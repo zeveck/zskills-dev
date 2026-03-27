@@ -1,14 +1,14 @@
 ---
 name: review-feedback
 description: >-
-  Review exported feedback JSON from the Zimulink feedback panel, evaluate each
+  Review exported feedback JSON from the in-app feedback panel, evaluate each
   pending entry, and selectively file GitHub issues via gh CLI. Use when the user
   says "review feedback", "triage feedback", or "file feedback issues".
 ---
 
 # /review-feedback — Review and triage user feedback
 
-Review exported feedback JSON from the Zimulink feedback panel, evaluate each
+Review exported feedback JSON from the in-app feedback panel, evaluate each
 pending entry, and selectively file GitHub issues.
 
 ## Trigger

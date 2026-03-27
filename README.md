@@ -88,11 +88,11 @@ data pipeline.
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/setup-zskills` | Install, audit, or update Z Skills infrastructure in any project |
 
-### 5 Domain Skills (`zimulink/`)
+### 5 Domain Skills (`block-diagram/`)
 
 These are for block-diagram editors and visual modeling projects. Use them
 directly or as templates for your own domain-specific skills.
-See [`zimulink/README.md`](zimulink/README.md).
+See [`block-diagram/README.md`](block-diagram/README.md).
 
 | Skill | Purpose |
 |-------|---------|
@@ -163,16 +163,11 @@ Instructions for the agent...
 
 See any skill in `skills/` for the full pattern.
 
-## Origin
+## Session Logging
 
-Z Skills was developed as part of [Zimulink](https://github.com/zeveck/zimulink),
-a block-diagram simulation tool built in 37 days by one developer directing Claude Code.
-The skills encode lessons from 800+ commits, 20B+ tokens of agent
-interaction, and dozens of real agent failures that were diagnosed and
-turned into guardrails.
-
-The `zimulink/` folder contains domain-specific skills from that project,
-preserved as reference implementations for similar domains.
+The hooks include a session logging system that converts Claude Code
+JSONL transcripts to readable markdown after every session. Available
+as a standalone package: [cc-session-logger](https://github.com/zeveck/cc-session-logger).
 
 ## License
 

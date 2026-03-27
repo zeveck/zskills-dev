@@ -1,12 +1,12 @@
 ---
 name: add-block
 description: >-
-  Step-by-step guide for adding new block types to Zimulink. Use when
-  the user asks to "add a block", "create a new block", "implement a block",
-  or mentions adding a block type to the library.
+  Step-by-step guide for adding new block types. Use when the user asks
+  to "add a block", "create a new block", "implement a block", or mentions
+  adding a block type to the library.
 ---
 
-# Adding Block Types to Zimulink
+# Adding Block Types
 
 Every new block must complete all steps (0–12). Steps 0–10 are the
 implementation workflow. Steps 11–12 are verification and landing.

@@ -1,8 +1,8 @@
-# Zimulink Domain Skills
+# Block Diagram Domain Skills
 
-These 5 skills are specific to block-diagram editors and visual modeling
-projects. They were developed for [Zimulink](https://github.com/zeveck/zimulink)
-and demonstrate how to extend Z Skills with domain-specific workflows.
+These 5 skills are for block-diagram editors and visual modeling
+projects. They demonstrate how to extend Z Skills with domain-specific
+workflows.
 
 ## Skills
 
@@ -35,13 +35,13 @@ generalize:
 Copy the skills you want to `.claude/skills/` in your project:
 
 ```bash
-cp -r zimulink/add-block .claude/skills/add-block
+cp -r block-diagram/add-block .claude/skills/add-block
 ```
 
 Or install all of them:
 
 ```bash
 for skill in add-block add-example manual-testing model-design review-feedback; do
-  cp -r zimulink/$skill .claude/skills/$skill
+  cp -r block-diagram/$skill .claude/skills/$skill
 done
 ```

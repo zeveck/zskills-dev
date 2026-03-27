@@ -1,7 +1,7 @@
 ---
 name: manual-testing
 description: >-
-  Zimulink-specific manual testing recipes for playwright-cli. Covers
+  Block-diagram editor manual testing recipes for playwright-cli. Covers
   common UI operations (adding blocks, connecting ports, running simulations,
   editing parameters) using real mouse/keyboard events. Use when told to
   "test manually", "test in the browser", or "verify with playwright-cli".

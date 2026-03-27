@@ -1,6 +1,6 @@
 ---
 name: model-design
-description: Design guidelines for creating well-laid-out Zimulink block diagrams and Ztateflow state charts. Use when building or reviewing .zlx model files.
+description: Design guidelines for creating well-laid-out block diagrams and state charts. Use when building or reviewing model files.
 ---
 
 # Model Design Guidelines
@@ -45,7 +45,7 @@ Follow these rules when creating or editing `.zlx` model files, placing blocks p
 - **Orthogonal routing only** -- horizontal and vertical segments, 90-degree bends. Diagonal (slanting) lines are prohibited. (MAAB db_0032, db_0032b)
 - **Zero crossings** as the target. Lines must not cross over blocks. If crossings are unavoidable, use line hops (small arcs) to distinguish a crossing from a connection. (MAAB db_0032c, jc_0903b2)
 - **Lines must not overlap** other lines, blocks, or labels. (MAAB jc_0903b)
-- **20px minimum clearance from unrelated blocks.** A line that routes adjacent to or behind a block it is not connected to creates a false visual connection -- proximity implies relationship. Re-route with waypoints, increase block spacing, or use Goto/From blocks. 20px = 2 grid units, the smallest readable gap given Zimulink's 10px grid snap. (ELK `spacing.edgeNode` default: 10 from edge center, yFiles `minimumNodeToEdgeDistance` default: 10, LabVIEW "do not wire under objects", Gestalt proximity principle)
+- **20px minimum clearance from unrelated blocks.** A line that routes adjacent to or behind a block it is not connected to creates a false visual connection -- proximity implies relationship. Re-route with waypoints, increase block spacing, or use Goto/From blocks. 20px = 2 grid units, the smallest readable gap given a 10px grid snap. (ELK `spacing.edgeNode` default: 10 from edge center, yFiles `minimumNodeToEdgeDistance` default: 10, LabVIEW "do not wire under objects", Gestalt proximity principle)
 - **10px minimum between parallel signal lines.** Parallel lines running closer than 10px (1 grid unit) become visually indistinguishable. (ELK `spacing.edgeEdge` default: 10, yFiles `minimumEdgeDistance`)
 - **Minimize bends.** Every bend must be justified by an obstacle or routing constraint. Prefer 0 bends (straight line) when ports are aligned; accept 1--2 bends for typical routing; investigate re-layout if a line requires 3+ bends. (MAAB db_0032c)
 - **Prefer zero-bend connections.** Position connected blocks so that the source output port and destination input port are at the same Y coordinate, producing a straight horizontal line. (auto-routing best practice: shortest path, fewest turns)
