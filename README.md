@@ -9,7 +9,7 @@ Claude Code how to perform a specific workflow with the discipline that
 prevents the most common AI agent failure modes: skipping verification,
 weakening tests, deferring hard parts, and shipping broken code.
 
-**[View the full presentation](PRESENTATION.html)** for the architecture,
+**[View the full presentation](https://zskills.synapticnoise.com/PRESENTATION.html)** for the architecture,
 workflow stages, enforcement model, and war stories.
 
 ## The Skills
