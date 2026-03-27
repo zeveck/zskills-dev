@@ -38,7 +38,7 @@ To update later: `/setup-zskills update` (pulls latest and syncs).
 
 ## Skill Catalog
 
-### 15 Core Skills (`skills/`)
+### 17 Core Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline.
@@ -73,6 +73,7 @@ data pipeline.
 |-------|---------|
 | `/fix-issues` | Batch bug-fixing sprints: prioritize N issues, dispatch parallel agents, verify, land |
 | `/fix-report` | Interactive sprint review — walk through results, gate landing on user approval |
+| `/review-feedback` | Triage user feedback into GitHub issues: deduplicate, evaluate, file |
 
 #### Ship
 
@@ -86,13 +87,14 @@ data pipeline.
 | Skill | Purpose |
 |-------|---------|
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
+| `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
 | `/setup-zskills` | Install, audit, or update Z Skills infrastructure in any project |
 
 ### Domain Extensions (`block-diagram/`)
 
-5 additional skills for block-diagram editors and visual modeling projects.
-These are **not** part of the core 15 — they're domain-specific extensions
-that demonstrate how to build your own. See [`block-diagram/README.md`](block-diagram/README.md).
+3 additional skills for block-diagram editors. These are **not** part of
+the core 17 — they're domain-specific extensions that demonstrate how to
+build your own. See [`block-diagram/README.md`](block-diagram/README.md).
 
 ## What Gets Installed
 

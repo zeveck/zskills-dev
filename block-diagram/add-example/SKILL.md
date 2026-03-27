@@ -1,7 +1,7 @@
 ---
 name: add-example
 description: >-
-  Create an example model for one or more block types. Handles .zlx construction,
+  Create an example model for one or more block types. Handles model file construction,
   registration, unit tests, codegen tests, screenshots, and verification.
   Usage: /add-example <block-type(s)> [concept hint]
 argument-hint: "<block-type(s)> [concept hint]"
@@ -40,7 +40,7 @@ just add the example key to the block's `examples` array in
 grep -A 30 "type: 'YourBlockType'" src/library/BlockDefinitions.js
 ```
 
-**Use the exact `key` values from `param()` calls in your .zlx file.**
+**Use the exact `key` values from `param()` calls in your model file.**
 Past failure: used `expression` instead of `expr` because param name was not
 checked against BlockDefinitions.js. The model loaded but produced wrong output.
 
@@ -81,9 +81,9 @@ truncated and unreadable.
 
 ## Phase 2 — Build
 
-### 2a. Create the .zlx file
+### 2a. Create the model file
 
-Create `examples/<name>/<name>.zlx` following `/model-design` rules:
+Create `examples/<name>/<name>.model` following `/model-design` rules:
 - Snap all positions to 10px grid
 - 80px minimum horizontal gap between blocks
 - Orthogonal routing only
@@ -137,7 +137,7 @@ mkdir -p examples/<name>/screenshots
 
 ```javascript
 'model-key': {
-  path: 'examples/model-name/model-name.zlx',
+  path: 'examples/model-name/model-name.model',
   name: 'Human-Readable Name',
   difficulty: 'Beginner',  // or 'Intermediate', 'Advanced'
   description: 'One sentence describing what the model demonstrates.',
@@ -215,8 +215,8 @@ All 3 suites must pass (unit, e2e, codegen). Report each suite's result.
 ### 5a. Dispatch verification agent
 
 Send a verification agent (or do it yourself) to check:
-- JSON validity of the .zlx file (parse it with `JSON.parse`)
-- Every param name in the .zlx matches the `key` in BlockDefinitions.js
+- JSON validity of the model file (parse it with `JSON.parse`)
+- Every param name in the model file matches the `key` in the block registry
 - All port references (srcPort, dstPort) are correct indices
 - EXAMPLE_MODELS registration is present
 - Block's `examples` array references the model key
@@ -235,7 +235,7 @@ README referenced a screenshot that did not match the actual model.
 
 ## Key Rules Summary
 
-1. **Always read BlockDefinitions.js** for exact param names before writing .zlx
+1. **Always read the block registry** for exact param names before writing the model file
 2. **Compute exact port positions** with the formula — never eyeball
 3. **Match solver to model characteristics** — fixed-step for piecewise, variable-step for smooth
 4. **Tests must verify output values** that prove the featured block works

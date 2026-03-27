@@ -10,7 +10,7 @@
 {{DEV_SERVER_CMD}}
 ```
 
-The port is determined automatically by `{{PORT_SCRIPT}}`: **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Run `node {{PORT_SCRIPT}}` to see your port. Override with `ZL_PORT=NNNN` env var if needed.
+The port is determined automatically by `{{PORT_SCRIPT}}`: **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Run `node {{PORT_SCRIPT}}` to see your port. Override with `DEV_PORT=NNNN` env var if needed.
 
 **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. If a port is busy, check what's on it with `lsof -i :<port>` and ask the user to stop it manually.
 

@@ -28,8 +28,8 @@ description: >-
 3. Bypass the auth gate:
 
    ```bash
-   playwright-cli localstorage-set zl-auth \
-     5eda6cbd3fa99fd4ef4e9839cf2a8507c247f15769f03253567e653b1792fb75
+   playwright-cli localstorage-set auth-token \
+     {{AUTH_BYPASS_VALUE}}
    playwright-cli reload
    ```
 
@@ -76,7 +76,7 @@ playwright-cli drag <block-item-ref> --x=400 --y=300
 
 ```bash
 # 1. Double-click the canvas to open Quick Insert
-playwright-cli dblclick "#zl-canvas" --x=400 --y=300
+playwright-cli dblclick "{{CANVAS_SELECTOR}}" --x=400 --y=300
 
 # 2. Type the block name
 playwright-cli type "Gain"
@@ -144,7 +144,7 @@ playwright-cli snapshot
 #    Use eval to get exact port coordinates if needed:
 playwright-cli eval "(() => {
   const sel = '[data-block-id=\"BLOCK_A_ID\"] \
-    .zl-port-visual[data-port-side=\"out\"]';
+    {{PORT_SELECTOR}}[data-port-side=\"out\"]';
   const p = document.querySelector(sel);
   const r = p.getBoundingClientRect();
   return { x: r.x + r.width/2, y: r.y + r.height/2 };
@@ -162,7 +162,7 @@ playwright-cli mousemove <midpoint-x> <midpoint-y>
 #    Input ports are on the left side of a block.
 playwright-cli eval "(() => {
   const sel = '[data-block-id=\"BLOCK_B_ID\"] \
-    .zl-port-visual[data-port-side=\"in\"]';
+    {{PORT_SELECTOR}}[data-port-side=\"in\"]';
   const p = document.querySelector(sel);
   const r = p.getBoundingClientRect();
   return { x: r.x + r.width/2, y: r.y + r.height/2 };
@@ -248,7 +248,7 @@ output graphs. Screenshot those for visual verification.
 **Always check `examples/` before building test models from scratch.**
 Run `ls examples/` to see available models. Load them via URL:
 ```
-http://localhost:<port>/?file=examples/<name>/<name>.zlx
+http://localhost:<port>/?file=examples/<name>/<name>.model
 ```
 
 Available examples include: `voltage-divider`, `smart-thermostat`,
@@ -262,62 +262,62 @@ Use these to locate elements when snapshot refs aren't sufficient:
 
 | Selector       | Description             |
 | -------------- | ----------------------- |
-| `#zl-canvas`   | Main SVG canvas         |
-| `#zl-viewport` | Pan/zoom viewport group |
+| `{{CANVAS_SELECTOR}}`   | Main SVG canvas         |
+| `{{VIEWPORT_SELECTOR}}` | Pan/zoom viewport group |
 
 ### Blocks & Ports
 
 | Selector                                | Description          |
 | --------------------------------------- | -------------------- |
 | `[data-block-id="ID"]`                  | Block by UUID        |
-| `.zl-block-body`                        | Block rectangle      |
-| `.zl-block-label`                       | Block name label     |
-| `.zl-port-visual[data-port-side="out"]` | Output port circle   |
-| `.zl-port-visual[data-port-side="in"]`  | Input port circle    |
+| `{{BLOCK_BODY_SELECTOR}}`                        | Block rectangle      |
+| `{{BLOCK_LABEL_SELECTOR}}`                       | Block name label     |
+| `{{PORT_SELECTOR}}[data-port-side="out"]` | Output port circle   |
+| `{{PORT_SELECTOR}}[data-port-side="in"]`  | Input port circle    |
 | `[data-port-index="0"]`                 | First port           |
-| `.zl-selected`                          | Any selected element |
+| `{{SELECTED_SELECTOR}}`                          | Any selected element |
 
 ### Lines
 
 | Selector              | Description         |
 | --------------------- | ------------------- |
 | `[data-line-id="ID"]` | Signal line by UUID |
-| `.zl-line`            | Any signal line     |
+| `{{LINE_SELECTOR}}`            | Any signal line     |
 
 ### Library Panel
 
 | Selector                    | Description             |
 | --------------------------- | ----------------------- |
-| `#zl-library`               | Library sidebar         |
+| `{{LIBRARY_SELECTOR}}`               | Library sidebar         |
 | `[data-category="sources"]` | Category by name        |
 | `[data-block-type="Gain"]`  | Block item by type name |
-| `.zl-library-search input`  | Library search input    |
+| `{{LIBRARY_SEARCH_SELECTOR}} input`  | Library search input    |
 
 ### Toolbar
 
 | Selector            | Description     |
 | ------------------- | --------------- |
-| `.zl-btn-run`       | Run simulation  |
-| `.zl-btn-stop`      | Stop simulation |
-| `.zl-btn-pause`     | Pause simulation |
-| `.zl-sim-time-stop` | Stop time input |
+| `{{RUN_BTN_SELECTOR}}`       | Run simulation  |
+| `{{STOP_BTN_SELECTOR}}`      | Stop simulation |
+| `{{PAUSE_BTN_SELECTOR}}`     | Pause simulation |
+| `{{SIM_TIME_SELECTOR}}` | Stop time input |
 
 ### Property Panel
 
 | Selector                  | Description       |
 | ------------------------- | ----------------- |
-| `.zl-property-panel`      | Properties dialog |
+| `{{PROPERTY_PANEL_SELECTOR}}`      | Properties dialog |
 | `[data-key="Gain"]`       | Parameter by key  |
-| `.zl-property-btn-apply`  | Apply button      |
-| `.zl-property-btn-cancel` | Cancel button     |
+| `{{PROPERTY_APPLY_SELECTOR}}`  | Apply button      |
+| `{{PROPERTY_CANCEL_SELECTOR}}` | Cancel button     |
 
 ### Quick Insert
 
 | Selector                 | Description       |
 | ------------------------ | ----------------- |
-| `.zl-quick-insert`       | Quick Insert popup |
-| `.zl-quick-insert-input` | Search text field |
-| `.zl-quick-insert-item`  | Result item       |
+| `{{QUICK_INSERT_SELECTOR}}`       | Quick Insert popup |
+| `{{QUICK_INSERT_INPUT_SELECTOR}}` | Search text field |
+| `{{QUICK_INSERT_ITEM_SELECTOR}}`  | Result item       |
 
 ## SVG Gotchas
 
@@ -341,5 +341,5 @@ Use these to locate elements when snapshot refs aren't sufficient:
 
    ```bash
    playwright-cli eval \
-     "document.querySelector('#zl-viewport').getAttribute('transform')"
+     "document.querySelector('{{VIEWPORT_SELECTOR}}').getAttribute('transform')"
    ```

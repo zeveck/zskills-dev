@@ -1,20 +1,15 @@
 # Block Diagram Domain Skills
 
-These 5 skills are for block-diagram editors and visual modeling
-projects. They demonstrate how to extend Z Skills with domain-specific
-workflows.
-
-![Block diagram domain skills](screenshots/domain-skills.png)
+3 skills for block-diagram editors and visual modeling projects.
+They demonstrate how to extend Z Skills with domain-specific workflows.
 
 ## Skills
 
 | Skill | Lines | Purpose |
 |-------|------:|---------|
-| `/add-block` | 633 | Full lifecycle for adding block types: plan, implement, register, UI, explorer, docs, tests, example, codegen, runtime, manual testing, verification, landing |
+| `/add-block` | 633 | Full lifecycle for adding block types: plan, implement, register, UI, docs, tests, example, codegen, runtime, verification, landing |
 | `/add-example` | 247 | Example model creation: research concept, design layout, build model file, register, test, screenshot, verify |
-| `/manual-testing` | 345 | Playwright-cli recipes with exact CSS selectors and event sequences for block-diagram UI |
 | `/model-design` | 250 | Layout guidelines for block diagrams and state charts based on MAAB/NASA standards |
-| `/review-feedback` | 98 | Triage exported user feedback JSON, deduplicate against existing issues, file via GitHub CLI |
 
 ## Using These Skills
 
@@ -22,16 +17,13 @@ workflows.
 workflows and layout standards. You'll need to adapt file paths and
 selectors to your project's architecture, but the patterns are ready to use.
 
-**If your project is something else:** use these as templates. The patterns
-generalize:
+**If your project is something else:** use these as templates:
 
 | This skill | Generalizes to |
 |------------|---------------|
-| `/add-block` | Any project with a plugin/component registry (VS Code extensions, Figma plugins, game entities) |
+| `/add-block` | Any project with a plugin/component registry (VS Code extensions, game entities) |
 | `/add-example` | Any project with example templates (starter projects, demo configurations) |
-| `/manual-testing` | Any project needing browser automation recipes (write your own selectors) |
 | `/model-design` | Any project with visual layout rules (diagram tools, form builders, dashboards) |
-| `/review-feedback` | Any project with user feedback intake (support tickets, bug reports) |
 
 ## Installation
 
@@ -44,7 +36,7 @@ cp -r block-diagram/add-block .claude/skills/add-block
 Or install all of them:
 
 ```bash
-for skill in add-block add-example manual-testing model-design review-feedback; do
+for skill in add-block add-example model-design; do
   cp -r block-diagram/$skill .claude/skills/$skill
 done
 ```

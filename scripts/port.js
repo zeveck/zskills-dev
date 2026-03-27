@@ -3,7 +3,7 @@
  *
  * Main repo ({{MAIN_REPO_PATH}}) -> 8080 (backward compatible).
  * Worktrees -> stable port in 9000-60000 derived from the project root path.
- * ZL_PORT env var overrides everything.
+ * DEV_PORT env var overrides everything.
  *
  * Usage:
  *   import { getPort } from './scripts/port.js';   // as module
@@ -22,7 +22,7 @@ const RANGE_START = 9000;
 const RANGE_SIZE = 51000; // 9000-60000
 
 export function getPort() {
-  if (process.env.ZL_PORT) return parseInt(process.env.ZL_PORT, 10);
+  if (process.env.DEV_PORT) return parseInt(process.env.DEV_PORT, 10);
 
   // Main repo gets the default port
   if (MAIN_REPO !== '{{MAIN_REPO_' + 'PATH}}' && PROJECT_ROOT === MAIN_REPO) return DEFAULT_PORT;

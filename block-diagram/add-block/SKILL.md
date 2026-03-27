@@ -228,7 +228,7 @@ case 'Name': {
 | `logic-discontinuities` | 7 | Logic & Discontinuities |
 | `data-handling` | 8 | Data Handling |
 | `lookup-tables` | 9 | Lookup Tables |
-| `ztateflow` | 10 | Ztateflow |
+| `state-machine` | 10 | State Machine |
 | `structural` | 11 | Structural |
 | `model-verification` | 12 | Model Verification |
 
@@ -360,7 +360,7 @@ In batch mode, invoke `/add-example` once after all blocks are implemented,
 passing all block types as a comma-separated list. One model that showcases
 all the blocks together is better than N separate trivial models.
 
-The `/add-example` skill handles: .zlx construction with exact port
+The `/add-example` skill handles: model file construction with exact port
 alignment, registration in BlockExplorerData.js, codegen compile tests,
 unit tests with value assertions, browser verification, and screenshots.
 
@@ -543,7 +543,7 @@ grep -r "'BlockType'" tests/blocks/
 # 6. Codegen emitter?
 grep "'BlockType'" src/codegen/BlockEmitter.js
 
-# 7. Example model features this block? (.zlx files use JSON double quotes)
+# 7. Example model features this block? (model files use JSON double quotes)
 grep -rl '"BlockType"' examples/ || echo "NO EXAMPLE FOUND"
 
 # 8. Runtime support OR tracking issue? (Rust uses double quotes)

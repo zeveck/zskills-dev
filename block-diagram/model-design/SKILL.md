@@ -5,7 +5,7 @@ description: Design guidelines for creating well-laid-out block diagrams and sta
 
 # Model Design Guidelines
 
-Follow these rules when creating or editing `.zlx` model files, placing blocks programmatically, or building Ztateflow charts. Based on 80+ sources including MAAB v5/v6, NASA Orion, Michael Burke (MathWorks), UML/Agile Modeling, ELK, yFiles, and graph drawing literature.
+Follow these rules when creating or editing model files, placing blocks programmatically, or building state charts. Based on 80+ sources including MAAB v5/v6, NASA Orion, Michael Burke (MathWorks), UML/Agile Modeling, ELK, yFiles, and graph drawing literature.
 
 ---
 
@@ -27,7 +27,7 @@ Follow these rules when creating or editing `.zlx` model files, placing blocks p
 - **Default block sizes** (from BlockDefinitions.js):
   - Standard blocks (Gain, Sum, etc.): 80x60
   - Scope: 60x60
-  - Chart (Ztateflow): 140x100
+  - Chart (state machine): 140x100
 - **Size blocks to show their content.** Icons and parameter text must be readable. If parameter text is truncated, enlarge the block. (MAAB jm_0002)
 - **Show key parameters on the block.** Gain values, constant values, transfer function coefficients, and other defining parameters should be visible on the block icon. (MAAB db_0140)
 - **Use consistent sizes** for blocks of the same type in a model.
@@ -61,7 +61,7 @@ Follow these rules when creating or editing `.zlx` model files, placing blocks p
 ### Signal Labeling
 - **Signal labels** go below the line, at the origin (source end) of the connection. (MAAB db_0097a/b)
 - **Label signals from interface blocks.** Signals originating from Inport, From, Subsystem, Constant, and Selector blocks should be labeled. Signals entering Outport, Goto, and Subsystem blocks should be labeled. (MAAB na_0008, jc_0008)
-- **Waypoints** in .zlx files should route signals cleanly around obstacles.
+- **Waypoints** in model files should route signals cleanly around obstacles.
 
 ### Unconnected Ports
 - **Every port must be connected.** No block shall have unconnected input or output ports, and no signal line shall have a dangling end. (MAAB db_0081)
@@ -101,7 +101,7 @@ When a line cannot maintain 20px clearance from an unrelated block without creat
 
 ---
 
-## .zlx Coordinate Cheat Sheet
+## Coordinate Cheat Sheet
 
 For a typical 3-block model (Source -> Processing -> Sink):
 
@@ -129,7 +129,7 @@ Where `branchX` is a convenient midpoint X between the source and destination bl
 
 ---
 
-## Ztateflow Chart Layout
+## State Chart Layout
 
 ### State Positioning
 - **Snap positions to 10px grid.** State x, y should be multiples of 10.
@@ -164,7 +164,7 @@ Where `branchX` is a convenient midpoint X between the source and destination bl
   - Downward: label to the **right**
   - Upward: label to the **left**
 - Labels must **never overlap** states, other transitions, or other labels.
-- Use `labelOffset: {dx, dy}` in .zlx to adjust:
+- Use `labelOffset: {dx, dy}` in the model file to adjust:
   - `dy: -15` for above, `dy: 15` for below
   - `dx: 15` for right, `dx: -15` for left
 
@@ -181,7 +181,7 @@ Where `branchX` is a convenient midpoint X between the source and destination bl
 
 ---
 
-## Ztateflow .zlx Coordinate Cheat Sheet
+## State Chart Coordinate Cheat Sheet
 
 For the Smart Thermostat pattern (1 junction + 4 states):
 
