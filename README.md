@@ -31,10 +31,18 @@ git clone https://github.com/zeveck/zskills.git zskills
 ```
 
 This installs the **17 core skills**, safety hooks, helper scripts, and
-CLAUDE.md guardrail rules. It prompts for project-specific values (test
-commands, dev server, source paths).
+CLAUDE.md guardrail rules. It auto-detects project settings (test commands,
+dev server, project name) from `package.json`, `Cargo.toml`, `Makefile`,
+etc. — you just confirm or override.
 
-To update later: `/setup-zskills update` (pulls latest and syncs).
+To include the block-diagram add-on (3 extra skills):
+
+```bash
+/setup-zskills install --with-block-diagram-addons
+```
+
+To update later: `/setup-zskills update` (pulls latest and syncs, including
+any installed add-ons).
 
 ## Skill Catalog
 

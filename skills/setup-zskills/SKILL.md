@@ -13,10 +13,19 @@ dependencies.
 **Invocation:**
 
 ```
-/setup-zskills [install | audit | update]
+/setup-zskills [install | audit | update] [--with-addons | --with-block-diagram-addons]
 ```
 
 Default mode (no argument): `audit`.
+
+**Add-on flags (install mode only):**
+- `--with-addons` — install core skills + ALL available add-on packs
+- `--with-block-diagram-addons` — install core skills + block-diagram add-on
+  (3 skills: `/add-block`, `/add-example`, `/model-design`)
+
+Without an add-on flag, `install` only installs the 17 core skills. If core
+is already installed, adding an add-on flag just copies the add-on skills
+(the audit detects core is satisfied and skips it).
 
 ---
 
@@ -180,23 +189,38 @@ to install." and stop.
 
 **If CLAUDE.md does NOT exist:**
 
-Copy `$PORTABLE/CLAUDE_TEMPLATE.md` to `CLAUDE.md`. Then prompt the user
-for each placeholder value:
+Copy `$PORTABLE/CLAUDE_TEMPLATE.md` to `CLAUDE.md`. Then **auto-detect
+placeholder values** from project files before prompting:
 
-```
-CLAUDE.md created from template. Please provide values for these placeholders:
+1. **Scan project files** for detection signals:
+   - `package.json` — `name`, `scripts.start`, `scripts.dev`, `scripts.test`,
+     `scripts["test:all"]`, `scripts["test:ci"]`
+   - `Cargo.toml` — `[package] name`
+   - `pyproject.toml` / `setup.py` / `setup.cfg` — project name, test config
+   - `Makefile` — `test`, `serve`, `dev` targets
+   - `manage.py` — Django project (dev server: `python manage.py runserver`)
+   - `.github/workflows/` / `.gitlab-ci.yml` — CI test commands
+   - `pytest.ini` / `jest.config.*` / `.mocharc.*` — test framework detection
+   - Git remote URL or directory name — fallback for project name
 
-{{PROJECT_NAME}}: [your project name]
-{{DEV_SERVER_CMD}}: [command to start dev server, e.g., npm start]
-{{UNIT_TEST_CMD}}: [unit test command, e.g., npm test]
-{{FULL_TEST_CMD}}: [full test suite command, e.g., npm run test:all]
-...
+2. **Present detected values for confirmation:**
+   ```
+   CLAUDE.md created from template. Detected values (confirm or override):
 
-I'll replace placeholders with your values. Press Enter to accept defaults
-shown in [brackets].
-```
+     {{PROJECT_NAME}}: my-app (from package.json)
+     {{DEV_SERVER_CMD}}: npm start (from package.json scripts.start)
+     {{UNIT_TEST_CMD}}: npm test (from package.json scripts.test)
+     {{FULL_TEST_CMD}}: npm run test:all (from package.json scripts["test:all"])
 
-After getting values, do find-and-replace for each placeholder.
+   Could not detect:
+     {{SOURCE_PATHS}}: [please provide, e.g., src/, lib/]
+   ```
+
+3. **Only prompt for values that couldn't be detected.** For detected values,
+   the user confirms or overrides. This means install on an established
+   project requires minimal input — most values are discoverable.
+
+After confirmation, do find-and-replace for each placeholder.
 
 **If CLAUDE.md EXISTS but is missing rules:**
 
@@ -279,7 +303,23 @@ Copy missing scripts from `$PORTABLE/scripts/` to `scripts/`.
 
 Report: "Installed N scripts: [list]"
 
-### Step 7 — Final report
+### Step 7 — Install add-ons (if `--with-addons` or `--with-block-diagram-addons`)
+
+Skip this step if no add-on flag was provided.
+
+1. **Determine which add-on packs to install:**
+   - `--with-addons` → all packs in `$PORTABLE/../block-diagram/` (and any
+     future add-on directories)
+   - `--with-block-diagram-addons` → only `$PORTABLE/../block-diagram/`
+
+2. **For each add-on skill** (e.g., `add-block`, `add-example`, `model-design`):
+   - If `.claude/skills/<name>/SKILL.md` already exists, skip (never overwrite)
+   - Otherwise, copy from the add-on source directory to `.claude/skills/<name>/`
+
+3. **Report:** "Installed N add-on skills: [list]" or "Add-on skills already
+   installed — skipped."
+
+### Step 8 — Final report
 
 ```
 Installation complete.
@@ -288,6 +328,7 @@ Installed:
 - CLAUDE.md: [created | N rules appended | already complete]
 - Hooks: N hooks installed
 - Scripts: N scripts installed
+- Add-ons: N add-on skills installed (omit this line if no add-on flag was used)
 
 Skills with additional requirements:
 - /briefing: requires project-specific briefing.cjs (see /briefing skill docs)

@@ -27,16 +27,19 @@ selectors to your project's architecture, but the patterns are ready to use.
 
 ## Installation
 
-Copy the skills you want to `.claude/skills/` in your project:
+These skills depend on the core Z Skills infrastructure (CLAUDE.md rules,
+hooks, scripts). Install everything together:
 
 ```bash
-cp -r block-diagram/add-block .claude/skills/add-block
+git clone https://github.com/zeveck/zskills.git zskills
+/setup-zskills install --with-block-diagram-addons
 ```
 
-Or install all of them:
+Or if you already have the core skills installed:
 
 ```bash
-for skill in add-block add-example model-design; do
-  cp -r block-diagram/$skill .claude/skills/$skill
-done
+/setup-zskills install --with-block-diagram-addons
 ```
+
+Once installed, `/setup-zskills update` keeps these updated alongside
+the core skills.
