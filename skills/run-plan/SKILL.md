@@ -189,9 +189,8 @@ If `$ARGUMENTS` contains `every <schedule>`:
    - `recurring`: true
    - `prompt`: the constructed command from step 3
 
-5. **Confirm** with wall-clock time. **Always show times in America/New_York
-   (ET)** — use `TZ=America/New_York date` for conversion, not the system
-   timezone (which may be UTC):
+5. **Confirm** with wall-clock time. Show times in the user's local
+   timezone — use `date` for conversion, not raw UTC:
 
    If `now` is present:
    > Run-plan scheduled every 4h. Running now.
@@ -291,9 +290,9 @@ Before parsing, check for stale state from a previous failed run:
 
    **Do NOT summarize, paraphrase, or reinterpret.** The plan is the spec.
 
-   Lesson from `/fix-issues` #387: summarized descriptions caused agents to
-   implement the wrong thing. "Reset button" was interpreted as "clear canvas"
-   instead of "reset mappings to defaults" because only the title was read.
+   Past failure: summarized descriptions caused agents to implement the
+   wrong thing. "Reset button" was interpreted as "clear canvas" instead
+   of "reset mappings to defaults" because only the title was read.
    The same will happen with plan phases if the orchestrator summarizes
    "implement translational mechanical domain" without the formulas, state
    equations, and design constraints.
@@ -777,7 +776,7 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
         ```bash
         cat > "<worktree-path>/.landed.tmp" <<LANDED
         status: full
-        date: $(TZ=America/New_York date -Iseconds)
+        date: $(date -Iseconds)
         source: run-plan
         phase: <phase name>
         commits: <list of cherry-picked hashes>
