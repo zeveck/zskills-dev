@@ -28,7 +28,7 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - **focus** (optional) — prioritize a specific domain:
   - `new` — recently filed issues, user feedback (#382+)
   - `correctness` — simulation/solver correctness (CORRECTNESS_PLAN)
-  - `codegen` — Rust code generation (BUILD_ISSUES)
+  - `codegen` — Rust code generation (RUST_ISSUES)
   - `statemachine` — state machine module (MODULE_ISSUES)
   - `physics` — physics module (MODULE_ISSUES)
   - `ui` — editor/canvas bugs
@@ -198,7 +198,7 @@ Issues that appear already fixed (N candidates):
 |---|-------|---------|----------|
 | #126 | Fcn block mapping | FIXED | SlxImporter.js:85, commit abc1234, 2 tests |
 | #191 | Block stubs | FIXED | All 4 blocks implemented, 12 tests pass |
-| #393 | Fcn codegen u(N) | FIXED | block-emitter.js step 8, commit def5678 |
+| #393 | Fcn codegen u(N) | FIXED | BlockEmitter step 8, commit def5678 |
 | #200 | Some bug | LIKELY FIXED | Code changed but no regression test |
 
 Close 3 FIXED issues? (all / comma-separated numbers / none)
@@ -356,6 +356,11 @@ If `every` is NOT present, skip this phase entirely and proceed to Phase 1
 
 ## Phase 1 — Preflight & Sync
 
+**IMPORTANT: Complete ALL steps (1-6 + Phase 1b) before Phase 2.** Do NOT
+skip tracker updates or research to "save time." Dispatching agents without
+research blurbs causes misinterpretation — agents guess from titles and
+implement the wrong fix. This has happened repeatedly.
+
 ### Preflight checks (before doing anything else)
 
 Before starting the sprint, check for stale state from a previous failed run:
@@ -410,10 +415,11 @@ alert user, write failure to report).
 4. **Update ALL issue trackers** — ensure these files reflect current GitHub state:
    - `plans/ISSUES_PLAN.md` (master index)
    - `plans/CORRECTNESS_ISSUES.md` (correctness defects)
-   - `plans/BUILD_ISSUES.md` (codegen issues)
+   - `plans/RUST_ISSUES.md` (codegen issues)
    - `plans/QE_ISSUES.md` (test gaps)
    - `plans/DOC_ISSUES.md` (documentation)
-   - `plans/MODULE_ISSUES.md` (module-specific features)
+   - `plans/MODULE_ISSUES.md` (state machine module features)
+   - `plans/MODULE_ISSUES.md` (physical modeling)
 
 5. **Identify gaps** — any GH issues not tracked in any plan file? Add them to
    the appropriate tracker.
@@ -447,7 +453,7 @@ alert user, write failure to report).
 2. **Fetch the research blurb from plan files:**
    ```bash
    grep -A 30 '#<N>' plans/ISSUES_PLAN.md plans/CORRECTNESS_ISSUES.md \
-     plans/BUILD_ISSUES.md plans/QE_ISSUES.md \
+     plans/RUST_ISSUES.md plans/QE_ISSUES.md plans/MODULE_ISSUES.md \
      plans/MODULE_ISSUES.md plans/DOC_ISSUES.md 2>/dev/null
    ```
    Plan blurbs contain root cause analysis, affected files, suggested fixes,
@@ -524,6 +530,15 @@ Before dispatching agents, check for interrelated issues:
 Tell the agent when issues are related: "Issues #100 and #101 share
 root cause X in file Y — consider fixing them together with a single commit."
 
+**Bundling beyond N.** When prioritizing, if additional open issues would
+naturally be fixed in the same session (same component, same area of code)
+or appear to have the same root cause, the orchestrator should include
+them alongside the selected issue for the same agent. These don't count
+toward N. In interactive mode, show bundled extras in the approval list
+with the rationale so the user can adjust. This keeps `/fix-issues 1
+every 1h` efficient — one agent, one worktree, but it picks up tightly
+coupled neighbors instead of leaving them for the next sprint.
+
 ### Present the list
 
 - **Without `auto`:** **Wait for user approval** of the list before proceeding.
@@ -585,7 +600,7 @@ agent hasn't returned after 1 hour, declare it **failed**:
    paraphrase or summarize — include the full text the user wrote. Titles are
    often vague; the body is the spec. If the body is empty, say so explicitly.
 2. **The research blurb from the plan file** (ISSUES_PLAN.md,
-   CORRECTNESS_ISSUES.md, BUILD_ISSUES.md, QE_ISSUES.md, etc.).
+   CORRECTNESS_ISSUES.md, RUST_ISSUES.md, QE_ISSUES.md, etc.).
    These contain root cause analysis, affected files, suggested fixes, and
    effort estimates written when the issue was filed. Grep the plan files for
    the issue number and include any matching section verbatim.
@@ -609,8 +624,8 @@ Each agent follows this fix workflow:
    use playwright-cli with real events, take screenshots as evidence.
    The pre-commit hook will BLOCK your commit if UI files are staged
    but `playwright-cli` wasn't used in the session. This is not optional.
-7. **Classify User Verify** — if {{UI_FILE_PATTERNS}} files changed,
-   mark `User Verify: NEEDED`
+7. **Classify User Verify** — if `src/editor/`, `src/ui/`, `src/styles/`,
+   or `src/modules/editor/` files changed, mark `User Verify: NEEDED`
    in the sprint report. The user must see UI changes before the issue
    can be closed. This is in ADDITION to your agent verification.
 8. Commit in the worktree (one issue per commit, clean history)
@@ -673,7 +688,7 @@ each sprint, losing results from earlier sprints that were never reviewed.
 The pre-commit hook blocks commits without test evidence.
 
 **User Verify:** Does the user need to see this? Mechanically classified:
-if {{UI_FILE_PATTERNS}}
+if `src/editor/`, `src/ui/`, `src/styles/`, or `src/modules/editor/`
 files changed → `NEEDED`. Otherwise → `N/A`. `/fix-report` Step 2
 presents all `NEEDED` items for user review before closing.
 
@@ -810,8 +825,35 @@ commit hashes, worktree paths, and test counts.
      code on main with the cron still running.
   9. **Update `SPRINT_REPORT.md`** — mark which fixes were landed (add a
      `Landed` column or update status).
-  10. Done. Closing GH issues, updating trackers, and cleaning worktrees are
-     still `/fix-report` actions — even in auto mode.
+  10. **Auto-remove fully landed worktrees** — for each worktree with
+      `status: full` in `.landed`:
+      ```bash
+      # Logs already extracted in step 5a. Double-check for stragglers:
+      if [ -d "<worktree>/.claude/logs" ]; then
+        for log in <worktree>/.claude/logs/*.md; do
+          [ -f ".claude/logs/$(basename "$log")" ] || cp "$log" .claude/logs/
+        done
+      fi
+
+      # Check for real uncommitted work (not artifacts)
+      DIRTY=$(git -C "<worktree>" diff --name-only HEAD)
+      UNTRACKED=$(git -C "<worktree>" status --porcelain | \
+        grep -v '\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
+
+      if [ -z "$DIRTY" ] && [ -z "$UNTRACKED" ]; then
+        rm -f "<worktree>/.landed" "<worktree>/.worktreepurpose" \
+              "<worktree>/.test-results.txt"
+        git worktree remove "<worktree>"
+        git branch -d "<branch>" 2>/dev/null
+      else
+        echo "Worktree <name> not auto-removed: uncommitted work found"
+      fi
+      ```
+      Skip removal for worktrees with `status: partial` — those have
+      unapplied commits that need attention.
+
+  11. Done. Closing GH issues and updating trackers are still `/fix-report`
+      actions — even in auto mode.
 
 ## Failure Protocol
 

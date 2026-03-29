@@ -33,7 +33,7 @@ is already installed, adding an add-on flag just copies the add-on skills
 
 **This step runs before any mode.** The portable assets (hooks, scripts,
 CLAUDE_TEMPLATE.md, skills) can come from two sources: the `zskills-portable/`
-vendored directory (inside projects like Zimulink), or the Z Skills repo
+vendored directory (inside projects like yours), or the Z Skills repo
 root (which has the same structure). To find them:
 
 1. Check if `zskills-portable/` exists in the current working directory. If

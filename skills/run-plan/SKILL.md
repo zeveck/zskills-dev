@@ -189,8 +189,9 @@ If `$ARGUMENTS` contains `every <schedule>`:
    - `recurring`: true
    - `prompt`: the constructed command from step 3
 
-5. **Confirm** with wall-clock time. Show times in the user's local
-   timezone — use `date` for conversion, not raw UTC:
+5. **Confirm** with wall-clock time. **Always show times in America/New_York
+   (ET)** — use `TZ=America/New_York date` for conversion, not the system
+   timezone (which may be UTC):
 
    If `now` is present:
    > Run-plan scheduled every 4h. Running now.
@@ -290,9 +291,9 @@ Before parsing, check for stale state from a previous failed run:
 
    **Do NOT summarize, paraphrase, or reinterpret.** The plan is the spec.
 
-   Past failure: summarized descriptions caused agents to implement the
-   wrong thing. "Reset button" was interpreted as "clear canvas" instead
-   of "reset mappings to defaults" because only the title was read.
+   Lesson from `/fix-issues` #387: summarized descriptions caused agents to
+   implement the wrong thing. "Reset button" was interpreted as "clear canvas"
+   instead of "reset mappings to defaults" because only the title was read.
    The same will happen with plan phases if the orchestrator summarizes
    "implement translational mechanical domain" without the formulas, state
    equations, and design constraints.
@@ -300,7 +301,7 @@ Before parsing, check for stale state from a previous failed run:
 8. **Classify UI impact from the plan text.** Scan the phase description
    for UI indicators: mentions of editor, toolbar, canvas, panel, dialog,
    CSS, button, menu, viewport, renderer, dark mode, layout, or any
-   reference to {{UI_FILE_PATTERNS}}.
+   reference to `src/editor/`, `src/ui/`, `src/styles/`, `src/modules/editor/`.
    Flag the phase as **UI-touching** if any are found.
 
    In `finish` mode, classify ALL phases upfront and report:
@@ -596,36 +597,29 @@ to the next incomplete phase (preventing infinite loops).
 
 ## Phase 5 — Write Report
 
-**APPEND** a new phase section to `reports/plan-{slug}.md`, where `{slug}`
-is derived from the plan filename (e.g., `FEATURE_PLAN.md` → `plan-feature`).
-Each plan gets its own report file — different plans never collide.
-Re-running the same plan appends (multiple phases accumulate).
+**PREPEND** new phase sections after the H1 in `reports/plan-{slug}.md`
+(`{slug}` from plan filename, e.g., `FEATURE_PLAN.md` → `plan-physics module`).
+Newest phase at the top — the reader's question is "what needs my
+attention?" and that's always the newest phase.
 
 If the file doesn't exist, create it with a `# Plan Report — {plan name}`
-heading. Do NOT overwrite — `finish` and `every` modes add multiple phases.
+heading. Never overwrite the file — each phase adds a section.
 
 After writing, regenerate `PLAN_REPORT.md` in the repo root as an **index**
-of all plan reports (same pattern as VERIFICATION_REPORT.md index):
+of all plan reports:
 1. Scan `reports/plan-*.md` files
-2. For each: extract plan name, phase count, overall status, and count
-   unchecked `[ ]` sign-off items
-3. Write `PLAN_REPORT.md` with:
-   - **Needs Sign-off** section at top — all unchecked `[ ]` items across
-     all plan reports, linked to their source file
-   - **Plans** table — each plan report with status and action item count
-   - Staleness rule: items >7 days flagged STALE (same as VERIFICATION_REPORT.md)
+2. For each: extract plan name, phase count, overall status, unchecked `[ ]`
+3. Write index with Needs Sign-off section (linked items) + Plans table
+4. Staleness rule: items >7 days flagged STALE
 
-Past failure in `/fix-issues`: the sprint report was overwritten each run,
-losing 17 sprints of data. Same applies here — never overwrite.
-
-**Report format** — each phase appends a section:
+**Report format** — each phase gets one `## Phase` section:
 
 ```markdown
 ## Phase — 4b Translational Mechanical Domain [UNFINALIZED]
 
 **Plan:** plans/FEATURE_PLAN.md
 **Status:** Completed (verified)
-**Worktree:** ../plan-feature-4b
+**Worktree:** ../plan-physics module-4b
 **Commits:** abc1234, def5678
 
 ### Work Items
@@ -638,34 +632,36 @@ losing 17 sprints of data. Same applies here — never overwrite.
 - Test suite: PASSED (4342 tests)
 - Acceptance criteria: all met
 
-### User Verification
-{Only include this section if UI files were changed in this phase.
-If no UI files changed, omit the section entirely.}
+### User Sign-off
+{Only if UI files changed. Omit entirely for non-UI phases.}
 
-| Change | Agent Verify | User Verify |
-|--------|:-----------:|:----------:|
-| Variable viewer panel | ✅ | [ ] |
-| Toolstrip button | ✅ | [ ] |
+- [ ] **P4b-1** — Variable viewer panel
+  1. Open the app, load a physics module model (e.g., voltage-divider example)
+  2. Run the simulation
+  3. Click the lightning icon in the toolstrip
+  4. Verify the Physical Variables panel opens with columns for V, I, P
+  5. Check that values update after simulation completes
+  ![viewer panel](.playwright/output/phase4b-variable-viewer.png)
 
-### #1 — Variable viewer panel
-- [ ] **Sign off**
-
-1. Open the app, load a model (e.g., amplifier-circuit example)
-2. Run the simulation
-3. Click the lightning icon in the toolstrip
-4. Verify the Physical Variables panel opens with columns for V, I, P
-5. Check that values update after simulation completes
-
-![viewer panel](.playwright/output/phase4b-variable-viewer.png)
+- [ ] **P4b-2** — Toolstrip button
+  1. Verify the lightning icon appears in the toolstrip
+  2. Click it — panel should toggle open/closed
 ```
 
-**Conditional:** Only include the User Verification section if UI files
-({{UI_FILE_PATTERNS}}) were
-changed in this phase. If no UI files changed, omit the entire section.
-
-**Use actual data.** The H1 is `# Plan Report` — created once when the
-file doesn't exist. Each phase appends a `## Phase` section. Never create
-a new H1.
+**Report format rules:**
+- **One checkbox per item.** Do NOT use a summary table with `[ ]` AND a
+  detail section with `[ ]` — the viewer counts both as separate checkboxes.
+  Use only the checklist format above.
+- **Phase-prefixed IDs** — `P4b-1`, `P2-3`, not `#1`, `#2` (which reset
+  per phase and collide).
+- **Include verification instructions** under each checkbox — numbered
+  steps, screenshots. The reviewer needs to know what to do, not just
+  what to check off.
+- **One item per verifiable thing** — "3 check blocks in Block Explorer"
+  is wrong. Each block gets its own checkbox.
+- **Avoid literal `[ ]` in description text** — the viewer renders it as
+  a phantom checkbox. Describe instead: "bracket pair" or use backtick
+  escaping.
 
 ## Phase 6 — Land
 
@@ -776,7 +772,7 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
         ```bash
         cat > "<worktree-path>/.landed.tmp" <<LANDED
         status: full
-        date: $(date -Iseconds)
+        date: $(TZ=America/New_York date -Iseconds)
         source: run-plan
         phase: <phase name>
         commits: <list of cherry-picked hashes>
@@ -805,8 +801,31 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      ```
   10. **Update the plan report** (`reports/plan-{slug}.md`) — mark the
       phase section as landed. Regenerate `PLAN_REPORT.md` index.
-  11. Done. Worktree cleanup: worktrees with `status: full` in `.landed`
-      are safe to remove. See CLAUDE.md worktree cleanup rules.
+  11. **Auto-remove worktree** after successful landing:
+      ```bash
+      # Extract any remaining logs
+      if [ -d "<worktree>/.claude/logs" ]; then
+        for log in <worktree>/.claude/logs/*.md; do
+          [ -f ".claude/logs/$(basename "$log")" ] || cp "$log" .claude/logs/
+        done
+      fi
+
+      # Check for real uncommitted work (not artifacts)
+      DIRTY=$(git -C "<worktree>" diff --name-only HEAD)
+      UNTRACKED=$(git -C "<worktree>" status --porcelain | \
+        grep -v '\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
+
+      if [ -z "$DIRTY" ] && [ -z "$UNTRACKED" ]; then
+        rm -f "<worktree>/.landed" "<worktree>/.worktreepurpose" \
+              "<worktree>/.test-results.txt"
+        git worktree remove "<worktree>"
+        git branch -d "<branch>" 2>/dev/null
+      else
+        echo "Worktree not auto-removed: uncommitted work found"
+      fi
+      ```
+      If removal fails for any reason, leave the worktree — it has
+      `.landed` and `/briefing worktrees` will classify it as safe.
 
 ## Failure Protocol
 
@@ -855,7 +874,7 @@ Add a `## Run Failed` section at the top of the report:
 ## Run Failed — YYYY-MM-DD HH:MM
 
 **Plan:** plans/FEATURE_PLAN.md
-**Phase:** 4b — Implementation Phase
+**Phase:** 4b — Translational Mechanical Domain
 **Failed at:** Phase N — [description]
 **Error:** [what went wrong]
 **State:**

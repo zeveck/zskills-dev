@@ -238,9 +238,10 @@ Then for each approved issue:
 2. Update ALL relevant plan files for that issue:
    - `plans/ISSUES_PLAN.md` — `- [ ]` → `- [x]` with commit hash
    - `plans/CORRECTNESS_ISSUES.md` — mark ~~FIXED~~
-   - `plans/BUILD_ISSUES.md` — mark ~~FIXED~~
+   - `plans/RUST_ISSUES.md` — mark ~~FIXED~~
    - `plans/QE_ISSUES.md` — mark RESOLVED
    - `plans/DOC_ISSUES.md`
+   - `plans/MODULE_ISSUES.md`
    - `plans/MODULE_ISSUES.md`
 
    Only update files that actually reference the issue number.
@@ -269,7 +270,7 @@ Worktrees:
   wt-123 — SAFE (status: full, landed 2026-03-16) ✓
   wt-456 — SAFE (status: full, landed 2026-03-16) ✓
   wt-789 — PARTIAL — skipped commits, needs review ⚠
-  feature-branch — ACTIVE — no .landed marker (long-running dev) ⚠
+  physics module-phase4 — ACTIVE — no .landed marker (long-running dev) ⚠
 
 Remove SAFE worktrees? (wt-123, wt-456)
 ```
@@ -298,32 +299,26 @@ Legend: ✅ verified, ⚠️ partial, ❌ failed, ➖ not applicable, [ ] not ye
 ```
 
 **Domain-grouped sections** — group by concern (UI/UX, Codegen,
-Simulation, State Machine, etc.), NOT by workflow state. Each section has:
+Simulation, state machine module, etc.), NOT by workflow state. Use a single-checkbox
+checklist (no summary table + detail card dual-checkbox pattern):
 
-1. **Summary table** with navigation links to detail cards:
-   ```markdown
-   ## UI / UX Fixes
-   | # | Title | Unit | E2E | Manual | User |
-   |---|-------|:----:|:---:|:------:|:----:|
-   | [#358](#358--block-rotation) | Block Rotation | ✅ | ✅ | ✅ | [ ] |
-   ```
-   Columns are context-appropriate: swap E2E for Codegen in codegen
-   sections, use `Tests Added | Suite` for test coverage items.
+```markdown
+## UI / UX Fixes
 
-2. **Detail cards** — only for items with `[ ]` in User column:
-   ```markdown
-   ### #358 — Block Rotation
-   [↑ back to table](#ui--ux-fixes)
-   - [ ] **Sign off**
+- [ ] **#358** — Block Rotation
+  1. Right-click a block and select Rotate
+  2. Ports should move to the correct sides
+  3. Block label should stay horizontal
+  ![rotation](.playwright/output/358-rotation-90deg.png)
 
-   Right-click a block and select Rotate. Ports should move to the
-   correct sides and the block label should stay horizontal.
+- [ ] **#401** — Tooltip positioning
+  1. Hover near canvas edge
+  2. Verify tooltip doesn't clip off-screen
+```
 
-   ![90 degree rotation](.playwright/output/358-rotation-90deg.png)
-   ```
-   Each card: heading, back-link, checkbox (paired with table `[ ]`),
-   imperative verification instructions, screenshot(s) with
-   `{issue}-{slug}.png` naming. Omit cards for `➖` or `✅` items.
+**One checkbox per verifiable item.** Include verification steps and
+screenshots directly under each checkbox. One item per distinct thing —
+not "3 fixes in category" but one per fix.
 
 **Outcome sections** (after all domain sections, include only non-empty):
 - **Not Fixed** — issues referenced in commits but not actually fixed

@@ -92,7 +92,7 @@ For each changed file, verify appropriate tests exist:
    - If a bug fix: does a regression test exist that would have caught the bug?
    - If a new feature: do tests cover the happy path AND edge cases?
 
-2. **Block changes** (block implementation files):
+2. **Block changes** (`src/blocks/*.js`):
    - Check `tests/blocks/*.test.js` for runtime tests
    - Verify output computation, parameter handling, edge cases
 
@@ -104,7 +104,7 @@ For each changed file, verify appropriate tests exist:
    - Verify codegen compile tests exist in `tests/codegen/`
    - Check JS-to-Rust behavioral parity
 
-5. **UI/editor changes** ({{UI_FILE_PATTERNS}}):
+5. **UI/editor changes** (`src/editor/`, `src/modules/editor/`):
    - Check for E2E tests in `tests/e2e/`
    - Flag for manual verification in Phase 4
 
@@ -183,7 +183,7 @@ the session when UI files are staged. This is not optional.
 **User verification (USER):** Some changes need the HUMAN to see them —
 judgment calls about animation quality, visual layout, UX feel. The agent
 flags these but cannot close them. Mechanically classified: if
-{{UI_FILE_PATTERNS}} files
+`src/editor/`, `src/ui/`, `src/styles/`, or `src/modules/editor/` files
 changed → `User Verify: NEEDED`. `/fix-report` Step 2 presents these to
 the user before closing.
 
@@ -322,30 +322,26 @@ Legend: ✅ verified, ⚠️ partial, ❌ failed, ➖ not applicable, [ ] not ye
 ```
 
 **Domain-grouped sections** — group by concern (UI/UX, Codegen, etc.),
-NOT by workflow state. Each section has:
+NOT by workflow state. Each section uses a single-checkbox checklist
+(no summary table + detail card dual-checkbox pattern):
 
-1. **Summary table** with navigation links to detail cards:
-   ```markdown
-   ## UI / UX Changes
-   | # | Title | Unit | E2E | Manual | User |
-   |---|-------|:----:|:---:|:------:|:----:|
-   | [#358](#358--block-rotation) | Block Rotation | ✅ | ✅ | ✅ | [ ] |
-   ```
-   Columns are context-appropriate per domain.
+```markdown
+## UI / UX Changes
 
-2. **Detail cards** — only for items with `[ ]` in User column:
-   ```markdown
-   ### #358 — Block Rotation
-   [↑ back to table](#ui--ux-changes)
-   - [ ] **Sign off**
+- [ ] **#358** — Block Rotation
+  1. Right-click a block and select Rotate
+  2. Ports should move to the correct sides
+  3. Block label should stay horizontal
+  ![rotation](.playwright/output/358-rotation-90deg.png)
 
-   Right-click a block and select Rotate. Ports should move to the
-   correct sides.
+- [ ] **#401** — Tooltip positioning
+  1. Hover near canvas edge
+  2. Verify tooltip doesn't clip off-screen
+```
 
-   ![rotation](.playwright/output/358-rotation-90deg.png)
-   ```
-   Each card: heading, back-link, paired checkbox, imperative
-   verification instructions, screenshot(s). Omit cards for `➖`/`✅`.
+**One checkbox per verifiable item.** Include verification steps and
+screenshots directly under each checkbox. One item per distinct thing
+to verify — not "3 blocks in explorer" but one per block.
 
 **Outcome sections** (include only non-empty):
 - **Skipped Verification** — per-item reason

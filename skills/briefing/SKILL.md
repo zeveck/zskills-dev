@@ -34,6 +34,14 @@ portion and handle scheduling separately (see Scheduling section below).
 
 ## Mode Dispatch
 
+**CRITICAL: "Present verbatim" means OUTPUT EVERY LINE.** Do not summarize,
+collapse, truncate, or rephrase script output. The script's formatting IS
+the presentation — it was designed to be read directly. If the output is 50
+lines, show 50 lines. The user wants to SEE the data, not hear about it.
+Past failure: agent received 45 lines of worktree status and collapsed it
+to a 4-line summary, hiding actionable details like which logs need
+extraction and which commits are unlanded.
+
 ### `summary` (default — empty or unrecognized arguments)
 
 Quick terminal-only triage view. The helper outputs pre-formatted text.
@@ -70,18 +78,95 @@ Present: "Report written to: `<path>`" with a brief summary of key findings.
 
 ### `verify`
 
-Aggregate all pending sign-off items into a single view.
+**Purpose:** show the user everything they need to verify, with links to
+open the reports directly. This is a sign-off dashboard — the user reads
+this, clicks through, checks items off, done.
+
+**This mode is NOT about worktrees.** Do not mention worktrees, do not
+suggest the user verify worktrees before landing, do not include worktree
+counts or status. Worktrees are for `/briefing worktrees`. Verify is
+exclusively about report checkboxes — `[ ]` items in verification reports,
+fix reports, and plan reports that need human sign-off.
+
+#### Step 1 — Gather data
 
 ```bash
 node scripts/briefing.cjs verify
 ```
 
-Present the output **verbatim**. Sections:
-- **UNMERGED WORKTREES** — worktrees with commits not yet on main
-- **REPORT SIGN-OFF** — unchecked `[ ]` items grouped by file
-- **PARTIAL LANDINGS** — worktrees where some commits were skipped
+The script output includes both report sign-off data and worktree data.
+Use both — report checkboxes are the primary output, worktrees needing
+verification are secondary (see "Worktree verification items" below).
 
-Empty state: `ALL CLEAR — no pending items.`
+#### Step 2 — Read the actual report files
+
+The script gives file paths and counts. That's not enough — the user needs
+to see the actual checkbox text. For each report file with unchecked items,
+READ the file and extract every `[ ]` line with its surrounding context
+(the heading it's under, any verification instructions).
+
+#### Step 3 — Build the output with links
+
+Get the dev server port:
+```bash
+node scripts/port.js
+```
+
+For each report file, construct a viewer URL:
+`http://localhost:<port>/viewer/?file=<path>`
+
+Present the output in this format:
+
+```
+Pending sign-offs: N items across M reports
+
+FIX_REPORT.md — 33 items
+  http://localhost:8080/viewer/?file=FIX_REPORT.md
+
+  UI / UX Fixes:
+    [ ] Block Rotation — right-click, select Rotate, check ports
+    [ ] Tooltip positioning — hover near canvas edge, verify no clipping
+
+  Simulation Fixes:
+    [ ] Solver tolerance — run voltage-divider, verify output within 1e-6
+
+reports/plan-block-expansion.md — 9 items
+  http://localhost:8080/viewer/?file=reports/plan-block-expansion.md
+
+  Phase 1:
+    [ ] IfBlock visible in Block Explorer
+    [ ] If/IfAction wiring works on canvas
+
+VERIFICATION_REPORT.md — 2 items
+  http://localhost:8080/viewer/?file=VERIFICATION_REPORT.md
+
+  [ ] Variable viewer panel sign-off
+  [ ] Toolstrip button sign-off
+```
+
+**Key formatting rules:**
+- The terminal output is a DIRECTORY, not a replica. Show the report name,
+  item count, viewer URL, and section summaries — not every checkbox line.
+  The user clicks through to the report to do the actual sign-off work.
+- Group by report file, with section summaries (e.g., "UI / UX Fixes: 5
+  items", "Simulation: 3 items")
+- The viewer URL is the actionable part — make it prominent
+
+#### Worktree verification items
+
+If the script's output includes worktrees needing verification before
+landing, include them — they ARE verification items. But flag them as
+unusual: a worktree needing user verification at `/briefing verify` time
+means `/run-plan` or `/fix-issues` didn't complete its verification phase.
+
+```
+⚠ Worktree needing verification (suggests incomplete skill run):
+  agent-a5217dbd (SLX Export Phase 1) — 6 commits, not yet verified/landed
+```
+
+This surfaces the problem rather than hiding it.
+
+Empty state: `ALL CLEAR — no pending sign-off items.`
 
 ### `current`
 
@@ -112,7 +197,7 @@ Present the output **verbatim**. Sections:
 - **SAFE TO REMOVE** — empty worktrees or all commits verified on main, no unextracted logs. Includes copy-pasteable `git worktree remove` commands.
 - **NEEDS LOG EXTRACTION FIRST** — commits are on main but `.claude/logs/` has modified files. Shows which logs need extraction and how.
 - **NOT SAFE** — has commits not found on main. Shows unlanded commit list.
-- **NAMED / LONG-RUNNING** — named worktrees (feature-branch, etc.), never auto-remove.
+- **NAMED / LONG-RUNNING** — named worktrees (physics module, etc.), never auto-remove.
 - **ORPHANED** — directories on disk but not registered with `git worktree list`.
 
 **Important:** Always extract logs before removing any worktree. Logs document how work was done — they are part of the project, not disposable artifacts.
@@ -141,7 +226,7 @@ Each worktree is classified into exactly one category:
 - **`done-needs-review`** — No `.landed`, has commits, inactive > 2 hours
 - **`possibly-active`** — No `.landed`, modified within last 2 hours
 - **`empty`** — No `.landed`, zero commits ahead of main
-- **`named`** — Not an `agent-*` worktree (e.g., feature-branch)
+- **`named`** — Not an `agent-*` worktree (e.g., physics module)
 - **`orphaned`** — Directory exists on disk but not in `git worktree list`
 
 ## Scheduling
@@ -231,6 +316,24 @@ The `summary` subcommand appends warnings when:
 - No briefing report has ever been generated
 - The most recent briefing report is older than 48 hours
 - A `done-needs-review` worktree is older than 7 days (stale)
+
+## Z Skills Update Check
+
+If a Z Skills repo clone exists (`zskills/` in project root, or
+`/tmp/zskills`), the `summary` and `report` modes should check for
+upstream updates:
+
+```bash
+ZSKILLS_DIR=""
+[ -d zskills/.git ] && ZSKILLS_DIR=zskills
+[ -d /tmp/zskills/.git ] && ZSKILLS_DIR=/tmp/zskills
+if [ -n "$ZSKILLS_DIR" ]; then
+  git -C "$ZSKILLS_DIR" fetch --dry-run 2>&1 | grep -qE '^\s+[a-f0-9]+\.\.[a-f0-9]+' && echo "updates available"
+fi
+```
+
+If updates are available, append to the output:
+> Z Skills: updates available (`/setup-zskills update`)
 
 ## Edge Cases
 

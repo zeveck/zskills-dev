@@ -90,8 +90,8 @@ Each agent gets the full description and a specific research focus:
 
 **Consolidate** the research into a single summary and **write it to a file**
 (e.g., `/tmp/draft-plan-research-<slug>.md`). The `<slug>` comes from the
-output filename if one was provided (e.g., `EXPORT_FEATURE`
-→ `/tmp/draft-plan-research-EXPORT_FEATURE.md`). If no output
+output filename if one was provided (e.g., `FEATURE_EXPORT`
+→ `/tmp/draft-plan-research-FEATURE_EXPORT.md`). If no output
 file was given, derive from the description. Do not rely on keeping the
 research in memory — context compaction will degrade it across multiple
 rounds of adversarial review. The file persists through all phases.
@@ -146,7 +146,8 @@ over from here.
 If the user says no (e.g., "just plan the first part"), narrow the scope
 per their feedback and proceed to Phase 2 with the focused scope.
 
-**Present the research summary to the user.** Wait for input:
+**Present the research summary to the user.** If running interactively
+(user invoked `/draft-plan` directly), wait for input:
 > Research complete. Summary written to `/tmp/draft-plan-research-<slug>.md`.
 > Here's the overview: [brief summary]
 > [Scope check result — either "this fits in one plan" or the decomposition recommendation above]
@@ -157,6 +158,11 @@ Incorporate any user feedback, then **immediately proceed to Phase 2.**
 Do not stop here. The checkpoint is a pause for steering, not the end of
 the skill. After the user responds (even if they just say "looks good" or
 "continue"), move to Phase 2 without being asked again.
+
+**If running as a subagent** (dispatched by `/research-and-plan` or
+`/research-and-go`), skip the user checkpoint — proceed directly to
+Phase 2. The decomposition was already approved by the user in the
+parent skill.
 
 ## Phase 2 — Draft
 

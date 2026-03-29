@@ -20,10 +20,14 @@ are pure delegation — no drafting happens during execution.
 
 - **output FILE** (optional) — meta-plan output path. Default:
   `plans/<SLUG>_META.md` (slug from description).
+- **auto** (optional) — skip the decomposition confirmation checkpoint.
+  Proceed directly to drafting after decomposition research. Used by
+  `/research-and-go` for fully autonomous operation.
 - **description** (required) — everything after recognized keywords.
 
-**Detection:** `output` + path = explicit file. First token ending `.md` =
-output file (prepend `plans/` if no `/`). Everything else = description.
+**Detection:** scan arguments for `output` + path, `auto`, and first
+token ending `.md`. Everything else = description. `auto` is stripped
+from the description.
 
 **Escalation from `/draft-plan`:** If the invoking context mentions a
 research file at `/tmp/draft-plan-research-*.md`, read it — that research
@@ -47,7 +51,7 @@ prerequisites exist (e.g., "generalize the port system" before new domains).
 would need 8+ phases, split further. Each must be completable by
 `/run-plan finish auto` in one session. Mark in-scope vs. out-of-scope.
 
-**Present the decomposition to the user and wait for confirmation:**
+**Present the decomposition:**
 > Decomposition complete. I identified N sub-problems:
 > 1. **Sub-problem A** — [one-line description] (est. N phases)
 > 2. **Sub-problem B** — [one-line description] (est. M phases, depends on A)
@@ -56,17 +60,31 @@ would need 8+ phases, split further. Each must be completable by
 > Dependency graph: A -> B -> D, A -> C (independent of B)
 >
 > In scope: [list]. Out of scope: [list].
->
-> Approve this decomposition? I'll draft sub-plans for each.
 
-Do NOT proceed until the user confirms. They may reorder, drop, merge,
-or add sub-problems.
+**Without `auto`:** wait for user confirmation. They may reorder, drop,
+merge, or add sub-problems. Do NOT proceed until confirmed.
+
+**With `auto`:** present the decomposition for the record, then proceed
+directly to Step 2. The user said `auto` — that's approval.
 
 ## Step 2 — Draft All Sub-Plans
 
-After user approval, draft each sub-plan by dispatching `/draft-plan`
-agents sequentially. Each runs in its own context and gets full
-adversarial review.
+After user approval, draft each sub-plan by invoking `/draft-plan`.
+
+**DO NOT just skip `/draft-plan` and issue agents to plan directly. If
+you do, all work will be thrown out.**
+`/draft-plan` dispatches separate reviewer and devil's advocate agents
+that catch problems you cannot catch in your own work. Writing a plan
+and self-reviewing it is not adversarial review — it's rubber-stamping.
+
+**PROHIBITED — the exact shortcut that keeps failing:**
+Do NOT use the Agent tool to dispatch "plan-drafting agents" or "writing
+agents" that produce plan files directly. The ONLY way to draft a sub-plan
+is via the **Skill tool** with `skill: "draft-plan"`. This has been
+violated three separate times, each time producing garbage that was thrown
+out. The agent rationalizes "I'll go faster" and skips adversarial review.
+It does NOT go faster — it produces plans with 10+ CRITICAL issues that
+require full restarts.
 
 For each sub-problem:
 
@@ -75,6 +93,22 @@ For each sub-problem:
 2. If research from Step 1 was written to a file, pass that path to the
    `/draft-plan` agent so it has the decomposition context.
 3. Dispatch: `/draft-plan output <path> <sub-problem description>`
+4. Wait for each `/draft-plan` batch to complete before dispatching the
+   next batch (see parallelism rules below).
+
+**Parallelism and resource limits:** Dispatch at most 3 `/draft-plan`
+agents concurrently. Wait for each batch to complete before the next.
+**While waiting, do NOT draft plans yourself — wait.** The idle time is
+the cost of not melting the container. Past failure: 11 parallel agents
+caused load average 67, 54 test timeouts, and forced a full restart.
+
+Draft in dependency order:
+1. Foundation plan first (alone — everything depends on it)
+2. Independent plans in batches of 3
+3. Dependent plans after their prerequisites complete
+
+Dependent sub-plans must be drafted after their prerequisites so later
+plans can reference earlier plans' actual content.
 
 **Staleness notes for dependent sub-plans.** Sub-plans that depend on
 earlier ones get this in their Dependencies section:
@@ -91,30 +125,81 @@ This tells `/run-plan` to offer a plan refresh (interactive) or
 auto-refresh (auto mode) before implementing — ensuring the plan reflects
 actual code, not predictions.
 
-## Step 3 — Adversarial Review of the Decomposition
+## Step 2b — Verify All Sub-Plans Were Properly Drafted
 
-One round of review focused on the **decomposition itself** (not the
-individual sub-plans — those already got reviewed by `/draft-plan`).
+**Before proceeding to cross-plan review**, verify that each sub-plan
+went through `/draft-plan`'s adversarial process. Two checks:
 
-Dispatch two agents in parallel:
+### Check 1 — Mechanical (grep)
 
-### Reviewer agent
-- Are the sub-problem boundaries clean? (No shared work split across plans)
+```bash
+for plan in plans/<SLUG>_*.md; do
+  if ! grep -q '## Plan Quality' "$plan" || ! grep -q '### Round History' "$plan"; then
+    echo "FAILED: $plan — missing adversarial review signature"
+  fi
+done
+```
+
+If any plan fails, it was not drafted via `/draft-plan`. Stop and
+re-draft it properly.
+
+### Check 2 — Verification agent
+
+Dispatch a verification agent that reads every sub-plan file and checks:
+
+1. `## Plan Quality` section exists with `### Round History` table
+2. Round History has at least one round with **non-zero findings** —
+   real adversarial review almost always finds issues on round 1. A
+   table showing "0 issues | 0 issues" on round 1 is suspicious.
+3. The findings described in Round History reference **specific content
+   from the plan** (phase names, field names, design decisions) — not
+   generic boilerplate like "looks good, no issues found"
+4. The plan's phases have concrete work items and acceptance criteria —
+   not vague descriptions that suggest a rushed draft
+
+The agent reports pass/fail per plan with evidence. Any plan that fails
+must be re-drafted via `/draft-plan` before proceeding.
+
+**Do NOT proceed to Step 3 with unreviewed plans** — the cross-plan
+review cannot compensate for plans that were never individually reviewed.
+
+## Step 3 — Cross-Plan Consistency Review (converge until clean)
+
+After all sub-plans are drafted and verified (Step 2b), review the **full
+set** for cross-plan consistency. Individual sub-plans were reviewed by `/draft-plan`, but
+cross-plan issues (shared schemas, naming collisions, directory conflicts,
+storage model disagreements) only emerge when you look at all plans together.
+
+### Each round: dispatch 2+ review agents in parallel
+
+**Reviewer agent** — cross-plan consistency:
+- Do all sub-plans agree on shared data structures, schemas, field names?
+- Are directory paths, ID prefixes, and namespaces consistent?
 - Is the dependency ordering correct?
-- Are there missing sub-problems? (Infrastructure, integration testing,
-  documentation?)
-- Is scope sizing realistic?
+- Are there missing sub-problems? (Infrastructure, integration, glue?)
 
-### Devil's advocate agent
+**Devil's advocate agent** — structural risks:
 - **Wrong split** — would a different decomposition be simpler?
-- **Hidden coupling** — do sub-plans share assumptions that will break if
-  one changes?
-- **Missing glue** — who integrates the sub-plans? Is there a final
-  integration phase?
-- **Deferred complexity** — is the hardest part buried in the last sub-plan?
+- **Hidden coupling** — shared assumptions that break if one plan changes?
+- **Missing glue** — who integrates the sub-plans?
+- **Deferred complexity** — hardest part buried in the last sub-plan?
 
-Address every finding: fix the decomposition or justify why it's not a
-problem. If the decomposition changes, update affected sub-plans.
+### After each round: apply fixes to the sub-plan files
+
+**This is the critical step that was previously missing.** For every
+finding that changes a sub-plan's assumptions, schemas, naming, or
+structure — edit the actual sub-plan file. Do NOT just document
+resolutions in the meta-plan. The sub-plan files are what `/run-plan`
+reads; the meta-plan is an index, not a patch set.
+
+Verify each fix was applied by reading the sub-plan file after editing.
+
+### Convergence
+
+Continue rounds until no CRITICAL or MAJOR issues are found. Minor issues
+may be noted for implementation-time resolution. Maximum 3 rounds — if
+still finding MAJOR issues after 3 rounds, the decomposition itself may
+need restructuring. Report to the user.
 
 ## Step 4 — Write the Meta-Plan
 
@@ -161,9 +246,9 @@ Execute the plan for <sub-problem X>.
 [List prerequisite phases. Dependent sub-plans may auto-refresh.]
 
 ## Plan Quality
-**Drafting process:** /research-and-plan with decomposition review
+**Drafting process:** /research-and-plan with cross-plan consistency review
 **Sub-plans:** Each drafted via /draft-plan with adversarial review
-**Decomposition review:** 1 round (reviewer + devil's advocate)
+**Cross-plan review:** N rounds until no CRITICAL/MAJOR issues remain
 ```
 
 Repeat the `Phase N` template for each sub-problem. First phase has

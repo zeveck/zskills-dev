@@ -30,18 +30,21 @@ followed by `/run-plan` (execute).
 
 Examples:
 - `/research-and-go Add physical modeling support for thermal and mechanical domains`
-- `/research-and-go Implement all missing blocks from the gap analysis`
+- `/research-and-go Implement all missing block diagram tool blocks from the gap analysis`
 - `/research-and-go Close the runtime deployment parity gap`
 
 ## Step 1 — Decompose and Draft
 
-Invoke `/research-and-plan` with the full description. This:
+Invoke `/research-and-plan` with `auto` and the full description:
+
+`/research-and-plan auto <description>`
+
+This:
 
 1. Dispatches research agents to survey the domain
 2. Identifies sub-problems and dependencies
 3. Sizes scope for each sub-plan
-4. **Skips the user confirmation checkpoint** — `go` implies trust.
-   Proceed directly after decomposition.
+4. **Skips the user confirmation checkpoint** — `auto` flag.
 5. Drafts each sub-plan via dispatched `/draft-plan` agents
    (each gets full adversarial review in its own context)
 6. Writes the meta-plan with pure implementation phases
