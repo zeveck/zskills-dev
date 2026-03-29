@@ -301,7 +301,7 @@ Before parsing, check for stale state from a previous failed run:
 8. **Classify UI impact from the plan text.** Scan the phase description
    for UI indicators: mentions of editor, toolbar, canvas, panel, dialog,
    CSS, button, menu, viewport, renderer, dark mode, layout, or any
-   reference to `src/editor/`, `src/ui/`, `src/styles/`, `src/modules/editor/`.
+   reference to UI/editor/styles directories in the project.
    Flag the phase as **UI-touching** if any are found.
 
    In `finish` mode, classify ALL phases upfront and report:

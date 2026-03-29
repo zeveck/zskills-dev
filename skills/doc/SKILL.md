@@ -58,7 +58,7 @@ Examples:
 | Example model registry | Component explorer file | `EXAMPLE_MODELS[key] = {path, name, difficulty, description}` |
 | Block reference | `getting-started/BLOCK_LIBRARY.md` | Markdown — all blocks with params and usage |
 | Block specs | `plans/blocks/<category>/` | Markdown — 14 category directories |
-| Docs app catalog | `src/ui/docs-registry.js` | Central registry for the `/docs/` app |
+| Docs app catalog | UI docs registry | Central registry for the docs app |
 
 ### Example documentation
 | What | Where | Format |
@@ -67,7 +67,7 @@ Examples:
 | Example README | `examples/<name>/README.md` | Markdown walkthrough |
 | Screenshots | `examples/<name>/screenshots/` | Numbered PNGs: `01-model-overview.png`, `02-simulation-results.png` |
 | Gallery index | `examples/README.md` | Markdown — all examples with images and descriptions |
-| App dropdown | `src/ui/examples-dropdown.js` | Categorized dropdown by module |
+| App dropdown | UI examples dropdown | Categorized dropdown by module |
 
 ### High-level documentation
 | What | Where | Format |
@@ -98,7 +98,7 @@ When auditing or documenting blocks, check each against this list:
   description, parameters table, usage notes
 - [ ] **Gallery entry** in `examples/README.md` — description, image,
   blocks used, solver info, download link
-- [ ] **Doc issue tracked** — `plans/DOC_ISSUES.md` entry (open or closed)
+- [ ] **Doc issue tracked** — entry in doc issues tracker (open or closed)
 
 ## Example Documentation Checklist
 

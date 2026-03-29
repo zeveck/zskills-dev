@@ -18,7 +18,7 @@ Two modes of quality assurance:
   or let the agent choose under-tested areas. Try to break things with edge
   cases, unusual inputs, and unexpected workflows.
 
-Both modes file GitHub issues and update `plans/QE_ISSUES.md`. Both are
+Both modes file GitHub issues and update `the QE issues tracker (e.g., `plans/QE_ISSUES.md`)`. Both are
 schedulable. Together they form the quality feedback loop: audit finds gaps →
 `/fix-issues` fixes them → audit validates the fixes.
 
@@ -164,7 +164,7 @@ If `every` is NOT present, skip this phase and proceed to the audit/bash
 
 Run when `bash` is NOT present in arguments.
 
-1. **Find the last audit checkpoint** — read the bottom of `plans/QE_ISSUES.md`
+1. **Find the last audit checkpoint** — read the bottom of `the QE issues tracker (e.g., `plans/QE_ISSUES.md`)`
    for the last audited commit range and date (format: `*Last audited:
    YYYY-MM-DD — commits <hash> through <hash>*`). If the file doesn't exist
    or has no checkpoint, fall back to `git log --oneline -20`.
@@ -189,7 +189,7 @@ Run when `bash` is NOT present in arguments.
    Low with clear fix), create issues via `gh issue create`. Include: summary,
    root cause, suggested fix/test, severity, and which commit introduced it.
 
-6. **Update tracker** — Edit `plans/QE_ISSUES.md`:
+6. **Update tracker** — Edit `the QE issues tracker (e.g., `plans/QE_ISSUES.md`)`:
    - Add new issues to "Open Issues" section
    - Move any resolved issues to "Resolved Issues"
    - Update the audit date and commit range at the bottom
@@ -269,7 +269,7 @@ Run when `bash` IS present in arguments.
      severity rating, suggested fix
    - Tag with appropriate labels
 
-6. **Update `plans/QE_ISSUES.md`** with new findings.
+6. **Update `the QE issues tracker (e.g., `plans/QE_ISSUES.md`)`** with new findings.
 
 7. **Clean up test files:**
    - Keep passing adversarial tests (they're valuable regression tests)

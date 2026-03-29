@@ -157,9 +157,9 @@ plan** — everything that will happen if approved:
 ```
 Ready to finalize:
   ✓ #123 — Solver crash (landed in abc1234)
-      → Close GH issue, update CORRECTNESS_PLAN + ISSUES_PLAN
+      → Close GH issue, update issue trackers
   ✓ #456 — Button misaligned (landed in def5678)
-      → Close GH issue, update ISSUES_PLAN
+      → Close GH issue, update issue trackers
 
 Not finalizing:
   ✗ #789 — Parser error (failed verification)
@@ -219,8 +219,8 @@ Present the batch and get confirmation:
 
 ```
 Closing and updating trackers for N issues:
-  #123 — close GH + mark [x] in ISSUES_PLAN, mark ~~FIXED~~ in CORRECTNESS_PLAN
-  #456 — close GH + mark [x] in ISSUES_PLAN
+  #123 — close GH + mark done in issue trackers
+  #456 — close GH + mark done in issue trackers
 
 Proceed?
 ```
@@ -235,14 +235,9 @@ Then for each approved issue:
    gh issue close <number> --comment "Fixed in <commit-hash>"
    ```
 
-2. Update ALL relevant plan files for that issue:
-   - `plans/ISSUES_PLAN.md` — `- [ ]` → `- [x]` with commit hash
-   - `plans/CORRECTNESS_ISSUES.md` — mark ~~FIXED~~
-   - `plans/RUST_ISSUES.md` — mark ~~FIXED~~
-   - `plans/QE_ISSUES.md` — mark RESOLVED
-   - `plans/DOC_ISSUES.md`
-   - `plans/MODULE_ISSUES.md`
-   - `plans/MODULE_ISSUES.md`
+2. Update ALL relevant issue tracker files — scan `plans/*ISSUES*.md`
+   for the issue number and mark it done (`[x]`, ~~FIXED~~, RESOLVED,
+   etc. — match the convention used in each file).
 
    Only update files that actually reference the issue number.
 

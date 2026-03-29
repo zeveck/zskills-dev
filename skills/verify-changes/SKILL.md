@@ -92,21 +92,17 @@ For each changed file, verify appropriate tests exist:
    - If a bug fix: does a regression test exist that would have caught the bug?
    - If a new feature: do tests cover the happy path AND edge cases?
 
-2. **Block changes** (`src/blocks/*.js`):
-   - Check `tests/blocks/*.test.js` for runtime tests
-   - Verify output computation, parameter handling, edge cases
+2. **Component/module changes** — find corresponding test files and verify
+   output computation, parameter handling, edge cases are tested.
 
-3. **Solver/engine changes** (`src/simulation/`, `src/engine/`):
-   - Check analytical verification tests where applicable
-   - Verify numerical accuracy assertions (tolerances, convergence)
+3. **Engine/solver changes** — check analytical verification tests where
+   applicable. Verify numerical accuracy assertions (tolerances, convergence).
 
-4. **Codegen changes** (`src/codegen/`, `src/deploy/`):
-   - Verify codegen compile tests exist in `tests/codegen/`
-   - Check JS-to-Rust behavioral parity
+4. **Codegen/build changes** — verify compile tests exist. Check behavioral
+   parity between source and generated code.
 
-5. **UI/editor changes** (`src/editor/`, `src/modules/editor/`):
-   - Check for E2E tests in `tests/e2e/`
-   - Flag for manual verification in Phase 4
+5. **UI/editor changes** — check for E2E tests. Flag for manual verification
+   in Phase 4.
 
 6. **Produce a coverage assessment:**
 
@@ -183,8 +179,8 @@ the session when UI files are staged. This is not optional.
 **User verification (USER):** Some changes need the HUMAN to see them —
 judgment calls about animation quality, visual layout, UX feel. The agent
 flags these but cannot close them. Mechanically classified: if
-`src/editor/`, `src/ui/`, `src/styles/`, or `src/modules/editor/` files
-changed → `User Verify: NEEDED`. `/fix-report` Step 2 presents these to
+UI/editor/styles files changed → `User Verify: NEEDED`. `/fix-report`
+Step 2 presents these to
 the user before closing.
 
 ### Agent verification steps

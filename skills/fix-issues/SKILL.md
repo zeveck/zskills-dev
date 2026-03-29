@@ -25,15 +25,11 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 ```
 
 - **N** (required for sprints) — number of issues to fix (e.g., `30`)
-- **focus** (optional) — prioritize a specific domain:
-  - `new` — recently filed issues, user feedback (#382+)
-  - `correctness` — simulation/solver correctness (CORRECTNESS_PLAN)
-  - `codegen` — Rust code generation (RUST_ISSUES)
-  - `statemachine` — state machine module (MODULE_ISSUES)
-  - `physics` — physics module (MODULE_ISSUES)
-  - `ui` — editor/canvas bugs
-  - `tests` — test gaps (QE_ISSUES)
-  - (omit for default priority order)
+- **focus** (optional) — prioritize a specific domain. The agent scans
+  `plans/*_ISSUES.md` and `plans/ISSUES_PLAN.md` to discover tracker files
+  and their domains. Common focus values: `new`, `correctness`, `codegen`,
+  `ui`, `tests` — but any domain found in your tracker files works.
+  Omit for default priority order.
 - **auto** (optional) — bypass confirmation gates for autonomous operation.
   Behavior depends on context:
   - **Sprints:** skip Phase 2 issue list approval, auto-land to main via
@@ -412,14 +408,12 @@ alert user, write failure to report).
    node ${CLAUDE_SKILL_DIR}/scripts/issue-stats.js
    ```
 
-4. **Update ALL issue trackers** — ensure these files reflect current GitHub state:
-   - `plans/ISSUES_PLAN.md` (master index)
-   - `plans/CORRECTNESS_ISSUES.md` (correctness defects)
-   - `plans/RUST_ISSUES.md` (codegen issues)
-   - `plans/QE_ISSUES.md` (test gaps)
-   - `plans/DOC_ISSUES.md` (documentation)
-   - `plans/MODULE_ISSUES.md` (state machine module features)
-   - `plans/MODULE_ISSUES.md` (physical modeling)
+4. **Update ALL issue trackers** — scan `plans/` for tracker files:
+   ```bash
+   ls plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null
+   ```
+   Ensure each tracker reflects current GitHub state. Add new issues to
+   the appropriate tracker based on domain.
 
 5. **Identify gaps** — any GH issues not tracked in any plan file? Add them to
    the appropriate tracker.
@@ -452,9 +446,7 @@ alert user, write failure to report).
 
 2. **Fetch the research blurb from plan files:**
    ```bash
-   grep -A 30 '#<N>' plans/ISSUES_PLAN.md plans/CORRECTNESS_ISSUES.md \
-     plans/RUST_ISSUES.md plans/QE_ISSUES.md plans/MODULE_ISSUES.md \
-     plans/MODULE_ISSUES.md plans/DOC_ISSUES.md 2>/dev/null
+   grep -A 30 '#<N>' plans/*ISSUES*.md 2>/dev/null
    ```
    Plan blurbs contain root cause analysis, affected files, suggested fixes,
    and effort estimates. This context was gathered when the issue was filed —
@@ -483,11 +475,11 @@ top, then the remaining slots filled by default priority.
 
 **Default ranking criteria (in order):**
 1. New issues not yet attempted (user feedback, recently filed)
-2. Correctness defects (CORRECTNESS_ISSUES.md)
+2. Correctness defects (from issue trackers tagged as correctness)
 3. Critical/high severity bugs
 4. Quick wins (15 min – 1 hour)
 5. Issues with clear repro steps
-6. Test gaps (QE_ISSUES.md)
+6. Test gaps (from issue trackers tagged as test quality)
 
 ### Triage: vague, complex, or interrelated issues
 
@@ -599,11 +591,10 @@ agent hasn't returned after 1 hour, declare it **failed**:
 1. **The verbatim issue body** from Phase 1b (`gh issue view`). Do NOT
    paraphrase or summarize — include the full text the user wrote. Titles are
    often vague; the body is the spec. If the body is empty, say so explicitly.
-2. **The research blurb from the plan file** (ISSUES_PLAN.md,
-   CORRECTNESS_ISSUES.md, RUST_ISSUES.md, QE_ISSUES.md, etc.).
+2. **The research blurb from issue tracker files** (`plans/*ISSUES*.md`).
    These contain root cause analysis, affected files, suggested fixes, and
-   effort estimates written when the issue was filed. Grep the plan files for
-   the issue number and include any matching section verbatim.
+   effort estimates written when the issue was filed. Grep the tracker files
+   for the issue number and include any matching section verbatim.
 
 The agent should have everything it needs to understand the problem without
 re-researching from scratch. Missing context = wrong fix.
@@ -624,8 +615,8 @@ Each agent follows this fix workflow:
    use playwright-cli with real events, take screenshots as evidence.
    The pre-commit hook will BLOCK your commit if UI files are staged
    but `playwright-cli` wasn't used in the session. This is not optional.
-7. **Classify User Verify** — if `src/editor/`, `src/ui/`, `src/styles/`,
-   or `src/modules/editor/` files changed, mark `User Verify: NEEDED`
+7. **Classify User Verify** — if any UI/editor/styles files changed
+   (check your project's UI directories), mark `User Verify: NEEDED`
    in the sprint report. The user must see UI changes before the issue
    can be closed. This is in ADDITION to your agent verification.
 8. Commit in the worktree (one issue per commit, clean history)
@@ -688,8 +679,8 @@ each sprint, losing results from earlier sprints that were never reviewed.
 The pre-commit hook blocks commits without test evidence.
 
 **User Verify:** Does the user need to see this? Mechanically classified:
-if `src/editor/`, `src/ui/`, `src/styles/`, or `src/modules/editor/`
-files changed → `NEEDED`. Otherwise → `N/A`. `/fix-report` Step 2
+if any UI/editor/styles files changed → `NEEDED`. Otherwise → `N/A`.
+`/fix-report` Step 2
 presents all `NEEDED` items for user review before closing.
 
 ### Skipped — Too Vague (need repro steps or clearer spec)
