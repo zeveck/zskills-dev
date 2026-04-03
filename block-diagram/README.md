@@ -32,14 +32,14 @@ hooks, scripts). Install everything together:
 
 ```bash
 git clone https://github.com/zeveck/zskills.git zskills
-/setup-zskills install --with-block-diagram-addons
+/update-zskills install --with-block-diagram-addons
 ```
 
 Or if you already have the core skills installed:
 
 ```bash
-/setup-zskills install --with-block-diagram-addons
+/update-zskills install --with-block-diagram-addons
 ```
 
-Once installed, `/setup-zskills update` keeps these updated alongside
+Once installed, `/update-zskills` keeps these updated alongside
 the core skills.

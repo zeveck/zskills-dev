@@ -1,31 +1,38 @@
 ---
-name: setup-zskills
-description: Install, audit, or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
+name: update-zskills
+description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 disable-model-invocation: true
 ---
 
-# Setup Z Skills Infrastructure
+# Update Z Skills Infrastructure
 
-Install, audit, or update the supporting infrastructure that Z Skills depend
+Install or update the supporting infrastructure that Z Skills depend
 on: CLAUDE.md agent rules, safety hooks, helper scripts, and skill
 dependencies.
 
 **Invocation:**
 
 ```
-/setup-zskills [install | audit | update] [--with-addons | --with-block-diagram-addons]
+/update-zskills [install] [--with-addons | --with-block-diagram-addons]
 ```
 
-Default mode (no argument): `audit`.
+Default mode (no argument): **smart detection** — if nothing is installed
+yet, do a full install; if already installed, pull latest, update changed
+skills, and fill new gaps. Always begins with an audit and reports what
+was found and what was done about it.
 
-**Add-on flags (install mode only):**
-- `--with-addons` — install core skills + ALL available add-on packs
-- `--with-block-diagram-addons` — install core skills + block-diagram add-on
-  (3 skills: `/add-block`, `/add-example`, `/model-design`)
+**Explicit mode:**
+- `install` — force a full first-time setup (same as what the default
+  mode does when nothing is installed, but skips the detection step)
 
-Without an add-on flag, `install` only installs the 17 core skills. If core
-is already installed, adding an add-on flag just copies the add-on skills
-(the audit detects core is satisfied and skips it).
+**Add-on flags:**
+- `--with-addons` — install/update core skills + ALL available add-on packs
+- `--with-block-diagram-addons` — install/update core skills + block-diagram
+  add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
+
+Without an add-on flag, only the 17 core skills are installed/updated.
+If core is already installed, adding an add-on flag just copies the
+add-on skills (the audit detects core is satisfied and skips it).
 
 ---
 
@@ -70,10 +77,12 @@ in update mode.
 
 ---
 
-## `audit` Mode — Read-Only Gap Analysis
+## Audit — Gap Analysis (runs as part of every invocation)
 
 The audit scans the project for all Z Skills dependencies and reports what
-is missing. **It NEVER modifies any files.**
+is present and what is missing. **The audit itself never modifies any files.**
+Its output is always displayed so the user can see exactly what was found
+before any changes are made.
 
 ### Step 1 — Scan installed skills and check dependency graph
 
@@ -89,7 +98,7 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
     `{{FULL_TEST_CMD}}`) — check if test commands are configured.
   - Tool references (`playwright-cli`, `gh `) — check if the tool is
     available via `which`.
-  - Hook references (`block-unsafe`, `stop-log`) — check if the hook file
+  - Hook references (`block-unsafe`) — check if the hook file
     exists in `.claude/hooks/`.
   - Script references (`scripts/port.js`, `scripts/test-all.js`) — check if
     the script file exists.
@@ -97,8 +106,9 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
 ### Step 2 — Check CLAUDE.md for 13 generic rules
 
 Read the project's `CLAUDE.md` (if it exists). For each of the 13 generic
-rules, search for a distinctive key phrase that identifies the rule. Mark
-the rule as present if the key phrase is found, missing otherwise.
+rules, search for a distinctive key phrase that identifies the rule
+(**case-insensitive**). Mark the rule as present if the key phrase is
+found, missing otherwise.
 
 | # | Rule Name | Key Phrase(s) to Search |
 |---|-----------|------------------------|
@@ -118,12 +128,10 @@ the rule as present if the key phrase is found, missing otherwise.
 
 ### Step 3 — Check hooks
 
-Look in `.claude/hooks/` for these 4 files:
+Look in `.claude/hooks/` for these 2 files:
 
 - `block-unsafe-generic.sh` (or `block-unsafe.sh` — either name counts)
-- `stop-log.cjs`
-- `subagent-stop-log.cjs`
-- `log-converter.cjs`
+- `block-unsafe-project.sh`
 
 ### Step 4 — Check scripts
 
@@ -160,7 +168,7 @@ CLAUDE.md Rules: M/13 present (K missing)
   - [rule name]: [key phrase not found]
   ...
 
-Hooks: M/4 installed (K missing)
+Hooks: M/2 installed (K missing)
   Missing:
   - [filename]
   ...
@@ -180,7 +188,6 @@ Skills with additional requirements:
   ...
 
 Overall: X/Y dependencies satisfied.
-Run /setup-zskills install to fix gaps.
 ```
 
 If everything is satisfied, end with:
@@ -188,28 +195,33 @@ If everything is satisfied, end with:
 Overall: Y/Y dependencies satisfied. Nothing to install.
 ```
 
+If there are gaps and the skill is running in default or install mode,
+proceed to fill them (see below). The audit report is always shown first
+so the user sees what was found before any modifications.
+
 ---
 
-## `install` Mode — Fill All Gaps
+## Default Mode — Smart Detection
 
-Runs the full audit first, then installs everything that is missing.
+1. **Run the audit** (Steps 1-6 above). Display the gap report.
 
-### Step 1 — Locate portable assets
+2. **Detect installation state:**
+   - If no `.claude/skills/` directory exists, or it contains zero skills
+     -> treat as first-time install (proceed to "Fill All Gaps" below).
+   - If skills are already installed -> treat as update (proceed to
+     "Pull Latest and Update" below).
+
+### Fill All Gaps (first-time install path)
+
+This is also the path taken by the explicit `install` mode.
+
+#### Step A — Locate portable assets
 
 Run Step 0 (locate portable assets). If the path cannot be resolved, stop
 with an error: "Cannot locate zskills-portable/ directory. Please provide
 the path to the Z Skills source repo."
 
-### Step 2 — Run audit
-
-Run audit steps 1-6 above. Display the gap report.
-
-### Step 3 — Check for gaps
-
-If no gaps found: report "All Z Skills dependencies are satisfied. Nothing
-to install." and stop.
-
-### Step 4 — Fill CLAUDE.md gaps
+#### Step B — Fill CLAUDE.md gaps
 
 **If CLAUDE.md does NOT exist:**
 
@@ -228,15 +240,15 @@ placeholder values** and fill them in — do not prompt or block:
    - Git remote URL or directory name — fallback for project name
 
 2. **Fill in values automatically.** Do not prompt. Do not block.
-   - **Detected values** → replace the placeholder directly
-   - **Undetectable values** → use sensible defaults:
-     - `{{PROJECT_NAME}}` → directory name (always available)
-     - `{{DEV_SERVER_CMD}}` → `npm start` if package.json exists,
+   - **Detected values** -> replace the placeholder directly
+   - **Undetectable values** -> use sensible defaults:
+     - `{{PROJECT_NAME}}` -> directory name (always available)
+     - `{{DEV_SERVER_CMD}}` -> `npm start` if package.json exists,
        otherwise comment out the section
-     - `{{UNIT_TEST_CMD}}` → `npm test` if package.json exists,
+     - `{{UNIT_TEST_CMD}}` -> `npm test` if package.json exists,
        otherwise comment out
-     - `{{FULL_TEST_CMD}}` → same as unit test command, or comment out
-   - **Truly unknown values** → comment out with a TODO marker:
+     - `{{FULL_TEST_CMD}}` -> same as unit test command, or comment out
+   - **Truly unknown values** -> comment out with a TODO marker:
      `<!-- TODO: fill in when known -->`
 
 3. **Report what was filled and what needs review:**
@@ -264,19 +276,26 @@ a duplicate section header.
 
 **NEVER overwrite or modify existing CLAUDE.md content.**
 
-### Step 5 — Fill hook gaps
+#### Step C — Fill hook gaps
 
 Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
 
 - For `block-unsafe-project.sh.template`: copy to
-  `.claude/hooks/block-unsafe-project.sh`, then prompt user for the
-  `# CONFIGURE:` values and replace them.
-- For hooks with timezone placeholders (`stop-log.cjs`,
-  `subagent-stop-log.cjs`): prompt user for timezone and replace.
+  `.claude/hooks/block-unsafe-project.sh`, then fill in the
+  `# CONFIGURE:` values from project detection (test commands, UI file
+  patterns). Use placeholders/fallbacks for anything undetectable.
 
-Then read `.claude/settings.json`. Show the user the hook registration
-entries that will be added. ASK before modifying. The format for hook
-registration in `settings.json` is:
+**Explain what each hook does** so the user understands what's being added:
+
+> Installing 2 safety hooks:
+> - **block-unsafe-generic.sh** — blocks destructive commands (git reset
+>   --hard, rm -rf, kill -9, git checkout --, etc.) and discipline
+>   violations (git add ., --no-verify)
+> - **block-unsafe-project.sh** — project-specific guards: prevents piping
+>   test output (must capture to file), verifies tests ran before commit,
+>   and optionally checks for UI verification before committing UI changes
+
+Then register the hooks in `.claude/settings.json`. The format is:
 
 ```json
 {
@@ -297,26 +316,6 @@ registration in `settings.json` is:
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/hooks/stop-log.cjs\""
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/hooks/subagent-stop-log.cjs\""
-          }
-        ]
-      }
     ]
   }
 }
@@ -327,7 +326,7 @@ themselves only process Bash tool inputs (they exit early for other tools).
 
 Report: "Installed N hooks: [list]"
 
-### Step 6 — Fill script gaps
+#### Step D — Fill script gaps
 
 Copy missing scripts from `$PORTABLE/scripts/` to `scripts/`.
 
@@ -335,14 +334,14 @@ Copy missing scripts from `$PORTABLE/scripts/` to `scripts/`.
 
 Report: "Installed N scripts: [list]"
 
-### Step 7 — Install add-ons (if `--with-addons` or `--with-block-diagram-addons`)
+#### Step E — Install add-ons (if `--with-addons` or `--with-block-diagram-addons`)
 
 Skip this step if no add-on flag was provided.
 
 1. **Determine which add-on packs to install:**
-   - `--with-addons` → all packs in `$PORTABLE/../block-diagram/` (and any
+   - `--with-addons` -> all packs in `$PORTABLE/../block-diagram/` (and any
      future add-on directories)
-   - `--with-block-diagram-addons` → only `$PORTABLE/../block-diagram/`
+   - `--with-block-diagram-addons` -> only `$PORTABLE/../block-diagram/`
 
 2. **For each add-on skill** (e.g., `add-block`, `add-example`, `model-design`):
    - If `.claude/skills/<name>/SKILL.md` already exists, skip (never overwrite)
@@ -351,7 +350,7 @@ Skip this step if no add-on flag was provided.
 3. **Report:** "Installed N add-on skills: [list]" or "Add-on skills already
    installed — skipped."
 
-### Step 8 — Final report
+#### Step F — Final report
 
 ```
 Installation complete.
@@ -365,12 +364,10 @@ Installed:
 Skills with additional requirements:
 - /briefing: requires project-specific briefing.cjs (see /briefing skill docs)
 
-Run /setup-zskills audit to verify.
+Run /update-zskills to check for updates later.
 ```
 
----
-
-## `update` Mode — Pull Latest and Fill Gaps
+### Pull Latest and Update (already-installed path)
 
 1. **Pull latest from upstream.** Find the `zskills/` clone (Step 0) and
    update it:
@@ -392,9 +389,9 @@ Run /setup-zskills audit to verify.
    are installed (e.g., `.claude/skills/add-block/SKILL.md` exists). If so,
    diff against `$ZSKILLS_PATH/block-diagram/` and update the same way.
 
-5. **Fill new gaps.** Run the audit. For any NEW items (skills, hooks,
-   scripts, CLAUDE.md rules) that don't exist yet, install them using
-   the same steps as install mode.
+5. **Fill new gaps.** For any NEW items (skills, hooks, scripts, CLAUDE.md
+   rules) that don't exist yet, install them using the same steps as the
+   install path above (Steps B-E).
 
 6. **Report:**
    ```
@@ -411,19 +408,20 @@ Run /setup-zskills audit to verify.
 
 ## Key Rules
 
-These rules are inviolable. They apply to all three modes:
+These rules are inviolable. They apply to all modes:
 
 1. **NEVER overwrite existing CLAUDE.md content** — append only. New rules
    go into `## Agent Rules` at the end. Never modify or delete existing
    sections.
 2. **NEVER overwrite existing hooks or scripts** — if a file already exists,
    skip it. The user may have customized it.
-3. **ALWAYS ask before modifying `.claude/settings.json`** — show the exact
-   JSON that will be added and wait for confirmation.
+3. **Explain what hooks do when installing them** — don't just list
+   filenames. The user needs to understand what each hook does.
 4. **Show the user what will be installed BEFORE doing it** — no silent
    modifications. List every file that will be created or modified.
-5. **The `audit` mode is strictly read-only** — it never modifies anything.
-   It only reads files and produces a report.
+5. **The audit portion is strictly read-only** — it never modifies anything.
+   It only reads files and produces a report. Modifications happen in the
+   install/update steps that follow.
 6. **The source of truth is `zskills-portable/`** — Step 0 describes how to
    locate it. Never hardcode paths or guess where assets live.
 7. **Do NOT use AskUserQuestion** — ask naturally in conversation text.

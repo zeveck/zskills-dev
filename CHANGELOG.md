@@ -9,7 +9,7 @@
   producing plans with 10+ CRITICAL issues each time.
 - `/research-and-plan`: max 3 concurrent `/draft-plan` agents with
   dependency-ordered batching. Prevents container overload.
-- `/setup-zskills`: auto-clone from GitHub when portable assets not found
+- `/update-zskills` (renamed from `/setup-zskills`): auto-clone from GitHub when portable assets not found
   locally. Auto-detect project settings (test commands, dev server, project
   name) from package.json, Cargo.toml, Makefile, CI configs — no blocking
   prompts. Sensible defaults for new/early-stage projects.
@@ -32,7 +32,7 @@
 - `/briefing`: Z Skills update check in summary/report modes
 - `/briefing`: "present verbatim" enforcement with past-failure reference
 - `/draft-plan`: skip user research checkpoint when running as subagent
-- `/setup-zskills`: no AskUserQuestion — ask naturally in conversation
+- `/update-zskills`: no AskUserQuestion — ask naturally in conversation
 - `/run-plan`: phase-prefixed IDs (P4b-1 not #1) to avoid collisions
 - `/run-plan`: one item per verifiable thing, avoid literal `[ ]` in
   description text (renders as phantom checkbox in viewers)

@@ -333,7 +333,7 @@ fi
 ```
 
 If updates are available, append to the output:
-> Z Skills: updates available (`/setup-zskills update`)
+> Z Skills: updates available (`/update-zskills`)
 
 ## Edge Cases
 

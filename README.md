@@ -42,10 +42,10 @@ Then: "Set up the Z Skills from the zskills/ directory"
 To include the block-diagram add-on (3 extra skills):
 
 ```bash
-/setup-zskills install --with-block-diagram-addons
+/update-zskills install --with-block-diagram-addons
 ```
 
-To update later: `/setup-zskills update` (pulls latest and syncs, including
+To update later: `/update-zskills` (pulls latest and syncs, including
 any installed add-ons).
 
 ## Skill Catalog
@@ -100,7 +100,7 @@ data pipeline.
 |-------|---------|
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
-| `/setup-zskills` | Install, audit, or update Z Skills infrastructure in any project |
+| `/update-zskills` | Install or update Z Skills infrastructure in any project |
 
 ### Block Diagram Add-on (`block-diagram/`)
 
@@ -173,9 +173,9 @@ See any skill in `skills/` for the full pattern.
 
 ## Session Logging
 
-The hooks include a session logging system that converts Claude Code
-JSONL transcripts to readable markdown after every session. Available
-as a standalone package: [cc-session-logger](https://github.com/zeveck/cc-session-logger).
+Several skills reference `.claude/logs/` for committing session logs.
+Session logging is provided by a separate package:
+[cc-session-logger](https://github.com/zeveck/cc-session-logger).
 
 ## License
 
