@@ -23,7 +23,7 @@ Default mode (no argument): `audit`.
 - `--with-block-diagram-addons` — install core skills + block-diagram add-on
   (3 skills: `/add-block`, `/add-example`, `/model-design`)
 
-Without an add-on flag, `install` only installs the 18 core skills. If core
+Without an add-on flag, `install` only installs the 17 core skills. If core
 is already installed, adding an add-on flag just copies the add-on skills
 (the audit detects core is satisfied and skips it).
 

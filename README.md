@@ -1,6 +1,6 @@
 # Z Skills
 
-**21 skills that plan, build, test, fix, and ship** — so one developer
+**20 skills that plan, build, test, fix, and ship** — so one developer
 can run a full engineering team.
 
 Z Skills encode hard-won lessons from real agent failures into reusable
@@ -50,7 +50,7 @@ any installed add-ons).
 
 ## Skill Catalog
 
-### 18 Core Skills (`skills/`)
+### 17 Core Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline.
@@ -100,12 +100,11 @@ data pipeline.
 |-------|---------|
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
-| `/setup-statusline` | Configure the status line — model name, context bar, rate limits, customizable in natural language |
 | `/setup-zskills` | Install, audit, or update Z Skills infrastructure in any project |
 
 ### Block Diagram Add-on (`block-diagram/`)
 
-3 additional skills for block-diagram editors. Not part of the core 18 —
+3 additional skills for block-diagram editors. Not part of the core 17 —
 install if your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 
