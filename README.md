@@ -26,10 +26,10 @@ Tell your LLM:
 
 > Install the Z Skills from github.com/zeveck/zskills
 
-It will clone the repo, copy the skills, set up hooks and scripts, and
-create a CLAUDE.md with auto-detected project settings. It detects test
-commands, dev server, and project name from your project files — and uses
-sensible defaults for anything it can't detect.
+It will clone the repo and copy the skills, hooks, and scripts. After
+the initial install, run `/update-zskills` to complete setup — it creates
+a CLAUDE.md with auto-detected project settings, verifies all dependencies,
+and reports any gaps.
 
 Or manually clone and tell your LLM to set up:
 
@@ -38,6 +38,8 @@ git clone https://github.com/zeveck/zskills.git zskills
 ```
 
 Then: "Set up the Z Skills from the zskills/ directory"
+
+After install, always run `/update-zskills` to verify and fill gaps.
 
 To include the block-diagram add-on (3 extra skills):
 

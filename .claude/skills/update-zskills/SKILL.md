@@ -327,12 +327,12 @@ Then register the hooks in `.claude/settings.json`. The format is:
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/block-unsafe-generic.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/block-unsafe-project.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh\"",
             "timeout": 5
           }
         ]
