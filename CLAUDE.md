@@ -79,7 +79,7 @@ Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and revi
 
 ## Git Rules
 
-**Do NOT push to remote unless explicitly told to.** Commit freely when asked, but never `git push` without the user saying "push", "push it", or similar. This applies even when the user says "commit and push" for one task -- it does not carry over to future tasks.
+**Do NOT commit or push unless explicitly told to.** Permission to commit or push applies to the scope in which it was given -- a single task, a skill invocation, or a specific set of changes. It does not carry over to future tasks. "Commit this" means commit that thing. "Commit freely" during a `/run-plan` invocation means within that run. Only an explicit, unprompted, standalone statement like "from now on, commit without asking" grants ongoing permission -- and even that only lasts for the session. Never `git push` without the user explicitly saying "push", "push it", or similar.
 
 **NEVER revert, discard, or "clean up" changes you didn't make.** If you see uncommitted changes from other agents or sessions, leave them alone. Do not run `git checkout -- <file>`, `git restore`, or any other command that discards working tree changes unless the user explicitly asks you to. Unrelated changes in the working tree are not yours to touch -- ask the user what they want to do with them.
 
