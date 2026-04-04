@@ -21,7 +21,7 @@ description: >-
 2. Open the browser:
 
    ```bash
-   PORT=$(node scripts/port.js)
+   PORT=$(bash scripts/port.sh)
    playwright-cli open http://localhost:$PORT
    ```
 

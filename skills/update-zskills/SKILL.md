@@ -96,11 +96,15 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
     output") — map each to a specific rule from the 13 generic rules below.
   - Test command references (`npm test`, `npm run test:all`,
     `{{FULL_TEST_CMD}}`) — check if test commands are configured.
-  - Tool references (`playwright-cli`, `gh `) — check if the tool is
+  - Tool references (`playwright-cli`, `gh`) — check if the tool is
     available via `which`.
+  - Optional tool references (`node`, `python3`) — check via `which`.
+    These are not required but enable features:
+    - `node`: enables `scripts/briefing.cjs` (preferred for /briefing)
+    - `python3`: enables `scripts/briefing.py` (fallback for /briefing)
   - Hook references (`block-unsafe`) — check if the hook file
     exists in `.claude/hooks/`.
-  - Script references (`scripts/port.js`, `scripts/test-all.js`) — check if
+  - Script references (`scripts/port.sh`, `scripts/test-all.sh`) — check if
     the script file exists.
 
 ### Step 2 — Check CLAUDE.md for 13 generic rules
@@ -137,8 +141,8 @@ Look in `.claude/hooks/` for these 2 files:
 
 Look in `scripts/` for these 3 files:
 
-- `port.js`
-- `test-all.js`
+- `port.sh`
+- `test-all.sh`
 - `briefing.cjs`
 
 ### Step 5 — Check skills with additional requirements

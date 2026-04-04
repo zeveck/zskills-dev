@@ -10,6 +10,23 @@ description: >-
 
 Gather project state and present a structured briefing.
 
+## Runtime Check
+
+Before executing any mode, determine which runtime is available for the
+briefing helper script:
+
+1. Try `node scripts/briefing.cjs` first (preferred).
+2. If `node` is not found, try `python3 scripts/briefing.py` (fallback).
+3. If neither `node` nor `python3` is available, output a clear error and stop:
+
+   > /briefing requires Node.js or Python 3. Install one and ensure it's on PATH.
+   > - Node.js: https://nodejs.org/
+   > - Python: https://python.org/
+
+Use the detected runtime for all `node scripts/briefing.cjs` commands below.
+If using the Python fallback, substitute `python3 scripts/briefing.py` wherever
+the instructions say `node scripts/briefing.cjs`.
+
 ## Argument Parsing
 
 Parse `$ARGUMENTS` to determine mode, options, and optional schedule:
@@ -109,7 +126,7 @@ READ the file and extract every `[ ]` line with its surrounding context
 
 Get the dev server port:
 ```bash
-node scripts/port.js
+bash scripts/port.sh
 ```
 
 For each report file, construct a viewer URL:
