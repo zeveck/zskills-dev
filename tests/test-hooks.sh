@@ -142,8 +142,10 @@ setup_project_test() {
   # Create mock package.json with test script
   printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$TEST_TMPDIR/package.json"
 
-  # Create mock transcript with test command
-  printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
+  # Create mock transcript with test command AND a pipeline skill invocation
+  # (the latter satisfies the Change 6 session-aware guard so tracking
+  # enforcement actually fires when expected)
+  printf '/run-plan plans/foo.md\nnpm run test:all\n' > "$TEST_TMPDIR/.transcript"
 
   # Initialize git repo (needed for git diff --cached, etc.)
   (cd "$TEST_TMPDIR" && git init -q && git add -A && git commit -q -m "init" 2>/dev/null)

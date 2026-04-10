@@ -366,10 +366,14 @@ skip tracker updates or research to "save time." Dispatching agents without
 research blurbs causes misinterpretation — agents guess from titles and
 implement the wrong fix. This has happened repeatedly.
 
-### Sprint tracking sentinel
+### Sprint tracking sentinel & lockdown
 
-When mode is sprint (N provided), create the pipeline sentinel before
-doing anything else:
+When mode is sprint (N provided), as your VERY FIRST actions create the
+pipeline sentinel AND the verification requirement marker. The
+verification requirement must be created at entry (not in Phase 4) so
+that the hook enforces it even if Phase 4 is skipped or the sprint
+crashes mid-execution.
+
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.claude/tracking"
@@ -378,6 +382,10 @@ if [ ! -f "$MAIN_ROOT/.claude/tracking/pipeline.active" ]; then
     "$N" "${FOCUS:-default}" "$(TZ=America/New_York date -Iseconds)" \
     > "$MAIN_ROOT/.claude/tracking/pipeline.active"
 fi
+# Lock down the verification requirement EARLY (was Phase 4, now entry)
+printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ncreatedAt: %s\n' \
+  "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.sprint"
 ```
 
 ### Preflight checks (before doing anything else)
@@ -684,21 +692,34 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 
 ## Phase 4 — Review
 
-### Pre-verification tracking
+The `requires.verify-changes.sprint` marker was already created at the
+very start of Phase 1 (in the Sprint tracking sentinel & lockdown
+section). The hook is enforcing that this requirement must be fulfilled
+before any cherry-pick can land. You don't need to re-create it here.
 
-Before dispatching verification agents, create a delegation requirement
-marker so the hook can enforce that verification actually runs:
-```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
-  "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.sprint"
-```
+### Dispatch protocol
 
-After each agent completes, **dispatch a fresh agent** to run `/verify-changes
-worktree` in its worktree. Do NOT run verification yourself — you wrote
-the dispatch prompts, so you have implementer bias. The verification agent
-must be a fresh agent with no memory of the implementation.
+**Check your tool list.** If `Agent` (or `Task`) is in your tool list,
+you are at top level — dispatch fresh verification subagents per the
+protocol below. The implementation subagents (in their per-issue
+worktrees) and the verification subagent are sibling subagents of you,
+the top-level orchestrator. The verifier has no memory of what the
+implementer did because they're separate contexts.
+
+**If you do NOT have the `Agent` tool**, you are running as a subagent
+yourself (Claude Code subagents have no Agent tool, by Anthropic's
+design at https://code.claude.com/docs/en/sub-agents). Run `/verify-changes
+worktree` inline in your current context, once per worktree. This is
+single-context inline verification — flag in the report whether you
+were fresh relative to the implementer or not. After Change 1's
+chunking is in place, /fix-issues runs as cron-fired top-level turns
+and Phase 4 is at top level, so this fallback is mostly defensive.
+
+After each implementation agent completes, **dispatch a fresh
+verification agent** (or run inline per the dispatch protocol above) to
+run `/verify-changes worktree` in its worktree. Do NOT run verification
+yourself in the same context as the implementation work — you have
+implementer bias.
 
 This delegates the full review workflow (diff review, test coverage audit,
 test run, manual verification, fix & re-verify cycle) to a separate agent.

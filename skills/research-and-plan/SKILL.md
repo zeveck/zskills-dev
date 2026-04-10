@@ -71,20 +71,43 @@ directly to Step 2. The user said `auto` — that's approval.
 
 After user approval, draft each sub-plan by invoking `/draft-plan`.
 
-**DO NOT just skip `/draft-plan` and issue agents to plan directly. If
-you do, all work will be thrown out.**
-`/draft-plan` dispatches separate reviewer and devil's advocate agents
-that catch problems you cannot catch in your own work. Writing a plan
-and self-reviewing it is not adversarial review — it's rubber-stamping.
+### Why /draft-plan must be invoked via the Skill tool, not the Agent tool
 
-**PROHIBITED — the exact shortcut that keeps failing:**
-Do NOT use the Agent tool to dispatch "plan-drafting agents" or "writing
-agents" that produce plan files directly. The ONLY way to draft a sub-plan
-is via the **Skill tool** with `skill: "draft-plan"`. This has been
-violated three separate times, each time producing garbage that was thrown
-out. The agent rationalizes "I'll go faster" and skips adversarial review.
-It does NOT go faster — it produces plans with 10+ CRITICAL issues that
-require full restarts.
+**Subagents in Claude Code cannot dispatch further subagents.** This is
+documented at https://code.claude.com/docs/en/sub-agents and verifiable by
+inspecting any subagent's tool list — they have no `Agent`/`Task` tool.
+By Anthropic's design, sub-sub-agent dispatch is not supported.
+
+`/draft-plan` internally dispatches Agent calls for parallel research
+(Phase 1), reviewer + devil's advocate agents (Phase 3), and the refiner
+(Phase 4). These dispatches require `/draft-plan` to be running in a
+context that HAS the `Agent` tool — meaning a top-level context, not a
+subagent.
+
+**The Skill tool is the recursion mechanism.** When you (a top-level skill)
+invoke `Skill: { skill: "draft-plan", args: ... }`, the Skill tool loads
+`/draft-plan`'s instructions INTO YOUR CONTEXT. You — still at top-level,
+still with the `Agent` tool — execute `/draft-plan`'s research, review,
+and refine workflow as if its instructions were your own. The Agent
+dispatches happen from your top-level context and work correctly.
+
+**If you instead Agent-dispatch a subagent to "run /draft-plan",** the
+dispatched subagent has no `Agent` tool. `/draft-plan`'s internal
+dispatches fail. The skill degrades to single-context inline drafting
+with no adversarial review. The output is unreviewed and may fail.
+
+**This rule applies to /draft-plan because it has internal dispatches.**
+It does NOT mean "don't use the Agent tool generally" — `/draft-plan`
+itself uses the Agent tool extensively for its sub-tasks. It means: to
+invoke a skill that has internal dispatches, use the Skill tool, not the
+Agent tool. The same rule applies to `/run-plan`, `/research-and-plan`,
+`/fix-issues`, `/verify-changes`, and `/add-block`.
+
+**Past failure:** This has been violated three separate times by agents
+who interpreted the rule as "/draft-plan internally is forbidden from
+using Agent" or who rationalized "I'll go faster by writing the plan
+directly." Both interpretations are wrong. The result was unreviewed
+plans with 10+ CRITICAL issues each, requiring full restarts.
 
 For each sub-problem:
 

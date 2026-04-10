@@ -142,8 +142,25 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
   REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   TRACKING_DIR="$REPO_ROOT/.claude/tracking"
 
+  # Session-aware guard (Change 6): only enforce tracking if THIS session has
+  # actually invoked a pipeline skill. This lets parallel sessions on disjoint
+  # files commit freely if they're not running their own tracked work.
+  # Without this guard, session A's active pipeline blocks session B's
+  # unrelated commits, which is unnecessarily restrictive.
+  TRACKING_SESSION_HAS_PIPELINE=false
+  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK="${TRANSCRIPT_CONTENT:-$(cat "$TRANSCRIPT" 2>/dev/null)}" || TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK=""
+    for pipeline_skill in "/research-and-go" "/research-and-plan" "/run-plan" "/fix-issues" "/add-block" "/draft-plan" "/verify-changes"; do
+      if [[ "$TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK" == *"$pipeline_skill"* ]]; then
+        TRACKING_SESSION_HAS_PIPELINE=true
+        break
+      fi
+    done
+  fi
+
   # Skip if tracking dir doesn't exist (backward compatible)
-  if [ -d "$TRACKING_DIR" ]; then
+  # OR if this session has not invoked any pipeline skill
+  if [ -d "$TRACKING_DIR" ] && $TRACKING_SESSION_HAS_PIPELINE; then
 
     # Check if any code files are being committed (skip check for content-only)
     if [ -z "$CODE_FILES" ]; then
@@ -244,7 +261,20 @@ if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
   REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   TRACKING_DIR="$REPO_ROOT/.claude/tracking"
 
-  if [ -d "$TRACKING_DIR" ]; then
+  # Session-aware guard (Change 6): only enforce if THIS session has
+  # invoked a pipeline skill. Same logic as the git commit block above.
+  TRACKING_SESSION_HAS_PIPELINE=false
+  if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
+    TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK="${TRANSCRIPT_CONTENT:-$(cat "$TRANSCRIPT" 2>/dev/null)}" || TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK=""
+    for pipeline_skill in "/research-and-go" "/research-and-plan" "/run-plan" "/fix-issues" "/add-block" "/draft-plan" "/verify-changes"; do
+      if [[ "$TRANSCRIPT_CONTENT_FOR_PIPELINE_CHECK" == *"$pipeline_skill"* ]]; then
+        TRACKING_SESSION_HAS_PIPELINE=true
+        break
+      fi
+    done
+  fi
+
+  if [ -d "$TRACKING_DIR" ] && $TRACKING_SESSION_HAS_PIPELINE; then
 
     # Staleness check: if pipeline.active is >8h old, warn but don't block
     PIPELINE_STALE=false

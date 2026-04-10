@@ -55,6 +55,18 @@ printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -
 
 Where `$DESCRIPTION` is the broad goal passed to this command.
 
+**Lock down the final cross-branch verification requirement immediately
+(Change 4 mechanical enforcement).** The pipeline will end with a
+top-level `/verify-changes branch` invocation that runs as a cron-fired
+turn after the meta-plan execution completes. By creating the requirement
+marker NOW (before any implementation), the hook will block any commit
+on main until this final verification has been fulfilled. The orchestrator
+cannot skip the final cross-branch check.
+
+```bash
+printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.final"
+```
+
 ### Re-run Handling
 
 If `pipeline.active` already exists and this is a deliberate re-run of the same
@@ -119,42 +131,98 @@ sub-plan, include the tracking index so child skills can mark their
 corresponding requirement as completed. For example, include
 `tracking-index=3` in the dispatch prompt for sub-plan 3.
 
-## Step 2 — Execute
+## Step 2 — Hand off to chunked /run-plan execution
 
-Immediately run:
+**Do NOT invoke `/run-plan` inline in this turn.** Long-running pipelines
+that all run in one turn cause late-phase fatigue (the original failure
+mode). Instead, schedule a one-shot cron to fire `/run-plan finish auto`
+in a fresh turn ~1 minute from now. The cron-fired turn runs at top level,
+processes the meta-plan with chunked execution (each phase as its own
+cron-fired turn), and the whole pipeline unfolds as a sequence of fresh
+top-level turns.
 
+```bash
+# Compute a target minute that is NOT :00 or :30 (to avoid scheduler jitter)
+NOW_MIN=$(date +%M)
+NOW_HOUR=$(date +%H)
+NOW_DAY=$(date +%d)
+NOW_MONTH=$(date +%m)
+TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
+# If we landed on :00 or :30, bump by 1 more
+if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
+  TARGET_MIN=$(( TARGET_MIN + 1 ))
+fi
+TARGET_HOUR=$NOW_HOUR
+if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
+  TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
+fi
 ```
-/run-plan <meta-plan-path> finish auto
-```
 
-This executes all implementation phases sequentially — each delegating
-to `/run-plan` on the corresponding sub-plan. Full verification,
-testing, and landing at each phase.
+Then call `CronCreate`:
 
-## Step 3 — Report
+- `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
+- `recurring`: false
+- `prompt`: `"Run /run-plan <meta-plan-path> finish auto"`
 
-When `/run-plan finish auto` completes (or fails), report:
+After scheduling the cron, output to the user:
 
-> **`/research-and-go` complete.**
-> Goal: [original description]
-> Sub-plans: N drafted, M executed successfully
-> Meta-plan: `plans/<META_PLAN>.md`
-> Report: `reports/plan-<slug>.md`
+> Pipeline starting. Meta-plan: `plans/<META_PLAN>.md` with N sub-plans.
 >
-> [If any phase failed: which one and why]
+> The first phase will fire in ~1-2 minutes as a fresh turn. Each subsequent
+> phase will fire similarly. The whole pipeline runs as a sequence of fresh
+> cron-fired turns at the top level — no late-phase fatigue, full Agent tool
+> available at every step, full visibility for you.
+>
+> To stop the pipeline at any point: `/run-plan stop`
+> To check progress: `/run-plan plans/<META_PLAN>.md status`
+> To clean up tracking after completion: `! bash scripts/clear-tracking.sh`
+
+Then **exit this turn**. Do NOT wait for /run-plan. The cron handles the
+rest.
+
+## Step 3 — Final cross-branch verification (scheduled by /run-plan, not here)
+
+The `requires.verify-changes.final` marker created in Step 0 ensures that
+no commit on main can be cherry-picked until a top-level `/verify-changes
+branch` has been run and produced its `fulfilled.verify-changes.final`
+marker.
+
+When `/run-plan` reaches the end of the meta-plan (last phase of last
+sub-plan landed), instead of exiting, it schedules ONE MORE cron whose
+prompt is `"Run /verify-changes branch"`. This cron fires at top-level,
+where `/verify-changes` has full Agent tool access and can dispatch its
+diff/coverage/manual sub-agents for proper multi-agent cross-branch
+verification. When `/verify-changes` completes, it creates the
+`fulfilled.verify-changes.final` marker, the hook unblocks commits, and
+the pipeline is officially done.
+
+The user sees the final-verify report as the last turn in the chain. That
+report is the pipeline's cap — read it carefully for any cross-sub-plan
+inconsistencies the per-sub-plan verifications missed.
+
+**Note for /run-plan implementers:** When /run-plan completes the LAST
+phase of the LAST sub-plan in a meta-plan that's part of a
+research-and-go pipeline (detect this by the presence of
+`requires.verify-changes.final`), schedule the final-verify cron BEFORE
+exiting the chunked transition. Use:
+- `cron`: target minute non-:00/:30, ~1 minute from now
+- `recurring`: false
+- `prompt`: `"Run /verify-changes branch"`
 
 ### Pipeline Cleanup
 
-After successful completion (all phases passed), clean up all tracking files:
+After the final cross-branch verification has fulfilled its requirement,
+the user can clean up tracking with:
 
-```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-rm -f "$MAIN_ROOT/.claude/tracking"/*
+```
+! bash scripts/clear-tracking.sh
 ```
 
-If any phase failed, do NOT clean up tracking files — they serve as a record of
-what was accomplished and what remains, enabling a re-run to pick up where this
-run left off (see Step 0 Re-run Handling).
+The pipeline does NOT auto-clean. The user does it manually so they have
+a chance to inspect the tracking state before discarding it.
+
+If the pipeline failed at any point, tracking is preserved for inspection
+and re-run. See Step 0 Re-run Handling for the resume protocol.
 
 ## Key Rules
 

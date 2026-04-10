@@ -44,6 +44,14 @@ command that ran them.
 inspect failures. Never pipe through `| tail`, `| head`, `| grep` -- it
 loses output and forces re-runs.
 
+**Never suppress errors on operations you need to verify.** Do not use
+`2>/dev/null` on commands whose success matters (git worktree remove,
+git cherry-pick, rm, mv, cp of important files). Do not use `; echo "done"`
+after fallible commands -- use `&& echo "done"` so failure is visible.
+After any operation that changes system state (removes a worktree, deletes
+files, lands commits), **verify the result** -- check that the directory is
+gone, the file is deleted, the commit is on the branch.
+
 **Pre-existing test failures.** If a test fails in code you didn't touch,
 verify with `git log` that the test/source predates your changes. You may
 file a GitHub issue with the error output and mark the test `it.skip('name
