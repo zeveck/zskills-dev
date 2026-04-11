@@ -25,10 +25,10 @@ On entry, create the fulfillment marker so the parent skill (e.g.,
 `/add-block`) knows this delegation was accepted:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
   "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.add-example.${NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.add-example.${NAME}"
 ```
 
 Where `$NAME` is derived from the block type(s) or model name (e.g.,
@@ -150,7 +150,7 @@ After Phase 2 (build) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-example.${NAME}.build"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.build"
 ```
 
 ---
@@ -190,7 +190,7 @@ After Phase 3 (register) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-example.${NAME}.register"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.register"
 ```
 
 ---
@@ -223,7 +223,7 @@ After Phase 4b (screenshot) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-example.${NAME}.screenshot"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.screenshot"
 ```
 
 ### 4c. Write unit tests
@@ -256,7 +256,7 @@ After Phase 4c/4d (tests pass):
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-example.${NAME}.tests"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.tests"
 ```
 
 ---
@@ -288,14 +288,14 @@ After Phase 5a (verification) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-example.${NAME}.verify"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.verify"
 ```
 
 Update the fulfillment marker to reflect completion:
 ```bash
 printf 'skill: add-example\nname: %s\nstatus: completed\ndate: %s\n' \
   "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.add-example.${NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.add-example.${NAME}"
 ```
 
 ### 5b. Retake screenshot if needed

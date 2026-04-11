@@ -48,17 +48,17 @@ being skipped.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 
 # Step 7 will dispatch /add-example for this block
 printf 'skill: add-example\nparent: add-block\nblock: %s\ncreatedAt: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/requires.add-example.${BLOCK_NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/requires.add-example.${BLOCK_NAME}"
 
 # Step 11 will dispatch /verify-changes for this block
 printf 'skill: verify-changes\nparent: add-block\nblock: %s\ncreatedAt: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.${BLOCK_NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.${BLOCK_NAME}"
 ```
 
 These markers tell the hook: "before any commit on main is allowed for
@@ -382,9 +382,9 @@ All existing tests must continue to pass (unit, E2E, and codegen suites).
 After Step 6 tests pass:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.tests"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.tests"
 ```
 
 In batch mode, each block gets its own tracking marker keyed by BlockName.
@@ -422,7 +422,7 @@ After `/add-example` completes:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.example"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.example"
 ```
 
 If the example was deferred (batch mode, will be done later), create the
@@ -430,7 +430,7 @@ deferred marker instead with the reason:
 ```bash
 printf 'block: %s\ndeferred: true\nreason: batch mode — example deferred until all blocks implemented\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.example-deferred"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.example-deferred"
 ```
 
 ---
@@ -507,7 +507,7 @@ After codegen is implemented:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.codegen"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.codegen"
 ```
 
 ### If Rust codegen cannot be implemented now
@@ -532,7 +532,7 @@ After deferring codegen, create the deferred marker with the GitHub issue number
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ndeferred: true\nissue: #%s\ndate: %s\n' \
   "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.codegen-deferred"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.codegen-deferred"
 ```
 
 ---
@@ -563,7 +563,7 @@ After Step 9 manual testing completes:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.manual-test"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.manual-test"
 ```
 
 ---
@@ -627,8 +627,8 @@ critical steps. If any are missing, go back and complete the step:
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # All four must exist (or their -deferred variant)
 for marker in tests example codegen manual-test; do
-  if [ ! -f "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.${marker}" ] && \
-     [ ! -f "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.${marker}-deferred" ]; then
+  if [ ! -f "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.${marker}" ] && \
+     [ ! -f "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.${marker}-deferred" ]; then
     echo "MISSING: step.add-block.${BLOCK_NAME}.${marker} — go back and complete this step"
   fi
 done
@@ -681,7 +681,7 @@ After the self-audit checklist passes:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.self-audit"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.self-audit"
 ```
 
 ---
@@ -740,7 +740,7 @@ After verification completes:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.add-block.${BLOCK_NAME}.verify"
+  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.verify"
 ```
 
 ---

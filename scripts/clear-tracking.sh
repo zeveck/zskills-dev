@@ -3,7 +3,7 @@
 # Agents are blocked from invoking this script by the PreToolUse hook.
 
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)
-TRACKING_DIR="$MAIN_ROOT/.claude/tracking"
+TRACKING_DIR="$MAIN_ROOT/.zskills/tracking"
 
 if [ ! -d "$TRACKING_DIR" ]; then
   echo "No tracking directory found at $TRACKING_DIR"

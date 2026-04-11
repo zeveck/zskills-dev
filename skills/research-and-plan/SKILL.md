@@ -290,14 +290,14 @@ After writing the meta-plan, check for an existing pipeline sentinel:
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ```
 
-If `$MAIN_ROOT/.claude/tracking/pipeline.active` does **not** exist, this is a
+If `$MAIN_ROOT/.zskills/tracking/pipeline.active` does **not** exist, this is a
 standalone invocation. Create requirement files for each phase that delegates to
 `/run-plan`:
 
 ```bash
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 for i in 1 2 ... N; do
-  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.run-plan.$i"
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
 done
 ```
 

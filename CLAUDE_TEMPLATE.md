@@ -138,4 +138,4 @@ skip this step and guess instead of looking.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.claude/tracking/` exists. Skills create tracking files during pipeline execution; hooks check them before allowing commits. See the tracking enforcement section in `block-unsafe-project.sh` for details. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists. Skills create tracking files during pipeline execution; hooks check them before allowing commits. See the tracking enforcement section in `block-unsafe-project.sh` for details. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.

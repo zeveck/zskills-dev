@@ -39,10 +39,10 @@ Before anything else, check whether another pipeline is already in progress.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 ```
 
-**Check for existing pipeline:** If `$MAIN_ROOT/.claude/tracking/pipeline.active`
+**Check for existing pipeline:** If `$MAIN_ROOT/.zskills/tracking/pipeline.active`
 exists, STOP. Read the file and report its contents — another pipeline is already
 in progress. Do not proceed unless this is a deliberate re-run (see Re-run
 Handling below).
@@ -50,7 +50,7 @@ Handling below).
 **Create the sentinel:**
 
 ```bash
-printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/pipeline.active"
+printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/pipeline.active"
 ```
 
 Where `$DESCRIPTION` is the broad goal passed to this command.
@@ -64,7 +64,7 @@ on main until this final verification has been fulfilled. The orchestrator
 cannot skip the final cross-branch check.
 
 ```bash
-printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.final"
+printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final"
 ```
 
 ### Re-run Handling
@@ -73,7 +73,7 @@ If `pipeline.active` already exists and this is a deliberate re-run of the same
 goal:
 
 1. Read the existing `pipeline.active` to confirm the goal matches.
-2. Check which `requires.*` files already exist in `$MAIN_ROOT/.claude/tracking/`.
+2. Check which `requires.*` files already exist in `$MAIN_ROOT/.zskills/tracking/`.
 3. For each existing requirement, check if a corresponding `completed.*` file
    exists. Only create new requirement files for unfulfilled requirements.
 4. Overwrite `pipeline.active` with a fresh timestamp.
@@ -111,15 +111,15 @@ produced by `/research-and-plan`):
 
 ```bash
 for i in 1 2 ... N; do
-  printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.draft-plan.$i"
-  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.run-plan.$i"
+  printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.draft-plan.$i"
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
 done
 ```
 
 Also create a requirement for the meta-plan execution itself:
 
 ```bash
-printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.claude/tracking/requires.run-plan.meta"
+printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.meta"
 ```
 
 Replace `1 2 ... N` with the actual sub-plan indices. The `draft-plan`

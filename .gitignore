@@ -1,7 +1,7 @@
 .claude/settings.local.json
 .claude/skills/social-seo/
 __pycache__/
-.claude/tracking/
+.zskills/tracking/
 .claude/scheduled_tasks.lock
 .test-results.txt
 .git-diff-full.txt

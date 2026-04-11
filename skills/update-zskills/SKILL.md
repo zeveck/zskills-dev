@@ -318,12 +318,12 @@ fi
 If the user says no, leave it commented out.
 
 **Note on tracking enforcement:** The tracking enforcement section in
-`block-unsafe-project.sh` (protecting `.claude/tracking/`, blocking
+`block-unsafe-project.sh` (protecting `.zskills/tracking/`, blocking
 `clear-tracking.sh` execution, and enforcing delegation/step verification)
 has no placeholders — it works out of the box. No configuration needed.
 
 **Add tracking directory to `.gitignore`:** During installation, add
-`.claude/tracking/` to the project's `.gitignore` if not already present.
+`.zskills/tracking/` to the project's `.gitignore` if not already present.
 Tracking files are ephemeral session state and should never be committed.
 
 Then register the hooks in `.claude/settings.json`. The format is:

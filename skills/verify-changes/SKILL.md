@@ -88,10 +88,10 @@ On entry, if a tracking ID was passed by the parent skill, create the
 fulfillment marker in the MAIN repo:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.verify-changes.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.$TRACKING_ID"
 ```
 If no tracking ID was passed (standalone invocation), skip tracking.
 
@@ -215,7 +215,7 @@ marker if a tracking ID is present:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.verify-changes.$TRACKING_ID.tests-run"
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.tests-run"
 ```
 
 ## Phase 4 — Agent Verification + User Verification Classification
@@ -293,7 +293,7 @@ and a tracking ID is present, create the manual-verified step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'ui_changes: true\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.verify-changes.$TRACKING_ID.manual-verified"
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
 Only create this marker if UI files were actually verified in Phase 4. Skip
 for non-UI changes.
@@ -468,11 +468,11 @@ present:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.verify-changes.$TRACKING_ID.complete"
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.complete"
 
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.verify-changes.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.$TRACKING_ID"
 ```
 
 ## Key Rules

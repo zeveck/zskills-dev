@@ -274,10 +274,10 @@ and drafts plans for all found issues.
    then dispatch `/draft-plan`:
    ```bash
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   mkdir -p "$MAIN_ROOT/.claude/tracking"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking"
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \
      "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.claude/tracking/requires.draft-plan.$ISSUE_NUMBER"
+     > "$MAIN_ROOT/.zskills/tracking/requires.draft-plan.$ISSUE_NUMBER"
    ```
    Then dispatch `/draft-plan` with:
    - The issue number and full body (`gh issue view <N> --json body`)
@@ -376,16 +376,16 @@ crashes mid-execution.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
-if [ ! -f "$MAIN_ROOT/.claude/tracking/pipeline.active" ]; then
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+if [ ! -f "$MAIN_ROOT/.zskills/tracking/pipeline.active" ]; then
   printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
     "$N" "${FOCUS:-default}" "$(TZ=America/New_York date -Iseconds)" \
-    > "$MAIN_ROOT/.claude/tracking/pipeline.active"
+    > "$MAIN_ROOT/.zskills/tracking/pipeline.active"
 fi
 # Lock down the verification requirement EARLY (was Phase 4, now entry)
 printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ncreatedAt: %s\n' \
   "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.sprint"
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.sprint"
 ```
 
 ### Preflight checks (before doing anything else)
@@ -500,7 +500,7 @@ After Phase 1 (preflight + sync + research) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.preflight"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.preflight"
 ```
 
 ## Phase 2 — Prioritize
@@ -608,7 +608,7 @@ After Phase 2 (prioritize) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)" "$ISSUE_COUNT" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.prioritize"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.prioritize"
 ```
 
 ## Phase 3 — Execute (agent teams in worktrees)
@@ -687,7 +687,7 @@ After Phase 3 (execute) is complete — all agents have returned:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.execute"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.execute"
 ```
 
 ## Phase 4 — Review
@@ -732,7 +732,7 @@ After Phase 4 (verify) is complete — all verification agents have returned:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.verify"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.verify"
 ```
 
 ## Phase 5 — Write Sprint Report (BEFORE landing)
@@ -803,7 +803,7 @@ After Phase 5 (report) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.report"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.report"
 ```
 
 ## Phase 6 — Land
@@ -952,7 +952,7 @@ After Phase 6 (land) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.fix-issues.sprint.land"
+  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.land"
 ```
 
 ## Failure Protocol

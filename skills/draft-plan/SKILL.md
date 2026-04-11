@@ -76,10 +76,10 @@ is a delegated invocation, or derive from the output file slug if standalone
 file in the MAIN repo:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.claude/tracking"
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.draft-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.draft-plan.$TRACKING_ID"
 ```
 
 ### Research agents
@@ -169,7 +169,7 @@ step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.draft-plan.$TRACKING_ID.research"
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.research"
 ```
 
 **Present the research summary to the user.** If running interactively
@@ -339,7 +339,7 @@ create the review step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.draft-plan.$TRACKING_ID.review"
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.review"
 ```
 
 ## Phase 4 — Refine
@@ -421,11 +421,11 @@ step marker and update the fulfillment file to complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.draft-plan.$TRACKING_ID.finalize"
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.finalize"
 
 printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.draft-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.draft-plan.$TRACKING_ID"
 ```
 
 ## Key Rules

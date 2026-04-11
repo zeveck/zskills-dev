@@ -335,14 +335,14 @@ Before parsing, check for stale state from a previous failed run:
    any landing until verification is fulfilled.
    ```bash
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   mkdir -p "$MAIN_ROOT/.claude/tracking"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
      "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.claude/tracking/fulfilled.run-plan.$TRACKING_ID"
+     > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
    # Lock down verification requirement IMMEDIATELY (was Phase 3, now entry)
    printf 'skill: verify-changes\nparent: run-plan\nid: %s\ncreatedAt: %s\n' \
      "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.claude/tracking/requires.verify-changes.$TRACKING_ID"
+     > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description
@@ -558,7 +558,7 @@ create the implementation step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.run-plan.$TRACKING_ID.implement"
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.implement"
 ```
 
 ### Pre-verification (requirement already created at entry)
@@ -573,7 +573,7 @@ Pass the tracking ID to the verification agent in the dispatch prompt so
 it can create its own fulfillment marker:
 > Your tracking ID is `$TRACKING_ID`. On entry, create
 > `fulfilled.verify-changes.$TRACKING_ID` in the main repo's
-> `.claude/tracking/` directory.
+> `.zskills/tracking/` directory.
 
 ## Phase 3 — Verify (separate agent)
 
@@ -678,7 +678,7 @@ After verification passes, create the verification step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.run-plan.$TRACKING_ID.verify"
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.verify"
 ```
 
 ## Phase 4 — Update Progress Tracking
@@ -799,7 +799,7 @@ After writing the report and regenerating the index, create the report step mark
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.run-plan.$TRACKING_ID.report"
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.report"
 ```
 
 ## Phase 5b — Plan Completion
@@ -1173,11 +1173,11 @@ marker and update the fulfillment file:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/step.run-plan.$TRACKING_ID.land"
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.land"
 
 printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/fulfilled.run-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
 ```
 
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
@@ -1185,7 +1185,7 @@ ignores these — they are informational only):
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.claude/tracking/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
+  > "$MAIN_ROOT/.zskills/tracking/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
 ```
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
@@ -1193,7 +1193,7 @@ with `step.*` markers:
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 for stage in implement verify report land; do
   printf 'phases: all\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-    > "$MAIN_ROOT/.claude/tracking/step.run-plan.$TRACKING_ID.$stage"
+    > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.$stage"
 done
 ```
 
