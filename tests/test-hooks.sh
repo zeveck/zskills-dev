@@ -94,6 +94,14 @@ expect_allow "rm file.js (no -rf)" "rm file.js"
 expect_allow "kill 1234 (no -9)" "kill 1234"
 
 echo ""
+echo "=== Push: block main/master ==="
+
+# These run on main branch, so all pushes should be blocked
+expect_deny "git push (bare, on main)" "git push"
+expect_deny "git push origin main" "git push origin main"
+expect_deny "git push -u origin main" "git push -u origin main"
+
+echo ""
 echo "=== Non-Bash tool_name ==="
 
 result=$(echo '{"tool_name":"Read","tool_input":{"file_path":"/tmp/foo"}}' | bash "$HOOK" 2>/dev/null)

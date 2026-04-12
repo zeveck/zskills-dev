@@ -77,13 +77,14 @@ if [[ "$INPUT" =~ git[[:space:]]+commit[[:space:]]+.*--no-verify ]]; then
   block_with_reason "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
 fi
 
-# ─── OPTIONAL: git push blocking ────────────────────────────────────
-# Uncomment the block below to prevent agents from pushing.
-# The user decides when to push — they can run: ! git push
-# /update-zskills install asks whether to enable this.
-
+# ─── git push: block main/master, allow feature branches ───────────
+# Agents can push feature branches (needed for PR workflow) but not main.
+# The user pushes main when ready: ! git push
 if [[ "$INPUT" =~ git[[:space:]]+push ]]; then
-  block_with_reason "BLOCKED: Agents must not push. The user decides when to push — they can run: ! git push"
+  CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+  if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+    block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
+  fi
 fi
 
 # No match — allow
