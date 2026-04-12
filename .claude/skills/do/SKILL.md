@@ -237,7 +237,7 @@ Before touching anything:
      message. `npm run test:all` before committing if code was touched.
      If tests fail after two fix attempts on the same error, STOP — report
      what you tried and let the user decide.
-   - **In worktree:** commit freely (that's the point of isolation).
+   - **In worktree:** the verification agent commits after tests pass.
      One logical unit per commit.
 
 ## Phase 3 — Verify

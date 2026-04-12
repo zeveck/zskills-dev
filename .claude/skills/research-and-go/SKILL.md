@@ -33,6 +33,50 @@ Examples:
 - `/research-and-go Implement all missing block diagram tool blocks from the gap analysis`
 - `/research-and-go Close the runtime deployment parity gap`
 
+## Step 0 — Tracking Setup
+
+Before anything else, check whether another pipeline is already in progress.
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+```
+
+**Check for existing research-and-go pipeline:** If any
+`$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.*` files exist, STOP.
+Read the file and report its contents — another research-and-go pipeline is
+already in progress. Do not proceed unless this is a deliberate re-run (see
+Re-run Handling below).
+
+**Create the scoped sentinel:**
+
+```bash
+SCOPE=$(echo "$DESCRIPTION" | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-30)
+printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.$SCOPE"
+```
+
+Where `$DESCRIPTION` is the broad goal passed to this command and `$SCOPE` is a
+slugified version for scoping.
+
+**Write `.zskills-tracked` in the main repo root:**
+
+```bash
+printf '%s\n' "research-and-go.$SCOPE" > "$MAIN_ROOT/.zskills-tracked"
+```
+
+### Re-run Handling
+
+If `pipeline.research-and-go.*` already exists and this is a deliberate re-run
+of the same goal:
+
+1. Read the existing `pipeline.research-and-go.*` to confirm the goal matches.
+2. Check which `requires.*` files already exist in `$MAIN_ROOT/.zskills/tracking/`.
+3. For each existing requirement, check if a corresponding `fulfilled.*` file
+   exists. Only create new requirement files for unfulfilled requirements.
+4. Touch existing `requires.*` files to refresh their mtime (prevents staleness
+   false positives).
+5. Overwrite the `pipeline.research-and-go.*` sentinel with a fresh timestamp.
+
 ## Step 1 — Decompose and Draft
 
 Invoke `/research-and-plan` with `auto` and the full description:
@@ -50,6 +94,41 @@ This:
 6. Writes the meta-plan with pure implementation phases
 
 The meta-plan file path comes back from `/research-and-plan`.
+
+## Step 1b — Lock Down Requirements
+
+After `/research-and-plan` returns and before execution begins, create tracking
+requirement files for every sub-plan and the meta-plan itself. These files let
+any observer (or a re-run) know exactly what the pipeline expects to accomplish.
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+```
+
+For each sub-plan index `i` (from 1 to N, where N is the number of sub-plans
+produced by `/research-and-plan`):
+
+```bash
+for i in 1 2 ... N; do
+  printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.draft-plan.$i"
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
+done
+```
+
+Also create a requirement for the meta-plan execution itself:
+
+```bash
+printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.meta"
+```
+
+Replace `1 2 ... N` with the actual sub-plan indices. The `draft-plan`
+requirements track the planning phase; the `run-plan` requirements track
+execution.
+
+**Pass tracking IDs to child skills:** When dispatching `/run-plan` for each
+sub-plan, include the tracking index so child skills can mark their
+corresponding requirement as completed. For example, include
+`tracking-index=3` in the dispatch prompt for sub-plan 3.
 
 ## Step 2 — Execute
 
@@ -74,6 +153,26 @@ When `/run-plan finish auto` completes (or fails), report:
 > Report: `reports/plan-<slug>.md`
 >
 > [If any phase failed: which one and why]
+
+### Pipeline Cleanup
+
+After successful completion (all phases passed), clean up all tracking files:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+rm -f "$MAIN_ROOT/.zskills/tracking"/*
+```
+
+After the pipeline completes, clean up:
+
+```bash
+rm -f "$MAIN_ROOT/.zskills-tracked"
+rm -f "$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.$SCOPE"
+```
+
+If any phase failed, do NOT clean up tracking files — they serve as a record of
+what was accomplished and what remains, enabling a re-run to pick up where this
+run left off (see Step 0 Re-run Handling).
 
 ## Key Rules
 

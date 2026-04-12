@@ -54,6 +54,19 @@ based on session recall.
 
 Examples: `/verify-changes`, `/verify-changes worktree`, `/verify-changes last 3`
 
+## Tracking Fulfillment
+
+On entry, if a tracking ID was passed by the parent skill, create the
+fulfillment marker in the MAIN repo:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
+  "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.$TRACKING_ID"
+```
+If no tracking ID was passed (standalone invocation), skip tracking.
+
 ## Phase 1 — Inventory Changes
 
 1. **Determine the diff scope** based on the argument:
@@ -167,6 +180,16 @@ For each changed file, verify appropriate tests exist:
    | Suite | Result | Failures |
    |-------|--------|----------|
 
+### Post-tests tracking
+
+After recording test results (pass or fail), create the tests-run step
+marker if a tracking ID is present:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.tests-run"
+```
+
 ## Phase 4 — Agent Verification + User Verification Classification
 
 Two types of verification — both are mandatory for UI changes:
@@ -228,6 +251,18 @@ have started one is skipping, not verifying.
 
    The user may be verifying hours later in a different context. "NEEDED"
    without instructions is useless — the user won't know what to check.
+
+### Post-manual-verification tracking
+
+After completing agent verification (Phase 4), if UI changes were verified
+and a tracking ID is present, create the manual-verified step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'ui_changes: true\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.manual-verified"
+```
+Only create this marker if UI files were actually verified in Phase 4. Skip
+for non-UI changes.
 
 ## Phase 5 — Fix Problems
 
@@ -390,6 +425,21 @@ re-verify or dismiss them.
 
 If there are no `reports/verify-*.md` files (e.g., all were cleaned up),
 write just the header and "No verification reports found."
+
+### Post-report tracking
+
+After writing the report (or confirming verification is clean), create the
+complete step marker and update the fulfillment file if a tracking ID is
+present:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.complete"
+
+printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' \
+  "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.$TRACKING_ID"
+```
 
 ## Key Rules
 

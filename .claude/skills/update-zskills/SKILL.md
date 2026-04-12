@@ -138,11 +138,12 @@ Look in `.claude/hooks/` for these 2 files:
 
 ### Step 4 — Check scripts
 
-Look in `scripts/` for these 3 files:
+Look in `scripts/` for these 4 files:
 
 - `port.sh`
 - `test-all.sh`
 - `briefing.cjs` OR `briefing.py` (either counts — Node or Python version)
+- `clear-tracking.sh`
 
 ### Step 5 — Check skills with additional requirements
 
@@ -315,6 +316,15 @@ fi
 ```
 If the user says no, leave it commented out.
 
+**Note on tracking enforcement:** The tracking enforcement section in
+`block-unsafe-project.sh` (protecting `.zskills/tracking/`, blocking
+`clear-tracking.sh` execution, and enforcing delegation/step verification)
+has no placeholders — it works out of the box. No configuration needed.
+
+**Add tracking directory to `.gitignore`:** During installation, add
+`.zskills/tracking/` to the project's `.gitignore` if not already present.
+Tracking files are ephemeral session state and should never be committed.
+
 Then register the hooks in `.claude/settings.json`. The format is:
 
 ```json
@@ -351,6 +361,9 @@ Report: "Installed N hooks: [list]"
 Copy missing scripts from `$PORTABLE/scripts/` to `scripts/`.
 
 - For scripts with placeholders: prompt user for values and replace.
+- Copy `clear-tracking.sh` from `$PORTABLE/scripts/` to `scripts/` if missing.
+  This script lets the user manually clear stale tracking state. Agents are
+  blocked from running it by the project hook.
 
 Report: "Installed N scripts: [list]"
 

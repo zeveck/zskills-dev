@@ -38,38 +38,6 @@ Do NOT do step 7 per-block when batching. Defer it until all blocks are implemen
 
 ---
 
-## Step -1 — Lock down delegation requirements (FIRST ACTION)
-
-Before any Pre-flight, before reading any plan, before any other work,
-write the tracking requirements for this block's delegations to the main
-repo's tracking directory. This must be your VERY FIRST action so that
-the hook can enforce these requirements regardless of any later step
-being skipped.
-
-```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
-
-# Step 7 will dispatch /add-example for this block
-printf 'skill: add-example\nparent: add-block\nblock: %s\ncreatedAt: %s\n' \
-  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.add-example.${BLOCK_NAME}"
-
-# Step 11 will dispatch /verify-changes for this block
-printf 'skill: verify-changes\nparent: add-block\nblock: %s\ncreatedAt: %s\n' \
-  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.${BLOCK_NAME}"
-```
-
-These markers tell the hook: "before any commit on main is allowed for
-this block's work, both `/add-example` and `/verify-changes` MUST have
-been run for it." If a later step is skipped, the cherry-pick to main
-will be blocked until the corresponding `fulfilled.*` markers exist.
-
-In **Batch Mode**, repeat this for EVERY block in the batch immediately,
-before any other work. Lock down the world before doing any
-implementation.
-
 ## Step 0 — Pre-flight: Check for a Plan
 
 Look in `plans/blocks/{category}/` for an existing plan file for this block.
@@ -395,11 +363,21 @@ In batch mode, each block gets its own tracking marker keyed by BlockName.
 
 ### Pre-example delegation
 
-The `requires.add-example.${BLOCK_NAME}` marker was already created in
-Step -1 (Lock down delegation requirements) at the very start of
-`/add-block`. The hook is already enforcing that this requirement must be
-fulfilled before any commit on main can land. You don't need to re-create
-it here.
+Before invoking `/add-example`, create a delegation requirement marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+printf 'skill: add-example\nparent: add-block\nblock: %s\ndate: %s\n' \
+  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.add-example.${BLOCK_NAME}"
+```
+
+Before dispatching any agent to a worktree, write the pipeline ID:
+
+```bash
+printf '%s\n' "add-block.${BLOCK_NAME}" > "<worktree-path>/.zskills-tracked"
+printf '%s\n' "add-block.${BLOCK_NAME}" > "$MAIN_ROOT/.zskills-tracked"
+```
 
 Use the `/add-example` skill to create an example model for this block
 (or the batch of blocks). Pass all block types from this batch:
@@ -690,32 +668,16 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 ### Pre-verification delegation
 
-The `requires.verify-changes.${BLOCK_NAME}` marker was already created in
-Step -1 (Lock down delegation requirements) at the very start of
-`/add-block`. The hook is enforcing that this requirement must be
-fulfilled before any commit on main can land for this block. You don't
-need to re-create it here.
+Before dispatching the verification agent, create a delegation requirement:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'skill: verify-changes\nparent: add-block\nblock: %s\ndate: %s\n' \
+  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.${BLOCK_NAME}"
+```
 
-### Dispatch protocol
-
-**Check your tool list.** If `Agent` (or `Task`) is in your tool list, you
-are at top level — dispatch a fresh verification subagent per the protocol
-below. The implementing subagent (in the worktree) and the verification
-subagent are sibling subagents with independent contexts: the verifier
-genuinely has no memory of the implementation work.
-
-**If you do NOT have the `Agent` tool**, you are running as a subagent
-yourself. Run `/verify-changes` inline in your current context. If the
-implementation was done in a separate subagent that returned to you, you
-ARE fresh relative to the implementer (different contexts). If the
-implementation was done in YOUR context, the verification is single-context
-self-review — flag this clearly in the verification report so the user
-knows what kind of verification they got.
-
-Dispatch a verification agent (or run inline) targeting the worktree. The
-agent that implemented the blocks must NOT verify them — either dispatch a
-fresh subagent or, if running inline, ensure your current context is
-distinct from the implementer's.
+Dispatch a **fresh verification agent** targeting the worktree. The agent
+that implemented the blocks must NOT verify them.
 
 Give the verification agent:
 - The **worktree path** and **branch name**

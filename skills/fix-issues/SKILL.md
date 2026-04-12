@@ -366,26 +366,18 @@ skip tracker updates or research to "save time." Dispatching agents without
 research blurbs causes misinterpretation — agents guess from titles and
 implement the wrong fix. This has happened repeatedly.
 
-### Sprint tracking sentinel & lockdown
+### Sprint tracking sentinel
 
-When mode is sprint (N provided), as your VERY FIRST actions create the
-pipeline sentinel AND the verification requirement marker. The
-verification requirement must be created at entry (not in Phase 4) so
-that the hook enforces it even if Phase 4 is skipped or the sprint
-crashes mid-execution.
-
+When mode is sprint (N provided), create the pipeline sentinel before
+doing anything else:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking"
-if [ ! -f "$MAIN_ROOT/.zskills/tracking/pipeline.active" ]; then
+if [ ! -f "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint" ]; then
   printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
     "$N" "${FOCUS:-default}" "$(TZ=America/New_York date -Iseconds)" \
-    > "$MAIN_ROOT/.zskills/tracking/pipeline.active"
+    > "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint"
 fi
-# Lock down the verification requirement EARLY (was Phase 4, now entry)
-printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ncreatedAt: %s\n' \
-  "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.sprint"
 ```
 
 ### Preflight checks (before doing anything else)
@@ -653,6 +645,16 @@ verbatim text to a temp file (e.g., `/tmp/issue-NNN.md`) and tell the agent
 to `Read` the file. This avoids the natural LLM tendency to compress long
 text when inlining it in a prompt. Shorter content can be inlined directly.
 
+Before dispatching each fix agent to its worktree, the orchestrator writes the
+pipeline ID to BOTH the worktree and the main repo root:
+
+```bash
+printf '%s\n' "fix-issues.sprint" > "<worktree-path>/.zskills-tracked"
+printf '%s\n' "fix-issues.sprint" > "$MAIN_ROOT/.zskills-tracked"
+```
+
+This associates the agent with this pipeline for hook enforcement.
+
 Each agent follows this fix workflow:
 
 1. Read the issue body (included in prompt) and relevant code
@@ -678,8 +680,9 @@ Each agent follows this fix workflow:
    abort (`git rebase --abort`) and proceed — Phase 6 cherry-pick
    verification will catch stale files via selective extraction.
 
-Agents commit freely in worktrees — that's the point of isolation. Worktree
-commits are safe and expected. The approval gate is landing to main (Phase 6).
+The implementation agent does NOT commit. The verification agent runs the full
+test suite and commits if verification passes. This ensures the hook's test
+gate is satisfied. The approval gate is landing to main (Phase 6).
 
 ### Post-execute tracking
 
@@ -692,34 +695,21 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 
 ## Phase 4 — Review
 
-The `requires.verify-changes.sprint` marker was already created at the
-very start of Phase 1 (in the Sprint tracking sentinel & lockdown
-section). The hook is enforcing that this requirement must be fulfilled
-before any cherry-pick can land. You don't need to re-create it here.
+### Pre-verification tracking
 
-### Dispatch protocol
+Before dispatching verification agents, create a delegation requirement
+marker so the hook can enforce that verification actually runs:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
+  "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.sprint"
+```
 
-**Check your tool list.** If `Agent` (or `Task`) is in your tool list,
-you are at top level — dispatch fresh verification subagents per the
-protocol below. The implementation subagents (in their per-issue
-worktrees) and the verification subagent are sibling subagents of you,
-the top-level orchestrator. The verifier has no memory of what the
-implementer did because they're separate contexts.
-
-**If you do NOT have the `Agent` tool**, you are running as a subagent
-yourself (Claude Code subagents have no Agent tool, by Anthropic's
-design at https://code.claude.com/docs/en/sub-agents). Run `/verify-changes
-worktree` inline in your current context, once per worktree. This is
-single-context inline verification — flag in the report whether you
-were fresh relative to the implementer or not. After Change 1's
-chunking is in place, /fix-issues runs as cron-fired top-level turns
-and Phase 4 is at top level, so this fallback is mostly defensive.
-
-After each implementation agent completes, **dispatch a fresh
-verification agent** (or run inline per the dispatch protocol above) to
-run `/verify-changes worktree` in its worktree. Do NOT run verification
-yourself in the same context as the implementation work — you have
-implementer bias.
+After each agent completes, **dispatch a fresh agent** to run `/verify-changes
+worktree` in its worktree. Do NOT run verification yourself — you wrote
+the dispatch prompts, so you have implementer bias. The verification agent
+must be a fresh agent with no memory of the implementation.
 
 This delegates the full review workflow (diff review, test coverage audit,
 test run, manual verification, fix & re-verify cycle) to a separate agent.
@@ -955,6 +945,16 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.land"
 ```
 
+After the sprint completes (whether all issues landed or the sprint ended),
+clean up the pipeline association files:
+
+```bash
+rm -f "$MAIN_ROOT/.zskills-tracked"
+rm -f "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint"
+```
+
+Also remove `.zskills-tracked` from each worktree that was used.
+
 ## Failure Protocol
 
 If **anything goes wrong** during an `auto` or `every` sprint — cherry-pick
@@ -1082,8 +1082,8 @@ ones. The issues stay open for the next sprint.
 
 - **Worktrees only** — all fixes happen in isolated worktrees, never in the
   main working tree.
-- **Agents commit freely in worktrees** — that's the point of isolation.
-  Worktree commits are safe and expected.
+- **The verification agent commits after passing tests** — the implementation
+  agent does not commit. This satisfies the hook's test gate.
 - **Never cherry-pick to main without permission** — unless `auto` flag is set,
   in which case the user has pre-approved autonomous landing.
 - **In `auto` mode, skip conflicting cherry-picks** — abort the conflict,

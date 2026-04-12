@@ -2,6 +2,4 @@
 .claude/skills/social-seo/
 __pycache__/
 .zskills/tracking/
-.claude/scheduled_tasks.lock
-.test-results.txt
-.git-diff-full.txt
+.zskills-tracked

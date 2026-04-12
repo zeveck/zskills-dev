@@ -255,6 +255,40 @@ Repeat the `Phase N` template for each sub-problem. First phase has
 `Dependencies: None`. Dependent phases list their prerequisites and note
 that the sub-plan may auto-refresh to reflect actual implementation.
 
+### Tracking — Standalone Invocation
+
+If this skill was invoked directly (not via `/research-and-go`), create
+tracking requirement files so that pipeline-aware tools can monitor progress.
+This only applies when `/research-and-go` did not already create them.
+
+After writing the meta-plan, check for an existing pipeline sentinel:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+```
+
+If no `$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.*` files exist,
+this is a standalone invocation. Create requirement files for each phase that
+delegates to `/run-plan`:
+
+```bash
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+for i in 1 2 ... N; do
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
+done
+```
+
+Replace `1 2 ... N` with the actual phase indices from the meta-plan (one per
+phase that uses `delegate /run-plan`). These files allow a subsequent
+`/run-plan` invocation (or a monitoring tool) to know how many phases the
+meta-plan expects and track which have been completed.
+
+If `pipeline.research-and-go.*` files exist, `/research-and-go` already created
+the requirement files in its Step 1b — do not create duplicates.
+
+**Note:** The existing 3-layer `/draft-plan` verification (Step 2b) is fully
+preserved. Tracking supplements the verification process; it does not replace it.
+
 ### Finalization
 
 1. Write the meta-plan to the output path.

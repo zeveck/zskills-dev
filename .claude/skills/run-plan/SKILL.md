@@ -245,6 +245,14 @@ Before parsing, check for stale state from a previous failed run:
    If worktrees from a previous run exist (paths containing `plan-`), warn
    the user. Do not remove them — note their presence and continue.
 
+4. **Unconfigured hook placeholders?**
+   ```bash
+   grep -q '{{' .claude/hooks/block-unsafe-project.sh 2>/dev/null
+   ```
+   If found AND test infrastructure exists (`package.json` with a `"test"`
+   script, or `vitest.config.*` / `jest.config.*` exists), **STOP.** Hook
+   placeholders have not been configured — run `/update-zskills` first.
+
 ### Parse plan
 
 1. **Read the plan file** in full. Also read any companion progress document
@@ -298,7 +306,19 @@ Before parsing, check for stale state from a previous failed run:
    "implement translational mechanical domain" without the formulas, state
    equations, and design constraints.
 
-8. **Classify UI impact from the plan text.** Scan the phase description
+8. **Create tracking fulfillment marker.** Determine the tracking ID: use
+   the ID passed by the parent skill if this is a delegated invocation, or
+   derive from the plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
+   `feature-plan`). Then create the fulfillment file in the MAIN repo:
+   ```bash
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   mkdir -p "$MAIN_ROOT/.zskills/tracking"
+   printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
+     "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+     > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
+   ```
+
+9. **Classify UI impact from the plan text.** Scan the phase description
    for UI indicators: mentions of editor, toolbar, canvas, panel, dialog,
    CSS, button, menu, viewport, renderer, dark mode, layout, or any
    reference to UI/editor/styles directories in the project.
@@ -440,7 +460,13 @@ agent hasn't returned after 2 hours, declare it **failed**:
    - One logical unit per commit — clean git history
    - `npm run test:all` before every commit — not just `npm test`
    - Tests alongside implementation, not deferred to later
-   - Agents commit freely in worktrees — that's the point of isolation
+   - The implementation agent does NOT commit. The verification agent runs the full test suite and commits if verification passes. This ensures the hook's test gate is satisfied (the committing agent's transcript contains the test command).
+   - **Before dispatching any worktree agent**, the orchestrator writes the pipeline ID to BOTH the worktree and the main repo root:
+     ```bash
+     printf '%s\n' "run-plan.$TRACKING_ID" > "<worktree-path>/.zskills-tracked"
+     printf '%s\n' "run-plan.$TRACKING_ID" > "$MAIN_ROOT/.zskills-tracked"
+     ```
+     Where `$TRACKING_ID` is the plan slug (e.g., `thermal-domain`). This file associates agents with this pipeline for hook enforcement.
    - **Rebase onto current main before final commit:**
      ```bash
      git fetch origin main && git rebase origin/main
@@ -480,6 +506,32 @@ agent hasn't returned after 2 hours, declare it **failed**:
    implement 7 components. If it says "write tests for free vibration," write
    those exact tests. Do not stop after the easy items and declare the hard
    ones "future work."
+
+### Post-implementation tracking
+
+After the implementation agent finishes (whether worktree or delegate mode),
+create the implementation step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.implement"
+```
+
+### Pre-verification tracking
+
+Before dispatching the verification agent, create a delegation requirement
+marker so the hook can enforce that verification actually runs:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
+  "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
+```
+Pass the tracking ID to the verification agent in the dispatch prompt so it
+can create its own fulfillment marker:
+> Your tracking ID is `$TRACKING_ID`. On entry, create
+> `fulfilled.verify-changes.$TRACKING_ID` in the main repo's
+> `.zskills/tracking/` directory.
 
 ## Phase 3 — Verify (separate agent)
 
@@ -560,6 +612,15 @@ If this phase used delegate execution, verification runs on **main**:
      After the fix agent finishes, re-verify (max 2 rounds). If still
      failing after 2 fix+verify cycles, **STOP** — needs human judgment.
      Invoke the Failure Protocol.
+
+### Post-verification tracking
+
+After verification passes, create the verification step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.verify"
+```
 
 ## Phase 4 — Update Progress Tracking
 
@@ -662,6 +723,15 @@ of all plan reports:
 - **Avoid literal `[ ]` in description text** — the viewer renders it as
   a phantom checkbox. Describe instead: "bracket pair" or use backtick
   escaping.
+
+### Post-report tracking
+
+After writing the report and regenerating the index, create the report step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.report"
+```
 
 ## Phase 5b — Plan Completion
 
@@ -902,6 +972,43 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
       ```
       If removal fails for any reason, leave the worktree — it has
       `.landed` and `/briefing worktrees` will classify it as safe.
+
+### Post-landing tracking
+
+After successful landing (cherry-pick + tests pass), create the land step
+marker and update the fulfillment file:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.land"
+
+printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: complete\ndate: %s\n' \
+  "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
+```
+
+Remove the `.zskills-tracked` files to avoid associating future sessions with a dead pipeline:
+```bash
+rm -f "<worktree-path>/.zskills-tracked"
+rm -f "$MAIN_ROOT/.zskills-tracked"
+```
+
+In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
+ignores these — they are informational only):
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
+```
+After the cross-phase verification in `finish` mode completes, aggregate
+with `step.*` markers:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+for stage in implement verify report land; do
+  printf 'phases: all\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+    > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.$stage"
+done
+```
 
 ## Failure Protocol
 

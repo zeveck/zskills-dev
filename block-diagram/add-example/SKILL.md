@@ -34,6 +34,13 @@ printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
 Where `$NAME` is derived from the block type(s) or model name (e.g.,
 `Gain`, `math-batch`).
 
+Before dispatching any agent to a worktree, write the pipeline ID:
+
+```bash
+printf '%s\n' "add-example.${NAME}" > "<worktree-path>/.zskills-tracked"
+printf '%s\n' "add-example.${NAME}" > "$MAIN_ROOT/.zskills-tracked"
+```
+
 ## Before You Start
 
 ```bash
@@ -265,15 +272,7 @@ printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds
 
 ### 5a. Dispatch verification agent
 
-**Check your tool list.** If `Agent` (or `Task`) is in your tool list, you
-are at top level — dispatch a fresh subagent for verification. If not, you
-are running as a subagent yourself (Claude Code subagents have no Agent
-tool, by Anthropic's design at https://code.claude.com/docs/en/sub-agents) — run
-the verification checks inline in your current context. You ARE fresh
-relative to the implementer if you were dispatched as a separate subagent
-by a top-level orchestrator.
-
-Verify (whether dispatched or inline):
+Send a verification agent (or do it yourself) to check:
 - JSON validity of the model file (parse it with `JSON.parse`)
 - Every param name in the model file matches the `key` in the block registry
 - All port references (srcPort, dstPort) are correct indices

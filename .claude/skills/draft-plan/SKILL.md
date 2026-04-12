@@ -68,6 +68,22 @@ This handles the common case of modernizing old-format plans:
 
 ## Phase 1 — Research (parallel agents)
 
+### Tracking fulfillment
+
+Determine the tracking ID: use the ID passed by the parent skill if this
+is a delegated invocation, or derive from the output file slug if standalone
+(e.g., `plans/FEATURE_PLAN.md` → `feature-plan`). Create the fulfillment
+file in the MAIN repo:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+mkdir -p "$MAIN_ROOT/.zskills/tracking"
+printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: started\ndate: %s\n' \
+  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.draft-plan.$TRACKING_ID"
+```
+
+### Research agents
+
 Dispatch multiple Explore agents in parallel to investigate the problem space.
 Each agent gets the full description and a specific research focus:
 
@@ -145,6 +161,16 @@ over from here.
 
 If the user says no (e.g., "just plan the first part"), narrow the scope
 per their feedback and proceed to Phase 2 with the focused scope.
+
+### Post-research tracking
+
+After consolidating research into the summary file, create the research
+step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.research"
+```
 
 **Present the research summary to the user.** If running interactively
 (user invoked `/draft-plan` directly), wait for input:
@@ -306,6 +332,16 @@ generic concerns. "Phase 3 might be complex" is useless. "Phase 3 says
 matrix factorization approach, or convergence criteria — the agent will have
 to guess all three" is actionable.
 
+### Post-review tracking
+
+After both reviewer and devil's advocate agents return their findings,
+create the review step marker:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.review"
+```
+
 ## Phase 4 — Refine
 
 A single agent receives:
@@ -377,6 +413,20 @@ After each round of review + refinement:
    >
    > Execute with: `/run-plan plans/THERMAL_PLAN.md`
    > Or with scheduling: `/run-plan plans/THERMAL_PLAN.md auto every 4h now`
+
+### Post-finalize tracking
+
+After writing the plan file and updating the index, create the finalize
+step marker and update the fulfillment file to complete:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/step.draft-plan.$TRACKING_ID.finalize"
+
+printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: complete\ndate: %s\n' \
+  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/fulfilled.draft-plan.$TRACKING_ID"
+```
 
 ## Key Rules
 

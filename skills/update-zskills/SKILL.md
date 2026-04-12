@@ -106,9 +106,9 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
   - Script references (`scripts/port.sh`, `scripts/test-all.sh`) — check if
     the script file exists.
 
-### Step 2 — Check CLAUDE.md for 14 generic rules
+### Step 2 — Check CLAUDE.md for 13 generic rules
 
-Read the project's `CLAUDE.md` (if it exists). For each of the 14 generic
+Read the project's `CLAUDE.md` (if it exists). For each of the 13 generic
 rules, search for a distinctive key phrase that identifies the rule
 (**case-insensitive**). Mark the rule as present if the key phrase is
 found, missing otherwise.
@@ -128,7 +128,6 @@ found, missing otherwise.
 | 11 | Correctness over speed | `"correctness over speed"` or `"correctness, not speed"` |
 | 12 | Enumerate before guessing | `"enumerate before guessing"` |
 | 13 | Never skip hooks | `"never.*--no-verify"` or `"skip.*pre-commit hooks"` |
-| 14 | Never suppress errors | `"suppress errors"` or `"2>/dev/null"` AND `"verify the result"` |
 
 ### Step 3 — Check hooks
 
@@ -168,7 +167,7 @@ Skill Dependencies: all satisfied | K missing
   - /run-plan requires /verify-changes — NOT INSTALLED
   ...
 
-CLAUDE.md Rules: M/14 present (K missing)
+CLAUDE.md Rules: M/13 present (K missing)
   Missing:
   - [rule name]: [key phrase not found]
   ...

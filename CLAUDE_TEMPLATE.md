@@ -44,14 +44,6 @@ command that ran them.
 inspect failures. Never pipe through `| tail`, `| head`, `| grep` -- it
 loses output and forces re-runs.
 
-**Never suppress errors on operations you need to verify.** Do not use
-`2>/dev/null` on commands whose success matters (git worktree remove,
-git cherry-pick, rm, mv, cp of important files). Do not use `; echo "done"`
-after fallible commands -- use `&& echo "done"` so failure is visible.
-After any operation that changes system state (removes a worktree, deletes
-files, lands commits), **verify the result** -- check that the directory is
-gone, the file is deleted, the commit is on the branch.
-
 **Pre-existing test failures.** If a test fails in code you didn't touch,
 verify with `git log` that the test/source predates your changes. You may
 file a GitHub issue with the error output and mark the test `it.skip('name
@@ -138,4 +130,4 @@ skip this step and guess instead of looking.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.zskills/tracking/` exists. Skills create tracking files during pipeline execution; hooks check them before allowing commits. See the tracking enforcement section in `block-unsafe-project.sh` for details. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.

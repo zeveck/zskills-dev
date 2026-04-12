@@ -222,24 +222,6 @@ comprehension rather than rigid parsing.
 
 Before parsing, check for stale state from a previous failed run:
 
-0. **Idempotent re-entry check (chunked finish auto only).** If running
-   with `finish auto`, this turn may have been triggered by a cron from
-   a previous turn. Read the plan tracker BEFORE doing anything else and
-   determine the next-target phase:
-   - If the next-target phase is already marked Done, the plan is
-     complete. Output "Plan complete (already)" and exit cleanly. No
-     more work to do, no more crons to schedule.
-   - If the next-target phase is already marked In Progress, another
-     agent (or a duplicate cron fire) is already working on it. Exit
-     cleanly with "Phase X already in progress, deferring." Do NOT
-     compete or duplicate work.
-   - Otherwise, proceed with the rest of the preflight and process the
-     next phase normally.
-
-   This idempotent check makes stale crons harmless. A cron that fires
-   after the user has manually advanced past its target phase simply
-   exits.
-
 1. **In-progress git operation?**
    ```bash
    ls .git/CHERRY_PICK_HEAD .git/MERGE_HEAD .git/REBASE_HEAD 2>/dev/null
@@ -324,25 +306,16 @@ Before parsing, check for stale state from a previous failed run:
    "implement translational mechanical domain" without the formulas, state
    equations, and design constraints.
 
-8. **Create tracking fulfillment marker AND lock down verification
-   requirement.** Determine the tracking ID: use the ID passed by the
-   parent skill if this is a delegated invocation, or derive from the
-   plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
-   `feature-plan`). Then create the fulfillment file AND the verification
-   requirement in the MAIN repo. **The verification requirement must be
-   created at entry (here), NOT at Phase 3** — if the agent skips Phase 3
-   entirely, the requirement file must already exist so the hook blocks
-   any landing until verification is fulfilled.
+8. **Create tracking fulfillment marker.** Determine the tracking ID: use
+   the ID passed by the parent skill if this is a delegated invocation, or
+   derive from the plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
+   `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
    mkdir -p "$MAIN_ROOT/.zskills/tracking"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
      "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
-   # Lock down verification requirement IMMEDIATELY (was Phase 3, now entry)
-   printf 'skill: verify-changes\nparent: run-plan\nid: %s\ncreatedAt: %s\n' \
-     "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description
@@ -399,31 +372,8 @@ Check the phase text for an execution mode directive:
   runs a skill (e.g., `/add-block`, `/run-plan`) that manages its own
   isolation. The orchestrating agent runs on **main**, not in a worktree.
   See "Delegate mode" below.
-- **`### Execution: main`** — main mode. The implementation agent runs
-  directly on main (no `isolation: "worktree"`). Commits go to main
-  immediately. Phase 6 (landing) is skipped because work is already on
-  main. Use when the plan or user specifies "work directly on main" or
-  "no worktrees" — common for single-user projects, prototyping, or
-  when worktree isolation adds complexity without benefit. The plan's
-  Design & Constraints section or the user's goal description should
-  indicate when this mode is appropriate.
 - **`### Execution: worktree`** or **no directive** — default worktree mode.
   See "Worktree mode" below.
-
-### Main mode
-
-The implementation agent runs directly on main. No worktree, no
-cherry-pick.
-
-1. **Dispatch agent on main** (no `isolation: "worktree"`). Give the agent
-   the verbatim phase text and instruction to commit directly to main.
-2. After implementation, proceed to Phase 3 (verify) as normal. The
-   verification agent checks the commits on main directly.
-3. **Phase 6 (landing) is a no-op** — work is already on main. Skip
-   cherry-picking. Still write the report (Phase 5) and update the
-   tracker (Phase 4).
-4. The chunked transition (Phase 5c) still applies — schedule cron for
-   the next phase and exit.
 
 ### Delegate mode
 
@@ -510,7 +460,13 @@ agent hasn't returned after 2 hours, declare it **failed**:
    - One logical unit per commit — clean git history
    - `npm run test:all` before every commit — not just `npm test`
    - Tests alongside implementation, not deferred to later
-   - Agents commit freely in worktrees — that's the point of isolation
+   - The implementation agent does NOT commit. The verification agent runs the full test suite and commits if verification passes. This ensures the hook's test gate is satisfied (the committing agent's transcript contains the test command).
+   - **Before dispatching any worktree agent**, the orchestrator writes the pipeline ID to BOTH the worktree and the main repo root:
+     ```bash
+     printf '%s\n' "run-plan.$TRACKING_ID" > "<worktree-path>/.zskills-tracked"
+     printf '%s\n' "run-plan.$TRACKING_ID" > "$MAIN_ROOT/.zskills-tracked"
+     ```
+     Where `$TRACKING_ID` is the plan slug (e.g., `thermal-domain`). This file associates agents with this pipeline for hook enforcement.
    - **Rebase onto current main before final commit:**
      ```bash
      git fetch origin main && git rebase origin/main
@@ -561,16 +517,18 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Isecon
   > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.implement"
 ```
 
-### Pre-verification (requirement already created at entry)
+### Pre-verification tracking
 
-The `requires.verify-changes.$TRACKING_ID` marker was already created in
-Phase 1 step 8 (Create tracking fulfillment marker AND lock down
-verification requirement). The hook is enforcing that this requirement
-must be fulfilled before any landing. You don't need to re-create it
-here.
-
-Pass the tracking ID to the verification agent in the dispatch prompt so
-it can create its own fulfillment marker:
+Before dispatching the verification agent, create a delegation requirement
+marker so the hook can enforce that verification actually runs:
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
+  "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
+```
+Pass the tracking ID to the verification agent in the dispatch prompt so it
+can create its own fulfillment marker:
 > Your tracking ID is `$TRACKING_ID`. On entry, create
 > `fulfilled.verify-changes.$TRACKING_ID` in the main repo's
 > `.zskills/tracking/` directory.
@@ -580,23 +538,6 @@ it can create its own fulfillment marker:
 Critical: the verification agent is NOT the implementing agent. Fresh eyes
 catch implementer blindspots — deferred hard parts, missing tests, stubs,
 shortcuts.
-
-### Dispatch protocol
-
-**Check your tool list.** If `Agent` (or `Task`) is in your tool list,
-you are at top level — dispatch a fresh verification subagent per the
-protocol below. The implementation subagent (in its worktree) and the
-verification subagent are sibling subagents of you, the top-level
-orchestrator. The verifier has independent context from the implementer.
-
-**If you do NOT have the `Agent` tool**, you are running as a subagent
-yourself (Claude Code subagents have no Agent tool, by Anthropic's
-design at https://code.claude.com/docs/en/sub-agents). Run `/verify-changes
-worktree` inline in your current context — the verifier subagent (you)
-is fresh relative to the implementer subagent that ran in a separate
-context. After Change 1's chunking is in place, /run-plan runs as
-cron-fired top-level turns and Phase 3 is at top level, so this fallback
-is mostly defensive.
 
 **Agent timeout: 45 minutes.** Verification should take 15-30 minutes —
 reading diffs, running tests, checking acceptance criteria. If a verification
@@ -755,25 +696,15 @@ of all plan reports:
 ### User Sign-off
 {Only if UI files changed. Omit entirely for non-UI phases.}
 
-**Dev server URL:** `http://localhost:PORT/` — The agent MUST start a dev
-server (if one isn't running) and include the URL with the actual port
-number. Use `bash scripts/port.sh` to get the deterministic port for the
-current worktree or main repo. If working in a worktree, the port differs
-from main — include the worktree-specific port. The user needs to be able
-to click this URL and immediately see the running app.
-
 - [ ] **P4b-1** — Variable viewer panel
-  **URL:** http://localhost:30815/
-  1. Open the app at the URL above
-  2. Load a physics module model (e.g., voltage-divider example)
-  3. Run the simulation
-  4. Click the lightning icon in the toolstrip
-  5. Verify the Physical Variables panel opens with columns for V, I, P
-  6. Check that values update after simulation completes
+  1. Open the app, load a physics module model (e.g., voltage-divider example)
+  2. Run the simulation
+  3. Click the lightning icon in the toolstrip
+  4. Verify the Physical Variables panel opens with columns for V, I, P
+  5. Check that values update after simulation completes
   ![viewer panel](.playwright/output/phase4b-variable-viewer.png)
 
 - [ ] **P4b-2** — Toolstrip button
-  **URL:** http://localhost:30815/
   1. Verify the lightning icon appears in the toolstrip
   2. Click it — panel should toggle open/closed
 ```
@@ -878,130 +809,6 @@ Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
 3. If `SPRINT_REPORT.md` does not exist, or the issue/plan is not
    mentioned in a skipped section, skip this step.
 
-## Phase 5c — Chunked finish auto transition (CRITICAL for finish auto mode)
-
-**This section applies when running `/run-plan <plan> finish auto`.**
-
-In chunked finish auto mode, each plan phase runs as a separate top-level
-cron-fired turn. The current turn does NOT loop back to process the next
-phase — instead, it lands the current phase, schedules a one-shot cron for
-the next phase (or the next meta-plan phase, or the final cross-branch
-verification, depending on context), and exits cleanly.
-
-### Why chunked execution
-
-The original failure mode was: a single long-running session built up
-late-phase fatigue and rationalized skipping verification on the last few
-phases. Chunked execution breaks the run into a sequence of fresh
-top-level turns, each handling exactly one plan phase. Each fresh turn
-re-reads the plan, the tracking state, and its own instructions. There
-is no momentum to skip steps because each turn starts clean.
-
-A secondary benefit: cron-fired turns run at top level (in the user's
-main session, with full `Agent`/`Task` tool access). This means
-implementation, verification, and reporting subagent dispatches all work
-correctly. Sub-sub-agent dispatch is not needed because there is no
-nesting — every cron fire is a fresh top-level turn.
-
-### Idempotent re-entry (every cron-fired turn does this first)
-
-At the very start of every `/run-plan` invocation in `finish auto` mode,
-read the plan tracker and check the next-target phase. If it's already
-marked Done OR In Progress, **exit cleanly** with a "no work to do"
-message. This handles two cases:
-
-1. A stale cron from a previous run fires after the user manually
-   re-invoked the next phase. The cron sees the work is already done
-   and exits without duplication.
-2. A previous turn already started this phase (e.g., is mid-cherry-pick).
-   The new turn defers and exits.
-
-Output for the no-work-to-do case:
-> /run-plan plans/X.md: phase N is already Done/In Progress. Skipping
-> this cron fire (likely a stale cron). The pipeline is still proceeding
-> via its actual current phase.
-
-### When this turn schedules the next cron
-
-After Phase 6 (land) succeeds for the current phase:
-
-1. Check if there is a NEXT incomplete phase in this plan:
-   - If YES: schedule a cron to fire `/run-plan <plan-file> finish auto`
-     ~1 minute from now. The next cron-fired turn will pick up the next
-     phase. Then exit this turn.
-   - If NO (this was the last phase): check if this plan is part of a
-     larger meta-plan or research-and-go pipeline (see below).
-
-2. **If this plan is being executed as a delegate phase of a meta-plan**
-   (you can detect this by the existence of a parent meta-plan that
-   references this sub-plan): after the last phase of this sub-plan
-   lands, schedule a cron to fire `/run-plan <META_PLAN_PATH> finish auto`
-   ~1 minute from now. The next cron-fired turn will resume the meta-plan
-   from its next incomplete delegate phase. Then exit.
-
-3. **If this is the meta-plan itself** and all sub-plans are done:
-   check for the existence of `requires.verify-changes.final` in the
-   tracking dir (this marker is created by `/research-and-go` Step 0).
-   - If it exists: this is part of a `/research-and-go` pipeline. Schedule
-     a cron to fire `/verify-changes branch` ~1 minute from now. The
-     final cross-branch verification will run at top level (full Agent
-     tool) and create `fulfilled.verify-changes.final`. Then exit.
-   - If it does not exist: this is a standalone meta-plan run. The
-     pipeline is complete. Update plan frontmatter `status: complete`,
-     report success, exit. No more crons.
-
-4. **If this is a standalone leaf plan** (not part of a meta-plan, not
-   part of research-and-go) and the last phase landed: update plan
-   frontmatter `status: complete`, report success, exit. No more crons.
-
-### How to schedule the next cron
-
-```bash
-# Compute target minute that's NOT :00 or :30 (to avoid scheduler jitter)
-NOW_MIN=$(date +%M)
-NOW_HOUR=$(date +%H)
-NOW_DAY=$(date +%d)
-NOW_MONTH=$(date +%m)
-TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
-if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
-  TARGET_MIN=$(( TARGET_MIN + 1 ))
-fi
-TARGET_HOUR=$NOW_HOUR
-if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
-  TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
-fi
-```
-
-Then call `CronCreate`:
-- `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
-- `recurring`: false
-- `prompt`: the next-step prompt — typically `"Run /run-plan <plan-file> finish auto"`, or `"Run /run-plan <meta-plan-path> finish auto"`, or `"Run /verify-changes branch"`
-
-After scheduling, output the chunking message:
-> Phase <N> of `<plan>` complete (commit `<hash>`).
-> Phase <N+1> will fire automatically in ~1-2 minutes (cron `<job-id>`).
-> To stop the pipeline: `/run-plan stop`
-> To check status: `/run-plan <plan> status`
-
-Then **exit this turn**. Do NOT do any other work. Do NOT loop back to
-process the next phase inline. The cron handles it.
-
-### Cron-scheduling rule (avoid confusion)
-
-**Only top-level orchestrators (this `/run-plan` running as a cron-fired
-top-level turn) call `CronCreate`.** Sub-agents (the implementer in the
-worktree, the verifier subagent dispatched by Phase 3) do NOT schedule
-crons. They do their work synchronously and return control to this top-
-level orchestrator. This ensures at most one pending chunking cron per
-pipeline at any time.
-
-### Single-phase mode (no chunking)
-
-When invoked WITHOUT `finish auto` (e.g., `/run-plan plans/X.md` or
-`/run-plan plans/X.md 4b`), do NOT chunk. Run the single specified phase
-to completion in this turn, then exit normally. Chunking is exclusively
-for `finish auto` mode.
-
 ## Phase 6 — Land
 
 ### Delegate mode landing
@@ -1050,21 +857,21 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
   when satisfied. This is the landing gate for UI changes — `auto`
   automates everything EXCEPT human judgment.
 
-  **In `finish auto` mode (chunked):** each phase runs as a separate
-  cron-fired turn (see Phase 5c). When a phase has User Verify items,
-  schedule the next-phase cron BUT also output the User Verify items in
-  the report. The user reviews them between cron fires and runs
-  `/run-plan stop` if they want to halt. Landing happens per-phase as
-  each phase's cron-fired turn completes — the worktree accumulates
-  changes only within a single phase, not across phases.
+  **In `finish` mode:** all phases share one worktree. Do NOT land
+  individual phases as they complete — wait until ALL phases are done,
+  then land everything together. Even non-UI phases should wait, because
+  if a later phase has UI that the user rejects, the earlier phases may
+  need to be revised too. The worktree accumulates all commits; landing
+  is one atomic cherry-pick sequence at the end after all sign-offs.
 
 - **With `auto` and NO User Verify items:** Auto-land verified phase
-  commits to main. **In chunked finish auto mode**, this is per-phase
-  landing — each cron-fired turn lands its own phase before scheduling
-  the next chunking cron. There is no "wait until all phases done" gate
-  in chunked mode; per-phase landing IS the new model.
+  commits to main. **Exception for `finish` mode:** do NOT auto-land
+  per-phase — a later phase may have UI that needs sign-off. In finish
+  mode, wait until all phases complete, then land everything together
+  (same as the User Verify gate above). Only auto-land per-phase when
+  running a single phase (no `finish` flag).
 
-  Auto-land steps:
+  Auto-land steps (single phase, or after all finish-mode phases complete):
   1. **Try cherry-picking WITHOUT stashing first.** Git allows cherry-picks
      on a dirty working tree as long as the cherry-picked files don't
      overlap with uncommitted changes. Other sessions may have uncommitted
@@ -1178,6 +985,12 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Isecon
 printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
+```
+
+Remove the `.zskills-tracked` files to avoid associating future sessions with a dead pipeline:
+```bash
+rm -f "<worktree-path>/.zskills-tracked"
+rm -f "$MAIN_ROOT/.zskills-tracked"
 ```
 
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
