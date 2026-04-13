@@ -19,9 +19,12 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 1 -- Config File + /update-zskills | ✅ Done | `2bbe180` | Config, schema, /update-zskills Step 0.5, 6 tests |
 | 2 -- main_protected Hook Enforcement | ✅ Done | `a874492` | Runtime config read, 8 tests, push fallback |
 | 3a -- Argument Detection + Config Reading + Direct Mode | ✅ Done | `a8dfe49` | 11 tests, pr/direct detection, config default |
-| 3b -- PR Mode Implementation | ⬜ | | Large: persistent worktree, push+PR, CI, auto-merge |
+| 3b-i -- Worktree Unification + Landing Script | ✅ Done | `9cc1dc2` | Manual worktrees, land-phase.sh, preflight, 7 tests |
+| 3b-ii -- PR Mode Happy Path | ⬜ | | Named branches, rebase, push+PR, .landed, mixed mode ban |
+| 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ⬜ | | CI polling, fix agents, auto-merge, PR comments |
 | 4 -- /fix-issues PR Landing | ⬜ | | Per-issue branches, PR creation |
-| 5 -- Pipeline Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan, do, commit, CLAUDE_TEMPLATE |
+| 5a -- Skill Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan |
+| 5b -- Execution Skills + Documentation + New Features | ⬜ | | do, commit, CLAUDE_TEMPLATE, update-zskills, cleanup, agents.min_model, baseline snapshot |
 
 ---
 
@@ -841,15 +844,13 @@ Phase 2 (main_protected check for `direct` + `main_protected` validation).
 
 ---
 
-## Phase 3b -- PR Mode Implementation
+## Phase 3b-i -- Worktree Unification + Landing Script
 
 ### Goal
 
-Implement PR mode for `/run-plan`: persistent worktree with named feature branch, all phases accumulating on the same branch, rebase at clean points, Phase 6 landing via push + `gh pr create`, CI check and fix cycle, auto-merge, and `.landed` marker writing. Mixed mode ban enforcement.
+Unify ALL worktree creation to use manual `git worktree add` at `/tmp/` paths, replacing Claude Code's `isolation: "worktree"` parameter. This affects cherry-pick mode (existing behavior change) and establishes the pattern for PR mode. Also create `scripts/land-phase.sh` for atomic post-landing cleanup and add a preflight safety net for landed worktrees.
 
-Also: unify ALL worktree creation to use manual `git worktree add` at `/tmp/` paths, replacing Claude Code's `isolation: "worktree"` parameter. This affects cherry-pick mode (existing behavior change) and establishes the pattern for PR mode.
-
-This is the largest and most complex phase. All code examples here are **canonical** -- Phase 4 and Phase 5 reference this phase rather than duplicating the patterns.
+**Why this is split from PR mode:** The worktree unification is foundational — it changes existing cherry-pick behavior. PR mode (Phase 3b-ii) builds on top of it. Splitting ensures the foundation is solid before adding PR complexity.
 
 ### Work Items
 
@@ -1004,6 +1005,41 @@ This catches stragglers from crashed agents, container restarts, or any remainin
 - [ ] Update /run-plan Phase 6 to call `scripts/land-phase.sh` after cherry-pick + tests + `.landed` marker
 - [ ] Add preflight check #5: scan and clean up worktrees with `status: landed` markers
 - [ ] Test: create a mock worktree with `.landed` marker, verify preflight removes it
+- [ ] Tests for land-phase.sh: no marker rejection, wrong status rejection, idempotent on missing dir
+- [ ] Sync installed copy of /run-plan SKILL.md
+
+### Design & Constraints (3b-i)
+
+- **Manual worktrees, NOT `isolation: "worktree"`.** Claude Code's `isolation: "worktree"` branches from `origin/HEAD` (not local main), causing stale base issues when local main is ahead of the remote. Manual `git worktree add ... main` uses local main.
+- **Absolute paths in agent prompts.** Read/Edit/Write/Grep tools require absolute paths. Bash `cd` persists between calls but non-Bash tools don't use cwd. Agent prompts must specify `WORKTREE_PATH` and instruct agents to use absolute paths for all file operations.
+- **`scripts/land-phase.sh` is the structural fix for forgotten cleanup.** Landing is an 11-step sequence where the orchestrator consistently drops tail steps after conflict resolution. The script reduces this to one call. Log extraction MUST succeed before removal (exit 1, not || true). Worktree removal gates the progress tracker update to Done.
+- **Preflight is defense in depth.** The script is the primary fix; the preflight catches stragglers from crashes or container restarts.
+
+### Acceptance Criteria (3b-i)
+
+- [ ] Cherry-pick mode uses manual worktree at `/tmp/<project>-cp-<slug>-phase-<N>` (no `isolation: "worktree"`)
+- [ ] ALL agents dispatched WITHOUT `isolation: "worktree"` (prompt-based absolute paths)
+- [ ] `scripts/land-phase.sh` exists: idempotent, .landed verification, logs MUST succeed, worktree removal
+- [ ] Preflight check #5: auto-remove worktrees with `status: landed` markers
+- [ ] All existing tests still pass (no regressions)
+- [ ] 4+ new tests for worktree unification and land-phase.sh
+- [ ] Installed skill copy synced
+
+### Dependencies (3b-i)
+
+Phase 3a (argument detection, config reading).
+
+---
+
+## Phase 3b-ii -- PR Mode Happy Path
+
+### Goal
+
+Implement PR mode for `/run-plan`: persistent worktree with named feature branch, all phases accumulating on the same branch, rebase at clean points, Phase 6 landing via push + `gh pr create`, `.landed` marker writing, and mixed mode ban enforcement. CI integration (polling, fix cycle, auto-merge) is deferred to Phase 3b-iii.
+
+All code examples here are **canonical** -- Phase 4 and Phase 5 reference this phase rather than duplicating the patterns.
+
+### Work Items
 
 #### 3b.2 -- PR mode: persistent worktree with named branch
 
@@ -1088,7 +1124,7 @@ echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
 - [ ] Worktree reuse: check if exists before creating (resume support)
 - [ ] Pipeline association via `.zskills-tracked`
 
-#### 3b.2 -- Rebase strategy
+#### 3b.3 -- Rebase strategy
 
 Rebase onto latest main **only when the tree is clean**. NEVER stash + rebase (stash pop frequently conflicts). NEVER `git merge origin/main` (creates merge commits on phase 2+).
 
@@ -1197,7 +1233,7 @@ fi
 - [ ] If rebase conflicts -> STOP, report to user
 - [ ] If rebase moves HEAD -> dispatch full `/verify-changes` re-verification
 
-#### 3b.3 -- Phase 6: push + PR creation
+#### 3b.4 -- Phase 6: push + PR creation
 
 Replace the cherry-pick landing logic in Phase 6 with push + PR creation when `LANDING_MODE` is `pr`:
 
@@ -1281,9 +1317,198 @@ fi
 - [ ] PR creation failure -> `.landed` with `status: pr-failed`
 - [ ] Error handling: `gh auth` failure -> report branch name and manual instructions
 
-#### 3b.4 -- CI integration
+#### 3b.5 -- .landed marker for PR mode
 
-After PR is created, poll CI checks and optionally fix failures. All CI behavior is controlled by config values re-read at point of use.
+After push + PR creation, write the `.landed` marker. In Phase 3b-ii (before CI integration exists), the status is always `pr-ready` -- the PR is created and awaiting CI/review. Phase 3b-iii adds CI polling and upgrades the status to `landed` when auto-merge succeeds.
+
+```bash
+# --- Write .landed marker ---
+# Without CI integration (Phase 3b-iii), we write pr-ready.
+# Phase 3b-iii will insert CI polling + auto-merge between PR creation
+# and this marker write, and will set LANDED_STATUS based on CI results.
+LANDED_STATUS="pr-ready"
+
+cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: $LANDED_STATUS
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+pr: $PR_URL
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+```
+
+**`land-phase.sh` acceptance for PR worktrees:** `scripts/land-phase.sh` currently only accepts `status: landed` as safe-to-remove. For PR mode, `status: pr-ready` is also safe because the work is preserved in the remote PR -- the local worktree is a convenience copy. After PR auto-merge succeeds (in Phase 3b-iii, `status: landed`), the orchestrator explicitly calls `land-phase.sh` for cleanup.
+
+**`.landed` status values for PR mode:**
+
+| Scenario | status | method | ci | pr_state |
+|----------|--------|--------|----|----------|
+| PR merged (auto-merge) | `landed` | `pr` | `pass`/`none`/`skipped` | `MERGED` |
+| PR open, CI passed, awaiting review | `pr-ready` | `pr` | `pass`/`none`/`skipped` | `OPEN` |
+| PR open, CI timed out (still running) | `pr-ready` | `pr` | `pending` | `OPEN` |
+| PR open, CI failing after max attempts | `pr-ci-failing` | `pr` | `fail` | `OPEN` |
+| Branch pushed, PR creation failed | `pr-failed` | `pr` | _(not set)_ | _(not set)_ |
+| Rebase conflict | `conflict` | `pr` | _(not set)_ | _(not set)_ |
+
+**Other landing modes (for reference):**
+
+| Scenario | status | method |
+|----------|--------|--------|
+| Cherry-pick landed | `landed` | `cherry-pick` |
+| Direct committed | `landed` | `direct` |
+| Cherry-pick conflicts | `conflict` | `cherry-pick` |
+| Agent done, didn't land | `not-landed` | -- |
+
+- [ ] Write `.landed` with `status: pr-ready` after successful push + PR creation
+- [ ] `.landed` marker includes: `status`, `date`, `source`, `method`, `branch`, `pr`, `commits`
+- [ ] Write marker atomically (tmp + mv)
+- [ ] Update `scripts/land-phase.sh` to accept `status: pr-ready` as safe-to-remove (work preserved in PR)
+- [ ] After PR auto-merge succeeds (`status: landed`, added in 3b-iii), explicitly call `land-phase.sh`
+
+#### 3b.6 -- Mixed mode ban in PR plans
+
+When the plan-level landing mode is `pr`, individual phases cannot use `### Execution: direct`. Delegate is always OK.
+
+```markdown
+**Mixed mode validation (Phase 2):**
+When `LANDING_MODE` is `pr`, scan the current phase text:
+- `### Execution: direct` -> ERROR: "Mixed execution modes not allowed in PR
+  plans. All phases must use worktree or delegate mode."
+- `### Execution: delegate ...` -> OK (delegate manages its own isolation)
+- `### Execution: worktree` or no directive -> OK (default)
+```
+
+- [ ] Add mixed mode validation in Phase 2 dispatch
+- [ ] `### Execution: direct` in a PR plan -> error
+- [ ] `### Execution: delegate` in a PR plan -> allowed
+
+#### 3b.7 -- Tests for PR mode
+
+Add tests to `tests/test-hooks.sh` for PR mode mechanics. These test the
+hook enforcement and marker writing — not the full PR flow (which requires
+a real GitHub repo).
+
+```bash
+# Test: .landed marker with status: landed
+test_landed_marker_landed() {
+  MARKER=$(cat <<LANDED
+status: landed
+date: 2026-04-13T12:00:00-04:00
+source: run-plan
+method: pr
+branch: feat/test
+pr: https://github.com/owner/repo/pull/42
+ci: pass
+pr_state: MERGED
+LANDED
+)
+  [[ "$MARKER" == *"status: landed"* ]] || fail "Expected status: landed"
+  [[ "$MARKER" == *"pr_state: MERGED"* ]] || fail "Expected pr_state: MERGED"
+}
+
+# Test: .landed marker with status: pr-ready
+test_landed_marker_pr_ready() {
+  MARKER="status: pr-ready"
+  [[ "$MARKER" == *"pr-ready"* ]] || fail "Expected pr-ready"
+}
+
+# Test: .landed marker with status: pr-ci-failing
+test_landed_marker_ci_failing() {
+  MARKER="status: pr-ci-failing"
+  [[ "$MARKER" == *"pr-ci-failing"* ]] || fail "Expected pr-ci-failing"
+}
+
+# Test: .landed marker with status: conflict (rebase failure)
+test_landed_marker_conflict() {
+  MARKER="status: conflict"
+  [[ "$MARKER" == *"conflict"* ]] || fail "Expected conflict"
+}
+
+# Test: PR mode branch naming
+test_pr_branch_naming() {
+  BRANCH_PREFIX="feat/"
+  PLAN_SLUG=$(basename "plans/THERMAL_DOMAIN.md" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+  BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
+  [[ "$BRANCH_NAME" == "feat/thermal-domain" ]] || fail "Expected feat/thermal-domain, got $BRANCH_NAME"
+}
+
+# Test: PR mode worktree path
+test_pr_worktree_path() {
+  PROJECT_NAME="my-app"
+  PLAN_SLUG="thermal-domain"
+  WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+  [[ "$WORKTREE_PATH" == "/tmp/my-app-pr-thermal-domain" ]] || fail "Wrong path: $WORKTREE_PATH"
+}
+
+# Test: main_protected blocks commit on main but not feature branch
+test_main_protected_feature_branch_allowed() {
+  setup_project_test
+  echo '{"execution":{"main_protected":true}}' > "$TEST_TMPDIR/.claude/zskills-config.json"
+  cd "$TEST_TMPDIR" && git init && git checkout -b feat/test
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m test"}}'
+  RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" bash "$HOOK")
+  [[ "$RESULT" != *"main branch is protected"* ]] || fail "Should not block on feature branch"
+}
+```
+
+- [ ] Add 7+ tests covering: .landed marker statuses (4), branch naming, worktree path, main_protected on feature branch
+- [ ] All tests pass alongside pre-existing tests
+
+#### 3b.8 -- Sync installed copies
+
+- [ ] Copy `skills/run-plan/SKILL.md` to `.claude/skills/run-plan/SKILL.md`
+- [ ] Verify installed copy matches source
+
+### Design & Constraints (3b-ii)
+
+- **Phase 3b-ii depends on 3b-i.** The worktree unification and landing script (3b-i) must be in place before PR mode is implemented. PR mode builds on the manual worktree pattern.
+- **Persistent worktree, NOT isolation parameter.** The orchestrator creates the worktree manually with `git worktree add -b`. Do NOT use `isolation: "worktree"` -- it branches from `origin/HEAD` (often stale), not local main. See 3b-i Design & Constraints.
+- **Agents dispatched without isolation.** Use absolute paths in agent prompts. See 3b-i for the dispatch pattern.
+- **Never checkout branches in main directory.** Branch checkout in main causes stash data loss, tracking enforcement deadlock, and progress tracking failure across cron turns. Always use worktrees.
+- **Rebase when the tree is clean, not when dirty.** Rebase onto latest main only at clean points: (1) between phases in `finish` mode (after verify+commit, before next impl dispatch), (2) before push (after last phase's commit). Never stash uncommitted changes to rebase -- `git stash pop` after rebase frequently conflicts. If rebase conflicts: `git rebase --abort` (leave worktree clean), write `.landed` with `status: conflict`, and stop. In cron mode, the `.landed` marker prevents re-attempts until the user resolves manually. If rebase moves HEAD, dispatch full `/verify-changes worktree` re-verification before proceeding -- this re-verification has its own fix cycle (max 2 attempts), independent of the CI fix budget.
+- **Verification agent commits.** Same as cherry-pick mode -- impl agent writes code, verification agent verifies and commits. The tracking system enforces this regardless of landing mode.
+- **One PR per plan.** All phases go into one PR. Agent never waits for merge mid-execution.
+- **Verify before marking pr-ready.** Always check that `PR_URL` is non-empty before writing `status: pr-ready`. If PR creation failed, write `status: pr-failed`.
+- **`land-phase.sh` accepts `pr-ready`.** Update the script's status check to accept both `status: landed` and `status: pr-ready` as safe-to-remove. For PR worktrees, the work is preserved in the remote branch/PR -- the local worktree is disposable.
+
+### Acceptance Criteria (3b-ii)
+
+- [ ] PR mode creates persistent worktree at `/tmp/<project>-pr-<plan-slug>` via manual `git worktree add`
+- [ ] PR mode branch name: `{branch_prefix}{plan-slug}`
+- [ ] PR mode worktree reuse on resume
+- [ ] Rebase at clean points only (between phases + before push)
+- [ ] Rebase conflict -> `git rebase --abort`, write `.landed` with `status: conflict`, STOP
+- [ ] Rebase moved HEAD -> full re-verification (own fix cycle, independent of CI budget)
+- [ ] PR mode Phase 6: push + `gh pr create`
+- [ ] PR number obtained via `gh pr view --json number --jq '.number'`
+- [ ] `.landed` with `status: pr-ready` after successful push + PR creation
+- [ ] `.landed` marker includes `branch`, `pr`, `commits` fields
+- [ ] `scripts/land-phase.sh` accepts `status: pr-ready` as safe-to-remove
+- [ ] Mixed mode ban enforced in PR plans
+- [ ] Tests in `tests/test-hooks.sh` (new file, not test-hooks.sh -- prevents cherry-pick conflicts)
+- [ ] 9+ PR mode tests pass (markers, naming, paths, config)
+- [ ] Installed skill copy synced
+
+### Dependencies (3b-ii)
+
+Phase 3b-i (worktree unification, landing script).
+
+---
+
+## Phase 3b-iii -- CI Integration + Fix Cycle + Auto-Merge
+
+### Goal
+
+Add CI check polling, failure fix cycle, auto-merge, and PR comment tracking to PR mode. This phase extends the PR landing flow from Phase 3b-ii with CI awareness. After PR creation (3b-ii writes `status: pr-ready`), this phase inserts CI polling between PR creation and the final `.landed` marker, upgrading the status based on CI results.
+
+### Work Items
+
+#### 3b-iii.1 -- CI config re-read and skip logic
+
+All CI behavior is controlled by config values re-read at point of use.
 
 **Config re-read (always re-read, never rely on earlier variables):**
 
@@ -1317,6 +1542,11 @@ if [ "$CI_AUTO_FIX" = "false" ]; then
   CI_STATUS="skipped"
 fi
 ```
+
+- [ ] Re-read `ci.auto_fix`, `ci.max_fix_attempts`, and `testing.full_cmd` from config at point of use
+- [ ] Skip CI polling when `ci.auto_fix: false`
+
+#### 3b-iii.2 -- CI pre-check and polling
 
 **CI pre-check (avoid hang on repos with no CI):**
 
@@ -1369,7 +1599,14 @@ Note: `gh pr checks --watch` is used WITHOUT `--fail-fast` (that flag may not ex
 
 **Timeout handling:** If `CI_STATUS` is `"pending"` (timeout exit 124), skip the fix cycle entirely and write `.landed` with `status: pr-ready`. The next cron turn will re-enter Phase 6, see the existing PR, and re-poll CI.
 
-**CI failure fix cycle:**
+- [ ] CI pre-check: retry 3x with 10s delay for GitHub Actions registration delay
+- [ ] No checks after retries -> `CI_STATUS="none"`, skip polling
+- [ ] Poll CI via `timeout 600 gh pr checks "$PR_NUMBER" --watch` (10 min cap; NOT `--fail-fast`)
+- [ ] Timeout (exit 124) -> `CI_STATUS="pending"`, write `pr-ready`, let next cron turn re-check
+- [ ] On failure: read logs via `gh run view "$FAILED_RUN_ID" --log-failed`
+- [ ] CI failure log namespaced: `/tmp/ci-failure-${PR_NUMBER}.txt` (parallel safety)
+
+#### 3b-iii.3 -- CI failure fix cycle
 
 ```bash
 if [ "$CI_STATUS" = "fail" ] && [ "$CI_MAX_ATTEMPTS" -gt 0 ]; then
@@ -1491,14 +1728,6 @@ $(tail -50 "$CI_LOG" 2>/dev/null || echo "No failure log available")
 fi
 ```
 
-- [ ] Re-read `ci.auto_fix`, `ci.max_fix_attempts`, and `testing.full_cmd` from config at point of use
-- [ ] Skip CI polling when `ci.auto_fix: false`
-- [ ] CI pre-check: retry 3x with 10s delay for GitHub Actions registration delay
-- [ ] No checks after retries -> `CI_STATUS="none"`, skip polling
-- [ ] Poll CI via `timeout 600 gh pr checks "$PR_NUMBER" --watch` (10 min cap; NOT `--fail-fast`)
-- [ ] Timeout (exit 124) -> `CI_STATUS="pending"`, write `pr-ready`, let next cron turn re-check
-- [ ] On failure: read logs via `gh run view "$FAILED_RUN_ID" --log-failed`
-- [ ] CI failure log namespaced: `/tmp/ci-failure-${PR_NUMBER}.txt` (parallel safety)
 - [ ] PR comments via `gh api repos/{owner}/{repo}/issues/$PR_NUMBER/comments` (NOT `gh pr comment`)
 - [ ] Edit single comment via `gh api -X PATCH` (not append spam)
 - [ ] Dispatch fix agent via Agent tool (inline prompt, not a skill)
@@ -1508,9 +1737,9 @@ fi
 - [ ] `ci.max_fix_attempts: 0` -> poll + report only, no fix attempts
 - [ ] Final comment: "CI Passed" or "CI Fix Exhausted" with failure log
 
-#### 3b.5 -- Auto-merge and .landed marker
+#### 3b-iii.4 -- Auto-merge and .landed upgrade
 
-After CI resolution, request auto-merge and write the `.landed` marker:
+After CI resolution, request auto-merge and upgrade the `.landed` marker from `pr-ready` (written by 3b-ii) to the final status:
 
 ```bash
 # --- Auto-merge: request merge when CI passes ---
@@ -1544,7 +1773,7 @@ else
   LANDED_STATUS="pr-ready"
 fi
 
-# --- Write .landed marker ---
+# --- Upgrade .landed marker ---
 cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
@@ -1557,127 +1786,32 @@ pr_state: $PR_STATE
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
 mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+# --- Cleanup on merge ---
+# When PR was merged (status: landed), call land-phase.sh to remove the worktree.
+# The work is on main via the merge -- the worktree is no longer needed.
+if [ "$LANDED_STATUS" = "landed" ]; then
+  bash scripts/land-phase.sh "$WORKTREE_PATH"
+fi
 ```
-
-**`.landed` status values for PR mode:**
-
-| Scenario | status | method | ci | pr_state |
-|----------|--------|--------|----|----------|
-| PR merged (auto-merge) | `landed` | `pr` | `pass`/`none`/`skipped` | `MERGED` |
-| PR open, CI passed, awaiting review | `pr-ready` | `pr` | `pass`/`none`/`skipped` | `OPEN` |
-| PR open, CI timed out (still running) | `pr-ready` | `pr` | `pending` | `OPEN` |
-| PR open, CI failing after max attempts | `pr-ci-failing` | `pr` | `fail` | `OPEN` |
-| Branch pushed, PR creation failed | `pr-failed` | `pr` | _(not set)_ | _(not set)_ |
-| Rebase conflict | `conflict` | `pr` | _(not set)_ | _(not set)_ |
-
-**Other landing modes (for reference):**
-
-| Scenario | status | method |
-|----------|--------|--------|
-| Cherry-pick landed | `landed` | `cherry-pick` |
-| Direct committed | `landed` | `direct` |
-| Cherry-pick conflicts | `conflict` | `cherry-pick` |
-| Agent done, didn't land | `not-landed` | -- |
 
 - [ ] Auto-merge via `gh pr merge "$PR_NUMBER" --auto --squash`
 - [ ] Check PR state via `gh pr view --json state --jq '.state'`
 - [ ] MERGED -> `status: landed` | OPEN -> `status: pr-ready`
 - [ ] CI failing -> `status: pr-ci-failing`
-- [ ] `.landed` marker includes: `status`, `date`, `source`, `method`, `branch`, `pr`, `ci`, `pr_state`, `commits`
+- [ ] Upgraded `.landed` marker includes `ci` and `pr_state` fields
 - [ ] Write marker atomically (tmp + mv)
+- [ ] On `status: landed`, call `land-phase.sh` for worktree cleanup
 
-#### 3b.6 -- Mixed mode ban in PR plans
-
-When the plan-level landing mode is `pr`, individual phases cannot use `### Execution: direct`. Delegate is always OK.
-
-```markdown
-**Mixed mode validation (Phase 2):**
-When `LANDING_MODE` is `pr`, scan the current phase text:
-- `### Execution: direct` -> ERROR: "Mixed execution modes not allowed in PR
-  plans. All phases must use worktree or delegate mode."
-- `### Execution: delegate ...` -> OK (delegate manages its own isolation)
-- `### Execution: worktree` or no directive -> OK (default)
-```
-
-- [ ] Add mixed mode validation in Phase 2 dispatch
-- [ ] `### Execution: direct` in a PR plan -> error
-- [ ] `### Execution: delegate` in a PR plan -> allowed
-
-#### 3b.7 -- Tests for PR mode
-
-Add tests to `tests/test-hooks.sh` for PR mode mechanics. These test the
-hook enforcement and marker writing — not the full PR flow (which requires
-a real GitHub repo).
+#### 3b-iii.5 -- Tests for CI integration
 
 ```bash
-# Test: .landed marker with status: landed
-test_landed_marker_landed() {
-  MARKER=$(cat <<LANDED
-status: landed
-date: 2026-04-13T12:00:00-04:00
-source: run-plan
-method: pr
-branch: feat/test
-pr: https://github.com/owner/repo/pull/42
-ci: pass
-pr_state: MERGED
-LANDED
-)
-  [[ "$MARKER" == *"status: landed"* ]] || fail "Expected status: landed"
-  [[ "$MARKER" == *"pr_state: MERGED"* ]] || fail "Expected pr_state: MERGED"
-}
-
-# Test: .landed marker with status: pr-ready
-test_landed_marker_pr_ready() {
-  MARKER="status: pr-ready"
-  [[ "$MARKER" == *"pr-ready"* ]] || fail "Expected pr-ready"
-}
-
-# Test: .landed marker with status: pr-ci-failing
-test_landed_marker_ci_failing() {
-  MARKER="status: pr-ci-failing"
-  [[ "$MARKER" == *"pr-ci-failing"* ]] || fail "Expected pr-ci-failing"
-}
-
-# Test: .landed marker with status: conflict (rebase failure)
-test_landed_marker_conflict() {
-  MARKER="status: conflict"
-  [[ "$MARKER" == *"conflict"* ]] || fail "Expected conflict"
-}
-
-# Test: PR mode branch naming
-test_pr_branch_naming() {
-  BRANCH_PREFIX="feat/"
-  PLAN_SLUG=$(basename "plans/THERMAL_DOMAIN.md" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-  BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
-  [[ "$BRANCH_NAME" == "feat/thermal-domain" ]] || fail "Expected feat/thermal-domain, got $BRANCH_NAME"
-}
-
-# Test: PR mode worktree path
-test_pr_worktree_path() {
-  PROJECT_NAME="my-app"
-  PLAN_SLUG="thermal-domain"
-  WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
-  [[ "$WORKTREE_PATH" == "/tmp/my-app-pr-thermal-domain" ]] || fail "Wrong path: $WORKTREE_PATH"
-}
-
-# Test: main_protected blocks commit on main but not feature branch
-test_main_protected_feature_branch_allowed() {
-  setup_project_test
-  echo '{"execution":{"main_protected":true}}' > "$TEST_TMPDIR/.claude/zskills-config.json"
-  cd "$TEST_TMPDIR" && git init && git checkout -b feat/test
-  INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m test"}}'
-  RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" bash "$HOOK")
-  [[ "$RESULT" != *"main branch is protected"* ]] || fail "Should not block on feature branch"
-}
-
 # Test: CI config defaults (no config = auto_fix true, max 2)
 test_ci_config_defaults() {
   CI_AUTO_FIX=true
   CI_MAX_ATTEMPTS=2
   CONFIG=""  # Empty config
   if [ -n "$CONFIG" ]; then
-    # Would extract, but config is empty
     :
   fi
   [[ "$CI_AUTO_FIX" == "true" ]] || fail "Default auto_fix should be true"
@@ -1693,59 +1827,62 @@ test_ci_config_auto_fix_false() {
   fi
   [[ "$CI_AUTO_FIX" == "false" ]] || fail "Expected auto_fix: false"
 }
+
+# Test: .landed marker with status: pr-ci-failing
+test_landed_marker_ci_failing() {
+  MARKER="status: pr-ci-failing"
+  [[ "$MARKER" == *"pr-ci-failing"* ]] || fail "Expected pr-ci-failing"
+}
+
+# Test: .landed marker upgrade includes ci and pr_state fields
+test_landed_marker_upgraded() {
+  MARKER=$(cat <<LANDED
+status: landed
+date: 2026-04-13T12:00:00-04:00
+source: run-plan
+method: pr
+branch: feat/test
+pr: https://github.com/owner/repo/pull/42
+ci: pass
+pr_state: MERGED
+LANDED
+)
+  [[ "$MARKER" == *"ci: pass"* ]] || fail "Expected ci field"
+  [[ "$MARKER" == *"pr_state: MERGED"* ]] || fail "Expected pr_state field"
+}
 ```
 
-- [ ] Add 9+ tests covering: .landed marker statuses (4), branch naming, worktree path, main_protected on feature branch, CI config defaults, CI config override
-- [ ] All tests pass alongside pre-existing tests
+- [ ] Add 4+ CI integration tests to `tests/test-hooks.sh`
+- [ ] All tests pass alongside pre-existing tests and 3b-ii tests
 
-#### 3b.8 -- Sync installed copies
+#### 3b-iii.6 -- Sync installed copies
 
 - [ ] Copy `skills/run-plan/SKILL.md` to `.claude/skills/run-plan/SKILL.md`
 - [ ] Verify installed copy matches source
 
-### Design & Constraints
+### Design & Constraints (3b-iii)
 
-- **Phase 3b is the largest phase.** It is conceptually one feature (PR mode end-to-end), and splitting it creates artificial phase boundaries and dependency chains. If an implementing agent struggles with the size, sub-work-items (3b.1-3b.7) can be implemented incrementally within the same worktree -- commit after each sub-item, verify, then continue to the next.
-- **Persistent worktree, NOT isolation parameter.** The orchestrator creates the worktree manually with `git worktree add -b`. Do NOT use `isolation: "worktree"` -- that creates auto-named worktrees that are not deterministic and do not persist across cron turns.
-- **Agents dispatched without isolation.** After the orchestrator creates the worktree, agents are dispatched WITHOUT `isolation: "worktree"`. The Agent tool has no `cwd` parameter -- the agent's prompt includes `FIRST: cd $WORKTREE_PATH` as a mandatory first action. This is how all worktree agents work in this codebase.
-- **Never checkout branches in main directory.** Branch checkout in main causes stash data loss, tracking enforcement deadlock, and progress tracking failure across cron turns. Always use worktrees.
-- **Rebase when the tree is clean, not when dirty.** Rebase onto latest main only at clean points: (1) between phases in `finish` mode (after verify+commit, before next impl dispatch), (2) before push (after last phase's commit). Never stash uncommitted changes to rebase -- `git stash pop` after rebase frequently conflicts. If rebase conflicts: `git rebase --abort` (leave worktree clean), write `.landed` with `status: conflict`, and stop. In cron mode, the `.landed` marker prevents re-attempts until the user resolves manually. If rebase moves HEAD, dispatch full `/verify-changes worktree` re-verification before proceeding -- this re-verification has its own fix cycle (max 2 attempts), independent of the CI fix budget.
+- **Phase 3b-iii depends on 3b-ii.** The PR creation and `.landed` marker writing (3b-ii) must be in place. This phase extends the flow with CI awareness.
 - **CI check after PR creation.** Controlled by `ci.auto_fix` (default `true`) and `ci.max_fix_attempts` (default `2`) in config. When enabled: poll `timeout 600 gh pr checks --watch` after creating the PR (10 minute cap prevents hung cron turns; exit 124 = timeout, treat as `pr-ready`). On failure, read logs (`gh run view --log-failed`), comment on PR with failure context via `gh api`, dispatch fix agent in the worktree (agent prompt includes `FIRST: cd $WORKTREE_PATH`), push (auto-updates PR). After each push, re-run the CI registration delay pre-check (retry 3x with 10s) before `--watch` to avoid polling stale checks. After each attempt or on exhaustion, update the single comment so human reviewers have an audit trail. When `ci.auto_fix: false`, skip entirely. When `ci.max_fix_attempts: 0`, poll and report but don't attempt fixes.
 - **PR comments via gh api, not gh pr comment.** `gh pr comment` does NOT return the comment ID. Use `gh api repos/{owner}/{repo}/issues/$PR_NUMBER/comments` to create (returns ID), and `gh api -X PATCH repos/{owner}/{repo}/issues/comments/$COMMENT_ID` to update.
-- **Verification agent commits.** Same as cherry-pick mode -- impl agent writes code, verification agent verifies and commits. The tracking system enforces this regardless of landing mode.
-- **One PR per plan.** All phases go into one PR. Agent never waits for merge mid-execution.
-- **Verify before marking landed.** Always check that `PR_URL` is non-empty before writing `status: landed` or `pr-ready`. If PR creation failed, write `status: pr-failed`. If CI is failing, write `status: pr-ci-failing`.
+- **Cleanup on merge.** When auto-merge succeeds (`status: landed`), call `land-phase.sh` to remove the worktree. The script accepts both `status: landed` and `status: pr-ready` (updated in 3b-ii).
 
-### Acceptance Criteria
+### Acceptance Criteria (3b-iii)
 
-- [ ] Cherry-pick mode uses manual worktree at `/tmp/<project>-cp-<slug>-phase-<N>` (no `isolation: "worktree"`)
-- [ ] PR mode creates persistent worktree at `/tmp/<project>-pr-<plan-slug>` via manual `git worktree add`
-- [ ] ALL agents dispatched WITHOUT `isolation: "worktree"` (prompt-based `cd` instead)
-- [ ] PR mode branch name: `{branch_prefix}{plan-slug}`
-- [ ] PR mode worktree reuse on resume
-- [ ] Rebase at clean points only (between phases + before push)
-- [ ] Rebase conflict -> `git rebase --abort`, write `.landed` with `status: conflict`, STOP
-- [ ] Rebase moved HEAD -> full re-verification (own fix cycle, independent of CI budget)
-- [ ] PR mode Phase 6: push + `gh pr create`
-- [ ] PR number obtained via `gh pr view --json number --jq '.number'`
 - [ ] CI pre-check with retry for registration delay
 - [ ] CI polling via `timeout 600 gh pr checks --watch` (10 min cap; no `--fail-fast`)
 - [ ] CI failure -> read logs, fix in worktree, push, re-poll (max attempts from config)
 - [ ] PR comments via `gh api` (create + edit single comment)
 - [ ] Auto-merge requested via `gh pr merge --auto --squash`
-- [ ] `.landed` status: `landed` (merged), `pr-ready` (awaiting review), `pr-ci-failing`, or `pr-failed`
-- [ ] `.landed` marker includes `branch`, `pr`, `ci`, `pr_state` fields
-- [ ] Mixed mode ban enforced in PR plans
-- [ ] `scripts/land-phase.sh` exists and handles: verify `.landed`, extract logs, remove worktree+branch
-- [ ] /run-plan Phase 6 calls `scripts/land-phase.sh` after cherry-pick + tests + `.landed` write
-- [ ] Preflight check #5: auto-remove worktrees with `status: landed` markers
-- [ ] Test: mock worktree with `.landed` marker cleaned up by preflight
-- [ ] 9+ PR mode tests pass (markers, naming, paths, config)
+- [ ] `.landed` upgraded: `landed` (merged), `pr-ready` (awaiting review), `pr-ci-failing`
+- [ ] `.landed` marker includes `ci`, `pr_state` fields after CI integration
+- [ ] On `status: landed`, `land-phase.sh` called for cleanup
+- [ ] 4+ CI integration tests pass in `tests/test-hooks.sh`
 - [ ] Installed skill copy synced
 
-### Dependencies
+### Dependencies (3b-iii)
 
-Phase 3a (argument detection, config reading, branch_prefix).
+Phase 3b-ii (PR mode happy path, `.landed` marker, `land-phase.sh` pr-ready acceptance).
 
 ---
 
@@ -1823,9 +1960,9 @@ echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
 
 #### 4.3 -- Per-issue landing: rebase + push + PR + CI
 
-Same PR landing flow as 3b.2-3b.5, with these differences:
+Same PR landing flow as 3b-ii/3b-iii, with these differences:
 
-**Rebase before push:** Same pattern as 3b.2, rebase point 2 only (fix-issues is single-phase per issue, no between-phase rebase needed):
+**Rebase before push:** Same pattern as 3b.3, rebase point 2 only (fix-issues is single-phase per issue, no between-phase rebase needed):
 
 ```bash
 cd "$WORKTREE_PATH"
@@ -1893,7 +2030,7 @@ EOF
     fi
   fi
 
-  # CI check + auto-merge: same pattern as 3b.4-3b.5
+  # CI check + auto-merge: same pattern as 3b-iii
   # (config re-read, pre-check, polling, fix cycle, auto-merge, .landed marker)
   # Only difference: source is "fix-issues" and marker includes issue: field
 
@@ -1916,12 +2053,12 @@ LANDED
 done
 ```
 
-- [ ] Rebase each issue worktree onto latest main before push (clean tree, same pattern as 3b.2)
+- [ ] Rebase each issue worktree onto latest main before push (clean tree, same pattern as 3b.3)
 - [ ] Re-verify if rebase moved HEAD
 - [ ] Push + PR creation for each fixed issue
 - [ ] PR body includes `Fixes #NNN` for auto-close linking
 - [ ] Handle existing PRs (update, don't duplicate)
-- [ ] CI check + auto-merge per issue (same pattern as 3b.4-3b.5)
+- [ ] CI check + auto-merge per issue (same pattern as 3b-iii)
 - [ ] `.landed` marker includes `issue:` field in addition to standard PR fields
 
 #### 4.4 -- /fix-report: PR-aware review flow
@@ -1981,7 +2118,7 @@ LANDED
 - **`Fixes #NNN` linking.** GitHub auto-closes issues when the PR is merged.
 - **Verification agent commits.** Same as all modes -- tracking enforces this.
 - **PR-aware sprint report.** `/fix-report` must show PR URLs so the user can review them.
-- **Same CI/auto-merge/marker pattern as 3b.** Do not re-implement; reference the canonical pattern from 3b.4-3b.5. The only differences are `source: fix-issues` and the additional `issue:` field in the marker.
+- **Same CI/auto-merge/marker pattern as 3b.** Do not re-implement; reference the canonical pattern from 3b-iii. The only differences are `source: fix-issues` and the additional `issue:` field in the marker.
 
 ### Acceptance Criteria
 
@@ -1995,6 +2132,7 @@ LANDED
 - [ ] `.landed` status: `landed`/`pr-ready`/`pr-ci-failing`/`pr-failed`
 - [ ] `.landed` marker includes `issue:` field
 - [ ] `/fix-report` shows PR URLs
+- [ ] Tests in `tests/test-hooks.sh` (not test-hooks.sh)
 - [ ] 3+ /fix-issues PR mode tests pass (naming, path, marker)
 - [ ] Installed skill copy synced
 
@@ -2003,18 +2141,20 @@ LANDED
 Phase 1 (config file).
 Phase 2 (main_protected validation).
 Phase 3a (landing mode detection pattern -- reuse the same approach).
+Phase 3b-ii (PR mode worktree setup, push+PR, .landed markers).
+Phase 3b-iii (CI integration, auto-merge pattern).
 
 ---
 
-## Phase 5 -- Pipeline Propagation
+## Phase 5a -- Skill Propagation
 
 ### Goal
 
-Propagate execution mode awareness through the skill chain: `/research-and-go` detects mode and passes it in the cron prompt, `/research-and-plan` passes mode context to `/draft-plan`, `/draft-plan` embeds landing hints, `/do` gets a `pr` option, `/commit` gets a `pr` subcommand, `CLAUDE_TEMPLATE.md` documents execution modes, and `/update-zskills` audits for execution mode rules.
+Propagate execution mode awareness through the upstream skill chain: `/research-and-go` detects mode and passes it in the cron prompt, `/research-and-plan` passes mode context to `/draft-plan`, `/draft-plan` embeds landing hints. These are small, mechanical changes -- each skill just detects `pr`/`direct` and passes it downstream.
 
 ### Work Items
 
-#### 5.1 -- /research-and-go: detect mode and pass to /run-plan
+#### 5a.1 -- /research-and-go: detect mode and pass to /run-plan
 
 Modify `skills/research-and-go/SKILL.md` to detect `pr` or `direct` in the goal text and pass it through to the `/run-plan` cron prompt:
 
@@ -2035,7 +2175,7 @@ fi
 - [ ] Pass landing mode to `/run-plan` cron prompt
 - [ ] Sync installed copy
 
-#### 5.2 -- /research-and-plan: pass mode context to /draft-plan
+#### 5a.2 -- /research-and-plan: pass mode context to /draft-plan
 
 Modify `skills/research-and-plan/SKILL.md` to detect `pr` or `direct` in the goal text and pass it through to `/draft-plan`:
 
@@ -2051,7 +2191,7 @@ When constructing the /draft-plan invocation, append the detected landing mode:
 - [ ] Pass landing mode context to `/draft-plan` invocations
 - [ ] Sync installed copy
 
-#### 5.3 -- /draft-plan: embed landing hints
+#### 5a.3 -- /draft-plan: embed landing hints
 
 Modify `skills/draft-plan/SKILL.md` to embed landing hints in generated plans when the config specifies a non-default landing mode:
 
@@ -2073,24 +2213,58 @@ argument always takes precedence.
 - [ ] Embed landing hint in generated plan when non-default
 - [ ] Sync installed copy
 
-#### 5.4 -- /do: `pr` option
+#### 5a.4 -- Sync all installed copies
 
-Modify `skills/do/SKILL.md` to accept a `pr` argument. `/do <task> pr` creates a worktree with a named branch, does the work, pushes, and creates a PR. Same PR landing flow as 3b, with these differences:
+- [ ] `skills/research-and-go/SKILL.md` -> `.claude/skills/research-and-go/SKILL.md`
+- [ ] `skills/research-and-plan/SKILL.md` -> `.claude/skills/research-and-plan/SKILL.md`
+- [ ] `skills/draft-plan/SKILL.md` -> `.claude/skills/draft-plan/SKILL.md`
+- [ ] Verify all installed copies match sources
+
+### Design & Constraints (5a)
+
+- **Propagation, not re-implementation.** Each skill reuses the same landing mode detection pattern from Phase 3a. No new patterns.
+- **Config hints, not enforcement.** `/draft-plan` embeds hints in plans, but `/run-plan` arguments always take precedence.
+- **`/research-and-plan` included.** It passes mode context to `/draft-plan`.
+
+### Acceptance Criteria (5a)
+
+- [ ] `/research-and-go` detects mode in goal and passes to `/run-plan` cron prompt
+- [ ] `/research-and-plan` detects mode and passes to `/draft-plan`
+- [ ] `/draft-plan` embeds landing hints for non-default modes
+- [ ] All installed skill copies synced and verified
+
+### Dependencies (5a)
+
+Phase 3a (landing mode detection pattern).
+
+---
+
+## Phase 5b -- Execution Skills + Documentation + New Features
+
+### Goal
+
+Add execution mode support to downstream skills (`/do`, `/commit`), document execution modes in `CLAUDE_TEMPLATE.md`, add execution mode audit to `/update-zskills`, update cleanup tooling for new `.landed` statuses, add `agents.min_model` config enforcement, and add baseline test snapshot capture.
+
+### Work Items
+
+#### 5b.1 -- /do: `pr` option
+
+Modify `skills/do/SKILL.md` to accept a `pr` argument. `/do <task> pr` creates a worktree with a named branch, does the work, pushes, and creates a PR. Same PR landing flow as 3b-ii/3b-iii, with these differences:
 
 - Branch name: `{branch_prefix}{task-slug}` (task slug derived from first few words of task description, lowercased, hyphenated)
 - Worktree: `/tmp/<project>-do-<task-slug>`
 - Single-phase: only rebase point 2 applies (before push)
-- CI check + auto-merge: same pattern as 3b.4-3b.5
+- CI check + auto-merge: same pattern as 3b-iii
 - `.landed` marker: `source: do`
 
 - [ ] Add `pr` argument detection to `/do`
 - [ ] PR mode creates named worktree, pushes, creates PR
-- [ ] Rebase onto latest main before push (same pattern as 3b.2, rebase point 2)
-- [ ] CI check + auto-merge (same pattern as 3b.4-3b.5)
+- [ ] Rebase onto latest main before push (same pattern as 3b.3, rebase point 2)
+- [ ] CI check + auto-merge (same pattern as 3b-iii)
 - [ ] `.landed` marker with `source: do`
 - [ ] Sync installed copy
 
-#### 5.5 -- /commit: `pr` subcommand
+#### 5b.2 -- /commit: `pr` subcommand
 
 Modify `skills/commit/SKILL.md` to accept a `pr` subcommand. `/commit pr` pushes the current branch and creates a PR to main:
 
@@ -2120,7 +2294,7 @@ fi
 # Poll CI if PR was created/exists
 if [ -n "$PR_URL" ]; then
   PR_NUMBER=$(gh pr view --json number --jq '.number')
-  # CI pre-check with retry (same pattern as 3b.4)
+  # CI pre-check with retry (same pattern as 3b-iii.2)
   CHECK_COUNT=0
   for _i in 1 2 3; do
     CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
@@ -2149,7 +2323,7 @@ fi
 - [ ] Handle existing PR
 - [ ] Sync installed copy
 
-#### 5.6 -- CLAUDE_TEMPLATE.md: document execution modes
+#### 5b.3 -- CLAUDE_TEMPLATE.md: document execution modes
 
 Add a section to `CLAUDE_TEMPLATE.md` documenting execution modes:
 
@@ -2189,7 +2363,7 @@ to main. Use PR mode or feature branches.
 - [ ] Document all three modes with usage examples
 - [ ] Document config defaults
 
-#### 5.7 -- /update-zskills: audit execution mode rules
+#### 5b.4 -- /update-zskills: audit execution mode rules
 
 Add execution mode key phrases to the `/update-zskills` audit checklist:
 
@@ -2204,7 +2378,7 @@ Add execution mode key phrases to the `/update-zskills` audit checklist:
 - [ ] Add execution mode audit items to `/update-zskills`
 - [ ] Sync installed copy
 
-#### 5.8 -- Cleanup tooling: recognize new `.landed` statuses
+#### 5b.5 -- Cleanup tooling: recognize new `.landed` statuses
 
 Update `/briefing` and `/fix-report` to classify the new `.landed` status values.
 Existing tooling only recognizes `status: full` (safe) and treats everything else
@@ -2221,44 +2395,112 @@ as "partial." The new statuses need distinct handling:
 
 - [ ] Update `/briefing` worktree classification to recognize all 6 statuses
 - [ ] Update `/fix-report` sprint summary to show PR URLs and CI status
-- [ ] `landed` and `pr-ready` → safe for cleanup; others → flag for user
+- [ ] `landed` and `pr-ready` -> safe for cleanup; others -> flag for user
 - [ ] Sync installed copies of briefing and fix-report skills
 
-#### 5.9 -- Sync all installed copies
+#### 5b.6 -- `agents.min_model` config field + hook enforcement
 
-- [ ] `skills/research-and-go/SKILL.md` -> `.claude/skills/research-and-go/SKILL.md`
-- [ ] `skills/research-and-plan/SKILL.md` -> `.claude/skills/research-and-plan/SKILL.md`
-- [ ] `skills/draft-plan/SKILL.md` -> `.claude/skills/draft-plan/SKILL.md`
+Add an `agents.min_model` field to the config schema and enforce it in the hook. This prevents agents from dispatching subagents with models below a minimum quality threshold.
+
+**Config addition:**
+
+```json
+{
+  "agents": {
+    "min_model": "claude-sonnet-4-20250514"
+  }
+}
+```
+
+**Schema addition:**
+
+```json
+"agents": {
+  "type": "object",
+  "description": "Agent dispatch configuration.",
+  "properties": {
+    "min_model": {
+      "type": "string",
+      "description": "Minimum model for Agent tool calls. Hook blocks Agent calls with model_name below this. Example: claude-sonnet-4-20250514"
+    }
+  }
+}
+```
+
+**Hook enforcement:** In `hooks/block-unsafe-project.sh.template`, when the tool is `Agent` and the input contains a `model` or `model_name` field, extract it and compare against `agents.min_model` from config. Block if the specified model is below the minimum.
+
+The comparison is lexicographic on the model family (opus > sonnet > haiku) -- a simple string check, not a version parser. If `min_model` is `claude-sonnet-4-*`, block `claude-haiku-*` but allow `claude-sonnet-4-*` and `claude-opus-*`.
+
+- [ ] Add `agents.min_model` to config schema
+- [ ] Add `agents` section to dogfood config
+- [ ] Add hook enforcement: block Agent calls with model below minimum
+- [ ] Model comparison: family-level (opus > sonnet > haiku), not version-level
+- [ ] Tests in `tests/test-hooks.sh` (config/hook tests belong there)
+
+#### 5b.7 -- Baseline test snapshot
+
+`/run-plan` captures test results BEFORE the implementation agent starts, so the verification agent can compare against a known-good baseline. This detects regressions introduced by the implementation (as opposed to pre-existing failures).
+
+**Mechanism:** Before dispatching the implementation agent for each phase:
+
+```bash
+# Capture baseline test results in the worktree
+cd "$WORKTREE_PATH"
+$FULL_TEST_CMD > .test-baseline.txt 2>&1 || true
+# The || true ensures we capture output even if some tests fail pre-existing.
+# The verification agent compares .test-results.txt against .test-baseline.txt
+# to distinguish new failures from pre-existing ones.
+```
+
+**Verification agent instructions (added to prompt):**
+
+```markdown
+After running tests, compare `.test-results.txt` against `.test-baseline.txt`:
+- New failures (in results but not in baseline) -> must be fixed before commit
+- Pre-existing failures (in both baseline and results) -> note in report, do not fix
+- Resolved failures (in baseline but not in results) -> positive, note in report
+```
+
+- [ ] Capture `.test-baseline.txt` before implementation agent dispatch
+- [ ] Add comparison instructions to verification agent prompt
+- [ ] Handle missing `FULL_TEST_CMD` (skip baseline if no test command configured)
+- [ ] Tests in `tests/test-hooks.sh`
+
+#### 5b.8 -- Sync all installed copies
+
 - [ ] `skills/do/SKILL.md` -> `.claude/skills/do/SKILL.md`
 - [ ] `skills/commit/SKILL.md` -> `.claude/skills/commit/SKILL.md`
 - [ ] `CLAUDE_TEMPLATE.md` updated
 - [ ] `skills/update-zskills/SKILL.md` -> `.claude/skills/update-zskills/SKILL.md`
+- [ ] `config/zskills-config.schema.json` updated with `agents` section
 - [ ] Verify all installed copies match sources
 
-### Design & Constraints
+### Design & Constraints (5b)
 
-- **Propagation, not re-implementation.** Each skill in this phase reuses the same landing mode detection pattern from Phase 3a. No new patterns.
-- **Config hints, not enforcement.** `/draft-plan` embeds hints in plans, but `/run-plan` arguments always take precedence.
 - **`/commit pr` is a convenience.** It's for manual use from any feature branch, not tied to the pipeline. No fix agents, no `.landed` markers.
 - **CLAUDE_TEMPLATE.md is documentation.** It tells the LLM about execution modes so it can make informed decisions.
-- **`/research-and-plan` included.** It passes mode context to `/draft-plan`.
+- **`agents.min_model` is family-level.** We compare model families (opus > sonnet > haiku), not specific version strings. This avoids brittle version parsing while still preventing quality downgrades.
+- **Baseline snapshot is best-effort.** If `FULL_TEST_CMD` is not configured, skip the baseline. The verification agent still runs tests; it just can't distinguish new vs pre-existing failures.
+- **Phase 5b tests go in `tests/test-hooks.sh`.** Config/hook tests (min_model, baseline) belong in the hook test file.
 
-### Acceptance Criteria
+### Acceptance Criteria (5b)
 
-- [ ] `/research-and-go` detects mode in goal and passes to `/run-plan` cron prompt
-- [ ] `/research-and-plan` detects mode and passes to `/draft-plan`
-- [ ] `/draft-plan` embeds landing hints for non-default modes
 - [ ] `/do pr` creates worktree, rebases onto main before push, pushes, creates PR, polls CI
 - [ ] `/commit pr` rebases onto main, pushes, creates PR, polls CI
 - [ ] `CLAUDE_TEMPLATE.md` documents all three execution modes
 - [ ] `/update-zskills` audit includes execution mode checks
 - [ ] `/briefing` and `/fix-report` classify all 6 `.landed` statuses correctly
+- [ ] `agents.min_model` config field exists with schema definition
+- [ ] Hook blocks Agent calls with model below `agents.min_model`
+- [ ] Baseline test snapshot captured before implementation agent dispatch
+- [ ] Verification agent compares `.test-results.txt` against `.test-baseline.txt`
 - [ ] All installed skill copies synced and verified
 
-### Dependencies
+### Dependencies (5b)
 
 Phase 3a (landing mode detection pattern).
-Phase 3b (/run-plan PR mode, for consistency).
+Phase 3b-ii (PR mode worktree setup, push+PR pattern).
+Phase 3b-iii (CI integration, auto-merge pattern).
 Phase 4 (fix-issues PR mode, for sprint report PR URLs).
 
 ---
