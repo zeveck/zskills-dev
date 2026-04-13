@@ -21,7 +21,7 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 3a -- Argument Detection + Config Reading + Direct Mode | ✅ Done | `a8dfe49` | 11 tests, pr/direct detection, config default |
 | 3b-i -- Worktree Unification + Landing Script | ✅ Done | `9cc1dc2` | Manual worktrees, land-phase.sh, preflight, 7 tests |
 | 3b-ii -- PR Mode Happy Path | ✅ Done | `36af895` | Named branches, rebase, push+PR, .landed, 9 tests |
-| 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ⬜ | | CI polling, fix agents, auto-merge, PR comments |
+| 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | 🟡 In Progress | | CI polling, fix agents, auto-merge, PR comments |
 | 4 -- /fix-issues PR Landing | ⬜ | | Per-issue branches, PR creation |
 | 5a -- Skill Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan |
 | 5b -- Execution Skills + Documentation | ⬜ | | do, commit, CLAUDE_TEMPLATE, update-zskills |
