@@ -642,6 +642,97 @@ agent hasn't returned after 2 hours, declare it **failed**:
    those exact tests. Do not stop after the easy items and declare the hard
    ones "future work."
 
+### PR mode (Phase 2)
+
+When `LANDING_MODE == pr`, the orchestrator creates a persistent worktree with
+a named feature branch. All phases accumulate on the same branch (one PR per
+plan). The worktree persists across cron turns for chunked execution.
+
+**Mixed mode validation:** When `LANDING_MODE` is `pr`, scan the current phase text:
+- `### Execution: direct` → ERROR: "Mixed execution modes not allowed in PR
+  plans. All phases must use worktree or delegate mode."
+- `### Execution: delegate ...` → OK (delegate manages its own isolation)
+- `### Execution: worktree` or no directive → OK (default)
+
+**Branch naming:** `{branch_prefix}{plan-slug}`
+- `branch_prefix` from config (`execution.branch_prefix`), default `"feat/"`
+- `plan-slug` derived from plan file path: lowercase, hyphens, no extension
+  - `plans/THERMAL_DOMAIN.md` → `thermal-domain`
+  - `plans/ADD_FILTER_BLOCK.md` → `add-filter-block`
+
+```bash
+# Derive plan slug
+PLAN_FILE="plans/THERMAL_DOMAIN.md"
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+
+BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
+PROJECT_NAME=$(basename "$PROJECT_ROOT")
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+```
+
+**Worktree creation — orchestrator creates manually, NOT via `isolation: "worktree"`:**
+
+```bash
+# Prune stale worktree entries. If /tmp was cleared (container restart,
+# codespace rebuild), git still has the old worktree registered in
+# .git/worktrees/. `git worktree prune` cleans up entries whose directories
+# no longer exist, so `git worktree add` won't fail with "already registered."
+git worktree prune
+
+# Check if worktree already exists (resuming a previous run)
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "Resuming existing PR worktree at $WORKTREE_PATH"
+else
+  # Create worktree on a named branch
+  git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
+    || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
+  # First form: create new branch from main
+  # Second form: branch already exists (resume after worktree was pruned)
+fi
+```
+
+**One branch per plan.** All phases accumulate on the same branch. The worktree
+persists across cron turns for chunked execution. Do NOT create a new worktree
+per phase.
+
+**Dispatching agents to the worktree:** Dispatch agents WITHOUT
+`isolation: "worktree"`. The agent's prompt tells it to work in the worktree:
+
+```
+Agent tool prompt:
+  "You are implementing Phase N of plan X.
+   FIRST: cd /tmp/myproject-pr-thermal-domain
+   All work happens in that directory. Do not work in any other directory.
+
+   <phase work items here>
+
+   Commit rules:
+   - Do NOT commit. The verification agent commits after review.
+   - Stage specific files by name (not git add .)
+   ..."
+```
+
+The key line is `FIRST: cd $WORKTREE_PATH` — the agent treats this as a
+mandatory first action. Without `isolation: "worktree"`, the agent starts in
+the main repo directory, so the `cd` instruction is essential.
+
+**Pipeline association:** Write `.zskills-tracked` in the worktree:
+
+```bash
+echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+```
+
+**Test baseline capture (orchestrator practice):** Before dispatching the
+implementation agent, the orchestrator captures a test baseline in the worktree:
+
+```bash
+# Orchestrator captures baseline BEFORE impl agent starts
+cd "$WORKTREE_PATH"
+if [ -n "$FULL_TEST_CMD" ]; then
+  $FULL_TEST_CMD > .test-baseline.txt 2>&1 || true
+fi
+```
+
 ### Post-implementation tracking
 
 After the implementation agent finishes (whether worktree or delegate mode),
@@ -1091,6 +1182,219 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      ```
   10. **Update the plan report** (`reports/plan-{slug}.md`) — mark the
       phase section as landed. Regenerate `PLAN_REPORT.md` index.
+
+### PR mode landing
+
+When `LANDING_MODE == pr`, landing replaces cherry-pick with push + PR creation.
+
+**Rebase strategy:** Rebase onto latest main only when the tree is clean.
+NEVER stash + rebase. NEVER `git merge origin/main`.
+
+**Rebase point 1: between phases (finish mode only)**
+
+After the verification agent commits Phase N, BEFORE dispatching Phase N+1's
+impl agent:
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+# Tree is clean (verification agent just committed). No stash needed.
+if [ $? -ne 0 ]; then
+  # CRITICAL: abort the rebase to leave the worktree clean.
+  # Without this, the worktree stays in "rebase in progress" state
+  # and all subsequent git operations fail (including cron retries).
+  git rebase --abort
+  echo "REBASE CONFLICT: Phase $N changes conflict with main."
+
+  # Write .landed marker so cron turns and cleanup tools know the state.
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+phase: $N
+reason: rebase-conflict-between-phases
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+  # In interactive mode: report to user and stop.
+  # In auto/cron mode: the cron will fire again later. On the next turn,
+  # it will see the .landed marker with status: conflict and skip this
+  # plan (same as any terminal status). If the user resolves the conflict
+  # manually and removes the .landed marker, the next cron turn will
+  # resume normally. If main moves further and the conflict resolves
+  # itself, the user can delete .landed to retry.
+  echo "Manual resolution required. Wrote .landed with status: conflict."
+  exit 1
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved -- re-verifying before Phase $((N+1))..."
+  # Dispatch /verify-changes worktree for full re-verification.
+  # The verification agent is dispatched the same way as implementation
+  # agents -- prompt includes "FIRST: cd $WORKTREE_PATH".
+  # Re-verification has its OWN fix cycle (max 2 attempts), INDEPENDENT
+  # of the CI fix budget. If re-verification fails after its own max
+  # attempts, STOP -- same as any verification failure (write report,
+  # mark phase as failed).
+fi
+```
+
+**Rebase point 2: before push (all PR mode runs)**
+
+After the LAST phase's verification agent commits, before pushing:
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+if [ $? -ne 0 ]; then
+  # CRITICAL: abort the rebase to leave the worktree clean.
+  git rebase --abort
+  echo "REBASE CONFLICT: Branch conflicts with main."
+
+  # Write .landed marker so cron turns and cleanup tools know the state.
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+reason: rebase-conflict-before-push
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+  # In interactive mode: report to user and stop.
+  # In auto/cron mode: .landed with status: conflict is a terminal state.
+  # The cron will see it on the next turn and skip this plan.
+  echo "Manual resolution required. Wrote .landed with status: conflict."
+  exit 1
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved since last verification -- re-verifying..."
+  # Dispatch /verify-changes worktree for full re-verification.
+  # The verification agent's prompt includes "FIRST: cd $WORKTREE_PATH".
+  # This includes tests, code review, and manual testing if UI files changed.
+  # Re-verification has its OWN fix cycle (max 2 attempts), INDEPENDENT
+  # of the CI fix budget. If re-verification fails after its own max
+  # attempts, STOP -- same as any verification failure.
+  # If re-verification passes, proceed to push.
+fi
+```
+
+**Push + PR creation:**
+
+```bash
+cd "$WORKTREE_PATH"
+
+# --- Construct PR title and body ---
+# $PLAN_SLUG, $PLAN_TITLE, $CURRENT_PHASE_NUM, $CURRENT_PHASE_TITLE come from
+# the plan parser (Phase 1 of /run-plan's execution).
+# $FINISH_MODE is true when running in finish mode (all remaining phases).
+
+if [ "$FINISH_MODE" = "true" ]; then
+  PR_TITLE="[${PLAN_SLUG}] ${PLAN_TITLE}"
+else
+  PR_TITLE="[${PLAN_SLUG}] Phase ${CURRENT_PHASE_NUM}: ${CURRENT_PHASE_TITLE}"
+fi
+
+# Collect completed phases for the body
+COMPLETED_PHASES=$(grep -E '^\| .* \| ✅' "$PLAN_FILE" | sed 's/|//g' | awk '{$1=$1};1' || echo "See plan file")
+
+PR_BODY="## Plan: ${PLAN_TITLE}
+
+**Phases completed:**
+${COMPLETED_PHASES}
+
+**Report:** See \`reports/plan-${PLAN_SLUG}.md\` for details.
+
+---
+Generated by \`/run-plan\`"
+
+# --- Push ---
+if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+  echo "Remote branch $BRANCH_NAME already exists. Pushing updates."
+  git push origin "$BRANCH_NAME"
+else
+  git push -u origin "$BRANCH_NAME"
+fi
+
+# --- PR creation ---
+EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$EXISTING_PR" ]; then
+  echo "PR #$EXISTING_PR already exists for $BRANCH_NAME. Updated with latest push."
+  PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+  PR_NUMBER="$EXISTING_PR"
+else
+  PR_URL=$(gh pr create \
+    --title "$PR_TITLE" \
+    --body "$PR_BODY" \
+    --base main \
+    --head "$BRANCH_NAME")
+  if [ -n "$PR_URL" ]; then
+    PR_NUMBER=$(gh pr view --json number --jq '.number')
+  fi
+fi
+
+# --- Verify PR was created ---
+if [ -z "$PR_URL" ]; then
+  echo "WARNING: PR creation failed. Branch pushed but PR not created."
+  echo "Manual fallback: gh pr create --base main --head $BRANCH_NAME"
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: pr-failed
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+pr:
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+  # Report and stop -- PR creation failed
+fi
+```
+
+**`.landed` marker for PR mode:**
+
+After successful push + PR creation, write the `.landed` marker. In Phase 3b-ii
+(before CI integration exists), the status is always `pr-ready` — the PR is
+created and awaiting CI/review. Phase 3b-iii adds CI polling and upgrades the
+status to `landed` when auto-merge succeeds.
+
+```bash
+# --- Write .landed marker ---
+# Without CI integration (Phase 3b-iii), we write pr-ready.
+# Phase 3b-iii will insert CI polling + auto-merge between PR creation
+# and this marker write, and will set LANDED_STATUS based on CI results.
+LANDED_STATUS="pr-ready"
+
+cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: $LANDED_STATUS
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+pr: $PR_URL
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+```
+
+**`.landed` status values for PR mode:**
+
+| Scenario | status | method | ci | pr_state |
+|----------|--------|--------|----|----------|
+| PR merged (auto-merge) | `landed` | `pr` | `pass`/`none`/`skipped` | `MERGED` |
+| PR open, CI passed, awaiting review | `pr-ready` | `pr` | `pass`/`none`/`skipped` | `OPEN` |
+| PR open, CI timed out (still running) | `pr-ready` | `pr` | `pending` | `OPEN` |
+| PR open, CI failing after max attempts | `pr-ci-failing` | `pr` | `fail` | `OPEN` |
+| Branch pushed, PR creation failed | `pr-failed` | `pr` | _(not set)_ | _(not set)_ |
+| Rebase conflict | `conflict` | `pr` | _(not set)_ | _(not set)_ |
 
 ### Post-landing tracking
 

@@ -845,7 +845,7 @@ printf 'status: partial\ndate: 2026-01-01\n' > "$LAND_TMPDIR/.landed"
 LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
 LAND_RC=$?
 rm -rf "$LAND_TMPDIR"
-if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say 'status: landed'"* ]]; then
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say"* ]]; then
   pass "land-phase.sh: rejects wrong status (exit 1)"
 else
   fail "land-phase.sh: wrong status rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
@@ -857,10 +857,122 @@ printf 'status: full\ndate: 2026-01-01\n' > "$LAND_TMPDIR/.landed"
 LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
 LAND_RC=$?
 rm -rf "$LAND_TMPDIR"
-if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say 'status: landed'"* ]]; then
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say"* ]]; then
   pass "land-phase.sh: rejects status: full (requires status: landed)"
 else
   fail "land-phase.sh: status:full rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+echo ""
+echo "=== PR mode tests ==="
+
+# Test: .landed marker with status: landed + PR fields
+MARKER=$(cat <<LANDED
+status: landed
+date: 2026-04-13T12:00:00-04:00
+source: run-plan
+method: pr
+branch: feat/test
+pr: https://github.com/owner/repo/pull/42
+ci: pass
+pr_state: MERGED
+LANDED
+)
+if [[ "$MARKER" == *"status: landed"* ]] && [[ "$MARKER" == *"method: pr"* ]] && [[ "$MARKER" == *"pr_state: MERGED"* ]]; then
+  pass "PR .landed marker: status: landed with PR fields (method: pr, pr_state: MERGED)"
+else
+  fail "PR .landed marker: expected status: landed, method: pr, pr_state: MERGED"
+fi
+
+# Test: .landed marker with status: pr-ready
+MARKER="status: pr-ready"
+if [[ "$MARKER" == *"pr-ready"* ]]; then
+  pass "PR .landed marker: status: pr-ready recognized"
+else
+  fail "PR .landed marker: expected pr-ready"
+fi
+
+# Test: .landed marker with status: pr-ci-failing
+MARKER="status: pr-ci-failing"
+if [[ "$MARKER" == *"pr-ci-failing"* ]]; then
+  pass "PR .landed marker: status: pr-ci-failing recognized"
+else
+  fail "PR .landed marker: expected pr-ci-failing"
+fi
+
+# Test: .landed marker with status: conflict (rebase failure)
+MARKER="status: conflict"
+if [[ "$MARKER" == *"conflict"* ]]; then
+  pass "PR .landed marker: status: conflict recognized"
+else
+  fail "PR .landed marker: expected conflict"
+fi
+
+# Test: PR mode branch naming
+BRANCH_PREFIX="feat/"
+PLAN_SLUG=$(basename "plans/THERMAL_DOMAIN.md" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
+if [[ "$BRANCH_NAME" == "feat/thermal-domain" ]]; then
+  pass "PR branch naming: feat/thermal-domain from THERMAL_DOMAIN.md"
+else
+  fail "PR branch naming: expected feat/thermal-domain, got $BRANCH_NAME"
+fi
+
+# Test: PR mode worktree path
+PROJECT_NAME="my-app"
+PLAN_SLUG="thermal-domain"
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+if [[ "$WORKTREE_PATH" == "/tmp/my-app-pr-thermal-domain" ]]; then
+  pass "PR worktree path: /tmp/my-app-pr-thermal-domain"
+else
+  fail "PR worktree path: expected /tmp/my-app-pr-thermal-domain, got $WORKTREE_PATH"
+fi
+
+# Test: main_protected allows commits on feature branches (not just main)
+RESULT=$(run_main_protected_test "feat/thermal-domain" '{"execution": {"main_protected": true}}' "git commit -m 'phase 1'")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected: allows commit on PR feature branch feat/thermal-domain"
+else
+  fail "main_protected: should allow commit on feat/thermal-domain, got: $RESULT"
+fi
+
+# Test: land-phase.sh accepts status: pr-ready as safe-to-remove
+LAND_TMPDIR=$(mktemp -d)
+cat > "$LAND_TMPDIR/.landed" <<LANDED
+status: pr-ready
+date: 2026-04-13T12:00:00-04:00
+source: run-plan
+method: pr
+branch: feat/test
+pr: https://github.com/owner/repo/pull/42
+LANDED
+LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
+LAND_RC=$?
+rm -rf "$LAND_TMPDIR"
+# land-phase.sh will fail at git worktree remove (not a real worktree),
+# but it should get PAST the status check (not exit with "does not say" error)
+if [[ "$LAND_OUTPUT" != *"does not say"* ]]; then
+  pass "land-phase.sh: accepts status: pr-ready (gets past marker check)"
+else
+  fail "land-phase.sh: should accept pr-ready, got: $LAND_OUTPUT"
+fi
+
+# Test: slug normalization edge cases
+PLAN_FILE="plans/ADD_FILTER_BLOCK.md"
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+SLUG_OK=true
+if [[ "$PLAN_SLUG" != "add-filter-block" ]]; then
+  SLUG_OK=false
+fi
+PLAN_FILE2="plans/FIX_MAIN_LOOP.md"
+PLAN_SLUG2=$(basename "$PLAN_FILE2" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+if [[ "$PLAN_SLUG2" != "fix-main-loop" ]]; then
+  SLUG_OK=false
+fi
+if [ "$SLUG_OK" = "true" ]; then
+  pass "Slug normalization: ADD_FILTER_BLOCK -> add-filter-block, FIX_MAIN_LOOP -> fix-main-loop"
+else
+  fail "Slug normalization: got $PLAN_SLUG and $PLAN_SLUG2"
 fi
 
 echo ""

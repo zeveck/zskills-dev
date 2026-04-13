@@ -20,8 +20,8 @@ if [ ! -f "$WORKTREE_PATH/.landed" ]; then
   echo "ERROR: No .landed marker in $WORKTREE_PATH. Cannot clean up without proof of landing."
   exit 1
 fi
-if ! grep -q 'status: landed' "$WORKTREE_PATH/.landed"; then
-  echo "ERROR: .landed marker does not say 'status: landed'. Current status:"
+if ! grep -qE 'status: (landed|pr-ready)' "$WORKTREE_PATH/.landed"; then
+  echo "ERROR: .landed marker does not say 'status: landed' or 'status: pr-ready'. Current status:"
   cat "$WORKTREE_PATH/.landed"
   exit 1
 fi
