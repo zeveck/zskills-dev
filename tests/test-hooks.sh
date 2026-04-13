@@ -550,7 +550,7 @@ run_main_protected_test() {
   test_tmpdir=$(mktemp -d)
 
   mkdir -p "$test_tmpdir/.claude/hooks"
-  mkdir -p "$test_tmpdir/.claude/tracking"
+  mkdir -p "$test_tmpdir/.zskills/tracking"
 
   # Copy and configure the hook template
   cp "$PROJECT_HOOK" "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
@@ -640,7 +640,7 @@ fi
 # Test: push tracking works before first push (no upstream) — code-files detection fallback
 push_tracking_tmpdir=$(mktemp -d)
 mkdir -p "$push_tracking_tmpdir/.claude/hooks"
-mkdir -p "$push_tracking_tmpdir/.claude/tracking"
+mkdir -p "$push_tracking_tmpdir/.zskills/tracking"
 cp "$PROJECT_HOOK" "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
 sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
 sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
@@ -649,11 +649,13 @@ printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$push_tracki
 printf 'npm run test:all\n' > "$push_tracking_tmpdir/.transcript"
 (cd "$push_tracking_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
 (cd "$push_tracking_tmpdir" && git checkout -b feat/test 2>/dev/null && echo "var x=1;" > app.js && git add app.js && git commit -q -m "add code" 2>/dev/null)
+# Pipeline association via .zskills-tracked (required by the modern push tracking block)
+printf 'run-plan.test-plan\n' > "$push_tracking_tmpdir/.zskills-tracked"
 # Add a requires file without fulfilled — should block push with code files
-touch "$push_tracking_tmpdir/.claude/tracking/requires.verify-changes"
+touch "$push_tracking_tmpdir/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
 PUSH_JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push -u origin feat/test\"},\"transcript_path\":\"$push_tracking_tmpdir/.transcript\"}"
-PUSH_RESULT=$(echo "$PUSH_JSON" | REPO_ROOT="$push_tracking_tmpdir" bash "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
-if [[ "$PUSH_RESULT" == *"Required skill invocation"* ]]; then
+PUSH_RESULT=$(echo "$PUSH_JSON" | REPO_ROOT="$push_tracking_tmpdir" LOCAL_ROOT="$push_tracking_tmpdir" TRACKING_ROOT="$push_tracking_tmpdir" bash "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+if [[ "$PUSH_RESULT" == *"Required skill invocation"* ]] || [[ "$PUSH_RESULT" == *"not yet fulfilled"* ]]; then
   pass "push tracking: no-upstream fallback detects code files and enforces tracking"
 else
   fail "push tracking: no-upstream fallback should detect code files, got: $PUSH_RESULT"

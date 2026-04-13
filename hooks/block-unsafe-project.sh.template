@@ -475,72 +475,9 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; t
   fi
 fi
 
-# ─── Tracking enforcement on git push ───
-if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
-  REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-  TRACKING_DIR="$REPO_ROOT/.claude/tracking"
-
-  if [ -d "$TRACKING_DIR" ]; then
-    # Detect code files in the push range
-    PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
-    if [ -z "$PUSH_DIFF" ]; then
-      # Fallback: compare against main (works before first push -u)
-      PUSH_DIFF=$(git diff --name-only main..HEAD 2>/dev/null)
-    fi
-
-    PUSH_CODE_FILES=""
-    while IFS= read -r line; do
-      if [[ "$line" =~ \.(js|ts|json|css|html|rs|py|go|rb)$ ]]; then
-        PUSH_CODE_FILES+="$line"$'\n'
-      fi
-    done <<< "$PUSH_DIFF"
-
-    if [ -n "$PUSH_CODE_FILES" ]; then
-      # Staleness check
-      PIPELINE_STALE=false
-      if [ -f "$TRACKING_DIR/pipeline.active" ]; then
-        STALE=$(find "$TRACKING_DIR/pipeline.active" -mmin +480 2>/dev/null)
-        if [ -n "$STALE" ]; then
-          echo "WARNING: Stale pipeline detected (>8h old). To clear: ! bash scripts/clear-tracking.sh" >&2
-          PIPELINE_STALE=true
-        fi
-      fi
-
-      # Delegation check (skip if pipeline is stale)
-      if ! $PIPELINE_STALE; then
-        for req in "$TRACKING_DIR"/requires.*; do
-          [ -f "$req" ] || continue
-          base=$(basename "$req")
-          fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
-          if [ ! -f "$fulfilled" ]; then
-            block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
-          fi
-        done
-      fi
-
-      # Step enforcement (skip if pipeline is stale)
-      if ! $PIPELINE_STALE; then
-        for impl in "$TRACKING_DIR"/step.*.implement; do
-          [ -f "$impl" ] || continue
-          verify="${impl/\.implement/.verify}"
-          if [ ! -f "$verify" ]; then
-            session=$(basename "$impl" .implement)
-            block_with_reason "BLOCKED: ${session#step.} has implementation but no verification. Run verification before landing. To clear: ! bash scripts/clear-tracking.sh"
-          fi
-        done
-
-        for verif in "$TRACKING_DIR"/step.*.verify; do
-          [ -f "$verif" ] || continue
-          report="${verif/\.verify/.report}"
-          if [ ! -f "$report" ]; then
-            session=$(basename "$verif" .verify)
-            block_with_reason "BLOCKED: ${session#step.} verified but no report written. Write report before landing. To clear: ! bash scripts/clear-tracking.sh"
-          fi
-        done
-      fi
-    fi
-  fi
-fi
+# Legacy .claude/tracking push enforcement block removed — superseded by
+# .zskills/tracking push enforcement at line 377 (with pipeline scoping,
+# worktree support, and no staleness bypass).
 
 # No match — allow
 exit 0

@@ -18,7 +18,7 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 |-------|--------|--------|-------|
 | 1 -- Config File + /update-zskills | ✅ Done | `2bbe180` | Config, schema, /update-zskills Step 0.5, 6 tests |
 | 2 -- main_protected Hook Enforcement | ✅ Done | `a874492` | Runtime config read, 8 tests, push fallback |
-| 3a -- Argument Detection + Config Reading + Direct Mode | ⬜ | | Small: detection, config, direct mode |
+| 3a -- Argument Detection + Config Reading + Direct Mode | ✅ Done | `a8dfe49` | 11 tests, pr/direct detection, config default |
 | 3b -- PR Mode Implementation | ⬜ | | Large: persistent worktree, push+PR, CI, auto-merge |
 | 4 -- /fix-issues PR Landing | ⬜ | | Per-issue branches, PR creation |
 | 5 -- Pipeline Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan, do, commit, CLAUDE_TEMPLATE |
@@ -847,13 +847,170 @@ Phase 2 (main_protected check for `direct` + `main_protected` validation).
 
 Implement PR mode for `/run-plan`: persistent worktree with named feature branch, all phases accumulating on the same branch, rebase at clean points, Phase 6 landing via push + `gh pr create`, CI check and fix cycle, auto-merge, and `.landed` marker writing. Mixed mode ban enforcement.
 
+Also: unify ALL worktree creation to use manual `git worktree add` at `/tmp/` paths, replacing Claude Code's `isolation: "worktree"` parameter. This affects cherry-pick mode (existing behavior change) and establishes the pattern for PR mode.
+
 This is the largest and most complex phase. All code examples here are **canonical** -- Phase 4 and Phase 5 reference this phase rather than duplicating the patterns.
 
 ### Work Items
 
-#### 3b.1 -- PR mode: persistent worktree with named branch
+#### 3b.1 -- Unify worktree creation: manual for ALL modes
 
-Add PR mode worktree setup to Phase 2 (Dispatch Implementation). When `LANDING_MODE` is `pr`:
+**Problem:** Claude Code's `isolation: "worktree"` creates worktrees at `.claude/worktrees/agent-<id>`. This causes:
+- Permission prompts (writes under `.claude/` trigger Claude Code's built-in protection)
+- Non-deterministic paths (can't resume across sessions or cron turns)
+- No control over branch naming
+- Auto-cleanup behavior that conflicts with our `.landed` marker workflow
+
+**Solution:** ALL modes (cherry-pick and PR) use manual `git worktree add` at `/tmp/` paths. Agents are dispatched WITHOUT `isolation: "worktree"` and told to `cd` to the worktree path as their first action.
+
+**Cherry-pick mode worktree creation (replaces `isolation: "worktree"`):**
+
+```bash
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+PROJECT_NAME=$(basename "$PROJECT_ROOT")
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
+
+git worktree prune
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "Resuming existing worktree at $WORKTREE_PATH"
+else
+  git worktree add "$WORKTREE_PATH" -b "cp-${PLAN_SLUG}-${PHASE}" main
+fi
+
+# Pipeline association
+echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+```
+
+Cherry-pick mode: one worktree per phase, auto-named branch, `/tmp/` path. After landing (cherry-pick to main), worktree is removed.
+
+**Agent dispatch (all modes):** Agents dispatched WITHOUT `isolation: "worktree"`. The prompt tells the agent the worktree path and requires absolute paths:
+
+```
+Agent tool prompt:
+  "You are working in worktree: /tmp/myproject-cp-thermal-domain-phase-1
+
+   IMPORTANT: Use ABSOLUTE PATHS for all file operations.
+   - Bash: run `cd /tmp/myproject-cp-thermal-domain-phase-1` before commands
+   - Read/Edit/Write/Grep: use /tmp/myproject-cp-thermal-domain-phase-1/... paths
+   Do not work in any other directory.
+   ..."
+```
+
+No `isolation: "worktree"` parameter on the Agent call. Bash cwd persists between calls, but Read/Edit/Write/Grep tools require absolute paths. The tracking hooks provide a backstop — if the agent works in the wrong directory, `.zskills-tracked` won't be found and commits are blocked.
+
+**Failed-run cleanup:** If a phase fails terminally, write `.landed` with `status: failed` in the worktree before invoking the Failure Protocol. The cron preamble runs `git worktree prune` to clean up stale entries from container restarts or crashed runs.
+
+**Update /run-plan skill text:** Replace all references to `isolation: "worktree"` in the dispatch instructions with the manual creation pattern above. This affects:
+- Phase 2 "Worktree mode" dispatch instructions
+- The worktree test recipe (agents work in `/tmp/` not `.claude/worktrees/`)
+
+**Atomic landing script (`scripts/land-phase.sh`):** The root cause of forgotten cleanup is that landing is an 11-step manual sequence. When cherry-pick conflicts break the flow, the orchestrator completes the hard part (conflict resolution) and drops the easy parts (cleanup, tracker update). This happened 3 times in 3 phases.
+
+The fix: reduce landing to a single script call. The orchestrator runs `bash scripts/land-phase.sh <worktree-path> <plan-file> <phase>` and the script handles everything atomically:
+
+```bash
+#!/bin/bash
+# scripts/land-phase.sh — Post-landing cleanup: verify .landed, extract logs, remove worktree
+# Usage: bash scripts/land-phase.sh <worktree-path>
+#
+# Prerequisites: orchestrator already cherry-picked, ran tests, wrote .landed marker.
+# This script handles the mechanical cleanup. Idempotent — safe to re-run.
+
+WORKTREE_PATH="$1"
+
+# Idempotency: if worktree is already gone, nothing to do
+if [ ! -d "$WORKTREE_PATH" ]; then
+  echo "Worktree already removed: $WORKTREE_PATH"
+  exit 0
+fi
+
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+# 1. Verify .landed marker (proof work is on main — refuse without it)
+if [ ! -f "$WORKTREE_PATH/.landed" ]; then
+  echo "ERROR: No .landed marker in $WORKTREE_PATH. Cannot clean up without proof of landing."
+  exit 1
+fi
+if ! grep -q 'status: landed' "$WORKTREE_PATH/.landed"; then
+  echo "ERROR: .landed marker does not say 'status: landed'. Current status:"
+  cat "$WORKTREE_PATH/.landed"
+  exit 1
+fi
+
+# 2. Extract logs not yet on main (MUST succeed before we destroy the worktree)
+if [ -d "$WORKTREE_PATH/.claude/logs" ]; then
+  if ! mkdir -p "$MAIN_ROOT/.claude/logs"; then
+    echo "ERROR: Could not create $MAIN_ROOT/.claude/logs — aborting cleanup to preserve logs"
+    exit 1
+  fi
+  for log in "$WORKTREE_PATH/.claude/logs/"*.md; do
+    [ -f "$log" ] || continue
+    if [ ! -f "$MAIN_ROOT/.claude/logs/$(basename "$log")" ]; then
+      if ! cp "$log" "$MAIN_ROOT/.claude/logs/"; then
+        echo "ERROR: Failed to copy $log — aborting cleanup to preserve logs"
+        exit 1
+      fi
+    fi
+  done
+fi
+
+# 3. Remove worktree (critical — fail loudly if this doesn't work)
+BRANCH=$(git -C "$WORKTREE_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+rm -f "$WORKTREE_PATH/.landed" "$WORKTREE_PATH/.test-results.txt" \
+      "$WORKTREE_PATH/.worktreepurpose" "$WORKTREE_PATH/.zskills-tracked"
+git worktree remove "$WORKTREE_PATH" 2>&1
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to remove worktree $WORKTREE_PATH"
+  exit 1
+fi
+
+# 4. Delete branch (best-effort — may already be gone)
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
+  git branch -d "$BRANCH" 2>/dev/null || true
+fi
+
+echo "Worktree removed: $WORKTREE_PATH"
+```
+
+The orchestrator's landing flow becomes:
+1. Cherry-pick commits (may need conflict resolution — LLM judgment)
+2. Run tests on main
+3. Write `.landed` marker in worktree
+4. `bash scripts/land-phase.sh "$WORKTREE_PATH" "$PLAN_FILE" "$PHASE"`
+
+Steps 1-3 need LLM judgment (conflict resolution, test diagnosis). Step 4 is mechanical — the script handles it. No more forgetting cleanup.
+
+**Preflight safety net:** Add to /run-plan's preflight checks:
+
+```bash
+# 5. Clean up landed worktrees from previous phases
+for wt_line in $(git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //'); do
+  if [ -f "$wt_line/.landed" ] && grep -q 'status: landed' "$wt_line/.landed"; then
+    echo "Cleaning up landed worktree: $wt_line"
+    bash scripts/land-phase.sh "$wt_line"
+  fi
+done
+```
+
+This catches stragglers from crashed agents, container restarts, or any remaining edge cases. Defense in depth — the script is the primary fix, the preflight is the safety net.
+
+- [ ] Replace `isolation: "worktree"` dispatch with manual `git worktree add` at `/tmp/` for cherry-pick mode
+- [ ] Agent dispatch uses prompt-based absolute paths instead of isolation parameter
+- [ ] Cherry-pick worktree path: `/tmp/<project>-cp-<plan-slug>-phase-<N>`
+- [ ] Pipeline association via `.zskills-tracked` in worktree
+- [ ] `git worktree prune` before creation (handles container restarts)
+- [ ] Update all /run-plan references to `isolation: "worktree"`
+- [ ] Create `scripts/land-phase.sh` — atomic post-landing: verify `.landed`, extract logs, remove worktree+branch
+- [ ] Update /run-plan Phase 6 to call `scripts/land-phase.sh` after cherry-pick + tests + `.landed` marker
+- [ ] Add preflight check #5: scan and clean up worktrees with `status: landed` markers
+- [ ] Test: create a mock worktree with `.landed` marker, verify preflight removes it
+
+#### 3b.2 -- PR mode: persistent worktree with named branch
+
+Add PR mode worktree setup to Phase 2 (Dispatch Implementation). When `LANDING_MODE` is `pr`, the worktree follows the same manual creation pattern as 3b.1 but with these differences:
+- **Named feature branch** (not auto-named)
+- **Persistent across phases** in `finish` mode (not one-per-phase)
+- **Deterministic path** for cron turn resumption
 
 **Branch naming:** `{branch_prefix}{plan-slug}`
 - `branch_prefix` from config (`execution.branch_prefix`), default `"feat/"` (read in 3a.2)
@@ -1561,8 +1718,9 @@ test_ci_config_auto_fix_false() {
 
 ### Acceptance Criteria
 
+- [ ] Cherry-pick mode uses manual worktree at `/tmp/<project>-cp-<slug>-phase-<N>` (no `isolation: "worktree"`)
 - [ ] PR mode creates persistent worktree at `/tmp/<project>-pr-<plan-slug>` via manual `git worktree add`
-- [ ] Agents dispatched WITHOUT `isolation: "worktree"`
+- [ ] ALL agents dispatched WITHOUT `isolation: "worktree"` (prompt-based `cd` instead)
 - [ ] PR mode branch name: `{branch_prefix}{plan-slug}`
 - [ ] PR mode worktree reuse on resume
 - [ ] Rebase at clean points only (between phases + before push)
@@ -1578,6 +1736,10 @@ test_ci_config_auto_fix_false() {
 - [ ] `.landed` status: `landed` (merged), `pr-ready` (awaiting review), `pr-ci-failing`, or `pr-failed`
 - [ ] `.landed` marker includes `branch`, `pr`, `ci`, `pr_state` fields
 - [ ] Mixed mode ban enforced in PR plans
+- [ ] `scripts/land-phase.sh` exists and handles: verify `.landed`, extract logs, remove worktree+branch
+- [ ] /run-plan Phase 6 calls `scripts/land-phase.sh` after cherry-pick + tests + `.landed` write
+- [ ] Preflight check #5: auto-remove worktrees with `status: landed` markers
+- [ ] Test: mock worktree with `.landed` marker cleaned up by preflight
 - [ ] 9+ PR mode tests pass (markers, naming, paths, config)
 - [ ] Installed skill copy synced
 
