@@ -8,7 +8,7 @@
 # Register BOTH this file and block-unsafe-generic.sh in .claude/settings.json
 # on the PreToolUse event, Bash matcher. The generic layer runs first.
 
-INPUT=$(</dev/stdin)
+INPUT=$(cat)
 
 # Only filter Bash commands
 if [[ "$INPUT" != *'"tool_name":"Bash"'* ]] && [[ "$INPUT" != *'"tool_name": "Bash"'* ]]; then
@@ -25,6 +25,23 @@ block_with_reason() {
 extract_transcript() {
   if [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
     echo "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Extract the cd target from the command (e.g., "cd /tmp/worktree && git push")
+# Hooks run in the main repo CWD, not the agent's cd target. This helper
+# lets us find .zskills-tracked in the correct directory for worktree agents.
+extract_cd_target() {
+  local cmd
+  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g')
+  if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
+    local target="${BASH_REMATCH[1]}"
+    # Remove surrounding quotes if present
+    target="${target%\"}"
+    target="${target#\"}"
+    if [ -d "$target" ]; then
+      echo "$target"
+    fi
   fi
 }
 
@@ -230,7 +247,7 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
         [ -f "$req" ] || continue
         base=$(basename "$req")
         # Pipeline scoping: if PIPELINE_ID is set, only check markers ending with .$PIPELINE_ID
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
@@ -243,7 +260,7 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
       for impl in "$TRACKING_DIR"/step.*.implement; do
         [ -f "$impl" ] || continue
         base=$(basename "$impl" .implement)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         verify="${impl/\.implement/.verify}"
@@ -255,7 +272,7 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
       for verif in "$TRACKING_DIR"/step.*.verify; do
         [ -f "$verif" ] || continue
         base=$(basename "$verif" .verify)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         report="${verif/\.verify/.report}"
@@ -338,7 +355,7 @@ if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
     for req in "$TRACKING_DIR"/requires.*; do
       [ -f "$req" ] || continue
       base=$(basename "$req")
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
         continue
       fi
       fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
@@ -351,7 +368,7 @@ if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
     for impl in "$TRACKING_DIR"/step.*.implement; do
       [ -f "$impl" ] || continue
       base=$(basename "$impl" .implement)
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
         continue
       fi
       verify="${impl/\.implement/.verify}"
@@ -363,7 +380,7 @@ if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
     for verif in "$TRACKING_DIR"/step.*.verify; do
       [ -f "$verif" ] || continue
       base=$(basename "$verif" .verify)
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
         continue
       fi
       report="${verif/\.verify/.report}"
@@ -381,7 +398,14 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
   # Pipeline association guard (same two-tier logic as commit/cherry-pick blocks)
-  LOCAL_ROOT="${LOCAL_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  # Resolve LOCAL_ROOT: prefer cd target (worktree agents use "cd /tmp/wt && git push")
+  # because the hook runs in the main repo CWD, not the agent's cd target.
+  CD_TARGET=$(extract_cd_target)
+  if [ -n "$CD_TARGET" ]; then
+    LOCAL_ROOT="${LOCAL_ROOT:-$CD_TARGET}"
+  else
+    LOCAL_ROOT="${LOCAL_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  fi
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
@@ -407,11 +431,16 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
   if [ -d "$TRACKING_DIR" ] && $TRACKING_SESSION_HAS_PIPELINE; then
 
     # Check if any code files are in the push (compare local branch to remote tracking)
+    # Use -C to run git in the cd target dir (worktree), not main repo CWD
+    GIT_ARGS=""
+    if [ -n "$CD_TARGET" ]; then
+      GIT_ARGS="-C $CD_TARGET"
+    fi
     CODE_FILES=""
-    PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
+    PUSH_DIFF=$(git $GIT_ARGS diff --name-only @{u}..HEAD 2>/dev/null)
     if [ -z "$PUSH_DIFF" ]; then
       # Fallback: compare against main (works before first push -u)
-      PUSH_DIFF=$(git diff --name-only main..HEAD 2>/dev/null)
+      PUSH_DIFF=$(git $GIT_ARGS diff --name-only main..HEAD 2>/dev/null)
     fi
     if [ -n "$PUSH_DIFF" ]; then
       while IFS= read -r line; do
@@ -427,7 +456,7 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
       for req in "$TRACKING_DIR"/requires.*; do
         [ -f "$req" ] || continue
         base=$(basename "$req")
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
@@ -440,7 +469,7 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
       for impl in "$TRACKING_DIR"/step.*.implement; do
         [ -f "$impl" ] || continue
         base=$(basename "$impl" .implement)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         verify="${impl/\.implement/.verify}"
@@ -452,7 +481,7 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
       for verif in "$TRACKING_DIR"/step.*.verify; do
         [ -f "$verif" ] || continue
         base=$(basename "$verif" .verify)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".$PIPELINE_ID" ]]; then
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
           continue
         fi
         report="${verif/\.verify/.report}"

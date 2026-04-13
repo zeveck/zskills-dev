@@ -92,12 +92,15 @@ if [[ "$INPUT" =~ git[[:space:]]+push ]]; then
     PUSH_CMD=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
   fi
 
-  # Parse: git push [-u] [remote] [refspec]
+  # Strip everything before "git push" (e.g., "cd /tmp/path &&")
+  PUSH_CMD="${PUSH_CMD##*git push}"
+
+  # Parse positional args after "git push": [-u] [remote] [refspec]
   # Strip flags (-u, --set-upstream, -f, --force, etc.) and find positional args
   PUSH_ARGS=""
   for word in $PUSH_CMD; do
     case "$word" in
-      git|push) continue ;;
+      "&&"*|";"*|"|"*) break ;;  # stop at command chaining
       -*) continue ;;  # skip flags
       *) PUSH_ARGS="$PUSH_ARGS $word" ;;
     esac
