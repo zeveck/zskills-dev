@@ -20,7 +20,7 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 2 -- main_protected Hook Enforcement | ✅ Done | `a874492` | Runtime config read, 8 tests, push fallback |
 | 3a -- Argument Detection + Config Reading + Direct Mode | ✅ Done | `a8dfe49` | 11 tests, pr/direct detection, config default |
 | 3b-i -- Worktree Unification + Landing Script | ✅ Done | `9cc1dc2` | Manual worktrees, land-phase.sh, preflight, 7 tests |
-| 3b-ii -- PR Mode Happy Path | ⬜ | | Named branches, rebase, push+PR, .landed, mixed mode ban |
+| 3b-ii -- PR Mode Happy Path | 🟡 In Progress | | Named branches, rebase, push+PR, .landed, mixed mode ban |
 | 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ⬜ | | CI polling, fix agents, auto-merge, PR comments |
 | 4 -- /fix-issues PR Landing | ⬜ | | Per-issue branches, PR creation |
 | 5a -- Skill Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan |
