@@ -319,6 +319,19 @@ Before parsing, check for stale state from a previous failed run:
    script, or `vitest.config.*` / `jest.config.*` exists), **STOP.** Hook
    placeholders have not been configured — run `/update-zskills` first.
 
+5. **Clean up landed worktrees from previous phases**
+   ```bash
+   for wt_line in $(git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //'); do
+     if [ -f "$wt_line/.landed" ] && grep -q 'status: landed' "$wt_line/.landed"; then
+       echo "Cleaning up landed worktree: $wt_line"
+       bash scripts/land-phase.sh "$wt_line"
+     fi
+   done
+   ```
+   This catches stragglers from crashed agents, container restarts, or any
+   remaining edge cases. Defense in depth — `scripts/land-phase.sh` is the
+   primary fix (called after each phase landing), the preflight is the safety net.
+
 ### Parse plan
 
 1. **Read the plan file** in full. Also read any companion progress document
@@ -495,16 +508,51 @@ agent hasn't returned after 2 hours, declare it **failed**:
 - If the plan was drafted with `/draft-plan`, the phase may be too large —
   consider splitting it (each phase should be ~3-5 components, ~500 lines).
 
-1. **Dispatch implementation agent** with `isolation: "worktree"`.
+1. **Create worktree manually at `/tmp/` path** (do NOT use `isolation: "worktree"`):
+   ```bash
+   PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+   PROJECT_NAME=$(basename "$PROJECT_ROOT")
+   WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
+
+   git worktree prune
+   if [ -d "$WORKTREE_PATH" ]; then
+     echo "Resuming existing worktree at $WORKTREE_PATH"
+   else
+     git worktree add "$WORKTREE_PATH" -b "cp-${PLAN_SLUG}-${PHASE}" main
+   fi
+
+   # Pipeline association
+   echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+   ```
+
+   Cherry-pick mode: one worktree per phase, auto-named branch, `/tmp/` path.
+   After landing (cherry-pick to main), worktree is removed.
+
+2. **Dispatch implementation agent WITHOUT `isolation: "worktree"`.** The
+   prompt tells the agent the worktree path and requires absolute paths:
+   ```
+   You are working in worktree: $WORKTREE_PATH
+
+   IMPORTANT: Use ABSOLUTE PATHS for all file operations.
+   - Bash: run `cd $WORKTREE_PATH` before commands
+   - Read/Edit/Write/Grep: use $WORKTREE_PATH/... paths
+   Do not work in any other directory.
+   ```
+
    Tell the agent to write a `.worktreepurpose` file as its first action:
    ```
-   echo "<session-name or plan-name>: <phase name>" > .worktreepurpose
+   echo "<session-name or plan-name>: <phase name>" > $WORKTREE_PATH/.worktreepurpose
    ```
-   Example: `echo "SKILLZ: briefing Phase 1" > .worktreepurpose`
+   Example: `echo "SKILLZ: briefing Phase 1" > $WORKTREE_PATH/.worktreepurpose`
    This metadata helps `/briefing worktrees` and `/briefing verify` show
    what each worktree is for, instead of just an opaque agent ID.
 
-2. **Agent prompt MUST include the verbatim plan text.** The implementing
+   **Failed-run cleanup:** If a phase fails terminally, write `.landed` with
+   `status: failed` in the worktree before invoking the Failure Protocol. The
+   cron preamble runs `git worktree prune` to clean up stale entries from
+   container restarts or crashed runs.
+
+3. **Agent prompt MUST include the verbatim plan text.** The implementing
    agent receives the EXACT text of the phase from the plan file — not a
    summary, not bullet points extracted from it, not "implement the mechanical
    domain." The full section with every requirement, formula, constraint,
@@ -518,7 +566,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    the file. This avoids the natural LLM tendency to compress long text
    when inlining it in a prompt. Shorter sections can be inlined directly.
 
-3. **If dispatching sub-agents for parallel work items**, each sub-agent gets:
+4. **If dispatching sub-agents for parallel work items**, each sub-agent gets:
    - The **full phase context** (verbatim) — so they understand the big picture
    - Their **specific scope** clearly delineated — e.g., "you are implementing
      Mass, Spring, Damper. Another agent is implementing sensors and force
@@ -532,12 +580,12 @@ agent hasn't returned after 2 hours, declare it **failed**:
      dispatching parallel agents. Never dispatch parallel agents that both
      need to create the same file.
 
-4. **Within-phase parallelism is the agent's judgment call** — if items are
+5. **Within-phase parallelism is the agent's judgment call** — if items are
    independent (e.g., Mass, Spring, Damper components), the agent may dispatch
    sub-agents. If there's shared infrastructure to build first, it works
    sequentially then parallelizes. The skill does NOT force parallelism.
 
-5. **Commit discipline:**
+6. **Commit discipline:**
    - One logical unit per commit — clean git history
    - `npm run test:all` before every commit — not just `npm test`
    - Tests alongside implementation, not deferred to later
@@ -563,7 +611,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
      conflicts, abort (`git rebase --abort`) and proceed — the cherry-pick
      verification will catch stale files via selective extraction.
 
-6. **Running tests in worktrees — CRITICAL.** Agents waste hours getting
+7. **Running tests in worktrees — CRITICAL.** Agents waste hours getting
    tests working in worktrees without these instructions. Include this
    VERBATIM in every implementation and verification agent prompt:
 
@@ -589,7 +637,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    > 8. If a test fails in code you didn't touch, it may be pre-existing.
    >    See `/verify-changes` Phase 3 for the pre-existing failure protocol.
 
-7. **No steps skipped or deferred.** If the plan says "implement 7 components,"
+8. **No steps skipped or deferred.** If the plan says "implement 7 components,"
    implement 7 components. If it says "write tests for free vibration," write
    those exact tests. Do not stop after the easy items and declare the hard
    ones "future work."
@@ -1006,24 +1054,26 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      ```
      Re-run the phase after the conflicting code is resolved on main.
 
-  5. **Extract logs and mark worktree as landed:**
-     a. Copy unique session logs from worktree to main's `.claude/logs/`
-     b. Write `.landed` marker (atomic: `.tmp` → `mv`):
-        ```bash
-        cat > "<worktree-path>/.landed.tmp" <<LANDED
-        status: full
-        date: $(TZ=America/New_York date -Iseconds)
-        source: run-plan
-        phase: <phase name>
-        commits: <list of cherry-picked hashes>
-        LANDED
-        mv "<worktree-path>/.landed.tmp" "<worktree-path>/.landed"
-        ```
-  6. **Commit extracted logs:**
+  5. **Mark worktree as landed:**
+     Write `.landed` marker (atomic: `.tmp` → `mv`):
      ```bash
-     git add .claude/logs/
-     git commit -m "chore: session logs from run-plan phase"
+     cat > "<worktree-path>/.landed.tmp" <<LANDED
+     status: landed
+     date: $(TZ=America/New_York date -Iseconds)
+     source: run-plan
+     phase: <phase name>
+     commits: <list of cherry-picked hashes>
+     LANDED
+     mv "<worktree-path>/.landed.tmp" "<worktree-path>/.landed"
      ```
+  6. **Run `scripts/land-phase.sh`** — atomic post-landing cleanup:
+     ```bash
+     bash scripts/land-phase.sh "$WORKTREE_PATH"
+     ```
+     This script handles everything: verifies `.landed` marker, extracts
+     logs to main's `.claude/logs/` (MUST succeed — exits 1 on failure),
+     removes the worktree, and deletes the branch. Idempotent — safe to
+     re-run if interrupted.
   7. **Restore stash** if one was created:
      ```bash
      git stash pop
@@ -1041,31 +1091,6 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      ```
   10. **Update the plan report** (`reports/plan-{slug}.md`) — mark the
       phase section as landed. Regenerate `PLAN_REPORT.md` index.
-  11. **Auto-remove worktree** after successful landing:
-      ```bash
-      # Extract any remaining logs
-      if [ -d "<worktree>/.claude/logs" ]; then
-        for log in <worktree>/.claude/logs/*.md; do
-          [ -f ".claude/logs/$(basename "$log")" ] || cp "$log" .claude/logs/
-        done
-      fi
-
-      # Check for real uncommitted work (not artifacts)
-      DIRTY=$(git -C "<worktree>" diff --name-only HEAD)
-      UNTRACKED=$(git -C "<worktree>" status --porcelain | \
-        grep -v '\.landed\|\.worktreepurpose\|\.test-results\|\.playwright\|node_modules')
-
-      if [ -z "$DIRTY" ] && [ -z "$UNTRACKED" ]; then
-        rm -f "<worktree>/.landed" "<worktree>/.worktreepurpose" \
-              "<worktree>/.test-results.txt"
-        git worktree remove "<worktree>"
-        git branch -d "<branch>" 2>/dev/null
-      else
-        echo "Worktree not auto-removed: uncommitted work found"
-      fi
-      ```
-      If removal fails for any reason, leave the worktree — it has
-      `.landed` and `/briefing worktrees` will classify it as safe.
 
 ### Post-landing tracking
 

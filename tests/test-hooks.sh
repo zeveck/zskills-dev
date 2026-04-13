@@ -783,6 +783,87 @@ else
 fi
 
 echo ""
+echo "=== Worktree path construction ==="
+
+# Test: cherry-pick worktree path follows convention
+PLAN_FILE="plans/THERMAL_DOMAIN_PLAN.md"
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+PROJECT_NAME="myproject"
+PHASE="4b"
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
+if [ "$WORKTREE_PATH" = "/tmp/myproject-cp-thermal-domain-plan-phase-4b" ]; then
+  pass "worktree path: /tmp/<project>-cp-<slug>-phase-<N>"
+else
+  fail "worktree path: expected /tmp/myproject-cp-thermal-domain-plan-phase-4b, got $WORKTREE_PATH"
+fi
+
+# Test: plan slug handles mixed case and underscores
+PLAN_FILE="plans/My_Feature_PLAN.md"
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+if [ "$PLAN_SLUG" = "my-feature-plan" ]; then
+  pass "plan slug: mixed case + underscores normalized"
+else
+  fail "plan slug: expected 'my-feature-plan', got '$PLAN_SLUG'"
+fi
+
+# Test: branch name follows convention
+BRANCH_NAME="cp-${PLAN_SLUG}-${PHASE}"
+if [ "$BRANCH_NAME" = "cp-my-feature-plan-4b" ]; then
+  pass "branch name: cp-<slug>-<phase>"
+else
+  fail "branch name: expected 'cp-my-feature-plan-4b', got '$BRANCH_NAME'"
+fi
+
+echo ""
+echo "=== land-phase.sh ==="
+
+LAND_SCRIPT="$REPO_ROOT/scripts/land-phase.sh"
+
+# Test: idempotent on missing directory (exit 0)
+LAND_OUTPUT=$(bash "$LAND_SCRIPT" "/tmp/nonexistent-worktree-path-$$" 2>&1)
+LAND_RC=$?
+if [ $LAND_RC -eq 0 ] && [[ "$LAND_OUTPUT" == *"Worktree already removed"* ]]; then
+  pass "land-phase.sh: idempotent on missing directory (exit 0)"
+else
+  fail "land-phase.sh: idempotent on missing dir — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+# Test: rejects worktree with no .landed marker (exit 1)
+LAND_TMPDIR=$(mktemp -d)
+LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
+LAND_RC=$?
+rm -rf "$LAND_TMPDIR"
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"No .landed marker"* ]]; then
+  pass "land-phase.sh: rejects no .landed marker (exit 1)"
+else
+  fail "land-phase.sh: no marker rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+# Test: rejects .landed with wrong status (exit 1)
+LAND_TMPDIR=$(mktemp -d)
+printf 'status: partial\ndate: 2026-01-01\n' > "$LAND_TMPDIR/.landed"
+LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
+LAND_RC=$?
+rm -rf "$LAND_TMPDIR"
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say 'status: landed'"* ]]; then
+  pass "land-phase.sh: rejects wrong status (exit 1)"
+else
+  fail "land-phase.sh: wrong status rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+# Test: rejects .landed with status: full (not status: landed)
+LAND_TMPDIR=$(mktemp -d)
+printf 'status: full\ndate: 2026-01-01\n' > "$LAND_TMPDIR/.landed"
+LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
+LAND_RC=$?
+rm -rf "$LAND_TMPDIR"
+if [ $LAND_RC -eq 1 ] && [[ "$LAND_OUTPUT" == *"does not say 'status: landed'"* ]]; then
+  pass "land-phase.sh: rejects status: full (requires status: landed)"
+else
+  fail "land-phase.sh: status:full rejection — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 
