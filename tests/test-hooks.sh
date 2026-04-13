@@ -660,6 +660,126 @@ else
 fi
 rm -rf "$push_tracking_tmpdir"
 
+
+echo "=== Landing mode argument detection ==="
+
+# Test: detect "pr" argument (case-insensitive)
+ARGUMENTS="plans/FEATURE.md finish auto pr"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  pass "detect pr argument"
+else
+  fail "detect pr argument"
+fi
+
+# Test: detect "PR" (uppercase)
+ARGUMENTS="plans/FEATURE.md PR auto"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  pass "detect PR uppercase"
+else
+  fail "detect PR uppercase"
+fi
+
+# Test: detect "direct" argument (case-insensitive)
+ARGUMENTS="plans/FEATURE.md direct"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  pass "detect direct argument"
+else
+  fail "detect direct argument"
+fi
+
+# Test: detect "DIRECT" (uppercase)
+ARGUMENTS="plans/FEATURE.md DIRECT auto"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  pass "detect DIRECT uppercase"
+else
+  fail "detect DIRECT uppercase"
+fi
+
+# Test: no landing mode argument -> falls through
+ARGUMENTS="plans/FEATURE.md finish auto"
+DETECTED_MODE="none"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  DETECTED_MODE="pr"
+fi
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  DETECTED_MODE="direct"
+fi
+if [ "$DETECTED_MODE" = "none" ]; then
+  pass "no landing mode falls through"
+else
+  fail "no landing mode falls through — detected '$DETECTED_MODE'"
+fi
+
+# Test: "pr" inside a word does not match (e.g., "SPRINT")
+ARGUMENTS="plans/SPRINT_PLAN.md finish"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  fail "word boundary: 'pr' should not match inside 'SPRINT'"
+else
+  pass "word boundary: 'pr' does not match inside 'SPRINT'"
+fi
+
+# Test: "direct" inside a word does not match (e.g., "indirectly")
+ARGUMENTS="plans/INDIRECT_PLAN.md finish"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  fail "word boundary: 'direct' should not match inside 'INDIRECT'"
+else
+  pass "word boundary: 'direct' does not match inside 'INDIRECT'"
+fi
+
+# Test: direct + main_protected -> conflict detected
+CONFIG='{"execution": {"landing": "cherry-pick", "main_protected": true}}'
+LANDING_MODE="direct"
+CONFLICT_DETECTED="no"
+if [[ "$CONFIG" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+  if [ "$LANDING_MODE" = "direct" ]; then
+    CONFLICT_DETECTED="yes"
+  fi
+fi
+if [ "$CONFLICT_DETECTED" = "yes" ]; then
+  pass "direct + main_protected conflict detected"
+else
+  fail "direct + main_protected conflict not detected"
+fi
+
+# Test: config landing default read when no argument
+LANDING_MODE="cherry-pick"
+CONFIG_CONTENT='{"execution": {"landing": "pr", "main_protected": false}}'
+if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  CFG_LANDING="${BASH_REMATCH[1]}"
+  if [ -n "$CFG_LANDING" ]; then
+    LANDING_MODE="$CFG_LANDING"
+  fi
+fi
+if [ "$LANDING_MODE" = "pr" ]; then
+  pass "config default landing mode read correctly"
+else
+  fail "config default landing mode — expected 'pr', got '$LANDING_MODE'"
+fi
+
+# Test: branch_prefix empty string handled correctly
+BRANCH_PREFIX="feat/"
+CONFIG_CONTENT='{"execution": {"branch_prefix": ""}}'
+if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  BRANCH_PREFIX="${BASH_REMATCH[1]}"
+fi
+if [ "$BRANCH_PREFIX" = "" ]; then
+  pass "branch_prefix empty string sets empty prefix"
+else
+  fail "branch_prefix empty string — expected empty, got '$BRANCH_PREFIX'"
+fi
+
+# Test: branch_prefix non-empty value
+BRANCH_PREFIX="feat/"
+CONFIG_CONTENT='{"execution": {"branch_prefix": "fix/"}}'
+if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  BRANCH_PREFIX="${BASH_REMATCH[1]}"
+fi
+if [ "$BRANCH_PREFIX" = "fix/" ]; then
+  pass "branch_prefix reads custom value"
+else
+  fail "branch_prefix custom value — expected 'fix/', got '$BRANCH_PREFIX'"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"

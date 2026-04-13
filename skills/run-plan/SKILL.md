@@ -1,7 +1,7 @@
 ---
 name: run-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [phase|finish|status] [auto] [every SCHEDULE] [now] | stop | next"
+argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHEDULE] [now] | stop | next"
 description: >-
   Execute the next phase of a plan document: parse phases and status, dispatch
   implementation in a worktree, verify with a separate agent, update progress
@@ -23,7 +23,7 @@ through multi-phase plans autonomously.
 ## Arguments
 
 ```
-/run-plan <plan-file> [phase] [auto] [every SCHEDULE] [now]
+/run-plan <plan-file> [phase] [auto] [pr|direct] [every SCHEDULE] [now]
 /run-plan stop | next
 ```
 
@@ -69,6 +69,70 @@ through multi-phase plans autonomously.
 - `now` (case-insensitive) — run immediately
 - `auto` (case-insensitive) — autonomous mode
 - `every` followed by a schedule expression — scheduling mode
+- `pr` (case-insensitive) — PR landing mode
+- `direct` (case-insensitive) — direct landing mode
+- Neither `pr` nor `direct` — read config default (`execution.landing`),
+  or `cherry-pick` if no config
+
+**Landing mode resolution:**
+1. Explicit argument wins: `pr` or `direct` in $ARGUMENTS
+2. Config default: read `.claude/zskills-config.json` `execution.landing` field
+3. Fallback: `cherry-pick`
+
+```bash
+# Detect landing mode
+LANDING_MODE="cherry-pick"  # default
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  LANDING_MODE="pr"
+elif [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  LANDING_MODE="direct"
+else
+  # Read config default
+  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      CFG_LANDING="${BASH_REMATCH[1]}"
+      if [ -n "$CFG_LANDING" ]; then
+        LANDING_MODE="$CFG_LANDING"
+      fi
+    fi
+  fi
+fi
+```
+
+**Validation:**
+
+```bash
+# direct + main_protected -> error
+if [[ "$LANDING_MODE" == "direct" ]]; then
+  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+      echo "ERROR: direct mode is incompatible with main_protected: true. Use pr mode or change config."
+      exit 1
+    fi
+  fi
+fi
+```
+
+**Reading branch_prefix from config:**
+
+```bash
+# Read branch prefix from config (default: feat/)
+BRANCH_PREFIX="feat/"
+if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
+  CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
+  # ([^\"]*) allows empty string match -- empty prefix means no prefix
+  if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    BRANCH_PREFIX="${BASH_REMATCH[1]}"
+  fi
+fi
+```
+
+**Strip `pr`/`direct` from arguments** before passing to downstream processing
+(same pattern as stripping `auto`, `finish`, etc.).
 
 Examples:
 - `/run-plan plans/FEATURE_PLAN.md` — interactive, next phase
@@ -77,6 +141,8 @@ Examples:
 - `/run-plan plans/FEATURE_PLAN.md finish auto` — autonomous, all remaining phases (no pausing)
 - `/run-plan plans/FEATURE_PLAN.md auto every 4h` — schedule every 4h
 - `/run-plan plans/FEATURE_PLAN.md auto every 4h now` — schedule + run now
+- `/run-plan plans/FEATURE_PLAN.md finish auto pr` — autonomous, all phases, PR landing
+- `/run-plan plans/FEATURE_PLAN.md direct` — direct mode, work on main
 - `/run-plan plans/FEATURE_PLAN.md status` — show plan progress
 - `/run-plan now` — trigger the active cron early
 - `/run-plan stop` — cancel scheduled runs
@@ -374,6 +440,10 @@ Check the phase text for an execution mode directive:
   See "Delegate mode" below.
 - **`### Execution: worktree`** or **no directive** — default worktree mode.
   See "Worktree mode" below.
+- **`### Execution: direct`** — direct mode. No worktree — agent works
+  directly on main. Phase 6 is a no-op (work is already on main). Only
+  valid when `LANDING_MODE` is `direct` (validated in argument detection).
+  See "Direct mode" below.
 
 ### Delegate mode
 
@@ -398,6 +468,17 @@ Use cases:
 - `### Execution: delegate /add-block DiscreteFilter` — block expansion
 - `### Execution: delegate /run-plan plans/SUB_PLAN.md finish auto` — meta-plans
 - `### Execution: delegate /draft-plan plans/FOO.md <description>` — plan generation
+
+### Direct mode
+
+When `LANDING_MODE` is `direct`:
+- Do NOT create a worktree
+- Agent works directly on main (current working directory)
+- `### Execution: direct` in phase text is the recognized directive
+- Phase 6: no-op (work is already on main, nothing to land)
+- `.landed` marker: not written (no worktree to mark)
+
+**Validation (already checked in argument detection):** `direct` + `main_protected: true` -> error before dispatch.
 
 ### Worktree mode (default)
 
@@ -816,6 +897,13 @@ Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
    mentioned in a skipped section, skip this step.
 
 ## Phase 6 — Land
+
+### Direct mode landing
+
+If `LANDING_MODE` is `direct`, Phase 6 is a **no-op**. Work was committed
+directly on main — there is nothing to cherry-pick, no worktree to land,
+and no `.landed` marker to write. Update the progress tracker to Done and
+proceed to the next phase or exit.
 
 ### Delegate mode landing
 
