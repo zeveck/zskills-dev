@@ -28,6 +28,30 @@ extract_transcript() {
   fi
 }
 
+# --- main_protected access control ---
+# Reads config at runtime (not baked in during /update-zskills).
+# Changing the config takes effect immediately.
+is_main_protected() {
+  local config_file
+  local repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  config_file="$repo_root/.claude/zskills-config.json"
+  if [ -f "$config_file" ]; then
+    local content
+    content=$(cat "$config_file" 2>/dev/null) || return 1
+    if [[ "$content" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+is_on_main() {
+  local branch
+  local repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  branch=$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  [[ "$branch" == "main" || "$branch" == "master" ]]
+}
+
 # ─── Tracking file protection ───
 # Block recursive deletion of tracking directory
 if [[ "$INPUT" =~ rm[[:space:]].*-[a-zA-Z]*r[a-zA-Z]*.*\.zskills/tracking ]]; then
@@ -53,8 +77,8 @@ fi
 # ─── CONFIGURE: set your test command patterns ────────────────────────
 # Piping test output (loses failures, forces re-runs -- capture to file instead)
 # Replace the placeholder values with your actual test command patterns.
-UNIT_TEST_CMD="{{UNIT_TEST_CMD}}"
-FULL_TEST_CMD="{{FULL_TEST_CMD}}"
+UNIT_TEST_CMD="bash tests/test-hooks.sh"
+FULL_TEST_CMD="bash tests/test-hooks.sh"
 
 # Build regex pattern from configured test commands (fall back to generic if unconfigured)
 if [[ "$UNIT_TEST_CMD" == *'{{'* ]] || [[ "$FULL_TEST_CMD" == *'{{'* ]]; then
@@ -72,6 +96,11 @@ fi
 
 if [[ "$INPUT" =~ $TEST_PIPE_PATTERN ]] && [[ "$INPUT" == *'|'* ]]; then
   block_with_reason "Don't pipe test output -- it loses failure details. Instead: ${FULL_TEST_CMD:-npm run test:all} > .test-results.txt 2>&1 then read the file. To inspect results, grep the captured file."
+fi
+
+# --- main_protected: block git commit on main ---
+if [[ "$INPUT" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
+  block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
 
 # ─── CONFIGURE: set your full test command ────────────────────────────
@@ -122,8 +151,8 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
 
     # ─── CONFIGURE: set your UI source paths, or remove this section if not applicable ───
     # Check if UI files changed but no playwright-cli verification
-    UI_FILE_PATTERNS="{{UI_FILE_PATTERNS}}"
-    if [[ "$UI_FILE_PATTERNS" != '{{UI_FILE_PATTERNS}}' ]]; then
+    UI_FILE_PATTERNS="PRESENTATION.html"
+    if [[ "$UI_FILE_PATTERNS" != 'PRESENTATION.html' ]]; then
       UI_DIFF_OUTPUT=$(git diff --cached --name-only 2>/dev/null)
       UI_FILES=""
       while IFS= read -r line; do
@@ -236,6 +265,11 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
       done
     fi
   fi
+fi
+
+# --- main_protected: block git cherry-pick on main ---
+if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]] && is_main_protected && is_on_main; then
+  block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
 
 # Safety net: transcript-based verification on git cherry-pick
@@ -422,6 +456,84 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
           block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before pushing. To clear: ! bash scripts/clear-tracking.sh"
         fi
       done
+    fi
+  fi
+fi
+
+# --- main_protected: block git push to main ---
+if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
+  # Check if pushing to main/master (explicit refspec or default branch)
+  if is_on_main; then
+    # On main branch, default push targets main
+    if [[ ! "$INPUT" =~ origin[[:space:]]+[a-zA-Z] ]] || [[ "$INPUT" =~ origin[[:space:]]+(main|master) ]]; then
+      block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
+    fi
+  fi
+fi
+
+# ─── Tracking enforcement on git push ───
+if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
+  REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  TRACKING_DIR="$REPO_ROOT/.claude/tracking"
+
+  if [ -d "$TRACKING_DIR" ]; then
+    # Detect code files in the push range
+    PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
+    if [ -z "$PUSH_DIFF" ]; then
+      # Fallback: compare against main (works before first push -u)
+      PUSH_DIFF=$(git diff --name-only main..HEAD 2>/dev/null)
+    fi
+
+    PUSH_CODE_FILES=""
+    while IFS= read -r line; do
+      if [[ "$line" =~ \.(js|ts|json|css|html|rs|py|go|rb)$ ]]; then
+        PUSH_CODE_FILES+="$line"$'\n'
+      fi
+    done <<< "$PUSH_DIFF"
+
+    if [ -n "$PUSH_CODE_FILES" ]; then
+      # Staleness check
+      PIPELINE_STALE=false
+      if [ -f "$TRACKING_DIR/pipeline.active" ]; then
+        STALE=$(find "$TRACKING_DIR/pipeline.active" -mmin +480 2>/dev/null)
+        if [ -n "$STALE" ]; then
+          echo "WARNING: Stale pipeline detected (>8h old). To clear: ! bash scripts/clear-tracking.sh" >&2
+          PIPELINE_STALE=true
+        fi
+      fi
+
+      # Delegation check (skip if pipeline is stale)
+      if ! $PIPELINE_STALE; then
+        for req in "$TRACKING_DIR"/requires.*; do
+          [ -f "$req" ] || continue
+          base=$(basename "$req")
+          fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
+          if [ ! -f "$fulfilled" ]; then
+            block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
+          fi
+        done
+      fi
+
+      # Step enforcement (skip if pipeline is stale)
+      if ! $PIPELINE_STALE; then
+        for impl in "$TRACKING_DIR"/step.*.implement; do
+          [ -f "$impl" ] || continue
+          verify="${impl/\.implement/.verify}"
+          if [ ! -f "$verify" ]; then
+            session=$(basename "$impl" .implement)
+            block_with_reason "BLOCKED: ${session#step.} has implementation but no verification. Run verification before landing. To clear: ! bash scripts/clear-tracking.sh"
+          fi
+        done
+
+        for verif in "$TRACKING_DIR"/step.*.verify; do
+          [ -f "$verif" ] || continue
+          report="${verif/\.verify/.report}"
+          if [ ! -f "$report" ]; then
+            session=$(basename "$verif" .verify)
+            block_with_reason "BLOCKED: ${session#step.} verified but no report written. Write report before landing. To clear: ! bash scripts/clear-tracking.sh"
+          fi
+        done
+      fi
     fi
   fi
 fi

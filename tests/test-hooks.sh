@@ -539,6 +539,128 @@ else
 fi
 
 echo ""
+echo "=== Project hook: main_protected enforcement ==="
+
+# Helper: run hook in a temp git repo with specific branch and config
+run_main_protected_test() {
+  local branch="$1"
+  local config_content="$2"
+  local cmd="$3"
+  local test_tmpdir
+  test_tmpdir=$(mktemp -d)
+
+  mkdir -p "$test_tmpdir/.claude/hooks"
+  mkdir -p "$test_tmpdir/.claude/tracking"
+
+  # Copy and configure the hook template
+  cp "$PROJECT_HOOK" "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
+
+  # Create mock package.json and transcript
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$test_tmpdir/package.json"
+  printf 'npm run test:all\n' > "$test_tmpdir/.transcript"
+
+  # Initialize git repo on specified branch
+  (cd "$test_tmpdir" && git init -q && git checkout -b "$branch" 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
+
+  # Write config if provided
+  if [ -n "$config_content" ]; then
+    cat > "$test_tmpdir/.claude/zskills-config.json" <<EOF
+$config_content
+EOF
+  fi
+
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$test_tmpdir/.transcript\"}"
+  local result
+  result=$(echo "$json" | REPO_ROOT="$test_tmpdir" bash "$test_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+
+  # Cleanup
+  rm -rf "$test_tmpdir"
+  echo "$result"
+}
+
+# Test: main_protected blocks commit on main
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git commit -m test")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected: commit on main blocked"
+else
+  fail "main_protected: commit on main should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected allows commit on feature branch
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git commit -m test")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected: commit on feature branch allowed"
+else
+  fail "main_protected: commit on feature branch should be allowed, got: $RESULT"
+fi
+
+# Test: main_protected false allows commit on main
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": false}}' "git commit -m test")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected: false allows commit on main"
+else
+  fail "main_protected: false should allow commit on main, got: $RESULT"
+fi
+
+# Test: no config file allows commit on main
+RESULT=$(run_main_protected_test "main" "" "git commit -m test")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected: no config allows commit on main"
+else
+  fail "main_protected: no config should allow commit on main, got: $RESULT"
+fi
+
+# Test: main_protected blocks cherry-pick on main
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git cherry-pick abc123")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected: cherry-pick on main blocked"
+else
+  fail "main_protected: cherry-pick on main should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected blocks push to main
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git push origin main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push to main blocked"
+else
+  fail "main_protected: push to main should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected allows push on feature branch
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push -u origin feat/test")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected: push on feature branch allowed"
+else
+  fail "main_protected: push on feature branch should be allowed, got: $RESULT"
+fi
+
+# Test: push tracking works before first push (no upstream) — code-files detection fallback
+push_tracking_tmpdir=$(mktemp -d)
+mkdir -p "$push_tracking_tmpdir/.claude/hooks"
+mkdir -p "$push_tracking_tmpdir/.claude/tracking"
+cp "$PROJECT_HOOK" "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
+sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
+sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
+sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
+printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$push_tracking_tmpdir/package.json"
+printf 'npm run test:all\n' > "$push_tracking_tmpdir/.transcript"
+(cd "$push_tracking_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
+(cd "$push_tracking_tmpdir" && git checkout -b feat/test 2>/dev/null && echo "var x=1;" > app.js && git add app.js && git commit -q -m "add code" 2>/dev/null)
+# Add a requires file without fulfilled — should block push with code files
+touch "$push_tracking_tmpdir/.claude/tracking/requires.verify-changes"
+PUSH_JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push -u origin feat/test\"},\"transcript_path\":\"$push_tracking_tmpdir/.transcript\"}"
+PUSH_RESULT=$(echo "$PUSH_JSON" | REPO_ROOT="$push_tracking_tmpdir" bash "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+if [[ "$PUSH_RESULT" == *"Required skill invocation"* ]]; then
+  pass "push tracking: no-upstream fallback detects code files and enforces tracking"
+else
+  fail "push tracking: no-upstream fallback should detect code files, got: $PUSH_RESULT"
+fi
+rm -rf "$push_tracking_tmpdir"
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 
