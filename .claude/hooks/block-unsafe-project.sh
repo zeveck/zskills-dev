@@ -409,6 +409,10 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
     # Check if any code files are in the push (compare local branch to remote tracking)
     CODE_FILES=""
     PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
+    if [ -z "$PUSH_DIFF" ]; then
+      # Fallback: compare against main (works before first push -u)
+      PUSH_DIFF=$(git diff --name-only main..HEAD 2>/dev/null)
+    fi
     if [ -n "$PUSH_DIFF" ]; then
       while IFS= read -r line; do
         if [[ "$line" =~ \.(js|jsx|mjs|cjs|ts|tsx|json|css|scss|html|vue|svelte|rs|py|go|rb|java|kt|swift|c|cc|cpp|h|hpp|sh|php)$ ]]; then

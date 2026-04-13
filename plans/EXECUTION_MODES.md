@@ -1,6 +1,6 @@
 ---
 title: Execution Modes
-created: 2026-04-12
+created: 2026-04-13
 status: active
 ---
 
@@ -16,10 +16,10 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Config File + /update-zskills | ⬜ | | Schema, dogfood config, template merge |
-| 2 -- main_protected Hook Enforcement | ⬜ | | Access control, separate from tracking; push hook fix |
+| 1 -- Config File + /update-zskills | ✅ Done | `2bbe180` | Config, schema, /update-zskills Step 0.5, 6 tests |
+| 2 -- main_protected Hook Enforcement | ✅ Done | `a874492` | Runtime config read, 8 tests, push fallback |
 | 3a -- Argument Detection + Config Reading + Direct Mode | ⬜ | | Small: detection, config, direct mode |
-| 3b -- PR Mode Implementation | ⬜ | | Large: persistent worktree, push+PR landing |
+| 3b -- PR Mode Implementation | ⬜ | | Large: persistent worktree, push+PR, CI, auto-merge |
 | 4 -- /fix-issues PR Landing | ⬜ | | Per-issue branches, PR creation |
 | 5 -- Pipeline Propagation | ⬜ | | research-and-go, research-and-plan, draft-plan, do, commit, CLAUDE_TEMPLATE |
 
@@ -29,19 +29,19 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 
 ### Goal
 
-Define the `.claude/zskills-config.json` schema, create the zskills dogfood config, and modify `/update-zskills` to read the config, merge with auto-detected values, and fill CLAUDE_TEMPLATE.md and hook templates from config values instead of raw placeholders.
+Define the `.claude/zskills-config.json` schema, create the zskills dogfood config, create the JSON Schema file for VS Code validation, and modify `/update-zskills` to read the config, merge with auto-detected values, and fill CLAUDE_TEMPLATE.md and hook templates from config values instead of raw placeholders.
 
 ### Work Items
 
 #### 1.1 -- Define `.claude/zskills-config.json` schema
 
-Create `.claude/zskills-config.json` for the zskills repo itself (dogfood). The schema:
+Create `.claude/zskills-config.json` for the zskills repo itself (dogfood):
 
 ```json
 {
+  "$schema": "./zskills-config.schema.json",
   "project_name": "zskills",
   "timezone": "America/New_York",
-  "source_layout": "skills/ — skill definitions, hooks/ — hook scripts, scripts/ — helpers",
 
   "execution": {
     "landing": "cherry-pick",
@@ -65,9 +65,16 @@ Create `.claude/zskills-config.json` for the zskills repo itself (dogfood). The 
   "ui": {
     "file_patterns": "",
     "auth_bypass": ""
+  },
+
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2
   }
 }
 ```
+
+**`$schema`:** Points to the JSON Schema file in the same directory. VS Code uses this for autocomplete, hover descriptions, and live validation. The `$schema` field is ignored by the bash regex extraction.
 
 **Allowed values for `execution.landing`:** `"cherry-pick"` (default), `"pr"`, `"direct"`.
 
@@ -75,24 +82,154 @@ Create `.claude/zskills-config.json` for the zskills repo itself (dogfood). The 
 
 **`execution.branch_prefix`:** String prepended to plan slug for branch names. Default `"feat/"`. Examples: `"feat/"`, `"agent/"`, `""` (empty string = no prefix).
 
-- [ ] Create `.claude/zskills-config.json` with the zskills dogfood values above
-- [ ] Verify the file is valid JSON: `python3 -c "import json; json.load(open('.claude/zskills-config.json'))"`
+**`ci.auto_fix`:** `true` (default) or `false`. When `true` and landing mode is `pr`, the agent polls CI checks after PR creation and attempts to fix failures automatically. When `false`, the agent creates the PR and reports the URL without waiting for CI.
 
-#### 1.2 -- Add config reading to `/update-zskills`
+**`ci.max_fix_attempts`:** Integer, default `2`. Maximum number of fix-and-push cycles the agent will attempt when CI fails. Set to `0` to poll CI but never attempt fixes (report-only mode).
+
+- [ ] Create `.claude/zskills-config.json` with the zskills dogfood values above (including `$schema` reference)
+- [ ] Verify the file is readable by the bash regex extraction (no external JSON validator -- if malformed, regex silently falls through to defaults, which is safe)
+
+#### 1.2 -- JSON Schema file
+
+Create `config/zskills-config.schema.json` in the skills distribution repo. This provides VS Code autocomplete, hover descriptions, and live validation for `.claude/zskills-config.json` in target projects.
+
+`/update-zskills` copies the schema file to `.claude/zskills-config.schema.json` in the target project alongside the config. The config's `"$schema": "./zskills-config.schema.json"` reference resolves relative to the config file location.
+
+Full schema:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "zskills Configuration",
+  "description": "Configuration for zskills agent skill system. Controls execution modes, testing, CI, and UI verification.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to this schema file (for VS Code validation)."
+    },
+    "project_name": {
+      "type": "string",
+      "description": "Human-readable project name. Used in PR titles and reports."
+    },
+    "timezone": {
+      "type": "string",
+      "description": "IANA timezone for timestamps in reports and markers. Example: America/New_York",
+      "default": "America/New_York"
+    },
+    "execution": {
+      "type": "object",
+      "description": "Controls how agent work reaches main.",
+      "properties": {
+        "landing": {
+          "type": "string",
+          "enum": ["cherry-pick", "pr", "direct"],
+          "default": "cherry-pick",
+          "description": "Default landing mode. cherry-pick: work in worktree, cherry-pick to main. pr: work in named worktree, push branch, create PR. direct: work on main, no landing step."
+        },
+        "main_protected": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, agents cannot commit, cherry-pick, or push to main. Forces PR or feature branch workflow."
+        },
+        "branch_prefix": {
+          "type": "string",
+          "default": "feat/",
+          "description": "Prefix for branch names in PR mode. Examples: 'feat/', 'agent/', '' (empty = no prefix)."
+        }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "description": "Test commands and patterns.",
+      "properties": {
+        "unit_cmd": {
+          "type": "string",
+          "description": "Command to run unit tests. Example: npm run test"
+        },
+        "full_cmd": {
+          "type": "string",
+          "description": "Command to run all tests (unit + integration + E2E). Example: npm run test:all"
+        },
+        "output_file": {
+          "type": "string",
+          "default": ".test-results.txt",
+          "description": "File where test output is captured."
+        },
+        "file_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns for test files. Example: ['tests/**/*.test.js']"
+        }
+      }
+    },
+    "dev_server": {
+      "type": "object",
+      "description": "Development server configuration for manual testing.",
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command to start the dev server. Example: npm start"
+        },
+        "port_script": {
+          "type": "string",
+          "description": "Script that outputs the dev server port. Example: scripts/port.sh"
+        },
+        "main_repo_path": {
+          "type": "string",
+          "description": "Absolute path to the main repo. Used by worktree agents to find the dev server."
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "description": "UI verification configuration.",
+      "properties": {
+        "file_patterns": {
+          "type": "string",
+          "description": "Regex pattern matching UI files. When these files change, manual verification is required. Example: src/(components|ui)/.*\\.tsx?$"
+        },
+        "auth_bypass": {
+          "type": "string",
+          "description": "JavaScript to execute for auth bypass during manual testing. Example: localStorage.setItem('token', 'test')"
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "description": "CI integration for PR mode. Controls whether the agent polls CI checks and attempts to fix failures.",
+      "properties": {
+        "auto_fix": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, poll CI checks after PR creation and attempt to fix failures. When false, create PR and report URL without waiting. Set to false for slow CI (30+ min) or repos without CI."
+        },
+        "max_fix_attempts": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum fix-and-push cycles when CI fails. 0 = poll and report only (no fix attempts). Each attempt comments on the PR with failure context."
+        }
+      }
+    }
+  }
+}
+```
+
+- [ ] Create `config/zskills-config.schema.json` with full field descriptions and defaults
+- [ ] Add `$schema` field to the dogfood config (`.claude/zskills-config.json`)
+- [ ] Add schema copy step to `/update-zskills`: copy `config/zskills-config.schema.json` to `.claude/zskills-config.schema.json` in target project
+- [ ] Verify VS Code picks up autocomplete (open the config, check for hover descriptions)
+
+#### 1.3 -- Add config reading to `/update-zskills`
 
 Modify `skills/update-zskills/SKILL.md` to add a config-reading step that runs after Step 0 (Locate Portable Assets) and before the Audit.
-
-The skill text must instruct the agent to:
-
-1. Check if `.claude/zskills-config.json` exists in the target project root.
-2. If it exists, read it and extract values for template filling.
-3. If it does not exist, auto-detect values from the project (current behavior).
-4. Apply the **merge algorithm**: for each config field, config non-empty string wins; auto-detected value fills gaps; empty string means "not applicable."
 
 Add this section after Step 0 in `skills/update-zskills/SKILL.md`:
 
 ```markdown
-## Step 0.5 — Read Config
+## Step 0.5 -- Read Config
 
 Check if `.claude/zskills-config.json` exists in the target project root (`$PROJECT_ROOT`).
 
@@ -109,6 +246,13 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    if [[ "$CONFIG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      MAIN_PROTECTED="${BASH_REMATCH[1]}"
    fi
+   # Extract CI config:
+   if [[ "$CONFIG_CONTENT" =~ \"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+     CI_AUTO_FIX="${BASH_REMATCH[1]}"
+   fi
+   if [[ "$CONFIG_CONTENT" =~ \"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+     CI_MAX_ATTEMPTS="${BASH_REMATCH[1]}"
+   fi
    ```
 3. For each template placeholder, use the config value if non-empty.
 
@@ -122,9 +266,9 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    EOF
    ```
    **Important:** `.claude/zskills-config.json` is protected by Claude Code's
-   built-in permission system — agent writes trigger a prompt. Since `/update-zskills`
-   runs interactively with the user, the user approves the prompt. The agent presents the values and instructs
-   the user to create the file using the `!` prefix (user action).
+   built-in permission system -- agent writes trigger a prompt. The agent presents
+   the values and instructs the user to create the file using the `!` prefix
+   (user action).
 
 **Merge algorithm pseudocode:**
 ```
@@ -134,15 +278,17 @@ for each field F in schema:
   else if auto_detect[F] is non-empty:
     use auto_detect[F]
   else:
-    mark as empty → template section gets commented out
+    mark as empty -> template section gets commented out
 ```
 ```
 
 - [ ] Add Step 0.5 to `skills/update-zskills/SKILL.md` after Step 0
 - [ ] Add extraction examples for all config fields used by templates
 - [ ] Config creation uses `!` user-action prefix (agent cannot write config directly)
+- [ ] Copy `config/zskills-config.schema.json` to `.claude/zskills-config.schema.json` in target project (part of Step 0.5)
+- [ ] Include `"$schema": "./zskills-config.schema.json"` in the suggested config template
 
-#### 1.3 -- Template filling from config
+#### 1.4 -- Template filling from config
 
 Modify the template-filling logic in `/update-zskills` to use config values. The placeholders in `CLAUDE_TEMPLATE.md` and `hooks/block-unsafe-project.sh.template` that map to config fields:
 
@@ -164,43 +310,92 @@ Modify the template-filling logic in `/update-zskills` to use config values. The
 #
 # Before:
 #   UI_FILE_PATTERNS="src/components/.*\.tsx?$"
-#   if [[ "$UI_FILE_PATTERNS" != ... ]]; then
-#     ...
-#   fi
 #
 # After (empty):
 #   # TODO: Configure UI file patterns in .claude/zskills-config.json
 #   # UI_FILE_PATTERNS=""
 ```
 
-The existing template already handles unconfigured placeholders (checks for `{{` prefix), so this is backward compatible. The config just provides cleaner values.
-
 - [ ] Update `/update-zskills` template-filling instructions to use config values
 - [ ] Ensure empty config values produce commented-out sections with TODO markers
 - [ ] Verify backward compatibility: no config = auto-detect (unchanged behavior)
 
-#### 1.4 -- Sync installed copies
+#### 1.5 -- Tests for config reading
 
-After modifying source files, sync the installed copies:
+Add tests to `tests/test-hooks.sh` for bash regex config extraction:
+
+```bash
+# Test: extract string value from config
+test_config_extract_string() {
+  CONFIG='{"project_name": "my-app", "timezone": "America/New_York"}'
+  [[ "$CONFIG" =~ \"project_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]
+  [[ "${BASH_REMATCH[1]}" == "my-app" ]] || fail "Expected my-app"
+}
+
+# Test: extract boolean value from config
+test_config_extract_boolean() {
+  CONFIG='{"execution": {"main_protected": true}}'
+  [[ "$CONFIG" =~ \"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]
+  [[ "${BASH_REMATCH[1]}" == "true" ]] || fail "Expected true"
+}
+
+# Test: extract integer value from config
+test_config_extract_integer() {
+  CONFIG='{"ci": {"max_fix_attempts": 3}}'
+  [[ "$CONFIG" =~ \"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]
+  [[ "${BASH_REMATCH[1]}" == "3" ]] || fail "Expected 3"
+}
+
+# Test: empty string value extracted correctly
+test_config_extract_empty_string() {
+  CONFIG='{"dev_server": {"cmd": ""}}'
+  [[ "$CONFIG" =~ \"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]
+  [[ "${BASH_REMATCH[1]}" == "" ]] || fail "Expected empty string"
+}
+
+# Test: missing config field falls through (no match)
+test_config_missing_field() {
+  CONFIG='{"project_name": "my-app"}'
+  if [[ "$CONFIG" =~ \"nonexistent\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    fail "Should not match nonexistent field"
+  fi
+}
+
+# Test: landing mode extraction
+test_config_extract_landing() {
+  CONFIG='{"execution": {"landing": "pr", "main_protected": false}}'
+  [[ "$CONFIG" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]
+  [[ "${BASH_REMATCH[1]}" == "pr" ]] || fail "Expected pr"
+}
+```
+
+- [ ] Add 6+ config extraction tests covering: string, boolean, integer, empty string, missing field, landing mode
+- [ ] All tests pass: `bash tests/test-hooks.sh > .test-results.txt 2>&1`
+
+#### 1.6 -- Sync installed copies
 
 - [ ] Copy `skills/update-zskills/SKILL.md` to `.claude/skills/update-zskills/SKILL.md`
 - [ ] Verify installed copy matches source: `diff skills/update-zskills/SKILL.md .claude/skills/update-zskills/SKILL.md`
+- [ ] Verify `config/zskills-config.schema.json` exists in the distribution repo
 
 ### Design & Constraints
 
-- **No jq dependency.** All JSON reading uses bash regex. The config is flat enough that `[[ "$content" =~ \"key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]` works for strings (note `*` not `+` to allow empty strings) and `[[ "$content" =~ \"key\"[[:space:]]*:[[:space:]]*(true|false) ]]` works for booleans. **Caveat:** bash regex may match the wrong key if two keys share a suffix (e.g., `"landing"` could match inside a longer key). This is acceptable for the current flat schema but should be improved if the config grows nested objects with ambiguous key names.
+- **No jq dependency.** All JSON reading uses bash regex. The config is flat enough that `[[ "$content" =~ \"key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]` works for strings (note `*` not `+` to allow empty strings) and `[[ "$content" =~ \"key\"[[:space:]]*:[[:space:]]*(true|false) ]]` works for booleans. Caveat: bash regex may match the wrong key if two keys share a suffix. This is acceptable for the current flat schema.
 - **Claude Code-protected.** `.claude/zskills-config.json` is protected by Claude Code's built-in permission system on all tools (Bash, Write, Edit). Agent writes trigger a permission prompt. No custom hook needed.
 - **Config is optional.** No config = current behavior. Config is a progressive enhancement.
 - **Config created by user action.** When no config exists, `/update-zskills` auto-detects values and presents them to the user with instructions to create the file using `! cat > .claude/zskills-config.json <<'EOF' ... EOF`.
 
 ### Acceptance Criteria
 
-- [ ] `.claude/zskills-config.json` exists in zskills repo with valid JSON
-- [ ] `skills/update-zskills/SKILL.md` has Step 0.5 that reads config
+- [ ] `.claude/zskills-config.json` exists in zskills repo with valid JSON and `$schema` reference
+- [ ] `config/zskills-config.schema.json` exists with descriptions for all fields
+- [ ] VS Code provides autocomplete and hover docs when editing the config
+- [ ] `skills/update-zskills/SKILL.md` has Step 0.5 that reads config and copies schema
 - [ ] Template placeholders map to config fields
 - [ ] Empty config values produce commented-out template sections
 - [ ] No config = auto-detect (backward compatible)
 - [ ] Config creation uses user action, not agent write
+- [ ] 6+ config extraction tests pass (string, boolean, integer, empty, missing, landing)
 - [ ] Installed skill copy synced
 
 ### Dependencies
@@ -224,7 +419,7 @@ Also fix the push tracking hook's code-files detection to work before upstream i
 Insert a helper function near the top of `hooks/block-unsafe-project.sh.template` (after the `block_with_reason` and `extract_transcript` functions) that reads `main_protected` from config at runtime:
 
 ```bash
-# ─── main_protected access control ───
+# --- main_protected access control ---
 # Reads config at runtime (not baked in during /update-zskills).
 # Changing the config takes effect immediately.
 is_main_protected() {
@@ -255,10 +450,10 @@ is_on_main() {
 
 #### 2.2 -- Block git commit on main when protected
 
-Insert before the existing `git commit` block (which handles test checks and tracking enforcement). The main_protected check must come first because it is a hard block — no exemptions for content-only commits.
+Insert before the existing `git commit` block (which handles test checks and tracking enforcement). The main_protected check must come first because it is a hard block -- no exemptions for content-only commits.
 
 ```bash
-# ─── main_protected: block git commit on main ───
+# --- main_protected: block git commit on main ---
 if [[ "$INPUT" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
@@ -269,10 +464,8 @@ fi
 
 #### 2.3 -- Block git cherry-pick on main when protected
 
-Insert before the existing `git cherry-pick` block:
-
 ```bash
-# ─── main_protected: block git cherry-pick on main ───
+# --- main_protected: block git cherry-pick on main ---
 if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]] && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
@@ -282,10 +475,8 @@ fi
 
 #### 2.4 -- Block git push to main when protected
 
-Insert before the existing `git push` block. This checks if the push target is main:
-
 ```bash
-# ─── main_protected: block git push to main ───
+# --- main_protected: block git push to main ---
 if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
   # Check if pushing to main/master (explicit refspec or default branch)
   if is_on_main; then
@@ -297,17 +488,15 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; t
 fi
 ```
 
-Note: the push regex uses `([[:space:]]|\")` to match the existing push tracking hook pattern (line 346 of the current template).
-
 - [ ] Add git push block that detects push-to-main
 - [ ] Push regex uses `([[:space:]]|\")` consistent with existing pattern
 
 #### 2.5 -- Fix push tracking hook: code-files detection before upstream
 
-The existing push tracking hook (line 378) uses `@{u}..HEAD` to find code files, which fails before the first `git push -u` (no upstream set). Fix: use `git diff main..HEAD` as fallback when `@{u}` is not available.
+The existing push tracking hook uses `@{u}..HEAD` to find code files, which fails before the first `git push -u` (no upstream set). Fix: use `git diff main..HEAD` as fallback:
 
 ```bash
-# In the existing git push tracking block, replace:
+# Replace:
 #   PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
 # With:
 PUSH_DIFF=$(git diff --name-only @{u}..HEAD 2>/dev/null)
@@ -330,25 +519,21 @@ cp hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh
 # Then apply current placeholder values from the installed copy
 ```
 
-The sync process: read the existing installed copy to extract current placeholder values (grep for the `UNIT_TEST_CMD=`, `FULL_TEST_CMD=`, `UI_FILE_PATTERNS=` assignments), then copy the template and replace placeholders with those values.
-
 - [ ] Sync installed hook copy with template
-- [ ] Verify: `diff <(grep -v '^#.*CONFIGURE' hooks/block-unsafe-project.sh.template) <(grep -v '^#.*CONFIGURE' .claude/hooks/block-unsafe-project.sh)` shows only placeholder differences
+- [ ] Verify: diff shows only placeholder differences between template and installed
 
 #### 2.7 -- Tests
 
-Add tests to `tests/test-hooks.sh` for main_protected enforcement. Write full test bodies (no stubs):
+Add tests to `tests/test-hooks.sh` for main_protected enforcement. Write full test bodies:
 
 ```bash
 # Test: main_protected blocks commit on main
 test_main_protected_blocks_commit_on_main() {
   setup_project_test
-  # Create config with main_protected: true
   mkdir -p "$TEST_TMPDIR/.zskills"
   cat > "$TEST_TMPDIR/.claude/zskills-config.json" <<'EOF'
 {"execution": {"main_protected": true}}
 EOF
-  # Simulate being on main branch
   cd "$TEST_TMPDIR" && git init && git checkout -b main
   INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m test"}}'
   RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" bash "$HOOK")
@@ -378,7 +563,6 @@ EOF
   cd "$TEST_TMPDIR" && git init && git checkout -b main
   INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m test"}}'
   RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" bash "$HOOK")
-  # Should not be blocked by main_protected (may be blocked by other checks)
   [[ "$RESULT" != *"main branch is protected"* ]] || fail "Should not block when main_protected is false"
 }
 
@@ -422,13 +606,10 @@ test_push_tracking_no_upstream() {
   setup_project_test
   mkdir -p "$TEST_TMPDIR/.zskills/tracking"
   cd "$TEST_TMPDIR" && git init && git checkout -b feat/test
-  # Create a tracking marker so enforcement is active
   echo "test-pipeline" > "$TEST_TMPDIR/.zskills-tracked"
   touch "$TEST_TMPDIR/.zskills/tracking/step.phase1.test-pipeline.implement"
-  # No upstream set — @{u} will fail, should fall back to main..HEAD
   INPUT='{"tool_name":"Bash","tool_input":{"command":"git push -u origin feat/test"}}'
   RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" LOCAL_ROOT="$TEST_TMPDIR" bash "$HOOK")
-  # Should attempt enforcement (may block on missing verify, that's correct)
   echo "$RESULT"  # For debugging
 }
 ```
@@ -441,10 +622,10 @@ test_push_tracking_no_upstream() {
 ### Design & Constraints
 
 - **Runtime config read.** The hook reads `main_protected` from `.claude/zskills-config.json` at runtime, NOT baked in during `/update-zskills`. Changing the config takes effect immediately without re-running `/update-zskills`.
-- **ACCESS CONTROL vs PROCESS CONTROL.** `main_protected` is access control (who can write to main). Tracking enforcement is process control (did you follow the workflow). Both can be active simultaneously and are independent. Ordering: main_protected fires first (hard block), then tracking enforcement fires (process block). If both are active on main, the user sees the main_protected error first.
-- **No exemptions.** When `main_protected` is true, ALL commits/cherry-picks/pushes to main are blocked, including content-only commits. The point is to force PR-based workflow.
+- **ACCESS CONTROL vs PROCESS CONTROL.** `main_protected` is access control (who can write to main). Tracking enforcement is process control (did you follow the workflow). Both can be active simultaneously and are independent. Ordering: main_protected fires first (hard block), then tracking enforcement fires (process block).
+- **No exemptions.** When `main_protected` is true, ALL commits/cherry-picks/pushes to main are blocked, including content-only commits.
 - **Backward compatible.** No config file = no protection (current behavior).
-- **Push regex consistency.** Use `([[:space:]]|\")` pattern for push detection, matching the existing hook's pattern on line 346.
+- **Push regex consistency.** Use `([[:space:]]|\")` pattern for push detection, matching the existing hook's pattern.
 
 ### Acceptance Criteria
 
@@ -475,20 +656,19 @@ Add `pr` and `direct` landing mode argument detection to `/run-plan`, config-bas
 
 #### 3a.1 -- Argument detection
 
-Add `pr` and `direct` to the argument detection block in `skills/run-plan/SKILL.md`. Same pattern as `auto`, `finish`, `stop` — case-insensitive, last token.
-
-Add to the "Detection" section (after the existing `auto` detection):
+Add `pr` and `direct` to the argument detection block in `skills/run-plan/SKILL.md`. Same pattern as `auto`, `finish`, `stop` -- case-insensitive, last token.
 
 ```markdown
-- `pr` (case-insensitive) — PR landing mode
-- `direct` (case-insensitive) — direct landing mode
-- Neither `pr` nor `direct` — read config default (`execution.landing`),
+- `pr` (case-insensitive) -- PR landing mode
+- `direct` (case-insensitive) -- direct landing mode
+- Neither `pr` nor `direct` -- read config default (`execution.landing`),
   or `cherry-pick` if no config
 
 **Landing mode resolution:**
 1. Explicit argument wins: `pr` or `direct` in $ARGUMENTS
 2. Config default: read `.claude/zskills-config.json` `execution.landing` field
 3. Fallback: `cherry-pick`
+```
 
 ```bash
 # Detect landing mode
@@ -513,8 +693,9 @@ fi
 ```
 
 **Validation:**
+
 ```bash
-# direct + main_protected → error
+# direct + main_protected -> error
 if [[ "$LANDING_MODE" == "direct" ]]; then
   CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
   if [ -f "$CONFIG_FILE" ]; then
@@ -525,7 +706,6 @@ if [[ "$LANDING_MODE" == "direct" ]]; then
     fi
   fi
 fi
-```
 ```
 
 - [ ] Add `pr` and `direct` to argument detection in SKILL.md
@@ -542,7 +722,7 @@ Add config reading for `branch_prefix` with support for empty string values:
 BRANCH_PREFIX="feat/"
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
   CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
-  # ([^\"]*) allows empty string match — empty prefix means no prefix
+  # ([^\"]*) allows empty string match -- empty prefix means no prefix
   if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     BRANCH_PREFIX="${BASH_REMATCH[1]}"
   fi
@@ -557,11 +737,9 @@ Note: the regex uses `([^\"]*)` (zero or more) not `([^\"]+)` (one or more), so 
 
 #### 3a.3 -- Direct mode
 
-Add `### Execution: direct` as a recognized directive. This is NOT a rename of `### Execution: main` (that directive does not exist in the current codebase). It is a new directive.
+Add `### Execution: direct` as a recognized directive. This is a NEW directive (not a rename).
 
-Direct mode means no worktree — agent works directly on main, commits go to main immediately, Phase 6 landing is a no-op.
-
-Add to the execution mode detection in Phase 2:
+Direct mode means no worktree -- agent works directly on main, commits go to main immediately, Phase 6 landing is a no-op.
 
 ```markdown
 ### Direct mode (Phase 2)
@@ -573,7 +751,7 @@ When `LANDING_MODE` is `direct`:
 - Phase 6: no-op (work is already on main, nothing to land)
 - `.landed` marker: not written (no worktree to mark)
 
-**Validation (already checked in 3a.1):** `direct` + `main_protected: true` → error before dispatch.
+**Validation (already checked in 3a.1):** `direct` + `main_protected: true` -> error before dispatch.
 ```
 
 - [ ] Add `### Execution: direct` as a recognized directive in SKILL.md
@@ -581,7 +759,60 @@ When `LANDING_MODE` is `direct`:
 - [ ] Direct mode Phase 6 is a no-op
 - [ ] Direct mode works on main directly
 
-#### 3a.4 -- Sync installed copies
+#### 3a.4 -- Tests for argument detection
+
+Add tests to `tests/test-hooks.sh` for landing mode argument parsing:
+
+```bash
+# Test: detect "pr" argument (case-insensitive)
+test_detect_pr_argument() {
+  ARGUMENTS="plans/FEATURE.md finish auto pr"
+  [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]] || fail "Should detect pr"
+}
+
+# Test: detect "direct" argument (case-insensitive)
+test_detect_direct_argument() {
+  ARGUMENTS="plans/FEATURE.md direct"
+  [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]] || fail "Should detect direct"
+}
+
+# Test: no landing mode argument -> falls through
+test_detect_no_landing_mode() {
+  ARGUMENTS="plans/FEATURE.md finish auto"
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+    fail "Should not detect pr"
+  fi
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+    fail "Should not detect direct"
+  fi
+}
+
+# Test: "pr" inside a word does not match (e.g., "sprint")
+test_pr_word_boundary() {
+  ARGUMENTS="plans/SPRINT_PLAN.md finish"
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+    fail "Should not match 'pr' inside 'SPRINT'"
+  fi
+}
+
+# Test: direct + main_protected -> error
+test_direct_main_protected_conflict() {
+  CONFIG='{"execution": {"landing": "cherry-pick", "main_protected": true}}'
+  LANDING_MODE="direct"
+  [[ "$CONFIG" =~ \"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]
+  MAIN_PROTECTED="${BASH_REMATCH[1]}"
+  if [ "$LANDING_MODE" = "direct" ] && [ "$MAIN_PROTECTED" = "true" ]; then
+    echo "Conflict detected (expected)"
+  else
+    fail "Should detect direct + main_protected conflict"
+  fi
+}
+```
+
+- [ ] Add 5+ argument detection tests covering: pr, direct, no mode, word boundary, direct+main_protected conflict
+- [ ] All tests pass
+
+#### 3a.5 -- Sync installed copies
 
 - [ ] Copy `skills/run-plan/SKILL.md` to `.claude/skills/run-plan/SKILL.md`
 - [ ] Verify installed copy matches source
@@ -590,16 +821,17 @@ When `LANDING_MODE` is `direct`:
 
 - **`direct` not `main`.** The keyword is `direct` because `main` collides with plan filenames containing "main" (e.g., `plans/MAIN_MENU.md`).
 - **`([^\"]*)` not `([^\"]+)`.** The branch_prefix regex must allow empty string matches. `([^\"]+)` requires at least one character, which would silently fail on `"branch_prefix": ""` and fall through to the default.
-- **Add, not rename.** The old plan said "rename ### Execution: main to direct" but `### Execution: main` does not exist in the current codebase. This is adding a new directive.
+- **Add, not rename.** `### Execution: main` does not exist in the current codebase. This is adding a new directive.
 
 ### Acceptance Criteria
 
 - [ ] `pr` and `direct` detected as arguments (case-insensitive)
 - [ ] Config default read when no argument specified
-- [ ] `direct` + `main_protected: true` → error
+- [ ] `direct` + `main_protected: true` -> error
 - [ ] `branch_prefix` empty string handled correctly
 - [ ] `### Execution: direct` recognized as a directive
 - [ ] Direct mode: no worktree, Phase 6 no-op
+- [ ] 5+ argument detection tests pass (pr, direct, no mode, word boundary, conflict)
 - [ ] Installed skill copy synced
 
 ### Dependencies
@@ -613,7 +845,9 @@ Phase 2 (main_protected check for `direct` + `main_protected` validation).
 
 ### Goal
 
-Implement PR mode for `/run-plan`: persistent worktree with named feature branch, all phases accumulating on the same branch, and Phase 6 landing via push + `gh pr create`. Mixed mode ban enforcement.
+Implement PR mode for `/run-plan`: persistent worktree with named feature branch, all phases accumulating on the same branch, rebase at clean points, Phase 6 landing via push + `gh pr create`, CI check and fix cycle, auto-merge, and `.landed` marker writing. Mixed mode ban enforcement.
+
+This is the largest and most complex phase. All code examples here are **canonical** -- Phase 4 and Phase 5 reference this phase rather than duplicating the patterns.
 
 ### Work Items
 
@@ -621,14 +855,11 @@ Implement PR mode for `/run-plan`: persistent worktree with named feature branch
 
 Add PR mode worktree setup to Phase 2 (Dispatch Implementation). When `LANDING_MODE` is `pr`:
 
-```markdown
-### PR mode worktree setup (Phase 2)
-
 **Branch naming:** `{branch_prefix}{plan-slug}`
 - `branch_prefix` from config (`execution.branch_prefix`), default `"feat/"` (read in 3a.2)
 - `plan-slug` derived from plan file path: lowercase, hyphens, no extension
-  - `plans/THERMAL_DOMAIN.md` → `thermal-domain`
-  - `plans/ADD_FILTER_BLOCK.md` → `add-filter-block`
+  - `plans/THERMAL_DOMAIN.md` -> `thermal-domain`
+  - `plans/ADD_FILTER_BLOCK.md` -> `add-filter-block`
 
 ```bash
 # Derive plan slug
@@ -640,13 +871,17 @@ PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 ```
 
-**Worktree creation — orchestrator creates manually, NOT via `isolation: "worktree"`:**
+**Worktree creation -- orchestrator creates manually, NOT via `isolation: "worktree"`:**
 
-The orchestrator creates the worktree directly with `git worktree add`. Do NOT use
-`isolation: "worktree"` in the Agent tool — that creates auto-named worktrees which
-are NOT deterministic and do NOT persist across cron turns.
+The orchestrator creates the worktree directly with `git worktree add`. Do NOT use `isolation: "worktree"` in the Agent tool -- that creates auto-named worktrees which are NOT deterministic and do NOT persist across cron turns.
 
 ```bash
+# Prune stale worktree entries. If /tmp was cleared (container restart,
+# codespace rebuild), git still has the old worktree registered in
+# .git/worktrees/. `git worktree prune` cleans up entries whose directories
+# no longer exist, so `git worktree add` won't fail with "already registered."
+git worktree prune
+
 # Check if worktree already exists (resuming a previous run)
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing PR worktree at $WORKTREE_PATH"
@@ -660,36 +895,183 @@ fi
 ```
 
 **Dispatching agents to the worktree:**
-Dispatch agents WITHOUT `isolation: "worktree"`. Instead, point them to the
-worktree path directly. The worktree is already created; agents just work in it.
+Dispatch agents WITHOUT `isolation: "worktree"`. Instead, the agent's prompt tells it to work in the worktree. The Agent tool has no `cwd` parameter -- the prompt specifies the directory and the agent `cd`s as its first action. This is how all worktree agents work.
+
+**Concrete dispatch example:**
+
+```
+Agent tool prompt:
+  "You are implementing Phase N of plan X.
+   FIRST: cd /tmp/myproject-pr-thermal-domain
+   All work happens in that directory. Do not work in any other directory.
+
+   <phase work items here>
+
+   Commit rules:
+   - Do NOT commit. The verification agent commits after review.
+   - Stage specific files by name (not git add .)
+   ..."
+```
+
+The key line is `FIRST: cd $WORKTREE_PATH` -- the agent treats this as a mandatory first action. Without `isolation: "worktree"`, the agent starts in the main repo directory, so the `cd` instruction is essential.
 
 **One branch per plan.** All phases accumulate on the same branch. The worktree persists across cron turns for chunked execution. Do NOT create a new worktree per phase.
 
 **Pipeline association:** Write `.zskills-tracked` in the worktree (same as cherry-pick mode):
+
 ```bash
 echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
-```
 ```
 
 - [ ] Add PR mode worktree setup to Phase 2 dispatch
 - [ ] Orchestrator creates worktree manually with `git worktree add -b`
-- [ ] Do NOT use `isolation: "worktree"` — agents dispatched without isolation to the worktree path
+- [ ] Do NOT use `isolation: "worktree"` -- agents dispatched without isolation to the worktree path
 - [ ] Branch naming uses config `branch_prefix` + plan slug
 - [ ] Worktree path is deterministic: `/tmp/<project>-pr-<plan-slug>`
 - [ ] Worktree reuse: check if exists before creating (resume support)
 - [ ] Pipeline association via `.zskills-tracked`
 
-#### 3b.2 -- PR mode: Phase 6 landing (push + PR)
+#### 3b.2 -- Rebase strategy
+
+Rebase onto latest main **only when the tree is clean**. NEVER stash + rebase (stash pop frequently conflicts). NEVER `git merge origin/main` (creates merge commits on phase 2+).
+
+**Rebase point 1: between phases (finish mode only)**
+
+After the verification agent commits Phase N, BEFORE dispatching Phase N+1's impl agent:
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+# Tree is clean (verification agent just committed). No stash needed.
+if [ $? -ne 0 ]; then
+  # CRITICAL: abort the rebase to leave the worktree clean.
+  # Without this, the worktree stays in "rebase in progress" state
+  # and all subsequent git operations fail (including cron retries).
+  git rebase --abort
+  echo "REBASE CONFLICT: Phase $N changes conflict with main."
+
+  # Write .landed marker so cron turns and cleanup tools know the state.
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+phase: $N
+reason: rebase-conflict-between-phases
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+  # In interactive mode: report to user and stop.
+  # In auto/cron mode: the cron will fire again later. On the next turn,
+  # it will see the .landed marker with status: conflict and skip this
+  # plan (same as any terminal status). If the user resolves the conflict
+  # manually and removes the .landed marker, the next cron turn will
+  # resume normally. If main moves further and the conflict resolves
+  # itself, the user can delete .landed to retry.
+  echo "Manual resolution required. Wrote .landed with status: conflict."
+  exit 1
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved -- re-verifying before Phase $((N+1))..."
+  # Dispatch /verify-changes worktree for full re-verification.
+  # The verification agent is dispatched the same way as implementation
+  # agents -- prompt includes "FIRST: cd $WORKTREE_PATH".
+  # Re-verification has its OWN fix cycle (max 2 attempts), INDEPENDENT
+  # of the CI fix budget. If re-verification fails after its own max
+  # attempts, STOP -- same as any verification failure (write report,
+  # mark phase as failed).
+fi
+```
+
+**Rebase point 2: before push (all PR mode runs)**
+
+After the LAST phase's verification agent commits, before pushing:
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+if [ $? -ne 0 ]; then
+  # CRITICAL: abort the rebase to leave the worktree clean.
+  git rebase --abort
+  echo "REBASE CONFLICT: Branch conflicts with main."
+
+  # Write .landed marker so cron turns and cleanup tools know the state.
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: run-plan
+method: pr
+branch: $BRANCH_NAME
+reason: rebase-conflict-before-push
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+  # In interactive mode: report to user and stop.
+  # In auto/cron mode: .landed with status: conflict is a terminal state.
+  # The cron will see it on the next turn and skip this plan.
+  echo "Manual resolution required. Wrote .landed with status: conflict."
+  exit 1
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved since last verification -- re-verifying..."
+  # Dispatch /verify-changes worktree for full re-verification.
+  # The verification agent's prompt includes "FIRST: cd $WORKTREE_PATH".
+  # This includes tests, code review, and manual testing if UI files changed.
+  # Re-verification has its OWN fix cycle (max 2 attempts), INDEPENDENT
+  # of the CI fix budget. If re-verification fails after its own max
+  # attempts, STOP -- same as any verification failure.
+  # If re-verification passes, proceed to push.
+fi
+```
+
+**Why full re-verification, not just re-test:** Verification includes manual testing (playwright), coverage audit, and code review -- not just `npm test`. If main moved enough to replay commits, the integration state changed and deserves full verification.
+
+- [ ] Rebase between phases in finish mode (clean tree, after commit)
+- [ ] Rebase before push (clean tree, after last phase commit)
+- [ ] NEVER stash + rebase
+- [ ] NEVER git merge origin/main
+- [ ] If rebase conflicts -> STOP, report to user
+- [ ] If rebase moves HEAD -> dispatch full `/verify-changes` re-verification
+
+#### 3b.3 -- Phase 6: push + PR creation
 
 Replace the cherry-pick landing logic in Phase 6 with push + PR creation when `LANDING_MODE` is `pr`:
-
-```markdown
-### PR mode landing (Phase 6)
 
 ```bash
 cd "$WORKTREE_PATH"
 
-# Check for existing remote branch
+# --- Construct PR title and body ---
+# $PLAN_SLUG, $PLAN_TITLE, $CURRENT_PHASE_NUM, $CURRENT_PHASE_TITLE come from
+# the plan parser (Phase 1 of /run-plan's execution).
+# $FINISH_MODE is true when running in finish mode (all remaining phases).
+
+if [ "$FINISH_MODE" = "true" ]; then
+  PR_TITLE="[${PLAN_SLUG}] ${PLAN_TITLE}"
+else
+  PR_TITLE="[${PLAN_SLUG}] Phase ${CURRENT_PHASE_NUM}: ${CURRENT_PHASE_TITLE}"
+fi
+
+# Collect completed phases for the body
+COMPLETED_PHASES=$(grep -E '^\| .* \| ✅' "$PLAN_FILE" | sed 's/|//g' | awk '{$1=$1};1' || echo "See plan file")
+
+PR_BODY="## Plan: ${PLAN_TITLE}
+
+**Phases completed:**
+${COMPLETED_PHASES}
+
+**Report:** See \`reports/plan-${PLAN_SLUG}.md\` for details.
+
+---
+Generated by \`/run-plan\`"
+
+# --- Push ---
 if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
   echo "Remote branch $BRANCH_NAME already exists. Pushing updates."
   git push origin "$BRANCH_NAME"
@@ -697,102 +1079,485 @@ else
   git push -u origin "$BRANCH_NAME"
 fi
 
-# Check for existing PR
+# --- PR creation ---
 EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
 if [ -n "$EXISTING_PR" ]; then
   echo "PR #$EXISTING_PR already exists for $BRANCH_NAME. Updated with latest push."
   PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+  PR_NUMBER="$EXISTING_PR"
 else
-  # Create PR
   PR_URL=$(gh pr create \
     --title "$PR_TITLE" \
     --body "$PR_BODY" \
     --base main \
     --head "$BRANCH_NAME")
+  if [ -n "$PR_URL" ]; then
+    PR_NUMBER=$(gh pr view --json number --jq '.number')
+  fi
 fi
 
-# Verify PR was created/exists before writing .landed marker
+# --- Verify PR was created ---
 if [ -z "$PR_URL" ]; then
   echo "WARNING: PR creation failed. Branch pushed but PR not created."
   echo "Manual fallback: gh pr create --base main --head $BRANCH_NAME"
-  # Write partial .landed marker
   cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
-status: partial
+status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
-method: pr-failed
+method: pr
 branch: $BRANCH_NAME
 pr:
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
   mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+  # Report and stop -- PR creation failed
+fi
+```
+
+**PR title:** `[plan-slug] Phase N: <phase title>` for single phase, or `[plan-slug] <plan title>` for finish mode.
+
+**PR body:** Include plan name, phases completed, and link to report file.
+
+- [ ] Push to remote (handle existing remote branch)
+- [ ] Create PR via `gh pr create` (handle existing PR)
+- [ ] Get PR number via `gh pr view --json number --jq '.number'` (NOT URL regex)
+- [ ] PR creation failure -> `.landed` with `status: pr-failed`
+- [ ] Error handling: `gh auth` failure -> report branch name and manual instructions
+
+#### 3b.4 -- CI integration
+
+After PR is created, poll CI checks and optionally fix failures. All CI behavior is controlled by config values re-read at point of use.
+
+**Config re-read (always re-read, never rely on earlier variables):**
+
+```bash
+# --- Re-read config at point of use ---
+# Do NOT rely on $CONFIG_CONTENT from earlier -- context compaction may
+# have lost it. Re-read the config file now.
+CI_AUTO_FIX=true
+CI_MAX_ATTEMPTS=2
+FULL_TEST_CMD=""
+CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+if [ -f "$CONFIG_FILE" ]; then
+  CI_CONFIG=$(cat "$CONFIG_FILE" 2>/dev/null)
+  if [[ "$CI_CONFIG" =~ \"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+    CI_AUTO_FIX="${BASH_REMATCH[1]}"
+  fi
+  if [[ "$CI_CONFIG" =~ \"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    CI_MAX_ATTEMPTS="${BASH_REMATCH[1]}"
+  fi
+  if [[ "$CI_CONFIG" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    FULL_TEST_CMD="${BASH_REMATCH[1]}"
+  fi
+fi
+```
+
+**Skip CI when disabled:**
+
+```bash
+if [ "$CI_AUTO_FIX" = "false" ]; then
+  echo "CI auto-fix disabled (ci.auto_fix: false). PR created -- CI results are the user's responsibility."
+  CI_STATUS="skipped"
+fi
+```
+
+**CI pre-check (avoid hang on repos with no CI):**
+
+`gh pr checks --watch` hangs indefinitely if no checks are configured. GitHub Actions has a registration delay (5-30s after push), so retry before concluding there are no checks:
+
+```bash
+CHECK_COUNT=0
+for _i in 1 2 3; do
+  CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
+  [ "$CHECK_COUNT" != "0" ] && break
+  sleep 10
+done
+if [ "$CHECK_COUNT" = "0" ]; then
+  echo "No CI checks configured for this repo. Skipping CI polling."
+  CI_STATUS="none"
+fi
+```
+
+**CI polling:**
+
+```bash
+echo "Waiting for $CHECK_COUNT CI check(s) on PR #$PR_NUMBER..."
+CI_LOG="/tmp/ci-failure-${PR_NUMBER}.txt"
+
+# Timeout: 10 minutes. In cron mode, a hung --watch blocks the entire turn.
+# Exit code 124 from timeout means "timed out" -- treat as "checks still pending".
+timeout 600 gh pr checks "$PR_NUMBER" --watch 2>"$CI_LOG.stderr"
+CI_EXIT=$?
+
+if [ "$CI_EXIT" -eq 0 ]; then
+  echo "CI checks passed."
+  CI_STATUS="pass"
+elif [ "$CI_EXIT" -eq 124 ]; then
+  echo "CI checks timed out after 10 minutes. Treating as pending."
+  CI_STATUS="pending"
+  # Write .landed with pr-ready so the next cron turn re-checks.
+  # Do NOT enter the fix cycle -- checks are still running, not failing.
 else
-  echo "PR: $PR_URL"
-  # Write full .landed marker
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
-status: full
+  echo "CI checks failed (exit $CI_EXIT). Reading failure logs..."
+  CI_STATUS="fail"
+  FAILED_RUN_ID=$(gh run list --branch "$BRANCH_NAME" --status failure --limit 1 \
+    --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+  if [ -n "$FAILED_RUN_ID" ]; then
+    gh run view "$FAILED_RUN_ID" --log-failed 2>&1 | head -500 > "$CI_LOG"
+  fi
+fi
+```
+
+Note: `gh pr checks --watch` is used WITHOUT `--fail-fast` (that flag may not exist in all gh versions).
+
+**Timeout handling:** If `CI_STATUS` is `"pending"` (timeout exit 124), skip the fix cycle entirely and write `.landed` with `status: pr-ready`. The next cron turn will re-enter Phase 6, see the existing PR, and re-poll CI.
+
+**CI failure fix cycle:**
+
+```bash
+if [ "$CI_STATUS" = "fail" ] && [ "$CI_MAX_ATTEMPTS" -gt 0 ]; then
+  # Post initial CI status comment using gh api (returns comment ID).
+  # gh pr comment does NOT return comment URL/ID, so we use the API directly.
+  COMMENT_ID=$(gh api "repos/{owner}/{repo}/issues/$PR_NUMBER/comments" \
+    -f body="**CI Status:** Investigating failure..." --jq '.id' 2>/dev/null || true)
+
+  for ATTEMPT in $(seq 1 "$CI_MAX_ATTEMPTS"); do
+    echo "CI fix attempt $ATTEMPT/$CI_MAX_ATTEMPTS..."
+
+    # Update the single status comment (edit, not append spam)
+    COMMENT_BODY="**CI Fix -- Attempt $ATTEMPT/$CI_MAX_ATTEMPTS**
+
+Failure from \`gh run view --log-failed\`:
+\`\`\`
+$(tail -50 "$CI_LOG" 2>/dev/null || echo "No failure log available")
+\`\`\`
+
+Attempting fix..."
+    if [ -n "$COMMENT_ID" ]; then
+      gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$COMMENT_ID" \
+        -f body="$COMMENT_BODY" 2>/dev/null || true
+    fi
+
+    # --- Dispatch CI fix agent ---
+    # The /run-plan ORCHESTRATOR dispatches this agent via the Agent tool.
+    # The agent does NOT use isolation: "worktree" -- the worktree already
+    # exists. Instead, the agent's prompt tells it to work in $WORKTREE_PATH.
+    #
+    # Tracking: The worktree has .zskills-tracked (written by the orchestrator
+    # in 3b.1), so the tracking hooks allow commits. The fix agent's
+    # transcript will contain test commands (it runs tests before committing),
+    # satisfying the test gate.
+    #
+    # Agent prompt (inline, not a skill):
+    #
+    #   CI checks failed on PR #$PR_NUMBER for branch $BRANCH_NAME.
+    #   The failure log is at $CI_LOG -- read it to understand what failed.
+    #
+    #   FIRST: cd $WORKTREE_PATH
+    #   All work happens in that directory. Do not work in any other directory.
+    #
+    #   Steps:
+    #   1. Read $CI_LOG. Identify the failure type:
+    #      - Test failure -> find the failing test, read the source, fix the code
+    #      - Build error -> fix the compilation/bundling issue
+    #      - Lint error -> fix the style violation
+    #      - Environment issue -> may not be fixable, report and stop
+    #   2. Make the minimal fix. Do not refactor or improve unrelated code.
+    #   3. Run tests locally to verify the fix:
+    #      - If FULL_TEST_CMD is set: "$FULL_TEST_CMD > .test-results.txt 2>&1"
+    #      - If FULL_TEST_CMD is empty: look for package.json scripts (npm test),
+    #        or test files matching common patterns. If no test command can be
+    #        determined, skip local testing and note it in the commit message.
+    #      Read .test-results.txt to check for failures.
+    #   4. If tests pass, commit with message:
+    #      "fix: address CI failure -- <short description of what was fixed>"
+    #   5. If tests fail on the same error after one fix attempt, STOP.
+    #      Do not thrash. Report what you tried and what failed.
+    #
+    #   Do NOT:
+    #   - Weaken tests to make them pass
+    #   - Skip the local test run
+    #   - Touch code unrelated to the CI failure
+    #   - Use git add . (stage specific files by name)
+
+    # After fix agent completes, push to branch (auto-updates PR, re-triggers CI)
+    cd "$WORKTREE_PATH"
+    git push origin "$BRANCH_NAME"
+
+    # CI registration delay: GitHub needs 5-30s to register new check runs
+    # after a push. Run the same pre-check retry loop before --watch to avoid
+    # watching stale checks from the previous push.
+    echo "Waiting for CI to register new checks after push..."
+    for _j in 1 2 3; do
+      NEW_CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
+      [ "$NEW_CHECK_COUNT" != "0" ] && break
+      sleep 10
+    done
+
+    echo "Waiting for CI re-check..."
+    timeout 600 gh pr checks "$PR_NUMBER" --watch 2>"$CI_LOG.stderr"
+    CI_EXIT=$?
+    if [ "$CI_EXIT" -eq 0 ]; then
+      echo "CI checks passed after fix attempt $ATTEMPT."
+      CI_STATUS="pass"
+      break
+    elif [ "$CI_EXIT" -eq 124 ]; then
+      echo "CI checks timed out after fix attempt $ATTEMPT. Treating as pending."
+      CI_STATUS="pending"
+      break
+    fi
+    # Re-read failure logs for next attempt
+    FAILED_RUN_ID=$(gh run list --branch "$BRANCH_NAME" --status failure --limit 1 \
+      --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+    if [ -n "$FAILED_RUN_ID" ]; then
+      gh run view "$FAILED_RUN_ID" --log-failed 2>&1 | head -500 > "$CI_LOG"
+    fi
+  done
+
+  # Final comment update
+  if [ "$CI_STATUS" = "pass" ]; then
+    FINAL_BODY="**CI Passed** after fix attempt $ATTEMPT. Ready for review."
+  else
+    FINAL_BODY="**CI Fix Exhausted** ($CI_MAX_ATTEMPTS attempts)
+
+CI is still failing. Manual intervention needed.
+
+Last failure:
+\`\`\`
+$(tail -50 "$CI_LOG" 2>/dev/null || echo "No failure log available")
+\`\`\`"
+  fi
+  if [ -n "$COMMENT_ID" ]; then
+    gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$COMMENT_ID" \
+      -f body="$FINAL_BODY" 2>/dev/null || true
+  fi
+fi
+```
+
+- [ ] Re-read `ci.auto_fix`, `ci.max_fix_attempts`, and `testing.full_cmd` from config at point of use
+- [ ] Skip CI polling when `ci.auto_fix: false`
+- [ ] CI pre-check: retry 3x with 10s delay for GitHub Actions registration delay
+- [ ] No checks after retries -> `CI_STATUS="none"`, skip polling
+- [ ] Poll CI via `timeout 600 gh pr checks "$PR_NUMBER" --watch` (10 min cap; NOT `--fail-fast`)
+- [ ] Timeout (exit 124) -> `CI_STATUS="pending"`, write `pr-ready`, let next cron turn re-check
+- [ ] On failure: read logs via `gh run view "$FAILED_RUN_ID" --log-failed`
+- [ ] CI failure log namespaced: `/tmp/ci-failure-${PR_NUMBER}.txt` (parallel safety)
+- [ ] PR comments via `gh api repos/{owner}/{repo}/issues/$PR_NUMBER/comments` (NOT `gh pr comment`)
+- [ ] Edit single comment via `gh api -X PATCH` (not append spam)
+- [ ] Dispatch fix agent via Agent tool (inline prompt, not a skill)
+- [ ] Fix agent works in worktree (no isolation parameter); prompt includes `FIRST: cd $WORKTREE_PATH`
+- [ ] After fix push: CI registration delay pre-check (retry 3x with 10s) before `--watch`
+- [ ] Fix loop `--watch` also uses `timeout 600` (10 min cap)
+- [ ] `ci.max_fix_attempts: 0` -> poll + report only, no fix attempts
+- [ ] Final comment: "CI Passed" or "CI Fix Exhausted" with failure log
+
+#### 3b.5 -- Auto-merge and .landed marker
+
+After CI resolution, request auto-merge and write the `.landed` marker:
+
+```bash
+# --- Auto-merge: request merge when CI passes ---
+# gh pr merge --auto --squash requires that auto-merge is enabled in the
+# GitHub repo settings (Settings > General > Allow auto-merge). It is OFF
+# by default. If not enabled, `--auto` returns exit code 1 with an error
+# about "Auto merge is not allowed for this repository". We suppress this
+# with `|| true`, and the PR stays open with status: pr-ready. The user
+# merges manually. This is the correct fallback -- pr-ready means "agent
+# work is done, PR is ready for human action."
+if [ "$CI_STATUS" = "pass" ] || [ "$CI_STATUS" = "none" ] || [ "$CI_STATUS" = "skipped" ]; then
+  gh pr merge "$PR_NUMBER" --auto --squash 2>/dev/null || true
+  # Give GitHub a moment to process the merge
+  sleep 5
+  PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+else
+  PR_STATE="OPEN"
+fi
+
+# --- Determine .landed status ---
+if [ "$CI_STATUS" = "pending" ]; then
+  # Timeout: checks still running. Write pr-ready so next cron turn re-checks.
+  LANDED_STATUS="pr-ready"
+elif [ "$CI_STATUS" = "fail" ]; then
+  LANDED_STATUS="pr-ci-failing"
+elif [ "$PR_STATE" = "MERGED" ]; then
+  LANDED_STATUS="landed"
+else
+  # PR is open -- either awaiting required reviews, or auto-merge
+  # not supported. Agent's work is done either way.
+  LANDED_STATUS="pr-ready"
+fi
+
+# --- Write .landed marker ---
+cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
 pr: $PR_URL
+ci: $CI_STATUS
+pr_state: $PR_STATE
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
-fi
+mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 ```
 
-**Error handling:**
-- `gh auth` failure → report branch name and manual instructions:
-  `"Push succeeded. Create PR manually: gh pr create --base main --head $BRANCH_NAME"`
-- Push failure → invoke Failure Protocol (network, permissions)
-- Existing PR → update with push, do not create duplicate
-- PR creation fails (empty PR_URL) → write `.landed` with `status: partial`, `method: pr-failed`
+**`.landed` status values for PR mode:**
 
-**PR title:** `[plan-slug] Phase N: <phase title>` for single phase, or `[plan-slug] <plan title>` for finish mode.
+| Scenario | status | method | ci | pr_state |
+|----------|--------|--------|----|----------|
+| PR merged (auto-merge) | `landed` | `pr` | `pass`/`none`/`skipped` | `MERGED` |
+| PR open, CI passed, awaiting review | `pr-ready` | `pr` | `pass`/`none`/`skipped` | `OPEN` |
+| PR open, CI timed out (still running) | `pr-ready` | `pr` | `pending` | `OPEN` |
+| PR open, CI failing after max attempts | `pr-ci-failing` | `pr` | `fail` | `OPEN` |
+| Branch pushed, PR creation failed | `pr-failed` | `pr` | _(not set)_ | _(not set)_ |
+| Rebase conflict | `conflict` | `pr` | _(not set)_ | _(not set)_ |
 
-**PR body:** Include plan name, phases completed, and link to report file.
-```
+**Other landing modes (for reference):**
 
-- [ ] Add PR landing to Phase 6 with push + `gh pr create`
-- [ ] Handle existing remote branch (push updates)
-- [ ] Handle existing PR (update, don't duplicate)
-- [ ] Handle `gh auth` failure (fallback to manual instructions)
-- [ ] Verify PR was created before writing full `.landed` marker
-- [ ] PR creation failure → `.landed` with `status: partial`, `method: pr-failed`
-- [ ] Write `.landed` marker with `method: pr`, `branch:`, `pr:` fields on success
-- [ ] PR title and body formatting
+| Scenario | status | method |
+|----------|--------|--------|
+| Cherry-pick landed | `landed` | `cherry-pick` |
+| Direct committed | `landed` | `direct` |
+| Cherry-pick conflicts | `conflict` | `cherry-pick` |
+| Agent done, didn't land | `not-landed` | -- |
 
-#### 3b.3 -- Mixed mode ban in PR plans
+- [ ] Auto-merge via `gh pr merge "$PR_NUMBER" --auto --squash`
+- [ ] Check PR state via `gh pr view --json state --jq '.state'`
+- [ ] MERGED -> `status: landed` | OPEN -> `status: pr-ready`
+- [ ] CI failing -> `status: pr-ci-failing`
+- [ ] `.landed` marker includes: `status`, `date`, `source`, `method`, `branch`, `pr`, `ci`, `pr_state`, `commits`
+- [ ] Write marker atomically (tmp + mv)
+
+#### 3b.6 -- Mixed mode ban in PR plans
 
 When the plan-level landing mode is `pr`, individual phases cannot use `### Execution: direct`. Delegate is always OK.
 
 ```markdown
 **Mixed mode validation (Phase 2):**
 When `LANDING_MODE` is `pr`, scan the current phase text:
-- `### Execution: direct` → ERROR: "Mixed execution modes not allowed in PR
+- `### Execution: direct` -> ERROR: "Mixed execution modes not allowed in PR
   plans. All phases must use worktree or delegate mode."
-- `### Execution: delegate ...` → OK (delegate manages its own isolation)
-- `### Execution: worktree` or no directive → OK (default)
+- `### Execution: delegate ...` -> OK (delegate manages its own isolation)
+- `### Execution: worktree` or no directive -> OK (default)
 ```
 
 - [ ] Add mixed mode validation in Phase 2 dispatch
-- [ ] `### Execution: direct` in a PR plan → error
-- [ ] `### Execution: delegate` in a PR plan → allowed
+- [ ] `### Execution: direct` in a PR plan -> error
+- [ ] `### Execution: delegate` in a PR plan -> allowed
 
-#### 3b.4 -- Sync installed copies
+#### 3b.7 -- Tests for PR mode
+
+Add tests to `tests/test-hooks.sh` for PR mode mechanics. These test the
+hook enforcement and marker writing — not the full PR flow (which requires
+a real GitHub repo).
+
+```bash
+# Test: .landed marker with status: landed
+test_landed_marker_landed() {
+  MARKER=$(cat <<LANDED
+status: landed
+date: 2026-04-13T12:00:00-04:00
+source: run-plan
+method: pr
+branch: feat/test
+pr: https://github.com/owner/repo/pull/42
+ci: pass
+pr_state: MERGED
+LANDED
+)
+  [[ "$MARKER" == *"status: landed"* ]] || fail "Expected status: landed"
+  [[ "$MARKER" == *"pr_state: MERGED"* ]] || fail "Expected pr_state: MERGED"
+}
+
+# Test: .landed marker with status: pr-ready
+test_landed_marker_pr_ready() {
+  MARKER="status: pr-ready"
+  [[ "$MARKER" == *"pr-ready"* ]] || fail "Expected pr-ready"
+}
+
+# Test: .landed marker with status: pr-ci-failing
+test_landed_marker_ci_failing() {
+  MARKER="status: pr-ci-failing"
+  [[ "$MARKER" == *"pr-ci-failing"* ]] || fail "Expected pr-ci-failing"
+}
+
+# Test: .landed marker with status: conflict (rebase failure)
+test_landed_marker_conflict() {
+  MARKER="status: conflict"
+  [[ "$MARKER" == *"conflict"* ]] || fail "Expected conflict"
+}
+
+# Test: PR mode branch naming
+test_pr_branch_naming() {
+  BRANCH_PREFIX="feat/"
+  PLAN_SLUG=$(basename "plans/THERMAL_DOMAIN.md" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+  BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
+  [[ "$BRANCH_NAME" == "feat/thermal-domain" ]] || fail "Expected feat/thermal-domain, got $BRANCH_NAME"
+}
+
+# Test: PR mode worktree path
+test_pr_worktree_path() {
+  PROJECT_NAME="my-app"
+  PLAN_SLUG="thermal-domain"
+  WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+  [[ "$WORKTREE_PATH" == "/tmp/my-app-pr-thermal-domain" ]] || fail "Wrong path: $WORKTREE_PATH"
+}
+
+# Test: main_protected blocks commit on main but not feature branch
+test_main_protected_feature_branch_allowed() {
+  setup_project_test
+  echo '{"execution":{"main_protected":true}}' > "$TEST_TMPDIR/.claude/zskills-config.json"
+  cd "$TEST_TMPDIR" && git init && git checkout -b feat/test
+  INPUT='{"tool_name":"Bash","tool_input":{"command":"git commit -m test"}}'
+  RESULT=$(echo "$INPUT" | REPO_ROOT="$TEST_TMPDIR" bash "$HOOK")
+  [[ "$RESULT" != *"main branch is protected"* ]] || fail "Should not block on feature branch"
+}
+
+# Test: CI config defaults (no config = auto_fix true, max 2)
+test_ci_config_defaults() {
+  CI_AUTO_FIX=true
+  CI_MAX_ATTEMPTS=2
+  CONFIG=""  # Empty config
+  if [ -n "$CONFIG" ]; then
+    # Would extract, but config is empty
+    :
+  fi
+  [[ "$CI_AUTO_FIX" == "true" ]] || fail "Default auto_fix should be true"
+  [[ "$CI_MAX_ATTEMPTS" == "2" ]] || fail "Default max_fix_attempts should be 2"
+}
+
+# Test: CI config auto_fix false
+test_ci_config_auto_fix_false() {
+  CONFIG='{"ci": {"auto_fix": false, "max_fix_attempts": 2}}'
+  CI_AUTO_FIX=true
+  if [[ "$CONFIG" =~ \"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+    CI_AUTO_FIX="${BASH_REMATCH[1]}"
+  fi
+  [[ "$CI_AUTO_FIX" == "false" ]] || fail "Expected auto_fix: false"
+}
+```
+
+- [ ] Add 9+ tests covering: .landed marker statuses (4), branch naming, worktree path, main_protected on feature branch, CI config defaults, CI config override
+- [ ] All tests pass alongside pre-existing tests
+
+#### 3b.8 -- Sync installed copies
 
 - [ ] Copy `skills/run-plan/SKILL.md` to `.claude/skills/run-plan/SKILL.md`
 - [ ] Verify installed copy matches source
 
 ### Design & Constraints
 
-- **Persistent worktree, NOT isolation parameter.** The orchestrator creates the worktree manually with `git worktree add -b`. Do NOT use `isolation: "worktree"` — that creates auto-named worktrees that are not deterministic and do not persist across cron turns.
-- **Agents dispatched without isolation.** After the orchestrator creates the worktree, agents are dispatched pointing to the worktree path, WITHOUT the `isolation: "worktree"` parameter.
+- **Phase 3b is the largest phase.** It is conceptually one feature (PR mode end-to-end), and splitting it creates artificial phase boundaries and dependency chains. If an implementing agent struggles with the size, sub-work-items (3b.1-3b.7) can be implemented incrementally within the same worktree -- commit after each sub-item, verify, then continue to the next.
+- **Persistent worktree, NOT isolation parameter.** The orchestrator creates the worktree manually with `git worktree add -b`. Do NOT use `isolation: "worktree"` -- that creates auto-named worktrees that are not deterministic and do not persist across cron turns.
+- **Agents dispatched without isolation.** After the orchestrator creates the worktree, agents are dispatched WITHOUT `isolation: "worktree"`. The Agent tool has no `cwd` parameter -- the agent's prompt includes `FIRST: cd $WORKTREE_PATH` as a mandatory first action. This is how all worktree agents work in this codebase.
 - **Never checkout branches in main directory.** Branch checkout in main causes stash data loss, tracking enforcement deadlock, and progress tracking failure across cron turns. Always use worktrees.
-- **Verification agent commits.** Same as cherry-pick mode — impl agent writes code, verification agent verifies and commits. The tracking system enforces this regardless of landing mode.
+- **Rebase when the tree is clean, not when dirty.** Rebase onto latest main only at clean points: (1) between phases in `finish` mode (after verify+commit, before next impl dispatch), (2) before push (after last phase's commit). Never stash uncommitted changes to rebase -- `git stash pop` after rebase frequently conflicts. If rebase conflicts: `git rebase --abort` (leave worktree clean), write `.landed` with `status: conflict`, and stop. In cron mode, the `.landed` marker prevents re-attempts until the user resolves manually. If rebase moves HEAD, dispatch full `/verify-changes worktree` re-verification before proceeding -- this re-verification has its own fix cycle (max 2 attempts), independent of the CI fix budget.
+- **CI check after PR creation.** Controlled by `ci.auto_fix` (default `true`) and `ci.max_fix_attempts` (default `2`) in config. When enabled: poll `timeout 600 gh pr checks --watch` after creating the PR (10 minute cap prevents hung cron turns; exit 124 = timeout, treat as `pr-ready`). On failure, read logs (`gh run view --log-failed`), comment on PR with failure context via `gh api`, dispatch fix agent in the worktree (agent prompt includes `FIRST: cd $WORKTREE_PATH`), push (auto-updates PR). After each push, re-run the CI registration delay pre-check (retry 3x with 10s) before `--watch` to avoid polling stale checks. After each attempt or on exhaustion, update the single comment so human reviewers have an audit trail. When `ci.auto_fix: false`, skip entirely. When `ci.max_fix_attempts: 0`, poll and report but don't attempt fixes.
+- **PR comments via gh api, not gh pr comment.** `gh pr comment` does NOT return the comment ID. Use `gh api repos/{owner}/{repo}/issues/$PR_NUMBER/comments` to create (returns ID), and `gh api -X PATCH repos/{owner}/{repo}/issues/comments/$COMMENT_ID` to update.
+- **Verification agent commits.** Same as cherry-pick mode -- impl agent writes code, verification agent verifies and commits. The tracking system enforces this regardless of landing mode.
 - **One PR per plan.** All phases go into one PR. Agent never waits for merge mid-execution.
-- **Verify before marking landed.** Always check that `PR_URL` is non-empty before writing `status: full`. If PR creation failed, write `status: partial` with `method: pr-failed` so cleanup tooling knows the state.
+- **Verify before marking landed.** Always check that `PR_URL` is non-empty before writing `status: landed` or `pr-ready`. If PR creation failed, write `status: pr-failed`. If CI is failing, write `status: pr-ci-failing`.
 
 ### Acceptance Criteria
 
@@ -800,11 +1565,20 @@ When `LANDING_MODE` is `pr`, scan the current phase text:
 - [ ] Agents dispatched WITHOUT `isolation: "worktree"`
 - [ ] PR mode branch name: `{branch_prefix}{plan-slug}`
 - [ ] PR mode worktree reuse on resume
+- [ ] Rebase at clean points only (between phases + before push)
+- [ ] Rebase conflict -> `git rebase --abort`, write `.landed` with `status: conflict`, STOP
+- [ ] Rebase moved HEAD -> full re-verification (own fix cycle, independent of CI budget)
 - [ ] PR mode Phase 6: push + `gh pr create`
-- [ ] PR creation verified before writing full `.landed` marker
-- [ ] PR failure → `.landed` with `status: partial`, `method: pr-failed`
-- [ ] PR mode `.landed` marker has `method: pr` fields on success
+- [ ] PR number obtained via `gh pr view --json number --jq '.number'`
+- [ ] CI pre-check with retry for registration delay
+- [ ] CI polling via `timeout 600 gh pr checks --watch` (10 min cap; no `--fail-fast`)
+- [ ] CI failure -> read logs, fix in worktree, push, re-poll (max attempts from config)
+- [ ] PR comments via `gh api` (create + edit single comment)
+- [ ] Auto-merge requested via `gh pr merge --auto --squash`
+- [ ] `.landed` status: `landed` (merged), `pr-ready` (awaiting review), `pr-ci-failing`, or `pr-failed`
+- [ ] `.landed` marker includes `branch`, `pr`, `ci`, `pr_state` fields
 - [ ] Mixed mode ban enforced in PR plans
+- [ ] 9+ PR mode tests pass (markers, naming, paths, config)
 - [ ] Installed skill copy synced
 
 ### Dependencies
@@ -823,16 +1597,7 @@ Add `pr` and `direct` landing mode arguments to `/fix-issues`. PR mode creates p
 
 #### 4.1 -- Argument detection
 
-Add `pr` and `direct` to argument detection in `skills/fix-issues/SKILL.md`. Same pattern as Phase 3a:
-
-```markdown
-**Landing mode detection (same as /run-plan):**
-- `pr` (case-insensitive) in $ARGUMENTS → PR mode
-- `direct` (case-insensitive) in $ARGUMENTS → direct mode
-- Neither → config default → `cherry-pick` fallback
-- `direct` + `main_protected: true` → error
-
-Strip `pr`/`direct` from arguments before parsing N, focus, etc.
+Same pattern as /run-plan (3a.1). Add `pr` and `direct` to argument detection in `skills/fix-issues/SKILL.md`:
 
 ```bash
 # Same detection logic as /run-plan (3a.1)
@@ -843,23 +1608,24 @@ elif [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]
   LANDING_MODE="direct"
 else
   # Read config default (same as /run-plan)
+  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      CFG_LANDING="${BASH_REMATCH[1]}"
+      [ -n "$CFG_LANDING" ] && LANDING_MODE="$CFG_LANDING"
+    fi
+  fi
 fi
-```
 ```
 
 - [ ] Add `pr` and `direct` to argument detection in `/fix-issues`
 - [ ] Add `direct` + `main_protected` conflict check
-- [ ] Strip landing mode from arguments before parsing
+- [ ] Strip landing mode from arguments before parsing issue numbers/focus
 
 #### 4.2 -- Per-issue named branches in PR mode
 
 When `LANDING_MODE` is `pr`, each issue gets its own worktree with a named branch:
-
-```markdown
-**Per-issue branch naming:**
-- Branch: `fix/issue-NNN` (e.g., `fix/issue-42`)
-- Worktree: `/tmp/<project>-fix-issue-NNN`
-- One PR per issue with `Fixes #NNN` in the body
 
 ```bash
 ISSUE_NUM=42
@@ -867,7 +1633,10 @@ BRANCH_NAME="fix/issue-${ISSUE_NUM}"
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
 
-# Orchestrator creates worktree manually (same as /run-plan PR mode)
+# Prune stale worktree entries (same as 3b.1)
+git worktree prune
+
+# Orchestrator creates worktree manually (same pattern as 3b.1)
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
@@ -878,19 +1647,55 @@ fi
 # Pipeline association
 echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
 ```
-```
+
+**Differences from /run-plan PR mode (3b.1):**
+- Branch prefix is hardcoded `fix/` (not config `branch_prefix`)
+- Branch name uses issue number, not plan slug
+- Worktree path uses `fix-issue-NNN`, not `pr-<plan-slug>`
+- One worktree per issue (not one per plan)
 
 - [ ] Per-issue branch naming: `fix/issue-NNN`
 - [ ] Per-issue worktree: `/tmp/<project>-fix-issue-NNN`
 - [ ] Orchestrator creates worktree manually (not isolation parameter)
 - [ ] Worktree reuse on resume
 
-#### 4.3 -- Phase 6: push + PR per issue
+#### 4.3 -- Per-issue landing: rebase + push + PR + CI
 
-In the fix-issues landing phase, when `LANDING_MODE` is `pr`:
+Same PR landing flow as 3b.2-3b.5, with these differences:
 
-```markdown
-**PR creation per issue (Phase 6):**
+**Rebase before push:** Same pattern as 3b.2, rebase point 2 only (fix-issues is single-phase per issue, no between-phase rebase needed):
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+if [ $? -ne 0 ]; then
+  git rebase --abort
+  echo "REBASE CONFLICT for issue #$ISSUE_NUM."
+  # Write .landed with status: conflict, continue to next issue
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: fix-issues
+method: pr
+branch: $BRANCH_NAME
+issue: $ISSUE_NUM
+reason: rebase-conflict
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+  continue  # Move to next issue
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved -- re-verifying issue #$ISSUE_NUM before push..."
+  # Dispatch /verify-changes worktree re-verification.
+  # Agent prompt includes "FIRST: cd $WORKTREE_PATH".
+  # Re-verification has its own fix cycle (max 2 attempts), independent
+  # of the CI fix budget.
+fi
+```
+
+**PR creation per issue:**
 
 ```bash
 for issue in "${FIXED_ISSUES[@]}"; do
@@ -903,8 +1708,8 @@ for issue in "${FIXED_ISSUES[@]}"; do
 
   EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
   if [ -n "$EXISTING_PR" ]; then
-    echo "PR #$EXISTING_PR already exists for issue #$ISSUE_NUM"
     PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+    PR_NUMBER="$EXISTING_PR"
   else
     PR_URL=$(gh pr create \
       --title "Fix #${ISSUE_NUM}: ${ISSUE_TITLE}" \
@@ -921,44 +1726,41 @@ EOF
 )" \
       --base main \
       --head "$BRANCH_NAME")
+    if [ -n "$PR_URL" ]; then
+      PR_NUMBER=$(gh pr view --json number --jq '.number')
+    fi
   fi
 
-  # Verify PR was created before writing full .landed marker
-  if [ -z "$PR_URL" ]; then
-    cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
-status: partial
-date: $(TZ=America/New_York date -Iseconds)
-source: fix-issues
-method: pr-failed
-branch: $BRANCH_NAME
-issue: $ISSUE_NUM
-commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
-LANDED
-  else
-    cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
-status: full
+  # CI check + auto-merge: same pattern as 3b.4-3b.5
+  # (config re-read, pre-check, polling, fix cycle, auto-merge, .landed marker)
+  # Only difference: source is "fix-issues" and marker includes issue: field
+
+  # .landed marker includes issue field
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
 method: pr
 branch: $BRANCH_NAME
 pr: $PR_URL
+ci: $CI_STATUS
+pr_state: $PR_STATE
 issue: $ISSUE_NUM
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  fi
   mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 
-  echo "Issue #$ISSUE_NUM → PR: $PR_URL"
+  echo "Issue #$ISSUE_NUM -> PR: $PR_URL"
 done
 ```
-```
 
+- [ ] Rebase each issue worktree onto latest main before push (clean tree, same pattern as 3b.2)
+- [ ] Re-verify if rebase moved HEAD
 - [ ] Push + PR creation for each fixed issue
 - [ ] PR body includes `Fixes #NNN` for auto-close linking
 - [ ] Handle existing PRs (update, don't duplicate)
-- [ ] Verify PR created before writing full `.landed` marker
-- [ ] PR failure → `.landed` with `status: partial`, `method: pr-failed`
-- [ ] `.landed` marker with `method: pr`, `issue:` field on success
+- [ ] CI check + auto-merge per issue (same pattern as 3b.4-3b.5)
+- [ ] `.landed` marker includes `issue:` field in addition to standard PR fields
 
 #### 4.4 -- /fix-report: PR-aware review flow
 
@@ -971,7 +1773,42 @@ Update `skills/fix-issues/SKILL.md` (the `/fix-report` section) to be PR-aware:
 - [ ] `/fix-report` checks `.landed` markers for `method: pr`
 - [ ] Sprint report includes PR URLs
 
-#### 4.5 -- Sync installed copies
+#### 4.5 -- Tests for /fix-issues PR mode
+
+```bash
+# Test: per-issue branch naming
+test_fix_issue_branch_naming() {
+  ISSUE_NUM=42
+  BRANCH_NAME="fix/issue-${ISSUE_NUM}"
+  [[ "$BRANCH_NAME" == "fix/issue-42" ]] || fail "Expected fix/issue-42"
+}
+
+# Test: per-issue worktree path
+test_fix_issue_worktree_path() {
+  PROJECT_NAME="my-app"
+  ISSUE_NUM=42
+  WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
+  [[ "$WORKTREE_PATH" == "/tmp/my-app-fix-issue-42" ]] || fail "Wrong path"
+}
+
+# Test: .landed marker includes issue field
+test_fix_issue_landed_marker() {
+  MARKER=$(cat <<LANDED
+status: landed
+source: fix-issues
+method: pr
+issue: 42
+LANDED
+)
+  [[ "$MARKER" == *"issue: 42"* ]] || fail "Expected issue field"
+  [[ "$MARKER" == *"source: fix-issues"* ]] || fail "Expected source: fix-issues"
+}
+```
+
+- [ ] Add 3+ tests covering: branch naming, worktree path, .landed marker with issue field
+- [ ] All tests pass
+
+#### 4.6 -- Sync installed copies
 
 - [ ] Copy `skills/fix-issues/SKILL.md` to `.claude/skills/fix-issues/SKILL.md`
 - [ ] Verify installed copy matches source
@@ -980,26 +1817,30 @@ Update `skills/fix-issues/SKILL.md` (the `/fix-report` section) to be PR-aware:
 
 - **One PR per issue.** Each issue gets its own branch and PR. This allows independent review and merging, unlike `/run-plan` where all phases share one branch.
 - **`Fixes #NNN` linking.** GitHub auto-closes issues when the PR is merged.
-- **Verification agent commits.** Same as all modes — tracking enforces this.
+- **Verification agent commits.** Same as all modes -- tracking enforces this.
 - **PR-aware sprint report.** `/fix-report` must show PR URLs so the user can review them.
-- **Verify before marking.** Same as /run-plan: check PR_URL is non-empty before writing `status: full`.
+- **Same CI/auto-merge/marker pattern as 3b.** Do not re-implement; reference the canonical pattern from 3b.4-3b.5. The only differences are `source: fix-issues` and the additional `issue:` field in the marker.
 
 ### Acceptance Criteria
 
 - [ ] `pr` and `direct` detected as arguments in `/fix-issues`
 - [ ] Per-issue branches: `fix/issue-NNN`
 - [ ] Per-issue worktrees: `/tmp/<project>-fix-issue-NNN`
+- [ ] Rebase onto latest main before push (clean tree, after commit)
+- [ ] Re-verify if rebase moved HEAD
 - [ ] Phase 6 creates one PR per fixed issue with `Fixes #NNN`
-- [ ] PR failure → `.landed` with `status: partial`, `method: pr-failed`
-- [ ] `.landed` markers have `method: pr`, `issue:` fields on success
+- [ ] CI check + auto-merge per issue
+- [ ] `.landed` status: `landed`/`pr-ready`/`pr-ci-failing`/`pr-failed`
+- [ ] `.landed` marker includes `issue:` field
 - [ ] `/fix-report` shows PR URLs
+- [ ] 3+ /fix-issues PR mode tests pass (naming, path, marker)
 - [ ] Installed skill copy synced
 
 ### Dependencies
 
 Phase 1 (config file).
 Phase 2 (main_protected validation).
-Phase 3a (landing mode detection pattern — reuse the same approach).
+Phase 3a (landing mode detection pattern -- reuse the same approach).
 
 ---
 
@@ -1015,12 +1856,6 @@ Propagate execution mode awareness through the skill chain: `/research-and-go` d
 
 Modify `skills/research-and-go/SKILL.md` to detect `pr` or `direct` in the goal text and pass it through to the `/run-plan` cron prompt:
 
-```markdown
-**Landing mode detection in /research-and-go:**
-
-Scan the goal text for `pr` or `direct` (case-insensitive, word boundary).
-If found, append the keyword to the `/run-plan` cron prompt:
-
 ```bash
 # In the cron prompt construction:
 LANDING_ARG=""
@@ -1033,7 +1868,6 @@ fi
 # Cron prompt includes landing mode:
 # /run-plan plans/GENERATED_PLAN.md finish auto $LANDING_ARG every 4h now
 ```
-```
 
 - [ ] Detect `pr`/`direct` in goal text
 - [ ] Pass landing mode to `/run-plan` cron prompt
@@ -1044,8 +1878,6 @@ fi
 Modify `skills/research-and-plan/SKILL.md` to detect `pr` or `direct` in the goal text and pass it through to `/draft-plan`:
 
 ```markdown
-**Landing mode propagation in /research-and-plan:**
-
 If the user's goal includes `pr` or `direct`, pass this context to `/draft-plan`
 so generated plans include appropriate landing hints.
 
@@ -1062,14 +1894,12 @@ When constructing the /draft-plan invocation, append the detected landing mode:
 Modify `skills/draft-plan/SKILL.md` to embed landing hints in generated plans when the config specifies a non-default landing mode:
 
 ```markdown
-**Landing hints in generated plans:**
-
 When generating a plan, check `.claude/zskills-config.json` for `execution.landing`:
 - If `"pr"`: add a note at the top of the plan:
-  `> **Landing mode: PR** — This plan targets PR-based landing. All phases
+  `> **Landing mode: PR** -- This plan targets PR-based landing. All phases
   > use worktree isolation with a named feature branch.`
 - If `"direct"`: add a note:
-  `> **Landing mode: direct** — This plan targets direct-to-main landing.
+  `> **Landing mode: direct** -- This plan targets direct-to-main landing.
   > No worktree isolation.`
 - If `"cherry-pick"` or absent: no note (default behavior).
 
@@ -1083,36 +1913,24 @@ argument always takes precedence.
 
 #### 5.4 -- /do: `pr` option
 
-Modify `skills/do/SKILL.md` to accept a `pr` argument:
+Modify `skills/do/SKILL.md` to accept a `pr` argument. `/do <task> pr` creates a worktree with a named branch, does the work, pushes, and creates a PR. Same PR landing flow as 3b, with these differences:
 
-```markdown
-**PR mode for /do:**
-
-`/do <task> pr` creates a worktree with a named branch, does the work,
-pushes, and creates a PR. Same as `/run-plan` PR mode but for single tasks.
-
-- Branch name: `{branch_prefix}{task-slug}` (task slug derived from first
-  few words of task description, lowercased, hyphenated)
+- Branch name: `{branch_prefix}{task-slug}` (task slug derived from first few words of task description, lowercased, hyphenated)
 - Worktree: `/tmp/<project>-do-<task-slug>`
-- Orchestrator creates worktree manually (not isolation parameter)
-- After work + verification: push + `gh pr create`
-- Verify PR created before writing `.landed` marker
-- `.landed` marker with `method: pr` on success, `method: pr-failed` on failure
-```
+- Single-phase: only rebase point 2 applies (before push)
+- CI check + auto-merge: same pattern as 3b.4-3b.5
+- `.landed` marker: `source: do`
 
 - [ ] Add `pr` argument detection to `/do`
 - [ ] PR mode creates named worktree, pushes, creates PR
-- [ ] Verify PR created before writing full `.landed` marker
+- [ ] Rebase onto latest main before push (same pattern as 3b.2, rebase point 2)
+- [ ] CI check + auto-merge (same pattern as 3b.4-3b.5)
+- [ ] `.landed` marker with `source: do`
 - [ ] Sync installed copy
 
 #### 5.5 -- /commit: `pr` subcommand
 
-Modify `skills/commit/SKILL.md` to accept a `pr` subcommand:
-
-```markdown
-**PR subcommand for /commit:**
-
-`/commit pr` pushes the current branch and creates a PR to main.
+Modify `skills/commit/SKILL.md` to accept a `pr` subcommand. `/commit pr` pushes the current branch and creates a PR to main:
 
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -1120,6 +1938,11 @@ if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
   echo "ERROR: Cannot create PR from main. Create a feature branch first."
   exit 1
 fi
+
+# Rebase onto latest main before pushing
+git fetch origin main
+git rebase origin/main
+# If rebase conflicts: report and stop. The user needs to resolve.
 
 git push -u origin "$BRANCH"
 
@@ -1131,13 +1954,35 @@ else
   PR_URL=$(gh pr create --base main --head "$BRANCH" --fill)
   echo "Created PR: $PR_URL"
 fi
+
+# Poll CI if PR was created/exists
+if [ -n "$PR_URL" ]; then
+  PR_NUMBER=$(gh pr view --json number --jq '.number')
+  # CI pre-check with retry (same pattern as 3b.4)
+  CHECK_COUNT=0
+  for _i in 1 2 3; do
+    CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
+    [ "$CHECK_COUNT" != "0" ] && break
+    sleep 10
+  done
+  if [ "$CHECK_COUNT" != "0" ]; then
+    timeout 600 gh pr checks "$PR_NUMBER" --watch 2>/dev/null
+    if [ $? -eq 0 ]; then
+      echo "CI checks passed."
+    else
+      echo "CI checks failed. Run /verify-changes to diagnose."
+    fi
+  fi
+fi
 ```
 
-This is a convenience command for manual PR creation from any feature branch.
-```
+**Differences from 3b:** This is a convenience command for manual PR creation. It does NOT dispatch fix agents or write `.landed` markers. It rebases, pushes, creates PR, and reports CI status.
 
 - [ ] Add `pr` subcommand to `/commit`
+- [ ] Rebase onto latest main before pushing
 - [ ] Push current branch + create PR
+- [ ] PR number via `gh pr view --json number --jq '.number'` (NOT URL regex)
+- [ ] Poll CI checks after PR creation (report only, no fix cycle)
 - [ ] Error if on main/master
 - [ ] Handle existing PR
 - [ ] Sync installed copy
@@ -1184,7 +2029,7 @@ to main. Use PR mode or feature branches.
 
 #### 5.7 -- /update-zskills: audit execution mode rules
 
-Add execution mode key phrases to the `/update-zskills` audit checklist. The audit checks CLAUDE.md for required rules — add checks for execution mode documentation:
+Add execution mode key phrases to the `/update-zskills` audit checklist:
 
 ```markdown
 **Execution mode audit items:**
@@ -1197,34 +2042,55 @@ Add execution mode key phrases to the `/update-zskills` audit checklist. The aud
 - [ ] Add execution mode audit items to `/update-zskills`
 - [ ] Sync installed copy
 
-#### 5.8 -- Sync all installed copies
+#### 5.8 -- Cleanup tooling: recognize new `.landed` statuses
 
-- [ ] `skills/research-and-go/SKILL.md` → `.claude/skills/research-and-go/SKILL.md`
-- [ ] `skills/research-and-plan/SKILL.md` → `.claude/skills/research-and-plan/SKILL.md`
-- [ ] `skills/draft-plan/SKILL.md` → `.claude/skills/draft-plan/SKILL.md`
-- [ ] `skills/do/SKILL.md` → `.claude/skills/do/SKILL.md`
-- [ ] `skills/commit/SKILL.md` → `.claude/skills/commit/SKILL.md`
+Update `/briefing` and `/fix-report` to classify the new `.landed` status values.
+Existing tooling only recognizes `status: full` (safe) and treats everything else
+as "partial." The new statuses need distinct handling:
+
+| Status | Classification | Action |
+|--------|---------------|--------|
+| `landed` | Safe to remove | Worktree cleanup OK |
+| `pr-ready` | Safe to remove | Work preserved in PR |
+| `pr-ci-failing` | Needs attention | CI failing, may need manual fix |
+| `pr-failed` | Needs attention | PR creation failed, manual `gh pr create` |
+| `conflict` | Needs attention | Rebase conflict, manual resolution |
+| `not-landed` | Agent done | Review before removing |
+
+- [ ] Update `/briefing` worktree classification to recognize all 6 statuses
+- [ ] Update `/fix-report` sprint summary to show PR URLs and CI status
+- [ ] `landed` and `pr-ready` → safe for cleanup; others → flag for user
+- [ ] Sync installed copies of briefing and fix-report skills
+
+#### 5.9 -- Sync all installed copies
+
+- [ ] `skills/research-and-go/SKILL.md` -> `.claude/skills/research-and-go/SKILL.md`
+- [ ] `skills/research-and-plan/SKILL.md` -> `.claude/skills/research-and-plan/SKILL.md`
+- [ ] `skills/draft-plan/SKILL.md` -> `.claude/skills/draft-plan/SKILL.md`
+- [ ] `skills/do/SKILL.md` -> `.claude/skills/do/SKILL.md`
+- [ ] `skills/commit/SKILL.md` -> `.claude/skills/commit/SKILL.md`
 - [ ] `CLAUDE_TEMPLATE.md` updated
-- [ ] `skills/update-zskills/SKILL.md` → `.claude/skills/update-zskills/SKILL.md`
+- [ ] `skills/update-zskills/SKILL.md` -> `.claude/skills/update-zskills/SKILL.md`
 - [ ] Verify all installed copies match sources
 
 ### Design & Constraints
 
 - **Propagation, not re-implementation.** Each skill in this phase reuses the same landing mode detection pattern from Phase 3a. No new patterns.
 - **Config hints, not enforcement.** `/draft-plan` embeds hints in plans, but `/run-plan` arguments always take precedence.
-- **`/commit pr` is a convenience.** It's for manual use from any feature branch, not tied to the pipeline.
+- **`/commit pr` is a convenience.** It's for manual use from any feature branch, not tied to the pipeline. No fix agents, no `.landed` markers.
 - **CLAUDE_TEMPLATE.md is documentation.** It tells the LLM about execution modes so it can make informed decisions.
-- **`/research-and-plan` included.** Was missing from the original plan (review finding R4). It passes mode context to `/draft-plan`.
+- **`/research-and-plan` included.** It passes mode context to `/draft-plan`.
 
 ### Acceptance Criteria
 
 - [ ] `/research-and-go` detects mode in goal and passes to `/run-plan` cron prompt
 - [ ] `/research-and-plan` detects mode and passes to `/draft-plan`
 - [ ] `/draft-plan` embeds landing hints for non-default modes
-- [ ] `/do pr` creates worktree, pushes, creates PR
-- [ ] `/commit pr` pushes and creates PR from current branch
+- [ ] `/do pr` creates worktree, rebases onto main before push, pushes, creates PR, polls CI
+- [ ] `/commit pr` rebases onto main, pushes, creates PR, polls CI
 - [ ] `CLAUDE_TEMPLATE.md` documents all three execution modes
 - [ ] `/update-zskills` audit includes execution mode checks
+- [ ] `/briefing` and `/fix-report` classify all 6 `.landed` statuses correctly
 - [ ] All installed skill copies synced and verified
 
 ### Dependencies
@@ -1235,9 +2101,9 @@ Phase 4 (fix-issues PR mode, for sprint report PR URLs).
 
 ---
 
-## Do NOT Repeat These Anti-Patterns
+## Anti-Patterns -- Hard Constraints
 
-These are the 9 mistakes from the old plan. Each is a hard constraint — violating any of them means the implementation is wrong.
+These are 11 mistakes identified through 4 rounds of adversarial review. Each is a hard constraint -- violating any of them means the implementation is wrong.
 
 1. **No worktree exemption for tracking.** The tracking system enforces in worktrees via `git-common-dir` resolution. Do not add any code that skips tracking checks in worktrees.
 
@@ -1256,3 +2122,30 @@ These are the 9 mistakes from the old plan. Each is a hard constraint — violat
 8. **Two-tier pipeline guard, not three.** Pipeline association uses exactly two tiers: (1) `.zskills-tracked` file in LOCAL repo root, (2) `ZSKILLS_PIPELINE_ID=` in transcript. There is no third tier. Do not add additional tiers.
 
 9. **`.zskills/tracking`, not `.claude/tracking`.** All tracking state lives under `.zskills/tracking/`. The `.claude/` directory triggers permission prompts when agents write to it. Do not use `.claude/tracking/` for any purpose.
+
+10. **No git stash + rebase.** Never stash uncommitted changes to rebase. `git stash pop` after rebase frequently conflicts and needs manual merge, which breaks autonomous flows. Rebase only when the tree is clean (after commits).
+
+11. **No git merge origin/main.** Never use `git merge origin/main` to update a feature branch. It creates merge commits that pollute history on phase 2+. Use `git rebase origin/main` at clean points only.
+
+---
+
+## Plan Quality
+
+**Drafting process:** /draft-plan with 2 rounds of adversarial review (modernization rewrite of existing 1772-line plan)
+**Convergence:** Converged at round 2
+**Remaining concerns:** None
+
+### Round History
+| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
+|-------|-------------------|---------------------------|----------|
+| 1     | 6 important, 4 minor | 4 critical, 9 important | All addressed: rebase conflict handling, .landed mv bug, PR title/body, agent dispatch, --watch timeout, re-poll delay, re-verify budget, auto-merge docs, Phase 3b sizing note |
+| 2     | 0 (CONVERGED) | 2 medium | Fixed: /do timeout, cleanup tooling statuses. Converged. |
+
+### Prior Review History (before re-draft)
+The original plan went through 4 additional rounds of incremental review during the design session. Key issues caught and resolved:
+- git stash + rebase fragility (replaced with clean-tree-only strategy)
+- gh pr comment does NOT return URL (switched to gh api)
+- /tmp file collision across parallel pipelines (namespaced with PR number)
+- .landed status ambiguity (replaced full/partial with 6 specific statuses)
+- Missing auto-merge flow (added gh pr merge --auto --squash)
+- Missing JSON Schema for config documentation (added config/zskills-config.schema.json)
