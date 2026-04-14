@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Configure git for test setup
+        run: |
+          git config --global user.email "ci@zskills.test"
+          git config --global user.name "CI Test Runner"
+          git config --global init.defaultBranch main
+
       - name: Run hook tests
         run: bash tests/test-hooks.sh
 
