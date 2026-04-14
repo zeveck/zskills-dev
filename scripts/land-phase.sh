@@ -45,18 +45,26 @@ fi
 
 # 3. Remove worktree (critical — fail loudly if this doesn't work)
 BRANCH=$(git -C "$WORKTREE_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-# Remove KNOWN pipeline artifacts (NOT .landed — preserve it for retry on failure).
-# .landed gets removed naturally when git worktree remove succeeds.
-# If removal fails, the marker survives so retry/diagnosis is possible.
+# Remove known pipeline artifacts.
 rm -f "$WORKTREE_PATH/.test-results.txt" \
       "$WORKTREE_PATH/.test-baseline.txt" \
       "$WORKTREE_PATH/.worktreepurpose" \
       "$WORKTREE_PATH/.zskills-tracked"
+
+# .landed is also untracked, so it blocks `git worktree remove`. Remove it
+# right before removal, but SAVE its content so we can restore on failure
+# (preserving proof-of-landing for retry/diagnosis).
+LANDED_CONTENT=$(cat "$WORKTREE_PATH/.landed")
+rm -f "$WORKTREE_PATH/.landed"
+
 git worktree remove "$WORKTREE_PATH" 2>&1
 if [ $? -ne 0 ]; then
+  # Restore .landed so retry is possible
+  mkdir -p "$WORKTREE_PATH"
+  printf '%s\n' "$LANDED_CONTENT" > "$WORKTREE_PATH/.landed"
   echo "ERROR: Failed to remove worktree $WORKTREE_PATH"
   echo "Unexpected files in worktree — investigate before retrying."
-  echo ".landed marker preserved for retry."
+  echo ".landed marker restored for retry."
   ls -A "$WORKTREE_PATH" 2>/dev/null | head -20
   exit 1
 fi
