@@ -11,7 +11,7 @@
 
   "testing": {
     "unit_cmd": "bash tests/test-hooks.sh",
-    "full_cmd": "bash scripts/test-all.sh",
+    "full_cmd": "bash tests/test-hooks.sh",
     "output_file": ".test-results.txt",
     "file_patterns": ["tests/**/*.sh"]
   },
