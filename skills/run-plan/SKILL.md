@@ -515,6 +515,12 @@ agent hasn't returned after 2 hours, declare it **failed**:
    WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
 
    git worktree prune
+   # Ensure local main is current with origin/main before branching from it.
+   # Fast-forward if behind. Legitimate local-ahead commits (cherry-pick
+   # landings, unpushed user commits) are preserved. Divergent state leaves
+   # local main as-is with a warning.
+   git fetch origin main 2>/dev/null || true
+   git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
    if [ -d "$WORKTREE_PATH" ]; then
      echo "Resuming existing worktree at $WORKTREE_PATH"
    else
@@ -680,6 +686,14 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 # .git/worktrees/. `git worktree prune` cleans up entries whose directories
 # no longer exist, so `git worktree add` won't fail with "already registered."
 git worktree prune
+
+# Ensure local main is current with origin/main before branching from it.
+# Fast-forward if behind. Legitimate local-ahead commits (cherry-pick
+# landings, unpushed user commits) are preserved — they flow through the
+# PR with feature work. Divergent state (ahead AND behind) leaves local
+# main as-is with a warning so the user knows to investigate.
+git fetch origin main 2>/dev/null || true
+git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
 
 # Check if worktree already exists (resuming a previous run)
 if [ -d "$WORKTREE_PATH" ]; then
