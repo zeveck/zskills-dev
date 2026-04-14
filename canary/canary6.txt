@@ -1,1 +1,2 @@
 Canary 6 Phase 1: created
+Canary 6 Phase 2: appended
