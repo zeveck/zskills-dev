@@ -62,6 +62,12 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   precedence over all other arguments.**
 - **next** — check when the next scheduled run will fire. **Takes precedence
   over all other arguments except `stop`.**
+- **pr** (optional) — land each fixed issue via a per-issue PR on a named
+  branch (`fix/issue-NNN`) in a dedicated worktree. Overrides the config
+  default `execution.landing`.
+- **direct** (optional) — land each fixed issue directly on main (no
+  worktree isolation, no PR). Overrides the config default. Incompatible
+  with `execution.main_protected: true`.
 
 **Detection:** scan `$ARGUMENTS` for:
 - `stop` (case-insensitive) — cancel cron and exit (highest precedence)
@@ -71,6 +77,49 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - `now` (case-insensitive) — run immediately
 - `auto` (case-insensitive) — autonomous mode (behavior varies by context)
 - `every` followed by a schedule expression — scheduling mode
+- `pr` (case-insensitive) — PR landing mode (per-issue branches + PRs)
+- `direct` (case-insensitive) — direct landing mode (commit on main)
+
+**Landing mode resolution** (same pattern as `/run-plan`):
+1. Explicit argument wins: `pr` or `direct` in `$ARGUMENTS`
+2. Config default: read `.claude/zskills-config.json` `execution.landing` field
+3. Fallback: `cherry-pick`
+
+```bash
+# Detect landing mode (same logic as /run-plan)
+LANDING_MODE="cherry-pick"
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
+  LANDING_MODE="pr"
+elif [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  LANDING_MODE="direct"
+else
+  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      CFG_LANDING="${BASH_REMATCH[1]}"
+      [ -n "$CFG_LANDING" ] && LANDING_MODE="$CFG_LANDING"
+    fi
+  fi
+fi
+
+# Validation: direct + main_protected -> error
+if [[ "$LANDING_MODE" == "direct" ]]; then
+  CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*true ]]; then
+      echo "ERROR: direct mode is incompatible with main_protected: true. Use pr mode or change config."
+      exit 1
+    fi
+  fi
+fi
+```
+
+**Strip `pr`/`direct` from arguments** before parsing issue numbers, focus,
+or other tokens (same pattern as stripping `auto`, `now`, etc.). The
+downstream N/focus parser must not see `pr` or `direct` as an issue count
+or domain name.
 
 Examples:
 - `/fix-issues 30` — interactive, 30 issues, run now
@@ -85,6 +134,8 @@ Examples:
 - `/fix-issues plan auto` — same, but plan all without selection
 - `/fix-issues stop` — cancel the recurring cron
 - `/fix-issues next` — check when the next sprint will run
+- `/fix-issues 5 auto pr` — autonomous sprint, per-issue PR landing
+- `/fix-issues 3 auto direct` — autonomous sprint, land commits on main directly
 
 ## Now (standalone — no N provided)
 
@@ -605,9 +656,15 @@ printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)"
 
 ## Phase 3 — Execute (agent teams in worktrees)
 
+**In `pr` mode, the orchestrator creates a NAMED per-issue worktree manually
+and dispatches agents WITHOUT `isolation: "worktree"`.** See the "PR mode
+(Phase 3)" section below for the exact worktree setup. For `cherry-pick` and
+`direct` modes, use the default `isolation: "worktree"` pattern described here.
+
 **1 issue per agent, parallel dispatch.** Each issue gets its own agent
-in its own worktree (`isolation: "worktree"`). **Dispatch at most 3
-worktree agents per message.** If you have more than 3, dispatch the
+in its own worktree (`isolation: "worktree"` for cherry-pick/direct, or a
+manually-created `fix/issue-NNN` worktree for `pr` mode). **Dispatch at
+most 3 worktree agents per message.** If you have more than 3, dispatch the
 first 3, wait for them to return, then dispatch the next batch. Five
 concurrent `git checkout` operations cause I/O contention on 9p
 filesystems — checkouts stall at ~72% and the Agent framework times
@@ -686,6 +743,59 @@ Each agent follows this fix workflow:
 The implementation agent does NOT commit. The verification agent runs the full
 test suite and commits if verification passes. This ensures the hook's test
 gate is satisfied. The approval gate is landing to main (Phase 6).
+
+### PR mode (Phase 3)
+
+When `LANDING_MODE == pr`, each issue gets its **own named branch and
+worktree** (one PR per issue, unlike `/run-plan` PR mode where all phases
+share one branch).
+
+**Differences from `/run-plan` PR mode:**
+- Branch prefix is hardcoded `fix/` (not config `branch_prefix`)
+- Branch name uses the issue number, not a plan slug
+- Worktree path uses `fix-issue-NNN`, not `pr-<plan-slug>`
+- One worktree per issue (not one per plan)
+
+**Branch naming:** `fix/issue-NNN` where `NNN` is the GitHub issue number.
+
+**Worktree path:** `/tmp/<project-name>-fix-issue-NNN`
+
+```bash
+ISSUE_NUM=42
+BRANCH_NAME="fix/issue-${ISSUE_NUM}"
+PROJECT_NAME=$(basename "$PROJECT_ROOT")
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
+
+# Prune stale worktree entries. If /tmp was cleared (container restart,
+# codespace rebuild), git still has the old worktree registered in
+# .git/worktrees/. `git worktree prune` cleans up entries whose directories
+# no longer exist, so `git worktree add` won't fail with "already registered."
+git worktree prune
+
+# Orchestrator creates worktree manually -- NOT via isolation: "worktree"
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "Resuming existing fix worktree at $WORKTREE_PATH"
+else
+  git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
+    || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
+  # First form: create new branch from main
+  # Second form: branch already exists (resume after worktree was pruned)
+fi
+
+# Pipeline association -- agent commits are gated by .zskills-tracked
+echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+```
+
+**Dispatching fix agents in PR mode:** Dispatch agents WITHOUT
+`isolation: "worktree"` — the worktree already exists. The agent prompt
+must include `FIRST: cd $WORKTREE_PATH` as the mandatory first action.
+Without this instruction, the agent starts in the main repo.
+
+For grouped interrelated issues (same root cause or same files from
+Phase 2 grouping), pick the LOWEST issue number as the branch identifier
+(`fix/issue-NNN`) and include all grouped issues in that one worktree.
+The `.landed` marker's `issue:` field records the primary issue; group
+members are listed separately in the sprint report.
 
 ### Post-execute tracking
 
@@ -800,6 +910,15 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 ```
 
 ## Phase 6 — Land
+
+**Landing mode dispatch:**
+- `LANDING_MODE == cherry-pick` — default path (below).
+- `LANDING_MODE == pr` — see "PR mode landing" subsection. One PR per
+  fixed issue, with `Fixes #NNN` linking.
+- `LANDING_MODE == direct` — **no-op**: work was committed on main by the
+  verification agent (no worktree isolation was used). Proceed to
+  post-land tracking. Note: direct mode still requires the verification
+  agent to commit — it just doesn't cherry-pick or push to a branch.
 
 - **Without `auto`:** Sprint complete. Output:
   > Sprint complete. Report written to `SPRINT_REPORT.md`.
@@ -938,6 +1057,180 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 
   11. Done. Closing GH issues and updating trackers are still `/fix-report`
       actions — even in auto mode.
+
+### PR mode landing
+
+When `LANDING_MODE == pr`, landing replaces cherry-pick with **per-issue
+rebase + push + PR creation + CI + auto-merge**. Each fixed issue is
+handled independently: one branch, one PR, one `.landed` marker per
+worktree. A failure on one issue (rebase conflict, CI failure, PR
+creation error) does NOT block the others — mark that issue's status
+and continue to the next.
+
+**Loop over every fixed issue** (and any grouped issue worktrees from
+Phase 2). `$FIXED_ISSUES` is the list of issue numbers whose worktrees
+have verified commits on `fix/issue-NNN`.
+
+**Rebase before push** (same pattern as `/run-plan` PR mode rebase point 2,
+but per issue — fix-issues is single-phase per issue, so only one rebase
+point is needed):
+
+```bash
+cd "$WORKTREE_PATH"
+git fetch origin main
+PRE_REBASE=$(git rev-parse HEAD)
+git rebase origin/main
+if [ $? -ne 0 ]; then
+  # Abort and mark this issue as conflict. Continue to the next issue.
+  if [ -d "$(git rev-parse --git-dir)/rebase-merge" ] || \
+     [ -d "$(git rev-parse --git-dir)/rebase-apply" ]; then
+    git rebase --abort
+  fi
+  echo "REBASE CONFLICT for issue #$ISSUE_NUM."
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: fix-issues
+method: pr
+branch: $BRANCH_NAME
+issue: $ISSUE_NUM
+reason: rebase-conflict
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+  continue  # Move to next issue
+fi
+if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
+  echo "Main moved -- re-verifying issue #$ISSUE_NUM before push..."
+  # Dispatch /verify-changes worktree re-verification.
+  # Agent prompt includes "FIRST: cd $WORKTREE_PATH".
+  # Re-verification has its own fix cycle (max 2 attempts), independent
+  # of the CI fix budget. If re-verification fails after its own max
+  # attempts, mark the issue as pr-failed and move on.
+fi
+```
+
+**Push + PR creation (per issue):**
+
+```bash
+for issue in "${FIXED_ISSUES[@]}"; do
+  ISSUE_NUM="$issue"
+  BRANCH_NAME="fix/issue-${ISSUE_NUM}"
+  PROJECT_NAME=$(basename "$PROJECT_ROOT")
+  WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
+
+  # Fetch issue title for the PR title
+  ISSUE_TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title' 2>/dev/null || echo "Issue $ISSUE_NUM")
+
+  cd "$WORKTREE_PATH"
+
+  # Push (new or update)
+  if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+    echo "Remote branch $BRANCH_NAME already exists. Pushing updates."
+    git push origin "$BRANCH_NAME"
+  else
+    git push -u origin "$BRANCH_NAME"
+  fi
+
+  # Existing PR? Update, don't duplicate.
+  EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+  if [ -n "$EXISTING_PR" ]; then
+    PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+    PR_NUMBER="$EXISTING_PR"
+  else
+    PR_URL=$(gh pr create \
+      --title "Fix #${ISSUE_NUM}: ${ISSUE_TITLE}" \
+      --body "$(cat <<EOF
+Fixes #${ISSUE_NUM}
+
+## Changes
+${CHANGE_SUMMARY}
+
+## Test plan
+- [ ] Verify the fix resolves the original issue
+- [ ] All existing tests pass
+EOF
+)" \
+      --base main \
+      --head "$BRANCH_NAME")
+    if [ -n "$PR_URL" ]; then
+      PR_NUMBER=$(gh pr view --json number --jq '.number')
+    fi
+  fi
+
+  # If PR creation failed, write pr-failed marker and continue.
+  if [ -z "$PR_URL" ]; then
+    echo "WARNING: PR creation failed for issue #$ISSUE_NUM. Branch pushed but PR not created."
+    cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: pr-failed
+date: $(TZ=America/New_York date -Iseconds)
+source: fix-issues
+method: pr
+branch: $BRANCH_NAME
+issue: $ISSUE_NUM
+pr:
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+    mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+    continue
+  fi
+
+  # --- CI check + auto-merge: same pattern as /run-plan 3b-iii ---
+  # See skills/run-plan/SKILL.md "PR mode landing" for the canonical
+  # implementation: config re-read, pre-check retry, polling, fix cycle,
+  # auto-merge, .landed upgrade.
+  #
+  # Differences from /run-plan PR mode:
+  #   - source: "fix-issues" (not "run-plan")
+  #   - .landed marker includes `issue: $ISSUE_NUM`
+  #   - `timeout 300` per issue (NOT 600) to avoid serial accumulation
+  #     across N issues. If CI doesn't resolve in 5 min for a given issue,
+  #     write status: pr-ready and move on. The next cron turn or the
+  #     user re-checks.
+  #
+  # Parallel optimization (future): if the orchestrator can dispatch
+  # sub-agents, each issue's CI polling can run in parallel. Not required
+  # for initial implementation.
+
+  # --- .landed marker (per issue) ---
+  # $LANDED_STATUS, $CI_STATUS, $PR_STATE come from the CI/auto-merge block.
+  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+status: $LANDED_STATUS
+date: $(TZ=America/New_York date -Iseconds)
+source: fix-issues
+method: pr
+branch: $BRANCH_NAME
+pr: $PR_URL
+ci: $CI_STATUS
+pr_state: $PR_STATE
+issue: $ISSUE_NUM
+commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
+LANDED
+  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
+
+  echo "Issue #$ISSUE_NUM -> PR: $PR_URL (status: $LANDED_STATUS)"
+
+  # Cleanup on merge: same as /run-plan PR mode -- if status is `landed`
+  # (PR merged), call land-phase.sh to remove the worktree.
+  if [ "$LANDED_STATUS" = "landed" ]; then
+    bash scripts/land-phase.sh "$WORKTREE_PATH"
+  fi
+done
+```
+
+**`.landed` status values for PR mode** (same as `/run-plan`):
+
+| Scenario | status | method | ci | pr_state |
+|----------|--------|--------|----|----------|
+| PR merged (auto-merge) | `landed` | `pr` | `pass`/`none`/`skipped` | `MERGED` |
+| PR open, CI passed, awaiting review | `pr-ready` | `pr` | `pass`/`none`/`skipped` | `OPEN` |
+| PR open, CI timed out (still running) | `pr-ready` | `pr` | `pending` | `OPEN` |
+| PR open, CI failing after max attempts | `pr-ci-failing` | `pr` | `fail` | `OPEN` |
+| Branch pushed, PR creation failed | `pr-failed` | `pr` | _(not set)_ | _(not set)_ |
+| Rebase conflict | `conflict` | `pr` | _(not set)_ | _(not set)_ |
+
+In all PR mode markers, the `issue:` field records which GitHub issue the
+branch resolves. `/fix-report` reads this field to group PR URLs with
+issue numbers in the sprint summary.
 
 ### Post-land tracking
 

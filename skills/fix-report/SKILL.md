@@ -104,6 +104,38 @@ Sprint Report — YYYY-MM-DD HH:MM
 Omit skip categories with zero items. Then list each fix with its status
 (landed/not landed, verified/needs check).
 
+### PR-aware reporting
+
+Scan every worktree's `.landed` marker for `method: pr`. These come from
+`/fix-issues <N> auto pr` runs — each fixed issue has its own
+`fix/issue-NNN` branch and a dedicated PR. The marker fields include:
+
+- `issue: NNN` — the GitHub issue the PR resolves
+- `pr: <URL>` — the PR URL
+- `status: landed | pr-ready | pr-ci-failing | pr-failed | conflict`
+- `ci: pass | fail | pending | none | skipped`
+- `pr_state: OPEN | MERGED`
+
+Present PR-linked fixes with their URLs alongside the issue numbers:
+
+```
+PR-landed fixes (sprint YYYY-MM-DD HH:MM):
+  #123 — Solver crash — PR merged (landed): https://github.com/org/repo/pull/456
+  #456 — Button offset — PR open, CI passing (pr-ready): https://github.com/org/repo/pull/457
+  #789 — Parser error — PR open, CI FAILING (pr-ci-failing): https://github.com/org/repo/pull/458
+  #321 — Config bug — rebase conflict — see worktree /tmp/proj-fix-issue-321
+```
+
+**When listing PR URLs**, use the `status` field to categorize:
+- `landed` — PR merged, auto-closed the issue via `Fixes #NNN`
+- `pr-ready` — PR open, CI passing, awaiting review/merge
+- `pr-ci-failing` — PR open but CI failed after max fix attempts
+- `pr-failed` — push succeeded but PR creation failed; show branch name
+- `conflict` — rebase conflict; worktree left clean for the user to resume
+
+Include PR URLs in the final `FIX_REPORT.md` domain sections so the user
+can click through to review each fix.
+
 **STOP.** Wait for the user. They may want to discuss, ask questions about
 specific fixes, review diffs, or reject fixes before proceeding. Do not move
 to Step 2 until the user says to continue.
@@ -180,6 +212,20 @@ until this gate is passed.
 ## Step 4 — Land Fixes (if needed)
 
 Skip this step if all fixes were already auto-landed by `/fix-issues auto`.
+
+**PR mode fixes are landed via merge, not cherry-pick.** If a worktree's
+`.landed` marker has `method: pr`:
+- `status: landed` — the PR was auto-merged; the fix is already on main
+  via the merge commit. No cherry-pick needed.
+- `status: pr-ready` — the PR is open; direct the user to review and
+  merge it on GitHub. Do NOT cherry-pick — that would duplicate the
+  commits when the PR merges.
+- `status: pr-ci-failing` / `pr-failed` / `conflict` — show the user
+  the PR URL (if any) and the worktree path; let them decide how to
+  resume. Do NOT auto-cherry-pick.
+
+For cherry-pick mode fixes that haven't been landed yet, continue with
+the steps below.
 
 For each approved fix that has NOT been landed:
 

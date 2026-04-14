@@ -1097,6 +1097,48 @@ else
   fail ".landed marker upgrade missing ci or pr_state fields"
 fi
 
+# ── /fix-issues PR mode tests (Phase 4) ──────────────────────────────
+
+# Test: per-issue branch naming
+ISSUE_NUM=42
+BRANCH_NAME="fix/issue-${ISSUE_NUM}"
+if [[ "$BRANCH_NAME" == "fix/issue-42" ]]; then
+  pass "/fix-issues PR: per-issue branch naming (fix/issue-42)"
+else
+  fail "/fix-issues PR: expected fix/issue-42, got $BRANCH_NAME"
+fi
+
+# Test: per-issue worktree path
+PROJECT_NAME="my-app"
+ISSUE_NUM=42
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
+if [[ "$WORKTREE_PATH" == "/tmp/my-app-fix-issue-42" ]]; then
+  pass "/fix-issues PR: per-issue worktree path (/tmp/my-app-fix-issue-42)"
+else
+  fail "/fix-issues PR: worktree path wrong, got $WORKTREE_PATH"
+fi
+
+# Test: .landed marker includes issue field for fix-issues source
+MARKER=$(cat <<LANDED
+status: landed
+date: 2026-04-13T12:00:00-04:00
+source: fix-issues
+method: pr
+branch: fix/issue-42
+pr: https://github.com/owner/repo/pull/99
+ci: pass
+pr_state: MERGED
+issue: 42
+LANDED
+)
+if [[ "$MARKER" == *"issue: 42"* ]] && \
+   [[ "$MARKER" == *"source: fix-issues"* ]] && \
+   [[ "$MARKER" == *"method: pr"* ]]; then
+  pass "/fix-issues PR: .landed marker includes issue field + fix-issues source"
+else
+  fail "/fix-issues PR: marker missing issue field, source, or method"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
