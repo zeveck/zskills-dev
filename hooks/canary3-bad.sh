@@ -1,5 +1,5 @@
 #!/bin/bash
 # canary 3 — deliberate syntax error
-if then
+if true; then
   echo "bad"
 fi
