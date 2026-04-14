@@ -670,6 +670,8 @@ PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 ```
 
+**PR-mode bookkeeping rule:** in PR mode, orchestrator bookkeeping (tracker updates, plan reports, `PLAN_REPORT.md` regen, plan-frontmatter completion, mark-Done) commits **inside the worktree on the feature branch**, not on `main`. The feature branch is the single source of truth; the squash merge lands everything atomically on `origin/main`, keeping local `main` in lockstep. In cherry-pick/direct mode these commits stay on `main` as before. Every "commit on main" instruction below for bookkeeping must be read through this lens.
+
 **Worktree creation — orchestrator creates manually, NOT via `isolation: "worktree"`:**
 
 ```bash
@@ -850,11 +852,14 @@ printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_Yor
 
 ## Phase 4 — Update Progress Tracking
 
-After verification passes. **These updates happen on MAIN, not in the
-worktree.** The plan file tracks progress across all phases — it's an
-orchestrator concern, not an implementation artifact. Updating it on main
-ensures the next cron invocation sees the correct phase status and advances
-to the next incomplete phase (preventing infinite loops).
+After verification passes. The plan file tracks progress across phases — an
+orchestrator concern, not an implementation artifact. Update it promptly so
+the next cron invocation sees the correct phase status and advances
+(preventing infinite loops).
+
+**Commit location depends on `LANDING_MODE`** (see PR-mode bookkeeping rule):
+cherry-pick/direct commits on main; PR mode `cd "$WORKTREE_PATH"` first and
+commits on the feature branch.
 
 1. **Update the plan file's progress tracker on main** — change the phase
    status to Done with the commit hash (from worktree branch or delegate's
@@ -871,16 +876,16 @@ to the next incomplete phase (preventing infinite loops).
    - Interactive mode: suggest adding one to the plan file, ask user
    - Auto mode: note in the report that no tracker was updated
 
-4. **Mark the phase as "In Progress" and commit:**
+4. **Mark the phase as 🟡 In Progress and commit** (mode-conditional location):
    ```bash
+   # PR mode only: cd "$WORKTREE_PATH" first (cherry-pick/direct: stay on main)
    git add <plan-file> [companion-doc]
    git commit -m "chore: mark phase <name> in progress"
    ```
-   Mark as 🟡 In Progress (not ✅ Done yet). Committing immediately
-   ensures the next cron invocation sees the phase is being worked on
-   (preventing re-runs). Phase 6 updates the tracker to ✅ Done AFTER
-   landing succeeds. If landing fails, the tracker correctly says
-   "In Progress" — the phase was attempted but not landed.
+   Not ✅ Done yet — Phase 6 updates to Done after landing succeeds (in
+   cherry-pick/direct via a main commit, in PR mode via a commit on the
+   feature branch *before* push so it's captured in the squash). If
+   landing fails in either mode, tracker correctly reads In Progress.
 
 ## Phase 5 — Write Report
 
@@ -891,6 +896,11 @@ attention?" and that's always the newest phase.
 
 If the file doesn't exist, create it with a `# Plan Report — {plan name}`
 heading. Never overwrite the file — each phase adds a section.
+
+**File location and commit follow the PR-mode bookkeeping rule**: in PR
+mode, write to `$WORKTREE_PATH/reports/plan-{slug}.md`, regenerate
+`$WORKTREE_PATH/PLAN_REPORT.md`, and commit on the feature branch.
+Cherry-pick/direct: write/regen/commit on main (unchanged).
 
 After writing, regenerate `PLAN_REPORT.md` in the repo root as an **index**
 of all plan reports:
@@ -1015,8 +1025,9 @@ If the plan file has YAML frontmatter with an `issue:` field (e.g.,
 
 Change `status: active` (or `status: in-progress`) to `status: complete`
 in the plan file's YAML frontmatter. If the plan has no `status:` field,
-add one: `status: complete`. Commit the change:
+add one: `status: complete`. Commit (mode-conditional per PR-mode rule):
 ```bash
+# PR mode only: cd "$WORKTREE_PATH" first (cherry-pick/direct: stay on main)
 git add <plan-file>
 git commit -m "chore: mark plan complete — <plan-name>"
 ```
@@ -1357,6 +1368,25 @@ if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
   # If re-verification passes, proceed to push.
 fi
 ```
+
+**Mark tracker ✅ Done on feature branch (PR mode, before push):**
+
+PR mode has no post-landing window the orchestrator controls — auto-merge
+is asynchronous. So the Done update must be made on the feature branch
+**before push**, captured in the squash. Also regen `reports/plan-{slug}.md`
+and `PLAN_REPORT.md` here if they need post-landing updates (strip
+`[UNFINALIZED]`, add merge note).
+
+```bash
+cd "$WORKTREE_PATH"
+# Edit plan file: change tracker row 🟡 → ✅ with commit hash
+git add <plan-file> [reports/plan-{slug}.md PLAN_REPORT.md]
+git commit -m "chore: mark phase <name> done (landed)"
+```
+
+If push/CI/auto-merge fails, the branch has optimistic Done state — fine
+because it's on feature branch, not main. Main only gets Done on successful
+squash-merge. Retry reuses the existing Done commit.
 
 **Push + PR creation:**
 

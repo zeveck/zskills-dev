@@ -69,9 +69,25 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# 4. Delete branch (best-effort — may already be gone)
+# 4. Delete local branch (best-effort — may already be gone)
 if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
   git branch -d "$BRANCH" 2>/dev/null || true
+fi
+
+# 5. Delete remote branch if it was pushed and PR is merged.
+# PR mode branches get pushed during landing; after squash-merge the
+# remote branch is no longer needed. Without this cleanup, every PR-mode
+# run leaves a stale branch on origin that clutters the branch list.
+# Best-effort: silently skip if the remote branch doesn't exist, isn't
+# configured, or we don't have permission.
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
+  # Only attempt if origin has this branch AND the worktree's .landed
+  # status indicates the PR actually merged (avoid deleting branches of
+  # pr-ready or pr-ci-failing workflows the user may still need).
+  # We read the .landed content captured before removal (line 44 area).
+  if echo "$LANDED_CONTENT" | grep -q "^status: landed"; then
+    git push origin --delete "$BRANCH" 2>/dev/null || true
+  fi
 fi
 
 echo "Worktree removed: $WORKTREE_PATH"
