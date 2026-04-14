@@ -10,4 +10,5 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
+| [plan-execution-modes.md](reports/plan-execution-modes.md) | 1 | Pending landing |
 | [plan-canary5-autonomous.md](reports/plan-canary5-autonomous.md) | 2 | Pending landing |
