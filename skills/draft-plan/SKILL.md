@@ -196,6 +196,56 @@ A single agent produces the initial plan based on the consolidated research
 and user feedback. The plan MUST follow a format that `/run-plan` can
 consume:
 
+### Landing mode hint
+
+Before writing the plan, determine which landing mode hint (if any) to
+embed near the top. Resolution order:
+
+1. **Explicit description suffix** — if the description passed to
+   `/draft-plan` ends with `Landing mode: pr` or `Landing mode: direct`
+   (as appended by `/research-and-plan`), that wins. Strip this suffix
+   from the description before using it in the plan body.
+2. **Config default** — otherwise read `.claude/zskills-config.json`
+   for `execution.landing`:
+
+   ```bash
+   PROJECT_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
+   LANDING_HINT=""
+   if [ -f "$CONFIG_FILE" ]; then
+     CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+     if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+       LANDING_HINT="${BASH_REMATCH[1]}"
+     fi
+   fi
+   ```
+
+3. **Fallback** — if neither the description suffix nor the config
+   specifies a mode, treat it as `cherry-pick` (the default) — no hint
+   emitted.
+
+Based on the resolved mode, prepend one of the following blockquotes
+immediately after the `# Plan: <Title>` heading and before `## Overview`:
+
+- `pr`:
+  ```markdown
+  > **Landing mode: PR** -- This plan targets PR-based landing. All phases
+  > use worktree isolation with a named feature branch.
+  ```
+- `direct`:
+  ```markdown
+  > **Landing mode: direct** -- This plan targets direct-to-main landing.
+  > No worktree isolation.
+  ```
+- `cherry-pick` or absent: **no blockquote** (default behavior — do not
+  emit a hint).
+
+**This is a hint, not enforcement.** The hint exists so the implementing
+agent (and any human reader) knows which landing model the plan was
+drafted for. At execution time the `/run-plan` argument (`pr`, `direct`,
+or unspecified) always takes precedence — the embedded hint never
+overrides an explicit `/run-plan` flag.
+
 ### Required plan structure
 
 Every plan file MUST begin with YAML frontmatter so that `/run-plan` can
@@ -223,6 +273,14 @@ status: active    # active | complete
 
 ```markdown
 # Plan: <Title>
+
+> **Landing mode: PR** -- This plan targets PR-based landing. All phases
+> use worktree isolation with a named feature branch.
+<!-- OR, if direct mode:
+> **Landing mode: direct** -- This plan targets direct-to-main landing.
+> No worktree isolation.
+-->
+<!-- Omit the blockquote entirely when landing mode is cherry-pick or unset. -->
 
 ## Overview
 Brief description of what this plan accomplishes and why.

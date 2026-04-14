@@ -136,11 +136,52 @@ corresponding requirement as completed. For example, include
 
 ## Step 2 — Execute
 
-Immediately run:
+### Landing mode detection
+
+Before constructing the `/run-plan` invocation, detect whether the original
+`$GOAL` text contains `pr` or `direct` as a distinct word (same pattern as
+Phase 3a in `/run-plan` and `/fix-issues`, extended to recognize sentence
+punctuation `.!?` since this is prose-like goal text):
+
+```bash
+LANDING_ARG=""
+if [[ "$GOAL" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_ARG="pr"
+elif [[ "$GOAL" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_ARG="direct"
+fi
+```
+
+Where `$GOAL` is the original description passed to `/research-and-go`.
+If the goal text does not mention either keyword, `LANDING_ARG` stays
+empty and `/run-plan` falls back to its config default (normally
+`cherry-pick`). Do NOT pass a literal empty token to `/run-plan` — omit
+the argument entirely when `LANDING_ARG=""`.
+
+### Construct the /run-plan cron prompt
+
+The cron prompt MUST place `$LANDING_ARG` between `auto` and `every` so
+that `/run-plan` parses it correctly. Build the prompt conditionally to
+avoid empty-token confusion:
+
+```bash
+if [ -n "$LANDING_ARG" ]; then
+  RUN_PROMPT="Run /run-plan <meta-plan-path> finish auto $LANDING_ARG every 4h now"
+else
+  RUN_PROMPT="Run /run-plan <meta-plan-path> finish auto every 4h now"
+fi
+```
+
+Immediately run the resulting invocation — conceptually:
 
 ```
-/run-plan <meta-plan-path> finish auto
+/run-plan <meta-plan-path> finish auto [pr|direct] every 4h now
 ```
+
+Concrete examples:
+- Goal "Add dark mode" → `/run-plan <meta-plan-path> finish auto`
+- Goal "Add thermal domain. PR." → `/run-plan <meta-plan-path> finish auto pr`
+- Goal "Refactor logs direct" → `/run-plan <meta-plan-path> finish auto direct`
 
 This executes all implementation phases sequentially — each delegating
 to `/run-plan` on the corresponding sub-plan. Full verification,

@@ -86,6 +86,28 @@ out. The agent rationalizes "I'll go faster" and skips adversarial review.
 It does NOT go faster — it produces plans with 10+ CRITICAL issues that
 require full restarts.
 
+### Landing mode detection
+
+Before dispatching `/draft-plan` agents, detect whether the original
+goal/description text contains `pr` or `direct` as a distinct word. Use
+the same pattern as Phase 3a, extended with sentence punctuation `.!?`
+since this is prose-like goal text:
+
+```bash
+LANDING_ARG=""
+if [[ "$GOAL" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_ARG="pr"
+elif [[ "$GOAL" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_ARG="direct"
+fi
+```
+
+Where `$GOAL` is the full description passed to `/research-and-plan`.
+If `LANDING_ARG` is empty, no landing-mode suffix is added to the
+`/draft-plan` invocation. This is a hint for generated plans — it does
+NOT enforce landing behavior. The `/run-plan` argument always takes
+precedence at execution time.
+
 For each sub-problem:
 
 1. Determine the sub-plan output path: `plans/<SLUG>_<N>.md` (or let the
@@ -93,6 +115,12 @@ For each sub-problem:
 2. If research from Step 1 was written to a file, pass that path to the
    `/draft-plan` agent so it has the decomposition context.
 3. Dispatch: `/draft-plan output <path> <sub-problem description>`
+   - **If `LANDING_ARG` is non-empty**, append `. Landing mode: <LANDING_ARG>`
+     to the description so `/draft-plan` can embed the matching hint in
+     the generated plan. Example:
+     `/draft-plan output plans/X.md rounds 2 <description>. Landing mode: pr`
+   - If `LANDING_ARG` is empty, omit the suffix entirely — do NOT pass
+     an empty `Landing mode:` token.
 4. Wait for each `/draft-plan` batch to complete before dispatching the
    next batch (see parallelism rules below).
 
