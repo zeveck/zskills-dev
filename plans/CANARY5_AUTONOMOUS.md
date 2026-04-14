@@ -1,7 +1,7 @@
 ---
 title: Canary 5 — Autonomous End-to-End
 created: 2026-04-14
-status: active
+status: complete
 ---
 
 # Plan: Canary 5 — Autonomous End-to-End
@@ -13,8 +13,8 @@ phases sharing one PR. Each phase builds on the previous.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Hello script | ⬜ | | canary/hello.sh |
-| 2 -- Hello self-test | ⬜ | | Add self-test to hello.sh |
+| 1 -- Hello script | ✅ Done | `4a6075d` | hello() function |
+| 2 -- Hello self-test | ✅ Done | `72d8a13` | BASH_SOURCE-guarded self-test |
 
 ## Phase 1 -- Hello script
 
