@@ -124,6 +124,55 @@ Dispatch two agents simultaneously. Both receive:
 - Remaining phases as the **REVIEW TARGET**
 - The parsed state file path (`/tmp/refine-plan-parsed-<slug>.md`)
 
+### Establishing current reality (preamble — both agents)
+
+Before applying any of the six review dimensions, both agents must
+establish current reality. The dimensions ask whether remaining phases'
+references, assumptions, and acceptance criteria hold — that question
+has no meaningful answer without knowing what reality now looks like.
+
+1. **Read the codebase state** for anything remaining phases will
+   interact with — source files, skills, configs, docs, schemas,
+   whatever. The plan text may be stale; reality is what exists.
+2. **Check what completed phases actually produced** (via commit
+   diffs or current file state) vs what they planned. Where they
+   diverged, reality wins; note the divergence in the Drift Log but
+   do NOT modify the completed phase section.
+3. **Incorporate changes outside the plan** — recent external
+   commits, known fixes, user-provided context. Reality includes
+   everything, not just phase output.
+4. **Treat remaining phases as a coherent whole.** Even if the plan
+   was recently patched in only some sections, review how any
+   changes ripple forward into all other remaining phases. Do not
+   focus review only on recently-edited sections — the plan's
+   cohesion comes from how ALL remaining phases fit together.
+
+5. **Dry-run each remaining phase against current reality.** For each
+   remaining phase, step through what it will do at execution time.
+   Where does it invoke skills, touch files, query configs, or make
+   API calls? At every external interaction point, check what current
+   reality will produce:
+   - **Skill invocation** → read the skill's current text and
+     simulate each stage of its flow. At each stage, ask: does this
+     stage's behavior still make sense given the mode/options the
+     phase will invoke the skill in, and given anything completed
+     phases added to the skill? Pay special attention to
+     pre-existing stages that weren't touched by completed phases
+     but will now run alongside new ones.
+   - **File write** → check whether the file exists, what convention
+     surrounds it, whether the write respects that convention.
+   - **Config query** → check the config's current value, not the
+     value the plan assumes.
+   - **API/tool call** → check the current signature and behavior.
+
+   Flag any step where reality produces different behavior than the
+   remaining phase expects. This catches mode-conditional drift
+   (rules written for an old default that silently misbehave under a
+   new mode added by completed phases) that dimensions 1-6 can miss
+   when applied only against plan text.
+
+Only then apply dimensions 1-6 against that reality.
+
 ### Reviewer agent
 
 Reviews remaining phases against the reality of completed work. Checks
@@ -131,21 +180,26 @@ these six dimensions:
 
 1. **Stale references** — code, files, APIs, data structures, or paths
    mentioned in remaining phases that were replaced, renamed, or removed
-   by completed phases. The plan may reference `src/old-module.js` but
-   completed work moved it to `src/new-module.ts`.
+   by **any source** (completed phases, external changes, or recent
+   patches). The plan may reference `src/old-module.js` but reality
+   moved it to `src/new-module.ts`.
 
-2. **Consistency** — do remaining phase specs match what completed phases
-   *actually built* (not what they *planned* to build)? Read the completed
-   phase sections AND check the actual codebase state. A completed phase
-   may have deviated from its spec.
+2. **Consistency** — do remaining phase specs match **current reality**
+   (the codebase, completed phases' actual output, recent changes) —
+   not what the plan originally planned? Where completed phases
+   deviated from their spec, or external changes shifted things, the
+   code is reality.
 
 3. **Sizing** — are remaining phases still right-sized (~3-5 components,
    ~500 lines) given what's known now? Completed work may have changed the
    scope of what remains.
 
 4. **Specification gaps** — do remaining phases reference decisions, APIs,
-   or data structures that should have been defined by completed phases
-   but are missing or different from what was built?
+   or data structures that are **missing from reality or inconsistent
+   with it**? The gap may be in what completed phases were supposed to
+   define but didn't, in what external changes introduced that the plan
+   doesn't account for, or in remaining phases that reference a
+   convention/rule elsewhere in the codebase that has since changed.
 
 5. **Dependency correctness** — are remaining phase dependencies correct
    given completed work and remaining phase ordering? A dependency on
@@ -376,6 +430,13 @@ printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: complete\ndate: %s\n' \
 - **Ultrathink throughout.** Every agent in the process should use careful,
   thorough reasoning. Read completed phases carefully to understand what
   was actually built.
+- **Ground in reality before reviewing.** The six dimensions work only
+  if grounded in what actually exists. Shallow review of plan text alone
+  — without reading the codebase, completed phases' real output, or
+  recent external changes — applies the dimensions to an incomplete
+  mental model and misses defects. This is the class of failure
+  `/refine-plan` exists to prevent. The Phase 2 "Establishing current
+  reality" preamble is mandatory, not advisory.
 - **Default 2 rounds.** Lighter than `/draft-plan`'s 3 because this is a
   refinement pass on an existing plan, not blank-slate creation.
 
