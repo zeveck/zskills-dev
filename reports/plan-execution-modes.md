@@ -1,5 +1,37 @@
 # Plan Report — Execution Modes
 
+## Phase — 5a Skill Propagation [UNFINALIZED]
+
+**Plan:** plans/EXECUTION_MODES.md
+**Status:** Completed (verified, landing in progress)
+**Worktree:** /tmp/zskills-pr-execution-modes
+**Branch:** feat/execution-modes
+**Commits:** a13211f
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | 5a.1 — `/research-and-go` detect mode + pass to `/run-plan` cron | Done | a13211f |
+| 2 | 5a.2 — `/research-and-plan` pass mode to `/draft-plan` | Done | a13211f |
+| 3 | 5a.3 — `/draft-plan` embed landing hint in generated plans | Done | a13211f |
+| 4 | 5a.4 — Sync 3 installed copies | Done | a13211f |
+
+### Verification
+- Test suite: 116 passed, 0 failed (no regression — phase is text only)
+- Drift check: clean (3/3 source↔installed pairs identical)
+- Acceptance criteria: all met
+- No automated tests required (per spec — skill text only)
+
+### Notes
+- Regex pattern extends Phase 3a's word-boundary class with `.!?` to match
+  goal/prose text in `/research-and-go` and `/research-and-plan`.
+- `/draft-plan` resolves landing mode in 3 tiers: description suffix
+  (`. Landing mode: pr` from `/research-and-plan`) → config
+  `execution.landing` → fallback `cherry-pick` (no hint).
+- Hint placement: blockquote after `# Plan: <Title>` H1, before `## Overview`.
+- Hints are advisory — `/run-plan` arguments always take precedence at
+  execution time (documented in each skill).
+
 ## Phase — 4 /fix-issues PR Landing
 
 **Plan:** plans/EXECUTION_MODES.md
