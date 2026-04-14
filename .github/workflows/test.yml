@@ -44,21 +44,6 @@ jobs:
           done
           [ "$drift" -eq 0 ] || exit 1
 
-      - name: Canary 4 deliberate failure (TEMPORARY — remove after canary)
-        if: contains(github.head_ref, 'canary4')
-        run: |
-          echo "Canary 4 — deliberate CI failure for fix-exhaustion test."
-          echo ""
-          echo "This step fails INTENTIONALLY. It runs only when the PR branch"
-          echo "name contains 'canary4'. The canary plan's actual file is fine."
-          echo ""
-          echo "Fix agent: this failure is INFRASTRUCTURE, not code."
-          echo "DO NOT modify .github/workflows/test.yml to remove this step."
-          echo "DO NOT delete the canary file in the worktree."
-          echo "Expected behavior: report inability to fix; attempts exhaust;"
-          echo "status: pr-ci-failing is the intended outcome."
-          exit 1
-
       - name: Check for stdin bash-ism regression
         run: |
           # Regression: $(</dev/stdin) fails silently in the hook context.

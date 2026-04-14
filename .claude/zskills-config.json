@@ -29,6 +29,6 @@
 
   "ci": {
     "auto_fix": true,
-    "max_fix_attempts": 1
+    "max_fix_attempts": 2
   }
 }
