@@ -1,5 +1,27 @@
 # Plan Report — Canary 6: Multi-PR Sequential PR-Mode Regression
 
+## Phase — 2 Append to canary6 file
+
+**Plan:** plans/CANARY6_MULTI_PR.md
+**Status:** Landed (PR pending merge)
+**Branch:** feat/canary6-multi-pr
+**Commits:** c8a8e10
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Append "Canary 6 Phase 2: appended" to canary/canary6.txt | Done | c8a8e10 |
+| 2 | File has exactly two lines, correct order | Done | c8a8e10 |
+
+### Verification
+- Test suite: 116 passed, 0 failed
+- Acceptance criteria: all met
+- **Cross-phase regression indicator:** pre-push, local main ahead of origin/main = 0 commits. Phase 2 runs against advanced origin/main (PR #15 merged Phase 1 before this phase started). PR-mode bookkeeping STILL goes on the feature branch, NOT local main. Multi-PR scenario validated.
+
+### Regression-test observations
+- Phase 2 is the scenario none of Canaries 1-5 tested — sequential PR-mode phases against an advanced origin/main.
+- Local main stayed clean throughout Phase 2 execution. If the pre-PR-#13 bug were still active, orchestrator bookkeeping would have accumulated on local main as divergent commits.
+
 ## Phase — 1 Create canary6 file
 
 **Plan:** plans/CANARY6_MULTI_PR.md

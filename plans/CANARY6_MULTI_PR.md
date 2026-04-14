@@ -22,7 +22,7 @@ Each phase runs as its own `/run-plan <plan> <phase> pr auto` invocation (NOT `f
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 -- Create canary6 file | ✅ Done | `e76f772` | Trivial file creation, one phase per PR |
-| 2 -- Append to canary6 file | ⬜ | | Trivial edit, second sequential PR |
+| 2 -- Append to canary6 file | ✅ Done | `c8a8e10` | Trivial edit, second sequential PR |
 
 ## Phase 1 -- Create canary6 file
 
