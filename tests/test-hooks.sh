@@ -96,19 +96,39 @@ expect_allow "kill 1234 (no -9)" "kill 1234"
 echo ""
 echo "=== Push: block main/master ==="
 
-# The bare push test relies on the CURRENT branch being main (the hook falls
-# back to `git branch --show-current`). Outer env may not be on main (CI runs
-# on PR feature branches), so run it in a controlled temp git repo on main.
-BARE_PUSH_TMP=$(mktemp -d)
-(cd "$BARE_PUSH_TMP" && git init -q -b main 2>/dev/null \
-  || (cd "$BARE_PUSH_TMP" && git init -q && git checkout -b main 2>/dev/null))
-_result=$(cd "$BARE_PUSH_TMP" && echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | bash "$HOOK" 2>/dev/null)
-rm -rf "$BARE_PUSH_TMP"
-if [[ "$_result" == *"permissionDecision"*"deny"* ]]; then
-  pass "deny: git push (bare, on main)"
-else
-  fail "deny: git push (bare, on main) — expected deny, got: $_result"
-fi
+# Bare push (no remote/refspec) — the hook falls back to `git branch --show-current`.
+# Test BOTH branch states to prove the fallback actually differentiates:
+# - On main: BLOCK (agents shouldn't push main)
+# - On feature branch: ALLOW (feature branches are fine)
+# The outer env's branch state is unreliable (CI runs on PR branches), so each
+# test creates a controlled temp git repo.
+bare_push_test() {
+  local label="$1" branch="$2" expected="$3"
+  local tmp
+  tmp=$(mktemp -d)
+  (cd "$tmp" && git init -q -b "$branch" 2>/dev/null \
+    || (cd "$tmp" && git init -q && git checkout -b "$branch" 2>/dev/null))
+  local result
+  result=$(cd "$tmp" && echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | bash "$HOOK" 2>/dev/null)
+  rm -rf "$tmp"
+  if [ "$expected" = "deny" ]; then
+    if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected deny, got: $result"
+    fi
+  else
+    if [[ "$result" != *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected allow, got: $result"
+    fi
+  fi
+}
+
+bare_push_test "deny: git push (bare, on main)" "main" "deny"
+bare_push_test "deny: git push (bare, on master)" "master" "deny"
+bare_push_test "allow: git push (bare, on feature branch)" "feat/test" "allow"
 
 # Explicit target tests — don't depend on current branch (parser extracts target)
 expect_deny "git push origin main" "git push origin main"
