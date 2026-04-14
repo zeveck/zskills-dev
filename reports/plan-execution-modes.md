@@ -1,12 +1,12 @@
 # Plan Report — Execution Modes
 
-## Phase — 4 /fix-issues PR Landing [UNFINALIZED]
+## Phase — 4 /fix-issues PR Landing
 
 **Plan:** plans/EXECUTION_MODES.md
-**Status:** Completed (verified, landing in progress)
-**Worktree:** /tmp/zskills-pr-execution-modes
-**Branch:** feat/execution-modes
-**Commits:** 793d2f9
+**Status:** Landed (PR #10 merged)
+**Branch:** feat/execution-modes (merged + deleted)
+**PR:** https://github.com/zeveck/zskills-dev/pull/10
+**Commits:** e9d4a82 (feature), c82cafc (tracker), 82fbe96 (report)
 
 ### Work Items
 | # | Item | Status | Commit |
