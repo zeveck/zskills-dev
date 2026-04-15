@@ -1,7 +1,7 @@
 ---
 title: Execution Modes
 created: 2026-04-13
-status: active
+status: complete
 ---
 
 # Plan: Execution Modes
@@ -24,8 +24,8 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ✅ Done | `e24d8ad` | CI polling, fix cycle, auto-merge, PR comments, 4 tests |
 | 4 -- /fix-issues PR Landing | ✅ Done | `e9d4a82` | Per-issue branches, PR #10, 3 tests |
 | 5a -- Skill Propagation | ✅ Done | `d5b46c5` | research-and-go, research-and-plan, draft-plan |
-| 5b -- Execution Skills + Documentation | ⬜ | | do, commit, CLAUDE_TEMPLATE, update-zskills |
-| 5c -- Infrastructure: Cleanup, Model Gate, Baseline | ⬜ | | cleanup tooling, agents.min_model, baseline snapshot |
+| 5b -- Execution Skills + Documentation | ✅ Done | `bfc5893` | /do pr, /commit pr, CLAUDE_TEMPLATE Execution Modes, update-zskills Step 2.5 |
+| 5c -- Infrastructure: Cleanup, Model Gate, Baseline | ✅ Done | `1839bb8` | fix-report + briefing scripts, block-agents.sh hook, .test-baseline compare |
 
 ---
 
