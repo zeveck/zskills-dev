@@ -213,6 +213,16 @@ these six dimensions:
 Each finding must be **specific and actionable**: cite the exact section,
 line, or reference that's wrong and what it should say instead.
 
+**Evidence discipline.** When a finding makes an empirical claim (a file
+has/lacks X, a function does Y, a tool's input contains Z), include a
+concrete **Verification:** line — the exact file:line, grep, schema
+quote, or command output that reproduces the evidence. The refiner will
+re-run these checks before acting. Structural/judgment findings
+("this phase mixes too many concerns") don't need a reproducer, but
+mark them explicitly: `Verification: judgment — no verifiable anchor`.
+Never write an empirical-sounding claim without something the refiner
+can independently re-check.
+
 ### Devil's Advocate agent
 
 Genuinely adversarial — tries to find ways the remaining plan will fail
@@ -247,6 +257,13 @@ export pipeline' but doesn't specify the serialization format, and
 Phase 1 already committed to MessagePack in `src/io.ts` — the agent will
 have to guess or conflict" is actionable.
 
+The same **evidence discipline** from the reviewer section applies:
+every empirical claim needs a `Verification:` line (file:line, grep,
+schema quote, etc.). The devil's advocate is *especially* prone to
+generating plausible-sounding-but-false claims because its job is
+pattern-generating failure modes, not verifying them. Discipline is
+load-bearing here.
+
 ### Write findings
 
 Write combined findings to `/tmp/refine-plan-review-round-N-<slug>.md`
@@ -272,11 +289,50 @@ A single agent receives:
 - Completed phases as **READ-ONLY CONTEXT** (for reference only)
 - The parsed state file path
 
+### Verify-before-fix (mandatory)
+
+Before touching any phase text, the refiner must **attempt to reproduce
+the cited evidence for each finding**. The reviewer/DA produce hypotheses;
+the refiner is the gate that tests them against reality. This is not
+optional.
+
+For each finding with an empirical claim:
+1. Read the `Verification:` line and run its check (Read the file, run
+   the grep, check the schema, run the command).
+2. Record one of three outcomes in the disposition table:
+   - **Verified** — evidence reproduces. Proceed with fix or justification.
+   - **Not reproduced** — the cited evidence does not match reality.
+     Disposition: **Justified — evidence did not reproduce**. Note what
+     was actually found. Do NOT fix based on this finding.
+   - **No anchor** — finding is empirical-sounding but lacks a verifiable
+     citation. Disposition: **Justified — claim not verifiable as stated**
+     unless the refiner can locate a verifiable anchor itself.
+
+Judgment findings (those explicitly marked `Verification: judgment`) skip
+step 1 and go straight to fix-or-justify based on merit.
+
+**Why this exists.** Past failure: a devil's advocate claimed a Claude
+Code tool's input JSON lacked a `model` field and cited the hook
+template as evidence. The hook template was real but irrelevant — the
+actual falsifier was the tool's own schema, which did contain the field.
+The refiner accepted the claim and pivoted a whole phase's architecture
+based on nothing. If the refiner had tried to reproduce the evidence, it
+would have discovered the claim was unsupported. Verify-before-fix turns
+"I believe the DA" into "I checked."
+
+### Address every finding
+
 The agent addresses **every finding**. For each finding, it must either:
 1. **Fix it** — update the remaining phase text to resolve the issue
 2. **Justify** — explain with evidence why it's not actually a problem
+   (including the "evidence did not reproduce" and "claim not verifiable"
+   cases from the verify-before-fix block)
 
 It may NOT ignore findings or defer them. Every finding gets a disposition.
+
+The disposition table (written to the refined output) must include an
+**Evidence** column with the outcome: `Verified`, `Not reproduced`,
+`No anchor`, or `Judgment` (for non-empirical findings).
 
 **Completed phases are NEVER modified.** The refiner operates only on
 remaining phase text. If a finding suggests a completed phase has a
@@ -419,6 +475,13 @@ printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: complete\ndate: %s\n' \
 - **Every finding must be addressed.** The refiner cannot ignore or defer
   reviewer/devil's-advocate findings. Fix it or justify why it's not a
   problem — with evidence.
+- **Verify findings before baking fixes.** Reviewer and DA findings are
+  hypotheses, not mandates. The refiner must reproduce each empirical
+  claim before acting on it. A plausible-sounding claim with no
+  verifiable anchor — or one whose evidence doesn't reproduce — is not a
+  mandate to fix. It's a signal to scrutinize harder. Devil's advocate
+  findings are *especially* prone to confidently-false empirical claims
+  because the role incentivizes plausibility, not truth.
 - **Convergence means no new substantive issues.** Not "the same issues
   rephrased." If the devil's advocate keeps finding real new problems, the
   plan isn't ready.

@@ -536,6 +536,12 @@ agent hasn't returned after 2 hours, declare it **failed**:
 
 2. **Dispatch implementation agent WITHOUT `isolation: "worktree"`.** The
    prompt tells the agent the worktree path and requires absolute paths:
+
+   **Before dispatching any Agent:** check `agents.min_model` in
+   `.claude/zskills-config.json`. If set, use that model or higher
+   (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch with a
+   lower-ordinal model than the configured minimum.
+
    ```
    You are working in worktree: $WORKTREE_PATH
 
@@ -807,7 +813,13 @@ If this phase used delegate execution, verification runs on **main**:
 1. **Dispatch verification agent** targeting the worktree's changes. The
    verification agent is dispatched **without** `isolation: "worktree"` — the
    Agent tool's `isolation` parameter creates a NEW worktree, it cannot attach
-   to an existing one. Instead, give the verification agent:
+   to an existing one.
+
+   **Before dispatching:** check `agents.min_model` in `.claude/zskills-config.json`.
+   If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never
+   dispatch with a lower-ordinal model than the configured minimum.
+
+   Give the verification agent:
    - The **worktree path** from Phase 2 (so it can read files and run tests
      there via `cd <worktree-path> && npm run test:all`)
    - The **worktree branch name** (so it can diff against main:
@@ -818,6 +830,18 @@ If this phase used delegate execution, verification runs on **main**:
      orchestrator with implementer bias.
    - The **work items checklist** — verify each item was actually implemented,
      not stubbed or skipped
+   - The **`.test-baseline.txt` file** captured before implementation started
+     (if `FULL_TEST_CMD` is configured). The verification agent should:
+     - Read `.test-baseline.txt` (baseline captured before implementation)
+     - Compare against `.test-results.txt` (results after running tests now)
+     - **New failures** (in results but not in baseline) → regressions, must
+       be fixed before the phase can commit
+     - **Pre-existing failures** (in both baseline and results) → note in report,
+       do not fix (these predate this phase)
+     - **Resolved failures** (in baseline but not in results) → note positively
+       as improvements
+     - If `.test-baseline.txt` is absent (`FULL_TEST_CMD` not configured), treat
+       all failures as potentially new — report all of them
 
 2. **Additional plan-specific checks** (the verifier checks these against the
    verbatim plan text — not against a summary):
@@ -1594,6 +1618,10 @@ Attempting fix..."
     fi
 
     # --- Dispatch CI fix agent ---
+    # Before dispatching: check agents.min_model in .claude/zskills-config.json.
+    # If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3).
+    # Never dispatch with a lower-ordinal model than the configured minimum.
+    #
     # The /run-plan ORCHESTRATOR dispatches this agent via the Agent tool.
     # The agent does NOT use isolation: "worktree" -- the worktree already
     # exists. Instead, the agent's prompt tells it to work in $WORKTREE_PATH.

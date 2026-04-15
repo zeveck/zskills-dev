@@ -362,6 +362,15 @@ Checks for completeness, correctness, and feasibility:
 - Are formulas and algorithms correct?
 - Will `/run-plan` be able to parse phases and status from this format?
 
+**Evidence discipline.** When a finding makes an empirical claim (a
+file, function, tool, or library has/lacks property X), include a
+concrete **Verification:** line — the exact file:line, grep, schema
+quote, or command output that reproduces the evidence. The refiner will
+re-run these checks before acting. Structural/judgment findings don't
+need a reproducer but should say `Verification: judgment — no verifiable
+anchor` explicitly. Never write an empirical-sounding claim without
+something the refiner can independently re-check.
+
 ### Devil's advocate agent
 
 Genuinely adversarial — tries to find ways the plan will fail:
@@ -390,6 +399,13 @@ generic concerns. "Phase 3 might be complex" is useless. "Phase 3 says
 matrix factorization approach, or convergence criteria — the agent will have
 to guess all three" is actionable.
 
+The same **evidence discipline** from the reviewer section applies:
+every empirical claim needs a `Verification:` line. The devil's advocate
+is *especially* prone to generating plausible-sounding-but-false claims
+because its job is pattern-generating failure modes, not verifying them.
+Discipline is load-bearing here — the refiner will re-check, and claims
+whose evidence doesn't reproduce will not drive fixes.
+
 ### Post-review tracking
 
 After both reviewer and devil's advocate agents return their findings,
@@ -407,13 +423,46 @@ A single agent receives:
 - The reviewer's findings
 - The devil's advocate's findings
 
+### Verify-before-fix (mandatory)
+
+Before touching the draft, the refiner must **attempt to reproduce the
+cited evidence for each finding**. The reviewer/DA produce hypotheses;
+the refiner is the gate that tests them against reality.
+
+For each finding with an empirical claim:
+1. Read the `Verification:` line and run its check (Read the file, run
+   the grep, check the schema, run the command).
+2. Record outcome: **Verified** (evidence reproduces → act on finding),
+   **Not reproduced** (evidence does not match reality → justify, do NOT
+   fix based on this finding), or **No anchor** (empirical-sounding
+   claim without verifiable citation → scrutinize, either locate an
+   anchor yourself or justify-not-fix).
+
+Judgment findings (marked `Verification: judgment`) skip step 1 and go
+straight to fix-or-justify on merit.
+
+**Why this exists.** Devil's-advocate findings are by role generated to
+be plausible failure modes, not verified truths. Past failure: a DA
+claimed a tool's input lacked a field, citing a tangentially-related
+file; the refiner accepted and rewrote a whole phase on a false premise.
+A 30-second check of the tool schema would have caught it. Verify-before-fix
+is the gate that turns "the DA said so" into "I checked."
+
+### Address every finding
+
 It produces an improved draft that **addresses every finding**. For each
 finding, it must either:
 1. **Fix it** — update the plan to resolve the issue
-2. **Justify** — explain why it's not actually a problem (with evidence)
+2. **Justify** — explain why it's not actually a problem (with evidence,
+   including the "evidence did not reproduce" and "claim not verifiable"
+   cases from the verify-before-fix block)
 
 It may NOT ignore findings or defer them. The refiner's output is the new
 draft for the next round.
+
+The refiner's output must include a **disposition table** listing each
+finding with an Evidence column (Verified / Not reproduced / No anchor
+/ Judgment) and the disposition (Fixed / Justified + reason).
 
 ## Phase 5 — Convergence Check
 
@@ -497,6 +546,13 @@ printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: complete\ndate: %s\n' \
 - **Every finding must be addressed.** The refiner cannot ignore or defer
   reviewer/devil's-advocate findings. Fix it or justify why it's not a
   problem.
+- **Verify findings before baking fixes.** Reviewer and DA findings are
+  hypotheses, not mandates. The refiner must reproduce each empirical
+  claim before acting on it. A plausible-sounding claim with no
+  verifiable anchor — or one whose evidence doesn't reproduce — is not
+  a mandate to fix. Devil's advocate findings are *especially* prone to
+  confidently-false empirical claims because the role incentivizes
+  plausibility, not truth.
 - **Convergence means no new substantive issues.** Not "the same issues
   rephrased." If the devil's advocate keeps finding real new problems, the
   plan isn't ready.

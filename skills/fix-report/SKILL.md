@@ -295,12 +295,31 @@ Check all worktrees for `.landed` markers:
 
 ```bash
 for wt in $(git worktree list | awk '{print $1}' | tail -n +2); do
-  if [ -f "$wt/.landed" ] && grep -q "^status: full" "$wt/.landed"; then
-    echo "SAFE: $wt ($(head -1 $wt/.landed))"
-  elif [ -f "$wt/.landed" ]; then
-    echo "PARTIAL: $wt — has unlanded work"
+  if [ -f "$wt/.landed" ]; then
+    STATUS=$(grep "^status:" "$wt/.landed" | cut -d' ' -f2)
+    PR_URL=$(grep "^pr:" "$wt/.landed" | cut -d' ' -f2)
+    case "$STATUS" in
+      full|landed)
+        echo "SAFE: $wt (status: $STATUS) ✓"
+        ;;
+      pr-ready)
+        echo "SAFE (worktree only): $wt (status: pr-ready, PR: ${PR_URL:-unknown}) ✓"
+        ;;
+      pr-ci-failing)
+        echo "NEEDS ATTENTION: $wt — CI failing on PR ${PR_URL:-unknown} ⚠"
+        ;;
+      pr-failed)
+        echo "NEEDS ATTENTION: $wt — PR creation failed, branch pushed ⚠"
+        ;;
+      conflict)
+        echo "NEEDS ATTENTION: $wt — rebase conflict, needs manual resolution ⚠"
+        ;;
+      *)
+        echo "PARTIAL: $wt — status: $STATUS (has unlanded or unresolved work) ⚠"
+        ;;
+    esac
   else
-    echo "ACTIVE: $wt — no .landed marker"
+    echo "ACTIVE: $wt — no .landed marker ⚠"
   fi
 done
 ```
@@ -309,20 +328,34 @@ Present the results:
 ```
 Worktrees:
   wt-123 — SAFE (status: full, landed 2026-03-16) ✓
-  wt-456 — SAFE (status: full, landed 2026-03-16) ✓
+  wt-456 — SAFE (status: landed, merged 2026-03-16) ✓
+  wt-pr-789 — SAFE (worktree only): status: pr-ready, PR: https://github.com/... ✓
+  wt-ci-101 — NEEDS ATTENTION: CI failing on PR https://github.com/... ⚠
   wt-789 — PARTIAL — skipped commits, needs review ⚠
   physics module-phase4 — ACTIVE — no .landed marker (long-running dev) ⚠
 
-Remove SAFE worktrees? (wt-123, wt-456)
+Remove SAFE worktrees? (wt-123, wt-456, wt-pr-789)
 ```
 
 **Wait for user approval** before removing anything.
 
-**Only remove worktrees with `status: full` in `.landed`.** Never remove
-PARTIAL or ACTIVE worktrees. After removing, also clean up the branch:
+**Safe-to-remove statuses:** `status: full` (fix-issues cherry-pick), `status: landed`
+(run-plan cherry-pick or merged PR), and `status: pr-ready` (open PR — worktree is safe
+to remove since the branch is already pushed). For `pr-ready`, remove the worktree
+only — do NOT delete the remote branch (it supports the open PR).
+
+**Never remove** worktrees with `status: pr-ci-failing`, `status: pr-failed`,
+`status: conflict`, `status: partial`, or ACTIVE worktrees (no `.landed`).
+
+After removing SAFE worktrees:
 ```bash
+# For status: full or status: landed:
 git worktree remove <path>
 git branch -d <branch-name>
+
+# For status: pr-ready (open PR — keep remote branch):
+git worktree remove <path>
+git branch -d <branch-name>   # local branch only; remote branch stays for the PR
 ```
 
 ## Step 7 — Write FIX_REPORT.md

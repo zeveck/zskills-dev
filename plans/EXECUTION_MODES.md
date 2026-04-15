@@ -1,7 +1,7 @@
 ---
 title: Execution Modes
 created: 2026-04-13
-status: active
+status: complete
 ---
 
 # Plan: Execution Modes
@@ -23,9 +23,9 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 3b-ii -- PR Mode Happy Path | ✅ Done | `36af895` | Named branches, rebase, push+PR, .landed, 9 tests |
 | 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ✅ Done | `e24d8ad` | CI polling, fix cycle, auto-merge, PR comments, 4 tests |
 | 4 -- /fix-issues PR Landing | ✅ Done | `e9d4a82` | Per-issue branches, PR #10, 3 tests |
-| 5a -- Skill Propagation | 🟡 In Progress | `a13211f` | research-and-go, research-and-plan, draft-plan |
-| 5b -- Execution Skills + Documentation | ⬜ | | do, commit, CLAUDE_TEMPLATE, update-zskills |
-| 5c -- Infrastructure: Cleanup, Model Gate, Baseline | ⬜ | | cleanup tooling, agents.min_model, baseline snapshot |
+| 5a -- Skill Propagation | ✅ Done | `d5b46c5` | research-and-go, research-and-plan, draft-plan |
+| 5b -- Execution Skills + Documentation | ✅ Done | `bfc5893` | /do pr, /commit pr, CLAUDE_TEMPLATE Execution Modes, update-zskills Step 2.5 |
+| 5c -- Infrastructure: Cleanup, Model Gate, Baseline | ✅ Done | `1839bb8` | fix-report + briefing scripts, block-agents.sh hook, .test-baseline compare |
 
 ---
 
@@ -2321,24 +2321,200 @@ Add execution mode support to downstream skills (`/do`, `/commit`), document exe
 
 #### 5b.1 -- /do: `pr` option
 
-Modify `skills/do/SKILL.md` to accept a `pr` argument. `/do <task> pr` creates a worktree with a named branch, does the work, pushes, and creates a PR. Same PR landing flow as 3b-ii/3b-iii, with these differences:
+Modify `skills/do/SKILL.md` to accept a `pr` argument. `/do <task> pr` creates a named worktree on a named branch, does the work, pushes, and creates a PR. Same PR landing flow as 3b-ii/3b-iii, with these differences:
 
-- Branch name: `{branch_prefix}{task-slug}` (task slug derived from first few words of task description, lowercased, hyphenated)
-- Worktree: `/tmp/<project>-do-<task-slug>`
-- Single-phase: only rebase point 2 applies (before push)
-- CI check + auto-merge: same pattern as 3b-iii
-- `.landed` marker: `source: do`
+**Argument detection:** Recognize `pr` as a trailing flag (same END-backward parsing as existing `push` and `worktree` flags). Use the extended detection pattern including sentence punctuation since `/do` receives prose-like task descriptions:
 
-- [ ] Add `pr` argument detection to `/do`
-- [ ] PR mode creates named worktree, pushes, creates PR
-- [ ] Rebase onto latest main before push (same pattern as 3b.3, rebase point 2)
-- [ ] CI check + auto-merge (same pattern as 3b-iii)
-- [ ] `.landed` marker with `source: do`
+```bash
+LANDING_MODE="cherry-pick"  # default
+if [[ "$REMAINING" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_MODE="pr"
+  # Strip the pr token from description (same as research-and-go/research-and-plan Phase 5a)
+fi
+```
+
+This is the same `.!?` extended pattern used by `/research-and-go` (skills/research-and-go/SKILL.md lines 147-151) — appropriate because `/do` receives prose-like descriptions where "pr" may appear as "PR." at end of sentence.
+
+**Task description extraction (must precede slug computation):**
+
+```bash
+# Strip pr flag and extract task description
+TASK_DESCRIPTION=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])//')
+TASK_DESCRIPTION=$(echo "$TASK_DESCRIPTION" | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+if [ -z "$TASK_DESCRIPTION" ]; then
+  echo "ERROR: Task description required. Usage: /do <task description> pr"
+  exit 1
+fi
+```
+
+This block must appear BEFORE the slug computation. `$TASK_DESCRIPTION` is the stripped description used for the slug, PR title, and PR body.
+
+**Slug algorithm:** First N words of the task description where N = min(4, word_count) — always at least 1 word, up to 4. If the task has fewer than 4 words, use all available words. Lowercased, all non-alphanumeric characters replaced with hyphens, consecutive hyphens collapsed, max 30 characters. Example: "Add dark mode to editor" → "add-dark-mode-to".
+
+**Slug collision handling (order matters):** When `/tmp/<project>-do-<slug>` already exists, the suffix must be applied to `TASK_SLUG` itself — not just to the path — so that both `WORKTREE_PATH` and `BRANCH_NAME` receive the updated value:
+
+1. Compute base slug from `$TASK_DESCRIPTION`
+2. Check if `/tmp/<project>-do-<slug>` exists
+3. If collision: append `-<last-5-chars-of-unix-epoch>` (via `date +%s | tail -c 5`) to `TASK_SLUG` itself (same collision strategy as existing `/do worktree` flag per `skills/do/SKILL.md` line 371)
+4. Derive `BRANCH_NAME` and `WORKTREE_PATH` from the (possibly suffixed) `TASK_SLUG`
+
+Computing `BRANCH_NAME` before the collision check (from the un-suffixed slug) would cause `git worktree add -b` to fail with "branch already exists" on a second invocation with the same description.
+
+**Worktree and branch setup (PR mode):**
+
+```bash
+# 1. Compute base slug
+TASK_SLUG="<derived per slug algorithm from $TASK_DESCRIPTION>"
+# 2. Collision check — BEFORE deriving BRANCH_NAME or WORKTREE_PATH
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel)")
+if [ -d "/tmp/${PROJECT_NAME}-do-${TASK_SLUG}" ]; then
+  TASK_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
+fi
+# 3. Derive both names from the (possibly suffixed) TASK_SLUG
+BRANCH_PREFIX=$(jq -r '.execution.branch_prefix // "feat/"' .claude/zskills-config.json 2>/dev/null || echo "feat/")
+BRANCH_NAME="${BRANCH_PREFIX}do-${TASK_SLUG}"
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
+
+# ff-merge main before branching (PR #17 pattern, run-plan/SKILL.md lines 694-696)
+git fetch origin main 2>/dev/null || true
+git merge --ff-only origin/main 2>/dev/null \
+  || echo "WARNING: local main not fast-forwarded — worktree uses local main as-is"
+git worktree prune
+git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
+  || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
+```
+
+**Tracking context:** `/do pr` is NOT a run-plan pipeline. But it must write its own tracking marker so the hook's pipeline-association check scopes enforcement to this context (preventing a same-session run-plan pipeline from false-blocking the push via Tier 2 transcript read). Immediately after worktree creation:
+
+```bash
+PIPELINE_ID="do.${TASK_SLUG}"
+echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+```
+
+This makes `TRACKING_SESSION_HAS_PIPELINE=true` for this worktree via Tier 1 (.zskills-tracked). The `/do pr` pipeline has no `requires.*` markers, so tracking enforcement passes — it just scopes away from any ambient run-plan pipeline.
+
+Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` in the main session; write only to the worktree file.
+
+**Implementation-agent dispatch (after `.zskills-tracked`, before rebase+push):**
+
+After writing `.zskills-tracked`, dispatch the implementation agent to do the actual work:
+
+Dispatch an Agent (without `isolation: "worktree"` — the worktree already exists) with this prompt:
+
+```
+You are implementing: $TASK_DESCRIPTION
+
+FIRST: cd $WORKTREE_PATH
+All work happens in that directory. Do NOT work in any other directory.
+You are on branch $BRANCH_NAME (already checked out in the worktree).
+
+Implement the task. Commit changes when done:
+- Stage files by name (not git add .)
+- Do NOT commit to main
+- Commit message should summarize what was implemented
+
+Check agents.min_model in .claude/zskills-config.json before dispatching
+any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
+```
+
+Wait for the implementation agent to complete. If the agent reports failure or exits without committing, write `.landed` with `status: conflict` and exit with an error message directing the user to inspect `$WORKTREE_PATH`.
+
+The implementation sequence is: worktree creation → write `.zskills-tracked` → **dispatch implementation agent (wait for completion)** → rebase → push → PR creation → CI poll → write `.landed`. The PR is created AFTER implementation completes, so `git log origin/main..HEAD` in the PR body will contain actual commits.
+
+**PR creation:**
+
+```bash
+cd "$WORKTREE_PATH"
+# Rebase onto latest main before push (rebase point 2 — same as 3b-iii)
+git fetch origin main
+git rebase origin/main || { echo "ERROR: Rebase conflict. Resolve manually in $WORKTREE_PATH."; exit 1; }
+
+git push -u origin "$BRANCH_NAME"
+
+# PR body: explicit title and body, not --fill
+PR_TITLE="do: $(echo "$TASK_DESCRIPTION" | cut -c1-60)"
+PR_BODY="Task: ${TASK_DESCRIPTION}
+
+Worktree: ${WORKTREE_PATH}
+Commits: $(git log origin/main..HEAD --format='%h %s' | head -10)"
+
+EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$EXISTING_PR" ]; then
+  PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+  echo "PR already exists: $PR_URL"
+else
+  PR_URL=$(gh pr create --base main --head "$BRANCH_NAME" \
+    --title "$PR_TITLE" --body "$PR_BODY")
+  echo "Created PR: $PR_URL"
+fi
+```
+
+**Bookkeeping rule (PR #13):** `/do pr` does NOT commit plan reports or tracker updates (it has no plan). If the implementation leaves `.zskills-tracked` or other tracking artifacts in the worktree, they are fine — they stay on the feature branch (not committed to main).
+
+**CI check and `.landed` marker:**
+
+CI poll is **report-only** (same poll mechanism as 3b-iii.2 — `gh pr checks --watch`, 600s timeout — but NOT the fix-cycle). `/do pr` is a user-initiated convenience command; users resolve CI failures themselves. For orchestrated fix cycles, use `/run-plan` or `/fix-issues` in PR mode.
+
+Write `.landed` on completion. Use `status: pr-ready` if CI passes (or no CI), `status: pr-ci-failing` if CI fails:
+
+```bash
+cat > "$WORKTREE_PATH/.landed" <<LANDED
+status: pr-ready
+date: $(TZ=America/New_York date -Iseconds)
+source: do
+branch: $BRANCH_NAME
+pr: $PR_URL
+LANDED
+```
+
+If CI fails, write `status: pr-ci-failing` instead of `status: pr-ready`. If the PR is auto-merged before `.landed` is written, write `status: landed`.
+
+**Existing `worktree` flag migration:** The current `/do worktree` flag uses `isolation: "worktree"`. Phase 3b-i replaced all `isolation: "worktree"` with manual `git worktree add` at `/tmp/` paths — the same reason applies here (stale origin/HEAD base). As part of this work item, convert the existing `worktree` flag to use `../do-<slug>/` path with manual `git worktree add`, matching the worktree naming documented in `skills/do/SKILL.md` line 369.
+
+Work items checklist:
+- [ ] Add `pr` trailing-flag detection to `/do` using extended `.!?` pattern (same as research-and-go)
+- [ ] Add `TASK_DESCRIPTION` extraction block (strip `pr` flag from `$ARGUMENTS`; error if empty after stripping)
+- [ ] Convert existing `worktree` flag from `isolation: "worktree"` to manual `git worktree add ../do-<slug>/`
+- [ ] PR mode: ff-merge main → worktree creation (PR #17 pattern)
+- [ ] Write `.zskills-tracked` with `do.${TASK_SLUG}` pipeline ID in worktree immediately after creation
+- [ ] Task slug: compute base slug (N = min(4, word_count) words, lowercase, non-alphanum→hyphen, collapsed, max 30 chars); check collision BEFORE deriving `BRANCH_NAME` and `WORKTREE_PATH`; if collision, append timestamp suffix to `TASK_SLUG` itself, then derive both names from the (possibly suffixed) slug
+- [ ] Branch prefix from `execution.branch_prefix` config (default `feat/`)
+- [ ] Dispatch implementation agent to worktree (no `isolation: "worktree"`): cd `$WORKTREE_PATH`, implement `$TASK_DESCRIPTION`, commit; check `agents.min_model` before any sub-agent dispatch
+- [ ] Wait for implementation agent to complete before rebasing/pushing; write `status: conflict` `.landed` and exit if agent fails
+- [ ] Rebase onto latest main before push
+- [ ] PR: explicit `--title "do: <first 60 chars of $TASK_DESCRIPTION>"` and `--body` (task + worktree path + `git log origin/main..HEAD` commits) — NOT `--fill`
+- [ ] Handle existing PR (check with `gh pr list --head`)
+- [ ] CI poll + report only (poll mechanism same as 3b-iii.2; no fix agents dispatched)
+- [ ] Write `.landed` marker with `source: do`; `status: pr-ready` (CI pass/none), `status: pr-ci-failing` (CI fail), `status: landed` (if PR auto-merged)
 - [ ] Sync installed copy
 
 #### 5b.2 -- /commit: `pr` subcommand
 
-Modify `skills/commit/SKILL.md` to accept a `pr` subcommand. `/commit pr` pushes the current branch and creates a PR to main:
+Modify `skills/commit/SKILL.md` to accept a `pr` subcommand. `/commit pr` pushes the current branch and creates a PR to main.
+
+**Argument parsing:** `pr` is recognized ONLY when it is the FIRST token in `$ARGUMENTS` (before any scope hint). This prevents false-triggering on scope hints that contain "pr" mid-string (e.g., `/commit fix pr comments` has scope hint "fix pr comments", no PR mode). Disambiguation rule: `/commit pr` → PR mode; `/commit pr comments fix` → PR mode (first token); `/commit fix pr format` → scope hint "fix pr format", no PR mode.
+
+```bash
+FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
+if [[ "$FIRST_TOKEN" == "pr" ]]; then
+  # PR subcommand mode
+  SCOPE_HINT=$(echo "$ARGUMENTS" | cut -d' ' -f2-)  # rest after 'pr' (may be empty)
+  # ... PR flow below
+fi
+```
+
+**Pre-check — clean working tree required:**
+
+```bash
+DIRTY=$(git status --porcelain 2>/dev/null)
+if [ -n "$DIRTY" ]; then
+  echo "ERROR: Working tree has uncommitted changes."
+  echo "Run \`/commit\` first to create a commit, then \`/commit pr\` to push and create the PR."
+  exit 1
+fi
+```
+
+**PR creation flow:**
 
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -2350,23 +2526,33 @@ fi
 # Rebase onto latest main before pushing
 git fetch origin main
 git rebase origin/main
-# If rebase conflicts: report and stop. The user needs to resolve.
+# If rebase conflicts: report and stop — user must resolve
+if [ $? -ne 0 ]; then
+  echo "ERROR: Rebase conflict. Resolve manually, then re-run \`/commit pr\`."
+  exit 1
+fi
 
 git push -u origin "$BRANCH"
+
+# PR title: strip branch prefix, convert hyphens to spaces
+BRANCH_SHORT="${BRANCH##*/}"  # remove prefix like feat/
+PR_TITLE=$(echo "$BRANCH_SHORT" | tr '-' ' ' | sed 's/\b./\u&/g')
+# Body: recent commits since divergence from origin/main (not local main — may be stale after rebase)
+PR_BODY=$(git log origin/main..HEAD --format='- %h %s' | head -15)
 
 EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null)
 if [ -n "$EXISTING_PR" ]; then
   PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
   echo "PR already exists: $PR_URL"
 else
-  PR_URL=$(gh pr create --base main --head "$BRANCH" --fill)
+  PR_URL=$(gh pr create --base main --head "$BRANCH" \
+    --title "$PR_TITLE" --body "$PR_BODY")
   echo "Created PR: $PR_URL"
 fi
 
 # Poll CI if PR was created/exists
 if [ -n "$PR_URL" ]; then
-  PR_NUMBER=$(gh pr view --json number --jq '.number')
-  # CI pre-check with retry (same pattern as 3b-iii.2)
+  PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq '.number')
   CHECK_COUNT=0
   for _i in 1 2 3; do
     CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
@@ -2384,24 +2570,31 @@ if [ -n "$PR_URL" ]; then
 fi
 ```
 
+Note: `PR_NUMBER` is derived from `$PR_URL` returned by `gh pr create` or `gh pr view "$EXISTING_PR"`, NOT via a bare `gh pr view` call (which relies on ambient branch autodetect and is subject to race conditions).
+
 **Differences from 3b:** This is a convenience command for manual PR creation. It does NOT dispatch fix agents or write `.landed` markers. It rebases, pushes, creates PR, and reports CI status.
 
-- [ ] Add `pr` subcommand to `/commit`
-- [ ] Rebase onto latest main before pushing
-- [ ] Push current branch + create PR
-- [ ] PR number via `gh pr view --json number --jq '.number'` (NOT URL regex)
-- [ ] Poll CI checks after PR creation (report only, no fix cycle)
+Work items checklist:
+- [ ] Add `pr` subcommand detection — first token ONLY, not mid-string
+- [ ] Pre-check: clean working tree required; error message directs user to `/commit` first
 - [ ] Error if on main/master
-- [ ] Handle existing PR
+- [ ] Rebase onto latest main before push
+- [ ] Push current branch
+- [ ] PR title: derived from branch name (strip prefix, hyphens → spaces); body: `git log origin/main..HEAD` (not `main..HEAD` — local main may be stale after rebase)
+- [ ] Handle existing PR (check with `gh pr list --head`)
+- [ ] PR number from `gh pr create` URL output or `gh pr view "$EXISTING_PR"` — NOT bare `gh pr view` (no branch arg)
+- [ ] Poll CI checks after PR creation (report only, no fix cycle)
 - [ ] Sync installed copy
 
 #### 5b.3 -- CLAUDE_TEMPLATE.md: document execution modes
 
-Add a section to `CLAUDE_TEMPLATE.md` documenting execution modes:
+**Implement AFTER 5b.1.** The `/do Add dark mode. pr` usage example requires the `pr` flag to exist in `skills/do/SKILL.md` before this documentation is accurate.
 
-```markdown
-## Execution Modes
+Add an `## Execution Modes` section to `CLAUDE_TEMPLATE.md` with this content (shown with indented code to avoid nested fence conflicts — write as actual markdown in the file, not as a fenced block inside a fenced block):
 
+The section heading is `## Execution Modes`. Under it:
+
+```
 Three landing modes control how agent work reaches main:
 
 | Mode | Keyword | How it works |
@@ -2417,65 +2610,100 @@ Three landing modes control how agent work reaches main:
 - `/do Add dark mode. pr`
 
 **Config default:** Set in `.claude/zskills-config.json`:
-```json
-{
-  "execution": {
-    "landing": "pr",
-    "main_protected": true,
-    "branch_prefix": "feat/"
-  }
-}
-```
+
+    {
+      "execution": {
+        "landing": "pr",
+        "main_protected": true,
+        "branch_prefix": "feat/"
+      }
+    }
 
 When `main_protected: true`, agents cannot commit, cherry-pick, or push
 to main. Use PR mode or feature branches.
 ```
 
-- [ ] Add execution modes section to `CLAUDE_TEMPLATE.md`
-- [ ] Document all three modes with usage examples
-- [ ] Document config defaults
+Note: The JSON config block uses 4-space indentation (not triple-backtick fences) to avoid nested fence rendering issues in the final CLAUDE_TEMPLATE.md file.
 
-#### 5b.4 -- /update-zskills: audit execution mode rules
+Work items checklist:
+- [ ] Implement AFTER 5b.1 (documents features 5b.1 ships)
+- [ ] Add `## Execution Modes` section to `CLAUDE_TEMPLATE.md`
+- [ ] Document all three modes with the usage examples table
+- [ ] Config JSON block as indented code (4-space), not a nested fenced block
 
-Add execution mode key phrases to the `/update-zskills` audit checklist:
+#### 5b.4 -- /update-zskills: audit execution mode rules (Step 2.5)
 
-```markdown
-**Execution mode audit items:**
-- "Execution Modes" section exists in CLAUDE.md
-- "main_protected" mentioned if config has it enabled
-- "PR" and "direct" keywords documented
-- `.claude/zskills-config.json` referenced
-```
+Add execution mode checking as a new **Step 2.5** in `skills/update-zskills/SKILL.md`, separate from Step 2's 13-rule key-phrase table. Step 2.5 is a documentation-presence audit that searches CLAUDE.md for heading and keyword presence — no config file inspection.
 
-- [ ] Add execution mode audit items to `/update-zskills`
+**Step 2.5 — Documentation presence audit (execution modes)**
+
+After Step 2 (13-rule key-phrase table), add Step 2.5:
+
+> Search the project's `CLAUDE.md` for these documentation-presence signals. Mark each present/missing based on case-insensitive substring match:
+>
+> | Check | Key phrase(s) to search in CLAUDE.md |
+> |-------|--------------------------------------|
+> | Execution Modes section | `## Execution Modes` (heading) |
+> | Landing mode keywords documented | `cherry-pick` AND `pr` AND `direct` |
+> | Direct mode description present | `Work directly on main` |
+>
+> Report in the same pass/fail format as Step 2. Missing items are recommendations, not errors — documentation-only gap, no enforcement consequence.
+
+Work items checklist:
+- [ ] Depends on 5b.3 — key phrases to search are the actual text strings 5b.3 adds to CLAUDE_TEMPLATE.md / CLAUDE.md
+- [ ] Add Step 2.5 to `skills/update-zskills/SKILL.md` with the documentation-presence table above
+- [ ] Step 2.5 uses CLAUDE.md substring search ONLY — no config file inspection
+- [ ] Output format matches Step 2 (present/missing per check)
 - [ ] Sync installed copy
 
 #### 5b.5 -- Sync all installed copies
 
-- [ ] `skills/do/SKILL.md` -> `.claude/skills/do/SKILL.md`
-- [ ] `skills/commit/SKILL.md` -> `.claude/skills/commit/SKILL.md`
+- [ ] `skills/do/SKILL.md` → `.claude/skills/do/SKILL.md`
+- [ ] `skills/commit/SKILL.md` → `.claude/skills/commit/SKILL.md`
 - [ ] `CLAUDE_TEMPLATE.md` updated
-- [ ] `skills/update-zskills/SKILL.md` -> `.claude/skills/update-zskills/SKILL.md`
+- [ ] `skills/update-zskills/SKILL.md` → `.claude/skills/update-zskills/SKILL.md`
 - [ ] Verify all installed copies match sources
 
 ### Design & Constraints (5b)
 
 - **`/commit pr` is a convenience.** It's for manual use from any feature branch, not tied to the pipeline. No fix agents, no `.landed` markers.
-- **CLAUDE_TEMPLATE.md is documentation.** It tells the LLM about execution modes so it can make informed decisions.
+- **`/commit pr` requires a clean working tree.** All changes must be committed before rebasing. If the tree is dirty, report: "Working tree has uncommitted changes. Run `/commit` first to create a commit, then `/commit pr` to push and create the PR."
+- **`/commit pr` keyword is first-token-only.** `/commit pr` → PR mode; `/commit fix pr format` → scope hint "fix pr format", no PR mode. This prevents false-triggering on scope hints that contain "pr" mid-string.
+- **`/do pr` is NOT pipeline-tracked by run-plan.** It writes its own `.zskills-tracked` with `do.${TASK_SLUG}` to scope tracking enforcement. Without this, an ambient run-plan pipeline ID in the same transcript would false-block the push via the hook's Tier 2 transcript read.
+- **Both `/do` worktree flags use manual worktree creation.** Both `worktree` and `pr` flags must use manual `git worktree add` (not `isolation: "worktree"`) — same reason as Phase 3b-i.
+- **CLAUDE_TEMPLATE.md is documentation.** It tells the LLM about execution modes so it can make informed decisions. The JSON config block uses indented code, not nested fenced blocks.
+- **PR titles and bodies must be explicit.** Never use `--fill` in `gh pr create` — it produces inconsistent results across `gh` versions and with terse commit messages.
+- **`/do pr` CI behavior is report-only.** When CI fails, write `.landed` with `status: pr-ci-failing` and report the failure. Do NOT dispatch fix agents — `/do` is a lightweight dispatcher; CI fix-cycles require the full run-plan infrastructure. "Same poll pattern as 3b-iii.2" means the poll mechanism only (`gh pr checks --watch`, 600s timeout) — not the fix-cycle.
+- **`/do pr` implementation sequence is fixed.** Worktree creation → `.zskills-tracked` → implementation agent (wait) → rebase → push → PR → CI → `.landed`. Do not reorder. The PR must be created after implementation so `git log origin/main..HEAD` in the body contains real commits.
+- **`TASK_DESCRIPTION` is always derived from `$ARGUMENTS` after stripping the `pr` flag.** It is never the raw `$ARGUMENTS` string. It must be assigned before the slug computation; the slug, PR title, and PR body all use it.
+- **Slug minimum-words rule.** N = min(4, word_count). If task description has 1 word, slug = that word (truncated). If 0 words after stripping, error and exit.
+- **Slug collision suffix targets `TASK_SLUG` itself.** When a collision is detected, append the timestamp suffix to `TASK_SLUG` before deriving `BRANCH_NAME` and `WORKTREE_PATH`. Do NOT derive `BRANCH_NAME` first and then patch only the path — the branch would already exist from the prior invocation, causing `git worktree add -b` to fail.
+- **PR body divergence reference is `origin/main`, not `main`.** Both `/do pr` and `/commit pr` rebase onto `origin/main` before pushing. Local `main` may be stale (ff-merge is best-effort with a warning fallback). Use `git log origin/main..HEAD` for PR bodies in both skills.
+- **Push remote is `origin` (matches existing run-plan/fix-issues patterns).** Projects with named remotes (e.g., `dev`) can override via config in a future enhancement.
 
 ### Acceptance Criteria (5b)
 
-- [ ] `/do pr` creates worktree, rebases onto main before push, pushes, creates PR, polls CI
-- [ ] `/commit pr` rebases onto main, pushes, creates PR, polls CI
-- [ ] `CLAUDE_TEMPLATE.md` documents all three execution modes
-- [ ] `/update-zskills` audit includes execution mode checks
+- [ ] `/do pr` creates worktree (manual, not `isolation: "worktree"`), writes `.zskills-tracked` with `do.<slug>` pipeline ID, dispatches implementation agent (waits for completion), rebases onto main before push, pushes, creates PR with explicit title/body, polls CI (report only)
+- [ ] `/do pr` slug collision: timestamp suffix applied to `TASK_SLUG` before deriving `BRANCH_NAME` and `WORKTREE_PATH`; second invocation with same description succeeds (new path AND new branch)
+- [ ] `/do worktree` flag converted from `isolation: "worktree"` to manual `git worktree add ../do-<slug>/`
+- [ ] `/commit pr` requires clean working tree (errors with instructions if dirty)
+- [ ] `/commit pr` recognized only when `pr` is the first token in $ARGUMENTS
+- [ ] `/commit pr` rebases onto main, pushes, creates PR with explicit title/body (no `--fill`), polls CI
+- [ ] PR body uses `git log origin/main..HEAD` (not `main..HEAD`) in both `/do pr` and `/commit pr`
+- [ ] PR number always derived from PR URL (not bare `gh pr view` ambient-branch lookup)
+- [ ] `CLAUDE_TEMPLATE.md` has `## Execution Modes` section with all three modes, usage examples, config block as indented code
+- [ ] `/update-zskills` has Step 2.5 with documentation-presence checks (CLAUDE.md heading + keyword substring search, no config inspection)
 - [ ] All installed skill copies synced and verified
 
 ### Dependencies (5b)
 
-Phase 3a (landing mode detection pattern).
+Phase 3a (landing mode detection pattern — base regex; 5b.1 extends it with `.!?` punctuation as in Phase 5a).
 Phase 3b-ii (PR mode worktree setup, push+PR pattern).
 Phase 3b-iii (CI integration, auto-merge pattern).
+PR #13 (`21e5c67`): PR-mode bookkeeping commits go in the worktree on the feature branch, not on main. Phase 5b.1 `/do pr` must not commit to main during the PR workflow.
+PR #17 (`e72f26e`): Worktree creation must include `git fetch origin main && git merge --ff-only origin/main` before branching. Phase 5b.1 worktree creation for `/do pr` must include this step (same as run-plan/SKILL.md lines 694-696).
+5b.1 is a hard prerequisite for 5b.3 (documentation references `/do pr` feature that must exist first).
+5b.3 is a hard prerequisite for 5b.4 (Step 2.5 audit searches for phrases 5b.3 adds).
 
 ---
 
@@ -2483,35 +2711,101 @@ Phase 3b-iii (CI integration, auto-merge pattern).
 
 ### Goal
 
-Update cleanup tooling for new `.landed` statuses, add `agents.min_model` config enforcement, and add baseline test snapshot capture. These are infrastructure improvements that support the execution mode system but are independent of the skill text changes in 5b.
+Update cleanup tooling for PR-mode `.landed` statuses, add `agents.min_model` config field with hook-based enforcement (primary) and skill-side reminders (belt-and-suspenders), and add baseline test comparison instructions to the verification agent. These are infrastructure improvements that support the execution mode system but are independent of the skill text changes in 5b.
 
 ### Work Items
 
-#### 5c.1 -- Cleanup tooling: recognize new `.landed` statuses
+#### 5c.1 -- Cleanup tooling: recognize PR-mode `.landed` statuses
 
-Update `/briefing` and `/fix-report` to classify the new `.landed` status values.
-Existing tooling only recognizes `status: landed` (safe) and treats everything else
-as unknown. The new statuses need distinct handling:
+Update `/fix-report` Step 6 worktree cleanup and `scripts/briefing.py` / `scripts/briefing.cjs` classification to handle the PR-mode `.landed` statuses written by `/run-plan` PR mode.
 
-| Status | Classification | Action |
-|--------|---------------|--------|
-| `landed` | Safe to remove | Worktree cleanup OK |
-| `pr-ready` | Safe to remove | Work preserved in PR |
-| `pr-ci-failing` | Needs attention | CI failing, may need manual fix |
-| `pr-failed` | Needs attention | PR creation failed, manual `gh pr create` |
-| `conflict` | Needs attention | Rebase conflict, manual resolution |
-| `not-landed` | Agent done | Review before removing |
+**Current gap analysis (verified against actual code):**
 
-- [ ] Update `/briefing` worktree classification to recognize all 6 statuses
-- [ ] Update `/fix-report` sprint summary to show PR URLs and CI status
-- [ ] `landed` and `pr-ready` -> safe for cleanup; others -> flag for user
+`skills/fix-report/SKILL.md` Step 6 (line 298) only removes worktrees with `status: full`:
+```bash
+grep -q "^status: full" "$wt/.landed"
+```
+But `/run-plan` cherry-pick mode writes `status: landed` (run-plan/SKILL.md line 1177), and `/run-plan` PR mode writes `status: pr-ready` or `status: landed` (run-plan/SKILL.md lines 1717-1725). `/fix-issues` cherry-pick mode writes `status: full` (fix-issues/SKILL.md line 994). The `land-phase.sh` cleanup script correctly accepts both `status: landed` and `status: pr-ready` as safe (line 23: `grep -qE 'status: (landed|pr-ready)'`). `/fix-report` Step 6 is behind by two statuses.
+
+`scripts/briefing.py` `classify_worktrees()` function (defined at line 156; internal status classification block at lines 260-286) and `scripts/briefing.cjs` `classifyWorktrees()` function (defined at line 150; status block lines 257-283) only recognize `status == 'full'` → `landed-full` and `status == 'partial'` → `landed-partial`. All PR-mode statuses (`pr-ready`, `pr-ci-failing`, `pr-failed`, `conflict`) fall through to the "no .landed" path and are misclassified as `possibly-active` or `empty`. The `skills/briefing/SKILL.md` text is conceptual description — the executable classification is in the scripts.
+
+Note: `status: not-landed` is NOT written by any current skill. It is documented in CLAUDE.md as a sentinel agents can write manually. Do NOT add it to the status table as an automatic output — no skill writes it automatically.
+
+**Status vocabulary (actual written values):**
+
+| Status | Written by | Classification | Cleanup action |
+|--------|-----------|---------------|----------------|
+| `full` | fix-issues cherry-pick | Safe to remove | Worktree + branch cleanup OK |
+| `landed` | run-plan cherry-pick; run-plan PR mode (merged) | Safe to remove | Worktree cleanup OK; land-phase.sh deletes remote branch |
+| `pr-ready` | run-plan PR mode (open PR) | Safe to remove (worktree only) | Worktree cleanup OK; remote branch must NOT be deleted (supports open PR) |
+| `pr-ci-failing` | run-plan PR mode (CI failing) | Needs attention | Flag for user; show PR URL |
+| `pr-failed` | run-plan PR mode (push succeeded, PR creation failed) | Needs attention | Flag for user; show branch |
+| `conflict` | run-plan PR mode (rebase conflict) | Needs attention | Flag for user; worktree left for user to resolve |
+
+**Constraint on `pr-ready` branch deletion:** When classifying `pr-ready` as safe for WORKTREE removal, do NOT delete the remote branch — the branch supports the open PR. `scripts/land-phase.sh` correctly implements this at line 88 (only deletes remote branch when `status: landed`). Do NOT modify land-phase.sh to delete remote branches for `pr-ready` worktrees.
+
+Work items checklist:
+- [ ] Update `/fix-report` Step 6 worktree cleanup check to accept `status: full` (fix-issues cherry-pick), `status: landed` (run-plan cherry-pick and PR merged), AND `status: pr-ready` (open PR, worktree safe to remove) as safe-to-remove — matching land-phase.sh gate at line 23
+- [ ] Update `/fix-report` Step 6 output messages to distinguish safe-to-remove statuses (show PR URL for `pr-ready`) from needs-attention statuses (`pr-ci-failing`, `pr-failed`, `conflict`)
+- [ ] Update `/fix-report` Step 6 narrative example text: lines 311-312 (update example to show `status: landed` and `status: pr-ready` as SAFE alongside `status: full`); line 321 (expand instruction text to list all three safe-to-remove statuses: `full`, `landed`, `pr-ready`)
+- [ ] Update `scripts/briefing.py` `classify_worktrees()` function (defined at line 156; status block lines 260-286) to handle PR-mode statuses: `pr-ready` → new category `landed-pr-ready`; `pr-ci-failing`, `pr-failed`, `conflict` → new category `landed-pr-needs-attention` (or similar distinct categories)
+- [ ] Update `scripts/briefing.cjs` `classifyWorktrees()` function (defined at line 150; status block lines 257-283) with the same new category logic
+- [ ] Update `scripts/briefing.py` display functions to handle the new PR-mode categories. Locate all call sites with: `grep -n "landed-full\|landed-partial\|possibly-active" scripts/briefing.py` — each hit is a site that may need to handle `landed-pr-ready` and `landed-pr-needs-attention`. Key functions to update:
+  - `format_summary()` (line 759): add `landed-pr-needs-attention` to NEEDS ATTENTION bucket (bucket comment at line 779) alongside `done-needs-review` and `landed-partial`
+  - `format_summary()` (line 759): WORKTREES count block — add `landed-pr-ready` and `landed-pr-needs-attention` to the listed categories so they appear in the summary line
+  - `format_report()` (line 922): `landed_count` — decide whether `landed-pr-ready` counts as "landed" (recommended: yes, it's safe-to-remove) and include it
+  - `format_current()` (line 1117): if `landed-pr-ready` worktrees exist, show them (they are not in-flight, but the PR is open)
+  - `format_verify()` (line 1026): `landed-pr-needs-attention` should appear in verification output similarly to `landed-partial`
+- [ ] Apply the same display function updates to `scripts/briefing.cjs`: `classifyWorktrees()` (status block lines 257-283); `formatSummary()` (line 666); `formatReport()` (line 858); `formatVerify()` (line 982); `formatCurrent()` (line 1102)
+- [ ] Update `skills/briefing/SKILL.md` Worktree Categories section to document the new PR-mode categories
 - [ ] Sync installed copies of briefing and fix-report skills
 
-#### 5c.2 -- `agents.min_model` config field + hook enforcement
+#### 5c.2 -- `agents.min_model` config field + hook-based enforcement
 
-Add an `agents.min_model` field to the config schema and enforce it in the hook. This prevents agents from dispatching subagents with models below a minimum quality threshold.
+**Architectural decision:** Hook-based enforcement of `agents.min_model` IS viable. The two real infrastructure blockers are both fixable, and the third claimed blocker was false.
 
-**Config addition:**
+**Blocker analysis (verified):**
+
+1. **Matcher — FIXABLE.** `.claude/settings.json` only registers a `"matcher": "Bash"` entry — the hook is never invoked for `Agent` tool calls. Fix: add a `"matcher": "Agent"` entry to the `PreToolUse` array in `.claude/settings.json`. Propagation to target projects: update the embedded settings.json JSON block in `skills/update-zskills/SKILL.md` Step C (around line 475 — the embedded JSON is the source of truth for what `/update-zskills` writes into target projects).
+
+2. **Hook file — FIXABLE.** `hooks/block-unsafe-project.sh.template` lines 13-16 have an unconditional early-exit for any non-Bash tool. Fix (preferred): add a new hook file `hooks/block-agents.sh.template` registered under the `Agent` matcher. Cleaner separation than modifying the existing Bash-focused hook.
+
+3. **Model field — NOT A BLOCKER (claim was false).** The prior refinement asserted "Agent tool input JSON contains no `model` field — verified." This claim is false. The Agent (Task) tool's input schema includes an optional `model` field with enum `["sonnet", "opus", "haiku"]`. When present, the hook can inspect it directly. The "no precedent in hooks/" evidence was a non-sequitur — absence of prior use is not absence of the field in the schema.
+
+**Hook implementation (`hooks/block-agents.sh.template`):**
+
+The new hook fires on every `Agent` (subagent) dispatch via the `Agent` PreToolUse matcher. It:
+1. Reads `agents.min_model` from `.claude/zskills-config.json` — if not set, exits 0 (pass-through)
+2. Extracts `model` from the tool input JSON if present
+3. If `model` is absent from tool input, reads the agent definition at `.claude/agents/<subagent_type>.md` and parses its YAML frontmatter for a `model:` field
+4. Converts the model string to an ordinal: `haiku=1`, `sonnet=2`, `opus=3`, `unknown=0`
+5. `unknown=0` means unknown model families always pass — pass-through for new Claude model families not yet in the ordinal map
+6. If the dispatch model ordinal < min_model ordinal: block with exit 2, print error: "agents.min_model requires <min_model> or higher; got <model>"
+
+**Residual blind spot (narrow):** If neither the `tool_input` nor the agent definition's frontmatter specifies a model, the subagent inherits from the parent session. This edge case is narrow because top-level Claude Code sessions run Opus or Sonnet. Skill-side reminders (in CLAUDE.md and at each orchestrator dispatch site) cover this case as belt-and-suspenders.
+
+**Ordinal comparison reference:**
+- `haiku = 1`
+- `sonnet = 2`
+- `opus = 3`
+- `unknown = 0` (always allowed — pass-through for new model families)
+
+**Config addition** (`config/zskills-config.schema.json`):
+
+```json
+"agents": {
+  "type": "object",
+  "description": "Agent dispatch configuration.",
+  "properties": {
+    "min_model": {
+      "type": "string",
+      "description": "Minimum model for subagent dispatch. Hook enforces this at Agent tool dispatch time. Example: claude-sonnet-4-20250514"
+    }
+  }
+}
+```
+
+**Dogfood config addition** (`.claude/zskills-config.json`):
 
 ```json
 {
@@ -2521,96 +2815,113 @@ Add an `agents.min_model` field to the config schema and enforce it in the hook.
 }
 ```
 
-**Schema addition:**
+**CLAUDE.md rule (add to CLAUDE_TEMPLATE.md alongside 5b.3 section):**
 
-```json
-"agents": {
-  "type": "object",
-  "description": "Agent dispatch configuration.",
-  "properties": {
-    "min_model": {
-      "type": "string",
-      "description": "Minimum model for Agent tool calls. Hook blocks Agent calls with model_name below this. Example: claude-sonnet-4-20250514"
-    }
-  }
-}
-```
+> When dispatching an Agent (subagent), always use Sonnet or higher. Never dispatch Haiku — even for "simple" tasks. The minimum model is configured at `agents.min_model` in `.claude/zskills-config.json`.
 
-**Hook enforcement:** In `hooks/block-unsafe-project.sh.template`, when the tool is `Agent` and the input contains a `model` or `model_name` field, extract it and compare against `agents.min_model` from config. Block if the specified model is below the minimum.
+**Skill-side reminders (belt-and-suspenders):** When any orchestrator skill (run-plan, fix-issues, do) constructs an Agent dispatch, the skill text includes a reminder to read `agents.min_model` and respect the minimum. This covers the residual blind spot where neither tool input nor agent definition specifies a model. Example addition to dispatch sections:
 
-The comparison uses an ordinal lookup on the model family, NOT lexicographic (since `opus < sonnet` alphabetically, which is backwards). Extract the family name from the model string and map to an ordinal: `haiku=1, sonnet=2, opus=3`. Compare ordinals: if the requested model's ordinal is less than the minimum model's ordinal, block. If `min_model` is `claude-sonnet-4-*` (ordinal 2), block `claude-haiku-*` (ordinal 1) but allow `claude-sonnet-4-*` (ordinal 2) and `claude-opus-*` (ordinal 3).
+> Before dispatching any Agent: check `agents.min_model` in `.claude/zskills-config.json`. If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch with a lower-ordinal model than the configured minimum.
 
-```bash
-model_ordinal() {
-  case "$1" in
-    *haiku*) echo 1 ;;
-    *sonnet*) echo 2 ;;
-    *opus*) echo 3 ;;
-    *) echo 99 ;;  # unknown/future model family, allow by default
-  esac
-}
-```
+Work items checklist:
+- [ ] Add `agents.min_model` to `config/zskills-config.schema.json` with schema definition
+- [ ] Add `agents` section to dogfood config (`.claude/zskills-config.json`)
+- [ ] Add `"matcher": "Agent"` entry to `.claude/settings.json` `PreToolUse` array
+- [ ] Add the Agent matcher JSON block to the embedded settings template in `skills/update-zskills/SKILL.md` Step C (~line 475) and update the note at ~line 501-502 ("only the Bash matcher is used") to reflect the new Agent matcher
+- [ ] Create `hooks/block-agents.sh.template`: read `agents.min_model` from config; extract `model` from tool input JSON; fall back to reading `.claude/agents/<subagent_type>.md` frontmatter if tool input has no `model`; apply ordinal check (haiku=1, sonnet=2, opus=3, unknown=0 always passes); block with exit 2 if dispatch model < min_model
+- [ ] Add CLAUDE.md rule to `CLAUDE_TEMPLATE.md`: "When dispatching Agent, use Sonnet or higher. Never Haiku."
+- [ ] Add skill-side reminder (belt-and-suspenders) to `skills/run-plan/SKILL.md` at each Agent dispatch point: implementation agent dispatch (~line 537), verification agent dispatch (~line 807), CI fix-cycle dispatch (~line 1596) — add `agents.min_model` check reminder at each
+- [ ] Add skill-side reminder to `skills/fix-issues/SKILL.md` at Agent dispatch sections (research agent dispatch, fix agent dispatch, verification agent dispatch — verify line numbers before editing)
+- [ ] Add skill-side reminder to `skills/do/SKILL.md` implementation-agent dispatch section added in 5b.1
+- [ ] For `skills/research-and-go/SKILL.md`: the skill delegates entirely through `/research-and-plan` (Skill invocation at line 86) — no direct Agent tool dispatch exists in this file. No skill-side reminder needed here. If the implementer finds an actual Agent dispatch via grep, add the reminder at that site.
+- [ ] Document ordinal comparison (haiku=1, sonnet=2, opus=3, unknown=0) in hook comments and skill dispatch instructions
+- [ ] Sync installed skill copies and new hook file
 
-- [ ] Add `agents.min_model` to config schema
-- [ ] Add `agents` section to dogfood config
-- [ ] Add hook enforcement: block Agent calls with model below minimum
-- [ ] Model comparison: ordinal (haiku=1, sonnet=2, opus=3), not lexicographic
-- [ ] Tests in `tests/test-hooks.sh` (config/hook tests belong there)
+Acceptance criterion for this item: (a) hook `block-agents.sh.template` fires on Agent dispatch and blocks haiku when `agents.min_model` is sonnet; (b) skill-side `agents.min_model` reminder text is present at each direct Agent dispatch site in run-plan (implementation ~537, verification ~807, CI fix ~1596), fix-issues (research, fix, verification dispatches), and do (implementation dispatch from 5b.1). research-and-go requires no change unless implementer locates an actual Agent dispatch in the file.
 
-#### 5c.3 -- Baseline test snapshot
+#### 5c.3 -- Baseline test snapshot: comparison instructions only
 
-`/run-plan` captures test results BEFORE the implementation agent starts, so the verification agent can compare against a known-good baseline. This detects regressions introduced by the implementation (as opposed to pre-existing failures).
-
-**Mechanism:** Before dispatching the implementation agent for each phase:
+**Baseline capture already shipped (Phase 5a).** `/run-plan/SKILL.md` lines 740-750 contain the complete baseline capture:
 
 ```bash
-# Capture baseline test results in the worktree
+# Orchestrator captures baseline BEFORE impl agent starts
 cd "$WORKTREE_PATH"
-$FULL_TEST_CMD > .test-baseline.txt 2>&1 || true
-# The || true ensures we capture output even if some tests fail pre-existing.
-# The verification agent compares .test-results.txt against .test-baseline.txt
-# to distinguish new failures from pre-existing ones.
+if [ -n "$FULL_TEST_CMD" ]; then
+  $FULL_TEST_CMD > .test-baseline.txt 2>&1 || true
+fi
 ```
 
-**Verification agent instructions (added to prompt):**
+`scripts/land-phase.sh` lines 49-52 already delete `.test-baseline.txt` as part of worktree cleanup. The capture and cleanup infrastructure is complete as of commit `d5b46c5` (Phase 5a via PR #11).
 
-```markdown
-After running tests, compare `.test-results.txt` against `.test-baseline.txt`:
-- New failures (in results but not in baseline) -> must be fixed before commit
-- Pre-existing failures (in both baseline and results) -> note in report, do not fix
-- Resolved failures (in baseline but not in results) -> positive, note in report
-```
+**Only remaining work:** The verification agent dispatch section in `skills/run-plan/SKILL.md` (approximately lines 807-855) does not include instructions to compare `.test-results.txt` against `.test-baseline.txt`. Add these comparison instructions to the verification agent prompt.
 
-- [ ] Capture `.test-baseline.txt` before implementation agent dispatch
-- [ ] Add comparison instructions to verification agent prompt
-- [ ] Handle missing `FULL_TEST_CMD` (skip baseline if no test command configured)
-- [ ] Tests in `tests/test-hooks.sh`
+Add to the verification agent dispatch (in the "give the verification agent:" list at ~line 814):
+- The `.test-baseline.txt` file captured before implementation started
+- Instructions to compare `.test-results.txt` against `.test-baseline.txt`:
+  - New failures (in results but not in baseline) → regressions, must be fixed before commit
+  - Pre-existing failures (in both baseline and results) → note in report, do not fix
+  - Resolved failures (in baseline but not in results) → positive improvement, note in report
+
+**Validation:** The baseline snapshot feature is validated manually (integration test) — run a plan phase and confirm `.test-baseline.txt` is present in the worktree before the implementation agent starts, and that the verification agent report distinguishes new from pre-existing failures. This is orchestrator behavior, not a hook — it cannot be meaningfully unit-tested in `tests/test-hooks.sh`.
+
+Work items checklist:
+- [ ] Add baseline comparison instructions to verification agent dispatch prompt in `skills/run-plan/SKILL.md` (~line 814 onward)
+- [ ] Handle missing `.test-baseline.txt` in instructions: "If `.test-baseline.txt` is absent (FULL_TEST_CMD not configured), treat all failures as potentially new — report all of them"
+- [ ] Sync installed copy of run-plan skill
+- [ ] Manual integration test: run a plan phase, confirm `.test-baseline.txt` present before impl agent; confirm verification report distinguishes new vs pre-existing failures
 
 #### 5c.4 -- Sync all installed copies
 
 - [ ] `config/zskills-config.schema.json` updated with `agents` section
-- [ ] Sync installed copies of briefing and fix-report skills
+- [ ] `.claude/zskills-config.json` updated with `agents.min_model`
+- [ ] `.claude/settings.json` updated with `"matcher": "Agent"` PreToolUse entry
+- [ ] `skills/update-zskills/SKILL.md` Step C (embedded settings.json template at ~line 475) updated with `"matcher": "Agent"` entry + adjusted note about matchers
+- [ ] `hooks/block-agents.sh.template` created and installed
+- [ ] `CLAUDE_TEMPLATE.md` updated (5b.3 Execution Modes section + 5c.2 min_model rule)
+- [ ] `skills/briefing/SKILL.md` → `.claude/skills/briefing/SKILL.md`
+- [ ] `skills/fix-report/SKILL.md` → `.claude/skills/fix-report/SKILL.md`
+- [ ] `skills/run-plan/SKILL.md` → `.claude/skills/run-plan/SKILL.md`
+- [ ] `skills/fix-issues/SKILL.md` → `.claude/skills/fix-issues/SKILL.md`
+- [ ] `skills/do/SKILL.md` → `.claude/skills/do/SKILL.md`
+- [ ] `scripts/briefing.py` and `scripts/briefing.cjs` updated (not just SKILL.md — these contain the runtime classification logic)
 - [ ] Verify all installed copies match sources
 
 ### Design & Constraints (5c)
 
-- **`agents.min_model` uses ordinal comparison.** We extract the model family (haiku=1, sonnet=2, opus=3) and compare ordinals. NOT lexicographic -- `opus < sonnet` alphabetically, which gives the wrong result. Unknown families get ordinal 0 (allowed by default).
-- **Baseline snapshot is best-effort.** If `FULL_TEST_CMD` is not configured, skip the baseline. The verification agent still runs tests; it just can't distinguish new vs pre-existing failures.
-- **Phase 5c tests go in `tests/test-hooks.sh`.** Config/hook tests (min_model, baseline) belong in the hook test file.
+- **Hook enforcement of `agents.min_model` IS viable via new `block-agents.sh.template`.** The two real blockers (Bash-only matcher in settings.json; Bash-only early-exit in block-unsafe-project.sh.template) are both fixable. The third claimed blocker ("Agent tool input lacks model field") was false — the Agent tool schema includes an optional `model` field. Add Agent matcher to `.claude/settings.json` (main repo) AND to the embedded settings.json template inside `skills/update-zskills/SKILL.md` Step C (so `/update-zskills` writes it into target projects); create a separate hook file `hooks/block-agents.sh.template` for Agent enforcement.
+- **`block-agents.sh.template` reads model from tool input first, then agent definition fallback.** When `model` is present in tool_input JSON, use it directly. When absent, read `.claude/agents/<subagent_type>.md` frontmatter for a `model:` field. When neither specifies a model, ordinal = 0 (unknown, always passes). This edge case is covered by skill-side reminders.
+- **`agents.min_model` uses ordinal comparison — for both hook and skills.** Hook enforces at runtime; skills carry reminders as belt-and-suspenders. Ordinal: haiku=1, sonnet=2, opus=3, unknown=0 (unknown families always allowed — pass-through for new Claude model families).
+- **Skill-side reminders are belt-and-suspenders, not the primary enforcement.** The hook is primary. Skill reminders cover the residual case where a model is not specified in tool_input or agent definition (subagent inherits from parent session).
+- **Baseline snapshot is best-effort.** If `FULL_TEST_CMD` is not configured, skip the baseline (already handled in lines 747-749 of run-plan/SKILL.md). The verification agent still runs tests; it just can't distinguish new vs pre-existing failures.
+- **briefing classification lives in scripts, not SKILL.md.** Updating `skills/briefing/SKILL.md` alone does NOT fix runtime behavior. The executable classification is in `scripts/briefing.py` (`classify_worktrees()` defined at line 156, status block lines 260-286) and `scripts/briefing.cjs` (`classifyWorktrees()` defined at line 150, status block lines 257-283) — both must be updated.
+- **briefing display functions must be updated alongside `classify_worktrees()`.** Adding new categories to `classify_worktrees()` without updating `format_summary()` (line 759), `format_report()` (line 922), `format_current()` (line 1117), and `format_verify()` (line 1026) in briefing.py — and their cjs counterparts `formatSummary()` (line 666), `formatReport()` (line 858), `formatVerify()` (line 982), `formatCurrent()` (line 1102) — causes new categories to be silently invisible in all output modes. Both the classifier and all downstream display functions must be updated atomically.
+- **`pr-ready` worktrees are safe to remove; `pr-ready` branches are not.** The worktree is expendable once the branch is pushed; the branch supports the open PR. `land-phase.sh` correctly handles this at line 88. Do NOT change land-phase.sh remote-branch-delete logic.
+- **Skill-side reminder covers run-plan, fix-issues, and do.** research-and-go delegates through the skill chain (no direct Agent dispatch in research-and-go/SKILL.md — line 86 is a Skill invocation). No reminder needed in research-and-go unless implementer finds an actual Agent dispatch via grep.
+- **Push remote is `origin` (matches existing run-plan/fix-issues patterns).** Projects with named remotes (e.g., `dev`) can override via config in a future enhancement.
 
 ### Acceptance Criteria (5c)
 
-- [ ] `/briefing` and `/fix-report` classify all 6 `.landed` statuses correctly
-- [ ] `agents.min_model` config field exists with schema definition
-- [ ] Hook blocks Agent calls with model below `agents.min_model`
-- [ ] Baseline test snapshot captured before implementation agent dispatch
-- [ ] Verification agent compares `.test-results.txt` against `.test-baseline.txt`
-- [ ] All installed skill copies synced and verified
+- [ ] `/fix-report` Step 6 accepts `status: full` (fix-issues cherry-pick) AND `status: landed` (run-plan cherry-pick + PR merged) AND `status: pr-ready` (open PR, worktree safe) as safe-to-remove
+- [ ] `/fix-report` Step 6 flags `pr-ci-failing`, `pr-failed`, `conflict` as needs-attention with appropriate messages
+- [ ] `/fix-report` Step 6 narrative text (example at lines 311-312 and instruction at line 321) updated to list all three safe-to-remove statuses (`full`, `landed`, `pr-ready`)
+- [ ] `scripts/briefing.py` and `scripts/briefing.cjs` classify PR-mode statuses as distinct categories (not misclassified as `possibly-active` or `empty`)
+- [ ] New briefing categories (`landed-pr-ready`, `landed-pr-needs-attention`) are visible in briefing output in all modes (summary, report, current, verify), not silently dropped — verified by running briefing with a test worktree that has a `pr-ready` `.landed` file
+- [ ] `agents.min_model` config field exists in `config/zskills-config.schema.json` with schema definition
+- [ ] Dogfood config (`.claude/zskills-config.json`) has `agents.min_model` set to sonnet
+- [ ] `.claude/settings.json` AND the embedded settings.json template in `skills/update-zskills/SKILL.md` Step C both have `"matcher": "Agent"` PreToolUse entry
+- [ ] `hooks/block-agents.sh.template` created: reads `agents.min_model` from config, reads `model` from tool input (falls back to agent definition frontmatter), applies ordinal check, blocks with exit 2 if below minimum
+- [ ] CLAUDE_TEMPLATE.md includes rule: "When dispatching Agent, use Sonnet or higher. Never Haiku."
+- [ ] Skill-side `agents.min_model` reminder text present at each direct Agent dispatch site in run-plan (~lines 537, 807, 1596), fix-issues (research/fix/verification dispatches), and do (implementation dispatch from 5b.1). research-and-go: no change needed (no direct Agent dispatch in the skill file).
+- [ ] `skills/run-plan/SKILL.md` verification agent dispatch includes comparison instructions for `.test-results.txt` vs `.test-baseline.txt`
+- [ ] All installed skill copies synced and verified (including script files and new hook)
 
 ### Dependencies (5c)
 
 Phase 3b-ii (`.landed` statuses, PR mode patterns).
-Phase 4 (fix-issues PR mode, for sprint report PR URLs).
+Phase 4 (`02e0f6b`) — fix-issues PR mode; fix-report already handles 5-status vocabulary at skill text level (Step 1 lines 109-134, Step 4 lines 216-225); 5c.1 closes the Step 6 cleanup gap.
+Phase 5a (`d5b46c5`) — baseline capture already implemented; 5c.3 adds only the comparison instructions.
+PR #13 (`21e5c67`) — PR-mode bookkeeping rule (relevant for understanding the worktree/branch lifecycle that 5c.1 cleanup must handle correctly).
+5b.1 (5c.2 skill-side reminder for `/do` requires the dispatch section 5b.1 adds to exist first).
 
 ---
 
@@ -2686,6 +2997,34 @@ Structural comparison of the plan as originally drafted (`adb4752`) vs current s
 - Baseline test snapshot — agents falsely claim failures are "pre-existing"
 - `agents.min_model` config — Sonnet minimum, no Haiku ever
 
+
+**Post-Phase-5a refinement additions (documented during /refine-plan round 2, 2026-04-14):**
+
+- **5c.2 architectural pivot.** `agents.min_model` hook enforcement replaced with CLAUDE.md rule + skill-side reminder. Three independent blockers confirmed from the codebase: (a) `.claude/settings.json` only has a `Bash` matcher; (b) `hooks/block-unsafe-project.sh.template` lines 13-16 exit for any non-Bash tool; (c) Agent tool input JSON contains no `model` field. All three prevent hook-based enforcement.
+- **5c.3 baseline already shipped.** Baseline capture (run-plan/SKILL.md ~lines 740-750) and cleanup (land-phase.sh lines 49-52) landed in Phase 5a (commit `d5b46c5`). Remaining 5c.3 scope reduced to adding comparison instructions at the verification agent dispatch.
+- **5c.1 real gap identified.** `/fix-report` already handles 5 PR statuses at the narrative level (post-Phase 4). The actual remaining gaps: (a) `/fix-report` Step 6 hardcodes `status: full`, missing `status: landed`; (b) `scripts/briefing.py` and `scripts/briefing.cjs` only recognize `full`/`partial` at runtime — all PR-mode statuses misclassified; (c) briefing display functions hardcode old category names, so fixing `classify_worktree()` alone makes new categories silently invisible.
+- **5b.1 scope tightened.** Slug algorithm specified (first N≤4 words, lowercased, non-alphanum→hyphen, collapsed, max 30 chars, timestamp on collision). Extended detection regex with `.!?` (same as Phase 5a research-and-go). Implementation-agent dispatch step added between `.zskills-tracked` write and rebase+push. `TASK_DESCRIPTION` extraction from `$ARGUMENTS` made explicit. Existing `/do worktree` flag scheduled for conversion from `isolation: "worktree"` to manual `git worktree add` (same reason as Phase 3b-i).
+- **5b.1 `.zskills-tracked` pipeline scoping.** `/do pr` must write its own `do.${TASK_SLUG}` pipeline ID in the worktree's `.zskills-tracked` to prevent ambient run-plan pipeline IDs (via Tier 2 transcript read) from false-blocking the push.
+- **5b.2 hardening.** `pr` recognized only as first token in `$ARGUMENTS` (prevents collision with scope hints like "fix pr comments"). Clean-tree pre-check added. `gh pr create --fill` replaced with explicit `--title`/`--body`. PR_NUMBER extracted from PR URL (not bare `gh pr view` ambient-branch lookup).
+- **PR #13 and PR #17 added as dependencies of 5b.** PR #13 (`21e5c67`) established the PR-mode bookkeeping rule (feature-branch commits, not main). PR #17 (`e72f26e`) added the `git fetch origin main && git merge --ff-only origin/main` step before worktree creation. Both landed after Phase 5a and must be followed by 5b.1.
+- **Tracker drift: Phase 5a.** Progress Tracker shows Phase 5a as `🟡 In Progress` but reality shows it landed via PR #11 (commit `d5b46c5`). Tracker left unchanged per `/refine-plan` byte-identical rule; drift noted here for visibility.
+
+
+**Post-Phase-5a re-refinement additions (2026-04-15, second /refine-plan run with verify-before-fix discipline):**
+
+- **5c.2 architecture corrected back to hook-based.** The prior refinement's skill-side-only pivot was driven by a false DA claim that "Agent tool input JSON has no `model` field — verified." The actual Agent (Task) tool schema includes an optional `model` field with enum `["sonnet","opus","haiku"]`. Hook enforcement is viable with: (a) `"matcher": "Agent"` entry in `.claude/settings.json` AND the embedded template in `skills/update-zskills/SKILL.md` Step C; (b) new `hooks/block-agents.sh.template` under the Agent matcher; (c) hook reads `model` from tool_input, falls back to agent-definition frontmatter at `.claude/agents/<subagent_type>.md`, applies ordinal check against `agents.min_model`. Skill-side reminders retained as belt-and-suspenders for the parent-session-inheritance edge case.
+
+- **`/do pr` + `/commit pr` PR body:** `git log main..HEAD` → `git log origin/main..HEAD` (after `git fetch origin main && git rebase origin/main`, local main may be stale; origin/main is the correct divergence reference).
+
+- **5b.1 slug collision:** Suffix (`-<last-5-chars-of-unix-epoch>` via `date +%s | tail -c 5`) now applies to `TASK_SLUG` BEFORE `BRANCH_NAME` and `WORKTREE_PATH` are derived, so both path and branch pick up the suffix. Prior ordering would have failed on a second invocation with same slug because the un-suffixed branch already existed.
+
+- **5c.1 briefing function citations corrected:** Actual locations: `classify_worktrees()` at briefing.py:156 (plural form, not singular); display functions at briefing.py:759 (format_summary), 922 (format_report), 1026 (format_verify), 1117 (format_current); briefing.cjs: classifyWorktrees() at 150, formatSummary() at 666, formatReport() at 858, formatVerify() at 982, formatCurrent() at 1102.
+
+- **5c.1 fix-report Step 6 narrative text added to update scope:** Lines 311-312 example output ("status: full") and line 321 instruction text both need updating to list full/landed/pr-ready as safe-to-remove, not just full.
+
+- **5c.2 research-and-go removed from Agent dispatch sites:** Line 86 is a `/research-and-plan` Skill tool call, not an Agent tool dispatch; the `agents.min_model` reminder doesn't apply there. Implementer grep-check noted if uncertain about other Agent dispatches in the skill.
+
+- **Meta: evidence discipline added to /refine-plan + /draft-plan.** Reviewer/DA findings must include `Verification:` lines (file:line, grep, schema quote); refiner's new mandatory verify-before-fix pass reproduces each empirical claim before acting. Findings whose evidence doesn't reproduce are justified-not-fixed. The DA-2 failure class above — confidently-false empirical claim cascading into architectural pivot — is the specific failure this discipline prevents.
 ## Plan Review (/refine-plan)
 
 **Refinement process:** /refine-plan with 2 rounds of adversarial review
@@ -2697,3 +3036,32 @@ Structural comparison of the plan as originally drafted (`adb4752`) vs current s
 |-------|-------------------|---------------------------|-------------|----------|
 | 1 | 2 critical, 3 important, 1 minor | 4 critical, 3 important, 1 minor | 11 | 11/11 |
 | 2 | 1 note (model_ordinal) | 1 issue (model_ordinal) | 1 | 1/1 (fixed: unknown=99) |
+
+### Round History — Post-Phase-5a refinement (2026-04-14)
+
+**Refinement process:** /refine-plan with 2 rounds of adversarial review (grounded-in-reality preamble per PR #12)
+**Convergence:** Max rounds reached (2); final round resolved all findings — no remaining concerns.
+
+| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1 | 5 critical, 9 important, 3 minor | 4 critical, 5 important, 2 minor | 28 | 28/28 |
+| 2 | 2 important, 2 minor | 1 critical, 2 important, 1 minor | 8 | 8/8 |
+
+**Round 1 critical fixes:** (a) 5c.2 hook enforcement rewritten to skill-side (Agent tool input lacks `model` field; Bash-only matcher + early-exit); (b) ordinal-0/99 contradiction resolved to 0; (c) `/commit pr` `gh pr view` bug fixed; (d) 5c.1 scope corrected around actual fix-report/briefing-script gaps; (e) 5c.3 reframed because baseline capture already shipped in Phase 5a.
+
+**Round 2 critical fix:** briefing display functions (format_summary/report/current/verify) update added to 5c.1 — classifier fix alone would make new PR-mode categories silently invisible in all output modes.
+
+**Remaining concerns:** None — all 36 findings across both rounds resolved.
+
+### Round History — Re-refinement pass (2026-04-15)
+
+**Refinement process:** /refine-plan re-run with verify-before-fix discipline (new in /refine-plan v2)
+**Reason for re-run:** The prior /refine-plan run accepted a false DA claim (Agent tool input JSON has no `model` field); the refiner baked it into 5c.2 as an architectural pivot. /refine-plan was then upgraded with evidence-verification; this re-run corrects the bad pivot.
+**Convergence:** Converged — round 1 fixed 16 findings (1 critical + 8 important + 5 minor + 2 informational-pass); lightweight round-2 validation found 2 cleanup issues (phantom `hooks/settings.json.template` references; prose/code mismatch on suffix length), both fixed directly without a third refinement cycle.
+
+| Round | Reviewer | DA | Substantive | Resolved |
+|-------|----------|-----|-------------|----------|
+| 1 | 1 critical, 4 important, 3 minor, 2 pass | 1 critical, 4 important, 1 minor | 14 | 14/14 (+ 2 pass) |
+| 2 (validation) | 2 regressions | — | 2 | 2/2 direct-fixed |
+
+**Remaining concerns:** None. 5c.2 corrected to hook-based enforcement with settings.json Agent matcher + new block-agents.sh.template + model-field read with agent-definition frontmatter fallback. Residual parent-session-inheritance blind spot covered by skill-side reminders (belt-and-suspenders).
