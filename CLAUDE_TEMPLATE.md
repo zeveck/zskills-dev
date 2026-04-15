@@ -128,6 +128,35 @@ URLs, or creating files from scratch, check what already exists: `ls` the
 directory, `grep` for the term, read the relevant file. Agents consistently
 skip this step and guess instead of looking.
 
+## Execution Modes
+
+Three landing modes control how agent work reaches main:
+
+| Mode | Keyword | How it works |
+|------|---------|-------------|
+| Cherry-pick | (default) | Work in auto-named worktree, cherry-pick to main |
+| PR | `pr` | Work in named worktree, push branch, create PR |
+| Direct | `direct` | Work directly on main, no landing step |
+
+**Usage:** Append keyword to any execution skill:
+- `/run-plan plans/X.md finish auto pr`
+- `/fix-issues 10 pr`
+- `/research-and-go Build an RPG. pr`
+- `/do Add dark mode. pr`
+
+**Config default:** Set in `.claude/zskills-config.json`:
+
+    {
+      "execution": {
+        "landing": "pr",
+        "main_protected": true,
+        "branch_prefix": "feat/"
+      }
+    }
+
+When `main_protected: true`, agents cannot commit, cherry-pick, or push
+to main. Use PR mode or feature branches.
+
 ## Tracking Enforcement
 
 Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.

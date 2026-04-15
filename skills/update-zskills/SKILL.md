@@ -276,6 +276,21 @@ found, missing otherwise.
 | 12 | Enumerate before guessing | `"enumerate before guessing"` |
 | 13 | Never skip hooks | `"never.*--no-verify"` or `"skip.*pre-commit hooks"` |
 
+### Step 2.5 — Documentation presence audit (execution modes)
+
+Search the project's `CLAUDE.md` for these documentation-presence signals.
+Mark each present/missing based on **case-insensitive substring match**:
+
+| Check | Key phrase(s) to search in CLAUDE.md |
+|-------|--------------------------------------|
+| Execution Modes section | `## Execution Modes` (heading) |
+| Landing mode keywords documented | `cherry-pick` AND `pr` AND `direct` |
+| Direct mode description present | `Work directly on main` |
+
+Report in the same pass/fail format as Step 2. Missing items are
+**recommendations, not errors** — this is a documentation-only gap with
+no enforcement consequence.
+
 ### Step 3 — Check hooks
 
 Look in `.claude/hooks/` for these 2 files:
@@ -317,6 +332,11 @@ Skill Dependencies: all satisfied | K missing
 CLAUDE.md Rules: M/13 present (K missing)
   Missing:
   - [rule name]: [key phrase not found]
+  ...
+
+Execution Mode Docs: M/3 present (K missing/recommended)
+  Missing (recommendation only):
+  - [check name]: [key phrase not found]
   ...
 
 Hooks: M/2 installed (K missing)

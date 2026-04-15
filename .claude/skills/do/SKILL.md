@@ -1,14 +1,14 @@
 ---
 name: do
 disable-model-invocation: true
-argument-hint: "<description> [worktree] [push] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [worktree] [push] [pr] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Supports scheduling with every/now/next/stop.
-  Usage: /do <description> [worktree] [push] [every SCHEDULE] [now] | stop | next.
+  Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] | stop | next.
 ---
 
-# /do \<description> [worktree] [push] [every SCHEDULE] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
+# /do \<description> [worktree] [push] [pr] [every SCHEDULE] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
 
 Execute small, ad-hoc tasks with structured research, verification, and
 optional isolation or auto-push. Can be scheduled for recurring maintenance
@@ -35,16 +35,21 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
 ## Arguments
 
 ```
-/do <description> [worktree] [push] [every SCHEDULE] [now]
+/do <description> [worktree] [push] [pr] [every SCHEDULE] [now]
 /do stop | next
 ```
 
 - **description** (required) — what to do, in natural language
-- **worktree** (optional) — use `isolation: "worktree"` for riskier or
-  larger tasks. Without this flag, work happens directly on main.
+- **worktree** (optional) — isolate work in a named worktree at
+  `/tmp/<project>-do-<slug>/` for riskier or larger tasks. Without this
+  flag, work happens directly on main.
 - **push** (optional) — auto-push to remote after verification passes.
   Upgrades verification to use a **separate verification agent** running
   `/verify-changes`. Push never happens without verification passing first.
+- **pr** (optional) — work in a named worktree on a named branch, then
+  push and create a PR to main. Dispatches an implementation agent to do
+  the work, waits for completion, rebases onto latest main, pushes, creates
+  PR, and polls CI (report only).
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -71,8 +76,18 @@ If the first word is NOT a meta-command, it's a regular task. Parse
 trailing flags from the END backward:
 - `push` — recognized at the end
 - `worktree` — recognized at the end
+- `pr` — recognized at the end (use extended pattern with `.!?` punctuation, since
+  task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
 - `every <schedule>` — recognized at the end (e.g., `every 4h`, `every day at 9am`)
 - `now` — recognized at the end (only meaningful with `every`: run now AND schedule)
+
+**PR flag detection pattern** (use extended `.!?` punctuation):
+```bash
+LANDING_MODE="default"
+if [[ "$REMAINING" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_MODE="pr"
+fi
+```
 
 Everything before the trailing flags is the task description.
 
@@ -87,6 +102,7 @@ This means:
 - `/do Update the presentation push` — description + push flag
 - `/do Fix the tooltip bug worktree push` — description + both flags
 - `/do Check docs every day at 9am` — schedule "Check docs" daily
+- `/do Add dark mode. pr` — description + pr flag (PR mode)
 
 Examples:
 - `/do Add example models for Integrator and Derivative blocks`
@@ -95,6 +111,7 @@ Examples:
 - `/do Update the presentation with Phase 3 results push`
 - `/do Make sure docs are up to date every day at 9am`
 - `/do Check for broken links in examples every 12h now`
+- `/do Add dark mode to editor pr`
 - `/do next` — all scheduled tasks
 - `/do next Check docs` — specific task
 - `/do stop` — cancel all
@@ -221,24 +238,241 @@ Before touching anything:
    take 1000+ lines of changes, has complex dependencies), suggest
    `/run-plan` instead and ask the user.
 
+## Phase 1.5 — Argument Parsing (always before Phase 1 research)
+
+Before any research or execution, parse flags from `$ARGUMENTS`.
+
+**Step 1: Check for `pr` flag** (trailing, using extended punctuation pattern):
+```bash
+REMAINING="$ARGUMENTS"
+LANDING_MODE="default"
+if [[ "$REMAINING" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
+  LANDING_MODE="pr"
+  # Strip the pr token from description
+  TASK_DESCRIPTION=$(echo "$REMAINING" | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /')
+  TASK_DESCRIPTION=$(echo "$TASK_DESCRIPTION" | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+  if [ -z "$TASK_DESCRIPTION" ]; then
+    echo "ERROR: Task description required. Usage: /do <task description> pr"
+    exit 1
+  fi
+fi
+```
+
+If `LANDING_MODE` is not `pr`, then `TASK_DESCRIPTION` is the full `$ARGUMENTS` minus the other trailing flags (`push`, `worktree`, `every ...`, `now`).
+
+**Step 2: Check for `worktree` flag** (trailing, plain word match):
+```bash
+if [[ "$REMAINING" =~ (^|[[:space:]])worktree($|[[:space:]]) ]]; then
+  USE_WORKTREE=true
+fi
+```
+
+**Step 3: Check for `push` flag** (trailing):
+```bash
+if [[ "$REMAINING" =~ (^|[[:space:]])push($|[[:space:]]) ]]; then
+  USE_PUSH=true
+fi
+```
+
+`pr` takes precedence: if `LANDING_MODE="pr"`, ignore `worktree` and `push` flags.
+
 ## Phase 2 — Execute
 
-1. **Do the work.** By default, work directly on main. If `worktree` flag
-   is present, dispatch with `isolation: "worktree"`.
+Choose execution path based on parsed flags:
 
-2. **Follow existing conventions:**
-   - Example models → `/model-design` skill guidelines
-   - Newsletter entries → existing NEWSLETTER.md format
-   - Documentation → existing doc style in the repo
-   - Code → existing patterns in the codebase
+### Path A: PR mode (`pr` flag)
 
-3. **Commit discipline:**
-   - **On main:** commit when the work is complete. Clean, descriptive
-     message. `npm run test:all` before committing if code was touched.
-     If tests fail after two fix attempts on the same error, STOP — report
-     what you tried and let the user decide.
-   - **In worktree:** the verification agent commits after tests pass.
-     One logical unit per commit.
+**This path replaces the normal Phase 2–5 flow entirely. After the PR is created, skip to Phase 5 Report.**
+
+**Step A1 — Compute task slug:**
+```bash
+# N = min(4, word_count) words from TASK_DESCRIPTION
+WORD_COUNT=$(echo "$TASK_DESCRIPTION" | wc -w)
+N=$(( WORD_COUNT < 4 ? WORD_COUNT : 4 ))
+TASK_SLUG=$(echo "$TASK_DESCRIPTION" | awk "{for(i=1;i<=$N;i++) printf \$i\"-\"; print \"\"}" \
+  | sed -E 's/[^a-zA-Z0-9]+/-/g; s/-+/-/g; s/^-//; s/-$//' \
+  | tr '[:upper:]' '[:lower:]' \
+  | cut -c1-30 \
+  | sed 's/-$//')
+```
+
+**Step A2 — Collision check (BEFORE deriving BRANCH_NAME or WORKTREE_PATH):**
+```bash
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel)")
+if [ -d "/tmp/${PROJECT_NAME}-do-${TASK_SLUG}" ]; then
+  TASK_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
+fi
+```
+
+**Step A3 — Derive BRANCH_NAME and WORKTREE_PATH from (possibly suffixed) TASK_SLUG:**
+```bash
+BRANCH_PREFIX=$(jq -r '.execution.branch_prefix // "feat/"' .claude/zskills-config.json 2>/dev/null || echo "feat/")
+BRANCH_NAME="${BRANCH_PREFIX}do-${TASK_SLUG}"
+WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
+```
+
+**Step A4 — ff-merge main + worktree creation:**
+```bash
+git fetch origin main 2>/dev/null || true
+git merge --ff-only origin/main 2>/dev/null \
+  || echo "WARNING: local main not fast-forwarded — worktree uses local main as-is"
+git worktree prune
+git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
+  || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
+```
+
+**Step A5 — Write tracking marker immediately after worktree creation:**
+```bash
+PIPELINE_ID="do.${TASK_SLUG}"
+echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+```
+Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` in the main session — write only to the worktree file.
+
+**Step A6 — Dispatch implementation agent (wait for completion):**
+
+Dispatch an Agent (without `isolation: "worktree"` — the worktree already exists) with this prompt:
+
+```
+You are implementing: $TASK_DESCRIPTION
+
+FIRST: cd $WORKTREE_PATH
+All work happens in that directory. Do NOT work in any other directory.
+You are on branch $BRANCH_NAME (already checked out in the worktree).
+
+Implement the task. Commit changes when done:
+- Stage files by name (not git add .)
+- Do NOT commit to main
+- Commit message should summarize what was implemented
+
+Check agents.min_model in .claude/zskills-config.json before dispatching
+any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
+```
+
+Wait for the implementation agent to complete. If the agent reports failure or exits without committing:
+```bash
+cat > "$WORKTREE_PATH/.landed" <<LANDED
+status: conflict
+date: $(TZ=America/New_York date -Iseconds)
+source: do
+branch: $BRANCH_NAME
+LANDED
+```
+Exit with error directing the user to inspect `$WORKTREE_PATH`.
+
+**Step A7 — Rebase + push + PR creation (after implementation agent completes):**
+```bash
+cd "$WORKTREE_PATH"
+# Rebase onto latest main before push
+git fetch origin main
+git rebase origin/main || { echo "ERROR: Rebase conflict. Resolve manually in $WORKTREE_PATH."; exit 1; }
+
+git push -u origin "$BRANCH_NAME"
+
+# PR body: explicit title and body, not --fill
+PR_TITLE="do: $(echo "$TASK_DESCRIPTION" | cut -c1-60)"
+PR_BODY="Task: ${TASK_DESCRIPTION}
+
+Worktree: ${WORKTREE_PATH}
+Commits: $(git log origin/main..HEAD --format='%h %s' | head -10)"
+
+EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$EXISTING_PR" ]; then
+  PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+  echo "PR already exists: $PR_URL"
+else
+  PR_URL=$(gh pr create --base main --head "$BRANCH_NAME" \
+    --title "$PR_TITLE" --body "$PR_BODY")
+  echo "Created PR: $PR_URL"
+fi
+```
+
+**Step A8 — CI poll (report only, no fix cycle):**
+```bash
+if [ -n "$PR_URL" ]; then
+  PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq '.number')
+  CHECK_COUNT=0
+  for _i in 1 2 3; do
+    CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
+    [ "$CHECK_COUNT" != "0" ] && break
+    sleep 10
+  done
+  CI_STATUS="none"
+  if [ "$CHECK_COUNT" != "0" ]; then
+    if timeout 600 gh pr checks "$PR_NUMBER" --watch 2>/dev/null; then
+      CI_STATUS="passed"
+      echo "CI checks passed."
+    else
+      CI_STATUS="failed"
+      echo "CI checks failed. Inspect the PR to diagnose failures."
+    fi
+  fi
+fi
+```
+
+**Step A9 — Write `.landed` marker:**
+```bash
+# Check if PR was auto-merged
+PR_STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+if [ "$PR_STATE" = "MERGED" ]; then
+  LANDED_STATUS="landed"
+elif [ "$CI_STATUS" = "failed" ]; then
+  LANDED_STATUS="pr-ci-failing"
+else
+  LANDED_STATUS="pr-ready"
+fi
+
+cat > "$WORKTREE_PATH/.landed" <<LANDED
+status: $LANDED_STATUS
+date: $(TZ=America/New_York date -Iseconds)
+source: do
+branch: $BRANCH_NAME
+pr: $PR_URL
+LANDED
+```
+
+After writing `.landed`, output the Phase 5 PR report and **exit** (skip Phases 3-4).
+
+### Path B: Worktree mode (`worktree` flag, no `pr`)
+
+Create a named worktree at `../do-<slug>/` using manual `git worktree add`:
+
+```bash
+# Compute slug from task description
+WORD_COUNT=$(echo "$TASK_DESCRIPTION" | wc -w)
+N=$(( WORD_COUNT < 4 ? WORD_COUNT : 4 ))
+TASK_SLUG=$(echo "$TASK_DESCRIPTION" | awk "{for(i=1;i<=$N;i++) printf \$i\"-\"; print \"\"}" \
+  | sed -E 's/[^a-zA-Z0-9]+/-/g; s/-+/-/g; s/^-//; s/-$//' \
+  | tr '[:upper:]' '[:lower:]' \
+  | cut -c1-30 \
+  | sed 's/-$//')
+WORKTREE_PATH="../do-${TASK_SLUG}"
+# Collision check
+if [ -d "$WORKTREE_PATH" ]; then
+  TASK_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
+  WORKTREE_PATH="../do-${TASK_SLUG}"
+fi
+git worktree add "$WORKTREE_PATH"
+```
+
+Do the work inside the worktree. The verification agent commits after tests pass (one logical unit per commit).
+
+### Path C: Direct (default, no `pr`, no `worktree`)
+
+Work directly on main.
+
+**Follow existing conventions in all paths:**
+- Example models → `/model-design` skill guidelines
+- Newsletter entries → existing NEWSLETTER.md format
+- Documentation → existing doc style in the repo
+- Code → existing patterns in the codebase
+
+**Commit discipline (Paths B and C):**
+- **On main (Path C):** commit when the work is complete. Clean, descriptive
+  message. `npm run test:all` before committing if code was touched.
+  If tests fail after two fix attempts on the same error, STOP — report
+  what you tried and let the user decide.
+- **In worktree (Path B):** the verification agent commits after tests pass.
+  One logical unit per commit.
 
 ## Phase 3 — Verify
 
@@ -277,16 +511,16 @@ Verification intensity matches the change type (from Phase 1):
 - Spot-check the content portion
 - If `push`: full `/verify-changes` via separate agent
 
-## Phase 4 — Push (if `push` flag present)
+## Phase 4 — Push (if `push` flag present, Path C/B only)
 
-Only reached if Phase 3 verification passed.
+Only reached if Phase 3 verification passed. Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7).
 
-1. **If on main:**
+1. **If on main (Path C):**
    ```bash
    git push
    ```
 
-2. **If in worktree:** cherry-pick to main first, then push:
+2. **If in worktree (Path B):** cherry-pick to main first, then push:
    - Protect uncommitted work on main (`git stash -u` if needed)
    - Cherry-pick worktree commits to main sequentially
    - If any cherry-pick conflicts: **abort and clean up:**
@@ -343,6 +577,16 @@ Verification: clean (/verify-changes clean)
 Worktree: ../do-<slug>/ (can be removed)
 ```
 
+**PR mode (pr flag):**
+```
+Done. [1-2 sentence summary of what was implemented]
+PR: <PR_URL>
+Branch: <BRANCH_NAME>
+Worktree: <WORKTREE_PATH>
+CI: passed | failed | no checks
+Status: pr-ready | pr-ci-failing | landed
+```
+
 ## Error Handling
 
 - **Test failures (code changes):** stop, fix the code, re-test. Never
@@ -353,6 +597,12 @@ Worktree: ../do-<slug>/ (can be removed)
 - **Push failure (auth, remote, etc.):** stop, report the error.
 - **Task is bigger than expected:** stop, suggest `/run-plan` instead.
   Ask the user before continuing.
+- **PR mode: rebase conflict:** write `.landed` with `status: conflict`,
+  report to user, direct them to inspect `$WORKTREE_PATH`.
+- **PR mode: CI failure:** write `.landed` with `status: pr-ci-failing`,
+  report the failure. Do NOT dispatch fix agents.
+- **PR mode: implementation agent fails without committing:** write
+  `.landed` with `status: conflict` and exit with an error message.
 - **If stuck on anything:** report the state and ask the user for
   guidance. Do not retry the same approach in a loop.
 
@@ -366,14 +616,26 @@ Worktree: ../do-<slug>/ (can be removed)
   checkout-old-commit, no comparison worktrees.
 - **Protect other agents' work** — do not commit unrelated changes that
   happen to be in the working tree. Stage only files related to the task.
-- **Worktree naming** — use `../do-<slug>/` where `<slug>` is a short
-  kebab-case description derived from the task (e.g., `do-sort-screenshots`,
-  `do-integrator-examples`). Include a timestamp suffix if a worktree
-  with that name already exists.
+- **Worktree naming (worktree flag)** — use `../do-<slug>/` where `<slug>`
+  is a short kebab-case description derived from the task (e.g.,
+  `do-sort-screenshots`, `do-integrator-examples`). Include a timestamp
+  suffix if a worktree with that name already exists. Uses manual
+  `git worktree add` — NOT `isolation: "worktree"`.
+- **Worktree naming (pr flag)** — use `/tmp/<project>-do-<slug>/` with
+  a named branch `<branch_prefix>do-<slug>`. Both BRANCH_NAME and
+  WORKTREE_PATH derive from TASK_SLUG (after any collision suffix).
 - **No persistent report files** — `/do` outputs results inline. It does
   NOT write SPRINT_REPORT.md, PLAN_REPORT.md, or any other report file.
   The commit is the artifact.
 - **Push requires verification** — `push` always dispatches a separate
   verification agent before pushing. No exceptions.
+- **PR mode CI is report-only** — `/do pr` polls CI and reports status.
+  It does NOT dispatch fix agents. For automated fix cycles, use
+  `/run-plan` or `/fix-issues` in PR mode.
+- **PR body uses `git log origin/main..HEAD`** — never `git log main..HEAD`
+  (local main may be stale after rebase).
+- **PR titles and bodies are explicit** — never use `--fill` in `gh pr create`.
+- **Slug collision suffix targets TASK_SLUG itself** — not just WORKTREE_PATH.
+  Both BRANCH_NAME and WORKTREE_PATH must pick up the suffix.
 - **Respect CLAUDE.md** — all standard rules apply (no external deps, no
   bundlers, no weakened tests, etc.)

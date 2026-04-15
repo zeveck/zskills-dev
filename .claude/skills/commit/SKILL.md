@@ -5,11 +5,11 @@ description: >-
   Safe commit workflow with optional scope hint. Inventories all changes,
   classifies related vs. unrelated files, traces dependencies, protects
   other agents' work, and optionally pushes or lands worktree commits.
-  Usage: /commit [scope] [push|land]
-argument-hint: "[scope] [push|land]"
+  Usage: /commit [pr] [scope] [push|land]
+argument-hint: "[pr] [scope] [push|land]"
 ---
 
-# /commit [scope] [push|land] — Safe Commit Workflow
+# /commit [pr] [scope] [push|land] — Safe Commit Workflow
 
 Commit current work without picking up or harming unrelated changes.
 
@@ -19,10 +19,26 @@ Commit current work without picking up or harming unrelated changes.
 - `/commit push` — commit and push to remote
 - `/commit parser reset button fix push` — scope-guided commit + push
 - `/commit land` — cherry-pick worktree commits into main (worktree only)
+- `/commit pr` — push current branch and create a PR to main (requires clean working tree)
+- `/commit pr fix pr comments` — PR mode with scope hint "fix pr comments"
 
-**Parsing:** `push` and `land` are reserved keywords. Everything else in the
-arguments is the **scope hint** — a free-form description of what this commit
-is about. The scope hint is optional; without one, classify from diffs alone.
+**Parsing:** `pr` is recognized ONLY when it is the **FIRST token** in
+`$ARGUMENTS`. This prevents false-triggering on scope hints that contain
+"pr" mid-string. `push` and `land` are reserved keywords for non-PR mode.
+
+```bash
+FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
+if [[ "$FIRST_TOKEN" == "pr" ]]; then
+  # PR subcommand mode
+  SCOPE_HINT=$(echo "$ARGUMENTS" | cut -d' ' -f2-)  # rest after 'pr' (may be empty)
+  # ... see Phase 6 (PR mode) below
+fi
+```
+
+Disambiguation:
+- `/commit pr` → PR mode (first token is `pr`)
+- `/commit pr comments fix` → PR mode (first token is `pr`), scope hint: "comments fix"
+- `/commit fix pr format` → scope hint "fix pr format", regular commit (first token is "fix")
 
 Examples:
 - `/commit` → scope: *(none)*, action: commit
@@ -31,6 +47,8 @@ Examples:
 - `/commit push` → scope: *(none)*, action: commit + push
 - `/commit land` → scope: *(none)*, action: land
 - `/commit parser fixes land` → scope: "parser fixes", action: land
+- `/commit pr` → action: PR mode (push + create PR)
+- `/commit pr fix pr comments` → PR mode, scope hint: "fix pr comments"
 
 ## Phase 1 — Inventory
 
@@ -204,6 +222,95 @@ git push -u origin <branch-name>
 **NEVER force-push to main/master.** If push is rejected, tell the user why
 and ask what to do.
 
+## Phase 6 (PR subcommand) — PR Mode (if `pr` is the first token)
+
+**This phase runs INSTEAD OF Phases 1–5 when `pr` is the first token.**
+It pushes the current branch and creates a PR to main.
+
+**Step 1 — Pre-check: clean working tree required:**
+```bash
+DIRTY=$(git status --porcelain 2>/dev/null)
+if [ -n "$DIRTY" ]; then
+  echo "ERROR: Working tree has uncommitted changes."
+  echo "Run \`/commit\` first to create a commit, then \`/commit pr\` to push and create the PR."
+  exit 1
+fi
+```
+
+**Step 2 — Branch guard:**
+```bash
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+  echo "ERROR: Cannot create PR from main. Create a feature branch first."
+  exit 1
+fi
+```
+
+**Step 3 — Rebase onto latest main before pushing:**
+```bash
+git fetch origin main
+git rebase origin/main
+if [ $? -ne 0 ]; then
+  echo "ERROR: Rebase conflict. Resolve manually, then re-run \`/commit pr\`."
+  exit 1
+fi
+```
+
+**Step 4 — Push:**
+```bash
+git push -u origin "$BRANCH"
+```
+
+**Step 5 — Create PR:**
+```bash
+# PR title: strip branch prefix, convert hyphens to spaces
+BRANCH_SHORT="${BRANCH##*/}"  # remove prefix like feat/
+PR_TITLE=$(echo "$BRANCH_SHORT" | tr '-' ' ' | sed 's/\b./\u&/g')
+# Body: recent commits since divergence from origin/main (not local main — may be stale after rebase)
+PR_BODY=$(git log origin/main..HEAD --format='- %h %s' | head -15)
+
+EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$EXISTING_PR" ]; then
+  PR_URL=$(gh pr view "$EXISTING_PR" --json url --jq '.url')
+  echo "PR already exists: $PR_URL"
+else
+  PR_URL=$(gh pr create --base main --head "$BRANCH" \
+    --title "$PR_TITLE" --body "$PR_BODY")
+  echo "Created PR: $PR_URL"
+fi
+```
+
+**Step 6 — Poll CI checks (report only, no fix cycle):**
+```bash
+if [ -n "$PR_URL" ]; then
+  PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq '.number')
+  CHECK_COUNT=0
+  for _i in 1 2 3; do
+    CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
+    [ "$CHECK_COUNT" != "0" ] && break
+    sleep 10
+  done
+  if [ "$CHECK_COUNT" != "0" ]; then
+    if timeout 600 gh pr checks "$PR_NUMBER" --watch 2>/dev/null; then
+      echo "CI checks passed."
+    else
+      echo "CI checks failed. Run /verify-changes to diagnose."
+    fi
+  fi
+fi
+```
+
+Note: `PR_NUMBER` is derived from `$PR_URL` returned by `gh pr create` or
+`gh pr view "$EXISTING_PR"` — NOT via a bare `gh pr view` call (which relies
+on ambient branch autodetect and is subject to race conditions).
+
+**PR mode does NOT:**
+- Dispatch fix agents for CI failures
+- Write `.landed` markers
+- Run Phases 1–5 (all commits must already exist — clean tree is required)
+
+**After Step 6, exit.** Skip Phases 1–5 and 7.
+
 ## Phase 7 — Land (if `land` argument)
 
 Only if `land` was in the arguments.
@@ -296,3 +403,11 @@ This is for landing worktree work onto main via cherry-pick.
   diffs. Some related files won't match the hint keywords, and some keyword
   matches may be unrelated. The hint narrows the search; it doesn't replace
   judgment.
+- **`/commit pr` requires a clean working tree** — all changes must be
+  committed before running PR mode. The pre-check enforces this.
+- **`/commit pr` keyword is first-token-only** — prevents false-triggering
+  on scope hints that contain "pr" mid-string.
+- **PR body uses `git log origin/main..HEAD`** — not `git log main..HEAD`
+  (local main may be stale after rebase).
+- **PR number from URL, not bare `gh pr view`** — bare view uses ambient
+  branch autodetect, which is subject to race conditions.
