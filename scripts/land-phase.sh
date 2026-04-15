@@ -13,7 +13,16 @@ if [ ! -d "$WORKTREE_PATH" ]; then
   exit 0
 fi
 
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+MAIN_ROOT_GIT_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
+if [ -z "$MAIN_ROOT_GIT_DIR" ]; then
+  echo "ERROR: land-phase.sh must be run from inside a git repository (cannot resolve MAIN_ROOT)" >&2
+  exit 1
+fi
+MAIN_ROOT=$(cd "$MAIN_ROOT_GIT_DIR/.." && pwd)
+if [ -z "$MAIN_ROOT" ] || [ "$MAIN_ROOT" = "/" ]; then
+  echo "ERROR: MAIN_ROOT resolved to empty or root ('$MAIN_ROOT') — aborting" >&2
+  exit 1
+fi
 
 # 1. Verify .landed marker (proof work is on main — refuse without it)
 if [ ! -f "$WORKTREE_PATH/.landed" ]; then
@@ -44,49 +53,121 @@ if [ -d "$WORKTREE_PATH/.claude/logs" ]; then
 fi
 
 # 3. Remove worktree (critical — fail loudly if this doesn't work)
-BRANCH=$(git -C "$WORKTREE_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-# Remove known pipeline artifacts.
-rm -f "$WORKTREE_PATH/.test-results.txt" \
-      "$WORKTREE_PATH/.test-baseline.txt" \
-      "$WORKTREE_PATH/.worktreepurpose" \
-      "$WORKTREE_PATH/.zskills-tracked"
+BRANCH=$(git -C "$WORKTREE_PATH" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Ephemeral pipeline files that agents should leave UNTRACKED. If any of
+# these are tracked, the run-plan / verifier prompts leaked them into a
+# commit — that's a contract violation to surface, not silently work around.
+EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked")
+for f in "${EPHEMERAL_FILES[@]}"; do
+  if [ -f "$WORKTREE_PATH/$f" ]; then
+    # git ls-files exits 0 and prints a path if tracked; empty if not tracked
+    tracked=$(git -C "$WORKTREE_PATH" ls-files --error-unmatch "$f" 2>/dev/null || echo "")
+    if [ -n "$tracked" ]; then
+      echo "ERROR: $f is git-tracked in $WORKTREE_PATH but should be untracked."
+      echo "An agent committed it. Fix the /run-plan or verifier prompt to not 'git add' this file,"
+      echo "then 'git rm' it from the feature branch and re-land. Refusing to proceed."
+      exit 1
+    fi
+    # Untracked — safe to remove
+    if ! rm "$WORKTREE_PATH/$f"; then
+      echo "ERROR: Failed to rm untracked $WORKTREE_PATH/$f"
+      exit 1
+    fi
+  fi
+done
 
 # .landed is also untracked, so it blocks `git worktree remove`. Remove it
 # right before removal, but SAVE its content so we can restore on failure
 # (preserving proof-of-landing for retry/diagnosis).
 LANDED_CONTENT=$(cat "$WORKTREE_PATH/.landed")
-rm -f "$WORKTREE_PATH/.landed"
+if ! rm "$WORKTREE_PATH/.landed"; then
+  echo "ERROR: Failed to rm $WORKTREE_PATH/.landed"
+  exit 1
+fi
 
-git worktree remove "$WORKTREE_PATH" 2>&1
-if [ $? -ne 0 ]; then
+# Confirm worktree working tree is clean before removal — otherwise
+# git worktree remove refuses and the residue is invisible to callers
+# that only check exit code. Use git status --porcelain to detect any
+# staged/unstaged changes or untracked files we didn't anticipate.
+if [ -n "$(git -C "$WORKTREE_PATH" status --porcelain 2>/dev/null)" ]; then
+  # Restore .landed so the marker isn't lost while we report
+  printf '%s\n' "$LANDED_CONTENT" > "$WORKTREE_PATH/.landed"
+  echo "ERROR: Worktree $WORKTREE_PATH is not clean — cannot safely remove."
+  echo "Current dirty state:"
+  git -C "$WORKTREE_PATH" status --porcelain | head -20
+  echo ""
+  echo ".landed marker restored for retry. Investigate dirty state before re-running."
+  exit 1
+fi
+
+if ! git worktree remove "$WORKTREE_PATH"; then
   # Restore .landed so retry is possible
   mkdir -p "$WORKTREE_PATH"
   printf '%s\n' "$LANDED_CONTENT" > "$WORKTREE_PATH/.landed"
   echo "ERROR: Failed to remove worktree $WORKTREE_PATH"
-  echo "Unexpected files in worktree — investigate before retrying."
-  echo ".landed marker restored for retry."
+  echo "Contents:"
   ls -A "$WORKTREE_PATH" 2>/dev/null | head -20
+  echo ".landed marker restored for retry."
   exit 1
 fi
 
-# 4. Delete local branch (best-effort — may already be gone)
-if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
-  git branch -d "$BRANCH" 2>/dev/null || true
+# Verify worktree is actually gone from filesystem AND from git's worktree registry
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "ERROR: $WORKTREE_PATH still exists on disk after 'git worktree remove'"
+  exit 1
+fi
+if git -C "$MAIN_ROOT" worktree list --porcelain | grep -q "^worktree $WORKTREE_PATH$"; then
+  echo "ERROR: $WORKTREE_PATH still in git worktree registry after removal"
+  exit 1
 fi
 
-# 5. Delete remote branch if it was pushed and PR is merged.
-# PR mode branches get pushed during landing; after squash-merge the
-# remote branch is no longer needed. Without this cleanup, every PR-mode
-# run leaves a stale branch on origin that clutters the branch list.
-# Best-effort: silently skip if the remote branch doesn't exist, isn't
-# configured, or we don't have permission.
-if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "HEAD" ]; then
-  # Only attempt if origin has this branch AND the worktree's .landed
-  # status indicates the PR actually merged (avoid deleting branches of
-  # pr-ready or pr-ci-failing workflows the user may still need).
-  # We read the .landed content captured before removal (line 44 area).
+# 4. Delete local branch — VERIFY it actually goes away.
+# When status: landed (PR squash-merged), the feature branch's commits are
+# reshaped into a squash commit on origin/main; the original commits are
+# not reachable from local main as individual objects, so `git branch -d`
+# refuses. We use -D because the content is safe on origin/main.
+# For other statuses (pr-ready, pr-ci-failing, conflict), we keep the
+# branch — work isn't fully landed yet.
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ] && [ "$BRANCH" != "HEAD" ]; then
   if echo "$LANDED_CONTENT" | grep -q "^status: landed"; then
-    git push origin --delete "$BRANCH" 2>/dev/null || true
+    # Use git -C "$MAIN_ROOT" so the command works regardless of caller's CWD.
+    # Important when the caller's CWD was the worktree we just removed.
+    if ! git -C "$MAIN_ROOT" branch -D "$BRANCH"; then
+      echo "ERROR: git branch -D $BRANCH failed"
+      exit 1
+    fi
+    # Verify gone
+    if git -C "$MAIN_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+      echo "ERROR: local branch $BRANCH still exists after 'git branch -D'"
+      exit 1
+    fi
+  else
+    echo "Keeping local branch $BRANCH (status is not 'landed' — work not fully merged)."
+  fi
+fi
+
+# 5. Delete remote branch — only when status: landed (PR merged).
+# Pre-check existence so "already gone" isn't an error. Post-check absence
+# so a silent failure (auth, network, permission) surfaces loudly.
+if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ] && [ "$BRANCH" != "HEAD" ]; then
+  if echo "$LANDED_CONTENT" | grep -q "^status: landed"; then
+    # Does origin have this branch? git -C ensures we use the main repo even
+    # if caller's CWD was the now-removed worktree.
+    if git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+      if ! git -C "$MAIN_ROOT" push origin --delete "$BRANCH"; then
+        echo "ERROR: git push origin --delete $BRANCH failed"
+        echo "Remote branch may still exist. Check auth / permissions."
+        exit 1
+      fi
+      # Verify gone on remote
+      if git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+        echo "ERROR: remote branch $BRANCH still on origin after --delete push"
+        exit 1
+      fi
+    else
+      echo "Remote branch $BRANCH already absent — skipping delete."
+    fi
   fi
 fi
 

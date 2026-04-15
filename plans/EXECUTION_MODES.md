@@ -22,7 +22,7 @@ The tracking system is DONE and working. This plan builds on top of it. Tracking
 | 3b-i -- Worktree Unification + Landing Script | ✅ Done | `9cc1dc2` | Manual worktrees, land-phase.sh, preflight, 7 tests |
 | 3b-ii -- PR Mode Happy Path | ✅ Done | `36af895` | Named branches, rebase, push+PR, .landed, 9 tests |
 | 3b-iii -- CI Integration + Fix Cycle + Auto-Merge | ✅ Done | `e24d8ad` | CI polling, fix cycle, auto-merge, PR comments, 4 tests |
-| 4 -- /fix-issues PR Landing | ✅ Done | `e9d4a82` | Per-issue branches, PR #10, 3 tests |
+| 4 -- /fix-issues PR Landing | ✅ Done | `02e0f6b` | Per-issue branches, PR #10, 3 tests |
 | 5a -- Skill Propagation | ✅ Done | `d5b46c5` | research-and-go, research-and-plan, draft-plan |
 | 5b -- Execution Skills + Documentation | ✅ Done | `bfc5893` | /do pr, /commit pr, CLAUDE_TEMPLATE Execution Modes, update-zskills Step 2.5 |
 | 5c -- Infrastructure: Cleanup, Model Gate, Baseline | ✅ Done | `1839bb8` | fix-report + briefing scripts, block-agents.sh hook, .test-baseline compare |

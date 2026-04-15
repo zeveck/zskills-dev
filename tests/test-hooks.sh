@@ -1181,8 +1181,8 @@ else
 fi
 
 # 2. min_model=sonnet, dispatch model=haiku → deny
-CONFIG_SONNET='{"agents":{"min_model":"claude-sonnet-4-20250514"}}'
-result=$(run_agent_hook '"model":"claude-haiku-4-20250514"' "$CONFIG_SONNET")
+CONFIG_SONNET='{"agents":{"min_model":"claude-sonnet-4-6"}}'
+result=$(run_agent_hook '"model":"claude-haiku-4-5"' "$CONFIG_SONNET")
 if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
   pass "min_model=sonnet, model=haiku → deny"
 else
@@ -1190,7 +1190,7 @@ else
 fi
 
 # 3. min_model=sonnet, dispatch model=sonnet → allow
-result=$(run_agent_hook '"model":"claude-sonnet-4-20250514"' "$CONFIG_SONNET")
+result=$(run_agent_hook '"model":"claude-sonnet-4-6"' "$CONFIG_SONNET")
 if [[ -z "$result" ]]; then
   pass "min_model=sonnet, model=sonnet → allow"
 else
@@ -1198,7 +1198,7 @@ else
 fi
 
 # 4. min_model=sonnet, dispatch model=opus → allow
-result=$(run_agent_hook '"model":"claude-opus-4-20250514"' "$CONFIG_SONNET")
+result=$(run_agent_hook '"model":"claude-opus-4-6"' "$CONFIG_SONNET")
 if [[ -z "$result" ]]; then
   pass "min_model=sonnet, model=opus → allow"
 else
@@ -1222,8 +1222,8 @@ else
 fi
 
 # 7. min_model=haiku, dispatch model=haiku → allow (haiku meets haiku)
-CONFIG_HAIKU='{"agents":{"min_model":"claude-haiku-4-20250514"}}'
-result=$(run_agent_hook '"model":"claude-haiku-4-20250514"' "$CONFIG_HAIKU")
+CONFIG_HAIKU='{"agents":{"min_model":"claude-haiku-4-5"}}'
+result=$(run_agent_hook '"model":"claude-haiku-4-5"' "$CONFIG_HAIKU")
 if [[ -z "$result" ]]; then
   pass "min_model=haiku, model=haiku → allow"
 else
@@ -1231,12 +1231,285 @@ else
 fi
 
 # 8. Unknown model family → always allow (future-proofing)
-result=$(run_agent_hook '"model":"claude-nova-4-20250514"' "$CONFIG_SONNET")
+result=$(run_agent_hook '"model":"claude-nova-4-6"' "$CONFIG_SONNET")
 if [[ -z "$result" ]]; then
   pass "unknown model family (claude-nova) → allow (ordinal=0 passes)"
 else
   fail "unknown model family → expected allow, got: $result"
 fi
+
+# ─── auto/inherit resolution tests ───
+# Helper: run agent hook with transcript_path in the hook input payload.
+run_agent_hook_with_transcript() {
+  local model_field="$1"       # e.g. '"model":"haiku"' or ""
+  local config_json="$2"       # config content
+  local transcript_content="$3" # JSONL lines for the transcript
+  local tmp_repo tmp_transcript
+  tmp_repo=$(mktemp -d)
+  tmp_transcript=$(mktemp)
+  mkdir -p "$tmp_repo/.claude"
+  (cd "$tmp_repo" && git init -q 2>/dev/null)
+
+  if [ -n "$config_json" ]; then
+    printf '%s\n' "$config_json" > "$tmp_repo/.claude/zskills-config.json"
+  fi
+  printf '%s\n' "$transcript_content" > "$tmp_transcript"
+
+  local tool_input
+  if [ -n "$model_field" ]; then
+    tool_input="{\"tool_name\":\"Agent\",\"transcript_path\":\"$tmp_transcript\",\"tool_input\":{${model_field},\"prompt\":\"Do something\"}}"
+  else
+    tool_input="{\"tool_name\":\"Agent\",\"transcript_path\":\"$tmp_transcript\",\"tool_input\":{\"prompt\":\"Do something\"}}"
+  fi
+
+  local result
+  result=$(echo "$tool_input" | REPO_ROOT="$tmp_repo" bash "$AGENTS_HOOK" 2>/dev/null)
+  rm -rf "$tmp_repo" "$tmp_transcript"
+  echo "$result"
+}
+
+# 9. min_model=auto + transcript says opus + dispatch=sonnet → deny
+CONFIG_AUTO='{"agents":{"min_model":"auto"}}'
+TRANSCRIPT_OPUS='{"role":"assistant","model":"claude-opus-4-6","content":"hi"}'
+result=$(run_agent_hook_with_transcript '"model":"claude-sonnet-4-6"' "$CONFIG_AUTO" "$TRANSCRIPT_OPUS")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=auto (resolves to opus), model=sonnet → deny"
+else
+  fail "min_model=auto resolved to opus, sonnet dispatch → expected deny, got: $result"
+fi
+
+# 10. min_model=auto + transcript says opus + dispatch=opus → allow
+result=$(run_agent_hook_with_transcript '"model":"claude-opus-4-6"' "$CONFIG_AUTO" "$TRANSCRIPT_OPUS")
+if [[ -z "$result" ]]; then
+  pass "min_model=auto (resolves to opus), model=opus → allow"
+else
+  fail "min_model=auto resolved to opus, opus dispatch → expected allow, got: $result"
+fi
+
+# 11. min_model=inherit alias works the same as auto
+CONFIG_INHERIT='{"agents":{"min_model":"inherit"}}'
+result=$(run_agent_hook_with_transcript '"model":"claude-sonnet-4-6"' "$CONFIG_INHERIT" "$TRANSCRIPT_OPUS")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=inherit (alias of auto) → resolves same"
+else
+  fail "min_model=inherit → expected same resolution as auto, got: $result"
+fi
+
+# 12. min_model=auto + transcript unreadable → falls back to sonnet floor (blocks haiku, allows sonnet)
+# Simulate an unresolvable auto by omitting transcript_path entirely
+tmp_repo=$(mktemp -d)
+mkdir -p "$tmp_repo/.claude"
+(cd "$tmp_repo" && git init -q 2>/dev/null)
+printf '%s\n' "$CONFIG_AUTO" > "$tmp_repo/.claude/zskills-config.json"
+result=$(echo '{"tool_name":"Agent","tool_input":{"model":"claude-haiku-4-5","prompt":"x"}}' \
+  | REPO_ROOT="$tmp_repo" bash "$AGENTS_HOOK" 2>/dev/null)
+rm -rf "$tmp_repo"
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=auto, no transcript_path → falls back to sonnet floor (blocks haiku)"
+else
+  fail "min_model=auto, no transcript_path → expected fallback deny, got: $result"
+fi
+
+# 13. min_model=auto + transcript says sonnet + dispatch=sonnet → allow (session matches)
+TRANSCRIPT_SONNET='{"role":"assistant","model":"claude-sonnet-4-6","content":"hi"}'
+result=$(run_agent_hook_with_transcript '"model":"claude-sonnet-4-6"' "$CONFIG_AUTO" "$TRANSCRIPT_SONNET")
+if [[ -z "$result" ]]; then
+  pass "min_model=auto (resolves to sonnet), model=sonnet → allow"
+else
+  fail "min_model=auto resolved to sonnet, sonnet dispatch → expected allow, got: $result"
+fi
+
+# 14. min_model=auto + transcript says sonnet + dispatch=haiku → deny
+result=$(run_agent_hook_with_transcript '"model":"claude-haiku-4-5"' "$CONFIG_AUTO" "$TRANSCRIPT_SONNET")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=auto (resolves to sonnet), model=haiku → deny"
+else
+  fail "min_model=auto resolved to sonnet, haiku dispatch → expected deny, got: $result"
+fi
+
+# 15. CRITICAL regression test: transcript ends with "<synthetic>" — the auto
+# resolver must IGNORE this entry (real Claude Code transcripts end this way)
+# and pick the last valid family-keyword model. Without the filter, ordinal=0
+# means the haiku floor silently disappears.
+TRANSCRIPT_WITH_SYNTHETIC='{"type":"assistant","message":{"model":"claude-opus-4-6","role":"assistant"}}
+{"type":"assistant","message":{"model":"claude-opus-4-6","role":"assistant"}}
+{"type":"assistant","message":{"model":"<synthetic>","role":"assistant"}}'
+result=$(run_agent_hook_with_transcript '"model":"claude-haiku-4-5"' "$CONFIG_AUTO" "$TRANSCRIPT_WITH_SYNTHETIC")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=auto, transcript trailing <synthetic> → resolves to last valid family (opus), haiku denied"
+else
+  fail "min_model=auto, <synthetic> regression: expected deny (Haiku under Opus floor), got: $result"
+fi
+
+# 16. min_model=auto + transcript ONLY has <synthetic> (no valid family) →
+# fallback to sonnet floor
+TRANSCRIPT_ONLY_SYNTHETIC='{"type":"assistant","message":{"model":"<synthetic>","role":"assistant"}}'
+result=$(run_agent_hook_with_transcript '"model":"claude-haiku-4-5"' "$CONFIG_AUTO" "$TRANSCRIPT_ONLY_SYNTHETIC")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=auto, transcript only has <synthetic> → fallback sonnet floor denies haiku"
+else
+  fail "min_model=auto, only <synthetic> → expected fallback deny, got: $result"
+fi
+
+echo ""
+echo "=== post-run-invariants.sh ==="
+
+INV_SCRIPT="$REPO_ROOT/scripts/post-run-invariants.sh"
+
+# 17. All checks skipped (empty args, must run in a git repo) → pass with message
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+if [ $INV_RC -eq 0 ] && grep -q "all checks passed" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: empty args → skips all → pass"
+else
+  fail "post-run-invariants.sh: empty args — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 18. Nonexistent worktree path (should skip — invariant #1/#2 only fires when path provided AND exists)
+# Actually invariant #1 requires the path NOT to exist; passing a nonexistent path should PASS.
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree /tmp/nonexistent-invariant-test-$$ > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+if [ $INV_RC -eq 0 ]; then
+  pass "post-run-invariants.sh: nonexistent worktree path → invariant #1 passes"
+else
+  fail "post-run-invariants.sh: nonexistent worktree — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 19. Existing worktree path (fail invariant #1)
+TMP_WT=$(mktemp -d)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree "$TMP_WT" > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+rm -rf "$TMP_WT"
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#1)" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: existing worktree path → invariant #1 fails loudly"
+else
+  fail "post-run-invariants.sh: existing worktree — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 20. Plan file with 🟡 row → fail invariant #6
+TMP_PLAN=$(mktemp)
+printf '# Plan\n| 1 | 🟡 In Progress | abc |\n' > "$TMP_PLAN"
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-file "$TMP_PLAN" > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+rm -f "$TMP_PLAN"
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#6)" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: plan with 🟡 → invariant #6 fails"
+else
+  fail "post-run-invariants.sh: plan with 🟡 — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 21. Not in git repo → exits 1 with clear error
+(cd /tmp && bash "$INV_SCRIPT" > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+if [ $INV_RC -ne 0 ] && grep -q "must run from inside a git repository" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: outside git repo → loud error, exit 1"
+else
+  fail "post-run-invariants.sh: outside git repo — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 22. land-phase.sh MAIN_ROOT guard: a valid path + .landed but running from
+# outside a git repo must hit the guard and error loudly. The prior version
+# of this test fell into the idempotent early-exit branch (nonexistent path)
+# and never reached the MAIN_ROOT guard — so we force the path to exist.
+EXISTING_PATH=$(mktemp -d)
+printf 'status: landed\n' > "$EXISTING_PATH/.landed"
+LAND_OUTPUT=$(cd /tmp && bash "$LAND_SCRIPT" "$EXISTING_PATH" 2>&1)
+LAND_RC=$?
+rm -rf "$EXISTING_PATH"
+if [ $LAND_RC -ne 0 ] && [[ "$LAND_OUTPUT" == *"must be run from inside a git repository"* ]]; then
+  pass "land-phase.sh: outside git repo with valid path → MAIN_ROOT guard exits loudly"
+else
+  fail "land-phase.sh: outside git repo — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+# 23. land-phase.sh: tracked ephemeral file is rejected with the specific error
+# (the main Bug #1 fix — this is the regression test for that whole class).
+TRACKED_WT=$(mktemp -d)
+(
+  cd "$TRACKED_WT" && git init -q
+  git config user.email test@test.test
+  git config user.name test
+  echo "tracked-as-test" > .worktreepurpose
+  git add .worktreepurpose
+  git commit -q -m "tracked .worktreepurpose (bad)"
+  printf 'status: landed\n' > .landed
+)
+LAND_OUTPUT=$(cd "$TRACKED_WT" && bash "$LAND_SCRIPT" "$TRACKED_WT" 2>&1)
+LAND_RC=$?
+rm -rf "$TRACKED_WT"
+if [ $LAND_RC -ne 0 ] && [[ "$LAND_OUTPUT" == *"git-tracked"* ]] && [[ "$LAND_OUTPUT" == *"should be untracked"* ]]; then
+  pass "land-phase.sh: tracked .worktreepurpose → rejected with specific 'git-tracked' error"
+else
+  fail "land-phase.sh: tracked ephemeral — rc=$LAND_RC, output: $LAND_OUTPUT"
+fi
+
+# 24. land-phase.sh: dirty working tree (untracked residue) → aborts with 'not clean',
+# restores .landed. Previously the generic-error path we relied on; make sure
+# that path is exercised and .landed is preserved.
+DIRTY_WT=$(mktemp -d)
+(
+  cd "$DIRTY_WT" && git init -q
+  git config user.email test@test.test
+  git config user.name test
+  echo "init" > init.txt && git add init.txt && git commit -q -m init
+  echo "unexpected" > unexpected-leftover.txt
+  printf 'status: landed\n' > .landed
+)
+LAND_OUTPUT=$(cd "$DIRTY_WT" && bash "$LAND_SCRIPT" "$DIRTY_WT" 2>&1)
+LAND_RC=$?
+LANDED_PRESERVED=0
+[ -f "$DIRTY_WT/.landed" ] && LANDED_PRESERVED=1
+rm -rf "$DIRTY_WT"
+if [ $LAND_RC -ne 0 ] && [[ "$LAND_OUTPUT" == *"not clean"* ]] && [ "$LANDED_PRESERVED" -eq 1 ]; then
+  pass "land-phase.sh: dirty worktree → aborts 'not clean', .landed restored for retry"
+else
+  fail "land-phase.sh: dirty worktree — rc=$LAND_RC, landed-preserved=$LANDED_PRESERVED, output: $LAND_OUTPUT"
+fi
+
+# 25. post-run-invariants.sh: plan report missing → invariant #5 fails
+TMP_SLUG="nonexistent-plan-$$"
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-slug "$TMP_SLUG" > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#5)" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: missing plan report → invariant #5 fails"
+else
+  fail "post-run-invariants.sh: missing plan report — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 26. post-run-invariants.sh: lingering local branch after 'landed' → invariant #3 fails.
+# Create a branch named 'invariant-zombie-test-$$' referencing HEAD; pass landed status.
+ZOMBIE_BRANCH="invariant-zombie-test-$$"
+git -C "$REPO_ROOT" branch "$ZOMBIE_BRANCH" HEAD 2>/dev/null
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$ZOMBIE_BRANCH" --landed-status landed > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+git -C "$REPO_ROOT" branch -D "$ZOMBIE_BRANCH" >/dev/null 2>&1
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#3)" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: local branch lingers after landed → invariant #3 fails"
+else
+  fail "post-run-invariants.sh: zombie local branch — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
+
+# 27. post-run-invariants.sh: local branch with 'pr-ready' status → does NOT fail
+# (intentional — pr-ready means work not fully landed, branch is kept).
+KEEP_BRANCH="invariant-keep-test-$$"
+git -C "$REPO_ROOT" branch "$KEEP_BRANCH" HEAD 2>/dev/null
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$KEEP_BRANCH" --landed-status pr-ready > /tmp/inv-test.txt 2>&1)
+INV_RC=$?
+git -C "$REPO_ROOT" branch -D "$KEEP_BRANCH" >/dev/null 2>&1
+# Exit may be nonzero if other invariants fire (fetch warning etc.), but invariant #3 must NOT fire.
+if ! grep -q "INVARIANT-FAIL (#3)" /tmp/inv-test.txt; then
+  pass "post-run-invariants.sh: pr-ready status → invariant #3 does NOT fire (branch kept intentionally)"
+else
+  fail "post-run-invariants.sh: pr-ready incorrectly triggered #3 — output: $(cat /tmp/inv-test.txt)"
+fi
+rm -f /tmp/inv-test.txt
 
 echo ""
 echo "---"

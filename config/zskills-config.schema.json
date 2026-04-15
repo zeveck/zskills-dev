@@ -119,7 +119,9 @@
       "properties": {
         "min_model": {
           "type": "string",
-          "description": "Minimum model for subagent dispatch. The block-agents.sh hook enforces this at Agent tool dispatch time. Ordinal: haiku=1 < sonnet=2 < opus=3. Unknown model families always pass (future-proofing). Example: claude-sonnet-4-20250514"
+          "default": "auto",
+          "description": "Minimum model for subagent dispatch, enforced by the block-agents.sh hook. Accepts either a literal model string (e.g., 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5') or the sentinel 'auto' / 'inherit' which resolves at dispatch time to the current session's model (from the transcript). Recommended: 'auto' — your session's model becomes the floor automatically, so subagents can never silently downgrade. Ordinal comparison: haiku=1 < sonnet=2 < opus=3; unknown model families pass (future-proofing for new Claude releases).",
+          "examples": ["auto", "claude-opus-4-6", "claude-sonnet-4-6"]
         }
       }
     }

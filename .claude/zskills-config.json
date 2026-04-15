@@ -33,6 +33,6 @@
   },
 
   "agents": {
-    "min_model": "claude-sonnet-4-20250514"
+    "min_model": "auto"
   }
 }

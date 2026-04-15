@@ -519,12 +519,13 @@ agent hasn't returned after 2 hours, declare it **failed**:
    # Fast-forward if behind. Legitimate local-ahead commits (cherry-pick
    # landings, unpushed user commits) are preserved. Divergent state leaves
    # local main as-is with a warning.
-   git fetch origin main 2>/dev/null || true
+   git fetch origin main 2>/dev/null || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
    git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
+   FEATURE_BRANCH="cp-${PLAN_SLUG}-${PHASE}"  # unified across modes — used by post-run-invariants.sh
    if [ -d "$WORKTREE_PATH" ]; then
      echo "Resuming existing worktree at $WORKTREE_PATH"
    else
-     git worktree add "$WORKTREE_PATH" -b "cp-${PLAN_SLUG}-${PHASE}" main
+     git worktree add "$WORKTREE_PATH" -b "$FEATURE_BRANCH" main
    fi
 
    # Pipeline association
@@ -558,6 +559,17 @@ agent hasn't returned after 2 hours, declare it **failed**:
    Example: `echo "SKILLZ: briefing Phase 1" > $WORKTREE_PATH/.worktreepurpose`
    This metadata helps `/briefing worktrees` and `/briefing verify` show
    what each worktree is for, instead of just an opaque agent ID.
+
+   **Hygiene constraint — NEVER commit ephemeral pipeline files.** The
+   files `.worktreepurpose`, `.zskills-tracked`, `.landed`, `.test-baseline.txt`,
+   and `.test-results.txt` must stay UNTRACKED throughout the run. Do NOT
+   include them in `git add` when dispatching implementation or
+   verification agents. When staging for a commit, name specific source
+   files explicitly (`git add skills/X.md tests/Y.sh ...`) rather than
+   patterns that could sweep ephemerals in. `scripts/land-phase.sh`
+   expects these files to be untracked and will refuse to clean up a
+   worktree that has any of them tracked — a staged-delete left over
+   from a commit would block `git worktree remove` and leak zombies.
 
    **Failed-run cleanup:** If a phase fails terminally, write `.landed` with
    `status: failed` in the worktree before invoking the Failure Protocol. The
@@ -678,6 +690,7 @@ PLAN_FILE="plans/THERMAL_DOMAIN.md"
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 
 BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"
+FEATURE_BRANCH="$BRANCH_NAME"  # unified across modes — used by post-run-invariants.sh
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 ```
@@ -698,7 +711,7 @@ git worktree prune
 # landings, unpushed user commits) are preserved — they flow through the
 # PR with feature work. Divergent state (ahead AND behind) leaves local
 # main as-is with a warning so the user knows to investigate.
-git fetch origin main 2>/dev/null || true
+git fetch origin main 2>/dev/null || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
 git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
 
 # Check if worktree already exists (resuming a previous run)
@@ -1821,6 +1834,56 @@ for stage in implement verify report land; do
     > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.$stage"
 done
 ```
+
+### Post-run invariants check (mandatory — mechanical gate)
+
+Before declaring the run complete, the orchestrator MUST invoke
+`scripts/post-run-invariants.sh` to assert end-state correctness. This
+catches silent failures in `land-phase.sh` (e.g., a branch delete that
+was accepted but didn't take effect) that would otherwise accumulate
+zombies across runs. The script is an enforced gate — NOT prose the
+orchestrator might "satisfy conceptually" and skip.
+
+Invoke it with named args, unified across modes (cherry-pick and PR use
+the same `FEATURE_BRANCH` variable; direct mode passes empty for both
+worktree and branch):
+
+```bash
+# FEATURE_BRANCH unified across modes — both cherry-pick and PR set this
+# at worktree creation time (cherry-pick uses cp-${PLAN_SLUG}-${PHASE},
+# PR uses ${BRANCH_PREFIX}${PLAN_SLUG}).
+bash scripts/post-run-invariants.sh \
+  --worktree      "$WORKTREE_PATH" \
+  --branch        "$FEATURE_BRANCH" \
+  --landed-status "$LANDED_STATUS" \
+  --plan-slug     "$PLAN_SLUG" \
+  --plan-file     "$PLAN_FILE"
+```
+
+The script asserts 7 invariants:
+1. Worktree directory gone from disk
+2. Worktree removed from git's worktree registry
+3. Local feature branch deleted (when `--landed-status landed`)
+4. Remote feature branch deleted (when `--landed-status landed`)
+5. Plan report exists at `reports/plan-<slug>.md`
+6. No 🟡 In Progress rows linger in the tracker
+7. Local main reconcilable with origin/main (WARN-level; user may have
+   legitimate unpushed local commits)
+
+Non-zero exit from the script means one or more invariants failed. When
+that happens: STOP. Do not self-reschedule the cron. Do not advance to
+the next phase. Report the specific failures to the user; they need to
+investigate and fix before another run.
+
+For direct mode (no worktree, no feature branch), pass empty strings
+for `--worktree` and `--branch`; the script skips those checks.
+
+**Unified FEATURE_BRANCH convention:** at worktree creation (Phase 2),
+both cherry-pick and PR modes export a single `FEATURE_BRANCH` variable
+that the invariants check reads. Cherry-pick sets it to the
+auto-generated `cp-${PLAN_SLUG}-${PHASE}`; PR mode sets it to
+`${BRANCH_PREFIX}${PLAN_SLUG}`. Do not use different variable names per
+mode — that's how invariant #3 silently skips in cherry-pick mode.
 
 ## Failure Protocol
 

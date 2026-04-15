@@ -37,6 +37,39 @@ if [ -z "$MIN_MODEL" ]; then
   exit 0
 fi
 
+# Sentinel resolution: "auto" / "inherit" → match the session's current model.
+# The PreToolUse hook's stdin JSON typically includes "transcript_path" pointing
+# at the session JSONL; each assistant message record there carries a "model"
+# field. We take the most recent, which is the current session model.
+if [[ "$MIN_MODEL" == "auto" || "$MIN_MODEL" == "inherit" ]]; then
+  TRANSCRIPT_PATH=""
+  if [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+    TRANSCRIPT_PATH="${BASH_REMATCH[1]}"
+  fi
+  RESOLVED=""
+  if [ -n "$TRANSCRIPT_PATH" ] && [ -f "$TRANSCRIPT_PATH" ]; then
+    # Walk model entries; filter to ONLY known Claude families (haiku/sonnet/
+    # opus); take the most recent. This rejects real-transcript artifacts
+    # like `"model":"<synthetic>"` that appear in Claude Code transcripts and
+    # would otherwise map to ordinal=0 (unknown), silently disabling the
+    # floor for any `auto`-configured project.
+    RESOLVED=$(grep -o '"model"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRANSCRIPT_PATH" \
+      | sed 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
+      | grep -Ei '(haiku|sonnet|opus)' \
+      | tail -1)
+  fi
+  if [ -n "$RESOLVED" ]; then
+    MIN_MODEL="$RESOLVED"
+  else
+    # Resolution failed (transcript missing, unreadable, no model field). Fall
+    # back to "sonnet" as a conservative floor: still blocks Haiku (per the
+    # "never Haiku" rule), allows sonnet+opus. Print a diagnostic to stderr so
+    # the failure is visible — not silent.
+    echo "block-agents.sh: could not resolve 'auto' from transcript (${TRANSCRIPT_PATH:-<missing>}); falling back to sonnet floor" >&2
+    MIN_MODEL="claude-sonnet-4-6"
+  fi
+fi
+
 # Convert model string to ordinal
 # Ordinal: haiku=1, sonnet=2, opus=3, unknown=0 (always allow)
 model_ordinal() {
