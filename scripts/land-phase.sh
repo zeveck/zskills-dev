@@ -148,26 +148,45 @@ if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ] && [
 fi
 
 # 5. Delete remote branch — only when status: landed (PR merged).
-# Pre-check existence so "already gone" isn't an error. Post-check absence
-# so a silent failure (auth, network, permission) surfaces loudly.
+# Distinguish three ls-remote outcomes (prior version conflated them):
+#   exit 0   → branch exists on origin → delete it
+#   exit 2   → branch doesn't exist on origin (with --exit-code) → skip
+#   exit 128 → origin unreachable / auth / config error → FAIL LOUDLY
+# Prior behavior treated 2 and 128 identically as "skip," meaning a broken
+# remote silently passed as "already gone." `git -C "$MAIN_ROOT"` ensures
+# this works regardless of caller's CWD.
 if [ -n "$BRANCH" ] && [ "$BRANCH" != "main" ] && [ "$BRANCH" != "master" ] && [ "$BRANCH" != "HEAD" ]; then
   if echo "$LANDED_CONTENT" | grep -q "^status: landed"; then
-    # Does origin have this branch? git -C ensures we use the main repo even
-    # if caller's CWD was the now-removed worktree.
-    if git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
-      if ! git -C "$MAIN_ROOT" push origin --delete "$BRANCH"; then
-        echo "ERROR: git push origin --delete $BRANCH failed"
-        echo "Remote branch may still exist. Check auth / permissions."
+    git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1
+    LS_RC=$?
+    case "$LS_RC" in
+      0)
+        # Branch exists on origin — delete it
+        if ! git -C "$MAIN_ROOT" push origin --delete "$BRANCH"; then
+          echo "ERROR: git push origin --delete $BRANCH failed"
+          echo "Remote branch may still exist. Check auth / permissions."
+          exit 1
+        fi
+        # Verify gone on remote
+        git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+          echo "ERROR: remote branch $BRANCH still on origin after --delete push"
+          exit 1
+        fi
+        ;;
+      2)
+        # --exit-code: branch genuinely absent on origin — safe to skip
+        echo "Remote branch $BRANCH already absent — skipping delete."
+        ;;
+      *)
+        # Exit 128 (fatal: origin unreachable, auth error, etc.) or unexpected code.
+        # This was previously conflated with "already absent," silently allowing a
+        # broken remote to masquerade as a clean state. Surface it.
+        echo "ERROR: git ls-remote for $BRANCH failed with exit $LS_RC — origin unreachable, misconfigured, or auth failure" >&2
+        echo "Cannot verify whether remote branch needs deletion. Fix the remote state and re-run." >&2
         exit 1
-      fi
-      # Verify gone on remote
-      if git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
-        echo "ERROR: remote branch $BRANCH still on origin after --delete push"
-        exit 1
-      fi
-    else
-      echo "Remote branch $BRANCH already absent — skipping delete."
-    fi
+        ;;
+    esac
   fi
 fi
 

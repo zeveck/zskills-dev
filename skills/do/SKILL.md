@@ -313,7 +313,8 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 
 **Step A4 — ff-merge main + worktree creation:**
 ```bash
-git fetch origin main 2>/dev/null || true
+git fetch origin main 2>/dev/null \
+  || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
 git merge --ff-only origin/main 2>/dev/null \
   || echo "WARNING: local main not fast-forwarded — worktree uses local main as-is"
 git worktree prune
@@ -415,8 +416,12 @@ fi
 
 **Step A9 — Write `.landed` marker:**
 ```bash
-# Check if PR was auto-merged
-PR_STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+# Check if PR was auto-merged. If gh pr view fails (network / auth / rate),
+# default to OPEN to keep the flow going AND warn so the failure is visible.
+if ! PR_STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null); then
+  echo "WARNING: gh pr view failed for $PR_URL — defaulting pr_state to OPEN (may be stale; verify at PR URL)" >&2
+  PR_STATE="OPEN"
+fi
 if [ "$PR_STATE" = "MERGED" ]; then
   LANDED_STATUS="landed"
 elif [ "$CI_STATUS" = "failed" ]; then

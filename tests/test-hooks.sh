@@ -1512,6 +1512,151 @@ fi
 rm -f /tmp/inv-test.txt
 
 echo ""
+echo "=== Phase C — real-git-state integration tests ==="
+
+# 28. Invariant #2: stale worktree registry entry (dir gone, registry entry remains)
+# Create a tmp repo, add a worktree, then rmdir the path manually. Registry is stale.
+TMP_T28=$(mktemp -d)
+(
+  cd "$TMP_T28" && git init -q -b main
+  git config user.email t@t.t && git config user.name t
+  echo base > f.txt && git add f.txt && git commit -q -m base
+  git worktree add "$TMP_T28/wt28" -q -b branch-t28-$$
+  rm -rf "$TMP_T28/wt28"
+)
+OUT_T28=$(cd "$TMP_T28" && bash "$INV_SCRIPT" --worktree "$TMP_T28/wt28" 2>&1)
+RC_T28=$?
+rm -rf "$TMP_T28"
+if [ $RC_T28 -ne 0 ] && [[ "$OUT_T28" == *"INVARIANT-FAIL (#2)"* ]]; then
+  pass "post-run-invariants.sh: stale worktree registry entry → invariant #2 fails"
+else
+  fail "post-run-invariants.sh: stale registry — rc=$RC_T28, output: $OUT_T28"
+fi
+
+# 29. Invariant #4: remote branch lingering after landed
+# Build a local repo + bare-repo origin; push a branch; delete local branch; assert #4 fires.
+TMP_T29=$(mktemp -d)
+(
+  mkdir -p "$TMP_T29/bare.git"
+  cd "$TMP_T29/bare.git" && git init --bare -q
+) >/dev/null
+(
+  mkdir -p "$TMP_T29/local"
+  cd "$TMP_T29/local" && git init -q -b main
+  git config user.email t@t.t && git config user.name t
+  echo base > f.txt && git add f.txt && git commit -q -m base
+  git remote add origin "$TMP_T29/bare.git"
+  git push -q origin main
+  git branch zombie-remote-$$
+  git push -q origin zombie-remote-$$
+  git branch -D zombie-remote-$$ >/dev/null
+) >/dev/null
+OUT_T29=$(cd "$TMP_T29/local" && bash "$INV_SCRIPT" --branch "zombie-remote-$$" --landed-status landed 2>&1)
+RC_T29=$?
+rm -rf "$TMP_T29"
+if [ $RC_T29 -ne 0 ] && [[ "$OUT_T29" == *"INVARIANT-FAIL (#4)"* ]]; then
+  pass "post-run-invariants.sh: remote branch lingering after landed → invariant #4 fails"
+else
+  fail "post-run-invariants.sh: invariant #4 — rc=$RC_T29, output: $OUT_T29"
+fi
+
+# 30. Invariant #7: local main ahead of origin/main → WARN (not fail)
+# Build a local repo + bare-repo origin; push one commit; make another commit locally (not pushed).
+TMP_T30=$(mktemp -d)
+(
+  mkdir -p "$TMP_T30/bare.git"
+  cd "$TMP_T30/bare.git" && git init --bare -q
+) >/dev/null
+(
+  mkdir -p "$TMP_T30/local"
+  cd "$TMP_T30/local" && git init -q -b main
+  git config user.email t@t.t && git config user.name t
+  echo base > f.txt && git add f.txt && git commit -q -m base
+  git remote add origin "$TMP_T30/bare.git"
+  git push -q origin main
+  echo extra > g.txt && git add g.txt && git commit -q -m "local-ahead"
+) >/dev/null
+OUT_T30=$(cd "$TMP_T30/local" && bash "$INV_SCRIPT" 2>&1)
+RC_T30=$?
+rm -rf "$TMP_T30"
+# Invariant #7 is a WARN, not a fail — exit should still be 0. Output must contain WARN (#7).
+if [ $RC_T30 -eq 0 ] && [[ "$OUT_T30" == *"INVARIANT-WARN (#7)"* ]]; then
+  pass "post-run-invariants.sh: local-ahead-of-origin → invariant #7 warns (exit 0)"
+else
+  fail "post-run-invariants.sh: invariant #7 — rc=$RC_T30, output: $OUT_T30"
+fi
+
+# 31. land-phase.sh happy path (full -D force-delete flow end-to-end).
+# Create real worktree + branch, write status: landed, run the script.
+# Verify: worktree gone from disk, from registry, local branch -D'd.
+#
+# IMPORTANT: assert setup BEFORE invoking land-phase.sh. If `git worktree add`
+# silently fails, land-phase.sh short-circuits at "Worktree already removed"
+# (RC 0) and downstream checks pass vacuously. Pre-assert prevents
+# wrong-reason passes.
+TMP_T31=$(mktemp -d)
+(
+  # Bare repo as origin so ls-remote returns exit 2 (branch absent) — not
+  # exit 128 (no remote), which the hardened land-phase.sh now fails on.
+  mkdir -p "$TMP_T31/bare.git" && cd "$TMP_T31/bare.git" && git init --bare -q
+) >/dev/null 2>&1
+(
+  cd "$TMP_T31" && git init -q -b main
+  git config user.email t@t.t && git config user.name t
+  echo base > f.txt && git add f.txt && git commit -q -m base
+  git remote add origin "$TMP_T31/bare.git"
+  BRANCH="land-happy-$$"
+  git worktree add -b "$BRANCH" "$TMP_T31/wt-happy" -q
+  printf 'status: landed\n' > "$TMP_T31/wt-happy/.landed"
+) >/dev/null 2>&1
+# Pre-assertion: setup must have created the worktree and branch.
+SETUP_OK_T31=1
+[ -d "$TMP_T31/wt-happy" ] || SETUP_OK_T31=0
+git -C "$TMP_T31" show-ref --verify --quiet "refs/heads/land-happy-$$" || SETUP_OK_T31=0
+if [ "$SETUP_OK_T31" -ne 1 ]; then
+  rm -rf "$TMP_T31"
+  fail "land-phase.sh happy path: setup failed — worktree or branch not created"
+else
+  OUT_T31=$(cd "$TMP_T31" && bash "$LAND_SCRIPT" "$TMP_T31/wt-happy" 2>&1)
+  RC_T31=$?
+  DIR_GONE_T31=0
+  BRANCH_GONE_T31=0
+  [ ! -d "$TMP_T31/wt-happy" ] && DIR_GONE_T31=1
+  ! git -C "$TMP_T31" show-ref --verify --quiet "refs/heads/land-happy-$$" && BRANCH_GONE_T31=1
+  rm -rf "$TMP_T31"
+  if [ $RC_T31 -eq 0 ] && [ "$DIR_GONE_T31" -eq 1 ] && [ "$BRANCH_GONE_T31" -eq 1 ]; then
+    pass "land-phase.sh: happy path (status: landed) → worktree + local branch both removed (-D force-delete)"
+  else
+    fail "land-phase.sh: happy path — rc=$RC_T31, dir-gone=$DIR_GONE_T31, branch-gone=$BRANCH_GONE_T31, output: $OUT_T31"
+  fi
+fi
+
+# 32. land-phase.sh: origin unreachable (ls-remote exit 128) → fail loudly.
+# Regression test for the fix that distinguishes exit 2 (branch absent — skip)
+# from exit 128 (remote broken — abort). Pre-fix, a broken remote silently
+# passed as "already absent" and land-phase.sh continued happily. Now it
+# must error instead.
+TMP_T32=$(mktemp -d)
+(
+  cd "$TMP_T32" && git init -q -b main
+  git config user.email t@t.t && git config user.name t
+  echo base > f.txt && git add f.txt && git commit -q -m base
+  BRANCH="land-no-origin-$$"
+  git worktree add -b "$BRANCH" "$TMP_T32/wt-no-origin" -q
+  printf 'status: landed\n' > "$TMP_T32/wt-no-origin/.landed"
+  # Intentionally do NOT `git remote add origin ...` — ls-remote will fail
+  # with exit 128 "fatal: 'origin' does not appear to be a git repository".
+) >/dev/null 2>&1
+OUT_T32=$(cd "$TMP_T32" && bash "$LAND_SCRIPT" "$TMP_T32/wt-no-origin" 2>&1)
+RC_T32=$?
+rm -rf "$TMP_T32"
+if [ $RC_T32 -ne 0 ] && [[ "$OUT_T32" == *"origin unreachable"* ]]; then
+  pass "land-phase.sh: origin unreachable on landed status → exit 1 with specific 'origin unreachable' error (no silent skip)"
+else
+  fail "land-phase.sh: broken origin — rc=$RC_T32, output: $OUT_T32"
+fi
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 

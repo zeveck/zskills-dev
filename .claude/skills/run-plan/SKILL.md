@@ -1610,8 +1610,15 @@ turn will re-enter Phase 6, see the existing PR, and re-poll CI.
 if [ "$CI_STATUS" = "fail" ] && [ "$CI_MAX_ATTEMPTS" -gt 0 ]; then
   # Post initial CI status comment using gh api (returns comment ID).
   # gh pr comment does NOT return comment URL/ID, so we use the API directly.
+  # The `|| true` preserves the assignment on gh api failure (network/auth);
+  # downstream `[ -n "$COMMENT_ID" ]` guards the PATCH calls. We warn to
+  # stderr so the failure is visible instead of silently losing the PR-side
+  # commentary of the fix cycle.
   COMMENT_ID=$(gh api "repos/{owner}/{repo}/issues/$PR_NUMBER/comments" \
     -f body="**CI Status:** Investigating failure..." --jq '.id' 2>/dev/null || true)
+  if [ -z "$COMMENT_ID" ]; then
+    echo "WARNING: failed to create CI-status PR comment on #$PR_NUMBER (auth/network?) — fix cycle will not post updates" >&2
+  fi
 
   for ATTEMPT in $(seq 1 "$CI_MAX_ATTEMPTS"); do
     echo "CI fix attempt $ATTEMPT/$CI_MAX_ATTEMPTS..."
@@ -1627,7 +1634,8 @@ $(tail -50 "$CI_LOG" 2>/dev/null || echo "No failure log available")
 Attempting fix..."
     if [ -n "$COMMENT_ID" ]; then
       gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$COMMENT_ID" \
-        -f body="$COMMENT_BODY" 2>/dev/null || true
+        -f body="$COMMENT_BODY" 2>/dev/null \
+        || echo "WARNING: failed to update CI-status PR comment on attempt $ATTEMPT (auth/network?)" >&2
     fi
 
     # --- Dispatch CI fix agent ---
@@ -1725,7 +1733,8 @@ $(tail -50 "$CI_LOG" 2>/dev/null || echo "No failure log available")
   fi
   if [ -n "$COMMENT_ID" ]; then
     gh api -X PATCH "repos/{owner}/{repo}/issues/comments/$COMMENT_ID" \
-      -f body="$FINAL_BODY" 2>/dev/null || true
+      -f body="$FINAL_BODY" 2>/dev/null \
+      || echo "WARNING: failed to post final CI-status PR comment (auth/network?)" >&2
   fi
 fi
 ```
@@ -1738,16 +1747,32 @@ After CI resolution, request auto-merge and upgrade the `.landed` marker:
 # --- Auto-merge: request merge when CI passes ---
 # gh pr merge --auto --squash requires that auto-merge is enabled in the
 # GitHub repo settings (Settings > General > Allow auto-merge). It is OFF
-# by default. If not enabled, `--auto` returns exit code 1 with an error
-# about "Auto merge is not allowed for this repository". We suppress this
-# with `|| true`, and the PR stays open with status: pr-ready. The user
-# merges manually. This is the correct fallback -- pr-ready means "agent
-# work is done, PR is ready for human action."
+# by default. If not enabled, `--auto` exits non-zero with
+# "Auto merge is not allowed for this repository". That's an EXPECTED
+# fallback (PR stays open, agent writes status: pr-ready, user merges
+# manually). Any OTHER non-zero stderr — auth, network, rate-limit, PR
+# already merged, etc. — is an unexpected failure we want visible.
+# So: capture stderr, inspect it, suppress only the documented expected
+# error, warn loudly on anything else.
 if [ "$CI_STATUS" = "pass" ] || [ "$CI_STATUS" = "none" ] || [ "$CI_STATUS" = "skipped" ]; then
-  gh pr merge "$PR_NUMBER" --auto --squash 2>/dev/null || true
+  MERGE_ERR=$(gh pr merge "$PR_NUMBER" --auto --squash 2>&1 >/dev/null) || true
+  if [ -n "$MERGE_ERR" ]; then
+    if echo "$MERGE_ERR" | grep -qiE "auto[- ]merge is not allowed"; then
+      : # expected — repo doesn't have auto-merge enabled; fall through to pr-ready
+    else
+      echo "WARNING: gh pr merge --auto failed with unexpected error: $MERGE_ERR" >&2
+    fi
+  fi
   # Give GitHub a moment to process the merge
   sleep 5
-  PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+  # Distinguish "call failed" from "PR is OPEN". If the API call fails
+  # (network / auth / rate-limit), we default to OPEN to keep the flow
+  # going AND emit a warning so the failure is visible — downstream
+  # writes pr_state: OPEN into .landed, so be honest it's a guess.
+  if ! PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null); then
+    echo "WARNING: gh pr view failed for PR #$PR_NUMBER — defaulting pr_state to OPEN (may be stale; verify at PR URL)" >&2
+    PR_STATE="OPEN"
+  fi
 else
   PR_STATE="OPEN"
 fi
