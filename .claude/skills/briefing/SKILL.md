@@ -238,8 +238,10 @@ The agent runs `node scripts/briefing.cjs <subcommand>` and captures stdout.
 
 Each worktree is classified into exactly one category:
 
-- **`landed-full`** — `.landed` file with `status: full` (all commits on main)
-- **`landed-partial`** — `.landed` file with `status: partial` (some commits skipped)
+- **`landed-full`** — `.landed` file with `status: full` (fix-issues cherry-pick, all commits on main) or `status: landed` (run-plan cherry-pick or merged PR)
+- **`landed-partial`** — `.landed` file with `status: partial` (some commits skipped, needs review)
+- **`landed-pr-ready`** — `.landed` file with `status: pr-ready` (PR is open; worktree is safe to remove, remote branch must NOT be deleted — it supports the open PR)
+- **`landed-pr-needs-attention`** — `.landed` file with `status: pr-ci-failing`, `status: pr-failed`, or `status: conflict` (PR-mode errors that need manual action)
 - **`done-needs-review`** — No `.landed`, has commits, inactive > 2 hours
 - **`possibly-active`** — No `.landed`, modified within last 2 hours
 - **`empty`** — No `.landed`, zero commits ahead of main

@@ -15,6 +15,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh\"",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

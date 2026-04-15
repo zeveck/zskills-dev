@@ -512,14 +512,26 @@ Then register the hooks in `.claude/settings.json`. The format is:
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh\"",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-Note: only the `Bash` matcher is used for PreToolUse hooks. The hook scripts
-themselves only process Bash tool inputs (they exit early for other tools).
+Note: both `Bash` and `Agent` matchers are used for PreToolUse hooks. The `Bash`
+matcher hooks enforce command safety and tracking. The `Agent` matcher hook
+enforces `agents.min_model` — blocking subagent dispatches that specify a model
+below the configured minimum (haiku=1 < sonnet=2 < opus=3).
 
 Report: "Installed N hooks: [list]"
 

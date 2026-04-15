@@ -30,5 +30,9 @@
   "ci": {
     "auto_fix": true,
     "max_fix_attempts": 2
+  },
+
+  "agents": {
+    "min_model": "claude-sonnet-4-20250514"
   }
 }

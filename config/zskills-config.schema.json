@@ -112,6 +112,16 @@
           "description": "Maximum fix-and-push cycles when CI fails. 0 = poll and report only (no fix attempts). Each attempt comments on the PR with failure context."
         }
       }
+    },
+    "agents": {
+      "type": "object",
+      "description": "Agent dispatch configuration.",
+      "properties": {
+        "min_model": {
+          "type": "string",
+          "description": "Minimum model for subagent dispatch. The block-agents.sh hook enforces this at Agent tool dispatch time. Ordinal: haiku=1 < sonnet=2 < opus=3. Unknown model families always pass (future-proofing). Example: claude-sonnet-4-20250514"
+        }
+      }
     }
   }
 }

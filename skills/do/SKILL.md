@@ -330,6 +330,10 @@ Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` in the main session — write 
 
 **Step A6 — Dispatch implementation agent (wait for completion):**
 
+**Before dispatching:** Check `agents.min_model` in `.claude/zskills-config.json`. If set,
+use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch with a
+lower-ordinal model than the configured minimum.
+
 Dispatch an Agent (without `isolation: "worktree"` — the worktree already exists) with this prompt:
 
 ```

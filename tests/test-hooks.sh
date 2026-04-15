@@ -1140,6 +1140,105 @@ else
 fi
 
 echo ""
+
+# ─── block-agents.sh.template tests ───
+echo "=== block-agents.sh — agents.min_model enforcement ==="
+
+AGENTS_HOOK="$REPO_ROOT/hooks/block-agents.sh.template"
+
+# Helper: run agent hook with tool_name=Agent, optional model field
+run_agent_hook() {
+  local model_field="$1"    # e.g. '"model":"haiku"' or ""
+  local config_json="$2"    # content of .claude/zskills-config.json or ""
+  local tmp_repo
+  tmp_repo=$(mktemp -d)
+  mkdir -p "$tmp_repo/.claude"
+  (cd "$tmp_repo" && git init -q 2>/dev/null)
+
+  if [ -n "$config_json" ]; then
+    printf '%s\n' "$config_json" > "$tmp_repo/.claude/zskills-config.json"
+  fi
+
+  local tool_input
+  if [ -n "$model_field" ]; then
+    tool_input="{\"tool_name\":\"Agent\",\"tool_input\":{${model_field},\"prompt\":\"Do something\"}}"
+  else
+    tool_input="{\"tool_name\":\"Agent\",\"tool_input\":{\"prompt\":\"Do something\"}}"
+  fi
+
+  local result
+  result=$(echo "$tool_input" | REPO_ROOT="$tmp_repo" bash "$AGENTS_HOOK" 2>/dev/null)
+  rm -rf "$tmp_repo"
+  echo "$result"
+}
+
+# 1. No config → pass through (no enforcement)
+result=$(run_agent_hook '"model":"haiku"' "")
+if [[ -z "$result" ]]; then
+  pass "no config → always allow"
+else
+  fail "no config → expected allow, got: $result"
+fi
+
+# 2. min_model=sonnet, dispatch model=haiku → deny
+CONFIG_SONNET='{"agents":{"min_model":"claude-sonnet-4-20250514"}}'
+result=$(run_agent_hook '"model":"claude-haiku-4-20250514"' "$CONFIG_SONNET")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "min_model=sonnet, model=haiku → deny"
+else
+  fail "min_model=sonnet, model=haiku → expected deny, got: $result"
+fi
+
+# 3. min_model=sonnet, dispatch model=sonnet → allow
+result=$(run_agent_hook '"model":"claude-sonnet-4-20250514"' "$CONFIG_SONNET")
+if [[ -z "$result" ]]; then
+  pass "min_model=sonnet, model=sonnet → allow"
+else
+  fail "min_model=sonnet, model=sonnet → expected allow, got: $result"
+fi
+
+# 4. min_model=sonnet, dispatch model=opus → allow
+result=$(run_agent_hook '"model":"claude-opus-4-20250514"' "$CONFIG_SONNET")
+if [[ -z "$result" ]]; then
+  pass "min_model=sonnet, model=opus → allow"
+else
+  fail "min_model=sonnet, model=opus → expected allow, got: $result"
+fi
+
+# 5. min_model=sonnet, no model in tool_input → allow (unknown=0, pass-through)
+result=$(run_agent_hook "" "$CONFIG_SONNET")
+if [[ -z "$result" ]]; then
+  pass "min_model=sonnet, no model field → allow (residual case)"
+else
+  fail "min_model=sonnet, no model field → expected allow, got: $result"
+fi
+
+# 6. Non-Agent tool_name → ignore entirely
+result=$(echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | bash "$AGENTS_HOOK" 2>/dev/null)
+if [[ -z "$result" ]]; then
+  pass "non-Agent tool_name → pass through (not our concern)"
+else
+  fail "non-Agent tool_name → expected silent pass, got: $result"
+fi
+
+# 7. min_model=haiku, dispatch model=haiku → allow (haiku meets haiku)
+CONFIG_HAIKU='{"agents":{"min_model":"claude-haiku-4-20250514"}}'
+result=$(run_agent_hook '"model":"claude-haiku-4-20250514"' "$CONFIG_HAIKU")
+if [[ -z "$result" ]]; then
+  pass "min_model=haiku, model=haiku → allow"
+else
+  fail "min_model=haiku, model=haiku → expected allow, got: $result"
+fi
+
+# 8. Unknown model family → always allow (future-proofing)
+result=$(run_agent_hook '"model":"claude-nova-4-20250514"' "$CONFIG_SONNET")
+if [[ -z "$result" ]]; then
+  pass "unknown model family (claude-nova) → allow (ordinal=0 passes)"
+else
+  fail "unknown model family → expected allow, got: $result"
+fi
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 

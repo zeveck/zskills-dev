@@ -254,7 +254,7 @@ function classifyWorktrees(opts = {}) {
       }
     }
 
-    if (landedData && landedData.status === 'full') {
+    if (landedData && (landedData.status === 'full' || landedData.status === 'landed')) {
       return {
         path: wt.path,
         name,
@@ -282,7 +282,35 @@ function classifyWorktrees(opts = {}) {
       };
     }
 
-    // No .landed — check mtime
+    if (landedData && landedData.status === 'pr-ready') {
+      return {
+        path: wt.path,
+        name,
+        branch,
+        category: 'landed-pr-ready',
+        isNamed: false,
+        ahead: counts.ahead,
+        behind: counts.behind,
+        landed: landedData,
+        purpose,
+      };
+    }
+
+    if (landedData && ['pr-ci-failing', 'pr-failed', 'conflict'].includes(landedData.status)) {
+      return {
+        path: wt.path,
+        name,
+        branch,
+        category: 'landed-pr-needs-attention',
+        isNamed: false,
+        ahead: counts.ahead,
+        behind: counts.behind,
+        landed: landedData,
+        purpose,
+      };
+    }
+
+    // No .landed (or unrecognized status) — check mtime
     const mtime = getWorktreeMtime(wt.path, name, mainPath);
 
     if (counts.ahead === 0) {
@@ -700,6 +728,15 @@ function formatSummary(worktrees, checkboxes, commits, opts = {}) {
     needsAttention.push(`  ! worktree ${wt.name} — ${skippedCount} skipped ${skipWord}`);
   }
 
+  // PR-mode needs-attention worktrees
+  const prNeedsAttention = worktrees.filter(wt => wt.category === 'landed-pr-needs-attention');
+  for (const wt of prNeedsAttention) {
+    const status = wt.landed ? wt.landed.status : 'unknown';
+    const prUrl = wt.landed ? wt.landed.pr || '' : '';
+    const prNote = prUrl ? ` — PR: ${prUrl}` : '';
+    needsAttention.push(`  ! worktree ${wt.name} — status: ${status}${prNote}`);
+  }
+
   // Uncommitted changes on main
   const uncommitted = opts.uncommitted !== undefined
     ? opts.uncommitted
@@ -809,6 +846,8 @@ function formatSummary(worktrees, checkboxes, commits, opts = {}) {
     if (wtCounts['done-needs-review']) parts.push(`${wtCounts['done-needs-review']} need review`);
     if (wtCounts['possibly-active']) parts.push(`${wtCounts['possibly-active']} active`);
     if (wtCounts['landed-full']) parts.push(`${wtCounts['landed-full']} landed`);
+    if (wtCounts['landed-pr-ready']) parts.push(`${wtCounts['landed-pr-ready']} pr-ready`);
+    if (wtCounts['landed-pr-needs-attention']) parts.push(`${wtCounts['landed-pr-needs-attention']} pr-needs-attention`);
     if (wtCounts['empty']) parts.push(`${wtCounts['empty']} empty`);
     if (wtCounts['named']) parts.push(`${wtCounts['named']} named`);
     if (wtCounts['orphaned']) parts.push(`${wtCounts['orphaned']} orphaned`);
@@ -869,7 +908,7 @@ function formatReport(worktrees, checkboxes, commits, opts = {}) {
   // Summary counts
   const needReview = worktrees.filter(wt => wt.category === 'done-needs-review').length;
   const inFlightCount = worktrees.filter(wt => wt.category === 'possibly-active').length;
-  const landedCount = worktrees.filter(wt => wt.category === 'landed-full' || wt.category === 'landed-partial').length;
+  const landedCount = worktrees.filter(wt => ['landed-full', 'landed-partial', 'landed-pr-ready'].includes(wt.category)).length;
   const uncheckedCount = checkboxes.length;
   const cbFiles = new Set(checkboxes.map(cb => cb.file));
 
@@ -882,7 +921,8 @@ function formatReport(worktrees, checkboxes, commits, opts = {}) {
   // Needs Attention
   const doneReview = worktrees.filter(wt => wt.category === 'done-needs-review');
   const landedPartial = worktrees.filter(wt => wt.category === 'landed-partial');
-  if (doneReview.length > 0 || landedPartial.length > 0 || checkboxes.length > 0) {
+  const prNeedsAttention = worktrees.filter(wt => wt.category === 'landed-pr-needs-attention');
+  if (doneReview.length > 0 || landedPartial.length > 0 || prNeedsAttention.length > 0 || checkboxes.length > 0) {
     lines.push('## Needs Attention');
     lines.push('');
 
@@ -924,6 +964,15 @@ function formatReport(worktrees, checkboxes, commits, opts = {}) {
       for (const s of skipped) {
         lines.push(`- Skipped: ${s}`);
       }
+      lines.push('');
+    }
+
+    // PR-mode needs-attention
+    for (const wt of prNeedsAttention) {
+      const status = wt.landed ? wt.landed.status : 'unknown';
+      const prUrl = wt.landed ? wt.landed.pr || '' : '';
+      const prNote = prUrl ? ` — PR: ${prUrl}` : '';
+      lines.push(`### [ ] PR attention: ${wt.name} (status: ${status}${prNote})`);
       lines.push('');
     }
   }
@@ -1078,6 +1127,20 @@ function formatVerify(worktrees, checkboxes, opts = {}) {
     lines.push('');
   }
 
+  // PR-mode needs attention
+  const prAttention = worktrees.filter(wt => wt.category === 'landed-pr-needs-attention');
+  if (prAttention.length > 0) {
+    hasContent = true;
+    lines.push(`PR NEEDS ATTENTION (${prAttention.length} — inspect and resolve)`);
+    for (const wt of prAttention) {
+      const status = wt.landed ? wt.landed.status : 'unknown';
+      const prUrl = wt.landed ? wt.landed.pr || '' : '';
+      const prNote = prUrl ? ` — ${prUrl}` : '';
+      lines.push(`  ${wt.name} (status: ${status}${prNote})`);
+    }
+    lines.push('');
+  }
+
   if (!hasContent) {
     return 'ALL CLEAR — no pending items.';
   }
@@ -1128,6 +1191,31 @@ function formatCurrent(worktrees, opts = {}) {
       const commitWord = wt.ahead === 1 ? 'commit' : 'commits';
       const age = wt.mtime ? formatRelativeTime(now - wt.mtime) : 'unknown';
       lines.push(`  ${wt.name}  ${wt.ahead} ${commitWord}  ${age}`);
+    }
+    lines.push('');
+  }
+
+  // PR-ready worktrees (worktree safe to remove; open PR)
+  const prReady = worktrees.filter(wt => wt.category === 'landed-pr-ready');
+  if (prReady.length > 0) {
+    lines.push(`PR OPEN — WORKTREE SAFE TO REMOVE (${prReady.length})`);
+    for (const wt of prReady) {
+      const prUrl = wt.landed ? wt.landed.pr || '' : '';
+      const prNote = prUrl ? `  PR: ${prUrl}` : '';
+      lines.push(`  ${wt.name}${prNote}`);
+    }
+    lines.push('');
+  }
+
+  // PR-mode needs attention
+  const prAttention = worktrees.filter(wt => wt.category === 'landed-pr-needs-attention');
+  if (prAttention.length > 0) {
+    lines.push(`PR NEEDS ATTENTION (${prAttention.length})`);
+    for (const wt of prAttention) {
+      const status = wt.landed ? wt.landed.status : 'unknown';
+      const prUrl = wt.landed ? wt.landed.pr || '' : '';
+      const prNote = prUrl ? `  PR: ${prUrl}` : '';
+      lines.push(`  ${wt.name}  status: ${status}${prNote}`);
     }
     lines.push('');
   }

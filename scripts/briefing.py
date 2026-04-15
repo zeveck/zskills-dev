@@ -257,7 +257,7 @@ def classify_worktrees(repo_root=None):
             except Exception:
                 pass
 
-        if landed_data and landed_data.get('status') == 'full':
+        if landed_data and landed_data.get('status') in ('full', 'landed'):
             results.append({
                 'path': wt['path'],
                 'name': name,
@@ -285,7 +285,35 @@ def classify_worktrees(repo_root=None):
             })
             continue
 
-        # No .landed — check mtime
+        if landed_data and landed_data.get('status') == 'pr-ready':
+            results.append({
+                'path': wt['path'],
+                'name': name,
+                'branch': branch,
+                'category': 'landed-pr-ready',
+                'isNamed': False,
+                'ahead': counts['ahead'],
+                'behind': counts['behind'],
+                'landed': landed_data,
+                'purpose': purpose,
+            })
+            continue
+
+        if landed_data and landed_data.get('status') in ('pr-ci-failing', 'pr-failed', 'conflict'):
+            results.append({
+                'path': wt['path'],
+                'name': name,
+                'branch': branch,
+                'category': 'landed-pr-needs-attention',
+                'isNamed': False,
+                'ahead': counts['ahead'],
+                'behind': counts['behind'],
+                'landed': landed_data,
+                'purpose': purpose,
+            })
+            continue
+
+        # No .landed (or unrecognized status) — check mtime
         mtime = get_worktree_mtime(wt['path'], name, main_path)
 
         if counts['ahead'] == 0:
@@ -793,6 +821,14 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
         skip_word = 'commit' if skipped_count == 1 else 'commits'
         needs_attention.append(f'  ! worktree {wt["name"]} — {skipped_count} skipped {skip_word}')
 
+    # PR-mode needs-attention worktrees
+    pr_needs_attention = [wt for wt in worktrees if wt['category'] == 'landed-pr-needs-attention']
+    for wt in pr_needs_attention:
+        status = wt.get('landed', {}).get('status', 'unknown') if wt.get('landed') else 'unknown'
+        pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+        pr_note = f' — PR: {pr_url}' if pr_url else ''
+        needs_attention.append(f'  ! worktree {wt["name"]} — status: {status}{pr_note}')
+
     # Uncommitted changes on main
     uncommitted = opts.get('uncommitted')
     if uncommitted is None:
@@ -882,6 +918,10 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
             parts.append(f'{wt_counts["possibly-active"]} active')
         if wt_counts.get('landed-full'):
             parts.append(f'{wt_counts["landed-full"]} landed')
+        if wt_counts.get('landed-pr-ready'):
+            parts.append(f'{wt_counts["landed-pr-ready"]} pr-ready')
+        if wt_counts.get('landed-pr-needs-attention'):
+            parts.append(f'{wt_counts["landed-pr-needs-attention"]} pr-needs-attention')
         if wt_counts.get('empty'):
             parts.append(f'{wt_counts["empty"]} empty')
         if wt_counts.get('named'):
@@ -935,7 +975,7 @@ def format_report(worktrees, checkboxes, commits, opts=None):
     # Summary counts
     need_review = len([wt for wt in worktrees if wt['category'] == 'done-needs-review'])
     in_flight_count = len([wt for wt in worktrees if wt['category'] == 'possibly-active'])
-    landed_count = len([wt for wt in worktrees if wt['category'] in ('landed-full', 'landed-partial')])
+    landed_count = len([wt for wt in worktrees if wt['category'] in ('landed-full', 'landed-partial', 'landed-pr-ready')])
     unchecked_count = len(checkboxes)
     cb_files = set(cb['file'] for cb in checkboxes)
 
@@ -948,7 +988,8 @@ def format_report(worktrees, checkboxes, commits, opts=None):
     # Needs Attention
     done_review = [wt for wt in worktrees if wt['category'] == 'done-needs-review']
     landed_partial = [wt for wt in worktrees if wt['category'] == 'landed-partial']
-    if done_review or landed_partial or checkboxes:
+    pr_needs_attention = [wt for wt in worktrees if wt['category'] == 'landed-pr-needs-attention']
+    if done_review or landed_partial or pr_needs_attention or checkboxes:
         lines.append('## Needs Attention')
         lines.append('')
 
@@ -983,6 +1024,14 @@ def format_report(worktrees, checkboxes, commits, opts=None):
             lines.append(f'### [ ] Partial: {wt["name"]} ({len(skipped)} skipped)')
             for s in skipped:
                 lines.append(f'- Skipped: {s}')
+            lines.append('')
+
+        # PR-mode needs-attention
+        for wt in pr_needs_attention:
+            status = wt.get('landed', {}).get('status', 'unknown') if wt.get('landed') else 'unknown'
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f' — PR: {pr_url}' if pr_url else ''
+            lines.append(f'### [ ] PR attention: {wt["name"]} (status: {status}{pr_note})')
             lines.append('')
 
     # Landed on Main
@@ -1104,6 +1153,18 @@ def format_verify(worktrees, checkboxes, opts=None):
                 lines.append(f'    Skipped: {s}')
         lines.append('')
 
+    # PR-mode needs attention
+    pr_attention = [wt for wt in worktrees if wt['category'] == 'landed-pr-needs-attention']
+    if pr_attention:
+        has_content = True
+        lines.append(f'PR NEEDS ATTENTION ({len(pr_attention)} — inspect and resolve)')
+        for wt in pr_attention:
+            status = wt.get('landed', {}).get('status', 'unknown') if wt.get('landed') else 'unknown'
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f' — {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]} (status: {status}{pr_note})')
+        lines.append('')
+
     if not has_content:
         return 'ALL CLEAR — no pending items.'
 
@@ -1143,6 +1204,27 @@ def format_current(worktrees, opts=None):
             commit_word = 'commit' if wt['ahead'] == 1 else 'commits'
             age = format_relative_time(now - wt['mtime']) if wt.get('mtime') else 'unknown'
             lines.append(f'  {wt["name"]}  {wt["ahead"]} {commit_word}  {age}')
+        lines.append('')
+
+    # PR-ready worktrees (worktree safe to remove; open PR)
+    pr_ready = [wt for wt in worktrees if wt['category'] == 'landed-pr-ready']
+    if pr_ready:
+        lines.append(f'PR OPEN — WORKTREE SAFE TO REMOVE ({len(pr_ready)})')
+        for wt in pr_ready:
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f'  PR: {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]}{pr_note}')
+        lines.append('')
+
+    # PR-mode needs attention
+    pr_attention = [wt for wt in worktrees if wt['category'] == 'landed-pr-needs-attention']
+    if pr_attention:
+        lines.append(f'PR NEEDS ATTENTION ({len(pr_attention)})')
+        for wt in pr_attention:
+            status = wt.get('landed', {}).get('status', 'unknown') if wt.get('landed') else 'unknown'
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f'  PR: {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]}  status: {status}{pr_note}')
         lines.append('')
 
     # Empty worktrees

@@ -194,6 +194,10 @@ candidates and waits for the user to select which to close.
 
 ### Step 2 — Research & verify
 
+**Before dispatching any Agent:** check `agents.min_model` in `.claude/zskills-config.json`.
+If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch
+with a lower-ordinal model than the configured minimum.
+
 Dispatch research agents for every open issue that lacks a research blurb
 in its tracker file. Each agent does:
 
@@ -661,6 +665,10 @@ and dispatches agents WITHOUT `isolation: "worktree"`.** See the "PR mode
 (Phase 3)" section below for the exact worktree setup. For `cherry-pick` and
 `direct` modes, use the default `isolation: "worktree"` pattern described here.
 
+**Before dispatching any fix Agent:** check `agents.min_model` in `.claude/zskills-config.json`.
+If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch
+with a lower-ordinal model than the configured minimum.
+
 **1 issue per agent, parallel dispatch.** Each issue gets its own agent
 in its own worktree (`isolation: "worktree"` for cherry-pick/direct, or a
 manually-created `fix/issue-NNN` worktree for `pr` mode). **Dispatch at
@@ -818,6 +826,11 @@ printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
   "$(TZ=America/New_York date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.sprint"
 ```
+
+**Before dispatching any verification Agent:** check `agents.min_model` in
+`.claude/zskills-config.json`. If set, use that model or higher (ordinal:
+haiku=1 < sonnet=2 < opus=3). Never dispatch with a lower-ordinal model than
+the configured minimum.
 
 After each agent completes, **dispatch a fresh agent** to run `/verify-changes
 worktree` in its worktree. Do NOT run verification yourself — you wrote
