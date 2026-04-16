@@ -348,9 +348,37 @@ Before parsing, check for stale state from a previous failed run:
    ```bash
    grep -q '{{' .claude/hooks/block-unsafe-project.sh 2>/dev/null
    ```
-   If found AND test infrastructure exists (`package.json` with a `"test"`
-   script, or `vitest.config.*` / `jest.config.*` exists), **STOP.** Hook
-   placeholders have not been configured — run `/update-zskills` first.
+   This gate is an **early-exit mirror** of the hook's own commit-block:
+   when `FULL_TEST_CMD` has unreplaced placeholders AND test infrastructure
+   exists, the hook will block the eventual `git commit` with *"Test
+   infrastructure detected but FULL_TEST_CMD not configured"* — so
+   catching it at preflight just prevents wasted work. Its job is to
+   notice when a project *has* test infrastructure but the hook doesn't
+   yet know about it.
+
+   Three cases, report each explicitly so the reasoning is legible:
+
+   - **Placeholders found AND test infra exists** — where test infra means
+     any of: `package.json` with a `"test"` script, `vitest.config.*`,
+     `jest.config.*`, `pytest.ini`, `.mocharc.*`, or `Makefile` (this list
+     must match `block-unsafe-project.sh:134-147` exactly, otherwise
+     preflight under-reports and the hook still blocks at commit time):
+     **STOP.** Hook placeholders have not been configured — run
+     `/update-zskills` first, or (if this plan's purpose is to configure
+     them) have the plan land those changes in an early phase before real
+     enforcement matters. Report: *"hook-placeholder gate tripped:
+     placeholders present AND test infra detected — stopping."*
+   - **Placeholders found, no test infra**: gate silent, proceed. This is
+     either a fresh/bootstrap project or one with no tests by design. If
+     the plan establishes tests, **it should also fill the hook
+     placeholders** (`UNIT_TEST_CMD`, `FULL_TEST_CMD`, and
+     `UI_FILE_PATTERNS` in `.claude/hooks/block-unsafe-project.sh`) in the
+     same phase, so subsequent runs have real enforcement. Report: *"gate
+     silent: placeholders present but no test infra yet — bootstrap or
+     tests-by-design; if this plan adds tests, also fill the hook
+     placeholders."*
+   - **No placeholders**: hook is configured, nothing to do. Report:
+     *"hook configured; gate n/a."*
 
 5. **Clean up landed worktrees from previous phases**
    ```bash
