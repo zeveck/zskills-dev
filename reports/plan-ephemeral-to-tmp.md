@@ -1,5 +1,34 @@
 # Plan Report — Route ephemeral test outputs to /tmp
 
+## Phase — 2 Update skill recipes + mirrors [UNFINALIZED]
+
+**Plan:** plans/EPHEMERAL_TO_TMP.md
+**Status:** Verified in worktree (cherry-pick pending)
+**Worktree:** /tmp/zskills-cp-ephemeral-to-tmp-phase-2
+**Branch:** cp-ephemeral-to-tmp-2
+**Commit on feature branch:** 8c2cfe5
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | skills/run-plan/SKILL.md — hygiene prose, impl recipe ×2, retry, baseline, verifier dispatch, verifier compare, code-comment | Done (23 TEST_OUT refs) |
+| 2 | skills/verify-changes/SKILL.md — recipe ×2, prose refs ×3 | Done |
+| 3 | skills/investigate/SKILL.md — recipe + prose ref | Done |
+| 4 | skills/fix-issues/SKILL.md — remove cleanup .test-results.txt (keep grep filter) | Done |
+| 5 | skills/update-zskills/SKILL.md — skipped (only config example, stays as-is per plan) | N/A |
+| 6 | All 4 mirrors synced via batch-cp | Done |
+
+### Verification
+- Scope: `✓ Clean` — exactly 8 files (4 source + 4 mirror), no scope creep
+- Mirror sync: `diff -rq` → all identical
+- Acceptance grep: 44 hits, all intentional (new idiom, hygiene prose, fix-issues filter, config example)
+- Zero bare writable `> .test-results.txt` redirects remain
+- DA1 (verifier cwd): PASS — explicit `<worktree-path>` + orchestrator-runtime note
+- DA2 (hygiene canary): PASS — filenames retained in "should NEVER appear" prose
+- DA7 (fix-issues filter): PASS — `\.test-results` in grep-v preserved
+- Tests: 235/235 passed, 0 failed
+- Verifier report: `reports/verify-worktree-zskills-cp-ephemeral-to-tmp-phase-2.md`
+
 ## Phase — 1 Update CLAUDE.md + CLAUDE_TEMPLATE.md with canonical idiom (landed)
 
 **Plan:** plans/EPHEMERAL_TO_TMP.md
