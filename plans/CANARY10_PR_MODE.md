@@ -157,3 +157,9 @@ Requires real GitHub state: a real remote, real PR creation, real CI
 execution, real merge. These cannot be mocked in `tests/run-all.sh`
 without a full GitHub-API fake. The user has committed to running
 this by hand post-restoration.
+
+## Validation history
+
+| Date       | Result | Notes |
+|------------|--------|-------|
+| 2026-04-16 | PASS   | All 9 checks. PR #19 created, CI (`test` job) passed in 9s, auto-merged to main as squash commit `8a0273e`. Remote branch auto-deleted. Local main fast-forwarded cleanly (ahead=0, behind=0). Chunked execution fired on schedule: Phase 1 implement marker 13:42 UTC, Phase 2 implement marker 13:44 UTC (delta 335s, >> 60s threshold). Confirmed the TZ fix (system-local UTC) works end-to-end in PR mode. |
