@@ -1153,7 +1153,10 @@ Three branches:
    esac
    ```
 
-   On attempt 1, schedule the verify cron (~1 min from now):
+   On attempt 1, schedule the verify cron (~1 min from now). TZ note: the
+   `date +%M` calls below use SYSTEM-local TZ, which is what CronCreate
+   expects. Do NOT override with `TZ=America/New_York` — see the warning
+   in "How to schedule the next cron" below for why this breaks the cron.
    ```bash
    NOW_MIN=$(date +%M); NOW_HOUR=$(date +%H)
    NOW_DAY=$(date +%d); NOW_MONTH=$(date +%m)
@@ -1365,7 +1368,13 @@ model — do NOT hold landing until all phases complete.
 ### How to schedule the next cron
 
 ```bash
-# Compute target minute that's NOT :00 or :30 (to avoid scheduler jitter)
+# Compute target minute that's NOT :00 or :30 (to avoid scheduler jitter).
+# CRITICAL: `date +%M` uses SYSTEM-local TZ, and CronCreate reads the cron
+# expression in SYSTEM-local TZ. Do NOT "fix" these to `TZ=America/New_York
+# date +%M` — that encodes ET into the expression while CronCreate expects
+# system-local, producing a cron pinned to a date/time that's already
+# passed (next fire ~365 days out). The user-facing message uses ET for
+# readability; the cron expression itself MUST stay system-local.
 NOW_MIN=$(date +%M)
 NOW_HOUR=$(date +%H)
 NOW_DAY=$(date +%d)
