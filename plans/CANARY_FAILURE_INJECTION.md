@@ -182,7 +182,9 @@ Rationale for choices:
 
 ### tests/run-all.sh integration
 
-Phase 1 adds ONE line after the existing `run_suite "test-hooks.sh"` line:
+Phase 1 adds ONE line at the end of the existing `run_suite` block in
+`tests/run-all.sh` (after `run_suite "test-scope-halt.sh"`, which is
+currently the last entry after the RESTORE Phase-F additions):
 
 ```bash
 run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"
@@ -227,8 +229,8 @@ prevention.
 - [ ] Create `tests/fixtures/canary/` directory (initially empty — add
       a `.gitkeep` so the directory is tracked).
 - [ ] Add `run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"`
-      to `tests/run-all.sh`, immediately after the existing
-      `run_suite "test-hooks.sh"` line.
+      to `tests/run-all.sh` at the end of the existing `run_suite` block
+      (after `run_suite "test-scope-halt.sh"` — the current last entry).
 - [ ] Append `section "Stash writes denied (6 cases)"` with 6 tests:
 
   | Command | Expected deny substring |

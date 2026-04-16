@@ -3,12 +3,17 @@
 __pycache__/
 .zskills/tracking/
 .zskills-tracked
-.test-results.txt
-.test-results-integration.txt
-.review-diff.txt
-.git-diff-full.txt
+
+# Ephemeral agent artifacts (test outputs, diff captures, lifecycle markers).
+# Wildcards catch current + future variants so we don't have to whack-a-mole
+# one filename at a time. Real fix is to route test outputs to /tmp — see
+# plans/EPHEMERAL_TMP_MIGRATION.md (if/when drafted).
+.test-*.txt
+.*-results.txt
+.*-results-*.txt
+.*-diff.txt
+.*-diff-*.txt
 .worktreepurpose
 .landed
-.test-baseline.txt
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
