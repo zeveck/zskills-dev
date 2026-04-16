@@ -37,7 +37,7 @@ confirmed they're happy to run this manually.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Create canary10 file | ⬜ | | Trivial file create (PR mode) |
+| 1 -- Create canary10 file | 🟡 In Progress | `bbec8c3` | PR-mode, commit on feature branch |
 | 2 -- Append second line   | ⬜ | | Trivial append (PR mode)      |
 
 ## Phase 1 -- Create canary10 file
