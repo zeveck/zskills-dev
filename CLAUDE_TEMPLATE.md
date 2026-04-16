@@ -39,10 +39,18 @@ command that ran them.
 
 **NEVER thrash on a failing fix.** If you attempt a fix, run tests, and the same test fails again, STOP. Do not try a third approach to the same problem -- you are guessing and will keep guessing wrong. Report: (1) what you tried, (2) what failed both times, (3) why you think it's failing. Let the user decide the next step. This applies to all retry loops: fix+verify cycles, test failures after cherry-pick, and any "fix -> test -> still fails" pattern. Two attempts at the same error is the maximum.
 
-**Capture test output to a file, never pipe.** Always run tests with:
-`{{FULL_TEST_CMD}} > {{TEST_OUTPUT_FILE}} 2>&1` -- then read the file to
-inspect failures. Never pipe through `| tail`, `| head`, `| grep` -- it
-loses output and forces re-runs.
+**Capture test output to a file, never pipe.** Route test output OUT of
+the working tree so it never shows up in `git status`. The canonical idiom
+is:
+
+```bash
+TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
+mkdir -p "$TEST_OUT"
+{{FULL_TEST_CMD}} > "$TEST_OUT/.test-results.txt" 2>&1
+```
+
+Then read `"$TEST_OUT/.test-results.txt"` to inspect failures. Never pipe
+through `| tail`, `| head`, `| grep` -- it loses output and forces re-runs.
 
 **Pre-existing test failures.** If a test fails in code you didn't touch,
 verify with `git log` that the test/source predates your changes. You may

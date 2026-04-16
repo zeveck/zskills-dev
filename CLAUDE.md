@@ -28,10 +28,24 @@ Skill distribution repo and presentation site for Z Skills.
 
 **NEVER thrash on a failing fix.** If you attempt a fix, run tests, and the same test fails again, STOP. Do not try a third approach to the same problem -- you are guessing and will keep guessing wrong. Report: (1) what you tried, (2) what failed both times, (3) why you think it's failing. Let the user decide the next step. This applies to all retry loops: fix+verify cycles, test failures after cherry-pick, and any "fix -> test -> still fails" pattern. Two attempts at the same error is the maximum.
 
-**Capture test output to a file, never pipe.** Always run tests with:
-`<test-cmd> > .test-results.txt 2>&1` -- then read the file to
-inspect failures. Never pipe through `| tail`, `| head`, `| grep` -- it
-loses output and forces re-runs.
+**Capture test output to a file, never pipe.** Route test output OUT of
+the working tree so it never shows up in `git status`. The canonical idiom
+is:
+
+```bash
+TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
+mkdir -p "$TEST_OUT"
+<test-cmd> > "$TEST_OUT/.test-results.txt" 2>&1
+```
+
+Then read `"$TEST_OUT/.test-results.txt"` to inspect failures. Never pipe
+through `| tail`, `| head`, `| grep` -- it loses output and forces re-runs.
+`/tmp/zskills-tests/` is per-worktree-basename, so parallel pipelines do
+not collide. `scripts/land-phase.sh` removes the per-worktree dir on
+successful landing. Always compute `$TEST_OUT` from `$(pwd)` AFTER you
+have `cd`-ed into the correct repo/worktree root; or derive it from an
+explicit `$WORKTREE_PATH` the caller passes you (never assume cwd if you
+were just handed a path).
 
 **Never suppress errors on operations you need to verify.** Do not use
 `2>/dev/null` on commands whose success matters (git worktree remove,
