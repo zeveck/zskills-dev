@@ -7,3 +7,8 @@ __pycache__/
 .test-results-integration.txt
 .review-diff.txt
 .git-diff-full.txt
+.worktreepurpose
+.landed
+.test-baseline.txt
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
