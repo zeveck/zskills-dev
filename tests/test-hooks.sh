@@ -1686,6 +1686,188 @@ else
 fi
 
 echo ""
+echo "=== Pipeline scoping filter: A–F (cross-pipeline marker isolation) ==="
+
+# test_pipeline_scoping_filter — the foundation for CANARY8's claim
+# that parallel pipelines don't cross-block. If these cases pass,
+# the suffix-match filter in hooks/block-unsafe-project.sh.template
+# is mechanically guaranteed to isolate one pipeline's tracking
+# markers from another.
+#
+# Naming convention mirrors real pipeline naming:
+#   research-and-go.<SCOPE>        — parent meta-orchestrator
+#   run-plan.meta-<SCOPE>          — meta-plan (META_ prefix from Phase B)
+#   run-plan.<SUB_PLAN_SLUG>       — each sub-plan
+#
+# The hook strips the leading prefix via ${PIPELINE_ID#*.} and
+# pattern-matches against each marker's basename. Two pipelines
+# with different suffixes after that stripping cannot cross-block.
+test_pipeline_scoping_filter() {
+  # Case A — exact-match enforce: marker .meta-foo + PIPELINE_ID
+  # run-plan.meta-foo + code commit → hook BLOCKS.
+  setup_project_test
+  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.meta-foo\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_deny "git commit -m test"
+  teardown_project_test
+
+  # Case B — sub-plan does not see parent's marker: same marker +
+  # PIPELINE_ID run-plan.foo-backend → hook ALLOWS.
+  setup_project_test
+  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.foo-backend\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_allow "git commit -m test"
+  teardown_project_test
+
+  # Case C — research-and-go scope does NOT see meta marker:
+  # PIPELINE_ID research-and-go.foo, marker .meta-foo. Suffix after
+  # stripping is `foo`; pattern `*.foo` requires base to end with
+  # literal `.foo`. `meta-foo` ends with `-foo`, not `.foo`. No match
+  # → hook ALLOWS. This is what makes the SCOPE/META_PLAN_SLUG
+  # distinction safe.
+  setup_project_test
+  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\nZSKILLS_PIPELINE_ID=research-and-go.foo\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_allow "git commit -m test"
+  teardown_project_test
+
+  # Case D — collision case (edge): same suffix after stripping.
+  # PIPELINE_ID research-and-go.meta-foo, marker .meta-foo. Both
+  # strip to `meta-foo`; pattern `*.meta-foo` matches base ending
+  # `.meta-foo`. → hook BLOCKS. Documents that users must not pick
+  # goal descriptions whose SCOPE collides with META_PLAN_SLUG
+  # naming. Not a normal scenario — requires hand-crafted inputs.
+  setup_project_test
+  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\nZSKILLS_PIPELINE_ID=research-and-go.meta-foo\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_deny "git commit -m test"
+  teardown_project_test
+
+  # Case E — empty PIPELINE_ID (no .zskills-tracked, no transcript
+  # declaration) → no association → skip enforcement → hook ALLOWS.
+  # Per hook's "Neither → unrelated session → skip enforcement"
+  # branch (line 207 of block-unsafe-project.sh.template).
+  setup_project_test
+  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_allow "git commit -m test"
+  teardown_project_test
+
+  # Case F — no marker present at all: empty tracking dir + any
+  # PIPELINE_ID + code commit → hook ALLOWS.
+  setup_project_test
+  # tracking dir is empty (no marker files)
+  (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+  rm -f "$TEST_TMPDIR/.transcript"
+  printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.meta-foo\n' > "$TEST_TMPDIR/.transcript"
+  expect_project_allow "git commit -m test"
+  teardown_project_test
+}
+test_pipeline_scoping_filter
+
+echo ""
+echo "=== /verify-changes \$ARGUMENTS parser (extracted from skill) ==="
+
+# test_verify_changes_arg_parser — re-implements the parser from
+# skills/verify-changes/SKILL.md under "Parsing $ARGUMENTS" and
+# exercises it against token strings. Locks down Phase H's parser
+# before any cron-fired use.
+#
+# The parser is a small for-token case statement:
+#   tracking-id=X  → TRACKING_ID=X
+#   worktree|branch|last → SCOPE=<token>
+#   [0-9]*         → if SCOPE=="last", SCOPE="last N"
+# Order-independent; unknown tokens are tolerated (ignored).
+test_verify_changes_arg_parser() {
+  parse_args() {
+    SCOPE=""
+    TRACKING_ID=""
+    for tok in $1; do
+      case "$tok" in
+        tracking-id=*) TRACKING_ID="${tok#tracking-id=}" ;;
+        worktree|branch|last) SCOPE="$tok" ;;
+        [0-9]*) [ "$SCOPE" = "last" ] && SCOPE="last $tok" ;;
+      esac
+    done
+  }
+
+  # Case 1: branch + tracking-id (the cron-fired use pattern)
+  parse_args "branch tracking-id=meta-foo"
+  if [ "$SCOPE" = "branch" ] && [ "$TRACKING_ID" = "meta-foo" ]; then
+    pass "parser: 'branch tracking-id=meta-foo' → SCOPE=branch, TRACKING_ID=meta-foo"
+  else
+    fail "parser: branch+tracking — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 2: token-order independence
+  parse_args "tracking-id=meta-foo branch"
+  if [ "$SCOPE" = "branch" ] && [ "$TRACKING_ID" = "meta-foo" ]; then
+    pass "parser: 'tracking-id=meta-foo branch' → same as Case 1 (order-independent)"
+  else
+    fail "parser: reversed-order — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 3: worktree alone
+  parse_args "worktree"
+  if [ "$SCOPE" = "worktree" ] && [ -z "$TRACKING_ID" ]; then
+    pass "parser: 'worktree' → SCOPE=worktree, TRACKING_ID=''"
+  else
+    fail "parser: worktree — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 4: last N
+  parse_args "last 3"
+  if [ "$SCOPE" = "last 3" ] && [ -z "$TRACKING_ID" ]; then
+    pass "parser: 'last 3' → SCOPE='last 3', TRACKING_ID=''"
+  else
+    fail "parser: last-N — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 5: branch + tracking-id + extra junk token (tolerated)
+  parse_args "branch tracking-id=meta-foo extra-junk-token"
+  if [ "$SCOPE" = "branch" ] && [ "$TRACKING_ID" = "meta-foo" ]; then
+    pass "parser: extra junk token tolerated (ignored silently)"
+  else
+    fail "parser: junk-tolerated — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 6: bare 'last' without a number — SCOPE stays 'last', no trailing N
+  parse_args "last"
+  if [ "$SCOPE" = "last" ] && [ -z "$TRACKING_ID" ]; then
+    pass "parser: bare 'last' → SCOPE=last (no N)"
+  else
+    fail "parser: bare-last — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 7: numeric token without preceding 'last' is ignored.
+  parse_args "branch 5"
+  if [ "$SCOPE" = "branch" ] && [ -z "$TRACKING_ID" ]; then
+    pass "parser: '5' without 'last' context → ignored (SCOPE stays 'branch')"
+  else
+    fail "parser: number-without-last — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+
+  # Case 8: empty arguments
+  parse_args ""
+  if [ -z "$SCOPE" ] && [ -z "$TRACKING_ID" ]; then
+    pass "parser: empty input → both empty"
+  else
+    fail "parser: empty — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
+  fi
+}
+test_verify_changes_arg_parser
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 
