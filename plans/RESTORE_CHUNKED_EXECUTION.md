@@ -186,7 +186,7 @@ the reconciliation points above.
 | C -- Tool-list-aware dispatch in 4 skills | ✅ Done | `3f0f8c2` | 4 skills restored | | | run-plan, fix-issues, verify-changes, add-block |
 | D -- /research-and-plan prohibition explanation | ✅ Done | `3f6e9c9` | Full ~38-line section restored | | | ~38-line block restoration |
 | E -- Early requires-lockdown in /run-plan | ✅ Done | `f7f3475` | Marker at entry | | | Move marker creation to Phase 1 step 8 |
-| H -- Scope-vs-plan judgment in /verify-changes | ⏳ Pending | | Extends review prompt + report; /run-plan halts on flags |
+| H -- Scope-vs-plan judgment in /verify-changes | ✅ Done | `8e5634d` | Scope vs plan Q + Scope Assessment + halt-on-flag check |
 | G -- Orphaned-reference reconciliation | ⏳ Pending | | 4 sites, mostly zero-diff (after A) |
 | F -- Invariants test + behavioral canaries | ⏳ Pending | | Static asserts all + behavioral canaries |
 

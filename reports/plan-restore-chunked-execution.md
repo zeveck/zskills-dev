@@ -48,3 +48,38 @@
 - All acceptance criteria: PASSED
 - Mirror sync: PASSED
 - Scope discipline: PASSED (2 files only)
+
+## Phase — H Scope-vs-plan Judgment in /verify-changes
+
+**Plan:** plans/RESTORE_CHUNKED_EXECUTION.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-cp-restore-chunked-execution-phase-H
+**Branch:** phase-H-scope-vs-plan
+**Commit:** 8e5634d (cherry-picked from 7452e1e)
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | `### Parsing $ARGUMENTS` subsection in /verify-changes | Done |
+| 2 | Branch-scope `MARKER_STEM` switch (2 sites: Tracking Fulfillment + Phase 7) | Done |
+| 3 | "Scope vs plan" bullet in per-file review checklist (credits faab84b) | Done |
+| 4 | "Scope Assessment" report section (mandatory in branch scope) | Done |
+| 5 | Cron-fired top-level invocation example in Arguments | Done |
+| 6 | /run-plan Phase 6 pre-landing 6th bail-out (halt-on-flag) | Done |
+| 7 | Mirror skills/verify-changes to .claude/skills/verify-changes | Done |
+| 8 | Mirror skills/run-plan to .claude/skills/run-plan | Done |
+
+### Verification
+- Test suite: PASSED (163/163)
+- All 5 AC grep checks: PASSED
+- Mirror sync: PASSED (both diff -q clean)
+- Scope discipline: PASSED (exactly 4 files: skills/verify-changes, mirror; skills/run-plan, mirror)
+- Fresh-eyes verifier: ACCEPT
+- Self-scope check: no flags — all 4 files enumerated in plan Work Items
+
+### Forward-compat risk flagged
+The halt check greps `⚠️ Flag` globally in the verify report. Verify reports
+may mention "⚠️ Flag" in prose (checklist descriptions), not just in the
+Scope Assessment table. Future Phase G and F verify reports could spuriously
+trigger the halt. Consider narrowing the grep to `| ⚠️ Flag |` (table-cell
+form) in a follow-up if G/F hit false-positive halts.
