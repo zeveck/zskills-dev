@@ -182,7 +182,7 @@ the reconciliation points above.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | A -- Chunked finish auto in /run-plan | ✅ Done | `f0e51b9` | Step 0 + Phase 5b gate + Phase 5c | | | Step 0 + Phase 5b gate + Phase 5c (chunked transition only) |
-| B -- Cross-branch final verify in /research-and-go | ⏳ Pending | | Pre-decide path; write marker at Step 0 |
+| B -- Cross-branch final verify in /research-and-go | 🟡 In Progress | | Pre-decide path; write marker at Step 0 |
 | C -- Tool-list-aware dispatch in 4 skills | ⏳ Pending | | run-plan, fix-issues, verify-changes, add-block |
 | D -- /research-and-plan prohibition explanation | ⏳ Pending | | ~38-line block restoration |
 | E -- Early requires-lockdown in /run-plan | ⏳ Pending | | Move marker creation to Phase 1 step 8 |
