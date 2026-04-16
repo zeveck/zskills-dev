@@ -106,3 +106,51 @@ form) in a follow-up if G/F hit false-positive halts.
 
 ### Plan spec's advisory line numbers vs reality
 Plan specified lines 673 and 730 in run-plan/SKILL.md; actual matches are at 717 and 774 (drift from prior edits). Content-anchored — accurate.
+
+## Phase — F Invariants Test + Behavioral Canaries
+
+**Plan:** plans/RESTORE_CHUNKED_EXECUTION.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-cp-restore-chunked-execution-phase-F
+**Branch:** phase-F-canaries-invariants
+**Commit:** 45445ad (cherry-picked from f583b30)
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | tests/test-skill-invariants.sh (new, 27 assertions) | Done |
+| 2 | tests/test-phase-5b-gate.sh (new, state machine + backoff) | Done |
+| 3 | tests/test-scope-halt.sh (new, halt detection) | Done |
+| 4 | tests/test-hooks.sh extended (6 pipeline-scoping + 8 arg-parser) | Done |
+| 5 | tests/run-all.sh extended (3 new run_suite lines) | Done |
+| 6 | plans/CANARY7_CHUNKED_FINISH.md (new) | Done |
+| 7 | plans/CANARY8_PARALLEL.md (new) | Done |
+| 8 | plans/CANARY9_FINAL_VERIFY.md (new) | Done |
+| 9 | plans/CANARY10_PR_MODE.md (new) | Done |
+| 10 | plans/CANARY11_SCOPE_VIOLATION.md (new) | Done |
+
+### Verification
+- Full test suite (main): PASSED — Overall 235/235, 0 failed
+  - test-hooks.sh: 177/177 (163 baseline + 14 new)
+  - test-port.sh: 4/4
+  - test-briefing-parity.sh: 11/11
+  - test-skill-invariants.sh: 27/27 (new)
+  - test-phase-5b-gate.sh: 10/10 (new)
+  - test-scope-halt.sh: 6/6 (new)
+- Artificial-break validation: PASSED (impl + verify agents both re-ran; renaming "Idempotent re-entry check" → "Idempotent check" caused 2 failures (invariant + mirror-sync); reverting restored 27/27)
+- Scope discipline: PASSED (exactly 10 files; no skill/hook/script/.claude modifications)
+- Fresh-eyes verifier: ACCEPT
+- Scope Assessment table: all 10 files "Yes" (no flags)
+- Verify report written without the flag glyph in prose (kept out of prose per instruction) — Phase H halt check PASSED (grep -c "⚠️ Flag" returned 0)
+
+### Plan completion
+All 8 phases (A-H) now landed. Every feature destroyed by faab84b is restored, with:
+- Automated test coverage locking down anchor presence
+- Pipeline scoping unit tests proving parallel pipelines don't cross-block
+- State-machine coverage for Phase 5b's self-rescheduling final-verify gate
+- Halt-on-scope-flag coverage for /run-plan's pre-landing check
+- Manual canary procedures (CANARY7-11) for the LLM-judgment and real-cron behaviors that can't be automated
+
+### Forward-compat follow-ups (not in this plan)
+1. Narrow the halt check grep from `"⚠️ Flag"` to `"| ⚠️ Flag |"` (table-cell form) to avoid prose false-positives. test-scope-halt.sh case 4 currently documents the substring behavior as "conservative: false-positive bias is a safety feature"; if tightened, update that test.
+2. If CANARY10 (PR mode E2E) is run and finds issues, those are outside this plan's scope.

@@ -188,7 +188,7 @@ the reconciliation points above.
 | E -- Early requires-lockdown in /run-plan | ✅ Done | `f7f3475` | Marker at entry | | | Move marker creation to Phase 1 step 8 |
 | H -- Scope-vs-plan judgment in /verify-changes | ✅ Done | `8e5634d` | Scope vs plan Q + Scope Assessment + halt-on-flag check |
 | G -- Orphaned-reference reconciliation | ✅ Done | `N/A` | Zero-diff: all 4 sites already accurate post-Phase-A |
-| F -- Invariants test + behavioral canaries | ⏳ Pending | | Static asserts all + behavioral canaries |
+| F -- Invariants test + behavioral canaries | ✅ Done | `45445ad` | 3 new test scripts + extended test-hooks + 5 canary plans (10 files) |
 
 ### Dependency graph and execution order
 
