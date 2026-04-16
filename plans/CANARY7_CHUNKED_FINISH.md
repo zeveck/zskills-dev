@@ -127,3 +127,9 @@ vibe:
 If all 5 checks pass: chunked finish auto is working. If any fail, file
 an issue with the plan path, Phase 1 & Phase 2 marker mtimes, the
 CronList snapshot, and the transcript of the turn that fails the check.
+
+## Validation history
+
+| Date       | Result | Notes |
+|------------|--------|-------|
+| 2026-04-16 | PASS   | All 5 checks (see `reports/plan-canary7-chunked-finish.md`). Phase 1 mtime 12:22:36 UTC, Phase 2 12:43:58 UTC, delta 1282s. Cron `7ca5e96b` (replaced `fa5ad488` which had a TZ bug) observed between turns. Surfaced a skill fix: don't `TZ=America/New_York date +%M` override the cron expression (commit `d1b96bb`). |

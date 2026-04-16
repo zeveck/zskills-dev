@@ -158,3 +158,9 @@ LLM judgment quality cannot be asserted with a grep. It requires:
 
 The bash mechanism (halt when flag present) IS automated
 (`tests/test-scope-halt.sh`). The LLM quality is what CANARY11 tests.
+
+## Validation history
+
+| Date       | Result | Notes |
+|------------|--------|-------|
+| 2026-04-16 | PASS   | Reviewer flagged `canary/unrelated.txt` deletion with `⚠️ Flag`, citing plan's Acceptance Criterion #2 ("Only canary11.txt changed"). Halt detection fired with exit 1 + `HALTED` on stderr. Worktree not cherry-picked. Fixtures left on main (`canary/canary11.txt`, `canary/unrelated.txt`, `plans/CANARY11_TEST_PLAN.md`) for future re-runs; setup commit `ca43e7b`. |
