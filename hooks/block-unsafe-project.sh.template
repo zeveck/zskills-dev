@@ -112,7 +112,7 @@ else
 fi
 
 if [[ "$INPUT" =~ $TEST_PIPE_PATTERN ]] && [[ "$INPUT" == *'|'* ]]; then
-  block_with_reason "Don't pipe test output -- it loses failure details. Instead: ${FULL_TEST_CMD:-npm run test:all} > .test-results.txt 2>&1 then read the file. To inspect results, grep the captured file."
+  block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD:-npm run test:all} > \"\$TEST_OUT/.test-results.txt\" 2>&1 then read \"\$TEST_OUT/.test-results.txt\" to inspect failures."
 fi
 
 # --- main_protected: block git commit on main ---

@@ -77,6 +77,17 @@ for f in "${EPHEMERAL_FILES[@]}"; do
   fi
 done
 
+# Remove the per-worktree /tmp test-output directory, if it exists.
+# Non-fatal: /tmp housekeeping must never block worktree cleanup.
+TEST_OUT_DIR="/tmp/zskills-tests/$(basename "$WORKTREE_PATH")"
+if [ -d "$TEST_OUT_DIR" ]; then
+  if rm -rf "$TEST_OUT_DIR"; then
+    :
+  else
+    echo "WARNING: failed to remove $TEST_OUT_DIR (non-fatal; will be cleaned at next reboot or manually)"
+  fi
+fi
+
 # .landed is also untracked, so it blocks `git worktree remove`. Remove it
 # right before removal, but SAVE its content so we can restore on failure
 # (preserving proof-of-landing for retry/diagnosis).

@@ -943,6 +943,9 @@ printf 'baseline output\n' > "$LAND_TMPDIR/.test-baseline.txt"
 printf 'test results\n' > "$LAND_TMPDIR/.test-results.txt"
 printf 'purpose\n' > "$LAND_TMPDIR/.worktreepurpose"
 printf 'pipeline-id\n' > "$LAND_TMPDIR/.zskills-tracked"
+TMP_TEST_OUT="/tmp/zskills-tests/$(basename "$LAND_TMPDIR")"
+mkdir -p "$TMP_TEST_OUT"
+printf 'dummy\n' > "$TMP_TEST_OUT/.test-results.txt"
 LAND_OUTPUT=$(bash "$LAND_SCRIPT" "$LAND_TMPDIR" 2>&1)
 LAND_RC=$?
 # Expect: script tried to remove the artifacts, then git worktree remove failed
@@ -954,11 +957,14 @@ ARTIFACTS_GONE=0
 [ ! -f "$LAND_TMPDIR/.zskills-tracked" ] && ARTIFACTS_GONE=$((ARTIFACTS_GONE+1))
 MARKER_PRESERVED=0
 [ -f "$LAND_TMPDIR/.landed" ] && MARKER_PRESERVED=1
+TEST_OUT_GONE=0
+[ ! -d "$TMP_TEST_OUT" ] && TEST_OUT_GONE=1
 rm -rf "$LAND_TMPDIR"
-if [ "$ARTIFACTS_GONE" -eq 4 ] && [ "$MARKER_PRESERVED" -eq 1 ]; then
-  pass "land-phase.sh: removes artifacts (incl. .test-baseline.txt) but preserves .landed on failure"
+rm -rf "$TMP_TEST_OUT"
+if [ "$ARTIFACTS_GONE" -eq 4 ] && [ "$MARKER_PRESERVED" -eq 1 ] && [ "$TEST_OUT_GONE" -eq 1 ]; then
+  pass "land-phase.sh: removes worktree artifacts AND /tmp test-out dir, preserves .landed on failure"
 else
-  fail "land-phase.sh: artifacts cleanup — gone=$ARTIFACTS_GONE/4, marker=$MARKER_PRESERVED, output: $LAND_OUTPUT"
+  fail "land-phase.sh: artifacts cleanup — gone=$ARTIFACTS_GONE/4, marker=$MARKER_PRESERVED, tmp_out_gone=$TEST_OUT_GONE, output: $LAND_OUTPUT"
 fi
 
 echo ""
