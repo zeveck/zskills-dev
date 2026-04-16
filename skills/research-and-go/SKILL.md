@@ -68,6 +68,41 @@ echo "ZSKILLS_PIPELINE_ID=research-and-go.$SCOPE"
 This echo is read by the tracking hook from the session transcript to scope
 marker checks to this pipeline only. It must happen before any git operation.
 
+**Pre-decide the meta-plan path** so the final-verify marker can be written
+immediately (gate is in place from pipeline start):
+
+```bash
+SCOPE_UPPER=$(echo "$SCOPE" | tr 'a-z-' 'A-Z_')
+META_PLAN_PATH="plans/META_${SCOPE_UPPER}.md"
+META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
+# Convention matches /run-plan TRACKING_ID derivation
+# (skills/run-plan/SKILL.md:388-398).
+```
+
+**Lock down the final cross-branch verification requirement immediately.**
+The pipeline will end with a top-level `/verify-changes branch` invocation
+that runs as a cron-fired turn after the meta-plan execution completes. By
+creating the requirement marker NOW (before any implementation), the hook
+will block any commit on main until this final verification has been
+fulfilled. The orchestrator cannot skip the final cross-branch check.
+
+```bash
+printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\nmeta_plan=%s\nmeta_plan_slug=%s\ncreatedAt=%s\n' \
+  "$META_PLAN_PATH" "$META_PLAN_SLUG" "$(date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$META_PLAN_SLUG"
+```
+
+The marker is named with the meta-plan slug to match the pipeline scope the
+meta-plan `/run-plan` will emit (`run-plan.<META_PLAN_SLUG>`). The hook's
+pipeline-scoping pattern (`*.${PIPELINE_ID#*.}` in
+`hooks/block-unsafe-project.sh.template:250`) enforces this marker on the
+meta-plan orchestrator's commits but NOT on sub-plan commits (sub-plans run
+under their own scopes). Note: hook enforcement is gated on `CODE_FILES`
+being non-empty (hook line 243); since the meta-plan's pipeline-completion
+commit is content-only, the hook is a backstop -- `/run-plan` Phase 5c does
+the orchestrator-level check that actually defers Phase 5b until the
+fulfillment marker exists.
+
 ### Re-run Handling
 
 If `pipeline.research-and-go.$SCOPE` already exists and this is a deliberate
@@ -85,7 +120,7 @@ re-run of the same goal:
 
 Invoke `/research-and-plan` with `auto`, `parent=research-and-go`, and the full description:
 
-`/research-and-plan auto parent=research-and-go <description>`
+`/research-and-plan output $META_PLAN_PATH auto parent=research-and-go <description>`
 
 This:
 
@@ -97,7 +132,10 @@ This:
    (each gets full adversarial review in its own context)
 6. Writes the meta-plan with pure implementation phases
 
-The meta-plan file path comes back from `/research-and-plan`.
+The meta-plan path is pre-decided by `/research-and-go` at Step 0 and
+passed to `/research-and-plan` via the `output` argument --
+`/research-and-plan` writes the meta-plan to that path. Confirm the path
+was written successfully (file exists and is non-empty) before proceeding.
 
 ## Step 1b — Lock Down Requirements
 
@@ -160,63 +198,66 @@ the argument entirely when `LANDING_ARG=""`.
 
 ### Construct the /run-plan cron prompt
 
-The cron prompt MUST place `$LANDING_ARG` between `auto` and `every` so
-that `/run-plan` parses it correctly. Build the prompt conditionally to
-avoid empty-token confusion:
+Build the prompt conditionally to avoid empty-token confusion. The cron is
+one-shot (`recurring: false`). Chunked finish auto self-perpetuates via
+`/run-plan` Phase 5c -- each completed phase schedules the next turn. The
+user-facing `every N` argument on `/run-plan` is unaffected; this change
+only removes the hardcoded wrapper from `/research-and-go`'s kickoff.
 
 ```bash
 if [ -n "$LANDING_ARG" ]; then
-  RUN_PROMPT="Run /run-plan <meta-plan-path> finish auto $LANDING_ARG every 4h now"
+  RUN_PROMPT="Run /run-plan $META_PLAN_PATH finish auto $LANDING_ARG"
 else
-  RUN_PROMPT="Run /run-plan <meta-plan-path> finish auto every 4h now"
+  RUN_PROMPT="Run /run-plan $META_PLAN_PATH finish auto"
 fi
 ```
 
-Immediately run the resulting invocation — conceptually:
+Immediately run the resulting invocation -- conceptually:
 
 ```
-/run-plan <meta-plan-path> finish auto [pr|direct] every 4h now
+/run-plan $META_PLAN_PATH finish auto [pr|direct]
 ```
 
 Concrete examples:
-- Goal "Add dark mode" → `/run-plan <meta-plan-path> finish auto`
-- Goal "Add thermal domain. PR." → `/run-plan <meta-plan-path> finish auto pr`
-- Goal "Refactor logs direct" → `/run-plan <meta-plan-path> finish auto direct`
+- Goal "Add dark mode" -> `/run-plan $META_PLAN_PATH finish auto`
+- Goal "Add thermal domain. PR." -> `/run-plan $META_PLAN_PATH finish auto pr`
+- Goal "Refactor logs direct" -> `/run-plan $META_PLAN_PATH finish auto direct`
 
-This executes all implementation phases sequentially — each delegating
-to `/run-plan` on the corresponding sub-plan. Full verification,
-testing, and landing at each phase.
+This executes all implementation phases sequentially -- each delegating
+to `/run-plan` on the corresponding sub-plan via chunked cron-fired turns.
+Full verification, testing, and landing at each phase.
 
-## Step 3 — Report
+## Step 3 — Final cross-branch verification (scheduled by /run-plan, not here)
 
-When `/run-plan finish auto` completes (or fails), report:
+After the meta-plan's last sub-plan completes its last phase, `/run-plan`
+Phase 5c detects the `requires.verify-changes.final.$META_PLAN_SLUG`
+marker. It schedules:
 
-> **`/research-and-go` complete.**
-> Goal: [original description]
-> Sub-plans: N drafted, M executed successfully
-> Meta-plan: `plans/<META_PLAN>.md`
-> Report: `reports/plan-<slug>.md`
->
-> [If any phase failed: which one and why]
+1. A cron firing `Run /verify-changes branch tracking-id=$META_PLAN_SLUG`
+2. A re-entry cron firing `Run /run-plan $META_PLAN_PATH finish auto`
+
+The verify cron runs at top level (full Agent tool), performs cross-branch
+verification (`git diff main...HEAD`), and on success writes
+`fulfilled.verify-changes.final.$META_PLAN_SLUG`. The re-entry cron then
+completes Phase 5b (mark plan complete) cleanly. The user sees the verify
+report as the final turn before the pipeline is truly complete.
+
+Reference: scheduling logic lives in `/run-plan` Phase 5c (Phase A). This
+Step 3 is documentation only -- `/research-and-go` has already exited at
+the end of Step 2.
 
 ### Pipeline Cleanup
 
-After successful completion (all phases passed), clean up all tracking files:
+Under chunked finish auto, `/research-and-go` Step 2 schedules a cron and
+exits -- Step 3 never runs in-session. Cleanup happens when the user (or a
+future automation) observes the pipeline is complete. Run
+`bash scripts/clear-tracking.sh` (interactive) to wipe tracking. Do NOT
+auto-wipe -- `requires.verify-changes.final.*` and its fulfillment marker
+are pipeline-completion records that should survive until the user confirms
+the pipeline finished.
 
-```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-rm -f "$MAIN_ROOT/.zskills/tracking"/*
-```
-
-After the pipeline completes, clean up the sentinel:
-
-```bash
-rm -f "$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.$SCOPE"
-```
-
-If any phase failed, do NOT clean up tracking files — they serve as a record of
-what was accomplished and what remains, enabling a re-run to pick up where this
-run left off (see Step 0 Re-run Handling).
+If the pipeline failed at any point, tracking is preserved for inspection
+and re-run. See Step 0 Re-run Handling for the resume protocol.
 
 ## Key Rules
 
