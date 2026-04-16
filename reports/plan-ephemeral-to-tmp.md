@@ -1,12 +1,12 @@
 # Plan Report — Route ephemeral test outputs to /tmp
 
-## Phase — 2 Update skill recipes + mirrors [UNFINALIZED]
+## Phase — 2 Update skill recipes + mirrors (landed)
 
 **Plan:** plans/EPHEMERAL_TO_TMP.md
-**Status:** Verified in worktree (cherry-pick pending)
-**Worktree:** /tmp/zskills-cp-ephemeral-to-tmp-phase-2
-**Branch:** cp-ephemeral-to-tmp-2
-**Commit on feature branch:** 8c2cfe5
+**Status:** Landed on main
+**Worktree:** /tmp/zskills-cp-ephemeral-to-tmp-phase-2 (cleaned up)
+**Branch:** cp-ephemeral-to-tmp-2 (deleted)
+**Commit on main:** d60e6eb (cherry-picked from 8c2cfe5)
 
 ### Work Items
 | # | Item | Status |
