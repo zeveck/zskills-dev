@@ -34,13 +34,17 @@ through multi-phase plans autonomously.
   plan is complete. `finish` is approval to START — do not ask for
   confirmation before the first phase (the user already said "finish").
   Without `auto`: pauses BETWEEN phases to show results and ask "continue
-  to next phase?" With `auto`: runs all phases without pausing (overnight).
+  to next phase?" With `auto`: each phase runs as its own cron-fired
+  top-level turn (~1–2 min between phases via one-shot crons scheduled by
+  Phase 5c). The first phase runs immediately; each subsequent phase is
+  scheduled after the prior phase lands. Preserves fresh context per
+  phase — no late-phase fatigue.
   Each phase still gets full verification, testing, and all safety rails.
   If any phase fails verification or hits a conflict, stops there.
-  **`finish` and `every` are mutually exclusive.** `finish` runs all phases
-  in one session. `every` schedules one phase per cron fire. Combining them
-  is meaningless — `finish` either completes (cron self-terminates) or fails
-  (Failure Protocol kills the cron). Use one or the other.
+  **`finish` and `every` are mutually exclusive.** `finish auto` schedules
+  its own ~1-min one-shot crons internally. `every N` schedules a recurring
+  cron at user-set cadence. Combining them would produce two overlapping
+  cron schedules. Use one or the other.
 - **auto** (optional) — bypass approval gates, auto-land to main via cherry-pick
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
@@ -138,7 +142,7 @@ Examples:
 - `/run-plan plans/FEATURE_PLAN.md` — interactive, next phase
 - `/run-plan plans/FEATURE_PLAN.md 4b` — interactive, specific phase
 - `/run-plan plans/FEATURE_PLAN.md finish` — interactive, all remaining phases (pauses between each)
-- `/run-plan plans/FEATURE_PLAN.md finish auto` — autonomous, all remaining phases (no pausing)
+- `/run-plan plans/FEATURE_PLAN.md finish auto` — autonomous, all remaining phases (chunked, one phase per cron turn)
 - `/run-plan plans/FEATURE_PLAN.md auto every 4h` — schedule every 4h
 - `/run-plan plans/FEATURE_PLAN.md auto every 4h now` — schedule + run now
 - `/run-plan plans/FEATURE_PLAN.md finish auto pr` — autonomous, all phases, PR landing
@@ -288,6 +292,35 @@ comprehension rather than rigid parsing.
 
 Before parsing, check for stale state from a previous failed run:
 
+0. **Idempotent re-entry check (chunked finish auto only).** If running
+   with `finish auto`, this turn may have been triggered by a cron from
+   a previous turn. Re-emit the pipeline ID first (cron-fired turns are
+   fresh sessions):
+   ```bash
+   TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')
+   echo "ZSKILLS_PIPELINE_ID=run-plan.$TRACKING_ID"
+   ```
+
+   Then read the plan frontmatter (`status` field) and the plan tracker
+   (phase statuses). Four cases:
+
+   1. **Frontmatter `status: complete`**: plan truly done. Exit with
+      "Plan complete (already)." No more work, no more crons.
+   2. **All phases Done + frontmatter NOT complete**: Phase 5b needs to
+      run (it owns the final-verify gate logic via its new first
+      sub-step). Skip Phase 1 sub-steps 1–9 and Phases 2–5; **route
+      directly to Phase 5b**. Phase 5b's gate handles the
+      verify-pending vs verify-fulfilled vs no-marker cases — single
+      source of truth, no duplicated logic in Step 0.
+   3. **Next-target phase already In Progress** (per tracker): output
+      "Phase X already in progress, deferring." Exit cleanly.
+   4. **Otherwise**: proceed with normal preflight (steps 1–9) then
+      Phase 2.
+
+   Stale crons are harmless — duplicate fires exit cleanly via this
+   check. Re-entry routes to Phase 5b which owns verify-pending state
+   and self-rescheduling.
+
 1. **In-progress git operation?**
    ```bash
    ls .git/CHERRY_PICK_HEAD .git/MERGE_HEAD .git/REBASE_HEAD 2>/dev/null
@@ -349,8 +382,12 @@ Before parsing, check for stale state from a previous failed run:
 3. **Determine target phase:**
    - If phase arg given: use it. If already complete, warn (or skip in auto)
    - If no phase arg: first incomplete phase
-   - If ALL phases complete: report "Plan complete" → stop. If `every`,
-     delete the cron via `CronList` + `CronDelete`
+   - If ALL phases complete:
+     - If frontmatter `status: complete`: report "Plan complete" → stop.
+       If `every`, delete the cron via `CronList` + `CronDelete`.
+     - If frontmatter NOT complete: route to Phase 5b directly (Phase 5b's
+       gate handles final-verify deferral; if final-verify is satisfied or
+       not required, Phase 5b completes the plan).
    - If multiple phases share the same number (e.g., 4a, 4b, 4c), treat
      each sub-phase as a separate phase
 
@@ -788,6 +825,12 @@ printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
   "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
 ```
+> **Note:** This is the per-pipeline verification requirement
+> (`requires.verify-changes.$TRACKING_ID`). It is **distinct** from
+> `requires.verify-changes.final.<META_PLAN_SLUG>` which is a cross-branch
+> final verification marker with a different lifecycle — created by
+> `/research-and-go` Step 0, fulfilled after ALL sub-plans complete. Phase A
+> does not modify or consolidate this marker; the two coexist independently.
 Pass the tracking ID to the verification agent in the dispatch prompt so it
 can create its own fulfillment marker:
 > Your tracking ID is `$TRACKING_ID`. On entry, create
@@ -1026,6 +1069,113 @@ Triggers when ALL phases are done: either the last phase just finished
 (single-phase run where it was the only remaining phase), or in `finish`
 mode after all phases complete. Run this BEFORE Phase 6 (Land).
 
+### 0a. Idempotent early-exit
+
+If frontmatter is already `status: complete`: this is a no-op re-entry.
+Exit cleanly without re-committing. Output "Plan already complete (no-op)."
+
+### 0b. Final-verify gate
+
+**Only applies if a final-verify marker exists.** Check for the cross-branch
+final-verify marker:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+MARKER="$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$TRACKING_ID"
+FULFILLED="$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.final.$TRACKING_ID"
+```
+
+Three branches:
+
+1. **Marker exists AND fulfilled missing**: defer pipeline completion until
+   `/verify-changes branch` runs at top level. Use self-rescheduling pattern
+   with exponential backoff.
+
+   Rationale: `/verify-changes branch` can take 5–60 min depending on
+   cumulative diff size; a fixed-time second cron risks firing before
+   fulfillment exists, causing visible "still pending" turns.
+
+   Read attempt counter file:
+   `$MAIN_ROOT/.zskills/tracking/verify-pending-attempts.$TRACKING_ID`
+   (numeric content; absent = 0). On each invocation:
+
+   - Increment attempt counter, write back to file.
+   - Compute backoff: `attempt 1: 10min, 2: 20min, 3: 40min, 4+: 60min`
+     (capped at 60min).
+   - On attempt 1 only: schedule the verify cron itself —
+     `Run /verify-changes branch tracking-id=$TRACKING_ID` one-shot,
+     ~1 min from now.
+   - On every attempt: schedule re-entry cron —
+     `Run /run-plan <plan-file> finish auto` one-shot, `<backoff>` from now.
+   - Exit with message:
+     > Final cross-branch verify pending (attempt <N>). Re-entry scheduled
+     > in <backoff>. Verify cron: <id-if-attempt-1>. Re-entry cron: <id>.
+
+   Do NOT run Phase 5b sub-steps 1–4. Do NOT run Phase 5c. Do NOT run
+   Phase 6.
+
+   ```bash
+   # Self-rescheduling with exponential backoff
+   ATTEMPTS_FILE="$MAIN_ROOT/.zskills/tracking/verify-pending-attempts.$TRACKING_ID"
+   if [ -f "$ATTEMPTS_FILE" ]; then
+     ATTEMPT=$(( $(cat "$ATTEMPTS_FILE") + 1 ))
+   else
+     ATTEMPT=1
+   fi
+   echo "$ATTEMPT" > "$ATTEMPTS_FILE"
+
+   # Compute backoff minutes: 10, 20, 40, 60 (capped)
+   case "$ATTEMPT" in
+     1) BACKOFF_MIN=10 ;;
+     2) BACKOFF_MIN=20 ;;
+     3) BACKOFF_MIN=40 ;;
+     *) BACKOFF_MIN=60 ;;
+   esac
+   ```
+
+   On attempt 1, schedule the verify cron (~1 min from now):
+   ```bash
+   NOW_MIN=$(date +%M); NOW_HOUR=$(date +%H)
+   NOW_DAY=$(date +%d); NOW_MONTH=$(date +%m)
+   TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
+   if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
+     TARGET_MIN=$(( TARGET_MIN + 1 ))
+   fi
+   TARGET_HOUR=$NOW_HOUR
+   if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
+     TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
+   fi
+   ```
+   Then call `CronCreate` with:
+   - `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
+   - `recurring`: false
+   - `prompt`: `"Run /verify-changes branch tracking-id=$TRACKING_ID"`
+
+   On every attempt, schedule re-entry cron (`<backoff>` from now):
+   ```bash
+   REENTRY_MIN=$(( (10#$NOW_MIN + BACKOFF_MIN) % 60 ))
+   REENTRY_HOUR=$NOW_HOUR
+   if [ "$REENTRY_MIN" -lt "$NOW_MIN" ]; then
+     REENTRY_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
+   fi
+   ```
+   Then call `CronCreate` with:
+   - `cron`: `"$REENTRY_MIN $REENTRY_HOUR $NOW_DAY $NOW_MONTH *"`
+   - `recurring`: false
+   - `prompt`: `"Run /run-plan <plan-file> finish auto"`
+
+   Then exit this turn.
+
+2. **Marker exists AND fulfilled exists**: verify completed. Delete the
+   attempt counter file (cleanup):
+   ```bash
+   rm -f "$MAIN_ROOT/.zskills/tracking/verify-pending-attempts.$TRACKING_ID"
+   ```
+   Proceed to sub-step 1.
+
+3. **No marker** (standalone plan, not via /research-and-go): proceed to
+   sub-step 1.
+
 ### 1. Audit phase compliance
 
 Before declaring the plan complete, verify every phase has a clean status:
@@ -1096,6 +1246,149 @@ Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
 
 3. If `SPRINT_REPORT.md` does not exist, or the issue/plan is not
    mentioned in a skipped section, skip this step.
+
+## Phase 5c — Chunked finish auto transition (CRITICAL for finish auto mode)
+
+**This section applies when running `/run-plan <plan> finish auto`.**
+
+In chunked finish auto mode, each plan phase runs as a separate top-level
+cron-fired turn. The current turn does NOT loop back to process the next
+phase — instead, it lands the current phase, schedules a one-shot cron for
+the next phase (or the next meta-plan phase, or the final cross-branch
+verification, depending on context), and exits cleanly.
+
+### Why chunked execution
+
+The original failure mode was: a single long-running session built up
+late-phase fatigue and rationalized skipping verification on the last few
+phases. Chunked execution breaks the run into a sequence of fresh
+top-level turns, each handling exactly one plan phase. Each fresh turn
+re-reads the plan, the tracking state, and its own instructions. There
+is no momentum to skip steps because each turn starts clean.
+
+A secondary benefit: cron-fired turns run at top level (in the user's
+main session, with full `Agent`/`Task` tool access). This means
+implementation, verification, and reporting subagent dispatches all work
+correctly. Sub-sub-agent dispatch is not needed because there is no
+nesting — every cron fire is a fresh top-level turn.
+
+### Idempotent re-entry (every cron-fired turn does this first)
+
+Cross-reference: Step 0 in Phase 1 preflight. At the very start of every
+`/run-plan` invocation in `finish auto` mode, read the plan tracker and
+check the next-target phase. If it's already marked Done OR In Progress,
+**exit cleanly** with a "no work to do" message. This handles two cases:
+
+1. A stale cron from a previous run fires after the user manually
+   re-invoked the next phase. The cron sees the work is already done
+   and exits without duplication.
+2. A previous turn already started this phase (e.g., is mid-cherry-pick).
+   The new turn defers and exits.
+
+Output for the no-work-to-do case:
+> /run-plan plans/X.md: phase N is already Done/In Progress. Skipping
+> this cron fire (likely a stale cron). The pipeline is still proceeding
+> via its actual current phase.
+
+### When this turn schedules the next cron
+
+After Phase 6 (land) succeeds for the current phase AND
+`scripts/post-run-invariants.sh` passes:
+
+> **`post-run-invariants.sh` ordering**: Phase 5c's next-phase cron
+> schedule runs AFTER `post-run-invariants.sh` passes. If invariants
+> fail, do NOT schedule the next cron; invoke Failure Protocol.
+
+1. **NEXT incomplete phase exists in this plan**: schedule a one-shot cron
+   (`recurring: false`) for `/run-plan <plan-file> finish auto` ~1–2 min
+   from now. The next cron-fired turn will pick up the next phase. Then
+   exit this turn.
+
+2. **This plan is a sub-plan delegate** (detected via `tracking-index=N`
+   arg from research-and-go Step 1b — see `skills/research-and-go/SKILL.md:135`):
+   after the last phase of this sub-plan lands, recover the meta-plan path
+   from `requires.run-plan.N` marker content (or
+   `pipeline.research-and-go.*` sentinel — see Step 1b). Schedule a
+   one-shot cron for `/run-plan <META_PLAN_PATH> finish auto` ~1–2 min
+   from now. The next cron-fired turn will resume the meta-plan from its
+   next incomplete delegate phase. Then exit.
+
+3. **All phases done (meta or standalone)**: do NOT schedule a next-phase
+   cron. Phase 5b has already run (or will run on the next `/run-plan`
+   invocation/re-entry — see Phase 1 step 3 amendment). Exit cleanly. The
+   final-verify gate lives in Phase 5b's first sub-step (see Phase 5b
+   0b. Final-verify gate); Phase 5c does not handle final-verify directly.
+
+### PR-mode branching for next-phase cron
+
+Do NOT poll `gh pr view --json state` inside the cron turn. Instead,
+Phase 5c reads the just-written `.landed` status file (written at landing
+time):
+
+- `status: landed` → schedule next-phase cron, exit.
+- `status: pr-ready` or `pr-ci-failing` → schedule a SHORT re-entry cron
+  (~5 min) whose prompt re-fires `/run-plan <plan> finish auto`. Step 0's
+  idempotent check will see the current phase is still In Progress and
+  re-attempt the PR-state poll via Phase 6.
+- `status: conflict` or `pr-failed` → invoke Failure Protocol. Do not
+  schedule next cron.
+- In cherry-pick / direct mode, the land event is synchronous (`.landed`
+  written immediately) and next-phase cron schedules directly.
+
+### User Verify items in chunked mode
+
+In chunked mode, landing happens per-phase. If the just-landed phase has
+User Verify items, schedule the next-phase cron AND output the User Verify
+items in this turn's completion message. Per-phase landing IS the chunked
+model — do NOT hold landing until all phases complete.
+
+### How to schedule the next cron
+
+```bash
+# Compute target minute that's NOT :00 or :30 (to avoid scheduler jitter)
+NOW_MIN=$(date +%M)
+NOW_HOUR=$(date +%H)
+NOW_DAY=$(date +%d)
+NOW_MONTH=$(date +%m)
+TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
+if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
+  TARGET_MIN=$(( TARGET_MIN + 1 ))
+fi
+TARGET_HOUR=$NOW_HOUR
+if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
+  TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
+fi
+```
+
+Then call `CronCreate`:
+- `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
+- `recurring`: false
+- `prompt`: the next-step prompt — typically `"Run /run-plan <plan-file> finish auto"`, or `"Run /run-plan <meta-plan-path> finish auto"`, or `"Run /verify-changes branch tracking-id=$TRACKING_ID"`
+
+After scheduling, output the chunking message:
+> Phase <N> of `<plan>` complete (commit `<hash>`).
+> Phase <N+1> will fire automatically in ~1-2 minutes (cron `<job-id>`).
+> To stop the pipeline: `/run-plan stop`
+> To check status: `/run-plan <plan> status`
+
+Then **exit this turn**. Do NOT do any other work. Do NOT loop back to
+process the next phase inline. The cron handles it.
+
+### Cron-scheduling rule (avoid confusion)
+
+**Only top-level orchestrators (this `/run-plan` running as a cron-fired
+top-level turn) call `CronCreate`.** Sub-agents (the implementer in the
+worktree, the verifier subagent dispatched by Phase 3) do NOT schedule
+crons. They do their work synchronously and return control to this top-
+level orchestrator. This ensures at most one pending chunking cron per
+pipeline at any time.
+
+### Single-phase mode (no chunking)
+
+When invoked WITHOUT `finish auto` (e.g., `/run-plan plans/X.md` or
+`/run-plan plans/X.md 4b`), do NOT chunk. Run the single specified phase
+to completion in this turn, then exit normally. Chunking is exclusively
+for `finish auto` mode.
 
 ## Phase 6 — Land
 
