@@ -1,7 +1,7 @@
 ---
 title: Canary 7 — Chunked Finish Auto End-to-End
 created: 2026-04-16
-status: active
+status: complete
 ---
 
 # Plan: Canary 7 — Chunked Finish Auto End-to-End
@@ -23,7 +23,7 @@ original failure mode this mode exists to prevent.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 -- Create canary7 file | ✅ Done | `12ac875` | Trivial file create (turn 1) |
-| 2 -- Append second line  | ⬜ | | Trivial file append |
+| 2 -- Append second line  | ✅ Done | `9ad4239` | Trivial file append (turn 2) |
 
 ## Phase 1 -- Create canary7 file
 
