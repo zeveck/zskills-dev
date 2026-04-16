@@ -1,6 +1,6 @@
 # Plan Report — Canary 10 PR Mode End-to-End
 
-## Phase — 2 Append second line [UNFINALIZED]
+## Phase — 2 Append second line (landed)
 
 **Plan:** plans/CANARY10_PR_MODE.md
 **Status:** Completed (verified, committed on feature branch)
@@ -22,7 +22,7 @@
 ### Phase 2 timing signal (cron-fired Turn 2)
 Phase 1 implement marker: 1776346750. Phase 2 implement marker: 1776347085. Delta: 335s (>>60s threshold). Confirms Phase 2 ran in a SEPARATE cron-fired turn from Phase 1, not inline.
 
-## Phase — 1 Create canary10 file [UNFINALIZED]
+## Phase — 1 Create canary10 file (landed)
 
 **Plan:** plans/CANARY10_PR_MODE.md
 **Status:** Completed (verified, committed on feature branch)
