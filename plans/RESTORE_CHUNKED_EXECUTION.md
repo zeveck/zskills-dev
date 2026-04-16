@@ -185,7 +185,7 @@ the reconciliation points above.
 | B -- Cross-branch final verify in /research-and-go | ✅ Done | `e4bc50a` | Pre-decide path; marker at Step 0 | | | Pre-decide path; write marker at Step 0 |
 | C -- Tool-list-aware dispatch in 4 skills | ✅ Done | `3f0f8c2` | 4 skills restored | | | run-plan, fix-issues, verify-changes, add-block |
 | D -- /research-and-plan prohibition explanation | ✅ Done | `3f6e9c9` | Full ~38-line section restored | | | ~38-line block restoration |
-| E -- Early requires-lockdown in /run-plan | 🟡 In Progress | | Move marker creation to Phase 1 step 8 |
+| E -- Early requires-lockdown in /run-plan | ✅ Done | `f7f3475` | Marker at entry | | | Move marker creation to Phase 1 step 8 |
 | H -- Scope-vs-plan judgment in /verify-changes | ⏳ Pending | | Extends review prompt + report; /run-plan halts on flags |
 | G -- Orphaned-reference reconciliation | ⏳ Pending | | 4 sites, mostly zero-diff (after A) |
 | F -- Invariants test + behavioral canaries | ⏳ Pending | | Static asserts all + behavioral canaries |
