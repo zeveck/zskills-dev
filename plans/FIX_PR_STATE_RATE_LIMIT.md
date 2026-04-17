@@ -2,7 +2,7 @@
 issue: 26
 title: Fix gh pr view Rate-Limit Silent Default to OPEN (zombie feature branches)
 created: 2026-04-17
-status: active
+status: complete
 ---
 
 # Plan: Fix gh pr view Rate-Limit Silent Default to OPEN
