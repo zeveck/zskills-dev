@@ -76,7 +76,7 @@ which now includes the previous phase's changes.
 |-------|--------|--------|-------|
 | 1 — Scaffold + block-unsafe-generic.sh stash | ✅ Done | `cace895` | 18 tests (6+7+5) |
 | 2 — land-phase.sh | ✅ Done | `e78a224` | 10 tests (1+4+3+1+guard) |
-| 3 — post-run-invariants.sh | ⬚ | | |
+| 3 — post-run-invariants.sh | ✅ Done | `a922e27` | 13 tests (1+1+2+2+2+2+3) |
 | 4 — block-agents.sh | ⬚ | | |
 | 5 — /commit reviewer + Phase 7 | ⬚ | | |
 
