@@ -3,10 +3,10 @@
 Issue: [#26](https://github.com/zeveck/zskills-dev/issues/26)
 Plan: `plans/FIX_PR_STATE_RATE_LIMIT.md`
 
-## Phase — 2 Invariant #8 + canary tests [UNFINALIZED]
+## Phase — 2 Invariant #8 + canary tests
 
 **Plan:** plans/FIX_PR_STATE_RATE_LIMIT.md
-**Status:** Completed (verified, awaiting landing)
+**Status:** Completed (verified, landed via PR squash)
 **Worktree:** /tmp/zskills-pr-fix-pr-state-rate-limit
 **Branch:** feat/fix-pr-state-rate-limit
 **Commits:** 7073075 (feat), 0e1a97f (tracker → in progress)
