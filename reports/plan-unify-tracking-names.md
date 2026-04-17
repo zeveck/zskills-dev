@@ -2,6 +2,38 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
+## Phase — 5 Canary + integration test coverage [UNFINALIZED]
+
+**Plan:** plans/UNIFY_TRACKING_NAMES.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-unify-tracking-names
+**Branch:** feat/unify-tracking-names
+**Commits:** 956be13 (test)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | canary "Tracking marker naming (subdir scope)" (8 cases) | Done | 956be13; header + 9 assertions (Case 3 dual) |
+| 2 | test-tracking-integration migrated to subdir | Done | 11/11 migrated; Test 11 reframed to fallback-test |
+| 3 | test-hooks.sh tracking section migrated | Done | DEFAULT_SUBDIR var; Pipeline scoping A-F reframed to own-subdir |
+| 4 | run-all.sh invokes test-tracking-integration | Done | 956be13 line 44 |
+| 5 | run-plan glob-dual-lookup for cross-pipeline reads | Done | lines 1174-1184, 1375-1383; Phase 2-6 transition comments |
+| 6 | Mirror sync run-plan | Done | `diff -r` clean |
+
+### Verification
+- AC 1-8 PASS; verifier sampled 3 migrated tests and confirmed semantic equivalence.
+- Test 11 reframing legitimate: seeds flat marker only, forces fallback, asserts suffix-match precision.
+- Pipeline scoping A-F reframing legitimate: 6 cases with distinct subdirs, testing own-subdir enforcement + cross-pipeline isolation.
+- Canary case count: header "(8 cases)" / 9 assertions — matches (Case 3 has intentional dual assertion).
+- Test suite: 327 → 358 (+9 canary + 22 tracking-integration newly invoked). STABLE 2×.
+- No tests deleted, no it.skip, no assertions weakened.
+
+### User Sign-off
+
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 4 Writer migration pass 2 (fix-issues, r&g, r&p, do) [UNFINALIZED]
 
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
