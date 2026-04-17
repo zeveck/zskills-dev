@@ -2,6 +2,39 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
+## Phase — 2 Reader changes [UNFINALIZED]
+
+**Plan:** plans/UNIFY_TRACKING_NAMES.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-unify-tracking-names
+**Branch:** feat/unify-tracking-names
+**Commits:** c88faa1 (feat)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | `scripts/sanitize-pipeline-id.sh` helper | Done | c88faa1 (round 2 fix: trailing-underscore bug) |
+| 2 | `scripts/migrate-tracking.sh` one-shot migration | Done | c88faa1 (round 2 fix: requires.* delegation skip) |
+| 3 | Hook template 9 reader sites → subdir-first + dual-read | Done | 3 helper fns + 21 call sites + 18 legacy/TODO markers |
+| 4 | `skills/update-zskills/SKILL.md` script list +2 entries | Done | c88faa1 |
+| 5 | Mirror sync (update-zskills only) | Done | `diff -r` clean |
+
+### Verification
+- Round 1 verifier: AC 1-9 PASS, but semantic review flagged 2 real bugs (sanitizer trailing `_`; migrate mis-routed `requires.*` delegation markers).
+- Round 2 fix agent: both bugs fixed with synthetic tests (sanitizer: `normal.id` → `normal.id`, no trailing `_`; migration: delegation markers stay flat).
+- Round 2 re-verifier: 6/6 PASS including idempotence check (2nd run = no-op).
+- Test suite: 327/327 pass (baseline 327, zero delta — Phase 5 adds subdir-path canary coverage).
+
+### Known transitional state
+- All 9 hook reader sites dual-read (subdir-first + flat fallback). Flat fallback has `# LEGACY — TODO: remove after Phase 6` markers for Phase 6's grep-based cleanup.
+- `scripts/migrate-tracking.sh` is conservative by design: only migrates `fulfilled.<skill>.<id>` and `step.<skill>.<id>.{implement,verify}` for the 4 $TRACKING_ID-using skills (run-plan, draft-plan, refine-plan, verify-changes). `requires.*` delegation markers and non-migrating writers (fix-issues/r&g/r&p/do) stay flat until Phase 4 writer migration; dual-read covers them until then.
+
+### User Sign-off
+
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 1 Decide scheme & document [UNFINALIZED]
 
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
