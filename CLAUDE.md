@@ -136,3 +136,17 @@ A commit must include **all files the feature needs** and **no unrelated files**
 URLs, or creating files from scratch, check what already exists: `ls` the
 directory, `grep` for the term, read the relevant file. Agents consistently
 skip this step and guess instead of looking.
+
+## Tracking markers
+
+Tracking markers live in `.zskills/tracking/` and are scoped per pipeline
+via a subdirectory named after `PIPELINE_ID`. See
+[`docs/tracking/TRACKING_NAMING.md`](docs/tracking/TRACKING_NAMING.md)
+for the authoritative scheme, delegation semantics, and migration
+strategy. When writing markers from a skill: construct them under
+`.zskills/tracking/$PIPELINE_ID/` using the `requires.*`, `fulfilled.*`,
+and `step.*` basenames — never flat under `.zskills/tracking/` directly.
+Use `scripts/sanitize-pipeline-id.sh` (lands in Phase 2 of the unify
+plan) before writing any constructed `PIPELINE_ID` to disk. `.landed` is
+NOT a tracking marker — it is a separate worktree-state artifact managed
+by `/commit land` and `scripts/write-landed.sh`.
