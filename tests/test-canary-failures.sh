@@ -453,6 +453,153 @@ else
   fail "invariant #7 Case C — rc=$i7c_rc (want 0); squash-divergence WARN present? out: $i7c_out"
 fi
 
+# ---------------------------------------------------------------------------
+# Phase 4 — block-agents.sh.template reproducers
+# ---------------------------------------------------------------------------
+# The hook reads $REPO_ROOT/.claude/zskills-config.json; each test overrides
+# REPO_ROOT to a per-test fixture dir so it reads the fixture config rather
+# than the live one. AGENTS_HOOK is set once (from the enclosing script's
+# $REPO_ROOT) to keep the two REPO_ROOTs visually distinct.
+AGENTS_HOOK="$REPO_ROOT/hooks/block-agents.sh.template"
+
+expect_agent_deny_substring() {
+  local label="$1" input_json="$2" want="$3" repo_root="$4"
+  local result
+  result=$(REPO_ROOT="$repo_root" bash "$AGENTS_HOOK" <<<"$input_json" 2>/dev/null) || true
+  if [[ "$result" == *'"permissionDecision":"deny"'* && "$result" == *"$want"* ]]; then
+    pass "$label"
+  else
+    fail "$label — want deny with '$want', got: $result"
+  fi
+}
+
+expect_agent_allow() {
+  local label="$1" input_json="$2" repo_root="$3"
+  local result
+  result=$(REPO_ROOT="$repo_root" bash "$AGENTS_HOOK" <<<"$input_json" 2>/dev/null) || true
+  if [[ -z "$result" ]]; then
+    pass "$label"
+  else
+    fail "$label — expected empty stdout, got: $result"
+  fi
+}
+
+setup_agent_config() {
+  # $1 = json string (config body); $2 = tmp repo_root
+  local json="$1" root="$2"
+  mkdir -p "$root/.claude"
+  printf '%s' "$json" > "$root/.claude/zskills-config.json"
+}
+
+build_agent_input() {
+  # $1 model, $2 transcript_path (may be empty string)
+  MODEL="$1" TPATH="$2" python3 -c '
+import json, os
+d = {"tool_name": "Agent",
+     "tool_input": {"subagent_type": "Explore", "model": os.environ["MODEL"]},
+     "transcript_path": os.environ.get("TPATH", "")}
+print(json.dumps(d))'
+}
+
+section "block-agents: family filter rejects synthetic (1 case)"
+# Transcript contains Opus then <synthetic>; the hook filters to
+# haiku/sonnet/opus only, so the effective floor resolves to Opus. A Sonnet
+# dispatch must be denied.
+a1_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a1_root")
+setup_agent_config '{"agents":{"min_model":"auto"}}' "$a1_root"
+a1_input=$(build_agent_input "claude-sonnet-4-6" "$FIXTURES/transcript-synthetic.jsonl")
+expect_agent_deny_substring \
+  "family filter: <synthetic> skipped, Opus floor enforced against Sonnet dispatch" \
+  "$a1_input" \
+  "agents.min_model requires claude-opus-4-6 or higher" \
+  "$a1_root"
+
+section "block-agents: ordinal comparison (6 cases)"
+# Each case: fresh tmp REPO_ROOT with explicit min_model (not auto), no
+# transcript needed. Matrix covers haiku/sonnet/opus × allow/deny.
+for pair in \
+  "claude-haiku-4-5|claude-haiku-4-5-20251001|allow|" \
+  "claude-haiku-4-5|claude-sonnet-4-6|allow|" \
+  "claude-sonnet-4-6|claude-haiku-4-5-20251001|deny|agents.min_model requires" \
+  "claude-sonnet-4-6|claude-sonnet-4-6|allow|" \
+  "claude-opus-4-6|claude-sonnet-4-6|deny|agents.min_model requires" \
+  "claude-opus-4-6|claude-opus-4-6|allow|"; do
+  IFS='|' read -r min_model dispatch expected want <<<"$pair"
+  o_root=$(mktemp -d)
+  FIXTURE_DIRS+=("$o_root")
+  setup_agent_config "{\"agents\":{\"min_model\":\"$min_model\"}}" "$o_root"
+  o_input=$(build_agent_input "$dispatch" "")
+  if [ "$expected" = "allow" ]; then
+    expect_agent_allow "ordinal: min=$min_model dispatch=$dispatch → allow" "$o_input" "$o_root"
+  else
+    expect_agent_deny_substring \
+      "ordinal: min=$min_model dispatch=$dispatch → deny" \
+      "$o_input" "$want" "$o_root"
+  fi
+done
+
+section "block-agents: unknown family passes through (1 case)"
+# claude-foo-99 has no haiku/sonnet/opus substring → ordinal=0 → always allow.
+# Locks in the intentional "future-model escape valve".
+a3_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a3_root")
+setup_agent_config '{"agents":{"min_model":"claude-sonnet-4-6"}}' "$a3_root"
+a3_input=$(build_agent_input "claude-foo-99" "")
+expect_agent_allow \
+  "unknown family: claude-foo-99 passes through (future-model escape valve)" \
+  "$a3_input" \
+  "$a3_root"
+
+section "block-agents: auto fallback to Sonnet (1 case)"
+# Locks in CURRENT behavior at hooks/block-agents.sh.template:68-69: when
+# 'auto' resolution fails (no transcript), the hook falls back to a Sonnet
+# floor. If the fallback is ever intentionally changed (e.g. fail-closed to
+# Opus), this test MUST be updated in the same PR — treat as a design
+# decision with its own review.
+a4_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a4_root")
+setup_agent_config '{"agents":{"min_model":"auto"}}' "$a4_root"
+a4_input=$(build_agent_input "claude-haiku-4-5-20251001" "")
+expect_agent_deny_substring \
+  "auto fallback: no transcript → Sonnet floor denies Haiku dispatch" \
+  "$a4_input" \
+  "agents.min_model requires claude-sonnet-4-6 or higher" \
+  "$a4_root"
+
+section "block-agents: auto success path (2 cases)"
+# Transcript has Opus — resolution succeeds to Opus floor.
+a5_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a5_root")
+setup_agent_config '{"agents":{"min_model":"auto"}}' "$a5_root"
+a5a_input=$(build_agent_input "claude-opus-4-6" "$FIXTURES/transcript-opus.jsonl")
+expect_agent_allow \
+  "auto success: Opus transcript, Opus dispatch → allow" \
+  "$a5a_input" \
+  "$a5_root"
+
+a5b_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a5b_root")
+setup_agent_config '{"agents":{"min_model":"auto"}}' "$a5b_root"
+a5b_input=$(build_agent_input "claude-sonnet-4-6" "$FIXTURES/transcript-opus.jsonl")
+expect_agent_deny_substring \
+  "auto success: Opus transcript, Sonnet dispatch → deny" \
+  "$a5b_input" \
+  "agents.min_model requires claude-opus-4-6 or higher" \
+  "$a5b_root"
+
+section "block-agents: min_model not configured (1 case)"
+# Config file present but 'agents' object has no min_model key → pass-through
+# per hooks/block-agents.sh.template:36-38.
+a6_root=$(mktemp -d)
+FIXTURE_DIRS+=("$a6_root")
+setup_agent_config '{"agents":{}}' "$a6_root"
+a6_input=$(build_agent_input "claude-haiku-4-5-20251001" "")
+expect_agent_allow \
+  "min_model unset: pass-through regardless of dispatch model" \
+  "$a6_input" \
+  "$a6_root"
+
 echo
 echo "Canary failure-injection: $PASS_COUNT passed, $FAIL_COUNT failed"
 exit $((FAIL_COUNT > 0))
