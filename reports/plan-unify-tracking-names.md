@@ -2,6 +2,38 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
+## Phase — 3 Writer migration pass 1 ($TRACKING_ID skills) [UNFINALIZED]
+
+**Plan:** plans/UNIFY_TRACKING_NAMES.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-unify-tracking-names
+**Branch:** feat/unify-tracking-names
+**Commits:** 412c7c0 (feat)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | run-plan: ~20 sites → subdir layout | Done | 412c7c0 |
+| 2 | draft-plan: ~5 sites → subdir (ZSKILLS_PIPELINE_ID fallback) | Done | 412c7c0 |
+| 3 | refine-plan: ~4 sites → subdir (fallback) | Done | 412c7c0 |
+| 4 | verify-changes: ~6 sites → subdir with **3-tier PIPELINE_ID resolution** (env → `.zskills-tracked` → $MARKER_STEM fallback) | Done | 412c7c0 (round 2 fix after delegation bug caught) |
+| 5 | Mirror sync all 4 skills | Done | `diff -r` clean |
+
+### Verification
+- **Round 1 verifier caught a real delegation bug**: verify-changes' initial fallback used `$MARKER_STEM.$TRACKING_ID` which resolved to `verify-changes.<slug>` (since `MARKER_STEM` is its own skill name), NOT the parent's PIPELINE_ID. Under run-plan delegation, parent wrote `requires.verify-changes.<slug>` into `run-plan.<slug>/` but verify-changes wrote `fulfilled.*` into `verify-changes.<slug>/` — different subdirs, hook would never match → silent BLOCK.
+- Round 2 fix: 3-tier PIPELINE_ID resolution in verify-changes (env → `.zskills-tracked` in cwd → fallback). The `.zskills-tracked` tier is the delegation channel since Claude Code subagent dispatch does not propagate env.
+- Round 2 verifier synthetic tests: co-location confirmed (parent's `requires.*` and delegatee's `fulfilled.*` both land in `run-plan.<slug>/`). All 3 tiers resolve correctly.
+- Tests: 327/327 pass (dual-read from Phase 2 covers legacy flat fixtures used in tracking-integration tests).
+
+### Known transitional state
+- Two residual flat READ paths at `skills/run-plan/SKILL.md:1176-1177` (cross-branch final-verify gate) and `:1365-1368` (cleanup glob). Writers of those markers are research-and-go (Phase 4 scope); the reads will be updated in Phase 5.
+
+### User Sign-off
+
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 2 Reader changes [UNFINALIZED]
 
 **Plan:** plans/UNIFY_TRACKING_NAMES.md

@@ -41,7 +41,7 @@ tests that lock in the new scheme.
 |-------|--------|--------|-------|
 | 1 — Decide scheme & document | 🟡 | | |
 | 2 — Reader changes | 🟡 | | |
-| 3 — Writer migration pass 1 ($TRACKING_ID skills) | ⬚ | | |
+| 3 — Writer migration pass 1 ($TRACKING_ID skills) | 🟡 | | |
 | 4 — Writer migration pass 2 (fix-issues, r&g, r&p, do) | ⬚ | | |
 | 5 — Canary + integration test coverage | ⬚ | | |
 | 6 — E2E validation + dual-read removal | ⬚ | | |
