@@ -318,8 +318,8 @@ git fetch origin main 2>/dev/null \
 git merge --ff-only origin/main 2>/dev/null \
   || echo "WARNING: local main not fast-forwarded — worktree uses local main as-is"
 git worktree prune
-git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
-  || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
+# /do expects a fresh branch per task — no legitimate resume.
+bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
 ```
 
 **Step A5 — Write tracking marker immediately after worktree creation:**

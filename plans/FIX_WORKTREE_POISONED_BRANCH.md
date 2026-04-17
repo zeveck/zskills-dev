@@ -1,7 +1,7 @@
 ---
 title: Fix Worktree-Add Silent Attach to Poisoned Stale Branches
 created: 2026-04-17
-status: active
+status: complete
 ---
 
 # Plan: Fix Worktree-Add Silent Attach to Poisoned Stale Branches
@@ -52,8 +52,8 @@ cases above.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Poisoned-branch discriminator helper + 3 call sites | ⬚ | | |
-| 2 — Canary test coverage | ⬚ | | |
+| 1 — Poisoned-branch discriminator helper + 3 call sites | ✅ | `5efccf4` | landed via PR (squashed on main) |
+| 2 — Canary test coverage | ✅ | `8e372d2` | landed via PR (squashed on main) |
 
 ## Shared Conventions
 
