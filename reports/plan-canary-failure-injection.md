@@ -1,5 +1,56 @@
 # Plan Report — Canary Failure Injection
 
+## Phase — 4 block-agents.sh reproducers [UNFINALIZED]
+
+**Plan:** `plans/CANARY_FAILURE_INJECTION.md`
+**Status:** Completed (verified), pending PR landing
+**Worktree:** `/tmp/zskills-pr-canary-failure-injection`
+**Branch:** `feat/canary-failure-injection`
+**Commits:** `2eba026` (impl + tests + fixtures), `dc566ce` (tracker 🟡)
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `section "block-agents: family filter rejects synthetic (1 case)"` | Done | `2eba026` |
+| 2 | `section "block-agents: ordinal comparison (6 cases)"` — haiku/sonnet/opus × min/dispatch | Done | `2eba026` |
+| 3 | `section "block-agents: unknown family passes through (1 case)"` | Done | `2eba026` |
+| 4 | `section "block-agents: auto fallback to Sonnet (1 case)"` — locks in CURRENT behavior | Done | `2eba026` |
+| 5 | `section "block-agents: auto success path (2 cases)"` | Done | `2eba026` |
+| 6 | `section "block-agents: min_model not configured (1 case)"` | Done | `2eba026` |
+| 7 | `tests/fixtures/canary/transcript-synthetic.jsonl` (Opus + `<synthetic>`) | Done | `2eba026` |
+| 8 | `tests/fixtures/canary/transcript-opus.jsonl` (Opus only) | Done | `2eba026` |
+
+### Verification
+
+- `/verify-changes worktree` — **PASS**. Scope Assessment clean.
+- Canary suite: `Canary failure-injection: 53 passed, 0 failed` (baseline 41 + 12 new).
+- Full aggregator: `Overall: 288/288 passed, 0 failed` (baseline 276 + 12 new).
+- CWD-robust (scaffold fix from Phase 3 confirmed working).
+- Hygiene: `.worktreepurpose` / `.zskills-tracked` untracked; only the 3 in-scope paths staged.
+
+### Acceptance Criteria
+
+- [x] 6 sections present, 12 tests total.
+- [x] Each test overrides `REPO_ROOT` per-test — never reads live canary config.
+- [x] 2 transcript fixtures committed with correct content.
+- [x] Auto Sonnet-fallback test locks in CURRENT behavior (not a prescription).
+- [x] `bash tests/test-canary-failures.sh` → 53 passed, 0 failed.
+- [x] `bash tests/run-all.sh` → 288/288.
+
+### Deviations from Plan
+
+Verifier noted: plan's inline AC prose at line 370 of the verbatim phase text says "52 tests passing (40 + 12)". The actual pre-Phase-4 canary count was 41 (Phase 2 added a +1 guard test). 41 + 12 = 53, which matches the parent's primary AC and the suite output. Plan prose drift, not a Phase 4 defect; noted for downstream phases that cite cumulative counts.
+
+Cumulative plan-wide count adjustment (running total):
+- Phase 1: 18
+- Phase 2: 27 (9 + array-drift guard pass)
+- Phase 3: 40
+- Phase 4: 52 → **53**
+- Final expected after Phase 5: plan says 78/68; actual will be 79/69 (+1 from Phase 2's guard, still tracking).
+
+---
+
 ## Phase — 3 post-run-invariants.sh reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`

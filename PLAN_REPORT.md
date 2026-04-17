@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-canary-failure-injection.md](reports/plan-canary-failure-injection.md) | 3/5 | Phase 3 pending PR landing (feat/canary-failure-injection) |
+| [plan-canary-failure-injection.md](reports/plan-canary-failure-injection.md) | 4/5 | Phase 4 pending PR landing (feat/canary-failure-injection) |
 | [plan-ephemeral-to-tmp.md](reports/plan-ephemeral-to-tmp.md) | 4/4 | **Complete** — all phases landed |
 | [plan-canary10-pr-mode.md](reports/plan-canary10-pr-mode.md) | 2 | Landed |
 | [plan-canary7-chunked-finish.md](reports/plan-canary7-chunked-finish.md) | 2 | Landed |
