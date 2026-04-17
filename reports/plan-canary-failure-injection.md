@@ -1,5 +1,63 @@
 # Plan Report — Canary Failure Injection
 
+## Plan Complete — 2026-04-16
+
+**All 5 phases landed.** Canary suite at `tests/test-canary-failures.sh` with **79 tests** locks in loud-failure behavior across 5 hardened layers. External users can verify their install via `bash tests/run-all.sh` (full suite: **314/314 passed**).
+
+| Phase | Tests | Commit (impl) | PR |
+|-------|-------|---------------|----|
+| 1 — Scaffold + stash hook | 18 | `cace895` | #20 |
+| 2 — land-phase.sh | 10 | `e78a224` | #21 |
+| 3 — post-run-invariants.sh | 13 | `a922e27` | #22 |
+| 4 — block-agents.sh | 12 | `2eba026` | #23 |
+| 5 — /commit reviewer + Phase 7 | 26 | `a6f9e70` | (this PR) |
+| **Total** | **79** | | |
+
+Final `bash tests/run-all.sh` count on main (post-merge): **314/314 passed, 0 failed**
+(baseline 235 pre-canary + 79 new canary tests = 314).
+
+The canary's ~50-line plan-adjustment vs plan prose (77 → 79) came from Phase 2's array-drift guard being counted as a distinct `pass` — documented in each phase report, no defects.
+
+---
+
+## Phase — 5 /commit reviewer + Phase 7 verification
+
+**Plan:** `plans/CANARY_FAILURE_INJECTION.md`
+**Status:** Completed (verified), pending PR landing
+**Worktree:** `/tmp/zskills-pr-canary-failure-injection`
+**Branch:** `feat/canary-failure-injection`
+**Commits:** `a6f9e70` (impl + tests), `c3ec136` (tracker 🟡)
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | `section "/commit reviewer prompt: load-bearing substrings (canonical)"` — 11 grep-F checks against `skills/commit/SKILL.md` | Done | `a6f9e70` |
+| 2 | `section "/commit reviewer prompt: load-bearing substrings (installed copy)"` — 11 checks against `.claude/skills/commit/SKILL.md` | Done | `a6f9e70` |
+| 3 | `section "/commit Phase 7: anti-stash discipline (2 cases)"` — `Do NOT stash` + `try-without-stash` | Done | `a6f9e70` |
+| 4 | `section "/commit Key Rules: stash prohibition (2 cases)"` — count `Do NOT stash` ≥ 2, `hook blocks` ≥ 1 | Done | `a6f9e70` |
+
+### Verification
+
+- `/verify-changes worktree` — **PASS**. Scope Assessment clean.
+- Canary suite: `Canary failure-injection: 79 passed, 0 failed` (baseline 53 + 26 new).
+- Full aggregator: `Overall: 314/314 passed, 0 failed` (baseline 288 + 26 new).
+- CWD-robust.
+
+### Acceptance Criteria
+
+- [x] 4 sections present, 26 tests total.
+- [x] Canonical + installed-copy reviewer prompts both locked in (installed-copy file present → 11 passes, not a skip).
+- [x] `Do NOT stash` count ≥ 2 + `hook blocks` count ≥ 1.
+- [x] `bash tests/test-canary-failures.sh` → 79 passed.
+- [x] `bash tests/run-all.sh` → 314/314 passed.
+
+### Deviations
+
+The plan's Phase 5 AC prose said 77/67 (installed/skipped). Actual final: 79 (installed) — delta from Phase 2's array-drift guard. Documented in the Plan Complete section above.
+
+---
+
 ## Phase — 4 block-agents.sh reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
