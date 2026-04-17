@@ -319,13 +319,24 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ```
 
 If the arguments do NOT contain `parent=research-and-go` (this is a standalone
-invocation), create requirement files for each phase that delegates to
-`/run-plan`:
+invocation), create metadata files for each phase that delegates to
+`/run-plan`. These are **metadata**, not enforcement (same OQ1 decision as
+research-and-go's integer markers), so they use the `meta.*` prefix — the
+hook's enforcement globs don't scan `meta.*`.
+
+Construct the PIPELINE_ID for this standalone research-and-plan run (the
+meta-plan filename gives a stable, per-run scope):
 
 ```bash
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
+# $META_PLAN_PATH is the output path where the meta-plan is (or will be)
+# written — same value used as the `output FILE` argument / default
+# (`plans/<SLUG>_META.md`). Derive a stable slug from it.
+META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
+PIPELINE_ID="research-and-plan.$META_PLAN_SLUG"
+PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 for i in 1 2 ... N; do
-  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.$i"
 done
 ```
 

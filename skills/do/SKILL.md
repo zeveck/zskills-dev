@@ -324,6 +324,10 @@ bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
 
 **Step A5 — Write tracking marker immediately after worktree creation:**
 ```bash
+# Route TASK_SLUG through the shared sanitizer before constructing
+# PIPELINE_ID (per Phase 1 design doc). Collapses any character outside
+# [a-zA-Z0-9._-] into `_` and truncates to 128 bytes.
+TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh "$TASK_SLUG")
 PIPELINE_ID="do.${TASK_SLUG}"
 echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
 ```

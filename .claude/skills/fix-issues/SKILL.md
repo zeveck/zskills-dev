@@ -326,13 +326,15 @@ and drafts plans for all found issues.
    step and plan all of them.
 
 4. **For each selected issue**, create a delegation requirement marker and
-   then dispatch `/draft-plan`:
+   then dispatch `/draft-plan`. The marker goes under fix-issues' own
+   per-sprint subdir ($PIPELINE_ID) — the parent reconciles child
+   fulfillment in its own scope:
    ```bash
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   mkdir -p "$MAIN_ROOT/.zskills/tracking"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \
      "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.zskills/tracking/requires.draft-plan.$ISSUE_NUMBER"
+     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.draft-plan.$ISSUE_NUMBER"
    ```
    Then dispatch `/draft-plan` with:
    - The issue number and full body (`gh issue view <N> --json body`)
@@ -423,15 +425,31 @@ implement the wrong fix. This has happened repeatedly.
 
 ### Sprint tracking sentinel
 
-When mode is sprint (N provided), create the pipeline sentinel before
-doing anything else:
+When mode is sprint (N provided), construct the per-sprint unique
+`$SPRINT_ID` and `$PIPELINE_ID` FIRST (before any other tracking write),
+then create the pipeline sentinel:
+
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking"
-if [ ! -f "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint" ]; then
+
+# Per-sprint unique ID (per Phase 1 design doc OQ3). Prevents concurrent
+# fix-issues sessions from colliding on the literal "sprint" suffix. The
+# ISSUE_TITLE slug is a human-readable tag; the UTC timestamp guarantees
+# uniqueness across concurrent sprints on the same host.
+ISSUE_TITLE_SLUG=$(printf '%s' "${ISSUE_TITLE:-sprint}" | tr -cd 'a-z0-9' | head -c 8)
+[ -z "$ISSUE_TITLE_SLUG" ] && ISSUE_TITLE_SLUG="sprint"
+SPRINT_ID="sprint-$(date -u +%Y%m%d-%H%M%S)-$ISSUE_TITLE_SLUG"
+PIPELINE_ID="fix-issues.$SPRINT_ID"
+PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+# Recover SPRINT_ID after sanitization (strip the "fix-issues." prefix).
+SPRINT_ID="${PIPELINE_ID#fix-issues.}"
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+
+if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
   printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
     "$N" "${FOCUS:-default}" "$(TZ=America/New_York date -Iseconds)" \
-    > "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint"
+    > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
 fi
 ```
 
@@ -547,7 +565,7 @@ After Phase 1 (preflight + sync + research) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.preflight"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.preflight"
 ```
 
 ## Phase 2 — Prioritize
@@ -655,7 +673,7 @@ After Phase 2 (prioritize) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)" "$ISSUE_COUNT" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.prioritize"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.prioritize"
 ```
 
 ## Phase 3 — Execute (agent teams in worktrees)
@@ -710,14 +728,16 @@ verbatim text to a temp file (e.g., `/tmp/issue-NNN.md`) and tell the agent
 to `Read` the file. This avoids the natural LLM tendency to compress long
 text when inlining it in a prompt. Shorter content can be inlined directly.
 
-**Declare pipeline ID** early in execution (before any git operation):
+**Declare pipeline ID** early in execution (before any git operation).
+`$PIPELINE_ID` was constructed at the top of Phase 1 ("Sprint tracking
+sentinel") as `fix-issues.$SPRINT_ID`:
 ```bash
-echo "ZSKILLS_PIPELINE_ID=fix-issues.sprint"
+echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 ```
 
 Before dispatching each fix agent to its worktree, write `.zskills-tracked`:
 ```bash
-printf '%s\n' "fix-issues.sprint" > "<worktree-path>/.zskills-tracked"
+printf '%s\n' "$PIPELINE_ID" > "<worktree-path>/.zskills-tracked"
 ```
 
 The echo associates the orchestrator session with this pipeline (read by hook
@@ -810,7 +830,7 @@ After Phase 3 (execute) is complete — all agents have returned:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.execute"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.execute"
 ```
 
 ## Phase 4 — Review
@@ -818,12 +838,15 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 ### Pre-verification tracking
 
 Before dispatching verification agents, create a delegation requirement
-marker so the hook can enforce that verification actually runs:
+marker so the hook can enforce that verification actually runs. The
+marker lives in fix-issues' own per-sprint subdir (same pattern as
+run-plan's delegation lock in Phase 3 of the tracking plan):
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
   "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.sprint"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.$SPRINT_ID"
 ```
 
 ### Dispatch protocol
@@ -864,7 +887,7 @@ After Phase 4 (verify) is complete — all verification agents have returned:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.verify"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.verify"
 ```
 
 ## Phase 5 — Write Sprint Report (BEFORE landing)
@@ -935,7 +958,7 @@ After Phase 5 (report) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.report"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.report"
 ```
 
 ## Phase 6 — Land
@@ -1261,14 +1284,14 @@ After Phase 6 (land) is complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.fix-issues.sprint.land"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.land"
 ```
 
 After the sprint completes (whether all issues landed or the sprint ended),
 clean up the sentinel:
 
 ```bash
-rm -f "$MAIN_ROOT/.zskills/tracking/pipeline.fix-issues.sprint"
+rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
 ```
 
 Also remove `.zskills-tracked` from each worktree that was used.

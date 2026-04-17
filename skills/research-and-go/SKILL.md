@@ -43,17 +43,24 @@ mkdir -p "$MAIN_ROOT/.zskills/tracking"
 ```
 
 **Check for duplicate pipeline:** Compute the scope slug first (see below),
-then check if `$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.$SCOPE`
-exists. If it does, STOP — this exact pipeline is already in progress. Read
-the file and report its contents. Do not proceed unless this is a deliberate
-re-run (see Re-run Handling below). Note: other research-and-go pipelines
-with DIFFERENT scopes are fine — they run in parallel without conflict.
+then check if
+`$MAIN_ROOT/.zskills/tracking/research-and-go.$SCOPE/pipeline.research-and-go.$SCOPE`
+exists (new subdir scheme — Phase 1 design doc Option B). If it does,
+STOP — this exact pipeline is already in progress. Read the file and
+report its contents. Do not proceed unless this is a deliberate re-run
+(see Re-run Handling below). Note: other research-and-go pipelines with
+DIFFERENT scopes are fine — they run in parallel without conflict.
 
 **Create the scoped sentinel:**
 
 ```bash
 SCOPE=$(echo "$DESCRIPTION" | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-30)
-printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/pipeline.research-and-go.$SCOPE"
+PIPELINE_ID="research-and-go.$SCOPE"
+PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+# Recover SCOPE after sanitization (strip the "research-and-go." prefix).
+SCOPE="${PIPELINE_ID#research-and-go.}"
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.research-and-go.$SCOPE"
 ```
 
 Where `$DESCRIPTION` is the broad goal passed to this command and `$SCOPE` is a
@@ -62,7 +69,7 @@ slugified version for scoping.
 **Declare pipeline ID for hook scoping:**
 
 ```bash
-echo "ZSKILLS_PIPELINE_ID=research-and-go.$SCOPE"
+echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 ```
 
 This echo is read by the tracking hook from the session transcript to scope
@@ -89,8 +96,14 @@ fulfilled. The orchestrator cannot skip the final cross-branch check.
 ```bash
 printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\nmeta_plan=%s\nmeta_plan_slug=%s\ncreatedAt=%s\n' \
   "$META_PLAN_PATH" "$META_PLAN_SLUG" "$(date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$META_PLAN_SLUG"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.final.$META_PLAN_SLUG"
 ```
+
+**Known cross-pipeline read gap (PHASE-5-UPDATE):** `run-plan` reads this
+`requires.verify-changes.final.$META_PLAN_SLUG` marker from a different
+pipeline's subdir (r&g's subdir, not run-plan's). The flat-path reads at
+`skills/run-plan/SKILL.md:1176-1177` and `1365-1368` still need updating
+to the subdir scheme. Tracked for Phase 5 — not touched here.
 
 The marker is named with the meta-plan slug to match the pipeline scope the
 meta-plan `/run-plan` will emit (`run-plan.<META_PLAN_SLUG>`). The hook's
@@ -105,13 +118,16 @@ fulfillment marker exists.
 
 ### Re-run Handling
 
-If `pipeline.research-and-go.$SCOPE` already exists and this is a deliberate
-re-run of the same goal:
+If `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.research-and-go.$SCOPE`
+already exists and this is a deliberate re-run of the same goal:
 
 1. Read the existing `pipeline.research-and-go.$SCOPE` to confirm the goal matches.
-2. Check which `requires.*` files already exist in `$MAIN_ROOT/.zskills/tracking/`.
-3. For each existing requirement, check if a corresponding `fulfilled.*` file
-   exists. Only create new requirement files for unfulfilled requirements.
+2. Check which `requires.*` and `meta.*` files already exist in
+   `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/`.
+3. For each existing `requires.*` entry, check if a corresponding `fulfilled.*`
+   file exists in the same subdir. Only create new requirement files for
+   unfulfilled requirements. (`meta.*` files are metadata and are idempotent —
+   just re-touch.)
 4. Touch existing `requires.*` files to refresh their mtime (prevents staleness
    false positives).
 5. Overwrite the `pipeline.research-and-go.$SCOPE` sentinel with a fresh timestamp.
@@ -150,21 +166,27 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 For each sub-plan index `i` (from 1 to N, where N is the number of sub-plans
 produced by `/research-and-plan`):
 
+These integer markers are **dispatch metadata**, not enforcement (per
+Phase 1 design doc OQ1). The hook's enforcement globs only scan
+`requires.*`, `fulfilled.*`, and `step.*`. Using the `meta.*` prefix
+keeps them out of the scope-filter path by construction, making the
+metadata intent explicit in the marker basename.
+
 ```bash
 for i in 1 2 ... N; do
-  printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.draft-plan.$i"
-  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.$i"
+  printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.draft-plan.$i"
+  printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.$i"
 done
 ```
 
-Also create a requirement for the meta-plan execution itself:
+Also create a metadata marker for the meta-plan execution itself:
 
 ```bash
-printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/requires.run-plan.meta"
+printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.meta"
 ```
 
 Replace `1 2 ... N` with the actual sub-plan indices. The `draft-plan`
-requirements track the planning phase; the `run-plan` requirements track
+metadata tracks the planning phase; the `run-plan` metadata tracks
 execution.
 
 **Pass tracking IDs to child skills:** When dispatching `/run-plan` for each
