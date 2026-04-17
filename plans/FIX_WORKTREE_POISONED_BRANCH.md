@@ -1,7 +1,7 @@
 ---
 title: Fix Worktree-Add Silent Attach to Poisoned Stale Branches
 created: 2026-04-17
-status: active
+status: complete
 ---
 
 # Plan: Fix Worktree-Add Silent Attach to Poisoned Stale Branches
