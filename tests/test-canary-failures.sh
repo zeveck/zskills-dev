@@ -6,7 +6,12 @@
 
 set -u
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+# Derive REPO_ROOT from the script's own location, not from CWD. This
+# makes the suite robust to any invocation directory (aggregator runs
+# from the repo root, but ad-hoc invocations from elsewhere should still
+# find the committed fixture files under tests/fixtures/canary/).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FIXTURES="$REPO_ROOT/tests/fixtures/canary"
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -258,6 +263,194 @@ if [ "$tc_rc" -eq 0 ] && [ ! -d "$tc_tmpdir" ]; then
   pass "/tmp test-output dir cleanup: rc=0 and $tc_tmpdir removed"
 else
   fail "/tmp test-output dir cleanup — rc=$tc_rc (want 0); dir still present? [ -d \"$tc_tmpdir\" ]=$([ -d "$tc_tmpdir" ] && echo yes || echo no); output: $tc_out"
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 3 — post-run-invariants.sh reproducers
+# ---------------------------------------------------------------------------
+# Script takes 5 required flags: --worktree, --branch, --landed-status,
+# --plan-slug, --plan-file. Pass empty string for flags not relevant to
+# a given invariant. MAIN_ROOT is resolved via `git rev-parse
+# --git-common-dir`, so every invocation subshell-cd's into the fixture's
+# primary repo first.
+INVARIANTS_SCRIPT="$REPO_ROOT/scripts/post-run-invariants.sh"
+
+section "Invariant #1: worktree on disk (1 case)"
+i1_primary=$(setup_fixture_repo)
+i1_stray=$(mktemp -d)
+FIXTURE_DIRS+=("$i1_stray")
+expect_script_exit \
+  "invariant #1: worktree directory still on disk" \
+  1 \
+  "INVARIANT-FAIL (#1): worktree still on disk at $i1_stray" \
+  bash -c "cd \"$i1_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i1_stray\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
+
+section "Invariant #2: worktree in registry (1 case)"
+i2_primary=$(setup_fixture_repo)
+i2_worktree=$(mktemp -u)
+FIXTURE_DIRS+=("$i2_worktree")
+# Don't name a base commit — setup_fixture_repo uses git's default branch
+# (may be master), so let git pick HEAD.
+git -C "$i2_primary" worktree add -q "$i2_worktree" -b canary/test-2
+# Wipe directory off disk but leave registry entry so only #2 fires.
+rm -rf "$i2_worktree"
+expect_script_exit \
+  "invariant #2: worktree still in git registry" \
+  1 \
+  "INVARIANT-FAIL (#2): $i2_worktree still in git worktree registry" \
+  bash -c "cd \"$i2_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i2_worktree\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
+
+section "Invariant #3: local branch after landed (2 cases)"
+# Fire case: branch still present under landed status.
+i3a_primary=$(setup_fixture_repo)
+git -C "$i3a_primary" branch canary/test-3
+expect_script_exit \
+  "invariant #3 fire: local branch present + landed" \
+  1 \
+  "INVARIANT-FAIL (#3): local branch canary/test-3 still exists after landed" \
+  bash -c "cd \"$i3a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch canary/test-3 --landed-status landed --plan-slug \"\" --plan-file \"\""
+
+# Negative case: pr-ready intentionally keeps the branch — must NOT fail.
+i3b_primary=$(setup_fixture_repo)
+git -C "$i3b_primary" branch canary/test-3
+i3b_out=$(cd "$i3b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch canary/test-3 --landed-status pr-ready \
+  --plan-slug "" --plan-file "" 2>&1); i3b_rc=$?
+if [ "$i3b_rc" -eq 0 ] && [[ "$i3b_out" != *"INVARIANT-FAIL (#3):"* ]]; then
+  pass "invariant #3 negative: pr-ready keeps branch, no #3 failure"
+else
+  fail "invariant #3 negative — rc=$i3b_rc (want 0); '#3' absent? out: $i3b_out"
+fi
+
+section "Invariant #4: remote branch after landed (2 cases)"
+# Fire case: branch pushed to origin + landed status.
+i4a_primary=$(setup_fixture_repo)
+i4a_origin=$(setup_bare_origin)
+git -C "$i4a_primary" remote add origin "$i4a_origin"
+git -C "$i4a_primary" push -q origin HEAD:refs/heads/main
+# Push HEAD directly (no local branch named canary/test-4 is ever created),
+# so #3 cannot co-fire and pollute the #4 assertion.
+git -C "$i4a_primary" push -q origin HEAD:refs/heads/canary/test-4
+expect_script_exit \
+  "invariant #4 fire: remote branch present + landed" \
+  1 \
+  "INVARIANT-FAIL (#4): remote branch origin/canary/test-4 still exists after landed" \
+  bash -c "cd \"$i4a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch canary/test-4 --landed-status landed --plan-slug \"\" --plan-file \"\""
+
+# Negative case: same fixture shape but landed-status=pr-ready — #4 must not fire.
+i4b_primary=$(setup_fixture_repo)
+i4b_origin=$(setup_bare_origin)
+git -C "$i4b_primary" remote add origin "$i4b_origin"
+git -C "$i4b_primary" push -q origin HEAD:refs/heads/main
+git -C "$i4b_primary" push -q origin HEAD:refs/heads/canary/test-4
+i4b_out=$(cd "$i4b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch canary/test-4 --landed-status pr-ready \
+  --plan-slug "" --plan-file "" 2>&1); i4b_rc=$?
+if [ "$i4b_rc" -eq 0 ] && [[ "$i4b_out" != *"INVARIANT-FAIL (#4):"* ]]; then
+  pass "invariant #4 negative: pr-ready keeps remote branch, no #4 failure"
+else
+  fail "invariant #4 negative — rc=$i4b_rc (want 0); '#4' absent? out: $i4b_out"
+fi
+
+section "Invariant #5: plan report missing (2 cases)"
+# Fire case: fresh fixture repo with no reports/ dir.
+i5a_primary=$(setup_fixture_repo)
+expect_script_exit \
+  "invariant #5 fire: missing plan report" \
+  1 \
+  "INVARIANT-FAIL (#5): plan report missing at" \
+  bash -c "cd \"$i5a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug canary-5 --plan-file \"\""
+
+# Negative case: create the report, assert rc=0.
+i5b_primary=$(setup_fixture_repo)
+mkdir -p "$i5b_primary/reports"
+touch "$i5b_primary/reports/plan-canary-5.md"
+i5b_out=$(cd "$i5b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" \
+  --plan-slug canary-5 --plan-file "" 2>&1); i5b_rc=$?
+if [ "$i5b_rc" -eq 0 ] && [[ "$i5b_out" != *"INVARIANT-FAIL (#5):"* ]]; then
+  pass "invariant #5 negative: report present, no #5 failure"
+else
+  fail "invariant #5 negative — rc=$i5b_rc (want 0); '#5' absent? out: $i5b_out"
+fi
+
+section "Invariant #6: in-progress sentinel in plan (2 cases)"
+# Fixture files are committed to the repo (tests/fixtures/canary/). Pass
+# the path through --plan-file; invariant #6 reads only that file.
+i6_fire_plan="$REPO_ROOT/tests/fixtures/canary/plan-with-sentinel.md"
+i6_negative_plan="$REPO_ROOT/tests/fixtures/canary/plan-without-sentinel.md"
+
+# Fire case: fixture contains the in-progress sentinel.
+i6a_primary=$(setup_fixture_repo)
+expect_script_exit \
+  "invariant #6 fire: plan contains in-progress sentinel" \
+  1 \
+  "INVARIANT-FAIL (#6):" \
+  bash -c "cd \"$i6a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"$i6_fire_plan\""
+
+# Negative case: fixture has no sentinel — must not fire #6.
+i6b_primary=$(setup_fixture_repo)
+i6b_out=$(cd "$i6b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" --plan-slug "" \
+  --plan-file "$i6_negative_plan" 2>&1); i6b_rc=$?
+if [ "$i6b_rc" -eq 0 ] && [[ "$i6b_out" != *"INVARIANT-FAIL (#6):"* ]]; then
+  pass "invariant #6 negative: clean plan, no #6 failure"
+else
+  fail "invariant #6 negative — rc=$i6b_rc (want 0); '#6' absent? out: $i6b_out"
+fi
+
+section "Invariant #7: main divergence WARN (3 cases)"
+# Case A — no divergence: primary and bare origin on the same main commit.
+# Expect rc=0 AND stderr does NOT contain 'INVARIANT-WARN (#7):'.
+# setup_fixture_repo uses the git default branch (often 'master'); invariant
+# #7 explicitly reads local 'main', so rename before the push.
+i7a_primary=$(setup_fixture_repo)
+git -C "$i7a_primary" branch -M main
+i7a_origin=$(setup_bare_origin)
+git -C "$i7a_primary" remote add origin "$i7a_origin"
+git -C "$i7a_primary" push -q origin main
+i7a_out=$(cd "$i7a_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" \
+  --plan-slug "" --plan-file "" 2>&1); i7a_rc=$?
+if [ "$i7a_rc" -eq 0 ] && [[ "$i7a_out" != *"INVARIANT-WARN (#7):"* ]]; then
+  pass "invariant #7 Case A (no divergence): rc=0 and no #7 WARN"
+else
+  fail "invariant #7 Case A — rc=$i7a_rc (want 0); '#7' absent? out: $i7a_out"
+fi
+
+# Case B — fetch fails: origin URL points at a nonexistent path.
+i7b_primary=$(setup_fixture_repo)
+git -C "$i7b_primary" remote add origin "file:///nonexistent/canary-origin-b"
+i7b_out=$(cd "$i7b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" \
+  --plan-slug "" --plan-file "" 2>&1); i7b_rc=$?
+if [ "$i7b_rc" -eq 0 ] && [[ "$i7b_out" == *"INVARIANT-WARN (#7): 'git fetch origin main' failed"* ]]; then
+  pass "invariant #7 Case B (fetch fails): rc=0 with fetch-fail WARN"
+else
+  fail "invariant #7 Case B — rc=$i7b_rc (want 0); fetch-fail WARN present? out: $i7b_out"
+fi
+
+# Case C — squash-merge divergence: local main has a commit origin/main
+# lacks, but the trees are identical (different commit metadata only).
+i7c_primary=$(setup_fixture_repo)
+git -C "$i7c_primary" branch -M main
+i7c_origin=$(setup_bare_origin)
+git -C "$i7c_primary" remote add origin "$i7c_origin"
+git -C "$i7c_primary" commit --allow-empty -q -m "B"
+git -C "$i7c_primary" push -q origin main
+I7C_TREE=$(git -C "$i7c_primary" rev-parse main^{tree})
+I7C_PARENT=$(git -C "$i7c_primary" rev-parse main^)
+I7C_BPRIME=$(git -C "$i7c_origin" commit-tree "$I7C_TREE" -p "$I7C_PARENT" -m "squash-like")
+git -C "$i7c_origin" update-ref refs/heads/main "$I7C_BPRIME"
+git -C "$i7c_primary" fetch -q origin main
+i7c_out=$(cd "$i7c_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" \
+  --plan-slug "" --plan-file "" 2>&1); i7c_rc=$?
+I7C_WANT="INVARIANT-WARN (#7): local main has commits absent from origin/main but tree is identical (squash-merge divergence)"
+if [ "$i7c_rc" -eq 0 ] && [[ "$i7c_out" == *"$I7C_WANT"* ]]; then
+  pass "invariant #7 Case C (squash-merge divergence): rc=0 with tree-identical WARN"
+else
+  fail "invariant #7 Case C — rc=$i7c_rc (want 0); squash-divergence WARN present? out: $i7c_out"
 fi
 
 echo
