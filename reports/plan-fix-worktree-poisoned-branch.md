@@ -2,6 +2,32 @@
 
 Plan: `plans/FIX_WORKTREE_POISONED_BRANCH.md`
 
+## Phase — 2 Canary test coverage [UNFINALIZED]
+
+**Plan:** plans/FIX_WORKTREE_POISONED_BRANCH.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-fix-worktree-poisoned-branch
+**Branch:** feat/fix-worktree-poisoned-branch
+**Commits:** 8e372d2 (test)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | `tests/test-canary-failures.sh` 6-case section (lines 306-402) | Done | 8e372d2 |
+
+### Verification
+- Acceptance criteria 1-6: all PASS (exact header, ≥7 helper refs, bash -n clean, rc=0, +6 delta, all 6 cases PASS).
+- Semantic review (6 cases): all PASS with correct rc and expected stderr substrings.
+- Constraints: 6 `FIXTURE_DIRS+=(...)` registrations; `git branch -M main` in each fixture; Case 4 `unset ZSKILLS_ALLOW_BRANCH_RESUME` inside subshell; Case 2 uses `git branch -f` force-ref + runtime 0/0 invariant check (stronger than plan's "comment" requirement — avoids the `--no-ff merge` trap entirely).
+- Flakiness: STABLE across 2 consecutive runs (diff on Overall line empty).
+- Test suite: 327/327 pass (baseline 321, +6 new).
+
+### User Sign-off
+
+*(None — non-UI phase; no user verification required.)*
+
+---
+
 ## Phase — 1 Poisoned-branch discriminator helper + 3 call sites [UNFINALIZED]
 
 **Plan:** plans/FIX_WORKTREE_POISONED_BRANCH.md
