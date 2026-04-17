@@ -2174,19 +2174,34 @@ if [ "$CI_STATUS" = "pass" ] || [ "$CI_STATUS" = "none" ] || [ "$CI_STATUS" = "s
   # Give GitHub a moment to process the merge
   sleep 5
   # Distinguish "call failed" from "PR is OPEN". If the API call fails
-  # (network / auth / rate-limit), we default to OPEN to keep the flow
-  # going AND emit a warning so the failure is visible — downstream
-  # writes pr_state: OPEN into .landed, so be honest it's a guess.
-  if ! PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null); then
-    echo "WARNING: gh pr view failed for PR #$PR_NUMBER — defaulting pr_state to OPEN (may be stale; verify at PR URL)" >&2
-    PR_STATE="OPEN"
+  # (network / auth / rate-limit), retry up to 3 times with 2s/4s backoff
+  # (6s max). On total failure, record UNKNOWN and propagate
+  # pr-state-unknown into .landed so the state-loss is visible and
+  # actionable — downstream tooling can detect the literal string.
+  PR_STATE="UNKNOWN"
+  for attempt in 1 2 3; do
+    if STATE_OUT=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>&1); then
+      PR_STATE="$STATE_OUT"
+      break
+    fi
+    echo "WARN: gh pr view attempt $attempt failed: $STATE_OUT" >&2
+    [ $attempt -lt 3 ] && sleep $((attempt * 2))
+  done
+  if [ "$PR_STATE" = "UNKNOWN" ]; then
+    echo "ERROR: gh pr view failed 3 times for PR #$PR_NUMBER. Recording pr-state-unknown." >&2
+    LANDED_STATUS="pr-state-unknown"
   fi
 else
   PR_STATE="OPEN"
 fi
 
 # --- Determine .landed status ---
-if [ "$CI_STATUS" = "pending" ]; then
+# Preserve pr-state-unknown from the retry loop above — it takes
+# precedence over CI/PR-state derived statuses because the underlying
+# PR state is unknown and must not be silently reclassified.
+if [ "${LANDED_STATUS:-}" = "pr-state-unknown" ]; then
+  : # keep LANDED_STATUS=pr-state-unknown
+elif [ "$CI_STATUS" = "pending" ]; then
   # Timeout: checks still running. Write pr-ready so next cron turn re-checks.
   LANDED_STATUS="pr-ready"
 elif [ "$CI_STATUS" = "fail" ]; then

@@ -417,12 +417,22 @@ fi
 **Step A9 — Write `.landed` marker:**
 ```bash
 # Check if PR was auto-merged. If gh pr view fails (network / auth / rate),
-# default to OPEN to keep the flow going AND warn so the failure is visible.
-if ! PR_STATE=$(gh pr view "$PR_URL" --json state --jq '.state' 2>/dev/null); then
-  echo "WARNING: gh pr view failed for $PR_URL — defaulting pr_state to OPEN (may be stale; verify at PR URL)" >&2
-  PR_STATE="OPEN"
-fi
-if [ "$PR_STATE" = "MERGED" ]; then
+# retry up to 3 times with 2s/4s backoff (6s max). On total failure, record
+# UNKNOWN and propagate pr-state-unknown into .landed so state-loss is
+# visible and downstream tooling can detect the literal string.
+PR_STATE="UNKNOWN"
+for attempt in 1 2 3; do
+  if STATE_OUT=$(gh pr view "$PR_URL" --json state --jq '.state' 2>&1); then
+    PR_STATE="$STATE_OUT"
+    break
+  fi
+  echo "WARN: gh pr view attempt $attempt failed: $STATE_OUT" >&2
+  [ $attempt -lt 3 ] && sleep $((attempt * 2))
+done
+if [ "$PR_STATE" = "UNKNOWN" ]; then
+  echo "ERROR: gh pr view failed 3 times for $PR_URL. Recording pr-state-unknown." >&2
+  LANDED_STATUS="pr-state-unknown"
+elif [ "$PR_STATE" = "MERGED" ]; then
   LANDED_STATUS="landed"
 elif [ "$CI_STATUS" = "failed" ]; then
   LANDED_STATUS="pr-ci-failing"
