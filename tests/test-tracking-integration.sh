@@ -1,7 +1,13 @@
 #!/bin/bash
 # End-to-end tests for the tracking enforcement system.
-# These tests create REAL git repos, write REAL tracking markers,
+# These tests create REAL git repos, write REAL tracking markers under the
+# Option B per-pipeline-subdir layout (.zskills/tracking/$PIPELINE_ID/…),
 # and run REAL git commits through the actual hook.
+#
+# Layout reference: docs/tracking/TRACKING_NAMING.md (Phase 1 design doc).
+# The hook reads subdir-first and falls back to the legacy flat glob +
+# suffix filter during the transitional window (Phases 2-6). These tests
+# exercise the PRIMARY (subdir) path.
 #
 # Run from repo root: bash tests/test-tracking-integration.sh
 
@@ -56,12 +62,21 @@ setup_repo() {
   sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
   sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
 
-  # Create .zskills/tracking directory
+  # Create .zskills/tracking directory (subdirs are created per pipeline below)
   mkdir -p "$TEST_TMPDIR/.zskills/tracking"
 
   # Create a transcript that contains the full test command (so the test-gate
   # check passes -- we are testing tracking enforcement, not test-gate)
   printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
+}
+
+# Create the per-pipeline tracking subdir for a given PIPELINE_ID and echo its
+# path. Centralizes the Option B layout so tests read consistently.
+pipeline_subdir() {
+  local repo="$1" pid="$2"
+  local dir="$repo/.zskills/tracking/$pid"
+  mkdir -p "$dir"
+  echo "$dir"
 }
 
 teardown_repo() {
@@ -115,18 +130,23 @@ try_commit_worktree() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 1: Basic enforcement (commit blocked by requires.*, unblocked by fulfilled.*)
+# Test 1: Basic enforcement (subdir layout)
+# requires.* in .zskills/tracking/$PIPELINE_ID/ blocks a code commit until
+# fulfilled.* is written into the SAME subdir.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo "=== Test 1: Basic enforcement ==="
 
 setup_repo
 
-# Create a requires marker (unfulfilled)
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.alpha"
+PID="run-plan.alpha"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+
+# Create a requires marker (unfulfilled) inside the pipeline's subdir
+touch "$DIR/requires.verify-changes.alpha"
 
 # Write .zskills-tracked to associate this session with the pipeline
-printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills-tracked"
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
 
 # Stage a code file (.js -- triggers code-file detection)
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -135,22 +155,22 @@ printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills-tracked"
 if try_commit; then
   fail "Test 1a: commit should be blocked by unfulfilled requires marker"
 else
-  pass "Test 1a: commit blocked by unfulfilled requires marker"
+  pass "Test 1a: commit blocked by unfulfilled requires marker (subdir layout)"
 fi
 
 # Verify the block message mentions the right marker
-if [[ "$HOOK_OUTPUT" == *"verify-changes.run-plan.alpha"* ]]; then
+if [[ "$HOOK_OUTPUT" == *"verify-changes.alpha"* ]]; then
   pass "Test 1b: block message references correct marker"
 else
-  fail "Test 1b: block message should reference 'verify-changes.run-plan.alpha', got: $HOOK_OUTPUT"
+  fail "Test 1b: block message should reference 'verify-changes.alpha', got: $HOOK_OUTPUT"
 fi
 
-# Now create the fulfilled marker
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.alpha"
+# Now create the fulfilled marker in the same subdir
+touch "$DIR/fulfilled.verify-changes.alpha"
 
 # Attempt commit -- should SUCCEED
 if try_commit; then
-  pass "Test 1c: commit allowed after fulfilled marker created"
+  pass "Test 1c: commit allowed after fulfilled marker created in same subdir"
 else
   fail "Test 1c: commit should be allowed after fulfilled marker, got: $HOOK_OUTPUT"
 fi
@@ -158,7 +178,9 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 2: Pipeline scoping (cross-pipeline non-blocking)
+# Test 2: Pipeline scoping via subdir isolation
+# Two concurrent pipelines live in disjoint subdirs. One pipeline's
+# unfulfilled markers must NOT affect the other.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -166,24 +188,26 @@ echo "=== Test 2: Pipeline scoping ==="
 
 setup_repo
 
-# Create markers for pipeline-A (unfulfilled)
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-A"
+# Pipeline A has an unfulfilled requires in its own subdir
+DIR_A=$(pipeline_subdir "$TEST_TMPDIR" "run-plan.pipeline-A")
+touch "$DIR_A/requires.verify-changes.pipeline-A"
 
-# Write .zskills-tracked with pipeline-B (different pipeline)
+# Session is associated with pipeline B (different subdir, no markers yet)
 printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
 
-# Attempt commit -- should SUCCEED (pipeline-B doesn't see pipeline-A markers)
+# Attempt commit -- should SUCCEED (pipeline-B's subdir absent/empty, pipeline-A invisible)
 if try_commit; then
-  pass "Test 2a: pipeline-B not blocked by pipeline-A's unfulfilled markers"
+  pass "Test 2a: pipeline-B not blocked by pipeline-A's subdir markers"
 else
   fail "Test 2a: pipeline-B should not be blocked by pipeline-A's markers, got: $HOOK_OUTPUT"
 fi
 
-# Now add pipeline-B's own unfulfilled marker
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+# Now give pipeline-B its own unfulfilled marker in its own subdir
+DIR_B=$(pipeline_subdir "$TEST_TMPDIR" "run-plan.pipeline-B")
+touch "$DIR_B/requires.verify-changes.pipeline-B"
 
 # Re-stage (previous commit wasn't real -- hook only, file still staged)
 (cd "$TEST_TMPDIR" && echo "var y = 2;" > app2.js && git add app2.js)
@@ -195,12 +219,12 @@ else
   pass "Test 2b: pipeline-B blocked by its own unfulfilled marker"
 fi
 
-# Fulfill pipeline-B's marker (but NOT pipeline-A's)
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.pipeline-B"
+# Fulfill pipeline-B's marker (pipeline-A still unfulfilled — it's in a different subdir)
+touch "$DIR_B/fulfilled.verify-changes.pipeline-B"
 
-# Attempt commit -- should SUCCEED (pipeline-B's marker is fulfilled, pipeline-A is irrelevant)
+# Attempt commit -- should SUCCEED
 if try_commit; then
-  pass "Test 2c: pipeline-B allowed after fulfilling its own marker (pipeline-A still unfulfilled)"
+  pass "Test 2c: pipeline-B allowed after fulfilling its own marker (pipeline-A subdir untouched)"
 else
   fail "Test 2c: pipeline-B should be allowed despite pipeline-A being unfulfilled, got: $HOOK_OUTPUT"
 fi
@@ -209,6 +233,9 @@ teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
 # Test 3: Worktree enforcement
+# Hook reads tracking markers from the MAIN repo's .zskills/tracking/
+# (via git-common-dir), even when invoked from a worktree. Markers
+# live in the per-pipeline subdir.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -234,10 +261,12 @@ else
   cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
 
   # Write .zskills-tracked in the worktree
-  printf 'run-plan.thermal-domain\n' > "$WORKTREE_DIR/.zskills-tracked"
+  PID="run-plan.thermal-domain"
+  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
 
-  # Create tracking markers in the MAIN repo's .zskills/tracking/
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
+  # Create tracking markers in the MAIN repo's per-pipeline subdir
+  DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+  touch "$DIR_T/requires.verify-changes.thermal-domain"
 
   # Create transcript in worktree (with test command so test-gate passes)
   printf 'npm run test:all\n' > "$WORKTREE_DIR/.transcript"
@@ -254,12 +283,12 @@ else
     pass "Test 3a: worktree commit blocked by main repo's unfulfilled requires marker"
   fi
 
-  # Create fulfilled marker in the MAIN repo's tracking dir
-  touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.thermal-domain"
+  # Create fulfilled marker in the SAME subdir in the main repo
+  touch "$DIR_T/fulfilled.verify-changes.thermal-domain"
 
   # Attempt commit again -- should SUCCEED
   if try_commit_worktree "$WORKTREE_DIR" "$TEST_TMPDIR" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"; then
-    pass "Test 3b: worktree commit allowed after fulfilled marker in main repo"
+    pass "Test 3b: worktree commit allowed after fulfilled marker in main repo subdir"
   else
     fail "Test 3b: worktree commit should be allowed after fulfilled marker, got: $HOOK_OUTPUT"
   fi
@@ -279,11 +308,14 @@ echo "=== Test 4: Content-only exemption ==="
 
 setup_repo
 
+PID="run-plan.alpha"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+
 # Create unfulfilled markers
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.alpha"
+touch "$DIR/requires.verify-changes.alpha"
 
 # Write .zskills-tracked
-printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills-tracked"
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
 
 # Stage ONLY a markdown file (content-only -- no code files)
 (cd "$TEST_TMPDIR" && echo "# Documentation update" > README.md && git add README.md)
@@ -328,8 +360,10 @@ echo "=== Test 5: Unrelated session ==="
 setup_repo
 
 # Create unfulfilled tracking markers (as if a pipeline is running)
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.implement"
+PID="run-plan.thermal-domain"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+touch "$DIR/requires.verify-changes.thermal-domain"
+touch "$DIR/step.run-plan.thermal-domain.implement"
 
 # Do NOT write .zskills-tracked
 
@@ -353,8 +387,7 @@ printf 'ZSKILLS_PIPELINE_ID=run-plan.thermal-domain\nnpm run test:all\n' > "$TES
 # Re-stage
 (cd "$TEST_TMPDIR" && echo "var y = 2;" > app2.js && git add app2.js)
 
-# Attempt commit -- should be BLOCKED (transcript has pipeline ID,
-# scoped to run-plan.alpha which matches our marker)
+# Attempt commit -- should be BLOCKED (transcript has pipeline ID matching the subdir)
 if try_commit; then
   fail "Test 5b: session with ZSKILLS_PIPELINE_ID matching markers should be blocked"
 else
@@ -365,6 +398,7 @@ teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
 # Test 6: Step enforcement (implement → verify → report chain)
+# All step markers live under the per-pipeline subdir.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -372,11 +406,14 @@ echo "=== Test 6: Step enforcement ==="
 
 setup_repo
 
-# Write .zskills-tracked
-printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
+PID="run-plan.thermal-domain"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
 
-# Create implement step marker only
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.implement"
+# Write .zskills-tracked
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+
+# Create implement step marker only (inside the subdir)
+touch "$DIR/step.run-plan.thermal-domain.implement"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -388,8 +425,8 @@ else
   pass "Test 6a: commit blocked — implement without verify"
 fi
 
-# Add verify marker
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.verify"
+# Add verify marker in the same subdir
+touch "$DIR/step.run-plan.thermal-domain.verify"
 
 # Attempt commit -- should be BLOCKED (verify without report)
 if try_commit; then
@@ -398,8 +435,8 @@ else
   pass "Test 6b: commit blocked — verify without report"
 fi
 
-# Add report marker
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.report"
+# Add report marker in the same subdir
+touch "$DIR/step.run-plan.thermal-domain.report"
 
 # Attempt commit -- should SUCCEED (full chain complete)
 if try_commit; then
@@ -419,12 +456,15 @@ echo "=== Test 7: No staleness bypass ==="
 
 setup_repo
 
+PID="run-plan.alpha"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+
 # Write .zskills-tracked
-printf 'run-plan.alpha\n' > "$TEST_TMPDIR/.zskills-tracked"
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
 
 # Create a requires marker and make it old (>8h = >480 minutes)
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.alpha"
-touch -t 202501010000 "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.alpha"
+touch "$DIR/requires.verify-changes.alpha"
+touch -t 202501010000 "$DIR/requires.verify-changes.alpha"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -448,15 +488,17 @@ echo "=== Test 8: Combined delegation + step enforcement ==="
 setup_repo
 
 # This simulates the state right before cherry-pick to main:
-# - requires + fulfilled (delegation satisfied)
-# - step implement + verify + report (step chain complete)
-printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
+# - requires + fulfilled (delegation satisfied) in per-pipeline subdir
+# - step implement + verify + report (step chain complete) in same subdir
+PID="run-plan.thermal-domain"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
 
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.thermal-domain"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.implement"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.verify"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.report"
+touch "$DIR/requires.verify-changes.thermal-domain"
+touch "$DIR/fulfilled.verify-changes.thermal-domain"
+touch "$DIR/step.run-plan.thermal-domain.implement"
+touch "$DIR/step.run-plan.thermal-domain.verify"
+touch "$DIR/step.run-plan.thermal-domain.report"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -469,7 +511,7 @@ else
 fi
 
 # Now remove the report marker (simulating incomplete step chain)
-rm -f "$TEST_TMPDIR/.zskills/tracking/step.run-plan.thermal-domain.report"
+rm -f "$DIR/step.run-plan.thermal-domain.report"
 
 # Re-stage
 (cd "$TEST_TMPDIR" && echo "var y = 2;" > app2.js && git add app2.js)
@@ -484,7 +526,7 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 9: phasestep markers are NOT enforced
+# Test 9: phasestep markers are NOT enforced (lives in per-pipeline subdir)
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
@@ -492,10 +534,14 @@ echo "=== Test 9: phasestep markers ignored ==="
 
 setup_repo
 
-printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
+PID="run-plan.thermal-domain"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
 
-# Create a phasestep marker (per-phase progress, NOT enforced)
-touch "$TEST_TMPDIR/.zskills/tracking/phasestep.run-plan.thermal-domain.phase3.implement"
+# Create a phasestep marker (per-phase progress, NOT enforced) in the subdir.
+# The hook's enforcement globs (requires.*, step.*.implement/verify,
+# fulfilled.*) do NOT match "phasestep.*" — so this file is ignored.
+touch "$DIR/phasestep.run-plan.thermal-domain.phase3.implement"
 
 # Stage a code file
 (cd "$TEST_TMPDIR" && echo "var x = 1;" > app.js && git add app.js)
@@ -537,15 +583,21 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
-# Test 11: Suffix matching prevents false positives
+# Test 11: Transitional flat-glob fallback still honors suffix matching
+# Under Option B, the reader tries the per-pipeline subdir first. If no
+# markers are found there, it falls back to the legacy flat glob + suffix
+# filter (which will be removed in Phase 6). This test locks in the
+# fallback's precision: PIPELINE_ID "plan" does NOT end ".run-plan.thermal-
+# domain", so the flat marker is correctly skipped.
 # ═══════════════════════════════════════════════════════════════════════
 
 echo ""
-echo "=== Test 11: Suffix matching precision ==="
+echo "=== Test 11: Flat-fallback suffix matching precision ==="
 
 setup_repo
 
-# Pipeline ID is "plan" -- should NOT match markers ending in ".run-plan.thermal-domain"
+# Pipeline ID is "plan" -- subdir does NOT exist, so fallback kicks in.
+# The flat marker's suffix is ".thermal-domain" which does not match "plan".
 printf 'plan\n' > "$TEST_TMPDIR/.zskills-tracked"
 touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
 
@@ -554,7 +606,7 @@ touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-d
 
 # Attempt commit -- should SUCCEED (suffix ".plan" does not match ".run-plan.thermal-domain")
 if try_commit; then
-  pass "Test 11a: pipeline ID 'plan' does not match marker ending '.run-plan.thermal-domain'"
+  pass "Test 11a: flat-fallback precision — pipeline 'plan' does not match 'run-plan.thermal-domain' flat marker"
 else
   fail "Test 11a: suffix matching should prevent false positive, got: $HOOK_OUTPUT"
 fi

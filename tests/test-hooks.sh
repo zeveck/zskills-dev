@@ -289,28 +289,37 @@ expect_project_allow "grep -n confirm scripts/clear-tracking.sh"
 
 teardown_project_test
 
+# Default transcript written by setup_project_test declares
+# ZSKILLS_PIPELINE_ID=run-plan.test-plan so the hook reads under
+# .zskills/tracking/run-plan.test-plan/ per the Option B layout.
+# (docs/tracking/TRACKING_NAMING.md)
+DEFAULT_SUBDIR=".zskills/tracking/run-plan.test-plan"
+
 echo ""
 echo "=== Project hook: delegation enforcement ==="
 
 # Test: requires.X without fulfilled.X blocks git commit
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 # Stage a code file so it's not content-only
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_deny "git commit -m test"
 teardown_project_test
 
-# Test: requires.X with fulfilled.X allows git commit
+# Test: requires.X with fulfilled.X in the same subdir allows git commit
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/fulfilled.verify-changes.test-plan"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_allow "git commit -m test"
 teardown_project_test
 
 # Test: delegation blocks git cherry-pick too
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 expect_project_deny "git cherry-pick abc123"
 teardown_project_test
 
@@ -319,38 +328,43 @@ echo "=== Project hook: step enforcement ==="
 
 # Test: step.X.implement without step.X.verify blocks
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.implement"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.implement"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_deny "git commit -m test"
 teardown_project_test
 
 # Test: step.X.implement with step.X.verify but no step.X.report blocks
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.implement"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.verify"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.implement"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.verify"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_deny "git commit -m test"
 teardown_project_test
 
 # Test: step.X.implement + step.X.verify + step.X.report allows
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.implement"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.verify"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.report"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.implement"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.verify"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.report"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_allow "git commit -m test"
 teardown_project_test
 
 # Test: phasestep.* markers are ignored (not enforced)
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/phasestep.run-plan.test-plan.implement"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/phasestep.run-plan.test-plan.implement"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_allow "git commit -m test"
 teardown_project_test
 
 # Test: step enforcement on cherry-pick
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.implement"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.implement"
 expect_project_deny "git cherry-pick abc123"
 teardown_project_test
 
@@ -359,16 +373,18 @@ echo "=== Project hook: no staleness bypass ==="
 
 # Test: stale requires.* (>8h) STILL blocks — no staleness bypass
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 # Make requires file look old (>8h = 480min)
-touch -t 202501010000 "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+touch -t 202501010000 "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_deny "git commit -m test"
 teardown_project_test
 
 # Test: fresh requires.* also blocks (same behavior as stale)
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 expect_project_deny "git commit -m test"
 teardown_project_test
@@ -385,7 +401,8 @@ teardown_project_test
 
 # Test: content-only commits bypass tracking enforcement
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 (cd "$TEST_TMPDIR" && echo "content" > readme.md && git add readme.md)
 expect_project_allow "git commit -m test"
 teardown_project_test
@@ -396,7 +413,9 @@ echo "=== Project hook: .zskills-tracked pipeline association ==="
 # Test: .zskills-tracked file associates agent with pipeline
 setup_project_test
 printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
+TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
+mkdir -p "$TD_DIR"
+touch "$TD_DIR/requires.verify-changes.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 # Remove transcript so ONLY .zskills-tracked provides the association
 rm -f "$TEST_TMPDIR/.transcript"
@@ -407,8 +426,10 @@ teardown_project_test
 # Test: .zskills-tracked with fulfilled requirement allows commit
 setup_project_test
 printf 'run-plan.thermal-domain\n' > "$TEST_TMPDIR/.zskills-tracked"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.thermal-domain"
+TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
+mkdir -p "$TD_DIR"
+touch "$TD_DIR/requires.verify-changes.thermal-domain"
+touch "$TD_DIR/fulfilled.verify-changes.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
@@ -417,7 +438,9 @@ teardown_project_test
 
 # Test: no .zskills-tracked AND no pipeline in transcript → skip enforcement
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
+TD_DIR="$TEST_TMPDIR/.zskills/tracking/run-plan.thermal-domain"
+mkdir -p "$TD_DIR"
+touch "$TD_DIR/requires.verify-changes.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 # Transcript has test command but NO pipeline skill
 rm -f "$TEST_TMPDIR/.transcript"
@@ -426,48 +449,53 @@ expect_project_allow "git commit -m test"
 teardown_project_test
 
 echo ""
-echo "=== Project hook: pipeline scoping (suffix matching) ==="
+echo "=== Project hook: pipeline scoping (subdir isolation) ==="
 
-# Test: Pipeline A's markers don't block Pipeline B
+# Test: Pipeline A's subdir does not block Pipeline B (disjoint subdirs)
 setup_project_test
 printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
-# Create unfulfilled requirement for pipeline A (different pipeline)
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-A"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/requires.verify-changes.pipeline-A"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_allow "git commit -m test"
 teardown_project_test
 
-# Test: Same pipeline's markers DO block
+# Test: Same pipeline's subdir markers DO block
 setup_project_test
 printf 'run-plan.pipeline-B\n' > "$TEST_TMPDIR/.zskills-tracked"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_deny "git commit -m test"
 teardown_project_test
 
-# Test: Transcript ZSKILLS_PIPELINE_ID scopes to specific pipeline
+# Test: Transcript ZSKILLS_PIPELINE_ID scopes to specific pipeline subdir
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-A"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/requires.verify-changes.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
-# Transcript declares pipeline A → only pipeline A markers checked
+# Transcript declares pipeline A → only pipeline A's subdir checked
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.pipeline-A\n' > "$TEST_TMPDIR/.transcript"
 # Pipeline A unfulfilled → blocked
 expect_project_deny "git commit -m test"
 teardown_project_test
 
-# Test: Transcript pipeline ID with fulfilled marker allows commit
+# Test: Transcript pipeline ID with fulfilled marker in same subdir allows commit
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-A"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.pipeline-A"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/requires.verify-changes.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/fulfilled.verify-changes.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
-# Transcript declares pipeline A → pipeline B's unfulfilled marker invisible
+# Transcript declares pipeline A → pipeline B's subdir untouched
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.pipeline-A\n' > "$TEST_TMPDIR/.transcript"
 expect_project_allow "git commit -m test"
@@ -475,30 +503,36 @@ teardown_project_test
 
 # Test: Transcript last-match wins (sequential runs in same session)
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-A"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.pipeline-A"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/requires.verify-changes.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-A/fulfilled.verify-changes.pipeline-A"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 # Two pipeline IDs in transcript — last one wins (pipeline B)
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.pipeline-A\nZSKILLS_PIPELINE_ID=run-plan.pipeline-B\n' > "$TEST_TMPDIR/.transcript"
-# Pipeline B unfulfilled ��� blocked (even though pipeline A is fulfilled)
+# Pipeline B unfulfilled in B's subdir → blocked (even though pipeline A is fulfilled)
 expect_project_deny "git commit -m test"
 teardown_project_test
 
-# Test: Step scoping — pipeline B's impl marker doesn't block pipeline A
+# Test: Step scoping — pipeline B's impl marker (in B's subdir) doesn't block pipeline A
 setup_project_test
 printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills-tracked"
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.pipeline-B.implement"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/step.run-plan.pipeline-B.implement"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_allow "git commit -m test"
 teardown_project_test
 
-# Test: Suffix matching prevents false positives (ID "plan" does NOT match "run-plan.thermal-domain")
+# Test: Flat-fallback suffix-match precision (LEGACY — fallback still
+# invoked when the per-pipeline subdir is absent; removed in Phase 6).
+# Pipeline ID "plan" does NOT end ".run-plan.thermal-domain".
 setup_project_test
 printf 'plan\n' > "$TEST_TMPDIR/.zskills-tracked"
+# Intentionally flat (no subdir). Exercises the transitional fallback path.
 touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.thermal-domain"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
 rm -f "$TEST_TMPDIR/.transcript"
@@ -513,31 +547,35 @@ echo "=== Project hook: push enforcement ==="
 # Test: git push blocked by unfulfilled requirement
 setup_project_test
 setup_push_remote
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 # Add a code file commit after the remote baseline so @{u}..HEAD has code
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js && git commit -q -m "code")
 expect_project_deny "git push origin main"
 teardown_project_test
 
-# Test: git push allowed when requirement fulfilled
+# Test: git push allowed when requirement fulfilled in same subdir
 setup_project_test
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
-touch "$TEST_TMPDIR/.zskills/tracking/fulfilled.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/fulfilled.verify-changes.test-plan"
 expect_project_allow "git push origin main"
 teardown_project_test
 
 # Test: git push blocked by step without verification
 setup_project_test
 setup_push_remote
-touch "$TEST_TMPDIR/.zskills/tracking/step.run-plan.test-plan.implement"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/step.run-plan.test-plan.implement"
 (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js && git commit -q -m "code")
 expect_project_deny "git push origin main"
 teardown_project_test
 
-# Test: git push with pipeline scoping
+# Test: git push with pipeline scoping (subdir isolation)
 setup_project_test
 printf 'run-plan.pipeline-A\n' > "$TEST_TMPDIR/.zskills-tracked"
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.pipeline-B"
+mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B"
+touch "$TEST_TMPDIR/.zskills/tracking/run-plan.pipeline-B/requires.verify-changes.pipeline-B"
 rm -f "$TEST_TMPDIR/.transcript"
 printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
 expect_project_allow "git push origin main"
@@ -546,7 +584,8 @@ teardown_project_test
 # Test: content-only push allowed despite unfulfilled requirements
 setup_project_test
 setup_push_remote
-touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 # Only markdown files in the push diff — no code files
 (cd "$TEST_TMPDIR" && echo "# readme" > README.md && git add README.md && git commit -q -m "docs")
 expect_project_allow "git push origin main"
@@ -730,7 +769,9 @@ printf 'npm run test:all\n' > "$push_tracking_tmpdir/.transcript"
 # Pipeline association via .zskills-tracked (required by the modern push tracking block)
 printf 'run-plan.test-plan\n' > "$push_tracking_tmpdir/.zskills-tracked"
 # Add a requires file without fulfilled — should block push with code files
-touch "$push_tracking_tmpdir/.zskills/tracking/requires.verify-changes.run-plan.test-plan"
+# (Option B: markers live in the per-pipeline subdir)
+mkdir -p "$push_tracking_tmpdir/.zskills/tracking/run-plan.test-plan"
+touch "$push_tracking_tmpdir/.zskills/tracking/run-plan.test-plan/requires.verify-changes.test-plan"
 PUSH_JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push -u origin feat/test\"},\"transcript_path\":\"$push_tracking_tmpdir/.transcript\"}"
 PUSH_RESULT=$(cd "$push_tracking_tmpdir" && echo "$PUSH_JSON" | REPO_ROOT="$push_tracking_tmpdir" LOCAL_ROOT="$push_tracking_tmpdir" TRACKING_ROOT="$push_tracking_tmpdir" bash "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
 if [[ "$PUSH_RESULT" == *"Required skill invocation"* ]] || [[ "$PUSH_RESULT" == *"not yet fulfilled"* ]]; then
@@ -1701,65 +1742,71 @@ else
 fi
 
 echo ""
-echo "=== Pipeline scoping filter: A–F (cross-pipeline marker isolation) ==="
+echo "=== Pipeline scoping: A–F (cross-pipeline marker isolation via subdirs) ==="
 
 # test_pipeline_scoping_filter — the foundation for CANARY8's claim
-# that parallel pipelines don't cross-block. If these cases pass,
-# the suffix-match filter in hooks/block-unsafe-project.sh.template
-# is mechanically guaranteed to isolate one pipeline's tracking
-# markers from another.
+# that parallel pipelines don't cross-block. Migrated to the Option B
+# per-pipeline subdir layout: each pipeline's markers live in
+# .zskills/tracking/$PIPELINE_ID/ so two pipelines with different
+# PIPELINE_IDs cannot see each other's markers regardless of basename.
 #
 # Naming convention mirrors real pipeline naming:
 #   research-and-go.<SCOPE>        — parent meta-orchestrator
 #   run-plan.meta-<SCOPE>          — meta-plan (META_ prefix from Phase B)
 #   run-plan.<SUB_PLAN_SLUG>       — each sub-plan
 #
-# The hook strips the leading prefix via ${PIPELINE_ID#*.} and
-# pattern-matches against each marker's basename. Two pipelines
-# with different suffixes after that stripping cannot cross-block.
+# NOTE: Case A under the flat scheme asserted that a marker named
+# `.meta-foo` would block a `run-plan.meta-foo` session via basename
+# suffix-matching. Under Option B, the marker's owning pipeline is the
+# subdir it lives in — so a `run-plan.meta-foo` session looks only in
+# `run-plan.meta-foo/`, not in `research-and-go.meta-foo/`. The original
+# cross-pipeline suffix-match semantics no longer exist as a hook-level
+# concern; run-plan handles the cross-pipeline final-verify marker via
+# an application-level glob-dual-lookup read (see skills/run-plan). The
+# migrated Case A verifies the new semantics: a pipeline's OWN subdir
+# marker still blocks that pipeline.
 test_pipeline_scoping_filter() {
-  # Case A — exact-match enforce: marker .meta-foo + PIPELINE_ID
-  # run-plan.meta-foo + code commit → hook BLOCKS.
+  # Case A — own-subdir enforcement: marker in run-plan.meta-foo/ +
+  # PIPELINE_ID run-plan.meta-foo + code commit → hook BLOCKS.
   setup_project_test
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  mkdir -p "$TEST_TMPDIR/.zskills/tracking/run-plan.meta-foo"
+  touch "$TEST_TMPDIR/.zskills/tracking/run-plan.meta-foo/requires.verify-changes.meta-foo"
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.meta-foo\n' > "$TEST_TMPDIR/.transcript"
   expect_project_deny "git commit -m test"
   teardown_project_test
 
-  # Case B — sub-plan does not see parent's marker: same marker +
-  # PIPELINE_ID run-plan.foo-backend → hook ALLOWS.
+  # Case B — sub-plan does not see parent r&g's subdir markers:
+  # marker in research-and-go.meta-foo/, PIPELINE_ID run-plan.foo-backend
+  # (disjoint subdir) → hook ALLOWS.
   setup_project_test
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  mkdir -p "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo"
+  touch "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo/requires.verify-changes.final.meta-foo"
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.foo-backend\n' > "$TEST_TMPDIR/.transcript"
   expect_project_allow "git commit -m test"
   teardown_project_test
 
-  # Case C — research-and-go scope does NOT see meta marker:
-  # PIPELINE_ID research-and-go.foo, marker .meta-foo. Suffix after
-  # stripping is `foo`; pattern `*.foo` requires base to end with
-  # literal `.foo`. `meta-foo` ends with `-foo`, not `.foo`. No match
-  # → hook ALLOWS. This is what makes the SCOPE/META_PLAN_SLUG
-  # distinction safe.
+  # Case C — distinct r&g session does NOT see another r&g's subdir:
+  # marker in research-and-go.meta-foo/, PIPELINE_ID research-and-go.foo
+  # (different subdir even within the same skill family) → hook ALLOWS.
   setup_project_test
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  mkdir -p "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo"
+  touch "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo/requires.verify-changes.final.meta-foo"
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\nZSKILLS_PIPELINE_ID=research-and-go.foo\n' > "$TEST_TMPDIR/.transcript"
   expect_project_allow "git commit -m test"
   teardown_project_test
 
-  # Case D — collision case (edge): same suffix after stripping.
-  # PIPELINE_ID research-and-go.meta-foo, marker .meta-foo. Both
-  # strip to `meta-foo`; pattern `*.meta-foo` matches base ending
-  # `.meta-foo`. → hook BLOCKS. Documents that users must not pick
-  # goal descriptions whose SCOPE collides with META_PLAN_SLUG
-  # naming. Not a normal scenario — requires hand-crafted inputs.
+  # Case D — own-subdir enforcement for r&g scope: marker in
+  # research-and-go.meta-foo/ + PIPELINE_ID research-and-go.meta-foo →
+  # hook BLOCKS (it's the marker's owning subdir).
   setup_project_test
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  mkdir -p "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo"
+  touch "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo/requires.verify-changes.final.meta-foo"
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\nZSKILLS_PIPELINE_ID=research-and-go.meta-foo\n' > "$TEST_TMPDIR/.transcript"
@@ -1768,10 +1815,9 @@ test_pipeline_scoping_filter() {
 
   # Case E — empty PIPELINE_ID (no .zskills-tracked, no transcript
   # declaration) → no association → skip enforcement → hook ALLOWS.
-  # Per hook's "Neither → unrelated session → skip enforcement"
-  # branch (line 207 of block-unsafe-project.sh.template).
   setup_project_test
-  touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.final.meta-foo"
+  mkdir -p "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo"
+  touch "$TEST_TMPDIR/.zskills/tracking/research-and-go.meta-foo/requires.verify-changes.final.meta-foo"
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\n' > "$TEST_TMPDIR/.transcript"
@@ -1779,9 +1825,10 @@ test_pipeline_scoping_filter() {
   teardown_project_test
 
   # Case F — no marker present at all: empty tracking dir + any
-  # PIPELINE_ID + code commit → hook ALLOWS.
+  # PIPELINE_ID + code commit → hook ALLOWS (subdir absent, flat
+  # fallback finds nothing).
   setup_project_test
-  # tracking dir is empty (no marker files)
+  # tracking dir is empty (no subdir, no marker files)
   (cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
   rm -f "$TEST_TMPDIR/.transcript"
   printf 'npm run test:all\nZSKILLS_PIPELINE_ID=run-plan.meta-foo\n' > "$TEST_TMPDIR/.transcript"

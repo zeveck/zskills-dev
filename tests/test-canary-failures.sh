@@ -807,6 +807,184 @@ expect_agent_allow \
   "$a6_input" \
   "$a6_root"
 
+# ---------------------------------------------------------------------------
+# Phase 5 (UNIFY_TRACKING_NAMES) — Tracking marker naming (Option B subdir)
+# ---------------------------------------------------------------------------
+# Locks in the per-pipeline-subdir layout introduced by Phases 2-4:
+# markers live in .zskills/tracking/$PIPELINE_ID/{fulfilled,requires,step}.*
+# and the hook reads subdir-first with a flat-glob fallback. Each case
+# below constructs a fixture tracking tree, pipes a synthesized commit
+# JSON into the project hook, and asserts deny/allow accordingly.
+
+PROJECT_HOOK_TMPL="$REPO_ROOT/hooks/block-unsafe-project.sh.template"
+
+# Spin up a throwaway repo with the project hook installed + configured,
+# a package.json with a test script, and a transcript containing the full
+# test command so the test-gate check doesn't interfere with tracking
+# enforcement. Echoes the repo root.
+setup_tracking_fixture() {
+  local tmp
+  tmp=$(mktemp -d)
+  FIXTURE_DIRS+=("$tmp")
+  mkdir -p "$tmp/.claude/hooks" "$tmp/.zskills/tracking"
+  cp "$PROJECT_HOOK_TMPL" "$tmp/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g'           "$tmp/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g'   "$tmp/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g'         "$tmp/.claude/hooks/block-unsafe-project.sh"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$tmp/package.json"
+  printf 'npm run test:all\n' > "$tmp/.transcript"
+  ( cd "$tmp" && git init -q && git config user.email c@t && git config user.name c \
+      && git add -A && git commit -q -m init )
+  echo "$tmp"
+}
+
+# Run the hook against a synthesized `git commit` input for the given repo
+# root. Echoes the hook's stdout. Stages a .js file FIRST so the tracking
+# enforcement code path (gated on CODE_FILES) actually fires.
+run_tracking_hook() {
+  local repo="$1"
+  ( cd "$repo" && printf 'var x=1;\n' > app.js && git add app.js )
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m test\"},\"transcript_path\":\"$repo/.transcript\"}"
+  echo "$json" | REPO_ROOT="$repo" TRACKING_ROOT="$repo" bash -c \
+    "cd '$repo' && bash '$repo/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+}
+
+# Assertion helpers for the tracking section: check deny/allow by the
+# presence of `"permissionDecision":"deny"` in hook output.
+assert_tracking_deny() {
+  local label="$1" out="$2" want_substr="$3"
+  if [[ "$out" == *'"permissionDecision":"deny"'* ]] && [[ "$out" == *"$want_substr"* ]]; then
+    pass "$label"
+  else
+    fail "$label — want deny containing '$want_substr', got: $out"
+  fi
+}
+assert_tracking_allow() {
+  local label="$1" out="$2"
+  if [[ "$out" != *'"permissionDecision":"deny"'* ]]; then
+    pass "$label"
+  else
+    fail "$label — expected allow, got deny: $out"
+  fi
+}
+
+section "Tracking marker naming (subdir scope) (8 cases)"
+
+# Case 1 — Concurrent-same-slug isolation: two pipelines with the same
+# TRACKING_ID (foo) under different orchestrator prefixes (run-plan.foo vs
+# draft-plan.foo). Each writes fulfillment only in its own subdir; the
+# other pipeline must NOT see it and must block.
+tn1_repo=$(setup_tracking_fixture)
+mkdir -p "$tn1_repo/.zskills/tracking/run-plan.foo"
+mkdir -p "$tn1_repo/.zskills/tracking/draft-plan.foo"
+# run-plan.foo has an unfulfilled requires; draft-plan.foo has its fulfillment.
+touch "$tn1_repo/.zskills/tracking/run-plan.foo/requires.verify-changes.foo"
+touch "$tn1_repo/.zskills/tracking/draft-plan.foo/requires.verify-changes.foo"
+touch "$tn1_repo/.zskills/tracking/draft-plan.foo/fulfilled.verify-changes.foo"
+printf 'run-plan.foo\n' > "$tn1_repo/.zskills-tracked"
+tn1_out=$(run_tracking_hook "$tn1_repo")
+assert_tracking_deny \
+  "concurrent-same-slug: run-plan.foo cannot see draft-plan.foo fulfillment" \
+  "$tn1_out" "verify-changes.foo"
+
+# Case 2 — Glob-special chars sanitized by scripts/sanitize-pipeline-id.sh
+# BEFORE they reach disk. Verify the sanitizer collapses *, ?, [, ], and
+# spaces into '_' so writers never persist glob-special basenames.
+tn2_raw='has space*?[abc]'
+tn2_sanitized=$(bash "$REPO_ROOT/scripts/sanitize-pipeline-id.sh" "$tn2_raw")
+# Expected: space→_, *→_, ?→_, [→_, a→a, b→b, c→c, ]→_
+tn2_want='has_space___abc_'
+if [ "$tn2_sanitized" = "$tn2_want" ]; then
+  pass "sanitize-pipeline-id: glob-special chars + space → '_' (got '$tn2_sanitized')"
+else
+  fail "sanitize-pipeline-id: expected '$tn2_want', got '$tn2_sanitized'"
+fi
+
+# Case 3 — Dots in TRACKING_ID: PIPELINE_ID = "run-plan.a.b.c". The subdir
+# is literally that flat basename, not a nested a/b/c tree. Hook finds
+# markers under the single subdir and enforces correctly.
+tn3_repo=$(setup_tracking_fixture)
+mkdir -p "$tn3_repo/.zskills/tracking/run-plan.a.b.c"
+# Confirm layout is flat (no nested dirs created by writer semantics).
+if [ -d "$tn3_repo/.zskills/tracking/run-plan.a.b.c" ] \
+   && [ ! -d "$tn3_repo/.zskills/tracking/run-plan.a" ] \
+   && [ ! -d "$tn3_repo/.zskills/tracking/run-plan.a/b" ]; then
+  pass "dots-in-tracking-id: subdir 'run-plan.a.b.c' is flat, no nested a/b/c"
+else
+  fail "dots-in-tracking-id: unexpected nested structure under run-plan.a.b.c"
+fi
+# And hook enforcement finds an unfulfilled requires under the dotted subdir.
+touch "$tn3_repo/.zskills/tracking/run-plan.a.b.c/requires.verify-changes.a.b.c"
+printf 'run-plan.a.b.c\n' > "$tn3_repo/.zskills-tracked"
+tn3_out=$(run_tracking_hook "$tn3_repo")
+assert_tracking_deny \
+  "dots-in-tracking-id: hook finds marker under flat dotted subdir" \
+  "$tn3_out" "verify-changes.a.b.c"
+
+# Case 4 — Empty PIPELINE_ID: session has no .zskills-tracked AND no
+# ZSKILLS_PIPELINE_ID in transcript. The hook's pipeline-association guard
+# skips enforcement entirely (TRACKING_SESSION_HAS_PIPELINE=false). Even
+# with unfulfilled markers in a subdir, commit is allowed.
+tn4_repo=$(setup_tracking_fixture)
+mkdir -p "$tn4_repo/.zskills/tracking/run-plan.orphan"
+touch "$tn4_repo/.zskills/tracking/run-plan.orphan/requires.verify-changes.orphan"
+# Transcript has test command but NO ZSKILLS_PIPELINE_ID line.
+printf 'npm run test:all\n' > "$tn4_repo/.transcript"
+# No .zskills-tracked either.
+tn4_out=$(run_tracking_hook "$tn4_repo")
+assert_tracking_allow \
+  "empty-PIPELINE_ID: no .zskills-tracked + no transcript id → enforcement skipped" \
+  "$tn4_out"
+
+# Case 5 — Missing subdir: PIPELINE_ID set but the subdir doesn't exist
+# (fresh pipeline, no markers written yet). The `[ -d $PIPELINE_SUBDIR ]`
+# guard skips the subdir loop. No flat markers either → allow.
+tn5_repo=$(setup_tracking_fixture)
+printf 'run-plan.nosubdir\n' > "$tn5_repo/.zskills-tracked"
+# Intentionally do NOT mkdir .zskills/tracking/run-plan.nosubdir/
+tn5_out=$(run_tracking_hook "$tn5_repo")
+assert_tracking_allow \
+  "missing-subdir: no subdir, no flat markers → allow (no error)" \
+  "$tn5_out"
+
+# Case 6 — Glob no-match inside empty subdir: subdir exists but contains
+# no markers. The inner `for req in …/requires.*; do [ -e "$req" ] ||
+# continue` handles the unexpanded literal pattern safely.
+tn6_repo=$(setup_tracking_fixture)
+mkdir -p "$tn6_repo/.zskills/tracking/run-plan.empty"
+printf 'run-plan.empty\n' > "$tn6_repo/.zskills-tracked"
+tn6_out=$(run_tracking_hook "$tn6_repo")
+assert_tracking_allow \
+  "glob-no-match: empty subdir, glob unexpanded, [ -e ] continues, hook allows" \
+  "$tn6_out"
+
+# Case 7 — fix-issues sprint isolation: two sprints with distinct SPRINT_IDs
+# each get their own subdir. Sprint A has an unfulfilled requires; Sprint B
+# is the active pipeline. B must NOT see A's unfulfilled marker.
+tn7_repo=$(setup_tracking_fixture)
+mkdir -p "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-120000-issuea"
+mkdir -p "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-130000-issueb"
+touch "$tn7_repo/.zskills/tracking/fix-issues.sprint-20260417-120000-issuea/requires.run-plan.123"
+printf 'fix-issues.sprint-20260417-130000-issueb\n' > "$tn7_repo/.zskills-tracked"
+tn7_out=$(run_tracking_hook "$tn7_repo")
+assert_tracking_allow \
+  "fix-issues sprint isolation: sprint B not blocked by sprint A's unfulfilled requires" \
+  "$tn7_out"
+
+# Case 8 — Metadata meta.* prefix is NOT enforced: a meta.run-plan.1 file
+# in research-and-go's subdir is ignored by the hook's enforcement globs
+# (requires.*, step.*.implement, step.*.verify, fulfilled.*). Orchestrator
+# subdir with meta.* entries never blocks.
+tn8_repo=$(setup_tracking_fixture)
+mkdir -p "$tn8_repo/.zskills/tracking/research-and-go.cooling"
+touch "$tn8_repo/.zskills/tracking/research-and-go.cooling/meta.run-plan.1"
+touch "$tn8_repo/.zskills/tracking/research-and-go.cooling/meta.draft-plan.1"
+printf 'research-and-go.cooling\n' > "$tn8_repo/.zskills-tracked"
+tn8_out=$(run_tracking_hook "$tn8_repo")
+assert_tracking_allow \
+  "meta.* prefix: metadata files do not match requires.* glob, no enforcement fires" \
+  "$tn8_out"
+
 # --- Phase 5: /commit reviewer prompt + Phase 7 anti-stash discipline ---
 
 expect_grep_F_hit() {

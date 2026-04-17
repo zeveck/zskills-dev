@@ -1173,8 +1173,15 @@ final-verify marker:
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-MARKER="$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$TRACKING_ID"
-FULFILLED="$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.final.$TRACKING_ID"
+# The final-verify marker is written by /research-and-go into ITS pipeline
+# subdir (research-and-go.$META_PLAN_SLUG/), not into this /run-plan's own
+# subdir. Use glob-dual-lookup: prefer any research-and-go.*/ subdir whose
+# marker basename matches this TRACKING_ID; fall back to the legacy flat
+# path during the Phase 2-6 transitional window.
+MARKER=$(ls "$MAIN_ROOT/.zskills/tracking/"research-and-go.*/requires.verify-changes.final."$TRACKING_ID" 2>/dev/null | head -1)
+[ -z "$MARKER" ] && MARKER="$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$TRACKING_ID"
+FULFILLED=$(ls "$MAIN_ROOT/.zskills/tracking/"research-and-go.*/fulfilled.verify-changes.final."$TRACKING_ID" 2>/dev/null | head -1)
+[ -z "$FULFILLED" ] && FULFILLED="$MAIN_ROOT/.zskills/tracking/fulfilled.verify-changes.final.$TRACKING_ID"
 ```
 
 Three branches:
@@ -1366,7 +1373,14 @@ to run plans, not manage long-term tracking state. The user runs
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-MARKER_COUNT=$(ls "$MAIN_ROOT/.zskills/tracking/"requires.* \
+# Count markers from both layouts during the Phase 2-6 transitional window:
+# (1) per-pipeline subdirs (.zskills/tracking/*/…) — Option B primary, and
+# (2) legacy flat basenames directly under .zskills/tracking/ — flat fallback.
+MARKER_COUNT=$(ls "$MAIN_ROOT/.zskills/tracking/"*/requires.* \
+                    "$MAIN_ROOT/.zskills/tracking/"*/step.* \
+                    "$MAIN_ROOT/.zskills/tracking/"*/verify-pending-attempts.* \
+                    "$MAIN_ROOT/.zskills/tracking/"*/fulfilled.verify-changes.* \
+                    "$MAIN_ROOT/.zskills/tracking/"requires.* \
                     "$MAIN_ROOT/.zskills/tracking/"step.* \
                     "$MAIN_ROOT/.zskills/tracking/"verify-pending-attempts.* \
                     "$MAIN_ROOT/.zskills/tracking/"fulfilled.verify-changes.* 2>/dev/null \

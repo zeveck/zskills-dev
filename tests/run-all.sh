@@ -41,6 +41,7 @@ run_suite "test-skill-invariants.sh" "tests/test-skill-invariants.sh"
 run_suite "test-phase-5b-gate.sh" "tests/test-phase-5b-gate.sh"
 run_suite "test-scope-halt.sh" "tests/test-scope-halt.sh"
 run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"
+run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
 
 echo ""
 echo "=============================="
