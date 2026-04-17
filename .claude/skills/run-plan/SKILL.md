@@ -1619,14 +1619,13 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
   5. **Mark worktree as landed:**
      Write `.landed` marker (atomic: `.tmp` → `mv`):
      ```bash
-     cat > "<worktree-path>/.landed.tmp" <<LANDED
+     cat <<LANDED | bash scripts/write-landed.sh "<worktree-path>"
      status: landed
      date: $(TZ=America/New_York date -Iseconds)
      source: run-plan
      phase: <phase name>
      commits: <list of cherry-picked hashes>
      LANDED
-     mv "<worktree-path>/.landed.tmp" "<worktree-path>/.landed"
      ```
   6. **Run `scripts/land-phase.sh`** — atomic post-landing cleanup:
      ```bash
@@ -1714,7 +1713,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -1725,7 +1724,6 @@ reason: rebase-conflict-between-phases
 conflict_files: $CONFLICT_FILES
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 
   # CLEAR communication: tell the user exactly what happened and how to resume.
   echo ""
@@ -1788,7 +1786,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -1798,7 +1796,6 @@ reason: rebase-conflict-before-push
 conflict_files: $CONFLICT_FILES
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 
   echo ""
   echo "=========================================="
@@ -1906,7 +1903,7 @@ fi
 if [ -z "$PR_URL" ]; then
   echo "WARNING: PR creation failed. Branch pushed but PR not created."
   echo "Manual fallback: gh pr create --base main --head $BRANCH_NAME"
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -1915,7 +1912,6 @@ branch: $BRANCH_NAME
 pr:
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
   # Report and stop -- PR creation failed
 fi
 ```
@@ -2204,7 +2200,7 @@ else
 fi
 
 # --- Upgrade .landed marker ---
-cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -2215,7 +2211,6 @@ ci: $CI_STATUS
 pr_state: $PR_STATE
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 
 # --- Cleanup on merge ---
 # When PR was merged (status: landed), call land-phase.sh to remove the worktree.

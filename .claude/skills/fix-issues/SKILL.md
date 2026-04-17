@@ -1020,18 +1020,17 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
         ```
      b. Write `.landed` marker (atomic):
         ```bash
-        cat > "<worktree>/.landed.tmp" <<LANDED
+        cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
         status: full
         date: $(TZ=America/New_York date -Iseconds)
         source: fix-issues
         commits:
           <list of cherry-picked commit hashes and messages>
         LANDED
-        mv "<worktree>/.landed.tmp" "<worktree>/.landed"
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
-        cat > "<worktree>/.landed.tmp" <<LANDED
+        cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
         status: partial
         date: $(TZ=America/New_York date -Iseconds)
         source: fix-issues
@@ -1039,7 +1038,6 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
         skipped: <hashes that conflicted>
         reason: cherry-pick conflict
         LANDED
-        mv "<worktree>/.landed.tmp" "<worktree>/.landed"
         ```
   6. **Commit extracted logs:**
      ```bash
@@ -1116,7 +1114,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
   echo "REBASE CONFLICT for issue #$ISSUE_NUM."
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -1125,7 +1123,6 @@ branch: $BRANCH_NAME
 issue: $ISSUE_NUM
 reason: rebase-conflict
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
   continue  # Move to next issue
 fi
 if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
@@ -1189,7 +1186,7 @@ EOF
   # If PR creation failed, write pr-failed marker and continue.
   if [ -z "$PR_URL" ]; then
     echo "WARNING: PR creation failed for issue #$ISSUE_NUM. Branch pushed but PR not created."
-    cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -1199,7 +1196,6 @@ issue: $ISSUE_NUM
 pr:
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-    mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
     continue
   fi
 
@@ -1222,7 +1218,7 @@ LANDED
 
   # --- .landed marker (per issue) ---
   # $LANDED_STATUS, $CI_STATUS, $PR_STATE come from the CI/auto-merge block.
-  cat > "$WORKTREE_PATH/.landed.tmp" <<LANDED
+  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -1234,7 +1230,6 @@ pr_state: $PR_STATE
 issue: $ISSUE_NUM
 commits: $(git log main.."$BRANCH_NAME" --format='%h' | tr '\n' ' ')
 LANDED
-  mv "$WORKTREE_PATH/.landed.tmp" "$WORKTREE_PATH/.landed"
 
   echo "Issue #$ISSUE_NUM -> PR: $PR_URL (status: $LANDED_STATUS)"
 
@@ -1390,14 +1385,13 @@ Do NOT invoke for:
 crashes, or times out, the ORCHESTRATOR (not the failed agent) writes a
 failure marker on the worktree:
 ```bash
-cat > "<worktree>/.landed.tmp" <<LANDED
+cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
 status: failed
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
 issues: <issue numbers attempted>
 reason: <agent returned no commits / agent crashed / tests failed>
 LANDED
-mv "<worktree>/.landed.tmp" "<worktree>/.landed"
 ```
 This ensures `/fix-report` can distinguish failed worktrees from active
 ones. The issues stay open for the next sprint.

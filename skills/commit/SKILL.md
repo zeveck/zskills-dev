@@ -367,13 +367,12 @@ This is for landing worktree work onto main via cherry-pick.
 6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):
    ```bash
-   cat > "<worktree-path>/.landed.tmp" <<LANDED
+   cat <<LANDED | bash scripts/write-landed.sh "<worktree-path>"
    status: full
    date: $(TZ=America/New_York date -Iseconds)
    source: commit-land
    commits: <list of cherry-picked hashes>
    LANDED
-   mv "<worktree-path>/.landed.tmp" "<worktree-path>/.landed"
    ```
 
 7. **Verify:**

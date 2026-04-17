@@ -138,6 +138,44 @@ expect_allow 'heredoc containing git stash -u' "$(printf 'cat <<EOF\ngit stash -
 # every invocation subshell-cd's into the fixture's primary repo first.
 SCRIPT="$REPO_ROOT/scripts/land-phase.sh"
 
+section "write-landed.sh: rc-checked atomic marker writes (3 cases)"
+# Locks in the rc-check behavior introduced with scripts/write-landed.sh.
+# The ad-hoc cat+mv pattern this helper replaces silently wrote empty/
+# partial markers on disk-full / read-only failures; the helper catches
+# those via `if ! cat ...` and `if ! mv ...` with loud stderr + rc=1.
+
+WRITE_LANDED="$REPO_ROOT/scripts/write-landed.sh"
+
+# Case 1: happy path — cat body into helper, .landed ends up with correct content.
+wl_primary=$(setup_fixture_repo)
+wl_worktree=$(mktemp -u)
+FIXTURE_DIRS+=("$wl_worktree")
+git -C "$wl_primary" worktree add -q "$wl_worktree" -b canary/wl-happy
+if printf 'status: landed\ndate: now\n' | bash "$WRITE_LANDED" "$wl_worktree" \
+   && [ -f "$wl_worktree/.landed" ] \
+   && grep -qxF 'status: landed' "$wl_worktree/.landed" \
+   && [ ! -f "$wl_worktree/.landed.tmp" ]; then
+  pass "write-landed.sh happy path: .landed written, .tmp cleaned"
+else
+  fail "write-landed.sh happy path — .landed content or .tmp-cleanup wrong"
+fi
+
+# Case 2: missing/bad worktree arg — exit 1 with specific error.
+wl_bad_out=$(printf 'status: landed\n' | bash "$WRITE_LANDED" 2>&1); wl_bad_rc=$?
+if [ "$wl_bad_rc" -eq 1 ] && [[ "$wl_bad_out" == *"requires a worktree-path arg"* ]]; then
+  pass "write-landed.sh missing arg: rc=1 with usage error"
+else
+  fail "write-landed.sh missing arg — rc=$wl_bad_rc; out: $wl_bad_out"
+fi
+
+# Case 3: worktree path doesn't exist — exit 1 with specific error.
+wl_nx_out=$(printf 'status: landed\n' | bash "$WRITE_LANDED" /tmp/write-landed-nx-$$-canary 2>&1); wl_nx_rc=$?
+if [ "$wl_nx_rc" -eq 1 ] && [[ "$wl_nx_out" == *"worktree path does not exist"* ]]; then
+  pass "write-landed.sh nonexistent path: rc=1 with path error"
+else
+  fail "write-landed.sh nonexistent path — rc=$wl_nx_rc; out: $wl_nx_out"
+fi
+
 section "land-phase.sh: dirty worktree refused (1 case)"
 dirty_primary=$(setup_fixture_repo)
 dirty_worktree=$(mktemp -u)
