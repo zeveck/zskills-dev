@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-fix-worktree-poisoned-branch.md](reports/plan-fix-worktree-poisoned-branch.md) | 2/2 | Both phases complete; landing via PR |
+| [plan-fix-worktree-poisoned-branch.md](reports/plan-fix-worktree-poisoned-branch.md) | 2/2 | **Complete** — both phases landed via PR squash |
 | [plan-fix-pr-state-rate-limit.md](reports/plan-fix-pr-state-rate-limit.md) | 2/2 | **Complete** — both phases landed via PR (#27, this PR) |
 | [plan-canary-failure-injection.md](reports/plan-canary-failure-injection.md) | 5/5 | **Complete** — 79 tests, 314/314 on main (pending this PR) |
 | [plan-ephemeral-to-tmp.md](reports/plan-ephemeral-to-tmp.md) | 4/4 | **Complete** — all phases landed |

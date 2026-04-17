@@ -2,10 +2,9 @@
 
 Plan: `plans/FIX_WORKTREE_POISONED_BRANCH.md`
 
-## Phase — 2 Canary test coverage [UNFINALIZED]
-
+## Phase — 2 Canary test coverage
 **Plan:** plans/FIX_WORKTREE_POISONED_BRANCH.md
-**Status:** Completed (verified, awaiting landing)
+**Status:** Completed (verified, landed via PR squash)
 **Worktree:** /tmp/zskills-pr-fix-worktree-poisoned-branch
 **Branch:** feat/fix-worktree-poisoned-branch
 **Commits:** 8e372d2 (test)
@@ -28,10 +27,9 @@ Plan: `plans/FIX_WORKTREE_POISONED_BRANCH.md`
 
 ---
 
-## Phase — 1 Poisoned-branch discriminator helper + 3 call sites [UNFINALIZED]
-
+## Phase — 1 Poisoned-branch discriminator helper + 3 call sites
 **Plan:** plans/FIX_WORKTREE_POISONED_BRANCH.md
-**Status:** Completed (verified, awaiting landing)
+**Status:** Completed (verified, landed via PR squash)
 **Worktree:** /tmp/zskills-pr-fix-worktree-poisoned-branch
 **Branch:** feat/fix-worktree-poisoned-branch
 **Commits:** 5efccf4 (feat)
