@@ -119,15 +119,42 @@ cron-fired top-level turn.
 ## Tracking Fulfillment
 
 On entry, if a tracking ID was passed by the parent skill, create the
-fulfillment marker in the MAIN repo:
+fulfillment marker in the MAIN repo. `verify-changes` is always invoked
+as a delegatee (or as a cron-fired top-level turn from a pipeline); the
+fulfillment marker must land in the parent's subdir so the parent's
+`requires.*` and our `fulfilled.*` meet at the same path.
+
+**PIPELINE_ID resolution — 3-tier priority** (same block applies at every
+PIPELINE_ID assignment below):
+
+1. `$ZSKILLS_PIPELINE_ID` env — set by the parent in shell-inheritance
+   cases (rare under Claude Code subagent dispatch since env does not
+   inherit across agents, but covers cron-fired top-level turns and
+   tests that export it explicitly).
+2. `.zskills-tracked` in the worktree (cwd) — the parent skill
+   (`run-plan`, `research-and-go`, etc.) writes its own PIPELINE_ID into
+   the worktree's `.zskills-tracked` when it sets up the worktree. This
+   is the primary delegation channel under Claude Code.
+3. Fallback `verify-changes.$TRACKING_ID` (or `verify-changes.final.<id>`
+   when SCOPE=branch) — only for TRULY standalone invocations with no
+   parent pipeline. verify-changes becomes its own pipeline owner.
+
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
+# 3-tier PIPELINE_ID resolution: env, then worktree .zskills-tracked
+# (parent's PIPELINE_ID inherited via the worktree file), then fallback
+# to own-skill standalone identity.
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.$MARKER_STEM.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.$MARKER_STEM.$TRACKING_ID"
 ```
 If no tracking ID was passed (standalone invocation), skip tracking.
 
@@ -269,8 +296,16 @@ After recording test results (pass or fail), create the tests-run step
 marker if a tracking ID is present:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+MARKER_STEM="verify-changes"
+[ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
+# 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.tests-run"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.tests-run"
 ```
 
 ## Phase 4 — Agent Verification + User Verification Classification
@@ -341,8 +376,16 @@ After completing agent verification (Phase 4), if UI changes were verified
 and a tracking ID is present, create the manual-verified step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+MARKER_STEM="verify-changes"
+[ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
+# 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 printf 'ui_changes: true\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.manual-verified"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
 Only create this marker if UI files were actually verified in Phase 4. Skip
 for non-UI changes.
@@ -538,14 +581,20 @@ complete step marker and update the fulfillment file if a tracking ID is
 present:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.verify-changes.$TRACKING_ID.complete"
-
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
+# 3-tier PIPELINE_ID resolution (see "Tracking Fulfillment" above).
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.complete"
+
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.$MARKER_STEM.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.$MARKER_STEM.$TRACKING_ID"
 ```
 
 ## Key Rules

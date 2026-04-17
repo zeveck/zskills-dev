@@ -64,13 +64,16 @@ Examples:
 Determine the tracking ID: use the ID passed by the parent skill if this
 is a delegated invocation, or derive from the plan file slug if standalone
 (e.g., `plans/EXECUTION_MODES.md` -> `execution-modes`). Create the
-fulfillment file in the MAIN repo:
+fulfillment file in the MAIN repo. The pipeline subdir follows Option B
+layout: when delegated, parent exports `ZSKILLS_PIPELINE_ID` via env and
+we write into the parent's subdir; when standalone, we own our own subdir:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.refine-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.refine-plan.$TRACKING_ID"
 ```
 
 ### Parse the plan file
@@ -277,8 +280,9 @@ append).
 After both agents return, create the review step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
 printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.refine-plan.$TRACKING_ID.review"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.refine-plan.$TRACKING_ID.review"
 ```
 
 ## Phase 3 — Refine
@@ -446,12 +450,13 @@ After writing the updated plan file, create the finalize step marker and
 update the fulfillment file to complete:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.refine-plan.$TRACKING_ID.finalize"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.refine-plan.$TRACKING_ID.finalize"
 
 printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.refine-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.refine-plan.$TRACKING_ID"
 ```
 
 ### Present the result

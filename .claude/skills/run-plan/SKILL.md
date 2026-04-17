@@ -456,17 +456,20 @@ Before parsing, check for stale state from a previous failed run:
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   mkdir -p "$MAIN_ROOT/.zskills/tracking"
+   PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
      "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
+     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.run-plan.$TRACKING_ID"
 
    # Lock down verification requirement IMMEDIATELY (was Phase 2,
    # now skill entry — ensures hook blocks landing even if Phase
-   # 2/3 are skipped via error path).
+   # 2/3 are skipped via error path). Delegation: verify-changes is
+   # a child of run-plan in this pipeline, so its `requires.*` marker
+   # lives in run-plan's OWN subdir (parent reconciles fulfillment).
    printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
      "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
-     > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.$TRACKING_ID"
+     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.$TRACKING_ID"
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description
@@ -862,8 +865,9 @@ After the implementation agent finishes (whether worktree or delegate mode),
 create the implementation step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.implement"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
 ```
 
 ### Pre-verification tracking
@@ -1026,8 +1030,9 @@ If this phase used delegate execution, verification runs on **main**:
 After verification passes, create the verification step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.verify"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
 ```
 
 ## Phase 4 — Update Progress Tracking
@@ -1145,8 +1150,9 @@ of all plan reports:
 After writing the report and regenerating the index, create the report step marker:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.report"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
 ```
 
 ## Phase 5b — Plan Completion
@@ -1202,7 +1208,8 @@ Three branches:
 
    ```bash
    # Self-rescheduling with exponential backoff
-   ATTEMPTS_FILE="$MAIN_ROOT/.zskills/tracking/verify-pending-attempts.$TRACKING_ID"
+   PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+   ATTEMPTS_FILE="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts.$TRACKING_ID"
    if [ -f "$ATTEMPTS_FILE" ]; then
      ATTEMPT=$(( $(cat "$ATTEMPTS_FILE") + 1 ))
    else
@@ -1262,7 +1269,8 @@ Three branches:
 2. **Marker exists AND fulfilled exists**: verify completed. Delete the
    attempt counter file (cleanup):
    ```bash
-   rm -f "$MAIN_ROOT/.zskills/tracking/verify-pending-attempts.$TRACKING_ID"
+   PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts.$TRACKING_ID"
    ```
    Proceed to sub-step 1.
 
@@ -2295,12 +2303,13 @@ After successful landing (cherry-pick + tests pass), create the land step
 marker and update the fulfillment file:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.land"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.land"
 
 printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: complete\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.run-plan.$TRACKING_ID"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.run-plan.$TRACKING_ID"
 ```
 
 Remove the worktree's `.zskills-tracked` to avoid associating future agents with a dead pipeline:
@@ -2312,16 +2321,18 @@ In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
 ignores these — they are informational only):
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
 ```
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 for stage in implement verify report land; do
   printf 'phases: all\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
-    > "$MAIN_ROOT/.zskills/tracking/step.run-plan.$TRACKING_ID.$stage"
+    > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.$stage"
 done
 ```
 
