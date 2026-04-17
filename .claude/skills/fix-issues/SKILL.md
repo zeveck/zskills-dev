@@ -784,10 +784,9 @@ git worktree prune
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
-  git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH" main 2>/dev/null \
-    || git worktree add "$WORKTREE_PATH" "$BRANCH_NAME"
-  # First form: create new branch from main
-  # Second form: branch already exists (resume after worktree was pruned)
+  # Legitimate multi-phase PR-mode resume — opt into branch resume.
+  ZSKILLS_ALLOW_BRANCH_RESUME=1 \
+    bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
 fi
 
 # Pipeline association -- agent commits are gated by .zskills-tracked

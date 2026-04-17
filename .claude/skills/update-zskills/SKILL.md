@@ -309,6 +309,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `land-phase.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for atomic post-landing cleanup
 - `post-run-invariants.sh` — referenced by `/run-plan` as mandatory end-of-run gate (7 invariants)
 - `write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
+- `worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
 - `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
 
 ### Step 5 — Check skills with additional requirements
