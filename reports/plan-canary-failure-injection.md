@@ -1,6 +1,6 @@
 # Plan Report — Canary Failure Injection
 
-## Phase — 1 Scaffold + block-unsafe-generic.sh stash reproducers [UNFINALIZED]
+## Phase — 1 Scaffold + block-unsafe-generic.sh stash reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
 **Status:** Completed (verified), pending PR landing
