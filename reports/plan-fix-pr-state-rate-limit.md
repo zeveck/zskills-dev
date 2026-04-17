@@ -3,10 +3,10 @@
 Issue: [#26](https://github.com/zeveck/zskills-dev/issues/26)
 Plan: `plans/FIX_PR_STATE_RATE_LIMIT.md`
 
-## Phase — 1 Retry + pr-state-unknown at call sites [UNFINALIZED]
+## Phase — 1 Retry + pr-state-unknown at call sites
 
 **Plan:** plans/FIX_PR_STATE_RATE_LIMIT.md
-**Status:** Completed (verified, awaiting landing)
+**Status:** Completed (verified, landed via PR squash)
 **Worktree:** /tmp/zskills-pr-fix-pr-state-rate-limit
 **Branch:** feat/fix-pr-state-rate-limit
 **Commits:** 3679056 (fix), fdeb81c (tracker → in progress)
