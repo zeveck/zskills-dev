@@ -39,7 +39,7 @@ when the ambiguous state is recorded.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Retry + pr-state-unknown at call sites | ⬚ | | |
+| 1 — Retry + pr-state-unknown at call sites | 🟡 | | |
 | 2 — Invariant #8 + canary tests | ⬚ | | |
 
 ## Shared Conventions
