@@ -2,6 +2,40 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
+## Phase — 4 Writer migration pass 2 (fix-issues, r&g, r&p, do) [UNFINALIZED]
+
+**Plan:** plans/UNIFY_TRACKING_NAMES.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-unify-tracking-names
+**Branch:** feat/unify-tracking-names
+**Commits:** e3263bc (feat)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | fix-issues: literal `sprint` → `$SPRINT_ID`, 11 sites to subdir | Done | e3263bc (SPRINT_ID=sprint-UTC-8charSlug, sanitizer applied) |
+| 2 | research-and-go: integer markers `requires.*` → `meta.*`, 7 sites | Done | e3263bc; OQ1 metadata decision enforced |
+| 3 | research-and-plan: 1 site `requires.run-plan.$i` → `meta.run-plan.$i` | Done | e3263bc |
+| 4 | do: `$TASK_SLUG` sanitizer integration (no tracking-dir writes) | Done | e3263bc; `.zskills-tracked` preserved |
+| 5 | Mirror sync all 4 skills | Done | `diff -r` clean |
+| 6 | `requires.verify-changes.final.$META_PLAN_SLUG` stays enforcement, moved to subdir | Done | e3263bc with PHASE-5-UPDATE annotation |
+
+### Verification
+- AC 1-12 all PASS on round 1 (no delegation bug this time — lesson from Phase 3's fix pattern applied).
+- SPRINT_ID synthetic: "Add dark mode feature" → `sprint-<UTC>-dddarkmo` (first 8 alphanumeric chars). Format matches OQ3 spec.
+- Delegation check: fix-issues writes `.zskills-tracked` with `fix-issues.$SPRINT_ID`; delegated verify-changes (tier-2 resolution) reads it and co-locates fulfilled. No mismatch.
+- Hook enforcement globs (`requires.*`, `step.*`, `fulfilled.*`) do NOT match `meta.*` — verified in hook template.
+- Tests: 327/327 pass, STABLE 2x.
+
+### Known transitional state
+- Cross-pipeline READS at `skills/run-plan/SKILL.md:1176-1177` and `1365-1368` still reference the OLD flat path of the final-verify marker. r&g now writes to subdir; run-plan reads flat. Dual-read in the hook doesn't help here (different code path). **Phase 5 must update these 2 read sites.** Annotation left in r&g's writer block.
+
+### User Sign-off
+
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 3 Writer migration pass 1 ($TRACKING_ID skills) [UNFINALIZED]
 
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
