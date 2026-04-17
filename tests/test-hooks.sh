@@ -552,9 +552,9 @@ touch "$TEST_TMPDIR/.zskills/tracking/requires.verify-changes.run-plan.test-plan
 expect_project_allow "git push origin main"
 teardown_project_test
 
-# Config file protection: handled by Claude Code's built-in permission system
-# on .claude/ directory. No custom hook tests needed — Claude Code gates all
-# tools (Bash, Write, Edit) for .claude/ paths automatically.
+# Config file: no custom hook tests needed. The config at .claude/zskills-config.json
+# is user-managed. Whether writes to .claude/ prompt is permission-mode-dependent
+# and not enforced by this hook layer.
 
 echo ""
 echo "=== Config extraction: bash regex ==="

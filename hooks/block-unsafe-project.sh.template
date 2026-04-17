@@ -80,10 +80,11 @@ if [[ "$INPUT" =~ (bash[[:space:]]|[^a-zA-Z]sh[[:space:]]|\.\/).*clear-tracking 
   block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash scripts/clear-tracking.sh"
 fi
 
-# ─── Config file protection ───
-# Config lives at .claude/zskills-config.json — protected by Claude Code's
-# built-in permission system on ALL tools (Bash, Write, Edit). No custom
-# hook needed. Agent writes trigger a permission prompt automatically.
+# ─── Config file ───
+# Config lives at .claude/zskills-config.json. It is user-managed; no custom
+# hook protects it. Writes to .claude/ may or may not prompt depending on the
+# user's permission mode — no file-specific rule exists. Agents that own the
+# config (e.g. /update-zskills) may write it directly.
 
 # ─── CONFIGURE: remove this section if you don't use session logging ───
 # git add .claude/logs/ (sweeps in all sessions' logs -- stage specific files)

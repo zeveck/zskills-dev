@@ -216,7 +216,7 @@ By separating implementation from committing, the system guarantees that every c
 
 ## Config Protection
 
-`.claude/zskills-config.json` is a user-managed configuration file. It lives in `.claude/` where Claude Code's built-in permission system protects it from agent writes via ALL tools (Bash, Write, Edit). Agent writes trigger a permission prompt automatically — no custom hook needed. Agents can read the config freely. If an agent needs configuration changed, it must ask the user.
+`.claude/zskills-config.json` is a user-managed configuration file. No dedicated protection mechanism exists for it — depending on the user's permission mode, writes to `.claude/` may prompt or auto-accept, but there is no file-specific rule. Agents may write the config when that is the explicit job (e.g., `/update-zskills`). Outside of those flows, treat the config as user-managed: read freely, and only modify it when the current skill's contract says to.
 
 ## Cleanup
 

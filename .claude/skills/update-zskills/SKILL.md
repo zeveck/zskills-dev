@@ -143,10 +143,13 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
 **If it does not exist:**
 1. Auto-detect values from the project (existing behavior).
-2. Present the auto-detected values to the user and instruct them to create
-   the config file:
-   ```
-   ! cat > .claude/zskills-config.json <<'EOF'
+2. Write the config file directly using the `Write` tool. Running
+   `/update-zskills` is the user's consent — do not gate this on a paste-this-
+   heredoc step. If the user's permission mode prompts for the write, that is
+   Claude Code's normal flow and the user will approve.
+
+   Content to write to `.claude/zskills-config.json`:
+   ```json
    {
      "$schema": "./zskills-config.schema.json",
      "project_name": "<detected>",
@@ -176,12 +179,9 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
        "max_fix_attempts": 2
      }
    }
-   EOF
    ```
-   **Important:** `.claude/zskills-config.json` is protected by Claude Code's
-   built-in permission system -- agent writes trigger a prompt. The agent presents
-   the values and instructs the user to create the file using the `!` prefix
-   (user action).
+   Fields left empty by auto-detection stay as empty strings — the install
+   summary's test-setup blurb tells the user what to fill in later.
 
 **Merge algorithm pseudocode:**
 ```
