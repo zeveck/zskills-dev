@@ -3,6 +3,33 @@
 Issue: [#26](https://github.com/zeveck/zskills-dev/issues/26)
 Plan: `plans/FIX_PR_STATE_RATE_LIMIT.md`
 
+## Phase — 2 Invariant #8 + canary tests
+
+**Plan:** plans/FIX_PR_STATE_RATE_LIMIT.md
+**Status:** Completed (verified, landed via PR squash)
+**Worktree:** /tmp/zskills-pr-fix-pr-state-rate-limit
+**Branch:** feat/fix-pr-state-rate-limit
+**Commits:** 7073075 (feat), 0e1a97f (tracker → in progress)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | `scripts/post-run-invariants.sh` invariant #8 block (lines 123-130) | Done | 7073075 |
+| 2 | `tests/test-canary-failures.sh` 3-case section (lines 509-562) | Done | 7073075 |
+
+### Verification
+- Content match: `^status: pr-state-unknown$` anchored grep, `[ -n "$WORKTREE_PATH" ]` guard, `INVARIANT_FAILED=1` set, stderr echo present.
+- Placement: FAIL-before-WARN ordering confirmed (`grep -nE 'INVARIANT-(FAIL|WARN)'` shows FAIL 1,2,3,4,5,6,**8** then WARN 7). `grep -cE 'INVARIANT-FAIL.*#[0-9]'` = 7 (correct — #7 is WARN).
+- Canary section: 3 cases cover fire-on-pr-state-unknown (Case 1), silent-on-pr-ready (Case 2, asserts substring absence — #1 co-fires by design), silent-on-missing-.landed (Case 3, `mktemp -u` so #1 also stays silent, rc=0 clean).
+- Bonus: anchored regex correctly rejects `status: pr-state-unknown-extra` (verifier hand-test).
+- Test suite: 321/321 pass (baseline 318 + 3 new). Zero regression.
+
+### User Sign-off
+
+*(None — non-UI phase; no user verification required.)*
+
+---
+
 ## Phase — 1 Retry + pr-state-unknown at call sites
 
 **Plan:** plans/FIX_PR_STATE_RATE_LIMIT.md

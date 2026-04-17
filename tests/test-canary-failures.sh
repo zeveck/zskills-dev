@@ -506,6 +506,64 @@ else
   fail "invariant #7 Case C — rc=$i7c_rc (want 0); squash-divergence WARN present? out: $i7c_out"
 fi
 
+section "post-run-invariants.sh: #8 pr-state-unknown (3 cases)"
+# Invariant #8 fires when a worktree's .landed recorded an UNKNOWN PR state
+# (gh pr view rate-limited during land-phase). Contract string with Phase 1's
+# writer: anchored '^status: pr-state-unknown$'. The guard
+# [ -f "$WORKTREE_PATH/.landed" ] short-circuits when no marker exists.
+#
+# Isolation note: invariant #1 fires whenever WORKTREE_PATH points at an
+# existing directory. #8's tests necessarily set WORKTREE_PATH to a dir
+# that contains (or could contain) a .landed file, so #1 co-fires in
+# Cases 1 & 2. We assert ONLY the #8 substring presence/absence — not
+# overall rc — because #1 is out-of-scope for this section and has its
+# own dedicated canary above.
+
+# Case 1 — fire: .landed with status: pr-state-unknown → #8 in stderr, rc=1.
+# #1 also fires (worktree dir exists); rc=1 either way, substring check is
+# the load-bearing assertion.
+i8a_primary=$(setup_fixture_repo)
+i8a_worktree=$(mktemp -d /tmp/canary-phase2-inv8-1.XXXXXX)
+FIXTURE_DIRS+=("$i8a_worktree")
+printf 'status: pr-state-unknown\n' > "$i8a_worktree/.landed"
+expect_script_exit \
+  "invariant #8 fire: .landed has status: pr-state-unknown" \
+  1 \
+  "INVARIANT-FAIL (#8): $i8a_worktree/.landed has status: pr-state-unknown" \
+  bash -c "cd \"$i8a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"$i8a_worktree\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"\""
+
+# Case 2 — silent on pr-ready: .landed present but status differs → no #8
+# (assert absence of #8 substring regardless of overall rc; #1 fires and
+# is expected to, being out-of-scope here).
+i8b_primary=$(setup_fixture_repo)
+i8b_worktree=$(mktemp -d /tmp/canary-phase2-inv8-2.XXXXXX)
+FIXTURE_DIRS+=("$i8b_worktree")
+printf 'status: pr-ready\n' > "$i8b_worktree/.landed"
+i8b_out=$(cd "$i8b_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "$i8b_worktree" --branch "" --landed-status pr-ready \
+  --plan-slug "" --plan-file "" 2>&1) || true
+if [[ "$i8b_out" != *"INVARIANT-FAIL (#8):"* ]]; then
+  pass "invariant #8 negative: pr-ready .landed does not fire #8"
+else
+  fail "invariant #8 negative (pr-ready) — '#8' unexpectedly present in: $i8b_out"
+fi
+
+# Case 3 — silent on no .landed: guard [ -f ... ] short-circuits → no #8.
+# Use mktemp -u so the worktree dir does NOT exist — then #1 also stays
+# quiet and we can additionally assert rc=0 to prove the guard, not some
+# unrelated fire, caused the silence.
+i8c_primary=$(setup_fixture_repo)
+i8c_worktree=$(mktemp -u /tmp/canary-phase2-inv8-3.XXXXXX)
+# No FIXTURE_DIRS entry — nothing was created. No .landed either.
+i8c_out=$(cd "$i8c_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "$i8c_worktree" --branch "" --landed-status "" \
+  --plan-slug "" --plan-file "" 2>&1); i8c_rc=$?
+if [ "$i8c_rc" -eq 0 ] && [[ "$i8c_out" != *"INVARIANT-FAIL (#8):"* ]]; then
+  pass "invariant #8 negative: no .landed, guard short-circuits, no #8"
+else
+  fail "invariant #8 negative (no .landed) — rc=$i8c_rc (want 0); '#8' absent? out: $i8c_out"
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 4 — block-agents.sh.template reproducers
 # ---------------------------------------------------------------------------

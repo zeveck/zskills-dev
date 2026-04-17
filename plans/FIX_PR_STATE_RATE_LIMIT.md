@@ -2,7 +2,7 @@
 issue: 26
 title: Fix gh pr view Rate-Limit Silent Default to OPEN (zombie feature branches)
 created: 2026-04-17
-status: active
+status: complete
 ---
 
 # Plan: Fix gh pr view Rate-Limit Silent Default to OPEN
@@ -40,7 +40,7 @@ when the ambiguous state is recorded.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Retry + pr-state-unknown at call sites | ✅ | `3679056` | landed via PR (squashed on main) |
-| 2 — Invariant #8 + canary tests | ⬚ | | |
+| 2 — Invariant #8 + canary tests | ✅ | `7073075` | landed via PR (squashed on main) |
 
 ## Shared Conventions
 

@@ -120,6 +120,15 @@ if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
   fi
 fi
 
+# #8: .landed recorded an UNKNOWN PR state (gh pr view rate-limited)
+# — manual reconciliation required.
+if [ -n "$WORKTREE_PATH" ] && [ -f "$WORKTREE_PATH/.landed" ]; then
+  if grep -q '^status: pr-state-unknown$' "$WORKTREE_PATH/.landed"; then
+    INVARIANT_FAILED=1
+    echo "INVARIANT-FAIL (#8): $WORKTREE_PATH/.landed has status: pr-state-unknown — gh pr view could not verify; manual reconciliation required" >&2
+  fi
+fi
+
 # 7. Local main reconcilable with origin/main — WARN not FAIL
 # Users may have legitimate unpushed work on local main; we don't reject,
 # but we surface it clearly so squash-merge divergence doesn't accumulate
