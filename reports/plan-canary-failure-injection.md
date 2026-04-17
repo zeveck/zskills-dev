@@ -1,6 +1,6 @@
 # Plan Report — Canary Failure Injection
 
-## Phase — 2 land-phase.sh reproducers [UNFINALIZED]
+## Phase — 2 land-phase.sh reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
 **Status:** Completed (verified), pending PR landing
