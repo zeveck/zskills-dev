@@ -303,6 +303,102 @@ else
   fail "/tmp test-output dir cleanup — rc=$tc_rc (want 0); dir still present? [ -d \"$tc_tmpdir\" ]=$([ -d "$tc_tmpdir" ] && echo yes || echo no); output: $tc_out"
 fi
 
+section "worktree-add-safe.sh: poisoned-branch discrimination (6 cases)"
+# Locks in the classification taxonomy introduced with the helper script:
+# fresh / equivalent-to-main / behind-only / ahead-no-optin /
+# ahead-with-optin / path-already-exists. Each fixture renames its default
+# branch to 'main' so the helper's default BASE argument works.
+
+# Case 1 — fresh branch: no local, no remote → rc=0, helper creates via -b.
+ws1_primary=$(setup_fixture_repo)
+git -C "$ws1_primary" branch -M main
+ws1_wt=$(mktemp -u)
+FIXTURE_DIRS+=("$ws1_wt")
+expect_script_exit \
+  "worktree-add-safe Case 1 (fresh): rc=0, new worktree via -b" \
+  0 \
+  "Preparing worktree" \
+  bash -c "cd \"$ws1_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-fresh \"$ws1_wt\" main"
+
+# Case 2 — equivalent-to-main: branch points at main tip (0 ahead, 0 behind)
+# → rc=0, helper deletes stale ref and creates fresh.
+ws2_primary=$(setup_fixture_repo)
+git -C "$ws2_primary" branch -M main
+# Force-create the stale ref at main tip so rev-list counts are both 0.
+git -C "$ws2_primary" branch -f canary/ws-equiv main
+# Sanity-check the fixture: both counts must be 0 before invoking the helper.
+ws2_ahead=$(git -C "$ws2_primary" rev-list --count main..canary/ws-equiv)
+ws2_behind=$(git -C "$ws2_primary" rev-list --count canary/ws-equiv..main)
+if [ "$ws2_ahead" != "0" ] || [ "$ws2_behind" != "0" ]; then
+  fail "Case 2 fixture bad: ahead=$ws2_ahead behind=$ws2_behind (want 0/0)"
+fi
+ws2_wt=$(mktemp -u)
+FIXTURE_DIRS+=("$ws2_wt")
+expect_script_exit \
+  "worktree-add-safe Case 2 (equivalent-to-main): rc=0, stale ref deleted" \
+  0 \
+  "equivalent to main — deleting stale ref" \
+  bash -c "cd \"$ws2_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-equiv \"$ws2_wt\" main"
+
+# Case 3 — behind-only (poisoned): branch from old main, main advances →
+# rc=3 with "poisoned stale branch" stderr.
+ws3_primary=$(setup_fixture_repo)
+git -C "$ws3_primary" branch -M main
+# Create branch at current main tip, then advance main past it.
+git -C "$ws3_primary" branch canary/ws-behind main
+git -C "$ws3_primary" commit --allow-empty -q -m "main advance 1"
+git -C "$ws3_primary" commit --allow-empty -q -m "main advance 2"
+ws3_wt=$(mktemp -u)
+FIXTURE_DIRS+=("$ws3_wt")
+expect_script_exit \
+  "worktree-add-safe Case 3 (behind-only poisoned): rc=3 with poisoning message" \
+  3 \
+  "poisoned stale branch" \
+  bash -c "cd \"$ws3_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-behind \"$ws3_wt\" main"
+
+# Case 4 — ahead without opt-in: branch ahead of main, no env var → rc=4
+# with ZSKILLS_ALLOW_BRANCH_RESUME guidance.
+ws4_primary=$(setup_fixture_repo)
+git -C "$ws4_primary" branch -M main
+# Create a branch with one commit ahead of main.
+git -C "$ws4_primary" checkout -q -b canary/ws-ahead-no
+git -C "$ws4_primary" commit --allow-empty -q -m "branch work"
+git -C "$ws4_primary" checkout -q main
+ws4_wt=$(mktemp -u)
+FIXTURE_DIRS+=("$ws4_wt")
+expect_script_exit \
+  "worktree-add-safe Case 4 (ahead, no opt-in): rc=4 with opt-in guidance" \
+  4 \
+  "set ZSKILLS_ALLOW_BRANCH_RESUME=1" \
+  bash -c "cd \"$ws4_primary\" && unset ZSKILLS_ALLOW_BRANCH_RESUME; bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-ahead-no \"$ws4_wt\" main"
+
+# Case 5 — ahead WITH opt-in: same setup as Case 4, env var set → rc=0,
+# helper attaches worktree to existing branch (no -b flag).
+ws5_primary=$(setup_fixture_repo)
+git -C "$ws5_primary" branch -M main
+git -C "$ws5_primary" checkout -q -b canary/ws-ahead-yes
+git -C "$ws5_primary" commit --allow-empty -q -m "branch work"
+git -C "$ws5_primary" checkout -q main
+ws5_wt=$(mktemp -u)
+FIXTURE_DIRS+=("$ws5_wt")
+expect_script_exit \
+  "worktree-add-safe Case 5 (ahead + opt-in): rc=0, attaches to existing branch" \
+  0 \
+  "resuming on existing branch canary/ws-ahead-yes" \
+  bash -c "cd \"$ws5_primary\" && ZSKILLS_ALLOW_BRANCH_RESUME=1 bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-ahead-yes \"$ws5_wt\" main"
+
+# Case 6 — worktree path already exists (caller bug): dir pre-created →
+# rc=2 with "caller must handle" error, no worktree registered.
+ws6_primary=$(setup_fixture_repo)
+git -C "$ws6_primary" branch -M main
+ws6_wt=$(mktemp -d)
+FIXTURE_DIRS+=("$ws6_wt")
+expect_script_exit \
+  "worktree-add-safe Case 6 (path exists, caller bug): rc=2 with caller-must-handle" \
+  2 \
+  "caller must handle resume before invoking this helper" \
+  bash -c "cd \"$ws6_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-exists \"$ws6_wt\" main"
+
 # ---------------------------------------------------------------------------
 # Phase 3 — post-run-invariants.sh reproducers
 # ---------------------------------------------------------------------------
