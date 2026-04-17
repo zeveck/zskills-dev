@@ -107,11 +107,15 @@ if [ -n "$PLAN_SLUG" ]; then
   fi
 fi
 
-# 6. No 🟡 In Progress rows linger in the tracker
+# 6. No 🟡 In Progress rows linger in the tracker.
+# Scoped to markdown table rows (lines starting with '|'). Bare whole-file
+# grep false-positives on prose, Drift Log sections, and code-fence
+# examples that mention the sentinel character — the invariant's real
+# concern is the Progress Tracker table, which is always pipe-delimited.
 if [ -n "$PLAN_FILE" ] && [ -f "$PLAN_FILE" ]; then
-  if grep -q '🟡' "$PLAN_FILE"; then
+  if grep -qE '^\|.*🟡' "$PLAN_FILE"; then
     echo "INVARIANT-FAIL (#6): plan $PLAN_FILE still has 🟡 In Progress rows after run" >&2
-    grep -n '🟡' "$PLAN_FILE" >&2
+    grep -nE '^\|.*🟡' "$PLAN_FILE" >&2
     INVARIANT_FAILED=1
   fi
 fi

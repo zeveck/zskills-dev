@@ -374,21 +374,22 @@ else
   fail "invariant #5 negative — rc=$i5b_rc (want 0); '#5' absent? out: $i5b_out"
 fi
 
-section "Invariant #6: in-progress sentinel in plan (2 cases)"
+section "Invariant #6: in-progress sentinel in plan (3 cases)"
 # Fixture files are committed to the repo (tests/fixtures/canary/). Pass
 # the path through --plan-file; invariant #6 reads only that file.
 i6_fire_plan="$REPO_ROOT/tests/fixtures/canary/plan-with-sentinel.md"
 i6_negative_plan="$REPO_ROOT/tests/fixtures/canary/plan-without-sentinel.md"
+i6_prose_plan="$REPO_ROOT/tests/fixtures/canary/plan-prose-sentinel.md"
 
-# Fire case: fixture contains the in-progress sentinel.
+# Fire case: fixture has 🟡 in a markdown table row.
 i6a_primary=$(setup_fixture_repo)
 expect_script_exit \
-  "invariant #6 fire: plan contains in-progress sentinel" \
+  "invariant #6 fire: plan has sentinel in a table row" \
   1 \
   "INVARIANT-FAIL (#6):" \
   bash -c "cd \"$i6a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug \"\" --plan-file \"$i6_fire_plan\""
 
-# Negative case: fixture has no sentinel — must not fire #6.
+# Negative case A: clean plan (no sentinel anywhere) — must not fire #6.
 i6b_primary=$(setup_fixture_repo)
 i6b_out=$(cd "$i6b_primary" && bash "$INVARIANTS_SCRIPT" \
   --worktree "" --branch "" --landed-status "" --plan-slug "" \
@@ -397,6 +398,20 @@ if [ "$i6b_rc" -eq 0 ] && [[ "$i6b_out" != *"INVARIANT-FAIL (#6):"* ]]; then
   pass "invariant #6 negative: clean plan, no #6 failure"
 else
   fail "invariant #6 negative — rc=$i6b_rc (want 0); '#6' absent? out: $i6b_out"
+fi
+
+# Negative case B (regression guard for row-scoped grep): plan mentions
+# the sentinel in PROSE only — table rows are all ✅/⬚. Must NOT fire
+# #6. If invariant #6 ever regresses to whole-file grep, this test
+# fails loudly.
+i6c_primary=$(setup_fixture_repo)
+i6c_out=$(cd "$i6c_primary" && bash "$INVARIANTS_SCRIPT" \
+  --worktree "" --branch "" --landed-status "" --plan-slug "" \
+  --plan-file "$i6_prose_plan" 2>&1); i6c_rc=$?
+if [ "$i6c_rc" -eq 0 ] && [[ "$i6c_out" != *"INVARIANT-FAIL (#6):"* ]]; then
+  pass "invariant #6 prose-regression: sentinel in prose only, no #6 failure"
+else
+  fail "invariant #6 prose-regression — rc=$i6c_rc (want 0); '#6' absent? out: $i6c_out"
 fi
 
 section "Invariant #7: main divergence WARN (3 cases)"
