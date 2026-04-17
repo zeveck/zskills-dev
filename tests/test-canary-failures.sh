@@ -600,6 +600,69 @@ expect_agent_allow \
   "$a6_input" \
   "$a6_root"
 
+# --- Phase 5: /commit reviewer prompt + Phase 7 anti-stash discipline ---
+
+expect_grep_F_hit() {
+  # $1 label, $2 file, $3 literal string
+  local label="$1" file="$2" want="$3"
+  if grep -qF -- "$want" "$file"; then
+    pass "$label"
+  else
+    fail "$label — not found in $file"
+  fi
+}
+expect_grep_count_at_least() {
+  # $1 label, $2 file, $3 literal string, $4 min count
+  local label="$1" file="$2" want="$3" min="$4"
+  local n
+  n=$(grep -cF -- "$want" "$file")
+  if [ "$n" -ge "$min" ]; then
+    pass "$label (count: $n >= $min)"
+  else
+    fail "$label (count: $n < $min) in $file"
+  fi
+}
+
+section "/commit reviewer prompt: load-bearing substrings (canonical)"
+COMMIT_SKILL="$REPO_ROOT/skills/commit/SKILL.md"
+expect_grep_F_hit "canonical: 'You are read-only.'"              "$COMMIT_SKILL" 'You are read-only.'
+expect_grep_F_hit "canonical: 'FORBIDDEN:'"                      "$COMMIT_SKILL" 'FORBIDDEN:'
+expect_grep_F_hit "canonical: backticked git-stash reference"    "$COMMIT_SKILL" '`git stash`'
+expect_grep_F_hit "canonical: 'push/-u/save/bare'"               "$COMMIT_SKILL" 'push/-u/save/bare'
+expect_grep_F_hit "canonical: 'checkout'"                        "$COMMIT_SKILL" 'checkout'
+expect_grep_F_hit "canonical: 'restore'"                         "$COMMIT_SKILL" 'restore'
+expect_grep_F_hit "canonical: 'reset'"                           "$COMMIT_SKILL" 'reset'
+expect_grep_F_hit "canonical: 'editing files'"                   "$COMMIT_SKILL" 'editing files'
+expect_grep_F_hit "canonical: 'creating worktrees'"              "$COMMIT_SKILL" 'creating worktrees'
+expect_grep_F_hit "canonical: 'git show <commit>:<file>' ref"    "$COMMIT_SKILL" '`git show <commit>:<file>`'
+expect_grep_F_hit "canonical: 'Past failure: reviewer ran'"      "$COMMIT_SKILL" 'Past failure: reviewer ran'
+
+section "/commit reviewer prompt: load-bearing substrings (installed copy)"
+COMMIT_SKILL_INSTALLED="$REPO_ROOT/.claude/skills/commit/SKILL.md"
+if [ ! -f "$COMMIT_SKILL_INSTALLED" ]; then
+  pass "installed copy: SKIPPED (run update-zskills to enable)"
+else
+  expect_grep_F_hit "installed: 'You are read-only.'"              "$COMMIT_SKILL_INSTALLED" 'You are read-only.'
+  expect_grep_F_hit "installed: 'FORBIDDEN:'"                      "$COMMIT_SKILL_INSTALLED" 'FORBIDDEN:'
+  expect_grep_F_hit "installed: backticked git-stash reference"    "$COMMIT_SKILL_INSTALLED" '`git stash`'
+  expect_grep_F_hit "installed: 'push/-u/save/bare'"               "$COMMIT_SKILL_INSTALLED" 'push/-u/save/bare'
+  expect_grep_F_hit "installed: 'checkout'"                        "$COMMIT_SKILL_INSTALLED" 'checkout'
+  expect_grep_F_hit "installed: 'restore'"                         "$COMMIT_SKILL_INSTALLED" 'restore'
+  expect_grep_F_hit "installed: 'reset'"                           "$COMMIT_SKILL_INSTALLED" 'reset'
+  expect_grep_F_hit "installed: 'editing files'"                   "$COMMIT_SKILL_INSTALLED" 'editing files'
+  expect_grep_F_hit "installed: 'creating worktrees'"              "$COMMIT_SKILL_INSTALLED" 'creating worktrees'
+  expect_grep_F_hit "installed: 'git show <commit>:<file>' ref"    "$COMMIT_SKILL_INSTALLED" '`git show <commit>:<file>`'
+  expect_grep_F_hit "installed: 'Past failure: reviewer ran'"      "$COMMIT_SKILL_INSTALLED" 'Past failure: reviewer ran'
+fi
+
+section "/commit Phase 7: anti-stash discipline (2 cases)"
+expect_grep_F_hit "phase-7: 'Do NOT stash' present"              "$COMMIT_SKILL" 'Do NOT stash'
+expect_grep_F_hit "phase-7: 'try-without-stash' present"         "$COMMIT_SKILL" 'try-without-stash'
+
+section "/commit Key Rules: stash prohibition (2 cases)"
+expect_grep_count_at_least "key-rules: 'Do NOT stash' appears >= 2" "$COMMIT_SKILL" 'Do NOT stash' 2
+expect_grep_count_at_least "key-rules: 'hook blocks' appears >= 1"  "$COMMIT_SKILL" 'hook blocks'  1
+
 echo
 echo "Canary failure-injection: $PASS_COUNT passed, $FAIL_COUNT failed"
 exit $((FAIL_COUNT > 0))
