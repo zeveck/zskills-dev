@@ -52,7 +52,7 @@ cases above.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Poisoned-branch discriminator helper + 3 call sites | ⬚ | | |
+| 1 — Poisoned-branch discriminator helper + 3 call sites | 🟡 | | |
 | 2 — Canary test coverage | ⬚ | | |
 
 ## Shared Conventions
