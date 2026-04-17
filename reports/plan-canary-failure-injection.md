@@ -1,5 +1,54 @@
 # Plan Report — Canary Failure Injection
 
+## Phase — 2 land-phase.sh reproducers [UNFINALIZED]
+
+**Plan:** `plans/CANARY_FAILURE_INJECTION.md`
+**Status:** Completed (verified), pending PR landing
+**Worktree:** `/tmp/zskills-pr-canary-failure-injection`
+**Branch:** `feat/canary-failure-injection`
+**Commits:** `e78a224` (impl + tests), `527c301` (tracker 🟡)
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Section `land-phase.sh: dirty worktree refused (1 case)` | Done | `e78a224` |
+| 2 | Section `land-phase.sh: tracked ephemeral rejected (4 cases)` + array-drift guard | Done | `e78a224` |
+| 3 | Section `land-phase.sh: ls-remote exit code handling (3 cases)` — rc=0/2/128 | Done | `e78a224` |
+| 4 | Section `land-phase.sh: /tmp test-output dir cleanup (1 case)` — locks in 66d9138 | Done | `e78a224` |
+
+### Verification
+
+- `/verify-changes worktree` — **PASS**. Scope Assessment clean, all cells "Yes".
+- Canary suite: `Canary failure-injection: 28 passed, 0 failed` (up from 18 post-Phase-1).
+- Full aggregator: `Overall: 263/263 passed, 0 failed` (baseline 253 + 10 new).
+- No regressions vs baseline.
+- Hygiene: `.worktreepurpose`/`.zskills-tracked`/`.landed` untracked; `/tmp/zskills-tests/...` outside worktree; only `tests/test-canary-failures.sh` modified.
+
+### Acceptance Criteria
+
+- [x] Section "dirty worktree" passes 1 test.
+- [x] Section "tracked ephemeral" passes 4 tests + array-drift guard.
+- [x] Section "ls-remote" passes 3 tests (rc=0/2/128 distinction).
+- [x] Section "/tmp cleanup" passes 1 test.
+- [x] `bash tests/test-canary-failures.sh` → `28 passed, 0 failed`.
+- [x] `bash tests/run-all.sh` → `Overall: 263/263 passed, 0 failed`.
+
+### Deviations from Plan
+
+Minor +1 count: the plan's headline count is "9 tests" but the AC wording
+also lists the array-drift guard as a distinct assertion ("...AND the
+array-drift guard passes"). The impl agent implemented the guard as its
+own `pass` call so drift is visible in test output. Net: 10 new passing
+assertions instead of 9. Total canary count: 28.
+
+Cumulative plan-wide count adjustment:
+- Phase 2 internal: 9 → 10
+- Final expected (installed-copy present): 78 → 79
+- Final expected (installed-copy skipped): 68 → 69
+
+---
+
 ## Phase — 1 Scaffold + block-unsafe-generic.sh stash reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
