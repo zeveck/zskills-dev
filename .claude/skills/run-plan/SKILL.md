@@ -1336,6 +1336,38 @@ Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
 3. If `SPRINT_REPORT.md` does not exist, or the issue/plan is not
    mentioned in a skipped section, skip this step.
 
+### 5. Remind about stale tracking markers
+
+After plan completion, the `fulfilled.run-plan.<id>` marker stays on disk
+as the canonical completion record, but the pipeline's `requires.*`,
+`step.*`, `verify-pending-attempts.*`, and `fulfilled.verify-changes.*`
+markers (which are bookkeeping, not history) persist in
+`.zskills/tracking/` indefinitely. Over many plan runs these accumulate
+and can cause subtle drift (e.g., a test that invokes the hook's push
+path from a zskills-tracked worktree may trip tracking enforcement
+against a leftover `requires.*` from a prior pipeline).
+
+Count remaining non-completion markers across all pipelines and surface
+a one-line reminder. Do NOT auto-clean — this skill's job is
+to run plans, not manage long-term tracking state. The user runs
+`bash scripts/clear-tracking.sh` when they're ready.
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+MARKER_COUNT=$(ls "$MAIN_ROOT/.zskills/tracking/"requires.* \
+                    "$MAIN_ROOT/.zskills/tracking/"step.* \
+                    "$MAIN_ROOT/.zskills/tracking/"verify-pending-attempts.* \
+                    "$MAIN_ROOT/.zskills/tracking/"fulfilled.verify-changes.* 2>/dev/null \
+                | wc -l)
+if [ "$MARKER_COUNT" -ge 10 ]; then
+  echo "NOTE: $MARKER_COUNT bookkeeping tracking markers on disk across completed pipelines."
+  echo "      Run: bash scripts/clear-tracking.sh   (preserves fulfilled.run-plan.* completion records)"
+fi
+```
+
+Threshold `10` is a judgment call — below that the accumulation is not
+yet disruptive. Adjust if it proves noisy or too quiet in practice.
+
 ## Phase 5c — Chunked finish auto transition (CRITICAL for finish auto mode)
 
 **This section applies when running `/run-plan <plan> finish auto`.**

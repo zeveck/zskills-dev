@@ -642,8 +642,17 @@ EOF
   fi
 
   local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$test_tmpdir/.transcript\"}"
+  # Override LOCAL_ROOT and TRACKING_ROOT so the hook resolves to the fixture,
+  # not the caller's worktree. Without these, the hook's push-path tracking
+  # block reads .zskills-tracked + tracking markers from wherever the test was
+  # invoked from (typically a zskills-tracked worktree with accumulated commits),
+  # firing the tracking guard before the main_protected check this test asserts.
   local result
-  result=$(echo "$json" | REPO_ROOT="$test_tmpdir" bash "$test_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+  result=$(echo "$json" | \
+    REPO_ROOT="$test_tmpdir" \
+    LOCAL_ROOT="$test_tmpdir" \
+    TRACKING_ROOT="$test_tmpdir" \
+    bash "$test_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
 
   # Cleanup
   rm -rf "$test_tmpdir"
