@@ -1,5 +1,57 @@
 # Plan Report — Canary Failure Injection
 
+## Phase — 3 post-run-invariants.sh reproducers [UNFINALIZED]
+
+**Plan:** `plans/CANARY_FAILURE_INJECTION.md`
+**Status:** Completed (verified), pending PR landing
+**Worktree:** `/tmp/zskills-pr-canary-failure-injection`
+**Branch:** `feat/canary-failure-injection`
+**Commits:** `a922e27` (impl + tests + scaffold fix), `f9164f1` (tracker 🟡)
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Section `Invariant #1: worktree on disk (1 case)` | Done | `a922e27` |
+| 2 | Section `Invariant #2: worktree in registry (1 case)` | Done | `a922e27` |
+| 3 | Section `Invariant #3: local branch after landed (2 cases)` — fire + pr-ready negative | Done | `a922e27` |
+| 4 | Section `Invariant #4: remote branch after landed (2 cases)` | Done | `a922e27` |
+| 5 | Section `Invariant #5: plan report missing (2 cases)` | Done | `a922e27` |
+| 6 | Section `Invariant #6: in-progress sentinel in plan (2 cases)` — uses committed fixtures | Done | `a922e27` |
+| 7 | Section `Invariant #7: main divergence WARN (3 cases)` — no-div / fetch-fail / squash-merge-div | Done | `a922e27` |
+| 8 | `tests/fixtures/canary/plan-with-sentinel.md` (contains 🟡 in a tracker row) | Done | `a922e27` |
+| 9 | `tests/fixtures/canary/plan-without-sentinel.md` (clean plan, no sentinel) | Done | `a922e27` |
+| 10 | Scaffold robustness fix: `REPO_ROOT` derives from script path, not CWD | Done | `a922e27` |
+
+### Verification
+
+- `/verify-changes worktree` — **PASS**. Scope Assessment clean.
+- Canary suite: `Canary failure-injection: 41 passed, 0 failed` (baseline 28 + 13 new).
+- Full aggregator: `Overall: 276/276 passed, 0 failed` (baseline 263 + 13 new).
+- Verified suite passes via BOTH `(cd worktree && bash tests/run-all.sh)` AND `bash /abs/worktree/tests/run-all.sh` from an arbitrary CWD.
+- Hygiene: `.worktreepurpose` / `.zskills-tracked` untracked; only the three in-scope paths staged.
+
+### Drive-by fixes surfaced during review
+
+1. **Scaffold CWD-sensitivity bug (orchestrator-caught during spot-check):** the Phase 1 scaffold derived `REPO_ROOT` via `git rev-parse --show-toplevel`, which follows CWD rather than the script's own location. When the aggregator was invoked with the test script's absolute path from a different repo's CWD, `REPO_ROOT` resolved to the wrong place and Phase 3's fixture paths failed to resolve. Fixed by switching to script-path derivation (mirrors `tests/run-all.sh`'s own pattern).
+2. **Verifier-caught `|| true` + `2>/dev/null` pair** in the impl agent's Invariant #4 fixture (a dead branch-delete whose rc was ignored and stderr suppressed — violates CLAUDE.md). Verifier replaced with a comment explaining the setup intent. Canary count unchanged.
+
+### Acceptance Criteria
+
+- [x] 7 invariant sections present, 13 tests total.
+- [x] #1-#6 assert rc=1 (FAIL); #7 cases assert rc=0 (WARN).
+- [x] Two fixture files committed with descriptive header comments.
+- [x] No literal 🟡 character in `tests/test-canary-failures.sh` (only in `plan-with-sentinel.md`).
+- [x] `bash tests/test-canary-failures.sh` → 41 passed, 0 failed.
+- [x] `bash tests/run-all.sh` → 276/276 passed, 0 failed.
+- [x] Suite CWD-robust.
+
+### Deviations from Plan
+
+None on the primary scope. The two drive-by fixes (scaffold CWD, impl `|| true`) are documented above — both strictly improve code quality without altering test behavior or expectations.
+
+---
+
 ## Phase — 2 land-phase.sh reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
