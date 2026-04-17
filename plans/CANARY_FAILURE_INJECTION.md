@@ -1,7 +1,7 @@
 ---
 title: Canary Failure Injection
 created: 2026-04-16
-status: active
+status: complete
 ---
 
 # Plan: Canary Failure Injection
@@ -78,7 +78,7 @@ which now includes the previous phase's changes.
 | 2 — land-phase.sh | ✅ Done | `e78a224` | 10 tests (1+4+3+1+guard) |
 | 3 — post-run-invariants.sh | ✅ Done | `a922e27` | 13 tests (1+1+2+2+2+2+3) |
 | 4 — block-agents.sh | ✅ Done | `2eba026` | 12 tests (1+6+1+1+2+1) |
-| 5 — /commit reviewer + Phase 7 | 🟡 In Progress | | |
+| 5 — /commit reviewer + Phase 7 | ✅ Done | `a6f9e70` | 26 tests (11+11+2+2) |
 
 ## Shared conventions (all phases)
 

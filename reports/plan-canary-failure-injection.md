@@ -20,7 +20,7 @@ The canary's ~50-line plan-adjustment vs plan prose (77 → 79) came from Phase 
 
 ---
 
-## Phase — 5 /commit reviewer + Phase 7 verification [UNFINALIZED]
+## Phase — 5 /commit reviewer + Phase 7 verification
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
 **Status:** Completed (verified), pending PR landing
