@@ -1,6 +1,6 @@
 # Plan Report — Canary Failure Injection
 
-## Phase — 3 post-run-invariants.sh reproducers [UNFINALIZED]
+## Phase — 3 post-run-invariants.sh reproducers
 
 **Plan:** `plans/CANARY_FAILURE_INJECTION.md`
 **Status:** Completed (verified), pending PR landing
