@@ -21,6 +21,58 @@ block_with_reason() {
   exit 0
 }
 
+# ─── Tracking enforcement helpers ───
+# Shared between the commit / cherry-pick / push reader blocks. Each helper
+# takes a marker path + the action-verb context ("committing", "landing",
+# "pushing") and calls block_with_reason on violation. TRACKING_DIR is read
+# from the caller's scope (the calling block already sets it).
+#
+# Usage:
+#   enforce_requires_marker "$req_path" "committing"
+#   enforce_step_implement_marker "$impl_path" "committing"
+#   enforce_step_verify_marker "$verify_path" "committing"
+
+enforce_requires_marker() {
+  local req="$1"
+  local action="$2"
+  local base
+  base=$(basename "$req")
+  local fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
+  # Also check inside the same subdir as the requires marker, if it's in one.
+  local req_dir
+  req_dir=$(dirname "$req")
+  local subdir_fulfilled="${req_dir}/${base/requires./fulfilled.}"
+  if [ ! -f "$fulfilled" ] && [ ! -f "$subdir_fulfilled" ]; then
+    if [ "$action" = "pushing" ]; then
+      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash scripts/clear-tracking.sh"
+    else
+      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
+    fi
+  fi
+}
+
+enforce_step_implement_marker() {
+  local impl="$1"
+  local action="$2"
+  local base
+  base=$(basename "$impl" .implement)
+  local verify="${impl/\.implement/.verify}"
+  if [ ! -f "$verify" ]; then
+    block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before ${action}. To clear: ! bash scripts/clear-tracking.sh"
+  fi
+}
+
+enforce_step_verify_marker() {
+  local verif="$1"
+  local action="$2"
+  local base
+  base=$(basename "$verif" .verify)
+  local report="${verif/\.verify/.report}"
+  if [ ! -f "$report" ]; then
+    block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before ${action}. To clear: ! bash scripts/clear-tracking.sh"
+  fi
+}
+
 # Extract transcript_path from JSON input using bash only
 extract_transcript() {
   if [[ "$INPUT" =~ \"transcript_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
@@ -243,44 +295,76 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
 
     if [ -n "$CODE_FILES" ]; then
 
+      PIPELINE_SUBDIR="$TRACKING_DIR/$PIPELINE_ID"
+
       # Delegation check: requires.* must have matching fulfilled.*
-      for req in "$TRACKING_DIR"/requires.*; do
-        [ -f "$req" ] || continue
-        base=$(basename "$req")
-        # Pipeline scoping: if PIPELINE_ID is set, only check markers ending with .$PIPELINE_ID
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
-        if [ ! -f "$fulfilled" ]; then
-          block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for req in "$PIPELINE_SUBDIR"/requires.*; do
+          [ -e "$req" ] || continue
+          found_any=1
+          enforce_requires_marker "$req" "committing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for req in "$TRACKING_DIR"/requires.*; do
+          [ -e "$req" ] || continue
+          [ -f "$req" ] || continue
+          base=$(basename "$req")
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_requires_marker "$req" "committing"
+        done
+      fi
 
-      # Step enforcement: implement needs verify, verify needs report
-      for impl in "$TRACKING_DIR"/step.*.implement; do
-        [ -f "$impl" ] || continue
-        base=$(basename "$impl" .implement)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        verify="${impl/\.implement/.verify}"
-        if [ ! -f "$verify" ]; then
-          block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before committing. To clear: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Step enforcement: implement needs verify
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for impl in "$PIPELINE_SUBDIR"/step.*.implement; do
+          [ -e "$impl" ] || continue
+          found_any=1
+          enforce_step_implement_marker "$impl" "committing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for impl in "$TRACKING_DIR"/step.*.implement; do
+          [ -e "$impl" ] || continue
+          [ -f "$impl" ] || continue
+          base=$(basename "$impl" .implement)
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_step_implement_marker "$impl" "committing"
+        done
+      fi
 
-      for verif in "$TRACKING_DIR"/step.*.verify; do
-        [ -f "$verif" ] || continue
-        base=$(basename "$verif" .verify)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        report="${verif/\.verify/.report}"
-        if [ ! -f "$report" ]; then
-          block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before committing. To clear: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Step enforcement: verify needs report
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for verif in "$PIPELINE_SUBDIR"/step.*.verify; do
+          [ -e "$verif" ] || continue
+          found_any=1
+          enforce_step_verify_marker "$verif" "committing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for verif in "$TRACKING_DIR"/step.*.verify; do
+          [ -e "$verif" ] || continue
+          [ -f "$verif" ] || continue
+          base=$(basename "$verif" .verify)
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_step_verify_marker "$verif" "committing"
+        done
+      fi
     fi
   fi
 fi
@@ -352,43 +436,76 @@ if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
 
   if [ -d "$TRACKING_DIR" ] && $TRACKING_SESSION_HAS_PIPELINE; then
 
+    PIPELINE_SUBDIR="$TRACKING_DIR/$PIPELINE_ID"
+
     # Delegation check: requires.* must have matching fulfilled.*
-    for req in "$TRACKING_DIR"/requires.*; do
-      [ -f "$req" ] || continue
-      base=$(basename "$req")
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-        continue
-      fi
-      fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
-      if [ ! -f "$fulfilled" ]; then
-        block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
-      fi
-    done
+    # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+    found_any=0
+    if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+      for req in "$PIPELINE_SUBDIR"/requires.*; do
+        [ -e "$req" ] || continue
+        found_any=1
+        enforce_requires_marker "$req" "landing"
+      done
+    fi
+    if [ "$found_any" -eq 0 ]; then
+      # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+      for req in "$TRACKING_DIR"/requires.*; do
+        [ -e "$req" ] || continue
+        [ -f "$req" ] || continue
+        base=$(basename "$req")
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+          continue
+        fi
+        enforce_requires_marker "$req" "landing"
+      done
+    fi
 
-    # Step enforcement: implement needs verify, verify needs report
-    for impl in "$TRACKING_DIR"/step.*.implement; do
-      [ -f "$impl" ] || continue
-      base=$(basename "$impl" .implement)
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-        continue
-      fi
-      verify="${impl/\.implement/.verify}"
-      if [ ! -f "$verify" ]; then
-        block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before landing. To clear: ! bash scripts/clear-tracking.sh"
-      fi
-    done
+    # Step enforcement: implement needs verify
+    # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+    found_any=0
+    if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+      for impl in "$PIPELINE_SUBDIR"/step.*.implement; do
+        [ -e "$impl" ] || continue
+        found_any=1
+        enforce_step_implement_marker "$impl" "landing"
+      done
+    fi
+    if [ "$found_any" -eq 0 ]; then
+      # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+      for impl in "$TRACKING_DIR"/step.*.implement; do
+        [ -e "$impl" ] || continue
+        [ -f "$impl" ] || continue
+        base=$(basename "$impl" .implement)
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+          continue
+        fi
+        enforce_step_implement_marker "$impl" "landing"
+      done
+    fi
 
-    for verif in "$TRACKING_DIR"/step.*.verify; do
-      [ -f "$verif" ] || continue
-      base=$(basename "$verif" .verify)
-      if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-        continue
-      fi
-      report="${verif/\.verify/.report}"
-      if [ ! -f "$report" ]; then
-        block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before landing. To clear: ! bash scripts/clear-tracking.sh"
-      fi
-    done
+    # Step enforcement: verify needs report
+    # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+    found_any=0
+    if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+      for verif in "$PIPELINE_SUBDIR"/step.*.verify; do
+        [ -e "$verif" ] || continue
+        found_any=1
+        enforce_step_verify_marker "$verif" "landing"
+      done
+    fi
+    if [ "$found_any" -eq 0 ]; then
+      # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+      for verif in "$TRACKING_DIR"/step.*.verify; do
+        [ -e "$verif" ] || continue
+        [ -f "$verif" ] || continue
+        base=$(basename "$verif" .verify)
+        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+          continue
+        fi
+        enforce_step_verify_marker "$verif" "landing"
+      done
+    fi
   fi
 fi
 
@@ -453,43 +570,76 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
 
     if [ -n "$CODE_FILES" ]; then
 
+      PIPELINE_SUBDIR="$TRACKING_DIR/$PIPELINE_ID"
+
       # Delegation check: requires.* must have matching fulfilled.*
-      for req in "$TRACKING_DIR"/requires.*; do
-        [ -f "$req" ] || continue
-        base=$(basename "$req")
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        fulfilled="${TRACKING_DIR}/${base/requires./fulfilled.}"
-        if [ ! -f "$fulfilled" ]; then
-          block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for req in "$PIPELINE_SUBDIR"/requires.*; do
+          [ -e "$req" ] || continue
+          found_any=1
+          enforce_requires_marker "$req" "pushing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for req in "$TRACKING_DIR"/requires.*; do
+          [ -e "$req" ] || continue
+          [ -f "$req" ] || continue
+          base=$(basename "$req")
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_requires_marker "$req" "pushing"
+        done
+      fi
 
-      # Step enforcement: implement needs verify, verify needs report
-      for impl in "$TRACKING_DIR"/step.*.implement; do
-        [ -f "$impl" ] || continue
-        base=$(basename "$impl" .implement)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        verify="${impl/\.implement/.verify}"
-        if [ ! -f "$verify" ]; then
-          block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before pushing. To clear: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Step enforcement: implement needs verify
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for impl in "$PIPELINE_SUBDIR"/step.*.implement; do
+          [ -e "$impl" ] || continue
+          found_any=1
+          enforce_step_implement_marker "$impl" "pushing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for impl in "$TRACKING_DIR"/step.*.implement; do
+          [ -e "$impl" ] || continue
+          [ -f "$impl" ] || continue
+          base=$(basename "$impl" .implement)
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_step_implement_marker "$impl" "pushing"
+        done
+      fi
 
-      for verif in "$TRACKING_DIR"/step.*.verify; do
-        [ -f "$verif" ] || continue
-        base=$(basename "$verif" .verify)
-        if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
-          continue
-        fi
-        report="${verif/\.verify/.report}"
-        if [ ! -f "$report" ]; then
-          block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before pushing. To clear: ! bash scripts/clear-tracking.sh"
-        fi
-      done
+      # Step enforcement: verify needs report
+      # Subdir-first; falls back to flat glob + scope filter for legacy markers.
+      found_any=0
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+        for verif in "$PIPELINE_SUBDIR"/step.*.verify; do
+          [ -e "$verif" ] || continue
+          found_any=1
+          enforce_step_verify_marker "$verif" "pushing"
+        done
+      fi
+      if [ "$found_any" -eq 0 ]; then
+        # Transitional fallback: flat glob + scope filter (LEGACY — TODO: remove after Phase 6 (migration cleanup))
+        for verif in "$TRACKING_DIR"/step.*.verify; do
+          [ -e "$verif" ] || continue
+          [ -f "$verif" ] || continue
+          base=$(basename "$verif" .verify)
+          if [ -n "$PIPELINE_ID" ] && [[ "$base" != *".${PIPELINE_ID#*.}" ]]; then
+            continue
+          fi
+          enforce_step_verify_marker "$verif" "pushing"
+        done
+      fi
     fi
   fi
 fi
