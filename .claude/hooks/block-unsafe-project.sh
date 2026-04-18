@@ -127,8 +127,14 @@ if [[ "$INPUT" =~ rm[[:space:]].*-[a-zA-Z]*r[a-zA-Z]*.*\.zskills/tracking ]]; th
   block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash scripts/clear-tracking.sh"
 fi
 
-# Block agent execution of clear-tracking script (reading is OK)
-if [[ "$INPUT" =~ (bash[[:space:]]|[^a-zA-Z]sh[[:space:]]|\.\/).*clear-tracking ]]; then
+# Block agent execution of clear-tracking script (reading is OK).
+# Matches bash|sh only at a word boundary (start, whitespace, or command
+# separator), NOT as a filename suffix. So "git add foo.sh scripts/clear-tracking.sh"
+# no longer false-positives (the "sh" in "foo.sh" is preceded by "." which is
+# excluded from the boundary set).
+_CT_EXEC_CMD='(^|[[:space:]]|[;&|"])(bash|sh)[[:space:]][^;&|"]*clear-tracking'
+_CT_EXEC_DIR='(^|[[:space:]]|[;&|"])\./[^[:space:]"]*clear-tracking'
+if [[ "$INPUT" =~ $_CT_EXEC_CMD ]] || [[ "$INPUT" =~ $_CT_EXEC_DIR ]]; then
   block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash scripts/clear-tracking.sh"
 fi
 

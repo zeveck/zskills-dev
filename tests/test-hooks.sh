@@ -287,6 +287,17 @@ expect_project_deny "./scripts/clear-tracking.sh"
 expect_project_allow "cat scripts/clear-tracking.sh"
 expect_project_allow "grep -n confirm scripts/clear-tracking.sh"
 
+# Regression: must NOT false-positive on commands that merely MENTION the path
+# without executing it. The old regex matched `[^a-zA-Z]sh[[:space:]]` which
+# caught `.sh ` anywhere; the fix requires bash|sh at a real word boundary.
+expect_project_allow "git add .claude/hooks/block-unsafe-project.sh scripts/clear-tracking.sh"
+expect_project_allow "diff old.sh scripts/clear-tracking.sh"
+expect_project_allow "ls -la foo.sh scripts/clear-tracking.sh"
+# Execution via pipe/separator is still blocked (word-boundary after them).
+expect_project_deny "cat foo | bash scripts/clear-tracking.sh"
+expect_project_deny "true && bash scripts/clear-tracking.sh"
+expect_project_deny "cd /tmp ; bash scripts/clear-tracking.sh"
+
 teardown_project_test
 
 # Default transcript written by setup_project_test declares
