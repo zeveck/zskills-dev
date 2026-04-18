@@ -2,7 +2,7 @@
 
 Plan: `plans/PARALLEL_CANARYA.md`
 
-## Phase — 1 Create docs/canary-parallel-A.md [UNFINALIZED]
+## Phase — 1 Create docs/canary-parallel-A.md
 
 **Plan:** plans/PARALLEL_CANARYA.md
 **Status:** Completed (verified, awaiting landing)

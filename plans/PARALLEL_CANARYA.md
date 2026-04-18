@@ -29,7 +29,7 @@ alone):
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Create canary-A.md | 🟡 | `a889c7f` | |
+| 1 — Create canary-A.md | ✅ | `a889c7f` | file created, 364/364 tests pass |
 
 ## Phase 1 — Create docs/canary-parallel-A.md
 
