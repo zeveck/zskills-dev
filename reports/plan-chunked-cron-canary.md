@@ -2,8 +2,7 @@
 
 Plan: `plans/CHUNKED_CRON_CANARY.md`
 
-## Phase — 3 Create docs/chunked-canary/phase-3.md [UNFINALIZED]
-
+## Phase — 3 Create docs/chunked-canary/phase-3.md
 **Plan:** plans/CHUNKED_CRON_CANARY.md
 **Status:** Completed (verified; Phase 6 landing next)
 **Worktree:** /tmp/zskills-pr-chunked-cron-canary
@@ -30,8 +29,7 @@ schedule** and triggered this Phase 3 turn autonomously. Second clean
 
 ---
 
-## Phase — 2 Create docs/chunked-canary/phase-2.md [UNFINALIZED]
-
+## Phase — 2 Create docs/chunked-canary/phase-2.md
 **Plan:** plans/CHUNKED_CRON_CANARY.md
 **Status:** Completed (verified, awaiting Phase 3 cron)
 **Worktree:** /tmp/zskills-pr-chunked-cron-canary
@@ -66,8 +64,7 @@ Phase 2 transition post-`b172366`.
 
 ---
 
-## Phase — 1 Create docs/chunked-canary/phase-1.md [UNFINALIZED]
-
+## Phase — 1 Create docs/chunked-canary/phase-1.md
 **Plan:** plans/CHUNKED_CRON_CANARY.md
 **Status:** Completed (verified, awaiting Phase 2 cron)
 **Worktree:** /tmp/zskills-pr-chunked-cron-canary
