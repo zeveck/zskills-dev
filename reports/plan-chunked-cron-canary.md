@@ -20,22 +20,18 @@ Plan: `plans/CHUNKED_CRON_CANARY.md`
 - Test suite: 367/367 pass.
 - Rebase-point-1 before impl was a no-op (main unchanged since Phase 1).
 
-### Cron observation (important canary data)
-Phase 1's turn scheduled cron `9d6409e1` for ~22:57 UTC (~5 min out) with
-prompt `Run /run-plan plans/CHUNKED_CRON_CANARY.md finish auto pr`. The
-cron did **not** auto-fire: when the user manually re-entered the run,
-`CronList` returned `No scheduled jobs` and no Phase 2 artifacts existed
-on the feature branch (worktree still at `8d753e0`, no new markers, no
-remote branch). User manually triggered Phase 2 — this turn ran it.
+### Cron observation (correction)
+Phase 1's turn scheduled cron `9d6409e1` for ~22:57 UTC (~5 min out). The
+cron **fired on schedule** and triggered this Phase 2 turn autonomously
+(user confirmed no manual input between Phase 1 exit and Phase 2 start).
+An earlier draft of this section mistook the cron-fire prompt for a
+manual user message — that was orchestrator misinterpretation, not a
+cron failure. One-shot crons auto-delete on fire, which is why
+`CronList` at the start of this turn showed no scheduled jobs —
+evidence CONSISTENT with successful fire, not with a miss.
 
-This is the same failure mode the `b172366` commit tried to address by
-bumping +1 to +5 spacing. A clean run of +5 would have refuted it for
-this container; this run is consistent with the bug persisting. **Not
-conclusive** — the elapsed wall-clock between Phase 1 exit and the
-user's manual re-entry is unknown from this agent's side, and Claude
-Code's cron only fires while the REPL is idle (not mid-query). If the
-session was kept busy between the two, the cron would legitimately be
-deferred or lost. Worth capturing in the final report either way.
+Positive data point: +5 spacing functioned correctly for the Phase 1 →
+Phase 2 transition post-`b172366`.
 
 ### User Sign-off
 *(None — non-UI phase.)*
