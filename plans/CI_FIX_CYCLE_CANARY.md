@@ -45,7 +45,7 @@ PR-mode:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Seed skill-mirror drift | ⬚ | | |
+| 1 — Seed skill-mirror drift | 🟡 | `ceeb4a6` | drift committed; awaiting CI-fail → fix-cycle → re-pass |
 
 ## Phase 1 — Seed skill-mirror drift
 
