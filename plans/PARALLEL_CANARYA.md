@@ -1,7 +1,7 @@
 ---
 title: Parallel Pipeline Canary A
 created: 2026-04-18
-status: active
+status: complete
 ---
 
 # Plan: Parallel Pipeline Canary A
