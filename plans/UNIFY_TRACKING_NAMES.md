@@ -39,12 +39,12 @@ tests that lock in the new scheme.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decide scheme & document | 🟡 | | |
-| 2 — Reader changes | 🟡 | | |
-| 3 — Writer migration pass 1 ($TRACKING_ID skills) | 🟡 | | |
-| 4 — Writer migration pass 2 (fix-issues, r&g, r&p, do) | 🟡 | | |
-| 5 — Canary + integration test coverage | 🟡 | | |
-| 6 — E2E validation + dual-read removal | 🟡 | `b0d1c84` | |
+| 1 — Decide scheme & document | ✅ | `261fd4c` | Option B (per-pipeline subdirs) |
+| 2 — Reader changes | ✅ | `6000f3c` | hook dual-read + sanitizer + migration |
+| 3 — Writer migration pass 1 ($TRACKING_ID skills) | ✅ | `b31adec` | run-plan, draft-plan, refine-plan, verify-changes |
+| 4 — Writer migration pass 2 (fix-issues, r&g, r&p, do) | ✅ | `c14fd5c` | SPRINT_ID, meta.* prefix, sanitizer |
+| 5 — Canary + integration test coverage | ✅ | `70ae07c` | +11 canary + tracking-integration suite |
+| 6 — E2E validation + dual-read removal | ✅ | `d9efce1` | 11/11 e2e pass; 9 fallback blocks removed |
 
 ## Shared Conventions
 

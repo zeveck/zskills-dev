@@ -2,8 +2,7 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
-## Phase — 6 End-to-end validation + dual-read removal [UNFINALIZED]
-
+## Phase — 6 End-to-end validation + dual-read removal
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
@@ -34,8 +33,7 @@ Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
 ---
 
-## Phase — 5 Canary + integration test coverage [UNFINALIZED]
-
+## Phase — 5 Canary + integration test coverage
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
@@ -66,8 +64,7 @@ Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
 ---
 
-## Phase — 4 Writer migration pass 2 (fix-issues, r&g, r&p, do) [UNFINALIZED]
-
+## Phase — 4 Writer migration pass 2 (fix-issues, r&g, r&p, do)
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
@@ -100,8 +97,7 @@ Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
 ---
 
-## Phase — 3 Writer migration pass 1 ($TRACKING_ID skills) [UNFINALIZED]
-
+## Phase — 3 Writer migration pass 1 ($TRACKING_ID skills)
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
@@ -132,8 +128,7 @@ Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
 ---
 
-## Phase — 2 Reader changes [UNFINALIZED]
-
+## Phase — 2 Reader changes
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
@@ -165,8 +160,7 @@ Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
 ---
 
-## Phase — 1 Decide scheme & document [UNFINALIZED]
-
+## Phase — 1 Decide scheme & document
 **Plan:** plans/UNIFY_TRACKING_NAMES.md
 **Status:** Completed (verified, awaiting landing)
 **Worktree:** /tmp/zskills-pr-unify-tracking-names
