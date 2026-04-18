@@ -35,14 +35,14 @@ through multi-phase plans autonomously.
   confirmation before the first phase (the user already said "finish").
   Without `auto`: pauses BETWEEN phases to show results and ask "continue
   to next phase?" With `auto`: each phase runs as its own cron-fired
-  top-level turn (~1–2 min between phases via one-shot crons scheduled by
+  top-level turn (~5 min between phases via one-shot crons scheduled by
   Phase 5c). The first phase runs immediately; each subsequent phase is
   scheduled after the prior phase lands. Preserves fresh context per
   phase — no late-phase fatigue.
   Each phase still gets full verification, testing, and all safety rails.
   If any phase fails verification or hits a conflict, stops there.
   **`finish` and `every` are mutually exclusive.** `finish auto` schedules
-  its own ~1-min one-shot crons internally. `every N` schedules a recurring
+  its own ~5-min one-shot crons internally. `every N` schedules a recurring
   cron at user-set cadence. Combining them would produce two overlapping
   cron schedules. Use one or the other.
 - **auto** (optional) — bypass approval gates, auto-land to main via cherry-pick
@@ -1190,7 +1190,7 @@ Three branches:
      (capped at 60min).
    - On attempt 1 only: schedule the verify cron itself —
      `Run /verify-changes branch tracking-id=$TRACKING_ID` one-shot,
-     ~1 min from now.
+     ~5 min from now.
    - On every attempt: schedule re-entry cron —
      `Run /run-plan <plan-file> finish auto` one-shot, `<backoff>` from now.
    - Exit with message:
@@ -1219,14 +1219,18 @@ Three branches:
    esac
    ```
 
-   On attempt 1, schedule the verify cron (~1 min from now). TZ note: the
+   On attempt 1, schedule the verify cron (~5 min from now). TZ note: the
    `date +%M` calls below use SYSTEM-local TZ, which is what CronCreate
    expects. Do NOT override with `TZ=America/New_York` — see the warning
    in "How to schedule the next cron" below for why this breaks the cron.
+   Margin note: +5 (not +1) gives the scheduler enough slack that
+   sub-minute timing jitter doesn't push a pinned-date one-shot past its
+   fire window. See "How to schedule the next cron" below for the
+   pinned-date / miss-by-365-days failure mode.
    ```bash
    NOW_MIN=$(date +%M); NOW_HOUR=$(date +%H)
    NOW_DAY=$(date +%d); NOW_MONTH=$(date +%m)
-   TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
+   TARGET_MIN=$(( (10#$NOW_MIN + 5) % 60 ))
    if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
      TARGET_MIN=$(( TARGET_MIN + 1 ))
    fi
@@ -1421,7 +1425,7 @@ After Phase 6 (land) succeeds for the current phase AND
 > fail, do NOT schedule the next cron; invoke Failure Protocol.
 
 1. **NEXT incomplete phase exists in this plan**: schedule a one-shot cron
-   (`recurring: false`) for `/run-plan <plan-file> finish auto` ~1–2 min
+   (`recurring: false`) for `/run-plan <plan-file> finish auto` ~5 min
    from now. The next cron-fired turn will pick up the next phase. Then
    exit this turn.
 
@@ -1430,7 +1434,7 @@ After Phase 6 (land) succeeds for the current phase AND
    after the last phase of this sub-plan lands, recover the meta-plan path
    from `requires.run-plan.N` marker content (or
    `pipeline.research-and-go.*` sentinel — see Step 1b). Schedule a
-   one-shot cron for `/run-plan <META_PLAN_PATH> finish auto` ~1–2 min
+   one-shot cron for `/run-plan <META_PLAN_PATH> finish auto` ~5 min
    from now. The next cron-fired turn will resume the meta-plan from its
    next incomplete delegate phase. Then exit.
 
@@ -1466,18 +1470,27 @@ model — do NOT hold landing until all phases complete.
 ### How to schedule the next cron
 
 ```bash
-# Compute target minute that's NOT :00 or :30 (to avoid scheduler jitter).
+# Compute target minute: +5 from now, avoiding :00 and :30 marks.
 # CRITICAL: `date +%M` uses SYSTEM-local TZ, and CronCreate reads the cron
 # expression in SYSTEM-local TZ. Do NOT "fix" these to `TZ=America/New_York
 # date +%M` — that encodes ET into the expression while CronCreate expects
 # system-local, producing a cron pinned to a date/time that's already
 # passed (next fire ~365 days out). The user-facing message uses ET for
 # readability; the cron expression itself MUST stay system-local.
+#
+# WHY +5 (not +1): one-shot crons pin day-of-month + month. If scheduler
+# jitter (sub-minute clock drift, TZ-conversion rounding, tick skew) makes
+# the fire window appear "already passed" at evaluation time, the next
+# matching slot is day-of-month+month NEXT YEAR — the cron sits in
+# CronList forever but won't fire this session. 1-minute margin is
+# borderline; 5 minutes is comfortable slack. Observed in the wild: a
+# chunked finish-auto pipeline's 5th consecutive +1 cron missed its
+# window and stalled the entire run.
 NOW_MIN=$(date +%M)
 NOW_HOUR=$(date +%H)
 NOW_DAY=$(date +%d)
 NOW_MONTH=$(date +%m)
-TARGET_MIN=$(( (10#$NOW_MIN + 1) % 60 ))
+TARGET_MIN=$(( (10#$NOW_MIN + 5) % 60 ))
 if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
   TARGET_MIN=$(( TARGET_MIN + 1 ))
 fi
@@ -1494,7 +1507,7 @@ Then call `CronCreate`:
 
 After scheduling, output the chunking message:
 > Phase <N> of `<plan>` complete (commit `<hash>`).
-> Phase <N+1> will fire automatically in ~1-2 minutes (cron `<job-id>`).
+> Phase <N+1> will fire automatically in ~5 minutes (cron `<job-id>`).
 > To stop the pipeline: `/run-plan stop`
 > To check status: `/run-plan <plan> status`
 
