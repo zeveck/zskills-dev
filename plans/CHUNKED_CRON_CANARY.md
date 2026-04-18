@@ -61,7 +61,7 @@ end-to-end result for the post-fix regression baseline.
 |-------|--------|--------|-------|
 | 1 — Create phase-1.md | 🟡 | `1a39978` | done; awaiting Phase 2 cron |
 | 2 — Create phase-2.md | 🟡 | `ddc1e29` | cron-fired +5 turn — cron 9d6409e1 fired on schedule |
-| 3 — Create phase-3.md | ⬚ | | |
+| 3 — Create phase-3.md | 🟡 | `e6c5e24` | cron-fired +5 turn — cron f1629378 fired on schedule; final phase, lands the plan |
 
 ## Phase 1 — Create docs/chunked-canary/phase-1.md
 

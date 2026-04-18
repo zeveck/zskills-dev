@@ -2,6 +2,34 @@
 
 Plan: `plans/CHUNKED_CRON_CANARY.md`
 
+## Phase — 3 Create docs/chunked-canary/phase-3.md [UNFINALIZED]
+
+**Plan:** plans/CHUNKED_CRON_CANARY.md
+**Status:** Completed (verified; Phase 6 landing next)
+**Worktree:** /tmp/zskills-pr-chunked-cron-canary
+**Branch:** feat/chunked-cron-canary
+**Commits:** e6c5e24 (feat)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | Create `docs/chunked-canary/phase-3.md` with exact spec content | Done | e6c5e24; header matches verbatim |
+
+### Verification
+- AC pass: all three phase files (1, 2, 3) present; Phase 3 header matches.
+- Test suite: 367/367 pass.
+- Rebase-point-1 before impl was a no-op (main unchanged).
+
+### Cron observation — Phase 2 → Phase 3
+Phase 2's turn scheduled cron `f1629378` for ~23:05 UTC. It **fired on
+schedule** and triggered this Phase 3 turn autonomously. Second clean
++5 data point in this run — two-for-two on cron delivery.
+
+### User Sign-off
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 2 Create docs/chunked-canary/phase-2.md [UNFINALIZED]
 
 **Plan:** plans/CHUNKED_CRON_CANARY.md
