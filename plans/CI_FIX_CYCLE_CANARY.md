@@ -1,7 +1,7 @@
 ---
 title: CI Fix Cycle Canary
 created: 2026-04-18
-status: active
+status: complete
 ---
 
 # Plan: CI Fix Cycle Canary
@@ -45,7 +45,7 @@ PR-mode:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Seed skill-mirror drift | ⬚ | | |
+| 1 — Seed skill-mirror drift | ✅ | `ceeb4a6` | drift committed; CI fix cycle lands it via squash |
 
 ## Phase 1 — Seed skill-mirror drift
 
