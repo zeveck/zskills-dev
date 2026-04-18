@@ -10,7 +10,8 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-unify-tracking-names.md](reports/plan-unify-tracking-names.md) | 6/6 | **Complete** — all phases landed via PR squash (pending this PR) |
+| [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary (pending this PR) |
+| [plan-unify-tracking-names.md](reports/plan-unify-tracking-names.md) | 6/6 | **Complete** — all phases landed via PR squash |
 | [plan-fix-worktree-poisoned-branch.md](reports/plan-fix-worktree-poisoned-branch.md) | 2/2 | **Complete** — both phases landed via PR squash |
 | [plan-fix-pr-state-rate-limit.md](reports/plan-fix-pr-state-rate-limit.md) | 2/2 | **Complete** — both phases landed via PR (#27, this PR) |
 | [plan-canary-failure-injection.md](reports/plan-canary-failure-injection.md) | 5/5 | **Complete** — 79 tests, 314/314 on main (pending this PR) |
