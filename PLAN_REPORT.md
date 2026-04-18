@@ -11,6 +11,7 @@ No items currently awaiting sign-off.
 | Report | Phases | Status |
 |--------|--------|--------|
 | [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary (pending this PR) |
+| [plan-parallel-canaryb.md](reports/plan-parallel-canaryb.md) | 1/1 | Landing via PR (this run) — concurrent with canary-A |
 | [plan-unify-tracking-names.md](reports/plan-unify-tracking-names.md) | 6/6 | **Complete** — all phases landed via PR squash |
 | [plan-fix-worktree-poisoned-branch.md](reports/plan-fix-worktree-poisoned-branch.md) | 2/2 | **Complete** — both phases landed via PR squash |
 | [plan-fix-pr-state-rate-limit.md](reports/plan-fix-pr-state-rate-limit.md) | 2/2 | **Complete** — both phases landed via PR (#27, this PR) |
