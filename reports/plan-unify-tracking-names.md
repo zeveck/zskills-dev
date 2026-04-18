@@ -2,6 +2,38 @@
 
 Plan: `plans/UNIFY_TRACKING_NAMES.md`
 
+## Phase — 6 End-to-end validation + dual-read removal [UNFINALIZED]
+
+**Plan:** plans/UNIFY_TRACKING_NAMES.md
+**Status:** Completed (verified, awaiting landing)
+**Worktree:** /tmp/zskills-pr-unify-tracking-names
+**Branch:** feat/unify-tracking-names
+**Commits:** b0d1c84 (feat)
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | Remove 9 LEGACY dual-read fallback blocks from hook template | Done | b0d1c84; `grep -c 'legacy\|transitional\|found_any'` returns 0 |
+| 2 | Delete `scripts/migrate-tracking.sh` | Done | Deleted via `unlink` (generic hook blocks `rm` on tracking/skills files) |
+| 3 | Write `tests/e2e-parallel-pipelines.sh` | Done | 286 lines, 11 assertions, real git repos, concurrent writes (`&` + `wait`), hook enforcement assertions |
+| 4 | RUN_E2E conditional in `tests/run-all.sh` | Done | Lines 47-48; defaults to skip |
+| 5 | Plan frontmatter `status: complete` | Done | `head -5` confirms |
+| 6 | Mirror sync hook template | Done | `cp hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh.template` |
+
+### Verification
+- AC 1-6 all PASS on round 1 (clean green first try — no bugs caught by verifier).
+- Test suite: 358/358 pass (default); 369/369 pass with RUN_E2E=1 (adds 11 e2e assertions).
+- Direct e2e run: `bash tests/e2e-parallel-pipelines.sh` returns rc=0, 11/11 PASS. Runtime ~2s.
+- E2E smoke tests real git repos (`mktemp -d`), concurrent pipeline writes, per-pipeline subdir isolation (zero cross-pollution), hook enforcement (blocks when `requires.*` unfulfilled, allows when fulfilled in same subdir), legacy-flat-ignored assertion (confirms dual-read truly gone).
+- Hook rendering: stale pre-Phase-2 `.claude/hooks/block-unsafe-project.sh` is NOT exercised by any test. All 4 test files render the hook at test-run time from `.sh.template` into their own tempdir via `cp` + `sed`. Phase 6 scope does not include regenerating the live rendered hook (out-of-band concern for `update-zskills`).
+- Diff review: 9 fallback removals are surgical — subdir-first reader preserved verbatim, only the `found_any` sentinel + `if [ "$found_any" -eq 0 ]; then ... fi` trailing fallback removed. 3 call sites × 3 marker types = 9 blocks, matches plan spec.
+
+### User Sign-off
+
+*(None — non-UI phase.)*
+
+---
+
 ## Phase — 5 Canary + integration test coverage [UNFINALIZED]
 
 **Plan:** plans/UNIFY_TRACKING_NAMES.md

@@ -44,7 +44,7 @@ tests that lock in the new scheme.
 | 3 — Writer migration pass 1 ($TRACKING_ID skills) | 🟡 | | |
 | 4 — Writer migration pass 2 (fix-issues, r&g, r&p, do) | 🟡 | | |
 | 5 — Canary + integration test coverage | 🟡 | | |
-| 6 — E2E validation + dual-read removal | ⬚ | | |
+| 6 — E2E validation + dual-read removal | 🟡 | `b0d1c84` | |
 
 ## Shared Conventions
 
