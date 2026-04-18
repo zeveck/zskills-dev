@@ -1,12 +1,13 @@
 # Plan Report — Parallel Pipeline Canary B
 
-## Phase — 1 Create docs/canary-parallel-B.md [UNFINALIZED]
+## Phase — 1 Create docs/canary-parallel-B.md
 
 **Plan:** plans/PARALLEL_CANARYB.md
-**Status:** Completed (verified)
+**Status:** Completed (verified, landed via PR)
 **Worktree:** /tmp/zskills-pr-parallel-canaryb
 **Branch:** feat/parallel-canaryb
-**Commits:** 53c62e2 (impl), b4d0504 (tracker → In Progress)
+**Commits (post-rebase):** 9c53e92 (impl), 7675985 (tracker → In Progress), 7fd41c0 (plan report), d839c65 (mark plan complete)
+**Post-rebase note:** Branch rebased onto origin/main after sibling PARALLEL_CANARYA landed first; PLAN_REPORT.md merge conflict resolved by preserving both canary entries. Post-rebase re-verification: 183/183 tests passed, diff narrow to 4 expected files.
 
 ### Work Items
 | # | Item | Status | Commit |
