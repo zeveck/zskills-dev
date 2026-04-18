@@ -59,7 +59,7 @@ end-to-end result for the post-fix regression baseline.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Create phase-1.md | ⬚ | | |
+| 1 — Create phase-1.md | 🟡 | `1a39978` | done; awaiting Phase 2 cron |
 | 2 — Create phase-2.md | ⬚ | | |
 | 3 — Create phase-3.md | ⬚ | | |
 
