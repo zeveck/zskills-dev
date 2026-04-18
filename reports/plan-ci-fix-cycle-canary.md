@@ -2,7 +2,7 @@
 
 Plan: `plans/CI_FIX_CYCLE_CANARY.md`
 
-## Phase — 1 Seed skill-mirror drift [UNFINALIZED]
+## Phase — 1 Seed skill-mirror drift
 
 **Plan:** plans/CI_FIX_CYCLE_CANARY.md
 **Status:** Completed (verified, drift intentional, awaiting CI-fix-cycle landing)
