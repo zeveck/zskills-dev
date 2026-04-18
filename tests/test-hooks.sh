@@ -100,8 +100,35 @@ expect_deny "pkill node" "pkill node"
 # 7. fuser -k
 expect_deny "fuser -k 8080" "fuser -k 8080"
 
-# 8. rm -rf
-expect_deny "rm -rf /tmp/foo" "rm -rf /tmp/foo"
+# 8. Destructive-op scope policy: permit contained /tmp/ destruction, block wide
+# Rule: rm -r{,f} / find -delete / rsync --delete / xargs rm require a literal
+# /tmp/<name> path AND no shell metachars ($, `, *, ?, ~).
+
+# SAFE (contained /tmp/ path, literal, no expansions)
+expect_allow "rm -rf /tmp/foo (safe)" "rm -rf /tmp/foo"
+expect_allow "rm -r /tmp/zskills-tests/specific" "rm -r /tmp/zskills-tests/specific"
+expect_allow "find /tmp/foo -mindepth 1 -delete" "find /tmp/foo -mindepth 1 -delete"
+expect_allow "find /tmp/e2e -name '*.log' -delete" "find /tmp/e2e -name phase-1 -delete"
+expect_allow "rsync --delete to /tmp/" "rsync -a --delete /dev/null/ /tmp/foo/"
+
+# UNSAFE: wide scope / unintended expansion risk
+expect_deny "rm -rf / (root)" "rm -rf /"
+expect_deny "rm -rf \$HOME (var)" "rm -rf \$HOME"
+expect_deny "rm -rf \$WORKTREE (var)" "rm -rf \$WORKTREE_PATH"
+expect_deny "rm -rf /tmp/\$VAR (var in /tmp)" "rm -rf /tmp/\$VAR"
+expect_deny "rm -rf /tmp/foo* (wildcard)" "rm -rf /tmp/foo*"
+expect_deny "rm -rf /home/user/foo (outside /tmp)" "rm -rf /home/user/foo"
+expect_deny "rm -rf ~/foo (HOME tilde)" "rm -rf ~/foo"
+expect_deny "rm -r . (relative)" "rm -r ."
+expect_deny "rm -rf /tmp (bare /tmp, no subpath)" "rm -rf /tmp"
+expect_deny "find / -delete (root)" "find / -delete"
+expect_deny "find \$HOME -delete (var)" "find \$HOME -delete"
+expect_deny "rsync --delete outside /tmp" "rsync -a --delete /dev/null/ /foo/"
+expect_deny "xargs rm outside /tmp" "find . -name foo | xargs rm"
+
+# Non-recursive rm stays allowed (single file, not wide)
+expect_allow "rm single file" "rm some-file.txt"
+expect_allow "rm -f single file" "rm -f some-file.txt"
 
 # 9. git add . / -A / --all
 expect_deny "git add ." "git add . "

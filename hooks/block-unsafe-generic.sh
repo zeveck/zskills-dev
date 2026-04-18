@@ -89,9 +89,69 @@ if [[ "$INPUT" =~ fuser[[:space:]]+(.*-[a-z]*k[a-z]*|--kill) ]]; then
   block_with_reason "BLOCKED: fuser -k kills whatever process holds a port. Other sessions may need that dev server for E2E tests. Ask the user to stop the process manually."
 fi
 
-# rm -rf / rm -r -f (mass deletion, with separate or combined flags)
-if [[ "$INPUT" =~ rm[[:space:]]+(-[a-zA-Z]*r[a-zA-Z]*f|(-r[[:space:]]+-f|-f[[:space:]]+-r)|--recursive[[:space:]]+--force|--force[[:space:]]+--recursive) ]]; then
-  block_with_reason "BLOCKED: rm -rf performs mass file deletion. Delete specific files by name, or ask the user."
+# ──────────────────────────────────────────────────────────────
+# Destructive-op scope policy
+# ──────────────────────────────────────────────────────────────
+# Goal: permit contained cleanup under /tmp/, block anything else.
+# The danger is destruction of unintended files via typos, unset
+# variables (rm -rf "$UNSET" ≡ rm -rf ""), unsafe globs, or wrong cwd.
+#
+# Policy: a destructive command is permitted iff:
+#   1. The command text contains `/tmp/<name>` as a literal path
+#      (not just `/tmp` bare — must have a subdir), AND
+#   2. The command has no shell metachars that could expand to an
+#      unintended path: `$` (variable/substitution), backtick,
+#      `*` / `?` (globs), or a leading `~` (HOME).
+#
+# Agents should use literal paths for destructive ops. Inside a
+# script the agent invokes, the script body is NOT subject to this
+# rule — the hook only sees the agent's own shell commands.
+#
+# Covered destructive ops: `rm -r` / `rm -rf` / `--recursive`,
+# `find ... -delete`, `rsync ... --delete`, `xargs rm` / `xargs ... -delete`.
+
+is_safe_destruct() {
+  local cmd="$1"
+  # Must include a literal /tmp/<identifier> path
+  [[ "$cmd" =~ /tmp/[a-zA-Z0-9._-] ]] || return 1
+  # Reject variable expansion or command substitution
+  [[ "$cmd" == *'$'* ]] && return 1
+  [[ "$cmd" == *'`'* ]] && return 1
+  # Reject glob wildcards
+  [[ "$cmd" == *'*'* ]] && return 1
+  [[ "$cmd" == *'?'* ]] && return 1
+  # Reject leading tilde (HOME expansion)
+  [[ "$cmd" =~ (^|[[:space:]])~ ]] && return 1
+  return 0
+}
+
+# rm -r / rm -rf (any flag combo that implies recursion)
+RM_RECURSIVE='rm[[:space:]]+(-[a-zA-Z]*r[a-zA-Z]*|--recursive)'
+if [[ "$COMMAND" =~ $RM_RECURSIVE ]]; then
+  if ! is_safe_destruct "$COMMAND"; then
+    block_with_reason "BLOCKED: recursive rm requires a literal /tmp/<name> path. Variables (empty-expansion = rm -rf \\\"\\\"), wildcards, or paths outside /tmp/ are unsafe. Delete specific files by name, use a literal /tmp/ path, or ask the user."
+  fi
+fi
+
+# find ... -delete
+if [[ "$COMMAND" =~ find[[:space:]]+.*-delete ]]; then
+  if ! is_safe_destruct "$COMMAND"; then
+    block_with_reason "BLOCKED: find ... -delete requires a literal /tmp/<name> path. Variables or paths outside /tmp/ can sweep unintended files."
+  fi
+fi
+
+# rsync ... --delete (mirror-sync that removes extras)
+if [[ "$COMMAND" =~ rsync[[:space:]]+.*--delete ]]; then
+  if ! is_safe_destruct "$COMMAND"; then
+    block_with_reason "BLOCKED: rsync --delete requires a literal /tmp/<name> destination. Outside /tmp/ or with variables, an unintended expansion can clobber real work."
+  fi
+fi
+
+# xargs rm / xargs find -delete (pipeline-driven destruction)
+if [[ "$COMMAND" =~ xargs[[:space:]]+.*(rm|-delete) ]]; then
+  if ! is_safe_destruct "$COMMAND"; then
+    block_with_reason "BLOCKED: xargs rm / xargs -delete requires a literal /tmp/<name> path."
+  fi
 fi
 
 # git add . / git add -A / git add --all (sweeps in unrelated changes)
