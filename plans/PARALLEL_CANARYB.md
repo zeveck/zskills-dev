@@ -29,7 +29,7 @@ alone):
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Create canary-B.md | ⬚ | | |
+| 1 — Create canary-B.md | 🟡 In Progress | `53c62e2` | One file, baseline tests preserved |
 
 ## Phase 1 — Create docs/canary-parallel-B.md
 
