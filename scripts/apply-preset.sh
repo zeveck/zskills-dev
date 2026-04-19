@@ -8,24 +8,27 @@
 #        1 = no changes (preset already applied)
 #        2 = usage error (unknown/missing preset)
 #        3 = missing file (config or hook not found)
-#        4 = malformed config JSON
+#        4 = cannot edit config (e.g. no outer-object closing brace)
 #
 # Preset → field mapping:
 #   cherry-pick    landing=cherry-pick  main_protected=false  BLOCK_MAIN_PUSH=0
 #   locked-main-pr landing=pr           main_protected=true   BLOCK_MAIN_PUSH=1
 #   direct         landing=direct       main_protected=false  BLOCK_MAIN_PUSH=0
 #
-# The script is idempotent: repeat invocations with the same preset exit
-# with code 1 and no writes. It preserves every config field not owned
-# by the preset (branch_prefix, testing.*, dev_server.*, ui.*, ci.*,
-# timezone, agents.min_model, $schema, project_name).
+# Idempotent: repeat invocations with the same preset exit rc=1 with no
+# writes. Preserves every config field not owned by the preset
+# (branch_prefix, testing.*, dev_server.*, ui.*, ci.*, timezone,
+# agents.min_model, $schema, project_name).
+#
+# Bash-only (no python/jq). Uses sed for in-place field updates and awk
+# to splice a missing `execution` block.
 #
 # Hook behavior:
 #   - If the BLOCK_MAIN_PUSH= line is missing (legacy hook), splice
 #     BLOCK_MAIN_PUSH=<target> before the first non-comment, non-blank
-#     line of code. This is a non-destructive fill — equivalent to the
-#     "missing value gets default" upgrade pattern.
-#   - If the line exists with a different value, sed-flip it in place.
+#     line of code. Non-destructive fill — other hook content preserved
+#     byte-for-byte.
+#   - If the line exists with a different value, rewrite it.
 #   - Otherwise no-op.
 
 set -e
@@ -51,55 +54,94 @@ if [ ! -f "$HOOK" ]; then
   echo "apply-preset: $HOOK not found. Install hooks via /update-zskills install first." >&2
   exit 3
 fi
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "apply-preset: python3 required (for JSON config manipulation)." >&2
-  exit 3
-fi
 
 CHANGED=()
 
+# Portable sed-in-place (BSD sed lacks GNU's `sed -i` syntax; stage to
+# tempfile then overwrite).
+sed_inplace() {
+  local expr="$1" file="$2"
+  local tmp
+  tmp=$(mktemp)
+  sed -E "$expr" "$file" > "$tmp" && cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
 # ─── Config: execution.landing + execution.main_protected ───────────
-CONFIG_DIFF=$(python3 - "$CONFIG" "$LANDING" "$MAIN_PROTECTED" <<'PY'
-import json, sys
-path, landing, main_protected_str = sys.argv[1], sys.argv[2], sys.argv[3]
-main_protected = main_protected_str == 'true'
-with open(path) as f:
-    raw = f.read()
-try:
-    cfg = json.loads(raw)
-except json.JSONDecodeError as e:
-    print(f"error: {path} is not valid JSON: {e}", file=sys.stderr)
-    sys.exit(4)
-changed = []
-if 'execution' not in cfg or not isinstance(cfg.get('execution'), dict):
-    cfg['execution'] = {
-        'landing': landing,
-        'main_protected': main_protected,
-        'branch_prefix': 'feat/',
-    }
-    changed.append('execution (inserted)')
-else:
-    ex = cfg['execution']
-    if ex.get('landing') != landing:
-        ex['landing'] = landing
-        changed.append(f'execution.landing={landing}')
-    if ex.get('main_protected') != main_protected:
-        ex['main_protected'] = main_protected
-        changed.append(f'execution.main_protected={main_protected_str}')
-if changed:
-    with open(path, 'w') as f:
-        json.dump(cfg, f, indent=2)
-        f.write('\n')
-print('|'.join(changed))
-PY
-)
-RC=$?
-if [ $RC -ne 0 ]; then
-  exit $RC
+# Existing-value probes. These regexes are permissive across formatting
+# (compact, canonical, mixed whitespace, tabs).
+CURRENT_LANDING=$(sed -n -E 's/.*"landing"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$CONFIG" | head -1)
+CURRENT_PROTECTED=$(sed -n -E 's/.*"main_protected"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$CONFIG" | head -1)
+
+# Is there an execution block at all?
+EXEC_EXISTS=0
+if grep -q '"execution"' "$CONFIG"; then
+  EXEC_EXISTS=1
 fi
-if [ -n "$CONFIG_DIFF" ]; then
-  IFS='|' read -ra parts <<<"$CONFIG_DIFF"
-  for p in "${parts[@]}"; do CHANGED+=("$p"); done
+
+if [ "$EXEC_EXISTS" = "0" ]; then
+  # Insert a fresh execution block before the outer object's closing brace.
+  TMP=$(mktemp)
+  awk -v landing="$LANDING" -v prot="$MAIN_PROTECTED" '
+    { buf[NR] = $0 }
+    END {
+      # Find the last standalone closing brace of the outer object.
+      last_close = 0
+      for (i = NR; i >= 1; i--) {
+        if (buf[i] ~ /^[[:space:]]*\}[[:space:]]*$/) { last_close = i; break }
+      }
+      if (last_close == 0) {
+        # Malformed — no outer closing brace. Leave file untouched and
+        # signal the caller via a non-zero exit from awk.
+        for (i = 1; i <= NR; i++) print buf[i]
+        exit 2
+      }
+      # Last non-blank line before the closing brace (needs a trailing
+      # comma to keep JSON valid after we append our block).
+      preceding = 0
+      for (i = last_close - 1; i >= 1; i--) {
+        if (buf[i] !~ /^[[:space:]]*$/) { preceding = i; break }
+      }
+      # Print everything up to (but not including) the preceding line.
+      for (i = 1; i < preceding; i++) print buf[i]
+      # Print the preceding line, ensuring it ends with a comma.
+      if (preceding > 0) {
+        if (buf[preceding] ~ /,[[:space:]]*$/) {
+          print buf[preceding]
+        } else {
+          line = buf[preceding]
+          sub(/[[:space:]]*$/, "", line)
+          print line ","
+        }
+      }
+      # Inject the execution block (canonical two-space indent).
+      print "  \"execution\": {"
+      print "    \"landing\": \"" landing "\","
+      print "    \"main_protected\": " prot ","
+      print "    \"branch_prefix\": \"feat/\""
+      print "  }"
+      # Preserve any blank lines between preceding and last_close.
+      for (i = preceding + 1; i < last_close; i++) print buf[i]
+      # Print the closing brace and anything after.
+      for (i = last_close; i <= NR; i++) print buf[i]
+    }
+  ' "$CONFIG" > "$TMP" || {
+    rm -f "$TMP"
+    echo "apply-preset: cannot locate outer closing brace in $CONFIG; file may be malformed." >&2
+    exit 4
+  }
+  cat "$TMP" > "$CONFIG"
+  rm -f "$TMP"
+  CHANGED+=("execution (inserted)")
+else
+  if [ "$CURRENT_LANDING" != "$LANDING" ]; then
+    sed_inplace "s/(\"landing\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\\1\"$LANDING\"/" "$CONFIG"
+    CHANGED+=("execution.landing=$LANDING")
+  fi
+  if [ "$CURRENT_PROTECTED" != "$MAIN_PROTECTED" ]; then
+    sed_inplace "s/(\"main_protected\"[[:space:]]*:[[:space:]]*)(true|false)/\\1$MAIN_PROTECTED/" "$CONFIG"
+    CHANGED+=("execution.main_protected=$MAIN_PROTECTED")
+  fi
 fi
 
 # ─── Hook: ensure BLOCK_MAIN_PUSH= exists and matches target ────────
@@ -126,17 +168,14 @@ if [ -z "$CURRENT_LINE" ]; then
       }
     }
   ' "$HOOK" > "$TMP"
-  # Preserve the hook's execute bit (matches original) — mv strips some attrs; use cp+rm.
   cat "$TMP" > "$HOOK"
   rm -f "$TMP"
   CHANGED+=("BLOCK_MAIN_PUSH=$BLOCK_MAIN_PUSH (spliced into legacy hook)")
 else
   CURRENT_VAL="${CURRENT_LINE#BLOCK_MAIN_PUSH=}"
-  # Strip any trailing comment/whitespace (e.g., "BLOCK_MAIN_PUSH=1  # comment")
   CURRENT_VAL="${CURRENT_VAL%%[[:space:]#]*}"
   if [ "$CURRENT_VAL" != "$BLOCK_MAIN_PUSH" ]; then
-    # Match exactly "BLOCK_MAIN_PUSH=<digit>" at line start; preserve trailing content
-    sed -i -E "s/^BLOCK_MAIN_PUSH=[01]/BLOCK_MAIN_PUSH=$BLOCK_MAIN_PUSH/" "$HOOK"
+    sed_inplace "s/^BLOCK_MAIN_PUSH=[01]/BLOCK_MAIN_PUSH=$BLOCK_MAIN_PUSH/" "$HOOK"
     CHANGED+=("BLOCK_MAIN_PUSH: $CURRENT_VAL → $BLOCK_MAIN_PUSH")
   fi
 fi

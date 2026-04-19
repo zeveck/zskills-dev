@@ -306,7 +306,7 @@ rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
    [ "$(get_landing /tmp/zskills-apply-test-14/.claude/zskills-config.json)" = "pr" ] && \
    [ "$(get_main_protected /tmp/zskills-apply-test-14/.claude/zskills-config.json)" = "true" ]; then
-  pass "compact JSON input: python parser handles it; fields rewrite correctly"
+  pass "compact JSON input: permissive sed regex handles it; fields rewrite correctly"
 else
   fail "compact JSON: rc=$rc"
 fi
