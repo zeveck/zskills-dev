@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 2/5 | **In progress** — Phases 1 (2c62a57) + 2 (bc2bcbd) landed; Phase 3 queued |
+| [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 3/5 | **In progress** — Phases 1-3 landed (2c62a57, bc2bcbd, 8e52a6d); Phase 4 queued |
 | [plan-ci-fix-cycle-canary.md](reports/plan-ci-fix-cycle-canary.md) | 1/1 | **Complete** — CI-fix-cycle canary (pending this PR) |
 | [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary |
 | [plan-parallel-canaryb.md](reports/plan-parallel-canaryb.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary (pending this PR) |

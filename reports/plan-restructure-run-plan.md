@@ -1,5 +1,49 @@
 # Plan Report — Restructure /run-plan and Siblings with Progressive Disclosure
 
+## Phase 3 — /fix-issues restructure
+
+**Plan:** plans/RESTRUCTURE_RUN_PLAN.md
+**Status:** Landed ✅
+**Worktree:** /tmp/zskills-cp-restructure-run-plan-phase-3 (cleaned)
+**Branch:** cp-restructure-run-plan-3 (deleted post-land)
+**Commits:** a0cea66 (worktree) → 8e52a6d (main)
+**Post-land test gate:** `bash tests/test-hooks.sh` → 219/219 passed
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | Create modes/ + references/ | Done | |
+| 3.4 | Extract cherry-pick body → modes/cherry-pick.md | Done | 131 lines; orig 982-1109 byte-identical |
+| 3.4b | Extract PR body → modes/pr.md | Done | 174 lines; orig 1110-1280 byte-identical; cross-reference at line 119 preserved verbatim |
+| 3.5 | Extract Failure Protocol → references/failure-protocol.md | Done | 125 lines; orig 1299-1420 (terminated at Key Rules-1 per R3-DA3) |
+| 3.6 | Phase 6 dispatch stub | Done | Preamble (964-981) + Post-land tracking (1281-1298) preserved |
+| 3.7 | Failure Protocol stub | Done | |
+| 3.8 | Byte-preservation + headers | PASS | All 3 diffs empty; headers 17/18/23 words ending in `.` |
+| 3.8b | Tracking invariant (R3-F1) | PASS | PRE=36 POST=36 |
+| 3.10 | Mirror `diff -r` | Done | Empty |
+| — | `## Key Rules` preserved (R3-DA3) | PASS | count=1 |
+| — | `worktree-add-safe.sh` in SKILL.md | PASS | Line 809 (inside Phase 3 Execute, not touched) — intact for CREATE_WORKTREE Phase 2 migration |
+| — | Cross-reference `skills/run-plan/SKILL.md` in modes/pr.md | PASS | Line 119 preserved; Phase 4D.2 will rewrite to `modes/pr.md` |
+
+### Post-edit line counts
+
+| File | Before | After |
+|------|-------:|------:|
+| skills/fix-issues/SKILL.md | 1460 | 1057 |
+| skills/fix-issues/modes/cherry-pick.md | — | 131 |
+| skills/fix-issues/modes/pr.md | — | 174 |
+| skills/fix-issues/references/failure-protocol.md | — | 125 |
+
+Plan-target band was 850-950 — actual 1057 is a plan arithmetic approximation (similar to Phase 1). Byte-preservation (authoritative) passed.
+
+### Downstream-plan idiom preservation
+
+- **Worktree-creation block** at original fix-issues:791-814 (cited by `plans/CREATE_WORKTREE_SKILL.md` WI 3.1): preserved in-place at line 809 in post-edit SKILL.md (block is inside Phase 3 Execute, not touched by this restructure). CREATE_WORKTREE's migration target remains contiguous at one path.
+- **Cross-reference to /run-plan PR-mode** at original fix-issues:1225: preserved verbatim at `skills/fix-issues/modes/pr.md:119`. Phase 4 WI 4D.2 will rewrite it to point at `skills/run-plan/modes/pr.md`.
+
+---
+
 ## Phase 2 — /do restructure
 
 **Plan:** plans/RESTRUCTURE_RUN_PLAN.md
