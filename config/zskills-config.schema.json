@@ -36,6 +36,12 @@
           "type": "string",
           "default": "feat/",
           "description": "Prefix for branch names in PR mode. Examples: 'feat/', 'agent/', '' (empty = no prefix)."
+        },
+        "worktree_root": {
+          "type": "string",
+          "default": "/tmp",
+          "description": "Parent directory under which scripts/create-worktree.sh places new worktrees. Each worktree lands at '<worktree_root>/<project>[-<prefix>]-<slug>'. Default /tmp keeps ephemeral work off the repo's filesystem.",
+          "examples": ["/tmp", "/var/tmp", "/home/vscode/worktrees"]
         }
       }
     },
