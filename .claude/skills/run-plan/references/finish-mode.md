@@ -96,49 +96,67 @@ User Verify items, schedule the next-phase cron AND output the User Verify
 items in this turn's completion message. Per-phase landing IS the chunked
 model — do NOT hold landing until all phases complete.
 
-### How to schedule the next cron
+### How to schedule the next cron (Design 2a — single persistent recurring cron)
 
-Compute the cron expression via `scripts/compute-cron-fire.sh`. The
-helper handles +5 default margin (scheduler-jitter slack), :00/:30
-avoidance (API busy marks), and all minute/hour/day/month/year
-rollovers.
+**Primary path: ensure a recurring `*/1 * * * *` cron exists for this
+pipeline.** Do NOT create a fresh one-shot per phase — the recurring
+cron fires every minute at REPL-idle windows, and Phase 1 Step 0's
+idempotent re-entry check handles redundant fires as cheap no-ops.
 
 ```bash
-# Default behavior: +5 minutes, avoid :00/:30 marks.
-NEXT_CRON=$(bash scripts/compute-cron-fire.sh)
+# Call CronList. If any existing job's prompt matches
+# "Run /run-plan <plan-file> finish auto" (same prompt as what we'd
+# schedule), skip creation — the cron from an earlier phase is still
+# alive and will fire the next phase.
+# Otherwise call CronCreate with:
+#   cron: "*/1 * * * *"
+#   recurring: true
+#   prompt: "Run /run-plan <plan-file> finish auto"
 ```
 
-**TZ note:** the helper reads `date +%s` in SYSTEM-local TZ, which is
-what CronCreate also expects. Do NOT override with
-`TZ=America/New_York date` — that encodes ET into the expression while
-CronCreate reads system-local, producing a cron pinned to an
-already-passed slot (next fire ~365 days out). The user-facing message
-uses ET for readability; the cron expression itself MUST stay
-system-local.
+**Cron terminates when the plan completes.** Phase 1 Step 0 Case 1
+(frontmatter `status: complete`) explicitly deletes this cron — see
+the SKILL.md main file's Phase 1 Step 0 block. That's the only
+mechanism that removes it; if Case 1 fails to fire (e.g., plan
+frontmatter never gets flipped), the cron keeps firing forever. The
+Failure Protocol also deletes /run-plan crons as its first act, so
+failure paths are also covered.
 
-**Why +5 (not +1):** one-shot crons pin day-of-month AND month. If
-scheduler jitter (sub-minute clock drift, TZ-conversion rounding, tick
-skew) makes the fire window appear "already passed" at evaluation
-time, the next matching slot is day-of-month+month NEXT YEAR — the
-cron sits in CronList forever but won't fire this session. 1-minute
-margin is borderline; 5 minutes is comfortable slack. Observed in the
-wild: a chunked finish-auto pipeline's 5th consecutive +1 cron missed
-its window and stalled the entire run.
+**Why recurring instead of one-shot (Design 2a).** One-shot crons pin
+day-of-month and month. If scheduler jitter or an active conversation
+blocks the single fire window, the cron's next matching slot is a year
+later — it effectively evaporates. This is the RESTRUCTURE_RUN_PLAN
+2026-04-19 Phase 5 fizzle bug. Recurring `*/1` has no pinning and no
+single-window fragility; missed fires retry a minute later until an
+idle window catches them.
 
-**Why day/month rollover matters:** inlined versions of this math
-previously got the rollover wrong. At 23:58 the naive
-`NOW_MIN + 5 → TARGET_HOUR = (NOW_HOUR + 1) % 24 = 0` produced a cron
-pinned to TODAY at 00:03 — already earlier today. The helper uses
-`date -d @<epoch + N*60>` which gets all rollovers right.
+**Why `*/1`, not `*/5`.** The original chunking design was 1 minute;
+it was bumped to 5 only as jitter insurance for one-shots. Recurring
+crons don't have that jitter concern, so we can revert. Each fire's
+no-op cost is a few file reads and <5 seconds of work, so firing every
+minute during a 10-minute phase = ~10 no-op fires = ~50 seconds of
+harmless ticking.
 
-Then call `CronCreate`:
-- `cron`: `"$NEXT_CRON"`
-- `recurring`: false
-- `prompt`: the next-step prompt — typically `"Run /run-plan <plan-file> finish auto"`, or `"Run /run-plan <meta-plan-path> finish auto"`, or `"Run /verify-changes branch tracking-id=$TRACKING_ID"`
+**Preserving agent "breathing".** Fresh-top-level-turn isolation (which
+is what the chunking design actually buys — see Phase 5c's "Why chunked
+execution" block) is preserved regardless of gap length. Wall-clock gap
+between phase completion and the next cron fire is typically 0-60s with
+`*/1`; agent quality is unaffected because each turn starts clean.
 
-After scheduling, output the chunking message:
+**TZ note:** CronCreate reads system-local TZ. `*/1 * * * *` has no TZ
+dependency (matches every minute regardless). For human-readable
+messages, use `TZ=America/New_York date` — but the cron expression
+itself is TZ-agnostic.
+
+**Special case: Phase 5b final-verify gate.** Phase 5b Case 1 (marker
+exists AND fulfilled missing) has a separate backoff cron — that's a
+distinct concern (waiting on external verify-changes) and keeps using
+`scripts/compute-cron-fire.sh` one-shots with explicit attempt-counter
+exponential backoff. Leave Phase 5b's Case 1 scheduling as-is.
+
+After ensuring the cron exists, output the chunking message:
 > Phase <N> of `<plan>` complete (commit `<hash>`).
-> Phase <N+1> will fire automatically in ~5 minutes (cron `<job-id>`).
+> Phase <N+1> will fire automatically within ~60 seconds (cron `<job-id>`, recurring `*/1`).
 > To stop the pipeline: `/run-plan stop`
 > To check status: `/run-plan <plan> status`
 

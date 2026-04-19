@@ -304,8 +304,13 @@ Before parsing, check for stale state from a previous failed run:
    Then read the plan frontmatter (`status` field) and the plan tracker
    (phase statuses). Four cases:
 
-   1. **Frontmatter `status: complete`**: plan truly done. Exit with
-      "Plan complete (already)." No more work, no more crons.
+   1. **Frontmatter `status: complete`**: plan truly done. **Terminal
+      cron cleanup (Design 2a):** call `CronList` and `CronDelete` on
+      any job whose prompt matches `Run /run-plan <plan-file> finish auto`
+      for THIS plan file. In Design 2a chunking, the recurring `*/1`
+      cron will otherwise keep firing forever — Case 1 is the only
+      routine termination path. Then exit with "Plan complete (already).
+      Cron <id> deleted." No more work, no more fires.
    2. **All phases Done + frontmatter NOT complete**: Phase 5b needs to
       run (it owns the final-verify gate logic via its new first
       sub-step). Skip Phase 1 sub-steps 1–9 and Phases 2–5; **route
