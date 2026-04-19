@@ -43,7 +43,7 @@ and dispatch their agent.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1a — Ship scripts/create-worktree.sh + skill wrapper + smoke test | ✅ Done | `17c752f` | 5 files, 578 insertions; 2/2 smoke + 255/255 test-hooks |
-| 1b — Full test suite + run-all registration + update-zskills registration | ⬚ | | |
+| 1b — Full test suite + run-all registration + update-zskills registration | 🟡 In Progress | | |
 | 2 — Migrate /run-plan (both modes) | ⬚ | | manual CANARY10 re-run (WI 2.8) before phase closure |
 | 3 — Migrate /fix-issues and /do (three sites) | ⬚ | | 2 canaries + CANARY10 + 2 smoke checks (WI 3.8) before phase closure |
 | 4 — Docs and cleanup | ⬚ | | |
