@@ -1,7 +1,8 @@
 ---
 title: Design 2a Chunking Smoke
 created: 2026-04-19
-status: active
+status: complete
+completed: 2026-04-19
 ---
 
 # Plan: Design 2a Chunking Smoke
@@ -24,8 +25,8 @@ Runtime smoke for Design 2a recurring-cron chunking (commit `20fd09c`). Two triv
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Create smoke file (line 1) | ✅ | (pending commit hash) | Direct mode: file created + verified inline |
-| 2 — Append line 2 and remove smoke file | ⬚ | | |
+| 1 — Create smoke file (line 1) | ✅ | `da44ef0` | Direct mode: file created + verified inline |
+| 2 — Append line 2 and remove smoke file | ✅ | `e3bd7b8` | Cron-fired turn; append + verify + git rm + commit |
 
 ---
 
