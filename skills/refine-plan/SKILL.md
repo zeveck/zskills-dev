@@ -213,6 +213,21 @@ these six dimensions:
    phases cover all work items? Are criteria still valid given what
    completed phases actually produced?
 
+7. **Numeric target arithmetic** — for every numeric acceptance target
+   (line counts, file counts, heading counts, commit counts, test counts,
+   extracted-range sizes), re-derive the expected value arithmetically
+   from the plan's stated extraction rules and current source state, then
+   compare against the plan's acceptance band. Flag any drift >10% as a
+   stale numeric target. This is the dimension that catches
+   plan-authoring arithmetic errors — e.g., "SKILL.md line count 340-380
+   after extraction" when the math gives 278, or "expected ~620 lines"
+   when the range is actually 661. Always flag even if the intent is
+   clear — a stale numeric band in an acceptance criterion forces the
+   implementing agent to either reject correct work or log "non-blocking
+   plan-text issue" (both of which are failure modes). Example
+   verification: `echo "417 - 94 - 60 + 15 = $((417-94-60+15))"` — produce
+   the exact arithmetic as your Verification line.
+
 Each finding must be **specific and actionable**: cite the exact section,
 line, or reference that's wrong and what it should say instead.
 
@@ -253,6 +268,19 @@ given what's already been built. Checks these six dimensions:
 6. **Integration risks** — ways remaining work will break when combined
    with completed work. What interfaces exist between completed and
    remaining phases? Are they compatible?
+
+7. **Numeric target arithmetic (adversarial)** — same as reviewer
+   dimension 7, but from an adversarial stance: *find* numeric targets
+   the plan states that are unreachable given the plan's own extraction
+   rules. Past failure (RESTRUCTURE_RUN_PLAN, 2026-04-19): three phases
+   shipped with acceptance bands arithmetically unreachable (Phase 1
+   340-380 vs actual 277; Phase 3 850-950 vs 1057; Phase 4 700-900 vs
+   1534). Each was caught post-hoc by implementation agents who flagged
+   "plan-text issue, non-blocking." All three would have been caught by
+   arithmetic verification at refine-plan time. Do the math. If the
+   plan's "remove 154 lines, add 15, expect 357" doesn't balance, say
+   so. Example verification: `python3 -c "print(417-94-60+15)"` or
+   equivalent bash.
 
 Each finding must be **specific and actionable** — not generic concerns.
 "Phase 3 might be complex" is useless. "Phase 3 says 'implement the
