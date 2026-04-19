@@ -251,10 +251,13 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
      from the preset.
    - **Hook missing `BLOCK_MAIN_PUSH=` line** (old pre-toggle hook):
      if the targeted `Edit` against `BLOCK_MAIN_PUSH=<N>` finds no
-     match, the hook predates this feature. Don't attempt a splice —
-     redirect the user to the legacy-hook upgrade flow (see
-     "Pull Latest and Update" > "Step 3.5 — Legacy hook upgrade").
-     Run that step, then retry the `Edit`.
+     match, the hook predates this feature. Don't attempt a splice.
+     Set a flag `PRESET_HOOK_PENDING=1` and skip the hook edit for
+     now; the config edits above still apply. Step 3.5 in "Pull
+     Latest and Update" detects `PRESET_HOOK_PENDING=1`, upgrades
+     the legacy hook, AND applies the preset `BLOCK_MAIN_PUSH` value
+     before returning — so the hook edit happens atomically with the
+     re-copy, not as a separate pass.
 
 **If it does not exist:**
 1. **If `$PRESET_ARG` is empty**, run the greenfield prompt (Step 0.6)
@@ -830,12 +833,21 @@ Run /update-zskills to check for updates later.
    > Re-copy and overwrite? [Y/n]
 
    - On `y`/`Y`/empty: `cp "$ZSKILLS_PATH/hooks/block-unsafe-generic.sh"
-     "$HOOK"` and confirm: "Hook upgraded. You can now run
-     `/update-zskills <preset>`."
+     "$HOOK"`. Then, **if `PRESET_HOOK_PENDING=1`** (set by Step 0.5
+     item 5 when the user passed a preset arg on a legacy install),
+     immediately run the targeted `Edit` on the freshly-copied hook
+     to set `BLOCK_MAIN_PUSH` to `<preset.BLOCK_MAIN_PUSH>`. Clear
+     the flag. Confirm: "Hook upgraded and preset `<name>` applied."
+     If the flag was not set, just confirm: "Hook upgraded. You can
+     now run `/update-zskills <preset>`."
    - On `n`: leave the hook alone. Warn: "Preset flipping
      (`/update-zskills cherry-pick` etc.) will not work until the hook
      is upgraded. Re-run `/update-zskills` to retry, or copy
-     `$ZSKILLS_PATH/hooks/block-unsafe-generic.sh` manually."
+     `$ZSKILLS_PATH/hooks/block-unsafe-generic.sh` manually." If
+     `PRESET_HOOK_PENDING=1`, also tell the user: "The config-side
+     preset fields were updated, but the hook toggle was NOT — the
+     `BLOCK_MAIN_PUSH` line in your existing hook still controls
+     behavior."
 
    This is the **only** exception to Key Rule #2 — re-copy happens
    solely when a required version marker is missing AND the user
