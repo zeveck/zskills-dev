@@ -1,13 +1,14 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
-## Phase — 1a Ship scripts/create-worktree.sh + skill wrapper + smoke test (verified, awaiting cherry-pick)
+## Phase — 1a Ship scripts/create-worktree.sh + skill wrapper + smoke test (landed)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
-**Status:** Verified by fresh agent; ready to land
+**Status:** Landed on main; tests green
 **Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-1a
-**Branch:** cp-create-worktree-skill-1a
-**Worktree commit:** 1a39c95 (`feat(create-worktree): ship script + skill wrapper + smoke test`)
-**Main commit:** _pending cherry-pick_
+**Branch:** cp-create-worktree-skill-1a (post-landing cleanup pending)
+**Worktree commit:** 1a39c95
+**Main commit:** 17c752f (`feat(create-worktree): ship script + skill wrapper + smoke test`)
+**Post-landing tests:** test-hooks 255/255; test-create-worktree 2/2
 
 ### Work Items
 | # | Item | Status | Code pointer |
