@@ -16,7 +16,9 @@
 # drift freely during extraction.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# Env-overridable so drift-detection tests (and any future scaffolding)
+# can point the checks at a non-default tree.
+: "${REPO_ROOT:=$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 PASS_COUNT=0
 FAIL_COUNT=0
