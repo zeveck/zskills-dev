@@ -1,5 +1,43 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
+## Phase — 1b Full test suite + run-all + update-zskills registration (verified, awaiting cherry-pick)
+
+**Plan:** plans/CREATE_WORKTREE_SKILL.md
+**Status:** Verified by fresh agent; ready to land
+**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-1b
+**Branch:** cp-create-worktree-skill-1b
+**Worktree commit:** 0e7a834 (`test(create-worktree): extend smoke to 20 cases; register; update-zskills bullet`)
+**Main commit:** _pending cherry-pick_
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1b.1 | Extend test to 20 cases | Done | tests/test-create-worktree.sh; per-PID slug isolation, EXIT trap cleanup, 1-13 summarized + 14-20 verbatim regression guards |
+| 1b.2 | Register in tests/run-all.sh | Done | alphabetical between test-compute-cron-fire and test-skill-conformance |
+| 1b.3 | Bullet in skills/update-zskills/SKILL.md | Done | line 452 alongside other shared-helper bullets |
+| 1b.4 | Mirror update-zskills | Done | `diff -r` empty |
+
+### Verification
+- 5/5 acceptance criteria PASS
+- `bash tests/test-create-worktree.sh` → 20/20
+- `bash tests/run-all.sh` → 594/594 (test-hooks 255/255 baseline preserved)
+- Manual probes: whitespace slug rc=5; slash-in-prefix rc=5 with `--branch-name` hint
+- Hygiene: no ephemerals tracked or staged; no test residue (worktrees, branches) post-suite
+
+### Phase 1a script gap closures (in-scope by spec anchor)
+The implementer extended `scripts/create-worktree.sh` to close two gaps Phase 1a's 2-case smoke didn't catch:
+1. **CWD-invariance:** `WT_PATH=$(cd "$MAIN_ROOT" && realpath -m "$RAW_PATH")` — Phase 1a Design statement requires path resolution to anchor on MAIN_ROOT. Required for case 17.
+2. **TOCTOU remap broadened:** also remap when `refs/heads/${BRANCH}` exists post-collision (gated on `WAS_RC ∉ {3,4,5}`). Required for case 18 spec literal "rc=2 even when underlying returns 128".
+
+Both gated against the Phase 1a Design + spec text; verifier judged scope-legitimate. 40 +/- lines of script delta.
+
+### Implementer judgment calls (verifier accepted all)
+1. Case 17 `--root` substituted to `../$PROJECT_NAME/cwdinv-root-…` because `/workspaces/` parent isn't writable in this env. Still proves CWD-invariance via `realpath -m` canonicalization from three different CWDs.
+2. Case 19 rollback uses `git hash-object`+`mktree`+`commit-tree` plumbing to commit `.zskills-tracked/keep` subtree on a base branch, then `--from` checkout materializes the dir → `printf >` fails → rc=8.
+3. Case 20 `--no-preflight` guard uses ephemeral `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url` instead of mutating shared `.git/config`.
+4. Test `SCRIPT` resolution prefers worktree copy over MAIN_ROOT copy when newer (so in-flight changes are exercised).
+5. `run-all.sh` insertion alphabetical within suite block; existing entries not reordered.
+
 ## Phase — 1a Ship scripts/create-worktree.sh + skill wrapper + smoke test (landed)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
