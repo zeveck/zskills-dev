@@ -51,7 +51,7 @@ one-level-deep principle and create fragile coupling.
 | 1 — /commit restructure                                         | ✅ | `2c62a57` | Landed; byte-preservation PASS, tracking invariant PASS, Key Rules preserved |
 | 2 — /do restructure                                             | ✅ | `bc2bcbd` | Landed; SKILL 669→455, Path A/B/C extracted, byte-preservation PASS |
 | 3 — /fix-issues restructure                                     | ✅ | `8e52a6d` | Landed; SKILL 1460→1057, 2 modes + failure-protocol reference, Key Rules preserved |
-| 4 — /run-plan restructure                                       | 🟡 | | In progress (4A/4B/4C/4D in worktree) |
+| 4 — /run-plan restructure                                       | ✅ | `4A:192fbe9 4B:8ea4ae8 4C:6afad52 4D:fefaa7a` | Landed all 4 sub-commits; SKILL 2589→1534 (plan 700-900 band stale); 6 extracted files; K.R./E.C. preserved |
 | 5 — Mirror install, full canary validation, and close-out       | ⬚ | | |
 
 ### Important: line numbers in this plan are research-time anchors and will drift

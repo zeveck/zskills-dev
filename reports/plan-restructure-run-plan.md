@@ -1,5 +1,70 @@
 # Plan Report — Restructure /run-plan and Siblings with Progressive Disclosure
 
+## Phase 4 — /run-plan restructure (4 atomic sub-commits)
+
+**Plan:** plans/RESTRUCTURE_RUN_PLAN.md
+**Status:** Landed ✅
+**Worktree:** /tmp/zskills-cp-restructure-run-plan-phase-4 (cleaned)
+**Branch:** cp-restructure-run-plan-4 (deleted post-land)
+**Commits (cherry-picked in order 4A→4B→4C→4D):**
+- **4A** `192fbe9` — `refactor(run-plan): extract finish-mode and failure-protocol to references/`
+- **4B** `8ea4ae8` — `refactor(run-plan): extract direct, delegate, cherry-pick landing modes to modes/`
+- **4C** `6afad52` — `refactor(run-plan): extract PR landing mode to modes/pr.md`
+- **4D** `fefaa7a` — `refactor(run-plan): tidy Phase 6 dispatch, update cross-reference, mirror install`
+
+**Post-land test gate:** `bash tests/test-hooks.sh` → 219/219 passed
+
+### Extraction summary
+
+| Sub-commit | Destination | Source range | Lines |
+|-----------|-------------|-------------:|------:|
+| 4A | references/finish-mode.md | 1384..1543 | 163 (incl. 3-line header) |
+| 4A | references/failure-protocol.md | 2460..2555 | 99 |
+| 4B | modes/direct.md | 1547..1553 | 10 |
+| 4B | modes/delegate.md | 1554..1566 | 16 |
+| 4B | modes/cherry-pick.md | 1567..1710 | 147 |
+| 4C | modes/pr.md | 1711..2371 | 664 |
+| **Total extracted** | | | **1099 lines** |
+
+### Post-edit line counts
+
+| File | Before | After |
+|------|-------:|------:|
+| skills/run-plan/SKILL.md | 2589 | 1534 |
+| skills/run-plan/modes/direct.md | — | 10 |
+| skills/run-plan/modes/delegate.md | — | 16 |
+| skills/run-plan/modes/cherry-pick.md | — | 147 |
+| skills/run-plan/modes/pr.md | — | 664 |
+| skills/run-plan/references/finish-mode.md | — | 163 |
+| skills/run-plan/references/failure-protocol.md | — | 99 |
+
+### Invariants
+
+| Check | Result |
+|-------|--------|
+| Byte-preservation (all 6 extracted files) | PASS — all diffs empty |
+| `^## Key Rules` count in SKILL.md | PASS — 1 (R3-DA2 guard held) |
+| `^## Edge Cases` count in SKILL.md | PASS — 1 (R3-DA2 guard held) |
+| Tracking invariant (R3-F1 corrected pattern) | PASS — PRE=49 POST=49 |
+| Semantic tracking check (R3-F6) | PASS — positive=12, negative=0 (no hardcoded pipeline IDs) |
+| Mirror `diff -r skills/run-plan .claude/skills/run-plan` | PASS — empty |
+| Mirror `diff -r skills/fix-issues .claude/skills/fix-issues` | PASS — empty |
+| 4D.2 cross-ref update (R3-F4, R3-DA5 hardened) | PASS — PRE_OLD=1 → POST_OLD=0, POST_NEW=1, POST_ANY stable at 1 |
+| Frontmatter byte-identical to pre-edit | PASS |
+
+### Plan-text issues flagged (non-blocking — for future /refine-plan round 2)
+
+1. **Plan acceptance criterion "SKILL.md 700–900 lines" is unreachable within Phase 4 scope.** Phase 4 extracts 1099 lines (close to the plan's "~1200" estimate), leaving ~1534 in SKILL.md. The 700–900 target would require extracting Phases 1-5 (~1100 lines: Phase 1 Parse, Phase 2 Implement, Phase 3 Verify, Phase 4 Update Tracker, Phase 5 Write Report) — but plan Design & Constraints explicitly keeps those IN SKILL.md ("orchestration — stays"). Third consecutive phase where the acceptance line-count band is arithmetically stale (Phase 1 was 340-380 → actual 277; Phase 3 was 850-950 → actual 1057; Phase 4 is 700-900 → actual 1534). Byte-preservation is the authoritative invariant and held throughout.
+2. **Mode files end with the next section's `###` heading** (e.g., `modes/direct.md` ends with `### Delegate mode landing`). This is the natural outcome of the plan's contiguous-byte-preservation rule (each range terminates at the next heading). Semantically unusual but correctness-preserving. Consider a cosmetic cleanup pass in a follow-up plan if desired.
+3. **`.landed` intro trap** — the implementation agent initially wrote `modes/pr.md`'s intro containing the literal `.landed`, which bumped the R3-F1 tracking-marker count by 1. Rephrased to "clean-tree rebases, CI polling with fix cycles, auto-merge request, and post-merge status upgrade". This is the third phase where the intro-drift guard caught a near-miss — worth documenting as a permanent rule for mode/reference file intros.
+
+### Downstream-plan impact
+
+- **Cross-reference update** at `skills/fix-issues/modes/pr.md` line 119: now points at `skills/run-plan/modes/pr.md` (was `skills/run-plan/SKILL.md`). Phase 3's byte-preservation preserved the original; Phase 4D.2 rewrote it.
+- **QUICKFIX_SKILL.md and CREATE_WORKTREE_SKILL.md** now have stale line-number citations (they reference specific lines in `/do`, `/fix-issues`, `/run-plan` that have moved into modes/*.md and references/*.md). Phase 5 WI 5.12 will document this in the close-out handoff report.
+
+---
+
 ## Phase 3 — /fix-issues restructure
 
 **Plan:** plans/RESTRUCTURE_RUN_PLAN.md
