@@ -1233,41 +1233,28 @@ Three branches:
    esac
    ```
 
-   On attempt 1, schedule the verify cron (~5 min from now). TZ note: the
-   `date +%M` calls below use SYSTEM-local TZ, which is what CronCreate
-   expects. Do NOT override with `TZ=America/New_York` — see the warning
-   in "How to schedule the next cron" below for why this breaks the cron.
-   Margin note: +5 (not +1) gives the scheduler enough slack that
-   sub-minute timing jitter doesn't push a pinned-date one-shot past its
-   fire window. See "How to schedule the next cron" below for the
-   pinned-date / miss-by-365-days failure mode.
+   On attempt 1, schedule the verify cron (~5 min from now) via the
+   `scripts/compute-cron-fire.sh` helper. The helper handles +5 default
+   margin, :00/:30 avoidance, and all minute/hour/day/month/year
+   rollovers correctly (inlined bash versions previously got day+month
+   rollover wrong — at 23:58, the naive math pinned the cron to
+   earlier-today, and it would fire ~365 days out).
    ```bash
-   NOW_MIN=$(date +%M); NOW_HOUR=$(date +%H)
-   NOW_DAY=$(date +%d); NOW_MONTH=$(date +%m)
-   TARGET_MIN=$(( (10#$NOW_MIN + 5) % 60 ))
-   if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
-     TARGET_MIN=$(( TARGET_MIN + 1 ))
-   fi
-   TARGET_HOUR=$NOW_HOUR
-   if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
-     TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
-   fi
+   VERIFY_CRON=$(bash scripts/compute-cron-fire.sh)
    ```
    Then call `CronCreate` with:
-   - `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
+   - `cron`: `"$VERIFY_CRON"`
    - `recurring`: false
    - `prompt`: `"Run /verify-changes branch tracking-id=$TRACKING_ID"`
 
-   On every attempt, schedule re-entry cron (`<backoff>` from now):
+   On every attempt, schedule re-entry cron (`<backoff>` from now). Pass
+   `--allow-marks` because the re-entry cadence is backoff-driven, not
+   API-busy-avoidance-driven:
    ```bash
-   REENTRY_MIN=$(( (10#$NOW_MIN + BACKOFF_MIN) % 60 ))
-   REENTRY_HOUR=$NOW_HOUR
-   if [ "$REENTRY_MIN" -lt "$NOW_MIN" ]; then
-     REENTRY_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
-   fi
+   REENTRY_CRON=$(bash scripts/compute-cron-fire.sh --offset "$BACKOFF_MIN" --allow-marks)
    ```
    Then call `CronCreate` with:
-   - `cron`: `"$REENTRY_MIN $REENTRY_HOUR $NOW_DAY $NOW_MONTH *"`
+   - `cron`: `"$REENTRY_CRON"`
    - `recurring`: false
    - `prompt`: `"Run /run-plan <plan-file> finish auto"`
 
@@ -1491,39 +1478,41 @@ model — do NOT hold landing until all phases complete.
 
 ### How to schedule the next cron
 
+Compute the cron expression via `scripts/compute-cron-fire.sh`. The
+helper handles +5 default margin (scheduler-jitter slack), :00/:30
+avoidance (API busy marks), and all minute/hour/day/month/year
+rollovers.
+
 ```bash
-# Compute target minute: +5 from now, avoiding :00 and :30 marks.
-# CRITICAL: `date +%M` uses SYSTEM-local TZ, and CronCreate reads the cron
-# expression in SYSTEM-local TZ. Do NOT "fix" these to `TZ=America/New_York
-# date +%M` — that encodes ET into the expression while CronCreate expects
-# system-local, producing a cron pinned to a date/time that's already
-# passed (next fire ~365 days out). The user-facing message uses ET for
-# readability; the cron expression itself MUST stay system-local.
-#
-# WHY +5 (not +1): one-shot crons pin day-of-month + month. If scheduler
-# jitter (sub-minute clock drift, TZ-conversion rounding, tick skew) makes
-# the fire window appear "already passed" at evaluation time, the next
-# matching slot is day-of-month+month NEXT YEAR — the cron sits in
-# CronList forever but won't fire this session. 1-minute margin is
-# borderline; 5 minutes is comfortable slack. Observed in the wild: a
-# chunked finish-auto pipeline's 5th consecutive +1 cron missed its
-# window and stalled the entire run.
-NOW_MIN=$(date +%M)
-NOW_HOUR=$(date +%H)
-NOW_DAY=$(date +%d)
-NOW_MONTH=$(date +%m)
-TARGET_MIN=$(( (10#$NOW_MIN + 5) % 60 ))
-if [ "$TARGET_MIN" -eq 0 ] || [ "$TARGET_MIN" -eq 30 ]; then
-  TARGET_MIN=$(( TARGET_MIN + 1 ))
-fi
-TARGET_HOUR=$NOW_HOUR
-if [ "$TARGET_MIN" -lt "$NOW_MIN" ]; then
-  TARGET_HOUR=$(( (10#$NOW_HOUR + 1) % 24 ))
-fi
+# Default behavior: +5 minutes, avoid :00/:30 marks.
+NEXT_CRON=$(bash scripts/compute-cron-fire.sh)
 ```
 
+**TZ note:** the helper reads `date +%s` in SYSTEM-local TZ, which is
+what CronCreate also expects. Do NOT override with
+`TZ=America/New_York date` — that encodes ET into the expression while
+CronCreate reads system-local, producing a cron pinned to an
+already-passed slot (next fire ~365 days out). The user-facing message
+uses ET for readability; the cron expression itself MUST stay
+system-local.
+
+**Why +5 (not +1):** one-shot crons pin day-of-month AND month. If
+scheduler jitter (sub-minute clock drift, TZ-conversion rounding, tick
+skew) makes the fire window appear "already passed" at evaluation
+time, the next matching slot is day-of-month+month NEXT YEAR — the
+cron sits in CronList forever but won't fire this session. 1-minute
+margin is borderline; 5 minutes is comfortable slack. Observed in the
+wild: a chunked finish-auto pipeline's 5th consecutive +1 cron missed
+its window and stalled the entire run.
+
+**Why day/month rollover matters:** inlined versions of this math
+previously got the rollover wrong. At 23:58 the naive
+`NOW_MIN + 5 → TARGET_HOUR = (NOW_HOUR + 1) % 24 = 0` produced a cron
+pinned to TODAY at 00:03 — already earlier today. The helper uses
+`date -d @<epoch + N*60>` which gets all rollovers right.
+
 Then call `CronCreate`:
-- `cron`: `"$TARGET_MIN $TARGET_HOUR $NOW_DAY $NOW_MONTH *"`
+- `cron`: `"$NEXT_CRON"`
 - `recurring`: false
 - `prompt`: the next-step prompt — typically `"Run /run-plan <plan-file> finish auto"`, or `"Run /run-plan <meta-plan-path> finish auto"`, or `"Run /verify-changes branch tracking-id=$TRACKING_ID"`
 
