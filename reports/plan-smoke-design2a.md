@@ -19,9 +19,18 @@
 - ✅ Phase 2 fires automatically via cron — no manual trigger needed.
 - ✅ `reports/smoke-design2a.md` was appended-to in Phase 2, verified to have 2 lines, then `git rm`'d. Commit landed cleanly.
 - ✅ Plan frontmatter flipped to `status: complete`.
-- [ ] `CronList` empty after terminal cleanup — **pending next cron fire** (Phase 1 Step 0 Case 1 triggers CronDelete).
+- ✅ `CronList` empty after terminal cleanup — **confirmed**. Third cron fire (~T+120s) hit Phase 1 Step 0 Case 1, called `CronDelete 3a1eeada`, `CronList` now empty.
 
-The final criterion will be verified when the next cron fire (at ~T+120s) hits Case 1 and calls CronDelete. Report updated below once that's confirmed.
+### Design 2a — FULLY VALIDATED end-to-end
+
+All five smoke-pass criteria met. The chunking mechanism:
+- Creates exactly one recurring cron per pipeline (no duplicates).
+- Fires reliably every minute during REPL-idle windows.
+- Handles idempotent re-entry correctly across phases.
+- Self-deletes on plan completion via Case 1.
+- Session-only semantics confirmed: cron auto-expires after 7 days as a backstop even if Case 1 somehow fails.
+
+The RESTRUCTURE Phase 5 fizzle bug (one-shot cron evaporated during active conversation at 17:19 UTC) would NOT have happened with Design 2a — the recurring cron would have retried a minute later and caught the next idle window.
 
 ## Phase 2 — Append line 2 and remove smoke file
 
