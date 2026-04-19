@@ -9,3 +9,4 @@ __pycache__/
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
 .claude/logs/
+DOC_PARTY_COMPARISON.md
