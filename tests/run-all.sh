@@ -37,6 +37,7 @@ run_suite() {
 run_suite "test-hooks.sh" "tests/test-hooks.sh"
 run_suite "test-port.sh" "tests/test-port.sh"
 run_suite "test-apply-preset.sh" "tests/test-apply-preset.sh"
+run_suite "test-compute-cron-fire.sh" "tests/test-compute-cron-fire.sh"
 run_suite "test-skill-conformance.sh" "tests/test-skill-conformance.sh"
 run_suite "test-briefing-parity.sh" "tests/test-briefing-parity.sh"
 run_suite "test-skill-invariants.sh" "tests/test-skill-invariants.sh"
