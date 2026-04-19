@@ -102,9 +102,32 @@ Run `/update-zskills` anytime — it pulls the latest from the repo,
 updates changed skills, and fills any new gaps. If you have a config
 already, it will not re-prompt.
 
+### Your first plan
+
+Once installed:
+
+```
+/draft-plan Add a dark-mode toggle to the settings page.
+/run-plan plans/<generated-file>.md
+```
+
+`/draft-plan` drafts a plan with adversarial review and writes it to
+`plans/`. `/run-plan` reads that plan and executes it phase by phase
+inside an isolated worktree, verifying each phase with a fresh reviewer
+and landing results via your configured landing mode.
+
 ## Landing modes
 
-Three modes control how agent work reaches `main`:
+Three modes control how agent work reaches `main`. The columns below
+reference three install-time knobs:
+
+- **`execution.landing`** — which strategy `/run-plan` uses
+  (cherry-pick, PR, or direct commit).
+- **`execution.main_protected`** — when `true`, the project-level hook
+  blocks agent commits, cherry-picks, and pushes on `main`.
+- **`BLOCK_MAIN_PUSH`** — a one-line toggle in
+  `.claude/hooks/block-unsafe-generic.sh` that blocks `git push main`
+  at the generic layer. Belt-and-suspenders with `main_protected`.
 
 | Preset | `execution.landing` | `execution.main_protected` | `BLOCK_MAIN_PUSH` | Use when |
 |---|---|---|---|---|
@@ -156,7 +179,7 @@ at [`config/zskills-config.schema.json`](config/zskills-config.schema.json).
   "dev_server": {
     "cmd": "npm start",
     "port_script": "scripts/port.sh",
-    "main_repo_path": "/workspaces/my-app"
+    "main_repo_path": "/home/you/projects/my-app"
   },
   "ui": {
     "file_patterns": "src/(components|ui)/.*\\.tsx?$",
@@ -185,6 +208,8 @@ Key fields:
   pipe test output; always capture to this file.
 - **`dev_server.cmd` / `port_script` / `main_repo_path`** — Lets
   worktree agents find the running dev server in the main repo.
+  `main_repo_path` must be the absolute path to your repo's root
+  (substitute your own — the example above is illustrative).
 - **`ui.file_patterns`** — Regex identifying UI files. When these
   change, the pre-commit hook requires manual browser verification.
 - **`ui.auth_bypass`** — JavaScript executed during
@@ -301,12 +326,16 @@ Manually-run canary plans (markdown plans under `plans/`):
 | Canary | What it validates |
 |---|---|
 | `CANARY1_HAPPY` / `CANARY5_AUTONOMOUS` | Happy-path single-phase runs |
+| `CANARY2_NOAUTO` | `pr-ready` fallback when auto-merge is unavailable |
+| `CANARY3_FIXCYCLE` | CI failure → fix-agent → re-push → CI passes → auto-merge |
+| `CANARY4_EXHAUST` | Fix-attempts exhaustion: `status: pr-ci-failing` reported cleanly |
 | `CANARY6_MULTI_PR` | Sequential multi-PR landing in PR mode |
 | `CANARY7_CHUNKED_FINISH` | `finish auto` chunking with cron-fired phases |
 | `CANARY8_PARALLEL` + `PARALLEL_CANARYA/B` | Concurrent pipelines on one repo |
 | `CANARY9_FINAL_VERIFY` | Cross-branch final-verify gate |
 | `CANARY10_PR_MODE` | PR-mode landing, tracker bookkeeping in worktree |
-| `CANARY11_SCOPE_VIOLATION` | Verifier catches scope-flag violations |
+| `CANARY11_SCOPE_VIOLATION` (+ `CANARY11_TEST_PLAN`) | Verifier catches scope-flag violations |
+| `CANARY_FAILURE_INJECTION` | Built `tests/test-canary-failures.sh` — external-user shareability gate |
 | `CHUNKED_CRON_CANARY` | Cron-fired chunked execution |
 | `CI_FIX_CYCLE_CANARY` | PR CI fails → fix agent → re-push → auto-merge |
 | `REBASE_CONFLICT_CANARY` | Two-session rebase conflict resolution |
