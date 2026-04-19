@@ -177,7 +177,11 @@ else
 fi
 
 # Resolve to absolute/canonical form (realpath -m doesn't require existence).
-WT_PATH=$(realpath -m "$RAW_PATH")
+# CWD-invariance (Design): relative paths in --root/--prefix must resolve
+# against MAIN_ROOT, not the caller's CWD — the same invocation must yield
+# the same absolute path whether run from MAIN_ROOT, a subdirectory, or a
+# nested worktree. Absolute paths are unaffected.
+WT_PATH=$(cd "$MAIN_ROOT" && realpath -m "$RAW_PATH")
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1a.6 — Branch resolution.
@@ -237,10 +241,38 @@ fi
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1a.9 — TOCTOU remap (R2-H3). Keeps worktree-add-safe.sh pristine.
+# In the concurrent same-slug race (test case 18) the losing process
+# may fail with a git "branch already exists / cannot lock ref" error
+# (rc=128/255) BEFORE the winner has materialized $WT_PATH. Detect
+# the race by the branch now being attached to some worktree — that
+# is the definitive "another agent claimed this slug" signal.
 # ──────────────────────────────────────────────────────────────────
-if [ "$WAS_RC" -ne 0 ] && [ "$WAS_RC" -ne 2 ] && [ -d "$WT_PATH" ]; then
-  echo "create-worktree: path materialized mid-flight; remapping rc=$WAS_RC to rc=2" >&2
-  WAS_RC=2
+if [ "$WAS_RC" -ne 0 ] && [ "$WAS_RC" -ne 2 ]; then
+  # Path materialized: the winning process has (at least partially)
+  # created the worktree directory. Definitive race signal.
+  BRANCH_ATTACHED=0
+  BRANCH_MATERIALIZED=0
+  if git -C "$MAIN_ROOT" worktree list --porcelain 2>/dev/null \
+       | grep -qE "^branch refs/heads/${BRANCH}$"; then
+    BRANCH_ATTACHED=1
+  fi
+  # Narrow window: the winner has created the branch REF but not yet
+  # registered its worktree. Detect via rev-parse on the local ref.
+  # Only treat as race evidence when worktree-add-safe.sh had not
+  # classified the existing branch (i.e., rc was NOT 3/4/5) — those
+  # codes come from the pre-existing-branch classifier, not a race.
+  case "$WAS_RC" in
+    3|4|5) : ;;
+    *)
+      if git -C "$MAIN_ROOT" rev-parse --verify --quiet "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+        BRANCH_MATERIALIZED=1
+      fi
+      ;;
+  esac
+  if [ -d "$WT_PATH" ] || [ "$BRANCH_ATTACHED" -eq 1 ] || [ "$BRANCH_MATERIALIZED" -eq 1 ]; then
+    echo "create-worktree: path/branch materialized mid-flight; remapping rc=$WAS_RC to rc=2" >&2
+    WAS_RC=2
+  fi
 fi
 if [ "$WAS_RC" -ne 0 ]; then exit "$WAS_RC"; fi
 
