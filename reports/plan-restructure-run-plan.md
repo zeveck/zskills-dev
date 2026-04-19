@@ -1,5 +1,48 @@
 # Plan Report — Restructure /run-plan and Siblings with Progressive Disclosure
 
+## Phase 2 — /do restructure
+
+**Plan:** plans/RESTRUCTURE_RUN_PLAN.md
+**Status:** Landed ✅
+**Worktree:** /tmp/zskills-cp-restructure-run-plan-phase-2 (cleaned)
+**Branch:** cp-restructure-run-plan-2 (deleted post-land)
+**Commits:** db5619a (worktree) → bc2bcbd (cherry-picked to main)
+**Post-land test gate:** `bash tests/test-hooks.sh` → 219/219 passed
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2.1 | Create skills/do/modes/ | Done | |
+| 2.3 | Extract Path A → modes/pr.md | Done | 183 lines; body = orig 283-462 byte-identical |
+| 2.4 | Extract Path B → modes/worktree.md | Done | 27 lines; body = orig 463-486 byte-identical |
+| 2.5 | Extract Path C → modes/direct.md | Done | 21 lines; body = orig 487-504 byte-identical |
+| 2.6 | Dispatch stub in Phase 2 SKILL.md | Done | Routing table: pr→A, worktree→B, neither→C |
+| 2.7 | Phase 3/4/5 bodies preserved in SKILL.md | Done | R3-F2 commitment honored |
+| 2.8 | Byte-preservation + headers | PASS | All 3 diffs empty; headers 19/16/16 words ending in `.` |
+| 2.8b | Tracking-marker invariant | PASS | PRE=9 POST=9 (R3-F1 pattern) |
+| 2.9 | Mirror to .claude/skills/do/ | Done | `diff -r` empty |
+| — | `## Key Rules` preserved | PASS | count=1 |
+| — | Argument-parser idiom preserved (lines 70-92) | PASS | `LANDING_MODE="pr"` still at original location |
+
+### Post-edit line counts
+
+| File | Before | After |
+|------|-------:|------:|
+| skills/do/SKILL.md | 669 | 455 |
+| skills/do/modes/pr.md | — | 183 |
+| skills/do/modes/worktree.md | — | 27 |
+| skills/do/modes/direct.md | — | 21 |
+
+### Downstream-plan idiom preservation (per user's refinement focus)
+
+- **Argument-parser idiom** at `skills/do/SKILL.md` lines ~70-92 (cited by `plans/QUICKFIX_SKILL.md` WI 1.2 and `plans/CREATE_WORKTREE_SKILL.md` WI 1a.2): **preserved in place** — stays in SKILL.md, not extracted.
+- **Agent-dispatch idiom** at original `skills/do/SKILL.md:342-358` (cited by QUICKFIX WI 1.11): now at `skills/do/modes/pr.md` inside Step A6 "Dispatch implementation agent" — byte-preserved. QUICKFIX's line reference becomes stale; Phase 5 WI 5.12 will document the handoff.
+- **Worktree-creation site** at original `skills/do/SKILL.md:322` (PR-mode, cited by CREATE_WORKTREE WI 3.2): now at `skills/do/modes/pr.md`.
+- **Worktree-creation site** at original `skills/do/SKILL.md:482` (worktree-mode, cited by CREATE_WORKTREE WI 3.3): now at `skills/do/modes/worktree.md`.
+
+---
+
 ## Phase 1 — /commit restructure
 
 **Plan:** plans/RESTRUCTURE_RUN_PLAN.md

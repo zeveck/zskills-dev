@@ -49,7 +49,7 @@ one-level-deep principle and create fragile coupling.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — /commit restructure                                         | ✅ | `2c62a57` | Landed; byte-preservation PASS, tracking invariant PASS, Key Rules preserved |
-| 2 — /do restructure                                             | 🟡 | | In progress (db5619a in worktree) |
+| 2 — /do restructure                                             | ✅ | `bc2bcbd` | Landed; SKILL 669→455, Path A/B/C extracted, byte-preservation PASS |
 | 3 — /fix-issues restructure                                     | ⬚ | | |
 | 4 — /run-plan restructure                                       | ⬚ | | |
 | 5 — Mirror install, full canary validation, and close-out       | ⬚ | | |
