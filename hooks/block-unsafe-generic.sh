@@ -99,6 +99,36 @@ if [[ "$INPUT" =~ fuser[[:space:]]+(.*-[a-z]*k[a-z]*|--kill) ]]; then
   block_with_reason "BLOCKED: fuser -k kills whatever process holds a port. Other sessions may need that dev server for E2E tests. Ask the user to stop the process manually."
 fi
 
+# xargs ... kill — the "identify PIDs by port/name, then kill them" pipeline.
+# Spelled `lsof -ti :PORT | xargs kill`, `pgrep -f NAME | xargs kill`, `pidof X | xargs kill`,
+# or `ps aux | grep ... | awk '{print $2}' | xargs kill`. All are the same anti-pattern as
+# fuser -k: the PID source is unverified, so you kill whatever happened to match — which in
+# the originating incident was the docker container. Matches any signal (bare, -9, -TERM).
+# Allowed: kill with an explicit PID (`kill 1234`, `kill -TERM 1234`), the sanctioned
+# helper `bash scripts/stop-dev.sh`, and `kill $(cat pidfile)` (below).
+XARGS_KILL='xargs[[:space:]]+([^;&|]*[[:space:]]+)?kill([[:space:]]|[;&|]|$)'
+if [[ "$COMMAND" =~ $XARGS_KILL ]]; then
+  block_with_reason "BLOCKED: 'xargs … kill' identifies PIDs from stdin (usually lsof/pgrep/pidof output) and kills whatever matches — same hazard as fuser -k. Use bash scripts/stop-dev.sh for your own dev server, or target a known PID with 'kill PID' directly."
+fi
+
+# kill $(lsof|pgrep|pidof|netstat …) / backtick equivalents — command-substitution variant
+# of the same anti-pattern. Deliberately allows `kill $(cat pidfile)` since reading a known
+# pid file is the canonical supervised-stop pattern.
+#
+# Known gaps (intentionally not regex-matched, to keep false-positive rate low):
+#   * `ss` (2-char name, high FP surface: grep patterns, filenames, etc.)
+#   * `ps` (2-char name, common file-extension suffix, high FP surface)
+#   * Two-step variable capture: `pids=$(lsof -ti :P); kill $pids` — the `kill` command
+#     sees only `$pids`, not the lsof substitution; hook is per-command, not cross-command.
+#   * For-loops, readarray / process substitution, eval-wrapped: same root cause.
+# These gaps are covered by the CLAUDE.md normative rule (and the fact that the `xargs …
+# kill` family IS fully caught — agents reaching for `ss -ltnp | xargs kill` still hit the
+# deny). The affirmative helper `bash scripts/stop-dev.sh` is the sanctioned path.
+KILL_SUBST='kill[[:space:]]+([^[:space:];&|]+[[:space:]]+)*(\$\([^)]*|`[^`]*)(lsof|pgrep|pidof|netstat)([[:space:]]|[;&|]|\)|`|$)'
+if [[ "$COMMAND" =~ $KILL_SUBST ]]; then
+  block_with_reason "BLOCKED: 'kill \$(lsof…)' / 'kill \`pgrep…\`' / kill with pidof|netstat-substitution identifies PIDs by port/name and kills them — same hazard as fuser -k. Use bash scripts/stop-dev.sh for your own dev server, or target a known PID with 'kill PID' directly."
+fi
+
 # ──────────────────────────────────────────────────────────────
 # Destructive-op scope policy
 # ──────────────────────────────────────────────────────────────

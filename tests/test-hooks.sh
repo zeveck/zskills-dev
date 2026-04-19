@@ -100,6 +100,39 @@ expect_deny "pkill node" "pkill node"
 # 7. fuser -k
 expect_deny "fuser -k 8080" "fuser -k 8080"
 
+# 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
+# The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
+# All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.
+expect_deny "lsof -ti | xargs kill"        "lsof -ti :8080 | xargs kill"
+expect_deny "lsof -ti | xargs kill -TERM"  "lsof -ti :8080 | xargs kill -TERM"
+expect_deny "lsof -ti | xargs kill -9"     "lsof -ti :8080 | xargs kill -9"
+expect_deny "pgrep -f | xargs kill"        "pgrep -f vite | xargs kill"
+expect_deny "pidof | xargs kill"           "pidof node | xargs kill"
+expect_deny "ps | awk | xargs kill"        "ps aux | awk '/vite/{print \$2}' | xargs kill"
+expect_deny "kill \$(lsof -ti)"            "kill \$(lsof -ti :8080)"
+expect_deny "kill \$(pgrep -f)"            "kill \$(pgrep -f vite)"
+expect_deny "kill \$(pidof)"               "kill \$(pidof node)"
+expect_deny "kill \`lsof -ti\`"            "kill \`lsof -ti :8080\`"
+expect_deny "kill -TERM \$(lsof -ti)"      "kill -TERM \$(lsof -ti :8080)"
+# 7c. Shell-separator bypasses — kill/lsof/pgrep/pidof followed by ;&| must still be caught.
+# Found during adversarial review: the termination class of the kill/tool word must treat
+# shell separators as word boundaries, not as extending the match.
+expect_deny "xargs kill;extra"                 "lsof -ti :8080 | xargs kill;echo done"
+expect_deny "xargs kill&background"            "lsof -ti :8080 | xargs kill&sleep 1"
+expect_deny "xargs kill|piped"                 "lsof -ti :8080 | xargs kill|wc -l"
+expect_deny "kill \$(lsof|pipe inside subst)"  "kill \$(lsof -ti :8080|head -1)"
+expect_deny "kill \$(pgrep;extra inside subst)" "kill \$(pgrep -f vite;echo)"
+# 7d. netstat added to Rule B (unambiguous tool name, no FP surface).
+expect_deny "kill \$(netstat -tnlp | awk)" "kill \$(netstat -tnlp | awk '/8080/{split(\$NF,a,\\\"/\\\"); print a[1]}')"
+# 7e. Intentionally-gapped tools (ss, ps) are documented as limitations — they remain
+# ALLOWED in Rule B because the short names have high FP risk. These tests lock in scope.
+# (The xargs → kill form with the same tools IS still caught by Rule A.)
+expect_allow "kill \$(grep ss file.txt) — ss not in list" "kill \$(grep ss file.txt)"
+expect_allow "kill \$(ps -eo pid) — ps not in list" "kill \$(ps -eo pid)"
+# But the xargs-pipeline spelling of the same family IS caught (regression for Rule A):
+expect_deny "ss -ltnp | awk | xargs kill"  "ss -ltnp | awk '{print \$NF}' | xargs kill"
+expect_deny "ps aux | awk | xargs kill"    "ps aux | awk '/vite/{print \$2}' | xargs kill"
+
 # 8. Destructive-op scope policy: permit contained /tmp/ destruction, block wide
 # Rule: rm -r{,f} / find -delete / rsync --delete / xargs rm require a literal
 # /tmp/<name> path AND no shell metachars ($, `, *, ?, ~).
@@ -148,6 +181,13 @@ expect_allow "git commit -m msg" "git commit -m \"msg\""
 # (bare git stash moved to deny list — see above)
 expect_allow "rm file.js (no -rf)" "rm file.js"
 expect_allow "kill 1234 (no -9)" "kill 1234"
+expect_allow "kill -TERM 1234 (SIGTERM allowed)" "kill -TERM 1234"
+expect_allow "bash scripts/stop-dev.sh (sanctioned SIGTERM helper)" "bash scripts/stop-dev.sh"
+# kill with a pid from a file is the canonical supervised-stop pattern — must stay allowed.
+expect_allow "kill \$(cat pidfile)" "kill \$(cat var/dev.pid)"
+# xargs for non-kill purposes must not be caught by the xargs-kill rule.
+expect_allow "xargs git blame (non-kill)" "git log --format=%H | xargs git blame"
+expect_allow "xargs echo (non-kill)" "echo foo | xargs echo"
 
 echo ""
 echo "=== Push: block main/master ==="

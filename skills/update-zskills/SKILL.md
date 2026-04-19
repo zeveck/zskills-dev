@@ -452,6 +452,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by writers before persisting ID)
 - `apply-preset.sh` — required by the preset UX (Step F); splices/flips the `BLOCK_MAIN_PUSH` line in `block-unsafe-generic.sh` and updates `execution.landing`/`execution.main_protected` in config
 - `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
+- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `var/dev.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
 - `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
 
 ### Step 5 — Check skills with additional requirements
@@ -629,6 +630,11 @@ has no placeholders — it works out of the box. No configuration needed.
 `.zskills/tracking/` to the project's `.gitignore` if not already present.
 Tracking files are ephemeral session state and should never be committed.
 
+**Add `var/` to `.gitignore`:** Also add `var/` if not already present.
+`scripts/stop-dev.sh` reads PIDs from `var/dev.pid` (written by the
+project's dev server launcher); PID files are per-worktree runtime state
+and must never be committed.
+
 Then register the hooks in `.claude/settings.json`. The format is:
 
 ```json
@@ -694,6 +700,9 @@ executable bit is preserved).
   project hook.
 - Copy `apply-preset.sh` if missing — required by Step F (preset UX).
   Without it, `/update-zskills <preset>` will fail.
+- Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
+  a dev server (SIGTERM to PIDs in `var/dev.pid`). Keeps the generic
+  hook's kill blocks intact while giving the agent a legitimate path.
 
 Report: "Installed N scripts: [list]"
 

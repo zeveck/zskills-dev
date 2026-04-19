@@ -12,7 +12,9 @@
 
 The port is determined automatically by `{{PORT_SCRIPT}}`: **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Run `bash {{PORT_SCRIPT}}` to see your port. Override with `DEV_PORT=NNNN` env var if needed.
 
-**NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. If a port is busy, check what's on it with `lsof -i :<port>` and ask the user to stop it manually.
+**To stop this worktree's dev server, run `bash scripts/stop-dev.sh`.** It sends SIGTERM to the PIDs recorded in `var/dev.pid`. Contract: your `{{DEV_SERVER_CMD}}` must write each spawned child PID (one per line) to `var/dev.pid` on start, and should clear it on clean shutdown. `var/` is gitignored.
+
+**NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. Do not reach for `lsof -ti :<port> | xargs kill` either — it's the same anti-pattern under a different spelling. If a port is busy from another session's process, check with `lsof -i :<port>` and ask the user to stop it manually.
 
 **Auth gate:** The app requires a password. For automated browser testing, bypass it:
 ```js
