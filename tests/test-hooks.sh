@@ -191,6 +191,41 @@ expect_deny "git push origin main" "git push origin main"
 expect_deny "git push -u origin main" "git push -u origin main"
 
 echo ""
+echo "=== Push: BLOCK_MAIN_PUSH preset toggle ==="
+
+# The installer flips BLOCK_MAIN_PUSH=1 -> 0 for cherry-pick / direct
+# presets. Simulate by sed-editing a tempo copy of the hook and confirm
+# main pushes are now allowed (the only branch that depends on the toggle).
+toggle_test() {
+  local label="$1" toggle_value="$2" branch="$3" expected="$4"
+  local tmp_hook tmp_repo result
+  tmp_hook=$(mktemp)
+  sed -E "s/^BLOCK_MAIN_PUSH=[01]/BLOCK_MAIN_PUSH=$toggle_value/" "$HOOK" > "$tmp_hook"
+  tmp_repo=$(mktemp -d)
+  (cd "$tmp_repo" && git init -q -b "$branch" 2>/dev/null \
+    || (cd "$tmp_repo" && git init -q && git checkout -b "$branch" 2>/dev/null))
+  result=$(cd "$tmp_repo" && echo '{"tool_name":"Bash","tool_input":{"command":"git push"}}' | bash "$tmp_hook" 2>/dev/null)
+  rm -rf "$tmp_repo" "$tmp_hook"
+  if [ "$expected" = "deny" ]; then
+    if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected deny, got: $result"
+    fi
+  else
+    if [[ "$result" != *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected allow, got: $result"
+    fi
+  fi
+}
+
+toggle_test "BLOCK_MAIN_PUSH=1 still denies git push on main" 1 "main" "deny"
+toggle_test "BLOCK_MAIN_PUSH=0 allows git push on main" 0 "main" "allow"
+toggle_test "BLOCK_MAIN_PUSH=0 allows git push on master" 0 "master" "allow"
+
+echo ""
 echo "=== Non-Bash tool_name ==="
 
 result=$(echo '{"tool_name":"Read","tool_input":{"file_path":"/tmp/foo"}}' | bash "$HOOK" 2>/dev/null)

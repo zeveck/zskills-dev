@@ -12,6 +12,16 @@
 #              git commit --no-verify (fix the hook, don't bypass)
 # Optional:    git push (agents should not push; the user pushes when ready)
 
+# ─── Preset toggle: main-push block ────────────────────────────────
+# Controls the "git push main/master" deny rule further down in this
+# file. Flipped by /update-zskills when a preset is applied:
+#   cherry-pick (default)  -> BLOCK_MAIN_PUSH=0
+#   locked-main-pr         -> BLOCK_MAIN_PUSH=1
+#   direct                 -> BLOCK_MAIN_PUSH=0
+# Default here is 1 so zskills-shipped configs fail closed (safer).
+# Installer sed's this single line; do not inline-expand further below.
+BLOCK_MAIN_PUSH=1
+
 INPUT=$(cat)
 
 # Only filter Bash commands
@@ -205,7 +215,7 @@ if [[ "$INPUT" =~ git[[:space:]]+push ]]; then
   # Strip remote-side of refspec if present (e.g., local:remote)
   PUSH_TARGET="${PUSH_TARGET%%:*}"
 
-  if [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; then
+  if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
   fi
 fi
