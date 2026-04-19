@@ -10,6 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
+| [plans/IMPROVE_STALENESS_DETECTION.md](plans/IMPROVE_STALENESS_DETECTION.md) | 0/3 | **Ready to run** — /draft-plan converged round 1 (15/15 findings addressed); structural fix for stale-acceptance-band class of bug |
 | [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 5/5 | **Complete** — all phases landed; 531/531 tests PASS; mirror parity clean; real-GitHub canaries deferred to user |
 | [plan-ci-fix-cycle-canary.md](reports/plan-ci-fix-cycle-canary.md) | 1/1 | **Complete** — CI-fix-cycle canary (pending this PR) |
 | [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary |
