@@ -1,13 +1,14 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
-## Phase — 1b Full test suite + run-all + update-zskills registration (verified, awaiting cherry-pick)
+## Phase — 1b Full test suite + run-all + update-zskills registration (landed)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
-**Status:** Verified by fresh agent; ready to land
-**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-1b
+**Status:** Landed on main; 594/594 green
+**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-1b (cleanup pending)
 **Branch:** cp-create-worktree-skill-1b
-**Worktree commit:** 0e7a834 (`test(create-worktree): extend smoke to 20 cases; register; update-zskills bullet`)
-**Main commit:** _pending cherry-pick_
+**Worktree commit:** 0e7a834
+**Main commit:** e257f25 (`test(create-worktree): extend smoke to 20 cases; register; update-zskills bullet`)
+**Post-landing tests:** test-hooks 255/255; run-all 594/594
 
 ### Work Items
 | # | Item | Status | Notes |
