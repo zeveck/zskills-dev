@@ -248,6 +248,15 @@ Phase 1b.
       && cp -r skills/create-worktree .claude/skills/create-worktree`.
       Verify: `diff -r skills/create-worktree .claude/skills/create-worktree`
       is empty.
+
+      **Edit source only; mirror via `cp -r`.** Per MEMORY
+      `feedback_claude_skills_permissions.md`, edits to `.claude/skills/`
+      trigger a permission prompt on every `Edit` tool call. Iterate on
+      `skills/create-worktree/` (the source working copy), then batch-mirror
+      via `rm -rf && cp -r` as shown. This rule applies to every mirror
+      step in this plan (1b.4, 2.5, 3.x). Never `Edit` a file under
+      `.claude/skills/` directly — if you find a bug post-mirror, fix it
+      in `skills/` and re-mirror.
 - [ ] 1a.15 — Extend `config/zskills-config.schema.json`: add
       `execution.worktree_root` under `properties.execution.properties`:
       ```json

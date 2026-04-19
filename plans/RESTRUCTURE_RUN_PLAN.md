@@ -70,7 +70,7 @@ unrelated edit has landed. At draft time, verified line-count inventory:
 
 | Skill | Lines at research (2026-04-18) | Lines at draft time (2026-04-18) |
 |-------|-------------------------------:|---------------------------------:|
-| `skills/run-plan/SKILL.md`   | 2532 | **2600** |
+| `skills/run-plan/SKILL.md`   | 2532 | **2589** (re-measured 2026-04-19; was 2600 at draft) |
 | `skills/fix-issues/SKILL.md` | 1460 | **1460** |
 | `skills/do/SKILL.md`         |  664 |  **669** |
 | `skills/commit/SKILL.md`     |  412 |  **417** |
@@ -106,10 +106,18 @@ larger skills.
       (Header total: 3 lines — H1, blank, intro. Verify with
       `head -3 skills/commit/modes/pr.md`.)
 - [ ] 1.3 Extract the `## Phase 7 — Land` section into `skills/commit/modes/land.md`.
-      At draft time this section spans lines 329–417 (end of file). Re-derive
-      by running `wc -l skills/commit/SKILL.md` and using that value as the
-      last line. Same byte-preservation rule. Same 3-line header
-      (`# /commit land — Land Worktree Commits` + blank + one-sentence intro).
+      At draft time this section spans lines 329–388 (terminating one line before
+      `## Key Rules` at line 389). **Do NOT use `wc -l` (EOF) as the end** — that
+      would sweep `## Key Rules` into modes/land.md, which is a top-level rule
+      section that applies to ALL subcommands, not just land. Re-derive the end
+      by running:
+      ```
+      grep -n '^## Key Rules\|^## Edge Cases\|^## References\|^## Notes' skills/commit/SKILL.md
+      ```
+      Use `(first such line) - 1` as the end. If no such heading exists, use
+      `wc -l`. Record the computed `$LAND_END` for use in WI 1.6c.
+      Byte-preservation rule applies. Same 3-line header (`# /commit land — Land
+      Worktree Commits` + blank + one-sentence intro).
 - [ ] 1.4 In `skills/commit/SKILL.md`, replace each extracted section with a
       short **active-instruction** dispatch stub. The stub MUST tell the
       executing agent to Read the mode file — passive markdown links alone
@@ -150,34 +158,57 @@ larger skills.
       Expected output: empty. Any non-empty diff is a FAIL — fix the
       extraction and re-run before proceeding.
 - [ ] 1.6c Verify byte-preservation of `modes/land.md` similarly.
-      Let `$LAND_END` = line count of `/tmp/commit-original.md` (usually 417).
-      Run:
+      `$LAND_END` was computed in WI 1.3 (line before `## Key Rules`, typically
+      388). Run:
       ```
       diff <(tail -n +4 skills/commit/modes/land.md) \
            <(sed -n "329,${LAND_END}p" /tmp/commit-original.md)
       ```
-      Expected output: empty.
-- [ ] 1.6d Verify the header structure of both mode files:
-      `head -3 skills/commit/modes/pr.md` and
-      `head -3 skills/commit/modes/land.md` each return exactly:
-      line 1 = `# <title>`, line 2 = empty, line 3 = one sentence.
+      Expected output: empty. Also verify `## Key Rules` is still in SKILL.md:
+      ```
+      grep -c '^## Key Rules' skills/commit/SKILL.md   # expected: 1
+      ```
+- [ ] 1.6d Verify the header structure of both mode files. `head -3` must
+      return exactly: line 1 = `# <title>`, line 2 = empty, line 3 = one
+      sentence. Additionally, **the intro on line 3 MUST end in terminal
+      punctuation** (`.`, `!`, or `?`) — this guards against a wrapped
+      two-line intro that would leak into the byte-preservation diff (DA-8
+      R1: `tail -n +4` assumes line 4 is the first line of the extracted
+      body, not the second line of a wrapped intro).
       - Line 1 matches `^# `: `head -1 <file> | grep -q "^# " || echo FAIL`
       - Line 2 is empty: `sed -n '2p' <file> | grep -q "^$" || echo FAIL`
-      - Line 3 non-empty, ≤25 words, single line:
-        `L3=$(sed -n '3p' <file>); test -n "$L3" && [ $(echo "$L3" | wc -w) -le 25 ] || echo FAIL`
-      - Line 4 is the first body line (no extra blank or header lines):
-        `sed -n '4p' <file>` should NOT start with `# ` or `## ` (the
-        extracted body's first line is not a heading; if it is, the
-        header/body boundary is off).
-- [ ] 1.6e Verify tracking marker count preservation. `/commit` does not
-      currently emit tracking markers (it's a commit workflow, not a
-      tracked skill invocation). Sanity-check:
+      - Line 3 non-empty, ≤25 words, single line ending in `.!?`:
+        ```
+        L3=$(sed -n '3p' <file>)
+        test -n "$L3" \
+          && [ "$(echo "$L3" | wc -w)" -le 25 ] \
+          && echo "$L3" | grep -qE '[.!?][[:space:]]*$' \
+          || echo FAIL
+        ```
+      - Line 4 is the first body line (no extra blank or header lines
+        from the H1/H2 level — the extracted body's first line will often
+        be a `### ` sub-heading, prose, or bullet, but must not be `# ` or
+        `## `):
+        `sed -n '4p' <file>` should NOT start with `# ` or `## ` (if it
+        does, the header/body boundary is off; `tail -n +4` in the diff
+        would shift by one line and the byte-preservation check would
+        misreport).
+- [ ] 1.6e Verify tracking marker count preservation. Use a grep pattern
+      that actually matches tracking writes (verified via `grep -cE
+      '\.zskills/tracking/\$(PIPELINE_ID\|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
+      skills/commit/SKILL.md` returning 1+ lines today — the previously-used
+      `printf.*tracking` pattern returns zero across all four skills and is
+      vacuous).
       ```
-      grep -c 'printf.*tracking' /tmp/commit-original.md     # expected: 0
-      grep -rc 'printf.*tracking' skills/commit/             # expected: same
+      TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
+      PRE=$(grep -cE "$TRACK_RE" /tmp/commit-original.md)
+      POST=$(find skills/commit -name '*.md' -exec grep -cE "$TRACK_RE" {} + \
+             | awk -F: '{s+=$2} END{print s}')
+      test "$PRE" = "$POST" || echo "FAIL: tracking-marker count drifted ($PRE→$POST)"
       ```
-      If the pre-edit count is non-zero, the post-edit count across SKILL.md
-      + modes/*.md combined must equal it exactly.
+      If `$PRE` is zero, the invariant is trivially satisfied — document
+      that fact and move on. For skills with non-zero counts (run-plan,
+      fix-issues), the invariant is meaningful.
 - [ ] 1.7 Mirror to installed location safely. The mirror copy MUST NOT leave
       stale files behind:
       ```
@@ -199,11 +230,18 @@ larger skills.
 **Target post-phase structure:**
 ```
 skills/commit/
-├── SKILL.md                (expected ~330 lines, down from 412)
+├── SKILL.md                (expected ~357 lines, down from 417)
+│                             = 0–234 (pre-Phase-6) + 2 dispatch stubs (~14 lines)
+│                             + 389–417 (## Key Rules + rest)
 ├── modes/
-│   ├── pr.md               (~90 lines: lines 235–322 content + 2-line header)
-│   └── land.md             (~65 lines: lines 323–383 content + 2-line header)
+│   ├── pr.md               (~97 lines: 235–328 content + 3-line header)
+│   └── land.md             (~63 lines: 329–388 content + 3-line header)
 ```
+
+**`## Key Rules` (line 389+) stays in SKILL.md.** It is a top-level rule section
+that applies to ALL commit subcommands. Extracting it into a mode file would
+make those rules mode-local, changing semantics. Verified via `grep -n '^## '
+skills/commit/SKILL.md` (shows Key Rules at 389 as the last top-level heading).
 
 **Line ranges are authoritative from the pre-edit file.** If `git diff` shows
 shifts after Phase 0 edits (e.g., an unrelated commit has landed), re-read
@@ -232,10 +270,12 @@ further links to deeper references.
 - [ ] Tracking-marker-count invariant (Work Item 1.6e): post-edit count
       across `skills/commit/SKILL.md` + `skills/commit/modes/*.md` combined
       equals pre-edit count in `/tmp/commit-original.md`.
-- [ ] `skills/commit/SKILL.md` line count is within 300–355 lines after
+- [ ] `skills/commit/SKILL.md` line count is within 340–380 lines after
       extraction; it contains exactly two dispatch stubs pointing at
       `modes/pr.md` and `modes/land.md` (and nothing else pointing at
       modes/*).
+- [ ] `grep -c '^## Key Rules' skills/commit/SKILL.md` == 1 (Key Rules
+      preserved in SKILL.md, not swept into land.md).
 - [ ] `diff -r skills/commit .claude/skills/commit` returns nothing.
 - [ ] `/commit` smoke test in a throwaway worktree (trivial one-file diff)
       runs to completion and produces a commit identical in structure to a
@@ -296,15 +336,30 @@ the three skill restructures.
       | `worktree`    | B    | [modes/worktree.md](modes/worktree.md) |
       | (neither)     | C    | [modes/direct.md](modes/direct.md) |
       ```
-- [ ] 2.7 Phase 3 (Verify, lines 500–536), Phase 4 (Push, 537–563), and
-      Phase 5 (Report, 564–612) contain path-specific branches. For each of
-      these three phases, identify which branches apply to which mode, and
-      decide: keep the branches in SKILL.md (if small, ≤40 lines total) OR
-      move the path-specific branches into the corresponding mode file.
-      **Default: keep in SKILL.md** unless doing so would break the
-      "self-contained mode file" principle for Path A (PR mode), which
-      exits before Phases 3–5 anyway per Path A's own report template.
-      Document the decision in the commit message.
+- [ ] 2.7 **Commit to decision (F-2 R1):** keep ALL of Phase 3 (Verify),
+      Phase 4 (Push), and Phase 5 (Report) bodies in SKILL.md as-is. Do
+      NOT duplicate or migrate path-specific branches into mode files.
+      Rationale:
+      - Path A (PR mode) exits before reaching Phase 3 — its own report
+        template is already inlined into Path A's body (which moves into
+        `modes/pr.md` in WI 2.3). So Phase 5's PR-specific branch is
+        effectively unused by Path A post-restructure; it remains a
+        historical artifact but does not affect behavior.
+      - Paths B and C fall through to Phases 3–5. Keeping those phases
+        in SKILL.md means Paths B and C execute exactly the code they
+        execute today.
+      - **User-focus preservation:** QUICKFIX (WI 1.11) cites the
+        agent-dispatch idiom at `skills/do/SKILL.md:342-358` (inside
+        Path A). That idiom moves into `modes/pr.md` via WI 2.3 with
+        byte-preservation. QUICKFIX's line reference becomes stale after
+        Phase 2 lands — addressed by Phase 5 WI 5.12.
+      - CREATE_WORKTREE (WIs 3.2–3.3) cites worktree-creation sites at
+        `skills/do/SKILL.md:322` (inside Path A → moves to modes/pr.md)
+        and `:482` (inside Path B → moves to modes/worktree.md). Both
+        blocks move byte-intact with their mode bodies. CREATE_WORKTREE's
+        own plan already documents the ordering.
+      Document this decision ("no Phase 3/4/5 content moves") in the
+      commit message.
 - [ ] 2.8 Verify byte-preservation for each mode file. For each of
       `modes/pr.md`, `modes/worktree.md`, `modes/direct.md`:
       ```
@@ -315,11 +370,14 @@ the three skill restructures.
       the corresponding Path section in the ORIGINAL file. All three diffs
       must return empty. Also verify header structure:
       `head -3 skills/do/modes/<name>.md` has H1+blank+≤25-word intro.
-- [ ] 2.8b Verify tracking-marker-count invariant:
+- [ ] 2.8b Verify tracking-marker-count invariant using the pattern
+      verified in Phase 1 (WI 1.6e):
       ```
-      grep -c 'printf.*tracking' /tmp/do-original.md
-      find skills/do -name '*.md' -exec grep -c 'printf.*tracking' {} + \
-        | awk -F: '{s+=$2} END{print s}'
+      TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
+      PRE=$(grep -cE "$TRACK_RE" /tmp/do-original.md)
+      POST=$(find skills/do -name '*.md' -exec grep -cE "$TRACK_RE" {} + \
+             | awk -F: '{s+=$2} END{print s}')
+      test "$PRE" = "$POST" || echo "FAIL: tracking-marker count drifted ($PRE→$POST)"
       ```
       The two numbers must match. Any mismatch means a marker was lost
       or duplicated during extraction — investigate and fix.
@@ -360,6 +418,24 @@ setup. Phases 3–5 stay in SKILL.md.
 **Do NOT extract Phase 1.5 (Argument Parsing, lines 241–278).** It's
 the dispatch logic itself and must live in SKILL.md — it's what decides
 which mode file to load.
+
+**Do NOT extract the bash-regex argument-parser idiom (lines ~70–92)**
+either. It's the meta-command detection + `LANDING_MODE` bash-regex
+block that `plans/QUICKFIX_SKILL.md` WI 1.2 and
+`plans/CREATE_WORKTREE_SKILL.md` WI 1a.2 cite as the canonical idiom.
+Those downstream plans copy the pattern verbatim for their own argument
+parsing; preserving the block at a stable location in `skills/do/SKILL.md`
+(above the Path-A start at line 283) means the downstream plans'
+references remain valid — only the exact line numbers may shift if
+Phase 0 edits happen upstream of this plan.
+
+**Agent-dispatch idiom at lines 342-358 (inside Path A "Step A6 —
+Dispatch implementation agent") moves into `modes/pr.md` via WI 2.3 with
+byte-preservation.** `plans/QUICKFIX_SKILL.md` WI 1.11 cites this idiom;
+after Phase 2 lands, QUICKFIX's line reference becomes stale and its
+next refinement must update the citation to point at
+`skills/do/modes/pr.md`. Phase 5 WI 5.12 (close-out) documents this
+handoff.
 
 **Do NOT extract Meta-Commands (stop/next/now, lines 120–172).** These
 are orthogonal subcommands, not modes.
@@ -409,16 +485,33 @@ Review, Phase 5 Report, plus a Phase 6 dispatch to the mode files.
 - [ ] 3.2 Capture pre-edit original: `git show HEAD:skills/fix-issues/SKILL.md
       > /tmp/fix-issues-original.md`.
 - [ ] 3.3 Before extraction, re-derive the landing-mode sub-section
-      boundaries under Phase 6. Run
-      `grep -n "^### \|^## Phase 6 \|^## Failure" /tmp/fix-issues-original.md`
+      boundaries under Phase 6. Run:
+      ```
+      grep -n '^## \|^### ' /tmp/fix-issues-original.md
+      ```
       (captured via `git show HEAD:skills/fix-issues/SKILL.md > /tmp/fix-issues-original.md`).
+      **Broader grep is mandatory** because several `^## ` headings look like
+      top-level sections but are actually templates embedded inside phases:
+      - `## Sprint — YYYY-MM-DD` (~line 914): sprint-report template, lives
+        inside Phase 5. Stays in SKILL.md (part of Phase 5).
+      - `## Changes` (~line 1193), `## Test plan` (~line 1196): PR-body
+        template, lives inside Phase 6's PR-per-issue landing subsection.
+        **MUST travel with PR-mode body into `modes/pr.md`** — they are the
+        templates that populate the PR description.
+      - `## Sprint Failed — YYYY-MM-DD` (~line 1349): failure-report template,
+        lives inside Failure Protocol. Travels with Failure Protocol into
+        `references/failure-protocol.md`.
+      - `## Key Rules` (~line 1421): top-level rules section. **Stays in
+        SKILL.md** — see DA-3 in Round 1 Disposition.
+
       Identify the line ranges of: (a) the cherry-pick per-issue landing
-      subsection, (b) the PR per-issue landing subsection, (c) the Phase 6
+      subsection, (b) the PR per-issue landing subsection (which includes
+      the `## Changes` / `## Test plan` template fragments), (c) the Phase 6
       preamble (if any) that is mode-agnostic and should stay in SKILL.md.
       At draft time: Phase 6 starts at line 964; Failure Protocol starts
-      at line 1299 (so Phase 6 ends at 1298); the cherry-pick/PR sub-bounds
-      are within 964–1298 and MUST be re-derived from the headings.
-      Document the chosen ranges in the commit message.
+      at line 1299 (so Phase 6 ends at 1298); Key Rules at line 1421; the
+      cherry-pick/PR sub-bounds are within 964–1298 and MUST be re-derived
+      from the headings. Document the chosen ranges in the commit message.
 - [ ] 3.4 Extract the per-issue cherry-pick landing subsection into
       `skills/fix-issues/modes/cherry-pick.md`. Prepend 3-line header
       (`# /fix-issues — Cherry-pick Mode (Per-Issue)` + blank + ≤25-word
@@ -431,11 +524,23 @@ Review, Phase 5 Report, plus a Phase 6 dispatch to the mode files.
       — Phase 4 Work Item 4D.2 updates it later. Do NOT "improve" by inlining
       `/run-plan`'s CI cycle; that's out of scope and violates
       byte-preservation.
-- [ ] 3.5 Extract the Failure Protocol section (lines 1299 to end-of-file,
-      or to the line before `## Key Rules` / `## Edge Cases` if those exist;
-      re-derive boundaries with grep) into
-      `skills/fix-issues/references/failure-protocol.md`. Prepend 3-line
-      header (`# /fix-issues — Failure Protocol` + blank + ≤25-word intro).
+- [ ] 3.5 Extract the Failure Protocol section into
+      `skills/fix-issues/references/failure-protocol.md`. Compute the end:
+      ```
+      FAILURE_START=$(grep -n '^## Failure Protocol' /tmp/fix-issues-original.md | head -1 | cut -d: -f1)
+      KEY_RULES_START=$(grep -n '^## Key Rules' /tmp/fix-issues-original.md | head -1 | cut -d: -f1)
+      # Fallback if no Key Rules exists:
+      : "${KEY_RULES_START:=$(wc -l < /tmp/fix-issues-original.md)}"
+      FAILURE_END=$((KEY_RULES_START - 1))
+      echo "Extracting lines $FAILURE_START..$FAILURE_END"
+      ```
+      **This must terminate at `## Key Rules`, not EOF.** Extracting through
+      EOF would sweep Key Rules (top-level rules section that applies to the
+      whole skill) into the failure-protocol reference. `## Sprint Failed —
+      YYYY-MM-DD` (inside Failure Protocol, ~line 1349) travels WITH Failure
+      Protocol — it's a template block used by the failure flow.
+      Prepend 3-line header (`# /fix-issues — Failure Protocol` + blank +
+      ≤25-word intro).
 - [ ] 3.6 In `skills/fix-issues/SKILL.md`, replace Phase 6 Land body with an
       active-instruction dispatch stub. If Phase 6 has a mode-agnostic
       preamble (per Work Item 3.3 analysis), keep the preamble; replace
@@ -474,13 +579,18 @@ Review, Phase 5 Report, plus a Phase 6 dispatch to the mode files.
       where `${start}` and `${end}` are the ranges derived in 3.3/3.5.
       All three diffs must be empty. Also verify header structure for
       each (H1 + blank + ≤25-word intro via `head -3`).
-- [ ] 3.8b Verify tracking-marker-count invariant:
+- [ ] 3.8b Verify tracking-marker-count invariant using the pattern
+      verified in Phase 1 (WI 1.6e):
       ```
-      grep -c 'printf.*tracking' /tmp/fix-issues-original.md
-      find skills/fix-issues -name '*.md' -exec grep -c 'printf.*tracking' {} + \
-        | awk -F: '{s+=$2} END{print s}'
+      TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
+      PRE=$(grep -cE "$TRACK_RE" /tmp/fix-issues-original.md)
+      POST=$(find skills/fix-issues -name '*.md' -exec grep -cE "$TRACK_RE" {} + \
+             | awk -F: '{s+=$2} END{print s}')
+      test "$PRE" = "$POST" || echo "FAIL: tracking-marker count drifted ($PRE→$POST)"
       ```
-      The two numbers must match exactly.
+      Pre-count for fix-issues is ~26 at research-time (verified 2026-04-19
+      via `grep -cE "$TRACK_RE" skills/fix-issues/SKILL.md` → 26). The two
+      numbers must match exactly.
 - [ ] 3.9 Inventory cross-references in `skills/fix-issues/SKILL.md` after
       edits. Grep for "Phase 6" and "Failure Protocol" — every remaining
       reference must either be the dispatch stub itself or a contextual
@@ -532,6 +642,19 @@ output paths.
 - Plan command (294–353): unique.
 - Phase 0 Schedule (354–418): shared cron registration — stays.
 - Phase 1/1b/2/3/4/5: orchestration — stays.
+- `## Key Rules` (~line 1421): top-level rules section, stays in SKILL.md.
+
+**Worktree-creation block coherence (F-9 R1).** The per-issue worktree-creation
+block in `skills/fix-issues/SKILL.md` (roughly lines 791–814 in pre-edit
+source — `git worktree prune`, `ZSKILLS_ALLOW_BRANCH_RESUME=1 bash
+scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" "$BASE_BRANCH"`,
+and the `echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"` line) must
+move **in one contiguous piece** into `modes/cherry-pick.md`. `plans/CREATE_WORKTREE_SKILL.md`
+Phase 3 WI 3.1 migrates this block to a single `bash scripts/create-worktree.sh`
+call and depends on the block being contiguous at one path. Acceptance:
+after Phase 3 lands, `grep -n "worktree-add-safe.sh" skills/fix-issues/modes/cherry-pick.md`
+must return at least one match, and `grep -n "worktree-add-safe.sh"
+skills/fix-issues/SKILL.md` must return zero.
 
 ### Acceptance Criteria
 
@@ -544,6 +667,8 @@ output paths.
 - [ ] The cross-reference to `/run-plan` PR mode in `modes/pr.md` is
       still the original text. (To be updated in Phase 4.)
 - [ ] Tracking-marker-count invariant (Work Item 3.8b) holds.
+- [ ] `grep -c '^## Key Rules' skills/fix-issues/SKILL.md` == 1 — Key Rules
+      was NOT swept into references/failure-protocol.md.
 
 ### Dependencies
 
@@ -565,15 +690,25 @@ transition` section into `skills/run-plan/references/finish-mode.md`. Extract
 the `## Failure Protocol` and `## Run Failed — YYYY-MM-DD HH:MM` sections into
 `skills/run-plan/references/failure-protocol.md`.
 
-**At draft time (2026-04-18), the boundaries are:**
+**At draft time (2026-04-18, re-verified 2026-04-19), the boundaries are:**
 - `## Phase 5b — Plan Completion`: line 1158 (stays in SKILL.md)
-- `## Phase 5c — Chunked finish auto transition`: line 1397 (EXTRACT to references/finish-mode.md)
-- `## Phase 6 — Land`: line 1555 (dispatcher preamble stays; mode bodies EXTRACT)
-- `## Failure Protocol`: line 2471 (EXTRACT)
-- `## Run Failed — YYYY-MM-DD HH:MM`: line 2515 (EXTRACT into same references/failure-protocol.md as Failure Protocol)
-- End of file: line 2600
+- `## Phase 5c — Chunked finish auto transition`: line 1384 (EXTRACT to references/finish-mode.md)
+- `## Phase 6 — Land`: line 1544 (dispatcher preamble stays; mode bodies EXTRACT)
+- `## Failure Protocol`: line 2460 (EXTRACT)
+  - `## Run Failed — YYYY-MM-DD HH:MM`: line 2504 — **template block embedded
+    INSIDE Failure Protocol (under Step 3 "Write the failure to the plan
+    report"), NOT a sibling top-level section. Travels with Failure Protocol
+    in the same extraction range.**
+- `## Key Rules`: line 2556 (**STAYS in SKILL.md** — top-level rules section
+  applying to the whole skill; extracting into a reference would change
+  semantics)
+- `## Edge Cases`: line 2571 (**STAYS in SKILL.md** — same rationale as Key
+  Rules)
+- End of file: line 2589
 
 Re-derive at implementation time; do NOT trust these absolute numbers.
+**Never use EOF as the end of the Failure Protocol extraction** — the
+extraction MUST terminate at `## Key Rules - 1`.
 
 ### Phase 4 execution structure: four atomic sub-commits
 
@@ -611,15 +746,23 @@ all Phase 4 acceptance criteria pass.
       grep -n "^## " /tmp/run-plan-original.md
       ```
       Record: `PHASE_5C_START`, `PHASE_6_START` (= `PHASE_5C_END + 1`),
-      `FAILURE_START`, `RUNFAILED_START`, `EOF` (total line count).
+      `FAILURE_START`, `KEY_RULES_START`, `EDGE_CASES_START`, `EOF` (total
+      line count). `RUNFAILED_START` is informational only — `## Run Failed`
+      is a template block embedded inside Failure Protocol, not a sibling
+      section. It travels with Failure Protocol in one range.
+      **Critical**: `FAILURE_END = KEY_RULES_START - 1`. Do NOT use `EOF`
+      as the end; that would sweep Key Rules and Edge Cases into the
+      reference file.
 - [ ] 4A.4 Extract Phase 5c chunked finish auto transition into
       `skills/run-plan/references/finish-mode.md`. Byte-preserve lines
       `$PHASE_5C_START` through `$PHASE_6_START - 1`. Prepend 3-line header
       (`# /run-plan — Finish-Auto Chunked Execution` + blank + ≤25-word intro).
-- [ ] 4A.5 Extract Failure Protocol + Run Failed into
-      `skills/run-plan/references/failure-protocol.md` as one file.
-      Byte-preserve lines `$FAILURE_START` through `$EOF`. Prepend 3-line
-      header (`# /run-plan — Failure Protocol & Failed-Run Template` + blank
+- [ ] 4A.5 Extract Failure Protocol (including the embedded `## Run Failed`
+      template) into `skills/run-plan/references/failure-protocol.md` as one
+      file. Byte-preserve lines `$FAILURE_START` through `$KEY_RULES_START - 1`.
+      **Do NOT use `$EOF` as the end** — `## Key Rules` and `## Edge Cases`
+      are top-level sections that must stay in SKILL.md. Prepend 3-line header
+      (`# /run-plan — Failure Protocol & Failed-Run Template` + blank
       + ≤25-word intro).
 - [ ] 4A.6 Replace the extracted Phase 5c section in `skills/run-plan/SKILL.md`
       with an active-instruction stub:
@@ -653,19 +796,27 @@ all Phase 4 acceptance criteria pass.
 
       # failure-protocol.md
       diff <(tail -n +4 skills/run-plan/references/failure-protocol.md) \
-           <(sed -n "${FAILURE_START},${EOF}p" /tmp/run-plan-original.md)
+           <(sed -n "${FAILURE_START},$((KEY_RULES_START - 1))p" /tmp/run-plan-original.md)
       ```
-      Both diffs must be empty.
+      Both diffs must be empty. Also verify Key Rules and Edge Cases remain
+      in SKILL.md:
+      ```
+      grep -c '^## Key Rules'  skills/run-plan/SKILL.md   # expected: 1
+      grep -c '^## Edge Cases' skills/run-plan/SKILL.md   # expected: 1
+      ```
 - [ ] 4A.9 Tracking-marker invariant for 4A (partial — only the extracted
-      sections). Count markers in the pre-edit range vs the extracted files:
+      sections). Use the same pattern as Phase 1 WI 1.6e:
       ```
-      grep -c 'printf.*tracking' <(sed -n "${PHASE_5C_START},$((PHASE_6_START - 1))p" /tmp/run-plan-original.md)
-      grep -c 'printf.*tracking' skills/run-plan/references/finish-mode.md
+      TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
 
-      grep -c 'printf.*tracking' <(sed -n "${FAILURE_START},${EOF}p" /tmp/run-plan-original.md)
-      grep -c 'printf.*tracking' skills/run-plan/references/failure-protocol.md
+      grep -cE "$TRACK_RE" <(sed -n "${PHASE_5C_START},$((PHASE_6_START - 1))p" /tmp/run-plan-original.md)
+      grep -cE "$TRACK_RE" skills/run-plan/references/finish-mode.md
+
+      grep -cE "$TRACK_RE" <(sed -n "${FAILURE_START},$((KEY_RULES_START - 1))p" /tmp/run-plan-original.md)
+      grep -cE "$TRACK_RE" skills/run-plan/references/failure-protocol.md
       ```
-      Each pair must match.
+      Each pair must match. Source range for failure-protocol.md ends at
+      `KEY_RULES_START - 1`, not `EOF` (see WI 4A.3/4A.5).
 - [ ] 4A.10 Smoke test: `/run-plan next` runs cleanly (read-only).
 - [ ] 4A.11 Parser-readiness smoke: `/run-plan plans/RESTRUCTURE_RUN_PLAN.md next`
       runs cleanly and recognizes the plan's phases correctly. If this
@@ -720,8 +871,10 @@ all Phase 4 acceptance criteria pass.
 - [ ] 4B.7 Byte-preservation verification for 4B's three mode files.
       For each: `diff <(tail -n +4 <extracted>) <(sed -n "${start},${end}p" /tmp/run-plan-original.md)`
       must be empty.
-- [ ] 4B.8 Tracking-marker invariant for 4B: count markers in each extracted
-      body's source range vs the corresponding mode file. Pairs must match.
+- [ ] 4B.8 Tracking-marker invariant for 4B using the pattern from 1.6e:
+      `TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'`.
+      Count markers in each extracted body's source range vs the
+      corresponding mode file. Pairs must match.
 - [ ] 4B.9 Smoke test: `/run-plan next` still runs cleanly.
 - [ ] 4B.10 Parser-readiness smoke: `/run-plan plans/RESTRUCTURE_RUN_PLAN.md next`.
       Same rationale as 4A.11 — if parsing broke after adding the three
@@ -748,15 +901,17 @@ all Phase 4 acceptance criteria pass.
       (NOT the post-4B state — always compare against the original).
       `diff <(tail -n +4 skills/run-plan/modes/pr.md) <(sed -n "${pr_start},${pr_end}p" /tmp/run-plan-original.md)`
       must be empty.
-- [ ] 4C.5 Tracking-marker invariant for 4C.
+- [ ] 4C.5 Tracking-marker invariant for 4C (same pattern as 1.6e).
 - [ ] 4C.6 Whole-file tracking-marker invariant (combined across all
       sub-commits so far):
       ```
-      grep -c 'printf.*tracking' /tmp/run-plan-original.md
-      find skills/run-plan -name '*.md' -exec grep -c 'printf.*tracking' {} + \
-        | awk -F: '{s+=$2} END{print s}'
+      TRACK_RE='\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'
+      PRE=$(grep -cE "$TRACK_RE" /tmp/run-plan-original.md)
+      POST=$(find skills/run-plan -name '*.md' -exec grep -cE "$TRACK_RE" {} + \
+             | awk -F: '{s+=$2} END{print s}')
+      test "$PRE" = "$POST" || echo "FAIL: tracking drifted ($PRE→$POST)"
       ```
-      Must match.
+      Pre-count for run-plan is ~28 at research-time (verified 2026-04-19).
 - [ ] 4C.7 Smoke test: `/run-plan next` still runs cleanly.
 - [ ] 4C.8 Parser-readiness smoke: `/run-plan plans/RESTRUCTURE_RUN_PLAN.md next`.
       Same rationale as 4A.11.
@@ -774,11 +929,19 @@ all Phase 4 acceptance criteria pass.
       transitions or orphaned prose. Target Phase 6 section ≤30 lines of
       actual content in SKILL.md (preamble + dispatch).
 - [ ] 4D.2 Update the cross-reference in `skills/fix-issues/modes/pr.md`
-      (created in Phase 3). First, confirm the current state:
+      (created in Phase 3). First, confirm current state and gate on
+      non-empty pre-count (F-4 + DA-5 R1):
       ```
-      grep -n "skills/run-plan" skills/fix-issues/modes/pr.md
+      PRE_OLD=$(grep -c 'skills/run-plan/SKILL\.md' skills/fix-issues/modes/pr.md)
+      PRE_ANY=$(grep -c 'skills/run-plan/'         skills/fix-issues/modes/pr.md)
+      if [ "$PRE_OLD" -eq 0 ]; then
+        echo "FAIL: expected >=1 reference to skills/run-plan/SKILL.md in fix-issues/modes/pr.md; got 0."
+        echo "This means Phase 3 drew the cherry-pick/pr extraction boundary such that"
+        echo "line 1225 (the cross-reference) did NOT land in pr.md. STOP and investigate."
+        exit 1
+      fi
+      echo "Pre-sed: $PRE_OLD references to SKILL.md, $PRE_ANY total skills/run-plan/ references"
       ```
-      Expected: one or more hits pointing at `skills/run-plan/SKILL.md`.
       Then apply the replacement:
       ```
       sed -i 's#skills/run-plan/SKILL\.md#skills/run-plan/modes/pr.md#g' \
@@ -786,15 +949,18 @@ all Phase 4 acceptance criteria pass.
       ```
       This changes ONLY the link target; surrounding prose (including
       the "5-min per-issue vs 10-min per-phase" caveat) is preserved
-      because sed only matches the literal path string. Verify post-edit:
+      because sed only matches the literal path string. Verify post-edit
+      with a count invariant (DA-5 R1):
       ```
-      grep -n "skills/run-plan/SKILL\.md" skills/fix-issues/modes/pr.md \
-        && echo FAIL || echo OK
-      grep -n "skills/run-plan/modes/pr\.md"  skills/fix-issues/modes/pr.md
+      POST_OLD=$(grep -c 'skills/run-plan/SKILL\.md'       skills/fix-issues/modes/pr.md)
+      POST_NEW=$(grep -c 'skills/run-plan/modes/pr\.md'    skills/fix-issues/modes/pr.md)
+      POST_ANY=$(grep -c 'skills/run-plan/'                skills/fix-issues/modes/pr.md)
+      test "$POST_OLD" -eq 0                   || { echo "FAIL: old path remains"; exit 1; }
+      test "$POST_NEW" -ge "$PRE_OLD"          || { echo "FAIL: new path count less than expected"; exit 1; }
+      test "$POST_ANY" -eq "$PRE_ANY"          || { echo "FAIL: total run-plan/ link count drifted ($PRE_ANY→$POST_ANY)"; exit 1; }
+      echo "OK: $PRE_OLD SKILL.md refs → $POST_NEW modes/pr.md refs; total count stable at $POST_ANY"
       ```
-      First command must print `OK` (zero matches on old path). Second
-      command must print at least one hit on the new path. Any other
-      outcome: revert the file (`git checkout HEAD -- skills/fix-issues/modes/pr.md`)
+      Any FAIL: revert the file (`git checkout HEAD -- skills/fix-issues/modes/pr.md`)
       and investigate before retrying.
 - [ ] 4D.3 Post-edit SKILL.md line count check:
       `wc -l skills/run-plan/SKILL.md`. Target 700–900 lines. If below 700,
@@ -814,27 +980,43 @@ all Phase 4 acceptance criteria pass.
       `/run-plan next` and `/run-plan plans/CANARY1_HAPPY.md status`
       (if `status` subcommand exists, read-only). Capture to
       `/tmp/zskills-tests/restructure-run-plan/run-plan-smoke.txt`.
-- [ ] 4D.6 Semantic tracking-marker check (addresses DA-5). Not just
+- [ ] 4D.6 Semantic tracking-marker check (addresses DA-5 R1). Not just
       counts — verify markers still use `$PIPELINE_ID` and
-      `$ZSKILLS_PIPELINE_ID` variables (not hardcoded pipeline names):
+      `$ZSKILLS_PIPELINE_ID` variables (not hardcoded pipeline names).
+      **Negative check with a pattern that CAN match** (the R1 version
+      `tracking/(run-plan|fix-issues)\.` matches zero lines because real
+      tracking writes parameterize the path — it was vacuous):
       ```
-      grep -E 'tracking/(run-plan|fix-issues)\.' skills/run-plan/modes/*.md \
-        skills/run-plan/references/*.md skills/run-plan/SKILL.md || echo "OK: no hardcoded pipeline IDs"
+      # Positive count: writes that correctly use the variable
+      POS=$(grep -cE '\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)' \
+            skills/run-plan/SKILL.md skills/run-plan/modes/*.md \
+            skills/run-plan/references/*.md 2>/dev/null \
+            | awk -F: '{s+=$2} END{print s}')
+
+      # Negative count: any literal tracking/<skill>. that bypasses the variable
+      NEG=$(grep -cE '\.zskills/tracking/(run-plan|fix-issues|do|commit)[^A-Za-z0-9_]' \
+            skills/run-plan/SKILL.md skills/run-plan/modes/*.md \
+            skills/run-plan/references/*.md 2>/dev/null \
+            | awk -F: '{s+=$2} END{print s}')
+
+      echo "positive-form tracking writes: $POS (expected: >= pre-edit whole-file count)"
+      echo "hardcoded-pipeline-id bypass:  $NEG (expected: 0)"
+      test "$NEG" = "0" || echo "FAIL: hardcoded pipeline IDs introduced"
       ```
-      Zero matches expected (all writes go through `$PIPELINE_ID`).
 - [ ] 4D.7 Phase 6 preamble marker sanity check. The Phase 6 preamble
       (pre-landing checklist, still in SKILL.md) is mode-agnostic. It
       should NOT emit any per-mode landing marker (e.g., `.landed
       status: full` belongs in cherry-pick mode; `.landed status:
-      pr-ready` belongs in PR mode). Inspect:
+      pr-ready` belongs in PR mode). Use the corrected tracking regex:
       ```
       awk '/^## Phase 6 — Land/,/^## /' skills/run-plan/SKILL.md \
-        | head -n -1 | grep -E 'printf.*\.landed|printf.*tracking' \
+        | head -n -1 \
+        | grep -E '\.zskills/tracking/\$|write-landed\.sh|\.landed' \
         && echo "REVIEW: preamble contains marker emissions" || echo "OK"
       ```
       If any emissions are in the preamble, verify they are genuinely
       shared across all modes (e.g., a "phase-complete" marker written
-      before mode selection). If they belong in a specific mode, they
+      before mode selection). If they belong to a specific mode, they
       were extracted incorrectly — move them to the mode file.
 - [ ] 4D.8 Parser-readiness smoke: `/run-plan plans/RESTRUCTURE_RUN_PLAN.md next`.
       Same rationale as 4A.11.
@@ -925,6 +1107,9 @@ does NOT modify them. They stay as-is and are the Phase 5 validation input.
 - [ ] Whole-file tracking-marker invariant (4C.6) holds: pre-edit count in
       `/tmp/run-plan-original.md` equals post-edit count across all
       `skills/run-plan/**/*.md` files combined.
+- [ ] `grep -c '^## Key Rules'  skills/run-plan/SKILL.md` == 1 and
+      `grep -c '^## Edge Cases' skills/run-plan/SKILL.md` == 1
+      (Key Rules and Edge Cases preserved; not swept into failure-protocol.md).
 - [ ] Semantic tracking-marker check (4D.6): no hardcoded pipeline IDs in
       any extracted file.
 - [ ] `skills/run-plan/SKILL.md` is 700–900 lines.
@@ -1042,11 +1227,20 @@ gaps discovered. Update memory to reflect the new structure.
       ```
       /run-plan plans/_pr_smoke.md pr
       ```
-      Verify in this order:
-      1. A branch matching `feat/_pr_smoke-phase-*` exists:
-         `git branch | grep 'feat/_pr_smoke'`
+      Verify in this order (F-5 R1 — use `/run-plan`'s actual branch-naming
+      logic, not `/do`'s `feat/` prefix). `/run-plan` PR mode computes
+      `FEATURE_BRANCH="${BRANCH_PREFIX}${PLAN_SLUG}"` (SKILL.md:783-784 in
+      current source); for a plan slug of `_pr_smoke`, the branch is
+      `${BRANCH_PREFIX}_pr_smoke`. Capture the exact branch from `/run-plan`'s
+      output:
+      ```
+      SMOKE_BRANCH=$(grep -oE 'branch[[:space:]]+[^ ]*_pr_smoke[^ ]*' "$TEST_OUT/pr-smoke.txt" | head -1 | awk '{print $NF}')
+      ```
+      1. Branch exists:
+         `git branch --list | grep -E '_pr_smoke'` (loose pattern since
+         `$BRANCH_PREFIX` is project-configured and may be empty)
       2. A PR is open:
-         `gh pr list --head feat/_pr_smoke-phase-1 --state open`
+         `gh pr list --head "$SMOKE_BRANCH" --state open`
       3. The worktree `.landed` marker has `status: pr-ready`:
          `cat <worktree-path>/.landed | grep '^status:'`
          (Worktree path is printed by `/run-plan` on completion; capture
@@ -1087,6 +1281,36 @@ gaps discovered. Update memory to reflect the new structure.
       status: complete flip. Commit message:
       `docs(restructure): close out progressive-disclosure restructure`.
       Do NOT push without explicit user approval (per CLAUDE.md).
+- [ ] 5.12 **Downstream-plan refinement handoff (F-3 R1).** Two active
+      downstream plans reference specific line numbers and patterns in
+      `/do`, `/fix-issues`, and `/run-plan` that this restructure has
+      moved. Neither plan will execute correctly against its current
+      anchors. In the close-out report (WI 5.9), include a "Downstream
+      handoff" section enumerating the stale citations:
+      ```
+      # Enumerate stale references in the two downstream plans:
+      grep -n 'skills/\(do\|fix-issues\|run-plan\)/SKILL\.md' \
+        plans/QUICKFIX_SKILL.md plans/CREATE_WORKTREE_SKILL.md
+      ```
+      Recommend to the user: **run `/refine-plan plans/QUICKFIX_SKILL.md`
+      and `/refine-plan plans/CREATE_WORKTREE_SKILL.md` BEFORE either plan
+      is executed.** Specific known drift:
+      - QUICKFIX WI 1.2 and CREATE_WORKTREE WI 1a.2 cite
+        `skills/do/SKILL.md:70-92` (bash-regex idiom). This region is
+        above the extracted Paths A/B/C and is preserved in place, but
+        line numbers may shift slightly if Phase 0-adjacent edits landed.
+      - QUICKFIX WI 1.11 cites `skills/do/SKILL.md:342-358`
+        (agent-dispatch). Moved into `skills/do/modes/pr.md` in Phase 2
+        WI 2.3 with byte-preservation.
+      - CREATE_WORKTREE Phase 2 cites `skills/run-plan/SKILL.md:603` and
+        `:814`. Moved into `skills/run-plan/modes/cherry-pick.md` (Phase
+        4B) and `skills/run-plan/modes/pr.md` (Phase 4C).
+      - CREATE_WORKTREE Phase 3 cites `skills/fix-issues/SKILL.md:809`,
+        `skills/do/SKILL.md:322`, `skills/do/SKILL.md:482`. Moved into
+        `skills/fix-issues/modes/cherry-pick.md`, `skills/do/modes/pr.md`,
+        `skills/do/modes/worktree.md` respectively.
+      This WI is documentation-only; it does NOT run `/refine-plan` on
+      the downstream plans (that's the user's call).
 
 ### Design & Constraints
 
@@ -1167,6 +1391,9 @@ This plan explicitly does NOT:
 | Mirror install out of sync | Low | Phase 5 `diff -r` check on all four skills |
 | In-flight plan conflicts | Low | Research confirmed no source-modifying plans actively in flight; RESTORE_CHUNKED_EXECUTION marks all phases done |
 | PR mode regression not caught by automated canaries | Medium | Work Item 5.5 spot-check + reliance on CANARY10's prior pass |
+| Downstream plans (QUICKFIX, CREATE_WORKTREE) reference line numbers in /do, /fix-issues, /run-plan that move during this restructure | Medium | Phase 5 WI 5.12 documents the drift in the close-out report and recommends `/refine-plan` on each downstream plan before execution |
+| Phase 1/3/4 extract-to-EOF naively would sweep `## Key Rules` / `## Edge Cases` top-level sections into mode/reference files | HIGH | Every extraction end-boundary is now computed via `grep -n '^## Key Rules'` etc., never `wc -l`; acceptance criteria assert Key Rules/Edge Cases counts post-edit |
+| Tracking-marker-count invariant was vacuous (grep pattern matched zero lines) | HIGH | Replaced every `grep 'printf.*tracking'` with `grep -cE '\.zskills/tracking/\$(PIPELINE_ID|ZSKILLS_PIPELINE_ID)|\.zskills-tracked|write-landed\.sh|\.landed'` which is verified to match 28 / 26 / 1 / 1 lines in run-plan / fix-issues / do / commit |
 
 ## Round 1 Disposition
 
@@ -1243,5 +1470,75 @@ trade-offs. No new substantive structural issues. **Converged.**
 
 | Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
 |-------|-------------------|---------------------------|----------|
-| 1     | 11 issues         | 10 issues                 | 21/21    |
-| 2     | 5 issues          | 7 issues                  | 12/12 (converged; no new structural issues) |
+| 1 (draft) | 11 issues    | 10 issues                 | 21/21    |
+| 2 (draft) | 5 issues     | 7 issues                  | 12/12 (converged; no new structural issues) |
+| 1 (refine, 2026-04-19) | 9 issues | 9 issues | 18/18 (16 fixed, 2 justified; converged on round 1) |
+
+## /refine-plan Round 1 Disposition (2026-04-19)
+
+Triggered by user hint: "two downstream plans will migrate worktree calls
+and add a new quickfix skill — ensure the /do and /fix-issues mode
+extractions preserve the argument-parser and agent-dispatch idioms that
+those downstream plans reference." Refinement surfaced both (a) the
+downstream-coordination work the user flagged, AND (b) several critical
+extraction bugs that would have shipped — notably `## Key Rules` and
+`## Edge Cases` sweeping into mode/reference files across Phases 1, 3,
+and 4, plus a vacuous tracking-marker invariant that would have passed
+regardless of what the restructure did to tracking writes.
+
+| ID      | Severity | Evidence                                          | Disposition |
+|---------|----------|---------------------------------------------------|-------------|
+| R3-F1   | HIGH     | Verified: `grep -c 'printf.*tracking'` → 0 in all 4 skills | Fixed — every tracking invariant now uses `grep -cE '\.zskills/tracking/\$(PIPELINE_ID\|ZSKILLS_PIPELINE_ID)\|\.zskills-tracked\|write-landed\.sh\|\.landed'` (verified non-vacuous: 28/26/1/1 lines in run-plan/fix-issues/do/commit). See WI 1.6e, 2.8b, 3.8b, 4A.9, 4B.8, 4C.5, 4C.6, 4D.6, 4D.7. |
+| R3-F2   | MED      | Judgment — WI 2.7 had "default keep / may move" ambiguity | Fixed — WI 2.7 now commits to "keep ALL Phase 3/4/5 bodies in SKILL.md; no per-path duplication." Rationale explicitly notes downstream-plan idiom preservation (user-focus). |
+| R3-F3   | HIGH     | Verified: `grep -n 'skills/do/SKILL.md:\|skills/run-plan/SKILL.md:\|skills/fix-issues/SKILL.md:' plans/QUICKFIX_SKILL.md plans/CREATE_WORKTREE_SKILL.md` returns multiple stale citations | Fixed — new WI 5.12 documents the drift in the close-out report and recommends `/refine-plan` on each downstream plan before execution. Risks table row added. |
+| R3-F4   | MED      | Verified: `grep -n 'skills/run-plan' skills/fix-issues/SKILL.md` → 1 hit at line 1225 | Fixed — WI 4D.2 now hard-gates on non-empty pre-count (STOP + investigate if zero) and asserts total-count invariant post-sed. |
+| R3-F5   | MED      | Verified: `FEATURE_BRANCH="${BRANCH_PREFIX}${PLAN_SLUG}"` at skills/run-plan/SKILL.md:783-784, NOT `feat/`-prefixed | Fixed — WI 5.5 now captures branch name from `/run-plan`'s actual output rather than assuming `/do`'s `feat/` convention. |
+| R3-F6   | HIGH     | Verified: `grep -cE 'tracking/(run-plan\|fix-issues)\.'` → 0 in current source | Fixed — WI 4D.6 now runs BOTH a positive check (`\.zskills/tracking/\$(PIPELINE_ID\|ZSKILLS_PIPELINE_ID)` must be >= pre-count) AND a negative check for hardcoded pipeline-id bypass. |
+| R3-F7   | LOW      | Judgment                                          | Partial fix — every extraction now states its terminating heading explicitly (Phase 1 1.3 → `## Key Rules`; Phase 3 3.5 → `## Key Rules`; Phase 4 4A.3/4A.5 → `## Key Rules`). |
+| R3-F8   | LOW      | Verified: `wc -l skills/run-plan/SKILL.md` → 2589  | Fixed — line-count table updated (2589, re-measured 2026-04-19). |
+| R3-F9   | LOW      | Verified: fix-issues worktree block at ~791–814  | Fixed — Phase 3 Design & Constraints now specifies "Worktree-creation block coherence": the whole block moves contiguously into modes/cherry-pick.md so CREATE_WORKTREE Phase 3 WI 3.1 has one migration target. |
+| R3-DA1  | HIGH     | Verified: `grep -n '^## ' skills/commit/SKILL.md` → `## Key Rules` at line 389 | Fixed — Phase 1 WI 1.3 now computes `$LAND_END = (## Key Rules line - 1)` = 388, not `wc -l`. WI 1.6c verifies Key Rules remains in SKILL.md. Acceptance criterion added. |
+| R3-DA2  | HIGH     | Verified: `grep -n '^## ' skills/run-plan/SKILL.md` → `## Key Rules` at 2556, `## Edge Cases` at 2571 | Fixed — Phase 4 WI 4A.3 computes `$KEY_RULES_START`; 4A.5 extracts `$FAILURE_START..($KEY_RULES_START-1)`, not `..$EOF`. Acceptance criteria assert Key Rules and Edge Cases counts == 1. |
+| R3-DA3  | HIGH     | Verified: `grep -n '^## Key Rules' skills/fix-issues/SKILL.md` → line 1421 | Fixed — Phase 3 WI 3.5 now makes the `## Key Rules` terminator mandatory (bash computes FAILURE_END from grep); acceptance criterion added. |
+| R3-DA4  | MED      | Verified: `grep -n '^## ' skills/fix-issues/SKILL.md` shows embedded templates at 914, 1193, 1196, 1349 that WI 3.3's narrow regex would miss | Fixed — WI 3.3 now uses `grep -n '^## \|^### '` and enumerates each embedded heading's classification (top-level vs template-inside-phase). `## Changes`/`## Test plan` travel with PR-mode body; `## Sprint Failed` travels with Failure Protocol. |
+| R3-DA5  | MED      | Verified: WI 4D.2 sed had no count invariant      | Fixed — WI 4D.2 now asserts `grep -c 'skills/run-plan/' fix-issues/modes/pr.md` pre-sed == post-sed (plus the specific old→new transition). |
+| R3-DA6  | MED      | Judgment                                          | Justified — memory entry `feedback_claude_skills_permissions.md` warns about PER-EDIT prompts; plan already uses batched `rm -rf && cp -r` per phase. Four batches over hours of work is minimal friction. Consolidating to Phase 5 only would weaken per-phase `diff -r` acceptance without material benefit. |
+| R3-DA7  | MED      | Judgment                                          | Justified — four parser-readiness smoke tests exist at sub-commit boundaries to enable per-sub-commit revert granularity. Plan already notes (Phase 4 structure) that these verify parse-readiness, not landing. Removing would weaken checkpointing. |
+| R3-DA8  | LOW      | Verified: WI 1.6d allowed ≤25-word intro on line 3 but did not enforce terminal punctuation; wrapped intros could confuse `tail -n +4` | Fixed — WI 1.6d now requires line 3 to end with `[.!?]` (confirmation that the intro is a single complete sentence on one source line). |
+| R3-DA9  | LOW      | Verified: `## Run Failed` at line 2504 is 44 lines into Failure Protocol (2460), inside the narrative | Fixed — Phase 4 overview (line ~573) now reads "`## Run Failed — YYYY-MM-DD HH:MM`: template block embedded INSIDE Failure Protocol, NOT a sibling top-level section." |
+
+**Round convergence.** No new HIGH findings likely on this material
+(two rounds of /draft-plan already ran; the /refine-plan round surfaced
+bugs that were latent in the original plan's boundary-derivation logic).
+All 18 findings had concrete evidence or explicit judgment rationale;
+16 fixed with byte-verifiable edits, 2 justified. **Converged on round 1.**
+
+## Drift Log
+
+No completed phases — all 5 phases were reviewed as remaining. The plan
+was drafted 2026-04-18 (2 rounds /draft-plan) and refined 2026-04-19 (1
+round /refine-plan). Between draft and refine, no plan-file commits
+modified the progress tracker; sibling SKILL.md files (run-plan,
+fix-issues, do, commit) did not receive commits that would shift the
+research-time line numbers materially — `wc -l skills/run-plan/SKILL.md`
+shows 2589 today vs 2600 at draft-time (delta 11 lines, below the plan's
+own 50-line re-read threshold). Refinement updated the line-count table
+anchor to 2589 and left the "re-derive at implementation time" guidance
+in place.
+
+**Extraction-boundary corrections** (the main refine-time drift vs the
+original draft's intent): the original plan's Phase 1 WI 1.3 ("lines
+329–417 (end of file)"), Phase 3 WI 3.5 ("lines 1299 to end-of-file"),
+and Phase 4 WI 4A.5 ("lines `$FAILURE_START` through `$EOF`") would have
+swept `## Key Rules` and `## Edge Cases` top-level sections into mode
+and reference files. This was a latent bug caught by the DA agent in
+round 1 of /refine-plan via `grep -n '^## '` on each source file. The
+refined plan now terminates every such extraction at `## Key Rules - 1`
+with explicit shell derivation and acceptance criteria that check the
+post-edit count of those sections in SKILL.md is exactly 1.
+
+**Tracking-invariant correction.** The original plan's `grep 'printf.*tracking'`
+pattern matched zero lines in all four skills (tracking writes use shell
+redirection, `> "$MAIN_ROOT/.zskills/tracking/..."`, not `printf`
+specifically). The refined plan uses a pattern that actually matches the
+real writes and is verified non-vacuous.
