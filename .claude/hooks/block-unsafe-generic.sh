@@ -39,6 +39,17 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # hook remains defensive; no false-allows.
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
 
+# Redact `git commit -m "..."` and `git commit -m '...'` message bodies so
+# rule scans don't false-positive on prose like
+# `git commit -m "fix: docker died from xargs kill"`. Chained commands AFTER
+# the commit (e.g. `git commit -m "msg" && rm -rf /etc`) remain visible.
+# Heredoc form (-m "$(cat <<'EOF' ... EOF)") is NOT redacted; for messages
+# with embedded quotes or banned substrings, use `git commit -F file`.
+COMMAND=$(printf '%s' "$COMMAND" | sed -E '
+  s/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?-[a-zA-Z]*m[[:space:]]+)"[^"]*"/\1"REDACTED"/g
+  s/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?-[a-zA-Z]*m[[:space:]]+)'\''[^'\'']*'\''/\1'\''REDACTED'\''/g
+')
+
 # Block patterns — each with a reason
 block_with_reason() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$1"
@@ -69,33 +80,33 @@ elif [[ "$COMMAND" =~ $STASH_BOUNDARY ]] && [[ ! "$COMMAND" =~ $STASH_ALLOW_SUB 
 fi
 
 # git checkout -- (any file or blanket) — discards uncommitted changes permanently
-if [[ "$INPUT" =~ git[[:space:]]+checkout[[:space:]]+-- ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+checkout[[:space:]]+-- ]]; then
   block_with_reason "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git restore (any file or blanket) — modern equivalent of checkout --
-if [[ "$INPUT" =~ git[[:space:]]+restore[[:space:]] ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+restore[[:space:]] ]]; then
   block_with_reason "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git clean -f (permanent file deletion)
-if [[ "$INPUT" =~ git[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f ]]; then
   block_with_reason "BLOCKED: git clean -f permanently deletes untracked files. These cannot be recovered from git."
 fi
 
 # git reset --hard (discards everything)
-if [[ "$INPUT" =~ git[[:space:]]+reset[[:space:]]+--hard ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+reset[[:space:]]+--hard ]]; then
   block_with_reason "BLOCKED: git reset --hard discards all uncommitted changes and staged work. Use git reset (soft) or ask the user."
 fi
 
 # kill -9 / kill -KILL / kill -SIGKILL / kill -s 9 / kill -s KILL / kill -s SIGKILL / killall / pkill
-if [[ "$INPUT" =~ kill[[:space:]]+(-9|-KILL|-SIGKILL|-s[[:space:]]+(9|KILL|SIGKILL)) ]] || [[ "$INPUT" =~ killall[[:space:]] ]] || [[ "$INPUT" =~ pkill[[:space:]] ]]; then
+if [[ "$COMMAND" =~ kill[[:space:]]+(-9|-KILL|-SIGKILL|-s[[:space:]]+(9|KILL|SIGKILL)) ]] || [[ "$COMMAND" =~ killall[[:space:]] ]] || [[ "$COMMAND" =~ pkill[[:space:]] ]]; then
   block_with_reason "BLOCKED: kill -9/killall/pkill can kill container-critical processes. Ask the user to stop the process manually."
 fi
 
 # fuser -k (kills whatever process holds a port — disrupts other sessions' dev servers and E2E tests)
 # Catch -k alone, bundled flags (-km, -mk), and --kill
-if [[ "$INPUT" =~ fuser[[:space:]]+(.*-[a-z]*k[a-z]*|--kill) ]]; then
+if [[ "$COMMAND" =~ fuser[[:space:]]+(.*-[a-z]*k[a-z]*|--kill) ]]; then
   block_with_reason "BLOCKED: fuser -k kills whatever process holds a port. Other sessions may need that dev server for E2E tests. Ask the user to stop the process manually."
 fi
 
@@ -195,13 +206,12 @@ if [[ "$COMMAND" =~ xargs[[:space:]]+.*(rm|-delete) ]]; then
 fi
 
 # git add . / git add -A / git add --all (sweeps in unrelated changes)
-# Note: in raw JSON, "git add ." appears as ...git add ."... so we also match \."
-if [[ "$INPUT" =~ git[[:space:]]+add[[:space:]]+(-A|--all|\.([[:space:]]|\"|\|)) ]] || [[ "$INPUT" =~ git[[:space:]]+add[[:space:]]+\.$ ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+(-A|--all|\.([[:space:]]|\"|\|)) ]] || [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+\.$ ]]; then
   block_with_reason "BLOCKED: git add . / git add -A sweeps in ALL changes, including other sessions' work. Stage files by name: git add file1 file2."
 fi
 
 # git commit --no-verify (skips pre-commit hooks)
-if [[ "$INPUT" =~ git[[:space:]]+commit[[:space:]]+.*--no-verify ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+commit[[:space:]]+.*--no-verify ]]; then
   block_with_reason "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
 fi
 
@@ -212,13 +222,11 @@ fi
 # Detection: parse the push target from the command itself, not from
 # git branch --show-current (which returns the MAIN repo's branch even
 # when the agent is working in a worktree via cd).
-if [[ "$INPUT" =~ git[[:space:]]+push ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+push ]]; then
   PUSH_TARGET=""
-  # Extract the command string from JSON input
-  PUSH_CMD=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g')
-  if [ -z "$PUSH_CMD" ]; then
-    PUSH_CMD=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-  fi
+  # COMMAND is already the parsed shell command (with -m bodies redacted),
+  # so no need to re-extract from the JSON.
+  PUSH_CMD="$COMMAND"
 
   # Strip everything before "git push" (e.g., "cd /tmp/path &&")
   PUSH_CMD="${PUSH_CMD##*git push}"

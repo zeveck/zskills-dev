@@ -133,6 +133,23 @@ expect_allow "kill \$(ps -eo pid) — ps not in list" "kill \$(ps -eo pid)"
 expect_deny "ss -ltnp | awk | xargs kill"  "ss -ltnp | awk '{print \$NF}' | xargs kill"
 expect_deny "ps aux | awk | xargs kill"    "ps aux | awk '/vite/{print \$2}' | xargs kill"
 
+# 7f. `git commit -m \"...\"` message bodies are redacted before scan, so prose
+# mentioning banned patterns no longer false-positives. Chained commands AFTER
+# the commit must still be visible to the rules. (Discovered when committing
+# the helper change itself — the hook blocked its own commit message.)
+expect_allow "commit -m \"...kill -9...\" double-quoted"   "git commit -m \"feat: doc kill -9 incident\""
+expect_allow "commit -m \"...fuser -k...\" double-quoted"  "git commit -m \"docs: avoid fuser -k\""
+expect_allow "commit -m \"...xargs kill...\" double-quoted" "git commit -m \"fix: don't reach for xargs kill\""
+expect_allow "commit -m '...kill -9...' single-quoted"   "git commit -m 'feat: doc kill -9 incident'"
+expect_allow "commit -m '...killall...' single-quoted"   "git commit -m 'docs: killall is forbidden'"
+expect_allow "commit -am '...pkill...' (combined flag)"  "git commit -am \"chore: pkill notes\""
+expect_allow "commit --signoff -m with banned words"     "git commit --signoff -m \"feat: lsof -ti | xargs kill\""
+# Chained dangerous commands AFTER a clean commit must still be denied.
+expect_deny  "commit then chained kill -9"               "git commit -m \"msg\" && kill -9 1234"
+expect_deny  "commit then chained fuser -k"              "git commit -m \"msg\" ; fuser -k 8080"
+expect_deny  "commit then chained xargs kill"            "git commit -m \"msg\" && lsof -ti :8080 | xargs kill"
+# Heredoc form is intentionally NOT redacted; agents should use -F file.
+
 # 8. Destructive-op scope policy: permit contained /tmp/ destruction, block wide
 # Rule: rm -r{,f} / find -delete / rsync --delete / xargs rm require a literal
 # /tmp/<name> path AND no shell metachars ($, `, *, ?, ~).
