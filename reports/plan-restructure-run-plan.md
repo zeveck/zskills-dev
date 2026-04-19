@@ -1,5 +1,92 @@
 # Plan Report — Restructure /run-plan and Siblings with Progressive Disclosure
 
+## Close-out — 2026-04-19
+
+**Status:** Complete ✅ (all 5 phases landed).
+**Runtime:** 4 chunked cron-fired turns (Phase 1 → 2 → 3 → 4) + 1 validation turn (Phase 5), ~1.5 hours wall.
+
+### Landed commits (main branch)
+
+| Phase | Commit(s) | Skill(s) touched |
+|-------|-----------|------------------|
+| 1 | `2c62a57` | /commit (417→277 lines, 2 modes) |
+| 2 | `bc2bcbd` | /do (669→455, 3 modes) |
+| 3 | `8e52a6d` | /fix-issues (1460→1057, 2 modes + 1 reference) |
+| 4 | `192fbe9, 8ea4ae8, 6afad52, fefaa7a` (4 atomic sub-commits 4A/4B/4C/4D) | /run-plan (2589→1534, 4 modes + 2 references) |
+
+### Totals
+
+- **Source SKILL.md reduction:** 5135 → 3323 lines (-35%)
+- **Extracted files:** 13 (5 in modes/, 2 in references/ for /run-plan; 2 in modes/ for /commit; 3 in modes/ for /do; 2 in modes/ + 1 in references/ for /fix-issues)
+- **Byte-preservation:** all 13 extracted files diff-clean against source ranges
+- **Tracking-marker invariants:** all four skills hold (pre = post, R3-F1 corrected pattern)
+- **`## Key Rules` + `## Edge Cases`:** preserved in every SKILL.md (R3-DA1/2/3 guards held)
+- **Test suite (`bash tests/run-all.sh`):** 531/531 PASS post-restructure (4 test-scope drifts fixed inline during Phase 5, see below)
+
+### Deferred canaries (require real GitHub / manual coordination)
+
+These were listed in the plan's Phase 5 but are NOT auto-dispatched — they hit real GitHub state and need user-driven execution:
+
+- **CANARY6 (multi-PR sequential PR mode)** — creates real PRs. Run manually via `/run-plan plans/CANARY6_MULTI_PR.md auto pr` when ready.
+- **CI fix-cycle canary** — `/ci-fix-canary` skill, real PR with CI. Run manually.
+- **WI 5.5 manual PR-mode spot-check** — throwaway plan + PR + close. Run manually.
+- **CANARY10 PR-mode E2E** — explicitly manual per the canary's own flag (`plans/CANARY10_PR_MODE.md:2-3`).
+
+Recommendation: the automated test suite (531/531) validates structural invariants — skill conformance, tracking integration, phase-5b gate, scope halt, canary failure injection. The deferred canaries validate end-to-end GitHub integration, which is the same set of behaviors RESTRUCTURE didn't touch (byte-preservation preserved the underlying logic). Defer unless regression suspicion surfaces.
+
+### Plan-text corrections made during Phase 5
+
+Three acceptance-criterion line-count bands were stale (arithmetically unreachable). Fixed inline per refined Gaps policy:
+
+| Phase | Stale band | Corrected band | Actual |
+|-------|------------|----------------|--------|
+| 1 | 340-380 | 265-295 (±5% of arithmetic 278) | 277 ✓ |
+| 3 | 850-950 | 1010-1115 (±5% of arithmetic 1061) | 1057 ✓ |
+| 4 | 700-900 | 1457-1611 (±5% of arithmetic 1534) | 1534 ✓ |
+
+All three were caught by the implementation agents pre-commit and originally logged as "non-blocking plan-text issues." The Gaps policy has been tightened (see plan) to require inline plan-text fixes of this class going forward.
+
+### Test-scope drifts fixed in Phase 5 (4 failures → all PASS)
+
+RESTRUCTURE moved content from SKILL.md files to new mode/reference files. Four tests searched only SKILL.md for content that now lives in mode files:
+
+| Test | Fix |
+|------|-----|
+| `test-scope-halt.sh` Case 5: `grep -q "⚠️ Flag"` in SKILL.md | Broadened to `grep -qr` across `skills/run-plan/` |
+| `test-scope-halt.sh` Case 6: `HALTED` error prefix in SKILL.md | Broadened to `grep -qr` |
+| `test-skill-invariants.sh`: `/run-plan halts on scope-violation flag` | Broadened to search whole skill dir |
+| `test-canary-failures.sh`: `'Do NOT stash' appears >=2 in COMMIT_SKILL` | Broadened via `find skills/commit -name '*.md'` |
+
+These are not weakened tests — the INTENT (content must exist somewhere in the skill) is preserved; only the SCOPE (where to search) was corrected for post-restructure layout. Changes are in commit that closes Phase 5.
+
+### Process issues surfaced (advisory, for future /refine-plan enhancement)
+
+Three instances of the same class of miss: /refine-plan's adversarial review did not re-derive numeric acceptance targets arithmetically, so stale bands shipped into Phases 1/3/4. Byte-preservation compensated — no incorrect code landed. Layered failure:
+
+1. **/refine-plan** — adversarial reviewer/DA dimensions don't include "numeric target arithmetic verification." Fix: add Dimension 7 to both agents. (Slip-in, ~10 min.)
+2. **/run-plan Phase 1 staleness check** — triggers on textual markers only ("drafted before"), not arithmetic drift. Needs design work → deferred to `plans/IMPROVE_STALENESS_DETECTION.md` (to be drafted).
+3. **Orchestrator response to agent staleness flags** — implementation agents caught each drift and flagged explicitly; orchestrator logged "non-blocking" instead of updating the plan inline. Policy fix committed in this phase (refined Gaps policy).
+
+### Downstream-plan handoff (WI 5.12)
+
+Two active downstream plans reference specific line numbers/patterns in `/do`, `/fix-issues`, and `/run-plan` that this restructure has moved. Before either plan is executed, run:
+
+- `/refine-plan plans/CREATE_WORKTREE_SKILL.md` — updates citations to `skills/run-plan/SKILL.md:603, :814`, `skills/fix-issues/SKILL.md:809`, `skills/do/SKILL.md:322, :482` → their new mode-file paths.
+- `/refine-plan plans/QUICKFIX_SKILL.md` — updates citations to `skills/do/SKILL.md:70-92` (still in place, may drift slightly) and `skills/do/SKILL.md:342-358` → `skills/do/modes/pr.md`.
+
+Both plans already tolerate the move (CREATE_WORKTREE explicitly documents coordination with RESTRUCTURE; QUICKFIX cites idioms semantically). The refinement is line-number maintenance, not architectural.
+
+### Execution order from here
+
+User-confirmed sequence:
+
+1. ✅ Phase 5 close-out (this)
+2. Next: slip in /refine-plan arithmetic-verification fix (Path A per earlier plan)
+3. Next: draft `plans/IMPROVE_STALENESS_DETECTION.md` for /run-plan changes
+4. Then: run that plan via /run-plan
+
+---
+
 ## Phase 4 — /run-plan restructure (4 atomic sub-commits)
 
 **Plan:** plans/RESTRUCTURE_RUN_PLAN.md

@@ -83,7 +83,7 @@ check "verify-changes: argument parser" \
 check "verify-changes: branch-scope marker stem" \
   'grep -q "verify-changes.final" skills/verify-changes/SKILL.md'
 check "/run-plan halts on scope-violation flag" \
-  'grep -q "Scope Assessment" skills/run-plan/SKILL.md'
+  'grep -qr "Scope Assessment" skills/run-plan/'
 
 # Phase A: Phase 5b idempotency + final-verify gate
 check "Phase 5b: final-verify gate present" \

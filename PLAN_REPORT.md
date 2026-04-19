@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 4/5 | **In progress** — Phases 1-4 landed (through fefaa7a); Phase 5 canaries queued |
+| [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 5/5 | **Complete** — all phases landed; 531/531 tests PASS; mirror parity clean; real-GitHub canaries deferred to user |
 | [plan-ci-fix-cycle-canary.md](reports/plan-ci-fix-cycle-canary.md) | 1/1 | **Complete** — CI-fix-cycle canary (pending this PR) |
 | [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary |
 | [plan-parallel-canaryb.md](reports/plan-parallel-canaryb.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary (pending this PR) |

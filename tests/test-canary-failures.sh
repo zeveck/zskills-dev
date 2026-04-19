@@ -1045,7 +1045,15 @@ expect_grep_F_hit "phase-7: 'Do NOT stash' present"              "$COMMIT_SKILL"
 expect_grep_F_hit "phase-7: 'try-without-stash' present"         "$COMMIT_SKILL" 'try-without-stash'
 
 section "/commit Key Rules: stash prohibition (2 cases)"
-expect_grep_count_at_least "key-rules: 'Do NOT stash' appears >= 2" "$COMMIT_SKILL" 'Do NOT stash' 2
+# Post-RESTRUCTURE (2026-04-19): count across skills/commit/**/*.md — the
+# 'Do NOT stash' rule text now lives in modes/land.md (extracted from the
+# original Phase 7 body) plus SKILL.md Key Rules section.
+COMMIT_STASH_COUNT=$(find "$REPO_ROOT/skills/commit" -name '*.md' -exec grep -cF -- 'Do NOT stash' {} + | awk -F: '{s+=$2} END{print s}')
+if [ "$COMMIT_STASH_COUNT" -ge 2 ]; then
+  pass "key-rules: 'Do NOT stash' appears >= 2 (count: $COMMIT_STASH_COUNT across skills/commit/**/*.md)"
+else
+  fail "key-rules: 'Do NOT stash' appears >= 2 (count: $COMMIT_STASH_COUNT < 2) across skills/commit/**/*.md"
+fi
 expect_grep_count_at_least "key-rules: 'hook blocks' appears >= 1"  "$COMMIT_SKILL" 'hook blocks'  1
 
 echo

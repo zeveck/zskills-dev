@@ -151,15 +151,17 @@ fi
 
 # Case 5: verify the skill's pre-landing checklist actually uses the
 # grep pattern this test validates. If the skill changes the pattern,
-# this test drifts out of sync.
-if grep -F "grep -q \"⚠️ Flag\"" "$REPO_ROOT/skills/run-plan/SKILL.md" >/dev/null; then
+# this test drifts out of sync. Post-RESTRUCTURE, the pattern lives in
+# modes/cherry-pick.md and modes/pr.md, not SKILL.md — so we search the
+# whole skill directory.
+if grep -Fr "grep -q \"⚠️ Flag\"" "$REPO_ROOT/skills/run-plan/" >/dev/null; then
   pass "skill pre-landing checklist uses the '⚠️ Flag' grep pattern"
 else
   fail "skill does not use 'grep -q \"⚠️ Flag\"' — test may be out of sync"
 fi
 
 # Case 6: verify the skill uses the HALTED error message prefix.
-if grep -q 'HALTED: /verify-changes flagged scope violations' "$REPO_ROOT/skills/run-plan/SKILL.md"; then
+if grep -qr 'HALTED: /verify-changes flagged scope violations' "$REPO_ROOT/skills/run-plan/"; then
   pass "skill emits 'HALTED: /verify-changes flagged scope violations' message"
 else
   fail "skill missing HALTED error message prefix"
