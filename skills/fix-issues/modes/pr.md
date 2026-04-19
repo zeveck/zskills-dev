@@ -116,7 +116,7 @@ LANDED
   fi
 
   # --- CI check + auto-merge: same pattern as /run-plan 3b-iii ---
-  # See skills/run-plan/SKILL.md "PR mode landing" for the canonical
+  # See skills/run-plan/modes/pr.md "PR mode landing" for the canonical
   # implementation: config re-read, pre-check retry, polling, fix cycle,
   # auto-merge, .landed upgrade.
   #
