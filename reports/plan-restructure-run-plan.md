@@ -1,12 +1,13 @@
 # Plan Report — Restructure /run-plan and Siblings with Progressive Disclosure
 
-## Phase 1 — /commit restructure [UNFINALIZED]
+## Phase 1 — /commit restructure
 
 **Plan:** plans/RESTRUCTURE_RUN_PLAN.md
-**Status:** Verified (pending land)
-**Worktree:** /tmp/zskills-cp-restructure-run-plan-phase-1
-**Branch:** cp-restructure-run-plan-1
-**Commits:** e695d66 — `refactor(commit): extract pr and land modes to modes/`
+**Status:** Landed ✅
+**Worktree:** /tmp/zskills-cp-restructure-run-plan-phase-1 (cleaned)
+**Branch:** cp-restructure-run-plan-1 (deleted post-land)
+**Commits:** e695d66 (worktree) → 2c62a57 (cherry-picked to main)
+**Post-land test gate:** `bash tests/test-hooks.sh` → 219/219 passed
 
 ### Work Items
 
