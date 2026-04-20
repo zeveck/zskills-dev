@@ -23,10 +23,9 @@ token stored as a secret in this repo.
      - **Contents**: Read and write
      - **Metadata**: Read (auto)
    - Expiration: whatever you want (90 days default is fine; rotate when it expires).
-2. **Add it as a repo secret** in this (dev) repo:
-   - Settings → Secrets and variables → Actions → New repository secret.
-   - Name: `PROD_PUSH_TOKEN`
-   - Value: paste the PAT.
+2. **Add it as a repo secret** in this (dev) repo. Two ways, pick one:
+   - **CLI (preferred):** `gh secret set PROD_PUSH_TOKEN --repo zeveck/zskills-dev` — paste the PAT at the prompt. Requires `gh auth status` to show you're signed in with admin on `zskills-dev`.
+   - **Web UI (fallback):** Settings → Secrets and variables → Actions → New repository secret. Name: `PROD_PUSH_TOKEN`. Value: paste the PAT.
 3. Done. The workflow will pick it up automatically.
 
 The default `GITHUB_TOKEN` (scoped to this repo) handles tagging dev and
@@ -37,17 +36,22 @@ creating the release — no extra setup needed for that side.
 On dispatch, it:
 
 1. Checks out the current dev HEAD (full history, so it can enumerate tags).
-2. Runs `bash tests/run-all.sh` as a gate. Any red test aborts the release.
-3. Computes the next tag as `YYYY.MM.N` where `N` is the count of existing
+2. **Pre-flight:** `git ls-remote`s the prod repo with `PROD_PUSH_TOKEN`
+   to validate the PAT. Fails the workflow in seconds if the token is
+   missing or expired — **zero state change required**, just rotate and
+   re-run.
+3. Runs `bash tests/run-all.sh` as a gate. Any red test aborts.
+4. Computes the next tag as `YYYY.MM.N` where `N` is the count of existing
    tags matching `YYYY.MM.*` (zero-indexed — first release of a month is
    `.0`, second is `.1`, etc.).
-4. Runs `scripts/build-prod.sh` to strip dev-only artifacts from the working
+5. Runs `scripts/build-prod.sh` to strip dev-only artifacts from the working
    tree (see that file's header for the full list of transforms).
-5. Writes the stripped tree as a new commit with `prod/main` as its parent,
+6. Writes the stripped tree as a new commit with `prod/main` as its parent,
    so prod ends up with a linear history of release snapshots.
-6. Pushes the stripped commit to `prod/main`, pushes the computed tag to
-   both dev and prod, and creates a GitHub Release on dev with
-   auto-generated notes from the last tag.
+7. **Prod-first push:** pushes the stripped commit to `prod/main`, then the
+   matching tag to prod. Only **after** prod succeeds does dev get tagged
+   and a GitHub Release created. Any failure before this point leaves dev
+   untouched — no orphan tags, no partial state.
 
 ## Who can release
 
@@ -87,4 +91,13 @@ force-pushed), a bad release leaves a bad commit at HEAD. To recover:
   prod/main manually (locally, authenticated as a prod collaborator) and
   delete the bad tag from both repos. The workflow intentionally does not
   automate this — expunging history should be rare and deliberate.
+
+## When the PAT expires
+
+GitHub emails the PAT owner ~7 days before expiry. If you miss the warning
+and click Ship to Prod with an expired token, the pre-flight step fails
+immediately and the rest of the workflow never runs — nothing is tagged,
+nothing is pushed, nothing needs cleanup. Just rotate the PAT (same steps
+as the one-time setup above, updating the existing `PROD_PUSH_TOKEN`
+secret rather than creating a new one) and click Run again.
 <!-- prod-strip:end -->

@@ -42,6 +42,23 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
+      - name: Pre-flight — verify PROD_PUSH_TOKEN is valid
+        # Runs before any state-changing work so an expired/missing PAT
+        # fails the workflow in seconds, with zero cleanup required. Also
+        # runs on dry-run so you can catch a dead token without shipping.
+        env:
+          PROD_PUSH_TOKEN: ${{ secrets.PROD_PUSH_TOKEN }}
+        run: |
+          if [ -z "${PROD_PUSH_TOKEN:-}" ]; then
+            echo "::error::PROD_PUSH_TOKEN secret is not set. See RELEASING.md for one-time setup."
+            exit 1
+          fi
+          if ! git ls-remote --heads "https://x-access-token:${PROD_PUSH_TOKEN}@github.com/zeveck/zskills.git" >/dev/null 2>&1; then
+            echo "::error::PROD_PUSH_TOKEN auth failed against zeveck/zskills. Rotate the PAT (RELEASING.md → 'One-time setup') and re-run."
+            exit 1
+          fi
+          echo "::notice::PAT auth OK."
+
       - name: Capture dev SHA being released
         id: dev_sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -84,22 +101,28 @@ jobs:
           echo "sha=${NEW_COMMIT}" >> "$GITHUB_OUTPUT"
           echo "::notice::Prod commit built: ${NEW_COMMIT}"
 
-      - name: Push to prod (branch + tag) and tag dev
+      - name: Push to prod (prod-first, so dev stays clean on failure)
+        if: ${{ inputs.dry-run == false }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
+          # 1) Push transformed commit to prod's main. Fast-forward — we
+          #    built on prod/main as parent in the commit-tree step above.
+          git push prod "${PROD_SHA}:refs/heads/main"
+          # 2) Push the same tag to prod, pointing at the transformed commit.
+          git push prod "${PROD_SHA}:refs/tags/${TAG}"
+
+      - name: Tag dev + create Release (only after prod succeeded)
         if: ${{ inputs.dry-run == false }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.tag.outputs.tag }}"
-          PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
           DEV_SHA="${{ steps.dev_sha.outputs.sha }}"
-          # 1) Tag dev at the SHA we released from
+          # 3) Tag dev at the SHA we released from (same tag name as prod).
           git tag "${TAG}" "${DEV_SHA}"
           git push origin "refs/tags/${TAG}"
-          # 2) Push transformed commit to prod's main (fast-forward — we built on prod/main as parent)
-          git push prod "${PROD_SHA}:refs/heads/main"
-          # 3) Same tag on prod, pointing at the transformed commit
-          git push prod "${PROD_SHA}:refs/tags/${TAG}"
-          # 4) GitHub Release on dev with auto-generated notes from last tag
+          # 4) GitHub Release on dev with auto-generated notes from last tag.
           gh release create "${TAG}" \
             --repo "${{ github.repository }}" \
             --title "${TAG}" \
