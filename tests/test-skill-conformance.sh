@@ -87,8 +87,8 @@ check run-plan "Failure Protocol"   '^## Failure Protocol'
 
 echo ""
 echo "=== /run-plan — shell idioms ==="
-check_fixed run-plan "worktree-add-safe"     'bash scripts/worktree-add-safe.sh'
-check_fixed run-plan "allow-branch-resume"   'ZSKILLS_ALLOW_BRANCH_RESUME=1'
+check_fixed run-plan "create-worktree invocation" 'bash "$MAIN_ROOT/scripts/create-worktree.sh"'
+check_fixed run-plan "pr mode --allow-resume"     '--allow-resume'
 
 echo ""
 echo "=== /commit — behavior contracts ==="

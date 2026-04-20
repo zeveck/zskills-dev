@@ -628,14 +628,6 @@ agent hasn't returned after 2 hours, declare it **failed**:
    Do not work in any other directory.
    ```
 
-   Tell the agent to write a `.worktreepurpose` file as its first action:
-   ```
-   echo "<session-name or plan-name>: <phase name>" > $WORKTREE_PATH/.worktreepurpose
-   ```
-   Example: `echo "SKILLZ: briefing Phase 1" > $WORKTREE_PATH/.worktreepurpose`
-   This metadata helps `/briefing worktrees` and `/briefing verify` show
-   what each worktree is for, instead of just an opaque agent ID.
-
    **Hygiene constraint — NEVER commit ephemeral pipeline files.** The
    files `.worktreepurpose`, `.zskills-tracked`, and `.landed` are worktree
    lifecycle markers and must stay UNTRACKED throughout the run.
@@ -789,31 +781,30 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 
 **PR-mode bookkeeping rule:** in PR mode, orchestrator bookkeeping (tracker updates, plan reports, `PLAN_REPORT.md` regen, plan-frontmatter completion, mark-Done) commits **inside the worktree on the feature branch**, not on `main`. The feature branch is the single source of truth; the squash merge lands everything atomically on `origin/main`, keeping local `main` in lockstep. In cherry-pick/direct mode these commits stay on `main` as before. Every "commit on main" instruction below for bookkeeping must be read through this lens.
 
-**Worktree creation — orchestrator creates manually, NOT via `isolation: "worktree"`:**
+**Worktree creation — via `scripts/create-worktree.sh`, NOT `isolation: "worktree"`:**
 
 ```bash
-# Prune stale worktree entries. If /tmp was cleared (container restart,
-# codespace rebuild), git still has the old worktree registered in
-# .git/worktrees/. `git worktree prune` cleans up entries whose directories
-# no longer exist, so `git worktree add` won't fail with "already registered."
-git worktree prune
-
-# Ensure local main is current with origin/main before branching from it.
-# Fast-forward if behind. Legitimate local-ahead commits (cherry-pick
-# landings, unpushed user commits) are preserved — they flow through the
-# PR with feature work. Divergent state (ahead AND behind) leaves local
-# main as-is with a warning so the user knows to investigate.
-git fetch origin main 2>/dev/null || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
-git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
-
-# Check if worktree already exists (resuming a previous run)
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# Resume detection stays directory-based (R2-M1): an existing PR worktree
+# means we're resuming the same plan across cron turns.
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing PR worktree at $WORKTREE_PATH"
 else
-  # Legitimate multi-phase PR-mode resume — opt into branch resume.
-  ZSKILLS_ALLOW_BRANCH_RESUME=1 \
-    bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
+  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+    --prefix pr \
+    --branch-name "$BRANCH_NAME" \
+    --allow-resume \
+    --purpose "run-plan PR mode; plan=${PLAN_SLUG}" \
+    "${PLAN_SLUG}")
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    echo "create-worktree failed (rc=$RC) for PR mode" >&2
+    exit "$RC"
+  fi
 fi
+# create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
+# underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
+# --allow-resume), .zskills-tracked, and .worktreepurpose writes.
 ```
 
 **One branch per plan.** All phases accumulate on the same branch. The worktree
@@ -840,12 +831,6 @@ Agent tool prompt:
 The key line is `FIRST: cd $WORKTREE_PATH` — the agent treats this as a
 mandatory first action. Without `isolation: "worktree"`, the agent starts in
 the main repo directory, so the `cd` instruction is essential.
-
-**Pipeline association:** Write `.zskills-tracked` in the worktree:
-
-```bash
-echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
-```
 
 **Test baseline capture (orchestrator practice):** Before dispatching the
 implementation agent, the orchestrator captures a test baseline in the worktree:
