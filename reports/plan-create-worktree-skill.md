@@ -1,5 +1,42 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
+## Phase — 2 Migrate /run-plan (both modes) (landed; awaiting CANARY10 gate)
+
+**Plan:** plans/CREATE_WORKTREE_SKILL.md
+**Status:** Landed on main; **WI 2.8 manual CANARY10 re-run still required before Phase 2 ✅**
+**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-2 (cleaned up)
+**Branch:** cp-create-worktree-skill-2 (deleted)
+**Worktree commits:** 8fc406c, 67aa8e9
+**Main commits:** 27d5243 (`refactor(run-plan): migrate cherry-pick site to scripts/create-worktree.sh`), 021226a (`refactor(run-plan): migrate PR site + remove stale worktreepurpose echo`)
+**Post-cherry-pick tests:** run-all 594/594 after each commit
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 2.1 | Cherry-pick site at `:608` → create-worktree.sh `--prefix cp` | Done | 27d5243 |
+| 2.2 | PR site at `:819` → create-worktree.sh `--prefix pr --branch-name "$BRANCH_NAME" --allow-resume` | Done | 021226a |
+| 2.3 | Remove dead pre-flight + inline `.zskills-tracked` echo at both sites | Done | both commits |
+| 2.4 | Delete stale agent-side `.worktreepurpose` echo at `:635-639` | Done | 021226a |
+| 2.5 | Mirror `.claude/skills/run-plan/` | Done | both commits (mirror invariant requires per-commit) |
+| 2.6 | Verification greps clean | Done | grep `git worktree add` = 0; `worktree-add-safe.sh` = 0; `create-worktree.sh` ≥ 2 |
+| 2.7 | `bash tests/run-all.sh` green | Done | 594/594 after each commit |
+| 2.8 | **Manual CANARY10 re-run** | **Pending** | gate — orchestrator runs `/run-plan plans/CANARY10_PR_MODE.md finish auto pr` |
+| 2.9 | Throwaway-plan smoke (cherry-pick) | Deferred | implementer can't self-invoke `/run-plan` from inside a worktree; orchestrator runs after landing |
+
+### Verification (verifier 0e7a834-equivalent agent)
+- All 8 acceptance criteria PASS
+- 594/594 run-all + 86/86 conformance
+- Hygiene clean; no leaked worktrees/branches
+- 8 judgment calls evaluated; all ACCEPT (the most consequential: `--branch-name "$BRANCH_NAME"` added to PR-mode call to preserve `${BRANCH_PREFIX}${PLAN_SLUG}` — without it, the literal plan example would have changed PR branches from `feat/<slug>` to `pr-<slug>`, silently breaking existing users)
+
+### Implementer judgment calls (verifier accepted all)
+1. **`--branch-name "$BRANCH_NAME"` in PR-mode** — preserves `${BRANCH_PREFIX}${PLAN_SLUG}` (default `feat/<slug>`); plan literal would have changed branch to `pr-<slug>`. Same decoupling pattern as Phase 3 WI 3.1.
+2. **Mirror in BOTH commits** — `tests/test-skill-invariants.sh:99-103` enforces per-commit mirror-sync. Deferring to C2 would regress mid-phase tests.
+3. **Conformance test updates in `tests/test-skill-conformance.sh`** — old literals (`worktree-add-safe.sh`, `cp-${PLAN_SLUG}`, `ZSKILLS_ALLOW_BRANCH_RESUME=1`) replaced with new-form anchors (`--prefix cp`, `bash "$MAIN_ROOT/scripts/create-worktree.sh"`, `--allow-resume`). Equivalent regression coverage; not test weakening.
+4. **AWK formula bug** — plan's acceptance #4 awk range matches start+end on same line, returns 0; sed-scoped `576,752p` shows count dropped 4 → 2 as intended.
+5. **PR-mode "Pipeline association" `.zskills-tracked` echo block at old `:843-847` removed** — within WI 2.3 ("dead code at each site"); redundant with create-worktree.sh's tracked-file write.
+6. **Orchestrator commit-discipline block at `:700-704` left untouched** — describes the contract (write `.zskills-tracked` before dispatching agents), not creating a worktree. Carve-out defensible; minor doc trim opportunity for Phase 4.
+
 ## Phase — 1b Full test suite + run-all + update-zskills registration (landed)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
