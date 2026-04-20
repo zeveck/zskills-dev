@@ -17,6 +17,7 @@ TASK_SLUG=$(echo "$TASK_DESCRIPTION" | awk "{for(i=1;i<=$N;i++) printf \$i\"-\";
 
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ATTEMPT_SLUG="${TASK_SLUG}"
+PIPELINE_ID="do.${TASK_SLUG}"
 # rc=0 BEFORE the first invocation is MANDATORY (R-M2 regression guard:
 # without it, a stale rc=2 from an earlier shell scope would falsely
 # trigger the retry block even when the first invocation succeeded).
@@ -24,13 +25,20 @@ rc=0
 # --root ../ resolves against $MAIN_ROOT (Phase 1a CWD-invariance).
 # --no-preflight preserves /do worktree-mode's base-branch semantics
 # (branches from user's HEAD, not origin/main).
+# --pipeline-id passes the canonical /do pipeline ID explicitly (no env
+# var reliance; the script sanitizes internally and writes
+# .zskills-tracked).
 WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
-  --prefix do --root ../ --no-preflight "${ATTEMPT_SLUG}") || rc=$?
+  --prefix do --root ../ --no-preflight \
+  --pipeline-id "$PIPELINE_ID" \
+  "${ATTEMPT_SLUG}") || rc=$?
 if [ "${rc:-0}" = "2" ]; then
   # rc=2 is path-exists collision — retry with timestamp suffix.
   ATTEMPT_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
   WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
-    --prefix do --root ../ --no-preflight "${ATTEMPT_SLUG}")
+    --prefix do --root ../ --no-preflight \
+    --pipeline-id "$PIPELINE_ID" \
+    "${ATTEMPT_SLUG}")
 fi
 ```
 

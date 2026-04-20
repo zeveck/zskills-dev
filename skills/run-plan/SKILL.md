@@ -595,6 +595,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    WT=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
      --prefix cp \
      --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}" \
+     --pipeline-id "run-plan.${TRACKING_ID}" \
      "${PLAN_SLUG}-phase-${PHASE}")
    RC=$?
    if [ "$RC" -ne 0 ]; then
@@ -795,6 +796,7 @@ else
     --branch-name "$BRANCH_NAME" \
     --allow-resume \
     --purpose "run-plan PR mode; plan=${PLAN_SLUG}" \
+    --pipeline-id "run-plan.${TRACKING_ID}" \
     "${PLAN_SLUG}")
   RC=$?
   if [ "$RC" -ne 0 ]; then
@@ -804,7 +806,8 @@ else
 fi
 # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
 # underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
-# --allow-resume), .zskills-tracked, and .worktreepurpose writes.
+# --allow-resume), .zskills-tracked (from --pipeline-id), and
+# .worktreepurpose writes.
 ```
 
 **One branch per plan.** All phases accumulate on the same branch. The worktree

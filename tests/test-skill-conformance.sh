@@ -166,6 +166,54 @@ check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'
 check_fixed verify-changes "faab84b regression anchor" 'faab84b'
 
 echo ""
+echo "=== create-worktree.sh caller contract ==="
+# Every multi-line `bash ".../scripts/create-worktree.sh" \` invocation in
+# skills/ must include `--pipeline-id` within the next 12 lines. Doc-prose
+# mentions (non-backslash-terminated `create-worktree.sh` lines) are not
+# invocations and are ignored here.
+#
+# This catches the Phase 2/3 class of bug: a caller migrates to
+# create-worktree.sh but forgets to plumb through its pipeline ID, which
+# the runtime would only surface if canaries actually exercise tracking
+# enforcement. The conformance test catches it at grep time.
+PIPELINE_ID_CONTRACT_FAIL=0
+PIPELINE_ID_CONTRACT_CALLS=0
+while IFS=: read -r file lineno _; do
+  [ -z "$file" ] && continue
+  PIPELINE_ID_CONTRACT_CALLS=$((PIPELINE_ID_CONTRACT_CALLS + 1))
+  # Look at lines $lineno through $lineno+12 in $file.
+  slice=$(sed -n "${lineno},$((lineno + 12))p" "$file" 2>/dev/null)
+  if ! echo "$slice" | grep -q -- '--pipeline-id'; then
+    fail "create-worktree caller missing --pipeline-id" "$file:$lineno"
+    PIPELINE_ID_CONTRACT_FAIL=$((PIPELINE_ID_CONTRACT_FAIL + 1))
+  fi
+done < <(grep -rn --include='*.md' -E 'scripts/create-worktree\.sh.*\\$' "$REPO_ROOT/skills/")
+# Guard against the pattern matching zero lines (which would make the
+# "every caller passes" claim vacuously true). We know Phase 3 has 5
+# multi-line invocation blocks across skills/run-plan (×2), skills/fix-issues,
+# and skills/do/modes (×2). Plus the /create-worktree SKILL.md's own
+# documentation example (~1). So ≥6 expected. If the pattern silently
+# stopped matching, the test MUST fail rather than quietly pass.
+if [ "$PIPELINE_ID_CONTRACT_CALLS" -lt 6 ]; then
+  fail "create-worktree caller scan found too few invocations (${PIPELINE_ID_CONTRACT_CALLS} < 6) — pattern broken?" "grep regex drift"
+  PIPELINE_ID_CONTRACT_FAIL=$((PIPELINE_ID_CONTRACT_FAIL + 1))
+fi
+if [ "$PIPELINE_ID_CONTRACT_FAIL" -eq 0 ]; then
+  pass "every create-worktree.sh invocation in skills/ passes --pipeline-id (scanned ${PIPELINE_ID_CONTRACT_CALLS})"
+fi
+
+# No caller may export or inline-set ZSKILLS_PIPELINE_ID as a side-channel.
+# The env var has no effect on the script (--pipeline-id is the only input),
+# but setting it near a create-worktree.sh call is a code smell — a relic of
+# the Phase-3-era bug where callers leaned on env-var plumbing. Flag any.
+if grep -rn --include='*.md' -E 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$REPO_ROOT/skills/" > /dev/null 2>&1; then
+  fail "skills/ contains 'export ZSKILLS_PIPELINE_ID'" "side-channel leak"
+  grep -rn --include='*.md' -E 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$REPO_ROOT/skills/" >&2
+else
+  pass "no 'export ZSKILLS_PIPELINE_ID' in skills/ (flag is the only interface)"
+fi
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

@@ -805,6 +805,7 @@ else
     --branch-name "fix/issue-${ISSUE_NUM}" \
     --allow-resume \
     --purpose "fix-issues; issue=${ISSUE_NUM}" \
+    --pipeline-id "$PIPELINE_ID" \
     "${ISSUE_NUM}")
   RC=$?
   if [ "$RC" -ne 0 ]; then
@@ -814,7 +815,8 @@ else
 fi
 # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
 # underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
-# --allow-resume), .zskills-tracked, and .worktreepurpose writes.
+# --allow-resume), .zskills-tracked (from --pipeline-id), and
+# .worktreepurpose writes.
 ```
 
 **Dispatching fix agents in PR mode:** Dispatch agents WITHOUT

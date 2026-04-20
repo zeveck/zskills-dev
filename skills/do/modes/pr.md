@@ -32,39 +32,38 @@ BRANCH_NAME="${BRANCH_PREFIX}do-${TASK_SLUG}"
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 ```
 
-**Step A4 — Worktree creation (pre-flight prune+fetch+ff-merge is owned by create-worktree.sh):**
+**Step A4 — Sanitize TASK_SLUG + construct PIPELINE_ID (BEFORE worktree creation):**
+```bash
+# Route TASK_SLUG through the shared sanitizer (collapses any character
+# outside [a-zA-Z0-9._-] into `_`, truncates to 128 bytes). KEEP this
+# defensive call: removing would require exhaustive downstream audit of
+# TASK_SLUG consumers (R2-M4). It is safe to run this BEFORE worktree
+# creation because the sanitized slug is needed by --pipeline-id.
+TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh "$TASK_SLUG")
+PIPELINE_ID="do.${TASK_SLUG}"
+```
+
+**Step A5 — Worktree creation (pre-flight prune+fetch+ff-merge is owned by create-worktree.sh):**
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # /do expects a fresh branch per task — no legitimate resume.
-# Export ZSKILLS_PIPELINE_ID so create-worktree.sh writes the correct
-# value to the worktree's .zskills-tracked (which it owns post-migration).
-# The script runs its own sanitize-pipeline-id.sh internally (R2-M4
-# compatible: idempotent on already-safe inputs).
-export ZSKILLS_PIPELINE_ID="do.${TASK_SLUG}"
+# --pipeline-id passes $PIPELINE_ID explicitly; the script sanitizes it
+# again internally (idempotent on already-safe inputs) and writes the
+# sanitized value to the worktree's .zskills-tracked. No env var reliance,
+# no cross-invocation pollution.
 WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
   --prefix do \
   --branch-name "${BRANCH_PREFIX}do-${TASK_SLUG}" \
   --purpose "do PR mode; task=${TASK_SLUG}" \
+  --pipeline-id "$PIPELINE_ID" \
   "${TASK_SLUG}")
 RC=$?
 if [ "$RC" -ne 0 ]; then
   echo "create-worktree failed (rc=$RC) for /do PR mode" >&2
   exit "$RC"
 fi
-```
-
-**Step A5 — Sanitize TASK_SLUG + construct PIPELINE_ID:**
-```bash
-# Route TASK_SLUG through the shared sanitizer before constructing
-# PIPELINE_ID (per Phase 1 design doc). Collapses any character outside
-# [a-zA-Z0-9._-] into `_` and truncates to 128 bytes. KEEP this defensive
-# sanitize call: removing it would require exhaustive downstream audit of
-# TASK_SLUG consumers (R2-M4).
-TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh "$TASK_SLUG")
-PIPELINE_ID="do.${TASK_SLUG}"
-# create-worktree.sh already wrote .zskills-tracked (it sanitizes
-# ZSKILLS_PIPELINE_ID internally, so the file ends up with the same
-# sanitized "do.<slug>" value as PIPELINE_ID above).
+# create-worktree.sh has now written $PIPELINE_ID (sanitized) to
+# $WORKTREE_PATH/.zskills-tracked.
 ```
 Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills-tracked` file in the worktree is the single source of truth.
 

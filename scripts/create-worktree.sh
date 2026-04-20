@@ -10,7 +10,7 @@
 # Usage:
 #   bash "$MAIN_ROOT/scripts/create-worktree.sh" \
 #     [--prefix P] [--branch-name REF] [--from B] [--root R] \
-#     [--purpose TEXT] [--allow-resume] [--no-preflight] \
+#     [--purpose TEXT] [--pipeline-id ID] [--allow-resume] [--no-preflight] \
 #     <slug>
 #
 # Exit codes (see plans/CREATE_WORKTREE_SKILL.md §Design & Constraints):
@@ -63,6 +63,7 @@ BRANCH_NAME_OVERRIDE=""
 FROM_BASE="main"
 ROOT_OVERRIDE=""
 PURPOSE=""
+PIPELINE_ID_OVERRIDE=""
 ALLOW_RESUME=0
 NO_PREFLIGHT=0
 SLUG=""
@@ -92,6 +93,11 @@ while [ $# -gt 0 ]; do
     --purpose)
       [ $# -ge 2 ] || { echo "create-worktree: --purpose requires a value" >&2; exit 5; }
       PURPOSE="$2"
+      shift 2
+      ;;
+    --pipeline-id)
+      [ $# -ge 2 ] || { echo "create-worktree: --pipeline-id requires a value" >&2; exit 5; }
+      PIPELINE_ID_OVERRIDE="$2"
       shift 2
       ;;
     --allow-resume)
@@ -127,9 +133,18 @@ if [ -z "$SLUG" ]; then
   exit 5
 fi
 
+if [ -z "$PIPELINE_ID_OVERRIDE" ]; then
+  echo "create-worktree: --pipeline-id <id> is required" >&2
+  echo "  Callers from other skills: pass your skill's canonical pipeline ID" >&2
+  echo "    (e.g., run-plan.\$TRACKING_ID, do.\$TASK_SLUG, \$PIPELINE_ID)." >&2
+  echo "  Standalone invocations via /create-worktree: the skill wrapper" >&2
+  echo "    synthesises create-worktree.\$SLUG when user omits it." >&2
+  exit 5
+fi
+
 # Slug sanity: reject whitespace or shell metacharacters; we use it verbatim
-# in the branch name, the path leaf, and the fallback pipeline ID. Allow
-# typical slug characters: [A-Za-z0-9._-].
+# in the branch name and path leaf. Allow typical slug characters:
+# [A-Za-z0-9._-].
 if [[ ! "$SLUG" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "create-worktree: invalid slug '$SLUG' — must match [A-Za-z0-9._-]+" >&2
   exit 5
@@ -277,14 +292,13 @@ fi
 if [ "$WAS_RC" -ne 0 ]; then exit "$WAS_RC"; fi
 
 # ──────────────────────────────────────────────────────────────────
-# WI 1a.10 — Post-create writes. Sanitize PIPELINE_ID first; fallback
-# includes prefix (R2-L3).
+# WI 1a.10 — Post-create write: sanitise the explicit --pipeline-id value
+# and write it to .zskills-tracked. The flag is validated required at
+# argument-parse time (see top of script); we sanitise again here so an
+# already-clean ID is a no-op but a caller passing a dirty string still
+# produces a safe value.
 # ──────────────────────────────────────────────────────────────────
-FALLBACK_ID="create-worktree"
-[ -n "${PREFIX:-}" ] && FALLBACK_ID="${FALLBACK_ID}.${PREFIX}"
-FALLBACK_ID="${FALLBACK_ID}.${SLUG}"
-RAW_PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-$FALLBACK_ID}"
-PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$RAW_PIPELINE_ID")
+PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID_OVERRIDE")
 
 # WI 1a.11 — Rollback on .zskills-tracked write failure.
 if ! printf '%s\n' "$PIPELINE_ID" > "$WT_PATH/.zskills-tracked"; then

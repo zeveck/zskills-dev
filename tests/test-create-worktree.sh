@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/create-worktree.sh — Phase 1b full suite (20 cases).
+# Tests for scripts/create-worktree.sh — 21-case suite.
 # Run from repo root: bash tests/test-create-worktree.sh
 #
 # Cases 1-13 cover foundational behaviour: path-template variants,
@@ -15,10 +15,11 @@
 #   18. Concurrent same-slug invocations      (R2-H3)
 #   19. Post-create write failure rollback    (R-F17)
 #   20. --no-preflight                        (R2-M3)
+#   21. --pipeline-id required                (Phase 3 follow-up)
 #
-# Each case exports ZSKILLS_PIPELINE_ID=test.create-worktree.$$ and
-# captures stdout via STDOUT=$(... 2>/dev/null). Per-case cleanup
-# runs on the success path; the EXIT trap is the safety net.
+# Each case passes --pipeline-id "test.create-worktree.$$" explicitly
+# (the script rejects missing --pipeline-id with rc 5). Per-case
+# cleanup runs on the success path; the EXIT trap is the safety net.
 
 set -u
 
@@ -118,8 +119,7 @@ BR_1="wt-${SLUG_1}"
 register_wt "$WT_1"; register_branch "$BR_1"
 
 ERR_1=$(mktemp)
-STDOUT_1=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight "$SLUG_1" 2>"$ERR_1")
+STDOUT_1=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_1" 2>"$ERR_1")
 RC_1=$?
 TRACKED_1="$(cat "$WT_1/.zskills-tracked" 2>/dev/null || true)"
 
@@ -148,8 +148,7 @@ register_wt "$WT_2"; register_branch "$BR_2"
 mkdir -p "$WT_2"
 
 ERR_2=$(mktemp)
-STDOUT_2=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight "$SLUG_2" 2>"$ERR_2")
+STDOUT_2=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_2" 2>"$ERR_2")
 RC_2=$?
 
 if [ "$RC_2" -eq 2 ] && [ -z "$STDOUT_2" ]; then
@@ -173,8 +172,7 @@ BR_3="${PREFIX_3}-${SLUG_3}"
 register_wt "$WT_3"; register_branch "$BR_3"
 
 ERR_3=$(mktemp)
-STDOUT_3=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "$PREFIX_3" "$SLUG_3" 2>"$ERR_3")
+STDOUT_3=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_3" "$SLUG_3" 2>"$ERR_3")
 RC_3=$?
 
 if [ "$RC_3" -eq 0 ] && [ "$STDOUT_3" = "$WT_3" ] && [ -d "$WT_3" ] \
@@ -198,8 +196,7 @@ PURPOSE_4="test purpose for case 4 $$"
 register_wt "$WT_4"; register_branch "$BR_4"
 
 ERR_4=$(mktemp)
-STDOUT_4=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --purpose "$PURPOSE_4" "$SLUG_4" 2>"$ERR_4")
+STDOUT_4=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --purpose "$PURPOSE_4" "$SLUG_4" 2>"$ERR_4")
 RC_4=$?
 PURPOSE_CONTENT="$(cat "$WT_4/.worktreepurpose" 2>/dev/null || true)"
 
@@ -223,8 +220,7 @@ BR_5="wt-${SLUG_5}"
 register_wt "$WT_5"; register_branch "$BR_5"
 
 ERR_5=$(mktemp)
-STDOUT_5=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight "$SLUG_5" 2>"$ERR_5")
+STDOUT_5=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_5" 2>"$ERR_5")
 RC_5=$?
 
 if [ "$RC_5" -eq 0 ] && [ ! -e "$WT_5/.worktreepurpose" ]; then
@@ -249,8 +245,7 @@ BR_6="wt-${SLUG_6}"
 register_wt "$WT_6"; register_branch "$BR_6"
 
 ERR_6=$(mktemp)
-STDOUT_6=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --root "$ROOT_6" "$SLUG_6" 2>"$ERR_6")
+STDOUT_6=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$ROOT_6" "$SLUG_6" 2>"$ERR_6")
 RC_6=$?
 
 if [ "$RC_6" -eq 0 ] && [ "$STDOUT_6" = "$WT_6" ] && [ -d "$WT_6" ] \
@@ -277,8 +272,7 @@ BR_7="${PREFIX_7}-${SLUG_7}"
 register_wt "$WT_7"; register_branch "$BR_7"
 
 ERR_7=$(mktemp)
-STDOUT_7=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --root "$ROOT_7" --prefix "$PREFIX_7" "$SLUG_7" 2>"$ERR_7")
+STDOUT_7=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$ROOT_7" --prefix "$PREFIX_7" "$SLUG_7" 2>"$ERR_7")
 RC_7=$?
 
 if [ "$RC_7" -eq 0 ] && [ "$STDOUT_7" = "$WT_7" ] && [ -d "$WT_7" ] \
@@ -314,8 +308,7 @@ ERR_8=$(mktemp)
 # MAIN_ROOT, not the caller's CWD.
 SUBDIR_8="$MAIN_ROOT/scripts"
 [ -d "$SUBDIR_8" ] || SUBDIR_8="$MAIN_ROOT/tests"
-STDOUT_8=$( cd "$SUBDIR_8" && ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --root "$REL_ROOT_8" "$SLUG_8" 2>"$ERR_8")
+STDOUT_8=$( cd "$SUBDIR_8" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_8" "$SLUG_8" 2>"$ERR_8")
 RC_8=$?
 
 if [ "$RC_8" -eq 0 ] && [ "$STDOUT_8" = "$EXPECTED_WT_8" ] && [ -d "$EXPECTED_WT_8" ]; then
@@ -335,8 +328,7 @@ rm -rf -- "$ABS_ROOT_8" 2>/dev/null || true
 # shell metacharacters like '$' which violate the slug regex.
 # ────────────────────────────────────────────────────────────────────
 ERR_9=$(mktemp)
-STDOUT_9=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight 'bad$slug' 2>"$ERR_9")
+STDOUT_9=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight 'bad$slug' 2>"$ERR_9")
 RC_9=$?
 
 if [ "$RC_9" -eq 5 ] && [ -z "$STDOUT_9" ] && grep -q 'invalid slug' "$ERR_9"; then
@@ -369,8 +361,7 @@ BASE_COMMIT_10=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_N
 git -C "$MAIN_ROOT" branch "$BASE_10" "$BASE_COMMIT_10" 2>/dev/null || true
 
 ERR_10=$(mktemp)
-STDOUT_10=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "$PREFIX_10" --from "$BASE_10" "$SLUG_10" 2>"$ERR_10")
+STDOUT_10=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_10" --from "$BASE_10" "$SLUG_10" 2>"$ERR_10")
 RC_10=$?
 
 if [ "$RC_10" -eq 3 ] && [ -z "$STDOUT_10" ] && grep -qi 'poisoned\|BEHIND' "$ERR_10"; then
@@ -398,8 +389,7 @@ AHEAD_COMMIT_11=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_
 git -C "$MAIN_ROOT" branch "$BR_11" "$AHEAD_COMMIT_11" 2>/dev/null || true
 
 ERR_11=$(mktemp)
-STDOUT_11=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "$PREFIX_11" "$SLUG_11" 2>"$ERR_11")
+STDOUT_11=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_11" "$SLUG_11" 2>"$ERR_11")
 RC_11=$?
 
 if [ "$RC_11" -eq 4 ] && [ -z "$STDOUT_11" ] && grep -qi 'ZSKILLS_ALLOW_BRANCH_RESUME\|commits ahead' "$ERR_11"; then
@@ -422,8 +412,7 @@ WT_12="/tmp/${PROJECT_NAME}-${PREFIX_12}-${SLUG_12}"
 register_wt "$WT_12"
 
 ERR_12=$(mktemp)
-STDOUT_12=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "$PREFIX_12" --allow-resume "$SLUG_12" 2>"$ERR_12")
+STDOUT_12=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_12" --allow-resume "$SLUG_12" 2>"$ERR_12")
 RC_12=$?
 
 if [ "$RC_12" -eq 0 ] && [ "$STDOUT_12" = "$WT_12" ] && [ -d "$WT_12" ] \
@@ -451,8 +440,7 @@ PURPOSE_13="case 13 purpose"
 register_wt "$WT_13"; register_branch "$BR_13"
 
 ERR_13=$(mktemp)
-STDOUT_13=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --purpose "$PURPOSE_13" "$SLUG_13" 2>"$ERR_13")
+STDOUT_13=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --purpose "$PURPOSE_13" "$SLUG_13" 2>"$ERR_13")
 RC_13=$?
 STDOUT_LINES=$(printf '%s' "$STDOUT_13" | grep -c '' || true)
 # Single-line check: exactly 1 line, and it equals $WT_13.
@@ -480,8 +468,7 @@ git -C "$MAIN_ROOT" branch -D "$BR_13" 2>/dev/null || true
 # Case 14 (R-F12) — Whitespace slug → rc 5; stderr mentions whitespace.
 # ────────────────────────────────────────────────────────────────────
 ERR_14=$(mktemp)
-STDOUT_14=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight "bad slug" 2>"$ERR_14")
+STDOUT_14=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "bad slug" 2>"$ERR_14")
 RC_14=$?
 
 # The script's slug regex [A-Za-z0-9._-]+ rejects whitespace. Stderr
@@ -502,8 +489,7 @@ rm -f -- "$ERR_14"
 # the slash ban AND the --branch-name alternative.
 # ────────────────────────────────────────────────────────────────────
 ERR_15=$(mktemp)
-STDOUT_15=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "fix/issue" "42" 2>"$ERR_15")
+STDOUT_15=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "fix/issue" "42" 2>"$ERR_15")
 RC_15=$?
 
 if [ "$RC_15" -eq 5 ] && [ -z "$STDOUT_15" ] \
@@ -529,8 +515,7 @@ WT_16="/tmp/${PROJECT_NAME}-${PREFIX_16}-${SLUG_16}"
 register_wt "$WT_16"; register_branch "$BRANCH_16"
 
 ERR_16=$(mktemp)
-STDOUT_16=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --prefix "$PREFIX_16" --branch-name "$BRANCH_16" "$SLUG_16" 2>"$ERR_16")
+STDOUT_16=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_16" --branch-name "$BRANCH_16" "$SLUG_16" 2>"$ERR_16")
 RC_16=$?
 BRANCH_COUNT=$(git -C "$MAIN_ROOT" branch --list "$BRANCH_16" | wc -l)
 LEAF=$(basename "$STDOUT_16" 2>/dev/null || true)
@@ -584,8 +569,7 @@ register_wt "$NESTED_WT_17"; register_branch "$NESTED_BR_17"
 
 # (17a) Invoke from MAIN_ROOT.
 ERR_17A=$(mktemp)
-STDOUT_17A=$( cd "$MAIN_ROOT" && ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17A")
+STDOUT_17A=$( cd "$MAIN_ROOT" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17A")
 RC_17A=$?
 # Tear down immediately so the subsequent invocations' path is free.
 git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
@@ -595,16 +579,14 @@ git -C "$MAIN_ROOT" branch -D "$BR_17" 2>/dev/null || true
 SUBDIR_17="$MAIN_ROOT/scripts"
 [ -d "$SUBDIR_17" ] || SUBDIR_17="$MAIN_ROOT/tests"
 ERR_17B=$(mktemp)
-STDOUT_17B=$( cd "$SUBDIR_17" && ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17B")
+STDOUT_17B=$( cd "$SUBDIR_17" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17B")
 RC_17B=$?
 git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
 git -C "$MAIN_ROOT" branch -D "$BR_17" 2>/dev/null || true
 
 # (17c) Invoke from inside a nested worktree.
 ERR_17C_SETUP=$(mktemp)
-SETUP_STDOUT_17C=$( cd "$MAIN_ROOT" && ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight "$NESTED_SLUG_17" 2>"$ERR_17C_SETUP")
+SETUP_STDOUT_17C=$( cd "$MAIN_ROOT" &&   bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$NESTED_SLUG_17" 2>"$ERR_17C_SETUP")
 SETUP_RC_17C=$?
 rm -f -- "$ERR_17C_SETUP"
 
@@ -612,8 +594,7 @@ STDOUT_17C=""
 RC_17C="setup-failed"
 ERR_17C=$(mktemp)
 if [ "$SETUP_RC_17C" -eq 0 ] && [ -d "$SETUP_STDOUT_17C" ]; then
-  STDOUT_17C=$( cd "$SETUP_STDOUT_17C" && ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-    bash "$SCRIPT" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17C")
+  STDOUT_17C=$( cd "$SETUP_STDOUT_17C" &&     bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --root "$REL_ROOT_17" --prefix "$PREFIX_17" "$SLUG_17" 2>"$ERR_17C")
   RC_17C=$?
 fi
 git -C "$MAIN_ROOT" worktree remove --force "$EXPECTED_WT_17" 2>/dev/null || true
@@ -658,14 +639,12 @@ RC_FILE_A="$TEST_TMPDIR/rc-18a"
 RC_FILE_B="$TEST_TMPDIR/rc-18b"
 
 (
-  ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-    bash "$SCRIPT" --no-preflight --prefix "$PREFIX_18" "$SLUG_18" >"$OUT_18A" 2>"$ERR_18A"
+      bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_18" "$SLUG_18" >"$OUT_18A" 2>"$ERR_18A"
   echo $? > "$RC_FILE_A"
 ) &
 PID_A=$!
 (
-  ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-    bash "$SCRIPT" --no-preflight --prefix "$PREFIX_18" "$SLUG_18" >"$OUT_18B" 2>"$ERR_18B"
+      bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --prefix "$PREFIX_18" "$SLUG_18" >"$OUT_18B" 2>"$ERR_18B"
   echo $? > "$RC_FILE_B"
 ) &
 PID_B=$!
@@ -725,8 +704,7 @@ ROLLBACK_COMMIT=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_
 git -C "$MAIN_ROOT" branch "$ROLLBACK_BRANCH" "$ROLLBACK_COMMIT" 2>/dev/null || true
 
 ERR_19=$(mktemp)
-STDOUT_19=$(ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-  bash "$SCRIPT" --no-preflight --from "$ROLLBACK_BRANCH" "$SLUG_19" 2>"$ERR_19")
+STDOUT_19=$(  bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight --from "$ROLLBACK_BRANCH" "$SLUG_19" 2>"$ERR_19")
 RC_19=$?
 
 WT_19_IN_LIST=$(git -C "$MAIN_ROOT" worktree list | grep -c -- "$WT_19" || true)
@@ -774,8 +752,7 @@ STDOUT_20=$(
   GIT_CONFIG_COUNT=1 \
   GIT_CONFIG_KEY_0=remote.origin.url \
   GIT_CONFIG_VALUE_0="$FAKE_BARE_DIR" \
-  ZSKILLS_PIPELINE_ID="test.create-worktree.$$" \
-    bash "$SCRIPT" --no-preflight "$SLUG_20" 2>"$ERR_20"
+      bash "$SCRIPT" --pipeline-id "test.create-worktree.$$" --no-preflight "$SLUG_20" 2>"$ERR_20"
 )
 RC_20=$?
 
@@ -791,6 +768,40 @@ fi
 rm -f -- "$ERR_20"
 git -C "$MAIN_ROOT" worktree remove --force "$WT_20" 2>/dev/null || true
 git -C "$MAIN_ROOT" branch -D "$BR_20" 2>/dev/null || true
+
+# ────────────────────────────────────────────────────────────────────
+# Case 21 — --pipeline-id is REQUIRED. Missing flag → rc 5 with a clear
+# error on stderr. The prior env-var channel was removed on purpose:
+# silent fallback was the root cause of the Phase 2/3 latent bugs where
+# callers forgot to plumb through their skill's canonical pipeline ID
+# and silently produced a wrong .zskills-tracked. Making the flag
+# required turns that class of bug into an immediate rc 5 at call time.
+# ────────────────────────────────────────────────────────────────────
+SLUG_21="${SLUG_BASE}-c21"
+WT_21="/tmp/${PROJECT_NAME}-${SLUG_21}"
+BR_21="wt-${SLUG_21}"
+register_wt "$WT_21"; register_branch "$BR_21"
+
+# Ensure env var set ≠ flag present. Setting env should NOT rescue a
+# missing flag — env is no longer honoured.
+ERR_21=$(mktemp)
+STDOUT_21=$(ZSKILLS_PIPELINE_ID="env-is-no-longer-honoured-$$" \
+  bash "$SCRIPT" --no-preflight "$SLUG_21" 2>"$ERR_21")
+RC_21=$?
+ERR_BODY_21="$(cat "$ERR_21" 2>/dev/null || true)"
+
+# Three asserts in one case: rc must be 5; stderr must mention the flag
+# name; no worktree may have been created on disk.
+if [ "$RC_21" -eq 5 ] \
+   && echo "$ERR_BODY_21" | grep -q -- '--pipeline-id' \
+   && [ ! -d "$WT_21" ]; then
+  pass "21 --pipeline-id required: rc=5, stderr names the flag, no worktree created"
+else
+  fail "21 --pipeline-id required: rc=$RC_21 wt-exists=$([ -d "$WT_21" ] && echo yes || echo no) (expected rc=5, no WT)"
+  echo "  --- stderr ---"; echo "$ERR_BODY_21"
+fi
+rm -f -- "$ERR_21"
+# No cleanup needed — nothing was created.
 
 echo ""
 echo "---"
