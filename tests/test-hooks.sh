@@ -917,6 +917,88 @@ else
   fail "main_protected: push on feature branch should be allowed, got: $RESULT"
 fi
 
+echo ""
+echo "=== Project hook: main_protected — worktree-cd awareness ==="
+
+# Background: hooks run in a separate process whose cwd is the main repo on
+# `main`; when an agent does `cd /tmp/wt && git commit ...`, env vars from the
+# agent shell don't propagate into the hook process. Before the fix to
+# is_on_main(), the predicate read the hook's ambient branch (main) and
+# wrongly blocked commits on feature-branch worktrees. These tests deliberately
+# do NOT set REPO_ROOT so the hook's cd-target detection is exercised.
+
+# Helper: simulates main-repo-on-main + a separate worktree on a chosen branch,
+# runs the hook with cwd=main, command = `cd $worktree && <cmd>`. Returns the
+# hook's stdout (deny JSON or empty).
+run_worktree_cd_test() {
+  local wt_branch="$1"   # branch the worktree is on
+  local subcmd="$2"      # the git command to run inside the worktree
+  local config_content='{"execution": {"main_protected": true}}'
+  local main_tmpdir wt_tmpdir
+  main_tmpdir=$(mktemp -d)
+  wt_tmpdir=$(mktemp -d)
+
+  # Setup main repo on main with main_protected=true
+  mkdir -p "$main_tmpdir/.claude/hooks"
+  cp "$PROJECT_HOOK" "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$main_tmpdir/package.json"
+  printf 'npm run test:all\n' > "$main_tmpdir/.transcript"
+  (cd "$main_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
+  cat > "$main_tmpdir/.claude/zskills-config.json" <<EOF
+$config_content
+EOF
+
+  # Setup separate "worktree" on the requested branch (a fresh repo is
+  # equivalent for the predicate's purpose — git -C reports its own branch).
+  (cd "$wt_tmpdir" && git init -q && git checkout -b "$wt_branch" 2>/dev/null && git commit -q --allow-empty -m "wt init" 2>/dev/null)
+
+  local cmd="cd $wt_tmpdir && $subcmd"
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$main_tmpdir/.transcript\"}"
+
+  # Critical: cwd=main (so ambient is on `main`), and DO NOT set REPO_ROOT.
+  # This exercises extract_cd_target inside the hook's is_on_main predicate.
+  local result
+  result=$(cd "$main_tmpdir" && echo "$json" | bash "$main_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+
+  rm -rf "$main_tmpdir" "$wt_tmpdir"
+  echo "$result"
+}
+
+# Worktree on feature branch — commit must be ALLOWED (the bug we're fixing).
+RESULT=$(run_worktree_cd_test "feat/touch-grass" "git commit -m test")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected + worktree-cd: commit on feature-branch worktree allowed"
+else
+  fail "main_protected + worktree-cd: commit on feature-branch worktree should be allowed, got: $RESULT"
+fi
+
+# Worktree happens to be on main — commit must STILL be blocked.
+RESULT=$(run_worktree_cd_test "main" "git commit -m test")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected + worktree-cd: commit on main-via-worktree still blocked"
+else
+  fail "main_protected + worktree-cd: commit on main-via-worktree should be blocked, got: $RESULT"
+fi
+
+# Worktree on feature branch — cherry-pick must be ALLOWED (same bug class).
+RESULT=$(run_worktree_cd_test "feat/touch-grass" "git cherry-pick abc123")
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "main_protected + worktree-cd: cherry-pick on feature-branch worktree allowed"
+else
+  fail "main_protected + worktree-cd: cherry-pick on feature-branch worktree should be allowed, got: $RESULT"
+fi
+
+# Worktree on feature branch — push to feature must be ALLOWED.
+RESULT=$(run_worktree_cd_test "feat/touch-grass" "git push -u origin feat/touch-grass")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected + worktree-cd: push feature branch from worktree allowed"
+else
+  fail "main_protected + worktree-cd: push feature branch from worktree should be allowed, got: $RESULT"
+fi
+
 # Test: push tracking works before first push (no upstream) — code-files detection fallback
 push_tracking_tmpdir=$(mktemp -d)
 mkdir -p "$push_tracking_tmpdir/.claude/hooks"

@@ -115,8 +115,24 @@ is_main_protected() {
 }
 
 is_on_main() {
+  # Answer "is the agent operating on main?" — must reflect the WORKTREE the
+  # agent is in, not the hook's ambient cwd. Hooks run in a separate process
+  # rooted at $CLAUDE_PROJECT_DIR (the main repo); when the agent runs
+  # `cd /tmp/wt && git commit ...` from a feature-branch worktree, the hook's
+  # own `git rev-parse` would report "main" and wrongly block the commit.
+  # Precedence: $REPO_ROOT env (test override) → cd target extracted from the
+  # command (worktree-cd case) → ambient cwd (main-repo invocation).
   local branch
-  local repo_root="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  local repo_root="${REPO_ROOT:-}"
+  if [ -z "$repo_root" ]; then
+    local cd_target
+    cd_target=$(extract_cd_target)
+    if [ -n "$cd_target" ]; then
+      repo_root="$cd_target"
+    else
+      repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    fi
+  fi
   branch=$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null)
   [[ "$branch" == "main" || "$branch" == "master" ]]
 }
