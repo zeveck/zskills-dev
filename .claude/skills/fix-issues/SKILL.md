@@ -794,23 +794,27 @@ BRANCH_NAME="fix/issue-${ISSUE_NUM}"
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
 
-# Prune stale worktree entries. If /tmp was cleared (container restart,
-# codespace rebuild), git still has the old worktree registered in
-# .git/worktrees/. `git worktree prune` cleans up entries whose directories
-# no longer exist, so `git worktree add` won't fail with "already registered."
-git worktree prune
-
-# Orchestrator creates worktree manually -- NOT via isolation: "worktree"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# Resume detection stays directory-based (R2-M1): an existing fix worktree
+# means we're resuming the same issue across cron turns.
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
-  # Legitimate multi-phase PR-mode resume — opt into branch resume.
-  ZSKILLS_ALLOW_BRANCH_RESUME=1 \
-    bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
+  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+    --prefix fix-issue \
+    --branch-name "fix/issue-${ISSUE_NUM}" \
+    --allow-resume \
+    --purpose "fix-issues; issue=${ISSUE_NUM}" \
+    "${ISSUE_NUM}")
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    echo "create-worktree failed (rc=$RC) for /fix-issues PR mode" >&2
+    exit "$RC"
+  fi
 fi
-
-# Pipeline association -- agent commits are gated by .zskills-tracked
-echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+# create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
+# underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
+# --allow-resume), .zskills-tracked, and .worktreepurpose writes.
 ```
 
 **Dispatching fix agents in PR mode:** Dispatch agents WITHOUT
