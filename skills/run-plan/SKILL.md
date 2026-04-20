@@ -588,28 +588,24 @@ agent hasn't returned after 2 hours, declare it **failed**:
 - If the plan was drafted with `/draft-plan`, the phase may be too large —
   consider splitting it (each phase should be ~3-5 components, ~500 lines).
 
-1. **Create worktree manually at `/tmp/` path** (do NOT use `isolation: "worktree"`):
+1. **Create worktree via `scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
    ```bash
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-   PROJECT_NAME=$(basename "$PROJECT_ROOT")
-   WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
-
-   git worktree prune
-   # Ensure local main is current with origin/main before branching from it.
-   # Fast-forward if behind. Legitimate local-ahead commits (cherry-pick
-   # landings, unpushed user commits) are preserved. Divergent state leaves
-   # local main as-is with a warning.
-   git fetch origin main 2>/dev/null || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
-   git merge --ff-only origin/main 2>/dev/null || echo "WARNING: local main not fast-forwarded (may be divergent) — worktree uses local main as-is"
-   FEATURE_BRANCH="cp-${PLAN_SLUG}-${PHASE}"  # unified across modes — used by post-run-invariants.sh
-   if [ -d "$WORKTREE_PATH" ]; then
-     echo "Resuming existing worktree at $WORKTREE_PATH"
-   else
-     git worktree add "$WORKTREE_PATH" -b "$FEATURE_BRANCH" main
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   WT=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+     --prefix cp \
+     --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}" \
+     "${PLAN_SLUG}-phase-${PHASE}")
+   RC=$?
+   if [ "$RC" -ne 0 ]; then
+     echo "create-worktree failed (rc=$RC) for cherry-pick mode" >&2
+     exit "$RC"
    fi
-
-   # Pipeline association
-   echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+   WORKTREE_PATH="$WT"
+   # Derived by create-worktree.sh: path ${WORKTREE_ROOT}/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE},
+   # branch cp-${PLAN_SLUG}-phase-${PHASE} (unified across modes — used by post-run-invariants.sh).
+   # Pre-flight prune+fetch+ff-merge, .zskills-tracked write, and .worktreepurpose
+   # write are all owned by the script; do NOT duplicate them here.
    ```
 
    Cherry-pick mode: one worktree per phase, auto-named branch, `/tmp/` path.
