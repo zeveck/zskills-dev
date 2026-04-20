@@ -73,6 +73,69 @@ Past failure: a verification was done entirely from memory without reading
 a single diff or dispatching any agents — it just confirmed "looks good"
 based on session recall.
 
+## Test-command resolution (BEFORE Phase 3)
+
+Resolve `$FULL_TEST_CMD` explicitly — do NOT search the repo for test
+scripts, and do NOT default to `npm run test:all`, `scripts/test-all.sh`,
+or any template file. Three-case decision tree:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)
+CONFIG_FILE="$MAIN_ROOT/.claude/zskills-config.json"
+
+FULL_TEST_CMD=""
+if [ -f "$CONFIG_FILE" ] \
+   && [[ "$(cat "$CONFIG_FILE")" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  FULL_TEST_CMD="${BASH_REMATCH[1]}"
+fi
+
+if [ -n "$FULL_TEST_CMD" ]; then
+  # Case 1 — config sets a test command. Use it verbatim.
+  TEST_MODE="config"
+else
+  # Config is empty or missing. Check whether the project has test infra
+  # at all (same detection list as run-plan's preflight hook-placeholder gate):
+  # package.json with a "test" script, vitest.config.*, jest.config.*,
+  # pytest.ini, .mocharc.*, Makefile, tests/*.sh, tests/*.py, tests/*.js.
+  TEST_INFRA_DETECTED=0
+  [ -f "$MAIN_ROOT/package.json" ] && grep -q '"test"[[:space:]]*:' "$MAIN_ROOT/package.json" && TEST_INFRA_DETECTED=1
+  ls "$MAIN_ROOT"/vitest.config.* "$MAIN_ROOT"/jest.config.* "$MAIN_ROOT"/pytest.ini \
+     "$MAIN_ROOT"/.mocharc.* "$MAIN_ROOT"/Makefile 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
+  ls "$MAIN_ROOT/tests"/*.sh "$MAIN_ROOT/tests"/*.py "$MAIN_ROOT/tests"/*.js 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
+
+  if [ "$TEST_INFRA_DETECTED" -eq 1 ]; then
+    # Case 2 — tests exist but no command configured. Misconfigured
+    # project. Refuse to claim verification; direct caller to fix config.
+    echo "ERROR: /verify-changes: test infra detected (tests/ files, package.json" >&2
+    echo "  test script, vitest/jest/pytest config, or Makefile present) but" >&2
+    echo "  testing.full_cmd is empty in .claude/zskills-config.json. Tests must" >&2
+    echo "  not be silently skipped. Run /update-zskills (or edit the config" >&2
+    echo "  directly) to set testing.full_cmd, then re-run /verify-changes." >&2
+    exit 1
+  else
+    # Case 3 — no test infra and no configured command. Legitimate state
+    # for a docs-only, greenfield, or all-manual-testing project. Skip
+    # the test gate and RECORD THE SKIP EXPLICITLY in the verification
+    # report so a reviewer can see that tests were not run by design.
+    TEST_MODE="skipped"
+    echo "/verify-changes: no test infra detected and no testing.full_cmd" >&2
+    echo "  configured — skipping Phase 3 tests. This MUST be recorded in" >&2
+    echo "  the verification report under 'Tests: skipped — no test infra'." >&2
+  fi
+fi
+```
+
+**Summary of the three cases** (report format uses exactly these strings):
+
+- `TEST_MODE=config` — use `$FULL_TEST_CMD` verbatim in Phase 3
+- `TEST_MODE=skipped` — do NOT run tests; explicitly note `"Tests: skipped — no test infra"` in the final report and tracking marker
+- Error exit — misconfiguration; no verification attempted, caller must fix
+
+The silent-fallback path (guess a command, search the repo, use a template
+file) is **removed**. Silence is acceptable ONLY when `TEST_MODE=skipped`
+with an explicit report entry — never as a stand-in for "couldn't figure
+out what to run."
+
 ## Arguments
 
 ```
@@ -230,11 +293,18 @@ For each changed file, verify appropriate tests exist:
 
 ## Phase 3 — Run Tests
 
+If `TEST_MODE=skipped` (from "Test-command resolution" above), skip this
+entire phase and write one bullet in the Phase 6 report under Tests:
+`Tests: skipped — no test infra detected; no testing.full_cmd configured.`
+Then proceed to Phase 4. Do not search for an alternate test command.
+
+Otherwise (`TEST_MODE=config`, `$FULL_TEST_CMD` set):
+
 1. **Run the full test suite with output captured to a file:**
    ```bash
    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    mkdir -p "$TEST_OUT"
-   npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+   $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
    ```
    **Never pipe** through `| tail`, `| head`, `| grep` — it loses output
    and forces re-runs. Capture once, then read `"$TEST_OUT/.test-results.txt"` to find
@@ -242,12 +312,12 @@ For each changed file, verify appropriate tests exist:
    dev server and cargo are available for E2E and codegen tests.
 
 2. **If tests fail, diagnose with targeted runs.** Read `"$TEST_OUT/.test-results.txt"`
-   to identify the failing test file, then run ONLY that file:
-   ```bash
-   node --test tests/the-failing-file.test.js
-   ```
-   Do NOT re-run `npm run test:all` to diagnose — that wastes 5 minutes
-   when the single file takes 30 seconds. Use `test:all` only as the final
+   to identify the failing test file, then run ONLY that file (the exact
+   single-file invocation depends on the project's test framework — infer
+   from the failing file's extension: `node --test tests/x.test.js`,
+   `pytest tests/x_test.py`, `bash tests/x.sh`, etc.).
+   Do NOT re-run `$FULL_TEST_CMD` to diagnose — that wastes minutes when
+   the single file takes seconds. Use the full command only as the final
    gate after fixes.
 
 3. **Pre-existing failure protocol.** If a test fails in code you didn't
@@ -276,7 +346,7 @@ For each changed file, verify appropriate tests exist:
       ```bash
       TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
       mkdir -p "$TEST_OUT"
-      npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+      $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
       ```
 
    e. **Guardrails:**
@@ -421,7 +491,7 @@ If any issues were found in Phases 2-4:
 
 After fixing any issues in Phase 5:
 
-1. **Run `npm run test:all` again** — all suites must pass, including new tests
+1. **Run `$FULL_TEST_CMD` again** — all suites must pass, including new tests
 2. **Re-check manual verifications** if fixes touched UI code
 3. **If new problems are found**, go back to Phase 5
 

@@ -135,6 +135,53 @@ if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
 fi
 ```
 
+**Resolving FULL_TEST_CMD from config:**
+
+The orchestrator resolves the test command ONCE here and passes it
+verbatim to every impl/verifier/fix-agent dispatch prompt. Three-case
+decision tree (same contract as `/verify-changes`):
+
+```bash
+FULL_TEST_CMD=""
+if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
+  CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
+  if [[ "$CONFIG_CONTENT" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    FULL_TEST_CMD="${BASH_REMATCH[1]}"
+  fi
+fi
+
+if [ -n "$FULL_TEST_CMD" ]; then
+  # Case 1: config set — use it.
+  TEST_MODE="config"
+else
+  # Check for test infra (same list as preflight hook-placeholder gate):
+  # package.json with a "test" script, vitest/jest/pytest configs,
+  # Makefile, tests/*.sh, tests/*.py, tests/*.js.
+  TEST_INFRA_DETECTED=0
+  [ -f "$PROJECT_ROOT/package.json" ] && grep -q '"test"[[:space:]]*:' "$PROJECT_ROOT/package.json" && TEST_INFRA_DETECTED=1
+  ls "$PROJECT_ROOT"/vitest.config.* "$PROJECT_ROOT"/jest.config.* "$PROJECT_ROOT"/pytest.ini \
+     "$PROJECT_ROOT"/.mocharc.* "$PROJECT_ROOT"/Makefile 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
+  ls "$PROJECT_ROOT/tests"/*.sh "$PROJECT_ROOT/tests"/*.py "$PROJECT_ROOT/tests"/*.js 2>/dev/null | grep -q . && TEST_INFRA_DETECTED=1
+
+  if [ "$TEST_INFRA_DETECTED" -eq 1 ]; then
+    # Case 2: tests exist but no command — misconfigured. Refuse.
+    echo "ERROR: /run-plan: test infra detected but testing.full_cmd is empty." >&2
+    echo "  Run /update-zskills to configure, or edit .claude/zskills-config.json." >&2
+    exit 1
+  else
+    # Case 3: no test infra, no command — docs-only/greenfield. Skip test gate.
+    TEST_MODE="skipped"
+    echo "/run-plan: no test infra detected; skipping test gate — will be noted in report."
+  fi
+fi
+```
+
+**Never hardcode `npm run test:all` or default to `scripts/test-all.sh`.**
+Every subsequent reference to running tests in this skill uses `$FULL_TEST_CMD`.
+Agent dispatch prompts must include the resolved `$FULL_TEST_CMD` literal (or
+the explicit "Tests: skipped — no test infra" when `TEST_MODE=skipped`) so
+the dispatched agent does not search the repo for a test script.
+
 **Strip `pr`/`direct` from arguments** before passing to downstream processing
 (same pattern as stripping `auto`, `finish`, etc.).
 
@@ -750,7 +797,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
 
 6. **Commit discipline:**
    - One logical unit per commit — clean git history
-   - `npm run test:all` before every commit — not just `npm test`
+   - `$FULL_TEST_CMD` before every commit (resolved from config — see argument-detection section)
    - Tests alongside implementation, not deferred to later
    - The implementation agent does NOT commit. The verification agent runs the full test suite and commits if verification passes. This ensures the hook's test gate is satisfied (the committing agent's transcript contains the test command).
    - **Declare pipeline ID** early in execution (before any git operation):
@@ -785,7 +832,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    >    ```bash
    >    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    >    mkdir -p "$TEST_OUT"
-   >    npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+   >    $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
    >    ```
    >    **Never pipe** through `| tail`, `| head`, `| grep` — it loses
    >    output and forces re-runs. Capture once, read the file.
@@ -795,13 +842,13 @@ agent hasn't returned after 2 hours, declare it **failed**:
    > 5. If tests fail, **read `"$TEST_OUT/.test-results.txt"`** to find the failures.
    >    Then run ONLY the failing test file to iterate on the fix:
    >    `node --test tests/the-failing-file.test.js`
-   >    Do NOT re-run `npm run test:all` to diagnose — that wastes 5
+   >    Do NOT re-run `$FULL_TEST_CMD` to diagnose — that wastes
    >    minutes when the single file takes 30 seconds.
    > 6. After fixing, run the single file again to confirm. Then run
    >    ```bash
    >    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    >    mkdir -p "$TEST_OUT"
-   >    npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+   >    $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
    >    ```
    >    ONE more time as the final gate before committing.
    > 7. Max 2 fix attempts at the same error — do not thrash.
@@ -976,7 +1023,7 @@ If this phase used delegate execution, verification runs on **main**:
 1. **Verify commits landed** — check `git log --oneline -10` for the
    delegate's commits. If expected commits are missing, the delegate
    failed to land — invoke Failure Protocol.
-2. **Run `npm run test:all` on main** — the delegate already tested, but
+2. **Run `$FULL_TEST_CMD` on main** — the delegate already tested, but
    /run-plan verifies against the plan's acceptance criteria.
 3. **Check acceptance criteria** from the verbatim plan text — the delegate
    skill doesn't know the plan's criteria, only /run-plan does.
@@ -1002,8 +1049,15 @@ If this phase used delegate execution, verification runs on **main**:
      cd <worktree-path>
      TEST_OUT="/tmp/zskills-tests/$(basename "<worktree-path>")"
      mkdir -p "$TEST_OUT"
-     npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+     $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
      ```
+
+     The orchestrator substitutes `$FULL_TEST_CMD` in the prompt with the
+     config-resolved literal command BEFORE dispatching the agent — the
+     verifier never resolves it themselves (don't let them search the repo).
+     If `TEST_MODE=skipped`, dispatch this block with the instruction
+     "Do NOT run tests; report `Tests: skipped — no test infra` in your
+     verification report" instead of the bash block above.
 
      Note: compute `$TEST_OUT` from the worktree-path LITERAL you were handed,
      NOT from `$(pwd)` at prompt-entry time — the orchestrator dispatches you

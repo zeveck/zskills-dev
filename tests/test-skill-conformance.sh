@@ -84,6 +84,22 @@ check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.fin
 check_fixed run-plan "read-auth: PR worktree path"  'PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"'
 check_fixed run-plan "read-auth: feature-branch branch" 'PLAN_FILE_FOR_READ="$PR_WORKTREE_PATH/$PLAN_FILE"'
 check_fixed run-plan "read-auth: main fallback"     'PLAN_FILE_FOR_READ="$MAIN_ROOT/$PLAN_FILE"'
+# Test-command resolution (caught by CANARY10 re-run — verifier defaulted to
+# a template file because no skill resolved testing.full_cmd). Both /run-plan
+# and /verify-changes MUST have the three-case decision tree: config → use,
+# test-infra-exists → fail, no-infra → skipped + explicit report note.
+check_fixed run-plan "test-cmd: config.full_cmd read" 'full_cmd'
+check_fixed run-plan "test-cmd: TEST_MODE=config"     'TEST_MODE="config"'
+check_fixed run-plan "test-cmd: TEST_MODE=skipped"    'TEST_MODE="skipped"'
+check_fixed run-plan "test-cmd: misconfig refusal"    'test infra detected but testing.full_cmd is empty'
+check       run-plan "test-cmd: no raw npm run test:all in exec paths" \
+  '^[[:space:]]*>?[[:space:]]*\$FULL_TEST_CMD'
+# Same contract for /verify-changes.
+check_fixed verify-changes "test-cmd: config.full_cmd read" 'full_cmd'
+check_fixed verify-changes "test-cmd: TEST_MODE=config"     'TEST_MODE="config"'
+check_fixed verify-changes "test-cmd: TEST_MODE=skipped"    'TEST_MODE="skipped"'
+check_fixed verify-changes "test-cmd: misconfig refusal"    'test infra detected'
+check_fixed verify-changes "test-cmd: skipped report text"  'Tests: skipped — no test infra'
 
 echo ""
 echo "=== /run-plan — structural landmarks ==="
