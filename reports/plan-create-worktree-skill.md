@@ -1,5 +1,67 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
+## Phase — 2 Migrate /run-plan (both modes) — CANARY10 INVALIDATED; to be re-run as part of Phase 3 gates
+
+**Plan:** plans/CREATE_WORKTREE_SKILL.md
+**Status:** Landed on main; **the earlier CANARY10 PASS is invalidated** (the run-plan orchestrator manually exported `ZSKILLS_PIPELINE_ID` when calling `scripts/create-worktree.sh`, masking the fact that the committed skill docs don't set it — so the test validated a code path that diverges from what users following the docs would exercise). Re-run required after the Phase 3 correctness fix (`--pipeline-id` flag required, commit `1512389`) lands.
+**Main commits:** 27d5243 + 021226a (migration) + 1512389 (correctness fix that makes the env-var-plumbing latent bug impossible)
+
+## Phase — 3 Migrate /fix-issues + /do (three sites) + correctness fix (landed; awaiting WI 3.8 gates)
+
+**Plan:** plans/CREATE_WORKTREE_SKILL.md
+**Status:** Landed on main; **WI 3.8 manual canaries + smoke checks required before Phase 3 ✅**
+**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-3 (cleanup pending)
+**Branch:** cp-create-worktree-skill-phase-3 (deletion pending)
+**Worktree commits:** 957cb89 + a6141ec + c3f52e3 + 4473bde
+**Main commits:** 7ac4722 + 4aed30d + b078690 + 1512389
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 3.1 | Migrate /fix-issues PR mode to create-worktree.sh | Done | 7ac4722 |
+| 3.2 | Migrate /do PR mode to create-worktree.sh | Done | 4aed30d |
+| 3.3 | Migrate /do worktree mode to create-worktree.sh (--root ../ --no-preflight) | Done | b078690 |
+| 3.4 | Remove dead code (prune/fetch/ff-merge/inline `.zskills-tracked` echoes/ZSKILLS_ALLOW_BRANCH_RESUME exports) at each site | Done | 7ac4722, 4aed30d, b078690 |
+| 3.5 | Mirror skills/fix-issues + skills/do | Done | per-commit |
+| 3.6 | Verification greps clean | Done | `worktree-add-safe.sh` = 0 in fix-issues+do; `scripts/create-worktree.sh` ≥ 1 in fix-issues, ≥ 2 in do |
+| 3.7 | `tests/run-all.sh` green | Done | 601/601 post-fix |
+| 3.8 | Manual canaries + smoke checks | **Pending** | CANARY_DO_WORKTREE_BASE + CANARY_FIX_ISSUES_RESUME + CANARY10 re-run + 2 smokes |
+
+### Correctness fix (commit 1512389 — 4th Phase 3 commit)
+
+During Phase 3 implementation, surface examination revealed a **latent bug inherited from Phase 1a's design**: `scripts/create-worktree.sh` accepted pipeline ID via `ZSKILLS_PIPELINE_ID` env var, with a silent fallback to `create-worktree[.${PREFIX}].${SLUG}` when unset. All 5 migrated call sites relied on the env var flowing through from the orchestrator — but the orchestrator only *echoed* `ZSKILLS_PIPELINE_ID=...` for the hook's transcript scoping, never *exported* it. So `.zskills-tracked` silently filled with the script's fallback instead of the caller's canonical ID, breaking tracking-marker lookup in production.
+
+Fix (commit 1512389):
+- Require `--pipeline-id <id>` flag; rc 5 if missing
+- Delete the env-var branch + fallback from the script
+- Update all 5 call sites to pass `--pipeline-id` explicitly
+- Remove the `export ZSKILLS_PIPELINE_ID` workaround from `/do` PR mode (added during initial Phase 3.2)
+- Update `skills/create-worktree/SKILL.md` with the two-tier contract (tier-1 bash callers: flag required; tier-2 standalone user invocations: Claude synthesises `create-worktree.<slug>` at skill layer)
+- Add conformance test in `tests/test-skill-conformance.sh` that asserts every `create-worktree.sh` multi-line invocation in `skills/` passes `--pipeline-id`; any new caller that omits it fails the test at grep time
+- Rewrite 20 test cases to use the flag; add case 21 (missing flag → rc 5)
+
+Full suite: **601/601** pass. Conformance test validated via bug injection (exit 1 when flag removed, exit 0 when restored).
+
+### Implementer judgment calls
+1. `--branch-name "fix/issue-${ISSUE_NUM}"` (slash-form) + `--prefix fix-issue` (hyphen-form path leaf) preserves the R2-H1 branch/path decoupling.
+2. Directory-based resume guard `if [ -d "$WORKTREE_PATH" ]` kept for /fix-issues (multi-issue resume semantic).
+3. `TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh ...)` call KEPT in /do PR mode per R2-M4. Moved to Step A4 (before worktree creation) so the sanitised value can be passed via `--pipeline-id`.
+4. `rc=0` BEFORE the first `create-worktree.sh` invocation in /do worktree mode is LOAD-BEARING (R-M2 regression guard; stale rc from prior shell scope would false-trigger the retry block).
+5. `--root ../ --no-preflight` preserves /do worktree-mode's base-branch semantics (user's HEAD, not `origin/main`).
+6. Case-17 `--root` substituted to `../$PROJECT_NAME/cwdinv-root-…` because `/workspaces/` parent isn't writable in this env; the substitute still proves CWD-invariance via `realpath -m` from three different CWDs.
+
+### WI 3.8 — manual gates (pending)
+
+The earlier CANARY10 gate for Phase 2 was compromised (orchestrator manually exported `ZSKILLS_PIPELINE_ID`, bypassing the very bug that had to be caught). With the correctness fix landed, ALL gates below must be run AFRESH:
+
+1. `/run-plan plans/CANARY10_PR_MODE.md finish auto pr` — PR-mode end-to-end (validates Phase 2 WI 2.2 properly this time)
+2. `plans/CANARY_DO_WORKTREE_BASE.md` — manually (Phase 3 WI 3.3 `--no-preflight` base preservation)
+3. `plans/CANARY_FIX_ISSUES_RESUME.md` — manually (Phase 3 WI 3.1 resume under `--allow-resume`)
+4. Smoke: `/fix-issues <dummy>` → branch `fix/issue-<N>` + path `/tmp/<project>-fix-issue-<N>`
+5. Smoke: `/do "<task>" pr` → `/tmp/<project>-do-<slug>` + branch `${BRANCH_PREFIX}do-<slug>`
+
+All 5 must pass before Phase 3 is marked ✅ Done and Phase 2's CANARY10 status is re-affirmed. Failure of any → revert the relevant Phase 3 commits + file a bug.
+
 ## Phase — 2 Migrate /run-plan (both modes) (landed; CANARY10 gate PASSED ✅)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
