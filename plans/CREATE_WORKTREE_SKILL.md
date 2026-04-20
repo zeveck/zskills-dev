@@ -44,7 +44,7 @@ and dispatch their agent.
 |-------|--------|--------|-------|
 | 1a — Ship scripts/create-worktree.sh + skill wrapper + smoke test | ✅ Done | `17c752f` | 5 files, 578 insertions; 2/2 smoke + 255/255 test-hooks |
 | 1b — Full test suite + run-all registration + update-zskills registration | ✅ Done | `e257f25` | 20/20 cases; 594/594 full suite; +script gap closures (CWD-anchor, TOCTOU broaden) |
-| 2 — Migrate /run-plan (both modes) | 🟡 In Progress | | manual CANARY10 re-run (WI 2.8) before phase closure |
+| 2 — Migrate /run-plan (both modes) | ✅ Done | `27d5243` + `021226a` | CANARY10 gate PASSED (PR #37, merged as 773b2c3); two-commit structure preserves clean revert |
 | 3 — Migrate /fix-issues and /do (three sites) | ⬚ | | 2 canaries + CANARY10 + 2 smoke checks (WI 3.8) before phase closure |
 | 4 — Docs and cleanup | ⬚ | | |
 

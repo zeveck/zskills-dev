@@ -1,9 +1,10 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
-## Phase — 2 Migrate /run-plan (both modes) (landed; awaiting CANARY10 gate)
+## Phase — 2 Migrate /run-plan (both modes) (landed; CANARY10 gate PASSED ✅)
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
-**Status:** Landed on main; **WI 2.8 manual CANARY10 re-run still required before Phase 2 ✅**
+**Status:** Landed on main; CANARY10 re-run passed all 9 checks (PR #37 → squash `773b2c3`); Phase 2 closed
+**CANARY10 gate verdict:** PASSED — PR merged cleanly, CI 10s, remote branch auto-deleted, local main FF, no divergence
 **Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-2 (cleaned up)
 **Branch:** cp-create-worktree-skill-2 (deleted)
 **Worktree commits:** 8fc406c, 67aa8e9
