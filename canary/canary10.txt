@@ -1,0 +1,2 @@
+Canary 10 Phase 1: PR mode
+Canary 10 Phase 2: PR mode
