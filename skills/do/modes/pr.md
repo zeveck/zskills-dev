@@ -32,27 +32,41 @@ BRANCH_NAME="${BRANCH_PREFIX}do-${TASK_SLUG}"
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 ```
 
-**Step A4 — ff-merge main + worktree creation:**
+**Step A4 — Worktree creation (pre-flight prune+fetch+ff-merge is owned by create-worktree.sh):**
 ```bash
-git fetch origin main 2>/dev/null \
-  || echo "WARNING: git fetch origin main failed — worktree will use cached origin/main (may be stale)"
-git merge --ff-only origin/main 2>/dev/null \
-  || echo "WARNING: local main not fast-forwarded — worktree uses local main as-is"
-git worktree prune
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # /do expects a fresh branch per task — no legitimate resume.
-bash scripts/worktree-add-safe.sh "$BRANCH_NAME" "$WORKTREE_PATH" main
+# Export ZSKILLS_PIPELINE_ID so create-worktree.sh writes the correct
+# value to the worktree's .zskills-tracked (which it owns post-migration).
+# The script runs its own sanitize-pipeline-id.sh internally (R2-M4
+# compatible: idempotent on already-safe inputs).
+export ZSKILLS_PIPELINE_ID="do.${TASK_SLUG}"
+WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  --prefix do \
+  --branch-name "${BRANCH_PREFIX}do-${TASK_SLUG}" \
+  --purpose "do PR mode; task=${TASK_SLUG}" \
+  "${TASK_SLUG}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "create-worktree failed (rc=$RC) for /do PR mode" >&2
+  exit "$RC"
+fi
 ```
 
-**Step A5 — Write tracking marker immediately after worktree creation:**
+**Step A5 — Sanitize TASK_SLUG + construct PIPELINE_ID:**
 ```bash
 # Route TASK_SLUG through the shared sanitizer before constructing
 # PIPELINE_ID (per Phase 1 design doc). Collapses any character outside
-# [a-zA-Z0-9._-] into `_` and truncates to 128 bytes.
+# [a-zA-Z0-9._-] into `_` and truncates to 128 bytes. KEEP this defensive
+# sanitize call: removing it would require exhaustive downstream audit of
+# TASK_SLUG consumers (R2-M4).
 TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh "$TASK_SLUG")
 PIPELINE_ID="do.${TASK_SLUG}"
-echo "$PIPELINE_ID" > "$WORKTREE_PATH/.zskills-tracked"
+# create-worktree.sh already wrote .zskills-tracked (it sanitizes
+# ZSKILLS_PIPELINE_ID internally, so the file ends up with the same
+# sanitized "do.<slug>" value as PIPELINE_ID above).
 ```
-Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` in the main session — write only to the worktree file.
+Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills-tracked` file in the worktree is the single source of truth.
 
 **Step A6 — Dispatch implementation agent (wait for completion):**
 
