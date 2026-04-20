@@ -1,7 +1,7 @@
 ---
 title: Canary 10 — PR Mode End-to-End
 created: 2026-04-16
-status: active
+status: complete
 ---
 
 # Plan: Canary 10 — PR Mode End-to-End
@@ -37,8 +37,8 @@ confirmed they're happy to run this manually.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Create canary10 file | ⬚ | | PR-mode |
-| 2 -- Append second line   | ⬚ | | PR-mode |
+| 1 -- Create canary10 file | ✅ Done | `9904fb9` | PR-mode (feature branch) |
+| 2 -- Append second line   | ✅ Done | `4dba90d` | PR-mode (feature branch) |
 
 ## Phase 1 -- Create canary10 file
 
