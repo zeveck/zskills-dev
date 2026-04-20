@@ -1,5 +1,28 @@
 # Plan Report — Canary 10 PR Mode End-to-End (post-correctness-fixes re-run)
 
+## Phase — 2 Append second line (verified on feature branch; pre-push)
+
+**Plan:** plans/CANARY10_PR_MODE.md
+**Status:** Committed on feat/canary10-pr-mode; awaiting push + PR + CI + auto-merge
+**Commit:** 4dba90d (`canary(canary10): append second line — Phase 2`)
+
+### Work Item
+- Appended `Canary 10 Phase 2: PR mode` as line 2 of `canary/canary10.txt`
+
+### Verification
+- Two-line content in order; `wc -l` = 2
+- Tests 259/259 (`bash tests/test-hooks.sh`) — orchestrator re-ran to confirm verifier's method was wrong (verifier looked at `scripts/test-all.sh`, which is the template-for-downstream-projects and has `{{PLACEHOLDERS}}`; canonical test is `bash tests/test-hooks.sh` per config)
+- `git log main..HEAD` → 4 commits; `git log HEAD..main` → empty; main at `97c7d19` unchanged
+- Hygiene: no tracked ephemerals
+
+### Cron-fired Phase 2 entry (in-vivo validation of PR-mode read-authority fix)
+- Phase 2's fresh turn read tracker from `/tmp/zskills-pr-canary10-pr-mode/plans/CANARY10_PR_MODE.md` (feature branch) — **not** main's stale copy
+- Step 0 classification: status=active, phase1_done=1, phase2_done=0 → Case 4 targeting Phase 2 (correct)
+- If the read-authority fix were absent, Step 0 would have read main (both ⬚), targeted Phase 1, and re-executed — validated by comparing: main's row shows Phase 1 ⬚ vs feature-branch row shows Phase 1 ✅
+
+### Methodological note (flag to user)
+The verifier agent's dispatch prompt didn't specify the exact test command. The agent searched the repo and landed on `scripts/test-all.sh` (template file). Result: it committed while reporting "tests not meaningfully runnable" — a mild "noted as gap" pattern. Orchestrator re-ran tests directly to confirm 259/259 before continuing. Future verifier prompts should name the test command explicitly from config (`testing.full_cmd`).
+
 ## Phase — 1 Create canary10 file (verified on feature branch)
 
 **Plan:** plans/CANARY10_PR_MODE.md
