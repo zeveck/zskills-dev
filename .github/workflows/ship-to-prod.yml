@@ -1,0 +1,127 @@
+name: 🚀 Ship to Prod
+
+# Manual release: strips dev-only artifacts and publishes the current
+# dev HEAD to zskills-prod (github.com/zeveck/zskills) with a matching
+# tag on both repos.
+#
+# Trigger: workflow_dispatch (the green "Run workflow" button in the
+# Actions tab, also reachable via the "Ship to Prod" badge in README.md).
+# One-time setup: add a fine-grained PAT with Contents:Write on
+# zeveck/zskills as the PROD_PUSH_TOKEN repo secret. See RELEASING.md.
+#
+# Tag format: YYYY.MM.N (zero-padded month, no prefix). The workflow
+# counts existing tags for the current month and appends the next
+# ordinal — first release of April 2026 is 2026.04.0, second is
+# 2026.04.1, etc.
+#
+# Dry-run: set the dry-run input to true to exercise the build steps
+# without pushing anything. Useful for validating build-prod.sh changes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run (build prod tree, skip all pushes)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # push tag to dev, create release on dev
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev (full history for tag listing)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Capture dev SHA being released
+        id: dev_sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Gate — run full test suite
+        run: bash tests/run-all.sh
+
+      - name: Compute release tag (YYYY.MM.N)
+        id: tag
+        run: |
+          YEAR=$(date -u +%Y)
+          MONTH=$(date -u +%m)
+          COUNT=$(git tag -l "${YEAR}.${MONTH}.*" | wc -l)
+          TAG="${YEAR}.${MONTH}.${COUNT}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Computed release tag: ${TAG}"
+
+      - name: Build prod tree (strip dev-only artifacts)
+        run: bash scripts/build-prod.sh
+
+      - name: Commit transformed tree onto prod/main
+        id: prod_commit
+        env:
+          PROD_PUSH_TOKEN: ${{ secrets.PROD_PUSH_TOKEN }}
+        run: |
+          if [ -z "${PROD_PUSH_TOKEN:-}" ]; then
+            echo "::error::PROD_PUSH_TOKEN secret is not set. See RELEASING.md for setup."
+            exit 1
+          fi
+          git remote add prod "https://x-access-token:${PROD_PUSH_TOKEN}@github.com/zeveck/zskills.git"
+          git fetch prod main
+          # Stage the stripped working tree and produce a tree SHA
+          git add -A
+          TRANSFORMED_TREE=$(git write-tree)
+          PROD_PARENT=$(git rev-parse prod/main)
+          TAG="${{ steps.tag.outputs.tag }}"
+          DEV_SHA="${{ steps.dev_sha.outputs.sha }}"
+          MSG=$(printf 'release: %s\n\nShipped from zskills-dev@%s\n' "$TAG" "$DEV_SHA")
+          NEW_COMMIT=$(printf '%s' "$MSG" | git commit-tree "$TRANSFORMED_TREE" -p "$PROD_PARENT" -F -)
+          echo "sha=${NEW_COMMIT}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Prod commit built: ${NEW_COMMIT}"
+
+      - name: Push to prod (branch + tag) and tag dev
+        if: ${{ inputs.dry-run == false }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
+          DEV_SHA="${{ steps.dev_sha.outputs.sha }}"
+          # 1) Tag dev at the SHA we released from
+          git tag "${TAG}" "${DEV_SHA}"
+          git push origin "refs/tags/${TAG}"
+          # 2) Push transformed commit to prod's main (fast-forward — we built on prod/main as parent)
+          git push prod "${PROD_SHA}:refs/heads/main"
+          # 3) Same tag on prod, pointing at the transformed commit
+          git push prod "${PROD_SHA}:refs/tags/${TAG}"
+          # 4) GitHub Release on dev with auto-generated notes from last tag
+          gh release create "${TAG}" \
+            --repo "${{ github.repository }}" \
+            --title "${TAG}" \
+            --generate-notes
+
+      - name: Dry-run summary
+        if: ${{ inputs.dry-run == true }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          DEV_SHA="${{ steps.dev_sha.outputs.sha }}"
+          PROD_SHA="${{ steps.prod_commit.outputs.sha }}"
+          {
+            echo "## Dry-run summary"
+            echo ""
+            echo "- Would tag dev at: \`${DEV_SHA}\` → \`${TAG}\`"
+            echo "- Would push prod commit: \`${PROD_SHA}\`"
+            echo "- Would tag prod at: \`${PROD_SHA}\` → \`${TAG}\`"
+            echo ""
+            echo "### Files changed by build-prod.sh"
+            echo ""
+            echo '```'
+            git diff-tree --no-commit-id --name-status -r HEAD "${PROD_SHA}" || true
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "::notice::Dry run complete — nothing pushed."
