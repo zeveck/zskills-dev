@@ -156,8 +156,24 @@ Examples:
 
 If `$ARGUMENTS` contains `status` (case-insensitive):
 
-1. Read the plan file specified in the arguments
-2. Also read any companion progress document if referenced
+1. Compute the authoritative plan-file path — same logic as Phase 1's
+   "Read authority" section, duplicated here because `status` exits
+   before Phase 1 preflight:
+   ```bash
+   PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   PROJECT_NAME=$(basename "$MAIN_ROOT")
+   PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+   if [ "$LANDING_MODE" = "pr" ] && [ -d "$PR_WORKTREE_PATH" ]; then
+     PLAN_FILE_FOR_READ="$PR_WORKTREE_PATH/$PLAN_FILE"
+   else
+     PLAN_FILE_FOR_READ="$MAIN_ROOT/$PLAN_FILE"
+   fi
+   ```
+   Read the plan from `$PLAN_FILE_FOR_READ` so PR-mode in-flight tracker
+   updates (committed on the feature branch) surface correctly instead
+   of main's stale copy.
+2. Also read any companion progress document if referenced (same rule).
 3. Parse all phases and their status (same parsing logic as Phase 1
    steps 2-3: "Extract phases and status" and "Determine target phase."
    Do NOT run preflight checks — `status` is read-only)
@@ -288,6 +304,48 @@ If `every` is NOT present, skip this phase and proceed to Phase 1
 The key differentiator. Plans have varied formats, so the agent uses LLM
 comprehension rather than rigid parsing.
 
+### Read authority (PLAN_FILE_FOR_READ) — compute before ANY plan read
+
+Before any read of the plan file (frontmatter, tracker, phase text), compute
+the authoritative source for this invocation.
+
+**Why this matters.** In PR mode, per-phase tracker updates (`🟡 In Progress`
+→ `✅ Done`, `status: complete`) commit on the **feature branch**, per the
+PR-mode bookkeeping rule. Main's copy of the plan file is stale across
+cron-fired `finish auto pr` re-entries until the squash merge lands at plan
+completion. A naive `cat plans/<plan>.md` from the orchestrator's CWD (main)
+would silently show `⬚/⬚` on turn 2 even when Phase 1 is already done on
+the feature branch — causing the re-entry check to re-execute already-done
+phases. Cherry-pick and direct modes commit bookkeeping on main directly, so
+main is authoritative there.
+
+```bash
+# Compute BEFORE Step 0. LANDING_MODE is already resolved from args/config
+# in the argument-detection section at the top of this skill.
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PROJECT_NAME=$(basename "$MAIN_ROOT")
+PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
+
+if [ "$LANDING_MODE" = "pr" ] && [ -d "$PR_WORKTREE_PATH" ]; then
+  PLAN_FILE_FOR_READ="$PR_WORKTREE_PATH/$PLAN_FILE"
+  echo "PR-mode re-entry: reading plan from feature-branch worktree at $PR_WORKTREE_PATH"
+else
+  PLAN_FILE_FOR_READ="$MAIN_ROOT/$PLAN_FILE"
+fi
+```
+
+**Every subsequent plan read MUST use `$PLAN_FILE_FOR_READ`**, including
+Step 0's re-entry check, all of Parse Plan's steps, and the Status command
+(which duplicates this computation for its own read-only early-exit path).
+The plain `$PLAN_FILE` (relative to CWD) would silently point at main's
+stale copy in PR-mode chunked re-entries.
+
+**Writes are unaffected.** Phase 4 tracker updates and Phase 5b frontmatter
+updates continue to follow the PR-mode bookkeeping rule (commit on feature
+branch in PR mode; commit on main in cherry-pick/direct mode). Only the
+read path needed the explicit branch.
+
 ### Preflight checks
 
 Before parsing, check for stale state from a previous failed run:
@@ -302,7 +360,8 @@ Before parsing, check for stale state from a previous failed run:
    ```
 
    Then read the plan frontmatter (`status` field) and the plan tracker
-   (phase statuses). Four cases:
+   (phase statuses) from `$PLAN_FILE_FOR_READ` (computed in the "Read
+   authority" section above — NOT from main's copy of the plan). Four cases:
 
    1. **Frontmatter `status: complete`**: plan truly done. **Terminal
       cron cleanup (Design 2a):** call `CronList` and `CronDelete` on
@@ -400,8 +459,11 @@ Before parsing, check for stale state from a previous failed run:
 
 ### Parse plan
 
-1. **Read the plan file** in full. Also read any companion progress document
-   if referenced (e.g., `FEATURE_PROGRESS_AND_NEXT_STEPS.md`).
+1. **Read the plan file** in full from `$PLAN_FILE_FOR_READ` (see "Read
+   authority" section above — in PR mode with an existing feature-branch
+   worktree, this resolves to the worktree's copy; otherwise main's copy).
+   Also read any companion progress document if referenced (e.g.,
+   `FEATURE_PROGRESS_AND_NEXT_STEPS.md`) — same path rule applies.
 
 2. **Extract phases and status** — handle four formats:
    - **Progress tracker table** (FEATURE_PLAN style): rows with `✅ Done`,

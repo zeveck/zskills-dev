@@ -77,6 +77,13 @@ check_fixed run-plan "write-landed invocation"      'bash scripts/write-landed.s
 check_fixed run-plan "pr-mode bookkeeping"          'PR-mode bookkeeping'
 check_fixed run-plan "post-run-invariants"          'bash scripts/post-run-invariants.sh'
 check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.final.'
+# PR-mode read-authority (the bug caught during CANARY10 re-run): when
+# LANDING_MODE=pr and a feature-branch worktree exists, plan reads MUST
+# come from the worktree — main's copy is stale until squash-merge. Step 0
+# and Parse Plan read from $PLAN_FILE_FOR_READ, not raw $PLAN_FILE.
+check_fixed run-plan "read-auth: PR worktree path"  'PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"'
+check_fixed run-plan "read-auth: feature-branch branch" 'PLAN_FILE_FOR_READ="$PR_WORKTREE_PATH/$PLAN_FILE"'
+check_fixed run-plan "read-auth: main fallback"     'PLAN_FILE_FOR_READ="$MAIN_ROOT/$PLAN_FILE"'
 
 echo ""
 echo "=== /run-plan — structural landmarks ==="
