@@ -148,7 +148,61 @@ expect_allow "commit --signoff -m with banned words"     "git commit --signoff -
 expect_deny  "commit then chained kill -9"               "git commit -m \"msg\" && kill -9 1234"
 expect_deny  "commit then chained fuser -k"              "git commit -m \"msg\" ; fuser -k 8080"
 expect_deny  "commit then chained xargs kill"            "git commit -m \"msg\" && lsof -ti :8080 | xargs kill"
-# Heredoc form is intentionally NOT redacted; agents should use -F file.
+
+# 7g. Heredoc bodies are redacted before the scan (the canonical commit
+# idiom uses `-m "$(cat <<'EOF' ... EOF)"`, so prose describing destructive
+# ops inside the heredoc no longer false-positives). Chained ops AFTER
+# the heredoc remain visible — the closing delimiter bounds the redaction.
+expect_allow "heredoc (<<'EOF') in commit w/ find -delete prose" \
+  "git commit -m \"\$(cat <<'EOF'\\nfix(hook): match find -delete in data regions\\nEOF\\n)\""
+expect_allow "heredoc (<<EOF unquoted) in commit w/ rm -rf prose" \
+  "git commit -m \"\$(cat <<EOF\\ndocs: warn against rm -rf outside /tmp\\nEOF\\n)\""
+expect_allow "heredoc (<<\"EOF\" dbl-q) in commit w/ rsync --delete prose" \
+  "git commit -m \"\$(cat <<\"EOF\"\\nchore: note rsync --delete edge case\\nEOF\\n)\""
+expect_allow "heredoc with custom delim (MSGEND)" \
+  "git commit -m \"\$(cat <<'MSGEND'\\nkill -9 notes and xargs rm tips\\nMSGEND\\n)\""
+# Chained dangerous command AFTER the heredoc closes must still deny.
+expect_deny  "heredoc commit then chained rm -rf /etc" \
+  "git commit -m \"\$(cat <<'EOF'\\nmsg\\nEOF\\n)\" && rm -rf /etc"
+expect_deny  "heredoc commit then chained find / -delete" \
+  "git commit -m \"\$(cat <<'EOF'\\nmsg\\nEOF\\n)\" ; find / -delete"
+
+# 7h. `git commit --message` (long-form alias) redacted like -m.
+expect_allow "commit --message w/ banned prose" \
+  "git commit --message \"fix: xargs rm behavior in scripts\""
+
+# 7i. `gh pr|issue create|comment` with --body|-b|--title|-t values
+# carry prose and must be redacted. Per-argument scope: chained
+# dangerous ops after the flag still get flagged.
+expect_allow "gh pr create --body w/ find -delete prose" \
+  "gh pr create --body \"body describing find -delete edge case\""
+expect_allow "gh pr create --title w/ rm -rf prose" \
+  "gh pr create --title \"fix: avoid rm -rf in hook\""
+expect_allow "gh pr create -b short flag" \
+  "gh pr create -b \"body w/ xargs rm reference\""
+expect_allow "gh pr create -t short flag" \
+  "gh pr create -t \"title w/ kill -9 reference\""
+expect_allow "gh pr create both --title AND --body (loop test)" \
+  "gh pr create --title \"fuser -k notes\" --body \"lsof -ti xargs kill tips\""
+expect_allow "gh pr comment --body w/ xargs rm prose" \
+  "gh pr comment 42 --body \"see the xargs rm thread\""
+expect_allow "gh issue create --title w/ rsync --delete prose" \
+  "gh issue create --title \"rsync --delete edge case\""
+expect_allow "gh issue create --body heredoc w/ banned prose" \
+  "gh issue create --body \"\$(cat <<EOF\\nreport: find . -delete surprise\\nEOF\\n)\""
+expect_allow "gh issue comment --body w/ find -delete prose" \
+  "gh issue comment 99 --body \"tracked under the find -delete issue\""
+
+# Chained dangerous ops AFTER a redacted gh arg must still be denied.
+expect_deny  "gh pr create --body then rm -rf /etc" \
+  "gh pr create --body \"clean body\" && rm -rf /etc"
+expect_deny  "gh pr comment --body then find / -delete" \
+  "gh pr comment 1 --body \"discussion\" ; find / -delete"
+
+# Regression: bare destructive ops (no wrapping arg) still denied.
+expect_deny  "rm -rf /etc bare (regression)"  "rm -rf /etc"
+expect_deny  "find / -delete bare (regression)" "find / -delete"
+expect_deny  "lsof xargs kill bare (regression)" "lsof -ti :8080 | xargs kill"
 
 # 8. Destructive-op scope policy: permit contained /tmp/ destruction, block wide
 # Rule: rm -r{,f} / find -delete / rsync --delete / xargs rm require a literal

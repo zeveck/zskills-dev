@@ -39,16 +39,49 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # hook remains defensive; no false-allows.
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
 
-# Redact `git commit -m "..."` and `git commit -m '...'` message bodies so
-# rule scans don't false-positive on prose like
-# `git commit -m "fix: docker died from xargs kill"`. Chained commands AFTER
-# the commit (e.g. `git commit -m "msg" && rm -rf /etc`) remain visible.
-# Heredoc form (-m "$(cat <<'EOF' ... EOF)") is NOT redacted; for messages
-# with embedded quotes or banned substrings, use `git commit -F file`.
-COMMAND=$(printf '%s' "$COMMAND" | sed -E '
-  s/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?-[a-zA-Z]*m[[:space:]]+)"[^"]*"/\1"REDACTED"/g
-  s/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?-[a-zA-Z]*m[[:space:]]+)'\''[^'\'']*'\''/\1'\''REDACTED'\''/g
-')
+# ──────────────────────────────────────────────────────────────
+# Data-region redaction
+# ──────────────────────────────────────────────────────────────
+# Destructive-op regex checks below scan $COMMAND as a single string.
+# Regions that legitimately describe destructive ops — commit messages,
+# PR bodies, issue titles, heredoc content — must not trip the scans.
+# We redact those regions before scanning. Redaction is per-argument
+# and stops at the closing quote / heredoc delimiter, so chained
+# commands AFTER a data-bearing arg (e.g. `git commit -m "msg" && rm
+# -rf /etc`) stay visible to the rules.
+#
+# $COMMAND holds literal `\n` sequences (two chars: backslash + n),
+# not real newlines — the JSON extractor above does not interpret
+# escape sequences beyond `\"`. So the regex treats `\\n` as the
+# in-string line separator (matching a literal backslash then n).
+
+# Pass 1 — heredoc bodies
+# Match `<<[-]?['"]?DELIM['"]?\n ... \nDELIM(\n|$)` and replace with a
+# sentinel. :m / t m iterate so sequential heredocs with different
+# delimiters all get redacted. GNU sed -E supports backrefs (\1) in
+# the pattern, which lets us pin the closing delimiter to the opener.
+# Quoted-delim forms are tried first so the unquoted alt doesn't eat
+# the identifier before the quote.
+COMMAND=$(printf '%s' "$COMMAND" | sed -E \
+  -e ':h' \
+  -e 's/<<-?[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 's/<<-?[[:space:]]*'\''([A-Za-z_][A-Za-z0-9_]*)'\''\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 's/<<-?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 't h')
+
+# Pass 2 — flag-scoped quoted arg values
+# - `git commit`                       : -m, --message (incl. -am/-Sm)
+# - `gh pr|issue create|comment`       : --body, -b, --title, -t
+# Intermediate args tolerated via [^|;&]* so a chained dangerous op
+# after the arg stays visible. The quoted value uses [^"]* / [^']* so
+# the match does not cross quote boundaries. Replacement drops the
+# quotes (plain `REDACTED`) to guarantee the :m / t m loop terminates
+# — the re-run can no longer match the now-bare sentinel.
+COMMAND=$(printf '%s' "$COMMAND" | sed -E \
+  -e ':m' \
+  -e 's/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*m|--message)[[:space:]]+)("[^"]*"|'\''[^'\'']*'\'')/\1REDACTED/g' \
+  -e 's/(gh[[:space:]]+(pr|issue)[[:space:]]+(create|comment)[[:space:]]([^|;&]*[[:space:]])?(--body|-b|--title|-t)[[:space:]]+)("[^"]*"|'\''[^'\'']*'\'')/\1REDACTED/g' \
+  -e 't m')
 
 # Block patterns — each with a reason
 block_with_reason() {
