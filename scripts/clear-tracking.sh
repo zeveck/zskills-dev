@@ -36,11 +36,14 @@ fi
 
 shopt -s nullglob
 
+# Tracking markers live in per-pipeline subdirs (.zskills/tracking/$PIPELINE_ID/)
+# per the tracking naming scheme; a handful of legacy flat-layout
+# fulfilled.run-plan.* files may also sit at the top level. `find -type f`
+# catches both without the subdir-blind glob that shipped originally.
 preserve_count=0
 c_requires=0; c_step=0; c_verify=0; c_draft=0; c_refine=0; c_vpa=0; c_other=0
 
-for f in "$TRACKING_DIR"/*; do
-  [ -f "$f" ] || continue
+while IFS= read -r f; do
   base=$(basename "$f")
   case "$base" in
     fulfilled.run-plan.*)       preserve_count=$((preserve_count+1)) ;;
@@ -52,7 +55,7 @@ for f in "$TRACKING_DIR"/*; do
     verify-pending-attempts.*)  c_vpa=$((c_vpa+1)) ;;
     *)                          c_other=$((c_other+1)) ;;
   esac
-done
+done < <(find "$TRACKING_DIR" -type f)
 
 clear_count=$((c_requires + c_step + c_verify + c_draft + c_refine + c_vpa + c_other))
 
@@ -61,14 +64,17 @@ if [ "$preserve_count" -eq 0 ] && [ "$clear_count" -eq 0 ]; then
   exit 0
 fi
 
-# Active pipeline detection.
+# Active pipeline detection. Scan requires.* wherever they live (top level
+# or per-pipeline subdir) and look for a matching fulfilled.* in the same
+# directory. "Active" = requires exists but fulfilled is missing or
+# status != complete.
 NOW=$(date +%s)
 active_list=()
-for req in "$TRACKING_DIR"/requires.*; do
-  [ -f "$req" ] || continue
+while IFS= read -r req; do
   base=$(basename "$req")
+  reqdir=$(dirname "$req")
   tail="${base#requires.}"
-  fulfilled="$TRACKING_DIR/fulfilled.$tail"
+  fulfilled="$reqdir/fulfilled.$tail"
 
   is_active=0
   if [ ! -f "$fulfilled" ]; then
@@ -90,7 +96,7 @@ for req in "$TRACKING_DIR"/requires.*; do
     fi
     active_list+=( "$tail  (${age_str} old)" )
   fi
-done
+done < <(find "$TRACKING_DIR" -type f -name 'requires.*')
 
 echo "Tracking dir: $TRACKING_DIR"
 echo ""
@@ -126,13 +132,39 @@ if [ ${#active_list[@]} -gt 0 ]; then
 fi
 
 cleared=0
-for f in "$TRACKING_DIR"/*; do
-  [ -f "$f" ] || continue
+while IFS= read -r f; do
   base=$(basename "$f")
   case "$base" in
     fulfilled.run-plan.*) ;;
     *) rm -f "$f"; cleared=$((cleared+1)) ;;
   esac
-done
+done < <(find "$TRACKING_DIR" -type f)
+
+# Remove now-empty per-pipeline subdirs (avoid leaving stub directories
+# from pipelines whose last non-preserved file was just cleared). The
+# top-level $TRACKING_DIR is itself preserved.
+find "$TRACKING_DIR" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+
+# Post-clear sanity: count surviving bookkeeping-class files (anything that
+# should have been cleared). Must be zero.
+residual=$(find "$TRACKING_DIR" -type f \
+  \( -name 'requires.*' \
+     -o -name 'step.*' -o -name 'phasestep.*' \
+     -o -name 'fulfilled.verify-changes.*' \
+     -o -name 'fulfilled.draft-plan.*' \
+     -o -name 'fulfilled.refine-plan.*' \
+     -o -name 'verify-pending-attempts.*' \) \
+  | wc -l | tr -d ' ')
 
 echo "Cleared $cleared bookkeeping markers. Preserved $preserve_count completion records."
+if [ "$residual" -ne 0 ]; then
+  echo "WARN: $residual bookkeeping file(s) still present after clearing — clear-tracking.sh scope may need updating:" >&2
+  find "$TRACKING_DIR" -type f \
+    \( -name 'requires.*' \
+       -o -name 'step.*' -o -name 'phasestep.*' \
+       -o -name 'fulfilled.verify-changes.*' \
+       -o -name 'fulfilled.draft-plan.*' \
+       -o -name 'fulfilled.refine-plan.*' \
+       -o -name 'verify-pending-attempts.*' \) >&2
+  exit 2
+fi
