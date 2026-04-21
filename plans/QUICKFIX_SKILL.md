@@ -32,7 +32,7 @@ worktree. No existing skill handles branch+commit+PR in main checkout:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1a — Core skill + happy paths | ⬚ | | SKILL.md core logic (WIs 1.1–1.15 + 1.3.5) + tests 1–10 (happy paths + basic errors) + run-all registration |
+| 1a — Core skill + happy paths | 🟡 In Progress | | SKILL.md core logic (WIs 1.1–1.15 + 1.3.5) + tests 1–10 (happy paths + basic errors) + run-all registration |
 | 1b — Guards, hardening, edge cases | ⬚ | | SKILL.md parallel-invocation gate / remote-branch collision / test-harness sandbox polish / mirror (WIs 1.16–1.19) + tests 11–25 (edge cases + structural guards) |
 | 3 — Documentation and cross-skill notes | ⬚ | | CLAUDE_TEMPLATE, README, update-zskills |
 
