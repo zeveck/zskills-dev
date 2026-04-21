@@ -215,8 +215,23 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    if [[ "$CONFIG_CONTENT" =~ \"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
      CI_MAX_ATTEMPTS="${BASH_REMATCH[1]}"
    fi
+   # Extract commit.co_author (optional — backfilled below if missing):
+   if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+     CO_AUTHOR="${BASH_REMATCH[1]}"
+   fi
    ```
 3. For each template placeholder, use the config value if non-empty.
+3.5. **Backfill `commit.co_author` if absent.** If the existing config
+   does not contain a `"commit"` block with a `"co_author"` field (e.g.
+   configs written before this field was introduced), splice in the
+   default so downstream skills (`/quickfix`, `/commit`) can rely on the
+   field resolving. Default value:
+   `"Claude Opus 4.7 (1M context) <noreply@anthropic.com>"`. Match the
+   same style used for other optional-field backfills — a targeted
+   `Edit` or small jq rewrite that preserves every other field unchanged.
+   If the `commit` key is absent, add the whole block; if the `commit`
+   block exists but lacks `co_author`, add only that field. Idempotent:
+   re-running on an already-backfilled config is a no-op.
 4. Copy `config/zskills-config.schema.json` from `$PORTABLE` to
    `.claude/zskills-config.schema.json` in the target project (so the
    `$schema` reference in the config resolves correctly).
@@ -249,6 +264,9 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
        "landing": "<preset.landing>",
        "main_protected": <preset.main_protected>,
        "branch_prefix": "feat/"
+     },
+     "commit": {
+       "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
      },
      "testing": {
        "unit_cmd": "<detected>",

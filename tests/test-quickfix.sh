@@ -357,7 +357,13 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 10 — Commit trailer contract (WI 1.13)
+# Case 10 — Commit trailer contract (WI 1.13). Co-author is now read
+# from .commit.co_author in zskills-config.json via jq BEFORE the
+# heredoc is built; the heredoc body itself carries `Co-Authored-By:
+# $CO_AUTHOR`, not a literal model string. Asserts:
+#   - user-edited body never contains a Co-Authored-By line
+#   - agent-dispatched body contains `Co-Authored-By: $CO_AUTHOR`
+#   - the jq-read form for .commit.co_author is present in the skill
 # ────────────────────────────────────────────────────────────────────
 USER_EDITED_BODY=$(awk '
   /🤖 Generated with \/quickfix \(user-edited\)/  { want=1; found=1 }
@@ -373,9 +379,10 @@ AGENT_BODY=$(awk '
 
 if [ -n "$USER_EDITED_BODY" ] \
    && [ -n "$AGENT_BODY" ] \
-   && ! printf '%s' "$USER_EDITED_BODY" | grep -q 'Co-Authored-By: Claude' \
-   &&   printf '%s' "$AGENT_BODY"       | grep -q 'Co-Authored-By: Claude'; then
-  pass "10 commit trailer: user-edited omits Co-Authored-By; agent-dispatched includes it"
+   && ! printf '%s' "$USER_EDITED_BODY" | grep -q 'Co-Authored-By:' \
+   &&   printf '%s' "$AGENT_BODY"       | grep -qE 'Co-Authored-By: \$CO_AUTHOR' \
+   && grep -qE 'jq -r .*\.commit\.co_author' "$SKILL"; then
+  pass "10 commit trailer: user-edited omits Co-Authored-By; agent-dispatched uses jq-read \$CO_AUTHOR from .commit.co_author"
 else
   fail "10 commit trailer: trailer contract not satisfied"
 fi
