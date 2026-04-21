@@ -552,12 +552,14 @@ COMMIT_EOF
 )
 else
   # agent-dispatched: include Co-Authored-By, matching skills/commit/SKILL.md trailer.
+  # Resolve the co-author line from config; default falls back to Claude Opus 4.7.
+  CO_AUTHOR=$(jq -r '.commit.co_author // "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"' "$MAIN_ROOT/.claude/zskills-config.json")
   COMMIT_BODY=$(cat <<COMMIT_EOF
 $COMMIT_MSG
 
 🤖 Generated with /quickfix (agent-dispatched)
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: $CO_AUTHOR
 COMMIT_EOF
 )
 fi
