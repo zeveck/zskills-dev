@@ -6,7 +6,7 @@ Create a named worktree and do the work there; the verification agent commits af
 Selected when the user passes `worktree` explicitly, or when
 `execution.landing` in `.claude/zskills-config.json` is `"cherry-pick"`.
 
-Create a named worktree at `${realpath(MAIN_ROOT/../)}/do-<slug>/` via `scripts/create-worktree.sh`:
+Create a named worktree at `/tmp/<project>-do-<slug>/` via `scripts/create-worktree.sh` (same path convention as `/do pr`, `/fix-issues pr`, and `/run-plan`; `WORKTREE_ROOT` in config overrides `/tmp`):
 
 ```bash
 # Compute slug from task description
@@ -25,21 +25,25 @@ PIPELINE_ID="do.${TASK_SLUG}"
 # without it, a stale rc=2 from an earlier shell scope would falsely
 # trigger the retry block even when the first invocation succeeded).
 rc=0
-# --root ../ resolves against $MAIN_ROOT (Phase 1a CWD-invariance).
 # --no-preflight preserves /do worktree-mode's base-branch semantics
 # (branches from user's HEAD, not origin/main).
 # --pipeline-id passes the canonical /do pipeline ID explicitly (no env
 # var reliance; the script sanitizes internally and writes
 # .zskills-tracked).
+# No --root: worktree lives under $WORKTREE_ROOT (default /tmp/) with the
+# standard ${PROJECT_NAME}-${PREFIX}-${SLUG} layout. This makes /do's
+# placement consistent with every other worktree-creating skill and works
+# in containerized environments where MAIN_ROOT's parent may not be
+# writable.
 WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
-  --prefix do --root ../ --no-preflight \
+  --prefix do --no-preflight \
   --pipeline-id "$PIPELINE_ID" \
   "${ATTEMPT_SLUG}") || rc=$?
 if [ "${rc:-0}" = "2" ]; then
   # rc=2 is path-exists collision — retry with timestamp suffix.
   ATTEMPT_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
   WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
-    --prefix do --root ../ --no-preflight \
+    --prefix do --no-preflight \
     --pipeline-id "$PIPELINE_ID" \
     "${ATTEMPT_SLUG}")
 fi
