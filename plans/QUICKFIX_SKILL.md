@@ -33,7 +33,7 @@ worktree. No existing skill handles branch+commit+PR in main checkout:
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1a — Core skill + happy paths | ✅ Done | `948d8a8` | SKILL.md (661 lines, WIs 1.1–1.15 + 1.3.5) + test-quickfix.sh (250 lines, 19 assertions across cases 1–10+14) + run-all.sh registration; 673/673 suite pass, 0 regressions |
-| 1b — Guards, hardening, edge cases | 🟡 In Progress | | SKILL.md parallel-invocation gate / remote-branch collision / test-harness sandbox polish / mirror (WIs 1.16–1.19) + tests 11–25 (edge cases + structural guards) |
+| 1b — Guards, hardening, edge cases | ✅ Done | `dd61421` | WI 1.16 pr-URL append + terminal-states doc; WI 1.17 test-quickfix.sh 11→42 cases / 19→50 assertions (load-bearing cases 11/18/19/20/33/34 by number); WI 1.18 run-all.sh reg (carried from 1a); WI 1.19 .claude/skills/quickfix/ byte-identical mirror; 704/704 suite pass |
 | 3 — Documentation and cross-skill notes | ⬚ | | CLAUDE_TEMPLATE, README, update-zskills |
 
 **Phase split rationale:** Phase 1 grew to 20 WIs / 25+ tests. 1a = shippable core; 1b = hardening + structural guards. Phase 3 writes docs only after the hardened skill lands.

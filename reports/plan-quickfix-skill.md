@@ -1,5 +1,38 @@
 # Plan Report — /quickfix Skill (Low-Ceremony Branch+Commit+PR from Main)
 
+## Phase — 1b Guards, Hardening, Edge Cases, Mirror [UNFINALIZED]
+
+**Plan:** plans/QUICKFIX_SKILL.md
+**Status:** Completed (verified, landed to main)
+**Worktree:** /tmp/zskills-cp-quickfix-skill-phase-1b
+**Branch:** cp-quickfix-skill-phase-1b
+**Worktree commit:** 47dae81
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1.16 | `pr: $PR_URL` append on success + terminal-states doc | Done | `skills/quickfix/SKILL.md:640` (append `>>`, not overwrite); EXIT trap intact at `:346`; terminal-states doc `:649-660` including literal `status: cancelled` string |
+| 1.17 | test-quickfix.sh expanded to ≥35 cases with load-bearing regression guards | Done | 11→42 cases, 19→50 assertions (+665 lines). Cases 11, 18, 19, 20, 33, 34 all present by case number |
+| 1.18 | run-all.sh registration carried from 1a; re-verified | Done | `grep -c 'test-quickfix.sh' tests/run-all.sh` = 1 |
+| 1.19 | .claude/skills/quickfix/ byte-identical mirror (literal-path idiom) | Done | `diff -r skills/quickfix .claude/skills/quickfix` empty |
+
+### Verification (fresh verifier subagent)
+- Test suite: **704/704 pass** (baseline post-1a 673/673; +31 new from test-quickfix.sh expansion; 0 regressions).
+- All 6 structural anti-patterns absent: `rm -rf "\$`, `|| true`, `HEAD:main|HEAD:master`, `--no-verify`, `(write|cat >).*\.landed`, `git push [^|]*:`.
+- All 5 behavioral gates present: `status: cancelled` (`:655`), `exit 6` (7 occurrences across cleanup branches), `stale` (5 occurrences), `sanitize-pipeline-id.sh` (`:312`), `/tmp/zskills-tests` (`:479, :487`).
+
+### Load-bearing regression guards (case-numbered per plan lines 211-218)
+- Case 11 @ `tests/test-quickfix.sh:356-367` — push-refspec absence.
+- Case 18 @ `:484-496` — `full_cmd` mismatch → rc=1 + `full_cmd differs` substring.
+- Case 19 @ `:499-511` — `unit_cmd` unset → rc=1 + `requires testing.unit_cmd`.
+- Case 20 @ `:514-534` — `--skip-tests` bypasses `unit_cmd` gate.
+- Case 33 @ `:763-775` — `rm -rf "\$` grep absence.
+- Case 34 @ `:777-789` — `|| true` grep absence.
+
+### Notes
+- Impl agent self-caught and fixed one test-harness hygiene bug mid-run: a `make_fixture` helper was leaking stdout from `git` side-effect calls, creating a stray directory. Fixed by adding `>/dev/null 2>&1` redirects; stray dir removed before commit. Worktree `git status -s` is clean of surprises post-fix.
+- Orchestrator note: the Phase 1b run also produced out-of-band feedback about `/run-plan finish auto` cron design — I dispatched the first impl agent in background mode, which violated the spec's implicit foreground-dispatch assumption and caused `*/1` cron noise during the phase. See `feedback_cron_chunking_noise.md` memory. Phase 1b's verifier was dispatched foreground correctly. A follow-up plan (bracket-pattern cron: delete on phase start, recreate on land) is queued per user's suggestion to enable background dispatch AND parallel plans cleanly.
+
 ## Phase — 1a Core Skill + Happy-Path Tests [UNFINALIZED]
 
 **Plan:** plans/QUICKFIX_SKILL.md
