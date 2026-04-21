@@ -1,5 +1,30 @@
 # Plan Report — /quickfix Skill (Low-Ceremony Branch+Commit+PR from Main)
 
+## Phase — 3 Documentation and Cross-Skill Notes [UNFINALIZED]
+
+**Plan:** plans/QUICKFIX_SKILL.md
+**Status:** Completed (verified, landed to main)
+**Worktree:** /tmp/zskills-cp-quickfix-skill-phase-3
+**Branch:** cp-quickfix-skill-phase-3
+**Worktree commit:** b41468c
+
+### Work Items
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 3.1 | CLAUDE_TEMPLATE.md bullet | Done | `CLAUDE_TEMPLATE.md:155` — `/quickfix Fix README typo` bullet inserted before the `/do Add dark mode. pr` line |
+| 3.3 | skills/update-zskills/SKILL.md — count + enum | Done | `:58` count 18→19; `:453` `/quickfix` added to `sanitize-pipeline-id.sh` consumer line |
+| 3.4 | README.md Ship-table row | Done | `README.md:413` — `` `/quickfix` `` row inserted in `#### Ship` table, matching existing column format |
+| 3.5 | .claude/skills/update-zskills/ mirror | Done | `diff -r skills/update-zskills .claude/skills/update-zskills` empty (byte-identical) |
+
+### Verification (fresh verifier subagent)
+- Test suite: **704/704 pass** (baseline 704/704; docs-only phase; 0 regressions).
+- All 6 acceptance greps from Phase 3 pass (rc=0 each).
+- Judgment on WI 3.3c (other-enumeration scan): `/quickfix` added only to the `sanitize-pipeline-id.sh` consumer enumeration, because grep confirmed /quickfix's SKILL.md references only that one script — no `worktree-add-safe.sh`, `create-worktree.sh`, `write-landed.sh`, `land-phase.sh` references. Architecturally consistent with /quickfix's "no worktree, no landing marker" identity.
+
+### Notes
+- Plan WI 3.2 is skip-numbered (doesn't exist). Impl correctly did not invent work to fill it.
+- `/quickfix` is now discoverable via: `CLAUDE_TEMPLATE.md` (consumer-project reference), `README.md` (project-front-page Ship table), `skills/update-zskills/SKILL.md` (installer enumeration + count).
+
 ## Phase — 1b Guards, Hardening, Edge Cases, Mirror [UNFINALIZED]
 
 **Plan:** plans/QUICKFIX_SKILL.md
