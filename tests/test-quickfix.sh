@@ -201,6 +201,34 @@ PREFLIGHT_SCRIPT="$TEST_TMPDIR/preflight.sh"
 } > "$PREFLIGHT_SCRIPT"
 chmod +x "$PREFLIGHT_SCRIPT"
 
+# Full end-to-end flow extractor — preflight + mode + slug + branch +
+# WI 1.10 (user-edited diff-and-maybe-prompt) + WI 1.12 test gate +
+# WI 1.13 commit + WI 1.14 push + WI 1.15 PR create. Skips WI 1.11
+# (agent-dispatched mode is a model-layer instruction; its lone bash
+# snippet unconditionally overwrites $CHANGED_FILES from $DIRTY_AFTER
+# which doesn't exist in user-edited mode, so running it would break
+# the test). The split is intentional: this script validates the
+# user-edited-mode end-to-end flow; agent-dispatched mode is only
+# testable by a real top-level skill invocation, not a bash fixture.
+extract_full_flow() {
+  awk '
+    /^### WI 1\.11/         { skip = 1 }
+    /^## Phase 4/           { skip = 0 }
+    skip                    { next }
+    /^```bash$/             { infence = 1; next }
+    infence && /^```$/      { infence = 0; print ""; next }
+    infence                 { print }
+  ' "$SKILL"
+}
+
+FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
+{
+  echo '#!/bin/bash'
+  echo 'set -u'
+  extract_full_flow
+} > "$FULL_FLOW_SCRIPT"
+chmod +x "$FULL_FLOW_SCRIPT"
+
 echo "=== quickfix — structural and algorithmic invariants ==="
 
 # ────────────────────────────────────────────────────────────────────
@@ -906,6 +934,56 @@ else
   fail "42 --branch override: rc=$RC current='$CURRENT'"
 fi
 rm -f -- "$ERR"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 43 — TRUE end-to-end (user-edited mode): preflight → branch →
+# test gate → commit → push → PR creation. Closes the "manual smoke"
+# acceptance criterion from Phase 1a (deferred to Phase 1b; Phase 1b's
+# 42 cases validated structural invariants but never actually ran the
+# whole flow). Runs against the full-flow extracted script (all bash
+# fences from SKILL.md minus WI 1.11's agent-dispatched snippet).
+#
+# Asserts: rc=0; branch quickfix/fix-readme-typo exists locally AND on
+# bare remote (push succeeded); commit has expected mode-aware trailer;
+# tracking marker has `status: complete` AND a `pr:` field (the mock
+# gh URL); stdout contains the PR URL so the user sees something
+# actionable.
+#
+# Uses --yes so WI 1.10's interactive "Proceed? [y/N]" prompt is
+# bypassed deterministically.
+# ────────────────────────────────────────────────────────────────────
+FIX=$(make_fixture c43)
+echo "edit for fix" >> "$FIX/README.md"
+ERR=$(mktemp)
+OUT=$(mktemp)
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$FULL_FLOW_SCRIPT" --yes "fix readme typo" >"$OUT" 2>"$ERR")
+RC=$?
+
+# Assertions
+CURRENT=$(git -C "$FIX" branch --show-current)
+BRANCH_EXISTS_LOCAL=$(git -C "$FIX" show-ref --verify --quiet "refs/heads/quickfix/fix-readme-typo" && echo yes || echo no)
+BRANCH_EXISTS_REMOTE=$(git -C "$FIX" show-ref --verify --quiet "refs/remotes/origin/quickfix/fix-readme-typo" && echo yes || echo no)
+MARKER="$FIX/.zskills/tracking/quickfix.fix-readme-typo/fulfilled.quickfix.fix-readme-typo"
+MARKER_STATUS_COMPLETE=$( [ -f "$MARKER" ] && grep -q '^status: complete$' "$MARKER" && echo yes || echo no)
+MARKER_PR_FIELD=$( [ -f "$MARKER" ] && grep -q '^pr: https' "$MARKER" && echo yes || echo no)
+STDOUT_HAS_PR_URL=$(grep -q 'github.com/owner/repo/pull/1' "$OUT" && echo yes || echo no)
+COMMIT_TRAILER=$(git -C "$FIX" log -1 --pretty=%B quickfix/fix-readme-typo 2>/dev/null | grep -c 'Generated with /quickfix (user-edited)')
+
+if [ "$RC" -eq 0 ] \
+   && [ "$BRANCH_EXISTS_LOCAL" = "yes" ] \
+   && [ "$BRANCH_EXISTS_REMOTE" = "yes" ] \
+   && [ "$MARKER_STATUS_COMPLETE" = "yes" ] \
+   && [ "$MARKER_PR_FIELD" = "yes" ] \
+   && [ "$STDOUT_HAS_PR_URL" = "yes" ] \
+   && [ "$COMMIT_TRAILER" -ge 1 ]; then
+  pass "43 true end-to-end (user-edited): branch pushed, PR URL printed, marker complete with pr: field, mode-aware trailer"
+else
+  fail "43 end-to-end: rc=$RC current='$CURRENT' local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-complete=$MARKER_STATUS_COMPLETE marker-pr=$MARKER_PR_FIELD stdout-url=$STDOUT_HAS_PR_URL trailer-count=$COMMIT_TRAILER"
+  echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
+  echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
+  [ -f "$MARKER" ] && { echo "  --- marker ---"; sed 's/^/    /' "$MARKER"; }
+fi
+rm -f -- "$ERR" "$OUT"
 
 echo ""
 echo "---"
