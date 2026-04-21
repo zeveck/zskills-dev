@@ -436,26 +436,30 @@ setup_push_remote() {
 }
 
 expect_project_deny() {
-  local cmd="$1"
+  # Accept 1-arg (cmd) or 2-arg (label, cmd) forms. Legacy callers pass one
+  # arg; newer callers pass a human-readable label + the command under test.
+  local label cmd
+  if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
   local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
-    pass "$cmd → denied (expected)"
+    pass "$label → denied (expected)"
   else
-    fail "$cmd → allowed (expected deny)"
+    fail "$label → allowed (expected deny)"
   fi
 }
 
 expect_project_allow() {
-  local cmd="$1"
+  local label cmd
+  if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
   local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ -z "$result" ]] || [[ "$result" != *"deny"* ]]; then
-    pass "$cmd → allowed (expected)"
+    pass "$label → allowed (expected)"
   else
-    fail "$cmd → denied (expected allow)"
+    fail "$label → denied (expected allow)"
   fi
 }
 
@@ -497,6 +501,28 @@ expect_project_allow "rm -f on file whose basename contains -r substring" \
   "rm -f /tmp/.zskills/tracking-adjacent-path-reporter.log"
 expect_project_allow "rm -f plus --branch flag (--branch has 'r' in 'branch' but is a long flag)" \
   "rm -f /tmp/x; gh pr view --branch main; cat /tmp/.zskills/tracking/foo"
+
+# Data-region redaction parity with block-unsafe-generic.sh: pattern rules
+# now scan an extracted + redacted $COMMAND, so commit messages and heredoc
+# prose that DISCUSS a banned pattern don't trip the rule scanning that
+# pattern. Extends the earlier (issue 7f-style) tests in generic's suite to
+# cover project-hook rules.
+expect_project_allow "commit -m mentions 'git push' literally — doesn't trip push-tracking rule" \
+  'git commit -m "warn: don'\''t git push before tests"'
+expect_project_allow "commit -m mentions 'git cherry-pick' — doesn't trip cherry-pick rule" \
+  'git commit -m "docs: see git cherry-pick notes"'
+expect_project_allow "commit -m mentions 'git add .claude/logs/' — doesn't trip logs rule" \
+  'git commit -m "note: avoid git add .claude/logs/ — stage by name"'
+expect_project_allow "commit -m mentions '.zskills/tracking' — doesn't trip recursive-delete rule" \
+  'git commit -m "docs: .zskills/tracking cleanup via scripts"'
+expect_project_allow "commit -m mentions 'bash scripts/clear-tracking.sh' — doesn't trip exec rule" \
+  'git commit -m "hint: run bash scripts/clear-tracking.sh if stale"'
+# Same flag-scoped redaction covers gh pr/issue body/title args.
+expect_project_allow "gh pr create --body mentions banned pattern — not execution" \
+  'gh pr create --body "warn: '\''git push --force'\'' will fail here"'
+# Chained destructive op AFTER a redacted -m message still blocks.
+expect_project_deny  "commit with prose + chained deny op still denies the chain" \
+  'git commit -m "msg about git push" && rm -rf .zskills/tracking'
 
 # Block execution of clear-tracking script
 expect_project_deny "bash scripts/clear-tracking.sh"

@@ -15,6 +15,47 @@ if [[ "$INPUT" != *'"tool_name":"Bash"'* ]] && [[ "$INPUT" != *'"tool_name": "Ba
   exit 0
 fi
 
+# ──────────────────────────────────────────────────────────────
+# Command extraction + data-region redaction
+# ──────────────────────────────────────────────────────────────
+# Lifted from block-unsafe-generic.sh so pattern rules below scan the
+# actual shell command with commit-message / PR-body / heredoc prose
+# stripped out. Without this, rules fire on commit messages that merely
+# DISCUSS a pattern (e.g., `git commit -m "don't git push before tests"`
+# would trip the push-tracking rule, or a commit message mentioning
+# `.zskills/tracking` would trip the recursive-delete rule).
+#
+# Only the pattern-scanning rules use $COMMAND. Structured-field
+# extraction (transcript_path, etc.) continues to read raw $INPUT.
+
+# Extract the command field from tool_input JSON.
+COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g')
+# Fallback: if extraction fails (malformed JSON), scan raw INPUT so the
+# hook remains defensive — no false-allows.
+[ -z "$COMMAND" ] && COMMAND="$INPUT"
+
+# Pass 1 — heredoc bodies. Redact `<<[-]?['"]?DELIM['"]?\n BODY \nDELIM(\n|$)`
+# with a sentinel. :h / t h loop handles sequential heredocs with different
+# delimiters. GNU sed -E backrefs pin the closing delimiter to the opener.
+COMMAND=$(printf '%s' "$COMMAND" | sed -E \
+  -e ':h' \
+  -e 's/<<-?[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 's/<<-?[[:space:]]*'\''([A-Za-z_][A-Za-z0-9_]*)'\''\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 's/<<-?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\\n.*\\n\1(\\n|$)/HEREDOC_REDACTED\2/' \
+  -e 't h')
+
+# Pass 2 — flag-scoped quoted arg values.
+# - `git commit`                       : -m, --message (incl. -am/-Sm)
+# - `gh pr|issue create|comment`       : --body, -b, --title, -t
+# Intermediate args tolerated via [^|;&]* so chained ops after the
+# arg stay visible. Replacement drops the quotes (bare `REDACTED`) so
+# the :m / t m loop terminates on re-run.
+COMMAND=$(printf '%s' "$COMMAND" | sed -E \
+  -e ':m' \
+  -e 's/(git[[:space:]]+commit[[:space:]]([^|;&]*[[:space:]])?(-[a-zA-Z]*m|--message)[[:space:]]+)("[^"]*"|'\''[^'\'']*'\'')/\1REDACTED/g' \
+  -e 's/(gh[[:space:]]+(pr|issue)[[:space:]]+(create|comment)[[:space:]]([^|;&]*[[:space:]])?(--body|-b|--title|-t)[[:space:]]+)("[^"]*"|'\''[^'\'']*'\'')/\1REDACTED/g' \
+  -e 't m')
+
 # Block patterns -- each with a reason
 block_with_reason() {
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$1"
@@ -148,7 +189,7 @@ is_on_main() {
 # bash blob). Past failure: `rm -f X; bash ... --worktree ... .zskills/tracking/...`
 # false-positived because `--worktree`'s `-r-letters` satisfied the flag
 # slot mid-regex.
-if [[ "$INPUT" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills/tracking ]]; then
+if [[ "$COMMAND" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills/tracking ]]; then
   block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash scripts/clear-tracking.sh"
 fi
 
@@ -162,7 +203,7 @@ fi
 # `bash` but the `bash` there is data, not a command verb).
 _CT_EXEC_CMD='(^|[;&|(`]|"command":")[[:space:]]*(bash|sh)[[:space:]][^;&|"]*clear-tracking'
 _CT_EXEC_DIR='(^|[;&|(`]|"command":")[[:space:]]*\./[^[:space:]"]*clear-tracking'
-if [[ "$INPUT" =~ $_CT_EXEC_CMD ]] || [[ "$INPUT" =~ $_CT_EXEC_DIR ]]; then
+if [[ "$COMMAND" =~ $_CT_EXEC_CMD ]] || [[ "$COMMAND" =~ $_CT_EXEC_DIR ]]; then
   block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash scripts/clear-tracking.sh"
 fi
 
@@ -174,7 +215,7 @@ fi
 
 # ─── CONFIGURE: remove this section if you don't use session logging ───
 # git add .claude/logs/ (sweeps in all sessions' logs -- stage specific files)
-if [[ "$INPUT" =~ git[[:space:]]+add[[:space:]]+\.claude/logs/?([[:space:]]|$) ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+\.claude/logs/?([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git add .claude/logs/ sweeps in ALL sessions' logs. Stage your session's logs by name: git add .claude/logs/*-<session-id>*.md"
 fi
 
@@ -214,14 +255,14 @@ done
 unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
 
 # --- main_protected: block git commit on main ---
-if [[ "$INPUT" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
+if [[ "$COMMAND" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
 
 # ─── CONFIGURE: set your full test command ────────────────────────────
 # Safety net: transcript-based verification on git commit
 # Ensures tests were run before committing code files.
-if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+commit ]]; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -373,13 +414,13 @@ if [[ "$INPUT" =~ git[[:space:]]+commit ]]; then
 fi
 
 # --- main_protected: block git cherry-pick on main ---
-if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]] && is_main_protected && is_on_main; then
+if [[ "$COMMAND" =~ git[[:space:]]+cherry-pick ]] && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
 
 # Safety net: transcript-based verification on git cherry-pick
 # Cherry-picks replay existing commits and bypass the commit hook above.
-if [[ "$INPUT" =~ git[[:space:]]+cherry-pick ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+cherry-pick ]]; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -472,7 +513,7 @@ fi
 
 # Safety net: tracking enforcement on git push
 # Push is the landing gate for PR mode — same tracking checks as commit/cherry-pick.
-if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
+if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
   TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
@@ -564,11 +605,11 @@ if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
 fi
 
 # --- main_protected: block git push to main ---
-if [[ "$INPUT" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
+if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
   # Check if pushing to main/master (explicit refspec or default branch)
   if is_on_main; then
     # On main branch, default push targets main
-    if [[ ! "$INPUT" =~ origin[[:space:]]+[a-zA-Z] ]] || [[ "$INPUT" =~ origin[[:space:]]+(main|master) ]]; then
+    if [[ ! "$COMMAND" =~ origin[[:space:]]+[a-zA-Z] ]] || [[ "$COMMAND" =~ origin[[:space:]]+(main|master) ]]; then
       block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
     fi
   fi
