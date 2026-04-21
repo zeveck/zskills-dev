@@ -152,6 +152,7 @@ Three landing modes control how agent work reaches main:
 - `/run-plan plans/X.md finish auto pr`
 - `/fix-issues 10 pr`
 - `/research-and-go Build an RPG. pr`
+- `/quickfix Fix README typo` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main)
 - `/do Add dark mode. pr`
 
 **Config default:** Set in `.claude/zskills-config.json`:

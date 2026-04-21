@@ -55,7 +55,7 @@ Behavior by invocation:
 - `--with-block-diagram-addons` — install/update core skills + block-diagram
   add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
 
-Without an add-on flag, only the 18 core skills are installed/updated.
+Without an add-on flag, only the 19 core skills are installed/updated.
 If core is already installed, adding an add-on flag just copies the
 add-on skills (the audit detects core is satisfied and skips it).
 
@@ -450,7 +450,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `write-landed.sh` — referenced by `/run-plan`, `/fix-issues`, `/commit` for rc-checked atomic `.landed` marker writes
 - `worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
 - `create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
-- `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by writers before persisting ID)
+- `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
 - `apply-preset.sh` — required by the preset UX (Step F); splices/flips the `BLOCK_MAIN_PUSH` line in `block-unsafe-generic.sh` and updates `execution.landing`/`execution.main_protected` in config
 - `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
 - `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `var/dev.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`

@@ -410,6 +410,7 @@ data pipeline.
 | Skill | Purpose |
 |-------|---------|
 | `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
+| `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
 | `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
 
 #### Support
