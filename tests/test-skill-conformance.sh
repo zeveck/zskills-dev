@@ -142,6 +142,16 @@ check_fixed do "branch name slug"             'do-${TASK_SLUG}'
 check_fixed do "pr worktree path"             '/tmp/${PROJECT_NAME}-do-'
 check_fixed do "sanitize-pipeline-id"         'bash scripts/sanitize-pipeline-id.sh'
 check_fixed do "pipeline-id format"           'PIPELINE_ID="do.'
+# Landing-mode resolution: /do must detect pr/direct/worktree flags,
+# fall back to execution.landing in zskills-config, and enforce the
+# direct+main_protected guard. Mirrors /run-plan and /fix-issues.
+check_fixed do "landing arg: pr"              'ARG_LANDING="pr"'
+check_fixed do "landing arg: direct"          'ARG_LANDING="direct"'
+check_fixed do "landing arg: worktree"        'ARG_LANDING="worktree"'
+check_fixed do "landing config read"          'execution.landing'
+check_fixed do "landing config: cherry-pick"  'cherry-pick) LANDING_MODE="worktree"'
+check       do "landing fallback direct"      'LANDING_MODE="direct"'
+check       do "direct+main_protected guard"  'direct mode is incompatible with main_protected'
 check       do "no-echo in main session"      'Do NOT echo.*ZSKILLS_PIPELINE_ID=do'
 check_fixed do "rebase before push"           'git rebase origin/main'
 check       do "no --fill"                    'never use --fill|NEVER use --fill|not --fill'

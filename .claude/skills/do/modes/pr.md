@@ -1,7 +1,10 @@
 # /do — PR Mode (Path A)
 
 Full end-to-end PR flow: create branch, worktree, dispatch agents, open the PR, poll CI, then write the landing marker.
-### Path A: PR mode (`pr` flag)
+### Path A: PR mode (`LANDING_MODE="pr"`)
+
+Selected when the user passes `pr` explicitly, or when
+`execution.landing` in `.claude/zskills-config.json` is `"pr"`.
 
 **This path replaces the normal Phase 2–5 flow entirely. After the PR is created, skip to Phase 5 Report.**
 

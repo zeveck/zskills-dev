@@ -35,21 +35,26 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
 ## Arguments
 
 ```
-/do <description> [worktree] [push] [pr] [every SCHEDULE] [now]
+/do <description> [worktree|direct|pr] [push] [every SCHEDULE] [now]
 /do stop | next
 ```
 
 - **description** (required) — what to do, in natural language
-- **worktree** (optional) — isolate work in a named worktree at
-  `/tmp/<project>-do-<slug>/` for riskier or larger tasks. Without this
-  flag, work happens directly on main.
+- **landing flags** (optional, mutually exclusive) — override the
+  `execution.landing` default in `.claude/zskills-config.json`:
+  - **worktree** — isolate in `/tmp/<project>-do-<slug>/`, cherry-pick
+    back to main after verification. Matches `execution.landing: "cherry-pick"`.
+  - **pr** — named worktree + feature branch, push, create PR to main,
+    poll CI. Matches `execution.landing: "pr"`.
+  - **direct** — work on main in place, no landing step. Matches
+    `execution.landing: "direct"`.
+  - When no flag is given, read `execution.landing` from config.
+    (`cherry-pick` → worktree, `pr` → pr, `direct` → direct, missing
+    config → direct.)
 - **push** (optional) — auto-push to remote after verification passes.
   Upgrades verification to use a **separate verification agent** running
-  `/verify-changes`. Push never happens without verification passing first.
-- **pr** (optional) — work in a named worktree on a named branch, then
-  push and create a PR to main. Dispatches an implementation agent to do
-  the work, waits for completion, rebases onto latest main, pushes, creates
-  PR, and polls CI (report only).
+  `/verify-changes`. Push never happens without verification passing
+  first. Ignored in `pr` mode (PR mode handles push internally).
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -75,19 +80,16 @@ Otherwise, check the **first word** of `$ARGUMENTS`:
 If the first word is NOT a meta-command, it's a regular task. Parse
 trailing flags from the END backward:
 - `push` — recognized at the end
-- `worktree` — recognized at the end
-- `pr` — recognized at the end (use extended pattern with `.!?` punctuation, since
-  task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
+- `worktree` — recognized at the end (landing flag)
+- `direct` — recognized at the end (landing flag)
+- `pr` — recognized at the end (landing flag; use extended pattern with `.!?` punctuation, since task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
 - `every <schedule>` — recognized at the end (e.g., `every 4h`, `every day at 9am`)
 - `now` — recognized at the end (only meaningful with `every`: run now AND schedule)
 
-**PR flag detection pattern** (use extended `.!?` punctuation):
-```bash
-LANDING_MODE="default"
-if [[ "$REMAINING" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
-  LANDING_MODE="pr"
-fi
-```
+**Landing-flag detection** — resolves to `LANDING_MODE ∈ {pr, worktree, direct}`.
+Explicit flag wins; otherwise fall back to `execution.landing` in
+`.claude/zskills-config.json`; otherwise default `direct`. See Phase 1.5
+for the full resolution block.
 
 Everything before the trailing flags is the task description.
 
@@ -242,28 +244,58 @@ Before touching anything:
 
 Before any research or execution, parse flags from `$ARGUMENTS`.
 
-**Step 1: Check for `pr` flag** (trailing, using extended punctuation pattern):
+**Step 1: Resolve `LANDING_MODE`.** Precedence: explicit flag (`pr`,
+`direct`, `worktree`) → `execution.landing` in
+`.claude/zskills-config.json` (`cherry-pick` → `worktree`, `pr` → `pr`,
+`direct` → `direct`) → fallback `direct`.
+
 ```bash
 REMAINING="$ARGUMENTS"
-LANDING_MODE="default"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+CONFIG_FILE="$MAIN_ROOT/.claude/zskills-config.json"
+
+ARG_LANDING=""
 if [[ "$REMAINING" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
-  LANDING_MODE="pr"
-  # Strip the pr token from description
-  TASK_DESCRIPTION=$(echo "$REMAINING" | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /')
-  TASK_DESCRIPTION=$(echo "$TASK_DESCRIPTION" | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
-  if [ -z "$TASK_DESCRIPTION" ]; then
-    echo "ERROR: Task description required. Usage: /do <task description> pr"
-    exit 1
-  fi
+  ARG_LANDING="pr"
+elif [[ "$REMAINING" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]]; then
+  ARG_LANDING="direct"
+elif [[ "$REMAINING" =~ (^|[[:space:]])worktree($|[[:space:]]) ]]; then
+  ARG_LANDING="worktree"
+fi
+
+if [ -n "$ARG_LANDING" ]; then
+  LANDING_MODE="$ARG_LANDING"
+elif [ -f "$CONFIG_FILE" ] && [[ $(cat "$CONFIG_FILE") =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+  case "${BASH_REMATCH[1]}" in
+    pr)          LANDING_MODE="pr" ;;
+    cherry-pick) LANDING_MODE="worktree" ;;
+    direct)      LANDING_MODE="direct" ;;
+    *)           LANDING_MODE="direct" ;;  # unknown → safe default
+  esac
+else
+  LANDING_MODE="direct"
+fi
+
+# Guard: direct + main_protected is an error (same contract as /run-plan
+# and /fix-issues). Prevents silently committing to main when the repo
+# requires PR/feature-branch workflow.
+if [ "$LANDING_MODE" = "direct" ] && [ -f "$CONFIG_FILE" ] \
+   && grep -q '"main_protected"[[:space:]]*:[[:space:]]*true' "$CONFIG_FILE"; then
+  echo "ERROR: direct mode is incompatible with main_protected: true. Use pr, worktree, or change config."
+  exit 1
 fi
 ```
 
-If `LANDING_MODE` is not `pr`, then `TASK_DESCRIPTION` is the full `$ARGUMENTS` minus the other trailing flags (`push`, `worktree`, `every ...`, `now`).
-
-**Step 2: Check for `worktree` flag** (trailing, plain word match):
+**Step 2: Derive `TASK_DESCRIPTION`** (strip landing tokens):
 ```bash
-if [[ "$REMAINING" =~ (^|[[:space:]])worktree($|[[:space:]]) ]]; then
-  USE_WORKTREE=true
+TASK_DESCRIPTION=$(echo "$REMAINING" \
+  | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /' \
+  | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
+  | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+if [ -z "$TASK_DESCRIPTION" ]; then
+  echo "ERROR: Task description required. Usage: /do <task description> [pr|direct|worktree] [push]"
+  exit 1
 fi
 ```
 
@@ -274,19 +306,19 @@ if [[ "$REMAINING" =~ (^|[[:space:]])push($|[[:space:]]) ]]; then
 fi
 ```
 
-`pr` takes precedence: if `LANDING_MODE="pr"`, ignore `worktree` and `push` flags.
+`pr` takes precedence: if `LANDING_MODE="pr"`, ignore `push` (PR mode handles push internally).
 
 ## Phase 2 — Execute
 
-Select the execution path based on the parsed flags from Phase 1.5,
+Select the execution path based on `LANDING_MODE` (resolved in Phase 1.5),
 then **read the corresponding mode file in full and follow its
 procedure end-to-end**. Do not proceed until you have read the file.
 
-| Flags include | Path | Mode file |
-|---------------|------|-----------|
-| `pr`          | A    | [modes/pr.md](modes/pr.md) |
-| `worktree`    | B    | [modes/worktree.md](modes/worktree.md) |
-| (neither)     | C    | [modes/direct.md](modes/direct.md) |
+| `LANDING_MODE` | Path | Mode file |
+|----------------|------|-----------|
+| `pr`           | A    | [modes/pr.md](modes/pr.md) |
+| `worktree`     | B    | [modes/worktree.md](modes/worktree.md) |
+| `direct`       | C    | [modes/direct.md](modes/direct.md) |
 
 ## Phase 3 — Verify
 

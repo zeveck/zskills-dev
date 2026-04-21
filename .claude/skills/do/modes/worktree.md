@@ -1,7 +1,10 @@
 # /do — Worktree Mode (Path B)
 
 Create a named worktree and do the work there; the verification agent commits after tests pass.
-### Path B: Worktree mode (`worktree` flag, no `pr`)
+### Path B: Worktree mode (`LANDING_MODE="worktree"`)
+
+Selected when the user passes `worktree` explicitly, or when
+`execution.landing` in `.claude/zskills-config.json` is `"cherry-pick"`.
 
 Create a named worktree at `${realpath(MAIN_ROOT/../)}/do-<slug>/` via `scripts/create-worktree.sh`:
 

@@ -1,9 +1,11 @@
 # /do — Direct Mode (Path C)
 
 Work directly on main; the verification agent commits after tests pass, one logical unit per commit.
-### Path C: Direct (default, no `pr`, no `worktree`)
+### Path C: Direct (`LANDING_MODE="direct"`)
 
-Work directly on main.
+Selected when the user passes `direct` explicitly, when `execution.landing`
+in `.claude/zskills-config.json` is `"direct"`, or as the fallback when
+no config is present. Work directly on main.
 
 **Follow existing conventions in all paths:**
 - Example models → `/model-design` skill guidelines
