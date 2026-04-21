@@ -138,8 +138,17 @@ is_on_main() {
 }
 
 # ─── Tracking file protection ───
-# Block recursive deletion of tracking directory
-if [[ "$INPUT" =~ rm[[:space:]].*-[a-zA-Z]*r[a-zA-Z]*.*\.zskills/tracking ]]; then
+# Block recursive deletion of tracking directory.
+# The `-r` / `-R` / `--recursive` flag must be a standalone token (preceded
+# by whitespace, not mid-word), AND both the flag and `.zskills/tracking`
+# must live in the same shell command (no ; & | crossing). The earlier
+# unanchored pattern matched ANY `-word-with-r` substring in the rm's
+# buffer (incl. `-tracked` inside `.zskills-tracked` pathnames and unrelated
+# long flags like `--worktree` / `--branch` later in the same multi-line
+# bash blob). Past failure: `rm -f X; bash ... --worktree ... .zskills/tracking/...`
+# false-positived because `--worktree`'s `-r-letters` satisfied the flag
+# slot mid-regex.
+if [[ "$INPUT" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills/tracking ]]; then
   block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash scripts/clear-tracking.sh"
 fi
 

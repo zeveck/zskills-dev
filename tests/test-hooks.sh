@@ -472,6 +472,32 @@ expect_project_deny "rm -fr .zskills/tracking"
 expect_project_allow "rm .zskills/tracking/requires.foo"
 expect_project_allow "rm -f .zskills/tracking/requires.old"
 
+# Regression guards (absolute paths, long form, flag-after-path).
+expect_project_deny "rm -rf /workspaces/zskills/.zskills/tracking"
+expect_project_deny "rm --recursive .zskills/tracking"
+expect_project_deny "rm /tmp/a -r .zskills/tracking/foo"
+
+# False-positive guards for anchor drift in the -r flag pattern.
+# Past failure: the original pattern was `rm[[:space:]].*-[a-zA-Z]*r[a-zA-Z]*.*\.zskills/tracking`
+# which matched ANY `-word-containing-r` token in the rm's buffer (including
+# substrings like `-tracked` inside `.zskills-tracked` pathnames, or unrelated
+# long flags like `--branch` / `--worktree` in an entirely different command
+# later in the same bash blob). The -r flag must be anchored to a flag-token
+# boundary (preceded by whitespace, not mid-word) AND scoped to a single shell
+# command (no ; & | crossing).
+expect_project_allow "rm -f .zskills-tracked (dash-tracked substring, not tracking dir)" \
+  "rm -f $WT/.zskills-tracked"
+expect_project_allow "rm -f file; later command with --worktree and .zskills/tracking" \
+  "rm -f foo.txt; bash scripts/post-run-invariants.sh --worktree /tmp/wt --branch b; printf >/workspaces/z/.zskills/tracking/marker"
+expect_project_allow "multi-line: rm -f then later .zskills/tracking (no -r anywhere)" \
+  "printf > /tmp/.zskills/tracking/foo
+rm -f /tmp/.zskills-tracked
+bash scripts/post-run-invariants.sh --worktree /tmp/wt --branch b"
+expect_project_allow "rm -f on file whose basename contains -r substring" \
+  "rm -f /tmp/.zskills/tracking-adjacent-path-reporter.log"
+expect_project_allow "rm -f plus --branch flag (--branch has 'r' in 'branch' but is a long flag)" \
+  "rm -f /tmp/x; gh pr view --branch main; cat /tmp/.zskills/tracking/foo"
+
 # Block execution of clear-tracking script
 expect_project_deny "bash scripts/clear-tracking.sh"
 expect_project_deny "sh scripts/clear-tracking.sh"
