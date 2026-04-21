@@ -1,7 +1,7 @@
 ---
 title: /create-worktree Skill — Unify Worktree Creation Across Skills
 created: 2026-04-18
-status: active
+status: complete
 ---
 
 # Plan: /create-worktree Skill — Unify Worktree Creation Across Skills
@@ -46,7 +46,7 @@ and dispatch their agent.
 | 1b — Full test suite + run-all registration + update-zskills registration | ✅ Done | `e257f25` | 20/20 cases; 594/594 full suite; +script gap closures (CWD-anchor, TOCTOU broaden) |
 | 2 — Migrate /run-plan (both modes) | ✅ Done | `27d5243` + `021226a` | CANARY10 gate PASSED (PR #37, merged as 773b2c3); two-commit structure preserves clean revert |
 | 3 — Migrate /fix-issues and /do (three sites) | ✅ Done | `7ac4722` + `4aed30d` + `b078690` + `1512389` + `2bfb68b` | WI 3.8 gates A-D all PASS; `2bfb68b` closes base-branch regression caught by Gate A (see Drift Log) |
-| 4 — Docs and cleanup | ⬚ | | |
+| 4 — Docs and cleanup | ✅ Done | (this commit) | CHANGELOG entry + frontmatter flip; WI 4.1 already satisfied by Phase 1b script-level entry (no skill-level edit needed — skills enumerated by glob); WIs 4.2/4.3 skipped per disjunctive acceptance (CLAUDE_TEMPLATE.md has no skill-listing section; PLAN_INDEX.md absent) |
 
 ## Phase 1a — Ship scripts/create-worktree.sh + Skill Wrapper + Smoke Test
 

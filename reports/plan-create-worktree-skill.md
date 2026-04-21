@@ -1,5 +1,20 @@
 # Plan Report — /create-worktree Skill (Unify Worktree Creation)
 
+## Phase — 4 Docs and Cleanup [COMPLETE]
+
+**Plan:** plans/CREATE_WORKTREE_SKILL.md
+**Status:** ✅ Done — plan frontmatter flipped to `status: complete` (2026-04-21)
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.1 | Skill-level registration in skills/update-zskills/SKILL.md | Already satisfied | Step 1 ("Scan installed skills and check dependency graph") enumerates skills via `.claude/skills/*/SKILL.md` glob — no literal-name list to edit. Script-level entry for `create-worktree.sh` landed in Phase 1b at line 452. Acceptance `grep -c 'create-worktree' skills/update-zskills/SKILL.md` ≥ 1 → already satisfied. |
+| 4.2 | CLAUDE_TEMPLATE.md reference | Skipped per disjunctive acceptance | Template has worktree-usage rules (isolation, "never apply to main without approval") but no skill-listing or creation-sequence section that would name `/create-worktree`. Adding one would be scope creep. |
+| 4.3 | plans/PLAN_INDEX.md entry | Skipped | File absent (`/plans` will rebuild). |
+| 4.4 | CHANGELOG.md entry | Done | Added `2026-04-21` section: `/create-worktree` + `scripts/create-worktree.sh` (Major), `/do honors execution.landing` (Major), plus minor entries for the hook redaction fix, `--no-preflight` base-branch fix, `clear-tracking.sh` per-pipeline recursion, and the test-cmd three-case resolution. |
+| 4.5 | Frontmatter `status: complete` | Done | This commit. |
+| 4.6 | Mirror update-zskills if 4.1 modified | N/A | 4.1 didn't modify update-zskills. |
+
 ## Phase — 2 Migrate /run-plan (both modes) — CANARY10 INVALIDATED; to be re-run as part of Phase 3 gates
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
