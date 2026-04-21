@@ -12,6 +12,20 @@
   `.worktreepurpose` write. `--pipeline-id <id>` is required — silent
   env-var fallback removed (caught latent bug where callers' canonical
   pipeline IDs weren't reaching tracking).
+- `/quickfix` skill — low-ceremony PR from main without a worktree. Auto-
+  detects user-edited mode (dirty tree + description → carry edits to a
+  branch and commit) vs agent-dispatched mode (clean tree + description →
+  model dispatches an agent to implement, then commits). PR-only; requires
+  `execution.landing == "pr"`. Runs the project's unit tests before commit
+  to satisfy the pre-commit hook. Fire-and-forget: commit, push, open PR,
+  print URL, exit.
+- `/cleanup-merged` skill — post-PR-merge local normalization. Fetches
+  origin with `--prune`, switches off a feature branch whose PR has merged
+  (or whose upstream is gone), pulls the main branch, and deletes local
+  feature branches whose upstreams were removed or whose PRs were merged.
+  Bails on a dirty tree; skips branches with unpushed commits; `--dry-run`
+  previews without modifying. Closes the async cleanup gap that PR-mode
+  flows inherit from git's design.
 - `/do`: honors `execution.landing` in zskills-config (same pattern as
   `/run-plan` and `/fix-issues`). `LANDING_MODE` now resolves via explicit
   flag (`pr`/`direct`/`worktree`) → config → fallback `direct`. Config
@@ -22,6 +36,14 @@
   `git commit -m|--message` / `gh pr|issue create|comment --body|--title`
   arg values before destructive-op scans. Stops false-positives on prose
   that mentions banned patterns (commit messages, PR bodies).
+- Hook `block-unsafe-project.sh`: same data-region redaction lifted in for
+  parity with the generic hook. Tracking-dir deletion rule anchors `-r`/
+  `-R`/`--recursive` as a flag token scoped to the single command, so
+  plain `rm -f` or multi-command lines mentioning `.zskills/tracking` in a
+  neighboring context no longer false-positive.
+- Hook `git checkout --` rule: anchors `--` as the file-separator token,
+  tolerating intermediate args like `HEAD~1` while continuing to reject
+  long flags (`--quiet`, `--force`, etc.).
 - `scripts/create-worktree.sh` `--no-preflight`: when `--from` is not
   passed, BASE now defaults to the main-repo's current branch (was:
   hardcoded `main`). Restores `/do` worktree-mode's pre-migration base-

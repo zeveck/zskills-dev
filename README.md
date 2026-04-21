@@ -12,7 +12,7 @@
 <!-- prod-strip:end -->
 # Z Skills
 
-**18 skills that plan, build, test, fix, and ship** — so one developer
+**20 skills that plan, build, test, fix, and ship** — so one developer
 can run a full engineering team.
 
 Z Skills encodes hard-won lessons from real agent failures into reusable
@@ -367,7 +367,7 @@ RUN_E2E=1 bash tests/run-all.sh          # + e2e-parallel-pipelines
 
 ## Skill catalog
 
-### 18 Core Skills (`skills/`)
+### 20 Core Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline.
@@ -411,6 +411,7 @@ data pipeline.
 |-------|---------|
 | `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
 | `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
+| `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
 | `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
 
 #### Support
@@ -419,11 +420,12 @@ data pipeline.
 |-------|---------|
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
+| `/create-worktree` | Unified worktree creation (used by other skills and ad-hoc): prefix-derived path, safe branch-add with TOCTOU remap |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
 
 ### Block Diagram Add-on (`block-diagram/`)
 
-3 additional skills for block-diagram editors. Not part of the core 18 —
+3 additional skills for block-diagram editors. Not part of the core 20 —
 install if your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 

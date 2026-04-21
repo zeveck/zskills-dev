@@ -155,6 +155,8 @@ Three landing modes control how agent work reaches main:
 - `/quickfix Fix README typo` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main)
 - `/do Add dark mode. pr`
 
+After a PR merges on GitHub, run `/cleanup-merged` to catch your local clone up (checkout main, pull, delete merged feature branches). Safe to run anytime; bails on a dirty tree.
+
 **Config default:** Set in `.claude/zskills-config.json`:
 
     {

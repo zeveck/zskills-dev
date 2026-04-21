@@ -56,7 +56,7 @@ Behavior by invocation:
 - `--with-block-diagram-addons` — install/update core skills + block-diagram
   add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
 
-Without an add-on flag, only the 19 core skills are installed/updated.
+Without an add-on flag, only the 20 core skills are installed/updated.
 If core is already installed, adding an add-on flag just copies the
 add-on skills (the audit detects core is satisfied and skips it).
 
