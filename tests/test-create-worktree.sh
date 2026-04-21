@@ -803,6 +803,63 @@ fi
 rm -f -- "$ERR_21"
 # No cleanup needed — nothing was created.
 
+# ────────────────────────────────────────────────────────────────────
+# Case 22 — --no-preflight defaults BASE to the main-repo's current
+# branch when --from is not passed. Regression guard for Gate A in
+# plans/CANARY_DO_WORKTREE_BASE.md: /do worktree-mode invoked from a
+# feature branch must produce a worktree whose HEAD equals the feature
+# branch's HEAD, not hardcoded 'main'.
+# Isolation: runs inside a fresh fixture git repo in /tmp so the test
+# does not depend on (or mutate) the real MAIN_ROOT's working-tree
+# state. The script anchors on git-common-dir, so MAIN_ROOT INSIDE the
+# script resolves to $FIX_22 when invoked from there.
+# ────────────────────────────────────────────────────────────────────
+FIX_22="/tmp/cw-c22-fixture-$$"
+rm -rf "$FIX_22"
+mkdir -p "$FIX_22/scripts"
+git init --quiet -b main "$FIX_22"
+git -C "$FIX_22" config user.email "t@t"
+git -C "$FIX_22" config user.name "t"
+cp "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$FIX_22/scripts/"
+cp "$MAIN_ROOT/scripts/worktree-add-safe.sh" "$FIX_22/scripts/"
+chmod +x "$FIX_22/scripts/sanitize-pipeline-id.sh" "$FIX_22/scripts/worktree-add-safe.sh"
+
+# Seed main.
+echo "init" > "$FIX_22/README.md"
+git -C "$FIX_22" add README.md
+git -C "$FIX_22" commit --quiet -m "init"
+
+# Feature branch with a unique commit ahead of main.
+git -C "$FIX_22" checkout --quiet -b feat-c22
+echo "feat" > "$FIX_22/feat.txt"
+git -C "$FIX_22" add feat.txt
+git -C "$FIX_22" commit --quiet -m "feat unique commit"
+FEAT_HEAD_22=$(git -C "$FIX_22" rev-parse HEAD)
+
+SLUG_22="c22"
+EXPECTED_WT_22="/tmp/$(basename "$FIX_22")-$SLUG_22"
+
+ERR_22=$(mktemp)
+STDOUT_22=$(cd "$FIX_22" && bash "$SCRIPT" --pipeline-id "test.c22.$$" --no-preflight "$SLUG_22" 2>"$ERR_22")
+RC_22=$?
+
+WT_HEAD_22="not-created"
+if [ -n "$STDOUT_22" ] && [ -d "$STDOUT_22" ]; then
+  WT_HEAD_22=$(git -C "$STDOUT_22" rev-parse HEAD 2>/dev/null || echo "rev-parse-failed")
+fi
+
+if [ "$RC_22" -eq 0 ] && [ "$STDOUT_22" = "$EXPECTED_WT_22" ] \
+   && [ "$WT_HEAD_22" = "$FEAT_HEAD_22" ]; then
+  pass "22 --no-preflight BASE defaults to main-repo HEAD: worktree HEAD matches feature branch HEAD"
+else
+  fail "22 --no-preflight base-from-HEAD: rc=$RC_22 stdout='$STDOUT_22' wt-head='$WT_HEAD_22' feat-head='$FEAT_HEAD_22'"
+  echo "  --- stderr ---"; cat "$ERR_22"
+fi
+rm -f -- "$ERR_22"
+# Fixture cleanup: worktree first, then fixture dir + any sibling under /tmp.
+[ -n "$STDOUT_22" ] && [ -d "$STDOUT_22" ] && git -C "$FIX_22" worktree remove --force "$STDOUT_22" 2>/dev/null || true
+rm -rf "$FIX_22" "$EXPECTED_WT_22"
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

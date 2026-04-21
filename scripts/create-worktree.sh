@@ -60,7 +60,7 @@ fi
 # ──────────────────────────────────────────────────────────────────
 PREFIX=""
 BRANCH_NAME_OVERRIDE=""
-FROM_BASE="main"
+FROM_BASE=""
 ROOT_OVERRIDE=""
 PURPOSE=""
 PIPELINE_ID_OVERRIDE=""
@@ -216,10 +216,29 @@ if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────────
-# WI 1a.7 — Pre-flight (skipped iff --no-preflight).
-# BASE defaults to 'main', overridable via --from.
+# WI 1a.7 — BASE resolution.
+# Precedence:
+#   1. Explicit --from <ref>      → use it.
+#   2. --no-preflight && no --from → MAIN_ROOT's current branch (detached
+#      HEAD falls back to the commit SHA). Closes the Gate A regression
+#      where the flag's docstring promised "branch from user's HEAD"
+#      but the implementation still hardcoded BASE=main.
+#   3. Otherwise                   → "main" (PR-mode / integration default).
 # ──────────────────────────────────────────────────────────────────
-BASE="$FROM_BASE"
+if [ -n "$FROM_BASE" ]; then
+  BASE="$FROM_BASE"
+elif [ "$NO_PREFLIGHT" -eq 1 ]; then
+  BASE=$(git -C "$MAIN_ROOT" symbolic-ref --short HEAD 2>/dev/null \
+         || git -C "$MAIN_ROOT" rev-parse HEAD 2>/dev/null || true)
+  if [ -z "$BASE" ]; then
+    echo "create-worktree: --no-preflight could not resolve MAIN_ROOT HEAD for base branch" >&2
+    exit 5
+  fi
+else
+  BASE="main"
+fi
+
+# Pre-flight (skipped iff --no-preflight).
 if [ "$NO_PREFLIGHT" -eq 0 ]; then
   # git worktree prune — tidy any stale registrations before attempting a fresh add.
   if ! git -C "$MAIN_ROOT" worktree prune 1>&2; then
