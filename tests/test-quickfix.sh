@@ -225,6 +225,12 @@ FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
 {
   echo '#!/bin/bash'
   echo 'set -u'
+  # WI 1.13 expects the model to set COMMIT_SUBJECT (conventional-commit
+  # form) before the commit fence runs. The fixture simulates that
+  # model-layer composition step with a synthetic subject so the bash
+  # extraction can test the rest of the flow (compose body, commit,
+  # push, PR) end-to-end.
+  echo 'COMMIT_SUBJECT="test(case43): synthetic conventional-commit subject"'
   extract_full_flow
 } > "$FULL_FLOW_SCRIPT"
 chmod +x "$FULL_FLOW_SCRIPT"
@@ -357,34 +363,26 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 10 — Commit trailer contract (WI 1.13). Co-author is now read
-# from .commit.co_author in zskills-config.json via jq BEFORE the
-# heredoc is built; the heredoc body itself carries `Co-Authored-By:
-# $CO_AUTHOR`, not a literal model string. Asserts:
-#   - user-edited body never contains a Co-Authored-By line
-#   - agent-dispatched body contains `Co-Authored-By: $CO_AUTHOR`
-#   - the jq-read form for .commit.co_author is present in the skill
+# Case 10 — Commit trailer contract (WI 1.13). Model composes
+# COMMIT_SUBJECT; bash fence composes the body from it + DESCRIPTION.
+# Asserts the design invariants textually:
+#   - Both mode-specific footers present: "Generated with /quickfix
+#     (user-edited)" and "(agent-dispatched)".
+#   - Co-Authored-By line uses $CO_AUTHOR (not hardcoded).
+#   - CO_AUTHOR is resolved from the config's co_author field via bash
+#     regex (BASH_REMATCH) — replacing the old jq read.
+#   - user-edited branch has NO Co-Authored-By trailer (the trailer
+#     appears exactly once in the skill, in the agent-dispatched arm).
 # ────────────────────────────────────────────────────────────────────
-USER_EDITED_BODY=$(awk '
-  /🤖 Generated with \/quickfix \(user-edited\)/  { want=1; found=1 }
-  want && /^COMMIT_EOF$/ { want=0 }
-  want && found          { print }
-' "$SKILL")
-
-AGENT_BODY=$(awk '
-  /🤖 Generated with \/quickfix \(agent-dispatched\)/  { want=1; found=1 }
-  want && /^COMMIT_EOF$/ { want=0 }
-  want && found          { print }
-' "$SKILL")
-
-if [ -n "$USER_EDITED_BODY" ] \
-   && [ -n "$AGENT_BODY" ] \
-   && ! printf '%s' "$USER_EDITED_BODY" | grep -q 'Co-Authored-By:' \
-   &&   printf '%s' "$AGENT_BODY"       | grep -qE 'Co-Authored-By: \$CO_AUTHOR' \
-   && grep -qE 'jq -r .*\.commit\.co_author' "$SKILL"; then
-  pass "10 commit trailer: user-edited omits Co-Authored-By; agent-dispatched uses jq-read \$CO_AUTHOR from .commit.co_author"
+COAUTH_COUNT=$(grep -c 'Co-Authored-By: \$CO_AUTHOR' "$SKILL" 2>/dev/null || echo 0)
+if grep -qE 'Generated with /quickfix \(user-edited\)' "$SKILL" \
+   && grep -qE 'Generated with /quickfix \(agent-dispatched\)' "$SKILL" \
+   && [ "$COAUTH_COUNT" = "1" ] \
+   && grep -q 'co_author' "$SKILL" \
+   && grep -q 'BASH_REMATCH' "$SKILL"; then
+  pass "10 commit trailer: both mode footers + single agent-only Co-Authored-By + CO_AUTHOR via BASH_REMATCH"
 else
-  fail "10 commit trailer: trailer contract not satisfied"
+  fail "10 commit trailer: contract not satisfied (coauth_count=$COAUTH_COUNT)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -459,59 +457,18 @@ rm -f -- "$ERR"
 # ────────────────────────────────────────────────────────────────────
 # Case 16 — gh missing exits 1 with gh-keyword stderr.
 # Point PATH at a minimal shadow that excludes gh; assert rc=1 plus
-# 'requires gh' in stderr.
+# 'requires gh' in stderr. The PATH is /usr/bin:/bin (common commands
+# available, no project bin/, no gh) — jq is NOT required any more
+# since the skill parses config via bash-regex.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c16)
 ERR=$(mktemp)
-# A deliberately-empty bin dir (no gh, no jq, nothing) — only inherit
-# the real PATH's jq. We still need jq, so construct a PATH with jq
-# but not gh. Easiest: copy jq into a dir and use ONLY that dir.
-ONLY_JQ="$FIX/only-jq-bin"
-mkdir -p "$ONLY_JQ"
-ln -s "$(command -v jq)" "$ONLY_JQ/jq"
-# Minimal essentials for bash/git: allow the whole real PATH but hide gh
-# by placing a dir that isn't on PATH. Easier strategy — use env -i and
-# re-inject specific bins.
-JQ_BIN="$(command -v jq)"
-GIT_BIN="$(command -v git)"
-DATE_BIN="$(command -v date)"
-# Use an explicit PATH with only /usr/bin + the jq binary's dir so we
-# can keep git & sed & awk & date, but DO have gh missing.
 (cd "$FIX" && PATH="/usr/bin:/bin" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
 RC=$?
 if [ "$RC" -eq 1 ] && grep -q 'requires gh' "$ERR"; then
   pass "16 gh missing: rc=1 + 'requires gh' stderr"
 else
   fail "16 gh missing: rc=$RC stderr='$(cat "$ERR")'"
-fi
-rm -f -- "$ERR"
-
-# ────────────────────────────────────────────────────────────────────
-# Case 17 — jq missing exits 1 with jq-keyword stderr.
-# Same idea as case 16, but restrict PATH so jq is absent.
-# Stash the real jq out of sight by using a PATH without it, while
-# keeping a mock gh present.
-# ────────────────────────────────────────────────────────────────────
-FIX=$(make_fixture c17)
-ERR=$(mktemp)
-# Construct a PATH containing: (1) /usr/bin/basic commands, (2) our gh
-# mock, but NO jq. We create a narrow bin with symlinks to the tools
-# we need and NOT jq.
-NARROW="$FIX/narrow-bin"
-mkdir -p "$NARROW"
-for tool in bash sh git sed awk grep date cat printf cut tr basename dirname mkdir rm cp mv env head tail sort uniq true false; do
-  src="$(command -v "$tool" 2>/dev/null || true)"
-  if [ -n "$src" ]; then
-    ln -sf "$src" "$NARROW/$tool" 2>/dev/null || true
-  fi
-done
-ln -sf "$FIX/bin/gh" "$NARROW/gh"
-(cd "$FIX" && PATH="$NARROW" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
-RC=$?
-if [ "$RC" -eq 1 ] && grep -q 'requires jq' "$ERR"; then
-  pass "17 jq missing: rc=1 + 'requires jq' stderr"
-else
-  fail "17 jq missing: rc=$RC stderr='$(cat "$ERR")'"
 fi
 rm -f -- "$ERR"
 

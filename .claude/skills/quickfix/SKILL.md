@@ -117,16 +117,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 Then run the fail-fast gates. Each prints a **single discriminator keyword
 line** to stderr and exits:
 
-**Check 1 — `jq` available.**
-
-```bash
-if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: /quickfix requires jq (not found on PATH)." >&2
-  exit 1
-fi
-```
-
-**Check 2 — `gh` available.**
+**Check 1 — `gh` available.**
 
 ```bash
 if ! command -v gh >/dev/null 2>&1; then
@@ -135,17 +126,43 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 ```
 
-**Check 3 — landing == pr.**
+**Read config once (bash-regex parsing, no `jq` dependency).**
+
+All subsequent config reads extract from this single capture. Pattern
+matches `skills/update-zskills/SKILL.md` Step 0.5. An unmatched key
+leaves its variable at the default assigned before the regex test; an
+empty string in the config ("present but empty") matches the regex and
+is passed through verbatim.
 
 ```bash
-LANDING=$(jq -r '.execution.landing // "direct"' "$MAIN_ROOT/.claude/zskills-config.json")
+CONFIG_CONTENT=$(cat "$MAIN_ROOT/.claude/zskills-config.json")
+
+LANDING="direct"
+if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  LANDING="${BASH_REMATCH[1]}"
+fi
+
+UNIT_CMD=""
+if [[ "$CONFIG_CONTENT" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  UNIT_CMD="${BASH_REMATCH[1]}"
+fi
+
+FULL_CMD=""
+if [[ "$CONFIG_CONTENT" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  FULL_CMD="${BASH_REMATCH[1]}"
+fi
+```
+
+**Check 2 — landing == pr.**
+
+```bash
 if [ "$LANDING" != "pr" ]; then
   echo "ERROR: /quickfix requires execution.landing == \"pr\" (got \"$LANDING\"). Use /commit or /do for non-PR landing." >&2
   exit 1
 fi
 ```
 
-**Check 4 — test-cmd alignment gate (LOAD-BEARING).**
+**Check 3 — test-cmd alignment gate (LOAD-BEARING).**
 
 The project's pre-commit hook (`hooks/block-unsafe-project.sh.template:188-229`)
 rejects `git commit` with staged code files unless the Claude transcript
@@ -155,8 +172,6 @@ contains the configured `FULL_TEST_CMD`. `/quickfix` runs the project's
 block our commit mid-flow.
 
 ```bash
-UNIT_CMD=$(jq -r '.testing.unit_cmd // ""' "$MAIN_ROOT/.claude/zskills-config.json")
-FULL_CMD=$(jq -r '.testing.full_cmd // ""' "$MAIN_ROOT/.claude/zskills-config.json")
 if [ "$SKIP_TESTS" -eq 0 ] && [ -z "$UNIT_CMD" ]; then
   echo "ERROR: /quickfix requires testing.unit_cmd (or pass --skip-tests)." >&2
   exit 1
@@ -290,7 +305,14 @@ Examples:
 if [ -n "$BRANCH_OVERRIDE" ]; then
   BRANCH="$BRANCH_OVERRIDE"
 else
-  BRANCH_PREFIX=$(jq -r '.execution.branch_prefix // "quickfix/"' "$MAIN_ROOT/.claude/zskills-config.json")
+  # branch_prefix: empty string ("present but empty") is legal and distinct
+  # from the key being absent. Only fall back to the default when the key
+  # is entirely missing.
+  if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    BRANCH_PREFIX="${BASH_REMATCH[1]}"
+  else
+    BRANCH_PREFIX="quickfix/"
+  fi
   BRANCH="${BRANCH_PREFIX}${SLUG}"
 fi
 ```
@@ -540,22 +562,54 @@ if [ -n "$DELS" ]; then
   done <<< "$DELS"
 fi
 
-# Build commit message (mode-aware trailer).
-COMMIT_MSG="$DESCRIPTION"
+# Resolve the co-author line from config (agent-dispatched mode only;
+# the user-edited branch omits Co-Authored-By entirely). Default falls
+# back to Claude Opus 4.7 when .commit.co_author is absent.
+CO_AUTHOR="Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  CO_AUTHOR="${BASH_REMATCH[1]}"
+fi
+```
+
+**Compose the commit subject (model-layer).** Look at `git diff --cached`
+and `git diff --cached --stat`. Set shell variable `COMMIT_SUBJECT` to a
+conventional-commit line: `type(scope): summary` (type ∈ {feat, fix, docs,
+refactor, chore, test, build, ci, style, perf, revert}; scope is the
+primary skill/module/file being changed; summary ≤ 70 chars describing
+what was actually changed). DESCRIPTION is the task spec — it goes into
+the commit body as context, **not** the subject line.
+
+The next bash fence consumes `$COMMIT_SUBJECT` to compose the full body
+and invoke `git commit`. If the commit fails, the same fence runs the
+cleanup (checkout base, delete branch, exit 5; each cleanup step
+verified, any that itself fails exits 6 for manual intervention). Never
+pass `--no-verify` — fix the root cause and retry (max 2 attempts on the
+same error, then STOP and report).
+
+```bash
+# The model must set COMMIT_SUBJECT before this fence runs (see prose
+# above). DESCRIPTION goes in the body as context, not the subject line.
+if [ -z "${COMMIT_SUBJECT:-}" ]; then
+  echo "ERROR: COMMIT_SUBJECT not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+
 if [ "$MODE" = "user-edited" ]; then
   # No Co-Authored-By: the human authored the edits.
   COMMIT_BODY=$(cat <<COMMIT_EOF
-$COMMIT_MSG
+$COMMIT_SUBJECT
+
+$DESCRIPTION
 
 🤖 Generated with /quickfix (user-edited)
 COMMIT_EOF
 )
 else
-  # agent-dispatched: include Co-Authored-By, matching skills/commit/SKILL.md trailer.
-  # Resolve the co-author line from config; default falls back to Claude Opus 4.7.
-  CO_AUTHOR=$(jq -r '.commit.co_author // "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"' "$MAIN_ROOT/.claude/zskills-config.json")
+  # agent-dispatched: include Co-Authored-By from $CO_AUTHOR.
   COMMIT_BODY=$(cat <<COMMIT_EOF
-$COMMIT_MSG
+$COMMIT_SUBJECT
+
+$DESCRIPTION
 
 🤖 Generated with /quickfix (agent-dispatched)
 
@@ -566,7 +620,6 @@ fi
 
 if ! git commit -m "$COMMIT_BODY"; then
   echo "ERROR: git commit failed (pre-commit hook, hook exit, or other)." >&2
-  # Cleanup each step verified.
   if ! git reset HEAD -- . ; then
     echo "ERROR: cleanup: git reset HEAD failed." >&2
     exit 6
@@ -666,7 +719,7 @@ to attest to.
 | Code | Meaning |
 |------|---------|
 | 0 | Success (PR created) or user-cancelled confirmation |
-| 1 | Config / environment error (landing, gh, jq, not-on-main, fetch failed, unit_cmd unset, full_cmd mismatch, parallel in progress, ls-remote network) |
+| 1 | Config / environment error (landing, gh, not-on-main, fetch failed, unit_cmd unset, full_cmd mismatch, parallel in progress, ls-remote network) |
 | 2 | Input error (no edits + no description; user-edited no description; branch exists local/remote; slug empty or contains slash) |
 | 4 | Test failure (`unit_cmd` non-zero) |
 | 5 | Commit / push / PR-create / agent failure |
