@@ -45,7 +45,7 @@ and dispatch their agent.
 | 1a — Ship scripts/create-worktree.sh + skill wrapper + smoke test | ✅ Done | `17c752f` | 5 files, 578 insertions; 2/2 smoke + 255/255 test-hooks |
 | 1b — Full test suite + run-all registration + update-zskills registration | ✅ Done | `e257f25` | 20/20 cases; 594/594 full suite; +script gap closures (CWD-anchor, TOCTOU broaden) |
 | 2 — Migrate /run-plan (both modes) | ✅ Done | `27d5243` + `021226a` | CANARY10 gate PASSED (PR #37, merged as 773b2c3); two-commit structure preserves clean revert |
-| 3 — Migrate /fix-issues and /do (three sites) | 🟡 In Progress | | 2 canaries + CANARY10 + 2 smoke checks (WI 3.8) before phase closure |
+| 3 — Migrate /fix-issues and /do (three sites) | ✅ Done | `7ac4722` + `4aed30d` + `b078690` + `1512389` + `2bfb68b` | WI 3.8 gates A-D all PASS; `2bfb68b` closes base-branch regression caught by Gate A (see Drift Log) |
 | 4 — Docs and cleanup | ⬚ | | |
 
 ## Phase 1a — Ship scripts/create-worktree.sh + Skill Wrapper + Smoke Test
@@ -284,6 +284,12 @@ Replace the remaining three worktree-creation sites:
       Failure mode 4 (rc=0 leak) has no dedicated canary — `create-worktree.sh` Phase 1a test case 18 structurally prevents recurrence.
 
       All three canaries + two smoke checks must PASS before Phase 3 is marked ✅. Failure of any → revert Phase 3 commits, file bug.
+
+      **Gate results (2026-04-21):**
+      - **Gate A — `CANARY_DO_WORKTREE_BASE`** — initial run caught the base-branch regression described in failure mode 1 (worktree branched from local `main`, not user HEAD). Instead of reverting, the root cause was closed forward in `2bfb68b` (`--no-preflight` now defaults `BASE` to `MAIN_ROOT`'s current branch when `--from` is not passed; `fix(create-worktree)`). Post-fix end-to-end re-run PASSED (worktree HEAD included the feature-branch unique commit).
+      - **Gate B — `CANARY_FIX_ISSUES_RESUME`** — PASS (3/3 resume asserts: exactly 1 `fix/issue-<N>*` branch, exactly 1 `/tmp/<project>-fix-issue-<N>*/` directory, `.zskills-tracked` unchanged across invocations).
+      - **Gate C — `/fix-issues` smoke** — PASS (4/4: worktree at `/tmp/zskills-fix-issue-<N>`, branch `fix/issue-<N>` slash form, path leaf hyphen-only, `.zskills-tracked` written with correct pipeline ID).
+      - **Gate D — `/do <task> pr` smoke** — PASS (4/4: path `/tmp/zskills-do-<slug>`, leaf hyphen-only, branch `${BRANCH_PREFIX}do-<slug>` = `feat/do-canary-smoke-gate-d`, `.zskills-tracked` = `do.canary-smoke-gate-d`).
 
 ### Design & Constraints
 

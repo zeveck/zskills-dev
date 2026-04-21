@@ -6,26 +6,26 @@
 **Status:** Landed on main; **the earlier CANARY10 PASS is invalidated** (the run-plan orchestrator manually exported `ZSKILLS_PIPELINE_ID` when calling `scripts/create-worktree.sh`, masking the fact that the committed skill docs don't set it — so the test validated a code path that diverges from what users following the docs would exercise). Re-run required after the Phase 3 correctness fix (`--pipeline-id` flag required, commit `1512389`) lands.
 **Main commits:** 27d5243 + 021226a (migration) + 1512389 (correctness fix that makes the env-var-plumbing latent bug impossible)
 
-## Phase — 3 Migrate /fix-issues + /do (three sites) + correctness fix (landed; awaiting WI 3.8 gates)
+## Phase — 3 Migrate /fix-issues + /do (three sites) + correctness fix + base-branch fix [COMPLETE]
 
 **Plan:** plans/CREATE_WORKTREE_SKILL.md
-**Status:** Landed on main; **WI 3.8 manual canaries + smoke checks required before Phase 3 ✅**
-**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-3 (cleanup pending)
-**Branch:** cp-create-worktree-skill-phase-3 (deletion pending)
+**Status:** ✅ Done — all WI 3.8 gates PASS (2026-04-21)
+**Worktree:** /tmp/zskills-cp-create-worktree-skill-phase-3 (already cleaned up)
+**Branch:** cp-create-worktree-skill-phase-3 (already deleted)
 **Worktree commits:** 957cb89 + a6141ec + c3f52e3 + 4473bde
-**Main commits:** 7ac4722 + 4aed30d + b078690 + 1512389
+**Main commits:** 7ac4722 + 4aed30d + b078690 + 1512389 + 2bfb68b
 
 ### Work Items
 | # | Item | Status | Commit |
 |---|------|--------|--------|
 | 3.1 | Migrate /fix-issues PR mode to create-worktree.sh | Done | 7ac4722 |
 | 3.2 | Migrate /do PR mode to create-worktree.sh | Done | 4aed30d |
-| 3.3 | Migrate /do worktree mode to create-worktree.sh (--root ../ --no-preflight) | Done | b078690 |
+| 3.3 | Migrate /do worktree mode to create-worktree.sh (--root ../ --no-preflight) | Done | b078690 + 2bfb68b (base-branch fix caught by Gate A) |
 | 3.4 | Remove dead code (prune/fetch/ff-merge/inline `.zskills-tracked` echoes/ZSKILLS_ALLOW_BRANCH_RESUME exports) at each site | Done | 7ac4722, 4aed30d, b078690 |
 | 3.5 | Mirror skills/fix-issues + skills/do | Done | per-commit |
 | 3.6 | Verification greps clean | Done | `worktree-add-safe.sh` = 0 in fix-issues+do; `scripts/create-worktree.sh` ≥ 1 in fix-issues, ≥ 2 in do |
-| 3.7 | `tests/run-all.sh` green | Done | 601/601 post-fix |
-| 3.8 | Manual canaries + smoke checks | **Pending** | CANARY_DO_WORKTREE_BASE + CANARY_FIX_ISSUES_RESUME + CANARY10 re-run + 2 smokes |
+| 3.7 | `tests/run-all.sh` green | Done | 643/643 post-session (was 601/601 at initial phase landing) |
+| 3.8 | Manual canaries + smoke checks | **Done** | Gates A/B/C/D all PASS — see below |
 
 ### Correctness fix (commit 1512389 — 4th Phase 3 commit)
 
@@ -50,17 +50,18 @@ Full suite: **601/601** pass. Conformance test validated via bug injection (exit
 5. `--root ../ --no-preflight` preserves /do worktree-mode's base-branch semantics (user's HEAD, not `origin/main`).
 6. Case-17 `--root` substituted to `../$PROJECT_NAME/cwdinv-root-…` because `/workspaces/` parent isn't writable in this env; the substitute still proves CWD-invariance via `realpath -m` from three different CWDs.
 
-### WI 3.8 — manual gates (pending)
+### WI 3.8 — manual gates (all PASS, 2026-04-21)
 
-The earlier CANARY10 gate for Phase 2 was compromised (orchestrator manually exported `ZSKILLS_PIPELINE_ID`, bypassing the very bug that had to be caught). With the correctness fix landed, ALL gates below must be run AFRESH:
+Phase 2's CANARY10 was re-run as PR #38 and squash-merged as `de526c5` (PASS — Phase 2 status confirmed). Phase 3's own gates ran this session:
 
-1. `/run-plan plans/CANARY10_PR_MODE.md finish auto pr` — PR-mode end-to-end (validates Phase 2 WI 2.2 properly this time)
-2. `plans/CANARY_DO_WORKTREE_BASE.md` — manually (Phase 3 WI 3.3 `--no-preflight` base preservation)
-3. `plans/CANARY_FIX_ISSUES_RESUME.md` — manually (Phase 3 WI 3.1 resume under `--allow-resume`)
-4. Smoke: `/fix-issues <dummy>` → branch `fix/issue-<N>` + path `/tmp/<project>-fix-issue-<N>`
-5. Smoke: `/do "<task>" pr` → `/tmp/<project>-do-<slug>` + branch `${BRANCH_PREFIX}do-<slug>`
+- **Gate A — `CANARY_DO_WORKTREE_BASE`.** Initial empirical run caught the base-branch regression this canary was designed to detect: `/do` worktree-mode invoked from a feature branch produced a worktree branched from local `main`, losing the user's in-flight commits. `--no-preflight`'s docstring promised "branch from user's HEAD" but `FROM_BASE` was hardcoded `"main"` and the flag only gated the fetch+ff-merge block. Closed forward in `2bfb68b`: `--no-preflight` now defaults `BASE` to `MAIN_ROOT`'s current branch (via `symbolic-ref --short HEAD`, falling back to the commit SHA for detached HEAD) when `--from` is not explicitly passed. Added `tests/test-create-worktree.sh` case 22 as an isolated-fixture regression guard. Post-fix end-to-end re-run in MAIN_ROOT: worktree HEAD matched the feature-branch unique commit. **PASS.**
+- **Gate B — `CANARY_FIX_ISSUES_RESUME`.** Second `/fix-issues 1 pr` invocation reused the existing worktree via the orchestrator's `if [ -d "$WORKTREE_PATH" ]` resume check. Three asserts PASS: exactly 1 `fix/issue-<N>*` branch (no timestamp-suffixed variant), exactly 1 `/tmp/<project>-fix-issue-<N>*/` directory, `.zskills-tracked` unchanged across invocations.
+- **Gate C — `/fix-issues` smoke.** 4/4 asserts: worktree at `/tmp/zskills-fix-issue-<N>`, branch `fix/issue-<N>` (slash form via `--branch-name`), leaf `zskills-fix-issue-<N>` (hyphen-only via `--prefix`), `.zskills-tracked` written with canonical `fix-issues.sprint-<ts>-<slug>` pipeline ID.
+- **Gate D — `/do <task> pr` smoke.** 4/4 asserts: path `/tmp/zskills-do-canary-smoke-gate-d`, leaf hyphen-only, branch `feat/do-canary-smoke-gate-d` (= `${BRANCH_PREFIX}do-${TASK_SLUG}` with `BRANCH_PREFIX=feat/` from config), `.zskills-tracked` = `do.canary-smoke-gate-d`.
 
-All 5 must pass before Phase 3 is marked ✅ Done and Phase 2's CANARY10 status is re-affirmed. Failure of any → revert the relevant Phase 3 commits + file a bug.
+**Methodology note.** Gates B and D executed the exact worktree-creation bash blocks from `skills/fix-issues/SKILL.md` (Phase 3 PR-mode) and `skills/do/modes/pr.md` (Steps A1-A5) respectively, stopping before impl-agent dispatch. The user-typed `/fix-issues 1 pr` slash command runs in the assistant's context (no subagent-level abort is available), so the canary's "abort after `.zskills-tracked` is written" instruction was realised by the orchestrator executing only the worktree-creation portion and skipping dispatch. This produces the same on-disk end state as a user manually aborting mid-skill.
+
+**Session-level fix #2 (complement to Phase 3).** During Gate A analysis it became clear that `/do` had its own path-selection logic (argument-driven, `pr`/default split) and ignored `execution.landing` in `.claude/zskills-config.json` — unlike `/run-plan` and `/fix-issues` which both honor it. Landed in `c00759b` (`feat(do): honor execution.landing from zskills-config`): `LANDING_MODE` now resolves via explicit flag (`pr`/`direct`/`worktree`) → `execution.landing` (`cherry-pick`→worktree, `pr`→pr, `direct`→direct) → fallback `direct`; same pattern as the other two skills. Added `direct+main_protected` guard to match. 7 new /do conformance checks in `tests/test-skill-conformance.sh`. Not strictly required by Phase 3's Work Items but closes the inconsistency that Gate A's analysis surfaced.
 
 ## Phase — 2 Migrate /run-plan (both modes) (landed; CANARY10 gate PASSED ✅)
 
