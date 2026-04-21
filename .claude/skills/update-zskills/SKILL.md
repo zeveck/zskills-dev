@@ -1,5 +1,6 @@
 ---
 name: update-zskills
+argument-hint: "[install] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 ---
 

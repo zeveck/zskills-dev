@@ -1,5 +1,6 @@
 ---
 name: manual-testing
+argument-hint: ""
 description: >-
   Block-diagram editor manual testing recipes for playwright-cli. Covers
   common UI operations (adding blocks, connecting ports, running simulations,

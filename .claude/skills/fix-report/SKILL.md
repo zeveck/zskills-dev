@@ -1,6 +1,7 @@
 ---
 name: fix-report
 disable-model-invocation: true
+argument-hint: ""
 description: >-
   Review ALL unreported sprint results: walk through manual verifications,
   land fixes to main, close GitHub issues, update trackers, and clean up
