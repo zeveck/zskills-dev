@@ -82,7 +82,7 @@
 - `/research-and-plan`: `auto` flag skips decomposition confirmation checkpoint
 - `/research-and-go`: explicitly passes `auto` to `/research-and-plan`
 - `/fix-issues`: orchestrator may bundle related issues (same component, same
-  root cause) into one worktree beyond N count
+  root cause) into one worktree beyond N count.
 - `/fix-issues`: Phase 1 enforcement — complete ALL sync steps before Phase 2
 - `/briefing`: Z Skills update check in summary/report modes
 - `/briefing`: "present verbatim" enforcement with past-failure reference
