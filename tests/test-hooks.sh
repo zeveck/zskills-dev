@@ -80,8 +80,25 @@ expect_allow "printf w/ stash text" "printf %s git-stash-push"
 expect_deny "&& git stash" "cd foo && git stash"
 expect_deny "; git stash" "echo ok; git stash"
 
-# 2. git checkout -- file
-expect_deny "git checkout -- file" "git checkout -- file.js"
+# 2. git checkout -- file  (file-separator form — discards working tree changes)
+# The `--` must be scoped to the file-list separator: `--` followed by
+# whitespace (then paths) or end-of-command. Without that anchor, the
+# regex false-positives on ANY long flag whose value starts with `--`
+# (--quiet, --force, --orphan, etc.). Incident this session: the hook
+# blocked `git checkout --quiet main` during Gate A re-run.
+expect_deny  "git checkout -- file"             "git checkout -- file.js"
+expect_deny  "git checkout -- . (blanket)"      "git checkout -- ."
+expect_deny  "git checkout -- multiple files"   "git checkout -- a.js b.js"
+expect_deny  "git checkout HEAD~1 -- file"      "git checkout HEAD~1 -- file.js"
+expect_deny  "git checkout -- (bare, no path)"  "git checkout --"
+# Long flags starting with -- must NOT be caught by the file-separator rule.
+expect_allow "git checkout --quiet main"        "git checkout --quiet main"
+expect_allow "git checkout --force main"        "git checkout --force main"
+expect_allow "git checkout --orphan newbranch"  "git checkout --orphan newbranch"
+expect_allow "git checkout --theirs file.js"    "git checkout --theirs file.js"
+expect_allow "git checkout --ours file.js"      "git checkout --ours file.js"
+expect_allow "git checkout --detach HEAD~1"     "git checkout --detach HEAD~1"
+expect_allow "git checkout -b feat/foo"         "git checkout -b feat/foo"
 
 # 3. git restore file
 expect_deny "git restore file" "git restore file.js"

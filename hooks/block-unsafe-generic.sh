@@ -112,8 +112,12 @@ elif [[ "$COMMAND" =~ $STASH_BOUNDARY ]] && [[ ! "$COMMAND" =~ $STASH_ALLOW_SUB 
   block_with_reason "BLOCKED: git-stash write subcommand forbidden (modifies working tree). Allowed read/recovery: apply, list, show, pop. For cherry-pick protection, let git refuse on overlap."
 fi
 
-# git checkout -- (any file or blanket) — discards uncommitted changes permanently
-if [[ "$COMMAND" =~ git[[:space:]]+checkout[[:space:]]+-- ]]; then
+# git checkout -- (any file or blanket) — discards uncommitted changes permanently.
+# Anchor `--` as the file-list separator: require it to be followed by
+# whitespace or end-of-command. Otherwise benign long flags like --quiet,
+# --force, --orphan, --theirs, --ours would false-positive because their
+# leading `--` matched the bare regex.
+if [[ "$COMMAND" =~ git[[:space:]]+checkout[[:space:]]+(.*[[:space:]])?--([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 

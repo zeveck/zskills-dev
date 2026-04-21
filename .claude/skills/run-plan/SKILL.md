@@ -457,15 +457,23 @@ Before parsing, check for stale state from a previous failed run:
 
 4. **Unconfigured hook placeholders?**
    ```bash
-   grep -q '{{' .claude/hooks/block-unsafe-project.sh 2>/dev/null
+   grep -qE '^(UNIT_TEST_CMD|FULL_TEST_CMD)=.*\{\{' .claude/hooks/block-unsafe-project.sh 2>/dev/null
    ```
    This gate is an **early-exit mirror** of the hook's own commit-block:
-   when `FULL_TEST_CMD` has unreplaced placeholders AND test infrastructure
-   exists, the hook will block the eventual `git commit` with *"Test
-   infrastructure detected but FULL_TEST_CMD not configured"* — so
-   catching it at preflight just prevents wasted work. Its job is to
-   notice when a project *has* test infrastructure but the hook doesn't
-   yet know about it.
+   when `UNIT_TEST_CMD` or `FULL_TEST_CMD` has unreplaced placeholders AND
+   test infrastructure exists, the hook will block the eventual `git
+   commit` with *"Test infrastructure detected but FULL_TEST_CMD not
+   configured"* — so catching it at preflight just prevents wasted work.
+   Its job is to notice when a project *has* test infrastructure but the
+   hook doesn't yet know about it.
+
+   **Scope matters.** A bare `grep '{{' <file>` false-positives on
+   intentional placeholders that the hook itself leaves in (e.g.
+   `UI_FILE_PATTERNS="{{UI_FILE_PATTERNS}}"` as a runtime "UI not
+   applicable here" sentinel, especially common in the zskills source
+   tree where the hook is a template). The anchored grep mirrors the
+   hook's actual runtime check (`block-unsafe-project.sh:179`) which
+   only fires on `UNIT_TEST_CMD` / `FULL_TEST_CMD` containing `{{`.
 
    Three cases, report each explicitly so the reasoning is legible:
 
