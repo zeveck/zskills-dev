@@ -1040,6 +1040,80 @@ else
   fail "main_protected: push on feature branch should be allowed, got: $RESULT"
 fi
 
+# Test: main_protected allows literal feature-branch refspec (regression guard —
+# the old `origin[[:space:]]+[a-zA-Z]` heuristic accepted this; make sure the
+# new three-case rule still allows it).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin feat/foo")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin feat/foo (literal feature branch) allowed"
+else
+  fail "main_protected: push origin feat/foo should be allowed, got: $RESULT"
+fi
+
+# Test: main_protected allows variable-bearing push target (the false-positive
+# the new rule is designed to eliminate). Old rule blocked because
+# `origin[[:space:]]+[a-zA-Z]` didn't match `origin "$BRANCH"` (starts with `"`),
+# which flipped the negated check into "looks like a bare push → block".
+# Note: on `main`, because the helper's git repo has main_protected=true. The
+# command's refspec is a variable — hook can't statically prove it isn't "main",
+# but the rule deliberately trusts it (see the block comment in the hook).
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' 'git push -u origin \"$BRANCH\"')
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin \"\$BRANCH\" (variable-bearing target) allowed"
+else
+  fail "main_protected: push origin \"\$BRANCH\" should be allowed, got: $RESULT"
+fi
+
+# Test: alternative variable name — same semantics.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' 'git push origin \"$BRANCH_NAME\"')
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin \"\$BRANCH_NAME\" (variable-bearing target) allowed"
+else
+  fail "main_protected: push origin \"\$BRANCH_NAME\" should be allowed, got: $RESULT"
+fi
+
+# Test: main_protected still blocks master explicitly (paired with the main case).
+RESULT=$(run_main_protected_test "master" '{"execution": {"main_protected": true}}' "git push origin master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin master blocked"
+else
+  fail "main_protected: push origin master should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected blocks force-push to main (new `+main` case explicitly
+# covered by rule (a)).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin +main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin +main (force-prefix) blocked"
+else
+  fail "main_protected: push origin +main should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected blocks HEAD:main refspec (new rule (b)).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin HEAD:main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin HEAD:main (refspec) blocked"
+else
+  fail "main_protected: push origin HEAD:main should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected blocks HEAD:master refspec (new rule (b)).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin HEAD:master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin HEAD:master (refspec) blocked"
+else
+  fail "main_protected: push origin HEAD:master should be blocked, got: $RESULT"
+fi
+
+# Test: main_protected blocks naked `git push` while on main (rule (c) — the
+# default push targets the current branch).
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git push")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: naked git push on main blocked"
+else
+  fail "main_protected: naked git push on main should be blocked, got: $RESULT"
+fi
+
 echo ""
 echo "=== Project hook: main_protected — worktree-cd awareness ==="
 
