@@ -31,6 +31,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # paths on MAIN_ROOT, so the test must too (else default paths mismatch).
 MAIN_ROOT="$(cd "$(git -C "$REPO_ROOT" rev-parse --git-common-dir)/.." && pwd)"
 PROJECT_NAME="$(basename "$MAIN_ROOT")"
+
+# Fixture anchors for cases 10, 11, 19. These cases construct synthetic
+# branches via plumbing (commit-tree) rooted on the current main-equivalent
+# commit. On a main-branch checkout (local dev, push-to-main CI) `main`
+# exists as a local ref; on a GitHub Actions PR checkout HEAD is detached
+# at the PR merge commit and local `main` does NOT exist. Fall back to
+# HEAD so fixture construction succeeds in both environments.
+# --verify --quiet ensures rev-parse prints NOTHING on failure (without
+# --verify it prints the unresolved name to stdout, polluting the var).
+MAIN_SHA=$(git -C "$MAIN_ROOT" rev-parse --verify --quiet main 2>/dev/null \
+        || git -C "$MAIN_ROOT" rev-parse --verify HEAD)
+MAIN_TREE_SHA=$(git -C "$MAIN_ROOT" rev-parse --verify --quiet main^{tree} 2>/dev/null \
+             || git -C "$MAIN_ROOT" rev-parse --verify HEAD^{tree})
 # Prefer the worktree copy of the script so in-flight edits (this phase's
 # Phase 1a-gap fixes, for example) are exercised rather than the landed
 # main-repo copy. Fall back to the main-repo script only if the worktree
@@ -352,12 +365,11 @@ BR_10="${PREFIX_10}-${SLUG_10}"
 BASE_10="cw-testbase-${SLUG_BASE}-c10"
 register_branch "$BR_10"; register_branch "$BASE_10"
 
-MAIN_SHA=$(git -C "$MAIN_ROOT" rev-parse main)
 # Stale branch at main SHA.
 git -C "$MAIN_ROOT" branch "$BR_10" "$MAIN_SHA" 2>/dev/null || true
 # Synthetic base, one empty commit ahead of main.
 BASE_COMMIT_10=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test \
-  git -C "$MAIN_ROOT" commit-tree "$(git -C "$MAIN_ROOT" rev-parse main^{tree})" -p "$MAIN_SHA" -m "cw-test: base advance c10")
+  git -C "$MAIN_ROOT" commit-tree "$MAIN_TREE_SHA" -p "$MAIN_SHA" -m "cw-test: base advance c10")
 git -C "$MAIN_ROOT" branch "$BASE_10" "$BASE_COMMIT_10" 2>/dev/null || true
 
 ERR_10=$(mktemp)
@@ -385,7 +397,7 @@ BR_11="${PREFIX_11}-${SLUG_11}"
 register_branch "$BR_11"
 
 AHEAD_COMMIT_11=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@test GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@test \
-  git -C "$MAIN_ROOT" commit-tree "$(git -C "$MAIN_ROOT" rev-parse main^{tree})" -p "$MAIN_SHA" -m "cw-test: ahead c11")
+  git -C "$MAIN_ROOT" commit-tree "$MAIN_TREE_SHA" -p "$MAIN_SHA" -m "cw-test: ahead c11")
 git -C "$MAIN_ROOT" branch "$BR_11" "$AHEAD_COMMIT_11" 2>/dev/null || true
 
 ERR_11=$(mktemp)
@@ -687,7 +699,6 @@ register_wt "$WT_19"; register_branch "$BR_19"; register_branch "$ROLLBACK_BRANC
 
 # Build the rollback base via plumbing: take main's tree, splice in
 # .zskills-tracked/keep, commit on top of main.
-MAIN_TREE_SHA=$(git -C "$MAIN_ROOT" rev-parse main^{tree})
 KEEP_BLOB=$(echo "rollback fixture for case 19" | git -C "$MAIN_ROOT" hash-object -w --stdin)
 SUB_TREE=$(printf '100644 blob %s\tkeep\n' "$KEEP_BLOB" | git -C "$MAIN_ROOT" mktree)
 # Extract all existing entries from main's tree, append our new entry.
