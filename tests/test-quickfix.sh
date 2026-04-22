@@ -807,14 +807,19 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 37 — DIRTY_AFTER excludes untracked (R2-M2 per plan line 50).
-# Assert the SKILL.md comment about excluding `git ls-files --others
-# --exclude-standard` (so agent scratch/artifact files aren't committed).
+# Case 37 — DIRTY_AFTER includes untracked (new-file integrity).
+# Assert the SKILL.md's WI 1.11 DIRTY_AFTER definition now unions
+# tracked modifications with `git ls-files --others --exclude-standard`
+# so new files created by the dispatched agent are counted. Also
+# assert the old exclusion wording is gone — a present "excludes ...
+# git ls-files --others" comment would mean the old behavior
+# regressed.
 # ────────────────────────────────────────────────────────────────────
-if grep -q "excludes.*git ls-files --others" "$SKILL"; then
-  pass "37 DIRTY_AFTER excludes untracked (R2-M2): comment present"
+if grep -q 'git ls-files --others --exclude-standard' "$SKILL" \
+   && ! grep -q "excludes.*git ls-files --others" "$SKILL"; then
+  pass "37 DIRTY_AFTER includes untracked (new-file integrity): union present, old exclusion wording gone"
 else
-  fail "37 DIRTY_AFTER R2-M2 comment missing"
+  fail "37 DIRTY_AFTER includes untracked: union-def missing or old exclusion wording still present"
 fi
 
 # ────────────────────────────────────────────────────────────────────
