@@ -476,21 +476,28 @@ When `MODE == "agent-dispatched"`:
    - **Do NOT** `git commit`, `git add`, or modify the index
    - **Do NOT** run tests, builds, linters, or formatters
    - When finished, list newly untracked files in the "done" report
+   - **IMPORTANT:** Only leave files untracked that you intend to commit
+     as part of this change. Delete any scratch, debug, or log files you
+     created during exploration before reporting done. The skill will
+     include all your remaining untracked files in the commit — any
+     lingering scratch will ship in the PR.
 4. After the Agent returns, verify:
    - `POST_HEAD=$(git rev-parse HEAD)`; if `POST_HEAD != PRE_HEAD`, the
      agent committed unexpectedly → exit 5 with cleanup (checkout base,
      delete branch).
-   - `DIRTY_AFTER=$(git diff --name-only HEAD)` — tracked modifications
-     only. Deliberately **excludes** `git ls-files --others
-     --exclude-standard` because agents routinely leave build artifacts,
-     log files, and scratch files that should NOT be part of the commit
-     (per R2-M2). Untracked files from the agent must be named in the
-     description-to-touch if they are intentional.
+   - `DIRTY_AFTER` is the sorted union of tracked modifications AND
+     newly untracked files. The agent is expected (per step 3's
+     IMPORTANT clause) to have cleaned up scratch/debug/log files
+     before reporting done, so any remaining untracked files ARE part
+     of the intended commit and SHOULD be staged. Definition:
+     ```bash
+     DIRTY_AFTER=$(printf '%s\n%s\n' "$(git diff --name-only HEAD)" "$(git ls-files --others --exclude-standard)" | sed '/^$/d' | sort -u)
+     ```
    - If `DIRTY_AFTER` is empty, the agent did not change the tree →
      exit 5 with cleanup.
 5. Populate:
    ```bash
-   CHANGED_FILES=$(printf '%s\n' "$DIRTY_AFTER" | sed '/^$/d' | sort -u)
+   CHANGED_FILES="$DIRTY_AFTER"
    DELS=$(git diff --name-only --diff-filter=D HEAD)
    ```
 6. Proceed to the test gate (WI 1.12).
