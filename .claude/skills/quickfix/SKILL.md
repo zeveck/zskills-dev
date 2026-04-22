@@ -262,6 +262,32 @@ else
 fi
 ```
 
+### WI 1.5.5 — Dirty-tree confirmation (model-layer)
+
+This is a **model-layer instruction**, not a bash block.
+
+When `MODE == "user-edited"` (i.e. `$DIRTY_FILES` is non-empty), the model
+MUST, before proceeding to slug/branch creation:
+
+1. Show the user the full dirty-file list (one per line).
+2. Show the output of `git diff HEAD`.
+3. Explicitly ask: **"Commit all of these files as part of '<DESCRIPTION>'? [y/N]"**
+4. Only proceed if the user affirms. If the user declines or does not
+   respond affirmatively, exit cleanly — set the tracking marker's
+   `status` to `cancelled` and commit nothing. No branch is created yet at
+   this point, so no rollback is needed.
+
+**Rationale:** user-edited mode accepts dirty-tree input so the user can
+ship a one-line fix without stashing. But without an explicit
+confirmation, the model could loosely match `$DESCRIPTION` to the dirty
+files and accidentally bundle unrelated in-flight work into the PR. Don't
+rely on description-to-filename pattern-matching — always surface the full
+diff and confirm before branching.
+
+This confirmation supersedes WI 1.10's bash `read -r` prompt, which now
+exists only as a fallback for the literal-script execution path used by
+`tests/test-quickfix.sh` Case 43 (invoked with `--yes`).
+
 ### WI 1.6 — Slug derivation
 
 Pipeline: lowercase → collapse non-alphanumerics to `-` → trim leading
@@ -413,6 +439,13 @@ Enumerate changed files, show the diff, optionally prompt. Re-compute
 the three sets after the branch switch so `CHANGED_FILES` reflects what
 will be staged (untracked files carry across; new untracked on the new
 branch still count).
+
+**Note:** The bash confirmation block below is vestigial in real
+(model-driven) `/quickfix` invocation — WI 1.5.5 already obtained the
+user's explicit confirmation. It remains in place to support
+literal-script execution in `tests/test-quickfix.sh` Case 43, which
+passes `--yes` to bypass the `read -r`. Do not re-prompt the user if WI
+1.5.5 already did.
 
 ```bash
 if [ "$MODE" = "user-edited" ]; then
