@@ -456,15 +456,22 @@ rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
 # Case 16 — gh missing exits 1 with gh-keyword stderr.
-# Point PATH at a minimal shadow that excludes gh; assert rc=1 plus
-# 'requires gh' in stderr. The PATH is /usr/bin:/bin (common commands
-# available, no project bin/, no gh) — jq is NOT required any more
-# since the skill parses config via bash-regex.
+# Build a narrow shadow bin that explicitly excludes gh. /usr/bin/gh is
+# preinstalled on GitHub Actions runners, so PATH="/usr/bin:/bin" does
+# NOT hide it there. Instead, construct a PATH that contains only the
+# commands the preflight needs, found at their actual locations via
+# `command -v`, and NO gh. Assert rc=1 plus 'requires gh' in stderr.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c16)
 ERR=$(mktemp)
-(cd "$FIX" && PATH="/usr/bin:/bin" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
+SHADOW_BIN=$(mktemp -d)
+for cmd in bash cat grep sed awk date mkdir head basename git printf env tr cut; do
+  src=$(command -v "$cmd" 2>/dev/null) || continue
+  ln -s "$src" "$SHADOW_BIN/$cmd"
+done
+(cd "$FIX" && PATH="$SHADOW_BIN" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
 RC=$?
+rm -rf -- "$SHADOW_BIN"
 if [ "$RC" -eq 1 ] && grep -q 'requires gh' "$ERR"; then
   pass "16 gh missing: rc=1 + 'requires gh' stderr"
 else
