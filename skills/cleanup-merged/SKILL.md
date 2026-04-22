@@ -96,12 +96,18 @@ if ! git fetch origin --prune; then
   echo "ERROR: git fetch failed. Check network/auth." >&2
   exit 4
 fi
+
+# Drop orphaned worktree registrations (directories deleted from disk)
+# so Phase 5's worktree→branch map reflects only live worktrees.
+git worktree prune
 ```
 
 `--prune` removes remote-tracking refs whose upstreams are gone. After
 this, `git branch -vv` shows `: gone]` next to local branches whose
 remote was deleted — the primary signal for detecting merged PRs when
-GitHub's auto-delete-head-branches setting is on.
+GitHub's auto-delete-head-branches setting is on. `git worktree prune`
+clears stale worktree entries so Phase 5 can reliably decide whether a
+merged branch is still held by a live worktree.
 
 ## Phase 3 — Switch off a merged feature branch (if applicable)
 
@@ -167,6 +173,14 @@ gone — if the remote is gone, the commits were either squash-merged or
 the branch was abandoned; either way, the local commits match no live
 ref.
 
+This phase is worktree-aware: if a merged branch is held by a worktree,
+`git branch -D` will refuse. Before attempting the delete, the loop
+maps each branch to its worktree (if any) via `git worktree list
+--porcelain`. A worktree that is clean and is not the main repo itself
+is removed first (`git worktree remove`); a dirty worktree, or the main
+repo's own worktree, causes the branch to be skipped with a warning so
+the user can intervene manually.
+
 ```bash
 CURRENT=$(git rev-parse --abbrev-ref HEAD)
 DELETED=0
@@ -209,7 +223,54 @@ while IFS= read -r branch; do
     continue
   fi
 
+  # Worktree detection: does any registered worktree hold $branch?
+  # `git worktree list --porcelain` emits blocks like:
+  #     worktree /abs/path
+  #     HEAD <sha>
+  #     branch refs/heads/<name>
+  #     (blank line)
+  # Detached-HEAD worktrees have no "branch" line; the awk filter below
+  # pairs every "worktree" line with its following "branch" line (if any)
+  # and drops the unpaired detached ones.
+  WORKTREE_FOR_BRANCH=""
+  while IFS= read -r wt_path && IFS= read -r wt_branch; do
+    if [ "${wt_branch#branch refs/heads/}" = "$branch" ]; then
+      WORKTREE_FOR_BRANCH="${wt_path#worktree }"
+      break
+    fi
+  done < <(git worktree list --porcelain | awk '/^worktree /{wt=$0} /^branch /{print wt; print $0}')
+
   REASON=$([ "$PR_STATE" = "MERGED" ] && echo "PR merged" || echo "upstream gone")
+
+  if [ -n "$WORKTREE_FOR_BRANCH" ]; then
+    if [ "$WORKTREE_FOR_BRANCH" = "$MAIN_ROOT" ]; then
+      echo "WARN: merged branch $branch is checked out in main repo; checkout main before cleanup-merged." >&2
+      SKIPPED=$((SKIPPED+1))
+      continue
+    fi
+
+    WT_DIRTY=$(git -C "$WORKTREE_FOR_BRANCH" status --porcelain 2>/dev/null)
+    if [ -n "$WT_DIRTY" ]; then
+      echo "WARN: worktree at $WORKTREE_FOR_BRANCH holds merged branch $branch but has uncommitted changes — inspect and remove manually." >&2
+      SKIPPED=$((SKIPPED+1))
+      continue
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+      echo "  WOULD-REMOVE-WORKTREE $WORKTREE_FOR_BRANCH (holds $branch)"
+      echo "  WOULD-DELETE $branch ($REASON)"
+      DELETED=$((DELETED+1))
+      continue
+    fi
+
+    if ! git worktree remove "$WORKTREE_FOR_BRANCH"; then
+      echo "  FAILED  $branch (git worktree remove $WORKTREE_FOR_BRANCH exited non-zero)" >&2
+      SKIPPED=$((SKIPPED+1))
+      continue
+    fi
+    echo "  REMOVED-WORKTREE $WORKTREE_FOR_BRANCH (held $branch)"
+  fi
+
   if [ "$DRY_RUN" -eq 1 ]; then
     echo "  WOULD-DELETE $branch ($REASON)"
     DELETED=$((DELETED+1))
@@ -276,3 +337,9 @@ reflect it. Typical cadence:
 
 Running it with nothing to do is safe and fast — it fetches, confirms
 main is current, finds no merged branches, and exits.
+
+If a merged branch is still held by a clean worktree, `/cleanup-merged`
+will remove the worktree before deleting the branch. A dirty worktree
+is left untouched with a warning — inspect and remove it manually. The
+main repo's own worktree is never removed; switch to the main branch
+first if the merged branch is checked out there.

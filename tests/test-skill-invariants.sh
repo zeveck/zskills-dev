@@ -103,6 +103,28 @@ for f in run-plan research-and-go fix-issues verify-changes research-and-plan; d
   fi
 done
 
+# /cleanup-merged worktree handling — each anchor must be present in the
+# skill source. A missing anchor means the worktree-aware branch-delete
+# path silently regressed to plain `git branch -D` (which fails on
+# worktree-held branches). If any check fails, the desc names the
+# missing piece.
+CM_SRC="skills/cleanup-merged/SKILL.md"
+check "cleanup-merged: worktree detection (git worktree list --porcelain)" \
+  "grep -q 'git worktree list --porcelain' '$CM_SRC'"
+check "cleanup-merged: worktree removal action (git worktree remove)" \
+  "grep -q 'git worktree remove' '$CM_SRC'"
+check "cleanup-merged: orphan cleanup (git worktree prune)" \
+  "grep -q 'git worktree prune' '$CM_SRC'"
+check "cleanup-merged: dirty-skip warning phrase" \
+  "grep -q 'uncommitted changes — inspect and remove manually' '$CM_SRC'"
+check "cleanup-merged: MAIN_ROOT comparison guard" \
+  "grep -q 'MAIN_ROOT' '$CM_SRC'"
+# Mirror the source too, so drift is caught immediately.
+if [ -d ".claude/skills/cleanup-merged" ]; then
+  check "mirror sync: cleanup-merged" \
+    "diff -q 'skills/cleanup-merged/SKILL.md' '.claude/skills/cleanup-merged/SKILL.md' >/dev/null"
+fi
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
