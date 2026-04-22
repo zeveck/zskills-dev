@@ -1,5 +1,6 @@
 <!-- prod-strip:start -->
 [![🚀 Ship to Prod](https://img.shields.io/badge/%F0%9F%9A%80%20Ship%20to%20Prod-click%20to%20release-ea580c?style=for-the-badge)](https://github.com/zeveck/zskills-dev/actions/workflows/ship-to-prod.yml)
+[![Tests](https://github.com/zeveck/zskills-dev/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/zeveck/zskills-dev/actions/workflows/test.yml)
 
 > ⚠️ **This is `zskills-dev`, the development repository.** End users should
 > install from the public mirror at **[`github.com/zeveck/zskills`](https://github.com/zeveck/zskills)**.
