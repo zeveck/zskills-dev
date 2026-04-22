@@ -30,7 +30,17 @@ fi
 
 **Step A3 — Derive BRANCH_NAME and WORKTREE_PATH from (possibly suffixed) TASK_SLUG:**
 ```bash
-BRANCH_PREFIX=$(jq -r '.execution.branch_prefix // "feat/"' .claude/zskills-config.json 2>/dev/null || echo "feat/")
+# Read .execution.branch_prefix via bash-regex (no external jq dependency).
+# Preserve empty-string when the key is present-but-empty; default "feat/"
+# only when the key is absent or the config file is missing.
+BRANCH_PREFIX="feat/"
+if [ -f .claude/zskills-config.json ]; then
+  _CFG=$(cat .claude/zskills-config.json)
+  if [[ "$_CFG" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    BRANCH_PREFIX="${BASH_REMATCH[1]}"
+  fi
+  unset _CFG
+fi
 BRANCH_NAME="${BRANCH_PREFIX}do-${TASK_SLUG}"
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 ```
