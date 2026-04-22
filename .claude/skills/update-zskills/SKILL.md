@@ -228,7 +228,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    field resolving. Default value:
    `"Claude Opus 4.7 (1M context) <noreply@anthropic.com>"`. Match the
    same style used for other optional-field backfills — a targeted
-   `Edit` or small jq rewrite that preserves every other field unchanged.
+   `Edit` or small `sed`-based rewrite that preserves every other field unchanged.
    If the `commit` key is absent, add the whole block; if the `commit`
    block exists but lacks `co_author`, add only that field. Idempotent:
    re-running on an already-backfilled config is a no-op.
