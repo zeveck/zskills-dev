@@ -198,12 +198,37 @@ For every file classified as "related":
 
    If the agent approves: proceed to step 4.
 
-4. Commit using a HEREDOC for clean formatting:
-   ```bash
-   git commit -m "$(cat <<'EOF'
-   <type>: <message>
+4. Resolve the Co-Authored-By trailer from config, then commit.
 
-   Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+   The trailer value lives in `.claude/zskills-config.json` under
+   `commit.co_author`. Read it with the same pure-bash regex idiom used
+   in `/update-zskills` Step 0.5 — no external JSON parser dependency,
+   matching the rest of /commit. Fall back to the default if the field
+   is absent or the file is missing:
+
+   ```bash
+   CO_AUTHOR="Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
+   if [[ -f .claude/zskills-config.json ]]; then
+     CONFIG_CONTENT=$(cat .claude/zskills-config.json)
+     if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+       CO_AUTHOR="${BASH_REMATCH[1]}"
+     fi
+   fi
+   ```
+
+   Commit using a HEREDOC for clean formatting. The heredoc delimiter
+   **must stay quoted (`<<'EOF'`)** so that any `$(...)`, backticks, or
+   `$VAR` substrings that happen to appear in `<type>` or `<message>`
+   are treated as literal text rather than executed by the shell. The
+   trailer is injected separately via `git commit --trailer`, which
+   handles RFC 5322 formatting and keeps `$CO_AUTHOR` out of the
+   heredoc body entirely:
+
+   ```bash
+   git commit \
+     --trailer "Co-Authored-By: $CO_AUTHOR" \
+     -m "$(cat <<'EOF'
+   <type>: <message>
    EOF
    )"
    ```
