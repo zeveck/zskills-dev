@@ -18,8 +18,8 @@ jobs:
           git config --global user.name "CI Test Runner"
           git config --global init.defaultBranch main
 
-      - name: Run hook tests
-        run: bash tests/test-hooks.sh
+      - name: Run full test suite
+        run: bash tests/run-all.sh
 
       - name: Bash syntax check on hooks and scripts
         run: |
