@@ -26,7 +26,7 @@ Ship-blocker for 2026.04.1: yes. Shipping now propagates the render-time-snapsho
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Migrate CODE consumers to runtime config read | 🟡 In Progress | `3b3fc88` | 5 files; +14 tests; 733→747 |
+| 1 — Migrate CODE consumers to runtime config read | ✅ Done | `3b3fc88` | 5 files; +14 tests; 733→747 |
 | 2 — Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber | ⬚ | | |
 | 3 — Add PostToolUse drift-warn hook + wire settings.json | ⬚ | | |
 
