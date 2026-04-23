@@ -11,8 +11,23 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ─── Runtime config read (eliminates install-time drift) ───
+# Read testing.unit_cmd from the checked-out .claude/zskills-config.json.
+_ZSK_REPO_ROOT="${REPO_ROOT:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || cd "$SCRIPT_DIR/.." && pwd)}"
+_ZSK_CFG="$_ZSK_REPO_ROOT/.claude/zskills-config.json"
+UNIT_TEST_CMD=""
+if [ -f "$_ZSK_CFG" ]; then
+  _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
+  if [[ "$_ZSK_CFG_BODY" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    UNIT_TEST_CMD="${BASH_REMATCH[1]}"
+  fi
+  unset _ZSK_CFG_BODY
+fi
+unset _ZSK_REPO_ROOT _ZSK_CFG
+
 # ─── CONFIGURE ──────────────────────────────────────────────────────
-UNIT_TEST_CMD='{{UNIT_TEST_CMD}}'
+# E2E_TEST_CMD / BUILD_TEST_CMD have no config source; install-filled by
+# /update-zskills. See plan DRIFT_ARCH_FIX.md Out-of-Scope.
 E2E_TEST_CMD='{{E2E_TEST_CMD}}'
 BUILD_TEST_CMD='{{BUILD_TEST_CMD}}'
 # ────────────────────────────────────────────────────────────────────
@@ -46,8 +61,18 @@ get_port() {
   fi
   local project_root
   project_root="$(cd "$SCRIPT_DIR/.." && pwd)"
-  local main_repo='{{MAIN_REPO_PATH}}'
-  if [[ "$main_repo" != '{{MAIN_REPO_PATH}}' ]] && [[ "$project_root" == "$main_repo" ]]; then
+  # Runtime config read: dev_server.main_repo_path
+  local _cfg_root="${REPO_ROOT:-$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null || echo "$project_root")}"
+  local _cfg="$_cfg_root/.claude/zskills-config.json"
+  local main_repo=""
+  if [ -f "$_cfg" ]; then
+    local _body
+    _body=$(cat "$_cfg" 2>/dev/null) || _body=""
+    if [[ "$_body" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_repo_path\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      main_repo="${BASH_REMATCH[1]}"
+    fi
+  fi
+  if [[ -n "$main_repo" ]] && [[ "$project_root" == "$main_repo" ]]; then
     echo 8080
     return
   fi

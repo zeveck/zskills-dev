@@ -397,11 +397,22 @@ setup_project_test() {
   mkdir -p "$TEST_TMPDIR/.claude/hooks"
   mkdir -p "$TEST_TMPDIR/.zskills/tracking"
 
-  # Copy and configure the hook template
+  # Copy the hook template. Post-Phase-1, test-cmd / UI-pattern values are
+  # NOT install-filled — they are read at runtime from .claude/zskills-config.json.
   cp "$PROJECT_HOOK" "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh"
+
+  # Write the runtime config the hook expects.
+  cat > "$TEST_TMPDIR/.claude/zskills-config.json" <<'EOF'
+{
+  "testing": {
+    "unit_cmd": "npm test",
+    "full_cmd": "npm run test:all"
+  },
+  "ui": {
+    "file_patterns": "src/ui/"
+  }
+}
+EOF
 
   # Create mock package.json with test script
   printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$TEST_TMPDIR/package.json"
@@ -946,11 +957,9 @@ run_main_protected_test() {
   mkdir -p "$test_tmpdir/.claude/hooks"
   mkdir -p "$test_tmpdir/.zskills/tracking"
 
-  # Copy and configure the hook template
+  # Copy the hook template. Post-Phase-1 the hook reads test-cmd / UI values
+  # at runtime from .claude/zskills-config.json.
   cp "$PROJECT_HOOK" "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$test_tmpdir/.claude/hooks/block-unsafe-project.sh"
 
   # Create mock package.json and transcript
   printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$test_tmpdir/package.json"
@@ -959,10 +968,32 @@ run_main_protected_test() {
   # Initialize git repo on specified branch
   (cd "$test_tmpdir" && git init -q && git checkout -b "$branch" 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
 
-  # Write config if provided
+  # Write config: always include test-cmd fields so runtime read populates
+  # FULL_TEST_CMD (used by the commit transcript gate). The caller-supplied
+  # config_content may override (e.g., to add execution.main_protected).
   if [ -n "$config_content" ]; then
-    cat > "$test_tmpdir/.claude/zskills-config.json" <<EOF
-$config_content
+    # Caller supplied partial config (e.g. just {"execution": {...}}). Merge
+    # default testing/ui fields so the runtime-read block populates the
+    # hook's test-cmd / UI-pattern vars. python3 is available on CI.
+    CALLER_CFG="$config_content" python3 -c '
+import json, os
+caller = json.loads(os.environ["CALLER_CFG"])
+defaults = {"testing": {"unit_cmd": "npm test", "full_cmd": "npm run test:all"}, "ui": {"file_patterns": "src/ui/"}}
+for k, v in defaults.items():
+    caller.setdefault(k, v)
+print(json.dumps(caller))
+' > "$test_tmpdir/.claude/zskills-config.json"
+  else
+    cat > "$test_tmpdir/.claude/zskills-config.json" <<'EOF'
+{
+  "testing": {
+    "unit_cmd": "npm test",
+    "full_cmd": "npm run test:all"
+  },
+  "ui": {
+    "file_patterns": "src/ui/"
+  }
+}
 EOF
   fi
 
@@ -1138,15 +1169,19 @@ run_worktree_cd_test() {
   # Setup main repo on main with main_protected=true
   mkdir -p "$main_tmpdir/.claude/hooks"
   cp "$PROJECT_HOOK" "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
-  sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
   printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$main_tmpdir/package.json"
   printf 'npm run test:all\n' > "$main_tmpdir/.transcript"
   (cd "$main_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
-  cat > "$main_tmpdir/.claude/zskills-config.json" <<EOF
-$config_content
-EOF
+  # Merge caller's partial config with default test-cmd / UI fields so runtime
+  # read populates all hook vars.
+  CALLER_CFG="$config_content" python3 -c '
+import json, os
+caller = json.loads(os.environ["CALLER_CFG"])
+defaults = {"testing": {"unit_cmd": "npm test", "full_cmd": "npm run test:all"}, "ui": {"file_patterns": "src/ui/"}}
+for k, v in defaults.items():
+    caller.setdefault(k, v)
+print(json.dumps(caller))
+' > "$main_tmpdir/.claude/zskills-config.json"
 
   # Setup separate "worktree" on the requested branch (a fresh repo is
   # equivalent for the predicate's purpose — git -C reports its own branch).
@@ -1201,9 +1236,12 @@ push_tracking_tmpdir=$(mktemp -d)
 mkdir -p "$push_tracking_tmpdir/.claude/hooks"
 mkdir -p "$push_tracking_tmpdir/.zskills/tracking"
 cp "$PROJECT_HOOK" "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
-sed -i 's|{{UNIT_TEST_CMD}}|npm test|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
-sed -i 's|{{FULL_TEST_CMD}}|npm run test:all|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
-sed -i 's|{{UI_FILE_PATTERNS}}|src/ui/|g' "$push_tracking_tmpdir/.claude/hooks/block-unsafe-project.sh"
+cat > "$push_tracking_tmpdir/.claude/zskills-config.json" <<'EOF'
+{
+  "testing": {"unit_cmd": "npm test", "full_cmd": "npm run test:all"},
+  "ui": {"file_patterns": "src/ui/"}
+}
+EOF
 printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$push_tracking_tmpdir/package.json"
 printf 'npm run test:all\n' > "$push_tracking_tmpdir/.transcript"
 (cd "$push_tracking_tmpdir" && git init -q && git checkout -b main 2>/dev/null && git add -A && git commit -q -m "init" 2>/dev/null)
@@ -2370,6 +2408,179 @@ test_verify_changes_arg_parser() {
   fi
 }
 test_verify_changes_arg_parser
+
+echo ""
+echo "=== Runtime config read ==="
+# These tests validate Phase 1 of DRIFT_ARCH_FIX: block-unsafe-project.sh reads
+# testing.unit_cmd / testing.full_cmd / ui.file_patterns at RUNTIME from
+# .claude/zskills-config.json instead of install-filled placeholders. Each
+# test synthesizes a fixture tree and invokes the hook with REPO_ROOT override.
+
+_rcr_setup_fixture() {
+  # Args: $1 = dir, $2 = config JSON body (written verbatim to .claude/zskills-config.json).
+  local dir="$1"
+  local config="$2"
+  mkdir -p "$dir/.claude/hooks"
+  mkdir -p "$dir/.zskills/tracking"
+  cp "$PROJECT_HOOK" "$dir/.claude/hooks/block-unsafe-project.sh"
+  if [ -n "$config" ]; then
+    printf '%s\n' "$config" > "$dir/.claude/zskills-config.json"
+  fi
+  (cd "$dir" && git init -q && git add -A && git commit -q -m "init" 2>/dev/null) || true
+}
+
+_rcr_run_hook() {
+  # Args: $1 = fixture dir, $2 = Bash command, $3 = transcript body (optional).
+  local dir="$1"
+  local cmd="$2"
+  local transcript_body="${3:-FIXTURE_FULL_CMD}"
+  printf '%s\n' "$transcript_body" > "$dir/.transcript"
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$dir/.transcript\"}"
+  echo "$json" | REPO_ROOT="$dir" TRACKING_ROOT="$dir" LOCAL_ROOT="$dir" \
+    bash -c "cd '$dir' && bash '$dir/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+}
+
+# 1. full_cmd read honored (allow path): transcript contains configured full_cmd.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"full_cmd":"FIXTURE_FULL_CMD"}}'
+# Stage a code file so the commit gate is non-exempt.
+(cd "$_rcr_tmp" && echo "var x=1;" > app.js && git add app.js)
+_rcr_result=$(_rcr_run_hook "$_rcr_tmp" "git commit -m test" "FIXTURE_FULL_CMD was run here")
+if [[ "$_rcr_result" != *"deny"* ]]; then
+  pass "runtime-read: full_cmd honored — transcript match allows commit"
+else
+  fail "runtime-read: full_cmd — expected allow, got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 2. full_cmd read honored (deny path): transcript lacks configured full_cmd.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"full_cmd":"FIXTURE_FULL_CMD"}}'
+(cd "$_rcr_tmp" && echo "var x=1;" > app.js && git add app.js)
+_rcr_result=$(_rcr_run_hook "$_rcr_tmp" "git commit -m test" "some other output, no test marker here")
+if [[ "$_rcr_result" == *"FIXTURE_FULL_CMD"* ]] && [[ "$_rcr_result" == *"deny"* ]]; then
+  pass "runtime-read: full_cmd honored — missing transcript match blocks commit with verbatim cmd in reason"
+else
+  fail "runtime-read: full_cmd missing — expected block referencing FIXTURE_FULL_CMD, got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 3. unit_cmd read honored: piped invocation of configured unit_cmd blocks.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"unit_cmd":"FIXTURE_UNIT","full_cmd":"FIXTURE_FULL"}}'
+_rcr_result=$(_rcr_run_hook "$_rcr_tmp" "FIXTURE_UNIT | head")
+if [[ "$_rcr_result" == *"Don't pipe test output"* ]]; then
+  pass "runtime-read: unit_cmd honored — pipe-block fires on configured cmd"
+else
+  fail "runtime-read: unit_cmd pipe — expected pipe-block, got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 4. ui.file_patterns read honored: downstream UI-touch detection uses configured pattern.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"full_cmd":"FIXTURE_FULL"},"ui":{"file_patterns":"src/ui/"}}'
+mkdir -p "$_rcr_tmp/src/ui"
+(cd "$_rcr_tmp" && echo "var x=1;" > src/ui/widget.js && git add src/ui/widget.js)
+# Transcript contains FIXTURE_FULL (so test-cmd gate passes) but NO playwright-cli.
+_rcr_result=$(_rcr_run_hook "$_rcr_tmp" "git commit -m test" "FIXTURE_FULL ran")
+if [[ "$_rcr_result" == *"UI files changed but no playwright-cli"* ]]; then
+  pass "runtime-read: ui.file_patterns honored — UI commit blocked without playwright-cli"
+else
+  fail "runtime-read: ui.file_patterns — expected UI-block, got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 5. Fallback: no config file → empty vars → empty-pattern guard skips pipe check.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" ""   # no config written
+_rcr_result=$(_rcr_run_hook "$_rcr_tmp" "ls | head -5")
+if [[ -z "$_rcr_result" ]] || [[ "$_rcr_result" != *"deny"* ]]; then
+  pass "runtime-read: no-config fallback — empty-pattern guard skips pipe check on unrelated piped cmds"
+else
+  fail "runtime-read: no-config — expected allow on 'ls | head', got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 6. Subdir invocation: cwd is $FIXTURE/src/ but config is at root — hook resolves via --show-toplevel.
+_rcr_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"unit_cmd":"FIXTURE_SUBDIR_UNIT","full_cmd":"FIXTURE_SUBDIR_FULL"}}'
+mkdir -p "$_rcr_tmp/src"
+printf 'FIXTURE_SUBDIR_FULL ran\n' > "$_rcr_tmp/.transcript"
+_rcr_json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"FIXTURE_SUBDIR_UNIT | head\"},\"transcript_path\":\"$_rcr_tmp/.transcript\"}"
+# Do NOT pass REPO_ROOT so the hook must derive it via git rev-parse --show-toplevel from src/.
+_rcr_result=$(echo "$_rcr_json" | bash -c "cd '$_rcr_tmp/src' && bash '$_rcr_tmp/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+if [[ "$_rcr_result" == *"Don't pipe test output"* ]]; then
+  pass "runtime-read: subdir invocation — --show-toplevel resolves config correctly"
+else
+  fail "runtime-read: subdir — expected pipe-block from subdir cwd, got: $_rcr_result"
+fi
+rm -rf "$_rcr_tmp"
+
+# 7. Worktree invocation: config in worktree checkout resolves correctly.
+_rcr_tmp=$(mktemp -d)
+_rcr_wt=$(mktemp -d -u)   # worktree path (not yet created)
+_rcr_setup_fixture "$_rcr_tmp" '{"testing":{"unit_cmd":"FIXTURE_WT_UNIT","full_cmd":"FIXTURE_WT_FULL"}}'
+# Commit the config + hook into the main repo so they land in the worktree checkout.
+(cd "$_rcr_tmp" && git add -A && git commit -q --allow-empty -m "seed config" 2>/dev/null)
+(cd "$_rcr_tmp" && git worktree add -q -b feat/wt-test "$_rcr_wt" 2>/dev/null) || _rcr_wt=""
+if [ -n "$_rcr_wt" ] && [ -f "$_rcr_wt/.claude/zskills-config.json" ]; then
+  printf 'FIXTURE_WT_FULL ran\n' > "$_rcr_wt/.transcript"
+  _rcr_json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"FIXTURE_WT_UNIT | head\"},\"transcript_path\":\"$_rcr_wt/.transcript\"}"
+  _rcr_result=$(echo "$_rcr_json" | bash -c "cd '$_rcr_wt' && bash '$_rcr_wt/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+  if [[ "$_rcr_result" == *"Don't pipe test output"* ]]; then
+    pass "runtime-read: worktree invocation — config resolves from worktree checkout"
+  else
+    fail "runtime-read: worktree — expected pipe-block in worktree, got: $_rcr_result"
+  fi
+  (cd "$_rcr_tmp" && git worktree remove -f "$_rcr_wt" 2>/dev/null) || rm -rf "$_rcr_wt"
+else
+  fail "runtime-read: worktree — fixture setup failed (worktree not created or config not present)"
+fi
+rm -rf "$_rcr_tmp"
+
+# ─── WI 1.6: drift-regression — placeholder deny-list + allow-list ───
+echo ""
+echo "=== Drift regression: placeholder deny-list / allow-list ==="
+
+# Deny-list: migrated placeholders must be absent from installed hook + scripts.
+_drift_fail=0
+for tok in '{{UNIT_TEST_CMD}}' '{{FULL_TEST_CMD}}' '{{UI_FILE_PATTERNS}}' '{{MAIN_REPO_PATH}}'; do
+  if grep -Fq "$tok" \
+    "$REPO_ROOT/.claude/hooks/block-unsafe-project.sh" \
+    "$REPO_ROOT/scripts/port.sh" \
+    "$REPO_ROOT/scripts/test-all.sh"; then
+    fail "drift-regression: migrated placeholder $tok still present in installed hook/scripts"
+    _drift_fail=1
+  fi
+done
+if [ "$_drift_fail" -eq 0 ]; then
+  pass "drift-regression: deny-list — no migrated placeholders in installed hook or scripts"
+fi
+
+# Allow-list: install-time placeholders must remain in test-all.sh.
+for tok in '{{E2E_TEST_CMD}}' '{{BUILD_TEST_CMD}}'; do
+  if grep -Fq "$tok" "$REPO_ROOT/scripts/test-all.sh"; then
+    pass "drift-regression: allow-list — $tok present in test-all.sh"
+  else
+    fail "drift-regression: install-time placeholder $tok missing from test-all.sh"
+  fi
+done
+
+# Additional: template must also be placeholder-free for migrated vars.
+for tok in '{{UNIT_TEST_CMD}}' '{{FULL_TEST_CMD}}' '{{UI_FILE_PATTERNS}}'; do
+  if grep -Fq "$tok" "$REPO_ROOT/hooks/block-unsafe-project.sh.template"; then
+    fail "drift-regression: template still contains migrated placeholder $tok"
+  else
+    pass "drift-regression: template — $tok removed from source template"
+  fi
+done
+
+# Installed hook no longer contains the dead `'{{'` detection branches.
+if grep -F "'{{'" "$REPO_ROOT/.claude/hooks/block-unsafe-project.sh" > /dev/null; then
+  fail "drift-regression: installed hook still contains dead '{{' detection branches"
+else
+  pass "drift-regression: installed hook — dead '{{' placeholder-detection branches removed"
+fi
 
 echo ""
 echo "---"
