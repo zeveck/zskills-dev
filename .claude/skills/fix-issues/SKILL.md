@@ -65,8 +65,9 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - **pr** (optional) — land each fixed issue via a per-issue PR on a named
   branch (`fix/issue-NNN`) in a dedicated worktree. Overrides the config
   default `execution.landing`.
-- **direct** (optional) — land each fixed issue directly on main (no
-  worktree isolation, no PR). Overrides the config default. Incompatible
+- **direct** (optional) — land each fixed issue by fast-forward-merging
+  its per-issue worktree branch (`fix-issue-NNN`) into main (no PR, no
+  cherry-pick extraction). Overrides the config default. Incompatible
   with `execution.main_protected: true`.
 
 **Detection:** scan `$ARGUMENTS` for:
@@ -678,18 +679,23 @@ printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)"
 
 ## Phase 3 — Execute (agent teams in worktrees)
 
-**In `pr` mode, the orchestrator creates a NAMED per-issue worktree manually
-and dispatches agents WITHOUT `isolation: "worktree"`.** See the "PR mode
-(Phase 3)" section below for the exact worktree setup. For `cherry-pick` and
-`direct` modes, use the default `isolation: "worktree"` pattern described here.
+**All modes create a per-issue worktree via `scripts/create-worktree.sh`
+BEFORE dispatching the fix agent, and dispatch agents WITHOUT
+`isolation: "worktree"`.** The distinction between modes is not *how* the
+worktree is created — it is *what happens at landing*: `cherry-pick`
+extracts commits from the worktree branch onto main, `direct` fast-forwards
+the worktree branch into main (Phase 6 detail), and `pr` opens a PR per
+issue. See the "Worktree setup (cherry-pick and direct modes)" subsection
+below for the baseline `create-worktree.sh` invocation, and the "PR mode
+(Phase 3)" subsection for PR-mode-specific branch naming.
 
 **Before dispatching any fix Agent:** check `agents.min_model` in `.claude/zskills-config.json`.
 If set, use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch
 with a lower-ordinal model than the configured minimum.
 
 **1 issue per agent, parallel dispatch.** Each issue gets its own agent
-in its own worktree (`isolation: "worktree"` for cherry-pick/direct, or a
-manually-created `fix/issue-NNN` worktree for `pr` mode). **Dispatch at
+in its own pre-created worktree (materialised via `create-worktree.sh`
+before dispatch for all modes — see "Worktree setup" below). **Dispatch at
 most 3 worktree agents per message.** If you have more than 3, dispatch the
 first 3, wait for them to return, then dispatch the next batch. Five
 concurrent `git checkout` operations cause I/O contention on 9p
@@ -735,13 +741,10 @@ sentinel") as `fix-issues.$SPRINT_ID`:
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 ```
 
-Before dispatching each fix agent to its worktree, write `.zskills-tracked`:
-```bash
-printf '%s\n' "$PIPELINE_ID" > "<worktree-path>/.zskills-tracked"
-```
-
 The echo associates the orchestrator session with this pipeline (read by hook
-from transcript). The `.zskills-tracked` file associates each worktree agent.
+from transcript). Each worktree's `.zskills-tracked` file is written
+atomically by `create-worktree.sh --pipeline-id` during worktree
+materialisation (see "Worktree setup" below).
 
 Each agent follows this fix workflow:
 
@@ -771,6 +774,52 @@ Each agent follows this fix workflow:
 The implementation agent does NOT commit. The verification agent runs the full
 test suite and commits if verification passes. This ensures the hook's test
 gate is satisfied. The approval gate is landing to main (Phase 6).
+
+### Worktree setup (cherry-pick and direct modes)
+
+For `LANDING_MODE == cherry-pick` (default) and `LANDING_MODE == direct`,
+create the per-issue worktree via `create-worktree.sh` BEFORE dispatching
+the fix agent. The default branch name is `fix-issue-NNN` (derived from
+`--prefix fix-issue` + the issue slug); the worktree lives at
+`${WORKTREE_ROOT:-/tmp}/<project-name>-fix-issue-NNN`. PR mode overrides
+the branch name to `fix/issue-NNN` via `--branch-name` — see that
+subsection below.
+
+```bash
+ISSUE_NUM=42
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# Resume detection stays directory-based: an existing fix worktree means
+# we're resuming the same issue across cron turns.
+WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
+if [ -d "$WORKTREE_PATH" ]; then
+  echo "Resuming existing fix worktree at $WORKTREE_PATH"
+else
+  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+    --prefix fix-issue \
+    --purpose "fix-issues; issue=${ISSUE_NUM}" \
+    --pipeline-id "$PIPELINE_ID" \
+    "${ISSUE_NUM}")
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    echo "create-worktree failed (rc=$RC) for /fix-issues cherry-pick/direct mode" >&2
+    exit "$RC"
+  fi
+fi
+# create-worktree.sh owns pre-flight prune+fetch+ff-merge, the underlying
+# safe add, .zskills-tracked (from --pipeline-id), and .worktreepurpose
+# writes. The orchestrator does NOT separately write the tracking marker
+# — the worktree directory does not exist until create-worktree.sh
+# materialises it, so any pre-dispatch write would fail.
+```
+
+For grouped interrelated issues (same root cause or same files from
+Phase 2 grouping), pass the **lowest issue number** as the slug — all
+grouped issues share that one worktree. Mirrors the PR-mode convention.
+
+**Dispatching fix agents in cherry-pick/direct mode:** Dispatch agents
+WITHOUT `isolation: "worktree"` — the worktree already exists. The agent
+prompt must include `FIRST: cd $WORKTREE_PATH` as the mandatory first
+action. Without this instruction, the agent starts in the main repo.
 
 ### PR mode (Phase 3)
 
@@ -973,10 +1022,10 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 - `LANDING_MODE == cherry-pick` — default path (below).
 - `LANDING_MODE == pr` — see "PR mode landing" subsection. One PR per
   fixed issue, with `Fixes #NNN` linking.
-- `LANDING_MODE == direct` — **no-op**: work was committed on main by the
-  verification agent (no worktree isolation was used). Proceed to
-  post-land tracking. Note: direct mode still requires the verification
-  agent to commit — it just doesn't cherry-pick or push to a branch.
+- `LANDING_MODE == direct` — see "Direct mode landing" in
+  [modes/direct.md](modes/direct.md). Per-issue rebase + FF-merge of
+  `fix-issue-NNN` into main, then push. Requires
+  `execution.main_protected: false` (enforced at Phase 1 argument parse).
 
 - **Without `auto`:** Sprint complete. Output:
   > Sprint complete. Report written to `SPRINT_REPORT.md`.
@@ -991,9 +1040,10 @@ mode file in full and follow its procedure end-to-end** per-issue.
 Do not proceed until you have read the file.
 
 - **cherry-pick** (default) → [modes/cherry-pick.md](modes/cherry-pick.md)
+- **direct** → [modes/direct.md](modes/direct.md)
 - **PR mode** → [modes/pr.md](modes/pr.md)
 
-Both mode files assume Phase 5 (Sprint Report) has written the
+All mode files assume Phase 5 (Sprint Report) has written the
 persistent report and Phase 4 (Review) has populated the
 before-landing summary.
 
