@@ -1185,6 +1185,85 @@ commits on the feature branch.
    feature branch *before* push so it's captured in the squash). If
    landing fails in either mode, tracker correctly reads In Progress.
 
+5. **(PR mode only) Sync the GitHub PR body's progress section.** The PR
+   body was snapshotted at PR-open time in Phase 6 (Step 5, Create PR) and
+   wrapped with HTML-comment markers (`<!-- run-plan:progress:start -->`
+   and `<!-- run-plan:progress:end -->`). As subsequent phases land on the
+   feature branch, the PR body must be updated so readers see current
+   progress — not the stale Phase 1 snapshot. Splice ONLY the
+   marker-enclosed region; preserve user-authored prose outside the
+   markers verbatim.
+
+   Skip this step entirely in cherry-pick / direct modes — there is no PR.
+   Skip this step in PR mode if no PR exists yet (Phase 6 hasn't opened
+   one), e.g. when Phase 4 runs between phases in finish mode before any
+   push has happened. Phase 6's Create PR step is authoritative for the
+   initial body.
+
+   ```bash
+   # Only run in PR mode, and only if a PR already exists for this branch.
+   if [ "$LANDING_MODE" = "pr" ]; then
+     PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+     if [ -n "$PR_NUMBER" ]; then
+       # Capture current PR body to a temp file (per-PR path avoids cross-run
+       # collisions). Use gh's --jq to extract the JSON string cleanly; this
+       # yields raw markdown with real newlines (no JSON escaping).
+       PR_BODY_FILE="/tmp/pr-body-${PLAN_SLUG}-${PR_NUMBER}.md"
+       if ! gh pr view "$PR_NUMBER" --json body --jq '.body' > "$PR_BODY_FILE" 2>/dev/null; then
+         echo "NOTICE: skipping PR body sync: gh pr view #$PR_NUMBER failed" >&2
+       else
+         CURRENT_BODY=$(cat "$PR_BODY_FILE")
+         START_MARKER='<!-- run-plan:progress:start -->'
+         END_MARKER='<!-- run-plan:progress:end -->'
+
+         # Regenerate the progress section from the plan tracker — SAME
+         # format as Phase 6 (Step 5) writes at PR-open time. Keep this in
+         # sync with that template.
+         COMPLETED_PHASES=$(grep -E '^\| .* \| ✅' "$PLAN_FILE" | sed 's/|//g' | awk '{$1=$1};1' || echo "See plan file")
+         NEW_PROGRESS="**Phases completed:**
+$COMPLETED_PHASES"
+
+         # Splice with bash regex (NO jq — zskills avoids jq in skills).
+         # The regex captures: (prefix-up-to-and-including-start-marker)
+         # (anything-in-between) (end-marker-and-rest). We keep groups 1
+         # and 3 and replace group 2 with the new progress content.
+         # Graceful on missing markers: emit NOTICE and skip the update.
+         if [[ "$CURRENT_BODY" =~ (.*$START_MARKER)(.*)($END_MARKER.*) ]]; then
+           PREFIX="${BASH_REMATCH[1]}"
+           SUFFIX="${BASH_REMATCH[3]}"
+           UPDATED_BODY="${PREFIX}
+${NEW_PROGRESS}
+${SUFFIX}"
+           if ! gh pr edit "$PR_NUMBER" --body "$UPDATED_BODY" >/dev/null 2>&1; then
+             echo "WARNING: gh pr edit #$PR_NUMBER failed — PR body not synced (auth/network?)" >&2
+           else
+             echo "Synced PR #$PR_NUMBER body progress section."
+           fi
+         else
+           echo "NOTICE: skipping PR body sync: markers not found; this is expected for PRs not opened by /run-plan PR mode" >&2
+         fi
+         rm -f "$PR_BODY_FILE"
+       fi
+     fi
+   fi
+   ```
+
+   **Design properties:**
+   - **Idempotent:** the splice only rewrites the marker-enclosed region;
+     safe to run multiple times per phase.
+   - **Headless-safe:** no interactive prompts; operates via `gh pr view`
+     + `gh pr edit`.
+   - **Preserves user edits outside markers:** user-authored prose
+     (additional sections, links, review notes) outside the marker pair
+     survives the splice.
+   - **Graceful on missing markers:** emit a NOTICE to stderr and skip
+     the update. Do NOT fail Phase 4 — the plan-tracker commit on the
+     feature branch is the source of truth; the PR body is a convenience
+     surface.
+   - **No jq:** splice is pure bash regex (`BASH_REMATCH`). `gh pr view
+     --json body --jq '.body'` is used only to extract the JSON string
+     cleanly (`.jq` is a flag on `gh`, not a separate binary dep).
+
 ## Phase 5 — Write Report
 
 **PREPEND** new phase sections after the H1 in `reports/plan-{slug}.md`
