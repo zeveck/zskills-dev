@@ -53,18 +53,36 @@ DIFFERENT scopes are fine — they run in parallel without conflict.
 
 **Create the scoped sentinel:**
 
+**Compose $SCOPE (model-layer).** Set shell variable `SCOPE` to a
+kebab-case identifier matching `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤30 chars, a
+3–5 word summary of the goal. Compose from `$DESCRIPTION`'s essential
+verbs/nouns — not a verbatim prefix of the input. Multi-line
+descriptions compose the same way as single-line ones: distill the
+intent, don't splice lines.
+
 ```bash
-SCOPE=$(echo "$DESCRIPTION" | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-30)
+if [ -z "${SCOPE:-}" ]; then
+  echo "ERROR: SCOPE not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if ! [[ "$SCOPE" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#SCOPE} -gt 30 ]; then
+  echo "ERROR: SCOPE must match ^[a-z0-9]+(-[a-z0-9]+)*\$ and be ≤30 chars (got '$SCOPE')." >&2
+  exit 2
+fi
+
 PIPELINE_ID="research-and-go.$SCOPE"
 PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
 # Recover SCOPE after sanitization (strip the "research-and-go." prefix).
+# Sanitization is idempotent on a validator-passing $SCOPE, but keep the
+# recovery so any future change to the sanitizer cannot silently skew
+# $SCOPE away from what $PIPELINE_ID encodes.
 SCOPE="${PIPELINE_ID#research-and-go.}"
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.research-and-go.$SCOPE"
 ```
 
 Where `$DESCRIPTION` is the broad goal passed to this command and `$SCOPE` is a
-slugified version for scoping.
+model-composed short identifier used for tracking-dir scoping.
 
 **Declare pipeline ID for hook scoping:**
 

@@ -47,16 +47,14 @@ fail() {
 }
 
 # --- Helpers ------------------------------------------------------------
-# Slug derivation, extracted verbatim from skills/quickfix/SKILL.md WI 1.6.
-# Keeping this in a helper lets us table-drive WI 1.6's contract.
-derive_slug() {
-  printf '%s' "$1" \
-    | tr '[:upper:]' '[:lower:]' \
-    | sed -E 's/[^a-z0-9]+/-/g' \
-    | sed -E 's/^-+//; s/-+$//' \
-    | cut -c1-40 \
-    | sed -E 's/-+$//'
-}
+#
+# WI 1.6 is now model-composed: the model sets $SLUG before any bash
+# fence runs, and a bash validator enforces shape. Tests that drive the
+# preflight slice set $SLUG explicitly in the environment (via the
+# `SLUG=…` prefix on the `bash "$PREFLIGHT_SCRIPT" …` invocation). A
+# harness-wide default is also injected into the extracted preflight /
+# full-flow scripts below so cases that only exercise pre-slug gates
+# (e.g. landing-gate, gh-gate, test-cmd gate) still proceed.
 
 # Per-run scratch directory; never under $REPO_ROOT so `git status` stays clean.
 TEST_TMPDIR="/tmp/zskills-quickfix-test-$$"
@@ -193,10 +191,17 @@ extract_preflight() {
 }
 
 # Extract to a shared helper script for the cases that run it.
+#
+# WI 1.6 is model-composed: the model sets $SLUG before the validator
+# fence runs. The test harness simulates that by injecting a default
+# `SLUG` from the environment (or falling back to a harness default) at
+# the top of the extracted script. Individual cases that care about a
+# specific slug export `SLUG=…` before invoking.
 PREFLIGHT_SCRIPT="$TEST_TMPDIR/preflight.sh"
 {
   echo '#!/bin/bash'
   echo 'set -u'
+  echo ': "${SLUG:=fix-stub}"'
   extract_preflight
 } > "$PREFLIGHT_SCRIPT"
 chmod +x "$PREFLIGHT_SCRIPT"
@@ -225,12 +230,17 @@ FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
 {
   echo '#!/bin/bash'
   echo 'set -u'
-  # WI 1.13 expects the model to set COMMIT_SUBJECT (conventional-commit
-  # form) before the commit fence runs. The fixture simulates that
-  # model-layer composition step with a synthetic subject so the bash
-  # extraction can test the rest of the flow (compose body, commit,
-  # push, PR) end-to-end.
+  # WI 1.6, 1.13, and 1.15 all expect the model to set shell variables
+  # (SLUG, COMMIT_SUBJECT, PR_TITLE) before the corresponding bash
+  # validator/commit/PR fences run. The fixture simulates those model-
+  # layer composition steps so the bash extraction can test the rest of
+  # the flow (branch creation, compose body, commit, push, PR) end-to-
+  # end. Individual cases that care about a specific slug export
+  # `SLUG=…` before invoking; the default below makes cases that don't
+  # care "just work".
+  echo ': "${SLUG:=fix-stub}"'
   echo 'COMMIT_SUBJECT="test(case43): synthetic conventional-commit subject"'
+  echo 'PR_TITLE="test: synthetic PR title"'
   extract_full_flow
 } > "$FULL_FLOW_SCRIPT"
 chmod +x "$FULL_FLOW_SCRIPT"
@@ -261,25 +271,68 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 3 — Slug derivation contract (WI 1.6)
+# Case 3 — SLUG validator-shape contract (WI 1.6)
+#
+# WI 1.6 is now model-composed: the model sets $SLUG, a bash validator
+# enforces shape. This case table-drives the validator regex + length
+# cap by running the actual fence block from the skill and asserting
+# that valid SLUGs pass and malformed ones fail with the expected exit
+# code. Regex: `^[a-z0-9]+(-[a-z0-9]+)*$`; max length 40.
 # ────────────────────────────────────────────────────────────────────
-slug_case() {
-  local label="$1" input="$2" expected="$3" got
-  got=$(derive_slug "$input")
-  if [ "$got" = "$expected" ]; then
-    pass "3  slug: $label"
+slug_validator() {
+  local slug="$1"
+  # Exact fence copy of WI 1.6's validator — kept in sync with the
+  # skill source. If this block drifts from skills/quickfix/SKILL.md
+  # WI 1.6, the test suite falsely passes; a targeted grep below
+  # asserts the fence is still present in source.
+  if [ -z "${slug:-}" ]; then
+    return 5
+  fi
+  if ! [[ "$slug" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#slug} -gt 40 ]; then
+    return 2
+  fi
+  return 0
+}
+slug_accept() {
+  local label="$1" input="$2"
+  slug_validator "$input"
+  local rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass "3  slug accept: $label ('$input')"
   else
-    fail "3  slug: $label — input='$input' expected='$expected' got='$got'"
+    fail "3  slug accept: $label ('$input') — got rc=$rc, expected 0"
   fi
 }
-slug_case "ASCII punctuation → kebab"          "Fix README typo!"                        "fix-readme-typo"
-slug_case "embedded slash → dash"              "Fix the broken link in docs/intro.md"    "fix-the-broken-link-in-docs-intro-md"
-slug_case "leading/trailing whitespace trim"   "  Update CHANGELOG  "                    "update-changelog"
-slug_case "collapsed leading/trailing dashes"  "---Fix---foo---"                         "fix-foo"
-# 41-char input chosen so cut -c1-40 lands on a dash; final sed must strip it.
-slug_case "boundary-at-cut trailing dash"      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx FOO" \
-                                               "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-slug_case "no alphanumerics → empty"           "!!!"                                     ""
+slug_reject() {
+  local label="$1" input="$2" expected_rc="$3"
+  slug_validator "$input"
+  local rc=$?
+  if [ "$rc" -eq "$expected_rc" ]; then
+    pass "3  slug reject: $label ('$input') → rc=$rc"
+  else
+    fail "3  slug reject: $label ('$input') — got rc=$rc, expected $expected_rc"
+  fi
+}
+slug_accept "single char"                "a"
+slug_accept "two segments"               "a-b"
+slug_accept "alphanumeric segments"      "ab-cd"
+slug_accept "typical 3-word"             "fix-readme-typo"
+slug_reject "uppercase"                  "Foo"                                             2
+slug_reject "leading dash"               "-foo"                                            2
+slug_reject "trailing dash"              "foo-"                                            2
+slug_reject "double dash"                "a--b"                                            2
+slug_reject "empty"                      ""                                                5
+slug_reject "slash"                      "a/b"                                             2
+slug_reject "41-char overflow"           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"       2
+
+# Also assert the validator fence itself is still literally present
+# in the skill source (guards against drift between test and skill).
+if grep -qE '^\s*echo "ERROR: SLUG not set — model-layer composition step skipped\."' "$SKILL" \
+   && grep -qE '^\s*if \! \[\[ "\$SLUG" =~ \^\[a-z0-9\]\+\(-\[a-z0-9\]\+\)\*\$ \]\] \|\| \[ \$\{#SLUG\} -gt 40 \]; then' "$SKILL"; then
+  pass "3  slug validator fence: present in skill source"
+else
+  fail "3  slug validator fence: NOT present in skill source — test harness and skill have drifted"
+fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 4 — Branch-name contract (WI 1.7)
@@ -604,7 +657,10 @@ rm -f -- "$ERR"
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c25 "true" "true" "pr" "")
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix foo" >/dev/null 2>"$ERR")
+# Model-composed SLUG injected explicitly (simulates WI 1.6's model-layer
+# composition step). The test specifically exercises empty-prefix
+# branch-name assembly, not slug derivation.
+(cd "$FIX" && SLUG=fix-foo PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix foo" >/dev/null 2>"$ERR")
 RC=$?
 MARKER="$FIX/.zskills/tracking/quickfix.fix-foo/fulfilled.quickfix.fix-foo"
 if [ -f "$MARKER" ] && grep -q '^branch: fix-foo$' "$MARKER"; then
@@ -680,7 +736,7 @@ git -C "$FIX" push --quiet origin quickfix/fix-remote-collision
 git -C "$FIX" checkout --quiet main
 git -C "$FIX" branch -D quickfix/fix-remote-collision >/dev/null 2>&1
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix remote collision" >/dev/null 2>"$ERR")
+(cd "$FIX" && SLUG=fix-remote-collision PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix remote collision" >/dev/null 2>"$ERR")
 RC=$?
 if [ "$RC" -eq 2 ] && grep -q 'already exists on origin' "$ERR"; then
   pass "28 remote branch collision: rc=2 + 'already exists on origin' stderr"
@@ -696,7 +752,7 @@ FIX=$(make_fixture c29)
 # Pre-create a LOCAL branch with the target slug name.
 git -C "$FIX" branch quickfix/fix-local-collision
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix local collision" >/dev/null 2>"$ERR")
+(cd "$FIX" && SLUG=fix-local-collision PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix local collision" >/dev/null 2>"$ERR")
 RC=$?
 if [ "$RC" -eq 2 ] && grep -q "'quickfix/fix-local-collision' already exists locally" "$ERR"; then
   pass "29 local branch collision: rc=2 + 'already exists locally' stderr"
@@ -725,20 +781,20 @@ fi
 rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 31 — Slash in slug (description with only specials) exits 2.
-# Description that derives to empty slug: '!!!' — already covered by
-# case 3, but assert the full preflight exits 2 with 'empty slug'
-# stderr.
+# Case 31 — Malformed SLUG (slash) is rejected by the WI 1.6 validator
+# at rc=2 with a 'SLUG must match' discriminator. Exercises the new
+# model-composed contract: the model sets $SLUG, the bash validator
+# enforces kebab-shape. A slash is outside the validator regex.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c31)
 echo "dirty" >> "$FIX/README.md"
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "!!!" >/dev/null 2>"$ERR")
+(cd "$FIX" && SLUG="a/b" PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
 RC=$?
-if [ "$RC" -eq 2 ] && grep -q 'empty slug' "$ERR"; then
-  pass "31 empty-slug description: rc=2 + 'empty slug' stderr"
+if [ "$RC" -eq 2 ] && grep -q 'SLUG must match' "$ERR"; then
+  pass "31 malformed SLUG (slash): rc=2 + 'SLUG must match' stderr"
 else
-  fail "31 empty-slug: rc=$RC stderr='$(cat "$ERR")'"
+  fail "31 malformed SLUG: rc=$RC stderr='$(cat "$ERR")'"
 fi
 rm -f -- "$ERR"
 
@@ -748,7 +804,7 @@ rm -f -- "$ERR"
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c32)
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix tracking path" >/dev/null 2>"$ERR")
+(cd "$FIX" && SLUG=fix-tracking-path PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix tracking path" >/dev/null 2>"$ERR")
 MARKER="$FIX/.zskills/tracking/quickfix.fix-tracking-path/fulfilled.quickfix.fix-tracking-path"
 if [ -f "$MARKER" ] && grep -q '^skill: quickfix$' "$MARKER" && grep -q '^slug: fix-tracking-path$' "$MARKER"; then
   pass "32 tracking path: pipeline-scoped subdir + marker basename + fields"
@@ -861,7 +917,7 @@ fi
 FIX=$(make_fixture c40)
 echo "edit" >> "$FIX/README.md"
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix readme typo" >/dev/null 2>"$ERR")
+(cd "$FIX" && SLUG=fix-readme-typo PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix readme typo" >/dev/null 2>"$ERR")
 RC=$?
 CURRENT=$(git -C "$FIX" branch --show-current)
 MARKER="$FIX/.zskills/tracking/quickfix.fix-readme-typo/fulfilled.quickfix.fix-readme-typo"
@@ -884,7 +940,9 @@ rm -f -- "$ERR"
 FIX=$(make_fixture c41)
 echo "edit" >> "$FIX/README.md"
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "a description with spaces" >/dev/null 2>"$ERR")
+# Explicit SLUG stub — the model-composed identifier is what drives
+# branch assembly now; the description isn't re-derived in bash.
+(cd "$FIX" && SLUG=a-description-with-spaces PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "a description with spaces" >/dev/null 2>"$ERR")
 RC=$?
 CURRENT=$(git -C "$FIX" branch --show-current)
 if [ "$RC" -eq 0 ] && [ "$CURRENT" = "quickfix/a-description-with-spaces" ]; then
@@ -932,7 +990,7 @@ FIX=$(make_fixture c43)
 echo "edit for fix" >> "$FIX/README.md"
 ERR=$(mktemp)
 OUT=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$FULL_FLOW_SCRIPT" --yes "fix readme typo" >"$OUT" 2>"$ERR")
+(cd "$FIX" && SLUG=fix-readme-typo PATH="$FIX/bin:$PATH" bash "$FULL_FLOW_SCRIPT" --yes "fix readme typo" >"$OUT" 2>"$ERR")
 RC=$?
 
 # Assertions

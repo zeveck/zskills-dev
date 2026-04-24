@@ -290,37 +290,32 @@ exists only as a fallback for the literal-script execution path used by
 
 ### WI 1.6 — Slug derivation
 
-Pipeline: lowercase → collapse non-alphanumerics to `-` → trim leading
-and trailing `-` → `cut -c1-40` → **trim trailing `-` again** (the second
-trim is load-bearing: when the cut boundary lands on a `-`, otherwise the
-branch would end in `quickfix/fix-foo-`).
+**Compose $SLUG (model-layer).** Set shell variable `SLUG` to a kebab-case
+identifier matching `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤40 chars, a 3–6 word
+summary of the task. Compose from the description's essential verbs/nouns
+— not a verbatim prefix of the input. Multi-line descriptions compose the
+same way as single-line ones: distill the intent, don't splice lines.
 
 ```bash
-SLUG=$(printf '%s' "$DESCRIPTION" \
-       | tr '[:upper:]' '[:lower:]' \
-       | sed -E 's/[^a-z0-9]+/-/g' \
-       | sed -E 's/^-+//; s/-+$//' \
-       | cut -c1-40 \
-       | sed -E 's/-+$//')
-
-if [ -z "$SLUG" ]; then
-  echo "ERROR: description produced an empty slug (no alphanumerics)." >&2
+if [ -z "${SLUG:-}" ]; then
+  echo "ERROR: SLUG not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if ! [[ "$SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#SLUG} -gt 40 ]; then
+  echo "ERROR: SLUG must match ^[a-z0-9]+(-[a-z0-9]+)*\$ and be ≤40 chars (got '$SLUG')." >&2
   exit 2
 fi
-case "$SLUG" in
-  */*) echo "ERROR: slug must not contain '/' (got '$SLUG')." >&2; exit 2 ;;
-esac
 ```
 
 Examples:
 
-| Input | Slug |
-|-------|------|
+| Input | Composed SLUG |
+|-------|---------------|
 | `Fix README typo!` | `fix-readme-typo` |
-| `Fix the broken link in docs/intro.md` | `fix-the-broken-link-in-docs-intro-md` |
+| `Fix the broken link in docs/intro.md` | `fix-broken-docs-link` |
 | `  Update CHANGELOG  ` | `update-changelog` |
-| `---Fix---foo---` | `fix-foo` |
-| `!!!` | `""` → exit 2 |
+| Multi-line: `"Refactor the worker pool\n\nIt's currently unbounded..."` | `refactor-worker-pool` |
+| `!!!` | (model cannot compose a slug from punctuation → validator exit 2 after any attempt) |
 
 ### WI 1.7 — Branch naming
 
@@ -697,12 +692,27 @@ fi
 
 ## Phase 7 — PR creation (WI 1.15)
 
-Title is the description truncated to 70 characters. Body is built via a
-`<<-EOF` heredoc with **tab-indented** body lines (tabs are stripped by
-`<<-`; using spaces would render the body as a code block on GitHub).
+**Compose $PR_TITLE (model-layer).** Set shell variable `PR_TITLE` to a
+single-line conventional-commit style title of the form
+`type(scope): summary` (type ∈ {feat, fix, docs, refactor, chore, test,
+build, ci, style, perf, revert}; scope is the primary module/file being
+changed; summary describes what's actually changing). ≤70 chars, no
+newlines. Compose from what the PR actually does — not a verbatim prefix
+of the description.
+
+Body is built via a `<<-EOF` heredoc with **tab-indented** body lines
+(tabs are stripped by `<<-`; using spaces would render the body as a code
+block on GitHub).
 
 ```bash
-PR_TITLE=$(printf '%s' "$DESCRIPTION" | cut -c1-70)
+if [ -z "${PR_TITLE:-}" ]; then
+  echo "ERROR: PR_TITLE not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 70 ]; then
+  echo "ERROR: PR_TITLE must be a single line ≤70 chars (got '$PR_TITLE')." >&2
+  exit 2
+fi
 
 PR_BODY=$(cat <<-EOF
 	## Summary
