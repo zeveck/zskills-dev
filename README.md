@@ -67,7 +67,7 @@ project.
 2. **Copy skills** from the clone into your project:
    ```bash
    mkdir -p .claude/skills
-   cp -r /tmp/zskills/skills/*/ .claude/skills/
+   cp -r /tmp/zskills/skills/* .claude/skills/
    ```
 
 3. **Run `/update-zskills`** to complete setup. This is the important
