@@ -1,5 +1,39 @@
 # Plan Report — Drift-Arch Fix
 
+**Plan status:** ✅ Complete (all 3 phases landed on `feat/drift-arch-fix`; PR #59 ready to squash-merge).
+
+## Phase — 3 Add PostToolUse drift-warn hook + wire settings.json
+
+**Plan:** plans/DRIFT_ARCH_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-drift-arch-fix (feat/drift-arch-fix)
+**Commit:** e3e6b3c
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 3.1 | Create `hooks/warn-config-drift.sh` (source) | Done | e3e6b3c |
+| 3.2 | Mirror to `.claude/hooks/warn-config-drift.sh` (byte-identical, +x) | Done | e3e6b3c |
+| 3.3 | Add PostToolUse entries to `.claude/settings.json` (Edit + Write matchers) | Done | e3e6b3c |
+| 3.4 | PostToolUse rows in canonical triples table (already landed in Phase 2) | Done | 8ce91de |
+| 3.5 | 5 test cases under `=== PostToolUse: config drift warn ===` | Done | e3e6b3c |
+
+### Verification
+- Test suite: PASSED (806/806; baseline 801/801; +5 new, zero regressions).
+- Byte-identical mirrors: `hooks/warn-config-drift.sh` ≡ `.claude/hooks/warn-config-drift.sh`; skill source ≡ mirror.
+- Settings.json: valid JSON; existing PreToolUse preserved byte-identical; new PostToolUse block has exactly 2 entries (Edit, Write) per plan.
+- Hook correctness: always `exit 0`; suffix-matches `.claude/zskills-config.json`; warn text verbatim.
+- All 5 WI 3.5 test cases pass (Edit/Write on config, Edit on unrelated file, malformed stdin).
+
+### Notes
+- WI 3.4 was effectively a no-op — Phase 2 pre-landed both PostToolUse rows (Edit, Write) in the canonical triples table when drafting Step C. Phase 3 only needed the hook file + settings.json wiring.
+- Install-integrity addition (WI 3.x "use judgment"): implementer added a specific "source missing → skip row" note in `skills/update-zskills/SKILL.md` Step C. Mirrored to `.claude/skills/update-zskills/SKILL.md`.
+
+### Risks
+None identified. Phase completes the drift-arch fix: users who edit `.claude/zskills-config.json` now get a stderr warn reminding them to `/update-zskills --rerender` if CLAUDE.md matters.
+
+---
+
 ## Phase — 2 Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber
 
 **Plan:** plans/DRIFT_ARCH_FIX.md
