@@ -25,10 +25,11 @@ was found and what was done about it.
 **Explicit mode:**
 - `install` — force a full first-time setup (same as what the default
   mode does when nothing is installed, but skips the detection step)
-- `--rerender` — regenerate the template-managed portion of `CLAUDE.md`
-  against the current `.claude/zskills-config.json`. Preserves every
-  line below `## Agent Rules`. No audit, no preset, no hooks/scripts
-  touched. See `### Step D — --rerender` for the full algorithm.
+- `--rerender` — regenerate `.claude/rules/zskills/managed.md` against
+  the current `.claude/zskills-config.json`. Simple full-file rewrite
+  of the zskills-owned rules file; root `./CLAUDE.md` is never touched.
+  No audit, no preset, no hooks/scripts touched. See
+  `### Step D — --rerender` for the algorithm.
 
 **Preset keywords (bare word, anywhere in the args):**
 
@@ -413,10 +414,12 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
   - Script references (`scripts/port.sh`, `scripts/test-all.sh`) — check if
     the script file exists.
 
-### Step 2 — Check CLAUDE.md for 13 generic rules
+### Step 2 — Check zskills rules file for 13 generic rules
 
-Read the project's `CLAUDE.md` (if it exists). For each of the 13 generic
-rules, search for a distinctive key phrase that identifies the rule
+Read `.claude/rules/zskills/managed.md` (the zskills-owned rules
+file); if absent, fall back to reading root `./CLAUDE.md` (pre-Phase-4
+installs rendered rules there). For each of the 13 generic rules,
+search for a distinctive key phrase that identifies the rule
 (**case-insensitive**). Mark the rule as present if the key phrase is
 found, missing otherwise.
 
@@ -438,10 +441,12 @@ found, missing otherwise.
 
 ### Step 2.5 — Documentation presence audit (execution modes)
 
-Search the project's `CLAUDE.md` for these documentation-presence signals.
-Mark each present/missing based on **case-insensitive substring match**:
+Search the zskills rules file (`.claude/rules/zskills/managed.md`,
+falling back to root `./CLAUDE.md`) for these documentation-presence
+signals. Mark each present/missing based on **case-insensitive
+substring match**:
 
-| Check | Key phrase(s) to search in CLAUDE.md |
+| Check | Key phrase(s) to search in zskills rules file |
 |-------|--------------------------------------|
 | Execution Modes section | `## Execution Modes` (heading) |
 | Landing mode keywords documented | `cherry-pick` AND `pr` AND `direct` |
@@ -499,7 +504,7 @@ Skill Dependencies: all satisfied | K missing
   - /run-plan requires /verify-changes — NOT INSTALLED
   ...
 
-CLAUDE.md Rules: M/13 present (K missing)
+Agent Rules: M/13 present (K missing)
   Missing:
   - [rule name]: [key phrase not found]
   ...
@@ -562,14 +567,23 @@ Run Step 0 (locate portable assets). If the path cannot be resolved, stop
 with an error: "Cannot locate zskills-portable/ directory. Please provide
 the path to the Z Skills source repo."
 
-#### Step B — Fill CLAUDE.md gaps
+#### Step B — Render zskills-managed rules file
 
-**If CLAUDE.md does NOT exist:**
+**Target path:** `.claude/rules/zskills/managed.md` in the project.
+Create the `.claude/rules/zskills/` subdirectory if absent. Claude Code
+auto-loads everything under `.claude/rules/` recursively at session
+start, so no `@`-import from root `./CLAUDE.md` is needed.
 
-Copy `$PORTABLE/CLAUDE_TEMPLATE.md` to `CLAUDE.md`. Then **auto-detect
-placeholder values** and fill them in — do not prompt or block:
+**Ownership rule:** zskills owns `.claude/rules/zskills/` in full. The
+user's root `./CLAUDE.md` is theirs exclusively. No cross-writes:
+Step B never reads or modifies root `./CLAUDE.md` content (the
+migration sub-step below is the sole, deterministic exception, and it
+only removes zskills-rendered lines — never user content).
 
-1. **Scan project files** for detection signals:
+**Render algorithm (every install, first-run and subsequent — idempotent):**
+
+1. **Scan project files for auto-detected placeholder defaults** (only
+   used when the corresponding config field is empty):
    - `package.json` — `name`, `scripts.start`, `scripts.dev`, `scripts.test`,
      `scripts["test:all"]`, `scripts["test:ci"]`
    - `Cargo.toml` — `[package] name`
@@ -580,42 +594,102 @@ placeholder values** and fill them in — do not prompt or block:
    - `pytest.ini` / `jest.config.*` / `.mocharc.*` — test framework detection
    - Git remote URL or directory name — fallback for project name
 
-2. **Fill in values automatically.** Do not prompt. Do not block.
-   - **Detected values** -> replace the placeholder directly
-   - **Undetectable values** -> use sensible defaults:
-     - `{{PROJECT_NAME}}` -> directory name (always available)
-     - `{{DEV_SERVER_CMD}}` -> `npm start` if package.json exists,
-       otherwise comment out the section
-     - `{{UNIT_TEST_CMD}}` -> `npm test` if package.json exists,
-       otherwise comment out
-     - `{{FULL_TEST_CMD}}` -> same as unit test command, or comment out
-   - **Truly unknown values** -> comment out with a TODO marker:
-     `<!-- TODO: fill in when known -->`
+2. **Substitute placeholders** in `$PORTABLE/CLAUDE_TEMPLATE.md` using
+   current `.claude/zskills-config.json` values (fall back to
+   auto-detected defaults for empty fields; for truly unknown values,
+   comment out with a TODO marker `<!-- TODO: fill in when known -->`).
+   Placeholder mapping is documented in Step 0.5.
 
-3. **Report what was filled and what needs review:**
+3. **Write the rendered content** to
+   `.claude/rules/zskills/managed.md`. Full overwrite is safe by
+   ownership rule — zskills owns this file in full; no user content
+   ever lives here. The file is regenerated from template + config on
+   every install and every `--rerender`. Never leaves broken
+   `{{PLACEHOLDER}}` strings.
+
+4. **Run the root-CLAUDE.md migration sub-step** (below) to detect and
+   relocate any pre-Phase-4 zskills content from root `./CLAUDE.md`.
+
+5. **Report:**
    ```
-   CLAUDE.md created. Values filled:
+   .claude/rules/zskills/managed.md rendered. Values filled:
      Project name: my-app (from package.json)
      Dev server: npm start (detected)
      Test command: npm test (detected)
      Full test: commented out (no test:all script found — update when ready)
 
-   Review CLAUDE.md and adjust any values that need changing.
+   Review .claude/rules/zskills/managed.md and adjust config values if needed
+   (edit .claude/zskills-config.json, then rerun /update-zskills --rerender).
    ```
 
-The CLAUDE.md should be functional immediately — the 13 agent rules
-work regardless of project-specific values. Unfilled placeholders should
-never leave broken `{{PLACEHOLDER}}` strings in the file.
+**Migration sub-step — relocate pre-Phase-4 zskills content from root `./CLAUDE.md`:**
 
-**If CLAUDE.md EXISTS but is missing rules:**
+Earlier zskills installs rendered into root `./CLAUDE.md`; Phase 4
+moved the target to `.claude/rules/zskills/managed.md`. On every
+install (first-run and subsequent), detect any zskills-rendered lines
+still sitting in root `./CLAUDE.md` and remove them — carefully, so
+user-authored content that merely mentions a zskills value is
+preserved. Idempotent: on a clean install or after a previous
+migration, nothing matches and nothing changes.
 
-Show the user which rules are missing, show the exact text that will be
-appended, and ASK before modifying. Append to a `## Agent Rules` section at
-the end of the existing CLAUDE.md. If `## Agent Rules` already exists in
-CLAUDE.md, append the missing rules to the existing section — do NOT create
-a duplicate section header.
+Algorithm:
 
-**NEVER overwrite or modify existing CLAUDE.md content.**
+1. If root `./CLAUDE.md` does not exist, the migration is a no-op.
+   Skip and continue.
+
+2. **Render the current template against current config** (same
+   substitution used in Step B step 2 above) to produce a
+   `$RENDERED_TEMPLATE` string. This is the set of lines zskills would
+   write today.
+
+3. For each placeholder `P` in `CLAUDE_TEMPLATE.md` whose current
+   rendered value `V` is non-empty, identify the set of lines in
+   `$RENDERED_TEMPLATE` that contain `V`. For each such "template
+   line," record its ±2-line neighbourhood in the template (2 lines
+   before, 2 lines after). The neighbourhood is the **context
+   signature** for that template line.
+
+4. Walk root `./CLAUDE.md` line by line. A root line is a **migration
+   candidate** iff:
+   - it contains at least one placeholder's current rendered value `V`, AND
+   - its ±2-line neighbourhood in root `./CLAUDE.md` matches the
+     corresponding template line's context signature (line-for-line,
+     ignoring trailing whitespace).
+
+   The context match restricts removal to lines that were genuinely
+   rendered by zskills. Prose that merely mentions a zskills value in
+   non-template context (e.g., "I remember we used to have
+   `bash tests/run-all.sh`…") fails the context check and is preserved.
+
+5. **If zero candidates**, migration is a no-op. Do not create a
+   backup, do not emit a NOTICE. Stop.
+
+6. **Otherwise**: back up root `./CLAUDE.md` to
+   `./CLAUDE.md.pre-zskills-migration` — **only if that backup does
+   NOT already exist.** Never overwrite a prior backup. This preserves
+   the user's pre-migration state across repeated `/update-zskills`
+   invocations.
+
+7. Remove the matched candidate lines from root `./CLAUDE.md`.
+   Everything else is left byte-identical. If the result is an empty
+   file, leave it as an empty file (do not delete) — an existing
+   `./CLAUDE.md` with no content signals "user chose zskills-only
+   rules and has no other project notes yet"; recreating it on next
+   invocation is cheaper than guessing intent.
+
+8. Emit to stderr:
+
+   ```
+   NOTICE: Migrated zskills content from root ./CLAUDE.md to .claude/rules/zskills/managed.md.
+   Backup: ./CLAUDE.md.pre-zskills-migration.
+   If your Claude Code settings exclude .claude/** from context (e.g. claudeMdExcludes),
+   the new rules file will not auto-load — adjust your excludes or @-import it from root CLAUDE.md.
+   ```
+
+**NEVER modify user-authored content in root `./CLAUDE.md`** — the
+migration removes only lines matching both value AND ±2-line template
+context. Anything the user added (their own sections, notes,
+references) is untouched.
 
 #### Step C — Fill hook gaps
 
@@ -887,7 +961,8 @@ formatting variance and legacy hook versions. Delegate to the script.
 Installation complete.
 
 Installed:
-- CLAUDE.md: [created | N rules appended | already complete]
+- .claude/rules/zskills/managed.md: [rendered | already current]
+- Root ./CLAUDE.md migration: [none | N lines relocated, backup at ./CLAUDE.md.pre-zskills-migration]
 - Hooks: N hooks installed
 - Scripts: N scripts installed
 - Add-ons: N add-on skills installed (omit this line if no add-on flag was used)
@@ -920,8 +995,8 @@ Run /update-zskills to check for updates later.
    are installed (e.g., `.claude/skills/add-block/SKILL.md` exists). If so,
    diff against `$ZSKILLS_PATH/block-diagram/` and update the same way.
 
-5. **Fill new gaps.** For any NEW items (skills, hooks, scripts, CLAUDE.md
-   rules) that don't exist yet, install them using the same steps as the
+5. **Fill new gaps.** For any NEW items (skills, hooks, scripts, zskills
+   rules file) that don't exist yet, install them using the same steps as the
    install path above (Steps B-E). In particular, if
    `scripts/apply-preset.sh` is missing from the target, copy it — Step F
    relies on it.
@@ -955,96 +1030,38 @@ Run /update-zskills to check for updates later.
 
 **Trigger:** user runs `/update-zskills --rerender`.
 
-**Scope:** regenerates `CLAUDE.md` only. Hooks and helper scripts are
-runtime-read; they auto-reflect config changes with no action from
-this flag. Does not touch `.claude/settings.json`, skills, or source
-templates. No audit, no preset, no config backfill — this is a pure
-CLAUDE.md re-render against the current `.claude/zskills-config.json`.
+**Scope:** full-file rewrite of `.claude/rules/zskills/managed.md`
+against the current `.claude/zskills-config.json`.
+Root `./CLAUDE.md` is never touched by `--rerender`.
+Hooks and helper scripts are runtime-read; they
+auto-reflect config changes with no action from this flag. Does not
+touch `.claude/settings.json`, skills, or source templates. No audit,
+no preset, no config backfill, no migration. Pure re-render.
 
-**Use case:** after a post-install edit to
-`.claude/zskills-config.json` changes a render-time-filled field
-(`{{PROJECT_NAME}}`, `{{DEV_SERVER_CMD}}`, `{{PORT_SCRIPT}}`,
-`{{AUTH_BYPASS}}`, `{{E2E_TEST_CMD}}`, `{{BUILD_TEST_CMD}}`,
-`{{TIMEZONE}}`), the frozen `CLAUDE.md` snapshot has drifted. This
-flag brings it back in sync without an audit round-trip.
+**Algorithm:**
 
-**Boundary-detection algorithm:**
-
-1. **Locate the `## Agent Rules` demarcation** in the existing
-   `CLAUDE.md`:
-
-   ```bash
-   HEADING_LINE=$(grep -n '^## Agent Rules[[:space:]]*$' CLAUDE.md | head -1 | cut -d: -f1)
-   ```
-
-   Tolerant of trailing whitespace, strict on leading `##` and — by
-   convention — a surrounding blank line (Step B appends with blank
-   lines around the heading). If no match → **exit 2** with error:
-
-   > `CLAUDE.md missing '## Agent Rules' demarcation; cannot rerender safely. Add the heading or re-run /update-zskills (without --rerender) for initial install.`
-
-2. **Split the existing file** on the heading line:
-   - `existing_above` = lines `1 .. heading_line - 1`
-   - `existing_below` = lines `heading_line .. end` (heading itself
-     stays in the below region)
-
-3. **Render `CLAUDE_TEMPLATE.md` against current config.** For each
-   placeholder (`{{PROJECT_NAME}}`, `{{DEV_SERVER_CMD}}`,
-   `{{PORT_SCRIPT}}`, `{{AUTH_BYPASS}}`, `{{E2E_TEST_CMD}}`,
-   `{{BUILD_TEST_CMD}}`, `{{TIMEZONE}}`), substitute the current
-   config value (per Step B's existing fill logic, unchanged). Locate
-   the `## Agent Rules` heading in the rendered output; extract
-   `fresh_above`.
-
-4. **Byte-compare `existing_above` to `fresh_above`.**
-   Right-trim trailing whitespace on each line before comparing, to
-   tolerate editor-induced churn. No "normalize by substituting prior
-   values" — if they differ, the differences are either user edits OR
-   config-change-since-last-render. Both cases mean the user reviews
-   before overwriting.
-
-   - **Identical:** write `fresh_above + existing_below` to
-     `CLAUDE.md`. **Exit 0.** If the resulting bytes equal the
-     existing `CLAUDE.md` content, skip the write entirely so the file
-     mtime stays stable — ensures idempotency (second consecutive
-     `--rerender` is a true no-op).
-   - **Different:** write `fresh_above + existing_below` to
-     `CLAUDE.md.new`. Do NOT overwrite `CLAUDE.md`. Print to stderr
-     verbatim:
-
-     ```
-     CLAUDE.md differs above '## Agent Rules' (user edits, config drift, or both).
-     New rendered content written to CLAUDE.md.new. Review with:
-         diff CLAUDE.md CLAUDE.md.new
-     To accept the new version:  mv CLAUDE.md.new CLAUDE.md
-     To discard it:              rm CLAUDE.md.new
-     ```
-
-     **Exit 2.**
-
-**Missing `CLAUDE.md`:** **exit 1** with error `no existing CLAUDE.md;
-run /update-zskills (without --rerender) for initial install`. Do not
-create one silently — `--rerender` is explicitly a re-render of an
-existing install, not an initial install.
+1. If `$PORTABLE/CLAUDE_TEMPLATE.md` is missing or unreadable, **exit
+   1** with error `CLAUDE_TEMPLATE.md missing or unreadable; cannot
+   rerender`.
+2. Render the template against current config (same substitution
+   logic as Step B step 2).
+3. Create `.claude/rules/zskills/` if absent.
+4. Write the rendered content to `.claude/rules/zskills/managed.md`
+   (full overwrite — the file is zskills-owned, no user content lives
+   here).
+5. **Exit 0.**
 
 **Exit codes:**
 
 | Code | Meaning |
 |------|---------|
-| 0 | Clean re-render (or idempotent no-op). |
-| 1 | No existing `CLAUDE.md` — not a valid `--rerender` target. |
-| 2 | Conflict (user edits above `## Agent Rules`, or missing demarcation heading). |
-
-**Why no interactive prompt on conflict:** `--rerender` is routinely
-invoked from headless automation (e.g., the Phase 3
-`warn-config-drift.sh` hook suggests it after a config edit). The
-diff-command + merge-instructions on stderr keep the agent's path
-deterministic while preserving user intent.
+| 0 | Re-render complete. |
+| 1 | `CLAUDE_TEMPLATE.md` missing or invalid. |
 
 **What `--rerender` does NOT do:** re-run the audit, backfill config
-fields, apply a preset, update skills, copy hooks/scripts, or touch
-`.claude/settings.json`. Any of those require a full
-`/update-zskills` invocation.
+fields, apply a preset, update skills, copy hooks/scripts, touch
+`.claude/settings.json`, or run the root-CLAUDE.md migration. Any of
+those require a full `/update-zskills` invocation.
 
 ---
 
@@ -1052,9 +1069,13 @@ fields, apply a preset, update skills, copy hooks/scripts, or touch
 
 These rules are inviolable. They apply to all modes:
 
-1. **NEVER overwrite existing CLAUDE.md content** — append only. New rules
-   go into `## Agent Rules` at the end. Never modify or delete existing
-   sections.
+1. **zskills owns `.claude/rules/zskills/` in full; root `./CLAUDE.md`
+   is the user's exclusively.** zskills renders, overwrites, and
+   rerenders its own `managed.md` freely. It never writes to root
+   `./CLAUDE.md` except for the one-time migration sub-step in
+   Step B, which removes only lines matching both a rendered value
+   AND the template's ±2-line context around that value. No other
+   cross-writes.
 2. **NEVER overwrite existing hooks or scripts** — if a file already
    exists, skip it. The user may have customized it.
    (Exception: `scripts/apply-preset.sh` performs targeted in-place

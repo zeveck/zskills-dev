@@ -2603,7 +2603,7 @@ _run_warn_hook() {
 # Case 1: Edit on repo-relative .claude/zskills-config.json → warn fires.
 _run_warn_hook '{"tool_name":"Edit","tool_input":{"file_path":".claude/zskills-config.json"}}'
 if [[ "$_WARN_RC" -eq 0 ]] \
-  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *".claude/rules/zskills/managed.md"* ]] \
   && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
   pass "warn-config-drift: Edit on .claude/zskills-config.json — stderr warns, rc=0"
 else
@@ -2613,7 +2613,7 @@ fi
 # Case 2: Edit with absolute path → same warn (suffix matcher).
 _run_warn_hook '{"tool_name":"Edit","tool_input":{"file_path":"/workspaces/zskills/.claude/zskills-config.json"}}'
 if [[ "$_WARN_RC" -eq 0 ]] \
-  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *".claude/rules/zskills/managed.md"* ]] \
   && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
   pass "warn-config-drift: Edit absolute path — suffix-match fires warn, rc=0"
 else
@@ -2631,7 +2631,7 @@ fi
 # Case 4: Write on .claude/zskills-config.json → same warn.
 _run_warn_hook '{"tool_name":"Write","tool_input":{"file_path":".claude/zskills-config.json"}}'
 if [[ "$_WARN_RC" -eq 0 ]] \
-  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *".claude/rules/zskills/managed.md"* ]] \
   && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
   pass "warn-config-drift: Write on .claude/zskills-config.json — stderr warns, rc=0"
 else

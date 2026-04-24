@@ -246,20 +246,47 @@ check_fixed update-zskills "Step C.9 runs before main merge"          'run BEFOR
 check_fixed update-zskills "Step C.9 row format documented"           'old_command: bash'
 check_fixed update-zskills "Step C.9 contribution instructions"       'ships the rename'
 
-# WI 2.4 — Step D --rerender section exists with all documented behaviors.
+# WI 4.x — Step B renders into .claude/rules/zskills/managed.md (zskills-owned).
+check       update-zskills "Step B header: render rules file" \
+  '^#### Step B — Render zskills-managed rules file'
+check_fixed update-zskills "Step B: target path managed.md" \
+  '.claude/rules/zskills/managed.md'
+check_fixed update-zskills "Step B: ownership rule" \
+  'zskills owns `.claude/rules/zskills/` in full'
+check_fixed update-zskills "Step B: root CLAUDE.md is user's" \
+  'root `./CLAUDE.md` is theirs exclusively'
+# WI 4.4 — Migration sub-step: root CLAUDE.md detection + backup + NOTICE.
+check       update-zskills "Step B: migration sub-step header" \
+  '^\*\*Migration sub-step'
+check_fixed update-zskills "Step B: migration ±2 line context" \
+  '±2-line'
+check_fixed update-zskills "Step B: migration backup path" \
+  './CLAUDE.md.pre-zskills-migration'
+check_fixed update-zskills "Step B: migration NOTICE stderr" \
+  'NOTICE: Migrated zskills content'
+check_fixed update-zskills "Step B: migration idempotent no backup overwrite" \
+  'Never overwrite a prior backup'
+
+# WI 4.2 — Step D --rerender section: simple full-file rewrite, rc=0/rc=1 only.
 check       update-zskills "Step D header" \
   '^### Step D — --rerender'
 check_fixed update-zskills "Step D: --rerender trigger"               '`/update-zskills --rerender`'
-check_fixed update-zskills "Step D: CLAUDE.md only scope"             'regenerates `CLAUDE.md` only'
-check_fixed update-zskills "Step D: Agent Rules demarcation grep"     'grep -n '\''^## Agent Rules'
-check_fixed update-zskills "Step D: exit 0 clean rerender"            'Clean re-render'
-check_fixed update-zskills "Step D: exit 1 missing CLAUDE.md"         'no existing CLAUDE.md'
-check_fixed update-zskills "Step D: exit 2 conflict"                  'CLAUDE.md.new'
-check_fixed update-zskills "Step D: mv accept instruction"            'mv CLAUDE.md.new CLAUDE.md'
-check_fixed update-zskills "Step D: rm discard instruction"           'rm CLAUDE.md.new'
-check_fixed update-zskills "Step D: idempotency"                      'mtime stays stable'
-check_fixed update-zskills "Step D: no interactive prompt"            'Why no interactive prompt'
-check       update-zskills "Step D: byte-compare with right-trim"     '[Rr]ight-trim trailing whitespace'
+check_fixed update-zskills "Step D: full-file rewrite scope" \
+  'full-file rewrite of `.claude/rules/zskills/managed.md`'
+check_fixed update-zskills "Step D: root CLAUDE.md never touched" \
+  'Root `./CLAUDE.md` is never touched by `--rerender`'
+check_fixed update-zskills "Step D: exit 0 success" \
+  'Re-render complete'
+check_fixed update-zskills "Step D: exit 1 template missing" \
+  'CLAUDE_TEMPLATE.md missing or unreadable'
+# Negative assertion — the byte-compare / .new artifacts MUST be gone.
+if grep -nE 'CLAUDE\.md\.new|byte-compare|Agent Rules.*demarcation|boundary-detection' \
+  "$REPO_ROOT/skills/update-zskills/SKILL.md" > /dev/null 2>&1; then
+  fail "[update-zskills] WI4.2: Step D still references byte-compare / .new / boundary" \
+    "CLAUDE.md.new or byte-compare language still present"
+else
+  pass "[update-zskills] WI4.2: no byte-compare / .new / boundary references in SKILL.md"
+fi
 
 # WI 2.1 — Step C hook-gap block no longer fills migrated placeholders.
 # (block-unsafe-project.sh should say "No install-time placeholder fill needed".)

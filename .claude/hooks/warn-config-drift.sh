@@ -3,8 +3,8 @@
 #
 # Fires after an Edit or Write tool whose target path ends with
 # .claude/zskills-config.json. Emits a note on stderr reminding the
-# user that CLAUDE.md is a render-time snapshot and may now be stale;
-# `/update-zskills --rerender` regenerates the template-managed portion.
+# user that .claude/rules/zskills/managed.md is a render-time snapshot
+# and may now be stale; `/update-zskills --rerender` regenerates it.
 #
 # Non-blocking by contract: always exits 0, even on malformed input.
 # A PostToolUse warn hook must never halt the user.
@@ -37,7 +37,7 @@ if [[ "$FILE_PATH" == *".claude/zskills-config.json" ]]; then
 NOTE: You just edited `.claude/zskills-config.json`.
 
 - Hooks and helper scripts read config at runtime — they are already current.
-- CLAUDE.md is a render-time snapshot — it may now be stale. Run `/update-zskills --rerender` to regenerate the template-managed portion (user-added content below `## Agent Rules` is preserved; conflicts write `CLAUDE.md.new` for manual merge).
+- `.claude/rules/zskills/managed.md` is a render-time snapshot — it may now be stale. Run `/update-zskills --rerender` to regenerate it (full-file rewrite; the file is zskills-owned, no user content lives there).
 WARN
 fi
 
