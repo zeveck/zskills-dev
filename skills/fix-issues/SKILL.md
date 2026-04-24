@@ -1022,16 +1022,10 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 - `LANDING_MODE == cherry-pick` — default path (below).
 - `LANDING_MODE == pr` — see "PR mode landing" subsection. One PR per
   fixed issue, with `Fixes #NNN` linking.
-- `LANDING_MODE == direct` — work was committed on the per-issue
-  worktree branch (`fix-issue-NNN`) by the verification agent. The
-  worktree was pre-created by `create-worktree.sh`, so the Agent tool's
-  `isolation: "worktree"` flag was NOT used — but a real worktree and
-  branch do exist. To land, fast-forward-merge `fix-issue-NNN` into
-  `main` (no PR, no cherry-pick). TODO(direct-mode-landing): specify the
-  exact FF-merge invocation and rollback behaviour if the branch has
-  diverged from main; keep scope tight for this PR — the migration of
-  Phase 3 worktree creation is the deliverable here, Phase 6 direct-mode
-  landing semantics get their own plan.
+- `LANDING_MODE == direct` — see "Direct mode landing" in
+  [modes/direct.md](modes/direct.md). Per-issue rebase + FF-merge of
+  `fix-issue-NNN` into main, then push. Requires
+  `execution.main_protected: false` (enforced at Phase 1 argument parse).
 
 - **Without `auto`:** Sprint complete. Output:
   > Sprint complete. Report written to `SPRINT_REPORT.md`.
@@ -1046,9 +1040,10 @@ mode file in full and follow its procedure end-to-end** per-issue.
 Do not proceed until you have read the file.
 
 - **cherry-pick** (default) → [modes/cherry-pick.md](modes/cherry-pick.md)
+- **direct** → [modes/direct.md](modes/direct.md)
 - **PR mode** → [modes/pr.md](modes/pr.md)
 
-Both mode files assume Phase 5 (Sprint Report) has written the
+All mode files assume Phase 5 (Sprint Report) has written the
 persistent report and Phase 4 (Review) has populated the
 before-landing summary.
 
