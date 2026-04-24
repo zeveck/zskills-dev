@@ -1,5 +1,43 @@
 # Plan Report — Drift-Arch Fix
 
+## Phase — 2 Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber
+
+**Plan:** plans/DRIFT_ARCH_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-drift-arch-fix (feat/drift-arch-fix)
+**Commit:** 8ce91de
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 2.1 | Remove placeholder-fill for migrated keys in Step C; keep E2E/BUILD fills | Done | 8ce91de |
+| 2.2 | Update placeholder-mapping table (remove migrated rows, annotate runtime-read fields) | Done | 8ce91de |
+| 2.3 | Add `### Step D — --rerender` with boundary algorithm + exit codes | Done | 8ce91de |
+| 2.4 | Integration tests for `--rerender` (6 blocks, 16 assertions) | Done | 8ce91de |
+| 2.5 | Rewrite Step C as agent-driven Read+Edit merge with canonical triples table | Done | 8ce91de |
+| 2.6 | `### Step C.9 — Hook renames` subsection with initially-empty migration table | Done | 8ce91de |
+| 2.7 | 32 structural conformance assertions for Step C / C.9 / D contracts | Done | 8ce91de |
+
+### Verification
+- Test suite: PASSED (801/801; baseline 747/747; +54 new assertions, zero regressions).
+- Byte-identical mirror: `diff -q skills/update-zskills/SKILL.md .claude/skills/update-zskills/SKILL.md` clean.
+- Canonical triples table: 5 rows (3 PreToolUse Bash/Bash/Agent + 2 PostToolUse Edit/Write) verified.
+- Step D boundary algorithm: 6 concrete steps with exit codes 0/1/2 + verbatim stderr prompt + idempotency via byte-compare-skip-write.
+- Step C.9 migration table: initially empty, row format documented, runs before main merge loop.
+- All Phase 2 acceptance criteria met.
+
+### Notes
+- **Plan-prose inconsistency flagged (non-blocking)**: WI 2.4 Test 1 says "Happy path: stale CLAUDE.md + updated config → new CLAUDE.md contains current config values (rc=0)", but the Design & Constraints' simplified byte-compare algorithm (intentional round-2 change removing the hand-wavy "normalize" step) makes rc=2 + `CLAUDE.md.new` the correct behavior on any drift. Tests correctly follow the algorithm; plan prose worth a small doc-only tidy — filed as non-blocking.
+- **`## Agent Rules` anchor absent from `CLAUDE_TEMPLATE.md`**: it's added by Step B's rules-append path when merging rules into an existing CLAUDE.md. Users who never went through that path get rc=2 "missing demarcation" on first `--rerender` invocation — correct per spec (user must add the heading or re-run `/update-zskills` non-`--rerender` first).
+
+### Risks
+None identified. Phase closes the `/update-zskills` Step C full-overwrite bug that was silently clobbering user-added PreToolUse entries on every install.
+
+### Next
+Phase 3 — PostToolUse drift-warn hook (`warn-config-drift.sh`) + wire via Phase 2's Step C merge (which already knows the two new triples from Phase 2's canonical table).
+
+---
+
 ## Phase — 1 Migrate CODE consumers to runtime config read
 
 **Plan:** plans/DRIFT_ARCH_FIX.md
