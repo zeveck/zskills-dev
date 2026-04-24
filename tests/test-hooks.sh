@@ -2582,6 +2582,70 @@ else
   pass "drift-regression: installed hook — dead '{{' placeholder-detection branches removed"
 fi
 
+# ─── Phase 3: PostToolUse drift-warn hook ─────────────────────────────
+echo ""
+echo "=== PostToolUse: config drift warn ==="
+
+WARN_HOOK="$REPO_ROOT/hooks/warn-config-drift.sh"
+
+# Helper: run warn hook, capture stderr (fd2) and rc. stdout is discarded
+# — the hook only speaks on stderr.
+_run_warn_hook() {
+  local _input="$1"
+  local _err_file
+  _err_file=$(mktemp)
+  printf '%s' "$_input" | bash "$WARN_HOOK" 2>"$_err_file" >/dev/null
+  _WARN_RC=$?
+  _WARN_ERR=$(cat "$_err_file")
+  rm -f "$_err_file"
+}
+
+# Case 1: Edit on repo-relative .claude/zskills-config.json → warn fires.
+_run_warn_hook '{"tool_name":"Edit","tool_input":{"file_path":".claude/zskills-config.json"}}'
+if [[ "$_WARN_RC" -eq 0 ]] \
+  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
+  pass "warn-config-drift: Edit on .claude/zskills-config.json — stderr warns, rc=0"
+else
+  fail "warn-config-drift: Edit relative — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 2: Edit with absolute path → same warn (suffix matcher).
+_run_warn_hook '{"tool_name":"Edit","tool_input":{"file_path":"/workspaces/zskills/.claude/zskills-config.json"}}'
+if [[ "$_WARN_RC" -eq 0 ]] \
+  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
+  pass "warn-config-drift: Edit absolute path — suffix-match fires warn, rc=0"
+else
+  fail "warn-config-drift: Edit absolute — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 3: Edit on an unrelated file → stderr empty.
+_run_warn_hook '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: Edit on package.json — no warn, rc=0"
+else
+  fail "warn-config-drift: Edit unrelated — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 4: Write on .claude/zskills-config.json → same warn.
+_run_warn_hook '{"tool_name":"Write","tool_input":{"file_path":".claude/zskills-config.json"}}'
+if [[ "$_WARN_RC" -eq 0 ]] \
+  && [[ "$_WARN_ERR" == *"CLAUDE.md"* ]] \
+  && [[ "$_WARN_ERR" == *"/update-zskills --rerender"* ]]; then
+  pass "warn-config-drift: Write on .claude/zskills-config.json — stderr warns, rc=0"
+else
+  fail "warn-config-drift: Write — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 5: Malformed stdin → non-blocking exit, stderr empty.
+_run_warn_hook 'not json garbage at all'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: malformed stdin — rc=0, stderr empty (non-blocking)"
+else
+  fail "warn-config-drift: malformed — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"

@@ -758,6 +758,18 @@ subagent dispatches that specify a model below the configured minimum
 surfaces `/update-zskills --rerender` guidance after edits to
 `.claude/zskills-config.json`.
 
+**Install-integrity check (applies to every row).** Before writing a
+settings.json entry for a triple, verify the referenced hook file is
+present in `$PORTABLE/hooks/` (source) — and therefore copyable to
+`.claude/hooks/`. If the source file is missing (e.g. a zskills release
+cut before the hook landed), warn the user and **skip that row's
+wiring**; do not write a settings.json entry pointing at a script that
+won't exist on disk. Report as `skip: <basename> — source missing` in
+the Step 6 preview. Same pattern as the other hook copies in Step C:
+"Copy missing hooks from `$PORTABLE/hooks/`" already fails soft if the
+source file isn't there; this just extends that convention into the
+settings.json merge.
+
 #### Step C.9 — Hook renames
 
 Rename migrations run BEFORE the main Step C merge loop (step 3 above),
