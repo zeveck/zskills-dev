@@ -8,16 +8,22 @@ Selected when the user passes `pr` explicitly, or when
 
 **This path replaces the normal Phase 2–5 flow entirely. After the PR is created, skip to Phase 5 Report.**
 
-**Step A1 — Compute task slug:**
+**Step A1 — Compose task slug (model-layer).** Set shell variable
+`TASK_SLUG` to a kebab-case identifier matching
+`^[a-z0-9]+(-[a-z0-9]+)*$`, ≤30 chars, a 3–5 word summary of the task.
+Compose from `$TASK_DESCRIPTION`'s essential verbs/nouns — not a verbatim
+prefix of the input. Multi-line descriptions compose the same way as
+single-line ones: distill the intent, don't splice lines.
+
 ```bash
-# N = min(4, word_count) words from TASK_DESCRIPTION
-WORD_COUNT=$(echo "$TASK_DESCRIPTION" | wc -w)
-N=$(( WORD_COUNT < 4 ? WORD_COUNT : 4 ))
-TASK_SLUG=$(echo "$TASK_DESCRIPTION" | awk "{for(i=1;i<=$N;i++) printf \$i\"-\"; print \"\"}" \
-  | sed -E 's/[^a-zA-Z0-9]+/-/g; s/-+/-/g; s/^-//; s/-$//' \
-  | tr '[:upper:]' '[:lower:]' \
-  | cut -c1-30 \
-  | sed 's/-$//')
+if [ -z "${TASK_SLUG:-}" ]; then
+  echo "ERROR: TASK_SLUG not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if ! [[ "$TASK_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#TASK_SLUG} -gt 30 ]; then
+  echo "ERROR: TASK_SLUG must match ^[a-z0-9]+(-[a-z0-9]+)*\$ and be ≤30 chars (got '$TASK_SLUG')." >&2
+  exit 2
+fi
 ```
 
 **Step A2 — Collision check (BEFORE deriving BRANCH_NAME or WORKTREE_PATH):**
@@ -125,7 +131,22 @@ git rebase origin/main || { echo "ERROR: Rebase conflict. Resolve manually in $W
 git push -u origin "$BRANCH_NAME"
 
 # PR body: explicit title and body, not --fill
-PR_TITLE="do: $(echo "$TASK_DESCRIPTION" | cut -c1-60)"
+#
+# Compose $PR_TITLE (model-layer). Set shell variable PR_TITLE to a
+# single-line title, ≤60 chars, that MUST begin with the literal prefix
+# `do: ` (four characters: d, o, colon, space — preserving /do's existing
+# convention). After the prefix, summarize what the task actually did —
+# compose from the completed work, not a verbatim prefix of
+# $TASK_DESCRIPTION.
+if [ -z "${PR_TITLE:-}" ]; then
+  echo "ERROR: PR_TITLE not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 60 ] || [[ "$PR_TITLE" != do:\ * ]]; then
+  echo "ERROR: PR_TITLE must be a single line ≤60 chars starting with 'do: ' (got '$PR_TITLE')." >&2
+  exit 2
+fi
+
 PR_BODY="Task: ${TASK_DESCRIPTION}
 
 Worktree: ${WORKTREE_PATH}

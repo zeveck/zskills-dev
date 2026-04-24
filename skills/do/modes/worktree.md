@@ -6,17 +6,24 @@ Create a named worktree and do the work there; the verification agent commits af
 Selected when the user passes `worktree` explicitly, or when
 `execution.landing` in `.claude/zskills-config.json` is `"cherry-pick"`.
 
-Create a named worktree at `/tmp/<project>-do-<slug>/` via `scripts/create-worktree.sh` (same path convention as `/do pr`, `/fix-issues pr`, and `/run-plan`; `WORKTREE_ROOT` in config overrides `/tmp`):
+Create a named worktree at `/tmp/<project>-do-<slug>/` via `scripts/create-worktree.sh` (same path convention as `/do pr`, `/fix-issues pr`, and `/run-plan`; `WORKTREE_ROOT` in config overrides `/tmp`).
+
+**Compose $TASK_SLUG (model-layer).** Set shell variable `TASK_SLUG` to a
+kebab-case identifier matching `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤30 chars, a
+3–5 word summary of the task. Compose from `$TASK_DESCRIPTION`'s essential
+verbs/nouns — not a verbatim prefix of the input. Multi-line descriptions
+compose the same way as single-line ones: distill the intent, don't
+splice lines.
 
 ```bash
-# Compute slug from task description
-WORD_COUNT=$(echo "$TASK_DESCRIPTION" | wc -w)
-N=$(( WORD_COUNT < 4 ? WORD_COUNT : 4 ))
-TASK_SLUG=$(echo "$TASK_DESCRIPTION" | awk "{for(i=1;i<=$N;i++) printf \$i\"-\"; print \"\"}" \
-  | sed -E 's/[^a-zA-Z0-9]+/-/g; s/-+/-/g; s/^-//; s/-$//' \
-  | tr '[:upper:]' '[:lower:]' \
-  | cut -c1-30 \
-  | sed 's/-$//')
+if [ -z "${TASK_SLUG:-}" ]; then
+  echo "ERROR: TASK_SLUG not set — model-layer composition step skipped." >&2
+  exit 5
+fi
+if ! [[ "$TASK_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#TASK_SLUG} -gt 30 ]; then
+  echo "ERROR: TASK_SLUG must match ^[a-z0-9]+(-[a-z0-9]+)*\$ and be ≤30 chars (got '$TASK_SLUG')." >&2
+  exit 2
+fi
 
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ATTEMPT_SLUG="${TASK_SLUG}"
