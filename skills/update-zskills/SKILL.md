@@ -1,6 +1,6 @@
 ---
 name: update-zskills
-argument-hint: "[install] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
+argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 ---
 
@@ -13,7 +13,7 @@ dependencies.
 **Invocation:**
 
 ```
-/update-zskills [install] [cherry-pick | locked-main-pr | direct]
+/update-zskills [install | --rerender] [cherry-pick | locked-main-pr | direct]
                 [--with-addons | --with-block-diagram-addons]
 ```
 
@@ -25,6 +25,10 @@ was found and what was done about it.
 **Explicit mode:**
 - `install` — force a full first-time setup (same as what the default
   mode does when nothing is installed, but skips the detection step)
+- `--rerender` — regenerate the template-managed portion of `CLAUDE.md`
+  against the current `.claude/zskills-config.json`. Preserves every
+  line below `## Agent Rules`. No audit, no preset, no hooks/scripts
+  touched. See `### Step D — --rerender` for the full algorithm.
 
 **Preset keywords (bare word, anywhere in the args):**
 
@@ -317,13 +321,11 @@ for each field F in schema:
 
 | Placeholder | Config path | Example |
 |-------------|-------------|---------|
-| `{{UNIT_TEST_CMD}}` | `testing.unit_cmd` | `npm run test` |
-| `{{FULL_TEST_CMD}}` | `testing.full_cmd` | `npm run test:all` |
-| `{{UI_FILE_PATTERNS}}` | `ui.file_patterns` | `src/(components\|ui)/.*\\.tsx?$` |
 | `{{DEV_SERVER_CMD}}` | `dev_server.cmd` | `npm start` |
 | `{{PORT_SCRIPT}}` | `dev_server.port_script` | `scripts/port.sh` |
-| `{{MAIN_REPO_PATH}}` | `dev_server.main_repo_path` | `/workspaces/my-app` |
 | `{{AUTH_BYPASS}}` | `ui.auth_bypass` | `localStorage.setItem(...)` |
+
+Runtime-read fields (not install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`, `dev_server.main_repo_path`. Hooks and helper scripts read these directly from `.claude/zskills-config.json` at every invocation — see Phase 1 of `plans/DRIFT_ARCH_FIX.md`.
 
 **Empty value handling:** When a config field is empty string `""`, the
 corresponding template section is commented out with a TODO marker:
@@ -620,9 +622,25 @@ a duplicate section header.
 Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
 
 - For `block-unsafe-project.sh.template`: copy to
-  `.claude/hooks/block-unsafe-project.sh`, then fill in the
-  `# CONFIGURE:` values from project detection (test commands, UI file
-  patterns). Use placeholders/fallbacks for anything undetectable.
+  `.claude/hooks/block-unsafe-project.sh`. No install-time placeholder
+  fill needed — the hook reads `testing.unit_cmd`, `testing.full_cmd`,
+  and `ui.file_patterns` from `.claude/zskills-config.json` at runtime
+  via bash regex (same idiom as `is_main_protected()`). Just copy the
+  source template.
+- For `scripts/port.sh` and `scripts/test-all.sh`: copy as-is from
+  `$PORTABLE/scripts/`. These also read `dev_server.main_repo_path` and
+  `testing.unit_cmd` from `.claude/zskills-config.json` at runtime — no
+  install-time fill.
+- For any remaining templates that do still contain placeholders
+  (`{{E2E_TEST_CMD}}`, `{{BUILD_TEST_CMD}}`): these have no config
+  source, so fill from project detection or leave as a `# TODO`
+  comment. Only these two placeholders — all others listed in the
+  Step 0.5 mapping table go through the template-render path (Step B),
+  not the hook path.
+
+Note: hooks and helper scripts read `testing.*`, `ui.file_patterns`,
+and `dev_server.main_repo_path` from `.claude/zskills-config.json` at
+runtime. No install-time fill needed. Only copy the source template.
 
 **Explain what each hook does** so the user understands what's being added:
 
@@ -655,48 +673,127 @@ Tracking files are ephemeral session state and should never be committed.
 project's dev server launcher); PID files are per-worktree runtime state
 and must never be committed.
 
-Then register the hooks in `.claude/settings.json`. The format is:
+Then register the hooks in `.claude/settings.json` via a **surgical
+agent-driven merge** — `Read` + `Edit` only, never `Write`-from-template.
+This preserves every other top-level key (`permissions`, `env`,
+`statusLine`, `model`, ...) and every non-zskills-owned hook entry that
+a user or another tool may have added.
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh\"",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
-}
+**Canonical zskills-owned triples** (single source of truth — anything
+not in this table is foreign and preserved untouched):
+
+| Event        | Matcher | Command literal                                                              |
+|--------------|---------|------------------------------------------------------------------------------|
+| PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh"`           |
+| PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh"`           |
+| PreToolUse   | Agent   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh"`                   |
+| PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
+| PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
+
+All 5 rows carry `"type": "command"` and `"timeout": 5`. The
+`warn-config-drift.sh` hook lands in Phase 3 of
+`plans/DRIFT_ARCH_FIX.md`; the two PostToolUse rows become live once
+that hook is installed.
+
+**Step C algorithm** (never overwrite; never reorder top-level keys;
+never strip whitespace from untouched regions; never re-emit the file
+from a template):
+
+1. **`Read` `.claude/settings.json`.** If the file does not exist,
+   `Write` a minimal file containing only the zskills `hooks` block
+   populated from the table above. Nothing to preserve on a fresh
+   install — stop.
+2. If the top-level `hooks` key is absent, `Edit` to insert a
+   `"hooks": { "PreToolUse": [], "PostToolUse": [] }` skeleton adjacent
+   to the existing top-level keys.
+   Do not touch `permissions`, `env`, `statusLine`, `model`, or any other existing top-level key.
+3. **Run Step C.9 renames first** (see below): for each
+   `old_command → new_command` row in the migration table, search the
+   entire `hooks.PreToolUse` and `hooks.PostToolUse` arrays for an
+   entry whose `command` equals `old_command`. If found, `Edit` to
+   replace the exact `old_command` string with `new_command` in place.
+   The surrounding structure (matcher, timeout, siblings) is preserved.
+   Renames first ensures later steps don't see orphan entries.
+4. For each `(event, matcher, command)` triple in the canonical table:
+   a. Search the ENTIRE `hooks.<event>` array (all matcher blocks) for
+      an object whose `hooks[*].command` equals `command` exactly. If
+      found anywhere — even under a different matcher — treat as
+      "already present" and skip (do not duplicate).
+   b. Otherwise, locate the matcher block whose `matcher` field equals
+      the triple's matcher. If present, `Edit` to append the zskills
+      hook object to that block's `hooks` array.
+      Do not touch sibling hook objects (user-added customizations in the same matcher survive).
+   c. If no matcher block with that matcher exists, `Edit` to append a
+      new `{ "matcher": "<matcher>", "hooks": [ <zskills entry> ] }`
+      object to `hooks.<event>`.
+5. Never reorder top-level keys, never strip whitespace from untouched
+   regions, never re-emit the file from a template, never remove
+   entries not listed in the rename table (Step C.9) or already-present
+   check (step 4a).
+6. **Preview and confirm before any `Edit`.** Display a diff-style
+   summary to the user — one line per planned action (`+ add
+   block-agents.sh under Agent matcher`, `skip: block-unsafe-generic.sh
+   already present`, `rename: block-unsafe-project.sh → deny-unsafe.sh`
+   ) — and ASK for confirmation.
+   Mirrors the Step B CLAUDE.md append convention (preview + ask).
+   On confirmation, perform the Edits; on rejection, report which
+   entries were missing and exit without changes.
+7. **Report:** `"Step C: registered N hook entries, skipped M already
+   present, renamed R, preserved F foreign entries."`
+
+**Why agent-driven, not scripted.** Three prior adversarial reviews of
+bash-splice approaches (append-if-missing, overwrite-if-stock,
+partition-by-ownership) all concluded that bash + nested-JSON is
+high-cost / high-risk. The `Edit` tool's exact-string match + LLM
+reasoning about JSON structure makes this operation natural. Precedents
+in this same skill: Step B's CLAUDE.md append, the `zskills-config.json`
+backfill (Step 0.5 step 3.5), and `scripts/apply-preset.sh`'s line
+splice — all surgical, all agent-driven, all preserve-by-default. Step
+C aligns with the house style.
+
+**Matcher semantics:** `PreToolUse`+`Bash` enforces command safety and
+tracking. `PreToolUse`+`Agent` enforces `agents.min_model` — blocking
+subagent dispatches that specify a model below the configured minimum
+(haiku=1 < sonnet=2 < opus=3). `PostToolUse`+`Edit`/`Write` (Phase 3)
+surfaces `/update-zskills --rerender` guidance after edits to
+`.claude/zskills-config.json`.
+
+#### Step C.9 — Hook renames
+
+Rename migrations run BEFORE the main Step C merge loop (step 3 above),
+so each row rewrites an existing entry in place. The surrounding
+structure (matcher, timeout, siblings) is preserved byte-for-byte.
+
+**When to add a row:** when a zskills release renames a hook file
+(e.g. `block-unsafe.sh` → `block-unsafe-generic.sh`), the PR that
+ships the rename MUST add a row here. Without a row, the old command
+lingers in every downstream install's `settings.json` alongside the
+new one — two copies of the same hook registered under the same
+matcher.
+
+**Format:** one row per rename, `old_command` and `new_command` as
+full exact strings (same form as the canonical table's `Command
+literal` column). Rows are append-only and idempotent — if
+`old_command` is absent from a given install, the row is a no-op.
+
+**Migration table** (initially empty):
+
+```
+# old_command → new_command
+
+# (none yet)
+#
+# Template for future rows:
+# old_command: bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<old-name>.sh"
+# new_command: bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<new-name>.sh"
+#
+# Committed in the same PR that ships the rename. Rows accumulate; the
+# table is append-only. Step C.9 runs each row against every install;
+# rows are idempotent (if old_command absent, the row is a no-op).
 ```
 
-Note: both `Bash` and `Agent` matchers are used for PreToolUse hooks. The `Bash`
-matcher hooks enforce command safety and tracking. The `Agent` matcher hook
-enforces `agents.min_model` — blocking subagent dispatches that specify a model
-below the configured minimum (haiku=1 < sonnet=2 < opus=3).
-
-Report: "Installed N hooks: [list]"
+When a row is added, include it in the preview displayed to the user in
+Step C step 6 (`rename: <basename> → <basename>`).
 
 #### Step C.5 — Statusline (optional)
 
@@ -839,6 +936,103 @@ Run /update-zskills to check for updates later.
 
    Source: $ZSKILLS_PATH (pulled from origin)
    ```
+
+---
+
+### Step D — --rerender
+
+**Trigger:** user runs `/update-zskills --rerender`.
+
+**Scope:** regenerates `CLAUDE.md` only. Hooks and helper scripts are
+runtime-read; they auto-reflect config changes with no action from
+this flag. Does not touch `.claude/settings.json`, skills, or source
+templates. No audit, no preset, no config backfill — this is a pure
+CLAUDE.md re-render against the current `.claude/zskills-config.json`.
+
+**Use case:** after a post-install edit to
+`.claude/zskills-config.json` changes a render-time-filled field
+(`{{PROJECT_NAME}}`, `{{DEV_SERVER_CMD}}`, `{{PORT_SCRIPT}}`,
+`{{AUTH_BYPASS}}`, `{{E2E_TEST_CMD}}`, `{{BUILD_TEST_CMD}}`,
+`{{TIMEZONE}}`), the frozen `CLAUDE.md` snapshot has drifted. This
+flag brings it back in sync without an audit round-trip.
+
+**Boundary-detection algorithm:**
+
+1. **Locate the `## Agent Rules` demarcation** in the existing
+   `CLAUDE.md`:
+
+   ```bash
+   HEADING_LINE=$(grep -n '^## Agent Rules[[:space:]]*$' CLAUDE.md | head -1 | cut -d: -f1)
+   ```
+
+   Tolerant of trailing whitespace, strict on leading `##` and — by
+   convention — a surrounding blank line (Step B appends with blank
+   lines around the heading). If no match → **exit 2** with error:
+
+   > `CLAUDE.md missing '## Agent Rules' demarcation; cannot rerender safely. Add the heading or re-run /update-zskills (without --rerender) for initial install.`
+
+2. **Split the existing file** on the heading line:
+   - `existing_above` = lines `1 .. heading_line - 1`
+   - `existing_below` = lines `heading_line .. end` (heading itself
+     stays in the below region)
+
+3. **Render `CLAUDE_TEMPLATE.md` against current config.** For each
+   placeholder (`{{PROJECT_NAME}}`, `{{DEV_SERVER_CMD}}`,
+   `{{PORT_SCRIPT}}`, `{{AUTH_BYPASS}}`, `{{E2E_TEST_CMD}}`,
+   `{{BUILD_TEST_CMD}}`, `{{TIMEZONE}}`), substitute the current
+   config value (per Step B's existing fill logic, unchanged). Locate
+   the `## Agent Rules` heading in the rendered output; extract
+   `fresh_above`.
+
+4. **Byte-compare `existing_above` to `fresh_above`.**
+   Right-trim trailing whitespace on each line before comparing, to
+   tolerate editor-induced churn. No "normalize by substituting prior
+   values" — if they differ, the differences are either user edits OR
+   config-change-since-last-render. Both cases mean the user reviews
+   before overwriting.
+
+   - **Identical:** write `fresh_above + existing_below` to
+     `CLAUDE.md`. **Exit 0.** If the resulting bytes equal the
+     existing `CLAUDE.md` content, skip the write entirely so the file
+     mtime stays stable — ensures idempotency (second consecutive
+     `--rerender` is a true no-op).
+   - **Different:** write `fresh_above + existing_below` to
+     `CLAUDE.md.new`. Do NOT overwrite `CLAUDE.md`. Print to stderr
+     verbatim:
+
+     ```
+     CLAUDE.md differs above '## Agent Rules' (user edits, config drift, or both).
+     New rendered content written to CLAUDE.md.new. Review with:
+         diff CLAUDE.md CLAUDE.md.new
+     To accept the new version:  mv CLAUDE.md.new CLAUDE.md
+     To discard it:              rm CLAUDE.md.new
+     ```
+
+     **Exit 2.**
+
+**Missing `CLAUDE.md`:** **exit 1** with error `no existing CLAUDE.md;
+run /update-zskills (without --rerender) for initial install`. Do not
+create one silently — `--rerender` is explicitly a re-render of an
+existing install, not an initial install.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| 0 | Clean re-render (or idempotent no-op). |
+| 1 | No existing `CLAUDE.md` — not a valid `--rerender` target. |
+| 2 | Conflict (user edits above `## Agent Rules`, or missing demarcation heading). |
+
+**Why no interactive prompt on conflict:** `--rerender` is routinely
+invoked from headless automation (e.g., the Phase 3
+`warn-config-drift.sh` hook suggests it after a config edit). The
+diff-command + merge-instructions on stderr keep the agent's path
+deterministic while preserving user intent.
+
+**What `--rerender` does NOT do:** re-run the audit, backfill config
+fields, apply a preset, update skills, copy hooks/scripts, or touch
+`.claude/settings.json`. Any of those require a full
+`/update-zskills` invocation.
 
 ---
 

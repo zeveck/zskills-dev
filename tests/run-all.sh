@@ -48,6 +48,7 @@ run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
 run_suite "test-stop-dev.sh" "tests/test-stop-dev.sh"
 run_suite "test-quickfix.sh" "tests/test-quickfix.sh"
+run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
