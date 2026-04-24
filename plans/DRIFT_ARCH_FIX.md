@@ -1,7 +1,8 @@
 ---
 title: Drift-Arch Fix — Runtime Config Read + Drift-Warn
 created: 2026-04-23
-status: active
+status: complete
+completed: 2026-04-24
 ---
 
 # Plan: Drift-Arch Fix
@@ -26,9 +27,10 @@ Ship-blocker for 2026.04.1: yes. Shipping now propagates the render-time-snapsho
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Migrate CODE consumers to runtime config read | ⬚ | | |
-| 2 — Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber | ⬚ | | |
-| 3 — Add PostToolUse drift-warn hook + wire settings.json | ⬚ | | |
+| 1 — Migrate CODE consumers to runtime config read | ✅ Done | `3b3fc88` | 5 files; +14 tests; 733→747 |
+| 2 — Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber | ✅ Done | `8ce91de` | Step C agent-driven merge + Step D --rerender + 48 new test assertions; 747→801 |
+| 3 — Add PostToolUse drift-warn hook + wire settings.json | ✅ Done | `e3e6b3c` | New hook + settings.json wiring + install-integrity note; +5 tests; 801→806 |
+| 4 — Move zskills-managed content to `.claude/rules/zskills/managed.md` (supersedes Phase 2's Step D) | ✅ Done | `2cac108` | Namespaced subdir + simple rewrite + auto-migration + drift-warn path update; 806→815 |
 
 ## Phase 1 — Migrate CODE consumers to runtime config read
 
@@ -442,6 +444,68 @@ All round-1 findings addressed (fixed or justified with evidence-anchored reason
 | R2-DA — Edit outside Claude Code tools | DA | Verified limitation | **Justified** — documented in Out-of-Scope |
 
 All round-2 findings dispositioned. No substantive issues remain; the plan converges.
+
+## Phase 4 — Move zskills-managed content to `.claude/rules/zskills/managed.md`
+
+### Goal
+
+Give zskills its own namespaced, auto-loaded location that it fully owns. Root `./CLAUDE.md` becomes user-exclusive. Supersedes Phase 2's `--rerender` byte-compare design with a simple full-rewrite that can never clobber user content (because no user content lives in `.claude/rules/zskills/`).
+
+### Work Items
+
+- [ ] 4.1 — Edit `skills/update-zskills/SKILL.md` Step B: render template into `.claude/rules/zskills/managed.md` (create the `.claude/rules/zskills/` subdirectory if absent). Stop writing to root `./CLAUDE.md` entirely. Drop the "NEVER overwrite existing CLAUDE.md content" rule; replace with: "zskills owns `.claude/rules/zskills/` in full. User's root `./CLAUDE.md` is theirs exclusively. No cross-writes."
+
+- [ ] 4.2 — Rewrite `### Step D — --rerender` as a simple full-file rewrite of `.claude/rules/zskills/managed.md`. Single success exit code (rc=0); rc=1 only if the template is missing/invalid. No byte-compare, no `.new` file, no boundary algorithm.
+
+- [ ] 4.3 — Mirror SKILL.md changes to `.claude/skills/update-zskills/SKILL.md` (byte-identical).
+
+- [ ] 4.4 — Migration logic in Step B: on every install (first-run and subsequent), detect zskills-rendered content in root `./CLAUDE.md`. For each placeholder in `CLAUDE_TEMPLATE.md`, render its current-config value; grep root `./CLAUDE.md` for lines containing that value within the template's ±2-line context. Lines matching both content AND context are candidates for removal. If any found:
+  - Back up root `./CLAUDE.md` to `./CLAUDE.md.pre-zskills-migration` (only if the backup does NOT already exist — never overwrite a prior backup).
+  - Remove matched lines from root `./CLAUDE.md`. Everything else untouched.
+  - Emit stderr NOTICE: "Migrated zskills content from root ./CLAUDE.md to .claude/rules/zskills/managed.md. Backup: ./CLAUDE.md.pre-zskills-migration."
+  - Idempotent: re-running on an already-migrated project is a no-op (nothing to remove, no new backup).
+
+- [ ] 4.5 — Update `hooks/warn-config-drift.sh` + `.claude/hooks/warn-config-drift.sh`: stderr wording references `.claude/rules/zskills/managed.md` specifically (was generic "CLAUDE.md" in Phase 3). Mirror byte-identical.
+
+- [ ] 4.6 — Replace `tests/test-update-zskills-rerender.sh` (459-line byte-compare oracle → ~150 lines). Test cases:
+  - Fresh install: `.claude/rules/zskills/managed.md` created, contains current-config values; root `./CLAUDE.md` absent or untouched.
+  - `--rerender` after config edit: file reflects new values; no `.new`; rc=0.
+  - Migration happy path: fixture with zskills-rendered content in root `./CLAUDE.md` → lines removed, backup at `./CLAUDE.md.pre-zskills-migration`, rules file contains fresh values.
+  - Migration no-op: fixture with user-only root `./CLAUDE.md` (no zskills lines) → untouched, no backup.
+  - Migration idempotent: run install twice on same fixture; backup still exists only once, root `./CLAUDE.md` unchanged on second run.
+
+- [ ] 4.7 — Update WI 2.7-style structural assertions in `tests/test-skill-conformance.sh`: new Step B wording, new Step D wording, presence of migration block, drift-warn hook references new path. Remove byte-compare and `.new`-file assertions.
+
+### Design & Constraints
+
+**Location choice: `.claude/rules/zskills/managed.md`.** Per Claude Code docs, `.claude/rules/` is auto-loaded recursively at session start, same priority as `.claude/CLAUDE.md`. Files without `paths` frontmatter load unconditionally. Namespaced subdirectory `zskills/` prevents collision with user files or other tools (anyone else uses their own name or the top level of `.claude/rules/`).
+
+**Why NOT `.claude/CLAUDE.md`**: that's a Claude Code documented user-intended project-CLAUDE.md location, co-equal with root `./CLAUDE.md`. Claiming it = squatting on shared address space. Users or other tools could legitimately expect to own it.
+
+**Why NOT `@.claude/…` import from root CLAUDE.md**: requires editing the user's root CLAUDE.md once (to add the `@` line); bootstrap issue if root CLAUDE.md doesn't exist.
+
+**Why a single `managed.md`, not multiple topic files**: Claude Code doesn't document load order for multiple `.md` files in a subdirectory. Single file removes ordering concerns. Can split later.
+
+**Migration detection precision**: content-match alone would false-positive on prose that mentions a value (e.g., "…note we previously used `bash tests/old.sh`…"). Matching content + ±2-line context against the rendered template restricts removal to lines that were genuinely rendered by zskills.
+
+**Backup policy**: `.pre-zskills-migration` created at most once. Prior backups are never overwritten. Users who re-run migration retain their pre-migration state.
+
+**Known caveat**: if a user has `claudeMdExcludes: ["**/.claude/**"]` or similarly broad exclusions in their settings, the rules file will be excluded. Migration NOTICE mentions this for awareness.
+
+### Acceptance Criteria
+
+- [ ] Fresh install on clean project: `.claude/rules/zskills/managed.md` created with rendered content. Root `./CLAUDE.md` untouched.
+- [ ] `--rerender` after config edit: `.claude/rules/zskills/managed.md` reflects new values; no `.new` file created; rc=0.
+- [ ] Migration happy path: zskills-rendered lines removed from root `./CLAUDE.md`, backup at `./CLAUDE.md.pre-zskills-migration`, rules file contains fresh values, stderr NOTICE emitted.
+- [ ] Migration no-op: root `./CLAUDE.md` with no zskills content unchanged; no backup created.
+- [ ] Migration idempotent: re-running install does not create a second backup; root `./CLAUDE.md` unchanged.
+- [ ] Drift-warn hook: editing `.claude/zskills-config.json` produces stderr containing `.claude/rules/zskills/managed.md` verbatim.
+- [ ] `skills/update-zskills/SKILL.md` and `.claude/skills/update-zskills/SKILL.md` byte-identical.
+- [ ] All tests pass. 806/806 baseline maintained or improved.
+
+### Dependencies
+
+Phases 1, 2, 3 already landed on `feat/drift-arch-fix`. Phase 4 supersedes Phase 2's Step D (the byte-compare algorithm and its test file are replaced).
 
 ## Disposition Table (Round 3 — post-convergence expansion)
 

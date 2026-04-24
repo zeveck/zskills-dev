@@ -2,8 +2,9 @@
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
-# This file is a template. Replace {{PLACEHOLDER}} values and remove
-# sections that don't apply to your project.
+# This file is a template. Most behavior is now driven at runtime from
+# .claude/zskills-config.json (unit_cmd, full_cmd, ui.file_patterns,
+# main_protected, etc.). Remove sections that don't apply to your project.
 #
 # Register BOTH this file and block-unsafe-generic.sh in .claude/settings.json
 # on the PreToolUse event, Bash matcher. The generic layer runs first.
@@ -221,38 +222,97 @@ fi
 
 # ─── CONFIGURE: set your test command patterns ────────────────────────
 # Piping test output (loses failures, forces re-runs -- capture to file instead)
-# Replace the placeholder values with your actual test command patterns.
-UNIT_TEST_CMD="bash tests/test-hooks.sh"
-FULL_TEST_CMD="bash tests/test-hooks.sh"
-
-# Build regex pattern from configured test commands (fall back to generic if unconfigured)
-if [[ "$UNIT_TEST_CMD" == *'{{'* ]] || [[ "$FULL_TEST_CMD" == *'{{'* ]]; then
-  # Placeholders not replaced -- use a generic pattern that catches common test runners
-  TEST_PIPE_PATTERN='npm[[:space:]]+test([[:space:]]|$)|npm[[:space:]]+run[[:space:]]+test(:[^[:space:]]+)?([[:space:]]|$)|node[[:space:]]+--test[[:space:]]'
-else
-  # Escape dots and special chars for bash regex
-  ESCAPED_UNIT="${UNIT_TEST_CMD//./\\.}"
-  ESCAPED_FULL="${FULL_TEST_CMD//./\\.}"
-  # Replace spaces with flexible whitespace
-  ESCAPED_UNIT="${ESCAPED_UNIT// /[[:space:]]+}"
-  ESCAPED_FULL="${ESCAPED_FULL// /[[:space:]]+}"
-  TEST_PIPE_PATTERN="(${ESCAPED_UNIT}|${ESCAPED_FULL})"
-fi
-
-# Split on &&, ||, ; so the pipe check only fires when the pipe is in
-# the SAME segment as the test command (otherwise an unrelated `ls | head`
-# earlier in the command falsely trips the block).
-_TEST_SEP=$'\x01'
-_TEST_NORM="${INPUT//&&/$_TEST_SEP}"
-_TEST_NORM="${_TEST_NORM//||/$_TEST_SEP}"
-_TEST_NORM="${_TEST_NORM//;/$_TEST_SEP}"
-IFS=$'\x01' read -ra _TEST_SEGMENTS <<< "$_TEST_NORM"
-for _seg in "${_TEST_SEGMENTS[@]}"; do
-  if [[ "$_seg" =~ $TEST_PIPE_PATTERN ]] && [[ "$_seg" == *'|'* ]]; then
-    block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD:-npm run test:all} > \"\$TEST_OUT/.test-results.txt\" 2>&1 then read \"\$TEST_OUT/.test-results.txt\" to inspect failures."
+#
+# ─── Runtime config read (eliminates install-time drift) ───
+# Config location: .claude/zskills-config.json in the checked-out tree.
+# --show-toplevel matches the existing is_main_protected() pattern at
+# line 146; in a worktree, this returns the worktree root, which is
+# correct — the config is git-tracked, so each worktree reads its own
+# branch-current version.
+_ZSK_REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+_ZSK_CFG="$_ZSK_REPO_ROOT/.claude/zskills-config.json"
+UNIT_TEST_CMD=""
+FULL_TEST_CMD=""
+UI_FILE_PATTERNS=""
+if [ -f "$_ZSK_CFG" ]; then
+  _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
+  if [[ "$_ZSK_CFG_BODY" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    UNIT_TEST_CMD="${BASH_REMATCH[1]}"
   fi
-done
-unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
+  if [[ "$_ZSK_CFG_BODY" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    FULL_TEST_CMD="${BASH_REMATCH[1]}"
+  fi
+  # ui.file_patterns: scope via enclosing "ui" object to disambiguate
+  # from testing.file_patterns (array, doesn't match the string regex
+  # anyway, but prefix scoping is defensive against future schema change).
+  if [[ "$_ZSK_CFG_BODY" =~ \"ui\"[[:space:]]*:[[:space:]]*\{[^}]*\"file_patterns\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    UI_FILE_PATTERNS="${BASH_REMATCH[1]}"
+  fi
+  unset _ZSK_CFG_BODY
+fi
+unset _ZSK_REPO_ROOT _ZSK_CFG
+
+# Escape every bash-regex metacharacter that might appear in a config
+# test-command string (parens, brackets, pipe, asterisk, plus, etc.).
+# Then re-space spaces to [[:space:]]+ so "bash  tests/run-all.sh"
+# (multiple spaces) still matches.
+#
+# Bash parameter-expansion quoting note: inside ${var//pat/replace}, `pat`
+# is a glob pattern. `?` matches any single char, `[...]` is a class,
+# `}` closes the expansion early. We use `[?]` (literal-? class) for the
+# `?` rule and `\\\}` (escaped closer) for the `}` rule to work around these.
+_zsk_regex_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//./\\.}"
+  s="${s//\(/\\(}"
+  s="${s//\)/\\)}"
+  s="${s//\[/\\[}"
+  s="${s//\]/\\]}"
+  s="${s//|/\\|}"
+  s="${s//\*/\\*}"
+  s="${s//+/\\+}"
+  s="${s//[?]/\\?}"
+  s="${s//\$/\\\$}"
+  s="${s//^/\\^}"
+  s="${s//\{/\\{}"
+  s="${s//\}/\\\}}"
+  s="${s// /[[:space:]]+}"
+  printf '%s' "$s"
+}
+
+# Guard: without both vars set, TEST_PIPE_PATTERN="(|)" matches empty
+# string and blocks every piped command. Skip the pipe check entirely
+# if both are empty (config missing or test fields unset).
+if [ -n "$UNIT_TEST_CMD" ] || [ -n "$FULL_TEST_CMD" ]; then
+  ESCAPED_UNIT=""
+  ESCAPED_FULL=""
+  [ -n "$UNIT_TEST_CMD" ] && ESCAPED_UNIT="$(_zsk_regex_escape "$UNIT_TEST_CMD")"
+  [ -n "$FULL_TEST_CMD" ] && ESCAPED_FULL="$(_zsk_regex_escape "$FULL_TEST_CMD")"
+  # Only alternate non-empty vars to avoid "(|cmd)" degenerate case.
+  if [ -n "$ESCAPED_UNIT" ] && [ -n "$ESCAPED_FULL" ]; then
+    TEST_PIPE_PATTERN="(${ESCAPED_UNIT}|${ESCAPED_FULL})"
+  elif [ -n "$ESCAPED_UNIT" ]; then
+    TEST_PIPE_PATTERN="${ESCAPED_UNIT}"
+  else
+    TEST_PIPE_PATTERN="${ESCAPED_FULL}"
+  fi
+
+  # Split on &&, ||, ; so the pipe check only fires when the pipe is in
+  # the SAME segment as the test command (otherwise an unrelated `ls | head`
+  # earlier in the command falsely trips the block).
+  _TEST_SEP=$'\x01'
+  _TEST_NORM="${INPUT//&&/$_TEST_SEP}"
+  _TEST_NORM="${_TEST_NORM//||/$_TEST_SEP}"
+  _TEST_NORM="${_TEST_NORM//;/$_TEST_SEP}"
+  IFS=$'\x01' read -ra _TEST_SEGMENTS <<< "$_TEST_NORM"
+  for _seg in "${_TEST_SEGMENTS[@]}"; do
+    if [[ "$_seg" =~ $TEST_PIPE_PATTERN ]] && [[ "$_seg" == *'|'* ]]; then
+      block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD:-npm run test:all} > \"\$TEST_OUT/.test-results.txt\" 2>&1 then read \"\$TEST_OUT/.test-results.txt\" to inspect failures."
+    fi
+  done
+  unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
+fi
 
 # --- main_protected: block git commit on main ---
 if [[ "$COMMAND" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
@@ -266,49 +326,26 @@ if [[ "$COMMAND" =~ git[[:space:]]+commit ]]; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
-    if [[ "$FULL_TEST_CHECK" == *'{{'* ]]; then
-      # Placeholder not replaced -- warn only if project has test infrastructure
-      REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-      HAS_TESTS=false
-      if [ -f "$REPO_ROOT/package.json" ]; then
-        PACKAGE_CONTENT=$(<"$REPO_ROOT/package.json")
-        if [[ "$PACKAGE_CONTENT" == *'"test"'* ]]; then
-          HAS_TESTS=true
+    # Check if full test command was run in this session
+    TRANSCRIPT_CONTENT=$(cat "$TRANSCRIPT" 2>/dev/null) || TRANSCRIPT_CONTENT=""
+    if [[ "$TRANSCRIPT_CONTENT" != *"$FULL_TEST_CHECK"* ]]; then
+      # Check if any code files are being committed (skip check for content-only)
+      DIFF_OUTPUT=$(git diff --cached --name-only 2>/dev/null)
+      CODE_FILES=""
+      while IFS= read -r line; do
+        if [[ "$line" =~ \.(js|ts|json|css|html|rs|py|go|rb)$ ]]; then
+          CODE_FILES+="$line"$'\n'
         fi
-      fi
-      if ! $HAS_TESTS; then
-        for f in "$REPO_ROOT"/pytest.ini "$REPO_ROOT"/jest.config.* "$REPO_ROOT"/vitest.config.* "$REPO_ROOT"/.mocharc.* "$REPO_ROOT"/Makefile; do
-          if [[ -f "$f" ]]; then
-            HAS_TESTS=true
-            break
-          fi
-        done
-      fi
-      if $HAS_TESTS; then
-        block_with_reason "BLOCKED: Test infrastructure detected but FULL_TEST_CMD not configured in block-unsafe-project.sh. Configure it so the pre-commit test check works."
-      fi
-    else
-      # Check if full test command was run in this session
-      TRANSCRIPT_CONTENT=$(cat "$TRANSCRIPT" 2>/dev/null) || TRANSCRIPT_CONTENT=""
-      if [[ "$TRANSCRIPT_CONTENT" != *"$FULL_TEST_CHECK"* ]]; then
-        # Check if any code files are being committed (skip check for content-only)
-        DIFF_OUTPUT=$(git diff --cached --name-only 2>/dev/null)
-        CODE_FILES=""
-        while IFS= read -r line; do
-          if [[ "$line" =~ \.(js|ts|json|css|html|rs|py|go|rb)$ ]]; then
-            CODE_FILES+="$line"$'\n'
-          fi
-        done <<< "$DIFF_OUTPUT"
-        if [ -n "$CODE_FILES" ]; then
-          block_with_reason "BLOCKED: Committing code but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before committing. (Content-only commits are exempt.)"
-        fi
+      done <<< "$DIFF_OUTPUT"
+      if [ -n "$CODE_FILES" ]; then
+        block_with_reason "BLOCKED: Committing code but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before committing. (Content-only commits are exempt.)"
       fi
     fi
 
     # ─── CONFIGURE: set your UI source paths, or remove this section if not applicable ───
-    # Check if UI files changed but no playwright-cli verification
-    UI_FILE_PATTERNS="{{UI_FILE_PATTERNS}}"
-    if [[ "$UI_FILE_PATTERNS" != '{{UI_FILE_PATTERNS}}' ]]; then
+    # Check if UI files changed but no playwright-cli verification.
+    # UI_FILE_PATTERNS is initialized at the top from .claude/zskills-config.json (ui.file_patterns).
+    if [ -n "$UI_FILE_PATTERNS" ]; then
       UI_DIFF_OUTPUT=$(git diff --cached --name-only 2>/dev/null)
       UI_FILES=""
       while IFS= read -r line; do
@@ -424,32 +461,9 @@ if [[ "$COMMAND" =~ git[[:space:]]+cherry-pick ]]; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
-    if [[ "$FULL_TEST_CHECK" == *'{{'* ]]; then
-      # Placeholder not replaced -- warn only if project has test infrastructure
-      REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-      HAS_TESTS=false
-      if [ -f "$REPO_ROOT/package.json" ]; then
-        PACKAGE_CONTENT=$(<"$REPO_ROOT/package.json")
-        if [[ "$PACKAGE_CONTENT" == *'"test"'* ]]; then
-          HAS_TESTS=true
-        fi
-      fi
-      if ! $HAS_TESTS; then
-        for f in "$REPO_ROOT"/pytest.ini "$REPO_ROOT"/jest.config.* "$REPO_ROOT"/vitest.config.* "$REPO_ROOT"/.mocharc.* "$REPO_ROOT"/Makefile; do
-          if [[ -f "$f" ]]; then
-            HAS_TESTS=true
-            break
-          fi
-        done
-      fi
-      if $HAS_TESTS; then
-        block_with_reason "BLOCKED: Test infrastructure detected but FULL_TEST_CMD not configured in block-unsafe-project.sh. Configure it so the pre-commit test check works."
-      fi
-    else
-      TRANSCRIPT_CONTENT=$(cat "$TRANSCRIPT" 2>/dev/null) || TRANSCRIPT_CONTENT=""
-      if [[ "$TRANSCRIPT_CONTENT" != *"$FULL_TEST_CHECK"* ]]; then
-        block_with_reason "BLOCKED: git cherry-pick but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before landing code on main."
-      fi
+    TRANSCRIPT_CONTENT=$(cat "$TRANSCRIPT" 2>/dev/null) || TRANSCRIPT_CONTENT=""
+    if [[ "$TRANSCRIPT_CONTENT" != *"$FULL_TEST_CHECK"* ]]; then
+      block_with_reason "BLOCKED: git cherry-pick but '${FULL_TEST_CHECK}' was not found in the session transcript. Run tests before landing code on main."
     fi
   fi
 

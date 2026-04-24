@@ -199,6 +199,125 @@ check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'
 check_fixed verify-changes "faab84b regression anchor" 'faab84b'
 
 echo ""
+echo "=== /update-zskills — Step C / C.9 / D contract (DRIFT_ARCH_FIX Phase 2) ==="
+# Step C is the agent-driven settings.json merge — Read+Edit, never Write-from-template.
+# Step C.9 is the hook-rename migration table (initially empty, append-only).
+# Step D is the --rerender subcommand for CLAUDE.md regeneration.
+# These assertions guard the SKILL.md contract; they do NOT execute the skill.
+
+# WI 2.7.1 — Step C says "Read + Edit", never "Write the whole file".
+check_fixed update-zskills "Step C: Read + Edit (agent-driven)" \
+  'surgical'
+check       update-zskills "Step C: Read + Edit terms appear" \
+  '`Read`.*`Edit`|Read. .*Edit.'
+check_fixed update-zskills "Step C: never Write-from-template"      'never `Write`-from-template'
+
+# WI 2.7.2 — Canonical zskills-owned triples for all 5 rows (3 PreToolUse + 2 PostToolUse).
+check_fixed update-zskills "Step C triples: PreToolUse Bash block-unsafe-generic" \
+  'PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh"`'
+check_fixed update-zskills "Step C triples: PreToolUse Bash block-unsafe-project" \
+  'PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh"`'
+check_fixed update-zskills "Step C triples: PreToolUse Agent block-agents" \
+  'PreToolUse   | Agent   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh"`'
+check_fixed update-zskills "Step C triples: PostToolUse Edit warn-config-drift" \
+  'PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`'
+check_fixed update-zskills "Step C triples: PostToolUse Write warn-config-drift" \
+  'PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`'
+
+# WI 2.7.3 — Preserve rule: never overwrite, never reorder top-level keys.
+check_fixed update-zskills "Step C preserve: never overwrite"         'never overwrite'
+check_fixed update-zskills "Step C preserve: never reorder top-level" 'never reorder top-level keys'
+check_fixed update-zskills "Step C preserve: foreign entries preserved" \
+  'preserved untouched'
+
+# WI 2.7.4 — Preview-and-confirm convention (mirrors Step B).
+check_fixed update-zskills "Step C preview-and-confirm"               'Preview and confirm before any `Edit`'
+check       update-zskills "Step C preview mentions Step B parity" \
+  'Mirrors the Step B CLAUDE.md append convention'
+check_fixed update-zskills "Step C report line"                       'registered N hook entries'
+
+# WI 2.7.5 — Step C.9 rename subsection exists, is initially empty, documents format.
+check       update-zskills "Step C.9 subsection header" \
+  '^#### Step C\.9 — Hook renames'
+check_fixed update-zskills "Step C.9 initially empty"                 '# (none yet)'
+check_fixed update-zskills "Step C.9 append-only"                     'append-only'
+check_fixed update-zskills "Step C.9 idempotent"                      'idempotent'
+check_fixed update-zskills "Step C.9 runs before main merge"          'run BEFORE the main Step C merge'
+check_fixed update-zskills "Step C.9 row format documented"           'old_command: bash'
+check_fixed update-zskills "Step C.9 contribution instructions"       'ships the rename'
+
+# WI 4.x — Step B renders into .claude/rules/zskills/managed.md (zskills-owned).
+check       update-zskills "Step B header: render rules file" \
+  '^#### Step B — Render zskills-managed rules file'
+check_fixed update-zskills "Step B: target path managed.md" \
+  '.claude/rules/zskills/managed.md'
+check_fixed update-zskills "Step B: ownership rule" \
+  'zskills owns `.claude/rules/zskills/` in full'
+check_fixed update-zskills "Step B: root CLAUDE.md is user's" \
+  'root `./CLAUDE.md` is theirs exclusively'
+# WI 4.4 — Migration sub-step: root CLAUDE.md detection + backup + NOTICE.
+check       update-zskills "Step B: migration sub-step header" \
+  '^\*\*Migration sub-step'
+check_fixed update-zskills "Step B: migration ±2 line context" \
+  '±2-line'
+check_fixed update-zskills "Step B: migration backup path" \
+  './CLAUDE.md.pre-zskills-migration'
+check_fixed update-zskills "Step B: migration NOTICE stderr" \
+  'NOTICE: Migrated zskills content'
+check_fixed update-zskills "Step B: migration idempotent no backup overwrite" \
+  'Never overwrite a prior backup'
+
+# WI 4.2 — Step D --rerender section: simple full-file rewrite, rc=0/rc=1 only.
+check       update-zskills "Step D header" \
+  '^### Step D — --rerender'
+check_fixed update-zskills "Step D: --rerender trigger"               '`/update-zskills --rerender`'
+check_fixed update-zskills "Step D: full-file rewrite scope" \
+  'full-file rewrite of `.claude/rules/zskills/managed.md`'
+check_fixed update-zskills "Step D: root CLAUDE.md never touched" \
+  'Root `./CLAUDE.md` is never touched by `--rerender`'
+check_fixed update-zskills "Step D: exit 0 success" \
+  'Re-render complete'
+check_fixed update-zskills "Step D: exit 1 template missing" \
+  'CLAUDE_TEMPLATE.md missing or unreadable'
+# Negative assertion — the byte-compare / .new artifacts MUST be gone.
+if grep -nE 'CLAUDE\.md\.new|byte-compare|Agent Rules.*demarcation|boundary-detection' \
+  "$REPO_ROOT/skills/update-zskills/SKILL.md" > /dev/null 2>&1; then
+  fail "[update-zskills] WI4.2: Step D still references byte-compare / .new / boundary" \
+    "CLAUDE.md.new or byte-compare language still present"
+else
+  pass "[update-zskills] WI4.2: no byte-compare / .new / boundary references in SKILL.md"
+fi
+
+# WI 2.1 — Step C hook-gap block no longer fills migrated placeholders.
+# (block-unsafe-project.sh should say "No install-time placeholder fill needed".)
+check_fixed update-zskills "WI2.1: block-unsafe-project runtime-read" \
+  'reads `testing.unit_cmd`, `testing.full_cmd`,'
+check_fixed update-zskills "WI2.1: E2E/BUILD still allowed" \
+  '{{E2E_TEST_CMD}}'
+# Negative assertion — the four migrated placeholders must not appear as
+# "fill" instructions anywhere in Step C's hook-gap section.
+# (We allow them in migration-mapping tables, just not as "fill in X from Y".)
+if grep -nE 'fill in.*\{\{UNIT_TEST_CMD\}\}|fill in.*\{\{FULL_TEST_CMD\}\}|fill in.*\{\{UI_FILE_PATTERNS\}\}|fill in.*\{\{MAIN_REPO_PATH\}\}' \
+  "$REPO_ROOT/skills/update-zskills/SKILL.md" > /dev/null 2>&1; then
+  fail "[update-zskills] WI2.1: migrated placeholders still have fill-in instructions" \
+    "fill in {{UNIT_TEST_CMD|FULL_TEST_CMD|UI_FILE_PATTERNS|MAIN_REPO_PATH}}"
+else
+  pass "[update-zskills] WI2.1: no fill-in instructions for migrated placeholders"
+fi
+
+# WI 2.2 — Placeholder-mapping table no longer lists the 4 migrated rows;
+# has the "Runtime-read fields" note.
+if grep -nE '^\| `\{\{(UNIT_TEST_CMD|FULL_TEST_CMD|UI_FILE_PATTERNS|MAIN_REPO_PATH)\}\}`' \
+  "$REPO_ROOT/skills/update-zskills/SKILL.md" > /dev/null 2>&1; then
+  fail "[update-zskills] WI2.2: placeholder table still contains migrated rows" \
+    "table rows for migrated keys"
+else
+  pass "[update-zskills] WI2.2: placeholder table has no migrated rows"
+fi
+check_fixed update-zskills "WI2.2: runtime-read note" \
+  'Runtime-read fields (not install-filled)'
+
+echo ""
 echo "=== create-worktree.sh caller contract ==="
 # Every multi-line `bash ".../scripts/create-worktree.sh" \` invocation in
 # skills/ must include `--pipeline-id` within the next 12 lines. Doc-prose
