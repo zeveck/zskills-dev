@@ -211,10 +211,17 @@ fi
 # Collect completed phases for the body
 COMPLETED_PHASES=$(grep -E '^\| .* \| ✅' "$PLAN_FILE" | sed 's/|//g' | awk '{$1=$1};1' || echo "See plan file")
 
+# The progress section is wrapped with HTML-comment markers so that Phase 4
+# (Update Progress Tracking) can splice in updated progress as later phases
+# land, without clobbering user-authored prose outside the markers. The
+# markers are literal sentinels — do not rename them without updating the
+# Phase 4 splice logic in skills/run-plan/SKILL.md.
 PR_BODY="## Plan: ${PLAN_TITLE}
 
+<!-- run-plan:progress:start -->
 **Phases completed:**
 ${COMPLETED_PHASES}
+<!-- run-plan:progress:end -->
 
 **Report:** See \`reports/plan-${PLAN_SLUG}.md\` for details.
 
