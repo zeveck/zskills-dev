@@ -30,7 +30,7 @@ Ship-blocker for 2026.04.1: yes. Shipping now propagates the render-time-snapsho
 | 1 — Migrate CODE consumers to runtime config read | ✅ Done | `3b3fc88` | 5 files; +14 tests; 733→747 |
 | 2 — Update /update-zskills: drop migrated fills, add --rerender, fix settings.json clobber | ✅ Done | `8ce91de` | Step C agent-driven merge + Step D --rerender + 48 new test assertions; 747→801 |
 | 3 — Add PostToolUse drift-warn hook + wire settings.json | ✅ Done | `e3e6b3c` | New hook + settings.json wiring + install-integrity note; +5 tests; 801→806 |
-| 4 — Move zskills-managed content to `.claude/rules/zskills/managed.md` (supersedes Phase 2's Step D) | ⬚ | | |
+| 4 — Move zskills-managed content to `.claude/rules/zskills/managed.md` (supersedes Phase 2's Step D) | ✅ Done | `2cac108` | Namespaced subdir + simple rewrite + auto-migration + drift-warn path update; 806→815 |
 
 ## Phase 1 — Migrate CODE consumers to runtime config read
 

@@ -1,6 +1,50 @@
 # Plan Report — Drift-Arch Fix
 
-**Plan status:** ✅ Complete (all 3 phases landed on `feat/drift-arch-fix`; PR #59 ready to squash-merge).
+**Plan status:** ✅ Complete (all 4 phases landed on `feat/drift-arch-fix`; PR #59 ready to squash-merge).
+
+## Phase — 4 Move zskills-managed content to `.claude/rules/zskills/managed.md`
+
+**Plan:** plans/DRIFT_ARCH_FIX.md
+**Status:** Completed (verified). **Supersedes** Phase 2's Step D byte-compare design.
+**Worktree:** /tmp/zskills-pr-drift-arch-fix (feat/drift-arch-fix)
+**Commit:** 2cac108
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 4.1 | Step B renders into `.claude/rules/zskills/managed.md`; "NEVER overwrite" rule replaced with explicit file ownership | Done | 2cac108 |
+| 4.2 | Step D rewritten as simple full-file rewrite; rc=0/rc=1 only; no `.new`, no byte-compare | Done | 2cac108 |
+| 4.3 | SKILL.md mirror to `.claude/skills/update-zskills/SKILL.md` (byte-identical) | Done | 2cac108 |
+| 4.4 | Auto-migration in Step B: detects zskills-rendered lines via ±2-line context match; backs up root CLAUDE.md; idempotent | Done | 2cac108 |
+| 4.5 | Drift-warn hook stderr references new path; byte-identical mirror | Done | 2cac108 |
+| 4.6 | `tests/test-update-zskills-rerender.sh` replaced (byte-compare oracle → 21 assertions across 5 cases including prose-preservation) | Done | 2cac108 |
+| 4.7 | `tests/test-skill-conformance.sh` Step B/D assertions updated; byte-compare residue negatively asserted | Done | 2cac108 |
+
+### Verification
+- Test suite: PASSED (**815/815**; baseline 806/806; +9 new; zero regressions).
+- Byte-identical mirrors: SKILL.md pair + warn-config-drift.sh pair both verified.
+- Step B: "NEVER overwrite" rule gone; replaced with ownership language.
+- Step D: no byte-compare, no `.new` file, no boundary detection — simple full-rewrite.
+- Migration precision: ±2-line context match verified via test case 3d (prose mention "I remember we used to have `npm start`" is preserved while template-context lines are removed).
+- Drift-warn hook: stderr references `.claude/rules/zskills/managed.md` verbatim.
+- All 8 Phase 4 acceptance criteria met.
+
+### Architectural wins
+- **File-level ownership**: zskills owns `.claude/rules/zskills/` in full; user owns root `./CLAUDE.md` exclusively. No cross-writes.
+- **Namespaced location**: `.claude/rules/zskills/managed.md` uses a subdirectory namespace that avoids collision with user files, other tools, or standard Claude Code locations (`./CLAUDE.md`, `./.claude/CLAUDE.md`).
+- **Auto-loaded**: Claude Code auto-discovers `.claude/rules/**/*.md` at session start — no `@-import` needed, no root CLAUDE.md prerequisite.
+- **Auto-migration**: existing consumers with zskills content in root `./CLAUDE.md` get seamless migration on next `/update-zskills` run (backup + clean + re-render in new location).
+- **Step B bug closed**: the "NEVER overwrite existing CLAUDE.md content" rule was a symptom of writing into user-owned territory. Eliminated by moving zskills out of user territory entirely.
+
+### Notes
+- Adversarially reviewed before implementation (namespace-collision risk, Claude Code feature maturity, migration correctness).
+- Implementer surfaced and handled edge case: if migration leaves root `./CLAUDE.md` empty, it's preserved rather than deleted (explicit user presence signal).
+- CLAUDE_TEMPLATE.md prose unchanged (didn't claim "this is your CLAUDE.md"; renders identically in both target locations).
+
+### Risks
+None identified. Phase 4 closes both the originally-spec'd drift-bug scope AND the Step B "never overwrite" bug that the user surfaced during execution.
+
+---
 
 ## Phase — 3 Add PostToolUse drift-warn hook + wire settings.json
 
