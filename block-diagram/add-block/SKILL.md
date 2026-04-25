@@ -22,6 +22,11 @@ WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
   --purpose "add-block; block=${BLOCK_NAME}" \
   --pipeline-id "add-block.${BLOCK_NAME}" \
   "${BLOCK_NAME}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "create-worktree failed (rc=$RC) for /add-block" >&2
+  exit "$RC"
+fi
 ```
 
 `create-worktree.sh` handles pre-flight (`prune`/`fetch`/`ff-merge` against
@@ -712,9 +717,12 @@ verification is single-context self-review — flag this clearly in the
 verification report so the user knows what kind of verification they got.
 
 Dispatch a verification agent (or run inline per the dispatch protocol
-above) targeting the worktree. The agent that implemented the blocks must
-NOT verify them — either dispatch a fresh subagent or, if running inline,
-ensure your current context is distinct from the implementer's.
+above) targeting the worktree, the same way as the implementation agent
+in the preamble: **without** `isolation: "worktree"`, with
+`FIRST: cd $WORKTREE_PATH` as the mandatory first action. The agent that
+implemented the blocks must NOT verify them — either dispatch a fresh
+subagent or, if running inline, ensure your current context is distinct
+from the implementer's.
 
 Give the verification agent:
 - The **worktree path** and **branch name**
