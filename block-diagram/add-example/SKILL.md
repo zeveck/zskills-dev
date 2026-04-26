@@ -34,12 +34,12 @@ printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
 Where `$NAME` is derived from the block type(s) or model name (e.g.,
 `Gain`, `math-batch`).
 
-Before dispatching any agent to a worktree, write the pipeline ID:
-
-```bash
-printf '%s\n' "add-example.${NAME}" > "<worktree-path>/.zskills-tracked"
-printf '%s\n' "add-example.${NAME}" > "$MAIN_ROOT/.zskills-tracked"
-```
+`/add-example` runs as a sub-skill inside its parent's worktree (Claude
+Code subagents cannot dispatch their own subagents). Do **not** write
+`.zskills-tracked` here — the worktree's existing file (written by the
+parent's `create-worktree.sh --pipeline-id` call) defines the active
+pipeline ID, and overwriting it would corrupt the parent's tracking
+scope.
 
 ## Before You Start
 

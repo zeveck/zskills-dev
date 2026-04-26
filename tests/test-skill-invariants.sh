@@ -125,6 +125,14 @@ if [ -d ".claude/skills/cleanup-merged" ]; then
     "diff -q 'skills/cleanup-merged/SKILL.md' '.claude/skills/cleanup-merged/SKILL.md' >/dev/null"
 fi
 
+# Cross-skill invariant: no skill statically prescribes `isolation: "worktree"`.
+# All worktree work must go through scripts/create-worktree.sh (manual creation)
+# per plans/EXECUTION_MODES.md. Word-boundary on "with" distinguishes prescriptions
+# ("Dispatch ... with `isolation: "worktree"`") from negative warnings ("WITHOUT
+# `isolation: "worktree"`"), so existing migrated skills don't false-positive.
+check 'no skill prescribes isolation: worktree (use scripts/create-worktree.sh)' \
+  '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ block-diagram/ 2>/dev/null'
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

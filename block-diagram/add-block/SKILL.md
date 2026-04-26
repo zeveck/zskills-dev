@@ -11,8 +11,33 @@ description: >-
 Every new block must complete all steps (0–12). Steps 0–10 are the
 implementation workflow. Steps 11–12 are verification and landing.
 
-**All implementation happens in a worktree.** Dispatch the implementation
-agent with `isolation: "worktree"`. Include the verbatim plan text and the
+**All implementation happens in a pre-created worktree.** Before dispatching
+the implementation agent, the orchestrator creates the worktree via
+`scripts/create-worktree.sh`:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  --prefix add-block \
+  --purpose "add-block; block=${BLOCK_NAME}" \
+  --pipeline-id "add-block.${BLOCK_NAME}" \
+  "${BLOCK_NAME}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "create-worktree failed (rc=$RC) for /add-block" >&2
+  exit "$RC"
+fi
+```
+
+`create-worktree.sh` handles pre-flight (`prune`/`fetch`/`ff-merge` against
+`main`), the underlying safe `git worktree add`, and an atomic
+`.zskills-tracked` write from `--pipeline-id`. No manual `.zskills-tracked`
+write is needed.
+
+Then dispatch the implementation agent **WITHOUT** `isolation: "worktree"`
+— the worktree already exists. The agent prompt MUST start with
+`FIRST: cd $WORKTREE_PATH` as a mandatory first action; without that, the
+agent starts in the main repo. Include the verbatim plan text and the
 worktree test recipe in the agent prompt:
 
 > **Worktree test recipe:**
@@ -35,6 +60,11 @@ When adding **multiple blocks at once**, change the step ordering:
 5. **Once:** Steps 10–12 (report, verification, landing)
 
 Do NOT do step 7 per-block when batching. Defer it until all blocks are implemented and tested.
+
+**Worktree pipeline-id in batch mode:** All grouped blocks share one worktree.
+Use the **first** block name from the user's invocation as the `${BLOCK_NAME}`
+slug for the orchestrator's `create-worktree.sh` call (mirrors fix-issues's
+"lowest issue number" convention for grouped issues).
 
 ---
 
@@ -372,13 +402,6 @@ printf 'skill: add-example\nparent: add-block\nblock: %s\ndate: %s\n' \
   > "$MAIN_ROOT/.zskills/tracking/requires.add-example.${BLOCK_NAME}"
 ```
 
-Before dispatching any agent to a worktree, write the pipeline ID:
-
-```bash
-printf '%s\n' "add-block.${BLOCK_NAME}" > "<worktree-path>/.zskills-tracked"
-printf '%s\n' "add-block.${BLOCK_NAME}" > "$MAIN_ROOT/.zskills-tracked"
-```
-
 Use the `/add-example` skill to create an example model for this block
 (or the batch of blocks). Pass all block types from this batch:
 
@@ -694,9 +717,12 @@ verification is single-context self-review — flag this clearly in the
 verification report so the user knows what kind of verification they got.
 
 Dispatch a verification agent (or run inline per the dispatch protocol
-above) targeting the worktree. The agent that implemented the blocks must
-NOT verify them — either dispatch a fresh subagent or, if running inline,
-ensure your current context is distinct from the implementer's.
+above) targeting the worktree, the same way as the implementation agent
+in the preamble: **without** `isolation: "worktree"`, with
+`FIRST: cd $WORKTREE_PATH` as the mandatory first action. The agent that
+implemented the blocks must NOT verify them — either dispatch a fresh
+subagent or, if running inline, ensure your current context is distinct
+from the implementer's.
 
 Give the verification agent:
 - The **worktree path** and **branch name**
