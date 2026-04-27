@@ -34,7 +34,7 @@ of ready plans (like `/fix-issues` for bugs).
    what to work on:
 
    ```
-   Plans: 5 ready, 2 in progress, 10 complete
+   Plans: 5 ready, 2 in progress, 10 complete, 6 canaries
 
    Ready to Run:
      EDITOR_GAPS_PLAN.md              9 gaps     High
@@ -47,12 +47,16 @@ of ready plans (like `/fix-issues` for bugs).
 
    Needs Review: 3 plans (old format, status ambiguous)
 
+   Canaries: 6 total (tracker state — not actual run history)
+
    Next: /run-plan plans/EDITOR_GAPS_PLAN.md
    ```
 
    Show Ready and In Progress tables with plan names, phase info, and
-   priority. Collapse Complete/Reference into counts. Highlight the
-   top-priority ready plan with a suggested `/run-plan` command.
+   priority. Collapse Complete/Reference/Canaries into counts. Highlight
+   the top-priority ready plan with a suggested `/run-plan` command. The
+   Canaries count comes from the index's Canaries section; never promote
+   a canary into Ready/In Progress in the dashboard view.
 
 4. If the file is older than 24 hours (check mtime), append:
    > ⚠️ Index is older than 24 hours. Run `/plans rebuild` to refresh.
@@ -66,8 +70,8 @@ when you have many plans and can't remember what each one is about.
 1. Read `plans/PLAN_INDEX.md` (auto-rebuild if missing).
 2. For each plan in the index, read its `## Overview` section (first
    paragraph only) and extract a one-line blurb.
-3. Display grouped by status (Ready, In Progress, Complete), with the
-   blurb after each plan name:
+3. Display grouped by status (Ready, In Progress, Complete, Canaries),
+   with the blurb after each plan name:
 
    ```
    Ready to Run:
@@ -85,7 +89,19 @@ when you have many plans and can't remember what each one is about.
      BRIEFING_SKILL_PLAN.md (7 phases)
        Activity briefing and review dashboard with 5 modes
      ...
+
+   Canaries (tracker state — not actual run history):
+     CANARY1_HAPPY.md (3 phases, Ready)
+       Happy-path /run-plan single-phase canary
+     CANARY11_SCOPE_VIOLATION.md (Manual — no tracker)
+       Adversarial canary: agent attempts out-of-scope edits
+     ...
    ```
+
+   The Canaries group renders the index's Canaries section verbatim. Use
+   the same symbol-counting rules from Mode: Rebuild Step 3 (`⬚` and `⬜`
+   are both pending) when displaying tracker status. Do not promote
+   canaries into other groups.
 
 4. **Exit.**
 
@@ -112,9 +128,27 @@ Capacitor.js, etc.) don't follow the `*Block.js` naming convention.
 
 ### Step 2 — Classify each file
 
-For each file, read the first ~50 lines. Classify into one of three categories:
+For each file, read enough of the file to classify it correctly. **Do not
+skim.** If the file has a Progress Tracker table, you MUST read every row of
+that table and count the status symbols — not summarize, not eyeball. Read
+the tracker in full even if it sits past the top of the file; do not stop
+after a fixed line budget. Index accuracy is load-bearing: a wrong status
+leads to wasted runs (re-executing done work) or missed work (skipping
+ready plans).
 
-1. **Executable plan** — has `## Phase` sections (numbered phases with work
+Classify into one of four categories:
+
+1. **Canary** — filename matches `CANARY*.md` OR `*_CANARY*.md` (case
+   sensitive on `CANARY`). Examples: `CANARY1_HAPPY.md`,
+   `CANARY11_SCOPE_VIOLATION.md`, `REBASE_CONFLICT_CANARY.md`,
+   `CI_FIX_CYCLE_CANARY.md`, `PARALLEL_CANARYA.md`. The filename match
+   takes precedence over executable-plan content detection: a plan with
+   phases AND a `CANARY`-matching name is classified as a canary, not an
+   executable plan. Canaries are re-runnable test fixtures and are listed
+   in their own section so users do not confuse their tracker state with
+   feature-plan progress.
+
+2. **Executable plan** — has `## Phase` sections (numbered phases with work
    items) OR has a Progress Tracker table (`| Phase | Status |`). These are
    plans that `/run-plan` can execute.
 
@@ -123,14 +157,14 @@ For each file, read the first ~50 lines. Classify into one of three categories:
    which sub-plan files it references. In the index, sub-plans should be
    indented under their meta-plan rather than listed independently.
 
-2. **Issue tracker** — filename ends in `_ISSUES.md` OR has an "Issue Tracker"
+3. **Issue tracker** — filename ends in `_ISSUES.md` OR has an "Issue Tracker"
    or "Issue List" heading OR is primarily a table of GitHub issue numbers.
    List separately — these are not executable by `/run-plan`.
    **Deterministic rule:** Files ending in `_ISSUES.md` are ALWAYS classified
    as issue trackers, regardless of other content (e.g., phase sections).
    The filename suffix takes precedence over content-based classification.
 
-3. **Reference document** — everything else (research docs, overviews, gap
+4. **Reference document** — everything else (research docs, overviews, gap
    analyses, block library lists). List separately.
 
 ### Step 3 — Determine status for executable plans
@@ -138,11 +172,24 @@ For each file, read the first ~50 lines. Classify into one of three categories:
 For each executable plan, determine its status:
 
 1. **Read the Progress Tracker** (if present) — a table with phase rows and
-   status indicators:
-   - All phases marked `Done` / `Complete` / has a commit hash → **Complete**
-   - Some phases done, others pending → **In Progress** (note the current
-     phase name and the next incomplete phase)
-   - No phases done (all `Not Started` / empty) → **Ready**
+   status indicators. Read EVERY row; do not stop at the first few. Count the
+   symbols.
+
+   **Pending symbols (treat both as "not done"):**
+   - `⬚` (U+2B1A SQUARE TILE) — used by some plans (e.g., ZSKILLS_MONITOR_PLAN)
+   - `⬜` (U+2B1C WHITE LARGE SQUARE) — used by other plans (e.g., CANARY1_HAPPY)
+
+   The classifier MUST match either symbol as pending. Real plans in this
+   repo use both interchangeably; treating only one as pending causes the
+   other set to misclassify.
+
+   **Done symbols:** `✅` / `✔` / `Done` / `Complete` / a 7+ char hex commit hash.
+
+   Status determination:
+   - All phases done (no `⬚`/`⬜` or other pending markers remain) → **Complete**
+   - Some phases done, others pending (`⬚`/`⬜`/`Not Started`/empty) →
+     **In Progress** (note the current phase name and the next incomplete phase)
+   - No phases done (all rows show `⬚`/`⬜`/`Not Started`/empty) → **Ready**
 
 2. **No Progress Tracker?** Check for other completion signals:
    - Sections with `**Status:** Done` or `**Status:** Complete` → count as done
@@ -152,6 +199,24 @@ For each executable plan, determine its status:
      (old-format plan; status is ambiguous — may be complete, may not be)
    - Only classify as **Ready** if the plan clearly hasn't been started
      (e.g., freshly created by `/draft-plan`)
+
+### Step 3b — Classify canaries within the Canaries section
+
+For each canary file, determine its tracker-state classification using the
+SAME symbol-counting rules from Step 3 (both `⬚` and `⬜` are pending; `✅` /
+`Done` / commit hash are done). The result feeds the Canaries section, not
+Ready/In Progress/Complete.
+
+- Has Progress Tracker, all rows pending → **Ready** (within Canaries)
+- Has Progress Tracker, some done → **In Progress** (within Canaries)
+- Has Progress Tracker, all done → **Complete** (within Canaries)
+- **No Progress Tracker** (e.g., CANARY8_PARALLEL, CANARY9_FINAL_VERIFY,
+  CANARY11_SCOPE_VIOLATION) → list as **Manual — no tracker**
+
+Do NOT use git history, PR resolution, or any other evidence beyond the
+canary's own Progress Tracker. The canary section is intentionally allowed
+to show stale entries — the point of the section is segregation, not
+ground-truth run history.
 
 ### Step 4 — Determine priority for "Ready to Run" plans
 
@@ -209,6 +274,18 @@ Complete, move to Ready, or rewrite with `/draft-plan plans/FILE.md`.
 |   ↳ [RUNTIME_DEPLOY_SERIALIZATION.md](RUNTIME_DEPLOY_SERIALIZATION.md) | 2 | Sub-plan of RUNTIME_PARITY_META |
 | [CODEGEN_PLAN.md](CODEGEN_PLAN.md) | 3 | All phases done |
 
+## Canaries
+
+Canaries are re-runnable test fixtures; their tracker state may not reflect
+actual run history. To check whether a canary has run, examine git history
+for its output file or a PR with its name.
+
+| Canary | Tracker Status | Phases | Notes |
+|--------|----------------|--------|-------|
+| [CANARY1_HAPPY.md](CANARY1_HAPPY.md) | Ready | 3 | Symbol: ⬜ |
+| [REBASE_CONFLICT_CANARY.md](REBASE_CONFLICT_CANARY.md) | In Progress | 4 | 2 of 4 phases done |
+| [CANARY11_SCOPE_VIOLATION.md](CANARY11_SCOPE_VIOLATION.md) | Manual — no tracker | n/a | No Progress Tracker |
+
 ## Reference (not executable)
 
 | File | Type | Description |
@@ -230,6 +307,14 @@ Complete, move to Ready, or rewrite with `/draft-plan plans/FILE.md`.
   with `↳` prefix. Sub-plans should NOT appear as separate top-level entries.
   This makes the hierarchy visible — e.g., RUNTIME_PARITY_META owns
   RUNTIME_SIGNAL_FLOW_BLOCKS and RUNTIME_DEPLOY_SERIALIZATION.
+- **Canaries section:** any file whose name matches `CANARY*.md` or
+  `*_CANARY*.md` belongs in the Canaries section, never in
+  Ready/In Progress/Complete — even if its tracker shows the same shape.
+  Tracker Status within the section uses the Step 3 / Step 3b symbol rules
+  (`⬚`/`⬜` pending, `✅`/`Done`/commit hash done). Canaries with no
+  Progress Tracker are listed with Tracker Status `Manual — no tracker`.
+  Stale entries are acceptable: the section is for visual segregation,
+  not ground-truth run history.
 
 ## Mode: Next (`/plans next`)
 
