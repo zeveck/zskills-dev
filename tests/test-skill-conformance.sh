@@ -216,6 +216,13 @@ check       fix-issues "kill cron first on fail"    'Kill the cron FIRST|kill.*c
 check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
 check       fix-issues "ci timeout 300"             'timeout 300'
 check       fix-issues "cross-ref to run-plan ci"   'run-plan.*PR mode landing|See.*run-plan'
+check       fix-issues "auto-gating prose"          'Auto-flag gating depends on landing mode|gated on \$AUTO'
+check_fixed fix-issues "pr ci+fix-cycle always run" 'CI polling, and the fix cycle ALL run regardless of'
+check_fixed fix-issues "only merge gated on auto"   'Only `gh pr merge --auto --squash` is gated on `auto`'
+check_fixed fix-issues "cherry-pick defers to fix-report" 'Cherry-picks land via `/fix-report`'
+check       fix-issues "direct requires auto"       'never run that without|explicit `auto` consent'
+check_fixed fix-issues "auto-merge AUTO guard"      'if [ "$AUTO" = "true" ]; then'
+check       fix-issues "ci poll always runs in pr.md" 'CI poll \+ fix cycle: ALWAYS|always runs.*interactive and auto'
 
 echo ""
 echo "=== /fix-issues — structural landmarks ==="

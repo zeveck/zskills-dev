@@ -1027,12 +1027,30 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
   `fix-issue-NNN` into main, then push. Requires
   `execution.main_protected: false` (enforced at Phase 1 argument parse).
 
-- **Without `auto`:** Sprint complete. Output:
+**Auto-flag gating depends on landing mode.** Without `auto`:
+
+- **`LANDING_MODE == pr`:** run [modes/pr.md](modes/pr.md) end-to-end
+  except for the final auto-merge call. Rebase, push, PR creation,
+  CI polling, and the fix cycle ALL run regardless of `auto` — they
+  either surface review (PR creation) or are reversible (the fix cycle
+  pushes commits back to the feature branch, which the user can revert).
+  This matches the canonical pattern that `/commit pr`, `/do pr`, and
+  `/run-plan` PR mode already follow: hand the user the cleanest possible
+  PR to review. **Only `gh pr merge --auto --squash` is gated on `auto`**;
+  without it, the PR sits at status `pr-ready` (or `pr-ci-failing` if
+  fix-cycle was exhausted) awaiting human review and merge on GitHub.
+- **`LANDING_MODE == cherry-pick`:** Sprint complete. Output:
   > Sprint complete. Report written to `SPRINT_REPORT.md`.
   > Run `/fix-report` to review fixes, land to main, and close issues.
 
-  All interactive landing, closing, and cleanup moves to `/fix-report`.
-  `/fix-issues` is DONE after writing the report.
+  Cherry-picks land via `/fix-report`'s interactive walk-through.
+- **`LANDING_MODE == direct`:** Sprint complete (same handoff as
+  cherry-pick). Direct mode FF-merges into main; never run that without
+  explicit `auto` consent.
+
+With `auto`, all three modes run their full landing procedure end-to-end
+including the merge call (modes/pr.md auto-merge, modes/cherry-pick.md
+cherry-pick to main, modes/direct.md FF-merge into main).
 
 Landing is per-issue. Select the mode based on the landing-mode
 detection from the Arguments section, then **read the corresponding
