@@ -10,7 +10,7 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 - **2026-04-27 (early)** — Issue #58 (`main_protected` push-guard regex false-positive) was already closed by [PR #73](https://github.com/zeveck/zskills-dev/pull/73) merged the same day this guide was written. The fix segment-scopes rules (a) and (b) to the `git push` portion of `$COMMAND` (`hooks/block-unsafe-project.sh.template:639-655`) and adds 9 regression tests in `tests/test-hooks.sh`. **Step removed from Phase A**; subsequent steps renumbered.
 - **2026-04-27 (mid)** — Issue #56 closed by [PR #74](https://github.com/zeveck/zskills-dev/pull/74) merged. Phase A item 1 marked complete.
-- **2026-04-27 (late)** — A drift across 5 PR-creating skills (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) was surfaced during [PR #75](https://github.com/zeveck/zskills-dev/pull/75) review: each skill duplicates the canonical `gh pr create` + CI poll + fix cycle + auto-merge pattern, with inconsistent gating and one skill (`/quickfix`) opting out entirely. PR #75 fixes the `/fix-issues` half; the broader unification gets a new plan via `/draft-plan` → `plans/PR_LANDING_UNIFICATION.md`. **Phase F item added.** Plan is in flight at the time of this edit; once the plan PR lands on main, the Phase F entry becomes executable via `/run-plan`.
+- **2026-04-27 (late)** — A drift across 5 PR-creating skills (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) was surfaced during the `/fix-issues 56 + 58` sprint: each skill duplicates the canonical `gh pr create` + CI poll + fix cycle + auto-merge pattern, with inconsistent gating and one skill (`/quickfix`) opting out entirely. [PR #75](https://github.com/zeveck/zskills-dev/pull/75) (merged 2026-04-27 22:51, commit `82ee65f`) fixes the `/fix-issues` half — interactive PR-mode now runs the full pipeline except the final `gh pr merge`, matching `/run-plan`, `/commit pr`, and `/do pr`. **The broader unification was explicitly deferred by PR #75 as out-of-scope** ("future `/draft-plan` candidate"); `plans/PR_LANDING_UNIFICATION.md` does NOT yet exist. Phase F therefore lists a `/draft-plan` step before the `/run-plan` step.
 
 ---
 
@@ -50,7 +50,8 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 - [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
-- [~] `/run-plan plans/PR_LANDING_UNIFICATION.md` — unifies the canonical PR-with-CI flow across 5 skills *(plan being drafted via `/draft-plan`; see Drift log)*
+- [ ] `/draft-plan plans/PR_LANDING_UNIFICATION.md ...` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a shared reference consumed by all 5 PR-creating skills. **Plan file does not exist yet** (lost; needs recreation).
+- [ ] `/run-plan plans/PR_LANDING_UNIFICATION.md` — only after the draft above lands on main.
 
 #### Phase G — deferred
 
@@ -184,6 +185,7 @@ Not needed:
 ## Source documents
 
 - PR #70: <https://github.com/zeveck/zskills-dev/pull/70>
-- Issues: [#56](https://github.com/zeveck/zskills-dev/issues/56) · ~~[#58](https://github.com/zeveck/zskills-dev/issues/58)~~ (closed by PR #73) · [#65](https://github.com/zeveck/zskills-dev/issues/65)
+- Issues: ~~[#56](https://github.com/zeveck/zskills-dev/issues/56)~~ (closed by PR #74) · ~~[#58](https://github.com/zeveck/zskills-dev/issues/58)~~ (closed by PR #73) · [#65](https://github.com/zeveck/zskills-dev/issues/65)
+- [PR #75](https://github.com/zeveck/zskills-dev/pull/75) — `/fix-issues` PR-mode gating fix, merged 2026-04-27
 - `QUEUED_QUICKFIXES.md` (repo root) — full prompts for QF1–QF4
 - `plans/PLAN_INDEX.md` — auto-generated dependency notes
