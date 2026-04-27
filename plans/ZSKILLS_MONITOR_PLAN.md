@@ -6,58 +6,64 @@ status: active
 
 # Plan: Zskills Monitor Dashboard
 
+> **Landing mode: PR** -- This plan targets PR-based landing. All phases use
+> worktree isolation with a named feature branch and PR per phase.
+
 ## Overview
 
 Stand up a local web dashboard that gives a "live as possible" view of the
 zskills repo — plans, issues, worktrees, branches, and recent tracking
 activity — and closes the loop by letting the user drag plans and issues
-between prioritized queue columns. A new `/zskills-monitor` skill launches
+between prioritized queue columns. A new `/zskills-dashboard` skill launches
 the server as a detached background subprocess (PID file at
-`.zskills/monitor-server.pid`), and a new `/work-on-plans` skill consumes
+`.zskills/dashboard-server.pid`), and a new `/work-on-plans` skill consumes
 the prioritized ready queue and dispatches `/run-plan <plan> auto` per
 entry — mirroring how `/fix-issues` batch-executes bug fixes.
 
 The server is Python stdlib only (no new dependencies) and uses
 `http.server.ThreadingHTTPServer`. The frontend is a vanilla ES-module
 HTML page (no framework, no build step) that polls `GET /api/state`
-every 2 seconds. All queue state — which plans are in `drafted` /
-`reviewed` / `ready` columns, and in what order — lives exclusively in
+every 2 seconds. All queue state lives exclusively in
 `.zskills/monitor-state.json`. **The server never mutates plan files.**
-Default column assignment for plans not yet in the state file is inferred
-from plan frontmatter `status:` at read time only; no write-back to plan
-frontmatter ever occurs.
+Default column for plans not yet in the state file is inferred from
+plan frontmatter `status:` at read time only.
 
 This plan also retires the `work`, `stop`, and `next-run` modes of
 `/plans`. Going forward `/plans` keeps only `bare`, `rebuild`, `next`,
 `details` (read-only index maintenance). All batch plan execution moves
 to the new `/work-on-plans` skill, which takes its input from the
-monitor-owned ready queue. The migration touches `skills/plans/SKILL.md`
-(argument-hint + mode summary), `README.md` (skill catalog), and
-`CHANGELOG.md` (migration note).
+monitor-owned ready queue. Phase 9 reconciles the surviving
+`/plans rebuild` classifier with Phase 4's Python aggregator so a
+single classification source remains.
 
-Scope boundaries: no new package dependencies (stdlib Python + native
-browser APIs only); no plan-file mutation from the server; no
-`kill -9` / `killall` / `pkill` on the server process — graceful SIGTERM
-only, with `lsof -i :<port>` documented as the fallback when the PID
-file is stale. The UI ships in two phases (read-only dashboard first,
-interactive queue + drag-and-drop second) so the read-only surface can
-be validated before drag-and-drop lands.
+The monitor server itself runs in the main repo (no worktree) — it is a
+long-lived background process, not a phase that lands a commit.
+Implementation phases use the standard `/run-plan` worktree flow via
+`scripts/create-worktree.sh`; this plan does not re-spec worktree
+creation.
+
+Scope boundaries: stdlib Python + native browser APIs only; no
+plan-file mutation from the server; no `kill -9` / `killall` / `pkill`
+on the server process — graceful SIGTERM only.
 
 ## Shared Schemas
 
 Three data shapes are referenced by multiple phases. They are defined
-once here so Phases 1, 2, 4, and 6A all anchor to the same canonical
-spec.
+once here so Phases 1, 3, 4, 5, and 7 all anchor to the same canonical
+spec. Phase bodies must reference these by section name; do not
+re-quote.
 
-### `.zskills/monitor-state.json` (written by Phase 2, read by Phases 1/4/6A)
+### `.zskills/monitor-state.json` (written by Phase 5, read by Phases 1/3/4/7)
 
 ```json
 {
-  "version": "1.0",
+  "version": "1.1",
+  "default_mode": "phase",
   "plans": {
-    "drafted":  ["slug-a", "slug-b"],
-    "reviewed": ["slug-c"],
-    "ready":    ["slug-d", "slug-e"]
+    "drafted":  [{"slug": "slug-a"}, {"slug": "slug-b"}],
+    "reviewed": [{"slug": "slug-c"}],
+    "ready":    [{"slug": "slug-d", "mode": "phase"},
+                 {"slug": "slug-e", "mode": "finish"}]
   },
   "issues": {
     "triage": [101, 102],
@@ -67,131 +73,821 @@ spec.
 }
 ```
 
-- `version` is hardcoded `"1.0"` for now. Consumers tolerate but ignore
-  unknown top-level keys (forward-compat).
-- Arrays preserve user-visible order exactly (first element = topmost
-  in column).
+- `version` = `"1.1"`. Consumers tolerate but ignore unknown top-level keys.
+- Plan queue entries are objects: `{"slug": <str>}` always; `ready` entries
+  may also carry `"mode": "phase" | "finish"`. `mode` is meaningful only on
+  `ready` (drafted/reviewed don't dispatch). Absent `mode` → inherit
+  `default_mode`; absent `default_mode` → `"phase"`.
+- `default_mode` is the top-level toggle written by Phase 7 UI or
+  `/work-on-plans default <mode>`.
+- Mode dispatch mapping: `"phase"` → `/run-plan plans/<file>.md auto`
+  (one phase per dispatch, multi-PR); `"finish"` → `/run-plan
+  plans/<file>.md auto finish` (all remaining phases, single PR).
+- **Version semantics.** On read, a `"version": "1.0"` file is treated as
+  "all entries are phase mode, no `default_mode`" (forward-compat). On
+  first write, the server upgrades to `"1.1"` schema and rewrites every
+  `ready` entry as an object.
+- Arrays preserve user-visible order exactly (first = topmost in column).
 - `updated_at` is set server-side on every successful POST.
+- **Cross-process consistency.** `os.replace()` is POSIX-atomic on the
+  same filesystem: a concurrent reader sees either the previous or the
+  new file in full, never a partial write. The plan does not use
+  cross-process file locks; readers must still be defensive against
+  unparseable JSON (treated as transient corruption — log and retry on
+  next invocation).
+
+### `.zskills/dashboard-server.pid` — `.env`-style key=value (no jq)
+
+```
+pid=12345
+port=8080
+started_at=2026-04-25T10:00:00-04:00
+```
+
+Lines are `key=value` (no spaces around `=`, no quotes). Bash readers
+use `BASH_REMATCH` once, e.g.
+
+```bash
+PIDFILE_TXT=$(<.zskills/dashboard-server.pid)
+[[ "$PIDFILE_TXT" =~ pid=([0-9]+) ]]        && PID="${BASH_REMATCH[1]}"
+[[ "$PIDFILE_TXT" =~ port=([0-9]+) ]]       && PORT="${BASH_REMATCH[1]}"
+[[ "$PIDFILE_TXT" =~ started_at=([^[:space:]]+) ]] && STARTED="${BASH_REMATCH[1]}"
+```
+
+Acceptance shape check is `grep -qE '^pid=[0-9]+$'` etc. — never jq.
+jq is permitted in standalone Python/bash test fixtures only when bash
+regex would be awkward; never in skill bodies.
+
+### `.zskills/work-on-plans-state.json` (written by Phases 1/3, read by Phase 5's `/api/work-state`)
+
+Tracks `/work-on-plans` activity so the dashboard can render Run/Status.
+Three valid `state` values, each with its own additional fields:
+
+```json
+// state: idle
+{ "state": "idle", "updated_at": "..." }
+
+// state: sprint (one-shot N or all)
+{ "state": "sprint", "sprint_id": "work-on-plans.<id>",
+  "session_id": "<host>:<pid>:<invocation_start_time>",
+  "started_at": "...",
+  "progress": { "done": 1, "total": 3, "current_slug": "foo-plan" },
+  "updated_at": "..." }
+
+// state: scheduled (recurring `every`)
+{ "state": "scheduled", "sprint_id": "work-on-plans.<id>",
+  "session_id": "<host>:<pid>:<invocation_start_time>",
+  "schedule": "every 4h", "schedule_mode": "phase",
+  "session_started_at": "...", "last_fire_at": "...",
+  "next_fire_at": "...", "updated_at": "..." }
+```
+
+- `session_id` = `<host>:<pid>:<invocation_start_time>` where
+  `invocation_start_time` is ISO-8601 of when `/work-on-plans` first
+  wrote to the state file. Compared as full string. PID reuse is
+  harmless (new process gets a different `invocation_start_time`).
+- **Initial fire-time.** At `every` registration, set
+  `last_fire_at = session_started_at` so staleness computes from the
+  schedule's birth, not epoch. First cron fire updates normally.
+- **Scheduled staleness.** When `state == "scheduled"` and
+  `last_fire_at` is older than `parse_schedule(schedule) + 30min`,
+  readers render idle with a warning. `every` silently overwrites a
+  stale entry; refuses to overwrite a non-stale entry from a different
+  `session_id` without `--force`. Re-registration from the SAME
+  `session_id` is treated as idempotent take-over: cancel the existing
+  cron via `CronDelete`, then register the new schedule. `--force` is
+  not required in the same-session case.
+- **Sprint staleness.** When `state == "sprint"` and `updated_at` is
+  older than 30min, treat as stale. `/api/work-state` returns
+  `"state": "stale-sprint"`; UI offers a "Clear stale sprint state"
+  button (POSTs `/api/work-state/reset`). `/work-on-plans` itself, on
+  any read, detects stale-sprint and resets to idle without prompting.
+- **Sprint heartbeat.** The orchestrator updates `updated_at` after
+  every plan completion (between dispatches) — 30min survives a single
+  long plan.
+- **Atomic write.** Same as `monitor-state.json`: write `.tmp`, then
+  `os.replace()`. No locking — last-writer-wins.
+- The sprint entry stores its own `mode` at start (in-flight sprints
+  unaffected by `default_mode` changes).
+
+### `.claude/zskills-config.json` — `dashboard` block (read by Phase 5)
+
+This plan adds one new top-level config block:
+
+```json
+"dashboard": {
+  "work_on_plans_trigger": ""
+}
+```
+
+- Empty/missing = no auto-trigger; `POST /api/trigger` returns 501 with
+  `{"command": <cmd>}` so the UI can copy-paste.
+- Set to a path → Phase 5 invokes the script per the **`POST /api/trigger`
+  security contract** (Phase 5). The script is user-owned plumbing (write
+  a marker, send a notification, ssh to a tmux pane, …); no default ships.
+- Path resolution: resolved against `MAIN_ROOT` (not cwd); `Path.resolve()`
+  is followed by symlinks, then re-checked to be inside `MAIN_ROOT`. A
+  path that escapes (`../`) → HTTP 500 `{"error": "trigger path escapes
+  MAIN_ROOT"}`. Non-executable / missing → HTTP 500 with the captured
+  error; UI shows a toast.
+- The block does NOT exist in the current `.claude/zskills-config.json`
+  (verified). Phase 5's startup adds it if absent, with the empty default
+  shown above.
+
+### Canonical slug rule (single source of truth)
+
+Slug = `basename(plan_path, ".md") | tr '[:upper:]_' '[:lower:]-'`.
+This matches `/run-plan` exactly (`skills/run-plan/SKILL.md:405`)
+so that `reports/plan-<slug>.md` lookups agree across `/run-plan`,
+Phase 1's `/work-on-plans` slug→file resolver, and Phase 4's
+snapshot. Phase 1 implements the rule inline (one-line `tr`) so it
+can land before Phase 4; Phase 4 exposes the same rule as
+`slug_of(path)` for reuse by later phases. **No other slug rule is
+permitted in this plan.** Phase 4's accept tests must include at
+least one fixture filename containing uppercase and `_` so Phase 1's
+inline `tr` and Phase 4's `slug_of()` are exercised against the same
+input shape.
 
 ### Default column inference — source of truth
 
-Plans not yet in `monitor-state.json` are placed via this rule. (No
-existing plan uses `status: draft`; real values seen in `plans/*.md`
-are `active`, `complete`, `conflict`, `landed`, `pr-failed`,
-`pr-ready`.)
+Plans not yet in `monitor-state.json` are placed via this rule. Real
+frontmatter `status:` values observed today (verified):
+`active`, `complete`, `conflict`, `landed`, plus the literal placeholder
+`$LANDED_STATUS`. (`pr-failed`/`pr-ready` only appear inside `.landed`
+markers, never in plan frontmatter.)
 
-| Frontmatter `status:` | Progress state | Column |
-|-----------------------|----------------|--------|
-| absent or `active` | no phases done yet | `drafted` |
+| Frontmatter `status:` | Progress | Column |
+|-----------------------|----------|--------|
+| absent | any | `drafted` |
+| `active` | no phases done | `drafted` |
 | `active` | ≥1 phase done | `reviewed` |
-| `complete`, `landed`, `pr-ready` | — | hidden (not shown in any column) |
-| `conflict`, `pr-failed` | — | `reviewed` (needs attention) |
-| anything else | — | `drafted` |
+| `complete`, `landed` | any | hidden |
+| `conflict` | any | `reviewed` (needs attention) |
+| `$LANDED_STATUS` (literal placeholder) | any | re-evaluate against `active` row |
+| anything else | any | `drafted` |
 
-Issues not in the state file default to column `triage`.
+Issues not in the state file default to `triage`.
 
 ### Landing-mode hint regex — source of truth
 
-The existing format in every real plan is the blockquote line
-
-```
-> **Landing mode: PR** -- This plan targets PR-based landing. All phases
-```
-
-(note the **asterisks**, the **space** between "Landing" and "mode",
-and value case — `PR`, `direct`, `cherry-pick`). The regex that
-matches the real format is:
-
 ```python
-# case-insensitive; captures the MODE token; tolerates ** wrappers
 LANDING_MODE_RE = re.compile(
     r"^\s*>\s*\*{0,2}Landing\s+mode:\s*([A-Za-z_-]+)\s*\*{0,2}",
     re.IGNORECASE | re.MULTILINE,
 )
 ```
 
-Captured value is lowercased before use. Verified to match at least 10
-existing plan files (`CHUNKED_CRON_CANARY.md`, `PARALLEL_CANARYA.md`,
-`FIX_WORKTREE_POISONED_BRANCH.md`, `CANARY_FAILURE_INJECTION.md`,
-`REBASE_CONFLICT_CANARY.md`, `UNIFY_TRACKING_NAMES.md`, etc.).
-
-Note: `/run-plan` itself does NOT currently parse the plan-body hint
-(it reads only `$ARGUMENTS` and `.claude/zskills-config.json`
-`execution.landing`); the monitor's display of `landing_mode` is
-therefore informational only for now. Phase 6A does not pass a
-landing-mode flag; `/run-plan` continues to resolve from its own rules.
+Captured value is lowercased. The dashboard's `landing_mode` field is
+informational metadata; `/run-plan` resolves its own landing mode from
+`$ARGUMENTS`/config (which is currently `"pr"` per
+`.claude/zskills-config.json`). When the plan body has no hint AND
+`.claude/zskills-config.json` is unreadable, the snapshot field is the
+sentinel `"unknown"` (never silently `"cherry-pick"`); the parse error
+is appended to `errors[]`.
 
 ## Progress Tracker
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Data aggregation library | ⬚ | | |
-| 2 — HTTP server | ⬚ | | |
-| 3 — Read-only dashboard UI | ⬚ | | |
-| 4 — Interactive queue + write-back | ⬚ | | |
-| 5 — `/zskills-monitor` skill | ⬚ | | |
-| 6 — `/work-on-plans` skill + remove `/plans work` | ⬚ | | |
+| 1 — `/work-on-plans` execute-only CLI | ⬚ | | |
+| 2 — Remove `/plans work` modes | ⬚ | | |
+| 3 — `/work-on-plans` queue mutation + scheduling | ⬚ | | |
+| 4 — Data aggregation library | ⬚ | | |
+| 5 — HTTP server | ⬚ | | |
+| 6 — Read-only dashboard UI | ⬚ | | |
+| 7 — Interactive queue + write-back | ⬚ | | |
+| 8 — `/zskills-dashboard` skill | ⬚ | | |
+| 9 — Migrate `/plans rebuild` to Python aggregator | ⬚ | | |
 
 ---
 
-## Phase 1 — Data aggregation library
+## Phase 1 — `/work-on-plans` execute-only CLI
 
 ### Goal
 
-Create a pure-Python, stdlib-only module at `scripts/zskills_monitor/`
-that aggregates every data source the dashboard will render into **one
-JSON document** via a single public entry point `collect_snapshot()`.
-Pure functions with file paths / git output as inputs, dict as output.
-Unit-testable without a running server.
+Ship the read+execute path of `/work-on-plans` — a batch executor
+that reads the monitor-owned ready queue and dispatches `/run-plan
+<plan> auto` per entry, modeled after `/fix-issues`. This phase is
+the migration target for `/plans work` (retired in Phase 2). Queue
+mutation and recurring-schedule subcommands land in Phase 3.
 
 ### Work Items
 
-- [ ] Create package directory `scripts/zskills_monitor/` with
-  `__init__.py` (empty) and `collect.py`.
-- [ ] Implement `parse_plan(path: Path) -> dict` — a new plan-markdown
-  parser (not a reuse of `briefing.scan_plans`, which returns a
-  different field set). Extracts frontmatter, Overview blurb,
-  Landing-mode hint (per Shared Schemas regex), phase-heading list,
-  and progress-tracker table with status-glyph → status mapping.
-  `scripts/briefing.py:scan_plans` is a reference only for the
-  frontmatter-delimiter idiom; the parser is otherwise new code.
-- [ ] Implement report parsing: `reports/plan-<slug>.md` → per-phase
-  structured metadata. See "Report parsing rules" below.
-- [ ] Implement tracking-marker scan: walk BOTH the flat top-level of
-  `.zskills/tracking/` AND one-level-deep pipeline-id subdirs (the
-  current on-disk layout is mixed — 20+ flat `fulfilled.*` files
-  coexist with subdirs). Parse
-  `requires.*` / `fulfilled.*` / `step.*`; produce a time-ordered
-  activity list. Flat-file records are tagged `location: "legacy"`
-  in the activity record so the UI can distinguish them if
-  needed.
-- [ ] Implement worktree listing via `git worktree list --porcelain` and
-  `.landed` marker reads (reuse logic from `scripts/briefing.py`:
-  `parse_worktree_list`, `parse_landed`, `classify_worktrees`).
-- [ ] Implement branch listing via
-  `git for-each-ref refs/heads/ --format='<fmt>'`.
-- [ ] Implement GitHub issue listing via
-  `gh issue list --state open --limit 500 --json number,title,labels,createdAt,body`
-  with a 60-second in-memory cache (module-level dict).
-- [ ] Implement state-file merge: read `.zskills/monitor-state.json`
-  (canonical schema — see Shared Schemas) and annotate each plan /
-  issue record with `queue: {"column": <str>, "index": <int>}`. If
-  the state file is missing, treat as empty queues. If the file is
-  unparseable (`json.JSONDecodeError`), append to `errors[]` with
-  `source: ".zskills/monitor-state.json"`, treat as empty queues,
-  do NOT raise. Fallback default-column inference uses the table in
-  Shared Schemas (never `status: draft`, which no plan uses).
-- [ ] Implement `collect_snapshot(repo_root: Path) -> dict` returning
-  the stable top-level JSON shape. Accepts `Path` or `str`; coerces
-  to `Path(repo_root)` internally.
-- [ ] CLI entry point: `python3 -m zskills_monitor.collect [--fixture <path>]`
-  prints the JSON snapshot to stdout for shell-test consumption.
-- [ ] Unit test: `tests/test_zskills_monitor_collect.sh` — invokes the
-  CLI against fixture directories under `tests/fixtures/monitor/*`
-  (a tiny plan, a tiny report, a tiny tracking tree) and asserts JSON
-  keys and types. Route output to `$TEST_OUT/.test-results.txt` per
-  CLAUDE.md (`TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"`),
-  never pipe.
+- [ ] Create `skills/work-on-plans/SKILL.md` with frontmatter.
+- [ ] Implement CLI parse for the execute-only surface:
+  - **Read-only:** `(no args)` lists ready queue + default + schedule;
+    `next` prints active schedule + `next_fire_at`.
+  - **Execute:** `N [phase|finish] [continue]` and `all [phase|finish]
+    [continue]` — mode arg overrides per-entry/default for the batch
+    only (does NOT mutate saved `mode`/`default_mode`).
+- [ ] **sync** sub-step: read
+  `MAIN_ROOT/.zskills/monitor-state.json` (Shared Schemas); extract
+  `plans.ready` preserving each entry's `slug` and `mode`. Missing-file
+  behaviour by subcommand: read-only (no args, `next`) auto-create
+  `monitor-state.json` with `default_mode="phase"` and columns seeded
+  per the **bootstrap precedence** rule below; `ready` starts empty —
+  then print the (empty) ready-queue listing and exit 0; execute
+  subcommands (`N`/`all`) use the same shared auto-create helper on
+  first read so the bootstrapped file is identical regardless of
+  entry point. Unparseable JSON → print path + diagnostic, exit 1.
+  Unparseable / unreadable `monitor-state.json` AND
+  `plans/PLAN_INDEX.md` are independent: an unreadable
+  `PLAN_INDEX.md` falls back to frontmatter scan with a warning to
+  stderr; an unparseable `monitor-state.json` halts (exit 1).
+- [ ] **resolve** sub-step: build a slug→`plans/<FILE>.md` dict by
+  scanning `plans/*.md` once and applying the canonical slug rule
+  (Shared Schemas) inline as a one-line `tr` (`basename | tr
+  '[:upper:]_' '[:lower:]-'`). Phase 1 self-implements the rule —
+  it does NOT import `slug_of` from Phase 4 (which has not landed
+  yet at the time Phase 1 ships). A queued slug with no matching
+  file → fail loud with the message under Design.
+- [ ] **dispatch** sub-step: for each plan, compute its dispatch mode
+  (CLI override > per-entry `mode` > `default_mode` > `"phase"`), then
+  invoke `/run-plan` via the **Skill tool** (see Dispatch mechanism)
+  with args `plans/<FILE>.md auto` (mode=phase) or
+  `plans/<FILE>.md auto finish` (mode=finish). No landing-mode flag —
+  `/run-plan` resolves its own (currently `pr` per config).
+  `/run-plan` itself uses `scripts/create-worktree.sh` for worktree
+  creation; `/work-on-plans` does not call it directly.
+- [ ] Failure policy: stop on first `/run-plan` failure unless
+  `continue` is set. Failure detection: see Design.
+- [ ] Sprint-state tracking: `N`/`all` modes write
+  `work-on-plans-state.json` with `state=sprint` at start (capturing
+  resolved per-plan mode), update `progress.{done,current_slug}` AND
+  `updated_at` on each completion (heartbeat per Shared Schemas
+  sprint-staleness rule), and rewrite to `{"state":"idle"}` at end
+  (or failure-without-continue). Any read path detecting a stale-sprint
+  entry resets to idle without prompting. Any read path detecting an
+  unparseable `work-on-plans-state.json` (invalid JSON) rewrites it to
+  `{"state":"idle"}` with a warning to stderr — never blocks dispatch.
+- [ ] Tracking markers (per `docs/tracking/TRACKING_NAMING.md`,
+  Option B layout):
+  - `.zskills/tracking/work-on-plans.<sprint-id>/
+    fulfilled.work-on-plans.<sprint-id>` — written for `sprint` mode
+    (NOT `next`, which is read-only).
+  - `.zskills/tracking/work-on-plans.<sprint-id>/
+    step.work-on-plans.<sprint-id>.<slug>` — one per dispatched plan.
+  - When dispatching `/run-plan`: BEFORE dispatch, write
+    `requires.run-plan.<plan-slug>` with `parent: work-on-plans` and
+    `id: <sprint-id>` into the work-on-plans subdir (the parent's own
+    subdir). AFTER `/run-plan` returns, write
+    `fulfilled.run-plan.<plan-slug>` (same fields plus `status:
+    complete` and `date:`) into the same parent subdir. Do NOT
+    instruct `/run-plan` to emit `parent:` — `/run-plan` does not
+    accept the field, and per `docs/tracking/TRACKING_NAMING.md:282-315`
+    the parent — not the child — owns the parent-tagged marker. The
+    child `/run-plan` continues to write its own
+    `fulfilled.run-plan.<plan-slug>` under `run-plan.<plan-slug>/`
+    via its existing logic; `/work-on-plans` does not modify it. This
+    matches `/fix-issues`'s actual pattern
+    (`skills/fix-issues/SKILL.md:336, 902` — parent writes
+    `requires.draft-plan.*` / `fulfilled.draft-plan.*` with `parent:
+    fix-issues` into its own subdir).
+  - Phase 4's activity scan reads `parent:` from the work-on-plans
+    subdir's parent-tagged markers to group dispatched runs under
+    their orchestrator in the UI.
+  - All ids sanitized via `bash scripts/sanitize-pipeline-id.sh`.
+- [ ] Mirror `skills/work-on-plans` → `.claude/skills/work-on-plans`
+  via `cp -r` (one shot, never per-file Edit).
+
+### Design & Constraints
+
+**Frontmatter (verbatim):**
+
+```yaml
+---
+name: work-on-plans
+disable-model-invocation: true
+argument-hint: "(no args = list ready queue) | [N|all] [phase|finish] [continue] | add <slug> [pos] | rank <slug> <pos> | remove <slug> | default <phase|finish> | every SCHEDULE [phase|finish] [--force] | stop | next"
+description: >-
+  Batch-execute the prioritized ready queue from the dashboard. Reads
+  .zskills/monitor-state.json (plans.ready) in order and dispatches
+  /run-plan <plan> auto [finish] per entry. Per-plan mode (phase or
+  finish) is honored from the queue, with a default-mode fallback.
+  Also manages the queue itself (add/rank/remove/default) and recurring
+  schedules. Mirrors /fix-issues for bugs.
+---
+```
+
+The full argument-hint is shipped in this phase even though some
+subcommands (`add`/`rank`/`remove`/`default`/`every`/`stop`) only
+become functional in Phase 3 — the frontmatter is authoritative and
+must not be rewritten between phases. Phase 1 implements the
+read+execute slots; Phase 3 fills in the remaining slots.
+
+**Positional-arg parsing (execute slots).** Slot 1 matching `^[0-9]+$`
+or `^all$` routes to execute mode. In execute mode, tokens after
+`N`/`all` are token-recognised: `phase` and `finish` are mode tokens
+(mutex); `continue` is a flag; anything else errors. Order-insensitive
+(`N finish continue` ≡ `N continue finish`). Phase 3 extends slot-1
+recognition with subcommand keywords (`add`, `rank`, `remove`,
+`default`, `every`, `stop`, `next`).
+
+**Bootstrap precedence (PLAN_INDEX.md vs. frontmatter scan).**
+`monitor-state.json` is seeded thus: (1) if `plans/PLAN_INDEX.md`
+exists and is readable, parse it for the drafted/reviewed
+classification; (2) else, scan `plans/*.md` frontmatter and apply the
+default-column inference table (Shared Schemas). Both paths leave
+`ready` empty. If `PLAN_INDEX.md` exists but is unreadable / parse
+fails, fall back to the frontmatter scan and warn to stderr (do NOT
+fail). `PLAN_INDEX.md` freshness is advisory only — Phase 1 does not
+invoke `/plans rebuild`. Phase 9 later retrofits `/plans rebuild`
+itself to call Phase 4's aggregator, at which point both producers
+agree by construction.
+
+**Slug → file path resolution.** Inline `tr '[:upper:]_' '[:lower:]-'`
+applied to `basename(plan_path, ".md")` (Shared Schemas canonical
+slug rule). Phase 1 self-implements; Phase 4 will later expose the
+same rule as `slug_of(path)` for reuse by other phases. On unknown
+slug:
+
+```
+/work-on-plans: queued slug '<slug>' has no matching plan file in
+plans/. The monitor state file references a plan that no longer
+exists. Open the dashboard to remove it from the queue, or edit
+.zskills/monitor-state.json directly.
+```
+
+**Dispatch mechanism.** `/work-on-plans` runs at top level (parent
+session). It dispatches `/run-plan` via the **Skill tool**, not the
+Agent tool, using the canonical syntax from
+`skills/research-and-plan/SKILL.md:74-104`:
+
+> invoke `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto" }`
+
+Per CLAUDE.md memory `project_subagent_architecture`, Claude Code
+subagents cannot dispatch subagents; Skill is a top-level-only
+primitive. `/work-on-plans` is a top-level skill (it is invoked
+directly by the user or by cron, never as an Agent subagent), so
+the Skill→Skill chain is supported. If `/work-on-plans` is somehow
+invoked from a subagent context (no Agent tool visible), it prints
+"`/work-on-plans` must run at top-level to dispatch /run-plan" and
+exits 2 — same defense `/fix-issues` uses for its dispatch protocol.
+
+**Dispatch loop.** For each plan in `plans.ready[0:N]`:
+1. Resolve dispatch mode: CLI arg (if present) > entry's `mode` >
+   `default_mode` > `"phase"`.
+2. Write `step.work-on-plans.<sprint-id>.<slug>` with
+   `status: started` and `parent: work-on-plans.<sprint-id>`.
+3. Invoke `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto" }`
+   for `phase`, or `Skill: { skill: "run-plan", args: "plans/<FILE>.md
+   auto finish" }` for `finish`.
+4. On success → mark step `status: complete`.
+5. On failure → without `continue`: stop, write summary to
+   `reports/work-on-plans-<sprint-id>.md`, exit non-zero. With
+   `continue`: log and proceed.
+
+**No-args output format.** `/work-on-plans` (no args):
+
+```
+Ready queue (3 plans, default mode: phase):
+  1. foo-plan       phase
+  2. bar-plan       finish
+  3. baz-plan       phase    (inherits default)
+Default mode: phase     Schedule: idle
+```
+
+`Schedule:` line shows `idle`, `every <SCHEDULE> (next fire <ts>)`, or
+`stale (last fire <age>)` based on `work-on-plans-state.json` — the
+recurring-schedule branch is filled in by Phase 3; Phase 1 always
+prints `Schedule: idle` since no `every` registration path exists yet.
+
+**Failure detection.** `/run-plan` returns a result message; there
+is no exit code. Treat the dispatch as a failure when ANY of:
+(a) the result text contains `Phase \d+ failed`, `verification
+failed`, or `rebase conflict` (case-sensitive grep on the response);
+(b) the dispatched `/run-plan` wrote a `step.run-plan.*.implement`
+marker but no matching `fulfilled.run-plan.*` within a 30-minute
+timeout; (c) the Skill invocation itself returned an error (text
+matches `^Error invoking skill\b` or contains `Skill .* not found`),
+indicating the dispatch never reached `/run-plan`. The text-grep
+arm is fragile to `/run-plan` output changes; this is acknowledged
+debt — when `/run-plan` exposes a machine-readable failure indicator
+(future work), prefer it.
+
+**Tracking markers.** Option B layout (subdir = pipeline id) per
+`docs/tracking/TRACKING_NAMING.md`. The `parent:` field is written by
+`/work-on-plans` itself into ITS OWN subdir's `requires.run-plan.*`
+and `fulfilled.run-plan.*` markers — matching the precedent in
+`skills/fix-issues/SKILL.md:336, 902`. Per
+`docs/tracking/TRACKING_NAMING.md:282-315`, the parent owns the
+parent-tagged marker; the child's own subdir is unmodified by this
+skill.
+
+**Phase rules:**
+- Never edit `.claude/skills/` directly. Edit `skills/` source,
+  then `cp -r` mirror.
+- No jq in skill body.
+- Phase 1 must self-implement the slug rule inline; importing
+  `slug_of` would create a hard dependency on Phase 4 and block
+  the migration ordering.
+
+### Acceptance Criteria
+
+- [ ] `skills/work-on-plans/SKILL.md` exists with the specified
+  frontmatter (`grep '^name: work-on-plans' …` matches).
+- [ ] Mirror byte-identical: `diff -q skills/work-on-plans/SKILL.md
+  .claude/skills/work-on-plans/SKILL.md` returns 0.
+- [ ] `/work-on-plans` with no args prints the ready queue list per
+  the no-args output format (priority + per-row mode), including
+  default-mode and schedule status; exits 0 (read-only).
+- [ ] Positional-arg parsing (execute slots): `/work-on-plans 3
+  continue finish` and `/work-on-plans 3 finish continue` are
+  equivalent and accepted; `/work-on-plans 3 banana` is rejected
+  with a usage message.
+- [ ] `/work-on-plans` (no args) on first run auto-creates
+  `monitor-state.json` (bootstrap with empty `ready`, seeded
+  drafted/reviewed columns from `plans/PLAN_INDEX.md` if present
+  and readable, else a frontmatter scan), then prints the
+  empty-queue listing.
+- [ ] Bootstrap fallback: with `plans/PLAN_INDEX.md` made unreadable
+  (e.g., `chmod 000`) `/work-on-plans` falls back to frontmatter
+  scan, warns to stderr, and exits 0.
+- [ ] State-file corruption recovery: with `work-on-plans-state.json`
+  overwritten to invalid JSON, the next `/work-on-plans` invocation
+  rewrites it to `{"state":"idle"}` with a stderr warning and
+  proceeds.
+- [ ] `/work-on-plans 1 phase` with one Ready plan dispatches
+  `/run-plan plans/<FILE>.md auto`; CLI mode override does NOT mutate
+  the entry's saved `mode`. Verified by: (a)
+  `step.work-on-plans.<sprint-id>.<slug>` marker under
+  `.zskills/tracking/work-on-plans.<sprint-id>/`; (b)
+  `requires.run-plan.<slug>` AND `fulfilled.run-plan.<slug>` markers
+  under the SAME `work-on-plans.<sprint-id>/` subdir, each carrying
+  `parent: work-on-plans` and `id: <sprint-id>`; (c) `/run-plan`'s
+  own `fulfilled.run-plan.<slug>` continues to land under
+  `run-plan.<slug>/` (no `parent:` field, written by `/run-plan`
+  itself, untouched by `/work-on-plans`).
+- [ ] `/work-on-plans 1 finish` with one Ready plan dispatches
+  `/run-plan plans/<FILE>.md auto finish`.
+- [ ] Sprint state lifecycle: `/work-on-plans 2 phase` writes
+  `work-on-plans-state.json` with `state=sprint` at start, updates
+  `progress.done` after each plan, and rewrites to `{"state":"idle"}`
+  at end (verified by snapshotting at three points).
+- [ ] No-Agent-tool path: when invoked from a context lacking the
+  Agent tool, `/work-on-plans` exits 2 with the documented
+  diagnostic.
+- [ ] Skill-error path: when the Skill invocation returns
+  `Error invoking skill` or `Skill 'run-plan' not found`,
+  `/work-on-plans` treats the dispatch as failed (stops without
+  `continue`, logs and proceeds with `continue`).
+- [ ] Unknown slug → fail-loud message (no silent skip).
+- [ ] No jq in skill body: `grep -nE '\bjq\b'
+  skills/work-on-plans/SKILL.md` returns no matches.
+- [ ] Slug rule self-implemented (no `slug_of` import in Phase 1):
+  `grep -nE 'slug_of|from\s+zskills_monitor' skills/work-on-plans/SKILL.md`
+  returns no matches.
+- [ ] Tracking marker `fulfilled.work-on-plans.<sprint-id>` appears
+  under `.zskills/tracking/work-on-plans.<sprint-id>/` after
+  `sprint`. After `next`, no new marker.
+
+### Dependencies
+
+- `/run-plan` skill (dispatch target; finish mode supported).
+- `scripts/sanitize-pipeline-id.sh`.
+- `scripts/create-worktree.sh` (used by `/run-plan` itself; not
+  invoked directly here).
+- `/fix-issues` skill body (reference for CLI parsing, scheduling,
+  reporting, and the `parent:` marker pattern — read-only).
+- No prior plan phase is required (this phase lands first).
+
+---
+
+## Phase 2 — Remove `/plans work` modes
+
+### Goal
+
+Retire the `work`, `stop`, `next-run` modes from `/plans` SKILL.md,
+argument-hint, README, CHANGELOG, and PRESENTATION. `/plans` keeps
+only `bare`, `rebuild`, `next`, `details` (read-only index
+maintenance). Batch execution moves to `/work-on-plans` (Phase 1).
+
+### Work Items
+
+- [ ] Edit `skills/plans/SKILL.md`:
+  - `argument-hint` becomes `"[rebuild | next | details]"`.
+  - Remove the "batch execution" sentence and the `/plans work`
+    usage example from the description; replace with "View plan
+    status, find the next ready plan. For batch execution, see
+    `/work-on-plans`."
+  - H1 becomes `# /plans [rebuild | next | details] — Plan
+    Dashboard` (drop "& Executor").
+  - Delete the three mode-summary bullets for `work`, `stop`,
+    `next-run`. Replace with one bullet: "**For batch execution:**
+    see `/work-on-plans`."
+  - Do NOT delete any `## Mode:` section — none exist for
+    work/stop/next-run.
+- [ ] Edit `README.md`: change the `/plans` row to drop "batch
+  execution"; add a new row `| /work-on-plans | Batch-execute
+  prioritized ready queue from the monitor dashboard |`.
+- [ ] Edit `CHANGELOG.md`: add `### Migration — /plans work
+  removed` explaining the move to `/work-on-plans` and listing
+  affected skills.
+- [ ] Edit `PRESENTATION.html` example. Reference by content
+  anchor, not line number: replace `<code>/plans work 3 auto every
+  6h</code>` with `<code>/work-on-plans 3 auto every 6h</code>`.
+- [ ] Add a one-line footer to `/plans bare` output:
+  > Note: this ranking is independent of the monitor dashboard's
+  > Ready queue. For interactive prioritization, open
+  > /zskills-dashboard.
+- [ ] Cancel any in-session `/plans work … every SCHEDULE` crons
+  before completing this phase. Run `CronList`; for every entry
+  whose prompt matches `^/plans\s+work\b` (or the equivalent `Run
+  /plans work` form), print the entry, then `CronDelete` it.
+  Mirrors `/run-plan stop`'s cron-cleanup pattern. Skip prompts
+  that don't match (don't touch `/run-plan` or `/fix-issues`
+  schedules).
+- [ ] Mirror `skills/plans` → `.claude/skills/plans` via `cp -r`.
+
+### Design & Constraints
+
+The three retired modes (`work`, `stop`, `next-run`) appear in
+`skills/plans/SKILL.md` ONLY in the argument-hint and mode-summary
+bullets — there are no dedicated `## Mode:` sections to delete.
+Verified existing top-level sections: Show, Details, Rebuild, Next,
+Key Rules. Leave those unchanged.
+
+`/plans rebuild` survives this phase unchanged. Phase 9 later
+rewrites its body to invoke Phase 4's Python aggregator; until then
+the existing bash/prose classifier is left in place — no
+intermediate "TODO Phase 9" stub is added (zskills is
+pre-backwards-compat, per `feedback_no_premature_backcompat`
+memory).
+
+**Enumeration check (blocking).** Before declaring this phase complete:
+
+```bash
+grep -niE '\bwork\s+N\b|\bnext-run\b|/plans\s+(work|stop|next-run)' \
+  skills/plans/SKILL.md
+```
+
+Returns zero lines. (`\bstop\b` alone is not checked — too many
+legitimate uses.)
+
+**Phase rules:**
+- Never edit `.claude/skills/` directly. Edit `skills/` source,
+  then `cp -r` mirror.
+- Do not run `/plans rebuild` as part of this phase.
+
+### Acceptance Criteria
+
+- [ ] Enumeration check above returns zero lines.
+- [ ] `skills/plans/SKILL.md` argument-hint equals exactly
+  `"[rebuild | next | details]"`.
+- [ ] README.md: `grep -nE '^\| `?/work-on-plans`? ' README.md`
+  returns one row; `grep -niE '\bbatch\s+execution\b' README.md
+  | grep -i plans` returns zero lines.
+- [ ] CHANGELOG.md contains a `Migration — /plans work removed`
+  entry introduced in this commit.
+- [ ] PRESENTATION.html: `grep -n '/plans work' PRESENTATION.html`
+  returns no matches AND `grep -cE '<code>/work-on-plans 3 auto every 6h</code>'
+  PRESENTATION.html` returns exactly 1 (replacement present, not
+  just removal).
+- [ ] `diff -q skills/plans/SKILL.md .claude/skills/plans/SKILL.md`
+  returns 0.
+- [ ] No surviving `/plans work … every SCHEDULE` crons after
+  `CronList`.
+
+### Dependencies
+
+- Phase 1 (`/work-on-plans` must exist as the migration target
+  before retiring `/plans work`).
+
+---
+
+## Phase 3 — `/work-on-plans` queue mutation + scheduling
+
+### Goal
+
+Extend `/work-on-plans` (Phase 1) with the queue-mutation and
+recurring-schedule subcommands. After this phase the full
+argument-hint surface is functional.
+
+### Work Items
+
+- [ ] Implement CLI parse for the remaining surface:
+  - **Queue manage:** `add <slug> [pos]`, `rank <slug> <pos>`,
+    `remove <slug>` — modify `ready`. `default <phase|finish>` sets
+    top-level `default_mode`.
+  - **Schedule:** `every SCHEDULE [phase|finish] [--force]` registers
+    a recurring sprint (refuses to overwrite non-stale entry from
+    another `session_id` without `--force`); `stop` cancels.
+- [ ] Extend the **sync** sub-step's missing-file branch: mutating
+  subcommands (`add`/`rank`/`remove`/`default`/`every`) auto-create
+  `monitor-state.json` via the same shared helper Phase 1 used (one
+  bootstrap helper for both phases — separate call sites, identical
+  output). `ready` starts empty.
+- [ ] `every SCHEDULE [phase|finish]`: in-session cron via
+  `CronCreate`, self-perpetuating like `/fix-issues`. **Mode-capture
+  invariant.** At registration the resolved mode (CLI flag > current
+  `default_mode` > `"phase"`) is captured as `schedule_mode`. Each
+  fire uses the captured `schedule_mode`, NOT live `default_mode`. To
+  change mode, `stop` and re-register. **`schedule_mode = finish` does
+  NOT call `/run-plan finish`** — it dispatches `/run-plan
+  plans/<file>.md auto finish` per ready plan (one PR per plan); the
+  cron then waits for the next interval. Writes
+  `work-on-plans-state.json` with `state=scheduled`,
+  `session_id=<host>:<pid>:<invocation_start_time>`, `last_fire_at`,
+  `next_fire_at` on each fire. At initial registration set
+  `last_fire_at = session_started_at` (Shared Schemas). Run/Status
+  widget shows captured `schedule_mode`, not `default_mode`.
+- [ ] **Reject SCHEDULE < 1h when `schedule_mode=finish`** with a
+  usage error: "When using finish mode, SCHEDULE must be ≥1h to
+  avoid nested cron collision with /run-plan's phase-chaining
+  crons. Use phase mode for shorter intervals." Phase mode has no
+  minimum interval (cron risk is intrinsic to finish mode only).
+- [ ] `stop` cancels the `/work-on-plans` cron via `CronDelete` and
+  rewrites `work-on-plans-state.json` to `{"state":"idle"}`. `next`
+  reads `work-on-plans-state.json` and prints the active schedule
+  (or "no schedule") plus `next_fire_at` — the read-only `next`
+  subcommand from Phase 1 is now backed by a real schedule.
+- [ ] Tracking markers (extending Phase 1):
+  `fulfilled.work-on-plans.<sprint-id>` is also written for
+  `schedule` and `stop` modes (NOT `next`, still read-only).
+- [ ] Mirror `skills/work-on-plans` → `.claude/skills/work-on-plans`
+  via `cp -r` (one shot, never per-file Edit).
+
+### Design & Constraints
+
+**Positional-arg parsing (extension).** Subcommand keywords (`add`,
+`rank`, `remove`, `default`, `every`, `stop`, `next`) match slot 1
+literally; slot 1 matching `^[0-9]+$` or `^all$` continues to route
+to execute mode (Phase 1). `add <slug>` rejects digit-prefix slugs
+(reserved for execute-mode `N`); such slugs must be added via the
+dashboard or by editing `monitor-state.json`.
+
+**Cron interactions.** `/work-on-plans every SCHEDULE [phase|finish]`
+registers an in-session cron via `CronCreate` (each fire re-registers;
+cron dies with the session). Each fire walks `plans.ready` and
+dispatches `/run-plan plans/<FILE>.md auto` (when `schedule_mode=phase`)
+or `/run-plan plans/<FILE>.md auto finish` (when `schedule_mode=finish`)
+per resolved per-plan mode. **Caveat for `finish`:** `/run-plan`'s
+finish mode self-registers its own short-interval crons (~5min) for
+phase chaining; under recurring `every` fires this can cause two
+nested cron generations. The `every` cron must therefore use a SCHEDULE
+strictly larger than the per-plan finish completion window — the
+minimum supported `SCHEDULE` for `every … finish` is `1h`, enforced
+at registration (work item above). The `next` mode prints
+`next_fire_at` from `work-on-plans-state.json`.
+
+**Coexistence with `/run-plan` standalone crons.** `/run-plan` also
+registers its own crons (e.g. via `/run-plan X.md auto finish` in a
+separate session). `/work-on-plans every` does not check or remove
+those — they are user-owned and operate on different state. If a
+user has both a `/run-plan X.md` cron and a `/work-on-plans every
+4h` cron whose ready queue includes plan `X`, both will dispatch and
+the user is responsible for choosing one. Documented as expected
+behavior; no auto-conflict resolution.
+
+**Schedule ownership.** `every` consults `work-on-plans-state.json`
+before registering: if `state=scheduled` from a different `session_id`
+and not stale, refuse with "already scheduled by session X — pass
+`--force` to take over." A stale entry is silently overwritten.
+A non-stale entry from the SAME `session_id` is treated as idempotent
+take-over: cancel the existing cron via `CronDelete` and register the
+new one without requiring `--force` (per Shared Schemas).
+
+**`CronCreate` failure.** If `CronCreate` returns an error, exit 1
+with "Failed to register schedule: <error>. The plan will not run
+automatically. You can run `/work-on-plans N phase` manually
+instead." Do NOT write `work-on-plans-state.json` on failure.
+
+**Phase rules:**
+- Never edit `.claude/skills/` directly. Edit `skills/` source,
+  then `cp -r` mirror.
+- This phase only writes `monitor-state.json` and
+  `work-on-plans-state.json` — it does NOT read the snapshot from
+  Phase 4 (the dashboard is the read-side consumer of those files).
+
+### Acceptance Criteria
+
+- [ ] `/work-on-plans add <slug>` with no state file auto-creates
+  `monitor-state.json` (bootstrap, same shape as Phase 1) and
+  appends to `ready`; `rank`, `remove`, `default <phase|finish>`
+  mutate the file as specified (verified by JSON parse pre/post).
+  `default` does not touch per-entry `mode` values.
+- [ ] `/work-on-plans add 4-phase-plan` is rejected with a usage
+  message (digit-prefix slugs reserved; user must use the dashboard
+  or edit `monitor-state.json` directly).
+- [ ] Schedule ownership + staleness: `every` against a non-stale
+  entry from another `session_id` refuses without `--force`; against
+  a stale entry, overwrites silently and `next` prints `stale`
+  beforehand. Same-session re-registration replaces the cron without
+  `--force`.
+- [ ] `/work-on-plans every 30m finish` → rejected with the
+  ≥1h usage error; `/work-on-plans every 1h finish` → accepted.
+  `/work-on-plans every 5m phase` → accepted (no minimum on phase
+  mode).
+- [ ] Schedule mode-capture invariant: register `every 4h` with
+  `default_mode=phase`; flip `default_mode=finish` via UI; fire the
+  cron and verify dispatch used captured `schedule_mode=phase`.
+- [ ] Stale-sprint recovery: sprint state with `updated_at` 60min ago
+  → GET returns `state:"stale-sprint"`; POST `/api/work-state/reset`
+  rewrites to idle (JSON parse verified).
+- [ ] `default <mode>` mid-sprint: in-flight sprint's recorded per-plan
+  modes are unchanged (captured at start).
+- [ ] `CronCreate` failure: simulate failure (mock or fixture); the
+  skill exits 1, prints the diagnostic, and does NOT write
+  `work-on-plans-state.json`.
+- [ ] Tracking marker `fulfilled.work-on-plans.<sprint-id>` appears
+  under `.zskills/tracking/work-on-plans.<sprint-id>/` after
+  `schedule` or `stop`. After `next`, no new marker.
+
+### Dependencies
+
+- Phase 1 (extends the same skill body and shares the
+  bootstrap-`monitor-state.json` helper).
+- `scripts/sanitize-pipeline-id.sh`.
+- `CronCreate`/`CronDelete`/`CronList` primitives.
+- This phase does NOT depend on Phase 4 — it only writes
+  `monitor-state.json` / `work-on-plans-state.json`. Reads of
+  those files happen in the dashboard stack (Phases 4–7).
+
+---
+
+## Phase 4 — Data aggregation library
+
+### Goal
+
+Pure-Python, stdlib-only module at `scripts/zskills_monitor/` that
+aggregates every data source the dashboard renders into a single JSON
+document via `collect_snapshot(repo_root)`. Pure functions, dict out.
+Unit-testable without a server. **Standalone-callable invariant:**
+`collect.py` MUST remain importable and runnable independently of
+`server.py` (Phase 5) — the CLI (`python3 -m zskills_monitor.collect`)
+is the canonical isolation test. Future callers (notably Phase 9's
+`/plans rebuild` migration) depend on this module having no
+HTTP-server coupling. `collect.py` must not import from `server.py`.
+
+### Work Items
+
+- [ ] Create package `scripts/zskills_monitor/` with `__init__.py`
+  (empty) and `collect.py`.
+- [ ] Implement `parse_plan(path) -> dict` — extract frontmatter,
+  Overview blurb (first non-empty paragraph after `## Overview`,
+  trimmed to 240 chars), Landing-mode hint (Shared Schemas regex),
+  phase-heading list, and progress-tracker table with status-glyph
+  map (`⬚`=todo, `⏳`/`⚙️`=in-progress, `✅`=done, `🔴`=blocked).
+  Frontmatter parsed via the same regex idiom as
+  `scripts/briefing.py:scan_plans` (no PyYAML).
+- [ ] Implement `parse_report(slug) -> dict | None` — see "Report
+  parsing rules" in Design.
+- [ ] Implement `slug_of(path) -> str` exposing the canonical slug
+  rule (Shared Schemas) for reuse by Phase 9 and any later caller.
+  Behavior identical to Phase 1's inline `tr` rule.
+- [ ] Implement tracking-marker scan — walk **both** flat top-level
+  `.zskills/tracking/*` (legacy) and one-level-deep
+  `.zskills/tracking/*/` subdirs. Dedup: when a file with the same
+  basename appears in both layouts for the same pipeline-id,
+  prefer the subdir copy and drop the flat one. If both copies
+  exist with differing timestamps, the subdir copy still wins
+  (the legacy flat copy is treated as informational); the conflict
+  is recorded in `errors[]` with `source: "tracking dedup"` and the
+  basename. Emit time-ordered activity list; flat-only entries
+  carry `location: "legacy"`, subdir entries carry
+  `location: "pipeline"` plus `pipeline: <subdir-name>` and (if
+  present in marker text) a `parent: <parent-pipeline-id>` field.
+- [ ] Implement worktree + branch listing reusing
+  `scripts/briefing.py` helpers (`parse_worktree_list:362`,
+  `parse_for_each_ref:386`, `parse_landed:95`,
+  `classify_worktrees:156`, `find_repo_root:41`). Wrap helper
+  invocations: any exception or non-zero subprocess return appends
+  to `errors[]` with `source: "git worktree"` / `"git for-each-ref"`
+  and returns an empty list. The aggregator never raises on git
+  failure.
+- [ ] Implement `list_issues()` — caches `gh issue list --state open
+  --limit 500 --json number,title,labels,createdAt,body` for 60s in
+  module-level state; on `gh` failure returns last cache or `[]`
+  and appends to `errors[]`. Never raises.
+- [ ] Implement state-file merge: read
+  `MAIN_ROOT/.zskills/monitor-state.json` (path resolved via
+  `find_repo_root` — always main, never cwd-relative); annotate each
+  plan with `queue: {column, index, mode}` (mode = entry's `mode`
+  if present on a `ready` entry, else `null`); annotate each issue
+  with `queue: {column, index}`. Tolerate version `"1.0"` (flat string
+  arrays — treat as `{slug: <str>, mode: null}`) and `"1.1"` (object
+  arrays). Missing → empty queues silently. Unparseable → empty
+  queues + append to `errors[]` with
+  `source: ".zskills/monitor-state.json"` and the parse error
+  message. Never raise.
+- [ ] Surface top-level `default_mode` in the snapshot at
+  `queues.default_mode` (default `"phase"` if absent).
+- [ ] Implement `collect_snapshot(repo_root) -> dict` returning the
+  stable JSON shape below. `repo_root` accepts `Path` or `str`.
+- [ ] CLI: `python3 -m zskills_monitor.collect [--fixture DIR]`
+  prints JSON to stdout for shell-test consumption.
+- [ ] Create test fixtures under `tests/fixtures/monitor/`:
+  - `minimal/` — one plan, one report, one tracking marker.
+  - `with-state/` — same plus a populated `monitor-state.json`.
+  - `corrupt-state/` — same plus a malformed `monitor-state.json`
+    to exercise the error path.
+  - `slug-uppercase/` — plan filename `MY_PLAN_FILE.md` exercising
+    the canonical slug rule (verifies Phase 1's inline `tr` and
+    Phase 4's `slug_of()` produce identical output).
+- [ ] `tests/test_zskills_monitor_collect.sh` — runs the CLI against
+  each fixture, asserts JSON keys and types. Test output goes to
+  `$TEST_OUT/.test-results.txt` per CLAUDE.md (never pipe). Register
+  in `tests/run-all.sh`.
 
 ### Design & Constraints
 
@@ -200,22 +896,30 @@ Unit-testable without a running server.
 ```
 scripts/zskills_monitor/
 ├── __init__.py
-├── collect.py          # this phase
-├── server.py           # Phase 2
-└── static/
-    ├── index.html      # Phase 3
-    ├── app.css         # Phase 3
-    └── app.js          # Phases 3 + 4
+├── collect.py          # this phase — pure aggregation, no HTTP
+├── server.py           # Phase 5 (imports collect, NOT vice versa)
+└── static/             # Phase 6
+    ├── index.html
+    ├── app.css
+    └── app.js
 ```
 
-**Stdlib only.** Imports allowed: `json`, `subprocess`, `re`, `pathlib`,
-`os`, `sys`, `time`, `datetime`, `argparse`, `typing`. **Forbidden:**
-`yaml`, `pyyaml`, `requests`, any pip install, any Node tooling. Regex
-line-parse the YAML frontmatter the same way `scripts/briefing.py`
-already does (see `scan_plans` lines 557–577: open/close `---` delim
-tracking + `^(\w+):\s*(.+)` key/value regex).
+**Stdlib + internal helpers only.** Allowed external imports:
+`json`, `subprocess`, `re`, `pathlib`, `os`, `sys`, `time`,
+`datetime`, `argparse`, `typing`. **Forbidden:** `yaml`, `pyyaml`,
+`requests`, any pip install, any Node tooling. Internal imports
+from `scripts/briefing.py` are permitted (briefing.py is part of
+the test harness and is exercised in the existing test suite); they
+are NOT considered server coupling. `collect.py` must not import
+`server.py` or any HTTP/socket module.
 
-**JSON shape — `collect_snapshot()` return value, verbatim:**
+**MAIN_ROOT resolution.** Every path that touches repo state
+(`.zskills/`, `plans/`, `reports/`) is constructed as `MAIN_ROOT /
+<rel>` where `MAIN_ROOT = find_repo_root()` — never cwd-relative.
+This means `collect_snapshot` produces the same answer when invoked
+from a worktree as from main.
+
+**JSON shape — `collect_snapshot()` return value:**
 
 ```json
 {
@@ -224,13 +928,13 @@ tracking + `^(\w+):\s*(.+)` key/value regex).
   "repo_root": "/workspaces/zskills",
   "plans": [
     {
-      "slug": "zskills-monitor-plan",
+      "slug": "zskills-dashboard-plan",
       "file": "plans/ZSKILLS_MONITOR_PLAN.md",
       "title": "Zskills Monitor Dashboard",
       "status": "active",
       "created": "2026-04-18",
       "issue": null,
-      "landing_mode": "cherry-pick",
+      "landing_mode": "pr",
       "blurb": "Stand up a local web dashboard ...",
       "phase_count": 6,
       "phases_done": 0,
@@ -240,242 +944,190 @@ tracking + `^(\w+):\s*(.+)` key/value regex).
       ],
       "has_report": false,
       "report_path": null,
-      "queue": {"column": "reviewed", "index": 2}
+      "queue": {"column": "reviewed", "index": 2, "mode": null}
     }
   ],
   "issues": [
     {"number": 42, "title": "...", "labels": ["bug"],
-     "created_at": "2026-04-17T...", "queue": {"column": "triage", "index": 0}}
+     "created_at": "...", "queue": {"column": "triage", "index": 0}}
   ],
   "worktrees": [
-    {"path": "/workspaces/zskills/worktrees/foo",
-     "branch": "feat/foo", "category": "named",
-     "landed": {"status": "full", "date": "..."} ,
+    {"path": "...", "branch": "feat/foo", "category": "named",
+     "landed": {"status": "full", "date": "..."},
      "ahead": 0, "behind": 0, "age_seconds": 3600}
   ],
   "branches": [
-    {"name": "feat/foo", "last_commit_at": "2026-04-18T...",
+    {"name": "feat/foo", "last_commit_at": "...",
      "last_commit_subject": "...", "upstream": "dev/feat/foo"}
   ],
   "activity": [
-    {"timestamp": "2026-04-18T14:29:00-04:00",
-     "pipeline": "run-plan.zskills-monitor-plan",
-     "kind": "fulfilled", "skill": "run-plan",
-     "id": "zskills-monitor-plan",
-     "status": "complete", "output": "..."}
+    {"timestamp": "...", "pipeline": "run-plan.<slug>",
+     "kind": "fulfilled", "skill": "run-plan", "id": "<id>",
+     "status": "complete", "output": "...",
+     "location": "pipeline", "parent": null}
   ],
-  "queues": { /* same shape as Shared Schemas monitor-state.json: plans + issues keys */ },
+  "queues": { "plans": {...}, "issues": {...} },
   "state_file_path": ".zskills/monitor-state.json",
   "errors": [
-    {"source": "gh issue list", "message": "gh not authenticated"}
+    {"source": "gh issue list", "message": "..."}
   ]
 }
 ```
 
 Top-level keys are stable: `version`, `updated_at`, `repo_root`,
 `plans`, `issues`, `worktrees`, `branches`, `activity`, `queues`,
-`state_file_path`, `errors`. Downstream consumers (Phase 3 UI, Phase 4
-write-back, Phase 6 `/work-on-plans`) depend on this exact shape.
+`state_file_path`, `errors`. The shape is a contract consumed by
+Phases 5–7 and Phase 9; any change is a breaking change and
+requires updating those callers in the same commit.
 
 **Plan parsing rules:**
 
-- Slug = lowercased basename without extension, with `_` → `-` and
-  stripped of non-`[a-z0-9-]`. Example: `ZSKILLS_MONITOR_PLAN.md` →
-  `zskills-monitor-plan`. Plan → slug is **lossy**; reverse mapping
-  for `/work-on-plans` is deferred to Phase 6A (which resolves slug
-  back to the original `plans/<FILE>.md` path by scanning the plans
-  directory once).
-- Blurb = first non-empty paragraph of `## Overview` (everything from
-  `## Overview` up to the next blank line after the first non-blank
-  content line). Trim to 240 chars for the dashboard.
-- `landing_mode` resolution order: (1) Landing-mode blockquote in the
-  plan if present — use the canonical regex from Shared Schemas:
-  `r"^\s*>\s*\*{0,2}Landing\s+mode:\s*([A-Za-z_-]+)\s*\*{0,2}"` with
-  `re.IGNORECASE | re.MULTILINE`, lowercased on capture; else (2)
-  `.claude/zskills-config.json` `execution.landing`; else (3)
-  `"cherry-pick"`.
-- If `.claude/zskills-config.json` is missing or `json.JSONDecodeError`:
-  fall through to `"cherry-pick"` and append to `errors[]` with
-  `source: ".claude/zskills-config.json"`. Do NOT raise.
+- Slug per Shared Schemas (`tr '[:upper:]_' '[:lower:]-'`) exposed
+  as `slug_of(path)`. Use this rule for the
+  `reports/plan-<slug>.md` lookup.
+- `landing_mode` resolution order: (1) plan-body Landing-mode regex
+  (Shared Schemas); else (2) `.claude/zskills-config.json`
+  `execution.landing`; else (3) **sentinel `"unknown"`**. Never
+  silently fall through to `"cherry-pick"`. If config is missing or
+  unparseable, append an error to `errors[]` and use `"unknown"`.
 - Phase headings: `^##\s+Phase\s+(\d+)\s*[—-]\s*(.+)$`.
-- Progress tracker table: locate `^\|\s*Phase\s*\|`, parse rows by
-  `|`-splitting; status glyph map: `⬚`=`todo`, `⏳`/`⚙️`=`in-progress`,
-  `✅`=`done`, `🔴`=`blocked`.
+- Progress tracker table: locate the row with `^\|\s*Phase\s*\|`,
+  parse subsequent `|`-separated rows, apply the status-glyph map.
 - `phases_done` = count of progress-tracker rows with status `done`.
 
-**Report parsing rules (`parse_report(slug: str) -> dict | None`):**
+**Report parsing rules (`parse_report(slug)`):**
 
-Reports live at `reports/plan-<slug>.md`. If absent, return `None` and
-set plan's `has_report=false`. If present, parse section-by-section:
+Reports live at `reports/plan-<slug>.md`. If absent, return `None`.
+Section boundary: a level-2 heading starting with `## Phase` followed
+by an em-dash or hyphen and a descriptive name. The phase token may
+appear EITHER before the dash (`## Phase 5c — Name`, dominant in
+non-canary reports) OR after it (`## Phase — 5c Name`, used in canary
+reports). The token may be alphanumeric (`A`, `5c`, `12`); when no
+distinct token is present (`## Phase — A`), treat the entire descriptive
+text as both the token and the name. Implementer must pick a parser
+that handles both shapes; add fixtures in `tests/fixtures/monitor/` for
+both. Per-phase fields (all optional):
 
-- Section boundary: `^## Phase\s*[—-]\s*(\d+[a-z]?)\s+(.+)$` — group 1
-  is the phase token (real reports use `1`, `4`, `5a`, `5b`, `5c` —
-  verified by `grep '^## Phase' reports/plan-*.md`); group 2 is the
-  descriptive name. Everything up to the next `^## ` is that phase's
-  block. If a heading has no leading number (rare), fall back to
-  `^## Phase\s*[—-]\s*(.+)$` and leave `phase_token: null`.
-- Per-phase fields (all optional, missing → `null`):
-  - `^\*\*Status:\*\*\s*(.+)$` → `status`
-  - `^\*\*Worktree:\*\*\s*(.+)$` → `worktree`
-  - `^\*\*Branch:\*\*\s*(.+)$` → `branch`
-  - `^\*\*Commits?:\*\*\s*(.+)$` → `commits` (comma-split to list)
-- Return shape:
-  ```python
-  {"path": "reports/plan-<slug>.md",
-   "markdown": "<full file text>",
-   "phases": [
-     {"phase_token": "5c", "name": "Infrastructure ...",
-      "status": "Completed (verified)",
-      "worktree": "/tmp/...", "branch": "feat/...",
-      "commits": ["1839bb8"]},
-     ...
-   ]}
-  ```
-- Phase 3 reconciliation keys plan-progress-tracker row `n` against
-  `int(phase_token.rstrip('abcdefghij'))` so a sub-letter like `5c`
-  maps to plan phase 5; if `phase_token` is `null`, fall through to
-  name-based matching.
-- The `markdown` field is included so the Phase 3 modal can render the
-  raw text; the `phases[]` structured view is what the dashboard uses
-  to reconcile report status against plan progress tracker.
+| Pattern | Field |
+|---------|-------|
+| `^\*\*Status:\*\*\s*(.+)$` | `status` |
+| `^\*\*Worktree:\*\*\s*(.+)$` | `worktree` |
+| `^\*\*Branch:\*\*\s*(.+)$` | `branch` |
+| `^\*\*Commits?:\*\*\s*(.+)$` | `commits` (comma-split list) |
+
+Reconcile to plan progress-tracker via
+`int(phase_token.rstrip('abcdefghij'))`; on null `phase_token`, fall
+through to name-based matching. Include the full markdown so the
+Phase 6 modal can render it as preformatted text.
 
 **Tracking marker scan:**
 
-Walk TWO locations:
-1. Top-level flat files in `.zskills/tracking/*` (legacy layout —
-   `ls .zskills/tracking/` today shows 20+ flat `fulfilled.run-plan.*`
-   files alongside pipeline-id subdirs; ignoring them silently would
-   make the dashboard's Activity panel appear empty on day 1).
-2. One level deep: `.zskills/tracking/*/` per-pipeline subdirs (the
-   current spec per `docs/tracking/TRACKING_NAMING.md`).
+Walk both layouts (flat + per-pipeline subdir). For each file whose
+basename matches `^(requires|fulfilled|step)\.(.+)$`, parse `key:
+value` lines (`^(\w+):\s*(.+)$`) and emit an activity record. The
+record's timestamp is the `date` field if present, else the `completed`
+field (`step.*` markers use `completed:`; `requires.*`/`fulfilled.*`
+use `date:`); if neither is present, drop the record and append to
+`errors[]`. Sort descending by
+`datetime.fromisoformat(timestamp).astimezone(timezone.utc)`
+(parse-then-sort; never raw string sort — different offsets break
+lexicographic order). Keep most-recent 200 in memory; UI trims to 20.
+Dedup: if `fulfilled.X` appears both flat and inside `X/`, prefer the
+subdir copy. On differing content/timestamps between the two copies,
+subdir still wins; flat-copy timestamp/contents are not consulted but
+the conflict is logged to `errors[]`.
 
-For each file whose basename matches
-`^(requires|fulfilled|step)\.(.+)$`, parse key/value lines
-(`^(\w+):\s*(.+)$`) and emit an activity record. Flat-file records
-carry `location: "legacy"`; subdir records carry
-`location: "pipeline"` plus `pipeline: <subdir-name>`.
+**`gh` issue cache.** `list_issues()` caches results for 60s in
+module-level state; on `gh` non-zero exit returns last cache or `[]`
+and appends to `errors[]` with `source: "gh issue list"`. Never raises.
 
-Sort descending by `datetime.fromisoformat(date).astimezone(timezone.utc)`
-(parse-then-sort — never raw string sort). Today every marker in the
-repo uses `-04:00`, but cron workers / remote triggers / non-ET
-contributors can write other offsets; lexicographic string sort on
-raw `date:` produces wrong order as soon as offsets diverge
-(`+` < `-` in ASCII, so `+00:00` sorts before `-04:00` even when the
-ET marker is chronologically later). Keep the most recent 200 in
-memory; UI trims to 20.
+**Reuse from `briefing.py`.** Import via
+`from scripts.briefing import ...` after `sys.path` is set to repo
+root (resolved via `find_repo_root()`, not relative to `__file__` —
+this works under both `python3 -m zskills_monitor.collect` and
+direct script execution). Helpers reused: `parse_worktree_list`,
+`parse_for_each_ref`, `parse_landed`, `classify_worktrees`,
+`find_repo_root`. `briefing.scan_plans` is NOT reused — its slug rule
+(`os.path.splitext(basename)`) differs from the canonical slug rule
+above; using it would break report lookups for any plan whose
+basename contains uppercase or `_`.
 
-**GitHub issues cache:**
-
-```python
-_ISSUE_CACHE = {"fetched_at": 0.0, "data": None}
-_ISSUE_CACHE_TTL = 60.0  # seconds
-
-def list_issues():
-    now = time.time()
-    if _ISSUE_CACHE["data"] is not None and \
-       now - _ISSUE_CACHE["fetched_at"] < _ISSUE_CACHE_TTL:
-        return _ISSUE_CACHE["data"]
-    result = subprocess.run(
-        ["gh", "issue", "list", "--state", "open", "--limit", "500",
-         "--json", "number,title,labels,createdAt,body"],
-        capture_output=True, text=True, timeout=30,
-    )
-    if result.returncode != 0:
-        # Record in errors[], return last cached value or []
-        return _ISSUE_CACHE["data"] or []
-    data = json.loads(result.stdout)
-    _ISSUE_CACHE.update({"fetched_at": now, "data": data})
-    return data
-```
-
-**Never use `|| true` or `2>/dev/null`.** If `gh` fails, append to the
-returned snapshot's `errors[]` list with `source` and `message`. Do
-not swallow silently.
-
-**Reuse from `scripts/briefing.py` (do not reimplement):**
-`parse_worktree_list`, `parse_for_each_ref`, `parse_landed`,
-`classify_worktrees`, `find_repo_root`. Import via
-`sys.path.insert(0, str(Path(__file__).parent.parent))` then
-`from briefing import ...`.
-
-**NOT reused:** `briefing.scan_plans` returns only
-`{file, title, issue, status, created, all_phases_done, has_report,
-phase_count}` — none of the new fields (slug, blurb, phases[] with
-names, progress tracker detail, landing_mode) are in its output.
-Phase 1 writes a new `parse_plan()` from scratch, using `scan_plans`
-as a reference for the frontmatter-delimiter idiom only.
-
-**Performance target:**
-
-`collect_snapshot()` must complete in under 500ms on a repo with ~50
-plans and a warm `gh` cache (no subprocess call). Unverified targets
-are acceptance-blocking: add a fixture `tests/fixtures/monitor/
-thirty-plans/` with synthetic plan files; acceptance criterion
-`time python3 -m zskills_monitor.collect --fixture
-tests/fixtures/monitor/thirty-plans` real time < 0.5s. If exceeded,
-add per-file `(path, mtime)` memoization to `parse_plan`.
-
-**CLI shape:**
-
-```
-python3 -m zskills_monitor.collect                # prints JSON to stdout
-python3 -m zskills_monitor.collect --fixture DIR  # use DIR as repo_root
-```
+**Never use `|| true` or `2>/dev/null`.** Failures append to
+`errors[]` with diagnostic source/message. Phase 6 surfaces these
+to the UI as a banner.
 
 ### Acceptance Criteria
 
 - [ ] `python3 -m zskills_monitor.collect --fixture
-  tests/fixtures/monitor/minimal | jq 'keys'` exits 0 and prints an
-  array containing exactly the top-level keys listed in Design &
-  Constraints (fixture-based; no cwd sensitivity).
-- [ ] `python3 -m zskills_monitor.collect --fixture
-  tests/fixtures/monitor/minimal | jq -e '.plans[0].slug != null and
-  .plans[0].phase_count != null'` exits 0.
-- [ ] **Queue annotation** (explicit): given a fixture with
-  `.zskills/monitor-state.json` containing
-  `{"plans":{"ready":["zskills-monitor-plan"]}}`,
-  `collect_snapshot(<fixture>)` returns `plans[0].queue ==
-  {"column":"ready","index":0}`.
-- [ ] **State-file absent**: with no `.zskills/monitor-state.json`,
-  snapshot returns without error; every plan's `queue.column`
-  follows the default inference table in Shared Schemas.
-- [ ] **State-file corrupt**: with a state file containing invalid
-  JSON, snapshot returns without raising; `errors[]` contains an
-  entry with `source: ".zskills/monitor-state.json"`.
-- [ ] **Landing-mode**: on a fixture plan whose body contains
-  `> **Landing mode: PR** --`, `plans[0].landing_mode == "pr"`.
-- [ ] **Legacy tracking markers**: a flat
-  `.zskills/tracking/fulfilled.run-plan.canary-happy` file is
-  surfaced in `activity[]` with `location == "legacy"`.
-- [ ] `grep -E '^import\s+(yaml|requests)'
-  scripts/zskills_monitor/collect.py` returns no matches (stdlib only).
-- [ ] Missing `gh` or `gh issue list` failure does NOT raise — the
-  snapshot returns with `issues: []` and `errors:
-  [{"source": "gh issue list", ...}]`.
-- [ ] Calling `collect_snapshot()` twice within 60s hits the issue
-  cache (verified by mocking `subprocess.run` or inspecting
-  `_ISSUE_CACHE`).
-- [ ] Performance: `time python3 -m zskills_monitor.collect --fixture
-  tests/fixtures/monitor/thirty-plans` shows real<0.5s after the
-  `gh` cache is warm.
+  tests/fixtures/monitor/minimal` exits 0 and the JSON contains all
+  top-level keys listed in Design.
+- [ ] **Standalone-callable check.** From a fresh Python REPL
+  (no server running): `from scripts.zskills_monitor.collect import
+  collect_snapshot, slug_of; collect_snapshot('/workspaces/zskills')`
+  returns a dict with the documented top-level keys.
+  `grep -nE 'from\s+\.server|from\s+scripts\.zskills_monitor\.server|import\s+http\.server|import\s+socketserver'
+  scripts/zskills_monitor/collect.py` returns no matches.
+- [ ] **Snapshot key contract.** Output JSON top-level keys are
+  exactly the set `{version, updated_at, repo_root, plans, issues,
+  worktrees, branches, activity, queues, state_file_path, errors}`
+  (no extras, no missing). Each `plans[]` entry has at minimum
+  `{slug, file, title, status, phases, queue}`.
+- [ ] Queue annotation: with a fixture state file containing
+  `{"version":"1.1","plans":{"ready":[{"slug":"zskills-dashboard-plan","mode":"finish"}]}}`,
+  snapshot's `plans[0].queue == {"column":"ready","index":0,"mode":"finish"}`.
+- [ ] Version 1.0 compat: a fixture with `{"version":"1.0",
+  "plans":{"ready":["foo-plan"]}}` is read without error; the entry's
+  `queue.mode == null`.
+- [ ] Slug-rule parity: with the `slug-uppercase/` fixture
+  (`MY_PLAN_FILE.md`), Phase 4's `slug_of()` and Phase 1's inline
+  `tr` rule both produce `my-plan-file`.
+- [ ] State-file absent: snapshot returns; every plan's `queue.column`
+  follows the Shared Schemas inference table.
+- [ ] State-file corrupt (`corrupt-state` fixture): snapshot returns
+  without raising; `errors[]` contains one entry with `source:
+  ".zskills/monitor-state.json"` and a non-empty `message`.
+- [ ] Landing-mode resolution: a plan with `> **Landing mode: PR**`
+  in body → `landing_mode == "pr"`. With config missing AND no
+  blockquote → `landing_mode == "unknown"` and `errors[]` has the
+  config-source entry.
+- [ ] Tracking dedup: a fixture with both
+  `fulfilled.run-plan.x` (flat) and `run-plan.x/fulfilled.run-plan.x`
+  (subdir) yields one activity entry, not two; the subdir copy wins.
+  Differing-content variant: same fixture but the two files have
+  different `date:` values → still one entry (subdir wins) and
+  `errors[]` has a `source: "tracking dedup"` entry.
+- [ ] No PyYAML/requests: `grep -nE '^import\s+(yaml|requests)'
+  scripts/zskills_monitor/collect.py` returns no matches.
+- [ ] Missing `gh`: snapshot returns with `issues: []` and `errors[]`
+  entry; no exception propagated.
+- [ ] Missing/broken `git`: simulate by mocking `briefing.run` to
+  return empty/error; snapshot still returns; `worktrees: []`,
+  `branches: []`; `errors[]` has a `source: "git ..."` entry.
+- [ ] Issue cache: two consecutive `collect_snapshot()` calls within
+  60s invoke `subprocess.run` once (verified by mocking).
+- [ ] Worktree-portable: snapshot from a worktree (`/tmp/zskills-pr-…`)
+  matches snapshot from main byte-for-byte (state-file paths resolve
+  via `MAIN_ROOT`, not cwd).
+- [ ] `tests/test_zskills_monitor_collect.sh` exits 0 and is
+  registered in `tests/run-all.sh`.
 
 ### Dependencies
 
-- External: Python 3.9+, `git` CLI, `gh` CLI (optional — snapshot
-  degrades gracefully).
-- Internal: `scripts/briefing.py` (imported for worktree / landed
-  helpers — treat as a stable API within this repo).
-- Plan/report file layout: `plans/*.md`, `reports/plan-<slug>.md`.
-- Tracking marker layout per `docs/tracking/TRACKING_NAMING.md`.
+- External: Python 3.9+, `git`, `gh` (optional — degrades gracefully).
+- Internal: `scripts/briefing.py` helpers.
+- Plan/report layout: `plans/*.md`, `reports/plan-<slug>.md`.
+- Tracking layout per `docs/tracking/TRACKING_NAMING.md`.
+- Phases 1 and 3 produce the `work-on-plans.<sprint-id>/` parent-tagged
+  markers this snapshot scans (tolerated absent — no hard dependency).
 
 ---
 
-## Phase 2 — HTTP server
+## Phase 5 — HTTP server
 
 ### Goal
 
-Expose Phase 1's `collect_snapshot()` over a small localhost-only HTTP
-API, plus static file serving for the Phase 3 UI, with a detachable
+Expose Phase 4's `collect_snapshot()` over a localhost-only HTTP API
+plus static file serving for the Phase 6 UI, with a detachable
 background lifecycle (PID file + graceful SIGTERM).
 
 ### Work Items
@@ -483,65 +1135,133 @@ background lifecycle (PID file + graceful SIGTERM).
 - [ ] Create `scripts/zskills_monitor/server.py` using
   `http.server.ThreadingHTTPServer` and a `BaseHTTPRequestHandler`
   subclass.
-- [ ] Implement routing per the route table below, with input
-  validation: `<slug>` must match `^[a-z0-9-]+$`, `<N>` must match
-  `^[0-9]+$`. Mismatch → HTTP 400 before any subprocess dispatch.
-- [ ] Implement `GET /api/state` → `collect_snapshot()` JSON.
-- [ ] Implement `GET /api/plan/<slug>` → single-plan detail (all phases,
-  work items, report if present, tracking events for this slug).
-  Look up `<slug>` in an in-memory slug → file-path dict built from
-  `plans/*.md` glob; NEVER `os.path.join(plans_dir, slug + ".md")`
-  (defense-in-depth against traversal even though regex already
-  rejects `..`).
-- [ ] Implement `GET /api/issue/<N>` → shell out to
-  `gh issue view <N> --json number,title,body,labels,comments,state`
-  with `timeout=15`; on timeout return HTTP 504 with JSON
-  `{"error":"gh issue view timed out"}`.
-- [ ] Implement `POST /api/queue` → enforce CSRF / origin check, body
-  size limit, strict JSON shape validation, atomic write to
-  `.zskills/monitor-state.json`.
-- [ ] Implement `GET /api/health` → `{"status": "ok", "uptime": <secs>,
-  "pid": <int>, "port": <int>}`.
-- [ ] Static file serving for `GET /`, `GET /app.js`, `GET /app.css`
-  from `scripts/zskills_monitor/static/`.
-- [ ] Bind to `127.0.0.1` only. Port resolution: shell out to
-  `bash scripts/port.sh` at startup; `DEV_PORT` env var overrides.
-  Wrap the `ThreadingHTTPServer(...)` constructor in
-  `try/except OSError` to print the friendly port-busy message on
-  `EADDRINUSE` instead of a stack trace.
-- [ ] PID file write to `.zskills/monitor-server.pid` on startup AFTER
-  successful bind; file format is JSON `{"pid": <int>, "port": <int>,
-  "started_at": "<ISO>"}` so `stop` / `status` read the port
-  without re-running `port.sh`.
-- [ ] SIGTERM handler: call `server.shutdown()`, remove PID file, exit 0.
-- [ ] Extend `.gitignore` with `.zskills/monitor-server.pid`,
-  `.zskills/monitor-server.log`, and `.zskills/monitor-state.json`
-  (not currently ignored — verified: `.gitignore` covers only
-  `.zskills/tracking/` and `.zskills-tracked`). Add to the same
-  commit as this phase.
-- [ ] Test: `tests/test_zskills_monitor_server.sh` — starts server in
-  background, `curl` each route, checks response shapes, stops via
-  SIGTERM, verifies PID file removed. Route output to
-  `$TEST_OUT/.test-results.txt` per CLAUDE.md (`TEST_OUT="/tmp/
-  zskills-tests/$(basename "$(pwd)")"`), never pipe.
-- [ ] Register both Phase 1 and Phase 2 test scripts in
-  `tests/run-all.sh` as new `run_suite` calls so `bash
-  tests/run-all.sh` exercises them on every run.
+- [ ] Implement routes per the route table; validate `<slug>` against
+  `^[a-z0-9-]+$` and `<N>` against `^[0-9]+$` before any subprocess
+  dispatch.
+- [ ] `GET /api/state` → `collect_snapshot()` JSON.
+- [ ] `GET /api/plan/<slug>` → plan detail. Look up via in-memory
+  slug→file dict built from `plans/*.md` glob; never
+  `os.path.join(plans_dir, slug+".md")` (defense-in-depth).
+- [ ] `GET /api/issue/<N>` → `gh issue view <N> --json
+  number,title,body,labels,comments,state` with `timeout=15`. On
+  timeout: HTTP 504. On any other non-zero exit: HTTP 502 with
+  `{"error": <gh stderr first line>}`.
+- [ ] `POST /api/queue` → Origin check, JSON parse, strict shape
+  validation, atomic write to `MAIN_ROOT/.zskills/monitor-state.json`.
+- [ ] `GET /api/work-state` → reads
+  `MAIN_ROOT/.zskills/work-on-plans-state.json` (auto-creates as
+  `{"state": "idle"}` if missing OR if existing file is unparseable
+  JSON; in the unparseable case, append to a server-side error log
+  and return idle); applies the staleness rule (Shared Schemas)
+  before returning. Stale entries return as
+  `{"state": "idle", "warning": "<message>"}`.
+- [ ] `POST /api/trigger` → body `{"command": "/work-on-plans 3 phase"}`.
+  Per the **`POST /api/trigger` security contract** below. Empty
+  `dashboard.work_on_plans_trigger` → HTTP 501 + `{"command": <cmd>}`.
+  Failures surface to UI; no silent swallow.
+- [ ] `POST /api/work-state/reset` → Origin-checked, idempotent.
+  Atomically writes `{"state": "idle", "updated_at": "..."}` via the
+  read-then-write lock; returns 200 with the new state. UI uses this to
+  clear stale sprint/scheduled entries.
+- [ ] `GET /api/health` → `{"status":"ok","uptime":<secs>,"pid":<int>,
+  "port":<int>}`.
+- [ ] Static file serving for `/`, `/app.js`, `/app.css` from
+  `scripts/zskills_monitor/static/`.
+- [ ] Bind to `127.0.0.1` only. Port: `bash scripts/port.sh` at
+  startup; `DEV_PORT` env overrides. If `scripts/port.sh` is missing
+  or returns non-numeric output, fall back to `DEV_PORT` (if set);
+  otherwise print a friendly diagnostic to stderr ("scripts/port.sh
+  failed: <error>; set DEV_PORT or restore the script") and exit 2
+  with no Python stack trace.
+- [ ] Ensure the state-file directory exists before any write:
+  `os.makedirs(MAIN_ROOT/'.zskills', exist_ok=True)` on startup
+  (idempotent; covers the case where Phase 5 is started without
+  Phase 8's `start` mode having pre-created the dir).
+- [ ] Validate `dashboard.work_on_plans_trigger` config at startup
+  if present: if the path resolves outside `MAIN_ROOT` or is not
+  executable, append an entry to `errors[]` (visible in
+  `/api/state`) with the diagnostic. Do NOT exit — the server still
+  serves read-only routes; only `POST /api/trigger` will return
+  500/400 per the security contract.
+- [ ] Add the `dashboard` block to `.claude/zskills-config.json` if
+  absent, with the empty default
+  (`"dashboard": { "work_on_plans_trigger": "" }`). The current
+  config file (verified) lacks this block; Phase 5 owns its
+  introduction.
+- [ ] PID file write to `MAIN_ROOT/.zskills/dashboard-server.pid`
+  AFTER successful bind, in `.env`-style (Shared Schemas).
+- [ ] SIGTERM/SIGINT handler: `server.shutdown()`, remove PID file,
+  exit 0.
+- [ ] Add `.zskills/monitor-state.json`,
+  `.zskills/work-on-plans-state.json`, AND
+  `.zskills/dashboard-server.pid` to `.gitignore` in this phase.
+  (`.zskills/dashboard-server.log` is added in Phase 8 — that file
+  is not written until Phase 8's `nohup` redirect.)
+- [ ] `tests/test_zskills_monitor_server.sh` — start in background,
+  curl each route, verify shapes, SIGTERM, verify PID-file removed.
+  Output to `$TEST_OUT/.test-results.txt`. Register in
+  `tests/run-all.sh`.
 
 ### Design & Constraints
 
-**Route table — canonical:**
+**Route table:**
 
 | Method | Path | Response | Notes |
 |--------|------|----------|-------|
 | GET | `/` | `static/index.html` (text/html) | |
 | GET | `/app.js` | `static/app.js` (application/javascript) | ES module |
 | GET | `/app.css` | `static/app.css` (text/css) | |
-| GET | `/api/health` | `{"status":"ok","uptime":<secs>,"pid":<int>}` | |
-| GET | `/api/state` | Phase 1 snapshot JSON | `Cache-Control: no-store` |
-| GET | `/api/plan/<slug>` | Plan detail JSON (see below) | 404 if slug unknown |
-| GET | `/api/issue/<N>` | `gh issue view` JSON | 404 if gh returns non-zero |
-| POST | `/api/queue` | `{"ok":true,"updated_at":"..."}` | See validation below |
+| GET | `/api/health` | `{status, uptime, pid, port}` | |
+| GET | `/api/state` | Phase 4 snapshot JSON | `Cache-Control: no-store` |
+| GET | `/api/plan/<slug>` | Plan detail JSON | 404 if slug unknown |
+| GET | `/api/issue/<N>` | `gh issue view` JSON | 504 on timeout, 502 on other gh failure |
+| POST | `/api/queue` | `{ok, updated_at}` | Origin check + shape validation |
+| GET | `/api/work-state` | work-on-plans-state.json + staleness | Auto-creates idle if missing |
+| POST | `/api/trigger` | `{status, stdout, stderr, returncode}` or 501 + `{command}` | Origin check + security contract; subprocesses `dashboard.work_on_plans_trigger` if set |
+| POST | `/api/work-state/reset` | `{state:"idle", updated_at}` | Origin check; clears stale sprint/scheduled state |
+
+**Why a trigger hook?** The Python `http.server` cannot directly invoke
+Claude Code skills — skills only run in the user's REPL session. The
+dashboard therefore has to either (a) tell the user the command to
+paste, or (b) call a user-provided trigger script that bridges back to
+a session (e.g., writing a marker file a hook watches, sending a
+notification, ssh'ing to a tmux pane). The plan ships option (a) by
+default and supports option (b) via the
+`dashboard.work_on_plans_trigger` config field. The trigger script is
+user-owned plumbing; the plan does not ship a default.
+
+**`POST /api/trigger` security contract:**
+
+1. **Origin/Host check** — same as `/api/queue` (`127.0.0.1:<port>` or
+   `localhost:<port>` only).
+2. **Command allowlist** — body's `command` MUST match
+   `^/work-on-plans(\s|$)`. Else HTTP 400 `{"error": "command must
+   start with /work-on-plans"}`. The regex matches the URL-decoded
+   command string; URL-encoded payloads are decoded by the HTTP
+   layer before validation.
+3. **Path validation** — `dashboard.work_on_plans_trigger` resolved
+   against `MAIN_ROOT`; symlinks followed then re-checked inside
+   `MAIN_ROOT`. Escape (`../`) → HTTP 500 `{"error": "trigger path
+   escapes MAIN_ROOT"}`.
+4. **Argv invocation, never shell** — invoke as `[<resolved_path>,
+   <command>]` with `shell=False`. `shell=True` is non-compliant.
+   Rationale: the command string is user-supplied and may contain
+   shell metacharacters (pipes, redirects, backticks); `shell=False`
+   passes the whole string as one argv element so the OS shell
+   never interprets it.
+5. **Environment scrubbing** — drop `ZSKILLS_PIPELINE_ID` and any
+   `ZSKILLS_*` variable; pass through `PATH`, `HOME`, `USER`, `LANG`.
+6. **Working directory** — `cwd=MAIN_ROOT`.
+7. **Timeout** — 30s; on kill, HTTP 504 with stderr captured.
+8. **Result encoding** — `{"status": "triggered"|"error", "stdout":
+   "...", "stderr": "...", "returncode": N}`. Failures surface to UI;
+   do NOT silently swallow.
+
+**Slug validation order (`GET /api/plan/<slug>`).** The HTTP layer
+decodes the URL-encoded path before regex match. The decoded
+`<slug>` is matched against `^[a-z0-9-]+$`. Any non-matching value
+(including `..%2F..%2Fetc` after decode → contains `/`) returns
+HTTP 400. Lookup is via in-memory dict, never `os.path.join`.
 
 **Plan detail shape (`GET /api/plan/<slug>`):**
 
@@ -551,785 +1271,482 @@ background lifecycle (PID file + graceful SIGTERM).
   "file": "plans/...",
   "title": "...",
   "status": "active",
-  "landing_mode": "cherry-pick",
+  "landing_mode": "pr",
   "blurb": "...",
-  "overview_full": "full Overview section markdown",
+  "overview_full": "<full Overview section markdown>",
   "phases": [
-    {"n": 1, "name": "...", "status": "todo", "commit": null, "notes": "",
-     "goal": "...", "work_items": [
-       {"text": "Create the module", "checked": false}
-     ],
+    {"n": 1, "name": "...", "status": "todo", "commit": null,
+     "notes": "", "goal": "...",
+     "work_items": [{"text": "...", "checked": false}],
      "acceptance_criteria": [...],
-     "design_constraints_md": "raw markdown",
-     "dependencies_md": "raw markdown"}
+     "design_constraints_md": "...",
+     "dependencies_md": "..."}
   ],
-  "report": {"path": "reports/plan-<slug>.md", "markdown": "..."} ,
-  "activity": [ /* same shape as top-level activity[] but filtered */ ]
+  "report": {"path": "reports/plan-<slug>.md", "markdown": "..."},
+  "activity": [ /* filtered to this slug */ ]
 }
 ```
 
-**POST /api/queue request body (strict shape — reject unknown keys):**
+**POST /api/queue body** matches Shared Schemas exactly. The server
+fills `version` and `updated_at` (client-supplied values are ignored).
 
-The canonical state schema is defined in Shared Schemas. The POST body
-matches it exactly (same top-level `plans` / `issues` keys; server
-fills `version` and `updated_at` on write — client-supplied values are
-ignored).
+**Request validation (only the load-bearing checks):**
+- `Origin` must equal `http://127.0.0.1:<bound-port>`. Missing or
+  mismatched → HTTP 403. This kills drive-by CSRF; browsers always
+  send a real `Origin` header on cross-site POSTs.
+- Body parses as JSON and matches the exact shape: top-level keys
+  `{default_mode?, plans, issues}`; `plans` columns
+  `{drafted, reviewed, ready}`; `issues` columns `{triage, ready}`;
+  plan entries are objects with required `slug` (matches `^[a-z0-9-]+$`)
+  and optional `mode` (one of `"phase"`, `"finish"`, only meaningful on
+  `ready`); `default_mode` (if present) is one of `"phase"`, `"finish"`;
+  issue items are ints; no duplicate slugs within or across plan columns
+  and no duplicate issue numbers within or across issue columns.
+  Violation → HTTP 400. (No body-size cap and no Content-Type
+  strictness — local-only server, JSON parse already rejects garbage.)
 
-**Request preconditions (checked BEFORE reading body):**
-- `Content-Length` header present and ≤ 65536 (64 KiB). Missing or
-  over-limit → HTTP 413 `{"error":"body too large"}`. The state file
-  is under 10 KiB at any realistic repo scale.
-- `Content-Type: application/json` (exact, case-insensitive match on
-  the media type; parameters allowed). Mismatch → HTTP 415.
-- `Origin` header must equal `http://127.0.0.1:<PORT>` where `<PORT>`
-  is the port the server bound to. Missing or mismatched →
-  HTTP 403 `{"error":"origin not allowed"}`. This defeats drive-by
-  CSRF from malicious pages that use
-  `fetch('http://127.0.0.1:<port>/api/queue', {mode:'no-cors', ...})`:
-  browsers send the real `Origin` header and the check rejects.
+**Atomic write contract.** State file at
+`MAIN_ROOT/.zskills/monitor-state.json`. Writes go through one
+helper that serializes concurrent POSTs via a module-level
+`threading.Lock`, writes to a single tmp path inside the same
+directory, then `os.replace(tmp, target)` (POSIX-atomic on same
+filesystem). Pick lock-OR-per-thread-tmp (one mechanism, not both).
+Never write outside `MAIN_ROOT/.zskills/`. **Cross-process scope.**
+The lock is in-process only; concurrent CLI readers (Phase 1 / 3)
+rely on `os.replace`'s POSIX atomicity — they see either the old or
+the new file in full, never a partial write. Transient JSON parse
+failures on the reader side are handled per Phase 1's "unparseable
+JSON" recovery (idle reset / warn + retry).
 
-**Body-shape validation rules (after reading body):**
-- Top-level keys must be exactly `{"plans", "issues"}` — reject others.
-- `plans` columns must be exactly `{"drafted","reviewed","ready"}`.
-- `issues` columns must be exactly `{"triage","ready"}`.
-- List items for `plans` are strings matching `^[a-z0-9-]+$`; for
-  `issues` are ints (not strings).
-- No duplicate entries within a column; no entry appears in more than
-  one column of the same panel.
-- On any violation: HTTP 400 with `{"error":"...","detail":"..."}`.
-- If the existing state file is unparseable (`JSONDecodeError` on read
-  during the merge step), the server treats it as empty and
-  overwrites via the atomic tmp+replace path; no data loss risk because
-  the client sends the full desired state.
+**Read-then-write serialization.** Routes that read-then-write
+(`GET /api/work-state` on stale detection, `POST /api/work-state/reset`,
+`POST /api/queue`) acquire a module-level `threading.Lock` for the
+read+write duration. Per-process scope. Atomic-write via `os.replace`
+still applies.
 
-**Atomic write helper (thread-safe — `ThreadingHTTPServer` serves each
-POST on its own handler thread):**
+**Server lifecycle contract.** `main()` resolves port (`DEV_PORT`
+env or `bash scripts/port.sh`; falls back per Work Items if the
+script is missing or non-numeric), creates `.zskills/` if absent,
+binds `ThreadingHTTPServer ("127.0.0.1", port)`, prints the friendly
+port-busy message + exit 2 on `EADDRINUSE` (no Python stack trace),
+writes the PID file (Shared Schemas key=value format) only after
+successful bind, installs SIGTERM/SIGINT handlers that call
+`server.shutdown()` + remove the PID file + `sys.exit(0)`, then
+`serve_forever()`.
 
-```python
-import json, os, threading
-from pathlib import Path
-
-STATE_PATH = Path(".zskills/monitor-state.json")
-_STATE_LOCK = threading.Lock()  # serializes concurrent POSTs
-
-def write_state_atomic(new_state: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # Per-writer unique tmp name: two threads opening the same fixed tmp
-    # path with mode "w" would truncate each other's in-flight writes
-    # (Python docs: "'w' open for writing, truncating the file first"),
-    # producing a 0-byte window that os.replace would then atomically
-    # move into production. Per-thread tmp + module lock eliminates
-    # both the truncation race and non-deterministic last-write-wins.
-    tmp = STATE_PATH.parent / (
-        f"{STATE_PATH.name}.tmp.{os.getpid()}.{threading.get_ident()}"
-    )
-    with _STATE_LOCK:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(new_state, f, indent=2, sort_keys=True)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, STATE_PATH)  # atomic on POSIX (same-FS rename)
-```
-
-`os.replace()` is atomic on POSIX for same-filesystem renames
-(https://docs.python.org/3/library/os.html#os.replace). The per-thread
-tmp name ensures a second writer never opens the same inode as an
-in-flight first writer; the `_STATE_LOCK` serializes the replace so
-last-write-wins is deterministic.
-
-**Signal handling skeleton:**
-
-```python
-import errno, json, signal, subprocess, sys, os, time
-from datetime import datetime, timezone
-from http.server import ThreadingHTTPServer
-from pathlib import Path
-
-_SERVER = None
-_PID_PATH = Path(".zskills/monitor-server.pid")
-_STARTED_AT = time.time()
-_PORT = None  # set in main()
-
-def _shutdown(signum, frame):
-    if _SERVER is not None:
-        _SERVER.shutdown()
-    try:
-        _PID_PATH.unlink()
-    except FileNotFoundError:
-        pass
-    sys.exit(0)
-
-def main():
-    global _SERVER, _PORT
-    _PORT = int(os.environ.get("DEV_PORT") or
-                subprocess.check_output(["bash", "scripts/port.sh"],
-                                        text=True).strip())
-    try:
-        _SERVER = ThreadingHTTPServer(("127.0.0.1", _PORT), MonitorHandler)
-    except OSError as e:
-        if e.errno == errno.EADDRINUSE:
-            sys.stderr.write(
-                f"Port {_PORT} is already in use. "
-                f"Run 'lsof -i :{_PORT}' to find the holder; stop it "
-                "manually (no kill -9), then retry /zskills-monitor start.\n"
-            )
-            sys.exit(2)
-        raise
-    _PID_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # JSON format so `stop`/`status` can read the bound port without
-    # re-running scripts/port.sh (which is path-derived and can
-    # change between start and stop if cwd or DEV_PORT differs).
-    _PID_PATH.write_text(json.dumps({
-        "pid": os.getpid(),
-        "port": _PORT,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    }))
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
-    _SERVER.serve_forever()
-```
-
-**Port-busy fallback text (printed to stderr, exit code 2):**
+**Port-busy stderr text:**
 
 ```
-Port <N> is already in use. The monitor server cannot start.
-Check what is holding the port:
-    lsof -i :<N>
-Stop that process manually, then retry /zskills-monitor start.
-If .zskills/monitor-server.pid exists but the PID is dead, remove
-the stale file and retry: rm .zskills/monitor-server.pid
+Port <N> is already in use. Run 'lsof -i :<N>' to find the holder
+and stop it manually (no kill -9). If .zskills/dashboard-server.pid is
+stale, rm it and retry /zskills-dashboard start.
 ```
 
-**Rules that apply to this phase in particular:**
-- **Bind to 127.0.0.1 only.** Not `0.0.0.0`. No CORS needed.
-- **No `kill -9`.** The server never force-terminates itself, and the
-  skill (Phase 5) never force-terminates it either.
-- **No `|| true`.** `subprocess.check_output(["bash","scripts/port.sh"])`
-  raises if `port.sh` fails — let it.
-- **No `2>/dev/null`.** Let errors surface.
-- **Atomic writes only** for the state file (tmp + `os.replace`).
-- **Write PID file AFTER successful bind**, not before — binding may
-  fail and we don't want a stale PID for a process that never served.
+**Phase rules:**
+- Bind to 127.0.0.1 only. Not `0.0.0.0`.
+- No `kill -9`. No `|| true`. No `2>/dev/null`. Atomic writes only
+  for the state file.
+- Write PID file **after** successful bind.
 
 ### Acceptance Criteria
 
 - [ ] Server starts: `python3 -m zskills_monitor.server &` then
-  `sleep 0.5 && curl -sf http://127.0.0.1:$(bash scripts/port.sh)/api/health |
-  jq -e '.status == "ok"'` returns 0.
-- [ ] PID file exists at `.zskills/monitor-server.pid` while server is
-  running and contains the live PID (verified by
-  `kill -0 "$(cat .zskills/monitor-server.pid)"` returning 0).
-- [ ] SIGTERM causes graceful exit:
-  `kill -TERM "$(cat .zskills/monitor-server.pid)"` then waiting ≤5s
-  results in PID file removed and port freed.
-- [ ] `curl -sf http://127.0.0.1:$PORT/api/state | jq -e '.version == "1.0"'`
-  returns 0.
-- [ ] `curl -sf http://127.0.0.1:$PORT/api/plan/does-not-exist -o /dev/null -w '%{http_code}'`
-  prints `404`.
-- [ ] Slug-validation: `curl -o /dev/null -w '%{http_code}'
-  http://127.0.0.1:$PORT/api/plan/..%2F..%2Fetc` prints `400`.
-- [ ] Integer-validation: `curl -o /dev/null -w '%{http_code}'
-  http://127.0.0.1:$PORT/api/issue/abc` prints `400`.
-- [ ] Valid POST to `/api/queue`:
-  `curl -sf -X POST -H 'Content-Type: application/json'
-  -H "Origin: http://127.0.0.1:$PORT" -d
-  '{"plans":{"drafted":[],"reviewed":[],"ready":["foo"]},"issues":{"triage":[],"ready":[]}}'
-  http://127.0.0.1:$PORT/api/queue` returns 200 and
-  `.zskills/monitor-state.json` contains the new state after the call.
-- [ ] CSRF: POST with no `Origin` header returns HTTP 403.
-- [ ] CSRF: POST with `Origin: https://evil.example` returns HTTP 403.
-- [ ] Body-size: POST with `Content-Length: 1048576` (1 MiB) returns
-  HTTP 413 without reading the body.
-- [ ] Wrong content-type: POST with `Content-Type: text/plain` returns
-  HTTP 415.
-- [ ] Invalid POST (unknown top-level key, well-formed Origin) returns
-  HTTP 400.
-- [ ] Port-busy: starting a second server while the first is running
-  produces the friendly port-busy message on stderr and exits 2
-  (no Python stack trace).
-- [ ] PID-file shape: `jq -e '.pid and .port and .started_at'
-  .zskills/monitor-server.pid` exits 0; `.port` matches `ss -ltn`.
-- [ ] `.gitignore` covers monitor files: `git check-ignore
-  .zskills/monitor-server.pid .zskills/monitor-server.log
-  .zskills/monitor-state.json` exits 0 for all three.
-- [ ] `tests/test_zskills_monitor_server.sh` exits 0.
-- [ ] `grep -nE '2>/dev/null|\|\|\s*true' scripts/zskills_monitor/server.py`
-  returns no matches.
-- [ ] Server binds only to 127.0.0.1 (verified by
-  `ss -ltn | grep :$PORT | grep '127.0.0.1:'`).
+  `sleep 0.5 && curl -sf http://127.0.0.1:$PORT/api/health` returns
+  200 with `status:"ok"` (verify with `grep -q '"status":[[:space:]]*"ok"'`,
+  not jq).
+- [ ] PID file shape: `grep -qE '^pid=[0-9]+$' .zskills/dashboard-server.pid
+  && grep -qE '^port=[0-9]+$' … && grep -qE '^started_at=' …`.
+  Bash regex (Shared Schemas) extracts each field.
+- [ ] PID liveness: `kill -0 $(grep -oE '^pid=[0-9]+'
+  .zskills/dashboard-server.pid | cut -d= -f2)` returns 0.
+- [ ] SIGTERM exit ≤5s: PID file removed and port freed.
+- [ ] Fresh-repo bootstrap: with `.zskills/` removed,
+  `python3 -m zskills_monitor.server &` succeeds; the dir is
+  re-created and writes (PID, state) succeed.
+- [ ] Port-script failure: with `scripts/port.sh` removed AND no
+  `DEV_PORT` env, the server prints the friendly diagnostic and
+  exits 2 (no Python stack trace).
+- [ ] Config-block bootstrap: `.claude/zskills-config.json` lacking
+  the `dashboard` block before this phase contains it after the
+  server has started once (`grep -E '"dashboard":' .claude/zskills-config.json`
+  matches).
+- [ ] Trigger-config validation surfaces in `/api/state`: with
+  `dashboard.work_on_plans_trigger` set to a non-existent path,
+  `/api/state` includes an entry in `errors[]` whose `source` mentions
+  the trigger config.
+- [ ] `curl -sf .../api/state | grep -q '"version":[[:space:]]*"1\.[01]"'` exits 0.
+- [ ] `curl -o /dev/null -w '%{http_code}' .../api/plan/does-not-exist`
+  prints `404`; slug `..%2F..%2Fetc` prints `400`; issue `abc` prints `400`.
+- [ ] Valid POST returns 200 and the state file contains the new state.
+- [ ] CSRF: POST without `Origin` returns 403; mismatched `Origin`
+  returns 403.
+- [ ] Invalid POST shape returns 400 and does NOT modify the state file.
+- [ ] `/api/work-state`: GET with no state file returns
+  `{"state":"idle"}` and creates the file; with a stale `scheduled`
+  entry, returns `{"state":"idle","warning":...}` and rewrites idle.
+  GET with an unparseable JSON file rewrites it to idle and returns
+  `{"state":"idle"}` with the server-side error logged.
+- [ ] `/api/trigger`: empty `dashboard.work_on_plans_trigger` → 501 +
+  `{"command": <cmd>}`; configured script → `{status:"triggered",
+  stdout, stderr, returncode}` with `returncode != 0` on script failure
+  (no silent stderr swallow).
+- [ ] `/api/trigger` security contract: (a) body `{"command": "rm -rf
+  /"}` → 400; `/work-on-plans 3 phase` accepted. (b) trigger script
+  echoing its argv shows `argv[1]` equal to the literal `command`
+  string AND server source has `shell=False` / argv list (no
+  `shell=True`). (c) trigger path `../../../tmp/evil.sh` → 500
+  path-escape. (d) trigger script dumping `env` contains `PATH`/`HOME`
+  but NOT `ZSKILLS_*`. (e) trigger script `pwd` equals `MAIN_ROOT`.
+  (f) script that sleeps 60s returns 504 within ~30s.
+- [ ] `/api/work-state/reset`: POST with stale `sprint` writes
+  `{"state": "idle"}` atomically; concurrent GETs while reset is
+  in-flight return consistent results (no half-rewritten file).
+- [ ] Port-busy: starting a second server prints the friendly stderr
+  message and exits 2 (no Python stack trace).
+- [ ] `.gitignore` covers monitor-state AND PID file:
+  `git check-ignore .zskills/monitor-state.json
+  .zskills/work-on-plans-state.json .zskills/dashboard-server.pid`
+  all exit 0.
+- [ ] `grep -nE '2>/dev/null|\|\|\s*true'
+  scripts/zskills_monitor/server.py` returns no matches.
+- [ ] Bind only on 127.0.0.1: `ss -ltn | grep :$PORT | grep '127.0.0.1:'`.
+- [ ] Worktree-portable: launching from a worktree writes the PID +
+  state files under main repo's `.zskills/`, not the worktree.
 
 ### Dependencies
 
-- Phase 1's `collect_snapshot()` (direct import).
-- `scripts/port.sh` (shell-out for port selection).
-- `.zskills/` is writable (create dir if missing).
-- `gh` CLI for issue detail route (graceful 404 if missing).
+- Phase 4's `collect_snapshot()`.
+- `scripts/port.sh`, `scripts/briefing.py:find_repo_root` (resolve
+  `MAIN_ROOT`).
+- `gh` CLI (graceful 502/504 if missing or slow).
 
 ---
 
-## Phase 3 — Read-only dashboard UI
+## Phase 6 — Read-only dashboard UI
 
 ### Goal
 
-Single-page vanilla HTML dashboard that renders the `/api/state`
-snapshot into four panels — Plans, Issues, Worktrees, Recent
-Activity — with drill-down modals on plan and issue. No drag-and-drop
-yet (Phase 4 adds that). Polls every 2 seconds. Matches
-`PRESENTATION.html` theme.
+Single-page vanilla HTML dashboard rendering the `/api/state` snapshot
+into five panels — Plans, Issues, Worktrees, Branches, Recent
+Activity — plus a top-level errors banner and drill-down modals for
+plan and issue. No drag-and-drop yet (Phase 7). Polls every 2 seconds.
+Matches `PRESENTATION.html` theme.
 
 ### Work Items
 
-- [ ] Create `scripts/zskills_monitor/static/index.html` (target per
-  "File budget" in Design & Constraints below).
-- [ ] Create `scripts/zskills_monitor/static/app.css` (target per
-  "File budget" below).
-- [ ] Create `scripts/zskills_monitor/static/app.js` (target per
-  "File budget" below), loaded as `<script type="module">`.
-- [ ] Implement fetch + render pipeline: setTimeout recursion (see
-  skeleton below; NOT `setInterval` — acceptance greps enforce this)
-  where `load()` GETs `/api/state`, diffs against last rendered state,
-  and only re-renders changed panels (simple list-equality check on
-  each panel's backing array). Pause on `document.hidden`, force a
-  reload on `visibilitychange` → visible.
-- [ ] Plans panel: card per plan, showing title, blurb, phase-progress
-  ratio (e.g. `2/6 ✅`), status badge, landing-mode pill.
-- [ ] Issues panel: card per open issue — number, title, labels,
-  created date.
-- [ ] Worktrees panel: row per worktree — path basename, branch,
-  `.landed` status badge, age (relative).
-- [ ] Recent Activity panel: last 20 tracking events, newest first.
-- [ ] Plan detail modal: opened on double-click or Enter keypress;
-  fetches `/api/plan/<slug>`; shows full Overview, phase list with
-  status/commit/notes, work-item checkboxes (display-only), report
-  path if present.
-- [ ] Issue detail modal: double-click opens; fetches `/api/issue/<N>`;
-  renders body as pre-wrapped text.
+- [ ] Create `scripts/zskills_monitor/static/index.html`,
+  `app.css`, and `app.js` (loaded as `<script type="module">`).
+- [ ] Implement fetch + render pipeline. Behavioral contract: poll
+  `/api/state` every 2s via `setTimeout` recursion (NOT
+  `setInterval`); pause when `document.hidden`; force-load on
+  `visibilitychange → visible`; diff per-panel (simple list-equality
+  on backing array) and only re-render changed panels. Show a
+  "Disconnected — retrying…" banner on non-2xx or fetch failure.
+- [ ] Render `snapshot.errors[]` as a dismissible top banner (one
+  line per error, `source: message`). The banner is the user-visible
+  surface for parse/config/gh failures collected by Phase 4; without
+  it, errors silently accumulate.
+- [ ] Plans panel: card per plan with title, blurb, phase-progress
+  ratio, status badge, landing-mode pill (renders `unknown` as a
+  warning pill).
+- [ ] Issues panel: card per open issue (number, title, labels,
+  created date).
+- [ ] Worktrees panel: row per worktree (path basename, branch,
+  `.landed` status badge, age).
+- [ ] **Branches panel:** row per branch from `snapshot.branches[]`
+  (name, last commit subject + age, upstream). User asked for
+  "branches and worktrees" — both are surfaced. **Worktree-backing
+  dedup:** for each branch, if any worktree has
+  `worktree.branch == branch.name`, dim the branch row (CSS
+  `opacity: 0.55`). Multiple worktrees on the same branch dim the
+  row once (dedup is per branch name, not per worktree count). The
+  match runs at render time off the snapshot's `worktrees[]` /
+  `branches[]` arrays — no backref field is added to Phase 4.
+- [ ] Recent Activity panel: last 20 tracking events (newest first)
+  spanning every zskills skill invocation (run-plan, fix-issues,
+  draft-plan, work-on-plans, zskills-dashboard, …). Each row shows
+  pipeline-id, kind, skill, status, timestamp, and (if present)
+  `parent` to surface dispatched-child relationships
+  (e.g. `/work-on-plans` → `/run-plan`).
+- [ ] Plan detail modal: opened on double-click or Enter; fetches
+  `/api/plan/<slug>`; shows full Overview, phase list with
+  status/commit/notes (commit shown as "Landed in <ref>" when
+  non-null, "Pending" when null), work-item checkboxes
+  (display-only), report path if present.
+- [ ] Issue detail modal: same UX; renders body as preformatted text.
 - [ ] Keyboard accessibility: every card has `tabindex="0"`, Enter
   opens modal, Esc closes, focus returns to the invoking card.
-- [ ] Error banner: if `/api/state` returns non-2xx or times out, show
-  a banner at the top saying "Disconnected — retrying…".
 
 ### Design & Constraints
 
-**File budget (soft guidelines, NOT hard caps):**
-- `index.html` target ≤ 250 lines
-- `app.css` target ≤ 400 lines
-- `app.js` target ≤ 700 lines (Phase 3 only; Phase 4 adds drag/ARIA/
-  keyboard fallback that will push this toward 900)
+**File budget (soft, reported only — not blocking):** `index.html`
+~250 lines, `app.css` ~400, `app.js` ~700 in Phase 6 (Phase 7 grows
+app.js). If a phase ends materially over budget, the Plan Review /
+Drift Log records the actual size; this plan does not block on
+budget. Hard rules: no framework, no build step, single ES module,
+no inline event handlers (`addEventListener` only), no external
+script imports.
 
-Rationale: the feature set — 4 panels, polling with visibility gating,
-error banner, 2 drill-down modals with focus trap, Tab/Enter/Esc
-handling, connection-status indicator, diff-rendering, responsive
-grid — is at the high end for a single vanilla ES module. Line counts
-are reported in the phase report but NOT enforced as blocking
-acceptance criteria. The enforced rules are: no framework, no build
-step, no external script imports, no inline handlers (see below).
+**CSS variables.** Reuse `:root` variables verbatim from
+`PRESENTATION.html:8-21` (`--bg`, `--surface`, `--surface2`,
+`--border`, `--text`, `--text-dim`, `--accent`, `--accent2`,
+`--green`, `--orange`, `--red`, `--pink`). Do not invent new names.
 
-**CSS variables — copy verbatim from `PRESENTATION.html`:**
+**Grid layout.** 5 panels in a responsive grid; on widths ≥900px
+arrange Plans (largest) and Branches stacked at top, with Issues,
+Worktrees, Activity flowing alongside. Below 900px, single-column
+stack. Errors banner pinned at the top; modal is a full-document
+overlay.
 
-```css
-:root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface2: #1c2129;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-dim: #8b949e;
-  --accent: #58a6ff;
-  --accent2: #bc8cff;
-  --green: #3fb950;
-  --orange: #d29922;
-  --red: #f85149;
-  --pink: #f778ba;
-}
-```
+**Card markup convention.** Every card is `<article class="card"
+tabindex="0" role="button" data-kind="…" data-slug|number="…"
+aria-label="…">`. Modal uses a custom `role="dialog" aria-modal=
+"true"` div (not `<dialog>` — focus inconsistencies); ESC handler is
+global; focus is trapped via simple first/last-focusable tracking.
 
-These are the exact names used at `PRESENTATION.html` lines 8–21.
-Do not invent new variable names. All semantic colors (success =
-`--green`, warn = `--orange`, blocked = `--red`, in-progress =
-`--accent`) must use these tokens.
+**Polling hygiene.** `setTimeout` recursion (not `setInterval`).
+`cache: 'no-store'` on every fetch. Pause on `document.hidden`;
+force-reload on `visibilitychange`. Naive 2s retry on fetch failure
+(local-only server; no exponential-backoff complexity warranted —
+the user can stop polling by closing the tab).
 
-**DOM skeleton (verbatim — `index.html` body):**
+**XSS escape policy (MANDATORY).** All user-authored content (plan,
+issue, worktree, branch, tracking text) is rendered via
+`element.textContent` or `document.createTextNode`. `innerHTML` is
+allowed only for hardcoded chrome (panel headers, icons, scaffolding);
+each such site carries the trailing comment `// chrome-only` on the
+**same line** as the assignment.
 
-```html
-<body>
-  <nav class="top">
-    <span class="logo">Z Skills Monitor</span>
-    <span class="spacer"></span>
-    <span id="connection" class="conn-ok">connected</span>
-    <span id="updated-at"></span>
-  </nav>
-
-  <main class="grid">
-    <section id="panel-plans" class="panel" aria-label="Plans">
-      <header><h2>Plans</h2><span class="count" id="plans-count">0</span></header>
-      <!-- Phase 3: single flat list. Phase 4 replaces with 3 columns. -->
-      <div id="plans-list" class="cards"></div>
-    </section>
-
-    <section id="panel-issues" class="panel" aria-label="Issues">
-      <header><h2>Issues</h2><span class="count" id="issues-count">0</span></header>
-      <div id="issues-list" class="cards"></div>
-    </section>
-
-    <section id="panel-worktrees" class="panel" aria-label="Worktrees">
-      <header><h2>Worktrees</h2><span class="count" id="wt-count">0</span></header>
-      <div id="worktrees-list" class="rows"></div>
-    </section>
-
-    <section id="panel-activity" class="panel" aria-label="Recent Activity">
-      <header><h2>Recent Activity</h2></header>
-      <ol id="activity-list" class="activity"></ol>
-    </section>
-  </main>
-
-  <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true"></div>
-
-  <script type="module" src="/app.js"></script>
-</body>
-```
-
-**Grid layout (in `app.css`):**
-
-```css
-.grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  grid-template-rows: auto auto;
-  grid-template-areas:
-    "plans     issues"
-    "worktrees activity";
-  gap: 16px;
-  padding: 72px 16px 16px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-#panel-plans     { grid-area: plans; }
-#panel-issues    { grid-area: issues; }
-#panel-worktrees { grid-area: worktrees; }
-#panel-activity  { grid-area: activity; }
-
-@media (max-width: 900px) {
-  .grid {
-    grid-template-columns: 1fr;
-    grid-template-areas: "plans" "issues" "worktrees" "activity";
-  }
-}
-```
-
-**`app.js` module structure:**
-
-```js
-// app.js — Phase 3 shape
-const POLL_MS = 2000;
-let lastSnapshot = null;
-let pollTimer = null;
-
-async function load() {
-  try {
-    const res = await fetch('/api/state', { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const snap = await res.json();
-    setConnected(true);
-    render(snap);
-    lastSnapshot = snap;
-  } catch (e) {
-    setConnected(false);
-  } finally {
-    // setTimeout recursion (NOT setInterval) — the next poll does not
-    // start until the current one completes. Prevents dogpiling when
-    // /api/state is slow (e.g. a cold `gh` cache with a 30s subprocess
-    // timeout).
-    if (!document.hidden) {
-      pollTimer = setTimeout(load, POLL_MS);
-    }
-  }
-}
-
-function render(snap) {
-  renderPlans(snap.plans);
-  renderIssues(snap.issues);
-  renderWorktrees(snap.worktrees);
-  renderActivity(snap.activity);
-  document.getElementById('updated-at').textContent = snap.updated_at;
-}
-
-// renderPlans, renderIssues, renderWorktrees, renderActivity,
-// openPlanModal(slug), openIssueModal(number), closeModal()...
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
-});
-
-// Force-reload whenever the tab becomes visible again: otherwise
-// external mutations (e.g. /work-on-plans modifying state while the
-// tab was hidden) would be invisible until the next poll, and a user
-// drag in the first 2s after focus would overwrite that mutation.
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    clearTimeout(pollTimer);
-    load();
-  }
-});
-
-load();
-```
-
-**Card markup convention — every card:**
-- `<article class="card" tabindex="0" role="button"
-  data-kind="plan" data-slug="..." aria-label="Plan: <title>">`
-- Enter / double-click → opens modal.
-- Modal `<dialog>` is avoided (inconsistent focus handling across
-  browsers) in favor of a custom div with `role="dialog"
-  aria-modal="true"`; ESC handler in global keydown listener;
-  focus is trapped via a simple first/last focusable element trap.
-
-**Polling hygiene:**
-- `setTimeout` recursion (not `setInterval`) — next poll only starts
-  after the current one finishes. Prevents concurrent fetches when
-  `/api/state` is slow (cold `gh` cache → 30s timeout).
-- `cache: 'no-store'` on every fetch.
-- If the page is hidden (`document.hidden`), pause polling entirely;
-  on `visibilitychange` → visible, force an immediate `load()` before
-  resuming. See skeleton above.
-
-**XSS escape policy (MANDATORY):**
-
-All user-authored content from plan files, issue bodies, worktree
-paths, branch names, and tracking output is rendered via
-`element.textContent` or `document.createTextNode`, NEVER via
-`innerHTML`, template-string interpolation into HTML, or
-`insertAdjacentHTML`.
-
-- Acceptable: `card.textContent = plan.title`, `code.textContent =
-  issue.body`, `document.createElement('div')` + append.
-- Forbidden for user content: `el.innerHTML = ...`,
-  ``el.innerHTML = `<p>${plan.blurb}</p>` ``,
-  `document.write`, `insertAdjacentHTML`.
-- Hardcoded chrome (panel headers, icons, class-only scaffolding) MAY
-  use `innerHTML` for convenience, but every such site must carry the
-  trailing comment `// chrome-only` on the **same line** as the
-  `innerHTML =` assignment (a longer justification may appear on a
-  preceding comment line; `grep` is per-line, so the marker MUST be
-  on the assignment line itself).
-- The modal renders plan Overview and issue body as preformatted text
-  (`<pre>` with `textContent`), not as rendered markdown. Markdown
-  rendering is out of scope for this plan.
-
-This rule defeats the vector where a malicious issue body or plan
-body contains `<img src=x onerror="fetch('/api/queue', {method:'POST',
-...})">` and silently wipes the user's queue.
-
-Acceptance enforcement (Phase 3 and Phase 4 both):
+Acceptance grep:
 
 ```bash
 grep -nE '\.innerHTML\s*=' scripts/zskills_monitor/static/app.js |
   grep -vE '//\s*chrome-only'
 ```
 
-Must return no lines. The `chrome-only` marker is a single token (no
-space) so `grep -v 'chrome only'` is NOT used — that phrasing would
-have falsely excluded a preceding-line comment while the assignment
-itself had no marker.
+Must return no lines.
 
-**Rules that apply to this phase in particular:**
-- No npm, no build step, no bundler. Single HTML file + 1 CSS file + 1
-  ES-module JS file.
-- No framework runtime (React, Vue, etc.).
-- No inline event handlers (`onclick=`). Use `addEventListener`.
-- Keyboard accessibility is a requirement, not a nice-to-have.
-- XSS escape policy above is blocking.
+**Phase rules:** no npm / build step / bundler / framework; no
+inline handlers; XSS policy is blocking.
 
 ### Acceptance Criteria
 
-- [ ] `grep -c '^\s*--bg:\|^\s*--surface:\|^\s*--accent:'
-  scripts/zskills_monitor/static/app.css` returns ≥ 3 (CSS vars present).
-- [ ] `grep -nE 'onclick=|onload=' scripts/zskills_monitor/static/`
-  returns no matches (no inline handlers).
-- [ ] XSS: `grep -nE '\.innerHTML\s*=' scripts/zskills_monitor/static/
-  app.js | grep -vE '//\s*chrome-only'` returns no matches.
-- [ ] Polling: `grep -nE 'setInterval\s*\(' scripts/zskills_monitor/
-  static/app.js` returns no matches (setTimeout recursion only).
-- [ ] Manual playwright-cli test checklist documented in the phase
-  report: (1) page loads at dashboard URL; (2) four panels visible;
-  (3) plan card double-click opens modal with phase list;
-  (4) Esc closes modal; (5) Tab reaches every card; (6) Enter on a
-  focused card opens its modal; (7) killing the server shows the
-  "Disconnected" banner within one poll cycle.
-- [ ] `grep -nE 'import\s+.+from\s+["\x27]https?:' scripts/zskills_monitor/static/app.js`
-  returns no matches (no external script imports — stdlib/native only).
+- [ ] Five panels visible (Plans, Issues, Worktrees, Branches,
+  Activity) plus an errors banner element. Branches panel renders
+  `snapshot.branches[]` with non-empty content when the repo has
+  branches.
+- [ ] Errors banner renders one row per `snapshot.errors[]` entry;
+  hides when the array is empty.
+- [ ] Branch dedup: with a fixture where a worktree backs branch
+  `feat/foo`, the Branches panel row for `feat/foo` has the dimmed
+  CSS class; an unbacked branch is rendered at full opacity.
+- [ ] CSS vars present: `grep -c '^\s*--bg:\|^\s*--surface:\|^\s*
+  --accent:' scripts/zskills_monitor/static/app.css` ≥ 3.
+- [ ] No inline handlers: `grep -nE 'onclick=|onload='
+  scripts/zskills_monitor/static/` returns no matches.
+- [ ] XSS grep (above) returns no lines.
+- [ ] No `setInterval`: `grep -nE 'setInterval\s*\('
+  scripts/zskills_monitor/static/app.js` returns no matches.
+- [ ] No external imports: `grep -nE 'import\s+.+from\s+["\x27]https?:'
+  scripts/zskills_monitor/static/app.js` returns no matches.
+- [ ] Plan detail modal: with a fixture plan having one phase with a
+  non-null `commit` and another with null, the modal shows
+  "Landed in <ref>" for the first row and "Pending" for the second.
+- [ ] Manual playwright-cli checklist documented in the phase report
+  covering: page loads; five panels visible; error banner renders
+  when state has errors; plan card double-click opens modal with
+  phase list; Esc closes modal; Tab reaches every card; Enter on
+  focused card opens its modal; killing the server shows the
+  Disconnected banner within one poll cycle.
 
 ### Dependencies
 
-- Phase 2's server serving `/api/state`, `/api/plan/<slug>`,
-  `/api/issue/<N>`, and static files.
-- Phase 1's JSON shape stable.
+- Phase 5's server (static + API routes).
+- Phase 4's snapshot shape stable (especially `errors[]`,
+  `branches[]`, `activity[]`).
 
 ---
 
-## Phase 4 — Interactive queue + write-back
+## Phase 7 — Interactive queue + write-back
 
 ### Goal
 
-Turn the Plans panel into three drag-and-drop columns (`Drafted`,
-`Reviewed`, `Ready (priority)`) and the Issues panel into two columns
-(`Triage`, `Ready`). Dropping a card changes its queue assignment;
-dropping within Ready changes priority. POST the full new state to
-`/api/queue`, which atomically rewrites `.zskills/monitor-state.json`.
-Keyboard fallback for non-drag users.
+Turn the Plans panel into three drag-and-drop columns
+(`Drafted`, `Reviewed`, `Ready`) and the Issues panel into two
+(`Triage`, `Ready`). Drop changes column / priority. POST the new
+full state to `/api/queue`, which atomically rewrites
+`.zskills/monitor-state.json`. Keyboard fallback for non-drag users.
 
 ### Work Items
 
-- [ ] Extend `app.js` to render Plans as 3 columns, Issues as 2
-  columns, using the same `data-column` / `data-slug` / `data-number`
-  hooks on card elements.
-- [ ] Implement HTML5 native drag: `draggable="true"`, `dragstart`,
-  `dragover` (with `preventDefault`), `drop`, `dragend` handlers.
-- [ ] On drop → build the new queue-state dict from current DOM order,
-  POST to `/api/queue`, on success let the next poll cycle confirm
-  (optimistic UI allowed but the server copy is authoritative).
-- [ ] Default column inference for plans NOT in state file: use the
-  table in Shared Schemas (no plan uses `status: draft` today; the
-  real statuses are `active`, `complete`, `conflict`, `landed`,
-  `pr-failed`, `pr-ready`). **Never write this inference back to
-  plan files.**
-- [ ] Default column inference for issues NOT in state file: `triage`.
-- [ ] Keyboard fallback per card: four buttons `↑ ↓ ← →` —
-  up/down reorder within column, left/right move to adjacent column.
-  Buttons are standard `<button>` elements in tab order.
-- [ ] ARIA: each column is a plain `<ul role="list">` (or bare `<ul>`
-  — `role="list"` is only needed if CSS removes the default role),
-  each card is `<li role="listitem">`. Do NOT use `role="listbox"` /
-  `role="option"` here — the APG listbox pattern
-  (https://www.w3.org/WAI/ARIA/apg/patterns/listbox/) forbids
-  interactive children inside options, and each card contains four
-  `<button>` controls. Column header has `id="col-ready-label"`
-  referenced by `aria-labelledby` on the `<ul>`. After each successful
-  move, announce via `aria-live="polite"` element (e.g. `"Moved Foo
-  Plan to Ready, position 2 of 5"`).
-- [ ] Verify that Phase 1's `collect_snapshot` already annotates plans
-  with `queue.column` / `queue.index` (it does — see Phase 1 Work
-  Items + Acceptance). No additional Phase 1 edits are needed from
-  this phase; if they appear necessary, that is a Phase 1 bug to
-  fix upstream.
-- [ ] Manual a11y test checklist added to phase report.
+- [ ] Extend `app.js` to render Plans as 3 columns and Issues as 2,
+  using `data-column` / `data-slug` / `data-number` hooks.
+- [ ] Implement HTML5 native drag. Behavioral contract: each card is
+  `draggable=true`; `dragstart` puts slug/number in `dataTransfer`;
+  drop zones implement `dragenter`/`dragleave`/`dragover`(preventDefault)/
+  `drop`. On drop, reorder DOM using a `clientY`-based insertion
+  point, build the queue dict from current DOM order, POST to
+  `/api/queue`, and on non-2xx revert immediately to the
+  last-known-good local state and announce the failure.
+- [ ] Default column inference for plans/issues NOT in state file
+  follows Shared Schemas. **Never write inference back to plan
+  files.**
+- [ ] Reconciliation. After a successful POST, suppress the next
+  poll cycle for `1.5s` and snap state to the POST response (which
+  echoes the canonical state). On POST failure, immediately revert
+  to last-known-good local state — do not wait for a poll. This
+  prevents the visible flicker where a stale GET arrives between
+  a user drag and the POST round-trip.
+- [ ] Keyboard fallback per card: four buttons `↑ ↓ ← →` (move
+  within column / between adjacent columns), each a real `<button>`
+  in tab order with `aria-label`.
+- [ ] ARIA: each column is `<ul role="list">` (interactive children
+  rule out the listbox pattern); each card is `<li role="listitem">`.
+  Column header has an `id` referenced by `aria-labelledby` on the
+  `<ul>`. After each successful move, append a non-empty
+  announcement to `#plans-live` (`aria-live="polite"`).
+- [ ] **Default-mode toggle** in the Plans panel header
+  (`Default mode: [Phase-by-phase | Finish (one PR)]`); click POSTs
+  `/api/queue` with the new `default_mode`.
+- [ ] **Per-row mode chip** on each `Ready` card (`phase` / `finish`);
+  click toggles the entry's `mode` via `/api/queue`. Chip styled
+  differently for inherit vs. explicit override. Drafted/Reviewed
+  cards have no chip.
+- [ ] **Run / Status widget** at the top of the Plans panel, polling
+  `/api/work-state` alongside `/api/state`. Render four states:
+  - `scheduled` → "Running every 4h · next fire 14:30 · [Stop]" (Stop
+    POSTs `/api/trigger` with `/work-on-plans stop`)
+  - `sprint` → "Sprint in progress: 1/3 plans done · current: foo-plan"
+  - `idle` + trigger configured → "[▶ Run top N]" button (POSTs
+    `/api/trigger`); small numeric input for N, defaults to 3
+  - `idle` + no trigger → "Copy and run: `/work-on-plans N <mode>`"
+    with copy button (uses current `default_mode`)
+  - stale-scheduled → "Schedule appears stale — restart with
+    `/work-on-plans every 4h`" (user re-issues manually)
+  - `stale-sprint` → "Sprint appears abandoned (last update Nm ago) ·
+    [Clear stale sprint state]" (button POSTs `/api/work-state/reset`)
+- [ ] Trigger-script-failure UI: on `/api/trigger` non-2xx other than
+  501, surface stderr as a dismissible toast.
+- [ ] Manual a11y test checklist documented in the phase report —
+  must cover tab/enter/esc, ↑↓←→ buttons, drag, two-tab concurrent
+  reorder, plan-file no-mutation invariant, default-mode toggle, and
+  per-row chip.
 
 ### Design & Constraints
 
-**State file shape:** see Shared Schemas (section at top of plan).
-Phase 4's UI triggers the first write by POSTing to Phase 2's
-`POST /api/queue` handler; the atomic write itself lives in Phase 2's
-`write_state_atomic` helper. Phase 1 / Phase 6A are readers. All phases
-share the single canonical schema.
+**State file shape.** See Shared Schemas. Phase 7 is the first
+writer; the atomic write helper lives in Phase 5's `server.py`.
+Phases 1, 3, and 4 are readers.
 
-**Concurrency model:** last-write-wins. Two browser tabs reordering
-simultaneously will each POST a full snapshot; the second POST wins.
-This is acceptable at single-user-local scale. Do **not** add locking,
-ETags, or merge logic. A brief UI flicker on reconciliation (next poll)
-is expected and acceptable.
+**Mode UI vs. data.** The default-mode toggle and per-row chip mutate
+`monitor-state.json` only — never `work-on-plans-state.json`. Mode
+selection at dispatch time happens in `/work-on-plans`, not the UI.
 
-**Plans panel DOM (replaces Phase 3's single list):**
+**Concurrency model.** Last-write-wins on the server; `_STATE_LOCK`
+serializes POSTs. "Last" = "last to commit on server clock," not
+user wall clock. Two tabs reordering is acceptable; UI flickers
+briefly, neither tab crashes. The plan does NOT add a per-tab
+"your changes were overwritten" warning UI — local-only single-user
+dashboard, the briefly-flickering reconciliation is treated as
+sufficient feedback.
 
-```html
-<section id="panel-plans" class="panel" aria-label="Plans">
-  <header><h2>Plans</h2></header>
-  <div class="columns">
-    <div class="column" data-column="drafted">
-      <h3 id="col-drafted-label">Drafted</h3>
-      <ul class="dropzone" data-column="drafted" role="list"
-          aria-labelledby="col-drafted-label"></ul>
-    </div>
-    <div class="column" data-column="reviewed">
-      <h3 id="col-reviewed-label">Reviewed</h3>
-      <ul class="dropzone" data-column="reviewed" role="list"
-          aria-labelledby="col-reviewed-label"></ul>
-    </div>
-    <div class="column" data-column="ready">
-      <h3 id="col-ready-label">Ready (priority)</h3>
-      <ul class="dropzone" data-column="ready" role="list"
-          aria-labelledby="col-ready-label"></ul>
-    </div>
-  </div>
-  <!-- Each card is an <li role="listitem"> with the four move buttons
-       as children; no role="option" because the APG listbox pattern
-       forbids interactive children inside options. -->
+**Plans panel DOM** (Phase 6's single list is replaced by a
+`<div class="columns">` wrapping three `<div class="column">`
+children, each containing an `<h3>` label + a `<ul class="dropzone"
+role="list" aria-labelledby="…">`). Each card is `<li
+role="listitem">` containing the card body plus a
+`<div class="card-controls" role="group" aria-label="Move this
+plan">` with the four `↑ ↓ ← →` buttons. Add `<div id="plans-live"
+aria-live="polite" class="sr-only"></div>` inside the panel for
+announcements.
 
-  <div id="plans-live" aria-live="polite" class="sr-only"></div>
-</section>
-```
-
-**Drag handler skeleton (`app.js` additions):**
-
-```js
-function wireDragForCard(card) {
-  card.draggable = true;
-  card.addEventListener('dragstart', (e) => {
-    e.dataTransfer.setData('text/plain', card.dataset.slug ||
-                                          card.dataset.number);
-    e.dataTransfer.effectAllowed = 'move';
-    card.classList.add('dragging');
-  });
-  card.addEventListener('dragend', () => card.classList.remove('dragging'));
-}
-
-function wireDragForZone(zone) {
-  zone.addEventListener('dragenter', (e) => {
-    e.preventDefault();
-    zone.classList.add('drop-hover');
-  });
-  zone.addEventListener('dragleave', (e) => {
-    // Only clear when leaving the zone itself, not a child.
-    if (e.target === zone) zone.classList.remove('drop-hover');
-  });
-  zone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    // Optional: compute insertion marker based on clientY
-  });
-  zone.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    zone.classList.remove('drop-hover');
-    const id = e.dataTransfer.getData('text/plain');
-    const card = findCardByIdentifier(id);
-    if (!card) return;
-    const before = computeInsertionSibling(zone, e.clientY);
-    zone.insertBefore(card, before);
-    const ok = await postQueue();
-    if (ok) {
-      announce(`Moved ${card.dataset.label || id} to `
-        + `${zone.dataset.column}, position `
-        + `${[...zone.children].indexOf(card) + 1} of ${zone.children.length}`);
-    }
-  });
-}
-
-async function postQueue() {
-  const body = buildQueueStateFromDOM();
-  const res = await fetch('/api/queue', {
-    method: 'POST',
-    // Origin header is sent automatically by the browser and checked
-    // server-side (see Phase 2 CSRF rules).
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    announce('Move failed — reverting on next sync');
-    return false;
-  }
-  return true;
-}
-```
-
-**Keyboard fallback buttons per card:**
-
-```html
-<div class="card-controls" role="group" aria-label="Move this plan">
-  <button aria-label="Move up"   data-move="up">↑</button>
-  <button aria-label="Move down" data-move="down">↓</button>
-  <button aria-label="Move to previous column" data-move="left">←</button>
-  <button aria-label="Move to next column"     data-move="right">→</button>
-</div>
-```
-
-**Manual a11y test checklist (must appear in phase report):**
-
-- [ ] Tab from document start reaches the first Plans card within 6
-  Tabs (header + column labels + card).
-- [ ] On a card, pressing Enter opens the detail modal.
-- [ ] On a card, focus moves to its `↑ ↓ ← →` buttons via Tab.
-- [ ] Clicking `↓` on a card moves it one slot down in the same
-  column, announces "Moved X to column, position N of M", and
-  `.zskills/monitor-state.json` reflects the new order.
-- [ ] Clicking `→` on a card in Drafted moves it to Reviewed (first
-  position).
-- [ ] Dragging a card between columns updates the state file.
-- [ ] Two browser tabs reordering: both persist their own POSTs; the
-  last one wins; neither crashes.
-- [ ] Plans not yet listed in state file default per the Shared
-  Schemas mapping: `active` + zero phases-done → `drafted`; `active`
-  + ≥1 phase done → `reviewed`; `conflict` / `pr-failed` →
-  `reviewed`; `complete` / `landed` / `pr-ready` → hidden. Verified
-  against a fixture repo with one plan per status value.
-- [ ] **No plan file in `plans/` has its frontmatter modified during
-  any drag/drop operation** — verified by `git diff plans/ | wc -l`
-  = 0 after a full drag-drop session.
-
-**Rules that apply to this phase in particular:**
-- **Never write plan frontmatter from the server.** The column state
-  lives exclusively in `.zskills/monitor-state.json`. Any code path
-  that looks like it might open a plan file for writing in `server.py`
-  is a bug — reject in review.
-- **Atomic writes only** for the state file (reuse Phase 2's
-  `write_state_atomic`).
-- **No optimistic deletion.** If a POST fails, the next poll cycle
-  restores the server-truth state; do not remove anything locally.
-- **No drag hints outside the Plans / Issues panels** — Worktrees and
-  Activity remain read-only.
+**Phase rules:**
+- **Never write plan frontmatter from the server.** Column state
+  lives only in `.zskills/monitor-state.json`. Any code path that
+  opens a plan file for writing in `server.py` is a bug.
+- Atomic writes only (Phase 5's helper).
+- No optimistic deletion. POST failure → revert local DOM to
+  last-known-good state immediately, then resume polling.
+- No drag hints outside Plans / Issues panels — Worktrees,
+  Branches, Activity remain read-only.
 
 ### Acceptance Criteria
 
-- [ ] Dragging a plan card between columns results in
-  `.zskills/monitor-state.json` containing the new column assignment
-  within 2 seconds (verified by diffing the file pre/post).
-- [ ] `.zskills/monitor-state.json` is valid JSON after 100 consecutive
-  POSTs from a test script (no partial writes — atomic tmp+replace
-  guarantees this).
-- [ ] **Concurrent POSTs** (race regression): 20 parallel `curl -X POST`
-  with distinct bodies complete without 5xx; the final state file is
-  valid JSON matching one of the posted bodies; no intermediate 0-byte
-  read is observed (stat the file after each response — `%s` > 0).
-- [ ] `git diff plans/` is empty after any drag-drop session (no plan
-  file mutation).
-- [ ] Keyboard-only: `↓` button moves card down one position; verified
-  by DOM inspection and state file diff.
-- [ ] `aria-live` announcement appears in `#plans-live` after each
-  successful move (verified by playwright-cli reading textContent).
-- [ ] POST with invalid shape (e.g., unknown column name) returns 400
-  and does NOT modify the state file.
-- [ ] Two-tab concurrent reorder test: after both tabs POST, the state
-  file matches whichever POST arrived last, and no error is thrown in
-  either tab's console.
+- [ ] Dragging a plan card between columns updates
+  `.zskills/monitor-state.json` within 2s (verify by diffing the
+  file pre/post).
+- [ ] State file is valid JSON after 100 consecutive POSTs.
+- [ ] Concurrent POSTs (20 parallel `curl`): all complete without
+  5xx, final state is valid JSON matching one of the bodies, no
+  intermediate 0-byte read observed.
+- [ ] `git diff plans/` is empty after any drag-drop session.
+- [ ] Keyboard-only: `↓` button moves card down one position;
+  verified by DOM + state-file diff.
+- [ ] `aria-live` announcement: after each successful move,
+  `#plans-live` contains non-empty text (length > 0; exact wording
+  not asserted).
+- [ ] Invalid POST (unknown column name) returns 400 and does NOT
+  modify the state file.
+- [ ] Two-tab last-write-wins: POST1 orders `[A,B,C]`, POST2 orders
+  `[C,B,A]` arriving ~1ms after POST1 (sequential `curl`s with
+  `&`); after both return, the state file matches POST2 (the later
+  writer). Final read is exactly one of the two payloads, never a
+  half-merged ordering.
+- [ ] POST failure: simulating a 500 on `/api/queue` causes the UI
+  to revert the dragged card to its previous slot within 200ms (no
+  reliance on the next 2s poll).
+- [ ] Default-mode toggle flips `default_mode` in the state file
+  (verify by JSON parse pre/post).
+- [ ] Per-row mode chip on a Ready card flips that entry's `mode`
+  (verify by JSON parse); chip on inherit vs. override visually
+  distinct (manual a11y check).
+- [ ] Run/Status widget renders the idle / sprint / scheduled /
+  stale-scheduled / stale-sprint states from a stubbed
+  `/api/work-state` response. The stale-sprint render exposes the
+  "Clear stale sprint state" button which POSTs
+  `/api/work-state/reset`.
+- [ ] Manual a11y checklist documented in the phase report.
 
 ### Dependencies
 
-- Phase 3's UI scaffold (panel layout, modal system).
-- Phase 2's `POST /api/queue` with strict validation.
-- Phase 1's `queue` annotation on plan / issue records.
-- Phase 6A reads this state file — must not change shape without
-  updating Phase 6A.
+- Phase 6's UI scaffold.
+- Phase 5's `POST /api/queue`, `GET /api/work-state`, `POST /api/trigger`.
+- Phase 4's `queue` annotation (with `mode` field).
+- Phases 1 and 3 read the state file — schema changes must update them.
 
 ---
 
-## Phase 5 — `/zskills-monitor` skill
+## Phase 8 — `/zskills-dashboard` skill
 
 ### Goal
 
-Expose the server as a first-class skill: `/zskills-monitor
-[start|stop|status]`. Start launches the server as a detached
-background process with a PID file. Stop sends SIGTERM (never
-`kill -9`). Status reports uptime + URL.
+Expose the server as a first-class skill: `/zskills-dashboard
+[start|stop|status]`. Start launches the server detached with a PID
+file. Stop sends SIGTERM (never `kill -9`). Status reports uptime + URL.
 
 ### Work Items
 
-- [ ] Create `skills/zskills-monitor/SKILL.md` with the frontmatter
-  shape below.
-- [ ] Implement the `start` mode: detect existing running instance via
-  PID file + `kill -0`; if running, print URL and exit. Otherwise,
-  launch server as detached subprocess.
-- [ ] Implement the `stop` mode: read PID file, send SIGTERM, wait ≤5s
-  polling `kill -0`; verify port is freed via `lsof -i :<port>`;
-  remove stale PID file if present.
-- [ ] Implement the `status` mode: read PID file; if process alive,
-  print URL, port, PID, uptime; if stale PID file, print a warning and
-  suggest `lsof -i :<port>`.
-- [ ] Mirror source to `.claude/skills/zskills-monitor/SKILL.md` via
-  a single `cp -r skills/zskills-monitor .claude/skills/` (batch copy,
-  never per-file Edit — see CLAUDE.md memory on permission storms
-  when editing `.claude/skills/` directly).
-- [ ] Tracking markers: per-invocation write
-  `fulfilled.zskills-monitor.<id>` under
-  `.zskills/tracking/zskills-monitor.<id>/`, where `<id>` is sanitized
-  via `scripts/sanitize-pipeline-id.sh`.
+- [ ] Create `skills/zskills-dashboard/SKILL.md` with the frontmatter
+  below.
+- [ ] Implement `start`, `stop`, `status` mode bodies per the
+  contracts below.
+- [ ] Mirror to `.claude/skills/zskills-dashboard/` via a single
+  `cp -r` (never per-file Edit on `.claude/skills/`).
+- [ ] Tracking markers: write
+  `fulfilled.zskills-dashboard.<id>` under
+  `.zskills/tracking/zskills-dashboard.<id>/` for **state-changing
+  invocations only** (`start`, `stop`). Skip for `status` (read-only)
+  to avoid flooding tracking with one subdir per status check.
+  `<id>` = `bash scripts/sanitize-pipeline-id.sh
+  "zskills-dashboard-$(date -u +%Y%m%dT%H%M%SZ)"`. Per
+  `docs/tracking/TRACKING_NAMING.md`, the subdir name IS the
+  pipeline-id (Option B layout).
+- [ ] Add `.zskills/dashboard-server.log` to `.gitignore` (this
+  phase owns the log; PID file's gitignore moved into Phase 5
+  alongside the state files).
+- [ ] Document `dashboard.work_on_plans_trigger` config field in
+  CHANGELOG/README with an example trigger script (no default script
+  is shipped — it is user-owned plumbing).
 
 ### Design & Constraints
 
@@ -1337,572 +1754,285 @@ background process with a PID file. Stop sends SIGTERM (never
 
 ```yaml
 ---
-name: zskills-monitor
-disable-model-invocation: false
+name: zskills-dashboard
+disable-model-invocation: true
 argument-hint: "[start|stop|status]"
 description: >-
-  Stand up a local web dashboard for this repo — plans, issues,
-  worktrees, tracking activity, and a drag-and-drop priority queue.
-  Starts a detached Python HTTP server on a port derived from
-  scripts/port.sh; stop sends SIGTERM. State lives in
-  .zskills/monitor-state.json. Usage: /zskills-monitor [start|stop|status].
+  Local web dashboard for this repo — plans, issues, worktrees,
+  branches, tracking activity, drag-and-drop priority queue.
+  Starts a detached Python HTTP server on a port from
+  scripts/port.sh; stop sends SIGTERM. State at
+  .zskills/monitor-state.json. Usage: /zskills-dashboard [start|stop|status].
 ---
 ```
 
-**Start mode (sequenced steps the skill body prescribes):**
+(`disable-model-invocation: true` matches the orchestrator-skill
+convention — `/fix-issues`, `/plans`, `/quickfix`, `/do`, `/commit`
+all do the same.)
 
-1. If `.zskills/monitor-server.pid` exists:
-   a. Read the JSON PID file:
-      `PID=$(jq -r .pid .zskills/monitor-server.pid)` and
-      `PORT=$(jq -r .port .zskills/monitor-server.pid)` (same idiom as
-      Stop mode — do NOT re-run `scripts/port.sh`, whose output can
-      diverge between start and the prior start if `cwd` or `DEV_PORT`
-      differs).
-   b. `kill -0 $PID` to check liveness.
-   c. If alive → print `Dashboard already running at http://127.0.0.1:$PORT/`
-      and exit 0.
-   d. If dead → print warning that PID file is stale; remove it;
-      continue.
-2. Compute port: `PORT=$(bash scripts/port.sh)`.
-3. Check port free:
-   `if lsof -iTCP:$PORT -sTCP:LISTEN >/dev/null; then
-     echo "Port $PORT busy — run 'lsof -i :$PORT' to investigate"; exit 2; fi`.
-4. Launch detached — the skill body runs **bash** (skills execute shell
-   commands, not Python), so the canonical form is:
+**PID-file format.** See Shared Schemas (`.env`-style key=value, read
+via `BASH_REMATCH` in one regex per field; never jq).
+
+**MAIN_ROOT anchoring.** All three modes (start/stop/status) resolve
+`MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)` as
+their first step and read/write the PID file as
+`$MAIN_ROOT/.zskills/dashboard-server.pid` — never cwd-relative. Without
+this anchor, invoking the skill from a worktree session would miss
+the PID file in the main repo and the modes would diverge.
+
+**Process-identity check (shared by start and stop).** Whenever a
+PID is read from the PID file, also run
+`ps -p $PID -o command=` and require the output to match
+`python3.*zskills_monitor.server`. If it does NOT match, treat the
+PID as stale or PID-reused: do NOT `kill` it; instead remove the
+PID file and continue.
+
+**Start mode contract.**
+1. If PID file exists: parse `pid`/`port` via `BASH_REMATCH`. `kill
+   -0 $PID`. If alive AND process-identity check matches → print
+   "already running at http://127.0.0.1:$PORT/" and exit 0.
+   Otherwise the PID is stale or PID-reuse → warn and remove the
+   file before continuing.
+2. Compute port: `PORT=$(bash scripts/port.sh)` (run from
+   `MAIN_ROOT`; `cd` first if needed so the path-derived port is
+   stable across invocations).
+3. Pre-flight: if `lsof -iTCP:$PORT -sTCP:LISTEN` shows another
+   holder, print the friendly busy message and exit 2.
+4. Launch detached:
    ```bash
-   mkdir -p .zskills
-   nohup python3 -m zskills_monitor.server \
-     > .zskills/monitor-server.log 2>&1 < /dev/null &
-   disown
+   mkdir -p "$MAIN_ROOT/.zskills"
+   ( cd "$MAIN_ROOT" && nohup python3 -m zskills_monitor.server \
+       > .zskills/dashboard-server.log 2>&1 < /dev/null & disown )
    ```
-   The `subprocess.Popen([..., start_new_session=True, ...],
-   stdout=<log>, stderr=STDOUT, stdin=DEVNULL)` form is documented
-   here only as a reference for test harnesses that launch the server
-   from Python. The skill does not use it.
-5. Sleep 500ms. Curl `http://127.0.0.1:$PORT/api/health`. If 200 OK:
-   print `Dashboard running at http://127.0.0.1:$PORT/`. Exit 0.
-6. If health check fails: print the last 20 lines of
-   `.zskills/monitor-server.log` and exit 1 — do NOT send SIGTERM
-   (there might be nothing running; log is the diagnostic).
-7. Verify detachment: `ps -o ppid= -p "$(cat .zskills/monitor-server.pid
-   | jq -r .pid)"` should print `1` (init) on Linux after
-   `start_new_session=True` / `disown`. This is logged to the skill
-   output but does not fail the start; it is assertion-tested in
-   Acceptance Criteria.
+5. Sleep 500ms; `curl -sf http://127.0.0.1:$PORT/api/health` and
+   verify `"status":"ok"` via `grep -q` (not jq). On success: print
+   the URL and exit 0. On failure: print the last 20 lines of the
+   log and exit 1 (do NOT send SIGTERM — there may be nothing
+   running).
 
-**Stop mode:**
+**Stop mode contract.**
+1. No PID file → print "No running monitor (no PID file)." Exit 0.
+2. Parse `pid`/`port` via `BASH_REMATCH`. `kill -0 $PID`; if dead,
+   remove stale PID file and exit 0.
+3. **Process-identity check** — `ps -p $PID -o command=` must match
+   `python3.*zskills_monitor.server`. If it does NOT match, print
+   "PID $PID does not appear to be zskills-monitor (matched:
+   <command>). Refusing to kill. Remove the PID file manually if
+   stale." Exit 1. (Symmetric with start mode; prevents killing an
+   unrelated process on PID-reuse.)
+4. `kill -TERM $PID`. Poll `kill -0 $PID` every 200ms for up to 5s.
+5. If still alive after 5s: print "Monitor did not exit within 5s.
+   Run 'lsof -i :$PORT' and stop manually; do NOT kill -9." Exit 1
+   (no escalation to SIGKILL — CLAUDE.md rule).
+6. Verify port free with `lsof -iTCP:$PORT -sTCP:LISTEN`. Remove
+   PID file. Exit 0.
 
-1. If `.zskills/monitor-server.pid` missing → print
-   `No running monitor (no PID file).` Exit 0 (idempotent).
-2. Read the PID file as JSON:
-   `PID=$(jq -r .pid .zskills/monitor-server.pid)` and
-   `PORT=$(jq -r .port .zskills/monitor-server.pid)`. The port is
-   read from the PID file, NOT re-computed via `bash scripts/port.sh`
-   — `port.sh`'s output can diverge between start and stop if `cwd`
-   or `DEV_PORT` changed, yielding a wrong `lsof` target.
-3. `kill -0 $PID`. If dead → remove stale PID file; exit 0.
-4. `kill -TERM $PID`.
-5. Wait up to 5s (poll `kill -0` at 200ms intervals).
-6. If still alive after 5s: print
-   `Monitor did not exit within 5s. Run 'lsof -i :$PORT' to
-   investigate; do NOT kill -9.` Exit 1. (Do not escalate to
-   SIGKILL — that is a CLAUDE.md rule violation.)
-7. Confirm port free: `lsof -iTCP:$PORT -sTCP:LISTEN`; print result.
-8. Remove PID file. Exit 0.
+**Status mode contract.**
+1. No PID file → "Monitor not running." Exit 0.
+2. Parse `pid`/`port`/`started_at` via `BASH_REMATCH`.
+3. `kill -0 $PID`. If dead: print "Monitor PID file is stale (PID
+   $PID not running). Run 'lsof -i :$PORT' to verify port is free,
+   then retry /zskills-dashboard start." Exit 1.
+4. Compute uptime from `started_at` (ISO-8601) using `date -d`
+   arithmetic; print URL, PID, uptime, log path.
 
-**Status mode:**
+**Detachment.** `nohup … & disown` on Linux re-parents to PID 1
+under most init systems. Acceptance verifies "process survives
+parent shell exit" — checked by `kill -0 $PID` from a NEW shell —
+without prescribing the specific reparent target (which varies:
+PID 1 with sysvinit, `systemd --user` with user namespaces, launchd
+on macOS).
 
-1. If no PID file: print `Monitor not running.` Exit 0.
-2. Read PID and port from the JSON PID file (same `jq` idiom as stop).
-3. `kill -0 $PID`.
-4. If alive: look up start time. The JSON PID file already contains
-   `started_at` (ISO-8601) — use that as the primary source, since it
-   is portable and recorded at actual bind-success time:
-   ```bash
-   STARTED=$(jq -r .started_at .zskills/monitor-server.pid)
-   # Uptime as human-readable "Nh Mm" via awk / date arithmetic.
-   ```
-   `ps -o lstart= -p $PID` is a portable (Linux + macOS) fallback if
-   the JSON file is missing the field. `/proc/$PID` mtime is
-   **avoided** — it is Linux-only and `stat -c` is not on macOS BSD.
-   Print:
-   ```
-   Monitor running
-     URL:    http://127.0.0.1:<port>/
-     PID:    <pid>
-     Uptime: <human>
-     Log:    .zskills/monitor-server.log
-   ```
-5. If dead: `Monitor PID file is stale (PID <N> not running).
-   Run 'lsof -i :<port>' to verify port is free; then retry
-   /zskills-monitor start.` Exit 1.
-
-**Tracking markers:**
-
-After every invocation, write
-`.zskills/tracking/zskills-monitor.<id>/fulfilled.zskills-monitor.<id>`
-with content:
-
-```
-skill: zskills-monitor
-id: <id>
-status: complete
-date: <ISO-8601>
-output: <start|stop|status result summary>
-```
-
-where `<id>` = sanitized via `bash scripts/sanitize-pipeline-id.sh
-"zskills-monitor-$(date -u +%Y%m%dT%H%M%SZ)"`. **Never construct the
-pipeline-id subdir path by string concatenation without sanitizing**
-(CLAUDE.md rule).
-
-**Mirror to `.claude/skills/` — one command, not per-file Edit:**
+**Mirror.** One command at the end of the phase:
 
 ```bash
-rm -rf .claude/skills/zskills-monitor
-cp -r skills/zskills-monitor .claude/skills/zskills-monitor
+rm -rf .claude/skills/zskills-dashboard && \
+  cp -r skills/zskills-dashboard .claude/skills/zskills-dashboard
 ```
 
-Run this once at the end of the phase — never Edit files under
-`.claude/skills/` directly (memory: permission storm).
-
-**Rules that apply to this phase in particular:**
-- **No `kill -9` / `killall` / `pkill` / `fuser -k`** — anywhere in the
-  skill body. Only SIGTERM. If SIGTERM fails within 5s, report and bail
-  out, do not escalate.
-- **No `2>/dev/null` on fallible ops.** `kill -0` failure is expected
-  (process is dead), so its stderr is harmless — but do not silence it
-  on `kill -TERM`, `rm`, or the `cp -r` mirror step.
-- **Verify after state change.** After `stop`: verify PID gone via
-  `kill -0` and port free via `lsof`. After `start`: verify via
-  `curl /api/health`. Do not declare success without verification.
-- **Do not commit `.zskills/monitor-server.log`, `.pid`, or
-  `monitor-state.json`.** `.gitignore` does NOT cover these today
-  (verified: the current `.gitignore` only lists `.zskills/tracking/`
-  and `.zskills-tracked`). Phase 2's Work Items include adding the
-  three entries to `.gitignore`; do not defer that work to this phase.
-  After Phase 2 lands, `git check-ignore .zskills/monitor-server.pid`
-  exits 0.
+**Phase rules:**
+- No `kill -9` / `killall` / `pkill` / `fuser -k` anywhere.
+- No jq in the skill body (Shared Schemas — `BASH_REMATCH` only).
+- No `2>/dev/null` on fallible operations except where the failure
+  is the expected branch (e.g. `kill -0` to detect a dead PID).
+- Verify after every state change (start → curl health; stop →
+  `kill -0` + `lsof`).
 
 ### Acceptance Criteria
 
-- [ ] `skills/zskills-monitor/SKILL.md` exists with the specified
+- [ ] `skills/zskills-dashboard/SKILL.md` exists with the specified
   frontmatter.
-- [ ] `.claude/skills/zskills-monitor/SKILL.md` exists and is
-  byte-identical to the source (`diff -q` returns 0).
-- [ ] `/zskills-monitor start` (or equivalent test harness) creates
-  `.zskills/monitor-server.pid` and `/api/health` returns 200 within
-  1s of completion.
-- [ ] `/zskills-monitor status` after start prints a line matching
-  `^Monitor running`.
-- [ ] `/zskills-monitor stop` removes `.zskills/monitor-server.pid`
-  and frees the port within 5s.
+- [ ] `diff -q skills/zskills-dashboard/SKILL.md
+  .claude/skills/zskills-dashboard/SKILL.md` returns 0.
+- [ ] `grep -nE '\bjq\b' skills/zskills-dashboard/SKILL.md` returns 0
+  matches.
 - [ ] `grep -nE '\bkill\s+-9|killall|pkill|fuser\s+-k'
-  skills/zskills-monitor/SKILL.md` returns no matches.
-- [ ] Running `start` twice in a row does not create a second server
-  — the second invocation detects the live PID and prints the URL
-  without launching.
-- [ ] Running `stop` twice is idempotent — the second run prints
-  `No running monitor (no PID file).` and exits 0.
-- [ ] Tracking marker is written under
-  `.zskills/tracking/zskills-monitor.<sanitized-id>/fulfilled.zskills-monitor.<sanitized-id>`
-  with valid `skill:`/`id:`/`status:`/`date:` fields after every
-  invocation.
-- [ ] **Detachment** (concrete survival test): start the server in one
-  bash session; exit that session; in a NEW bash session, assert:
-  (a) `jq -r .pid .zskills/monitor-server.pid` points at a live
-  process (`kill -0` returns 0); (b) `ps -o ppid= -p "$PID"` prints
-  `1` (Linux init; macOS launchd behaves equivalently — parent ≠
-  original session shell); (c) `curl -sf
-  http://127.0.0.1:$(jq -r .port .zskills/monitor-server.pid)/api/
-  health | jq -e '.status == "ok"'` exits 0.
+  skills/zskills-dashboard/SKILL.md` returns 0 matches.
+- [ ] `start` writes a PID file and `/api/health` returns 200 within
+  1s; `status` after start prints `^Monitor running`.
+- [ ] PID-file shape: `grep -qE '^pid=[0-9]+$'
+  .zskills/dashboard-server.pid && grep -qE '^port=[0-9]+$' … &&
+  grep -qE '^started_at=' …`.
+- [ ] `stop` removes the PID file and frees the port within 5s.
+- [ ] `start` twice → second run detects live PID + matching
+  command name and prints the URL without launching a duplicate.
+- [ ] `stop` twice → second run prints the no-PID-file message,
+  exits 0.
+- [ ] **Stop mode PID-mismatch defense.** Write a PID file pointing
+  at a long-running unrelated process (e.g. a sleep loop with a
+  known PID); run `/zskills-dashboard stop` and verify it prints
+  the mismatch diagnostic, does NOT kill the unrelated process,
+  and exits 1.
+- [ ] State-changing tracking marker: after `start` (or `stop`),
+  `.zskills/tracking/zskills-dashboard.<sanitized-id>/
+  fulfilled.zskills-dashboard.<sanitized-id>` exists with
+  `skill:`/`id:`/`status:`/`date:` fields. After `status` no new
+  marker is written.
+- [ ] Detachment survival: in a NEW shell after the launching shell
+  exited, `kill -0 $(grep -oE '^pid=[0-9]+'
+  .zskills/dashboard-server.pid | cut -d= -f2)` returns 0 AND
+  `curl -sf http://127.0.0.1:$PORT/api/health | grep -q '"status"'`
+  exits 0.
+- [ ] PID-reuse defense: a PID file pointing at a non-monitor
+  process (e.g. `bash`) is treated as stale; `start` does not
+  print "already running" against it.
 
 ### Dependencies
 
-- Phase 2's server (launch target) and `.gitignore` updates.
-- `scripts/port.sh` (path-derived port hash + `DEV_PORT` override).
-- `scripts/sanitize-pipeline-id.sh` — already present in the repo
-  (verified: `ls scripts/sanitize-pipeline-id.sh` returns the file);
-  use via `bash scripts/sanitize-pipeline-id.sh "$RAW_ID"`.
+- Phase 5's server (launch target).
+- `scripts/port.sh`.
+- `scripts/sanitize-pipeline-id.sh`.
+- `lsof`, `kill`, `ps` (standard on supported Linux + macOS).
 - `.zskills/` writable.
-- `lsof`, `kill`, `ps`, `jq` present (standard on all supported
-  Linux + macOS hosts).
 
 ---
 
-## Phase 6 — `/work-on-plans` skill + remove `/plans work`
-
-This phase has two independent sub-parts. 6A is an addition; 6B is a
-removal. Both must land together so the skill catalog and user-facing
-CLI stay consistent.
+## Phase 9 — Migrate `/plans rebuild` to Python aggregator
 
 ### Goal
 
-(A) Ship `/work-on-plans` — a batch executor that reads the
-monitor-owned ready queue and dispatches `/run-plan <plan> auto` per
-entry, modeled after `/fix-issues`. (B) Remove the now-redundant
-`work`, `stop`, and `next-run` modes from `/plans` SKILL.md,
-argument-hint, and all downstream references (README, CHANGELOG,
-PRESENTATION).
+Eliminate the duplicated classifier between `/plans rebuild` (prose
+spec in `skills/plans/SKILL.md`) and Phase 4's
+`scripts/zskills_monitor/collect.py`. After this phase
+`/plans rebuild | next | details` continues to expose the same CLI
+surface to users, but its implementation reads classification from
+the Python aggregator instead of restating the rules in skill prose.
+Single source of truth for plan classification: `collect.py`.
 
-### Work Items — 6A (`/work-on-plans`)
+### Work Items
 
-- [ ] Create `skills/work-on-plans/SKILL.md` with frontmatter.
-- [ ] Implement CLI parse: `N [auto|continue]`, `all [auto|continue]`,
-  `every SCHEDULE`, `stop`, `next`.
-- [ ] Implement "sync" sub-step: read `.zskills/monitor-state.json`
-  (canonical schema — see Shared Schemas), extract `plans.ready` in
-  order. If the file does not exist: treat as an empty state
-  (`{"plans":{"ready":[]}, ...}`) and print:
-  `No monitor state file found. The ready queue is empty — start
-  the monitor with /zskills-monitor start and drag plans to Ready.`
-  Exit 0 (do NOT raise `FileNotFoundError`). If the file is
-  unparseable JSON: print the path and exit 1 with a diagnostic; do
-  NOT silently ignore.
-- [ ] Implement "resolve" sub-step: map each ready-queue slug back to
-  `plans/<ORIGINAL_FILE>.md` by scanning `plans/*.md` once and
-  computing each file's slug via the same rule Phase 1 used; build a
-  slug → path dict; fail loud if a queued slug has no matching file.
-- [ ] Implement "dispatch" sub-step: per plan, invoke
-  `/run-plan plans/<FILE>.md auto` via the **Skill tool** (see
-  Dispatch mechanism subsection below). **No landing-mode flag** —
-  `/run-plan` itself resolves from its own argument + config rules
-  (per verified `skills/run-plan/SKILL.md` behavior).
-- [ ] Implement failure policy: stop on first `/run-plan` failure
-  unless `continue` flag is set. Empty-args behavior: print usage
-  string and exit 0 (do NOT default-run anything).
-- [ ] Implement `every SCHEDULE`: same cron self-registration pattern
-  as `/fix-issues` — treat as in-session cron; each run re-registers.
-- [ ] Implement `stop`: cancel the `/work-on-plans` cron if any.
-- [ ] Implement `next`: print when the next scheduled run fires.
-- [ ] Tracking: write `fulfilled.work-on-plans.<sprint-id>` under
-  `.zskills/tracking/work-on-plans.<sprint-id>/` on each invocation
-  (sanitized id).
-- [ ] Mirror `skills/work-on-plans` → `.claude/skills/work-on-plans`
-  via `cp -r` (batch, not Edit).
-
-### Work Items — 6B (remove `/plans work`)
-
-- [ ] Edit `skills/plans/SKILL.md`:
-  - Line 4: change `argument-hint` from
-    `"[rebuild | next | details | work N [auto] [every SCHEDULE] [now]] | stop | next-run"`
-    to `"[rebuild | next | details]"`.
-  - Lines 7–8 (description): remove the "batch execution" sentence
-    and the `/plans [... work N ...]` usage example; replace with
-    "View plan status, find the next ready plan. For batch execution,
-    see `/work-on-plans`."
-  - Line 11 (H1): change `# /plans [rebuild | next | details | work N]
-    — Plan Dashboard & Executor` to `# /plans [rebuild | next |
-    details] — Plan Dashboard` (drop "& Executor").
-  - Lines 23–25 (mode summary bullets): delete the three bullets for
-    `work`, `stop`, `next-run` entirely. Replace with a single
-    pointer: "- **For batch execution:** see `/work-on-plans`."
-  - **Do not** delete any `## Mode:` section — there are none for
-    `work`/`stop`/`next-run` (they appear only in the mode-summary
-    bullets at the top; verified: `grep "^## " skills/plans/SKILL.md`
-    shows only Show, Details, Rebuild, Next + tracker sub-headings).
-- [ ] Edit `README.md` skill catalog (verified: the string `/plans
-  work` does NOT appear in README.md — only `plans` appears on lines
-  78, 79, 81; line 81 reads
-  `| /plans | Plan dashboard: index, status tracking, priority
-  ranking, batch execution |`). Two edits:
-  1. Change the `/plans` row to remove "batch execution":
-     `| /plans | Plan dashboard: index, status tracking, priority
-     ranking |`.
-  2. Add a new row directly beneath the `/plans` row:
-     `| /work-on-plans | Batch-execute prioritized ready queue from
-     the monitor dashboard |`.
-- [ ] Edit `CHANGELOG.md`: add entry
-  `### Migration — /plans work removed`
-  explaining that batch plan execution moved to `/work-on-plans` and
-  that users running `/plans work N` should now run
-  `/work-on-plans N`. List the affected skills.
-- [ ] Edit `PRESENTATION.html` line 504 (example
-  `<code>/plans work 3 auto every 6h</code>`): replace with
-  `<code>/work-on-plans 3 auto every 6h</code>`.
+- [ ] Edit `skills/plans/SKILL.md`'s `## Mode: Rebuild` section to
+  invoke the Phase 4 aggregator. The new prose instructs the
+  implementing agent to:
+  1. Run `python3 -m zskills_monitor.collect`
+     (`collect_snapshot(repo_root)`) and parse the resulting JSON.
+  2. Group `snapshot.plans[]` into the index sections (Ready,
+     Active, Blocked, Drafted, Reviewed, etc.) using the
+     `status` / `phases_done` fields already computed by
+     `collect.py`.
+  3. Render `plans/PLAN_INDEX.md` from the grouped data, preserving
+     the existing index file shape (header, sections, last-rebuilt
+     timestamp).
+  - The existing prose-spec classification rules in `Mode: Rebuild`
+    are removed (they now live in `collect.py`'s plan parsing +
+    default-column inference).
+- [ ] Update `## Mode: Next` and `## Mode: Details` similarly: read
+  `collect_snapshot()` instead of re-parsing plan frontmatter. Keep
+  user-visible behavior identical.
+- [ ] Add a sanity test under `tests/test_plans_rebuild_uses_collect.sh`
+  that runs `/plans rebuild` (or invokes the same code path) and
+  asserts `plans/PLAN_INDEX.md` is regenerated and references the
+  same set of plans `python3 -m zskills_monitor.collect` reports.
+  Output goes to `$TEST_OUT/.test-results.txt`. Register in
+  `tests/run-all.sh`.
 - [ ] Mirror `skills/plans` → `.claude/skills/plans` via `cp -r`.
 
-### Design & Constraints — 6A
+### Design & Constraints
 
-**Frontmatter (verbatim):**
+`/plans` is `disable-model-invocation: true` and the rebuild logic
+is implemented by the parent agent reading the skill prose. The
+migration is a prose rewrite, not new code: the agent's instructions
+change from "read plan frontmatter, classify per these rules" to
+"shell out to `python3 -m zskills_monitor.collect`, then group the
+returned plans into index sections." The Python aggregator's
+`slug_of()`, `parse_plan()`, and default-column inference are
+sufficient to drive the index render.
 
-```yaml
----
-name: work-on-plans
-disable-model-invocation: true
-argument-hint: "N [auto] [continue] | all [auto] [continue] | every SCHEDULE | stop | next"
-description: >-
-  Batch-execute the prioritized ready queue built in the monitor
-  dashboard. Reads .zskills/monitor-state.json (plans.ready) in order
-  and dispatches /run-plan <plan> auto for each. Mirrors /fix-issues
-  for bugs — same scheduling, same failure policy, same reporting.
-  Usage: /work-on-plans N [auto] [continue] | all | every SCHEDULE |
-  stop | next.
----
-```
+**No CLI surface change.** `/plans bare | rebuild | next | details`
+keep their argument-hint, descriptions, and user-visible output
+unchanged. Migration is internal.
 
-**Slug → file path resolution (single source of truth):**
+**Standalone-callable dependency.** This phase relies on Phase 4's
+**Standalone-callable invariant** (Phase 4 Goal): `collect.py` must
+be importable and runnable independent of `server.py`. `/plans
+rebuild` invokes the collector via the CLI
+(`python3 -m zskills_monitor.collect`) — no HTTP server is required.
+If the CLI invocation fails (module missing, import error, non-zero
+exit), `/plans rebuild` reports the error to the user and exits
+non-zero — there is no fallback to a legacy bash classifier.
 
-```python
-# Same rule as Phase 1 collect.py
-def slug_of(plan_path: Path) -> str:
-    name = plan_path.stem          # basename without .md
-    s = name.lower().replace("_", "-")
-    s = re.sub(r"[^a-z0-9-]", "", s)
-    return s
-
-# Build the reverse dict
-def build_slug_index(plans_dir: Path) -> dict[str, Path]:
-    out = {}
-    for p in sorted(plans_dir.glob("*.md")):
-        out[slug_of(p)] = p
-    return out
-```
-
-If a ready-queue slug is not in the index: fail the entire run with:
-
-```
-/work-on-plans: queued slug '<slug>' has no matching plan file in plans/.
-The monitor state file references a plan that no longer exists on disk.
-Open the dashboard to remove it from the queue, or edit
-.zskills/monitor-state.json directly.
-```
-
-**Dispatch mechanism (pinned — NOT "same as /fix-issues"):**
-
-`/fix-issues` does NOT dispatch `/run-plan` — it dispatches `/draft-plan`
-for skipped issues and uses the Agent (Task) tool directly for per-issue
-worktree fix agents (verified in `skills/fix-issues/SKILL.md`). The
-"pattern /fix-issues uses" that this plan inherits is the
-**CLI surface + scheduling + failure policy + reporting** — NOT the
-dispatch target.
-
-For invoking `/run-plan` from `/work-on-plans`, the mechanism is:
-
-- `/work-on-plans` runs at top level (parent session). It dispatches
-  `/run-plan plans/<FILE>.md auto` via the **Skill tool**
-  (`skill: run-plan`, `args: "plans/<FILE>.md auto"`).
-- It does NOT spawn an Agent (Task) subagent that then calls the Skill
-  tool — per CLAUDE.md memory `project_subagent_architecture`, Claude
-  Code subagents cannot themselves dispatch subagents, and Skill is
-  a top-level-only primitive in that architecture. Running
-  `/work-on-plans` at top level and having IT call `Skill` is the
-  only supported path.
-- If `/work-on-plans` is itself invoked from inside a subagent context
-  (no `Agent` tool visible), it cannot dispatch; document this case
-  by printing `/work-on-plans must run at top-level to dispatch
-  /run-plan (subagents cannot invoke Skill)` and exiting 2. This
-  mirrors the guidance in `skills/fix-issues/SKILL.md` "Dispatch
-  protocol" where the orchestrator checks for the presence of the
-  Agent tool.
-
-**Dispatch loop:**
-
-For each plan in `plans.ready[0:N]` (in order):
-
-1. Record the dispatch: create a `step.work-on-plans.<sprint-id>.<slug>`
-   marker with `status: started`.
-2. Invoke `Skill(skill="run-plan", args="plans/<FILE>.md auto")`.
-3. On success: mark the step `status: complete`.
-4. On failure:
-   - Without `continue` flag → stop immediately, write a summary
-     report to `reports/work-on-plans-<sprint-id>.md`, exit non-zero.
-   - With `continue` flag → log failure, continue to next plan.
-
-**Landing-mode policy:**
-
-`/work-on-plans` passes NO landing-mode flag to `/run-plan`. `/run-plan`
-resolves its landing mode from `$ARGUMENTS` (`pr` / `direct`) then
-`.claude/zskills-config.json` `execution.landing` then the
-`cherry-pick` fallback — as verified in
-`skills/run-plan/SKILL.md:75–105`. `/run-plan` does NOT currently
-parse the plan-body Landing-mode hint; the monitor displays that
-hint for the user as informational metadata only. If plan-body hints
-should drive actual landing, that is a `/run-plan` change owned by a
-different plan, not this one.
-
-**CLI parsing — priority order (mirrors `/fix-issues`):**
-- **No args** → print usage string, exit 0 (do NOT default to `next`
-  or `1 auto`; explicit is better than implicit).
-- `stop` (case-insensitive) → highest precedence
-- `next` → second highest
-- `every <SCHEDULE>` → scheduling mode (implies `auto`)
-- Otherwise: `N` (integer) or `all`, optionally with `auto` and/or
-  `continue`
-
-**Failure-policy default:** stop on first failure. `continue` is opt-in.
-
-**Cron self-registration pattern:** same as `/fix-issues` — in-session
-cron registered via `CronCreate`, self-perpetuating (each run
-re-registers). Document that the cron dies with the Claude Code session.
-
-**Tracking markers:**
-- `fulfilled.work-on-plans.<sprint-id>` — one per invocation, at end.
-- `step.work-on-plans.<sprint-id>.<slug>` — one per dispatched plan.
-
-All IDs sanitized via `scripts/sanitize-pipeline-id.sh`.
-
-### Design & Constraints — 6B
-
-**Exact edits to `skills/plans/SKILL.md` (re-verified: the modes are
-stubs named in the argument-hint and mode-summary only — NO dedicated
-`## Mode: Work`, `## Mode: Stop`, or `## Mode: Next-Run` sections
-exist in the file, and no Step / Rule body elsewhere references these
-three modes by name).** Relevant current lines (from
-`grep "^## " skills/plans/SKILL.md`):
-
-```
-27:## Mode: Show (bare `/plans`)
-61:## Mode: Details (`/plans details`)
-92:## Mode: Rebuild (`/plans rebuild`)
-234:## Mode: Next (`/plans next`)
-250:## Key Rules
-```
-
-Leave lines 27, 61, 92, 234, 250 UNCHANGED. Only change frontmatter
-and mode-summary bullets (lines 4, 7–8, 11, 23–25).
-
-**Enumeration check — blocking acceptance:**
-
-Before declaring Phase 6B complete, re-run:
-
-```bash
-grep -niE '\bwork\s+N\b|\bnext-run\b|/plans\s+(work|stop|next-run)' \
-  skills/plans/SKILL.md
-```
-
-This must return zero lines. `\bstop\b` alone is not checked (too
-many legitimate uses of the word "stop"). If any matches appear,
-the removal was incomplete — the mode-summary or argument-hint
-still references a deleted mode, OR a mode body that research missed
-actually exists. Fix before landing.
-
-**Add a reconciliation note to `/plans bare`:**
-
-The `/plans bare` output (lines 36–51 of `skills/plans/SKILL.md`)
-still classifies plans as "Ready to Run" / "In Progress" / etc. —
-parallel vocabulary to the monitor's `drafted/reviewed/ready`. Add a
-one-sentence footer to the bare output:
-
-> Note: this ranking is independent of the monitor dashboard's Ready
-> queue. For interactive prioritization, open /zskills-monitor.
-
-This is a tiny copy change; it prevents user confusion when the two
-surfaces disagree.
-
-**PRESENTATION.html — verified existing reference:**
-
-```
-504:      <td><code>/plans work 3 auto every 6h</code></td>
-```
-
-Replace the code content only; do not restructure the table.
-
-**Rules that apply to this phase in particular:**
-- **Never edit `.claude/skills/` directly.** Edit `skills/` source,
-  then `cp -r skills/plans .claude/skills/plans && cp -r
-  skills/work-on-plans .claude/skills/work-on-plans`.
-- **6A and 6B must land in the same push** (not necessarily the same
-  commit). Two commits are acceptable:
-  - (a) `/work-on-plans: add skill + mirror + tracker`
-  - (b) `/plans: remove work/stop/next-run + migrate README/CHANGELOG/
-    PRESENTATION`
-  Either they are both on the pushed branch together, or neither is.
-  CLAUDE.md's "feature-complete commit" rule is about dependency
-  bundles (an imported file must ship with its importer); it does
-  NOT require every co-shipped doc to be in one commit. Splitting
-  helps pre-commit hooks that size-limit per-commit file counts.
-- **Do not run `/plans rebuild`** as part of this phase — that
-  touches `plans/PLAN_INDEX.md` which is orthogonal, and leaving it
-  out keeps the commit focused.
+**Pre-backwards-compat note.** Per
+`feedback_no_premature_backcompat`, this phase is a clean cut: the
+old prose classifier is removed entirely, not preserved alongside
+the new path.
 
 ### Acceptance Criteria
 
-- [ ] `skills/work-on-plans/SKILL.md` exists with the specified
-  frontmatter (`grep '^name: work-on-plans' skills/work-on-plans/SKILL.md`
-  matches).
-- [ ] `.claude/skills/work-on-plans/SKILL.md` exists and is
-  byte-identical to source.
-- [ ] `/work-on-plans` with **no args** prints the usage string and
-  exits 0 (does not default-run anything).
-- [ ] `/work-on-plans next` with an empty ready queue prints
-  `No plans in the ready queue.` and exits 0.
-- [ ] `/work-on-plans next` with **no state file present** prints the
-  "No monitor state file found ..." message (see Work Items) and
-  exits 0, without raising `FileNotFoundError`.
-- [ ] `/work-on-plans 1 auto` with one plan in `plans.ready` dispatches
-  `/run-plan plans/<FILE>.md auto` via the Skill tool (no Agent / Task
-  spawn) — verified by presence of
-  `step.work-on-plans.<sprint-id>.<slug>` marker.
-- [ ] A queued slug with no matching file yields the fail-loud error
-  message from Design & Constraints (no silent skip).
-- [ ] Enumeration check (blocking):
-  `grep -niE '\bwork\s+N\b|\bnext-run\b|/plans\s+(work|stop|next-run)'
-  skills/plans/SKILL.md` returns zero lines.
-- [ ] `skills/plans/SKILL.md` argument-hint equals exactly
-  `"[rebuild | next | details]"`.
-- [ ] `grep -nE '^\| `?/work-on-plans`? ' README.md` returns exactly
-  one row (the new catalog entry). `grep -niE
-  '\bbatch\s+execution\b' README.md | grep -i plans` returns zero
-  lines (the `/plans` row's phrase was removed).
-- [ ] `CHANGELOG.md` contains a `Migration — /plans work removed` entry
-  (or equivalently-titled section) introduced in this commit.
-- [ ] `grep -n '/plans work' PRESENTATION.html` returns no matches
-  (line 504 was migrated).
+- [ ] `skills/plans/SKILL.md`'s `## Mode: Rebuild` section invokes
+  `python3 -m zskills_monitor.collect` (verified by `grep -nE
+  'zskills_monitor\.collect|collect_snapshot' skills/plans/SKILL.md`
+  returning at least one match).
+- [ ] The old prose classifier rules are removed: `grep -nE
+  'classify as \*\*Ready\*\*|classify every \`\.md\`'
+  skills/plans/SKILL.md` returns no matches (or only matches
+  inside the new wrapper prose, not the old algorithm).
 - [ ] `diff -q skills/plans/SKILL.md .claude/skills/plans/SKILL.md`
-  returns 0 (mirror synced).
-- [ ] `diff -q skills/work-on-plans/SKILL.md
-  .claude/skills/work-on-plans/SKILL.md` returns 0 (mirror synced).
-- [ ] Tracking marker
-  `fulfilled.work-on-plans.<sprint-id>` appears under
-  `.zskills/tracking/work-on-plans.<sprint-id>/` after a test
-  invocation.
+  returns 0.
+- [ ] `tests/test_plans_rebuild_uses_collect.sh` exits 0 and is
+  registered in `tests/run-all.sh`. The test verifies that the
+  plan-set in the regenerated `plans/PLAN_INDEX.md` matches the
+  plan-set in `python3 -m zskills_monitor.collect`'s output.
+- [ ] Smoke: invoking `/plans rebuild` regenerates
+  `plans/PLAN_INDEX.md` with a fresh "Last rebuilt:" timestamp and
+  no Python tracebacks.
+- [ ] User-visible output of `/plans bare`, `/plans next`, and
+  `/plans details` is unchanged in shape (manual spot-check
+  documented in the phase report).
 
 ### Dependencies
 
-- Phase 4's `.zskills/monitor-state.json` (input data).
-- `/run-plan` skill (dispatch target — must accept
-  `<plan-path> auto` signature).
-- `scripts/sanitize-pipeline-id.sh` (tracking id sanitization).
-- `/fix-issues` skill body (reference pattern for CLI parsing,
-  scheduling, reporting — read but not modified).
-- 6A and 6B must land in a single commit (see in-phase rule above).
+- Phase 4 (`collect_snapshot`, `slug_of`, fixture parity tests must
+  exist and pass).
+- `skills/plans/SKILL.md` source (Phase 2 already trimmed the retired
+  modes; this phase rewrites Rebuild/Next/Details bodies).
+- No dependency on Phases 5–8 (the dashboard server is not invoked
+  by `/plans rebuild`).
 
----
+## Drift Log
 
-## Plan Quality
+Structural comparison of the plan as originally drafted vs current state.
 
-**Drafting process:** `/draft-plan` with 2 rounds of adversarial review
-**Convergence:** Converged at round 2 (findings trajectory 40 → 10 → all resolved)
-**Remaining concerns:** None substantive. Minor compression opportunities deferred (`/tmp/draft-plan-refiner-round-2.md` F8) judged below threshold.
+The plan was added in commit "chore(plans): add four new plans" (initial introduction) and has not been previously executed. No completed phases — all phases reviewed as remaining. No structural drift between as-drafted and current state; the round-1 refinement adjusted plan text directly without divergence from any prior shipped artifact.
+
+| Phase | Planned | Actual | Delta |
+|-------|---------|--------|-------|
+| 1–8   | as drafted | as drafted | No drift — no execution yet |
+| 9     | (did not exist) | New phase added in /refine-plan round 1 | +1 phase: migrate /plans rebuild to call Phase 4 aggregator |
+
+## Plan Review
+
+**Refinement process:** /refine-plan with 2 rounds of adversarial review (reviewer + devil's advocate per round)
+**Convergence:** Converged at round 2 — both reviewer and DA reported zero substantive new issues
+**User-surfaced concerns:** Both A (Phase 4 standalone-callable not explicitly stated) and B (no migration phase for /plans rebuild) addressed in round 1.
+
+**Remaining concerns (non-blocking polish, not addressed):**
+- Phase 4 Design wording at the "snapshot shape consumed by Phases 5–7 and Phase 9" reference is imprecise — Phase 9 consumes the `collect_snapshot()` Python function via CLI, not the JSON snapshot. Documentation imprecision; no functional impact.
+- Phase 9 AC 6 manual spot-check could be more automated (current AC verifies output shape via documented manual check; could be replaced with structured shape assertions).
+- ~~Phase 9 Design does not document the failure behavior if `collect.py` is unavailable.~~ Resolved post-convergence: Design & Constraints now states `/plans rebuild` reports the error and exits non-zero with no legacy-bash fallback.
 
 ### Round History
-| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
-|-------|-------------------|---------------------------|----------|
-| 1 | 17 (4 critical, 8 major, 5 minor) | 23 (6 critical, 11 major, 6 minor) | 39 fixed / 1 justified (phase-4 split declined per user decision) |
-| 2 | 8 (0 critical, 2 major, 3 minor, 3 compression) | 5 (0 critical, 1 major, 4 minor) | 13 raw → 10 actionable, all fixed |
 
-### Key round-1 fixes
-- `.gitignore` work item added (was claiming coverage that didn't exist).
-- Landing-mode parse regex corrected to match real `> **Landing mode: PR**` format.
-- Default-column inference corrected (no plan uses `status: draft`).
-- Flat + nested tracking-marker walk (mixed legacy layout handled).
-- `/work-on-plans` dispatch pinned to `Skill(skill="run-plan", args="plans/<FILE>.md auto")`.
-- Shared Schemas section added to prevent per-phase drift.
-- CSRF / body-size / path-param validation on HTTP routes.
-- XSS escape policy (`textContent` default, `// chrome-only` marker for exceptions).
-- Detached-subprocess `ppid=1` survival test added.
-- JSON PID file (pid + port) so `stop` doesn't recompute port.
-
-### Key round-2 fixes
-- Phase 3 Work Items reconciled with updated Design & Constraints (`setTimeout`+visibilitychange; 250/400/700 line budget).
-- `write_state_atomic` race fixed: per-thread tmp name + `threading.Lock()`.
-- XSS acceptance grep tightened (single-token `// chrome-only` marker on same line).
-- Report-phase regex corrected for `## Phase — 5c Name` format.
-- ARIA listbox anti-pattern replaced with plain `role="list"` / `role="listitem"`.
-- Activity-list sort normalized to UTC before ordering.
-
-### Research and review artifacts (ephemeral)
-- `/tmp/draft-plan-research-ZSKILLS_MONITOR_PLAN.md`
-- `/tmp/draft-plan-review-round-1-reviewer.md`, `-devil.md`, `-refiner-round-1.md`
-- `/tmp/draft-plan-review-round-2-reviewer.md`, `-devil.md`, `-refiner-round-2.md`
+| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1     | 17 issues         | 25 issues                 | 32          | 32 Fixed, 10 Justified |
+| 2     | 0 substantive (2 minor polish) | 0 substantive (1 minor polish) | 0 | Converged |
