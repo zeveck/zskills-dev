@@ -144,6 +144,20 @@ check       commit "origin/main for log"      'git log origin/main\.\.HEAD'
 check       commit "--watch unreliable"       '--watch.*(exit code is unreliable|UNRELIABLE)'
 check_fixed commit "write-landed"             'bash scripts/write-landed.sh'
 check       commit "read-only reviewer"       'You are read-only|you are read-only'
+# Config-driven default mode (issue #56): /commit with no explicit mode
+# token must consult execution.landing in .claude/zskills-config.json
+# instead of always defaulting to commit-only. Explicit `pr` (first
+# token), `push` (anywhere), or `land` (anywhere) override the config.
+# A config of `cherry-pick` is rejected as misuse (the `land` subcommand
+# is the cherry-pick flow, not a default-mode selector).
+check_fixed commit "default-mode: landing config read"   'execution.landing'
+check_fixed commit "default-mode: bash-regex landing"    '\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"'
+check_fixed commit "default-mode: explicit-mode guard"   'HAS_EXPLICIT_MODE'
+check_fixed commit "default-mode: push|land anywhere"    '(push|land)'
+check_fixed commit "default-mode: pr → PR mode"          'DEFAULT_MODE="pr"'
+check_fixed commit "default-mode: direct → commit-only"  'direct|"")'
+check       commit "default-mode: cherry-pick rejected"  'cherry-pick.*not a valid default|cherry-pick.*NOT a default-mode'
+check       commit "default-mode: no jq dependency"      'Bash regex only|no jq|no external JSON'
 
 echo ""
 echo "=== /commit — structural landmarks ==="

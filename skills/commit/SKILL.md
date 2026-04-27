@@ -25,6 +25,9 @@ Commit current work without picking up or harming unrelated changes.
 **Parsing:** `pr` is recognized ONLY when it is the **FIRST token** in
 `$ARGUMENTS`. This prevents false-triggering on scope hints that contain
 "pr" mid-string. `push` and `land` are reserved keywords for non-PR mode.
+When no explicit mode token is supplied, the skill consults
+`execution.landing` in `.claude/zskills-config.json` to pick the default
+(see the config-driven default-mode block below).
 
 ```bash
 FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
@@ -35,10 +38,88 @@ if [[ "$FIRST_TOKEN" == "pr" ]]; then
 fi
 ```
 
+**Config-driven default mode (when no explicit mode token is given):**
+
+If `$ARGUMENTS` contains no explicit mode token (`pr` as first token, or
+`push`/`land` anywhere), read `execution.landing` from
+`.claude/zskills-config.json` to pick the default. This mirrors the
+landing-mode resolution in `/run-plan`, `/fix-issues`, and `/do` so
+projects with `execution.landing: "pr"` (the default preset, which also
+sets `main_protected: true`) get PR mode for `/commit` without users
+needing to retype `pr` every time. Bash regex only — no jq, matching the
+co-author read in Phase 5.
+
+```bash
+# Detect any explicit mode signal in the arguments. `pr` is first-token-only
+# (to avoid false-triggering on scope hints); `push` and `land` are
+# recognized anywhere (matching their parsing throughout the rest of this
+# skill, e.g., `/commit skill updates push`).
+HAS_EXPLICIT_MODE=0
+if [[ "$FIRST_TOKEN" == "pr" ]]; then
+  HAS_EXPLICIT_MODE=1
+elif [[ "$ARGUMENTS" =~ (^|[[:space:]])(push|land)($|[[:space:]]) ]]; then
+  HAS_EXPLICIT_MODE=1
+fi
+
+if [ "$HAS_EXPLICIT_MODE" -eq 0 ]; then
+  # No explicit mode — consult execution.landing from config.
+  CONFIG_FILE=".claude/zskills-config.json"
+  if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_CONTENT=$(cat "$CONFIG_FILE")
+    if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      CFG_LANDING="${BASH_REMATCH[1]}"
+      case "$CFG_LANDING" in
+        pr)
+          # Treat as `/commit pr` — drop into PR subcommand mode below.
+          # SCOPE_HINT keeps any scope words from $ARGUMENTS (no `pr` prefix
+          # to strip, since the user didn't type it).
+          SCOPE_HINT="$ARGUMENTS"
+          DEFAULT_MODE="pr"
+          ;;
+        direct|"")
+          # Commit-only default — current behavior preserved.
+          DEFAULT_MODE="commit"
+          ;;
+        cherry-pick)
+          # `/commit land` is the cherry-pick subcommand for landing
+          # worktree commits onto main, NOT a default-mode selector. A
+          # config of `cherry-pick` here is almost certainly a misconfig
+          # (the user probably wanted `pr` or `direct`). Surface loudly
+          # rather than silently picking a behavior.
+          echo "ERROR: execution.landing=\"cherry-pick\" is not a valid default for /commit." >&2
+          echo "  /commit land is the cherry-pick subcommand for landing worktree" >&2
+          echo "  commits onto main; it is NOT a default-mode selector. Set" >&2
+          echo "  execution.landing to \"pr\" or \"direct\" in" >&2
+          echo "  .claude/zskills-config.json, or invoke /commit land explicitly." >&2
+          exit 1
+          ;;
+        *)
+          # Unknown value — fall back to commit-only.
+          DEFAULT_MODE="commit"
+          ;;
+      esac
+    else
+      DEFAULT_MODE="commit"
+    fi
+  else
+    DEFAULT_MODE="commit"
+  fi
+
+  # If config says `pr`, behave exactly as `/commit pr` from here on:
+  # skip Phases 1–5 and run modes/pr.md end-to-end.
+  if [ "$DEFAULT_MODE" = "pr" ]; then
+    FIRST_TOKEN="pr"  # so downstream "is FIRST_TOKEN pr?" branches engage
+  fi
+fi
+```
+
 Disambiguation:
 - `/commit pr` → PR mode (first token is `pr`)
 - `/commit pr comments fix` → PR mode (first token is `pr`), scope hint: "comments fix"
 - `/commit fix pr format` → scope hint "fix pr format", regular commit (first token is "fix")
+- `/commit` with `execution.landing: "pr"` in config → PR mode (config default)
+- `/commit` with `execution.landing: "direct"` or no config → commit-only (preserved default)
+- `/commit push` or `/commit land` always overrides config — explicit wins
 
 Examples:
 - `/commit` → scope: *(none)*, action: commit
