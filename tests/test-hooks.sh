@@ -1146,6 +1146,89 @@ else
 fi
 
 echo ""
+echo "=== Project hook: push-segment scoping (rules a/b) ==="
+
+# Background: rules (a) and (b) used to scan the entire $COMMAND buffer, which
+# false-positived on multi-statement commands like
+# `git fetch origin main && git push -u origin feat/foo` — "origin main" in
+# the fetch portion tripped rule (a). The fix scopes the regex to PUSH_ARGS
+# (the bounded post-`git push` segment, mirroring block-unsafe-generic.sh).
+# These tests pin both the regression cases (must ALLOW) and the BLOCK cases
+# the fix must keep working.
+
+# Regression case (this bug): fetch-then-push on a feature branch.
+RESULT=$(run_main_protected_test "feat/foo" '{"execution": {"main_protected": true}}' "git fetch origin main && git push -u origin feat/foo")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "push-scope: fetch origin main && push -u origin feat/foo allowed"
+else
+  fail "push-scope: fetch origin main && push -u origin feat/foo should be allowed, got: $RESULT"
+fi
+
+# Regression case (semicolon variant of the same chain).
+RESULT=$(run_main_protected_test "chore/foo" '{"execution": {"main_protected": true}}' "git fetch origin main; git push -u origin chore/foo")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "push-scope: fetch origin main; push -u origin chore/foo allowed"
+else
+  fail "push-scope: fetch origin main; push -u origin chore/foo should be allowed, got: $RESULT"
+fi
+
+# BLOCK: explicit `git push origin main` (rule a).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push origin main blocked"
+else
+  fail "push-scope: git push origin main should be blocked, got: $RESULT"
+fi
+
+# BLOCK: master variant of rule (a).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push origin master blocked"
+else
+  fail "push-scope: git push origin master should be blocked, got: $RESULT"
+fi
+
+# BLOCK: rule (a) with -u flag (flags must be skipped, target still detected).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push -u origin main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push -u origin main blocked"
+else
+  fail "push-scope: git push -u origin main should be blocked, got: $RESULT"
+fi
+
+# BLOCK: force-prefix form `+main`.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin +main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push origin +main blocked"
+else
+  fail "push-scope: git push origin +main should be blocked, got: $RESULT"
+fi
+
+# BLOCK: delete-refspec form `:main`.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin :main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push origin :main (delete-refspec) blocked"
+else
+  fail "push-scope: git push origin :main should be blocked, got: $RESULT"
+fi
+
+# BLOCK: bare HEAD:main (rule b — no `origin` token).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push HEAD:main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push HEAD:main blocked"
+else
+  fail "push-scope: git push HEAD:main should be blocked, got: $RESULT"
+fi
+
+# BLOCK: bare HEAD:master (rule b — master variant).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push HEAD:master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "push-scope: git push HEAD:master blocked"
+else
+  fail "push-scope: git push HEAD:master should be blocked, got: $RESULT"
+fi
+
+echo ""
 echo "=== Project hook: main_protected — worktree-cd awareness ==="
 
 # Background: hooks run in a separate process whose cwd is the main repo on
