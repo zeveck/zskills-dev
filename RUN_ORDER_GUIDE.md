@@ -6,37 +6,42 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ---
 
+## Drift log
+
+- **2026-04-27** — Issue #58 (`main_protected` push-guard regex false-positive) was already closed by [PR #73](https://github.com/zeveck/zskills-dev/pull/73) merged the same day this guide was written. The fix segment-scopes rules (a) and (b) to the `git push` portion of `$COMMAND` (`hooks/block-unsafe-project.sh.template:639-655`) and adds 9 regression tests in `tests/test-hooks.sh`. **Step removed from Phase A**; subsequent steps renumbered.
+
+---
+
 ## TL;DR — straight execution list
 
 ```
 Phase A — pre-flight (fixes the tools the plans use to land)
   1. /fix-issues 56             # /commit respects execution.landing
-  2. /fix-issues 58             # main_protected push-guard regex
-  3. /quickfix  ← QF1           # slug-namespace /draft-plan review files
-  4. /quickfix  ← QF2           # orchestrator-judgment convergence fix
-  5. /quickfix  ← QF4           # /refine-plan positional-tail guidance
-  6. /run-plan  plans/IMPROVE_STALENESS_DETECTION.md   (optional but recommended early)
+  2. /quickfix  ← QF1           # slug-namespace /draft-plan review files
+  3. /quickfix  ← QF2           # orchestrator-judgment convergence fix
+  4. /quickfix  ← QF4           # /refine-plan positional-tail guidance
+  5. /run-plan  plans/IMPROVE_STALENESS_DETECTION.md   (optional but recommended early)
 
 Phase B — foundation
-  7. /run-plan  plans/SCRIPTS_INTO_SKILLS_PLAN.md      (lands first; gates Tier-2)
+  6. /run-plan  plans/SCRIPTS_INTO_SKILLS_PLAN.md      (lands first; gates Tier-2)
 
 Phase C — DEFAULT_PORT reconciliation (mandatory /refine-plan)
-  8. /refine-plan plans/DEFAULT_PORT_CONFIG.md         (strip WI 1.1-1.3 — redundant after Phase B)
-  9. /run-plan    plans/DEFAULT_PORT_CONFIG.md         (now: backfill = WI 1.4 only)
+  7. /refine-plan plans/DEFAULT_PORT_CONFIG.md         (strip WI 1.1-1.3 — redundant after Phase B)
+  8. /run-plan    plans/DEFAULT_PORT_CONFIG.md         (now: backfill = WI 1.4 only)
 
 Phase D — Tier-2 plans (run sequentially to reduce mirror churn)
- 10. /run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md
- 11. /run-plan plans/SKILL_FILE_DRIFT_FIX.md
+  9. /run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+ 10. /run-plan plans/SKILL_FILE_DRIFT_FIX.md
 
 Phase E — /update-zskills source discovery (must wait for B+C+D-Drift)
- 12. /quickfix ← QF3            # explicitly deferred until SCRIPTS_INTO_SKILLS,
+ 11. /quickfix ← QF3            # explicitly deferred until SCRIPTS_INTO_SKILLS,
                                  # SKILL_FILE_DRIFT_FIX, DEFAULT_PORT_CONFIG land
 
 Phase F — independent plans (any order, post-Phase B is safest)
- 13. /run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md  # closes Issue #65
- 14. /run-plan plans/DRAFT_TESTS_SKILL_PLAN.md
- 15. /run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md
- 16. /run-plan plans/ZSKILLS_MONITOR_PLAN.md
+ 12. /run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md  # closes Issue #65
+ 13. /run-plan plans/DRAFT_TESTS_SKILL_PLAN.md
+ 14. /run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md
+ 15. /run-plan plans/ZSKILLS_MONITOR_PLAN.md
 
 Phase G — deferred
      plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md         # reference; not executable yet
@@ -48,17 +53,18 @@ Phase G — deferred
 
 ### 1. Pre-flight quickfixes & issues come before every plan
 
-These five items all touch the **tooling that plans use to land**: `/commit`, the push-guard hook, `/draft-plan`, `/refine-plan`. Landing them first means every subsequent `/run-plan`, `/refine-plan`, or `/quickfix` runs against fixed orchestration code instead of carrying the bugs forward.
+These four items all touch the **tooling that plans use to land**: `/commit`, `/draft-plan`, `/refine-plan`. Landing them first means every subsequent `/run-plan`, `/refine-plan`, or `/quickfix` runs against fixed orchestration code instead of carrying the bugs forward.
 
 | Item | Touches | Why first |
 |---|---|---|
 | Issue #56 | `skills/commit/SKILL.md` (config-read for `execution.landing`) | `/commit` is invoked at the end of every plan landing; today it ignores the `pr` mode the plans assume. |
-| Issue #58 | `hooks/block-unsafe-project.sh.template` (push-guard regex) | Multi-command bash blocks (`git fetch origin main && git push -u origin feat/x`) currently false-positive on the main_protected guard. Affects PR-mode landings. |
 | QF1 | `skills/draft-plan/SKILL.md:L126` | Concurrent `/draft-plan` runs collide on `/tmp/draft-plan-review-round-N.md`. |
 | QF2 | `skills/draft-plan/SKILL.md` + `skills/refine-plan/SKILL.md` (4 sites total) | Convergence is an orchestrator judgment, not the refiner's self-call; the buggy behavior currently rubber-stamps "CONVERGED" mid-loop. |
 | QF4 | `skills/refine-plan/SKILL.md` (Arguments + Phase 2) | Adds positional-tail guidance arg so `/refine-plan plans/X.md anti-deferral focus` works. Useful for the Phase C reconciliation below. |
 
-These are mutually independent — order within Phase A doesn't matter — but **all five must land before Phase B** so the Phase-B/C/D plans don't trip them.
+These are mutually independent — order within Phase A doesn't matter — but **all four must land before Phase B** so the Phase-B/C/D plans don't trip them.
+
+(Issue #58 was originally listed here; closed via PR #73 — see Drift log above.)
 
 ### 2. SCRIPTS_INTO_SKILLS_PLAN is the foundation gate
 
@@ -154,7 +160,6 @@ Not needed:
 | File / surface | Touched by |
 |---|---|
 | `skills/commit/SKILL.md` | Issue #56 |
-| `hooks/block-unsafe-project.sh.template` | Issue #58 |
 | `skills/draft-plan/SKILL.md` | QF1, QF2 |
 | `skills/refine-plan/SKILL.md` | QF2, QF4 |
 | `skills/update-zskills/SKILL.md` | SCRIPTS_INTO_SKILLS_PLAN, SKILL_FILE_DRIFT_FIX, DEFAULT_PORT_CONFIG, CONSUMER_STUB_CALLOUTS_PLAN, QF3 |
@@ -170,6 +175,6 @@ Not needed:
 ## Source documents
 
 - PR #70: <https://github.com/zeveck/zskills-dev/pull/70>
-- Issues: [#56](https://github.com/zeveck/zskills-dev/issues/56) · [#58](https://github.com/zeveck/zskills-dev/issues/58) · [#65](https://github.com/zeveck/zskills-dev/issues/65)
+- Issues: [#56](https://github.com/zeveck/zskills-dev/issues/56) · ~~[#58](https://github.com/zeveck/zskills-dev/issues/58)~~ (closed by PR #73) · [#65](https://github.com/zeveck/zskills-dev/issues/65)
 - `QUEUED_QUICKFIXES.md` (repo root) — full prompts for QF1–QF4
 - `plans/PLAN_INDEX.md` — auto-generated dependency notes
