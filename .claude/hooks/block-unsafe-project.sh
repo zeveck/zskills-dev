@@ -631,16 +631,33 @@ fi
 # legitimate worktree-scoped pushes without closing a realistic attack
 # vector.
 if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
-  # (a) Explicit origin main/master (optionally force-prefixed with +):
-  if [[ "$COMMAND" =~ origin[[:space:]]+\+?(main|master)([[:space:]]|$|\") ]]; then
+  # Scope rules (a) and (b) to JUST the `git push` command segment, not the
+  # whole $COMMAND buffer. Without this, multi-statement commands like
+  # `git fetch origin main && git push -u origin feat/foo` false-positive
+  # because "origin main" appears in the fetch portion. Mirrors the bounded
+  # extraction in block-unsafe-generic.sh:266-280.
+  PUSH_CMD="$COMMAND"
+  PUSH_CMD="${PUSH_CMD##*git push}"
+  PUSH_ARGS=""
+  for word in $PUSH_CMD; do
+    case "$word" in
+      "&&"*|";"*|"|"*) break ;;  # stop at command chaining
+      -*) continue ;;            # skip flags (-u, --force, etc.)
+      *) PUSH_ARGS="$PUSH_ARGS $word" ;;
+    esac
+  done
+  # (a) Explicit origin main/master (optionally prefixed with + for
+  # force-push or : for delete-refspec):
+  if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(main|master)([[:space:]]|$|\") ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (b) HEAD:main or HEAD:master refspec:
-  if [[ "$COMMAND" =~ HEAD:(main|master)([[:space:]]|$|\") ]]; then
+  if [[ "$PUSH_ARGS" =~ HEAD:(main|master)([[:space:]]|$|\") ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (c) Naked push (no origin arg) while on main — defaults to pushing
-  # the current branch, which is main:
+  # the current branch, which is main. Tested against full $COMMAND
+  # because seeing `origin` ANYWHERE means a non-naked push is present.
   if ! [[ "$COMMAND" =~ origin[[:space:]] ]] && is_on_main; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
