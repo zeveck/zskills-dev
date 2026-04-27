@@ -8,44 +8,53 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
-- **2026-04-27** — Issue #58 (`main_protected` push-guard regex false-positive) was already closed by [PR #73](https://github.com/zeveck/zskills-dev/pull/73) merged the same day this guide was written. The fix segment-scopes rules (a) and (b) to the `git push` portion of `$COMMAND` (`hooks/block-unsafe-project.sh.template:639-655`) and adds 9 regression tests in `tests/test-hooks.sh`. **Step removed from Phase A**; subsequent steps renumbered.
+- **2026-04-27 (early)** — Issue #58 (`main_protected` push-guard regex false-positive) was already closed by [PR #73](https://github.com/zeveck/zskills-dev/pull/73) merged the same day this guide was written. The fix segment-scopes rules (a) and (b) to the `git push` portion of `$COMMAND` (`hooks/block-unsafe-project.sh.template:639-655`) and adds 9 regression tests in `tests/test-hooks.sh`. **Step removed from Phase A**; subsequent steps renumbered.
+- **2026-04-27 (mid)** — Issue #56 closed by [PR #74](https://github.com/zeveck/zskills-dev/pull/74) merged. Phase A item 1 marked complete.
+- **2026-04-27 (late)** — A drift across 5 PR-creating skills (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) was surfaced during [PR #75](https://github.com/zeveck/zskills-dev/pull/75) review: each skill duplicates the canonical `gh pr create` + CI poll + fix cycle + auto-merge pattern, with inconsistent gating and one skill (`/quickfix`) opting out entirely. PR #75 fixes the `/fix-issues` half; the broader unification gets a new plan via `/draft-plan` → `plans/PR_LANDING_UNIFICATION.md`. **Phase F item added.** Plan is in flight at the time of this edit; once the plan PR lands on main, the Phase F entry becomes executable via `/run-plan`.
 
 ---
 
-## TL;DR — straight execution list
+## TL;DR — execution checklist
 
-```
-Phase A — pre-flight (fixes the tools the plans use to land)
-  1. /fix-issues 56             # /commit respects execution.landing
-  2. /quickfix  ← QF1           # slug-namespace /draft-plan review files
-  3. /quickfix  ← QF2           # orchestrator-judgment convergence fix
-  4. /quickfix  ← QF4           # /refine-plan positional-tail guidance
-  5. /run-plan  plans/IMPROVE_STALENESS_DETECTION.md   (optional but recommended early)
+Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or plan being drafted)
 
-Phase B — foundation
-  6. /run-plan  plans/SCRIPTS_INTO_SKILLS_PLAN.md      (lands first; gates Tier-2)
+#### Phase A — pre-flight (fixes the tools the plans use to land)
 
-Phase C — DEFAULT_PORT reconciliation (mandatory /refine-plan)
-  7. /refine-plan plans/DEFAULT_PORT_CONFIG.md         (strip WI 1.1-1.3 — redundant after Phase B)
-  8. /run-plan    plans/DEFAULT_PORT_CONFIG.md         (now: backfill = WI 1.4 only)
+- [x] `/fix-issues 56` — `/commit` respects `execution.landing` (PR #74, merged 2026-04-27)
+- [ ] `/quickfix ← QF1` — slug-namespace `/draft-plan` review files
+- [ ] `/quickfix ← QF2` — orchestrator-judgment convergence fix
+- [ ] `/quickfix ← QF4` — `/refine-plan` positional-tail guidance
+- [ ] `/run-plan plans/IMPROVE_STALENESS_DETECTION.md` *(optional but recommended early)*
 
-Phase D — Tier-2 plans (run sequentially to reduce mirror churn)
-  9. /run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md
- 10. /run-plan plans/SKILL_FILE_DRIFT_FIX.md
+#### Phase B — foundation
 
-Phase E — /update-zskills source discovery (must wait for B+C+D-Drift)
- 11. /quickfix ← QF3            # explicitly deferred until SCRIPTS_INTO_SKILLS,
-                                 # SKILL_FILE_DRIFT_FIX, DEFAULT_PORT_CONFIG land
+- [ ] `/run-plan plans/SCRIPTS_INTO_SKILLS_PLAN.md` *(lands first; gates Tier-2)*
 
-Phase F — independent plans (any order, post-Phase B is safest)
- 12. /run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md  # closes Issue #65
- 13. /run-plan plans/DRAFT_TESTS_SKILL_PLAN.md
- 14. /run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md
- 15. /run-plan plans/ZSKILLS_MONITOR_PLAN.md
+#### Phase C — DEFAULT_PORT reconciliation (mandatory /refine-plan)
 
-Phase G — deferred
-     plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md         # reference; not executable yet
-```
+- [ ] `/refine-plan plans/DEFAULT_PORT_CONFIG.md` *(strip WI 1.1–1.3 — redundant after Phase B)*
+- [ ] `/run-plan plans/DEFAULT_PORT_CONFIG.md` *(now: backfill = WI 1.4 only)*
+
+#### Phase D — Tier-2 plans (run sequentially to reduce mirror churn)
+
+- [ ] `/run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md`
+- [ ] `/run-plan plans/SKILL_FILE_DRIFT_FIX.md`
+
+#### Phase E — /update-zskills source discovery (must wait for B+C+D)
+
+- [ ] `/quickfix ← QF3` *(explicitly deferred until SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, DEFAULT_PORT_CONFIG land)*
+
+#### Phase F — independent plans (any order, post-Phase B is safest)
+
+- [ ] `/run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — closes Issue #65
+- [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
+- [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
+- [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
+- [~] `/run-plan plans/PR_LANDING_UNIFICATION.md` — unifies the canonical PR-with-CI flow across 5 skills *(plan being drafted via `/draft-plan`; see Drift log)*
+
+#### Phase G — deferred
+
+- `plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md` *(reference; not executable yet)*
 
 ---
 
