@@ -10,6 +10,16 @@ worktree. A failure on one issue (rebase conflict, CI failure, PR
 creation error) does NOT block the others — mark that issue's status
 and continue to the next.
 
+**Auto-flag gating.** Rebase, push, PR creation, **CI polling, and the
+fix cycle all run regardless of `$AUTO`** — they're either low-risk
+(review-surfacing) or reversible (the fix cycle pushes commits to the
+feature branch, which the user can revert). Goal: by the time the user
+reviews the PR, it is as clean as the agent could get it. Only the
+final `gh pr merge --auto --squash` call is gated on `$AUTO`. Without
+`auto`, the PR settles at status `pr-ready` after CI passes (or after
+fix-cycle exhaustion at `pr-ci-failing`) and waits for human review
+and merge on GitHub.
+
 **Loop over every fixed issue** (and any grouped issue worktrees from
 Phase 2). `$FIXED_ISSUES` is the list of issue numbers whose worktrees
 have verified commits on `fix/issue-NNN`.
@@ -115,10 +125,12 @@ LANDED
     continue
   fi
 
-  # --- CI check + auto-merge: same pattern as /run-plan 3b-iii ---
-  # See skills/run-plan/modes/pr.md "PR mode landing" for the canonical
+  # --- CI poll + fix cycle: ALWAYS runs (interactive and auto) ---
+  # Pushes fixes back to the feature branch — reversible, no human
+  # approval needed. Same pattern as /run-plan 3b-iii. See
+  # skills/run-plan/modes/pr.md "PR mode landing" for the canonical
   # implementation: config re-read, pre-check retry, polling, fix cycle,
-  # auto-merge, .landed upgrade.
+  # .landed upgrade.
   #
   # Differences from /run-plan PR mode:
   #   - source: "fix-issues" (not "run-plan")
@@ -128,12 +140,25 @@ LANDED
   #     write status: pr-ready and move on. The next cron turn or the
   #     user re-checks.
   #
-  # Parallel optimization (future): if the orchestrator can dispatch
-  # sub-agents, each issue's CI polling can run in parallel. Not required
-  # for initial implementation.
+  # After this block: $CI_STATUS = pass | fail | pending; $PR_STATE = OPEN.
+  # If CI passed: $LANDED_STATUS = pr-ready (will be upgraded to landed
+  # below if auto-merge fires). If fix cycle exhausted with CI still
+  # failing: $LANDED_STATUS = pr-ci-failing.
+
+  # --- Auto-merge: GATED on $AUTO ---
+  # Only the irreversible merge action is autonomous-only. Without
+  # `auto`, the PR sits at pr-ready / pr-ci-failing for human review.
+  # With `auto`, fire `gh pr merge "$PR_NUMBER" --auto --squash` and,
+  # on confirmed merge, upgrade $LANDED_STATUS to "landed" and
+  # $PR_STATE to "MERGED".
+  if [ "$AUTO" = "true" ]; then
+    : # gh pr merge "$PR_NUMBER" --auto --squash; on merge confirmation:
+      # LANDED_STATUS="landed"; PR_STATE="MERGED"
+  fi
 
   # --- .landed marker (per issue) ---
-  # $LANDED_STATUS, $CI_STATUS, $PR_STATE come from the CI/auto-merge block.
+  # $LANDED_STATUS, $CI_STATUS, $PR_STATE come from the CI poll + fix
+  # cycle (always-run) and the auto-gated merge step above.
   cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
