@@ -4,7 +4,7 @@
 #
 # Pure bash — no jq, no eval, no $(( )) over user-controlled input.
 # Stated-form parsing uses awk + case + integer arithmetic only. Same
-# pattern as scripts/compute-cron-fire.sh: keep parse/compute/edit logic
+# pattern as compute-cron-fire.sh: keep parse/compute/edit logic
 # in a testable script rather than skill-prose.
 #
 # Token format (single-line, space-delimited key=value):

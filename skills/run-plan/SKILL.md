@@ -574,7 +574,7 @@ Before parsing, check for stale state from a previous failed run:
       rule (if any) in the target phase's `### Design &
       Constraints` section. Supported rules:
       - Literal arithmetic expression: "N - M + K" → evaluate via
-        `scripts/plan-drift-correct.sh --eval "N - M + K"`
+        `.claude/skills/run-plan/scripts/plan-drift-correct.sh --eval "N - M + K"`
         (the script implements parse-only integer arithmetic; no
         shell eval, no injection surface).
       - "extract lines N..M" or "lines N-M" → value is M - N + 1.
@@ -741,7 +741,7 @@ criteria during its work:
 >
 > in your final report. One per drift. Advisory — continue your work.
 
-Tokens are parsed by `scripts/plan-drift-correct.sh --parse <report-file>`
+Tokens are parsed by `.claude/skills/run-plan/scripts/plan-drift-correct.sh --parse <report-file>`
 in Phase 3.5. Format is single-line, space-delimited; `<field>` MUST NOT
 contain `:` or `=`.
 
@@ -950,7 +950,7 @@ reality at execution time:
 >
 > in your final report. One per drift. Advisory — continue your work.
 
-Tokens are parsed by `scripts/plan-drift-correct.sh --parse <report-file>`
+Tokens are parsed by `.claude/skills/run-plan/scripts/plan-drift-correct.sh --parse <report-file>`
 in Phase 3.5. Format is single-line, space-delimited; `<field>` MUST NOT
 contain `:` or `=`. Phase format: `phase=1`, `phase=4A`, etc.; bullet is
 the 1-indexed ordinal of a numeric-bearing bullet within the phase's
@@ -1294,7 +1294,7 @@ dispatches.
 ### 2. Parse tokens
 
 ```bash
-bash scripts/plan-drift-correct.sh --parse <combined-reports>
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/plan-drift-correct.sh" --parse <combined-reports>
 ```
 Produces one `<phase>|<bullet>|<field>|<stated>|<actual>` line per
 drift. Zero lines = no drifts → skip to step 6.
@@ -1303,7 +1303,7 @@ drift. Zero lines = no drifts → skip to step 6.
 
 For each record, compute drift via:
 ```bash
-bash scripts/plan-drift-correct.sh --drift "<stated>" "<actual>"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/plan-drift-correct.sh" --drift "<stated>" "<actual>"
 ```
 Decision table:
 
@@ -1319,8 +1319,8 @@ Decision table:
 
 For each "auto-correct" record:
 ```bash
-NEW_BAND="$(bash scripts/plan-drift-correct.sh --drift-band <actual> 5)"  # ±5% of actual
-bash scripts/plan-drift-correct.sh --correct <plan-file> <phase> <bullet> "$NEW_BAND" --audit "was <stated>"
+NEW_BAND="$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/plan-drift-correct.sh" --drift-band <actual> 5)"  # ±5% of actual
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/plan-drift-correct.sh" --correct <plan-file> <phase> <bullet> "$NEW_BAND" --audit "was <stated>"
 ```
 `--audit` appends `<!-- Auto-corrected YYYY-MM-DD: was <stated>, arithmetic says <actual> -->` inline on the bullet.
 
@@ -1341,7 +1341,7 @@ printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\
 Uses the `phasestep.*` prefix (informational; hook ignores). The
 `step.*.verify` marker stays as-is.
 
-If Phase 3.5 fails (e.g., `scripts/plan-drift-correct.sh` exits
+If Phase 3.5 fails (e.g., `.claude/skills/run-plan/scripts/plan-drift-correct.sh` exits
 non-zero mid-correction, or >20% drift case triggers), the
 orchestrator MUST:
 1. `git checkout -- <plan-file>` to revert any partial corrections.
@@ -1681,13 +1681,13 @@ Three branches:
    ```
 
    On attempt 1, schedule the verify cron (~5 min from now) via the
-   `scripts/compute-cron-fire.sh` helper. The helper handles +5 default
+   `.claude/skills/run-plan/scripts/compute-cron-fire.sh` helper. The helper handles +5 default
    margin, :00/:30 avoidance, and all minute/hour/day/month/year
    rollovers correctly (inlined bash versions previously got day+month
    rollover wrong — at 23:58, the naive math pinned the cron to
    earlier-today, and it would fire ~365 days out).
    ```bash
-   VERIFY_CRON=$(bash scripts/compute-cron-fire.sh)
+   VERIFY_CRON=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh")
    ```
    Then call `CronCreate` with:
    - `cron`: `"$VERIFY_CRON"`
@@ -1698,7 +1698,7 @@ Three branches:
    `--allow-marks` because the re-entry cadence is backoff-driven, not
    API-busy-avoidance-driven:
    ```bash
-   REENTRY_CRON=$(bash scripts/compute-cron-fire.sh --offset "$BACKOFF_MIN" --allow-marks)
+   REENTRY_CRON=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh" --offset "$BACKOFF_MIN" --allow-marks)
    ```
    Then call `CronCreate` with:
    - `cron`: `"$REENTRY_CRON"`
@@ -1891,7 +1891,7 @@ done
 ### Post-run invariants check (mandatory — mechanical gate)
 
 Before declaring the run complete, the orchestrator MUST invoke
-`scripts/post-run-invariants.sh` to assert end-state correctness. This
+`.claude/skills/run-plan/scripts/post-run-invariants.sh` to assert end-state correctness. This
 catches silent failures in `land-phase.sh` (e.g., a branch delete that
 was accepted but didn't take effect) that would otherwise accumulate
 zombies across runs. The script is an enforced gate — NOT prose the
@@ -1905,7 +1905,7 @@ worktree and branch):
 # FEATURE_BRANCH unified across modes — both cherry-pick and PR set this
 # at worktree creation time (cherry-pick uses cp-${PLAN_SLUG}-${PHASE},
 # PR uses ${BRANCH_PREFIX}${PLAN_SLUG}).
-bash scripts/post-run-invariants.sh \
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/post-run-invariants.sh" \
   --worktree      "$WORKTREE_PATH" \
   --branch        "$FEATURE_BRANCH" \
   --landed-status "$LANDED_STATUS" \

@@ -2085,7 +2085,7 @@ fi
 echo ""
 echo "=== post-run-invariants.sh ==="
 
-INV_SCRIPT="$REPO_ROOT/scripts/post-run-invariants.sh"
+INV_SCRIPT="$REPO_ROOT/skills/run-plan/scripts/post-run-invariants.sh"
 
 # 17. All checks skipped (empty args, must run in a git repo) → pass with message
 (cd "$REPO_ROOT" && bash "$INV_SCRIPT" > /tmp/inv-test.txt 2>&1)

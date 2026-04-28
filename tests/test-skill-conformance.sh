@@ -61,7 +61,7 @@ check_fixed run-plan "pipeline-id echo"             'ZSKILLS_PIPELINE_ID=run-pla
 check_fixed run-plan ".zskills-tracked write"       '.zskills-tracked'
 check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-tests/'
 check_fixed run-plan "test capture redirect"        '.test-results.txt" 2>&1'
-check_fixed run-plan "compute-cron-fire invocation" 'bash scripts/compute-cron-fire.sh'
+check_fixed run-plan "compute-cron-fire invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh"'
 check       run-plan "cron tz warning"              'date.*SYSTEM-local|system-local'
 check       run-plan "--watch unreliable"           '--watch.*(exit code is unreliable|UNRELIABLE)'
 check_fixed run-plan "gh pr checks re-check"        'gh pr checks "$PR_NUMBER"'
@@ -75,7 +75,7 @@ check       run-plan "push error-check first-time"  'if ! git push -u origin'
 check       run-plan "pre-cherry-pick stash"        'pre-cherry-pick stash'
 check_fixed run-plan "write-landed invocation"      'bash scripts/write-landed.sh'
 check_fixed run-plan "pr-mode bookkeeping"          'PR-mode bookkeeping'
-check_fixed run-plan "post-run-invariants"          'bash scripts/post-run-invariants.sh'
+check_fixed run-plan "post-run-invariants"          'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/post-run-invariants.sh"'
 check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.final.'
 # PR-mode read-authority (the bug caught during CANARY10 re-run): when
 # LANDING_MODE=pr and a feature-branch worktree exists, plan reads MUST

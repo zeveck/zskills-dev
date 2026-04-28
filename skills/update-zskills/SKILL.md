@@ -242,7 +242,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    `$schema` reference in the config resolves correctly).
 5. **If `$PRESET_ARG` was set**, defer preset application to
    **Step F — Apply Preset** (invoked at the end of both install and
-   update paths). Step F runs `scripts/apply-preset.sh` which handles
+   update paths). Step F runs `.claude/skills/update-zskills/scripts/apply-preset.sh` which handles
    all three preset-owned fields (`execution.landing`,
    `execution.main_protected`, `BLOCK_MAIN_PUSH`) atomically,
    including idempotency, JSON formatting variance, missing
@@ -407,8 +407,8 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
     available via `which`.
   - Optional tool references (`node`, `python3`) — check via `which`.
     These are not required but enable features:
-    - `node`: enables `scripts/briefing.cjs` (preferred for /briefing)
-    - `python3`: enables `scripts/briefing.py` (fallback for /briefing)
+    - `node`: enables `.claude/skills/briefing/scripts/briefing.cjs` (preferred for /briefing)
+    - `python3`: enables `.claude/skills/briefing/scripts/briefing.py` (fallback for /briefing)
   - Hook references (`block-unsafe`) — check if the hook file
     exists in `.claude/hooks/`.
   - Script references (`scripts/port.sh`, `scripts/test-all.sh`) — check if
@@ -484,9 +484,11 @@ Look in `scripts/` for these files (all required by installed skills):
 
 ### Step 5 — Check skills with additional requirements
 
-If `/briefing` is installed, check for `briefing.cjs` or `briefing.py` in `scripts/`.
-If neither is found, add a note: "The /briefing skill requires briefing.cjs
-or briefing.py in scripts/ — see /briefing skill documentation."
+If `/briefing` is installed, check for `[ -f .claude/skills/briefing/scripts/briefing.cjs ]`
+or `[ -f .claude/skills/briefing/scripts/briefing.py ]` (the artifact half catches
+partial skill-mirror installs). If neither is found, add a note: "The /briefing
+skill requires `.claude/skills/briefing/scripts/briefing.cjs` (or `briefing.py`)
+— see /briefing skill documentation."
 
 ### Step 6 — Produce the gap report
 
@@ -530,7 +532,7 @@ Tools: M/N available (K missing)
   ...
 
 Skills with additional requirements:
-  - /briefing: requires briefing.cjs or briefing.py in scripts/ (not found)
+  - /briefing: requires `.claude/skills/briefing/scripts/briefing.cjs` or `briefing.py` (not found)
   ...
 
 Overall: X/Y dependencies satisfied.
@@ -821,7 +823,7 @@ partition-by-ownership) all concluded that bash + nested-JSON is
 high-cost / high-risk. The `Edit` tool's exact-string match + LLM
 reasoning about JSON structure makes this operation natural. Precedents
 in this same skill: Step B's CLAUDE.md append, the `zskills-config.json`
-backfill (Step 0.5 step 3.5), and `scripts/apply-preset.sh`'s line
+backfill (Step 0.5 step 3.5), and `.claude/skills/update-zskills/scripts/apply-preset.sh`'s line
 splice — all surgical, all agent-driven, all preserve-by-default. Step
 C aligns with the house style.
 
@@ -888,7 +890,7 @@ If `.claude/settings.json` already has a `"statusLine"` key, skip.
 Otherwise, offer to install: "Add zskills statusline? Shows context window,
 5-hour, and 7-day rate limits as colored bars."
 
-If yes: copy `$PORTABLE/scripts/statusline.sh` to `~/.claude/statusline-command.sh`
+If yes: copy `$PORTABLE/.claude/skills/update-zskills/scripts/statusline.sh` to `~/.claude/statusline-command.sh`
 and add `"statusLine": {"type":"command","command":"bash ~/.claude/statusline-command.sh"}`
 to `.claude/settings.json`. Users can customize further with `/statusline`.
 
@@ -936,7 +938,7 @@ If `$PRESET_ARG` is empty, skip this step entirely — nothing to do.
 Otherwise:
 
 ```bash
-bash scripts/apply-preset.sh "$PRESET_ARG"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
 
 Capture stdout and the exit code. Report to the user verbatim:
@@ -968,7 +970,7 @@ Installed:
 - Add-ons: N add-on skills installed (omit this line if no add-on flag was used)
 
 Skills with additional requirements:
-- /briefing: requires briefing.cjs or briefing.py in scripts/ (see /briefing skill docs)
+- /briefing: requires `.claude/skills/briefing/scripts/briefing.cjs` or `briefing.py` (see /briefing skill docs)
 
 Run /update-zskills to check for updates later.
 ```
@@ -998,7 +1000,7 @@ Run /update-zskills to check for updates later.
 5. **Fill new gaps.** For any NEW items (skills, hooks, scripts, zskills
    rules file) that don't exist yet, install them using the same steps as the
    install path above (Steps B-E). In particular, if
-   `scripts/apply-preset.sh` is missing from the target, copy it — Step F
+   `.claude/skills/update-zskills/scripts/apply-preset.sh` is missing from the target, copy it — Step F
    relies on it.
 
 5.5. **Apply Preset** (if `$PRESET_ARG` is non-empty). Run the same
@@ -1006,7 +1008,7 @@ Run /update-zskills to check for updates later.
    "Fill All Gaps"):
 
    ```bash
-   bash scripts/apply-preset.sh "$PRESET_ARG"
+   bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
    ```
 
    Capture stdout and exit code; report verbatim to the user. This is
@@ -1078,7 +1080,7 @@ These rules are inviolable. They apply to all modes:
    cross-writes.
 2. **NEVER overwrite existing hooks or scripts** — if a file already
    exists, skip it. The user may have customized it.
-   (Exception: `scripts/apply-preset.sh` performs targeted in-place
+   (Exception: `.claude/skills/update-zskills/scripts/apply-preset.sh` performs targeted in-place
    edits to `block-unsafe-generic.sh` — splicing a missing
    `BLOCK_MAIN_PUSH=` line or flipping its value. This is a
    deterministic, non-destructive operation limited to that one line;

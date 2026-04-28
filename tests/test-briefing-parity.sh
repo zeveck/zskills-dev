@@ -4,6 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export CLAUDE_PROJECT_DIR="$REPO_ROOT"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -59,7 +60,7 @@ smoke_cmds=(
 
 for cmd in "${smoke_cmds[@]}"; do
   # shellcheck disable=SC2086
-  output=$(cd "$REPO_ROOT" && python3 scripts/briefing.py $cmd 2>&1)
+  output=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" $cmd 2>&1)
   exit_code=$?
   if [[ $exit_code -eq 0 && -n "$output" ]]; then
     pass "python3 briefing.py $cmd"
@@ -81,9 +82,9 @@ else
   json_cmds=("commits --since=24h" "worktrees" "checkboxes")
   for cmd in "${json_cmds[@]}"; do
     # shellcheck disable=SC2086
-    node_out=$(cd "$REPO_ROOT" && node scripts/briefing.cjs $cmd 2>/dev/null)
+    node_out=$(cd "$REPO_ROOT" && node "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" $cmd 2>/dev/null)
     # shellcheck disable=SC2086
-    py_out=$(cd "$REPO_ROOT" && python3 scripts/briefing.py $cmd 2>/dev/null)
+    py_out=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" $cmd 2>/dev/null)
 
     # Both should produce valid JSON — compare top-level keys
     node_keys=$(echo "$node_out" | python3 -c "
@@ -125,8 +126,8 @@ except:
   done
 
   # Text subcommand: summary — compare line count
-  node_summary=$(cd "$REPO_ROOT" && node scripts/briefing.cjs summary --since=24h 2>/dev/null)
-  py_summary=$(cd "$REPO_ROOT" && python3 scripts/briefing.py summary --since=24h 2>/dev/null)
+  node_summary=$(cd "$REPO_ROOT" && node "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" summary --since=24h 2>/dev/null)
+  py_summary=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" summary --since=24h 2>/dev/null)
 
   node_lines=$(echo "$node_summary" | wc -l)
   py_lines=$(echo "$py_summary" | wc -l)

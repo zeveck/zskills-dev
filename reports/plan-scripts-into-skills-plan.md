@@ -1,5 +1,56 @@
 # Plan Report — Move skill-owned scripts into the skills that use them
 
+## Phase — 2 Move single-owner Tier-1 scripts to owning skills [UNFINALIZED]
+
+**Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-scripts-into-skills-plan
+**Branch:** feat/scripts-into-skills-plan
+**Commits:** e401209 (impl: 7 git mv + 22 file mods), 3716452 (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 2.1 | apply-preset.sh moved to skills/update-zskills/scripts/ | Done | e401209 |
+| 2.2 | compute-cron-fire.sh moved to skills/run-plan/scripts/ + 4 callsites | Done | e401209 |
+| 2.2b | plan-drift-correct.sh moved to skills/run-plan/scripts/ + 8 callsites + test path + TRACKING_NAMING.md | Done | e401209 |
+| 2.3 | post-run-invariants.sh moved + 3 callsites | Done | e401209 |
+| 2.4 | briefing.cjs + briefing.py moved + 11 callsites + language-appropriate self-doc idioms | Done | e401209 |
+| 2.5 | update-zskills dependency check retains both halves (artifact + interpreter) | Done | e401209 |
+| 2.6 | tests/test-briefing-parity.sh updated | Done | e401209 |
+| 2.7 | tests/test-apply-preset.sh updated | Done | e401209 |
+| 2.7b | statusline.sh moved + Step C.5 fixed + +x bit set | Done | e401209 |
+| 2.8 | Mirrors regenerated for 3 skills via mirror-skill.sh | Done | e401209 |
+| 2.8b | scripts/__pycache__/ verified absent | Done | e401209 |
+| 2.9 | bash tests/run-all.sh passes | Done | 931/931 |
+
+### Verification
+
+- Test suite: PASSED (931/931, no delta from baseline)
+- All scripts moved with `git mv`-equivalent rename detection (history preserved via `git log --follow`)
+- All 7 scripts have correct +x bits (statusline.sh required `git update-index --chmod=+x`)
+- No old `scripts/<name>` references in skills/ or .claude/skills/ (disambiguated grep returns 0)
+- Mirror parity: `diff -r skills/<name> .claude/skills/<name>` empty for update-zskills, run-plan, briefing
+- Briefing dependency check retains the artifact half (skills/briefing/scripts/briefing.* still listed)
+- Self-doc idioms language-appropriate: path.basename(__filename) in .cjs, os.path.basename(sys.argv[0]) in .py, no $(basename "$0") leak
+
+### PLAN-TEXT-DRIFT findings
+
+5 tokens flagged by implementer + verifier (independent re-detection confirmed all 5):
+- 2 are AC grep-overmatch issues (literal `grep 'scripts/X'` matches new-form `.claude/skills/<owner>/scripts/X` because new path is suffix-equal). Disambiguated form `(^|[^./])scripts/X` returns 0 outside intentional STALE_LIST. AC intent satisfied.
+- 3 are line-number staleness in plan WI prose (work was done via grep, not line numbers).
+
+None blocked correctness. Phase 3.5 didn't auto-correct because the drift category here is "AC formulation pattern" not "numeric value off by N%" — the disambiguated greps are already in the plan as fallback.
+
+### Notes
+
+- Cross-skill callers (other skills that call these moved scripts) are Phase 3b's scope and remain untouched.
+- HANDOFF_CANARY_FAILURE_INJECTION.md:223 references `scripts/post-run-invariants.sh` — outside skills/.claude/skills scope; will be swept in Phase 3b or Phase 6 docs sweep.
+- STALE_LIST in script-ownership.md intentionally retains old `scripts/<name>` paths (Phase 4 deletion list); not in scope to change.
+
+---
+
 ## Phase — 1 Inventory cleanup: fix dead refs, write ownership registry [UNFINALIZED]
 
 **Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md

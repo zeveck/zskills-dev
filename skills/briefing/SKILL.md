@@ -15,17 +15,17 @@ Gather project state and present a structured briefing.
 Before executing any mode, determine which runtime is available for the
 briefing helper script:
 
-1. Try `node scripts/briefing.cjs` first (preferred).
-2. If `node` is not found, try `python3 scripts/briefing.py` (fallback).
+1. Try `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"` first (preferred).
+2. If `node` is not found, try `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"` (fallback).
 3. If neither `node` nor `python3` is available, output a clear error and stop:
 
    > /briefing requires Node.js or Python 3. Install one and ensure it's on PATH.
    > - Node.js: https://nodejs.org/
    > - Python: https://python.org/
 
-Use the detected runtime for all `node scripts/briefing.cjs` commands below.
-If using the Python fallback, substitute `python3 scripts/briefing.py` wherever
-the instructions say `node scripts/briefing.cjs`.
+Use the detected runtime for all `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"` commands below.
+If using the Python fallback, substitute `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"` wherever
+the instructions say `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"`.
 
 ## Argument Parsing
 
@@ -64,7 +64,7 @@ extraction and which commits are unlanded.
 Quick terminal-only triage view. The helper outputs pre-formatted text.
 
 ```bash
-node scripts/briefing.cjs summary --since=<period>
+node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" summary --since=<period>
 ```
 
 Present the output **verbatim** — it is already formatted with three buckets:
@@ -79,7 +79,7 @@ Present the output **verbatim** — it is already formatted with three buckets:
 Generate a detailed markdown report and write it to `reports/`.
 
 ```bash
-node scripts/briefing.cjs report --since=<period>
+node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" report --since=<period>
 ```
 
 The helper writes the file directly and prints its path. Report includes:
@@ -108,7 +108,7 @@ fix reports, and plan reports that need human sign-off.
 #### Step 1 — Gather data
 
 ```bash
-node scripts/briefing.cjs verify
+node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" verify
 ```
 
 The script output includes both report sign-off data and worktree data.
@@ -190,7 +190,7 @@ Empty state: `ALL CLEAR — no pending sign-off items.`
 Show what's actively in flight right now.
 
 ```bash
-node scripts/briefing.cjs current
+node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" current
 ```
 
 Present the output **verbatim**. Sections:
@@ -207,7 +207,7 @@ Detailed worktree analysis with cleanup readiness. Read-only — shows what's
 safe to remove but does not remove anything.
 
 ```bash
-node scripts/briefing.cjs worktrees-status
+node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" worktrees-status
 ```
 
 Present the output **verbatim**. Sections:
@@ -221,7 +221,7 @@ Present the output **verbatim**. Sections:
 
 ## Data Gathering
 
-The agent runs `node scripts/briefing.cjs <subcommand>` and captures stdout.
+The agent runs `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" <subcommand>` and captures stdout.
 
 | Subcommand   | Output   | Description                              |
 |-------------|----------|------------------------------------------|

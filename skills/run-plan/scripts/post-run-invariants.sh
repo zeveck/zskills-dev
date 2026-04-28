@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/post-run-invariants.sh — End-of-run assertions for /run-plan.
+# post-run-invariants.sh — End-of-run assertions for /run-plan.
 #
 # Purpose: make silent-failure accumulation structurally impossible. After
 # a plan run completes (PR mode, cherry-pick mode, or delegate mode), the
@@ -19,7 +19,7 @@
 # the LLM may skip prose under compaction. This script WILL run.
 #
 # Usage:
-#   bash scripts/post-run-invariants.sh \
+#   bash $(basename "$0") \
 #     --worktree <path> \
 #     --branch <name> \
 #     --landed-status <status> \

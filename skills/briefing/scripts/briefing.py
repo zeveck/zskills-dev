@@ -6,14 +6,14 @@ Standalone Python script. No dependencies beyond the standard library.
 Ported from briefing.cjs (Node.js/CommonJS).
 
 Usage:
-  python3 scripts/briefing.py worktrees          — JSON worktree classification
-  python3 scripts/briefing.py checkboxes         — JSON unchecked items from reports
-  python3 scripts/briefing.py commits [--since=] — JSON categorized commits
-  python3 scripts/briefing.py summary            — Formatted terminal output
-  python3 scripts/briefing.py report [--since=]  — Combined JSON blob
-  python3 scripts/briefing.py verify             — Verification status
-  python3 scripts/briefing.py current            — Current session status
-  python3 scripts/briefing.py worktrees-status   — Detailed worktree cleanup report
+  python3 briefing.py worktrees          — JSON worktree classification
+  python3 briefing.py checkboxes         — JSON unchecked items from reports
+  python3 briefing.py commits [--since=] — JSON categorized commits
+  python3 briefing.py summary            — Formatted terminal output
+  python3 briefing.py report [--since=]  — Combined JSON blob
+  python3 briefing.py verify             — Verification status
+  python3 briefing.py current            — Current session status
+  python3 briefing.py worktrees-status   — Detailed worktree cleanup report
 """
 
 import glob
@@ -25,6 +25,8 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+
+SELF = os.path.basename(sys.argv[0])
 
 try:
     from zoneinfo import ZoneInfo
@@ -1614,7 +1616,7 @@ def format_worktrees_status(worktrees, opts=None):
 def main():
     args = sys.argv[1:]
     if not args:
-        print('Usage: python3 scripts/briefing.py <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
+        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
         sys.exit(1)
 
     subcommand = args[0]
@@ -1700,7 +1702,7 @@ def main():
         print(format_worktrees_status(wts))
 
     else:
-        print('Usage: python3 scripts/briefing.py <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
+        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
         sys.exit(1)
 
 

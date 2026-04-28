@@ -2,7 +2,7 @@
 # Apply a zskills preset to .claude/zskills-config.json and
 # .claude/hooks/block-unsafe-generic.sh.
 #
-# Usage: bash scripts/apply-preset.sh <cherry-pick|locked-main-pr|direct>
+# Usage: bash $(basename "$0") <cherry-pick|locked-main-pr|direct>
 # Env:   PROJECT_ROOT — override root (default: $(pwd))
 # Exits: 0 = applied (at least one field changed)
 #        1 = no changes (preset already applied)
@@ -154,7 +154,7 @@ if [ -z "$CURRENT_LINE" ]; then
   awk -v val="$BLOCK_MAIN_PUSH" '
     BEGIN { inserted=0 }
     !inserted && NR>1 && !/^#/ && !/^[[:space:]]*$/ {
-      print "# Preset toggle — set by scripts/apply-preset.sh. Do not edit manually."
+      print "# Preset toggle — set by apply-preset.sh. Do not edit manually."
       print "BLOCK_MAIN_PUSH=" val
       print ""
       inserted=1
@@ -163,7 +163,7 @@ if [ -z "$CURRENT_LINE" ]; then
     END {
       # Safety net: if the file had no code lines at all, append.
       if (!inserted) {
-        print "# Preset toggle — set by scripts/apply-preset.sh. Do not edit manually."
+        print "# Preset toggle — set by apply-preset.sh. Do not edit manually."
         print "BLOCK_MAIN_PUSH=" val
       }
     }

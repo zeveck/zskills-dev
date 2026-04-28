@@ -407,7 +407,7 @@ expect_script_exit \
 # a given invariant. MAIN_ROOT is resolved via `git rev-parse
 # --git-common-dir`, so every invocation subshell-cd's into the fixture's
 # primary repo first.
-INVARIANTS_SCRIPT="$REPO_ROOT/scripts/post-run-invariants.sh"
+INVARIANTS_SCRIPT="$REPO_ROOT/skills/run-plan/scripts/post-run-invariants.sh"
 
 section "Invariant #1: worktree on disk (1 case)"
 i1_primary=$(setup_fixture_repo)

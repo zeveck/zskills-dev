@@ -3,7 +3,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCRIPT="$REPO_ROOT/scripts/compute-cron-fire.sh"
+SCRIPT="$REPO_ROOT/skills/run-plan/scripts/compute-cron-fire.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
