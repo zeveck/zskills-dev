@@ -51,8 +51,8 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 - [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
-- [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. Drafted on branch `plans/pr-landing-unification` (2026-04-27).
-- [ ] **Rebase + merge** branch `plans/pr-landing-unification` onto main, then `/run-plan plans/PR_LANDING_UNIFICATION.md`. Branch is based on `47e8344` (pre-#75) — rebase first to pick up the PR #75 gating fix that the plan inherits from.
+- [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. Drafted on branch `plans/pr-landing-unification` (2026-04-27), [PR #77](https://github.com/zeveck/zskills-dev/pull/77) open and rebased onto current main.
+- [ ] After PR #77 merges: `/run-plan plans/PR_LANDING_UNIFICATION.md`.
 
 #### Phase G — deferred
 
