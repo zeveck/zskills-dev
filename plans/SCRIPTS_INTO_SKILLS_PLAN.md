@@ -115,14 +115,15 @@ decision belongs in the follow-up plan, not here.
 
 ## Phase 1 — Inventory cleanup: fix dead refs, write ownership registry
 
-### Goal
+#### Goal
 
-Close one pre-existing hole (four dead references that fail at runtime)
-and seed the ownership table in a place future agents will read. (The
-"orphan" originally listed here — `build-prod.sh` — was reclassified
-Tier 2 after R1/D1 verification; no deletion happens.)
+Close one pre-existing hole (four dead references that fail at runtime),
+seed the ownership table in a place future agents will read, and clean
+two non-script artifacts from `scripts/`. (The "orphan" originally
+listed here — `build-prod.sh` — was reclassified Tier 2 after R1/D1
+verification; no deletion happens.)
 
-### Work Items
+#### Work Items
 
 - [ ] 1.2 — **Dead reference fix in `skills/fix-issues/SKILL.md`.** Three
       references to scripts that don't exist on disk and never have:
@@ -139,6 +140,17 @@ Tier 2 after R1/D1 verification; no deletion happens.)
       via `gh issue list --json labels`). The replacement prose is
       grep-able recipes the agent can execute today, so the skill
       stops promising machinery it doesn't have.
+
+      **Read context before substituting (F-7 fix).** Read 20 lines of
+      context around each match (`:301`, `:500`, `:505`) BEFORE writing
+      the replacement. The three recipes above are illustrative, not
+      authoritative — the surrounding paragraph may be checking for
+      something subtly different (e.g., line `:301` may be checking
+      pre-emptive `gh issue` closures rather than label tallies). The
+      task is judgment-class; `script-ownership.md` is the registry
+      authority, but for fallback prose the implementing agent must
+      verify the recipe is a 1:1 replacement for what the (nonexistent)
+      script would have produced.
 - [ ] 1.3 — **Dead reference fix in `skills/review-feedback/SKILL.md:34`**:
       `node scripts/review-feedback.js feedback.json`. Replace with a
       `jq`-free bash recipe (parse the JSON via the same
@@ -156,16 +168,76 @@ Tier 2 after R1/D1 verification; no deletion happens.)
       brief paragraph documenting the cross-skill path convention
       (next item) and the STALE_LIST that Phase 4 reads. This is the
       authoritative file Phase 4's migration logic greps. **Format
-      contract:** column 1 = ` `script-name.ext` `, column 2 = ` 1 `
+      contract:** column 1 = `` `script-name.ext` ``, column 2 = ` 1 `
       or ` 2 ` (literal digit, with surrounding whitespace), column
       3 = owner-or-disposition. Future agents adding rows must
       preserve this layout or update both parsers.
-- [ ] 1.5 — Mirror update-zskills:
-      `rm -rf .claude/skills/update-zskills && cp -a skills/update-zskills/ .claude/skills/update-zskills/`.
-      Mirror fix-issues and review-feedback the same way after WIs
-      1.2 / 1.3.
 
-### Design & Constraints
+      **The table to write includes the two new-since-draft scripts
+      (F-1 / F-2 / DA-1 / DA-2 fixes):**
+
+      | Script                       | Tier   | Owner / disposition          |
+      |------------------------------|--------|------------------------------|
+      | `apply-preset.sh`            | 1      | `update-zskills`             |
+      | `briefing.cjs`               | 1      | `briefing`                   |
+      | `briefing.py`                | 1      | `briefing`                   |
+      | `build-prod.sh`              | 2      | release-only repo tooling; never installed to consumers (called by `.github/workflows/ship-to-prod.yml:80`; documented in `RELEASING.md:5,47,64,71,78,82`) |
+      | `clear-tracking.sh`          | 1      | `update-zskills`             |
+      | `compute-cron-fire.sh`       | 1      | `run-plan`                   |
+      | `create-worktree.sh`         | 1      | `create-worktree`            |
+      | `land-phase.sh`              | 1      | `commit`                     |
+      | `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
+      | `plan-drift-correct.sh`      | 1      | `run-plan`                   |
+      | `port.sh`                    | 1      | `update-zskills`             |
+      | `post-run-invariants.sh`     | 1      | `run-plan`                   |
+      | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
+      | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
+      | `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `var/dev.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
+      | `test-all.sh`                | 2      | already a partial template (`{{E2E_TEST_CMD}}` placeholders); customized by consumer with their own test commands. **Note:** full conversion to a formal failing stub is deferred to the same follow-up plan. |
+      | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
+      | `write-landed.sh`            | 1      | `commit`                     |
+
+      Total: 14 Tier 1 (`apply-preset`, `briefing.cjs`, `briefing.py`,
+      `clear-tracking`, `compute-cron-fire`, `create-worktree`,
+      `land-phase`, `plan-drift-correct`, `port`, `post-run-invariants`,
+      `sanitize-pipeline-id`, `statusline`, `worktree-add-safe`,
+      `write-landed`); 4 Tier 2 (`build-prod.sh`, `mirror-skill.sh`,
+      `stop-dev.sh`, `test-all.sh`).
+
+      **Synchronize the Overview table.** The Overview table at the top
+      of this plan (lines 38-55) MUST match this canonical 18-row
+      table. Add the two missing rows (`mirror-skill.sh`,
+      `plan-drift-correct.sh`) to the Overview table during this WI.
+- [ ] 1.5 — Mirror update-zskills via the helper:
+      `bash scripts/mirror-skill.sh update-zskills`.
+      Mirror fix-issues and review-feedback the same way after WIs
+      1.2 / 1.3:
+      ```bash
+      for s in update-zskills fix-issues review-feedback; do
+        bash scripts/mirror-skill.sh "$s"
+      done
+      ```
+- [ ] 1.6 — **Clean orphan artifacts under `scripts/` (DA-11 fix).**
+      Two non-script artifacts remain at `scripts/` and contradict the
+      "consumer-customizable" framing this plan establishes for what's
+      left there:
+      - `scripts/rel-root-cw-cw-smoke-43859/` — empty directory left
+        behind by a `tests/test-create-worktree.sh` fixture cleanup
+        path. Verify empty (`ls -A scripts/rel-root-cw-cw-smoke-43859`
+        outputs nothing) then `rmdir scripts/rel-root-cw-cw-smoke-43859`.
+        If non-empty, surface to the user — do NOT recursively delete.
+      - `scripts/__pycache__/briefing.cpython-312.pyc` — Python bytecode
+        generated by `briefing.py`. Do NOT delete in Phase 1; this
+        cleanup is paired with Phase 2's `briefing.py` move (Phase 2
+        WI 2.4 already moves `briefing.py` to `skills/briefing/scripts/`
+        which writes future bytecode to a NEW
+        `skills/briefing/scripts/__pycache__/`). Phase 2 WI 2.8b will
+        do the per-file `rm -- scripts/__pycache__/briefing.cpython-312.pyc`
+        and `rmdir scripts/__pycache__/` once empty. Add
+        `scripts/__pycache__/` to `.gitignore` if not already present
+        (verify with `grep '__pycache__' .gitignore`).
+
+#### Design & Constraints
 
 **Cross-skill path convention** (recorded in
 `skills/update-zskills/references/script-ownership.md` per WI 1.4 and
@@ -206,6 +278,23 @@ referenced from every later phase):
   invocation becomes a need, switch to the `readlink -f` resolution
   form documented in Phase 3a Design.
 
+**Single source of truth for Tier-1 names (DA-5 fix).** Every grep
+sweep in this plan that enumerates Tier-1 names MUST drive off
+`script-ownership.md` rather than maintaining its own closed list.
+The canonical parser, used in WI 4.2 / WI 4.8 case 6a / Phase 5
+WI 5.1 / Phase 3b WI 3b.1:
+
+```bash
+TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+  gsub(/[[:space:]`]/, "", $2); print $2
+}' skills/update-zskills/references/script-ownership.md)
+```
+
+Phases 3b, 5, and 6 keep illustrative closed lists in their grep
+recipes for human readability, but ACs reference the parser-driven
+form so a future row addition to `script-ownership.md` doesn't drift
+the sweep grep.
+
 **Why fix the dead refs now and not file as separate issues.** Per
 memory `feedback_dont_defer_hole_closure.md`: when an incident is a
 hole, closing the hole IS the change. The dead refs are
@@ -218,13 +307,23 @@ them keeps shipping a skill that lies.
 consumers protecting `scripts/<name>` source-tree paths for Tier 1
 scripts. Source tree migrates to skill-dir-only.
 
-**Mirror discipline.** Every phase that edits `skills/<name>/`
-finishes with
-`rm -rf .claude/skills/<name> && cp -a skills/<name>/ .claude/skills/<name>/`
-(batched copy, never per-file Edit on `.claude/skills/`; per memory
-`feedback_claude_skills_permissions.md`).
+**Mirror discipline (DA-2 fix).** Every phase that edits
+`skills/<name>/` finishes with `bash scripts/mirror-skill.sh <name>`
+(or `for s in ...; do bash scripts/mirror-skill.sh "$s"; done` for
+multiple skills). The earlier draft used `rm -rf .claude/skills/<name>
+&& cp -a skills/<name>/ .claude/skills/<name>/` — this pattern is
+**blocked by the consumer's own `block-unsafe-generic.sh` hook**
+(`hooks/block-unsafe-generic.sh:201-213, 217-222` rejects recursive
+rm on paths that aren't a literal `/tmp/<name>`, that contain shell
+variable expansion, or that contain glob wildcards — `.claude/skills/<name>`
+fails the literal-`/tmp/` check; `.claude/skills/$s` fails both that
+and the variable-expansion check). `mirror-skill.sh` (added by PR #88)
+is hook-compatible: it uses `cp -a "$SRC/." "$DST/"` plus per-file
+`rm --` for orphan removal (no `-r` flag, no glob, never `rm -rf`).
+The script is also tested (`tests/test-mirror-skill.sh`); the helper
+is the canonical mirror primitive going forward.
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
 - [ ] `test -f scripts/build-prod.sh` (Tier-2; not deleted; verified
       consumed by `.github/workflows/ship-to-prod.yml:80`).
@@ -234,17 +333,30 @@ finishes with
       and `test -f .claude/skills/update-zskills/references/script-ownership.md`.
 - [ ] `grep -c 'Tier 1' skills/update-zskills/references/script-ownership.md`
       ≥ 1 (table is present).
+- [ ] **Ownership registry contains 18 rows including the two
+      new-since-draft scripts (F-1 / F-2 / DA-1 / DA-2 fix).**
+      `grep -F '`mirror-skill.sh`' skills/update-zskills/references/script-ownership.md`
+      ≥ 1 AND
+      `grep -F '`plan-drift-correct.sh`' skills/update-zskills/references/script-ownership.md`
+      ≥ 1.
+- [ ] **Overview table in this plan mirrors the registry.**
+      `grep -F '`mirror-skill.sh`' plans/SCRIPTS_INTO_SKILLS_PLAN.md`
+      ≥ 1 AND
+      `grep -F '`plan-drift-correct.sh`' plans/SCRIPTS_INTO_SKILLS_PLAN.md`
+      ≥ 1.
+- [ ] **Orphan artifacts cleaned (DA-11 fix).**
+      `! test -e scripts/rel-root-cw-cw-smoke-43859`.
 - [ ] `diff -r skills/fix-issues .claude/skills/fix-issues` is empty;
       same for `review-feedback` and `update-zskills`.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-### Dependencies
+#### Dependencies
 
 None.
 
 ## Phase 2 — Move single-owner Tier 1 scripts
 
-### Goal
+#### Goal
 
 Move scripts whose only zskills caller is one skill into that skill's
 `scripts/` subdir. No cross-skill path updates needed yet — these
@@ -252,11 +364,13 @@ scripts have a single owner and the owner uses a same-skill internal
 path.
 
 Scripts moved in this phase: `apply-preset.sh` (→ `update-zskills`),
-`compute-cron-fire.sh` (→ `run-plan`), `post-run-invariants.sh` (→
-`run-plan`), `briefing.cjs` (→ `briefing`), `briefing.py` (→
-`briefing`), `statusline.sh` (→ `update-zskills`).
+`compute-cron-fire.sh` (→ `run-plan`), `plan-drift-correct.sh`
+(→ `run-plan`, F-2 / DA-1 fix — single-owner is `run-plan` per
+ownership table; 8 callsites all in `skills/run-plan/SKILL.md`),
+`post-run-invariants.sh` (→ `run-plan`), `briefing.cjs` (→ `briefing`),
+`briefing.py` (→ `briefing`), `statusline.sh` (→ `update-zskills`).
 
-### Work Items
+#### Work Items
 
 - [ ] 2.1 — **`apply-preset.sh` → `skills/update-zskills/scripts/apply-preset.sh`.**
       `git mv scripts/apply-preset.sh skills/update-zskills/scripts/apply-preset.sh`
@@ -281,6 +395,43 @@ Scripts moved in this phase: `apply-preset.sh` (→ `update-zskills`),
       Per D5: update self-doc strings inside the script to
       path-agnostic `$(basename "$0")` form (verify with
       `grep -n 'scripts/compute-cron-fire' scripts/compute-cron-fire.sh`).
+- [ ] 2.2b — **`plan-drift-correct.sh` → `skills/run-plan/scripts/plan-drift-correct.sh`
+      (F-2 / DA-1 fix).** Single-owner: only `skills/run-plan/SKILL.md`
+      references it (8 callsites at lines 577, 744, 953, 1297, 1306,
+      1322, 1323, 1344 — verified by
+      `grep -nc plan-drift-correct skills/run-plan/SKILL.md` = 8).
+      The script's own header (line 7) cites `compute-cron-fire.sh` as
+      its co-pattern, confirming `run-plan` ownership.
+
+      `git mv scripts/plan-drift-correct.sh skills/run-plan/scripts/`.
+
+      Update all 8 callsites in `skills/run-plan/SKILL.md` from
+      `bash scripts/plan-drift-correct.sh ...` (or `scripts/plan-drift-correct.sh`
+      in prose) to
+      `bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/plan-drift-correct.sh" ...`
+      (bare `$CLAUDE_PROJECT_DIR` form per Phase 1 Design). Authoritative
+      truth = the grep:
+      ```bash
+      grep -rn 'scripts/plan-drift-correct' skills/run-plan/ .claude/skills/run-plan/
+      ```
+      Address every match. (Both source and mirror copies will appear;
+      mirror is regenerated in WI 2.8 below.)
+
+      Update self-doc strings inside `plan-drift-correct.sh` (verify
+      with `grep -n 'scripts/' scripts/plan-drift-correct.sh` to see
+      header references) to path-agnostic `$(basename "$0")` form.
+
+      Update the test at `tests/test-plan-drift-correct.sh:13`
+      (`SCRIPT="$REPO_ROOT/scripts/plan-drift-correct.sh"`) to
+      `SCRIPT="$REPO_ROOT/skills/run-plan/scripts/plan-drift-correct.sh"`.
+      MANDATE absolute-anchored form (D16).
+
+      Sweep `docs/tracking/TRACKING_NAMING.md` lines 414, 421 (verified
+      by `grep -n plan-drift-correct docs/tracking/TRACKING_NAMING.md`)
+      from `scripts/plan-drift-correct.sh` to
+      `.claude/skills/run-plan/scripts/plan-drift-correct.sh`. (This
+      could alternatively land as part of Phase 6 WI 6.0b's docs sweep;
+      done here so the move is atomic.)
 - [ ] 2.3 — **`post-run-invariants.sh` → `skills/run-plan/scripts/post-run-invariants.sh`.**
       `git mv` and update `skills/run-plan/SKILL.md:1639`, `:1653` and
       `skills/run-plan/references/finish-mode.md:50`. Same-skill →
@@ -291,17 +442,16 @@ Scripts moved in this phase: `apply-preset.sh` (→ `update-zskills`),
 - [ ] 2.4 — **`briefing.cjs` and `briefing.py` → `skills/briefing/scripts/`.**
       `git mv scripts/briefing.cjs skills/briefing/scripts/`;
       `git mv scripts/briefing.py skills/briefing/scripts/`.
-      Update **all 11 references** (verified by
-      `grep -nc 'briefing\.\(cjs\|py\)' skills/briefing/SKILL.md` = 11)
-      in `skills/briefing/SKILL.md` (the
-      `node scripts/briefing.cjs` invocations at
-      `:18,19,26,27,28,67,82,111,193,210,224`) to
-      `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"`
+      Update **all references** in `skills/briefing/SKILL.md`
+      (expect ~11 matches; F-8 fix — line list dropped, grep is
+      authoritative). Authoritative truth is
+      `grep -rn 'scripts/briefing\.\(cjs\|py\)' skills/briefing/`;
+      address every match. Each
+      `node scripts/briefing.cjs ...` becomes
+      `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" ...`
       (and similarly for `briefing.py`; bare `$CLAUDE_PROJECT_DIR`
-      form per Phase 1 Design). Authoritative truth is the
-      grep, not the line-number list — drive edits by
-      `grep -rn 'scripts/briefing\.\(cjs\|py\)' skills/briefing/`
-      and address every match.
+      form per Phase 1 Design).
+
       Also update self-doc strings inside `briefing.cjs` and
       `briefing.py` (verified at
       `grep -n 'scripts/briefing' scripts/briefing.cjs` lines
@@ -357,15 +507,33 @@ Scripts moved in this phase: `apply-preset.sh` (→ `update-zskills`),
       Update self-doc strings inside `statusline.sh` (verify with
       `grep -n 'statusline\|scripts/' scripts/statusline.sh`) to
       path-agnostic `$(basename "$0")` form.
-- [ ] 2.8 — Mirror each touched skill:
-      `rm -rf .claude/skills/update-zskills && cp -a skills/update-zskills/ .claude/skills/update-zskills/`,
-      same for `run-plan` and `briefing`.
+- [ ] 2.8 — Mirror each touched skill via the helper (DA-2 fix):
+      ```bash
+      for s in update-zskills run-plan briefing; do
+        bash scripts/mirror-skill.sh "$s"
+      done
+      ```
+- [ ] 2.8b — **Clean orphan `__pycache__/` (DA-11 follow-on from WI 1.6).**
+      Now that `briefing.py` has moved, the bytecode at
+      `scripts/__pycache__/briefing.cpython-312.pyc` is permanently
+      orphaned. Remove per-file (NEVER `rm -r`):
+      ```bash
+      rm -- scripts/__pycache__/briefing.cpython-312.pyc \
+        && echo "removed scripts/__pycache__/briefing.cpython-312.pyc" \
+        || { echo "ERROR: rm failed" >&2; exit 1; }
+      rmdir scripts/__pycache__/ 2>&1 \
+        | grep -qE '(Directory not empty|^$)' && echo "rmdir attempted"
+      # If non-empty (other .pyc files appeared), skip the rmdir and
+      # surface to user; do NOT recursively delete.
+      ```
+      Verify `scripts/__pycache__/` is in `.gitignore`; if not, add
+      it.
 - [ ] 2.9 — Run `bash tests/run-all.sh`. Expect green; if not, fix
       paths in whatever WI missed a reference (do NOT weaken tests).
 
-### Design & Constraints
+#### Design & Constraints
 
-**Why these five together.** Single-owner moves are independent of
+**Why these scripts together.** Single-owner moves are independent of
 each other; they share only the mechanical pattern (`git mv`, update
 N references in one skill, mirror). Bundling them into one phase
 keeps the diff coherent and gives one revert-point if the pattern
@@ -379,6 +547,14 @@ itself is wrong.
 "belongs inside the skill that uses it" is satisfied by the briefing
 skill. The dependency check in `update-zskills` becomes "node/python3
 present on PATH", with no `scripts/briefing.*` filename mention.
+
+**Why `plan-drift-correct.sh` moves with `compute-cron-fire.sh`
+(F-2 / DA-1 fix).** The two scripts are co-pattern: both are
+`run-plan`-owned bash arithmetic/drift helpers; the
+`plan-drift-correct.sh` header (line 7) explicitly cites
+`compute-cron-fire.sh` as its template. Both have only `run-plan`
+callsites. Co-locating them at `skills/run-plan/scripts/` is mechanical
+and obvious.
 
 **Why `statusline.sh` moves to `update-zskills`.** Single-owner:
 Step C.5 of `update-zskills/SKILL.md` is the only zskills caller, and
@@ -397,23 +573,45 @@ five scripts moved in this phase invoke a peer script — applies
 later, in Phase 3 (`create-worktree.sh` → `worktree-add-safe.sh`,
 `sanitize-pipeline-id.sh`).
 
-**Mirror discipline.** Per Phase 1.
+**Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
 - [ ] `! test -e scripts/apply-preset.sh && test -f skills/update-zskills/scripts/apply-preset.sh && test -f .claude/skills/update-zskills/scripts/apply-preset.sh`.
 - [ ] `! test -e scripts/compute-cron-fire.sh && test -f skills/run-plan/scripts/compute-cron-fire.sh && test -f .claude/skills/run-plan/scripts/compute-cron-fire.sh`.
+- [ ] **`plan-drift-correct.sh` moved (F-2 / DA-1 fix):**
+      `! test -e scripts/plan-drift-correct.sh && test -f skills/run-plan/scripts/plan-drift-correct.sh && test -f .claude/skills/run-plan/scripts/plan-drift-correct.sh`.
 - [ ] `! test -e scripts/post-run-invariants.sh && test -f skills/run-plan/scripts/post-run-invariants.sh && test -f .claude/skills/run-plan/scripts/post-run-invariants.sh`.
 - [ ] `! test -e scripts/briefing.cjs && ! test -e scripts/briefing.py && test -f skills/briefing/scripts/briefing.cjs && test -f skills/briefing/scripts/briefing.py && test -f .claude/skills/briefing/scripts/briefing.cjs && test -f .claude/skills/briefing/scripts/briefing.py`.
 - [ ] `! test -e scripts/statusline.sh && test -f skills/update-zskills/scripts/statusline.sh && test -f .claude/skills/update-zskills/scripts/statusline.sh`.
+- [ ] **Bytecode cleanup (DA-11 fix):**
+      `! test -e scripts/__pycache__/briefing.cpython-312.pyc`.
 - [ ] Step C.5 source path updated:
       `grep -F '.claude/skills/update-zskills/scripts/statusline.sh' skills/update-zskills/SKILL.md | wc -l` ≥ 1
       AND `! grep -E '\$PORTABLE/scripts/statusline\.sh' skills/update-zskills/SKILL.md`.
-- [ ] All five executable bits preserved:
-      `for f in skills/update-zskills/scripts/apply-preset.sh skills/run-plan/scripts/compute-cron-fire.sh skills/run-plan/scripts/post-run-invariants.sh skills/briefing/scripts/briefing.py; do test -x "$f" || exit 1; done`
+- [ ] All six executable bits preserved:
+      `for f in skills/update-zskills/scripts/apply-preset.sh skills/run-plan/scripts/compute-cron-fire.sh skills/run-plan/scripts/plan-drift-correct.sh skills/run-plan/scripts/post-run-invariants.sh skills/briefing/scripts/briefing.py skills/update-zskills/scripts/statusline.sh; do test -x "$f" || exit 1; done`
       (`.cjs` does not need `+x` since it's invoked via `node`).
-- [ ] `grep -rn 'scripts/apply-preset\|scripts/compute-cron-fire\|scripts/post-run-invariants\|scripts/briefing\.' skills/ .claude/skills/`
-      returns zero matches (all old-path refs purged).
+- [ ] `grep -rn 'scripts/apply-preset\|scripts/compute-cron-fire\|scripts/plan-drift-correct\|scripts/post-run-invariants\|scripts/briefing\.' skills/ .claude/skills/`
+      returns zero matches (all old-path refs purged including the
+      new `plan-drift-correct.sh` per F-2 / DA-1 fix).
+- [ ] **`plan-drift-correct.sh` callsites swept (F-2 fix):**
+      `grep -c 'scripts/plan-drift-correct' skills/run-plan/SKILL.md`
+      = 0 (was 8 before Phase 2 ran) AND
+      `grep -c '.claude/skills/run-plan/scripts/plan-drift-correct' skills/run-plan/SKILL.md`
+      ≥ 8.
+- [ ] **`plan-drift-correct.sh` test path updated (F-2 fix):**
+      `grep -F 'skills/run-plan/scripts/plan-drift-correct.sh' tests/test-plan-drift-correct.sh`
+      ≥ 1 AND
+      `! grep -F '"$REPO_ROOT/scripts/plan-drift-correct.sh"' tests/test-plan-drift-correct.sh`.
+- [ ] **TRACKING_NAMING.md docs updated (F-10 / F-2 fix):**
+      `grep -F '.claude/skills/run-plan/scripts/plan-drift-correct.sh' docs/tracking/TRACKING_NAMING.md`
+      ≥ 2 (was 0; lines 414, 421) AND
+      `grep -F 'scripts/plan-drift-correct.sh' docs/tracking/TRACKING_NAMING.md`
+      = 0 (or only inside skill-relative paths via the dot-prefix
+      match above — disambiguate with the exact-non-prefix form
+      `grep -nE '(^|[^./])scripts/plan-drift-correct' docs/tracking/TRACKING_NAMING.md`
+      = 0).
 - [ ] **Briefing dependency check retains the artifact half (D6 fix).**
       The dependency-check prose at `:410-411, :487-489, :533, :971`
       MUST mention `[ -f .claude/skills/briefing/scripts/briefing.cjs ]`
@@ -430,13 +628,13 @@ later, in Phase 3 (`create-worktree.sh` → `worktree-add-safe.sh`,
       same for `run-plan` and `briefing`.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-### Dependencies
+#### Dependencies
 
 Phase 1 (registry doc).
 
 ## Phase 3a — Move shared Tier 1 scripts and update same-skill internals
 
-### Goal
+#### Goal
 
 Move the seven shared Tier 1 scripts (`create-worktree.sh`,
 `worktree-add-safe.sh`, `land-phase.sh`, `write-landed.sh`,
@@ -447,7 +645,7 @@ owning skills, and update same-skill internal references
 config-driven `port.sh` default-port read). Cross-skill caller
 updates are deferred to Phase 3b.
 
-### Work Items
+#### Work Items
 
 - [ ] 3a.1 — **`create-worktree.sh` and `worktree-add-safe.sh` →
       `skills/create-worktree/scripts/`.**
@@ -600,10 +798,10 @@ updates are deferred to Phase 3b.
       ```
       Apply verbatim — the rewrite is mechanical, not
       judgment-class.
-- [ ] 3a.5 — Mirror three touched skills:
+- [ ] 3a.5 — Mirror three touched skills via the helper (DA-2 fix):
       ```bash
       for s in create-worktree commit update-zskills; do
-        rm -rf .claude/skills/$s && cp -a skills/$s/ .claude/skills/$s/
+        bash scripts/mirror-skill.sh "$s"
       done
       ```
       Verify with
@@ -615,7 +813,7 @@ updates are deferred to Phase 3b.
       callers that tests trace through. Phase 3a's gate is: same-skill
       internals + install-integrity gate work in isolation.
 
-### Design & Constraints
+#### Design & Constraints
 
 **Why split same-skill internals from cross-skill sweep.** Per D17
 (major): combining all 11 WIs across 8 skills produced a 30-edit
@@ -624,21 +822,53 @@ Phase 3b is the grep-driven cross-skill sweep + tests. Splitting gives
 `/run-plan` a natural midpoint and lets a reviewer audit each half
 independently.
 
-**Phase 3a is intentionally a mid-state (D26 + R2.2 fix).** End-of-3a
-leaves cross-skill callers naming `scripts/<name>` while the source
-files have moved. `bash tests/run-all.sh` is EXPECTED RED at end-of-3a
-— this is by design; Phase 3b updates the cross-skill callers and
-makes tests green. The /run-plan verifier MUST accept this — DO NOT
-block on `tests/run-all.sh` for Phase 3a. The gating signals for 3a
-are the structural ACs below (move succeeded, install-integrity gate
+**Phase 3a is intentionally a mid-state — but with a SCOPED test
+allowlist (DA-4 fix).** End-of-3a leaves cross-skill callers naming
+`scripts/<name>` while the source files have moved. Some test suites
+WILL go red because they trace through cross-skill callers; others
+SHOULD remain green because they're independent of the moves.
+
+The verifier MUST allow the following test suites to fail at end-of-3a
+(they exercise cross-skill paths swept in Phase 3b):
+
+- `test-create-worktree.sh` (copies `scripts/sanitize-pipeline-id.sh`
+  and `scripts/worktree-add-safe.sh` into fixtures; sweep is in WI 3b.9)
+- `test-quickfix.sh` (copies `scripts/sanitize-pipeline-id.sh`;
+  sweep is in WI 3b.9)
+- `test-canary-failures.sh` (paths to `land-phase.sh` and
+  `write-landed.sh`; sweep is in WI 3b.9)
+- `test-briefing-parity.sh` (Phase 2 WI 2.6 update may have shifted
+  it; depending on landing order, can fail at 3a)
+- `test-apply-preset.sh` (Phase 2 WI 2.7 update; same caveat)
+
+EVERY OTHER test suite registered in `tests/run-all.sh` (specifically
+including `test-mirror-skill.sh`, `test-plan-drift-correct.sh`,
+`test-hooks.sh`, `test-port.sh`, `test-compute-cron-fire.sh`,
+`test-skill-conformance.sh`, `test-skill-invariants.sh`,
+`test-phase-5b-gate.sh`, `test-scope-halt.sh`,
+`test-tracking-integration.sh`, `test-stop-dev.sh`,
+`test-update-zskills-rerender.sh`) MUST remain green. The verifier
+parses `tests/run-all.sh` output and asserts:
+
+```bash
+ALLOW_FAIL_SUITES="test-create-worktree test-quickfix test-canary-failures test-briefing-parity test-apply-preset"
+# Every suite NOT in ALLOW_FAIL_SUITES must report exit 0.
+```
+
+Per memory `feedback_verifier_test_ungated.md`, "verifier must attest
+to tests" — the explicit attestation here is "specific suites listed
+above are intentionally red at this midpoint; ALL OTHER suites must
+be green; gating is structural plus this scoped test contract." For
+PR-mode landing, mark CI failures on the 3a commit as expected for
+the listed suites only; do NOT block the PR.
+
+Phase 3b's commit is the first one where ALL test suites must be green.
+
+The structural ACs below (move succeeded, install-integrity gate
 updated, mirrors clean) PLUS the positive-pass signal
-`bash skills/create-worktree/scripts/create-worktree.sh --help`
-exits with usage text. Per memory `feedback_verifier_test_ungated.md`,
-"verifier must attest to tests" — the explicit attestation here is
-"tests intentionally red at this midpoint; gating is structural,
-not test-suite-green." For PR-mode landing, mark CI failures on the
-3a commit as expected; do NOT block the PR. Phase 3b's commit is the
-first one that must be CI-green.
+`bash skills/create-worktree/scripts/create-worktree.sh --help` exits
+with usage text PLUS the scoped test allowlist constitute the Phase
+3a gating contract.
 
 **`sanitize-pipeline-id.sh` ownership.** Choosing a single owner
 (`create-worktree`) over inlining-as-function: the script is 15
@@ -670,9 +900,9 @@ resolves to the symlink's directory, not the target's. If symlink
 invocation becomes a need, switch to
 `SCRIPT_DIR=$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)`.
 
-**Mirror discipline.** Per Phase 1.
+**Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
 - [ ] None of the seven shared Tier 1 scripts exist at
       `scripts/<name>` anymore:
@@ -694,17 +924,31 @@ invocation becomes a need, switch to
       `create-worktree.sh` runs from its new location and prints
       usage text:
       `bash skills/create-worktree/scripts/create-worktree.sh --help 2>&1 | grep -q -i usage`.
-      This is the gating signal in lieu of `tests/run-all.sh` for
-      Phase 3a — full `tests/run-all.sh` green is INTENTIONALLY
-      deferred to Phase 3b (see Design note above).
+      This is the gating signal in lieu of full `tests/run-all.sh`
+      green for Phase 3a — full green is INTENTIONALLY deferred to
+      Phase 3b for the listed allowlisted suites only (see Design
+      note above; DA-4 fix).
+- [ ] **Scoped test allowlist verifier contract (DA-4 fix).** The
+      verifier MUST capture per-suite exit codes from
+      `tests/run-all.sh` and assert: every suite NOT in the allowlist
+      (`test-create-worktree`, `test-quickfix`, `test-canary-failures`,
+      `test-briefing-parity`, `test-apply-preset`) reports exit 0.
+      The verifier-side recipe:
+      ```bash
+      OUT=$(bash tests/run-all.sh 2>&1)
+      ALLOW="test-create-worktree test-quickfix test-canary-failures test-briefing-parity test-apply-preset"
+      # Each suite reports `Tests: <name>` header, then a `Results: X passed, Y failed` line.
+      # For each suite, parse pass/fail; if Y > 0 and suite NOT in ALLOW, fail Phase 3a.
+      ```
+      Document expected-failing suites in the Phase 3a commit message.
 
-### Dependencies
+#### Dependencies
 
 Phases 1, 2.
 
 ## Phase 3b — Update cross-skill callers via grep-driven sweep
 
-### Goal
+#### Goal
 
 Update every cross-skill caller of the five shared Tier 1 scripts.
 Phase 3a left the source tree with scripts moved + same-skill
@@ -714,13 +958,19 @@ internals updated, but cross-skill callers in `do`, `fix-issues`,
 recipe, not a same-script call) all still name the old paths. This
 phase sweeps and updates them.
 
-### Work Items
+#### Work Items
 
 - [ ] 3b.1 — **Grep-driven cross-skill sweep, all seven scripts.**
-      For each of `{sanitize-pipeline-id, create-worktree, land-phase,
-      write-landed, worktree-add-safe, clear-tracking, port}`, run:
+      For each Tier-1 script name parsed from `script-ownership.md`
+      (DA-5 fix; canonical parser pinned in Phase 1 Design), run:
       ```bash
-      grep -rn 'scripts/<name>' skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      for name in $TIER1_NAMES; do
+        echo "==$name=="
+        grep -rn "scripts/$name" skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md
+      done
       ```
       Update EVERY match to the cross-skill form. Distinguish two
       patterns currently in use, both becoming the same target
@@ -791,8 +1041,16 @@ phase sweeps and updates them.
         `skills/verify-changes/SKILL.md:438`. Each becomes
         `bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh"`.
 
-      Authoritative truth = the grep (re-run in the implementing
-      session); the line lists above are a snapshot at draft time.
+      Authoritative truth = the parser-driven grep above (re-run in
+      the implementing session); the line lists above are a snapshot
+      at draft time.
+
+      **Note: `plan-drift-correct.sh` callsites are single-owner and
+      already swept in Phase 2 WI 2.2b** (F-2 / DA-1 fix). The grep
+      driven by `TIER1_NAMES` will include `plan-drift-correct` as a
+      defensive check; expect zero `scripts/plan-drift-correct`
+      matches by the time Phase 3b runs (Phase 2 already cleared
+      them). If matches appear, Phase 2 missed something — surface it.
 - [ ] 3b.2 — **Update CLAUDE.md and README.md script mentions.**
       `grep -n 'scripts/land-phase\|scripts/sanitize-pipeline-id\|scripts/write-landed\|scripts/create-worktree\|scripts/worktree-add-safe' CLAUDE.md README.md`
       shows:
@@ -802,8 +1060,8 @@ phase sweeps and updates them.
       - `CLAUDE.md:151` (mention of `scripts/sanitize-pipeline-id.sh`)
       - `CLAUDE.md:154` (mention of `scripts/write-landed.sh`)
       - `README.md:275` (mention of `scripts/write-landed.sh`)
-      - `README.md:455-465` (helper-scripts list — now mostly
-        Tier-1; rewriting handled by Phase 5 WI 5.5.d).
+      - `README.md:455-465` (helper-scripts list — see WI 3b.2.a
+        below; DA-6 fix moves the rewrite into Phase 3b).
 
       Update each: prose-form path becomes either
       `.claude/skills/<owner>/scripts/<name>` or "the script bundled
@@ -814,9 +1072,35 @@ phase sweeps and updates them.
 
       For `CLAUDE.md:11` (helper-scripts overview): rewrite to
       `scripts/ — consumer-customizable stubs (stop-dev.sh,
-      test-all.sh) and release-only repo tooling (build-prod.sh);
-      skill machinery (including port.sh, clear-tracking.sh,
-      statusline.sh) moved to .claude/skills/<owner>/scripts/`.
+      test-all.sh) and release-only repo tooling (build-prod.sh,
+      mirror-skill.sh); skill machinery (including port.sh,
+      clear-tracking.sh, statusline.sh) moved to
+      .claude/skills/<owner>/scripts/`.
+- [ ] 3b.2.a — **README.md helper-scripts list rewrite (DA-6 fix —
+      moved here from Phase 5 WI 5.5.d).** Rewrite the helper-scripts
+      list at `README.md:457-465` (header at `:455`, list body at
+      `:457-465`):
+      - REMOVE Tier-1 entries: `briefing.cjs/.py` (briefing skill),
+        `land-phase.sh` (commit skill), `post-run-invariants.sh`
+        (run-plan skill), `write-landed.sh` (commit skill),
+        `worktree-add-safe.sh` (create-worktree skill),
+        `sanitize-pipeline-id.sh` (create-worktree skill),
+        `port.sh` (update-zskills skill — Tier-1 after scope
+        adjustment), `clear-tracking.sh` (update-zskills skill —
+        Tier-1 after scope adjustment).
+      - KEEP Tier-2 entries: `test-all.sh`, `stop-dev.sh` (if
+        listed). `build-prod.sh` and `mirror-skill.sh` are
+        release-only repo tooling and typically not in the
+        consumer-facing helper-scripts block; if present, KEEP.
+      - ADD a closing line: "Skill machinery scripts moved into
+        their owning skills under `.claude/skills/<owner>/scripts/`
+        — see the `update-zskills` skill's
+        `references/script-ownership.md` for the full table."
+
+      Post-edit, the consumer-facing Helper Scripts list is just
+      `test-all.sh` and `stop-dev.sh` (plus the closing pointer
+      line). Phase 5 WI 5.5.d becomes a verification-only step
+      (DA-6 fix).
 - [ ] 3b.3 — **Update cross-skill `sanitize-pipeline-id.sh` callers.**
       Driven by 3b.1 grep. Each becomes
       `bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$ARG"`
@@ -874,21 +1158,23 @@ phase sweeps and updates them.
 
       Authoritative grep at draft time:
       `grep -n 'scripts/clear-tracking' hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh`
-      shows lines 89, 91, 103, 114, 194, 208 in each file (line 203
-      and line 205-206 are the regex-match pattern, NOT user-facing
-      help-text — DO NOT edit those).
+      shows lines 89, 91, 103, 114, 194, 208 in each file (six
+      user-facing block-reason strings — UPDATE these). Line 203 is
+      an in-source comment explaining how the regex distinguishes
+      command-verb `bash` from `bash` inside an echo string; the
+      actual regex declarations are at lines 205-206
+      (`_CT_EXEC_CMD`, `_CT_EXEC_DIR` — note these regexes match on
+      the `clear-tracking` substring with NO `scripts/` prefix, so
+      they don't appear in the `scripts/clear-tracking` sweep grep).
+      Skip both 203 and 205-206 (F-5 fix — wording corrected).
 
       For each user-facing help-text line, change
       `! bash scripts/clear-tracking.sh` →
       `! bash .claude/skills/update-zskills/scripts/clear-tracking.sh`.
 
       **Compatibility constraints (per `feedback_hook_skill_interaction.md`):**
-      - The leading-space pattern at `:203` (`echo "Run: bash scripts/clear-tracking.sh"`)
-        is documentation explaining that the regex `_CT_EXEC_CMD` at
-        `:205` correctly distinguishes a command-verb `bash` from
-        `bash` inside an echo string. Read the comment block at
-        `:198-208` to confirm; the regex match logic does not depend
-        on the `scripts/` prefix in the help-text strings, only on
+      - The regex match logic at lines 205-206 does not depend on
+        the `scripts/` prefix in the help-text strings, only on
         the `bash <something>clear-tracking` pattern. Updating the
         help-text to point at the new path therefore does NOT change
         regex behavior — verify by mental-running both regexes
@@ -904,19 +1190,21 @@ phase sweeps and updates them.
 
       Note: `stop-dev.sh` references in `hooks/block-unsafe-generic.sh:159,177`
       are UNCHANGED (Tier-2 stays at `scripts/`).
-- [ ] 3b.8 — Mirror touched skills (now nine):
+- [ ] 3b.8 — Mirror touched skills via the helper (DA-2 fix). Now
+      twelve mirror calls (the nine cross-skill consumers plus the
+      three updated owners):
       ```bash
-      for s in run-plan fix-issues do quickfix research-and-plan research-and-go briefing fix-report manual-testing verify-changes; do
-        rm -rf .claude/skills/$s && cp -a skills/$s/ .claude/skills/$s/
+      for s in run-plan fix-issues do quickfix research-and-plan research-and-go briefing fix-report manual-testing verify-changes create-worktree commit update-zskills; do
+        bash scripts/mirror-skill.sh "$s"
       done
       ```
-      Plus re-mirror `create-worktree`, `commit`, and `update-zskills`
-      if 3b prose edits touched their SKILL.md/modes.
 
-      Also mirror the hook (Phase 3b WI 3b.7):
+      Also mirror the hook (Phase 3b WI 3b.7) via per-file copy:
       `cp hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh`
-      then `chmod +x` (verify with
-      `diff hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh | head`).
+      then `chmod +x .claude/hooks/block-unsafe-project.sh` (verify
+      with `diff hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh | head`).
+      The hook file is NOT a skill, so it does not flow through
+      `mirror-skill.sh`; the per-file `cp` is correct.
 - [ ] 3b.9 — Update tests that copy these scripts into fixture trees:
       - `tests/test-create-worktree.sh:834-836` (currently copies
         `scripts/sanitize-pipeline-id.sh` and `scripts/worktree-add-safe.sh`
@@ -934,7 +1222,7 @@ phase sweeps and updates them.
       form. The bare-relative form is FORBIDDEN.
 - [ ] 3b.10 — `bash tests/run-all.sh`. Expect green.
 
-### Design & Constraints
+#### Design & Constraints
 
 **Grep-driven, not enumeration-driven.** Per R8/D3/D10 (major):
 prior draft enumerated specific line numbers (`run-plan:712, :911`)
@@ -942,6 +1230,15 @@ and missed 10+ prose mentions. The authoritative truth for "did we
 get them all" is the recursive grep, not a curated list. WIs above
 list line numbers only as worked examples; the grep at the start of
 each WI drives actual edits.
+
+**Single source of truth — Tier-1 names from `script-ownership.md`
+(DA-5 fix).** WI 3b.1's grep loop iterates over names parsed from
+`script-ownership.md` (using the `awk -F'|'` recipe pinned in Phase
+1 Design and reused in WI 4.2 / WI 4.8 case 6a). The plan elsewhere
+keeps illustrative closed-list regexes for human readability, but
+the actionable sweep drives off the registry — so when a future row
+addition lands in `script-ownership.md`, the sweep grep catches it
+without separate maintenance.
 
 **Cross-skill path is the longer form.** `bash
 "$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>"`
@@ -981,9 +1278,17 @@ tree's `scripts/` directory no longer holds the canonical copy of
 Tier 1 scripts. zskills' own test harness is therefore aware of the
 move.
 
-**Mirror discipline.** Per Phase 1.
+**README helper-scripts list rewrite happens here, not in Phase 5
+(DA-6 fix).** The earlier draft deferred the rewrite to Phase 5
+WI 5.5.d, but Phase 3b's AC at line 1012 (recursive zero-match grep
+across `skills/`, `.claude/skills/`, `CLAUDE.md`, `README.md`) would
+fail because the helper-scripts list still names Tier-1 scripts. To
+keep AC line 1012 honest, WI 3b.2.a does the rewrite. Phase 5
+WI 5.5.d becomes a verification step.
 
-### Acceptance Criteria
+**Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
+
+#### Acceptance Criteria
 
 - [ ] All seven Tier 1 scripts at the canonical skill-dir location AND
       the mirror:
@@ -1005,15 +1310,19 @@ move.
         .claude/skills/update-zskills/scripts/port.sh; do
         test -f "$f" || { echo MISSING "$f"; exit 1; }; done
       ```
-- [ ] **Recursive zero-match for old paths everywhere** (this is the
-      authoritative completeness measure, replacing the loose `≥ N`
-      thresholds per R9):
+- [ ] **Recursive zero-match for old paths everywhere — driven by
+      `script-ownership.md` (DA-5 / F-3 fix):**
       ```bash
-      grep -rn 'scripts/create-worktree\.sh\|scripts/worktree-add-safe\.sh\|scripts/sanitize-pipeline-id\.sh\|scripts/land-phase\.sh\|scripts/write-landed\.sh\|scripts/clear-tracking\.sh\|scripts/port\.sh' skills/ .claude/skills/ CLAUDE.md README.md
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -rEn "$PATTERN" skills/ .claude/skills/ CLAUDE.md README.md
       ```
       returns zero matches. (RELEASING.md already excluded — Tier-1
       scripts have no RELEASING references; verified by grep at draft
-      time.)
+      time. Note: README.md helper-scripts list at `:457-465` was
+      rewritten in WI 3b.2.a per DA-6 fix.)
 - [ ] **Hook help-text updated for `clear-tracking.sh`:**
       `grep -c 'scripts/clear-tracking' hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh`
       shows ONLY the regex-pattern lines (lines 205-206 — `_CT_EXEC_CMD`
@@ -1033,6 +1342,13 @@ move.
       returns zero matches.
 - [ ] All touched mirrors are clean:
       `for s in create-worktree commit update-zskills run-plan fix-issues do quickfix research-and-plan research-and-go briefing fix-report manual-testing verify-changes; do diff -r skills/$s .claude/skills/$s || exit 1; done`.
+- [ ] **README helper-scripts list rewritten (DA-6 fix):**
+      `grep -E '^- \\`port\.sh\\`|^- \\`land-phase\.sh\\`|^- \\`write-landed\.sh\\`|^- \\`worktree-add-safe\.sh\\`|^- \\`sanitize-pipeline-id\.sh\\`|^- \\`clear-tracking\.sh\\`|^- \\`briefing\.cjs\\`|^- \\`post-run-invariants\.sh\\`' README.md | wc -l`
+      = 0 (Tier-1 entries removed from the helper-scripts list);
+      AND `grep -F '`test-all.sh`' README.md` ≥ 1
+      AND `grep -F '`stop-dev.sh`' README.md` ≥ 1
+      AND `grep -F 'script-ownership.md' README.md` ≥ 1
+      (closing pointer line added).
 - [ ] **`bash tests/run-all.sh` exits 0** (including
       `test-create-worktree.sh`, `test-quickfix.sh`,
       `test-canary-failures.sh`). NOTE: requires
@@ -1045,13 +1361,13 @@ phase's edits do not introduce new `CLAUDE_SKILL_DIR` mentions
 because the canonical form is `$CLAUDE_PROJECT_DIR`. If a regression
 check is desired, the Phase 1 AC already covers it.)
 
-### Dependencies
+#### Dependencies
 
 Phases 1, 2, 3a.
 
 ## Phase 4 — Update `/update-zskills` install flow and add stale-Tier-1 migration
 
-### Goal
+#### Goal
 
 (a) Stop copying Tier 1 scripts into consumer `scripts/`. Consumers
 receive them via the existing skill-mirror path
@@ -1059,7 +1375,7 @@ receive them via the existing skill-mirror path
 scripts on consumer disk left over from prior installs and offer to
 remove them after verifying they match a known zskills version.
 
-### Work Items
+#### Work Items
 
 - [ ] 4.1 — **Edit `skills/update-zskills/SKILL.md` Step D.** Per R4
       verification (`sed -n '895,910p' skills/update-zskills/SKILL.md`),
@@ -1078,29 +1394,41 @@ remove them after verifying they match a known zskills version.
         named.
       - ADD a closing note: "Tier-1 scripts (skill machinery, e.g.,
         `port.sh`, `clear-tracking.sh`, `statusline.sh`,
-        `apply-preset.sh`, briefing helpers, worktree helpers) ship
-        via the skill mirror at `.claude/skills/<owner>/scripts/`.
-        They are NOT copied to `scripts/`. See
-        `references/script-ownership.md` for the full table."
+        `apply-preset.sh`, briefing helpers, worktree helpers,
+        `plan-drift-correct.sh`) ship via the skill mirror at
+        `.claude/skills/<owner>/scripts/`. They are NOT copied to
+        `scripts/`. See `references/script-ownership.md` for the full
+        table." (F-2 / DA-1 fix — closing note enumerates the
+        new-since-draft script.)
 
       The acceptance criterion below uses zero-match-of-Tier-1 names
       in Step D rather than a per-script regex, so adding/removing
       bullets within Tier-2 won't trip it.
-- [ ] 4.2 — **Generate `skills/update-zskills/references/tier1-shipped-hashes.txt`.**
+- [ ] 4.2 — **Generate `skills/update-zskills/references/tier1-shipped-hashes.txt`
+      (DA-3 fix — recipe rewritten to handle wildcards correctly).**
       Per R3 (major) and D8 (major): `git log --all` on a fresh
       auto-clone of `/tmp/zskills` only sees one branch; tarball
-      installs see no history at all. Switch to a static
-      hashes-file shipped IN the source tree.
+      installs see no history at all. Switch to a static hashes-file
+      shipped IN the source tree.
 
       Generate the file once during Phase 4 by running, against the
       zskills repo (any working clone with full history). Per R2.3:
       the Tier-1 name list is parsed from `script-ownership.md` (the
       single source of truth), NOT hardcoded — eliminating the
       three-way drift risk between ownership table, generation loop,
-      and STALE_LIST array:
+      and STALE_LIST array.
+
+      **Two-pass generation (DA-3 fix).** `git rev-parse
+      "<commit>:<path>"` requires a LITERAL tree path — wildcards in
+      the path component do NOT expand. Verified empirically:
+      `git rev-parse "HEAD:skills/*/scripts/foo.sh"` returns the
+      literal string, not a hash. The previous single-loop recipe
+      silently produced empty output for the post-Phase-3 paths.
+      Use two passes:
+
       ```bash
       OUT=skills/update-zskills/references/tier1-shipped-hashes.txt
-      : > "$OUT"
+      : > "$OUT.raw"
 
       # Single source of truth: parse Tier-1 names from
       # script-ownership.md (column 2 where column 3 == "1").
@@ -1109,25 +1437,45 @@ remove them after verifying they match a known zskills version.
       }' skills/update-zskills/references/script-ownership.md)
 
       for name in $TIER1_NAMES; do
-        # Tier-1 scripts may live at scripts/<name> (pre-Phase-3) or
-        # skills/<owner>/scripts/<name> (post-Phase-3). Enumerate
-        # blob hashes from both locations across all branches.
-        for path in "scripts/$name" "skills/*/scripts/$name"; do
-          git log --all --pretty=format:%H -- $path \
-            | while read commit; do
-                git rev-parse "${commit}:${path}" 2>/dev/null
-              done
-        done
-      done | sort -u > "$OUT.raw"
+        # Pass 1: pre-Phase-3 location (literal path).
+        git log --all --pretty=format:%H -- "scripts/$name" \
+          | while read commit; do
+              git rev-parse "${commit}:scripts/$name"
+            done >> "$OUT.raw"
 
-      # LF-normalize (D25 fix). Each line is already a hex sha (no
-      # CRLF risk in the hash output itself), but for any future
-      # generator that emits multi-byte content, normalize on
-      # write. Verify: every line is a 40-char hex sha.
-      tr -d '\r' < "$OUT.raw" > "$OUT"
+        # Pass 2: post-Phase-3 location. Pathspec wildcard works
+        # with `git log --` but NOT with `git rev-parse <rev>:<path>`.
+        # For each commit that touched ANY skills/*/scripts/$name,
+        # discover the literal tree path via `git ls-tree -r
+        # --name-only` then feed it to rev-parse.
+        git log --all --pretty=format:%H -- "skills/*/scripts/$name" \
+          | while read commit; do
+              # Find the actual literal path(s) at this commit.
+              git ls-tree -r --name-only "${commit}" \
+                | grep -E "^skills/[^/]+/scripts/$name\$" \
+                | while read literal; do
+                    git rev-parse "${commit}:${literal}"
+                  done
+            done >> "$OUT.raw"
+      done
+
+      sort -u "$OUT.raw" > "$OUT"
       rm "$OUT.raw"
-      grep -v '^[0-9a-f]\{40\}$' "$OUT" && { echo "non-hash lines"; exit 1; }
+
+      # LF-normalize (D25 fix). Hash output is already 40-char hex,
+      # but normalize for the same reasons consumers do.
+      tr -d '\r' < "$OUT" > "$OUT.norm" && mv "$OUT.norm" "$OUT"
+
+      # Validate: every line is a 40-char hex sha. Fail loud.
+      if grep -v '^[0-9a-f]\{40\}$' "$OUT"; then
+        echo "ERROR: non-hash lines in $OUT" >&2
+        exit 1
+      fi
       ```
+
+      No `2>/dev/null` suppression on any of the git invocations
+      (DA-3 fix — prior draft's suppression hid the wildcard
+      failure entirely).
 
       **Hash content normalization (D25 fix).** All hashes in
       `tier1-shipped-hashes.txt` are computed against LF-normalized
@@ -1144,9 +1492,11 @@ remove them after verifying they match a known zskills version.
       `.claude/skills/update-zskills/references/tier1-shipped-hashes.txt`
       via the standard skill mirror.
 
-      `build-prod.sh` is intentionally NOT in this list — Tier 2,
-      stays at `scripts/`, never migrated off (and `script-ownership.md`
-      column 3 = "2", so the awk parser excludes it automatically).
+      `build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, and
+      `test-all.sh` are intentionally NOT in this list — Tier 2,
+      stay at `scripts/`, never migrated off (and `script-ownership.md`
+      column 3 = "2" for each, so the awk parser excludes them
+      automatically).
 - [ ] 4.3 — **Add a CI / test check that
       `tier1-shipped-hashes.txt` is regenerated when a Tier-1 script
       changes.** Implemented as test case 6c in WI 4.8 below
@@ -1170,6 +1520,13 @@ remove them after verifying they match a known zskills version.
       `references/script-ownership.md`:
 
       ```bash
+      # Pre-flight: git is required for hash-object normalization
+      # (DA-8 fix — explicit guard at the top of Step D.5).
+      if ! command -v git >/dev/null 2>&1; then
+        echo "Step D.5 requires git on PATH; skipping stale-Tier-1 migration" >&2
+        return 0  # do not abort /update-zskills; skip migration only
+      fi
+
       STALE_LIST=(
         apply-preset.sh
         briefing.cjs
@@ -1178,6 +1535,7 @@ remove them after verifying they match a known zskills version.
         compute-cron-fire.sh
         create-worktree.sh
         land-phase.sh
+        plan-drift-correct.sh
         port.sh
         post-run-invariants.sh
         sanitize-pipeline-id.sh
@@ -1186,6 +1544,10 @@ remove them after verifying they match a known zskills version.
         write-landed.sh
       )
       ```
+
+      (F-2 / DA-1 fix — `plan-drift-correct.sh` added in alphabetical
+      order between `land-phase.sh` and `port.sh`. Total now 14
+      entries, matching the 14 Tier-1 rows in `script-ownership.md`.)
 
       Note: `statusline.sh` is a **defensive entry**. The current
       Step C.5 copies `statusline.sh` directly from
@@ -1199,9 +1561,9 @@ remove them after verifying they match a known zskills version.
       `~/.claude/statusline-command.sh` is separate and
       unaffected).
 
-      (Note: `build-prod.sh` is NOT in STALE_LIST — it is Tier-2 repo
-      tooling consumed by `.github/workflows/ship-to-prod.yml`, not
-      skill machinery. Verified by R1/D1.)
+      (Note: `build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`,
+      `test-all.sh` are NOT in STALE_LIST — they are Tier-2 per
+      `script-ownership.md` and stay at `scripts/`.)
 
       ```bash
       KNOWN_HASHES=$PORTABLE/.claude/skills/update-zskills/references/tier1-shipped-hashes.txt
@@ -1213,8 +1575,7 @@ remove them after verifying they match a known zskills version.
         target="scripts/$name"
         [ -f "$target" ] || continue
 
-        # git is required (Phase 4 preconditions). git hash-object works
-        # on any file regardless of whether it is in a repo.
+        # git is required (Phase 4 preconditions, guarded above).
         # CRLF-normalize for cross-platform consumer compat (D25 fix —
         # Windows consumers with core.autocrlf=true store files as LF
         # in the index but check out as CRLF; raw `git hash-object`
@@ -1308,9 +1669,37 @@ remove them after verifying they match a known zskills version.
       **No silent error suppression.** Per CLAUDE.md
       (`Never suppress errors on operations you need to verify`):
       `git hash-object` is NOT wrapped in `2>/dev/null || ...` —
-      if git is missing the script fails loudly. The `rm` call uses
+      if git is missing the script reaches the pre-flight guard at
+      the top of Step D.5 (DA-8 fix) and skips with a one-line note.
+      The `rm` call uses
       `&& echo ... || { echo ERROR; exit 1; }`, not `2>/dev/null`.
       The `read -r -p` prompt is explicit (no silent default).
+- [ ] 4.4b — **Strip `port_script` from this repo's
+      `.claude/zskills-config.json:25` (DA-7 fix).** After Phase 5
+      WI 5.5.a removes `port_script` from the schema, leftover
+      `port_script` fields in any existing `.claude/zskills-config.json`
+      are unknown-property violations under the new schema. Add to
+      Step D.5 (or a new sub-block right after Step D.5) a
+      consumer-side cleanup:
+      ```bash
+      CFG=.claude/zskills-config.json
+      if [ -f "$CFG" ] && grep -qF '"port_script"' "$CFG"; then
+        # Use the existing BASH_REMATCH-style line stripper used
+        # elsewhere in /update-zskills (see Step 0.5 backfill
+        # algorithm). Concrete recipe:
+        TMP=$(mktemp)
+        # Drop any line that contains only the port_script field
+        # plus possible leading whitespace and trailing comma.
+        grep -v '^\s*"port_script"\s*:' "$CFG" > "$TMP" \
+          && mv "$TMP" "$CFG" \
+          && echo "stripped legacy dev_server.port_script from $CFG (DA-7 fix)" \
+          || { echo "ERROR: failed to strip port_script from $CFG" >&2; exit 1; }
+      fi
+      ```
+      Coordinated with Phase 5 WI 5.5.a, which removes the schema
+      property AND this repo's own `.claude/zskills-config.json:25`.
+      WI 4.4b applies to ANY consumer's config (downstream projects),
+      not just this repo's.
 - [ ] 4.5 — **Verify Step C.5 (statusline) source-path edit landed
       from Phase 2 WI 2.7b.** `statusline.sh` is Tier 1 (per scope
       adjustment); WI 2.7b updated Step C.5 line 891 from
@@ -1327,8 +1716,8 @@ remove them after verifying they match a known zskills version.
       regression check: re-grep `grep -n 'briefing\.cjs\|briefing\.py' skills/update-zskills/SKILL.md`
       and verify no occurrence references `scripts/briefing.*`. No
       edit expected.
-- [ ] 4.7 — Mirror update-zskills:
-      `rm -rf .claude/skills/update-zskills && cp -a skills/update-zskills/ .claude/skills/update-zskills/`.
+- [ ] 4.7 — Mirror update-zskills via the helper (DA-2 fix):
+      `bash scripts/mirror-skill.sh update-zskills`.
 - [ ] 4.8 — **Add a test for Step D.5 migration logic.** New file
       `tests/test-update-zskills-migration.sh` with these cases:
       1. Consumer `scripts/create-worktree.sh` matches a historical
@@ -1346,9 +1735,10 @@ remove them after verifying they match a known zskills version.
          --stdin` MUST produce the LF-equivalent hash and classify
          this fixture as MIGRATED. Asserts cross-platform parity
          (Windows consumers with core.autocrlf=true).
-      2c. **New Tier-1 scripts: hash-matched migrate.** Three
+      2c. **New Tier-1 scripts: hash-matched migrate.** Four
          additional fixtures, one each for `scripts/port.sh`,
-         `scripts/clear-tracking.sh`, `scripts/statusline.sh` —
+         `scripts/clear-tracking.sh`, `scripts/statusline.sh`,
+         `scripts/plan-drift-correct.sh` (F-2 / F-6 fix — added) —
          each populated with a hash from
          `tier1-shipped-hashes.txt`. Each → MIGRATED list contains
          it; after `y` confirmation the file is removed.
@@ -1357,10 +1747,17 @@ remove them after verifying they match a known zskills version.
          defensive STALE_LIST inclusion. The fixture exercises
          the code path; real consumers are unlikely to have
          `scripts/statusline.sh` matching a known hash.)
-      2d. **New Tier-1 scripts: user-modified KEPT.** Three
+      2d. **New Tier-1 scripts: user-modified KEPT.** Four
          additional fixtures (same names as 2c), each with a
          user-modified line. Each → KEPT list contains it; file
          preserved.
+      2e. **Git-missing pre-flight (DA-8 fix).** Run Step D.5 in a
+         shell where `git` is removed from `PATH` (e.g.,
+         `PATH=/usr/bin bash -c '...'` with a stub PATH that
+         excludes the git executable). The pre-flight guard MUST
+         emit "Step D.5 requires git on PATH; skipping
+         stale-Tier-1 migration" to stderr and return 0 (not
+         abort `/update-zskills`).
       3. Consumer `scripts/foo.sh` not in STALE_LIST → ignored
          (does not appear in either list).
       4. `$KNOWN_HASHES` file is missing (deliberately removed) →
@@ -1412,11 +1809,15 @@ remove them after verifying they match a known zskills version.
          done < skills/update-zskills/references/tier1-shipped-hashes.txt
          ```
 
-         **6c. Commit-cohabitation (D23 fix — replaces the brittle
-         regenerate-and-diff).** When a Tier-1 script changes, the
-         hash file must change in the same commit (or later). Equiv:
-         the last commit that touched the hash file must NOT be an
-         ancestor of any Tier-1 script's last-touched commit.
+         **6c. Commit-cohabitation (D23 fix; DA-10 fix — owner-literal
+         pathspec replaces wildcard).** When a Tier-1 script changes,
+         the hash file must change in the same commit (or later).
+         Equiv: the last commit that touched the hash file must NOT
+         be an ancestor of any Tier-1 script's last-touched commit.
+         Per DA-10: the wildcard pathspec `skills/*/scripts/$name`
+         can false-positive if a future fixture-script lives at
+         `skills/<other>/scripts/<tier-1-name>`. Use the
+         owner-literal column from `script-ownership.md` instead:
          ```bash
          # Skip on shallow clones (CI's actions/checkout@v4 default).
          if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
@@ -1424,18 +1825,31 @@ remove them after verifying they match a known zskills version.
          else
            LAST_HASH_COMMIT=$(git log -1 --pretty=format:%H \
              -- skills/update-zskills/references/tier1-shipped-hashes.txt)
-           for name in $TIER1_FROM_DOC; do
-             # Tier-1 scripts may live at scripts/<name> (pre-Phase-3)
-             # OR skills/<owner>/scripts/<name> (post-Phase-3).
-             LAST_SCRIPT_COMMIT=$(git log -1 --pretty=format:%H \
-               -- "scripts/$name" "skills/*/scripts/$name")
-             [ -z "$LAST_SCRIPT_COMMIT" ] && continue
-             if ! git merge-base --is-ancestor \
-                  "$LAST_SCRIPT_COMMIT" "$LAST_HASH_COMMIT"; then
-               echo "Tier-1 script $name changed after hash file regenerated"
-               exit 1
-             fi
-           done
+
+           # Parse name+owner pairs from script-ownership.md (column 2
+           # = name, column 3 = tier, column 4 = owner-or-disposition).
+           # For Tier-1 rows, extract the leading word of column 4 as
+           # the canonical owner.
+           awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+             gsub(/[[:space:]`]/, "", $2);
+             # Owner column may have trailing prose (e.g.,
+             # "create-worktree" or "update-zskills (source moves; ...)";
+             # take the first non-whitespace token).
+             owner=$4; sub(/^[[:space:]`]+/, "", owner);
+             sub(/[[:space:]`(].*$/, "", owner);
+             print $2 " " owner
+           }' skills/update-zskills/references/script-ownership.md \
+           | while read name owner; do
+               [ -z "$name" ] && continue
+               LAST_SCRIPT_COMMIT=$(git log -1 --pretty=format:%H \
+                 -- "scripts/$name" "skills/$owner/scripts/$name")
+               [ -z "$LAST_SCRIPT_COMMIT" ] && continue
+               if ! git merge-base --is-ancestor \
+                    "$LAST_SCRIPT_COMMIT" "$LAST_HASH_COMMIT"; then
+                 echo "Tier-1 script $name (owner: $owner) changed after hash file regenerated"
+                 exit 1
+               fi
+             done
          fi
          ```
          Document: case 6c only runs when full git history is present
@@ -1448,7 +1862,7 @@ remove them after verifying they match a known zskills version.
       with siblings).
 - [ ] 4.10 — `bash tests/run-all.sh`.
 
-### Design & Constraints
+#### Design & Constraints
 
 **git is required.** `git hash-object --stdin` (fed CRLF-normalized
 content) is the migration-side hash function. If git is not on
@@ -1466,6 +1880,22 @@ strips Windows CRLF before hashing so the consumer hash matches the
 LF-normalized release hash; without the `tr` step every Tier-1
 script on a Windows consumer with core.autocrlf=true is
 mis-classified KEPT).
+
+**Pre-flight git check (DA-8 fix).** Step D.5 begins with an
+explicit `command -v git` guard. On git-missing systems, the
+migration skips with a one-line stderr note and returns 0 — it does
+NOT abort `/update-zskills` mid-flight. Consumer flow:
+
+1. `/update-zskills` runs Step C (CLAUDE.md install).
+2. Step D runs (gap-filling Tier-2 scripts).
+3. Step D.5 begins; if `git` is absent, prints
+   "Step D.5 requires git on PATH; skipping stale-Tier-1 migration"
+   and returns. Subsequent steps continue.
+4. If `git` is present, the rest of Step D.5 runs as specified.
+
+This makes /update-zskills resilient on minimal containers without
+git, at the cost of leaving the legacy stale Tier-1 scripts in place
+(consumer can re-run /update-zskills after installing git).
 
 **Why static `tier1-shipped-hashes.txt`, not `git log --all`.** Per
 R3/D8: `/update-zskills` auto-clones zskills to `/tmp/zskills` with
@@ -1487,7 +1917,18 @@ discard their work. Hash check against
 shipped a Tier-1 script) decides: in-set → exact upstream copy, safe
 to remove; not-in-set → user-modified → keep + warn.
 
-**STALE_LIST drift detection (R12/D20 + D23 + D27).** Three
+**Two-pass hash generation (DA-3 fix).** The previous draft's
+generator used `git rev-parse "${commit}:${path}"` with `path =
+"skills/*/scripts/$name"` — but `git rev-parse <rev>:<path>` does
+NOT expand wildcards in the path component (verified empirically:
+the wildcard form returns the literal string, not a hash). Pass 1
+enumerates the pre-Phase-3 location with a literal path. Pass 2
+discovers the actual literal tree path via `git ls-tree -r
+--name-only` per-commit before feeding it to `git rev-parse`. This
+gives correct coverage across both source-tree layouts (pre- and
+post-Phase-3).
+
+**STALE_LIST drift detection (R12/D20 + D23 + D27 + DA-10).** Three
 independent assertions in WI 4.8 case 6:
 - 6a: parse Tier-1 names from `script-ownership.md` (the single
   source of truth) and from `STALE_LIST` array in SKILL.md, sort,
@@ -1503,7 +1944,11 @@ independent assertions in WI 4.8 case 6:
   "regenerate from `git log --all`" approach (D23 fix), which was
   non-deterministic on shallow clones (`actions/checkout@v4` defaults
   to `fetch-depth: 1`) and varied with developer-local branch state.
-  Case 6c skips with a warning on shallow clones; does not fail.
+  Case 6c uses owner-literal pathspec from `script-ownership.md`
+  column 4 (DA-10 fix; previous wildcard `skills/*/scripts/$name`
+  could false-positive on future fixture-scripts in unrelated
+  skill dirs). Skips with a warning on shallow clones; does not
+  fail.
 
 **Tarball install / per-file defer marker.** Per D8 + D24: tarball
 installs have no `.git` to enumerate, but the static hashes file
@@ -1521,18 +1966,24 @@ user-modified warning is per-file-acknowledged.
 this phase.** Per D12: WIs in this plan only ADD a new CHANGELOG
 entry (in Phase 6); they MUST NOT edit any existing CHANGELOG row,
 which describes past state correctly. RELEASING.md is consulted for
-Tier-2 `build-prod.sh` (no edit) but not for Tier-1 history.
+Tier-2 `build-prod.sh` (no edit) but not for Tier-1 history. Phase 6
+WI 6.4 (DA-12 fix) adds a one-section migration note in
+`RELEASING.md` for the consumer-facing blast radius (separate from
+historical CHANGELOG).
 
 **No silent error suppression** in the migration bash. Per CLAUDE.md
 (`Never suppress errors on operations you need to verify`):
-`git hash-object` is NOT wrapped in `2>/dev/null` — if git is missing
-the script fails loudly. The `rm` uses
-`&& echo ... || { echo ERROR; exit 1; }`. The `read -r -p` prompt is
-explicit (no silent default).
+`git hash-object` is NOT wrapped in `2>/dev/null` — if git is
+missing the pre-flight guard handles it; everywhere else, errors
+propagate. The `rm` uses `&& echo ... || { echo ERROR; exit 1; }`.
+The `read -r -p` prompt is explicit (no silent default). The hash
+generator (WI 4.2) does NOT suppress `git rev-parse` errors —
+DA-3 fix; the prior `2>/dev/null` had hidden the wildcard failure
+entirely.
 
-**Mirror discipline.** Per Phase 1.
+**Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
 - [ ] `grep -c '^#### Step D' skills/update-zskills/SKILL.md` ≥ 1.
 - [ ] **Old-Tier-1 names absent from Step D's bullet list.** Extract
@@ -1542,88 +1993,125 @@ explicit (no silent default).
       ```bash
       awk '/^#### Step D —/{f=1;next} /^#### Step/{f=0} f' \
           skills/update-zskills/SKILL.md \
-        | grep -E 'apply-preset|create-worktree|land-phase|write-landed|sanitize-pipeline-id|worktree-add-safe|compute-cron-fire|post-run-invariants|briefing\.|clear-tracking|port\.sh|statusline' \
+        | grep -E 'apply-preset|create-worktree|land-phase|write-landed|sanitize-pipeline-id|worktree-add-safe|compute-cron-fire|post-run-invariants|briefing\.|clear-tracking|port\.sh|statusline|plan-drift-correct' \
         | wc -l
       ```
       = 0 (Step D no longer enumerates any Tier-1 name as a thing to
-      copy — including the three reclassified scripts
-      `clear-tracking.sh`, `port.sh`, `statusline.sh`).
+      copy — including the new-since-draft `plan-drift-correct.sh`
+      and the three reclassified scripts `clear-tracking.sh`,
+      `port.sh`, `statusline.sh`).
 - [ ] `grep -c '^#### Step D\.5 — Migrate stale Tier-1' skills/update-zskills/SKILL.md` = 1.
 - [ ] `grep -c 'STALE_LIST' skills/update-zskills/SKILL.md` ≥ 1.
+- [ ] **STALE_LIST contains plan-drift-correct.sh (F-2 / DA-1 / F-6 fix):**
+      `grep -F 'plan-drift-correct.sh' skills/update-zskills/SKILL.md` ≥ 1
+      AND the line appears inside the `STALE_LIST=( ... )` block
+      (verify via the WI 4.8 case 6a parser).
+- [ ] **STALE_LIST count = 14 (F-6 fix):**
+      `awk '/^STALE_LIST=\(/{f=1;next} /^\)/{f=0} f' skills/update-zskills/SKILL.md | grep -c '\.\(sh\|cjs\|py\)$'`
+      = 14.
+- [ ] **Pre-flight git guard present (DA-8 fix):**
+      `grep -F 'command -v git' skills/update-zskills/SKILL.md` ≥ 1
+      AND grep verifies the guard precedes the `STALE_LIST=(`
+      declaration in the same Step D.5 block.
 - [ ] `test -f skills/update-zskills/references/tier1-shipped-hashes.txt`
       and the file contains only 40-char hex SHA lines (no blanks):
       `! grep -v '^[0-9a-f]\{40\}$' skills/update-zskills/references/tier1-shipped-hashes.txt`.
 - [ ] `test -f .claude/skills/update-zskills/references/tier1-shipped-hashes.txt`
       and `diff skills/update-zskills/references/tier1-shipped-hashes.txt .claude/skills/update-zskills/references/tier1-shipped-hashes.txt`
       is empty.
-- [ ] STALE_LIST does NOT contain `build-prod.sh`:
-      `! grep -E '^\s*build-prod\.sh\s*$' skills/update-zskills/SKILL.md`
-      (build-prod is Tier-2 per R1/D1).
+- [ ] STALE_LIST does NOT contain `build-prod.sh`, `mirror-skill.sh`,
+      `stop-dev.sh`, or `test-all.sh`:
+      `! grep -E '^\s*(build-prod|mirror-skill|stop-dev|test-all)\.sh\s*$' skills/update-zskills/SKILL.md`
+      (Tier-2 scripts per `script-ownership.md`).
+- [ ] **Consumer config strip (DA-7 fix):**
+      `grep -F 'port_script' .claude/zskills-config.json | wc -l` = 0
+      (this repo's config no longer has the field after Phase 5
+      WI 5.5.a + Phase 4 WI 4.4b runs).
 - [ ] `test -f tests/test-update-zskills-migration.sh && test -x tests/test-update-zskills-migration.sh`.
 - [ ] `grep -c 'test-update-zskills-migration' tests/run-all.sh` ≥ 1.
-- [ ] `bash tests/test-update-zskills-migration.sh` exits 0 (nine
-      cases green: 1, 2, 2b, 2c, 2d, 3, 4, 5, 6 — case 6 has three
-      sub-parts 6a/6b/6c per the WI 4.8 spec; cases 2c/2d cover the
-      newly-Tier-1 scripts `port.sh`, `clear-tracking.sh`,
-      `statusline.sh`).
+- [ ] `bash tests/test-update-zskills-migration.sh` exits 0 (eleven
+      cases green: 1, 2, 2b, 2c, 2d, 2e, 3, 4, 5, 6 — case 6 has
+      three sub-parts 6a/6b/6c per the WI 4.8 spec; cases 2c/2d
+      cover the four newly-Tier-1 scripts `port.sh`,
+      `clear-tracking.sh`, `statusline.sh`, `plan-drift-correct.sh`;
+      case 2e covers DA-8 git-missing pre-flight).
 - [ ] `bash tests/run-all.sh` exits 0.
 - [ ] `diff -r skills/update-zskills .claude/skills/update-zskills`
       empty.
 
-### Dependencies
+#### Dependencies
 
 Phases 1, 2, 3a, 3b.
 
 ## Phase 5 — Update zskills tests and sweep README/CLAUDE.md/CLAUDE_TEMPLATE
 
-### Goal
+#### Goal
 
 Catch any test path that still names `scripts/<tier-1>.sh` directly,
 update README and CLAUDE.md to reflect the new locations of Tier-1
 scripts, and confirm hook help-text paths and CLAUDE_TEMPLATE for
 Tier-2 scripts remain accurate.
 
-### Work Items
+#### Work Items
 
-- [ ] 5.1 — Sweep `tests/` for any remaining Tier-1 path references:
+- [ ] 5.1 — Sweep `tests/` for any remaining Tier-1 path references.
+      Drive the sweep off `script-ownership.md` (DA-5 / F-3 fix —
+      single source of truth replaces the closed-list regex):
       ```bash
-      grep -rn 'scripts/apply-preset\|scripts/briefing\.\|scripts/compute-cron-fire\|scripts/create-worktree\|scripts/land-phase\|scripts/post-run-invariants\|scripts/sanitize-pipeline-id\|scripts/worktree-add-safe\|scripts/write-landed' tests/
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -rEn "$PATTERN" tests/
       ```
       Each match is an unmigrated test path. Update each to the
       mandated absolute form
       `"$REPO_ROOT/skills/<owner>/scripts/<name>"` (per D16; the
       bare-relative form is forbidden).
 - [ ] 5.2 — Sweep `hooks/` and `.claude/hooks/` for Tier-1 mentions
-      (research said zero; re-verify):
+      (research said zero; re-verify), driven off the same canonical
+      list:
       ```bash
-      grep -rn 'scripts/apply-preset\|scripts/briefing\.\|scripts/compute-cron-fire\|scripts/create-worktree\|scripts/land-phase\|scripts/post-run-invariants\|scripts/sanitize-pipeline-id\|scripts/worktree-add-safe\|scripts/write-landed' hooks/ .claude/hooks/
+      grep -rEn "$PATTERN" hooks/ .claude/hooks/
       ```
-      Expected: zero matches. If any: file an issue (out of scope
-      for this plan to rewrite hooks; report the unexpected
-      finding).
+      Expected: zero matches OUTSIDE the `clear-tracking.sh`
+      help-text rewrite landed by Phase 3b WI 3b.7 (those should now
+      point at `.claude/skills/update-zskills/scripts/clear-tracking.sh`,
+      NOT bare `scripts/clear-tracking.sh`). If any: file an issue
+      (out of scope for this plan to rewrite hooks; report the
+      unexpected finding).
 - [ ] 5.3 — Verify hook help-text post-edit. After Phase 3b WI 3b.7:
       `grep -n 'clear-tracking' hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh`
       shows the user-facing help-text strings now reference
       `.claude/skills/update-zskills/scripts/clear-tracking.sh` (six
       lines per file: 89, 91, 103, 114, 194, 208), with the
-      regex-pattern lines (~205-206) and the explanatory comment
-      (~203) untouched. `stop-dev` references in
+      regex-pattern lines (205-206 — `_CT_EXEC_CMD`, `_CT_EXEC_DIR`)
+      and the explanatory comment at line 203 untouched (F-5 fix —
+      wording corrected: line 203 is a comment about the regex, not
+      the regex itself; the regex is at 205-206 with no `scripts/`
+      prefix). `stop-dev` references in
       `hooks/block-unsafe-generic.sh:159,177` remain unchanged
       (Tier-2). Re-run the grep at WI execution time to confirm
       Phase 3b WI 3b.7 landed cleanly.
-- [ ] 5.4 — **Update CLAUDE_TEMPLATE.md.**
-      - `:15` (`bash scripts/stop-dev.sh`) → unchanged (Tier-2).
-      - `:177` (`clear-tracking.sh in scripts/`) → REWRITE: point at
+- [ ] 5.4 — **Update CLAUDE_TEMPLATE.md (F-9 fix — line numbers
+      replaced with grep-driven recipe).**
+      - Tier-2 stop-dev mention (currently around `:15`) → unchanged.
+      - `clear-tracking` mention (currently around `:188`; was
+        previously claimed at `:177`) → REWRITE: point at
         `.claude/skills/update-zskills/scripts/clear-tracking.sh`
         (now Tier-1 after the scope adjustment). Verify the
         surrounding prose still parses; this template becomes the
         consumer CLAUDE.md, so the path needs to match the
         skill-mirror install location consumers will have.
-      - **5.4.X — Drop both `{{PORT_SCRIPT}}` placeholders at `:13`.**
-        `CLAUDE_TEMPLATE.md:13` uses `{{PORT_SCRIPT}}` twice in
-        user-facing prose: ``determined automatically by `{{PORT_SCRIPT}}` ``
-        and ``Run `bash {{PORT_SCRIPT}}` to see your port``.
-        Rewrite the prose to drop both placeholders. Recommended
+      - **5.4.X — Drop both `{{PORT_SCRIPT}}` placeholders.** Line
+        numbers are stale (was `:13`; actual is `:24` per
+        `grep -n PORT_SCRIPT CLAUDE_TEMPLATE.md`). Drive the edit
+        off the grep:
+        ```bash
+        grep -nF '{{PORT_SCRIPT}}' CLAUDE_TEMPLATE.md
+        ```
+        Each match is a placeholder occurrence. Rewrite the
+        surrounding prose to drop both placeholders. Recommended
         replacement: ``The port is determined automatically — run
         `bash .claude/skills/update-zskills/scripts/port.sh` to
         see it. Override with `DEV_PORT=NNNN` env var.`` This
@@ -1664,8 +2152,20 @@ Tier-2 scripts remain accurate.
         `/workspaces/zskills/.claude/zskills-config.json:25`** (this
         repo's own consumer config). After the schema change, a
         leftover field would fail any future schema validation and
-        contradicts the just-removed schema property.
+        contradicts the just-removed schema property. (Phase 4
+        WI 4.4b extends the same cleanup to downstream consumers'
+        configs; DA-7 fix.)
       - CHANGELOG entry at Phase 6 notes the deprecation.
+      - **Cross-plan coordination (DA-7 fix).** `plans/DEFAULT_PORT_CONFIG.md`
+        adds `dev_server.default_port` to the schema and edits this
+        repo's config. WI 5.5.a removes `dev_server.port_script` from
+        the same schema and the same config. Whichever lands first,
+        the second plan's overlapping work items become no-ops.
+        The deferred stub-callout follow-up plan (per Overview
+        "Stub-callout pattern (out of scope)" paragraph) MAY
+        re-introduce a consumer-overridable callout but under a
+        different field name; the round-trip on `port_script` is
+        accepted.
 
       **5.5.b** — `:275` mention of `scripts/write-landed.sh` →
       rewrite. Replace with prose like:
@@ -1678,32 +2178,22 @@ Tier-2 scripts remain accurate.
       `.claude/skills/update-zskills/scripts/clear-tracking.sh`
       (Tier-1 after the scope adjustment).
 
-      **5.5.d** — README helper-scripts list at `:455-465` (verified by
-      `sed -n '455,465p' README.md`) currently enumerates:
-      `port.sh`, `test-all.sh`, `briefing.cjs/.py`, `land-phase.sh`,
-      `post-run-invariants.sh`, `write-landed.sh`,
-      `worktree-add-safe.sh`, `sanitize-pipeline-id.sh`,
-      `clear-tracking.sh`. Rewrite the block:
-      - REMOVE Tier-1 entries: `briefing.cjs/.py` (briefing skill),
-        `land-phase.sh` (commit skill), `post-run-invariants.sh`
-        (run-plan skill), `write-landed.sh` (commit skill),
-        `worktree-add-safe.sh` (create-worktree skill),
-        `sanitize-pipeline-id.sh` (create-worktree skill),
-        `port.sh` (update-zskills skill — Tier-1 after scope
-        adjustment), `clear-tracking.sh` (update-zskills skill —
-        Tier-1 after scope adjustment).
-      - KEEP Tier-2 entries: `test-all.sh`, `stop-dev.sh` (if
-        listed). `build-prod.sh` is release-only repo tooling and
-        typically not in the consumer-facing helper-scripts block;
-        if present, KEEP.
-      - ADD a closing line: "Skill machinery scripts moved into
-        their owning skills under `.claude/skills/<owner>/scripts/`
-        — see the `update-zskills` skill's
-        `references/script-ownership.md` for the full table."
-
-      Post-edit, the consumer-facing Helper Scripts list is just
-      `test-all.sh` and `stop-dev.sh` (plus the closing pointer
-      line).
+      **5.5.d** — README helper-scripts list at `:457-465` (header
+      at `:455`, list body at `:457-465` per F-11 fix; verified by
+      `sed -n '455,465p' README.md`) — **Phase 3b WI 3b.2.a already
+      rewrote this list (DA-6 fix).** This sub-bullet becomes a
+      verification-only step:
+      ```bash
+      # Tier-1 entries removed; Tier-2 retained.
+      grep -F 'test-all.sh' README.md | wc -l   # ≥ 1
+      grep -F 'stop-dev.sh' README.md | wc -l   # ≥ 1
+      grep -E '^- \\`(port|land-phase|write-landed|worktree-add-safe|sanitize-pipeline-id|clear-tracking|briefing|post-run-invariants)' README.md
+      # ↑ should return 0 matches (Tier-1 entries gone).
+      grep -F 'script-ownership.md' README.md | wc -l   # ≥ 1 (closing pointer)
+      ```
+      If WI 3b.2.a was skipped (e.g., Phase 3b landed without it),
+      apply the rewrite here per the WI 3b.2.a spec; otherwise this
+      step is no-op verification.
 - [ ] 5.6 — **Update CLAUDE.md (D28 fix — line numbers stale after
       Phase 3b).** Phase 3b WI 3b.2 already lists CLAUDE.md edits as
       part of its grep-driven sweep — this WI consolidates the
@@ -1714,8 +2204,9 @@ Tier-2 scripts remain accurate.
       is stale because Phase 3b's edits shifted lines) and fix each.
 
       ```bash
-      grep -rn 'scripts/land-phase\|scripts/sanitize-pipeline-id\|scripts/write-landed\|scripts/create-worktree\|scripts/worktree-add-safe\|scripts/port\|scripts/clear-tracking\|scripts/statusline' CLAUDE.md
+      grep -rn 'scripts/land-phase\|scripts/sanitize-pipeline-id\|scripts/write-landed\|scripts/create-worktree\|scripts/worktree-add-safe\|scripts/port\|scripts/clear-tracking\|scripts/statusline\|scripts/plan-drift-correct' CLAUDE.md
       ```
+      (F-2 fix — added `plan-drift-correct` to the regex.)
 
       For each remaining match, rewrite the path-mention as one of:
       - "the landing script (now bundled in the `commit` skill)"
@@ -1726,39 +2217,57 @@ Tier-2 scripts remain accurate.
       - "the port-resolution / tracking-clear / statusline scripts
         (bundled in the `update-zskills` skill)" (for `port.sh`,
         `clear-tracking.sh`, `statusline.sh`).
+      - "the plan-drift correction script (bundled in the
+        `run-plan` skill)" (for `plan-drift-correct.sh`).
       - Or simply drop the path-mention if the surrounding paragraph
         doesn't depend on path.
 
       Specifically extend the CLAUDE.md `:11` overview rewrite
       (already in Phase 3b WI 3b.2) to acknowledge the additional
       moves: `port.sh`, `clear-tracking.sh`, `statusline.sh` are
-      now in `update-zskills` skill.
+      now in `update-zskills` skill; `plan-drift-correct.sh` is in
+      `run-plan` skill.
 
       Agents reading CLAUDE.md don't execute these paths directly;
       the Skill / script invocation sites that DO execute were swept
       in Phase 3b. CLAUDE.md edits here are prose-only.
 
       Verify with
-      `grep -c 'scripts/land-phase\|scripts/sanitize-pipeline-id\|scripts/write-landed\|scripts/create-worktree\|scripts/worktree-add-safe\|scripts/port\|scripts/clear-tracking\|scripts/statusline' CLAUDE.md`
+      `grep -c 'scripts/land-phase\|scripts/sanitize-pipeline-id\|scripts/write-landed\|scripts/create-worktree\|scripts/worktree-add-safe\|scripts/port\|scripts/clear-tracking\|scripts/statusline\|scripts/plan-drift-correct' CLAUDE.md`
       = 0 after edits.
 - [ ] 5.7 — **Update `tests/run-all.sh` to export
       `CLAUDE_PROJECT_DIR=$REPO_ROOT`.** Per D4 / Phase 3b Design:
       tests run outside the harness, and Phase 3b cross-skill
       invocations use `$CLAUDE_PROJECT_DIR` as the resolution root.
       Add `export CLAUDE_PROJECT_DIR="$REPO_ROOT"` near the top of
-      `tests/run-all.sh` (after `REPO_ROOT` is computed) so all
-      sub-tests inherit it.
+      `tests/run-all.sh` AFTER `REPO_ROOT` is computed (DA-9 fix —
+      ordering matters; an export-before-compute would set
+      `CLAUDE_PROJECT_DIR=""` since `$REPO_ROOT` would be empty,
+      reproducing the same silent-failure mode the plan critiques
+      the dropped `:-$MAIN_ROOT` fallback for). The current
+      `tests/run-all.sh:5-6` shows
+      `REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"` — the export goes
+      AFTER line 6.
 - [ ] 5.8 — Re-run `bash tests/run-all.sh` to confirm Phase 5 edits
       didn't regress.
 
-### Design & Constraints
+#### Design & Constraints
 
 **Why this phase has real edits, not just verification.** The
 original draft framed Phase 5 as "mostly verification" but R5 (major)
-showed README has a script-list block at `:455-465` enumerating
-Tier-1 scripts that this plan must rewrite. CLAUDE.md has four
-mentions (`:11, :44, :151, :154`) that go stale once Tier-1 scripts
-move. Phase 5 owns these consumer-doc edits.
+showed README has a script-list block at `:457-465` enumerating
+Tier-1 scripts — though Phase 3b WI 3b.2.a (DA-6 fix) now does that
+rewrite, leaving Phase 5 WI 5.5.d as verification-only. CLAUDE.md
+has four mentions (`:11, :44, :151, :154`) that go stale once Tier-1
+scripts move. Phase 5 owns these consumer-doc edits.
+
+**Single source of truth — Tier-1 names from `script-ownership.md`
+(DA-5 / F-3 fix).** The Phase 5 sweeps at WI 5.1 and WI 5.2 drive
+off the same `awk -F'|'` parser used in WI 4.2 / WI 4.8 case 6a /
+Phase 3b WI 3b.1. ACs at the bottom retain illustrative closed-list
+greps for human readability, but the actionable sweep uses the
+parser — so if `script-ownership.md` adds a future row, the sweep
+catches it without separate maintenance.
 
 **Hook help-text — `clear-tracking` updated, `stop-dev` unchanged.**
 Phase 3b WI 3b.7 (added in the round-4 scope adjustment) rewrites the
@@ -1775,60 +2284,108 @@ at `scripts/`).
 skill mirror needed unless WI 5.1 turns up an unexpected skill-side
 path.
 
-### Acceptance Criteria
+#### Acceptance Criteria
 
-- [ ] **Tests + hooks zero-match-of-old-paths:**
+- [ ] **Tests + hooks zero-match-of-old-paths (DA-5 / F-3 fix —
+      driven from `script-ownership.md`):**
       ```bash
-      grep -rn 'scripts/apply-preset\|scripts/briefing\.\|scripts/compute-cron-fire\|scripts/create-worktree\|scripts/land-phase\|scripts/post-run-invariants\|scripts/sanitize-pipeline-id\|scripts/worktree-add-safe\|scripts/write-landed' tests/ hooks/ .claude/hooks/
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -rEn "$PATTERN" tests/ hooks/ .claude/hooks/ \
+        | grep -v '_CT_EXEC' \
+        | grep -v '^[^:]*:203:' \
+        | grep -v '\.claude/skills/'
       ```
-      returns zero matches.
+      returns zero matches. (The `_CT_EXEC` filter excludes regex
+      lines 205-206 in `block-unsafe-project.sh`; the `:203:` filter
+      excludes the comment at line 203; the
+      `.claude/skills/`-exclusion drops the help-text rewrite that
+      legitimately includes `clear-tracking` paths.)
 - [ ] **Tier-2 hook help-text intact** (per R7, use rg-friendly form):
       `grep -c 'scripts/stop-dev' hooks/block-unsafe-generic.sh` ≥ 2
       (Tier-2 stop-dev references unchanged).
-- [ ] **Tier-1 `clear-tracking` hook help-text moved** (was Tier-2):
+- [ ] **Tier-1 `clear-tracking` hook help-text moved (F-4 fix —
+      `≥ 8` corrected to `= 12`):**
       `grep -rn '\.claude/skills/update-zskills/scripts/clear-tracking' hooks/ .claude/hooks/ | wc -l`
-      ≥ 8 (six help-text lines × two files); old bare
+      = 12 (six help-text lines × two files); old bare
       `scripts/clear-tracking.sh` now appears only in the regex-pattern
-      lines (`_CT_EXEC_CMD`/`_CT_EXEC_DIR`) and the `:203` comment —
-      verify by reading lines 198-208 of each file.
+      lines (`_CT_EXEC_CMD`/`_CT_EXEC_DIR` at lines 205-206) and the
+      `:203` comment that documents how the regex distinguishes
+      command-verb `bash` from `bash` inside an echo string (F-5 fix
+      — wording corrected). Verify by reading lines 198-208 of each
+      file.
 - [ ] **README zero-match-of-old-Tier-1 (now extended):**
-      `grep -E 'scripts/(apply-preset|briefing\.|compute-cron-fire|create-worktree|land-phase|post-run-invariants|sanitize-pipeline-id|worktree-add-safe|write-landed|port\.sh|clear-tracking|statusline)' README.md | wc -l`
+      ```bash
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -E "$PATTERN" README.md | wc -l
+      ```
       = 0.
 - [ ] **README Tier-2 references intact:**
       `grep -c 'scripts/test-all\|scripts/stop-dev' README.md` ≥ 1.
-- [ ] **`port_script` config field dropped:**
+- [ ] **`port_script` config field dropped (consumer + this repo):**
       `! grep -F 'port_script' README.md`
       AND `! grep -F 'port_script' config/zskills-config.schema.json`
-      AND `! grep -F '{{PORT_SCRIPT}}' skills/update-zskills/SKILL.md`.
-- [ ] **CLAUDE.md zero-match-of-old-Tier-1 (now extended):**
-      `grep -E 'scripts/(apply-preset|briefing\.|compute-cron-fire|create-worktree|land-phase|post-run-invariants|sanitize-pipeline-id|worktree-add-safe|write-landed|port\.sh|clear-tracking|statusline)' CLAUDE.md | wc -l`
-      = 0.
+      AND `! grep -F '{{PORT_SCRIPT}}' skills/update-zskills/SKILL.md`
+      AND `! grep -F 'port_script' .claude/zskills-config.json`.
+- [ ] **CLAUDE.md zero-match-of-old-Tier-1 (now extended; DA-5 / F-3
+      fix — driven off `script-ownership.md`):**
+      ```bash
+      grep -E "$PATTERN" CLAUDE.md | wc -l
+      ```
+      = 0 (where `$PATTERN` is computed as above).
 - [ ] **CLAUDE_TEMPLATE Tier-2 references intact:**
       `grep -c 'scripts/stop-dev' CLAUDE_TEMPLATE.md` ≥ 1.
-      Note: the `clear-tracking` reference at `CLAUDE_TEMPLATE.md:177`
+      Note: the `clear-tracking` reference in `CLAUDE_TEMPLATE.md`
       (per WI 5.4) needs reframing — `clear-tracking.sh` is now Tier-1.
-      Update `:177` to point at `.claude/skills/update-zskills/scripts/clear-tracking.sh`
+      Update the prose to point at `.claude/skills/update-zskills/scripts/clear-tracking.sh`
       (mirror discipline: this file is the template that becomes
       consumer CLAUDE.md, so the update propagates to consumers via
-      the existing template-install path).
-- [ ] `tests/run-all.sh` exports `CLAUDE_PROJECT_DIR`:
-      `grep -E 'export\s+CLAUDE_PROJECT_DIR' tests/run-all.sh | wc -l`
-      ≥ 1.
+      the existing template-install path). F-9 fix: line numbers
+      replaced with grep-driven recipe (was `:177`, actual `:188`).
+- [ ] **`tests/run-all.sh` exports `CLAUDE_PROJECT_DIR` AFTER
+      `REPO_ROOT` is computed (DA-9 fix):**
+      `awk '/REPO_ROOT=/{seen=1} /export CLAUDE_PROJECT_DIR/{if(!seen) exit 1}' tests/run-all.sh`
+      exits 0 (asserts ordering, not just presence).
 - [ ] `bash tests/run-all.sh` exits 0.
 
-### Dependencies
+#### Dependencies
 
 Phases 1, 2, 3a, 3b, 4.
 
 ## Phase 6 — Docs and close-out
 
-### Goal
+#### Goal
 
 CHANGELOG entry, plan registry entry if applicable, frontmatter flip
-to `complete`.
+to `complete`, sweep `docs/` for stale path references introduced
+since this plan was drafted, and add a consumer-facing migration note
+to `RELEASING.md`.
 
-### Work Items
+#### Work Items
 
+- [ ] 6.0b — **Sweep `docs/` for stale Tier-1 path references (F-10
+      fix; redundant with Phase 2 WI 2.2b's specific
+      `TRACKING_NAMING.md` edit, but covers any other docs files that
+      slipped through).** Phase 2 WI 2.2b updates
+      `docs/tracking/TRACKING_NAMING.md` lines 414, 421 (which
+      reference `scripts/plan-drift-correct.sh`). Sweep for any
+      additional matches across all of `docs/`:
+      ```bash
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -rEn "$PATTERN" docs/
+      ```
+      For each match, rewrite the path-mention to
+      `.claude/skills/<owner>/scripts/<name>` per `script-ownership.md`
+      column 4 (or "the script bundled in the `<owner>` skill" if
+      docs prose is path-agnostic).
 - [ ] 6.1 — **`CHANGELOG.md`: ADD ONE entry** under the unreleased /
       current section in the existing style. Use exactly this literal
       so the AC can grep for it:
@@ -1848,8 +2405,62 @@ to `complete`.
       Otherwise skip (disjunctive — `/plans` will rebuild).
 - [ ] 6.3 — Frontmatter flip: `status: complete` and add
       `completed: <date>` line.
+- [ ] 6.4 — **Add a downstream-consumer migration note to
+      `RELEASING.md` (DA-12 fix).** The plan's user-visible blast
+      radius across schema, README, CLAUDE.md, CLAUDE_TEMPLATE.md,
+      hook help-text, this-repo config, two new files in
+      `references/`, and 13 scripts moved out of `scripts/` warrants
+      more than two CHANGELOG lines for downstream consumers. Add a
+      `### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-<version>)`
+      section to `RELEASING.md` (or a new `MIGRATION.md` one-pager)
+      summarizing the user-visible changes:
 
-### Design & Constraints
+      ```markdown
+      ### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-<version>)
+
+      Upgrading from <pre-version> to this release:
+
+      - **`scripts/` is now slimmer.** Skill-machinery scripts moved
+        into their owning skills (`.claude/skills/<owner>/scripts/`).
+        `/update-zskills` detects leftover copies in your repo's
+        `scripts/` and offers to remove them after verifying they
+        match a known release. User-modified scripts are kept and
+        flagged with a defer-marker mechanism.
+      - **`dev_server.port_script` removed** from the config schema.
+        `port.sh` lives at one canonical location inside the
+        `update-zskills` skill; consumers no longer override its
+        location via config. A future plan may reintroduce a
+        consumer-overridable callout under a different field name.
+      - **`dev_server.default_port` added** (integer, default 8080).
+        Consumers may set this to override the main-repo dev port.
+        `/update-zskills` writes it on greenfield install and
+        backfills it into existing configs.
+      - **New file `.zskills/tier1-migration-deferred`** —
+        consumer-side per-file marker that suppresses the
+        user-modified warning for specific files on subsequent
+        `/update-zskills` runs. Append filenames one per line.
+      - **New file `.claude/skills/update-zskills/references/tier1-shipped-hashes.txt`**
+        — release-side artifact shipped via the skill mirror; used
+        by the migration logic to verify whether a leftover script
+        is an exact upstream copy.
+      - **Hook help-text path updated** for `clear-tracking.sh`:
+        `block-unsafe-project.sh` now points at the skill-mirror
+        location. If you've aliased the old `bash scripts/clear-tracking.sh`
+        invocation, update to `bash .claude/skills/update-zskills/scripts/clear-tracking.sh`.
+      - **`statusline.sh` source moved** but install destination
+        (`~/.claude/statusline-command.sh`) unchanged — invocation
+        path is identical post-install. Only relevant if you've
+        manually edited `scripts/statusline.sh` in your repo;
+        port the change to
+        `.claude/skills/update-zskills/scripts/statusline.sh`.
+      ```
+
+      This single section gives downstream consumers a one-stop
+      reference for what changes when they upgrade. The CHANGELOG
+      entries (WI 6.1, 6.1b) remain as the per-line summary; this
+      WI is the longer-form companion.
+
+#### Design & Constraints
 
 **No edits to historical entries.** Per D12: WI 6.1 only inserts a
 new line at the top of the unreleased section. Do NOT modify lines
@@ -1857,9 +2468,26 @@ describing prior `scripts/...` work — those entries describe a state
 that was correct at the time. The grep AC below pins the literal
 string of the new entry.
 
-No skill edits, no mirror needed.
+**`docs/` sweep — defensive coverage (F-10 fix).** Phase 2 WI 2.2b
+catches the specific `TRACKING_NAMING.md:414,421` references for
+`plan-drift-correct.sh`. WI 6.0b's broader sweep across all of
+`docs/` is defensive: any other `scripts/<tier-1>` reference that
+was added since the plan was drafted (or that this plan didn't
+hand-enumerate) gets caught here. Empty result is the expected case
+post-Phase 2 WI 2.2b; non-empty means there's additional drift to
+fix.
 
-### Acceptance Criteria
+**`RELEASING.md` migration note — closes the close-out gap (DA-12
+fix).** Phase 6 originally had only 4 WIs (6.1, 6.1b, 6.2, 6.3) for
+a ~10-line doc footprint, vs. 12+ user-facing surfaces touched by
+the plan. WI 6.4 adds the migration note. RELEASING.md is the
+canonical place for upgrade notes (already used for `build-prod.sh`
+context). Adding a section there — rather than a new top-level
+`MIGRATION.md` — keeps the project's doc index small.
+
+No skill edits, no skill mirror needed.
+
+#### Acceptance Criteria
 
 - [ ] **CHANGELOG entries present (literal pin per R6/D11):**
       ```bash
@@ -1867,27 +2495,79 @@ No skill edits, no mirror needed.
         && grep -F 'feat(config): drop dev_server.port_script' CHANGELOG.md
       ```
       exits 0.
+- [ ] **`docs/` Tier-1 sweep clean (F-10 fix):**
+      ```bash
+      TIER1_NAMES=$(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+        gsub(/[[:space:]`]/, "", $2); print $2
+      }' skills/update-zskills/references/script-ownership.md)
+      PATTERN=$(echo "$TIER1_NAMES" | sed 's,^,scripts/,' | paste -sd'|' -)
+      grep -rEn "$PATTERN" docs/ | wc -l
+      ```
+      = 0.
+- [ ] **TRACKING_NAMING.md updated to skill-mirror paths (F-2 / F-10
+      fix):**
+      `grep -F '.claude/skills/run-plan/scripts/plan-drift-correct.sh' docs/tracking/TRACKING_NAMING.md`
+      ≥ 2 (was 0; corresponding old-path matches now zero).
+- [ ] **`RELEASING.md` migration section present (DA-12 fix):**
+      `grep -F 'Migration: SCRIPTS_INTO_SKILLS_PLAN' RELEASING.md`
+      ≥ 1 AND
+      `grep -F 'tier1-migration-deferred' RELEASING.md` ≥ 1
+      AND `grep -F 'dev_server.default_port' RELEASING.md` ≥ 1.
 - [ ] `grep -q 'SCRIPTS_INTO_SKILLS' plans/PLAN_INDEX.md` succeeds OR
       file absent.
 - [ ] `head -10 plans/SCRIPTS_INTO_SKILLS_PLAN.md` shows
       `status: complete` and `completed:` lines.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-### Dependencies
+#### Dependencies
 
 Phases 1–5.
 
-## Plan Quality
+## Drift Log
 
-**Drafting process:** /draft-plan with 3 rounds of adversarial review (max)
-**Convergence:** converged in round 3 (final convergence-check verified all 8 round-2 fixes landed; zero new majors, zero contradictions, zero broken ACs)
-**Remaining concerns:** none. R2.1 (README block could inline owner mapping) was reviewer-marked optional UX nit and accepted as indirection-by-design. Two minor sharpness issues from round 3 (N1 STALE_LIST awk parser indented inside a code fence — copy-paste hazard the implementing agent fixes inline; N2 case 6c failure message could point at "regenerate hashes file" remediation) — both are single-Edit nudges, not blocking.
+Structural comparison: this plan was authored 2026-04-25 (PR #70 batch) before any phase was executed. No completed phases — all 7 phases were reviewed as remaining in the 2026-04-28 `/refine-plan` pass. Drift sources absorbed:
+
+| Source | Landed | Drift impact | Disposition |
+|--------|--------|--------------|-------------|
+| `scripts/mirror-skill.sh` | PR #88 (2026-04-28) | Per-skill mirror regen helper. The plan's `rm -rf .claude/skills/X && cp -a ...` recipe is blocked by `block-unsafe-generic.sh:217-222`. | All 6 mirror recipes across Phases 1, 2, 3a, 3b, 4 replaced with `bash scripts/mirror-skill.sh skills/X`. Tier-2 entry added to ownership registry. |
+| `scripts/plan-drift-correct.sh` | PRs #90/#91/#92 (2026-04-28) | New Tier-1 script owned by `/run-plan`, with 8 callsites in `skills/run-plan/SKILL.md` plus a test file. | Added to ownership table. New WI 2.2b moves it + sweeps callsites. Added to STALE_LIST and Phase 4 hash fixtures. Phase 6 WI 6.0b added to update `docs/tracking/TRACKING_NAMING.md:414,421`. |
+| `hooks/block-unsafe-project.sh.template` rule (c) | PR #87 (2026-04-28) | Push-guard rule (c) segment-scoping. | Verified non-interaction with this plan's hook touchpoints (clear-tracking help-text region distinct from rule (c) line range). Recorded as F-12 / Justified-not-fixed. |
+| `tests/run-all.sh` | PR #90 | Now registers `test-plan-drift-correct.sh`. | Phase 5's test-suite sweep adjusted to use `script-ownership.md`-driven parser pattern. Phase 3a's "tests intentionally red" carve-out replaced with explicit allowlist (5 named suites) so regressions in `test-mirror-skill.sh` / `test-plan-drift-correct.sh` aren't masked. |
+| `docs/tracking/TRACKING_NAMING.md` `phasestep.*` extension | PRs #90/#92 | Now lists `phasestep.run-plan.<id>.<phase>.drift-detect` and `drift-fail` (lines 408-426). | Phase 6 WI 6.0b added to sweep `docs/` for stale `scripts/plan-drift-correct.sh` references after script relocation. |
+
+## Plan Review
+
+**Refinement process:** `/refine-plan` with 1 round of adversarial review (reviewer + devil's advocate, with user-supplied scope/focus directive citing 5 since-draft landings).
+
+**Convergence:** Converged at round 1. 24 findings (12 reviewer + 12 DA), 23 Fixed, 1 Justified-not-fixed (F-12 — non-reproducing user signal about PR #87 push-guard rule (c), recorded for evidence-trail completeness). Substantive remaining issues: 0.
+
+**Verify-before-fix outcomes:** all empirical findings had their `Verification:` lines independently reproduced before fixes were applied. Two blockers were verified the hard way:
+
+- **DA-3** (`git rev-parse <rev>:<wildcard-path>`): confirmed by spinning up a small git repo and observing that wildcard patterns are NOT expanded — they're treated as literal tree paths, and the original WI 4.2's `2>/dev/null` was suppressing the silent failure. Without the fix, half the planned hashes would never compute and the consumer migration would mis-classify user-modified vs. release-blob.
+- **DA-2** (hook block on `rm -rf .claude/`): confirmed by three of the refiner's own Bash calls being blocked by `block-unsafe-generic.sh:217-222` for `rm -rf` patterns matching the exact recipe the plan tells implementers to run. Implementers would have hit a hook block on the first mirror operation of every phase.
+
+**Remaining concerns:** None blocking execution. The refinement absorbed real drift; 5 HIGH-severity findings would have caused plan execution to fail or silently produce wrong output.
 
 ### Round History
-| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
-|-------|-------------------|---------------------------|----------|
-| 1     | 17 (R1–R17)       | 20 (D1–D20)               | 35 verified+fixed; 2 confirmations/false-alarms (R13, D13, D15); 0 deferred |
-| 2     | 7 (R2.1–R2.7)     | 9 (D21–D29)               | 14 fixed (D21 lang-split, D22 awk prose, D23 case6 redesign, D24 per-file defer marker, D25 CRLF normalize, D26+R2.2 Phase 3a verifier contract, D27 STALE_LIST parser pinned, D28 stale line numbers in WI 5.6, D29 EXISTENCE-axis paragraph, R2.3 single-source-of-truth name list, R2.4 dropped WI 3b.7, R2.6 SNAPSHOT warning header, R2.7 fallback-form required); 1 noted-not-fixed (R2.1 — accepted indirection); 1 false-alarm (R2.5) |
-| 4     | user-driven scope adjustment | (n/a) | Three scripts reclassified Tier-2 → Tier-1: `clear-tracking.sh`, `port.sh`, `statusline.sh`. Original Tier-2 rationale was circular. Edits: ownership table, "maximalist alternative" subsection rewrite, Phase 2 added `statusline.sh` move WI, Phase 3a added `clear-tracking.sh` and `port.sh` move WIs (port.sh also gains config-driven `dev_server.default_port`), Phase 3b extended grep sweep + new hook help-text WI 3b.7 + cross-skill caller WI 3b.6b, Phase 4 STALE_LIST extended + test cases 2c/2d added, Phase 5 README/CLAUDE.md/CLAUDE_TEMPLATE sweeps extended (drops `port_script` config field), Phase 6 CHANGELOG gains second entry. Stub-callout follow-up work (post-create-worktree, dev-port, formal stop-dev/test-all stub conversion, generalized convention) DEFERRED to a follow-up plan. |
-| 3     | combined convergence-check | combined convergence-check | 8/8 round-2 fixes verified landed; 0 new majors, 0 new criticals; 2 minor sharpness items recorded (N1, N2) — non-blocking. **Converged.** |
-| 5     | post-round-4 convergence-check (F1–F7) | (n/a) | 7 findings on the round-4 scope expansion. **F1 (major)** — dropped the round-4 `:-$MAIN_ROOT` fallback form on `CLAUDE_PROJECT_DIR` everywhere (16 callsite occurrences + Phase 1 / Phase 3b Design rationale rewritten); cross-skill callers in skill prose lacked `MAIN_ROOT` in scope, making the fallback silently expand to an empty path. **F2 (major)** — dropped the hand-waved "add a Step 0.5/0.6 prompt for `default_port`" instruction (Step 0.5 has no prompt loop; Step 0.6 only asks landing-mode); replaced with concrete sub-WIs 3a.4c.i/ii/iii (greenfield template gets `"default_port": 8080,`; no install prompt; optional BASH_REMATCH read). **F3 (major)** — added explicit sub-bullet 3b.6b.x for surgical edit at `update-zskills/SKILL.md:704` (split the Step C bullet; remove `port.sh` half, keep `test-all.sh`). **F4 (minor)** — added WI 5.4.X for both `{{PORT_SCRIPT}}` placeholders at `CLAUDE_TEMPLATE.md:13`; clarified that Phase 3b skips `:326` (Phase 5 deletes the row). **F5 (minor)** — added bullet to WI 5.5.a removing `port_script` from this repo's own `.claude/zskills-config.json:25`. **F6 (minor)** — softened `statusline.sh` STALE_LIST rationale to "defensive entry"; added expectation note to test case 2c. **F7 (minor)** — pinned the `port.sh` self-doc rewrite verbatim in WI 3a.4c. |
+
+| Round | Reviewer Findings | DA Findings | Substantive | Resolved | Outcome |
+|-------|-------------------|-------------|-------------|----------|---------|
+| 1     | 12                | 12          | 24          | 23 Fixed, 1 Justified-not-reproducing | Converged |
+
+### Top High-Impact Fixes
+
+1. **DA-2** — Replaced 6 instances of `rm -rf .claude/skills/<name> && cp -a ...` with `bash scripts/mirror-skill.sh <name>` across Phases 1, 2, 3a, 3b, 4.
+2. **F-2 / DA-1** — Added `plan-drift-correct.sh` (Tier-1, owner `run-plan`) to the ownership table. New WI 2.2b moves it + sweeps the 8 callsites in `run-plan/SKILL.md` + updates the test path. Added to STALE_LIST and to WI 4.8 cases 2c/2d test fixtures.
+3. **DA-3** — Rewrote WI 4.2's hash-file generator from a single broken `git rev-parse "${commit}:skills/*/scripts/$name"` loop to a two-pass form: pass 1 uses literal pre-Phase-3 paths; pass 2 uses `git ls-tree -r --name-only` to discover the actual literal post-Phase-3 path before feeding it to `rev-parse`. Removed the `2>/dev/null` suppression that had hidden the failure.
+
+### Other Notable Fixes
+
+- **F-3 / DA-5** — replaced the three different closed-list regexes (7, 9, 12 names) across Phases 3b/5 with a `script-ownership.md`-driven parser pattern.
+- **F-4** — corrected the `≥ 8` AC threshold to `= 12` (six help-text lines × two files).
+- **DA-4** — replaced Phase 3a's "all test failures acceptable" carve-out with a specific allowlist (5 named suites).
+- **DA-6** — moved README helper-scripts list rewrite from Phase 5 WI 5.5.d into Phase 3b WI 3b.2.a so the Phase 3b zero-match AC is honest.
+- **DA-7 / DA-8** — added Phase 4 WI 4.4b to strip leftover `port_script` from consumer configs and a `command -v git` pre-flight at the top of Step D.5.
+- **DA-9** — replaced the order-blind grep AC with an awk ordering check.
+- **DA-10** — replaced the wildcard pathspec in WI 4.8 case 6c with owner-literal parsed from `script-ownership.md`.
+- **DA-11** — added WI 1.6 + WI 2.8b to clean `scripts/rel-root-cw-cw-smoke-43859/` and `scripts/__pycache__/briefing.cpython-312.pyc`.
+- **DA-12** — added Phase 6 WI 6.4: `RELEASING.md` migration note covering the consumer-visible blast radius.
