@@ -207,6 +207,139 @@ expect_rc 2 "drift: non-integer actual"  --drift "100" "ten"
 expect_rc 2 "parse: file not found"  --parse "/tmp/zskills-tests/nonexistent-$$.txt"
 
 echo ""
+echo "=== Phase 3.5 orchestration: simulated end-to-end --parse → --drift → --correct ==="
+# Simulates the orchestrator's workflow: an agent's combined report contains a
+# PLAN-TEXT-DRIFT token; a stale plan file's acceptance band gets corrected.
+E2E_REPORT="$TEST_OUT/e2e-report.txt"
+cat > "$E2E_REPORT" <<'EOF'
+Implementation report.
+
+PLAN-TEXT-DRIFT: phase=2 bullet=1 field=skill-line-count plan=approximately 357 actual=277
+
+Done.
+EOF
+E2E_PLAN="$TEST_OUT/e2e-plan.md"
+cat > "$E2E_PLAN" <<'EOF'
+## Phase 2 — Foo
+
+### Acceptance Criteria
+
+- [ ] Skill is approximately 357 lines after restructure.
+- [ ] Other thing.
+EOF
+parse_out=$(bash "$SCRIPT" --parse "$E2E_REPORT" 2>&1); parse_rc=$?
+e2e_record="2|1|skill-line-count|approximately 357|277"
+if [ "$parse_rc" = "0" ] && [ "$parse_out" = "$e2e_record" ]; then
+  # Decompose record (using bash IFS split; no eval, no $(()) over user input).
+  IFS='|' read -r e2e_phase e2e_bullet _e2e_field e2e_stated e2e_actual <<< "$parse_out"
+  drift_out=$(bash "$SCRIPT" --drift "$e2e_stated" "$e2e_actual" 2>&1); drift_rc=$?
+  if [ "$drift_rc" = "0" ] && [ "$drift_out" = "23" ]; then
+    bash "$SCRIPT" --correct "$E2E_PLAN" "$e2e_phase" "$e2e_bullet" "$e2e_actual" --audit "$e2e_stated" >/dev/null 2>&1
+    correct_rc=$?
+    if [ "$correct_rc" = "0" ] \
+        && grep -q 'Skill is 277 lines after restructure' "$E2E_PLAN" \
+        && grep -q 'Auto-corrected' "$E2E_PLAN" \
+        && grep -q 'was approximately 357' "$E2E_PLAN"; then
+      pass "Phase 3.5 e2e: parse → drift → correct lands audited band"
+    else
+      fail "Phase 3.5 e2e: --correct stage failed (rc=$correct_rc, plan content unexpected)"
+    fi
+  else
+    fail "Phase 3.5 e2e: --drift stage — expected '23', got rc=$drift_rc out='$drift_out'"
+  fi
+else
+  fail "Phase 3.5 e2e: --parse stage — expected rc=0 + '$e2e_record', got rc=$parse_rc out='$parse_out'"
+fi
+
+echo ""
+echo "=== Phase 3.5 orchestration: thrash determinism (same phase+bullet, repeat --correct) ==="
+# The orchestrator enforces the thrash-rule (abort on second correction). The
+# script itself must be deterministic on repeat: a second --correct invocation
+# with a literal that matches the post-first-correction text must succeed and
+# produce the same end-state band, so the orchestrator's re-detection of a
+# PLAN-TEXT-DRIFT token after a correction reflects a real drift, not script
+# nondeterminism.
+THRASH_PLAN="$TEST_OUT/thrash-plan.md"
+cat > "$THRASH_PLAN" <<'EOF'
+## Phase 1 — Bar
+
+### Acceptance Criteria
+
+- [ ] Foo is approximately 100 widgets.
+EOF
+bash "$SCRIPT" --correct "$THRASH_PLAN" 1 1 "120" --audit "approximately 100" >/dev/null 2>&1
+first_rc=$?
+# After first correction, the line literal is now "120"; second --correct must
+# locate the new literal and rewrite to a third value deterministically.
+bash "$SCRIPT" --correct "$THRASH_PLAN" 1 1 "150" --audit "120" >/dev/null 2>&1
+second_rc=$?
+audit_count=$(grep -o 'Auto-corrected' "$THRASH_PLAN" | wc -l | tr -d ' ')
+if [ "$first_rc" = "0" ] && [ "$second_rc" = "0" ] \
+    && grep -q 'Foo is 150 widgets' "$THRASH_PLAN" \
+    && [ "$audit_count" = "2" ]; then
+  pass "Phase 3.5 thrash: --correct deterministic on repeat (orchestrator enforces abort, not script)"
+else
+  fail "Phase 3.5 thrash: first_rc=$first_rc second_rc=$second_rc, audit-comments=$audit_count"
+fi
+
+echo ""
+echo "=== Phase 3.5 orchestration: >20% drift escalation signal ==="
+# >20% drift case from decision-table: orchestrator reads --drift output and
+# routes >20 to ABORT (no --correct call). Verify --drift returns >20 in
+# representative shapes.
+out=$(bash "$SCRIPT" --drift "100" "200" 2>&1)
+if [ "$out" = "100" ]; then
+  pass "Phase 3.5 escalate: literal 100 vs 200 → drift=100 (>20, ABORT)"
+else
+  fail "Phase 3.5 escalate: literal — expected 100, got '$out'"
+fi
+
+out=$(bash "$SCRIPT" --drift "approximately 50" "100" 2>&1)
+if [ "$out" = "100" ]; then
+  pass "Phase 3.5 escalate: approximately 50 vs 100 → drift=100 (>20, ABORT)"
+else
+  fail "Phase 3.5 escalate: approximately — expected 100, got '$out'"
+fi
+
+echo ""
+echo "=== Phase 3.5 orchestration: multi-drift report → per-record correction ==="
+# Two drifts in one combined-report; orchestrator parses, drifts each, corrects
+# each independently. End state: both bands rewritten with audit comments.
+MULTI_REPORT="$TEST_OUT/e2e-multi-report.txt"
+cat > "$MULTI_REPORT" <<'EOF'
+PLAN-TEXT-DRIFT: phase=1 bullet=1 field=count-a plan=approximately 100 actual=110
+PLAN-TEXT-DRIFT: phase=1 bullet=2 field=count-b plan=at most 50 actual=45
+EOF
+MULTI_PLAN="$TEST_OUT/e2e-multi-plan.md"
+cat > "$MULTI_PLAN" <<'EOF'
+## Phase 1 — Multi
+
+### Acceptance Criteria
+
+- [ ] Count A is approximately 100.
+- [ ] Count B is at most 50.
+EOF
+parsed=$(bash "$SCRIPT" --parse "$MULTI_REPORT" 2>&1); prc=$?
+expected_two='1|1|count-a|approximately 100|110
+1|2|count-b|at most 50|45'
+if [ "$prc" = "0" ] && [ "$parsed" = "$expected_two" ]; then
+  multi_ok=1
+  while IFS='|' read -r mp mb _mf ms ma; do
+    bash "$SCRIPT" --correct "$MULTI_PLAN" "$mp" "$mb" "$ma" --audit "$ms" >/dev/null 2>&1 || multi_ok=0
+  done <<< "$parsed"
+  if [ "$multi_ok" = "1" ] \
+      && grep -q 'Count A is 110' "$MULTI_PLAN" \
+      && grep -q 'Count B is 45' "$MULTI_PLAN" \
+      && [ "$(grep -c 'Auto-corrected' "$MULTI_PLAN")" = "2" ]; then
+    pass "Phase 3.5 multi: parse → loop → correct lands two audited bands"
+  else
+    fail "Phase 3.5 multi: corrections didn't land cleanly (multi_ok=$multi_ok)"
+  fi
+else
+  fail "Phase 3.5 multi: --parse expected 2 records, got rc=$prc out='$parsed'"
+fi
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ "$FAIL_COUNT" -eq 0 ]; then
