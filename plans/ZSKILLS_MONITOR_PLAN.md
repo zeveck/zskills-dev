@@ -251,7 +251,7 @@ is appended to `errors[]`.
 |-------|--------|--------|-------|
 | 1 — `/work-on-plans` execute-only CLI | ✅ Done | `12270a0` | landed via PR squash; new skill (677 lines) + parent: marker docs; 943/943 |
 | 2 — Remove `/plans work` modes | ✅ Done | `76dbece` | landed via PR squash; 5 files updated; /plans work retired; 943/943 |
-| 3 — `/work-on-plans` queue mutation + scheduling | ⬚ | | |
+| 3 — `/work-on-plans` queue mutation + scheduling | ✅ Done | `f9290b7` | landed via PR squash; 6 subcommands + flock; SKILL 677→1249; +28 tests; 971/971 |
 | 4 — Data aggregation library | ⬚ | | |
 | 5 — HTTP server | ⬚ | | |
 | 6 — Read-only dashboard UI | ⬚ | | |

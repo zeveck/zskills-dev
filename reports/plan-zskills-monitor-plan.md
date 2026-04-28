@@ -1,5 +1,48 @@
 # Plan Report — Zskills Monitor Dashboard
 
+## Phase — 3 /work-on-plans queue mutation + scheduling [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_MONITOR_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-monitor-plan
+**Branch:** feat/zskills-monitor-plan
+**Commits:** f9290b7 (impl: 6 subcommands + flock + 28 tests), 905099b (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 3.1 | CLI parse for queue mutate (add/rank/remove/default) + schedule (every/stop) subcommands | Done | f9290b7 |
+| 3.2 | Cross-process flock helper for monitor-state.json RMW | Done | f9290b7 |
+| 3.3 | every cron + mode capture (captured > live default precedence) | Done | f9290b7 |
+| 3.4 | schedule_under_1h() rejection of <1h with finish + verbatim diagnostic | Done | f9290b7 |
+| 3.5 | stop deletes via CronDelete + state idle reset; next reads $WORK_STATE | Done | f9290b7 |
+| 3.6 | fulfilled.work-on-plans.<sprint-id> markers for mutating subcommands | Done | f9290b7 |
+| 3.7 | Mirror parity for /work-on-plans skill | Done | f9290b7 |
+
+### Verification
+
+- Test suite: PASSED (971/971, +28 from baseline 943)
+- All 10 ACs pass
+- Cross-process flock: 8/8 racers land with lock; 5/8 without (negative control proves race + that the lock prevents lost updates)
+- Slug regex `^[a-z][a-z0-9-]*$` forbids leading digit (per AC-2 — leading digits reserved for execute-mode N)
+- Schedule rejection: `30m`/`5m`/`*/30 *`/`*/2 *` all detected as <1h; `1h`/`4h` accepted
+- No `eval` over user input, no `jq`, no `kill -9`
+- Mirror byte-identical
+
+### Notable scope decisions (verifier-accepted)
+
+1. Slug regex is `^[a-z][a-z0-9-]*$` with explicit `^[0-9]` reject before general regex — belt-and-braces for AC-2's "digit-prefix reserved for execute-mode N" rule.
+2. ensure_monitor_state() bootstrap helper duplicates Phase 1's heredoc (rather than `source`-ing) because SKILL.md remains a single-file LLM-driven prompt with no shared `.sh` to import.
+3. .gitignore extended now (Phase 3) instead of Phase 5 — Phase 3 is the first phase that creates `monitor-state.json` / `work-on-plans-state.json` / `monitor-state.json.lock` in the working tree.
+
+### Notes
+
+- Phase 3 completes the `/work-on-plans` skill surface. The remaining phases shift to data aggregation (4), HTTP server (5), dashboard UI (6, 7), `/zskills-dashboard` skill (8), and `/plans rebuild` migration (9).
+- One transient flake observed in `test-briefing-parity` from a parallel session's worktree appearing/vanishing during the implementer's run; pre-existing environmental flake, not introduced by Phase 3. Verifier's full-suite run was clean.
+
+---
+
 ## Phase — 2 Remove /plans work modes [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_MONITOR_PLAN.md
