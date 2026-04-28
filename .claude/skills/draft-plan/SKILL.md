@@ -123,7 +123,7 @@ The summary should cover:
 - Open questions or uncertainties
 
 **Similarly, write each round's review findings to files:**
-- `/tmp/draft-plan-review-round-N.md` — reviewer + devil's advocate findings
+- `/tmp/draft-plan-review-<slug>-round-N.md` — reviewer + devil's advocate findings
 - Pass these file paths to the refiner agent so it has the full context
 
 **Scope check — is this too big for one plan?** After consolidating
