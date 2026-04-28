@@ -452,7 +452,7 @@ ISSUE_TITLE_SLUG=$(printf '%s' "${ISSUE_TITLE:-sprint}" | tr -cd 'a-z0-9' | head
 [ -z "$ISSUE_TITLE_SLUG" ] && ISSUE_TITLE_SLUG="sprint"
 SPRINT_ID="sprint-$(date -u +%Y%m%d-%H%M%S)-$ISSUE_TITLE_SLUG"
 PIPELINE_ID="fix-issues.$SPRINT_ID"
-PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SPRINT_ID after sanitization (strip the "fix-issues." prefix).
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
@@ -701,7 +701,7 @@ printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)"
 
 ## Phase 3 — Execute (agent teams in worktrees)
 
-**All modes create a per-issue worktree via `scripts/create-worktree.sh`
+**All modes create a per-issue worktree via `.claude/skills/create-worktree/scripts/create-worktree.sh`
 BEFORE dispatching the fix agent, and dispatch agents WITHOUT
 `isolation: "worktree"`.** The distinction between modes is not *how* the
 worktree is created — it is *what happens at landing*: `cherry-pick`
@@ -816,7 +816,7 @@ WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
-  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
     --prefix fix-issue \
     --purpose "fix-issues; issue=${ISSUE_NUM}" \
     --pipeline-id "$PIPELINE_ID" \
@@ -871,7 +871,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
-  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
     --prefix fix-issue \
     --branch-name "fix/issue-${ISSUE_NUM}" \
     --allow-resume \

@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/create-worktree.sh — Unified worktree creation helper.
+# create-worktree.sh — Unified worktree creation helper.
 #
 # Owns: prefix-derived path, optional --branch-name override, optional
 # pre-flight prune+fetch+ff-merge (suppressible), worktree-add-safe.sh
@@ -8,7 +8,7 @@
 # on stdout (exactly one line). All progress/errors go to stderr.
 #
 # Usage:
-#   bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+#   bash $(basename "$0") \
 #     [--prefix P] [--branch-name REF] [--from B] [--root R] \
 #     [--purpose TEXT] [--pipeline-id ID] [--allow-resume] [--no-preflight] \
 #     <slug>
@@ -23,7 +23,20 @@
 #   7  Pre-flight ff-merge not possible (divergent main)
 #   8  Post-create write failed (rolled back)
 
+# Print usage on --help (positive-pass invocation signal for Phase 3a AC).
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+esac
+
 set -eu
+
+# Same-skill internal resolution — peers (worktree-add-safe.sh,
+# sanitize-pipeline-id.sh) live in the same scripts/ directory as this
+# script. Symlink invocation is not supported (D18).
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # ──────────────────────────────────────────────────────────────────
 # WI 1a.3 — Compute MAIN_ROOT BEFORE any cd. All path resolution
@@ -42,8 +55,9 @@ if [ -z "$MAIN_ROOT" ] || [ "$MAIN_ROOT" = "/" ]; then
 fi
 
 # Install-integrity: sanitize-pipeline-id.sh MUST be present and executable (R2-L4).
-if [ ! -x "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" ]; then
-  echo "create-worktree: $MAIN_ROOT/scripts/sanitize-pipeline-id.sh missing or not executable (install-integrity)" >&2
+# Same-skill peer (post-Phase-3a) — verifies the skill's mirror is intact.
+if [ ! -x "$SCRIPT_DIR/sanitize-pipeline-id.sh" ]; then
+  echo "create-worktree: $SCRIPT_DIR/sanitize-pipeline-id.sh missing or not executable (install-integrity)" >&2
   exit 5
 fi
 
@@ -266,10 +280,10 @@ fi
 WAS_RC=0
 if [ "$ALLOW_RESUME" -eq 1 ]; then
   ZSKILLS_ALLOW_BRANCH_RESUME=1 \
-    bash "$MAIN_ROOT/scripts/worktree-add-safe.sh" "$BRANCH" "$WT_PATH" "$BASE" 1>&2 \
+    bash "$SCRIPT_DIR/worktree-add-safe.sh" "$BRANCH" "$WT_PATH" "$BASE" 1>&2 \
     || WAS_RC=$?
 else
-  bash "$MAIN_ROOT/scripts/worktree-add-safe.sh" "$BRANCH" "$WT_PATH" "$BASE" 1>&2 \
+  bash "$SCRIPT_DIR/worktree-add-safe.sh" "$BRANCH" "$WT_PATH" "$BASE" 1>&2 \
     || WAS_RC=$?
 fi
 
@@ -317,7 +331,7 @@ if [ "$WAS_RC" -ne 0 ]; then exit "$WAS_RC"; fi
 # already-clean ID is a no-op but a caller passing a dirty string still
 # produces a safe value.
 # ──────────────────────────────────────────────────────────────────
-PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID_OVERRIDE")
+PIPELINE_ID=$(bash "$SCRIPT_DIR/sanitize-pipeline-id.sh" "$PIPELINE_ID_OVERRIDE")
 
 # WI 1a.11 — Rollback on .zskills-tracked write failure.
 if ! printf '%s\n' "$PIPELINE_ID" > "$WT_PATH/.zskills-tracked"; then

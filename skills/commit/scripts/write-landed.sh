@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/write-landed.sh — atomic .landed marker write with rc checks.
+# write-landed.sh — atomic .landed marker write with rc checks.
 #
 # Replaces the ad-hoc `cat > .landed.tmp <<EOF ... EOF ; mv .landed.tmp .landed`
 # pattern that appeared at 12 sites across skills/. The ad-hoc pattern silently
@@ -8,7 +8,7 @@
 # broken file, so downstream readers got a corrupt or empty .landed.
 #
 # Usage:
-#   cat <<LANDED | bash scripts/write-landed.sh <worktree-path>
+#   cat <<LANDED | bash $(basename "$0") <worktree-path>
 #   status: landed
 #   date: ...
 #   ...

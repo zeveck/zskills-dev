@@ -1,7 +1,9 @@
 #!/bin/bash
-# scripts/worktree-add-safe.sh BRANCH_NAME WORKTREE_PATH [BASE_BRANCH=main]
+# worktree-add-safe.sh BRANCH_NAME WORKTREE_PATH [BASE_BRANCH=main]
 # Creates a git worktree safely — either fresh, or a verified-legitimate
 # resume. Fails loud on poisoned or ambiguous branch state.
+#
+# Usage:  bash $(basename "$0") BRANCH_NAME WORKTREE_PATH [BASE_BRANCH=main]
 set -eu
 BRANCH_NAME="${1:?missing branch name}"
 WORKTREE_PATH="${2:?missing worktree path}"

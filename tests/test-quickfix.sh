@@ -135,9 +135,11 @@ GITIGNORE
   git -C "$fix" branch --set-upstream-to=origin/main main >/dev/null 2>&1
 
   # Provide the scripts the skill depends on (sanitize-pipeline-id.sh).
-  mkdir -p "$fix/scripts"
-  cp "$REPO_ROOT/scripts/sanitize-pipeline-id.sh" "$fix/scripts/"
-  chmod +x "$fix/scripts/sanitize-pipeline-id.sh"
+  # Skill references it via $MAIN_ROOT/.claude/skills/create-worktree/scripts/
+  # (post-Phase-3a path under the .claude mirror).
+  mkdir -p "$fix/.claude/skills/create-worktree/scripts"
+  cp "$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$fix/.claude/skills/create-worktree/scripts/"
+  chmod +x "$fix/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
 
   # Config with aligned unit_cmd / full_cmd (default: `true` passes).
   mkdir -p "$fix/.claude"

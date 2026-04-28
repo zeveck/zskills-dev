@@ -71,7 +71,7 @@ if ! [[ "$SCOPE" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#SCOPE} -gt 30 ]; then
 fi
 
 PIPELINE_ID="research-and-go.$SCOPE"
-PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SCOPE after sanitization (strip the "research-and-go." prefix).
 # Sanitization is idempotent on a validator-passing $SCOPE, but keep the
 # recovery so any future change to the sanitizer cannot silently skew
@@ -291,7 +291,7 @@ the end of Step 2.
 Under chunked finish auto, `/research-and-go` Step 2 schedules a cron and
 exits -- Step 3 never runs in-session. Cleanup happens when the user (or a
 future automation) observes the pipeline is complete. Run
-`bash scripts/clear-tracking.sh` (interactive) to wipe tracking. Do NOT
+`bash .claude/skills/update-zskills/scripts/clear-tracking.sh` (interactive) to wipe tracking. Do NOT
 auto-wipe -- `requires.verify-changes.final.*` and its fulfillment marker
 are pipeline-completion records that should survive until the user confirms
 the pipeline finished.

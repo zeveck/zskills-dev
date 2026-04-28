@@ -1582,7 +1582,7 @@ fi
 echo ""
 echo "=== land-phase.sh ==="
 
-LAND_SCRIPT="$REPO_ROOT/scripts/land-phase.sh"
+LAND_SCRIPT="$REPO_ROOT/skills/commit/scripts/land-phase.sh"
 
 # Test: idempotent on missing directory (exit 0)
 LAND_OUTPUT=$(bash "$LAND_SCRIPT" "/tmp/nonexistent-worktree-path-$$" 2>&1)

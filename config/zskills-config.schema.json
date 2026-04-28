@@ -88,6 +88,11 @@
           "type": "string",
           "description": "Command to start the dev server. Example: npm start"
         },
+        "default_port": {
+          "type": "integer",
+          "default": 8080,
+          "description": "Default dev server port for the main repo; worktrees get a hash-derived port in 9000-60000."
+        },
         "port_script": {
           "type": "string",
           "description": "Script that outputs the dev server port. Example: scripts/port.sh"

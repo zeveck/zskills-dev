@@ -47,7 +47,7 @@ This is for landing worktree work onto main via cherry-pick.
 6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):
    ```bash
-   cat <<LANDED | bash scripts/write-landed.sh "<worktree-path>"
+   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
    status: full
    date: $(TZ=America/New_York date -Iseconds)
    source: commit-land

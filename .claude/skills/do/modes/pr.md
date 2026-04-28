@@ -58,7 +58,7 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 # defensive call: removing would require exhaustive downstream audit of
 # TASK_SLUG consumers (R2-M4). It is safe to run this BEFORE worktree
 # creation because the sanitized slug is needed by --pipeline-id.
-TASK_SLUG=$(bash scripts/sanitize-pipeline-id.sh "$TASK_SLUG")
+TASK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$TASK_SLUG")
 PIPELINE_ID="do.${TASK_SLUG}"
 ```
 
@@ -70,7 +70,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # again internally (idempotent on already-safe inputs) and writes the
 # sanitized value to the worktree's .zskills-tracked. No env var reliance,
 # no cross-invocation pollution.
-WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
   --prefix do \
   --branch-name "${BRANCH_PREFIX}do-${TASK_SLUG}" \
   --purpose "do PR mode; task=${TASK_SLUG}" \

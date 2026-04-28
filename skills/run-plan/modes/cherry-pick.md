@@ -110,7 +110,7 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
   5. **Mark worktree as landed:**
      Write `.landed` marker (atomic: `.tmp` → `mv`):
      ```bash
-     cat <<LANDED | bash scripts/write-landed.sh "<worktree-path>"
+     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
      status: landed
      date: $(TZ=America/New_York date -Iseconds)
      source: run-plan
@@ -118,9 +118,9 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      commits: <list of cherry-picked hashes>
      LANDED
      ```
-  6. **Run `scripts/land-phase.sh`** — atomic post-landing cleanup:
+  6. **Run `.claude/skills/commit/scripts/land-phase.sh`** — atomic post-landing cleanup:
      ```bash
-     bash scripts/land-phase.sh "$WORKTREE_PATH"
+     bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
      ```
      This script handles everything: verifies `.landed` marker, extracts
      logs to main's `.claude/logs/` (MUST succeed — exits 1 on failure),

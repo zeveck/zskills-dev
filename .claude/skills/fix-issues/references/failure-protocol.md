@@ -112,7 +112,7 @@ Do NOT invoke for:
 crashes, or times out, the ORCHESTRATOR (not the failed agent) writes a
 failure marker on the worktree:
 ```bash
-cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
+cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
 status: failed
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues

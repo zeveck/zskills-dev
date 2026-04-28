@@ -6,7 +6,7 @@ Create a named worktree and do the work there; the verification agent commits af
 Selected when the user passes `worktree` explicitly, or when
 `execution.landing` in `.claude/zskills-config.json` is `"cherry-pick"`.
 
-Create a named worktree at `/tmp/<project>-do-<slug>/` via `scripts/create-worktree.sh` (same path convention as `/do pr`, `/fix-issues pr`, and `/run-plan`; `WORKTREE_ROOT` in config overrides `/tmp`).
+Create a named worktree at `/tmp/<project>-do-<slug>/` via `.claude/skills/create-worktree/scripts/create-worktree.sh` (same path convention as `/do pr`, `/fix-issues pr`, and `/run-plan`; `WORKTREE_ROOT` in config overrides `/tmp`).
 
 **Compose $TASK_SLUG (model-layer).** Set shell variable `TASK_SLUG` to a
 kebab-case identifier matching `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤30 chars, a
@@ -42,14 +42,14 @@ rc=0
 # placement consistent with every other worktree-creating skill and works
 # in containerized environments where MAIN_ROOT's parent may not be
 # writable.
-WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
   --prefix do --no-preflight \
   --pipeline-id "$PIPELINE_ID" \
   "${ATTEMPT_SLUG}") || rc=$?
 if [ "${rc:-0}" = "2" ]; then
   # rc=2 is path-exists collision — retry with timestamp suffix.
   ATTEMPT_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
-  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
     --prefix do --no-preflight \
     --pipeline-id "$PIPELINE_ID" \
     "${ATTEMPT_SLUG}")

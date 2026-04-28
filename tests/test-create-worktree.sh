@@ -48,9 +48,9 @@ MAIN_TREE_SHA=$(git -C "$MAIN_ROOT" rev-parse --verify --quiet main^{tree} 2>/de
 # Phase 1a-gap fixes, for example) are exercised rather than the landed
 # main-repo copy. Fall back to the main-repo script only if the worktree
 # copy is missing.
-SCRIPT="$REPO_ROOT/scripts/create-worktree.sh"
+SCRIPT="$REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh"
 if [ ! -x "$SCRIPT" ]; then
-  SCRIPT="$MAIN_ROOT/scripts/create-worktree.sh"
+  SCRIPT="$MAIN_ROOT/skills/create-worktree/scripts/create-worktree.sh"
 fi
 
 PASS_COUNT=0
@@ -831,8 +831,8 @@ mkdir -p "$FIX_22/scripts"
 git init --quiet -b main "$FIX_22"
 git -C "$FIX_22" config user.email "t@t"
 git -C "$FIX_22" config user.name "t"
-cp "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$FIX_22/scripts/"
-cp "$MAIN_ROOT/scripts/worktree-add-safe.sh" "$FIX_22/scripts/"
+cp "$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_22/scripts/"
+cp "$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh" "$FIX_22/scripts/"
 chmod +x "$FIX_22/scripts/sanitize-pipeline-id.sh" "$FIX_22/scripts/worktree-add-safe.sh"
 
 # Seed main.

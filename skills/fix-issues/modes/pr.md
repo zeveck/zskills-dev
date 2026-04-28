@@ -40,7 +40,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
   echo "REBASE CONFLICT for issue #$ISSUE_NUM."
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -112,7 +112,7 @@ EOF
   # If PR creation failed, write pr-failed marker and continue.
   if [ -z "$PR_URL" ]; then
     echo "WARNING: PR creation failed for issue #$ISSUE_NUM. Branch pushed but PR not created."
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -159,7 +159,7 @@ LANDED
   # --- .landed marker (per issue) ---
   # $LANDED_STATUS, $CI_STATUS, $PR_STATE come from the CI poll + fix
   # cycle (always-run) and the auto-gated merge step above.
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -177,7 +177,7 @@ LANDED
   # Cleanup on merge: same as /run-plan PR mode -- if status is `landed`
   # (PR merged), call land-phase.sh to remove the worktree.
   if [ "$LANDED_STATUS" = "landed" ]; then
-    bash scripts/land-phase.sh "$WORKTREE_PATH"
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
   fi
 done
 ```

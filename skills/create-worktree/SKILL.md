@@ -4,7 +4,7 @@ disable-model-invocation: false
 argument-hint: "<slug> [--prefix P] [--branch-name REF] [--from B] [--root R] [--purpose TEXT] [--pipeline-id ID] [--allow-resume] [--no-preflight]"
 description: >-
   Create a git worktree for agent work. Thin wrapper around
-  scripts/create-worktree.sh — owns prefix-derived path, optional
+  .claude/skills/create-worktree/scripts/create-worktree.sh — owns prefix-derived path, optional
   --branch-name override, optional pre-flight prune+fetch+ff-merge,
   worktree-add-safe.sh call with TOCTOU-race remap, and sanitised
   .zskills-tracked / .worktreepurpose writes. Prints the worktree
@@ -13,7 +13,7 @@ description: >-
 
 # /create-worktree — Unified Worktree Creation
 
-Thin skill wrapper around `scripts/create-worktree.sh`. The script is the spec; this file exists for discoverability and to document the invocation contract. Do not duplicate the script's logic here.
+Thin skill wrapper around `.claude/skills/create-worktree/scripts/create-worktree.sh`. The script is the spec; this file exists for discoverability and to document the invocation contract. Do not duplicate the script's logic here.
 
 ## Two-tier contract
 
@@ -27,11 +27,10 @@ This is why the script is strict but the skill is ergonomic.
 
 ## Invocation
 
-Compute `MAIN_ROOT` before invoking (works from any CWD, including nested worktrees):
+Invoke via `$CLAUDE_PROJECT_DIR` (works from any CWD, including nested worktrees):
 
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-WT_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+WT_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
   --pipeline-id "<id>" \
   [--prefix P] [--branch-name REF] [--from B] [--root R] \
   [--purpose TEXT] [--allow-resume] [--no-preflight] \
@@ -84,17 +83,17 @@ On success (rc=0), stdout is exactly one line: the absolute worktree path. All p
 | 7 | Pre-flight ff-merge not possible (divergent base) | No |
 | 8 | Post-create write failed (worktree rolled back) | Maybe |
 
-Codes 2/3/4 propagate from `scripts/worktree-add-safe.sh`. Code 2 also covers the TOCTOU remap when the path materialises mid-flight.
+Codes 2/3/4 propagate from `.claude/skills/create-worktree/scripts/worktree-add-safe.sh`. Code 2 also covers the TOCTOU remap when the path materialises mid-flight.
 
 ## Post-create side effects
 
 - `.zskills-tracked` is always written with the sanitised `--pipeline-id` value.
   The script requires the flag — there is no env-var path and no fallback.
-  The value is passed through `scripts/sanitize-pipeline-id.sh` before being written.
+  The value is passed through `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` before being written.
 - `.worktreepurpose` is written iff `--purpose` was given.
-- Both files are untracked and not safe to commit — `scripts/land-phase.sh`
+- Both files are untracked and not safe to commit — `.claude/skills/commit/scripts/land-phase.sh`
   refuses to clean up a worktree that has git-tracked copies of either.
 
 ## Pointer
 
-Authoritative spec: [`scripts/create-worktree.sh`](../../scripts/create-worktree.sh). Edit there; this wrapper should stay thin.
+Authoritative spec: [`scripts/create-worktree.sh`](scripts/create-worktree.sh). Edit there; this wrapper should stay thin.
