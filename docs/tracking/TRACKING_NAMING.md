@@ -314,6 +314,56 @@ requires AND fulfillment into its own subdir**. Child skills never
 need to know the parent's `PIPELINE_ID` for correctness — the parent
 reconciles the tracking state itself after the child returns.
 
+## Parent-tagged markers
+
+When a parent skill writes `requires.<child>.*` or
+`fulfilled.<child>.*` markers into ITS OWN subdir to track a child
+dispatch, it MAY tag those markers with an optional `parent:` field
+in the marker body:
+
+```
+parent: <parent-skill-name>
+```
+
+**Schema.** One `parent: <skill-name>` line in the marker body.
+Lowercase skill name only — no path, no version. The line is
+optional; readers MUST tolerate its absence and MUST NOT reject
+markers that lack it. Multiple `parent:` lines in the same body are
+unspecified; writers SHOULD emit at most one.
+
+**Who writes it.** The parent skill, when it constructs the
+`requires.*` / `fulfilled.*` marker for a child dispatch, into its
+OWN per-pipeline subdir. The child skill never writes `parent:` on
+its own markers (e.g., `/run-plan` does not emit `parent:` on its
+own `fulfilled.run-plan.*` under `run-plan.<slug>/`).
+
+**Who reads it.** Activity-scan readers (e.g., the dashboard's
+recent-activity view) use `parent:` to group dispatched child runs
+under their orchestrator. The hook's enforcement globs do NOT read
+`parent:` — enforcement is by basename + scope-filter only.
+
+**Worked examples** (current writers — read-only inventory, do not
+modify):
+
+- `skills/fix-issues/SKILL.md` writes
+  `requires.draft-plan.<issue-number>` with `parent: fix-issues`
+  into `fix-issues.<sprint-id>/` when dispatching `/draft-plan` for
+  a skipped issue. It later writes
+  `requires.verify-changes.<sprint-id>` with `parent: fix-issues`
+  in the same subdir.
+- `skills/work-on-plans/SKILL.md` writes
+  `requires.run-plan.<plan-slug>` and
+  `fulfilled.run-plan.<plan-slug>` with `parent: work-on-plans`
+  into `work-on-plans.<sprint-id>/` when dispatching `/run-plan`
+  per ready-queue entry. The child `/run-plan` continues to write
+  its own `fulfilled.run-plan.<plan-slug>` under
+  `run-plan.<plan-slug>/` (without `parent:`); the parent does not
+  modify that file.
+
+The field schema is informational; it does not alter the
+delegation semantics described above. Both parent-tagged and
+untagged markers are treated identically by the hook.
+
 ## Design evaluation
 
 The three schemes trade off differently against the same criteria:

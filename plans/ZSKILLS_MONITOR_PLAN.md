@@ -249,7 +249,7 @@ is appended to `errors[]`.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — `/work-on-plans` execute-only CLI | ⬚ | | |
+| 1 — `/work-on-plans` execute-only CLI | ✅ Done | `12270a0` | landed via PR squash; new skill (677 lines) + parent: marker docs; 943/943 |
 | 2 — Remove `/plans work` modes | ⬚ | | |
 | 3 — `/work-on-plans` queue mutation + scheduling | ⬚ | | |
 | 4 — Data aggregation library | ⬚ | | |
