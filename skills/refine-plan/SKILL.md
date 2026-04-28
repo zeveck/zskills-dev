@@ -1,17 +1,17 @@
 ---
 name: refine-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N]"
+argument-hint: "<plan-file> [rounds N] [guidance...]"
 description: >-
   Refine an in-progress plan by reviewing remaining phases against completed
   work. Dispatches adversarial reviewer and devil's advocate agents to find
   stale references, invalidated assumptions, and specification gaps — then
   refines remaining phases until convergence. Completed phases are NEVER
   modified. Appends a Drift Log and Plan Review section.
-  Usage: /refine-plan <plan-file> [rounds N]
+  Usage: /refine-plan <plan-file> [rounds N] [guidance...]
 ---
 
-# /refine-plan \<plan-file> [rounds N] — Adversarial Plan Refiner
+# /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
 
 Refines an existing plan that is partially executed. Completed phases
 represent real, shipped work — they are **immutable context**, never
@@ -35,7 +35,7 @@ after refinement.
 ## Arguments
 
 ```
-/refine-plan <plan-file> [rounds N]
+/refine-plan <plan-file> [rounds N] [guidance...]
 ```
 
 - **plan-file** (required) — path to the plan `.md` file to refine.
@@ -45,17 +45,19 @@ after refinement.
   pass on an existing plan, not blank-slate creation.
 
 **Detection:** scan `$ARGUMENTS` from the start:
-- The **first token** ending in `.md` or containing `/` is the plan file.
-  If the token contains `/`, use as-is; otherwise prepend `plans/`.
-- `rounds` followed by a number sets max cycles.
-- If no plan file is detected, **error:** "No plan file specified.
-  Usage: `/refine-plan <plan-file> [rounds N]`"
+- The **first token** ending in `.md` is the plan file. If the token contains `/`, use as-is; otherwise prepend `plans/`.
+- `rounds` followed by a numeric argument sets max cycles. (`rounds` not followed by a number is treated as guidance text, not the keyword.)
+- Any tokens not matched as the plan file or `rounds N` keyword are joined with spaces into **guidance text** — prepended to the reviewer + devil's advocate agent prompts in Phase 2 as a "User-driven scope/focus directive" section.
+- Empty guidance preserves today's reviewer/DA prompt output (no behavior change for invocations without trailing guidance tokens).
+- If no plan file is detected, **error:** "No plan file specified. Usage: `/refine-plan <plan-file> [rounds N] [guidance...]`"
 
 Examples:
 - `/refine-plan plans/EXECUTION_MODES.md`
 - `/refine-plan plans/EXECUTION_MODES.md rounds 3`
 - `/refine-plan THERMAL_PLAN.md` -> reads `plans/THERMAL_PLAN.md`
 - `/refine-plan rounds 2 plans/FEATURE.md` -> plan file is `plans/FEATURE.md`, 2 rounds
+- `/refine-plan plans/FOO.md anti-deferral focus`
+- `/refine-plan plans/FOO.md rounds 3 expand audit to all config fields`
 
 ## Phase 1 — Parse Plan
 
@@ -126,6 +128,8 @@ Dispatch two agents simultaneously. Both receive:
 - Completed phases clearly marked as **READ-ONLY CONTEXT** (not review targets)
 - Remaining phases as the **REVIEW TARGET**
 - The parsed state file path (`/tmp/refine-plan-parsed-<slug>.md`)
+
+**If guidance was supplied** (positional-tail tokens after the plan file and `rounds N`, joined with spaces): prepend a `User-driven scope/focus directive:` section to BOTH the reviewer and devil's advocate agent prompts, containing the guidance text verbatim. Agents treat this as priming context that shapes WHAT they pressure-test — NOT as factual claims they should act on without verification (verify-before-fix discipline still applies). If guidance is empty, the agent prompts are unchanged from today's output.
 
 ### Establishing current reality (preamble — both agents)
 
