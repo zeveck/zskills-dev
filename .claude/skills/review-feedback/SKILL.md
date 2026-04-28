@@ -25,14 +25,8 @@ will specify the path). This file is exported from the app via
 
 ## Workflow
 
-1. **Read** the feedback JSON file:
-   ```bash
-   cat feedback.json
-   ```
-   Or run the summary helper first:
-   ```bash
-   node scripts/review-feedback.js feedback.json
-   ```
+1. **Read** the feedback JSON file directly with the Read tool (or
+   `cat feedback.json` for a quick scan).
 
 2. **For each pending entry**, evaluate:
    - Is it a real, actionable bug or feature request?

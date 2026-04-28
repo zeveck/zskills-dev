@@ -45,6 +45,8 @@ Tier 2 after R1/D1 verified it is consumed by
 | `compute-cron-fire.sh`       | 1      | `run-plan`                   |
 | `create-worktree.sh`         | 1      | `create-worktree`            |
 | `land-phase.sh`              | 1      | `commit`                     |
+| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
+| `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |
 | `post-run-invariants.sh`     | 1      | `run-plan`                   |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
@@ -54,8 +56,8 @@ Tier 2 after R1/D1 verified it is consumed by
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
 
-13 Tier 1 moves, 3 Tier 2 stay-puts (`build-prod.sh`, `stop-dev.sh`,
-`test-all.sh`), zero deletes.
+14 Tier 1 moves, 4 Tier 2 stay-puts (`build-prod.sh`, `mirror-skill.sh`,
+`stop-dev.sh`, `test-all.sh`), zero deletes.
 
 **Skills with only Tier-2 references are unchanged in their script
 choices.** `verify-changes`, `cleanup-merged`, `fix-report`,

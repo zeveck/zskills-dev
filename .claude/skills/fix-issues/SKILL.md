@@ -298,13 +298,23 @@ Draft plans for issues previously skipped as "too complex for batch fix."
 Accepts optional `auto` — `/fix-issues plan auto` skips the selection gate
 and drafts plans for all found issues.
 
-1. **Run `node scripts/skipped-issues.cjs --check-gh`** — this scans the
-   ENTIRE `SPRINT_REPORT.md` across all sprints, extracts skipped issue
-   numbers (including ranges like #148-#168), deduplicates against existing
-   executable plans in `plans/`, and checks GitHub issue state. Output is
-   JSON with each issue classified as `needs-plan`, `has-plan`, or `closed`.
+1. **Find skipped issues from `plans/SPRINT_REPORT.md`.** Scan the entire
+   sprint report for issue numbers under "Skipped" / "Too Complex" /
+   "Remaining Open" headings. Use grep to extract candidate numbers
+   (handles bare `#NNN`, ranges like `#148-#168`, and `#NNN, #MMM` lists):
 
-   Use the script output directly — do NOT manually grep SPRINT_REPORT.md.
+   ```bash
+   grep -nE '#[0-9]+' plans/SPRINT_REPORT.md | grep -iE 'skip|complex|remain'
+   ```
+
+   Then for each candidate `#N`:
+   - Check `plans/` for an existing executable plan covering it:
+     `grep -l "#$N\b" plans/*.md` (existing plan = skip)
+   - Check GitHub state: `gh issue view "$N" --json state -q .state`
+     (`OPEN` = candidate; `CLOSED` = skip)
+
+   Build the working list of `needs-plan` issues from candidates that
+   have NO existing plan AND are still `OPEN`. Skip the rest.
 
 2. **Deduplicate** — check `plans/` for existing plans that already cover
    each issue. Also check whether the issue is still open on GitHub
@@ -495,14 +505,26 @@ alert user, write failure to report).
    gh issue list --state open --limit 500 --json number,title,labels,createdAt
    ```
 
-2. **Run the sync script** to find gaps between GitHub and plan files:
+2. **Find gaps** between GitHub open issues and plan tracker files. List
+   the trackers, then for each open GH issue number check whether it
+   appears in any tracker:
+
    ```bash
-   node ${CLAUDE_SKILL_DIR}/scripts/sync-issues.js
+   ls plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null
+
+   gh issue list --state open --limit 500 --json number -q '.[].number' \
+     | while read -r N; do
+         if ! grep -q "#$N\b" plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null; then
+           echo "GAP: #$N not in any tracker"
+         fi
+       done
    ```
 
-3. **Run the stats script** to see current distribution:
+3. **Tally label distribution** to see current spread:
+
    ```bash
-   node ${CLAUDE_SKILL_DIR}/scripts/issue-stats.js
+   gh issue list --state open --limit 500 --json labels \
+     -q '.[].labels[].name' | sort | uniq -c | sort -rn
    ```
 
 4. **Update ALL issue trackers** — scan `plans/` for tracker files:
