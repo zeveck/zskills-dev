@@ -12,6 +12,7 @@ Order matters because several items churn the same files (`skills/update-zskills
 - **2026-04-27 (mid)** — Issue #56 closed by [PR #74](https://github.com/zeveck/zskills-dev/pull/74) merged. Phase A item 1 marked complete.
 - **2026-04-27 (late)** — A drift across 5 PR-creating skills (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) was surfaced during the `/fix-issues 56 + 58` sprint: each skill duplicates the canonical `gh pr create` + CI poll + fix cycle + auto-merge pattern, with inconsistent gating and one skill (`/quickfix`) opting out entirely. [PR #75](https://github.com/zeveck/zskills-dev/pull/75) (merged 2026-04-27 22:51, commit `82ee65f`) fixes the `/fix-issues` half — interactive PR-mode now runs the full pipeline except the final `gh pr merge`, matching `/run-plan`, `/commit pr`, and `/do pr`. The broader unification was explicitly deferred by PR #75 as out-of-scope ("future `/draft-plan` candidate").
 - **2026-04-27 (later)** — `plans/PR_LANDING_UNIFICATION.md` drafted on branch `plans/pr-landing-unification` (worktree `/tmp/zskills-worktrees/pr-landing-unification`). 912 lines, 7 phases (1A foundation → 1B validation → 2 `/run-plan` → 3 `/commit pr`+`/do pr` → 4 `/fix-issues pr` → 5 `/quickfix` → 6 conformance), produced via `/draft-plan rounds 3` + `/refine-plan` YAGNI pass. Creates a new `/land-pr` skill that the 5 callers dispatch via the Skill tool. Branch is based on `47e8344` (pre-PR #75); needs rebase onto main before landing. Phase F entry below moves from "needs draft" to "needs merge".
+- **2026-04-28** — Session-of-2026-04-28 PRs merged: PR #76 (no-Haiku CLAUDE.md rule), PR #77 (PR_LANDING_UNIFICATION plan onto main → executable now), PR #78 (QUEUED_QUICKFIXES QF2 + QF4 revised per Opus re-review — when you run those quickfixes, copy from the revised file), PR #79 (QF1 done), PR #80 (`/quickfix` now returns user to base branch on success — fixes a session-friction gap that surfaced during the QF1 run). [Issue #81](https://github.com/zeveck/zskills-dev/issues/81) filed: `main_protected` push-guard rule (c) false-positives on literal `git push` substrings (e.g. inside grep args) — non-blocking but worth picking up alongside the QF2/QF4 runs.
 
 ---
 
@@ -22,9 +23,9 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 #### Phase A — pre-flight (fixes the tools the plans use to land)
 
 - [x] `/fix-issues 56` — `/commit` respects `execution.landing` (PR #74, merged 2026-04-27)
-- [ ] `/quickfix ← QF1` — slug-namespace `/draft-plan` review files
-- [ ] `/quickfix ← QF2` — orchestrator-judgment convergence fix
-- [ ] `/quickfix ← QF4` — `/refine-plan` positional-tail guidance
+- [x] `/quickfix ← QF1` — slug-namespace `/draft-plan` review files (PR #79, merged 2026-04-28)
+- [ ] `/quickfix ← QF2` — orchestrator-judgment convergence fix *(prompt revised in PR #78; copy revised body from `QUEUED_QUICKFIXES.md`)*
+- [ ] `/quickfix ← QF4` — `/refine-plan` positional-tail guidance + spaces-in-paths fix *(prompt revised in PR #78 to add Sub-edit 5)*
 - [ ] `/run-plan plans/IMPROVE_STALENESS_DETECTION.md` *(optional but recommended early)*
 
 #### Phase B — foundation
@@ -51,8 +52,8 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 - [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
-- [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. Drafted on branch `plans/pr-landing-unification` (2026-04-27), [PR #77](https://github.com/zeveck/zskills-dev/pull/77) open and rebased onto current main.
-- [ ] After PR #77 merges: `/run-plan plans/PR_LANDING_UNIFICATION.md`.
+- [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. [PR #77](https://github.com/zeveck/zskills-dev/pull/77) merged 2026-04-28; plan now on main.
+- [ ] `/run-plan plans/PR_LANDING_UNIFICATION.md` — ready to execute.
 
 #### Phase G — deferred
 
