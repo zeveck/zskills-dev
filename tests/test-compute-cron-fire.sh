@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/compute-cron-fire.sh
+# Tests for skills/run-plan/scripts/compute-cron-fire.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

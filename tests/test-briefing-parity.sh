@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/briefing.py (and parity with briefing.cjs)
+# Tests for skills/briefing/scripts/briefing.py (and parity with briefing.cjs)
 # Run from repo root: bash tests/test-briefing-parity.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

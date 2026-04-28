@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/apply-preset.sh
+# Tests for skills/update-zskills/scripts/apply-preset.sh
 # Run from repo root: bash tests/test-apply-preset.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

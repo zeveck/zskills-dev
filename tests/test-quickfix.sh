@@ -408,7 +408,7 @@ fi
 # ────────────────────────────────────────────────────────────────────
 # Case 9 — Tracking setup (WI 1.8)
 # ────────────────────────────────────────────────────────────────────
-if grep -q 'scripts/sanitize-pipeline-id.sh' "$SKILL" \
+if grep -q 'skills/create-worktree/scripts/sanitize-pipeline-id.sh' "$SKILL" \
    && grep -qE 'echo.*ZSKILLS_PIPELINE_ID=\$PIPELINE_ID' "$SKILL" \
    && grep -q 'fulfilled.quickfix' "$SKILL" \
    && grep -q "trap 'finalize_marker \$?' EXIT" "$SKILL"; then

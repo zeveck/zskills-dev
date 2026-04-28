@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/plan-drift-correct.sh.
+# Tests for skills/run-plan/scripts/plan-drift-correct.sh.
 #
 # Covers all three modes (--parse, --drift, --correct) across the five
 # supported <stated> forms (range, ≤, ≥, ~/literal, exactly), plus the

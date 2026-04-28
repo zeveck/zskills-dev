@@ -2713,7 +2713,7 @@ _drift_fail=0
 for tok in '{{UNIT_TEST_CMD}}' '{{FULL_TEST_CMD}}' '{{UI_FILE_PATTERNS}}' '{{MAIN_REPO_PATH}}'; do
   if grep -Fq "$tok" \
     "$REPO_ROOT/.claude/hooks/block-unsafe-project.sh" \
-    "$REPO_ROOT/scripts/port.sh" \
+    "$REPO_ROOT/skills/update-zskills/scripts/port.sh" \
     "$REPO_ROOT/scripts/test-all.sh"; then
     fail "drift-regression: migrated placeholder $tok still present in installed hook/scripts"
     _drift_fail=1

@@ -186,9 +186,6 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    if [[ "$CONFIG_CONTENT" =~ \"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      DEV_SERVER_CMD="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"port_script\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-     PORT_SCRIPT="${BASH_REMATCH[1]}"
-   fi
    if [[ "$CONFIG_CONTENT" =~ \"main_repo_path\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      MAIN_REPO_PATH="${BASH_REMATCH[1]}"
    fi
@@ -324,7 +321,6 @@ for each field F in schema:
 | Placeholder | Config path | Example |
 |-------------|-------------|---------|
 | `{{DEV_SERVER_CMD}}` | `dev_server.cmd` | `npm start` |
-| `{{PORT_SCRIPT}}` | `dev_server.port_script` | `scripts/port.sh` |
 | `{{AUTH_BYPASS}}` | `ui.auth_bypass` | `localStorage.setItem(...)` |
 
 Runtime-read fields (not install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`, `dev_server.main_repo_path`. Hooks and helper scripts read these directly from `.claude/zskills-config.json` at every invocation — see Phase 1 of `plans/DRIFT_ARCH_FIX.md`.

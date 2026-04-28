@@ -21,7 +21,7 @@ When using the Agent tool:
 {{DEV_SERVER_CMD}}
 ```
 
-The port is determined automatically by `{{PORT_SCRIPT}}`: **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Run `bash {{PORT_SCRIPT}}` to see your port. Override with `DEV_PORT=NNNN` env var if needed.
+The port is determined automatically — run `bash .claude/skills/update-zskills/scripts/port.sh` to see it. **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Override with `DEV_PORT=NNNN` env var if needed.
 
 **To stop this worktree's dev server, run `bash scripts/stop-dev.sh`.** It sends SIGTERM to the PIDs recorded in `var/dev.pid`. Contract: your `{{DEV_SERVER_CMD}}` must write each spawned child PID (one per line) to `var/dev.pid` on start, and should clear it on clean shutdown. `var/` is gitignored.
 
@@ -185,4 +185,4 @@ to main. Use PR mode or feature branches.
 
 ## Tracking Enforcement
 
-Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `clear-tracking.sh` script in `scripts/` lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `.claude/skills/update-zskills/scripts/clear-tracking.sh` script lets the user manually clear stale tracking state -- agents are blocked from running it directly.
