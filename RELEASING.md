@@ -92,6 +92,50 @@ force-pushed), a bad release leaves a bad commit at HEAD. To recover:
   delete the bad tag from both repos. The workflow intentionally does not
   automate this — expunging history should be rare and deliberate.
 
+### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-2026.04)
+
+Upgrading from a pre-2026.04 release to this release:
+
+- **`scripts/` is now slimmer.** Skill-machinery scripts moved
+  into their owning skills (`.claude/skills/<owner>/scripts/<name>`).
+  `/update-zskills` detects leftover copies in your repo's
+  `scripts/` and offers to remove them after verifying they
+  match a known release. User-modified scripts are kept and
+  flagged with a defer-marker mechanism.
+- **`dev_server.port_script` removed** from the config schema.
+  `port.sh` lives at one canonical location inside the
+  `update-zskills` skill; consumers no longer override its
+  location via config. A future plan may reintroduce a
+  consumer-overridable callout under a different field name.
+- **`dev_server.default_port` added** (integer, default 8080).
+  Consumers may set this to override the main-repo dev port.
+  `/update-zskills` writes it on greenfield install and
+  backfills it into existing configs.
+- **New file `.zskills/tier1-migration-deferred`** —
+  consumer-side per-file marker that suppresses the
+  user-modified warning for specific files on subsequent
+  `/update-zskills` runs. Append filenames one per line.
+- **New file `.claude/skills/update-zskills/references/tier1-shipped-hashes.txt`**
+  — release-side artifact shipped via the skill mirror; used
+  by the migration logic to verify whether a leftover script
+  is an exact upstream copy.
+- **Hook help-text path updated** for `clear-tracking.sh`:
+  `block-unsafe-project.sh` now points at the skill-mirror
+  location. If you've aliased the old `bash scripts/clear-tracking.sh`
+  invocation, update to `bash .claude/skills/update-zskills/scripts/clear-tracking.sh`.
+- **`statusline.sh` source moved** but install destination
+  (`~/.claude/statusline-command.sh`) unchanged — invocation
+  path is identical post-install. Only relevant if you've
+  manually edited `scripts/statusline.sh` in your repo;
+  port the change to
+  `.claude/skills/update-zskills/scripts/statusline.sh`.
+
+The CHANGELOG entries (the `refactor(scripts):` and
+`feat(config):` lines under the corresponding release) remain
+the per-line summary; this section is the longer-form
+companion. See `plans/SCRIPTS_INTO_SKILLS_PLAN.md` for the
+full specification.
+
 ## When the PAT expires
 
 GitHub emails the PAT owner ~7 days before expiry. If you miss the warning

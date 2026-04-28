@@ -223,7 +223,7 @@ kicked off by a human interaction at least a second apart). The
 still legible to a human reading logs.
 
 Per the shared conventions in `plans/UNIFY_TRACKING_NAMES.md`, every
-writer sources `scripts/sanitize-pipeline-id.sh` before writing the
+writer sources `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` before writing the
 constructed ID to disk. The sanitizer collapses any character outside
 `[a-zA-Z0-9._-]` into `_` and truncates to 128 bytes — safe for
 filesystem and glob use.
@@ -233,7 +233,7 @@ filesystem and glob use.
 **Decision: `.landed` is NOT a tracking marker.**
 
 `.landed` is a separate artifact written at worktree-root by
-`/commit land` and `scripts/write-landed.sh` when cherry-picked
+`/commit land` and `.claude/skills/commit/scripts/write-landed.sh` when cherry-picked
 commits have been confirmed on `main`. It records landing state for
 worktree-cleanup tools; it does not participate in pre-commit
 enforcement and is not read by the hook's `requires.*`/`fulfilled.*`/
@@ -254,8 +254,8 @@ The migration is staged across Phases 2-6:
    the legacy flat glob + suffix filter if the subdir is absent. The
    fallback is explicitly labelled `legacy`/`flat`/`transitional` in
    hook comments so Phase 6 can mechanically grep-and-remove it.
-   `scripts/sanitize-pipeline-id.sh` lands here so Phases 3-4 writers
-   can source it.
+   `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh`
+   lands here so Phases 3-4 writers can source it.
 2. **Phase 3 (writers, pass 1).** Skills whose `PIPELINE_ID` is
    already effectively unique per invocation (`$TRACKING_ID`-based:
    `run-plan`, `do`) are migrated to write under the subdir. Because

@@ -1,5 +1,48 @@
 # Plan Report — Move skill-owned scripts into the skills that use them
 
+## Phase — 6 Docs and close-out (FINAL) [UNFINALIZED]
+
+**Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
+**Status:** Completed (verified) — final phase
+**Worktree:** /tmp/zskills-pr-scripts-into-skills-plan
+**Branch:** feat/scripts-into-skills-plan
+**Commits:** b33c117 (impl: 5 docs files), 7315fdf (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 6.0b | docs/tracking/TRACKING_NAMING.md sweep (3 stale Tier-1 references at lines 226, 236, 257) | Done | b33c117 |
+| 6.1 | CHANGELOG `refactor(scripts):` entry (Tier-1 relocation) | Done | b33c117 |
+| 6.1b | CHANGELOG `feat(config):` entry (`dev_server.port_script` removal) | Done | b33c117 |
+| 6.2 | plans/PLAN_INDEX.md row moved Ready → Complete (counts 9/14 → 8/15) | Done | b33c117 |
+| 6.3 | Plan frontmatter flip: status: active → status: complete; completed: 2026-04-28 added | Done | b33c117 |
+| 6.4 | RELEASING.md migration note (`### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-2026.04)` with 7 bullets) | Done | b33c117 |
+
+### Verification
+
+- Test suite: PASSED (943/943, no delta — docs only)
+- All 7 ACs pass
+- CHANGELOG entries match style (## YYYY-MM-DD blocks)
+- RELEASING.md migration section follows plan's literal 7-bullet template
+- Frontmatter flip done inline per WI 6.3 (orchestrator's Phase 5b idempotently no-ops)
+
+### PLAN-TEXT-DRIFT findings
+
+2 tokens flagged by both implementer and verifier:
+
+1. **AC2 grep-overmatch** (spirit-PASS): `scripts/<name>` substring matches the new skill-mirror paths `.claude/skills/<owner>/scripts/<name>`. Spec literal "= 0" is unsatisfiable as written without a path-prefix anchor (e.g., `(^|[^./])scripts/`). All 5 hits in TRACKING_NAMING.md are correct new paths from Phases 2 + 6 work; zero stale references. Spec-bug, not implementation-bug.
+
+2. **WI 6.4 RELEASING.md is stripped from prod** by `scripts/build-prod.sh:57-63`. The file is wholesale `rm`-ed during build-prod, so the migration note never reaches downstream consumers' install. Spec said "Add to RELEASING.md" — done — but user-facing intent is undermined. Worth a follow-up plan: move the note to a prod-shipped file (CHANGELOG, README, or new MIGRATION.md) or add a `<!-- prod-keep -->` marker mechanism in build-prod.
+
+### Notes
+
+- Phase 6 is the final phase. After landing: 7/7 phases done, plan complete.
+- Frontmatter flip done in this phase per WI 6.3; orchestrator's Phase 5b will detect status: complete and idempotently no-op.
+- The plan's full migration is now landed: 14 Tier-1 scripts moved into their owning skills, cross-skill callers swept, /update-zskills install flow rewrite + safe stale-Tier-1 migration via hash-fixture, residual docs/tests swept, schema cleanup, full close-out.
+
+---
+
 ## Phase — 5 Tests + README/CLAUDE.md/CLAUDE_TEMPLATE residual sweep [UNFINALIZED]
 
 **Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md

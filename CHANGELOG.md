@@ -3,6 +3,25 @@
 ## 2026-04-28
 
 ### Added
+- refactor(scripts): move Tier-1 scripts into owning skills; /update-zskills migrates stale copies
+  — 14 skill-machinery scripts relocated from `scripts/` into
+  `.claude/skills/<owner>/scripts/<name>`. Cross-skill callers updated
+  to invoke via `$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>`.
+  `/update-zskills` now ships scripts via the skill mirror only and
+  detects leftover Tier-1 copies in consumer `scripts/`: exact-hash
+  matches against `tier1-shipped-hashes.txt` are removed automatically;
+  user-modified copies are flagged and tracked via
+  `.zskills/tier1-migration-deferred`. Tier-2 release/consumer-facing
+  scripts (e.g. `build-prod.sh`) remain at top-level `scripts/`. See
+  `RELEASING.md` Migration section and
+  `plans/SCRIPTS_INTO_SKILLS_PLAN.md`.
+- feat(config): drop dev_server.port_script (port.sh now lives in update-zskills skill); add dev_server.default_port for main-repo port override
+  — `port.sh` is now bundled with the `update-zskills` skill at one
+  canonical location. Existing config schemas drop the `port_script`
+  field; `dev_server.default_port` (integer, default 8080) added so
+  consumers can override the main-repo dev port without overriding
+  the script path. `/update-zskills` writes `default_port` on
+  greenfield install and backfills it into existing configs.
 - feat(run-plan): add `PLAN-TEXT-DRIFT:` structured token for
   acceptance-band drift flags; see `skills/run-plan/SKILL.md` Key Rules
   and `scripts/plan-drift-correct.sh`. Implementation and verification
