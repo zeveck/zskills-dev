@@ -17,7 +17,7 @@ description: >-
 
 `/quickfix` turns the current main checkout (with or without dirty edits)
 into a one-commit PR without leaving main. No worktree. No cherry-pick.
-Fire-and-forget: commit, push, open PR, print URL, exit.
+Fire-and-forget: commit, push, open PR, print URL, return to base branch, exit.
 
 **Ultrathink throughout.**
 
@@ -746,10 +746,22 @@ if [ -f "$MARKER" ]; then
 fi
 
 echo "$PR_URL"
+
+# WI 1.17 — return to base branch on success.
+# The PR exists on GitHub; locally we leave the user where they started
+# (on $BASE_BRANCH) so subsequent commands don't accidentally pile onto
+# the feature branch. Forgiving: if the checkout fails, warn but do not
+# fail the run — the PR is already created.
+if ! git checkout "$BASE_BRANCH"; then
+  echo "WARN: PR created at $PR_URL but failed to checkout back to $BASE_BRANCH. Run 'git checkout $BASE_BRANCH' manually." >&2
+fi
 ```
 
 No `--watch`, no polling. CI runs on GitHub's side; the user follows the
-URL. The EXIT trap finalizes the marker to `complete` on success.
+URL. The success path returns the working tree to `$BASE_BRANCH` so
+subsequent commands don't accidentally pile onto the feature branch —
+forgiving on failure (warn, do not fail the run, since the PR is already
+created). The EXIT trap finalizes the marker to `complete` on success.
 
 ### Terminal marker states
 
@@ -784,4 +796,4 @@ to attest to.
 - **No error suppression on fallible operations.** Distinguish network failure from branch-exists; check each cleanup step.
 - **Bare-branch push only.** `git push -u origin "$BRANCH"` — never a refspec pointed at a protected ref.
 - **No `.landed` marker.** `/quickfix` has no worktree; PR state is authoritative via `gh pr view`.
-- **Fire-and-forget.** End at `gh pr create`; print URL; exit. No polling, no `--watch`.
+- **Fire-and-forget.** End at `gh pr create`; print URL; return user to `$BASE_BRANCH`; exit. No polling, no `--watch`.
