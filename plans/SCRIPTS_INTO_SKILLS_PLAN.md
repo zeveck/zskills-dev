@@ -81,11 +81,12 @@ zskills machinery (move into a skill, update callers and hook
 help-text) or consumer-customizable (stays at `scripts/`).
 
 **The COUNT-vs-EXISTENCE framing is partially resolved.** Tier-1
-machinery now leaves consumer `scripts/` entirely (13 moves). What
+machinery now leaves consumer `scripts/` entirely (14 moves). What
 remains in `scripts/` is genuinely consumer-customizable
-(`stop-dev.sh`, `test-all.sh`) plus release-only repo tooling
-(`build-prod.sh`) that never ships to consumers. The split is now
-ownership-driven, not call-form-driven.
+(`stop-dev.sh`, `test-all.sh`) plus repo-tooling helpers that
+either never ship to consumers (`build-prod.sh`) or wrap hook-blocked
+operations (`mirror-skill.sh`). The split is now ownership-driven,
+not call-form-driven.
 
 **Stub-callout pattern (out of scope for this plan).** The principled
 end state for `stop-dev.sh` and `test-all.sh` is the consumer
@@ -107,7 +108,7 @@ decision belongs in the follow-up plan, not here.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Inventory cleanup: fix dead refs, write ownership registry | ⬚ |  |  |
+| 1 — Inventory cleanup: fix dead refs, write ownership registry | 🟡 | `49c666b` | dead refs replaced; script-ownership.md written; mirror parity |
 | 2 — Move single-owner Tier 1 scripts (apply-preset, compute-cron-fire, post-run-invariants, briefing.*, statusline) | ⬚ |  |  |
 | 3a — Move shared Tier 1 scripts and update same-skill internals (create-worktree, worktree-add-safe, land-phase, write-landed, sanitize-pipeline-id, clear-tracking, port [+ config-driven default_port]) | ⬚ |  |  |
 | 3b — Update cross-skill callers (grep-driven sweep across skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md) and tests | ⬚ |  |  |
@@ -2411,7 +2412,7 @@ to `RELEASING.md`.
       `RELEASING.md` (DA-12 fix).** The plan's user-visible blast
       radius across schema, README, CLAUDE.md, CLAUDE_TEMPLATE.md,
       hook help-text, this-repo config, two new files in
-      `references/`, and 13 scripts moved out of `scripts/` warrants
+      `references/`, and 14 scripts moved out of `scripts/` warrants
       more than two CHANGELOG lines for downstream consumers. Add a
       `### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-<version>)`
       section to `RELEASING.md` (or a new `MIGRATION.md` one-pager)
