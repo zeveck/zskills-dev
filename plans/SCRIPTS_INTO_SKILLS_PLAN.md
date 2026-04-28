@@ -45,6 +45,8 @@ Tier 2 after R1/D1 verified it is consumed by
 | `compute-cron-fire.sh`       | 1      | `run-plan`                   |
 | `create-worktree.sh`         | 1      | `create-worktree`            |
 | `land-phase.sh`              | 1      | `commit`                     |
+| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
+| `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |
 | `post-run-invariants.sh`     | 1      | `run-plan`                   |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
@@ -54,8 +56,8 @@ Tier 2 after R1/D1 verified it is consumed by
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
 
-13 Tier 1 moves, 3 Tier 2 stay-puts (`build-prod.sh`, `stop-dev.sh`,
-`test-all.sh`), zero deletes.
+14 Tier 1 moves, 4 Tier 2 stay-puts (`build-prod.sh`, `mirror-skill.sh`,
+`stop-dev.sh`, `test-all.sh`), zero deletes.
 
 **Skills with only Tier-2 references are unchanged in their script
 choices.** `verify-changes`, `cleanup-merged`, `fix-report`,
@@ -79,11 +81,12 @@ zskills machinery (move into a skill, update callers and hook
 help-text) or consumer-customizable (stays at `scripts/`).
 
 **The COUNT-vs-EXISTENCE framing is partially resolved.** Tier-1
-machinery now leaves consumer `scripts/` entirely (13 moves). What
+machinery now leaves consumer `scripts/` entirely (14 moves). What
 remains in `scripts/` is genuinely consumer-customizable
-(`stop-dev.sh`, `test-all.sh`) plus release-only repo tooling
-(`build-prod.sh`) that never ships to consumers. The split is now
-ownership-driven, not call-form-driven.
+(`stop-dev.sh`, `test-all.sh`) plus repo-tooling helpers that
+either never ship to consumers (`build-prod.sh`) or wrap hook-blocked
+operations (`mirror-skill.sh`). The split is now ownership-driven,
+not call-form-driven.
 
 **Stub-callout pattern (out of scope for this plan).** The principled
 end state for `stop-dev.sh` and `test-all.sh` is the consumer
@@ -105,7 +108,7 @@ decision belongs in the follow-up plan, not here.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Inventory cleanup: fix dead refs, write ownership registry | ⬚ |  |  |
+| 1 — Inventory cleanup: fix dead refs, write ownership registry | ✅ Done | `49c666b` | landed via PR squash; dead refs replaced; script-ownership.md written; mirror parity |
 | 2 — Move single-owner Tier 1 scripts (apply-preset, compute-cron-fire, post-run-invariants, briefing.*, statusline) | ⬚ |  |  |
 | 3a — Move shared Tier 1 scripts and update same-skill internals (create-worktree, worktree-add-safe, land-phase, write-landed, sanitize-pipeline-id, clear-tracking, port [+ config-driven default_port]) | ⬚ |  |  |
 | 3b — Update cross-skill callers (grep-driven sweep across skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md) and tests | ⬚ |  |  |
@@ -115,7 +118,7 @@ decision belongs in the follow-up plan, not here.
 
 ## Phase 1 — Inventory cleanup: fix dead refs, write ownership registry
 
-#### Goal
+### Goal
 
 Close one pre-existing hole (four dead references that fail at runtime),
 seed the ownership table in a place future agents will read, and clean
@@ -123,7 +126,7 @@ two non-script artifacts from `scripts/`. (The "orphan" originally
 listed here — `build-prod.sh` — was reclassified Tier 2 after R1/D1
 verification; no deletion happens.)
 
-#### Work Items
+### Work Items
 
 - [ ] 1.2 — **Dead reference fix in `skills/fix-issues/SKILL.md`.** Three
       references to scripts that don't exist on disk and never have:
@@ -237,7 +240,7 @@ verification; no deletion happens.)
         `scripts/__pycache__/` to `.gitignore` if not already present
         (verify with `grep '__pycache__' .gitignore`).
 
-#### Design & Constraints
+### Design & Constraints
 
 **Cross-skill path convention** (recorded in
 `skills/update-zskills/references/script-ownership.md` per WI 1.4 and
@@ -323,7 +326,7 @@ is hook-compatible: it uses `cp -a "$SRC/." "$DST/"` plus per-file
 The script is also tested (`tests/test-mirror-skill.sh`); the helper
 is the canonical mirror primitive going forward.
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] `test -f scripts/build-prod.sh` (Tier-2; not deleted; verified
       consumed by `.github/workflows/ship-to-prod.yml:80`).
@@ -350,13 +353,13 @@ is the canonical mirror primitive going forward.
       same for `review-feedback` and `update-zskills`.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-#### Dependencies
+### Dependencies
 
 None.
 
 ## Phase 2 — Move single-owner Tier 1 scripts
 
-#### Goal
+### Goal
 
 Move scripts whose only zskills caller is one skill into that skill's
 `scripts/` subdir. No cross-skill path updates needed yet — these
@@ -370,7 +373,7 @@ ownership table; 8 callsites all in `skills/run-plan/SKILL.md`),
 `post-run-invariants.sh` (→ `run-plan`), `briefing.cjs` (→ `briefing`),
 `briefing.py` (→ `briefing`), `statusline.sh` (→ `update-zskills`).
 
-#### Work Items
+### Work Items
 
 - [ ] 2.1 — **`apply-preset.sh` → `skills/update-zskills/scripts/apply-preset.sh`.**
       `git mv scripts/apply-preset.sh skills/update-zskills/scripts/apply-preset.sh`
@@ -531,7 +534,7 @@ ownership table; 8 callsites all in `skills/run-plan/SKILL.md`),
 - [ ] 2.9 — Run `bash tests/run-all.sh`. Expect green; if not, fix
       paths in whatever WI missed a reference (do NOT weaken tests).
 
-#### Design & Constraints
+### Design & Constraints
 
 **Why these scripts together.** Single-owner moves are independent of
 each other; they share only the mechanical pattern (`git mv`, update
@@ -575,7 +578,7 @@ later, in Phase 3 (`create-worktree.sh` → `worktree-add-safe.sh`,
 
 **Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] `! test -e scripts/apply-preset.sh && test -f skills/update-zskills/scripts/apply-preset.sh && test -f .claude/skills/update-zskills/scripts/apply-preset.sh`.
 - [ ] `! test -e scripts/compute-cron-fire.sh && test -f skills/run-plan/scripts/compute-cron-fire.sh && test -f .claude/skills/run-plan/scripts/compute-cron-fire.sh`.
@@ -628,13 +631,13 @@ later, in Phase 3 (`create-worktree.sh` → `worktree-add-safe.sh`,
       same for `run-plan` and `briefing`.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-#### Dependencies
+### Dependencies
 
 Phase 1 (registry doc).
 
 ## Phase 3a — Move shared Tier 1 scripts and update same-skill internals
 
-#### Goal
+### Goal
 
 Move the seven shared Tier 1 scripts (`create-worktree.sh`,
 `worktree-add-safe.sh`, `land-phase.sh`, `write-landed.sh`,
@@ -645,7 +648,7 @@ owning skills, and update same-skill internal references
 config-driven `port.sh` default-port read). Cross-skill caller
 updates are deferred to Phase 3b.
 
-#### Work Items
+### Work Items
 
 - [ ] 3a.1 — **`create-worktree.sh` and `worktree-add-safe.sh` →
       `skills/create-worktree/scripts/`.**
@@ -813,7 +816,7 @@ updates are deferred to Phase 3b.
       callers that tests trace through. Phase 3a's gate is: same-skill
       internals + install-integrity gate work in isolation.
 
-#### Design & Constraints
+### Design & Constraints
 
 **Why split same-skill internals from cross-skill sweep.** Per D17
 (major): combining all 11 WIs across 8 skills produced a 30-edit
@@ -902,7 +905,7 @@ invocation becomes a need, switch to
 
 **Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] None of the seven shared Tier 1 scripts exist at
       `scripts/<name>` anymore:
@@ -942,13 +945,13 @@ invocation becomes a need, switch to
       ```
       Document expected-failing suites in the Phase 3a commit message.
 
-#### Dependencies
+### Dependencies
 
 Phases 1, 2.
 
 ## Phase 3b — Update cross-skill callers via grep-driven sweep
 
-#### Goal
+### Goal
 
 Update every cross-skill caller of the five shared Tier 1 scripts.
 Phase 3a left the source tree with scripts moved + same-skill
@@ -958,7 +961,7 @@ internals updated, but cross-skill callers in `do`, `fix-issues`,
 recipe, not a same-script call) all still name the old paths. This
 phase sweeps and updates them.
 
-#### Work Items
+### Work Items
 
 - [ ] 3b.1 — **Grep-driven cross-skill sweep, all seven scripts.**
       For each Tier-1 script name parsed from `script-ownership.md`
@@ -1222,7 +1225,7 @@ phase sweeps and updates them.
       form. The bare-relative form is FORBIDDEN.
 - [ ] 3b.10 — `bash tests/run-all.sh`. Expect green.
 
-#### Design & Constraints
+### Design & Constraints
 
 **Grep-driven, not enumeration-driven.** Per R8/D3/D10 (major):
 prior draft enumerated specific line numbers (`run-plan:712, :911`)
@@ -1288,7 +1291,7 @@ WI 5.5.d becomes a verification step.
 
 **Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] All seven Tier 1 scripts at the canonical skill-dir location AND
       the mirror:
@@ -1361,13 +1364,13 @@ phase's edits do not introduce new `CLAUDE_SKILL_DIR` mentions
 because the canonical form is `$CLAUDE_PROJECT_DIR`. If a regression
 check is desired, the Phase 1 AC already covers it.)
 
-#### Dependencies
+### Dependencies
 
 Phases 1, 2, 3a.
 
 ## Phase 4 — Update `/update-zskills` install flow and add stale-Tier-1 migration
 
-#### Goal
+### Goal
 
 (a) Stop copying Tier 1 scripts into consumer `scripts/`. Consumers
 receive them via the existing skill-mirror path
@@ -1375,7 +1378,7 @@ receive them via the existing skill-mirror path
 scripts on consumer disk left over from prior installs and offer to
 remove them after verifying they match a known zskills version.
 
-#### Work Items
+### Work Items
 
 - [ ] 4.1 — **Edit `skills/update-zskills/SKILL.md` Step D.** Per R4
       verification (`sed -n '895,910p' skills/update-zskills/SKILL.md`),
@@ -1862,7 +1865,7 @@ remove them after verifying they match a known zskills version.
       with siblings).
 - [ ] 4.10 — `bash tests/run-all.sh`.
 
-#### Design & Constraints
+### Design & Constraints
 
 **git is required.** `git hash-object --stdin` (fed CRLF-normalized
 content) is the migration-side hash function. If git is not on
@@ -1983,7 +1986,7 @@ entirely.
 
 **Mirror discipline.** Per Phase 1 (use `bash scripts/mirror-skill.sh`).
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] `grep -c '^#### Step D' skills/update-zskills/SKILL.md` ≥ 1.
 - [ ] **Old-Tier-1 names absent from Step D's bullet list.** Extract
@@ -2039,20 +2042,20 @@ entirely.
 - [ ] `diff -r skills/update-zskills .claude/skills/update-zskills`
       empty.
 
-#### Dependencies
+### Dependencies
 
 Phases 1, 2, 3a, 3b.
 
 ## Phase 5 — Update zskills tests and sweep README/CLAUDE.md/CLAUDE_TEMPLATE
 
-#### Goal
+### Goal
 
 Catch any test path that still names `scripts/<tier-1>.sh` directly,
 update README and CLAUDE.md to reflect the new locations of Tier-1
 scripts, and confirm hook help-text paths and CLAUDE_TEMPLATE for
 Tier-2 scripts remain accurate.
 
-#### Work Items
+### Work Items
 
 - [ ] 5.1 — Sweep `tests/` for any remaining Tier-1 path references.
       Drive the sweep off `script-ownership.md` (DA-5 / F-3 fix —
@@ -2251,7 +2254,7 @@ Tier-2 scripts remain accurate.
 - [ ] 5.8 — Re-run `bash tests/run-all.sh` to confirm Phase 5 edits
       didn't regress.
 
-#### Design & Constraints
+### Design & Constraints
 
 **Why this phase has real edits, not just verification.** The
 original draft framed Phase 5 as "mostly verification" but R5 (major)
@@ -2284,7 +2287,7 @@ at `scripts/`).
 skill mirror needed unless WI 5.1 turns up an unexpected skill-side
 path.
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] **Tests + hooks zero-match-of-old-paths (DA-5 / F-3 fix —
       driven from `script-ownership.md`):**
@@ -2353,20 +2356,20 @@ path.
       exits 0 (asserts ordering, not just presence).
 - [ ] `bash tests/run-all.sh` exits 0.
 
-#### Dependencies
+### Dependencies
 
 Phases 1, 2, 3a, 3b, 4.
 
 ## Phase 6 — Docs and close-out
 
-#### Goal
+### Goal
 
 CHANGELOG entry, plan registry entry if applicable, frontmatter flip
 to `complete`, sweep `docs/` for stale path references introduced
 since this plan was drafted, and add a consumer-facing migration note
 to `RELEASING.md`.
 
-#### Work Items
+### Work Items
 
 - [ ] 6.0b — **Sweep `docs/` for stale Tier-1 path references (F-10
       fix; redundant with Phase 2 WI 2.2b's specific
@@ -2409,7 +2412,7 @@ to `RELEASING.md`.
       `RELEASING.md` (DA-12 fix).** The plan's user-visible blast
       radius across schema, README, CLAUDE.md, CLAUDE_TEMPLATE.md,
       hook help-text, this-repo config, two new files in
-      `references/`, and 13 scripts moved out of `scripts/` warrants
+      `references/`, and 14 scripts moved out of `scripts/` warrants
       more than two CHANGELOG lines for downstream consumers. Add a
       `### Migration: SCRIPTS_INTO_SKILLS_PLAN (post-<version>)`
       section to `RELEASING.md` (or a new `MIGRATION.md` one-pager)
@@ -2460,7 +2463,7 @@ to `RELEASING.md`.
       entries (WI 6.1, 6.1b) remain as the per-line summary; this
       WI is the longer-form companion.
 
-#### Design & Constraints
+### Design & Constraints
 
 **No edits to historical entries.** Per D12: WI 6.1 only inserts a
 new line at the top of the unreleased section. Do NOT modify lines
@@ -2487,7 +2490,7 @@ context). Adding a section there — rather than a new top-level
 
 No skill edits, no skill mirror needed.
 
-#### Acceptance Criteria
+### Acceptance Criteria
 
 - [ ] **CHANGELOG entries present (literal pin per R6/D11):**
       ```bash
@@ -2519,7 +2522,7 @@ No skill edits, no skill mirror needed.
       `status: complete` and `completed:` lines.
 - [ ] `bash tests/run-all.sh` exits 0.
 
-#### Dependencies
+### Dependencies
 
 Phases 1–5.
 
