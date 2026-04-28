@@ -61,10 +61,15 @@ All phases respect these invariants:
   `scripts/migrate-tracking.sh`. Pure code change. Block-diagram has no
   in-flight users mid-flow.
 - **PIPELINE_ID sanitization**: every constructed PIPELINE_ID is sanitized
-  via `bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID"` BEFORE the
-  first `mkdir -p`. The sanitizer (`scripts/sanitize-pipeline-id.sh:9-10`)
-  is `tr -c 'a-zA-Z0-9._-' '_' | head -c 128`. Do NOT introduce a
-  second sanitizer.
+  via `bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID"`
+  BEFORE the first `mkdir -p`. The sanitizer
+  (`.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh`,
+  source at `skills/create-worktree/scripts/sanitize-pipeline-id.sh:9-11`)
+  is `tr -c 'a-zA-Z0-9._-' '_' | head -c 128`. Caller form is the
+  shipped `$CLAUDE_PROJECT_DIR/...` shape per
+  `skills/update-zskills/references/script-ownership.md` "Cross-skill
+  path convention" — block-diagram ships to consumers, so the shipped
+  form applies. Do NOT introduce a second sanitizer.
 - **Basename slugging (NEW vs prior draft)**: marker basename suffixes
   use sanitised slugs `${BLOCK_SLUG}` / `${NAME_SLUG}`, NOT the raw
   user-supplied `${BLOCK_NAME}` / `${NAME}`. Rationale: the sanitizer
@@ -120,13 +125,39 @@ contract so the slugs match.
 
 ### Work Items
 
+- [ ] **Pre-tracking caller cleanup: fix `block-diagram/add-block/SKILL.md:16,20`.**
+      PR #97's cross-skill caller sweep missed this file. L16 (prose
+      backtick `` `scripts/create-worktree.sh` ``) and L20
+      (`bash "$MAIN_ROOT/scripts/create-worktree.sh" \`) point at a
+      script path that no longer exists on main — every `/add-block`
+      invocation currently fails at the worktree-creation step before
+      any tracking code runs. Same commit as the rest of Phase 1 (one
+      file, feature-complete commit per CLAUDE.md). Replace L16 prose
+      with `` `.claude/skills/create-worktree/scripts/create-worktree.sh` ``
+      and L20 with:
+
+      ```bash
+      WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+      ```
+
+      Reference shape (post-#97 callers):
+      `skills/run-plan/SKILL.md:778`, `skills/fix-issues/SKILL.md:819,874`.
+      Acceptance: `! grep -F '$MAIN_ROOT/scripts/create-worktree.sh' block-diagram/add-block/SKILL.md`
+      returns 0 lines. This MUST land before any of the tracking work
+      below — the tier-2 `.zskills-tracked` resolution path (Phase 1's
+      core mechanism) depends on `create-worktree.sh --pipeline-id`
+      actually executing successfully.
+
 - [ ] **Add a single PIPELINE_ID resolution block at the top of
       add-block's "Tracking" surface, computing both PIPELINE_ID and
       BLOCK_SLUG.** Place it once; do NOT repeat the `MAIN_ROOT=…` +
       `mkdir -p` pair at every write site. Insert the block immediately
       after the worktree-creation snippet at
-      `block-diagram/add-block/SKILL.md:18-29`, in a new subsection
-      titled "Tracking setup" before "Step 0":
+      `block-diagram/add-block/SKILL.md:18-29` (post-#97-fix; the
+      surrounding line numbers are stable because the previous work
+      item only changed the path string at L16 and L20, not line
+      counts), in a new subsection titled "Tracking setup" before
+      "Step 0":
 
       ```bash
       MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -138,9 +169,9 @@ contract so the slugs match.
         PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
       fi
       : "${PIPELINE_ID:=add-block.${BLOCK_NAME}}"
-      PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+      PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
       # Sanitised per-marker suffix slug — pairs with add-example's NAME_SLUG.
-      BLOCK_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
+      BLOCK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       ```
 
@@ -232,10 +263,10 @@ contract so the slugs match.
         PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
       fi
       : "${PIPELINE_ID:=add-example.${NAME}}"
-      PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+      PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
       # Sanitised per-marker suffix slug — pairs with add-block's BLOCK_SLUG
       # when invoked under delegation (orchestrator passes NAME == BLOCK_NAME).
-      NAME_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$NAME")
+      NAME_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$NAME")
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
         "$NAME" "$(TZ=America/New_York date -Iseconds)" \
@@ -328,6 +359,17 @@ contract so the slugs match.
       throwaway-shell snippet below:
 
       ```bash
+      # Capture the sanitizer path BEFORE cd-ing into the throwaway
+      # temp dir — `MAIN_ROOT=$(pwd)` after `cd "$tmp"` would point
+      # at the empty temp, where the sanitizer doesn't exist, and bash
+      # command substitution would silently swallow the resulting
+      # ENOENT, producing empty PIPELINE_IDs and undetectable failure.
+      SANITIZER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+      # Source-tree fallback (when running this snippet directly inside
+      # the zskills repo, where CLAUDE_PROJECT_DIR may not be set):
+      [ ! -f "$SANITIZER" ] && SANITIZER="$(git rev-parse --show-toplevel)/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+      [ ! -f "$SANITIZER" ] && { echo "sanitizer not found at $SANITIZER" >&2; exit 1; }
+
       tmp=$(mktemp -d) && cd "$tmp"
       git init -q
       MAIN_ROOT=$(pwd)
@@ -335,24 +377,24 @@ contract so the slugs match.
       # Case A: delegated, simple identifier.
       BLOCK_NAME=Gain
       PIPELINE_ID="add-block.${BLOCK_NAME}"
-      PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-      BLOCK_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
+      PIPELINE_ID=$(bash "$SANITIZER" "$PIPELINE_ID")
+      BLOCK_SLUG=$(bash "$SANITIZER" "$BLOCK_NAME")
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       printf '%s\n' "$PIPELINE_ID" > .zskills-tracked
       : > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.add-example.${BLOCK_SLUG}"
       NAME=$BLOCK_NAME  # orchestrator passes NAME==BLOCK_NAME
-      NAME_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$NAME")
+      NAME_SLUG=$(bash "$SANITIZER" "$NAME")
       : > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 
       # Case B: delegated, whitespace-bearing identifier.
       BLOCK_NAME='My Block'
       PIPELINE_ID="add-block.${BLOCK_NAME}"
-      PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-      BLOCK_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
+      PIPELINE_ID=$(bash "$SANITIZER" "$PIPELINE_ID")
+      BLOCK_SLUG=$(bash "$SANITIZER" "$BLOCK_NAME")
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       : > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.add-example.${BLOCK_SLUG}"
       NAME=$BLOCK_NAME
-      NAME_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$NAME")
+      NAME_SLUG=$(bash "$SANITIZER" "$NAME")
       : > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 
       # Case C: standalone /add-example (no parent, no .zskills-tracked).
@@ -362,15 +404,15 @@ contract so the slugs match.
       PIPELINE_ID=""
       [ -z "$PIPELINE_ID" ] && [ -f .zskills-tracked ] && PIPELINE_ID=$(tr -d '[:space:]' < .zskills-tracked)
       : "${PIPELINE_ID:=add-example.${NAME}}"
-      PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-      NAME_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$NAME")
+      PIPELINE_ID=$(bash "$SANITIZER" "$PIPELINE_ID")
+      NAME_SLUG=$(bash "$SANITIZER" "$NAME")
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       : > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 
       find "$MAIN_ROOT/.zskills/tracking" -type f | sort
       ```
 
-      Expected output (4 paths):
+      Expected output (5 paths):
 
       ```
       .../tracking/add-block.Gain/fulfilled.add-example.Gain
@@ -388,12 +430,17 @@ contract so the slugs match.
 
 ### Design & Constraints
 
-**Canonical post-migration writer pattern** — the verbatim shape used
-by the existing 3-tier-with-`.zskills-tracked` template at
-`skills/verify-changes/SKILL.md:209-214` (and replicated at
-verify-changes lines 372-374, 453-455, 658-660), with the sanitizer
-line added per the Phase-4 idiom in
-`skills/fix-issues/SKILL.md:434-454`:
+**Canonical post-migration writer pattern** — assembled from two
+real anchors. The 3-tier-reading-with-`.zskills-tracked` shape comes
+from `skills/verify-changes/SKILL.md:206-218` (and three replicas at
+L368-L378, L448-L458, L653-L663; verify-changes does NOT itself
+sanitize — `grep -n 'sanitize-pipeline-id' skills/verify-changes/SKILL.md`
+returns zero hits). The sanitizer-invocation idiom comes from the
+post-#97 form in `skills/fix-issues/SKILL.md:443-463` (sanitizer call
+at L455). The composite — 3-tier reading + sanitizer line + slug
+suffix — is what block-diagram needs. The implementing agent should
+read both anchors, then write the composite below; do NOT expect
+either anchor alone to be the verbatim template:
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -402,8 +449,8 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=<skill-name>.<unique-id>}"        # tier-3 fallback
-PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
-SUFFIX_SLUG=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "$RAW_SUFFIX")
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+SUFFIX_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$RAW_SUFFIX")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 # Subsequent writes:
 printf '...' > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/<category>.<skill>.${SUFFIX_SLUG}"
@@ -414,7 +461,9 @@ research baseline is a different, simpler pattern (single-tier
 `${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}`). It is not the right
 template for block-diagram because add-block and add-example need
 tier-2 `.zskills-tracked` resolution to inherit the parent's PIPELINE_ID
-under delegation. `verify-changes` is the correct anchor.
+under delegation. `verify-changes` is the correct anchor for the
+3-tier reading shape; `fix-issues` is the correct anchor for the
+sanitizer line.
 
 Pattern rules (also in `docs/tracking/TRACKING_NAMING.md`):
 
@@ -432,12 +481,12 @@ Pattern rules (also in `docs/tracking/TRACKING_NAMING.md`):
 basenames verbatim because `${BLOCK_NAME}` and `${NAME}` are
 user-supplied unique parameters. That reasoning is correct only when
 the inputs are also clean identifiers. The sanitizer
-(`scripts/sanitize-pipeline-id.sh`) replaces whitespace and
-shell-special chars with `_` before the directory name is computed; if
-the marker basename is NOT also sanitised, parent and child write
-basenames that differ for the same input. Verified:
-`bash scripts/sanitize-pipeline-id.sh "add-block.My Block"` →
-`add-block.My_Block`. Slugging both sides (deterministic, idempotent)
+(`.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh`)
+replaces whitespace and shell-special chars with `_` before the
+directory name is computed; if the marker basename is NOT also
+sanitised, parent and child write basenames that differ for the same
+input. Verified: `bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "add-block.My Block"`
+→ `add-block.My_Block`. Slugging both sides (deterministic, idempotent)
 fixes the mismatch with no cost to clean inputs. This is NOT the
 Phase-4 collision rename (that was about `sprint` literal collisions
 across concurrent sessions); it is a simpler "make the on-disk shape
@@ -463,7 +512,7 @@ delegation-contract work item), so `BLOCK_SLUG == NAME_SLUG` for any
 input.
 
 Hook permissiveness note: `enforce_requires_marker`
-(`hooks/block-unsafe-project.sh.template:77-93`) accepts EITHER a
+(`hooks/block-unsafe-project.sh.template:77-94`) accepts EITHER a
 flat-top-level `${TRACKING_DIR}/fulfilled.X` OR a same-subdir
 `${req_dir}/fulfilled.X` as fulfillment. So strictly speaking,
 co-locating both markers in the same `$PIPELINE_ID/` subdir is
@@ -506,18 +555,32 @@ sanitizer call in add-example operates on the in-memory string only.
       `grep -cE '\$MAIN_ROOT/\.zskills/tracking/\$PIPELINE_ID/'
       block-diagram/add-example/SKILL.md` returns **7** (the 6 writer
       sites in the migration table plus 1 occurrence in the
-      top-of-skill PIPELINE_ID resolution block: the entry-block
-      `fulfilled` write at L233). The `mkdir -p
+      top-of-skill PIPELINE_ID resolution block — the `fulfilled` write
+      inside the new entry block). The `mkdir -p
       "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"` line ends without a
       trailing slash, so the regex `\$PIPELINE_ID/` does NOT match it
       — that's why the count is 7, not 8 (matches the add-block side
-      where the entry-block mkdir likewise does not contribute). If
-      the count differs from these exact numbers, do NOT loosen the
-      criterion — investigate and reconcile.
+      where the entry-block mkdir likewise does not contribute).
+      Invariance under the F1 caller-path change: the new sanitizer
+      caller path uses `$CLAUDE_PROJECT_DIR/.claude/skills/...`, not
+      `$MAIN_ROOT/.zskills/tracking/`, so it does not contribute
+      matches to this regex — counts stay at 12 and 7. If the count
+      differs from these exact numbers, do NOT loosen the criterion
+      — investigate and reconcile.
 - [ ] Sanitizer is invoked exactly twice per skill (once for
-      PIPELINE_ID, once for the suffix slug). Verification:
-      `grep -c 'sanitize-pipeline-id' block-diagram/add-block/SKILL.md`
-      = 2; same for `add-example`.
+      PIPELINE_ID, once for the suffix slug), via the canonical
+      shipped caller form. Verification:
+      `grep -c '\.claude/skills/create-worktree/scripts/sanitize-pipeline-id\.sh'
+      block-diagram/add-block/SKILL.md` = 2; same for `add-example`.
+      Plus a fail-loud guard against regressing to the pre-#97 path:
+      `! grep -F '$MAIN_ROOT/scripts/sanitize-pipeline-id.sh'
+      block-diagram/add-block/SKILL.md` returns 0 lines; same for
+      `add-example`.
+- [ ] No regression to pre-#97 `create-worktree.sh` caller path.
+      Verification:
+      `! grep -F '$MAIN_ROOT/scripts/create-worktree.sh'
+      block-diagram/add-block/SKILL.md` returns 0 lines (closes the
+      PR #97 sweep miss; see Phase 1's first work item).
 - [ ] BLOCK_SLUG / NAME_SLUG variables are introduced. Verification:
       `grep -c 'BLOCK_SLUG=' block-diagram/add-block/SKILL.md` ≥ 1;
       `grep -c 'NAME_SLUG=' block-diagram/add-example/SKILL.md` ≥ 1.
@@ -601,8 +664,12 @@ existing skills.
 
 - [ ] **Add a regression-guard lint** in
       `tests/test-skill-invariants.sh`, mirroring the structure of the
-      existing `isolation: "worktree"` check at lines 128-134. Insert
-      directly after that block (before the `Results:` line at L137):
+      existing `isolation: "worktree"` check at lines 128-135 (a
+      multi-line `check '...' \\` continuation: comment block L128-L133,
+      check call L134-L135). Insert directly after that block (before
+      the final `echo "Results: ..."` line near the bottom of the file
+      — currently L138 pre-Phase-2; locate by content rather than
+      literal line number to survive any prior edits):
 
       ```bash
       # Cross-skill invariant: no skill writes flat-layout tracking markers.
@@ -815,13 +882,30 @@ sense.
 
 ### Work Items
 
+- [ ] **Pre-implementation: run the proposed detection logic against
+      the production file, enumerate matches, confirm zero unexpected
+      false-positives.** Mirrors Phase 2's baseline-grep pattern. Run
+      the awk-join + regex-match below against current
+      `tests/test-skill-invariants.sh` (post-Phase-1 + post-Phase-2)
+      and paste the output into the PR body. Expected: only the
+      Phase-2 flat-layout check matches the framework-enum regex AND
+      it already includes `block-diagram/` (so the meta-lint passes).
+      If anything else matches and lacks `block-diagram/`, EITHER fix
+      that check to include block-diagram coverage OR add a
+      `# block-diagram-exempt:` comment with rationale before
+      installing the meta-lint.
+
 - [ ] **Add a meta-lint to `tests/test-skill-invariants.sh`** that
       scans the file's own `check` invocations and asserts that any
       check argument referencing `skills/` as a framework-wide
       enumeration path also references `block-diagram/`. Insert
-      directly after the new flat-layout lint from Phase 2 (i.e.,
-      after L134's existing isolation check + Phase 2's
-      flat-layout check, before the `Results:` summary line):
+      directly after the new flat-layout lint from Phase 2 — i.e.,
+      after the isolation-worktree check (L128-L135 pre-Phase-2;
+      relative position post-Phase-2) plus Phase 2's flat-layout
+      check, and before the final `echo "Results: ..."` line near the
+      bottom of the file. Locate the insertion point by content, NOT
+      by literal line number — Phase 2 inserts ~9-12 lines so the
+      pre-Phase-2 "L137/L138" anchor goes stale by-construction.
 
       ```bash
       # Meta-lint: every framework-wide cross-skill check must cover
@@ -834,7 +918,16 @@ sense.
       # followed by whitespace, a quote, or end-of-line — NOT followed by
       # a skill-name segment like `skills/run-plan/SKILL.md`). Such a
       # check must also contain ` block-diagram/` (with whitespace
-      # boundary) somewhere in the same line.
+      # boundary) somewhere in the same logical check invocation.
+      #
+      # CRITICAL — line-continuation handling: real `check` invocations
+      # span TWO physical lines via trailing `\\` continuation, e.g.:
+      #   check '<desc>' \                  ← head: matches `^check`, lacks `skills/`
+      #     '! grep -rE ... skills/ ...'    ← body: has `skills/`, lacks `^check`
+      # A naive per-physical-line regex never finds the `^check && skills/`
+      # conjunction and the meta-lint passes vacuously. The pre-process
+      # step below joins `\\\n` continuations so each logical check
+      # invocation collapses to one line BEFORE the regex runs.
       #
       # Opt-out: prefix the check with the comment
       #   # block-diagram-exempt: <reason>
@@ -843,16 +936,34 @@ sense.
       SCRIPT="$REPO_ROOT/tests/test-skill-invariants.sh"
       _meta_skipped=0
       _meta_failed=0
+      # Collapse `\\\n` continuations into single logical lines.
+      # awk: when a line ends with `\`, drop the `\` and buffer; on the
+      # next line, prepend the buffer and emit. Comment lines pass
+      # through unchanged so the `# block-diagram-exempt:` opt-out
+      # still works on the preceding-line basis.
+      joined=$(awk '
+        /\\$/ { sub(/\\$/,""); buf = buf $0; next }
+        buf   { print buf $0; buf = ""; next }
+              { print }
+      ' "$SCRIPT")
       while IFS= read -r line; do
         case "$line" in
           *"# block-diagram-exempt:"*) _meta_skipped=1; continue ;;
         esac
-        # Match check lines that enumerate skills/ as a directory path.
-        # Regex: skills/ preceded by non-alpha, followed by space or quote
-        # or end-of-line (i.e., a path arg) — NOT skills/<name>/ which
-        # has an alpha char after the slash.
+        # Match logical-check lines that enumerate skills/ as a path.
+        # Regex: skills/ preceded by non-alpha, followed by space,
+        # single-quote, double-quote, or end-of-line (i.e., a path arg
+        # at a directory boundary) — NOT skills/<name>/ (alpha after
+        # slash, single-skill probe) NOR skills/$f/... (variable
+        # interpolation, also single-skill probe by convention). The
+        # post-slash class must be path-terminator-shaped, not just
+        # non-alpha — `$` is non-alpha, but `skills/$f/SKILL.md` is the
+        # mirror-sync per-skill loop body at
+        # `tests/test-skill-invariants.sh:101-102`, which is single-skill
+        # by intent. After the awk-join above, both predicates evaluate
+        # against the same logical line.
         if printf '%s' "$line" | grep -qE '^[[:space:]]*check ' \
-           && printf '%s' "$line" | grep -qE '[^A-Za-z]skills/([^A-Za-z]|$)'; then
+           && printf '%s' "$line" | grep -qE '[^A-Za-z]skills/([[:space:]'\''"]|$)'; then
           if [ "$_meta_skipped" -eq 1 ]; then
             _meta_skipped=0
             continue
@@ -864,7 +975,7 @@ sense.
         else
           _meta_skipped=0
         fi
-      done < "$SCRIPT"
+      done <<<"$joined"
       if [ "$_meta_failed" -eq 0 ]; then
         check 'meta: framework-wide checks cover block-diagram/' 'true'
       else
@@ -873,24 +984,47 @@ sense.
       ```
 
       Place this block AFTER all other `check` invocations and BEFORE
-      the final `Results:` summary line (currently L137). The block
-      reads `$REPO_ROOT/tests/test-skill-invariants.sh` (resolved at
+      the final `echo "Results: $PASS passed, $FAIL failed"` line at
+      the bottom of the file. The block reads
+      `$REPO_ROOT/tests/test-skill-invariants.sh` (resolved at
       script-top via `SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"; REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"`,
       which is already in the script) so the path is invocation-
       independent — `bash $0`, `cd tests && bash test-skill-invariants.sh`,
       and `tests/run-all.sh`-driven invocation all read the same file.
       The earlier draft used `$0` which would break under `bash -c
-      'source tests/test-skill-invariants.sh'`-style invocation.
+      'source tests/test-skill-invariants.sh'`-style invocation. The
+      `<<<"$joined"` here-string and the awk pre-pass are bash-only —
+      `tests/test-skill-invariants.sh:1` is `#!/bin/bash`, so the
+      shebang already requires bash.
 
-      The detection regex `[^A-Za-z]skills/([^A-Za-z]|$)` matches:
+      The detection regex
+      `[^A-Za-z]skills/([[:space:]'"]|$)` matches:
       - `' skills/ '` (space-skills-slash-space — framework enum)
       - `' skills/'` at end-of-line (skills as final arg)
       - `' "skills/"'` (quoted directory)
+      - `' '\''skills/'\'''` (single-quoted directory — same boundary)
 
       and does NOT match:
       - `'skills/run-plan/SKILL.md'` (alpha after slash — single skill)
+      - `'skills/$f/SKILL.md'` (`$` after slash — variable
+        interpolation, single-skill-shaped per
+        `tests/test-skill-invariants.sh:101-102` mirror-sync loop)
       - `'.claude/skills/'` (preceded by alpha — different path)
       - `'skills'` without trailing slash
+
+      The earlier `[^A-Za-z]` post-slash class was too loose — it
+      false-positived on `skills/$f` because `$` is non-alphabetic.
+      Restricting to a path-terminator class (whitespace, single-quote,
+      double-quote, or end-of-line) is what the comment already
+      described and what every framework-enum site uses in practice.
+
+      For-loop framework enumerations (e.g.,
+      `tests/test-skill-invariants.sh:48-53` enumerating run-plan +
+      fix-issues + verify-changes + block-diagram/add-block) use
+      `for f in skills/...` rather than `check '...' \\ skills/...`
+      and are correctly outside the meta-lint regex. Author discipline
+      governs framework-coverage in for-loops; the meta-lint is the
+      mechanical guard for the `check`-shaped pattern.
 
       The earlier draft's case-glob `*"check "*" skills/"*` required
       both a literal leading space and a literal `"check "` substring,
@@ -911,20 +1045,42 @@ sense.
       its output contains
       `meta: framework-wide checks cover block-diagram/` in a passing
       line (no `FAIL:` prefix).
-- [ ] Meta-lint fires on a deliberately-broken check (manual smoke).
-      Procedure: add a throwaway
+- [ ] Meta-lint fires on a deliberately-broken **single-line** check
+      (manual smoke). Procedure: add a throwaway
       `check 'demo' '! grep -rE foo skills/'`, run the script, observe
       the meta-lint failure (`META-LINT FAIL: …` in stderr), then
       remove the throwaway. Note this dry-run in the PR body.
+- [ ] Meta-lint fires on a deliberately-broken **multi-line** check
+      (manual smoke — CRITICAL, the actual production-shape regression
+      class). Procedure: add a throwaway
+
+      ```bash
+      check 'multi-line demo' \
+        '! grep -rE foo skills/'
+      ```
+
+      run the script, observe the meta-lint failure (`META-LINT
+      FAIL: …`) — the awk-join must collapse the two lines into a
+      single logical check invocation so both `^check` and `skills/`
+      predicates fire on the same line. Then remove the throwaway.
+      Note this dry-run in the PR body. Without this smoke, the
+      meta-lint can pass vacuously against real production-shape
+      checks (which all use multi-line `\\` continuation) — exactly
+      the failure mode this lint exists to prevent.
 - [ ] Opt-out works (manual smoke). Procedure: prefix the throwaway
       check with `# block-diagram-exempt: demo`, re-run, observe the
       meta-lint passes, then remove the throwaway.
-- [ ] Detection-regex precision: a single-skill check
-      (`grep -q "..." skills/run-plan/SKILL.md`) does NOT trigger the
-      meta-lint. Verification: the existing file-local checks at L33,
-      35, 39, 41, 43, 45, 57, 59, 61, 78, 80, 82, 84, 90, 92, 96 all
-      reference `skills/<name>/SKILL.md` patterns and must continue
-      to pass without exemption comments after Phase 3 lands.
+- [ ] Detection-regex precision: every existing single-skill probe
+      (every `check` invocation whose body contains
+      `skills/<name>/SKILL.md` with an alphabetic char immediately
+      following `skills/`) continues to pass without an exemption
+      comment after Phase 3 lands. Verification by behavior, not
+      enumeration: `bash tests/test-skill-invariants.sh` exits 0 with
+      no `META-LINT FAIL:` output. (Counting by behavior survives
+      future PRs adding rows; an enumerated line-number list would
+      go stale on the first such PR. The pre-implementation
+      enumeration step in the work items above produces the
+      point-in-time list for the PR body.)
 - [ ] Full suite green: `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt"
       2>&1; tail -5 "$TEST_OUT/.test-results.txt"` ends with `0 failed`.
 
@@ -948,9 +1104,41 @@ This is the initial draft. Drift tracking will begin after Phase 1 lands.
   isolation case 11 proves no correctness interference between the
   two pipelines, so this is hygiene, not correctness. Acceptable per
   `docs/tracking/TRACKING_NAMING.md` OQ2 ("let expire"); revisit if
-  cleanup becomes important — `scripts/clear-tracking.sh` could be
-  extended to age-out completed-fulfilled standalone subdirs after
-  N days.
+  cleanup becomes important — `.claude/skills/update-zskills/scripts/clear-tracking.sh`
+  (owner: `update-zskills` per `skills/update-zskills/references/script-ownership.md:28`)
+  could be extended to age-out completed-fulfilled standalone subdirs
+  after N days.
+
+### 2026-04-28 — Refine pass against post-#100 main (PRs #73-#100)
+
+This refine pass ran on 2026-04-28 against main at HEAD `ad5b58f`,
+two days after the plan was authored on 2026-04-26. The dominant
+drift was SCRIPTS_INTO_SKILLS (PRs #94-#100), which moved
+`scripts/sanitize-pipeline-id.sh` and `scripts/create-worktree.sh`
+into `skills/create-worktree/scripts/` and codified a caller
+convention in `skills/update-zskills/references/script-ownership.md`:
+shipped/cross-skill callers MUST use
+`$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>`. The plan
+had 14 stale `$MAIN_ROOT/scripts/sanitize-pipeline-id.sh` references
+in code blocks and several prose mentions; all were rewritten to the
+shipped form. PR #97's cross-skill caller sweep also missed
+`block-diagram/add-block/SKILL.md:20` (a live broken
+`$MAIN_ROOT/scripts/create-worktree.sh` invocation); Phase 1's first
+work item now absorbs that fix. Several anchor citations
+(`verify-changes:209-214`, `fix-issues:434-454`,
+`test-skill-invariants.sh:128-134/L137`) had drifted by 3-7 lines and
+were re-anchored. The Phase 3 meta-lint detection logic was rewritten
+to pre-process line-continuations via awk before applying the
+per-line regex — without that fix the meta-lint passes vacuously
+against any real production-shape multi-line `check '...' \\` (the
+exact regression class the lint exists to prevent). Acceptance
+criteria were tightened: sanitizer-call grep anchored to the
+canonical shipped path; `! grep -F` guards added to fail loud on
+any pre-#97 path resurfacing; Phase 3 detection-precision criterion
+moved from a fragile literal line-number enumeration to a structural
+exit-status assertion. No completed phases existed; all three phases
+were reviewed as remaining. See "Plan Review" below for round
+history.
 
 ## Adversarial Review — Round 1 Disposition
 
@@ -1004,3 +1192,84 @@ This is the initial draft. Drift tracking will begin after Phase 1 lands.
 |-------|-------------------|-------------|----------|
 | 1     | 14 (3 blocker, 4 major, 4 minor, 3 confirm) | 10 (2 blocker, 4 major, 3 minor, 1 spec) | 17 fixed, 7 confirm-only |
 | 2     | 1 major + 1 minor + 6 confirms | 3 minor/spec + 6 confirms | 1 major fixed, 4 minors noted |
+
+## Plan Review
+
+**Refinement process:** /refine-plan with 2 rounds of adversarial
+review against post-#100 main on 2026-04-28 (HEAD `ad5b58f`).
+Triggered by ~10 day drift since the original /draft-plan-converged
+draft was authored on 2026-04-26; PRs #73-#100 had landed in the
+interim, including SCRIPTS_INTO_SKILLS (#94-#100) which moved every
+helper-script the plan referenced.
+
+**Convergence:** Converged at round 2. Round 1 surfaced 18
+substantive findings (3 blockers, 6 majors, 9 minors); all fixed.
+Round 2 surfaced 1 additional blocker the round-1 sweep missed
+(meta-lint regex false-positive on `mirror sync: $f`); fixed via
+regex tightening from `[^A-Za-z]` to `[[:space:]'"]` after the path
+slash. Round 2 also produced 4 confirmation/judgment items that
+required no substantive change.
+
+**Remaining concerns:** None blocking. The Drift Log note on
+orphan standalone-then-delegated subdirs (from the original draft's
+DA-R2-2) remains as future hygiene work — not introduced by this
+refine pass.
+
+### Refine pass round history (2026-04-28)
+
+| Round | Reviewer findings | Devil's Advocate findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1     | 14 (3 blocker, 4 major, 7 minor/judgment) | 8 (2 blocker, 4 major, 2 minor) | 18 | 18/18 |
+| 2     | 5 (1 blocker promoted from R2 reviewer, 3 minor, 1 judgment) | (combined with reviewer for round 2) | 1 | 1/1 |
+
+### What this refine pass changed
+
+- **Phase 1 / Shared Conventions:** all 14 stale
+  `$MAIN_ROOT/scripts/sanitize-pipeline-id.sh` references replaced
+  with the canonical post-#97 shipped form
+  `$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh`
+  per `script-ownership.md` Cross-skill path convention. Prose
+  mentions and the line-citation `:9-10` updated to point at the
+  post-move source.
+- **Phase 1 first work item:** absorbed PR #97's sweep miss at
+  `block-diagram/add-block/SKILL.md:16,20` (live broken
+  `$MAIN_ROOT/scripts/create-worktree.sh` caller). Acceptance
+  criterion added.
+- **Phase 1 dry-run:** rewritten to capture `SANITIZER` BEFORE
+  `cd "$tmp"` with a fail-loud guard. The prior snippet would have
+  silently passed against an empty temp dir because bash command
+  substitution swallows the file-not-found error.
+- **Phase 1 Design & Constraints:** the "canonical writer pattern"
+  prose was misattributed — `verify-changes` does not actually call
+  the sanitizer at any of its 3-tier blocks. Rewritten to honestly
+  cite verify-changes (3-tier reading shape) and fix-issues (sanitizer
+  idiom) as two separate anchors composing the template; line numbers
+  re-anchored to current source.
+- **Phase 2:** anchor "L128-134" → "L128-L135"; literal "L137" →
+  content-anchored "before the final `echo \"Results:\"` line".
+- **Phase 3 meta-lint:** the previous detection logic passed
+  vacuously against real production-shape multi-line `check '...' \\`
+  invocations because the per-line regex requires `^check` and
+  `skills/` to match the same physical line. Rewritten to pre-process
+  trailing-backslash continuations via awk before applying the
+  regex. Plus a regex tightening: `[^A-Za-z]skills/([^A-Za-z]|$)` →
+  `[^A-Za-z]skills/([[:space:]'"]|$)` so variable-interpolation
+  paths like `skills/$f/SKILL.md` (the mirror-sync per-skill loop)
+  are correctly classified as single-skill probes, not framework
+  enumerations.
+- **Phase 3 acceptance:** added a multi-line smoke-test work item
+  (CRITICAL — without it, the meta-lint can ship vacuous against
+  the actual production-shape regression class). Replaced fragile
+  literal-line-number enumeration of single-skill checks with a
+  structural exit-status assertion. Added a pre-implementation
+  enumeration step mirroring Phase 2's baseline-grep.
+- **Drift Log:** new subsection appended documenting the
+  post-#100-main drift; existing content preserved as historical
+  record.
+
+### Files modified
+- `plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` (this plan, in place)
+
+### Files NOT modified
+- `block-diagram/**`, `skills/**`, `tests/**`, `hooks/**` — refine
+  pass touches the plan only; implementation is downstream.
