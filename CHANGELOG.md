@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-28
+
+### Added
+- feat(run-plan): add `PLAN-TEXT-DRIFT:` structured token for
+  acceptance-band drift flags; see `skills/run-plan/SKILL.md` Key Rules
+  and `scripts/plan-drift-correct.sh`. Implementation and verification
+  agents emit one token per stale numeric acceptance criterion;
+  `scripts/plan-drift-correct.sh` provides `--parse` / `--drift` /
+  `--correct` modes consumed by `/run-plan` Phase 3.5
+  (`plans/IMPROVE_STALENESS_DETECTION.md`).
+
 ## 2026-04-21
 
 ### Major

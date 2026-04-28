@@ -679,6 +679,26 @@ Use cases:
 - `### Execution: delegate /run-plan plans/SUB_PLAN.md finish auto` — meta-plans
 - `### Execution: delegate /draft-plan plans/FOO.md <description>` — plan generation
 
+### Plan-text drift signals
+
+Include this VERBATIM in the dispatch prompt (delegate mode) so the
+delegated skill's implementing agent surfaces stale numeric acceptance
+criteria during its work:
+
+> If during your work you observe a plan's acceptance criterion
+> contains a numeric target (lines / tests / cases / commits / files)
+> that doesn't match reality, emit a line of the form:
+>
+> ```
+> PLAN-TEXT-DRIFT: phase=<N> bullet=<M> field=<str> plan=<stated> actual=<measured>
+> ```
+>
+> in your final report. One per drift. Advisory — continue your work.
+
+Tokens are parsed by `scripts/plan-drift-correct.sh --parse <report-file>`
+in Phase 3.5. Format is single-line, space-delimited; `<field>` MUST NOT
+contain `:` or `=`.
+
 ### Direct mode
 
 When `LANDING_MODE` is `direct`:
@@ -868,6 +888,28 @@ agent hasn't returned after 2 hours, declare it **failed**:
    those exact tests. Do not stop after the easy items and declare the hard
    ones "future work."
 
+### Plan-text drift signals
+
+Include this VERBATIM in every implementation-agent prompt (worktree
+mode) so the agent flags numeric acceptance bands that don't match
+reality at execution time:
+
+> If during your work you observe a plan's acceptance criterion
+> contains a numeric target (lines / tests / cases / commits / files)
+> that doesn't match reality, emit a line of the form:
+>
+> ```
+> PLAN-TEXT-DRIFT: phase=<N> bullet=<M> field=<str> plan=<stated> actual=<measured>
+> ```
+>
+> in your final report. One per drift. Advisory — continue your work.
+
+Tokens are parsed by `scripts/plan-drift-correct.sh --parse <report-file>`
+in Phase 3.5. Format is single-line, space-delimited; `<field>` MUST NOT
+contain `:` or `=`. Phase format: `phase=1`, `phase=4A`, etc.; bullet is
+the 1-indexed ordinal of a numeric-bearing bullet within the phase's
+`### Acceptance Criteria` section.
+
 ### PR mode (Phase 2)
 
 When `LANDING_MODE == pr`, the orchestrator creates a persistent worktree with
@@ -1038,6 +1080,26 @@ If this phase used delegate execution, verification runs on **main**:
 4. Dispatch a verification agent if needed (same rules as worktree mode
    below, but targeting main instead of a worktree path).
 
+#### Plan-text drift signals (delegate mode verification)
+
+Include this VERBATIM in the verifier dispatch prompt:
+
+> If during your verification you observe a plan's acceptance criterion
+> contains a numeric target (lines / tests / cases / commits / files)
+> that doesn't match reality, emit a line of the form:
+>
+> ```
+> PLAN-TEXT-DRIFT: phase=<N> bullet=<M> field=<str> plan=<stated> actual=<measured>
+> ```
+>
+> in your final report. One per drift. Advisory — continue your work.
+
+**Verifiers MUST re-detect drift independently.** Do not forward the
+implementation agent's tokens — re-measure each numeric acceptance
+criterion against current reality. If implementation skipped the check
+OR implementation IS the source of drift, the verifier catches it.
+Phase 3.5 processes the UNION of both reports' tokens.
+
 ### Worktree mode verification
 
 1. **Dispatch verification agent** targeting the worktree's changes. The
@@ -1137,6 +1199,26 @@ If this phase used delegate execution, verification runs on **main**:
      After the fix agent finishes, re-verify (max 2 rounds). If still
      failing after 2 fix+verify cycles, **STOP** — needs human judgment.
      Invoke the Failure Protocol.
+
+#### Plan-text drift signals (worktree mode verification)
+
+Include this VERBATIM in the verifier dispatch prompt:
+
+> If during your verification you observe a plan's acceptance criterion
+> contains a numeric target (lines / tests / cases / commits / files)
+> that doesn't match reality, emit a line of the form:
+>
+> ```
+> PLAN-TEXT-DRIFT: phase=<N> bullet=<M> field=<str> plan=<stated> actual=<measured>
+> ```
+>
+> in your final report. One per drift. Advisory — continue your work.
+
+**Verifiers MUST re-detect drift independently.** Do not forward the
+implementation agent's tokens — re-measure each numeric acceptance
+criterion against current reality. If implementation skipped the check
+OR implementation IS the source of drift, the verifier catches it.
+Phase 3.5 processes the UNION of both reports' tokens.
 
 ### Post-verification tracking
 
@@ -1704,6 +1786,11 @@ template is in the same file.
   with DATA: (1) current phase and when it started, (2) agent duration and
   tool call count, (3) errors or retries. Do not say "everything is fine"
   if an agent has been running >30 minutes or retried 2+ times.
+- **Plan-text drift signals.** Implementation and verification
+  agents MUST emit a `PLAN-TEXT-DRIFT:` token (format above) for
+  each numeric acceptance criterion that doesn't match reality.
+  Phase 3.5 parses these to decide whether to auto-correct the
+  plan. Token format forbids `:` and `=` inside `<field>`.
 
 ## Edge Cases
 
