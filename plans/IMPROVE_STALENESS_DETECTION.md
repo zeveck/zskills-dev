@@ -23,7 +23,7 @@ Combined with `/refine-plan` Dimension 7, these form a defense-in-depth chain: *
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Standardize `PLAN-TEXT-DRIFT:` token + `scripts/plan-drift-correct.sh`        | ⬚ | | |
+| 1 — Standardize `PLAN-TEXT-DRIFT:` token + `scripts/plan-drift-correct.sh`        | 🟡 | `33fa174` | impl + tests; verifier committed |
 | 2 — Post-implement auto-correct gate (Phase 3.5)                                  | ⬚ | | |
 | 3 — Pre-dispatch arithmetic gate (Phase 1 step 6 extension) + tests + docs        | ⬚ | | |
 
