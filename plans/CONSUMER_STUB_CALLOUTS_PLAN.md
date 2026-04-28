@@ -116,10 +116,11 @@ prerequisite, then re-run this plan.
       under empty `$CLAUDE_PROJECT_DIR`).
 - [ ] 1.3 — **CHANGELOG entry check.** The prerequisite plan does
       not pin a verbatim commit-message string in its Phase 6, so
-      we use a tolerant regex that captures the spirit (Tier-1 →
-      owning skills) without breaking on minor copy-edits:
+      we use a tolerant regex. Each alternation requires the
+      "Tier" keyword to avoid matching unrelated CHANGELOG prose
+      that happens to mention "move scripts" (DA16 fix):
       ```bash
-      grep -E 'Tier.?1.*owning skills?|move.*scripts.*into.*skills|relocate.*scripts.*under.*skills' CHANGELOG.md \
+      grep -E 'Tier.?1.*owning skills?|move.*Tier.?1.*into.*skills|relocate.*Tier.?1.*skills' CHANGELOG.md \
         || { echo "FAIL: CHANGELOG entry for Tier-1 scripts → owning skills not found"; FAIL=1; }
       ```
 - [ ] 1.4 — **Halt with actionable message on any failure.** If `FAIL`
@@ -167,6 +168,13 @@ The `tests/run-all.sh export CLAUDE_PROJECT_DIR` anchor is
 load-bearing for cross-skill lib resolution in this plan's stub
 tests; without it Phase 3.4 / 4.5 silently no-op.
 
+**Post-prerequisite-landing reality.** As of refine-round-1
+(post-PRs #94–#100 + PR #88), all 1.1–1.3 anchors pass against
+current main. Phase 1 functions as a **regression guard** (catches
+a future re-rolled or partially-rolled-back prereq), not as a
+discovery check. The HALT path will not fire on first invocation
+of `/run-plan` against a clean tree; that is intentional.
+
 **No remediation by the implementing agent.** Per the user
 instruction and the broader "surface bugs, don't patch" principle
 (`feedback_no_premature_backcompat.md` adjacent: don't quietly route
@@ -182,16 +190,19 @@ shell tests; nothing parses JSON here.
 ### Acceptance Criteria
 
 - [ ] WI 1.1 grep matches `status: complete` in
-      `plans/SCRIPTS_INTO_SKILLS_PLAN.md`.
-- [ ] WI 1.2 multi-anchor compound test passes (rc 0).
-- [ ] WI 1.3 grep matches `refactor(scripts): move Tier-1 scripts
-      into owning skills` in `CHANGELOG.md`.
+      `plans/SCRIPTS_INTO_SKILLS_PLAN.md`. (Already passes;
+      regression guard.)
+- [ ] WI 1.2 multi-anchor compound test passes (rc 0). (Already
+      passes; regression guard against future partial rollback.)
+- [ ] WI 1.3 grep matches the tightened CHANGELOG alternation
+      (passes against current `CHANGELOG.md:6`
+      `refactor(scripts): move Tier-1 scripts into owning skills`).
 - [ ] **No live-tree halt-path test.** Per CLAUDE.md "Never modify
       the working tree to check if a failure is pre-existing" —
       do NOT rename `CHANGELOG.md` or any source file to test the
       halt path. The shell-mechanics of `exit 1` halting `/run-plan`
       are already verified in the Design ("Halt mechanism (verified)"
-      below); we trust that and the per-WI checks above. If
+      above); we trust that and the per-WI checks above. If
       curious, an implementer may verify halt-path behavior in a
       throwaway `mktemp -d` copy.
 
@@ -223,7 +234,10 @@ helper used by every callout site.
       >    but not executable; ignoring (chmod +x to enable)`) and
       >    treats it as absent.
       > 3. zskills invokes the stub with documented positional
-      >    arguments (per-stub; see canonical table).
+      >    arguments (per-stub; see canonical table). The dispatcher
+      >    consumes a single `--` discriminator (required at every
+      >    callsite) before forwarding the remainder verbatim — a
+      >    literal `--` argument inside the stub's `$@` is preserved.
       > 4. **stdout:** zskills captures stdout and uses it where
       >    documented (per-stub; e.g. `dev-port.sh` expects a
       >    numeric port).
@@ -239,7 +253,10 @@ helper used by every callout site.
       > 6. **First-run note:** zskills emits a one-line stderr note
       >    the first time a stub is encountered in a project (gated
       >    by absence of `.zskills/stub-notes/<stub>.noted`; the
-      >    file is touched after the first note).
+      >    file is touched after the first note). If the marker
+      >    write fails (read-only fs), the note is suppressed —
+      >    this avoids per-invocation noise on systems where the
+      >    marker can't be persisted.
 - [ ] 2.2 — **Create the sourceable helper** at
       `skills/update-zskills/scripts/zskills-stub-lib.sh`. The lib
       defines one function:
@@ -276,9 +293,11 @@ helper used by every callout site.
         local notes_dir="$repo_root/.zskills/stub-notes"
         local marker="$notes_dir/$name.noted"
         if [ ! -f "$marker" ]; then
-          mkdir -p "$notes_dir"
-          touch "$marker" 2>/dev/null || true
-          echo "zskills: invoking consumer stub scripts/$name (one-time note; see .claude/skills/update-zskills/references/stub-callouts.md)" >&2
+          # Suppress the note when marker write fails (e.g. read-only fs)
+          # to avoid per-invocation noise on systems that can't persist.
+          if mkdir -p "$notes_dir" 2>/dev/null && touch "$marker" 2>/dev/null; then
+            echo "zskills: invoking consumer stub scripts/$name (one-time note; see .claude/skills/update-zskills/references/stub-callouts.md)" >&2
+          fi
         fi
         ZSKILLS_STUB_INVOKED=1
         ZSKILLS_STUB_STDOUT=$(bash "$stub" "$@")
@@ -290,8 +309,12 @@ helper used by every callout site.
       }
       ```
 - [ ] 2.3 — **Tests** at `tests/test-stub-callouts.sh`. Mirror the
-      `tests/test-create-worktree.sh:828-836` fake-consumer-project
-      pattern. Cases:
+      `tests/test-create-worktree.sh:828-836` **FIX_NN-style
+      temp-fixture pattern**: `FIX_N="/tmp/<test-prefix>-fixture-$$"`,
+      `rm -rf "$FIX_N"`, `mkdir -p "$FIX_N/scripts"`, `git init
+      --quiet -b main "$FIX_N"`, `git -C "$FIX_N" config user.email/name`,
+      `cp "$REPO_ROOT/skills/<owner>/scripts/<helper>.sh" "$FIX_N/scripts/"`,
+      `chmod +x`, then `cd "$FIX_N" && bash "$SCRIPT" ...`. Cases:
       1. `stub-absent` → `INVOKED=0`, `RC=0`, `STDOUT=""`.
       2. `stub-present-with-stdout` → `INVOKED=1`, `RC=0`, `STDOUT`
          matches expected.
@@ -308,13 +331,17 @@ helper used by every callout site.
          `stub-A` (returns "hello"), then with `stub-B` (absent);
          second call's `STDOUT=""` and `INVOKED=0` (no stale state
          from first call).
+      8. **Literal `--` in stub args (DA10):** call dispatcher with
+         `... -- foo -- bar`; verify the stub's `$@` is `(foo, --, bar)`
+         (the dispatcher consumes only the FIRST `--`, the second is
+         forwarded verbatim).
       Add `tests/test-stub-callouts.sh` to `tests/run-all.sh`.
 - [ ] 2.4 — **Extend `/update-zskills` Step D to copy from
-      `stubs/`.** Stubs ship at
+      `stubs/`.** New stubs (post-create-worktree.sh, dev-port.sh,
+      start-dev.sh) ship at
       `skills/update-zskills/stubs/<name>.sh` (a new directory,
-      parallel to `scripts/` — not `scripts/`, since they're
-      consumer-installed templates rather than skill-callable
-      tools). Step D currently only copies "from
+      parallel to `scripts/` — for consumer-installable failing-stub
+      / no-op templates). Step D currently only copies "from
       `$PORTABLE/scripts/`" (verified at SKILL.md:897). Edit Step
       D's copy-loop / source-dir list to **also** copy missing
       files from `$PORTABLE/skills/update-zskills/stubs/` to the
@@ -323,13 +350,17 @@ helper used by every callout site.
       > Copy missing scripts from `$PORTABLE/scripts/` and from
       > `$PORTABLE/skills/update-zskills/stubs/` to `scripts/`
       > (verify executable bit is preserved). The `stubs/` dir
-      > holds consumer-customizable failing-stub / no-op
-      > templates; `scripts/` holds zskills-managed tools.
+      > holds NEW consumer-customizable failing-stub / no-op
+      > templates (post-create-worktree.sh, dev-port.sh,
+      > start-dev.sh); `scripts/` holds the existing zskills-managed
+      > Tier-2 templates (stop-dev.sh, test-all.sh — kept at
+      > `scripts/` for continuity with prior installs; their
+      > bodies become failing stubs in Phase 5 but their source
+      > location does not move).
       AC: `grep -F 'skills/update-zskills/stubs/' skills/update-zskills/SKILL.md` ≥ 1.
 - [ ] 2.5 — **Mirror** `update-zskills`:
       ```bash
-      rm -rf .claude/skills/update-zskills && \
-        cp -a skills/update-zskills/ .claude/skills/update-zskills/
+      bash scripts/mirror-skill.sh update-zskills
       ```
 
 ### Design & Constraints
@@ -356,6 +387,35 @@ Design). Tests source via the absolute repo-root form
 (consistent with prerequisite plan WI 5.7's
 `tests/run-all.sh` `CLAUDE_PROJECT_DIR` export — works either way).
 
+**`stubs/` vs `scripts/` source-of-truth (DA5).** Two source
+directories, one canonical-source rule per stub:
+
+- `skills/update-zskills/stubs/` — NEW failing-stub / no-op source
+  templates introduced by this plan: `post-create-worktree.sh`,
+  `dev-port.sh`, `start-dev.sh`.
+- `scripts/` (top-level) — existing Tier-2 zskills-managed
+  templates that the prerequisite kept at the top-level `scripts/`
+  per `skills/update-zskills/SKILL.md:960` (which excludes them
+  from STALE_LIST): `stop-dev.sh`, `test-all.sh`. Phase 5
+  OVERWRITES their content in place; their source location does
+  not move. Their Step D copy bullets continue to read from
+  `$PORTABLE/scripts/`.
+
+Step D never reads from both directories for the same name. New
+stubs go in `stubs/`; the two pre-existing Tier-2 templates stay
+at `scripts/`. If a future stub needs to be added, it goes in
+`stubs/` (the canonical home for new consumer-installable
+templates). Documented in `references/script-ownership.md` via
+Phase 7 close-out.
+
+**`--` discriminator pinned (DA10).** The dispatcher's `--`
+separator is **required** at every callsite (every existing
+call-site already passes it; tests confirm with case 8). The lib
+consumes only the first `--` and forwards subsequent tokens
+verbatim, so a stub that legitimately needs a `--` in its own
+`$@` is unaffected. Documented in `references/stub-callouts.md`
+under the contract.
+
 **No jq.** The lib does no JSON parsing. Per
 `feedback_no_jq_in_skills.md`.
 
@@ -376,18 +436,26 @@ implemented in this plan; reachable by adding a `--stdout=stream`
 flag to the dispatcher in a future PR.
 
 **Mirror discipline.** WI 2.4 is the only skill edit in this phase;
-batched cp per `feedback_claude_skills_permissions.md`.
+WI 2.5 mirrors via `bash scripts/mirror-skill.sh update-zskills`
+per the prerequisite plan's convention. Inline `rm -rf
+.claude/skills/<name>` is blocked by
+`hooks/block-unsafe-generic.sh:217-222` (RM_RECURSIVE regex +
+is_safe_destruct require literal `/tmp/`); `mirror-skill.sh`
+(PR #88) avoids the gate via per-file `rm` and `find -print0`.
 
-**First-run marker scope.** Markers live at
-`.zskills/stub-notes/<stub>.noted` (per project; `.zskills/` is the
-existing zskills-managed directory and is the right home for
-agent-written ephemeral state per
+**First-run marker scope and read-only-fs handling (DA9).**
+Markers live at `.zskills/stub-notes/<stub>.noted` (per project;
+`.zskills/` is the existing zskills-managed directory and is the
+right home for agent-written ephemeral state per
 `feedback_claude_dir_prompts.md` — `.claude/` writes trigger
-permission prompts, `.zskills/` does not). The note is one line,
-cheap; the marker prevents per-invocation noise. We deliberately do
-NOT write under `var/` — zskills' own `.gitignore` does not list
-`var/`, and consumer projects vary; using `.zskills/` avoids
-creating a surprise directory in foreign projects.
+permission prompts, `.zskills/` does not). The lib only emits the
+first-run note if the marker write succeeds (`mkdir -p && touch`
+under `2>/dev/null` and a guarded `if`); on read-only fs the note
+is silently suppressed to avoid per-invocation noise. We
+deliberately do NOT write under `var/` — zskills' own `.gitignore`
+does not list `var/`, and consumer projects vary; using
+`.zskills/` avoids creating a surprise directory in foreign
+projects.
 
 **Stub non-zero rc contract (pinned).** If the stub exits non-zero,
 the lib (a) sets `ZSKILLS_STUB_RC` to the stub's exit code unchanged,
@@ -407,7 +475,8 @@ is documented verbatim in `references/stub-callouts.md`.
 - [ ] `test -x skills/update-zskills/scripts/zskills-stub-lib.sh` and
       mirrored copy.
 - [ ] `bash tests/test-stub-callouts.sh` exits 0; PASS lines for all
-      7 cases above (including multi-invocation clean-state).
+      8 cases above (including multi-invocation clean-state and the
+      DA10 literal-`--` case).
 - [ ] `grep -c 'test-stub-callouts.sh' tests/run-all.sh` ≥ 1.
 - [ ] **Test sources lib via source-tree path, not via mirror:**
       `! grep -F '$CLAUDE_PROJECT_DIR' tests/test-stub-callouts.sh`
@@ -417,12 +486,13 @@ is documented verbatim in `references/stub-callouts.md`.
       on `.claude/skills/` mirror state).
 - [ ] `grep -F 'skills/update-zskills/stubs/' skills/update-zskills/SKILL.md`
       ≥ 1 (Step D extended to copy from `stubs/`).
-- [ ] **Lib-missing stderr warning wired at both callsites:**
-      `grep -F 'stub-lib missing' skills/create-worktree/scripts/create-worktree.sh skills/update-zskills/scripts/port.sh`
-      returns ≥ 2 matches (one per callsite; warns when
-      `$CLAUDE_PROJECT_DIR` is set but the cross-skill lib path
-      doesn't resolve — surfaces a broken install instead of silently
-      no-op'ing all consumer stubs).
+- [ ] **Lib-missing stderr warning wired at both callsites
+      (DA15 — split per-file):**
+      `grep -c -F 'stub-lib missing' skills/create-worktree/scripts/create-worktree.sh` ≥ 1
+      AND
+      `grep -c -F 'stub-lib missing' skills/update-zskills/scripts/port.sh` ≥ 1
+      (regression guard against future edits dropping the warning
+      from one site while doubling it in the other).
 - [ ] `diff -r skills/update-zskills .claude/skills/update-zskills`
       empty.
 - [ ] `bash tests/run-all.sh` exits 0.
@@ -446,18 +516,23 @@ stdout.
 - [ ] 3.1 — **Wire the callout** in
       `skills/create-worktree/scripts/create-worktree.sh`
       (post-prerequisite-plan path; verify with
-      `tail -10 skills/create-worktree/scripts/create-worktree.sh` —
-      the final block today is verbatim from
-      `scripts/create-worktree.sh:337-341`):
+      `tail -25 skills/create-worktree/scripts/create-worktree.sh` —
+      the final block today is at lines 336–355). Verbatim before
+      block (current `skills/create-worktree/scripts/create-worktree.sh:336-355`):
       ```bash
-      # ──────────────────────────────────────────────────────────────────
       # WI 1a.11 — Rollback on .zskills-tracked write failure.
       if ! printf '%s\n' "$PIPELINE_ID" > "$WT_PATH/.zskills-tracked"; then
-        ...
+        echo "create-worktree: post-create write failed — worktree rolled back" >&2
+        git -C "$MAIN_ROOT" worktree remove --force "$WT_PATH" 1>&2 || true
+        exit 8
       fi
 
       if [ -n "$PURPOSE" ]; then
-        ...
+        if ! printf '%s\n' "$PURPOSE" > "$WT_PATH/.worktreepurpose"; then
+          echo "create-worktree: post-create write failed — worktree rolled back" >&2
+          git -C "$MAIN_ROOT" worktree remove --force "$WT_PATH" 1>&2 || true
+          exit 8
+        fi
       fi
 
       # ──────────────────────────────────────────────────────────────────
@@ -467,7 +542,7 @@ stdout.
       exit 0
       ```
       Insert **after the `.worktreepurpose` block, before the
-      `printf '%s\n' "$WT_PATH"` line**:
+      `# WI 1a.12` divider line**:
       ```bash
       # ──────────────────────────────────────────────────────────────────
       # WI 3.1 — Consumer post-create-worktree callout.
@@ -498,10 +573,10 @@ stdout.
       broken `/update-zskills` install loudly per "surface bugs,
       don't patch" rather than silently no-op every callout.
 - [ ] 3.2 — **Add stub to `/update-zskills` Step D copy list.**
-      Edit `skills/update-zskills/SKILL.md` Step D (lines 895–910;
-      verify via `grep -nE '#### Step D|Copy.*if missing' skills/update-zskills/SKILL.md`).
-      After the existing `clear-tracking.sh` / `apply-preset.sh` /
-      `stop-dev.sh` bullets, add:
+      Edit `skills/update-zskills/SKILL.md` Step D (heading at L895,
+      body at 897-906; verify via `grep -nE '#### Step D|Copy.*if missing' skills/update-zskills/SKILL.md`).
+      After the existing `stop-dev.sh` and `test-all.sh` bullets,
+      add:
       > - Copy `post-create-worktree.sh` if missing — invoked by the
       >   `/create-worktree` skill's worktree-creation script after a
       >   successful create. Stub is a documented no-op; consumer
@@ -510,7 +585,8 @@ stdout.
 - [ ] 3.3 — **Create the stub source** at
       `skills/update-zskills/stubs/post-create-worktree.sh`. New
       directory `skills/update-zskills/stubs/` (parallel to
-      `scripts/`, holds files copied to consumer `scripts/`).
+      `scripts/`, holds NEW consumer-installable failing-stub /
+      no-op templates per Phase 2 Design canonical-source rule).
       Content:
       ```bash
       #!/bin/bash
@@ -538,9 +614,13 @@ stdout.
       pick up `stubs/`. This WI just lands the stub source file
       itself.)
 - [ ] 3.4 — **Tests** at `tests/test-post-create-worktree.sh` (new).
-      Three cases against a fake consumer project (mirror the
-      `tests/test-create-worktree.sh:828-836` fixture pattern, plus
-      install the stub-lib path):
+      Three cases against a fake consumer project. Mirror the
+      `tests/test-create-worktree.sh:828-836` **FIX_NN-style
+      temp-fixture pattern**: `FIX_N="/tmp/<test-prefix>-fixture-$$"`,
+      `mkdir -p "$FIX_N/scripts"`, `git init --quiet -b main "$FIX_N"`,
+      `cp "$REPO_ROOT/skills/create-worktree/scripts/<helper>.sh"
+      "$FIX_N/scripts/"`, `chmod +x`, install the stub-lib path,
+      then `cd "$FIX_N" && bash "$SCRIPT" --pipeline-id ...`:
       1. `stub-absent` — create-worktree succeeds; no stub invoked
          (no `.zskills/stub-notes/post-create-worktree.sh.noted`
          marker).
@@ -552,26 +632,25 @@ stdout.
          worktree directory **still exists** (left for inspection),
          stderr matches `post-create-worktree.sh exited 7`.
       Add to `tests/run-all.sh`.
-- [ ] 3.5 — **Mirror** `create-worktree` and (already done in 2.4
-      but re-run if any incremental edit) `update-zskills`:
+- [ ] 3.5 — **Mirror** `create-worktree` and `update-zskills`:
       ```bash
-      rm -rf .claude/skills/create-worktree && \
-        cp -a skills/create-worktree/ .claude/skills/create-worktree/
-      rm -rf .claude/skills/update-zskills && \
-        cp -a skills/update-zskills/ .claude/skills/update-zskills/
+      bash scripts/mirror-skill.sh create-worktree
+      bash scripts/mirror-skill.sh update-zskills
       ```
 
 ### Design & Constraints
 
-**Insertion point verification.** The verbatim 5-line block in WI
-3.1 is from the **post-prerequisite-plan** path
+**Insertion point verification.** The verbatim 20-line before-block
+in WI 3.1 is from the **post-prerequisite-plan** path
 (`skills/create-worktree/scripts/create-worktree.sh`). The drafter
-verified this against the current `scripts/create-worktree.sh`
-(lines 320–341); the SCRIPTS_INTO_SKILLS_PLAN's Phase 3a moves the
-file via `git mv` without rewriting the tail, so the verbatim block
-is preserved. If the prerequisite plan rewrote the tail
-unexpectedly, `/refine-plan` flags it; otherwise the insertion
-point matches.
+verified this against the current
+`skills/create-worktree/scripts/create-worktree.sh` (lines 336–355);
+the SCRIPTS_INTO_SKILLS_PLAN's Phase 3a moved the file via
+`git mv` without rewriting the tail, so the verbatim block is
+preserved. The `...` ellipses do **not** appear in the verbatim
+before-block in this WI — every line is quoted in full. If the
+prerequisite plan rewrote the tail unexpectedly, `/refine-plan`
+flags it; otherwise the insertion point matches.
 
 **Rollback semantics decision.** On stub failure: **leave the
 worktree in place; exit 9.** Rationale: the worktree is fully
@@ -584,14 +663,14 @@ destroying the consumer's partial setup work and was rejected.
 Document this in `references/stub-callouts.md`.
 
 **Exit code 9.** rc 8 is taken by the existing `.zskills-tracked`
-write-failure path (line 326); rc 9 is the next free slot.
+write-failure path (line 340); rc 9 is the next free slot.
 Spot-checked downstream: `/run-plan` failure protocol uses generic
 non-zero handling, no special-case for rc 9; tests treat any
 non-zero as failure.
 
 **Failure-semantics contrast with neighboring blocks (DA4).** The
 `.zskills-tracked` and `.worktreepurpose` write-failure paths
-(lines 322–334) destroy the worktree via
+(lines 336–350) destroy the worktree via
 `git worktree remove --force` then `exit 8`. The post-create stub
 failure path (this WI) **preserves** the worktree and `exit 9`s.
 The semantics are intentionally different: write failures are
@@ -622,7 +701,10 @@ fallback to `$MAIN_ROOT` keeps source-tree tests working when
 post-prerequisite, but defensiveness costs nothing).
 
 **Mirror discipline.** WIs touch both `create-worktree/` and
-`update-zskills/`; both mirror in WI 3.5.
+`update-zskills/`; both mirror in WI 3.5 via `mirror-skill.sh`.
+Inline `rm -rf .claude/skills/<name>` is blocked by
+`hooks/block-unsafe-generic.sh:217-222`; `mirror-skill.sh`
+(PR #88) avoids the gate via per-file `rm` and `find -print0`.
 
 **No jq.** No JSON involved.
 
@@ -654,10 +736,21 @@ Consumer can override the worktree port-derivation algorithm
 
 - [ ] 4.1 — **Wire the callout** in
       `skills/update-zskills/scripts/port.sh` (post-prerequisite-plan
-      path; verify with `head -50 skills/update-zskills/scripts/port.sh`).
-      Insertion point: **after the `DEV_PORT` env-var override (line
-      37), before the main-repo check (line 39).** Verbatim before
-      block (current `scripts/port.sh:33-43`):
+      path; verify with `cat -n skills/update-zskills/scripts/port.sh`
+      — the script is 61 newline-terminated lines).
+
+      **Upstream context (do NOT modify; lines 24-43 are the
+      runtime config-read block added by prereq Phase 4 / PR #98):**
+      ```
+      [lines 24-43: BASH_REMATCH against .claude/zskills-config.json
+       extracts dev_server.main_repo_path → MAIN_REPO and
+       dev_server.default_port → DEFAULT_PORT, then unsets the
+       _ZSK_REPO_ROOT/_ZSK_CFG temporaries at line 43. Untouched
+       by this WI.]
+      ```
+
+      Verbatim before block (current
+      `skills/update-zskills/scripts/port.sh:45-55`):
       ```bash
       # DEV_PORT env var overrides everything
       if [[ -n "$DEV_PORT" ]]; then
@@ -671,7 +764,9 @@ Consumer can override the worktree port-derivation algorithm
         exit 0
       fi
       ```
-      After block:
+
+      After block (insert the consumer-callout block at line 50,
+      between the DEV_PORT exit and the main-repo block):
       ```bash
       # DEV_PORT env var overrides everything
       if [[ -n "$DEV_PORT" ]]; then
@@ -713,14 +808,22 @@ Consumer can override the worktree port-derivation algorithm
         exit 0
       fi
       ```
-      **Note (verified):** `port.sh:27` does `unset _ZSK_REPO_ROOT
-      _ZSK_CFG`, so `$_ZSK_REPO_ROOT` is **empty** at the insertion
-      point (line 38). `$PROJECT_ROOT` is set at line 12 of `port.sh`
-      (`PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"`) and never
-      unset — that's the canonical in-scope variable. Use
+
+      **Note (verified against current port.sh).** `port.sh:18` sets
+      `PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"`
+      (the script is invoked from the consumer repo via the shipped
+      `.claude/skills/` tree, so the in-scope project root is taken
+      from git, not the script location). `port.sh:43` does
+      `unset _ZSK_REPO_ROOT _ZSK_CFG`. At the insertion point
+      (line 50), `_ZSK_REPO_ROOT` is empty — but it WAS briefly
+      bound at line 28 inside the runtime config-read block, and
+      the lifetime is contained between L28 and L43. Use
       `${CLAUDE_PROJECT_DIR:-$PROJECT_ROOT}` for the lib path and
-      bare `"$PROJECT_ROOT"` as the dispatch arg. Verbatim. Do not
-      re-introduce `_ZSK_REPO_ROOT`.
+      bare `"$PROJECT_ROOT"` as the dispatch arg. **Do not redeclare
+      `_ZSK_REPO_ROOT`** inside the inserted callout block —
+      port.sh L28+L43 already creates and unsets that name inside
+      the upstream runtime config-read block, and re-using it would
+      shadow / leak across a load-bearing scope boundary.
 - [ ] 4.2 — **Stub source** at
       `skills/update-zskills/stubs/dev-port.sh`. Content:
       ```bash
@@ -766,7 +869,10 @@ Consumer can override the worktree port-derivation algorithm
          → built-in, stderr matches `present but not executable`.
       Plus a sixth (sanity): `DEV_PORT` env var still wins when
       stub is also present (env-var check is *before* the stub).
-- [ ] 4.6 — **Mirror** `update-zskills`.
+- [ ] 4.6 — **Mirror** `update-zskills`:
+      ```bash
+      bash scripts/mirror-skill.sh update-zskills
+      ```
 
 ### Design & Constraints
 
@@ -790,7 +896,8 @@ the project-context the consumer needs to make a decision.
 **No `eval`-style stdout handling.** `BASH_REMATCH` for numeric
 validation; per `feedback_no_jq_in_skills.md`.
 
-**Mirror discipline.** WI 4.6 covers `update-zskills`.
+**Mirror discipline.** WI 4.6 covers `update-zskills` via
+`mirror-skill.sh` (hook-compatible per-file rm).
 
 ### Acceptance Criteria
 
@@ -841,7 +948,9 @@ Three transformations — one new failing stub, two conversions from
       echo "start-dev.sh: not configured. Edit scripts/start-dev.sh with your dev-start command (and write child PIDs to var/dev.pid)." >&2
       exit 1
       ```
-- [ ] 5.2 — **`/update-zskills` Step D bullet:**
+- [ ] 5.2 — **`/update-zskills` Step D bullet:** add after the
+      existing `stop-dev.sh` (901-903) and `test-all.sh` (904-906)
+      bullets:
       > - Copy `start-dev.sh` if missing — sanctioned way to start a
       >   dev server. Initial install is a failing stub the user
       >   replaces with their start command (and a write to
@@ -859,8 +968,10 @@ Three transformations — one new failing stub, two conversions from
       tested → it's runnable infrastructure, not docs) without
       clear ownership. The `references/stub-callouts.md` doc
       describes the contract; consumers fill the body.
-- [ ] 5.4 — **Replace `scripts/stop-dev.sh`** content with a failing
-      stub paralleling start-dev:
+- [ ] 5.4 — **Replace `scripts/stop-dev.sh`** content (in place;
+      `stop-dev.sh` stays at top-level `scripts/` per Phase 2
+      Design canonical-source rule and SKILL.md:960's STALE_LIST
+      exclusion) with a failing stub paralleling start-dev:
       ```bash
       #!/bin/bash
       # stop-dev.sh -- Sanctioned way to stop your dev server.
@@ -885,9 +996,12 @@ Three transformations — one new failing stub, two conversions from
       exists semantics in `/update-zskills` ensure consumers who
       already have a customized `stop-dev.sh` are not overwritten.
 - [ ] 5.5 — **Update `/update-zskills` Step D bullet** for
-      `stop-dev.sh` (currently `skills/update-zskills/SKILL.md:906-908`):
-      old text "the sanctioned way for agents to stop a dev server
-      (SIGTERM to PIDs in `var/dev.pid`)…"; new text:
+      `stop-dev.sh` (currently `skills/update-zskills/SKILL.md:901-903`).
+      The current bullet reads:
+      > - Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
+      >   a dev server (SIGTERM to PIDs in `var/dev.pid`). Keeps the generic
+      >   hook's kill blocks intact while giving the agent a legitimate path.
+      Replace with:
       > - Copy `stop-dev.sh` if missing — sanctioned way to stop a
       >   dev server. Initial install is a failing stub the user
       >   replaces (contract: read PIDs from `var/dev.pid`, SIGTERM
@@ -901,13 +1015,32 @@ Three transformations — one new failing stub, two conversions from
       acknowledging the configure-first step is a regression.
       Replace both occurrences with:
       > `Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly.`
-      Also update the related comment at line 156 / 174 prose if
-      it pre-states the same recommendation. Mirror to
-      `.claude/hooks/block-unsafe-generic.sh`.
-- [ ] 5.7 — **Update `CLAUDE_TEMPLATE.md`** lines 7–23 (verified by
-      research). Add a "to start" paragraph paralleling "to stop";
-      reframe the prose to acknowledge the stub model. Verbatim
-      before block (CLAUDE_TEMPLATE.md:7-15):
+      Mirror to `.claude/hooks/block-unsafe-generic.sh`.
+- [ ] 5.7 — **Update `CLAUDE_TEMPLATE.md`** Dev Server section
+      (`## Dev Server` heading at L18; section spans L18-28
+      verified by Read of the current template).
+
+      **Pre-edit verification gates (F5 fix — split per token):**
+      ```bash
+      # PORT_SCRIPT must be absent everywhere (gone since prereq).
+      grep -F '{{PORT_SCRIPT}}' skills/update-zskills/scripts/apply-preset.sh \
+                                skills/update-zskills/SKILL.md \
+                                CLAUDE_TEMPLATE.md
+      # Expected: zero matches. If ≥ 1 match, abort and surface as
+      # a prerequisite-plan miss.
+
+      # DEV_SERVER_CMD must be absent from apply-preset.sh ONLY.
+      # SKILL.md:323 has a documentation row (placeholder-mapping
+      # table) that is intentional and MUST NOT trigger abort.
+      grep -F '{{DEV_SERVER_CMD}}' skills/update-zskills/scripts/apply-preset.sh
+      # Expected: zero matches. ≥ 1 match → prereq miss → abort.
+      ```
+      Both gates already pass on the current tree (regression
+      guards). If a gate fires, surface as a prerequisite-plan
+      miss per `feedback_dont_defer_hole_closure.md` — do NOT
+      patch CLAUDE_TEMPLATE.md to absorb leftover placeholders.
+
+      **Verbatim before-block (CLAUDE_TEMPLATE.md:18-28):**
       ```markdown
       ## Dev Server
 
@@ -915,35 +1048,40 @@ Three transformations — one new failing stub, two conversions from
       {{DEV_SERVER_CMD}}
       ```
 
-      The port is determined automatically by `{{PORT_SCRIPT}}`: ...
+      The port is determined automatically — run `bash .claude/skills/update-zskills/scripts/port.sh` to see it. **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Override with `DEV_PORT=NNNN` env var if needed.
 
       **To stop this worktree's dev server, run `bash scripts/stop-dev.sh`.** It sends SIGTERM to the PIDs recorded in `var/dev.pid`. Contract: your `{{DEV_SERVER_CMD}}` must write each spawned child PID (one per line) to `var/dev.pid` on start, and should clear it on clean shutdown. `var/` is gitignored.
+
+      **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. Do not reach for `lsof -ti :<port> | xargs kill` either — it's the same anti-pattern under a different spelling. If a port is busy from another session's process, check with `lsof -i :<port>` and ask the user to stop it manually.
       ```
-      After block (replace with):
+
+      **After-block (replace L18-28 with):**
       ```markdown
       ## Dev Server
 
-      Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes; see the in-file comments for the contract. The pairing is: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `var/dev.pid`; `stop-dev.sh` reads `var/dev.pid` and SIGTERMs each. `var/` is gitignored.
+      Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `var/dev.pid`; `stop-dev.sh` reads `var/dev.pid` and SIGTERMs each. `var/` is gitignored.
 
-      The port is determined automatically (8080 for the main repo; a deterministic per-worktree port otherwise). Run `bash .claude/skills/update-zskills/scripts/port.sh` to see your port. Override with `DEV_PORT=NNNN` env var, or with a `scripts/dev-port.sh` stub for project-wide custom logic (see `.claude/skills/update-zskills/references/stub-callouts.md`).
+      The port is determined automatically (8080 for the main repo `{{MAIN_REPO_PATH}}`; a deterministic per-worktree port otherwise). Run `bash .claude/skills/update-zskills/scripts/port.sh` to see your port. Override with `DEV_PORT=NNNN` env var, or with a `scripts/dev-port.sh` stub for project-wide custom logic (see `.claude/skills/update-zskills/references/stub-callouts.md`).
+
+      **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. Do not reach for `lsof -ti :<port> | xargs kill` either — it's the same anti-pattern under a different spelling. If a port is busy from another session's process, check with `lsof -i :<port>` and ask the user to stop it manually.
       ```
-      Drop the `{{DEV_SERVER_CMD}}` codeblock at lines 9–11 (now
-      consumed by start-dev.sh) and the `{{PORT_SCRIPT}}` placeholder.
-      Pre-edit verification: run
-      `grep -EF '{{PORT_SCRIPT}}|{{DEV_SERVER_CMD}}' skills/update-zskills/scripts/apply-preset.sh skills/update-zskills/SKILL.md`.
-      Expected post-prerequisite: zero matches in apply-preset.sh's
-      replacement list. **If the grep returns ≥ 1 match, abort
-      this WI and surface as a prerequisite-plan miss** per
-      `feedback_dont_defer_hole_closure.md` — do NOT patch
-      CLAUDE_TEMPLATE.md to absorb leftover placeholders.
+
+      The after-block preserves: (a) `{{MAIN_REPO_PATH}}` placeholder
+      for apply-preset.sh substitution, (b) `{{DEV_SERVER_CMD}}`
+      placeholder (now inlined in the start-dev.sh prose), and
+      (c) the L28 kill-9 paragraph verbatim. Do NOT touch the
+      worktree-rules `.landed` heredoc section at L96-114 (it
+      contains `{{TIMEZONE}}` at L107 — DA4 regression guard).
 
 (c) **CONVERT `test-all.sh` to failing stub.**
 
 - [ ] 5.8 — **Drop the current implementation.** Same rationale as
       5.3 — git history preserves the prior body; no
       `references/test-all-reference.sh` shipped.
-- [ ] 5.9 — **Replace `scripts/test-all.sh`** content with a failing
-      stub:
+- [ ] 5.9 — **Replace `scripts/test-all.sh`** content (in place;
+      stays at top-level `scripts/` per Phase 2 Design canonical-
+      source rule and SKILL.md:960 STALE_LIST exclusion) with a
+      failing stub:
       ```bash
       #!/bin/bash
       # test-all.sh -- Run all test suites (unit + e2e + build).
@@ -963,34 +1101,60 @@ Three transformations — one new failing stub, two conversions from
       echo "test-all.sh: not configured. Edit scripts/test-all.sh with your test runner. See .claude/skills/update-zskills/references/stub-callouts.md." >&2
       exit 1
       ```
-- [ ] 5.10 — **Add `/update-zskills` Step D bullet** for
-      `test-all.sh`. Verified: Step D today (SKILL.md:895–910)
-      lists `clear-tracking.sh`, `apply-preset.sh`,
-      `stop-dev.sh` — and **no** `test-all.sh` bullet. The
-      prerequisite plan's text on this is also conditional and
-      unpinned, so this WI is unconditional regardless of the
-      prereq's pre-state. Add after the existing bullets:
+- [ ] 5.10 — **Update `/update-zskills` Step D bullet for
+      `test-all.sh`.** The current bullet at SKILL.md:904-906 reads:
+      > - Copy `test-all.sh` if missing — consumer-customizable test runner
+      >   template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
+      >   the consumer with their own test commands.
+      Replace with:
       > - Copy `test-all.sh` if missing — invoked by `/run-plan`,
       >   `/verify-changes`, etc. when `testing.full_cmd` is
       >   `bash scripts/test-all.sh`. Initial install is a failing
       >   stub the user replaces.
+      (This is a REPLACE of the existing bullet, not an unconditional
+      ADD — the prereq plan landed a `test-all.sh` bullet at
+      904-906 that the original draft of WI 5.10 missed.)
 - [ ] 5.11 — **Skill-side test-all.sh callsite check + preset
-      check.** Two greps:
+      check (regression guards).** Two greps:
       (a) `grep -rn 'scripts/test-all\|test-all.sh' skills/` — all
       hits should be NEVER admonitions / commentary, not defaults.
       (b) `grep -F 'scripts/test-all.sh' skills/update-zskills/scripts/apply-preset.sh`
-      — must be **zero**. If `apply-preset.sh` injects
-      `bash scripts/test-all.sh` as a default `testing.full_cmd`,
-      fresh-install consumers hit the failing stub on their first
-      `/run-plan` (silently broken UX).
-      If either grep finds a default, that's a prerequisite-plan
-      miss — flag, surface, do not patch here per
-      `feedback_dont_defer_hole_closure.md`.
-- [ ] 5.12 — **Update tests.** `tests/test-stop-dev.sh` currently
-      tests the working `stop-dev.sh`. Replace with a single-case
-      test that confirms `bash scripts/stop-dev.sh` exits 1 and
-      stderr matches `not configured`. Same for any
-      `tests/test-test-all.sh` if present.
+      — must be **zero**. **Already passes as of refine-round-1**
+      (apply-preset.sh has zero hits for this string today). This
+      is a **regression guard**, not a discovery check: if a future
+      apply-preset.sh edit re-introduces `bash scripts/test-all.sh`
+      as a default `testing.full_cmd`, fresh-install consumers
+      would hit the failing stub on their first `/run-plan`
+      (silently broken UX). Halt and surface as a prerequisite-plan
+      miss per `feedback_dont_defer_hole_closure.md`; do not patch
+      here.
+- [ ] 5.12 — **Update tests for stop-dev.sh and test-all.sh
+      conversions.** Today `tests/test-stop-dev.sh` runs 7 verified
+      behavioral tests against the working `scripts/stop-dev.sh`
+      (no-PID, live-PID, dead-PID, SIGTERM-ignoring, blank/non-
+      numeric, empty-PID-file, multi-PID — all 7 currently pass).
+      After WI 5.4 lands, `scripts/stop-dev.sh` becomes a failing
+      stub the consumer customizes; the 7 behavioral tests no
+      longer apply to anyone's runtime (consumers who fill in
+      their own stop logic do so in their own repos, where zskills
+      doesn't run their tests). Per
+      `feedback_no_premature_backcompat.md` (zskills doesn't test
+      consumer code) and DA7's analysis:
+
+      Action:
+      - **Delete `tests/test-stop-dev.sh`** entirely.
+      - **Remove its line from `tests/run-all.sh`** (the test
+        invocation entry).
+      - The 7 behavioral tests remain in git history if any
+        consumer wants to copy them as a starting point for their
+        own customized stop-dev.sh tests.
+      - If `tests/test-test-all.sh` exists, delete it under the
+        same rationale.
+
+      No replacement single-case stub-fail test ships — the stub is
+      trivial (3 lines of body), git history records its content,
+      and `grep -F 'not configured' scripts/stop-dev.sh` (an AC
+      below) verifies the conversion happened.
 - [ ] 5.13 — **Sweep `README.md`** for `test-all.sh` / `stop-dev.sh`
       references (research line 458 found
       `scripts/test-all.sh — meta test runner (unit + E2E + build
@@ -998,7 +1162,9 @@ Three transformations — one new failing stub, two conversions from
       > - `test-all.sh` — failing-stub by default; consumer fills
       >   with their test orchestrator.
 - [ ] 5.14 — **Mirror** all touched skills:
-      `update-zskills` (Step D, references, stubs).
+      ```bash
+      bash scripts/mirror-skill.sh update-zskills
+      ```
 
 ### Design & Constraints
 
@@ -1027,18 +1193,39 @@ install. After first install, the stub IS the consumer's file.
 recommends `bash scripts/stop-dev.sh` as the sanctioned kill path.
 Post-conversion, that command exits 1 with `not configured`. WI
 5.6 updates the help-text to flag the stub model
-(`consumer-customizable stub; configure first per ...`) so a user
-hitting the hook block in an unconfigured project sees the
+(`failing stub by default — edit it with your stop logic`) so a
+user hitting the hook block in an unconfigured project sees the
 configure step in the same message. The `kill PID` direct fallback
 is preserved. This follows
 `feedback_hook_skill_interaction.md`: when skills change, hook
 static text must change too — don't relax the hook, fix the text.
 
-**No new test for the stop-dev / test-all failing stubs** beyond a
-single-line "exits 1, message matches". The stubs are trivial.
+**Phrasing standardized on "failing stub by default" (F10).** The
+WI 5.6 verbatim text, the README sweep target prose (5.13), and
+the AC below all use the same string. Earlier draft language
+("consumer-customizable stub") has been replaced for consistency
+with the AC `grep -F 'failing stub by default' ...`.
 
-**Mirror discipline.** WI 5.14 covers all skill edits in this
-phase.
+**Test-deletion rationale (F11/DA7).** zskills doesn't test
+consumer code; once `scripts/stop-dev.sh` becomes a failing stub
+the consumer customizes, the 7 behavioral tests in
+`tests/test-stop-dev.sh` are testing nothing zskills-relevant
+(they currently test the about-to-be-replaced working
+implementation). Delete the file rather than degrade it to a
+single trivial assertion. Same for any pre-existing
+`tests/test-test-all.sh`.
+
+**`{{TIMEZONE}}` and worktree-rules section preserved (DA4).** WI
+5.7 edits ONLY the `## Dev Server` section at L18-28. The
+worktree-rules `.landed` heredoc section at L96-114 (which
+contains `{{TIMEZONE}}` at L107) MUST NOT be touched by this WI.
+Phase 6.2 verifies `grep -F '{{TIMEZONE}}' CLAUDE_TEMPLATE.md`
+returns exactly 1 match as a regression guard.
+
+**Mirror discipline.** WI 5.14 mirrors `update-zskills` via
+`mirror-skill.sh` (hook-compatible). WI 5.6 also mirrors
+`hooks/block-unsafe-generic.sh` (per-file `cp`, not affected by
+the recursive-rm hook).
 
 ### Acceptance Criteria
 
@@ -1057,12 +1244,20 @@ phase.
 - [ ] `grep -F 'start-dev.sh' CLAUDE_TEMPLATE.md` matches.
 - [ ] `grep -F 'failing-stub by default' README.md` matches (or
       equivalent prose anchor — implementer to choose).
-- [ ] `bash tests/test-stop-dev.sh` exits 0 (now testing reference
-      impl + stub-fail case).
+- [ ] `! test -e tests/test-stop-dev.sh` (file deleted per WI 5.12).
+- [ ] `! grep -F 'test-stop-dev.sh' tests/run-all.sh` (entry
+      removed per WI 5.12).
 - [ ] `grep -F 'failing stub by default' hooks/block-unsafe-generic.sh`
       ≥ 2 (one for each updated block-reason; lines 159 and 177).
 - [ ] `diff hooks/block-unsafe-generic.sh .claude/hooks/block-unsafe-generic.sh`
       empty (mirror).
+- [ ] **Pre-edit gate `{{PORT_SCRIPT}}` zero-hits across
+      apply-preset.sh + SKILL.md + CLAUDE_TEMPLATE.md** (regression
+      guard — already passes as of refine-round-1).
+- [ ] **Pre-edit gate `{{DEV_SERVER_CMD}}` zero-hits in
+      apply-preset.sh** (regression guard — already passes; SKILL.md
+      placeholder-mapping row at L323 is intentional and excluded
+      from this gate per F5).
 - [ ] `bash tests/run-all.sh` exits 0.
 - [ ] `diff -r skills/update-zskills .claude/skills/update-zskills`
       empty.
@@ -1086,59 +1281,91 @@ question explicitly.
       stub-by-default model. Phase 5.13 covered the line-458 hit;
       this WI is the broader sweep for any other mention.
 - [ ] 6.2 — **CLAUDE_TEMPLATE.md verification.** Re-read lines
-      1–40 and confirm the Phase 5.7 edits are coherent. Specifically:
+      18-28 (post-WI-5.7 Dev Server section) and confirm:
       no orphan `{{PORT_SCRIPT}}` reference, no orphan
-      `{{DEV_SERVER_CMD}}` codeblock, "to start" / "to stop" pair
-      reads naturally, port-section references stub-callout convention.
+      `{{DEV_SERVER_CMD}}` codeblock outside its placeholder-bound
+      use, "to start" / "to stop" pair reads naturally,
+      port-section references stub-callout convention.
+      Additionally verify the `{{TIMEZONE}}` placeholder at L107
+      (in the worktree-rules `.landed` heredoc) is preserved — DA4
+      regression guard.
 - [ ] 6.3 — **`briefing-extra.sh` decision: DEFERRED.**
       **Rationale:** there is no current consumer demand for a
       briefing-extension seam. The convention is now formalized in
       `references/stub-callouts.md`, the dispatch helper is shipped
       and tested, and adding a future `briefing-extra.sh` callout
-      is mechanical (insertion at end of `briefing.cjs`'s output
-      assembly, one stub file, one test, one Step-D bullet — likely
-      a single PR). Per `feedback_dont_defer_hole_closure.md`: this
-      is NOT a deferred hole — there is no current bug or missing
-      contract. It is a **deferred extension point** with a clear
-      pattern to follow when a real need surfaces.
+      is mechanical — though note `briefing` is currently
+      DUAL-RUNTIME: insertion at the end of the output assembly in
+      BOTH `briefing.cjs` AND `briefing.py` (cjs preferred / py3
+      fallback per `skills/briefing/SKILL.md:18-28`), plus one
+      stub file, one test, one Step-D bullet. Likely a single PR
+      if the dual-runtime status holds; if `briefing.py` has been
+      retired by then, single-runtime suffices. Per
+      `feedback_dont_defer_hole_closure.md`: this is NOT a
+      deferred hole — there is no current bug or missing contract.
+      It is a **deferred extension point** with a clear pattern
+      to follow when a real need surfaces.
 
       Document this decision in `references/stub-callouts.md`
       under a "Future callouts" subsection as a single line so the
       next agent doesn't re-litigate the deferral itself:
       > - `briefing-extra.sh` — declined for now; revisit when
-      >   first consumer demand surfaces.
-- [ ] 6.4 — **`/update-zskills` step-D preview.** The Step D
-      preview to the user (lines 880–882 reference the rename-list
-      shown in Step C step 6) needs to include the four new stubs
-      in its install report. Verify:
-      `grep -A20 'Installed N scripts' skills/update-zskills/SKILL.md` —
-      the report-line list is dynamic (`[list]`); no edit needed
+      >   first consumer demand surfaces. Note: `briefing` is
+      >   dual-runtime (cjs + py3); a future callout would need to
+      >   be wired in both unless the .py runtime has been retired.
+- [ ] 6.4 — **`/update-zskills` Step D install report.** The Step
+      D install report at `skills/update-zskills/SKILL.md:912`
+      reads `Report: "Installed N scripts: [list]"`. The `[list]`
+      placeholder is dynamic in the existing implementation (Step D
+      iterates over copied filenames). Verify:
+      `grep -A20 'Installed N scripts' skills/update-zskills/SKILL.md`
+      — confirm the report-line list is dynamic; no edit needed
       if the existing format auto-includes the new bullets. If
-      it's hardcoded, extend.
+      it's hardcoded, extend to include the four new stubs
+      (`post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`,
+      plus any other `stubs/` additions). Step D.5 (stale-Tier-1
+      migration, SKILL.md:914+) is a separate report and is **not**
+      affected by the new stubs (they are not in STALE_LIST).
 - [ ] 6.5 — **Mirror** any touched skills (likely just
-      `update-zskills` for the references update).
+      `update-zskills` for the references update):
+      ```bash
+      bash scripts/mirror-skill.sh update-zskills
+      ```
 
 ### Design & Constraints
 
 **`briefing-extra.sh` deferral is principled, not lazy.** Phase 6.3
 is explicit: there is no consumer demand, the seam is mechanical to
-add later, the convention is now documented. This is the
-distinction `feedback_dont_defer_hole_closure.md` draws between
-"hole closure" (close it now) and "extension point" (add when
-needed). Holes need closing because they're broken contracts;
-extension points are speculation.
+add later (in either single- or dual-runtime form), the convention
+is now documented. This is the distinction
+`feedback_dont_defer_hole_closure.md` draws between "hole closure"
+(close it now) and "extension point" (add when needed). Holes need
+closing because they're broken contracts; extension points are
+speculation.
+
+**Step D install report (F7/DA14).** WI 6.4's anchor is line 912
+(the dynamic-`[list]` install report inside Step D). This is
+distinct from Step C.9's rename-list reference at L880-882 (which
+is about the rename-table preview displayed in Step C step 6, a
+different feature entirely). Earlier drafts of this WI conflated
+the two; the current text is anchored to L912.
 
 **No hook edits.** Phase 5.6 already concluded `block-unsafe-generic.sh`
-help-text remains correct.
+help-text edits.
 
 ### Acceptance Criteria
 
 - [ ] `grep -nE 'scripts/(test-all|stop-dev|start-dev)' README.md`
       — every match is in stub-aware prose.
 - [ ] `grep -F '{{PORT_SCRIPT}}' CLAUDE_TEMPLATE.md` returns no
-      matches.
+      matches (regression guard — already passes as of
+      refine-round-1; `{{PORT_SCRIPT}}` was removed by the
+      prerequisite plan).
+- [ ] `[ "$(grep -c -F '{{TIMEZONE}}' CLAUDE_TEMPLATE.md)" -eq 1 ]`
+      (DA4 regression guard against accidental duplication or
+      removal during WI 5.7's Dev Server edit).
 - [ ] `grep -F 'briefing-extra' skills/update-zskills/references/stub-callouts.md`
-      matches (decision recorded).
+      matches (decision recorded, including the dual-runtime note).
 - [ ] **Every shipped stub references the canonical doc:**
       `for f in skills/update-zskills/stubs/*.sh; do grep -qF 'references/stub-callouts.md' "$f" || { echo "stub $f missing reference"; exit 1; }; done`
       — pins doc-string consistency between the stub headers and
@@ -1154,7 +1381,9 @@ Phases 1–5.
 
 ### Goal
 
-CHANGELOG entry, plan-index update, frontmatter flip.
+CHANGELOG entry, plan-index update, frontmatter flip; pin the
+stub-body versioning policy that prevents Step D.5 false-positives
+on future stub revisions (DA6).
 
 ### Work Items
 
@@ -1174,6 +1403,35 @@ CHANGELOG entry, plan-index update, frontmatter flip.
       categories exist).
 - [ ] 7.3 — **Frontmatter flip:** `status: complete` and add
       `completed: <date>` line.
+- [ ] 7.4 — **Pin the stub-body versioning policy (DA6).** Add a
+      paragraph to `skills/update-zskills/references/script-ownership.md`
+      under a new "Failing-stub body revisions" subsection:
+      > Failing-stub bodies (`post-create-worktree.sh`,
+      > `dev-port.sh`, `start-dev.sh`, `stop-dev.sh`,
+      > `test-all.sh`) are version-shipped artifacts. Future PRs
+      > that change a failing-stub body MUST add the OLD body's
+      > hash to
+      > `skills/update-zskills/references/tier1-shipped-hashes.txt`
+      > so consumers running the prior version are not flagged as
+      > user-modified by Step D.5 (consumers' `scripts/stop-dev.sh`
+      > / `scripts/test-all.sh` would otherwise mismatch the new
+      > shipped hash and emit "WARNING: user-modified" prompts at
+      > every `/update-zskills` run, even though the file is
+      > pristine).
+
+      This applies to the existing `scripts/stop-dev.sh` and
+      `scripts/test-all.sh` only after Phase 5 lands their failing-
+      stub bodies; the three stubs in `stubs/` are net-new in this
+      plan and have no prior shipped body to grandfather.
+
+      If `tier1-shipped-hashes.txt` does not yet exist (it's a
+      Step D.5 mechanism from prereq Phase 4), and the existing
+      Step D.5 logic does not currently hash-check `stop-dev.sh`/
+      `test-all.sh` (verified at SKILL.md:960-962 — they are
+      explicitly excluded from STALE_LIST), the policy is
+      forward-looking: the doc captures the requirement so that if
+      Step D.5 is ever extended to cover failing-stub bodies, the
+      OLD-hash discipline is in place.
 
 ### Acceptance Criteria
 
@@ -1183,59 +1441,166 @@ CHANGELOG entry, plan-index update, frontmatter flip.
       `status: complete` and `completed:` lines.
 - [ ] `grep -q 'CONSUMER_STUB_CALLOUTS' plans/PLAN_INDEX.md`
       succeeds OR file absent.
+- [ ] `grep -F 'Failing-stub body revisions' skills/update-zskills/references/script-ownership.md`
+      matches (WI 7.4 stub-body versioning policy recorded).
 - [ ] `bash tests/run-all.sh` exits 0.
 
 ### Dependencies
 
 Phases 1–6.
 
-## Plan Quality
+## Drift Log
 
-**Drafting process:** /draft-plan with adversarial review
-**Convergence:** converged in round 2 (all 6 round-2 polish items addressed inline)
-**Remaining concerns:** None blocking. Phase 5 has 14 WIs across 3 transformations; reviewer suggested splitting 5a/5b but the conversion is a coherent unit and the dropped reference-impls reduce per-WI burden.
+Structural comparison of the plan as originally drafted (committed
+2026-04-25, single commit `4aa8864`) vs current state after
+`/refine-plan` round 1 (post-prerequisite-landing).
 
-**Mode-agnosticism (clarification of DA14).** The "Landing mode: PR" hint at the top of this plan controls only how `/run-plan` lands these commits — it does not propagate to runtime behavior. The skill this plan delivers (dispatch helper, new stubs, failing-stub conversions, hook help-text) operates identically under any landing mode at consumer runtime. The Phase 1 staleness gate is also mode-agnostic: every anchor is filesystem state (file moves, frontmatter `status: complete`, CHANGELOG entry written by prerequisite Phase 6 WI 6.1, `tests/run-all.sh` `CLAUDE_PROJECT_DIR` export) — none are mode-specific. The prerequisite plan (`SCRIPTS_INTO_SKILLS_PLAN`) writes its CHANGELOG entry as an explicit Phase 6 work item, so that anchor fires regardless of which mode lands the prerequisite.
+The plan has only one prior commit; per `/refine-plan` convention,
+the drift log records changes from the plan-as-originally-written to
+the post-refine state, plus the **external** codebase drift that
+forced this refine pass (the prerequisite plan
+`SCRIPTS_INTO_SKILLS_PLAN.md` landed via PRs #94–#100 and PR #88
+introduced `scripts/mirror-skill.sh` after this plan was drafted).
+
+### Internal drift — refinements applied to remaining phases
+
+| Phase | Planned | Actual after refine | Delta |
+|-------|---------|---------------------|-------|
+| 1 — Staleness gate | 4 WIs (frontmatter check, multi-anchor fs check, CHANGELOG check, halt) | 4 WIs (unchanged) + Design note added: "Post-prereq-landing reality: anchors all pass against current main; Phase 1 functions as regression guard, not discovery check" | F13 fix; WI 1.3 grep alternation tightened (DA16) — middle alternation now requires `Tier` keyword |
+| 2 — Stub-callout convention + dispatch helper | 5 WIs | 5 WIs + 8th test case (literal `--` argument forwarding, DA10) + canonical-source rule for `stubs/` vs `scripts/` (DA5) + first-run-marker read-only-fs handling (DA9) | F6/DA12 anchor renamed (`fake-consumer-project` → FIX_NN-style); DA15 AC split per-file; lib body marker-write tightened |
+| 3 — `post-create-worktree.sh` callout | 5 WIs | 5 WIs (unchanged) | F16 line citations updated (320–341 → 336–355; 326 → 340); F3/DA1 mirror snippet at WI 3.5 → `bash scripts/mirror-skill.sh create-worktree && bash scripts/mirror-skill.sh update-zskills` |
+| 4 — `dev-port.sh` callout | 6 WIs | 6 WIs (unchanged) | F1/F2/DA2 verbatim before-block re-anchored to `skills/update-zskills/scripts/port.sh:45-55`; upstream-context marker added for L24-43 runtime config-read; insertion point pinned at L50; Design note line numbers updated 27→43, 12→18; `_ZSK_REPO_ROOT` reframed to "do not redeclare in inserted block"; WI 4.6 mirror via mirror-skill.sh |
+| 5 — `start-dev.sh` (new) + stop-dev.sh / test-all.sh conversions | 14 WIs | 14 WIs | F4/DA3 WI 5.7 verbatim before-block re-anchored to `CLAUDE_TEMPLATE.md:18-28`; `{{PORT_SCRIPT}}` reference dropped (placeholder gone); `{{MAIN_REPO_PATH}}` and L28 kill-9 paragraph preserved; F5 pre-edit gate split per token (PORT_SCRIPT all 3 files / DEV_SERVER_CMD apply-preset.sh only — SKILL.md:323 doc row excluded from abort); F8 stop-dev.sh bullet citation 906–908 → 901–903; F9 WI 5.10 rewritten as REPLACE of existing test-all.sh bullet at SKILL.md:904-906; F11/DA7 WI 5.12 + AC L1060 reconciled (delete tests/test-stop-dev.sh entirely; remove from run-all.sh); F10 phrasing standardized on "failing stub by default"; F3/DA1 mirror snippet at WI 5.14 → `bash scripts/mirror-skill.sh update-zskills` |
+| 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + briefing-extra.sh | 5 WIs | 5 WIs | F7/DA14 WI 6.4 re-anchored to SKILL.md:912 install report (Step C.9 conflation removed); F12/DA11 WI 6.3 deferral acknowledges briefing dual-runtime (cjs+py3); DA4 `{{TIMEZONE}}` regression-guard AC added (`grep -c -F '{{TIMEZONE}}' CLAUDE_TEMPLATE.md = 1`); F14 WI 5.11(b) reframed as regression guard |
+| 7 — Close-out | 3 WIs | 4 WIs (added 7.4) | DA6 new WI 7.4 documents failing-stub-body versioning policy in `references/script-ownership.md` (prevents Step D.5 false-positives on future stub revisions) |
+
+### External drift — codebase changes that forced this refine pass
+
+| Source | What changed | Where it bit the plan |
+|--------|--------------|------------------------|
+| PR #88 — `scripts/mirror-skill.sh` (hook-compatible mirror helper) | New helper script using per-file `rm` + `find -print0` to avoid `block-unsafe-generic.sh:217-222` (`RM_RECURSIVE` regex). Prereq plan `SCRIPTS_INTO_SKILLS_PLAN.md` adopted this as the canonical mirror recipe across 10+ call-sites. | This plan's WI 2.5, 3.5, 5.14 shipped inline `rm -rf .claude/skills/<name> && cp -a ...` snippets — hard-blocked by the local hook. Refine replaced all three with `bash scripts/mirror-skill.sh <name>`. |
+| PRs #94–#100 — `SCRIPTS_INTO_SKILLS_PLAN.md` landing (Tier-1 scripts moved into owning skills) | `scripts/port.sh` → `skills/update-zskills/scripts/port.sh`, rewritten with new runtime config-read block (BASH_REMATCH against `.claude/zskills-config.json`); now 61 lines. `PROJECT_ROOT` from `git rev-parse --show-toplevel` at L18; runtime config-read at L24-43; DEV_PORT block at L45-49; main-repo block at L51-55. `_ZSK_REPO_ROOT` briefly reintroduced at L28 and unset at L43. | WI 4.1's "verbatim before block (`scripts/port.sh:33-43`)" + WI 4.1 Design line citations (`port.sh:27`, `line 12`) all stale. Refine re-anchored to L45-55 with explicit upstream-context marker for L24-43 (do-not-modify). |
+| PRs #94–#100 — `CLAUDE_TEMPLATE.md` updates | `{{PORT_SCRIPT}}` placeholder removed entirely; `## Dev Server` heading now at L18 (was L7 region in plan); new `lsof -ti :<port> | xargs kill` paragraph at L28; new `{{TIMEZONE}}` placeholder at L107 (worktree-rules `.landed` heredoc example). | WI 5.7's "verbatim before block (`CLAUDE_TEMPLATE.md:7-15`)" cited the wrong section (L7-15 is Subagent Dispatch); the `{{PORT_SCRIPT}}` quote was already stale (placeholder gone). Refine re-anchored to L18-28, dropped `{{PORT_SCRIPT}}` reference, preserved the new kill-9 paragraph and `{{MAIN_REPO_PATH}}`. Added DA4 regression guard for `{{TIMEZONE}}`. |
+| PRs #94–#100 — `update-zskills/SKILL.md` Step D / D.5 reshape | Step D heading at L895; bullets for `stop-dev.sh` (L901-903) AND `test-all.sh` (L904-906); install report `Installed N scripts: [list]` at L912; new Step D.5 (stale-Tier-1 migration) heading at L914; STALE_LIST at L931-947; exclusion comment for `stop-dev.sh`/`test-all.sh`/`build-prod.sh`/`mirror-skill.sh` at L960-962. | Plan's WI 5.5 cite (`906-908`) was off (actual 901-903 — F8). WI 5.10 falsely claimed Step D had "no test-all.sh entry" — bullet IS present at 904-906; refine rewrote as REPLACE not unconditional ADD (F9). WI 6.4 anchored to L880-882 (Step C.9 rename-list territory) instead of L912 install report; refine re-anchored (F7/DA14). DA6 surfaced the failing-stub-body-versioning concern with Step D.5; refine added new WI 7.4. |
+| External — `skills/briefing/scripts/` is now dual-runtime | `briefing.cjs` (1929 lines) AND `briefing.py` (1710 lines); `skills/briefing/SKILL.md:18-28` prefers cjs / falls back to py3. | WI 6.3's deferred-`briefing-extra.sh` rationale referenced only `briefing.cjs`. Refine acknowledged dual-runtime in the deferral note (F12/DA11). |
+| External — `tests/test-create-worktree.sh` fixture pattern | The phrase "fake-consumer-project" never existed; the actual fixture pattern at L815-836 is FIX_NN-style temp-fixture (`FIX_22="/tmp/cw-c22-fixture-$$"` + `git init -b main` + `cp` skill scripts + `chmod +x`). | WI 2.3 / WI 3.4 cited the pattern by the misleading descriptor "fake-consumer-project". Refine reworded both to name the FIX_NN pattern explicitly (F6/DA12). |
+| External — `apply-preset.sh` content | Zero matches today for `PORT_SCRIPT`, `DEV_SERVER_CMD`, `TIMEZONE`, `test-all`, `stop-dev`, `start-dev`. | WI 5.7's pre-edit gate over-broadly matched `SKILL.md:323` (placeholder-mapping documentation row); refine split the gate per token. WI 5.11(b) gate already passes; refine reframed as a regression guard (F5/F14/DA8). |
+
+## Plan Review
+
+**Refinement process:** `/refine-plan` with 1 round of adversarial
+review (rounds budget = 2 per user invocation; converged in 1).
+
+**Convergence:** Converged at round 1 — orchestrator's judgment.
+
+The consolidated disposition table below (`### Round 3 finding
+dispositions`) records all 32 findings (16 reviewer F1–F16 + 16
+devil's-advocate DA1–DA16) with per-finding evidence and a
+`Verified, fixed` outcome on every entry. Zero `Justified — evidence
+did not reproduce` entries; zero `Justified — claim not verifiable`
+entries; zero deferrals. Per the
+convergence rule "0 substantive issues → converged → next phase",
+the orchestrator short-circuited round 2 (substantive remaining
+issues = 0). Independent spot-checks against current main confirmed
+the critical fixes:
+
+- `port.sh` line citations (L18 / L24-43 / L43 / L45-49 / L51-55)
+  match reality (`Read skills/update-zskills/scripts/port.sh`).
+- `CLAUDE_TEMPLATE.md:18-28` verbatim before-block matches reality
+  (Dev Server heading at L18, `{{DEV_SERVER_CMD}}` at L21+L26,
+  L28 kill-9 paragraph, `{{MAIN_REPO_PATH}}` at L24).
+- `bash scripts/mirror-skill.sh <name>` adopted at WI 2.5, 3.5, 4.6,
+  5.14, 6.5 (no remaining inline `rm -rf .claude/skills/<name>`
+  blocked snippets in the plan).
+- WI 5.7 pre-edit gate split per token; SKILL.md:323 documentation
+  row no longer trips abort.
+- WI 5.10 re-framed as REPLACE of existing test-all.sh bullet at
+  L904-906 (not unconditional ADD).
+- New WI 7.4 documents failing-stub-body versioning policy.
+
+**Remaining concerns:** None blocking. Two judgment-class items
+worth noting for the implementing agent:
+
+1. **WI 5.12 deletes the existing `tests/test-stop-dev.sh` (7
+   behavioral cases) entirely.** The rationale (zskills doesn't test
+   consumer code; once stop-dev.sh is a failing-stub the consumer
+   customizes, the 7 cases don't apply to anyone's runtime) is
+   sound, and the disposition rejects the alternative
+   "single-case test that the stub exits 1" as not adding signal
+   beyond the AC `grep -F 'not configured' scripts/stop-dev.sh`. The
+   7 cases remain in git history if a future consumer wants them as
+   a starting point. If a reviewer prefers retaining a single-case
+   test, that's a one-WI delta.
+2. **WI 7.4's failing-stub-body versioning policy is forward-
+   looking.** Step D.5 today excludes stop-dev.sh/test-all.sh from
+   STALE_LIST (per SKILL.md:960-962), so the "user-modified"
+   false-positive DA6 raised does not bite immediately. The policy
+   captures the requirement so a future Step D.5 extension that
+   covers failing-stub bodies will inherit the OLD-hash discipline.
+
+### Round 3 finding dispositions
+
+| ID | Severity | Disposition | Evidence | Fix summary |
+|----|----------|-------------|----------|-------------|
+| F1 | critical | Verified, fixed | Read port.sh fresh: PROJECT_ROOT L18, config block L24-43, unset L43, DEV_PORT L45-49, MAIN_REPO L51-55 (file is 61 newline-terminated lines plus a no-NL final line, total 62 logical lines) | WI 4.1 verbatim before-block re-anchored to `skills/update-zskills/scripts/port.sh:45-55`; added "[lines 24-43: runtime config-read for MAIN_REPO and DEFAULT_PORT — do not modify]" context marker; insertion point pinned at L50 |
+| F2 | major | Verified, fixed | port.sh:18 `PROJECT_ROOT=$(git rev-parse...)` (line 12 is comment); port.sh:43 `unset _ZSK_REPO_ROOT _ZSK_CFG`; `_ZSK_REPO_ROOT` is set inside config-read at L28 then unset at L43 | WI 4.1 Design line numbers updated 27→43, 12→18; reframed "Do not re-introduce" to "do not redeclare `_ZSK_REPO_ROOT` inside the inserted callout block — port.sh L28+L43 already creates and unsets it inside the upstream runtime config-read block" |
+| F3 | critical | Verified, fixed | hooks/block-unsafe-generic.sh:201 (is_safe_destruct requires literal `/tmp/`); :217 (RM_RECURSIVE regex); scripts/mirror-skill.sh exists (74 lines, hook-compatible per-file rm); 33 hits of `mirror-skill` in SCRIPTS_INTO_SKILLS_PLAN.md, 0 in CONSUMER_STUB_CALLOUTS_PLAN.md | WI 2.5, 3.5, 5.14 inline `rm -rf .claude/skills/<name>` snippets replaced with `bash scripts/mirror-skill.sh <name>`; per-phase Design note added: "Inline `rm -rf .claude/skills/<name>` is blocked by `block-unsafe-generic.sh:217-222`; `mirror-skill.sh` (PR #88) avoids the gate via per-file `rm` and `find -print0`." |
+| F4 | critical | Verified, fixed | CLAUDE_TEMPLATE.md is 188 lines; `## Dev Server` heading at L18; `{{DEV_SERVER_CMD}}` at L21 (codeblock) and L26 (prose); `{{PORT_SCRIPT}}` zero hits in any file; kill-9 paragraph at L28; `{{TIMEZONE}}` at L107; `{{MAIN_REPO_PATH}}` at L24 | WI 5.7 verbatim before-block re-anchored to L18-28; quoted current Dev Server prose verbatim including the kill-9 paragraph at L28; dropped `{{PORT_SCRIPT}}` reference; preserved `{{MAIN_REPO_PATH}}`; corrected the trailing "drop the codeblock at lines 9-11" prose |
+| F5 | critical | Verified, fixed | grep -nE on `{{PORT_SCRIPT}}\|{{DEV_SERVER_CMD}}` returns 1 hit at SKILL.md:323 (placeholder-mapping doc table row); apply-preset.sh and CLAUDE_TEMPLATE.md zero hits | WI 5.7 pre-edit gate split: `{{PORT_SCRIPT}}` checked across apply-preset.sh + SKILL.md + CLAUDE_TEMPLATE.md (zero hits required); `{{DEV_SERVER_CMD}}` checked only in apply-preset.sh (zero hits required); SKILL.md row at L323 is legitimate documentation, must not trigger abort |
+| F6 | major | Verified, fixed | `grep -i 'fake-consumer\|fake_consumer\|setup_fake' tests/test-create-worktree.sh` → 0 hits; FIX_22 fixture at L828-836 confirmed | WI 2.3 and WI 3.4 reworded to name the FIX_NN pattern explicitly (cite tests/test-create-worktree.sh:828-836 with the FIX_NN structure quoted) |
+| F7 | major | Verified, fixed | SKILL.md L880-882 is Step C.9 closing prose (rename-list); Step D heading L895; Step D body 897-906; install report L912; Step D.5 L914 | WI 6.4 re-anchored to SKILL.md:912 (`Report: "Installed N scripts: [list]"`); dropped the "lines 880-882 reference rename-list" sentence; clarified Step D.5 is a separate report unaffected by the new stubs |
+| F8 | minor | Verified, fixed | Step D `stop-dev.sh` bullet at SKILL.md:901-903 (not 906-908); test-all.sh bullet at 904-906 | WI 5.5 line citation updated 906-908 → 901-903 |
+| F9 | major | Verified, fixed | SKILL.md Step D today HAS both a stop-dev.sh bullet (901-903) AND a test-all.sh bullet (904-906); plan claim of "no test-all.sh entry" is wrong | WI 5.10 rewritten as REPLACE of the existing test-all.sh bullet at 904-906 with the failing-stub-aware bullet; "Verified" prose corrected (removed false `clear-tracking.sh`/`apply-preset.sh` bullet claim) |
+| F10 | minor | Verified, fixed | Plan WI 5.6 says "failing stub by default"; Phase 5 Design L1030 said "consumer-customizable stub"; AC L1062 says "failing stub by default" | Phase 5 Design L1030 prose changed to "failing stub by default" to match WI 5.6 verbatim and the AC; standardized phrasing across the phase |
+| F11 | minor | Verified, fixed | WI 5.12 says "single-case test"; AC L1060 said "reference impl + stub-fail case"; WI 5.3 explicitly drops `references/stop-dev-reference.sh` | AC L1060 reconciled with WI 5.12 (see DA7 for the broader 7-test deletion concern) |
+| F12 | minor | Verified, fixed | `ls skills/briefing/scripts/` shows briefing.cjs AND briefing.py; SKILL.md L18-28 (preferred + fallback prose) | WI 6.3 deferral rationale updated to acknowledge dual-runtime: "insertion at the end of the output assembly in BOTH briefing.cjs and briefing.py (cjs preferred / py3 fallback per skills/briefing/SKILL.md:18-28)" |
+| F13 | minor | Verified, fixed | All 8 anchors of WI 1.2 pass on current main | Phase 1 Design augmented with one-line note: "Post-prerequisite-landing reality: as of refine-round-1, all 1.1-1.3 anchors pass against current main; Phase 1 functions as a regression guard, not a discovery check." |
+| F14 | minor | Verified, fixed | `grep -F 'scripts/test-all.sh' apply-preset.sh` → 0 hits today; the gate is now a regression guard | WI 5.11(b) prose reframed as a regression guard ("passes as of refine-round-1; if a future apply-preset.sh edit reintroduces `bash scripts/test-all.sh` as a default `testing.full_cmd`, this gate flags the regression") |
+| F15 | major | Verified, fixed | Round History L1204 declared "Converged" pre-prereq-landing; per `feedback_convergence_orchestrator_judgment.md` convergence is the orchestrator's call | Round History updated: row 2's "Converged" qualified as "Converged in round 2 against pre-prereq main; re-opened in round 3 (refine-plan post-prereq) for SCRIPTS_INTO_SKILLS_PLAN landing drift"; new Round 3 row appended; Plan Quality augmented with refine-round-1-post-prereq paragraph |
+| F16 | minor | Verified, fixed | create-worktree.sh tail block: WI 1a.11 .zskills-tracked rollback at L336-342 (exit 8 at L340); .worktreepurpose write at L344-350 (exit 8 at L347); WI 1a.12 final printf at L354 | WI 3.1 Design citation updated `(lines 320-341)` → `(lines 336-355)` and `(line 326)` → `(line 340)`; ellipsis-meaning note added |
+| DA1 | critical | Verified, fixed (joint with F3) | hooks/block-unsafe-generic.sh:201,217 + plan WI 2.5 L331, WI 3.5 L558+L560, WI 5.14 L1000-1001 | See F3 fix. Plan Quality footnote added: "mirror-skill.sh (PR #88) is the canonical hook-compatible mirror recipe used throughout SCRIPTS_INTO_SKILLS_PLAN; this plan adopts the same convention" |
+| DA2 | major | Verified, fixed (joint with F1+F2) | port.sh full read; line numbers as in F1/F2 | See F1 + F2 fixes. Design note clarified: the new runtime-config-read block at L24-43 must NOT be edited by WI 4.1; the only edit lands between L49 and L51 |
+| DA3 | critical | Verified, fixed (joint with F4) | CLAUDE_TEMPLATE.md L18 (## Dev Server), L21 (`{{DEV_SERVER_CMD}}` codeblock), L24 (port prose with `{{MAIN_REPO_PATH}}`), L26 (`{{DEV_SERVER_CMD}}` prose), L28 (kill-9 paragraph) | See F4 fix. After-block updated to preserve the kill-9 paragraph at L28 verbatim and keep `{{MAIN_REPO_PATH}}` reference for apply-preset.sh substitution |
+| DA4 | minor | Verified, fixed | `{{TIMEZONE}}` exists at CLAUDE_TEMPLATE.md:107 only; not mentioned in plan | WI 6.2 AC added: `grep -F '{{TIMEZONE}}' CLAUDE_TEMPLATE.md` returns exactly 1 (regression guard against accidental duplication or removal); Phase 5 Design footnote added that WI 5.7 edits MUST NOT touch the worktree-rules `.landed` heredoc section (L96-114) |
+| DA5 | major | Verified, fixed | WI 2.4 establishes new `stubs/` dir; WI 5.4/5.9 keep stop-dev.sh/test-all.sh at `scripts/`; SKILL.md:960 explicitly excludes them from STALE_LIST | Phase 2 Design augmented with explicit canonical-source rule: `stubs/` holds NEW failing-stub source templates; `scripts/` holds the prereq's existing stop-dev.sh and test-all.sh which Phase 5 OVERWRITES in place. Step D never reads from both for the same name. |
+| DA6 | major | Verified, fixed | SKILL.md:931-947 STALE_LIST; SKILL.md:960-962 exclusion comment | New WI 7.4 documents the failing-stub-body-versioning contract in `references/script-ownership.md`; Plan Quality footnote added |
+| DA7 | major | Verified, fixed (joint with F11) | tests/test-stop-dev.sh has 7 currently-passing behavioral tests; plan WI 5.3 drops reference impl; AC L1060 contradicts WI 5.12 | WI 5.12 rewritten: delete tests/test-stop-dev.sh entirely (zskills doesn't test consumer code); removed test-stop-dev.sh from tests/run-all.sh; AC L1060 dropped. The 7 behavioral tests are preserved in git history if any consumer wants to copy them as a starting point. |
+| DA8 | minor | Verified, fixed (joint with F13+F14) | grep -F '{{PORT_SCRIPT}}' CLAUDE_TEMPLATE.md → 0 today; grep -F 'scripts/test-all.sh' apply-preset.sh → 0 today | Reframing per F13/F14: each already-passing AC explicitly labeled "regression guard" |
+| DA9 | minor | Verified, fixed | Plan WI 2.2 L278-282 lib body | Lib marker-write logic tightened: `if mkdir -p "$notes_dir" 2>/dev/null && touch "$marker" 2>/dev/null; then echo ... ; fi` — note suppressed when marker write fails (read-only fs case); behavior pinned in Phase 2 Design |
+| DA10 | minor | Verified, fixed | Plan WI 2.2 L264 `[ "$1" = "--" ] && shift` | Phase 2 Design notes `--` discriminator is REQUIRED at every callsite; test case 8 added to WI 2.3 ("stub gets literal `--` argument in `$@`" — verifies dispatcher only consumes the FIRST `--`, forwards subsequent verbatim) |
+| DA11 | minor | Verified, fixed (joint with F12) | See F12 evidence | See F12 fix |
+| DA12 | minor | Verified, fixed (joint with F6) | See F6 evidence | See F6 fix |
+| DA13 | major | Verified, fixed (joint with F15) | See F15 evidence | See F15 fix; explicit Drift Log section added per /refine-plan convention |
+| DA14 | minor | Verified, fixed (joint with F7) | See F7 evidence | See F7 fix |
+| DA15 | minor | Verified, fixed | Plan WI 2.5 AC L420-425 with `≥ 2 matches` ambiguity | AC split into two per-file checks: `grep -c -F 'stub-lib missing' skills/create-worktree/scripts/create-worktree.sh` ≥ 1 AND `grep -c -F 'stub-lib missing' skills/update-zskills/scripts/port.sh` ≥ 1 |
+| DA16 | minor | Verified, fixed | Plan WI 1.3 grep alternation | WI 1.3 alternation tightened: middle alternation now requires "Tier" keyword (`move.*Tier.?1.*into.*skills`) not just "scripts"; passes today against current CHANGELOG.md L6 |
 
 ### Round History
-| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
-|-------|-------------------|---------------------------|----------|
-| 1     | 16                | 18                        | 34/34    |
-| 2     | 6 (R2.x convergence-check)  | combined with reviewer  | All round-1 fixes verified landed; 1 new major (N1, lib silent-fail) + 5 new minors (N2-N6) — all fixed in this round. Verdict: Converged. |
 
-#### Round 1 disposition
+| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1 (pre-prereq, /draft-plan)     | 16                | 18                        | 34           | 34/34 |
+| 2 (pre-prereq, /draft-plan)     | 6                 | combined                  | 6            | 6/6 — declared "Converged" pre-prereq |
+| 3 (post-prereq, /refine-plan)   | 16                | 16                        | 32 (de-dup'd; ~26 unique) | 32/32 — orchestrator-confirmed Converged |
 
-- **R1 / DA1** (CRITICAL, port.sh `_ZSK_REPO_ROOT` unset): FIXED — Phase 4 WI 4.1 now uses `${CLAUDE_PROJECT_DIR:-$PROJECT_ROOT}` for lib path and bare `$PROJECT_ROOT` as dispatch arg; verbatim, no implementer choice. Verified `port.sh:27` unsets `_ZSK_REPO_ROOT`; `PROJECT_ROOT` set at line 12 and never unset.
-- **R2** (Phase 1 anchor symmetry): FIXED — added `clear-tracking.sh` present-anchor; symmetric three-pair coverage.
-- **R3** (CHANGELOG grep brittle): FIXED — switched from `grep -F` to tolerant `grep -E 'Tier.?1.*owning skills?|move.*scripts.*into.*skills|relocate.*scripts.*under.*skills'`.
-- **R4** (halt-path AC fragile): FIXED — removed live-tree `mv CHANGELOG.md` test; trust per-WI checks + Design verification.
-- **R5 / DA7** (`var/.zskills-stub-noted-<stub>` location): FIXED — moved to `.zskills/stub-notes/<stub>.noted` per `feedback_claude_dir_prompts.md`.
-- **R6** (lib non-zero rc not pinned): FIXED — lib emits `zskills: scripts/<name> exited <rc>` on stderr; documented in Phase 2 Design and `references/stub-callouts.md`; Phase 4 Design simplified accordingly.
-- **R7 / DA-coordination** (WI 5.10 conditional): FIXED — unconditional add of test-all.sh bullet; verified Step D today has no test-all.sh entry.
-- **R8 / DA6** (CRITICAL, hook help-text): FIXED — Phase 5 WI 5.6 rewritten to actively edit `hooks/block-unsafe-generic.sh` lines 159 and 177, plus mirror; AC added (`grep -F 'consumer-customizable stub'` ≥ 2).
-- **R9** (halt-message refine-plan recommendation): FIXED — trimmed to optional aside.
-- **R10** (CLAUDE_TEMPLATE.md verification): FIXED — pre-edit grep on apply-preset.sh + SKILL.md; abort-if-leftover surfacing path documented.
-- **R11** (rc 9 collision): JUSTIFIED — added Design note: spot-checked /run-plan + tests, no special-casing of rc 9.
-- **R12** (briefing-extra deferral sketch): FIXED — trimmed to one-line entry in `references/stub-callouts.md`.
-- **R13** (multi-invocation test missing): FIXED — added test case 7 (`multiple-invocations-clean-state`).
-- **R14** (post-create-worktree args missing MAIN_ROOT): FIXED — added `$6 MAIN_ROOT` to positional list; updated stub doc.
-- **R15** (reference-impl tension docs vs runnable): FIXED — dropped `references/*-reference.sh` shipping entirely; git history preserves prior bodies.
-- **R16** (phase count): JUSTIFIED — kept 7 (precedent: SCRIPTS_INTO_SKILLS_PLAN). Phase 5 reduced in scope by R15 fix.
-- **DA1** = R1 (resolved jointly).
-- **DA2** (Step D copy mechanism for `stubs/`): FIXED — new WI 2.4 explicitly extends Step D's source-dir list to include `$PORTABLE/skills/update-zskills/stubs/`; AC added.
-- **DA3** (Phase 1 missing CLAUDE_PROJECT_DIR anchor): FIXED — added `grep -F 'export CLAUDE_PROJECT_DIR' tests/run-all.sh` to WI 1.2.
-- **DA4** (rollback semantics contradiction): JUSTIFIED — added Design note in Phase 3 documenting the deliberate write-failure-vs-stub-failure distinction; flagged to be added to `references/stub-callouts.md`.
-- **DA5** (silent conversion for existing consumers): FIXED — Phase 7 CHANGELOG entry expanded to flag the caveat with explicit upgrade path.
-- **DA6** = R8 (resolved jointly).
-- **DA7** = R5 (resolved jointly).
-- **DA8** (port stdout edge cases): FIXED — Phase 4 WI 4.1 trims whitespace, requires `^[1-9][0-9]+$` (rejects 0/leading-zero/embedded newlines).
-- **DA9** (stub timeout unaddressed): FIXED — added Phase 2 Design note: no library-default timeout (variance too wide); per-callsite `timeout 10s` documented as optional.
-- **DA10** (stdout/stderr collision): FIXED — added Phase 2 Design note: stderr passthrough by default; future `--stdout=stream` flag documented as a follow-on extension.
-- **DA11** (apply-preset.sh check): FIXED — Phase 5 WI 5.11 expanded to grep apply-preset.sh for `scripts/test-all.sh` defaults.
-- **DA12** (Phase 5 size): FIXED in part — dropped reference-impl WIs (R15) simplified 5.3 / 5.8 in scope; final count is 14 WIs (5.1–5.14). Did not split into 5a/5b — the conversion is a coherent unit and splitting would fragment the CHANGELOG entry.
-- **DA13** (apply-preset.sh placeholder check): FIXED — folded into R10 fix (pre-edit grep widened to apply-preset.sh).
-- **DA14** (cherry-pick mode lacks CHANGELOG): NOT REPRODUCED — the prerequisite plan's Phase 6 WI 6.1 explicitly edits `CHANGELOG.md` like any other WI; that edit lands regardless of mode (cherry-pick / PR / direct). The DA's framing ("landing mode determines whether CHANGELOG gets written") was incorrect — landing mode controls *how* commits are organized into worktrees / PRs / branches, not *what* WIs do. The skill this plan delivers, and the staleness gate that protects it, are both mode-agnostic. No fix needed; clarified in Plan Quality "Mode-agnosticism" note.
-- **DA15** (`_STUB_LIB` env leak): FIXED — added `unset _STUB_LIB` after both callsites (Phase 3 and Phase 4).
-- **DA16** (`wc -l` AC brittle): FIXED — replaced with stable `grep -F 'not configured'` ACs.
-- **DA17** (heredoc-in-bash-c quoting): JUSTIFIED — removed via R4 fix (the live-tree halt-path AC was the only place this nesting was prescribed).
-- **DA18** (CHANGELOG entry exact-string AC): FIXED — Phase 7 AC loosened to `grep -F 'consumer stub-callout convention'`.
+The pre-prereq "Converged at round 2" badge has been re-evaluated by
+this refine pass: post-prerequisite-landing drift (PR #88 +
+PRs #94–#100) invalidated multiple plan anchors (verbatim before-
+blocks for `port.sh` and `CLAUDE_TEMPLATE.md`, Step D line cites,
+mirror-snippet hook-block compatibility) — the convergence claim was
+correct AS OF its timestamp but became stale when the prerequisite
+landed. The current convergence is grounded in current main as of
+2026-04-28.
+
+#### Round 3 (refine-plan, post-prereq) disposition summary
+
+All 32 findings `Verified, fixed`. Critical (4): F1/DA2 port.sh
+verbatim re-anchor; F3/DA1 mirror-skill.sh adoption; F4/DA3
+CLAUDE_TEMPLATE.md verbatim re-anchor; F5 pre-edit gate per-token
+split. Major (8): F2 port.sh Design line numbers; F6/DA12 FIX_NN
+fixture rename; F7/DA14 Step D install report re-anchor; F9 WI 5.10
+REPLACE-not-ADD; F15/DA13 Round History updated; DA5 stubs/+scripts/
+canonical-source rule; DA6 stub-body versioning policy (new WI 7.4);
+DA7 WI 5.12 / AC reconciliation. Minor (15+): F8/F10/F11/F12/F13/F14/F16
++ DA4/DA8/DA9/DA10/DA11/DA15/DA16. See per-phase disposition tables
+in the refined output for evidence anchors.
