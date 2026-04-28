@@ -894,8 +894,20 @@ to `.claude/settings.json`. Users can customize further with `/statusline`.
 
 #### Step D — Fill script gaps
 
-Copy missing scripts from `$PORTABLE/scripts/` to `scripts/` (verify
-executable bit is preserved).
+> Copy missing scripts from `$PORTABLE/scripts/` and from
+> `$PORTABLE/skills/update-zskills/stubs/` to `scripts/`
+> (verify executable bit is preserved). The `stubs/` dir
+> holds NEW consumer-customizable failing-stub / no-op
+> templates (post-create-worktree.sh, dev-port.sh,
+> start-dev.sh); `scripts/` holds the existing zskills-managed
+> Tier-2 templates (stop-dev.sh, test-all.sh — kept at
+> `scripts/` for continuity with prior installs; their
+> bodies become failing stubs in Phase 5 but their source
+> location does not move).
+
+If `$PORTABLE/skills/update-zskills/stubs/` does not exist
+(older zskills snapshot), skip the second source silently —
+do not error.
 
 - For scripts with placeholders: prompt user for values and replace.
 - Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
@@ -904,6 +916,10 @@ executable bit is preserved).
 - Copy `test-all.sh` if missing — consumer-customizable test runner
   template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
   the consumer with their own test commands.
+- Copy any consumer-stub templates from
+  `$PORTABLE/skills/update-zskills/stubs/` (e.g.
+  `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) if missing.
+  See `references/stub-callouts.md` for the contract and inventory.
 
 > Tier-1 scripts (skill machinery) ship via the skill mirror at
 > `.claude/skills/<owner>/scripts/`. They are NOT copied to `scripts/`.
