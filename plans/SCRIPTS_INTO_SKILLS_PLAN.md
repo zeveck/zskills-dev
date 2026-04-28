@@ -115,7 +115,7 @@ decision belongs in the follow-up plan, not here.
 | 3b — Update cross-skill callers (grep-driven sweep across skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md) and tests | ✅ Done | `64dc37d` | landed via combined 3a+3b PR squash; 13 skills + hooks + 6 tests + docs swept; port.sh PROJECT_ROOT fix; 931/931 tests |
 | 4 — Update `/update-zskills` install flow: drop Tier-1 copies, install via skill mirror, add stale-Tier-1 migration | ✅ Done | `18404ae` | landed via PR squash; Step D rewrite + Step D.5 migration + tier1-shipped-hashes.txt; port_script strip; 943/943 tests (+12 migration cases) |
 | 5 — Update zskills tests + sweep README/CLAUDE.md/CLAUDE_TEMPLATE for residual references | ✅ Done | `608c5fb` | landed via PR squash; 20 files, +39/-47; port_script schema field dropped; CLAUDE_PROJECT_DIR ordering check; 943/943 |
-| 6 — Docs and close-out: CHANGELOG, plan registry, frontmatter flip | ⬚ |  |  |
+| 6 — Docs and close-out: CHANGELOG, plan registry, frontmatter flip | 🟡 | `b33c117` | CHANGELOG + RELEASING.md migration note + TRACKING_NAMING sweep + PLAN_INDEX move + frontmatter flip; 943/943 |
 
 ## Phase 1 — Inventory cleanup: fix dead refs, write ownership registry
 
