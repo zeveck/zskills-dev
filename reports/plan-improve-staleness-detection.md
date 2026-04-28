@@ -1,5 +1,46 @@
 # Plan Report — Improve /run-plan Staleness Detection (Arithmetic Drift)
 
+## Phase — 2 Post-implement auto-correct gate (Phase 3.5) [UNFINALIZED]
+
+**Plan:** plans/IMPROVE_STALENESS_DETECTION.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-improve-staleness-detection
+**Branch:** feat/improve-staleness-detection
+**Commits:** e370ab9 (impl + tests), e5f3128 (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 2.1 | New `## Phase 3.5` H2 section in skills/run-plan/SKILL.md | Done | e370ab9 |
+| 2.2 | Verbatim Phase 3.5 content (8 numbered subsections, 5-row decision table) | Done | e370ab9 |
+| 2.3 | Phase 4 opening prose blockquote referencing Phase 3.5 | Done | e370ab9 |
+| 2.4 | Mirror parity (per-file cp) | Done | e370ab9 |
+| 2.5 | 5 new integration test cases for Phase 3.5 orchestration (e2e, thrash, escalate, multi) | Done | e370ab9 |
+| 2.6 | Commit | Done | e370ab9 |
+
+### Verification
+
+- Test suite: PASSED (902/902, +5 from Phase 1 baseline 897)
+- All 8 acceptance criteria verified by independent verification agent
+- Mirror clean: `diff -r skills/run-plan .claude/skills/run-plan` empty
+- Phase 3.5 H2 inserted at line 1233 (between Phase 3's `### Post-verification tracking` and `## Phase 4`)
+- Decision-table 5 rows verbatim (≤10%, 10-20%, >20%, byte-pres failed, unsupported)
+- DELETE-verify-on-failure rule documented; thrash rule scoped per-execution
+- `^## Phase ` count: main 10 → branch 11 (Δ=+1, the new Phase 3.5)
+
+### PLAN-TEXT-DRIFT findings
+
+None against Phase 2 acceptance criteria. Implementer + verifier independently confirmed no drift.
+
+### Notes
+
+- Phase 3.5 wraps `scripts/plan-drift-correct.sh` (Phase 1) into the orchestration flow. Implementation runs the script as a black box; the skill prose only orchestrates parse → drift → correct/escalate decisions and the marker-ordering rules.
+- `step.*.verify` written by Phase 3 satisfies the hook's landing gate; Phase 3.5 success writes informational `phasestep.*.drift-detect`; failure DELETEs `step.*.verify` to re-block landing.
+- Phase 3 will land the pre-dispatch arithmetic gate (Phase 1 step 6 extension) and the `--eval` mode for integer arithmetic.
+
+---
+
 ## Phase — 1 Standardize PLAN-TEXT-DRIFT token + scripts/plan-drift-correct.sh [UNFINALIZED]
 
 **Plan:** plans/IMPROVE_STALENESS_DETECTION.md
