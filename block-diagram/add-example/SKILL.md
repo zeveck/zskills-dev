@@ -21,14 +21,36 @@ verification, distilled from real mistakes.
 
 ## Fulfillment Tracking
 
-On entry, create the fulfillment marker so the parent skill (e.g.,
-`/add-block`) knows this delegation was accepted:
+On entry, resolve `PIPELINE_ID` and `NAME_SLUG`, then create the
+fulfillment marker so the parent skill (e.g., `/add-block`) knows this
+delegation was accepted. `add-example` may run as a sub-skill (delegated
+from `/add-block`) OR standalone (`/add-example` is registered as a
+top-level slash command — see frontmatter and `block-diagram/README.md`).
+Resolution is therefore 3-tier with a synthesized fallback so direct
+invocation works. In delegated mode, tier-2 `.zskills-tracked` always
+fires (the parent's worktree wrote it), so the synthesized fallback never
+triggers and markers correctly land in the parent's subdir.
+
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
+# 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
+# (parent's PIPELINE_ID, written by add-block's create-worktree.sh
+# --pipeline-id call) → synthesized fallback for standalone use.
+# In delegated mode tier 2 always fires; tier 3 fires only when
+# /add-example is invoked directly with no parent worktree.
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=add-example.${NAME}}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+# Sanitised per-marker suffix slug — pairs with add-block's BLOCK_SLUG
+# when invoked under delegation (orchestrator passes NAME == BLOCK_NAME).
+NAME_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$NAME")
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
   "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.add-example.${NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 ```
 
 Where `$NAME` is derived from the block type(s) or model name (e.g.,
@@ -155,9 +177,8 @@ mkdir -p examples/<name>/screenshots
 
 After Phase 2 (build) is complete:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.build"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.build"
 ```
 
 ---
@@ -195,9 +216,8 @@ In `tests/codegen-compile.test.js`, add the model to the appropriate tier:
 
 After Phase 3 (register) is complete:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.register"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.register"
 ```
 
 ---
@@ -228,9 +248,8 @@ mv .playwright/output/screenshot-*.png examples/<name>/screenshots/01-model-with
 
 After Phase 4b (screenshot) is complete:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.screenshot"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.screenshot"
 ```
 
 ### 4c. Write unit tests
@@ -261,9 +280,8 @@ All 3 suites must pass (unit, e2e, codegen). Report each suite's result.
 
 After Phase 4c/4d (tests pass):
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.tests"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.tests"
 ```
 
 ---
@@ -285,16 +303,15 @@ Send a verification agent (or do it yourself) to check:
 
 After Phase 5a (verification) is complete:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-example.${NAME}.verify"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.verify"
 ```
 
 Update the fulfillment marker to reflect completion:
 ```bash
 printf 'skill: add-example\nname: %s\nstatus: completed\ndate: %s\n' \
   "$NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/fulfilled.add-example.${NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 ```
 
 ### 5b. Retake screenshot if needed

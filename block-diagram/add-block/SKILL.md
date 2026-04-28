@@ -13,11 +13,11 @@ implementation workflow. Steps 11–12 are verification and landing.
 
 **All implementation happens in a pre-created worktree.** Before dispatching
 the implementation agent, the orchestrator creates the worktree via
-`scripts/create-worktree.sh`:
+`.claude/skills/create-worktree/scripts/create-worktree.sh`:
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
   --prefix add-block \
   --purpose "add-block; block=${BLOCK_NAME}" \
   --pipeline-id "add-block.${BLOCK_NAME}" \
@@ -65,6 +65,41 @@ Do NOT do step 7 per-block when batching. Defer it until all blocks are implemen
 Use the **first** block name from the user's invocation as the `${BLOCK_NAME}`
 slug for the orchestrator's `create-worktree.sh` call (mirrors fix-issues's
 "lowest issue number" convention for grouped issues).
+
+---
+
+## Tracking setup
+
+Before any tracking-marker writes (Step 6 onward), resolve `PIPELINE_ID`
+and `BLOCK_SLUG` once. Both the orchestrator (which dispatches the
+implementation sub-agent) and the in-worktree implementation sub-agent
+run this block; the sanitizer is deterministic so both yield the same
+PIPELINE_ID and BLOCK_SLUG given the same `$BLOCK_NAME`.
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
+# (parent's PIPELINE_ID inherited via the worktree file written by
+# create-worktree.sh --pipeline-id) → fallback synthesized id.
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
+if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
+  PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
+fi
+: "${PIPELINE_ID:=add-block.${BLOCK_NAME}}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+# Sanitised per-marker suffix slug — pairs with add-example's NAME_SLUG.
+BLOCK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+```
+
+Tier-1 (env) covers cron-fired top-level turns. Tier-2 (`.zskills-tracked`)
+is the path that fires in practice for `/add-block`'s normal flow, since
+the preamble dispatches through `create-worktree.sh --pipeline-id`. Tier-3
+(`add-block.${BLOCK_NAME}` synthesized) covers truly standalone direct
+invocations.
+
+Marker basenames use `${BLOCK_SLUG}` on disk; user-facing prose and echo
+messages keep `${BLOCK_NAME}` for legibility.
 
 ---
 
@@ -379,10 +414,8 @@ All existing tests must continue to pass (unit, E2E, and codegen suites).
 
 After Step 6 tests pass:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.tests"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.tests"
 ```
 
 In batch mode, each block gets its own tracking marker keyed by BlockName.
@@ -393,13 +426,16 @@ In batch mode, each block gets its own tracking marker keyed by BlockName.
 
 ### Pre-example delegation
 
-Before invoking `/add-example`, create a delegation requirement marker:
+Before invoking `/add-example`, create a delegation requirement marker.
+In batch mode, `BLOCK_NAME` is the aggregate (e.g., `math-batch` or the
+first-block name — same convention as the worktree's `--pipeline-id`).
+This single `requires` marker pairs with the single `/add-example`
+invocation that follows; do NOT loop per-block.
+
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-mkdir -p "$MAIN_ROOT/.zskills/tracking"
 printf 'skill: add-example\nparent: add-block\nblock: %s\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.add-example.${BLOCK_NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.add-example.${BLOCK_SLUG}"
 ```
 
 Use the `/add-example` skill to create an example model for this block
@@ -408,6 +444,22 @@ Use the `/add-example` skill to create an example model for this block
 ```
 /add-example <block-type(s)> [concept hint]
 ```
+
+**Delegation contract — NAME == BLOCK_NAME.** When invoking
+`/add-example`, pass the `<block-type(s)>` argument verbatim as both the
+displayed argument AND the `$NAME` variable the sub-skill will see. In
+single-block mode this is `$BLOCK_NAME`; in batch mode it is the same
+comma-separated list (or aggregate slug — first-block name or
+`<category>-batch`) you used for the worktree's `--pipeline-id` (see
+Batch Mode above). The sanitizer is deterministic, so identical input on
+both sides yields identical `BLOCK_SLUG` / `NAME_SLUG` and the basenames
+pair-match.
+
+Example: `BLOCK_NAME="My Block"` → `BLOCK_SLUG=My_Block`; the
+`/add-example "My Block"` call sees `NAME=My Block` →
+`NAME_SLUG=My_Block`. Both sides write `requires.add-example.My_Block`
+and `fulfilled.add-example.My_Block` under the same `add-block.My_Block/`
+subdir.
 
 In batch mode, invoke `/add-example` once after all blocks are implemented,
 passing all block types as a comma-separated list. One model that showcases
@@ -421,9 +473,8 @@ unit tests with value assertions, browser verification, and screenshots.
 
 After `/add-example` completes:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.example"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example"
 ```
 
 If the example was deferred (batch mode, will be done later), create the
@@ -431,7 +482,7 @@ deferred marker instead with the reason:
 ```bash
 printf 'block: %s\ndeferred: true\nreason: batch mode — example deferred until all blocks implemented\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.example-deferred"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example-deferred"
 ```
 
 ---
@@ -506,9 +557,8 @@ handled by `/add-example` (Step 7), not here.
 
 After codegen is implemented:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.codegen"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen"
 ```
 
 ### If Rust codegen cannot be implemented now
@@ -530,10 +580,9 @@ Create a GitHub issue and add an entry to `plans/BUILD_ISSUES.md` following the 
 
 After deferring codegen, create the deferred marker with the GitHub issue number:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ndeferred: true\nissue: #%s\ndate: %s\n' \
   "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.codegen-deferred"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen-deferred"
 ```
 
 ---
@@ -562,9 +611,8 @@ Use the `/manual-testing` skill with `playwright-cli` to verify the block works 
 
 After Step 9 manual testing completes:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.manual-test"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.manual-test"
 ```
 
 ---
@@ -625,11 +673,10 @@ for EACH block added. Fix any failures — do not "note" them as gaps.
 Before running the self-audit checklist, verify tracking files exist for
 critical steps. If any are missing, go back and complete the step:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # All four must exist (or their -deferred variant)
 for marker in tests example codegen manual-test; do
-  if [ ! -f "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.${marker}" ] && \
-     [ ! -f "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.${marker}-deferred" ]; then
+  if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.${marker}" ] && \
+     [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.${marker}-deferred" ]; then
     echo "MISSING: step.add-block.${BLOCK_NAME}.${marker} — go back and complete this step"
   fi
 done
@@ -680,9 +727,8 @@ noted" instead of failing. These checks prevent that.
 
 After the self-audit checklist passes:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.self-audit"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.self-audit"
 ```
 
 ---
@@ -693,10 +739,9 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 Before dispatching the verification agent, create a delegation requirement:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'skill: verify-changes\nparent: add-block\nblock: %s\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/requires.verify-changes.${BLOCK_NAME}"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.${BLOCK_SLUG}"
 ```
 
 ### Dispatch protocol
@@ -745,9 +790,8 @@ If verification fails: dispatch a fix agent (max 2 fix+verify rounds).
 
 After verification completes:
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/step.add-block.${BLOCK_NAME}.verify"
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.verify"
 ```
 
 ---
