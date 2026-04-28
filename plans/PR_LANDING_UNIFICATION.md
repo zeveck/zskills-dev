@@ -39,18 +39,21 @@ This plan creates a new **`/land-pr`** skill that the five callers dispatch via 
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — `/land-pr` skill scaffolding + scripts + canonical-schema + tests | ⬚ | | Includes intra-phase smoke checkpoint |
+| 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke | ⬚ | | Smoke checkpoint at end |
+| 1B — `/land-pr` validation: failure-modes doc + mocks + tests + conformance | ⬚ | | Lands before Phases 2–5 |
 | 2 — Migrate `/run-plan` PR mode to `/land-pr` (caller owns body splice) | ⬚ | | |
 | 3 — Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix: gain fix-cycle) | ⬚ | | |
 | 4 — Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout special case) | ⬚ | | |
 | 5 — Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle) | ⬚ | | |
 | 6 — Drift-prevention conformance + canary | ⬚ | | |
 
-## Phase 1 — `/land-pr` skill scaffolding + scripts + canonical-schema + tests
+## Phase 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke
 
 ### Goal
 
-Create the `/land-pr` skill with four deterministic scripts, canonical procedure prose, the file-based result contract (with safe allow-list parsing), the canonical `.landed` schema, caller-loop reference, fix-cycle agent prompt template, and a unit-test suite covering the documented failure modes. No caller migration in this phase — the existing 5 skills continue to use their inline implementations until Phases 2–5.
+Create the `/land-pr` skill with the four deterministic scripts, canonical procedure prose, the file-based result contract (with safe allow-list parsing), the canonical `.landed` schema, AND the caller-facing references that Phases 2–5 will copy from (caller-loop pattern, fix-cycle agent prompt template). Smoke-checkpoint validates the foundation end-to-end. Comprehensive tests, mocks, conformance assertions, and failure-mode documentation are deferred to Phase 1B.
+
+**Why split from comprehensive tests:** Phase 1A is the foundation that Phases 2–5 dispatch and copy from. It's ~10 WIs, ~700 lines of new code. Phase 1B (tests + conformance + mocks) is ~5 WIs, ~900 lines — bulky but mechanically simpler. Keeping them separate gives reviewable PR boundaries and lets a foundation flaw be caught at the end of 1A's smoke, not tangled with test scaffolding written on top of broken scripts.
 
 ### Work Items
 
@@ -103,14 +106,6 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
   6. On `CI_STATUS=fail`, capture failure log: extract a run ID via `gh pr checks "$PR" --json link` and bash-regex on the URL, then run `gh run view --log-failed <run-id> > "$LOG_OUT"`. If run-ID extraction fails, emit `CI_LOG_FILE=` (empty) — caller's fix-cycle agent must handle missing log gracefully.
   7. Emit final `CI_STATUS=...` and `CI_LOG_FILE=...` to stdout, exit 0 (poll completed regardless of pass/fail).
   8. Exit 20 if pre-conditions invalid (PR number non-numeric, or `gh auth status` returns non-zero on first call — fail-fast on auth).
-
-- [ ] **WI 1.5a — `splice-body.sh` shared utility.** Create `skills/land-pr/scripts/splice-body.sh`. Args: `--body-current <path>` `--progress-text <path>` `--start-marker <text>` `--end-marker <text>` `--out <path>`. Behavior:
-  1. Validate both markers exist in the current body. Exit 40 if missing (with stderr message naming which marker is missing).
-  2. Splice `progress-text` content between the markers using `awk` (more robust than sed against `&`/`\` metacharacters in body content).
-  3. Write to `out` atomically (`.tmp` + `mv`). Exit 41 on write failure.
-  4. Exit 0 on success.
-
-  **Why a shared utility:** body splice is currently only used by `/run-plan`'s per-phase progress update. A future caller (e.g., `/fix-issues` per-issue body amendments) would re-implement the same sed/awk dance and drift. Centralizing this in `/land-pr`'s scripts/ ensures one tested implementation. /run-plan calls this script in WI 2.1.
 
 - [ ] **WI 1.6 — `pr-merge.sh`.** Create `skills/land-pr/scripts/pr-merge.sh`. Args: `--pr <number>` `--auto-flag <true|false>` `--ci-status <pass|fail|pending|none|skipped|unknown>`. Behavior:
   1. If `auto-flag != true`: emit `MERGE_REQUESTED=false MERGE_REASON=auto-not-requested`, exit 0.
@@ -288,8 +283,6 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
 
 - [ ] **WI 1.9 — Fix-cycle agent prompt template.** Create `skills/land-pr/references/fix-cycle-agent-prompt-template.md`. Template structure same as Round-1 plan (caller fills in `<CALLER_WORK_CONTEXT>`). Add explicit constraint: *"You are running at orchestrator level. Do NOT dispatch further Agent tools. If your fix attempt requires nested agent dispatch, stop and report — the caller's loop will retry up to its max attempts."*
 
-- [ ] **WI 1.10 — Failure-modes reference.** Create `skills/land-pr/references/failure-modes.md` cataloging the 10 failure modes from the research synthesis. Each entry: failure description, severity, detection mechanism in the corresponding script, the test case in `tests/test-land-pr-scripts.sh` that proves the detection works.
-
 - [ ] **WI 1.11 — Canonical `.landed` schema.** Document in `skills/land-pr/SKILL.md` the canonical `.landed` schema:
   ```
   status: <required>      # landed | pr-ready | pr-ci-failing | pr-failed | conflict | pr-state-unknown
@@ -342,7 +335,74 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
   9. Compose final result and write to `$RESULT_FILE` (atomic via `.tmp` + `mv`). Per WI 1.7, every VALUE is validated via `validate_result_value` before write; multi-line content is referenced via `*_FILE` sidecar paths.
   10. Echo a brief one-line summary to stdout for the conversation log: `STATUS=<status> PR=<url> CI=<status>`.
 
-- [ ] **WI 1.13 — Mock infrastructure for tests.** Create `tests/mocks/mock-gh.sh` and `tests/mocks/mock-git.sh`. Each is a bash script with a subcommand router. Reference implementation for `mock-gh.sh` (the test scripts copy this verbatim and extend per-test):
+- [ ] **WI 1A.13 — Mirror (foundation).** `rm -rf .claude/skills/land-pr && cp -a skills/land-pr .claude/skills/land-pr && diff -rq skills/land-pr .claude/skills/land-pr` (must produce no output). Mirrors the 1A foundation files: SKILL.md, 4 scripts, references/caller-loop-pattern.md, references/fix-cycle-agent-prompt-template.md.
+
+- [ ] **WI 1A.14 — Update PLAN_INDEX.** Move PR_LANDING_UNIFICATION from "Ready to Run" to "In Progress" with current phase = 1A.
+
+### End-of-phase smoke checkpoint (mandatory)
+
+After completing **WI 1.1–1.6 and WI 1.12** (skill + scripts + procedure prose), and BEFORE Phase 1B writes mocks / comprehensive tests / conformance assertions, run a smoke test:
+
+**Concrete recipe (use real GitHub):** Create a throwaway feature branch in this repo (e.g., `smoke/land-pr-$(date +%s)`), make a trivial commit (touch a file in `tmp/`), then invoke `/land-pr --branch smoke/land-pr-$TS --title "smoke test" --body-file /tmp/smoke-body.md --result-file /tmp/land-pr-smoke.txt --no-monitor`. The `--no-monitor` flag avoids triggering CI cost. After verification, **clean up:**
+```bash
+gh pr close "$PR_NUMBER" --delete-branch  # closes the smoke PR + deletes branch on remote
+git push dev --delete smoke/land-pr-$TS    # belt-and-suspenders
+```
+
+Verify:
+- The result file is produced with the expected schema (all required keys present, all values single-line).
+- The skill's procedure drives Claude through rebase/push/create successfully.
+- The allow-list parser in WI 1.7 reads the result file without invoking `source`.
+- No shell-injection vulnerabilities (manually stuff `$()` into a sidecar file path; confirm the parser leaves it as a literal string).
+- `gh pr edit` is NOT called by `pr-push-and-create.sh` on the smoke PR (verified by passing the same body twice — second invocation should detect existing PR and not modify body).
+
+If the smoke test fails, the script contracts or procedure prose are wrong — **fix before starting Phase 1B**, do not write tests/conformance assertions on top of broken foundations.
+
+### Design & Constraints
+
+- **Cross-skill dispatch via Skill tool, single-string args.** Per `skills/research-and-plan/SKILL.md:140`. Same-context recursion per `:87-105`. Therefore data hand-off is file-based (WI 1.7), not via stdout.
+- **No `jq` binary; `gh ... --jq` flag is allowed.** `jq` standalone binary is prohibited per memory `feedback_no_jq_in_skills`. `gh`'s `--jq` flag is gh's built-in formatter, not a separate process — using it does not introduce a `jq` dependency. Conformance test (WI 1.15) guards against `^[[:space:]]*jq ` pattern, not against `--jq=` flag.
+- **No `|| true`, no `2>/dev/null` on fallible ops.** Per CLAUDE.md "Never suppress errors."
+- **No `--no-verify` on commits.** Per CLAUDE.md.
+- **`scripts/write-landed.sh` is reused as-is.** Atomic write semantics verified at the script's docstring (line 19: "Writes: <worktree-path>/.landed (atomic via .tmp + mv)").
+- **Result-file values are single-line shell-safe; multi-line content goes in sidecar files.** The caller never `source`s the result file; uses an allow-list line-by-line parser (WI 1.7). This eliminates the shell-injection class.
+- **Test-output capture pattern.** All tests follow CLAUDE.md's TEST_OUT idiom — never pipe.
+- **Idempotency is a contract.** Re-invoking `/land-pr` with the same branch must be a no-op for already-done steps (rebase up-to-date is exit 0; push up-to-date is exit 0; existing PR is detected). Body updates are caller-owned, NOT done by `/land-pr`. WI 1.14 includes explicit idempotency test cases.
+- **Race condition on parallel `/land-pr` invocations is bounded by gh's "already exists" rejection.** If two callers race past `gh pr list` and both call `gh pr create`, gh enforces one open PR per head branch and the second invocation gets a non-zero exit with "already exists" stderr. The losing invocation's caller sees `STATUS=create-failed` and handles it via the canonical loop; no duplicate PRs are created. This is documented; no `flock` guard is needed.
+- **`--no-monitor` and `--pr <num>` enable two flow shapes.** `--no-monitor`: caller wants to report PR URL early and skip CI poll for this invocation. `--pr <num>`: caller resumes monitoring an existing PR. Together they let users / future callers split the create-and-monitor flow when needed. None of the 5 callers in this plan use these flags — they all monitor synchronously.
+- **All 5 callers run CI monitoring + fix-cycle.** No exceptions. /quickfix's "fire-and-forget" was drift, not design. /commit pr and /do pr's "report-only" was drift, not design. The unification corrects all three (per maintainer rationale in Overview).
+- **`/land-pr` is dispatched only at orchestrator level.** Documented contract — no runtime guard. Conformance assertions in Phase 6 verify callers' SKILL.md files contain the dispatch at orchestrator level (not inside an Agent prompt block).
+- **Hooks compatibility.** Per `hooks/block-unsafe-project.sh.template:634-640`, the `git push` rule scope is segmented to the `git push` portion of the command (the recent #58 fix). /land-pr's gh/git calls won't trip false-positives. The smoke checkpoint (intra-phase) verifies this end-to-end.
+- **PR body ownership is the caller's, not `/land-pr`'s.** /land-pr writes the body only on initial PR creation (the `--body-file` content). Subsequent body updates (e.g., /run-plan's HTML-comment-marker progress splice) are caller-owned and happen before the caller invokes /land-pr. This preserves user-added review notes.
+- **shellcheck clean.** All four scripts must pass `shellcheck` with no warnings.
+
+### Acceptance Criteria
+
+- [ ] Smoke checkpoint passes — see "End-of-phase smoke checkpoint" section above.
+- [ ] `skills/land-pr/SKILL.md` exists; `grep -E '^name: land-pr$' skills/land-pr/SKILL.md` returns one line.
+- [ ] All four scripts exist and are executable: `for f in pr-rebase pr-push-and-create pr-monitor pr-merge; do test -x "skills/land-pr/scripts/$f.sh" || fail "$f not executable"; done`.
+- [ ] `shellcheck skills/land-pr/scripts/*.sh` returns 0.
+- [ ] `skills/land-pr/references/caller-loop-pattern.md` and `skills/land-pr/references/fix-cycle-agent-prompt-template.md` exist (callers in Phases 2–5 will copy from these).
+- [ ] Mirror byte-identical for 1A files: `diff -rq skills/land-pr .claude/skills/land-pr` produces no output (note: failure-modes.md, mocks, and tests don't exist yet; they're 1B work).
+- [ ] No skill yet calls `/land-pr` (Phases 2–5 do that). Existing skills' PR mode behavior is unchanged.
+- [ ] `plans/PLAN_INDEX.md` shows PR_LANDING_UNIFICATION in "In Progress" with Phase 1A complete.
+- [ ] `bash tests/run-all.sh` still passes (Phase 1A doesn't break existing tests; new tests come in 1B).
+
+### Dependencies
+
+- None. This is the foundation phase.
+
+## Phase 1B — `/land-pr` validation: failure-modes doc + mocks + tests + conformance
+
+### Goal
+
+Add the validation layer on top of Phase 1A's foundation: failure-modes documentation, mock infrastructure (mock-gh + mock-git for unit tests), comprehensive script tests covering the documented failure modes, and conformance assertions in `tests/test-skill-conformance.sh` (with a new `check_not` helper). Ensures regressions are caught before Phases 2–5 migrate the 5 callers.
+
+### Work Items
+
+- [ ] **WI 1B.1 — Failure-modes reference.** Create `skills/land-pr/references/failure-modes.md` cataloging the 10 failure modes from the research synthesis. Each entry: failure description, severity, detection mechanism in the corresponding script, the test case in `tests/test-land-pr-scripts.sh` that proves the detection works.
+
+- [ ] **WI 1B.2 — Mock infrastructure for tests.** Create `tests/mocks/mock-gh.sh` and `tests/mocks/mock-git.sh`. Each is a bash script with a subcommand router. Reference implementation for `mock-gh.sh` (the test scripts copy this verbatim and extend per-test):
   ```bash
   #!/bin/bash
   # mock-gh.sh — minimal stateful mock for `gh` commands.
@@ -378,7 +438,7 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
 
   `mock-git.sh` follows the same pattern. For state-modifying ops (rebase, push), the mock can also call real `git` with a fake remote (local bare repo at `$MOCK_GIT_FAKE_REMOTE`) when realistic side effects are required.
 
-- [ ] **WI 1.14 — `tests/test-land-pr-scripts.sh`.** Create the test file. Capture output per CLAUDE.md: `TEST_OUT="/tmp/zskills-tests/$(basename $(pwd))/.test-results.txt"`. Tests cover all 10 failure modes from `references/failure-modes.md` PLUS:
+- [ ] **WI 1B.3 — `tests/test-land-pr-scripts.sh`.** Create the test file. Capture output per CLAUDE.md: `TEST_OUT="/tmp/zskills-tests/$(basename $(pwd))/.test-results.txt"`. Tests cover all 10 failure modes from `references/failure-modes.md` PLUS:
   - **rebase-idempotent**: local branch is already rebased, then a fix commit is added, then `pr-rebase.sh` is called again → exit 0, no modifications, no conflict.
   - **PR_NUMBER extraction from URL**: when `gh pr create` returns URL `.../pull/42`, `PR_NUMBER=42` is extracted (no second `gh pr view` call).
   - **--no-monitor returns early**: `/land-pr --no-monitor` writes result file with `CI_STATUS=not-monitored` and does NOT run `pr-monitor.sh`.
@@ -387,7 +447,7 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
   - **status mapping table coverage**: at least one test per row of the WI 1.12 table — verify the correct `status` is derived for each combination.
   - **race-bounded create-failed**: simulate two concurrent `gh pr create` calls against same branch (mock returns "already exists" on second); confirm the second invocation gets `STATUS=create-failed CALL_ERROR_FILE=...` and does NOT create a duplicate PR.
 
-- [ ] **WI 1.15 — Conformance assertions + `check_not` helper.** Add to `tests/test-skill-conformance.sh`:
+- [ ] **WI 1B.4 — Conformance assertions + `check_not` helper.** Add to `tests/test-skill-conformance.sh`:
   - **Define `check_not` helper** (top of file, alongside existing `check`/`check_fixed` at lines 29-51):
     ```bash
     check_not() {
@@ -409,63 +469,29 @@ Create the `/land-pr` skill with four deterministic scripts, canonical procedure
     - `check_not land-pr "no || true" '\|\| true'`
     - `check_not land-pr "no source-based result parsing" 'source[[:space:]]+.*RESULT_FILE|\.[[:space:]]+.*RESULT_FILE'`  (caller pattern in references/ — verifies the safe parser, not source)
 
-- [ ] **WI 1.16 — Mirror.** `rm -rf .claude/skills/land-pr && cp -a skills/land-pr .claude/skills/land-pr && diff -rq skills/land-pr .claude/skills/land-pr` (must produce no output).
+- [ ] **WI 1B.5 — Mirror update.** `rm -rf .claude/skills/land-pr && cp -a skills/land-pr .claude/skills/land-pr && diff -rq skills/land-pr .claude/skills/land-pr` (must produce no output). Mirrors 1B's added `failure-modes.md` plus any 1A changes that landed since 1A's mirror.
 
-- [ ] **WI 1.17 — Update PLAN_INDEX.** Move PR_LANDING_UNIFICATION from "Ready to Run" to "In Progress" with current phase = 1.
-
-### Intra-phase smoke checkpoint (mandatory)
-
-After completing **WI 1.1–1.6 and WI 1.12** (skill + scripts + procedure prose), and BEFORE writing references / mocks / comprehensive tests / conformance assertions, run a smoke test:
-
-**Concrete recipe (use real GitHub):** Create a throwaway feature branch in this repo (e.g., `smoke/land-pr-$(date +%s)`), make a trivial commit (touch a file in `tmp/`), then invoke `/land-pr --branch smoke/land-pr-$TS --title "smoke test" --body-file /tmp/smoke-body.md --result-file /tmp/land-pr-smoke.txt --no-monitor`. The `--no-monitor` flag avoids triggering CI cost. After verification, **clean up:**
-```bash
-gh pr close "$PR_NUMBER" --delete-branch  # closes the smoke PR + deletes branch on remote
-git push dev --delete smoke/land-pr-$TS    # belt-and-suspenders
-```
-
-Verify:
-- The result file is produced with the expected schema (all required keys present, all values single-line).
-- The skill's procedure drives Claude through rebase/push/create successfully.
-- The allow-list parser in WI 1.7 reads the result file without invoking `source`.
-- No shell-injection vulnerabilities (manually stuff `$()` into a sidecar file path; confirm the parser leaves it as a literal string).
-- `gh pr edit` is NOT called by `pr-push-and-create.sh` on the smoke PR (verified by passing the same body twice — second invocation should detect existing PR and not modify body).
-
-If the smoke test fails, the script contracts or procedure prose are wrong — **fix before proceeding to WI 1.8–1.15**, do not write 1500+ lines of references/tests on top of broken foundations.
+- [ ] **WI 1B.6 — Update PLAN_INDEX.** Move PR_LANDING_UNIFICATION's "Next Phase" to 1B → 2.
 
 ### Design & Constraints
 
-- **Cross-skill dispatch via Skill tool, single-string args.** Per `skills/research-and-plan/SKILL.md:140`. Same-context recursion per `:87-105`. Therefore data hand-off is file-based (WI 1.7), not via stdout.
-- **No `jq` binary; `gh ... --jq` flag is allowed.** `jq` standalone binary is prohibited per memory `feedback_no_jq_in_skills`. `gh`'s `--jq` flag is gh's built-in formatter, not a separate process — using it does not introduce a `jq` dependency. Conformance test (WI 1.15) guards against `^[[:space:]]*jq ` pattern, not against `--jq=` flag.
-- **No `|| true`, no `2>/dev/null` on fallible ops.** Per CLAUDE.md "Never suppress errors."
-- **No `--no-verify` on commits.** Per CLAUDE.md.
-- **`scripts/write-landed.sh` is reused as-is.** Atomic write semantics verified at the script's docstring (line 19: "Writes: <worktree-path>/.landed (atomic via .tmp + mv)").
-- **Result-file values are single-line shell-safe; multi-line content goes in sidecar files.** The caller never `source`s the result file; uses an allow-list line-by-line parser (WI 1.7). This eliminates the shell-injection class.
-- **Test-output capture pattern.** All tests follow CLAUDE.md's TEST_OUT idiom — never pipe.
-- **Idempotency is a contract.** Re-invoking `/land-pr` with the same branch must be a no-op for already-done steps (rebase up-to-date is exit 0; push up-to-date is exit 0; existing PR is detected). Body updates are caller-owned, NOT done by `/land-pr`. WI 1.14 includes explicit idempotency test cases.
-- **Race condition on parallel `/land-pr` invocations is bounded by gh's "already exists" rejection.** If two callers race past `gh pr list` and both call `gh pr create`, gh enforces one open PR per head branch and the second invocation gets a non-zero exit with "already exists" stderr. The losing invocation's caller sees `STATUS=create-failed` and handles it via the canonical loop; no duplicate PRs are created. This is documented; no `flock` guard is needed.
-- **`--no-monitor` and `--pr <num>` enable two flow shapes.** `--no-monitor`: caller wants to report PR URL early and skip CI poll for this invocation. `--pr <num>`: caller resumes monitoring an existing PR. Together they let users / future callers split the create-and-monitor flow when needed. None of the 5 callers in this plan use these flags — they all monitor synchronously.
-- **All 5 callers run CI monitoring + fix-cycle.** No exceptions. /quickfix's "fire-and-forget" was drift, not design. /commit pr and /do pr's "report-only" was drift, not design. The unification corrects all three (per maintainer rationale in Overview).
-- **`/land-pr` is dispatched only at orchestrator level.** Documented contract — no runtime guard. Conformance assertions in Phase 6 verify callers' SKILL.md files contain the dispatch at orchestrator level (not inside an Agent prompt block).
-- **Hooks compatibility.** Per `hooks/block-unsafe-project.sh.template:634-640`, the `git push` rule scope is segmented to the `git push` portion of the command (the recent #58 fix). /land-pr's gh/git calls won't trip false-positives. The smoke checkpoint (intra-phase) verifies this end-to-end.
-- **PR body ownership is the caller's, not `/land-pr`'s.** /land-pr writes the body only on initial PR creation (the `--body-file` content). Subsequent body updates (e.g., /run-plan's HTML-comment-marker progress splice) are caller-owned and happen before the caller invokes /land-pr. This preserves user-added review notes.
-- **shellcheck clean.** All four scripts must pass `shellcheck` with no warnings.
+- **All script tests use mock-gh / mock-git.** Real-gh smoke is reserved for the 1A end-of-phase checkpoint and for Phases 2–5 manual canaries. Phase 1B tests stay deterministic via PATH override.
+- **Conformance assertions are the drift tripwire.** WI 1B.4's assertions back-fill the moves from /run-plan's existing inline assertions to /land-pr (per Phase 2 WI 2.7). Once 1B lands, conformance enforces the no-regression contract for Phases 2–5.
+- **Test-output capture** per CLAUDE.md TEST_OUT idiom; never pipe.
 
 ### Acceptance Criteria
 
-- [ ] Smoke checkpoint (intra-phase) passes — see "Intra-phase smoke checkpoint" section above.
-- [ ] `skills/land-pr/SKILL.md` exists; `grep -E '^name: land-pr$' skills/land-pr/SKILL.md` returns one line.
-- [ ] All four scripts exist and are executable.
-- [ ] `shellcheck skills/land-pr/scripts/*.sh` returns 0.
-- [ ] `tests/test-land-pr-scripts.sh` runs and passes (≥10 failure-mode test cases + idempotency, status-mapping, result-safe-parsing, race-bounded test cases).
-- [ ] `tests/test-skill-conformance.sh` runs and passes (new `check_not` helper defined; new /land-pr assertions; no existing assertion modified).
+- [ ] `skills/land-pr/references/failure-modes.md` exists with all 10 failure modes documented.
+- [ ] `tests/mocks/mock-gh.sh` and `tests/mocks/mock-git.sh` exist and are executable.
+- [ ] `tests/test-land-pr-scripts.sh` runs and passes (≥10 failure-mode test cases + idempotency, status-mapping, result-safe-parsing, race-bounded test cases). Output captured per CLAUDE.md.
+- [ ] `tests/test-skill-conformance.sh` runs and passes — `check_not` helper defined; new /land-pr assertions; no existing assertion modified.
 - [ ] `bash tests/run-all.sh` passes overall.
 - [ ] Mirror byte-identical: `diff -rq skills/land-pr .claude/skills/land-pr` produces no output.
-- [ ] No skill yet calls `/land-pr` (Phases 2–5 do that). Existing skills' PR mode behavior is unchanged.
-- [ ] `plans/PLAN_INDEX.md` shows PR_LANDING_UNIFICATION in "In Progress" with Phase 1 complete.
+- [ ] `plans/PLAN_INDEX.md` shows PR_LANDING_UNIFICATION's Next Phase = 2.
 
 ### Dependencies
 
-- None. This is the foundation phase.
+- Phase 1A complete (status: complete; foundation in place).
 
 ## Phase 2 — Migrate `/run-plan` PR mode to `/land-pr` (caller owns body splice)
 
@@ -480,23 +506,23 @@ Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (c
   **First-phase invocation:** No PR exists yet; the body file written must INCLUDE the markers (so subsequent phases have something to splice into). `/run-plan`'s body construction prose places `<!-- run-plan:progress:start -->\n<progress section>\n<!-- run-plan:progress:end -->` near the top of the body. /land-pr creates the PR with this body via `pr-push-and-create.sh` (no special handling needed).
 
   **Subsequent-phase invocation (existing PR detected before the loop):**
-  1. Fetch current body: `gh pr view "$PR_NUMBER" --json body --jq '.body' > /tmp/pr-body-current.md`. On error (transient gh failure, retry once with 2s backoff; if second attempt fails, write `.landed conflict REASON=gh-pr-view-failed` and break the loop).
-  2. Validate markers are present: `grep -qF '<!-- run-plan:progress:start -->' /tmp/pr-body-current.md && grep -qF '<!-- run-plan:progress:end -->' /tmp/pr-body-current.md`. If markers are absent (user manually removed them, or GitHub stripped them somehow), the splice cannot proceed. Write `.landed conflict REASON=body-markers-missing` and break the loop with a clear error message ("Manual repair required: PR body must contain run-plan:progress markers").
-  3. Build the new progress section text in `/tmp/pr-progress-section.txt`.
-  4. Splice via the shared `splice-body.sh` utility (WI 1.5a):
+  1. Fetch current body: `gh pr view "$PR_NUMBER" --json body --jq '.body' > /tmp/pr-body-current.md`. On error: retry once with 2s backoff; if second attempt fails, write `.landed conflict REASON=gh-pr-view-failed` and break the loop.
+  2. Validate markers are present: `grep -qF '<!-- run-plan:progress:start -->' /tmp/pr-body-current.md && grep -qF '<!-- run-plan:progress:end -->' /tmp/pr-body-current.md`. If markers are absent, write `.landed conflict REASON=body-markers-missing` and break with a clear error message ("Manual repair required: PR body must contain run-plan:progress markers").
+  3. Build the new progress section text in `/tmp/pr-progress-section.txt`, then splice inline using `awk` (per the existing pattern at `skills/run-plan/SKILL.md:1216-1217`, but with awk instead of sed for `&`/`\` safety):
      ```bash
-     bash skills/land-pr/scripts/splice-body.sh \
-       --body-current /tmp/pr-body-current.md \
-       --progress-text /tmp/pr-progress-section.txt \
-       --start-marker '<!-- run-plan:progress:start -->' \
-       --end-marker '<!-- run-plan:progress:end -->' \
-       --out "$BODY_FILE"
+     awk -v start='<!-- run-plan:progress:start -->' \
+         -v end='<!-- run-plan:progress:end -->' \
+         -v progress="$(cat /tmp/pr-progress-section.txt)" \
+         '
+         $0 ~ start { print; print progress; skip=1; next }
+         $0 ~ end   { skip=0 }
+         !skip      { print }
+         ' /tmp/pr-body-current.md > "$BODY_FILE"
      ```
-     On exit 40 (markers missing — should not happen since step 2 validated, but defensive): write `.landed conflict REASON=splice-marker-mismatch` and break.
-     On exit 41 (write failure): write `.landed conflict REASON=splice-write-failed` and break.
-  5. Update the PR body: `gh pr edit "$PR_NUMBER" --body-file "$BODY_FILE"`. On error: retry once with 2s backoff. On second failure: write `.landed conflict REASON=gh-pr-edit-failed` and break.
+     The awk passes `progress` as a variable (no shell expansion of body content), so `&`/`\` and other regex metacharacters in user-pasted content survive intact.
+  4. Update the PR body: `gh pr edit "$PR_NUMBER" --body-file "$BODY_FILE"`. On error: retry once with 2s backoff. On second failure: write `.landed conflict REASON=gh-pr-edit-failed` and break.
 
-  All five recovery paths (`gh-pr-view-failed`, `body-markers-missing`, `splice-marker-mismatch`, `splice-write-failed`, `gh-pr-edit-failed`) write the canonical-schema `.landed` and break out of the fix-cycle loop without invoking `/land-pr`. The user reviews the marker file and decides next steps (manual repair, restore markers, etc.).
+  Three recovery paths (`gh-pr-view-failed`, `body-markers-missing`, `gh-pr-edit-failed`) cover the real failure modes; each writes the canonical-schema `.landed` and breaks the loop without invoking `/land-pr`. (Earlier drafts had 5 paths covering a separate `splice-body.sh` utility's exit codes; that utility was removed as YAGNI premature extraction — only `/run-plan` does body splicing today, so the splice stays inline. See Plan Review for refinement history.)
 
   `/land-pr`'s `pr-push-and-create.sh` does NOT touch the body when an existing PR is detected (per WI 1.4) — preserving user-added review notes between the markers.
 
@@ -544,7 +570,7 @@ Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (c
 
 ### Dependencies
 
-- Phase 1 must be complete (status: complete; `/land-pr` skill installed and tested).
+- Phase 1A and Phase 1B must both be complete (`/land-pr` skill installed, references in place, tests + conformance assertions passing).
 
 ## Phase 3 — Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix: gain fix-cycle)
 
@@ -594,7 +620,7 @@ Replace the inline implementation in `skills/commit/modes/pr.md` AND `skills/do/
 
 ### Dependencies
 
-- Phase 1 must be complete.
+- Phases 1A and 1B must both be complete.
 
 ## Phase 4 — Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout special case)
 
@@ -640,7 +666,7 @@ Replace the inline implementation in `skills/fix-issues/modes/pr.md` with a per-
 
 ### Dependencies
 
-- Phase 1 must be complete.
+- Phases 1A and 1B must both be complete.
 
 ## Phase 5 — Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle)
 
@@ -688,7 +714,7 @@ Replace the fire-and-forget PR-creation block in `skills/quickfix/SKILL.md` (cur
 
 ### Dependencies
 
-- Phase 1 must be complete.
+- Phases 1A and 1B must both be complete.
 
 ## Phase 6 — Drift-prevention conformance + canary
 
@@ -817,12 +843,63 @@ Lock in the unification with conformance tripwires and a canary that exercises t
 
 ### Round History
 
-| Round | Reviewer | DA | Total findings | Fixed | Justified | Ignored |
-|-------|---------:|---:|---------------:|------:|----------:|--------:|
-| 1     | 8        | 10 | 18             | 12    | 4         | 0       |
-| 2     | 6        | 10 | 16             | 12    | 4         | 0       |
-| 3     | 6        | 10 | 14             | 8     | 6         | 0       |
-| **Cumulative** | **20** | **30** | **48** | **32** | **14** | **0** |
+| Round | Source | Reviewer | DA | Total findings | Fixed | Justified | Ignored |
+|-------|--------|---------:|---:|---------------:|------:|----------:|--------:|
+| 1     | /draft-plan | 8 | 10 | 18         | 12    | 4         | 0       |
+| 2     | /draft-plan | 6 | 10 | 16         | 12    | 4         | 0       |
+| 3     | /draft-plan | 6 | 10 | 14         | 8     | 6         | 0       |
+| 4     | /refine-plan (YAGNI pass) | 6 | 6 | 12 | 4 (1 removal + 3 simplifications + Phase 1 split) | 8         | 0       |
+| **Cumulative** | | **26** | **36** | **60** | **36** | **22** | **0** |
+
+## Drift Log
+
+The plan was drafted via `/draft-plan rounds 3` (commit ee6ad28) and refined via `/refine-plan` (this commit). No phases have been executed yet — Drift Log captures only the refinement-time structural delta vs. the original draft.
+
+| Phase | Drafted | Current | Delta |
+|-------|---------|---------|-------|
+| 1 (single phase) | 17 WIs, smoke checkpoint, ~1700 lines new code | **Split into 1A (foundation) and 1B (validation)** | 2 phases of ~10 + ~6 WIs; smoke at end of 1A; reviewable PR boundary; Phase 1 scope (DA9/DA3-6) addressed structurally |
+| 1 → WI 1.5a (`splice-body.sh` shared utility) | Added in /draft-plan Round 3 | **Removed** | YAGNI premature extraction — only /run-plan needs splicing today; future callers can extract when actually needed |
+| 2 → WI 2.1 (body splice recovery paths) | 5 paths covering splice-body.sh exits | **Collapsed to 3 paths** with inline awk | `splice-marker-mismatch` and `splice-write-failed` were artifacts of the removed shared utility; remaining 3 paths cover real failure modes |
+| Phase 2-6 dependencies | "Phase 1 must be complete" | **"Phases 1A and 1B must both be complete"** | Mechanical update from the split |
+
+## Plan Review
+
+**Refinement process:** `/refine-plan rounds 1` with focused YAGNI guidance from the maintainer.
+
+**Convergence:** Round 4 (refinement) found 12 findings; the surgical refinement addressed them with concrete edits or justified-not-fix.
+
+**Scope of Round 4:** the refinement targeted speculative additions from /draft-plan Round 3 (DA-driven hypothetical-future-drift items) and the Phase 1 scope concern that had been justified-not-fixed in Rounds 1 and 3. The maintainer's guidance was "surgical, don't rewrite."
+
+### Round 4 Disposition
+
+| Finding | Source | Disposition |
+|---|---|---|
+| **WI 1.5a (`splice-body.sh`) is YAGNI** | Reviewer + maintainer | **Fixed (removed).** Only /run-plan splices bodies today; /commit pr, /do pr, /fix-issues pr, /quickfix all create the PR body once and never update it. The "future caller drift" hypothesis was speculative. Inline awk in /run-plan's WI 2.1 replaces it. |
+| **WI 2.1 — collapse 5 recovery paths to 3** | Reviewer | **Fixed (simplified).** Two paths (`splice-marker-mismatch`, `splice-write-failed`) were artifacts of the removed shared utility. Remaining 3 (`gh-pr-view-failed`, `body-markers-missing`, `gh-pr-edit-failed`) cover real failure modes. |
+| **Phase 1 scope (17 WIs, ~1700 lines)** | DA9 (R1) + DA3-6 (R3) + maintainer | **Fixed (split into 1A/1B).** Re-opened from prior justified-not-fix dispositions. 1A = foundation + caller-facing references + smoke (~10 WIs); 1B = failure-modes doc + mocks + tests + conformance (~6 WIs). Phases 2–5 depend on both. Each phase is now a reviewable PR boundary. |
+| **WI 1.8 `_CLEANUP_PATHS` fragile string-match** | Reviewer | **Justified.** The current pattern preserves CI_LOG_FILE while cleaning others; it works correctly. A simpler pattern (only put cleanup-targets into the array) is a future polish, not a P1 blocker. |
+| **WI 1.13 mock-gh stateful counter** | DA (counter to reviewer YAGNI) | **Justified — keep.** Real test need: pre-check loop tests need sequential canned responses. Not over-engineering. |
+| **WI 1.13 `_CLEANUP_PATHS` cleanup itself necessary** | DA | **Justified — keep.** Real disk-space concern; CI_LOG_FILE preservation requires explicit sequencing. |
+| **WI 6.1 dispatch heuristic** | Reviewer (keep) | **Justified — keep.** Real conformance value; line-anchor pattern correctly avoids prose false-matches. |
+| **Smoke checkpoint** | DA + Reviewer (keep) | **Justified — keep, now naturally aligned with Phase 1A's end.** With the split, the smoke is the natural validation gate before 1B starts. |
+| **Round 3 prior-art bug fixes (87af82a/1de3049/175e4aa/b904cef)** | DA distinction call-out | **Justified — keep.** Distinguished from speculative additions; these are mandatory hardenings against documented prior bugs. |
+| **WI 1.14 test cases stay** | DA | **Justified — keep.** Tests cover real failure modes; not speculative. |
+| **Other Round 3 fixes (status mapping precedence, mock fail-fast, etc.)** | DA distinction | **Justified — keep.** All address real correctness or test-confidence issues, not speculative future drift. |
+
+### Cumulative Convergence
+
+After 4 rounds (3 /draft-plan + 1 /refine-plan), the plan has 60 total findings dispositioned: **36 fixed, 22 justified-not-fixed, 0 ignored**. The plan is ready for `/run-plan` execution starting with Phase 1A.
+
+### Load-bearing architectural decisions (read these before considering future changes)
+
+1. **File-based result contract with allow-list parser** (Phase 1A WI 1.7) — `/land-pr` writes single-line shell-safe `KEY=VALUE` lines plus sidecar files for multi-line content. Caller parses via line-by-line allow-list; never `source`s the file.
+2. **Caller-owned body splice with inline awk** (Phase 2 WI 2.1) — `/land-pr`'s `pr-push-and-create.sh` does NOT touch PR body on existing PRs. /run-plan splices its own progress section using inline awk (no shared utility — YAGNI).
+3. **Status mapping table is first-match-wins** (Phase 1A WI 1.12 step 8) — failure-exits and CI-failure rows precede CI-pass rows.
+4. **Mock-gh fail-fast on missing canned response** (Phase 1B WI 1B.2) — exit 127 with stderr error.
+5. **Subagent boundary contract** (Overview + Phase 1A WI 1.1 description) — `/land-pr` and the caller's fix-cycle agent dispatch are orchestrator-level only.
+6. **Phase 1 split into 1A (foundation) + 1B (validation)** — reviewable PR boundary; smoke checkpoint validates 1A before 1B writes tests on top.
+7. **Drop 300s `/fix-issues` timeout special case** (Phase 4) — same CI pipeline, same timeout.
+8. **/quickfix gains CI monitoring + fix-cycle** (Phase 5) — fire-and-forget was drift, not design.
 
 ### Load-bearing architectural decisions (read these before considering future changes)
 

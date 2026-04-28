@@ -16,7 +16,7 @@ Totals: 46 plans — 9 ready, 0 in progress, 14 complete, 20 canaries, 3 referen
 | [SCRIPTS_INTO_SKILLS_PLAN.md](SCRIPTS_INTO_SKILLS_PLAN.md) | 7 | 1 | Medium | Created 2026-04-26 |
 | [SKILL_FILE_DRIFT_FIX.md](SKILL_FILE_DRIFT_FIX.md) | 6 | 1 | Medium | Created 2026-04-26 |
 | [IMPROVE_STALENESS_DETECTION.md](IMPROVE_STALENESS_DETECTION.md) | 3 | 1 | Low | Created 2026-04-19 |
-| [PR_LANDING_UNIFICATION.md](PR_LANDING_UNIFICATION.md) | 6 | 1 | High | Drafted 2026-04-27 with 3 rounds adversarial review; extracts /land-pr from 5 duplicating skills (run-plan, commit pr, do pr, fix-issues pr, quickfix); inherits PR #75 gating |
+| [PR_LANDING_UNIFICATION.md](PR_LANDING_UNIFICATION.md) | 7 (1A,1B,2,3,4,5,6) | 1A | High | Drafted 2026-04-27, refined 2026-04-28 (YAGNI pass: removed splice-body utility, split Phase 1); extracts /land-pr from 5 duplicating skills; inherits PR #75 gating |
 | [ZSKILLS_MONITOR_PLAN.md](ZSKILLS_MONITOR_PLAN.md) | 9 | 1 | Low | Created 2026-04-19; refined 2026-04-26 |
 
 ## In Progress
