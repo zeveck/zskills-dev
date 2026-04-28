@@ -3,7 +3,7 @@
 
   This file contains the yellow-circle emoji (U+1F7E1) in PROSE only
   (never in a markdown table row starting with '|'). The fixture tests
-  that scripts/post-run-invariants.sh invariant #6 does NOT false-positive
+  that the post-run-invariants script (bundled in run-plan skill) invariant #6 does NOT false-positive
   on prose mentions of the sentinel after the row-scoped grep fix.
 
   If invariant #6 ever regresses to whole-file grep, this fixture will

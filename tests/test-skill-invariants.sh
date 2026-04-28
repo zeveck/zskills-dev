@@ -126,11 +126,12 @@ if [ -d ".claude/skills/cleanup-merged" ]; then
 fi
 
 # Cross-skill invariant: no skill statically prescribes `isolation: "worktree"`.
-# All worktree work must go through scripts/create-worktree.sh (manual creation)
-# per plans/EXECUTION_MODES.md. Word-boundary on "with" distinguishes prescriptions
-# ("Dispatch ... with `isolation: "worktree"`") from negative warnings ("WITHOUT
-# `isolation: "worktree"`"), so existing migrated skills don't false-positive.
-check 'no skill prescribes isolation: worktree (use scripts/create-worktree.sh)' \
+# All worktree work must go through skills/create-worktree/scripts/create-worktree.sh
+# (manual creation) per plans/EXECUTION_MODES.md. Word-boundary on "with"
+# distinguishes prescriptions ("Dispatch ... with `isolation: "worktree"`") from
+# negative warnings ("WITHOUT `isolation: "worktree"`"), so existing migrated skills
+# don't false-positive.
+check 'no skill prescribes isolation: worktree (use skills/create-worktree/scripts/create-worktree.sh)' \
   '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ block-diagram/ 2>/dev/null'
 
 # Emit format expected by tests/run-all.sh

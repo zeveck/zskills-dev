@@ -357,7 +357,7 @@ check_fixed update-zskills "WI2.2: runtime-read note" \
 
 echo ""
 echo "=== create-worktree.sh caller contract ==="
-# Every multi-line `bash ".../scripts/create-worktree.sh" \` invocation in
+# Every multi-line `bash ".../skills/create-worktree/scripts/create-worktree.sh" \` invocation in
 # skills/ must include `--pipeline-id` within the next 12 lines. Doc-prose
 # mentions (non-backslash-terminated `create-worktree.sh` lines) are not
 # invocations and are ignored here.

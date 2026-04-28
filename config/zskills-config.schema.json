@@ -93,10 +93,6 @@
           "default": 8080,
           "description": "Default dev server port for the main repo; worktrees get a hash-derived port in 9000-60000."
         },
-        "port_script": {
-          "type": "string",
-          "description": "Script that outputs the dev server port. Example: scripts/port.sh"
-        },
         "main_repo_path": {
           "type": "string",
           "description": "Absolute path to the main repo. Used by worktree agents to find the dev server."

@@ -133,13 +133,13 @@ expect_allow 'heredoc containing git stash -u' "$(printf 'cat <<EOF\ngit stash -
 # ---------------------------------------------------------------------------
 # Phase 2 — land-phase.sh reproducers
 # ---------------------------------------------------------------------------
-# Script signature is ONE arg: `bash scripts/land-phase.sh <worktree-path>`.
+# Script signature is ONE arg: `bash skills/commit/scripts/land-phase.sh <worktree-path>`.
 # MAIN_ROOT resolution uses `git rev-parse --git-common-dir` from CWD, so
 # every invocation subshell-cd's into the fixture's primary repo first.
 SCRIPT="$REPO_ROOT/skills/commit/scripts/land-phase.sh"
 
 section "write-landed.sh: rc-checked atomic marker writes (3 cases)"
-# Locks in the rc-check behavior introduced with scripts/write-landed.sh.
+# Locks in the rc-check behavior introduced with skills/commit/scripts/write-landed.sh.
 # The ad-hoc cat+mv pattern this helper replaces silently wrote empty/
 # partial markers on disk-full / read-only failures; the helper catches
 # those via `if ! cat ...` and `if ! mv ...` with loud stderr + rc=1.
@@ -190,7 +190,7 @@ expect_script_exit \
   bash -c "cd \"$dirty_primary\" && bash \"$SCRIPT\" \"$dirty_worktree\""
 
 section "land-phase.sh: tracked ephemeral rejected (4 cases)"
-# Array-drift guard: confirm scripts/land-phase.sh still lists exactly the
+# Array-drift guard: confirm skills/commit/scripts/land-phase.sh still lists exactly the
 # four ephemeral names we cover below. If the script's list drifts from
 # this plan's list, fail loudly so test authors update this phase rather
 # than silently passing against a changed list.
@@ -887,7 +887,7 @@ assert_tracking_deny \
   "concurrent-same-slug: run-plan.foo cannot see draft-plan.foo fulfillment" \
   "$tn1_out" "verify-changes.foo"
 
-# Case 2 — Glob-special chars sanitized by scripts/sanitize-pipeline-id.sh
+# Case 2 — Glob-special chars sanitized by skills/create-worktree/scripts/sanitize-pipeline-id.sh
 # BEFORE they reach disk. Verify the sanitizer collapses *, ?, [, ], and
 # spaces into '_' so writers never persist glob-special basenames.
 tn2_raw='has space*?[abc]'

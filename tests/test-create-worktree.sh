@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/create-worktree.sh — 21-case suite.
+# Tests for skills/create-worktree/scripts/create-worktree.sh — 21-case suite.
 # Run from repo root: bash tests/test-create-worktree.sh
 #
 # Cases 1-13 cover foundational behaviour: path-template variants,
@@ -118,7 +118,7 @@ trap cleanup EXIT
 
 mkdir -p "$TEST_TMPDIR"
 
-echo "=== Phase 1b — scripts/create-worktree.sh (20 cases) ==="
+echo "=== Phase 1b — skills/create-worktree/scripts/create-worktree.sh (20 cases) ==="
 
 # ────────────────────────────────────────────────────────────────────
 # Case 1 — Fresh creation (plain, no flags). rc=0, stdout=absolute path,

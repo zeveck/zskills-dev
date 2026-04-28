@@ -197,7 +197,6 @@ at [`config/zskills-config.schema.json`](config/zskills-config.schema.json).
   },
   "dev_server": {
     "cmd": "npm start",
-    "port_script": ".claude/skills/update-zskills/scripts/port.sh",
     "main_repo_path": "/home/you/projects/my-app"
   },
   "ui": {
@@ -225,7 +224,7 @@ Key fields:
   `/verify-changes`, `/run-plan`, the pre-commit hook, and others.
 - **`testing.output_file`** — Where test output gets captured. Never
   pipe test output; always capture to this file.
-- **`dev_server.cmd` / `port_script` / `main_repo_path`** — Lets
+- **`dev_server.cmd` / `main_repo_path`** — Lets
   worktree agents find the running dev server in the main repo.
   `main_repo_path` must be the absolute path to your repo's root
   (substitute your own — the example above is illustrative).
@@ -272,9 +271,10 @@ Two other file types sit alongside tracking markers:
   orchestrator writes it before dispatching work, removes it after the
   pipeline completes. Hooks use it to scope marker matching.
 - **`.landed`** (worktree root) — a YAML-ish marker written by
-  `/commit land` / `.claude/skills/commit/scripts/write-landed.sh` when a worktree's work has
-  been cherry-picked (or merged) to main. `status: full` = safe to
-  remove the worktree. `status: partial` / `not-landed` = inspect first.
+  `/commit land` (via the script bundled in the `commit` skill) when a
+  worktree's work has been cherry-picked (or merged) to main. `status: full`
+  = safe to remove the worktree. `status: partial` / `not-landed` = inspect
+  first.
 
 ## Hook policies
 

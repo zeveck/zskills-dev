@@ -1,5 +1,5 @@
 #!/bin/bash
-# Tests for scripts/port.sh
+# Tests for skills/update-zskills/scripts/port.sh
 # Run from repo root: bash tests/test-port.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
