@@ -294,6 +294,8 @@ mutation and recurring-schedule subcommands land in Phase 3.
   `plans/PLAN_INDEX.md` are independent: an unreadable
   `PLAN_INDEX.md` falls back to frontmatter scan with a warning to
   stderr; an unparseable `monitor-state.json` halts (exit 1).
+  All read-modify-write paths acquire the cross-process flock per
+  Shared Schemas.
 - [ ] **resolve** sub-step: build a slug→`plans/<FILE>.md` dict by
   scanning `plans/*.md` once and applying the canonical slug rule
   (Shared Schemas) inline as a one-line `tr` (`basename | tr
@@ -307,8 +309,8 @@ mutation and recurring-schedule subcommands land in Phase 3.
   with args `plans/<FILE>.md auto` (mode=phase) or
   `plans/<FILE>.md auto finish` (mode=finish). No landing-mode flag —
   `/run-plan` resolves its own (currently `pr` per config).
-  `/run-plan` itself uses `scripts/create-worktree.sh` for worktree
-  creation; `/work-on-plans` does not call it directly.
+  `/run-plan` itself uses `skills/create-worktree/scripts/create-worktree.sh`
+  for worktree creation; `/work-on-plans` does not call it directly.
 - [ ] Failure policy: stop on first `/run-plan` failure unless
   `continue` is set. Failure detection: see Design.
 - [ ] Sprint-state tracking: `N`/`all` modes write
@@ -334,21 +336,37 @@ mutation and recurring-schedule subcommands land in Phase 3.
     `fulfilled.run-plan.<plan-slug>` (same fields plus `status:
     complete` and `date:`) into the same parent subdir. Do NOT
     instruct `/run-plan` to emit `parent:` — `/run-plan` does not
-    accept the field, and per `docs/tracking/TRACKING_NAMING.md:282-315`
-    the parent — not the child — owns the parent-tagged marker. The
-    child `/run-plan` continues to write its own
-    `fulfilled.run-plan.<plan-slug>` under `run-plan.<plan-slug>/`
-    via its existing logic; `/work-on-plans` does not modify it. This
-    matches `/fix-issues`'s actual pattern
-    (`skills/fix-issues/SKILL.md:336, 902` — parent writes
-    `requires.draft-plan.*` / `fulfilled.draft-plan.*` with `parent:
-    fix-issues` into its own subdir).
+    accept the field. The `parent:` field schema is: an optional
+    `parent: <skill-name>` line in marker bodies, written by the
+    parent skill when it writes `requires.*`/`fulfilled.*` for a
+    dispatched child; consumed by Phase 4's activity scan to group
+    dispatched runs under their orchestrator. (Documented inline
+    here pending a section addition to `docs/tracking/TRACKING_NAMING.md`
+    — see Phase 1 work item below.) The child `/run-plan` continues
+    to write its own `fulfilled.run-plan.<plan-slug>` under
+    `run-plan.<plan-slug>/` via its existing logic; `/work-on-plans`
+    does not modify it. This matches `/fix-issues`'s actual pattern
+    (`skills/fix-issues/SKILL.md`, anchor `grep -n 'parent: fix-issues'`
+    locates the pattern at lines 346 and 924 of the file as of refine
+    time — parent writes `requires.draft-plan.*` /
+    `fulfilled.draft-plan.*` with `parent: fix-issues` into its own
+    subdir).
   - Phase 4's activity scan reads `parent:` from the work-on-plans
     subdir's parent-tagged markers to group dispatched runs under
     their orchestrator in the UI.
-  - All ids sanitized via `bash scripts/sanitize-pipeline-id.sh`.
-- [ ] Mirror `skills/work-on-plans` → `.claude/skills/work-on-plans`
-  via `cp -r` (one shot, never per-file Edit).
+  - All ids sanitized via
+    `bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"`.
+- [ ] **Document the `parent:` marker field schema** in
+  `docs/tracking/TRACKING_NAMING.md`. Add a sub-section "Parent-tagged
+  markers" describing the field as: optional one-line `parent: <skill-name>`
+  in `requires.*` / `fulfilled.*` marker bodies; written by the parent
+  skill into its own subdir when dispatching a child; ignored by the
+  child; consumed by readers (Phase 4 activity scan) to group dispatched
+  runs. Cross-link from the Delegation semantics section. This closes
+  the documentation gap raised in F-10.
+- [ ] Mirror `skills/work-on-plans/` → `.claude/skills/work-on-plans/`
+  via `bash scripts/mirror-skill.sh work-on-plans` (one shot, never
+  per-file Edit; uses the hook-compatible mirror tool).
 
 ### Design & Constraints
 
@@ -410,8 +428,9 @@ exists. Open the dashboard to remove it from the queue, or edit
 
 **Dispatch mechanism.** `/work-on-plans` runs at top level (parent
 session). It dispatches `/run-plan` via the **Skill tool**, not the
-Agent tool, using the canonical syntax from
-`skills/research-and-plan/SKILL.md:74-104`:
+Agent tool, using the canonical syntax documented in
+`skills/research-and-plan/SKILL.md` § "Why /draft-plan must be invoked
+via the Skill tool, not the Agent tool":
 
 > invoke `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto" }`
 
@@ -469,14 +488,14 @@ debt — when `/run-plan` exposes a machine-readable failure indicator
 `docs/tracking/TRACKING_NAMING.md`. The `parent:` field is written by
 `/work-on-plans` itself into ITS OWN subdir's `requires.run-plan.*`
 and `fulfilled.run-plan.*` markers — matching the precedent in
-`skills/fix-issues/SKILL.md:336, 902`. Per
-`docs/tracking/TRACKING_NAMING.md:282-315`, the parent owns the
-parent-tagged marker; the child's own subdir is unmodified by this
-skill.
+`skills/fix-issues/SKILL.md` (anchor `grep -n 'parent: fix-issues'`).
+The field schema is documented inline in this phase's Tracking-markers
+work item AND added to `docs/tracking/TRACKING_NAMING.md` as a Phase 1
+work item (closes F-10).
 
 **Phase rules:**
 - Never edit `.claude/skills/` directly. Edit `skills/` source,
-  then `cp -r` mirror.
+  then mirror via `bash scripts/mirror-skill.sh <name>`.
 - No jq in skill body.
 - Phase 1 must self-implement the slug rule inline; importing
   `slug_of` would create a hard dependency on Phase 4 and block
@@ -487,7 +506,9 @@ skill.
 - [ ] `skills/work-on-plans/SKILL.md` exists with the specified
   frontmatter (`grep '^name: work-on-plans' …` matches).
 - [ ] Mirror byte-identical: `diff -q skills/work-on-plans/SKILL.md
-  .claude/skills/work-on-plans/SKILL.md` returns 0.
+  .claude/skills/work-on-plans/SKILL.md` returns 0; `diff -rq
+  skills/work-on-plans/ .claude/skills/work-on-plans/` returns 0
+  (catches sibling-file drift not caught by the single-file diff).
 - [ ] `/work-on-plans` with no args prints the ready queue list per
   the no-args output format (priority + per-row mode), including
   default-mode and schedule status; exits 0 (read-only).
@@ -540,15 +561,28 @@ skill.
 - [ ] Tracking marker `fulfilled.work-on-plans.<sprint-id>` appears
   under `.zskills/tracking/work-on-plans.<sprint-id>/` after
   `sprint`. After `next`, no new marker.
+- [ ] `docs/tracking/TRACKING_NAMING.md` contains a "Parent-tagged
+  markers" sub-section after this phase
+  (`grep -n '## .*Parent-tagged' docs/tracking/TRACKING_NAMING.md`
+  returns at least one match).
+- [ ] Cross-process lock acquisition: a parallel-write fixture
+  (two `/work-on-plans add <slug>` invocations forked in the same
+  shell) produces a final `monitor-state.json` containing both new
+  entries — verifies the flock prevents lost-update.
 
 ### Dependencies
 
 - `/run-plan` skill (dispatch target; finish mode supported).
-- `scripts/sanitize-pipeline-id.sh`.
-- `scripts/create-worktree.sh` (used by `/run-plan` itself; not
-  invoked directly here).
+- `skills/create-worktree/scripts/sanitize-pipeline-id.sh` (invoked at
+  install-time as `$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh`;
+  in source-tree zskills tests as
+  `$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh`).
+- `skills/create-worktree/scripts/create-worktree.sh` (used by
+  `/run-plan` itself; not invoked directly here).
 - `/fix-issues` skill body (reference for CLI parsing, scheduling,
   reporting, and the `parent:` marker pattern — read-only).
+- `scripts/mirror-skill.sh` (Tier-2; replaces the now-hook-blocked
+  `rm -rf .claude/skills/<name> && cp -r …` recipe).
 - No prior plan phase is required (this phase lands first).
 
 ---
@@ -582,7 +616,13 @@ maintenance). Batch execution moves to `/work-on-plans` (Phase 1).
   prioritized ready queue from the monitor dashboard |`.
 - [ ] Edit `CHANGELOG.md`: add `### Migration — /plans work
   removed` explaining the move to `/work-on-plans` and listing
-  affected skills.
+  affected skills. The entry MUST call out the cron-cleanup
+  scope limitation (see Design): `CronDelete` only sees crons
+  registered in the running session; users with `/plans work …
+  every <N>` crons in OTHER sessions must run `CronList` +
+  manual `CronDelete` from each affected session OR wait for
+  those sessions to terminate (in-session crons die with the
+  session).
 - [ ] Edit `PRESENTATION.html` example. Reference by content
   anchor, not line number: replace `<code>/plans work 3 auto every
   6h</code>` with `<code>/work-on-plans 3 auto every 6h</code>`.
@@ -597,7 +637,8 @@ maintenance). Batch execution moves to `/work-on-plans` (Phase 1).
   Mirrors `/run-plan stop`'s cron-cleanup pattern. Skip prompts
   that don't match (don't touch `/run-plan` or `/fix-issues`
   schedules).
-- [ ] Mirror `skills/plans` → `.claude/skills/plans` via `cp -r`.
+- [ ] Mirror `skills/plans/` → `.claude/skills/plans/` via
+  `bash scripts/mirror-skill.sh plans`.
 
 ### Design & Constraints
 
@@ -614,6 +655,16 @@ intermediate "TODO Phase 9" stub is added (zskills is
 pre-backwards-compat, per `feedback_no_premature_backcompat`
 memory).
 
+**Cron-cleanup scope.** `CronList`/`CronDelete` are session-scoped
+(per `project_scheduling_primitives` memory). When this phase runs
+in a worktree (PR landing mode), it sees ONLY the worktree-session's
+crons, not crons registered in the user's main session or other
+sprints. The cleanup is therefore best-effort. The CHANGELOG entry
+must document this so users know to run the cleanup from each
+session that ever ran `/plans work … every`. In-session crons die
+with the session, so any session that has terminated needs no
+cleanup.
+
 **Enumeration check (blocking).** Before declaring this phase complete:
 
 ```bash
@@ -626,7 +677,7 @@ legitimate uses.)
 
 **Phase rules:**
 - Never edit `.claude/skills/` directly. Edit `skills/` source,
-  then `cp -r` mirror.
+  then `bash scripts/mirror-skill.sh plans`.
 - Do not run `/plans rebuild` as part of this phase.
 
 ### Acceptance Criteria
@@ -638,20 +689,23 @@ legitimate uses.)
   returns one row; `grep -niE '\bbatch\s+execution\b' README.md
   | grep -i plans` returns zero lines.
 - [ ] CHANGELOG.md contains a `Migration — /plans work removed`
-  entry introduced in this commit.
+  entry introduced in this commit, including the cron-cleanup
+  scope-limitation paragraph.
 - [ ] PRESENTATION.html: `grep -n '/plans work' PRESENTATION.html`
   returns no matches AND `grep -cE '<code>/work-on-plans 3 auto every 6h</code>'
   PRESENTATION.html` returns exactly 1 (replacement present, not
   just removal).
-- [ ] `diff -q skills/plans/SKILL.md .claude/skills/plans/SKILL.md`
-  returns 0.
-- [ ] No surviving `/plans work … every SCHEDULE` crons after
-  `CronList`.
+- [ ] `diff -rq skills/plans/ .claude/skills/plans/` returns 0
+  (catches mirror drift on sibling files).
+- [ ] No surviving in-session `/plans work … every SCHEDULE` crons
+  after `CronList` (best-effort; cross-session crons documented in
+  CHANGELOG).
 
 ### Dependencies
 
 - Phase 1 (`/work-on-plans` must exist as the migration target
   before retiring `/plans work`).
+- `scripts/mirror-skill.sh`.
 
 ---
 
@@ -676,7 +730,8 @@ argument-hint surface is functional.
   subcommands (`add`/`rank`/`remove`/`default`/`every`) auto-create
   `monitor-state.json` via the same shared helper Phase 1 used (one
   bootstrap helper for both phases — separate call sites, identical
-  output). `ready` starts empty.
+  output). `ready` starts empty. All read-modify-write paths acquire
+  the cross-process flock per Shared Schemas.
 - [ ] `every SCHEDULE [phase|finish]`: in-session cron via
   `CronCreate`, self-perpetuating like `/fix-issues`. **Mode-capture
   invariant.** At registration the resolved mode (CLI flag > current
@@ -704,8 +759,9 @@ argument-hint surface is functional.
 - [ ] Tracking markers (extending Phase 1):
   `fulfilled.work-on-plans.<sprint-id>` is also written for
   `schedule` and `stop` modes (NOT `next`, still read-only).
-- [ ] Mirror `skills/work-on-plans` → `.claude/skills/work-on-plans`
-  via `cp -r` (one shot, never per-file Edit).
+- [ ] Mirror `skills/work-on-plans/` → `.claude/skills/work-on-plans/`
+  via `bash scripts/mirror-skill.sh work-on-plans` (one shot, never
+  per-file Edit).
 
 ### Design & Constraints
 
@@ -754,7 +810,7 @@ instead." Do NOT write `work-on-plans-state.json` on failure.
 
 **Phase rules:**
 - Never edit `.claude/skills/` directly. Edit `skills/` source,
-  then `cp -r` mirror.
+  then `bash scripts/mirror-skill.sh work-on-plans`.
 - This phase only writes `monitor-state.json` and
   `work-on-plans-state.json` — it does NOT read the snapshot from
   Phase 4 (the dashboard is the read-side consumer of those files).
@@ -792,13 +848,22 @@ instead." Do NOT write `work-on-plans-state.json` on failure.
 - [ ] Tracking marker `fulfilled.work-on-plans.<sprint-id>` appears
   under `.zskills/tracking/work-on-plans.<sprint-id>/` after
   `schedule` or `stop`. After `next`, no new marker.
+- [ ] Mirror byte-identical: `diff -rq skills/work-on-plans/
+  .claude/skills/work-on-plans/` returns 0.
+- [ ] Cross-process lock acquisition: a parallel mutation fixture
+  (server POST + CLI `add` racing) yields a final `monitor-state.json`
+  that contains both edits — verifies the flock prevents lost-update.
 
 ### Dependencies
 
 - Phase 1 (extends the same skill body and shares the
   bootstrap-`monitor-state.json` helper).
-- `scripts/sanitize-pipeline-id.sh`.
+- `skills/create-worktree/scripts/sanitize-pipeline-id.sh` (invoked
+  via the canonical `$MAIN_ROOT/.claude/skills/create-worktree/scripts/`
+  install-time path, or `$REPO_ROOT/skills/create-worktree/scripts/`
+  in zskills source-tree tests).
 - `CronCreate`/`CronDelete`/`CronList` primitives.
+- `scripts/mirror-skill.sh`.
 - This phase does NOT depend on Phase 4 — it only writes
   `monitor-state.json` / `work-on-plans-state.json`. Reads of
   those files happen in the dashboard stack (Phases 4–7).
@@ -809,27 +874,45 @@ instead." Do NOT write `work-on-plans-state.json` on failure.
 
 ### Goal
 
-Pure-Python, stdlib-only module at `scripts/zskills_monitor/` that
-aggregates every data source the dashboard renders into a single JSON
-document via `collect_snapshot(repo_root)`. Pure functions, dict out.
+Pure-Python, stdlib-only module at
+`skills/zskills-dashboard/scripts/zskills_monitor/` (owned by the
+`/zskills-dashboard` skill created in Phase 8) that aggregates every
+data source the dashboard renders into a single JSON document via
+`collect_snapshot(repo_root)`. Pure functions, dict out.
 Unit-testable without a server. **Standalone-callable invariant:**
 `collect.py` MUST remain importable and runnable independently of
-`server.py` (Phase 5) — the CLI (`python3 -m zskills_monitor.collect`)
+`server.py` (Phase 5) — the CLI
+(`PYTHONPATH=…/skills/zskills-dashboard/scripts python3 -m zskills_monitor.collect`)
 is the canonical isolation test. Future callers (notably Phase 9's
 `/plans rebuild` migration) depend on this module having no
 HTTP-server coupling. `collect.py` must not import from `server.py`.
 
+**Module-location rationale.** Per `CLAUDE.md` and
+`skills/update-zskills/references/script-ownership.md`, post-Phase-B
+skill machinery lives at `skills/<owner>/scripts/`. Phase 8 creates
+`/zskills-dashboard`; that skill is the natural owner for the
+collector + server + static UI. Placing the package at the flat
+`scripts/zskills_monitor/` would create a divergent precedent and
+ship `/zskills-dashboard` without owning its own machinery.
+
 ### Work Items
 
-- [ ] Create package `scripts/zskills_monitor/` with `__init__.py`
-  (empty) and `collect.py`.
+- [ ] Create package `skills/zskills-dashboard/scripts/zskills_monitor/`
+  with `__init__.py` (empty) and `collect.py`.
+  (The `skills/zskills-dashboard/` directory is also touched by
+  Phase 8's `SKILL.md`. The two phases edit disjoint files within
+  the same skill directory; mirror discipline runs at the end of
+  whichever phase lands last in any given sprint.)
 - [ ] Implement `parse_plan(path) -> dict` — extract frontmatter,
   Overview blurb (first non-empty paragraph after `## Overview`,
   trimmed to 240 chars), Landing-mode hint (Shared Schemas regex),
   phase-heading list, and progress-tracker table with status-glyph
   map (`⬚`=todo, `⏳`/`⚙️`=in-progress, `✅`=done, `🔴`=blocked).
   Frontmatter parsed via the same regex idiom as
-  `scripts/briefing.py:scan_plans` (no PyYAML).
+  `skills/briefing/scripts/briefing.py` (anchor: `def scan_plans` at
+  the time of refine — locate via `grep -n '^def scan_plans'`).
+  No PyYAML. Also derive `category`, `meta_plan`, and `sub_plans`
+  per the categorization rules below.
 - [ ] Implement `parse_report(slug) -> dict | None` — see "Report
   parsing rules" in Design.
 - [ ] Implement `slug_of(path) -> str` exposing the canonical slug
@@ -847,18 +930,21 @@ HTTP-server coupling. `collect.py` must not import from `server.py`.
   carry `location: "legacy"`, subdir entries carry
   `location: "pipeline"` plus `pipeline: <subdir-name>` and (if
   present in marker text) a `parent: <parent-pipeline-id>` field.
-- [ ] Implement worktree + branch listing reusing
-  `scripts/briefing.py` helpers (`parse_worktree_list:362`,
-  `parse_for_each_ref:386`, `parse_landed:95`,
-  `classify_worktrees:156`, `find_repo_root:41`). Wrap helper
-  invocations: any exception or non-zero subprocess return appends
-  to `errors[]` with `source: "git worktree"` / `"git for-each-ref"`
-  and returns an empty list. The aggregator never raises on git
-  failure.
+- [ ] Implement worktree + branch listing reusing helpers from
+  `skills/briefing/scripts/briefing.py`. Required helpers (located
+  via `grep -n '^def …' skills/briefing/scripts/briefing.py` at
+  refine time): `find_repo_root`, `parse_landed`,
+  `classify_worktrees`, `parse_worktree_list`, `parse_for_each_ref`.
+  Wrap helper invocations: any exception or non-zero subprocess
+  return appends to `errors[]` with `source: "git worktree"` /
+  `"git for-each-ref"` and returns an empty list. The aggregator
+  never raises on git failure.
 - [ ] Implement `list_issues()` — caches `gh issue list --state open
   --limit 500 --json number,title,labels,createdAt,body` for 60s in
   module-level state; on `gh` failure returns last cache or `[]`
-  and appends to `errors[]`. Never raises.
+  and appends to `errors[]`. Never raises. Cache is per-Python-process;
+  CLI invocations from `/plans rebuild` and the server are independent
+  cache scopes — documented limitation, not a bug (per DA-14).
 - [ ] Implement state-file merge: read
   `MAIN_ROOT/.zskills/monitor-state.json` (path resolved via
   `find_repo_root` — always main, never cwd-relative); annotate each
@@ -874,9 +960,19 @@ HTTP-server coupling. `collect.py` must not import from `server.py`.
   `queues.default_mode` (default `"phase"` if absent).
 - [ ] Implement `collect_snapshot(repo_root) -> dict` returning the
   stable JSON shape below. `repo_root` accepts `Path` or `str`.
-- [ ] CLI: `python3 -m zskills_monitor.collect [--fixture DIR]`
-  prints JSON to stdout for shell-test consumption.
-- [ ] Create test fixtures under `tests/fixtures/monitor/`:
+- [ ] CLI: `PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts"
+  python3 -m zskills_monitor.collect [--fixture DIR]` prints JSON to
+  stdout for shell-test consumption. The CLI invocation pattern is
+  documented inline in this phase's Design.
+- [ ] **`errors[]` ordering & cap** (per DA-10). Sort by
+  `(source, message)` ascending so the array is a deterministic
+  function of the underlying error set. Soft cap at 100 entries; if
+  exceeded, drop the oldest-source-first overflow and append one
+  entry `{"source": "errors-cap", "message": "<N> errors elided"}`.
+- [ ] Create test fixtures under `tests/fixtures/monitor/` (verify
+  directory does not pre-exist before creating; current
+  `tests/fixtures/` has only a `canary/` subdir, so `monitor/` is
+  open):
   - `minimal/` — one plan, one report, one tracking marker.
   - `with-state/` — same plus a populated `monitor-state.json`.
   - `corrupt-state/` — same plus a malformed `monitor-state.json`
@@ -884,6 +980,13 @@ HTTP-server coupling. `collect.py` must not import from `server.py`.
   - `slug-uppercase/` — plan filename `MY_PLAN_FILE.md` exercising
     the canonical slug rule (verifies Phase 1's inline `tr` and
     Phase 4's `slug_of()` produce identical output).
+  - `category-canary/` — filename `CANARY42.md` with a small body
+    (exercises the `category: "canary"` rule).
+  - `category-issues/` — filename `BUG_TRACKER_ISSUES.md`
+    (exercises `category: "issue_tracker"`).
+  - `category-meta/` — plan body containing
+    `Skill: { skill: "run-plan", args: "plans/sub.md auto" }`
+    (exercises `meta_plan: true` + `sub_plans: ["sub"]`).
 - [ ] `tests/test_zskills_monitor_collect.sh` — runs the CLI against
   each fixture, asserts JSON keys and types. Test output goes to
   `$TEST_OUT/.test-results.txt` per CLAUDE.md (never pipe). Register
@@ -894,24 +997,90 @@ HTTP-server coupling. `collect.py` must not import from `server.py`.
 **Module layout:**
 
 ```
-scripts/zskills_monitor/
-├── __init__.py
-├── collect.py          # this phase — pure aggregation, no HTTP
-├── server.py           # Phase 5 (imports collect, NOT vice versa)
-└── static/             # Phase 6
-    ├── index.html
-    ├── app.css
-    └── app.js
+skills/zskills-dashboard/
+├── SKILL.md              # Phase 8
+└── scripts/
+    └── zskills_monitor/
+        ├── __init__.py
+        ├── collect.py    # this phase — pure aggregation, no HTTP
+        ├── server.py     # Phase 5 (imports collect, NOT vice versa)
+        └── static/       # Phase 6
+            ├── index.html
+            ├── app.css
+            └── app.js
 ```
+
+(The `static/` directory is conventionally a sibling of `scripts/`
+in Python packaging, but here it ships INSIDE the `zskills_monitor`
+package so the server can locate it via `pathlib.Path(__file__).parent
+/ "static"` without PYTHONPATH gymnastics. This is acceptable for a
+small embedded UI; if the static tree grows or needs CDN-ing, lift
+it to `skills/zskills-dashboard/static/`.)
+
+**PYTHONPATH discipline.** Every CLI invocation of the package, in
+any phase, MUST set PYTHONPATH OR cd into the parent directory.
+Canonical recipe:
+
+```bash
+MAIN_ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts:${PYTHONPATH:-}" \
+  python3 -m zskills_monitor.collect [args]
+```
+
+Equivalent for tests:
+
+```python
+import sys, pathlib
+sys.path.insert(0, str(pathlib.Path(MAIN_ROOT) /
+                       "skills/zskills-dashboard/scripts"))
+from zskills_monitor.collect import collect_snapshot
+```
+
+The `from scripts.zskills_monitor.…` import shape from earlier drafts
+is RETIRED. The package is `zskills_monitor`, root-relative to its
+own enclosing `scripts/` directory.
 
 **Stdlib + internal helpers only.** Allowed external imports:
 `json`, `subprocess`, `re`, `pathlib`, `os`, `sys`, `time`,
-`datetime`, `argparse`, `typing`. **Forbidden:** `yaml`, `pyyaml`,
-`requests`, any pip install, any Node tooling. Internal imports
-from `scripts/briefing.py` are permitted (briefing.py is part of
-the test harness and is exercised in the existing test suite); they
-are NOT considered server coupling. `collect.py` must not import
-`server.py` or any HTTP/socket module.
+`datetime`, `argparse`, `typing`, `importlib.util`. **Forbidden:**
+`yaml`, `pyyaml`, `requests`, any pip install, any Node tooling.
+
+**Reuse from `briefing.py`.** Load via path-based import — the
+canonical Python recipe for importing a module from outside the
+import path:
+
+```python
+import importlib.util, pathlib
+def _load_briefing(main_root):
+    spec = importlib.util.spec_from_file_location(
+        "briefing",
+        pathlib.Path(main_root) / "skills" / "briefing" / "scripts" / "briefing.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+```
+
+Helpers reused: `parse_worktree_list`, `parse_for_each_ref`,
+`parse_landed`, `classify_worktrees`, `find_repo_root`. Locate by
+anchor (`grep -n '^def <name>' skills/briefing/scripts/briefing.py`)
+since briefing.py has been edited and line numbers drift.
+`briefing.scan_plans` is NOT reused — its slug rule
+(`os.path.splitext(basename)`) differs from the canonical slug rule
+above; using it would break report lookups for any plan whose
+basename contains uppercase or `_`.
+
+(An equivalent simpler form is `sys.path.insert(0,
+"$MAIN_ROOT/skills/briefing/scripts"); import briefing`. Either path
+works; the spec_from_file_location form is preferred when the
+collector is imported from contexts that already have a competing
+top-level `briefing` module, which Phase 4 does not currently have
+but is robust against.)
+
+These internal imports do NOT count as "server coupling" — `briefing.py`
+is part of the test harness and is exercised in the existing test
+suite. `collect.py` must still not import `server.py` or any HTTP/socket
+module.
 
 **MAIN_ROOT resolution.** Every path that touches repo state
 (`.zskills/`, `plans/`, `reports/`) is constructed as `MAIN_ROOT /
@@ -942,6 +1111,9 @@ from a worktree as from main.
         {"n": 1, "name": "Data aggregation library",
          "status": "todo", "commit": null, "notes": ""}
       ],
+      "category": "executable",
+      "meta_plan": false,
+      "sub_plans": [],
       "has_report": false,
       "report_path": null,
       "queue": {"column": "reviewed", "index": 2, "mode": null}
@@ -994,6 +1166,22 @@ requires updating those callers in the same commit.
 - Progress tracker table: locate the row with `^\|\s*Phase\s*\|`,
   parse subsequent `|`-separated rows, apply the status-glyph map.
 - `phases_done` = count of progress-tracker rows with status `done`.
+- **Categorization** (drives Phase 9's index sections):
+  - `category = "canary"` if filename basename matches `^CANARY`
+    (case-sensitive; `CANARY42.md`, `CANARY_TRACKING.md`).
+  - `category = "issue_tracker"` if basename matches
+    `_ISSUES\.md$` (case-sensitive on `ISSUES`; e.g.
+    `BUG_TRACKER_ISSUES.md`).
+  - `category = "reference"` if frontmatter has
+    `executable: false` OR (heuristic) the plan body has zero
+    `## Phase N` headings AND zero progress-tracker table.
+  - Otherwise `category = "executable"`.
+- **Meta-plan detection**: `meta_plan = true` if the plan body
+  contains at least one `Skill: { skill: "run-plan"` literal
+  (regex: `Skill\s*:\s*\{\s*skill\s*:\s*["']run-plan["']`).
+  When true, `sub_plans` is the list of slugs extracted from the
+  `args:` field of each such Skill directive. Empty list when no
+  matches.
 
 **Report parsing rules (`parse_report(slug)`):**
 
@@ -1040,17 +1228,13 @@ the conflict is logged to `errors[]`.
 **`gh` issue cache.** `list_issues()` caches results for 60s in
 module-level state; on `gh` non-zero exit returns last cache or `[]`
 and appends to `errors[]` with `source: "gh issue list"`. Never raises.
+Per-process cache; documented limitation per DA-14.
 
-**Reuse from `briefing.py`.** Import via
-`from scripts.briefing import ...` after `sys.path` is set to repo
-root (resolved via `find_repo_root()`, not relative to `__file__` —
-this works under both `python3 -m zskills_monitor.collect` and
-direct script execution). Helpers reused: `parse_worktree_list`,
-`parse_for_each_ref`, `parse_landed`, `classify_worktrees`,
-`find_repo_root`. `briefing.scan_plans` is NOT reused — its slug rule
-(`os.path.splitext(basename)`) differs from the canonical slug rule
-above; using it would break report lookups for any plan whose
-basename contains uppercase or `_`.
+**`errors[]` ordering & cap.** Sorted by `(source, message)`. Soft
+cap at 100; overflow drops the oldest-source-first entries and adds
+one summary entry. Per DA-10 — closes the per-poll re-render bug
+where the UI's order-sensitive equality check would re-render when
+the underlying error SET hadn't changed.
 
 **Never use `|| true` or `2>/dev/null`.** Failures append to
 `errors[]` with diagnostic source/message. Phase 6 surfaces these
@@ -1058,20 +1242,34 @@ to the UI as a banner.
 
 ### Acceptance Criteria
 
-- [ ] `python3 -m zskills_monitor.collect --fixture
+- [ ] `PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts"
+  python3 -m zskills_monitor.collect --fixture
   tests/fixtures/monitor/minimal` exits 0 and the JSON contains all
   top-level keys listed in Design.
 - [ ] **Standalone-callable check.** From a fresh Python REPL
-  (no server running): `from scripts.zskills_monitor.collect import
-  collect_snapshot, slug_of; collect_snapshot('/workspaces/zskills')`
+  (no server running):
+  ```python
+  import sys, pathlib
+  sys.path.insert(0, str(pathlib.Path(MAIN_ROOT) /
+                         "skills/zskills-dashboard/scripts"))
+  from zskills_monitor.collect import collect_snapshot, slug_of
+  collect_snapshot(MAIN_ROOT)
+  ```
   returns a dict with the documented top-level keys.
-  `grep -nE 'from\s+\.server|from\s+scripts\.zskills_monitor\.server|import\s+http\.server|import\s+socketserver'
-  scripts/zskills_monitor/collect.py` returns no matches.
+  `grep -nE 'from\s+\.server|from\s+zskills_monitor\.server|import\s+http\.server|import\s+socketserver'
+  skills/zskills-dashboard/scripts/zskills_monitor/collect.py` returns
+  no matches.
 - [ ] **Snapshot key contract.** Output JSON top-level keys are
   exactly the set `{version, updated_at, repo_root, plans, issues,
   worktrees, branches, activity, queues, state_file_path, errors}`
   (no extras, no missing). Each `plans[]` entry has at minimum
-  `{slug, file, title, status, phases, queue}`.
+  `{slug, file, title, status, phases, category, meta_plan, sub_plans,
+  queue}`.
+- [ ] **Category inference**: with the `category-canary/`,
+  `category-issues/`, and `category-meta/` fixtures, snapshot's
+  per-plan `category` is `"canary"`, `"issue_tracker"`, and
+  `"executable"` respectively; `meta_plan` is `false, false, true`;
+  `sub_plans` for the meta fixture is `["sub"]`.
 - [ ] Queue annotation: with a fixture state file containing
   `{"version":"1.1","plans":{"ready":[{"slug":"zskills-dashboard-plan","mode":"finish"}]}}`,
   snapshot's `plans[0].queue == {"column":"ready","index":0,"mode":"finish"}`.
@@ -1086,6 +1284,12 @@ to the UI as a banner.
 - [ ] State-file corrupt (`corrupt-state` fixture): snapshot returns
   without raising; `errors[]` contains one entry with `source:
   ".zskills/monitor-state.json"` and a non-empty `message`.
+- [ ] `errors[]` is sorted: a fixture with three intentional errors
+  yields snapshot's `errors[]` ordered by `(source, message)`
+  ascending. Re-running `collect_snapshot` against the same fixture
+  produces a byte-identical `errors[]` array (deterministic).
+- [ ] `errors[]` cap: a fixture with 150 simulated errors yields
+  100 entries plus one `{"source": "errors-cap", ...}` summary entry.
 - [ ] Landing-mode resolution: a plan with `> **Landing mode: PR**`
   in body → `landing_mode == "pr"`. With config missing AND no
   blockquote → `landing_mode == "unknown"` and `errors[]` has the
@@ -1096,8 +1300,16 @@ to the UI as a banner.
   Differing-content variant: same fixture but the two files have
   different `date:` values → still one entry (subdir wins) and
   `errors[]` has a `source: "tracking dedup"` entry.
-- [ ] No PyYAML/requests: `grep -nE '^import\s+(yaml|requests)'
-  scripts/zskills_monitor/collect.py` returns no matches.
+- [ ] No PyYAML/requests:
+  `grep -nE '^import\s+(yaml|requests)' skills/zskills-dashboard/scripts/zskills_monitor/collect.py`
+  returns no matches.
+- [ ] Briefing helpers reused via path import (NOT bare
+  `from scripts.briefing`):
+  `grep -nE '^from\s+scripts\.briefing\b'
+  skills/zskills-dashboard/scripts/zskills_monitor/collect.py` returns
+  no matches; `grep -nE 'spec_from_file_location|sys\.path\.insert.+briefing'
+  skills/zskills-dashboard/scripts/zskills_monitor/collect.py` returns
+  at least one match.
 - [ ] Missing `gh`: snapshot returns with `issues: []` and `errors[]`
   entry; no exception propagated.
 - [ ] Missing/broken `git`: simulate by mocking `briefing.run` to
@@ -1114,7 +1326,7 @@ to the UI as a banner.
 ### Dependencies
 
 - External: Python 3.9+, `git`, `gh` (optional — degrades gracefully).
-- Internal: `scripts/briefing.py` helpers.
+- Internal: `skills/briefing/scripts/briefing.py` helpers.
 - Plan/report layout: `plans/*.md`, `reports/plan-<slug>.md`.
 - Tracking layout per `docs/tracking/TRACKING_NAMING.md`.
 - Phases 1 and 3 produce the `work-on-plans.<sprint-id>/` parent-tagged
@@ -1132,9 +1344,9 @@ background lifecycle (PID file + graceful SIGTERM).
 
 ### Work Items
 
-- [ ] Create `scripts/zskills_monitor/server.py` using
-  `http.server.ThreadingHTTPServer` and a `BaseHTTPRequestHandler`
-  subclass.
+- [ ] Create `skills/zskills-dashboard/scripts/zskills_monitor/server.py`
+  using `http.server.ThreadingHTTPServer` and a
+  `BaseHTTPRequestHandler` subclass.
 - [ ] Implement routes per the route table; validate `<slug>` against
   `^[a-z0-9-]+$` and `<N>` against `^[0-9]+$` before any subprocess
   dispatch.
@@ -1148,6 +1360,8 @@ background lifecycle (PID file + graceful SIGTERM).
   `{"error": <gh stderr first line>}`.
 - [ ] `POST /api/queue` → Origin check, JSON parse, strict shape
   validation, atomic write to `MAIN_ROOT/.zskills/monitor-state.json`.
+  Acquires the cross-process flock (Shared Schemas) for the entire
+  read+modify+write duration.
 - [ ] `GET /api/work-state` → reads
   `MAIN_ROOT/.zskills/work-on-plans-state.json` (auto-creates as
   `{"state": "idle"}` if missing OR if existing file is unparseable
@@ -1161,18 +1375,34 @@ background lifecycle (PID file + graceful SIGTERM).
   Failures surface to UI; no silent swallow.
 - [ ] `POST /api/work-state/reset` → Origin-checked, idempotent.
   Atomically writes `{"state": "idle", "updated_at": "..."}` via the
-  read-then-write lock; returns 200 with the new state. UI uses this to
+  read-then-write lock (cross-process flock + module-level
+  threading.Lock); returns 200 with the new state. UI uses this to
   clear stale sprint/scheduled entries.
 - [ ] `GET /api/health` → `{"status":"ok","uptime":<secs>,"pid":<int>,
   "port":<int>}`.
 - [ ] Static file serving for `/`, `/app.js`, `/app.css` from
-  `scripts/zskills_monitor/static/`.
-- [ ] Bind to `127.0.0.1` only. Port: `bash scripts/port.sh` at
-  startup; `DEV_PORT` env overrides. If `scripts/port.sh` is missing
-  or returns non-numeric output, fall back to `DEV_PORT` (if set);
-  otherwise print a friendly diagnostic to stderr ("scripts/port.sh
-  failed: <error>; set DEV_PORT or restore the script") and exit 2
-  with no Python stack trace.
+  `skills/zskills-dashboard/scripts/zskills_monitor/static/`
+  (resolved server-side via
+  `pathlib.Path(__file__).parent / "static"`).
+- [ ] Bind to `127.0.0.1` only. **Port resolution chain** (replaces
+  the legacy `bash scripts/port.sh` direct invocation):
+  1. `DEV_PORT` env var if set and numeric → use it.
+  2. Else read `dev_server.default_port` from
+     `$MAIN_ROOT/.claude/zskills-config.json` using the
+     `BASH_REMATCH`-equivalent regex idiom (Python `re`, not bash);
+     same regex shape as `port.sh` and `scripts/test-all.sh`.
+     If found and numeric → use it.
+  3. Else invoke
+     `bash "$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh"`
+     (or, in source-tree zskills tests,
+     `$MAIN_ROOT/skills/update-zskills/scripts/port.sh`); `port.sh`
+     itself reads `default_port` from config and additionally hashes
+     worktree paths to derive a deterministic non-default port. If
+     `port.sh` is missing or returns non-numeric output, print the
+     friendly diagnostic to stderr ("port resolution failed: <error>;
+     set DEV_PORT or restore .claude/skills/update-zskills/scripts/port.sh,
+     or set dev_server.default_port in .claude/zskills-config.json")
+     and exit 2 with no Python stack trace.
 - [ ] Ensure the state-file directory exists before any write:
   `os.makedirs(MAIN_ROOT/'.zskills', exist_ok=True)` on startup
   (idempotent; covers the case where Phase 5 is started without
@@ -1193,6 +1423,7 @@ background lifecycle (PID file + graceful SIGTERM).
 - [ ] SIGTERM/SIGINT handler: `server.shutdown()`, remove PID file,
   exit 0.
 - [ ] Add `.zskills/monitor-state.json`,
+  `.zskills/monitor-state.json.lock`,
   `.zskills/work-on-plans-state.json`, AND
   `.zskills/dashboard-server.pid` to `.gitignore` in this phase.
   (`.zskills/dashboard-server.log` is added in Phase 8 — that file
@@ -1200,7 +1431,9 @@ background lifecycle (PID file + graceful SIGTERM).
 - [ ] `tests/test_zskills_monitor_server.sh` — start in background,
   curl each route, verify shapes, SIGTERM, verify PID-file removed.
   Output to `$TEST_OUT/.test-results.txt`. Register in
-  `tests/run-all.sh`.
+  `tests/run-all.sh`. Test launches the server with the canonical
+  `PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts python3 -m
+  zskills_monitor.server` recipe.
 
 ### Design & Constraints
 
@@ -1215,7 +1448,7 @@ background lifecycle (PID file + graceful SIGTERM).
 | GET | `/api/state` | Phase 4 snapshot JSON | `Cache-Control: no-store` |
 | GET | `/api/plan/<slug>` | Plan detail JSON | 404 if slug unknown |
 | GET | `/api/issue/<N>` | `gh issue view` JSON | 504 on timeout, 502 on other gh failure |
-| POST | `/api/queue` | `{ok, updated_at}` | Origin check + shape validation |
+| POST | `/api/queue` | `{ok, updated_at}` | Origin check + shape validation + flock |
 | GET | `/api/work-state` | work-on-plans-state.json + staleness | Auto-creates idle if missing |
 | POST | `/api/trigger` | `{status, stdout, stderr, returncode}` or 501 + `{command}` | Origin check + security contract; subprocesses `dashboard.work_on_plans_trigger` if set |
 | POST | `/api/work-state/reset` | `{state:"idle", updated_at}` | Origin check; clears stale sprint/scheduled state |
@@ -1307,26 +1540,28 @@ fills `version` and `updated_at` (client-supplied values are ignored).
 
 **Atomic write contract.** State file at
 `MAIN_ROOT/.zskills/monitor-state.json`. Writes go through one
-helper that serializes concurrent POSTs via a module-level
-`threading.Lock`, writes to a single tmp path inside the same
-directory, then `os.replace(tmp, target)` (POSIX-atomic on same
-filesystem). Pick lock-OR-per-thread-tmp (one mechanism, not both).
-Never write outside `MAIN_ROOT/.zskills/`. **Cross-process scope.**
-The lock is in-process only; concurrent CLI readers (Phase 1 / 3)
-rely on `os.replace`'s POSIX atomicity — they see either the old or
-the new file in full, never a partial write. Transient JSON parse
-failures on the reader side are handled per Phase 1's "unparseable
-JSON" recovery (idle reset / warn + retry).
+helper that: (1) acquires the cross-process `fcntl.flock(LOCK_EX)`
+on `MAIN_ROOT/.zskills/monitor-state.json.lock` (Shared Schemas);
+(2) acquires the module-level `threading.Lock` (in-process
+serialization); (3) writes to a single tmp path inside the same
+directory; (4) calls `os.replace(tmp, target)` (POSIX-atomic on same
+filesystem); (5) releases the locks in reverse order. Pick
+lock-OR-per-thread-tmp (one mechanism, not both — the threading.Lock
+suffices for in-process serialization). Never write outside
+`MAIN_ROOT/.zskills/`. **Cross-process scope.** The `flock` covers
+concurrent CLI writers (Phases 1/3); `os.replace` covers concurrent
+readers (snapshot, dashboard). Transient JSON parse failures on the
+reader side are handled per Phase 1's "unparseable JSON" recovery
+(idle reset / warn + retry).
 
 **Read-then-write serialization.** Routes that read-then-write
 (`GET /api/work-state` on stale detection, `POST /api/work-state/reset`,
-`POST /api/queue`) acquire a module-level `threading.Lock` for the
-read+write duration. Per-process scope. Atomic-write via `os.replace`
-still applies.
+`POST /api/queue`) acquire the `flock` + module-level
+`threading.Lock` for the read+write duration. Atomic-write via
+`os.replace` still applies.
 
-**Server lifecycle contract.** `main()` resolves port (`DEV_PORT`
-env or `bash scripts/port.sh`; falls back per Work Items if the
-script is missing or non-numeric), creates `.zskills/` if absent,
+**Server lifecycle contract.** `main()` resolves port (per the
+**Port resolution chain** above), creates `.zskills/` if absent,
 binds `ThreadingHTTPServer ("127.0.0.1", port)`, prints the friendly
 port-busy message + exit 2 on `EADDRINUSE` (no Python stack trace),
 writes the PID file (Shared Schemas key=value format) only after
@@ -1350,22 +1585,32 @@ stale, rm it and retry /zskills-dashboard start.
 
 ### Acceptance Criteria
 
-- [ ] Server starts: `python3 -m zskills_monitor.server &` then
+- [ ] Server starts: `PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts
+  python3 -m zskills_monitor.server &` then
   `sleep 0.5 && curl -sf http://127.0.0.1:$PORT/api/health` returns
   200 with `status:"ok"` (verify with `grep -q '"status":[[:space:]]*"ok"'`,
   not jq).
 - [ ] PID file shape: `grep -qE '^pid=[0-9]+$' .zskills/dashboard-server.pid
-  && grep -qE '^port=[0-9]+$' … && grep -qE '^started_at=' …`.
-  Bash regex (Shared Schemas) extracts each field.
+  && grep -qE '^port=[0-9]+$' … && grep -qE '^started_at=[0-9T:+-]+$' …`.
+  Bash regex (Shared Schemas) extracts each field. The tightened
+  `started_at` value pattern catches malformed timestamps that would
+  break Phase 8's `date -d` arithmetic (per DA-8).
 - [ ] PID liveness: `kill -0 $(grep -oE '^pid=[0-9]+'
   .zskills/dashboard-server.pid | cut -d= -f2)` returns 0.
 - [ ] SIGTERM exit ≤5s: PID file removed and port freed.
 - [ ] Fresh-repo bootstrap: with `.zskills/` removed,
   `python3 -m zskills_monitor.server &` succeeds; the dir is
   re-created and writes (PID, state) succeed.
-- [ ] Port-script failure: with `scripts/port.sh` removed AND no
-  `DEV_PORT` env, the server prints the friendly diagnostic and
-  exits 2 (no Python stack trace).
+- [ ] **Port resolution chain (replaces F-15 vacuous AC):** Verified
+  in three sub-cases.
+  (a) `DEV_PORT=9999 python3 -m zskills_monitor.server` → server binds 9999.
+  (b) `DEV_PORT` unset, config has `dev_server.default_port: 8765` → server
+      binds 8765.
+  (c) `DEV_PORT` unset, `dev_server.default_port` removed from config,
+      `.claude/skills/update-zskills/scripts/port.sh` made non-executable
+      → server prints the friendly diagnostic (containing the words
+      "port resolution failed") to stderr and exits 2 with no Python
+      stack trace.
 - [ ] Config-block bootstrap: `.claude/zskills-config.json` lacking
   the `dashboard` block before this phase contains it after the
   server has started once (`grep -E '"dashboard":' .claude/zskills-config.json`
@@ -1403,22 +1648,34 @@ stale, rm it and retry /zskills-dashboard start.
   in-flight return consistent results (no half-rewritten file).
 - [ ] Port-busy: starting a second server prints the friendly stderr
   message and exits 2 (no Python stack trace).
-- [ ] `.gitignore` covers monitor-state AND PID file:
-  `git check-ignore .zskills/monitor-state.json
+- [ ] `.gitignore` covers monitor-state, lock file, work-state, AND
+  PID file: `git check-ignore .zskills/monitor-state.json
+  .zskills/monitor-state.json.lock
   .zskills/work-on-plans-state.json .zskills/dashboard-server.pid`
   all exit 0.
 - [ ] `grep -nE '2>/dev/null|\|\|\s*true'
-  scripts/zskills_monitor/server.py` returns no matches.
+  skills/zskills-dashboard/scripts/zskills_monitor/server.py` returns
+  no matches.
 - [ ] Bind only on 127.0.0.1: `ss -ltn | grep :$PORT | grep '127.0.0.1:'`.
 - [ ] Worktree-portable: launching from a worktree writes the PID +
   state files under main repo's `.zskills/`, not the worktree.
+- [ ] Cross-process flock acquisition: a parallel-write integration
+  test (server POST + CLI mutation racing) yields a final state
+  containing both edits.
 
 ### Dependencies
 
 - Phase 4's `collect_snapshot()`.
-- `scripts/port.sh`, `scripts/briefing.py:find_repo_root` (resolve
+- `skills/update-zskills/scripts/port.sh` (invoked at install-time
+  as `$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh`; in
+  source-tree zskills tests as
+  `$REPO_ROOT/skills/update-zskills/scripts/port.sh`). Port resolution
+  also reads `dev_server.default_port` from `.claude/zskills-config.json`
+  directly (Python `re`, BASH_REMATCH-equivalent idiom).
+- `skills/briefing/scripts/briefing.py` (`find_repo_root` resolves
   `MAIN_ROOT`).
 - `gh` CLI (graceful 502/504 if missing or slow).
+- `fcntl` (stdlib) for cross-process flock.
 
 ---
 
@@ -1434,18 +1691,23 @@ Matches `PRESENTATION.html` theme.
 
 ### Work Items
 
-- [ ] Create `scripts/zskills_monitor/static/index.html`,
+- [ ] Create
+  `skills/zskills-dashboard/scripts/zskills_monitor/static/index.html`,
   `app.css`, and `app.js` (loaded as `<script type="module">`).
 - [ ] Implement fetch + render pipeline. Behavioral contract: poll
   `/api/state` every 2s via `setTimeout` recursion (NOT
   `setInterval`); pause when `document.hidden`; force-load on
   `visibilitychange → visible`; diff per-panel (simple list-equality
-  on backing array) and only re-render changed panels. Show a
-  "Disconnected — retrying…" banner on non-2xx or fetch failure.
+  on backing array; for `errors[]`, hash the JSON-stringified array
+  per DA-10 to make the equality check order-deterministic) and only
+  re-render changed panels. Show a "Disconnected — retrying…" banner
+  on non-2xx or fetch failure.
 - [ ] Render `snapshot.errors[]` as a dismissible top banner (one
   line per error, `source: message`). The banner is the user-visible
   surface for parse/config/gh failures collected by Phase 4; without
-  it, errors silently accumulate.
+  it, errors silently accumulate. Order is deterministic per
+  Phase 4's sort; UI re-renders only when the JSON-stringified array
+  changes.
 - [ ] Plans panel: card per plan with title, blurb, phase-progress
   ratio, status badge, landing-mode pill (renders `unknown` as a
   warning pill).
@@ -1510,6 +1772,13 @@ force-reload on `visibilitychange`. Naive 2s retry on fetch failure
 (local-only server; no exponential-backoff complexity warranted —
 the user can stop polling by closing the tab).
 
+**Diff stability for `errors[]`.** Phase 4 sorts `errors[]` by
+`(source, message)` and caps at 100 entries (per DA-10). Phase 6's
+re-render check therefore compares
+`JSON.stringify(state.errors)` to the previous value — equal strings
+mean no re-render. Without the Phase 4 deterministic sort, ordering
+churn between polls would force a banner re-render on every cycle.
+
 **XSS escape policy (MANDATORY).** All user-authored content (plan,
 issue, worktree, branch, tracking text) is rendered via
 `element.textContent` or `document.createTextNode`. `innerHTML` is
@@ -1520,7 +1789,8 @@ each such site carries the trailing comment `// chrome-only` on the
 Acceptance grep:
 
 ```bash
-grep -nE '\.innerHTML\s*=' scripts/zskills_monitor/static/app.js |
+grep -nE '\.innerHTML\s*=' \
+  skills/zskills-dashboard/scripts/zskills_monitor/static/app.js |
   grep -vE '//\s*chrome-only'
 ```
 
@@ -1537,18 +1807,28 @@ inline handlers; XSS policy is blocking.
   branches.
 - [ ] Errors banner renders one row per `snapshot.errors[]` entry;
   hides when the array is empty.
+- [ ] Errors banner re-render stability: a fixture where two
+  consecutive `/api/state` GETs return errors in the same set
+  (Phase 4's sorted order ensures byte-equal arrays) does NOT
+  trigger a banner DOM re-render. Verify by mutation observer on
+  the banner element.
 - [ ] Branch dedup: with a fixture where a worktree backs branch
   `feat/foo`, the Branches panel row for `feat/foo` has the dimmed
   CSS class; an unbacked branch is rendered at full opacity.
-- [ ] CSS vars present: `grep -c '^\s*--bg:\|^\s*--surface:\|^\s*
-  --accent:' scripts/zskills_monitor/static/app.css` ≥ 3.
+- [ ] CSS vars present:
+  `grep -c '^\s*--bg:\|^\s*--surface:\|^\s*--accent:'
+  skills/zskills-dashboard/scripts/zskills_monitor/static/app.css`
+  ≥ 3.
 - [ ] No inline handlers: `grep -nE 'onclick=|onload='
-  scripts/zskills_monitor/static/` returns no matches.
+  skills/zskills-dashboard/scripts/zskills_monitor/static/` returns
+  no matches.
 - [ ] XSS grep (above) returns no lines.
 - [ ] No `setInterval`: `grep -nE 'setInterval\s*\('
-  scripts/zskills_monitor/static/app.js` returns no matches.
+  skills/zskills-dashboard/scripts/zskills_monitor/static/app.js`
+  returns no matches.
 - [ ] No external imports: `grep -nE 'import\s+.+from\s+["\x27]https?:'
-  scripts/zskills_monitor/static/app.js` returns no matches.
+  skills/zskills-dashboard/scripts/zskills_monitor/static/app.js`
+  returns no matches.
 - [ ] Plan detail modal: with a fixture plan having one phase with a
   non-null `commit` and another with null, the modal shows
   "Landed in <ref>" for the first row and "Pending" for the second.
@@ -1607,7 +1887,12 @@ full state to `/api/queue`, which atomically rewrites
   announcement to `#plans-live` (`aria-live="polite"`).
 - [ ] **Default-mode toggle** in the Plans panel header
   (`Default mode: [Phase-by-phase | Finish (one PR)]`); click POSTs
-  `/api/queue` with the new `default_mode`.
+  `/api/queue` with the new `default_mode`. When a sprint is in
+  flight (per `/api/work-state`), render a small footnote next to
+  the toggle: "Sprint in flight: change applies to plans not yet
+  dispatched and to future sprints; in-flight plans keep their
+  captured mode." (Per DA-13 — closes the cross-component
+  surprise.)
 - [ ] **Per-row mode chip** on each `Ready` card (`phase` / `finish`);
   click toggles the entry's `mode` via `/api/queue`. Chip styled
   differently for inherit vs. explicit override. Drafted/Reviewed
@@ -1629,26 +1914,44 @@ full state to `/api/queue`, which atomically rewrites
   501, surface stderr as a dismissible toast.
 - [ ] Manual a11y test checklist documented in the phase report —
   must cover tab/enter/esc, ↑↓←→ buttons, drag, two-tab concurrent
-  reorder, plan-file no-mutation invariant, default-mode toggle, and
-  per-row chip.
+  reorder, plan-file no-mutation invariant, default-mode toggle,
+  per-row chip, and the in-flight-sprint footnote.
 
 ### Design & Constraints
 
 **State file shape.** See Shared Schemas. Phase 7 is the first
-writer; the atomic write helper lives in Phase 5's `server.py`.
-Phases 1, 3, and 4 are readers.
+writer; the atomic write helper (cross-process flock + atomic
+rename) lives in Phase 5's `server.py`.
+Phases 1, 3, and 4 are readers; Phases 1 and 3 also write via the
+same flock contract.
 
 **Mode UI vs. data.** The default-mode toggle and per-row chip mutate
 `monitor-state.json` only — never `work-on-plans-state.json`. Mode
 selection at dispatch time happens in `/work-on-plans`, not the UI.
 
-**Concurrency model.** Last-write-wins on the server; `_STATE_LOCK`
-serializes POSTs. "Last" = "last to commit on server clock," not
-user wall clock. Two tabs reordering is acceptable; UI flickers
-briefly, neither tab crashes. The plan does NOT add a per-tab
-"your changes were overwritten" warning UI — local-only single-user
-dashboard, the briefly-flickering reconciliation is treated as
-sufficient feedback.
+**In-flight default-mode change semantics (per DA-13).** The default-mode
+toggle changes `monitor-state.json:default_mode` immediately. Effects:
+- Plans NOT yet dispatched in the current sprint, plus all future
+  sprints, will resolve mode using the new `default_mode` (subject
+  to per-entry `mode` overrides which are unchanged).
+- Plans ALREADY dispatched in the current sprint keep their captured
+  mode (per Shared Schemas sprint-state contract — the in-flight
+  sprint stores its own `mode` at start).
+- Newly-dragged-into-Ready plans get the new `default_mode` as their
+  fallback.
+
+The Plans panel renders a small footnote next to the toggle when
+`/api/work-state.state == "sprint"` so users see the rule before
+toggling.
+
+**Concurrency model.** Last-write-wins on the server; the
+cross-process flock + module-level `_STATE_LOCK` serialize POSTs
+across both server and CLI writers. "Last" = "last to commit on
+server clock," not user wall clock. Two tabs reordering is
+acceptable; UI flickers briefly, neither tab crashes. The plan does
+NOT add a per-tab "your changes were overwritten" warning UI —
+local-only single-user dashboard, the briefly-flickering
+reconciliation is treated as sufficient feedback.
 
 **Plans panel DOM** (Phase 6's single list is replaced by a
 `<div class="columns">` wrapping three `<div class="column">`
@@ -1664,7 +1967,7 @@ announcements.
 - **Never write plan frontmatter from the server.** Column state
   lives only in `.zskills/monitor-state.json`. Any code path that
   opens a plan file for writing in `server.py` is a bug.
-- Atomic writes only (Phase 5's helper).
+- Atomic writes only (Phase 5's helper, including the flock).
 - No optimistic deletion. POST failure → revert local DOM to
   last-known-good state immediately, then resume polling.
 - No drag hints outside Plans / Issues panels — Worktrees,
@@ -1679,6 +1982,12 @@ announcements.
 - [ ] Concurrent POSTs (20 parallel `curl`): all complete without
   5xx, final state is valid JSON matching one of the bodies, no
   intermediate 0-byte read observed.
+- [ ] **Cross-process lost-update integration test (per DA-6)**:
+  with the server running, dispatch one POST `/api/queue` and one
+  CLI `/work-on-plans add <slug>` in parallel (both target
+  `monitor-state.json`); the final file contains both edits (the
+  CLI's added slug AND the POST's column reordering). Verifies the
+  flock prevents lost-update across the server/CLI boundary.
 - [ ] `git diff plans/` is empty after any drag-drop session.
 - [ ] Keyboard-only: `↓` button moves card down one position;
   verified by DOM + state-file diff.
@@ -1700,6 +2009,10 @@ announcements.
 - [ ] Per-row mode chip on a Ready card flips that entry's `mode`
   (verify by JSON parse); chip on inherit vs. override visually
   distinct (manual a11y check).
+- [ ] **In-flight sprint footnote**: with `/api/work-state` stubbed
+  to `{"state":"sprint", ...}`, the default-mode toggle area
+  contains the footnote text "Sprint in flight"; with state
+  `"idle"`, the footnote is absent.
 - [ ] Run/Status widget renders the idle / sprint / scheduled /
   stale-scheduled / stale-sprint states from a stubbed
   `/api/work-state` response. The stale-sprint render exposes the
@@ -1710,9 +2023,11 @@ announcements.
 ### Dependencies
 
 - Phase 6's UI scaffold.
-- Phase 5's `POST /api/queue`, `GET /api/work-state`, `POST /api/trigger`.
+- Phase 5's `POST /api/queue`, `GET /api/work-state`, `POST /api/trigger`,
+  cross-process flock contract.
 - Phase 4's `queue` annotation (with `mode` field).
-- Phases 1 and 3 read the state file — schema changes must update them.
+- Phases 1 and 3 read+write the state file under the same flock —
+  schema changes must update them.
 
 ---
 
@@ -1727,23 +2042,27 @@ file. Stop sends SIGTERM (never `kill -9`). Status reports uptime + URL.
 ### Work Items
 
 - [ ] Create `skills/zskills-dashboard/SKILL.md` with the frontmatter
-  below.
+  below. (The `skills/zskills-dashboard/scripts/zskills_monitor/`
+  package is created by Phase 4; this phase adds the skill body. The
+  two phases edit disjoint files in the same skill directory.)
 - [ ] Implement `start`, `stop`, `status` mode bodies per the
   contracts below.
-- [ ] Mirror to `.claude/skills/zskills-dashboard/` via a single
-  `cp -r` (never per-file Edit on `.claude/skills/`).
+- [ ] Mirror to `.claude/skills/zskills-dashboard/` via
+  `bash scripts/mirror-skill.sh zskills-dashboard` (hook-compatible
+  per-file orphan removal; never `rm -rf` + `cp -r`).
 - [ ] Tracking markers: write
   `fulfilled.zskills-dashboard.<id>` under
   `.zskills/tracking/zskills-dashboard.<id>/` for **state-changing
   invocations only** (`start`, `stop`). Skip for `status` (read-only)
   to avoid flooding tracking with one subdir per status check.
-  `<id>` = `bash scripts/sanitize-pipeline-id.sh
-  "zskills-dashboard-$(date -u +%Y%m%dT%H%M%SZ)"`. Per
-  `docs/tracking/TRACKING_NAMING.md`, the subdir name IS the
-  pipeline-id (Option B layout).
+  `<id>` = `bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+  "zskills-dashboard-$(date -u +%Y%m%dT%H%M%SZ)"`
+  (in source-tree zskills tests, use the `$REPO_ROOT/skills/...`
+  prefix). Per `docs/tracking/TRACKING_NAMING.md`, the subdir name
+  IS the pipeline-id (Option B layout).
 - [ ] Add `.zskills/dashboard-server.log` to `.gitignore` (this
-  phase owns the log; PID file's gitignore moved into Phase 5
-  alongside the state files).
+  phase owns the log; PID, monitor-state, lock, work-state files'
+  gitignore moved into Phase 5 alongside the state files).
 - [ ] Document `dashboard.work_on_plans_trigger` config field in
   CHANGELOG/README with an example trigger script (no default script
   is shipped — it is user-owned plumbing).
@@ -1760,15 +2079,18 @@ argument-hint: "[start|stop|status]"
 description: >-
   Local web dashboard for this repo — plans, issues, worktrees,
   branches, tracking activity, drag-and-drop priority queue.
-  Starts a detached Python HTTP server on a port from
-  scripts/port.sh; stop sends SIGTERM. State at
-  .zskills/monitor-state.json. Usage: /zskills-dashboard [start|stop|status].
+  Starts a detached Python HTTP server on a port resolved from
+  DEV_PORT / dev_server.default_port / port.sh; stop sends SIGTERM.
+  State at .zskills/monitor-state.json. Usage:
+  /zskills-dashboard [start|stop|status].
 ---
 ```
 
 (`disable-model-invocation: true` matches the orchestrator-skill
 convention — `/fix-issues`, `/plans`, `/quickfix`, `/do`, `/commit`
-all do the same.)
+all do the same. The flag suppresses model auto-invocation; explicit
+user invocation `/zskills-dashboard start` still works (per DA-12 —
+flag does not break user-typed slash commands).)
 
 **PID-file format.** See Shared Schemas (`.env`-style key=value, read
 via `BASH_REMATCH` in one regex per field; never jq).
@@ -1781,29 +2103,49 @@ this anchor, invoking the skill from a worktree session would miss
 the PID file in the main repo and the modes would diverge.
 
 **Process-identity check (shared by start and stop).** Whenever a
-PID is read from the PID file, also run
-`ps -p $PID -o command=` and require the output to match
-`python3.*zskills_monitor.server`. If it does NOT match, treat the
-PID as stale or PID-reused: do NOT `kill` it; instead remove the
-PID file and continue.
+PID is read from the PID file:
+1. Run `ps -p $PID -o command=` and require the output to match
+   `python3.*zskills_monitor.server`.
+2. Additionally, verify the process's cwd matches `MAIN_ROOT` (per
+   F-11). On Linux: `readlink /proc/$PID/cwd` must equal
+   `$MAIN_ROOT`. On macOS (or Linux without `/proc`): fall back to
+   `lsof -p $PID -d cwd -Fn` (parses the `n<path>` line). If the
+   readlink/lsof itself fails (permission denied or tool missing),
+   skip the cwd check and rely on command-name match alone (logged
+   to stderr).
+
+If EITHER check fails (command-name mismatch OR cwd-mismatch when
+verifiable), treat the PID as stale or PID-reused: do NOT `kill` it;
+instead remove the PID file and continue. The cwd check defends
+against a different worktree's session matching `python3.*zskills_monitor.server`
+on the same host.
 
 **Start mode contract.**
 1. If PID file exists: parse `pid`/`port` via `BASH_REMATCH`. `kill
-   -0 $PID`. If alive AND process-identity check matches → print
-   "already running at http://127.0.0.1:$PORT/" and exit 0.
-   Otherwise the PID is stale or PID-reuse → warn and remove the
-   file before continuing.
-2. Compute port: `PORT=$(bash scripts/port.sh)` (run from
-   `MAIN_ROOT`; `cd` first if needed so the path-derived port is
-   stable across invocations).
+   -0 $PID`. If alive AND process-identity check matches (command +
+   cwd) → print "already running at http://127.0.0.1:$PORT/" and
+   exit 0. Otherwise the PID is stale or PID-reuse or different-repo
+   process → warn and remove the file before continuing.
+2. Compute port: invoke
+   `bash "$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh"`
+   (in source-tree tests:
+   `$REPO_ROOT/skills/update-zskills/scripts/port.sh`). The script
+   itself reads `DEV_PORT` env and `dev_server.default_port` config
+   (Phase 5's resolution chain is the same logic, factored into the
+   server; the skill body just calls the canonical script).
 3. Pre-flight: if `lsof -iTCP:$PORT -sTCP:LISTEN` shows another
    holder, print the friendly busy message and exit 2.
 4. Launch detached:
    ```bash
    mkdir -p "$MAIN_ROOT/.zskills"
-   ( cd "$MAIN_ROOT" && nohup python3 -m zskills_monitor.server \
+   ( cd "$MAIN_ROOT" && \
+     PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts:${PYTHONPATH:-}" \
+     nohup python3 -m zskills_monitor.server \
        > .zskills/dashboard-server.log 2>&1 < /dev/null & disown )
    ```
+   The PYTHONPATH prefix is required so the server's package
+   (`skills/zskills-dashboard/scripts/zskills_monitor/`) is on
+   `sys.path` when running with cwd=$MAIN_ROOT (per DA-5).
 5. Sleep 500ms; `curl -sf http://127.0.0.1:$PORT/api/health` and
    verify `"status":"ok"` via `grep -q` (not jq). On success: print
    the URL and exit 0. On failure: print the last 20 lines of the
@@ -1814,12 +2156,13 @@ PID file and continue.
 1. No PID file → print "No running monitor (no PID file)." Exit 0.
 2. Parse `pid`/`port` via `BASH_REMATCH`. `kill -0 $PID`; if dead,
    remove stale PID file and exit 0.
-3. **Process-identity check** — `ps -p $PID -o command=` must match
-   `python3.*zskills_monitor.server`. If it does NOT match, print
-   "PID $PID does not appear to be zskills-monitor (matched:
-   <command>). Refusing to kill. Remove the PID file manually if
-   stale." Exit 1. (Symmetric with start mode; prevents killing an
-   unrelated process on PID-reuse.)
+3. **Process-identity check** — both command name AND cwd (per
+   F-11). If EITHER fails, print "PID $PID does not appear to be
+   zskills-monitor for this repo (matched: <command>; cwd:
+   <cwd-or-unknown>). Refusing to kill. Remove the PID file
+   manually if stale." Exit 1. (Symmetric with start mode; prevents
+   killing an unrelated process on PID-reuse OR a different
+   worktree's monitor server.)
 4. `kill -TERM $PID`. Poll `kill -0 $PID` every 200ms for up to 5s.
 5. If still alive after 5s: print "Monitor did not exit within 5s.
    Run 'lsof -i :$PORT' and stop manually; do NOT kill -9." Exit 1
@@ -1829,7 +2172,11 @@ PID file and continue.
 
 **Status mode contract.**
 1. No PID file → "Monitor not running." Exit 0.
-2. Parse `pid`/`port`/`started_at` via `BASH_REMATCH`.
+2. Parse `pid`/`port`/`started_at` via `BASH_REMATCH`. The
+   `started_at` value must match `^[0-9T:+-]+$` — if not, treat the
+   PID file as malformed: print "PID file at <path> has malformed
+   started_at; rm it and retry /zskills-dashboard start" and exit 1
+   (per DA-8).
 3. `kill -0 $PID`. If dead: print "Monitor PID file is stale (PID
    $PID not running). Run 'lsof -i :$PORT' to verify port is free,
    then retry /zskills-dashboard start." Exit 1.
@@ -1841,20 +2188,28 @@ under most init systems. Acceptance verifies "process survives
 parent shell exit" — checked by `kill -0 $PID` from a NEW shell —
 without prescribing the specific reparent target (which varies:
 PID 1 with sysvinit, `systemd --user` with user namespaces, launchd
-on macOS).
+on macOS). Hook-compatibility of `nohup … & disown` was verified at
+plan refine time (`grep -n 'nohup\|disown'
+.claude/hooks/block-unsafe-generic.sh` returned no matches).
 
-**Mirror.** One command at the end of the phase:
+**Mirror.** One command at the end of the phase (replaces the
+hook-blocked `rm -rf` + `cp -r` recipe — per F-5/DA-1):
 
 ```bash
-rm -rf .claude/skills/zskills-dashboard && \
-  cp -r skills/zskills-dashboard .claude/skills/zskills-dashboard
+bash scripts/mirror-skill.sh zskills-dashboard
 ```
+
+`mirror-skill.sh` is hook-compatible (per-file `rm`, no `-r` flag);
+it handles file additions, updates, and orphan removal in one
+invocation. Verified self-doc'd at
+`scripts/mirror-skill.sh:1-9`.
 
 **Phase rules:**
 - No `kill -9` / `killall` / `pkill` / `fuser -k` anywhere.
 - No jq in the skill body (Shared Schemas — `BASH_REMATCH` only).
 - No `2>/dev/null` on fallible operations except where the failure
-  is the expected branch (e.g. `kill -0` to detect a dead PID).
+  is the expected branch (e.g. `kill -0` to detect a dead PID, or
+  `readlink /proc/$PID/cwd` failing on non-Linux).
 - Verify after every state change (start → curl health; stop →
   `kill -0` + `lsof`).
 
@@ -1862,8 +2217,9 @@ rm -rf .claude/skills/zskills-dashboard && \
 
 - [ ] `skills/zskills-dashboard/SKILL.md` exists with the specified
   frontmatter.
-- [ ] `diff -q skills/zskills-dashboard/SKILL.md
-  .claude/skills/zskills-dashboard/SKILL.md` returns 0.
+- [ ] `diff -rq skills/zskills-dashboard/ .claude/skills/zskills-dashboard/`
+  returns 0 (whole-tree mirror including SKILL.md and the
+  `scripts/zskills_monitor/` package shipped with the skill).
 - [ ] `grep -nE '\bjq\b' skills/zskills-dashboard/SKILL.md` returns 0
   matches.
 - [ ] `grep -nE '\bkill\s+-9|killall|pkill|fuser\s+-k'
@@ -1872,17 +2228,25 @@ rm -rf .claude/skills/zskills-dashboard && \
   1s; `status` after start prints `^Monitor running`.
 - [ ] PID-file shape: `grep -qE '^pid=[0-9]+$'
   .zskills/dashboard-server.pid && grep -qE '^port=[0-9]+$' … &&
-  grep -qE '^started_at=' …`.
+  grep -qE '^started_at=[0-9T:+-]+$' …` (tightened pattern catches
+  malformed timestamps that would break Phase 8 status mode's
+  `date -d` arithmetic, per DA-8).
 - [ ] `stop` removes the PID file and frees the port within 5s.
-- [ ] `start` twice → second run detects live PID + matching
-  command name and prints the URL without launching a duplicate.
+- [ ] `start` twice → second run detects live PID + matching command
+  name + matching cwd and prints the URL without launching a duplicate.
 - [ ] `stop` twice → second run prints the no-PID-file message,
   exits 0.
-- [ ] **Stop mode PID-mismatch defense.** Write a PID file pointing
-  at a long-running unrelated process (e.g. a sleep loop with a
-  known PID); run `/zskills-dashboard stop` and verify it prints
-  the mismatch diagnostic, does NOT kill the unrelated process,
-  and exits 1.
+- [ ] **Stop mode PID-mismatch defense (command-name).** Write a
+  PID file pointing at a long-running unrelated process (e.g. a
+  sleep loop with a known PID); run `/zskills-dashboard stop` and
+  verify it prints the mismatch diagnostic, does NOT kill the
+  unrelated process, and exits 1.
+- [ ] **Stop mode PID-mismatch defense (cwd).** Launch a second
+  monitor server in a worktree (different `MAIN_ROOT`); from the
+  first repo, write a PID file pointing at the worktree's PID and
+  run `/zskills-dashboard stop`. The cwd check fails (worktree's
+  cwd ≠ this repo's MAIN_ROOT), the skill prints the mismatch
+  diagnostic, does NOT kill the worktree's server, and exits 1.
 - [ ] State-changing tracking marker: after `start` (or `stop`),
   `.zskills/tracking/zskills-dashboard.<sanitized-id>/
   fulfilled.zskills-dashboard.<sanitized-id>` exists with
@@ -1896,13 +2260,26 @@ rm -rf .claude/skills/zskills-dashboard && \
 - [ ] PID-reuse defense: a PID file pointing at a non-monitor
   process (e.g. `bash`) is treated as stale; `start` does not
   print "already running" against it.
+- [ ] PYTHONPATH discipline: `grep -nE 'PYTHONPATH=.*skills/zskills-dashboard/scripts'
+  skills/zskills-dashboard/SKILL.md` returns at least one match
+  (start-mode contract sets PYTHONPATH).
+- [ ] Mirror tool used: `grep -nE 'mirror-skill\.sh'
+  skills/zskills-dashboard/SKILL.md` returns at least one match;
+  `grep -nE 'rm\s+-rf\s+\.claude/skills'
+  skills/zskills-dashboard/SKILL.md` returns no matches.
 
 ### Dependencies
 
 - Phase 5's server (launch target).
-- `scripts/port.sh`.
-- `scripts/sanitize-pipeline-id.sh`.
-- `lsof`, `kill`, `ps` (standard on supported Linux + macOS).
+- `skills/update-zskills/scripts/port.sh` (invoked at install-time
+  as `$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh`; in
+  source-tree zskills tests as
+  `$REPO_ROOT/skills/update-zskills/scripts/port.sh`).
+- `skills/create-worktree/scripts/sanitize-pipeline-id.sh` (canonical
+  `$MAIN_ROOT/.claude/skills/create-worktree/scripts/...` install path).
+- `scripts/mirror-skill.sh` (Tier-2 hook-compatible mirror tool).
+- `lsof`, `kill`, `ps`, `readlink` / `lsof -p` for cwd check
+  (standard on supported Linux + macOS).
 - `.zskills/` writable.
 
 ---
@@ -1913,39 +2290,57 @@ rm -rf .claude/skills/zskills-dashboard && \
 
 Eliminate the duplicated classifier between `/plans rebuild` (prose
 spec in `skills/plans/SKILL.md`) and Phase 4's
-`scripts/zskills_monitor/collect.py`. After this phase
-`/plans rebuild | next | details` continues to expose the same CLI
-surface to users, but its implementation reads classification from
-the Python aggregator instead of restating the rules in skill prose.
-Single source of truth for plan classification: `collect.py`.
+`skills/zskills-dashboard/scripts/zskills_monitor/collect.py`. After
+this phase `/plans rebuild | next | details` continues to expose the
+same CLI surface to users, but its implementation reads classification
+from the Python aggregator instead of restating the rules in skill
+prose. Single source of truth for plan classification: `collect.py`.
 
 ### Work Items
 
 - [ ] Edit `skills/plans/SKILL.md`'s `## Mode: Rebuild` section to
   invoke the Phase 4 aggregator. The new prose instructs the
   implementing agent to:
-  1. Run `python3 -m zskills_monitor.collect`
-     (`collect_snapshot(repo_root)`) and parse the resulting JSON.
-  2. Group `snapshot.plans[]` into the index sections (Ready,
-     Active, Blocked, Drafted, Reviewed, etc.) using the
-     `status` / `phases_done` fields already computed by
-     `collect.py`.
+  1. Run `PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts"
+     python3 -m zskills_monitor.collect` (which calls
+     `collect_snapshot(repo_root)`) and parse the resulting JSON.
+  2. Group `snapshot.plans[]` into the index sections using the
+     `category`, `meta_plan`, `status`, and `phases_done` fields.
+     Mapping (per the current `/plans rebuild` index — six sections):
+     - **Ready to Run** ← `category=="executable"` AND
+       `status=="active"` AND `phases_done == 0` AND
+       `queue.column != "ready"` (top of the run-eligible list);
+       OR `queue.column == "ready"`.
+     - **In Progress** ← `category=="executable"` AND
+       `status=="active"` AND `phases_done >= 1` AND
+       `phases_done < phase_count`.
+     - **Needs Review** ← `category=="executable"` AND
+       `status=="conflict"` (any progress).
+     - **Complete** ← `status in {"complete","landed"}`.
+     - **Canaries** ← `category=="canary"`.
+     - **Reference (not executable)** ← `category in
+       {"reference","issue_tracker"}`.
+     - Meta-plans (`meta_plan==true`) are listed under their
+       sub-plan's section per existing prose convention; the
+       implementing agent surfaces them as a parent-of-list.
   3. Render `plans/PLAN_INDEX.md` from the grouped data, preserving
      the existing index file shape (header, sections, last-rebuilt
      timestamp).
   - The existing prose-spec classification rules in `Mode: Rebuild`
     are removed (they now live in `collect.py`'s plan parsing +
-    default-column inference).
+    default-column inference + categorization).
 - [ ] Update `## Mode: Next` and `## Mode: Details` similarly: read
   `collect_snapshot()` instead of re-parsing plan frontmatter. Keep
   user-visible behavior identical.
 - [ ] Add a sanity test under `tests/test_plans_rebuild_uses_collect.sh`
   that runs `/plans rebuild` (or invokes the same code path) and
   asserts `plans/PLAN_INDEX.md` is regenerated and references the
-  same set of plans `python3 -m zskills_monitor.collect` reports.
+  same set of plans `python3 -m zskills_monitor.collect` reports
+  (matching SECTION-by-SECTION via the categorization rules above).
   Output goes to `$TEST_OUT/.test-results.txt`. Register in
   `tests/run-all.sh`.
-- [ ] Mirror `skills/plans` → `.claude/skills/plans` via `cp -r`.
+- [ ] Mirror `skills/plans/` → `.claude/skills/plans/` via
+  `bash scripts/mirror-skill.sh plans`.
 
 ### Design & Constraints
 
@@ -1953,10 +2348,12 @@ Single source of truth for plan classification: `collect.py`.
 is implemented by the parent agent reading the skill prose. The
 migration is a prose rewrite, not new code: the agent's instructions
 change from "read plan frontmatter, classify per these rules" to
-"shell out to `python3 -m zskills_monitor.collect`, then group the
-returned plans into index sections." The Python aggregator's
-`slug_of()`, `parse_plan()`, and default-column inference are
-sufficient to drive the index render.
+"shell out to `PYTHONPATH=… python3 -m zskills_monitor.collect`,
+then group the returned plans into index sections per the
+category/meta_plan mapping above." The Python aggregator's
+`slug_of()`, `parse_plan()`, default-column inference, and the new
+`category`/`meta_plan`/`sub_plans` fields (added in Phase 4 per
+F-12) are sufficient to drive the index render.
 
 **No CLI surface change.** `/plans bare | rebuild | next | details`
 keep their argument-hint, descriptions, and user-visible output
@@ -1966,10 +2363,19 @@ unchanged. Migration is internal.
 **Standalone-callable invariant** (Phase 4 Goal): `collect.py` must
 be importable and runnable independent of `server.py`. `/plans
 rebuild` invokes the collector via the CLI
-(`python3 -m zskills_monitor.collect`) — no HTTP server is required.
+(`PYTHONPATH=…/skills/zskills-dashboard/scripts python3 -m
+zskills_monitor.collect`) — no HTTP server is required.
 If the CLI invocation fails (module missing, import error, non-zero
 exit), `/plans rebuild` reports the error to the user and exits
 non-zero — there is no fallback to a legacy bash classifier.
+
+**Python 3.9+ precondition (per DA-7).** After this phase, `/plans
+rebuild` requires Python 3.9+ in the user's environment. Environments
+without Python 3 cannot run `/plans rebuild`. This is consistent with
+Phase 4's runtime requirement and with the project's pre-backwards-compat
+posture (`feedback_no_premature_backcompat`). The DA noted this as a
+regression vector for fresh clones; the design choice prioritizes
+single-source-of-truth over preserving the bash classifier.
 
 **Pre-backwards-compat note.** Per
 `feedback_no_premature_backcompat`, this phase is a clean cut: the
@@ -1981,58 +2387,90 @@ the new path.
 - [ ] `skills/plans/SKILL.md`'s `## Mode: Rebuild` section invokes
   `python3 -m zskills_monitor.collect` (verified by `grep -nE
   'zskills_monitor\.collect|collect_snapshot' skills/plans/SKILL.md`
-  returning at least one match).
+  returning at least one match) and uses the canonical PYTHONPATH
+  prefix `PYTHONPATH=.*skills/zskills-dashboard/scripts` (verified
+  by `grep -nE 'PYTHONPATH.*skills/zskills-dashboard/scripts'
+  skills/plans/SKILL.md` returning at least one match).
+- [ ] Section mapping uses Phase 4's `category`/`meta_plan` fields:
+  `grep -nE '"category"\s*:\s*"(canary|issue_tracker|reference|executable)"|"meta_plan"\s*:\s*true'
+  skills/plans/SKILL.md` returns at least one match (the prose
+  references the field names so the implementer knows what to
+  consume).
 - [ ] The old prose classifier rules are removed: `grep -nE
   'classify as \*\*Ready\*\*|classify every \`\.md\`'
   skills/plans/SKILL.md` returns no matches (or only matches
   inside the new wrapper prose, not the old algorithm).
-- [ ] `diff -q skills/plans/SKILL.md .claude/skills/plans/SKILL.md`
-  returns 0.
+- [ ] `diff -rq skills/plans/ .claude/skills/plans/` returns 0.
 - [ ] `tests/test_plans_rebuild_uses_collect.sh` exits 0 and is
   registered in `tests/run-all.sh`. The test verifies that the
   plan-set in the regenerated `plans/PLAN_INDEX.md` matches the
-  plan-set in `python3 -m zskills_monitor.collect`'s output.
+  plan-set in `python3 -m zskills_monitor.collect`'s output AND
+  that section assignment matches the Phase 4 categorization rules
+  (canary plans land in Canaries section, etc.).
 - [ ] Smoke: invoking `/plans rebuild` regenerates
   `plans/PLAN_INDEX.md` with a fresh "Last rebuilt:" timestamp and
   no Python tracebacks.
 - [ ] User-visible output of `/plans bare`, `/plans next`, and
   `/plans details` is unchanged in shape (manual spot-check
   documented in the phase report).
+- [ ] Python-missing failure is loud: with `python3` removed from
+  PATH (via a wrapper or `env -i PATH=/`), `/plans rebuild` reports
+  the error and exits non-zero (no silent fallback).
 
 ### Dependencies
 
-- Phase 4 (`collect_snapshot`, `slug_of`, fixture parity tests must
-  exist and pass).
+- Phase 4 (`collect_snapshot`, `slug_of`, `category`/`meta_plan`
+  fields, fixture parity tests must exist and pass).
 - `skills/plans/SKILL.md` source (Phase 2 already trimmed the retired
   modes; this phase rewrites Rebuild/Next/Details bodies).
+- `scripts/mirror-skill.sh` (Tier-2 mirror tool).
+- Python 3.9+ in user's environment (a precondition; missing →
+  clean exit non-zero with diagnostic, no bash fallback).
 - No dependency on Phases 5–8 (the dashboard server is not invoked
   by `/plans rebuild`).
 
 ## Drift Log
 
-Structural comparison of the plan as originally drafted vs current state.
+Structural comparison: this plan was authored 2026-04-18 and refreshed in PR #70 (2026-04-27) before any phase was executed. No completed phases — all 9 phases reviewed as remaining in the 2026-04-28 `/refine-plan` round 1 pass. Drift sources absorbed:
 
-The plan was added in commit "chore(plans): add four new plans" (initial introduction) and has not been previously executed. No completed phases — all phases reviewed as remaining. No structural drift between as-drafted and current state; the round-1 refinement adjusted plan text directly without divergence from any prior shipped artifact.
+| Source | Landed | Drift impact | Disposition |
+|--------|--------|--------------|-------------|
+| `scripts/port.sh` → `skills/update-zskills/scripts/port.sh` | PR #97 (2026-04-28) | Phase 5/8 referenced old path | Updated to `$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh` |
+| `scripts/sanitize-pipeline-id.sh` → `skills/create-worktree/scripts/sanitize-pipeline-id.sh` | PR #97 | Phase 1/3/8 referenced old path | Updated to canonical post-Phase-B form |
+| `scripts/briefing.py` → `skills/briefing/scripts/briefing.py` | PR #96 | Phase 4's Python `from scripts.briefing` import was broken | Switched to `importlib.util.spec_from_file_location` against the new path |
+| `rm -rf .claude/skills/X && cp -r` recipe | hook-blocked since PR #88 | Phase 8's mirror recipe would hit a hook block on first invocation | All 5 mirror recipes use `bash scripts/mirror-skill.sh <name>` |
+| `dev_server.port_script` removed; `dev_server.default_port` added | PR #97 + #99 | Phase 5 HTTP server port resolution referenced old field | Phase 5 port-resolution chain rewritten to consult `default_port` first |
 
-| Phase | Planned | Actual | Delta |
-|-------|---------|--------|-------|
-| 1–8   | as drafted | as drafted | No drift — no execution yet |
-| 9     | (did not exist) | New phase added in /refine-plan round 1 | +1 phase: migrate /plans rebuild to call Phase 4 aggregator |
+Substantive design changes in round 1 (verifier-flagged + DA-flagged):
+
+| Change | Phases | Why |
+|--------|--------|-----|
+| Python module relocated to `skills/zskills-dashboard/scripts/zskills_monitor/` (was `scripts/zskills_monitor/`) | 4-9 | DA-4: flat `scripts/` violates post-Phase-B norm (Tier-1 lives in skills/<owner>/scripts/) |
+| `PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts"` prefix added to all `python3 -m zskills_monitor.*` invocations | 4-9 | DA-5: module discovery would fail without it |
+| Phase 4 `plans[]` JSON schema gained `category`, `meta_plan`, `sub_plans` fields | 4, 9 | F-12: Phase 9 couldn't reproduce the 6-section PLAN_INDEX without categorization rules |
+| Cross-process `flock` for `monitor-state.json` writes (server + CLI) | shared schemas | DA-6: read-modify-write race between Phase 5 server and Phase 1/3 CLI |
+| Phase 8 process-identity check now compares cwd in addition to command name | 8 | F-11: prevents falsely killing a different worktree's monitor server |
+| `parent:` marker schema documented inline in Phase 1 + new WI to update `docs/tracking/TRACKING_NAMING.md` | 1 | F-10: TRACKING_NAMING.md was cited as authority but had zero `parent:` references |
 
 ## Plan Review
 
-**Refinement process:** /refine-plan with 2 rounds of adversarial review (reviewer + devil's advocate per round)
-**Convergence:** Converged at round 2 — both reviewer and DA reported zero substantive new issues
-**User-surfaced concerns:** Both A (Phase 4 standalone-callable not explicitly stated) and B (no migration phase for /plans rebuild) addressed in round 1.
+**Refinement process:** `/refine-plan` with 1 round of adversarial review (reviewer + devil's advocate, with user-supplied scope/focus directive citing post-PR-#100 SCRIPTS_INTO_SKILLS landing).
 
-**Remaining concerns (non-blocking polish, not addressed):**
-- Phase 4 Design wording at the "snapshot shape consumed by Phases 5–7 and Phase 9" reference is imprecise — Phase 9 consumes the `collect_snapshot()` Python function via CLI, not the JSON snapshot. Documentation imprecision; no functional impact.
-- Phase 9 AC 6 manual spot-check could be more automated (current AC verifies output shape via documented manual check; could be replaced with structured shape assertions).
-- ~~Phase 9 Design does not document the failure behavior if `collect.py` is unavailable.~~ Resolved post-convergence: Design & Constraints now states `/plans rebuild` reports the error and exits non-zero with no legacy-bash fallback.
+**Convergence:** Converged at round 1. 30 findings (15 reviewer + 15 DA), 25 Fixed, 5 Justified-not-fixed (all with explicit reasoning):
+- DA-7: Python precondition is intentional design per `feedback_no_premature_backcompat`
+- DA-9: Phase 5 split would renumber phases — out of round-1 surgical scope; logged for follow-up
+- DA-11: no anchor; implementer naturally enumerates fixture paths
+- DA-12: flag controls auto-invoke not user-typed `/`
+- DA-14: per-process `gh` cache acceptable; documented
+
+**Verify-before-fix outcomes:** Every empirical finding had its `Verification:` line independently reproduced before fixes were applied. Notable:
+- F-10 (`parent:` marker schema): TRACKING_NAMING.md cited as authority but `grep parent: docs/tracking/TRACKING_NAMING.md` returned ZERO matches. Field is attested only in `skills/fix-issues/SKILL.md:346,924`. Refiner Verified the false attribution and added a documentation WI rather than treating the citation as authoritative.
+- DA-1 (mirror recipe hook block): refiner reproduced the block by reading `block-unsafe-generic.sh:220`, confirmed Phase 8's recipe would be blocked, applied the `mirror-skill.sh` substitution.
+
+**Remaining concerns:** None blocking execution.
 
 ### Round History
 
-| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
-|-------|-------------------|---------------------------|-------------|----------|
-| 1     | 17 issues         | 25 issues                 | 32          | 32 Fixed, 10 Justified |
-| 2     | 0 substantive (2 minor polish) | 0 substantive (1 minor polish) | 0 | Converged |
+| Round | Reviewer Findings | DA Findings | Substantive | Resolved | Outcome |
+|-------|-------------------|-------------|-------------|----------|---------|
+| 1     | 15                | 15          | 30          | 25 Fixed, 5 Justified-with-reason | Converged |
