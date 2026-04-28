@@ -1,5 +1,54 @@
 # Plan Report — Move skill-owned scripts into the skills that use them
 
+## Phase — 4 /update-zskills install flow rewrite + stale-Tier-1 migration [UNFINALIZED]
+
+**Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-scripts-into-skills-plan
+**Branch:** feat/scripts-into-skills-plan
+**Commits:** 18404ae (impl + new test + migration helper), 3b73e87 (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 4.1 | Step D rewrite — drop Tier-1 enumerations, point readers to script-ownership.md | Done | 18404ae |
+| 4.2 | references/tier1-shipped-hashes.txt generated via 2-pass form (literal + git ls-tree); 26 unique 40-char hex SHAs; --verify 2>/dev/null suppresses merge-commit literal-path stdout pollution | Done | 18404ae |
+| 4.3 | Commit-cohabitation check implemented as case 6c | Done | 18404ae |
+| 4.4 | Step D.5 stale-Tier-1 migration: command -v git pre-flight (DA-8), 14-entry STALE_LIST, CRLF-normalizing hash, MIGRATED/KEPT prompts, per-file defer marker | Done | 18404ae |
+| 4.4b | port_script strip block + this-repo config update | Done | 18404ae |
+| 4.5 | No bare scripts/statusline.sh in SKILL.md (only $PORTABLE/.claude/skills/.../) | Verified | (passive) |
+| 4.6 | No scripts/briefing.* in SKILL.md (only .claude/skills/briefing/scripts/) | Verified | (passive) |
+| 4.7 | Mirror parity for update-zskills | Done | 18404ae |
+| 4.8 | tests/test-update-zskills-migration.sh (12 cases incl. case 6c uncommitted-in-worktree branch) | Done | 18404ae |
+| 4.9 | Test registered in tests/run-all.sh alphabetically | Done | 18404ae |
+| 4.10 | bash tests/run-all.sh exits 0 (943/943) | Done | 18404ae |
+
+### Verification
+
+- Test suite: PASSED (943/943, +12 from Phase 3b's 931 baseline)
+- All 16 acceptance criteria verified by independent verification agent
+- Migration sanity scenarios independently re-verified by verifier:
+  - Known-hash blob → MIGRATED (matched, removed)
+  - User-modified blob → KEPT (preserved, marker created)
+  - CRLF fixture → cross-platform parity (`tr -d '\r' | git hash-object --stdin`)
+- Step D.5 audit: command -v git pre-flight precedes STALE_LIST; no eval, no jq, no error-suppression on verifiable ops
+
+### PLAN-TEXT-DRIFT findings
+
+3 tokens flagged by both implementer and verifier (independently re-confirmed):
+1. WI 4.1 closing-note example list contradicted AC2's zero-match grep. Resolved by keeping intent (script-ownership.md pointer), dropping example list. Only valid resolution.
+2. WI 4.2 `git rev-parse` recipe needed `--verify ... 2>/dev/null` to suppress merge-commit literal-path stdout pollution. Sensible scope distinction: DA-3 rule was about wildcard-failure hiding, not this case. Author-side hash-file generation only; not in shipped artifacts.
+3. WI 4.8 case 6c needed pre-commit/uncommitted-in-worktree pass branch (hash file is untracked at verification time). Implementer added; check still runs after the file commits.
+
+### Notes
+
+- Phase 4 is the largest single-phase scope (678 plan-lines). Implementable in one agent run.
+- Step D.5's migration logic uses pure bash + git hash-object (no jq, no eval, no `$(())` over user input).
+- Per-file `.zskills/tier1-migration-deferred` marker design (D24) lets users decline migration with a single flag without re-prompting on subsequent runs.
+
+---
+
 ## Phase — 3b Cross-skill caller sweep + port.sh fix [UNFINALIZED]
 
 **Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
