@@ -1,5 +1,59 @@
 # Plan Report — Move skill-owned scripts into the skills that use them
 
+## Phase — 3b Cross-skill caller sweep + port.sh fix [UNFINALIZED]
+
+**Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-scripts-into-skills-plan (will be removed after combined 3a+3b PR squash)
+**Branch:** feat/scripts-into-skills-plan
+**Commits:** 64dc37d (Phase 3b impl + orchestrator fixups), 4925f8b (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 3b.1 | Cross-skill caller sweep across 13 skills (do, run-plan, fix-issues, quickfix, research-and-go, research-and-plan, create-worktree, commit, briefing, manual-testing, fix-report, verify-changes, update-zskills) | Done | 64dc37d |
+| 3b.2 / 3b.2.a | CLAUDE.md + README.md updates; helper-scripts list rewritten with script-ownership.md pointer | Done | 64dc37d |
+| 3b.3-3b.6b | sanitize-pipeline-id, create-worktree, land-phase, write-landed, clear-tracking, port.sh callers converted | Done | 64dc37d |
+| 3b.7 | Hook help-text in template + .claude mirror updated (lines 89, 91, 103, 114, 194, 208) | Done | 64dc37d |
+| 3b.8 | 13 skill mirrors regenerated via mirror-skill.sh; all `diff -r` clean | Done | 64dc37d |
+| 3b.9 | 6 test files updated with new script paths (test-canary-failures, test-create-worktree, test-hooks, test-port, test-quickfix, test-skill-conformance) | Done | 64dc37d |
+| 3b.10 | `bash tests/run-all.sh` exits 0 (931/931) | Done | 64dc37d |
+| (extra) | port.sh PROJECT_ROOT bug fix (3a verifier-flagged): derive from `git rev-parse --show-toplevel`, not `$SCRIPT_DIR/..` | Done | 64dc37d |
+| (orch) | /quickfix `$CLAUDE_PROJECT_DIR` → `$MAIN_ROOT` (set -u safety) + test-quickfix fixture target update | Done | 64dc37d |
+
+### Verification
+
+- Test suite: PASSED (931/931, +37 from Phase 3a's 894 baseline)
+- All 37 cross-skill caller failures resolved
+- port.sh from main repo path returns `8080` (default_port from config) — bug fixed
+- Mirror parity holds for all 13 swept skills
+- /quickfix runs cleanly under `set -u` (no unset CLAUDE_PROJECT_DIR trip)
+
+### PLAN-TEXT-DRIFT findings
+
+3 minor AC-text drift tokens (non-blocking):
+1. WI 3b.6b.x AC contradicts WI text (says SKIP `:326` PORT_SCRIPT row but AC says zero `scripts/port.sh` matches in the file).
+2. WI 3b.7 AC's wording about `grep -c 'scripts/clear-tracking'` is incorrect (substring match overcounts new-form paths).
+3. WI 3b.6b line numbers stale (off-by-one: `:326` → `327`, `:414` → `415`, `:704` → `705`).
+
+All 3 are AC formulation drift that the verifier flagged for refine; none block correctness.
+
+### Combined 3a+3b landing
+
+Phase 3a was a midpoint with 37 intentionally red tests (per plan's allowlist contract). Phase 3b's commit lands ON TOP of Phase 3a's commits in the same feature branch. Phase 3b's PR (opened in this phase's Phase 6) presents the COMBINED 3a+3b work — green CI, clean squash to main.
+
+The orchestrator's 2 fixups were folded into Phase 3b's `64dc37d` commit by the verifier:
+- /quickfix's `$CLAUDE_PROJECT_DIR` → `$MAIN_ROOT` (avoids `set -u` unbound-var trip in fixture sub-shells)
+- test-quickfix fixture target moved to `.claude/skills/create-worktree/scripts/` (matches SKILL's new path)
+
+### Notes
+
+- This is the largest phase by file count (52 modified files spanning skill text, hooks, tests, docs).
+- Phase 4 onwards (`/update-zskills` install flow rewrite, tests sweep, docs close-out) follow the now-clean baseline.
+
+---
+
 ## Phase — 3a Move shared Tier-1 scripts + default_port reconcile [UNFINALIZED]
 
 **Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md

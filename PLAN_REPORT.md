@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-scripts-into-skills-plan.md](reports/plan-scripts-into-skills-plan.md) | 3/7 | **In progress** — Phases 1+2+3a done (registry + 14 Tier-1 scripts moved + default_port reconcile); 894/931 tests (37 cross-skill fails deferred to 3b per plan's intentional-red contract); Phase 3a's PR landing combined into Phase 3b's PR; Phases 3b, 4, 5, 6 remaining |
+| [plan-scripts-into-skills-plan.md](reports/plan-scripts-into-skills-plan.md) | 4/7 | **In progress** — Phases 1+2+3a+3b done (registry + 14 Tier-1 scripts moved + default_port reconcile + cross-skill caller sweep + port.sh PROJECT_ROOT fix); 931/931 tests; Phase 3a+3b combined squash lands together; Phases 4, 5, 6 remaining |
 | [plan-improve-staleness-detection.md](reports/plan-improve-staleness-detection.md) | 3/3 | **Complete** — all 3 phases landed; defense-in-depth drift detection chain (pre-authoring /refine-plan Dimension 7, pre-dispatch Phase 1 step 6 b, post-implement Phase 3.5); 931/931 tests, +68 plan-drift cases |
 | [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 5/5 | **Complete** — all phases landed; 531/531 tests PASS; mirror parity clean; real-GitHub canaries deferred to user |
 | [plan-ci-fix-cycle-canary.md](reports/plan-ci-fix-cycle-canary.md) | 1/1 | **Complete** — CI-fix-cycle canary (pending this PR) |
