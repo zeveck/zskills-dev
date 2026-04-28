@@ -1,7 +1,8 @@
 ---
 title: Move skill-owned scripts into the skills that use them
 created: 2026-04-25
-status: active
+status: complete
+completed: 2026-04-28
 ---
 
 # Plan: Move skill-owned scripts into the skills that use them
