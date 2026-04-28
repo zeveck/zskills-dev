@@ -60,7 +60,7 @@ itself; the user owns ordering.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ⬚ |  |  |
+| 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | 🟡 In Progress |  |  |
 | 2 — Stub-callout convention + sourceable dispatch helper | ⬚ |  |  |
 | 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ⬚ |  |  |
 | 4 — `dev-port.sh` callout in `port.sh` | ⬚ |  |  |
