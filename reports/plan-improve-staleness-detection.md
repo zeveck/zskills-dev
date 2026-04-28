@@ -1,5 +1,50 @@
 # Plan Report — Improve /run-plan Staleness Detection (Arithmetic Drift)
 
+## Phase — 3 Pre-dispatch arithmetic gate (Phase 1 step 6 extension) [UNFINALIZED]
+
+**Plan:** plans/IMPROVE_STALENESS_DETECTION.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-improve-staleness-detection
+**Branch:** feat/improve-staleness-detection
+**Commits:** f966467 (impl + tests), 35f9db6 (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 3.1 | `skills/run-plan/SKILL.md` Phase 1 step 6 restructured into sub-checks `a.` (textual, preserved) and `b.` (arithmetic, new 5-step procedure) | Done | f966467 |
+| 3.2 | Mirror parity (per-file cp) | Done | f966467 |
+| 3.3 | 29 new test cases (extract-lines drift, non-derivable skip path, injection canary, eval edge cases) | Done | f966467 |
+| 3.4 | `scripts/plan-drift-correct.sh --eval <expr>` mode (token-walking parser, awk via -v vars, no $(()) over user input, no eval) | Done | f966467 |
+| 3.5 | `docs/tracking/TRACKING_NAMING.md` adds `phasestep.run-plan.<id>.<phase>.drift-fail` alongside drift-detect | Done | f966467 |
+| 3.6 | CHANGELOG close-out entry | Done | f966467 |
+| 3.7 | `bash tests/run-all.sh` passes | Done | 931/931 |
+| 3.8 | Commit | Done | f966467 |
+
+### Verification
+
+- Test suite: PASSED (931/931, +29 from Phase 2 baseline 902)
+- All 9 acceptance criteria verified by independent verification agent
+- `--eval "417 - 94 - 60 + 15"` → 278; `--eval "417 * 2"` → exit 2 (unsupported character)
+- Security: no `eval` of user input; no `$(())` over user-controlled `<expr>`; charset filter (digits/+/-/whitespace only) before tokenisation; awk math via `-v` variables
+- Injection canary test confirms `$(touch ...)`, backticks, `;`, `&&` are all rejected and never create marker file
+- Mirror clean
+
+### PLAN-TEXT-DRIFT findings
+
+None against Phase 3 acceptance criteria. Implementer + verifier independently confirmed no drift on self-execution.
+
+### Notes
+
+- Pre-dispatch gate complements Phase 3.5's post-implement gate. Defense-in-depth chain now complete:
+  1. **Pre-authoring** — `/refine-plan` Dimension 7 (commit `fd9d03d`, pre-existing)
+  2. **Pre-dispatch** — `/run-plan` Phase 1 step 6 sub-check `b` (Phase 3, this PR)
+  3. **Post-implement** — `/run-plan` Phase 3.5 auto-correct gate (Phase 2, PR #91)
+- All three layers share the `PLAN-TEXT-DRIFT:` token vocabulary and the `scripts/plan-drift-correct.sh` helper.
+- Plan is now complete (status: complete after this PR squashes).
+
+---
+
 ## Phase — 2 Post-implement auto-correct gate (Phase 3.5) [UNFINALIZED]
 
 **Plan:** plans/IMPROVE_STALENESS_DETECTION.md

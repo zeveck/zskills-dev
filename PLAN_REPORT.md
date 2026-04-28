@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-improve-staleness-detection.md](reports/plan-improve-staleness-detection.md) | 2/3 | **In progress** — Phases 1+2 done (PLAN-TEXT-DRIFT token + script in P1; Phase 3.5 auto-correct gate in P2; 902/902 tests, +39 plan-drift cases); Phase 3 (pre-dispatch arithmetic gate + --eval) remaining |
+| [plan-improve-staleness-detection.md](reports/plan-improve-staleness-detection.md) | 3/3 | **Complete** — all 3 phases landed; defense-in-depth drift detection chain (pre-authoring /refine-plan Dimension 7, pre-dispatch Phase 1 step 6 b, post-implement Phase 3.5); 931/931 tests, +68 plan-drift cases |
 | [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 5/5 | **Complete** — all phases landed; 531/531 tests PASS; mirror parity clean; real-GitHub canaries deferred to user |
 | [plan-ci-fix-cycle-canary.md](reports/plan-ci-fix-cycle-canary.md) | 1/1 | **Complete** — CI-fix-cycle canary (pending this PR) |
 | [plan-parallel-canarya.md](reports/plan-parallel-canarya.md) | 1/1 | **Complete** — concurrent-pipeline in-vivo canary |
