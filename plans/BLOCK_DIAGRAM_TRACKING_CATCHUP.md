@@ -42,7 +42,7 @@ phase, three phases, three PRs).
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Migrate add-block + add-example writers (paired) | ⬚ | | One commit; 19 sites; bundled per delegation. |
+| 1 — Migrate add-block + add-example writers (paired) | ✅ Done | `0e9c37e` | 19 sites migrated (12 add-block + 7 add-example); pre-#97 caller-path cleanup at L16/L20; delegation dry-run output 5/5 expected paths; 943/943 tests pass. |
 | 2 — Lint guard + canary cases for block-diagram | ⬚ | | Mirrors `tests/test-skill-invariants.sh:128-134`; extends canary by 2 cases. |
 | 3 — Framework-coverage CI guard for block-diagram (recommended) | ⬚ | | Decision in Design & Constraints below; one-work-item phase. |
 
