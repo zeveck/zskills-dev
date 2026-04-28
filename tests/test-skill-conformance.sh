@@ -73,7 +73,7 @@ check_fixed run-plan "pr number from url"           'PR_NUMBER="${PR_URL##*/}"'
 check       run-plan "pr number numeric check"      'PR_NUMBER" =~ \^\[0-9\]\+\$'
 check       run-plan "push error-check first-time"  'if ! git push -u origin'
 check       run-plan "pre-cherry-pick stash"        'pre-cherry-pick stash'
-check_fixed run-plan "write-landed invocation"      'bash scripts/write-landed.sh'
+check_fixed run-plan "write-landed invocation"      'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
 check_fixed run-plan "pr-mode bookkeeping"          'PR-mode bookkeeping'
 check_fixed run-plan "post-run-invariants"          'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/post-run-invariants.sh"'
 check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.final.'
@@ -127,7 +127,7 @@ check run-plan "Failure Protocol"   '^## Failure Protocol'
 
 echo ""
 echo "=== /run-plan — shell idioms ==="
-check_fixed run-plan "create-worktree invocation" 'bash "$MAIN_ROOT/scripts/create-worktree.sh"'
+check_fixed run-plan "create-worktree invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh"'
 check_fixed run-plan "pr mode --allow-resume"     '--allow-resume'
 
 echo ""
@@ -142,7 +142,7 @@ check_fixed commit "quoted heredoc body"      '-m "$(cat <<'\''EOF'\'''
 check       commit "no-amend after hook fail" 'NEVER.*--amend.*hook|--amend would modify'
 check       commit "origin/main for log"      'git log origin/main\.\.HEAD'
 check       commit "--watch unreliable"       '--watch.*(exit code is unreliable|UNRELIABLE)'
-check_fixed commit "write-landed"             'bash scripts/write-landed.sh'
+check_fixed commit "write-landed"             'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
 check       commit "read-only reviewer"       'You are read-only|you are read-only'
 # Config-driven default mode (issue #56): /commit with no explicit mode
 # token must consult execution.landing in .claude/zskills-config.json
@@ -171,7 +171,7 @@ check       do "pr extended punctuation"      'extended.*punctuation pattern|ext
 check       do "task-slug collision suffix"   'date \+%s \| tail -c'
 check_fixed do "branch name slug"             'do-${TASK_SLUG}'
 check_fixed do "pr worktree path"             '/tmp/${PROJECT_NAME}-do-'
-check_fixed do "sanitize-pipeline-id"         'bash scripts/sanitize-pipeline-id.sh'
+check_fixed do "sanitize-pipeline-id"         'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"'
 check_fixed do "pipeline-id format"           'PIPELINE_ID="do.'
 # Landing-mode resolution: /do must detect pr/direct/worktree flags,
 # fall back to execution.landing in zskills-config, and enforce the
@@ -206,7 +206,7 @@ check_fixed fix-issues "fix branch naming"          'fix/issue-'
 check_fixed fix-issues "pr worktree path"           '/tmp/${PROJECT_NAME}-fix-issue-'
 check_fixed fix-issues "sprint-id format"           'SPRINT_ID="sprint-'
 check_fixed fix-issues "pipeline-id format"         'PIPELINE_ID="fix-issues.'
-check_fixed fix-issues "sanitize-pipeline-id"       'bash scripts/sanitize-pipeline-id.sh'
+check_fixed fix-issues "sanitize-pipeline-id"       'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"'
 check_fixed fix-issues "recover sprint-id"          'SPRINT_ID="${PIPELINE_ID#fix-issues.'
 check       fix-issues "3 agent dispatch cap"       'most 3 worktree agents per message'
 check       fix-issues "agent 1-hour timeout"       'Agent timeout: 1 hour|1.hour.*timeout'

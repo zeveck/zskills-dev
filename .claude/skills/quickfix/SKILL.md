@@ -352,7 +352,7 @@ the transcript (tier-2 tracking per `tests/test-hooks.sh:245`), and write
 the `started` marker under the pipeline-scoped tracking dir.
 
 ```bash
-PIPELINE_ID=$(bash "$MAIN_ROOT/scripts/sanitize-pipeline-id.sh" "quickfix.$SLUG")
+PIPELINE_ID=$(bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "quickfix.$SLUG")
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
 TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"

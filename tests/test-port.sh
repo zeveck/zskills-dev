@@ -4,7 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PORT_SCRIPT="$REPO_ROOT/scripts/port.sh"
+PORT_SCRIPT="$REPO_ROOT/skills/update-zskills/scripts/port.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0

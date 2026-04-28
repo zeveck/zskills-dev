@@ -126,7 +126,7 @@ READ the file and extract every `[ ]` line with its surrounding context
 
 Get the dev server port:
 ```bash
-bash scripts/port.sh
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh"
 ```
 
 For each report file, construct a viewer URL:

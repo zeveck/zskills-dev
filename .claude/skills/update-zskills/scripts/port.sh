@@ -9,7 +9,13 @@
 # Usage:  bash $(basename "$0")   (prints port to stdout)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# PROJECT_ROOT must come from the invocation context, not the script
+# location. After the move into skills/update-zskills/scripts/, the script
+# can be invoked from any consumer repo via the shipped .claude/skills/
+# tree, so $SCRIPT_DIR/.. would point inside the skill bundle, not the
+# repo root. Use git rev-parse --show-toplevel; fall back to PWD when
+# invoked outside a git repo.
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 DEFAULT_PORT=8080  # fallback when config field is absent
 RANGE_START=9000
@@ -17,8 +23,9 @@ RANGE_SIZE=51000  # 9000-60000
 
 # ─── Runtime config read (eliminates install-time drift) ───
 # Read dev_server.main_repo_path AND dev_server.default_port from the
-# checked-out config.
-_ZSK_REPO_ROOT="${REPO_ROOT:-$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || echo "$PROJECT_ROOT")}"
+# checked-out config. PROJECT_ROOT IS the repo root, so the config lives
+# at $PROJECT_ROOT/.claude/zskills-config.json.
+_ZSK_REPO_ROOT="${REPO_ROOT:-$PROJECT_ROOT}"
 _ZSK_CFG="$_ZSK_REPO_ROOT/.claude/zskills-config.json"
 MAIN_REPO=""
 if [ -f "$_ZSK_CFG" ]; then

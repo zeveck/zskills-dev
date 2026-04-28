@@ -197,7 +197,7 @@ at [`config/zskills-config.schema.json`](config/zskills-config.schema.json).
   },
   "dev_server": {
     "cmd": "npm start",
-    "port_script": "scripts/port.sh",
+    "port_script": ".claude/skills/update-zskills/scripts/port.sh",
     "main_repo_path": "/home/you/projects/my-app"
   },
   "ui": {
@@ -272,7 +272,7 @@ Two other file types sit alongside tracking markers:
   orchestrator writes it before dispatching work, removes it after the
   pipeline completes. Hooks use it to scope marker matching.
 - **`.landed`** (worktree root) — a YAML-ish marker written by
-  `/commit land` / `scripts/write-landed.sh` when a worktree's work has
+  `/commit land` / `.claude/skills/commit/scripts/write-landed.sh` when a worktree's work has
   been cherry-picked (or merged) to main. `status: full` = safe to
   remove the worktree. `status: partial` / `not-landed` = inspect first.
 
@@ -315,7 +315,7 @@ Z Skills ships two PreToolUse hooks that block specific unsafe patterns:
 - **Tracking directory protection:** blocks recursive deletion of
   `.zskills/tracking/`.
 - **`clear-tracking.sh` exec block:** agents cannot run
-  `scripts/clear-tracking.sh` — only the user can clear tracking state
+  `.claude/skills/update-zskills/scripts/clear-tracking.sh` — only the user can clear tracking state
   (it's an escape hatch, not an agent routine).
 
 Both hooks fail closed: when a rule fires, the agent sees a permission
@@ -454,15 +454,10 @@ Agent guardrails that prevent the most common failure modes:
 
 ### Helper Scripts
 
-- `port.sh` — deterministic dev server port per worktree
 - `test-all.sh` — meta test runner (unit + E2E + build tests)
-- `briefing.cjs` / `briefing.py` — project status gathering for `/briefing`
-- `land-phase.sh` — atomic post-landing cleanup
-- `post-run-invariants.sh` — 7-invariant end-of-run mechanical gate
-- `write-landed.sh` — rc-checked `.landed` marker writer
-- `worktree-add-safe.sh` — safe worktree creation (fresh vs poisoned stale branches)
-- `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer
-- `clear-tracking.sh` — user-only escape hatch for stale tracking state
+- `stop-dev.sh` — stop the dev server (consumer-customizable)
+
+Skill machinery scripts moved into their owning skills under `.claude/skills/<owner>/scripts/` — see the `update-zskills` skill's `references/script-ownership.md` for the full table.
 
 ### Session Logging
 

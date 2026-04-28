@@ -60,7 +60,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -133,7 +133,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -235,7 +235,7 @@ if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
   echo "Remote branch $BRANCH_NAME already exists. Pushing updates."
   if ! git push origin "$BRANCH_NAME"; then
     echo "ERROR: git push to existing $BRANCH_NAME failed. Aborting before PR creation." >&2
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -249,7 +249,7 @@ LANDED
 else
   if ! git push -u origin "$BRANCH_NAME"; then
     echo "ERROR: git push -u (first-time) failed for $BRANCH_NAME. Aborting before PR creation." >&2
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -304,7 +304,7 @@ fi
 if [ -z "$PR_URL" ]; then
   echo "WARNING: PR creation failed. Branch pushed but PR not created."
   echo "Manual fallback: gh pr create --base main --head $BRANCH_NAME"
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -637,7 +637,7 @@ else
 fi
 
 # --- Upgrade .landed marker ---
-cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: $LANDED_STATUS
 date: $(TZ=America/New_York date -Iseconds)
 source: run-plan
@@ -653,7 +653,7 @@ LANDED
 # When PR was merged (status: landed), call land-phase.sh to remove the worktree.
 # The work is on main via the merge -- the worktree is no longer needed.
 if [ "$LANDED_STATUS" = "landed" ]; then
-  bash scripts/land-phase.sh "$WORKTREE_PATH"
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
 fi
 ```
 

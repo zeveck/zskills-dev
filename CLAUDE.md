@@ -8,7 +8,7 @@ Skill distribution repo and presentation site for Z Skills.
 - `block-diagram/` — add-on skills (3)
 - `.claude/skills/` — installed skill copies (what Claude Code reads)
 - `hooks/` — source hook scripts
-- `scripts/` — helper scripts (port.sh, test-all.sh, briefing.cjs/briefing.py, apply-preset.sh, etc.)
+- `scripts/` — consumer-customizable stubs (stop-dev.sh, test-all.sh) and release-only repo tooling (build-prod.sh, mirror-skill.sh); skill machinery (including port.sh, clear-tracking.sh, statusline.sh) moved to `.claude/skills/<owner>/scripts/`
 - `CLAUDE_TEMPLATE.md` — template for CLAUDE.md generation in target projects
 - `PRESENTATION.html` — main site (index.html redirects here)
 - `README.md`, `CHANGELOG.md` — documentation
@@ -41,7 +41,7 @@ mkdir -p "$TEST_OUT"
 Then read `"$TEST_OUT/.test-results.txt"` to inspect failures. Never pipe
 through `| tail`, `| head`, `| grep` -- it loses output and forces re-runs.
 `/tmp/zskills-tests/` is per-worktree-basename, so parallel pipelines do
-not collide. `scripts/land-phase.sh` removes the per-worktree dir on
+not collide. `.claude/skills/commit/scripts/land-phase.sh` removes the per-worktree dir on
 successful landing. Always compute `$TEST_OUT` from `$(pwd)` AFTER you
 have `cd`-ed into the correct repo/worktree root; or derive it from an
 explicit `$WORKTREE_PATH` the caller passes you (never assume cwd if you
@@ -159,7 +159,7 @@ for the authoritative scheme, delegation semantics, and migration
 strategy. When writing markers from a skill: construct them under
 `.zskills/tracking/$PIPELINE_ID/` using the `requires.*`, `fulfilled.*`,
 and `step.*` basenames — never flat under `.zskills/tracking/` directly.
-Use `scripts/sanitize-pipeline-id.sh` (lands in Phase 2 of the unify
+Use `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` (lands in Phase 2 of the unify
 plan) before writing any constructed `PIPELINE_ID` to disk. `.landed` is
 NOT a tracking marker — it is a separate worktree-state artifact managed
-by `/commit land` and `scripts/write-landed.sh`.
+by `/commit land` and `.claude/skills/commit/scripts/write-landed.sh`.

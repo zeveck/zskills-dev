@@ -22,7 +22,7 @@ description: >-
 2. Open the browser:
 
    ```bash
-   PORT=$(bash scripts/port.sh)
+   PORT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")
    playwright-cli open http://localhost:$PORT
    ```
 

@@ -136,7 +136,7 @@ expect_allow 'heredoc containing git stash -u' "$(printf 'cat <<EOF\ngit stash -
 # Script signature is ONE arg: `bash scripts/land-phase.sh <worktree-path>`.
 # MAIN_ROOT resolution uses `git rev-parse --git-common-dir` from CWD, so
 # every invocation subshell-cd's into the fixture's primary repo first.
-SCRIPT="$REPO_ROOT/scripts/land-phase.sh"
+SCRIPT="$REPO_ROOT/skills/commit/scripts/land-phase.sh"
 
 section "write-landed.sh: rc-checked atomic marker writes (3 cases)"
 # Locks in the rc-check behavior introduced with scripts/write-landed.sh.
@@ -144,7 +144,7 @@ section "write-landed.sh: rc-checked atomic marker writes (3 cases)"
 # partial markers on disk-full / read-only failures; the helper catches
 # those via `if ! cat ...` and `if ! mv ...` with loud stderr + rc=1.
 
-WRITE_LANDED="$REPO_ROOT/scripts/write-landed.sh"
+WRITE_LANDED="$REPO_ROOT/skills/commit/scripts/write-landed.sh"
 
 # Case 1: happy path — cat body into helper, .landed ends up with correct content.
 wl_primary=$(setup_fixture_repo)
@@ -195,10 +195,10 @@ section "land-phase.sh: tracked ephemeral rejected (4 cases)"
 # this plan's list, fail loudly so test authors update this phase rather
 # than silently passing against a changed list.
 EXPECTED_EPHEMERAL='EPHEMERAL_FILES=(".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked")'
-if grep -qxF "$EXPECTED_EPHEMERAL" "$REPO_ROOT/scripts/land-phase.sh"; then
-  pass "array-drift guard: scripts/land-phase.sh EPHEMERAL_FILES matches plan"
+if grep -qxF "$EXPECTED_EPHEMERAL" "$REPO_ROOT/skills/commit/scripts/land-phase.sh"; then
+  pass "array-drift guard: skills/commit/scripts/land-phase.sh EPHEMERAL_FILES matches plan"
 else
-  fail "array-drift guard: scripts/land-phase.sh EPHEMERAL_FILES does NOT match plan list — update this phase"
+  fail "array-drift guard: skills/commit/scripts/land-phase.sh EPHEMERAL_FILES does NOT match plan list — update this phase"
 fi
 
 for eph in ".test-results.txt" ".test-baseline.txt" ".worktreepurpose" ".zskills-tracked"; do
@@ -318,7 +318,7 @@ expect_script_exit \
   "worktree-add-safe Case 1 (fresh): rc=0, new worktree via -b" \
   0 \
   "Preparing worktree" \
-  bash -c "cd \"$ws1_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-fresh \"$ws1_wt\" main"
+  bash -c "cd \"$ws1_primary\" && bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-fresh \"$ws1_wt\" main"
 
 # Case 2 — equivalent-to-main: branch points at main tip (0 ahead, 0 behind)
 # → rc=0, helper deletes stale ref and creates fresh.
@@ -338,7 +338,7 @@ expect_script_exit \
   "worktree-add-safe Case 2 (equivalent-to-main): rc=0, stale ref deleted" \
   0 \
   "equivalent to main — deleting stale ref" \
-  bash -c "cd \"$ws2_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-equiv \"$ws2_wt\" main"
+  bash -c "cd \"$ws2_primary\" && bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-equiv \"$ws2_wt\" main"
 
 # Case 3 — behind-only (poisoned): branch from old main, main advances →
 # rc=3 with "poisoned stale branch" stderr.
@@ -354,7 +354,7 @@ expect_script_exit \
   "worktree-add-safe Case 3 (behind-only poisoned): rc=3 with poisoning message" \
   3 \
   "poisoned stale branch" \
-  bash -c "cd \"$ws3_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-behind \"$ws3_wt\" main"
+  bash -c "cd \"$ws3_primary\" && bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-behind \"$ws3_wt\" main"
 
 # Case 4 — ahead without opt-in: branch ahead of main, no env var → rc=4
 # with ZSKILLS_ALLOW_BRANCH_RESUME guidance.
@@ -370,7 +370,7 @@ expect_script_exit \
   "worktree-add-safe Case 4 (ahead, no opt-in): rc=4 with opt-in guidance" \
   4 \
   "set ZSKILLS_ALLOW_BRANCH_RESUME=1" \
-  bash -c "cd \"$ws4_primary\" && unset ZSKILLS_ALLOW_BRANCH_RESUME; bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-ahead-no \"$ws4_wt\" main"
+  bash -c "cd \"$ws4_primary\" && unset ZSKILLS_ALLOW_BRANCH_RESUME; bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-ahead-no \"$ws4_wt\" main"
 
 # Case 5 — ahead WITH opt-in: same setup as Case 4, env var set → rc=0,
 # helper attaches worktree to existing branch (no -b flag).
@@ -385,7 +385,7 @@ expect_script_exit \
   "worktree-add-safe Case 5 (ahead + opt-in): rc=0, attaches to existing branch" \
   0 \
   "resuming on existing branch canary/ws-ahead-yes" \
-  bash -c "cd \"$ws5_primary\" && ZSKILLS_ALLOW_BRANCH_RESUME=1 bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-ahead-yes \"$ws5_wt\" main"
+  bash -c "cd \"$ws5_primary\" && ZSKILLS_ALLOW_BRANCH_RESUME=1 bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-ahead-yes \"$ws5_wt\" main"
 
 # Case 6 — worktree path already exists (caller bug): dir pre-created →
 # rc=2 with "caller must handle" error, no worktree registered.
@@ -397,7 +397,7 @@ expect_script_exit \
   "worktree-add-safe Case 6 (path exists, caller bug): rc=2 with caller-must-handle" \
   2 \
   "caller must handle resume before invoking this helper" \
-  bash -c "cd \"$ws6_primary\" && bash \"$REPO_ROOT/scripts/worktree-add-safe.sh\" canary/ws-exists \"$ws6_wt\" main"
+  bash -c "cd \"$ws6_primary\" && bash \"$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh\" canary/ws-exists \"$ws6_wt\" main"
 
 # ---------------------------------------------------------------------------
 # Phase 3 — post-run-invariants.sh reproducers
@@ -891,7 +891,7 @@ assert_tracking_deny \
 # BEFORE they reach disk. Verify the sanitizer collapses *, ?, [, ], and
 # spaces into '_' so writers never persist glob-special basenames.
 tn2_raw='has space*?[abc]'
-tn2_sanitized=$(bash "$REPO_ROOT/scripts/sanitize-pipeline-id.sh" "$tn2_raw")
+tn2_sanitized=$(bash "$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$tn2_raw")
 # Expected: space→_, *→_, ?→_, [→_, a→a, b→b, c→c, ]→_
 tn2_want='has_space___abc_'
 if [ "$tn2_sanitized" = "$tn2_want" ]; then

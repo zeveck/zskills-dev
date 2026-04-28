@@ -435,7 +435,7 @@ have started one is skipping, not verifying.
    - What to look at (specific UI element, interaction, visual behavior)
    - How to reproduce (steps: open app, navigate to X, click Y, observe Z)
    - What "correct" looks like (expected appearance, behavior, output)
-   - URL: `http://localhost:$(bash scripts/port.sh)/`
+   - URL: `http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/`
 
    The user may be verifying hours later in a different context. "NEEDED"
    without instructions is useless — the user won't know what to check.

@@ -342,7 +342,7 @@ meta-plan filename gives a stable, per-run scope):
 # (`plans/<SLUG>_META.md`). Derive a stable slug from it.
 META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
 PIPELINE_ID="research-and-plan.$META_PLAN_SLUG"
-PIPELINE_ID=$(bash scripts/sanitize-pipeline-id.sh "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 for i in 1 2 ... N; do
   printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.$i"

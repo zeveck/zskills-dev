@@ -86,9 +86,9 @@ enforce_requires_marker() {
   local subdir_fulfilled="${req_dir}/${base/requires./fulfilled.}"
   if [ ! -f "$fulfilled" ] && [ ! -f "$subdir_fulfilled" ]; then
     if [ "$action" = "pushing" ]; then
-      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash scripts/clear-tracking.sh"
+      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled before pushing. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
     else
-      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash scripts/clear-tracking.sh"
+      block_with_reason "BLOCKED: Required skill invocation '${base#requires.}' not yet fulfilled. Invoke the required skill via the Skill tool. To clear stale tracking: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
     fi
   fi
 }
@@ -100,7 +100,7 @@ enforce_step_implement_marker() {
   base=$(basename "$impl" .implement)
   local verify="${impl/\.implement/.verify}"
   if [ ! -f "$verify" ]; then
-    block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before ${action}. To clear: ! bash scripts/clear-tracking.sh"
+    block_with_reason "BLOCKED: ${base#step.} has implementation but no verification. Run verification before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
   fi
 }
 
@@ -111,7 +111,7 @@ enforce_step_verify_marker() {
   base=$(basename "$verif" .verify)
   local report="${verif/\.verify/.report}"
   if [ ! -f "$report" ]; then
-    block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before ${action}. To clear: ! bash scripts/clear-tracking.sh"
+    block_with_reason "BLOCKED: ${base#step.} verified but no report written. Write report before ${action}. To clear: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
   fi
 }
 
@@ -191,7 +191,7 @@ is_on_main() {
 # false-positived because `--worktree`'s `-r-letters` satisfied the flag
 # slot mid-regex.
 if [[ "$COMMAND" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills/tracking ]]; then
-  block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash scripts/clear-tracking.sh"
+  block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
 fi
 
 # Block agent execution of clear-tracking script (reading is OK).
@@ -205,7 +205,7 @@ fi
 _CT_EXEC_CMD='(^|[;&|(`]|"command":")[[:space:]]*(bash|sh)[[:space:]][^;&|"]*clear-tracking'
 _CT_EXEC_DIR='(^|[;&|(`]|"command":")[[:space:]]*\./[^[:space:]"]*clear-tracking'
 if [[ "$COMMAND" =~ $_CT_EXEC_CMD ]] || [[ "$COMMAND" =~ $_CT_EXEC_DIR ]]; then
-  block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash scripts/clear-tracking.sh"
+  block_with_reason "BLOCKED: Only the user can run the clear-tracking script. Run: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
 fi
 
 # ─── Config file ───

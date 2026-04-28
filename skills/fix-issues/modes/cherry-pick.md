@@ -64,7 +64,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      b. Write `.landed` marker (atomic):
         ```bash
-        cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
+        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: full
         date: $(TZ=America/New_York date -Iseconds)
         source: fix-issues
@@ -74,7 +74,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
-        cat <<LANDED | bash scripts/write-landed.sh "<worktree>"
+        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: partial
         date: $(TZ=America/New_York date -Iseconds)
         source: fix-issues

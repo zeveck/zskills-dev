@@ -50,7 +50,7 @@ for issue in "${FIXED_ISSUES[@]}"; do
       git rebase --abort
     fi
     echo "REBASE CONFLICT for issue #$ISSUE_NUM."
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -78,7 +78,7 @@ LANDED
     # working tree has uncommitted changes that overlap with the merge.
     # Either way, skip this issue — same policy as cherry-pick conflict.
     echo "FF-MERGE REFUSED for issue #$ISSUE_NUM (branch diverged or dirty-tree overlap)."
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -97,7 +97,7 @@ LANDED
     # and continue; the next cron turn will see local ahead of origin
     # and retry. Do NOT reset local main; that would discard verified work.
     echo "PUSH FAILED for issue #$ISSUE_NUM after FF-merge (commits on local main, not origin)."
-    cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: direct-push-failed
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues
@@ -117,7 +117,7 @@ LANDED
   fi
 
   # --- Write .landed marker ---
-  cat <<LANDED | bash scripts/write-landed.sh "$WORKTREE_PATH"
+  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: full
 date: $(TZ=America/New_York date -Iseconds)
 source: fix-issues

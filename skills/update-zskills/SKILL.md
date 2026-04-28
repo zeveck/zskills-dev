@@ -412,7 +412,7 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
     - `python3`: enables `.claude/skills/briefing/scripts/briefing.py` (fallback for /briefing)
   - Hook references (`block-unsafe`) — check if the hook file
     exists in `.claude/hooks/`.
-  - Script references (`scripts/port.sh`, `scripts/test-all.sh`) — check if
+  - Script references (`.claude/skills/update-zskills/scripts/port.sh`, `scripts/test-all.sh`) — check if
     the script file exists.
 
 ### Step 2 — Check zskills rules file for 13 generic rules
@@ -704,10 +704,11 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   and `ui.file_patterns` from `.claude/zskills-config.json` at runtime
   via bash regex (same idiom as `is_main_protected()`). Just copy the
   source template.
-- For `scripts/port.sh` and `scripts/test-all.sh`: copy as-is from
-  `$PORTABLE/scripts/`. These also read `dev_server.main_repo_path` and
-  `testing.unit_cmd` from `.claude/zskills-config.json` at runtime — no
-  install-time fill.
+- For `scripts/test-all.sh`: copy as-is from
+  `$PORTABLE/scripts/`. Reads `testing.unit_cmd` from
+  `.claude/zskills-config.json` at runtime — no
+  install-time fill. (Tier-2 placeholder; consumer
+  customizes.)
 - For any remaining templates that do still contain placeholders
   (`{{E2E_TEST_CMD}}`, `{{BUILD_TEST_CMD}}`): these have no config
   source, so fill from project detection or leave as a `# TODO`

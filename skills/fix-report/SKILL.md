@@ -160,7 +160,7 @@ For each issue with `User Verify: NEEDED`:
    - What to look at (specific UI element, panel, interaction)
    - Steps to reproduce (open app → navigate → interact → observe)
    - What "correct" looks like (expected appearance or behavior)
-   - URL: `http://localhost:$(bash scripts/port.sh)/`
+   - URL: `http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/`
    - The user may be verifying hours later — "check the UI" is useless.
      Be specific: "Open the toolstrip, click the lightning icon, verify
      the Physical Variables panel opens with a table showing V, I, P
@@ -362,7 +362,7 @@ git branch -d <branch-name>   # local branch only; remote branch stays for the P
 ## Step 7 — Write FIX_REPORT.md
 
 Write `FIX_REPORT.md` to the repo root. Viewable in the browser:
-`http://localhost:$(bash scripts/port.sh)/viewer/?file=FIX_REPORT.md`
+`http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/viewer/?file=FIX_REPORT.md`
 
 ### Report structure
 

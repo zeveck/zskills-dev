@@ -504,12 +504,12 @@ Before parsing, check for stale state from a previous failed run:
    for wt_line in $(git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //'); do
      if [ -f "$wt_line/.landed" ] && grep -q 'status: landed' "$wt_line/.landed"; then
        echo "Cleaning up landed worktree: $wt_line"
-       bash scripts/land-phase.sh "$wt_line"
+       bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$wt_line"
      fi
    done
    ```
    This catches stragglers from crashed agents, container restarts, or any
-   remaining edge cases. Defense in depth — `scripts/land-phase.sh` is the
+   remaining edge cases. Defense in depth — `.claude/skills/commit/scripts/land-phase.sh` is the
    primary fix (called after each phase landing), the preflight is the safety net.
 
 ### Parse plan
@@ -771,11 +771,11 @@ agent hasn't returned after 2 hours, declare it **failed**:
 - If the plan was drafted with `/draft-plan`, the phase may be too large —
   consider splitting it (each phase should be ~3-5 components, ~500 lines).
 
-1. **Create worktree via `scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
+1. **Create worktree via `.claude/skills/create-worktree/scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
    ```bash
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   WT=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+   WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
      --prefix cp \
      --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}" \
      --pipeline-id "run-plan.${TRACKING_ID}" \
@@ -819,14 +819,14 @@ agent hasn't returned after 2 hours, declare it **failed**:
    Test output lives OUTSIDE the worktree, at `/tmp/zskills-tests/<worktree-
    basename>/` (see CLAUDE.md). The filenames `.test-results.txt` and
    `.test-baseline.txt` should NEVER appear in the worktree at all; if they
-   do, a stale writer leaked them, and `scripts/land-phase.sh` treats any
+   do, a stale writer leaked them, and `.claude/skills/commit/scripts/land-phase.sh` treats any
    git-tracked version as a landing-time error (a canary for contract
    violations — not a normal-path cleanup).
 
    Do NOT include any of these files in `git add` when dispatching
    implementation or verification agents. When staging for a commit, name
    specific source files explicitly (`git add skills/X.md tests/Y.sh ...`)
-   rather than patterns that could sweep ephemerals in. `scripts/land-phase.sh`
+   rather than patterns that could sweep ephemerals in. `.claude/skills/commit/scripts/land-phase.sh`
    expects the lifecycle markers to be untracked and will refuse to clean up a
    worktree that has any of them tracked — a staged-delete left over
    from a commit would block `git worktree remove` and leak zombies.
@@ -987,7 +987,7 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 
 **PR-mode bookkeeping rule:** in PR mode, orchestrator bookkeeping (tracker updates, plan reports, `PLAN_REPORT.md` regen, plan-frontmatter completion, mark-Done) commits **inside the worktree on the feature branch**, not on `main`. The feature branch is the single source of truth; the squash merge lands everything atomically on `origin/main`, keeping local `main` in lockstep. In cherry-pick/direct mode these commits stay on `main` as before. Every "commit on main" instruction below for bookkeeping must be read through this lens.
 
-**Worktree creation — via `scripts/create-worktree.sh`, NOT `isolation: "worktree"`:**
+**Worktree creation — via `.claude/skills/create-worktree/scripts/create-worktree.sh`, NOT `isolation: "worktree"`:**
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -996,7 +996,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing PR worktree at $WORKTREE_PATH"
 else
-  WORKTREE_PATH=$(bash "$MAIN_ROOT/scripts/create-worktree.sh" \
+  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
     --prefix pr \
     --branch-name "$BRANCH_NAME" \
     --allow-resume \
@@ -1803,7 +1803,7 @@ against a leftover `requires.*` from a prior pipeline).
 Count remaining non-completion markers across all pipelines and surface
 a one-line reminder. Do NOT auto-clean — this skill's job is
 to run plans, not manage long-term tracking state. The user runs
-`bash scripts/clear-tracking.sh` when they're ready.
+`bash .claude/skills/update-zskills/scripts/clear-tracking.sh` when they're ready.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -1821,7 +1821,7 @@ MARKER_COUNT=$(ls "$MAIN_ROOT/.zskills/tracking/"*/requires.* \
                 | wc -l)
 if [ "$MARKER_COUNT" -ge 10 ]; then
   echo "NOTE: $MARKER_COUNT bookkeeping tracking markers on disk across completed pipelines."
-  echo "      Run: bash scripts/clear-tracking.sh   (preserves fulfilled.run-plan.* completion records)"
+  echo "      Run: bash .claude/skills/update-zskills/scripts/clear-tracking.sh   (preserves fulfilled.run-plan.* completion records)"
 fi
 ```
 
