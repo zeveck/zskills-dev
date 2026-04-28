@@ -1,18 +1,16 @@
 ---
 name: plans
 disable-model-invocation: true
-argument-hint: "[rebuild | next | details | work N [auto] [every SCHEDULE] [now]] | stop | next-run"
+argument-hint: "[rebuild | next | details]"
 description: >-
-  Plan dashboard and batch executor. View plan status, find the next
-  ready plan, or work through plans automatically.
-  Usage: /plans [rebuild | next | work N [auto] [every SCHEDULE]]
+  Plan dashboard. View plan status, find the next ready plan. For batch
+  execution, see `/work-on-plans`.
 ---
 
-# /plans [rebuild | next | details | work N] — Plan Dashboard & Executor
+# /plans [rebuild | next | details] — Plan Dashboard
 
 Maintains `plans/PLAN_INDEX.md` — a structured index of all plan files with
-their classification, status, and priority. Also supports batch execution
-of ready plans (like `/fix-issues` for bugs).
+their classification, status, and priority.
 
 **Modes:**
 
@@ -20,9 +18,7 @@ of ready plans (like `/fix-issues` for bugs).
 - **rebuild** `/plans rebuild` — scan all plans, classify, regenerate
 - **next** `/plans next` — show the highest-priority ready-to-run plan with command
 - **details** `/plans details` — show every plan with a one-line description
-- **work** `/plans work N [auto]` — batch-execute next N ready plans
-- **stop** `/plans stop` — cancel scheduled runs
-- **next-run** `/plans next-run` — when does the next scheduled run fire?
+- **For batch execution:** see `/work-on-plans`.
 
 ## Mode: Show (bare `/plans`)
 
@@ -60,7 +56,10 @@ of ready plans (like `/fix-issues` for bugs).
 
 4. If the file is older than 24 hours (check mtime), append:
    > ⚠️ Index is older than 24 hours. Run `/plans rebuild` to refresh.
-5. **Exit.**
+5. Append a one-line footer:
+   > Note: this ranking is independent of the monitor dashboard's Ready
+   > queue. For interactive prioritization, open /zskills-dashboard.
+6. **Exit.**
 
 ## Mode: Details (`/plans details`)
 

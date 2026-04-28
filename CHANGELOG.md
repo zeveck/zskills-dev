@@ -2,6 +2,30 @@
 
 ## 2026-04-28
 
+### Migration — /plans work removed
+
+The `/plans work`, `/plans stop`, and `/plans next-run` modes are
+retired. Batch execution of ready plans now lives in the dedicated
+`/work-on-plans` skill (shipped earlier in this dashboard cycle).
+`/plans` keeps only the read-only index-maintenance modes: bare,
+`rebuild`, `next`, `details`. Affected files: `skills/plans/SKILL.md`,
+`README.md`, `PRESENTATION.html` (cron-scheduling example row),
+`CHANGELOG.md`.
+
+Migrate `/plans work N [auto] [every SCHEDULE]` invocations to
+`/work-on-plans N [auto] [every SCHEDULE]`. The argument shape is
+preserved.
+
+**Cron-cleanup scope.** `CronList` and `CronDelete` are session-scoped
+(see `project_scheduling_primitives`). Cleanup of old `/plans work …
+every SCHEDULE` crons run from this phase only sees the running
+session's cron table — it cannot reach crons registered in your main
+session, other sprints, or worktree sessions you've left open. If you
+ever ran `/plans work … every SCHEDULE` in another session, you must
+run `CronList` + manual `CronDelete` from each affected session OR
+wait for those sessions to terminate (in-session crons die with the
+session, so any session you've already closed needs no cleanup).
+
 ### Added
 - refactor(scripts): move Tier-1 scripts into owning skills; /update-zskills migrates stale copies
   — 14 skill-machinery scripts relocated from `scripts/` into
