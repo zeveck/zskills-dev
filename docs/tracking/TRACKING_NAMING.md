@@ -399,6 +399,28 @@ only — the orchestrator itself never commits code):
 The isolation is structural — two concurrent pipelines cannot see
 each other's markers because they live in disjoint subdirectories.
 
+### Informational marker prefixes (allow-list)
+
+The hook enforces `requires.*`, `fulfilled.*`, and `step.*` only. Any
+basename outside that set is silently ignored — pipelines can write
+human-readable progress markers without affecting commit gating.
+
+Currently defined informational prefixes:
+
+- `phasestep.<skill>.<id>.<phase>.<event>` — per-phase progress notes
+  emitted by `/run-plan` and friends. Examples:
+  - `phasestep.run-plan.<id>.<phase>.drift-detect` — emitted by Phase 3.5
+    (introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 2) when
+    the orchestrator runs `scripts/plan-drift-correct.sh --parse` over
+    the implementation + verification reports. Informational only; the
+    hook ignores `phasestep.*`.
+- `meta.<skill>.<index>` — metadata-only markers used by
+  `research-and-go` for dispatcher-time bookkeeping (see OQ1).
+
+If a future design needs enforcement of one of these, promote it into
+`requires.*`/`fulfilled.*`/`step.*` rather than extending the hook's
+prefix set.
+
 ## References
 
 - `plans/UNIFY_TRACKING_NAMES.md` — the plan that commissions this doc
