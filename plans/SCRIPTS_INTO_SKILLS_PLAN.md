@@ -109,7 +109,7 @@ decision belongs in the follow-up plan, not here.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Inventory cleanup: fix dead refs, write ownership registry | ✅ Done | `49c666b` | landed via PR squash; dead refs replaced; script-ownership.md written; mirror parity |
-| 2 — Move single-owner Tier 1 scripts (apply-preset, compute-cron-fire, post-run-invariants, briefing.*, statusline) | ⬚ |  |  |
+| 2 — Move single-owner Tier 1 scripts (apply-preset, compute-cron-fire, post-run-invariants, briefing.*, statusline) | 🟡 | `e401209` | 7 scripts moved; 22 files modified; 931/931 |
 | 3a — Move shared Tier 1 scripts and update same-skill internals (create-worktree, worktree-add-safe, land-phase, write-landed, sanitize-pipeline-id, clear-tracking, port [+ config-driven default_port]) | ⬚ |  |  |
 | 3b — Update cross-skill callers (grep-driven sweep across skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md) and tests | ⬚ |  |  |
 | 4 — Update `/update-zskills` install flow: drop Tier-1 copies, install via skill mirror, add stale-Tier-1 migration | ⬚ |  |  |
