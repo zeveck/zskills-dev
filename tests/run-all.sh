@@ -53,6 +53,7 @@ run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migratio
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-plan-drift-correct.sh" "tests/test-plan-drift-correct.sh"
+run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

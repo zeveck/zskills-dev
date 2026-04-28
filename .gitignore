@@ -2,6 +2,10 @@
 .claude/skills/social-seo/
 __pycache__/
 .zskills/tracking/
+.zskills/monitor-state.json
+.zskills/monitor-state.json.lock
+.zskills/work-on-plans-state.json
+.zskills/dashboard-server.pid
 .zskills-tracked
 
 .worktreepurpose
