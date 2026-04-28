@@ -281,6 +281,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
      },
      "dev_server": {
        "cmd": "<detected>",
+       "default_port": 8080,
        "port_script": "",
        "main_repo_path": "<detected>"
      },

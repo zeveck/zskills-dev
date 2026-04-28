@@ -1,6 +1,6 @@
 #!/bin/bash
-# scripts/land-phase.sh — Post-landing cleanup: verify .landed, extract logs, remove worktree
-# Usage: bash scripts/land-phase.sh <worktree-path>
+# land-phase.sh — Post-landing cleanup: verify .landed, extract logs, remove worktree
+# Usage: bash $(basename "$0") <worktree-path>
 #
 # Prerequisites: orchestrator already cherry-picked, ran tests, wrote .landed marker.
 # This script handles the mechanical cleanup. Idempotent — safe to re-run.

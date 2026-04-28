@@ -22,6 +22,7 @@
 
   "dev_server": {
     "cmd": "",
+    "default_port": 8080,
     "port_script": "",
     "main_repo_path": "/workspaces/zskills"
   },
