@@ -1230,12 +1230,139 @@ printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_Yor
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
 ```
 
+## Phase 3.5 — Detect and auto-correct plan-text drift
+
+Runs AFTER Phase 3's `### Post-verification tracking` writes
+`step.run-plan.$TRACKING_ID.verify`, and BEFORE Phase 4's tracker
+commit. Reads both the implementation agent's and verification
+agent's reports for `PLAN-TEXT-DRIFT:` tokens and auto-corrects
+the plan file.
+
+### 1. Gather reports
+
+Concatenate the implementation agent's final-message text and the
+verification agent's final-message text into a single parse input.
+Both agents' outputs are available from Phase 2 and Phase 3 agent
+dispatches.
+
+### 2. Parse tokens
+
+```bash
+bash scripts/plan-drift-correct.sh --parse <combined-reports>
+```
+Produces one `<phase>|<bullet>|<field>|<stated>|<actual>` line per
+drift. Zero lines = no drifts → skip to step 6.
+
+### 3. Per-drift decision
+
+For each record, compute drift via:
+```bash
+bash scripts/plan-drift-correct.sh --drift "<stated>" "<actual>"
+```
+Decision table:
+
+| Drift | Byte-preservation / test gate | Action |
+|-------|-------------------------------|--------|
+| ≤10%  | held                          | auto-correct + count |
+| 10-20% | held                         | auto-correct + count + note in phase report |
+| >20%  | held                          | ABORT: do NOT correct, report to user, escalate to Failure Protocol (plan intent likely wrong, not just arithmetic) |
+| any   | failed                        | Failure Protocol (byte-preservation failure always escalates) |
+| unsupported `<stated>` form (exit 2) | — | skip, log as "non-derivable" in phase report |
+
+### 4. Auto-correct
+
+For each "auto-correct" record:
+```bash
+NEW_BAND="$(bash scripts/plan-drift-correct.sh --drift-band <actual> 5)"  # ±5% of actual
+bash scripts/plan-drift-correct.sh --correct <plan-file> <phase> <bullet> "$NEW_BAND" --audit "was <stated>"
+```
+`--audit` appends `<!-- Auto-corrected YYYY-MM-DD: was <stated>, arithmetic says <actual> -->` inline on the bullet.
+
+### 5. Marker ordering and failure handling
+
+`.verify` is ALREADY written by Phase 3. That satisfies the hook's
+landing gate (`hooks/block-unsafe-project.sh.template:341 etc.`
+globs `step.*.verify`). If Phase 3.5 proceeds cleanly, write an
+informational marker:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\ncompleted: %s\n' \
+  "$PHASE" "$FOUND" "$CORRECTED" "$ESCALATED" "$(TZ=America/New_York date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.drift-detect"
+```
+Uses the `phasestep.*` prefix (informational; hook ignores). The
+`step.*.verify` marker stays as-is.
+
+If Phase 3.5 fails (e.g., `scripts/plan-drift-correct.sh` exits
+non-zero mid-correction, or >20% drift case triggers), the
+orchestrator MUST:
+1. `git checkout -- <plan-file>` to revert any partial corrections.
+2. DELETE `step.run-plan.$TRACKING_ID.verify` (so the landing gate
+   re-blocks — the pipeline is no longer verified-and-clean, it's
+   verified-but-drift-escalated).
+3. Write `phasestep.run-plan.$TRACKING_ID.$PHASE.drift-fail` with
+   the error detail.
+4. Invoke Failure Protocol.
+
+### 6. Commit-location rule
+
+The auto-correction edits the plan file. Where does the edit commit?
+
+**Cherry-pick / direct mode:** commit on main, bundled with Phase 4's
+tracker commit. Combined message:
+```
+chore: mark phase <name> in progress (+ auto-corrected <N> stale acceptance bands)
+```
+If N == 0: default Phase 4 message.
+
+**PR mode:** commit inside the worktree on the feature branch,
+bundled with Phase 4's feature-branch tracker commit. Same combined
+message. The next phase's Phase 1 parse reads the plan file from
+the worktree (since `finish auto` PR-mode runs consecutive phases
+in the SAME worktree), so the corrected band is visible to the next
+phase's thrash-detection.
+
+### 7. Thrash rule
+
+If the SAME `<phase>+<bullet>` pair gets a `PLAN-TEXT-DRIFT:` token
+on a subsequent Phase 3.5 invocation (across phases in the same
+`/run-plan finish auto` execution), the first correction was
+wrong. ABORT:
+1. Write `phasestep.*.drift-fail` with "thrash detected: phase
+   P bullet B re-flagged after correction."
+2. Do NOT correct a second time.
+3. Invoke Failure Protocol.
+
+Thrash rule is scoped to the current `/run-plan` invocation's
+history, NOT across sessions. State is tracked in-memory by the
+orchestrator during `finish auto`; for cron-fired chunked runs,
+the rule relies on re-reading the plan file from the correct
+location (worktree for PR mode, main for cherry-pick / direct).
+
+### 8. Interaction with /refine-plan
+
+Phase 3.5 corrects small arithmetic drift only. If the scan finds
+multiple fields with >10% drift OR the plan's own extraction rules
+are arithmetically inconsistent (detected by the pre-dispatch gate
+in Phase 1 step 6), append a recommendation to the phase report:
+"Recommend running `/refine-plan <plan-file>` after close-out; this
+plan has structural drift beyond per-band correction scope."
+
+Do NOT auto-dispatch `/refine-plan` mid-run — too expensive and
+scope-overlapping.
+
 ## Phase 4 — Update Progress Tracking
 
 After verification passes. The plan file tracks progress across phases — an
 orchestrator concern, not an implementation artifact. Update it promptly so
 the next cron invocation sees the correct phase status and advances
 (preventing infinite loops).
+
+> If Phase 3.5 auto-corrected any acceptance bands, those edits are
+> staged alongside the tracker update here and land as a single
+> commit.
 
 **Commit location depends on `LANDING_MODE`** (see PR-mode bookkeeping rule):
 cherry-pick/direct commits on main; PR mode `cd "$WORKTREE_PATH"` first and
