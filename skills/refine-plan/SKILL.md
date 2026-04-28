@@ -376,18 +376,16 @@ Output is the updated remaining phases only. Write the refined text to
 
 ## Phase 4 — Convergence Check
 
+> Convergence is the **orchestrator's judgment**, not the refiner's self-call. Do NOT accept "CONVERGED" from the refiner agent as authoritative — the refiner just refined; it is biased toward declaring its own work done. This is a recurring failure mode in practice.
+
 After each round of review + refinement:
 
-1. **Count substantive issues** — how many findings from the reviewer and
-   devil's advocate were real problems (fixed by the refiner), not false
-   positives (justified by the refiner)?
+1. Count remaining substantive issues from the refiner's disposition table (Justified-not-fixed entries plus any gaps the refinement introduced).
 
 2. **Check convergence:**
-   - **0 substantive issues** -> converged. Proceed to Phase 5.
-   - **Substantive issues remain AND rounds < max** -> back to Phase 2
-     with the refined draft as the new input.
-   - **Max rounds reached** -> proceed to Phase 5 with a
-     "remaining concerns" note listing unresolved issues.
+   - **0 substantive issues** -> converged -> next phase.
+   - **>0 substantive issues AND rounds < max** -> another review+refine cycle, back to Phase 2 with the refined draft as the new input. Honor the user's rounds budget; don't stop early.
+   - **Only short-circuit before max rounds when remaining substantive issues are genuinely 0.**
 
 3. **Track round history** — record each round's finding counts and
    resolutions. This goes into the Plan Review section in Phase 5.
@@ -515,9 +513,7 @@ printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: complete\ndate: %s\n' \
   mandate to fix. It's a signal to scrutinize harder. Devil's advocate
   findings are *especially* prone to confidently-false empirical claims
   because the role incentivizes plausibility, not truth.
-- **Convergence means no new substantive issues.** Not "the same issues
-  rephrased." If the devil's advocate keeps finding real new problems, the
-  plan isn't ready.
+- **Convergence is the orchestrator's call** based on the refiner's disposition table, not the refiner's self-declaration. Run all budgeted rounds unless issues drop to 0.
 - **Write parsed state AND findings to /tmp/ files.** Context compaction
   will degrade in-memory state across multiple rounds. The `/tmp/` files
   persist through all phases. Read them if context is lost.
