@@ -630,7 +630,7 @@ fi
 # variable-bearing push-target forms) produces false-positives on
 # legitimate worktree-scoped pushes without closing a realistic attack
 # vector.
-if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected; then
+if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\"|$) ]] && is_main_protected; then
   # Scope rules (a) and (b) to JUST the `git push` command segment, not the
   # whole $COMMAND buffer. Without this, multi-statement commands like
   # `git fetch origin main && git push -u origin feat/foo` false-positive
@@ -655,10 +655,13 @@ if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]] && is_main_protected;
   if [[ "$PUSH_ARGS" =~ HEAD:(main|master)([[:space:]]|$|\") ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
-  # (c) Naked push (no origin arg) while on main — defaults to pushing
-  # the current branch, which is main. Tested against full $COMMAND
-  # because seeing `origin` ANYWHERE means a non-naked push is present.
-  if ! [[ "$COMMAND" =~ origin[[:space:]] ]] && is_on_main; then
+  # (c) Naked push (no origin arg) while on main — based on PUSH_ARGS,
+  # not full $COMMAND. An empty PUSH_ARGS means we extracted no
+  # positional args from the push segment, which matches a naked
+  # `git push`. Quoted-argument false-positives (e.g. grep "git push"
+  # in some-file) no longer trip because the extraction loop only
+  # sees tokens after the actual `git push` invocation.
+  if [ -z "${PUSH_ARGS// /}" ] && is_on_main; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
 fi

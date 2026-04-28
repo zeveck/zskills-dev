@@ -997,7 +997,14 @@ print(json.dumps(caller))
 EOF
   fi
 
-  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$test_tmpdir/.transcript\"}"
+  # JSON shape: "command" is the LAST field so the hook's greedy sed
+  # extraction (`.*"command":"\(.*\)".*`) doesn't bleed envelope tokens
+  # like `transcript_path` into COMMAND. Single-line JSON is required by
+  # the helper; reordering to put `command` last is the simplest way to
+  # match production (where Claude Code's JSON is multi-line, also clean).
+  # Issue #81: rule (c)'s PUSH_ARGS-based check needs a clean COMMAND so
+  # the post-`git push` segment doesn't get JSON envelope words spliced in.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$test_tmpdir/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   # Override LOCAL_ROOT and TRACKING_ROOT so the hook resolves to the fixture,
   # not the caller's worktree. Without these, the hook's push-path tracking
   # block reads .zskills-tracked + tracking markers from wherever the test was
@@ -1226,6 +1233,82 @@ if [[ "$RESULT" == *"Cannot push to main"* ]]; then
   pass "push-scope: git push HEAD:master blocked"
 else
   fail "push-scope: git push HEAD:master should be blocked, got: $RESULT"
+fi
+
+echo ""
+echo "=== Project hook: rule (c) push-segment scoping (issue #81) ==="
+
+# Background: rule (c) ("naked push while on main") used to scan the entire
+# $COMMAND for `origin[[:space:]]`. That false-positived whenever the literal
+# string `git push` appeared inside a quoted argument (grep/sed/echo/awk
+# scanning a file or message that mentions "git push") AND there was no
+# `origin ` substring elsewhere in the command AND the agent was on main.
+# The fix scopes rule (c) to PUSH_ARGS — the bounded post-`git push` segment.
+# These tests pin the BLOCK cases that must keep working AND the ALLOW cases
+# the fix is supposed to unblock.
+
+# BLOCK (true naked push, the case rule c was designed for): on main, bare
+# `git push` defaults to pushing the current branch (main). Must still block.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git push")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "rule-c: naked git push on main blocked"
+else
+  fail "rule-c: naked git push on main should be blocked, got: $RESULT"
+fi
+
+# BLOCK (flag-only push on main): `git push -u` has no positional args, so
+# PUSH_ARGS extraction yields empty. Must still block.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git push -u")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "rule-c: git push -u (flag only) on main blocked"
+else
+  fail "rule-c: git push -u (flag only) on main should be blocked, got: $RESULT"
+fi
+
+# ALLOW (the false-positive from issue #81): on main, grep for the literal
+# string "git push" inside a file. The hook's outer gate matches `git push"`
+# (where the trailing `"` closes a quoted shell arg). Pre-fix, rule (c) then
+# scanned $COMMAND, saw no `origin ` substring, and blocked. PUSH_ARGS scoping
+# fixes this — PUSH_ARGS contains the trailing tokens after `git push`, which
+# is non-empty (`" some-file.sh"`), so rule (c) skips. Note: JSON encoding of
+# the embedded double-quote requires `\"` here so the test fixture's bash-to-
+# JSON interpolation produces a literal `"` in the extracted command.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' 'grep -n \"git push\" some-file.sh')
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "rule-c: grep \"git push\" some-file.sh on main allowed (issue #81)"
+else
+  fail "rule-c: grep \"git push\" some-file.sh on main should be allowed, got: $RESULT"
+fi
+
+# ALLOW (echo with literal substring): on main, echo a string that mentions
+# "git push". Same shape as the grep case — quoted-argument false-positive.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' 'echo \"remember to git push\" >> notes.md')
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "rule-c: echo \"remember to git push\" on main allowed"
+else
+  fail "rule-c: echo \"remember to git push\" on main should be allowed, got: $RESULT"
+fi
+
+# ALLOW (feature-branch push while branch is main): rule (c) keys off
+# is_on_main, but PUSH_ARGS contains positional args (`origin feat/foo`), so
+# rule (c) must skip. Rules (a)/(b) inspect PUSH_ARGS and find no main/master,
+# so they also pass. End result: allowed.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git push -u origin feat/foo")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "rule-c: git push -u origin feat/foo (while on main) allowed"
+else
+  fail "rule-c: git push -u origin feat/foo (while on main) should be allowed, got: $RESULT"
+fi
+
+# ALLOW (the original #58 case, plus #81 scoping check): fetch-then-push of
+# a feature branch while on main. The fetch portion contains `origin main`,
+# but rule (a) is scoped to PUSH_ARGS so it doesn't fire; rule (c) sees
+# PUSH_ARGS=`origin feat/foo` (non-empty) so it doesn't fire either.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "git fetch origin main && git push -u origin feat/foo")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "rule-c: git fetch origin main && git push -u origin feat/foo (while on main) allowed"
+else
+  fail "rule-c: git fetch origin main && git push -u origin feat/foo (while on main) should be allowed, got: $RESULT"
 fi
 
 echo ""
