@@ -13,6 +13,7 @@ Order matters because several items churn the same files (`skills/update-zskills
 - **2026-04-27 (late)** — A drift across 5 PR-creating skills (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) was surfaced during the `/fix-issues 56 + 58` sprint: each skill duplicates the canonical `gh pr create` + CI poll + fix cycle + auto-merge pattern, with inconsistent gating and one skill (`/quickfix`) opting out entirely. [PR #75](https://github.com/zeveck/zskills-dev/pull/75) (merged 2026-04-27 22:51, commit `82ee65f`) fixes the `/fix-issues` half — interactive PR-mode now runs the full pipeline except the final `gh pr merge`, matching `/run-plan`, `/commit pr`, and `/do pr`. The broader unification was explicitly deferred by PR #75 as out-of-scope ("future `/draft-plan` candidate").
 - **2026-04-27 (later)** — `plans/PR_LANDING_UNIFICATION.md` drafted on branch `plans/pr-landing-unification` (worktree `/tmp/zskills-worktrees/pr-landing-unification`). 912 lines, 7 phases (1A foundation → 1B validation → 2 `/run-plan` → 3 `/commit pr`+`/do pr` → 4 `/fix-issues pr` → 5 `/quickfix` → 6 conformance), produced via `/draft-plan rounds 3` + `/refine-plan` YAGNI pass. Creates a new `/land-pr` skill that the 5 callers dispatch via the Skill tool. Branch is based on `47e8344` (pre-PR #75); needs rebase onto main before landing. Phase F entry below moves from "needs draft" to "needs merge".
 - **2026-04-28** — Session-of-2026-04-28 PRs merged: PR #76 (no-Haiku CLAUDE.md rule), PR #77 (PR_LANDING_UNIFICATION plan onto main → executable now), PR #78 (QUEUED_QUICKFIXES QF2 + QF4 revised per Opus re-review — when you run those quickfixes, copy from the revised file), PR #79 (QF1 done), PR #80 (`/quickfix` now returns user to base branch on success — fixes a session-friction gap that surfaced during the QF1 run). [Issue #81](https://github.com/zeveck/zskills-dev/issues/81) filed: `main_protected` push-guard rule (c) false-positives on literal `git push` substrings (e.g. inside grep args) — non-blocking but worth picking up alongside the QF2/QF4 runs.
+- **2026-04-28 (late)** — Session-end status: Phase A pre-flight is **fully complete**. PR #82 (QF2 — orchestrator-judgment convergence fix), PR #85 (QF4 — `/refine-plan` positional-tail guidance + spaces fix), PR #86 (Issue #83 — `/research-and-plan` Step 3 orchestrator-judgment), PR #87 (Issue #81 — push-guard rule (c) + outer-regex EOL fix), PR #88 (Issue #84 — `scripts/mirror-skill.sh` helper). Three new follow-up issues filed and resolved in-session: Issue #83 (closed by PR #86), Issue #84 (closed by PR #88). Issue #81 closed by PR #87. **Open issues remaining: #65 (block-diagram tracking — addressed by `BLOCK_DIAGRAM_TRACKING_CATCHUP.md` plan in Phase F) and #67 (GitLab support — explicitly deferred).** **/refine-plan triggers added inline** to Phase D and Phase F entries (previously missing from the execution checklist; pre-run hygiene to absorb drift from prior-phase landings).
 
 ---
 
@@ -24,8 +25,8 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 - [x] `/fix-issues 56` — `/commit` respects `execution.landing` (PR #74, merged 2026-04-27)
 - [x] `/quickfix ← QF1` — slug-namespace `/draft-plan` review files (PR #79, merged 2026-04-28)
-- [ ] `/quickfix ← QF2` — orchestrator-judgment convergence fix *(prompt revised in PR #78; copy revised body from `QUEUED_QUICKFIXES.md`)*
-- [ ] `/quickfix ← QF4` — `/refine-plan` positional-tail guidance + spaces-in-paths fix *(prompt revised in PR #78 to add Sub-edit 5)*
+- [x] `/quickfix ← QF2` — orchestrator-judgment convergence fix (PR #82, merged 2026-04-28)
+- [x] `/quickfix ← QF4` — `/refine-plan` positional-tail guidance + spaces-in-paths fix (PR #85, merged 2026-04-28)
 - [ ] `/run-plan plans/IMPROVE_STALENESS_DETECTION.md` *(optional but recommended early)*
 
 #### Phase B — foundation
@@ -39,7 +40,9 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 #### Phase D — Tier-2 plans (run sequentially to reduce mirror churn)
 
+- [ ] `/refine-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md` — pre-run hygiene; absorbs any drift from Phase B's script relocation.
 - [ ] `/run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md`
+- [ ] `/refine-plan plans/SKILL_FILE_DRIFT_FIX.md` — pre-run hygiene; absorbs drift from Phase B + Phase D-prior.
 - [ ] `/run-plan plans/SKILL_FILE_DRIFT_FIX.md`
 
 #### Phase E — /update-zskills source discovery (must wait for B+C+D)
@@ -48,12 +51,19 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 #### Phase F — independent plans (any order, post-Phase B is safest)
 
+For each item: `/refine-plan` first to absorb drift introduced by Phase B / C / D landings since the plan was authored, then `/run-plan`. Skip the refine step only if you've verified the plan has no touchpoints with what's landed since.
+
+- [ ] `/refine-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` *(low drift risk — block-diagram is isolated; refine still recommended for hygiene)*
 - [ ] `/run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — closes Issue #65
+- [ ] `/refine-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
+- [ ] `/refine-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
+- [ ] `/refine-plan plans/ZSKILLS_MONITOR_PLAN.md`
 - [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
 - [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. [PR #77](https://github.com/zeveck/zskills-dev/pull/77) merged 2026-04-28; plan now on main.
-- [ ] `/run-plan plans/PR_LANDING_UNIFICATION.md` — ready to execute.
+- [ ] `/refine-plan plans/PR_LANDING_UNIFICATION.md` *(highest drift risk — plan was authored against pre-PR-#75 main; refine to absorb the merged QF/issue fixes)*
+- [ ] `/run-plan plans/PR_LANDING_UNIFICATION.md`
 
 #### Phase G — deferred
 
