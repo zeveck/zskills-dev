@@ -10,6 +10,9 @@
   `scripts/plan-drift-correct.sh` provides `--parse` / `--drift` /
   `--correct` modes consumed by `/run-plan` Phase 3.5
   (`plans/IMPROVE_STALENESS_DETECTION.md`).
+- feat(run-plan): Phase 3.5 post-implement auto-correct + Phase 1
+  pre-dispatch arithmetic staleness gate landed. See
+  `plans/IMPROVE_STALENESS_DETECTION.md` for design.
 
 ## 2026-04-21
 

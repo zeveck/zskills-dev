@@ -547,7 +547,9 @@ Before parsing, check for stale state from a previous failed run:
 5. **Check for conflicts** — if the target phase is "In Progress" (🟡 or
    equivalent), another agent may be working on it. **STOP.** Do not compete.
 
-6. **Check for staleness notes** — if the plan's Dependencies section
+6. **Check for staleness.** Two independent checks:
+
+   **a. Textual staleness.** if the plan's Dependencies section
    contains language like "drafted before," "may need refresh," or "APIs
    and data structures referenced here are based on [another plan's]
    design, not actual code," the plan may be stale:
@@ -558,6 +560,50 @@ Before parsing, check for stale state from a previous failed run:
      refresh, re-read the plan and continue.
    - Skip this check if the plan file was modified more recently than
      the dependency's completion (it may already be up to date).
+
+   **b. Arithmetic staleness (pre-dispatch).** For the target
+   phase's `### Acceptance Criteria` section, extract numeric
+   targets and verify against current source.
+
+   Procedure:
+   1. Read the target phase's `### Acceptance Criteria` bullets.
+   2. For each bullet, attempt to match a numeric claim via the
+      token-compatible grammar (Phase 1 `<stated>` forms: N-M,
+      ≤N, ≥N, ~N, exactly N). Unmatched bullets skip.
+   3. For each matched claim, locate the corresponding extraction
+      rule (if any) in the target phase's `### Design &
+      Constraints` section. Supported rules:
+      - Literal arithmetic expression: "N - M + K" → evaluate via
+        `scripts/plan-drift-correct.sh --eval "N - M + K"`
+        (the script implements parse-only integer arithmetic; no
+        shell eval, no injection surface).
+      - "extract lines N..M" or "lines N-M" → value is M - N + 1.
+      - "SKILL.md X lines down from Y" → value is Y - X or X (case-
+        by-case; script uses a small fixed set of patterns).
+      - No derivable rule → skip bullet, emit info line:
+        "pre-dispatch arithmetic check: <bullet> skipped (no
+        derivable rule)".
+   4. Compute drift between stated target and derived value.
+      Use the same `--drift` command as Phase 3.5.
+   5. Collect findings per bullet.
+
+   Decision:
+   - **Without `auto`:** present findings:
+     ```
+     Pre-dispatch arithmetic drift:
+     Phase <N>: <bullet-text>
+       plan says: <stated>
+       arithmetic says: <derived>
+       drift: <pct>%
+     ```
+     Ask user: "(1) proceed (Phase 3.5 will post-correct small
+     drift), (2) pause for `/refine-plan`, (3) override (suppress
+     this check for this phase)?"
+   - **With `auto`:** if any bullet has drift >20%, dispatch
+     `/refine-plan <plan-file>` (plan-level issue, not per-band);
+     after refresh, re-read and continue. If all drifts are
+     ≤20%, log findings to the phase report and proceed — Phase
+     3.5 will auto-correct post-hoc within the ≤20% band.
 
 7. **Save the VERBATIM phase text** — copy the entire section from the plan
    file exactly as written. Every sentence, every bullet, every formula, every

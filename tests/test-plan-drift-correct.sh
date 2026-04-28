@@ -340,6 +340,119 @@ else
 fi
 
 echo ""
+echo "=== --eval: integer arithmetic happy path ==="
+# expect_eval <label> <expr> <expected-stdout>
+expect_eval() {
+  local label="$1" expr="$2" expected="$3"
+  local out
+  out=$(bash "$SCRIPT" --eval "$expr" 2>&1)
+  local rc=$?
+  if [ "$rc" = "0" ] && [ "$out" = "$expected" ]; then
+    pass "$label  ($expr → $out)"
+  else
+    fail "$label — expected '$expected' rc=0, got '$out' rc=$rc  ($expr)"
+  fi
+}
+
+expect_eval "AC: 417 - 94 - 60 + 15"          "417 - 94 - 60 + 15"  278
+expect_eval "simple add 100 + 200"             "100 + 200"           300
+expect_eval "single integer 42"                "42"                  42
+expect_eval "leading minus -5 + 10"            "-5 + 10"             5
+expect_eval "negative result 10 - 100"         "10 - 100"            -90
+expect_eval "whitespace tolerant 1+2"          "1+2"                 3
+expect_eval "extra whitespace tolerant"        "  10   +   20   "    30
+expect_eval "tab whitespace"                   $'1\t+\t2'            3
+expect_eval "long chain"                       "1 + 2 + 3 + 4 + 5"   15
+
+echo ""
+echo "=== --eval: unsupported operators / chars rejected with rc=2 ==="
+expect_rc 2 "AC: '417 * 2' (multiplication)"   --eval "417 * 2"
+expect_rc 2 "division '10 / 2'"                --eval "10 / 2"
+expect_rc 2 "parens '(1 + 2)'"                 --eval "(1 + 2)"
+expect_rc 2 "variable 'x + 1'"                 --eval "x + 1"
+expect_rc 2 "decimal '1.5 + 2'"                --eval "1.5 + 2"
+expect_rc 2 "comma '1, 2'"                     --eval "1, 2"
+expect_rc 2 "shell metachar '\$(echo 1)'"      --eval '$(echo 1)'
+expect_rc 2 "backtick injection"               --eval '`id`'
+expect_rc 2 "semicolon"                        --eval "1 ; 2"
+expect_rc 2 "empty expression"                 --eval ""
+expect_rc 2 "whitespace-only expression"       --eval "   "
+expect_rc 2 "trailing operator '1 + 2 +'"      --eval "1 + 2 +"
+expect_rc 2 "leading operator-only expr"       --eval "+"
+expect_rc 2 "missing arg (no expr)"            --eval
+
+echo ""
+echo "=== --eval: pre-dispatch arithmetic gate (Phase 1 step 6 sub-check b) ==="
+# Simulates orchestrator workflow: plan-text drift between an extraction
+# rule "extract lines 100-200" and an acceptance band "50-70 lines."
+# Math: 200 - 100 + 1 = 101 (derived). Band midpoint is 60. Drift is large.
+derived=$(bash "$SCRIPT" --eval "200 - 100 + 1" 2>&1); ev_rc=$?
+if [ "$ev_rc" = "0" ] && [ "$derived" = "101" ]; then
+  pass "pre-dispatch: --eval derives 101 from 'lines 100-200' rule"
+else
+  fail "pre-dispatch: --eval expected 101, got rc=$ev_rc out='$derived'"
+fi
+
+# Feed derived value into --drift against the stated band "50-70"
+drift_out=$(bash "$SCRIPT" --drift "50-70" "$derived" 2>&1); dr_rc=$?
+# midpoint(50,70)=60; |101-60|=41; ceil(41*100/60)=ceil(68.33)=69
+if [ "$dr_rc" = "0" ] && [ "$drift_out" = "69" ]; then
+  pass "pre-dispatch: --drift '50-70' vs derived=101 → 69% (large, escalate)"
+else
+  fail "pre-dispatch: --drift expected 69, got rc=$dr_rc out='$drift_out'"
+fi
+
+# Verify the drift is >20%, which the orchestrator would route to ABORT/refine-plan.
+if [ "$drift_out" -gt 20 ] 2>/dev/null; then
+  pass "pre-dispatch: drift=$drift_out exceeds 20% threshold (orchestrator escalates)"
+else
+  fail "pre-dispatch: drift=$drift_out should exceed 20% but did not"
+fi
+
+echo ""
+echo "=== --eval: pre-dispatch 'non-derivable' skip path ==="
+# Phase 3 plan: when an acceptance bullet has a numeric claim but the
+# extraction rule isn't one of the supported forms (literal arithmetic,
+# 'lines N-M'), the orchestrator skips the bullet. The script's role in
+# this path is: --eval rejects the unsupported expression with rc=2, and
+# the orchestrator interprets rc=2 as "non-derivable, skip."
+bash "$SCRIPT" --eval "roughly N lines per Y files" >/dev/null 2>&1
+nd_rc=$?
+if [ "$nd_rc" = "2" ]; then
+  pass "pre-dispatch: --eval rc=2 on natural-language rule → 'non-derivable' skip"
+else
+  fail "pre-dispatch: --eval on non-derivable expected rc=2, got rc=$nd_rc"
+fi
+
+# Same for an extraction rule with multiplication (out of v1 grammar).
+bash "$SCRIPT" --eval "10 * 5" >/dev/null 2>&1
+nd2_rc=$?
+if [ "$nd2_rc" = "2" ]; then
+  pass "pre-dispatch: --eval rc=2 on multiplication → 'non-derivable' skip"
+else
+  fail "pre-dispatch: --eval on multiplication expected rc=2, got rc=$nd2_rc"
+fi
+
+echo ""
+echo "=== --eval: injection-surface containment ==="
+# DA-7 concern: untrusted plan text reaches --eval; ensure no shell
+# expansion / no command execution. The ONLY valid output is an integer
+# or rc=2. We assert no marker-file is created by these inputs.
+INJ_MARK="$TEST_OUT/eval-injection-canary-$$.flag"
+rm -f "$INJ_MARK"
+# Each of these should rc=2 without side effects.
+bash "$SCRIPT" --eval "\$(touch $INJ_MARK)" >/dev/null 2>&1 || true
+bash "$SCRIPT" --eval "1; touch $INJ_MARK" >/dev/null 2>&1 || true
+bash "$SCRIPT" --eval "1 \`touch $INJ_MARK\`" >/dev/null 2>&1 || true
+bash "$SCRIPT" --eval "1 && touch $INJ_MARK" >/dev/null 2>&1 || true
+if [ ! -e "$INJ_MARK" ]; then
+  pass "pre-dispatch: --eval rejects shell-injection surface (no marker created)"
+else
+  fail "pre-dispatch: --eval LEAKED — marker file '$INJ_MARK' was created"
+  rm -f "$INJ_MARK"
+fi
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ "$FAIL_COUNT" -eq 0 ]; then

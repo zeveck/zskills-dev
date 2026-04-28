@@ -414,6 +414,14 @@ Currently defined informational prefixes:
     the orchestrator runs `scripts/plan-drift-correct.sh --parse` over
     the implementation + verification reports. Informational only; the
     hook ignores `phasestep.*`.
+  - `phasestep.run-plan.<id>.<phase>.drift-fail` — emitted by `/run-plan`
+    Phase 3.5 (and the Phase 1 step 6 sub-check b pre-dispatch gate
+    introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 3) when a
+    PLAN-TEXT-DRIFT token cannot be auto-corrected — drift exceeds the
+    20% safe-band, an extraction rule is non-derivable, or
+    `scripts/plan-drift-correct.sh --correct` fails. Records the failure
+    reason in the marker body for the phase report; informational only,
+    the hook ignores `phasestep.*`.
 - `meta.<skill>.<index>` — metadata-only markers used by
   `research-and-go` for dispatcher-time bookkeeping (see OQ1).
 
