@@ -61,7 +61,7 @@ itself; the user owns ordering.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ✅ Done | `942c4f4` | Regression-guard; all anchors pass |
-| 2 — Stub-callout convention + sourceable dispatch helper | ⬚ |  |  |
+| 2 — Stub-callout convention + sourceable dispatch helper | 🟡 In Progress |  |  |
 | 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ⬚ |  |  |
 | 4 — `dev-port.sh` callout in `port.sh` | ⬚ |  |  |
 | 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ⬚ |  |  |
