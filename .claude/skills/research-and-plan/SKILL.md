@@ -216,6 +216,8 @@ review cannot compensate for plans that were never individually reviewed.
 
 ## Step 3 — Cross-Plan Consistency Review (converge until clean)
 
+> Convergence is the **orchestrator's judgment**, not any agent's self-call. Do NOT accept "CONVERGED" or "no issues found" from the reviewer or devil's advocate as authoritative — count substantive findings yourself, and honor the user's rounds budget. Both agents are biased toward declaring their pass complete (the reviewer toward "looks fine," the devil's advocate toward plausibility over truth). This is a recurring failure mode in practice.
+
 After all sub-plans are drafted and verified (Step 2b), review the **full
 set** for cross-plan consistency. Individual sub-plans were reviewed by `/draft-plan`, but
 cross-plan issues (shared schemas, naming collisions, directory conflicts,
@@ -247,10 +249,17 @@ Verify each fix was applied by reading the sub-plan file after editing.
 
 ### Convergence
 
-Continue rounds until no CRITICAL or MAJOR issues are found. Minor issues
-may be noted for implementation-time resolution. Maximum 3 rounds — if
-still finding MAJOR issues after 3 rounds, the decomposition itself may
-need restructuring. Report to the user.
+The **orchestrator** decides convergence after each round by counting
+substantive findings (CRITICAL or MAJOR severity) across both agents'
+reports — do not rubber-stamp a self-declared "CONVERGED" from either
+agent. Continue rounds until **the orchestrator** confirms no CRITICAL
+or MAJOR issues remain. Honor the user's rounds budget; only short-
+circuit before max rounds when CRITICAL/MAJOR findings are genuinely 0.
+Minor issues may be noted for implementation-time resolution. Maximum
+3 rounds — if still finding MAJOR issues after 3 rounds, the
+decomposition itself may need restructuring. Report to the user.
+
+> **Note: the CRITICAL/MAJOR severity threshold is intentional** divergence from `/draft-plan` Phase 5 and `/refine-plan` Phase 4 (which use a flat "no substantive issues" criterion). `/research-and-plan` decomposes a broad goal into sub-plan stubs, where MINOR sub-plan-stub wording is correctly deferred to subsequent `/draft-plan` runs on each sub-plan. Do not "fix" this to match the other plan skills.
 
 ## Step 4 — Write the Meta-Plan
 
@@ -376,6 +385,10 @@ preserved. Tracking supplements the verification process; it does not replace it
   knows to refresh.
 - **Adversarial review targets the decomposition.** Individual sub-plans
   get their own review via `/draft-plan`. Step 3 reviews the split itself.
+- **Convergence is the orchestrator's call** based on counted CRITICAL/MAJOR
+  findings across the reviewer + devil's advocate reports, not any agent's
+  self-declaration. Run all budgeted rounds unless CRITICAL/MAJOR findings
+  drop to 0.
 - **Respect constraints.** No external solvers, no bundlers, no
   dependencies without approval. These apply to every sub-plan.
 - **Each sub-plan must be session-completable.** If a sub-plan needs 8+
