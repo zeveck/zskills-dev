@@ -44,6 +44,18 @@
 #     form `<!-- Auto-corrected YYYY-MM-DD: was X, arithmetic says Y -->`.
 #     Exit 0 on success; 1 if the target bullet can't be uniquely located.
 #
+#   --eval <expr>
+#     Pre-dispatch arithmetic gate (Phase 1 step 6 sub-check b). Evaluates
+#     an integer-only expression `N [+-] N [+-] N …` (whitespace-tolerant,
+#     integer-only, no variables, no parentheses, no multiplication or
+#     division). Implementation is a hand-rolled token-walking parser —
+#     NO `eval`, NO shell `$(( ))` over user input, NO awk-script string
+#     interpolation. Untrusted strings never reach a shell or arithmetic
+#     interpreter.
+#       - Emits the computed integer to stdout. Exit 0.
+#       - Rejects unsupported operators (`*`, `/`, `(`, `)`, variables,
+#         non-digit non-sign chars) with exit 2 and stderr message.
+#
 # Exits:
 #   0  success
 #   1  malformed token (parse) / unlocatable bullet (correct)
@@ -455,6 +467,183 @@ mode_correct() {
   return 0
 }
 
+# ---------- mode: --eval ----------
+
+# Pre-dispatch arithmetic gate. Token-walking parser for integer-only
+# expressions of the form `N [+-] N [+-] N …`. Whitespace tolerant.
+#
+# Security model: untrusted input NEVER reaches `eval` or shell `$(( ))`.
+# Each token is matched against strict regexes (`^[+-]?[0-9]+$` for
+# operands, exact `+`/`-` for operators); the resulting list of validated
+# tokens is fed to awk via `-v` (one variable per token) plus a fixed
+# count, so awk only sees integers and the BEGIN block walks them with
+# integer arithmetic. No string interpolation into the awk script body.
+#
+# Rejected with rc=2: `*`, `/`, `(`, `)`, identifiers, decimals, anything
+# else.
+mode_eval() {
+  local expr="$1"
+
+  # Strip leading/trailing whitespace.
+  expr="${expr#"${expr%%[![:space:]]*}"}"
+  expr="${expr%"${expr##*[![:space:]]}"}"
+
+  if [ -z "$expr" ]; then
+    err "plan-drift-correct --eval: empty expression"
+    return 2
+  fi
+
+  # First-pass charset filter: only digits, +, -, whitespace allowed.
+  # Anything else (letters, `*`, `/`, parens, `.`, `,`) → reject early
+  # with a precise message.
+  local i ch
+  i=0
+  while [ "$i" -lt "${#expr}" ]; do
+    ch="${expr:$i:1}"
+    case "$ch" in
+      [0-9]|+|-|' '|$'\t')
+        ;;
+      *)
+        err "plan-drift-correct --eval: unsupported character '$ch' in expression (only digits, '+', '-', whitespace allowed)"
+        return 2
+        ;;
+    esac
+    i=$(( i + 1 ))
+  done
+
+  # Token-walk: split on whitespace and on +/- boundaries. We collect a
+  # list of operand-tokens and operator-tokens in alternating order,
+  # starting with an operand. A leading sign on the first operand is
+  # part of the operand; subsequent +/- are operators.
+  #
+  # Strategy:
+  #   1. Compress runs of whitespace, then parse character-by-character.
+  #   2. Build operand-strings until we hit an operator boundary.
+  #   3. An operator is a +/- that immediately follows an operand
+  #      (with optional whitespace between). A +/- that follows another
+  #      operator or starts the expression is a unary sign on the next
+  #      operand (only allowed once at the very beginning per operand).
+  local operands=()  # validated integer literal strings
+  local operators=() # '+' or '-'
+  local cur=""
+  local expect_operand=1   # 1 → next non-space token starts an operand
+  local sign=""            # accumulating leading sign for current operand
+
+  i=0
+  while [ "$i" -lt "${#expr}" ]; do
+    ch="${expr:$i:1}"
+    case "$ch" in
+      ' '|$'\t')
+        if [ -n "$cur" ]; then
+          # End of an operand.
+          operands+=("${sign}${cur}")
+          cur=""
+          sign=""
+          expect_operand=0
+        fi
+        ;;
+      [0-9])
+        cur="${cur}${ch}"
+        # Once digits start, we're mid-operand; subsequent +/- are
+        # operators, not signs (until the operand is flushed).
+        expect_operand=0
+        ;;
+      '+'|'-')
+        if [ "$expect_operand" = "1" ]; then
+          # Sign on the next operand. Only one sign permitted, and only
+          # before any digits of the operand.
+          if [ -n "$cur" ] || [ -n "$sign" ]; then
+            err "plan-drift-correct --eval: unexpected '$ch' (double sign or sign after digit)"
+            return 2
+          fi
+          sign="$ch"
+        else
+          # End previous operand if still buffered, then record operator.
+          if [ -n "$cur" ]; then
+            operands+=("${sign}${cur}")
+            cur=""
+            sign=""
+          fi
+          operators+=("$ch")
+          expect_operand=1
+        fi
+        ;;
+      *)
+        # Should have been caught by the charset filter above.
+        err "plan-drift-correct --eval: unexpected character '$ch'"
+        return 2
+        ;;
+    esac
+    i=$(( i + 1 ))
+  done
+
+  # Flush trailing operand.
+  if [ -n "$cur" ]; then
+    operands+=("${sign}${cur}")
+  elif [ -n "$sign" ]; then
+    err "plan-drift-correct --eval: trailing sign with no operand"
+    return 2
+  fi
+
+  # Validate counts: operands must equal operators+1.
+  local op_n="${#operands[@]}"
+  local opr_n="${#operators[@]}"
+  if [ "$op_n" -eq 0 ]; then
+    err "plan-drift-correct --eval: no operands parsed from '$1'"
+    return 2
+  fi
+  if [ "$op_n" -ne $(( opr_n + 1 )) ]; then
+    err "plan-drift-correct --eval: malformed expression (operands=$op_n, operators=$opr_n)"
+    return 2
+  fi
+
+  # Validate each operand is a strict integer literal.
+  local idx tok
+  idx=0
+  while [ "$idx" -lt "$op_n" ]; do
+    tok="${operands[$idx]}"
+    if ! [[ "$tok" =~ ^[+-]?[0-9]+$ ]]; then
+      err "plan-drift-correct --eval: invalid integer token '$tok'"
+      return 2
+    fi
+    idx=$(( idx + 1 ))
+  done
+
+  # Compute via awk -v. Tokens are now strict integer literals; awk's
+  # own integer arithmetic does the math. We never interpolate strings
+  # into the awk program body.
+  #
+  # Build a flat operand-list string and an operator-list string, both
+  # space-delimited, and pass them as -v variables. awk splits and walks.
+  local operand_blob operator_blob
+  operand_blob="${operands[*]}"
+  operator_blob="${operators[*]:-}"
+
+  # awk script: split blobs on whitespace, then accumulate.
+  # Note: split() in awk handles empty operator_blob by returning 0 fields.
+  awk -v ops="$operand_blob" -v ors="$operator_blob" '
+    BEGIN {
+      n = split(ops, a, /[[:space:]]+/);
+      m = split(ors, b, /[[:space:]]+/);
+      # awk split(): if the string is empty, awk returns 0 fields.
+      # If it is non-empty, leading/trailing FS is suppressed by the FS regex.
+      acc = a[1] + 0;
+      for (k = 2; k <= n; k++) {
+        if (b[k-1] == "+") {
+          acc = acc + (a[k] + 0);
+        } else if (b[k-1] == "-") {
+          acc = acc - (a[k] + 0);
+        } else {
+          # Unreachable: pre-validated.
+          exit 3;
+        }
+      }
+      printf "%d\n", acc;
+    }
+  '
+  return 0
+}
+
 # ---------- arg dispatch ----------
 
 if [ "$#" -lt 1 ]; then
@@ -489,13 +678,21 @@ case "$MODE" in
     mode_correct "$@"
     exit $?
     ;;
+  --eval)
+    if [ "$#" -ne 1 ]; then
+      err "plan-drift-correct --eval <expr>"
+      exit 2
+    fi
+    mode_eval "$1"
+    exit $?
+    ;;
   -h|--help)
     usage
     exit 0
     ;;
   *)
     err "plan-drift-correct: unknown mode '$MODE'"
-    err "  modes: --parse | --drift | --correct"
+    err "  modes: --parse | --drift | --correct | --eval"
     exit 2
     ;;
 esac
