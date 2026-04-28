@@ -1,5 +1,42 @@
 # Plan Report — Move skill-owned scripts into the skills that use them
 
+## Phase — 5 Tests + README/CLAUDE.md/CLAUDE_TEMPLATE residual sweep [UNFINALIZED]
+
+**Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-scripts-into-skills-plan
+**Branch:** feat/scripts-into-skills-plan
+**Commits:** 608c5fb (impl: 20 files, +39/-47), d4809e7 (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 5.x | Residual sweep across CLAUDE.md, CLAUDE_TEMPLATE.md, README.md, schema, tests, fixtures | Done | 608c5fb |
+| 5.5.a | port_script field dropped from schema, README, SKILL.md `{{PORT_SCRIPT}}`, this-repo config | Done | 608c5fb |
+| 5.5.d | README helper-scripts list verified bare-basename form (Phase 3b WI 3b.2.a output preserved) | Done | 608c5fb |
+| 5.7 | tests/run-all.sh exports CLAUDE_PROJECT_DIR after REPO_ROOT (ordering check) | Done | 608c5fb |
+| 5.x | bash tests/run-all.sh exits 0 (943/943, no delta) | Done | 608c5fb |
+
+### Verification
+
+- Test suite: PASSED (943/943, no delta from baseline — sweep is doc/test cleanup, no behavioral changes)
+- Schema audit: `port_script` removal is Phase-5-scope (sibling properties intact); not a regression
+- Verifier independently audited all 10 ACs; all pass
+- Hook help-text: 12 new-form `clear-tracking.sh` matches in `block-unsafe-generic.sh` (6 lines × 2 files); `stop-dev.sh` Tier-2 references intact (count=4)
+
+### PLAN-TEXT-DRIFT findings
+
+- **AC5 stale text vs. WI 5.5.d**: AC5 grep was written against pre-3b form (`scripts/test-all|scripts/stop-dev`), WI 5.5.d explicitly checks bare basenames per Phase 3b WI 3b.2.a's bullet-list rewrite. Implementation followed WI 5.5.d (correct), AC5 prose is stale. Non-blocking — Tier-2 references ARE intact.
+
+### Notes
+
+- Small targeted phase: 20 files, +39/-47 lines (cleanup, not new behavior).
+- Schema `port_script` removal completes the migration: `port.sh` lives at `.claude/skills/update-zskills/scripts/port.sh` only, no consumer override field needed.
+- After landing: 6/7 phases done; Phase 6 (docs close-out + frontmatter flip) is the final phase.
+
+---
+
 ## Phase — 4 /update-zskills install flow rewrite + stale-Tier-1 migration [UNFINALIZED]
 
 **Plan:** plans/SCRIPTS_INTO_SKILLS_PLAN.md
