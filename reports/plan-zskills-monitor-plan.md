@@ -1,5 +1,51 @@
 # Plan Report — Zskills Monitor Dashboard
 
+## Phase — 4 Python data aggregation library [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_MONITOR_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-monitor-plan
+**Branch:** feat/zskills-monitor-plan
+**Commits:** b720fbb (impl: Python module + 12 fixtures + 29 tests), e04a711 (tracker mark in-progress)
+
+### Work Items
+
+All WIs done per implementer + verifier report. Module at `skills/zskills-dashboard/scripts/zskills_monitor/` (post-Phase-B norm; relocated from flat `scripts/` per refine-plan DA-4 fix):
+
+- `__init__.py` + `collect.py` (1277 lines)
+- `parse_plan(path)` — frontmatter, blurb, landing-mode, phases, tracker, category, meta_plan, sub_plans
+- `parse_report(slug)` — both `## Phase 5c — N` and `## Phase — 5c N` shapes
+- `slug_of(path)` — canonical `tr '[:upper:]_' '[:lower:]-'` rule (verified parity with Phase 1's inline tr)
+- Tracking-marker scan with subdir-wins dedup + conflict logging
+- Worktree + branch listing reusing briefing helpers via `importlib.util.spec_from_file_location` (NOT broken `from scripts.briefing`)
+- 60s issue cache with `_runner` injection seam
+- v1.0 + v1.1 state-file merge (queue.mode annotation; default_mode surfaced)
+- `errors[]` sorted by (source, message), capped at 100 + 1 summary entry
+- `repo_root` resolved via `git rev-parse --git-common-dir` (worktree-portable)
+- 12 fixture sets covering: minimal, with-state, corrupt-state, slug-uppercase, category-{canary,issues,meta}, error-cap, landing-{pr,unknown}, tracking-dedup, state-v10
+- `tests/test_zskills_monitor_collect.sh` — 29 test assertions, registered in run-all.sh
+
+### Verification
+
+- Test suite: PASSED (1000/1000, +29 from Phase 3 baseline 971)
+- All 18 ACs pass
+- collect.py audit: no eval, no shell=True, no os.system, no `2>/dev/null`, no `|| true`, no jq, no PyYAML
+- Categorization rules verified against fixtures: `^CANARY` → canary, `_ISSUES.md` → issue_tracker, executable+meta detection via Skill-tool delegate args parsing
+- errors[] ordering: byte-deterministic across re-runs; cap at 100 with summary lands deterministically
+- Worktree-portable: REPL test from worktree returned MAIN_ROOT (`/workspaces/zskills`), not the worktree path
+- 18 ACs all pass per implementer's report; verifier independently re-ran them
+
+### Notable extension noted by verifier
+
+`parse_report` is fully implemented; snapshot includes `plans[].report` (full parsed report dict) in addition to `has_report`/`report_path`. Additive — minimum key set is satisfied; Phases 5-7 can rely on the `report` field.
+
+### Notes
+
+- This was a "rate-limit recovery" landing: the previous implementation agent hit a 5-hour-window error mid-flow (mis-reported as "monthly limit") after writing collect.py (1277 lines, 18 tool uses). The retry agent on this turn read collect.py end-to-end + added the 12 fixture sets + test script + run-all.sh registration. Verifier did fresh-eyes audit on collect.py since the originating implementer's report was lost.
+- 1000/1000 tests pass, ground-truth matches plan, no PLAN-TEXT-DRIFT.
+
+---
+
 ## Phase — 3 /work-on-plans queue mutation + scheduling [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_MONITOR_PLAN.md
