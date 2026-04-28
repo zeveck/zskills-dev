@@ -411,7 +411,7 @@ Currently defined informational prefixes:
   emitted by `/run-plan` and friends. Examples:
   - `phasestep.run-plan.<id>.<phase>.drift-detect` — emitted by Phase 3.5
     (introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 2) when
-    the orchestrator runs `scripts/plan-drift-correct.sh --parse` over
+    the orchestrator runs `.claude/skills/run-plan/scripts/plan-drift-correct.sh --parse` over
     the implementation + verification reports. Informational only; the
     hook ignores `phasestep.*`.
   - `phasestep.run-plan.<id>.<phase>.drift-fail` — emitted by `/run-plan`
@@ -419,7 +419,7 @@ Currently defined informational prefixes:
     introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 3) when a
     PLAN-TEXT-DRIFT token cannot be auto-corrected — drift exceeds the
     20% safe-band, an extraction rule is non-derivable, or
-    `scripts/plan-drift-correct.sh --correct` fails. Records the failure
+    `.claude/skills/run-plan/scripts/plan-drift-correct.sh --correct` fails. Records the failure
     reason in the marker body for the phase report; informational only,
     the hook ignores `phasestep.*`.
 - `meta.<skill>.<index>` — metadata-only markers used by

@@ -4,7 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCRIPT="$REPO_ROOT/scripts/apply-preset.sh"
+SCRIPT="$REPO_ROOT/skills/update-zskills/scripts/apply-preset.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0

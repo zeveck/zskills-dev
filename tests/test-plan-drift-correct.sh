@@ -10,7 +10,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SCRIPT="$REPO_ROOT/scripts/plan-drift-correct.sh"
+SCRIPT="$REPO_ROOT/skills/run-plan/scripts/plan-drift-correct.sh"
 
 TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")/plan-drift-correct"
 mkdir -p "$TEST_OUT"

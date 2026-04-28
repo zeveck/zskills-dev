@@ -5,7 +5,7 @@
 # cron-fired follow-up turn.
 #
 # Usage:
-#   bash scripts/compute-cron-fire.sh [--offset N] [--allow-marks]
+#   bash $(basename "$0") [--offset N] [--allow-marks]
 # Env:
 #   FAKE_NOW_EPOCH=<seconds>  — override "now" for tests (otherwise system time)
 # Output (stdout, one line):

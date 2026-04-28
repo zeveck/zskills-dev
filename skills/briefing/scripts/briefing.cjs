@@ -5,17 +5,19 @@
  * Exports core functions for unit testing; also supports CLI invocation.
  *
  * Usage:
- *   node scripts/briefing.js worktrees          — JSON worktree classification
- *   node scripts/briefing.js checkboxes         — JSON unchecked items from reports
- *   node scripts/briefing.js commits [--since=] — JSON categorized commits
- *   node scripts/briefing.js summary            — Formatted terminal output
- *   node scripts/briefing.js report [--since=]  — Combined JSON blob
+ *   node briefing.cjs worktrees          — JSON worktree classification
+ *   node briefing.cjs checkboxes         — JSON unchecked items from reports
+ *   node briefing.cjs commits [--since=] — JSON categorized commits
+ *   node briefing.cjs summary            — Formatted terminal output
+ *   node briefing.cjs report [--since=]  — Combined JSON blob
  */
 'use strict';
 
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+
+const SELF = path.basename(__filename);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1889,7 +1891,7 @@ if (require.main === module) {
       break;
     }
     default:
-      console.error('Usage: node scripts/briefing.cjs <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]');
+      console.error(`Usage: node ${SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]`);
       process.exit(1);
   }
 }

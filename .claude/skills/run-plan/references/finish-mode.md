@@ -47,7 +47,7 @@ Output for the no-work-to-do case:
 ### When this turn schedules the next cron
 
 After Phase 6 (land) succeeds for the current phase AND
-`scripts/post-run-invariants.sh` passes:
+`.claude/skills/run-plan/scripts/post-run-invariants.sh` passes:
 
 > **`post-run-invariants.sh` ordering**: Phase 5c's next-phase cron
 > schedule runs AFTER `post-run-invariants.sh` passes. If invariants
@@ -151,7 +151,7 @@ itself is TZ-agnostic.
 **Special case: Phase 5b final-verify gate.** Phase 5b Case 1 (marker
 exists AND fulfilled missing) has a separate backoff cron — that's a
 distinct concern (waiting on external verify-changes) and keeps using
-`scripts/compute-cron-fire.sh` one-shots with explicit attempt-counter
+`.claude/skills/run-plan/scripts/compute-cron-fire.sh` one-shots with explicit attempt-counter
 exponential backoff. Leave Phase 5b's Case 1 scheduling as-is.
 
 After ensuring the cron exists, output the chunking message:
