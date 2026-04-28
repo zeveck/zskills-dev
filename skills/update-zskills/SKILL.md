@@ -902,16 +902,162 @@ Copy missing scripts from `$PORTABLE/scripts/` to `scripts/` (verify
 executable bit is preserved).
 
 - For scripts with placeholders: prompt user for values and replace.
-- Copy `clear-tracking.sh` if missing — lets the user manually clear
-  stale tracking state. Agents are blocked from running it by the
-  project hook.
-- Copy `apply-preset.sh` if missing — required by Step F (preset UX).
-  Without it, `/update-zskills <preset>` will fail.
 - Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
   a dev server (SIGTERM to PIDs in `var/dev.pid`). Keeps the generic
   hook's kill blocks intact while giving the agent a legitimate path.
+- Copy `test-all.sh` if missing — consumer-customizable test runner
+  template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
+  the consumer with their own test commands.
+
+> Tier-1 scripts (skill machinery) ship via the skill mirror at
+> `.claude/skills/<owner>/scripts/`. They are NOT copied to `scripts/`.
+> See `references/script-ownership.md` for the full table.
 
 Report: "Installed N scripts: [list]"
+
+#### Step D.5 — Migrate stale Tier-1 scripts
+
+Earlier zskills versions copied skill-machinery scripts to the
+consumer's `scripts/`. Detect any leftover copies and offer to remove
+them after verifying they match a known zskills version (so a
+user-modified script is preserved with a warning).
+
+```bash
+# Pre-flight: git is required for hash-object normalization (DA-8 fix
+# — explicit guard at the top of Step D.5). On git-missing systems,
+# skip the migration with a one-line stderr note; do not abort
+# /update-zskills mid-flight.
+if ! command -v git >/dev/null 2>&1; then
+  echo "Step D.5 requires git on PATH; skipping stale-Tier-1 migration" >&2
+  return 0
+fi
+
+STALE_LIST=(
+  apply-preset.sh
+  briefing.cjs
+  briefing.py
+  clear-tracking.sh
+  compute-cron-fire.sh
+  create-worktree.sh
+  land-phase.sh
+  plan-drift-correct.sh
+  port.sh
+  post-run-invariants.sh
+  sanitize-pipeline-id.sh
+  statusline.sh
+  worktree-add-safe.sh
+  write-landed.sh
+)
+```
+
+Note: `statusline.sh` is a defensive entry. Step C.5 copies
+`statusline.sh` directly from
+`$PORTABLE/.claude/skills/update-zskills/scripts/statusline.sh` to
+`~/.claude/statusline-command.sh`, with no intermediate consumer-side
+`scripts/statusline.sh` step. However, consumers may have a leftover
+`scripts/statusline.sh` from manual copies, third-party tutorials, or
+pre-refactor experiments. Defensive migration: matches → MIGRATED;
+user-modified → KEPT. Expect this entry to be a no-op for most
+consumers (the live install at `~/.claude/statusline-command.sh` is
+separate and unaffected).
+
+(Note: `build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`
+are NOT in `STALE_LIST` — they are Tier-2 per
+`references/script-ownership.md` and stay at `scripts/`.)
+
+```bash
+KNOWN_HASHES=$PORTABLE/.claude/skills/update-zskills/references/tier1-shipped-hashes.txt
+DEFER_MARKER=.zskills/tier1-migration-deferred
+
+MIGRATED=()
+KEPT=()
+for name in "${STALE_LIST[@]}"; do
+  target="scripts/$name"
+  [ -f "$target" ] || continue
+
+  # git is required (Phase 4 preconditions, guarded above).
+  # CRLF-normalize for cross-platform consumer compat (D25 fix —
+  # Windows consumers with core.autocrlf=true store files as LF in
+  # the index but check out as CRLF; raw `git hash-object` would hash
+  # the CRLF bytes and never match the LF-hashed release file).
+  # Strip \r before hashing through stdin.
+  consumer_hash=$(tr -d '\r' < "$target" | git hash-object --stdin)
+
+  # Match against the static, version-shipped hashes file.
+  if [ -f "$KNOWN_HASHES" ] && grep -qxF "$consumer_hash" "$KNOWN_HASHES"; then
+    MIGRATED+=("$name")
+  else
+    KEPT+=("$name")
+  fi
+done
+
+if [ "${#MIGRATED[@]}" -gt 0 ]; then
+  echo "Found ${#MIGRATED[@]} stale Tier-1 script(s) at scripts/ that"
+  echo "match a known zskills version. These now ship via skill mirrors."
+  printf '  - %s\n' "${MIGRATED[@]}"
+  read -r -p "Remove? [y/N] " ans
+  if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+    for name in "${MIGRATED[@]}"; do
+      rm -- "scripts/$name" \
+        && echo "removed scripts/$name" \
+        || { echo "ERROR: rm scripts/$name failed" >&2; exit 1; }
+    done
+  else
+    echo "Kept. To migrate later, re-run /update-zskills."
+  fi
+fi
+
+# The defer marker is a NEWLINE-DELIMITED LIST of deferred filenames
+# (D24 fix — boolean marker permanently muted future Tier-1 additions;
+# per-file list re-prompts when a NEW Tier-1 filename appears in KEPT).
+DEFERRED_NAMES=()
+if [ -f "$DEFER_MARKER" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && DEFERRED_NAMES+=("$line")
+  done < "$DEFER_MARKER"
+fi
+
+# Filter KEPT to only files NOT already deferred.
+KEPT_NEW=()
+for name in "${KEPT[@]}"; do
+  skip=0
+  for d in "${DEFERRED_NAMES[@]}"; do
+    [ "$name" = "$d" ] && skip=1 && break
+  done
+  [ "$skip" -eq 0 ] && KEPT_NEW+=("$name")
+done
+
+if [ "${#KEPT_NEW[@]}" -gt 0 ]; then
+  echo "WARNING: ${#KEPT_NEW[@]} Tier-1 script(s) at scripts/ do NOT match"
+  echo "any known zskills version (likely user-modified). NOT removing."
+  printf '  - %s\n' "${KEPT_NEW[@]}"
+  echo
+  echo "Review each: if your modifications are still needed, port them"
+  echo "into a skill subdir (.claude/skills/<owner>/scripts/) and delete"
+  echo "the scripts/ copy. If they were unintentional, delete the file."
+  echo "To defer these files on subsequent /update-zskills runs:"
+  echo "  mkdir -p .zskills"
+  for name in "${KEPT_NEW[@]}"; do
+    echo "  echo $name >> $DEFER_MARKER"
+  done
+  echo "(Future Tier-1 additions NOT in this list will re-prompt.)"
+fi
+
+# Strip leftover `port_script` field from the consumer's
+# `.claude/zskills-config.json` (DA-7 fix). Phase 5 WI 5.5.a removes
+# `port_script` from the schema; existing configs carrying that field
+# would become unknown-property violations under the new schema.
+CFG=.claude/zskills-config.json
+if [ -f "$CFG" ] && grep -qF '"port_script"' "$CFG"; then
+  TMP=$(mktemp)
+  # Drop any line that contains only the port_script field plus possible
+  # leading whitespace and trailing comma.
+  grep -v '^\s*"port_script"\s*:' "$CFG" > "$TMP" \
+    && mv "$TMP" "$CFG" \
+    && echo "stripped legacy dev_server.port_script from $CFG (DA-7 fix)" \
+    || { echo "ERROR: failed to strip port_script from $CFG" >&2; exit 1; }
+fi
+```
 
 #### Step E — Install add-ons (if `--with-addons` or `--with-block-diagram-addons`)
 
