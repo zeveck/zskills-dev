@@ -110,7 +110,7 @@ decision belongs in the follow-up plan, not here.
 |-------|--------|--------|-------|
 | 1 — Inventory cleanup: fix dead refs, write ownership registry | ✅ Done | `49c666b` | landed via PR squash; dead refs replaced; script-ownership.md written; mirror parity |
 | 2 — Move single-owner Tier 1 scripts (apply-preset, compute-cron-fire, post-run-invariants, briefing.*, statusline) | ✅ Done | `e401209` | landed via PR squash; 7 scripts moved; 22 files modified; 931/931 |
-| 3a — Move shared Tier 1 scripts and update same-skill internals (create-worktree, worktree-add-safe, land-phase, write-landed, sanitize-pipeline-id, clear-tracking, port [+ config-driven default_port]) | 🟡 | `596a498` | 7 scripts moved; default_port wired; 894/931 tests (37 cross-skill fails deferred to 3b) |
+| 3a — Move shared Tier 1 scripts and update same-skill internals (create-worktree, worktree-add-safe, land-phase, write-landed, sanitize-pipeline-id, clear-tracking, port [+ config-driven default_port]) | ✅ Done | `596a498` | midpoint — landing deferred to 3b's PR squash; 7 scripts moved; default_port wired |
 | 3b — Update cross-skill callers (grep-driven sweep across skills/ .claude/skills/ CLAUDE.md README.md RELEASING.md) and tests | ⬚ |  |  |
 | 4 — Update `/update-zskills` install flow: drop Tier-1 copies, install via skill mirror, add stale-Tier-1 migration | ⬚ |  |  |
 | 5 — Update zskills tests + sweep README/CLAUDE.md/CLAUDE_TEMPLATE for residual references | ⬚ |  |  |
