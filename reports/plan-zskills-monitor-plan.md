@@ -1,5 +1,39 @@
 # Plan Report — Zskills Monitor Dashboard
 
+## Phase — 2 Remove /plans work modes [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_MONITOR_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-monitor-plan
+**Branch:** feat/zskills-monitor-plan
+**Commits:** 76dbece (impl: 5 files updated), 783db9d (tracker mark in-progress)
+
+### Work Items
+
+| # | Item | Status | Source |
+|---|------|--------|--------|
+| 2.1 | skills/plans/SKILL.md — argument-hint, description, H1 trimmed; pointer to /work-on-plans; work/stop/next-run removed | Done | 76dbece |
+| 2.2 | README.md — /plans row drops "batch execution"; new /work-on-plans row | Done | 76dbece |
+| 2.3 | CHANGELOG.md — Migration entry + Cron-cleanup scope paragraph (session-scoped caveat) | Done | 76dbece |
+| 2.4 | PRESENTATION.html — cron-scheduling row example uses /work-on-plans | Done | 76dbece |
+| 2.5 | /plans bare-mode footer ranking-independent note | Done | 76dbece |
+| 2.6 | Cron cleanup (best-effort, session-scoped) | Done | 76dbece |
+| 2.7 | Mirror parity for /plans skill | Done | 76dbece |
+
+### Verification
+
+- Test suite: PASSED (943/943, no delta — docs/skill-text only)
+- All 7 ACs pass; verifier independently re-detected zero PLAN-TEXT-DRIFT
+- PRESENTATION.html row Skill cell change (`/plans` → `/work-on-plans`) verified consistent with table pattern
+- /plans skill no longer claims batch execution; pointer to /work-on-plans is canonical migration path
+
+### Notes
+
+- Phase 2 is the cleanup half of the Phase 1+2 migration. Phase 1 shipped /work-on-plans; Phase 2 retires the older /plans work modes.
+- Cron cleanup is session-scoped (CronList/CronDelete only see this session's crons) — caveat noted in CHANGELOG.
+
+---
+
 ## Phase — 1 /work-on-plans execute-only CLI [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_MONITOR_PLAN.md
