@@ -1009,8 +1009,9 @@ if [ "$RC" -eq 0 ] \
    && [ "$MARKER_STATUS_COMPLETE" = "yes" ] \
    && [ "$MARKER_PR_FIELD" = "yes" ] \
    && [ "$STDOUT_HAS_PR_URL" = "yes" ] \
-   && [ "$COMMIT_TRAILER" -ge 1 ]; then
-  pass "43 true end-to-end (user-edited): branch pushed, PR URL printed, marker complete with pr: field, mode-aware trailer"
+   && [ "$COMMIT_TRAILER" -ge 1 ] \
+   && [ "$CURRENT" = "main" ]; then
+  pass "43 true end-to-end (user-edited): branch pushed, PR URL printed, marker complete with pr: field, mode-aware trailer, returned to base"
 else
   fail "43 end-to-end: rc=$RC current='$CURRENT' local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-complete=$MARKER_STATUS_COMPLETE marker-pr=$MARKER_PR_FIELD stdout-url=$STDOUT_HAS_PR_URL trailer-count=$COMMIT_TRAILER"
   echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
