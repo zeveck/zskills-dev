@@ -7,6 +7,9 @@
 # DEV_PORT env var overrides everything.
 #
 # Usage:  bash $(basename "$0")   (prints port to stdout)
+#
+# Precedence: DEV_PORT env -> dev-port.sh stub (consumer-provided) ->
+# dev_server.default_port (main-repo branch; fail-loud if absent) -> worktree-hash.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # PROJECT_ROOT must come from the invocation context, not the script
@@ -15,9 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # tree, so $SCRIPT_DIR/.. would point inside the skill bundle, not the
 # repo root. Use git rev-parse --show-toplevel; fall back to PWD when
 # invoked outside a git repo.
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+PROJECT_ROOT="${PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-DEFAULT_PORT=8080  # fallback when config field is absent
+DEFAULT_PORT=""
 RANGE_START=9000
 RANGE_SIZE=51000  # 9000-60000
 
@@ -35,12 +38,11 @@ if [ -f "$_ZSK_CFG" ]; then
     MAIN_REPO="${BASH_REMATCH[1]}"
   fi
   # Same scoping pattern: extract dev_server.default_port (numeric).
-  if [[ "$_ZSK_CFG_BODY" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"default_port\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+  if [[ "$_ZSK_CFG_BODY" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^{}]*\"default_port\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
     DEFAULT_PORT="${BASH_REMATCH[1]}"
   fi
   unset _ZSK_CFG_BODY
 fi
-unset _ZSK_REPO_ROOT _ZSK_CFG
 
 # DEV_PORT env var overrides everything
 if [[ -n "$DEV_PORT" ]]; then
@@ -78,9 +80,14 @@ unset _STUB_LIB
 
 # Main repo gets the default port
 if [[ -n "$MAIN_REPO" ]] && [[ "$PROJECT_ROOT" == "$MAIN_REPO" ]]; then
+  if [[ -z "$DEFAULT_PORT" ]]; then
+    echo "port.sh: dev_server.default_port not set in $_ZSK_CFG. Open this repo in Claude Code and run /update-zskills (a Claude Code slash command, not a shell command) to backfill the field, or set DEV_PORT=NNNN env var to override per-invocation." >&2
+    exit 1
+  fi
   echo "$DEFAULT_PORT"
   exit 0
 fi
+unset _ZSK_REPO_ROOT _ZSK_CFG
 
 # Worktrees get a deterministic port from their path hash
 # Use cksum for portability (POSIX, available everywhere bash is)
