@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-block-diagram-tracking-catchup.md](reports/plan-block-diagram-tracking-catchup.md) | 1/3 | **In progress** — Phase 1 done (19 tracking sites in add-block + add-example migrated to subdir layout, BLOCK_SLUG/NAME_SLUG sanitisation, pre-#97 caller-path fix at L16/L20); Phases 2-3 remaining |
+| [plan-block-diagram-tracking-catchup.md](reports/plan-block-diagram-tracking-catchup.md) | 2/3 | **In progress** — Phases 1+2 done (19 tracking sites migrated; cross-skill invariant lint installed; 3 new canary cases for block-diagram delegation pair / missing fulfillment / cross-name isolation; 975/975 tests); Phase 3 remaining |
 | [plan-zskills-monitor-plan.md](reports/plan-zskills-monitor-plan.md) | 4/9 | **In progress** — Phases 1+2+3+4 done (/work-on-plans CLI shipped + /plans work retired + flock + Python aggregation library); 1000/1000 tests; Phases 5-9 remaining |
 | [plan-scripts-into-skills-plan.md](reports/plan-scripts-into-skills-plan.md) | 7/7 | **Complete** — all 7 phases landed (full Tier-1 relocation + cross-skill sweep + /update-zskills install flow rewrite + safe stale-Tier-1 migration + residual sweep + docs close-out); 943/943 tests; landed via PRs #95, #96, #97, #98, #99, plus this final PR |
 | [plan-improve-staleness-detection.md](reports/plan-improve-staleness-detection.md) | 3/3 | **Complete** — all 3 phases landed; defense-in-depth drift detection chain (pre-authoring /refine-plan Dimension 7, pre-dispatch Phase 1 step 6 b, post-implement Phase 3.5); 931/931 tests, +68 plan-drift cases |

@@ -1,5 +1,45 @@
 # Plan Report — Block-Diagram Tracking-Naming Catch-up
 
+## Phase — 2 Lint guard + canary cases for block-diagram [UNFINALIZED]
+
+**Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-diagram-tracking-catchup
+**Branch:** feat/block-diagram-tracking-catchup
+**Commits:** 6662368
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Baseline grep `> "[^"]*\.zskills/tracking/[a-zA-Z]'` in `skills/` + `block-diagram/` returns 0 (Phase 1 migration verified clean) | Done | 6662368 |
+| 2 | Cross-skill invariant lint added to `tests/test-skill-invariants.sh` (post-`isolation: "worktree"` check) | Done | 6662368 |
+| 3 | Manual lint smoke: revert one Phase 1 site → lint fails (exit 1, FAIL line); restore → lint passes (exit 0) | Done | 6662368 |
+| 4 | Canary case 9 — `block-diagram delegation pair: requires + fulfilled co-located in PIPELINE_ID subdir → allow` | Done | 6662368 |
+| 5 | Canary case 10 — `block-diagram missing fulfillment: requires.add-example.Integrator unfulfilled → deny` | Done | 6662368 |
+| 6 | Canary case 11 — `block-diagram cross-name isolation: Gain not blocked by Integrator's unmet requires` | Done | 6662368 |
+| 7 | Section header in `tests/test-canary-failures.sh` updated `(8 cases)` → `(11 cases)` | Done | 6662368 |
+
+### Verification
+
+- **Test suite:** PASSED (975/975 in verifier session). Phase 1's `parity: worktrees` host-environment flake did not reproduce.
+- **Acceptance criteria:**
+  - Baseline grep returns 0 ✓
+  - Lint phrase present (≥1 line; actual 2 — auto-corrected from stale "1 line" in AC2 because the verbatim insert block contains the phrase in both the header comment and the check description) ✓
+  - Manual lint smoke independently re-run by verifier: PASS → revert site → FAIL with lint diagnostic → restore → PASS, with `git diff block-diagram/` clean afterward ✓
+  - Section header `(11 cases)` exactly 1 line ✓
+  - 3 new cases pass with PASS lines ✓
+  - Pre/post canary count delta = 3 (101 → 104) ✓
+  - Full suite green ✓
+
+### Plan-text drift auto-corrected
+
+- **AC2 (lint phrase grep count):** `1 line` → `≥1 line`. Reason: the verbatim insert block specified by Work Item 2 contains the phrase `no skill writes flat-layout tracking markers` in both the header comment and the check description string. A faithful insertion produces 2 matches, not 1. The lint is functionally correct; only the AC verification command's expected count was stale. Inline audit comment recorded next to the AC.
+
+### Notes
+
+- Branch is rebased onto `7afd6f0` (the main HEAD captured at start of Phase 2). Main has since advanced again (zskills-monitor-plan Phase 4 landed during this turn). Final-phase landing will need a fresh rebase before push — handled by Phase 3's run.
+
 ## Phase — 1 Migrate add-block + add-example writers (paired) [UNFINALIZED]
 
 **Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
