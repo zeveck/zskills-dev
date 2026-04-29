@@ -134,6 +134,17 @@ fi
 check 'no skill prescribes isolation: worktree (use skills/create-worktree/scripts/create-worktree.sh)' \
   '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ block-diagram/ 2>/dev/null'
 
+# Cross-skill invariant: no skill writes flat-layout tracking markers.
+# Post-UNIFY_TRACKING_NAMES Phase 6, only $PIPELINE_ID-subdir writes
+# are visible to the hook. Pattern matches `> "…/.zskills/tracking/<basename>"`
+# where <basename> starts with a letter (rules out `$PIPELINE_ID/...`
+# which begins with `$`). Pinned to the writer shape `> "…"` so prose
+# and comment hits in skills/{quickfix,research-and-go,session-report,
+# verify-changes,run-plan}/SKILL.md don't false-positive. See
+# plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md for baseline-zero proof.
+check 'no skill writes flat-layout tracking markers (post-UNIFY_TRACKING_NAMES)' \
+  '! grep -rEn '"'"'> "[^"]*\.zskills/tracking/[a-zA-Z]'"'"' skills/ block-diagram/ 2>/dev/null'
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
