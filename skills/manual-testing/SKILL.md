@@ -20,7 +20,7 @@ description: >-
      echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
      exit 1
    fi
-   # Get the correct port for this project root (8080 for main, unique per worktree)
+   # Get the correct port for this project root (configured via dev_server.default_port for main; unique per worktree; consumer dev-port.sh stub may override)
    $DEV_SERVER_CMD &
    ```
 

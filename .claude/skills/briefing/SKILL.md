@@ -138,7 +138,7 @@ Present the output in this format:
 Pending sign-offs: N items across M reports
 
 FIX_REPORT.md — 33 items
-  http://localhost:8080/viewer/?file=FIX_REPORT.md
+  http://localhost:<port>/viewer/?file=FIX_REPORT.md
 
   UI / UX Fixes:
     [ ] Block Rotation — right-click, select Rotate, check ports
@@ -148,14 +148,14 @@ FIX_REPORT.md — 33 items
     [ ] Solver tolerance — run voltage-divider, verify output within 1e-6
 
 reports/plan-block-expansion.md — 9 items
-  http://localhost:8080/viewer/?file=reports/plan-block-expansion.md
+  http://localhost:<port>/viewer/?file=reports/plan-block-expansion.md
 
   Phase 1:
     [ ] IfBlock visible in Block Explorer
     [ ] If/IfAction wiring works on canvas
 
 VERIFICATION_REPORT.md — 2 items
-  http://localhost:8080/viewer/?file=VERIFICATION_REPORT.md
+  http://localhost:<port>/viewer/?file=VERIFICATION_REPORT.md
 
   [ ] Variable viewer panel sign-off
   [ ] Toolstrip button sign-off
