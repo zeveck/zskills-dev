@@ -398,6 +398,7 @@ Committed: abc1234 — "commit message"
 ```
 
 **On main with push:**
+<!-- allow-hardcoded: npm run test:all reason: report-template example string the agent prints in its completion message; not an executable command -->
 ```
 Done and pushed. [1-2 sentence summary]
 Changed: file1.js, file2.md (+N lines)

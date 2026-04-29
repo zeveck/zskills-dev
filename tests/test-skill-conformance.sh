@@ -404,6 +404,207 @@ else
 fi
 
 echo ""
+echo "=== No skill-file drift hardcodes ==="
+# Deny-list scan for forbidden literals in skills/**/*.md. Single source
+# of truth for the literal list lives in tests/fixtures/forbidden-literals.txt
+# — the same file that hooks/warn-config-drift.sh reads at runtime.
+#
+# Detection has TWO modes:
+#
+#   - EXEC-FENCE: hits inside ``` bash / sh / shell / no-language ``` fences
+#     are flagged unless the immediately-preceding prose contains an
+#     <!-- allow-hardcoded: <literal> reason: ... --> marker that names
+#     the literal. Markers accumulate across consecutive lines; any
+#     non-blank, non-marker line resets the accumulated set.
+#
+#   - PROSE-IMPERATIVE: hits in PROSE outside fences, when the literal
+#     appears in a code-span on a bullet (`- `, `* `) or numbered-list
+#     (`N. `) line that ALSO contains a sentence-start imperative verb
+#     (`Run`, `Execute`, `Invoke` — capitalized; `(^|[.;:][[:space:]]+|\*\*)`
+#     prefix). Lower-case `run` does not trigger (avoids past-participle
+#     false-positives like "has run" / "can run").
+#
+# Both modes strip a leading `>` blockquote-prefix before applying their
+# regexes — load-bearing for the run-plan worktree-test recipe at
+# skills/run-plan/SKILL.md:898-930, where bash fences live inside a
+# blockquote.
+#
+# Fixture format:
+#   - One literal per line. Comments (`#`) and blank lines skipped.
+#   - Default: fixed-substring match.
+#   - `re:` prefix: extended regex (grep -E / `=~`). The pattern is
+#     unanchored unless it self-anchors. The allowlist marker for a
+#     regex entry names the pattern WITHOUT the `re:` prefix.
+#
+# When adding a new config field whose value could appear hardcoded in
+# skill files, add the antipattern literal to
+# tests/fixtures/forbidden-literals.txt. Both the test and
+# hooks/warn-config-drift.sh read from this file — no code change.
+
+FORBIDDEN_FIXTURE="$REPO_ROOT/tests/fixtures/forbidden-literals.txt"
+
+if [ ! -r "$FORBIDDEN_FIXTURE" ]; then
+  fail "forbidden-literals fixture readable" "$FORBIDDEN_FIXTURE missing or unreadable"
+else
+  # Read fixture once. Split into FIXED (substring) and REGEX (extended-regex) entries.
+  FIXED_LITERALS=()
+  REGEX_PATTERNS=()
+  while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    [[ "$entry" =~ ^# ]] && continue
+    if [[ "$entry" =~ ^re: ]]; then
+      REGEX_PATTERNS+=("${entry#re:}")
+    else
+      FIXED_LITERALS+=("$entry")
+    fi
+  done < "$FORBIDDEN_FIXTURE"
+
+  DRIFT_FAIL=0
+  DRIFT_HITS=()
+
+  while IFS= read -r skill_file; do
+    in_fence=0
+    fence_type=""
+    unset allowed_in_fence; declare -A allowed_in_fence=()
+    prev_lines=()
+    line_no=0
+    while IFS= read -r line; do
+      line_no=$((line_no + 1))
+      # Blockquote normalisation: strip a leading `>` + optional space
+      # before applying any structural regex. Without this, blockquoted
+      # fenced bash blocks (` >    ```bash`) go undetected.
+      norm_line="$line"
+      if [[ "$norm_line" =~ ^[[:space:]]*\>[[:space:]]?(.*)$ ]]; then
+        norm_line="${BASH_REMATCH[1]}"
+      fi
+
+      if [ "$in_fence" -eq 0 ]; then
+        # Outside any fence.
+        if [[ "$norm_line" =~ ^[[:space:]]*\<!--[[:space:]]+allow-hardcoded:[[:space:]]+(.+)[[:space:]]+reason:.*--\>[[:space:]]*$ ]]; then
+          captured="${BASH_REMATCH[1]}"
+          # Trim trailing whitespace.
+          captured="${captured%"${captured##*[![:space:]]}"}"
+          prev_lines+=("$captured")
+        elif [[ "$norm_line" =~ ^[[:space:]]*\`\`\`([a-zA-Z0-9_+-]*)[[:space:]]*$ ]]; then
+          # Fence-opener of any kind. Track exec vs other so non-shell
+          # fences (json, markdown, etc.) don't get scanned for shell
+          # literals — but their bounds are still tracked.
+          lang="${BASH_REMATCH[1]}"
+          in_fence=1
+          if [ -z "$lang" ] || [ "$lang" = "bash" ] || [ "$lang" = "sh" ] || [ "$lang" = "shell" ]; then
+            fence_type="exec"
+          else
+            fence_type="other"
+          fi
+          allowed_in_fence=()
+          if [ "$fence_type" = "exec" ]; then
+            for lit in "${prev_lines[@]:-}"; do
+              [ -n "$lit" ] && allowed_in_fence["$lit"]=1
+            done
+          fi
+          prev_lines=()
+          continue
+        else
+          # Any other non-blank line resets the marker block.
+          [ -n "$norm_line" ] && prev_lines=()
+        fi
+        # PROSE-IMPERATIVE detection: bullet/numbered line with a
+        # code-span AND a sentence-start imperative verb.
+        if [[ "$norm_line" =~ ^[[:space:]]*([-*]|[0-9]+\.) ]] \
+           && [[ "$norm_line" =~ \`[^\`]+\` ]] \
+           && [[ "$norm_line" =~ (^|[.\;\:][[:space:]]+|\*\*)(Run|Execute|Invoke)[[:space:]] ]]; then
+          for literal in "${FIXED_LITERALS[@]}"; do
+            if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
+              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no contains '$literal'. Replace with \$VAR (preferred) or add an allow-hardcoded marker if legitimately required.")
+              DRIFT_FAIL=1
+            fi
+          done
+          for pattern in "${REGEX_PATTERNS[@]}"; do
+            if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
+              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches forbidden regex '$pattern'. Replace with \$VAR (preferred) or add an allow-hardcoded marker if legitimately required.")
+              DRIFT_FAIL=1
+            fi
+          done
+        fi
+        continue
+      fi
+
+      # Inside a fence.
+      if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
+        in_fence=0
+        fence_type=""
+        allowed_in_fence=()
+        prev_lines=()
+        continue
+      fi
+      # Only scan exec-type fences (bash / sh / shell / no-language).
+      if [ "$fence_type" != "exec" ]; then
+        continue
+      fi
+      for literal in "${FIXED_LITERALS[@]}"; do
+        if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
+          DRIFT_HITS+=("DRIFT: $skill_file:$line_no contains '$literal' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred) or add the marker if legitimately required.")
+          DRIFT_FAIL=1
+        fi
+      done
+      for pattern in "${REGEX_PATTERNS[@]}"; do
+        if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
+          DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches forbidden regex '$pattern' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred) or add the marker if legitimately required.")
+          DRIFT_FAIL=1
+        fi
+      done
+    done < "$skill_file"
+  done < <(find "$REPO_ROOT/skills" -name '*.md' | sort)
+
+  if [ "$DRIFT_FAIL" -eq 0 ]; then
+    pass "no skill-file drift hardcodes (deny-list clean against tests/fixtures/forbidden-literals.txt)"
+  else
+    fail "skill-file drift hardcodes detected" "${#DRIFT_HITS[@]} hit(s)"
+    for h in "${DRIFT_HITS[@]}"; do
+      printf '    %s\n' "$h" >&2
+    done
+  fi
+fi
+
+echo ""
+echo "=== Worktree-test blockquote structural AC ==="
+# WI 4.6 — Phase 2 WI 2.2 migrated the worktree-test recipe blockquote at
+# skills/run-plan/SKILL.md:898-930 from raw `npm start` / `npm run test:all` /
+# `.test-results.txt` literals to `$DEV_SERVER_CMD` / `$FULL_TEST_CMD` /
+# `$TEST_OUTPUT_FILE`. This AC mechanizes the structural invariant so a
+# future agent can't silently revert one of the substitutions and have
+# only the deny-list catch it (or worse, slip past as a non-fence literal).
+BQ_TMP=$(mktemp)
+awk '/^[[:space:]]*> \*\*Worktree test recipe:\*\*/,/^[[:space:]]*8\. \*\*No steps skipped/' \
+    "$REPO_ROOT/skills/run-plan/SKILL.md" > "$BQ_TMP"
+
+if [ ! -s "$BQ_TMP" ]; then
+  fail "worktree-test blockquote: extracted bounds non-empty" "awk produced 0 lines — anchors drifted?"
+elif grep -qE 'npm start|npm run test:all|\.test-results\.txt' "$BQ_TMP"; then
+  fail "worktree-test blockquote: no raw literal" "raw literal in $BQ_TMP — see $REPO_ROOT/skills/run-plan/SKILL.md:898-930"
+  grep -nE 'npm start|npm run test:all|\.test-results\.txt' "$BQ_TMP" >&2
+elif ! grep -qE '\$DEV_SERVER_CMD' "$BQ_TMP"; then
+  fail "worktree-test blockquote: \$DEV_SERVER_CMD present" "missing in $BQ_TMP"
+elif ! grep -qE '\$TEST_OUTPUT_FILE' "$BQ_TMP"; then
+  fail "worktree-test blockquote: \$TEST_OUTPUT_FILE present" "missing in $BQ_TMP"
+elif ! grep -qE '\$FULL_TEST_CMD' "$BQ_TMP"; then
+  fail "worktree-test blockquote: \$FULL_TEST_CMD present" "missing in $BQ_TMP"
+else
+  pass "worktree-test blockquote: \$DEV_SERVER_CMD / \$FULL_TEST_CMD / \$TEST_OUTPUT_FILE all present, no raw literals"
+fi
+rm -f "$BQ_TMP"
+
+# Substitution-discipline rule at SKILL.md:179-187 must enumerate all 3 vars.
+DISCIPLINE_BLOCK=$(sed -n '179,187p' "$REPO_ROOT/skills/run-plan/SKILL.md")
+if echo "$DISCIPLINE_BLOCK" | grep -q '\$DEV_SERVER_CMD' \
+   && echo "$DISCIPLINE_BLOCK" | grep -q '\$FULL_TEST_CMD' \
+   && echo "$DISCIPLINE_BLOCK" | grep -q '\$TEST_OUTPUT_FILE'; then
+  pass "substitution-discipline at SKILL.md:179-187 names all 3 vars"
+else
+  fail "substitution-discipline at SKILL.md:179-187 names all 3 vars" "block: $DISCIPLINE_BLOCK"
+fi
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

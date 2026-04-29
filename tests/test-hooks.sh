@@ -2986,6 +2986,187 @@ else
 fi
 
 echo ""
+echo "=== PostToolUse: skill-file drift warn ==="
+# WI 4.2 / 4.5 — the warn hook also reads tests/fixtures/forbidden-literals.txt
+# and emits a WARN when an Edit/Write on skills/<owner>/...md leaves a
+# forbidden literal in the file without an <!-- allow-hardcoded ... -->
+# marker on the same or previous line. The mirror tree
+# (.claude/skills/...) is intentionally excluded.
+
+# Fresh fixture directory laid out like a zskills repo so the hook's
+# CLAUDE_PROJECT_DIR-based fixture lookup works.
+SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test
+rm -rf /tmp/zskills-warn-skill-drift-test
+mkdir -p "$SKILL_DRIFT_FIXTURE/tests/fixtures"
+mkdir -p "$SKILL_DRIFT_FIXTURE/skills/foo"
+mkdir -p "$SKILL_DRIFT_FIXTURE/.claude/skills/foo"
+cp "$REPO_ROOT/tests/fixtures/forbidden-literals.txt" \
+   "$SKILL_DRIFT_FIXTURE/tests/fixtures/forbidden-literals.txt"
+
+# Helper: same shape as _run_warn_hook but passes CLAUDE_PROJECT_DIR so
+# the hook can resolve the fixture file.
+_run_skill_warn() {
+  local _input="$1"
+  local _err_file
+  _err_file=$(mktemp)
+  printf '%s' "$_input" \
+    | CLAUDE_PROJECT_DIR="$SKILL_DRIFT_FIXTURE" bash "$WARN_HOOK" \
+        2>"$_err_file" >/dev/null
+  _WARN_RC=$?
+  _WARN_ERR=$(cat "$_err_file")
+  rm -f "$_err_file"
+}
+
+# Case 6: Edit on skills/foo/SKILL.md adding a forbidden literal inside
+# a bash fence → WARN to stderr, rc=0.
+cat > "$SKILL_DRIFT_FIXTURE/skills/foo/SKILL.md" <<'SKILL'
+# Foo
+
+```bash
+TZ=America/New_York date -Iseconds
+```
+SKILL
+_run_skill_warn '{"tool_name":"Edit","tool_input":{"file_path":"'"$SKILL_DRIFT_FIXTURE"'/skills/foo/SKILL.md"}}'
+if [[ "$_WARN_RC" -eq 0 ]] \
+  && [[ "$_WARN_ERR" == *"WARN:"* ]] \
+  && [[ "$_WARN_ERR" == *"TZ=America/New_York"* ]] \
+  && [[ "$_WARN_ERR" == *"skills/foo/SKILL.md:4"* ]]; then
+  pass "warn-config-drift: skill-file forbidden literal — WARN emitted, rc=0"
+else
+  fail "warn-config-drift: skill-file literal — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 7: Same content but with an <!-- allow-hardcoded ... --> marker on
+# the line immediately above the fence-opener → no WARN.
+cat > "$SKILL_DRIFT_FIXTURE/skills/foo/SKILL.md" <<'SKILL'
+# Foo
+
+<!-- allow-hardcoded: TZ=America/New_York reason: example demonstrating timezone literal in synthetic fixture -->
+```bash
+TZ=America/New_York date -Iseconds
+```
+SKILL
+_run_skill_warn '{"tool_name":"Edit","tool_input":{"file_path":"'"$SKILL_DRIFT_FIXTURE"'/skills/foo/SKILL.md"}}'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: skill-file with allow-hardcoded marker above fence — no WARN, rc=0"
+else
+  fail "warn-config-drift: skill-file marker — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 8: Edit on the .claude/skills mirror path → mirror branch is
+# excluded (the source skills/ Edit fires the hook; warning twice would
+# spam the cp-batched mirror update). Stderr empty, rc=0.
+cat > "$SKILL_DRIFT_FIXTURE/.claude/skills/foo/SKILL.md" <<'SKILL'
+# Foo
+
+```bash
+TZ=America/New_York date -Iseconds
+```
+SKILL
+_run_skill_warn '{"tool_name":"Edit","tool_input":{"file_path":"'"$SKILL_DRIFT_FIXTURE"'/.claude/skills/foo/SKILL.md"}}'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: .claude/skills mirror path — no WARN (mirror exclusion), rc=0"
+else
+  fail "warn-config-drift: mirror path — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 9: Regex deny-list entry exemption — the fixture has
+# `re:\$TEST_OUT/\.test-results\.txt`. The allowlist marker references the
+# pattern WITHOUT the `re:` prefix.
+cat > "$SKILL_DRIFT_FIXTURE/skills/foo/SKILL.md" <<'SKILL'
+# Foo
+
+<!-- allow-hardcoded: \$TEST_OUT/\.test-results\.txt reason: demonstrating regex-entry exemption in synthetic fixture -->
+```bash
+echo $TEST_OUT/.test-results.txt
+```
+SKILL
+_run_skill_warn '{"tool_name":"Edit","tool_input":{"file_path":"'"$SKILL_DRIFT_FIXTURE"'/skills/foo/SKILL.md"}}'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: regex-entry allow-hardcoded marker exempts hit — no WARN, rc=0"
+else
+  fail "warn-config-drift: regex-entry marker — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Case 10: Fixture missing → graceful no-op.
+rm -f "$SKILL_DRIFT_FIXTURE/tests/fixtures/forbidden-literals.txt"
+cat > "$SKILL_DRIFT_FIXTURE/skills/foo/SKILL.md" <<'SKILL'
+# Foo
+
+```bash
+TZ=America/New_York date -Iseconds
+```
+SKILL
+_run_skill_warn '{"tool_name":"Edit","tool_input":{"file_path":"'"$SKILL_DRIFT_FIXTURE"'/skills/foo/SKILL.md"}}'
+if [[ "$_WARN_RC" -eq 0 ]] && [[ -z "$_WARN_ERR" ]]; then
+  pass "warn-config-drift: missing fixture — graceful no-op, rc=0, stderr empty"
+else
+  fail "warn-config-drift: missing fixture — rc=$_WARN_RC, stderr=$_WARN_ERR"
+fi
+
+# Cleanup the synthetic fixture tree.
+rm -rf /tmp/zskills-warn-skill-drift-test
+
+echo ""
+echo "=== Fixture-extension coverage (single source of truth) ==="
+# AC fixture-extension (plan AC §refine-1 R1.17): adding an entry to
+# tests/fixtures/forbidden-literals.txt MUST immediately enforce in
+# BOTH the deny-list test (Phase 4.1) and the drift-warn hook
+# (Phase 4.2) with no code change. Append a synthetic literal
+# `__TEST_LITERAL__` to a temp copy of the fixture; create a synthetic
+# skill file containing the literal inside a bash fence; run both
+# surfaces against it; assert both surface the expected DRIFT/WARN.
+FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test
+rm -rf /tmp/zskills-fixture-extension-test
+mkdir -p "$FIXTURE_EXT_DIR/tests/fixtures"
+mkdir -p "$FIXTURE_EXT_DIR/skills/synthetic"
+cp "$REPO_ROOT/tests/fixtures/forbidden-literals.txt" \
+   "$FIXTURE_EXT_DIR/tests/fixtures/forbidden-literals.txt"
+printf '__TEST_LITERAL__\n' >> "$FIXTURE_EXT_DIR/tests/fixtures/forbidden-literals.txt"
+cat > "$FIXTURE_EXT_DIR/skills/synthetic/SKILL.md" <<'SKILL'
+# Synthetic
+
+```bash
+echo __TEST_LITERAL__
+```
+SKILL
+
+# Surface 1: drift-warn hook against the synthetic skill file.
+EXT_ERR=$(mktemp)
+printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"'"$FIXTURE_EXT_DIR"'/skills/synthetic/SKILL.md"}}' \
+  | CLAUDE_PROJECT_DIR="$FIXTURE_EXT_DIR" bash "$WARN_HOOK" 2>"$EXT_ERR" >/dev/null
+EXT_RC=$?
+EXT_ERR_CONTENT=$(cat "$EXT_ERR")
+rm -f "$EXT_ERR"
+if [[ "$EXT_RC" -eq 0 ]] \
+  && [[ "$EXT_ERR_CONTENT" == *"WARN:"* ]] \
+  && [[ "$EXT_ERR_CONTENT" == *"__TEST_LITERAL__"* ]]; then
+  pass "fixture-extension: drift-warn hook picks up appended literal — WARN emitted"
+else
+  fail "fixture-extension: drift-warn hook missed appended literal" "rc=$EXT_RC stderr=$EXT_ERR_CONTENT"
+fi
+
+# Surface 2: deny-list test (test-skill-conformance.sh) against the
+# synthetic skills/ tree. Run with REPO_ROOT pointing at the synthetic
+# fixture directory.
+EXT_DENY_OUT=$(mktemp)
+REPO_ROOT="$FIXTURE_EXT_DIR" bash "$REPO_ROOT/tests/test-skill-conformance.sh" \
+  > "$EXT_DENY_OUT" 2>&1
+EXT_DENY_RC=$?
+# We expect FAIL on the deny-list section; other sections will likely
+# also fail because the synthetic tree has no real skills — that's
+# expected and not what we are asserting. We only check that the new
+# synthetic literal surfaces in the deny-list output.
+if grep -q '__TEST_LITERAL__' "$EXT_DENY_OUT"; then
+  pass "fixture-extension: deny-list test picks up appended literal — DRIFT line emitted"
+else
+  fail "fixture-extension: deny-list test missed appended literal" "no __TEST_LITERAL__ in output (rc=$EXT_DENY_RC)"
+  head -50 "$EXT_DENY_OUT" >&2
+fi
+rm -f "$EXT_DENY_OUT"
+rm -rf /tmp/zskills-fixture-extension-test
+
+echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
 
