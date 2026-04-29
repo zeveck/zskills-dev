@@ -1,7 +1,7 @@
 ---
 title: Default Port Config — Schema-Driven, Runtime-Read
 created: 2026-04-25
-status: active
+status: complete
 ---
 
 # Plan: Default Port Config — Schema-Driven, Runtime-Read
