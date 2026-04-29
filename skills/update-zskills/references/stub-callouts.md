@@ -212,6 +212,13 @@ When adding a new stub:
 4. Document the new stub's positional arguments and stdout contract
    in this file.
 
+## Future callouts
+
+- `briefing-extra.sh` — declined for now; revisit when first consumer
+  demand surfaces. Note: `briefing` is dual-runtime (cjs + py3); a
+  future callout would need to be wired in both unless the .py runtime
+  has been retired.
+
 ## Related
 
 - `skills/update-zskills/references/script-ownership.md` — Tier-1
