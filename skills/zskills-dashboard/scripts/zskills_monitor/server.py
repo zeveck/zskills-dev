@@ -932,6 +932,14 @@ class MonitorHandler(BaseHTTPRequestHandler):
         def err_log(msg: str) -> None:
             sys.stderr.write(f"[work-state] {msg}\n")
 
+        # Phase 7: surface whether a /work-on-plans trigger is configured
+        # so the Run/Status widget can pick the right idle render.
+        cfg = _read_config(main_root)
+        trigger_configured = False
+        if isinstance(cfg.get("dashboard"), dict):
+            trig = cfg["dashboard"].get("work_on_plans_trigger", "")
+            trigger_configured = bool(trig)
+
         with _state_lock(main_root):
             doc, was_unparseable = _read_work_state(main_root, error_log=err_log)
             target = main_root / ".zskills" / "work-on-plans-state.json"
@@ -939,17 +947,27 @@ class MonitorHandler(BaseHTTPRequestHandler):
                 # Bootstrap-write idle.
                 idle = {"state": "idle", "updated_at": _now_iso()}
                 _atomic_write_json(target, idle)
-                self._send_json(200, {"state": "idle"})
+                self._send_json(
+                    200,
+                    {"state": "idle", "trigger_configured": trigger_configured},
+                )
                 return
             stale, reason = _is_stale(doc)
             if stale:
                 idle = {"state": "idle", "updated_at": _now_iso()}
                 _atomic_write_json(target, idle)
                 self._send_json(
-                    200, {"state": "idle", "warning": reason}
+                    200,
+                    {
+                        "state": "idle",
+                        "warning": reason,
+                        "trigger_configured": trigger_configured,
+                    },
                 )
                 return
-        self._send_json(200, doc)
+        out = dict(doc)
+        out["trigger_configured"] = trigger_configured
+        self._send_json(200, out)
 
     def _handle_work_state_reset(self) -> None:
         if not self._origin_ok():
