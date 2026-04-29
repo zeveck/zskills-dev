@@ -1,5 +1,51 @@
 # Plan Report — Skill-File Drift Fix
 
+## Phase — 3 Hook Fallback Fix + Test-Infra Sync
+
+**Plan:** plans/SKILL_FILE_DRIFT_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-skill-file-drift-fix
+**Branch:** feat/skill-file-drift-fix
+**Commit:** 4311f42
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | Sweep `${VAR:-default}` opinionated fallbacks | Done | 26 hits audited; 1 opinionated FIXED (FULL_TEST_CMD npm fallback); 25 sensible KEPT (env-overridable plumbing + new doc-defaults) |
+| 3.2 | Implement three-case tree | Done | Case A (cmd set), Case B (empty + no infra → skip), Case C (empty + infra → deny test-pipes) |
+| 3.3 | Mirror to .claude/hooks/ | Done | diff -q empty |
+| 3.4 | Test-infra sync via shared fixture | Done | tests/fixtures/test-infra-patterns.txt (9 patterns); sync test in test-hooks.sh checks both consumers |
+| 3.5 | Three test cases for WI 3.2 | Done | 5 cases (Case A + Case A output_file honored + Case B + Case C deny + Case C non-test allow); 4 sync tests |
+
+### Design deviation: helper-vs-inline (verified SOUND)
+
+The plan's WI 3.1 prescribed sourcing `zskills-resolve-config.sh` for the suggestion-message text. Implementer chose inline config-read instead. Rationale:
+- Helper has hard fail-loud `${CLAUDE_PROJECT_DIR:?...}` guard.
+- Test fixtures use `REPO_ROOT=$TEST_TMPDIR` without setting `CLAUDE_PROJECT_DIR` — sourcing helper would abort fixtures.
+- Inline implementation is contractually equivalent (same BASH_REMATCH idiom, empty-init guard, malformed-tolerance, no-jq).
+- Case A `output_file` test proves equivalence: configured `.out.log` appears in deny message; literal `.test-results.txt` absent.
+
+Verifier judged SOUND. Future cleanup that exports `CLAUDE_PROJECT_DIR` in fixtures + switches hook to helper-source is a sensible follow-up but not in scope.
+
+### Verification
+
+- **Test suite:** PASSED (1249 baseline → 1258 after Phase 3, +9 cases, 0 failures)
+- **AC 1** (zero `:-npm run test:all`): 0 hits in `hooks/` and `.claude/hooks/`
+- **AC 2** (three test cases): 5 present (Case A, A-output_file, B, C, C-allow)
+- **AC 3** (sync test): present + synthetic-divergence message format check
+- **AC 4** (full suite passes): 1258/1258
+- **Mirror parity:** clean (`diff -q hooks/block-unsafe-project.sh.template .claude/hooks/block-unsafe-project.sh` empty)
+- **Pattern parity:** all 9 patterns appear in both `block-unsafe-project.sh` and `verify-changes/SKILL.md`
+
+### Plan-Text Drift
+
+None observed. Implementer's `${VAR:-default}` count was 24; verifier counted 26 (the 2 extras are the new `${TEST_OUTPUT_FILE:-.test-results.txt}` doc-defaults — sensible additions, not pre-existing audit items). Cosmetic count-claim drift; not a substantive issue.
+
+### User Sign-off
+
+Phase 3 produces no UI changes — no sign-off needed.
+
 ## Phase — 2 Migrate Hardcoded Literals
 
 **Plan:** plans/SKILL_FILE_DRIFT_FIX.md
