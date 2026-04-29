@@ -84,11 +84,13 @@ session, so any session you've already closed needs no cleanup).
   `plans/SCRIPTS_INTO_SKILLS_PLAN.md`.
 - feat(config): drop dev_server.port_script (port.sh now lives in update-zskills skill); add dev_server.default_port for main-repo port override
   — `port.sh` is now bundled with the `update-zskills` skill at one
-  canonical location. Existing config schemas drop the `port_script`
-  field; `dev_server.default_port` (integer, default 8080) added so
-  consumers can override the main-repo dev port without overriding
-  the script path. `/update-zskills` writes `default_port` on
-  greenfield install and backfills it into existing configs.
+  canonical location; the `port_script` config field that pointed at
+  it is removed. `dev_server.default_port` (integer, default 8080)
+  added so the main-repo port is configurable. `/update-zskills`
+  writes `default_port` on greenfield install. Existing configs
+  without the field will receive a fail-loud diagnostic from port.sh
+  (run `/update-zskills` to add the field manually for now; automatic
+  backfill is tracked as future work).
 - feat(run-plan): add `PLAN-TEXT-DRIFT:` structured token for
   acceptance-band drift flags; see `skills/run-plan/SKILL.md` Key Rules
   and `scripts/plan-drift-correct.sh`. Implementation and verification

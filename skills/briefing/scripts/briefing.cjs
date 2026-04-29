@@ -11,6 +11,12 @@
  *   node briefing.cjs summary            — Formatted terminal output
  *   node briefing.cjs report [--since=]  — Combined JSON blob
  */
+
+// ZSKILLS INVARIANT: briefing.py and briefing.cjs are intentional Python/Node mirrors.
+// Their port-handling behavior, output structure, and degradation semantics MUST stay byte-equivalent
+// except for language idioms (`'` vs `"`, `None` vs `null`, comment syntax). Edits to one require
+// a parity edit to the other. tests/test-briefing-parity.sh enforces this.
+
 'use strict';
 
 const { execSync } = require('node:child_process');
@@ -702,14 +708,14 @@ function formatSummary(worktrees, checkboxes, commits, opts = {}) {
   lines.push(`BRIEFING — ${formatET()}`);
   lines.push('');
 
-  // Get port for localhost URLs via port.sh; default 8080.
-  let port = '8080';
+  // Get port via port.sh; emit no URL on failure.
+  let port = null;
   try {
-    const portSh = path.join(mainPath, 'scripts', 'port.sh');
+    const portSh = path.join(mainPath, '.claude', 'skills', 'update-zskills', 'scripts', 'port.sh');
     if (fs.existsSync(portSh)) {
-      port = run(`bash ${portSh}`, { cwd: mainPath }) || '8080';
+      port = run(`bash ${portSh}`, { cwd: mainPath }) || null;
     }
-  } catch { /* default 8080 */ }
+  } catch { port = null; }
 
   // === NEEDS ATTENTION bucket (non-verification items) ===
   const needsAttention = [];
@@ -779,8 +785,12 @@ function formatSummary(worktrees, checkboxes, commits, opts = {}) {
     lines.push(`VERIFICATION (${sourceCheckboxes.length} items across ${fileCount} topics)`);
     for (const [file, items] of Object.entries(cbByFile)) {
       const topic = topicName(file);
-      const viewerUrl = `http://localhost:${port}/viewer/?file=${file}`;
-      lines.push(`  ${topic} (${items.length}) — ${viewerUrl}`);
+      if (port === null) {
+        lines.push(`  ${topic} (${items.length})`);
+      } else {
+        const viewerUrl = `http://localhost:${port}/viewer/?file=${file}`;
+        lines.push(`  ${topic} (${items.length}) — ${viewerUrl}`);
+      }
       for (const cb of items) {
         const isGeneric = /^\*?\*?Sign off\*?\*?/.test(cb.text) || cb.text.length < 10;
         const label = (isGeneric && cb.heading) ? cb.heading : cb.text;
@@ -1076,14 +1086,14 @@ function formatVerify(worktrees, checkboxes, opts = {}) {
         .replace(/\b\w/g, c => c.toUpperCase());
     };
 
-    // Get port for localhost URL via port.sh; default 8080.
-    let port = '8080';
+    // Get port via port.sh; emit no URL on failure.
+    let port = null;
     try {
-      const portSh = path.join(mainPath, 'scripts', 'port.sh');
+      const portSh = path.join(mainPath, '.claude', 'skills', 'update-zskills', 'scripts', 'port.sh');
       if (fs.existsSync(portSh)) {
-        port = run(`bash ${portSh}`, { cwd: mainPath }) || '8080';
+        port = run(`bash ${portSh}`, { cwd: mainPath }) || null;
       }
-    } catch { /* default 8080 */ }
+    } catch { port = null; }
 
     const itemCount = sourceCheckboxes.length;
     const fileCount = Object.keys(cbByFile).length;
@@ -1100,9 +1110,11 @@ function formatVerify(worktrees, checkboxes, opts = {}) {
         if (logOut) commitDate = ` (updated ${logOut})`;
       }
 
-      const viewerUrl = `http://localhost:${port}/viewer/?file=${file}`;
       lines.push(`  ${topic}${commitDate}`);
-      lines.push(`  ${viewerUrl}`);
+      if (port !== null) {
+        const viewerUrl = `http://localhost:${port}/viewer/?file=${file}`;
+        lines.push(`  ${viewerUrl}`);
+      }
       lines.push('');
 
       for (const cb of items) {

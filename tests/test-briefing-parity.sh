@@ -140,6 +140,84 @@ except:
   else
     fail "parity: summary (line counts diverge: node=$node_lines, py=$py_lines)"
   fi
+
+  # ---------------------------------------------------------------------
+  # Port-failure parity tests (Phase 4 of DEFAULT_PORT_CONFIG)
+  # ---------------------------------------------------------------------
+  # Fixture: a fake "main repo" that has NO port.sh installed. briefing.py /
+  # briefing.cjs must run to completion AND emit no localhost: URL AND produce
+  # equivalent output. Pre-Phase-4 fallback (`port = '8080'`) would emit
+  # localhost:8080/... unconditionally; this test guards against regression.
+  echo ""
+  echo "=== Port-failure parity (no port.sh installed) ==="
+
+  FIXTURE_DIR="/tmp/zskills-briefing-fixture-noport"
+  rm -rf "$FIXTURE_DIR"
+  mkdir -p "$FIXTURE_DIR/skills/briefing/scripts"
+  # .git marker so find_repo_root / findRepoRoot anchors at FIXTURE_DIR.
+  mkdir -p "$FIXTURE_DIR/.git"
+  # NO .claude/skills/update-zskills/scripts/port.sh — that's the whole point.
+  # Copy briefing scripts into fixture so __file__ / __filename resolve to fixture
+  # paths. (find_repo_root walks up from the script's directory, not cwd.)
+  cp "$REPO_ROOT/skills/briefing/scripts/briefing.py" "$FIXTURE_DIR/skills/briefing/scripts/briefing.py"
+  cp "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" "$FIXTURE_DIR/skills/briefing/scripts/briefing.cjs"
+
+  noport_node_out="$FIXTURE_DIR/.node-summary.txt"
+  noport_py_out="$FIXTURE_DIR/.py-summary.txt"
+
+  # Run both, capturing stderr separately to inspect crashes.
+  node_exit=0
+  py_exit=0
+  (cd "$FIXTURE_DIR" && node "$FIXTURE_DIR/skills/briefing/scripts/briefing.cjs" summary --since=24h) \
+    >"$noport_node_out" 2>"$FIXTURE_DIR/.node-err.txt" || node_exit=$?
+  (cd "$FIXTURE_DIR" && python3 "$FIXTURE_DIR/skills/briefing/scripts/briefing.py" summary --since=24h) \
+    >"$noport_py_out" 2>"$FIXTURE_DIR/.py-err.txt" || py_exit=$?
+
+  # AC: both run to completion (exit 0).
+  if [[ "$node_exit" -eq 0 ]]; then
+    pass "port-failure: briefing.cjs exits 0 on missing port.sh"
+  else
+    fail "port-failure: briefing.cjs exit=$node_exit on missing port.sh"
+  fi
+  if [[ "$py_exit" -eq 0 ]]; then
+    pass "port-failure: briefing.py exits 0 on missing port.sh"
+  else
+    fail "port-failure: briefing.py exit=$py_exit on missing port.sh"
+  fi
+
+  # AC: neither emits a localhost: URL.
+  # Note: `grep -c` returns 0 (no match) with exit-code 1; we want the count.
+  node_localhost=$(grep -c 'localhost:' "$noport_node_out" 2>/dev/null)
+  [[ -z "$node_localhost" ]] && node_localhost=0
+  py_localhost=$(grep -c 'localhost:' "$noport_py_out" 2>/dev/null)
+  [[ -z "$py_localhost" ]] && py_localhost=0
+  if [[ "$node_localhost" -eq 0 ]]; then
+    pass "port-failure: briefing.cjs emits no localhost: URL"
+  else
+    fail "port-failure: briefing.cjs emitted $node_localhost localhost: URL(s)"
+  fi
+  if [[ "$py_localhost" -eq 0 ]]; then
+    pass "port-failure: briefing.py emits no localhost: URL"
+  else
+    fail "port-failure: briefing.py emitted $py_localhost localhost: URL(s)"
+  fi
+
+  # AC: outputs are equivalent. We compare verbatim — the port-handling code
+  # paths in briefing.py and briefing.cjs do NOT interpolate language-specific
+  # literals (None/null/True/False) into stdout (verified by
+  #   grep -nE 'lines\.(append|push)\(.*\b(None|null|True|False|true|false)\b'
+  # returning empty for both files at the time of this writing). If a future
+  # edit introduces a literal divergence, fix the source so output stays
+  # byte-equivalent rather than weakening this test.
+  if diff -q "$noport_node_out" "$noport_py_out" >/dev/null 2>&1; then
+    pass "port-failure: outputs are byte-equivalent"
+  else
+    # Show first 5 differing lines for debug, but still fail.
+    diff_lines=$(diff "$noport_node_out" "$noport_py_out" | head -10 | tr '\n' '|')
+    fail "port-failure: outputs diverge — diff: $diff_lines"
+  fi
+
+  rm -rf "$FIXTURE_DIR"
 fi
 
 echo ""

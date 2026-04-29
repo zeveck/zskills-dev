@@ -1,7 +1,7 @@
 ---
 title: Default Port Config — Schema-Driven, Runtime-Read
 created: 2026-04-25
-status: active
+status: complete
 ---
 
 # Plan: Default Port Config — Schema-Driven, Runtime-Read
@@ -22,11 +22,11 @@ The plan is split into 5 phases. Phase 1 lands the field (schema + this-repo con
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 2 — port.sh runtime-read tightening + fail-loud + fixture isolation | ⬚ | | |
-| P1.A — CHANGELOG correction + greenfield port_script template removal | ⬚ | | Residual Phase 1 work; can land in parallel with Phase 2 |
-| 3 — Template prose refinement + Step B placeholder mapping | ⬚ | | |
-| 4 — briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure | ⬚ | | |
-| 5 — Documentation surfaces | ⬚ | | |
+| 2 — port.sh runtime-read tightening + fail-loud + fixture isolation | ✅ | `cbccfe1` | tightened regex + fail-loud + 3 fixture cases; +3 tests |
+| P1.A — CHANGELOG correction + greenfield port_script template removal | ✅ | `b66bbc5` | CHANGELOG fixed + greenfield template port_script removed; +0/-0 tests |
+| 3 — Template prose refinement + Step B placeholder mapping | ✅ | `f85a546` | {{DEFAULT_PORT}} + {{MAIN_REPO_PATH}} substitution; conformance test reconciled; +6 tests |
+| 4 — briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure | ✅ | `623f6df` | path fix + drop 8080 fallback + omit URL + invariant comment + parity test extension; +5 tests |
+| 5 — Documentation surfaces | ✅ | `0b0c1d6` | briefing/SKILL.md 3 sites + manual-testing/SKILL.md line 23 |
 
 ---
 

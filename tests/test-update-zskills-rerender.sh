@@ -666,6 +666,99 @@ PRESET
   fi
 fi
 
+# --- Test 7: DEFAULT_PORT + MAIN_REPO_PATH substitution (Phase 3 WI 3.6) ----
+# Asserts that Step B's placeholder mapping substitutes `{{DEFAULT_PORT}}` and
+# `{{MAIN_REPO_PATH}}` end-to-end against the real repo CLAUDE_TEMPLATE.md.
+# Mirrors WI 3.2's mapping rows: dev_server.default_port → {{DEFAULT_PORT}};
+# dev_server.main_repo_path → {{MAIN_REPO_PATH}}. Validates the rendered
+# managed.md contains the literal port digits in the Architecture port line
+# and no leftover placeholder substrings for either field.
+echo ""
+echo "=== Test 7: DEFAULT_PORT + MAIN_REPO_PATH placeholder substitution ==="
+
+REAL_TEMPLATE="$REPO_ROOT/CLAUDE_TEMPLATE.md"
+if [ ! -f "$REAL_TEMPLATE" ]; then
+  fail "Test 7 prereq" "$REAL_TEMPLATE not found"
+else
+  # Test 7a: fresh install with default_port=8080 → managed.md contains 8080
+  # in the Architecture port line, no {{DEFAULT_PORT}} substring, no
+  # {{MAIN_REPO_PATH}} substring.
+  T7A=$(mktemp -d)
+  TEMPLATE_CONTENT_7A=$(cat "$REAL_TEMPLATE")
+  RENDERED_7A=$(render_template "$TEMPLATE_CONTENT_7A" \
+    "PROJECT_NAME=acme" \
+    "DEV_SERVER_CMD=npm start" \
+    "AUTH_BYPASS=localStorage.setItem('skipAuth','1')" \
+    "DEFAULT_PORT=8080" \
+    "MAIN_REPO_PATH=/home/user/acme" \
+    "TIMEZONE=America/New_York" \
+    "FULL_TEST_CMD=npm test" \
+    "UNIT_TEST_CMD=npm run test:unit" \
+    "TEST_FILE_PATTERNS=tests/.*\\.test\\.ts$" \
+    "SOURCE_LAYOUT=src/")
+  printf '%s' "$RENDERED_7A" > "$T7A/managed.md"
+  if grep -q '`8080`' "$T7A/managed.md" \
+     && grep -q '/home/user/acme' "$T7A/managed.md"; then
+    pass "Test 7a: rendered managed.md contains literal port 8080 and main_repo_path"
+  else
+    fail "Test 7a: substitution did not write 8080/path" \
+      "$(grep -E 'port|main repo' "$T7A/managed.md" | head -3)"
+  fi
+  if ! grep -q '{{DEFAULT_PORT}}' "$T7A/managed.md"; then
+    pass "Test 7b: no leftover {{DEFAULT_PORT}} substring in rendered managed.md"
+  else
+    fail "Test 7b: {{DEFAULT_PORT}} not substituted" \
+      "$(grep '{{DEFAULT_PORT}}' "$T7A/managed.md")"
+  fi
+  if ! grep -q '{{MAIN_REPO_PATH}}' "$T7A/managed.md"; then
+    pass "Test 7c: no leftover {{MAIN_REPO_PATH}} substring in rendered managed.md"
+  else
+    fail "Test 7c: {{MAIN_REPO_PATH}} not substituted" \
+      "$(grep '{{MAIN_REPO_PATH}}' "$T7A/managed.md")"
+  fi
+  rm -rf "$T7A"
+
+  # Test 7d: re-render with default_port=3000 → managed.md contains 3000.
+  T7D=$(mktemp -d)
+  RENDERED_7D=$(render_template "$TEMPLATE_CONTENT_7A" \
+    "PROJECT_NAME=acme" \
+    "DEV_SERVER_CMD=npm start" \
+    "AUTH_BYPASS=localStorage.setItem('skipAuth','1')" \
+    "DEFAULT_PORT=3000" \
+    "MAIN_REPO_PATH=/home/user/acme" \
+    "TIMEZONE=America/New_York" \
+    "FULL_TEST_CMD=npm test" \
+    "UNIT_TEST_CMD=npm run test:unit" \
+    "TEST_FILE_PATTERNS=tests/.*\\.test\\.ts$" \
+    "SOURCE_LAYOUT=src/")
+  printf '%s' "$RENDERED_7D" > "$T7D/managed.md"
+  if grep -q '`3000`' "$T7D/managed.md"; then
+    pass "Test 7d: re-render with default_port=3000 produces literal 3000"
+  else
+    fail "Test 7d: re-render did not write 3000" \
+      "$(grep -E 'port|main repo' "$T7D/managed.md" | head -3)"
+  fi
+  # Sanity: re-rendered file must NOT still contain the old default 8080
+  # in the Architecture port line region (the line we control).
+  if ! grep -E '^The port is determined.*`8080`' "$T7D/managed.md" >/dev/null; then
+    pass "Test 7e: re-render replaced 8080 with new port (no stale literal in port line)"
+  else
+    fail "Test 7e: stale 8080 in port line after re-render" \
+      "$(grep '^The port is determined' "$T7D/managed.md")"
+  fi
+  rm -rf "$T7D"
+
+  # Test 7f: SKILL.md placeholder mapping table includes both new rows.
+  SKILL_FILE="$REPO_ROOT/skills/update-zskills/SKILL.md"
+  if grep -q '`{{DEFAULT_PORT}}` | `dev_server.default_port`' "$SKILL_FILE" \
+     && grep -q '`{{MAIN_REPO_PATH}}` | `dev_server.main_repo_path`' "$SKILL_FILE"; then
+    pass "Test 7f: SKILL.md placeholder mapping table has DEFAULT_PORT + MAIN_REPO_PATH rows"
+  else
+    fail "Test 7f: SKILL.md mapping table missing rows" \
+      "expected both DEFAULT_PORT and MAIN_REPO_PATH mapping rows"
+  fi
+fi
+
 # --- Summary ---------------------------------------------------------------
 echo ""
 echo "---"
