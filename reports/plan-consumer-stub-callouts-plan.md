@@ -1,5 +1,59 @@
 # Plan Report — Consumer stub-callout extension
 
+## Phase — 7 Close-out (CHANGELOG / plan index / frontmatter complete / DA6 policy + carryovers) [UNFINALIZED]
+
+**Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+**Status:** Completed (verified) — **plan complete**
+**Worktree:** /tmp/zskills-pr-consumer-stub-callouts-plan
+**Branch:** feat/consumer-stub-callouts-plan
+**Commits:** 4820e09 (In Progress), dd1a668 (close-out + carryovers)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 7.1 | CHANGELOG entry | Done | "consumer stub-callout convention" entry at top of unreleased |
+| 7.2 | Plan index update | Done | moved from Ready-to-Run to Complete; totals updated |
+| 7.3 | Frontmatter flip `status: complete` + `completed: 2026-04-28` | Done | America/New_York date per project tz |
+| 7.4 | DA6 stub-body versioning policy in `script-ownership.md` | Done | "Failing-stub body revisions" section added |
+
+### Carryovers folded in
+
+**Carryover A — Phase 2 bookkeeping debt resolved:**
+- `zskills-stub-lib.sh` registered Tier-1 owned by `update-zskills` in `script-ownership.md`
+- Hash `52ef89b146d789734326df6866808f8c7ae57ca3` added to `tier1-shipped-hashes.txt`
+- STALE_LIST sync (case 6a parity check requires both `script-ownership.md` and `SKILL.md`'s `STALE_LIST=(...)` array to match)
+
+**Carryover B — Phase 3+4+5 plan-text drift cleanup:**
+4 ACs in this plan (lines 717, 908, 1241, 1243) relaxed from `grep -F '<file>.sh if missing'` to `grep -F '\`<file>.sh\` if missing'` so they match the SKILL.md backtick-wrapped bullet text the implementers wrote. Advisory-only (no behavioral change).
+
+### Verification
+
+All 5 ACs PASS (4 plan ACs + 1 implicit "tests green"):
+- `grep -F 'consumer stub-callout convention' CHANGELOG.md` — PASS
+- frontmatter shows `status: complete` + `completed: 2026-04-28` — PASS
+- plan index entry present — PASS
+- `grep -F 'Failing-stub body revisions' script-ownership.md` — PASS
+- `bash tests/run-all.sh` exits 0 — PASS (1066/1066)
+
+Mirror parity clean (`diff -r skills/update-zskills .claude/skills/update-zskills` empty).
+
+### Plan-text drift (advisory)
+
+```
+PLAN-TEXT-DRIFT: phase=7 bullet=7.3 field=completed-date plan=2026-04-29 actual=2026-04-28
+```
+
+Orchestrator prompt referenced 2026-04-29 (UTC); the implementer used `TZ=America/New_York date +%Y-%m-%d` and got 2026-04-28. Project timezone convention is ET, so 2026-04-28 is correct.
+
+### Plan complete
+
+Frontmatter is now `status: complete`. The orchestrator's recurring `*/1` chunking cron will hit Step 0 Case 1 on its next fire and self-delete (Design 2a terminal cron cleanup). Auto-merge requested via `gh pr merge --auto --squash` — PR #106 will squash-merge to main once CI / required reviews pass.
+
+### Dependencies
+
+Phases 1, 2, 3, 4, 5, 6.
+
 ## Phase — 6 Hooks / CLAUDE_TEMPLATE / docs sweep + briefing-extra.sh decision [UNFINALIZED]
 
 **Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md

@@ -67,7 +67,7 @@ itself; the user owns ordering.
 | 4 — `dev-port.sh` callout in `port.sh` | ✅ Done | `c632391` | Callout + 6 test cases + Tier-1 hash regen; 1075/1075 |
 | 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ✅ Done | `f8ab398` | start-dev stub + 2 in-place conversions + hook help + CLAUDE_TEMPLATE + README + test-stop-dev deletion; 1066/1066 |
 | 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | ✅ Done | `631653f` | docs sweep verified + briefing-extra deferral recorded; 1066/1066 |
-| 7 — CHANGELOG, plan index, frontmatter flip | 🟡 In Progress |  |  |
+| 7 — CHANGELOG, plan index, frontmatter flip | ✅ Done | `dd1a668` | CHANGELOG + index + frontmatter complete + DA6 policy + 2 carryovers; 1066/1066 |
 
 ## Phase 1 — Staleness gate
 
