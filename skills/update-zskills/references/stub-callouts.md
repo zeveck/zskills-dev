@@ -77,6 +77,38 @@ unaffected.
 | `test-all.sh`              | run-plan / verify-changes     | CONVERT to failing stub| `command not found` → `exit 1` with message |
 | `briefing-extra.sh`        | `briefing.cjs`                | DEFERRED (Phase 6)     | n/a                        |
 
+### `dev-port.sh`
+
+Override the worktree port-derivation algorithm. The callsite is in
+`skills/update-zskills/scripts/port.sh`, **after** the `DEV_PORT` env-var
+override and **before** the built-in main-repo / worktree-hash branches —
+so the env var still wins, but the stub overrides the built-in.
+
+**Arguments (positional):**
+
+| Position | Name            | Description                                            |
+|----------|-----------------|--------------------------------------------------------|
+| `$1`     | `PROJECT_ROOT`  | absolute path of the current project root              |
+| `$2`     | `MAIN_REPO`     | configured `dev_server.main_repo_path` (may be empty)  |
+
+**stdout contract:** print a positive integer (matches
+`^[1-9][0-9]+$` after whitespace trim) to stdout to use as the port. A
+bare `0` is rejected (invalid TCP port).
+
+**Exit-code behavior:**
+
+- `exit 0` + numeric stdout → port returned as-is.
+- `exit 0` + empty stdout → silent fall-through to built-in algorithm
+  (no stderr warning).
+- `exit 0` + non-numeric / invalid stdout → fall-through to built-in
+  algorithm; stderr warning `zskills: dev-port.sh returned
+  non-numeric/invalid stdout '<stdout>'; falling through to built-in`.
+- `exit non-zero` → fall-through to built-in algorithm; the dispatcher
+  (lib) emits `zskills: scripts/dev-port.sh exited <rc>`. Port
+  resolution is upstream of every dev-server operation, so non-zero
+  stub exits never break the user's workflow — they degrade gracefully
+  to the built-in.
+
 ## Sourceable dispatcher
 
 The dispatcher lives at

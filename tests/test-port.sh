@@ -59,6 +59,121 @@ else
   fail "non-numeric output: $port"
 fi
 
+# ─── Consumer dev-port.sh stub-callout cases ───
+# Each case sets up a fake project root with .claude/skills/update-zskills/
+# scripts/zskills-stub-lib.sh sourced from the repo, optionally a
+# scripts/dev-port.sh stub, then runs port.sh with that root and
+# CLAUDE_PROJECT_DIR set so the callout activates.
+
+STUB_LIB_SRC="$REPO_ROOT/skills/update-zskills/scripts/zskills-stub-lib.sh"
+
+setup_stub_project() {
+  # $1 = stub body (or empty for no stub); $2 = "exec" or "noexec"
+  local body="$1"
+  local mode="${2:-exec}"
+  local d
+  d=$(mktemp -d)
+  (
+    cd "$d"
+    git init -q
+    git config user.email "t@t" >/dev/null
+    git config user.name "t" >/dev/null
+    git commit -q --allow-empty -m init
+  )
+  mkdir -p "$d/.claude/skills/update-zskills/scripts"
+  cp "$STUB_LIB_SRC" "$d/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+  if [ -n "$body" ]; then
+    mkdir -p "$d/scripts"
+    printf '%s\n' "$body" > "$d/scripts/dev-port.sh"
+    if [ "$mode" = "exec" ]; then
+      chmod +x "$d/scripts/dev-port.sh"
+    fi
+  fi
+  printf '%s\n' "$d"
+}
+
+# 5. stub-absent → built-in algorithm runs (worktree-hash range or 8080)
+proj=$(setup_stub_project "" exec)
+out=$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>/dev/null)
+if [[ "$out" =~ ^[0-9]+$ ]] && { [[ "$out" -ge 9000 && "$out" -le 60000 ]] || [[ "$out" == "8080" ]]; }; then
+  pass "stub-absent → built-in algorithm runs ($out)"
+else
+  fail "stub-absent → expected built-in port, got '$out'"
+fi
+rm -rf "$proj"
+
+# 6. stub-returns-numeric → output is the stub's port
+proj=$(setup_stub_project "#!/bin/bash
+echo 12345
+exit 0" exec)
+out=$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>/dev/null)
+if [[ "$out" == "12345" ]]; then
+  pass "stub-returns-numeric → 12345"
+else
+  fail "stub-returns-numeric — expected 12345, got '$out'"
+fi
+rm -rf "$proj"
+
+# 7. stub-returns-empty → falls through to built-in
+proj=$(setup_stub_project "#!/bin/bash
+exit 0" exec)
+out=$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>/dev/null)
+if [[ "$out" =~ ^[0-9]+$ ]] && { [[ "$out" -ge 9000 && "$out" -le 60000 ]] || [[ "$out" == "8080" ]]; }; then
+  pass "stub-returns-empty → built-in ($out)"
+else
+  fail "stub-returns-empty — expected built-in port, got '$out'"
+fi
+rm -rf "$proj"
+
+# 8. stub-returns-non-numeric → built-in, stderr matches
+proj=$(setup_stub_project "#!/bin/bash
+echo notaport
+exit 0" exec)
+err_file=$(mktemp)
+out=$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>"$err_file")
+err=$(cat "$err_file")
+rm -f "$err_file"
+if [[ "$out" =~ ^[0-9]+$ ]] && { [[ "$out" -ge 9000 && "$out" -le 60000 ]] || [[ "$out" == "8080" ]]; }; then
+  if [[ "$err" == *"non-numeric"* ]]; then
+    pass "stub-returns-non-numeric → built-in + stderr warning"
+  else
+    fail "stub-returns-non-numeric — port ok ($out) but stderr missing 'non-numeric': $err"
+  fi
+else
+  fail "stub-returns-non-numeric — expected built-in port, got '$out'"
+fi
+rm -rf "$proj"
+
+# 9. stub-non-executable → built-in, stderr matches "present but not executable"
+proj=$(setup_stub_project "#!/bin/bash
+echo 7777" noexec)
+err_file=$(mktemp)
+out=$(cd "$proj" && CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>"$err_file")
+err=$(cat "$err_file")
+rm -f "$err_file"
+if [[ "$out" =~ ^[0-9]+$ ]] && { [[ "$out" -ge 9000 && "$out" -le 60000 ]] || [[ "$out" == "8080" ]]; }; then
+  if [[ "$err" == *"present but not executable"* ]]; then
+    pass "stub-non-executable → built-in + stderr warning"
+  else
+    fail "stub-non-executable — port ok ($out) but stderr missing 'present but not executable': $err"
+  fi
+else
+  fail "stub-non-executable — expected built-in port, got '$out'"
+fi
+rm -rf "$proj"
+
+# 10. DEV_PORT env var still wins when stub also present (sanity).
+proj=$(setup_stub_project "#!/bin/bash
+echo 12345
+exit 0" exec)
+out=$(cd "$proj" && DEV_PORT=4242 CLAUDE_PROJECT_DIR="$proj" bash "$PORT_SCRIPT" 2>/dev/null)
+if [[ "$out" == "4242" ]]; then
+  pass "DEV_PORT wins over stub (4242)"
+else
+  fail "DEV_PORT vs stub — expected 4242, got '$out'"
+fi
+rm -rf "$proj"
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"

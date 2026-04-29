@@ -921,6 +921,11 @@ do not error.
   successful create. Stub is a documented no-op; consumer
   replaces with setup steps (cp `.env.local`, `npm install`,
   etc.). See `.claude/skills/update-zskills/references/stub-callouts.md`.
+- Copy `dev-port.sh` if missing — invoked by `port.sh`
+  (lives in the `update-zskills` skill) after the
+  `DEV_PORT` env override; if non-empty numeric stdout is
+  returned, that value is used as the port. See
+  `.claude/skills/update-zskills/references/stub-callouts.md`.
 - Copy any consumer-stub templates from
   `$PORTABLE/skills/update-zskills/stubs/` (e.g.
   `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) if missing.
