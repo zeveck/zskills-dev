@@ -321,8 +321,10 @@ for each field F in schema:
 |-------------|-------------|---------|
 | `{{DEV_SERVER_CMD}}` | `dev_server.cmd` | `npm start` |
 | `{{AUTH_BYPASS}}` | `ui.auth_bypass` | `localStorage.setItem(...)` |
+| `{{DEFAULT_PORT}}` | `dev_server.default_port` | `8080` |
+| `{{MAIN_REPO_PATH}}` | `dev_server.main_repo_path` | `/path/to/repo` |
 
-Runtime-read fields (not install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`, `dev_server.main_repo_path`. Hooks and helper scripts read these directly from `.claude/zskills-config.json` at every invocation — see Phase 1 of `plans/DRIFT_ARCH_FIX.md`.
+Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled): `testing.unit_cmd`, `testing.full_cmd`, `ui.file_patterns`. The field `dev_server.main_repo_path` is read at runtime by `port.sh` AND install-substituted into managed.md as `{{MAIN_REPO_PATH}}` (the rendered value reflects the config at install/--rerender time; warn-config-drift signals re-render-needed when the config is edited via Claude Code's Edit/Write tool — see Phase 3 Design & Constraints for coverage limits). Similarly, `dev_server.default_port` is runtime-read by `port.sh` AND install-substituted as `{{DEFAULT_PORT}}`. See Phase 1 of `plans/DRIFT_ARCH_FIX.md` for the canonical bash-regex read pattern.
 
 **Empty value handling:** When a config field is empty string `""`, the
 corresponding template section is commented out with a TODO marker:

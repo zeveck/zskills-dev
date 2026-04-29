@@ -343,17 +343,25 @@ else
   pass "[update-zskills] WI2.1: no fill-in instructions for migrated placeholders"
 fi
 
-# WI 2.2 — Placeholder-mapping table no longer lists the 4 migrated rows;
-# has the "Runtime-read fields" note.
-if grep -nE '^\| `\{\{(UNIT_TEST_CMD|FULL_TEST_CMD|UI_FILE_PATTERNS|MAIN_REPO_PATH)\}\}`' \
+# WI 2.2 — Placeholder-mapping table no longer lists the 3 migrated runtime-only
+# rows (UNIT_TEST_CMD, FULL_TEST_CMD, UI_FILE_PATTERNS); has the "Runtime-read
+# fields" note. Note: MAIN_REPO_PATH was originally migrated out by
+# SKILL_FILE_DRIFT_FIX (WI2.2) but Phase 3 of DEFAULT_PORT_CONFIG re-adds it as
+# an install-substituted placeholder with dual runtime/install role — see
+# SKILL.md's runtime-read prose for the reconciliation. So MAIN_REPO_PATH IS
+# expected in the table; only the other three migrated keys must remain absent.
+if grep -nE '^\| `\{\{(UNIT_TEST_CMD|FULL_TEST_CMD|UI_FILE_PATTERNS)\}\}`' \
   "$REPO_ROOT/skills/update-zskills/SKILL.md" > /dev/null 2>&1; then
   fail "[update-zskills] WI2.2: placeholder table still contains migrated rows" \
     "table rows for migrated keys"
 else
   pass "[update-zskills] WI2.2: placeholder table has no migrated rows"
 fi
+# Runtime-read note prose was tightened in Phase 3 of DEFAULT_PORT_CONFIG to
+# acknowledge MAIN_REPO_PATH and DEFAULT_PORT's dual role. The new prose still
+# carries the "NOT install-filled" qualifier (with different surrounding text).
 check_fixed update-zskills "WI2.2: runtime-read note" \
-  'Runtime-read fields (not install-filled)'
+  'Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled)'
 
 echo ""
 echo "=== create-worktree.sh caller contract ==="
