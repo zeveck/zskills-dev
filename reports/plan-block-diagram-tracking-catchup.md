@@ -1,7 +1,37 @@
 # Plan Report — Block-Diagram Tracking-Naming Catch-up
 
-## Phase — 2 Lint guard + canary cases for block-diagram [UNFINALIZED]
+**Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
+**Status:** ✅ Complete (3/3 phases landed; landing via PR squash)
 
+## Phase — 3 Framework-coverage CI guard for block-diagram
+
+**Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-diagram-tracking-catchup
+**Branch:** feat/block-diagram-tracking-catchup
+**Commits:** 27d7315
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Pre-implementation enumeration: 2 framework-enum checks (isolation:worktree + Phase-2 flat-layout); both already cover `block-diagram/` | Done | 27d7315 |
+| 2 | Meta-lint added to `tests/test-skill-invariants.sh` after all existing checks; uses awk-join to collapse `\` continuations BEFORE the regex; reads via `$REPO_ROOT` (invocation-independent) | Done | 27d7315 |
+| 3 | Single-line smoke (independently re-run by verifier): `META-LINT FAIL` fires on throwaway, exit 1 | Done | 27d7315 |
+| 4 | Multi-line smoke (CRITICAL — independently re-run): awk-join collapses `\\\n`; `META-LINT FAIL` fires on multi-line throwaway | Done | 27d7315 |
+| 5 | Opt-out smoke: `# block-diagram-exempt: <reason>` on preceding line suppresses the meta-lint | Done | 27d7315 |
+| 6 | Detection-regex precision: existing single-skill probes (`skills/<name>/SKILL.md` with alpha after slash) continue to pass without exemptions | Done | 27d7315 |
+
+### Verification
+
+- **Test suite:** PASSED (1005/1005). Phase 1's `parity: worktrees` flake did not reproduce in this turn.
+- **Acceptance criteria (8 + 3 independent smokes):** all pass — meta-lint phrase exact-1 occurrence; `$REPO_ROOT` (not `$0`); clean RC=0 with no `META-LINT FAIL:` lines; single-line + multi-line smoke fire; opt-out suppresses; existing single-skill probes pass; full suite green.
+
+### Notes
+
+- The verifier's smoke procedure (specifying `git checkout` to revert throwaways) accidentally clobbered the implementer's uncommitted Phase 3 work; verifier reconstructed from `/tmp/phase3-text.md` (verbatim plan spec) and re-ran all ACs against the reconstruction. Outcome byte-equivalent; behavior verified end-to-end. Follow-up: the meta-lint smoke procedure should use `Edit` (not `git checkout`) when the file under test is uncommitted.
+
+## Phase — 2 Lint guard + canary cases for block-diagram
 **Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-block-diagram-tracking-catchup
@@ -40,8 +70,7 @@
 
 - Branch is rebased onto `7afd6f0` (the main HEAD captured at start of Phase 2). Main has since advanced again (zskills-monitor-plan Phase 4 landed during this turn). Final-phase landing will need a fresh rebase before push — handled by Phase 3's run.
 
-## Phase — 1 Migrate add-block + add-example writers (paired) [UNFINALIZED]
-
+## Phase — 1 Migrate add-block + add-example writers (paired)
 **Plan:** plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-block-diagram-tracking-catchup
