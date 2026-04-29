@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Z Skills Monitor</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Z Skills Monitor</h1>
+    <div class="topbar-meta">
+      <span id="updated-at" class="muted" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div id="conn-banner" class="conn-banner" hidden>
+    Disconnected &mdash; retrying&hellip;
+  </div>
+
+  <section id="errors-banner" class="errors-banner" hidden aria-label="Snapshot errors">
+    <ul id="errors-list" class="errors-list"></ul>
+  </section>
+
+  <main id="grid" class="grid">
+    <section class="panel panel-plans" aria-label="Plans">
+      <h2 class="panel-title">Plans</h2>
+      <div id="plans-body" class="panel-body"></div>
+      <p id="plans-empty" class="empty muted" hidden>No plans found.</p>
+    </section>
+
+    <section class="panel panel-branches" aria-label="Branches">
+      <h2 class="panel-title">Branches</h2>
+      <div id="branches-body" class="panel-body"></div>
+      <p id="branches-empty" class="empty muted" hidden>No branches.</p>
+    </section>
+
+    <section class="panel panel-issues" aria-label="Issues">
+      <h2 class="panel-title">Issues</h2>
+      <div id="issues-body" class="panel-body"></div>
+      <p id="issues-empty" class="empty muted" hidden>No open issues.</p>
+    </section>
+
+    <section class="panel panel-worktrees" aria-label="Worktrees">
+      <h2 class="panel-title">Worktrees</h2>
+      <div id="worktrees-body" class="panel-body"></div>
+      <p id="worktrees-empty" class="empty muted" hidden>No worktrees.</p>
+    </section>
+
+    <section class="panel panel-activity" aria-label="Recent Activity">
+      <h2 class="panel-title">Recent Activity</h2>
+      <div id="activity-body" class="panel-body"></div>
+      <p id="activity-empty" class="empty muted" hidden>No recent activity.</p>
+    </section>
+  </main>
+
+  <div id="modal-root" class="modal-root" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop" id="modal-backdrop"></div>
+    <div class="modal-card" id="modal-card" tabindex="-1">
+      <header class="modal-head">
+        <h2 id="modal-title" class="modal-title">&nbsp;</h2>
+        <button id="modal-close" class="modal-close" aria-label="Close">&times;</button>
+      </header>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
