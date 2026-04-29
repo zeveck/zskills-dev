@@ -1,5 +1,38 @@
 # Plan Report — Default Port Config
 
+## Phase — 3 Template prose refinement + Step B placeholder mapping [UNFINALIZED]
+
+**Plan:** plans/DEFAULT_PORT_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
+**Commits:** f85a546
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | Refine `CLAUDE_TEMPLATE.md:22` dev-server prose | Done | Substitutes `{{DEFAULT_PORT}}` + acknowledges dev-port.sh stub override |
+| 3.2 | Add `{{DEFAULT_PORT}}` and `{{MAIN_REPO_PATH}}` rows to placeholder mapping in `skills/update-zskills/SKILL.md` | Done | `{{MAIN_REPO_PATH}}` was an active shipping bug |
+| 3.3 | Verify Step B substitution picks up new rows | Done | Documentation-only |
+| 3.4 | Reconcile SKILL.md runtime-read-fields prose | Done | `main_repo_path` and `default_port` now documented as dual runtime-read + install-substituted |
+| 3.5 | Mirror `.claude/skills/update-zskills/SKILL.md` (cp `.claude/CLAUDE_TEMPLATE.md` skipped — no .claude/ template existed) | Done | `diff -rq` empty |
+| 3.6 | Extend `tests/test-update-zskills-rerender.sh` with placeholder substitution end-to-end cases | Done (extended, not created — file existed post-rebase from SKILL_FILE_DRIFT_FIX) | Test 7 with 6 cases (7a-7f) |
+
+### Verification
+
+- **Test suite:** 1343/1343 passed (baseline 1337/1337 + 6 new Test 7 cases). Independent fresh-eyes verifier confirmed all 8 ACs.
+- **Mirror:** `diff -rq skills/update-zskills .claude/skills/update-zskills` empty.
+- **Conformance reconciliation:** see Spec deviations.
+
+### Spec deviations (verified, intentional)
+
+- **`tests/test-skill-conformance.sh` updated** (NOT in original Phase 3 plan). SKILL_FILE_DRIFT_FIX (#122) introduced two conformance assertions encoding the OLD prose: (a) negative-grep on `(UNIT_TEST_CMD|FULL_TEST_CMD|UI_FILE_PATTERNS|MAIN_REPO_PATH)` placeholder mapping rows; (b) literal `'Runtime-read fields (not install-filled)'`. Phase 3.2 + 3.4 explicitly invert both. Reconciled to lock in the post-Phase-3 contract: dropped `MAIN_REPO_PATH` only from the negative-grep; updated literal to the new wording. Verifier independently confirmed not test-weakening — both assertions still LOCK IN the new contract.
+
+### Plan-text drift (informational)
+
+- `phase=3 bullet=3.4 field=line_number plan=326 actual=325` — cosmetic. Confirmed.
+- `phase=3 bullet=3.2 field=line_range plan=319-324 actual=318-323` — cosmetic. Confirmed.
+
 ## Phase — P1.A CHANGELOG correction + greenfield port_script template removal [UNFINALIZED]
 
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
