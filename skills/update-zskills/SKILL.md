@@ -1018,6 +1018,8 @@ STALE_LIST=(
   clear-tracking.sh
   compute-cron-fire.sh
   create-worktree.sh
+  detect-language.sh
+  insert-prerequisites.sh
   land-phase.sh
   parse-plan.sh
   plan-drift-correct.sh

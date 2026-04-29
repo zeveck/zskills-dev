@@ -1,0 +1,8 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "no-test-setup-fixture"
+version = "0.0.1"
+description = "Fixture: language detected (python via pyproject.toml) but NO tests/ exist and no config -> case 3, emit Prerequisites recommendation."

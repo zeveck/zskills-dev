@@ -1,0 +1,8 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-only-fixture"
+version = "0.0.1"
+description = "Fixture project: Python only via pyproject.toml; expect pytest."

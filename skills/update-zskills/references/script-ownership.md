@@ -28,6 +28,8 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `clear-tracking.sh`          | 1      | `update-zskills`             |
 | `compute-cron-fire.sh`       | 1      | `run-plan`                   |
 | `create-worktree.sh`         | 1      | `create-worktree`            |
+| `detect-language.sh`         | 1      | `draft-tests`                |
+| `insert-prerequisites.sh`    | 1      | `draft-tests`                |
 | `land-phase.sh`              | 1      | `commit`                     |
 | `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
 | `parse-plan.sh`              | 1      | `draft-tests`                |
@@ -42,8 +44,9 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `write-landed.sh`            | 1      | `commit`                     |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 
-Total: 16 Tier 1 (`apply-preset`, `briefing.cjs`, `briefing.py`,
-`clear-tracking`, `compute-cron-fire`, `create-worktree`, `land-phase`,
+Total: 18 Tier 1 (`apply-preset`, `briefing.cjs`, `briefing.py`,
+`clear-tracking`, `compute-cron-fire`, `create-worktree`,
+`detect-language`, `insert-prerequisites`, `land-phase`,
 `parse-plan`, `plan-drift-correct`, `port`, `post-run-invariants`,
 `sanitize-pipeline-id`, `statusline`, `worktree-add-safe`,
 `write-landed`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
@@ -113,6 +116,8 @@ scripts/briefing.py
 scripts/clear-tracking.sh
 scripts/compute-cron-fire.sh
 scripts/create-worktree.sh
+scripts/detect-language.sh
+scripts/insert-prerequisites.sh
 scripts/land-phase.sh
 scripts/parse-plan.sh
 scripts/plan-drift-correct.sh

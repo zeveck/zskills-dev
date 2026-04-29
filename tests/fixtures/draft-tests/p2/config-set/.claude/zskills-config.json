@@ -1,0 +1,6 @@
+{
+  "testing": {
+    "full_cmd": "make test-everything",
+    "unit_cmd": "make test-unit"
+  }
+}

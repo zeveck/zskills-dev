@@ -1,0 +1,5 @@
+{
+  "name": "js-only-fixture",
+  "version": "0.0.1",
+  "description": "Fixture project: JavaScript only, no jest reference (vitest expected)."
+}
