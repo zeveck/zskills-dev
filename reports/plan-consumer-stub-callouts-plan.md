@@ -1,5 +1,49 @@
 # Plan Report — Consumer stub-callout extension
 
+## Phase — 3 `post-create-worktree.sh` callout [UNFINALIZED]
+
+**Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-consumer-stub-callouts-plan
+**Branch:** feat/consumer-stub-callouts-plan
+**Commits:** d83819c (In Progress), 698c6e6 (impl + mirror + lib fix)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | Callout block in `skills/create-worktree/scripts/create-worktree.sh` | Done | DA15 stub-lib-missing stderr wired |
+| 3.2 | Step D bullet in `skills/update-zskills/SKILL.md` | Done | references stub-callouts.md |
+| 3.3 | `skills/update-zskills/stubs/post-create-worktree.sh` (new dir populated) | Done | exec; 6-arg no-op default body |
+| 3.4 | `tests/test-post-create-worktree.sh` 3 cases | Done | absent / present-success / present-fail rc=9 worktree-preserved |
+| 3.5 | Mirror via `mirror-skill.sh create-worktree` + `update-zskills` | Done | `diff -r` empty for both |
+
+### Verification
+
+- `bash tests/test-post-create-worktree.sh` → 3/3 PASS.
+- `bash tests/test-stub-callouts.sh` → 8/8 PASS (Phase 2 lib unaffected by the fix).
+- `bash tests/run-all.sh` → **1016/1016 pass** (was 951/951 + 3 new + 62 new from main during rebase).
+- `grep -c 'zskills_dispatch_stub post-create-worktree.sh' skills/create-worktree/scripts/create-worktree.sh` = 1.
+- `grep -c -F 'stub-lib missing' skills/create-worktree/scripts/create-worktree.sh` = 1 (DA15 wiring complete for create-worktree.sh; Phase 4 wires the analogous warning into port.sh).
+- Mirror parity: clean.
+
+### Bonus — surfaced Phase 2 latent lib bug
+
+While wiring the callout into `create-worktree.sh` (which runs under `set -eu`), the implementer found that `zskills-stub-lib.sh` captured the stub's RC with `ZSKILLS_STUB_STDOUT=$(bash "$stub" "$@"); ZSKILLS_STUB_RC=$?` — but a non-zero `$(...)` aborts the caller before the next line under `set -e`. Fix: `ZSKILLS_STUB_STDOUT=$(bash "$stub" "$@") || ZSKILLS_STUB_RC=$?` keeps the assignment safe and lets the caller propagate the failure correctly. Comment in the lib documents the constraint.
+
+### Plan-text drift (advisory)
+
+```
+PLAN-TEXT-DRIFT: phase=3 bullet=AC3 field=grep_pattern plan="post-create-worktree.sh if missing" actual="`post-create-worktree.sh` if missing"
+```
+
+The Phase 3 AC at line ~702 of the plan says
+`grep -F 'post-create-worktree.sh if missing' skills/update-zskills/SKILL.md` should match — but the bullet wraps the filename in backticks, so the literal pattern doesn't match. The bullet IS present (functionality correct); the AC pattern is too strict. Phase 7 close-out can relax this AC text. No code change needed.
+
+### Dependencies
+
+Phase 1, Phase 2.
+
 ## Phase — 2 Stub-callout convention + sourceable dispatch helper [UNFINALIZED]
 
 **Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md

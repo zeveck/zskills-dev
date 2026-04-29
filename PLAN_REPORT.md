@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-consumer-stub-callouts-plan.md](reports/plan-consumer-stub-callouts-plan.md) | 2/7 | **In progress** — Phase 1 (regression guard) + Phase 2 (sourceable stub-callout dispatcher + ref + 8-case test + SKILL.md Step D) landed on `feat/consumer-stub-callouts-plan` (PR #106); Phases 3-7 remaining |
+| [plan-consumer-stub-callouts-plan.md](reports/plan-consumer-stub-callouts-plan.md) | 3/7 | **In progress** — Phases 1+2+3 landed on `feat/consumer-stub-callouts-plan` (PR #106): regression guard, sourceable dispatcher + 8-case test, post-create-worktree callout wired into create-worktree.sh + 3-case test (incl. Phase 2 lib `set -e` safety fix); 1016/1016 tests; Phases 4-7 remaining |
 | [plan-block-diagram-tracking-catchup.md](reports/plan-block-diagram-tracking-catchup.md) | 3/3 | **Complete** — all 3 phases landed (19 tracking sites migrated to subdir layout with sanitised slugs; cross-skill invariant lint + 3 canary cases; framework-coverage meta-lint with awk-joined multi-line support); 1005/1005 tests; landing via PR squash |
 | [plan-zskills-monitor-plan.md](reports/plan-zskills-monitor-plan.md) | 5/9 | **In progress** — Phases 1+2+3+4+5 done (/work-on-plans CLI + /plans work retired + flock + Python aggregation library + HTTP server with security contract); 1058/1058 tests; Phases 6-9 remaining |
 | [plan-scripts-into-skills-plan.md](reports/plan-scripts-into-skills-plan.md) | 7/7 | **Complete** — all 7 phases landed (full Tier-1 relocation + cross-skill sweep + /update-zskills install flow rewrite + safe stale-Tier-1 migration + residual sweep + docs close-out); 943/943 tests; landed via PRs #95, #96, #97, #98, #99, plus this final PR |
