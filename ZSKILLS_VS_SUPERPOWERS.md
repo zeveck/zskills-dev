@@ -53,7 +53,7 @@ smaller and more portable.
 | Testing philosophy | Verification-after with verifier attestation, project-specific test commands, and manual-testing gates | TDD-first with strict red-green-refactor discipline | This is a philosophical split, not a clean win: Superpowers trusts test-first discipline; Z Skills bets more on independent post-hoc verification gates. |
 | Git safety | `/commit`, landing modes, branch protection assumptions, hooks, tracking markers | Worktree and finishing-branch skills | Z Skills is more protective in a configured repo. Superpowers is easier to apply manually. |
 | Long-running autonomy | `/run-plan finish auto`, scheduling, tracking, issue sprints | Batch execution and subagent-driven development | Z Skills clearly wins for sustained autonomous repo operations. |
-| Skill and plan creation | `/draft-plan`, `/refine-plan`, `/update-zskills`, repo-local install/update conventions | `writing-skills`, `using-superpowers`, plugin packaging | Superpowers has stronger direct guidance for writing durable skills. Z Skills has stronger adversarial design and drift-correction workflows for larger artifacts. |
+| Skill and plan creation | `/draft-plan`, `/refine-plan`, `/update-zskills`, repo-local install/update conventions | `writing-skills`, `using-superpowers`, plugin packaging | Different scopes, not competitors: Superpowers' `writing-skills` covers how to author a skill file (format, searchability, durability); Z Skills' `/draft-plan` and `/refine-plan` cover whether the design is sound through adversarial review and drift correction. In practice, zskills convention runs new non-trivial skills through `/draft-plan` before authoring, treating the skill design itself as the plan. |
 
 ## Overlap
 
@@ -130,7 +130,8 @@ to repository state, scripts, hooks, and branch workflows.
 | You are operating one important repo with repeatable agent workflows | Z Skills | The setup cost can pay off through guardrails and automation. |
 | You need strict TDD behavior | Superpowers | TDD-first is an explicit Superpowers practice. Z Skills intentionally emphasizes independent verification-after rather than red-green-refactor as the central discipline. |
 | You need batch issue-fixing or autonomous PR flow | Z Skills | Those are first-class workflows. |
-| You want to create new reusable skills | Superpowers | Its skill-writing guidance is direct, mature, and less project-specific. |
+| You want to author a new skill file | Superpowers | Its `writing-skills` guidance is direct, mature, and less project-specific. |
+| You want adversarial design review of a new skill before authoring it | Z Skills | `/draft-plan` runs reviewer and devil's-advocate passes to converge the design before any file is written. Project convention is to use it for skills with non-trivial design surface (multiple commands, hooks, integration points). |
 | You want to design or revise large execution plans | Z Skills | `/draft-plan` and `/refine-plan` add adversarial review, devil's-advocate pressure, and drift correction before execution. |
 | You want repo-specific safety hooks and tracking | Z Skills | That is its core advantage. |
 
