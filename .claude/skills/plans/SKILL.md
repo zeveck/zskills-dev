@@ -20,12 +20,90 @@ their classification, status, and priority.
 - **details** `/plans details` — show every plan with a one-line description
 - **For batch execution:** see `/work-on-plans`.
 
+## Single source of truth
+
+All four modes consume the **Phase 4 Python aggregator**
+(`skills/zskills-dashboard/scripts/zskills_monitor/collect.py`) — never
+re-parse plan frontmatter or progress trackers from skill prose. The
+aggregator is the canonical classifier; this skill is a thin renderer
+over its JSON output.
+
+Canonical invocation (used by every mode below):
+
+```bash
+MAIN_ROOT=$(git rev-parse --show-toplevel)
+PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
+  python3 -m zskills_monitor.collect
+```
+
+The CLI emits a single JSON document on stdout matching the
+`collect_snapshot()` schema. The fields this skill consumes from each
+`snapshot.plans[]` entry are:
+
+- `slug`, `file`, `title`, `blurb`, `phase_count`, `phases_done`
+- `status` — frontmatter value (`active`, `complete`, `landed`, `conflict`,
+  or empty → defaults to `active`)
+- `category` — one of `"canary"`, `"issue_tracker"`, `"reference"`,
+  `"executable"` (set by `collect.py`'s `_categorize_plan`)
+- `meta_plan` — `true` if the plan body invokes `Skill: { skill: "run-plan", … }`;
+  `sub_plans` lists the slugs of its delegated children
+
+Example aggregator emission (single plan entry, fields trimmed for
+clarity — note the JSON shape this skill consumes):
+
+```json
+{
+  "slug": "example-plan",
+  "title": "Example Plan",
+  "status": "active",
+  "phase_count": 5,
+  "phases_done": 0,
+  "category": "executable",
+  "meta_plan": false,
+  "sub_plans": [],
+  "queue": {"column": "drafted", "index": -1, "mode": null}
+}
+```
+
+Canaries surface as `"category": "canary"`; issue-tracker docs as
+`"category": "issue_tracker"`; reference docs as `"category": "reference"`;
+and meta-plans add `"meta_plan": true` plus a non-empty `sub_plans[]`.
+- `queue.column` — current monitor-state column (`ready`, `drafted`,
+  `reviewed`, `landed`, etc.) or `null` if hidden
+- `phases[]` — per-row tracker entries with `n`, `name`, `status`, `commit`
+
+If `python3` is missing, the module fails to import, or the CLI exits
+non-zero, every mode below reports the error to the user verbatim and
+exits non-zero. **There is no bash fallback** — the prose classifier was
+removed when this skill migrated to the aggregator.
+
+## Index → snapshot section mapping
+
+The six sections of `plans/PLAN_INDEX.md` are derived from the
+aggregator's `category`, `status`, `phases_done`, and `queue.column`
+fields per this mapping (used by Mode: Rebuild, Mode: Show, and Mode:
+Details to group plans):
+
+| Section | Selector |
+|---------|----------|
+| **Ready to Run** | `category=="executable"` AND `status=="active"` AND `phases_done == 0` AND `queue.column != "ready"`; OR `queue.column == "ready"` (any plan explicitly placed in the ready column wins regardless of phase progress) |
+| **In Progress** | `category=="executable"` AND `status=="active"` AND `phases_done >= 1` AND `phases_done < phase_count` |
+| **Needs Review** | `category=="executable"` AND `status=="conflict"` |
+| **Complete** | `status` in `{"complete","landed"}` |
+| **Canaries** | `category=="canary"` (regardless of status — canaries never promote into other sections) |
+| **Reference (not executable)** | `category` in `{"reference","issue_tracker"}` |
+
+**Meta-plans** (`meta_plan==true`) are listed at the top level of
+whichever section their `status`/category place them in, with each entry
+in `sub_plans[]` indented beneath them using `↳` prefix. Sub-plans do
+NOT appear as separate top-level entries.
+
 ## Mode: Show (bare `/plans`)
 
-1. Read `plans/PLAN_INDEX.md`
+1. Read `plans/PLAN_INDEX.md`.
 2. If the file does not exist, **auto-run rebuild** (Mode: Rebuild below) to
    create it, then display the newly generated index.
-3. If the file exists, display a **actionable dashboard** — not a one-line
+3. If the file exists, display an **actionable dashboard** — not a one-line
    summary. Show the actual plan names and status so the user can decide
    what to work on:
 
@@ -66,11 +144,26 @@ their classification, status, and priority.
 Show every plan with a one-line description, grouped by status. Useful
 when you have many plans and can't remember what each one is about.
 
-1. Read `plans/PLAN_INDEX.md` (auto-rebuild if missing).
-2. For each plan in the index, read its `## Overview` section (first
-   paragraph only) and extract a one-line blurb.
-3. Display grouped by status (Ready, In Progress, Complete, Canaries),
-   with the blurb after each plan name:
+1. Invoke the canonical aggregator CLI (see "Single source of truth"
+   above):
+
+   ```bash
+   MAIN_ROOT=$(git rev-parse --show-toplevel)
+   SNAPSHOT=$(PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
+     python3 -m zskills_monitor.collect) || {
+       echo "ERROR: zskills_monitor.collect failed (rc=$?)" >&2
+       exit 1
+     }
+   ```
+
+   Parse `$SNAPSHOT` as JSON.
+2. Group `snapshot.plans[]` per the section mapping above
+   (Ready / In Progress / Needs Review / Complete / Canaries /
+   Reference). Use each plan's `blurb` field directly — `collect.py`
+   already extracted the first paragraph after `## Overview`, trimmed
+   to 240 characters.
+3. Display grouped by status (Ready, In Progress, Complete, Canaries,
+   Reference), with the blurb after each plan name:
 
    ```
    Ready to Run:
@@ -97,150 +190,93 @@ when you have many plans and can't remember what each one is about.
      ...
    ```
 
-   The Canaries group renders the index's Canaries section verbatim. Use
-   the same symbol-counting rules from Mode: Rebuild Step 3 (`⬚` and `⬜`
-   are both pending) when displaying tracker status. Do not promote
-   canaries into other groups.
-
+   Within the Canaries group, derive the per-canary tracker state from
+   the snapshot's `phases[]` array: all rows `done` → `Complete`; some
+   `done` and some not → `In Progress`; none `done` → `Ready`; empty
+   `phases[]` (no Progress Tracker present) → `Manual — no tracker`. Do
+   not promote canaries into other groups.
 4. **Exit.**
 
 ## Mode: Rebuild (`/plans rebuild`)
 
-Scan `plans/`, classify every `.md` file, and write a fresh `plans/PLAN_INDEX.md`.
+Regenerate `plans/PLAN_INDEX.md` from the aggregator snapshot. The
+implementing agent shells out to `python3 -m zskills_monitor.collect`
+and renders the six-section index from the returned JSON — there is
+**no in-prose classifier**. All status, category, phase-count, and
+meta-plan inference happens inside `collect.py`.
 
-### Step 1 — Inventory
+### Step 1 — Invoke the aggregator
 
 ```bash
-ls plans/*.md
+MAIN_ROOT=$(git rev-parse --show-toplevel)
+SNAPSHOT_JSON=$(PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
+  python3 -m zskills_monitor.collect)
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ERROR: python3 -m zskills_monitor.collect failed (rc=$RC)" >&2
+  echo "Cannot regenerate plans/PLAN_INDEX.md — bailing out." >&2
+  exit 1
+fi
 ```
 
-Get all plan files. Ignore subdirectories (e.g., `plans/blocks/`).
+If the invocation fails (e.g. `python3` missing, `zskills_monitor`
+package unimportable, runtime exception), the rebuild aborts with a
+non-zero exit and the diagnostic above. **Do not** synthesize a
+fallback classifier — Phase 9 of `plans/ZSKILLS_MONITOR_PLAN.md`
+explicitly removes the legacy bash classifier so that
+`collect.py` is the single source of truth for plan classification.
 
-Also count block plan files for the coverage summary:
-```bash
-BLOCK_PLANS=$(find plans/blocks -name '*.md' 2>/dev/null | wc -l)
-BLOCK_IMPLS=$(grep -c "    type: '" src/library/registry.js 2>/dev/null)
-```
-Use the registry file for the implementation count — it's the authoritative
-registry. `find *Block.js` undercounts because some components (Resistor.js,
-Capacitor.js, etc.) don't follow the `*Block.js` naming convention.
+### Step 2 — Group `snapshot.plans[]` into sections
 
-### Step 2 — Classify each file
+Apply the section-selector table from "Index → snapshot section
+mapping" above. Concretely (parse `$SNAPSHOT_JSON` with a JSON-aware
+helper — `python3 -c 'import json,sys; …'` is fine):
 
-For each file, read enough of the file to classify it correctly. **Do not
-skim.** If the file has a Progress Tracker table, you MUST read every row of
-that table and count the status symbols — not summarize, not eyeball. Read
-the tracker in full even if it sits past the top of the file; do not stop
-after a fixed line budget. Index accuracy is load-bearing: a wrong status
-leads to wasted runs (re-executing done work) or missed work (skipping
-ready plans).
+- **Ready to Run** ← plan where (`category=="executable"` AND
+  `status=="active"` AND `phases_done == 0` AND
+  `queue.column != "ready"`) OR (`queue.column == "ready"`).
+- **In Progress** ← plan where `category=="executable"` AND
+  `status=="active"` AND `1 <= phases_done < phase_count`.
+- **Needs Review** ← plan where `category=="executable"` AND
+  `status=="conflict"`.
+- **Complete** ← plan where `status` is `"complete"` or `"landed"`.
+- **Canaries** ← plan where `category=="canary"`. Render
+  per-canary tracker status from the snapshot's `phases[]`:
+  all done → `Complete`; some done → `In Progress`; none done →
+  `Ready`; no `phases[]` → `Manual — no tracker`.
+- **Reference (not executable)** ← plan where `category` is
+  `"reference"` or `"issue_tracker"`.
 
-Classify into one of four categories:
+For each meta-plan (`meta_plan==true`), list its top-level entry under
+its own section, then indent each slug in its `sub_plans[]` underneath
+with `↳`. Sub-plans MUST NOT appear as separate top-level entries —
+look them up in `snapshot.plans[]` by `slug` and write them only as
+the meta-plan's children.
 
-1. **Canary** — filename matches `CANARY*.md` OR `*_CANARY*.md` (case
-   sensitive on `CANARY`). Examples: `CANARY1_HAPPY.md`,
-   `CANARY11_SCOPE_VIOLATION.md`, `REBASE_CONFLICT_CANARY.md`,
-   `CI_FIX_CYCLE_CANARY.md`, `PARALLEL_CANARYA.md`. The filename match
-   takes precedence over executable-plan content detection: a plan with
-   phases AND a `CANARY`-matching name is classified as a canary, not an
-   executable plan. Canaries are re-runnable test fixtures and are listed
-   in their own section so users do not confuse their tracker state with
-   feature-plan progress.
+### Step 3 — Order within each section
 
-2. **Executable plan** — has `## Phase` sections (numbered phases with work
-   items) OR has a Progress Tracker table (`| Phase | Status |`). These are
-   plans that `/run-plan` can execute.
+- **Ready to Run**: items whose `queue.column == "ready"` come first
+  (in their `queue.index` order from the snapshot — this preserves
+  user-set priority from `/zskills-dashboard`). Then default-column
+  Ready entries, ordered by recency (newest first; tiebreak alphabetical
+  by `slug`). Assign priority labels: `High` for plans referenced as
+  fix-issues "too complex" skips (check `SPRINT_REPORT.md` if it
+  exists for context); `Medium` for plans created within the last 14
+  days; `Low` otherwise.
+- **In Progress / Complete / Reference / Canaries**: alphabetical by
+  `slug`.
+- **Needs Review**: alphabetical by `slug`.
 
-   **Meta-plan detection:** If the plan's phases use `### Execution: delegate
-   /run-plan` directives referencing other plan files, it's a meta-plan. Record
-   which sub-plan files it references. In the index, sub-plans should be
-   indented under their meta-plan rather than listed independently.
+### Step 4 — Write `plans/PLAN_INDEX.md`
 
-3. **Issue tracker** — filename ends in `_ISSUES.md` OR has an "Issue Tracker"
-   or "Issue List" heading OR is primarily a table of GitHub issue numbers.
-   List separately — these are not executable by `/run-plan`.
-   **Deterministic rule:** Files ending in `_ISSUES.md` are ALWAYS classified
-   as issue trackers, regardless of other content (e.g., phase sections).
-   The filename suffix takes precedence over content-based classification.
-
-4. **Reference document** — everything else (research docs, overviews, gap
-   analyses, block library lists). List separately.
-
-### Step 3 — Determine status for executable plans
-
-For each executable plan, determine its status:
-
-1. **Read the Progress Tracker** (if present) — a table with phase rows and
-   status indicators. Read EVERY row; do not stop at the first few. Count the
-   symbols.
-
-   **Pending symbols (treat both as "not done"):**
-   - `⬚` (U+2B1A SQUARE TILE) — used by some plans (e.g., ZSKILLS_MONITOR_PLAN)
-   - `⬜` (U+2B1C WHITE LARGE SQUARE) — used by other plans (e.g., CANARY1_HAPPY)
-
-   The classifier MUST match either symbol as pending. Real plans in this
-   repo use both interchangeably; treating only one as pending causes the
-   other set to misclassify.
-
-   **Done symbols:** `✅` / `✔` / `Done` / `Complete` / a 7+ char hex commit hash.
-
-   Status determination:
-   - All phases done (no `⬚`/`⬜` or other pending markers remain) → **Complete**
-   - Some phases done, others pending (`⬚`/`⬜`/`Not Started`/empty) →
-     **In Progress** (note the current phase name and the next incomplete phase)
-   - No phases done (all rows show `⬚`/`⬜`/`Not Started`/empty) → **Ready**
-
-2. **No Progress Tracker?** Check for other completion signals:
-   - Sections with `**Status:** Done` or `**Status:** Complete` → count as done
-   - If all phase sections have completion markers → **Complete**
-   - If some do → **In Progress**
-   - If the plan has phases but no status indicators at all → **Needs Review**
-     (old-format plan; status is ambiguous — may be complete, may not be)
-   - Only classify as **Ready** if the plan clearly hasn't been started
-     (e.g., freshly created by `/draft-plan`)
-
-### Step 3b — Classify canaries within the Canaries section
-
-For each canary file, determine its tracker-state classification using the
-SAME symbol-counting rules from Step 3 (both `⬚` and `⬜` are pending; `✅` /
-`Done` / commit hash are done). The result feeds the Canaries section, not
-Ready/In Progress/Complete.
-
-- Has Progress Tracker, all rows pending → **Ready** (within Canaries)
-- Has Progress Tracker, some done → **In Progress** (within Canaries)
-- Has Progress Tracker, all done → **Complete** (within Canaries)
-- **No Progress Tracker** (e.g., CANARY8_PARALLEL, CANARY9_FINAL_VERIFY,
-  CANARY11_SCOPE_VIOLATION) → list as **Manual — no tracker**
-
-Do NOT use git history, PR resolution, or any other evidence beyond the
-canary's own Progress Tracker. The canary section is intentionally allowed
-to show stale entries — the point of the section is segregation, not
-ground-truth run history.
-
-### Step 4 — Determine priority for "Ready to Run" plans
-
-Rank ready plans by:
-
-1. **Plans referenced by `/fix-issues` "too complex" skips** — check
-   `SPRINT_REPORT.md` for "Skipped -- Too Complex" entries that reference a
-   plan file. Those plans are highest priority (blocking batch fixes).
-2. **Recently created plans** — sort by git creation date (newest first).
-   Use `git log --diff-filter=A --format=%aI -- <file>` to get each file's
-   initial commit date. This avoids conflating "recently written" with
-   "recently touched by any edit."
-3. **Alphabetical** — tiebreaker.
-
-Assign priority labels: **High** (referenced by fix-issues skips), **Medium**
-(recent), **Low** (older/alphabetical fallback).
-
-### Step 5 — Write `plans/PLAN_INDEX.md`
-
-Write the index file with this structure:
+Render with this structure (preserves the historical six-section shape):
 
 ```markdown
 # Plan Index
 
 Auto-generated by `/plans rebuild`. Last rebuilt: YYYY-MM-DD HH:MM ET.
+
+Totals: N plans — A ready, B in progress, C complete, D canaries, E reference.
 
 ## Ready to Run
 
@@ -256,9 +292,10 @@ Auto-generated by `/plans rebuild`. Last rebuilt: YYYY-MM-DD HH:MM ET.
 
 ## Needs Review
 
-Old-format plans without progress trackers. Status is ambiguous — may be
-complete, partially done, or not started. Triage these once: mark as
-Complete, move to Ready, or rewrite with `/draft-plan plans/FILE.md`.
+Old-format plans without progress trackers, OR plans whose frontmatter
+`status` is `conflict`. Status is ambiguous — may be complete, partially
+done, or not started. Triage these once: mark as Complete, move to
+Ready, or rewrite with `/draft-plan plans/FILE.md`.
 
 | Plan | Phases | Issue | Notes |
 |------|--------|-------|-------|
@@ -295,52 +332,84 @@ for its output file or a PR with its name.
 ```
 
 **Notes for each section:**
+
 - If a section would be empty, include the table header with a single row:
-  `| (none) | | | | |`
-- Use relative links (just the filename, since index is in `plans/`)
-- Count phases by counting `## Phase` headings (or progress tracker rows)
-- For "In Progress" plans, identify both the current phase (last done) and
-  the next phase (first incomplete)
-- **Meta-plan grouping:** If a plan is a meta-plan (has `delegate /run-plan`
-  phases referencing other plan files), indent its sub-plans beneath it
-  with `↳` prefix. Sub-plans should NOT appear as separate top-level entries.
-  This makes the hierarchy visible — e.g., RUNTIME_PARITY_META owns
-  RUNTIME_SIGNAL_FLOW_BLOCKS and RUNTIME_DEPLOY_SERIALIZATION.
-- **Canaries section:** any file whose name matches `CANARY*.md` or
-  `*_CANARY*.md` belongs in the Canaries section, never in
-  Ready/In Progress/Complete — even if its tracker shows the same shape.
-  Tracker Status within the section uses the Step 3 / Step 3b symbol rules
-  (`⬚`/`⬜` pending, `✅`/`Done`/commit hash done). Canaries with no
-  Progress Tracker are listed with Tracker Status `Manual — no tracker`.
-  Stale entries are acceptable: the section is for visual segregation,
-  not ground-truth run history.
+  `| (none) | | | | |`.
+- Use relative links (just the filename, since the index lives in
+  `plans/`).
+- `phase_count` from the snapshot drives the "Phases" column; for
+  In Progress entries, the "Current Phase" is the last `phases[]` row
+  with `status=="done"` and "Next Phase" is the first remaining row.
+- Do NOT recompute classification by reading plan files in this skill;
+  every category/status/phase value comes from the snapshot.
+- Canary tracker status: derive from the snapshot's `phases[]` per
+  Step 2's Canaries rule. Stale entries are acceptable — the section
+  is for visual segregation, not ground-truth run history.
+
+### Step 5 — Block-plan coverage line (optional context)
+
+The "Reference (not executable)" footer line can include a count of
+implemented blocks vs. block plans:
+
+```bash
+BLOCK_PLANS=$(find plans/blocks -name '*.md' 2>/dev/null | wc -l)
+BLOCK_IMPLS=$(grep -c "    type: '" src/library/registry.js 2>/dev/null)
+```
+
+Use the registry file for the implementation count — it's the
+authoritative registry. `find *Block.js` undercounts because some
+components don't follow the `*Block.js` naming convention.
 
 ## Mode: Next (`/plans next`)
 
-1. Read `plans/PLAN_INDEX.md`
-2. If the file does not exist, **auto-run rebuild** to create it first.
-3. Find the first entry in the "Ready to Run" table (highest priority)
+1. Invoke the canonical aggregator CLI (see "Single source of truth"
+   above) and parse the JSON. Apply the section mapping to identify
+   the **Ready to Run** set.
+2. If `plans/PLAN_INDEX.md` is missing, **also auto-run rebuild** so
+   the file exists for subsequent `/plans` calls. This is a
+   side-effect, not the source of truth — `Mode: Next` reads its
+   answer from the snapshot, not from the regenerated index.
+3. Pick the highest-priority Ready entry using Mode: Rebuild Step 3's
+   ordering: `queue.column == "ready"` items first (in
+   `queue.index` order), then default-column Ready entries by
+   recency.
 4. If found, output:
    > **Next plan to run:** `EXAMPLE_PLAN.md`
    > Phases: 5, starting at Phase 1 -- Setup
    > Priority: High (referenced by fix-issues skip #NNN)
    >
    > Run with: `/run-plan plans/EXAMPLE_PLAN.md`
-5. If the "Ready to Run" table is empty or has only `(none)`:
+
+   The "starting at Phase 1 -- …" comes from the first entry in the
+   snapshot plan's `phases[]` whose `status != "done"` (or, if
+   `phases[]` is empty, from the first `## Phase` heading captured by
+   `collect.py` and exposed via `phase_count`).
+5. If the Ready-to-Run set is empty:
    > No plans ready to run. All executable plans are either in progress or complete.
    > Check "In Progress" plans in the index for plans that need attention.
 6. **Exit.**
 
 ## Key Rules
 
+- **Single source of truth.** All classification (`category`,
+  `meta_plan`, status, phase counts) lives in
+  `skills/zskills-dashboard/scripts/zskills_monitor/collect.py`. The
+  prose in this skill never reproduces those rules — it only describes
+  how to render the snapshot's already-computed fields.
 - **Rebuild is idempotent** — running it twice produces the same result
   (assuming no plan files changed between runs).
-- **Never modify plan files** — the index is read-only metadata. It reads
-  plans but never changes them.
-- **Skip `plans/blocks/` subdirectories** — those are block-specific plan
-  files managed by `/add-block`, not executable plans.
+- **Never modify plan files** — the index is read-only metadata. It
+  reads plans (via the aggregator) but never changes them.
+- **Skip `plans/blocks/` subdirectories** — those are block-specific
+  plan files managed by `/add-block`, not executable plans.
+  `collect.py` already restricts to top-level `plans/*.md`.
 - **Skip `PLAN_INDEX.md` itself** — don't index the index.
-- **Relative links** — since the index lives in `plans/`, links are just
-  filenames (e.g., `[FOO.md](FOO.md)`), not `plans/FOO.md`.
-- **Timezone** — always use America/New_York (ET) for the "Last rebuilt"
-  timestamp.
+- **Relative links** — since the index lives in `plans/`, links are
+  just filenames (e.g., `[FOO.md](FOO.md)`), not `plans/FOO.md`.
+- **Timezone** — always use America/New_York (ET) for the "Last
+  rebuilt" timestamp.
+- **No bash fallback.** If `python3 -m zskills_monitor.collect` fails,
+  every mode reports the failure and exits non-zero. Per
+  `feedback_no_premature_backcompat`, this is intentional: maintaining
+  two classifiers (the prose one and the Python one) was the bug
+  Phase 9 closes.
