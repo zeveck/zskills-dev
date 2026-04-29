@@ -100,6 +100,7 @@ the env-var-supplied value) through the canonical sanitiser before
 writing to disk. The bare-relative `scripts/sanitize-pipeline-id.sh`
 form is FORBIDDEN — that path no longer exists post-PR-#97.
 
+<!-- allow-hardcoded: TZ=America/New_York reason: illustrative tracking-marker idiom; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this Phase 1 skeleton -->
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 if [ -n "${ZSKILLS_PIPELINE_ID:-}" ]; then
@@ -286,6 +287,7 @@ coverage floor on ac-less phases (the scope is empty by construction).
 
 After the parser returns, write the research step marker:
 
+<!-- allow-hardcoded: TZ=America/New_York reason: illustrative tracking-marker idiom; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this Phase 1 skeleton -->
 ```bash
 printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-tests.$TRACKING_ID.research"
