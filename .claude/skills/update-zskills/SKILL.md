@@ -969,6 +969,7 @@ STALE_LIST=(
   compute-cron-fire.sh
   create-worktree.sh
   land-phase.sh
+  parse-plan.sh
   plan-drift-correct.sh
   port.sh
   post-run-invariants.sh
