@@ -255,8 +255,8 @@ is appended to `errors[]`.
 | 4 — Data aggregation library | ✅ Done | `b720fbb` | landed via PR squash; Python module at skills/zskills-dashboard/scripts/zskills_monitor/; 1277-line collect.py; 12 fixture sets; +29 tests; 1000/1000 |
 | 5 — HTTP server | ✅ Done | `63747e5` | landed via PR squash; server.py 1099 lines; 9 endpoints; 127.0.0.1 only; trigger security contract; flock + atomic writes; +53 tests |
 | 6 — Read-only dashboard UI | ✅ Done | `1239f6c` | landed via PR squash; static HTML/CSS/JS; 5 panels + 2 modals; XSS-safe; +45 tests; 1111/1111 |
-| 7 — Interactive queue + write-back | 🟡 In Progress | | |
-| 8 — `/zskills-dashboard` skill | ⬚ | | |
+| 7 — Interactive queue + write-back | ✅ Done | `208fb7f` | landed via PR #115 squash; drag-drop + default-mode + per-row chips + run-status + POST write-back; +47 tests; 1158/1158 |
+| 8 — `/zskills-dashboard` skill | 🟡 In Progress | | |
 | 9 — Migrate `/plans rebuild` to Python aggregator | ⬚ | | |
 
 ---
