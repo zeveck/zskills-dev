@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-draft-tests-skill-plan.md](reports/plan-draft-tests-skill-plan.md) | 1/6 | **In progress** — Phase 1 done (skeleton: SKILL.md + parse-plan.sh + 7 fixtures + 62 tests); 1275/1275 tests on `feat/draft-tests-skill-plan`; Phases 2–6 chunked via finish-auto cron |
+| [plan-draft-tests-skill-plan.md](reports/plan-draft-tests-skill-plan.md) | 2/6 | **In progress** — Phase 1 done (skeleton: SKILL.md + parse-plan.sh + 7 fixtures + 62 tests) + Phase 2 done (detect-language.sh + insert-prerequisites.sh + 9 fixtures + 53 tests); 1387/1387 tests on `feat/draft-tests-skill-plan`; Phases 3–6 chunked via finish-auto cron |
 | [plan-default-port-config.md](reports/plan-default-port-config.md) | 5/5 | **Complete** — all phases (2 + P1.A + 3 + 4 + 5) landed on `feat/default-port-config` (final: 0b0c1d6); 1348/1348 tests; landing via PR squash |
 | [plan-consumer-stub-callouts-plan.md](reports/plan-consumer-stub-callouts-plan.md) | 7/7 | **Complete** — all 7 phases landed on `feat/consumer-stub-callouts-plan` (PR #106): consumer stub-callout convention + sourceable dispatcher + 3 callouts (post-create-worktree, dev-port) + 3 stubs (post-create-worktree, dev-port, start-dev) + stop-dev/test-all failing-stub conversions + DA15 wiring + DA6 stub-body versioning policy; 1066/1066 tests; landing via PR squash |
 | [plan-block-diagram-tracking-catchup.md](reports/plan-block-diagram-tracking-catchup.md) | 3/3 | **Complete** — all 3 phases landed (19 tracking sites migrated to subdir layout with sanitised slugs; cross-skill invariant lint + 3 canary cases; framework-coverage meta-lint with awk-joined multi-line support); 1005/1005 tests; landing via PR squash |
