@@ -63,7 +63,7 @@ itself; the user owns ordering.
 | 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ✅ Done | `942c4f4` | Regression-guard; all anchors pass |
 | 2 — Stub-callout convention + sourceable dispatch helper | ✅ Done | `4f457a3` | Lib + ref + 8-case test + Step D + mirror; 951/951 tests |
 | 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ✅ Done | `698c6e6` | Callout wired + stub + 3-case test + lib `set -e` safety fix; 1016/1016 |
-| 4 — `dev-port.sh` callout in `port.sh` | ⬚ |  |  |
+| 4 — `dev-port.sh` callout in `port.sh` | 🟡 In Progress |  |  |
 | 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ⬚ |  |  |
 | 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | ⬚ |  |  |
 | 7 — CHANGELOG, plan index, frontmatter flip | ⬚ |  |  |
