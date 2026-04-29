@@ -341,10 +341,11 @@ and drafts plans for all found issues.
    per-sprint subdir ($PIPELINE_ID) — the parent reconciles child
    fulfillment in its own scope:
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \
-     "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
+     "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.draft-plan.$ISSUE_NUMBER"
    ```
    Then dispatch `/draft-plan` with:
@@ -441,6 +442,7 @@ When mode is sprint (N provided), construct the per-sprint unique
 then create the pipeline sentinel:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking"
 
@@ -459,7 +461,7 @@ mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
   printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
-    "$N" "${FOCUS:-default}" "$(TZ=America/New_York date -Iseconds)" \
+    "$N" "${FOCUS:-default}" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
 fi
 ```
@@ -586,8 +588,9 @@ For each candidate, note:
 
 After Phase 1 (preflight + sync + research) is complete:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.preflight"
 ```
 
@@ -694,8 +697,9 @@ If ALL candidates are too vague, too complex, or already attempted:
 
 After Phase 2 (prioritize) is complete:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\nissueCount: %d\n' "$(TZ=America/New_York date -Iseconds)" "$ISSUE_COUNT" \
+printf 'completed: %s\nissueCount: %d\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" "$ISSUE_COUNT" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.prioritize"
 ```
 
@@ -774,7 +778,9 @@ Each agent follows this fix workflow:
 2. Reproduce the bug (unit test or manual)
 3. Implement the fix
 4. Write regression tests (unit and/or E2E as appropriate)
-5. Run `npm run test:all` — all suites must pass
+5. Run `$FULL_TEST_CMD` (resolve via
+   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+   if you don't already have it in your environment) — all suites must pass
 6. **Agent verification** via `/manual-testing` if UI files changed —
    use playwright-cli with real events, take screenshots as evidence.
    The pre-commit hook will BLOCK your commit if UI files are staged
@@ -905,8 +911,9 @@ members are listed separately in the sprint report.
 
 After Phase 3 (execute) is complete — all agents have returned:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.execute"
 ```
 
@@ -919,10 +926,11 @@ marker so the hook can enforce that verification actually runs. The
 marker lives in fix-issues' own per-sprint subdir (same pattern as
 run-plan's delegation lock in Phase 3 of the tracking plan):
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
-  "$(TZ=America/New_York date -Iseconds)" \
+  "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.$SPRINT_ID"
 ```
 
@@ -962,8 +970,9 @@ Report the review results to the user.
 
 After Phase 4 (verify) is complete — all verification agents have returned:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.verify"
 ```
 
@@ -1033,8 +1042,9 @@ commit hashes, worktree paths, and test counts.
 
 After Phase 5 (report) is complete:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.report"
 ```
 
@@ -1091,8 +1101,9 @@ before-landing summary.
 
 After Phase 6 (land) is complete:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.land"
 ```
 
@@ -1127,7 +1138,9 @@ failure reporting.
 - **Never close GH issues, update trackers, or remove worktrees** — that's
   `/fix-report`'s job.
 - **One issue per commit** — clean git history in worktrees.
-- **`npm run test:all` before every commit** — not just `npm test`.
+- **`$FULL_TEST_CMD` before every commit** (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) — not just `npm test`.
 - **Never weaken tests** — fix the code, not the test. Do not loosen
   tolerances, skip assertions, or remove test cases.
 - **Never defer the hard parts** — finish all phases of the plan. Do not

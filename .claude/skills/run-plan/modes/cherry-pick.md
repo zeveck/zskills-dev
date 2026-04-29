@@ -93,7 +93,12 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      9. If you genuinely can't reconcile, STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     npm run test:all
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -z "$FULL_TEST_CMD" ]; then
+       echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+       exit 1
+     fi
+     $FULL_TEST_CMD
      ```
      If main's tests are already failing, **STOP.** Invoke the Failure
      Protocol — do not cherry-pick on top of broken code.
@@ -110,9 +115,10 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
   5. **Mark worktree as landed:**
      Write `.landed` marker (atomic: `.tmp` → `mv`):
      ```bash
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
      status: landed
-     date: $(TZ=America/New_York date -Iseconds)
+     date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
      source: run-plan
      phase: <phase name>
      commits: <list of cherry-picked hashes>
@@ -132,7 +138,12 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     npm run test:all
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -z "$FULL_TEST_CMD" ]; then
+       echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+       exit 1
+     fi
+     $FULL_TEST_CMD
      ```
      If tests fail, invoke the **Failure Protocol**.
   9. **Update tracker to Done** — now that landing succeeded, update the

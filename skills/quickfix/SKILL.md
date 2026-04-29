@@ -352,6 +352,7 @@ the transcript (tier-2 tracking per `tests/test-hooks.sh:245`), and write
 the `started` marker under the pipeline-scoped tracking dir.
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 PIPELINE_ID=$(bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "quickfix.$SLUG")
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
@@ -359,7 +360,7 @@ TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG"
 mkdir -p "$TRACK_DIR"
 
-NOW_ISO=$(TZ=America/New_York date -Iseconds)
+NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 cat > "$MARKER" <<MARK
 status: started
 date: $NOW_ISO
@@ -538,13 +539,14 @@ directory (never piped — see CLAUDE.md's "capture test output to a file,
 never pipe" rule).
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 if [ "$SKIP_TESTS" -eq 1 ]; then
   echo "WARN: --skip-tests passed; skipping $UNIT_CMD" >&2
 else
   TEST_OUT="/tmp/zskills-tests/$(basename "$MAIN_ROOT")-quickfix-$SLUG"
   mkdir -p "$TEST_OUT"
-  if ! bash -c "$UNIT_CMD" > "$TEST_OUT/.test-results.txt" 2>&1; then
-    echo "ERROR: tests failed. See $TEST_OUT/.test-results.txt" >&2
+  if ! bash -c "$UNIT_CMD" > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1; then
+    echo "ERROR: tests failed. See $TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" >&2
     # Rollback: leave edits in the working tree (user may have work to save),
     # drop back to base, delete the feature branch.
     if ! git checkout "$BASE_BRANCH"; then
@@ -574,6 +576,7 @@ On commit failure, clean up verified-each-step: any cleanup step that
 itself fails exits 6 (manual intervention).
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 # Stage: reject directory entries.
 while IFS= read -r f; do
   [ -z "$f" ] && continue
@@ -597,13 +600,9 @@ if [ -n "$DELS" ]; then
   done <<< "$DELS"
 fi
 
-# Resolve the co-author line from config (agent-dispatched mode only;
-# the user-edited branch omits Co-Authored-By entirely). Default falls
-# back to Claude Opus 4.7 when .commit.co_author is absent.
-CO_AUTHOR="Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-  CO_AUTHOR="${BASH_REMATCH[1]}"
-fi
+# Co-author line for agent-dispatched mode comes from $COMMIT_CO_AUTHOR
+# (resolved by the helper at fence-top). Empty value means no
+# Co-Authored-By trailer (consumer opt-out).
 ```
 
 **Compose the commit subject (model-layer).** Look at `git diff --cached`
@@ -622,6 +621,11 @@ pass `--no-verify` — fix the root cause and retry (max 2 attempts on the
 same error, then STOP and report).
 
 ```bash
+# Resolve $COMMIT_CO_AUTHOR at fence-top — context compaction may have
+# lost vars set in the earlier helper-source fence (per the convention at
+# run-plan/modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 # The model must set COMMIT_SUBJECT before this fence runs (see prose
 # above). DESCRIPTION goes in the body as context, not the subject line.
 if [ -z "${COMMIT_SUBJECT:-}" ]; then
@@ -639,8 +643,8 @@ $DESCRIPTION
 🤖 Generated with /quickfix (user-edited)
 COMMIT_EOF
 )
-else
-  # agent-dispatched: include Co-Authored-By from $CO_AUTHOR.
+elif [ -n "$COMMIT_CO_AUTHOR" ]; then
+  # agent-dispatched + co_author configured: include Co-Authored-By trailer.
   COMMIT_BODY=$(cat <<COMMIT_EOF
 $COMMIT_SUBJECT
 
@@ -648,7 +652,17 @@ $DESCRIPTION
 
 🤖 Generated with /quickfix (agent-dispatched)
 
-Co-Authored-By: $CO_AUTHOR
+Co-Authored-By: $COMMIT_CO_AUTHOR
+COMMIT_EOF
+)
+else
+  # agent-dispatched + co_author empty (consumer opt-out): no trailer.
+  COMMIT_BODY=$(cat <<COMMIT_EOF
+$COMMIT_SUBJECT
+
+$DESCRIPTION
+
+🤖 Generated with /quickfix (agent-dispatched)
 COMMIT_EOF
 )
 fi

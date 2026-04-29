@@ -176,11 +176,31 @@ else
 fi
 ```
 
-**Never hardcode `npm run test:all` or default to `scripts/test-all.sh`.**
-Every subsequent reference to running tests in this skill uses `$FULL_TEST_CMD`.
-Agent dispatch prompts must include the resolved `$FULL_TEST_CMD` literal (or
-the explicit "Tests: skipped — no test infra" when `TEST_MODE=skipped`) so
-the dispatched agent does not search the repo for a test script.
+**Never hardcode `npm run test:all`, `npm start`, or `.test-results.txt`.**
+Every subsequent reference uses `$FULL_TEST_CMD`, `$DEV_SERVER_CMD`, and
+`$TEST_OUTPUT_FILE`. **Agent dispatch prompts must include the RESOLVED
+literal value** of each var (substituted from the helper's output BEFORE
+emission), or the explicit "Tests: skipped — no test infra" when
+`TEST_MODE=skipped`. Markdown blockquotes (e.g., the worktree-test recipe
+at lines 898-930) do NOT undergo parameter expansion at emission time —
+YOU, the orchestrator-model, must perform the substitution before typing
+the blockquote into the subagent's prompt.
+
+To resolve all three vars in one step (sibling resolution to the
+`$FULL_TEST_CMD` decision tree above), source the helper:
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# Informational fallbacks for the recipe (non-critical-path):
+[ -z "$DEV_SERVER_CMD" ] && DEV_SERVER_CMD=npm
+[ -z "$TEST_OUTPUT_FILE" ] && TEST_OUTPUT_FILE=.test-results.txt
+```
+
+Note: if `dev_server.cmd` is unset, the recipe instructs `npm` as a
+sensible default; configure `dev_server.cmd` for non-npm projects.
+The `testing.output_file` filename suffix is informational (not
+load-bearing for project semantics) — fallback to `.test-results.txt`
+is safe.
 
 **Strip `pr`/`direct` from arguments** before passing to downstream processing
 (same pattern as stripping `auto`, `finish`, etc.).
@@ -623,11 +643,12 @@ Before parsing, check for stale state from a previous failed run:
    derive from the plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
-     "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+     "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.run-plan.$TRACKING_ID"
 
    # Lock down verification requirement IMMEDIATELY (was Phase 2,
@@ -636,7 +657,7 @@ Before parsing, check for stale state from a previous failed run:
    # a child of run-plan in this pipeline, so its `requires.*` marker
    # lives in run-plan's OWN subdir (parent reconciles fulfillment).
    printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
-     "$TRACKING_ID" "$(TZ=America/New_York date -Iseconds)" \
+     "$TRACKING_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.$TRACKING_ID"
    ```
 
@@ -900,20 +921,20 @@ agent hasn't returned after 2 hours, declare it **failed**:
    VERBATIM in every implementation and verification agent prompt:
 
    > **Worktree test recipe:**
-   > 1. Start a dev server FIRST: `npm start &`
+   > 1. Start a dev server FIRST: `$DEV_SERVER_CMD &`
    > 2. Wait for it: `sleep 3`
    > 3. Run tests with output captured to a file:
    >    ```bash
    >    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    >    mkdir -p "$TEST_OUT"
-   >    $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
+   >    $FULL_TEST_CMD > "$TEST_OUT/$TEST_OUTPUT_FILE" 2>&1
    >    ```
    >    **Never pipe** through `| tail`, `| head`, `| grep` — it loses
    >    output and forces re-runs. Capture once, read the file.
    > 4. The dev server must stay running for E2E tests. If source files
    >    changed (they will have — you're implementing), E2E tests FAIL
    >    (not skip) without a dev server.
-   > 5. If tests fail, **read `"$TEST_OUT/.test-results.txt"`** to find the failures.
+   > 5. If tests fail, **read `"$TEST_OUT/$TEST_OUTPUT_FILE"`** to find the failures.
    >    Then run ONLY the failing test file to iterate on the fix:
    >    `node --test tests/the-failing-file.test.js`
    >    Do NOT re-run `$FULL_TEST_CMD` to diagnose — that wastes
@@ -922,7 +943,7 @@ agent hasn't returned after 2 hours, declare it **failed**:
    >    ```bash
    >    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    >    mkdir -p "$TEST_OUT"
-   >    $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
+   >    $FULL_TEST_CMD > "$TEST_OUT/$TEST_OUTPUT_FILE" 2>&1
    >    ```
    >    ONE more time as the final gate before committing.
    > 7. Max 2 fix attempts at the same error — do not thrash.
@@ -1044,6 +1065,10 @@ the main repo directory, so the `cd` instruction is essential.
 implementation agent, the orchestrator captures a test baseline in the worktree:
 
 ```bash
+# Resolve config-derived vars at fence-top — context compaction may have
+# lost vars set in earlier fences (per the convention at modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 # Orchestrator captures baseline BEFORE impl agent starts
 cd "$WORKTREE_PATH"
 if [ -n "$FULL_TEST_CMD" ]; then
@@ -1058,9 +1083,10 @@ fi
 After the implementation agent finishes (whether worktree or delegate mode),
 create the implementation step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
 ```
 
@@ -1119,7 +1145,9 @@ If this phase used delegate execution, verification runs on **main**:
 1. **Verify commits landed** — check `git log --oneline -10` for the
    delegate's commits. If expected commits are missing, the delegate
    failed to land — invoke Failure Protocol.
-2. **Run `$FULL_TEST_CMD` on main** — the delegate already tested, but
+2. **Run `$FULL_TEST_CMD` on main** (resolve via
+   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+   if not already in environment) — the delegate already tested, but
    /run-plan verifies against the plan's acceptance criteria.
 3. **Check acceptance criteria** from the verbatim plan text — the delegate
    skill doesn't know the plan's criteria, only /run-plan does.
@@ -1199,10 +1227,11 @@ Include this VERBATIM in the verifier dispatch prompt:
      there). The verifier must run tests via:
 
      ```bash
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      cd <worktree-path>
      TEST_OUT="/tmp/zskills-tests/$(basename "<worktree-path>")"
      mkdir -p "$TEST_OUT"
-     $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
+     $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
      ```
 
      The orchestrator substitutes `$FULL_TEST_CMD` in the prompt with the
@@ -1237,7 +1266,7 @@ Include this VERBATIM in the verifier dispatch prompt:
    - The **`"$TEST_OUT/.test-baseline.txt"` file** captured before implementation
      started (if `FULL_TEST_CMD` is configured). The verification agent should:
      - Read `"$TEST_OUT/.test-baseline.txt"` (baseline captured before implementation)
-     - Compare against `"$TEST_OUT/.test-results.txt"` (results after running tests now)
+     - Compare against `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` (results after running tests now)
      - **New failures** (in results but not in baseline) → regressions, must
        be fixed before the phase can commit
      - **Pre-existing failures** (in both baseline and results) → note in report,
@@ -1344,9 +1373,10 @@ Include this VERBATIM in the verifier dispatch prompt:
 
 After verification passes, create the verification step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
 ```
 
@@ -1406,10 +1436,11 @@ globs `step.*.verify`). If Phase 3.5 proceeds cleanly, write an
 informational marker:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\ncompleted: %s\n' \
-  "$PHASE" "$FOUND" "$CORRECTED" "$ESCALATED" "$(TZ=America/New_York date -Iseconds)" \
+  "$PHASE" "$FOUND" "$CORRECTED" "$ESCALATED" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.drift-detect"
 ```
 Uses the `phasestep.*` prefix (informational; hook ignores). The
@@ -1670,9 +1701,10 @@ of all plan reports:
 
 After writing the report and regenerating the index, create the report step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
 ```
 
@@ -1928,13 +1960,14 @@ reading this file.
 After successful landing (cherry-pick + tests pass), create the land step
 marker and update the fulfillment file:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.land"
 
 printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: complete\ndate: %s\n' \
-  "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.run-plan.$TRACKING_ID"
 ```
 
@@ -1946,18 +1979,20 @@ rm -f "<worktree-path>/.zskills-tracked"
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
 ignores these — they are informational only):
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ=America/New_York date -Iseconds)" \
+printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
 ```
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 for stage in implement verify report land; do
-  printf 'phases: all\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+  printf 'phases: all\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.$stage"
 done
 ```

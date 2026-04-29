@@ -38,7 +38,12 @@ This is for landing worktree work onto main via cherry-pick.
 
 5. **Run tests after cherry-picks land:**
    ```bash
-   npm run test:all
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -z "$FULL_TEST_CMD" ]; then
+     echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+     exit 1
+   fi
+   $FULL_TEST_CMD
    ```
    If tests fail, report to the user. Do NOT attempt to fix — the
    cherry-picked code was already tested in the worktree. A failure here
@@ -47,9 +52,10 @@ This is for landing worktree work onto main via cherry-pick.
 6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
    status: full
-   date: $(TZ=America/New_York date -Iseconds)
+   date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
    source: commit-land
    commits: <list of cherry-picked hashes>
    LANDED

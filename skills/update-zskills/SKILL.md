@@ -610,6 +610,7 @@ only removes zskills-rendered lines — never user content).
    relocate any pre-Phase-4 zskills content from root `./CLAUDE.md`.
 
 5. **Report:**
+   <!-- allow-hardcoded: npm start reason: report-template example showing the auto-detected dev_server.cmd value; not an executable command -->
    ```
    .claude/rules/zskills/managed.md rendered. Values filled:
      Project name: my-app (from package.json)

@@ -258,7 +258,12 @@ Run when `bash` IS present in arguments.
 
 4. **Run automated tests:**
    ```bash
-   npm run test:all
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -z "$FULL_TEST_CMD" ]; then
+     echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+     exit 1
+   fi
+   $FULL_TEST_CMD
    ```
    - Tests that PASS: the feature handles the edge case correctly. Good.
    - Tests that FAIL: found a bug. File a GitHub issue.
@@ -280,8 +285,10 @@ Run when `bash` IS present in arguments.
    - **ONLY use `todo` for bugs you just DISCOVERED during this bash
      session.** NEVER use `todo` to skip a test that was passing before
      and now fails due to your changes — that's weakening, not discovery.
-   - Run `npm run test:all` before committing — all suites must pass
-     (todo-skipped tests are acceptable)
+   - Run `$FULL_TEST_CMD` (resolve via
+     `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+     if you don't already have it in your environment) before committing —
+     all suites must pass (todo-skipped tests are acceptable)
    - Commit all tests (passing + skipped) with descriptive message
 
 8. **Report** — Summarize:

@@ -204,6 +204,12 @@ PREFLIGHT_SCRIPT="$TEST_TMPDIR/preflight.sh"
   echo '#!/bin/bash'
   echo 'set -u'
   echo ': "${SLUG:=fix-stub}"'
+  # The skill sources zskills-resolve-config.sh which requires
+  # CLAUDE_PROJECT_DIR. Inside a test fixture, $(pwd) equals $FIX (the
+  # fixture root) — use it as the project dir so the helper finds
+  # .claude/zskills-config.json under the fixture.
+  echo ': "${CLAUDE_PROJECT_DIR:=$(pwd)}"'
+  echo 'export CLAUDE_PROJECT_DIR'
   extract_preflight
 } > "$PREFLIGHT_SCRIPT"
 chmod +x "$PREFLIGHT_SCRIPT"
@@ -243,6 +249,11 @@ FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
   echo ': "${SLUG:=fix-stub}"'
   echo 'COMMIT_SUBJECT="test(case43): synthetic conventional-commit subject"'
   echo 'PR_TITLE="test: synthetic PR title"'
+  # The skill sources zskills-resolve-config.sh which requires
+  # CLAUDE_PROJECT_DIR. The fixture cd's into $FIX before running, so
+  # $(pwd) equals the fixture root.
+  echo ': "${CLAUDE_PROJECT_DIR:=$(pwd)}"'
+  echo 'export CLAUDE_PROJECT_DIR'
   extract_full_flow
 } > "$FULL_FLOW_SCRIPT"
 chmod +x "$FULL_FLOW_SCRIPT"
@@ -423,19 +434,22 @@ fi
 # Asserts the design invariants textually:
 #   - Both mode-specific footers present: "Generated with /quickfix
 #     (user-edited)" and "(agent-dispatched)".
-#   - Co-Authored-By line uses $CO_AUTHOR (not hardcoded).
-#   - CO_AUTHOR is resolved from the config's co_author field via bash
-#     regex (BASH_REMATCH) — replacing the old jq read.
-#   - user-edited branch has NO Co-Authored-By trailer (the trailer
-#     appears exactly once in the skill, in the agent-dispatched arm).
+#   - Co-Authored-By line uses $COMMIT_CO_AUTHOR (resolved by the
+#     canonical helper zskills-resolve-config.sh, not hardcoded).
+#   - co_author field referenced (resolution logic now in the helper —
+#     no BASH_REMATCH for co_author in the skill itself post-Phase-2
+#     drift fix).
+#   - user-edited branch has NO Co-Authored-By trailer; the trailer
+#     also gates on $COMMIT_CO_AUTHOR being non-empty (consumer opt-out
+#     when blank).
 # ────────────────────────────────────────────────────────────────────
-COAUTH_COUNT=$(grep -c 'Co-Authored-By: \$CO_AUTHOR' "$SKILL" 2>/dev/null || echo 0)
+COAUTH_COUNT=$(grep -c 'Co-Authored-By: \$COMMIT_CO_AUTHOR' "$SKILL" 2>/dev/null || echo 0)
 if grep -qE 'Generated with /quickfix \(user-edited\)' "$SKILL" \
    && grep -qE 'Generated with /quickfix \(agent-dispatched\)' "$SKILL" \
    && [ "$COAUTH_COUNT" = "1" ] \
    && grep -q 'co_author' "$SKILL" \
-   && grep -q 'BASH_REMATCH' "$SKILL"; then
-  pass "10 commit trailer: both mode footers + single agent-only Co-Authored-By + CO_AUTHOR via BASH_REMATCH"
+   && grep -q 'zskills-resolve-config\.sh' "$SKILL"; then
+  pass "10 commit trailer: both mode footers + single agent-only Co-Authored-By: \$COMMIT_CO_AUTHOR + helper-sourced"
 else
   fail "10 commit trailer: contract not satisfied (coauth_count=$COAUTH_COUNT)"
 fi

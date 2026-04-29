@@ -13,6 +13,7 @@ After the verification agent commits Phase N, BEFORE dispatching Phase N+1's
 impl agent:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
 git fetch origin main
 PRE_REBASE=$(git rev-parse HEAD)
@@ -62,7 +63,7 @@ if [ $? -ne 0 ]; then
 
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
@@ -108,6 +109,7 @@ fi
 After the LAST phase's verification agent commits, before pushing:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
 git fetch origin main
 PRE_REBASE=$(git rev-parse HEAD)
@@ -135,7 +137,7 @@ if [ $? -ne 0 ]; then
 
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
@@ -195,6 +197,7 @@ squash-merge. Retry reuses the existing Done commit.
 **Push + PR creation:**
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
 
 # --- Construct PR title and body ---
@@ -237,7 +240,7 @@ if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
     echo "ERROR: git push to existing $BRANCH_NAME failed. Aborting before PR creation." >&2
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
@@ -251,7 +254,7 @@ else
     echo "ERROR: git push -u (first-time) failed for $BRANCH_NAME. Aborting before PR creation." >&2
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
@@ -306,7 +309,7 @@ if [ -z "$PR_URL" ]; then
   echo "Manual fallback: gh pr create --base main --head $BRANCH_NAME"
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME
@@ -424,6 +427,12 @@ turn will re-enter Phase 6, see the existing PR, and re-poll CI.
 **CI failure fix cycle:**
 
 ```bash
+# Resolve config-derived vars at fence-top — the agent-prompt template
+# below references $FULL_TEST_CMD and $TEST_OUTPUT_FILE; context
+# compaction may have lost vars set earlier (per the convention at
+# modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 if [ "$CI_STATUS" = "fail" ] && [ "$CI_MAX_ATTEMPTS" -gt 0 ]; then
   # Post initial CI status comment using gh api (returns comment ID).
   # gh pr comment does NOT return comment URL/ID, so we use the API directly.
@@ -488,11 +497,11 @@ Attempting fix..."
     #      - If FULL_TEST_CMD is set:
     #        TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
     #        mkdir -p "$TEST_OUT"
-    #        "$FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1"
+    #        "$FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1"
     #      - If FULL_TEST_CMD is empty: look for package.json scripts (npm test),
     #        or test files matching common patterns. If no test command can be
     #        determined, skip local testing and note it in the commit message.
-    #      Read "$TEST_OUT/.test-results.txt" to check for failures.
+    #      Read "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" to check for failures.
     #   4. If tests pass, commit with message:
     #      "fix: address CI failure -- <short description of what was fixed>"
     #   5. If tests fail on the same error after one fix attempt, STOP.
@@ -574,6 +583,7 @@ fi
 After CI resolution, request auto-merge and upgrade the `.landed` marker:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 # --- Auto-merge: request merge when CI passes ---
 # gh pr merge --auto --squash requires that auto-merge is enabled in the
 # GitHub repo settings (Settings > General > Allow auto-merge). It is OFF
@@ -639,7 +649,7 @@ fi
 # --- Upgrade .landed marker ---
 cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: $LANDED_STATUS
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
 method: pr
 branch: $BRANCH_NAME

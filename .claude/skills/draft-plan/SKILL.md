@@ -77,11 +77,12 @@ file in the MAIN repo. The pipeline subdir follows Option B layout: when
 delegated, parent exports `ZSKILLS_PIPELINE_ID` via env and we write into
 the parent's subdir; when standalone, we own our own subdir:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: started\ndate: %s\n' \
-  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.draft-plan.$TRACKING_ID"
 ```
 
@@ -170,9 +171,10 @@ per their feedback and proceed to Phase 2 with the focused scope.
 After consolidating research into the summary file, create the research
 step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.research"
 ```
 
@@ -415,9 +417,10 @@ whose evidence doesn't reproduce will not drive fixes.
 After both reviewer and devil's advocate agents return their findings,
 create the review step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
-printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ=America/New_York date -Iseconds)" \
+printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.review"
 ```
 
@@ -530,13 +533,14 @@ After each round of review + refinement:
 After writing the plan file and updating the index, create the finalize
 step marker and update the fulfillment file to complete:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.finalize"
 
 printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: complete\ndate: %s\n' \
-  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$OUTPUT_FILE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.draft-plan.$TRACKING_ID"
 ```
 

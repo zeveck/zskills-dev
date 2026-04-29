@@ -1,0 +1,32 @@
+# tests/fixtures/forbidden-literals.txt
+#
+# Forbidden literals in skills/**/*.md — single source of truth shared
+# by tests/test-skill-conformance.sh (CI deny-list) AND
+# hooks/warn-config-drift.sh (real-time WARN). See plan
+# plans/SKILL_FILE_DRIFT_FIX.md Phase 4 and Phase 1's
+# references/canonical-config-prelude.md for the format spec.
+#
+# Format:
+#   - One entry per line. Comments (lines starting with `#`) and blank
+#     lines are skipped.
+#   - Default: literal substring match (grep -F). The substring's
+#     presence anywhere on a line counts as a hit.
+#   - Prefix `re:` flips the entry to extended-regex (grep -E). The
+#     pattern is unanchored unless it contains its own anchors. Authors
+#     of `re:` entries are responsible for adding `^`/`$`/word-boundary
+#     anchors as needed.
+#
+# When adding a new config field whose value could appear hardcoded in a
+# skill .md, append the literal here. Both the deny-list test and the
+# drift-warn hook pick it up at runtime — no code change needed.
+#
+# Note on re: prefix collision (refine-2 R2.5/DA2.22): forbidden literals
+# starting with the substring `re:` cannot be deny-listed in literal
+# mode (the prefix would be stripped). Currently no entry triggers this.
+# Future-proof workaround: express as a regex with literal `re:` in the
+# pattern, e.g. `re:re:remote` denies the literal substring `re:remote`.
+
+TZ=America/New_York
+npm run test:all
+npm start
+re:\$TEST_OUT/\.test-results\.txt

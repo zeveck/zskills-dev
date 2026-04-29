@@ -112,9 +112,10 @@ any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
 
 Wait for the implementation agent to complete. If the agent reports failure or exits without committing:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cat > "$WORKTREE_PATH/.landed" <<LANDED
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: do
 branch: $BRANCH_NAME
 LANDED
@@ -193,6 +194,7 @@ fi
 
 **Step A9 — Write `.landed` marker:**
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 # Check if PR was auto-merged. If gh pr view fails (network / auth / rate),
 # retry up to 3 times with 2s/4s backoff (6s max). On total failure, record
 # UNKNOWN and propagate pr-state-unknown into .landed so state-loss is
@@ -219,7 +221,7 @@ fi
 
 cat > "$WORKTREE_PATH/.landed" <<LANDED
 status: $LANDED_STATUS
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: do
 branch: $BRANCH_NAME
 pr: $PR_URL

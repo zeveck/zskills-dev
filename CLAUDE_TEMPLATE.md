@@ -74,6 +74,43 @@ file a GitHub issue with the error output and mark the test `it.skip('name
 
 {{TEST_FILE_PATTERNS}}
 
+## Skill-file hardcode discipline
+
+Skill files (`skills/**/*.md`) are shared across every project that installs zskills. Hardcoding consumer-specific literals -- `npm run test:all`, `npm start`, `TZ=America/New_York`, `$TEST_OUT/.test-results.txt`, the canonical co-author trailer -- in a fenced bash block ships that consumer's choice to every downstream. The deny-list at `tests/test-skill-conformance.sh` (literal list in `tests/fixtures/forbidden-literals.txt`) blocks new occurrences at CI time, and `hooks/warn-config-drift.sh` emits a real-time WARN when an Edit/Write introduces one. Replace each hit with the resolved variable (`$FULL_TEST_CMD`, `$DEV_SERVER_CMD`, `${TIMEZONE:-UTC}`, `$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}`, `$COMMIT_CO_AUTHOR`) sourced via `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`.
+
+**Resolution rule.** Skill `.md` files MUST resolve config-derived values via the canonical block in `references/canonical-config-prelude.md`. Hardcoded literals trigger the deny-list test (`tests/test-skill-conformance.sh`) and the drift-warn hook (`hooks/warn-config-drift.sh`). Exemptions require an inspectable `<!-- allow-hardcoded: ... -->` marker per the format spec. Per-fence: any bash fence that references one of the resolved variables MUST source `zskills-resolve-config.sh` in or immediately above the fence (positive-side fence-local check at `tests/test-skill-conformance.sh`); inline self-resolution (`CONFIG_CONTENT=$(cat ...)` + `BASH_REMATCH` extraction) and blockquoted recipes governed by the substitution-discipline annotation are accepted equivalents.
+
+For the rare case where the literal is genuinely correct -- a prohibition example ("**Never hardcode `npm run test:all`**"), a migration tool detecting the antipattern, or a report-template string the agent prints verbatim -- mark it with an inspectable allow-hardcoded comment on the line **immediately above** the fence-opener (case-sensitive lowercase prefix, ` reason:` delimiter so multi-token literals like `npm run test:all` work). See `references/canonical-config-prelude.md` for the full format spec.
+
+Two worked examples:
+
+- **Prohibition-by-name** (skill documents an antipattern in a fenced sample report):
+  ```
+  <!-- allow-hardcoded: TZ=America/New_York reason: prohibition-by-name in run-plan SKILL.md cron-confirm example -->
+  ```bash
+  # The agent confirms wall-clock with TZ=America/New_York date for ET output.
+  ```
+  ```
+
+- **Migration-tool literal** (the deny-list test or warn-hook fixture itself contains the literal so it can detect the antipattern):
+  ```
+  <!-- allow-hardcoded: scripts/port.sh reason: migration-tool literal in update-zskills SKILL.md detects antipattern -->
+  ```bash
+  grep -rn 'scripts/port.sh' skills/  # detects callers that haven't migrated
+  ```
+  ```
+
+For regex deny-list entries (lines starting with `re:` in the fixture), the marker names the pattern WITHOUT the `re:` prefix:
+
+```
+<!-- allow-hardcoded: \$TEST_OUT/\.test-results\.txt reason: migration-tool literal demonstrating the migrated form -->
+```bash
+echo "Captured to $TEST_OUT/.test-results.txt"
+```
+```
+
+The marker must be in markdown prose (HTML comments aren't bash-valid inside fences). Markers stack: place multiple consecutive marker lines above one fence to exempt multiple distinct literals in that fence. Any non-blank, non-marker line resets the marker block.
+
 ## Playwright CLI (Browser Automation)
 
 This environment uses `playwright-cli` for browser automation. Run `playwright-cli --help` for available commands.

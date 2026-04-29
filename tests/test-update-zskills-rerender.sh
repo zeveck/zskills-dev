@@ -533,6 +533,139 @@ else
 fi
 rm -rf "$T5" /tmp/rerender-stderr-t5-a /tmp/rerender-stderr-t5-b
 
+# --- Oracle: Step 3.5 — backfill commit.co_author --------------------------
+# Encodes the SKILL.md Step 3.5 algorithm. Default value spec'd at line 231;
+# schema source-of-truth lives at config/zskills-config.schema.json line 55.
+# Idempotent: re-running on an already-backfilled config is a no-op.
+#
+# Args: $1 = path to the consumer's .claude/zskills-config.json.
+# Effect: rewrites the file in-place, splicing in the commit block / field
+# if absent. No-op if commit.co_author already present.
+DEFAULT_CO_AUTHOR='Claude Opus 4.7 (1M context) <noreply@anthropic.com>'
+run_step_3_5_backfill() {
+  local cfg="$1"
+  [ -f "$cfg" ] || return 0
+  local body
+  body=$(cat "$cfg")
+  # Already backfilled? Look for commit.co_author with any value. Use the
+  # same scoped regex as zskills-resolve-config.sh.
+  if [[ "$body" =~ \"commit\"[[:space:]]*:[[:space:]]*\{[^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    return 0
+  fi
+  # If a "commit" block exists but lacks co_author, add the field inside it.
+  if [[ "$body" =~ \"commit\"[[:space:]]*:[[:space:]]*\{ ]]; then
+    # Splice "co_author": "<default>" as the first key in the commit block.
+    # Tolerates the empty "commit": {} case too.
+    local new_body
+    new_body=$(printf '%s' "$body" | python3 -c '
+import json, sys
+d=json.load(sys.stdin)
+d.setdefault("commit", {})
+if "co_author" not in d["commit"]:
+  d["commit"]["co_author"] = "'"$DEFAULT_CO_AUTHOR"'"
+print(json.dumps(d, indent=2))
+') || return 1
+    printf '%s\n' "$new_body" > "$cfg"
+    return 0
+  fi
+  # No commit block at all: add it as a top-level key.
+  local new_body
+  new_body=$(printf '%s' "$body" | python3 -c '
+import json, sys
+d=json.load(sys.stdin)
+d["commit"] = {"co_author": "'"$DEFAULT_CO_AUTHOR"'"}
+print(json.dumps(d, indent=2))
+') || return 1
+  printf '%s\n' "$new_body" > "$cfg"
+  return 0
+}
+
+# --- Test 6: commit.co_author backfill (Phase 1 WI 1.2 regression) ---------
+# Asserts that the documented Step 3.5 backfill (SKILL.md:226-234) inserts
+# the default co_author trailer when the field is absent, and is idempotent.
+echo ""
+echo "=== Test 6: commit.co_author backfill — absent → default; idempotent ==="
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "  SKIP — python3 not available, oracle requires it"
+else
+  # Test 6a: config with NO commit block at all → backfill adds whole block.
+  T6A=$(mktemp -d)
+  mkdir -p "$T6A/.claude"
+  cat > "$T6A/.claude/zskills-config.json" <<'NOCOMMIT'
+{
+  "project_name": "acme",
+  "timezone": "America/New_York"
+}
+NOCOMMIT
+  run_step_3_5_backfill "$T6A/.claude/zskills-config.json"
+  if grep -q '"co_author"' "$T6A/.claude/zskills-config.json" \
+     && grep -q 'Claude Opus 4.7' "$T6A/.claude/zskills-config.json"; then
+    pass "Test 6a: backfill adds commit.co_author when commit block absent"
+  else
+    fail "Test 6a: backfill (no commit block)" "$(cat "$T6A/.claude/zskills-config.json")"
+  fi
+
+  # Test 6b: idempotency — running the oracle twice yields the same content.
+  POST_FIRST=$(cat "$T6A/.claude/zskills-config.json")
+  run_step_3_5_backfill "$T6A/.claude/zskills-config.json"
+  POST_SECOND=$(cat "$T6A/.claude/zskills-config.json")
+  if [ "$POST_FIRST" = "$POST_SECOND" ]; then
+    pass "Test 6b: backfill is idempotent (re-run = no-op)"
+  else
+    fail "Test 6b: idempotent backfill" "diff observed on second run"
+  fi
+  rm -rf "$T6A"
+
+  # Test 6c: config with EMPTY commit block → backfill adds co_author field.
+  T6C=$(mktemp -d)
+  mkdir -p "$T6C/.claude"
+  cat > "$T6C/.claude/zskills-config.json" <<'EMPTYCOMMIT'
+{
+  "project_name": "acme",
+  "commit": {}
+}
+EMPTYCOMMIT
+  run_step_3_5_backfill "$T6C/.claude/zskills-config.json"
+  if grep -q '"co_author"' "$T6C/.claude/zskills-config.json" \
+     && grep -q 'Claude Opus 4.7' "$T6C/.claude/zskills-config.json"; then
+    pass "Test 6c: backfill adds co_author when commit block is empty"
+  else
+    fail "Test 6c: backfill (empty commit block)" "$(cat "$T6C/.claude/zskills-config.json")"
+  fi
+  rm -rf "$T6C"
+
+  # Test 6d: config with already-set co_author → backfill is a no-op.
+  T6D=$(mktemp -d)
+  mkdir -p "$T6D/.claude"
+  cat > "$T6D/.claude/zskills-config.json" <<'PRESET'
+{
+  "project_name": "acme",
+  "commit": {
+    "co_author": "Existing Author <existing@example.com>"
+  }
+}
+PRESET
+  PRE_D=$(cat "$T6D/.claude/zskills-config.json")
+  run_step_3_5_backfill "$T6D/.claude/zskills-config.json"
+  POST_D=$(cat "$T6D/.claude/zskills-config.json")
+  if [ "$PRE_D" = "$POST_D" ] \
+     && grep -q 'Existing Author' "$T6D/.claude/zskills-config.json"; then
+    pass "Test 6d: backfill no-ops when commit.co_author already set"
+  else
+    fail "Test 6d: no-op on already-backfilled" "config was modified"
+  fi
+  rm -rf "$T6D"
+
+  # Test 6e: schema declares the same default at config/zskills-config.schema.json.
+  SCHEMA_FILE="$REPO_ROOT/config/zskills-config.schema.json"
+  if grep -q "Claude Opus 4.7 (1M context) <noreply@anthropic.com>" "$SCHEMA_FILE"; then
+    pass "Test 6e: schema declares co_author default matching backfill default"
+  else
+    fail "Test 6e: schema default" "default not found in $SCHEMA_FILE"
+  fi
+fi
+
 # --- Summary ---------------------------------------------------------------
 echo ""
 echo "---"
