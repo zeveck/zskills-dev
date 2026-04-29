@@ -1,5 +1,59 @@
 # Plan Report — Skill-File Drift Fix
 
+## Phase — 2 Migrate Hardcoded Literals
+
+**Plan:** plans/SKILL_FILE_DRIFT_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-skill-file-drift-fix
+**Branch:** feat/skill-file-drift-fix
+**Commit:** ec6ec71
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2.1 | Pre-migration enumeration | Done | 23 source skill files identified across 6 categories; INJECTED-BLOCKQUOTE singled out at run-plan/SKILL.md:898-930 |
+| 2.2 | Per-fence migration | Done | Helper-source preamble added per fence; 5 fixture literals + INJECTED-BLOCKQUOTE migrated; co_author hardcoded defaults dropped at commit/SKILL.md, quickfix/SKILL.md |
+| 2.3 | Mirror sync | Done | `find skills -name '*.md'` diff loop empty (byte-identical) |
+| 2.4 | Categorized re-audit | Done | Zero EXEC-FENCE drift remains; 17 hits remain (all PROHIBITION/MIGRATION-TOOL/PROSE-DESCRIPTIVE/fallback) |
+| 2.5 | End-to-end fixture test | Done | tests/test-skill-file-drift.sh (12 cases) exercises migrated fence with timezone:Europe/London + testing.full_cmd:FIXTURE_FULL; resolved values flow through |
+
+### Verification
+
+- **Test suite:** PASSED (1237 baseline → 1249 after Phase 2, +12 fixture cases, 0 failures)
+- **Audit grep classifications:** TZ 0/EXEC + 5/PROSE-DESCRIPTIVE; test:all 0/EXEC + 9/PROHIBITION-MIGRATION-TOOL-PROSE-DESCRIPTIVE; npm start 0/EXEC + 3/PROHIBITION-MIGRATION-TOOL; .test-results.txt all in `${TEST_OUTPUT_FILE:-.test-results.txt}` form or out-of-scope contexts
+- **INJECTED-BLOCKQUOTE structural AC:** PASS (no raw `npm start`/`npm run test:all`/`.test-results.txt`; `$DEV_SERVER_CMD`/`$TEST_OUTPUT_FILE`/`$FULL_TEST_CMD` all present)
+- **Mirror parity:** clean
+- **Substitution discipline strengthening:** `skills/run-plan/SKILL.md:181` now enumerates all 3 vars (`$FULL_TEST_CMD`, `$DEV_SERVER_CMD`, `$TEST_OUTPUT_FILE`)
+
+### Test-harness collateral changes (verified contractually equivalent)
+
+- `tests/test-skill-conformance.sh` "run-plan test capture redirect" — literal-match for `.test-results.txt"` updated to regex matching the migrated `${TEST_OUTPUT_FILE:-.test-results.txt}` pattern. Same intent (capture-not-pipe contract).
+- `tests/test-quickfix.sh` case 10 — was asserting `$CO_AUTHOR` + `BASH_REMATCH` in skill body; now asserts `$COMMIT_CO_AUTHOR` + helper-source line. The CO_AUTHOR resolution logic moved to the helper by design; the assertion follows.
+- `tests/test-quickfix.sh` extracted-script harness — added `: "${CLAUDE_PROJECT_DIR:=$(pwd)}"` so the helper's mandatory env var is satisfied inside the synthetic fixture (which `cd`s into `$FIX` before running the extracted script).
+
+### Acceptance Criteria — all met
+
+| AC | Verdict |
+|----|---------|
+| Zero EXEC-FENCE for `TZ=America/New_York` | PASS |
+| Zero EXEC-FENCE for `npm run test:all` | PASS |
+| Zero EXEC-FENCE for `npm start` | PASS |
+| Mirror parity (skills ↔ .claude/skills) | PASS |
+| Full test suite | PASS (1249/1249) |
+| Synthetic-fixture test (London config flows through) | PASS |
+| INJECTED-BLOCKQUOTE structural AC | PASS |
+
+### Plan-Text Drift
+
+- `bullet=Categories field=tz-count plan=60 actual=60` — matches once you separate EXEC vs PROSE-DESCRIPTIVE
+- `bullet=Categories field=test-results-count plan=16 actual=13-in-scope` — plan undercount of in-scope migrations vs total raw-audit hits; informational
+- `bullet=Categories field=npm-start-count plan=2-EXEC+1-PROSE actual=3-EXEC+1-PROSE+1-injected` — `manual-testing/SKILL.md:19` was a third EXEC-FENCE site not enumerated in plan; informational
+
+### User Sign-off
+
+Phase 2 produces no UI changes — no sign-off needed.
+
 ## Phase — 1 Canonical Config-Resolution Helper Script
 
 **Plan:** plans/SKILL_FILE_DRIFT_FIX.md
