@@ -1,5 +1,66 @@
 # Plan Report — Zskills Monitor Dashboard
 
+## Phase — 5 HTTP server [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_MONITOR_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-monitor-plan
+**Branch:** feat/zskills-monitor-plan
+**Commits:** 63747e5 (impl: server.py + 53 tests), 50b9b55 (tracker mark in-progress)
+
+### Work Items
+
+All WIs done per implementer + verifier audit. Files:
+- `skills/zskills-dashboard/scripts/zskills_monitor/server.py` (1099 lines, ThreadingHTTPServer + BaseHTTPRequestHandler)
+- `skills/zskills-dashboard/scripts/zskills_monitor/static/.gitkeep` (Phase 6 placeholder)
+- `tests/test_zskills_monitor_server.sh` (812 lines, 53 cases)
+- `tests/run-all.sh` (one-line registration)
+
+### Security audit (verifier-confirmed)
+
+- **Bind**: `BIND_HOST = "127.0.0.1"` only; verified via `ss -ltn` smoke. NO 0.0.0.0 anywhere.
+- **Trigger contract**: Origin check → command allowlist (`^/work-on-plans(\s|$)`) → path resolved against MAIN_ROOT + relative_to recheck → `subprocess.run([str(resolved), command], shell=False, ...)` → env scrubbed to `{PATH, HOME, USER, LANG}` (drops ZSKILLS_*) → `cwd=str(main_root)` → `timeout=30`
+- **Slug/issue regex**: applied AFTER `urllib.parse.unquote` → directory traversal blocked (`..%2F..%2Fetc` decodes to `../../etc` → contains `/` → fails regex → 400)
+- **Plan lookup**: in-memory dict via `plans_dir.glob("*.md")`, NOT `os.path.join` against user input — `grep -nE 'os\.path\.join'` returned 0 hits
+- **No `eval`/`exec`/`shell=True`** anywhere
+- **PID file**: written AFTER bind succeeds (so EADDRINUSE doesn't leave stale PID); format `pid=N\nport=N\nstarted_at=ISO`
+
+### Endpoints (9 total)
+
+GET: `/api/health`, `/api/state`, `/api/plan/<slug>`, `/api/issue/<N>`, `/api/work-state`, `/`, `/app.js`, `/app.css`
+POST: `/api/queue`, `/api/trigger`, `/api/work-state/reset`
+
+### Cross-process flock
+
+`fcntl.flock(LOCK_EX)` on `.zskills/monitor-state.json.lock` + module-level `_STATE_THREAD_LOCK` for in-process serialization. All write paths (`/api/queue`, work-state stale-rewrite, `/api/work-state/reset`) wrapped via `with _state_lock(main_root):`. Atomic via `os.replace()` with same-dir `.tmp`.
+
+### Port resolution chain
+
+1. `--port` arg
+2. `DEV_PORT` env
+3. config `dev_server.default_port` (BASH_REMATCH-style regex on JSON)
+4. `port.sh` (checks BOTH `.claude/skills/update-zskills/scripts/port.sh` AND `skills/update-zskills/scripts/port.sh`)
+5. Friendly diagnostic + `exit 2` (no Python traceback)
+
+NO use of removed `dev_server.port_script` field (deleted in PR #99).
+
+### Verification
+
+- Test suite: PASSED (1058/1058 — Phase 5 added +53; another parallel session contributed 5 more)
+- Independent server smoke: bind to 127.0.0.1 verified via `ss -ltn`; SIGTERM exit in 506ms with PID file removal; PID file format matches Shared Schemas
+- Trigger security tested live: empty config → 501; non-`/work-on-plans` → 400; argv literal command (shell=False) verified; env scrubbed; path-escape → 500
+
+### Notable verifier-flagged minor notes (non-blocking)
+
+1. server.py is 1099 lines, not the implementer-reported "~720" (count error in report; implementation is solid).
+2. `_state_lock` relies on `os.close(fd)` in `finally` to release the flock rather than explicit `LOCK_UN`. Linux semantics make this correct (closing the fd releases the flock), but a more defensive pattern would explicitly `LOCK_UN` in `finally`. Not a blocker.
+
+### PLAN-TEXT-DRIFT findings
+
+Zero. Implementer's claim independently re-confirmed by verifier.
+
+---
+
 ## Phase — 4 Python data aggregation library [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_MONITOR_PLAN.md
