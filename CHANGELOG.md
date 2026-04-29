@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-04-29
+
+### Added — `/zskills-dashboard` skill
+
+`/zskills-dashboard [start|stop|status]` exposes the Phase 5 monitor
+server as a first-class skill. `start` launches the server detached
+(`nohup … & disown`) so it survives the parent shell, writes
+`.zskills/dashboard-server.pid` (`.env`-style: `pid=…`, `port=…`,
+`started_at=…`), and verifies via `/api/health`. `stop` sends SIGTERM
+only (never `kill -9`), polls for exit up to 5s, and verifies the port
+is released. `status` reads the PID file, runs `kill -0`, and prints
+URL/PID/uptime/log path.
+
+Both `start` and `stop` use a **two-factor process-identity check**
+(command name match `python3.*zskills_monitor.server` AND cwd match
+`MAIN_ROOT` via `/proc/$PID/cwd` with `lsof -p $PID -d cwd` fallback)
+so stale or PID-reused entries — and PIDs belonging to a different
+worktree's monitor — never get killed by accident. State-changing
+modes write a `fulfilled.zskills-dashboard.<id>` tracking marker; the
+read-only `status` does not.
+
+New config field: `dashboard.work_on_plans_trigger` (string,
+optional) — relative path to a consumer-authored trigger script. When
+set, the dashboard "Run" button posts to `/api/trigger` and the server
+spawns the script with the selected `/work-on-plans` command as
+argv[1]. **No default script is shipped** — this is plumbing the
+consumer wires. When absent, the Run button is hidden and
+`/api/trigger` returns 501.
+
+Example consumer trigger script:
+
+```bash
+#!/bin/bash
+# scripts/work-on-plans-trigger.sh
+exec >>".zskills/work-on-plans-trigger.log" 2>&1
+echo "[$(date -Iseconds)] trigger: $1"
+mkdir -p .zskills/triggers
+printf '%s\n' "$1" > ".zskills/triggers/$(date -u +%Y%m%dT%H%M%SZ).cmd"
+```
+
+`.zskills/dashboard-server.log` added to `.gitignore`.
+
 ## 2026-04-28
 
 ### Migration — /plans work removed

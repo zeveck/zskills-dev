@@ -238,6 +238,20 @@ Key fields:
 - **`agents.min_model`** — Minimum model for subagent dispatch.
   `auto` = "inherit from this session's model." Enforced by the
   `block-agents.sh` hook.
+- **`dashboard.work_on_plans_trigger`** — Optional relative path to a
+  consumer-authored script the `/zskills-dashboard` server invokes
+  when the UI's Run button is clicked. The selected `/work-on-plans`
+  invocation is passed as argv[1]. No default script is shipped (this
+  is plumbing the consumer wires). When absent or empty, the Run
+  button is hidden and `/api/trigger` returns 501. Example:
+  ```bash
+  #!/bin/bash
+  # scripts/work-on-plans-trigger.sh
+  exec >>".zskills/work-on-plans-trigger.log" 2>&1
+  echo "[$(date -Iseconds)] trigger: $1"
+  mkdir -p .zskills/triggers
+  printf '%s\n' "$1" > ".zskills/triggers/$(date -u +%Y%m%dT%H%M%SZ).cmd"
+  ```
 
 ## Tracking scheme
 
@@ -424,6 +438,7 @@ data pipeline.
 | `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
 | `/create-worktree` | Unified worktree creation (used by other skills and ad-hoc): prefix-derived path, safe branch-add with TOCTOU remap |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
+| `/zskills-dashboard` | Local web dashboard for plans/issues/worktrees/branches/tracking: `start` launches a detached Python server, `stop` SIGTERMs it, `status` reports uptime |
 
 ### Block Diagram Add-on (`block-diagram/`)
 
