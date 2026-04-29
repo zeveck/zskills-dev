@@ -39,13 +39,14 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `test-all.sh`                | 2      | already a partial template (`{{E2E_TEST_CMD}}` placeholders); customized by consumer with their own test commands. **Note:** full conversion to a formal failing stub is deferred to the same follow-up plan. |
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
+| `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 
-Total: 14 Tier 1 (`apply-preset`, `briefing.cjs`, `briefing.py`,
+Total: 15 Tier 1 (`apply-preset`, `briefing.cjs`, `briefing.py`,
 `clear-tracking`, `compute-cron-fire`, `create-worktree`, `land-phase`,
 `plan-drift-correct`, `port`, `post-run-invariants`,
 `sanitize-pipeline-id`, `statusline`, `worktree-add-safe`,
-`write-landed`); 4 Tier 2 (`build-prod.sh`, `mirror-skill.sh`,
-`stop-dev.sh`, `test-all.sh`).
+`write-landed`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
+`mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
 
 ## Format contract
 
@@ -119,8 +120,43 @@ scripts/sanitize-pipeline-id.sh
 scripts/statusline.sh
 scripts/worktree-add-safe.sh
 scripts/write-landed.sh
+scripts/zskills-stub-lib.sh
 ```
 
 Phase 4 reads this list (or recomputes it via the parser above) when
 deciding which legacy `scripts/<name>` files to delete in a consumer
 repo on next `update-zskills` run.
+
+## Failing-stub body revisions
+
+Failing-stub bodies (`post-create-worktree.sh`, `dev-port.sh`,
+`start-dev.sh`, `stop-dev.sh`, `test-all.sh`) are version-shipped
+artifacts. Future PRs that change a failing-stub body MUST add the OLD
+body's hash to
+`skills/update-zskills/references/tier1-shipped-hashes.txt` so consumers
+running the prior version are not flagged as user-modified by Step D.5
+(consumers' `scripts/stop-dev.sh` / `scripts/test-all.sh` would otherwise
+mismatch the new shipped hash and emit "WARNING: user-modified" prompts
+at every `/update-zskills` run, even though the file is pristine).
+
+This applies to the existing `scripts/stop-dev.sh` and
+`scripts/test-all.sh` only after the consumer-stub-callouts plan Phase 5
+landed their failing-stub bodies; the three stubs in `stubs/`
+(`post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) are net-new
+in that plan and have no prior shipped body to grandfather.
+
+If `tier1-shipped-hashes.txt` does not yet exist (it's a Step D.5
+mechanism from `SCRIPTS_INTO_SKILLS_PLAN.md` Phase 4), and the existing
+Step D.5 logic does not currently hash-check `stop-dev.sh` /
+`test-all.sh` (verified at `skills/update-zskills/SKILL.md:960-962` —
+they are explicitly excluded from STALE_LIST), the policy is
+forward-looking: the doc captures the requirement so that if Step D.5 is
+ever extended to cover failing-stub bodies, the OLD-hash discipline is
+already in place.
+
+The bodies of `stop-dev.sh` and `test-all.sh` (now failing stubs)
+are versioned at the source location (`scripts/stop-dev.sh` and
+`scripts/test-all.sh`) and updated in place by the maintainers;
+consumers do NOT auto-receive body updates because their
+`scripts/<stub>.sh` is consumer-owned post-install (Step D
+skip-if-exists semantics).

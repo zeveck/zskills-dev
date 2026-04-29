@@ -975,6 +975,7 @@ STALE_LIST=(
   statusline.sh
   worktree-add-safe.sh
   write-landed.sh
+  zskills-stub-lib.sh
 )
 ```
 

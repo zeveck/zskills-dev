@@ -1,7 +1,8 @@
 ---
 title: Consumer stub-callout extension
 created: 2026-04-25
-status: active
+status: complete
+completed: 2026-04-28
 ---
 
 # Plan: Consumer stub-callout extension
@@ -713,7 +714,7 @@ Inline `rm -rf .claude/skills/<name>` is blocked by
 - [ ] `grep -c 'zskills_dispatch_stub post-create-worktree.sh'
       skills/create-worktree/scripts/create-worktree.sh` = 1.
 - [ ] `test -x skills/update-zskills/stubs/post-create-worktree.sh`.
-- [ ] `grep -F 'post-create-worktree.sh if missing'
+- [ ] `grep -F '`post-create-worktree.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `bash tests/test-post-create-worktree.sh` exits 0; PASS lines
       for all 3 cases.
@@ -904,7 +905,7 @@ validation; per `feedback_no_jq_in_skills.md`.
 - [ ] `grep -c 'zskills_dispatch_stub dev-port.sh'
       skills/update-zskills/scripts/port.sh` = 1.
 - [ ] `test -x skills/update-zskills/stubs/dev-port.sh`.
-- [ ] `grep -F 'dev-port.sh if missing'
+- [ ] `grep -F '`dev-port.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `bash tests/test-port.sh` exits 0; PASS lines for the 5 new
       cases plus the existing tests.
@@ -1237,9 +1238,9 @@ the recursive-rm hook).
 - [ ] `grep -F 'not configured' scripts/stop-dev.sh` matches
       (stable signal that conversion happened, not a line-count).
 - [ ] `grep -F 'not configured' scripts/test-all.sh` matches.
-- [ ] `grep -F 'start-dev.sh if missing'
+- [ ] `grep -F '`start-dev.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
-- [ ] `grep -F 'test-all.sh if missing'
+- [ ] `grep -F '`test-all.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `grep -F 'start-dev.sh' CLAUDE_TEMPLATE.md` matches.
 - [ ] `grep -F 'failing-stub by default' README.md` matches (or

@@ -27,6 +27,7 @@ wait for those sessions to terminate (in-session crons die with the
 session, so any session you've already closed needs no cleanup).
 
 ### Added
+- feat(stubs): formalize consumer stub-callout convention; add post-create-worktree.sh, dev-port.sh, start-dev.sh stubs; convert stop-dev.sh, test-all.sh to failing stubs. Existing consumers: your old stop-dev.sh / test-all.sh stay (skip-if-exists); to adopt the new start-dev.sh / stop-dev.sh pairing (start-dev writes var/dev.pid; stop-dev reads it), `rm scripts/start-dev.sh scripts/stop-dev.sh && /update-zskills` for the new templates, then customize.
 - refactor(scripts): move Tier-1 scripts into owning skills; /update-zskills migrates stale copies
   — 14 skill-machinery scripts relocated from `scripts/` into
   `.claude/skills/<owner>/scripts/<name>`. Cross-skill callers updated
