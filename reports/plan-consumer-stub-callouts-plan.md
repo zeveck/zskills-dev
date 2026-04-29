@@ -1,5 +1,44 @@
 # Plan Report — Consumer stub-callout extension
 
+## Phase — 6 Hooks / CLAUDE_TEMPLATE / docs sweep + briefing-extra.sh decision [UNFINALIZED]
+
+**Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-consumer-stub-callouts-plan
+**Branch:** feat/consumer-stub-callouts-plan
+**Commits:** 3543805 (In Progress), 631653f (briefing-extra deferral entry + mirror)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 6.1 | README sweep verification | Done | zero matches for `scripts/(test-all\|stop-dev\|start-dev\|dev-port\|post-create-worktree)` — vacuously stub-aware |
+| 6.2 | CLAUDE_TEMPLATE.md regression guards | Done | `{{PORT_SCRIPT}}` 0 matches; `{{TIMEZONE}}` count=1 (DA4) |
+| 6.3 | briefing-extra.sh deferred — recorded in `references/stub-callouts.md` | Done | dual-runtime note (cjs + py3) included |
+| 6.4 | Step D install report | Done | existing dynamic "Installed N scripts: [list]" at SKILL.md:944 satisfies the requirement |
+| 6.5 | Mirror | Done | `diff -r` empty |
+
+### Verification
+
+All 6 ACs PASS:
+
+- **AC1** `grep -nE 'scripts/(test-all|stop-dev|start-dev)' README.md` — every match in stub-aware prose: PASS (0 matches; vacuous).
+- **AC2** `grep -F '{{PORT_SCRIPT}}' CLAUDE_TEMPLATE.md` returns no matches: PASS.
+- **AC3** `[ "$(grep -c -F '{{TIMEZONE}}' CLAUDE_TEMPLATE.md)" -eq 1 ]`: PASS.
+- **AC4** `grep -F 'briefing-extra' skills/update-zskills/references/stub-callouts.md`: PASS.
+- **AC5** Every shipped stub references the canonical doc: PASS (all 3 — `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`).
+- **AC6** `bash tests/run-all.sh` exits 0: PASS (1066/1066).
+
+### Notes
+
+- Phase 6 was largely a verification phase — most edits were anticipated by Phase 5's CLAUDE_TEMPLATE.md / README work. Only WI 6.3 required a substantive doc edit (the briefing-extra deferral entry).
+- AC5's "every stub references canonical doc" already passed because the implementer of Phases 3, 4, 5 included the `references/stub-callouts.md` reference in each stub's header. The AC enshrines this discipline as a regression guard for future PRs.
+- No Tier-1 hash regen needed (only `.md` files modified).
+
+### Dependencies
+
+Phase 1, Phase 2, Phase 3, Phase 4, Phase 5.
+
 ## Phase — 5 `start-dev.sh` + convert `stop-dev.sh` / `test-all.sh` to failing stubs [UNFINALIZED]
 
 **Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md

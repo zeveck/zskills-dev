@@ -65,7 +65,7 @@ itself; the user owns ordering.
 | 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ✅ Done | `698c6e6` | Callout wired + stub + 3-case test + lib `set -e` safety fix; 1016/1016 |
 | 4 — `dev-port.sh` callout in `port.sh` | ✅ Done | `c632391` | Callout + 6 test cases + Tier-1 hash regen; 1075/1075 |
 | 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ✅ Done | `f8ab398` | start-dev stub + 2 in-place conversions + hook help + CLAUDE_TEMPLATE + README + test-stop-dev deletion; 1066/1066 |
-| 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | 🟡 In Progress |  |  |
+| 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | ✅ Done | `631653f` | docs sweep verified + briefing-extra deferral recorded; 1066/1066 |
 | 7 — CHANGELOG, plan index, frontmatter flip | ⬚ |  |  |
 
 ## Phase 1 — Staleness gate
