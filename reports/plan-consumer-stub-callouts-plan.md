@@ -1,5 +1,54 @@
 # Plan Report — Consumer stub-callout extension
 
+## Phase — 4 `dev-port.sh` callout [UNFINALIZED]
+
+**Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-consumer-stub-callouts-plan
+**Branch:** feat/consumer-stub-callouts-plan
+**Commits:** d055101 (In Progress), c632391 (impl + mirror + Tier-1 hash regen)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.1 | Callout block in `skills/update-zskills/scripts/port.sh` | Done | between DEV_PORT fast-path and main-repo branch; numeric-stdout regex + non-numeric warn-and-fall-through; DA15 stderr wired |
+| 4.2 | `skills/update-zskills/stubs/dev-port.sh` | Done | exec; 2-positional-arg no-op default body |
+| 4.3 | Step D bullet | Done | after post-create-worktree.sh bullet |
+| 4.4 | `references/stub-callouts.md` extended with `dev-port.sh` section | Done | args, stdout numeric-port contract, fall-through semantics |
+| 4.5 | `tests/test-port.sh` extended with 6 new cases (existing 4 + new 6 = 10) | Done | absent, numeric, empty fall-through, non-numeric warn, non-exec, DEV_PORT-wins |
+| 4.6 | Mirror via `mirror-skill.sh update-zskills` | Done | `diff -r` empty |
+
+### Verification
+
+- `bash tests/test-port.sh` → 10/10 PASS.
+- `bash tests/run-all.sh` → **1075/1075 pass** (was 1068/1069 with case 6c failing pre-commit; case 6c now passes since git log sees the co-committed hash file update).
+- `grep -c 'zskills_dispatch_stub dev-port.sh' skills/update-zskills/scripts/port.sh` = 1.
+- `grep -c -F 'stub-lib missing' skills/update-zskills/scripts/port.sh` = 1.
+- **Phase 2 cross-phase AC (DA15) now satisfied:** both callsites wired (`create-worktree.sh` from Phase 3, `port.sh` from this phase).
+- Mirror parity clean.
+
+### Bonus — Tier-1 hash regeneration (case 6c fix)
+
+Pre-existing zskills convention surfaced post-Phase-3: when a Tier-1 script (per `script-ownership.md`) changes, its CRLF-stripped blob hash must be appended to `skills/update-zskills/references/tier1-shipped-hashes.txt` in the same commit (or a later one by `merge-base --is-ancestor`). Phase 3 modified `create-worktree.sh` (Tier-1) without updating the hash file — case 6c failed in `tests/test-update-zskills-migration.sh:466-509`. Phase 4 also modifies a Tier-1 script (`port.sh`), so this phase's commit appends both new hashes:
+
+- `44fdf87b192cd8e356d4992f92c90050cfa641f0` — `create-worktree.sh` post-Phase-3
+- `1a839c0a5cd35d4324f417a96decb606bb47346e` — `port.sh` post-Phase-4
+
+**`zskills-stub-lib.sh` registration in `script-ownership.md` deferred to Phase 7** — that script was added in Phase 2 and is internal Tier-1 machinery, but case 6c only iterates entries already in the ownership table, so deferring registration doesn't break the build. Phase 7 close-out adds it alongside the CHANGELOG entry.
+
+### Plan-text drift (advisory)
+
+```
+PLAN-TEXT-DRIFT: phase=4 bullet=AC3 field=grep_pattern plan="dev-port.sh if missing" actual="`dev-port.sh` if missing"
+```
+
+Same backtick drift as Phase 3 AC3 — bullet wraps the filename in backticks, AC's literal `grep -F` pattern doesn't match. Functionality correct; AC text too strict. Phase 7 close-out can relax both Phase 3 AC3 and Phase 4 AC3 together.
+
+### Dependencies
+
+Phase 1, Phase 2, Phase 3.
+
 ## Phase — 3 `post-create-worktree.sh` callout [UNFINALIZED]
 
 **Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
