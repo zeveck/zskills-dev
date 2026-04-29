@@ -1,7 +1,6 @@
 # Plan Report — Default Port Config
 
-## Phase — 5 Documentation surfaces [UNFINALIZED]
-
+## Phase — 5 Documentation surfaces
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
@@ -26,8 +25,7 @@
 
 - `phase=5 bullet=5.2 field=line plan=18 actual=23` — cosmetic. SKILL_FILE_DRIFT_FIX added `zskills-resolve-config.sh` prelude to the dev-server-startup section, shifting the target comment down 5 lines. Same comment text; edit applied as written.
 
-## Phase — 4 briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure [UNFINALIZED]
-
+## Phase — 4 briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
@@ -59,8 +57,7 @@
 
 - `phase=4 bullet=AC field=grep-substring-conflict plan='scripts', 'port.sh' grep returns 0 actual=2`. The acceptance criterion `grep -c "'scripts', 'port.sh'" briefing.py = 0` is unsatisfiable post-WI-4.0 because the new mandated path `'.claude', 'skills', 'update-zskills', 'scripts', 'port.sh'` contains `'scripts', 'port.sh'` as a tail substring. The redundant canonical AC `grep -c "scripts/port.sh" = 0` (the actual anti-stale check) does pass. Verifier independently confirmed: AC intent (no old-path remnants) is satisfied; the conflicting AC literal is a spec authoring oversight.
 
-## Phase — 3 Template prose refinement + Step B placeholder mapping [UNFINALIZED]
-
+## Phase — 3 Template prose refinement + Step B placeholder mapping
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
@@ -92,8 +89,7 @@
 - `phase=3 bullet=3.4 field=line_number plan=326 actual=325` — cosmetic. Confirmed.
 - `phase=3 bullet=3.2 field=line_range plan=319-324 actual=318-323` — cosmetic. Confirmed.
 
-## Phase — P1.A CHANGELOG correction + greenfield port_script template removal [UNFINALIZED]
-
+## Phase — P1.A CHANGELOG correction + greenfield port_script template removal
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
@@ -121,8 +117,7 @@ None.
 
 Phase P1.A's footprint is documentation + greenfield-template only. No tests added because both files are non-runtime artifacts. Backfill into existing configs remains future work (captured in plan's Out of Scope and now in CHANGELOG).
 
-## Phase — 2 port.sh runtime-read tightening + fail-loud + fixture isolation [UNFINALIZED]
-
+## Phase — 2 port.sh runtime-read tightening + fail-loud + fixture isolation
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
