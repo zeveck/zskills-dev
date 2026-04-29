@@ -1,5 +1,34 @@
 # Plan Report — Default Port Config
 
+## Phase — P1.A CHANGELOG correction + greenfield port_script template removal [UNFINALIZED]
+
+**Plan:** plans/DEFAULT_PORT_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
+**Commits:** b66bbc5
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| P1.A.1 | Correct `CHANGELOG.md` aspirational backfill claim | Done | New entry: backfill is "tracked as future work"; fail-loud diagnostic mentioned |
+| P1.A.2 | Remove `"port_script": ""` from greenfield install template at `skills/update-zskills/SKILL.md:282` | Done | Strip-legacy block at line 1080-area preserved (still needed for old consumer configs) |
+| P1.A.3 | Mirror to `.claude/skills/update-zskills/SKILL.md` | Done | `diff -rq skills/update-zskills .claude/skills/update-zskills` empty |
+
+### Verification
+
+- **Test suite:** 1275/1275 passed, 0 failed (no change from post-rebase baseline; this phase touches only docs/template).
+- **Acceptance criteria:** All 4 ACs verified by separate verification agent.
+- **Mirror:** byte-identical between source and `.claude/skills/...` copy.
+
+### Spec deviations
+
+None.
+
+### Notes
+
+Phase P1.A's footprint is documentation + greenfield-template only. No tests added because both files are non-runtime artifacts. Backfill into existing configs remains future work (captured in plan's Out of Scope and now in CHANGELOG).
+
 ## Phase — 2 port.sh runtime-read tightening + fail-loud + fixture isolation [UNFINALIZED]
 
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
