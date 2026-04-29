@@ -1,5 +1,46 @@
 # Plan Report — Skill-File Drift Fix
 
+## Phase — 4 Enforcement (deny-list + drift-warn + allowlist)
+
+**Plan:** plans/SKILL_FILE_DRIFT_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-skill-file-drift-fix
+**Branch:** feat/skill-file-drift-fix
+**Commit:** f26fac3
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.1 | Test deny-list (test-skill-conformance.sh) | Done | +201 lines; fence-state tracker upgraded to handle ALL fence languages (refines spec pseudocode); strips `>` blockquote-prefix; PROSE-IMPERATIVE detection; `re:` prefix dispatch |
+| 4.2 | Drift-warn hook extension | Done | +104 lines (template + mirror); skill-file matcher anchored to exclude `.claude/skills/` mirrors; reads same fixture as 4.1 |
+| 4.3 | Settings.json wiring | Done (NO CHANGE) | Existing Edit\|Write matcher already wires warn-config-drift.sh per refine-2 DA2.6 |
+| 4.4 | Allowlist convention | Done | CLAUDE_TEMPLATE.md +35 lines; 3 worked examples; managed.md is render output (template is canonical) |
+| 4.5 | Test cases for WI 4.2 | Done | +181 lines; 5 skill-file branch + 2 fixture-extension single-source-of-truth tests |
+| 4.6 | Blockquote-structural AC | Done | In test-skill-conformance.sh; asserts INJECTED-BLOCKQUOTE contains only `$VAR` refs; substitution-discipline names all 3 vars |
+| 4.7 | Phase ordering split | Done | Deny-list passes against post-Phase-2 baseline; 2 surfaced drift sites markered (do/SKILL.md:401 npm-test report-template, update-zskills/SKILL.md:613 npm-start render-report) |
+
+### Verification
+
+- **Test suite:** PASSED (1258 baseline → 1268 after Phase 4, +10 cases, 0 failures)
+- **Mirror parity:** clean (`diff -q hooks/warn-config-drift.sh .claude/hooks/warn-config-drift.sh` empty)
+- **Allowlist markers well-formed:** both reference literal verbatim with one-line `reason:` field
+- **Fence-tracker upgrade:** verified empirically; `verify-changes/SKILL.md` has 5 ```markdown fences whose closers would have corrupted spec's tracker
+
+### Design deviations (verified SOUND)
+
+1. **Fence-tracker tracks all languages, scans only exec.** Spec pseudocode's regex `^[[:space:]]*\`\`\`(bash|sh|shell)?[[:space:]]*$` would not match `\`\`\`markdown` etc. but would treat closer as opener — corrupting fence state. Implementer's upgrade (track all, scan exec) is the correct fix.
+
+2. **Allowlist convention in CLAUDE_TEMPLATE.md not managed.md directly.** `managed.md` does not exist in the repo; it's generated from `CLAUDE_TEMPLATE.md` by `/update-zskills --rerender`. Template is the only valid source-of-truth location.
+
+### Plan-Text Drift
+
+`bullet=4.1 field=fence-state-tracker plan=bash-only-opener actual=any-language-opener-with-exec-vs-other-classification` — pseudocode upgrade documented above.
+
+### User Sign-off
+
+Phase 4 produces no UI changes — no sign-off needed.
+
 ## Phase — 3 Hook Fallback Fix + Test-Infra Sync
 
 **Plan:** plans/SKILL_FILE_DRIFT_FIX.md
