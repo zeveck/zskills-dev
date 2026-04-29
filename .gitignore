@@ -6,6 +6,7 @@ __pycache__/
 .zskills/monitor-state.json.lock
 .zskills/work-on-plans-state.json
 .zskills/dashboard-server.pid
+.zskills/dashboard-server.log
 .zskills-tracked
 
 .worktreepurpose
