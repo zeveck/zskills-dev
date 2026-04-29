@@ -253,7 +253,7 @@ is appended to `errors[]`.
 | 2 — Remove `/plans work` modes | ✅ Done | `76dbece` | landed via PR squash; 5 files updated; /plans work retired; 943/943 |
 | 3 — `/work-on-plans` queue mutation + scheduling | ✅ Done | `f9290b7` | landed via PR squash; 6 subcommands + flock; SKILL 677→1249; +28 tests; 971/971 |
 | 4 — Data aggregation library | ✅ Done | `b720fbb` | landed via PR squash; Python module at skills/zskills-dashboard/scripts/zskills_monitor/; 1277-line collect.py; 12 fixture sets; +29 tests; 1000/1000 |
-| 5 — HTTP server | 🟡 | `63747e5` | server.py 1099 lines; 9 endpoints; 127.0.0.1 only; trigger security contract; flock + atomic writes; +53 tests |
+| 5 — HTTP server | ✅ Done | `63747e5` | landed via PR squash; server.py 1099 lines; 9 endpoints; 127.0.0.1 only; trigger security contract; flock + atomic writes; +53 tests |
 | 6 — Read-only dashboard UI | ⬚ | | |
 | 7 — Interactive queue + write-back | ⬚ | | |
 | 8 — `/zskills-dashboard` skill | ⬚ | | |
