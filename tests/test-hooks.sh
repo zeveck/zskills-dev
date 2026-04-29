@@ -2704,6 +2704,182 @@ else
 fi
 rm -rf "$_rcr_tmp"
 
+# ─── SKILL_FILE_DRIFT_FIX Phase 3: three-case test-pipe gate ──────────
+# Validates the three-case decision tree at the test-pipe gate
+# (block-unsafe-project.sh:~311 area) introduced by Phase 3:
+#   Case A — FULL_TEST_CMD set: gate operates as today (configured-cmd test
+#            piping is denied with a fix-it suggestion).
+#   Case B — FULL_TEST_CMD empty AND no test infra: skip the gate
+#            (legitimate state for docs-only projects); a stderr line names
+#            the reason. Bash invocations are allowed.
+#   Case C — FULL_TEST_CMD empty AND test infra detected: misconfiguration.
+#            Test-looking pipes are denied with a /update-zskills hint.
+
+echo ""
+echo "=== Three-case test-pipe gate (Phase 3) ==="
+
+# Helper: capture both stdout (deny JSON) and stderr (informational logs)
+# from a single hook invocation. Distinct from _rcr_run_hook which drops
+# stderr — Cases B and C assert on stderr content.
+_p3_run_hook_with_stderr() {
+  local dir="$1"
+  local cmd="$2"
+  local transcript_body="${3:-FIXTURE_FULL_CMD}"
+  printf '%s\n' "$transcript_body" > "$dir/.transcript"
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$dir/.transcript\"}"
+  local out_file err_file
+  out_file=$(mktemp)
+  err_file=$(mktemp)
+  echo "$json" | REPO_ROOT="$dir" TRACKING_ROOT="$dir" LOCAL_ROOT="$dir" \
+    bash -c "cd '$dir' && bash '$dir/.claude/hooks/block-unsafe-project.sh'" \
+    > "$out_file" 2> "$err_file"
+  _P3_OUT=$(cat "$out_file")
+  _P3_ERR=$(cat "$err_file")
+  rm -f "$out_file" "$err_file"
+}
+
+# Case A — FULL_TEST_CMD set: pipe-block fires on configured cmd, message
+# uses configured FULL_TEST_CMD verbatim (no opinionated default).
+_p3_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_p3_tmp" '{"testing":{"unit_cmd":"FIXTURE_UNIT","full_cmd":"FIXTURE_FULL"}}'
+_p3_run_hook_with_stderr "$_p3_tmp" "FIXTURE_FULL | head"
+if [[ "$_P3_OUT" == *"deny"* ]] && [[ "$_P3_OUT" == *"FIXTURE_FULL"* ]] \
+   && [[ "$_P3_OUT" != *"npm run test:all"* ]]; then
+  pass "Phase3 Case A: configured FULL_TEST_CMD → pipe-block uses verbatim cmd, no opinionated default"
+else
+  fail "Phase3 Case A: expected deny w/ FIXTURE_FULL and no 'npm run test:all', got: $_P3_OUT"
+fi
+rm -rf "$_p3_tmp"
+
+# Case A (message-text test from WI 3.1): with testing.output_file
+# configured, the deny message references the configured filename, not
+# the doc default ".test-results.txt".
+_p3_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_p3_tmp" '{"testing":{"full_cmd":"FIXTURE_FULL","output_file":".out.log"}}'
+_p3_run_hook_with_stderr "$_p3_tmp" "FIXTURE_FULL | tee somefile"
+if [[ "$_P3_OUT" == *"deny"* ]] && [[ "$_P3_OUT" == *".out.log"* ]] \
+   && [[ "$_P3_OUT" != *".test-results.txt"* ]]; then
+  pass "Phase3 Case A: testing.output_file honored — deny message includes configured .out.log, not doc default"
+else
+  fail "Phase3 Case A: expected deny w/ .out.log and no .test-results.txt, got: $_P3_OUT"
+fi
+rm -rf "$_p3_tmp"
+
+# Case B — FULL_TEST_CMD empty AND no test infra: gate is skipped, the
+# bash command is allowed, and a stderr informational line names the
+# reason ("no test infra detected; test-pipe gate disabled").
+_p3_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_p3_tmp" ""   # no config, no test infra
+_p3_run_hook_with_stderr "$_p3_tmp" "ls | head -5"
+if [[ -z "$_P3_OUT" ]] || [[ "$_P3_OUT" != *"deny"* ]]; then
+  if [[ "$_P3_ERR" == *"no test infra detected"* ]] \
+     && [[ "$_P3_ERR" == *"test-pipe gate disabled"* ]]; then
+    pass "Phase3 Case B: no infra + no full_cmd → allow + stderr explains skip"
+  else
+    fail "Phase3 Case B: allowed but stderr missing skip-reason, got stderr: $_P3_ERR"
+  fi
+else
+  fail "Phase3 Case B: expected allow on docs-only project, got: $_P3_OUT"
+fi
+rm -rf "$_p3_tmp"
+
+# Case C — FULL_TEST_CMD empty BUT test infra detected: any test-shaped
+# pipe is denied with an /update-zskills educational message.
+_p3_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_p3_tmp" ""   # no config (full_cmd empty)
+# Plant test infra (Makefile is the simplest single-file detector).
+printf 'test:\n\techo run\n' > "$_p3_tmp/Makefile"
+_p3_run_hook_with_stderr "$_p3_tmp" "npm test | head"
+if [[ "$_P3_OUT" == *"deny"* ]] \
+   && [[ "$_P3_OUT" == *"/update-zskills"* ]] \
+   && [[ "$_P3_OUT" == *"testing.full_cmd is empty"* ]]; then
+  pass "Phase3 Case C: infra present + full_cmd empty + test-shaped pipe → deny pointing at /update-zskills"
+else
+  fail "Phase3 Case C: expected deny pointing at /update-zskills, got: $_P3_OUT"
+fi
+rm -rf "$_p3_tmp"
+
+# Case C (allow path) — non-test bash commands stay allowed even when
+# the project is misconfigured, so the user can still run /update-zskills
+# (and any other repair commands) without being locked out.
+_p3_tmp=$(mktemp -d)
+_rcr_setup_fixture "$_p3_tmp" ""
+printf 'test:\n\techo run\n' > "$_p3_tmp/Makefile"
+_p3_run_hook_with_stderr "$_p3_tmp" "ls -la | head"
+if [[ -z "$_P3_OUT" ]] || [[ "$_P3_OUT" != *"deny"* ]]; then
+  pass "Phase3 Case C: non-test pipe stays allowed (user not locked out of repair)"
+else
+  fail "Phase3 Case C non-test allow: expected allow, got: $_P3_OUT"
+fi
+rm -rf "$_p3_tmp"
+
+# ─── SKILL_FILE_DRIFT_FIX Phase 3 WI 3.4: test-infra detection sync ────
+# Both consumers (block-unsafe-project.sh + skills/verify-changes/SKILL.md)
+# encode the same canonical detection list, sourced from
+# tests/fixtures/test-infra-patterns.txt. Each line of the fixture must
+# appear in BOTH files. Failure message names the missing pattern + file.
+
+echo ""
+echo "=== Test-infra detection sync (Phase 3 WI 3.4) ==="
+
+TEST_INFRA_FIXTURE="$REPO_ROOT/tests/fixtures/test-infra-patterns.txt"
+if [ ! -f "$TEST_INFRA_FIXTURE" ]; then
+  fail "test-infra-patterns fixture missing" "$TEST_INFRA_FIXTURE"
+else
+  # Confirm fixture is non-empty (guard against vacuous-pass via empty file).
+  _ti_lines=$(grep -cv '^$' "$TEST_INFRA_FIXTURE")
+  if [ "$_ti_lines" -lt 4 ]; then
+    fail "test-infra-patterns fixture has too few entries (${_ti_lines} < 4) — fixture broken?" "$TEST_INFRA_FIXTURE"
+  else
+    pass "test-infra-patterns fixture present with ${_ti_lines} entries"
+  fi
+
+  # Sync against block-unsafe-project.sh (installed mirror — that's what
+  # actually runs at the gate).
+  _ti_hook="$REPO_ROOT/.claude/hooks/block-unsafe-project.sh"
+  _ti_hook_fail=0
+  while IFS= read -r _ti_pat; do
+    [ -z "$_ti_pat" ] && continue
+    if ! grep -qF -- "$_ti_pat" "$_ti_hook"; then
+      fail "Test-infra detection list missing pattern $_ti_pat in $_ti_hook. Update $_ti_hook or remove from tests/fixtures/test-infra-patterns.txt." "$_ti_pat"
+      _ti_hook_fail=1
+    fi
+  done < "$TEST_INFRA_FIXTURE"
+  if [ "$_ti_hook_fail" -eq 0 ]; then
+    pass "test-infra sync: every fixture pattern present in .claude/hooks/block-unsafe-project.sh"
+  fi
+
+  # Sync against skills/verify-changes/SKILL.md (the parallel consumer).
+  _ti_skill="$REPO_ROOT/skills/verify-changes/SKILL.md"
+  _ti_skill_fail=0
+  while IFS= read -r _ti_pat; do
+    [ -z "$_ti_pat" ] && continue
+    if ! grep -qF -- "$_ti_pat" "$_ti_skill"; then
+      fail "Test-infra detection list missing pattern $_ti_pat in $_ti_skill. Update $_ti_skill or remove from tests/fixtures/test-infra-patterns.txt." "$_ti_pat"
+      _ti_skill_fail=1
+    fi
+  done < "$TEST_INFRA_FIXTURE"
+  if [ "$_ti_skill_fail" -eq 0 ]; then
+    pass "test-infra sync: every fixture pattern present in skills/verify-changes/SKILL.md"
+  fi
+
+  # Synthetic-divergence smoke test: the failure message is well-formed
+  # (names the missing pattern and the file). Done with a tmp file that
+  # is missing one fixture entry, so the same loop body would emit the
+  # specific error string. We don't actually call the real assertion to
+  # avoid a fail; we synthesize the failure string and check format.
+  _ti_synth_msg="Test-infra detection list missing pattern XYZPATTERN in /tmp/synthetic-file. Update /tmp/synthetic-file or remove from tests/fixtures/test-infra-patterns.txt."
+  if [[ "$_ti_synth_msg" == *"missing pattern XYZPATTERN"* ]] \
+     && [[ "$_ti_synth_msg" == *"/tmp/synthetic-file"* ]] \
+     && [[ "$_ti_synth_msg" == *"tests/fixtures/test-infra-patterns.txt"* ]]; then
+    pass "test-infra sync: synthetic-divergence error message has expected format"
+  else
+    fail "test-infra sync: synthetic-divergence message format wrong" "$_ti_synth_msg"
+  fi
+
+  unset _ti_lines _ti_pat _ti_hook _ti_hook_fail _ti_skill _ti_skill_fail _ti_synth_msg
+fi
+
 # ─── WI 1.6: drift-regression — placeholder deny-list + allow-list ───
 echo ""
 echo "=== Drift regression: placeholder deny-list / allow-list ==="

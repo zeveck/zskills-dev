@@ -234,6 +234,7 @@ _ZSK_CFG="$_ZSK_REPO_ROOT/.claude/zskills-config.json"
 UNIT_TEST_CMD=""
 FULL_TEST_CMD=""
 UI_FILE_PATTERNS=""
+TEST_OUTPUT_FILE=""
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
   if [[ "$_ZSK_CFG_BODY" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
@@ -248,7 +249,45 @@ if [ -f "$_ZSK_CFG" ]; then
   if [[ "$_ZSK_CFG_BODY" =~ \"ui\"[[:space:]]*:[[:space:]]*\{[^}]*\"file_patterns\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     UI_FILE_PATTERNS="${BASH_REMATCH[1]}"
   fi
+  # testing.output_file: per-project test-output filename (default
+  # ".test-results.txt" applied at use-site, NOT here — this var stays
+  # empty when unset so the suggestion-message text knows whether to
+  # show the configured value or the doc default).
+  if [[ "$_ZSK_CFG_BODY" =~ \"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    TEST_OUTPUT_FILE="${BASH_REMATCH[1]}"
+  fi
   unset _ZSK_CFG_BODY
+fi
+
+# Test-infra detection — same list as skills/verify-changes/SKILL.md
+# (test-infra-patterns.txt is the canonical source enforced by the sync
+# test in tests/test-hooks.sh + tests/test-skill-conformance.sh).
+# Patterns: package.json with a "test" script, vitest.config.*,
+# jest.config.*, pytest.ini, .mocharc.*, Makefile, tests/*.sh, tests/*.py,
+# tests/*.js. Used by the three-case test-pipe gate below to distinguish
+# "no test infra" (legitimate skip) from "infra exists but no full_cmd"
+# (misconfiguration → deny pointing at /update-zskills).
+TEST_INFRA_DETECTED=0
+if [ -f "$_ZSK_REPO_ROOT/package.json" ] && \
+   grep -q '"test"[[:space:]]*:' "$_ZSK_REPO_ROOT/package.json" 2>/dev/null; then
+  TEST_INFRA_DETECTED=1
+fi
+if [ "$TEST_INFRA_DETECTED" -eq 0 ]; then
+  for _zsk_pat in \
+      "$_ZSK_REPO_ROOT"/vitest.config.* \
+      "$_ZSK_REPO_ROOT"/jest.config.* \
+      "$_ZSK_REPO_ROOT"/pytest.ini \
+      "$_ZSK_REPO_ROOT"/.mocharc.* \
+      "$_ZSK_REPO_ROOT"/Makefile \
+      "$_ZSK_REPO_ROOT"/tests/*.sh \
+      "$_ZSK_REPO_ROOT"/tests/*.py \
+      "$_ZSK_REPO_ROOT"/tests/*.js; do
+    if [ -e "$_zsk_pat" ]; then
+      TEST_INFRA_DETECTED=1
+      break
+    fi
+  done
+  unset _zsk_pat
 fi
 unset _ZSK_REPO_ROOT _ZSK_CFG
 
@@ -281,10 +320,23 @@ _zsk_regex_escape() {
   printf '%s' "$s"
 }
 
-# Guard: without both vars set, TEST_PIPE_PATTERN="(|)" matches empty
-# string and blocks every piped command. Skip the pipe check entirely
-# if both are empty (config missing or test fields unset).
-if [ -n "$UNIT_TEST_CMD" ] || [ -n "$FULL_TEST_CMD" ]; then
+# Three-case test-pipe gate (mirrors skills/verify-changes/SKILL.md
+# test-command resolution). The opinionated npm-specific fallback that
+# previously sat in the suggestion-message text was removed in Phase 3
+# of SKILL_FILE_DRIFT_FIX: empty FULL_TEST_CMD is now classified by the
+# three-case tree below, not silently defaulted to a hardcoded command.
+#
+#   Case A — FULL_TEST_CMD set: gate operates as today (existing pattern check).
+#   Case B — FULL_TEST_CMD empty AND no test infra detected: skip the gate
+#            entirely (legitimate state for docs-only / greenfield projects).
+#            Logs to stderr once so an operator sees the reason.
+#   Case C — FULL_TEST_CMD empty BUT test infra detected: misconfiguration.
+#            Deny the bash invocation with an explicit message pointing at
+#            /update-zskills. Forces the user to configure testing.full_cmd
+#            so the test-pipe gate (and downstream commit-transcript gate)
+#            can function.
+if [ -n "$FULL_TEST_CMD" ]; then
+  # Case A — gate operates as today.
   ESCAPED_UNIT=""
   ESCAPED_FULL=""
   [ -n "$UNIT_TEST_CMD" ] && ESCAPED_UNIT="$(_zsk_regex_escape "$UNIT_TEST_CMD")"
@@ -308,10 +360,36 @@ if [ -n "$UNIT_TEST_CMD" ] || [ -n "$FULL_TEST_CMD" ]; then
   IFS=$'\x01' read -ra _TEST_SEGMENTS <<< "$_TEST_NORM"
   for _seg in "${_TEST_SEGMENTS[@]}"; do
     if [[ "$_seg" =~ $TEST_PIPE_PATTERN ]] && [[ "$_seg" == *'|'* ]]; then
-      block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD:-npm run test:all} > \"\$TEST_OUT/.test-results.txt\" 2>&1 then read \"\$TEST_OUT/.test-results.txt\" to inspect failures."
+      block_with_reason "Don't pipe test output -- it loses failure details. Instead: TEST_OUT=\"/tmp/zskills-tests/\$(basename \"\$(pwd)\")\"; mkdir -p \"\$TEST_OUT\"; ${FULL_TEST_CMD} > \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" 2>&1 then read \"\$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}\" to inspect failures."
     fi
   done
   unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
+elif [ "$TEST_INFRA_DETECTED" -eq 1 ]; then
+  # Case C — test infra exists but FULL_TEST_CMD is empty. The
+  # pattern-based gate can't function. Refuse only on commands that
+  # LOOK like piped test invocations (heuristic on common test verbs)
+  # so the user is told to fix the config without locking them out of
+  # unrelated bash. Heuristic spans: npm test/run test, pytest, vitest,
+  # jest, mocha, make test, bash|sh tests/ — same surface as the
+  # test-infra detection list above.
+  _TEST_SEP=$'\x01'
+  _TEST_NORM="${INPUT//&&/$_TEST_SEP}"
+  _TEST_NORM="${_TEST_NORM//||/$_TEST_SEP}"
+  _TEST_NORM="${_TEST_NORM//;/$_TEST_SEP}"
+  IFS=$'\x01' read -ra _TEST_SEGMENTS <<< "$_TEST_NORM"
+  for _seg in "${_TEST_SEGMENTS[@]}"; do
+    if [[ "$_seg" == *'|'* ]] && \
+       [[ "$_seg" =~ (npm[[:space:]]+(run[[:space:]]+)?test|pytest|vitest|jest|mocha|make[[:space:]]+test|(bash|sh)[[:space:]]+tests/) ]]; then
+      block_with_reason "BLOCKED: project has test infrastructure (package.json test script, vitest/jest/pytest config, Makefile, or tests/*.sh|*.py|*.js files) but testing.full_cmd is empty in .claude/zskills-config.json. The test-pipe gate cannot function without it. Run /update-zskills to configure testing.full_cmd, or edit .claude/zskills-config.json directly."
+    fi
+  done
+  unset _TEST_SEP _TEST_NORM _TEST_SEGMENTS _seg
+else
+  # Case B — no test infra and no configured command. Legitimate state
+  # for docs-only / greenfield / all-manual-testing projects. Skip the
+  # gate. Log once to stderr so an operator can see why no test enforcement
+  # is happening on this project.
+  echo "# /verify-changes: no test infra detected; test-pipe gate disabled" >&2
 fi
 
 # --- main_protected: block git commit on main ---

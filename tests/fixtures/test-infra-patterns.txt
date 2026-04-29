@@ -1,0 +1,9 @@
+package.json
+vitest.config.*
+jest.config.*
+pytest.ini
+.mocharc.*
+Makefile
+tests/*.sh
+tests/*.py
+tests/*.js
