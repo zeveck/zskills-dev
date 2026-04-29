@@ -349,6 +349,25 @@ if [ -n "$PURPOSE" ]; then
 fi
 
 # ──────────────────────────────────────────────────────────────────
+# WI 3.1 — Consumer post-create-worktree callout.
+# See .claude/skills/update-zskills/references/stub-callouts.md.
+# ──────────────────────────────────────────────────────────────────
+_STUB_LIB="${CLAUDE_PROJECT_DIR:-$MAIN_ROOT}/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+if [ -f "$_STUB_LIB" ]; then
+  # shellcheck disable=SC1090
+  . "$_STUB_LIB"
+  zskills_dispatch_stub post-create-worktree.sh "$MAIN_ROOT" -- \
+    "$WT_PATH" "$BRANCH" "$SLUG" "$PREFIX" "$PIPELINE_ID" "$MAIN_ROOT"
+  if [ "${ZSKILLS_STUB_INVOKED:-0}" = "1" ] && [ "${ZSKILLS_STUB_RC:-0}" -ne 0 ]; then
+    echo "create-worktree: post-create-worktree.sh exited ${ZSKILLS_STUB_RC}; worktree $WT_PATH left in place for inspection" >&2
+    exit 9
+  fi
+elif [ -n "$CLAUDE_PROJECT_DIR" ]; then
+  echo "create-worktree: stub-lib missing at $_STUB_LIB; consumer stubs disabled. Run /update-zskills to repair." >&2
+fi
+unset _STUB_LIB
+
+# ──────────────────────────────────────────────────────────────────
 # WI 1a.12 — Final stdout: exactly one line with the path.
 # ──────────────────────────────────────────────────────────────────
 printf '%s\n' "$WT_PATH"

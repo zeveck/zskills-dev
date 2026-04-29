@@ -57,6 +57,7 @@ run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"
 run_suite "test_zskills_monitor_server.sh" "tests/test_zskills_monitor_server.sh"
 run_suite "test-stub-callouts.sh" "tests/test-stub-callouts.sh"
+run_suite "test-post-create-worktree.sh" "tests/test-post-create-worktree.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

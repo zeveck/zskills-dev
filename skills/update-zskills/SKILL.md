@@ -916,6 +916,11 @@ do not error.
 - Copy `test-all.sh` if missing — consumer-customizable test runner
   template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
   the consumer with their own test commands.
+- Copy `post-create-worktree.sh` if missing — invoked by the
+  `/create-worktree` skill's worktree-creation script after a
+  successful create. Stub is a documented no-op; consumer
+  replaces with setup steps (cp `.env.local`, `npm install`,
+  etc.). See `.claude/skills/update-zskills/references/stub-callouts.md`.
 - Copy any consumer-stub templates from
   `$PORTABLE/skills/update-zskills/stubs/` (e.g.
   `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) if missing.

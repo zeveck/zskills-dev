@@ -37,8 +37,12 @@ zskills_dispatch_stub() {
     fi
   fi
   ZSKILLS_STUB_INVOKED=1
-  ZSKILLS_STUB_STDOUT=$(bash "$stub" "$@")
-  ZSKILLS_STUB_RC=$?
+  # `|| ZSKILLS_STUB_RC=$?` makes the assignment safe under callers'
+  # `set -e`; without the `||`, a non-zero stub aborts the caller
+  # before line 41 runs, so RC stays at 0 and the caller never sees
+  # the failure. Discovered when wiring Phase 3 callout into
+  # create-worktree.sh (which uses `set -eu`).
+  ZSKILLS_STUB_STDOUT=$(bash "$stub" "$@") || ZSKILLS_STUB_RC=$?
   if [ "$ZSKILLS_STUB_RC" -ne 0 ]; then
     echo "zskills: scripts/$name exited $ZSKILLS_STUB_RC" >&2
   fi
