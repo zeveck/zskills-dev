@@ -1,5 +1,73 @@
 # Plan Report — Zskills Monitor Dashboard
 
+## Phase — 6 Read-only dashboard UI [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_MONITOR_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-monitor-plan
+**Branch:** feat/zskills-monitor-plan
+**Commits:** 1239f6c (impl: HTML+CSS+JS + 45 tests), 5f27e06 (tracker mark in-progress)
+
+### Work Items
+
+11 WIs done. Files at `skills/zskills-dashboard/scripts/zskills_monitor/static/`:
+- `index.html` (64 lines) — 5 panels + modal-root + `<script type="module" src="/app.js">`
+- `app.css` (326 lines) — minimal styling, ≥3 CSS vars (`--bg`, `--surface`, `--accent`)
+- `app.js` (547 lines) — fetch/render pipeline, modals, keyboard accessibility
+
+### Safety audit (verifier-confirmed)
+
+- **No `.innerHTML =`** assignments anywhere (XSS-safe; uses `textContent` + DOM construction)
+- **No `setInterval`** (visibility-aware `setTimeout` recursion — pauses when tab hidden)
+- **No remote module imports** (`https://...` in `import` statements: 0 hits)
+- **No inline event handlers** (`onclick=`/`onload=` in HTML/CSS: 0 hits)
+- `cache: 'no-store'` on all 3 fetch sites (poll, plan modal, issue modal)
+- `<script type="module">` in index.html (no script global pollution)
+- `aria-modal="true"` + `role="dialog"` on modal element
+
+### 5 panels + 2 modals
+
+- **Plans**: title, blurb, phase ratio, status badge, landing-mode pill (+ `unknown` warning style)
+- **Issues**: number, title, labels, created date
+- **Worktrees**: basename, branch, `.landed` status pill, age
+- **Branches**: name, last commit + age, upstream; worktree-backed branches dimmed via `.card.dim`
+- **Activity**: capped at 20, newest first, with `parent` for dispatched-child surface
+- **Plan detail modal**: `/api/plan/<slug>` with phase list — "Landed in <ref>" / "Pending" branching
+- **Issue detail modal**: `/api/issue/<N>` preformatted body
+
+### Keyboard accessibility
+
+- All cards `tabindex="0"` (Tab cycles)
+- Enter on focused card opens modal
+- Esc closes modal; focus restored to invoker
+- Focus-trap inside open modal
+
+### Deterministic rendering
+
+- `errors[]` pre-sorted by Phase 4 `collect.py`; verifier confirmed two consecutive `/api/state` GETs returned byte-equal JSON
+- Plans/issues/worktrees stable ordering
+- Activity capped at 20 entries, JSON-fingerprint-based diff
+
+### Verification
+
+- Test suite: PASSED (1111/1111 — Phase 6 added +45; rebase brought in 8 from main's parallel sessions)
+- Live UI smoke (verifier-run on port 55933):
+  - `GET /` → 200, `text/html`, 2560B
+  - `GET /app.js` → 200, `application/javascript`, 21482B
+  - `GET /app.css` → 200, `text/css`, 8072B
+  - `GET /api/state` x2 → byte-equal `errors[]`
+- Server smoke clean shutdown via SIGTERM
+
+### PLAN-TEXT-DRIFT findings
+
+Zero. No TODO/FIXME/HACK/PLAN-TEXT-DRIFT/TBD markers in static/ or new test file.
+
+### Notes
+
+- Working-tree had a pre-existing whitespace-only reformat of `.claude/zskills-config.json` from another session/process. Per CLAUDE.md "never revert/discard changes you didn't make," verifier left it untouched. Resolved rebase initially via `--autostash`. The change remains in the worktree as `M .claude/zskills-config.json` — outside Phase 6's commit.
+
+---
+
 ## Phase — 5 HTTP server [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_MONITOR_PLAN.md
