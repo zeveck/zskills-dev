@@ -16,6 +16,7 @@ Order matters because several items churn the same files (`skills/update-zskills
 - **2026-04-28 (late)** — Session-end status: Phase A pre-flight is **fully complete**. PR #82 (QF2 — orchestrator-judgment convergence fix), PR #85 (QF4 — `/refine-plan` positional-tail guidance + spaces fix), PR #86 (Issue #83 — `/research-and-plan` Step 3 orchestrator-judgment), PR #87 (Issue #81 — push-guard rule (c) + outer-regex EOL fix), PR #88 (Issue #84 — `scripts/mirror-skill.sh` helper). Three new follow-up issues filed and resolved in-session: Issue #83 (closed by PR #86), Issue #84 (closed by PR #88). Issue #81 closed by PR #87. **Open issues remaining: #65 (block-diagram tracking — addressed by `BLOCK_DIAGRAM_TRACKING_CATCHUP.md` plan in Phase F) and #67 (GitLab support — explicitly deferred).** **/refine-plan triggers added inline** to Phase D and Phase F entries (previously missing from the execution checklist; pre-run hygiene to absorb drift from prior-phase landings).
 - **2026-04-28 (later)** — `IMPROVE_STALENESS_DETECTION.md` landed via chunked `finish auto` PR mode: PR #90 (Phase 1: `PLAN-TEXT-DRIFT:` token + `scripts/plan-drift-correct.sh`, 34 cases), PR #91 (Phase 2: `## Phase 3.5` post-implement auto-correct gate, +5 cases), PR #92 (Phase 3: pre-dispatch arithmetic gate sub-checks `a`/`b` + `--eval` token-walking parser with injection canary, +29 cases). Plan frontmatter `status: complete`. 863 → 931 tests passing (+68 plan-drift cases total). The defense-in-depth chain is now complete: `/refine-plan` Dimension 7 (pre-authoring) + Phase 1 step 6 b (pre-dispatch) + Phase 3.5 (post-implement). All 3 layers share the `PLAN-TEXT-DRIFT:` vocabulary and the `plan-drift-correct.sh` helper. Phase A of ROG: every item now `[x]`.
 - **2026-04-28 (latest)** — `SCRIPTS_INTO_SKILLS_PLAN.md` (Phase B foundation) landed via chunked `finish auto` PR mode after `/refine-plan` (PR #94 absorbed since-draft drift: `mirror-skill.sh` + `plan-drift-correct.sh` registry entries, hook-blocked `rm -rf .claude/skills/X` recipes replaced with `bash scripts/mirror-skill.sh`, `git rev-parse <commit>:<wildcard-path>` rewrite). Then 6 PRs: #95 (Phase 1: dead-ref cleanup + `script-ownership.md` registry, 14 Tier-1 + 4 Tier-2), #96 (Phase 2: 7 single-owner Tier-1 scripts moved into owning skills), #97 (Phase 3a+3b combined: 7 shared Tier-1 scripts moved + cross-skill caller sweep across 13 skills + hooks + 6 tests + docs + port.sh PROJECT_ROOT bug fix + DEFAULT_PORT_CONFIG Phase 1 inline schema/this-repo-config/template), #98 (Phase 4: `/update-zskills` Step D rewrite + Step D.5 stale-Tier-1 migration via 26-hash known-shipped fixture + CRLF-normalizing hash compare + `command -v git` pre-flight + `port_script` strip; +12 migration tests), #99 (Phase 5: residual sweep + `port_script` schema field removal), #100 (Phase 6: CHANGELOG + RELEASING.md migration note + PLAN_INDEX move + frontmatter flip). Plan frontmatter `status: complete; completed: 2026-04-28`. 931 → 943 tests. **Phase B of ROG complete; DEFAULT_PORT_CONFIG Phase 1 was reconciled inline and is no longer needed as a separate plan**. ROG Phase C's `/refine-plan plans/DEFAULT_PORT_CONFIG.md` step still applies — refine should detect the inline-landed work and strip those WIs.
+- **2026-04-29** — `ZSKILLS_MONITOR_PLAN.md` landed via PR-mode chunked `finish auto`. Refine via PR #101 (2026-04-28; +685/-247 absorbing post-PR-#100 SCRIPTS_INTO_SKILLS drift). Then 9 phase PRs: #102 (Phase 1: `/work-on-plans` execute-only CLI, 943→943 + new skill 677 lines), #104 (Phase 2: retire `/plans work` modes), #107 (Phase 3: queue mutation + scheduling subcommands; SKILL 677→1249, +28 tests), #108 (Phase 4: 1277-line `collect.py` data aggregator; +29 tests), #111 (Phase 5: HTTP server with security contract; +53 tests), #113 (Phase 6: read-only dashboard UI; +45 tests, 1111/1111), #115 (Phase 7: drag-drop + write-back; +47 tests, 1158/1158), #116 (Phase 8: `/zskills-dashboard` skill with cmd+cwd identity check; +35 tests, 1193/1193), #117 (Phase 9: `/plans rebuild` migrated to Python aggregator, no bash fallback; +20 tests, 1213/1213). PR #118 marks plan complete. **Phase F's ZSKILLS_MONITOR_PLAN entry is done; new `/work-on-plans` and `/zskills-dashboard` skills shipped.** Two parallel sessions during this stretch landed `BLOCK_DIAGRAM_TRACKING_CATCHUP.md` (PR #109) and `CONSUMER_STUB_CALLOUTS_PLAN.md` (PR #106).
 
 ---
 
@@ -42,8 +43,8 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 #### Phase D — Tier-2 plans (run sequentially to reduce mirror churn)
 
-- [ ] `/refine-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md` — pre-run hygiene; absorbs any drift from Phase B's script relocation.
-- [ ] `/run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md`
+- [x] `/refine-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md` — landed via PR #105 (2026-04-28)
+- [x] `/run-plan plans/CONSUMER_STUB_CALLOUTS_PLAN.md` — landed via PR #106 (2026-04-29; parallel session)
 - [ ] `/refine-plan plans/SKILL_FILE_DRIFT_FIX.md` — pre-run hygiene; absorbs drift from Phase B + Phase D-prior.
 - [ ] `/run-plan plans/SKILL_FILE_DRIFT_FIX.md`
 
@@ -55,14 +56,14 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 For each item: `/refine-plan` first to absorb drift introduced by Phase B / C / D landings since the plan was authored, then `/run-plan`. Skip the refine step only if you've verified the plan has no touchpoints with what's landed since.
 
-- [ ] `/refine-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` *(low drift risk — block-diagram is isolated; refine still recommended for hygiene)*
-- [ ] `/run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — closes Issue #65
+- [x] `/refine-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — landed via PR #103 (2026-04-28)
+- [x] `/run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — landed via PR #109 (2026-04-29; closes Issue #65)
 - [ ] `/refine-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md`
 - [ ] `/refine-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
-- [ ] `/refine-plan plans/ZSKILLS_MONITOR_PLAN.md`
-- [ ] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md`
+- [x] `/refine-plan plans/ZSKILLS_MONITOR_PLAN.md` — landed via PR #101 (2026-04-28)
+- [x] `/run-plan plans/ZSKILLS_MONITOR_PLAN.md` — landed via PRs #102, #104, #107, #108, #111, #113, #115, #116, #117 + #118 bookkeeping (2026-04-28 → 2026-04-29). All 9 phases complete; +270 tests (943 → 1213). New `/work-on-plans` + `/zskills-dashboard` skills; HTTP server with drag-drop dashboard; `/plans rebuild` migrated to Python aggregator.
 - [x] `/draft-plan plans/PR_LANDING_UNIFICATION.md` — extract canonical `gh pr create` + CI poll + fix-cycle + auto-merge pattern into a new `/land-pr` skill consumed by all 5 PR-creating skills. [PR #77](https://github.com/zeveck/zskills-dev/pull/77) merged 2026-04-28; plan now on main.
 - [ ] `/refine-plan plans/PR_LANDING_UNIFICATION.md` *(highest drift risk — plan was authored against pre-PR-#75 main; refine to absorb the merged QF/issue fixes)*
 - [ ] `/run-plan plans/PR_LANDING_UNIFICATION.md`
