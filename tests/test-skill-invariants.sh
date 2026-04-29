@@ -134,6 +134,91 @@ fi
 check 'no skill prescribes isolation: worktree (use skills/create-worktree/scripts/create-worktree.sh)' \
   '! grep -rEn '"'"'\bwith[[:space:]]+`?isolation: *"worktree"'"'"' skills/ block-diagram/ 2>/dev/null'
 
+# Cross-skill invariant: no skill writes flat-layout tracking markers.
+# Post-UNIFY_TRACKING_NAMES Phase 6, only $PIPELINE_ID-subdir writes
+# are visible to the hook. Pattern matches `> "…/.zskills/tracking/<basename>"`
+# where <basename> starts with a letter (rules out `$PIPELINE_ID/...`
+# which begins with `$`). Pinned to the writer shape `> "…"` so prose
+# and comment hits in skills/{quickfix,research-and-go,session-report,
+# verify-changes,run-plan}/SKILL.md don't false-positive. See
+# plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md for baseline-zero proof.
+check 'no skill writes flat-layout tracking markers (post-UNIFY_TRACKING_NAMES)' \
+  '! grep -rEn '"'"'> "[^"]*\.zskills/tracking/[a-zA-Z]'"'"' skills/ block-diagram/ 2>/dev/null'
+
+# Meta-lint: every framework-wide cross-skill check must cover
+# block-diagram/. Two prior framework migrations (isolation:worktree,
+# UNIFY_TRACKING_NAMES) silently skipped block-diagram/ because the
+# check enumerated skills/ alone.
+#
+# Detection rule: a `check` line references `skills/` as a
+# framework-wide enumeration (matches the regex `[^A-Za-z]skills/`
+# followed by whitespace, a quote, or end-of-line — NOT followed by
+# a skill-name segment like `skills/run-plan/SKILL.md`). Such a
+# check must also contain ` block-diagram/` (with whitespace
+# boundary) somewhere in the same logical check invocation.
+#
+# CRITICAL — line-continuation handling: real `check` invocations
+# span TWO physical lines via trailing `\` continuation, e.g.:
+#   check '<desc>' \                  ← head: matches `^check`, lacks `skills/`
+#     '! grep -rE ... skills/ ...'    ← body: has `skills/`, lacks `^check`
+# A naive per-physical-line regex never finds the `^check && skills/`
+# conjunction and the meta-lint passes vacuously. The pre-process
+# step below joins `\\n` continuations so each logical check
+# invocation collapses to one line BEFORE the regex runs.
+#
+# Opt-out: prefix the check with the comment
+#   # block-diagram-exempt: <reason>
+# on the immediately preceding line. Use sparingly — exemptions
+# are by definition the surface that grows to bite us next time.
+SCRIPT="$REPO_ROOT/tests/test-skill-invariants.sh"
+_meta_skipped=0
+_meta_failed=0
+# Collapse `\\n` continuations into single logical lines.
+# awk: when a line ends with `\`, drop the `\` and buffer; on the
+# next line, prepend the buffer and emit. Comment lines pass
+# through unchanged so the `# block-diagram-exempt:` opt-out
+# still works on the preceding-line basis.
+joined=$(awk '
+  /\\$/ { sub(/\\$/,""); buf = buf $0; next }
+  buf   { print buf $0; buf = ""; next }
+        { print }
+' "$SCRIPT")
+while IFS= read -r line; do
+  case "$line" in
+    *"# block-diagram-exempt:"*) _meta_skipped=1; continue ;;
+  esac
+  # Match logical-check lines that enumerate skills/ as a path.
+  # Regex: skills/ preceded by non-alpha, followed by space,
+  # single-quote, double-quote, or end-of-line (i.e., a path arg
+  # at a directory boundary) — NOT skills/<name>/ (alpha after
+  # slash, single-skill probe) NOR skills/$f/... (variable
+  # interpolation, also single-skill probe by convention). The
+  # post-slash class must be path-terminator-shaped, not just
+  # non-alpha — `$` is non-alpha, but `skills/$f/SKILL.md` is the
+  # mirror-sync per-skill loop body at
+  # `tests/test-skill-invariants.sh:101-102`, which is single-skill
+  # by intent. After the awk-join above, both predicates evaluate
+  # against the same logical line.
+  if printf '%s' "$line" | grep -qE '^[[:space:]]*check ' \
+     && printf '%s' "$line" | grep -qE '[^A-Za-z]skills/([[:space:]'\''"]|$)'; then
+    if [ "$_meta_skipped" -eq 1 ]; then
+      _meta_skipped=0
+      continue
+    fi
+    if ! printf '%s' "$line" | grep -qE '[^A-Za-z]block-diagram/'; then
+      echo "META-LINT FAIL: framework-wide check missing block-diagram/ coverage: $line" >&2
+      _meta_failed=1
+    fi
+  else
+    _meta_skipped=0
+  fi
+done <<<"$joined"
+if [ "$_meta_failed" -eq 0 ]; then
+  check 'meta: framework-wide checks cover block-diagram/' 'true'
+else
+  check 'meta: framework-wide checks cover block-diagram/' 'false'
+fi
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

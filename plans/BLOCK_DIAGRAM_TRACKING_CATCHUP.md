@@ -1,7 +1,7 @@
 ---
 title: Block-Diagram Tracking-Naming Catch-up
 created: 2026-04-26
-status: active
+status: complete
 ---
 
 # Plan: Block-Diagram Tracking-Naming Catch-up
@@ -42,9 +42,9 @@ phase, three phases, three PRs).
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Migrate add-block + add-example writers (paired) | ⬚ | | One commit; 19 sites; bundled per delegation. |
-| 2 — Lint guard + canary cases for block-diagram | ⬚ | | Mirrors `tests/test-skill-invariants.sh:128-134`; extends canary by 2 cases. |
-| 3 — Framework-coverage CI guard for block-diagram (recommended) | ⬚ | | Decision in Design & Constraints below; one-work-item phase. |
+| 1 — Migrate add-block + add-example writers (paired) | ✅ Done | `0e9c37e` | 19 sites migrated (12 add-block + 7 add-example); pre-#97 caller-path cleanup at L16/L20; delegation dry-run output 5/5 expected paths; 943/943 tests pass. |
+| 2 — Lint guard + canary cases for block-diagram | ✅ Done | `6662368` | Lint installed (writer-shape regex); 3 canary cases added (delegation pair, missing fulfillment, cross-name isolation); section header (8) → (11); manual smoke confirmed lint fails on reverted Phase 1 site. 975/975 tests pass. |
+| 3 — Framework-coverage CI guard for block-diagram (recommended) | ✅ Done | `27d7315` | Meta-lint added to `tests/test-skill-invariants.sh` (post-Phase-2 flat-layout check); awk-joins `\` continuations BEFORE the regex (multi-line smoke verified the join works); `# block-diagram-exempt:` opt-out supported; reads via `$REPO_ROOT` (invocation-independent). 1005/1005 tests pass. |
 
 ## Shared Conventions
 
@@ -797,7 +797,8 @@ existing skills.
       = 0. Paste the run into the PR body.
 - [ ] New invariant lint present. Verification:
       `grep -F 'no skill writes flat-layout tracking markers'
-      tests/test-skill-invariants.sh` returns 1 line.
+      tests/test-skill-invariants.sh` returns ≥1 line.
+      <!-- Auto-corrected 2026-04-29: was "returns 1 line"; the verbatim insert block in Work Item 2 contains the phrase in both the header comment and the check description string, so the actual count is 2. The lint is functionally correct; only the AC verification command's count was off-by-one. -->
 - [ ] Lint fails on a deliberately-reverted Phase 1 site (manual
       smoke). Procedure: temporarily change one
       `$PIPELINE_ID/step.add-block` reference back to flat,
