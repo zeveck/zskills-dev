@@ -34,6 +34,7 @@ git pull --ff-only origin main
 linear and FF-mergeable):
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 for issue in "${FIXED_ISSUES[@]}"; do
   ISSUE_NUM="$issue"
   BRANCH_NAME="fix-issue-${ISSUE_NUM}"
@@ -52,7 +53,7 @@ for issue in "${FIXED_ISSUES[@]}"; do
     echo "REBASE CONFLICT for issue #$ISSUE_NUM."
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: direct
 branch: $BRANCH_NAME
@@ -80,7 +81,7 @@ LANDED
     echo "FF-MERGE REFUSED for issue #$ISSUE_NUM (branch diverged or dirty-tree overlap)."
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: direct
 branch: $BRANCH_NAME
@@ -99,7 +100,7 @@ LANDED
     echo "PUSH FAILED for issue #$ISSUE_NUM after FF-merge (commits on local main, not origin)."
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: direct-push-failed
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: direct
 branch: $BRANCH_NAME
@@ -119,7 +120,7 @@ LANDED
   # --- Write .landed marker ---
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: full
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: direct
 branch: $BRANCH_NAME
@@ -147,6 +148,11 @@ done
 **After the loop — commit extracted logs and run the full test suite:**
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$FULL_TEST_CMD" ]; then
+  echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
 cd "$MAIN_ROOT"
 if [ -n "$(git status --porcelain .claude/logs/)" ]; then
   git add .claude/logs/
@@ -154,7 +160,7 @@ if [ -n "$(git status --porcelain .claude/logs/)" ]; then
   git push origin main
 fi
 
-npm run test:all
+$FULL_TEST_CMD
 ```
 
 If tests fail after all FF-merges land, invoke the **Failure Protocol** — do not leave broken code on main with the cron still running.

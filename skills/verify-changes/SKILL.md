@@ -203,6 +203,7 @@ PIPELINE_ID assignment below):
    parent pipeline. verify-changes becomes its own pipeline owner.
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -216,7 +217,7 @@ fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
-  "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$SCOPE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.$MARKER_STEM.$TRACKING_ID"
 ```
 If no tracking ID was passed (standalone invocation), skip tracking.
@@ -302,16 +303,17 @@ Otherwise (`TEST_MODE=config`, `$FULL_TEST_CMD` set):
 
 1. **Run the full test suite with output captured to a file:**
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    mkdir -p "$TEST_OUT"
-   $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
+   $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
    ```
    **Never pipe** through `| tail`, `| head`, `| grep` — it loses output
-   and forces re-runs. Capture once, then read `"$TEST_OUT/.test-results.txt"` to find
+   and forces re-runs. Capture once, then read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to find
    failures. This runs unit tests (~4,000), then auto-detects whether the
    dev server and cargo are available for E2E and codegen tests.
 
-2. **If tests fail, diagnose with targeted runs.** Read `"$TEST_OUT/.test-results.txt"`
+2. **If tests fail, diagnose with targeted runs.** Read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"`
    to identify the failing test file, then run ONLY that file (the exact
    single-file invocation depends on the project's test framework — infer
    from the failing file's extension: `node --test tests/x.test.js`,
@@ -331,7 +333,7 @@ Otherwise (`TEST_MODE=config`, `$FULL_TEST_CMD` set):
 
    b. **Research and file a GitHub issue** (`gh issue create`) with:
       - Title: `Test failure: <test name>`
-      - Verbatim error output from `"$TEST_OUT/.test-results.txt"`
+      - Verbatim error output from `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"`
       - The exact `assert.*` line from the test source (read the test code)
       - Reproduction command: `node --test tests/<file>.test.js`
       - `git log` evidence that the failure predates current changes
@@ -344,9 +346,10 @@ Otherwise (`TEST_MODE=config`, `$FULL_TEST_CMD` set):
    d. **Re-run the failing test file** to confirm the skip works, then
       run the final gate:
       ```bash
+      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
       TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
       mkdir -p "$TEST_OUT"
-      $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1
+      $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
       ```
 
    e. **Guardrails:**
@@ -365,6 +368,7 @@ Otherwise (`TEST_MODE=config`, `$FULL_TEST_CMD` set):
 After recording test results (pass or fail), create the tests-run step
 marker if a tracking ID is present:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -374,7 +378,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ=America/New_York date -Iseconds)" \
+printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.tests-run"
 ```
 
@@ -401,7 +405,12 @@ Use the `/manual-testing` skill for recipes, selectors, and setup instructions.
 **"No dev server" is not an excuse to skip.** If UI files changed and no
 dev server is running, START ONE:
 ```bash
-npm start &
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$DEV_SERVER_CMD" ]; then
+  echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
+$DEV_SERVER_CMD &
 ```
 Wait a few seconds, then proceed. The dev server is a static file server —
 it takes 2 seconds to start. Reporting "N/A (no dev server)" when you could
@@ -445,6 +454,7 @@ have started one is skipping, not verifying.
 After completing agent verification (Phase 4), if UI changes were verified
 and a tracking ID is present, create the manual-verified step marker:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -454,7 +464,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-printf 'ui_changes: true\ncompleted: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'ui_changes: true\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
 Only create this marker if UI files were actually verified in Phase 4. Skip
@@ -650,6 +660,7 @@ After writing the report (or confirming verification is clean), create the
 complete step marker and update the fulfillment file if a tracking ID is
 present:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -659,11 +670,11 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.complete"
 
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' \
-  "$TRACKING_ID" "$SCOPE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$SCOPE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.$MARKER_STEM.$TRACKING_ID"
 ```
 
@@ -684,9 +695,11 @@ printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: complete\ndate: %s\n' 
 - **Fix, don't just report.** When problems are found, fix them — then re-verify.
   The goal is a clean verification, not a list of issues left for the user.
 - **Start a dev server if needed.** "No dev server" is not an excuse to
-  skip manual verification. Run `npm start &`
-  — it takes 2 seconds. Only report "cannot verify" for genuinely
-  unavailable tooling (e.g., no cargo for codegen).
+  skip manual verification. Run `$DEV_SERVER_CMD &` (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) — it takes 2 seconds.
+  Only report "cannot verify" for genuinely unavailable tooling (e.g.,
+  no cargo for codegen).
 - **Be thorough but honest.** If something genuinely can't be verified,
   say so explicitly. Don't skip silently.
 - **Respect existing changes.** Never discard, revert, or overwrite uncommitted

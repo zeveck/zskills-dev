@@ -279,8 +279,11 @@ For each gap found:
 - Check all markdown formatting (links, images, tables)
 - Verify image references point to existing files
 - Verify model files load without errors (if dev server is up)
-- `npm run test:all` if any code files were touched (component explorer,
-  registry file, docs-registry.js, examples-dropdown.js)
+- `$FULL_TEST_CMD` (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) if any code files
+  were touched (component explorer, registry file, docs-registry.js,
+  examples-dropdown.js)
 
 ### Phase 4 — Report
 
@@ -311,6 +314,8 @@ Remaining gaps:
 - **Update all cross-references** — a new example needs entries in
   component explorer, `examples/README.md`, and relevant block
   explorer entries. Don't create orphaned docs.
-- **`npm run test:all` before committing** if code files were touched.
+- **`$FULL_TEST_CMD` before committing** (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) if code files were touched.
 - **Content-only changes skip tests** — if only markdown/images were
   changed, no test run needed.

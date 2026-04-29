@@ -578,9 +578,10 @@ For each ready entry in `plans.ready[0:N]`:
    `status: started` BEFORE dispatch:
 
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    STEP_FILE="$PIPELINE_DIR/step.work-on-plans.$SPRINT_ID.$SLUG"
    printf 'skill: work-on-plans\nparent: work-on-plans.%s\nslug: %s\nmode: %s\nstatus: started\ndate: %s\n' \
-     "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ=America/New_York date -Iseconds)" \
+     "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$STEP_FILE"
    ```
 
@@ -590,8 +591,9 @@ For each ready entry in `plans.ready[0:N]`:
    for Phase 4's activity scan:
 
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    printf 'skill: run-plan\nparent: work-on-plans\nid: %s\nslug: %s\nmode: %s\ndate: %s\n' \
-     "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ=America/New_York date -Iseconds)" \
+     "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$PIPELINE_DIR/requires.run-plan.$SLUG"
    ```
 
@@ -639,8 +641,9 @@ For each ready entry in `plans.ready[0:N]`:
    - Write `fulfilled.run-plan.<slug>` in this skill's own subdir:
 
      ```bash
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      printf 'skill: run-plan\nparent: work-on-plans\nid: %s\nslug: %s\nstatus: complete\ndate: %s\n' \
-       "$SPRINT_ID" "$SLUG" "$(TZ=America/New_York date -Iseconds)" \
+       "$SPRINT_ID" "$SLUG" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
        > "$PIPELINE_DIR/fulfilled.run-plan.$SLUG"
      ```
 
@@ -667,9 +670,10 @@ empty-after-failure):
    marker):
 
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    printf 'skill: work-on-plans\nsprint_id: %s\ntotal: %d\ndone: %d\ncontinue: %s\nstatus: %s\ndate: %s\n' \
      "$SPRINT_ID" "$DISPATCH_COUNT" "$DONE" "${CONTINUE_ON_FAILURE:-0}" \
-     "$SPRINT_FINAL_STATUS" "$(TZ=America/New_York date -Iseconds)" \
+     "$SPRINT_FINAL_STATUS" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$PIPELINE_DIR/fulfilled.work-on-plans.$SPRINT_ID"
    ```
 
@@ -1139,8 +1143,9 @@ After every successful mutating subcommand (including `every` and
 `stop`, NOT including `next`), write a sprint-completion marker:
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'skill: work-on-plans\nsprint_id: %s\nsubcommand: %s\nstatus: complete\ndate: %s\n' \
-  "$SPRINT_ID" "$SUBCOMMAND" "$(TZ=America/New_York date -Iseconds)" \
+  "$SPRINT_ID" "$SUBCOMMAND" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$PIPELINE_DIR/fulfilled.work-on-plans.$SPRINT_ID"
 ```
 

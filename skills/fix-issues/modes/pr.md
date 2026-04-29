@@ -29,6 +29,7 @@ but per issue — fix-issues is single-phase per issue, so only one rebase
 point is needed):
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
 git fetch origin main
 PRE_REBASE=$(git rev-parse HEAD)
@@ -42,7 +43,7 @@ if [ $? -ne 0 ]; then
   echo "REBASE CONFLICT for issue #$ISSUE_NUM."
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: pr
 branch: $BRANCH_NAME
@@ -64,6 +65,7 @@ fi
 **Push + PR creation (per issue):**
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 for issue in "${FIXED_ISSUES[@]}"; do
   ISSUE_NUM="$issue"
   BRANCH_NAME="fix/issue-${ISSUE_NUM}"
@@ -114,7 +116,7 @@ EOF
     echo "WARNING: PR creation failed for issue #$ISSUE_NUM. Branch pushed but PR not created."
     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: pr-failed
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: pr
 branch: $BRANCH_NAME
@@ -161,7 +163,7 @@ LANDED
   # cycle (always-run) and the auto-gated merge step above.
   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: $LANDED_STATUS
-date: $(TZ=America/New_York date -Iseconds)
+date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues
 method: pr
 branch: $BRANCH_NAME

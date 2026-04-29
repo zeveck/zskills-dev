@@ -247,7 +247,9 @@ For every file classified as "related":
      just parrot it — write a proper commit message)
 
 2. **Run tests if code was staged** — if any staged files are code (`.js`,
-   `.css`, `.html`, `.rs`), run `npm run test:all` before committing. All
+   `.css`, `.html`, `.rs`), run `$FULL_TEST_CMD` (resolve via
+   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+   if you don't already have it in your environment) before committing. All
    suites must pass. If tests fail after two fix attempts on the same error,
    STOP and report to the user (CLAUDE.md: "NEVER thrash on a failing fix").
    Skip this step for content-only commits (`.md`, `.jpg`, `.png`, logs).
@@ -282,19 +284,13 @@ For every file classified as "related":
 4. Resolve the Co-Authored-By trailer from config, then commit.
 
    The trailer value lives in `.claude/zskills-config.json` under
-   `commit.co_author`. Read it with the same pure-bash regex idiom used
-   in `/update-zskills` Step 0.5 — no external JSON parser dependency,
-   matching the rest of /commit. Fall back to the default if the field
-   is absent or the file is missing:
+   `commit.co_author`. Source the canonical helper to populate
+   `$COMMIT_CO_AUTHOR`. If the field is absent or the file is missing,
+   `$COMMIT_CO_AUTHOR` is empty — that's a valid consumer opt-out
+   (no Co-Authored-By trailer):
 
    ```bash
-   CO_AUTHOR="Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-   if [[ -f .claude/zskills-config.json ]]; then
-     CONFIG_CONTENT=$(cat .claude/zskills-config.json)
-     if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
-       CO_AUTHOR="${BASH_REMATCH[1]}"
-     fi
-   fi
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    ```
 
    Commit using a HEREDOC for clean formatting. The heredoc delimiter
@@ -302,16 +298,26 @@ For every file classified as "related":
    `$VAR` substrings that happen to appear in `<type>` or `<message>`
    are treated as literal text rather than executed by the shell. The
    trailer is injected separately via `git commit --trailer`, which
-   handles RFC 5322 formatting and keeps `$CO_AUTHOR` out of the
-   heredoc body entirely:
+   handles RFC 5322 formatting and keeps `$COMMIT_CO_AUTHOR` out of the
+   heredoc body entirely. Emit the trailer ONLY if `$COMMIT_CO_AUTHOR`
+   is non-empty:
 
    ```bash
-   git commit \
-     --trailer "Co-Authored-By: $CO_AUTHOR" \
-     -m "$(cat <<'EOF'
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "$COMMIT_CO_AUTHOR" ]; then
+     git commit \
+       --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" \
+       -m "$(cat <<'EOF'
    <type>: <message>
    EOF
    )"
+   else
+     git commit \
+       -m "$(cat <<'EOF'
+   <type>: <message>
+   EOF
+   )"
+   fi
    ```
 
 5. Verify:

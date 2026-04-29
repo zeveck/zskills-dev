@@ -339,7 +339,9 @@ Verification intensity matches the change type (from Phase 1):
 
 ### Code changes (js, css, html)
 
-- **Run `npm run test:all`** — all suites must pass, not just unit tests.
+- **Run `$FULL_TEST_CMD`** (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) — all suites must pass, not just unit tests.
 - **If tests fail: fix them.** Do not check if failures are pre-existing.
   Do not stash, checkout old commits, or create comparison worktrees.
   If you touched code and tests fail, they're yours to fix. (See

@@ -140,6 +140,7 @@ read-only and writes nothing (per Phase 8 spec — avoids flooding
 tracking with one subdir per status check).
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 write_tracking_marker() {
   local mode="$1" pid_val="${2:-}" port_val="${3:-}"
   local raw="zskills-dashboard-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -155,7 +156,7 @@ write_tracking_marker() {
     [ -n "$pid_val" ] && printf 'pid: %s\n' "$pid_val"
     [ -n "$port_val" ] && printf 'port: %s\n' "$port_val"
     printf 'status: complete\n'
-    printf 'date: %s\n' "$(TZ=America/New_York date -Iseconds)"
+    printf 'date: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)"
   } > "$marker"
   echo "ZSKILLS_PIPELINE_ID=zskills-dashboard.$id"
 }

@@ -60,7 +60,7 @@ check_fixed run-plan "pr worktree path"             'WORKTREE_PATH="/tmp/${PROJE
 check_fixed run-plan "pipeline-id echo"             'ZSKILLS_PIPELINE_ID=run-plan.'
 check_fixed run-plan ".zskills-tracked write"       '.zskills-tracked'
 check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-tests/'
-check_fixed run-plan "test capture redirect"        '.test-results.txt" 2>&1'
+check       run-plan "test capture redirect"        '\$TEST_OUT/(\$TEST_OUTPUT_FILE|\$\{TEST_OUTPUT_FILE:-\.test-results\.txt\})" 2>&1'
 check_fixed run-plan "compute-cron-fire invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh"'
 check       run-plan "cron tz warning"              'date.*SYSTEM-local|system-local'
 check       run-plan "--watch unreliable"           '--watch.*(exit code is unreliable|UNRELIABLE)'

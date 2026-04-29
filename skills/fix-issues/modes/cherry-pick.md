@@ -30,7 +30,12 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         purposes), STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     npm run test:all
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -z "$FULL_TEST_CMD" ]; then
+       echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+       exit 1
+     fi
+     $FULL_TEST_CMD
      ```
      If main's tests are already failing, **STOP.** Invoke the Failure
      Protocol — do not cherry-pick on top of broken code. Report: "main
@@ -64,9 +69,10 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      b. Write `.landed` marker (atomic):
         ```bash
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: full
-        date: $(TZ=America/New_York date -Iseconds)
+        date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
         commits:
           <list of cherry-picked commit hashes and messages>
@@ -74,9 +80,10 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: partial
-        date: $(TZ=America/New_York date -Iseconds)
+        date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
         landed: <hashes that did land, if any>
         skipped: <hashes that conflicted>
@@ -94,7 +101,12 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     npm run test:all
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -z "$FULL_TEST_CMD" ]; then
+       echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+       exit 1
+     fi
+     $FULL_TEST_CMD
      ```
      If tests fail, invoke the **Failure Protocol** — do not leave broken
      code on main with the cron still running.

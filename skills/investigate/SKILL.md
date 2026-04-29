@@ -203,11 +203,16 @@ included in the final report.
 
 3. **Run the full test suite:**
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -z "$FULL_TEST_CMD" ]; then
+     echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+     exit 1
+   fi
    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    mkdir -p "$TEST_OUT"
-   npm run test:all > "$TEST_OUT/.test-results.txt" 2>&1
+   $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
    ```
-   Read `"$TEST_OUT/.test-results.txt"` to check results. All suites must pass.
+   Read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to check results. All suites must pass.
 
 4. **Check for side effects.** If the fix changed shared code (utility
    functions, base classes, model structures):

@@ -52,6 +52,7 @@ run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migratio
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-zskills-resolve-config.sh" "tests/test-zskills-resolve-config.sh"
+run_suite "test-skill-file-drift.sh" "tests/test-skill-file-drift.sh"
 run_suite "test-plan-drift-correct.sh" "tests/test-plan-drift-correct.sh"
 run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"

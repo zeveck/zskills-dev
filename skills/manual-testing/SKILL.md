@@ -15,8 +15,13 @@ description: >-
 1. Start the dev server (if not already running):
 
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -z "$DEV_SERVER_CMD" ]; then
+     echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
+     exit 1
+   fi
    # Get the correct port for this project root (8080 for main, unique per worktree)
-   npm start &
+   $DEV_SERVER_CMD &
    ```
 
 2. Open the browser:

@@ -15,9 +15,11 @@ no config is present. Work directly on main.
 
 **Commit discipline (Paths B and C):**
 - **On main (Path C):** commit when the work is complete. Clean, descriptive
-  message. `npm run test:all` before committing if code was touched.
-  If tests fail after two fix attempts on the same error, STOP — report
-  what you tried and let the user decide.
+  message. `$FULL_TEST_CMD` (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if you don't already have it in your environment) before committing if
+  code was touched. If tests fail after two fix attempts on the same error,
+  STOP — report what you tried and let the user decide.
 - **In worktree (Path B):** the verification agent commits after tests pass.
   One logical unit per commit.
 
