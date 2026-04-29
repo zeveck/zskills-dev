@@ -1,5 +1,66 @@
 # Plan Report — Consumer stub-callout extension
 
+## Phase — 5 `start-dev.sh` + convert `stop-dev.sh` / `test-all.sh` to failing stubs [UNFINALIZED]
+
+**Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-consumer-stub-callouts-plan
+**Branch:** feat/consumer-stub-callouts-plan
+**Commits:** e93f5d3 (In Progress), f8ab398 (impl + hook + template + README + mirror)
+
+### Work Items
+
+All 14 WIs completed:
+
+| # | Item | Status |
+|---|------|--------|
+| 5.1 | `skills/update-zskills/stubs/start-dev.sh` (new failing stub) | Done |
+| 5.2 | Step D bullet for start-dev.sh | Done |
+| 5.3 | Drop current `scripts/stop-dev.sh` impl | Done |
+| 5.4 | Replace `scripts/stop-dev.sh` with failing stub (in place) | Done |
+| 5.5 | Step D bullet for stop-dev.sh updated | Done |
+| 5.6 | Hook help-text at `hooks/block-unsafe-generic.sh:159,177` | Done |
+| 5.7 | `CLAUDE_TEMPLATE.md` Dev Server section | Done |
+| 5.8 | Drop current `scripts/test-all.sh` impl | Done |
+| 5.9 | Replace `scripts/test-all.sh` with failing stub | Done |
+| 5.10 | Step D bullet for test-all.sh updated | Done |
+| 5.11 | Skill-side test-all.sh callsite check + preset (regression-guard verified) | Done |
+| 5.12 | Delete `tests/test-stop-dev.sh` + remove run-all.sh entry; update test-hooks.sh stale allow-list | Done |
+| 5.13 | `README.md` sweep for failing-stub anchor + start-dev mention | Done |
+| 5.14 | Mirror `update-zskills` + hook source/.claude parity | Done |
+
+### Verification
+
+- `bash tests/run-all.sh` → **1066/1066 pass**. Math: baseline 1075 − 7 (deleted `test-stop-dev.sh` cases) − 2 (removed stale `{{E2E_TEST_CMD}}` / `{{BUILD_TEST_CMD}}` placeholder allow-list cases that no longer apply post-WI 5.9) = **1066** ✓ exact.
+- `test -x skills/update-zskills/stubs/start-dev.sh` ✓.
+- `bash scripts/stop-dev.sh; rc=1; stderr matches "not configured"` ✓.
+- `bash scripts/test-all.sh; rc=1; stderr matches "not configured"` ✓.
+- `grep -F 'not configured' scripts/{stop,test-all}-dev.sh` matches both ✓.
+- `grep -F 'failing-stub by default' README.md` matches ✓.
+- `grep -F 'failing stub by default' hooks/block-unsafe-generic.sh` ≥ 2 ✓ (lines 159, 177 both updated; **plan AC line numbers verified accurate, no drift on those**).
+- Hook source/.claude mirror parity: `diff hooks/block-unsafe-generic.sh .claude/hooks/block-unsafe-generic.sh` empty ✓.
+- `! test -e tests/test-stop-dev.sh` ✓ (file deleted).
+- `! grep -F 'test-stop-dev.sh' tests/run-all.sh` ✓ (entry removed).
+
+### Notes
+
+- The two pre-existing Tier-2 templates (`stop-dev.sh`, `test-all.sh`) stayed at top-level `scripts/` per Phase 2 DA5. Their bodies were overwritten in place; their location did not move.
+- No Tier-1 hash regen needed — neither converted script is Tier-1 (per `script-ownership.md`).
+- Major value-add: removed silent `{{E2E_TEST_CMD}}` / `{{BUILD_TEST_CMD}}` runtime "command not found" exit-127 errors that the prior implementation produced. The new failing stubs surface "not configured" cleanly to stderr with rc=1.
+
+### Plan-text drift (advisory)
+
+```
+PLAN-TEXT-DRIFT: phase=5 bullet=AC6 field=grep_string plan="start-dev.sh if missing" actual="`start-dev.sh` if missing"
+PLAN-TEXT-DRIFT: phase=5 bullet=AC7 field=grep_string plan="test-all.sh if missing" actual="`test-all.sh` if missing"
+```
+
+Same backtick AC drift as Phase 3 AC3 + Phase 4 AC3 — bullets verbatim use backticks, AC's literal `grep -F` omits them. Functionality correct; AC text too strict. Phase 7 close-out can relax all four AC patterns together.
+
+### Dependencies
+
+Phase 1, Phase 2.
+
 ## Phase — 4 `dev-port.sh` callout [UNFINALIZED]
 
 **Plan:** plans/CONSUMER_STUB_CALLOUTS_PLAN.md
