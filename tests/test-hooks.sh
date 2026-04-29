@@ -2723,14 +2723,11 @@ if [ "$_drift_fail" -eq 0 ]; then
   pass "drift-regression: deny-list — no migrated placeholders in installed hook or scripts"
 fi
 
-# Allow-list: install-time placeholders must remain in test-all.sh.
-for tok in '{{E2E_TEST_CMD}}' '{{BUILD_TEST_CMD}}'; do
-  if grep -Fq "$tok" "$REPO_ROOT/scripts/test-all.sh"; then
-    pass "drift-regression: allow-list — $tok present in test-all.sh"
-  else
-    fail "drift-regression: install-time placeholder $tok missing from test-all.sh"
-  fi
-done
+# (Phase 5 conversion: scripts/test-all.sh is now a failing stub the
+# consumer customizes; no install-time placeholders remain. The prior
+# allow-list for {{E2E_TEST_CMD}} / {{BUILD_TEST_CMD}} was removed
+# alongside the implementation. See plans/CONSUMER_STUB_CALLOUTS_PLAN.md
+# Phase 5.)
 
 # Additional: template must also be placeholder-free for migrated vars.
 for tok in '{{UNIT_TEST_CMD}}' '{{FULL_TEST_CMD}}' '{{UI_FILE_PATTERNS}}'; do

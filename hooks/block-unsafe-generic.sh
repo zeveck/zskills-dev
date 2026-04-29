@@ -156,7 +156,7 @@ fi
 # helper `bash scripts/stop-dev.sh`, and `kill $(cat pidfile)` (below).
 XARGS_KILL='xargs[[:space:]]+([^;&|]*[[:space:]]+)?kill([[:space:]]|[;&|]|$)'
 if [[ "$COMMAND" =~ $XARGS_KILL ]]; then
-  block_with_reason "BLOCKED: 'xargs … kill' identifies PIDs from stdin (usually lsof/pgrep/pidof output) and kills whatever matches — same hazard as fuser -k. Use bash scripts/stop-dev.sh for your own dev server, or target a known PID with 'kill PID' directly."
+  block_with_reason "BLOCKED: 'xargs … kill' identifies PIDs from stdin (usually lsof/pgrep/pidof output) and kills whatever matches — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
 fi
 
 # kill $(lsof|pgrep|pidof|netstat …) / backtick equivalents — command-substitution variant
@@ -174,7 +174,7 @@ fi
 # deny). The affirmative helper `bash scripts/stop-dev.sh` is the sanctioned path.
 KILL_SUBST='kill[[:space:]]+([^[:space:];&|]+[[:space:]]+)*(\$\([^)]*|`[^`]*)(lsof|pgrep|pidof|netstat)([[:space:]]|[;&|]|\)|`|$)'
 if [[ "$COMMAND" =~ $KILL_SUBST ]]; then
-  block_with_reason "BLOCKED: 'kill \$(lsof…)' / 'kill \`pgrep…\`' / kill with pidof|netstat-substitution identifies PIDs by port/name and kills them — same hazard as fuser -k. Use bash scripts/stop-dev.sh for your own dev server, or target a known PID with 'kill PID' directly."
+  block_with_reason "BLOCKED: 'kill \$(lsof…)' / 'kill \`pgrep…\`' / kill with pidof|netstat-substitution identifies PIDs by port/name and kills them — same hazard as fuser -k. Use bash scripts/stop-dev.sh (failing stub by default — edit it with your stop logic) to stop your dev server, or target a known PID with 'kill PID' directly."
 fi
 
 # ──────────────────────────────────────────────────────────────

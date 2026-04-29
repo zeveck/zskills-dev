@@ -910,12 +910,18 @@ If `$PORTABLE/skills/update-zskills/stubs/` does not exist
 do not error.
 
 - For scripts with placeholders: prompt user for values and replace.
-- Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
-  a dev server (SIGTERM to PIDs in `var/dev.pid`). Keeps the generic
-  hook's kill blocks intact while giving the agent a legitimate path.
-- Copy `test-all.sh` if missing — consumer-customizable test runner
-  template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
-  the consumer with their own test commands.
+- Copy `stop-dev.sh` if missing — sanctioned way to stop a
+  dev server. Initial install is a failing stub the user
+  replaces (contract: read PIDs from `var/dev.pid`, SIGTERM
+  each). Pair: `start-dev.sh`.
+- Copy `test-all.sh` if missing — invoked by `/run-plan`,
+  `/verify-changes`, etc. when `testing.full_cmd` is
+  `bash scripts/test-all.sh`. Initial install is a failing
+  stub the user replaces.
+- Copy `start-dev.sh` if missing — sanctioned way to start a
+  dev server. Initial install is a failing stub the user
+  replaces with their start command (and a write to
+  `var/dev.pid`).
 - Copy `post-create-worktree.sh` if missing — invoked by the
   `/create-worktree` skill's worktree-creation script after a
   successful create. Stub is a documented no-op; consumer

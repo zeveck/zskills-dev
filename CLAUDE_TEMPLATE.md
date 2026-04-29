@@ -17,13 +17,9 @@ When using the Agent tool:
 
 ## Dev Server
 
-```bash
-{{DEV_SERVER_CMD}}
-```
+Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `var/dev.pid`; `stop-dev.sh` reads `var/dev.pid` and SIGTERMs each. `var/` is gitignored.
 
-The port is determined automatically — run `bash .claude/skills/update-zskills/scripts/port.sh` to see it. **8080** for the main repo (`{{MAIN_REPO_PATH}}`), a **deterministic unique port** for each worktree (derived from the project root path). Override with `DEV_PORT=NNNN` env var if needed.
-
-**To stop this worktree's dev server, run `bash scripts/stop-dev.sh`.** It sends SIGTERM to the PIDs recorded in `var/dev.pid`. Contract: your `{{DEV_SERVER_CMD}}` must write each spawned child PID (one per line) to `var/dev.pid` on start, and should clear it on clean shutdown. `var/` is gitignored.
+The port is determined automatically (8080 for the main repo `{{MAIN_REPO_PATH}}`; a deterministic per-worktree port otherwise). Run `bash .claude/skills/update-zskills/scripts/port.sh` to see your port. Override with `DEV_PORT=NNNN` env var, or with a `scripts/dev-port.sh` stub for project-wide custom logic (see `.claude/skills/update-zskills/references/stub-callouts.md`).
 
 **NEVER use `kill -9`, `killall`, `pkill`, or `fuser -k` to stop processes.** These can kill container-critical processes or disrupt other sessions' dev servers and E2E tests. Do not reach for `lsof -ti :<port> | xargs kill` either — it's the same anti-pattern under a different spelling. If a port is busy from another session's process, check with `lsof -i :<port>` and ask the user to stop it manually.
 
