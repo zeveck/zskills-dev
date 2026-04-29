@@ -1,5 +1,31 @@
 # Plan Report — Default Port Config
 
+## Phase — 5 Documentation surfaces [UNFINALIZED]
+
+**Plan:** plans/DEFAULT_PORT_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
+**Commits:** 0b0c1d6
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | Replace `localhost:8080/...` with `localhost:<port>/...` in `skills/briefing/SKILL.md` (3 sites: lines 141, 151, 158) | Done | Matches existing `<port>` convention at line 133 |
+| 5.2 | Reword `skills/manual-testing/SKILL.md` line 23 comment to reference `dev_server.default_port` and dev-port.sh stub | Done | Plan said line 18; SKILL_FILE_DRIFT_FIX (#122) shifted it to 23 (same comment text) |
+| 5.3 | Mirror to `.claude/skills/briefing/` and `.claude/skills/manual-testing/` | Done | `diff -rq` empty for both |
+
+### Verification
+
+- **Test suite:** 1348/1348 passed (no change — Phase 5 adds no new tests).
+- **Acceptance criteria:** All 5 ACs verified by independent fresh-eyes verifier.
+- **Mirror:** byte-identical between source and `.claude/skills/...`.
+- **Plan's "What's out" exclusions confirmed**: tests/test-hooks.sh (still has 16 `8080` deny-pattern test cases), tests/test-port.sh (still has 8 `8080` literal references), CLAUDE.md (still has 1 HTML-commented `8080` aside) — all left alone as documented.
+
+### Plan-text drift (informational)
+
+- `phase=5 bullet=5.2 field=line plan=18 actual=23` — cosmetic. SKILL_FILE_DRIFT_FIX added `zskills-resolve-config.sh` prelude to the dev-server-startup section, shifting the target comment down 5 lines. Same comment text; edit applied as written.
+
 ## Phase — 4 briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure [UNFINALIZED]
 
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
