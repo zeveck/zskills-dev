@@ -1,6 +1,6 @@
 # Plan Report — /draft-tests Skill
 
-## Phase — 1 Skeleton, ingestion, and checksum gate [UNFINALIZED]
+## Phase — 1 Skeleton, ingestion, and checksum gate
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
 **Status:** Completed (verified)

@@ -45,7 +45,7 @@ reference it rather than transcribing.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Skeleton, ingestion, and checksum gate | 🟡 In Progress | `2cf6897` | 62 new tests; SKILL.md + parse-plan.sh + 7 fixtures |
+| 1 — Skeleton, ingestion, and checksum gate | ✅ Done | `2cf6897` | 62 new tests; SKILL.md + parse-plan.sh + 7 fixtures |
 | 2 — Language detection, test-file discovery, no-test-setup path | ⬚ | | |
 | 3 — Drafting agent and test-spec format | ⬚ | | |
 | 4 — Adversarial review loop (QE personas) | ⬚ | | |
