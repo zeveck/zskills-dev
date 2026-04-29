@@ -1,7 +1,8 @@
 ---
 title: Consumer stub-callout extension
 created: 2026-04-25
-status: active
+status: complete
+completed: 2026-04-28
 ---
 
 # Plan: Consumer stub-callout extension
@@ -60,13 +61,13 @@ itself; the user owns ordering.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ⬚ |  |  |
-| 2 — Stub-callout convention + sourceable dispatch helper | ⬚ |  |  |
-| 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ⬚ |  |  |
-| 4 — `dev-port.sh` callout in `port.sh` | ⬚ |  |  |
-| 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ⬚ |  |  |
-| 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | ⬚ |  |  |
-| 7 — CHANGELOG, plan index, frontmatter flip | ⬚ |  |  |
+| 1 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ✅ Done | `942c4f4` | Regression-guard; all anchors pass |
+| 2 — Stub-callout convention + sourceable dispatch helper | ✅ Done | `4f457a3` | Lib + ref + 8-case test + Step D + mirror; 951/951 tests |
+| 3 — `post-create-worktree.sh` callout in `create-worktree.sh` | ✅ Done | `698c6e6` | Callout wired + stub + 3-case test + lib `set -e` safety fix; 1016/1016 |
+| 4 — `dev-port.sh` callout in `port.sh` | ✅ Done | `c632391` | Callout + 6 test cases + Tier-1 hash regen; 1075/1075 |
+| 5 — `start-dev.sh` (new) + convert `stop-dev.sh` / `test-all.sh` to failing stubs | ✅ Done | `f8ab398` | start-dev stub + 2 in-place conversions + hook help + CLAUDE_TEMPLATE + README + test-stop-dev deletion; 1066/1066 |
+| 6 — Hooks / CLAUDE_TEMPLATE / docs sweep + `briefing-extra.sh` decision | ✅ Done | `631653f` | docs sweep verified + briefing-extra deferral recorded; 1066/1066 |
+| 7 — CHANGELOG, plan index, frontmatter flip | ✅ Done | `dd1a668` | CHANGELOG + index + frontmatter complete + DA6 policy + 2 carryovers; 1066/1066 |
 
 ## Phase 1 — Staleness gate
 
@@ -713,7 +714,7 @@ Inline `rm -rf .claude/skills/<name>` is blocked by
 - [ ] `grep -c 'zskills_dispatch_stub post-create-worktree.sh'
       skills/create-worktree/scripts/create-worktree.sh` = 1.
 - [ ] `test -x skills/update-zskills/stubs/post-create-worktree.sh`.
-- [ ] `grep -F 'post-create-worktree.sh if missing'
+- [ ] `grep -F '`post-create-worktree.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `bash tests/test-post-create-worktree.sh` exits 0; PASS lines
       for all 3 cases.
@@ -904,7 +905,7 @@ validation; per `feedback_no_jq_in_skills.md`.
 - [ ] `grep -c 'zskills_dispatch_stub dev-port.sh'
       skills/update-zskills/scripts/port.sh` = 1.
 - [ ] `test -x skills/update-zskills/stubs/dev-port.sh`.
-- [ ] `grep -F 'dev-port.sh if missing'
+- [ ] `grep -F '`dev-port.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `bash tests/test-port.sh` exits 0; PASS lines for the 5 new
       cases plus the existing tests.
@@ -1237,9 +1238,9 @@ the recursive-rm hook).
 - [ ] `grep -F 'not configured' scripts/stop-dev.sh` matches
       (stable signal that conversion happened, not a line-count).
 - [ ] `grep -F 'not configured' scripts/test-all.sh` matches.
-- [ ] `grep -F 'start-dev.sh if missing'
+- [ ] `grep -F '`start-dev.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
-- [ ] `grep -F 'test-all.sh if missing'
+- [ ] `grep -F '`test-all.sh` if missing'
       skills/update-zskills/SKILL.md` matches.
 - [ ] `grep -F 'start-dev.sh' CLAUDE_TEMPLATE.md` matches.
 - [ ] `grep -F 'failing-stub by default' README.md` matches (or

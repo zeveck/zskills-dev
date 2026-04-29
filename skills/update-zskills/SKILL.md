@@ -894,16 +894,48 @@ to `.claude/settings.json`. Users can customize further with `/statusline`.
 
 #### Step D — Fill script gaps
 
-Copy missing scripts from `$PORTABLE/scripts/` to `scripts/` (verify
-executable bit is preserved).
+> Copy missing scripts from `$PORTABLE/scripts/` and from
+> `$PORTABLE/skills/update-zskills/stubs/` to `scripts/`
+> (verify executable bit is preserved). The `stubs/` dir
+> holds NEW consumer-customizable failing-stub / no-op
+> templates (post-create-worktree.sh, dev-port.sh,
+> start-dev.sh); `scripts/` holds the existing zskills-managed
+> Tier-2 templates (stop-dev.sh, test-all.sh — kept at
+> `scripts/` for continuity with prior installs; their
+> bodies become failing stubs in Phase 5 but their source
+> location does not move).
+
+If `$PORTABLE/skills/update-zskills/stubs/` does not exist
+(older zskills snapshot), skip the second source silently —
+do not error.
 
 - For scripts with placeholders: prompt user for values and replace.
-- Copy `stop-dev.sh` if missing — the sanctioned way for agents to stop
-  a dev server (SIGTERM to PIDs in `var/dev.pid`). Keeps the generic
-  hook's kill blocks intact while giving the agent a legitimate path.
-- Copy `test-all.sh` if missing — consumer-customizable test runner
-  template; placeholders such as `{{E2E_TEST_CMD}}` are filled in by
-  the consumer with their own test commands.
+- Copy `stop-dev.sh` if missing — sanctioned way to stop a
+  dev server. Initial install is a failing stub the user
+  replaces (contract: read PIDs from `var/dev.pid`, SIGTERM
+  each). Pair: `start-dev.sh`.
+- Copy `test-all.sh` if missing — invoked by `/run-plan`,
+  `/verify-changes`, etc. when `testing.full_cmd` is
+  `bash scripts/test-all.sh`. Initial install is a failing
+  stub the user replaces.
+- Copy `start-dev.sh` if missing — sanctioned way to start a
+  dev server. Initial install is a failing stub the user
+  replaces with their start command (and a write to
+  `var/dev.pid`).
+- Copy `post-create-worktree.sh` if missing — invoked by the
+  `/create-worktree` skill's worktree-creation script after a
+  successful create. Stub is a documented no-op; consumer
+  replaces with setup steps (cp `.env.local`, `npm install`,
+  etc.). See `.claude/skills/update-zskills/references/stub-callouts.md`.
+- Copy `dev-port.sh` if missing — invoked by `port.sh`
+  (lives in the `update-zskills` skill) after the
+  `DEV_PORT` env override; if non-empty numeric stdout is
+  returned, that value is used as the port. See
+  `.claude/skills/update-zskills/references/stub-callouts.md`.
+- Copy any consumer-stub templates from
+  `$PORTABLE/skills/update-zskills/stubs/` (e.g.
+  `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) if missing.
+  See `references/stub-callouts.md` for the contract and inventory.
 
 > Tier-1 scripts (skill machinery) ship via the skill mirror at
 > `.claude/skills/<owner>/scripts/`. They are NOT copied to `scripts/`.
@@ -943,6 +975,7 @@ STALE_LIST=(
   statusline.sh
   worktree-add-safe.sh
   write-landed.sh
+  zskills-stub-lib.sh
 )
 ```
 

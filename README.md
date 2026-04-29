@@ -455,8 +455,9 @@ Agent guardrails that prevent the most common failure modes:
 
 ### Helper Scripts
 
-- `test-all.sh` — meta test runner (unit + E2E + build tests)
-- `stop-dev.sh` — stop the dev server (consumer-customizable)
+- `test-all.sh` — failing-stub by default; consumer fills with their test orchestrator.
+- `stop-dev.sh` — failing-stub by default; consumer fills with their dev-server stop logic.
+- `start-dev.sh` — failing-stub by default; consumer fills with their dev-server start command (writes child PIDs to `var/dev.pid`).
 
 Skill machinery scripts moved into their owning skills under `.claude/skills/<owner>/scripts/` — see the `update-zskills` skill's `references/script-ownership.md` for the full table.
 

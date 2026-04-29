@@ -47,7 +47,6 @@ run_suite "test-phase-5b-gate.sh" "tests/test-phase-5b-gate.sh"
 run_suite "test-scope-halt.sh" "tests/test-scope-halt.sh"
 run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
-run_suite "test-stop-dev.sh" "tests/test-stop-dev.sh"
 run_suite "test-quickfix.sh" "tests/test-quickfix.sh"
 run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migration.sh"
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
@@ -56,6 +55,8 @@ run_suite "test-plan-drift-correct.sh" "tests/test-plan-drift-correct.sh"
 run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"
 run_suite "test_zskills_monitor_server.sh" "tests/test_zskills_monitor_server.sh"
+run_suite "test-stub-callouts.sh" "tests/test-stub-callouts.sh"
+run_suite "test-post-create-worktree.sh" "tests/test-post-create-worktree.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

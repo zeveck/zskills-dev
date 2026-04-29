@@ -48,6 +48,34 @@ if [[ -n "$DEV_PORT" ]]; then
   exit 0
 fi
 
+# ─── Consumer dev-port.sh callout (stub-callout convention) ───
+_STUB_LIB="${CLAUDE_PROJECT_DIR:-$PROJECT_ROOT}/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+if [ -f "$_STUB_LIB" ]; then
+  # shellcheck disable=SC1090
+  . "$_STUB_LIB"
+  zskills_dispatch_stub dev-port.sh "$PROJECT_ROOT" -- \
+    "$PROJECT_ROOT" "$MAIN_REPO"
+  if [ "${ZSKILLS_STUB_INVOKED:-0}" = "1" ] && [ "${ZSKILLS_STUB_RC:-0}" -eq 0 ]; then
+    # Trim leading/trailing whitespace; require a positive
+    # integer (no leading zero, no embedded newlines, rejects
+    # bare "0" which is not a valid TCP port).
+    _PORT_TRIMMED="${ZSKILLS_STUB_STDOUT#"${ZSKILLS_STUB_STDOUT%%[![:space:]]*}"}"
+    _PORT_TRIMMED="${_PORT_TRIMMED%"${_PORT_TRIMMED##*[![:space:]]}"}"
+    if [[ "$_PORT_TRIMMED" =~ ^[1-9][0-9]+$ ]]; then
+      echo "$_PORT_TRIMMED"
+      exit 0
+    elif [ -n "$_PORT_TRIMMED" ]; then
+      echo "zskills: dev-port.sh returned non-numeric/invalid stdout '$ZSKILLS_STUB_STDOUT'; falling through to built-in" >&2
+    fi
+    # empty stdout = silent fall-through (no warning)
+    unset _PORT_TRIMMED
+  fi
+  # non-zero rc from stub: also fall through (warning emitted by lib)
+elif [ -n "$CLAUDE_PROJECT_DIR" ]; then
+  echo "port.sh: stub-lib missing at $_STUB_LIB; consumer stubs disabled. Run /update-zskills to repair." >&2
+fi
+unset _STUB_LIB
+
 # Main repo gets the default port
 if [[ -n "$MAIN_REPO" ]] && [[ "$PROJECT_ROOT" == "$MAIN_REPO" ]]; then
   echo "$DEFAULT_PORT"
