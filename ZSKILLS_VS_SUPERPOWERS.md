@@ -30,8 +30,8 @@ verification gates.
 |---|---:|---:|
 | Repository inspected | [`zeveck/zskills`](https://github.com/zeveck/zskills) | [`obra/superpowers`](https://github.com/obra/superpowers) |
 | Current distribution style | Manual repo install plus `/update-zskills` | Plugin distribution for Claude Code, Codex, Cursor, OpenCode, Gemini CLI, and Copilot-style environments |
-| Core skill count inspected | 18 core skills plus 3 block-diagram add-ons | 14 core skills |
-| Approximate `SKILL.md` line count inspected | 12,182 | 3,159 |
+| Core skill count inspected | 24 core skills under `skills/`, plus 3 block-diagram add-ons under `block-diagram/` | 14 core skills |
+| Approximate `SKILL.md` line count inspected | 15,256 across `skills/` plus `block-diagram/` | 3,159 |
 | Repo-local infrastructure | Hooks, helper scripts, config schema, CI workflow, tests, plans, reports, tracking conventions | Commands, hooks, agents, scripts, tests, and plugin packaging across supported agent environments |
 | Public adoption signal | Small public footprint at inspection time | Very large public footprint and ecosystem adoption |
 | Primary operating model | Plan-driven autonomous execution inside a prepared repo | Portable skill-triggered engineering discipline |
@@ -45,15 +45,15 @@ smaller and more portable.
 
 | Capability | Z Skills | Superpowers | Practical Difference |
 |---|---|---|---|
-| Planning | `/draft-plan`, `/research-and-plan`, `/research-and-go`, `/run-plan` | `brainstorming`, `writing-plans`, `executing-plans` | Z Skills can generate and execute plan phases through repo-local pipelines. Superpowers focuses on disciplined planning and controlled execution. |
+| Planning and design | `/draft-plan`, `/refine-plan`, `/research-and-plan`, `/research-and-go`, `/run-plan` | `brainstorming`, `writing-plans`, `executing-plans` | Z Skills can adversarially draft, refine, and execute plan phases through repo-local pipelines. Superpowers focuses on interactive design and controlled execution. |
 | Worktree isolation | First-class in `/run-plan`, `/fix-issues`, `/do`, and landing modes | `using-git-worktrees` skill | Both value isolation. Z Skills automates more of the branch/worktree lifecycle. |
 | Subagents | Implementation, review, issue-fixing, verification, adversarial planning | Subagent-driven development, code review, parallel agents | Both use subagents. Z Skills embeds them in larger workflows; Superpowers teaches when and how to dispatch them. |
 | Verification | `/verify-changes`, final-verify markers, test capture, manual UI checks, hook fallbacks | `verification-before-completion`, code review, systematic test discipline | Z Skills has stronger mechanical guardrails. Superpowers has clearer general-purpose verification principles. |
 | Debugging | `/investigate` | `systematic-debugging` | Superpowers is stronger as a reusable debugging methodology. Z Skills is more integrated into its project workflow. |
-| Testing philosophy | Verification-heavy, project-specific test commands via config | Strong TDD skill with strict "test first" discipline | Superpowers is more explicit and reusable on TDD. |
+| Testing philosophy | Verification-after with verifier attestation, project-specific test commands, and manual-testing gates | TDD-first with strict red-green-refactor discipline | This is a philosophical split, not a clean win: Superpowers trusts test-first discipline; Z Skills bets more on independent post-hoc verification gates. |
 | Git safety | `/commit`, landing modes, branch protection assumptions, hooks, tracking markers | Worktree and finishing-branch skills | Z Skills is more protective in a configured repo. Superpowers is easier to apply manually. |
 | Long-running autonomy | `/run-plan finish auto`, scheduling, tracking, issue sprints | Batch execution and subagent-driven development | Z Skills clearly wins for sustained autonomous repo operations. |
-| Skill creation and maintenance | `/update-zskills`, repo-local install/update conventions | `writing-skills`, `using-superpowers`, plugin packaging | Superpowers has stronger general guidance for writing durable skills. Z Skills has stronger repo-specific update plumbing. |
+| Skill and plan creation | `/draft-plan`, `/refine-plan`, `/update-zskills`, repo-local install/update conventions | `writing-skills`, `using-superpowers`, plugin packaging | Superpowers has stronger direct guidance for writing durable skills. Z Skills has stronger adversarial design and drift-correction workflows for larger artifacts. |
 
 ## Overlap
 
@@ -76,6 +76,7 @@ to repository state, scripts, hooks, and branch workflows.
 | Strength | Why It Matters |
 |---|---|
 | Autonomous plan execution | `/run-plan` can advance a plan phase by phase with verification and landing behavior. |
+| Adversarial design and refinement | `/draft-plan` and `/refine-plan` use reviewer and devil's-advocate passes to converge plans before execution or repair stale plans after drift. |
 | Tracking markers | `.zskills/tracking` creates a persistent coordination layer that hooks and workflows can inspect. |
 | Landing modes | Cherry-pick, PR, and direct modes support different repo governance models. |
 | Batch issue fixing | `/fix-issues` is designed for sprint-style bug fixing across many issues. |
@@ -100,14 +101,14 @@ to repository state, scripts, hooks, and branch workflows.
 | Dimension | Z Skills | Superpowers | Winner |
 |---|---|---|---|
 | Quality of operational coverage | Very high. It encodes many real failure cases into explicit workflows, tests, hooks, and reports. | Medium-high. It has strong core practices and tests, but less repo-operation machinery. | Z Skills |
-| Quality of general methodology | Medium-high. Good practices are present, but often embedded in long operational instructions. | High. TDD, debugging, review, planning, and skill-writing are direct and reusable. | Superpowers |
+| Quality of general methodology | Medium-high. Good practices are present, but often embedded in long operational instructions and plan machinery. | High. TDD, debugging, review, planning, and skill-writing are direct and reusable. | Superpowers |
 | Usability for a new user | Medium-low. Setup and mental model are heavier. | High. Plugin distribution and smaller skill surfaces are easier to start with. | Superpowers |
 | Usefulness for normal feature work | High if the repo is configured. Medium if not. | High across most repos. | Superpowers |
-| Usefulness for sustained autonomous work | Very high. This is the main design center. | Medium. It supports disciplined batches, but not the same repo-local automation. | Z Skills |
+| Usefulness for sustained autonomous work | Very high. This is the main design center. | Low to N/A. It supports disciplined batches, but not repo-state pickup through tracking markers, scheduled phase advancement, and landing gates. | Z Skills |
 | Mechanical protection | High in supported environments. Hooks, markers, config, and landing modes matter. | Medium. Much of the discipline is prompt/process-level unless supported by runtime hooks. | Z Skills |
 | Portability | Medium-low. It assumes more about GitHub, worktrees, hooks, cron-like scheduling, and project structure. | High. It is designed to travel across projects and agent environments. | Superpowers |
 | Power ceiling | Very high. It can drive complex repo operations. | High. It improves agent behavior broadly but is less of an autonomous harness. | Z Skills |
-| Failure surface | Higher. More machinery means more assumptions and more ways to misconfigure. | Lower. Smaller workflows are easier to reason about. | Superpowers |
+| Failure surface | Higher, because more machinery means more assumptions and more ways to misconfigure. It also has more explicit failure-surfacing tools: canaries, reports, drift correction, verification gates, and hook signals. | Lower, partly because it does less repo-local automation. Smaller workflows are easier to reason about, but fewer failures are mechanically surfaced. | Context-dependent |
 
 ## Risks and Tradeoffs
 
@@ -115,7 +116,7 @@ to repository state, scripts, hooks, and branch workflows.
 |---|---|---|
 | Setup burden | Higher: skills, hooks, config, helper scripts, landing choices, project conventions. | Lower: plugin install and skill activation. |
 | Context weight | Higher: many skills are long and procedural. | Lower: core skills are shorter and narrower. |
-| Workflow rigidity | High in configured pipelines. | Medium-high because some skills mandate discovery, brainstorming, and TDD. |
+| Workflow rigidity | High by design in configured pipelines. This is load-bearing: tracking and hooks exist because agents otherwise bypass hard parts. | Medium-high because some skills mandate discovery, brainstorming, and TDD. |
 | Misconfiguration impact | Higher because hooks, tracking, branch modes, and scheduling can interact. | Lower because more of the system is advisory/process-level. |
 | Installing both | Risky unless one system is clearly primary. Duplicate planning, verification, worktree, and completion instructions can conflict. | Same risk from the other side. |
 
@@ -127,9 +128,10 @@ to repository state, scripts, hooks, and branch workflows.
 | You want an agent to work through multi-phase plans over time | Z Skills | Its plan execution, tracking, scheduling, and landing workflows are built for this. |
 | You are onboarding a broad team or many repos | Superpowers | It is easier to distribute and explain. |
 | You are operating one important repo with repeatable agent workflows | Z Skills | The setup cost can pay off through guardrails and automation. |
-| You need strict TDD behavior | Superpowers | The TDD skill is sharper and more general-purpose. |
+| You need strict TDD behavior | Superpowers | TDD-first is an explicit Superpowers practice. Z Skills intentionally emphasizes independent verification-after rather than red-green-refactor as the central discipline. |
 | You need batch issue-fixing or autonomous PR flow | Z Skills | Those are first-class workflows. |
-| You want to create new reusable skills | Superpowers | Its skill-writing guidance is stronger and less project-specific. |
+| You want to create new reusable skills | Superpowers | Its skill-writing guidance is direct, mature, and less project-specific. |
+| You want to design or revise large execution plans | Z Skills | `/draft-plan` and `/refine-plan` add adversarial review, devil's-advocate pressure, and drift correction before execution. |
 | You want repo-specific safety hooks and tracking | Z Skills | That is its core advantage. |
 
 ## Combined Strategy
@@ -146,21 +148,6 @@ The safer combined approach is:
 | 2 | If Superpowers is primary, borrow Z Skills ideas for repo-specific hooks, tracking, or issue-sprint automation only where needed. |
 | 3 | If Z Skills is primary, borrow Superpowers' TDD, systematic debugging, and skill-authoring standards as quality bars inside Z Skills workflows. |
 | 4 | Document any precedence rules in the repo agent instructions so the model does not try to follow conflicting workflows. |
-
-## Reviewer Corrections Applied
-
-Two independent review agents checked the assessment. Their main corrections
-are reflected above:
-
-| Correction | Impact on This Document |
-|---|---|
-| Do not call Superpowers an "official framework." | This document describes it as a plugin-distributed methodology layer instead. |
-| Do not overstate Superpowers enforcement. | Enforcement is described as mostly process-level unless supported by runtime hooks. |
-| Do not make the distinction too binary. | Both systems teach and orchestrate; the difference is degree and repo coupling. |
-| Treat line counts as weak evidence. | Counts are shown only as context for system shape. |
-| Warn against combining both wholesale. | The combined strategy section requires choosing one primary orchestrator. |
-| Emphasize Z Skills environment assumptions. | Risks and recommendations call out setup, GitHub, worktree, hook, scheduling, and tracking assumptions. |
-| Emphasize Superpowers' own friction. | Risks call out mandatory discovery, brainstorming, and TDD discipline. |
 
 ## Final Take
 
