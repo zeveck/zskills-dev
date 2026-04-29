@@ -67,10 +67,24 @@ byte-identical.
 
 - [ ] 1.1 — Create `skills/draft-tests/SKILL.md` with frontmatter
   (`name: draft-tests`, `disable-model-invocation: false`,
-  `argument-hint: "<plan-file> [rounds N]"`, description).
+  `argument-hint: "<plan-file> [rounds N] [guidance...]"`, description).
+  The `[guidance...]` positional tail mirrors `/refine-plan` PR #85
+  (`skills/refine-plan/SKILL.md:4`); see WI 1.2 for parsing semantics
+  and Phase 4 for prompt-prepend behavior.
 - [ ] 1.2 — Implement argument parsing: first `.md` or slash-containing
   token is the plan file (prepend `plans/` if bare); `rounds N` sets
-  cycles (default 3). Error on missing plan file with usage string.
+  cycles (default 3 — see Phase 4 D&C for the rationale vs.
+  `/refine-plan`'s default 2). Any tokens not matched as plan file or
+  `rounds N` are joined with spaces into **guidance text** —
+  prepended to BOTH the reviewer and DA prompts in Phase 4 as a
+  "User-driven scope/focus directive" section, mirroring
+  `skills/refine-plan/SKILL.md:50, :132`. Empty guidance preserves
+  byte-identical reviewer/DA prompt output (regression-safe). The
+  guidance text is **priming context** that shapes WHAT the agents
+  pressure-test — NOT factual claims they should act on without
+  verification. Verify-before-fix discipline still applies in the
+  refiner. Error on missing plan file with usage string
+  `Usage: /draft-tests <plan-file> [rounds N] [guidance...]`.
 - [ ] 1.3 — Implement tracking fulfillment using the canonical idiom
   (see research §Tracking marker idiom). Two-tier PIPELINE_ID
   resolution: if `$ZSKILLS_PIPELINE_ID` is set (delegated invocation),
@@ -82,7 +96,16 @@ byte-identical.
   `fulfilled.draft-tests.$TRACKING_ID` with `status: started` at
   Phase 1 and `status: complete` at finalize. Pass any constructed
   PIPELINE_ID (not the env-var-supplied value) through
-  `scripts/sanitize-pipeline-id.sh` before writing to disk.
+  `"$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"`
+  (per `skills/update-zskills/references/script-ownership.md` cross-skill
+  caller convention) before writing to disk. Source-tree zskills tests
+  use `"$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"`
+  — mirroring `skills/work-on-plans/SKILL.md` and
+  `skills/zskills-dashboard/SKILL.md`. The bare-relative
+  `scripts/sanitize-pipeline-id.sh` form is FORBIDDEN — that path no
+  longer exists post-PR-#97 (relocated under `create-worktree`'s
+  ownership) and `/update-zskills`'s STALE_LIST migration will remove
+  it from any consumer checkout.
 - [ ] 1.4 — Parse the plan file: YAML frontmatter, Progress Tracker
   table, phase sections. Classify each phase Completed / Pending using
   `/refine-plan`'s rules (`Done`, `✅`, or `[x]` in the Status column,
@@ -225,6 +248,13 @@ byte-identical.
   `AC-N.M — ` prefix is added. If a reviewer flags AC-ID assignment as
   a modification, the justification is: "ID prefix is content-preserving
   metadata required to reference criteria from the appended specs."
+- **Cross-skill script invocation.** Use the
+  `"$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>"` form for
+  any helper from another skill. The bare-`scripts/<name>` form is
+  forbidden post-PR-#97 — those paths are removed by `/update-zskills`'s
+  STALE_LIST migration on consumer checkouts. See
+  `skills/update-zskills/references/script-ownership.md` for the full
+  owner registry.
 - **No jq.** Parse YAML and JSON (including `.claude/zskills-config.json`
   in later phases) via bash regex with `BASH_REMATCH`. Idiom (from
   research §Bash regex JSON parsing idiom):
@@ -246,9 +276,17 @@ byte-identical.
 ### Acceptance Criteria
 
 - [ ] AC-1.1 — `skills/draft-tests/SKILL.md` exists with valid
-  frontmatter matching the fields listed in 1.1.
+  frontmatter matching the fields listed in 1.1, including the
+  `[guidance...]` positional tail in `argument-hint`.
 - [ ] AC-1.2 — Invoking the skill with no plan-file argument produces
-  an error mentioning "Usage: /draft-tests <plan-file> [rounds N]".
+  an error mentioning "Usage: /draft-tests <plan-file> [rounds N] [guidance...]".
+- [ ] AC-1.2b — Invocation `/draft-tests plans/FOO.md focus on
+  integration tests` produces reviewer + DA prompts whose body begins
+  with "User-driven scope/focus directive: focus on integration tests"
+  (mirroring `skills/refine-plan/SKILL.md:132`). Invocation without
+  the tail produces prompts byte-identical to the no-guidance baseline
+  — verified by a stubbed-prompt diff fixture (regression guard
+  against accidental directive-section emission on empty guidance).
 - [ ] AC-1.3 — After Phase 1 runs, a file
   `.zskills/tracking/<pipeline-id>/fulfilled.draft-tests.<tracking-id>`
   exists with `status: started`.
@@ -652,11 +690,18 @@ explicit gotcha suppression, and converge it.
   on a broken implementation, (d) a mock destroys the test's value
   (asserts on its own mock), (e) a specified observable side effect
   is not exercised, (f) a spec targets scope wrong (e.g., an
-  integration-only AC has only unit specs).
+  integration-only AC has only unit specs). **If the user supplied
+  positional-tail guidance** (per WI 1.2), prepend a
+  `User-driven scope/focus directive:` section with the verbatim
+  guidance text — exactly mirroring `skills/refine-plan/SKILL.md:50,
+  :132`. The agent treats guidance as priming context (what to
+  pressure-test), NOT as factual claims (still subject to
+  verify-before-fix in the refiner).
 - [ ] 4.2 — Devil's advocate agent prompt. Same persona, adversarial
   stance. Genuinely tries to find how the spec set will leave real
   defects uncaught. Explicitly NOT a gotcha-generator — calibration
-  text from research §Senior QE norms applies.
+  text from research §Senior QE norms applies. Same guidance prepend
+  semantics as 4.1.
 - [ ] 4.3 — **NOT-a-finding list** (authored fresh for this skill; not
   inherited from /draft-plan — /draft-plan has no QE-specific
   NOT-a-finding list). Inserted verbatim in BOTH reviewer and DA
@@ -677,7 +722,8 @@ explicit gotcha suppression, and converge it.
   meets the stated criteria." The loop treats this as a round-pass,
   not a bug. This zero-findings path is NOT equivalent to
   "convergence" — convergence is enforced mechanically against the
-  positive definition in Design & Constraints, which includes an
+  positive definition in Design & Constraints (which is the
+  orchestrator's check, not the refiner's self-call), and includes an
   orchestrator-level coverage-floor check that runs BEFORE agent
   dispatch each round.
 - [ ] 4.5 — **Mandatory blast-radius field.** (Authored fresh for this
@@ -739,7 +785,11 @@ explicit gotcha suppression, and converge it.
   finding (Verified / Not reproduced / No anchor / Judgment) in a
   disposition table. For Verified findings with moderate/major blast
   radius, fix the draft. For Not-reproduced or No-anchor findings,
-  justify-not-fix with the reproduction attempt recorded.
+  justify-not-fix with the reproduction attempt recorded. **The
+  refiner produces a disposition table — it does NOT declare
+  convergence.** Convergence is the orchestrator's mechanical check
+  against the disposition table, per Design & Constraints; the
+  refiner's role ends at its disposition table.
 - [ ] 4.10 — Write per-round artifacts:
   `/tmp/draft-tests-review-round-N-<slug>.md` (combined reviewer +
   DA + synthesised coverage-floor findings) and
@@ -748,11 +798,27 @@ explicit gotcha suppression, and converge it.
 - [ ] 4.11 — Convergence check (positive definition, see Design &
   Constraints). On convergence or max rounds, the refined draft from
   the last round becomes the final spec set used in Phase 5 / 6.
+  **Convergence is determined by the orchestrator (the SKILL body
+  itself) reading the refiner's disposition table and applying the
+  four positive conditions from Design & Constraints — never by
+  accepting "CONVERGED" or equivalent self-declaration from the
+  refiner agent's prose output.**
 
 ### Design & Constraints
 
+- **Convergence is the orchestrator's judgment, not the refiner's
+  self-call.** Mirroring `skills/refine-plan/SKILL.md:383` and
+  `skills/draft-plan/SKILL.md:474`: the refiner produces a disposition
+  table; the orchestrator (the skill body itself, not the agent)
+  reads the table and applies the four positive conditions below.
+  NEVER accept "CONVERGED", "no further refinement needed", or
+  equivalent self-call from the refiner agent as authoritative —
+  the refiner just refined; it is biased toward declaring its own
+  work done. This is a recurring failure mode in practice (see
+  CLAUDE.md memory anchor `feedback_convergence_orchestrator_judgment.md`).
 - **Convergence (positive).** A round converges when all four of the
-  following hold:
+  following hold (orchestrator counts these against the disposition
+  table; refiner's prose claim of convergence is ignored):
   1. Every AC across all Pending non-delegate phases has ≥ 1 spec
      referencing it (coverage floor — enforced mechanically by 4.8
      before agent dispatch).
@@ -766,10 +832,40 @@ explicit gotcha suppression, and converge it.
   each round finds a new wave of decreasingly-relevant issues.
   "Zero findings from agents" is a valid round result but does NOT by
   itself imply convergence — the positive criteria must all hold.
-- **Default rounds = 3.** Matches `/draft-plan`. Early exit on
-  convergence before max rounds.
+- **Default rounds = 3.** Matches `/draft-plan` (also default 3).
+  Note: `/refine-plan` defaults to 2 because it operates on an
+  already-refined plan; `/draft-tests`'s 3 matches `/draft-plan`
+  because the typical invocation is blank-slate (no prior `### Tests`
+  subsections) — Phase 4's senior-QE personas review specs against
+  fresh ACs whose shape they have never seen, more like first-pass
+  than refinement. On re-invocation against a plan that already has
+  specs (Phase 5 refinement path), 2 rounds would suffice — but the
+  simpler v1 contract is "default 3 always; early exit on
+  convergence handles the re-invocation case." Override with
+  `rounds N` per invocation.
+- **PLAN-TEXT-DRIFT tokens are out of scope.** `/run-plan`'s
+  PLAN-TEXT-DRIFT pipeline (PRs #90-#92, see
+  `skills/run-plan/SKILL.md:739, :744, :1358-:1418`) detects
+  arithmetic divergence in plan bullets at execution time. Test specs
+  authored by `/draft-tests` are qualitative (scope/AC-link/literal-
+  expected) and contain no arithmetic claims a `/run-plan` agent
+  would measure — so the drafter does NOT emit `PLAN-TEXT-DRIFT:`
+  tokens, and the review loop does not check for them. WI 1.6's
+  AC-ID assignment touches ONLY the `### Acceptance Criteria` block;
+  the drafter's `### Tests` output is treated as inert text by
+  `plan-drift-correct.sh --correct` (which targets `### Acceptance
+  Criteria` numeric bullets only). This is a correct
+  non-integration; flagged here so a future implementer doesn't
+  introduce a spurious coupling.
 - **Both agents dispatched in parallel** per round — as in
   `/draft-plan` Phase 3.
+- **Agent model dispatch.** Reviewer, DA, and refiner agents inherit
+  the parent model (Opus by default) — do NOT pass a `model:`
+  parameter on dispatch. QE judgment is judgment-class work, not
+  bulk pattern matching; CLAUDE.md memory anchor `feedback_no_haiku.md`
+  is explicit on this. Past canary failures have stemmed from
+  Sonnet/Haiku optimisations on judgment-class tasks; defending
+  against the temptation up front.
 - **Refiner can STOP and report** if it cannot resolve a finding and
   cannot justify it away. The skill surfaces unresolved findings in
   the final output rather than silently writing a spec set with known
@@ -837,6 +933,17 @@ explicit gotcha suppression, and converge it.
   floor-violations should NOT fire) and verifies the pre-check is
   invoked against the merged view in both first-invocation and
   re-invocation modes.
+- [ ] AC-4.9 — **Orchestrator-judgment convergence guard (negative
+  case).** A fixture refiner output that contains the literal text
+  "CONVERGED", "no further refinement needed", or any equivalent
+  self-call but whose disposition table fails any of the four
+  positive conditions in Design & Constraints (missing AC coverage,
+  non-literal expected, dup of round N-1, unresolved
+  moderate/major-blast-radius finding) does NOT cause the skill to
+  exit with convergence status — the orchestrator's mechanical
+  check on the disposition table overrides the refiner's self-call.
+  Verified by running the orchestrator's convergence determination
+  on the fixture's disposition table and asserting `converged=false`.
 
 ### Dependencies
 
@@ -960,10 +1067,25 @@ re-invocation — deliberately named distinct from `/refine-plan`'s
   and `:536`) and would otherwise refuse to execute the new backfill
   phase, silently orphaning it. This frontmatter flip is the only
   frontmatter edit the skill is permitted to make.
+
+  **Cron interaction (informational).** `/run-plan`'s terminal-cron
+  cleanup at `skills/run-plan/SKILL.md:413-419` runs only when
+  `status==complete`. When `/draft-tests` flips `status` complete →
+  active, the next `/run-plan` invocation enters the case-4 normal
+  preflight path (not case 1) — the cron correctly continues firing
+  and re-evaluates the plan with the new backfill phase.
+  `/draft-tests` does NOT touch registered crons; the status flip is
+  the only frontmatter mutation. Documented so a future "why
+  doesn't /draft-tests delete the cron when flipping status?"
+  question has an answer in the spec.
 - [ ] 5.7 — `## Test Spec Revisions` section for re-invocation. When
   the skill modifies a Pending phase's existing `### Tests`
   subsection or appends a new backfill phase, append (or update) a
-  `## Test Spec Revisions` section. Use a 2-column format:
+  `## Test Spec Revisions` section. **Placement: AFTER any existing
+  `## Drift Log` and `## Plan Review` sections** (the trailing
+  sections `/refine-plan` writes; see Phase 5 D&C "Co-skill ordering
+  with /refine-plan" below for the rationale and the cross-skill
+  checksum-boundary interaction). Use a 2-column format:
   ```markdown
   ## Test Spec Revisions
 
@@ -1018,6 +1140,42 @@ re-invocation — deliberately named distinct from `/refine-plan`'s
   2-column schema (`| Date | Change |`) is chosen because
   Planned/Actual columns would be meaningless for spec-authoring
   actions.
+- **Co-skill ordering with `/refine-plan`** (cross-skill integration
+  risk, named explicitly). `/refine-plan`'s checksum boundary at
+  `skills/refine-plan/SKILL.md:110` is closed-form — "the full text
+  from `## Phase N` to the next `## Phase` or end of file" — not the
+  broad-wildcard form `/draft-tests` uses. If `## Test Spec
+  Revisions` is placed between the last `## Phase` and `## Drift
+  Log`, `/refine-plan`'s next-invocation checksum on the last
+  Completed phase will INCLUDE bytes through `## Test Spec Revisions`
+  (its boundary scan only terminates at the next `## Phase`).
+  Subsequent `/draft-tests` re-invocations that grow `## Test Spec
+  Revisions` would then trigger a `/refine-plan` checksum mismatch
+  and a false "Completed phase drifted" error. **Resolution
+  (binding):** `/draft-tests` MUST place `## Test Spec Revisions`
+  AFTER any existing `## Drift Log` and `## Plan Review` sections
+  (and after any other user-authored trailing non-phase headings),
+  so `/refine-plan`'s closed-form boundary scan still terminates at
+  `## Drift Log` rather than seeing `## Test Spec Revisions` first.
+  Additionally, **a plan touched by both skills should run
+  `/refine-plan` BEFORE `/draft-tests` in any cycle** — `/refine-plan`
+  computes its checksums in its own Phase 1, and any subsequent
+  `/draft-tests` run modifies trailing sections (where `/refine-plan`
+  is no longer scanning). Note: `/refine-plan`'s Phase 5 reassembly
+  (`skills/refine-plan/SKILL.md:397-411`) rebuilds frontmatter +
+  Overview + Tracker + Completed + Refined-remaining + fresh Drift
+  Log + fresh Plan Review and **does not preserve any pre-existing
+  trailing sections beyond those it rebuilds** — so a `## Test Spec
+  Revisions` section written by `/draft-tests` will be DESTROYED by a
+  subsequent `/refine-plan` run. Broadening `/refine-plan`'s checksum
+  boundary AND its reassembly preservation to recognise `## Test
+  Spec Revisions` is **out of scope** (depends on a co-skill change,
+  separate PR). Until that lands, callers must run `/draft-tests`
+  AFTER `/refine-plan` if both are needed in one cycle, and re-run
+  `/draft-tests` after every `/refine-plan` to recover any clobbered
+  `## Test Spec Revisions` history. Surfaced here so a future
+  reader's "why doesn't this just work both ways?" question has an
+  answer in the spec.
 - **Never record in `## Test Spec Revisions` that a Completed phase
   was modified.** If that ever happened, the checksum gate already
   refused the write. The only Completed-phase-adjacent entry is
@@ -1111,6 +1269,17 @@ re-invocation — deliberately named distinct from `/refine-plan`'s
   AC closes the round-3 reviewer's data-flow gap between Phase 5's
   runtime-appended phases and Phase 4's parsed-state-driven
   coverage-floor pre-check.
+- [ ] AC-5.11 — **`## Test Spec Revisions` placement after Drift Log
+  / Plan Review.** On a plan that already contains `## Drift Log`
+  and `## Plan Review` sections (e.g., a plan previously refined by
+  `/refine-plan`), after `/draft-tests` writes a new
+  `## Test Spec Revisions` section (per WI 5.7), the resulting plan
+  contains the headings in this order: last `## Phase ...`, then
+  `## Drift Log`, then `## Plan Review`, then `## Test Spec
+  Revisions`, then any user-authored trailing sections (e.g.,
+  `## Plan Quality`). Closes the `/refine-plan` checksum-boundary
+  cross-skill interaction documented in Phase 5 D&C "Co-skill
+  ordering with /refine-plan".
 
 ### Dependencies
 
@@ -1131,7 +1300,8 @@ one worked example showing before/after, and mirror the skill into
 ### Work Items
 
 - [ ] 6.1 — Write `tests/test-draft-tests.sh`. Covers:
-  - Frontmatter shape and argument parsing (AC-1.1, AC-1.2).
+  - Frontmatter shape and argument parsing including the
+    `[guidance...]` positional tail (AC-1.1, AC-1.2, AC-1.2b).
   - Tracking marker creation (AC-1.3).
   - Phase classification on a multi-status fixture plan including
     `Done`, `✅`, `[x]`, `⬚`, `⬜`, and empty-cell glyphs (AC-1.4).
@@ -1185,6 +1355,13 @@ one worked example showing before/after, and mirror the skill into
     phase's ACs, the coverage-floor pre-check synthesises a
     floor-violation finding for that AC.
   - `## Test Spec Revisions` format (AC-5.6).
+  - **`## Test Spec Revisions` placement after Drift Log / Plan
+    Review (AC-5.11):** fixture plan with pre-existing `## Drift
+    Log` and `## Plan Review` sections; after `/draft-tests` writes
+    a `## Test Spec Revisions` section, assert the resulting heading
+    order is last `## Phase ...` → `## Drift Log` → `## Plan Review`
+    → `## Test Spec Revisions` → trailing user-authored sections.
+    Cross-skill checksum-boundary co-existence guard.
   - Structural preservation of `## Drift Log` / `## Plan Quality`
     on backfill append (AC-5.7); plus the non-canonical-trailing-
     heading regression fixture (plan with `## Anti-Patterns -- Hard
@@ -1209,6 +1386,13 @@ one worked example showing before/after, and mirror the skill into
     file, not on plan file or drafter output alone (AC-4.8): two
     sub-cases — pre-merge synthesises violations, post-merge does
     not.
+  - **Orchestrator-judgment convergence guard (AC-4.9):** fixture
+    refiner output containing literal "CONVERGED" / "no further
+    refinement needed" but with a disposition table failing one of
+    the four positive conditions; assert the orchestrator's
+    convergence determination returns `converged=false` and the
+    loop continues to the next round (or to max-rounds AC-4.6
+    handling if budget exhausted).
   - Max-rounds + floor-violation reconciliation (AC-4.6 + AC-4.7):
     fixture forces max-rounds with at least one AC still uncovered;
     assert (i) plan-on-disk contains the partial spec set, (ii)
@@ -1221,14 +1405,22 @@ one worked example showing before/after, and mirror the skill into
     prompt-assembly contents and mutation output without live model
     calls. Live-LLM tests (if any) gated behind `ZSKILLS_TEST_LLM=1`.
 - [ ] 6.2 — Register the test in `tests/run-all.sh` via
-  `run_suite "test-draft-tests.sh" "tests/test-draft-tests.sh"` near
-  other skill-conformance and skill-test entries — `tests/run-all.sh`
-  is domain-grouped, NOT alphabetised; place the new entry after
-  `test-skill-invariants.sh` or another skill-test peer.
+  `run_suite "test-draft-tests.sh" "tests/test-draft-tests.sh"`.
+  `tests/run-all.sh` is domain-grouped, NOT alphabetised — group
+  the new entry alongside other skill-conformance / skill-test peers
+  (e.g., near `test-skill-conformance.sh` line 43,
+  `test-skill-invariants.sh` line 45, `test-mirror-skill.sh` line
+  53, or `test-stub-callouts.sh` line 58 — line numbers are
+  illustrative, anchored to current main but not load-bearing).
+  Exact line is the implementer's judgment; what matters is the
+  entry sits in the skill-test cluster, not at end-of-file or
+  between unrelated domain groups.
 - [ ] 6.3 — Extend `tests/test-skill-conformance.sh` with
-  draft-tests-specific checks:
+  draft-tests-specific checks (one `check` / `check_fixed` line per
+  sub-bullet below; AC-6.2 enforces list-membership not literal count):
   - `skills/draft-tests/SKILL.md` has the canonical frontmatter
-    fields.
+    fields including the `[guidance...]` positional tail in
+    `argument-hint`.
   - The tracking marker basename pattern matches the canonical scheme
     (`fulfilled.draft-tests.<id>`).
   - The SKILL.md body contains the NOT-a-finding list verbatim (grep
@@ -1238,6 +1430,14 @@ one worked example showing before/after, and mirror the skill into
   - The SKILL.md body contains the orchestrator-level coverage-floor
     pre-check (grep for a distinctive phrase from 4.8) — guards
     against silent regression of the coverage-floor gate.
+  - **The SKILL.md body contains the "orchestrator's judgment, not
+    the refiner's self-call" framing** (grep for the phrase
+    `orchestrator's judgment` in the convergence context). Guards
+    against silent drift back to refiner-self-declared convergence
+    — the recurring failure mode CLAUDE.md memory anchor
+    `feedback_convergence_orchestrator_judgment.md` flags. Mirrors
+    the same phrase in `skills/refine-plan/SKILL.md:383` and
+    `skills/draft-plan/SKILL.md:474`.
   - The SKILL.md body asserts the broad-form checksum-boundary rule
     (grep for a distinctive phrase such as "next level-2 heading"
     or "next `## ` heading at column 0"). Guards against silent
@@ -1260,30 +1460,59 @@ one worked example showing before/after, and mirror the skill into
     falsely terminate Completed-phase checksums at in-code headings
     (the round-2 /refine-plan DA Finding 1 — empirically present in
     `plans/EXECUTION_MODES.md` lines 236, 2079, 2082).
-  - The SKILL.md body does NOT contain `jq` as a standalone word.
-- [ ] 6.4 — Worked example. Create `plans/examples/` directory (it
-  does not exist yet) with a `README.md` explaining "this directory
-  holds purpose-built example plans demonstrating skill behavior;
-  nothing here is executed by `tests/run-all.sh` or `/run-plan`."
-  Author a small stable illustrative plan
-  `plans/examples/DRAFT_TESTS_EXAMPLE_PLAN_before.md` (NOT a copy of
-  a real in-use `plans/*.md`). Run the skill against a copy of it
-  into `plans/examples/DRAFT_TESTS_EXAMPLE_PLAN.md`. Both files ship
-  as documentation. The README documents the before/after diff
-  showing how one Pending phase gained a `### Tests` subsection.
-  This resolves the prior contradiction between "do not reuse real
-  plans as fixtures" (Design & Constraints) and "pick a real plan
-  from `plans/`" (earlier wording).
-- [ ] 6.5 — Mirror source to `.claude/skills/` at the end. Single
-  batch:
+  - The SKILL.md body does NOT contain `jq` as a standalone word
+    (per AC-6.6's hardened pattern with `[^a-zA-Z_]` boundaries and
+    `-I`).
+- [ ] 6.4 — Worked example. Author stable illustrative fixture plans
+  under `tests/fixtures/draft-tests/examples/` (NOT under
+  `plans/examples/`). The directory holds
+  `tests/fixtures/draft-tests/examples/README.md` explaining "this
+  directory holds purpose-built example plans demonstrating skill
+  behavior; nothing here is executed by `tests/run-all.sh` or
+  `/run-plan` — fixtures and worked examples co-locate under
+  `tests/fixtures/` to keep them out of any future `plans/` glob."
+  Author the small stable illustrative plan
+  `tests/fixtures/draft-tests/examples/DRAFT_TESTS_EXAMPLE_PLAN_before.md`
+  (NOT a copy of a real in-use `plans/*.md`). Run the skill against
+  a copy of it into
+  `tests/fixtures/draft-tests/examples/DRAFT_TESTS_EXAMPLE_PLAN.md`.
+  Both files ship as documentation. The README documents the
+  before/after diff showing how one Pending phase gained a
+  `### Tests` subsection. **Rationale for `tests/fixtures/`
+  placement (not `plans/`):** current PLAN_INDEX.md rebuild scanners
+  (`skills/zskills-dashboard/scripts/zskills_monitor/collect.py:1097`
+  uses `plans_dir.glob("*.md")` — top-level only, NOT recursive,
+  verified) wouldn't pick up `plans/examples/*.md` today, but a
+  future change to recursive globbing would silently surface the
+  examples in the live index. Co-locating with fixtures is
+  defensive: the "examples are pure documentation" framing already
+  matches the `tests/fixtures/` mental model, and no existing
+  tooling globs `tests/fixtures/`. This resolves the prior
+  contradiction between "do not reuse real plans as fixtures"
+  (Phase 6 D&C) and "pick a real plan from `plans/`" (earlier
+  wording).
+- [ ] 6.5 — Mirror source to `.claude/skills/` at the end via the
+  canonical helper:
   ```bash
-  mkdir -p .claude/skills/draft-tests
-  cp skills/draft-tests/SKILL.md .claude/skills/draft-tests/SKILL.md
+  bash scripts/mirror-skill.sh draft-tests
   ```
-  Never edit `.claude/skills/draft-tests/SKILL.md` directly during
-  development — all edits go to `skills/draft-tests/SKILL.md` first.
-  This is the last action before the tracking `status: complete`
-  write.
+  This script handles per-file copy, orphan detection (per-file
+  `rm`, not `rm -rf` — hook-compatible), and post-regen `diff -rq`
+  verification (see `scripts/mirror-skill.sh:30-75` for the full
+  contract). Inline `rm -rf .claude/skills/draft-tests && cp -a ...`
+  is hook-blocked by `hooks/block-unsafe-generic.sh:217-220`
+  (RM_RECURSIVE pattern) and forbidden. Inline two-line
+  `mkdir -p && cp` is also forbidden — it copies only `SKILL.md`,
+  doesn't handle `references/` or `scripts/` subdirectories the
+  skill may grow, and doesn't detect orphan files in the mirror
+  from prior runs. **Never edit any file under
+  `.claude/skills/draft-tests/` directly during development** —
+  all edits go to `skills/draft-tests/` first, then re-run
+  `bash scripts/mirror-skill.sh draft-tests`. (CLAUDE.md memory
+  anchor `feedback_claude_skills_permissions.md`: edits to
+  `.claude/skills/` trigger permission storms; mirror discipline
+  is the workaround.) This is the last action before the tracking
+  `status: complete` write.
 - [ ] 6.6 — End-of-phase tracking marker. Write
   `step.draft-tests.$TRACKING_ID.finalize` and update the
   `fulfilled.draft-tests.$TRACKING_ID` marker to `status: complete`,
@@ -1297,15 +1526,21 @@ one worked example showing before/after, and mirror the skill into
   through `| tail` / `| grep` in the test file itself. This matches
   the CLAUDE.md capture idiom.
 - **Fixture plans** live under `tests/fixtures/draft-tests/` and are
-  deliberately minimal — one plan per test scenario. **Fixtures
-  (under `tests/fixtures/`) and worked examples (under
-  `plans/examples/`) are disjoint sets; neither reuses real
-  `plans/*.md` files.** Fixtures are for automated tests; worked
-  examples are documentation.
+  deliberately minimal — one plan per test scenario. **Worked
+  examples** live under `tests/fixtures/draft-tests/examples/`
+  alongside fixtures (NOT under `plans/examples/` — see WI 6.4
+  rationale). Fixtures are for automated tests; worked examples are
+  documentation; both share the `tests/fixtures/` root because
+  neither is a real executable plan and `tests/fixtures/` is
+  excluded from every plan-scanning tool. Neither reuses real
+  `plans/*.md` files.
 - **Worked example is evidence, not infrastructure.** The example
-  files ship in `plans/examples/` as pure documentation. They are
-  NOT invoked by `tests/run-all.sh`. They are not wired into
-  `/run-plan`.
+  files ship in `tests/fixtures/draft-tests/examples/` as pure
+  documentation. They are NOT invoked by `tests/run-all.sh`. They
+  are not wired into `/run-plan`.
+- **Mirror discipline.** All `.claude/skills/draft-tests/` writes go
+  through `scripts/mirror-skill.sh` — never inline `cp` / `rm`. The
+  helper is hook-compatible and verifies `diff -rq` post-regen.
 - **No suppression of fallible operations.** The test file uses
   `&& echo "ok"` (not `; echo "ok"`) after destructive or fallible
   steps. No `2>/dev/null` on `git`, `cp`, `rm` commands whose success
@@ -1316,7 +1551,13 @@ one worked example showing before/after, and mirror the skill into
   framework; use whatever the file already uses.
 - **Do not weaken tests in this phase to make them pass.** If
   `tests/test-draft-tests.sh` fails against the Phase 1–5 build,
-  fix the skill, not the test.
+  fix the skill, not the test. **Surface-bugs-don't-patch
+  corollary (CLAUDE.md):** zskills is a skill-framework repo —
+  every quiet route-around in `/draft-tests`'s build-out (silenced
+  fixture, relaxed regex, deleted assertion) gets multiplied across
+  every downstream consumer plan. If a test reveals a SKILL.md spec
+  gap, surface it as a real defect and fix the SKILL.md — never
+  quietly patch the test.
 - **No live LLM calls from the test suite.** All refiner / reviewer /
   DA behavior exercised by `tests/test-draft-tests.sh` uses stubbed
   prompts and canned responses (pre-authored fixture files).
@@ -1329,35 +1570,120 @@ one worked example showing before/after, and mirror the skill into
 - [ ] AC-6.1 — `tests/run-all.sh` invokes `tests/test-draft-tests.sh`
   and the suite passes locally (exit 0) with `ZSKILLS_TEST_LLM`
   unset.
-- [ ] AC-6.2 — `tests/test-skill-conformance.sh` passes and includes
-  all ten draft-tests-specific checks enumerated in 6.3 items
-  (1)–(10). Future additions to 6.3 must bump this count concurrently.
-- [ ] AC-6.3 — `plans/examples/` exists and contains
-  `README.md`, `DRAFT_TESTS_EXAMPLE_PLAN_before.md`, and
+- [ ] AC-6.2 — `tests/test-skill-conformance.sh` passes; the new
+  draft-tests block contains **one `check` / `check_fixed` line per
+  WI 6.3 sub-bullet** (list-membership invariant — the check count
+  is derived from WI 6.3's enumerated bullet count, NOT pinned to a
+  literal numeral). The conformance test file includes a tag-line
+  comment in the draft-tests block referencing WI 6.3 as the
+  authoritative enumeration source, so future WI 6.3 additions
+  drive a single edit (the new conformance line) rather than
+  coupled edits at WI 6.3 + AC-6.2 literal. Closes the count-drift
+  surface that fired during /refine-plan round 2 (9 → 10).
+- [ ] AC-6.3 — `tests/fixtures/draft-tests/examples/` exists and
+  contains `README.md`, `DRAFT_TESTS_EXAMPLE_PLAN_before.md`, and
   `DRAFT_TESTS_EXAMPLE_PLAN.md`; `diff` between the two plan files
   shows (i) an appended `### Tests` subsection in at least one
   Pending phase and (ii) no changes to Completed-phase sections.
-- [ ] AC-6.4 — `.claude/skills/draft-tests/SKILL.md` exists and is
-  byte-identical to `skills/draft-tests/SKILL.md` (verified by `cmp`
-  in the test file).
+  No example files appear under `plans/examples/` (negative
+  assertion guarding against accidental relocation).
+- [ ] AC-6.4 — `.claude/skills/draft-tests/` mirrors
+  `skills/draft-tests/` with no diff (verified by
+  `diff -rq skills/draft-tests/ .claude/skills/draft-tests/`
+  returning empty output, matching the contract
+  `scripts/mirror-skill.sh` enforces post-regen at lines 66-71).
+  At minimum, `cmp skills/draft-tests/SKILL.md
+  .claude/skills/draft-tests/SKILL.md` returns identical; if the
+  skill ships any subdirectory (`references/`, `scripts/`), all
+  nested files are also identical and no orphans exist on either
+  side. Closes the orphan-survivor failure mode that the prior
+  inline `cp` snippet didn't catch.
 - [ ] AC-6.5 — After Phase 6 completes end-to-end, the tracking
   fulfillment marker for the skill's own run has `status: complete`.
 - [ ] AC-6.6 — **Hardened jq-absence assertion** (closes the
-  empty-grep-on-missing-dir hole): the conformance check is
-  `test -f skills/draft-tests/SKILL.md && ! grep -rE '(^|[^a-zA-Z])jq([^a-zA-Z]|$)' skills/draft-tests/` — fails closed when the
-  directory is missing, and uses word-boundary regex so substrings
-  like `jquery` do not match but real `jq` invocations do.
+  empty-grep-on-missing-dir hole and the underscore-identifier
+  false-positive): the conformance check is
+  `test -f skills/draft-tests/SKILL.md && ! grep -rIE '(^|[^a-zA-Z_])jq([^a-zA-Z_]|$)' skills/draft-tests/`
+  — fails closed when the directory is missing, uses `[^a-zA-Z_]`
+  word-boundary regex so substrings like `jquery` and identifiers
+  like `_jq_helper` do not match but real `jq` invocations
+  (`| jq '.'`, `jq -r ...`) do. `-I` skips binary files
+  defensively.
 
 ### Dependencies
 
 Phases 1–5 (all skill behavior must exist before tests exercise it).
 Phase 4 (worked-example run exercises the full loop).
 
+---
+
+
+## Out of Scope
+
+(Added by /refine-plan 2026-04-29 round 1 — original plan had no Out of Scope section.)
+
+- **Broadening `/refine-plan`'s checksum boundary to include
+  `## Test Spec Revisions`.** `/refine-plan`'s
+  `skills/refine-plan/SKILL.md:110` boundary is closed-form ("next
+  `## Phase` or end of file"); a plan growing `## Test Spec
+  Revisions` between the last `## Phase` and `## Drift Log` would
+  cause `/refine-plan`'s next-invocation checksum on the last
+  Completed phase to incorrectly include `## Test Spec Revisions`
+  bytes, producing a false "Completed phase drifted" error. Phase 5
+  D&C "Co-skill ordering with /refine-plan" works around this by
+  pinning placement AFTER `## Drift Log` / `## Plan Review`. A
+  proper fix — broadening `/refine-plan`'s boundary regex (and its
+  Phase 5 reassembly preservation) to recognise `## Test Spec
+  Revisions` — depends on a co-skill change and ships in a separate
+  PR.
+- **Broadening `/refine-plan`'s Phase 5 reassembly to preserve
+  pre-existing `## Test Spec Revisions` sections.**
+  `skills/refine-plan/SKILL.md:397-411` rebuilds frontmatter +
+  Overview + Tracker + Completed + Refined-remaining + fresh Drift
+  Log + fresh Plan Review and discards any other trailing sections.
+  A `## Test Spec Revisions` section written by `/draft-tests` will
+  be DESTROYED by a subsequent `/refine-plan` run. Workaround
+  (binding for v1): callers run `/refine-plan` BEFORE `/draft-tests`
+  in any cycle, and re-run `/draft-tests` after every
+  `/refine-plan` to re-author the clobbered history. The proper fix
+  belongs in a `/refine-plan` PR.
+- **A `--bootstrap` flag prepending a Phase 0 to scaffold a missing
+  test runner** (already noted in WI 2.5 as future work; reiterated
+  here for Out-of-Scope completeness).
+- **Monitor surface integration** (`skills/zskills-dashboard/`,
+  `server.py`, `app.css`, `/work-on-plans` parser changes). Plan
+  has zero monitor coupling per pre-flight research; verified zero
+  references to monitor surfaces in plan body.
+
+
 ## Drift Log
 
-No completed phases — `/refine-plan` was invoked three times (rounds 1, 2, 3) on a freshly-drafted plan immediately after `/draft-plan` finalised, as verification-and-tighten rounds. All six phases were reviewed as remaining across all three rounds. No execution drift to record; no completed-vs-planned divergence exists.
+This refine (2026-04-29, /refine-plan round 1) absorbed post-2026-04-24 ecosystem changes from PRs #79, #82, #85, #88, #97, #90-#92. Original plan was authored 2026-04-24, status `active`, never executed (all 6 phases ⬚). It went through 6 prior adversarial review passes (3 /draft-plan + 3 /refine-plan), converging at round 3 with zero reviewer findings — so this absorption is targeted, not foundational re-review.
 
-The /refine-plan rounds surfaced substantive findings the prior `/draft-plan` rounds missed (round 1: 7; round 2: 2; round 3: 1) — those are itemised in the Plan Quality section below rather than here, since Drift Log's purpose is execution-time divergence (which is empty for this plan). Round 3's reviewer was the first clean (zero-finding) reviewer pass across the full 6-pass review history; the round-3 DA's single finding closed the last sibling-site of the WI 1.7b cone.
+### Ecosystem changes absorbed
+
+| Change | PR | Plan adjustment |
+|---|---|---|
+| `sanitize-pipeline-id.sh` relocated to `skills/create-worktree/scripts/` | #97 | WI 1.3 path re-anchored to `$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` per `script-ownership.md` |
+| `scripts/mirror-skill.sh` helper added; inline `rm -rf .claude/skills/X` hook-blocked | #88 | WI 6.5 mirror snippet replaced with `bash scripts/mirror-skill.sh draft-tests`; AC-6.4 widened to `diff -rq` (recursive) |
+| Convergence is orchestrator's judgment, not refiner's self-call | #82 | Phase 4 D&C extended with explicit framing; AC-4.9 tests negative case (refiner cannot self-declare CONVERGED) |
+| `[guidance...]` positional tail added to /refine-plan | #85 | Adopted for /draft-tests parity; WI 1.1/1.2 extended; AC-1.2b regression guard |
+| Default rounds asymmetry (/draft-plan=3 vs /refine-plan=2) | n/a | Kept default at 3 with explicit rationale (QE coverage is generative like drafting) |
+| PLAN-TEXT-DRIFT machinery in /run-plan | #90-#92 | Phase 4 D&C adds non-integration declaration (specs aren't arithmetic claims) |
+| `## Test Spec Revisions` checksum-boundary cross-skill risk | DA6 finding | Phase 5 D&C pins placement AFTER `## Drift Log`/`## Plan Review` to preserve /refine-plan's `## Phase` boundary scan; AC-5.11 + WI 5.7 enforce; co-skill-ordering workaround documented |
+| `plans/examples/` polluting PLAN_INDEX.md rebuild | DA8 finding | Worked example relocated to `tests/fixtures/draft-tests/examples/` |
+| AC-6.2 hardcoded conformance count fragility | R1.12/DA7 | Replaced with list-membership invariant (one check per WI 6.3 sub-bullet, pattern not count) |
+
+### Out-of-scope deferrals (per parallel-safety bar)
+
+- Broadening /refine-plan's checksum boundary AND its Phase 5 reassembly to recognise `## Test Spec Revisions` — depends on a co-skill change, separate /refine-plan PR
+- `--bootstrap` flag for first-run fixtures — future enhancement
+- Monitor-surface integration — N/A; plan has zero monitor coupling, ZSKILLS_MONITOR_PLAN in flight in another session
+
+### Non-coupling confirmed
+
+- Zero references to `skills/zskills-dashboard/`, `server.py`, `app.css`, `/work-on-plans`, or any monitor surface (verified during refine).
+- ROG line 153: "/draft-tests is its own skill family, no shared files" with ZSKILLS_MONITOR_PLAN.
 
 ## Plan Quality
 
@@ -1414,3 +1740,60 @@ All three /draft-plan rounds applied verify-before-fix at refinement: the refine
 ### Convergence verified empirically through round 3
 
 Strict /draft-plan convergence is "0 substantive issues found in a verification round." That bar was hit at round 3 of /refine-plan: the **reviewer returned zero findings** for the first time across all 6 passes. The DA returned one finding — a sibling-site of the WI 1.7b cone (AC-1.7b never added as a numbered bullet) that all six prior reviewers missed because none of them grep'd for the actual AC bullet's existence in Phase 1's AC block. That finding's fix is internal-only (no new spec patterns introduced that could in turn have sibling-sites), closing the WI 1.7b cone definitively. Cumulative trajectory across all 6 review passes: 21 → 7 → 2 → 7 → 2 → 1, monotonically decreasing in count and severity (zero HIGH since /draft-plan round 3; rounds 5+ all MEDIUM-or-below; rounds 4+ exclusively sibling-sites of prior fixes — no new defect classes). The plan has been pressure-tested against: the plan's own AC bullets (regex-against-self), the plan file's structural-rule reach (closed-enumeration sweep across all sites including AC-2.10 and the WI 1.7b cone), real-plan empirical fixtures (EXECUTION_MODES.md, EPHEMERAL_TO_TMP.md, CREATE_WORKTREE_SKILL.md, CANARY_DO_WORKTREE_BASE.md), adjacent-skill reality-grounding (citation line numbers, integration claims, post-round-2 commit drift via 28d22d8), numeric arithmetic on every count claim, fenced-code-block edge cases on the broad-form rule, and re-invocation idempotence on backfill phases. A round 7 of /refine-plan would most likely return zero findings — DA's own assessment: "the WI 1.7b sibling-site cone is now fully closed; a round-7 verification would almost certainly return zero." The plan is empirically converged and ready for `/run-plan`.
+
+## Disposition Table — /refine-plan 2026-04-29 Round 1 Adversarial Review
+
+| # | Source | Finding (summary) | Evidence | Disposition |
+|---|--------|-------------------|----------|-------------|
+| R1.1 | Reviewer | WI 1.3 sanitize-pipeline-id.sh path drift (post-PR-#97) — `scripts/sanitize-pipeline-id.sh` no longer exists; relocated to `skills/create-worktree/scripts/...` per script-ownership.md | Verified — `find . -name sanitize-pipeline-id.sh` returns only `skills/create-worktree/scripts/...` and `.claude/skills/create-worktree/scripts/...`; script-ownership.md:74-79 confirms `"$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>"` cross-skill caller form | Fixed — WI 1.3 last sentence rewritten to use `"$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"`; added Phase 1 D&C bullet "Cross-skill script invocation" naming the convention and forbidding bare-`scripts/` form (per user directive 1) |
+| R1.2 | Reviewer | WI 6.5 mirror snippet outdated (post-PR-#88) — inline `mkdir+cp` only copies SKILL.md, no orphan removal, no diff-verify; recursive-rm refactor is hook-blocked | Verified — `scripts/mirror-skill.sh:30-75` provides `cp -a` + per-file orphan loop + post-regen `diff -rq`; `hooks/block-unsafe-generic.sh:217-220` RM_RECURSIVE blocks recursive rm outside /tmp; script-ownership.md:32 names mirror-skill.sh as canonical | Fixed — WI 6.5 rewritten to `bash scripts/mirror-skill.sh draft-tests`; added Phase 6 D&C bullet "Mirror discipline"; AC-6.4 widened to `diff -rq` per directive 2 |
+| R1.3 | Reviewer | Phase 4 D&C convergence framing missing "orchestrator's judgment" (post-PR-#82) | Verified — `skills/refine-plan/SKILL.md:383` and `skills/draft-plan/SKILL.md:474` both contain the verbatim "orchestrator's judgment, not the refiner's self-call" framing | Fixed — added leading bullet "Convergence is the orchestrator's judgment, not the refiner's self-call" to Phase 4 D&C with citation to refine-plan:383 and draft-plan:474; added AC-4.9 testing the negative case (refiner self-call ignored when conditions fail); added WI 4.9 / 4.11 prose framing; added new WI 6.3 conformance grep for the phrase |
+| R1.4 | Reviewer | WI 1.1 argument-hint omits `[guidance...]` tail (post-PR-#85); asymmetric with /refine-plan | Verified — `skills/refine-plan/SKILL.md:4` has `[guidance...]`; plan L70 lacks it | Fixed — adopted `[guidance...]` per user directive 4; updated WI 1.1 argument-hint, WI 1.2 parsing semantics with priming-context-not-fact note, WI 4.1/4.2 prepend semantics, AC-1.1, added AC-1.2b (guidance-prepend regression guard), and 6.1 test bullet |
+| R1.5 | Reviewer | Default-rounds asymmetry vs /refine-plan undocumented | Verified — draft-plan default 3 (SKILL.md:32), refine-plan default 2 (SKILL.md:42-46) | Fixed — Phase 4 D&C "Default rounds" bullet expanded with explicit asymmetry rationale per user directive 5 (kept at 3 to match /draft-plan blank-slate framing; called out /refine-plan's 2 as the closer-structural-sibling alternative and explained why) |
+| R1.6 | Reviewer | PLAN-TEXT-DRIFT machinery (PRs #90-#92) unmentioned; non-integration not declared | Verified — plan grep for `PLAN-TEXT-DRIFT|plan-drift-correct` returns 0; run-plan SKILL.md has 14+ references | Fixed — added Phase 4 D&C bullet "PLAN-TEXT-DRIFT tokens are out of scope" with one-sentence non-coupling note citing run-plan SKILL.md:739, :744, :1358-:1418 (per user directive 6) |
+| R1.7 | Reviewer | WI 6.2 placement guidance has stale "after test-skill-invariants.sh" anchor | Verified — tests/run-all.sh line 45 still has test-skill-invariants.sh, but 16 more entries follow including test-mirror-skill.sh:53 and test-stub-callouts.sh:58 | Fixed — WI 6.2 rewritten with explicit anchor-stable guidance ("group alongside skill-conformance / skill-test peers, near line 43/45/53/58"); line numbers labeled "illustrative, anchored to current main but not load-bearing" |
+| R1.8 | Reviewer | AC-6.4 `cmp` parity check incompatible with subdirectory mirroring | Verified — `mirror-skill.sh:66-71` uses `diff -rq`; AC-6.4 specs `cmp` on a single file | Fixed — AC-6.4 rewritten to `diff -rq skills/draft-tests/ .claude/skills/draft-tests/` returning empty output, matching mirror-skill.sh contract; `cmp` retained as a minimum sub-condition |
+| R1.9 | Reviewer | WI 6.3 / AC-6.6 jq-absence regex `[^a-zA-Z]` boundaries miss underscore identifiers; `grep -r` follows symlinks inconsistently | Verified — plan L1347 has `(^|[^a-zA-Z])jq([^a-zA-Z]|$)` literal | Fixed — AC-6.6 hardened to `[^a-zA-Z_]` boundaries and `-rIE` (binary skip); WI 6.3 last bullet updated to reference AC-6.6's hardened pattern |
+| R1.10 | Reviewer | Phase 6 D&C "do not weaken tests" rule should reference CLAUDE.md surface-bugs guard | Verified — CLAUDE.md preamble has both rules paired ("NEVER weaken tests" + "Skill-framework repo — surface bugs, don't patch"); plan L1317-1319 only carries the first | Fixed — extended the "do not weaken tests" Phase 6 D&C bullet with the surface-bugs-don't-patch corollary, naming zskills as a skill-framework repo where quiet route-arounds get multiplied across consumers |
+| R1.11 | Reviewer | WI 5.6 spec lacks pointer to /run-plan's other terminal-treatment paths (cron interaction) | Verified — run-plan SKILL.md:413-419 cron cleanup gates on status==complete; status flip → active correctly bypasses (case-4 path) | Fixed — appended "Cron interaction (informational)" paragraph to WI 5.6 explaining cron correctly continues firing after status flip and that /draft-tests does not touch registered crons |
+| R1.12 | Reviewer | AC-6.2 hardcodes "ten" — count-pin fragility (already drifted 9→10 once during /refine-plan round 2) | Verified — plan L1332-1334 has "ten ... items (1)–(10). Future additions ... must bump this count concurrently"; round 2 drift confirmed in Plan Quality / Round History | Fixed — AC-6.2 rewritten to list-membership invariant ("one `check` / `check_fixed` line per WI 6.3 sub-bullet"); WI 6.3 preamble names the per-bullet contract explicitly per user directive 9 |
+| DA1 | DA | WI 1.3 sanitize-pipeline-id.sh path is broken (literal stale anchor) | Verified — same evidence chain as R1.1 (PR #97 relocation, script-ownership.md cross-skill caller convention, STALE_LIST migration) | Fixed — same edits as R1.1 (consolidated; this is a duplicate finding) |
+| DA2 | DA | WI 6.5 mirror snippet ships dirty mirror on re-runs (orphan files survive); AC-6.4 `cmp` SKILL.md alone passes silently on orphan-survivor | Verified — same evidence chain as R1.2 + DA2's broader AC-6.4 concern; mirror-skill.sh:32-63 covers subdirectories; AC-6.4 widening also addresses DA2's silent-pass concern | Fixed — same edits as R1.2 + AC-6.4 widened to `diff -rq` per user directive 2's broader scope (covers references/, scripts/, orphan removal) |
+| DA3 | DA | WI 6.5 narrative invariant "Never edit `.claude/skills/draft-tests/SKILL.md` directly" too narrow — should cover any file under `.claude/skills/draft-tests/` | Judgment | Fixed — WI 6.5 prohibition broadened: "Never edit any file under `.claude/skills/draft-tests/` directly during development" with citation to CLAUDE.md memory anchor `feedback_claude_skills_permissions.md` |
+| DA4 | DA | Plan body never names "orchestrator judgment" — diverges from PR #82 convergence model | Verified — same evidence chain as R1.3; CLAUDE.md memory anchor `feedback_convergence_orchestrator_judgment.md` confirms the recurring-failure-mode framing | Fixed — same edits as R1.3 (consolidated); additionally added new WI 6.3 conformance grep for the phrase "orchestrator's judgment" so silent regression is caught at conformance time per directive 3's negative-case AC requirement |
+| DA5 | DA | `[guidance...]` not adopted; default rounds=3 inconsistent with refine-loop semantics | Verified — same evidence chain as R1.4 + R1.5 | Fixed — same edits as R1.4 (adopt guidance) + R1.5 (document rounds asymmetry); per user directives 4 + 5 |
+| DA6 | DA | `## Test Spec Revisions` is a section name that NO existing skill recognises; /refine-plan's checksum boundary at SKILL.md:110 is closed-form `## Phase` only — incompatible with /draft-tests's broad-form rule | Verified — refine-plan SKILL.md:110 confirms closed-form "next `## Phase` or end of file"; refine-plan Phase 5 reassembly at SKILL.md:397-411 rebuilds without preserving non-Drift-Log/Plan-Review trailing sections | Fixed — chose user-directive option (a) "declare ordering": Phase 5 D&C new bullet "Co-skill ordering with /refine-plan" pins `## Test Spec Revisions` placement AFTER `## Drift Log` / `## Plan Review`; AC-5.11 added testing the order; WI 5.7 placement language updated; ALSO documented the deeper /refine-plan reassembly-loss issue (Test Spec Revisions destroyed by subsequent /refine-plan run) with the workaround (run /refine-plan first, re-run /draft-tests after) and the proper /refine-plan PR called out as Out-of-Scope |
+| DA7 | DA | AC-6.2 pin-count "ten" couples plan to test count; future WI 6.3 grows are silent regressions | Verified — same evidence chain as R1.12 | Fixed — same edit as R1.12; per user directive 9 (list-membership pattern, not count) |
+| DA8 | DA | `plans/examples/` lives outside `tests/fixtures/` but `/run-plan` may scan `plans/`; PLAN_INDEX.md rebuild risk | Verified partial — `collect.py:1097` uses `plans_dir.glob("*.md")` (top-level only, NOT recursive); current scanners would NOT pick up `plans/examples/*.md`. However user directive 8 prefers relocation as defensive against future recursive globbing + cleaner separation | Fixed — relocated worked example to `tests/fixtures/draft-tests/examples/` per user directive 8 option (b); WI 6.4 rewritten with relocation rationale (current scanner state verified at collect.py:1097) and a future-recursive-globbing defensive note; AC-6.3 updated to assert location AND adds negative assertion (no example files under `plans/examples/`); Phase 6 D&C "Fixture plans" bullet aligned |
+| DA9 | DA | Phase 4 reviewer/DA prompts say "live LLM" via Agent dispatch — but plan does not anchor model selection (Opus inheritance vs. risk of Sonnet/Haiku optimization later) | Judgment — CLAUDE.md memory anchor `feedback_no_haiku.md` is explicit on inherit-parent default; risk is forward-looking | Fixed — added Phase 4 D&C bullet "Agent model dispatch" pinning inherit-parent (Opus default); cites CLAUDE.md memory anchor; explains "QE judgment is judgment-class work, not bulk pattern matching" rationale |
+| DA10 | DA | Plan has zero coupling to PR #114 smoke-revert or PR #88 mirror — but mentions neither, and Phase 6 examples reuse mirroring patterns; non-integration declaration missing | Judgment + verified-partial — PRs #90-#92 PLAN-TEXT-DRIFT non-coupling already addressed via R1.6; PR #114 / PR #88 are auxiliary but worth a non-coupling sentence per zskills convention | Fixed — Phase 4 D&C PLAN-TEXT-DRIFT non-coupling bullet (per R1.6) explicitly notes "WI 1.6's AC-ID assignment touches ONLY `### Acceptance Criteria`; the drafter's `### Tests` output is treated as inert text by `plan-drift-correct.sh --correct` (which targets `### Acceptance Criteria` numeric bullets only) — drafter MUST NOT emit `PLAN-TEXT-DRIFT:` tokens" closing the contract per user directive 6. PR #88 (mirror) is now load-bearing in WI 6.5 + Phase 6 D&C "Mirror discipline" — no longer adjacency, integration is explicit. PR #114 smoke-revert is /run-plan-internal; no /draft-tests surface coupling exists, no further note needed |
+
+### Convergence note for orchestrator
+
+Round 1 disposition counts:
+- Total findings: 21
+- Verified empirical: 14 (R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7, R1.8, R1.9, R1.10, R1.11, R1.12, DA1, DA2, DA4, DA5, DA6, DA7) — note R1.* and DA* duplicates count toward the same Verified empirical pool
+- Verified partial / mixed: 1 (DA8 — collect.py glob is non-recursive but defensive relocation chosen)
+- Judgment: 2 (DA3, DA9)
+- Mixed (judgment + verified-partial): 1 (DA10)
+- Not reproduced: 0
+- No anchor: 0
+- Fixed: 21
+- Justified-not-fixed: 0
+- Substantive issues remaining (refiner's count): 0
+
+This is the refiner's count against the round's findings. **Convergence is the orchestrator's judgment, not the refiner's self-call** — the orchestrator counts Justified-not-fixed entries plus any new gaps the refinement introduced and applies the four positive conditions in Phase 4 D&C against the table above. The refiner does NOT declare convergence here; the orchestrator must read the table and the rounds budget independently.
+
+## Plan Review
+
+**Refinement process:** /refine-plan (2026-04-29) with 1 round of adversarial review (orchestrator-judgment convergence per PR #82; user-budgeted rounds=2 short-circuited at round 1 because substantive issues = 0 after disposition).
+**Convergence:** Converged at round 1. All 21 findings (11 reviewer + 10 DA) disposed: 21 fixed, 0 justified-not-fixed.
+**Remaining concerns:** None blocking. /refine-plan checksum-boundary broadening for `## Test Spec Revisions` is documented as out-of-scope future work (co-skill PR).
+
+### /refine-plan Round History (this refine, 2026-04-29)
+
+| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1     | 11 (2 blocker, 0 major, 6 minor, 3 spec) | 10 (1 blocker, 3 major, 3 minor, 3 spec) | 0 | 21 fixed, 0 justified-not-fixed |
+
+The disposition table for this refine's round 1 is at the previous section ("Disposition Table — /refine-plan 2026-04-29 Round 1 Adversarial Review"). Earlier Plan Quality / Disposition Tables describe the original /draft-plan + /refine-plan history from 2026-04-24.
