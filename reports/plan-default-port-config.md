@@ -1,5 +1,38 @@
 # Plan Report — Default Port Config
 
+## Phase — 4 briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure [UNFINALIZED]
+
+**Plan:** plans/DEFAULT_PORT_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-default-port-config (PR mode, branch `feat/default-port-config`)
+**Commits:** 623f6df
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.0 | Fix port.sh path lookup BEFORE removing fallback (load-bearing ordering) | Done | `'.claude', 'skills', 'update-zskills', 'scripts', 'port.sh'` at briefing.py:808, 1122 and briefing.cjs:714, 1092 |
+| 4.1 | Drop `'8080'` literal in briefing.py at 4 sites; emit no URL when port is None | Done | `port = None` initializer; URL emission gated; comments rewritten |
+| 4.2 | Same in briefing.cjs at 4 sites with `null` | Done | symmetric Python ↔ JS edits |
+| 4.3 | Invariant comment at top of both files | Done | briefing.py:19-22 (#), briefing.cjs:15-18 (//) |
+| 4.4 | Extend `tests/test-briefing-parity.sh` with port-failure parity cases | Done | 5 new tests; literal fixture path `/tmp/zskills-briefing-fixture-noport`; both run exit 0, no `localhost:` URL, byte-equivalent output |
+| 4.5 | Mirror to `.claude/skills/briefing/` | Done | `bash scripts/mirror-skill.sh briefing`; `diff -rq` empty |
+
+### Verification
+
+- **Test suite:** 1348/1348 passed, 0 failed (baseline 1343/1343 + 5 new parity-test cases).
+- **Acceptance criteria:** All 11 ACs verified by independent fresh-eyes verifier.
+- **Mirror:** byte-identical between source and `.claude/skills/...` copy for both briefing.py and briefing.cjs.
+- **Hash file:** `tier1-shipped-hashes.txt` updated with new briefing.py (`5d799f0…`) and briefing.cjs (`09e579c1…`) blob hashes — satisfies test-update-zskills-migration case 6c (commit-cohabitation invariant).
+
+### Spec deviations
+
+- **WI 4.0 ordering preserved.** Path fix applied alongside fallback removal in the same staged diff; both edits coexist coherently. (The plan calls out load-bearing ordering for landing sequencing; in this single-commit context, both edits are atomic.)
+
+### Plan-text drift (informational)
+
+- `phase=4 bullet=AC field=grep-substring-conflict plan='scripts', 'port.sh' grep returns 0 actual=2`. The acceptance criterion `grep -c "'scripts', 'port.sh'" briefing.py = 0` is unsatisfiable post-WI-4.0 because the new mandated path `'.claude', 'skills', 'update-zskills', 'scripts', 'port.sh'` contains `'scripts', 'port.sh'` as a tail substring. The redundant canonical AC `grep -c "scripts/port.sh" = 0` (the actual anti-stale check) does pass. Verifier independently confirmed: AC intent (no old-path remnants) is satisfied; the conflicting AC literal is a spec authoring oversight.
+
 ## Phase — 3 Template prose refinement + Step B placeholder mapping [UNFINALIZED]
 
 **Plan:** plans/DEFAULT_PORT_CONFIG.md
