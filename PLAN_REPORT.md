@@ -10,7 +10,7 @@ No items currently awaiting sign-off.
 
 | Report | Phases | Status |
 |--------|--------|--------|
-| [plan-zskills-monitor-plan.md](reports/plan-zskills-monitor-plan.md) | 3/9 | **In progress** — Phases 1+2+3 done (/work-on-plans shipped with full subcommand surface + /plans work retired + cross-process flock); 971/971 tests (+28); Phases 4-9 remaining |
+| [plan-zskills-monitor-plan.md](reports/plan-zskills-monitor-plan.md) | 4/9 | **In progress** — Phases 1+2+3+4 done (/work-on-plans CLI shipped + /plans work retired + flock + Python aggregation library); 1000/1000 tests; Phases 5-9 remaining |
 | [plan-scripts-into-skills-plan.md](reports/plan-scripts-into-skills-plan.md) | 7/7 | **Complete** — all 7 phases landed (full Tier-1 relocation + cross-skill sweep + /update-zskills install flow rewrite + safe stale-Tier-1 migration + residual sweep + docs close-out); 943/943 tests; landed via PRs #95, #96, #97, #98, #99, plus this final PR |
 | [plan-improve-staleness-detection.md](reports/plan-improve-staleness-detection.md) | 3/3 | **Complete** — all 3 phases landed; defense-in-depth drift detection chain (pre-authoring /refine-plan Dimension 7, pre-dispatch Phase 1 step 6 b, post-implement Phase 3.5); 931/931 tests, +68 plan-drift cases |
 | [plan-restructure-run-plan.md](reports/plan-restructure-run-plan.md) | 5/5 | **Complete** — all phases landed; 531/531 tests PASS; mirror parity clean; real-GitHub canaries deferred to user |
