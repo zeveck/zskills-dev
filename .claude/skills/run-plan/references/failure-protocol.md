@@ -90,6 +90,17 @@ Invoke this protocol for ANY of these:
 - `npm run test:all` fails after cherry-picks are landed
 - Verification fails after 2 fix+verify cycles (auto mode)
 - Preflight checks detect stale state (conflict markers, orphaned stash)
+- **Verifier clobbered the implementer's uncommitted work** (e.g., a
+  smoke-revert step ran `git checkout <file>` on a file with
+  uncommitted impl changes, reverting it to HEAD and wiping the impl).
+  Recovery: the verifier reports the suspected clobber and STOPs
+  without committing. The orchestrator re-dispatches implementation
+  cleanly against the pre-impl HEAD baseline (which is the verifier's
+  current working-tree state, since the clobber reverted to it). Do
+  NOT have the verifier reconstruct from the plan spec — the
+  orchestrator cannot validate reconstruction matches implementer
+  intent. See the "Smoke-procedure revert mechanics" verbatim block in
+  Phase 3 of `skills/run-plan/SKILL.md` for the prevention guidance.
 - Any unrecoverable error that stops the run from completing normally
 
 Do NOT invoke for:

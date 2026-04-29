@@ -1146,6 +1146,43 @@ criterion against current reality. If implementation skipped the check
 OR implementation IS the source of drift, the verifier catches it.
 Phase 3.5 processes the UNION of both reports' tokens.
 
+#### Smoke-procedure revert mechanics (delegate mode verification)
+
+Include this VERBATIM in the verifier dispatch prompt:
+
+> Many plan ACs include manual smoke procedures: temporarily modify a
+> file under test → run a script → confirm a behavior change → revert
+> the throwaway. When you revert, **first check whether the file has
+> uncommitted changes**: `git status -s <file>`. A line beginning with
+> ` M`, `MM`, `AM`, or any other dirty-state marker means uncommitted
+> impl work is present.
+>
+> - **Uncommitted: DO NOT use `git checkout <file>`.** It reverts to
+>   HEAD, which is the pre-implementation state — silently wiping the
+>   implementer's uncommitted work. /run-plan's design contract is
+>   "implementer writes, verifier commits"; the file you're
+>   smoke-testing typically has uncommitted impl changes. Use Edit to
+>   remove the specific throwaway lines you added, or save+restore
+>   with `cp <file> /tmp/$(basename <file>).pre-smoke` and
+>   `cp /tmp/$(basename <file>).pre-smoke <file>` (basename avoids
+>   creating nested /tmp paths that don't exist for relative paths
+>   with subdirectories).
+> - **Clean (no uncommitted changes)**: `git checkout <file>` is safe
+>   and reverts only your throwaway.
+>
+> This guidance applies to **mid-smoke reverts only**. Post-failure
+> rollbacks (e.g., Phase 3.5 plan-file rollback) run after something
+> has gone wrong on files that should match HEAD — `git checkout` is
+> correct there.
+>
+> If you suspect the file under test has been clobbered (file size
+> drops, expected lines vanish), STOP. Do NOT reconstruct from the
+> spec — even if you re-run every AC against the reconstruction, the
+> orchestrator cannot validate that your reconstruction matches the
+> implementer's actual intent. Invoke the Failure Protocol so the
+> orchestrator can re-dispatch implementation cleanly against a
+> known-clean baseline.
+
 ### Worktree mode verification
 
 1. **Dispatch verification agent** targeting the worktree's changes. The
@@ -1265,6 +1302,43 @@ implementation agent's tokens — re-measure each numeric acceptance
 criterion against current reality. If implementation skipped the check
 OR implementation IS the source of drift, the verifier catches it.
 Phase 3.5 processes the UNION of both reports' tokens.
+
+#### Smoke-procedure revert mechanics (worktree mode verification)
+
+Include this VERBATIM in the verifier dispatch prompt:
+
+> Many plan ACs include manual smoke procedures: temporarily modify a
+> file under test → run a script → confirm a behavior change → revert
+> the throwaway. When you revert, **first check whether the file has
+> uncommitted changes**: `git status -s <file>`. A line beginning with
+> ` M`, `MM`, `AM`, or any other dirty-state marker means uncommitted
+> impl work is present.
+>
+> - **Uncommitted: DO NOT use `git checkout <file>`.** It reverts to
+>   HEAD, which is the pre-implementation state — silently wiping the
+>   implementer's uncommitted work. /run-plan's design contract is
+>   "implementer writes, verifier commits"; the file you're
+>   smoke-testing typically has uncommitted impl changes. Use Edit to
+>   remove the specific throwaway lines you added, or save+restore
+>   with `cp <file> /tmp/$(basename <file>).pre-smoke` and
+>   `cp /tmp/$(basename <file>).pre-smoke <file>` (basename avoids
+>   creating nested /tmp paths that don't exist for relative paths
+>   with subdirectories).
+> - **Clean (no uncommitted changes)**: `git checkout <file>` is safe
+>   and reverts only your throwaway.
+>
+> This guidance applies to **mid-smoke reverts only**. Post-failure
+> rollbacks (e.g., Phase 3.5 plan-file rollback) run after something
+> has gone wrong on files that should match HEAD — `git checkout` is
+> correct there.
+>
+> If you suspect the file under test has been clobbered (file size
+> drops, expected lines vanish), STOP. Do NOT reconstruct from the
+> spec — even if you re-run every AC against the reconstruction, the
+> orchestrator cannot validate that your reconstruction matches the
+> implementer's actual intent. Invoke the Failure Protocol so the
+> orchestrator can re-dispatch implementation cleanly against a
+> known-clean baseline.
 
 ### Post-verification tracking
 
