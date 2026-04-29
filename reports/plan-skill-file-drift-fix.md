@@ -1,5 +1,63 @@
 # Plan Report — Skill-File Drift Fix
 
+## Phase — 5 Verification + Drift-Regression Test (FINAL)
+
+**Plan:** plans/SKILL_FILE_DRIFT_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-skill-file-drift-fix
+**Branch:** feat/skill-file-drift-fix
+**Commit:** (pending verifier squash)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | Inline /verify-changes scope review | Done | 14 commits cumulative on `feat/skill-file-drift-fix`; 67 files / +2812 / -298 vs `dev/main`. Every changed file maps to a plan WI. Mirror parity clean across the 4 Phase-5 source skill edits. No off-scope creep. Full test suite passes (1272/1272). |
+| 5.2 | Two-sided drift-regression test (positive side) | Done | `tests/test-skill-conformance.sh` gains a fence-local positive-side scanner (`scan_positive_side`). Recognizes 3 legitimate equivalents to helper-source preamble: (a) explicit `. zskills-resolve-config.sh`, (b) inline self-resolution (`CONFIG_CONTENT=$(cat ...)` + BASH_REMATCH), (c) blockquoted recipes governed by substitution-discipline at `skills/run-plan/SKILL.md:179-187`. 2 synthetic fixtures (PASS, FAIL) + 1 real-tree pass. **Surfaced 3 Phase-2 misses → fixed**: helper-source preamble added at `skills/run-plan/SKILL.md:1067` (test-baseline fence), `skills/quickfix/SKILL.md:623` (commit-body fence using `$COMMIT_CO_AUTHOR`), `skills/run-plan/modes/pr.md:429` (CI fix-cycle fence with agent-prompt comments referencing `$FULL_TEST_CMD`/`$TEST_OUTPUT_FILE`). |
+| 5.3 | DRIFT_ARCH_FIX cross-reference | Done | One-line "see also" pointer appended to `plans/DRIFT_ARCH_FIX.md` immediately after Plan Quality bullets, before Round History. |
+| 5.4 | PLAN_INDEX.md update | Done | SKILL_FILE_DRIFT_FIX moved from "Ready to Run" to "Complete" (`6 phases — All phases done; landed 2026-04-29`). Totals updated: `7 ready → 6 ready, 16 complete → 17 complete`. |
+| 5.5 | Rule paragraph in CLAUDE_TEMPLATE.md | Done | `.claude/rules/zskills/managed.md` does not exist; CLAUDE_TEMPLATE.md is the canonical source (it renders into managed.md). New "Resolution rule." paragraph added under existing "Skill-file hardcode discipline" heading; documents helper-source MUST + inline self-resolution / blockquote substitution-discipline equivalents. |
+| 5.6 | Live blockquote-emission smoke (manual) | Documented | Recipe in "Manual smoke recipe" subsection below; not mechanically testable from outside an orchestrator session. |
+| 5.7 | PROSE-IMPERATIVE substitution-discipline coverage | Done (Option A) | Per-site grep loop in `tests/test-skill-conformance.sh`. Detector: bullet/numbered + code-span + `$FULL_TEST_CMD\|$DEV_SERVER_CMD`, outside fences and outside blockquotes (the latter governed by substitution-discipline). Window check: ±5 lines for `zskills-resolve-config.sh` OR `CONFIG_CONTENT=$(cat` OR `(resolved from config` OR `(resolve via`. Scans 10 sites; all pass. **Option A applied**: 3 inline annotations added (`run-plan/SKILL.md:1148`, `verify-changes/SKILL.md:130`, `verify-changes/SKILL.md:504`) — 1-2 lines per site. The 9 PROSE-IMPERATIVE-migrated sites enumerated in the plan already had `(resolve via ... zskills-resolve-config.sh ...)` annotations from Phase 2; the 3 fix-ups close additional bullet-form $VAR references the broader detector found. |
+
+### Verification
+
+- **Test suite:** PASSED (1268 baseline → 1272 after Phase 5, **+4 cases**, 0 failures). New cases: 1 synthetic-PASS positive-side, 1 synthetic-FAIL positive-side, 1 real-tree positive-side, 1 PROSE-IMPERATIVE coverage.
+- **Positive-side real-tree:** every fence in `skills/` that references one of `{UNIT_TEST_CMD, FULL_TEST_CMD, TIMEZONE, DEV_SERVER_CMD, TEST_OUTPUT_FILE, COMMIT_CO_AUTHOR}` either sources `zskills-resolve-config.sh`, performs inline self-resolution, or is a blockquoted recipe governed by substitution-discipline.
+- **PROSE-IMPERATIVE coverage:** 10 of 10 bullet/numbered $VAR sites have nearby resolution-discipline annotation.
+- **Mirror parity:** `diff -q` clean across all 4 Phase-5 source/mirror pairs.
+- **No PROSE refs flagged outside fences:** the substitution-discipline annotation at `skills/run-plan/SKILL.md:181` ("the orchestrator substitutes `$FULL_TEST_CMD`") is correctly NOT a positive-side consumer (fence-local check ignores prose).
+- **Frontmatter:** `status: complete`, `completed: 2026-04-29` written; tracker row 5 marked ✅ Done.
+
+### Manual smoke recipe (WI 5.6 — blockquote emission)
+
+The blockquote-substitution discipline is model-side (not bash-mechanical). The structural AC at WI 4.6 + the deny-list at 4.1 catch the markdown-source surface, but they cannot verify that the orchestrator-model actually substitutes `$DEV_SERVER_CMD` / `$TEST_OUTPUT_FILE` literals before emission to a dispatched subagent. Recipe:
+
+1. Configure a fixture project with `.claude/zskills-config.json` containing `dev_server.cmd: "yarn start"` and `testing.output_file: ".out.log"`.
+2. Run `/run-plan plans/<any>.md 1` to dispatch an implementation worktree-test cycle.
+3. Inspect the dispatched subagent's prompt (via the standard subagent-prompt-capture pattern in `tests/run-all.sh` if available, or via /run-plan's tracking markers / report).
+4. Assert the prompt contains literal `yarn start &` and `$TEST_OUT/.out.log`, NOT `$DEV_SERVER_CMD &` or `$TEST_OUT/$TEST_OUTPUT_FILE` (literal-unresolved means the model failed the discipline).
+
+Standard tracking markers do not currently expose dispatch-prompt content, so this is a manual one-time smoke per release. Documented for future regression coverage.
+
+### Design deviations (verified SOUND)
+
+1. **Positive-side check accepts inline self-resolution + blockquote.** The spec pseudocode showed only the `zskills-resolve-config.sh` helper-source preamble. Implementation added two equivalents: (a) inline `CONFIG_CONTENT=$(cat ...)` + `BASH_REMATCH` (a fence that DEFINES the var by reading config inline — circular to require helper-source), (b) blockquoted fences (`> `-prefixed) governed by the substitution-discipline annotation, not by helper-source. Without these equivalents, the resolution-defining fences at `run-plan/SKILL.md:144` and `verify-changes/SKILL.md:82` would self-flag, and the worktree-test recipe blockquote would self-flag despite the explicit substitution-discipline.
+
+2. **PROSE-IMPERATIVE coverage detector relaxed (no imperative-verb gate).** The deny-list's PROSE-IMPERATIVE detector requires a sentence-start imperative verb (`Run`/`Execute`/`Invoke`) to avoid false-positives on bare literals like "has run". The COVERAGE check here is broader: bullet/numbered + code-span + $VAR — because Phase 2's migration introduced annotation-bearing prose forms that don't always carry an imperative verb (e.g., `- \`$FULL_TEST_CMD\` (resolve via ...)`). The window check is the discriminator that prevents false-positives.
+
+3. **Coverage window markers expanded beyond `zskills-resolve-config.sh` literal.** Added recognition of `(resolved from config`, `(resolve via`, and `CONFIG_CONTENT=$(cat` as legitimate annotations within ±5 lines. Reflects what Phase 2 actually shipped; without this, sites whose annotation pointed to an in-skill resolution section (rather than the helper directly) would falsely flag.
+
+### Plan-Text Drift
+
+`bullet=5.2 field=positive-side-equivalents plan=helper-source-only actual=helper-source-OR-inline-self-resolution-OR-blockquoted` — see Design deviation 1 above. Plan said the test should fail when "the canonical block is missing"; implementation interprets canonical block to include all 3 functionally-equivalent resolution patterns documented in `references/canonical-config-prelude.md` (helper source + inline self-resolution per the existing `skills/run-plan/modes/pr.md:325-345` convention) and the substitution-discipline at `skills/run-plan/SKILL.md:179-187` (for blockquotes).
+
+`bullet=5.7 field=detector-form plan=PROSE-IMPERATIVE-only actual=bullet+codespan+\$VAR` — see Design deviation 2 above. Plan referenced "PROSE-IMPERATIVE-migrated sites" by deny-list detector terminology; coverage check is broader because Phase 2's migrated forms are not all imperative-verb sentences.
+
+### User Sign-off
+
+Phase 5 produces no UI changes — no sign-off needed.
+
 ## Phase — 4 Enforcement (deny-list + drift-warn + allowlist)
 
 **Plan:** plans/SKILL_FILE_DRIFT_FIX.md

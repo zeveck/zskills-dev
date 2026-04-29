@@ -427,6 +427,12 @@ turn will re-enter Phase 6, see the existing PR, and re-poll CI.
 **CI failure fix cycle:**
 
 ```bash
+# Resolve config-derived vars at fence-top — the agent-prompt template
+# below references $FULL_TEST_CMD and $TEST_OUTPUT_FILE; context
+# compaction may have lost vars set earlier (per the convention at
+# modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 if [ "$CI_STATUS" = "fail" ] && [ "$CI_MAX_ATTEMPTS" -gt 0 ]; then
   # Post initial CI status comment using gh api (returns comment ID).
   # gh pr comment does NOT return comment URL/ID, so we use the API directly.

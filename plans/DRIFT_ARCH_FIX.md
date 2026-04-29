@@ -522,6 +522,8 @@ Phases 1, 2, 3 already landed on `feat/drift-arch-fix`. Phase 4 supersedes Phase
 - **Verify-before-fix discipline**: every finding across all three rounds dispositioned with evidence anchor — 29 fixed, 4 justified. Zero deferred or ignored within scope.
 - **Remaining concerns**: none blocking; two acknowledged limitations in Out-of-Scope (edits outside Claude Code tools don't fire the drift-warn hook; template structural changes between releases trigger `.new` conflict by design).
 
+> **See also:** This plan migrated CODE consumers and TEXT consumers but did not address skill `.md` files containing bash fences. That gap is closed by `plans/SKILL_FILE_DRIFT_FIX.md`.
+
 ### Round History
 
 | Round | Reviewer Findings | DA / Research Findings | Resolved |

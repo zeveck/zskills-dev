@@ -1,7 +1,8 @@
 ---
 title: Skill-File Drift Fix — Runtime Config Resolution in Skill Bash Fences
 created: 2026-04-25
-status: active
+status: complete
+completed: 2026-04-29
 ---
 
 # Plan: Skill-File Drift Fix
@@ -53,7 +54,7 @@ The plan resolves four architectural gaps:
 | 2 — Migrate ~97 hardcoded references across 6 categories (60 TZ + 8 test-cmd EXEC + 2 dev-server + 8 PROSE-IMPERATIVE test-cmd + 1 PROSE-IMPERATIVE npm start + 16 output_file + 2 co_author); resolve verbatim-injected blockquote | ✅ Done | (squash) | 50 files (23 source + 23 mirror + 4 tests); helper-source preamble added per fence; INJECTED-BLOCKQUOTE migrated via model-side `$VAR` discipline; 1237 → 1249 (+12 fixture cases) |
 | 3 — Fix opinionated fallbacks in hooks (block-unsafe-project.sh:311 + sweep for others); sync test-infra detection list | ✅ Done | (squash) | three-case tree at pipe gate; 26-fallback sweep (1 opinionated fixed, 25 sensible kept); shared fixture `tests/fixtures/test-infra-patterns.txt` (9 patterns) + sync test; testing.output_file-aware suggestion message; 1249 → 1258 |
 | 4 — Enforcement: test deny-list (4-entry fixture) + drift-warn hook extension + prose-imperative detection + allowlist comment convention | ✅ Done | (squash) | 10 files (5 source + 5 mirrors); 4-entry fixture; all-fence tracker (refines spec pseudocode); 2 surfaced drift sites markered (do/SKILL.md:401 npm-test report-template, update-zskills/SKILL.md:613 npm-start render-report); allowlist convention in CLAUDE_TEMPLATE.md; 1258 → 1268 (+10) |
-| 5 — Verification + drift-regression test | 🟡 In Progress | | |
+| 5 — Verification + drift-regression test | ✅ Done | (squash) | inline /verify-changes review (cumulative diff stat + scope assessment + full test suite); two-sided fence-local drift check (3 Phase-2-miss preambles surfaced + fixed); PROSE-IMPERATIVE coverage (Option A: 3 inline annotations added at run-plan/SKILL.md:1148, verify-changes/SKILL.md:130, verify-changes/SKILL.md:504); DRIFT_ARCH_FIX cross-ref appended; PLAN_INDEX moved to Complete; CLAUDE_TEMPLATE.md rule paragraph added; live blockquote-emission smoke documented as manual recipe; 1268 → 1272 (+4) |
 
 ## Phase 0 — Staleness Gate
 

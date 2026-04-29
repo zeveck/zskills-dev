@@ -1065,6 +1065,10 @@ the main repo directory, so the `cd` instruction is essential.
 implementation agent, the orchestrator captures a test baseline in the worktree:
 
 ```bash
+# Resolve config-derived vars at fence-top — context compaction may have
+# lost vars set in earlier fences (per the convention at modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 # Orchestrator captures baseline BEFORE impl agent starts
 cd "$WORKTREE_PATH"
 if [ -n "$FULL_TEST_CMD" ]; then
@@ -1141,7 +1145,9 @@ If this phase used delegate execution, verification runs on **main**:
 1. **Verify commits landed** — check `git log --oneline -10` for the
    delegate's commits. If expected commits are missing, the delegate
    failed to land — invoke Failure Protocol.
-2. **Run `$FULL_TEST_CMD` on main** — the delegate already tested, but
+2. **Run `$FULL_TEST_CMD` on main** (resolve via
+   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+   if not already in environment) — the delegate already tested, but
    /run-plan verifies against the plan's acceptance criteria.
 3. **Check acceptance criteria** from the verbatim plan text — the delegate
    skill doesn't know the plan's criteria, only /run-plan does.

@@ -621,6 +621,11 @@ pass `--no-verify` — fix the root cause and retry (max 2 attempts on the
 same error, then STOP and report).
 
 ```bash
+# Resolve $COMMIT_CO_AUTHOR at fence-top — context compaction may have
+# lost vars set in the earlier helper-source fence (per the convention at
+# run-plan/modes/pr.md:325-345).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
 # The model must set COMMIT_SUBJECT before this fence runs (see prose
 # above). DESCRIPTION goes in the body as context, not the subject line.
 if [ -z "${COMMIT_SUBJECT:-}" ]; then

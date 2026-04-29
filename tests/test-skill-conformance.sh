@@ -605,6 +605,304 @@ else
 fi
 
 echo ""
+echo "=== Positive-side fence-local drift check (WI 5.2) ==="
+# Two-sided drift-regression test (refine-2 DA2.14/DA2.17). The negative
+# side above catches re-hardcoded literals. This positive side catches the
+# inverse regression mode: a fence references one of the 6 config-derived
+# vars but the canonical helper-source preamble (zskills-resolve-config.sh)
+# is missing from that fence — so the var resolves to empty at runtime.
+#
+# Fence-local: per-fence accumulators reset on fence-open. PROSE references
+# to vars OUTSIDE fences (e.g., the substitution-discipline annotation at
+# run-plan/SKILL.md:181) are NOT consumers — they are explanation — and
+# the fence-local check correctly ignores them.
+#
+# Var list (matches Phase 1 helper's resolved set):
+#   UNIT_TEST_CMD, FULL_TEST_CMD, TIMEZONE, DEV_SERVER_CMD,
+#   TEST_OUTPUT_FILE, COMMIT_CO_AUTHOR
+POS_DRIFT_FAIL=0
+POS_DRIFT_HITS=()
+POS_VAR_RE='\$\{?(UNIT_TEST_CMD|FULL_TEST_CMD|TIMEZONE|DEV_SERVER_CMD|TEST_OUTPUT_FILE|COMMIT_CO_AUTHOR)\}?'
+
+scan_positive_side() {
+  local target_root="$1"
+  local fail_var_name="$2"
+  local hits_var_name="$3"
+  local local_fail=0
+  local -a local_hits=()
+  while IFS= read -r skill_file; do
+    in_fence=0
+    fence_type=""
+    fence_uses_var=0
+    fence_has_preamble=0
+    fence_is_blockquoted=0
+    fence_self_resolves=0
+    fence_open_line=0
+    line_no=0
+    prev_line=""
+    while IFS= read -r line; do
+      line_no=$((line_no + 1))
+      # Detect blockquote prefix (load-bearing: blockquote-fenced fences
+      # are governed by the substitution-discipline annotation, not the
+      # helper-source preamble — see skills/run-plan/SKILL.md:179-187).
+      raw_is_bq=0
+      norm_line="$line"
+      if [[ "$norm_line" =~ ^[[:space:]]*\>[[:space:]]?(.*)$ ]]; then
+        norm_line="${BASH_REMATCH[1]}"
+        raw_is_bq=1
+      fi
+      if [ "$in_fence" -eq 0 ]; then
+        if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`([a-zA-Z0-9_+-]*)[[:space:]]*$ ]]; then
+          lang="${BASH_REMATCH[1]}"
+          in_fence=1
+          if [ -z "$lang" ] || [ "$lang" = "bash" ] || [ "$lang" = "sh" ] || [ "$lang" = "shell" ]; then
+            fence_type="exec"
+          else
+            fence_type="other"
+          fi
+          fence_uses_var=0
+          fence_has_preamble=0
+          fence_self_resolves=0
+          fence_is_blockquoted=$raw_is_bq
+          fence_open_line=$line_no
+          # The preamble may live on the line immediately above the
+          # fence-opener (i.e., the prose `. "$CLAUDE_PROJECT_DIR/.../zskills-resolve-config.sh"`
+          # source-line pattern is sometimes itself outside the fence).
+          # Check prev_line.
+          if [[ "$prev_line" == *"zskills-resolve-config.sh"* ]]; then
+            fence_has_preamble=1
+          fi
+        fi
+        prev_line="$norm_line"
+        continue
+      fi
+      # Inside a fence.
+      if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
+        # Fence-close: evaluate. Three legitimate equivalents to the
+        # helper-source preamble:
+        #   (1) helper-source: `. "$CLAUDE_PROJECT_DIR/.../zskills-resolve-config.sh"`
+        #   (2) inline self-resolution: a fence that DEFINES the var by
+        #       reading config inline (CONFIG_CONTENT=$(cat ...) +
+        #       BASH_REMATCH extraction) — circular to require helper-source.
+        #   (3) blockquote-fenced: governed by the substitution-discipline
+        #       at skills/run-plan/SKILL.md:179-187 (model substitutes
+        #       resolved literals before emission), not by helper-source.
+        if [ "$fence_type" = "exec" ] \
+           && [ "$fence_uses_var" -eq 1 ] \
+           && [ "$fence_has_preamble" -eq 0 ] \
+           && [ "$fence_self_resolves" -eq 0 ] \
+           && [ "$fence_is_blockquoted" -eq 0 ]; then
+          local_hits+=("DRIFT (positive-side): $skill_file:$fence_open_line bash fence references one of {UNIT_TEST_CMD,FULL_TEST_CMD,TIMEZONE,DEV_SERVER_CMD,TEST_OUTPUT_FILE,COMMIT_CO_AUTHOR} but does not source zskills-resolve-config.sh in or immediately above the fence (and is neither a self-resolving CONFIG_CONTENT fence nor a blockquoted substitution-discipline fence). Add the helper-source preamble.")
+          local_fail=1
+        fi
+        in_fence=0
+        fence_type=""
+        fence_uses_var=0
+        fence_has_preamble=0
+        fence_self_resolves=0
+        fence_is_blockquoted=0
+        prev_line=""
+        continue
+      fi
+      if [ "$fence_type" = "exec" ]; then
+        if [[ "$norm_line" =~ $POS_VAR_RE ]]; then
+          fence_uses_var=1
+        fi
+        if [[ "$norm_line" == *"zskills-resolve-config.sh"* ]]; then
+          fence_has_preamble=1
+        fi
+        # Inline self-resolution pattern: CONFIG_CONTENT=$(cat ...) +
+        # BASH_REMATCH extraction. The fence is itself the resolver.
+        if [[ "$norm_line" =~ CONFIG_CONTENT=\$\(cat ]] \
+           || [[ "$norm_line" =~ \[\[[[:space:]]*\"\$\(cat ]]; then
+          fence_self_resolves=1
+        fi
+      fi
+    done < "$skill_file"
+  done < <(find "$target_root" -name '*.md' | sort)
+  # Export results via name-refs.
+  printf -v "$fail_var_name" '%s' "$local_fail"
+  if [ "$local_fail" -eq 1 ]; then
+    # Stash hits into a global by appending to the named array.
+    for h in "${local_hits[@]}"; do
+      eval "$hits_var_name+=(\"\$h\")"
+    done
+  fi
+}
+
+# Smoke fixtures (refine-2 DA2.14): 2 synthetic positive-side cases + 1
+# real-tree case. Use a temp dir so we exercise the same scan_positive_side
+# logic on small fixtures with known ground truth.
+POS_FIXTURE_DIR=$(mktemp -d)
+mkdir -p "$POS_FIXTURE_DIR/skills/syn-pass" "$POS_FIXTURE_DIR/skills/syn-fail"
+cat > "$POS_FIXTURE_DIR/skills/syn-pass/SKILL.md" <<'PASS_FIXTURE'
+# syn-pass
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+echo "$FULL_TEST_CMD"
+```
+PASS_FIXTURE
+cat > "$POS_FIXTURE_DIR/skills/syn-fail/SKILL.md" <<'FAIL_FIXTURE'
+# syn-fail
+
+```bash
+echo "$FULL_TEST_CMD"
+echo "no preamble — should fail positive-side"
+```
+FAIL_FIXTURE
+
+# Synthetic-PASS case: scan only syn-pass; expect 0 hits.
+SYN_PASS_FAIL=0
+SYN_PASS_HITS=()
+scan_positive_side "$POS_FIXTURE_DIR/skills/syn-pass" SYN_PASS_FAIL SYN_PASS_HITS
+if [ "$SYN_PASS_FAIL" -eq 0 ]; then
+  pass "positive-side synthetic-PASS: fence using \$FULL_TEST_CMD WITH preamble accepted"
+else
+  fail "positive-side synthetic-PASS: should accept fence with preamble" "${SYN_PASS_HITS[*]:-no hits}"
+fi
+
+# Synthetic-FAIL case: scan only syn-fail; expect 1 hit.
+SYN_FAIL_FAIL=0
+SYN_FAIL_HITS=()
+scan_positive_side "$POS_FIXTURE_DIR/skills/syn-fail" SYN_FAIL_FAIL SYN_FAIL_HITS
+if [ "$SYN_FAIL_FAIL" -eq 1 ] && [ "${#SYN_FAIL_HITS[@]}" -ge 1 ]; then
+  pass "positive-side synthetic-FAIL: fence using \$FULL_TEST_CMD WITHOUT preamble flagged"
+else
+  fail "positive-side synthetic-FAIL: should flag fence missing preamble" "fail=$SYN_FAIL_FAIL, hits=${#SYN_FAIL_HITS[@]}"
+fi
+
+rm -rf "$POS_FIXTURE_DIR"
+
+# Real-tree case: scan current skills/ — expect 0 drift after Phase 2 migration.
+REAL_POS_FAIL=0
+REAL_POS_HITS=()
+scan_positive_side "$REPO_ROOT/skills" REAL_POS_FAIL REAL_POS_HITS
+if [ "$REAL_POS_FAIL" -eq 0 ]; then
+  pass "positive-side real-tree: every fence using a config-var also sources zskills-resolve-config.sh"
+else
+  fail "positive-side real-tree: ${#REAL_POS_HITS[@]} fence(s) reference config-vars without preamble" "see hits below"
+  for h in "${REAL_POS_HITS[@]}"; do
+    printf '    %s\n' "$h" >&2
+  done
+fi
+
+echo ""
+echo "=== PROSE-IMPERATIVE substitution-discipline coverage (WI 5.7) ==="
+# refine-2 R2.12 follow-on. For each PROSE-migrated $VAR reference
+# (8 npm-run-test:all + 1 npm-start sites — see plan WI 5.7), assert that
+# within 5 lines (forward or backward) of the migrated $VAR reference
+# there is EITHER (a) an inline annotation referencing
+# zskills-resolve-config.sh, OR (b) a pointer to a per-skill canonical-
+# prelude config-read block (existing `CONFIG_CONTENT=$(cat ...)` pattern).
+#
+# Annotation form (Phase 2 added these inline alongside the migration):
+#
+#     run `$FULL_TEST_CMD` (resolve via
+#       `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+#       if you don't already have it in your environment) before committing.
+#
+# This test re-derives the migrated-site set at execution time (line
+# numbers drift across edits) so it stays robust as files change.
+#
+# Detection: outside any bash fence, a bullet/numbered-list line
+# containing a code-span with $FULL_TEST_CMD or $DEV_SERVER_CMD. Note:
+# the deny-list detector's tighter PROSE-IMPERATIVE form requires a
+# sentence-start imperative verb (`Run`/`Execute`/`Invoke`) to avoid
+# false-positives on bare literals; the COVERAGE check here is broader
+# because the migration introduced annotation-bearing prose forms that
+# don't always carry an imperative verb (e.g., `- \`$FULL_TEST_CMD\` (resolve via ...)`).
+PROSE_VAR_RE='\$\{?(FULL_TEST_CMD|DEV_SERVER_CMD)\}?'
+COVERAGE_FAIL=0
+COVERAGE_SITES_SCANNED=0
+declare -a COVERAGE_HITS=()
+
+while IFS= read -r skill_file; do
+  in_fence=0
+  line_no=0
+  # Read whole file into array for ±5 windowing.
+  mapfile -t FILE_LINES < "$skill_file"
+  # Track fence state independently while iterating with index.
+  total=${#FILE_LINES[@]}
+  for (( idx=0; idx<total; idx++ )); do
+    line="${FILE_LINES[$idx]}"
+    raw_is_bq=0
+    norm_line="$line"
+    if [[ "$norm_line" =~ ^[[:space:]]*\>[[:space:]]?(.*)$ ]]; then
+      norm_line="${BASH_REMATCH[1]}"
+      raw_is_bq=1
+    fi
+    if [ "$in_fence" -eq 0 ]; then
+      if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`([a-zA-Z0-9_+-]*)[[:space:]]*$ ]]; then
+        in_fence=1
+        continue
+      fi
+      # Skip blockquoted prose: substitution discipline governs (see
+      # skills/run-plan/SKILL.md:179-187 — model substitutes resolved
+      # literals before emitting blockquoted recipes to subagents).
+      if [ "$raw_is_bq" -eq 1 ]; then
+        continue
+      fi
+      # Bullet/numbered list with code-span containing one of the migrated
+      # $VAR refs. (No imperative-verb gate — see comment block above.)
+      if [[ "$norm_line" =~ ^[[:space:]]*([-*]|[0-9]+\.) ]] \
+         && [[ "$norm_line" =~ \`[^\`]+\` ]] \
+         && [[ "$norm_line" =~ $PROSE_VAR_RE ]]; then
+        # Found a PROSE-IMPERATIVE $VAR site. Window ±5 lines.
+        win_start=$((idx - 5))
+        win_end=$((idx + 5))
+        [ "$win_start" -lt 0 ] && win_start=0
+        [ "$win_end" -ge "$total" ] && win_end=$((total - 1))
+        found=0
+        for (( j=win_start; j<=win_end; j++ )); do
+          wline="${FILE_LINES[$j]}"
+          # (a) inline annotation referencing zskills-resolve-config.sh
+          # (b) pointer to per-skill config-read CONFIG_CONTENT=$(cat ...) pattern
+          # (c) inline pointer-prose to a resolution section: `(resolved from
+          #     config — see X)` / `(resolve via X)` — the migration introduced
+          #     these in lieu of inline helper-source where the surrounding
+          #     fence already had a resolver.
+          if [[ "$wline" == *"zskills-resolve-config.sh"* ]] \
+             || [[ "$wline" =~ CONFIG_CONTENT=\$\(cat ]] \
+             || [[ "$wline" =~ \(resolved\ from\ config ]] \
+             || [[ "$wline" =~ \(resolve\ via ]]; then
+            found=1
+            break
+          fi
+        done
+        site_lineno=$((idx + 1))
+        COVERAGE_SITES_SCANNED=$((COVERAGE_SITES_SCANNED + 1))
+        if [ "$found" -eq 0 ]; then
+          # Extract var name for message clarity.
+          var_match=""
+          [[ "$norm_line" =~ $PROSE_VAR_RE ]] && var_match="${BASH_REMATCH[1]}"
+          COVERAGE_HITS+=("FAIL: PROSE-IMPERATIVE site at $skill_file:$site_lineno uses \$$var_match without nearby resolution-discipline annotation. Add an inline \`(resolve via ...)\` or pointer to the skill's config-read block.")
+          COVERAGE_FAIL=1
+        fi
+      fi
+    else
+      if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
+        in_fence=0
+      fi
+    fi
+  done
+done < <(find "$REPO_ROOT/skills" -name '*.md' | sort)
+
+# Guard against vacuous pass: if zero sites were detected, the regex broke.
+# Plan enumerates 9 PROSE-IMPERATIVE sites (8 test-cmd + 1 dev-server).
+# Allow some slack (≥7) for natural drift, but flag if obviously broken.
+if [ "$COVERAGE_SITES_SCANNED" -lt 7 ]; then
+  fail "PROSE-IMPERATIVE coverage: scanned only $COVERAGE_SITES_SCANNED sites (<7) — detector regex broken?" "expected ≥7 from plan enumeration"
+elif [ "$COVERAGE_FAIL" -eq 0 ]; then
+  pass "PROSE-IMPERATIVE coverage: all $COVERAGE_SITES_SCANNED sites have nearby resolution-discipline annotation"
+else
+  fail "PROSE-IMPERATIVE coverage: ${#COVERAGE_HITS[@]} of $COVERAGE_SITES_SCANNED sites missing annotation" "see hits below"
+  for h in "${COVERAGE_HITS[@]}"; do
+    printf '    %s\n' "$h" >&2
+  done
+fi
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

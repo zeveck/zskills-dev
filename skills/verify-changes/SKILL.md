@@ -127,7 +127,7 @@ fi
 
 **Summary of the three cases** (report format uses exactly these strings):
 
-- `TEST_MODE=config` — use `$FULL_TEST_CMD` verbatim in Phase 3
+- `TEST_MODE=config` — use `$FULL_TEST_CMD` verbatim in Phase 3 (resolved by the three-case decision tree above; helper source: `zskills-resolve-config.sh`)
 - `TEST_MODE=skipped` — do NOT run tests; explicitly note `"Tests: skipped — no test infra"` in the final report and tracking marker
 - Error exit — misconfiguration; no verification attempted, caller must fix
 
@@ -501,7 +501,9 @@ If any issues were found in Phases 2-4:
 
 After fixing any issues in Phase 5:
 
-1. **Run `$FULL_TEST_CMD` again** — all suites must pass, including new tests
+1. **Run `$FULL_TEST_CMD` again** (resolve via
+   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+   if not already in environment) — all suites must pass, including new tests
 2. **Re-check manual verifications** if fixes touched UI code
 3. **If new problems are found**, go back to Phase 5
 
