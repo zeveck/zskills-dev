@@ -22,7 +22,7 @@ The plan is split into 5 phases. Phase 1 lands the field (schema + this-repo con
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 2 — port.sh runtime-read tightening + fail-loud + fixture isolation | ⬚ | | |
+| 2 — port.sh runtime-read tightening + fail-loud + fixture isolation | 🟡 | `cbccfe1` | tightened regex + fail-loud + 3 fixture cases; +3 tests |
 | P1.A — CHANGELOG correction + greenfield port_script template removal | ⬚ | | Residual Phase 1 work; can land in parallel with Phase 2 |
 | 3 — Template prose refinement + Step B placeholder mapping | ⬚ | | |
 | 4 — briefing.py / briefing.cjs path-fix + drop literal + omit-URL on failure | ⬚ | | |
