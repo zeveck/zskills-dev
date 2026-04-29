@@ -1,7 +1,7 @@
 ---
 title: Zskills Monitor Dashboard
 created: 2026-04-18
-status: active
+status: complete
 ---
 
 # Plan: Zskills Monitor Dashboard
@@ -257,7 +257,7 @@ is appended to `errors[]`.
 | 6 — Read-only dashboard UI | ✅ Done | `1239f6c` | landed via PR squash; static HTML/CSS/JS; 5 panels + 2 modals; XSS-safe; +45 tests; 1111/1111 |
 | 7 — Interactive queue + write-back | ✅ Done | `208fb7f` | landed via PR #115 squash; drag-drop + default-mode + per-row chips + run-status + POST write-back; +47 tests; 1158/1158 |
 | 8 — `/zskills-dashboard` skill | ✅ Done | `8ac36d9` | landed via PR #116 squash; SKILL.md 583 lines; start/stop/status w/ cmd+cwd identity check; SIGTERM-only; +35 tests; 1193/1193 |
-| 9 — Migrate `/plans rebuild` to Python aggregator | 🟡 In Progress | | |
+| 9 — Migrate `/plans rebuild` to Python aggregator | ✅ Done | `84521bd` | landed via PR #117 squash; SKILL.md +69 lines; 3 modes wire to python3 -m zskills_monitor.collect; no bash fallback; +20 tests; 1213/1213 |
 
 ---
 
