@@ -48,8 +48,8 @@ The plan resolves four architectural gaps:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 0 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ⬚ | | |
-| 1 — Canonical config-resolution helper resolves 6 vars (UNIT_TEST_CMD, FULL_TEST_CMD, TIMEZONE, DEV_SERVER_CMD, TEST_OUTPUT_FILE, COMMIT_CO_AUTHOR) | ⬚ | | |
+| 0 — Staleness gate (halt if SCRIPTS_INTO_SKILLS_PLAN not landed) | ✅ Done | gate-only (no commit) | All 5 checks pass on main 59cbb2c (frontmatter + 4 anchor pairs + CLAUDE_PROJECT_DIR export + CHANGELOG entry). Inline preflight; no implementation needed. |
+| 1 — Canonical config-resolution helper resolves 6 vars (UNIT_TEST_CMD, FULL_TEST_CMD, TIMEZONE, DEV_SERVER_CMD, TEST_OUTPUT_FILE, COMMIT_CO_AUTHOR) | 🟡 In Progress | | |
 | 2 — Migrate ~97 hardcoded references across 6 categories (60 TZ + 8 test-cmd EXEC + 2 dev-server + 8 PROSE-IMPERATIVE test-cmd + 1 PROSE-IMPERATIVE npm start + 16 output_file + 2 co_author); resolve verbatim-injected blockquote | ⬚ | | |
 | 3 — Fix opinionated fallbacks in hooks (block-unsafe-project.sh:311 + sweep for others); sync test-infra detection list | ⬚ | | |
 | 4 — Enforcement: test deny-list (4-entry fixture) + drift-warn hook extension + prose-imperative detection + allowlist comment convention | ⬚ | | |
