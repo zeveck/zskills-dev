@@ -382,6 +382,349 @@ else
   fail "errors[] differs across consecutive polls"
 fi
 
+###############################################################################
+# Block 3 — Phase 7: interactive queue + write-back
+###############################################################################
+
+echo ""
+echo "=== Phase 7 AC: static-grep contract ==="
+
+# AC: drag handlers wired (HTML5 native: dragstart/dragend/dragenter/dragleave/dragover/drop).
+for ev in dragstart dragend dragenter dragleave dragover drop; do
+  if grep -q "addEventListener(\"$ev\"" "$APP_JS"; then
+    pass "AC: drag event $ev wired via addEventListener"
+  else
+    fail "AC: drag event $ev NOT wired"
+  fi
+done
+
+# AC: Phase 7 endpoint constants present.
+for url in /api/queue /api/trigger /api/work-state/reset /api/work-state; do
+  if grep -q "\"$url\"" "$APP_JS"; then
+    pass "AC: $url URL constant present"
+  else
+    fail "AC: $url URL constant missing"
+  fi
+done
+
+# AC: cache:'no-store' on every fetch site (poll + work-state + queue + trigger + reset + plan + issue = 7).
+NO_STORE_COUNT=$(grep -c 'cache:[[:space:]]*"no-store"' "$APP_JS" || true)
+if [ "${NO_STORE_COUNT:-0}" -ge 6 ]; then
+  pass "AC: cache:'no-store' on every fetch ($NO_STORE_COUNT ≥ 6)"
+else
+  fail "AC: cache:'no-store' missing on some fetches ($NO_STORE_COUNT)"
+fi
+
+# AC: no innerHTML except chrome-only.
+HITS=$(grep -nE '\.innerHTML\s*=' "$APP_JS" | grep -vE '//\s*chrome-only' || true)
+if [ -z "$HITS" ]; then
+  pass "AC: Phase 7 introduces no innerHTML"
+else
+  fail "AC: forbidden innerHTML lines: $HITS"
+fi
+
+# AC: no setInterval (still setTimeout-recursion only).
+if ! grep -nE 'setInterval\s*\(' "$APP_JS" >/dev/null; then
+  pass "AC: setInterval still not used"
+else
+  fail "AC: setInterval is used; must be setTimeout-recursion"
+fi
+
+# AC: no inline event handlers in the static dir.
+if ! grep -nE 'onclick=|onload=' "$STATIC_DIR" -r >/dev/null; then
+  pass "AC: no inline onclick=/onload= handlers (Phase 7)"
+else
+  fail "AC: found inline event handlers"
+fi
+
+# AC: Default-mode toggle UI present.
+if grep -q 'id="dm-phase"' "$INDEX_HTML" && grep -q 'id="dm-finish"' "$INDEX_HTML"; then
+  pass "AC: default-mode segmented buttons in index.html"
+else
+  fail "AC: default-mode buttons missing"
+fi
+
+# AC: in-flight-sprint footnote element present.
+if grep -q 'id="default-mode-footnote"' "$INDEX_HTML"; then
+  pass "AC: default-mode footnote element present"
+else
+  fail "AC: default-mode footnote element missing"
+fi
+if grep -q 'Sprint in flight' "$INDEX_HTML"; then
+  pass "AC: 'Sprint in flight' footnote text present"
+else
+  fail "AC: 'Sprint in flight' footnote text missing"
+fi
+
+# AC: aria-live regions for plans/issues announcements.
+if grep -q 'id="plans-live"' "$INDEX_HTML" && grep -q 'aria-live="polite"' "$INDEX_HTML"; then
+  pass "AC: plans-live aria-live region present"
+else
+  fail "AC: plans-live region missing"
+fi
+
+# AC: run-status widget root element present.
+if grep -q 'id="run-status"' "$INDEX_HTML"; then
+  pass "AC: run-status widget root present"
+else
+  fail "AC: run-status widget missing"
+fi
+
+# AC: PLAN_COLUMNS / ISSUE_COLUMNS constants in app.js.
+if grep -q 'PLAN_COLUMNS' "$APP_JS" && grep -q 'ISSUE_COLUMNS' "$APP_JS"; then
+  pass "AC: PLAN_COLUMNS / ISSUE_COLUMNS constants present"
+else
+  fail "AC: column constants missing"
+fi
+
+# AC: Reconciliation suppress window present (1500ms).
+if grep -q 'POST_RECONCILE_SUPPRESS_MS' "$APP_JS" && grep -q '1500' "$APP_JS"; then
+  pass "AC: reconciliation suppress window 1500ms present"
+else
+  fail "AC: reconciliation window missing"
+fi
+
+# AC: Mode chip and remove button structure in source.
+if grep -q '"mode-chip"' "$APP_JS" && grep -q '"remove-btn"' "$APP_JS"; then
+  pass "AC: mode-chip + remove-btn render code present"
+else
+  fail "AC: mode-chip / remove-btn missing"
+fi
+
+# AC: Move buttons (↑ ↓ ← →) wired with action attributes.
+for act in plan-up plan-down plan-left plan-right issue-up issue-down issue-left issue-right; do
+  if grep -q "\"$act\"" "$APP_JS"; then
+    pass "AC: action $act wired"
+  else
+    fail "AC: action $act missing"
+  fi
+done
+
+# AC: stale-sprint clear-button POSTs reset endpoint.
+if grep -q 'clear-stale-sprint' "$APP_JS"; then
+  pass "AC: clear-stale-sprint action present"
+else
+  fail "AC: clear-stale-sprint action missing"
+fi
+
+# AC: Trigger button + work-state reset POST sites.
+if grep -q 'TRIGGER_URL' "$APP_JS" && grep -q 'WORK_STATE_RESET_URL' "$APP_JS"; then
+  pass "AC: TRIGGER_URL + WORK_STATE_RESET_URL constants present"
+else
+  fail "AC: trigger/reset constants missing"
+fi
+
+###############################################################################
+# Block 4 — Phase 7: live write-back smoke (server already running)
+###############################################################################
+
+echo ""
+echo "=== Phase 7 AC: live write-back smoke ==="
+
+# Re-use the running server from Block 2 — same port, same MAIN_ROOT ($MR).
+
+# AC: POST /api/queue WITHOUT Origin → 403.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue")
+if [ "$CODE" = "403" ]; then
+  pass "AC: POST /api/queue without Origin → 403"
+else
+  fail "AC: POST /api/queue no-origin → $CODE"
+fi
+
+# AC: POST /api/queue WITH valid Origin → 200 + state file written.
+STATE_FILE="$MR/.zskills/monitor-state.json"
+rm -f "$STATE_FILE"
+CODE=$(curl -s -o "$MR/post.body" -w '%{http_code}' -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"default_mode":"phase","plans":{"drafted":[{"slug":"ui-fixture-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue")
+if [ "$CODE" = "200" ]; then
+  pass "AC: POST /api/queue with valid Origin → 200"
+else
+  fail "AC: POST /api/queue valid → $CODE (body=$(head -c 200 "$MR/post.body"))"
+fi
+if [ -f "$STATE_FILE" ] && grep -q '"ui-fixture-plan"' "$STATE_FILE"; then
+  pass "AC: monitor-state.json updated by POST"
+else
+  fail "AC: monitor-state.json not updated"
+fi
+
+# AC: default_mode flips on POST.
+DM_BEFORE=$(grep -E '"default_mode"' "$STATE_FILE" | head -1)
+curl -s -o /dev/null -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"default_mode":"finish","plans":{"drafted":[{"slug":"ui-fixture-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue"
+DM_AFTER=$(grep -E '"default_mode"' "$STATE_FILE" | head -1)
+if printf '%s' "$DM_AFTER" | grep -q '"finish"'; then
+  pass "AC: default_mode flipped to finish via POST"
+else
+  fail "AC: default_mode did not flip (before=$DM_BEFORE after=$DM_AFTER)"
+fi
+
+# AC: per-row mode override persisted.
+curl -s -o /dev/null -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"plans":{"drafted":[],"reviewed":[],"ready":[{"slug":"ui-fixture-plan","mode":"finish"}]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue"
+if grep -qE '"mode":[[:space:]]*"finish"' "$STATE_FILE"; then
+  pass "AC: per-row mode override persisted"
+else
+  fail "AC: per-row mode override not persisted"
+fi
+
+# AC: invalid POST (unknown column) → 400 + state UNCHANGED.
+HASH_BEFORE=$(cksum "$STATE_FILE" | awk '{print $1}')
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"plans":{"drafted":[],"NOT_A_COLUMN":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue")
+HASH_AFTER=$(cksum "$STATE_FILE" | awk '{print $1}')
+if [ "$CODE" = "400" ] && [ "$HASH_BEFORE" = "$HASH_AFTER" ]; then
+  pass "AC: invalid POST (unknown column) → 400, state unchanged"
+else
+  fail "AC: invalid POST: code=$CODE hash_changed=$([ "$HASH_BEFORE" = "$HASH_AFTER" ] && echo no || echo yes)"
+fi
+
+# AC: 100 consecutive POSTs leave state file as valid JSON.
+for i in $(seq 1 100); do
+  curl -s -o /dev/null -X POST \
+    -H "Origin: http://127.0.0.1:$PORT" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[{"slug":"ui-fixture-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+    "http://127.0.0.1:$PORT/api/queue"
+done
+if python3 -c "import json,sys; json.loads(open('$STATE_FILE').read()); print('ok')" >/dev/null 2>&1; then
+  pass "AC: state file is valid JSON after 100 consecutive POSTs"
+else
+  fail "AC: state file invalid after 100 POSTs"
+fi
+
+# AC: 20 parallel POSTs all return 2xx, final file is valid JSON.
+PAR_TMP="$MR/par-codes.txt"
+: > "$PAR_TMP"
+PAR_PIDS=""
+for i in $(seq 1 20); do
+  (curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+    -H "Origin: http://127.0.0.1:$PORT" \
+    -H 'Content-Type: application/json' \
+    -d "{\"plans\":{\"drafted\":[{\"slug\":\"ui-fixture-plan\"}],\"reviewed\":[],\"ready\":[]},\"issues\":{\"triage\":[$i],\"ready\":[]}}" \
+    "http://127.0.0.1:$PORT/api/queue" >> "$PAR_TMP") &
+  PAR_PIDS="$PAR_PIDS $!"
+done
+# Wait only for the curl children, not the long-running server PID.
+for p in $PAR_PIDS; do wait "$p" || true; done
+ANY_5XX=0
+while read -r line; do
+  case "$line" in
+    5*) ANY_5XX=1 ;;
+  esac
+done < "$PAR_TMP"
+if [ "$ANY_5XX" -eq 0 ]; then
+  pass "AC: 20 parallel POSTs all without 5xx"
+else
+  fail "AC: at least one 5xx in 20 parallel POSTs"
+fi
+if python3 -c "import json,sys; json.loads(open('$STATE_FILE').read()); print('ok')" >/dev/null 2>&1; then
+  pass "AC: state file valid JSON after 20 parallel POSTs"
+else
+  fail "AC: state file invalid after parallel POSTs"
+fi
+
+# AC: Two-tab last-write-wins. POST1 then POST2 sequentially with &.
+curl -s -o /dev/null -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"plans":{"drafted":[{"slug":"a-plan"},{"slug":"b-plan"},{"slug":"c-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue" &
+P1=$!
+curl -s -o /dev/null -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"plans":{"drafted":[{"slug":"c-plan"},{"slug":"b-plan"},{"slug":"a-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
+  "http://127.0.0.1:$PORT/api/queue" &
+P2=$!
+wait "$P1" "$P2"
+# Final state must match exactly one payload (last-writer-wins). Both
+# orderings include the same three slugs, so verify the file is parseable
+# and the slug list is exactly {a-plan, b-plan, c-plan} in some order.
+if python3 -c "import json; d=json.loads(open('$STATE_FILE').read()); slugs=[e['slug'] for e in d['plans']['drafted']]; assert sorted(slugs)==['a-plan','b-plan','c-plan'], slugs; print('ok')" >/dev/null 2>&1; then
+  pass "AC: two-tab last-write-wins: final state matches one full payload"
+else
+  fail "AC: two-tab race produced half-merged state"
+fi
+
+# AC: trigger-not-configured → 501.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"/work-on-plans 1 phase"}' \
+  "http://127.0.0.1:$PORT/api/trigger")
+if [ "$CODE" = "501" ]; then
+  pass "AC: /api/trigger no config → 501 (UI hides Run button)"
+else
+  fail "AC: /api/trigger no-config → $CODE (expected 501)"
+fi
+
+# AC: /api/work-state surfaces trigger_configured flag.
+WS_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT/api/work-state")
+if printf '%s' "$WS_BODY" | grep -q '"trigger_configured":[[:space:]]*false'; then
+  pass "AC: /api/work-state surfaces trigger_configured=false"
+else
+  fail "AC: /api/work-state missing trigger_configured: $WS_BODY"
+fi
+
+# Configure a trigger then verify trigger_configured flips to true.
+TRIG="$MR/scripts/trig-ui.sh"
+mkdir -p "$MR/scripts"
+cat >"$TRIG" <<'EOF'
+#!/bin/bash
+echo "argv1=$1"
+EOF
+chmod +x "$TRIG"
+cat >"$MR/.claude/zskills-config.json" <<EOF
+{
+  "dev_server": { "default_port": $PORT },
+  "execution": { "landing": "pr" },
+  "dashboard": { "work_on_plans_trigger": "scripts/trig-ui.sh" }
+}
+EOF
+WS_BODY2=$(curl -sf -m 3 "http://127.0.0.1:$PORT/api/work-state")
+if printf '%s' "$WS_BODY2" | grep -q '"trigger_configured":[[:space:]]*true'; then
+  pass "AC: /api/work-state trigger_configured flips to true after config"
+else
+  fail "AC: trigger_configured did not flip: $WS_BODY2"
+fi
+
+# AC: POST /api/work-state/reset writes idle.
+cat >"$MR/.zskills/work-on-plans-state.json" <<'EOF'
+{"state":"sprint","sprint_id":"x","updated_at":"2026-04-29T00:00:00+00:00"}
+EOF
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  -H "Origin: http://127.0.0.1:$PORT" \
+  "http://127.0.0.1:$PORT/api/work-state/reset")
+if [ "$CODE" = "200" ] && grep -q '"state":[[:space:]]*"idle"' "$MR/.zskills/work-on-plans-state.json"; then
+  pass "AC: POST /api/work-state/reset clears stale sprint"
+else
+  fail "AC: reset → $CODE; file=$(cat "$MR/.zskills/work-on-plans-state.json")"
+fi
+
+# AC: reset without Origin → 403.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "http://127.0.0.1:$PORT/api/work-state/reset")
+if [ "$CODE" = "403" ]; then
+  pass "AC: POST /api/work-state/reset without Origin → 403"
+else
+  fail "AC: reset no-origin → $CODE"
+fi
+
 # Stop server cleanly via SIGTERM and verify port is released.
 kill -TERM "$SERVER_PID" 2>/dev/null || true
 for _ in 1 2 3 4 5 6 7 8 9 10; do

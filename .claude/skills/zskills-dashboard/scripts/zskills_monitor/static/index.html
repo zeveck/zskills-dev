@@ -22,11 +22,29 @@
     <ul id="errors-list" class="errors-list"></ul>
   </section>
 
+  <div id="toast-region" class="toast-region" aria-live="polite" role="status"></div>
+
   <main id="grid" class="grid">
     <section class="panel panel-plans" aria-label="Plans">
-      <h2 class="panel-title">Plans</h2>
+      <div class="panel-head">
+        <h2 class="panel-title">Plans</h2>
+        <div class="plans-controls">
+          <div id="default-mode-area" class="default-mode-area">
+            <span class="muted" id="default-mode-label">Default mode:</span>
+            <div class="seg" role="group" aria-labelledby="default-mode-label">
+              <button type="button" id="dm-phase" class="seg-btn" aria-pressed="false">Phase-by-phase</button>
+              <button type="button" id="dm-finish" class="seg-btn" aria-pressed="false">Finish (one PR)</button>
+            </div>
+            <span id="default-mode-footnote" class="dm-footnote muted" hidden>
+              Sprint in flight: change applies to plans not yet dispatched and to future sprints; in-flight plans keep their captured mode.
+            </span>
+          </div>
+        </div>
+      </div>
+      <div id="run-status" class="run-status" aria-label="Run status"></div>
       <div id="plans-body" class="panel-body"></div>
       <p id="plans-empty" class="empty muted" hidden>No plans found.</p>
+      <div id="plans-live" class="sr-only" aria-live="polite"></div>
     </section>
 
     <section class="panel panel-branches" aria-label="Branches">
@@ -39,6 +57,7 @@
       <h2 class="panel-title">Issues</h2>
       <div id="issues-body" class="panel-body"></div>
       <p id="issues-empty" class="empty muted" hidden>No open issues.</p>
+      <div id="issues-live" class="sr-only" aria-live="polite"></div>
     </section>
 
     <section class="panel panel-worktrees" aria-label="Worktrees">
