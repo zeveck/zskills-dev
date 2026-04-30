@@ -1,5 +1,45 @@
 # Plan Report — /draft-tests Skill
 
+## Phase — 4 Adversarial review loop (QE personas)
+
+**Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-draft-tests-skill-plan
+**Branch:** feat/draft-tests-skill-plan
+**Commits:** c9ebf31
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 4.1 | Reviewer agent prompt with senior-QE persona + finding categories + guidance prepend | Done | c9ebf31 |
+| 4.2 | Devil's-advocate prompt — adversarial stance, calibrated against gotcha generation | Done | c9ebf31 |
+| 4.3 | NOT-a-finding list (authored fresh — Bach/Bolton/Beck-cited) verbatim in both prompts | Done | c9ebf31 |
+| 4.4 | Zero findings is valid — explicit `## Findings` "No findings" path in output-format block | Done | c9ebf31 |
+| 4.5 | Mandatory `Blast radius:` line on every finding; minor dropped, moderate/major must resolve | Done | c9ebf31 |
+| 4.6 | Prior-rounds dedup (round 2+ feeds previous findings as "already addressed"); refiner secondary gate | Done | c9ebf31 |
+| 4.7 | Evidence discipline — `Verification:` line on every empirical claim (mirrors /draft-plan PR #71) | Done | c9ebf31 |
+| 4.8 | Orchestrator-level coverage-floor pre-check on per-round MERGED candidate file (closes first/re/backfill ambiguity) | Done | c9ebf31 |
+| 4.9 | Refiner with verify-before-fix + disposition table; refiner does NOT declare convergence | Done | c9ebf31 |
+| 4.10 | Per-round artifacts: review-round-N + refined-round-N files | Done | c9ebf31 |
+| 4.11 | Convergence check via orchestrator (NOT refiner self-call) — 4 positive conditions | Done | c9ebf31 |
+
+### Verification
+- Test suite: **1549/1549 passed, 0 failed** (baseline 1470; +79 new in `tests/test-draft-tests-phase4.sh`).
+- Per-AC verification (AC-4.1 through AC-4.9): all PASS, independently re-checked by a fresh verifier.
+- **AC-4.9 (load-bearing) deep-dive:** verifier read `convergence-check.sh` source — confirmed it never short-circuits on refiner prose claims; the awk-based parser walks the disposition table mechanically. Run against the `refiner-falsely-claims-converged.md` fixture (which contains "CONVERGED" + "No further refinement needed" prose with 2 unresolved Justified rows): rc=1, NOT CONVERGED — orchestrator correctly overrides refiner self-call. CLAUDE.md memory `feedback_convergence_orchestrator_judgment.md` upheld.
+- AC-4.5 (no live LLM in tests): verifier confirmed zero `Agent(`/`claude`/`ANTHROPIC_API` matches in test logic; 21 stub env-var references confirm everything goes through `ZSKILLS_DRAFT_TESTS_*_STUB_<N>` env vars. Live mode gated behind `ZSKILLS_TEST_LLM=1`.
+- Tier-1 hash integrity: all 3 new scripts have actual `git hash-object` recorded (verifier ran `git hash-object` and grepped tier1-shipped-hashes.txt for each).
+- Source/mirror parity: clean.
+- Plan-text drift: zero tokens (Phase 4 spec explicitly out-of-scope for PLAN-TEXT-DRIFT per Design & Constraints).
+
+### Implementation notes
+- 3 new scripts: `review-loop.sh` (round driver), `coverage-floor-precheck.sh` (operates on the merged candidate at `/tmp/draft-tests-candidate-round-N-<slug>.md`), `convergence-check.sh` (4-condition mechanical orchestrator judgment, ignores refiner prose).
+- Exit codes: 0 = converged, 2 = max rounds + floor unmet (partial-success), 3 = max rounds + floor met but other unresolved findings, 6 = no stubs and no `ZSKILLS_TEST_LLM=1` (fail-loud).
+- Coverage floor uses awk-portable `match() + RSTART/RLENGTH + substr()` (mawk-safe); first attempt used 3-arg `match($0, regex, m)` which is gawk-only and silently failed on mawk — caught by AC-4.8 pre-merge test.
+- Tier-1 ownership now 23 entries (Phase 4 added 3); STALE_LIST kept in sync; tier1-shipped-hashes.txt updated with **actual** hashes after final edits.
+- Implementer self-caught one stale hash mid-run (re-edited script after registering hash; re-registered with the post-edit `git hash-object`). Phase 2's stale-hash defect did not regress.
+
 ## Phase — 3 Drafting agent and test-spec format
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md

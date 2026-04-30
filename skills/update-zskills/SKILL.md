@@ -1018,6 +1018,8 @@ STALE_LIST=(
   briefing.py
   clear-tracking.sh
   compute-cron-fire.sh
+  convergence-check.sh
+  coverage-floor-precheck.sh
   create-worktree.sh
   detect-language.sh
   draft-orchestrator.sh
@@ -1027,6 +1029,7 @@ STALE_LIST=(
   plan-drift-correct.sh
   port.sh
   post-run-invariants.sh
+  review-loop.sh
   sanitize-pipeline-id.sh
   statusline.sh
   worktree-add-safe.sh
