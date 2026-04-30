@@ -1,6 +1,6 @@
 # Plan Report — /draft-tests Skill
 
-## Phase — 3 Drafting agent and test-spec format [UNFINALIZED]
+## Phase — 3 Drafting agent and test-spec format
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
 **Status:** Completed (verified)
