@@ -146,6 +146,48 @@ else
 fi
 cleanup_fixture "$F"
 
+# --- Test 7: orphan-dir empty ----------------------------------------
+# Source has SKILL.md only; mirror has SKILL.md + an empty references/.
+# Helper's `elif [ -d "$orphan" ]` branch should rmdir the empty
+# references/ directory, leaving diff -rq clean.
+F=$(make_fixture orphan-dir-empty)
+mkdir -p "$F/skills/epsilon"
+echo "epsilon content" > "$F/skills/epsilon/SKILL.md"
+mkdir -p "$F/.claude/skills/epsilon/references"
+echo "epsilon content" > "$F/.claude/skills/epsilon/SKILL.md"
+out=$( cd "$F" && bash "$HELPER" epsilon 2>&1 )
+ec=$?
+if [ "$ec" -eq 0 ] \
+   && [ ! -e "$F/.claude/skills/epsilon/references" ] \
+   && diff -rq "$F/skills/epsilon/" "$F/.claude/skills/epsilon/" >/dev/null 2>&1; then
+  pass "orphan-dir empty: empty mirror subdir is removed"
+else
+  fail "orphan-dir empty (exit=$ec, out=$out, dir-exists=$( [ -e "$F/.claude/skills/epsilon/references" ] && echo yes || echo no ))"
+fi
+cleanup_fixture "$F"
+
+# --- Test 8: orphan-dir non-empty ------------------------------------
+# Source has SKILL.md only; mirror has SKILL.md + references/notes.md.
+# Helper's `elif [ -d "$orphan" ]` branch should walk the dir with
+# `find -type f` to rm the file, then rmdir the now-empty parent.
+F=$(make_fixture orphan-dir-nonempty)
+mkdir -p "$F/skills/zeta"
+echo "zeta content" > "$F/skills/zeta/SKILL.md"
+mkdir -p "$F/.claude/skills/zeta/references"
+echo "zeta content"  > "$F/.claude/skills/zeta/SKILL.md"
+echo "stale notes"   > "$F/.claude/skills/zeta/references/notes.md"
+out=$( cd "$F" && bash "$HELPER" zeta 2>&1 )
+ec=$?
+if [ "$ec" -eq 0 ] \
+   && [ ! -e "$F/.claude/skills/zeta/references/notes.md" ] \
+   && [ ! -e "$F/.claude/skills/zeta/references" ] \
+   && diff -rq "$F/skills/zeta/" "$F/.claude/skills/zeta/" >/dev/null 2>&1; then
+  pass "orphan-dir non-empty: file removed then empty parent rmdir'd"
+else
+  fail "orphan-dir non-empty (exit=$ec, out=$out, file-exists=$( [ -e "$F/.claude/skills/zeta/references/notes.md" ] && echo yes || echo no ), dir-exists=$( [ -e "$F/.claude/skills/zeta/references" ] && echo yes || echo no ))"
+fi
+cleanup_fixture "$F"
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' \
