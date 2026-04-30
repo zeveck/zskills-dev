@@ -12,7 +12,11 @@
 #     apply the section mapping documented in the SKILL.md, and assert each
 #     fixture lands in the expected section.
 #
-# Output goes to $TEST_OUT/.test-results.txt per CLAUDE.md.
+# Per-test scratch log goes to $TEST_OUT/test_plans_rebuild_uses_collect.log.
+# This is NOT the canonical $TEST_OUT/.test-results.txt verifier capture
+# (CLAUDE.md "Capture test output to a file" idiom) — that path is owned by
+# the OUTER runner capture (e.g. `bash tests/run-all.sh > .../.test-results.txt`)
+# and must not be truncated by individual tests, or earlier failures vanish.
 #
 # Run from repo root: bash tests/test_plans_rebuild_uses_collect.sh
 
@@ -28,7 +32,7 @@ FIXTURES="$REPO_ROOT/tests/fixtures/monitor"
 
 TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
 mkdir -p "$TEST_OUT"
-RESULTS="$TEST_OUT/.test-results.txt"
+RESULTS="$TEST_OUT/test_plans_rebuild_uses_collect.log"
 : > "$RESULTS"
 
 PASS_COUNT=0
