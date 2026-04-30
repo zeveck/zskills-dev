@@ -52,7 +52,7 @@ Status legend: `[x]` complete · `[ ]` pending · `[~]` in flight (PR open or pl
 
 #### Phase E — /update-zskills source discovery (must wait for B+C+D)
 
-- [ ] `/quickfix ← QF3` *(now UNBLOCKED — all three gating plans landed: SCRIPTS_INTO_SKILLS PR #100, SKILL_FILE_DRIFT_FIX PR #122, DEFAULT_PORT_CONFIG PR #125)*
+- [x] `/quickfix ← QF3` — landed via PR #128 (2026-04-30T04:23 UTC, closes Issue #126: `/update-zskills` source-asset probe extension + stop-and-ask replacing silent auto-clone). QF3 was moved to Issue #126 on 2026-04-29 (per `QUEUED_QUICKFIXES.md:69`); PR #128 closed it.
 
 #### Phase F — independent plans (any order, post-Phase B is safest)
 
@@ -61,7 +61,7 @@ For each item: `/refine-plan` first to absorb drift introduced by Phase B / C / 
 - [x] `/refine-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — landed via PR #103 (2026-04-28)
 - [x] `/run-plan plans/BLOCK_DIAGRAM_TRACKING_CATCHUP.md` — landed via PR #109 (2026-04-29; closes Issue #65)
 - [x] `/refine-plan plans/DRAFT_TESTS_SKILL_PLAN.md` — landed via PR #120 (efd5c28, 2026-04-28; absorbed post-2026-04-24 ecosystem changes)
-- [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md` — **in progress** in another session: Phase 1 done via PR #124 (9ed3bfd, 2026-04-29; skeleton + parse-plan.sh + 7 fixtures + 62 tests); Phases 2–6 chunked via finish-auto cron on `feat/draft-tests-skill-plan`
+- [ ] `/run-plan plans/DRAFT_TESTS_SKILL_PLAN.md` — **in progress** in another session: Phase 1 PR #124 (skeleton + parse-plan.sh + 7 fixtures + 62 tests, 2026-04-29), Phase 2 PR #135 (language detection + test-file discovery + no-test-setup path, 2026-04-30 10:30 UTC), Phase 3 PR #136 (drafting agent + test-spec format, 2026-04-30 11:08 UTC), Phase 4 PR #137 (adversarial review loop with QE personas, 2026-04-30 11:50 UTC). **Phases 5–6 still pending**, chunked finish-auto cron on `feat/draft-tests-skill-plan` continuing.
 - [ ] `/refine-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [ ] `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
 - [x] `/refine-plan plans/ZSKILLS_MONITOR_PLAN.md` — landed via PR #101 (2026-04-28)
