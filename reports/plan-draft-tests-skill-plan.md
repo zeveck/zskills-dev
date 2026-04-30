@@ -1,12 +1,12 @@
 # Plan Report — /draft-tests Skill
 
-## Phase — 2 Language detection, test-file discovery, no-test-setup path [UNFINALIZED]
+## Phase — 2 Language detection, test-file discovery, no-test-setup path
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
-**Status:** Completed (verified)
+**Status:** Completed (verified) — landed via PR squash merge
 **Worktree:** /tmp/zskills-pr-draft-tests-skill-plan
 **Branch:** feat/draft-tests-skill-plan
-**Commits:** 4ec3bc4, ff33eea
+**Commits:** e7b4d66, e415499 (post-rebase: was 4ec3bc4, ff33eea)
 
 ### Work Items
 
