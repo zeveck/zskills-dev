@@ -222,14 +222,23 @@ repo_has_token() {
   local token="$1"
   if [ -z "$token" ]; then return 1; fi
   if [ -n "$REPO_ROOT" ]; then
-    if (cd "$REPO_ROOT" && git grep -F -q -- "$token" 2>/dev/null); then
+    # Exclude the plan file itself from the search. The plan's AC body
+    # is where the backticked token literally appears; without this
+    # exclusion, `git grep -F` would always find the token (in the AC
+    # body that asserts it's absent), classifying every "absent"
+    # backticked token as UNKNOWN instead of MISSING. Compute the plan
+    # path RELATIVE to REPO_ROOT so git's pathspec exclude matches.
+    local plan_abs plan_rel
+    plan_abs="$(cd "$(dirname "$PLAN_FILE")" && pwd)/$(basename "$PLAN_FILE")"
+    plan_rel="${plan_abs#"$REPO_ROOT"/}"
+    if (cd "$REPO_ROOT" && git grep -F -q -- "$token" -- ":(exclude)$plan_rel" 2>/dev/null); then
       return 0
     fi
     return 1
   fi
-  # Fallback: scan PWD recursively for the literal token. Bounded to
-  # avoid runaway output on huge trees.
-  if grep -rFq -- "$token" . 2>/dev/null; then
+  # Fallback: scan PWD recursively for the literal token, excluding
+  # the plan file. Bounded to avoid runaway output on huge trees.
+  if grep -rFq --exclude="$(basename "$PLAN_FILE")" -- "$token" . 2>/dev/null; then
     return 0
   fi
   return 1

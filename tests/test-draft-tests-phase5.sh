@@ -52,6 +52,31 @@ prepare_dir() {
   printf '%s' "$dir"
 }
 
+# git_isolate_dir <dir>
+#
+# Initialize <dir> as a fresh git repo and commit its current contents.
+# Required for any test that invokes gap-detect.sh (or any other script
+# using `git grep`/`git rev-parse --show-toplevel`), so the script
+# resolves to <dir> as REPO_ROOT instead of the worktree's git root.
+# Without this, fixture files containing supposedly-absent backticked
+# tokens are visible to `git grep` once they're committed in the
+# worktree (e.g., on CI), and gap-detect misclassifies MISSING ACs as
+# UNKNOWN. Locally during dev the bug hides because uncommitted
+# fixtures are invisible to `git grep`.
+#
+# Call this AFTER copying fixtures into <dir> but BEFORE invoking
+# gap-detect/backfill/etc. Then run those scripts inside a subshell
+# with `cd <dir>` so `git rev-parse --show-toplevel` resolves correctly.
+git_isolate_dir() {
+  local dir="$1"
+  ( cd "$dir" \
+    && git init -q \
+    && git config user.email "test@draft-tests.local" \
+    && git config user.name "draft-tests-test" \
+    && git add -A \
+    && git commit -q -m "fixture" )
+}
+
 # ==========================================================================
 # Pre-flight: scripts exist and are executable.
 # ==========================================================================
@@ -186,7 +211,8 @@ echo "=== AC-5.3 -- MISSING -> backfill appended ==="
 DIR=$(prepare_dir "ac-5-3-missing")
 cp "$P5/missing-backticked.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 
 # Phase 1 should be MISSING.
 if grep -E -q "^  1:AC-1\.1" "$DIR/gaps.md"; then
@@ -244,7 +270,8 @@ echo "=== AC-5.4 -- multiple backfill phases for 4+ MISSING ==="
 DIR=$(prepare_dir "ac-5-4-many")
 cp "$P5/many-missing.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 bash "$BACKFILL_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" "$DIR/gaps.md" "$DIR/backfill.md" 2>/dev/null
 
 # Count `## Phase N -- Backfill` headings inserted.
@@ -369,7 +396,8 @@ echo "=== AC-5.7 -- trailing-section structural preservation ==="
 DIR=$(prepare_dir "ac-5-7-drift-quality")
 cp "$P5/drift-log-and-review.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 # Save original Drift Log + Plan Review + Plan Quality bodies.
 awk '/^## Drift Log/,/^## Plan Review/{print > "/tmp/draft-tests-p5-drift.txt"; next}
      /^## Plan Review/,/^## Plan Quality/{print > "/tmp/draft-tests-p5-review.txt"; next}
@@ -432,7 +460,8 @@ fi
 DIR=$(prepare_dir "ac-5-7-noncanon")
 cp "$P5/non-canonical-trailing.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 ANTI_PRE_BYTES=$(extract_section "$DIR/plan.md" 'Anti-Patterns')
 QUALITY_PRE_BYTES=$(extract_section "$DIR/plan.md" 'Plan Quality')
 bash "$BACKFILL_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" "$DIR/gaps.md" "$DIR/backfill.md" 2>/dev/null
@@ -474,7 +503,8 @@ fi
 DIR=$(prepare_dir "ac-5-7-fenced")
 cp "$P5/fenced-trailing.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 bash "$BACKFILL_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" "$DIR/gaps.md" "$DIR/backfill.md" 2>/dev/null
 
 backfill_line=$(grep -n '^## Phase [0-9]\+ -- Backfill' "$DIR/plan.md" | head -1 | cut -d: -f1)
@@ -639,7 +669,8 @@ echo "=== AC-5.10 -- backfill phase enrolled in coverage floor ==="
 DIR=$(prepare_dir "ac-5-10-floor")
 cp "$P5/missing-backticked.md" "$DIR/plan.md"
 bash "$PARSE_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" 2>/dev/null >/dev/null
-bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null
+git_isolate_dir "$DIR"
+( cd "$DIR" && bash "$GAP_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" /dev/null "$DIR/gaps.md" 2>/dev/null )
 bash "$BACKFILL_SCRIPT" "$DIR/plan.md" "$DIR/parsed.md" "$DIR/gaps.md" "$DIR/backfill.md" 2>/dev/null
 
 # Parsed-state must include the new backfill phase id in
