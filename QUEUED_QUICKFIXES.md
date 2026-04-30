@@ -1,6 +1,6 @@
 # Queued /quickfix Prompts
 
-Four `/quickfix` invocations to run when ready. Prompts 1 and 2 address recurring failure modes in `/draft-plan` and `/refine-plan`; Prompt 3 fixes `/update-zskills` source-asset discovery; Prompt 4 adds positional-tail guidance to `/refine-plan`. Prompts 1, 2, and 4 are independent of each other (no line-range overlap, but 1 and 2 both edit `skills/draft-plan/SKILL.md` so let one PR land before kicking off the other). Prompt 3 must wait for SCRIPTS_INTO_SKILLS_PLAN, SKILL_FILE_DRIFT_FIX, and DEFAULT_PORT_CONFIG to land first.
+Three `/quickfix` invocations to run when ready (Prompt 3 was moved to issue #126 on 2026-04-29 — see breadcrumb below). Prompts 1 and 2 address recurring failure modes in `/draft-plan` and `/refine-plan`; Prompt 4 adds positional-tail guidance to `/refine-plan`. Prompts 1, 2, and 4 are independent of each other (no line-range overlap, but 1 and 2 both edit `skills/draft-plan/SKILL.md` so let one PR land before kicking off the other).
 
 Source context: produced 2026-04-26 from a session where both bugs surfaced (file collision in `/tmp/draft-plan-review-round-1.md` exposed the convergence-by-refiner-self-declaration pattern). Re-reviewed 2026-04-27 by three independent Opus agents; revisions to Prompts 2 and 4 incorporated below (Edit-replace clarification on QF2, prose-mirror clarification on QF4, in-scope spaces-in-paths fix added to QF4 Sub-edit 5).
 
@@ -66,27 +66,7 @@ After landing, file a follow-up GitHub issue: `gh issue create --title "Apply or
 
 ## Prompt 3 — `/update-zskills` source-asset discovery: extend probe + stop-and-ask
 
-Source context: queued 2026-04-26 from a session triaging Simon Greenwold's feedback. Originally drafted as a standalone `/quickfix` invocation; queued instead because (a) low urgency — doesn't break installs, just produces silent re-clone when a non-`/tmp` clone exists; (b) `skills/update-zskills/SKILL.md` is going to churn from active plans (DEFAULT_PORT_CONFIG, SCRIPTS_INTO_SKILLS_PLAN, SKILL_FILE_DRIFT_FIX) — running this now would create a refine-after-rebase loop. Anchored on Step 0's section name and the 4-tier probe (not line numbers) so it survives the file churn.
-
-```
-/quickfix Fix /update-zskills: extend the source-asset locator probe and replace the silent auto-clone fallback with stop-and-ask.
-
-Edit skills/update-zskills/SKILL.md Step 0 ("Locate Portable Assets" — the section describing the existing 4-tier probe: zskills-portable/ → ./zskills/ → /tmp/zskills → silent auto-clone). Then mirror to .claude/skills/update-zskills/ via `rm -rf` + `cp -r` + `diff -rq`.
-
-Two changes:
-
-A. Extend the probe between tiers 3 and 4. After /tmp/zskills fails, check these locations IN ORDER (first valid wins; same validity test as the existing tiers — directory contains CLAUDE_TEMPLATE.md + hooks/ + scripts/ + skills/):
-  1. $PWD/../zskills (project's sibling)
-  2. $PWD/../../zskills (grandparent-sibling)
-  3. ~/src/zskills
-  4. ~/code/zskills
-  5. ~/projects/zskills
-  6. ~/zskills
-
-B. Replace the silent tier-4 auto-clone with stop-and-ask. Print the list of locations that were checked. Ask in plain prose (NOT AskUserQuestion, per the skill's Key Rule 7): "Couldn't locate zskills source. Options: (a) paste a path to your clone, (b) type 'clone' to clone fresh to /tmp/zskills, (c) type 'abort' to cancel." Validate any pasted path; abort exits cleanly with a message; 'clone' falls back to the original auto-clone behavior.
-
-Feedback context: Simon Greenwold cloned to a non-/tmp path and /update-zskills "flailed around like crazy." The fix is better discovery + honest "help me out" — no env var, no flag, no new knowledge required of the user.
-```
+Prompt 3 (QF3) moved to issue #126 2026-04-29.
 
 ---
 
