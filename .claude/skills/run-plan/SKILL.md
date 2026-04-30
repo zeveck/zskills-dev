@@ -298,11 +298,21 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
 
 1. Use `CronList` to list all cron jobs
 2. Delete ALL whose prompt starts with `Run /run-plan` using `CronDelete`
-3. Report what was cancelled:
+3. Clean up any per-phase defer counters and recovery sentinels for this
+   plan (#110). MAIN_ROOT and TRACKING_ID are not yet in scope here, so
+   compute them inline:
+   ```bash
+   TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
+   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
+   ```
+4. Report what was cancelled:
    - If one cron found: `Run-plan cron stopped (was job ID XXXX, every INTERVAL).`
    - If multiple found: `Stopped N run-plan crons (IDs: XXXX, YYYY).`
    - If none found: `No active /run-plan cron found.`
-4. **Exit.** Do not proceed to any phase. The `stop` command does nothing else.
+5. **Exit.** Do not proceed to any phase. The `stop` command does nothing else.
 
 ## Phase 0 — Schedule (if `every` is present)
 
@@ -426,6 +436,48 @@ Before parsing, check for stale state from a previous failed run:
    echo "ZSKILLS_PIPELINE_ID=run-plan.$TRACKING_ID"
    ```
 
+   **Sentinel-recovery prelude (#110).** Before evaluating the four cases
+   below, check for a `cron-recovery-needed.<phase>` marker left by a prior
+   turn whose CronCreate failed after a successful CronDelete (high-severity
+   race documented in WI 1.3 step 4d). The marker means the recurring `*/1`
+   cron may not exist; this turn must try to re-establish it before doing
+   anything else. The counter is held — this is recovery, not normal flow.
+
+   ```bash
+   # MAIN_ROOT is already in scope from the "Read authority" block earlier
+   # in this section (line ~393); reuse it here.
+   PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+   if compgen -G "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed.*" >/dev/null 2>&1; then
+     # CronList → check if a "Run /run-plan <plan-file> finish auto" cron
+     # already exists (a stale fire from before the failed Delete may have
+     # raced ahead of us).
+     # If exists AND cadence ∈ {*/1, */10, */30, */60} (sane backoff cadence
+     #   set, A1 fix): rm cron-recovery-needed.* (already recovered at a
+     #   sane cadence; trust it).
+     # If exists BUT cadence ∉ {*/1, */10, */30, */60} (A1 fix: third-party
+     #   cron at e.g. */15, or scheduler corruption returning bad cadence):
+     #   emit WARN cron-recovery-bad-cadence with the observed cadence
+     #   string, force CronDelete on ALL matching crons, then fall through
+     #   to the "missing" branch below to CronCreate at */1.
+     # If missing: CronCreate cron="*/1 * * * *" recurring=true
+     #             prompt="Run /run-plan <plan-file> finish auto"
+     #             then verify via CronList again AND verify the new cron's
+     #             cadence is exactly "*/1 * * * *" (not just "exists").
+     #             On success: rm cron-recovery-needed.*. On failure: leave
+     #             marker, emit WARN cron-recovery-failed and continue to
+     #             case dispatch (Case 3's own inline retry may succeed, or
+     #             Case 4 will happy-path past the missing cron).
+   fi
+   ```
+
+   The cadence-sanity check (A1 fix) protects against three failure modes:
+   (i) a third-party tool created a recurring cron with the same prompt at
+   a different cadence (e.g., `*/15`); (ii) Case 3's 3-retry exhaustion left
+   a partial-success cron at the wrong target cadence; (iii) the previous
+   turn's CronCreate raced with another top-level invocation. Without this
+   check, the "exists, rm marker" branch would silently accept a wrong
+   cadence and the pipeline would run at the wrong fire rate indefinitely.
+
    Then read the plan frontmatter (`status` field) and the plan tracker
    (phase statuses) from `$PLAN_FILE_FOR_READ` (computed in the "Read
    authority" section above — NOT from main's copy of the plan). Four cases:
@@ -435,7 +487,15 @@ Before parsing, check for stale state from a previous failed run:
       any job whose prompt matches `Run /run-plan <plan-file> finish auto`
       for THIS plan file. In Design 2a chunking, the recurring `*/1`
       cron will otherwise keep firing forever — Case 1 is the only
-      routine termination path. Then exit with "Plan complete (already).
+      routine termination path. Also rm any leftover recovery sentinel
+      and per-phase defer counters so the next pipeline starts clean
+      (R6 fix, #110):
+      ```bash
+      PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+      rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
+      rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
+      ```
+      Then exit with "Plan complete (already).
       Cron <id> deleted." No more work, no more fires.
    2. **All phases Done + frontmatter NOT complete**: Phase 5b needs to
       run (it owns the final-verify gate logic via its new first
@@ -443,10 +503,74 @@ Before parsing, check for stale state from a previous failed run:
       directly to Phase 5b**. Phase 5b's gate handles the
       verify-pending vs verify-fulfilled vs no-marker cases — single
       source of truth, no duplicated logic in Step 0.
-   3. **Next-target phase already In Progress** (per tracker): output
-      "Phase X already in progress, deferring." Exit cleanly.
+   3. **Next-target phase already In Progress** (per tracker): apply the
+      adaptive backoff decision rule (#110). The pipeline cron stays at
+      its current cadence on most fires and steps down to a slower
+      cadence only at boundary fires `C+1 ∈ {1, 10, 16, 26}`. The
+      counter `C` is per-phase scoped:
+
+      1. Read `C` from
+         `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers.<phase>`
+         (default `0` if missing).
+      2. Read current cadence `R` via `CronList` substring match on
+         `Run /run-plan <plan-file> finish auto`. If multi-match, pick
+         the first for cadence read (the delete-all step in 4 collapses
+         all). If no match: emit `WARN no-cron-match`, do NOT increment
+         counter, output the defer message, exit.
+      3. Compute target cadence `T` from `C+1`:
+         `<10` → `*/1`, `10..15` → `*/10`, `16..25` → `*/30`,
+         `≥26` → `*/60`.
+      4. If `T != R`:
+         a. CronList → enumerate ALL prompts containing
+            `Run /run-plan <plan-file> finish auto`.
+         b. CronDelete each ID.
+         c. CronCreate ONE cron with `cron: T`, `recurring: true`,
+            `prompt: "Run /run-plan <plan-file> finish auto"`.
+         d. Verify: CronList again; if no match found OR cadence != `T`,
+            `sleep 2` between retry attempts (N1 fix: inter-attempt
+            spacing protects against rate-limit-class CronCreate
+            failures, which would otherwise burn all 3 retries inside
+            the same rate-limit window), then retry steps c–d up to 2
+            more times (3 total CronCreate attempts; total worst-case
+            wall-time on the failing path ≈ 4-6s of sleep + 6 LLM tool
+            calls). If all 3 attempts fail: write
+            `cron-recovery-needed.<phase>` marker, emit
+            `WARN cron-replace-failed (3 retries exhausted)` to stdout
+            AND output a prominent user-visible WARN to the turn's final
+            message:
+
+            > ⚠ /run-plan finish auto: failed to update cron after 3 attempts.
+            > Pipeline is stalled until you re-invoke /run-plan <plan>
+            > finish auto.
+            >
+            > If the next invocation also fails: run `/run-plan stop` to
+            > clear all crons, then file an issue at
+            > github.com/zeveck/zskills-dev/issues/new with the contents of
+            > .zskills/tracking/<pipeline-id>/cron-recovery-needed.<phase>
+            > and your `CronList` output.
+
+            (N2 fix: explicit escalation path — `/run-plan stop` + manual
+            `gh issue` filing — so users have a complete action ladder
+            rather than a re-invoke-or-give-up choice.)
+
+            Do NOT increment counter. Exit.
+      5. If `T == R`: no cron action.
+      6. Write `C+1` to the counter file
+         `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers.<phase>`.
+         Output the defer message ONLY at `C+1 ∈ {1, 10, 16, 26}`
+         (silent on intermediate fires so users see meaningful step-down
+         events but not minute-by-minute noise):
+
+         > Phase X already in progress, deferring. Backoff cadence now T.
    4. **Otherwise**: proceed with normal preflight (steps 1–9) then
-      Phase 2.
+      Phase 2. Before proceeding, clear all per-phase defer counters and
+      any stale recovery sentinel from a prior phase (#110):
+      ```bash
+      PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+      rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
+      rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
+      ```
+      (Harmless on first phase — rm of missing files is a no-op.)
 
    Stale crons are harmless — duplicate fires exit cleanly via this
    check. Re-entry routes to Phase 5b which owns verify-pending state
@@ -1818,6 +1942,8 @@ Three branches:
    ```bash
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts.$TRACKING_ID"
+   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*       # NEW (#110)
+   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*    # NEW (#110)
    ```
    Proceed to sub-step 1.
 

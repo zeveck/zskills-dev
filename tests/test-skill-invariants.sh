@@ -91,6 +91,16 @@ check "Phase 5b: final-verify gate present" \
 check "Phase 5b: idempotent early-exit present" \
   'grep -q "frontmatter is already.*status: complete" skills/run-plan/SKILL.md'
 
+# Issue #110: adaptive cron backoff anchors (Mode A)
+check "issue #110: in-progress-defers counter" \
+  'grep -q "in-progress-defers" skills/run-plan/SKILL.md'
+check "issue #110: cron-recovery-needed sentinel" \
+  'grep -q "cron-recovery-needed" skills/run-plan/SKILL.md'
+check "issue #110: cron-replace-failed WARN" \
+  'grep -q "WARN cron-replace-failed" skills/run-plan/SKILL.md'
+check "issue #110: backoff documented in finish-mode" \
+  'grep -q "in-progress-defers" skills/run-plan/references/finish-mode.md'
+
 # post-run-invariants.sh still invoked by /run-plan
 check "post-run-invariants.sh invoked by /run-plan" \
   'grep -q "post-run-invariants.sh" skills/run-plan/SKILL.md'

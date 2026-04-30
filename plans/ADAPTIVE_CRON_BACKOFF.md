@@ -2,7 +2,7 @@
 issue: 110
 title: Adaptive Backoff for /run-plan finish auto Chunking Cron
 created: 2026-04-29
-status: active
+status: complete
 ---
 
 # Plan: Adaptive Backoff for /run-plan finish auto Chunking Cron
@@ -43,7 +43,7 @@ options; speccing without prototyping would be design-by-guess).
 at Step 0 Case 3 ("clean defers" — orchestrator reaches Step 0 and finds
 the next-target phase already In Progress). Does not implement Mode B.
 A follow-up issue is filed in Phase 1 of this plan (WI 1.0 below; issue
-[TBD]) so the deferral is concretely tracked, not handwaved.
+#134) so the deferral is concretely tracked, not handwaved.
 
 Per memory `feedback_dont_defer_hole_closure`, deferring is suspect when
 the deferred work IS the change. Here it is not: Mode A and Mode B
@@ -53,7 +53,7 @@ behind a paused orchestrator). The Mode A counter machinery is a strict
 subset of any unified design — shipping it first is sequencing, not
 deferring closure.
 
-**Out of scope (deferred to follow-up issue [TBD] filed in WI 1.0):**
+**Out of scope (deferred to follow-up issue #134 filed in WI 1.0):**
 
 - Mode B failure-fire pile-up.
 - Unified `fires-since-last-progress.$TRACKING_ID` counter at cron-fire
@@ -74,7 +74,7 @@ The 6 open questions from `/tmp/draft-plan-110-framing.md` (verbatim from
 issue addendum lines 429-441):
 
 1. **Where does the bump check live?** — **DEFERRED** to follow-up issue
-   [TBD] filed by WI 1.0 of this plan. Question is N/A under the chosen
+   #134 filed by WI 1.0 of this plan. Question is N/A under the chosen
    Mode A scope (the bump check lives in Step 0 Case 3 by definition,
    since that is the only entry point Mode A covers). Recording this
    resolution explicitly so the follow-up does not re-litigate.
@@ -309,10 +309,10 @@ The `cron-recovery-needed.<phase>` marker is written under
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue | ⬚ | | Largest phase; 9 work items (1.0–1.8) |
-| 2 — Documentation: finish-mode.md table + failure-protocol.md cleanup step | ⬚ | | |
-| 3 — Test fixture: tests/test-runplan-defer-backoff.sh | ⬚ | | 14 cases (10 functional + 3 recovery + 1 cadence-sanity A1) + 2 anchors |
-| 4 — Mirror, invariants, run-all.sh, regression check | ⬚ | | |
+| 1 — Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue | ✅ Done | `316350d` | 9 work items (1.0–1.8) all completed; tests 1353/1353 |
+| 2 — Documentation: finish-mode.md table + failure-protocol.md cleanup step | ✅ Done | `c881f9f` | Backoff table + reset triggers + DA4/DA5/A1/N2 prose in finish-mode.md; new step 5 in failure-protocol.md |
+| 3 — Test fixture: tests/test-runplan-defer-backoff.sh | ✅ Done | `d969f09` | 14 functional + 2 anchor cases; 435 lines (in [370, 440] band); standalone test passes 16/16 |
+| 4 — Mirror, invariants, run-all.sh, regression check | ✅ Done | `88f414b` | run-all.sh registers new test (line 52); test-skill-invariants extended +4 #110 anchors (36→40 pass); mirror parity confirmed |
 
 ## Phase 1 — Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue
 
@@ -1182,7 +1182,7 @@ design, not a gap.
 | Round | Reviewer Findings | DA Findings | Resolved | Notes |
 |-------|-------------------|-------------|----------|-------|
 | 1 | 9 (lost to file-write collision; 5 re-checked in round 2) | 8 | 10/17 (R5, R7 from task brief + 8 DA) | DA1 (HIGH) and DA2 (HIGH) invalidated initial sentinel-recovery design; redesigned to inline-retry. DA4 forced honest Q3 resolution. |
-| 2 | Combined R + DA single agent (file collision lesson) | — | 8/8 (3 MEDIUM + 5 LOW), 0 not-reproduced | All round-2 findings had verifiable anchors. Surgical fixes only — heading level, cadence-sanity check, [TBD] placeholder, sleep between retries, WARN escalation, Failure-Protocol step rationale. |
+| 2 | Combined R + DA single agent (file collision lesson) | — | 8/8 (3 MEDIUM + 5 LOW), 0 not-reproduced | All round-2 findings had verifiable anchors. Surgical fixes only — heading level, cadence-sanity check, follow-up-issue placeholder, sleep between retries, WARN escalation, Failure-Protocol step rationale. |
 
 ### Anti-rubber-stamp dispositions (verified at finalize)
 

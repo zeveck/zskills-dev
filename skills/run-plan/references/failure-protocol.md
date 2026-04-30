@@ -83,6 +83,33 @@ To restart: /run-plan <plan-file> auto every INTERVAL
 To cancel: /run-plan stop
 ```
 
+### 5. Clean tracking counter files
+
+After alerting the user, remove the per-pipeline tracking counters so a
+re-invocation of `/run-plan <plan-file> finish auto` starts fresh
+(Issue #110):
+
+```bash
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')}"
+rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
+rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts."*
+rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
+```
+
+Position rationale (R9 fix): step 5 lands AFTER step 4 (Alert) because
+the alert message references runtime state in plain text — cron + stash,
+not counters. Running counter-rm in step 1 (alongside cron-kill) or
+step 2 (alongside stash-restore) would conflate concerns: step 1 is
+"protect against the cron stomping" (system-level), step 2 is "preserve
+working-tree integrity" (filesystem-level), step 3 is "audit-trail
+write" (report-level), step 4 is "user comms" (signal). Counter cleanup
+is post-mortem hygiene — safe to do last because nothing downstream
+depends on the counter values once the run has failed.
+
+Do NOT remove other markers under the pipeline subdirectory — only the
+counter files. The `step.*` and `fulfilled.*` markers are part of the
+plan's audit trail.
+
 ### When to trigger
 
 Invoke this protocol for ANY of these:
