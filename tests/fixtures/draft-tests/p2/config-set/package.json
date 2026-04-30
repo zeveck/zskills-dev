@@ -1,0 +1,5 @@
+{
+  "name": "config-set-fixture",
+  "version": "0.0.1",
+  "description": "Fixture: config has full_cmd/unit_cmd set; detection should be informational only and the verbatim cmd reaches the drafter."
+}

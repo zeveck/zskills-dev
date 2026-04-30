@@ -357,7 +357,194 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
 
 ## Phase 2 — Language detection, test-file discovery, no-test-setup path
 
-(Implementation deferred to Phase 2 of `plans/DRAFT_TESTS_SKILL_PLAN.md`.)
+This phase detects the project's language(s) and test-file conventions
+so the drafter (Phase 3) can calibrate against existing test style and
+the Phase 5 backfill gap detection has a stable test-file map. It runs
+AFTER Phase 1's parser writes the parsed-state file. It is purely
+mechanical detection: no test runner is installed, scaffolded, or
+executed.
+
+The detection step is **config-first**: before any manifest sniff or
+test-file discovery, the skill reads the consumer's
+`.claude/zskills-config.json` and resolves the test command via the
+same three-case decision tree used by `/verify-changes` (see
+`skills/verify-changes/SKILL.md` lines 76–137 for the canonical
+implementation; the same idioms apply here).
+
+### Three-case test-cmd resolution (config-first)
+
+```bash
+PROJECT_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+DETECT_STATE="/tmp/draft-tests-detect-${SLUG}.md"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/detect-language.sh" \
+  "$PROJECT_ROOT" "$DETECT_STATE"
+```
+
+The Phase 2 detection-state file is **additive** to Phase 1's parsed-
+state shape (introduced via `parse-plan.sh`): the new `case:`,
+`languages:`, `recommendations:`, `test_files:`,
+`calibration_signal_file:`, `no_test_setup:`, `recommendation_text:`,
+`detection_status:`, `config_full_cmd:`, `config_unit_cmd:`, and
+`advisories:` keys do not conflict with Phase 1's `plan_file:`,
+`completed_phases:`, `pending_phases:`, `non_delegate_pending_phases:`,
+`delegate_phases:`, `ac_less:`, `frontmatter_*:`, or `advisories:`
+schema. (`advisories:` overlaps in name only — Phase 2 writes its own
+file; consumers reading both can concatenate, sort, or merge as
+needed.)
+
+`detect-language.sh` writes a structured detection-state file recording:
+
+- **case** (1, 2, or 3) — the three-case outcome.
+- **languages:** — newline-separated list of detected languages.
+- **recommendations:** — `<lang>: <runner>` lines (one per language).
+- **test_files:** — `<lang>:<absolute-path>` entries listing every
+  candidate test file found. **Phase 5 reads this list** for backfill
+  gap detection without re-running discovery (per AC-2.9).
+- **calibration_signal_file** — path to a separate file containing the
+  bounded calibration signal (≤ 20 lines per language; reads at most 3
+  test files per language; never raw test-file contents).
+- **detection_status** — `ok`, `undetectable`, or `error`.
+- **config_full_cmd** / **config_unit_cmd** — verbatim values from
+  `.claude/zskills-config.json` `testing.full_cmd` / `testing.unit_cmd`.
+  Empty if not set.
+- **recommendation_text** — the verbatim `## Prerequisites` block to
+  insert in case 3 (no test infra + no config). Empty otherwise.
+
+The three cases:
+
+1. **case 1** — `.claude/zskills-config.json` has `testing.full_cmd`
+   or `testing.unit_cmd` set. The drafter prompt receives the value
+   verbatim. Detection is downgraded to informational (framework
+   recommendation only; no Prerequisites block; no recommendation
+   text).
+2. **case 2** — config is empty AND ≥ 1 test file was found via the
+   language-aware heuristics below. The drafter prompt is given the
+   detected framework recommendation plus the calibration signal. No
+   command is asserted — the drafter is told to match existing style
+   only.
+3. **case 3** — config is empty AND no test infra exists. The skill
+   emits a `## Prerequisites` recommendation block (per WI 2.4) and
+   the drafter prompt and the inserted block both contain the literal
+   string `no configured test runner` (per AC-2.4).
+
+**Never sniff `package.json` scripts, `pytest.ini`, `Makefile`, or
+similar to "guess" a test command.** Config-first is a deliberate
+honesty boundary — see CLAUDE.md memory anchor
+`feedback_verifier_test_ungated.md`.
+
+### Language detection from manifest files (WI 2.1)
+
+The language detection step recognises a small set of canonical
+manifest files via `detect-language.sh`:
+
+- `package.json` → JavaScript/TypeScript. Recommended runner: vitest.
+  If `jest` is referenced anywhere in `package.json` (scripts or
+  devDependencies), recommend jest instead.
+- `pyproject.toml`, `setup.py`, or `requirements*.txt` → Python.
+  Recommended runner: pytest.
+- `go.mod` → Go. Recommended runner: `go test` (built in).
+- `Cargo.toml` → Rust. Recommended runner: `cargo test` (built in).
+- Heavy `*.sh` content (≥ 3 files at repo root or under `scripts/`)
+  AND no other manifest → bash. Recommended runner: bats.
+- **Multiple manifests** → polyglot. Per-subtree recommendations are
+  emitted (one per detected language). Example: a project with
+  `Cargo.toml` and `package.json` gets "Rust tests via `cargo test`;
+  JS tests via vitest" — never a single winner.
+- **None of the above** → report `language undetectable` and degrade
+  to the WI 2.4 path.
+
+**Graceful fallback (WI 2.7).** If any detection step errors (missing
+permissions, malformed manifest), `detect-language.sh` logs the
+failure to stderr, sets `detection_status: undetectable`, and
+proceeds. Detection failure never aborts the run.
+
+### Test-file discovery (WI 2.2)
+
+Language-aware heuristics, NOT runner-sniffing:
+
+- JS/TS: `*.test.{ts,tsx,js,jsx}`, `*.spec.{ts,tsx,js,jsx}`,
+  `__tests__/` directories, `tests/` directory.
+- Python: `test_*.py`, `*_test.py`, `tests/` directory.
+- Go: `*_test.go`.
+- Rust: files under `tests/` subtrees, `#[cfg(test)]` blocks (found via
+  grep, not parsed).
+- Bash: `tests/test-*.sh`, `tests/*_test.sh`.
+
+If the repo has zero candidate files, the calibration signal is empty
+and the drafter is told **"no existing tests to calibrate against —
+use the recommended runner's defaults."**
+
+### Calibration signal (WI 2.3, AC-2.8)
+
+Bounded signal extraction:
+
+- **Per language, read at most 3 test files**, preferring the file
+  with the most imports (proxy for "canonical example for this
+  project"). Ties broken by largest file. For polyglot projects, this
+  cap applies per detected language.
+- **Extract via a small regex panel**: imports (top 10 lines),
+  presence of `describe(`/`it(`/`test(`/`test_`/`_test` patterns,
+  `assertEqual`/`expect(`/`assert.`/`should` patterns,
+  `beforeEach`/`fixture`/`setup` patterns, assertion library name.
+- **Emit ≤ 20 lines per language** as a structured summary (framework
+  name, naming convention, fixture style, assertion library, one
+  representative test-file path). This is the *calibration signal*.
+  Full test-file contents are never passed to the drafter.
+- **Persist the full test-file path list** (not contents) under
+  `test_files:` so Phase 5 can re-read candidate files for gap
+  detection without re-running discovery (AC-2.9).
+
+### No-test-setup path (WI 2.4) and `## Prerequisites` insertion (AC-2.10)
+
+When `case == 3` (no test infra + no config), the skill writes the
+`recommendation_text` block as a `## Prerequisites` section between
+`## Overview` and `## Progress Tracker`. **Every other level-2 section
+must remain byte-identical** — broad form, including non-canonical
+user-authored sections like `## Anti-Patterns -- Hard Constraints`,
+`## Non-Goals`, `## Risks and Mitigations`. Insertion is fenced-code-
+block-aware (mirroring the parse-plan section-boundary scan).
+
+```bash
+if [ "$CASE" = "3" ]; then
+  PREREQ_BODY="/tmp/draft-tests-prereq-${SLUG}.md"
+  awk '
+    /^recommendation_text_begin$/ { active=1; next }
+    /^recommendation_text_end$/   { active=0; next }
+    active                        { print }
+  ' "$DETECT_STATE" > "$PREREQ_BODY"
+  if [ -s "$PREREQ_BODY" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/insert-prerequisites.sh" \
+      "$PLAN_FILE" "$PREREQ_BODY"
+  fi
+fi
+```
+
+`insert-prerequisites.sh` does the byte-preserving in-place edit:
+
+- If the plan already has a `## Prerequisites` section (prior
+  invocation), the existing block is replaced in place — not
+  duplicated.
+- If the plan has no `## Prerequisites`, the block is inserted on the
+  blank line above `## Progress Tracker`.
+- The skill writes the recommendation. It does **NOT** install,
+  scaffold, or run anything. WI 2.5 — `--bootstrap` is explicitly out
+  of scope for v1; the recommendation IS the entire no-test-setup
+  behavior.
+
+### Bootstrap is out of scope for v1 (WI 2.5)
+
+A `--bootstrap` flag that prepends a Phase 0 to scaffold a missing
+test runner is explicitly noted as future work and is NOT exposed in
+v1. The written `## Prerequisites` recommendation is the entire
+no-test-setup behavior.
+
+### Client-project portability
+
+`detect-language.sh` runs in **consumer repos**, not just zskills. It
+takes `$PROJECT_ROOT` as its first argument and never assumes
+`tests/run-all.sh`, `tests/test-*.sh`, or any zskills-specific layout.
+All detection heuristics are expressed as generic file patterns. The
+skill itself does not modify the project's environment.
 
 ## Phase 3 — Drafting agent and test-spec format
 
