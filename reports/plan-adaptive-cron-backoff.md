@@ -1,5 +1,30 @@
 # Plan Report — Adaptive Cron Backoff (#110)
 
+## Phase — 2 Documentation: finish-mode.md backoff table + failure-protocol.md cleanup step [UNFINALIZED]
+
+**Plan:** plans/ADAPTIVE_CRON_BACKOFF.md
+**Status:** Completed (verified inline by orchestrator; Phase 2 is doc-only with grep-based ACs and skill-invariants gate)
+**Worktree:** /tmp/zskills-pr-adaptive-cron-backoff
+**Branch:** feat/adaptive-cron-backoff
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 2.1 | finish-mode.md `#### Adaptive backoff for clean defers (Issue #110)` sub-section under `### How to schedule the next cron` | Done — heading level `####` correctly nested; backoff schedule table + reset-trigger list + Q3/DA4/DA5/A1/N2/N4 prose all present |
+| 2.2 | failure-protocol.md NEW step 5 "Clean tracking counter files" between step 4 (Alert) and "When to trigger" | Done — counter-rm bash block + R9 position rationale embedded |
+| 2.3 | Mirror via `bash scripts/mirror-skill.sh run-plan` | Done — `Mirror clean` reported; `diff -q` empty for both files |
+
+### Verification
+- **AC grep checks:** all ≥ thresholds met (`*/10`=3, `*/30`=3, `*/60`=2; `in-progress-defers` 3 in finish-mode, 1 in failure-protocol; `cron-recovery-needed` 1 in failure-protocol; `#110` 2; `Adaptive backoff` heading 1; `healthy` 3; `resurrect` 2)
+- **Mirror parity:** ✅ `diff -q` empty for both files
+- **`bash tests/test-skill-invariants.sh`** → exit 0; **36/36 passed** (the relevant gate for skill structural correctness)
+- **Full suite skipped intentionally** for Phase 2 — doc-only changes, no behavior; Phase 4 will run the full suite as the final regression gate
+
+### Notable
+- Doc-only phase, no bash logic added.
+- Heading-level discipline: `####` correctly nested under the existing `### How to schedule the next cron` section (R1 fix). A `###` would have terminated the parent block.
+
+
 ## Phase — 1 Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue [UNFINALIZED]
 
 **Plan:** plans/ADAPTIVE_CRON_BACKOFF.md

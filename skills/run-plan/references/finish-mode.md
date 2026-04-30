@@ -154,6 +154,81 @@ distinct concern (waiting on external verify-changes) and keeps using
 `.claude/skills/run-plan/scripts/compute-cron-fire.sh` one-shots with explicit attempt-counter
 exponential backoff. Leave Phase 5b's Case 1 scheduling as-is.
 
+#### Adaptive backoff for clean defers (Issue #110)
+
+When a phase is in flight (Step 0 Case 3 — "next-target phase already
+🟡 In Progress"), the recurring `*/1` cron continues firing every
+minute. Without backoff, a 30-min phase produces ~30 visible defer
+turns; a longer pause produces proportionally more. Mode A (Issue #110)
+adds a per-phase counter `in-progress-defers.<phase>` and steps the
+cron's cadence down at boundary fires `C+1 ∈ {1, 10, 16, 26}`:
+
+| C+1 (counter after fire) | New cadence | Cumulative wall time | Cumulative fires |
+|--------------------------|-------------|----------------------|------------------|
+| 1–9 | `*/1` (initial; no change) | 0–9 min | 1–9 |
+| 10 | step down to `*/10` | ~10 min | 10 |
+| 11–15 | `*/10` | 10–60 min | 11–15 |
+| 16 | step down to `*/30` | ~70 min | 16 |
+| 17–25 | `*/30` | 70–340 min | 17–25 |
+| 26+ | step down to `*/60` (cap) | 340 min+ | 26+ |
+
+Fire counts derived from cumulative cadence, not issue body raw figures:
+30 min → 12 fires, 60 min → 15, 120 min → 17, 300 min → 23, 720 min → 31.
+
+**Reset triggers** (the counter file is `rm`'d at):
+
+- Step 0 Case 4 entry (next phase starts — clean per-phase scoping)
+- Step 0 Case 1 terminal (plan-complete; next pipeline starts clean)
+- Phase 5b plan-complete (alongside `verify-pending-attempts.*` rm)
+- Failure Protocol step 5 (post-mortem hygiene)
+- `/run-plan stop` (when invoked with a plan-file argument)
+
+**Distinct from Phase 5b's verify-pending one-shot backoff
+(`verify-pending-attempts.*`)**: they coexist as mutually-exclusive
+runtime states. See SKILL.md Phase 5b sub-step 0b.
+
+**Concurrency note.** Two `finish auto` pipelines on the same plan-file
+simultaneously would share the recurring cron prompt and cause counter
+ambiguity. Do not launch concurrent `finish auto` pipelines on the same
+plan-file. (Same scope as `/run-plan stop`'s system-wide effect.)
+
+**Stop-vs-Case-3 race (DA5).** If you run `/run-plan stop` while a Case
+3 cadence-change is in flight (between `CronDelete` and `CronCreate`),
+Case 3's `CronCreate` may resurrect the cron after your `stop`. Run
+`/run-plan stop` again if needed; the second invocation will catch the
+resurrected cron.
+
+**Healthy-phase vs crash-loop ambiguity (DA4).** The per-phase counter
+cannot distinguish a healthy long-running phase (implementer agent doing
+real work) from a phase that is crash-looping. Both produce the same
+backoff signal because `step.run-plan.<id>.implement` is written only at
+end-of-phase. This is acceptable: the cost of treating a healthy phase
+like a slow one is exactly the cost we are bounding here. When the phase
+eventually finishes (crash loop or healthy), the next cron fire reaches
+Case 4, which `rm`'s `in-progress-defers.*`, resetting the counter for
+the next phase.
+
+**High-severity race recovery.** If `CronDelete` succeeds but
+`CronCreate` fails, Case 3 retries inline up to 3 times with a 2-second
+`sleep` between attempts. If all 3 retries fail, a
+`cron-recovery-needed.<phase>` marker is written and a prominent WARN is
+emitted in the turn's final output asking the user to re-invoke
+`/run-plan <plan> finish auto`, with an escalation pointer to `/run-plan
+stop` + `gh issue create` if the next invocation also fails. The next
+user invocation hits the Step 0 sentinel-prelude, which re-attempts
+`CronCreate` before case dispatch AND verifies cadence sanity (`*/1,
+*/10, */30, */60`) — if a found cron is at an unexpected cadence (e.g.,
+a third-party `*/15` cron with the same prompt), the prelude
+force-deletes it and creates a fresh `*/1`. The pipeline does NOT
+silently stall: the user-visible WARN is the safety mechanism.
+
+**During-phase inspection.** While a phase is in flight, the counter
+file at `.zskills/tracking/<pipeline-id>/in-progress-defers.<phase>` is
+human-readable (`cat` it to see the current defer count). The five
+cleanup sites (Case 4, Case 1, Phase 5b, Failure Protocol, `/run-plan
+stop`) remove the file at terminal moments only; during-phase inspection
+is always available.
+
 After ensuring the cron exists, output the chunking message:
 > Phase <N> of `<plan>` complete (commit `<hash>`).
 > Phase <N+1> will fire automatically within ~60 seconds (cron `<job-id>`, recurring `*/1`).
