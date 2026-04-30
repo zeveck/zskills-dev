@@ -1,5 +1,41 @@
 # Plan Report — /draft-tests Skill
 
+## Phase — 3 Drafting agent and test-spec format [UNFINALIZED]
+
+**Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-draft-tests-skill-plan
+**Branch:** feat/draft-tests-skill-plan
+**Commits:** b1b8906
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 3.1 | One-line spec format (`- [scope] [risk: AC-N.M] given <input>, when <action>, expect <literal>`) | Done | b1b8906 |
+| 3.2 | Multi-line expansion (Input/Action/Expected/Rationale sub-bullets) | Done | b1b8906 |
+| 3.3 | Drafting agent prompt with senior-QE persona + research-cited calibration cues | Done | b1b8906 |
+| 3.4 | Drafter inputs: full plan, parsed-state path, research path, resolved test-cmd context, calibration outputs | Done | b1b8906 |
+| 3.5 | Append logic with position priority (AC → D&C → Work Items; never before Goal, never inside Execution) + idempotent re-invocation | Done | b1b8906 |
+| 3.6 | Skip delegate phases per parsed-state `delegate_phases:` (single-source-of-truth, no plan-body re-greping); record `delegate_skipped_phases:` artifact | Done | b1b8906 |
+| 3.7 | Calibrate to existing project test conventions (Phase 2 calibration signal) | Done | b1b8906 |
+| 3.8 | Drafter output written to `/tmp/draft-tests-draft-round-0-<slug>.md` for Phase 4's review loop | Done | b1b8906 |
+
+### Verification
+- Test suite: **1470/1470 passed, 0 failed** (baseline 1406; +64 new in `tests/test-draft-tests-phase3.sh`).
+- Per-AC verification (AC-3.1 through AC-3.6): all PASS, independently re-checked by a fresh verifier.
+- AC-3.6 single-source-of-truth: verifier mutated the plan body (removed `### Execution: delegate` line) AFTER parsing and confirmed orchestrator still skipped the delegate phase — proves parsed-state is authoritative, not a re-grep heuristic.
+- AC-3.5 idempotency: verifier ran orchestrator twice on same fixture; `cmp -s` clean; no duplicate or nested `### Tests`.
+- Tier-1 hash integrity: both new scripts have actual `git hash-object` recorded in `tier1-shipped-hashes.txt` (the Phase 2 stale-hash defect did not regress).
+- Source/mirror parity: `diff -rq skills/draft-tests/ .claude/skills/draft-tests/` clean.
+- Plan-text drift: zero `PLAN-TEXT-DRIFT:` tokens. AC-3.1's `N − K` formula (4-1=3) self-passes against the n-minus-k fixture.
+
+### Implementation notes
+- Two new scripts: `append-tests-section.sh` (mechanical position-priority insertion, fenced-code-block-aware boundary scan, byte-preserving) and `draft-orchestrator.sh` (parsed-state consumer + per-round output writer with `drafted_phases`/`delegate_skipped_phases`/`ac_less_skipped_phases`/`idempotent_skipped_phases` artifacts).
+- Orchestrator is parameterized with a SPECS FILE (the drafter agent's output) so tests stub the agent by writing the file directly — no live LLM dispatch in tests, matching the AC-4.5 pattern that Phase 4 will extend.
+- Tier-1 ownership: now 20 entries in `script-ownership.md` (Phase 1 added 1, Phase 2 added 2, Phase 3 added 2).
+- 4 new fixtures (`n-minus-k.md`, `delegate-skip.md`, `idempotency.md`, `regex-conformance.md`) cover the load-bearing behaviors. The regex-conformance fixture exercises sub-letter ACs (`AC-1.6c`) for AC-3.2's grammar.
+
 ## Phase — 2 Language detection, test-file discovery, no-test-setup path
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
