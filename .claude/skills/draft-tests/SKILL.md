@@ -338,8 +338,9 @@ printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
   owner registry. **Source-tree zskills tests** use the equivalent
   `"$REPO_ROOT/skills/<owner>/scripts/<name>"` form, mirroring
   `skills/work-on-plans/SKILL.md` and `skills/zskills-dashboard/SKILL.md`.
-- **No jq.** Parse YAML and JSON (including `.claude/zskills-config.json`
-  in later phases) via bash regex with `BASH_REMATCH`. Idiom:
+- **No external JSON/YAML tooling.** Parse YAML and JSON (including
+  `.claude/zskills-config.json` in later phases) via bash regex with
+  `BASH_REMATCH`. Idiom:
   ```bash
   if [[ "$CONTENT" =~ \"key\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     VALUE="${BASH_REMATCH[1]}"
@@ -1480,10 +1481,10 @@ spec text.
 
 This section is placed AFTER any existing `## Drift Log` and
 `## Plan Review` and BEFORE all other user-authored trailing
-non-phase level-2 sections — **the broad form: any `## <name>` (other
-than `## Phase ...`) outside fenced code blocks the user has authored
-after the last phase counts as a trailing section, not a closed
-list.** Use the same awk-style `in_code` state-tracker as WI 1.5 / WI
+non-phase level-2 sections — **the broad form:
+any `## <name>` (other than `## Phase ...`) outside fenced code
+blocks the user has authored after the last phase counts as a
+trailing section, not a closed list.** Use the same awk-style `in_code` state-tracker as WI 1.5 / WI
 5.2 — heading detection runs only when `in_code == 0` so `## `
 headings inside ` ``` ` fences are not mistaken for trailing
 sections. Named examples (illustrative, NOT exhaustive):
@@ -1626,7 +1627,85 @@ form (per `skills/update-zskills/references/script-ownership.md`).
 
 ## Phase 6 — Tests, conformance, worked example, mirror
 
-(Implementation deferred to Phase 6 of `plans/DRAFT_TESTS_SKILL_PLAN.md`.)
+This is the final phase. After all Phase 1–5 work has been written,
+the implementing agent: (1) ensures the skill's own test coverage is
+green, (2) ships the worked-example fixtures, (3) re-mirrors the
+source skill into `.claude/skills/`, and (4) writes the **finalize
+tracking marker** and flips the fulfillment marker to
+`status: complete`. Mirrors `/draft-plan` Phase 6's post-finalize
+contract.
+
+### Test coverage
+
+The skill's tests live under `tests/`, split per implementation phase
+to keep individual files readable: `tests/test-draft-tests.sh`
+(Phase 1) plus `tests/test-draft-tests-phase{2,3,4,5}.sh`. Each is
+registered in `tests/run-all.sh` alongside the other skill-conformance
+peers (e.g., `test-skill-conformance.sh`, `test-skill-invariants.sh`,
+`test-mirror-skill.sh`). Per-skill conformance assertions live in
+`tests/test-skill-conformance.sh` in a dedicated `draft-tests` block;
+the block carries a tag-line comment referencing WI 6.3 of
+`plans/DRAFT_TESTS_SKILL_PLAN.md` as the authoritative enumeration
+source so future WI 6.3 additions drive a single edit (a new
+conformance line) rather than coupled edits at WI 6.3 + AC-6.2
+literal.
+
+### Worked example
+
+The repo ships a small, purpose-built before/after example pair under
+`tests/fixtures/draft-tests/examples/` (NOT `plans/examples/`) — a
+README explains the directory's purpose, plus the
+`DRAFT_TESTS_EXAMPLE_PLAN_before.md` and
+`DRAFT_TESTS_EXAMPLE_PLAN.md` files. The diff between them shows what
+a hypothetical `/draft-tests` invocation produces: AC-ID prefixes
+assigned to a Pending phase's bullets, plus an appended `### Tests`
+subsection in that Pending phase. The Completed phase is
+byte-identical between the two files. The example files are pure
+documentation — they are NOT invoked by `tests/run-all.sh` and NOT
+wired into `/run-plan`. Fixtures and worked examples co-locate under
+`tests/fixtures/` to keep them out of any future `plans/` glob.
+
+### Mirror
+
+After every phase's source-skill edits land, re-mirror the skill via
+the canonical helper:
+
+```bash
+bash scripts/mirror-skill.sh draft-tests
+```
+
+The helper handles per-file copy, orphan detection (per-file `rm`,
+not `rm -rf` — hook-compatible), and post-regen `diff -rq`
+verification. Inline `cp` / `rm -rf` is forbidden — see
+`feedback_claude_skills_permissions.md`. **Never edit any file under
+`.claude/skills/draft-tests/` directly during development.** All
+edits go to `skills/draft-tests/` first.
+
+### Finalize tracking marker
+
+After the mirror succeeds, write the `finalize` step marker and
+update the fulfillment marker to `status: complete`. Mirrors
+`/draft-plan`'s Phase 6 post-finalize contract:
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-tests.$TRACKING_ID}"
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-tests.$TRACKING_ID.finalize"
+
+printf 'skill: draft-tests\nid: %s\nplan: %s\nstatus: complete\ndate: %s\n' \
+  "$TRACKING_ID" "$PLAN_FILE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.draft-tests.$TRACKING_ID"
+```
+
+The finalize marker basename is the canonical
+`step.draft-tests.$TRACKING_ID.finalize` per the tracking-marker
+scheme (see `docs/tracking/TRACKING_NAMING.md`). The fulfillment
+marker is the same one created in Phase 1 — only the file's `status:`
+line changes from `started` to `complete`. The plan file itself has
+already been written by Phases 3–5; this step records skill
+completion, not plan content.
 
 ## Key Rules
 
@@ -1647,8 +1726,8 @@ form (per `skills/update-zskills/references/script-ownership.md`).
 - **Empty guidance preserves byte-identical reviewer/DA prompts.** The
   `User-driven scope/focus directive:` section is emitted ONLY when
   guidance text is non-empty.
-- **No jq.** Bash regex with `BASH_REMATCH` for all JSON / YAML
-  parsing.
+- **No external JSON/YAML tooling.** Bash regex with `BASH_REMATCH`
+  for all JSON / YAML parsing.
 - **Edit `skills/draft-tests/` only.** Mirror to
   `.claude/skills/draft-tests/` via `bash scripts/mirror-skill.sh
   draft-tests` — NEVER inline `cp` / `rm -rf`. Per CLAUDE.md memory
