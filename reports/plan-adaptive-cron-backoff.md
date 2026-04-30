@@ -1,5 +1,35 @@
 # Plan Report — Adaptive Cron Backoff (#110)
 
+## Phase — 3 Test fixture: tests/test-runplan-defer-backoff.sh [UNFINALIZED]
+
+**Plan:** plans/ADAPTIVE_CRON_BACKOFF.md
+**Status:** Completed (sub-agent dispatched with tight synchronous-only instructions; first sub-agent this session to complete without the rate-limit-truncation pattern. Orchestrator re-ran the test independently to confirm.)
+**Worktree:** /tmp/zskills-pr-adaptive-cron-backoff
+**Branch:** feat/adaptive-cron-backoff
+
+### Work Items
+| # | Item | Status |
+|---|------|--------|
+| 3.1 | `tests/test-runplan-defer-backoff.sh` — header docstring + pass/fail helpers + `defer_backoff_step()` function + 14 cases + 2 anchor cases | Done — 435 lines (in plan AC band [370, 440]) |
+| 3.2 | Pure-bash function pattern, no LLM-tool mocking | Done — mirrors `tests/test-phase-5b-gate.sh:51-92` idiom faithfully |
+| 3.3 | Executable bit set | Done |
+
+### Verification
+- `bash tests/test-runplan-defer-backoff.sh` → exit 0; **`Results: 16 passed, 0 failed`**
+- 14 functional cases + 2 anchor cases = 16/16 pass
+- Cases cover: cold-start (1), 3 cadence step-downs (2-4), cap-held (5), no-cron-match warning (6), idempotent partial-crash recovery (7), Case 4 new-phase counter rm (8), high-severity-race retry exhaustion (9), multi-match concurrency collapse (10), prelude marker+create success (11), prelude marker+cron exists at sane cadence (12), prelude marker+create fails (13), A1 cadence-sanity rejection of `*/15` (14)
+- Anchor A: `grep -F 'in-progress-defers' skills/run-plan/SKILL.md` returns ≥5 (got 6)
+- Anchor B: cadence literals in `references/finish-mode.md` (`*/10`=3, `*/30`=3, `*/60`=2)
+
+### Notable
+- Sub-agent (id `a8abd188353bd3573`) ran with explicit instructions: synchronous bash only, no Monitor / ScheduleWakeup / waiting language. Completed in 25 tool uses, 4.6 min, with a coherent final report. **First clean sub-agent dispatch of this session** — supports the rate-limit-truncation theory when those instructions were absent in earlier dispatches.
+- No SKILL.md modifications (Phase 1 owns the source-of-truth bash; Phase 3 is a faithful test extraction).
+- `tests/run-all.sh` registration deferred to Phase 4 per plan spec.
+
+### Dependencies
+Phase 1 (machinery exists in SKILL.md to extract from). Confirmed satisfied.
+
+
 ## Phase — 2 Documentation: finish-mode.md backoff table + failure-protocol.md cleanup step [UNFINALIZED]
 
 **Plan:** plans/ADAPTIVE_CRON_BACKOFF.md

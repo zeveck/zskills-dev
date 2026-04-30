@@ -311,7 +311,7 @@ The `cron-recovery-needed.<phase>` marker is written under
 |-------|--------|--------|-------|
 | 1 — Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue | ✅ Done | `316350d` | 9 work items (1.0–1.8) all completed; tests 1353/1353 |
 | 2 — Documentation: finish-mode.md table + failure-protocol.md cleanup step | ✅ Done | `c881f9f` | Backoff table + reset triggers + DA4/DA5/A1/N2 prose in finish-mode.md; new step 5 in failure-protocol.md |
-| 3 — Test fixture: tests/test-runplan-defer-backoff.sh | ⬚ | | 14 cases (10 functional + 3 recovery + 1 cadence-sanity A1) + 2 anchors |
+| 3 — Test fixture: tests/test-runplan-defer-backoff.sh | ✅ Done | _pending commit_ | 14 functional + 2 anchor cases; 435 lines (in [370, 440] band); standalone test passes 16/16 |
 | 4 — Mirror, invariants, run-all.sh, regression check | ⬚ | | |
 
 ## Phase 1 — Counter machinery + Step 0 prelude/Case 1/Case 3/Case 4 + stop + Phase 5b cleanup + follow-up issue
