@@ -8,6 +8,7 @@ Totals: 46 plans — 6 ready, 0 in progress, 17 complete, 20 canaries, 3 referen
 
 | Plan | Phases | Next Phase | Priority | Notes |
 |------|--------|------------|----------|-------|
+| [ADAPTIVE_CRON_BACKOFF.md](ADAPTIVE_CRON_BACKOFF.md) | 4 | 1 | Medium | Drafted 2026-04-29 (issue #110, /draft-plan 2 rounds) |
 | [BLOCK_DIAGRAM_TRACKING_CATCHUP.md](BLOCK_DIAGRAM_TRACKING_CATCHUP.md) | 3 | 1 | Medium | Created 2026-04-26 |
 | [DEFAULT_PORT_CONFIG.md](DEFAULT_PORT_CONFIG.md) | 5 | 1 | Medium | Created 2026-04-26 |
 | [DRAFT_TESTS_SKILL_PLAN.md](DRAFT_TESTS_SKILL_PLAN.md) | 6 | 1 | Medium | Created 2026-04-26 |
