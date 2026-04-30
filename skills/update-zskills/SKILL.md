@@ -1012,6 +1012,7 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 STALE_LIST=(
+  append-backfill-phase.sh
   append-tests-section.sh
   apply-preset.sh
   briefing.cjs
@@ -1023,15 +1024,20 @@ STALE_LIST=(
   create-worktree.sh
   detect-language.sh
   draft-orchestrator.sh
+  flip-frontmatter-status.sh
+  gap-detect.sh
   insert-prerequisites.sh
+  insert-test-spec-revisions.sh
   land-phase.sh
   parse-plan.sh
   plan-drift-correct.sh
   port.sh
   post-run-invariants.sh
+  re-invocation-detect.sh
   review-loop.sh
   sanitize-pipeline-id.sh
   statusline.sh
+  verify-completed-checksums.sh
   worktree-add-safe.sh
   write-landed.sh
   zskills-stub-lib.sh

@@ -1,5 +1,45 @@
 # Plan Report — /draft-tests Skill
 
+## Phase — 5 Backfill mechanics and re-invocation
+
+**Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-draft-tests-skill-plan
+**Branch:** feat/draft-tests-skill-plan
+**Commits:** 56df394
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 5.1 | Three-level gap-detection rubric (COVERED / UNKNOWN / MISSING) — backticked-token-required for MISSING; prose-only never triggers | Done | 56df394 |
+| 5.2 | Backfill phase append at correct structural position (broad-form heading rule, fenced-code-block aware) — closed-enumeration regression guard | Done | 56df394 |
+| 5.3 | Backfill phase content (Goal / Work Items / D&C / AC / Dependencies) | Done | 56df394 |
+| 5.3b | Update parsed-state on backfill — append to `non_delegate_pending_phases:` so Phase 4's coverage-floor pre-check enforces the floor on backfill ACs | Done | 56df394 |
+| 5.4 | Cluster 1–3 Completed phases per backfill phase (no mega-phase on 4+ MISSING) | Done | 56df394 |
+| 5.5 | Re-invocation detection — existing `### Tests` becomes round-0 draft | Done | 56df394 |
+| 5.6 | Frontmatter flip `status: complete` → `active` ONLY when appending backfill (single-purpose) | Done | 56df394 |
+| 5.7 | `## Test Spec Revisions` 2-column section, placed AFTER `## Drift Log` / `## Plan Review` (closes /refine-plan checksum-boundary cross-skill interaction) | Done | 56df394 |
+| 5.8 | Completed-phase checksum drift gate — STOP with error, plan NOT written | Done | 56df394 |
+
+### Verification
+- Test suite: **1652/1652 passed, 0 failed** (baseline 1549; +103 net new in `tests/test-draft-tests-phase5.sh` — verifier added one strengthening assertion to AC-5.1's no-op branch).
+- Per-AC verification (AC-5.1 through AC-5.11): all PASS, independently re-checked by a fresh verifier.
+- **Verifier-found bug, fixed before push:** `append-backfill-phase.sh` no-op branch tripped `set -u` because `declare -a MISSING_PIDS` (no `=()`) left the array unset. Plan file was untouched (defensive abort), but script exited 1 instead of 0 on the no-MISSING path; impl agent's AC-5.1 test had masked this with `2>/dev/null` and an exit-code-agnostic assertion. Verifier fixed the script (`declare -a MISSING_PIDS=()`), strengthened the test to assert exit code 0, regenerated the Tier-1 hash, and re-mirrored.
+- **AC-5.7 (load-bearing) deep-dive:** verifier confirmed the broad-form section-boundary rule against the `non-canonical-trailing.md` fixture (`## Anti-Patterns -- Hard Constraints` between last phase and `## Plan Quality`). Backfill landed IMMEDIATELY BEFORE `## Anti-Patterns`; bytes byte-identical pre/post via `diff`. Fenced-code-block regression: ` ```markdown ` block containing `## Example` at column 0 was correctly skipped; backfill landed before `## Plan Quality`, not the in-fence heading.
+- **AC-5.10 (data-flow) deep-dive:** verifier traced the end-to-end path — pre-backfill parsed-state had `non_delegate_pending_phases:` empty; after `append-backfill-phase.sh` ran, parsed-state contained the backfill phase ID; running `coverage-floor-precheck.sh` (Phase 4) against post-5.3b state synthesized `Coverage floor violated: AC-2.1 ...` for the backfill phase's missing AC. Single-source-of-truth invariant intact.
+- AC-5.11 placement: `## Drift Log` → `## Plan Review` → `## Test Spec Revisions` → `## Plan Quality` order verified.
+- AC-5.8 frontmatter: both branches verified (with-backfill flips `status:`; without leaves byte-identical).
+- AC-5.9 checksum: tampered Completed-phase body causes `verify-completed-checksums.sh` to exit 1, name the drifted phase, and leave the plan-file mtime preserved.
+- Tier-1 hash integrity: all 6 new scripts have actual `git hash-object` recorded (post-bugfix hash for `append-backfill-phase.sh`).
+- Source/mirror parity: clean.
+
+### Implementation notes
+- 6 new scripts: `gap-detect.sh`, `append-backfill-phase.sh`, `insert-test-spec-revisions.sh`, `flip-frontmatter-status.sh`, `re-invocation-detect.sh`, `verify-completed-checksums.sh`.
+- 10 new fixtures under `tests/fixtures/draft-tests/p5/` covering all 11 ACs.
+- Tier-1 ownership total now 29 entries (Phase 5 added 6).
+- mawk-portable awk throughout; verifier-strengthened test ensures regressions on the no-op branch are caught (no more masked `set -u` failures).
+
 ## Phase — 4 Adversarial review loop (QE personas)
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
