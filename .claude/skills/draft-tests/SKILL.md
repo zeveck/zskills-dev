@@ -548,14 +548,288 @@ skill itself does not modify the project's environment.
 
 ## Phase 3 — Drafting agent and test-spec format
 
-(Implementation deferred to Phase 3 of `plans/DRAFT_TESTS_SKILL_PLAN.md`.)
+This phase dispatches a single drafting agent that reads the parsed-state
+file (Phase 1) and the detection-state file (Phase 2), produces a
+per-phase spec body for every Pending non-delegate non-ac-less phase,
+writes those bodies to a SPECS FILE on disk, then calls the deterministic
+orchestrator to insert each `### Tests` subsection into the plan at the
+position-priority slot. Phase 4's adversarial review loop reads the
+per-round drafter output file produced here.
+
+The drafting agent is dispatched via the `Agent` tool (general-purpose,
+inheriting the parent model — Opus by default; never Haiku, per CLAUDE.md
+memory anchor `feedback_no_haiku.md`). The agent's role is to author
+specs only; it does NOT mutate the plan file. File mutation is handled
+by `append-tests-section.sh` via `draft-orchestrator.sh`.
+
+### Drafting agent dispatch
+
+```bash
+DRAFT_ROUND_OUT="/tmp/draft-tests-draft-round-0-${SLUG}.md"
+SPECS_FILE="/tmp/draft-tests-specs-round-0-${SLUG}.md"
+```
+
+The drafter agent prompt is assembled inline below. Before dispatch, the
+orchestrator script writes the parsed-state list of targeted phases (the
+non-delegate non-ac-less Pending phases) and the resolved test-command
+context into the prompt — so the agent sees exactly which phases require
+specs and which test runner (if any) is configured.
+
+After dispatch, the agent's output is parsed for the spec bodies, written
+to `$SPECS_FILE`, and the orchestrator runs:
+
+```bash
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/draft-orchestrator.sh" \
+  "$PLAN_FILE" "$PARSED_STATE" "$SPECS_FILE" "$DRAFT_ROUND_OUT" 0
+```
+
+The orchestrator handles: per-phase iteration, position-priority
+insertion via `append-tests-section.sh`, idempotent skip when
+`### Tests` already exists, and writing the round-N artifact with
+`drafted_phases:`, `delegate_skipped_phases:`, `ac_less_skipped_phases:`,
+and `idempotent_skipped_phases:` lists. Source-tree zskills tests use the
+`"$REPO_ROOT/skills/draft-tests/scripts/draft-orchestrator.sh"` form
+(per `skills/update-zskills/references/script-ownership.md`).
+
+### Single-source-of-truth invariant
 
 The drafter MUST consume `ac_less:` from the parsed-state file: it MUST
 NOT re-derive ac-less-ness by re-scanning phase content
 (single-source-of-truth, mirrors WI 3.6's delegate-skip pattern). The
 drafter MUST consume `delegate_phases:` from the parsed-state file: it
 MUST NOT re-grep the plan or apply its own heuristic
-(single-source-of-truth invariant with WI 4.8).
+(single-source-of-truth invariant with WI 4.8). Both `delegate_phases:`
+and `ac_less:` lists are read once from
+`/tmp/draft-tests-parsed-<slug>.md` and reused — re-grepping the plan
+body for `### Execution: delegate` or absence-of-`### Acceptance
+Criteria` is a defect.
+
+`draft-orchestrator.sh` reads the parsed-state lists and computes the
+target set as `non_delegate_pending_phases - ac_less` — no re-derivation.
+
+### Spec format — one-line bullet (canonical)
+
+```
+- [scope] [risk: AC-N.M] given <input>, when <action>, expect <literal>
+```
+
+Where:
+
+- **scope** is one of `unit`, `integration`, `property`, `e2e`. The
+  drafter picks the narrowest scope that exercises the AC. Reach for
+  `[integration]` / `[e2e]` only when unit scope cannot observe the AC.
+- **risk: AC-N.M** links the spec to the AC it exercises. The trailing
+  `[a-z]?` after the second numeral admits sub-letter ACs (e.g.
+  `[risk: AC-1.6c]`).
+- **\<literal\>** is an exact value, named exception, or precisely-defined
+  observable side effect. `assert f(0) == 0` is a literal. `Returns
+  {status: 'ok', count: 3}` is a literal. `raises ValueError("empty
+  input")` (named exception) counts as a literal. "Test the zero case"
+  is NOT — that is a vague placeholder and is rejected by AC-3.3.
+
+### Spec format — multi-line expansion
+
+When a one-liner becomes unreadable (long inputs, multi-step setup,
+non-trivial expected values), the drafter expands into:
+
+```markdown
+- [scope] [risk: AC-N.M] <short name>
+  - Input: <literal>
+  - Action: <literal>
+  - Expected: <literal>
+  - Rationale: <one sentence — why this spec exists, not how it works>
+```
+
+Expansion is the drafter's judgment call; the senior-QE review loop
+(Phase 4) pushes back if one-liners are illegible or expansions are
+gratuitous.
+
+### Drafting agent prompt — senior-QE persona
+
+The drafter is dispatched with the following persona prompt (verbatim
+where indicated):
+
+> You are a senior QE engineer with 15+ years of experience reviewing
+> systems engineering work for testability. Your job is to author
+> specs that an implementing agent (an AI dispatched by `/run-plan`)
+> can mechanically translate into tests. **You do not write test code.
+> You author specs.** The implementer will translate `[unit] [risk:
+> AC-3.2] given f(0), when called, expect 0` into the project's
+> existing assertion idiom (vitest `expect(f(0)).toBe(0)`, pytest
+> `assert f(0) == 0`, Go `if got := f(0); got != 0 { t.Errorf(...) }`,
+> bash `[ "$(f 0)" = "0" ] || fail`). Calibrate framework choice,
+> naming conventions, fixture style, and assertion library to the
+> project's existing tests per the Phase-2 calibration signal,
+> unless this phase's requirements justify a different level (e.g.,
+> existing tests are unit-only, this phase needs integration).
+>
+> **Senior-QE norms calibration** — your specs reflect the discipline
+> of Bach (Heuristic Test Strategy: test against the product's stated
+> operating conditions, not arbitrary edge cases), Bolton (specs are
+> claims about behavior, not procedures), Beck (TDD: spec the smallest
+> assertion that fails on the bug you're catching, not a barrage of
+> sympathetic assertions), Hendrickson (exploratory testing surfaces
+> ACs, not assertion theatre), and Crispin/Gregory (whole-team
+> testing: every AC is a testable claim or it's not done). You are
+> authoring specs for an implementer who will read them, write tests,
+> and ship — write specs that a competent implementer can take
+> mechanically.
+
+This calibration is in the prompt body verbatim (not just the persona
+label) per WI 3.3. The senior-QE-norms paragraph is not optional —
+without it the drafter regresses to assertion-theatre style.
+
+### Drafting agent inputs
+
+The drafter receives:
+
+- **Plan file** (full text, read fresh from disk).
+- **Parsed-state file path** (`/tmp/draft-tests-parsed-<slug>.md`) — for
+  the authoritative `non_delegate_pending_phases:`, `delegate_phases:`,
+  and `ac_less:` lists.
+- **Detection-state file path** (`/tmp/draft-tests-detect-<slug>.md`) —
+  for languages, framework recommendation, and the calibration signal
+  reference.
+- **Calibration signal file path** (from detection-state's
+  `calibration_signal_file:`).
+- **Resolved test-command context.** If
+  `.claude/zskills-config.json` has `testing.full_cmd` /
+  `testing.unit_cmd`, those values are passed to the drafter prompt
+  verbatim (per AC-3.4). If neither is configured, the drafter prompt
+  contains the literal string `no configured test runner — scope tags
+  remain valid; specs don't assume a runner` (also per AC-3.4 — the
+  detection-state file's `config_unit_cmd:` empty triggers this path).
+- **Phase-2 calibration outputs**: language list, framework
+  recommendations, existing-test convention summary.
+
+### Anti-pattern list (verbatim in drafter prompt)
+
+The following anti-patterns are forbidden, listed verbatim in the
+drafter's prompt:
+
+> Anti-patterns — do NOT produce specs that exhibit any of the
+> following:
+>
+> - **No happy-path-only coverage.** Every spec set must include at
+>   least one error / boundary / negative case per AC, unless the AC
+>   is provably positive-only.
+> - **No assertion mirroring.** Do not assert that `f()` returns what
+>   `f()` returns. Assert against an externally-known literal.
+> - **No hallucinated APIs.** Check existence before referencing —
+>   the implementer cannot test `widget.spin()` if no such method
+>   exists. If the plan implies the API, name the AC; if it does
+>   not, flag the gap to the user.
+> - **No over-specific assertions baking in transient values.** Do
+>   not pin to a specific timestamp, hash, or generated id; pin to
+>   the structural claim ("returns a non-empty UUID v4 string").
+> - **No mock-thrash.** Do not mock everything until the test
+>   asserts on its own mock. Mock the boundary; assert on the
+>   product code's behaviour.
+> - **No empty try/catch scaffolds.** Every exception handler in a
+>   spec must specify the exception type AND a partial message
+>   match.
+> - **No MAX_INT / Unicode / clock-skew cargo-cult tests** unless
+>   the AC actually mentions those domains. The bar is product
+>   intent, not folklore.
+
+### Coverage requirement at draft time
+
+Every AC in every Pending non-delegate non-ac-less phase MUST have at
+least one spec referencing it via `risk: AC-N.M`. The drafter is told
+this is a FLOOR, not a ceiling — more specs are welcome if they cover
+orthogonal risks. Delegate-phase ACs are exempt (see WI 3.6).
+
+If an AC appears untestable as-written, the drafter flags it back to
+the user via a comment in the round-0 output — does NOT fabricate a
+softer spec to satisfy the floor (per Design & Constraints "Drafter
+never recommends weakening tests").
+
+### Append logic and position priority
+
+For each Pending non-delegate non-ac-less phase, the orchestrator
+inserts a `### Tests` subsection at the position-priority slot:
+
+1. Immediately after the phase's `### Acceptance Criteria` block
+   (highest priority — the AC-and-its-spec stay co-located).
+2. Else after `### Design & Constraints`.
+3. Else after `### Work Items`.
+4. **Never** before `### Goal`. **Never** inside an
+   `### Execution: ...` subsection (delegate phases are skipped
+   wholesale per WI 3.6 / AC-3.6; the inside-execution guard is a
+   defensive secondary).
+
+`append-tests-section.sh` implements this priority order. Boundary
+detection is fenced-code-block-aware (mirrors parse-plan.sh's
+invariant) so a `## ` heading inside a ` ``` ` fence does not falsely
+terminate subsection boundaries.
+
+### Idempotent re-invocation
+
+If `### Tests` already exists in the phase (re-invocation),
+`append-tests-section.sh` is a no-op — the plan file is left
+byte-identical for that phase. Phase 5's refinement path handles
+updates to existing `### Tests` content. Idempotency is verified by
+running the orchestrator twice on the same fixture and asserting the
+plan file is byte-identical on the second run (AC-3.5).
+
+### Skip rules — single-source-of-truth
+
+- **Skip phases listed in `ac_less:`** (parsed-state, per WI 1.7b) —
+  these phases get NO `### Tests` subsection regardless of position
+  priority. The WI 1.7b advisory line is emitted in their stead.
+- **Skip phases listed in `delegate_phases:`** (parsed-state, per WI
+  1.4b) — test coverage is the delegated skill's responsibility (the
+  sub-skill authors its own tests inside the work it produces).
+
+The drafter MUST consume those parsed-state lists and MUST NOT
+re-derive either property from the plan body. `draft-orchestrator.sh`
+enforces this by reading both lists from the parsed-state file and
+computing the target set as a set-difference.
+
+### Drafter output file (per-round artifact)
+
+The orchestrator writes `/tmp/draft-tests-draft-round-0-<slug>.md`
+before merging into the plan. This is the input for Phase 4's review
+loop. Format:
+
+```
+plan_file: <path>
+parsed_state: <path>
+specs_file: <path>
+round: <N>
+drafted_phases:
+  <phase-id>
+  ...
+delegate_skipped_phases:
+  <phase-id>
+  ...
+ac_less_skipped_phases:
+  <phase-id>
+  ...
+idempotent_skipped_phases:
+  <phase-id>
+  ...
+specs_begin
+phase: <phase-id>
+<spec body>
+phase: <phase-id>
+<spec body>
+specs_end
+```
+
+`delegate_skipped_phases:` is recorded so Phase 4's reviewer/DA prompts
+and Phase 6's conformance test (AC-3.6) can read it as a concrete
+artifact rather than parsing prose. AC-3.6 set-equality is verified
+by parsing `delegate_phases:` from the parsed-state file and
+`delegate_skipped_phases:` from the round-0 output, sorting both, and
+diffing — empty diff = equal sets = pass.
+
+### Drafter never writes test code
+
+Specs only. Test code is the implementer's job during `/run-plan`.
+Past failure mode: drafters wrap-up by writing illustrative test
+snippets and the implementer copy-pastes them, baking the drafter's
+guesses into the test suite. Hold the line — specs only.
 
 ## Phase 4 — Adversarial review loop (QE personas)
 

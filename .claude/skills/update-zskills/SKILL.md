@@ -1012,6 +1012,7 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 STALE_LIST=(
+  append-tests-section.sh
   apply-preset.sh
   briefing.cjs
   briefing.py
@@ -1019,6 +1020,7 @@ STALE_LIST=(
   compute-cron-fire.sh
   create-worktree.sh
   detect-language.sh
+  draft-orchestrator.sh
   insert-prerequisites.sh
   land-phase.sh
   parse-plan.sh
