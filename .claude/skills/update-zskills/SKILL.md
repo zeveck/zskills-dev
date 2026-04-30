@@ -81,7 +81,56 @@ root (which has the same structure). To find them:
    both `$PORTABLE` and `$ZSKILLS_PATH`.
 3. Check if `/tmp/zskills` exists and contains `CLAUDE_TEMPLATE.md`. If
    yes, use it.
-4. **Auto-clone fallback:** Clone the repo:
+4. **Extended probe — common downstream clone locations.** If none of
+   the above matched, check the following paths IN ORDER (first valid
+   wins). A path is valid iff the directory exists and contains all
+   four of `CLAUDE_TEMPLATE.md`, `hooks/`, `scripts/`, and `skills/` —
+   the same validity test as the existing tiers. If the path is a git
+   clone, also store it as `$ZSKILLS_PATH`.
+   1. `$PWD/../zskills` (project's sibling)
+   2. `$PWD/../../zskills` (grandparent-sibling)
+   3. `~/src/zskills`
+   4. `~/code/zskills`
+   5. `~/projects/zskills`
+   6. `~/zskills`
+
+   Track each location you checked (matched and unmatched) for the
+   stop-and-ask prompt below.
+5. **Stop-and-ask fallback.** If no path above matched, do NOT silently
+   auto-clone. Instead, print the full list of locations that were
+   checked (tiers 1-3 plus the six extended-probe paths from tier 4),
+   then ask the user in plain conversation text (NOT
+   `AskUserQuestion`, per Key Rule 7):
+
+   > Couldn't locate zskills source. Checked:
+   >   - ./zskills-portable/
+   >   - ./zskills/
+   >   - /tmp/zskills
+   >   - $PWD/../zskills
+   >   - $PWD/../../zskills
+   >   - ~/src/zskills
+   >   - ~/code/zskills
+   >   - ~/projects/zskills
+   >   - ~/zskills
+   >
+   > Options:
+   >   (a) paste a path to your clone
+   >   (b) type `clone` to clone fresh to /tmp/zskills
+   >   (c) type `abort` to cancel
+
+   Wait for the user's reply. Then:
+   - **Pasted path:** Validate it with the same directory-contains
+     check (`CLAUDE_TEMPLATE.md` + `hooks/` + `scripts/` + `skills/`).
+     If valid, use it as `$PORTABLE` (and `$ZSKILLS_PATH` if it's a
+     git clone). If invalid, report what's missing and re-ask the same
+     options once; on a second invalid reply, treat as `abort`.
+   - **`clone`:** Fall through to the auto-clone behavior below.
+   - **`abort`:** Print "Aborted — no zskills source resolved." and
+     exit cleanly. Do not modify the project.
+   - **Anything else:** Treat as `abort`.
+
+6. **Auto-clone fallback (only when the user typed `clone` above).**
+   Clone the repo:
    ```bash
    git clone https://github.com/zeveck/zskills.git /tmp/zskills
    ```
