@@ -127,7 +127,15 @@ extract_transcript() {
 # lets us find .zskills-tracked in the correct directory for worktree agents.
 extract_cd_target() {
   local cmd
-  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g')
+  # JSON wire format escapes embedded newlines as the two-character
+  # sequence `\n`. The regex below uses [[:space:]] as a stop-class —
+  # without decoding `\n` to a real newline, multi-line bash commands
+  # like `cd /tmp/wt\ngit commit` would capture `/tmp/wt\ngit` (literal
+  # backslash-n) into the path and fail the [ -d ] check, causing
+  # is_on_main to fall back to the ambient cwd. Decode `\n` here in the
+  # same spirit as the existing `\"` decoding. `\n` is the only escape
+  # we currently see in practice from Claude Code's wire format.
+  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
   if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
     local target="${BASH_REMATCH[1]}"
     # Remove surrounding quotes if present
