@@ -1153,6 +1153,115 @@ else
 fi
 
 echo ""
+echo "=== Project hook: extract_cd_target multi-line bash (issue #93) ==="
+
+# Background: the hook's extract_cd_target uses [[:space:]] as a stop-class
+# in its regex. JSON wire format escapes embedded newlines as the literal
+# two-character sequence `\n` — which [[:space:]] does NOT match. Without
+# decoding `\n` → real newline in the sed pre-processing, multi-line bash
+# like `cd /tmp/feature-worktree\ngit commit -m foo` captured
+# `/tmp/feature-worktree\ngit` (with literal backslash-n) into the path,
+# the [ -d ] check failed, extract_cd_target returned empty, and is_on_main
+# fell back to ambient cwd (main repo on main) → blocked legitimate
+# feature-branch commits.
+#
+# Helper: run hook with a custom JSON envelope (no test-cmd shell-quoting),
+# in a configured main repo, against a separately-created feature-branch
+# tmpdir referenced via `cd /tmp/...`. Does NOT set REPO_ROOT — that env
+# override would short-circuit is_on_main before extract_cd_target runs.
+run_extract_cd_target_test() {
+  local main_branch="$1"   # branch the "main repo" is on (the ambient cwd)
+  local feat_branch="$2"   # branch the cd-target worktree is on
+  local raw_command="$3"   # literal command string (may contain \n)
+  local main_tmpdir
+  local feat_tmpdir
+  main_tmpdir=$(mktemp -d)
+  feat_tmpdir=$(mktemp -d)
+
+  # --- Main repo (hook's ambient cwd) ---
+  mkdir -p "$main_tmpdir/.claude/hooks"
+  mkdir -p "$main_tmpdir/.zskills/tracking"
+  cp "$PROJECT_HOOK" "$main_tmpdir/.claude/hooks/block-unsafe-project.sh"
+  printf '{"scripts":{"test":"vitest","test:all":"vitest run"}}\n' > "$main_tmpdir/package.json"
+  printf 'npm run test:all\n' > "$main_tmpdir/.transcript"
+  cat > "$main_tmpdir/.claude/zskills-config.json" <<'EOF'
+{
+  "testing": {
+    "unit_cmd": "npm test",
+    "full_cmd": "npm run test:all"
+  },
+  "ui": {
+    "file_patterns": "src/ui/"
+  },
+  "execution": {
+    "main_protected": true
+  }
+}
+EOF
+  (cd "$main_tmpdir" && git init -q && git checkout -b "$main_branch" 2>/dev/null && git add -A && git -c user.email=t@t -c user.name=t commit -q -m "init" 2>/dev/null)
+
+  # --- Feature worktree (separate dir referenced via cd) ---
+  (cd "$feat_tmpdir" && git init -q && git checkout -b "$feat_branch" 2>/dev/null && echo x > x && git add x && git -c user.email=t@t -c user.name=t commit -q -m "init" 2>/dev/null)
+
+  # Build JSON: "command" must be LAST field (greedy sed quirk, see helper above).
+  # Substitute the feat_tmpdir into the raw command. The caller-supplied raw_command
+  # contains literal `\n` sequences — these must reach the hook unescaped (i.e., as
+  # the two characters backslash-n), which is exactly the JSON wire format the bug
+  # is about. printf with %s preserves them.
+  local cmd_with_path
+  cmd_with_path=$(printf '%s' "$raw_command" | sed "s|FEAT_TMPDIR|$feat_tmpdir|g")
+  local json
+  json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$main_tmpdir/.transcript\",\"tool_input\":{\"command\":\"$cmd_with_path\"}}"
+
+  # Run hook in main_tmpdir cwd, with NO REPO_ROOT override so is_on_main
+  # exercises extract_cd_target. LOCAL_ROOT/TRACKING_ROOT are set to the
+  # main repo so the tracking guard reads from the fixture (no .zskills-tracked
+  # there → tracking enforcement skipped, isolating this test to extract_cd_target).
+  local result
+  result=$(echo "$json" | (
+    cd "$main_tmpdir" &&
+    LOCAL_ROOT="$main_tmpdir" \
+    TRACKING_ROOT="$main_tmpdir" \
+    bash "$main_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null
+  ))
+
+  # Cleanup
+  rm -rf "$main_tmpdir" "$feat_tmpdir"
+  echo "$result"
+}
+
+# Test: multi-line `cd /tmp/feat-wt\ngit commit` from a main-repo cwd does NOT
+# block. Pre-fix: extract_cd_target captured "/tmp/.../wt\ngit", failed [ -d ],
+# is_on_main fell back to main → "main branch is protected". Post-fix: \n is
+# decoded, target captures cleanly, is_on_main resolves to feat/test → allowed.
+RESULT=$(run_extract_cd_target_test "main" "feat/test" 'cd FEAT_TMPDIR\ngit commit -m foo')
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "extract_cd_target: multi-line cd \\n git commit (issue #93) allowed"
+else
+  fail "extract_cd_target: multi-line cd \\n git commit should be allowed, got: $RESULT"
+fi
+
+# Test: same case with `cd /tmp/feat-wt && git commit` (single-line) — must
+# also be allowed. Pins the existing-behavior baseline so the \n decoding
+# change can't regress the && form.
+RESULT=$(run_extract_cd_target_test "main" "feat/test" 'cd FEAT_TMPDIR && git commit -m foo')
+if [[ "$RESULT" != *"main branch is protected"* ]]; then
+  pass "extract_cd_target: single-line cd && git commit allowed (baseline)"
+else
+  fail "extract_cd_target: single-line cd && git commit should be allowed, got: $RESULT"
+fi
+
+# Test: the multi-line form with the FEATURE worktree on `main` (i.e., the
+# cd target IS a main branch) must still be BLOCKED. Confirms extract_cd_target
+# is correctly resolving to the cd target — not silently allowing everything.
+RESULT=$(run_extract_cd_target_test "main" "main" 'cd FEAT_TMPDIR\ngit commit -m foo')
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "extract_cd_target: multi-line cd to main-branch worktree blocked"
+else
+  fail "extract_cd_target: multi-line cd to main-branch worktree should be blocked, got: $RESULT"
+fi
+
+echo ""
 echo "=== Project hook: push-segment scoping (rules a/b) ==="
 
 # Background: rules (a) and (b) used to scan the entire $COMMAND buffer, which
