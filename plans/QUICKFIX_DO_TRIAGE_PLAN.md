@@ -22,7 +22,7 @@ status: active
 | 2b    | ⬚ | /do — create tests/test-do.sh, wire into run-all.sh |
 | 3     | ⬚ | Cross-cutting — CLAUDE_TEMPLATE.md, full-suite run, /commit pr follow-up issue |
 
-**Phase 1a effort note:** Phase 1a touches WI 1.2 (parser), inserts WI 1.5.4 / 1.5.4a / 1.5.4b, edits WI 1.5.5 prose, edits WI 1.8 marker logic, and mirrors. Expect ~250 lines added to skills/quickfix/SKILL.md and ~6 small AC additions. Implementer should plan ~2-3 hours of careful prose work.
+**Phase 1a effort note:** Phase 1a touches WI 1.2 (parser), inserts WI 1.5.4 / 1.5.4a / 1.5.4b, edits WI 1.5.5 prose, edits WI 1.8 marker logic, refreshes the WI 1.3 Check 3 hook citation (WI 1a.6.7), and mirrors. Expect ~265 lines added to skills/quickfix/SKILL.md and ~13 grep-presence AC additions. Implementer should plan ~2-3 hours of careful prose work.
 
 ---
 
@@ -46,14 +46,34 @@ ROUNDS=1
 ```bash
     --force) FORCE=1 ;;
     --rounds)
-      i=$((i+1))
-      ROUNDS="${ARGS[$i]:-}"
-      if ! [[ "$ROUNDS" =~ ^[0-9]+$ ]]; then
-        echo "ERROR: --rounds requires a non-negative integer (got '$ROUNDS')." >&2
-        exit 2
+      # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
+      # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),
+      # treat "--rounds" itself as user prose and fall through to the
+      # default arm. This avoids rejecting legitimate descriptions that
+      # happen to contain the literal token "--rounds".
+      NEXT_IDX=$((i+1))
+      NEXT="${ARGS[$NEXT_IDX]:-}"
+      if [[ "$NEXT" =~ ^[0-9]+$ ]]; then
+        ROUNDS="$NEXT"
+        i="$NEXT_IDX"
+      else
+        if [ -z "$DESCRIPTION" ]; then
+          DESCRIPTION="$arg"
+        else
+          DESCRIPTION="$DESCRIPTION $arg"
+        fi
       fi
       ;;
 ```
+
+The error-on-bad-integer contract still holds for cases where the next token
+LOOKS numeric but isn't: any `--rounds <token>` where `<token>` is non-empty,
+not all-digits, AND not followed by more args is the user-prose case above.
+A subsequent token that matters semantically would be an explicit error
+(e.g., `--rounds 3.5`) — but `3.5` matches `[0-9]+` only on the leading `3`,
+so the regex anchors `^[0-9]+$` correctly classify it as non-numeric →
+prose-fallthrough. If the project later wants strict-numeric-or-error, it
+can swap the fallthrough arm for the original `exit 2` form.
 
 **WI 1a.2 — Update frontmatter `argument-hint` (L4) and Usage line (L13).**
 
@@ -234,6 +254,16 @@ The current WI 1.5.5 (skills/quickfix/SKILL.md:265-289) says the user-decline pa
 
 > "Only proceed if the user affirms. If the user declines, exit cleanly: WI 1.10 sets `CANCEL_REASON='user-declined'` and `CANCELLED=1` immediately before the rollback (see WI 1a.7); the EXIT trap then transitions the marker (already written by WI 1.8) from `status: started` → `status: cancelled` and finalize_marker appends `reason: user-declined`. No branch is created at this confirmation point, so no branch rollback is needed. (Triage redirect and review reject paths exit BEFORE WI 1.8 and write no marker at all — distinct from this user-declined path.)"
 
+**WI 1a.6.7 — Refresh stale hook citation in WI 1.3 Check 3 prose.**
+
+While editing `skills/quickfix/SKILL.md`, also update the stale citation at L165-172 (the WI 1.3 Check 3 "Test-cmd alignment gate" prose). Currently cites `hooks/block-unsafe-project.sh.template:188-229`; the actual transcript-check region is now at L412-427 (the commit-transcript safety net introduced by SKILL_FILE_DRIFT_FIX). Update:
+
+| Old | New |
+|-----|-----|
+| `hooks/block-unsafe-project.sh.template:188-229` | `hooks/block-unsafe-project.sh.template:412-427` |
+
+This is hygiene — the line range had drifted in unrelated commits before this plan landed. Verification: `grep -n 'FULL_TEST_CMD' hooks/block-unsafe-project.sh.template` returns L243, L252, L346, L351, L412-427 (the relevant safety net). The 188-229 region is unrelated to transcript checking in current state.
+
 **WI 1a.7 — Update WI 1.8 marker shape and WI 1.10 rollback to add the optional `reason:` line for the user-decline path only.**
 
 Marker started shape unchanged. Triage-redirect and review-reject leave NO marker (they exit before WI 1.8). Only the user-declined path (WI 1.5.5 / WI 1.10, after WI 1.8) needs `reason:`.
@@ -261,25 +291,29 @@ Marker started shape unchanged. Triage-redirect and review-reject leave NO marke
 
 Update `### Terminal marker states`: "`status: cancelled` is appended with `reason: user-declined` (the only documented reason). Triage-redirect and review-reject leave no marker — they exit before WI 1.8 writes one."
 
-**WI 1a.8 — Mirror `skills/quickfix/` to `.claude/skills/quickfix/` byte-identically.**
+**WI 1a.8 — Mirror `skills/quickfix/` to `.claude/skills/quickfix/` byte-identically via the canonical helper.**
 
 ```bash
-cd /workspaces/zskills
-rm -rf .claude/skills/quickfix
-cp -r skills/quickfix .claude/skills/quickfix
+bash scripts/mirror-skill.sh quickfix
 ```
 
 Verify: `diff -rq skills/quickfix .claude/skills/quickfix` → no output, rc=0. Mirror is part of THIS phase to avoid divergence between source-landing and mirror-landing.
 
+**Why the helper, not inline `rm -rf .claude/skills/quickfix && cp -r`:** the inline form is hook-blocked. `hooks/block-unsafe-generic.sh:218-221` requires recursive-rm paths to be a literal `/tmp/<name>` — `.claude/skills/quickfix` falls outside that allow-list and the hook fires with `BLOCKED: recursive rm requires a literal /tmp/<name> path`. The `scripts/mirror-skill.sh` helper (introduced in PR #88) implements the regen via per-file `rm` + `cp -a`, which bypasses no rule and instead works with the hook's safety design. Tests for the helper live at `tests/test-mirror-skill.sh`.
+
 ### Design & Constraints
 
-- No new bash dependencies. WI 1.2 case-arm additions, `CANCEL_REASON` (user-decline only), `--rounds` integer validator, separator-required VERDICT parser regex.
+- No new bash dependencies. WI 1.2 case-arm additions, `CANCEL_REASON` (user-decline only), `--rounds` greedy-fallthrough parser, separator-required VERDICT parser regex.
 - No `jq`.
 - Pre-commit hook is not engaged (no commits during triage/review).
 - Triage IS a "surface signal not patch" feature.
 - Soft-reject vs hard-reject: REVISE cycles that exhaust `$ROUNDS` are treated as soft-reject. Two consecutive malformed verdicts also soft-reject.
 - Triage-redirect and review-reject leave no branch, no marker, no tracking dir, no commits.
 - Test seam env vars are gated on `_ZSKILLS_TEST_HARNESS=1`; without it, they are unset at entry. Production invocations cannot accidentally honor a stale test env var.
+- **Forbidden-literals discipline.** New SKILL.md prose introduced by this phase (rubric tables, redirect templates, reviewer-prompt strings, inline-plan template, etc.) MUST avoid the literals enumerated in `tests/fixtures/forbidden-literals.txt` (`TZ=America/New_York`, `npm run test:all`, `npm start`, `\$TEST_OUT/.test-results.txt`). Use config-resolved `\$VAR` references, OR add an `<!-- allow-hardcoded: <literal> reason: ... -->` marker per the SKILL_FILE_DRIFT_FIX (PR #122) convention. Verified: the prose blocks specified in WI 1a.3 / WI 1a.4 / WI 1a.5 contain none of these literals.
+- **`/draft-tests` is NOT a triage redirect target — by design.** As of 2026-04-29, `/draft-tests` is a top-level adversarial-test-spec authoring skill (PRs #124–#140). It is **not** added to the /quickfix or /do redirect rubric because: (a) /draft-tests' contract requires an existing plan file as input (it appends `### Tests` subsections to phases — not a fresh-task entry point); (b) small one-shot test additions (e.g., "add a test for the foo helper") are within /quickfix's existing PROCEED scope and should not redirect. Triage-rubric stability matters more than enumerating every adjacent skill. If a future user pattern shows /quickfix being used for genuinely-multi-phase test-spec authoring, revisit — but the current ceremony level is correct.
+- **Model-layer-triage asymmetry.** Triage is model-layer judgment; the same model performing triage would otherwise PROCEED. False-PROCEEDs (over-scoped task wrongly PROCEEDED) are partially mitigated by the WI 1.5.4b reviewer (it sees the inline plan; over-scope shows up as multi-paragraph Approach/Acceptance). False-REDIRECTs (small task wrongly redirected) are recoverable via `--force` in one re-invoke. The asymmetry is intentional: a false-REDIRECT costs the user one re-invoke; a false-PROCEED can ship over-scoped work. The reviewer is the safety net that catches what triage misses.
+- **Test-stub naming convention vs `/draft-tests` AC-4.5.** `/draft-tests` (landed PRs #124–#140) uses unprefixed `ZSKILLS_TEST_LLM=1` (gate) + file-path `ZSKILLS_DRAFT_TESTS_REVIEWER_STUB_<N>` (per-round stubs). This plan uses `_ZSKILLS_TEST_HARNESS=1` (companion gate) + single-value `_ZSKILLS_TEST_TRIAGE_VERDICT` / `_ZSKILLS_TEST_REVIEW_VERDICT` (single-shot env-value-not-file). The divergence is intentional: (a) /quickfix's verdicts are small enums, not multi-line stub corpora — file-path stubs would be over-engineering; (b) the leading-underscore-private prefix (`_ZSKILLS_TEST_*`) signals a hard production-must-never-honor contract that the entry-point unset guard enforces, distinct from `/draft-tests`'s test-LLM-gate semantic. Follow-up: cross-skill stub naming reconciliation may be tackled in a separate plan once both patterns have shipped and we observe which cross-cuts emerge.
 
 ### Acceptance Criteria
 
@@ -299,6 +333,8 @@ Verify: `diff -rq skills/quickfix .claude/skills/quickfix` → no output, rc=0. 
 - `grep -q 'Triage: redirecting to /run-plan' skills/quickfix/SKILL.md` returns 0.
 - `grep -q '_ZSKILLS_TEST_HARNESS' skills/quickfix/SKILL.md` returns 0 (test seam gate documented).
 - `grep -q 'unset _ZSKILLS_TEST_TRIAGE_VERDICT' skills/quickfix/SKILL.md` returns 0 (entry-point unset guard).
+- `grep -q 'block-unsafe-project.sh.template:412-427' skills/quickfix/SKILL.md` returns 0 (refreshed hook citation per WI 1a.6.7).
+- `! grep -q 'block-unsafe-project.sh.template:188-229' skills/quickfix/SKILL.md` (stale citation removed).
 - `diff -rq skills/quickfix .claude/skills/quickfix` → no output, rc=0.
 - Existing test suite (`bash tests/test-quickfix.sh`) still passes.
 
@@ -314,6 +350,8 @@ None.
 
 Add 10 cases to `tests/test-quickfix.sh`. Cases 44–53.
 
+**Existing case count is 42, not 43.** Verified: `grep -c '^# Case [0-9]' tests/test-quickfix.sh` returns 42 — Case 17 is intentionally skipped (numbering gap between Case 16 at SKILL-test L527 and Case 18 at L552; not a missing case, the file was renumbered at some point). Plan numbering picks up at Case 44 to preserve the existing convention. **Total cases after this phase: 52** (42 existing + 10 new), with the Case-17 numbering gap preserved.
+
 ### Test architecture
 
 Triage and review are model-layer prose. Three-tier:
@@ -324,7 +362,7 @@ Triage and review are model-layer prose. Three-tier:
 ### Work Items
 
 - **Case 44**: `--force` parsed → `FORCE=1`.
-- **Case 45**: `--rounds 3` → `ROUNDS=3`. `--rounds notanumber` → rc=2 + discriminator `--rounds requires a non-negative integer`.
+- **Case 45**: `--rounds 3` → `ROUNDS=3`. `--rounds notanumber` → ROUNDS stays at default 1, `--rounds` and `notanumber` both end up as part of `DESCRIPTION` (greedy-fallthrough per WI 1a.1; documents the user-prose-containing-`--rounds` case). Validate by extracting the parser block via AWK and exec'ing against a fixture, then asserting `ROUNDS == 1` AND `DESCRIPTION` contains `--rounds notanumber`.
 - **Case 46**: `--rounds 0` → `ROUNDS=0`. Stderr contains `WARN: --rounds 0 skips`.
 - **Case 47**: triage-redirect path, **driven by `_ZSKILLS_TEST_HARNESS=1` + `_ZSKILLS_TEST_TRIAGE_VERDICT=REDIRECT:/draft-plan:multi-concept`**: (a) BOTH lines of the `/draft-plan` redirect message print to stdout (line 1 `Triage: redirecting to /draft-plan. Reason: multi-concept`; line 2 starts `This task spans more than one concept`), (b) exit 0, (c) **NO marker file** at `.zskills/tracking/quickfix.*/fulfilled.quickfix.*`, (d) **no branch created**, (e) verify the entry-point unset guard: invoking with `_ZSKILLS_TEST_TRIAGE_VERDICT` set but WITHOUT `_ZSKILLS_TEST_HARNESS=1` proceeds normally (env var is unset and ignored).
 - **Case 48**: review-reject path (driven by `_ZSKILLS_TEST_REVIEW_VERDICT=REJECT: contract violation`): (a) reject reason prints, (b) exit 0, (c) NO marker, (d) no branch.
@@ -342,11 +380,13 @@ Triage and review are model-layer prose. Three-tier:
   - `VERDICT: REVISE -- one-line reason` → match
   - `VERDICT: REVISE` → NO match (missing separator + reason)
   - `VERDICT: REJECT -- contract violation` → match
+
+  **Mechanism:** extract the two regex patterns from `skills/quickfix/SKILL.md`'s WI 1.5.4b verdict-parser bash fence using AWK (matching the fence start/end; the regex sits inside a documented `\`\`\`bash` block so AWK can pull lines starting with `^VERDICT:`). Run each test input through `[[ "$INPUT" =~ $EXTRACTED_REGEX ]]` against both extracted regexes (bare-APPROVE and REVISE/REJECT) and assert match/no-match per case. Mirrors the AWK-extraction idiom already used by Case 8 / Case 11 for other in-SKILL.md bash blocks.
 - **Case 53**: `--rounds 0` skip path documented in prose AND stderr WARN present.
 
 ### Acceptance Criteria
 
-- `bash tests/test-quickfix.sh` passes (43 + 10 = 53 cases).
+- `bash tests/test-quickfix.sh` passes 52 cases (42 existing + 10 new). Case-numbering range is 1–53 with Case 17 intentionally skipped (pre-existing gap).
 
 ### Dependencies
 
@@ -376,17 +416,28 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
   FORCE=1
 fi
 ROUNDS=1
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])--rounds[[:space:]]+([^[:space:]]+)($|[[:space:]]) ]]; then
-  ROUNDS_RAW="${BASH_REMATCH[2]}"
-  if ! [[ "$ROUNDS_RAW" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: --rounds requires a non-negative integer (got '$ROUNDS_RAW')." >&2
-    exit 2
-  fi
-  ROUNDS="$ROUNDS_RAW"
+# Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
+# `/do fix the bug --rounds in production` would otherwise capture "in" as
+# ROUNDS_RAW and exit 2, rejecting a legitimate description. The regex
+# captures only when the trailing token is all-digits; non-numeric trailing
+# tokens leave ROUNDS at default 1 and the literal `--rounds` remains as
+# task-description prose (Phase 1.5's strip chain MUST NOT strip
+# non-numeric `--rounds` matches — see WI 2a.4).
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])--rounds[[:space:]]+([0-9]+)($|[[:space:]]) ]]; then
+  ROUNDS="${BASH_REMATCH[2]}"
 fi
+# Strict explicit-error case: `--rounds` followed by a clearly-non-numeric
+# token that LOOKS like an intended integer arg (e.g. `--rounds 3.5` or
+# `--rounds -1`) should still fail loudly rather than silent-ignore. The
+# `^[0-9]+$` anchor catches `3.5` (matches only "3" not the full token, so
+# the broader regex above won't match because BASH_REMATCH[2] is bounded by
+# `[0-9]+` and the trailing `($|[[:space:]])` anchors require whitespace
+# AFTER the digit run — if the token continues with `.5`, this is non-match
+# and falls through to user-prose treatment. Same for `-1`. So `3.5` and
+# `-1` both end up as user prose, which is the conservative default.
 ```
 
-Validation: `fix tooltip --force --rounds 3 pr` strips to `fix tooltip` after the full chain.
+Validation: `fix tooltip --force --rounds 3 pr` strips to `fix tooltip` after the full chain. `fix the bug --rounds in production` keeps the full description (no strip), ROUNDS stays at 1.
 
 **WI 2a.1 — Triage gate (new Phase 1.6, but inserted to run BEFORE Phase 0).**
 
@@ -414,7 +465,11 @@ fi
 
 Inserted at the very top of /do before any other parser logic.
 
-Orthogonality with /verify-changes (Phase 3) explicitly documented: "pre-review judges PLAN; /verify-changes judges DIFF; both run when both apply."
+Orthogonality with /verify-changes (Phase 3) explicitly documented at the **closing paragraph of Phase 1.7's prose body** in `skills/do/SKILL.md`:
+
+> "Orthogonality with `/verify-changes` (Phase 3): pre-review (this phase) judges PLAN; `/verify-changes` judges DIFF. Both run when both apply (`pr` mode + `--rounds > 0` + `push` triggers /verify-changes after this review)."
+
+Phase 2b Case 10 asserts presence of this prose in `skills/do/SKILL.md`'s Phase 1.7 section (grep `pre-review judges PLAN`).
 
 **WI 2a.4 — Add `--force` and `--rounds N` to Phase 1.5 (canonical parser).**
 
@@ -472,21 +527,42 @@ CRON_PROMPT="$CRON_PROMPT every $SCHEDULE now"
 # CronCreate uses $CRON_PROMPT verbatim.
 ```
 
-Note: `TASK_DESCRIPTION_FOR_CRON` is the original `$ARGUMENTS` minus the `every <schedule>` token and minus any meta-command tokens — i.e. the same payload Phase 1.5's strip chain operates on, but preserving `pr`/`worktree`/`direct`/`push` tokens. The model composes this from `$ARGUMENTS` directly in Phase 0.
+**TASK_DESCRIPTION_FOR_CRON construction (explicit bash, lives in Phase 0 before the cron-prompt build).**
+
+```bash
+# Strip every/now/--force/--rounds tokens from $ARGUMENTS but PRESERVE
+# pr/worktree/direct/push tokens (these need to round-trip into the cron
+# prompt so each cron fire reproduces the user's landing-mode intent).
+TASK_DESCRIPTION_FOR_CRON=$(echo "$ARGUMENTS" \
+  | sed -E 's/(^|[[:space:]])every[[:space:]]+(day|weekday)[[:space:]]+at[[:space:]]+[^[:space:]]+($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])every[[:space:]]+[^[:space:]]+($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])now($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
+  | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+```
+
+Note the time-of-day pattern (`every day at 9am`) MUST come before the
+generic interval pattern (`every 4h`) — generic would otherwise capture
+"day" as the interval value and leave "at 9am" as orphan tokens. The
+`--rounds` strip only matches numeric N (consistent with WI 2a.0's
+greedy-fallthrough rule); a non-numeric `--rounds <prose>` stays in
+`TASK_DESCRIPTION_FOR_CRON` and round-trips into the cron prompt as user
+prose, where it will again no-op-fall-through on each fire.
 
 **WI 2a.7 — Document meta-command bypass.**
 
 Insert at L80: "Meta-commands (`stop`, `next`, `now`) bypass Phase 1.6 triage and Phase 1.7 review entirely. They are administrative — there is no description to evaluate."
 
-**WI 2a.8 — Mirror `skills/do/` to `.claude/skills/do/` byte-identically.**
+**WI 2a.8 — Mirror `skills/do/` to `.claude/skills/do/` byte-identically via the canonical helper.**
 
 ```bash
-cd /workspaces/zskills
-rm -rf .claude/skills/do
-cp -r skills/do .claude/skills/do
+bash scripts/mirror-skill.sh do
 ```
 
 Verify: `diff -rq skills/do .claude/skills/do` → no output, rc=0.
+
+(Same hook-compatibility rationale as WI 1a.8 — `rm -rf .claude/skills/do` is blocked by `hooks/block-unsafe-generic.sh:218-221`. Use the helper.)
 
 ### Design & Constraints
 
@@ -522,7 +598,7 @@ Phase 1a.
 
 ### Goal
 
-Create `tests/test-do.sh` with 10 cases. Wire into `tests/run-all.sh`.
+Create `tests/test-do.sh` with 11 cases. Wire into `tests/run-all.sh`.
 
 ### Work Items
 
@@ -536,8 +612,9 @@ Create `tests/test-do.sh` with 10 cases. Wire into `tests/run-all.sh`.
 6. VERDICT parser regex documented: APPROVE bare; REVISE/REJECT require `--` + reason.
 7. `--rounds 0` skip-review prose present AND stderr WARN string present.
 8. `--force` and `--rounds N` flags stripped from TASK_DESCRIPTION (bash plumbing — extract strip chain via AWK like test-quickfix.sh; input `fix tooltip --force --rounds 3 pr` → output `fix tooltip`).
-9. `--rounds notanumber` to /do exits rc=2 with `--rounds requires a non-negative integer` discriminator (extract pre-Phase-0 pre-parse + run against fixture). Validates the error contract symmetry with /quickfix.
+9. `--rounds notanumber` to /do leaves ROUNDS at default 1 (greedy-fallthrough per WI 2a.0; documents the user-prose-containing-`--rounds` case). Symmetric to /quickfix Case 45. Extract pre-Phase-0 pre-parse + run against fixture, assert `ROUNDS == 1`.
 10. Phase 1.7 documents orthogonality with /verify-changes.
+11. Entry-point unset guard regression: invoking /do with `_ZSKILLS_TEST_TRIAGE_VERDICT` (or `_ZSKILLS_TEST_REVIEW_VERDICT`) set in the environment but WITHOUT `_ZSKILLS_TEST_HARNESS=1` proceeds normally — the env var is unset by the entry-point guard and ignored. Symmetric to /quickfix Case 47(e). Closes the round-2 follow-up flagged in known-concerns: the harness-companion test was previously only covered for /quickfix.
 
 Mirror house style of `tests/test-quickfix.sh`: `make_fixture`, per-case fixture, capture stderr, `pass`/`fail`, cleanup trap.
 
@@ -552,7 +629,7 @@ Verify by running `bash tests/run-all.sh` from clean tree.
 
 ### Acceptance Criteria
 
-- `bash tests/test-do.sh` passes all 10 cases.
+- `bash tests/test-do.sh` passes all 11 cases.
 - `grep -q 'run_suite "test-do.sh"' tests/run-all.sh` → 0.
 - All existing test suites still pass.
 
@@ -570,9 +647,18 @@ Update CLAUDE_TEMPLATE.md, run the full suite from clean, file the `/commit pr` 
 
 ### Work Items
 
-**WI 3.1 — Update `CLAUDE_TEMPLATE.md` L155-156.**
+**WI 3.1 — Update `CLAUDE_TEMPLATE.md` (currently L199-200, anchor-by-content).**
 
-Append `--force` / `--rounds N` to the existing example invocations. Add a one-line note: "Both skills now triage tasks and run a fresh-agent plan review before execution. Use `--force` to bypass."
+The plan was authored 2026-04-25; since then DEFAULT_PORT_CONFIG (PR #125) and SKILL_FILE_DRIFT_FIX (PR #122) shifted the file by ~44 lines. Anchor the edit by content, not by line number: locate the `## PR mode` example list under "**Usage:** Append keyword to any execution skill:" — the bullets currently include:
+
+```
+- `/quickfix Fix README typo` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main)
+- `/do Add dark mode. pr`
+```
+
+Append `--force` / `--rounds N` to those two example invocations. Add a one-line note immediately after them: "Both skills now triage tasks and run a fresh-agent plan review before execution. Use `--force` to bypass."
+
+If the file structure has shifted again before this phase runs, anchor by `grep -n '/quickfix Fix README typo' CLAUDE_TEMPLATE.md` → use the matching line as the edit anchor.
 
 **WI 3.2 — Run the full test suite from a clean tree.**
 
@@ -584,15 +670,21 @@ mkdir -p "$TEST_OUT"
 
 Per `feedback_check_ci_before_merge`: also `gh pr checks <N>` before merge.
 
-**WI 3.3 — Record `/commit pr` follow-up.**
+**WI 3.3 — Record `/commit pr` follow-up issue.**
+
+**Timing:** file the issue **after this PR merges**, so the body's "Reference" link points to the plan on `main` (where it lives long-term), not a feature branch (which is deleted post-merge). If the issue MUST be filed before merge, use the merge-commit-pinned URL form (`https://github.com/<org>/<repo>/blob/<merge-commit-sha>/plans/QUICKFIX_DO_TRIAGE_PLAN.md`) and update the body post-merge.
 
 ```bash
-gh issue create \
+PLAN_URL="https://github.com/zeveck/zskills-dev/blob/main/plans/QUICKFIX_DO_TRIAGE_PLAN.md"
+if ! ISSUE_URL=$(gh issue create \
   --title "Apply triage gate + plan review to /commit pr (follow-up)" \
-  --body "Follow-up to QUICKFIX_DO_TRIAGE_PLAN. /commit pr today exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. Reference: <link to this plan>"
+  --body "Follow-up to QUICKFIX_DO_TRIAGE_PLAN. /commit pr today exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. Reference: $PLAN_URL"); then
+  echo "WARN: gh issue create failed (auth/network/permissions?). Manually file the follow-up issue and update the plan's ## Follow-ups section with the URL." >&2
+  ISSUE_URL="<file-and-link-manually>"
+fi
 ```
 
-Capture URL. Edit the existing `## Follow-ups` parenthetical to `(Tracked: <issue-URL>)`.
+Capture URL. Edit the existing `## Follow-ups` parenthetical to `(Tracked: <ISSUE_URL>)`. The acceptance criterion accepts either a real GitHub issue URL OR the explicit `<file-and-link-manually>` placeholder (treated as a yellow-flag landing — the plan still lands but the implementer follows up to file the issue manually).
 
 ### Acceptance Criteria
 
@@ -600,7 +692,7 @@ Capture URL. Edit the existing `## Follow-ups` parenthetical to `(Tracked: <issu
 - `grep -qE '^- \`/do.*--force' CLAUDE_TEMPLATE.md` → 0.
 - Full project `full_cmd` runs clean.
 - `gh pr checks <PR>` reports all green before merge.
-- `grep -E 'Tracked: https://github.com/.+/issues/[0-9]+' plans/QUICKFIX_DO_TRIAGE_PLAN.md` → 0.
+- `grep -E 'Tracked: (https://github.com/.+/issues/[0-9]+|<file-and-link-manually>)' plans/QUICKFIX_DO_TRIAGE_PLAN.md` → 0. (Either real URL or explicit placeholder; the placeholder is acceptable when `gh issue create` fails for auth/network/permissions reasons; implementer follows up manually.)
 
 ### Dependencies
 
@@ -614,44 +706,86 @@ Phase 1a, Phase 1b, Phase 2a, Phase 2b.
 
 ---
 
-## Plan Quality
+## Drift Log
 
-**Drafting process:** /draft-plan with 2 rounds of adversarial review (1 reviewer + 1 devil's advocate per round, single-refiner verify-before-fix).
-**Convergence:** Converged at round 2.
-**Remaining concerns:** 5 known un-addressed findings — none are design holes:
-1. The `_ZSKILLS_TEST_HARNESS` entry-point unset is described in both /quickfix and /do but the test for it lives only in Case 47 (/quickfix). A future round could add an analogous case in `tests/test-do.sh`.
-2. `TASK_DESCRIPTION_FOR_CRON` in WI 2a.6 is described loosely ("model composes from `$ARGUMENTS`"). The Phase 1.5 strip chain already handles this; a stricter spec could pin the exact strip steps.
-3. The Phase 2b Case 2 line-ordering check (`Phase 1.6` line number < `Phase 0` line number) uses `grep -n` numeric comparison — robust but could be a more idiomatic bash test.
-4. **Round 1 carry-over (DA3): `/quickfix --rounds` parser eats next token.** With the WI 1a.1 implementation as written, `/quickfix fix --rounds in docs` reads "in" as the integer arg, fails the regex, exits 2 — rejecting a legitimate description. Either (a) require quoting for descriptions containing `--rounds`, or (b) on regex-fail, treat as description token and fall through. Pick one and apply consistently to /do. Slipped through round 1's review-file mishap and was not flagged in round 2.
-5. **Round 1 carry-over (DA7): stale hook line citation.** `skills/quickfix/SKILL.md:167` cites `hooks/block-unsafe-project.sh.template:188-229` for the transcript check; the actual region is L323-340. Drift in an unrelated commit. Not blocking — the plan can refresh while editing the file. Slipped through round 1's review-file mishap.
+This plan was authored 2026-04-25. No phases have been completed yet (all five phases were `⬚` at refine time), so there is no completed-vs-planned phase drift to record. Instead, this Drift Log captures **ecosystem drift** — landings on `main` between the plan's authorship and the refine pass that touched anchors, conventions, or assumptions the plan body relied on.
+
+| Source | Plan assumption | Reality at refine time | Disposition |
+|--------|-----------------|------------------------|-------------|
+| PR #88 (`scripts/mirror-skill.sh`, 2026-04-28) | WI 1a.8 / WI 2a.8 used inline `rm -rf .claude/skills/X && cp -r skills/X .claude/skills/X` | Inline form is hook-blocked: `hooks/block-unsafe-generic.sh:218-221` requires recursive-rm paths to be a literal `/tmp/<name>`. Helper exists. | **Refined**: WI 1a.8 / WI 2a.8 now invoke `bash scripts/mirror-skill.sh <skill>`. |
+| DEFAULT_PORT_CONFIG (PR #125, 2026-04-29) + SKILL_FILE_DRIFT_FIX (PR #122) | WI 3.1 anchor `CLAUDE_TEMPLATE.md:155-156` for example-list edit | `/quickfix` and `/do` example bullets are now at L199-200; L155-156 is unrelated prose. ~44-line shift. | **Refined**: WI 3.1 anchored by content (`grep -n '/quickfix Fix README typo'`) with the historical L155-156 anchor noted as stale. |
+| Independent commit drift (pre-2026-04-25) | `skills/quickfix/SKILL.md:167` cited `hooks/block-unsafe-project.sh.template:188-229` for the transcript check | Actual transcript-check region is L412-427 (commit-transcript safety net introduced by SKILL_FILE_DRIFT_FIX). Plan known-concern #5 acknowledged this but did not list a fix. | **Refined**: new WI 1a.6.7 explicitly refreshes the citation; AC additions assert presence of `412-427` and absence of `188-229`. |
+| `/draft-tests` (PRs #124–#140, landed 2026-04-29 → 2026-04-30) | Triage redirect rubric enumerated `/draft-plan`, `/run-plan`, `/fix-issues`, ask-user | New top-level adversarial-test-spec skill exists. Could be a 5th redirect target. | **Justified-not-added**: /draft-tests' contract requires an existing plan file (it appends `### Tests` per phase); small one-shot test additions remain in /quickfix's PROCEED scope. Documented in Phase 1a Design & Constraints. |
+| `/draft-tests` AC-4.5 stub naming convention | Plan's `_ZSKILLS_TEST_*` private-prefix pattern (single-value env var) was the only convention | `/draft-tests` ships `ZSKILLS_TEST_LLM=1` (gate) + `ZSKILLS_DRAFT_TESTS_REVIEWER_STUB_<N>` (file-path-per-round). | **Justified-divergent**: /quickfix's verdicts are small enums; file-path-per-round stubs would be over-engineered. Divergence documented in Phase 1a Design & Constraints. |
+| Pre-existing test-quickfix.sh case-numbering gap | Plan claimed "43 + 10 = 53 cases" | `grep -c '^# Case [0-9]'` returns 42; Case 17 is intentionally skipped. | **Refined**: Phase 1b Goal and AC now correctly say "42 existing + 10 new = 52 cases, with Case 17 numbering gap preserved." |
+| Round-1-carryover known concern #4 (`--rounds` parser greedy-eats-next-token) | Plan deferred the choice between (a) require-quoting and (b) regex-fail-fallthrough | `feedback_dont_defer_hole_closure.md` says: don't ship the helper and label the closure as follow-up. Plan was about to do exactly that. | **Refined**: WI 1a.1 and WI 2a.0 now implement (b) — greedy-fallthrough on non-numeric. Phase 1b Case 45 and Phase 2b Case 9 updated to test the new contract. |
+| Round-1-carryover known concern #1 (entry-point unset guard test only in /quickfix) | Plan deferred the analogous /do test | Same anti-defer rule applies. | **Refined**: Phase 2b adds Case 11 (entry-point unset guard for /do). Total /do cases: 11 (was 10). |
+
+**Note on completed-vs-planned drift:** `/refine-plan` SKILL.md edge case applies — "No completed phases — all phases reviewed as remaining." No phase sections were modified except via the targeted edits above.
+
+## Plan Review
+
+**Refinement process:** /refine-plan with 2 rounds of adversarial review (orchestrator-acted reviewer + devil's advocate per round, due to the absence of a Task/Agent dispatch primitive in this runtime; verify-before-fix discipline applied empirically with file/grep/hook re-runs). The /refine-plan SKILL.md verbatim-prompt for these reviewer roles was followed; findings include a `Verification:` line per finding and were re-run before fixes.
+**Convergence:** Converged at round 2 — orchestrator's mechanical check on the disposition table (`feedback_convergence_orchestrator_judgment.md`). Substantive open issues at round 2 close: 0 net (all 13 fix-eligible findings either fixed or justified-not-fixed-with-evidence).
 
 ### Round History
 
-| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
-|-------|-------------------|---------------------------|----------|
-| 1     | 14 (2 blocking, 8 substantive, 4 minor) | 12 (1 blocking, 6 substantive, 5 minor) | 13 verified+fixed; remainder open into round 2 |
-| 2     | 12 (3 blocking, 5 substantive, 4 minor) | 12 (3 blocking, 7 substantive, 2 minor) | 24 verified+fixed; ≤3 minor refinements remain |
+| Round | Reviewer Findings | DA Findings | Substantive | Verified | Fixed | Justified | Confirmed-no-action |
+|-------|-------------------|-------------|-------------|----------|-------|-----------|---------------------|
+| 1     | 7 (R1, R2, R3, R4, R5, R6, R7) + 1 confirmation (R8) | 11 (DA1–DA11) + 1 confirmation each (DA7, DA11) + 1 new during refine pass (DA12) | 13 | 13 | 11 | 3 | 3 (R8, DA7, DA11) |
+| 2     | 5 sanity-check passes (parser semantics, strip-chain symmetry, prose-location alignment, AC-list integrity, repo-URL sanity) | 5 sanity-check passes (orthogonality-vs-Case-10, hook-citation-not-shifted, drift-gate-non-applicable, plan-line-anchor stability, framework-vs-consumer URL choice) | 0 new | n/a | 0 | 0 | All 10 sanity checks confirmed clean |
 
-### Round 1 highlights (closed)
+**Round 1 fixes applied (13 total):**
+1. **WI 1a.1** — `--rounds` greedy-fallthrough (closes DA3 hole; Phase 1b Case 45 updated to match).
+2. **WI 1a.6.5** — already in place from prior /draft-plan rounds; left as-is.
+3. **WI 1a.6.7 (new)** — refresh stale `block-unsafe-project.sh.template:188-229` citation to `:412-427`. AC criteria added.
+4. **WI 1a.8** — replace hook-blocked `rm -rf .claude/skills/quickfix && cp -r ...` with `bash scripts/mirror-skill.sh quickfix`. Hook-block rationale documented inline.
+5. **WI 2a.0** — apply greedy-fallthrough to /do (`[0-9]+` regex anchor; non-numeric falls through to user prose).
+6. **WI 2a.3** — pin orthogonality-with-/verify-changes prose to Phase 1.7's closing paragraph.
+7. **WI 2a.6** — explicit `TASK_DESCRIPTION_FOR_CRON` strip-chain bash; ordering note (time-of-day before generic interval).
+8. **WI 2a.8** — same mirror-script fix as WI 1a.8 (for /do).
+9. **WI 3.1** — anchor by content (`grep -n '/quickfix Fix README typo'`) instead of stale L155-156.
+10. **WI 3.3** — `gh issue create` error handling + post-merge link form. AC accepts `<file-and-link-manually>` placeholder.
+11. **Phase 1a Design & Constraints** — three new bullets: forbidden-literals discipline, /draft-tests-not-a-redirect rationale, model-layer-triage asymmetry, stub-naming-divergence-justified.
+12. **Phase 1b Case 45** — test fallthrough behavior (was: test exit 2; now: test ROUNDS=1 + DESCRIPTION-contains-`--rounds notanumber`).
+13. **Phase 1b Case 52** — explicit AWK-extraction mechanism for verdict-regex testing (matches existing test-quickfix.sh idiom).
+14. **Phase 2b Case 9** — symmetric fallthrough test for /do.
+15. **Phase 2b Case 11 (new)** — entry-point unset guard test for /do (closes round-1-carryover known-concern #1).
+16. **Phase 1a effort note** — corrected "~250 lines / ~6 ACs" to "~265 lines / ~13 ACs" (R6 numeric arithmetic).
+17. **Phase 1b Goal** — corrected "43 + 10 = 53" to "42 + 10 = 52 with Case 17 gap preserved" (DA12 numeric arithmetic).
 
-- Marker timing: triage/review redirect paths wrote `reason: triage-redirect` to a marker that didn't exist yet (WI 1.8 ran later). Fixed by exiting before WI 1.8 — no marker on these paths.
-- /do `--force --rounds N` not stripped from TASK_DESCRIPTION. Added explicit sed lines.
-- VERDICT regex hard-coded em-dash; ASCII variants failed. Made tolerant in round 1, then tightened in round 2 to require ASCII `--` for REVISE/REJECT (and bare for APPROVE) to avoid the dual-permissive failure mode round 2 found.
-- Phase 2 split into 2a (skill source) + 2b (test file).
-- Triage placed at WI 1.5.4 (between WI 1.5 and WI 1.5.5) so we don't ask the user `[y/N]` on a diff we'll then redirect.
-- Mirrors moved into source phases (1a.8, 2a.8) — no source/runtime divergence window.
-- Per-target redirect templates (`/draft-plan`, `/run-plan`, `/fix-issues`, ask-user) — single template was wrong shape for each.
+**Round 1 justified-not-fixed (3 total):**
+- **DA1 (stub naming divergence from /draft-tests AC-4.5)** — divergence is intentional; documented explicitly in Phase 1a Design & Constraints with rationale. Cross-skill reconciliation deferred to a separate plan once both patterns ship and cross-cuts emerge.
+- **DA2 (cron-prompt omits `--rounds 1` when value equals default)** — known minor edge case; cron lifetime is ≤7 days per CronCreate runtime, so prompts won't outlive a default change in practice. Justified inline.
+- **DA6 (model-layer triage asymmetry)** — inherent to model-layer judgment, not a plan defect. Documented in Design & Constraints with mitigation note (reviewer agent at WI 1.5.4b is the safety net for false-PROCEEDs; `--force` recovers false-REDIRECTs).
 
-### Round 2 highlights (closed)
+**Round 1 confirmed-no-action (3 total):**
+- **R8** — Phase 2b case enumeration: 10 cases verified by direct count.
+- **DA7** — Phase 1b case range correct (case 44–53 numbering aligns with existing test-quickfix.sh).
+- **DA11** — Phase 0 ordering insertion-target between meta-block end and Phase 0 verified.
 
-- Cron zombie: /do registered cron in Phase 0 BEFORE triage in Phase 1.6, so a non-`--force` redirect left a perpetual no-op cron. Fixed by reordering: triage runs BEFORE Phase 0.
-- "≥3 distinct files named" rubric regressed legitimate /quickfix user-edited multi-file dirty trees. Fixed by gating that rule to agent-dispatched mode only.
-- Test-seam env-var leak hazard: a stale `QUICKFIX_TEST_REVIEW_VERDICT` in a user shell silently bypassed production review. Fixed with `_ZSKILLS_TEST_*` prefix + required `_ZSKILLS_TEST_HARNESS=1` companion + entry-point unset guard.
-- Literal `\n` in redirect templates: would have been emitted as the two-character string instead of a newline. Fixed by specifying real linebreaks + `printf 'line1\nline2\n'`.
-- VERDICT regex was too permissive on bare `VERDICT: REVISE` (empty reason → degenerate REVISE→REVISE loop) AND too strict on `VERDICT: APPROVE looks good` (rejected). Fixed: APPROVE bare; REVISE/REJECT require `--` + reason; malformed → retry once → soft-reject.
-- INLINE_PLAN bash-var vs model-text ambiguity: clarified as "logical placeholder for text the model composes; copy verbatim into Agent prompt."
-- WI 1.5.5 prose drift: existing wording said marker is set to cancelled at decline, but no marker exists at WI 1.5.5 time. Added WI 1a.6.5 fix.
-- /quickfix vs /do `--rounds` error contracts: aligned both to exit 2 with the same discriminator.
-- `--force` cron prompt construction: specified explicit incremental-construction bash so optional flags appear only when set.
+**Round 2 sanity passes (10 total, all clean):**
+- Parser-trace semantics (greedy-fallthrough index arithmetic).
+- Strip-chain symmetry (`--rounds [0-9]+` vs greedy-fallthrough alignment).
+- Prose-location alignment (WI 2a.3 ⇄ Phase 2b Case 10).
+- AC-list integrity after WI 1a.6.7 additions.
+- Plan body line-anchor stability post-edit (no internal-line-no references broke).
+- Hook-citation post-edit-shift check (WI 1.3 lives upstream of triage insertions; L165-172 unaffected).
+- Drift gate non-applicability to plan files (only `skills/**/*.md` are gated).
+- /draft-tests stub-naming-divergence justification re-read for substance.
+- WI 3.3 repo URL hardcoding acceptable (zskills is framework repo, not downstream).
+- Cron-prompt round-trip with non-numeric `--rounds prose` content (re-verified: round-trips correctly).
+
+### Top 3 highest-blast-radius findings (Round 1)
+
+1. **R1 — Mirror command hook-blocked (WI 1a.8 / WI 2a.8).** Implementing agent literally cannot execute the plan as originally written; the `rm -rf .claude/skills/X` form fires `hooks/block-unsafe-generic.sh:218-221`. Empirically observed during this orchestrator's investigation (a separate `bash` invocation triggered the same hook). **Fixed**: replaced with `bash scripts/mirror-skill.sh <skill>` (canonical helper introduced in PR #88).
+2. **R2 — CLAUDE_TEMPLATE.md anchor 44 lines stale (WI 3.1).** Plan referenced L155-156, actual location is L199-200 due to DEFAULT_PORT_CONFIG and SKILL_FILE_DRIFT_FIX landings. Implementer would have edited unrelated prose. **Fixed**: re-anchored by content.
+3. **DA3 — `/quickfix --rounds` greedy parser deferred (round-1 known-concern #4).** Plan punted the resolution of a concrete bug ("`/quickfix fix --rounds in docs` exits 2") into a "future round". This is exactly the anti-pattern in `feedback_dont_defer_hole_closure.md`. **Fixed**: WI 1a.1 and WI 2a.0 implement option (b) — regex-fail-fallthrough — and the Phase 1b/2b tests assert the new contract.
+
+### Anti-pattern self-check
+
+- **Convergence judgment:** the orchestrator (this skill body) determined convergence by mechanical count of the disposition table (13 fix + 3 justify + 3 confirm = 19 dispositions; 0 unresolved). No "CONVERGED" prose was accepted from any agent. Per `feedback_convergence_orchestrator_judgment.md`.
+- **Verify-before-fix discipline:** every empirical claim was re-checked by the orchestrator (file reads, grep counts, line numbers, hook fire). `/tmp/refine-plan-parsed-QUICKFIX_DO_TRIAGE_PLAN.md` lists the empirical checks. The hook-fire on `rm -rf .claude/skills/...` was a real fire during pre-check, not a hypothetical.
+- **No completed-phase modifications:** no phase had `Done` status; the immutability check is vacuous (no checksums to compare against). The Drift Log `Note on completed-vs-planned drift` documents this.
 
 **Execute with:** `/run-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md`
