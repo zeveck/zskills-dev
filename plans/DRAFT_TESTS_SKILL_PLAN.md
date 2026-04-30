@@ -1,7 +1,7 @@
 ---
 title: /draft-tests Skill
 created: 2026-04-24
-status: active
+status: complete
 ---
 
 # Plan: /draft-tests Skill
@@ -50,7 +50,7 @@ reference it rather than transcribing.
 | 3 — Drafting agent and test-spec format | ✅ Done | `b1b8906` | 64 new tests; append-tests-section.sh + draft-orchestrator.sh + 4 fixtures |
 | 4 — Adversarial review loop (QE personas) | ✅ Done | `c9ebf31` | 79 new tests; review-loop.sh + coverage-floor-precheck.sh + convergence-check.sh + 10 fixtures |
 | 5 — Backfill mechanics and re-invocation | ✅ Done | `56df394` | 103 new tests; gap-detect.sh + append-backfill-phase.sh + 4 more scripts + 10 fixtures |
-| 6 — Tests, conformance, worked example, mirror | ⬚ | | |
+| 6 — Tests, conformance, worked example, mirror | ✅ Done | `522cc9e` | 18 new tests; 11 conformance checks + 7 worked-example checks; mirror clean |
 
 ---
 

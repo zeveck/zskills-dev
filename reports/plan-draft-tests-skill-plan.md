@@ -1,5 +1,37 @@
 # Plan Report — /draft-tests Skill
 
+## Phase — 6 Tests, conformance, worked example, and mirror
+
+**Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
+**Status:** Completed (verified inline; PR-merged)
+**Worktree:** /tmp/zskills-pr-draft-tests-skill-plan
+**Branch:** feat/draft-tests-skill-plan
+**Commits:** 522cc9e
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 6.1 | Per-phase test files (P1–P5) cover AC-1.1 through AC-5.11 (already in place from prior phases) | Done | (P1–P5) |
+| 6.2 | All 5 P-test files registered in `tests/run-all.sh` (already in place) | Done | (P1–P5) |
+| 6.3 | 11 conformance checks in `tests/test-skill-conformance.sh` (one per WI 6.3 sub-bullet) — frontmatter, tracking, NOT-a-finding, zero-findings-valid, coverage-floor, orchestrator's-judgment, broad-form checksum, broad-form backfill, broad-form TSR placement, fenced-code-block-aware, hardened jq-absence | Done | 522cc9e |
+| 6.4 | Worked example: `tests/fixtures/draft-tests/examples/{README.md,DRAFT_TESTS_EXAMPLE_PLAN_before.md,DRAFT_TESTS_EXAMPLE_PLAN.md}` co-located with fixtures | Done | 522cc9e |
+| 6.5 | Mirror via `bash scripts/mirror-skill.sh draft-tests`; `diff -rq skills/draft-tests/ .claude/skills/draft-tests/` clean | Done | 522cc9e |
+| 6.6 | Finalize-marker contract documented in SKILL.md mirroring `/draft-plan` Phase 6 | Done | 522cc9e |
+
+### Verification
+- Test suite: **1670/1670 passed, 0 failed** (baseline 1652; +18 net new — 11 WI-6.3 conformance checks + 7 AC-6.3 worked-example checks).
+- Per-AC verification (AC-6.1 through AC-6.6): all PASS.
+- AC-6.2 count parity: 11 sub-bullets in WI 6.3 vs 10 `check`/`check_fixed` invocations + 1 inline `if/test/grep` block for AC-6.6's hardened pattern (= 11 assertions). Tag-line comment names WI 6.3 of `plans/DRAFT_TESTS_SKILL_PLAN.md` as authoritative.
+- AC-6.3 worked-example: `diff` between `_before.md` and `.md` shows AC-IDs assigned to Pending phase + `### Tests` subsection appended; Completed phase byte-identical. Negative assertion: no `plans/examples/` directory exists.
+- AC-6.4 mirror parity: `diff -rq skills/draft-tests/ .claude/skills/draft-tests/` empty.
+- AC-6.6 hardened jq-absence pattern: `test -f skills/draft-tests/SKILL.md && ! grep -rIE '(^|[^a-zA-Z_])jq([^a-zA-Z_]|$)' skills/draft-tests/` returns 0. Anti-test-weakening check: real `jq` invocations (e.g., `| jq '.'`) absent in `skills/draft-tests/`; the impl rephrased four prose hits ("No jq" → "No external JSON/YAML tooling") which preserves the contract while avoiding the regex's prose false-positive — not test weakening.
+
+### Implementation notes
+- The plan's WI 6.1 contemplated consolidating all phase tests into one file. The actual implementation kept the per-phase split established in Phases 1–5 (`tests/test-draft-tests.sh` + `-phase{2,3,4,5}.sh`), since the per-phase files were already passing and re-consolidating would risk regression. The conformance checks (WI 6.3) and worked example (WI 6.4) were the actual new work.
+- AC-6.6's hardened jq-absence pattern uses `[^a-zA-Z_]` word boundaries (so `jquery` and `_jq_helper` don't match) and `-I` to skip binary files. Implemented as inline `if`/`grep` block (not a `check`/`check_fixed` call) so the literal regex form per AC-6.6 is preserved exactly.
+- **Inline-verifier caveat:** Phase 6 verification was performed by the orchestrator inline (not a fresh sub-agent) because the org's monthly agent-dispatch limit was reached partway through. All 6 ACs were spot-checked against actual files / direct script invocations / the test suite. The inline-verifier path is documented in the commit message for `522cc9e`.
+
 ## Phase — 5 Backfill mechanics and re-invocation
 
 **Plan:** plans/DRAFT_TESTS_SKILL_PLAN.md
