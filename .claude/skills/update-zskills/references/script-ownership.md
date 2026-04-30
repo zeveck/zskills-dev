@@ -28,6 +28,8 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `build-prod.sh`              | 2      | release-only repo tooling; never installed to consumers (called by `.github/workflows/ship-to-prod.yml:80`; documented in `RELEASING.md:5,47,64,71,78,82`) |
 | `clear-tracking.sh`          | 1      | `update-zskills`             |
 | `compute-cron-fire.sh`       | 1      | `run-plan`                   |
+| `convergence-check.sh`       | 1      | `draft-tests`                |
+| `coverage-floor-precheck.sh` | 1      | `draft-tests`                |
 | `create-worktree.sh`         | 1      | `create-worktree`            |
 | `detect-language.sh`         | 1      | `draft-tests`                |
 | `draft-orchestrator.sh`      | 1      | `draft-tests`                |
@@ -38,6 +40,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |
 | `post-run-invariants.sh`     | 1      | `run-plan`                   |
+| `review-loop.sh`             | 1      | `draft-tests`                |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
 | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
 | `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `var/dev.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
@@ -46,13 +49,15 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `write-landed.sh`            | 1      | `commit`                     |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 
-Total: 20 Tier 1 (`apply-preset`, `append-tests-section`, `briefing.cjs`,
-`briefing.py`, `clear-tracking`, `compute-cron-fire`, `create-worktree`,
+Total: 23 Tier 1 (`apply-preset`, `append-tests-section`, `briefing.cjs`,
+`briefing.py`, `clear-tracking`, `compute-cron-fire`,
+`convergence-check`, `coverage-floor-precheck`, `create-worktree`,
 `detect-language`, `draft-orchestrator`, `insert-prerequisites`,
 `land-phase`, `parse-plan`, `plan-drift-correct`, `port`,
-`post-run-invariants`, `sanitize-pipeline-id`, `statusline`,
-`worktree-add-safe`, `write-landed`, `zskills-stub-lib`); 4 Tier 2
-(`build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
+`post-run-invariants`, `review-loop`, `sanitize-pipeline-id`,
+`statusline`, `worktree-add-safe`, `write-landed`, `zskills-stub-lib`);
+4 Tier 2 (`build-prod.sh`, `mirror-skill.sh`, `stop-dev.sh`,
+`test-all.sh`).
 
 ## Format contract
 
@@ -117,6 +122,8 @@ scripts/briefing.cjs
 scripts/briefing.py
 scripts/clear-tracking.sh
 scripts/compute-cron-fire.sh
+scripts/convergence-check.sh
+scripts/coverage-floor-precheck.sh
 scripts/create-worktree.sh
 scripts/detect-language.sh
 scripts/insert-prerequisites.sh
@@ -125,6 +132,7 @@ scripts/parse-plan.sh
 scripts/plan-drift-correct.sh
 scripts/port.sh
 scripts/post-run-invariants.sh
+scripts/review-loop.sh
 scripts/sanitize-pipeline-id.sh
 scripts/statusline.sh
 scripts/worktree-add-safe.sh

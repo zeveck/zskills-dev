@@ -833,9 +833,36 @@ guesses into the test suite. Hold the line — specs only.
 
 ## Phase 4 — Adversarial review loop (QE personas)
 
-(Implementation deferred to Phase 4 of `plans/DRAFT_TESTS_SKILL_PLAN.md`.)
+After Phase 3 has appended a `### Tests` subsection into every Pending
+non-delegate non-ac-less phase, this phase wraps the drafter output in a
+review loop calibrated to senior-QE norms. Reviewer + devil's advocate
+agents are dispatched **in parallel** per round (matching `/draft-plan`
+Phase 3); the refiner runs serially after both return; the orchestrator
+mechanically determines convergence.
+**Reviewer, DA, and refiner agents inherit the parent model** — never
+pass a `model:` parameter on dispatch. QE judgment is judgment-class
+work, not bulk pattern matching, per
+CLAUDE.md memory anchor `feedback_no_haiku.md`. Past canary failures
+have stemmed from Sonnet/Haiku optimisations on judgment-class tasks.
 
-### Reviewer / DA prompt prefix — guidance directive
+The mechanical orchestration is implemented by three scripts under
+`skills/draft-tests/scripts/`:
+
+- `coverage-floor-precheck.sh` — runs BEFORE each round's agent
+  dispatch; merges drafter/refiner output into a per-round candidate
+  file; greps the candidate for `risk: AC-N.M` references; synthesises
+  one `Coverage floor violated: AC-N.M ...` finding per missing AC.
+- `convergence-check.sh` — reads the refiner's disposition table, ignores
+  any "CONVERGED" / "no further refinement needed" prose, applies the
+  four positive conditions from Design & Constraints, returns 0 if
+  converged or 1 if not.
+- `review-loop.sh` — round driver. Calls the pre-check, dispatches
+  reviewer + DA (mocked in tests via env-var stubs; live-LLM gated
+  behind `ZSKILLS_TEST_LLM=1`), writes the per-round artifacts, calls
+  the convergence check, exits with code 2 (partial-success) on max
+  rounds + coverage floor unmet (per AC-4.6 / AC-4.7).
+
+### Reviewer / DA prompt prefix — guidance directive (WI 4.1, WI 4.2)
 
 If the user supplied positional-tail guidance (per the Arguments
 section), prepend a `User-driven scope/focus directive:` section to
@@ -848,50 +875,357 @@ The agents treat this as **priming context** (what to pressure-test),
 NOT as factual claims (still subject to verify-before-fix in the
 refiner).
 
-### NOT-a-finding list (authored fresh for this skill)
+### Reviewer agent prompt — senior-QE persona (WI 4.1)
+
+The reviewer is dispatched with the senior-QE persona (Bach / Bolton /
+Beck / Hendrickson / Crispin/Gregory calibration; same calibration
+paragraph as the Phase 3 drafter). It looks for findings of these
+shapes:
+
+- (a) a stated AC has no spec referencing it,
+- (b) a spec has no literal expected value,
+- (c) an assertion is so weak it would pass on a broken implementation,
+- (d) a mock destroys the test's value (asserts on its own mock),
+- (e) a specified observable side effect is not exercised,
+- (f) a spec targets scope wrong (e.g., an integration-only AC has only
+  unit specs).
+
+**Landmine mitigation:** the prompt explicitly states **"test specs are
+expansions of ACs, not replacements — if a spec and its AC conflict in
+tone, that is a finding."** This prevents the `/run-plan`-parser
+disambiguation failure mode (per research §Top 3 landmines).
+
+### Devil's advocate prompt (WI 4.2)
+
+Same persona, adversarial stance. Genuinely tries to find how the spec
+set will leave real defects uncaught. Explicitly NOT a gotcha-generator —
+the senior-QE-norms calibration text from Phase 3 applies. Same
+guidance prepend semantics as the reviewer (WI 4.1).
+
+### NOT-a-finding list (WI 4.3, authored fresh for this skill)
 
 Inserted verbatim in BOTH reviewer and DA prompts. **NOT a finding:**
-implausible failure modes under the product's stated operating
-conditions (Bach); type-system-enforced preconditions;
-performance/concurrency/security tests on non-load-bearing code; tests
-duplicating existing specs in the same phase; MAX_INT/Unicode/clock-skew
-tests on code whose ACs don't mention those domains; tests requiring
-infrastructure not present (e.g., "spin up postgres" when the project
-is config-only); tests that exist only to increase coverage numbers;
-tests of framework code rather than product code; property-based tests
-for functions with no meaningful algebraic properties.
 
-### Zero findings is valid and correct (authored fresh for this skill)
+- Implausible failure modes under the product's stated operating
+  conditions (Bach).
+- Type-system-enforced preconditions.
+- Performance / concurrency / security tests on non-load-bearing code.
+- Tests duplicating existing specs in the same phase.
+- MAX_INT / Unicode / clock-skew tests on code whose ACs don't mention
+  those domains.
+- Tests requiring infrastructure not present (e.g., "spin up postgres"
+  when the project is config-only).
+- Tests that exist only to increase coverage numbers.
+- Tests of framework code rather than product code.
+- Property-based tests for functions with no meaningful algebraic
+  properties.
 
-Both prompts must state this in the output-format block. If the
-reviewer has nothing substantive to flag, it outputs `## Findings` with
-a single explicit line: `No findings — spec set meets the stated
-criteria.` The loop treats this as a round-pass, not a bug. This
-zero-findings path is NOT equivalent to "convergence" — convergence is
-enforced mechanically against the positive definition in Design &
-Constraints (which is the orchestrator's check, not the refiner's
-self-call), and includes an orchestrator-level coverage-floor pre-check
-that runs BEFORE agent dispatch each round.
+This list is **fresh for this skill** — `/draft-plan` has no
+QE-specific NOT-a-finding list, so it is NOT inherited.
 
-### Orchestrator-level coverage-floor pre-check
+### Zero findings is valid and correct (WI 4.4, AC-4.1, AC-4.2, authored fresh)
 
-Runs BEFORE dispatching reviewer/DA each round. The pre-check operates
-on a per-round candidate file (see Phase 4 spec for full algorithm) and
-reads `non_delegate_pending_phases:` from the parsed-state file as the
-authoritative scope for ACs subject to the coverage floor. The
-pre-check MUST NOT re-derive delegate-classification.
+Both prompts state this in the output-format block. If the reviewer has
+nothing substantive to flag, it outputs `## Findings` with a single
+explicit line: `No findings — spec set meets the stated criteria.`
+The loop treats this as a round-pass, not a bug. **This zero-findings
+path is NOT equivalent to "convergence"** — convergence is enforced
+mechanically against the positive definition in Design & Constraints
+(the orchestrator's check, not the refiner's self-call), and includes
+the orchestrator-level coverage-floor pre-check that runs BEFORE agent
+dispatch each round.
 
-### Convergence is the orchestrator's judgment, not the refiner's self-call
+- **AC-4.1**: a round whose reviewer output is "No findings — spec set
+  meets the stated criteria." with DA the same AND whose
+  orchestrator-level coverage-floor pre-check produces zero synthetic
+  findings does not cause the loop to error / stall / mark the plan
+  incomplete; the loop treats this as convergence and proceeds.
+- **AC-4.2**: on a plan where an AC lacks a spec AND both agents return
+  "No findings", the orchestrator's pre-check injects a coverage-floor
+  finding, the refiner addresses it, and the loop does NOT converge on
+  that round.
+
+### Mandatory blast-radius field (WI 4.5, AC-4.3, authored fresh)
+
+Every finding **must end with**:
+
+```
+Blast radius: <minor|moderate|major> — <one-line description of what would happen if this gap shipped to prod>
+```
+
+- **Minor** findings are dropped at refiner stage.
+- **Moderate** findings must be resolved.
+- **Major** findings must be resolved or block convergence.
+
+Findings missing the `Blast radius:` line are rejected by the refiner
+with a `finding-format-violation` note in the disposition table. The
+prompt makes this explicit so the reviewer/DA self-conform.
+
+### Prior-rounds dedup (WI 4.6, authored fresh)
+
+From round 2 onward, both agents receive the previous round's findings
+list with the directive **"already addressed — do not re-raise in
+rephrased form."** The refiner is the secondary gate: if a round-N
+finding is semantically identical to a round-(N-1) finding, the refiner
+marks it `Justified — duplicate of round N-1` in the disposition table.
+The convergence check skips Justified-duplicate rows when counting
+unresolved blockers.
+
+### Evidence discipline — `Verification:` line on every empirical claim (WI 4.7)
+
+Patterned on `/draft-plan`'s reviewer/DA sections (see
+`skills/draft-plan/SKILL.md:369-374`): every empirical claim ("the
+existing test file at X uses framework Y"; "AC-3.2 has no spec
+referencing it") **ends with a `Verification:` line** containing the
+exact grep, file:line, or command output reproducing the evidence.
+Structural / judgment findings use `Verification: judgment — no
+verifiable anchor` explicitly.
+
+The refiner re-runs each `Verification:` check **before acting** —
+verify-before-fix discipline. Devil's-advocate findings are
+particularly prone to plausible-sounding-but-false claims because the
+DA's role is generating failure modes, not verifying them. The
+discipline is load-bearing: claims whose evidence doesn't reproduce do
+not drive fixes.
+
+### Orchestrator-level coverage-floor pre-check (WI 4.8, AC-4.8)
+
+Runs BEFORE dispatching reviewer/DA each round. Implementation:
+`skills/draft-tests/scripts/coverage-floor-precheck.sh`. The pre-check
+operates on a **per-round candidate file** to unify first-invocation,
+re-invocation, and backfill-invocation semantics. The algorithm:
+
+1. Read the plan file's current bytes.
+2. Read the round-N drafter output (or, on round ≥ 1, the refiner's
+   round-(N-1) output).
+3. Construct the candidate by overlaying the drafter / refiner's
+   `### Tests` subsections into their target phases (in-memory merge —
+   does not touch the plan-file on disk). Write the result to
+   `/tmp/draft-tests-candidate-round-<N>-<slug>.md`.
+4. Read the `non_delegate_pending_phases:` list from the parsed-state
+   file (Phase 1, WI 1.4b) — this is the authoritative scope for ACs
+   subject to the coverage floor. **The pre-check MUST NOT re-derive
+   delegate-classification.**
+5. For every AC in those phases, grep the candidate for a
+   `risk: AC-<phase>.<n>[<sub-letter>]?` reference (sub-letter suffix
+   admitted to match sub-letter ACs like `AC-1.6c`); for each AC
+   lacking one, synthesise a finding of the form:
+
+   ```
+   Coverage floor violated: AC-N.M has no spec. Blast radius: major - coverage floor is the convergence precondition.
+   ```
+
+6. Inject these synthetic findings into the refiner's input alongside
+   reviewer / DA findings.
+
+Because the grep target is the **merged candidate** (not the plan file
+alone, not the drafter-output alone), first-invocation round 0 finds
+the drafter's specs (no spurious mass-violation), re-invocation finds
+existing in-plan specs (no false redundancy), and backfill-invocation
+finds specs from the round's drafter output merged on top of the
+backfill phase. This closes both the zero-findings-vs-convergence
+contradiction (WI 4.4 vs the Design & Constraints convergence rule)
+AND the grep-target ambiguity (what "the current draft" resolves to per
+invocation mode).
+
+Invocation:
+
+```bash
+PRECHECK="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/coverage-floor-precheck.sh"
+bash "$PRECHECK" \
+  "$PLAN_FILE" "$PARSED_STATE" "$PREV_INPUT" \
+  "$ROUND_N" "$SLUG" \
+  "/tmp/draft-tests-candidate-round-${ROUND_N}-${SLUG}.md" \
+  "/tmp/draft-tests-floor-findings-round-${ROUND_N}-${SLUG}.md"
+```
+
+Source-tree zskills tests use the equivalent
+`"$REPO_ROOT/skills/draft-tests/scripts/coverage-floor-precheck.sh"`
+form (per `skills/update-zskills/references/script-ownership.md`).
+
+### Refiner agent — verify-before-fix and disposition table (WI 4.9)
+
+The refiner receives:
+
+- The current draft (read from `$PLAN_FILE`).
+- The combined reviewer + DA findings.
+- The synthesised coverage-floor findings from the pre-check.
+- The previous round's findings list (round ≥ 2) for dedup.
+
+**Verify-before-fix is mandatory.** For each finding, the refiner runs
+the `Verification:` check (Read the file, run the grep, check the
+schema, run the command). It records the outcome per finding in a
+disposition table:
+
+| Finding | Evidence | Disposition |
+|---------|----------|-------------|
+| <finding text including `Blast radius:`> | Verified \| Not-reproduced \| No-anchor \| Judgment | Fixed \| Justified — <reason> |
+
+Per AC-4.4, the disposition table has **one row per finding** with
+exactly these three columns.
+
+For Verified findings with moderate / major blast radius, the refiner
+fixes the draft. For Not-reproduced or No-anchor findings, it
+justify-not-fixes with the reproduction attempt recorded. For
+Justified-duplicate findings (round ≥ 2), it marks
+`Justified — duplicate of round N-1`.
+
+**The refiner produces a disposition table — it does NOT declare
+convergence.** The refiner's role ends at its disposition table.
+Convergence is the orchestrator's mechanical check (next section).
+
+The refiner can **STOP and report** if it cannot resolve a finding and
+cannot justify it away. The skill surfaces unresolved findings in the
+final output rather than silently writing a spec set with known
+defects.
+
+The refiner **never writes to Completed phases**. Same immutability
+contract as Phase 1.
+
+### Per-round artifacts (WI 4.10)
+
+Each round writes:
+
+- `/tmp/draft-tests-candidate-round-<N>-<slug>.md` — merged candidate
+  used by the pre-check.
+- `/tmp/draft-tests-floor-findings-round-<N>-<slug>.md` — synthesised
+  coverage-floor findings (empty if floor met).
+- `/tmp/draft-tests-review-round-<N>-<slug>.md` — combined reviewer +
+  DA + synthesised coverage-floor findings.
+- `/tmp/draft-tests-refined-round-<N>-<slug>.md` — refiner output +
+  disposition table.
+
+These artifacts persist across context compaction. `review-loop.sh`
+writes them.
+
+### Convergence check (WI 4.11) — orchestrator's mechanical judgment
+
+Implementation:
+`skills/draft-tests/scripts/convergence-check.sh`. After each round, the
+orchestrator reads the refiner's disposition table and applies the four
+positive conditions from Design & Constraints below. **It NEVER accepts
+"CONVERGED" / "no further refinement needed" / equivalent self-call
+from the refiner agent's prose output.** The script literally does not
+parse those strings.
+
+On convergence or max rounds, the refined draft from the last round
+becomes the final spec set used in Phase 5 / 6.
+
+Invocation:
+
+```bash
+CONVERGENCE="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/convergence-check.sh"
+bash "$CONVERGENCE" "$REFINED_OUT" "$FLOOR_FINDINGS"
+# rc=0 -> CONVERGED; rc=1 -> NOT CONVERGED (reasons on stdout)
+```
+
+### Round driver — `review-loop.sh`
+
+`skills/draft-tests/scripts/review-loop.sh` is the round driver. It:
+
+1. Runs the coverage-floor pre-check (Step 1 above).
+2. Dispatches reviewer + DA in parallel — in **test mode**, agent
+   output is supplied via env-var stubs:
+   `ZSKILLS_DRAFT_TESTS_REVIEWER_STUB_<N>` and `..._DA_STUB_<N>`. In
+   **live mode**, the SKILL.md prose dispatches the agents and writes
+   the same files; the script reads them. Live mode is gated behind
+   `ZSKILLS_TEST_LLM=1` per AC-4.5.
+3. Writes the combined review artifact (reviewer + DA + synthesised
+   floor findings).
+4. Dispatches the refiner — stub: `..._REFINER_STUB_<N>`.
+5. Calls `convergence-check.sh`. On convergence, exits 0. Else carries
+   the refined output forward as the next round's pre-check input.
+6. On max rounds without convergence, writes the **"Remaining concerns"**
+   note to `/tmp/draft-tests-remaining-concerns-<slug>.md` and exits
+   with code 2 if the coverage floor is unmet (per AC-4.6 / AC-4.7) or
+   code 3 if the floor is met but other convergence conditions still
+   fail.
+
+Tests stub all three roles (no live LLM dispatch in
+`tests/test-draft-tests-phase4.sh`). CI skips live runs with the explicit
+"Tests: skipped — LLM-in-the-loop ACs" note matching `/verify-changes`'s
+skipped-test convention.
+
+### Convergence is the orchestrator's judgment, not the refiner's self-call (AC-4.9)
 
 Mirroring `skills/refine-plan/SKILL.md:383` and
 `skills/draft-plan/SKILL.md:474`: the refiner produces a disposition
 table; the orchestrator (the skill body itself, not the agent) reads
-the table and applies the four positive conditions. NEVER accept
+the table and applies the four positive conditions. **NEVER accept
 "CONVERGED", "no further refinement needed", or equivalent self-call
-from the refiner agent as authoritative — the refiner just refined; it
-is biased toward declaring its own work done. This is a recurring
+from the refiner agent as authoritative** — the refiner just refined;
+it is biased toward declaring its own work done. This is a recurring
 failure mode in practice (see CLAUDE.md memory anchor
 `feedback_convergence_orchestrator_judgment.md`).
+
+This is the **AC-4.9 negative-case guard.** A refiner output containing
+the literal text "CONVERGED" / "no further refinement needed" but
+whose disposition table fails any of the four positive conditions
+(missing AC coverage, non-literal expected, dup of round N-1,
+unresolved moderate/major-blast-radius finding) does NOT cause the
+skill to exit with convergence status. The orchestrator's mechanical
+check on the disposition table overrides the refiner's self-call.
+
+### Convergence (positive definition)
+
+A round converges when **all four** of the following hold (orchestrator
+counts these against the disposition table; refiner's prose claim of
+convergence is ignored):
+
+1. Every AC across all Pending non-delegate phases has ≥ 1 spec
+   referencing it (coverage floor — enforced mechanically by the
+   pre-check before agent dispatch).
+2. Every spec has a literal expected value or named exception.
+3. No finding from this round duplicates a previous round's finding
+   (after refiner's dedup pass).
+4. All findings are either resolved or have blast radius = minor
+   (dropped at refiner stage).
+
+**Negative-only convergence** ("no new findings this round") is
+explicitly rejected — vulnerable to reviewer-ratchet where each round
+finds a new wave of decreasingly-relevant issues. **Zero findings from
+agents** is a valid round result but does NOT by itself imply
+convergence — the positive criteria must all hold.
+
+### Default rounds = 3
+
+Matches `/draft-plan` (also default 3). Note: `/refine-plan` defaults
+to 2 because it operates on an already-refined plan; `/draft-tests`'s 3
+matches `/draft-plan` because the typical invocation is blank-slate (no
+prior `### Tests` subsections) — Phase 4's senior-QE personas review
+specs against fresh ACs whose shape they have never seen, more like
+first-pass than refinement. On re-invocation against a plan that
+already has specs (Phase 5 refinement path), 2 rounds would suffice —
+but the simpler v1 contract is "default 3 always; early exit on
+convergence handles the re-invocation case." Override with `rounds N`
+per invocation.
+
+### PLAN-TEXT-DRIFT tokens are out of scope
+
+`/run-plan`'s `PLAN-TEXT-DRIFT:` pipeline (PRs #90-#92) detects
+arithmetic divergence in plan bullets at execution time. Test specs
+authored by `/draft-tests` are qualitative (scope / AC-link /
+literal-expected) and contain no arithmetic claims a `/run-plan` agent
+would measure — so the drafter does NOT emit `PLAN-TEXT-DRIFT:` tokens,
+and the review loop does not check for them. AC-ID assignment touches
+ONLY the `### Acceptance Criteria` block; the drafter's `### Tests`
+output is treated as inert text by `plan-drift-correct.sh --correct`
+(which targets `### Acceptance Criteria` numeric bullets only). This is
+a correct non-integration; flagged here so a future implementer doesn't
+introduce a spurious coupling.
+
+### Max-rounds exit and partial-success — exit code 2 (AC-4.6, AC-4.7)
+
+If the loop hits max rounds AND the coverage floor remains unmet, the
+skill takes the AC-4.6 path (writes the partial spec set + a "Remaining
+concerns" note listing each unresolved finding's one-line description
+and blast radius) AND exits with **return code 2**, reserved for
+**"partial-success — coverage floor not met."** The plan on disk
+reflects the best-effort spec set; the non-zero exit blocks downstream
+automation from advancing on un-attested coverage. The plan IS written
+(no hard-abort that loses work). This is NOT a contradiction with
+AC-4.6 — both ACs apply on this path, and exit code 2 is the
+conjunction.
 
 ## Phase 5 — Backfill mechanics and re-invocation
 
