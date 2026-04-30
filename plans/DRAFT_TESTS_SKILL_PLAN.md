@@ -48,7 +48,7 @@ reference it rather than transcribing.
 | 1 — Skeleton, ingestion, and checksum gate | ✅ Done | `2cf6897` | 62 new tests; SKILL.md + parse-plan.sh + 7 fixtures |
 | 2 — Language detection, test-file discovery, no-test-setup path | ✅ Done | `e7b4d66` | 53 new tests; detect-language.sh + insert-prerequisites.sh + 9 fixtures |
 | 3 — Drafting agent and test-spec format | ✅ Done | `b1b8906` | 64 new tests; append-tests-section.sh + draft-orchestrator.sh + 4 fixtures |
-| 4 — Adversarial review loop (QE personas) | 🟡 In Progress | `c9ebf31` | 79 new tests; review-loop.sh + coverage-floor-precheck.sh + convergence-check.sh + 10 fixtures |
+| 4 — Adversarial review loop (QE personas) | ✅ Done | `c9ebf31` | 79 new tests; review-loop.sh + coverage-floor-precheck.sh + convergence-check.sh + 10 fixtures |
 | 5 — Backfill mechanics and re-invocation | ⬚ | | |
 | 6 — Tests, conformance, worked example, mirror | ⬚ | | |
 
