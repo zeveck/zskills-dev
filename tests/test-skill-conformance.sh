@@ -364,6 +364,125 @@ check_fixed update-zskills "WI2.2: runtime-read note" \
   'Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled)'
 
 echo ""
+echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
+# Anchor: tests/test-skill-conformance.sh draft-tests block — one check
+# per WI 6.3 sub-bullet of plans/DRAFT_TESTS_SKILL_PLAN.md (current count:
+# 11). When WI 6.3 grows or shrinks, add or remove a single check line
+# here in tandem; AC-6.2 is a list-membership invariant, not a literal
+# count. WI 6.3 is the authoritative enumeration source.
+#
+# 1. Frontmatter shape (incl. `[guidance...]` positional tail in argument-hint)
+check       draft-tests "frontmatter argument-hint with [guidance...]" \
+  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[guidance\.\.\.\]"'
+# 2. Tracking marker basename matches canonical scheme `fulfilled.draft-tests.<id>`
+check_fixed draft-tests "fulfilled marker basename" \
+  'fulfilled.draft-tests.$TRACKING_ID'
+# 3. NOT-a-finding list verbatim (distinctive phrase from WI 4.3)
+check_fixed draft-tests "NOT-a-finding list (WI 4.3)" \
+  'Type-system-enforced preconditions'
+# 4. "Zero findings is valid" framing (WI 4.4)
+check_fixed draft-tests "zero findings is valid (WI 4.4)" \
+  'Zero findings is valid'
+# 5. Orchestrator-level coverage-floor pre-check (WI 4.8)
+check_fixed draft-tests "orchestrator-level coverage-floor pre-check (WI 4.8)" \
+  'orchestrator-level coverage-floor pre-check'
+# 6. Convergence is the orchestrator's judgment, not the refiner's self-call (AC-4.9)
+check_fixed draft-tests "orchestrator's judgment, not refiner self-call (AC-4.9)" \
+  "orchestrator's judgment"
+# 7. Broad-form checksum-boundary rule
+check_fixed draft-tests "broad-form checksum boundary (WI 1.5)" \
+  'next level-2 heading'
+# 8. Broad-form backfill-insertion rule
+check_fixed draft-tests "broad-form backfill insertion (WI 5.2)" \
+  'ANY non-phase'
+# 9. Broad-form Test-Spec-Revisions placement rule
+check_fixed draft-tests "broad-form Test-Spec-Revisions placement (WI 5.6)" \
+  '(other than `## Phase'
+# 10. Fenced-code-block-aware boundary scan
+check_fixed draft-tests "fenced-code-block-aware boundary scan" \
+  'in_code == 0'
+# 11. Hardened jq-absence assertion (AC-6.6) — fails closed when SKILL.md
+#     is missing; word-boundary regex so `jquery` and `_jq_helper` don't
+#     match but real `jq` invocations (`| jq '.'`, `jq -r ...`) do; -I
+#     skips binary files. Exact pattern per AC-6.6.
+if test -f "$REPO_ROOT/skills/draft-tests/SKILL.md" \
+   && ! grep -rIE '(^|[^a-zA-Z_])jq([^a-zA-Z_]|$)' "$REPO_ROOT/skills/draft-tests/" > /dev/null 2>&1; then
+  pass "[draft-tests] no \`jq\` standalone-word usage (AC-6.6 hardened pattern)"
+else
+  if [ ! -f "$REPO_ROOT/skills/draft-tests/SKILL.md" ]; then
+    fail "[draft-tests] AC-6.6 jq-absence: skills/draft-tests/SKILL.md missing (fail-closed)" \
+      "test -f skills/draft-tests/SKILL.md"
+  else
+    fail "[draft-tests] AC-6.6 jq-absence: standalone \`jq\` word found in skills/draft-tests/" \
+      '(^|[^a-zA-Z_])jq([^a-zA-Z_]|$)'
+    grep -rIEn '(^|[^a-zA-Z_])jq([^a-zA-Z_]|$)' "$REPO_ROOT/skills/draft-tests/" >&2
+  fi
+fi
+
+echo ""
+echo "=== /draft-tests — worked example (AC-6.3) ==="
+# AC-6.3: tests/fixtures/draft-tests/examples/ exists and contains
+# README.md + DRAFT_TESTS_EXAMPLE_PLAN_before.md + DRAFT_TESTS_EXAMPLE_PLAN.md.
+# diff between the two plan files shows (i) appended `### Tests` in at
+# least one Pending phase and (ii) no changes to Completed-phase
+# sections. Negative assertion: no example files under plans/examples/.
+EXAMPLES_DIR="$REPO_ROOT/tests/fixtures/draft-tests/examples"
+EX_BEFORE="$EXAMPLES_DIR/DRAFT_TESTS_EXAMPLE_PLAN_before.md"
+EX_AFTER="$EXAMPLES_DIR/DRAFT_TESTS_EXAMPLE_PLAN.md"
+EX_README="$EXAMPLES_DIR/README.md"
+
+if [ -d "$EXAMPLES_DIR" ]; then
+  pass "[draft-tests] AC-6.3: examples directory exists at tests/fixtures/draft-tests/examples/"
+else
+  fail "[draft-tests] AC-6.3: examples directory" "$EXAMPLES_DIR missing"
+fi
+
+for f in "$EX_README" "$EX_BEFORE" "$EX_AFTER"; do
+  if [ -f "$f" ]; then
+    pass "[draft-tests] AC-6.3: $(basename "$f") present"
+  else
+    fail "[draft-tests] AC-6.3: $(basename "$f") present" "$f missing"
+  fi
+done
+
+# diff-shape assertions: at least one `### Tests` line appears only in
+# the after-file (i.e., is appended), and the Phase 1 (Completed) section
+# is byte-identical between before and after.
+if [ -f "$EX_BEFORE" ] && [ -f "$EX_AFTER" ]; then
+  DIFF_OUT=$(diff "$EX_BEFORE" "$EX_AFTER" || true)
+  # (i) appended `### Tests` in at least one Pending phase
+  if printf '%s\n' "$DIFF_OUT" | grep -qE '^>[[:space:]]+### Tests'; then
+    pass "[draft-tests] AC-6.3 (i): diff shows an appended ### Tests subsection"
+  else
+    fail "[draft-tests] AC-6.3 (i): diff lacks an appended ### Tests subsection" \
+      "no '> ### Tests' in diff"
+  fi
+  # (ii) no changes to Completed-phase sections — extract Phase 1 region
+  # from each file (Phase 1 is the Completed phase per the worked-example
+  # spec) and require byte-identical.
+  P1_BEFORE=$(awk '/^## Phase 1/,/^## Phase 2/' "$EX_BEFORE")
+  P1_AFTER=$(awk '/^## Phase 1/,/^## Phase 2/' "$EX_AFTER")
+  if [ "$P1_BEFORE" = "$P1_AFTER" ]; then
+    pass "[draft-tests] AC-6.3 (ii): Phase 1 (Completed) section byte-identical"
+  else
+    fail "[draft-tests] AC-6.3 (ii): Phase 1 (Completed) section drifted" \
+      "before-vs-after Phase 1 differs"
+  fi
+fi
+
+# Negative assertion: no example files under plans/examples/.
+if [ ! -e "$REPO_ROOT/plans/examples" ]; then
+  pass "[draft-tests] AC-6.3 negative: plans/examples/ absent (examples are under tests/fixtures/, not plans/)"
+elif [ -d "$REPO_ROOT/plans/examples" ] \
+     && [ -z "$(find "$REPO_ROOT/plans/examples" -maxdepth 1 -type f 2>/dev/null)" ]; then
+  pass "[draft-tests] AC-6.3 negative: plans/examples/ contains no files"
+else
+  fail "[draft-tests] AC-6.3 negative: example files found under plans/examples/" \
+    "examples must live under tests/fixtures/draft-tests/examples/"
+  ls -la "$REPO_ROOT/plans/examples" >&2 || true
+fi
+
+echo ""
 echo "=== create-worktree.sh caller contract ==="
 # Every multi-line `bash ".../skills/create-worktree/scripts/create-worktree.sh" \` invocation in
 # skills/ must include `--pipeline-id` within the next 12 lines. Doc-prose

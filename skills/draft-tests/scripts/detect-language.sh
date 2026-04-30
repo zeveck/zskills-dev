@@ -58,7 +58,7 @@
 #   signal-file path is written to detection-state via
 #   `calibration_signal_file:`.
 #
-# Bash-only; no jq. JSON parsing via BASH_REMATCH idioms.
+# Bash-only; no external JSON tooling. JSON parsing via BASH_REMATCH idioms.
 
 # Note: this script intentionally does NOT use `set -u`. Bash 4 has
 # a long-standing bug where empty arrays trip "unbound variable" under
@@ -99,7 +99,7 @@ CASE_NUM=3
 
 # ---------------------------------------------------------------------------
 # Step 1 -- config-first. Read .claude/zskills-config.json if present.
-# Bash regex parse only; no jq. WI 2.6.
+# Bash regex parse only; no external JSON tooling. WI 2.6.
 # ---------------------------------------------------------------------------
 CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
 if [ -f "$CONFIG_FILE" ]; then
