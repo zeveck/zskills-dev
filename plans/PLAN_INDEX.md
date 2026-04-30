@@ -15,6 +15,7 @@ Totals: 46 plans — 6 ready, 0 in progress, 17 complete, 20 canaries, 3 referen
 | [QUICKFIX_DO_TRIAGE_PLAN.md](QUICKFIX_DO_TRIAGE_PLAN.md) | 5 | 1a | Medium | Created 2026-04-26 |
 | [IMPROVE_STALENESS_DETECTION.md](IMPROVE_STALENESS_DETECTION.md) | 3 | 1 | Low | Created 2026-04-19 |
 | [PR_LANDING_UNIFICATION.md](PR_LANDING_UNIFICATION.md) | 7 (1A,1B,2,3,4,5,6) | 1A | High | Drafted 2026-04-27, refined 2026-04-28 (YAGNI pass: removed splice-body utility, split Phase 1); extracts /land-pr from 5 duplicating skills; inherits PR #75 gating |
+| [SKILL_VERSIONING.md](SKILL_VERSIONING.md) | 7 (1,2,3,4,5a,5b,6) | 1 | Medium | Drafted 2026-04-30 via /draft-plan with 3 adversarial rounds (53 unique findings, 52 Fixed, 1 Justified). CalVer+hash format `YYYY.MM.DD+HHHHHH`; per-skill + repo-level versions; hook + /commit + CI 3-point enforcement; /update-zskills delta display |
 | [ZSKILLS_MONITOR_PLAN.md](ZSKILLS_MONITOR_PLAN.md) | 9 | 1 | Low | Created 2026-04-19; refined 2026-04-26 |
 
 ## In Progress
