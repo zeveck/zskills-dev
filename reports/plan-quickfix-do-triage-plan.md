@@ -1,5 +1,47 @@
 # Plan Report — /quickfix and /do Triage Gate, Inline Plan, Fresh-Agent Review
 
+## Phase — 2a /do: triage gate, inline plan, fresh-agent review (skill source + mirror)
+
+**Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-quickfix-do-triage-plan (PR mode)
+**Implementation commit:** 4a6c659
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2a.0 | Pre-flight flag pre-parse with entry-point unset guard | Done | Unset guard FIRST, then `FORCE=0`, then numeric-only `--rounds` regex with greedy-fallthrough |
+| 2a.1 | `## Phase 0a — Triage` (mirror of /quickfix WI 1.5.4) | Done | 7-row rubric (no MODE col), 6 worked examples, 4 redirect-message rows |
+| 2a.2 | Cron-zombie regression guard documented in Phase 0a opener | Done | "Phase 0a runs BEFORE Phase 0c. A REDIRECT path exits before any `CronCreate` call" |
+| 2a.3 | `## Phase 0b — Inline plan + fresh-agent review` | Done | WARN for `--rounds 0`, OBSERVABLE-SIGNAL RULE, regex fence (L410), REVISE iteration, REJECT exits with no marker / no cron / no worktree |
+| 2a.4 | Phase 1.5 strip-chain extended with `--force`/`--rounds` `sed -E` arms; idempotent re-affirm of FORCE/ROUNDS as Step 4 | Done | L646-647 |
+| 2a.5 | `argument-hint` updated; two new bullets in Arguments block | Done | L4 |
+| 2a.6 | Phase 0 → Phase 0c rename; cron-prompt construction with quoted-description carve-out (DA3 fix) | Done | TASK_DESCRIPTION_FOR_CRON build; carve-out at L501-521; persistence prose retained |
+| 2a.7 | Meta-command bypass note (single grep-able line) after meta-command bullets | Done | L84 |
+| 2a.8 | Mirror via `scripts/mirror-skill.sh do`; precondition uses `git status --porcelain` (DA12 fix) | Done | `diff -rq` clean (rc=0) |
+
+### Verification
+
+- **Test suite:** PASSED (1709/1709, no regression — baseline 1709/1709)
+- **All 13 ACs PASS** — heading order strictly ascending: 0a@234 < 0b@312 < 0c@462 < Phase 1@569
+- **Cron-zombie guard verified**: triage and review run at lines 234 and 312, BEFORE Phase 0c (cron registration) at L462
+- **Hygiene:** only `skills/do/SKILL.md` and `.claude/skills/do/SKILL.md` modified
+- **PLAN-TEXT-DRIFT:** none (verifier independently confirmed plan ACs key only on heading text + grep strings, no hard-coded line numbers)
+
+### Diff stat
+
+- `skills/do/SKILL.md`: +383 / -11 (499 → 882 lines)
+- `.claude/skills/do/SKILL.md`: +383 / -11 (mirror, byte-identical)
+
+### Commits on `feat/quickfix-do-triage-plan` (Phase 2a only)
+
+```
+4a6c659 feat(do): triage gate, inline plan, fresh-agent review BEFORE cron registration (Phase 2a)
+```
+
+---
+
 ## Phase — 1b /quickfix: extend test suite for triage / review / --force / --rounds
 
 **Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
