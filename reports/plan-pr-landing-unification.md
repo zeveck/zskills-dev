@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 1A `/land-pr` foundation [UNFINALIZED]
+## Phase — 1A `/land-pr` foundation
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified)
