@@ -1,5 +1,47 @@
 # Plan Report — /quickfix and /do Triage Gate, Inline Plan, Fresh-Agent Review
 
+## Phase — 1b /quickfix: extend test suite for triage / review / --force / --rounds
+
+**Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-quickfix-do-triage-plan (PR mode)
+**Implementation commit:** 73ff49a
+
+### Cases added (44–53)
+
+| # | Case | Notes |
+|---|------|-------|
+| 44 | `--force` parsed → `FORCE=1`; no positional consumed | |
+| 45 | `--rounds 3` numeric → `ROUNDS=3`; `--rounds notanumber` greedy-falls through to `DESCRIPTION` | greedy-fallthrough |
+| 46 | `--rounds 0` clean parse; WARN discriminator present in skill prose | |
+| 47 | Triage REDIRECT(/draft-plan) seam — message printed, exit 0, no marker, no branch | entry-point unset guard verified |
+| 48 | Review REJECT seam — reason printed, exit 0, no marker, no branch | |
+| 49 | User-decline regression — marker carries `status: cancelled` AND `reason: user-declined` | |
+| 50 | WI 1.5.x heading-ordering by line number (1.5 < 1.5.4 < 1.5.4a < 1.5.4b < 1.5.5) | |
+| 51a/51b | Per-target redirect-message line check + structural extraction (4 table rows, opener pattern) | Two-part assertion; +1 pass-row |
+| 52 | VERDICT regex contract from WI 1.5.4b `regex` fence + fence-tag co-discipline | bare APPROVE matches; APPROVE+free-text rejected; REVISE/REJECT require `--` separator |
+| 53 | `--rounds 0` skip path documented in BOTH prose AND stderr WARN literal | |
+
+### Verification
+
+- **Test suite:** PASSED (1709/1709, +11 from 1698 baseline)
+- **Acceptance criteria:** all PASS — 52 case-numbers (42 existing + 10 new); cases 44–53 each present and pass at runtime
+- **Hygiene:** only `tests/test-quickfix.sh` modified
+- **Test-seam usage:** all triage / review cases use `_ZSKILLS_TEST_TRIAGE_VERDICT` / `_ZSKILLS_TEST_REVIEW_VERDICT` with `_ZSKILLS_TEST_HARNESS=1`; no model-layer mocks
+- **PLAN-TEXT-DRIFT:** none (verifier independently re-confirmed; the implementer's "1708→1709" advisory is structural improvement from Case 51 split, not a real plan-text drift)
+
+### Diff stat
+
+- `tests/test-quickfix.sh`: +518 lines (10 cases + parser-only extractor helper at helpers section)
+
+### Commits on `feat/quickfix-do-triage-plan` (Phase 1b only)
+
+```
+73ff49a test(quickfix): cover triage / review / --force / --rounds (Phase 1b)
+```
+
+---
+
 ## Phase — 1a /quickfix triage gate, inline plan, fresh-agent review (skill source + mirror)
 
 **Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md

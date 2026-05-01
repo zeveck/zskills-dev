@@ -17,7 +17,7 @@ status: active
 | Phase | Status | Description |
 |-------|--------|-------------|
 | 1a    | ✅ Done (`d779788`) | /quickfix — flags, triage gate (WI 1.5.4), inline plan, fresh-agent review (skill source + mirror) |
-| 1b    | ⬚ | /quickfix — extend tests/test-quickfix.sh to cover triage / review / --force / --rounds |
+| 1b    | ✅ Done (`73ff49a`) | /quickfix — extend tests/test-quickfix.sh to cover triage / review / --force / --rounds |
 | 2a    | ⬚ | /do — flags, triage gate (BEFORE cron registration), inline plan, fresh-agent review (skill source + mirror) |
 | 2b    | ⬚ | /do — create tests/test-do.sh, wire into run-all.sh |
 | 3     | ⬚ | Cross-cutting — CLAUDE_TEMPLATE.md, full-suite run, /commit pr follow-up issue |
