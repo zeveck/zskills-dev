@@ -2,41 +2,39 @@
   "$schema": "./zskills-config.schema.json",
   "project_name": "zskills",
   "timezone": "America/New_York",
-
   "execution": {
     "landing": "pr",
     "main_protected": true,
     "branch_prefix": "feat/"
   },
-
   "commit": {
     "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   },
-
   "testing": {
     "unit_cmd": "bash tests/run-all.sh",
     "full_cmd": "bash tests/run-all.sh",
     "output_file": ".test-results.txt",
-    "file_patterns": ["tests/**/*.sh"]
+    "file_patterns": [
+      "tests/**/*.sh"
+    ]
   },
-
   "dev_server": {
     "cmd": "",
     "default_port": 8080,
     "main_repo_path": "/workspaces/zskills"
   },
-
   "ui": {
     "file_patterns": "",
     "auth_bypass": ""
   },
-
   "ci": {
     "auto_fix": true,
     "max_fix_attempts": 2
   },
-
   "agents": {
     "min_model": "auto"
+  },
+  "dashboard": {
+    "work_on_plans_trigger": ""
   }
 }
