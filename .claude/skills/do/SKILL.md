@@ -1,14 +1,14 @@
 ---
 name: do
 disable-model-invocation: true
-argument-hint: "<description> [worktree] [push] [pr] [every SCHEDULE] [now] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Supports scheduling with every/now/next/stop.
-  Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] | stop | next.
+  Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop | next.
 ---
 
-# /do \<description> [worktree] [push] [pr] [every SCHEDULE] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
+# /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
 
 Execute small, ad-hoc tasks with structured research, verification, and
 optional isolation or auto-push. Can be scheduled for recurring maintenance
@@ -64,6 +64,10 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   - Cron is session-scoped — dies when the session dies
 - **now** (optional) — run immediately. When combined with `every`, runs
   immediately AND schedules. Without `every`, `now` is the default behavior.
+- **--force** (optional) — bypass triage redirect and review reject. Persists
+  into the cron prompt verbatim when used with `every`.
+- **--rounds N** (optional) — max review/refine cycles (default 1; `0` skips
+  review with stderr WARN).
 - **stop** — cancel `/do` cron(s). Bare `/do stop` → all crons.
   With query `/do stop Check docs` → targets matching cron.
 - **next** — check next fire time. Bare → all. With query → targeted.
@@ -76,6 +80,8 @@ Otherwise, check the **first word** of `$ARGUMENTS`:
 - `stop [query]` — meta-command: cancel crons. Bare → all. With query → targeted.
 - `next [query]` — meta-command: show fire times. Bare → all. With query → targeted.
 - `now [query]` — meta-command: trigger immediately. Bare → all/ask. With query → targeted.
+
+Meta-commands (`stop`, `next`, `now`) bypass Phase 0a triage and Phase 0b review entirely. They are administrative — there is no description to evaluate.
 
 If the first word is NOT a meta-command, it's a regular task. Parse
 trailing flags from the END backward:
@@ -172,7 +178,288 @@ cron by comparing the description against all `/do` cron prompts:
 5. **None:** report "no active /do cron found."
 6. **Exit.**
 
-## Phase 0 — Schedule (if `every` is present)
+## Pre-flight — Flag pre-parse (runs before Phase 0a/0b/0c)
+
+Phase 0a (triage) and Phase 0b (review) need to know `--force` and
+`--rounds N`; Phase 0c (cron registration) needs them so the cron prompt
+template can include them verbatim. Phase 1.5's argument parser runs AFTER
+Phase 0c today, so this pre-parse runs first — at the very top of the
+skill, before Phase 0a. This pre-parse is non-destructive: it sets `FORCE`
+and `ROUNDS` shell variables but does NOT mutate `$ARGUMENTS` (Phase 1.5's
+parser remains source of truth for the canonical strip).
+
+```bash
+# Pre-flight (runs before Phase 0a/0b/0c): read --force and --rounds N out
+# of $ARGUMENTS so Phase 0c's cron prompt template can include them, and
+# Phase 0a/0b can branch on them. Does not mutate $ARGUMENTS.
+
+# Entry-point unset guard (WI 2a.3 test seam) — keep first so any code path
+# that later reads _ZSKILLS_TEST_* env vars (triage, review, cron-prompt
+# construction) sees the production-cleared values when the harness flag
+# is absent. Symmetric to /quickfix WI 1a.3a.
+if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
+  unset _ZSKILLS_TEST_TRIAGE_VERDICT _ZSKILLS_TEST_REVIEW_VERDICT
+fi
+
+FORCE=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
+  FORCE=1
+fi
+ROUNDS=1
+# Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
+# `/do fix the bug --rounds in production` would otherwise capture "in" as
+# ROUNDS_RAW and exit 2, rejecting a legitimate description. The regex
+# captures only when the trailing token is all-digits; non-numeric trailing
+# tokens leave ROUNDS at default 1 and the literal `--rounds` remains as
+# task-description prose (Phase 1.5's strip chain MUST NOT strip
+# non-numeric `--rounds` matches — see WI 2a.4).
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])--rounds[[:space:]]+([0-9]+)($|[[:space:]]) ]]; then
+  ROUNDS="${BASH_REMATCH[2]}"
+fi
+# Strict explicit-error case: `--rounds` followed by a clearly-non-numeric
+# token that LOOKS like an intended integer arg (e.g. `--rounds 3.5` or
+# `--rounds -1`) should still fail loudly rather than silent-ignore. The
+# `^[0-9]+$` anchor catches `3.5` (matches only "3" not the full token, so
+# the broader regex above won't match because BASH_REMATCH[2] is bounded by
+# `[0-9]+` and the trailing `($|[[:space:]])` anchors require whitespace
+# AFTER the digit run — if the token continues with `.5`, this is non-match
+# and falls through to user-prose treatment. Same for `-1`. So `3.5` and
+# `-1` both end up as user prose, which is the conservative default.
+```
+
+Validation: `fix tooltip --force --rounds 3 pr` strips to `fix tooltip` after
+the full chain. `fix the bug --rounds in production` keeps the full
+description (no strip), ROUNDS stays at 1.
+
+## Phase 0a — Triage
+
+Before any cron registration, fresh-agent review, or task work, the model
+runs a triage gate to decide whether `/do` is the right skill for this
+description. **Phase 0a runs BEFORE Phase 0c (cron registration).** A
+REDIRECT path exits before any `CronCreate` call, so a redirected `/do`
+leaves no cron behind. Phase 0c cannot run on a redirected invocation.
+
+This is a **model-layer instruction**, not a bash block. Triage runs
+BEFORE Phase 0b (review) and BEFORE Phase 0c (cron registration) — so a
+redirect leaves no cron, no marker, no branch, no commits. /do does NOT
+write a tracking marker (no new tracking for /do) — there is nothing to
+clean up on redirect.
+
+**Test seam (production behavior unaffected).** When
+`_ZSKILLS_TEST_HARNESS=1` is set, the model MUST skip the triage Agent
+dispatch and instead use the value of `_ZSKILLS_TEST_TRIAGE_VERDICT` as
+the verdict. Production invocations (where the harness flag is absent and
+the entry-point unset guard at the pre-flight has already cleared the
+test vars) always run the full Agent path. Recognized stub values:
+`PROCEED`, `REDIRECT:/draft-plan:reason`, `REDIRECT:/run-plan:reason`,
+`REDIRECT:/fix-issues:reason`, `REDIRECT:ask-user:reason`.
+
+The model judges `$DESCRIPTION` against this rubric — qualitative,
+observable from description text, no LOC counting. /do always works in a
+fresh worktree (PR mode) or main (direct/worktree mode), so the "≥3
+distinct files in description" rule applies uniformly (no MODE carve-out
+needed).
+
+| Signal | Verdict |
+|--------|---------|
+| Description scopes to one concept | PROCEED |
+| ≥ 3 distinct files explicitly named in description | REDIRECT → `/draft-plan` |
+| Verbs include any of: `add feature`, `redesign`, `rewrite`, `refactor across` | REDIRECT → `/draft-plan` |
+| `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` |
+| Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user |
+| References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` |
+| References an existing plan file under `plans/` | REDIRECT → `/run-plan` |
+
+**Worked examples (calibrate the model's PROCEED/REDIRECT calls):**
+
+| Example invocation | Verdict | Why |
+|--------------------|---------|-----|
+| `/do Fix README typo` | PROCEED | one concept, one likely file |
+| `/do Sort the screenshots in session-sequence-snapshots` | PROCEED | one concrete object |
+| `/do Update the presentation with Phase 3 results push` | PROCEED | concrete verb + object |
+| `/do add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
+| `/do improve` | REDIRECT → ask user | vague verb, no object |
+| `/do fix #142` | REDIRECT → /fix-issues | references issue number |
+
+Output one of:
+
+- `PROCEED` — print `Triage: proceeding with /do (<one-line reason>).` Continue to Phase 0b.
+- `REDIRECT(target=<skill>, reason=<text>)` — see redirect handling.
+
+**Per-target redirect message templates** (must be exact-text-grep-able).
+Each message is **two physical lines** in the printed output (the
+linebreak is a real newline, not the literal `\n` characters):
+
+| target | Line 1 | Line 2 |
+|--------|--------|--------|
+| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
+| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
+| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
+| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /do with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
+
+The model implements these as a `printf 'line1\nline2\n' "$REASON"` so
+both lines are emitted to stdout and both are independently greppable
+from a test fixture.
+
+On REDIRECT and `$FORCE -eq 0`: print the per-target message (both
+lines), then `exit 0`. **No marker is written** (no tracking for /do).
+No cron. No branch.
+
+On REDIRECT and `$FORCE -eq 1`: print
+`Triage: REDIRECT(<target>) overridden by --force; proceeding.`
+Continue to Phase 0b.
+
+## Phase 0b — Inline plan + fresh-agent review
+
+After Phase 0a, before Phase 0c (cron registration), the model composes a
+short inline plan and dispatches one fresh Agent to review it. This phase
+runs BEFORE Phase 0c so a REJECT exits before any `CronCreate` call.
+
+**Skip when `--rounds 0`.** If `$ROUNDS -eq 0`: print to stderr
+`WARN: --rounds 0 skips fresh-agent plan review (legacy opt-in).` and
+skip review entirely. Continue to Phase 0c.
+
+**Inline plan composition (model-layer).** This is a **model-layer
+instruction**, not a bash block. After triage returns PROCEED (or after
+`--force` overrides a REDIRECT), the model composes a short inline plan
+held in `INLINE_PLAN`. `INLINE_PLAN` is a logical placeholder for text
+the model composes in its response. When the reviewer Agent is dispatched,
+the model copies the `INLINE_PLAN` text **verbatim** into the Agent prompt
+as the `INLINE PLAN ...` section — there is no file read or shell-variable
+interpolation; this is a model-to-prompt substitution.
+
+```text
+### /do inline plan
+**Description:** <DESCRIPTION>
+**Mode:** <LANDING_MODE> (or "as inferred from description; will be resolved in Phase 1.5")
+**Files (expected):** <comma-separated list, OR "as inferred from description; may be refined during Phase 1 research">
+**Approach:** <2-4 sentences>
+**Acceptance:** <2-4 bullets>
+```
+
+Constraints:
+
+- ≤60 lines total.
+- "Files (expected)" is OPTIONAL for /do — the worktree may not exist yet
+  for PR mode; the agent will discover files in Phase 1 research. When
+  unsure, set to `as inferred from description; may be refined during
+  Phase 1 research`.
+- The model-authored fields **Approach** and **Acceptance** MUST NOT
+  contain the literals for other skills (`/draft-plan`, `/run-plan`,
+  `/fix-issues`) — using these in model-authored prose would muddle the
+  redirect-message guards.
+- The **Description** field is verbatim user input and is exempt — a
+  user description that mentions another skill name is the user's
+  prerogative.
+- Early-stage review judges PLAN STRUCTURE, not file enumeration accuracy.
+
+**Fresh-agent plan review (model-layer).** This is a **model-layer
+instruction**, not a bash block.
+
+**Test seam (production behavior unaffected).** When
+`_ZSKILLS_TEST_HARNESS=1` is set, the model MUST skip the reviewer Agent
+dispatch and instead use the value of `_ZSKILLS_TEST_REVIEW_VERDICT` as
+the verdict (one of `APPROVE`, `REVISE: reason`, `REJECT: reason`).
+Production invocations always run the full Agent path.
+
+Otherwise dispatch ONE Agent (no model hint — inherit parent) with this
+prompt:
+
+```text
+You are the REVIEWER agent for /do's pre-execution plan review.
+
+DESCRIPTION the user provided:
+[DESCRIPTION]
+
+LANDING_MODE: [LANDING_MODE]
+
+INLINE PLAN the model proposes to execute:
+[INLINE_PLAN verbatim]
+
+Your job: judge whether the inline plan, when executed, will produce a
+change set that faithfully addresses DESCRIPTION without obvious
+omissions or out-of-scope work. Judge PLAN STRUCTURE, not file
+enumeration accuracy (file lists may be best-effort at this stage).
+
+OBSERVABLE-SIGNAL RULE (mandatory): count the **Acceptance** bullets in
+the inline plan. If >4 Acceptance bullets are present, you MUST return
+`VERDICT: REVISE -- too many concepts; consider /draft-plan` regardless
+of whether each bullet individually looks reasonable. This is a hard
+auto-REVISE — not a judgment call. The Acceptance-bullet ceiling is the
+concrete observable that distinguishes "task fits /do" from "task
+should /draft-plan." If the model proposes an Acceptance section that
+exceeds the ceiling, the inline plan needs to be split, not rubber-stamped.
+
+Return EXACTLY one of these as the FIRST line. APPROVE is a bare line
+with no separator; REVISE and REJECT MUST include both an ASCII `--`
+separator AND a one-line reason ≤200 chars. No free text after APPROVE
+on line 1.
+
+  VERDICT: APPROVE
+  VERDICT: REVISE -- <one-line reason ≤ 200 chars>
+  VERDICT: REJECT -- <one-line reason ≤ 200 chars>
+
+Then, on subsequent lines, add a short justification (≤ 10 lines) — for
+APPROVE this is where you justify, NOT on line 1.
+```
+
+**Verdict parser (separator-required for REVISE/REJECT).** Trim trailing
+whitespace from the first line, then match against this regex (in
+priority order):
+
+```regex
+# Bare APPROVE: no trailing text on line 1.
+^VERDICT:[[:space:]]+APPROVE[[:space:]]*$
+
+# REVISE/REJECT: separator (--) and reason are REQUIRED.
+^VERDICT:[[:space:]]+(REVISE|REJECT)[[:space:]]+--[[:space:]]+(.+)$
+```
+
+Reason captured in group 2 of the second regex. Em-dashes (`—`, `–`) in
+the iteration prompt template are normalized to ASCII `--` before
+insertion (the model performs this normalization when composing the
+iteration prompt) so the parser only needs to handle ASCII. If the
+first line matches NEITHER regex → treat as a malformed verdict, retry
+once with the same prompt; on second malformed → soft-reject (same exit
+semantics as REJECT).
+
+**REVISE loop.** At most `$ROUNDS` iterations. On REVISE, the model
+rewrites `INLINE_PLAN` using BOTH the verdict reason AND the
+justification body, then dispatches a NEW reviewer (single reviewer,
+NOT /draft-plan dual-agent). Iteration prompt template:
+
+```text
+You are the REVIEWER agent for /do's pre-execution plan review (round [N]).
+
+Prior reviewer (round [N-1]) returned:
+  VERDICT: REVISE -- [prior reason]
+  Justification:
+  [prior justification body verbatim]
+
+The model has REVISED the inline plan in response. New plan below.
+
+DESCRIPTION the user provided:
+[DESCRIPTION]
+[…rest of original prompt unchanged…]
+
+Judge whether the revision addresses the prior reviewer's reason. Return
+the same VERDICT format (APPROVE bare; REVISE/REJECT require -- + reason).
+Do not re-flag issues the prior reviewer already accepted; do flag NEW
+issues you see.
+```
+
+After `$ROUNDS` REVISE cycles → soft-reject (same exit semantics as REJECT).
+
+On APPROVE: print verdict + justification, continue to Phase 0c.
+
+On REJECT and `$FORCE -eq 0`: print verdict, `exit 0`. **No marker is
+written** (no tracking for /do). No worktree, no commits, no cron.
+
+On REJECT and `$FORCE -eq 1`: print override message. Continue to Phase 0c.
+
+Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); the `push` flag with code changes (`worktree`/`direct` mode only — see Phase 3) triggers /verify-changes after execution. PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
+
+## Phase 0c — Schedule (if `every` is present)
 
 If `$ARGUMENTS` contains `every <schedule>`:
 
@@ -199,18 +486,82 @@ If `$ARGUMENTS` contains `every <schedule>`:
      **interactive invocation**, if descriptions are similar but not exact,
      list existing crons and ask: "Replace this one, or keep both?"
 
-3. **Construct the cron prompt.** Always include `now` in the cron prompt
-   so each cron fire runs immediately AND re-registers itself. Note: this
-   `now` is for the CRON's invocation, not the current invocation:
+3. **Construct `TASK_DESCRIPTION_FOR_CRON`** — strip every/now/--force/--rounds
+   tokens from `$ARGUMENTS` but PRESERVE pr/worktree/direct/push tokens (these
+   need to round-trip into the cron prompt so each cron fire reproduces the
+   user's landing-mode intent).
+
+   Quoted-description carve-out: /do supports a leading quoted description
+   (see "Detection" above). When `$ARGUMENTS` begins with `"..."`, peel the
+   quoted segment off, strip-chain only the unquoted suffix, then reassemble.
+   This prevents `/do "fix --force usage in scripts" --force every 4h` from
+   corrupting the user-prose `--force` substring inside the quotes.
+
+   ```bash
+   if [[ "$ARGUMENTS" =~ ^([[:space:]]*\"[^\"]*\")[[:space:]]*(.*)$ ]]; then
+     QUOTED_HEAD="${BASH_REMATCH[1]}"
+     REST="${BASH_REMATCH[2]}"
+   else
+     QUOTED_HEAD=""
+     REST="$ARGUMENTS"
+   fi
+   STRIPPED_REST=$(echo "$REST" \
+     | sed -E 's/(^|[[:space:]])every[[:space:]]+(day|weekday)[[:space:]]+at[[:space:]]+[^[:space:]]+($|[[:space:]])/ /' \
+     | sed -E 's/(^|[[:space:]])every[[:space:]]+[^[:space:]]+($|[[:space:]])/ /' \
+     | sed -E 's/(^|[[:space:]])now($|[[:space:]])/ /' \
+     | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
+     | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
+     | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
+   if [ -n "$QUOTED_HEAD" ] && [ -n "$STRIPPED_REST" ]; then
+     TASK_DESCRIPTION_FOR_CRON="$QUOTED_HEAD $STRIPPED_REST"
+   elif [ -n "$QUOTED_HEAD" ]; then
+     TASK_DESCRIPTION_FOR_CRON="$QUOTED_HEAD"
+   else
+     TASK_DESCRIPTION_FOR_CRON="$STRIPPED_REST"
+   fi
    ```
-   Run /do <description> [worktree] [push] every <schedule> now
+
+   The time-of-day pattern (`every day at 9am`) MUST come before the
+   generic interval pattern (`every 4h`) — generic would otherwise capture
+   "day" as the interval value and leave "at 9am" as orphan tokens. The
+   `--rounds` strip only matches numeric N (consistent with WI 2a.0's
+   greedy-fallthrough rule); a non-numeric `--rounds <prose>` stays in
+   `TASK_DESCRIPTION_FOR_CRON` and round-trips into the cron prompt as user
+   prose, where it will again no-op-fall-through on each fire.
+
+   **Quoted-description known limit.** A quoted description containing a
+   literal `every <token>` substring (e.g., `/do "audit every PR" every 4h`)
+   is also protected — only the unquoted suffix is strip-chained. A
+   multi-segment quoted form (`/do "fix" --force "every 4h"`) is not
+   supported; the regex matches only the leading quote pair.
+
+4. **Construct the cron prompt** incrementally so optional flags only appear
+   when set. `FORCE` and `ROUNDS` are pre-parsed in WI 2a.0; `SCHEDULE` is
+   parsed in step 1 above. Always include `now` in the cron prompt so each
+   cron fire runs immediately AND re-registers itself. Note: this `now` is
+   for the CRON's invocation, not the current invocation.
+
+   ```bash
+   # Construct cron prompt incrementally so optional flags only appear when set.
+   CRON_PROMPT="Run /do ${TASK_DESCRIPTION_FOR_CRON}"  # description with landing/push tokens preserved
+   if [ "$FORCE" -eq 1 ]; then
+     CRON_PROMPT="$CRON_PROMPT --force"
+   fi
+   if [ "$ROUNDS" != "1" ]; then
+     CRON_PROMPT="$CRON_PROMPT --rounds $ROUNDS"
+   fi
+   CRON_PROMPT="$CRON_PROMPT every $SCHEDULE now"
+   # CronCreate uses $CRON_PROMPT verbatim.
    ```
 
-4. **Create the cron** — `CronCreate` with `recurring: true`.
+   **Persistence of `--force` and `--rounds N`:** these flags are preserved verbatim in the cron prompt. A `/do <task> --force every 4h` produces a cron prompt of `Run /do <task> --force every 4h now`, so every cron fire bypasses triage and review. Intentional: setting `--force` on a recurring task means the user wants the bypass on every fire.
 
-5. **Confirm** with wall-clock time.
+5. **Create the cron** — `CronCreate` with `recurring: true`, passing
+   `$CRON_PROMPT` verbatim.
 
-6. **If `now` is present:** proceed to Phase 1.
+6. **Confirm** with wall-clock time.
+
+7. **If `now` is present:** proceed to Phase 1.
    **If `now` is NOT present:** **Exit.** The cron fires later.
 
 If `every` is NOT present, skip this phase (bare invocation runs immediately).
@@ -292,12 +643,21 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
   | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
 if [ -z "$TASK_DESCRIPTION" ]; then
   echo "ERROR: Task description required. Usage: /do <task description> [pr|direct|worktree] [push]"
   exit 1
 fi
 ```
+
+The two new `sed -E` lines strip `--force` and `--rounds N` (numeric N
+only) from `TASK_DESCRIPTION` so they don't leak into downstream prompts.
+Non-numeric `--rounds <prose>` is left in place — symmetric with the
+pre-flight greedy-fallthrough rule (WI 2a.0): a non-numeric trailing
+token after `--rounds` is user prose, not a flag, and must NOT raise
+exit 2.
 
 **Step 3: Check for `push` flag** (trailing):
 ```bash
@@ -307,6 +667,29 @@ fi
 ```
 
 `pr` takes precedence: if `LANDING_MODE="pr"`, ignore `push` (PR mode handles push internally).
+
+**Step 4: Re-affirm `FORCE` and `ROUNDS`** (already set by the pre-flight
+pre-parse; idempotent re-validation in case Phase 1.5 is invoked outside
+the normal entry path — defensive). The regex MUST match the pre-flight
+exactly: numeric-only `[0-9]+` capture with greedy-fallthrough on
+non-numeric (no exit-2 branch — that would contradict the pre-flight's
+contract that `/do fix the bug --rounds in production` is a legitimate
+description).
+
+```bash
+# Re-affirm (already set by pre-flight pre-parse; idempotent).
+# Regex is numeric-only — symmetric with WI 2a.0. Non-numeric trailing
+# tokens after `--rounds` are user prose (greedy-fallthrough) and DO NOT
+# raise exit 2 — that would re-introduce the closed greedy bug.
+FORCE=${FORCE:-0}
+if [[ "$REMAINING" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
+  FORCE=1
+fi
+ROUNDS=${ROUNDS:-1}
+if [[ "$REMAINING" =~ (^|[[:space:]])--rounds[[:space:]]+([0-9]+)($|[[:space:]]) ]]; then
+  ROUNDS="${BASH_REMATCH[2]}"
+fi
+```
 
 ## Phase 2 — Execute
 
