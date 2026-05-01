@@ -11,6 +11,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Required by tests/test-update-zskills-migration.sh case 6c
+          # (commit-cohabitation): the test uses `git log -1 -- <path>` and
+          # `merge-base --is-ancestor`, both of which need full history.
+          # With the default fetch-depth: 1 (shallow), case 6c's prior code
+          # would silently call `pass "shallow clone — skipped"` and the
+          # test was invisible in CI for ~24h while drift accumulated on
+          # main (issue surfaced 2026-05-01). Phase B of recovery.
+          fetch-depth: 0
 
       - name: Configure git for test setup
         run: |

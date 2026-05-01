@@ -52,9 +52,11 @@ mkdir -p "$TEST_OUT"
 
 PASS_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
 pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { printf '\033[31m  FAIL\033[0m %s — %s\n' "$1" "$2"; FAIL_COUNT=$((FAIL_COUNT+1)); }
+skip() { printf '\033[33m  SKIP\033[0m %s\n' "$1"; SKIP_COUNT=$((SKIP_COUNT+1)); }
 
 # --- Oracle: Step D.5 migration -------------------------------------------
 # Args:
@@ -461,11 +463,17 @@ test_case_6b_hash_format() {
 
 # Case 6c: commit-cohabitation — when a Tier-1 script changes, the hash
 # file must change in the same commit (or later). Owner-literal pathspec
-# from script-ownership.md column 4 (DA-10 fix). Skip with warning on
-# shallow clones.
+# from script-ownership.md column 4 (DA-10 fix). Requires full git
+# history (fetch-depth: 0 in CI; non-shallow locally).
+#
+# Past failure (2026-04-30 → 2026-05-01): this test previously called
+# `pass "shallow clone — skipped (warning)"` on shallow clones, making
+# it invisible in CI and silently masking ~24h of accumulated Tier-1
+# drift across PRs #128, #131, #135-#142. The skip-as-pass anti-pattern
+# is corrected here: shallow now FAILs loudly.
 test_case_6c_commit_cohabitation() {
   if [ "$(git -C "$REPO_ROOT" rev-parse --is-shallow-repository)" = "true" ]; then
-    pass "case 6c: shallow clone — skipped (warning)"
+    fail "case 6c: shallow clone" "this test requires full git history (set fetch-depth: 0 in CI; run \`git fetch --unshallow\` locally). Previously skipped-as-PASS, masking ~24h of Tier-1 drift on main."
     return
   fi
 
@@ -474,9 +482,10 @@ test_case_6c_commit_cohabitation() {
   last_hash_commit=$(git -C "$REPO_ROOT" log -1 --pretty=format:%H -- "$hash_path")
   if [ -z "$last_hash_commit" ]; then
     # The hash file may have been generated in this very worktree but not
-    # yet committed (verifier-pre-commit state). Skip with warning; the
-    # check will run on the CI clone after this PR lands.
-    pass "case 6c: hash file uncommitted in this worktree — skipped (pre-commit)"
+    # yet committed (verifier-pre-commit state). This is a legitimate
+    # transient state (the post-merge CI fires after the commit lands),
+    # so emit a real SKIP rather than a fake PASS.
+    skip "case 6c: hash file uncommitted in this worktree (pre-commit state)"
     return
   fi
 
@@ -525,12 +534,17 @@ test_case_6b_hash_format
 test_case_6c_commit_cohabitation
 
 echo
-TOTAL=$((PASS_COUNT + FAIL_COUNT))
+TOTAL=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
 if [ "$FAIL_COUNT" -eq 0 ]; then
-  printf '\033[32mResults: %d passed, 0 failed (of %d)\033[0m\n' "$PASS_COUNT" "$TOTAL"
+  if [ "$SKIP_COUNT" -gt 0 ]; then
+    printf '\033[32mResults: %d passed, 0 failed, %d skipped (of %d)\033[0m\n' \
+      "$PASS_COUNT" "$SKIP_COUNT" "$TOTAL"
+  else
+    printf '\033[32mResults: %d passed, 0 failed (of %d)\033[0m\n' "$PASS_COUNT" "$TOTAL"
+  fi
   exit 0
 else
-  printf '\033[31mResults: %d passed, %d failed (of %d)\033[0m\n' \
-    "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"
+  printf '\033[31mResults: %d passed, %d failed, %d skipped (of %d)\033[0m\n' \
+    "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT" "$TOTAL"
   exit 1
 fi
