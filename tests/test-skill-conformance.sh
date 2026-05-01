@@ -381,6 +381,22 @@ check fix-issues "Phase 6 Land"      '^## Phase 6'
 check fix-issues "Failure Protocol"  '^## Failure Protocol'
 
 echo ""
+echo "=== /quickfix — behavior contracts (PR_LANDING_UNIFICATION Phase 5) ==="
+# WI 5.6 — verify Phase 7 migration is mechanical:
+#   1. /quickfix dispatches /land-pr via the Skill tool (CI poll +
+#      fix-cycle now present as additive coverage on top of the post-#151
+#      triage + plan-review gates).
+#   2. No inline `gh pr create` — owned by /land-pr's pr-push-and-create.sh.
+#   3. No "Fire-and-forget" prose — replaced by the new full-lifecycle
+#      description (`triage → review → commit → push → PR → CI poll →
+#      fix cycle`). Note: any `--force` or `--fill` references elsewhere
+#      in the skill are unaffected; only the literal "Fire-and-forget"
+#      prose is removed.
+check_fixed quickfix "Phase 7 dispatches /land-pr" 'land-pr'
+check_not   quickfix "no inline gh pr create"      'gh pr create'
+check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
+
+echo ""
 echo "=== /verify-changes — RESTRUCTURE-adjacent invariants ==="
 check       verify-changes "Scope Assessment header"  '^## Scope Assessment'
 check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'

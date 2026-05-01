@@ -1,5 +1,65 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 5 Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle)
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified) — drift fix: /quickfix GAINS CI monitoring + fix-cycle (was fire-and-forget)
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** 287931d (impl + verify), 81cd438 (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 5.1 | Replace inline PR creation in /quickfix Phase 7 | Done | Phase 7 body (994-1081) → caller-loop; LANDED_SOURCE=quickfix, no --worktree-path, no --auto; fix-cycle context = $DESCRIPTION + $COMMIT_SUBJECT; Exit codes (1082) + Key Rules (1093+) untouched |
+| 5.2 | Preserve pre-PR work (triage + plan-review gates) | Done | Phases 1-6 (lines 137-989) all untouched; WI 1.5.4 (triage 295), 1.5.4a (plan compose 366), 1.5.4b (plan review 399), 1.5.5 (decline 518) preserved |
+| 5.3 | Preserve parallel-invocation gate | Done | WI 1.3.5 line 215 stale-marker detection untouched |
+| 5.4 | Preserve fulfillment-marker model + dual-artifact split | Done | Marker still written; pr: $PR_URL appended in caller loop (lines 1132-1133); no --worktree-path → /land-pr writes no .landed |
+| 5.5 | Update Key Rules prose (line 20 + line 1102) | Done | "Fire-and-forget" → "triage → review → commit → push → PR → CI poll → fix cycle"; surrounding Key Rules verbatim |
+| 5.6 | Conformance assertions | Done | +3 quickfix assertions: dispatches /land-pr, no inline gh pr create, no fire-and-forget literal |
+| 5.7 | Mirror via mirror-skill.sh quickfix | Done | `diff -r` empty |
+| 5.8 | Manual verification | **DEFERRED** | Architectural — same as Phases 2.9, 3.5/3.10, 4.8. Phase 6 cron fire serves as de-facto canary |
+
+### Verification
+
+- Test suite: PASSED (1794/1794, baseline 1790 + 3 conformance + 1 Case 43b = +4)
+- Static migration: 0 inline `gh pr create`, 0 `gh pr checks --watch`, 0 `gh pr merge --auto`, 0 `Fire-and-forget`, 30 `land-pr` references, 2 `Skill.*land-pr` dispatch comments
+- Caller-loop consistency vs /commit + /do + /fix-issues: all 5 canonical-pattern invariants verified
+- Pre-PR gate preservation: WI 1.5.4 triage, WI 1.5.4a plan compose, WI 1.5.4b plan review, WI 1.5.5 decline all intact upstream of Phase 7
+- Mirror byte-identical
+- Phase 1A scripts non-regression: shellcheck 0 warnings
+- WI-by-WI verifier verdict: 8/8 (with 5.8 deferred)
+
+### Test integrity audit (CRITICAL — per CLAUDE.md "never weaken tests")
+
+The implementer modified existing test cases in `tests/test-quickfix.sh`. Verifier audit confirmed STRENGTHENING, not weakening:
+
+- **Case 13 regex** `(write|cat >).*\.landed` → `>>?[[:space:]]*"?[^"[:space:]]*\.landed`: New regex catches all 4 real code-form `.landed` writes across the codebase. Old regex actually MISSED `printf > .landed` writes in `land-phase.sh` (it required literal `cat >` or `write`). New regex is strictly more accurate AND complete. Old regex's prose-match was a false-positive on the new "does NOT write a `.landed` marker" prose at line 1054.
+- **Case 43 trim**: Removed `MARKER_PR_FIELD`, `STDOUT_HAS_PR_URL`, `CURRENT == main` assertions. All 3 behaviors PRESERVED inside new Phase 7 (lines 1132-1133, 1231, 1239). Removed because Phase 7 dispatches Skill tool which can't be bash-extracted; Case 43 still covers the bash-extractable subflow (preflight → branch → test → commit → push). Behaviors now structurally asserted by Case 43b.
+- **`extract_full_flow` stops at Phase 7**: Architectural change — Phase 7 dispatches Skill tool which bash can't execute.
+- **Case 43b NEW**: Substantive structural assertions (NOT tautologies) — (a) Skill dispatch present, (b) WI 1.16 pr: URL append idiom (count==1 in Phase 7), (c) WI 1.17 git checkout $BASE_BRANCH preserved.
+
+### Drift dispositions (Phase 3.5)
+
+Zero drift tokens — neither implementer nor verifier emitted any.
+
+### Milestone reached
+
+**All 5 PR-landing call sites now dispatch `/land-pr`:**
+- `/run-plan` (Phase 2, PR #161)
+- `/commit pr` + `/do pr` (Phase 3, PR #162)
+- `/fix-issues pr` (Phase 4, PR #163)
+- `/quickfix` (this PR)
+
+Three call sites GAINED canonical fix-cycle through this plan: `/commit pr` (Phase 3), `/do pr` (Phase 3), `/fix-issues pr` (Phase 4), and `/quickfix` (Phase 5) — restoring previously-drifted behavior.
+
+### For Phase 6
+
+Phase 6 is drift-prevention conformance + canary — the FINAL phase. Verifier suggests:
+- Anti-drift conformance: assert no `gh pr create` outside `skills/land-pr/` and `tests/`
+- End-to-end canary: exercise at least one caller through to PR creation + CI fix-cycle (folds in deferred WI 2.9, 3.5/3.10, 4.8, 5.8 manual canaries)
+
 ## Phase — 4 Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
