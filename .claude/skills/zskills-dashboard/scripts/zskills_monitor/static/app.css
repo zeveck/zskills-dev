@@ -269,6 +269,13 @@ code, pre, .mono {
   overflow-y: auto;
 }
 
+/* The class selector above otherwise wins by source order against the
+   browser-default `[hidden] { display: none }` rule (equal specificity),
+   leaving the modal permanently visible. Restore the default. */
+.modal-root[hidden] {
+  display: none;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
