@@ -342,6 +342,15 @@ Verification intensity matches the change type (from Phase 1):
 - **Run `$FULL_TEST_CMD`** (resolve via
   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
   if you don't already have it in your environment) — all suites must pass, not just unit tests.
+  **CRITICAL — Bash tool timeout:** invoke with `timeout: 600000` (10
+  min); default 120000ms is shorter than the suite's runtime (~3-4
+  min). Do NOT recover from a Bash timeout by retrying with
+  `run_in_background: true` + `Monitor` / `BashOutput` — wake events
+  do not reliably deliver to subagents (you may be one), so the wait
+  never returns and the dispatch hangs at "Tests are running. Let me
+  wait for the monitor." Past failure: 6+ subagent crashes with that
+  phrase across 2026-04-29 and 2026-04-30. Always foreground-Bash with
+  explicit long timeout; capture to file; read the file on return.
 - **If tests fail: fix them.** Do not check if failures are pre-existing.
   Do not stash, checkout old commits, or create comparison worktrees.
   If you touched code and tests fail, they're yours to fix. (See

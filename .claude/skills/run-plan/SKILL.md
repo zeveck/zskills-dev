@@ -1045,9 +1045,24 @@ agent hasn't returned after 2 hours, declare it **failed**:
    VERBATIM in every implementation and verification agent prompt:
 
    > **Worktree test recipe:**
+   >
+   > **CRITICAL — Bash tool timeout:** when invoking `$FULL_TEST_CMD` via
+   > the `Bash` tool, **pass `timeout: 600000`** (10 minutes). The default
+   > 120000ms (2 min) is shorter than the suite's actual runtime (~3-4
+   > min in zskills) and causes the Bash call to time out. **Do NOT
+   > recover by retrying with `run_in_background: true` + `Monitor` /
+   > `BashOutput` polling** — wake events for background processes do
+   > not reliably deliver to subagents (you are a subagent), so the wait
+   > never returns and the dispatch hangs at "Tests are running. Let me
+   > wait for the monitor." Past failure: 6+ subagent crashes with
+   > exactly that phrase across 2026-04-29 and 2026-04-30 sessions.
+   > Always foreground-Bash with explicit long timeout; capture to file
+   > as below; read the file when the call returns.
+   >
    > 1. Start a dev server FIRST: `$DEV_SERVER_CMD &`
    > 2. Wait for it: `sleep 3`
-   > 3. Run tests with output captured to a file:
+   > 3. Run tests with output captured to a file (`Bash` tool with
+   >    `timeout: 600000`):
    >    ```bash
    >    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    >    mkdir -p "$TEST_OUT"
