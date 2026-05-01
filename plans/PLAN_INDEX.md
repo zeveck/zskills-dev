@@ -21,7 +21,7 @@ Totals: 46 plans — 5 ready, 1 in progress, 17 complete, 20 canaries, 3 referen
 
 | Plan | Phases | Current Phase | Next Phase | Notes |
 |------|--------|---------------|------------|-------|
-| [PR_LANDING_UNIFICATION.md](PR_LANDING_UNIFICATION.md) | 7 (1A,1B,2,3,4,5,6) | 1A | 1B | Drafted 2026-04-27, refined 2026-04-28; extracts /land-pr from 5 duplicating skills; inherits PR #75 gating |
+| [PR_LANDING_UNIFICATION.md](PR_LANDING_UNIFICATION.md) | 7 (1A,1B,2,3,4,5,6) | 1B | 2 | Drafted 2026-04-27, refined 2026-04-28; extracts /land-pr from 5 duplicating skills; inherits PR #75 gating; 1A landed 2026-04-30 (PR #159), 1B added validation layer (failure-modes doc + mocks + 23 script tests + 49 conformance assertions) |
 
 ## Complete
 

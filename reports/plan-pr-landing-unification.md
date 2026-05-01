@@ -1,5 +1,43 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 1B `/land-pr` validation
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** 04d4d3d (impl + verify), 0782877 (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1B.1 | `skills/land-pr/references/failure-modes.md` — 10 failure modes cataloged | Done | severity + detection-line + test-case columns; coverage matrix |
+| 1B.2 | `tests/mocks/mock-gh.sh` + `mock-git.sh` — fail-fast subcommand router | Done | exit 99 on missing canned response (loud, not silent); `mock-git.sh` adds `MOCK_GIT_PASSTHROUGH=1` for hybrid fixtures |
+| 1B.3 | `tests/test-land-pr-scripts.sh` — 23 cases covering all 10 failure modes | Done | 10 modes + 4 idempotency + 4 arg-validation + 2 hardening + 3 split sub-cases |
+| 1B.4 | Conformance assertions in `tests/test-skill-conformance.sh` | Done | 37 land-pr assertions + 5 new helpers (`check_not`, `check_in_file`, `check_not_in_file`, `check_executable`, `check_not_in_file_filtered`) |
+| 1B.5 | Mirror byte-identical via `mirror-skill.sh land-pr` | Done | exit 0; `diff -r` clean |
+| 1B.6 | `plans/PLAN_INDEX.md` — Current 1B, Next 2 | Done | row updated |
+
+### Verification
+
+- Test suite: PASSED (1782/1782, baseline 1722 + 60 new = 1782)
+- shellcheck: 0 warnings on `tests/test-land-pr-scripts.sh`, `tests/mocks/mock-gh.sh`, `tests/mocks/mock-git.sh`, all 4 `skills/land-pr/scripts/*.sh`
+- Standalone `tests/test-land-pr-scripts.sh`: 23/23
+- Standalone conformance: 234/234
+- WI-by-WI verifier verdict: 6/6 PASS
+- Failure-mode coverage matrix: all 10 cited test cases exist; all detection-mechanism line numbers correspond to actual exit-code/stdout-key sites in the scripts
+- Phase 1A scripts non-regression: `git diff main...HEAD -- skills/land-pr/scripts/` is empty
+
+### Drift dispositions (Phase 3.5: 2 found, 0 corrected — non-numeric, non-derivable)
+
+- `WI-1B.2 fail-fast-exit-code`: plan said 127 (mimic `gh` "command not found"); implementer chose 99. Both loud + non-zero. Disposed as faithful-to-intent; not a blocker.
+- `WI-1B.4 check_fixed-pattern`: plan said `'gh pr checks .*--watch'`; rewritten to `'gh pr checks "$PR_NUMBER" --watch'` because `check_fixed` is `grep -F` (literal) and `.*` would not glob. Rewrite preserves intent and asserts the actual code shape. Disposed as faithful.
+
+### Implementer-flagged concerns (verifier resolved)
+
+- `check_not_in_file_filtered` allows the canonical `shift || true` arg-parser idiom in the 4 land-pr scripts (Phase 1A code) while still forbidding silencing-fallible-op `|| true`. Verifier accepted as Phase 1B-acceptable; refactoring `shift || true` is out-of-scope (touches 1A code). Reasonable follow-up.
+
 ## Phase — 1A `/land-pr` foundation
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
