@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 3 Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix) [UNFINALIZED]
+## Phase — 3 Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified) — drift fix: both skills GAIN fix-cycle (previously missing)
