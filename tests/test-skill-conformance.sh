@@ -151,16 +151,28 @@ check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-test
 check       run-plan "test capture redirect"        '\$TEST_OUT/(\$TEST_OUTPUT_FILE|\$\{TEST_OUTPUT_FILE:-\.test-results\.txt\})" 2>&1'
 check_fixed run-plan "compute-cron-fire invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh"'
 check       run-plan "cron tz warning"              'date.*SYSTEM-local|system-local'
-check       run-plan "--watch unreliable"           '--watch.*(exit code is unreliable|UNRELIABLE)'
-check_fixed run-plan "gh pr checks re-check"        'gh pr checks "$PR_NUMBER"'
-check_fixed run-plan "timeout 124 handling"         'WATCH_EXIT" -eq 124'
-check_fixed run-plan "ci-pending pr-ready"          'pr-ready'
-check_fixed run-plan "ci log path"                  '/tmp/ci-failure-'
-check       run-plan "auto-merge expected fallback"  'auto-merge enabled|expected.{0,15}auto-merge'
-check_fixed run-plan "pr number from url"           'PR_NUMBER="${PR_URL##*/}"'
-check       run-plan "pr number numeric check"      'PR_NUMBER" =~ \^\[0-9\]\+\$'
-check       run-plan "push error-check first-time"  'if ! git push -u origin'
+# PR_LANDING_UNIFICATION Phase 2 WI 2.7 — `/run-plan` no longer owns the
+# inline PR-landing implementation. The following assertions RELOCATED
+# to /land-pr's section below: "--watch unreliable", "gh pr checks
+# re-check", "timeout 124 handling", "ci log path", "auto-merge expected
+# fallback", "pr number from url", "pr number numeric check", "push
+# error-check first-time". The `ci-pending pr-ready` assertion was
+# REWRITTEN to anchor on /land-pr's WI 1.11 schema (the `pr-ready`
+# literal now survives only there, per DA2-6).
+#
+# `pre-cherry-pick stash` STAYS on /run-plan — it lives in
+# modes/cherry-pick.md (cherry-pick mode is out-of-scope for PR
+# unification), verified by Round 2 spec.
 check       run-plan "pre-cherry-pick stash"        'pre-cherry-pick stash'
+# WI 2.7 NEW assertions — verify migration is mechanical:
+#   1. /run-plan dispatches /land-pr via the Skill tool
+#   2. No inline `gh pr create` — owned by /land-pr's pr-push-and-create.sh
+#   3. No inline `gh pr checks --watch` — owned by /land-pr's pr-monitor.sh
+#   4. No inline `gh pr merge --auto` — owned by /land-pr's pr-merge.sh
+check_fixed run-plan "dispatches /land-pr"          'land-pr'
+check_not   run-plan "no inline gh pr create"       'gh pr create'
+check_not   run-plan "no inline gh pr checks --watch" 'gh pr checks.*--watch'
+check_not   run-plan "no inline gh pr merge --auto"  'gh pr merge.*--auto'
 check_fixed run-plan "write-landed invocation"      'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
 check_fixed run-plan "pr-mode bookkeeping"          'PR-mode bookkeeping'
 check_fixed run-plan "post-run-invariants"          'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/post-run-invariants.sh"'
@@ -368,6 +380,29 @@ check       land-pr "monitor bare re-check"    'gh pr checks "\$PR_NUMBER" >/dev
 
 # --- PR_NUMBER from URL via parameter expansion (no second gh pr view) ---
 check       land-pr "PR_NUMBER from URL not gh pr view" '\$\{[A-Z_]*##\*/\}'
+
+# --- WI 2.7 RELOCATED from /run-plan (post-Phase-2 migration) ---
+# Per plan: when /run-plan migrates to dispatch /land-pr, the inline
+# assertions targeting CI polling, --watch handling, the fallback
+# re-check, the auto-merge expected-fallback wording, the PR_URL→PR_NUMBER
+# extraction, and the push error-check first-time pattern all RELOCATE
+# here because the implementations now live in /land-pr's
+# scripts/pr-monitor.sh, scripts/pr-merge.sh, and scripts/pr-push-and-create.sh.
+check       land-pr "--watch unreliable"           '--watch.*(exit code is unreliable|UNRELIABLE)'
+check_fixed land-pr "gh pr checks re-check"        'gh pr checks "$PR_NUMBER"'
+check_fixed land-pr "timeout 124 handling"         'WATCH_EXIT" -eq 124'
+# `pr-ready` literal — REWRITTEN per DA2-6 against /land-pr's WI 1.11
+# canonical .landed schema and WI 1.12 status mapping table (rows 4, 5,
+# 7, 9, 10 produce pr-ready). After WI 2.2 deletes /run-plan's inline
+# block, the literal survives only here.
+check_fixed land-pr "pr-ready status mapping"      'pr-ready'
+# CI log path — /land-pr's pr-monitor.sh names it differently from the
+# old /run-plan inline path (`/tmp/ci-failure-`). Anchor on the new path.
+check       land-pr "ci log path"                  '/tmp/land-pr-ci-log-'
+check       land-pr "auto-merge expected fallback" 'auto-merge enabled|expected.{0,15}auto-merge'
+check_fixed land-pr "pr number from url"           'PR_NUMBER="${PR_URL##*/}"'
+check       land-pr "pr number numeric check"      'PR_NUMBER" =~ \^\[0-9\]\+\$'
+check       land-pr "push error-check first-time"  'if ! git push -u origin'
 
 # --- BRANCH_SLUG derivation (foundation bug fix from Phase 1A) ---
 check_fixed land-pr "BRANCH_SLUG derivation"  'BRANCH_SLUG'
