@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 5 Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle) [UNFINALIZED]
+## Phase — 5 Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified) — drift fix: /quickfix GAINS CI monitoring + fix-cycle (was fire-and-forget)
