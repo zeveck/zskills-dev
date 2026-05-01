@@ -135,6 +135,45 @@ if [ -d ".claude/skills/cleanup-merged" ]; then
     "diff -q 'skills/cleanup-merged/SKILL.md' '.claude/skills/cleanup-merged/SKILL.md' >/dev/null"
 fi
 
+# Tier-1 drift invariant (Phase E of 2026-05-01 recovery): every Tier-1
+# script's CURRENT blob hash must be in
+# `skills/update-zskills/references/tier1-shipped-hashes.txt`. Trivial
+# check, can't be skipped, runs in shallow clones, catches drift at PR
+# time. Complementary to test-update-zskills-migration.sh case 6c
+# (which uses git history) — this one only needs the current tree.
+#
+# Past failure: 10 Tier-1 scripts drifted across PRs #128-#142 because
+# case 6c (the only existing check) silently skipped on shallow clones
+# in CI, and authors had no easy way to know they needed to update the
+# hash file. This invariant is unconditional.
+TIER1_DRIFT_OUT=$(
+  awk -F'|' 'NR>1 && $3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+    gsub(/[[:space:]`]/, "", $2);
+    owner=$4;
+    sub(/^[[:space:]`]+/, "", owner);
+    sub(/[[:space:]`(].*$/, "", owner);
+    if (length($2) > 0) print $2 "\t" owner
+  }' skills/update-zskills/references/script-ownership.md \
+  | while IFS=$'\t' read -r name owner; do
+      src="skills/$owner/scripts/$name"
+      if [ ! -f "$src" ]; then
+        src="block-diagram/$owner/scripts/$name"
+        [ -f "$src" ] || continue
+      fi
+      current_hash=$(git ls-tree HEAD "$src" 2>/dev/null | awk '{print $3}')
+      [ -z "$current_hash" ] && continue
+      if ! grep -qF "$current_hash" skills/update-zskills/references/tier1-shipped-hashes.txt; then
+        echo "DRIFT: $name -> $current_hash ($src)"
+      fi
+    done
+)
+if [ -z "$TIER1_DRIFT_OUT" ]; then
+  check 'Tier-1 drift: every current Tier-1 blob hash is in tier1-shipped-hashes.txt' 'true'
+else
+  echo "$TIER1_DRIFT_OUT" >&2
+  check 'Tier-1 drift: every current Tier-1 blob hash is in tier1-shipped-hashes.txt' 'false'
+fi
+
 # Cross-skill invariant: no skill statically prescribes `isolation: "worktree"`.
 # All worktree work must go through skills/create-worktree/scripts/create-worktree.sh
 # (manual creation) per plans/EXECUTION_MODES.md. Word-boundary on "with"
