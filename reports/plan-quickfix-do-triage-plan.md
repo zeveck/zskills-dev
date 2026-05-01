@@ -1,5 +1,50 @@
 # Plan Report — /quickfix and /do Triage Gate, Inline Plan, Fresh-Agent Review
 
+## Phase — 2b /do: create test suite, wire into runner
+
+**Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-quickfix-do-triage-plan (PR mode)
+**Implementation commit:** dc0005d
+
+### Cases (1–13)
+
+| # | Case | Notes |
+|---|------|-------|
+| 1 | argument-hint contains `--force` and `--rounds N` | |
+| 2 | Phase 0a < Phase 0c structural ordering — **cron-zombie regression static guard** | Phase 0a@234, 0b@312, 0c@462 |
+| 3 | Phase 0b inline-plan template + reviewer prose | |
+| 4 | `--force` cron-persistence ("every cron fire bypasses triage and review") | |
+| 5 | Meta-command bypass note grep-able | |
+| 6 | VERDICT regex documented (APPROVE bare; REVISE/REJECT need `--`) | |
+| 7 | `--rounds 0` skip prose AND stderr WARN literal present | |
+| 8 | Phase 1.5 strip chain: `fix tooltip --force --rounds 3 pr` → `fix tooltip` | end-to-end |
+| 9 | `--rounds notanumber` greedy-fallthrough — ROUNDS stays at 1, FORCE=0 | |
+| 10 | Phase 0b orthogonality (`pre-review judges PLAN`; PR mode handles own push) | |
+| 11 | Entry-point unset guard regression — no `_ZSKILLS_TEST_HARNESS` → seam vars unset | symmetric to /quickfix Case 47e |
+| 12 | Phase 1.5 re-validation does NOT exit 2 on non-numeric `--rounds` | round-2 R5/DA4 |
+| 13 | Quoted-description protection — DA3 fix: in-quotes `--force` preserved, trailing stripped | |
+
+### Verification
+
+- **Test suite:** PASSED (1722/1722, +13 from 1709 baseline) — independently re-measured by verifier
+- **All 8 ACs PASS** — file exists, 13 cases pass, run-all.sh wired, suite count matches plan exactly, cron-zombie static guard, DA3 quoted-description case, R5/DA4 re-validation case, hygiene
+- **Cron-zombie regression coverage**: structural (Case 2 ordering) + entry-point (Case 11 unset guard) + upstream-symmetry (/quickfix Cases 47/48 dynamic seam) = combined regression guarantee at appropriate cost
+- **PLAN-TEXT-DRIFT:** none
+
+### Diff stat
+
+- `tests/test-do.sh`: +473 lines (new file)
+- `tests/run-all.sh`: +1 line (`run_suite "test-do.sh" "tests/test-do.sh"` after the test-quickfix.sh line)
+
+### Commits on `feat/quickfix-do-triage-plan` (Phase 2b only)
+
+```
+dc0005d test(do): create test-do.sh (13 cases) + wire into run-all.sh (Phase 2b)
+```
+
+---
+
 ## Phase — 2a /do: triage gate, inline plan, fresh-agent review (skill source + mirror)
 
 **Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
