@@ -17,7 +17,7 @@ description: >-
 
 `/quickfix` turns the current main checkout (with or without dirty edits)
 into a one-commit PR without leaving main. No worktree. No cherry-pick.
-Fire-and-forget: commit, push, open PR, print URL, return to base branch, exit.
+Lifecycle: triage → review → commit → push → PR → CI poll → fix cycle.
 
 **Ultrathink throughout.**
 
@@ -990,7 +990,16 @@ if ! git push -u origin "$BRANCH"; then
 fi
 ```
 
-## Phase 7 — PR creation (WI 1.15)
+## Phase 7 — PR creation, CI poll, fix-cycle (WI 1.15) — dispatch `/land-pr`
+
+`/quickfix` no longer owns inline PR creation, CI polling, or the fix-cycle.
+Those move to `/land-pr` (see `skills/land-pr/SKILL.md`). `/quickfix`'s
+remaining responsibilities here are (a) compose `$PR_TITLE` + body file
+BEFORE invoking /land-pr, (b) drive the canonical caller loop, (c) on
+`CI_STATUS=fail` dispatch a fix-cycle agent at orchestrator level whose
+work-context slot is the user's `$DESCRIPTION` plus the staged commit
+subject, and (d) preserve the WI 1.16 `pr: $PR_URL` marker append + the
+WI 1.17 return-to-base-branch behavior on success.
 
 **Compose $PR_TITLE (model-layer).** Set shell variable `PR_TITLE` to a
 single-line conventional-commit style title of the form
@@ -1000,9 +1009,10 @@ changed; summary describes what's actually changing). ≤70 chars, no
 newlines. Compose from what the PR actually does — not a verbatim prefix
 of the description.
 
-Body is built via a `<<-EOF` heredoc with **tab-indented** body lines
-(tabs are stripped by `<<-`; using spaces would render the body as a code
-block on GitHub).
+PR body is composed once before the loop and written to a `$BODY_FILE`
+that `/land-pr`'s `pr-push-and-create.sh` consumes via `--body-file`. The
+heredoc uses `<<-EOF` with **tab-indented** body lines (tabs are stripped
+by `<<-`; using spaces would render the body as a code block on GitHub).
 
 ```bash
 if [ -z "${PR_TITLE:-}" ]; then
@@ -1014,7 +1024,11 @@ if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 70 ]; then
   exit 2
 fi
 
-PR_BODY=$(cat <<-EOF
+# Per-BRANCH_SLUG body file path so concurrent /quickfix invocations on
+# parallel slugs do not collide.
+BRANCH_SLUG="${BRANCH//\//-}"
+BODY_FILE="/tmp/pr-body-quickfix-$BRANCH_SLUG.md"
+cat > "$BODY_FILE" <<-EOF
 	## Summary
 
 	$DESCRIPTION
@@ -1030,22 +1044,192 @@ PR_BODY=$(cat <<-EOF
 
 	🤖 Generated with /quickfix
 	EOF
-)
+```
 
-if ! PR_URL=$(gh pr create --base "$BASE_BRANCH" --head "$BRANCH" --title "$PR_TITLE" --body "$PR_BODY"); then
-  echo "ERROR: gh pr create failed. Branch '$BRANCH' is pushed; create the PR manually on GitHub." >&2
-  exit 5
+`/quickfix` customizations of the canonical caller-loop pattern (per
+`skills/land-pr/references/caller-loop-pattern.md`):
+
+- `$LANDED_SOURCE = "quickfix"`
+- **No `--worktree-path`** — `/quickfix` has no worktree; this means
+  `/land-pr` does NOT write a `.landed` marker. The two artifact systems
+  coexist intentionally: `/quickfix`'s fulfillment marker (with `pr:` URL
+  appended below) tracks the `/quickfix` lifecycle; `.landed` is for
+  worktree-using callers.
+- **No `--auto`** — auto-merge stays OFF for `/quickfix` (matches
+  pre-migration behavior; the change here is additive CI monitoring +
+  fix-cycle, not auto-merge).
+- `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (`/quickfix` composes the body
+  once above; no per-phase update like /run-plan does).
+- `<CALLER_REBASE_CONFLICT_HANDLER>` = no agent-assisted resolution
+  (`/quickfix` has no worktree and no plan context); break and surface
+  the bail.
+- `<DISPATCH_FIX_CYCLE_AGENT_HERE>` = user's `$DESCRIPTION` + staged
+  commit subject (`$COMMIT_SUBJECT`).
+
+```bash
+# === BEGIN CANONICAL /land-pr CALLER LOOP ===
+# Per skills/land-pr/references/caller-loop-pattern.md.
+
+ATTEMPT=0
+MAX="${CI_MAX_ATTEMPTS:-2}"
+RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
+
+LANDED_SOURCE="quickfix"
+LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE"
+
+while :; do
+  # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /quickfix.
+  #
+  # /quickfix composes the body once above and never refreshes it.
+  # /land-pr touches the body only on initial PR creation; on existing
+  # PRs (the second-iteration retry case) the body is preserved as-is —
+  # fine for /quickfix because the body content is a static
+  # description+mode snapshot, not a progress checklist that drifts.
+
+  # Invoke /land-pr via the Skill tool. The Skill tool loads /land-pr's
+  # prose into the current (orchestrator) context — its internal bash
+  # blocks run here.
+  #
+  # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+  if [ ! -f "$RESULT_FILE" ]; then
+    echo "ERROR: /land-pr produced no result file at $RESULT_FILE" >&2
+    exit 5
+  fi
+
+  # SAFE allow-list parsing (per WI 1.7). Never `source`. Reading line by
+  # line and dispatching on a fixed key set guarantees that even
+  # maliciously-crafted values cannot reach shell evaluation.
+  declare -A LP
+  while IFS='=' read -r KEY VALUE; do
+    case "$KEY" in
+      STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+      MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+      CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+        LP["$KEY"]="$VALUE" ;;
+      "") ;;  # blank line — ignore
+      *) printf 'WARN: /land-pr result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+    esac
+  done < "$RESULT_FILE"
+
+  STATUS="${LP[STATUS]:-}"
+  CI_STATUS="${LP[CI_STATUS]:-}"
+  PR_URL="${LP[PR_URL]:-}"
+  PR_NUMBER="${LP[PR_NUMBER]:-}"
+
+  # Sidecar cleanup paths. CI_LOG_FILE intentionally NOT in the array —
+  # the fix-cycle agent below reads it.
+  _CLEANUP_PATHS=("${LP[CALL_ERROR_FILE]:-}" "${LP[CONFLICT_FILES_LIST]:-}")
+  rm -f "$RESULT_FILE"
+
+  # WI 1.16 — append the PR URL to the fulfillment marker as soon as
+  # /land-pr emits one (first iteration where STATUS ∈ {created, monitored,
+  # merged}). Append-once is enforced via the `pr:` line absence check:
+  # subsequent loop iterations will re-emit the same PR_URL (since
+  # /land-pr is idempotent and the PR already exists), but the marker
+  # already carries the line. The EXIT trap (registered by WI 1.8) flips
+  # `status: started` → `status: complete` at script end.
+  if [ -n "$PR_URL" ] && [ -f "$MARKER" ] && ! grep -q '^pr: ' "$MARKER"; then
+    printf 'pr: %s\n' "$PR_URL" >> "$MARKER"
+  fi
+
+  case "$STATUS" in
+    rebase-conflict)
+      # <CALLER_REBASE_CONFLICT_HANDLER> — /quickfix has no worktree and
+      # no plan context, so no agent-assisted resolution path. /land-pr
+      # already aborted the rebase — break and surface to user.
+      echo "/land-pr returned rebase-conflict. Resolve manually and re-run \`/quickfix\` (or land manually)." >&2
+      break ;;
+    push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
+      echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
+      break ;;
+    created|monitored|merged) ;;  # fall through to CI-status check
+  esac
+
+  case "$CI_STATUS" in
+    pass|none|skipped)
+      break ;;  # /land-pr already requested merge if --auto (none for /quickfix)
+    pending)
+      break ;;  # settle at pr-ready
+    not-monitored)
+      break ;;  # --no-monitor was used (none of /quickfix's flows do this)
+    fail)
+      if [ "$ATTEMPT" -ge "$MAX" ]; then
+        echo "INFO: CI fix-cycle exhausted ($ATTEMPT/$MAX); PR settles at pr-ci-failing" >&2
+        break
+      fi
+      # ===== <DISPATCH_FIX_CYCLE_AGENT_HERE> — /quickfix customization =====
+      #
+      # Dispatch a fix-cycle agent at orchestrator level (NOT a nested
+      # subagent — /land-pr was already invoked at orchestrator level
+      # via the Skill tool; this dispatch is at the same level).
+      #
+      # Prompt structure follows
+      # skills/land-pr/references/fix-cycle-agent-prompt-template.md.
+      # /quickfix fills <CALLER_WORK_CONTEXT> with the user's original
+      # `$DESCRIPTION` and the staged commit subject `$COMMIT_SUBJECT` —
+      # the agent gets the same intent the commit captured, plus the CI
+      # failure log.
+      #
+      # Inputs (substituted into the template):
+      #   PR URL       = ${LP[PR_URL]}
+      #   PR number    = ${LP[PR_NUMBER]}
+      #   Branch       = $BRANCH
+      #   Worktree     = (none — agent works in the current repo root)
+      #   CI log file  = ${LP[CI_LOG_FILE]}
+      #   Caller work context (CALLER_WORK_CONTEXT):
+      #     Description: $DESCRIPTION
+      #     Commit subject: $COMMIT_SUBJECT
+      #     Mode: $MODE
+      #     Branch: $BRANCH
+      #     Recent commits on this branch:
+      #       $(git log origin/$BASE_BRANCH..HEAD --format='%h %s')
+      #
+      # Constraints (verbatim from the template):
+      #   - You are running at orchestrator level. Do NOT dispatch
+      #     further Agent tools.
+      #   - Do not invoke /land-pr yourself. The caller's loop owns
+      #     re-invocation.
+      #   - Do not modify .github/workflows/ unless the failure is
+      #     clearly a workflow bug.
+      #   - Honor existing tests (CLAUDE.md "NEVER weaken tests").
+      #   - No --no-verify on commits.
+      #
+      # Procedure: read CI log → diagnose → state root cause → patch →
+      # commit → push. The agent ends its reply with one line:
+      #   FIX-CYCLE: root_cause="..." files_changed=N commit=<sha>
+      # or
+      #   FIX-CYCLE-PUNT: reason="..."
+      #
+      # After the agent completes, the caller's loop increments $ATTEMPT
+      # and `continue`s — /land-pr is idempotent.
+      # =====================================================================
+      ATTEMPT=$((ATTEMPT + 1))
+      continue ;;  # re-enter loop, /land-pr is idempotent
+    unknown)
+      echo "WARN: CI_STATUS=unknown — settling at pr-ready" >&2
+      break ;;
+    *)
+      echo "WARN: CI_STATUS='$CI_STATUS' unrecognized — settling at pr-ready" >&2
+      break ;;
+  esac
+done
+
+# Sidecar cleanup (after final iteration). CI_LOG_FILE intentionally
+# NOT in the array — useful for post-mortem inspection.
+for f in "${_CLEANUP_PATHS[@]}"; do
+  [ -n "$f" ] && [ -f "$f" ] && rm -f "$f"
+done
+
+# Body file cleanup — keep until after the loop in case a re-invocation
+# needs it (only consumed on the first iteration where the PR doesn't
+# exist yet, but defensive).
+rm -f "$BODY_FILE"
+
+# Print the PR URL on stdout so the user sees something actionable.
+if [ -n "$PR_URL" ]; then
+  echo "$PR_URL"
 fi
-
-# WI 1.16 — append the PR URL to the fulfillment marker BEFORE the EXIT
-# trap flips `status: started` → `status: complete`. The appended line is
-# the only record of the PR URL in the tracking store (no worktree-state
-# artifact is produced — see the note below on terminal marker states).
-if [ -f "$MARKER" ]; then
-  printf 'pr: %s\n' "$PR_URL" >> "$MARKER"
-fi
-
-echo "$PR_URL"
 
 # WI 1.17 — return to base branch on success.
 # The PR exists on GitHub; locally we leave the user where they started
@@ -1055,29 +1239,32 @@ echo "$PR_URL"
 if ! git checkout "$BASE_BRANCH"; then
   echo "WARN: PR created at $PR_URL but failed to checkout back to $BASE_BRANCH. Run 'git checkout $BASE_BRANCH' manually." >&2
 fi
+# === END CANONICAL /land-pr CALLER LOOP ===
 ```
 
-No `--watch`, no polling. CI runs on GitHub's side; the user follows the
-URL. The success path returns the working tree to `$BASE_BRANCH` so
-subsequent commands don't accidentally pile onto the feature branch —
-forgiving on failure (warn, do not fail the run, since the PR is already
-created). The EXIT trap finalizes the marker to `complete` on success.
+The EXIT trap finalizes the marker to `complete` on success. The CI poll
+and fix-cycle are owned by `/land-pr`; `/quickfix`'s pre-PR triage
+(WI 1.5.4) and plan-review (WI 1.5.4b) gates remain upstream of this
+phase — CI monitoring is additive coverage on top, not a replacement for
+them.
 
 ### Terminal marker states
 
 The fulfillment marker at `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.quickfix.$SLUG`
 transitions from `status: started` at WI 1.8 entry to exactly one of:
 
-- `status: complete` — PR created, URL appended via `pr: $PR_URL`.
+- `status: complete` — PR created, URL appended via `pr: $PR_URL` (the
+  append happens in the caller loop on the first iteration where
+  `/land-pr` returns a `STATUS=created|monitored|merged`).
 - `status: cancelled` is appended with `reason: user-declined` (the only
   documented reason). Triage-redirect, review-reject, and production
   model-layer decline at WI 1.5.5 leave no marker — they exit before
   WI 1.8 writes one.
 - `status: failed` — any non-zero exit path after the marker was written.
 
-No `.landed` marker is written. `/quickfix` has no worktree, and PR state
-is authoritative via `gh pr view` — there is no cherry-pick-landing step
-to attest to.
+No `.landed` marker is written. `/quickfix` has no worktree (no
+`--worktree-path` is passed to `/land-pr`), and PR state is authoritative
+via `gh pr view` — there is no cherry-pick-landing step to attest to.
 
 ## Exit codes
 
@@ -1099,4 +1286,4 @@ to attest to.
 - **No error suppression on fallible operations.** Distinguish network failure from branch-exists; check each cleanup step.
 - **Bare-branch push only.** `git push -u origin "$BRANCH"` — never a refspec pointed at a protected ref.
 - **No `.landed` marker.** `/quickfix` has no worktree; PR state is authoritative via `gh pr view`.
-- **Fire-and-forget.** End at `gh pr create`; print URL; return user to `$BASE_BRANCH`; exit. No polling, no `--watch`.
+- **Full lifecycle.** triage → review → commit → push → PR → CI poll → fix cycle. PR creation, CI monitoring, and the fix cycle are dispatched via `/land-pr`; on `CI_STATUS=fail`, a fix-cycle agent runs at orchestrator level (up to `CI_MAX_ATTEMPTS`, default 2). Auto-merge stays OFF. The success path returns the user to `$BASE_BRANCH`.

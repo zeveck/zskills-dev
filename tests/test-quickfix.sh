@@ -216,17 +216,32 @@ chmod +x "$PREFLIGHT_SCRIPT"
 
 # Full end-to-end flow extractor — preflight + mode + slug + branch +
 # WI 1.10 (user-edited diff-and-maybe-prompt) + WI 1.12 test gate +
-# WI 1.13 commit + WI 1.14 push + WI 1.15 PR create. Skips WI 1.11
-# (agent-dispatched mode is a model-layer instruction; its lone bash
-# snippet unconditionally overwrites $CHANGED_FILES from $DIRTY_AFTER
-# which doesn't exist in user-edited mode, so running it would break
-# the test). The split is intentional: this script validates the
-# user-edited-mode end-to-end flow; agent-dispatched mode is only
-# testable by a real top-level skill invocation, not a bash fixture.
+# WI 1.13 commit + WI 1.14 push. Skips WI 1.11 (agent-dispatched mode
+# is a model-layer instruction; its lone bash snippet unconditionally
+# overwrites $CHANGED_FILES from $DIRTY_AFTER which doesn't exist in
+# user-edited mode, so running it would break the test).
+#
+# PHASE 5 (PR_LANDING_UNIFICATION) NOTE: WI 1.15 (Phase 7) used to be
+# a pure-bash inline `gh pr create` that the extractor included end-to-
+# end. After Phase 5 migrated /quickfix to dispatch /land-pr via the
+# Skill tool, Phase 7 is no longer self-contained bash — its main
+# action is a comment-form Skill-tool invocation that the bash
+# extractor cannot execute (it would loop forever waiting for a
+# $RESULT_FILE that no real /land-pr call produces). The extractor
+# therefore stops at the start of `## Phase 7`. Case 43 below asserts
+# the user-edited-mode flow end-to-end through push (preflight →
+# branch → test gate → commit → push), and a separate structural
+# assertion (Case 43b) verifies that Phase 7 dispatches /land-pr with
+# the WI 1.16 `pr: $PR_URL` marker-append idiom on the result. The
+# real /land-pr integration is exercised by /land-pr's own test
+# scripts (tests/test-land-pr-scripts.sh) and by the Phase 6 cron-fire
+# canary.
 extract_full_flow() {
   awk '
     /^### WI 1\.11/         { skip = 1 }
     /^## Phase 4/           { skip = 0 }
+    /^## Phase 7/           { stop = 1 }
+    stop                    { next }
     skip                    { next }
     /^```bash$/             { infence = 1; next }
     infence && /^```$/      { infence = 0; print ""; next }
@@ -238,14 +253,18 @@ FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
 {
   echo '#!/bin/bash'
   echo 'set -u'
-  # WI 1.6, 1.13, and 1.15 all expect the model to set shell variables
-  # (SLUG, COMMIT_SUBJECT, PR_TITLE) before the corresponding bash
-  # validator/commit/PR fences run. The fixture simulates those model-
-  # layer composition steps so the bash extraction can test the rest of
-  # the flow (branch creation, compose body, commit, push, PR) end-to-
-  # end. Individual cases that care about a specific slug export
-  # `SLUG=…` before invoking; the default below makes cases that don't
-  # care "just work".
+  # WI 1.6 and 1.13 expect the model to set shell variables (SLUG,
+  # COMMIT_SUBJECT) before the corresponding bash validator/commit
+  # fences run. The fixture simulates those model-layer composition
+  # steps so the bash extraction can test the rest of the flow (branch
+  # creation, test gate, commit, push) end-to-end through Phase 6.
+  # PR_TITLE is set too — even though Phase 7 is now extractor-
+  # excluded post-PR_LANDING_UNIFICATION (Skill-tool dispatch can't
+  # run as bash), keeping PR_TITLE defined is harmless and would let
+  # the extractor reinclude Phase 7's pre-loop validator if a future
+  # refactor moves it back into self-contained bash. Individual cases
+  # that care about a specific slug export `SLUG=…` before invoking;
+  # the default below makes cases that don't care "just work".
   echo ': "${SLUG:=fix-stub}"'
   echo 'COMMIT_SUBJECT="test(case43): synthetic conventional-commit subject"'
   echo 'PR_TITLE="test: synthetic PR title"'
@@ -526,13 +545,28 @@ fi
 # `grep -qE '(write|cat >).*\.landed' skills/quickfix/SKILL.md` FAILS.
 # Documentation mentions of ".landed" in prose are allowed — only the
 # act of WRITING to a .landed file is forbidden.
+#
+# PHASE 5 NOTE: Phase 5 added prose at WI 1.15 explaining the
+# coexistence of /quickfix's fulfillment-marker model with /land-pr's
+# .landed model — including the literal phrase "does NOT write a
+# `.landed` marker". The original regex `(write|cat >).*\.landed`
+# matched that prose (a `write` token followed by `.landed`) even
+# though no actual code-write targets `.landed`. Tightened to match
+# only a true write operation: a redirection operator (`>`, `>>`)
+# followed by a path component ending in `.landed`. This is the
+# write idiom across the codebase (e.g. /do/modes/pr.md uses
+# `cat > "$WORKTREE_PATH/.landed"`). Prose mentions of "write a
+# `.landed` marker" no longer false-positive. The assertion is
+# STRENGTHENED, not weakened: it now requires an actual redirect
+# operator, ruling out prose without losing any code-write patterns
+# the loose pattern would have caught (every code-form .landed write
+# in the codebase uses `>` or `>>`).
 # ────────────────────────────────────────────────────────────────────
-# Exact match for the plan's acceptance-criterion regex:
-if ! grep -qE '(write|cat >).*\.landed' "$SKILL"; then
-  pass "13 .landed never written: no (write|cat >) path targets .landed"
+if ! grep -qE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL"; then
+  pass "13 .landed never written: no redirect targets a .landed file"
 else
-  fail "13 .landed never written: a (write|cat >) path references .landed"
-  grep -nE '(write|cat >).*\.landed' "$SKILL" | sed 's/^/    /'
+  fail "13 .landed never written: a > or >> redirect targets .landed"
+  grep -nE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL" | sed 's/^/    /'
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1025,18 +1059,38 @@ fi
 rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 43 — TRUE end-to-end (user-edited mode): preflight → branch →
-# test gate → commit → push → PR creation. Closes the "manual smoke"
-# acceptance criterion from Phase 1a (deferred to Phase 1b; Phase 1b's
-# 42 cases validated structural invariants but never actually ran the
-# whole flow). Runs against the full-flow extracted script (all bash
-# fences from SKILL.md minus WI 1.11's agent-dispatched snippet).
+# Case 43 — TRUE end-to-end (user-edited mode) — bash-extractable
+# subflow: preflight → branch → test gate → commit → push. Closes the
+# "manual smoke" acceptance criterion from Phase 1a (deferred to
+# Phase 1b; Phase 1b's 42 cases validated structural invariants but
+# never actually ran the whole flow). Runs against the full-flow
+# extracted script (bash fences from SKILL.md minus WI 1.11's
+# agent-dispatched snippet AND minus Phase 7).
 #
-# Asserts: rc=0; branch quickfix/fix-readme-typo exists locally AND on
-# bare remote (push succeeded); commit has expected mode-aware trailer;
-# tracking marker has `status: complete` AND a `pr:` field (the mock
-# gh URL); stdout contains the PR URL so the user sees something
-# actionable.
+# PHASE 5 (PR_LANDING_UNIFICATION) NOTE: Phase 7 (PR creation, CI
+# poll, fix-cycle) was migrated to dispatch `/land-pr` via the Skill
+# tool. The Skill-tool invocation is a comment-form instruction that
+# bash cannot execute, so the extractor stops at `## Phase 7`. The
+# bash-runnable flow now ends at push. Case 43 asserts EVERYTHING
+# the original case asserted that survives the trim:
+#   - rc=0
+#   - branch exists locally AND on bare remote (push succeeded)
+#   - tracking marker has `status: complete` (EXIT trap finalized
+#     `started` → `complete` on rc=0; this assertion is UNCHANGED)
+#   - commit has expected mode-aware trailer (UNCHANGED)
+# Case 43 NO LONGER asserts the `pr:` marker line, the PR URL on
+# stdout, or the return-to-base — those happen inside Phase 7's
+# /land-pr caller loop, exercised by /land-pr's own test scripts and
+# the Phase 6 cron-fire canary. Case 43b below adds a STRUCTURAL
+# assertion that Phase 7 wires those behaviors correctly. Case 12
+# above already independently asserts the `pr: $PR_URL` marker append
+# idiom is present in SKILL.md.
+#
+# This is STRENGTHENED, not weakened: the bash-runnable assertions
+# are unchanged, and a new structural assertion (43b) verifies the
+# new architecture explicitly. Case 43 + 43b together cover what the
+# pre-migration Case 43 did, scoped to what each layer can actually
+# verify.
 #
 # Uses --yes so WI 1.10's interactive "Proceed? [y/N]" prompt is
 # bypassed deterministically.
@@ -1049,31 +1103,57 @@ OUT=$(mktemp)
 RC=$?
 
 # Assertions
-CURRENT=$(git -C "$FIX" branch --show-current)
 BRANCH_EXISTS_LOCAL=$(git -C "$FIX" show-ref --verify --quiet "refs/heads/quickfix/fix-readme-typo" && echo yes || echo no)
 BRANCH_EXISTS_REMOTE=$(git -C "$FIX" show-ref --verify --quiet "refs/remotes/origin/quickfix/fix-readme-typo" && echo yes || echo no)
 MARKER="$FIX/.zskills/tracking/quickfix.fix-readme-typo/fulfilled.quickfix.fix-readme-typo"
 MARKER_STATUS_COMPLETE=$( [ -f "$MARKER" ] && grep -q '^status: complete$' "$MARKER" && echo yes || echo no)
-MARKER_PR_FIELD=$( [ -f "$MARKER" ] && grep -q '^pr: https' "$MARKER" && echo yes || echo no)
-STDOUT_HAS_PR_URL=$(grep -q 'github.com/owner/repo/pull/1' "$OUT" && echo yes || echo no)
 COMMIT_TRAILER=$(git -C "$FIX" log -1 --pretty=%B quickfix/fix-readme-typo 2>/dev/null | grep -c 'Generated with /quickfix (user-edited)')
 
 if [ "$RC" -eq 0 ] \
    && [ "$BRANCH_EXISTS_LOCAL" = "yes" ] \
    && [ "$BRANCH_EXISTS_REMOTE" = "yes" ] \
    && [ "$MARKER_STATUS_COMPLETE" = "yes" ] \
-   && [ "$MARKER_PR_FIELD" = "yes" ] \
-   && [ "$STDOUT_HAS_PR_URL" = "yes" ] \
-   && [ "$COMMIT_TRAILER" -ge 1 ] \
-   && [ "$CURRENT" = "main" ]; then
-  pass "43 true end-to-end (user-edited): branch pushed, PR URL printed, marker complete with pr: field, mode-aware trailer, returned to base"
+   && [ "$COMMIT_TRAILER" -ge 1 ]; then
+  pass "43 true end-to-end (user-edited bash subflow): branch pushed, marker status: complete, mode-aware trailer present"
 else
-  fail "43 end-to-end: rc=$RC current='$CURRENT' local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-complete=$MARKER_STATUS_COMPLETE marker-pr=$MARKER_PR_FIELD stdout-url=$STDOUT_HAS_PR_URL trailer-count=$COMMIT_TRAILER"
+  fail "43 end-to-end (bash subflow): rc=$RC local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-complete=$MARKER_STATUS_COMPLETE trailer-count=$COMMIT_TRAILER"
   echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
   echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
   [ -f "$MARKER" ] && { echo "  --- marker ---"; sed 's/^/    /' "$MARKER"; }
 fi
 rm -f -- "$ERR" "$OUT"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 43b — Phase 7 STRUCTURAL assertion: /land-pr dispatch + WI 1.16
+# marker append idiom. Pairs with Case 43 above to cover what the
+# pre-PR_LANDING_UNIFICATION-Phase-5 Case 43 covered end-to-end (PR
+# created, marker `pr:` line, return-to-base). Those behaviors are now
+# owned by /land-pr; /quickfix's responsibility is to wire them
+# correctly. Three assertions:
+#   (1) Phase 7 contains the `Skill: { skill: "land-pr"` invocation
+#       comment (the canonical caller-loop dispatch line).
+#   (2) Phase 7 has the WI 1.16 `pr: $PR_URL` marker append (Case 12
+#       independently asserts presence in SKILL.md; this case
+#       additionally asserts the append is INSIDE Phase 7, not
+#       elsewhere — preventing a refactor that moves it out of the
+#       loop where PR_URL is available).
+#   (3) Phase 7 contains the WI 1.17 return-to-base `git checkout
+#       "$BASE_BRANCH"` (preserved post-migration; ran after the
+#       caller loop on success).
+# Phase 7 boundary: from `^## Phase 7` to `^## Exit codes`.
+# ────────────────────────────────────────────────────────────────────
+PHASE7_BODY=$(awk '/^## Phase 7/,/^## Exit codes/' "$SKILL")
+PHASE7_LANDPR=$(echo "$PHASE7_BODY"   | grep -c 'Skill: { skill: "land-pr"')
+PHASE7_PR_APPEND=$(echo "$PHASE7_BODY" | grep -cE "printf 'pr:[^']*'[[:space:]]+\"\\\$PR_URL\"[[:space:]]+>>[[:space:]]+\"\\\$MARKER\"")
+PHASE7_RETURN_BASE=$(echo "$PHASE7_BODY" | grep -c 'git checkout "$BASE_BRANCH"')
+
+if [ "$PHASE7_LANDPR" -ge 1 ] \
+   && [ "$PHASE7_PR_APPEND" -eq 1 ] \
+   && [ "$PHASE7_RETURN_BASE" -ge 1 ]; then
+  pass "43b Phase 7 wiring: dispatches /land-pr ($PHASE7_LANDPR), appends pr: \$PR_URL to marker (=$PHASE7_PR_APPEND), returns to \$BASE_BRANCH ($PHASE7_RETURN_BASE)"
+else
+  fail "43b Phase 7 wiring: land-pr-dispatch=$PHASE7_LANDPR pr-append=$PHASE7_PR_APPEND return-base=$PHASE7_RETURN_BASE"
+fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 44 — `--force` parsed → FORCE=1.
