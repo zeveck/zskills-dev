@@ -1,5 +1,61 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 2 Migrate `/run-plan` PR mode to `/land-pr` [UNFINALIZED]
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified) — most consequential migration in the plan
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** bfc265d (impl + verify), 335a237 (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2.1 | Caller-owned body splice (preserve bash-regex BASH_REMATCH) | Done | $PR_BODY built before /land-pr invoke; SKILL.md:1715-1745 splice unchanged (`git diff` 0 lines) |
+| 2.2 | Replace inline PR-landing block with caller loop | Done | `modes/pr.md` 681→545 lines; markers `# === BEGIN/END CANONICAL /land-pr CALLER LOOP ===` at 279/522 |
+| 2.3 | Preserve agent-assisted rebase conflict resolution (≤5 files) | Done | `STATUS=rebase-conflict` branch reads `${LP[CONFLICT_FILES_LIST]}`, dispatches if ≤5 |
+| 2.4 | Preserve fix-cycle agent dispatch with plan context | Done | `<DISPATCH_FIX_CYCLE_AGENT_HERE>` block + `<CALLER_WORK_CONTEXT>` slot named |
+| 2.5 | Preserve finish-mode loop + frontmatter writes | Done | `git diff main...HEAD -- skills/run-plan/SKILL.md` empty |
+| 2.5a | ADAPTIVE_CRON_BACKOFF Mode A interaction documented | Done | doc note at `pr.md:268-276` |
+| 2.6 | `.landed` ownership split + downstream consumer test | Done | ownership table at `pr.md:533-543`; `tests/test-landed-schema.sh` (6 cases) |
+| 2.7 | Conformance assertions: WATCH_EXIT relocated + 4 new | Done | `WATCH_EXIT` in land-pr (test-skill-conformance.sh:367-393); +4 run-plan: dispatches /land-pr, no inline gh pr create/checks --watch/merge --auto |
+| 2.8 | Mirror via `mirror-skill.sh run-plan` | Done | `diff -r` byte-identical |
+| 2.9 | Manual canary verification (CANARY1_HAPPY + CANARY3_FIXCYCLE) | **DEFERRED** | Architectural: subagents lack Agent tool; multi-agent skills can't run from subagent context (memory `feedback_multi_agent_skills_top_level`). De-facto canary: Phase 3 cron fire uses migrated code in main; post-run-invariants is the safety net |
+
+### Verification
+
+- Test suite: PASSED (1792/1792, baseline 1782 + 10 net new = 1792)
+  - +4 run-plan conformance assertions
+  - +6 new `tests/test-landed-schema.sh` cases
+  - WATCH_EXIT relocated (net 0 from move)
+- Static migration (substitute for canary): all 4 grep-counts at expected values
+  - `gh pr create` in pr.md: 0 ✓
+  - `gh pr merge --auto` in pr.md: 0 ✓
+  - `gh pr checks.*--watch` in pr.md: 0 ✓
+  - `land-pr` references in pr.md: 50 ✓ (2 actual `Skill.*land-pr` dispatches at lines 330, 336)
+- Caller-loop key elements present: allow-list parser, `while :` loop, body-prep marker
+- shellcheck on `tests/test-landed-schema.sh`: 0 warnings
+- Phase 1A scripts non-regression: `git diff main...HEAD -- skills/land-pr/` empty
+- Phase 3 readiness check (mental walkthrough of caller loop): no infinite-loop risks; all branches handled (rebase-conflict break; push/create/monitor/merge-failed break; created/monitored/merged fall to CI; pass/none/skipped/pending/unknown break; fail+attempt-cap continue/break)
+- LAND_ARGS construction: required + conditional flags all present
+- RESULT_FILE path: `/tmp/land-pr-result-$BRANCH_SLUG-$$.txt` (PID-isolated)
+- _CLEANUP_PATHS: CI_LOG_FILE correctly excluded
+
+### WI 2.9 deferral context
+
+The plan author assumed the implementer subagent could invoke `/run-plan` against canary plans to perform end-to-end smoke. This is structurally not possible: subagents have no `Agent` tool, and `/run-plan` is a multi-agent skill that dispatches its own impl + verify subagents. Per memory `feedback_multi_agent_skills_top_level`, multi-agent skills must run at top level. The same constraint applies to verifier subagents.
+
+**Mitigation:** Phase 3 fires via cron as a fresh top-level turn that uses the migrated `/run-plan` code in main. If the migration is broken, Phase 3's land step will fail at one of: push, PR create, CI poll, fix cycle, or auto-merge. `post-run-invariants.sh` catches the failure and stops the pipeline (no Phase 4+ cron). The mechanical safety net (`.landed` status, `post-run-invariants`, Phase 5c branching on landed-status) is the actual smoke gate.
+
+**Phase 3 readiness:** static migration grep-checks + caller-loop walkthrough + Phase 1A's smoke-tested `/land-pr` components combine to give high confidence the migration is correct. The remaining risk (composition: run-plan dispatching land-pr in actual flow) gets exercised by Phase 3 itself.
+
+**One Phase-3 nuance flagged by verifier (not a blocker):** The agent-assisted rebase resolution at `pr.md:425-428` uses a placeholder `:` with conservative `break` fallback. If the orchestrator-level Agent dispatch isn't completed at runtime, the agent-assisted resolution silently no-ops (treats every conflict as too-many-files). This matches plan intent (conservative fail-safe) and won't fire in Phase 3 (main is current; no rebase conflict expected).
+
+### PLAN-TEXT-DRIFT
+
+None detected. Counts (681 → 545 lines), file paths, and SKILL.md splice line range all match plan text.
+
 ## Phase — 1B `/land-pr` validation
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
