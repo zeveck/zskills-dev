@@ -16,7 +16,7 @@ status: active
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1a    | ⬚ | /quickfix — flags, triage gate (WI 1.5.4), inline plan, fresh-agent review (skill source + mirror) |
+| 1a    | 🟡 In Progress | /quickfix — flags, triage gate (WI 1.5.4), inline plan, fresh-agent review (skill source + mirror) |
 | 1b    | ⬚ | /quickfix — extend tests/test-quickfix.sh to cover triage / review / --force / --rounds |
 | 2a    | ⬚ | /do — flags, triage gate (BEFORE cron registration), inline plan, fresh-agent review (skill source + mirror) |
 | 2b    | ⬚ | /do — create tests/test-do.sh, wire into run-all.sh |
