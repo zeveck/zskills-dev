@@ -196,8 +196,10 @@ Three landing modes control how agent work reaches main:
 - `/run-plan plans/X.md finish auto pr`
 - `/fix-issues 10 pr`
 - `/research-and-go Build an RPG. pr`
-- `/quickfix Fix README typo` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main)
-- `/do Add dark mode. pr`
+- `/quickfix Fix README typo --force` — low-ceremony PR for trivial changes (no worktree; picks up in-flight edits in main; `--force` skips triage + review)
+- `/do Add dark mode. --rounds 2 --force. pr`
+
+Both skills now triage tasks and run a fresh-agent plan review before execution. Use `--force` to bypass.
 
 After a PR merges on GitHub, run `/cleanup-merged` to catch your local clone up (checkout main, pull, delete merged feature branches). Safe to run anytime; bails on a dirty tree.
 

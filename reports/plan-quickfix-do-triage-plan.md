@@ -1,5 +1,57 @@
 # Plan Report — /quickfix and /do Triage Gate, Inline Plan, Fresh-Agent Review
 
+## Plan complete — 2026-05-01
+
+All five phases landed via PR mode in a single autonomous `finish auto` run.
+
+| Phase | Status | Commit | PR |
+|-------|--------|--------|-----|
+| 1a | ✅ Done | `d779788` | [#151](https://github.com/zeveck/zskills-dev/pull/151) |
+| 1b | ✅ Done | `73ff49a` | [#152](https://github.com/zeveck/zskills-dev/pull/152) |
+| 2a | ✅ Done | `4a6c659` | [#153](https://github.com/zeveck/zskills-dev/pull/153) |
+| 2b | ✅ Done | `dc0005d` | [#154](https://github.com/zeveck/zskills-dev/pull/154) |
+| 3  | ✅ Done | `59613d4` | (this PR) |
+
+**Test suite trajectory:** 1698 (pre-plan baseline) → 1709 (after Phase 1b adds 10 quickfix cases, +1 split) → 1722 (after Phase 2b adds 13 do cases). No regressions across all five phases.
+
+**Follow-up:** [#155](https://github.com/zeveck/zskills-dev/issues/155) — apply triage gate + plan review to `/commit pr`.
+
+---
+
+## Phase — 3 Cross-cutting: CLAUDE_TEMPLATE.md, full-suite run, follow-up issue
+
+**Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-quickfix-do-triage-plan (PR mode)
+**Implementation commit:** 59613d4
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | CLAUDE_TEMPLATE.md L199-200 — append `--force`/`--rounds N` to /quickfix and /do bullets + one-line triage note | Done | Anchor verified: matches plan's "**Usage:** Append keyword..." section verbatim. /quickfix bullet renders `--force`; /do bullet renders `--rounds 2 --force` (to satisfy AC2 grep). |
+| 3.2 | Full project `bash tests/run-all.sh` runs clean | Done | 1722/1722 PASS; CI also green via `gh pr checks` before merge |
+| 3.3 | File `/commit pr` follow-up issue, link in `## Follow-ups` | Done | Issue #155 created (state: OPEN); plan parenthetical updated to `(Tracked: https://github.com/zeveck/zskills-dev/issues/155)` |
+
+### Verification
+
+- **Test suite:** PASSED (1722/1722, no change from baseline — CLAUDE_TEMPLATE.md is documentation)
+- **All 4 ACs PASS** — both grep ACs for `--force` examples; full-suite clean; Tracked URL anchor matches real issue URL
+- **PLAN-TEXT-DRIFT:** none
+
+### Diff stat
+
+- `CLAUDE_TEMPLATE.md`: +3 / −2 (3 lines changed)
+- `plans/QUICKFIX_DO_TRIAGE_PLAN.md`: +1 / −1 (Tracked URL parenthetical)
+
+### Commits on `feat/quickfix-do-triage-plan` (Phase 3 only)
+
+```
+59613d4 docs(template): document --force / --rounds + triage gate (Phase 3)
+```
+
+---
+
 ## Phase — 2b /do: create test suite, wire into runner
 
 **Plan:** plans/QUICKFIX_DO_TRIAGE_PLAN.md

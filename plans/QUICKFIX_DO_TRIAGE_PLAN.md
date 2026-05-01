@@ -1,7 +1,7 @@
 ---
 title: /quickfix and /do — Triage Gate, Inline Plan, and Fresh-Agent Plan Review
 created: 2026-04-25
-status: active
+status: complete
 ---
 
 # Plan: /quickfix and /do — Triage Gate, Inline Plan, and Fresh-Agent Plan Review
@@ -20,7 +20,7 @@ status: active
 | 1b    | ✅ Done (`73ff49a`) | /quickfix — extend tests/test-quickfix.sh to cover triage / review / --force / --rounds |
 | 2a    | ✅ Done (`4a6c659`) | /do — flags, triage gate (BEFORE cron registration), inline plan, fresh-agent review (skill source + mirror) |
 | 2b    | ✅ Done (`dc0005d`) | /do — create tests/test-do.sh, wire into run-all.sh |
-| 3     | ⬚ | Cross-cutting — CLAUDE_TEMPLATE.md, full-suite run, /commit pr follow-up issue |
+| 3     | ✅ Done (`59613d4`) | Cross-cutting — CLAUDE_TEMPLATE.md, full-suite run, /commit pr follow-up issue |
 
 **Phase 1a effort note:** Phase 1a touches WI 1.2 (parser), inserts WI 1.5.4 / 1.5.4a / 1.5.4b, edits WI 1.5.5 prose, edits WI 1.8 marker logic, refreshes the WI 1.3 Check 3 hook citation (WI 1a.6.7), and mirrors. Expect roughly 250-300 lines added to `skills/quickfix/SKILL.md` (planning estimate, not an acceptance criterion) and **20** grep-presence AC additions in the Acceptance Criteria block (counted by `awk '/^### Acceptance Criteria/,/^### Dependencies/' ... | grep -cE '^- .*grep'`). Implementer should plan ~2-3 hours of careful prose work.
 
@@ -824,7 +824,7 @@ Phase 1a, Phase 1b, Phase 2a, Phase 2b.
 
 ## Follow-ups (out of scope for this plan)
 
-- `/commit pr` exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. (Tracked as a GitHub issue, number recorded after Phase 3 WI 3.3.)
+- `/commit pr` exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. (Tracked: https://github.com/zeveck/zskills-dev/issues/155)
 
 ---
 
