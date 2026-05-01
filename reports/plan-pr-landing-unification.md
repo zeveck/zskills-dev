@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 1B `/land-pr` validation [UNFINALIZED]
+## Phase — 1B `/land-pr` validation
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified)
