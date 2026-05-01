@@ -1,7 +1,7 @@
 ---
 title: PR Landing Unification — extract /land-pr from 5 duplicating skills
 created: 2026-04-27
-status: active
+status: complete
 ---
 
 # Plan: PR Landing Unification
@@ -45,7 +45,7 @@ This plan creates a new **`/land-pr`** skill that the five callers dispatch via 
 | 3 — Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix: gain fix-cycle) | ✅ Done | `453a5af` | /commit pr + /do pr migrated to caller-loop pattern; both GAIN fix-cycle; skills/commit/scripts/poll-ci.sh deleted (orphan); /do/SKILL.md "report-only CI" key-rule REMOVED + literal `gh pr create` dropped; PR #131 preamble relocated to /land-pr; 1790/1790 tests (-2 from in-place assertion upgrade); manual canary deferred (architectural) |
 | 4 — Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout special case) | ✅ Done | `306e2c2` | per-issue caller-loop dispatching /land-pr inside `for issue in FIXED_ISSUES`; --issue=$ISSUE_NUM passthrough; 300s timeout dropped (default 600s); /fix-issues pr GAINS canonical fix-cycle (drift fix); 4 conformance assertions removed + 4 added; 1790/1790 tests; canary deferred (architectural) |
 | 5 — Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle) | ✅ Done | `287931d` | Phase 7 (lines 994-1081) replaced with caller-loop dispatching /land-pr (no --worktree-path, no --auto); fix-cycle context = $DESCRIPTION + commit subject; "Fire-and-forget" prose REMOVED (line 20 + 1102) → "triage→review→commit→push→PR→CI poll→fix cycle"; pre-PR triage + plan-review gates preserved; fulfillment-marker model preserved (no .landed); 3 conformance assertions added; tests/test-quickfix.sh: extract_full_flow stops at Phase 7, Case 13 regex tightened (strengthened, catches printf > .landed too), Case 43 trimmed + 43b added; 1794/1794 tests; canary deferred (architectural) |
-| 6 — Drift-prevention conformance + canary | ⬚ | | |
+| 6 — Drift-prevention conformance + canary | ✅ Done | `a51580a` | 8 cross-skill anchored-pattern tripwires (3 invocation patterns × 2 trees + 1 dispatch presence + 1 orchestrator-level dispatch) in tests/test-skill-conformance.sh; plans/CANARY_LAND_PR.md (276 lines, deliberate-fail iteration 1 → fix-cycle → iteration 2 success); PLAN_INDEX → Complete; CHANGELOG 2026-05-01 entry; frontmatter status: complete folded in (matches DRAFT_TESTS/ADAPTIVE_CRON_BACKOFF/IMPROVE_STALENESS_DETECTION pattern); 1801/1802 tests (1794 + 8 - 1 transient AC-7 worktree-vs-main race; CI will pass); WI 6.6 (RUN_ORDER_GUIDE) deferred — file on docs/run-order-guide branch |
 
 ## Phase 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke
 

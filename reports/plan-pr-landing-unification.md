@@ -1,5 +1,72 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 6 Drift-prevention conformance + canary (FINAL)
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified) — locks in the unification with cross-skill drift detection
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** a51580a (impl + verify + frontmatter complete), 420ce4b (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 6.1 | Cross-skill conformance tripwires | Done | 8 tripwires using anchored invocation patterns (Round 6 R6-2): no `gh pr create` / `gh pr checks --watch` / `gh pr merge` outside `skills/land-pr/` (source + mirror coverage); 5 callers dispatch `/land-pr` (positive presence); orchestrator-level dispatch heuristic (no nested Agent block ±15 lines around dispatch) |
+| 6.2 | `plans/CANARY_LAND_PR.md` | Done | 276 lines; single-phase canary with deliberate-fail iteration 1 → fix-cycle dispatched → iteration 2 success; 5 documented failure modes; `.landed` success criteria; parser-discipline (no `source` of result file); 4-script-invoked verification |
+| 6.3 | Drift-prevention rationale documented | Done | 27-line header comment in tests/test-skill-conformance.sh cites the 4 drift bugs (87af82a, 1de3049, 175e4aa, b904cef) that motivated this plan |
+| 6.4 | `plans/PLAN_INDEX.md` updated | Done | PR_LANDING_UNIFICATION moved In Progress → Complete; CANARY_LAND_PR added to Canaries; totals updated 46→47, 1→0 in progress, 17→18 complete, 20→21 canaries |
+| 6.5 | `CHANGELOG.md` updated | Done | 2026-05-01 entry summarizing scope, scripts, caller-loop pattern, all 6 PRs (#159-#164 + this), Phase 6 specifics |
+| 6.6 | RUN_ORDER_GUIDE update | **DEFERRED** | File lives on `docs/run-order-guide` branch (not feat/pr-landing-unification); cross-branch update from this worktree is architecturally awkward. Will be follow-up commit on that branch post-merge — same pattern as previous landings per memory `feedback_rog_workflow.md` |
+| 6.7 | Final verification | Done | tests/run-all.sh ran (1801/1802); 8 tripwires PASS; cross-skill grep guards return 0 hits outside `skills/land-pr/`; canary plan present and well-formed |
+
+### Verification
+
+- Test suite: 1801/1802 passed (baseline 1794 + 8 new tripwires - 1 transient)
+- Static migration sanity check across 5 callers: 0 hits of `gh pr create` / `gh pr checks --watch` / `gh pr merge` outside land-pr/ (anchored grep)
+- 5 callers reference /land-pr: run-plan/modes/pr.md=50, commit/modes/pr.md=24, do/SKILL.md=2, do/modes/pr.md=24, fix-issues/modes/pr.md=31, quickfix/SKILL.md=30
+- shellcheck on `skills/land-pr/scripts/*.sh`: 0 warnings (Phase 1A non-regression)
+- WI-by-WI verifier verdict: 7/7 (with 6.6 deferred)
+- Tripwire reality check: each anchored regex traced by hand — catches `gh pr create`, `PR_URL=$(gh pr create...)`, `if ! gh pr merge`, `timeout 600 gh pr checks 123 --watch`; correctly skips backtick-prose, `Manual fallback:` echoes, `**Only \`gh pr merge\`...` gating prose
+- Orchestrator-dispatch heuristic: locates the `Skill: { skill: "land-pr"...` line then scans ±15 lines for start-of-line `Agent:`/`prompt:`/`dispatch.*agent` — all uniformly anchored per Round 6 R6-13
+
+### Transient test failure (non-blocking)
+
+`tests/test_plans_rebuild_uses_collect.sh AC-7`: failed with `aggregator missing plans found in PLAN_INDEX.md: CANARY_LAND_PR.md`. Root cause analyzed and confirmed: `collect.py:175-203` `_resolve_main_root` calls `git rev-parse --git-common-dir` which hops from worktree to main's `.git`, then globs main's `plans/` (which doesn't have CANARY_LAND_PR.md yet). The test reads `$REPO_ROOT/plans/PLAN_INDEX.md` from the worktree (which has the new entry), so they mismatch.
+
+**CI prediction**: PASS. `.github/workflows/test.yml:16` uses `actions/checkout@v4` with `fetch-depth: 0`, producing a normal `.git` directory (not a gitlink), so `_resolve_main_root` returns the same checkout root. Both the index and the glob see CANARY_LAND_PR.md. Verified by reading the workflow definition.
+
+### Drift dispositions (Phase 3.5: 1 found, 0 corrected — non-numeric, documented in plan)
+
+`AC-1/AC-2/AC-3 grep_pattern plan=substring actual=anchored`: AC bullets at lines 39-41 of phase-6.md state substring grep, but WI 6.1 specifies anchored. This drift is already documented in the plan's Round 6 disposition (line 957/968) — Round 6 R6-2 corrected the spec from naive substring to anchored invocation pattern; the implementer used the corrected version. Non-blocking.
+
+### Plan COMPLETE — milestone summary
+
+This is the FINAL phase of `plans/PR_LANDING_UNIFICATION.md`. Frontmatter `status: complete` folded into commit `a51580a` (matches DRAFT_TESTS / ADAPTIVE_CRON_BACKOFF / IMPROVE_STALENESS_DETECTION pattern; single PR closes everything).
+
+**6 PRs total**:
+- #159 `1c6c143` — Phase 1A `/land-pr` foundation
+- #160 `8d9bc13` — Phase 1B validation layer
+- #161 `e28c7f6` — Phase 2 `/run-plan` migration (the bootstrap canary)
+- #162 `bc36e6a` — Phase 3 `/commit pr` + `/do pr` migration
+- #163 `a14c441` — Phase 4 `/fix-issues pr` migration
+- #164 `4176427` — Phase 5 `/quickfix` migration
+- THIS PR — Phase 6 drift-prevention + canary
+
+**Net plan impact**:
+- New `/land-pr` skill (552-line SKILL.md + 4 scripts + 2 caller-facing references + 10-failure-mode catalog)
+- All 5 PR-landing call sites unified through `/land-pr` Skill dispatch
+- 4 of 5 callers GAINED canonical fix-cycle (drift fix): `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`
+- 8 cross-skill anchored-pattern conformance tripwires lock in the unification
+- 1 end-to-end canary plan exercises the unified flow with deliberate fix-cycle
+- Tests 1722 (pre-plan) → 1801 (+79 net, including 23 unit + 6 schema + 47 conformance + 3 plan = sum across all 6 phases)
+- Mirror byte-identical for all touched skills
+
+### For follow-up
+
+- WI 6.6: update `RUN_ORDER_GUIDE.md` on `docs/run-order-guide` branch with PR_LANDING_UNIFICATION completion + next step (per `feedback_rog_workflow.md`)
+- Consider follow-up on the test-briefing-parity flake (sister to issue #132 — minute-boundary timing race surfaced during Phase 3 CI; non-blocking)
+
 ## Phase — 5 Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
