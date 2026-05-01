@@ -50,6 +50,94 @@ check_fixed() {
   fi
 }
 
+# check_not <skill> <label> <pattern>
+# Inverted `check`: passes when the pattern is ABSENT from the skill tree.
+# Used to enforce "no jq binary in scripts", "no || true", etc.
+# Pattern is extended regex.
+check_not() {
+  local skill="$1" label="$2" pattern="$3"
+  if grep -rE -e "$pattern" "$REPO_ROOT/skills/$skill/" > /dev/null 2>&1; then
+    fail "[$skill] $label" "pattern '$pattern' found but should NOT exist"
+  else
+    pass "[$skill] $label"
+  fi
+}
+
+# check_in_file <skill> <relative-path> <label> <pattern>
+# Like `check` but scoped to a specific file inside the skill tree.
+# Used for "WATCH_EXIT must appear in pr-monitor.sh" etc. — assertions
+# that mean "in this specific file" not "anywhere in the skill tree".
+check_in_file() {
+  local skill="$1" relpath="$2" label="$3" pattern="$4"
+  local target="$REPO_ROOT/skills/$skill/$relpath"
+  if [ ! -f "$target" ]; then
+    fail "[$skill/$relpath] $label" "file does not exist"
+    return
+  fi
+  if grep -E -e "$pattern" "$target" > /dev/null 2>&1; then
+    pass "[$skill/$relpath] $label"
+  else
+    fail "[$skill/$relpath] $label" "$pattern"
+  fi
+}
+
+# check_not_in_file <skill> <relative-path> <label> <pattern>
+# Inverted check_in_file.
+check_not_in_file() {
+  local skill="$1" relpath="$2" label="$3" pattern="$4"
+  local target="$REPO_ROOT/skills/$skill/$relpath"
+  if [ ! -f "$target" ]; then
+    fail "[$skill/$relpath] $label" "file does not exist"
+    return
+  fi
+  if grep -E -e "$pattern" "$target" > /dev/null 2>&1; then
+    fail "[$skill/$relpath] $label" "pattern '$pattern' found but should NOT exist"
+  else
+    pass "[$skill/$relpath] $label"
+  fi
+}
+
+# check_executable <skill> <relative-path> <label>
+# Asserts a file exists AND has the executable bit set.
+check_executable() {
+  local skill="$1" relpath="$2" label="$3"
+  local target="$REPO_ROOT/skills/$skill/$relpath"
+  if [ ! -f "$target" ]; then
+    fail "[$skill/$relpath] $label" "file does not exist"
+    return
+  fi
+  if [ -x "$target" ]; then
+    pass "[$skill/$relpath] $label"
+  else
+    fail "[$skill/$relpath] $label" "not executable"
+  fi
+}
+
+# check_not_in_file_filtered <skill> <relpath> <label> <pattern> <ignore-substring>
+# Like check_not_in_file but also strips lines containing
+# <ignore-substring> before checking. Used for "no || true except the
+# canonical `shift || true` arg-parser idiom" — we want to forbid
+# silencing-fallible-op `|| true` while allowing the documented sentinel.
+check_not_in_file_filtered() {
+  local skill="$1" relpath="$2" label="$3" pattern="$4" ignore="$5"
+  local target="$REPO_ROOT/skills/$skill/$relpath"
+  if [ ! -f "$target" ]; then
+    fail "[$skill/$relpath] $label" "file does not exist"
+    return
+  fi
+  # Strip commented lines AND lines containing the ignore substring,
+  # then check for the pattern.
+  local hits
+  hits=$(grep -nE -e "$pattern" "$target" \
+    | grep -v -F "$ignore" \
+    | grep -v -E '^[0-9]+:[[:space:]]*#' || true)
+  if [ -n "$hits" ]; then
+    fail "[$skill/$relpath] $label" "pattern '$pattern' found (excluding '$ignore'): $hits"
+  else
+    pass "[$skill/$relpath] $label"
+  fi
+}
+
 echo "=== /run-plan — behavior contracts ==="
 check       run-plan "stop-precedence"              'Takes precedence'
 check_fixed run-plan "landing-default"              'LANDING_MODE="cherry-pick"'
@@ -242,6 +330,106 @@ echo "=== /verify-changes — RESTRUCTURE-adjacent invariants ==="
 check       verify-changes "Scope Assessment header"  '^## Scope Assessment'
 check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'
 check_fixed verify-changes "faab84b regression anchor" 'faab84b'
+
+echo ""
+echo "=== /land-pr — Phase 1B drift tripwire (PR_LANDING_UNIFICATION) ==="
+# These assertions back-fill the moves from /run-plan's existing inline
+# assertions to /land-pr (per Phase 2 WI 2.7). Once 1B lands, conformance
+# enforces the no-regression contract for Phases 2–5 caller migrations.
+
+# --- Frontmatter / argument-hint ---
+check_fixed land-pr "frontmatter name"            'name: land-pr'
+check_fixed land-pr "argument-hint exists"        'argument-hint:'
+# References to each of the 4 scripts in SKILL.md (separate assertions
+# because the references span many lines and a single regex match is
+# brittle):
+check_fixed land-pr "references pr-rebase.sh"          'pr-rebase.sh'
+check_fixed land-pr "references pr-push-and-create.sh" 'pr-push-and-create.sh'
+check_fixed land-pr "references pr-monitor.sh"         'pr-monitor.sh'
+check_fixed land-pr "references pr-merge.sh"           'pr-merge.sh'
+
+# --- Result-file safety contract ---
+check_fixed land-pr "result-file contract var"   '$RESULT_FILE'
+check       land-pr "validate_result_value defined" 'validate_result_value'
+
+# --- WATCH_EXIT (DA2-5) ---
+# WATCH_EXIT must be the executable variable name. WATCH_RC is the older
+# name from poll-ci.sh — it must not appear in any executable line in
+# pr-monitor.sh. Comments DOCUMENT the migration (line 15 of pr-monitor.sh
+# explicitly says `# - Uses WATCH_EXIT (not WATCH_RC)`); the comment-strip
+# regex `^[^#]*` lets the documentation stand while still failing if any
+# executable line uses WATCH_RC.
+check_in_file     land-pr scripts/pr-monitor.sh "WATCH_EXIT (not WATCH_RC)" 'WATCH_EXIT'
+check_not_in_file land-pr scripts/pr-monitor.sh "WATCH_RC absent in executable lines" '^[^#]*WATCH_RC'
+
+# --- Monitor: --watch + bare re-check pattern ---
+check_fixed land-pr "monitor uses --watch"     'gh pr checks "$PR_NUMBER" --watch'
+check       land-pr "monitor bare re-check"    'gh pr checks "\$PR_NUMBER" >/dev/null'
+
+# --- PR_NUMBER from URL via parameter expansion (no second gh pr view) ---
+check       land-pr "PR_NUMBER from URL not gh pr view" '\$\{[A-Z_]*##\*/\}'
+
+# --- BRANCH_SLUG derivation (foundation bug fix from Phase 1A) ---
+check_fixed land-pr "BRANCH_SLUG derivation"  'BRANCH_SLUG'
+
+# --- PR #131 past-failure preamble (issue #133) ---
+check land-pr "PR #131 past-failure preamble" 'PR #131'
+
+# --- Caller loop: allow-list parser pattern ---
+check land-pr "allow-list parser key set" 'STATUS\|PR_URL\|PR_NUMBER'
+
+# --- Failure modes catalog exists (WI 1B.1) ---
+check_fixed land-pr "failure-modes catalog exists" 'The 10 failure modes'
+
+# --- 4 scripts exist + executable ---
+check_executable land-pr scripts/pr-rebase.sh           "pr-rebase.sh executable"
+check_executable land-pr scripts/pr-push-and-create.sh  "pr-push-and-create.sh executable"
+check_executable land-pr scripts/pr-monitor.sh          "pr-monitor.sh executable"
+check_executable land-pr scripts/pr-merge.sh            "pr-merge.sh executable"
+
+# --- No `jq` binary in scripts (gh ... --jq flag is OK; standalone jq is forbidden) ---
+# Per the plan: anchor on `^[[:space:]]*jq ` so `gh --jq '.foo'` flag use is
+# still allowed. Scope to scripts/ only — references/ may discuss jq in prose.
+check_not_in_file land-pr scripts/pr-rebase.sh          "no jq binary"          '^[[:space:]]*jq '
+check_not_in_file land-pr scripts/pr-push-and-create.sh "no jq binary"          '^[[:space:]]*jq '
+check_not_in_file land-pr scripts/pr-monitor.sh         "no jq binary"          '^[[:space:]]*jq '
+check_not_in_file land-pr scripts/pr-merge.sh           "no jq binary"          '^[[:space:]]*jq '
+
+# --- No `|| true` in scripts on FALLIBLE operations.
+# Per the four scripts' arg-parser idiom, `shift || true` is the
+# canonical no-more-args sentinel inside the `while [ $# -gt 0 ]` loop —
+# intentional, not a silenced fallible op (the next iteration's
+# `[ $# -gt 0 ]` reads the state shift produced). The filtered-helper
+# strips lines containing `shift || true` before checking, so that the
+# canonical idiom is allowed but any other `|| true` fails the assertion.
+check_not_in_file_filtered land-pr scripts/pr-rebase.sh          "no || true on fallible ops" '\|\| true' 'shift || true'
+check_not_in_file_filtered land-pr scripts/pr-push-and-create.sh "no || true on fallible ops" '\|\| true' 'shift || true'
+check_not_in_file_filtered land-pr scripts/pr-monitor.sh         "no || true on fallible ops" '\|\| true' 'shift || true'
+check_not_in_file_filtered land-pr scripts/pr-merge.sh           "no || true on fallible ops" '\|\| true' 'shift || true'
+
+# --- No `2>/dev/null` on fallible paths in scripts.
+# Anchor on `^[^#]*` to skip the prose comments at pr-monitor.sh:12-13
+# (which DOCUMENT the past failure of using 2>/dev/null in poll-ci.sh).
+# Documented exemption (per SKILL.md step 2): the resume-mode `gh pr view`
+# PR_URL recovery in SKILL.md uses `2>/dev/null` because empty-PR_URL is an
+# explicit handled outcome. That exemption lives in SKILL.md, NOT in any
+# script under scripts/ — so per-script the assertion is unconditional.
+check_not_in_file land-pr scripts/pr-rebase.sh          "no 2>/dev/null on fallible ops" '^[^#]*2>/dev/null'
+check_not_in_file land-pr scripts/pr-push-and-create.sh "no 2>/dev/null on fallible ops" '^[^#]*2>/dev/null'
+check_not_in_file land-pr scripts/pr-monitor.sh         "no 2>/dev/null on fallible ops" '^[^#]*2>/dev/null'
+check_not_in_file land-pr scripts/pr-merge.sh           "no 2>/dev/null on fallible ops" '^[^#]*2>/dev/null'
+
+# --- Caller loop pattern lives in references ---
+check_in_file land-pr references/caller-loop-pattern.md "caller loop allow-list keys" \
+  'STATUS\|PR_URL\|PR_NUMBER'
+# Defense-in-depth: caller pattern must explicitly forbid `source` of the
+# result file. Two literal landmarks (defense + parser-rationale section).
+check_fixed land-pr 'never source: contract bullet'   'Never `source`'
+check_fixed land-pr 'never source: parser rationale'  'allow-list parser, not `source`'
+
+# --- Caller pattern: no source-based result parsing ---
+check_not land-pr "no source-based result parsing in caller pattern" \
+  'source[[:space:]]+.*RESULT_FILE|^\.[[:space:]]+.*RESULT_FILE'
 
 echo ""
 echo "=== /update-zskills — Step C / C.9 / D contract (DRIFT_ARCH_FIX Phase 2) ==="
