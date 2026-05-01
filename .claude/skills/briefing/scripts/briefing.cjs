@@ -595,10 +595,14 @@ function parseCommits(opts = {}) {
 function formatET(date) {
   const d = date || new Date();
   try {
+    // hourCycle: 'h23' is REQUIRED — `hour12: false` alone is ambiguous between
+    // h23 (midnight = 00) and h24 (midnight = 24). Some Node/ICU builds resolve
+    // it to h24, which produces `24:41 ET` at 00:41 ET and breaks parity with
+    // briefing.py (which uses %H, always 0-23). See issue #132.
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false,
+      hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
     });
     const parts = {};
     for (const p of fmt.formatToParts(d)) parts[p.type] = p.value;

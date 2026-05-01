@@ -218,6 +218,70 @@ except:
   fi
 
   rm -rf "$FIXTURE_DIR"
+
+  # ---------------------------------------------------------------------
+  # Midnight-ET formatter regression test (issue #132)
+  # ---------------------------------------------------------------------
+  # At 00:xx ET (~04:xx UTC) some Node/ICU builds resolve `hour12: false`
+  # to hourCycle h24, emitting `24:30 ET` instead of `00:30 ET` and
+  # diverging from briefing.py (which uses %H, always 0-23). This test
+  # pins a Date / datetime to midnight ET and asserts both formatters
+  # emit the 00 hour, not 24.
+  echo ""
+  echo "=== Midnight-ET formatter parity (issue #132) ==="
+
+  # Node: 04:30 UTC = 00:30 ET (after DST cutover; works year-round at this
+  # particular wall-clock minute since EDT is UTC-4 and EST is UTC-5;
+  # we test 04:30 UTC which is 00:30 EDT or 23:30 EST. Use a Spring date
+  # to be unambiguous.)
+  node_midnight_out=$(node -e "
+    const { formatET } = require('$REPO_ROOT/skills/briefing/scripts/briefing.cjs');
+    // 2026-04-30T04:30:00Z = 2026-04-30 00:30 EDT (April is in DST)
+    process.stdout.write(formatET(new Date('2026-04-30T04:30:00Z')));
+  " 2>/dev/null)
+  py_midnight_out=$(python3 -c "
+import sys, os
+sys.path.insert(0, '$REPO_ROOT/skills/briefing/scripts')
+from datetime import datetime, timezone
+import briefing
+# 2026-04-30T04:30:00Z = 2026-04-30 00:30 EDT
+d = datetime(2026, 4, 30, 4, 30, 0, tzinfo=timezone.utc)
+sys.stdout.write(briefing.format_et(d))
+" 2>/dev/null)
+
+  expected="2026-04-30 00:30 ET"
+
+  if [[ "$node_midnight_out" == "$expected" ]]; then
+    pass "midnight-ET: briefing.cjs emits '00:30 ET' at 00:30 ET"
+  else
+    fail "midnight-ET: briefing.cjs emitted '$node_midnight_out', expected '$expected'"
+  fi
+
+  if [[ "$py_midnight_out" == "$expected" ]]; then
+    pass "midnight-ET: briefing.py emits '00:30 ET' at 00:30 ET"
+  else
+    fail "midnight-ET: briefing.py emitted '$py_midnight_out', expected '$expected'"
+  fi
+
+  # Belt-and-suspenders: explicitly assert no '24:' hour anywhere.
+  if [[ "$node_midnight_out" != *"24:"* ]]; then
+    pass "midnight-ET: briefing.cjs output has no '24:' hour"
+  else
+    fail "midnight-ET: briefing.cjs output contains '24:' — '$node_midnight_out'"
+  fi
+
+  if [[ "$py_midnight_out" != *"24:"* ]]; then
+    pass "midnight-ET: briefing.py output has no '24:' hour"
+  else
+    fail "midnight-ET: briefing.py output contains '24:' — '$py_midnight_out'"
+  fi
+
+  # Final parity check: outputs are byte-equivalent at midnight ET.
+  if [[ "$node_midnight_out" == "$py_midnight_out" ]]; then
+    pass "midnight-ET: briefing.cjs and briefing.py outputs match"
+  else
+    fail "midnight-ET: outputs diverge — node='$node_midnight_out' py='$py_midnight_out'"
+  fi
 fi
 
 echo ""
