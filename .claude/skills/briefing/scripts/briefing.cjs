@@ -595,18 +595,25 @@ function parseCommits(opts = {}) {
 function formatET(date) {
   const d = date || new Date();
   try {
-    // hourCycle: 'h23' is REQUIRED — `hour12: false` alone is ambiguous between
-    // h23 (midnight = 00) and h24 (midnight = 24). Some Node/ICU builds resolve
-    // it to h24, which produces `24:41 ET` at 00:41 ET and breaks parity with
-    // briefing.py (which uses %H, always 0-23). See issue #132.
+    // Use hourCycle:'h23' alone — NOT hour12:false. Per MDN: when both
+    // hour12 and hourCycle are specified, hour12 takes precedence and
+    // hourCycle is silently ignored. With hour12:false alone, en-US locale
+    // can resolve to h24 on older Node/ICU builds (e.g., CI's ubuntu-latest
+    // default Node), emitting `24:30 ET` at 00:30 ET and breaking parity
+    // with briefing.py (which uses %H, always 0-23). hourCycle:'h23' alone
+    // is the only spec-portable way to force midnight = 00. See issue #132.
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
       year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false, hourCycle: 'h23',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     });
     const parts = {};
     for (const p of fmt.formatToParts(d)) parts[p.type] = p.value;
-    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ET`;
+    // Belt-and-suspenders: even with hourCycle:'h23', some Node/ICU
+    // builds (e.g., older Node 18 on CI) still resolve en-US to h24 for
+    // midnight, emitting '24'. Normalize here.
+    const hour = parts.hour === '24' ? '00' : parts.hour;
+    return `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute} ET`;
   } catch {
     // Fallback if Intl not available
     return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
