@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 2 Migrate `/run-plan` PR mode to `/land-pr` [UNFINALIZED]
+## Phase — 2 Migrate `/run-plan` PR mode to `/land-pr`
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified) — most consequential migration in the plan

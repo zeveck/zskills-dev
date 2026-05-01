@@ -41,7 +41,7 @@ This plan creates a new **`/land-pr`** skill that the five callers dispatch via 
 |-------|--------|--------|-------|
 | 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke | ✅ Done | `6d0d0ab` | SKILL + 4 scripts + 2 references + mirror; smoke PR #158 created+closed; 1722/1722 tests; shellcheck clean; bug fix: BRANCH_SLUG for /tmp paths |
 | 1B — `/land-pr` validation: failure-modes doc + mocks + tests + conformance | ✅ Done | `04d4d3d` | failure-modes catalog (10 modes) + 2 mocks + 23 land-pr unit tests + 37 conformance assertions + 5 helpers; 1782/1782 tests (+60); shellcheck clean; mirror byte-identical |
-| 2 — Migrate `/run-plan` PR mode to `/land-pr` (caller owns body splice) | 🟡 In Progress | `bfc265d` | inline block (681→545 lines) replaced with /land-pr Skill dispatch + caller loop; 0 inline gh pr create/merge/checks --watch; 4 new conformance assertions + WATCH_EXIT relocated to land-pr; tests/test-landed-schema.sh (6 cases); 1792/1792 tests; WI 2.9 (canary) deferred to Phase 3 fire (architectural) |
+| 2 — Migrate `/run-plan` PR mode to `/land-pr` (caller owns body splice) | ✅ Done | `bfc265d` | inline block (681→545 lines) replaced with /land-pr Skill dispatch + caller loop; 0 inline gh pr create/merge/checks --watch; 4 new conformance assertions + WATCH_EXIT relocated to land-pr; tests/test-landed-schema.sh (6 cases); 1792/1792 tests; WI 2.9 (canary) deferred to Phase 3 fire (architectural) |
 | 3 — Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix: gain fix-cycle) | ⬚ | | |
 | 4 — Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout special case) | ⬚ | | |
 | 5 — Migrate `/quickfix` to `/land-pr` (drift fix: gain CI monitoring + fix-cycle) | ⬚ | | |
