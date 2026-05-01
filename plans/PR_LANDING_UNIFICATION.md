@@ -39,7 +39,7 @@ This plan creates a new **`/land-pr`** skill that the five callers dispatch via 
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke | ⬚ | | Smoke checkpoint at end |
+| 1A — `/land-pr` foundation: skill + 4 scripts + caller-facing references + smoke | 🟡 In Progress | `6d0d0ab` | SKILL + 4 scripts + 2 references + mirror; smoke PR #158 created+closed; 1722/1722 tests; shellcheck clean; bug fix: BRANCH_SLUG for /tmp paths |
 | 1B — `/land-pr` validation: failure-modes doc + mocks + tests + conformance | ⬚ | | Lands before Phases 2–5 |
 | 2 — Migrate `/run-plan` PR mode to `/land-pr` (caller owns body splice) | ⬚ | | |
 | 3 — Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix: gain fix-cycle) | ⬚ | | |
