@@ -91,12 +91,12 @@ For each item: `/refine-plan` first to absorb drift introduced by Phase B / C / 
 
 Issues filed but not yet routed to a phase. Default to running clear-and-doable items as a parallel `/fix-issues` batch; route design-class items to `/draft-plan` first.
 
-- [ ] **Issue [#132](https://github.com/zeveck/zskills-dev/issues/132)** — `briefing.cjs` midnight ET `Intl.DateTimeFormat` h24 quirk. **Route: `/fix-issues 132 pr`.** One-line fix specced (`hourCycle: 'h23'`), regression test plan in the issue body, scope is one file. Textbook clear-and-doable.
-- [ ] **Issue [#133](https://github.com/zeveck/zskills-dev/issues/133)** — `/commit pr` Step 6 CI poll skipped without enforcement. **Route: `/fix-issues 133 pr`.** Mechanical fix following established `requires.*`/`fulfilled.*` tracking discipline + hook block; bounded scope across `skills/commit/` + hook surface. Light-touch alternatives (more prose, stronger language) explicitly rejected per memory `feedback_execute_skill_bash_blocks` — only mechanical enforcement closes the gap.
+- [ ] **Issue [#132](https://github.com/zeveck/zskills-dev/issues/132)** — `briefing.cjs` midnight ET `Intl.DateTimeFormat` h24 quirk. **Route: `/fix-issues 132`** (PR mode resolved from `execution.landing: "pr"` in config). One-line fix specced (`hourCycle: 'h23'`), regression test plan in the issue body, scope is one file. Textbook clear-and-doable.
+- [ ] **Issue [#133](https://github.com/zeveck/zskills-dev/issues/133)** — `/commit pr` Step 6 CI poll skipped without enforcement. **Route: `/fix-issues 133`.** Mechanical fix following established `requires.*`/`fulfilled.*` tracking discipline + hook block; bounded scope across `skills/commit/` + hook surface. Light-touch alternatives (more prose, stronger language) explicitly rejected per memory `feedback_execute_skill_bash_blocks` — only mechanical enforcement closes the gap.
 - [ ] **Issue [#134](https://github.com/zeveck/zskills-dev/issues/134)** — Mode B failure-fire pile-up backoff (follow-up to #110). **Route: `/draft-plan` first, then `/run-plan`.** Bump-check has 3 untested architectural options — same shape that got #110 itself deferred from `/fix-issues` to `/draft-plan`. Don't try `/fix-issues` directly; the design surface needs adversarial review.
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-Reasonable parallel batch: **`/fix-issues 132 133 pr`** — different surfaces (`briefing.cjs` vs `skills/commit/` + hooks), no file overlap, both clear-and-doable.
+Reasonable parallel batch: **`/fix-issues 132 133`** — different surfaces (`briefing.cjs` vs `skills/commit/` + hooks), no file overlap, both clear-and-doable. PR mode is resolved from `execution.landing: "pr"` in config, so the explicit `pr` token is redundant.
 
 ---
 
