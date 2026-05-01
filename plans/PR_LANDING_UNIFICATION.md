@@ -27,7 +27,7 @@ This plan creates a new **`/land-pr`** skill that the five callers dispatch via 
 
 **Cross-skill dispatch model:** Per `skills/research-and-plan/SKILL.md:87-105`, the Skill tool is the recursion mechanism — invoking `/land-pr` via `Skill: { skill: "land-pr", args: "..." }` loads `/land-pr`'s instructions into the **same** conversation context as the caller. There is no subprocess return value; data hand-off uses a file-based result contract with a safe allow-list parser (the caller passes `--result-file <path>`, `/land-pr` writes `KEY=VALUE` lines there with single-line shell-safe values, the caller reads via line-by-line allow-list parsing — never `source`).
 
-**PR body ownership:** `/land-pr` writes the PR body **only on initial PR creation**. Subsequent body updates (e.g., `/run-plan`'s per-phase progress splice) are the caller's responsibility — performed before the caller invokes `/land-pr`. This preserves callers' splice patterns (e.g., `/run-plan`'s HTML-comment-marker splice in `modes/pr.md:221-224`) and avoids destroying user-added review notes.
+**PR body ownership:** `/land-pr` writes the PR body **only on initial PR creation**. Subsequent body updates (e.g., `/run-plan`'s per-phase progress splice) are the caller's responsibility — performed before the caller invokes `/land-pr`. This preserves callers' splice patterns (e.g., `/run-plan`'s HTML-comment-marker splice — markers defined in `modes/pr.md:221-224`, splice implementation in `SKILL.md:1715-1745` using bash-regex `BASH_REMATCH`) and avoids destroying user-added review notes.
 
 **Subagent boundary:** `/land-pr` is invoked at orchestrator level only — never from within an Agent-dispatched subagent. The fix-cycle agent dispatch in the caller's loop is similarly orchestrator-level. This is a documented contract (no runtime guard exists; a misbehaving caller could violate it but conformance assertions check that callers' SKILL.md invokes `/land-pr` from the right level of nesting).
 
@@ -63,16 +63,21 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
   name: land-pr
   description: Land an existing feature branch as a PR. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. Caller invokes only at orchestrator level (not from within Agent-dispatched subagents). Invoked directly by users with hand-crafted feature branches, and via Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix.
   argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>]
-  allowed-tools: Bash(git *) Bash(gh *) Bash(bash *) Read Edit Write
   ---
   ```
   No `disable-model-invocation`, no `user-invocable: false`. Both you and Claude can invoke; both via slash command and via Skill-tool dispatch.
 
+  **No `allowed-tools` field (per DA1-9):** verified that `grep -l "allowed-tools" skills/*/SKILL.md` returns 0 hits — no zskills skill currently uses this field. Introducing it on /land-pr alone would be inconsistent and would confuse the conformance test landscape. If a hardening sweep across all skills is desired, it belongs in a separate plan (out of scope here).
+
 - [ ] **WI 1.2 — Argument parsing.** `/land-pr`'s SKILL.md parses `$ARGUMENTS` using bash regex (the established pattern in `/quickfix` and `/do`). Required: `--branch`, `--title`, `--body-file`, `--result-file`. Optional: `--auto` (bool, default false), `--worktree-path`, `--landed-source` (default `land-pr`), `--ci-timeout` (default 600), `--no-monitor` (skip CI poll, return after create — see use-case note in WI 1.12), `--pr <num>` (resume mode: skip rebase/push/create, jump to monitor only), `--issue <num>` (passes through to `.landed` schema). Validate: branch is not `main`/`master`; body-file exists and is non-empty; title is non-empty and ≤ 120 chars; result-file's parent directory exists.
 
-- [ ] **WI 1.3 — `pr-rebase.sh`.** Create `skills/land-pr/scripts/pr-rebase.sh`. Args: `--branch <name>` `--base <branch>` (default `main`). Behavior: `git fetch origin <base>`; `git rebase origin/<base>`. On clean rebase or "already up to date" (idempotent re-invocation): exit 0. On rebase conflicts, `git rebase --abort` (with rc check), write conflict-files list to a sidecar file (`/tmp/land-pr-conflict-files-$BRANCH-$$.txt`, one path per line), emit `CONFLICT_FILES_LIST=<path>` to stdout, exit 10. On other failure (not in git repo, branch absent, fetch fails): exit 11 with stderr error. **Why split out:** rebase conflicts need orchestrator judgement (agent-assisted resolution? manual? abort?). The script never tries to resolve conflicts itself.
+- [ ] **WI 1.3 — `pr-rebase.sh`.** Create `skills/land-pr/scripts/pr-rebase.sh`. Args: `--branch <name>` `--base <branch>` (default `main`). Behavior: `git fetch origin <base>`; `git rebase origin/<base>`. On clean rebase or "already up to date" (idempotent re-invocation): exit 0. On rebase conflicts, **the order MUST be capture-then-abort** (per DA2-7: `git rebase --abort` resets the working tree and erases conflict markers, after which `git diff --name-only --diff-filter=U` returns nothing; the existing `run-plan/modes/pr.md:30, 121` sites both capture BEFORE abort): step 1 — capture conflict files into a sidecar via `CONFLICT_FILES=$(git diff --name-only --diff-filter=U); printf '%s\n' "$CONFLICT_FILES" > /tmp/land-pr-conflict-files-$BRANCH-$$.txt`; step 2 — `git rebase --abort` only after the sidecar write completes successfully (check `[ -s "$SIDECAR" ] || echo "WARN: empty conflict-files sidecar" >&2` before abort); step 3 — verify abort succeeded (`if [ $? -ne 0 ]; then exit 11 with abort-failed stderr`); step 4 — emit `CONFLICT_FILES_LIST=<path>` to stdout, exit 10.
 
-  Idempotency note (verified per git documentation): `git rebase origin/<base>` is a no-op when the local branch is already on top of the base. The fix-cycle re-invocation case (caller pushed a fix commit, /land-pr is called again) does NOT cause spurious conflicts — the local branch's new commits are already rebased on origin/main from the prior pass. WI 1.14 includes an explicit test case for this.
+  **Reason token (per R2-2 / Round 5 candidate #5 / DA1-8 marker discipline):** populate the result-file's `REASON=<token>` field on exit 11 to distinguish failure subtypes — `REASON=not-a-repo` (git rev-parse failed), `REASON=branch-absent` (branch ref doesn't exist locally and not on remote), `REASON=network` (fetch failed), `REASON=abort-failed` (rebase --abort returned non-zero — repo in intermediate state, manual cleanup needed). Caller's loop dispatches on `REASON` for retry-on-network-only logic when desired.
+
+  On other failure (not in git repo, branch absent, fetch fails): exit 11 with stderr error AND populated `REASON`. **Why split out:** rebase conflicts need orchestrator judgement (agent-assisted resolution? manual? abort?). The script never tries to resolve conflicts itself.
+
+  Idempotency note (verified per git documentation): `git rebase origin/<base>` is a no-op when the local branch is already on top of the base. The fix-cycle re-invocation case (caller pushed a fix commit, /land-pr is called again) does NOT cause spurious conflicts — the local branch's new commits are already rebased on origin/main from the prior pass. WI 1B.3 includes an explicit test case for this.
 
 - [ ] **WI 1.4 — `pr-push-and-create.sh`.** Create `skills/land-pr/scripts/pr-push-and-create.sh`. Args: `--branch <name>` `--base <branch>` `--title <title>` `--body-file <path>`. Behavior:
   1. Detect existing PR via `gh pr list --head "$BRANCH" --base "$BASE" --json number,url 2>"$STDERR_LOG"`. Parse the JSON output via bash regex (no `jq` binary — `gh ... --json` is gh's built-in formatter):
@@ -89,7 +94,7 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
      If multiple open PRs from the same branch exist (force-push artifact), the first `BASH_REMATCH` capture wins (the most recent); log a warning to stderr but proceed.
   2. Push: `git push -u origin "$BRANCH"` (or `git push` if upstream already set). On non-zero exit, exit 12 with the captured stderr — no `|| true`, no `2>/dev/null`.
   3. If `PR_EXISTING=true`:
-     - **Body update is the caller's responsibility, not /land-pr's.** This script does NOT call `gh pr edit --body-file`. Rationale: `/run-plan`'s per-phase update uses HTML-comment-marker splicing (verified at `skills/run-plan/modes/pr.md:221-224`) to preserve user-added review notes; a wholesale body replacement here would destroy those edits. Callers that need body updates handle them in their own prose before invoking `/land-pr` (see Phase 2 WI 2.1).
+     - **Body update is the caller's responsibility, not /land-pr's.** This script does NOT call `gh pr edit --body-file`. Rationale: `/run-plan`'s per-phase update uses HTML-comment-marker splicing (markers defined at `skills/run-plan/modes/pr.md:221-224`, splice implementation at `skills/run-plan/SKILL.md:1715-1745` using bash-regex `BASH_REMATCH`) to preserve user-added review notes; a wholesale body replacement here would destroy those edits. Callers that need body updates handle them in their own prose before invoking `/land-pr` (see Phase 2 WI 2.1).
      - Emit `PR_EXISTING=true PR_URL=<url> PR_NUMBER=<num>` to stdout, exit 0.
   4. Else (no existing PR): `gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$BODY_FILE"`. **Race-condition note:** if a parallel `/land-pr` invocation just created a PR for the same branch (`gh pr list` race window), `gh pr create` will fail with an "already exists" error — gh enforces one open PR per head branch. The losing invocation receives exit 13 with the stderr captured; caller's loop handles it as `STATUS=create-failed`. No duplicate PRs are created. Exit 13 on creation failure.
   5. Extract `PR_NUMBER` from create output's URL via parameter expansion `${URL##*/}` (per fix 175e4aa — never via second `gh pr view`). Validate it's all-digits via `[[ "$PR_NUMBER" =~ ^[0-9]+$ ]]`; if not, exit 14.
@@ -97,11 +102,15 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
 
   **Why combined:** push and create are sequential with no orchestrator decision between them. If push fails, create can't run.
 
-- [ ] **WI 1.5 — `pr-monitor.sh`.** Create `skills/land-pr/scripts/pr-monitor.sh`. Args: `--pr <number>` `--timeout <sec>` (default 600) `--log-out <path>`. Behavior:
+- [ ] **WI 1.5 — `pr-monitor.sh` (consolidated successor to `skills/commit/scripts/poll-ci.sh`).** Create `skills/land-pr/scripts/pr-monitor.sh`. **Consolidation decision (per R1-2 + DA1-3):** `pr-monitor.sh` is the canonical implementation of the `--watch + re-check` primitive across all callers. PR #142's `skills/commit/scripts/poll-ci.sh` (verified at `skills/commit/scripts/poll-ci.sh:31-57`) implements the same primitive but emits prose instead of structured `KEY=VALUE` and lacks failure-log capture. After Phase 3 migrates `/commit pr` to dispatch `/land-pr`, `poll-ci.sh` becomes dead code; **WI 3.5a (added below) deletes it**. The conformance assertion at `tests/test-skill-conformance.sh:151` (`commit "step6: poll-ci.sh invocation"`) is removed in WI 3.4 and replaced with the /land-pr dispatch assertion.
+
+  **Pre-existing bug to surface (per CLAUDE.md "skill-framework repo — surface bugs, don't patch"):** `skills/commit/scripts/poll-ci.sh:34,49,51` use `2>/dev/null` on fallible operations — a documented CLAUDE.md violation. `pr-monitor.sh` MUST NOT inherit these silenced redirects. All stderr from fallible gh calls in `pr-monitor.sh` goes to a captured log file (`$STDERR_LOG`) and is surfaced in the result-file's `CALL_ERROR_FILE` sidecar on failure — never silently dropped.
+
+  Args: `--pr <number>` `--timeout <sec>` (default 600) `--log-out <path>`. Behavior:
   1. Pre-check loop: 3 attempts with 10s sleep, query `gh pr checks "$PR" --json name 2>"$STDERR_LOG"`. Parse with bash regex `\[.*\]` to detect non-empty array. On count > 0, break.
   2. If count == 0 after retries: emit `CI_STATUS=none`, exit 0.
-  3. Initial poll: `timeout "$TIMEOUT" gh pr checks "$PR" --watch 2>"$LOG_OUT.stderr"`. Capture exit code as `WATCH_RC`.
-  4. **Honor only `WATCH_RC=124`** (timeout's exit for "still running") → emit `CI_STATUS=pending`, exit 0. For all other watch exit codes, IGNORE and re-check.
+  3. Initial poll: `timeout "$TIMEOUT" gh pr checks "$PR" --watch 2>"$LOG_OUT.stderr"`. Capture exit code as **`WATCH_EXIT`** (NOT `WATCH_RC` — per DA2-5: the existing conformance assertion at `tests/test-skill-conformance.sh:68` is `check_fixed run-plan "timeout 124 handling" 'WATCH_EXIT" -eq 124'`, which RELOCATES to `land-pr` per WI 2.7. Naming the variable `WATCH_RC` would force the assertion to be REWRITTEN at relocation time. Using `WATCH_EXIT` keeps the assertion mechanically RELOCATABLE).
+  4. **Honor only `WATCH_EXIT=124`** (timeout's exit for "still running") → emit `CI_STATUS=pending`, exit 0. For all other watch exit codes, IGNORE and re-check.
   5. Re-check (per fix 87af82a): bare `gh pr checks "$PR" >/dev/null 2>"$STDERR_LOG"`. Exit 0 → `CI_STATUS=pass`. Exit 1 → `CI_STATUS=fail`. Exit 8 → `CI_STATUS=pending`. Other → `CI_STATUS=unknown` (with stderr captured to `$LOG_OUT.stderr`).
   6. On `CI_STATUS=fail`, capture failure log: extract a run ID via `gh pr checks "$PR" --json link` and bash-regex on the URL, then run `gh run view --log-failed <run-id> > "$LOG_OUT"`. If run-ID extraction fails, emit `CI_LOG_FILE=` (empty) — caller's fix-cycle agent must handle missing log gracefully.
   7. Emit final `CI_STATUS=...` and `CI_LOG_FILE=...` to stdout, exit 0 (poll completed regardless of pass/fail).
@@ -221,8 +230,15 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
     done < "$RESULT_FILE"
     STATUS="${LP[STATUS]}"
     CI_STATUS="${LP[CI_STATUS]}"
-    # Sidecar cleanup — capture paths before removing result file, then clean up sidecars after caller-specific handling below.
-    _CLEANUP_PATHS="${LP[CALL_ERROR_FILE]:-} ${LP[CONFLICT_FILES_LIST]:-} ${LP[CI_LOG_FILE]:-}"
+    # Sidecar cleanup — capture paths of files that should be cleaned up.
+    # Per DA1-12: do NOT include CI_LOG_FILE in this list. The cleanup pattern below was previously
+    # `[[ "$f" != *"$CI_LOG_FILE"* ]]`, which has two bugs: (a) when CI_LOG_FILE is empty (the CI=pass
+    # case), the pattern `*""*` matches everything → no sidecars are cleaned, leaking indefinitely;
+    # (b) substring containment can spuriously skip CALL_ERROR_FILE if its path happens to contain
+    # CI_LOG_FILE as a prefix. Build the array from cleanup-targets only:
+    # Per DA2-11: use an array (not space-joined string) to avoid field-splitting bugs
+    # if a sidecar path ever contains spaces. Trivial bash, no metacharacter pitfalls.
+    _CLEANUP_PATHS=("${LP[CALL_ERROR_FILE]:-}" "${LP[CONFLICT_FILES_LIST]:-}")
     rm -f "$RESULT_FILE"
 
     case "$STATUS" in
@@ -270,11 +286,12 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
     esac
   done
 
-  # Sidecar cleanup (after final iteration). CI_LOG_FILE is preserved if the
-  # caller wants to retain failure logs; CALL_ERROR_FILE and CONFLICT_FILES_LIST
-  # are transient and removed.
-  for f in $_CLEANUP_PATHS; do
-    [ -n "$f" ] && [ -f "$f" ] && [[ "$f" != *"$CI_LOG_FILE"* ]] && rm -f "$f"
+  # Sidecar cleanup (after final iteration). _CLEANUP_PATHS contains only
+  # CALL_ERROR_FILE and CONFLICT_FILES_LIST (transient). CI_LOG_FILE is intentionally
+  # NOT in the array — the caller may want to retain failure logs after the loop exits;
+  # if cleanup is needed, the caller does it explicitly after consuming the log.
+  for f in "${_CLEANUP_PATHS[@]}"; do
+    [ -n "$f" ] && [ -f "$f" ] && rm -f "$f"
   done
   # === END CANONICAL /land-pr CALLER LOOP ===
   ```
@@ -312,7 +329,7 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
 
      **Use case for `--no-monitor`:** caller wants to report PR URL to user mid-flight (e.g., interactive `/land-pr` invocation where the user wants the URL fast and will check CI themselves), or caller wants to split create-and-monitor across two cron-fired turns. None of the 5 callers in this plan use `--no-monitor` — it's a flag for direct user invocation and future callers.
 
-  6. Run `pr-monitor.sh` with `--ci-timeout`.
+  6. Run `pr-monitor.sh` with `--ci-timeout`. **Prepend the verbatim PR #131 past-failure preamble** (relocated from `skills/commit/modes/pr.md:62-70` per WI 3.4 / DA2-8) immediately above this step — the agent-discipline lesson ("don't paraphrase the polling step; don't substitute a single `gh pr checks` snapshot for an actual `--watch` poll") is load-bearing and was added in PR #133 as a behavioral guardrail. The conformance assertion `check land-pr "PR #131 past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'` (added in WI 3.4) verifies it survives.
   7. Run `pr-merge.sh` with `--auto-flag` and the resolved `CI_STATUS`.
   8. Compose `.landed` body if `--worktree-path` was supplied. Use this **status mapping table** to derive the `status` field:
 
@@ -331,11 +348,11 @@ Create the `/land-pr` skill with the four deterministic scripts, canonical proce
      | 9 | false (auto-merge-disabled-on-repo) | * | pass / none / skipped | pr-ready |
      | 10 | false (auto-not-requested) | * | pass / none / skipped | pr-ready |
 
-     All required schema fields populated; optional fields populated when known. Pipe to `bash scripts/write-landed.sh "$WORKTREE_PATH"` (uses atomic write per its docstring at `scripts/write-landed.sh:19`: *"Writes: <worktree-path>/.landed (atomic via .tmp + mv)"*).
+     All required schema fields populated; optional fields populated when known. Pipe to `bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"` (uses atomic write per its docstring at `skills/commit/scripts/write-landed.sh:19`: *"Writes: <worktree-path>/.landed (atomic via .tmp + mv)"*).
   9. Compose final result and write to `$RESULT_FILE` (atomic via `.tmp` + `mv`). Per WI 1.7, every VALUE is validated via `validate_result_value` before write; multi-line content is referenced via `*_FILE` sidecar paths.
   10. Echo a brief one-line summary to stdout for the conversation log: `STATUS=<status> PR=<url> CI=<status>`.
 
-- [ ] **WI 1A.13 — Mirror (foundation).** `rm -rf .claude/skills/land-pr && cp -a skills/land-pr .claude/skills/land-pr && diff -rq skills/land-pr .claude/skills/land-pr` (must produce no output). Mirrors the 1A foundation files: SKILL.md, 4 scripts, references/caller-loop-pattern.md, references/fix-cycle-agent-prompt-template.md.
+- [ ] **WI 1A.13 — Mirror (foundation).** Run `bash scripts/mirror-skill.sh land-pr` (introduced in PR #88; per-file mirror that respects the `hooks/block-unsafe-generic.sh:201-220` recursive-rm guard). The script does the diff verification internally and exits non-zero on drift. Mirrors the 1A foundation files: SKILL.md, 4 scripts, references/caller-loop-pattern.md, references/fix-cycle-agent-prompt-template.md.
 
 - [ ] **WI 1A.14 — Update PLAN_INDEX.** Move PR_LANDING_UNIFICATION from "Ready to Run" to "In Progress" with current phase = 1A.
 
@@ -361,18 +378,19 @@ If the smoke test fails, the script contracts or procedure prose are wrong — *
 ### Design & Constraints
 
 - **Cross-skill dispatch via Skill tool, single-string args.** Per `skills/research-and-plan/SKILL.md:140`. Same-context recursion per `:87-105`. Therefore data hand-off is file-based (WI 1.7), not via stdout.
-- **No `jq` binary; `gh ... --jq` flag is allowed.** `jq` standalone binary is prohibited per memory `feedback_no_jq_in_skills`. `gh`'s `--jq` flag is gh's built-in formatter, not a separate process — using it does not introduce a `jq` dependency. Conformance test (WI 1.15) guards against `^[[:space:]]*jq ` pattern, not against `--jq=` flag.
+- **No `jq` binary; `gh ... --jq` flag is allowed.** `jq` standalone binary is prohibited per memory `feedback_no_jq_in_skills`. `gh`'s `--jq` flag is gh's built-in formatter, not a separate process — using it does not introduce a `jq` dependency. Conformance test (WI 1B.4) guards against `^[[:space:]]*jq ` pattern, not against `--jq=` flag. **Internal style preference (DA1-11):** prefer bash-regex on `gh ... --json` output (per WI 1.4 step 1) over `gh ... --jq '.field'` for consistency. WI 1.6 step 6 uses `--jq` for terseness; WI 1.4 sets the bash-regex precedent and is the default for new code.
 - **No `|| true`, no `2>/dev/null` on fallible ops.** Per CLAUDE.md "Never suppress errors."
 - **No `--no-verify` on commits.** Per CLAUDE.md.
-- **`scripts/write-landed.sh` is reused as-is.** Atomic write semantics verified at the script's docstring (line 19: "Writes: <worktree-path>/.landed (atomic via .tmp + mv)").
+- **`skills/commit/scripts/write-landed.sh` is reused as-is.** Path corrected per R1-7 — PRs #95-#100 moved this script under `skills/commit/scripts/` (the `commit` skill owns landing primitives; per `skills/update-zskills/references/script-ownership.md`). Atomic write semantics verified at the script's docstring (line 19: "Writes: <worktree-path>/.landed (atomic via .tmp + mv)"). The agent invokes it as `bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"`. Same correction applies to `skills/commit/scripts/land-phase.sh`.
 - **Result-file values are single-line shell-safe; multi-line content goes in sidecar files.** The caller never `source`s the result file; uses an allow-list line-by-line parser (WI 1.7). This eliminates the shell-injection class.
 - **Test-output capture pattern.** All tests follow CLAUDE.md's TEST_OUT idiom — never pipe.
-- **Idempotency is a contract.** Re-invoking `/land-pr` with the same branch must be a no-op for already-done steps (rebase up-to-date is exit 0; push up-to-date is exit 0; existing PR is detected). Body updates are caller-owned, NOT done by `/land-pr`. WI 1.14 includes explicit idempotency test cases.
+- **Idempotency is a contract.** Re-invoking `/land-pr` with the same branch must be a no-op for already-done steps (rebase up-to-date is exit 0; push up-to-date is exit 0; existing PR is detected). Body updates are caller-owned, NOT done by `/land-pr`. WI 1B.3 includes explicit idempotency test cases.
 - **Race condition on parallel `/land-pr` invocations is bounded by gh's "already exists" rejection.** If two callers race past `gh pr list` and both call `gh pr create`, gh enforces one open PR per head branch and the second invocation gets a non-zero exit with "already exists" stderr. The losing invocation's caller sees `STATUS=create-failed` and handles it via the canonical loop; no duplicate PRs are created. This is documented; no `flock` guard is needed.
 - **`--no-monitor` and `--pr <num>` enable two flow shapes.** `--no-monitor`: caller wants to report PR URL early and skip CI poll for this invocation. `--pr <num>`: caller resumes monitoring an existing PR. Together they let users / future callers split the create-and-monitor flow when needed. None of the 5 callers in this plan use these flags — they all monitor synchronously.
 - **All 5 callers run CI monitoring + fix-cycle.** No exceptions. /quickfix's "fire-and-forget" was drift, not design. /commit pr and /do pr's "report-only" was drift, not design. The unification corrects all three (per maintainer rationale in Overview).
 - **`/land-pr` is dispatched only at orchestrator level.** Documented contract — no runtime guard. Conformance assertions in Phase 6 verify callers' SKILL.md files contain the dispatch at orchestrator level (not inside an Agent prompt block).
-- **Hooks compatibility.** Per `hooks/block-unsafe-project.sh.template:634-640`, the `git push` rule scope is segmented to the `git push` portion of the command (the recent #58 fix). /land-pr's gh/git calls won't trip false-positives. The smoke checkpoint (intra-phase) verifies this end-to-end.
+- **Hooks compatibility.** Per `hooks/block-unsafe-project.sh.template:634-640`, the `git push` rule scope is segmented to the `git push` portion of the command (the recent #58 fix). /land-pr's gh/git calls won't trip false-positives. The smoke checkpoint (intra-phase) verifies this end-to-end. **Recursive-rm hook compatibility (per DA1-1):** all mirror WIs use `bash scripts/mirror-skill.sh <name>` instead of `rm -rf .claude/skills/<name>` because `hooks/block-unsafe-generic.sh:201-220` blocks recursive rm outside `/tmp/`. PR #88's `mirror-skill.sh` does per-file mirror that respects the guard.
+- **Post-merge red-main canary interaction (per DA1-10).** `.github/workflows/test.yml:82-122` (PR #149) auto-files or comments on a `main-broken` GitHub issue when a push to main fails Tests. This canary is independent of `/land-pr`'s exit status — if `--auto` is true and CI passes pre-merge but post-merge red appears (rare, but possible due to merge-commit interactions), the canary fires regardless of whether /land-pr's caller loop returned `STATUS=merged`. This is intentional: the canary exists precisely to catch the silent post-merge red case. /land-pr does not write to `.github/`, so no interference is possible.
 - **PR body ownership is the caller's, not `/land-pr`'s.** /land-pr writes the body only on initial PR creation (the `--body-file` content). Subsequent body updates (e.g., /run-plan's HTML-comment-marker progress splice) are caller-owned and happen before the caller invokes /land-pr. This preserves user-added review notes.
 - **shellcheck clean.** All four scripts must pass `shellcheck` with no warnings.
 
@@ -383,7 +401,7 @@ If the smoke test fails, the script contracts or procedure prose are wrong — *
 - [ ] All four scripts exist and are executable: `for f in pr-rebase pr-push-and-create pr-monitor pr-merge; do test -x "skills/land-pr/scripts/$f.sh" || fail "$f not executable"; done`.
 - [ ] `shellcheck skills/land-pr/scripts/*.sh` returns 0.
 - [ ] `skills/land-pr/references/caller-loop-pattern.md` and `skills/land-pr/references/fix-cycle-agent-prompt-template.md` exist (callers in Phases 2–5 will copy from these).
-- [ ] Mirror byte-identical for 1A files: `diff -rq skills/land-pr .claude/skills/land-pr` produces no output (note: failure-modes.md, mocks, and tests don't exist yet; they're 1B work).
+- [ ] Mirror byte-identical for 1A files: `bash scripts/mirror-skill.sh land-pr` exits 0 (script does the diff verification internally; note: failure-modes.md, mocks, and tests don't exist yet; they're 1B work).
 - [ ] No skill yet calls `/land-pr` (Phases 2–5 do that). Existing skills' PR mode behavior is unchanged.
 - [ ] `plans/PLAN_INDEX.md` shows PR_LANDING_UNIFICATION in "In Progress" with Phase 1A complete.
 - [ ] `bash tests/run-all.sh` still passes (Phase 1A doesn't break existing tests; new tests come in 1B).
@@ -469,7 +487,7 @@ Add the validation layer on top of Phase 1A's foundation: failure-modes document
     - `check_not land-pr "no || true" '\|\| true'`
     - `check_not land-pr "no source-based result parsing" 'source[[:space:]]+.*RESULT_FILE|\.[[:space:]]+.*RESULT_FILE'`  (caller pattern in references/ — verifies the safe parser, not source)
 
-- [ ] **WI 1B.5 — Mirror update.** `rm -rf .claude/skills/land-pr && cp -a skills/land-pr .claude/skills/land-pr && diff -rq skills/land-pr .claude/skills/land-pr` (must produce no output). Mirrors 1B's added `failure-modes.md` plus any 1A changes that landed since 1A's mirror.
+- [ ] **WI 1B.5 — Mirror update.** Run `bash scripts/mirror-skill.sh land-pr`. Mirrors 1B's added `failure-modes.md` plus any 1A changes that landed since 1A's mirror.
 
 - [ ] **WI 1B.6 — Update PLAN_INDEX.** Move PR_LANDING_UNIFICATION's "Next Phase" to 1B → 2.
 
@@ -486,7 +504,7 @@ Add the validation layer on top of Phase 1A's foundation: failure-modes document
 - [ ] `tests/test-land-pr-scripts.sh` runs and passes (≥10 failure-mode test cases + idempotency, status-mapping, result-safe-parsing, race-bounded test cases). Output captured per CLAUDE.md.
 - [ ] `tests/test-skill-conformance.sh` runs and passes — `check_not` helper defined; new /land-pr assertions; no existing assertion modified.
 - [ ] `bash tests/run-all.sh` passes overall.
-- [ ] Mirror byte-identical: `diff -rq skills/land-pr .claude/skills/land-pr` produces no output.
+- [ ] Mirror byte-identical: `bash scripts/mirror-skill.sh land-pr` exits 0.
 - [ ] `plans/PLAN_INDEX.md` shows PR_LANDING_UNIFICATION's Next Phase = 2.
 
 ### Dependencies
@@ -497,36 +515,26 @@ Add the validation layer on top of Phase 1A's foundation: failure-modes document
 
 ### Goal
 
-Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (currently lines 195–657, ~460 lines) with a Skill-tool dispatch to `/land-pr` plus the canonical caller fix-cycle loop. **Critical:** `/run-plan` continues to own per-phase PR body splicing (using its existing HTML-comment markers at `modes/pr.md:221-224` and SKILL.md:1190-1217), performed BEFORE invoking `/land-pr`. /land-pr does not touch the body on existing PRs.
+Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (current main `b1db0b2`: file is 681 lines; the inline rebase + push + create + CI poll + fix cycle + auto-merge + `.landed` block bounded by the grep-able markers `## Step 6` / end-of-`gh pr merge`-block / `### Post-landing tracking`, current lines 281–680) with a Skill-tool dispatch to `/land-pr` plus the canonical caller fix-cycle loop. **Critical:** `/run-plan` continues to own per-phase PR body splicing using its existing bash-regex (`BASH_REMATCH`) implementation at `skills/run-plan/SKILL.md:1715-1745`, performed BEFORE invoking `/land-pr`. /land-pr does not touch the body on existing PRs. **Per DA1-8:** prefer grep-able markers ("delete from `## Step 6` to end of `gh pr merge` block") over hard line numbers — the file drifts faster than the plan can be rewritten.
 
 ### Work Items
 
-- [ ] **WI 2.1 — Caller-owned body splice (with explicit failure recovery).** Continue building `$PR_BODY` in `/run-plan`'s prose with HTML-comment-wrapped progress section (`<!-- run-plan:progress:start --> ... <!-- run-plan:progress:end -->`). Write to `/tmp/pr-body-$PLAN_SLUG.md`.
+- [ ] **WI 2.1 — Caller-owned body splice (preserve existing bash-regex implementation).** Continue building `$PR_BODY` in `/run-plan`'s prose with HTML-comment-wrapped progress section (`<!-- run-plan:progress:start --> ... <!-- run-plan:progress:end -->`). Write to `/tmp/pr-body-$PLAN_SLUG.md`.
 
   **First-phase invocation:** No PR exists yet; the body file written must INCLUDE the markers (so subsequent phases have something to splice into). `/run-plan`'s body construction prose places `<!-- run-plan:progress:start -->\n<progress section>\n<!-- run-plan:progress:end -->` near the top of the body. /land-pr creates the PR with this body via `pr-push-and-create.sh` (no special handling needed).
 
-  **Subsequent-phase invocation (existing PR detected before the loop):**
-  1. Fetch current body: `gh pr view "$PR_NUMBER" --json body --jq '.body' > /tmp/pr-body-current.md`. On error: retry once with 2s backoff; if second attempt fails, write `.landed conflict REASON=gh-pr-view-failed` and break the loop.
-  2. Validate markers are present: `grep -qF '<!-- run-plan:progress:start -->' /tmp/pr-body-current.md && grep -qF '<!-- run-plan:progress:end -->' /tmp/pr-body-current.md`. If markers are absent, write `.landed conflict REASON=body-markers-missing` and break with a clear error message ("Manual repair required: PR body must contain run-plan:progress markers").
-  3. Build the new progress section text in `/tmp/pr-progress-section.txt`, then splice inline using `awk` (per the existing pattern at `skills/run-plan/SKILL.md:1216-1217`, but with awk instead of sed for `&`/`\` safety):
-     ```bash
-     awk -v start='<!-- run-plan:progress:start -->' \
-         -v end='<!-- run-plan:progress:end -->' \
-         -v progress="$(cat /tmp/pr-progress-section.txt)" \
-         '
-         $0 ~ start { print; print progress; skip=1; next }
-         $0 ~ end   { skip=0 }
-         !skip      { print }
-         ' /tmp/pr-body-current.md > "$BODY_FILE"
-     ```
-     The awk passes `progress` as a variable (no shell expansion of body content), so `&`/`\` and other regex metacharacters in user-pasted content survive intact.
-  4. Update the PR body: `gh pr edit "$PR_NUMBER" --body-file "$BODY_FILE"`. On error: retry once with 2s backoff. On second failure: write `.landed conflict REASON=gh-pr-edit-failed` and break.
+  **Subsequent-phase invocation (existing PR detected before the loop):** **Preserve the existing bash-regex splice implementation at `skills/run-plan/SKILL.md:1715-1745` verbatim** (per DA1-2). Do NOT rewrite it as awk or sed. The current implementation uses bash `[[ "$CURRENT_BODY" =~ (.*$START_MARKER)(.*)($END_MARKER.*) ]]` with `BASH_REMATCH` capture groups — already passes the conformance assertion at `tests/test-skill-conformance.sh:102` (`(.*$START_MARKER)(.*)($END_MARKER.*)`). `BASH_REMATCH` does no replacement-side metachar interpretation, so `&`/`\` in user-pasted content survive intact. The structural change here is **relocation only**: the splice block moves from its current Phase 4 location into the `<CALLER_PRE_INVOKE_BODY_PREP>` slot of the canonical caller-loop pattern, executed BEFORE invoking `/land-pr` on each phase iteration where a PR already exists.
 
-  Three recovery paths (`gh-pr-view-failed`, `body-markers-missing`, `gh-pr-edit-failed`) cover the real failure modes; each writes the canonical-schema `.landed` and breaks the loop without invoking `/land-pr`. (Earlier drafts had 5 paths covering a separate `splice-body.sh` utility's exit codes; that utility was removed as YAGNI premature extraction — only `/run-plan` does body splicing today, so the splice stays inline. See Plan Review for refinement history.)
+  **Recovery paths (3 paths, each writes the canonical-schema `.landed` and breaks the loop without invoking `/land-pr`):**
+  1. **`gh-pr-view-failed`** — `gh pr view "$PR_NUMBER" --json body --jq '.body'` fails. Retry once with 2s backoff; on second failure, write `.landed status=conflict REASON=gh-pr-view-failed` and break.
+  2. **`body-markers-missing`** — `grep -qF '<!-- run-plan:progress:start -->' && grep -qF '<!-- run-plan:progress:end -->'` returns false on the fetched body. The current implementation at `SKILL.md:1742` emits `NOTICE: skipping PR body sync: markers not found` and gracefully continues — preserve this behavior on the **best-effort path** (per the existing design property at `SKILL.md:1758-1761`: "the plan-tracker commit on the feature branch is the source of truth; the PR body is a convenience surface"). Do NOT escalate to `.landed conflict` — escalation would regress the existing graceful behavior captured by conformance assertion at `tests/test-skill-conformance.sh:103`.
+  3. **`gh-pr-edit-failed`** — `gh pr edit "$PR_NUMBER" --body "$UPDATED_BODY"` fails. Retry once with 2s backoff; on second failure, the existing implementation at `SKILL.md:1737` emits `WARNING: gh pr edit ... failed — PR body not synced` and continues. Preserve this WARN-and-continue behavior. Do NOT escalate to `.landed conflict` — feature-branch commit is the source of truth.
+
+  This is a deliberate framing change from earlier plan revisions (which proposed sed→awk improvements and 3-or-5 hard-failure recovery paths). The current implementation already handles `gh-pr-view-failed`, `body-markers-missing`, and `gh-pr-edit-failed` with the right severity (graceful for body-markers-missing and gh-pr-edit-failed; retry-then-graceful for gh-pr-view-failed). Wholesale rewriting it as hard-failure-with-`.landed-conflict` would regress passing conformance assertions and the documented design property. The old "5 paths covering splice-body.sh" was already removed as YAGNI in Round 4; this revision now also removes the gh-pr-view-failed-or-edit-failed-as-hard-conflict over-escalation and aligns with the existing implementation.
 
   `/land-pr`'s `pr-push-and-create.sh` does NOT touch the body when an existing PR is detected (per WI 1.4) — preserving user-added review notes between the markers.
 
-- [ ] **WI 2.2 — Replace inline PR-landing block with caller loop.** Edit `skills/run-plan/modes/pr.md`. Delete the inline rebase + push + create + CI poll + fix cycle + auto-merge + .landed block (current lines 195–657). Replace with the canonical caller-loop pattern from `skills/land-pr/references/caller-loop-pattern.md`. Customize:
+- [ ] **WI 2.2 — Replace inline PR-landing block with caller loop.** Edit `skills/run-plan/modes/pr.md`. Delete the inline rebase + push + create + CI poll + fix cycle + auto-merge + .landed block — bounded by grep-able **bash-comment** markers `# --- PR creation ---` (start, current line 268; verified — `run-plan/modes/pr.md` uses bash-comment headers, not Markdown `## Step 6` headings; the latter only appears in `commit/modes/pr.md`) and the H3 marker `### Post-landing tracking` (end, current line 681). The deleted block is bounded by these two markers (current lines ~268–680 in `b1db0b2`; use the markers, not the line range, since the file drifts). Replace with the canonical caller-loop pattern from `skills/land-pr/references/caller-loop-pattern.md`. Customize:
   - `$LANDED_SOURCE=run-plan`
   - `$WORKTREE_PATH=` the per-phase worktree
   - `$AUTO=$AUTO_FROM_RUNPLAN_INVOCATION`
@@ -536,17 +544,39 @@ Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (c
 
 - [ ] **WI 2.3 — Preserve agent-assisted rebase conflict resolution.** When `/land-pr` returns `STATUS=rebase-conflict` and the conflict-files list (read from `${LP[CONFLICT_FILES_LIST]}`) has count ≤ 5, dispatch the existing `/run-plan` rebase-resolution agent (orchestrator-level, not nested) in the worktree. The agent runs `git rebase origin/main` itself to reproduce the conflict state (`pr-rebase.sh` aborted it leaving a clean tree), resolves the conflicts, and signals success. Then `continue` the loop to re-invoke `/land-pr` (its rebase will be no-op since the conflict is resolved). On > 5 files or agent failure: write `.landed conflict` marker per current behavior (using the canonical schema from WI 1.11) and `break` the loop.
 
-- [ ] **WI 2.4 — Preserve fix-cycle agent dispatch with plan context.** Use `skills/land-pr/references/fix-cycle-agent-prompt-template.md` as the structural starting point. Caller-specific bits: plan title, current phase, phase work items, the `${LP[CI_LOG_FILE]}` from `/land-pr`'s output, the worktree path. The existing fix-cycle agent prompt prose in `/run-plan/modes/pr.md` lines 472–505 transfers into the template's `<CALLER_WORK_CONTEXT>` slot.
+- [ ] **WI 2.4 — Preserve fix-cycle agent dispatch with plan context.** Use `skills/land-pr/references/fix-cycle-agent-prompt-template.md` as the structural starting point. Caller-specific bits: plan title, current phase, phase work items, the `${LP[CI_LOG_FILE]}` from `/land-pr`'s output, the worktree path. The existing fix-cycle agent prompt prose in `/run-plan/modes/pr.md` (locate via grep-able marker `Dispatch a fix-cycle agent` or the agent-prompt heredoc near the inline `gh pr checks --watch` block) transfers into the template's `<CALLER_WORK_CONTEXT>` slot. Per DA1-8: prefer marker-based locator over hard line numbers.
 
 - [ ] **WI 2.5 — Preserve finish-mode loop and frontmatter writes.** `/run-plan` schedules the next phase via one-shot cron after a phase lands. This continues unchanged. The frontmatter status update (in the plan file, before push so it's captured in the squash) also continues unchanged — both happen in `/run-plan`'s prose, before invoking `/land-pr`.
 
-- [ ] **WI 2.6 — `.landed` ownership split + downstream consumer verification.** `/land-pr` writes `.landed` for push-failed/CI-failing/landed states. `/run-plan` writes `.landed` only for the pre-`/land-pr` "rebase-conflict-too-many-files" case. Both writers use the canonical schema from WI 1.11. **Verification:** in WI 2.9's manual canary, run `/fix-report` on the resulting `.landed` AND check that `scripts/land-phase.sh` cleans up the worktree correctly. Add a unit test (extend `tests/test-skill-conformance.sh` or a new `tests/test-landed-schema.sh`) asserting both `/fix-report` and `scripts/land-phase.sh` parse a canonical-schema `.landed` without error.
+- [ ] **WI 2.5a — ADAPTIVE_CRON_BACKOFF Mode A interaction (per DA1-6).** `/run-plan/SKILL.md:439-573` (added in PRs #131, #138) implements per-phase defer counters and cadence step-down at boundary fires `C+1 ∈ {1, 10, 16, 26}`. The defer counter is incremented in `/run-plan`'s Step 0 pre-flight on every cron-fired turn that finds the phase still "In Progress." When `/land-pr`'s synchronous CI monitoring (default 600s) and the wrapping caller-loop's fix-cycle (up to ~10+ min on a 2-attempt cycle) hold the orchestrator turn open, the next `*/1` cron fire arrives while the prior turn is still running. The adaptive-cron machinery is designed to handle this — the `*/1`-fire on an in-progress phase enters Step 0 and increments the defer counter. **Design implication:** at default settings, a single fix-cycle iteration (~10 min including push + re-poll) crosses 10 cron fires, which steps the cadence from `*/1` to `*/10` mid-fix-cycle. The phase still finishes correctly (Step 0 defers, then the original turn writes `.landed`), but the cron is now `*/10`, slowing every subsequent phase's first defer-fire by an order of magnitude.
+
+  **Acceptance:** WI 2.9's manual canary observes the `in-progress-defers.<phase>` counter behavior across a fix-cycle invocation and verifies that the cadence settles correctly when the phase lands. **No code change is required in /run-plan or /land-pr** — the adaptive machinery is correct by design — but the plan must DOCUMENT this interaction so the implementer reviews it post-canary and confirms the step-down is acceptable. If empirical observation shows step-down is too aggressive across fix-cycles, follow-up: add a "fix-cycle-active" sentinel that suppresses defer-counter increments while `/land-pr` is mid-flight (out of scope for this phase).
+
+  **`cron-recovery-needed.<phase>` sentinel safety:** The sentinel is keyed by phase name; if `/land-pr`'s caller loop crashes mid-fix-cycle, the sentinel never gets cleared. /run-plan's Step 0 sentinel-recovery prelude (`SKILL.md:439-471`) handles this on next entry. No additional cleanup is needed.
+
+- [ ] **WI 2.6 — `.landed` ownership split + downstream consumer verification.** `/land-pr` writes `.landed` for push-failed/CI-failing/landed states. `/run-plan` writes `.landed` only for the pre-`/land-pr` "rebase-conflict-too-many-files" case. Both writers use the canonical schema from WI 1.11. **Path correction (per R1-7):** `write-landed.sh` and `land-phase.sh` live at `skills/commit/scripts/write-landed.sh` and `skills/commit/scripts/land-phase.sh` (moved by PRs #95-#100; verified via `find` returns `./skills/commit/scripts/write-landed.sh` and `./skills/commit/scripts/land-phase.sh`). The mirrored runtime paths the agent invokes are `$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/{write-landed,land-phase}.sh`. **Verification:** in WI 2.9's manual canary, run `/fix-report` on the resulting `.landed` AND check that `bash $CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh` cleans up the worktree correctly. Add a unit test (extend `tests/test-skill-conformance.sh` or a new `tests/test-landed-schema.sh`) asserting both `/fix-report` and `skills/commit/scripts/land-phase.sh` parse a canonical-schema `.landed` without error.
 
 - [ ] **WI 2.7 — Update conformance tests.** In `tests/test-skill-conformance.sh`:
-  - Existing /run-plan PR-mode assertions targeting inline code (the 87af82a re-check, 175e4aa hardenings, b904cef gating) MOVE to /land-pr's conformance section (added in WI 1.15).
-  - Add new assertions: `check_fixed run-plan "modes/pr.md dispatches /land-pr" 'land-pr'`; `check_not run-plan "no inline gh pr create" 'gh pr create'`; `check_not run-plan "no inline gh pr checks" 'gh pr checks'`; `check_not run-plan "no inline gh pr merge" 'gh pr merge'`. (Uses the `check_not` helper from WI 1.15.)
+  - Existing /run-plan PR-mode assertions targeting inline code (the 87af82a re-check, 175e4aa hardenings, b904cef gating) MOVE to /land-pr's conformance section (added in WI 1B.4).
+  - **Stale-assertion enumeration (per DA1-4):** the following assertions in `tests/test-skill-conformance.sh` will fail when /run-plan migrates and MUST be relocated, rewritten, or deleted in this WI (verified against current main `b1db0b2`):
+    | Line | Assertion label | Action |
+    |---|---|---|
+    | 66 | `run-plan "--watch unreliable"` | RELOCATE to `land-pr` (assertion now lives in `pr-monitor.sh`) |
+    | 67 | `run-plan "gh pr checks re-check"` | RELOCATE to `land-pr` |
+    | 68 | `run-plan "timeout 124 handling"` `WATCH_EXIT" -eq 124` | RELOCATE to `land-pr` (per WI 1.5: `pr-monitor.sh` uses `WATCH_EXIT` variable name, so the regex matches verbatim — see DA2-5) |
+    | 69 | `run-plan "ci-pending pr-ready"` `pr-ready` | **REWRITE** — per R2-2/DA2-6: the `pr-ready` literal currently appears in `run-plan/modes/pr.md:400, 424, 592, 638, 646, 675, 676`. After WI 2.2 deletes the inline block, ALL these sites are gone. The `pr-ready` token survives only in /land-pr's `.landed` schema (WI 1.11). Rewrite as `check_fixed land-pr "pr-ready status mapping" 'pr-ready'` (matches WI 1.12 step 8's status table where rows 4, 5, 7, 9, 10 produce `pr-ready`). Alternatively REMOVE if the schema-table coverage in WI 1B.4 already asserts pr-ready presence; implementer's judgment. |
+    | 70 | `run-plan "ci log path"` `/tmp/ci-failure-` | RELOCATE to `land-pr` |
+    | 71 | `run-plan "auto-merge expected fallback"` | RELOCATE to `land-pr` |
+    | 72 | `run-plan "pr number from url"` | RELOCATE to `land-pr` (lives in `pr-push-and-create.sh`) |
+    | 73 | `run-plan "pr number numeric check"` | RELOCATE to `land-pr` |
+    | 74 | `run-plan "push error-check first-time"` | RELOCATE to `land-pr` |
+    | 75 | `run-plan "pre-cherry-pick stash"` | STAY — verified the literal `'pre-cherry-pick stash'` lives in `skills/run-plan/modes/cherry-pick.md:83`, NOT in `pr.md`. Cherry-pick mode is out-of-scope for this plan; the assertion is unaffected by PR-mode migration. |
+    Lines 99–103 (PR-body splice markers, `gh pr edit` body sync, splice regex form, NOTICE-on-missing-markers) STAY on `run-plan` — body splice remains caller-owned per WI 2.1; the existing bash-regex splice at `skills/run-plan/SKILL.md:1715-1745` is preserved verbatim.
 
-- [ ] **WI 2.8 — Mirror.** `rm -rf .claude/skills/run-plan && cp -a skills/run-plan .claude/skills/run-plan && diff -rq skills/run-plan .claude/skills/run-plan`.
+    **Total run-plan PR-mode assertions enumerated: 9** (lines 66, 67, 68, 69, 70, 71, 72, 73, 74) plus line 75 STAY-verified for completeness. Combined with WI 3.4 (commit=3), WI 3.9 (do=4), and WI 4.6 (fix-issues=8), the cross-skill total is 24 assertions affected by migration (per DA2-6 re-count against current `tests/test-skill-conformance.sh`). The original Round 1 estimate of "~13 assertions" was significantly low; the per-line tables in this WI and WI 3.4 / 3.9 / 4.6 now enumerate all 24.
+  - Add new assertions: `check_fixed run-plan "modes/pr.md dispatches /land-pr" 'land-pr'`; `check_not run-plan "no inline gh pr create" 'gh pr create'`; `check_not run-plan "no inline gh pr checks --watch" 'gh pr checks --watch'`; `check_not run-plan "no inline gh pr merge" 'gh pr merge'`. (Uses the `check_not` helper from WI 1B.4.)
+
+- [ ] **WI 2.8 — Mirror.** Run `bash scripts/mirror-skill.sh run-plan`.
 
 - [ ] **WI 2.9 — Manual canary verification.** Run `/run-plan plans/CANARY1_HAPPY.md` end-to-end. Confirm: PR is created, body has progress section, CI poll runs, `.landed` written correctly, `/fix-report` reads it correctly, on success the worktree is cleaned up. Run `/run-plan plans/CANARY3_FIXCYCLE.md` (which intentionally breaks CI) — confirm fix-cycle dispatches, recovers, and lands. Spot check: between phases, manually edit the PR body to add a "review note" outside the HTML-comment markers; confirm the next phase preserves it.
 
@@ -565,7 +595,7 @@ Replace the inline PR-landing implementation in `skills/run-plan/modes/pr.md` (c
 - [ ] `bash tests/run-all.sh` passes.
 - [ ] CANARY1_HAPPY runs end-to-end successfully; user-added review notes preserved across phases.
 - [ ] CANARY3_FIXCYCLE triggers fix-cycle and recovers (or settles at `pr-ci-failing`).
-- [ ] `/fix-report` and `scripts/land-phase.sh` parse canonical-schema `.landed` without error (per WI 2.6).
+- [ ] `/fix-report` and `skills/commit/scripts/land-phase.sh` parse canonical-schema `.landed` without error (per WI 2.6).
 - [ ] Mirror byte-identical.
 
 ### Dependencies
@@ -588,19 +618,25 @@ Replace the inline implementation in `skills/commit/modes/pr.md` AND `skills/do/
 
 - [ ] **WI 3.3 — /commit pr title/body construction.** Title from branch name as today. Body from recent commits as today. Write body to `/tmp/pr-body-commit-$BRANCH_SLUG.md`.
 
-- [ ] **WI 3.4 — /commit pr conformance.** Inline `gh pr create` and `gh pr checks --watch` GONE. `/land-pr` dispatched.
+- [ ] **WI 3.4 — /commit pr conformance.** Inline `gh pr create` and `gh pr checks --watch` GONE. `/land-pr` dispatched. **Stale-assertion enumeration (per DA1-4):** in `tests/test-skill-conformance.sh`, line 144 (`commit "--watch unreliable"`) RELOCATES to `land-pr` (now lives in `pr-monitor.sh`); line 151 (`commit "step6: poll-ci.sh invocation"`) is REMOVED (poll-ci.sh deleted in WI 3.5a); line 152 (`commit "step6: past-failure preamble"`) **RELOCATES** to /land-pr's SKILL.md prose (NOT removed, NOT moved to `failure-modes.md` — per DA2-8: the past-failure preamble at `skills/commit/modes/pr.md:62-70` is a **prompt-engineering lesson** about agent-discipline ("agent skipped Step 6 on PR #131 push, read inline bash as suggestion-prose, did one snapshot, exited"), not a script-failure-mode. `failure-modes.md` per WI 1B.1 catalogs script-level failures; the wrong document for an agent-prose-discipline lesson). Action: copy the verbatim PR #131 preamble paragraph into /land-pr's SKILL.md prose immediately above WI 1.12 step 6 (the `pr-monitor.sh` invocation step), reworded to point at /land-pr's polling logic instead of /commit's. Then add a new conformance assertion: `check land-pr "PR #131 past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'`. Add: `check_fixed commit "modes/pr.md dispatches /land-pr" 'land-pr'`.
 
-- [ ] **WI 3.5 — /commit mirror + manual.** Mirror commit; verify on a feature branch with passing CI; verify with intentionally-failing CI (fix-cycle dispatches).
+- [ ] **WI 3.5 — /commit mirror + manual.** Run `bash scripts/mirror-skill.sh commit`; verify on a feature branch with passing CI; verify with intentionally-failing CI (fix-cycle dispatches).
+
+- [ ] **WI 3.5a — Delete orphan `skills/commit/scripts/poll-ci.sh` (per DA1-3).** After WI 3.1 migrates `/commit/modes/pr.md` to dispatch `/land-pr`, `poll-ci.sh` is no longer invoked from anywhere. Delete `skills/commit/scripts/poll-ci.sh` and `.claude/skills/commit/scripts/poll-ci.sh`. Verify `grep -rln 'poll-ci.sh' skills/ .claude/skills/` returns no hits. The `pr-monitor.sh` in `/land-pr` is the canonical successor (per WI 1.5 above).
 
 - [ ] **WI 3.6 — /do pr migration.** Edit `skills/do/modes/pr.md`. Delete current lines 124–218. Replace with caller-loop pattern. `$LANDED_SOURCE=do`, `$WORKTREE_PATH=$WORKTREE_PATH`, no `--auto`. `<CALLER_PRE_INVOKE_BODY_PREP>` block: empty (do's body is fixed at PR creation). `<DISPATCH_FIX_CYCLE_AGENT_HERE>` block: agent context = task description.
 
-- [ ] **WI 3.7 — Remove duplicate `gh pr create` from `skills/do/SKILL.md`.** Single source of truth: `modes/pr.md`. Conformance test asserts `gh pr create` does not appear in `skills/do/SKILL.md`.
+- [ ] **WI 3.7 — Remove the `gh pr create` prose mention in `skills/do/SKILL.md`, then add regression guard.** **DA2-1 correction:** Round 1 claimed `grep -n "gh pr create" skills/do/SKILL.md` returns 0 hits. Re-running the grep against current main `b1db0b2` actually returns ONE hit at line 878: `- **PR titles and bodies are explicit** — never use \`--fill\` in \`gh pr create\`.` This is a Key Rules prose constraint about the `--fill` flag, not a live invocation, but the Phase 6 grep tripwire (`grep -rln 'gh pr create' skills/ | grep -v 'skills/land-pr/'` must be 0) WILL match it and fail.
+
+  **Fix:** Edit `skills/do/SKILL.md` line 878 to reword without the literal `gh pr create` substring. Replacement candidate: `- **PR titles and bodies are explicit** — never use \`--fill\` when creating a PR (the title and body are constructed by the skill, not auto-derived from commits).`. Verify the equivalent conformance assertion at `tests/test-skill-conformance.sh:195` (`do "no --fill" 'never use --fill|NEVER use --fill|not --fill'`) still passes against the rewritten line — the assertion checks for `never use --fill` substring, which the replacement still contains. Then add a `check_not` assertion that `gh pr create` does NOT appear in `skills/do/SKILL.md` (using the helper from WI 1B.4) so any future drift is caught.
+
+  **Lesson:** Round 1 refiner's "verified 0 hits" claim was wrong. Future verify-before-fix passes must run the grep with the exact pattern in the exact scope before declaring "no hits."
 
 - [ ] **WI 3.8 — /do pr `.landed` schema harmonization.** /land-pr writes the canonical-schema marker (WI 1.11). Verify `/fix-report` and cleanup tooling handle the new fields gracefully (additive change — they read fewer fields than the marker has).
 
-- [ ] **WI 3.9 — /do conformance.** Inline `gh pr create` and `gh pr checks --watch` GONE from BOTH `SKILL.md` and `modes/pr.md`. `/land-pr` dispatched.
+- [ ] **WI 3.9 — /do conformance.** Inline `gh pr create` and `gh pr checks --watch` GONE from BOTH `SKILL.md` and `modes/pr.md`. `/land-pr` dispatched. **Stale-assertion enumeration (per DA1-4):** in `tests/test-skill-conformance.sh`, line 197 (`do "--watch unreliable"`) RELOCATES to `land-pr`; line 198 (`do "pr-state-unknown retry"`) STAYS — the `pr-state-unknown` token is now part of /land-pr's `.landed` schema (WI 1.11) and may still be referenced in /do's caller-loop wrapper for explanatory prose; verify at WI 3.10. Line 199 (`do "report-only ci"` regex `(does NOT|doesn.?t) dispatch fix agents|report-only`) is **REMOVED** — its INTENT is now incorrect because Phase 3 is a drift fix that ADDS fix-cycle to /do pr; replace with `check_fixed do "modes/pr.md dispatches /land-pr" 'land-pr'`. Line 194 (`do "rebase before push"`) STAYS — the rebase is preserved (now via `pr-rebase.sh`); the assertion may be RELOCATED to `land-pr` if the literal `git rebase origin/main` no longer appears in /do.
 
-- [ ] **WI 3.10 — /do mirror + manual.** Mirror do; verify `/do pr "small task"` end-to-end with passing and failing CI.
+- [ ] **WI 3.10 — /do mirror + manual.** Run `bash scripts/mirror-skill.sh do`; verify `/do pr "small task"` end-to-end with passing and failing CI.
 
 ### Design & Constraints
 
@@ -634,7 +670,7 @@ Replace the inline implementation in `skills/fix-issues/modes/pr.md` with a per-
 
 - [ ] **WI 4.1 — Replace per-issue inline impl.** In `skills/fix-issues/modes/pr.md`, the "for each issue" loop body (current lines 17–148) replaces the inline implementation with the canonical caller-loop pattern dispatching `/land-pr` per issue. `$LANDED_SOURCE=fix-issues`, `$WORKTREE_PATH=$ISSUE_WORKTREE`, `$AUTO=$AUTO`, `$ISSUE_NUM=$ISSUE_NUM`. `<CALLER_PRE_INVOKE_BODY_PREP>` block: empty (per-issue body is fixed). `<DISPATCH_FIX_CYCLE_AGENT_HERE>` block: agent context = issue body + change summary.
 
-- [ ] **WI 4.2 — Drop 300s timeout flag.** The current `--ci-timeout 300` (line 126) is REMOVED. /land-pr's default of 600s applies.
+- [ ] **WI 4.2 — Drop 300s timeout special case.** Per DA2-4: the current `300s` timeout in `/fix-issues/modes/pr.md` is NOT a `--ci-timeout 300` flag invocation — it's a comment at line 140 (`#   - \`timeout 300\` per issue (NOT 600) to avoid serial accumulation`). Verified: `grep -n "timeout 300" skills/fix-issues/modes/pr.md` returns line 140 only. Line 126 in current main is `LANDED` (a heredoc terminator), unrelated. The downstream conformance assertion at `tests/test-skill-conformance.sh:224` matches the comment text. **Action:** delete the comment at line 140 (and any nearby prose explaining the 300s special case); after WI 4.1 replaces the inline impl with the canonical caller-loop pattern (which dispatches /land-pr with no `--ci-timeout` flag), /land-pr's default 600s applies. Per WI 4.6 line 224 → REMOVE the `fix-issues "ci timeout 300"` conformance assertion.
 
 - [ ] **WI 4.3 — Preserve agent-assisted rebase conflict resolution.** Per current behavior. Same pattern as Phase 2 WI 2.3.
 
@@ -642,9 +678,20 @@ Replace the inline implementation in `skills/fix-issues/modes/pr.md` with a per-
 
 - [ ] **WI 4.5 — `--issue` field passes through.** /land-pr's `--issue $ISSUE_NUM` flag (per WI 1.2) populates the `.landed` marker's `issue` field.
 
-- [ ] **WI 4.6 — Conformance.** Inline `gh pr create`, `gh pr checks --watch`, `gh pr merge --auto --squash` GONE from `modes/pr.md`. The 7 conformance assertions added by PR #75 (b904cef): those targeting the gating contract MOVE to /land-pr's conformance section in Phase 1; those targeting /fix-issues-specific behavior stay.
+- [ ] **WI 4.6 — Conformance.** Inline `gh pr create`, `gh pr checks --watch`, `gh pr merge --auto --squash` GONE from `modes/pr.md`. **Stale-assertion enumeration (per DA1-4) — verified against current `tests/test-skill-conformance.sh:208-232`:**
+  | Line | Assertion label | Action |
+  |---|---|---|
+  | 224 | `fix-issues "ci timeout 300"` | **REMOVE** — WI 4.2 drops the 300s special case; default 600s applies |
+  | 225 | `fix-issues "cross-ref to run-plan ci"` | **REMOVE** — the cross-ref text in /fix-issues becomes obsolete (the CI logic now lives in /land-pr, not /run-plan) |
+  | 226 | `fix-issues "auto-gating prose"` | STAY — gating contract is still /fix-issues-specific |
+  | 227 | `fix-issues "pr ci+fix-cycle always run"` | STAY (regex may need rewording — verify at WI 4.7 mirror time) |
+  | 228 | `fix-issues "only merge gated on auto"` | STAY — gating contract is /fix-issues-specific (b904cef) |
+  | 230 | `fix-issues "direct requires auto"` | STAY |
+  | 231 | `fix-issues "auto-merge AUTO guard"` regex `if [ "$AUTO" = "true" ]` | **RELOCATE to land-pr** — the literal guard now lives in `pr-merge.sh` (WI 1.6 step 1) |
+  | 232 | `fix-issues "ci poll always runs in pr.md"` | **REWRITE** — the literal pattern is brittle; replace with assertion that /fix-issues dispatches /land-pr unconditionally per-issue (regardless of AUTO) |
+  Add: `check_fixed fix-issues "modes/pr.md dispatches /land-pr per-issue" 'land-pr'`.
 
-- [ ] **WI 4.7 — Mirror.**
+- [ ] **WI 4.7 — Mirror.** Run `bash scripts/mirror-skill.sh fix-issues`.
 
 - [ ] **WI 4.8 — Manual canary verification.** Run `/fix-issues plan` then `/fix-issues 1` (auto and interactive). Confirm per-issue PR creation, CI poll, fix-cycle, `.landed` markers with `issue=N` field.
 
@@ -674,23 +721,36 @@ Replace the inline implementation in `skills/fix-issues/modes/pr.md` with a per-
 
 ### Goal
 
-Replace the fire-and-forget PR-creation block in `skills/quickfix/SKILL.md` (currently lines ~693–748) with a `/land-pr` dispatch. Drift fix: /quickfix gains CI monitoring + fix-cycle.
+Replace the fire-and-forget PR-creation block in `skills/quickfix/SKILL.md` Phase 7 (verified at lines 993–1102 of current main `b1db0b2`; the original plan's "lines ~693-748" citation predates PRs #151-#156 which expanded /quickfix from ~750 lines to 1102 by adding the triage gate and plan-review gates) with a `/land-pr` dispatch. **Drift fix: /quickfix gains CI monitoring + fix-cycle as additive coverage on top of the post-PR-#151 triage + plan-review gates.** The framing here corrects the original plan's "drift, not a feature" wording (per DA1-5): /quickfix's pre-#151 design pushed rigor upstream (no CI poll because the lightweight nature of the fix was the gate); the post-#151 design adds upstream triage+review. CI monitoring is additive, not corrective — the drift fix is "/quickfix should also have CI monitoring + fix-cycle for parity with the other 4 callers when CI fails."
 
 ### Work Items
 
-- [ ] **WI 5.1 — Replace inline PR creation.** Edit `skills/quickfix/SKILL.md` Phase 7. Delete inline `gh pr create` and immediate exit. Replace with canonical caller-loop pattern. `$LANDED_SOURCE=quickfix`, no `--worktree-path` (no worktree), no `--auto` by default. `<CALLER_PRE_INVOKE_BODY_PREP>` block: empty. `<DISPATCH_FIX_CYCLE_AGENT_HERE>` block: agent context = user's `$DESCRIPTION` and the staged commit subject.
+- [ ] **WI 5.1 — Replace inline PR creation.** Edit `skills/quickfix/SKILL.md` Phase 7. **Scope (per R2-1 / DA2-9):** the deleted block is bounded by grep-able markers `^## Phase 7 — PR creation` (start, current line 993) and `^## Exit codes` (end, current line 1082) — Phase 7 is the LAST phase in `quickfix/SKILL.md`; there is NO `## Phase 8` (verified: `grep -nE "^## Phase " skills/quickfix/SKILL.md` returns Phases 1, 2, 3, 4, 5, 6, 7 with `## Exit codes` at line 1082 immediately following). Delete only the Phase 7 body (current lines 994–1081): the inline `gh pr create` (line 1035), error handling, and the immediate exit. **Do NOT delete `## Exit codes` (line 1082) or `## Key Rules` (line 1093+).** WI 5.5 separately rewrites the single Key Rules entry at line 1102 (`Fire-and-forget`) — preserve the surrounding rules at lines 1095–1101 (PR-only, aligned-test-cmd, dirty-tree-is-input, never-bypass-pre-commit-hook, no-error-suppression, bare-branch-push-only, no-`.landed`-marker) verbatim; they are orthogonal to PR creation. Replace the deleted Phase 7 body with the canonical caller-loop pattern from `skills/land-pr/references/caller-loop-pattern.md`. `$LANDED_SOURCE=quickfix`, no `--worktree-path` (no worktree), no `--auto` by default. `<CALLER_PRE_INVOKE_BODY_PREP>` block: empty. `<DISPATCH_FIX_CYCLE_AGENT_HERE>` block: agent context = user's `$DESCRIPTION` and the staged commit subject.
 
-- [ ] **WI 5.2 — Preserve pre-PR work.** /quickfix's mode detection, dirty-tree confirmation, slug derivation, branch creation, agent dispatch (or user-edit confirmation), test gate, commit — all run BEFORE /land-pr is dispatched. Unchanged.
+- [ ] **WI 5.2 — Preserve pre-PR work, including post-#151 triage + plan-review gates.** /quickfix Phases 1–6 run BEFORE /land-pr is dispatched. **Specifically preserved (verified against current main):**
+  - WI 1.3 config + environment gates (line 139)
+  - WI 1.3.5 parallel-invocation gate / stale-marker detection (line 215, see also WI 5.3)
+  - WI 1.5 mode detection (line 271)
+  - **WI 1.5.4 triage gate** (line 295, post-PR #151) — model-layer instruction that decides whether `/quickfix` is the right tool BEFORE creating any branch or marker. Stays unchanged. The triage gate is upstream of /land-pr.
+  - **WI 1.5.4a inline plan composition** (line 366, post-PR #151)
+  - **WI 1.5.4b fresh-agent plan review** (line 399, post-PR #151) — second upstream rigor gate. Stays unchanged.
+  - WI 1.5.5 dirty-tree confirmation (line 518)
+  - WI 1.6 slug derivation, WI 1.7 branch naming, WI 1.8 tracking setup, WI 1.9 branch creation
+  - Phase 3 (WI 1.10/1.11): user-edited or agent-dispatched change
+  - Phase 4 (WI 1.12): test gate
+  - Phase 5 (WI 1.13): commit
+  - Phase 6 (WI 1.14): push
+  Only Phase 7 (PR creation, lines 993–1102) is touched by this migration. The triage gate decides "is this the right tool" (BEFORE-PR); /land-pr's CI fix-cycle is the AFTER-PR-creation block.
 
-- [ ] **WI 5.3 — Preserve parallel-invocation gate.** Lines 185–209 (stale-marker detection) stay.
+- [ ] **WI 5.3 — Preserve parallel-invocation gate.** WI 1.3.5 (current line 215, stale-marker detection) stays.
 
 - [ ] **WI 5.4 — Preserve fulfillment-marker model.** /quickfix continues writing the fulfillment marker (with PR URL appended) and does NOT pass `--worktree-path` to /land-pr — so no `.landed` is written. Two artifact systems coexist intentionally: fulfillment-marker tracks /quickfix lifecycle; `.landed` is for worktree-using callers.
 
-- [ ] **WI 5.5 — Update prose.** Remove "fire-and-forget" language. Replace with description of canonical CI monitoring + fix-cycle behavior.
+- [ ] **WI 5.5 — Update Key Rules prose at SKILL.md:1102.** Replace the literal `Fire-and-forget. End at gh pr create; print URL; return user to $BASE_BRANCH; exit. No polling, no --watch.` line with a description of the new full lifecycle: `triage → review → commit → push → PR → CI poll → fix cycle`. **Do NOT delete supporting prose more aggressively than this single line** — pre-#151 `/quickfix` was philosophically coherent in its lightweight design, and the per-#151 gates already provide the upstream rigor; CI monitoring is additive coverage on top, not a wholesale rewrite. Update related prose at line 20 (`Fire-and-forget: commit, push, open PR, print URL, return to base branch, exit.`) similarly: replace with the same new lifecycle description.
 
-- [ ] **WI 5.6 — /quickfix conformance.** Inline `gh pr create` GONE. `/land-pr` dispatched. CI monitoring + fix-cycle now present.
+- [ ] **WI 5.6 — /quickfix conformance.** Inline `gh pr create` GONE. `/land-pr` dispatched. CI monitoring + fix-cycle now present. Add: `check_fixed quickfix "Phase 7 dispatches /land-pr" 'land-pr'`; `check_not quickfix "no inline gh pr create" 'gh pr create'`; `check_not quickfix "no fire-and-forget literal" 'Fire-and-forget'` (note: any `--force` or `--fill` references are unaffected; only the literal "Fire-and-forget" prose is removed).
 
-- [ ] **WI 5.7 — Mirror.**
+- [ ] **WI 5.7 — Mirror.** Run `bash scripts/mirror-skill.sh quickfix`.
 
 - [ ] **WI 5.8 — Manual verification.** Run `/quickfix "test small fix"` (agent-dispatched mode) and `/quickfix --yes` on a dirty tree (user-edited mode). Confirm PR creation, CI poll, fix-cycle if CI fails.
 
@@ -727,11 +787,18 @@ Lock in the unification with conformance tripwires and a canary that exercises t
 ### Work Items
 
 - [ ] **WI 6.1 — Cross-skill conformance tripwires.** Add to `tests/test-skill-conformance.sh`:
-  - **No `gh pr create` outside `skills/land-pr/`.** Shell assertion: `grep -rln 'gh pr create' "$REPO_ROOT/skills/" | grep -v 'skills/land-pr/' | wc -l` must be 0. Same for `.claude/skills/`.
-  - **No `gh pr checks --watch` outside `skills/land-pr/`.** Same shape.
-  - **No `gh pr merge` outside `skills/land-pr/`.** Same shape.
-  - **All 5 callers dispatch `/land-pr`.** For each of the 5 caller files, assert `land-pr` appears.
-  - **Orchestrator-level dispatch verification.** For each caller's modes/pr.md (or SKILL.md for /quickfix): assert the `/land-pr` Skill-tool invocation appears at top-level prose, NOT inside an Agent prompt block. Heuristic: scan for the dispatch line; verify the surrounding 30 lines do NOT contain `^[[:space:]]*(Agent:|prompt:)|dispatch.*agent` patterns (anchored to start-of-line to avoid matching prose discussion of agents). Documented limitation: a prose paragraph that happens to start a line with "Agent:" still false-fails — implementer can adjust pattern further if needed.
+  - **No `gh pr create` *invocation* outside `skills/land-pr/`.** Per DA2-2: a naive `grep -rln 'gh pr create'` matches **prose mentions** (e.g., `skills/do/SKILL.md:878` "never use `--fill` in `gh pr create`", `skills/run-plan/modes/pr.md:309` "Manual fallback: gh pr create ..."), causing the tripwire to false-fail. WI 3.7 above removes the `do/SKILL.md:878` prose; WI 2.2's full block-deletion removes the `run-plan/modes/pr.md:309` echo. To handle the residual class: tripwire matches **invocation lines only** via the pattern `^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr create\b` — anchored to start-of-line, allowing optional `if !`, `VAR=`, or `$(` invocation prefixes. Pure-prose mentions (which always have leading non-bash text like ``"`gh pr create`"``, "Manual fallback:", or list-marker prefixes) do not match. Concrete shell assertion:
+    ```bash
+    HITS=$(grep -rEln '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr create\b' "$REPO_ROOT/skills/" | grep -v 'skills/land-pr/')
+    [ -z "$HITS" ] || { echo "FAIL: live gh pr create invocation outside /land-pr: $HITS"; exit 1; }
+    ```
+    Same shape repeated for `.claude/skills/`.
+  - **No `gh pr checks --watch` invocation outside `skills/land-pr/`.** Pattern: `^[[:space:]]*(timeout[[:space:]]+[0-9]+[[:space:]]+)?gh pr checks\b.*--watch\b`. Excludes prose `\`timeout 600 gh pr checks --watch\`` (which has backtick prefix, not whitespace).
+  - **No `gh pr merge` invocation outside `skills/land-pr/`.** Pattern: `^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr merge\b`. Excludes prose like `**Only \`gh pr merge --auto --squash\` is gated on \`auto\`**` (backtick prefix).
+  - **All 5 callers dispatch `/land-pr`.** For each of the 5 caller files, assert `land-pr` appears (substring match is fine — `land-pr` only appears in dispatch contexts).
+  - **Orchestrator-level dispatch verification.** For each caller's modes/pr.md (or SKILL.md for /quickfix): assert the `/land-pr` Skill-tool invocation appears at top-level prose, NOT inside an Agent prompt block. Heuristic: scan for the dispatch line; verify the surrounding 30 lines do NOT contain start-of-line patterns `^[[:space:]]*(Agent:|prompt:)` AND do NOT contain start-of-line `^[[:space:]]*dispatch.*agent` (per R2-4: all three alternatives are now uniformly anchored to start-of-line; the original third alternative `dispatch.*agent` lacked anchoring and matched any prose mentioning dispatch). Documented limitation: a prose paragraph that happens to start a line with "Agent:" still false-fails — implementer can adjust pattern further if needed.
+
+  **Why prose vs. invocation distinction matters (per DA2-2):** post-migration the inline-block deletions in WI 2.2 / 3.1 / 3.6 / 4.1 / 5.1 remove ALL invocation sites outside /land-pr, but several prose mentions survive (Key Rules constraints, manual-fallback echoes, design notes). The pre-DA2-2 tripwire shape (`grep -rln 'gh pr create' | wc -l == 0`) would false-fail on these. The start-of-line-anchored shape lets prose survive while still catching any new live invocation that drifts in.
 
 - [ ] **WI 6.2 — `/land-pr` canary.** Create `plans/CANARY_LAND_PR.md`. Run a small `/run-plan` cycle through `/land-pr` end-to-end with deliberately-failing CI on attempt 1 (forcing fix-cycle), passing on attempt 2.
 
@@ -835,11 +902,93 @@ Lock in the unification with conformance tripwires and a canary that exercises t
 
 **Convergence check (orchestrator's call):** Round 3 introduced 14 findings; the refinement addressed all of them. Of the 5 MAJOR findings, all 5 are FIXED (precedence, splice failure, drift hazard, parser validation, mock fallback). Of the 9 MINOR findings, 3 are FIXED (cleanup, heuristic, concurrent forks) and 6 are JUSTIFIED (helper doc, smoke infra fix, phase scope, rollback, parser idiom, user-invocation tests). Substantive issues remaining: **0**.
 
+## Round 5 Disposition
+
+(Refiner output of Round 5 review — verify-before-fix applied to each finding. Round 5 corresponds to /refine-plan against post-2026-04-27 ecosystem drift. Round 4 was the YAGNI pass already documented in the plan; this Round 5 is the post-ecosystem-drift refine fired ~2 weeks after the original draft, after PRs #88, #95-#100, #131, #138, #142, #149, #151-#156 landed and changed the surfaces being reorganized. Per the orchestrator's note in `/tmp/refine-plan-review-round-1-pr-landing-unification.md`, only 5 of the reviewer's 12 findings were preserved due to a file-management error; round 2 of the refine cycle will re-scan for any reviewer findings missed here.)
+
+| Finding | Source | Evidence | Disposition |
+|---|---|---|---|
+| R5-1: Mirror recipes use `rm -rf` (hook-blocked) | Reviewer R1-1 + DA1-1 | **Verified.** `hooks/block-unsafe-generic.sh:201-220` blocks recursive rm without literal `/tmp/<name>` path. `scripts/mirror-skill.sh` exists per PR #88. The hook fired empirically when grep tested the plan text mid-refine. | **Fixed.** All 7 mirror WIs (1A.13, 1B.5, 2.8, 3.5, 3.10, 4.7, 5.7) and 2 acceptance criteria use `bash scripts/mirror-skill.sh <name>`. New load-bearing decision #10 documents the rule. |
+| R5-2: `pr-monitor.sh` overlaps `skills/commit/scripts/poll-ci.sh` | Reviewer R1-2 + DA1-3 | **Verified.** `poll-ci.sh` exists (PR #142, lines 31-57); same `--watch + re-check` primitive; uses `2>/dev/null` (CLAUDE.md violation). Conformance assertion at `tests/test-skill-conformance.sh:151` references it. | **Fixed.** WI 1.5 amended with explicit consolidation decision: `pr-monitor.sh` is canonical successor; surfaces (does NOT preserve) the `2>/dev/null` bug. New WI 3.5a deletes `poll-ci.sh`. WI 3.4 removes the stale conformance assertion. New load-bearing decision #3. |
+| R5-3: Phase 5 baseline mismatches current `/quickfix` | Reviewer R1-3 | **Verified.** `wc -l skills/quickfix/SKILL.md` = 1102 (not ~750 as in original plan). Triage gate at line 295, plan review at line 399 (PRs #151-#156). Phase 7 with `gh pr create` at lines 993-1102. | **Fixed.** WI 5.1, 5.2, 5.5 substantially rewritten. WI 5.2 explicitly enumerates which sections to preserve (triage, plan review, etc.). WI 5.5 uses surgical line-1102 replacement, not aggressive deletion. |
+| R5-4: `write-landed.sh` / `land-phase.sh` paths wrong | Reviewer R1-7 | **Verified.** `find` returns `./skills/commit/scripts/{write-landed,land-phase}.sh` — moved by PRs #95-#100. Old plan referenced `scripts/write-landed.sh`. | **Fixed.** WI 1.12 step 8, WI 2.6, and Design & Constraints all use `skills/commit/scripts/...` and the runtime path `$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/...`. New load-bearing decision #11. |
+| R5-5: WI numbering 1.13/1.14/1.15 stale post-1A/1B split | Reviewer R1-8 | **Verified.** `grep -n "WI 1\.1[3-5]"` returned hits at lines 75, 364, 370, 546, 547 in live prose. Disposition tables (lines 773+) historical, untouched. | **Fixed.** Mechanical rename in 5 live-prose locations: WI 1.13 → 1B.2, 1.14 → 1B.3, 1.15 → 1B.4. Disposition tables preserved as-is. |
+| R5-6: WI 2.1 splice citation is wrong (sed at L1216-1217 doesn't exist) | DA1-2 | **Verified.** `skills/run-plan/SKILL.md:1206-1218` is test baseline capture, NOT body splice. Real splice at `:1715-1745` uses bash `BASH_REMATCH`. Conformance test `tests/test-skill-conformance.sh:102` already asserts the regex form. | **Fixed.** WI 2.1 substantially rewritten — preserve the existing bash-regex implementation verbatim; structural change is RELOCATION only. The 3 recovery paths now align with existing graceful-degradation (NOTICE/WARN, not hard `.landed conflict`). Overview line 30 and WI 1.4 line citations corrected. |
+| R5-7: Phase 6 conformance plan does not enumerate stale assertions | DA1-4 | **Verified.** `tests/test-skill-conformance.sh:66-71, 144, 151-152, 197-199, 224-232` — ~13 assertions will fail post-migration. Original plan's "MOVE" / "STAY" was hand-wavy. | **Fixed.** WI 2.7, WI 3.4, WI 3.9, WI 4.6 all now contain per-line tables enumerating each assertion's action (RELOCATE / REMOVE / STAY / REWRITE) cited against current main. |
+| R5-8: /quickfix "drift, not feature" framing stale post-#151 | DA1-5 | **Verified.** `skills/quickfix/SKILL.md:295,399` show triage and plan-review gates added by PRs #151-#156. Original "drift" framing predates these gates. | **Fixed.** Phase 5 Goal reframed: "/quickfix gains CI monitoring + fix-cycle as ADDITIVE coverage on top of the post-#151 triage + plan-review gates." WI 5.5 uses surgical line replacement. Load-bearing decision #9 updated. |
+| R5-9: ADAPTIVE_CRON_BACKOFF Mode A interaction unaddressed | DA1-6 | **Verified.** `skills/run-plan/SKILL.md:439-573` — adaptive-cron machinery PRs #131, #138. Per-phase defer counters + boundary cadence step-down `*/1 → */10`. /land-pr's synchronous CI monitoring (up to 600s) crosses cadence boundaries. | **Fixed.** New WI 2.5a documents the interaction. No code change required (machinery is correct by design); WI 2.9 manual canary observes counter behavior. Sentinel safety also addressed. |
+| R5-10: WI 3.7 deletes `gh pr create` from `skills/do/SKILL.md` (no-op) | DA1-7 | **Verified.** `grep -n "gh pr create" skills/do/SKILL.md` returns 0 hits. The "duplicate" was already removed (or never existed). | **Fixed.** WI 3.7 reframed as a regression-guard conformance assertion (no deletion needed). |
+| R5-11: Stale line-range citations across multiple WIs | DA1-8 | **Verified.** All 5 caller files have new line counts vs. plan citations: `run-plan/modes/pr.md=681` (was "195-657"), `commit/modes/pr.md=96`, `do/modes/pr.md=232`, `fix-issues/modes/pr.md=201`, `quickfix/SKILL.md=1102` (was "693-748"). | **Fixed.** WI 2.2, WI 2.4, WI 5.1 use grep-able markers ("delete from `## Step 6` to ...") instead of hard line numbers. Approximate ranges retained for orientation. |
+| R5-12: WI 1.1 specifies `allowed-tools` (no precedent in zskills) | DA1-9 | **Verified.** `grep -l "allowed-tools" skills/*/SKILL.md` returns 0 hits. | **Fixed.** Removed `allowed-tools` line from WI 1.1 frontmatter. Note added explaining why a hardening sweep belongs in a separate plan. |
+| R5-13: Post-merge red-main canary interaction not in plan | DA1-10 | **Verified.** `.github/workflows/test.yml:82-122` (PR #149) auto-files `main-broken` issue on red push to main. Independent of /land-pr's exit status. | **Fixed.** New paragraph in Design & Constraints documenting the canary's independence from /land-pr. No code interaction needed — /land-pr does not write to `.github/`. |
+| R5-14: WI 1.6 uses `gh --jq` while WI 1.4 uses bash regex (style inconsistency) | DA1-11 | **Judgment.** Both are policy-compliant per `feedback_no_jq_in_skills` (which forbids `jq` binary, not `gh --jq`). Style nit, not correctness. | **Justified.** Updated Design & Constraints with explicit note: bash-regex preferred per WI 1.4 precedent; `gh --jq` is acceptable for terseness. The implementer may standardize on bash-regex throughout in a follow-up polish if desired. |
+| R5-15: `_CLEANUP_PATHS` empty-`CI_LOG_FILE` substring-match bug | DA1-12 | **Verified.** When `CI_LOG_FILE=` (empty), pattern `*""*` matches everything → no cleanup happens. Substring-prefix collision is also possible but rarer. | **Fixed.** WI 1.8 cleanup loop simplified — `_CLEANUP_PATHS` now contains only `CALL_ERROR_FILE` and `CONFLICT_FILES_LIST`; `CI_LOG_FILE` is excluded by construction. The substring-match line removed entirely. |
+| R5-16: Duplicate "Load-bearing architectural decisions" subsection | Orchestrator | **Verified.** Two subsections at lines 893 + 904 of v4 plan. Second one referenced removed `splice-body.sh`. | **Fixed.** Reconciled to single 11-item list; updated to reflect post-Round-5 state (preserve `BASH_REMATCH` splice; `pr-monitor.sh` consolidates poll-ci.sh; mirror-skill.sh; etc.). |
+| R5-17: Reviewer record partial (5/12 preserved) | Orchestrator note | **Acknowledged.** R1-4, R1-5, R1-6, R1-9, R1-10, R1-11, R1-12 lost in file-management error. JSONL transcript preserves them but is not read per protocol. | **Justified — out of scope for this round.** Round 2 of the refine cycle will re-scan for any drift findings missed here. The 5 reviewer findings preserved here, plus the full 12 DA findings, cover the most pressing post-merge ecosystem drift. |
+
+**Round 5 substantive issues:** 16 fixed, 1 justified, 0 ignored.
+
+## Round 5 Plan Review
+
+**Refinement scope:** post-2026-04-27 ecosystem drift absorption. Round 5 was fired ~2 weeks after the original /draft-plan + /refine-plan (Rounds 1-4) when the maintainer noticed that ecosystem PRs #88, #95-#100, #131, #138, #142, #149, #151-#156 had materially changed surfaces the plan reorganizes. Round 5's refinement targeted: (a) stale citations (file paths, line numbers, framing assumptions); (b) overlapping primitives that emerged in the interim (`poll-ci.sh`, `mirror-skill.sh`); (c) hidden integration costs (adaptive cron, post-merge canary); (d) one duplication that pre-existed (load-bearing decisions section).
+
+**Round 5 substantive issues:** 17 total findings. **16 fixed**, **1 justified** (R5-17, partial-reviewer record acknowledged but out of scope for the refiner). **0 ignored.**
+
+**Note about partial-reviewer record:** the orchestrator preserved 5 of the reviewer's 12 round-1 findings; the lost 7 are recoverable only from the JSONL transcript (do not read per protocol). Round 2 of the refine cycle is expected to re-scan for any drift the round-1 reviewer might have caught and the orchestrator's partial preservation missed.
+
+**Verify-before-fix outcomes:** of the 16 empirical findings, 16 reproduced and were fixed. No DA finding turned out to be a plausible-sounding-but-false claim this round — the DA's grounding was unusually solid (likely because the empirical claims were all "the file as it exists at HEAD `b1db0b2` differs from the plan's claim," which is mechanical to verify). One judgment-class finding (R5-14, --jq style) was justified-not-fixed as a style nit deferred to follow-up polish. R5-17 is an orchestrator-level housekeeping note, not an empirical claim.
+
+**New observations the reviewer/DA may have missed (candidates for Round 6):**
+1. **WI 5.1 still references "Phase 7 (currently lines 993-1102)"** — even with the explanatory note, an aggressive implementer might delete the entire range. The grep-able-marker recommendation should be amplified in WI 5.1 with explicit start/stop markers ("from `^## Phase 7 — PR creation` to the line BEFORE `^## Phase 8` or end-of-file"). Round 6 may want to tighten this.
+2. **`scripts/mirror-skill.sh` is a thin per-file mirror — verify it handles the `references/` subdirectory** introduced by /land-pr. The script may need a small update or the WI may need to add an `--include references` flag. Round 6 should verify the script's actual behavior against /land-pr's directory layout (multiple subdirs: `scripts/`, `references/`).
+3. **WI 6.1 "no `gh pr merge`" check has a false-positive risk** — `pr-merge.sh` itself contains `gh pr merge --auto --squash`. The current rule says "outside `skills/land-pr/`" so it's fine, but the check should be tightened to also exclude `skills/land-pr/scripts/`. (Already covered by current wording, but worth flagging.)
+4. **Phase 4 sprint-report path:** `/fix-issues` writes a sprint report; the original plan's WI 4.4 says it's "unchanged" but does not check whether the report references the now-replaced inline CI block. Round 6 should grep the sprint-report template for stale CI-block references.
+5. **`pr-rebase.sh` exits 11 on "branch absent"** but does NOT distinguish "fetch-failed-network" from "branch-doesn't-exist." The /land-pr caller-loop's `rebase-failed` STATUS becomes ambiguous. Could use a `REASON` token to distinguish.
+
+These are low-priority candidates; Round 6 should decide whether to fold them in or defer.
+
+## Round 6 Disposition
+
+(Refiner output of Round 6 — final round of post-2026-04-27 ecosystem-drift refine. Verify-before-fix applied to each finding. Round 6 specifically re-verified the 3 HIGH-class DA findings that contradicted Round 5 refiner's "verified" claims; 2 of 3 reproduced.)
+
+| Finding | Source | Evidence | Disposition |
+|---|---|---|---|
+| R6-1 / DA6-1 (HIGH, original DA2-1): WI 3.7's "0 hits for `gh pr create` in `do/SKILL.md`" claim is FALSE | DA Round 2 | **Verified — DA's claim REPRODUCED.** Ran `grep -n "gh pr create" skills/do/SKILL.md` against current main `b1db0b2`: returns line 878: `- **PR titles and bodies are explicit** — never use \`--fill\` in \`gh pr create\`.` This is a Key Rules prose constraint about the `--fill` flag, but the WI 6.1 tripwire grep would still match it. Round 1 refiner's "verified 0 hits" claim was wrong — they likely grepped a stale checkout or misread the output. | **Fixed.** WI 3.7 rewritten: edit line 878 to remove the literal `gh pr create` substring (replacement preserves the `never use --fill` semantics so the existing `do "no --fill"` conformance assertion at L195 still passes). Honest acknowledgment: Round 1 refiner missed this empirical claim; Round 6 caught it. |
+| R6-2 / DA6-2 (HIGH, original DA2-2): Phase 6 tripwires fire on prose mentions across 3+ files | DA Round 2 | **Verified — REPRODUCED.** Ran `grep -rn "gh pr create" skills/`: confirmed prose hits at `skills/do/SKILL.md:878`, `skills/run-plan/modes/pr.md:309` (Manual fallback echo), `skills/fix-issues/SKILL.md:1082` (gating prose), `skills/commit/modes/pr.md:80-81` (description prose), `skills/run-plan/modes/pr.md:362, 419` (description prose). After WI 2.2 / 3.1 / 3.6 / 4.1 / 5.1 inline deletions, several of these prose mentions survive (Key Rules constraints, manual-fallback echoes, design notes). Naive substring tripwires WILL false-fail on these. | **Fixed.** WI 6.1 rewritten with start-of-line-anchored invocation patterns (e.g., `^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr create\b`) that match live invocations but not prose backtick-quoted substrings or list-marker-prefixed mentions. Three concrete shell assertions provided (gh pr create / gh pr checks --watch / gh pr merge), each excluding prose patterns. R2-4's `dispatch.*agent` start-of-line anchor also folded in. |
+| R6-3 / DA6-3 (HIGH, original DA2-3): WI 2.2's `## Step 6` start-anchor is fictional in `run-plan/modes/pr.md` | DA Round 2 | **Verified — REPRODUCED.** Ran `grep -n "Step 6" skills/run-plan/modes/pr.md`: zero hits. Ran `grep -nE "^## " skills/run-plan/modes/pr.md`: zero hits (no Markdown H2 headers in this file). Ran `grep -nE "^# --- " skills/run-plan/modes/pr.md`: confirmed bash-comment headers `# --- PR creation ---` (line 268), `# --- Auto-merge ---` (587), and H3 `### Post-landing tracking` (681). Origin: `## Step 6` is real in `commit/modes/pr.md:62`, NOT in `run-plan/modes/pr.md`. Round 5 refiner conflated the two files. | **Fixed.** WI 2.2 corrected to use real anchors: `# --- PR creation ---` (line 268) for start, `### Post-landing tracking` (line 681) for end. Approximate range adjusted from "281–680" to "268–680". Honest acknowledgment: Round 5's marker-discipline fix (R5-11) introduced a phantom marker; Round 6 replaced it with verified anchors. |
+| R6-4 / DA6-4 (MEDIUM, original DA2-4): WI 4.2 cites wrong line for 300s timeout | DA Round 2 | **Verified — REPRODUCED.** Ran `grep -n "timeout 300" skills/fix-issues/modes/pr.md`: returns line 140 (a comment), NOT line 126. Line 126 is `LANDED` heredoc terminator. The `--ci-timeout 300` flag invocation does not exist in current main; the 300s reference is a code comment about the special case. Conformance assertion `tests/test-skill-conformance.sh:224` matches the comment text. | **Fixed.** WI 4.2 corrected: cite line 140 as the comment site; clarify there is no `--ci-timeout` flag invocation to remove (only the comment + the 300s special-case prose); WI 4.6 line 224 already says REMOVE the conformance assertion (consistent). |
+| R6-5 / DA6-5 (MEDIUM, original DA2-5): WI 1.5 used `WATCH_RC` but conformance assertion expects `WATCH_EXIT` | DA Round 2 | **Verified — REPRODUCED.** Ran `grep -n "WATCH_EXIT\|WATCH_RC" skills/run-plan/modes/pr.md`: returns 4 hits, all `WATCH_EXIT` (lines 388, 397, 539, 542). `tests/test-skill-conformance.sh:68` is `WATCH_EXIT" -eq 124`. Plan's `WATCH_RC` would force the assertion to be REWRITTEN at relocation time. | **Fixed.** WI 1.5 step 3-4 changed from `WATCH_RC` to `WATCH_EXIT` (matches existing variable name). WI 2.7 line 68 row updated to note the regex matches verbatim post-relocation. |
+| R6-6 / DA6-6 / R6-DA1-4-recount (MEDIUM, original DA2-6 + R2-2): WI 2.7 omits line 69; total assertion count is 24, not ~13 | DA Round 2 + Reviewer Round 2 | **Verified — REPRODUCED.** Ran `grep -nE "^check[[:space:]]+(commit\|do\|run-plan\|fix-issues\|quickfix)\|^check_fixed[[:space:]]+(commit\|do\|run-plan\|fix-issues\|quickfix)" tests/test-skill-conformance.sh` and counted PR-mode-affected assertions: run-plan=9 (lines 66, 67, 68, 69, 70, 71, 72, 73, 74), commit=3, do=4, fix-issues=8 — total 24. Plan's per-line tables in WI 2.7 / 3.4 / 3.9 / 4.6 enumerated 23 of these — only line 69 (`run-plan "ci-pending pr-ready"`) was missing. Round 1's "~13" estimate was significantly low. | **Fixed.** WI 2.7 table now includes line 69 (REWRITE — the `pr-ready` literal disappears from `run-plan/modes/pr.md` after WI 2.2; rewrites against `land-pr` schema) and line 75 (STAY — verified the literal lives in `cherry-pick.md:83`, not `pr.md`). Total per WI 2.7 row footer: 9 run-plan assertions enumerated. Combined cross-skill total of 24 documented in WI 2.7. |
+| R6-7 / DA6-7 (MEDIUM, original DA2-7): WI 1.3 conflict-files capture order ambiguous | DA Round 2 | **Verified — REPRODUCED.** Reviewed `skills/run-plan/modes/pr.md` lines 30, 121: both sites capture conflicts via `git diff --name-only --diff-filter=U` BEFORE `git rebase --abort` (because abort resets the working tree and erases conflict markers). WI 1.3 spec was order-ambiguous. | **Fixed.** WI 1.3 now explicitly specifies capture-then-abort: 4 ordered steps (capture-into-sidecar → verify sidecar non-empty → abort with rc check → emit `CONFLICT_FILES_LIST`). |
+| R6-8 / DA6-8 (MEDIUM, original DA2-8): WI 3.4 misclassifies PR #131 prompt-engineering lesson as script-failure-mode | DA Round 2 | **Verified — REPRODUCED.** Read `skills/commit/modes/pr.md:62-70`: the preamble is "agent skipped Step 6 on PR #131 push, read inline bash as suggestion-prose, did one snapshot `gh pr checks 131` showing pending, reported that, exited" — a prompt-engineering / agent-discipline lesson, NOT a script-failure-mode. `failure-modes.md` per WI 1B.1 catalogs script-level failures (e.g., `gh pr checks` returns no checks). Wrong document. | **Fixed.** WI 3.4 now RELOCATES the verbatim PR #131 preamble paragraph to `/land-pr`'s SKILL.md prose immediately above WI 1.12 step 6 (the `pr-monitor.sh` invocation step), reworded to point at /land-pr's polling instead of /commit's. New conformance assertion: `check land-pr "PR #131 past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'`. WI 1.12 step 6 updated to mention the prepended preamble. |
+| R6-9 / DA6-9 / R6-R2-1 (NIT/LOW, original R2-1 + DA2-9): WI 5.1 line range invites Key Rules over-deletion; Round 5 candidate #1's `^## Phase 8` end-anchor is fictional | Reviewer + DA Round 2 | **Verified — REPRODUCED.** Ran `grep -nE "^## Phase " skills/quickfix/SKILL.md`: returns Phase 1 (137), Phase 2 (269), Phase 3 (715), Phase 4 (820), Phase 5 (851), Phase 6 (974), Phase 7 (993). NO Phase 8. Phase 7 is followed by `## Exit codes` (line 1082) and `## Key Rules` (line 1093). Round 5 Plan Review's recommended `^## Phase 8` end-anchor would lock the implementer to a fictional anchor. | **Fixed.** WI 5.1 rewritten with concrete anchors: start `^## Phase 7 — PR creation` (line 993), end `^## Exit codes` (line 1082); explicit instruction NOT to delete `## Exit codes` or `## Key Rules`; WI 5.5 separately handles only the single Key Rules line at 1102. |
+| R6-10 (LOW, original DA2-10): Round 5 candidate #2 (mirror-skill.sh references/ subdir) is a non-issue | DA Round 2 | **Verified — DA's "non-issue" claim REPRODUCED.** Ran `find skills -name "references" -type d`: returns 3 existing `references/` subdirs (`fix-issues`, `run-plan`, `update-zskills`). `scripts/mirror-skill.sh` line 35 uses `cp -a "$SRC/." "$DST/"` which copies all subdirs natively. The Round 5 Plan Review's flag was over-cautious. | **Justified — concern refuted.** Round 5 Plan Review candidate #2 dropped. No fix needed; mirror-skill.sh already handles `references/` correctly. |
+| R6-11 (LOW, original DA2-11): `_CLEANUP_PATHS` space-splitting bug | DA Round 2 | **Verified — REPRODUCED.** Plan WI 1.8 used `_CLEANUP_PATHS="${LP[CALL_ERROR_FILE]:-} ${LP[CONFLICT_FILES_LIST]:-}"` then `for f in $_CLEANUP_PATHS`. If a sidecar path contained spaces (validate_result_value rejects newlines/$/`/&/?/# but NOT spaces), the unquoted expansion would split on spaces. | **Fixed.** WI 1.8 now uses bash array: `_CLEANUP_PATHS=("${LP[CALL_ERROR_FILE]:-}" "${LP[CONFLICT_FILES_LIST]:-}")` and `for f in "${_CLEANUP_PATHS[@]}"`. Trivial bash, no metacharacter pitfalls. |
+| R6-12 / R6-R2-3 (NIT/INFO, original R2-3): WI 5.1 `gh pr create --head` form citation | Reviewer Round 2 | **Verified — informational only.** Ran `grep -n "gh pr create" skills/quickfix/SKILL.md`: line 1035 `gh pr create --base "$BASE_BRANCH" --head "$BRANCH" --title "$PR_TITLE" --body "$PR_BODY"`. The plan's `check_not quickfix "no inline gh pr create" 'gh pr create'` correctly catches this form. No issue. | **Justified — informational only, no action.** R2-3 itself recommended "Mark as informational." |
+| R6-13 / R6-R2-4 (NIT, original R2-4): WI 6.1 `dispatch.*agent` not start-of-line anchored | Reviewer Round 2 | **Verified — REPRODUCED.** Plan's WI 6.1 third alternative `dispatch.*agent` lacked `^[[:space:]]*` prefix; would false-match prose like "The skill dispatches the agent at orchestrator level." | **Fixed.** WI 6.1 rewritten (per R6-2 / DA2-2 above) — all three alternatives in the dispatch heuristic uniformly anchored to start-of-line. Documented residual limitation about Agent:-prefix prose. |
+| R6-14 (info, original R2-3 dup count): test.yml line range 82-110 → 82-122 | DA Round 2 fix-integrity summary | **Verified.** Ran `wc -l .github/workflows/test.yml`: 122 lines; the post-merge canary block extends through end-of-file (line 122). Plan cited 82-110 in 2 places. | **Fixed.** Both citations of `.github/workflows/test.yml:82-110` updated to `:82-122`. |
+| R6-15 / R6-R5-17 (info): Round 5 partial-reviewer record caveat | Orchestrator note | **Acknowledged.** Round 5 reviewer preserved 5/12 findings. Round 6 reviewer ran independently and produced 4 new findings (R2-1 through R2-4), all minor. The 7 lost Round 1 reviewer findings are not recoverable per protocol. | **Justified — out of scope; round 6 reviewer covered the surface.** Round 6 reviewer's 4 findings + DA's 11 findings together cover the post-Round-5 state thoroughly. |
+
+**Round 6 substantive issues:** **15 findings total** — **11 fixed**, **3 justified — evidence reproduced but disposition was no-action** (R6-10 mirror-skill.sh non-issue; R6-12 R2-3 informational; R6-15 partial-reviewer caveat), **1 justified — evidence supports disposition** (R6-13 fixed via R6-2 fold-in). **0 ignored.**
+
+**Honest convergence assessment (post-Round-6):**
+
+- **DA's HIGH findings: 3 of 3 reproduced (DA2-1, DA2-2, DA2-3).** Round 1 refiner's verify-before-fix discipline broke down on these — the empirical claims that Round 1 marked "Verified" were not actually verified. Specifically:
+  - DA2-1: Round 1 said `grep -n "gh pr create" skills/do/SKILL.md` returns 0 hits. Re-running returns 1 hit at line 878. Round 1 was wrong.
+  - DA2-2: Round 1 didn't verify the WI 6.1 tripwires against current main. Re-running confirms they false-fail on prose mentions in 3+ files.
+  - DA2-3: Round 1 introduced `## Step 6` as a "marker-discipline fix" but didn't verify the marker exists in `run-plan/modes/pr.md`. It doesn't (it's in `commit/modes/pr.md`). Round 1 conflated the two files.
+- **DA's MEDIUM findings: 5 of 5 reproduced (DA2-4, DA2-5, DA2-6, DA2-7, DA2-8).** Each reflects a citation-class or framing-class miss in Round 5.
+- **DA's LOW findings: 2 of 3 reproduced (DA2-9, DA2-11), 1 confirmed-as-non-issue (DA2-10).**
+- **Reviewer's findings: 4 minor/nit, all addressed (3 fixed, 1 informational).**
+- **DA1-4 recount:** Round 1 estimated ~13 PR-mode conformance assertions affected by migration; actual count is 24. Plan's per-line tables enumerated 23 of these; only line 69 was missing. Now corrected — full 24 documented.
+
+**Most consequential Round 1 miss:** the Round 5 refiner's "DA1's grounding was unusually solid" comment (now-overwritten Round 5 Plan Review claim) was contradicted by 3 false "verified" claims that Round 6 caught. The lesson: even when DA findings reproduce systematically, individual "Verified — 0 hits" lines must be re-run by the next round's refiner with the exact pattern in the exact scope. Plan now corrected.
+
 ## Plan Quality
 
-**Drafting process:** `/draft-plan` with 3 rounds of adversarial review.
-**Convergence:** Converged at Round 3 (0 substantive issues remaining).
-**Remaining concerns:** None. All dispositioned findings are either fixed or explicitly justified.
+**Drafting process:** `/draft-plan` with 3 rounds of adversarial review, then `/refine-plan` Round 4 (YAGNI pass), Round 5 (post-ecosystem-drift refine), and Round 6 (post-Round-5 verification + final polish).
+**Convergence:** Converged at Round 6 — final round of the user's 2-round /refine-plan budget. 11 of 15 Round 6 findings fixed; 4 justified (3 informational/non-issues; 1 fold-in). Round 6 specifically caught 3 HIGH-class verify-before-fix failures from Round 5 (refiner's "verified" claims that didn't reproduce).
+**Remaining concerns:** None blocking. The 2 LOW-class findings that didn't fix (R6-10 mirror-skill.sh non-issue; R6-12 R2-3 informational) are dispositioned as no-action with evidence. The plan is ready for `/run-plan` execution.
 
 ### Round History
 
@@ -849,7 +998,11 @@ Lock in the unification with conformance tripwires and a canary that exercises t
 | 2     | /draft-plan | 6 | 10 | 16         | 12    | 4         | 0       |
 | 3     | /draft-plan | 6 | 10 | 14         | 8     | 6         | 0       |
 | 4     | /refine-plan (YAGNI pass) | 6 | 6 | 12 | 4 (1 removal + 3 simplifications + Phase 1 split) | 8         | 0       |
-| **Cumulative** | | **26** | **36** | **60** | **36** | **22** | **0** |
+| 5     | /refine-plan (ecosystem drift) | 5* | 12 | 17 | 16    | 1         | 0       |
+| 6     | /refine-plan (post-Round-5 verify) | 4 | 11 | 15 | 11    | 4         | 0       |
+| **Cumulative** | | **35** | **59** | **92** | **63** | **29** | **0** |
+
+*Round 5 reviewer record partial — 5 of 12 findings preserved due to orchestrator file-management error. Round 6 reviewer ran independently and surfaced 4 new minor/nit findings, all addressed.
 
 ## Drift Log
 
@@ -859,8 +1012,20 @@ The plan was drafted via `/draft-plan rounds 3` (commit ee6ad28) and refined via
 |-------|---------|---------|-------|
 | 1 (single phase) | 17 WIs, smoke checkpoint, ~1700 lines new code | **Split into 1A (foundation) and 1B (validation)** | 2 phases of ~10 + ~6 WIs; smoke at end of 1A; reviewable PR boundary; Phase 1 scope (DA9/DA3-6) addressed structurally |
 | 1 → WI 1.5a (`splice-body.sh` shared utility) | Added in /draft-plan Round 3 | **Removed** | YAGNI premature extraction — only /run-plan needs splicing today; future callers can extract when actually needed |
-| 2 → WI 2.1 (body splice recovery paths) | 5 paths covering splice-body.sh exits | **Collapsed to 3 paths** with inline awk | `splice-marker-mismatch` and `splice-write-failed` were artifacts of the removed shared utility; remaining 3 paths cover real failure modes |
-| Phase 2-6 dependencies | "Phase 1 must be complete" | **"Phases 1A and 1B must both be complete"** | Mechanical update from the split |
+| 2 → WI 2.1 (body splice) | Round-3: sed→awk improvement on a phantom `SKILL.md:1216-1217` sed pattern; Round-4: 3 hard-failure paths with inline awk | **Round-5: preserve existing `BASH_REMATCH` splice at `SKILL.md:1715-1745` verbatim; recovery paths use NOTICE/WARN graceful continuation, not `.landed conflict`** | DA1-2: the sed at L1216-1217 never existed; the real splice is bash-regex at L1715-1745 and is already conformance-tested. Rewriting it would have broken passing assertions. |
+| All phases — mirror recipes | `rm -rf .claude/skills/<name> && cp -a` | **`bash scripts/mirror-skill.sh <name>`** | DA1-1: `hooks/block-unsafe-generic.sh:201-220` blocks recursive rm outside `/tmp/`; PR #88's `mirror-skill.sh` is the canonical helper. |
+| 1A → WI 1.5 (`pr-monitor.sh`) | Standalone implementation | **Consolidated successor to `skills/commit/scripts/poll-ci.sh`** | DA1-3 + R1-2: `poll-ci.sh` (PR #142) is the same primitive. Phase 3 WI 3.5a deletes it; `pr-monitor.sh` surfaces (does not preserve) the pre-existing `2>/dev/null` bug. |
+| 6 → WI 6.1 conformance | "MOVE assertions" hand-wave | **Per-line tables** in WI 2.7, 3.4, 3.9, 4.6 enumerating each affected assertion's RELOCATE / REMOVE / STAY / REWRITE action | DA1-4: ~13 assertions in `tests/test-skill-conformance.sh:66-232` will fail post-migration without explicit per-line guidance. |
+| 5 → Phase 5 framing | "/quickfix's fire-and-forget is drift, not a feature" | **"/quickfix gains CI monitoring + fix-cycle as ADDITIVE coverage on top of post-#151 triage + plan-review gates"** | DA1-5: PRs #151-#156 added upstream rigor (triage, plan-review); the "drift" framing was stale. |
+| 2 → New WI 2.5a | Not present | **ADAPTIVE_CRON_BACKOFF Mode A interaction documented** | DA1-6: PRs #131, #138 added per-phase defer counters + cadence step-down at boundary fires `*/1 → */10`. /land-pr's synchronous CI monitoring crosses cadence boundaries; behavior is correct by design but must be documented. |
+| 3 → WI 3.7 | "Remove duplicate `gh pr create` from `do/SKILL.md`" | **Reframed as regression-guard conformance assertion** (no deletion needed) | DA1-7: empirical grep showed 0 hits — the duplicate is already absent at HEAD `b1db0b2`. |
+| All phases — line citations | Hard line numbers (e.g., "lines 195-657") | **Grep-able markers** for the inline blocks being deleted; line numbers retained as orientation | DA1-8: 5 caller files have all drifted in line counts since 2026-04-27. Markers survive future drift. |
+| 1A → WI 1.1 frontmatter | Included `allowed-tools: ...` | **Removed** | DA1-9: no zskills skill uses `allowed-tools`; introducing it on /land-pr alone is inconsistent. Hardening sweep belongs in a separate plan. |
+| 1A → Design & Constraints | "Hooks compatibility" only | **Added post-merge red-main canary interaction (PR #149)** | DA1-10: `.github/workflows/test.yml:82-122` auto-files `main-broken` issues independent of /land-pr's exit; documented as intentional. |
+| All phases — `.landed` writers | `scripts/write-landed.sh` | **`skills/commit/scripts/write-landed.sh`** (runtime: `$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh`) | R1-7: PRs #95-#100 moved scripts under `skills/commit/scripts/` per ownership. |
+| 1A → WI 1.8 cleanup | `[[ "$f" != *"$CI_LOG_FILE"* ]]` substring match | **Build `_CLEANUP_PATHS` from cleanup-targets only (`CALL_ERROR_FILE`, `CONFLICT_FILES_LIST`); exclude CI_LOG_FILE by construction** | DA1-12: empty `CI_LOG_FILE` makes `*""*` match-all → no cleanup. Constructive exclusion is simpler and bug-free. |
+| Load-bearing decisions section | Two duplicate subsections | **Single 11-item list** | Orchestrator note: pre-existing duplication; Round 5 reconciled to one list reflecting all post-Round-5 decisions. |
+| Phase 2-6 dependencies | "Phase 1 must be complete" | **"Phases 1A and 1B must both be complete"** | Mechanical update from the split (Round 4). |
 
 ## Plan Review
 
@@ -888,25 +1053,25 @@ The plan was drafted via `/draft-plan rounds 3` (commit ee6ad28) and refined via
 
 ### Cumulative Convergence
 
-After 4 rounds (3 /draft-plan + 1 /refine-plan), the plan has 60 total findings dispositioned: **36 fixed, 22 justified-not-fixed, 0 ignored**. The plan is ready for `/run-plan` execution starting with Phase 1A.
+After 6 rounds (3 /draft-plan + 3 /refine-plan: YAGNI pass, ecosystem drift, post-Round-5 verification), the plan has **92 total findings dispositioned: 63 fixed, 29 justified-not-fixed, 0 ignored**. Round 6 explicitly re-verified 3 HIGH-class DA findings that contradicted Round 5 refiner's "Verified" claims; all 3 reproduced (Round 1 refiner missed them):
+- **DA2-1 (HIGH):** `gh pr create` exists at `skills/do/SKILL.md:878` (Round 5 said 0 hits).
+- **DA2-2 (HIGH):** Phase 6 tripwires false-fail on prose mentions across 3+ files (Round 5 didn't run them).
+- **DA2-3 (HIGH):** `## Step 6` anchor used in WI 2.2 doesn't exist in `run-plan/modes/pr.md` (Round 5 conflated `commit/modes/pr.md`).
+
+The 5 Round-5 candidate items have all been resolved in Round 6: (1) WI 5.1 line range tightened with concrete `^## Exit codes` end-anchor; (2) mirror-skill.sh references/ subdir verified non-issue (dropped); (3) WI 6.1 false-positive risk addressed via start-of-line invocation patterns; (4) /fix-issues sprint-report verified clean (no stale CI-block references); (5) `pr-rebase.sh` `REASON` token added in WI 1.3 to distinguish network/branch-absent/not-a-repo failures.
+
+**Plan is ready for `/run-plan` execution.** No remaining substantive issues. Round 6 caught 3 load-bearing factual errors that would have broken Phase 6 conformance assertions and Phase 2 implementation; honest disposition table (Round 6 Disposition above) records the verify-before-fix lineage so future maintainers can trace why the corrections were made.
 
 ### Load-bearing architectural decisions (read these before considering future changes)
 
-1. **File-based result contract with allow-list parser** (Phase 1A WI 1.7) — `/land-pr` writes single-line shell-safe `KEY=VALUE` lines plus sidecar files for multi-line content. Caller parses via line-by-line allow-list; never `source`s the file.
-2. **Caller-owned body splice with inline awk** (Phase 2 WI 2.1) — `/land-pr`'s `pr-push-and-create.sh` does NOT touch PR body on existing PRs. /run-plan splices its own progress section using inline awk (no shared utility — YAGNI).
-3. **Status mapping table is first-match-wins** (Phase 1A WI 1.12 step 8) — failure-exits and CI-failure rows precede CI-pass rows.
-4. **Mock-gh fail-fast on missing canned response** (Phase 1B WI 1B.2) — exit 127 with stderr error.
-5. **Subagent boundary contract** (Overview + Phase 1A WI 1.1 description) — `/land-pr` and the caller's fix-cycle agent dispatch are orchestrator-level only.
-6. **Phase 1 split into 1A (foundation) + 1B (validation)** — reviewable PR boundary; smoke checkpoint validates 1A before 1B writes tests on top.
-7. **Drop 300s `/fix-issues` timeout special case** (Phase 4) — same CI pipeline, same timeout.
-8. **/quickfix gains CI monitoring + fix-cycle** (Phase 5) — fire-and-forget was drift, not design.
-
-### Load-bearing architectural decisions (read these before considering future changes)
-
-1. **File-based result contract with allow-list parser** (WI 1.7) — `/land-pr` writes single-line shell-safe `KEY=VALUE` lines plus sidecar files for multi-line content. Caller parses via line-by-line allow-list; never `source`s the file. Eliminates the shell-injection class.
-2. **Caller-owned body splice via shared `splice-body.sh` utility** (WI 1.5a + WI 2.1) — `/land-pr`'s `pr-push-and-create.sh` does NOT touch PR body on existing PRs. /run-plan splices its own progress section using a shared utility script. Future callers re-use the utility — single tested implementation, drift-prevented.
-3. **Status mapping table is first-match-wins** (WI 1.12 step 8) — failure-exits and CI-failure rows precede CI-pass rows so the "merge requested but CI failed" combo is reported as `pr-ci-failing`, not `landed`.
-4. **Mock-gh fail-fast on missing canned response** (WI 1.13) — exit 127 with stderr error instead of silent exit 0. Eliminates false test confidence.
-5. **Subagent boundary contract** (Overview + WI 1.1 description) — `/land-pr` and the caller's fix-cycle agent dispatch are orchestrator-level only; never inside an Agent-dispatched subagent. Documented contract; no runtime guard. Conformance heuristic in WI 6.1.
-6. **Drop 300s `/fix-issues` timeout special case** (Phase 4 + Round-1 DA6 disposition) — same CI pipeline, same timeout. Sequential N-issue accumulation is solved by parallelism (`--auto`), not by under-timeouting CI.
-7. **/quickfix gains CI monitoring + fix-cycle** (Phase 5 + Round-1 DA10 + Round-2 R2-6 dispositions) — fire-and-forget was drift, not design (per maintainer direction).
+1. **File-based result contract with allow-list parser** (Phase 1A WI 1.7) — `/land-pr` writes single-line shell-safe `KEY=VALUE` lines plus sidecar files for multi-line content. Caller parses via line-by-line allow-list; never `source`s the file. Eliminates the shell-injection class.
+2. **Caller-owned body splice — preserve existing `BASH_REMATCH` implementation** (Phase 2 WI 2.1) — `/land-pr`'s `pr-push-and-create.sh` does NOT touch PR body on existing PRs. /run-plan splices its own progress section using its existing bash-regex implementation at `skills/run-plan/SKILL.md:1715-1745` (NO shared utility — that was YAGNI; no rewrite to awk/sed — DA1-2 verified the existing implementation already handles `&`/`\` correctly via `BASH_REMATCH`).
+3. **`pr-monitor.sh` is the consolidated successor to `skills/commit/scripts/poll-ci.sh`** (Phase 1A WI 1.5 + Phase 3 WI 3.5a) — single `--watch + re-check` primitive across all callers; `poll-ci.sh` deleted in Phase 3 after `/commit pr` migrates. Surfaces the pre-existing `2>/dev/null` bug rather than preserving it.
+4. **Status mapping table is first-match-wins** (Phase 1A WI 1.12 step 8) — failure-exits and CI-failure rows precede CI-pass rows so the "merge requested but CI failed" combo is reported as `pr-ci-failing`, not `landed`.
+5. **Mock-gh fail-fast on missing canned response** (Phase 1B WI 1B.2) — exit 127 with stderr error instead of silent exit 0. Eliminates false test confidence.
+6. **Subagent boundary contract** (Overview + Phase 1A WI 1.1 description) — `/land-pr` and the caller's fix-cycle agent dispatch are orchestrator-level only; never inside an Agent-dispatched subagent. Documented contract; no runtime guard. Conformance heuristic in WI 6.1.
+7. **Phase 1 split into 1A (foundation) + 1B (validation)** — reviewable PR boundary; smoke checkpoint validates 1A before 1B writes tests on top.
+8. **Drop 300s `/fix-issues` timeout special case** (Phase 4 + Round-1 DA6 disposition) — same CI pipeline, same timeout. Sequential N-issue accumulation is solved by parallelism (`--auto`), not by under-timeouting CI.
+9. **/quickfix gains CI monitoring + fix-cycle as ADDITIVE coverage on top of post-#151 triage + plan-review gates** (Phase 5 + Round-1 DA10 + Round-2 R2-6 + Round-5 DA1-5 dispositions) — original "fire-and-forget = drift" framing was stale post-PR-#151; the corrected framing is "/quickfix gains CI monitoring + fix-cycle for parity with the other 4 callers when CI fails." Triage + review remain as upstream gates.
+10. **All mirror WIs use `bash scripts/mirror-skill.sh <name>`** (per DA1-1) — never `rm -rf .claude/skills/<name>`, which is hook-blocked by `hooks/block-unsafe-generic.sh:201-220`. PR #88's helper does per-file mirror that respects the guard.
+11. **Landing primitives live under `skills/commit/scripts/`** (per R1-7) — `write-landed.sh` and `land-phase.sh` were moved by PRs #95-#100; agent invocations use `$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/`.
