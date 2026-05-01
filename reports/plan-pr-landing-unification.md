@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 4 Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout) [UNFINALIZED]
+## Phase — 4 Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified) — drift fix: /fix-issues pr GAINS canonical fix-cycle
