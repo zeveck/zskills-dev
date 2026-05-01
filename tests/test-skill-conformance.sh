@@ -339,15 +339,40 @@ check       fix-issues "skip-conflicts protocol"    'cherry-pick CONFLICTS|skip-
 check       fix-issues "verbatim issue body"        'verbatim issue body|gh issue view'
 check       fix-issues "kill cron first on fail"    'Kill the cron FIRST|kill.*cron.*first'
 check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
-check       fix-issues "ci timeout 300"             'timeout 300'
-check       fix-issues "cross-ref to run-plan ci"   'run-plan.*PR mode landing|See.*run-plan'
+# PR_LANDING_UNIFICATION Phase 4 WI 4.6 — /fix-issues pr no longer owns the
+# inline PR-landing implementation. The following assertions changed:
+#   - "ci timeout 300" → REMOVED (WI 4.2 drops the 300s special case;
+#     /land-pr's default 600s applies).
+#   - "cross-ref to run-plan ci" → REMOVED (CI logic now lives in
+#     /land-pr, not /run-plan; the cross-ref is obsolete).
+#   - "auto-merge AUTO guard" → RELOCATED to /land-pr's pr-merge.sh
+#     (line 67 uses `if [ "$AUTO_FLAG" != "true" ]`).
+#   - "ci poll always runs in pr.md" → REWRITTEN as
+#     "modes/pr.md dispatches /land-pr per-issue" — the literal
+#     comment-text pattern is brittle; assertion now verifies that
+#     /fix-issues unconditionally dispatches /land-pr per-issue
+#     (regardless of AUTO).
 check       fix-issues "auto-gating prose"          'Auto-flag gating depends on landing mode|gated on \$AUTO'
 check_fixed fix-issues "pr ci+fix-cycle always run" 'CI polling, and the fix cycle ALL run regardless of'
 check_fixed fix-issues "only merge gated on auto"   'Only `gh pr merge --auto --squash` is gated on `auto`'
 check_fixed fix-issues "cherry-pick defers to fix-report" 'Cherry-picks land via `/fix-report`'
 check       fix-issues "direct requires auto"       'never run that without|explicit `auto` consent'
-check_fixed fix-issues "auto-merge AUTO guard"      'if [ "$AUTO" = "true" ]; then'
-check       fix-issues "ci poll always runs in pr.md" 'CI poll \+ fix cycle: ALWAYS|always runs.*interactive and auto'
+# WI 4.6 NEW: verify modes/pr.md now dispatches /land-pr per-issue.
+check_fixed fix-issues "modes/pr.md dispatches /land-pr per-issue" 'land-pr'
+# WI 4.6 regression guard: `gh pr create` and `gh pr checks --watch`
+# must NOT appear anywhere in /fix-issues — those primitives moved to
+# /land-pr's pr-push-and-create.sh / pr-monitor.sh. Future drift (e.g.,
+# re-introducing inline `gh pr create` for a bypass path) is caught
+# here. Mirrors the same regression guards on /commit (line ~316-317)
+# and /do (line ~316-317). The `gh pr merge --auto --squash` text
+# remains in prose only — see "only merge gated on auto" assertion
+# above; the executable invocation now lives in /land-pr's pr-merge.sh.
+check_not   fix-issues "no inline gh pr create"       'gh pr create'
+check_not   fix-issues "no inline gh pr checks --watch" 'gh pr checks.*--watch'
+# WI 4.6 RELOCATE: the `if [ "$AUTO_FLAG" != "true" ]` literal guard
+# now lives in /land-pr's pr-merge.sh (Phase 1B WI 1.6). Verify it
+# stays there.
+check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTO_FLAG guard" 'if \[ "\$AUTO_FLAG" != "true" \]; then'
 
 echo ""
 echo "=== /fix-issues — structural landmarks ==="
