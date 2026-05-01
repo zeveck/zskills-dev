@@ -9,6 +9,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,3 +65,58 @@ jobs:
             exit 1
           fi
           echo "No stdin bash-ism found"
+
+      # Phase D of 2026-05-01 recovery: branch protection requires the
+      # `test` status check on PR ref (refs/pull/N/merge), but does NOT
+      # require it to stay green on main HEAD after merge. Between
+      # 2026-04-30T04:23 and 2026-05-01T01:09, post-merge Tests on main
+      # was red across PRs #128, #131, #135-#142 because case 6c
+      # (commit-cohabitation) silently skipped on shallow clones. ~24h
+      # of unnoticed red main. Phase B (PR #147) closed the silent-skip;
+      # this canary makes any FUTURE post-merge red loud by
+      # auto-filing/commenting an issue.
+      #
+      # Only fires on push events to main when an earlier step in this
+      # job failed. PR-context failures don't trigger (those are
+      # surface-visible on the PR already).
+      - name: Open issue on red main (post-merge canary)
+        if: ${{ failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          SHA_SHORT="${SHA:0:8}"
+          # Idempotently ensure the label exists so first-fire works.
+          gh label create "main-broken" \
+            --color "d73a4a" \
+            --description "Tests failed on main HEAD (post-merge canary)" \
+            2>/dev/null || true
+          # If an unresolved 'main-broken' issue exists, comment on it
+          # rather than spam-creating duplicates.
+          EXISTING=$(gh issue list --label main-broken --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          BODY=$(cat <<MSG
+          Tests failed on \`main\` HEAD \`${SHA_SHORT}\`.
+
+          - Commit: \`${SHA}\`
+          - Run: ${RUN_URL}
+
+          Branch protection only enforces the \`test\` check on PR refs (\`refs/pull/N/merge\`), not on \`main\` after merge. This issue is the post-merge canary that fires when a push to main produces a red Tests run.
+
+          **Action**: investigate the failure (read the run logs), then either fix forward (PR with the fix) or revert the breaking commit. See PR #145 / 2026-05-01 recovery for the precedent.
+
+          *Auto-filed by \`.github/workflows/test.yml\` on red push to main.*
+          MSG
+          )
+          if [ -n "$EXISTING" ]; then
+            echo "Existing main-broken issue #${EXISTING} is open — appending comment."
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            echo "No open main-broken issue — creating new one."
+            gh issue create \
+              --title "[main-broken] Tests failed on main @ ${SHA_SHORT}" \
+              --label "bug" \
+              --label "main-broken" \
+              --body "$BODY"
+          fi
