@@ -241,15 +241,17 @@ check       commit "never add-all"            'stage files by name|Stage only th
 check_fixed commit "quoted heredoc body"      '-m "$(cat <<'\''EOF'\'''
 check       commit "no-amend after hook fail" 'NEVER.*--amend.*hook|--amend would modify'
 check       commit "origin/main for log"      'git log origin/main\.\.HEAD'
-check       commit "--watch unreliable"       '--watch.*(exit code is unreliable|UNRELIABLE)'
+# PR_LANDING_UNIFICATION Phase 3 WI 3.4 — /commit pr no longer owns the
+# inline PR-landing implementation. The following assertions RELOCATED:
+#   - "--watch unreliable" → /land-pr's section (line ~391, already there).
+#   - "step6: past-failure preamble" → /land-pr's section (line ~411,
+#     upgraded to the verbatim `Past failure.*PR #131|skipped Step 6 on PR
+#     #131` regex per WI 3.4).
+# REMOVED: "step6: poll-ci.sh invocation" — poll-ci.sh was deleted in
+# WI 3.5a; pr-monitor.sh in /land-pr is the canonical successor.
 check_fixed commit "write-landed"             'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
-# Issue #133: /commit pr Step 6 (CI poll) was being skipped by the agent
-# because it was inline-bash-prose. Step 6 now references scripts/poll-ci.sh
-# AND carries a "Past failure:" preamble citing PR #131. Either alone is
-# acceptable per the issue AC; we assert both since this fix ships option 1
-# + option 2 together.
-check_fixed commit "step6: poll-ci.sh invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/poll-ci.sh"'
-check       commit "step6: past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'
+# WI 3.4 NEW: verify modes/pr.md now dispatches /land-pr.
+check_fixed commit "modes/pr.md dispatches /land-pr" 'land-pr'
 check       commit "read-only reviewer"       'You are read-only|you are read-only'
 # Config-driven default mode (issue #56): /commit with no explicit mode
 # token must consult execution.landing in .claude/zskills-config.json
@@ -291,12 +293,28 @@ check_fixed do "landing config: cherry-pick"  'cherry-pick) LANDING_MODE="worktr
 check       do "landing fallback direct"      'LANDING_MODE="direct"'
 check       do "direct+main_protected guard"  'direct mode is incompatible with main_protected'
 check       do "no-echo in main session"      'Do NOT echo.*ZSKILLS_PIPELINE_ID=do'
-check_fixed do "rebase before push"           'git rebase origin/main'
+# PR_LANDING_UNIFICATION Phase 3 WI 3.9 — /do pr no longer owns the
+# inline PR-landing implementation. The following assertions RELOCATED:
+#   - "rebase before push" (`git rebase origin/main`) → /land-pr
+#     (now lives in scripts/pr-rebase.sh; literal no longer in /do).
+#   - "--watch unreliable" → /land-pr's section (line ~391, already there).
+# REMOVED: "report-only ci" — its INTENT is now incorrect because Phase 3
+# is a drift fix that ADDS fix-cycle to /do pr; replaced with
+# "modes/pr.md dispatches /land-pr".
 check       do "no --fill"                    'never use --fill|NEVER use --fill|not --fill'
 check       do "origin/main pr body"          'git log origin/main\.\.HEAD'
-check       do "--watch unreliable"           '--watch.*(exit code is unreliable|UNRELIABLE)'
+# WI 3.9 STAYS: `pr-state-unknown` token still referenced in /do's
+# caller-loop wrapper (Step A8 schema-harmonization note explains it
+# is now emitted by /land-pr's status-mapping table).
 check_fixed do "pr-state-unknown retry"       'pr-state-unknown'
-check       do "report-only ci"               '(does NOT|doesn.?t) dispatch fix agents|report-only'
+# WI 3.9 NEW: verify modes/pr.md now dispatches /land-pr.
+check_fixed do "modes/pr.md dispatches /land-pr" 'land-pr'
+# WI 3.7 regression guard: `gh pr create` must NOT appear anywhere in
+# /do (SKILL.md or modes/) — that primitive moved to /land-pr's
+# pr-push-and-create.sh. Future drift (e.g., re-introducing inline `gh pr
+# create` for a bypass path) is caught here.
+check_not   do "no inline gh pr create"       'gh pr create'
+check_not   do "no inline gh pr checks --watch" 'gh pr checks.*--watch'
 
 echo ""
 echo "=== /do — structural landmarks ==="
@@ -407,8 +425,10 @@ check       land-pr "push error-check first-time"  'if ! git push -u origin'
 # --- BRANCH_SLUG derivation (foundation bug fix from Phase 1A) ---
 check_fixed land-pr "BRANCH_SLUG derivation"  'BRANCH_SLUG'
 
-# --- PR #131 past-failure preamble (issue #133) ---
-check land-pr "PR #131 past-failure preamble" 'PR #131'
+# --- PR #131 past-failure preamble (issue #133; WI 3.4 RELOCATED from /commit) ---
+# Spec verbatim (WI 3.4): the regex MUST anchor on the substantive failure
+# wording so paraphrase drift trips the assertion.
+check land-pr "PR #131 past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'
 
 # --- Caller loop: allow-list parser pattern ---
 check land-pr "allow-list parser key set" 'STATUS\|PR_URL\|PR_NUMBER'

@@ -1,5 +1,52 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 3 Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix)
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified) — drift fix: both skills GAIN fix-cycle (previously missing)
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** 453a5af (impl + verify), 3c3264d (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | `/commit pr` migration to caller loop | Done | LANDED_SOURCE=commit, no --worktree-path, no --auto, fix-cycle context = staged + commits |
+| 3.2 | `/commit pr` preconditions preserved (clean-tree + branch guard) | Done | Steps 1-2 precede /land-pr dispatch (Step 4) |
+| 3.3 | `/commit pr` body to `/tmp/pr-body-commit-$BRANCH_SLUG.md` | Done | path uses BRANCH_SLUG sanitization |
+| 3.4 | `/commit pr` conformance updates | Done | --watch unreliable relocated; step6: poll-ci.sh removed; PR #131 preamble relocated to /land-pr SKILL.md:323-333; new `dispatches /land-pr` assertion |
+| 3.5 | `/commit` mirror | Done | `diff -r` empty |
+| 3.5a | Delete orphan `skills/commit/scripts/poll-ci.sh` | Done | both source + mirror deleted; 4 surviving refs are historical comments (pr-monitor.sh docstring + failure-modes.md case study), no live invocations |
+| 3.6 | `/do pr` migration to caller loop | Done | LANDED_SOURCE=do, --worktree-path=$WORKTREE_PATH, no --auto, fix-cycle context = task description; A1-A6 preserved |
+| 3.7 | Remove `gh pr create` from `/do/SKILL.md` line 878 | Done | reworded to "never use --fill when creating a PR"; regression guard `check_not do "no inline gh pr create"` |
+| 3.8 | `/do pr` `.landed` schema harmonization | Done | /fix-report reads only `status:` + `pr:` (additive contract honored) |
+| 3.9 | `/do pr` conformance updates | Done | --watch unreliable relocated; pr-state-unknown retry STAYS; report-only ci REMOVED + replaced with `dispatches /land-pr` |
+| 3.10 | `/do` mirror | Done | `diff -r` empty |
+
+### Verification
+
+- Test suite: PASSED (1790/1790, baseline 1792 - 2 net from in-place assertion upgrade)
+- Static migration: 0 inline `gh pr create` in commit/modes/pr.md, do/modes/pr.md, do/SKILL.md
+- 0 inline `gh pr checks --watch` in commit/modes/pr.md, do/modes/pr.md
+- 24 land-pr references in each of /commit and /do modes/pr.md
+- shellcheck on land-pr scripts: 0 warnings (Phase 1A non-regression)
+- Caller-loop consistency (commit + do vs canonical): both use BRANCH_SLUG, allow-list parser with same KEY set, identical STATUS + CI_STATUS handling, _CLEANUP_PATHS array (CI_LOG_FILE excluded)
+- WI-by-WI verifier verdict: 11/11 PASS
+
+### Drift dispositions (Phase 3.5: 2 found, 0 corrected — both informational)
+
+- `tests-net delta plan=+1 actual=-2`: relocations consumed an existing /land-pr `PR #131 past-failure preamble` placeholder rather than minting new (in-place upgrade). Net change of -2 from `commit step6: poll-ci.sh` removal + `do report-only ci` removal. Non-blocking.
+- `WI-3.5a grep-result plan=zero-hits actual=4-historical-comments`: 4 surviving `poll-ci.sh` references are documentation in pr-monitor.sh docstring + failure-modes.md case study (and their mirrors). All comments, no live invocations. Verifier recommends keeping as teaching aid.
+
+### Phase 2 canary outcome (de facto)
+
+This phase's `/run-plan` invocation is the FIRST to use the migrated `/run-plan` PR-mode code from PR #161. Phase 2's WI 2.9 (manual canary verification) was deferred to this phase fire as the safety net. **The new `/run-plan` orchestrated this phase end-to-end without issue:** worktree creation, agent dispatch, verification, tracker commits, and (next) the new `/land-pr` dispatch for landing. Phase 2's migration is verified-in-action.
+
+### For Phase 4
+
+`/fix-issues pr` migration can copy the caller-loop block from `skills/commit/modes/pr.md:68-214` or `skills/do/modes/pr.md:181-329` — both are byte-canonical to the reference template. Conformance pattern (`check_not <skill> "no inline gh pr create"` + `check_fixed <skill> "modes/pr.md dispatches /land-pr"`) is established for run-plan/commit/do; extend to fix-issues.
+
 ## Phase — 2 Migrate `/run-plan` PR mode to `/land-pr`
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
