@@ -143,6 +143,13 @@ check       commit "no-amend after hook fail" 'NEVER.*--amend.*hook|--amend woul
 check       commit "origin/main for log"      'git log origin/main\.\.HEAD'
 check       commit "--watch unreliable"       '--watch.*(exit code is unreliable|UNRELIABLE)'
 check_fixed commit "write-landed"             'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
+# Issue #133: /commit pr Step 6 (CI poll) was being skipped by the agent
+# because it was inline-bash-prose. Step 6 now references scripts/poll-ci.sh
+# AND carries a "Past failure:" preamble citing PR #131. Either alone is
+# acceptable per the issue AC; we assert both since this fix ships option 1
+# + option 2 together.
+check_fixed commit "step6: poll-ci.sh invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/poll-ci.sh"'
+check       commit "step6: past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'
 check       commit "read-only reviewer"       'You are read-only|you are read-only'
 # Config-driven default mode (issue #56): /commit with no explicit mode
 # token must consult execution.landing in .claude/zskills-config.json

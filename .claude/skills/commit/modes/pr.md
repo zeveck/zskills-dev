@@ -60,29 +60,28 @@ fi
 ```
 
 **Step 6 — Poll CI checks (report only, no fix cycle):**
+
+> Past failure (2026-04-30): agent skipped Step 6 on PR #131 push, read the
+> previous inline bash block as suggestion-prose, did one snapshot
+> `gh pr checks 131` showing `pending`, reported that in the summary, and
+> exited. User discovered the midnight CI flake 20+ minutes later by manual
+> polling. **DO NOT skip this step.** The polling logic now lives in
+> `scripts/poll-ci.sh` so it must be invoked explicitly — paraphrasing or
+> substituting a single `gh pr checks` snapshot is a skill-step skip.
+
 ```bash
 if [ -n "$PR_URL" ]; then
   PR_NUMBER=$(gh pr view "$PR_URL" --json number --jq '.number')
-  CHECK_COUNT=0
-  for _i in 1 2 3; do
-    CHECK_COUNT=$(gh pr checks "$PR_NUMBER" --json name --jq 'length' 2>/dev/null || echo "0")
-    [ "$CHECK_COUNT" != "0" ] && break
-    sleep 10
-  done
-  if [ "$CHECK_COUNT" != "0" ]; then
-    # `gh pr checks --watch` exit code is unreliable across gh versions
-    # (can return 0 even when a check failed). Use --watch only to block
-    # until completion; then re-check with `gh pr checks` (no --watch),
-    # which DOES signal via exit code reliably.
-    timeout 600 gh pr checks "$PR_NUMBER" --watch 2>/dev/null
-    if gh pr checks "$PR_NUMBER" >/dev/null 2>&1; then
-      echo "CI checks passed."
-    else
-      echo "CI checks failed. Run /verify-changes to diagnose."
-    fi
-  fi
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/poll-ci.sh" "$PR_NUMBER"
 fi
 ```
+
+`scripts/poll-ci.sh` does exactly what the previous inline block did: polls
+up to 30s for checks to register, then `timeout 600 gh pr checks --watch` to
+block, then re-checks via `gh pr checks` (no `--watch`, exit code is
+reliable there) and prints "CI checks passed." (exit 0) or "CI checks
+failed. Run /verify-changes to diagnose." (exit 1). See `scripts/poll-ci.sh`
+for the implementation and the `--watch`-exit-code rationale.
 
 Note: `PR_NUMBER` is derived from `$PR_URL` returned by `gh pr create` or
 `gh pr view "$EXISTING_PR"` — NOT via a bare `gh pr view` call (which relies
