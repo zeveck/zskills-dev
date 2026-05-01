@@ -1,7 +1,7 @@
 ---
 name: quickfix
 disable-model-invocation: true
-argument-hint: "[<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests]"
+argument-hint: "[<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) as a PR without a
   worktree. Two auto-detected modes: user-edited (dirty tree + description →
@@ -10,7 +10,7 @@ description: >-
   requires execution.landing == "pr". Runs testing.unit_cmd (aligned with
   full_cmd to satisfy the project pre-commit hook), commits, pushes, and
   creates a PR via gh. No worktree; no .landed marker.
-  Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests]
+  Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -70,12 +70,22 @@ Empty DESCRIPTION is allowed at parse time — mode detection (WI 1.5)
 decides whether it is fatal.
 
 ```bash
+# Entry-point unset guard for the model-layer test seam. Without the
+# REQUIRED companion flag _ZSKILLS_TEST_HARNESS=1, clear any inherited
+# _ZSKILLS_TEST_* vars so a stale stub from a parent shell cannot leak
+# into a fresh production /quickfix invocation. See WI 1a.3a.
+if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
+  unset _ZSKILLS_TEST_TRIAGE_VERDICT _ZSKILLS_TEST_REVIEW_VERDICT
+fi
+
 ARGS=( "$@" )
 DESCRIPTION=""
 BRANCH_OVERRIDE=""
 YES_FLAG=0
 FROM_HERE=0
 SKIP_TESTS=0
+FORCE=0
+ROUNDS=1
 
 i=0
 while [ $i -lt ${#ARGS[@]} ]; do
@@ -88,6 +98,26 @@ while [ $i -lt ${#ARGS[@]} ]; do
     --yes|-y)    YES_FLAG=1 ;;
     --from-here) FROM_HERE=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
+    --force) FORCE=1 ;;
+    --rounds)
+      # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
+      # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),
+      # treat "--rounds" itself as user prose and fall through to the
+      # default arm. This avoids rejecting legitimate descriptions that
+      # happen to contain the literal token "--rounds".
+      NEXT_IDX=$((i+1))
+      NEXT="${ARGS[$NEXT_IDX]:-}"
+      if [[ "$NEXT" =~ ^[0-9]+$ ]]; then
+        ROUNDS="$NEXT"
+        i="$NEXT_IDX"
+      else
+        if [ -z "$DESCRIPTION" ]; then
+          DESCRIPTION="$arg"
+        else
+          DESCRIPTION="$DESCRIPTION $arg"
+        fi
+      fi
+      ;;
     *)
       if [ -z "$DESCRIPTION" ]; then
         DESCRIPTION="$arg"
@@ -164,7 +194,7 @@ fi
 
 **Check 3 — test-cmd alignment gate (LOAD-BEARING).**
 
-The project's pre-commit hook (`hooks/block-unsafe-project.sh.template:188-229`)
+The project's pre-commit hook (`hooks/block-unsafe-project.sh.template:412-427`)
 rejects `git commit` with staged code files unless the Claude transcript
 contains the configured `FULL_TEST_CMD`. `/quickfix` runs the project's
 `unit_cmd` before committing, so we require `unit_cmd` is set AND — if
@@ -262,6 +292,229 @@ else
 fi
 ```
 
+### WI 1.5.4 — Triage gate (model-layer)
+
+This is a **model-layer instruction**, not a bash block. Triage runs after
+WI 1.5 so user-edited mode triage may inspect `$DIRTY_FILES` and the
+output of `git diff HEAD`. Triage runs BEFORE WI 1.5.5 so we don't ask
+the user to confirm a diff we may redirect, and BEFORE WI 1.6 / WI 1.8 —
+so a redirect leaves no branch, no marker, no tracking dir, no commits.
+
+**Test seam (production behavior unaffected).** When
+`_ZSKILLS_TEST_HARNESS=1` is set, the model MUST skip the triage Agent
+dispatch and instead use the value of `_ZSKILLS_TEST_TRIAGE_VERDICT` as
+the verdict. Production invocations (where the harness flag is absent
+and the entry-point unset guard at WI 1.2 has already cleared the test
+vars) always run the full Agent path. Recognized stub values:
+`PROCEED`, `REDIRECT:/draft-plan:reason`, `REDIRECT:/run-plan:reason`,
+`REDIRECT:/fix-issues:reason`, `REDIRECT:ask-user:reason`.
+
+The model judges `$DESCRIPTION` (and, in user-edited mode, the dirty-tree
+shape) against this rubric — qualitative, observable from description
+text and dirty-tree shape, no LOC counting:
+
+| Signal | Verdict | Mode applicability |
+|--------|---------|--------------------|
+| Description scopes to one concept; user-edited dirty tree (if any) is one cluster | PROCEED | both |
+| ≥ 3 distinct files explicitly named in description | REDIRECT → `/draft-plan` | **agent-dispatched only** (user-edited mode dirty tree may legitimately span ≥3 files; the "Dirty tree spans heterogeneous subsystems" row catches that case) |
+| Verbs include any of: `add feature`, `redesign`, `rewrite`, `refactor across` | REDIRECT → `/draft-plan` | both |
+| `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` | both |
+| Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user | both |
+| References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` | both |
+| References an existing plan file under `plans/` | REDIRECT → `/run-plan` | both |
+| Dirty tree (user-edited mode) spans heterogeneous subsystems (model judgment) | REDIRECT → `/draft-plan` | user-edited only |
+
+**Worked examples (calibrate the model's PROCEED/REDIRECT calls):**
+
+| Example invocation | Verdict | Why |
+|--------------------|---------|-----|
+| `/quickfix Fix README typo` | PROCEED | one concept, one likely file |
+| `/quickfix add comment to canary-marker.txt` | PROCEED | one concrete object, one concrete file |
+| `/quickfix update CHANGELOG with v0.5 release notes` | PROCEED | concrete verb + object + file |
+| `/quickfix add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
+| `/quickfix improve` | REDIRECT → ask user | vague verb, no object |
+| `/quickfix fix #142` | REDIRECT → /fix-issues | references issue number |
+
+Output one of:
+
+- `PROCEED` — print `Triage: proceeding with /quickfix (<one-line reason>).` Continue to WI 1.5.4a.
+- `REDIRECT(target=<skill>, reason=<text>)` — see redirect handling.
+
+**Per-target redirect message templates** (must be exact-text-grep-able).
+Each message is **two physical lines** in the printed output (the
+linebreak is a real newline, not the literal `\n` characters):
+
+| target | Line 1 | Line 2 |
+|--------|--------|--------|
+| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
+| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
+| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
+| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
+
+The model implements these as a `printf 'line1\nline2\n' "$REASON"` so
+both lines are emitted to stdout and both are independently greppable
+from a test fixture.
+
+On REDIRECT and `$FORCE -eq 0`: print the per-target message (both
+lines), then `exit 0`. **No marker is written** (WI 1.8 has not yet
+run). No branch. No tracking dir.
+
+On REDIRECT and `$FORCE -eq 1`: print
+`Triage: REDIRECT(<target>) overridden by --force; proceeding.`
+Continue.
+
+### WI 1.5.4a — Inline plan composition (model-layer)
+
+This is a **model-layer instruction**, not a bash block. After triage
+returns PROCEED (or after `--force` overrides a REDIRECT), the model
+composes a short inline plan held in `INLINE_PLAN`. `INLINE_PLAN` is a
+logical placeholder for text the model composes in its response. When
+WI 1.5.4b dispatches the reviewer Agent, the model copies the
+`INLINE_PLAN` text **verbatim** into the Agent prompt as the
+`INLINE PLAN ...` section — there is no file read or shell-variable
+interpolation; this is a model-to-prompt substitution.
+
+```text
+### /quickfix inline plan
+**Description:** <DESCRIPTION>
+**Mode:** <MODE>
+**Files (expected):** <comma-separated list, or "as in dirty tree">
+**Approach:** <2-4 sentences>
+**Acceptance:** <2-4 bullets>
+```
+
+Constraints:
+
+- ≤60 lines total.
+- The model-authored fields **Approach** and **Acceptance** MUST NOT
+  contain the literals for other skills (`/draft-plan`, `/run-plan`,
+  `/fix-issues`) — using these in model-authored prose would muddle
+  the redirect-message guards.
+- The **Description** field is verbatim user input and is exempt — a
+  user description that mentions another skill name is the user's
+  prerogative.
+- Early-stage review judges PLAN STRUCTURE, not file enumeration
+  accuracy.
+
+### WI 1.5.4b — Fresh-agent plan review (model-layer)
+
+This is a **model-layer instruction**, not a bash block.
+
+**Test seam (production behavior unaffected).** When
+`_ZSKILLS_TEST_HARNESS=1` is set, the model MUST skip the reviewer
+Agent dispatch and instead use the value of
+`_ZSKILLS_TEST_REVIEW_VERDICT` as the verdict (one of `APPROVE`,
+`REVISE: reason`, `REJECT: reason`). Production invocations always run
+the full Agent path.
+
+If `$ROUNDS -eq 0`: print to stderr
+`WARN: --rounds 0 skips fresh-agent plan review (legacy opt-in).` and
+skip review entirely. Continue.
+
+Otherwise dispatch ONE Agent (no model hint — inherit parent) with this
+prompt:
+
+```text
+You are the REVIEWER agent for /quickfix's pre-execution plan review.
+
+DESCRIPTION the user provided:
+[DESCRIPTION]
+
+MODE: [MODE]
+
+[if MODE=user-edited:]
+Dirty files (the user is asking to bundle these into the PR):
+[DIRTY_FILES, one per line]
+
+Diff:
+[git diff HEAD output, truncated to first 4000 lines]
+
+INLINE PLAN the model proposes to execute:
+[INLINE_PLAN verbatim]
+
+Your job: judge whether the inline plan, when executed, will produce a PR
+that faithfully addresses DESCRIPTION (and, in user-edited mode, a PR
+that matches the dirty-diff scope) without obvious omissions or
+out-of-scope work. Judge PLAN STRUCTURE, not file enumeration accuracy
+(file lists may be best-effort at this stage).
+
+OBSERVABLE-SIGNAL RULE (mandatory): count the **Acceptance** bullets in
+the inline plan. If >4 Acceptance bullets are present, you MUST return
+`VERDICT: REVISE -- too many concepts; consider /draft-plan` regardless
+of whether each bullet individually looks reasonable. This is a hard
+auto-REVISE — not a judgment call. The Acceptance-bullet ceiling is the
+concrete observable that distinguishes "task fits /quickfix" from "task
+should /draft-plan." If the model proposes an Acceptance section that
+exceeds the ceiling, the inline plan needs to be split, not rubber-stamped.
+
+Return EXACTLY one of these as the FIRST line. APPROVE is a bare line
+with no separator; REVISE and REJECT MUST include both an ASCII `--`
+separator AND a one-line reason ≤200 chars. No free text after APPROVE
+on line 1.
+
+  VERDICT: APPROVE
+  VERDICT: REVISE -- <one-line reason ≤ 200 chars>
+  VERDICT: REJECT -- <one-line reason ≤ 200 chars>
+
+Then, on subsequent lines, add a short justification (≤ 10 lines) — for
+APPROVE this is where you justify, NOT on line 1.
+```
+
+**Verdict parser (separator-required for REVISE/REJECT).** Trim trailing
+whitespace from the first line, then match against this regex (in
+priority order):
+
+```regex
+# Bare APPROVE: no trailing text on line 1.
+^VERDICT:[[:space:]]+APPROVE[[:space:]]*$
+
+# REVISE/REJECT: separator (--) and reason are REQUIRED.
+^VERDICT:[[:space:]]+(REVISE|REJECT)[[:space:]]+--[[:space:]]+(.+)$
+```
+
+Reason captured in group 2 of the second regex. Em-dashes (`—`, `–`) in
+the iteration prompt template are normalized to ASCII `--` before
+insertion (the model performs this normalization when composing the
+iteration prompt) so the parser only needs to handle ASCII. If the
+first line matches NEITHER regex → treat as a malformed verdict, retry
+once with the same prompt; on second malformed → soft-reject (same exit
+semantics as REJECT).
+
+**REVISE loop.** At most `$ROUNDS` iterations. On REVISE, the model
+rewrites `INLINE_PLAN` using BOTH the verdict reason AND the
+justification body, then dispatches a NEW reviewer (single reviewer,
+NOT /draft-plan dual-agent). Iteration prompt template:
+
+```text
+You are the REVIEWER agent for /quickfix's pre-execution plan review (round [N]).
+
+Prior reviewer (round [N-1]) returned:
+  VERDICT: REVISE -- [prior reason]
+  Justification:
+  [prior justification body verbatim]
+
+The model has REVISED the inline plan in response. New plan below.
+
+DESCRIPTION the user provided:
+[DESCRIPTION]
+[…rest of original prompt unchanged…]
+
+Judge whether the revision addresses the prior reviewer's reason. Return
+the same VERDICT format (APPROVE bare; REVISE/REJECT require -- + reason).
+Do not re-flag issues the prior reviewer already accepted; do flag NEW
+issues you see.
+```
+
+After `$ROUNDS` REVISE cycles → soft-reject (same exit semantics as REJECT).
+
+On APPROVE: print verdict + justification ABOVE the WI 1.5.5 prompt
+(user-edited) or the WI 1.11 dispatch (agent-dispatched). Continue.
+
+On REJECT and `$FORCE -eq 0`: print verdict, exit 0. **No marker is
+written** (WI 1.8 has not yet run).
+
+On REJECT and `$FORCE -eq 1`: print override message. Continue.
+
 ### WI 1.5.5 — Dirty-tree confirmation (model-layer)
 
 This is a **model-layer instruction**, not a bash block.
@@ -272,10 +525,28 @@ MUST, before proceeding to slug/branch creation:
 1. Show the user the full dirty-file list (one per line).
 2. Show the output of `git diff HEAD`.
 3. Explicitly ask: **"Commit all of these files as part of '<DESCRIPTION>'? [y/N]"**
-4. Only proceed if the user affirms. If the user declines or does not
-   respond affirmatively, exit cleanly — set the tracking marker's
-   `status` to `cancelled` and commit nothing. No branch is created yet at
-   this point, so no rollback is needed.
+4. Only proceed if the user affirms. If the user declines, exit cleanly
+   with `exit 0`. There are two decline paths with different marker
+   semantics:
+
+   1. **Production (model-layer) decline.** When the model itself
+      executes WI 1.5.5 and the user types `n`, the script exits BEFORE
+      WI 1.8 has run — no marker has been written, the EXIT trap is not
+      registered, and no branch has been created. Identical observable
+      end state to triage-redirect and review-reject: empty disk.
+   2. **Test-fixture (bash-fallback) decline.** When the bash extractor
+      in the test suite hits the `case "$answer" in *)` arm at WI 1.10
+      (with `--yes`-bypassed prompt), WI 1.8 has already run — the
+      marker exists at `status: started` and the EXIT trap is
+      registered. WI 1.10 sets `CANCEL_REASON='user-declined'` and
+      `CANCELLED=1`; the trap then runs `finalize_marker` which
+      transitions `status: started` → `status: cancelled` and appends
+      `reason: user-declined`.
+
+   No branch is created at this confirmation point in either path, so
+   no branch rollback is needed. (Triage redirect and review reject
+   paths exit BEFORE WI 1.8 and write no marker at all — observably
+   identical to the production decline path above.)
 
 **Rationale:** user-edited mode accepts dirty-tree input so the user can
 ship a one-line fix without stashing. But without an explicit
@@ -287,6 +558,10 @@ diff and confirm before branching.
 This confirmation supersedes WI 1.10's bash `read -r` prompt, which now
 exists only as a fallback for the literal-script execution path used by
 `tests/test-quickfix.sh` Case 43 (invoked with `--yes`).
+
+When `$ROUNDS != 0`, the WI 1.5.4b reviewer's verdict prints ABOVE this
+confirmation prompt as added context. The `[y/N]` is unchanged. A
+reviewer APPROVE does not auto-confirm — the user still confirms here.
 
 ### WI 1.6 — Slug derivation
 
@@ -372,6 +647,7 @@ base: $BASE_BRANCH
 MARK
 
 CANCELLED=0
+CANCEL_REASON=""
 finalize_marker() {
   local rc="$1"
   local final
@@ -385,6 +661,15 @@ finalize_marker() {
   # Rewrite the status line, preserving the rest.
   if [ -f "$MARKER" ]; then
     sed -i "s/^status: started$/status: $final/" "$MARKER"
+  fi
+  # Append `reason:` for the user-decline path only. Placed AFTER the
+  # outer `fi` (not nested inside it) so the new block is self-guarding
+  # via its own `[ -f "$MARKER" ]` check — pinning OUTSIDE prevents
+  # future refactors of the outer guard from accidentally breaking the
+  # reason-write path.
+  if [ "$CANCELLED" -eq 1 ] && [ -n "${CANCEL_REASON:-}" ] && [ -f "$MARKER" ] \
+     && ! grep -q '^reason:' "$MARKER"; then
+    printf 'reason: %s\n' "$CANCEL_REASON" >> "$MARKER"
   fi
 }
 trap 'finalize_marker $?' EXIT
@@ -469,6 +754,7 @@ if [ "$MODE" = "user-edited" ]; then
     case "$answer" in
       y|Y|yes|YES) ;;
       *)
+        CANCEL_REASON="user-declined"
         CANCELLED=1
         echo "Cancelled by user. Cleaning up branch." >&2
         if ! git checkout "$BASE_BRANCH"; then
@@ -783,7 +1069,10 @@ The fulfillment marker at `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.q
 transitions from `status: started` at WI 1.8 entry to exactly one of:
 
 - `status: complete` — PR created, URL appended via `pr: $PR_URL`.
-- `status: cancelled` — user answered `n` at the user-edited confirmation prompt.
+- `status: cancelled` is appended with `reason: user-declined` (the only
+  documented reason). Triage-redirect, review-reject, and production
+  model-layer decline at WI 1.5.5 leave no marker — they exit before
+  WI 1.8 writes one.
 - `status: failed` — any non-zero exit path after the marker was written.
 
 No `.landed` marker is written. `/quickfix` has no worktree, and PR state
