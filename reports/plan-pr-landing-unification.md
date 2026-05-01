@@ -1,5 +1,50 @@
 # Plan Report — PR Landing Unification
 
+## Phase — 4 Migrate `/fix-issues pr` to `/land-pr` (drop 300s timeout) [UNFINALIZED]
+
+**Plan:** plans/PR_LANDING_UNIFICATION.md
+**Status:** Completed (verified) — drift fix: /fix-issues pr GAINS canonical fix-cycle
+**Worktree:** /tmp/zskills-pr-pr-landing-unification
+**Branch:** feat/pr-landing-unification
+**Commits:** 306e2c2 (impl + verify), 958e2a7 (tracker)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.1 | Per-issue caller-loop dispatching /land-pr | Done | `LANDED_SOURCE=fix-issues`, `WORKTREE_PATH=$ISSUE_WORKTREE`, `AUTO=$AUTO`, `--issue=$ISSUE_NUM`; body-prep empty; fix-cycle context = issue body + change summary |
+| 4.2 | Drop 300s timeout special case | Done | Comment removed; conformance assertion `fix-issues "ci timeout 300"` removed; /land-pr default 600s applies |
+| 4.3 | Preserve agent-assisted rebase resolution | Done | Same pattern as /commit and /do — break on conflict, /land-pr writes `.landed status=conflict` with `issue:` field |
+| 4.4 | Preserve sprint report generation (Phase 5 of /fix-issues SKILL.md) | Done | `git diff main...HEAD -- skills/fix-issues/SKILL.md` empty |
+| 4.5 | `--issue $ISSUE_NUM` flag passthrough to .landed | Done | Unconditional in `$LAND_ARGS` (always set in /fix-issues context) |
+| 4.6 | Conformance updates | Done | 4 removed (ci timeout 300, cross-ref to run-plan ci, ci poll always runs, auto-merge AUTO guard) + 4 added (dispatches /land-pr, no inline gh pr create, no inline checks --watch, AUTO_FLAG guard relocated to land-pr) |
+| 4.7 | Mirror via mirror-skill.sh fix-issues | Done | `diff -r` empty |
+| 4.8 | Manual canary verification | **DEFERRED** | Architectural — same as 2.9, 3.5/3.10 (subagents can't run multi-agent skills). Phase 5 cron fire serves as de-facto canary |
+
+### Verification
+
+- Test suite: PASSED (1790/1790, baseline 1790, net-zero from balanced add/remove)
+- Static migration: 0 inline `gh pr create`, 0 `gh pr checks --watch`, 31 `land-pr` references, 1 `Skill.*land-pr` dispatch site (per-issue inside loop), 0 `timeout 300`, 4 `--issue` references
+- Caller-loop consistency vs /commit + /do: identical 12-key allow-list parser, BRANCH_SLUG sanitize, STATUS dispatch, CI_STATUS dispatch, _CLEANUP_PATHS array (CI_LOG_FILE excluded)
+- `pr-merge.sh:67` literal pattern verified (`if [ "$AUTO_FLAG" != "true" ]; then`) — relocated assertion regex matches
+- shellcheck on /land-pr scripts: 0 warnings (Phase 1A non-regression)
+- Phase 1A scripts non-regression: `git diff main...HEAD -- skills/land-pr/` empty
+- WI-by-WI verifier verdict: 8/8 PASS (with 4.8 deferred)
+
+### Drift dispositions (Phase 3.5)
+
+Zero drift tokens — neither implementer nor verifier emitted any.
+
+### Phase 3 canary verified-in-action (composition)
+
+This phase's `/run-plan` invocation used the new migrated /run-plan PR mode (PR #161) AND dispatched `/land-pr` (PRs #159+#160) in Phase 6. Both verified end-to-end during Phase 3's land step (PR #162 merged via /land-pr at commit `bc36e6a`). Phase 4's land will be the second composition canary fire.
+
+### For Phase 5
+
+- All 4 PR-landing call sites (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`) now dispatch `/land-pr`. Phase 5 (`/quickfix` migration) is the LAST code-touching call-site migration.
+- Pattern is well-established: mirror copy-paste-modify the canonical caller-loop with appropriate slot fills.
+- /quickfix is the most invasive migration: per the spec it's a "drift fix: gain CI monitoring + fix-cycle" — meaning /quickfix currently has fire-and-forget design that's drift, not a feature. Restoring full caller-loop pattern.
+
 ## Phase — 3 Migrate `/commit pr` and `/do pr` to `/land-pr` (drift fix)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
