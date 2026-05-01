@@ -1,6 +1,6 @@
 # Plan Report — PR Landing Unification
 
-## Phase — 6 Drift-prevention conformance + canary (FINAL) [UNFINALIZED]
+## Phase — 6 Drift-prevention conformance + canary (FINAL)
 
 **Plan:** plans/PR_LANDING_UNIFICATION.md
 **Status:** Completed (verified) — locks in the unification with cross-skill drift detection
