@@ -780,7 +780,18 @@ Each agent follows this fix workflow:
 4. Write regression tests (unit and/or E2E as appropriate)
 5. Run `$FULL_TEST_CMD` (resolve via
    `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-   if you don't already have it in your environment) — all suites must pass
+   if you don't already have it in your environment) — all suites must pass.
+   **CRITICAL — Bash tool timeout:** invoke with `timeout: 600000` (10
+   min). The default 120000ms is shorter than the suite's actual runtime
+   (~3-4 min in zskills). **Do NOT recover from a timeout by retrying
+   with `run_in_background: true` + `Monitor` / `BashOutput` polling** —
+   wake events for background processes do not reliably deliver to
+   subagents, so the wait never returns and the dispatch hangs at "Tests
+   are running. Let me wait for the monitor." Past failure: 6+ subagent
+   crashes with exactly that phrase across 2026-04-29 and 2026-04-30
+   sessions. Always foreground-Bash with explicit long timeout; capture
+   to file via `> "$TEST_OUT/$TEST_OUTPUT_FILE" 2>&1` and read the file
+   when the Bash call returns.
 6. **Agent verification** via `/manual-testing` if UI files changed —
    use playwright-cli with real events, take screenshots as evidence.
    The pre-commit hook will BLOCK your commit if UI files are staged
