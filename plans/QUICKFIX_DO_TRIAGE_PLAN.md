@@ -824,7 +824,7 @@ Phase 1a, Phase 1b, Phase 2a, Phase 2b.
 
 ## Follow-ups (out of scope for this plan)
 
-- `/commit pr` exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. (Tracked as a GitHub issue, number recorded after Phase 3 WI 3.3.)
+- `/commit pr` exhibits the same gate-routing-around behavior /quickfix and /do had before this plan. Apply the same orthogonal triage + inline-plan + review pattern in a follow-up plan. (Tracked: https://github.com/zeveck/zskills-dev/issues/155)
 
 ---
 
