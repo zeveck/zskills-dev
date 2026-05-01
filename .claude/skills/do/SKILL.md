@@ -870,12 +870,12 @@ Status: pr-ready | pr-ci-failing | landed
   The commit is the artifact.
 - **Push requires verification** — `push` always dispatches a separate
   verification agent before pushing. No exceptions.
-- **PR mode CI is report-only** — `/do pr` polls CI and reports status.
-  It does NOT dispatch fix agents. For automated fix cycles, use
-  `/run-plan` or `/fix-issues` in PR mode.
+- **PR mode CI runs through `/land-pr`** — `/do pr` dispatches the
+  shared `/land-pr` skill, which polls CI and (on failure) drives a
+  fix-cycle agent loop with the task description as work context.
 - **PR body uses `git log origin/main..HEAD`** — never `git log main..HEAD`
   (local main may be stale after rebase).
-- **PR titles and bodies are explicit** — never use `--fill` in `gh pr create`.
+- **PR titles and bodies are explicit** — never use `--fill` when creating a PR (the title and body are constructed by the skill, not auto-derived from commits).
 - **Slug collision suffix targets TASK_SLUG itself** — not just WORKTREE_PATH.
   Both BRANCH_NAME and WORKTREE_PATH must pick up the suffix.
 - **Respect CLAUDE.md** — all standard rules apply (no external deps, no
