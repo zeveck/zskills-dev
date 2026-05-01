@@ -397,6 +397,152 @@ check_not   quickfix "no inline gh pr create"      'gh pr create'
 check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
 
 echo ""
+echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
+# Drift-prevention assertions catching any future re-introduction of inline
+# PR-landing primitives outside /land-pr. Each historical drift bug below
+# had to be patched reactively — these tripwires fail-closed at conformance
+# time so a regression never ships.
+#
+# Drift-bug rationale (WI 6.3):
+#   - 87af82a — `gh pr checks --watch` exit code unreliable; needed bare
+#     re-check after watch exits non-zero. /land-pr's pr-monitor.sh is the
+#     canonical resolution; inline copies in callers re-introduce the bug.
+#   - 1de3049 — duplicate `gh pr create` invocation after rebase failure;
+#     pr-push-and-create.sh handles single-shot creation with stderr
+#     capture. Inline copies risked retry-then-conflict.
+#   - 175e4aa — auto-merge stderr text varies between gh versions; only
+#     pr-merge.sh's allow-list of benign stderr strings handles this
+#     correctly. Inline `gh pr merge` calls without that allow-list
+#     spuriously fail otherwise-successful merges.
+#   - b904cef — agent skipped a step on PR #131 push, treated inline bash
+#     as suggestion-prose, did one snapshot poll. The /land-pr dispatch
+#     contract makes this skip-class impossible: the caller invokes the
+#     skill, which executes deterministically.
+#
+# Pattern design (per spec WI 6.1, R6-2/DA2-2):
+# Anchor each invocation pattern to start-of-line so prose mentions
+# (backtick-quoted substrings, "Manual fallback:" echoes, list-marker
+# prefixes, "**Only \`gh pr merge --auto --squash\`** is gated" gating
+# prose) survive while live invocations are caught.
+
+# --- Cross-skill grep helpers ---
+
+# cross_check_no_invocation <label> <pattern> <root>
+# Greps <root> for <pattern> recursively; passes if zero hits OUTSIDE
+# skills/land-pr/ (or .claude/skills/land-pr/ for the mirror root). Only
+# the start-of-line-anchored invocation patterns from WI 6.1 are passed
+# in — prose mentions don't match. The exclusion uses fixed-string
+# `land-pr/` so both source and mirror trees work.
+cross_check_no_invocation() {
+  local label="$1" pattern="$2" root="$3"
+  local hits
+  hits=$(grep -rEln -e "$pattern" "$root/" | grep -v 'land-pr/')
+  if [ -z "$hits" ]; then
+    pass "[cross-skill] $label"
+  else
+    fail "[cross-skill] $label" "live invocation outside /land-pr: $(echo "$hits" | tr '\n' ' ')"
+  fi
+}
+
+# --- WI 6.1 (a) — No inline `gh pr create` invocations ---
+# Pattern: start-of-line, optional `if [!]`/`VAR=`/`$(` invocation
+# prefixes. Excludes prose backtick-mentions and bullet-list mentions.
+cross_check_no_invocation "no inline gh pr create (skills/)" \
+  '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr create\b' \
+  "$REPO_ROOT/skills"
+cross_check_no_invocation "no inline gh pr create (.claude/skills/)" \
+  '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr create\b' \
+  "$REPO_ROOT/.claude/skills"
+
+# --- WI 6.1 (b) — No inline `gh pr checks --watch` invocations ---
+# Pattern: start-of-line with optional `timeout N` wrapper. Excludes
+# prose like backtick-quoted `timeout 600 gh pr checks --watch` and
+# bullet-list discussion of the unreliable-exit behavior.
+cross_check_no_invocation "no inline gh pr checks --watch (skills/)" \
+  '^[[:space:]]*(timeout[[:space:]]+[0-9]+[[:space:]]+)?gh pr checks\b.*--watch\b' \
+  "$REPO_ROOT/skills"
+cross_check_no_invocation "no inline gh pr checks --watch (.claude/skills/)" \
+  '^[[:space:]]*(timeout[[:space:]]+[0-9]+[[:space:]]+)?gh pr checks\b.*--watch\b' \
+  "$REPO_ROOT/.claude/skills"
+
+# --- WI 6.1 (c) — No inline `gh pr merge` invocations ---
+# Pattern: start-of-line, optional `if [!]`/`VAR=`/`$(` invocation
+# prefixes. Excludes prose like `**Only \`gh pr merge --auto --squash\`
+# is gated on \`auto\`**` (backtick-prefix, not whitespace-prefix).
+cross_check_no_invocation "no inline gh pr merge (skills/)" \
+  '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr merge\b' \
+  "$REPO_ROOT/skills"
+cross_check_no_invocation "no inline gh pr merge (.claude/skills/)" \
+  '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr merge\b' \
+  "$REPO_ROOT/.claude/skills"
+
+# --- WI 6.1 (d) — All 5 callers dispatch /land-pr ---
+# Substring match suffices because `land-pr` only appears in dispatch
+# contexts inside the caller files (verified during Phase 2-5 migrations).
+# These checks duplicate the per-skill assertions above (run-plan,
+# commit, do, fix-issues, quickfix already each have their own
+# `dispatches /land-pr` check) but consolidate them as a single
+# cross-skill drift-prevention claim.
+LAND_PR_CALLERS=(
+  "skills/run-plan/modes/pr.md"
+  "skills/commit/modes/pr.md"
+  "skills/do/modes/pr.md"
+  "skills/fix-issues/modes/pr.md"
+  "skills/quickfix/SKILL.md"
+)
+ALL_CALLERS_OK=1
+for caller in "${LAND_PR_CALLERS[@]}"; do
+  if [ ! -f "$REPO_ROOT/$caller" ]; then
+    fail "[cross-skill] caller exists: $caller" "file does not exist"
+    ALL_CALLERS_OK=0
+  elif ! grep -q -F 'land-pr' "$REPO_ROOT/$caller"; then
+    fail "[cross-skill] caller dispatches /land-pr: $caller" "no 'land-pr' substring found"
+    ALL_CALLERS_OK=0
+  fi
+done
+if [ "$ALL_CALLERS_OK" -eq 1 ]; then
+  pass "[cross-skill] all 5 callers reference /land-pr (dispatch present)"
+fi
+
+# --- WI 6.1 (e) — Orchestrator-level dispatch verification ---
+# The /land-pr Skill-tool invocation MUST appear at top-level prose, NOT
+# inside an Agent prompt block. The dispatch contract is documented in
+# /land-pr/SKILL.md and load-bearing decision #6 of the plan. Heuristic:
+# locate the dispatch line (matches `Skill:[[:space:]]*\{[[:space:]]*skill:`
+# with `land-pr`); verify the surrounding ±15 lines do NOT contain
+# start-of-line `Agent:`, `prompt:`, or `dispatch.*agent` markers.
+#
+# Per R6-13 / R3-4: all three alternatives are uniformly start-of-line-
+# anchored to avoid prose false-matches. Documented residual limitation
+# (WI 6.1): a prose paragraph that happens to start a line with "Agent:"
+# can still false-fail; the implementer can refine the pattern as needed.
+NESTED_AGENT_RE='^[[:space:]]*(Agent:|prompt:|dispatch.*agent)'
+ORCH_DISPATCH_FAIL=0
+for caller in "${LAND_PR_CALLERS[@]}"; do
+  caller_path="$REPO_ROOT/$caller"
+  [ ! -f "$caller_path" ] && continue
+  # Locate the `Skill: { skill: "land-pr" ... }` dispatch line. Matches
+  # both bare and indented forms.
+  dispatch_line=$(grep -nE 'Skill:[[:space:]]*\{[[:space:]]*skill:[[:space:]]*"land-pr"' "$caller_path" | head -1 | cut -d: -f1)
+  if [ -z "$dispatch_line" ]; then
+    fail "[cross-skill] orchestrator dispatch found in $caller" "no Skill:{skill:\"land-pr\"} line"
+    ORCH_DISPATCH_FAIL=1
+    continue
+  fi
+  win_start=$((dispatch_line - 15))
+  win_end=$((dispatch_line + 15))
+  [ "$win_start" -lt 1 ] && win_start=1
+  if sed -n "${win_start},${win_end}p" "$caller_path" | grep -qE -e "$NESTED_AGENT_RE"; then
+    fail "[cross-skill] /land-pr dispatched at orchestrator level in $caller" \
+      "nested-Agent marker (Agent:/prompt:/dispatch.*agent) found within ±15 lines of dispatch line $dispatch_line"
+    ORCH_DISPATCH_FAIL=1
+  fi
+done
+if [ "$ORCH_DISPATCH_FAIL" -eq 0 ]; then
+  pass "[cross-skill] /land-pr dispatched at orchestrator level in all 5 callers (no nested-Agent markers within ±15 lines)"
+fi
+
+echo ""
 echo "=== /verify-changes — RESTRUCTURE-adjacent invariants ==="
 check       verify-changes "Scope Assessment header"  '^## Scope Assessment'
 check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'

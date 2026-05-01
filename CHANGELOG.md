@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-05-01
+
+### Added — `/land-pr` skill (PR_LANDING_UNIFICATION complete)
+
+`/land-pr` extracts the PR-landing pipeline (rebase → push → create →
+CI poll → fix-cycle → auto-merge) from 5 duplicating skills into one
+canonical implementation. Callers — `/run-plan`, `/commit pr`, `/do
+pr`, `/fix-issues pr`, `/quickfix` — now dispatch `/land-pr` via the
+Skill tool with a file-based result contract instead of each carrying
+inline copies of `gh pr create` / `gh pr checks --watch` / `gh pr
+merge`. Eliminates 5x duplication and the drift bugs (`87af82a`,
+`1de3049`, `175e4aa`, `b904cef`) it caused.
+
+The skill ships 4 scripts under `skills/land-pr/scripts/`:
+`pr-rebase.sh`, `pr-push-and-create.sh`, `pr-monitor.sh`, `pr-merge.sh`.
+A canonical caller-loop pattern lives at
+`skills/land-pr/references/caller-loop-pattern.md` (allow-list parser,
+never `source`-the-result-file). Subagent boundary contract: callers
+dispatch `/land-pr` at orchestrator level only — never inside an
+Agent-dispatched subagent.
+
+Phase 6 adds drift-prevention infrastructure:
+
+- **8 cross-skill conformance tripwires** in
+  `tests/test-skill-conformance.sh` (start-of-line-anchored grep
+  patterns for `gh pr create` / `gh pr checks --watch` / `gh pr
+  merge` outside `/land-pr`, plus a 5-caller dispatch presence check
+  and an orchestrator-level dispatch heuristic). Static drift
+  prevention; complements the per-skill `check_not` assertions added
+  in Phases 2–5.
+
+- **`plans/CANARY_LAND_PR.md`** — manual end-to-end canary that
+  exercises the unified flow with a deliberate skill-mirror drift on
+  attempt 1, forcing one fix-cycle iteration before CI passes on
+  attempt 2 and auto-merge fires. Behavioral validation layer.
+
+PRs that landed each phase:
+
+- 1A — `/land-pr` skill foundation: PR #159
+- 1B — validation layer (failure-modes + mocks + tests + conformance): PR #160
+- 2 — `/run-plan` caller migration: PR #161
+- 3 — `/commit pr` + `/do pr` caller migration: PR #162
+- 4 — `/fix-issues pr` caller migration: PR #163
+- 5 — `/quickfix` caller migration: PR #164
+- 6 — drift-prevention conformance + canary: this PR
+
+Plan: `plans/PR_LANDING_UNIFICATION.md` (now Complete in PLAN_INDEX).
+
 ## 2026-04-29
 
 ### Added — `/zskills-dashboard` skill
