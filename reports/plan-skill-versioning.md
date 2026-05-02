@@ -1,5 +1,71 @@
 # Plan Report — Skill Versioning
 
+## Phase — 5a /update-zskills data plumbing [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSIONING.md
+**Status:** Completed (verified inline)
+**Worktree:** /tmp/zskills-pr-skill-versioning
+**Branch:** feat/skill-versioning
+**Commit:** bc55f55
+
+### Work Items
+
+| # | Item | Status |
+|---|------|--------|
+| 5a.0 | PR preflight (gh pr list filter) | Done — orchestrator-level (filtered self-PR #175); no external PRs touch update-zskills |
+| 5a.1 | zskills-resolve-config.sh +ZSKILLS_VERSION | Done (mirrored) |
+| 5a.2 | tests/test-zskills-resolve-config.sh extension | Done (4 new cases: 8a/b/c + extended loop) |
+| 5a.3 | config/zskills-config.schema.json +zskills_version | Done (purely additive; other blocks byte-identical) |
+| 5a.4 | scripts/resolve-repo-version.sh | Done — outputs `2026.04.0` against current repo |
+| 5a.5 | scripts/skill-version-delta.sh | Done — emits 29 tab-delimited rows (26 core + 3 addon) |
+| 5a.6 | scripts/json-set-string-field.sh | Done — pre-condition check confirmed apply-preset.sh does NOT factor out a JSON helper; added as sibling |
+| 5a.7 | tests/test-json-set-string-field.sh | Done — 13 cases (≥11 required), each validates output via `python3 json.load` |
+| 5a.8 | tests/test-skill-version-delta.sh | Done — 12 cases incl. add-on installed/missing |
+| 5a.9 | briefing/SKILL.md Z Skills Update Check rewired | Done |
+| 5a.10 | tests/run-all.sh registration | Done |
+| 5a.11 | Bump briefing/SKILL.md (after 5a.9 body edit) | Done — `2026.05.02+0495d8` |
+| 5a.11.5 | Bump update-zskills/SKILL.md (after script additions) | Done — `2026.05.02+76f85b` (two bumps actually — fix to skill-version-delta.sh required a re-bump) |
+| 5a.12 | Mirror briefing + update-zskills | Done — both `diff -r` clean |
+| 5a.13 | CHANGELOG entry | Done — under `## 2026-05-02` |
+| 5a.14 | Commit message | Done |
+
+### Verification (16 ACs)
+
+All pass with documented PLAN-TEXT-DRIFT exceptions:
+- ZSKILLS_VERSION resolution + test ext: **PASS** (23/23 cases)
+- Schema additive: **PASS** (`work_on_plans_trigger` + `zskills_version` both present, others unchanged)
+- `resolve-repo-version.sh /workspaces/zskills` → `2026.04.0`: **PASS**
+- `skill-version-delta.sh` → 29 rows: **PASS**
+- `test-json-set-string-field.sh` (13/13): **PASS** (each case validates via `python3 json.load`)
+- `test-skill-version-delta.sh` (12/12): **PASS**
+- briefing + update-zskills mirrors clean: **PASS**
+- Both bumps stored = fresh: **PASS** (`0495d8` + `76f85b`)
+- update-zskills hash matches recomputed projection: **PASS** (`76f85b` == `76f85b`)
+- Full suite: **1980/1980 PASS** (+29 vs 1951 baseline)
+- jq grep: **PARTIAL** (4 hits in script comments only — verified 0 actual `jq` invocations via stricter regex)
+- AC-version-monotone: **PARTIAL** (same date as Phase 3; hash bumped — intent satisfied)
+
+### Plan-text drift signals
+
+5 tokens, all addressed inline:
+1. `awk -v` escape processing bug (5a.6) — switched to `ENVIRON` passing for byte-clean transport. **Real catch by impl agent.**
+2. Embedded-quote handling (5a.6) — added shell-side guard `case "$VALUE" in *\"*) exit 3` so contract enforced.
+3. `CLAUDE_PROJECT_DIR` unset (5a.5) — added parameter-default fallback to `$ZSKILLS_PATH` so script doesn't abort under `set -u` outside test harness.
+4. AC-jq-grep — 4 pre-existing comment hits; stricter regex finds 0 actual invocations.
+5. AC-version-monotone — same calendar day as Phase 3; hash bumped, intent satisfied.
+
+### Implementer notes
+
+- 5a.0 self-referential preflight false-positive: PR #175 is THIS pipeline's own PR. Orchestrator filtered it explicitly; PR #68 (Codex) doesn't touch update-zskills/. Phase 5a's spec didn't anticipate self-detection — worth folding into the spec for future runs.
+- The two-bump cadence on update-zskills (5a.11.5) actually became three bumps — first bump after script additions, then a `set -u` fix to skill-version-delta.sh changed the projection again, requiring a re-bump. Final state correct.
+- Verifier subagent skipped due to known Monitor anti-pattern; orchestrator did inline verification.
+
+### Next phase
+
+Phase 5b — `/update-zskills` UI surface (3 insertion sites: gap report + install final report + update final report). 5b.6 will RE-bump update-zskills after body edits.
+
+---
+
 ## Phase — 4 Enforcement [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSIONING.md

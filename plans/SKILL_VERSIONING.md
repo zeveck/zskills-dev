@@ -26,7 +26,7 @@ This plan adds a per-skill version field to SKILL.md frontmatter, defines a mech
 | 2 — Tooling: `frontmatter-get.sh` / `frontmatter-set.sh` / `skill-content-hash.sh` + tests | ✅ Done | `27effe5` | 3 helpers (251+300+276L); 2 test files (30+8 cases); 12 fixtures; smoke recipe in §1.10. Tests 1845/1845 PASS (+38 vs baseline 1807) |
 | 3 — Migration: seed every core + add-on skill + extend conformance test | ✅ Done | `0aef328` | Two-pass migration on 26 core + 3 add-on = 29 SKILL.md (date 2026.05.02 + per-skill 6-char hash). 26 mirrored. Conformance test +103 lines (3 new sections). Tests 1931/1931 PASS (+86 vs 1845 baseline) |
 | 4 — Enforcement: drift-warn hook + `/commit` Phase 5 step 2.5 + CI gate + CLAUDE.md rule | ✅ Done | `02010ae` | Branch 3 of warn-config-drift hook (+124L) with realpath-probe + grep -Fqx + subject disambiguation; scripts/skill-version-stage-check.sh (114L); /commit Phase 5 step 2.5; tests/test-skill-version-enforcement.sh (516L, 20 cases); forbidden-literals regex; commit/SKILL.md bumped 2026.05.02+fe9135. Tests 1951/1951 PASS (+20) |
-| 5a — `/update-zskills` data plumbing (helpers + config + briefing) | ⬚ | | |
+| 5a — `/update-zskills` data plumbing (helpers + config + briefing) | ✅ Done | `bc55f55` | 3 helpers (resolve-repo-version, skill-version-delta, json-set-string-field) + 2 tests (13+12 cases) + zskills-resolve-config.sh +ZSKILLS_VERSION + schema +zskills_version + briefing rewire. Two-bump cadence: briefing 0495d8 + update-zskills 76f85b. Tests 1980/1980 PASS (+29). 5 PLAN-TEXT-DRIFT addressed inline (awk -v escape bug = real catch). |
 | 5b — `/update-zskills` UI surface (3 insertion sites + tests) | ⬚ | | |
 | 6 — Verification: 4 canaries (missed bump, correct bump, parallel-worktree merge, revert) | ⬚ | | |
 
