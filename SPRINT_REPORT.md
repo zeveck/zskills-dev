@@ -127,3 +127,68 @@ User invoked `/fix-issues 132 133 auto`. Both issues were pre-routed in `RUN_ORD
 - Tracking dir: `.zskills/tracking/fix-issues.sprint-20260501-004143-fixflake/`
 - Markers: `pipeline.fix-issues.<sprint>`, `step.fix-issues.<sprint>.preflight`
 
+## Sprint — 2026-05-01 22:45 ET [UNFINALIZED]
+
+**Mode:** auto | **Focus:** explicit-issues (#143, #150, #165)
+
+User invoked `/fix-issues 143 150 165 auto` (with ultrathink). All three were pre-routed in `RUN_ORDER_GUIDE.md` "Open issues — disposition" subsection as clear-and-doable parallel batch with no file overlap. Phase 1b read all three verbatim issue bodies; Phase 2 prioritization auto-passed (user-specified explicit list). 3 per-issue worktrees on `fix/issue-NNN` branches; 3 parallel fix agents dispatched (one per issue, single message). PR mode resolved from `execution.landing: "pr"` in config.
+
+### Fixed
+
+| # | Title | Worktree | Branch | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|--------|-------|-------------|-------------|
+| #143 | Add Agent-tool-required preflight to 5 multi-agent skills (refine-plan, draft-plan, draft-tests, research-and-plan, research-and-go) | `/tmp/zskills-fix-issue-143` | `fix/issue-143` | `f0c9435` | full suite 1801→1807 (+5 conformance asserts + 1 unrelated baseline drift); conformance 252/252 in isolation | PASS (fresh verifier `/verify-changes worktree`; verified source/mirror parity, anchor reference correct, variant wording for research-and-go) | N/A (skill-prose only) |
+| #150 | Materialize temp worktree so `worktree-portable` AC stops skip-as-pass in CI | `/tmp/zskills-fix-issue-150` | `fix/issue-150` | `b7b66c2` | full suite 1801→1802 (the +1 PASS that was previously hidden as a SKIP from primary repo); target test passes in both invocation contexts | PASS (fresh verifier; option 1 from issue body: `git worktree add --detach` + trap-based teardown; no leaked tempdirs verified) | N/A (test-only change) |
+| #165 | Move dashboard config migration from server.py to /update-zskills + schema | `/tmp/zskills-fix-issue-165` | `fix/issue-165` | `aacdbfd` | full suite 1801→1802 (test inverted to assert read-only contract); 0 grep hits for `ensure_dashboard_config_block`; 0 writes to `zskills-config.json` from server.py | PASS (fresh verifier; schema declaration well-formed, /update-zskills Step 3.6 idempotent backfill, all 6 ACs satisfied) | N/A (config-migration + server-internal change, no UI surface) |
+
+**Agent Verify** classification: all three verified by fresh `/verify-changes worktree` subagents (no implementer bias). All three verifiers independently re-ran the full test suite, audited the diff against the issue's acceptance criteria, and returned PASS.
+
+**User Verify** for all three: N/A. None of the fixes touch UI/editor/styles surface.
+
+### Skipped — Too Vague
+None.
+
+### Skipped — Too Complex (need /run-plan)
+None.
+
+### Skipped — Cherry-Pick Conflict (will retry next sprint)
+None.
+
+### Not Fixed (agent attempted but failed)
+None.
+
+### Notable mid-sprint observations
+
+- **Concurrent suite-execution flakes** (across all 3 verifiers, distinct from the 2026-04-30 sprint's pre-existing case-6c failure):
+  - `tests/test-briefing-parity.sh "parity: worktrees"` — node/py key counts differ when other agents are concurrently adding/removing worktrees during the run. Confirmed flake by isolated re-run (21/21 PASS). Test reads live `git worktree list` mid-run.
+  - `tests/test-hooks.sh "post-run-invariants.sh"` cases — fail with `grep: /tmp/inv-test.txt: No such file or directory` and similar. Isolated re-run = 365/365 PASS. Tests share `/tmp/inv-test.txt` between cases without per-case cleanup discipline; concurrent suite runs racewith each other on this shared path.
+  - **Won't manifest in CI** — each PR runs in its own isolated container, no concurrent `tests/run-all.sh`. **Worth filing post-sprint** as a separate test-design issue (shared `/tmp` paths between cases + tests reading live `git worktree list`).
+- **Sub-agent crash pattern not observed this sprint.** All 3 fix agents and all 3 verification agents reported back cleanly with full diff + test deltas + AC checklists. The 2026-04-29 / 2026-04-30 "Tests are running. Let me wait for the monitor." crash pattern appears mitigated — the explicit `Bash timeout: 600000` + capture-to-file guidance from PR #148 plus the agents' adherence to it (no Monitor/BashOutput retry observed) is consistent with the fix's intent.
+- **Issue #143 self-correction observation.** The example block in the issue body referenced memory anchor `feedback_convergence_orchestrator_judgment.md` (a copy-paste from the round-1 example), but the explicit acceptance criterion named `feedback_multi_agent_skills_top_level.md`. The dispatch prompt flagged this discrepancy; the implementing agent followed the AC (correct anchor) rather than the example block.
+
+### PRs landed (auto-merged on green CI)
+
+| PR | Branch | Issue | Status | Merge commit |
+|----|--------|-------|--------|--------------|
+| https://github.com/zeveck/zskills-dev/pull/169 | `fix/issue-143` | #143 | MERGED 2026-05-01 22:50 ET; CI pass first try | `a71a68d` |
+| https://github.com/zeveck/zskills-dev/pull/170 | `fix/issue-150` | #150 | MERGED 2026-05-01 22:53 ET; CI pass first try | `4c92fbd` |
+| https://github.com/zeveck/zskills-dev/pull/171 | `fix/issue-165` | #165 | MERGED 2026-05-01 22:55 ET; CI pass first try | `12a405b` |
+
+**GitHub issues auto-closed** by `Fixes #NNN` in PR bodies:
+- #143 closed 2026-05-01 22:50 ET
+- #150 closed 2026-05-01 22:53 ET
+- #165 closed 2026-05-01 22:55 ET
+
+**Worktrees** retained for `/fix-report` review (per skill convention — `/fix-issues` does not remove worktrees): `/tmp/zskills-fix-issue-{143,150,165}`. Each has a `.landed` marker with `status: landed`.
+
+### Tracking
+
+- Pipeline ID: `fix-issues.sprint-20260502-021604-batch3`
+- Tracking dir: `.zskills/tracking/fix-issues.sprint-20260502-021604-batch3/`
+- Markers: `step.fix-issues.<sprint>.{preflight,prioritize,execute,verify,report,land}` + `requires.verify-changes.<sprint>`. Pipeline sentinel removed at end of sprint per skill convention.
+
+### Notes for follow-up (not blocking)
+
+- **`/land-pr` step 8 commits-list bug**: `git log --format=%H "$BASE_BRANCH..HEAD"` uses local `main` ref (potentially stale after parallel PR merges in same session) instead of `origin/main`. The `.landed` marker for #150 records 2 commits, for #165 records 3 commits — those extra SHAs are the merge commits of preceding PRs in this same sprint that landed on origin/main but weren't yet in the local main ref. Cosmetic-only; doesn't affect the actual merge correctness (squash-merge handles dedupe). Worth filing as a separate `/fix-issues` candidate for the `/land-pr` skill.
+- **Multi-agent suite-flake observations** (test-briefing-parity worktrees + test-hooks post-run-invariants `/tmp/inv-test.txt`) noted under "Notable mid-sprint observations" above. CI doesn't run multiple suites concurrently, so these don't bite there. Worth filing as test-isolation-discipline issue if it recurs.
+
