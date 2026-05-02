@@ -209,6 +209,30 @@ bash scripts/frontmatter-set.sh skills/run-plan/SKILL.md metadata.version "$TODA
 
 If frequency rises, revisit and add a slash command in a follow-up plan.
 
+**Smoke-test recipe (manual verification of Phase 2 helpers).** Run these lines from the repo root any time you want to confirm the helpers still work end-to-end. They do NOT mutate any tracked file — the set step writes to a `/tmp` copy.
+
+```bash
+# 1. get a top-level key (file form)
+bash scripts/frontmatter-get.sh skills/run-plan/SKILL.md name           # → run-plan
+
+# 2. get a top-level key (stdin form)
+cat skills/run-plan/SKILL.md | bash scripts/frontmatter-get.sh - name   # → run-plan
+
+# 3. compute the 6-char canonical-projection hash
+bash scripts/skill-content-hash.sh skills/run-plan                      # → 6 hex chars
+
+# 4. set a versioned value on a /tmp copy (do NOT mutate the real SKILL.md)
+mkdir -p /tmp/skill-versioning-smoke
+cp skills/run-plan/SKILL.md /tmp/skill-versioning-smoke/SKILL.md
+TODAY=$(TZ=America/New_York date +%Y.%m.%d)
+HASH=$(bash scripts/skill-content-hash.sh skills/run-plan)
+bash scripts/frontmatter-set.sh /tmp/skill-versioning-smoke/SKILL.md metadata.version "$TODAY+$HASH"
+bash scripts/frontmatter-get.sh /tmp/skill-versioning-smoke/SKILL.md metadata.version
+# → e.g. 2026.04.30+0c846e
+```
+
+If any step fails or returns an unexpected value, run `bash tests/test-frontmatter-helpers.sh` and `bash tests/test-skill-content-hash.sh` to localise the regression.
+
 **Trade-offs considered:**
 - **Single combined `bump-version.sh`.** Rejected. Get/set/hash are independent operations; downstream tools may want one without the others.
 - **`/bump-skill <name>` slash command.** Rejected for v1.
