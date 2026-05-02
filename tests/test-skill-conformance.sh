@@ -801,6 +801,26 @@ check_fixed update-zskills "WI2.2: runtime-read note" \
   'Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled)'
 
 echo ""
+echo "=== Multi-agent adversarial-loop skills — Agent-tool-required preflight (issue #143) ==="
+# These five skills internally dispatch reviewer + devil's-advocate + refiner
+# sub-agents (or, in research-and-go's case, Skill-load sibling skills that
+# do). They MUST run at top level where the `Agent` tool exists. The
+# preflight block surfaces the failure mode loudly when one is dispatched as
+# a subagent. The structural section heading is the stable anchor: prose
+# inside the block can drift, but `## Preflight — top-level dispatch required`
+# must be present in every one of these five skills.
+check_fixed refine-plan       "preflight: Agent-tool-required heading (issue #143)" \
+  '## Preflight — top-level dispatch required'
+check_fixed draft-plan        "preflight: Agent-tool-required heading (issue #143)" \
+  '## Preflight — top-level dispatch required'
+check_fixed draft-tests       "preflight: Agent-tool-required heading (issue #143)" \
+  '## Preflight — top-level dispatch required'
+check_fixed research-and-plan "preflight: Agent-tool-required heading (issue #143)" \
+  '## Preflight — top-level dispatch required'
+check_fixed research-and-go   "preflight: Agent-tool-required heading (issue #143)" \
+  '## Preflight — top-level dispatch required'
+
+echo ""
 echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
 # Anchor: tests/test-skill-conformance.sh draft-tests block — one check
 # per WI 6.3 sub-bullet of plans/DRAFT_TESTS_SKILL_PLAN.md (current count:
