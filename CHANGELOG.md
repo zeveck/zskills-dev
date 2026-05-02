@@ -2,6 +2,13 @@
 
 ## 2026-05-02
 
+### Added — skill-version enforcement (commit: 2026.05.02+fe9135)
+
+Three-point gate on metadata.version: warn-config-drift hook
+(Edit-time, fires only on staged files), /commit Phase 5 step 2.5
+hard stop, test-skill-conformance.sh CI gate (now also validates
+hash freshness).
+
 ### Added — per-skill versioning
 
 Every source skill under `skills/` and `block-diagram/` now carries

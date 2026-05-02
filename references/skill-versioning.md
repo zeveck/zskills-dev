@@ -93,7 +93,7 @@ metadata:
 
 A bump is NOT required when the projection is byte-identical (the canonical projection's whitespace normalization absorbs trailing-whitespace and `\r\n`→`\n` edits). This makes pure-whitespace edits a no-op for the version line by construction, not by judgment.
 
-**Detection mechanism (mechanically applicable).** The enforcement check at Edit-time and commit-time computes `worktree_hash = bash scripts/skill-content-hash.sh skills/<name>` and compares to the hash extracted from HEAD's `metadata.version`. Mismatch with no version bump → warn/stop. Match with a version bump → warn (no-op edit, symmetric).
+**Detection mechanism (mechanically applicable).** The enforcement check at Edit-time and commit-time computes `worktree_hash = bash scripts/skill-content-hash.sh skills/<name>` and compares to the hash extracted from HEAD's `metadata.version`. Mismatch with no version bump → warn/stop. Match with a version bump → warn (no-op edit, symmetric). **Single source of truth for the comparison logic:** `scripts/skill-version-stage-check.sh` (Phase 4.3) implements the commit-time stop. The Edit-time hook (Phase 4.1, `hooks/warn-config-drift.sh` Branch 3) inlines the same body-diff predicate so an unstaged edit can warn without invoking the gate. Both consult `scripts/skill-content-hash.sh` and `scripts/frontmatter-get.sh` — no third copy of the comparison ever appears.
 
 **Multi-edit-day handling (now consistent with implementation).** Same skill edited twice on the same date. Edit 1: hash changes from `aaa111` to `bbb222`, agent bumps version to `2026.04.30+bbb222`, commits. HEAD now carries `+bbb222`. Edit 2: hash changes from `bbb222` to `ccc333`. Hook compares: HEAD's hash is `bbb222`, worktree's projection hash is `ccc333` — they differ, bump required. Agent bumps to `2026.04.30+ccc333`. Implementation matches the rule: every distinct content state ends up with a distinct version line.
 
@@ -309,3 +309,28 @@ Output is exactly 6 lowercase hex chars (no trailing newline). This is the `HHHH
 **Why deny-list `SKILL.md` (rather than allow-list known subdirs).** §1.1 covers this. An allow-list of `modes/, references/, scripts/, fixtures/` silently misses real skill content like `skills/update-zskills/stubs/`. The deny-list of one (`SKILL.md`) future-proofs against any new subdirectory a skill author may add.
 
 **Determinism check.** Two independent implementations of this rule, given the same skill directory, MUST produce the same 6-char hash. The Phase 2.3 helper tests verify this against fixtures with known projections.
+
+---
+
+## Appendix C — Skill-version literal in skill prose
+
+`tests/fixtures/forbidden-literals.txt` carries a regex entry that flags any `YYYY.MM.DD+HHHHHH`-shaped substring appearing inside a bash fence (or on an imperative-bullet code-span) anywhere under `skills/<name>/**`:
+
+```
+re:[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}
+```
+
+**Why deny-listed.** Per-skill version values belong in SKILL.md frontmatter — never pasted into a bash fence (a stale literal silently accumulates) or into prose imperatives (the literal goes stale the next time the skill is bumped). The deny-list catches both leakage modes.
+
+**Scope.** The deny-list scans skill content only (`skills/<name>/**.md`) — NOT `plans/**`, `references/**`, `CHANGELOG.md`, or other repo-level docs. SKILL.md frontmatter itself is not scanned (the conformance scanner enters at the body, after the closing `---`). So the deny-list never fires on legitimate `metadata.version: "..."` lines.
+
+**Exemption marker.** Reuse the SKILL_FILE_DRIFT_FIX `<!-- allow-hardcoded: <pattern> reason: ... -->` convention. The marker block above a fence-opener exempts that fence; for the version-literal regex the `<pattern>` token is the literal regex body (no `re:` prefix):
+
+```markdown
+<!-- allow-hardcoded: [0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6} reason: documenting the format with an example value -->
+```bash
+echo "Example version: 2026.04.30+a1b2c3"
+```
+```
+
+This file (`references/skill-versioning.md`) lives OUTSIDE the deny-list scope (it's not under `skills/`), so its multiple example values render without markers. A skill whose body legitimately needs a literal version example (rare) can use the marker above.

@@ -8,7 +8,7 @@ description: >-
   Usage: /commit [pr] [scope] [push|land]
 argument-hint: "[pr] [scope] [push|land]"
 metadata:
-  version: "2026.05.02+86b98e"
+  version: "2026.05.02+fe9135"
 ---
 
 # /commit [pr] [scope] [push|land] — Safe Commit Workflow
@@ -255,6 +255,21 @@ For every file classified as "related":
    suites must pass. If tests fail after two fix attempts on the same error,
    STOP and report to the user (CLAUDE.md: "NEVER thrash on a failing fix").
    Skip this step for content-only commits (`.md`, `.jpg`, `.png`, logs).
+
+2.5. **Skill-version bump check.** For every staged file under
+   `skills/<owner>/...` or `block-diagram/<owner>/...`, verify each affected
+   skill's `metadata.version` was correctly bumped (date refreshed AND hash
+   matches recomputed projection):
+
+   ```bash
+   bash "$CLAUDE_PROJECT_DIR/scripts/skill-version-stage-check.sh" || {
+     echo "STOP: skill version check failed; see message above." >&2
+     exit 1
+   }
+   ```
+
+   Exit non-zero halts `/commit` until the agent fixes. The script's STOP
+   message includes the exact bump command for each affected skill.
 
 3. **Dispatch a fresh agent to review the staged changes before committing.**
    The agent receives `git diff --cached` and the proposed commit message.
