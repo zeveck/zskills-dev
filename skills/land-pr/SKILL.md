@@ -1,6 +1,7 @@
 ---
 name: land-pr
-description: Land an existing feature branch as a PR. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. Caller invokes only at orchestrator level (not from within Agent-dispatched subagents). Invoked directly by users with hand-crafted feature branches, and via Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix.
+user-invocable: false
+description: Helper skill — the canonical PR-landing primitive. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. Caller invokes only at orchestrator level (not from within Agent-dispatched subagents). Dispatched via Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix. Not designed for direct user invocation — the API (--body-file, --result-file required) is caller-oriented; users wanting to ship a branch should use /commit pr.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>]
 ---
 
@@ -9,8 +10,11 @@ argument-hint: --branch <name> --title <title> --body-file <path> --result-file 
 `/land-pr` owns the rebase → push → create-or-detect → monitor → merge
 sequence for a feature branch that is already in a presentable state.
 Five callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`,
-`/quickfix`) dispatch into this skill via the Skill tool; users may also
-invoke it directly via the slash command.
+`/quickfix`) dispatch into this skill via the Skill tool. `/land-pr` is
+a helper, not a user-facing command: the API requires `--body-file` and
+`--result-file`, both of which only make sense when a caller has set
+them up. Users wanting to ship an existing branch should use `/commit pr`,
+which dispatches `/land-pr` internally with the right arguments.
 
 The skill is a **prose-driven procedure**: when invoked, you (Claude) read
 this SKILL.md and execute the procedure step-by-step, calling the four
@@ -212,14 +216,14 @@ CALL_ERROR_FILE=""
 
 ### Step 2 — Resume-mode short-circuit (`--pr <num>`)
 
-If `$PR_RESUME` is set, skip rebase / push / create — the caller (or
-user) has already done those and wants to monitor an existing PR.
-Set `PR_NUMBER=$PR_RESUME` and jump to step 6 (monitor).
+If `$PR_RESUME` is set, skip rebase / push / create — the caller has
+already done those and wants to monitor an existing PR. Set
+`PR_NUMBER=$PR_RESUME` and jump to step 6 (monitor).
 
-**Use case for `--pr <num>`:** caller (or user) previously invoked
+**Use case for `--pr <num>`:** caller previously invoked
 `/land-pr --no-monitor` (or had a monitor timeout); the PR exists and
-the branch is pushed; now they want to monitor (or re-monitor) without
-re-running rebase/push/create.
+the branch is pushed; now the caller wants to monitor (or re-monitor)
+without re-running rebase/push/create.
 
 ```bash
 if [ -n "$PR_RESUME" ]; then
@@ -305,11 +309,9 @@ If `$NO_MONITOR` is true and PR creation succeeded, set
 `STATUS=created` `CI_STATUS=not-monitored` and jump to step 8.
 
 **Use case for `--no-monitor`:** caller wants to report the PR URL
-mid-flight (e.g., interactive `/land-pr` invocation where the user
-wants the URL fast and will check CI themselves), or caller wants to
-split the create-and-monitor flow across two cron-fired turns. None of
-the 5 callers in this plan use `--no-monitor` — it's a flag for
-direct user invocation and future callers.
+mid-flight, or split the create-and-monitor flow across two cron-fired
+turns. None of the 5 callers in this plan use `--no-monitor` — it is
+reserved for future callers.
 
 ```bash
 if [ -z "$STATUS" ] && [ "$NO_MONITOR" = "true" ]; then
