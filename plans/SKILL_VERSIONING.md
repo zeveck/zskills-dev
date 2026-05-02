@@ -6,7 +6,7 @@ status: active
 
 # Plan: Skill Versioning
 
-> **Landing mode: PR** — This plan touches 25 source skills + 3 add-ons + tests + hooks + a runtime helper script + `/update-zskills`. PR review is appropriate.
+> **Landing mode: PR** — This plan touches every source skill under `skills/` and every add-on under `block-diagram/` + tests + hooks + a runtime helper script + `/update-zskills`. PR review is appropriate. (Source-of-truth count: `find skills -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | wc -l` plus same against `block-diagram/`. As of Round-1 refinement: 26 + 3 = 29; was 25 + 3 = 28 at plan-write — PR #159 added `skills/land-pr/` on 2026-05-01. Counts are derivation-driven, NOT pinned. See Drift Log.)
 
 ## Overview
 
@@ -24,7 +24,7 @@ This plan adds a per-skill version field to SKILL.md frontmatter, defines a mech
 |-------|--------|--------|-------|
 | 1 — Decision & Specification (no code) | ⬚ | | |
 | 2 — Tooling: `frontmatter-get.sh` / `frontmatter-set.sh` / `skill-content-hash.sh` + tests | ⬚ | | |
-| 3 — Migration: seed all 25 core + 3 add-on skills + extend conformance test | ⬚ | | |
+| 3 — Migration: seed every core + add-on skill + extend conformance test | ⬚ | | |
 | 4 — Enforcement: drift-warn hook + `/commit` Phase 5 step 2.5 + CI gate + CLAUDE.md rule | ⬚ | | |
 | 5a — `/update-zskills` data plumbing (helpers + config + briefing) | ⬚ | | |
 | 5b — `/update-zskills` UI surface (3 insertion sites + tests) | ⬚ | | |
@@ -46,7 +46,7 @@ Document the chosen format, location, bump rule, enforcement combination, repo-l
 
   > **Skill versioning.** Every source skill under `skills/<name>/SKILL.md` and `block-diagram/<name>/SKILL.md` carries a `metadata.version: "YYYY.MM.DD+HHHHHH"` field — date in `America/New_York` plus a 6-char content hash. Edits to a skill body, frontmatter (other than `metadata.version` itself), or any regular file under the skill directory (mode files, references, scripts, fixtures, stubs, etc.) MUST bump this field; the date refreshes to today, the hash is recomputed via `scripts/skill-content-hash.sh`. Pure typo / formatting / whitespace edits do not require a bump (the hash naturally absorbs them since the canonical projection normalizes whitespace; see `references/skill-versioning.md` §3). Enforcement fires at three points: `warn-config-drift.sh` (Edit-time warn, fires only when the file is staged), `/commit` Phase 5 step 2.5 (commit-time hard stop), `test-skill-conformance.sh` (CI gate). The repo-level zskills version (`YYYY.MM.N`) lives in git tags and is mirrored into `.claude/zskills-config.json` by `/update-zskills`.
 
-- [ ] 1.3 — Update `plans/PLAN_INDEX.md`: add this plan to the active list with one-line description.
+- [ ] 1.3 — Verify the plan is registered in `plans/PLAN_INDEX.md` "Ready to Run" (idempotent — already added by `/draft-plan` registration; `grep -n 'SKILL_VERSIONING' plans/PLAN_INDEX.md` returns the existing row at refine time). If absent for any reason, add a row matching the existing format. Do NOT add a second row. (refine-plan F-R8 / F-DA-12: already-done as of 2026-05-02; work item is idempotent verify, not a fresh insert.)
 
 (Round-2 F-DA-R2-11: the prior 1.4 "Mirror nothing" item was a no-op; moved to Non-Goals.)
 
@@ -79,7 +79,7 @@ The 11 decisions below are answered explicitly. Each must be quoted verbatim in 
 
 **Why redacted frontmatter is in the projection (not excluded entirely).** Including the redacted frontmatter snapshot is the only choice consistent with §1.3's promise that editing `description:` requires a bump. If frontmatter were excluded, the §1.3 description-edit-triggers-bump rule would be unenforceable (the hash wouldn't see it). Redacting only `metadata.version` keeps the hash stable under version-line edits (no fixed-point problem) while making every OTHER frontmatter field a hash-affecting input.
 
-**Hash collision budget (Round-2 F-R2-9 / F-DA-R2-10).** 6 hex chars = 24 bits = 16,777,216 distinct hash values. Birthday boundary is ~4,096 distinct content states per skill before a 50% collision probability. A single skill cycling through ~4k versions over its lifetime is implausible at zskills' scale (current fleet: 28 skills, total commits to date < 200). 6 chars is sufficient. Trade-off: visual brevity in `/update-zskills` reports and CHANGELOG annotations beats the marginal collision-margin gain at 8 chars. If a real collision is ever observed, the helper widens to 8 in a one-line change (mechanical migration). Documenting here per F-DA-R2-10 surfaces the choice rather than burying it.
+**Hash collision budget (Round-2 F-R2-9 / F-DA-R2-10).** 6 hex chars = 24 bits = 16,777,216 distinct hash values. Birthday boundary is ~4,096 distinct content states per skill before a 50% collision probability. A single skill cycling through ~4k versions over its lifetime is implausible at zskills' scale (current fleet: ~30 skills, total commits to date < 200). 6 chars is sufficient. Trade-off: visual brevity in `/update-zskills` reports and CHANGELOG annotations beats the marginal collision-margin gain at 8 chars. If a real collision is ever observed, the helper widens to 8 in a one-line change (mechanical migration). Documenting here per F-DA-R2-10 surfaces the choice rather than burying it.
 
 **Hash human-readability trade-off (Round-2 F-DA-R2-9 — DateLean discipline).** The user's lean was "evergreen versioning, recency-at-a-glance." The hash component is **machine-distinguishing, not human-distinguishing**: two visually similar hashes (`a1b2c3` vs `a1b2c4`) read as the same to humans. Downstream report formatters MUST de-emphasize the hash:
 - When two versions differ only in the date and share the same hash content state, render the date prominently and omit/dim the hash.
@@ -181,11 +181,11 @@ A bump is NOT required when the projection is byte-identical (the canonical proj
 
 `tests/test-skill-file-drift.sh` tests `zskills-resolve-config.sh` resolution; unrelated to skill content.
 
-**Mirror-only skills (out of scope).** `.claude/skills/` carries 27 dirs; `skills/` carries 25. Two skills (`playwright-cli`, `social-seo`) live ONLY in `.claude/skills/` with no source counterpart — they pre-date the source/mirror split. These are out of scope for Phase 3 migration: do NOT add `metadata.version` to them. Phase 3.6 conformance enumeration filters via `for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/` (source roots only). A separate plan can fold these in if/when they get a source representation. (Round-1 finding F-R6.)
+**Mirror-only skills (out of scope).** `.claude/skills/` and `skills/` differ by exactly two directories: `playwright-cli` and `social-seo` live ONLY in `.claude/skills/` (pre-source/mirror-split vendor bundle); every other entry in `.claude/skills/` has a `skills/<name>/` source counterpart. These are out of scope for Phase 3 migration: do NOT add `metadata.version` to them. Phase 3.6 conformance enumeration filters via `for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/` (source roots only). A separate plan can fold these in if/when they get a source representation. (Round-1 finding F-R6.)
 
 #### 1.7 Block-diagram add-ons — same scheme, applied uniformly to 3 skills
 
-**Chosen.** All 3 block-diagram add-on skills (`add-block`, `add-example`, `model-design`) carry `metadata.version: "YYYY.MM.DD+HHHHHH"` using the same rule. `block-diagram/screenshots/` does NOT contain a `SKILL.md` (it holds image assets only — verified by `ls block-diagram/screenshots/`); it is excluded from migration and conformance enumeration. (Round-1 finding F-R1: 25 + 3 = 28 total skills, NOT 29.)
+**Chosen.** All 3 block-diagram add-on skills (`add-block`, `add-example`, `model-design`) carry `metadata.version: "YYYY.MM.DD+HHHHHH"` using the same rule. `block-diagram/screenshots/` does NOT contain a `SKILL.md` (it holds image assets only — verified by `ls block-diagram/screenshots/`); it is excluded from migration and conformance enumeration. (Original Round-1 finding F-R1 cited "25 + 3 = 28"; that figure was correct at plan-write 2026-04-30 but stale once PR #159 added `skills/land-pr/` on 2026-05-01 — current is 26 + 3 = 29. The number is derivation-driven from `find ... -exec test -f '{}/SKILL.md' \; -print` enumeration, NOT pinned. See refine-plan Drift Log.)
 
 Migration in Phase 3 seeds the 3 add-ons. Phase 4 enforcement covers them via the same conformance regex AND the widened drift-warn hook regex (Branch 2 widened from `(^|/)skills/[^/]+/.*\.md$` to `(^|/)(skills|block-diagram)/[^/]+/.*\.md$` — see Phase 4.1 and Round-1 finding F-R4).
 
@@ -213,11 +213,11 @@ Where `<Type>` is one of `Added`, `Updated`, `Fixed`, `Removed`. The annotation 
 
 **Trade-offs considered:**
 - **Switch CHANGELOG to version-headed.** Rejected. Repo-level scheme is `YYYY.MM.N`; existing date-headed CHANGELOG has 6 dated blocks that would orphan.
-- **Per-skill `CHANGELOG.md` files.** Rejected. 25+3 files multiplies maintenance for no consumer benefit.
+- **Per-skill `CHANGELOG.md` files.** Rejected. ~30 files multiplies maintenance for no consumer benefit.
 
 #### 1.9 Migration / seeding — uniform initial date, per-skill computed hash
 
-**Chosen.** All 25 core + 3 block-diagram skills receive `metadata.version: "YYYY.MM.DD+HHHHHH"` set to **the date Phase 3 lands** (`TZ="$TIMEZONE" date +%Y.%m.%d` at migration commit time) PLUS a per-skill hash freshly computed from each skill's content projection.
+**Chosen.** Every core skill under `skills/<name>/SKILL.md` and every block-diagram add-on under `block-diagram/<name>/SKILL.md` receives `metadata.version: "YYYY.MM.DD+HHHHHH"` set to **the date Phase 3 lands** (`TZ="$TIMEZONE" date +%Y.%m.%d` at migration commit time) PLUS a per-skill hash freshly computed from each skill's content projection. The set of skills is derived at migration time via the Phase 3.2 enumeration (`find ... -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print`) — NOT pinned to a literal count, since the number drifts as new skills land.
 
 **Justification.** A uniform date is honest: "all skills synced as of D." A per-skill hash captures that the skills are NOT identical content (each skill's `aaa111` differs from another's). Mixing uniform-date and per-skill-hash is the correct invariant.
 
@@ -311,7 +311,7 @@ Ship three pure-bash helper scripts. Tests cover each helper so Phase 3 can rely
   - Builds the canonical projection per §1.1 / §1.3:
     1. **Redacted frontmatter snapshot of `SKILL.md`.** **Use the same block-scalar-aware traversal as Phase 2.1's parser** (Round-3 F-DA-R3-4): identify block scalars by trailing `>-`, `>`, `|`, or `|-` on a key line, then skip all subsequent more-indented lines (continuation content) until indent returns to the parent level. The redactor MUST NOT inspect or rewrite block-scalar continuation lines — a `description-extra: >-` continuation line containing literal text like `version: "X"` must be preserved verbatim. Then locate the line whose whitespace-stripped content (`awk '{$1=$1};1'`) matches the literal `version: "..."` form **AND** which sits immediately under the `metadata:` parent line (tracking indentation per the block-scalar-aware traversal). Replace that line with `<original-leading-whitespace>version: "<REDACTED>"` — preserving the leading-whitespace count exactly. Other frontmatter keys (including block scalars) preserved verbatim. The whole frontmatter block (between the first `---` and the next `---`) becomes component 1.
     2. **SKILL.md body** — everything below the closing `---`.
-    3. **Every regular file under `<skill-dir>/`** (recursive, excluding `SKILL.md` itself, dotfiles, and conventional dev artifacts). Enumerate via `find "$skill_dir" -type f ! -name SKILL.md ! -name '.*' ! -path '*/__pycache__/*' ! -path '*/node_modules/*' -print0 | sort -z`. The exclusion of `! -name '.*'` filters editor swapfiles, `.DS_Store`, `.landed`, `.zskills-tracked`, `.test-results.txt`, etc., from the projection (Round-3 F-DA-R3-2: skill dirs SHOULD be clean of dotfiles in the first place; the conformance test in 3.6 also asserts this — defense in depth). **Reject any non-text file:** call `file --mime "$f" | grep -qi 'charset=binary'` and exit 1 if matched (binary fixtures are out of scope; conformance test catches this — see Phase 3.6 update).
+    3. **Every regular file under `<skill-dir>/`** (recursive, excluding `SKILL.md` itself, dotfiles, and conventional dev artifacts). Enumerate via `find "$skill_dir" -type f ! -name SKILL.md ! -name '.*' ! -path '*/__pycache__/*' ! -path '*/node_modules/*' -print0 | sort -z`. The exclusion of `! -name '.*'` filters editor swapfiles, `.DS_Store`, `.landed`, `.zskills-tracked`, `.test-results.txt`, etc., from the projection (Round-3 F-DA-R3-2: skill dirs SHOULD be clean of dotfiles in the first place; the conformance test in 3.6 also asserts this — defense in depth). **Reject any non-text file:** test size first, then mime — `if [ -s "$f" ] && file --mime "$f" | grep -qi 'charset=binary'; then exit 1; fi`. Empty files (`.gitkeep`-style anchors) are treated as zero-byte text and pass through with no projection effect; binary files (PNGs, compiled artifacts) exit 1. (refine-plan F-DA-5: `file --mime` reports `inode/x-empty; charset=binary` for any empty file, so the prior unguarded form would false-positive on `.gitkeep` and on any incidentally-empty fixture under a skill dir. Verified: `file --mime skills/zskills-dashboard/scripts/zskills_monitor/static/.gitkeep` → `inode/x-empty; charset=binary`.)
   - Concatenate with `=== <relative-path> ===\n` headers (paths relative to `<skill-dir>`) and whitespace normalization per file: strip trailing whitespace per line; collapse `\r\n`→`\n`; ensure single trailing `\n` per file. Single `\n` separator between components and between files within component 3.
   - Pipe the projection through `sha256sum | cut -d' ' -f1 | head -c 6` (canonical sha256 cut form; the script-wide `export LC_ALL=C` from step 0 ensures locale-independent byte ordering throughout — no per-command prefix needed).
   - On success: prints the 6-char hash to stdout, exits 0.
@@ -387,11 +387,11 @@ Phase 1 (`references/skill-versioning.md` §1.10 names the helpers; this phase i
 
 ---
 
-## Phase 3 — Migration: seed all 25 core + 3 block-diagram skills + extend conformance test
+## Phase 3 — Migration: seed every core + add-on skill + extend conformance test
 
 ### Goal
 
-Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (25 core + 3 block-diagram = 28 files), set the date to the date Phase 3 lands and the hash to each skill's freshly-computed content hash, mirror to `.claude/skills/`, and extend `tests/test-skill-conformance.sh` to assert presence and shape AND that the stored hash matches the recomputed projection.
+Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (every directory under `skills/` and `block-diagram/` that contains a `SKILL.md` — currently 26 + 3 = 29 at refine time; the count is derivation-driven, not pinned), set the date to the date Phase 3 lands and the hash to each skill's freshly-computed content hash, mirror to `.claude/skills/`, and extend `tests/test-skill-conformance.sh` to assert presence and shape AND that the stored hash matches the recomputed projection.
 
 ### Work Items
 
@@ -414,13 +414,14 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 
   (Round-1 finding F-R13: `-exec test -f '{}/SKILL.md' \;` filters out `block-diagram/screenshots/` which holds image assets, no SKILL.md.)
 
-  Expected counts: 25 core, 3 add-on (NOT 4 — Round-1 finding F-R1). Sanity-check before iterating:
+  Expected counts at refine time: 26 core, 3 add-on (was "25 / 3" at plan-write 2026-04-30; PR #159 added `skills/land-pr/` on 2026-05-01 so the core figure drifted). The count IS NOT pinned — the gates below are lower-bound + structural assertions, not equality checks. (refine-plan Round-1 F-R1 / F-R2 / F-DA-1 / F-DA-2 — the prior literal `test "$CORE_COUNT" = "25"` gate would hard-fail on first run today.)
 
   ```bash
   CORE_COUNT=$(echo "$CORE_SKILLS" | wc -l)
   ADDON_COUNT=$(echo "$ADDON_SKILLS" | wc -l)
-  test "$CORE_COUNT" = "25" || { echo "FAIL: expected 25 core skills, got $CORE_COUNT" >&2; exit 1; }
-  test "$ADDON_COUNT" = "3" || { echo "FAIL: expected 3 add-on skills, got $ADDON_COUNT" >&2; exit 1; }
+  [ "$CORE_COUNT" -ge 1 ] || { echo "FAIL: no core skills found under skills/" >&2; exit 1; }
+  [ "$ADDON_COUNT" -ge 1 ] || { echo "FAIL: no add-on skills found under block-diagram/" >&2; exit 1; }
+  echo "Migrating $CORE_COUNT core + $ADDON_COUNT add-on skills"
   ```
 
 - [ ] 3.3 — **Two-pass migration** (Round-3 finding F-R3-2 / F-DA-R3-1: pre-migration NO SKILL.md has a `metadata:` block, so the byte-level redaction rule in §1.1 cannot fire — pre-migration projection differs from post-migration projection by the new `metadata:\n  version: "<REDACTED>"` lines, breaking the "stable across before/after states" claim. Two-pass closes this cleanly via a placeholder fixed point):
@@ -453,6 +454,25 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 
   **Fixed-point property (load-bearing).** After pass 2 writes `<DATE>+<HASH>`, recomputing the hash on the post-write file again yields the same `<HASH>`, because the redaction rule replaces the version-line content with `<REDACTED>` regardless of value. The pre-write projection (`metadata: { version: "PLACEHOLDER+PLACEHOLDER" }` → redacted to `metadata: { version: "<REDACTED>" }`) and post-write projection (`metadata: { version: "<DATE>+<HASH>" }` → redacted to `metadata: { version: "<REDACTED>" }`) are byte-identical. Phase 3.6 conformance recomputing on the same content state produces the same hash → no spurious failures.
 
+  **Invariant (no child-file edits between passes).** Between pass 1 and pass 2, NO other file under any `<skill-dir>/` may be modified. The fixed-point argument depends on the projections being byte-identical EXCEPT for the version-line content (which the redaction normalizes). If a future multi-step migration also needs to edit child files (modes/, references/, scripts/, etc.) AS PART of the same migration, run pass 1 → child edits → pass 2 in that order; otherwise pass 2's hash will not match the post-write-pass-2 file's recomputed hash and conformance will fire. (refine-plan F-DA-11.)
+
+  **Enforcement gate (refine-plan F-R2-7).** The invariant above is enforced by snapshotting the working-tree state across the two passes and aborting on any drift. Editor swap-files, transient artifacts from background processes, or concurrent agent edits all manifest as `git ls-files -m -o --exclude-standard` deltas:
+
+  ```bash
+  PASS1_TREE=$(git -C "$REPO_ROOT" ls-files -m -o --exclude-standard skills block-diagram | sort)
+  # ... run pass 1 (placeholder write) ...
+  # ... run pass 2 (real-value write) ...
+  PASS2_TREE=$(git -C "$REPO_ROOT" ls-files -m -o --exclude-standard skills block-diagram | sort)
+  # Filter to the SKILL.md set (which IS expected to change between passes).
+  PASS1_NON_SKILLMD=$(printf '%s\n' "$PASS1_TREE" | grep -v '/SKILL\.md$' || true)
+  PASS2_NON_SKILLMD=$(printf '%s\n' "$PASS2_TREE" | grep -v '/SKILL\.md$' || true)
+  if [ "$PASS1_NON_SKILLMD" != "$PASS2_NON_SKILLMD" ]; then
+    echo "FAIL: filesystem state changed between passes (non-SKILL.md drift)" >&2
+    diff <(printf '%s\n' "$PASS1_NON_SKILLMD") <(printf '%s\n' "$PASS2_NON_SKILLMD") >&2
+    exit 1
+  fi
+  ```
+
   **Why two-pass beats the alternative ("synthesize a virtual redacted line when no `metadata.version` exists").** The synthesis approach requires the redactor to know where in the frontmatter to imagine a virtual line, makes the rule conditional on absence, and complicates the `frontmatter-set.sh` helper's reasoning. Two-pass keeps the redaction rule unconditional and pushes the migration cost into a one-time-only mechanical step. The placeholder is gone after pass 2 lands; no runtime code ever sees it.
 
   **Idempotence.** Re-running pass 1 on a SKILL.md that already has `metadata.version` is a no-op (`frontmatter-set.sh` is idempotent — same value writes nothing). Re-running pass 2 with the same `$MIGRATION_DATE` and recomputed hash is a no-op. Either pass alone reaches the same eventual state.
@@ -481,21 +501,44 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 - [ ] 3.6 — Extend `tests/test-skill-conformance.sh` with three new sections (`=== Skill-dir cleanliness ===`, `=== Per-skill version frontmatter ===`, `=== Per-skill version mirror parity ===`) at the insertion point: after the existing per-skill behavior-pattern blocks, before the PROSE-IMPERATIVE coverage block at the file's tail. Mirror loop uses an explicit allow-list of source-less skills (Round-3 F-DA-R3-3) so an orphaned mirror after a future cleanup is NOT silently treated as expected.
 
   ```bash
-  # Skill-dir cleanliness: no dotfiles or build artifacts in skill directories.
-  # (Round-3 F-DA-R3-2: defense-in-depth alongside the find filter in scripts/skill-content-hash.sh.)
+  # Skill-dir cleanliness: no dotfiles or build artifacts in GIT-TRACKED content.
+  # Scoped to `git ls-files <skill-dir>` rather than `find` so that working-tree
+  # runtime artifacts (briefing.py's __pycache__, zskills_monitor's __pycache__,
+  # editor swap files, etc.) do NOT trip the gate. The cleanliness rule enforces
+  # what consumers see — i.e., what's tracked in git — not what lives transiently
+  # in a developer's working tree. (refine-plan F-DA-4 / F-DA-14: the prior
+  # `find`-based form would hard-fail on day-zero migration because briefing and
+  # zskills-dashboard both materialize __pycache__ when their Python runs, and
+  # `.gitkeep` is intentionally tracked in zskills-dashboard's static dir.)
+  #
+  # `.gitkeep` is the universal Unix idiom for tracking an otherwise-empty
+  # directory; allow-list it explicitly. Other dotfiles in tracked content
+  # (e.g., `.env`, `.DS_Store`, `.swp`) remain rejected.
   echo "=== Skill-dir cleanliness ==="
   for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
     [ -d "$skill_dir" ] || continue
     name=$(basename "$skill_dir")
-    # Find any dotfile (regular file or directory) under the skill dir.
-    dotfile_hits=$(find "$skill_dir" -name '.*' ! -name '.' ! -name '..' -print)
-    artifact_hits=$(find "$skill_dir" \( -name '__pycache__' -o -name 'node_modules' \) -print)
+    skill_rel="${skill_dir#$REPO_ROOT/}"
+    skill_rel="${skill_rel%/}"
+    tracked=$(git -C "$REPO_ROOT" ls-files -- "$skill_rel")
+    # Reject any tracked dotfile EXCEPT `.gitkeep` (allow-listed).
+    dotfile_hits=$(printf '%s\n' "$tracked" | awk -F/ '
+      { name=$NF }
+      name ~ /^\./ && name != ".gitkeep" { print }
+    ')
+    # __pycache__ / node_modules: should never be tracked. If git ls-files
+    # reports any, that IS a real cleanliness regression.
+    # grep returns 1 when no matches; that's the success case here. Use a
+    # conditional rather than `|| true` so a real grep error (regex syntax,
+    # broken pipe) still surfaces.
+    artifact_hits=$(printf '%s\n' "$tracked" | grep -E '(^|/)(__pycache__|node_modules)(/|$)') || \
+      [ "$?" -eq 1 ] || { echo "FAIL: grep error" >&2; return 1; }
     if [ -n "$dotfile_hits" ] || [ -n "$artifact_hits" ]; then
-      fail "skill $name: contains dotfile/artifact (skill dirs must be clean)" \
-        "$(echo "$dotfile_hits"; echo "$artifact_hits")"
+      fail "skill $name: contains tracked dotfile/artifact (skill dirs must be clean)" \
+        "$(printf '%s\n%s\n' "$dotfile_hits" "$artifact_hits")"
       continue
     fi
-    pass "skill $name: clean (no dotfiles/artifacts)"
+    pass "skill $name: clean (no tracked dotfiles/artifacts)"
   done
 
   echo "=== Per-skill version frontmatter ==="
@@ -562,7 +605,7 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 
   (Round-1 findings F-R11, F-R13, F-DA11: dead `screenshots` continue-line removed since enumeration filter handles it; regex tightened to validate month/day ranges. Round-2 F-R2-7: third loop over `.claude/skills/` closes the mirror-desync coverage gap. Round-3 F-DA-R3-2: dotfile-cleanliness loop. Round-3 F-DA-R3-3: hardcoded `MIRROR_ONLY_OK` allow-list with documented entries.)
 
-  Expected: **28 passes** for the cleanliness loop, **28 passes** for the source-version loop (25 core + 3 add-ons), plus **N passes** for the mirror loop (`N = .claude/skills` count, with `playwright-cli` and `social-seo` as allow-listed skipped passes; all other mirrors must have a source counterpart). 0 fails after migration lands.
+  Expected: **N passes** for the cleanliness loop and **N passes** for the source-version loop, where `N = $CORE_COUNT + $ADDON_COUNT` (computed by the Phase 3.2 enumeration; refine time = 26 + 3 = 29 but the literal is NOT pinned — the AC asserts `>= $CORE_COUNT + $ADDON_COUNT` PASS lines per loop), plus **M passes** for the mirror loop (`M = .claude/skills` count, with `playwright-cli` and `social-seo` as allow-listed skipped passes; all other mirrors must have a source counterpart). 0 fails after migration lands across all three sections.
 
 - [ ] 3.7 — Append `CHANGELOG.md` entry under today's date heading (create the date heading if absent), per the §1.8 canonical template:
 
@@ -571,7 +614,7 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 
   ### Added — per-skill versioning
 
-  Every source skill (25 core + 3 block-diagram add-ons) now carries
+  Every source skill under `skills/` and `block-diagram/` now carries
   `metadata.version: "YYYY.MM.DD+HHHHHH"` in its SKILL.md frontmatter,
   seeded to today's date and each skill's content hash. Edits to a
   skill body must bump this field; see `references/skill-versioning.md`
@@ -579,11 +622,11 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
   commits (Phase 4).
   ```
 
-- [ ] 3.8 — Commit message: `feat(skills): seed metadata.version on all 28 skills + extend conformance test`.
+- [ ] 3.8 — Commit message: `feat(skills): seed metadata.version on all source skills + extend conformance test` (the actual count goes in the commit body, derived from the Phase 3.2 enumeration — do NOT pin a literal in the subject line).
 
 ### Design & Constraints
 
-**Atomicity at scale.** Phase 3 modifies 28 SKILL.md files and 25 mirror copies. The script-driven loop is idempotent — re-running with the same `$MIGRATION_DATE` and recomputed hash is a no-op. Verify per-skill mirror parity (3.5) before staging.
+**Atomicity at scale.** Phase 3 modifies one SKILL.md per source-skill directory and one mirror copy per core skill (the count is derived from the Phase 3.2 enumeration; refine time = 26 core SKILL.md + 3 add-on SKILL.md + 26 mirror copies, but the literal is NOT pinned). The script-driven loop is idempotent — re-running with the same `$MIGRATION_DATE` and recomputed hash is a no-op. Verify per-skill mirror parity (3.5) before staging.
 
 **Conformance regex precision.** `^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\+[0-9a-f]{6}$` — month restricted to 01-12, day to 01-31, hash exactly 6 lowercase hex. Round-1 finding F-DA11: rejects `2026.13.45+xxx` and similar.
 
@@ -598,14 +641,14 @@ Add `metadata.version: "YYYY.MM.DD+HHHHHH"` to every source skill's `SKILL.md` (
 ### Acceptance Criteria
 
 - [ ] For every source skill (under `skills/` and `block-diagram/`), `bash scripts/frontmatter-get.sh <skill>/SKILL.md metadata.version` outputs a value matching the strict regex `^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\+[0-9a-f]{6}$`. Verified per-skill via the conformance test loop (3.6); per-skill grep on indentation patterns is fragile (F-R2-8 — does not verify that `version:` sits under `metadata:`). Use the per-file `frontmatter-get.sh metadata.version` invocation as the authoritative check.
-- [ ] Source-skill count check: `find skills -maxdepth 1 -mindepth 1 -type d | wc -l` returns 25 and `find block-diagram -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | wc -l` returns 3.
+- [ ] Source-skill count check: `find skills -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | wc -l` returns `$CORE_COUNT` from the Phase 3.2 enumeration (refine time: 26; was 25 at plan-write 2026-04-30) AND `find block-diagram -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print | wc -l` returns `$ADDON_COUNT` (refine time: 3). The AC checks consistency between Phase 3.2's enumeration result and Phase 3.6's loop output, not against a pinned literal.
 - [ ] For every source skill `X`, the stored hash equals the freshly-computed hash: `[ "${version##*+}" = "$(bash scripts/skill-content-hash.sh <X>)" ]`.
 - [ ] For every core skill `X` in `skills/`, `diff -r skills/X .claude/skills/X` is empty.
-- [ ] `bash tests/test-skill-conformance.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0. Output contains: the cleanliness section `=== Skill-dir cleanliness ===` with at least 28 PASS lines and 0 fails; the source-loop section `=== Per-skill version frontmatter ===` with at least 28 PASS lines (25 core + 3 add-on); AND the mirror-loop section `=== Per-skill version mirror parity ===` with one PASS line per `.claude/skills/*/` directory present (`playwright-cli` and `social-seo` show as allow-listed-skipped; all other mirrors match source). 0 fails across all three sections.
+- [ ] `bash tests/test-skill-conformance.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0. Output contains: the cleanliness section `=== Skill-dir cleanliness ===` with at least `$CORE_COUNT + $ADDON_COUNT` PASS lines and 0 fails; the source-loop section `=== Per-skill version frontmatter ===` with at least `$CORE_COUNT + $ADDON_COUNT` PASS lines; AND the mirror-loop section `=== Per-skill version mirror parity ===` with one PASS line per `.claude/skills/*/` directory present (`playwright-cli` and `social-seo` show as allow-listed-skipped; all other mirrors match source). 0 fails across all three sections.
 - [ ] `bash tests/test-mirror-skill.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
 - [ ] `bash tests/run-all.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
 - [ ] `grep -q "Added — per-skill versioning" CHANGELOG.md` succeeds.
-- [ ] All 28 skills have the same date prefix (the migration date), assertable by:
+- [ ] Every source skill has the same date prefix (the migration date), assertable by:
 
   ```bash
   for f in skills/*/SKILL.md block-diagram/*/SKILL.md; do
@@ -638,7 +681,7 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
 
 - [ ] 4.1 — Extend `hooks/warn-config-drift.sh` with a third branch `--- Branch 3: skill version not bumped ---` after the existing skill-file forbidden-literals branch.
 
-  **Outer regex (Branch 3 — this work item).** Branch 3 uses **a single regex** that captures any regular file under a skill directory in either source root: `(^|/)(skills|block-diagram)/([^/]+)/.*$`. **No `\.md$` anchor** — Branch 3 must catch edits to `scripts/*.sh`, `stubs/*.sh`, `fixtures/*`, etc., because every regular file under the skill directory is in the projection per §1.1, so any of them can drift the hash. (Empirical check: `echo "skills/run-plan/scripts/correct-plan.sh" | grep -E "(^|/)(skills|block-diagram)/[^/]+/.*\.md$"` returns no match — the `.md$` anchor would silently miss script edits. Branch 3's regex deliberately omits the anchor.) Branch 2's existing `\.md$` regex is **separately** widened to add `block-diagram/` for SKILL.md forbidden-literal coverage (Round-1 finding F-R4); that widening is independent of Branch 3.
+  **Outer regex (Branch 3 — this work item).** Branch 3 uses **a single regex** that captures any regular file under a skill directory in either source root: `(^|/)(skills|block-diagram)/([^/]+)/[^/]+`. **No `\.md$` anchor** — Branch 3 must catch edits to `scripts/*.sh`, `stubs/*.sh`, `fixtures/*`, etc., because every regular file under the skill directory is in the projection per §1.1, so any of them can drift the hash. The trailing `[^/]+` (rather than `.*`) requires at least one path segment AFTER the skill name, so `block-diagram/screenshots/foo.png` (no SKILL.md) and `block-diagram/README.md` (top-level doc) both gracefully no-op via the downstream `[ -f "$skill_md" ] || exit 0` check; this regex tightening is defensive (refine-plan F-DA-9, partly verified — `block-diagram/README.md` does NOT match either form, but `block-diagram/screenshots/foo.png` DOES match both forms; the new tighter form keeps the same outcome but reduces surface for future-tightening confusion). (Empirical check: `echo "skills/run-plan/scripts/correct-plan.sh" | grep -E "(^|/)(skills|block-diagram)/[^/]+/.*\.md$"` returns no match — the `.md$` anchor would silently miss script edits. Branch 3's regex deliberately omits the anchor.) Branch 2's existing `\.md$` regex is **separately** widened to add `block-diagram/` for SKILL.md forbidden-literal coverage (Round-1 finding F-R4); that widening is independent of Branch 3.
 
   **Staged-file gate.** Before doing any work, the new branch checks whether the file is in the staging set. **Use `grep -Fqx` (fixed-string)** — paths can contain regex metacharacters (e.g., a skill named `a.b` or `a+b`) and `grep -qx` would treat them as a regex pattern (F-DA-R2-5: `grep -qx "skills/foo.bar/SKILL.md"` matches `skills/fooXbar/SKILL.md`). Same fix at the pseudocode site below.
 
@@ -648,7 +691,47 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
   fi
   ```
 
-  where `$FILE_PATH_REL` is `$FILE_PATH` made relative to `$REPO_ROOT`. This folds Round-1 finding F-DA7 (hook noise during WIP) into the hook itself: warn fires only when the agent has explicitly staged the file, signaling commit intent. Mid-WIP edits do not generate noise.
+  where `$FILE_PATH_REL` is `$FILE_PATH` made relative to `$REPO_ROOT`. **`$FILE_PATH` may arrive as either an absolute path or a repo-relative path** — the harness's behavior across hook contexts is not stable across versions. The hook MUST normalize to repo-relative form using `git`-aware resolution rather than path-string surgery (refine-plan F-R10 / F-DA-16: the previous `${FILE_PATH#$REPO_ROOT/}` form silently fails when `$FILE_PATH` is symlink-resolved differently from `$REPO_ROOT`, when the strip is a no-op on already-relative input, or when `$REPO_ROOT` ends with a trailing slash). Use:
+
+  ```bash
+  # Normalize to repo-relative form. GNU `realpath --relative-to` handles
+  # symlink resolution and absolute/relative input symmetrically. BSD/macOS
+  # `realpath` exists at /usr/bin/realpath but lacks --relative-to; the
+  # `command -v realpath` probe alone is NOT sufficient. Probe the FLAG by
+  # actually invoking it and checking that the result is non-empty AND
+  # doesn't start with a slash. (refine-plan F-DA-R2-1: prior form passed
+  # the `command -v` probe on macOS, then `realpath --relative-to=...`
+  # failed with "illegal option", leaving FILE_PATH_REL empty and the
+  # `grep -Fqx ""` gate matching nothing — silent miss on macOS.)
+  FILE_PATH_REL=""
+  if FILE_PATH_REL=$(realpath --relative-to="$REPO_ROOT" "$FILE_PATH" 2>/dev/null) \
+       && [ -n "$FILE_PATH_REL" ]; then
+    case "$FILE_PATH_REL" in
+      /*) FILE_PATH_REL="" ;;  # absolute output (shouldn't happen with --relative-to, but defensive)
+    esac
+  fi
+  if [ -z "$FILE_PATH_REL" ]; then
+    # Fallback: string-strip. Works when $FILE_PATH and $REPO_ROOT share a
+    # textual prefix; fails on symlink-divergence (e.g., /var/folders/.../X
+    # vs /private/var/folders/.../X on macOS).
+    FILE_PATH_REL="${FILE_PATH#$REPO_ROOT/}"
+    case "$FILE_PATH_REL" in
+      /*)
+        # Strip didn't reduce the path — symlink divergence, $REPO_ROOT
+        # mismatch, or BSD realpath without GNU --relative-to. Surface a
+        # WARN diagnostic so the silent no-op is at least observable.
+        # (refine-plan F-R2-1: prior fallback exited silently with no
+        # diagnostic; consumers reported "the hook didn't fire" with no
+        # debugging trail.)
+        printf 'WARN: warn-config-drift: could not normalize %s relative to %s — staged-file gate skipped\n' \
+          "$FILE_PATH" "$REPO_ROOT" >&2
+        exit 0
+        ;;
+    esac
+  fi
+  ```
+
+  This folds Round-1 finding F-DA7 (hook noise during WIP) into the hook itself: warn fires only when the agent has explicitly staged the file, signaling commit intent. Mid-WIP edits do not generate noise.
 
   **Subject disambiguation.** When `$FILE_PATH` is a child file under `<root>/<name>/(modes|references|scripts|fixtures)/...`, the hook compares the PARENT skill's recomputed hash to HEAD's `metadata.version` hash — NOT a hash of the child file itself. The body-diff check operates on the parent SKILL.md's projection, not on the child file. (Round-1 finding F-DA8: subjects must be explicit.)
 
@@ -664,7 +747,9 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
   [ -x "$HASH_HELPER" ] && [ -x "$GET_HELPER" ] || exit 0  # graceful no-op
 
   # Derive the parent skill dir + SKILL.md from the edited path.
-  if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/([^/]+)/.*$ ]]; then
+  # Trailing `[^/]+` requires the file to be INSIDE a skill dir (not the
+  # parent directory itself). refine-plan F-DA-9.
+  if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/([^/]+)/[^/]+ ]]; then
     skill_root_kind="${BASH_REMATCH[2]}"
     skill_name="${BASH_REMATCH[3]}"
     skill_dir="$REPO_ROOT/$skill_root_kind/$skill_name"
@@ -676,7 +761,24 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
 
   # Staged-file gate: warn only if THIS path is in the staging set.
   # grep -Fqx (fixed-string) — paths may contain regex metachars; -qx is a regex match.
-  FILE_PATH_REL="${FILE_PATH#$REPO_ROOT/}"
+  # Normalize $FILE_PATH to repo-relative form. Probe `realpath --relative-to`
+  # by invocation (BSD realpath exists but lacks the flag; refine-plan F-DA-R2-1).
+  # WARN on fallback failure so the silent no-op is observable (refine-plan F-R2-1).
+  FILE_PATH_REL=""
+  if FILE_PATH_REL=$(realpath --relative-to="$REPO_ROOT" "$FILE_PATH" 2>/dev/null) \
+       && [ -n "$FILE_PATH_REL" ]; then
+    case "$FILE_PATH_REL" in /*) FILE_PATH_REL="" ;; esac
+  fi
+  if [ -z "$FILE_PATH_REL" ]; then
+    FILE_PATH_REL="${FILE_PATH#$REPO_ROOT/}"
+    case "$FILE_PATH_REL" in
+      /*)
+        printf 'WARN: warn-config-drift: could not normalize %s relative to %s — staged-file gate skipped\n' \
+          "$FILE_PATH" "$REPO_ROOT" >&2
+        exit 0
+        ;;
+    esac
+  fi
   if ! git -C "$REPO_ROOT" diff --cached --name-only | grep -Fqx "$FILE_PATH_REL"; then
     exit 0
   fi
@@ -789,7 +891,7 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
 
   Mirror to `.claude/skills/`? **No** — top-level `scripts/` isn't mirrored; it lives at `scripts/` only.
 
-- [ ] 4.4 — Extend `skills/commit/SKILL.md` Phase 5 (Commit) with a new sub-step `2.5` (between current step 2 "run tests" and step 3 "dispatch reviewer"). Insertion site verified: `grep -n '^## Phase' skills/commit/SKILL.md` shows Phase 4 line 213 (Stage & Review, 4 steps), Phase 5 line 239 (Commit). The natural gate placement is at Phase 5 step 2.5, AFTER tests pass (so the command is correctly ordered: tests then version-check then reviewer). (Round-1 finding F-R2: the prior plan said "Phase 4 step 3.5" which would interleave between staging and presenting-to-user — wrong location, since presenting-to-user is the Phase 4 outcome.)
+- [ ] 4.4 — Extend `skills/commit/SKILL.md` Phase 5 (Commit) with a new sub-step `2.5` between the existing step 2 (`Run tests if code was staged`) and step 3 (`Dispatch a fresh agent to review`) of `## Phase 5 — Commit`. Locate by heading text via `awk '/^## Phase 5 — Commit/,/^## Phase 6/' skills/commit/SKILL.md`; do NOT anchor to line numbers (refine-plan F-DA-13: the previous "line 239" cite is correct at refine time but brittle — any future edit to commit/SKILL.md upstream of Phase 5 shifts it). The natural gate placement is at Phase 5 step 2.5, AFTER tests pass (so the command is correctly ordered: tests then version-check then reviewer). (Round-1 finding F-R2: the prior plan said "Phase 4 step 3.5" which would interleave between staging and presenting-to-user — wrong location, since presenting-to-user is the Phase 4 outcome.)
 
   > **2.5. Skill-version bump check.** For every staged file under `skills/<owner>/...` or `block-diagram/<owner>/...`, verify each affected skill's `metadata.version` was correctly bumped (date refreshed AND hash matches recomputed projection):
   >
@@ -805,19 +907,19 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
 - [ ] 4.5 — Update `references/skill-versioning.md` §1.3 with the body-diff-detection rule used by both the hook (4.1) and `/commit` (4.4 + extracted script in 4.3): same script, single source of truth.
 
 - [ ] 4.6 — Add `tests/test-skill-version-enforcement.sh` covering the hook AND the extracted script in isolation:
-  - 10 hook test cases (each sandbox-based): edit-with-no-bump (warns); edit-with-bump (silent); revert-with-bump-only (warns symmetric); whitespace-only edit (silent — projection identical); new file (silent — no HEAD); helper missing (silent — graceful); HEAD missing version (silent — first migration); body diff with version line untouched (warns); **edit a child file under modes/ without staging it (silent — staged-file gate)**; **edit a child file under modes/ AND stage it without bumping parent SKILL.md (warns referencing parent)**.
+  - 12 hook test cases (each sandbox-based): edit-with-no-bump (warns); edit-with-bump (silent); revert-with-bump-only (warns symmetric); whitespace-only edit (silent — projection identical); new file (silent — no HEAD); helper missing (silent — graceful); HEAD missing version (silent — first migration); body diff with version line untouched (warns); **edit a child file under modes/ without staging it (silent — staged-file gate)**; **edit a child file under modes/ AND stage it without bumping parent SKILL.md (warns referencing parent)**; **`$FILE_PATH` fed as absolute path → same outcome as repo-relative case** (refine-plan F-R10 / F-DA-16: covers realpath normalization); **`$FILE_PATH` fed as repo-relative path → same outcome as absolute case** (covers fallback strip).
   - 8 stage-check script test cases: same matrix but checking exit code (0 = pass, 1 = STOP).
   - Uses `/tmp/zskills-tests/$(basename "$(pwd)")/`. Creates a sandbox git repo per case.
 
 - [ ] 4.7 — Register `tests/test-skill-version-enforcement.sh` in `tests/run-all.sh`.
 
-- [ ] 4.8 — Add `<!-- allow-skill-version-literal: ... -->` exemption marker for prose containing version literals (e.g., `references/skill-versioning.md` itself shows `2026.04.30+a1b2c3` as an example). Reuse the SKILL_FILE_DRIFT_FIX marker convention. Document in `references/skill-versioning.md`. Update `tests/fixtures/forbidden-literals.txt` if needed to include the regex `[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}`.
+- [ ] 4.8 — Add `<!-- allow-skill-version-literal: ... -->` exemption marker for prose containing version literals (e.g., `references/skill-versioning.md` itself shows `2026.04.30+a1b2c3` as an example). Reuse the SKILL_FILE_DRIFT_FIX marker convention. Document in `references/skill-versioning.md`. **Scope the deny-list to skill content only** (`skills/<name>/**` and `block-diagram/<name>/**`) — NOT `plans/**`, `references/**`, `CHANGELOG.md`, or other non-skill content. Verify this BEFORE updating `tests/fixtures/forbidden-literals.txt`: read `tests/test-skill-conformance.sh` and confirm its forbidden-literal scan iterates only over skill files. If it scans more broadly today, extend the conformance test to scope itself first, then add the regex to the fixture. (refine-plan F-R14: a broadly-scoped deny-list would fire on this very plan file, which embeds many `2026.04.30+xxxxxx` examples; scoping the deny-list to skill content is the cleaner fix.) The regex to add is `[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}`.
 
 - [ ] 4.9 — **Bump `metadata.version` of `skills/commit/SKILL.md` FIRST** — this phase edits the commit skill's body. Compute fresh hash via `bash scripts/skill-content-hash.sh skills/commit`, write today's date + hash via `frontmatter-set.sh`. **Bump precedes mirror** (Round-2 F-DA-R2-4: mirroring before bumping leaves the mirror immediately stale, fails the AC `diff -r skills/commit .claude/skills/commit` is empty). This bump also validates the gate end-to-end (the commit landing this phase must itself pass the gate).
 
 - [ ] 4.10 — Mirror modified files **after the bump**: `bash scripts/mirror-skill.sh commit`. Hooks live at `hooks/` (top-level), no mirror needed.
 
-- [ ] 4.11 — Append CHANGELOG entry per the §1.8 canonical template:
+- [ ] 4.11 — Append `CHANGELOG.md` entry under today's date heading (create the date heading if absent), per the §1.8 canonical template (refine-plan F-R19: explicit "create today's heading if absent" matches Phase 3.7's wording):
 
   ```markdown
   ### Added — skill-version enforcement (commit: <YYYY.MM.DD+HHHHHH>)
@@ -858,7 +960,7 @@ Wire the three-point enforcement chain (Edit-time warn → commit-time hard stop
 - [ ] In a sandbox git repo, staging a body change to `skills/X/SKILL.md` without bumping the version and running `scripts/skill-version-stage-check.sh` exits 1 with `STOP:` on stderr.
 - [ ] Same sandbox with the version bumped exits 0.
 - [ ] Editing `skills/run-plan/modes/pr.md` AND staging it without bumping `skills/run-plan/SKILL.md`'s `metadata.version` produces a WARN referencing the parent SKILL.md (subject disambiguation). Verified by case 10.
-- [ ] `bash tests/test-skill-version-enforcement.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0 with ≥ 18 cases passing.
+- [ ] `bash tests/test-skill-version-enforcement.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0 with ≥ 20 cases passing (12 hook + 8 stage-check).
 - [ ] `bash tests/test-skill-conformance.sh` STILL passes.
 - [ ] `bash tests/run-all.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
 - [ ] `diff -r skills/commit .claude/skills/commit` is empty.
@@ -886,17 +988,39 @@ Surface the *plumbing* layer for version data: config-schema field, repo-version
 
 - [ ] 5a.0 — **Preflight: `/update-zskills` PR check.** (Round-1 finding F-DA5.)
 
+  **Re-anchor before editing.** Before starting 5a, re-derive the actual line numbers / anchor text for each insertion site in `skills/update-zskills/SKILL.md` from CURRENT state — the file has shifted since plan-draft (PR #171 on 2026-05-02 added Step 3.6 backfill at line 286, shifting everything below by ~30 lines). Phase 5b's three sites in particular MUST be located by heading text (`### Step 6 — Produce the gap report`, `#### Step G — Final report`, the `Updated: N skills` line under `### Pull Latest and Update`), NOT by the line numbers the plan was originally drafted against. (refine-plan F-DA-15.)
+
   ```bash
-  open=$(gh pr list --state open --search 'in:title update-zskills OR in:files skills/update-zskills/' --json number,title)
-  if [ "$(echo "$open" | grep -c '^\[')" -gt 0 ] && [ "$open" != "[]" ]; then
-    echo "FAIL: open PRs touching update-zskills:" >&2
-    echo "$open" >&2
+  # `in:files` qualifier is NOT supported by `gh pr list --search`; it's a
+  # `gh search prs` qualifier. Use `gh pr list --state open --json` and
+  # post-filter via fixed-string match on file paths from the JSON. (refine-plan
+  # F-DA-7: the prior `gh pr list --search 'in:files ...'` form silently
+  # returned empty regardless of actual PR state.)
+  # Limit 100 is well above zskills' typical open-PR count (rarely >10). If
+  # the soft cap is ever hit, the count check below logs a warning so the
+  # gate doesn't silently miss PRs beyond row 100. (refine-plan F-R2-9.)
+  raw=$(gh pr list --state open --limit 100 --json number,title,files)
+  raw_count=$(printf '%s' "$raw" | grep -c '"number":' || true)
+  if [ "$raw_count" -ge 100 ]; then
+    echo "WARN: gh pr list returned $raw_count PRs (soft cap is 100); re-run with --limit 1000 to verify no missed entries." >&2
+  fi
+  # Match any PR whose JSON entry contains the file-path substring.
+  hits=$(printf '%s\n' "$raw" | grep -F 'skills/update-zskills/' || \
+    [ "$?" -eq 1 ] || { echo "FAIL: gh/grep error" >&2; exit 1; })
+  if [ -n "$hits" ]; then
+    echo "FAIL: open PRs touching skills/update-zskills/:" >&2
+    # Print only the matching lines — for an active repo with many open PRs,
+    # dumping `$raw` (full JSON of all open PRs) is unreadable noise.
+    # (refine-plan F-DA-R2-5.)
+    printf '%s\n' "$hits" >&2
     echo "Land or coordinate before starting Phase 5." >&2
     exit 1
   fi
   ```
 
   This is a hard preflight gate. If any open PR touches `skills/update-zskills/`, abort Phase 5a and surface to the user. Coordination is a user decision, not an agent decision.
+
+  **Title-only fallback (informational).** If the user wants ALSO to surface PRs whose titles mention `update-zskills` (regardless of files), run `gh pr list --state open --search 'update-zskills in:title' --json number,title` separately and present the union. Do NOT collapse this into the file-path gate above — the file-path test is the load-bearing one.
 
 - [ ] 5a.1 — Update `skills/update-zskills/scripts/zskills-resolve-config.sh` to resolve a 7th var `ZSKILLS_VERSION` from a top-level `zskills_version` field in `.claude/zskills-config.json`:
 
@@ -911,13 +1035,17 @@ Surface the *plumbing* layer for version data: config-schema field, repo-version
 
 - [ ] 5a.2 — Update `tests/test-zskills-resolve-config.sh` with a 7th var case.
 
-- [ ] 5a.3 — Update `config/zskills-config.schema.json` to declare `zskills_version` as a top-level optional string field. Default: empty string.
+- [ ] 5a.3 — ADD `zskills_version` to `config/zskills-config.schema.json` as a top-level optional string field with default empty string. **Do NOT touch the existing `dashboard`, `commit`, `execution`, `testing`, `dev_server`, `ui`, or `ci` blocks** — those carry recently-added fields (notably `dashboard.work_on_plans_trigger` from PR #171, 2026-05-02) and a careless `Edit` on the schema would regress them. The change is purely additive at the top-level. (refine-plan F-R9: schema must survive the additive change unchanged elsewhere.)
 
 - [ ] 5a.4 — Add `skills/update-zskills/scripts/resolve-repo-version.sh` (mirrored):
 
   ```bash
   #!/bin/bash
   # resolve-repo-version.sh — extract latest YYYY.MM.N tag from zskills source.
+  # Tag scheme is defined by RELEASING.md:44-46 (zero-indexed YYYY.MM.N).
+  # If the tag scheme changes (suffixes like `-rc`, prefixes like `v`, etc.),
+  # update this regex AND tests/test-skill-version-delta.sh together.
+  # (refine-plan F-R15: surface the cross-file dependency.)
   set -u
   ZSKILLS_PATH="${1:-}"
   [ -d "$ZSKILLS_PATH/.git" ] || { echo ""; exit 0; }
@@ -932,14 +1060,24 @@ Surface the *plumbing* layer for version data: config-schema field, repo-version
 
   ```bash
   #!/bin/bash
-  # Per-skill version delta. Stdout: <name>\t<source-ver>\t<installed-ver>\t<status>.
+  # Per-skill version delta. Stdout: <name>\t<kind>\t<source-ver>\t<installed-ver>\t<status>.
+  # `<kind>` is `core` for skills/<name>/ or `addon` for block-diagram/<name>/.
+  # Iterating BOTH source roots so block-diagram add-ons surface in install /
+  # update / audit reports. (refine-plan F-R13 / F-DA-10: prior loop ranged only
+  # over `skills/*/`, silently dropping the 3 add-ons even though §1.7 promised
+  # parity.)
   set -u
   ZSKILLS_PATH="${1:?usage: skill-version-delta.sh <zskills-source-path>}"
   GET="$CLAUDE_PROJECT_DIR/scripts/frontmatter-get.sh"
   [ -x "$GET" ] || GET="$ZSKILLS_PATH/scripts/frontmatter-get.sh"
-  for src_skill in "$ZSKILLS_PATH/skills"/*/; do
+  for src_skill in "$ZSKILLS_PATH/skills"/*/ "$ZSKILLS_PATH/block-diagram"/*/; do
     [ -f "${src_skill}SKILL.md" ] || continue
     name=$(basename "$src_skill")
+    case "$src_skill" in
+      "$ZSKILLS_PATH/skills"/*) kind="core" ;;
+      "$ZSKILLS_PATH/block-diagram"/*) kind="addon" ;;
+      *) kind="unknown" ;;
+    esac
     src_ver=$(bash "$GET" "${src_skill}SKILL.md" metadata.version) || src_ver=""
     inst_skill="$CLAUDE_PROJECT_DIR/.claude/skills/$name"
     inst_ver=""
@@ -955,40 +1093,147 @@ Surface the *plumbing* layer for version data: config-schema field, repo-version
     else
       status="bumped"
     fi
-    printf '%s\t%s\t%s\t%s\n' "$name" "$src_ver" "$inst_ver" "$status"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$kind" "$src_ver" "$inst_ver" "$status"
   done
   ```
 
-- [ ] 5a.6 — Add `skills/update-zskills/scripts/json-set-string-field.sh` (mirrored) — JSON-aware string-field write, no jq. Reuse the idiom from `apply-preset.sh`. (If `apply-preset.sh` already factors this out, reuse its helper instead.)
+  **Render-time filter (consumed by Phase 5b.1 Site C):** the renderer applies the `--with-block-diagram-addons` heuristic: include `kind=addon` rows ONLY when `--with-block-diagram-addons` was passed OR when at least one `block-diagram/*` skill is currently installed under `.claude/skills/`. Otherwise emit only `kind=core` rows. Filtering happens at the renderer, not the enumerator — so the data plumbing is symmetric and downstream callers can render either subset.
+
+- [ ] 5a.6 — Add `skills/update-zskills/scripts/json-set-string-field.sh` (mirrored) — JSON-aware string-field write, no jq. **Pre-condition: verify whether `apply-preset.sh` already factors out a JSON-write helper before adding this file** — read `skills/update-zskills/scripts/apply-preset.sh` and check; if a reusable function already exists there, source/extend it instead of duplicating. If `apply-preset.sh` does NOT factor it out, add this new helper as a sibling. (refine-plan F-DA-8: the original "If `apply-preset.sh` already factors this out, reuse its helper" was non-binding; the verifier MUST check, not assume.)
+
+  Use `awk` for in-place rewriting (matches `frontmatter-set.sh`'s 2.2 approach). `awk`'s string-replacement is metacharacter-clean (no `&`, `\1`, etc. trap). Sed was rejected here specifically because `${VALUE}` may contain `&` (sed's matched-text backreference) or `\N` (sed backreference); only escaping `|` was insufficient. (refine-plan F-DA-8.)
 
   ```bash
   #!/bin/bash
   # json-set-string-field.sh <json-file> <key> <value>
   # Updates a top-level string field in a JSON file in-place.
-  # Inserts the field if absent. No jq.
+  # Inserts the field if absent. No jq, no sed (awk is metacharacter-clean).
   set -u
   FILE="${1:?json-file required}"
   KEY="${2:?key required}"
   VALUE="${3:?value required}"
   TMP="$(mktemp)"
+  # Preserve original file mode — `mktemp` defaults to 0600 which would lock
+  # other readers (e.g., the dashboard server) out of the JSON file. Match
+  # the original perms before mv. (refine-plan F-DA-8.)
+  # `chmod --reference` is GNU coreutils; BSD/macOS lacks it. Probe-and-fall
+  # back via `stat`. The probe pattern uses `2>/dev/null` defensibly (probe-
+  # then-detect-failure-via-exit-code), not to silence a fallible op whose
+  # success matters. (refine-plan F-R2-8.)
+  if ! chmod --reference="$FILE" "$TMP" 2>/dev/null; then
+    perms=$(stat -c '%a' "$FILE" 2>/dev/null || stat -f '%Lp' "$FILE")
+    chmod "$perms" "$TMP"
+  fi
   if grep -q "\"$KEY\"" "$FILE"; then
-    # Update existing field via sed with escaped quotes.
-    sed -E "s|(\"$KEY\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")|\1${VALUE//|/\\|}\2|" "$FILE" > "$TMP"
-  else
-    # Insert before closing brace.
+    # Update existing field. awk uses match()/substr() (no gsub) so the
+    # replacement value `v` is treated as a literal string — no metacharacter
+    # expansion. Whatever follows the closing quote (trailing comma, newline,
+    # `}`, etc.) is preserved byte-for-byte. (refine-plan F-R2-3 / F-DA-R2-2:
+    # earlier awk arithmetic dropped the opening quote AND the trailing
+    # comma on middle fields. The form below uses match() once on the full
+    # `"key" : "..."` pattern and slices the line into pre/head/post.)
     awk -v k="$KEY" -v v="$VALUE" '
-      /^\}[[:space:]]*$/ && !done { print "  \"" k "\": \"" v "\","; done=1 }
-      { print }
+      {
+        # Build the pattern: "<key>"<ws>:<ws>"<anything-without-quote>"
+        # `[^"]*` is awk-regex (NOT shell glob); the inner pattern matches
+        # the existing quoted value with NO embedded quotes. Embedded quotes
+        # are out of scope for v1 (see Non-Goals; refine-plan F-DA-R2-3).
+        pat = "\"" k "\"" "[[:space:]]*:[[:space:]]*\"[^\"]*\""
+        if (match($0, pat)) {
+          pre  = substr($0, 1, RSTART - 1)              # before "key"
+          head = substr($0, RSTART, RLENGTH)            # "key": "old"
+          post = substr($0, RSTART + RLENGTH)           # everything after closing "
+          # Replace just the trailing quoted value inside `head`. Anchor to
+          # end-of-string so we only touch the value, not the key. The
+          # replacement uses sub() with v interpolated as a literal awk
+          # string, so `&`/`\1`/etc. in v are NOT awk-regex metacharacters
+          # in the REPLACEMENT side — but sub() DOES treat `&` and `\&` as
+          # specials in the replacement. To stay metacharacter-clean,
+          # construct the new head by string concatenation:
+          if (match(head, /"[^"]*"$/)) {
+            head_pre = substr(head, 1, RSTART - 1)      # "key": (trailing space then opening ")
+            # head_pre ends just before the OPENING quote of the value.
+            new_head = head_pre "\"" v "\""
+            print pre new_head post
+            next
+          }
+        }
+        print
+      }
     ' "$FILE" > "$TMP"
+  else
+    # Insert before the outer closing brace, comma-aware (matches
+    # apply-preset.sh:99-115). For an empty object `{ }` the inserted
+    # field is the only entry — no leading comma needed AND no trailing
+    # comma. For a non-empty object, the previous last field needs a
+    # trailing comma added (if absent), and the inserted field gets
+    # NO trailing comma. (refine-plan F-R2-6: the prior insert path
+    # always wrote a trailing comma → invalid JSON.)
+    awk -v k="$KEY" -v v="$VALUE" '
+      { buf[NR] = $0 }
+      END {
+        # Find the last standalone closing brace.
+        last_close = 0
+        for (i = NR; i >= 1; i--) {
+          if (buf[i] ~ /^[[:space:]]*\}[[:space:]]*$/) { last_close = i; break }
+        }
+        if (last_close == 0) {
+          # Malformed JSON — leave file untouched and exit non-zero.
+          for (i = 1; i <= NR; i++) print buf[i]
+          exit 2
+        }
+        # Find the last non-blank line before the closing brace.
+        preceding = 0
+        for (i = last_close - 1; i >= 1; i--) {
+          if (buf[i] !~ /^[[:space:]]*$/) { preceding = i; break }
+        }
+        for (i = 1; i < preceding; i++) print buf[i]
+        if (preceding > 0) {
+          # `preceding` is either the opening `{` (empty object) or the
+          # last existing field. If it ends in `{`, no comma needed.
+          # If it ends in `,`, no extra comma needed. Otherwise add one.
+          if (buf[preceding] ~ /\{[[:space:]]*$/) {
+            print buf[preceding]
+          } else if (buf[preceding] ~ /,[[:space:]]*$/) {
+            print buf[preceding]
+          } else {
+            line = buf[preceding]
+            sub(/[[:space:]]*$/, "", line)
+            print line ","
+          }
+        }
+        # Inject the new field WITHOUT trailing comma (it lands as the
+        # last field before `}`).
+        print "  \"" k "\": \"" v "\""
+        # Preserve any blank lines between preceding and last_close.
+        for (i = preceding + 1; i < last_close; i++) print buf[i]
+        for (i = last_close; i <= NR; i++) print buf[i]
+      }
+    ' "$FILE" > "$TMP" || {
+      rm -f "$TMP"
+      echo "json-set-string-field: malformed JSON in $FILE (no outer closing brace)" >&2
+      exit 2
+    }
   fi
   mv "$TMP" "$FILE"
   ```
 
-  Document edge case: sed substitution preserves all other content. Test in 5a.7.
+  Document edge cases in test 5a.7: value-with-special-chars MUST cover `&`, `\1`, `|`, embedded quotes (round-trip get/set/get); update-middle-field MUST preserve trailing commas; insert-into-empty-object MUST produce valid JSON (no trailing comma); insert-into-non-empty-object MUST add a comma to the prior last field.
 
-- [ ] 5a.7 — Add `tests/test-json-set-string-field.sh` — 6 cases: insert into empty obj, insert with existing fields, update existing field, idempotent no-change, value-with-special-chars, malformed JSON exits non-zero.
+- [ ] 5a.7 — Add `tests/test-json-set-string-field.sh` — at least **11** cases. Each case MUST pipe the resulting file through `python3 -c "import sys,json; json.load(sys.stdin)"` (or equivalent JSON validator) to catch malformed-JSON output that grep-based assertions would miss:
+  1. Insert into empty `{}` object — output MUST be valid JSON, no trailing comma. (refine-plan F-R2-6.)
+  2. Insert into non-empty object — output MUST be valid JSON with comma added to the prior last field, NO trailing comma on the new field. (refine-plan F-R2-6.)
+  3. Update existing field that is the LAST field — output MUST be valid JSON, no trailing comma.
+  4. **Update middle field with trailing comma** — output MUST preserve the trailing comma; output MUST be valid JSON. (refine-plan F-R2-3 / F-DA-R2-2: prior awk arithmetic dropped the comma.)
+  5. Idempotent no-change (set field to same value twice) — file unchanged after second invocation.
+  6. **Value-with-`&`-and-`\1` round-trip** — verifies awk-replacement doesn't expand metacharacters (refine-plan F-DA-8 / F-R2-3).
+  7. Value-with-`|`-and-embedded-quotes — note: embedded quotes in v1 contract are out-of-scope per Non-Goals (refine-plan F-DA-R2-3); the test asserts the helper either round-trips correctly OR exits non-zero, NOT silently corrupts.
+  8. **File-mode preservation** — set perms to 0644 pre-call, assert post-call still 0644 (refine-plan F-DA-8).
+  9. Malformed JSON (no closing brace) — helper exits non-zero, file unchanged.
+  10. Insert when only line is `{}` on a single line — currently out of scope; helper exits non-zero (the awk regex requires the closing brace on its own line). Document as v1 limitation.
+  11. Update where the value contains the key name as a substring (e.g., `"version": "...version..."`) — verifies the regex anchors correctly to the FIELD's quoted value, not a substring elsewhere.
 
-- [ ] 5a.8 — Add `tests/test-skill-version-delta.sh` — fixture cases: source-newer (bumped), source-older (still emits, downstream decides), installed-missing (new), source-missing-but-installed-present (would be `removed` if implemented; v1 doesn't enumerate that case — out of scope), both-empty (malformed), both-equal (unchanged).
+- [ ] 5a.8 — Add `tests/test-skill-version-delta.sh` — fixture cases: source-newer (bumped), source-older (still emits, downstream decides), installed-missing (new), source-missing-but-installed-present (would be `removed` if implemented; v1 doesn't enumerate that case — out of scope), both-empty (malformed), both-equal (unchanged), **add-on-source-installed** (`kind=addon` row emitted when `block-diagram/<name>/SKILL.md` exists in source AND `.claude/skills/<name>/SKILL.md` exists; refine-plan F-R13 / F-DA-10), **add-on-source-not-installed** (`kind=addon` row STILL emitted by the script; renderer-side filter is responsible for hiding when no add-on is installed).
 
 - [ ] 5a.9 — Update `skills/briefing/SKILL.md` "Z Skills Update Check" section (lines 339-356):
 
@@ -1021,7 +1266,7 @@ Surface the *plumbing* layer for version data: config-schema field, repo-version
 
 - [ ] 5a.12 — Mirror modified files **after both bumps**: `bash scripts/mirror-skill.sh briefing && bash scripts/mirror-skill.sh update-zskills`. Verify mirror parity via `diff -r skills/briefing .claude/skills/briefing` (empty) and `diff -r skills/update-zskills .claude/skills/update-zskills` (empty). Both source skills now have refreshed `metadata.version`; both mirrors are byte-identical.
 
-- [ ] 5a.13 — Append CHANGELOG entry per §1.8 canonical template.
+- [ ] 5a.13 — Append `CHANGELOG.md` entry under today's date heading (create the date heading if absent), per the §1.8 canonical template (refine-plan F-R19).
 
 - [ ] 5a.14 — Commit message: `feat(update-zskills): plumbing for per-skill + repo-level version delta (helpers, config schema, briefing rewire)`.
 
@@ -1047,8 +1292,11 @@ The `frontmatter-get.sh` helper is YAML-only; calling it on a JSON file exits 2 
 
 - [ ] `gh pr list` preflight runs and aborts on any open PR touching `skills/update-zskills/` (verified by manual review of 5a.0).
 - [ ] `bash skills/update-zskills/scripts/zskills-resolve-config.sh` (or sourcing it) sets `ZSKILLS_VERSION`. Verified by extending `tests/test-zskills-resolve-config.sh`.
+- [ ] (refine-plan F-R2-10) `grep -c 'ZSKILLS_VERSION' tests/test-zskills-resolve-config.sh` returns ≥ 1 — confirms the 7th-var case was actually added, not just promised in 5a.2.
+- [ ] (refine-plan F-R2-10) `bash tests/test-zskills-resolve-config.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0 with at least one new ZSKILLS_VERSION-related case passing.
+- [ ] Schema preservation (refine-plan F-R9): `grep -q '"work_on_plans_trigger"' config/zskills-config.schema.json` AND `grep -q '"zskills_version"' config/zskills-config.schema.json` both succeed post-5a.3. The existing `dashboard`, `commit`, `execution`, `testing`, `dev_server`, `ui`, `ci` top-level blocks are unchanged from the pre-5a.3 file — verifiable via `git diff config/zskills-config.schema.json` only showing the additive `zskills_version` insertion.
 - [ ] `bash skills/update-zskills/scripts/resolve-repo-version.sh /workspaces/zskills` outputs a value matching `^[0-9]{4}\.(0[1-9]|1[0-2])\.[0-9]+$`.
-- [ ] `bash skills/update-zskills/scripts/skill-version-delta.sh /workspaces/zskills` outputs ≥ 25 tab-delimited lines.
+- [ ] `bash skills/update-zskills/scripts/skill-version-delta.sh /workspaces/zskills` outputs at least `$CORE_COUNT + $ADDON_COUNT` tab-delimited lines (refine time = 26 + 3 = 29; the AC is derivation-driven, not pinned, since the count drifts as new skills land — see F-R13 / F-DA-10 fix that adds add-ons to the loop).
 - [ ] `bash tests/test-skill-version-delta.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
 - [ ] `bash tests/test-json-set-string-field.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
 - [ ] `diff -r skills/briefing .claude/skills/briefing` is empty.
@@ -1067,6 +1315,7 @@ Phase 1, Phase 2, Phase 3, Phase 4.
 
 - Updating `skills/update-zskills/SKILL.md` UI surface (Phase 5b).
 - Wiring `/zskills-dashboard` (deferred).
+- **Embedded quotes / JSON-escapes inside string values for `json-set-string-field.sh`.** v1 contract is "string fields whose values contain no `"` characters." The awk regex `[^"]*` stops at the first inner quote; values containing `\"` (JSON-escaped) are not supported. `.claude/zskills-config.json`'s actual usage (a date+hash version string) does not need them. Out of scope; document as a known limitation in the helper's header. (refine-plan F-DA-R2-3.)
 
 ---
 
@@ -1080,7 +1329,7 @@ Wire the data plumbing from Phase 5a into `skills/update-zskills/SKILL.md`'s thr
 
 - [ ] 5b.1 — Insert version-delta surfacing in three sites within `skills/update-zskills/SKILL.md`:
 
-  **Site A — Audit gap report (Step 6, lines ~542-595).** After the existing gap enumeration, add:
+  **Site A — Audit gap report (`### Step 6 — Produce the gap report` in `skills/update-zskills/SKILL.md`; locate via `grep -n '### Step 6 — Produce the gap report' skills/update-zskills/SKILL.md` — at refine time line 559, but line numbers will shift; anchor by heading text).** Insert AFTER the closing fence of the audit-report template body (the `Overall: X/Y dependencies satisfied.` line) and BEFORE the "If everything is satisfied" prose paragraph that follows. Add:
 
   ```bash
   # Repo-level version
@@ -1098,9 +1347,9 @@ Wire the data plumbing from Phase 5a into `skills/update-zskills/SKILL.md`'s thr
 
   **JSON read uses inline BASH_REMATCH, NOT `frontmatter-get.sh`** (Round-1 findings F-R5 / F-DA3: helper is YAML-only; calling it on JSON exits 2 and `2>/dev/null` would silently swallow the failure, anti-CLAUDE.md). The same idiom appears in `zskills-resolve-config.sh` — single source of truth for JSON parsing.
 
-  **Site B — Install final report (lines ~1202-1218).** Add a "Per-skill versions" sub-section showing each skill's installed version. For an install, all skills are "new" relative to the (empty) prior state.
+  **Site B — Install final report (`#### Step G — Final report` in `skills/update-zskills/SKILL.md`; locate via `grep -n '#### Step G — Final report' skills/update-zskills/SKILL.md` — at refine time line 1221; line numbers will shift, anchor by heading).** Add a "Per-skill versions" sub-section between the existing `Skills with additional requirements:` bullet and the closing `Run /update-zskills to check for updates later.` line, showing each skill's installed version. For an install, all skills are "new" relative to the (empty) prior state.
 
-  **Site C — Update final report (lines ~1260-1269).** REPLACE the current `Updated: N skills (list)` line with a structured table:
+  **Site C — Update final report (the `Updated: N skills (list)` line inside step `6. Report:` of `### Pull Latest and Update (already-installed path)` in `skills/update-zskills/SKILL.md`; locate via `grep -n 'Updated: N skills' skills/update-zskills/SKILL.md` — at refine time line 1283; line numbers will shift, anchor by text).** REPLACE that line with a structured table:
 
   ```
   Z Skills updated.
@@ -1137,7 +1386,7 @@ Wire the data plumbing from Phase 5a into `skills/update-zskills/SKILL.md`'s thr
 
 - [ ] 5b.7 — Mirror modified file **after the bump**: `bash scripts/mirror-skill.sh update-zskills`. Verify parity via `diff -r skills/update-zskills .claude/skills/update-zskills` (empty).
 
-- [ ] 5b.8 — Append CHANGELOG entry per §1.8 canonical template.
+- [ ] 5b.8 — Append `CHANGELOG.md` entry under today's date heading (create the date heading if absent), per the §1.8 canonical template (refine-plan F-R19).
 
 - [ ] 5b.9 — Commit message: `feat(update-zskills): per-skill + repo-level version delta in install/update/audit reports`.
 
@@ -1160,7 +1409,10 @@ Wire the data plumbing from Phase 5a into `skills/update-zskills/SKILL.md`'s thr
 - [ ] `skills/update-zskills/SKILL.md` Step 6 (audit gap report) contains a `Repo version:` line.
 - [ ] `skills/update-zskills/SKILL.md` Update final report references `metadata.version`: `grep -c 'metadata.version' skills/update-zskills/SKILL.md` returns ≥ 2.
 - [ ] `bash tests/test-update-zskills-version-surface.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
-- [ ] **Rerender output is version-data-free:** capture rerender output; `grep -E 'Repo version|metadata.version' "$capture"` returns 0 matches.
+- [ ] **Rerender output AND its written file are both version-data-free** (refine-plan F-DA-17 strengthening — the prior AC was trivially satisfied because `--rerender` writes only `.claude/rules/zskills/managed.md` from `CLAUDE_TEMPLATE.md`, and neither file ever had version data; the AC needs CONTRAST to verify the boundary is intentional):
+  - Run `bash scripts/update-zskills.sh --rerender 2>&1 | tee /tmp/rerender-capture`; assert `grep -E 'Repo version|metadata.version' /tmp/rerender-capture` returns 0 matches.
+  - Run `cat .claude/rules/zskills/managed.md`; assert `grep -E 'Repo version|metadata.version'` returns 0 matches there too.
+  - Then run `bash scripts/update-zskills.sh` (without `--rerender`) against an installed-state fixture; assert its output DOES contain at least one `metadata.version` reference (Phase 5b.1 Sites B/C). The contrast between "rerender silent" and "install/update populated" is what verifies the boundary is real, not just incidentally absent.
 - [ ] `diff -r skills/update-zskills .claude/skills/update-zskills` is empty.
 - [ ] `bash scripts/frontmatter-get.sh skills/update-zskills/SKILL.md metadata.version` returns a value > Phase 3 migration date.
 - [ ] `bash tests/run-all.sh > /tmp/zskills-tests/$(basename "$(pwd)")/.test-results.txt 2>&1` exits 0.
@@ -1186,11 +1438,23 @@ Prove the enforcement chain fires correctly. Four canaries cover the design prom
 ### Work Items
 
 - [ ] 6.1 — Author `tests/test-skill-version-canary-missed-bump.sh`:
-  - Setup: clone `/workspaces/zskills` into sandbox, replicate Phase-3-landed state.
+  - Setup: clone `/workspaces/zskills` into sandbox, replicate Phase-3-landed state. **Defensive sandbox guard (refine-plan F-R2-2 / F-DA-R2-6):** before any `git add` of synthetic artifacts, assert the canary is NOT operating against the live repo. Apply uniformly to canaries 6.1, 6.2, 6.3, 6.4 — all four materialize sandbox state and could in principle be mis-targeted if `$REPO_ROOT` shadows or misresolves.
+    ```bash
+    SANDBOX_REPO=$(mktemp -d)/zskills-clone
+    git clone --quiet "$REPO_ROOT" "$SANDBOX_REPO"
+    cd "$SANDBOX_REPO"
+    # Hard-fail if we are still inside the live repo.
+    case "$(realpath "$PWD")" in
+      "$(realpath "$REPO_ROOT")"|"$(realpath "$REPO_ROOT")"/*)
+        echo "FAIL: canary refusing to run inside live repo: $PWD" >&2
+        exit 1 ;;
+    esac
+    ```
   - Action: edit a sandbox SKILL.md body, stage it, do NOT bump version.
   - Assertion 1 (Edit-time): run hook with synthetic input, assert stderr contains `WARN:` and `content changed`.
   - Assertion 2 (commit-time): stage, run `scripts/skill-version-stage-check.sh`, assert exit 1 and stderr contains `STOP:`.
   - Assertion 3 (CI gate): conformance test against sandbox state — passes regex but fails hash-freshness check (Phase 3.6 added the stale-hash check).
+  - **Cleanliness-loop honest-clone case (refine-plan F-DA-14):** materialize a `__pycache__/` artifact under one sandbox skill dir, mirror what would happen if the dev had run briefing.py. Run conformance's `=== Skill-dir cleanliness ===` loop against the sandbox. Because the cleanliness check now scopes to `git ls-files` (refine-plan F-DA-4 fix), the materialized `__pycache__/` is NOT tracked, so cleanliness still passes — i.e., the canary tests the same thing CI would test, no false-green. Then `git add` the `__pycache__` directory and re-run cleanliness; the check MUST fail (artifact-tracking is a real regression). This is the contrast assertion — without it, the cleanliness gate could be silently subverted by future "fix" agents.
   - Cleanup.
 
 - [ ] 6.2 — Author `tests/test-skill-version-canary-correct-bump.sh`:
@@ -1213,7 +1477,7 @@ Prove the enforcement chain fires correctly. Four canaries cover the design prom
 
 - [ ] 6.4 — Author `tests/test-skill-version-canary-revert.sh` — covers §1.3 revert/no-op failure mode and §1.1 multi-edit-day handling (was F-DA1):
   - Setup: sandbox.
-  - **Multi-edit-day sub-case:** edit A on date D, bump to `D+aaa`. Land. Then edit B on same date D, bump to `D+bbb` (different hash because content differs). Hook sees `staged_ver != head_ver` AND `cur_hash != head_hash` — silent. Stage-check exits 0. **This is the F-DA1 closure.**
+  - **Multi-edit-day sub-case:** edit A on date D, bump to `D+aaa`. Land. Then edit B on same date D, bump to `D+bbb` (different hash because content differs). Hook predicates: `on_disk_ver != head_ver` (asymmetric warn at Phase 4.1 lines 703-714 skipped) AND `cur_hash != head_hash` (symmetric warn skipped); both fall through; hook exits 0 with no stderr. Stage-check exits 0. **This is the F-DA1 closure.** (refine-plan F-R20: cite the underlying hook conditions so the implementing agent can cross-check against Phase 4.1 directly.)
   - **Revert/no-op sub-case:** edit body, bump version, revert body change leaving version bumped. Hook emits `WARN:` matching `version bumped but content unchanged`. Stage-check exits 1.
 
 - [ ] 6.5 — Register all 4 canaries in `tests/run-all.sh`: `grep -c 'test-skill-version-canary' tests/run-all.sh` returns 4.
@@ -1221,8 +1485,8 @@ Prove the enforcement chain fires correctly. Four canaries cover the design prom
 - [ ] 6.6 — Run the full suite end-to-end. All Phase 1-5b changes plus all 4 canaries must pass.
 
 - [ ] 6.7 — `/verify-changes` end-to-end review:
-  - Cumulative diff stat across all 6 phases (28 SKILL.md frontmatter additions, 6 new scripts, 6 new tests, 1 hook extension, 1 commit-skill extension, 1 update-zskills overhaul, 1 briefing tweak, 2 schema updates, plan + reference docs).
-  - **Rebase-clean preflight (carryover from F-DA5).** Before final landing, re-check `gh pr list --state open --search 'in:title update-zskills OR in:files skills/update-zskills/'` — abort if any open PR has appeared since Phase 5a.
+  - Cumulative diff stat across all 6 phases (one SKILL.md frontmatter addition per source skill — count derived from Phase 3.2 enumeration, refine time = `$CORE_COUNT + $ADDON_COUNT`; **7 new helper scripts** (`scripts/{frontmatter-get,frontmatter-set,skill-content-hash,skill-version-stage-check}.sh` + `skills/update-zskills/scripts/{resolve-repo-version,skill-version-delta,json-set-string-field}.sh`); **10 new tests** (6 non-canary: `test-frontmatter-helpers.sh`, `test-skill-content-hash.sh`, `test-skill-version-enforcement.sh`, `test-json-set-string-field.sh`, `test-skill-version-delta.sh`, `test-update-zskills-version-surface.sh` + 4 canaries from Phase 6); 1 hook extension; 1 commit-skill extension; 1 update-zskills overhaul; 1 briefing tweak; 2 schema updates; plan + reference docs. (refine-plan F-R2-4: prior "6 new scripts, 6 new tests" undercounted; recounted from work items.)
+  - **Rebase-clean preflight (carryover from F-DA5).** Before final landing, re-run the Phase 5a.0 file-path-grep preflight (`gh pr list --state open --limit 100 --json number,title,files` piped through `grep -F 'skills/update-zskills/'`). Abort if any open PR has appeared since Phase 5a. Do NOT use the un-supported `gh pr list --search 'in:files ...'` form (refine-plan F-DA-7).
   - Scope assessment: stay within stated phase contracts.
   - Full test suite run captured to `.test-results.txt`.
   - Manual smoke: helpers, mirror parity, conformance, all 4 canaries.
@@ -1337,3 +1601,215 @@ This plan went through **three rounds** of `/draft-plan` adversarial review. Rou
 - **Mirror-only skills (`playwright-cli`, `social-seo`) marked out of scope** for migration (F-R6).
 
 The trade-off taken: the hash adds machinery (a new helper script, a canonicalization rule, an additional CI check) in exchange for closing two CRITICAL failure modes that pure CalVer could not. Migrating CalVer+hash → SemVer (if plugin distribution lands) is a one-time mechanical bump, costing less than living with the failure modes now.
+
+---
+
+## Drift Log — Round 1 (refine-plan)
+
+The plan was drafted 2026-04-30. /refine-plan ran 2026-05-02. Between those two dates, eight PRs landed on `main`:
+
+| PR # | Subject | Impact on this plan |
+|------|---------|---------------------|
+| #159 | `pr-landing-unification` extract `/land-pr` from 5 duplicating skills | **CORE_COUNT drift 25 → 26.** Added `skills/land-pr/` directory. Phase 3.2 sanity gate (`test "$CORE_COUNT" = "25"`) would hard-fail today — re-anchored as a lower-bound assertion. Threaded through Overview, Phase 3 prose, Phase 3.6 expected counts, Phase 3 ACs, Phase 5a.5 delta-script enumeration (now also iterates block-diagram/), Phase 6.7 cumulative diff stat. |
+| #160 | `/land-pr` validation phase | Lands inside `skills/land-pr/` — counted in #159's drift. |
+| #161-#166 | `pr-landing-unification` migration phases | Re-wires `/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix` to call `/land-pr`. Source content of those 5 skills changed but no count/path changes. Phase 3 enumeration picks them up automatically. |
+| #167 | `chore(devcontainer): track .playwright/cli.config.json` | Outside skill dirs; no impact. |
+| #168 | `fix(dashboard): make modal dismissable + absorb dashboard config block` | No skill-tree shape change. Re-shuffled `skills/zskills-dashboard/` content but path counts unchanged. |
+| #169 | `fix(skills): add Agent-tool-required preflight to 5 multi-agent skills` | Added `## Preflight` block to `refine-plan`, `draft-plan`, `draft-tests`, `research-and-plan`, `research-and-go`. Phase 3.3's pass-2 hash captures the preflight content automatically — no plan change required. Surfaced explicitly so a future refiner doesn't think "did the plan know about #169?" |
+| #170 | `fix(tests): materialize temp worktree so worktree-portable case runs in CI` | Test-only; no plan impact. |
+| #171 | `fix(dashboard): move config migration to /update-zskills + schema` | **TWO impacts.** (a) Added `dashboard.work_on_plans_trigger` field to `config/zskills-config.schema.json`. Phase 5a.3 must add `zskills_version` as a sibling top-level field WITHOUT touching `dashboard` block — added explicit AC and prose guard. (b) Added Step 3.6 "Backfill dashboard.work_on_plans_trigger if absent" to `skills/update-zskills/SKILL.md` at line 286. Shifted everything below by ~30 lines: Step 6 (gap report) is now at 559 (was ~542), Step G (final report) at 1221 (was ~1202), the `Updated: N skills` line at 1283 (was ~1260). Phase 5b.1 line citations (Sites A/B/C) re-anchored to text instead of line numbers. |
+| #172 | `docs(sprint)` record of 169/170/171 | No code; no impact. |
+
+### Skill-count drift consolidated
+
+The literal counts "25 core", "28 total", "25 + 3 = 28" were correct at plan-write (2026-04-30) and stale at refine-time (2026-05-02). Plan strategy: replace literals with derivation-driven enumeration where feasible; where a literal must remain, anchor it to the migration-time `$CORE_COUNT + $ADDON_COUNT` expression. **Sites patched** (in remaining phases — historical Round-2/3 narrative left intact since it's a historical record):
+
+- Overview line 9 — count phrasing replaced with "every source skill under skills/" + a parenthetical noting the live count is derivation-driven
+- Progress Tracker row for Phase 3
+- §1.6 Mirror-only skills prose (count-free phrasing)
+- §1.7 Block-diagram add-ons prose (parenthetical noting current vs draft-time count)
+- §1.8 Per-skill CHANGELOG rejection rationale ("~30 files")
+- §1.9 Migration prose
+- Hash collision budget (current fleet: ~30 skills)
+- Phase 3 heading + Goal
+- Phase 3.2 sanity gate (now lower-bound + structural assertion, NOT equality)
+- Phase 3.6 expected pass counts (re-anchored to `$CORE_COUNT + $ADDON_COUNT`)
+- Phase 3.7 CHANGELOG body
+- Phase 3.8 commit message
+- Phase 3 atomicity prose
+- Phase 3 ACs (count check, conformance pass count, "all 28 skills")
+- Phase 5a AC for `skill-version-delta.sh` line count (now `>= $CORE_COUNT + $ADDON_COUNT`)
+- Phase 6.7 cumulative diff stat
+
+### Line-number drift in `skills/update-zskills/SKILL.md`
+
+PR #171 added ~30 lines at line 286 of `update-zskills/SKILL.md`. All Phase 5b.1 line citations re-anchored to **heading text** rather than line numbers (defense against future drift):
+
+- Site A: was "Step 6, lines ~542-595" → now "`### Step 6 — Produce the gap report`; locate via `grep -n`"
+- Site B: was "lines ~1202-1218" → now "`#### Step G — Final report`; locate via `grep -n`"
+- Site C: was "lines ~1260-1269" → now "`Updated: N skills` line inside `### Pull Latest and Update`'s step `6. Report:`; locate via `grep -n`"
+
+Phase 4.4 (commit-skill insertion site) anchored similarly — by `## Phase 5 — Commit` heading text rather than the existing `line 239` cite.
+
+### Pre-existing-state surprises discovered
+
+- **`__pycache__` contamination in working tree.** `skills/briefing/scripts/__pycache__/` and `skills/zskills-dashboard/scripts/zskills_monitor/__pycache__/` exist as untracked artifacts whenever briefing.py or the zskills_monitor server runs. The original Phase 3.6 cleanliness loop used `find` to assert no dotfiles/artifacts under skill dirs — would hard-fail on day-zero migration. Cleanliness loop now scoped to `git ls-files` so the working-tree noise doesn't trip the gate; tracked artifacts (a real regression) still fail loudly. Phase 6.1 canary now MATERIALIZES a `__pycache__/` artifact in its sandbox to assert the working-tree variant still passes (no false-green from sandbox cloning) AND `git add`-ing the artifact triggers a fail (regression detection).
+- **`.gitkeep` is git-tracked AND empty.** `skills/zskills-dashboard/scripts/zskills_monitor/static/.gitkeep` is intentionally tracked. Phase 2.3's `file --mime ... charset=binary` rejection rule would trip on it because `file --mime` reports `inode/x-empty; charset=binary` for any zero-byte file. Phase 2.3 now guards with `[ -s "$f" ]` — empty files pass through (treated as zero-byte text, no projection effect). Phase 3.6 cleanliness loop allow-lists `.gitkeep` explicitly (universal Unix idiom for tracking empty directories).
+- **`gh pr list --search 'in:files ...'` does not work.** The `in:files` qualifier is a `gh search prs` qualifier, not a `gh pr list --search` qualifier. The original Phase 5a.0 preflight silently returned empty regardless of actual PR state (false-green). Re-written to use `gh pr list --json files` + post-filter via `grep -F`.
+- **PR #169 preflight blocks in 5 multi-agent skills.** Mirror parity verified clean (no diff between `skills/<name>/SKILL.md` and `.claude/skills/<name>/SKILL.md` for any of the 5). Phase 3.3 pass-2 hash captures the preflight content automatically; subsequent edits will trip the normal bump rule. No code change needed; documented here for future refiners.
+
+---
+
+## Plan Review — Round 1 (refine-plan)
+
+| Finding | Severity | Disposition | Rationale | Verification outcome |
+|---------|----------|-------------|-----------|----------------------|
+| F-R1 | CRIT | Fixed | Skill-count drift consolidated. Sites patched: Overview line 9, Progress Tracker phase 3, §1.6, §1.7, §1.8, §1.9, hash collision budget prose, Phase 3 heading, Phase 3 Goal, Phase 3.2 sanity gate (now lower-bound + structural, not equality), Phase 3.6 expected counts, Phase 3.7 CHANGELOG body, Phase 3.8 commit-msg, atomicity prose, Phase 3 ACs (×3), Phase 5a delta-script AC, Phase 6.7 cumulative diff. Round History narrative left intact as historical record. | Verified — `find skills -maxdepth 1 -mindepth 1 -type d -exec test -f '{}/SKILL.md' \; -print \| wc -l` returns 26; PR #159 (`skills/land-pr/`) confirmed via `git log --oneline`. |
+| F-R2 | HIGH | Fixed (consolidates with F-R1) | Phase 3.2 sanity gate replaced with structural lower-bound + log; downstream assertions now reference `$CORE_COUNT + $ADDON_COUNT` derivation, not literal "28". | Verified — same enumeration command. |
+| F-R3 | HIGH | Fixed | Site A line citation re-anchored to `### Step 6 — Produce the gap report` heading text. | Verified — `grep -n '### Step 6' skills/update-zskills/SKILL.md` → 559 (was ~542 in plan; PR #171 shifted). |
+| F-R4 | MED | Fixed | Site B line citation re-anchored to `#### Step G — Final report` heading text. | Verified — `grep -n '#### Step G' skills/update-zskills/SKILL.md` → 1221 (was ~1202 in plan). |
+| F-R5 | MED | Fixed | Site C line citation re-anchored to `Updated: N skills` text + `### Pull Latest and Update` heading. | Verified — `grep -n 'Updated: N skills' skills/update-zskills/SKILL.md` → 1283 (was ~1260 in plan). |
+| F-R6 | LOW | Justified | PR #171's Step 3.5/3.6 are nested inside Step 0.5 (config-write path), not in the audit/install/update report sites that Phase 5b touches; no plan-text collision. Drift Log notes the schema-survival concern (now also covered by F-R9 fix). | Verified — `grep -n '3\.5\|3\.6' skills/update-zskills/SKILL.md` confirms 275/286 nested under Step 0.5 (line 213). |
+| F-R7 | LOW | Justified | PR #169 preflight blocks in 5 multi-agent skills are part of HEAD content; Phase 3.3 pass-2 hash captures automatically; subsequent edits trip the normal bump. Drift Log notes for future refiners. | Verified — preflight present in all 5 skills at the cited lines; mirror parity diff -q clean. |
+| F-R8 | LOW | Fixed | Phase 1.3 reworded as idempotent verify ("if absent for any reason, add a row matching the existing format; do NOT add a second row"). | Verified — `grep -n 'SKILL_VERSIONING' plans/PLAN_INDEX.md` returns existing row at line 17/18. |
+| F-R9 | MED | Fixed | Phase 5a.3 prose explicitly forbids touching `dashboard`, `commit`, `execution`, `testing`, `dev_server`, `ui`, `ci` blocks; new AC asserts `work_on_plans_trigger` survives AND `zskills_version` is added. | Verified — `grep -n work_on_plans_trigger config/zskills-config.schema.json` returns line 150 (PR #171). |
+| F-R10 | MED | Fixed | Hook FILE_PATH normalization upgraded to `realpath --relative-to` with string-strip fallback that asserts no leading slash. Phase 4.6 tests extended with absolute-path and relative-path cases (12 hook cases total, AC raised to ≥ 20 passes). | Verified — bash semantics for `${var#prefix}` confirm the documented edge cases. |
+| F-R11 | LOW | Fixed | §1.6 prose rewritten count-free ("two skills live ONLY in `.claude/skills/` ... every other entry has a `skills/<name>/` source counterpart"). | Verified — `comm -23 <(ls .claude/skills/ \| sort) <(ls skills/ \| sort)` → playwright-cli, social-seo. |
+| F-R12 | LOW | Justified | "≤ 7 phase commits" in Phase 6 ACs is achievable per current phase plan (5a.11 + 5a.11.5 land in same 5a commit; 4.9-4.11 in same Phase 4 commit). The reviewer's softening suggestion ("each phase lands as a single commit; fix-up commits acceptable if folded in") is a reasonable refinement but not load-bearing — the existing AC reads "≤ 7" not "= 7", so a fix-up commit just nudges the count without breaking the AC. No edit. | Judgment — no verifiable anchor (future state). |
+| F-R13 | HIGH | Fixed | Phase 5a.5 `skill-version-delta.sh` loop extended to iterate both `skills/*/` and `block-diagram/*/`; output now includes a `kind` (core/addon) column; renderer-side filter on `--with-block-diagram-addons` documented. Phase 5a.8 test fixtures extended with add-on cases. | Verified — Phase 5a.5 pseudocode reading; §1.7 parity promise. |
+| F-R14 | LOW | Fixed | Phase 4.8 prose explicitly scopes the deny-list to skill content only (`skills/<name>/**` and `block-diagram/<name>/**`); plan, references, CHANGELOG out of scope. Verifier instructed to read `tests/test-skill-conformance.sh` to confirm scoping BEFORE updating `forbidden-literals.txt`. | Verified — plan file embeds many `2026.04.30+xxxxxx` examples; broad scoping would self-fire. |
+| F-R15 | LOW | Fixed | `resolve-repo-version.sh` comment cites `RELEASING.md:44-46` and notes regex must update with release scheme. | Verified — `git tag --list` → `2026.04.0`; RELEASING.md:44-46 documents zero-indexed `YYYY.MM.N`. |
+| F-R16 | LOW | Justified | Phase 5a.0 preflight already targets `skills/update-zskills/`, not `skills/commit/` (Phase 4's surface). Sequential phase landing means by the time 5a.0 runs, Phase 4's PR is merged. Reviewer's suggestion is a documentation nicety; no functional fix needed. The 5a.0 prose was already substantially rewritten by F-DA-7 fix; further nuance can wait. | Judgment — no verifiable anchor; sequential ordering verified by phase dependency graph. |
+| F-R17 | LOW | Justified | `grep -c 'test-skill-version-canary' tests/run-all.sh returns 4` is correctly scoped to the canary string only; other Phase 2/4/5a tests use different names. Reviewer concurs ("AC is correct; no change"). | Judgment — pattern is specific to canaries. |
+| F-R18 | LOW | Justified | `! -name '.*'` filter is correct as defense-in-depth; `.landed` lives at WORKTREE root, never inside skill dirs. No code change. (Reviewer's suggestion to document this in §1.1 is documentation polish only.) | Verified — `find skills /workspaces/zskills/block-diagram -maxdepth 2 -name '.*' -type f` returns nothing. |
+| F-R19 | LOW | Fixed | Phases 4.11, 5a.13, 5b.8 reworded to match Phase 3.7 verbatim ("Append CHANGELOG.md entry under today's date heading (create the date heading if absent), per the §1.8 canonical template"). | Judgment — text consistency. |
+| F-R20 | MED | Fixed | Phase 6.4 multi-edit-day sub-case now cites the underlying Phase 4.1 hook predicates (`on_disk_ver != head_ver` AND `cur_hash != head_hash` → both fall through). | Verified — Phase 4.1 lines 703-714 walked manually. |
+| F-R21 | LOW | Justified | Naming hygiene only; "2.5" sub-step style matches existing `update-zskills` precedent (3.5/3.6 in Step 0.5). No code change. | Judgment. |
+| F-DA-1 | CRIT | Fixed (consolidates with F-R1) | Phase 3.2 hardcoded `test "$CORE_COUNT" = "25"` replaced with structural lower-bound assertion + log; AC at line 601 (now 715-ish post-edit) re-anchored similarly. | Verified — `find skills ... \| wc -l` → 26. |
+| F-DA-2 | CRIT | Fixed (consolidates with F-R1) | "28 total" / "25 + 3" / "28 PASS" hardcoded literals replaced with derivation-driven references throughout remaining phases; original Round-2/3 narrative left intact as historical record. | Verified — same as F-R1. |
+| F-DA-3 | MED | Justified — evidence did not reproduce | Plan asserts briefing's "Z Skills Update Check" is at "lines 339-356"; DA claimed body at 343-360. Re-verification: heading at line 339, body 341-355, next section at 357 — plan's range INCLUDES the heading and IS correct. DA's "off by 2-4" claim does not reproduce. No edit needed. | Verified — `grep -n '^## Z Skills Update Check' skills/briefing/SKILL.md` → 339; `awk 'NR==339,NR==356'` shows complete section. |
+| F-DA-4 | CRIT | Fixed | Phase 3.6 cleanliness loop scoped to `git ls-files` (tracked content only) — working-tree `__pycache__` no longer trips the gate; `.gitkeep` allow-listed explicitly. Conformance still detects real regressions (tracked dotfiles, tracked `__pycache__`/`node_modules`). | Verified — `find skills -name '__pycache__' -type d` → 2 hits (briefing, zskills-dashboard); `git ls-files skills/zskills-dashboard \| grep gitkeep` confirms `.gitkeep` is tracked. |
+| F-DA-5 | HIGH | Fixed | Phase 2.3 `file --mime` rejection now guarded with `[ -s "$f" ]` — empty files pass through as zero-byte text. | Verified — `file --mime <empty>` → `inode/x-empty; charset=binary` (would false-positive without the size guard). |
+| F-DA-6 | HIGH | Fixed (consolidates with F-R3, F-R4, F-R5) | Sites A/B/C re-anchored to heading text + `grep -n` recipes. | Verified — see F-R3/4/5. |
+| F-DA-7 | MED | Fixed | Phase 5a.0 preflight rewritten to use `gh pr list --json files` + post-filter via `grep -F`; the broken `--search 'in:files ...'` form is gone. Phase 6.7 re-run preflight matched. Title-only fallback offered as informational sibling check. | Verified — empirical `gh pr list --search "in:files ..."` confirms no support; `gh search prs` is the supported path. |
+| F-DA-8 | HIGH | Fixed | `json-set-string-field.sh` rewritten to use `awk` (metacharacter-clean) for both update and insert paths; preserves file mode via `chmod --reference`; verifier instructed to check `apply-preset.sh` for an existing factored helper BEFORE adding the new file. Phase 5a.7 test extended with `&` / `\1` / `|` / file-mode-preservation cases. | Verified — `man sed` confirms `&` and `\N` are sed-special; `man mktemp` confirms 0600 default. |
+| F-DA-9 | LOW | Fixed (partial — DA over-claimed) | Branch 3 outer regex tightened from `(^|/)(skills\|block-diagram)/[^/]+/.*$` → `(^|/)(skills\|block-diagram)/([^/]+)/[^/]+` (requires at least one path segment after the skill name). Defensive, not load-bearing. **Re-verification: DA claimed `block-diagram/README.md` matches; it does NOT** — `[^/]+` requires the second segment to itself contain a slash, which `README.md` (no slash) doesn't. The screenshots case (`block-diagram/screenshots/foo.png`) DOES match both old and new — gracefully no-ops via downstream `[ -f "$skill_md" ]` check. | Verified — `echo "block-diagram/README.md" \| grep -E ...` → no match (DA was wrong on this); `echo "block-diagram/screenshots/foo.png" \| grep -E ...` → match (DA was right). Tightened regex anyway as defensive cleanup. |
+| F-DA-10 | MED | Fixed (consolidates with F-R13) | Same fix as F-R13 — `skill-version-delta.sh` iterates both source roots; `kind` column added; renderer-filter documented. | Verified — same as F-R13. |
+| F-DA-11 | MED | Fixed | Phase 3.3 fixed-point property block extended with explicit invariant: "between pass 1 and pass 2, NO other file under any `<skill-dir>/` may be modified." | Verified — `grep -n 'no child-file edits\|Invariant' plans/SKILL_VERSIONING.md` returns 0 before edit; the rule was missing. |
+| F-DA-12 | LOW | Fixed (consolidates with F-R8) | Same as F-R8: Phase 1.3 reworded as idempotent verify. | Verified — see F-R8. |
+| F-DA-13 | LOW | Fixed | Phase 4.4 insertion site re-anchored to `## Phase 5 — Commit` heading text via `awk` recipe; line-239 cite preserved as a refine-time data point but no longer load-bearing. | Verified — `grep -n '^## Phase 5' skills/commit/SKILL.md` → 239 today; matches plan. |
+| F-DA-14 | HIGH | Fixed | Phase 6.1 canary now materializes a `__pycache__/` artifact in its sandbox AND tests both the untracked case (cleanliness should pass — same as F-DA-4 fix) AND the tracked case (cleanliness MUST fail). Tied pair with F-DA-4 — the cleanliness scoping change makes the canary honest. | Verified — `git ls-files skills/briefing \| grep -c __pycache__` → 0 confirms the artifact is untracked; sandbox-clone semantics walked through. |
+| F-DA-15 | MED | Fixed (consolidates with F-R3, F-R4, F-R5, F-DA-6) | Phase 5a.0 preamble explicitly tells the implementing agent to "re-derive the actual line numbers / anchor text from current state — the file has shifted since plan-draft (PR #171, 2026-05-02 added ~30 lines)." Sites A/B/C anchored to heading text. | Verified — `git log --oneline -- skills/update-zskills/SKILL.md \| head -3` shows PR #171 as most recent. |
+| F-DA-16 | MED | Fixed (consolidates with F-R10) | Same fix as F-R10: hook normalizes via `realpath --relative-to` with string-strip fallback; Phase 4.6 tests extended. | Verified — see F-R10. |
+| F-DA-17 | LOW | Fixed | Phase 5b AC for `--rerender` strengthened: now asserts BOTH stdout AND `managed.md` are version-data-free, AND that running `update-zskills` (without `--rerender`) DOES populate version data. The contrast verifies the boundary is intentional. | Verified — `grep -nE 'Repo version\|metadata.version' CLAUDE_TEMPLATE.md` → 0 confirms the hollow-check criticism. |
+
+**Summary**
+
+- Total findings: 38 (21 reviewer + 17 DA)
+- Fixed: 28
+  - F-R1, F-R2, F-R3, F-R4, F-R5, F-R8, F-R9, F-R10, F-R11, F-R13, F-R14, F-R15, F-R19, F-R20, F-DA-1, F-DA-2, F-DA-4, F-DA-5, F-DA-6, F-DA-7, F-DA-8, F-DA-9, F-DA-10, F-DA-11, F-DA-12, F-DA-13, F-DA-14, F-DA-15, F-DA-16, F-DA-17 (counting consolidations: F-R1/F-DA-1/F-DA-2 are one logical fix at many sites, etc.; the disposition table marks consolidations explicitly)
+- Justified: 9
+  - F-R6 (PR #171 nested in Step 0.5; no collision)
+  - F-R7 (PR #169 preflight; hash captures automatically)
+  - F-R12 (≤ 7 phase commits achievable; reviewer's softening is polish)
+  - F-R16 (Phase 4 vs 5a.0 preflight scope correct as written)
+  - F-R17 (canary AC is well-scoped; no change)
+  - F-R18 (`! -name '.*'` filter is defense-in-depth; correct)
+  - F-R21 (naming hygiene only; matches precedent)
+  - F-DA-3 (evidence did NOT reproduce — briefing line 339 is correct in plan; DA was wrong)
+  - F-DA-9 partly justified (DA's `block-diagram/README.md` claim does not reproduce; regex tightened anyway as defensive cleanup, so net Fixed — but DA was over-claiming on the README case)
+
+Round 1 disposition complete. Convergence is the orchestrator's call.
+
+---
+
+## Drift Log — Round 2 (refine-plan)
+
+### Regression closure: `json-set-string-field.sh` awk pseudocode
+
+Round 1's F-DA-8 fix replaced sed (vulnerable to `&` / `\1` metacharacter expansion in `$VALUE`) with awk (metacharacter-clean by construction). The awk replacement was not mentally simulated end-to-end before landing, and shipped two concrete bugs:
+
+- **Update path** (Round 2 F-R2-3 / F-DA-R2-2). The arithmetic at `before = substr($0, 1, i + length(pat) + colon_part_len - 1)` plus `print before v "\""` produced output that dropped the trailing comma whenever the field being updated was a middle field (any field followed by `,`) — empirically reproduced on `{ "zskills_version": "OLD", "other": "value" }` → `{ "zskills_version": "2026.04.0"\n  "other": "value" }`. Invalid JSON. Phase 5b.2 writes `zskills_version` into `.claude/zskills-config.json`; if any other field landed below it, every consumer of that config would break on next read.
+- **Insert path** (Round 2 F-R2-6). The `awk '/^\}[[:space:]]*$/ && !done { print "  \"" k "\": \"" v "\","; ...'` form unconditionally wrote a trailing comma. On an empty `{}` object the result was `"key": "v",\n}` — invalid JSON. On a non-empty object the result was `"prior": "v"\n"new": "v",` — invalid JSON because the prior last field gained no comma.
+
+Round 2 closure: rewrote both paths.
+
+- Update path now uses one outer `match($0, ...)` against the full `"key"<ws>:<ws>"<value>"` shape, slices the line into `pre / head / post`, then a second `match(head, /"[^"]*"$/)` to surgically replace just the value's quoted portion. Whatever follows the closing quote (trailing comma, newline, brace, etc.) lands in `post` byte-for-byte.
+- Insert path now mirrors `apply-preset.sh:99-115`'s comma-aware pattern: scan for the last non-blank line before the outer `}`, add a comma to that line if it doesn't already end in `,` or `{`, then emit the new field WITHOUT a trailing comma.
+
+Verified empirically against five canonical inputs (insert empty, insert non-empty, update last, update middle, special-char value). Output piped through `python3 -c "json.load(sys.stdin)"` succeeds in all five.
+
+Phase 5a.7 test plan extended from 8 to 11 cases. New cases explicitly cover: insert-into-empty-`{}` (no trailing comma); insert-into-non-empty (prior field gets comma); update-middle-field-with-trailing-comma-preserved; key-as-substring-of-value (regex anchoring). Each case MUST pipe through a JSON validator — grep-based assertions would have missed these bugs.
+
+### Portability: `realpath --relative-to` is GNU-only
+
+Round 2 F-DA-R2-1. Round 1's hook normalization assumed `command -v realpath` was sufficient — but BSD/macOS `realpath` exists at `/usr/bin/realpath` AND lacks the `--relative-to` flag, so the probe passed and the actual call failed silently. Round 2 swapped the probe-by-name for probe-by-invocation: `realpath --relative-to=... 2>/dev/null` AND check the result is non-empty. If it fails OR the result starts with `/`, fall through to the string-strip path. Applied to both occurrences (lines ~684 and ~727 of the plan).
+
+### WARN-on-fallback diagnostic
+
+Round 2 F-R2-1 (refiner-surfaced gap #2). The string-strip fallback in the hook silently no-oped when `$REPO_ROOT` and `$FILE_PATH` were symlink-divergent, leaving consumers to report "the hook didn't fire" with no debugging trail. Round 2 added a one-line `printf 'WARN: ...' >&2` before the silent `exit 0`, gated on the same `case "$FILE_PATH_REL" in /*` check that triggers the no-op. Preserves the safer-failure-mode property (no false-positive warns) while making the failure observable.
+
+### Sandbox guard for canaries
+
+Round 2 F-R2-2 / F-DA-R2-6 (refiner-surfaced gap #3). Phase 6.1's setup says "clone /workspaces/zskills into sandbox" then later runs `git add __pycache__` against an environment-resolved path. If `$REPO` or `$REPO_ROOT` were misconfigured or shadowed, the `git add` could land against the live repo. Round 2 added a defensive `case "$(realpath "$PWD")" in "$(realpath "$REPO_ROOT")"|"$(realpath "$REPO_ROOT")"/*) exit 1` guard, with prose telling 6.2/6.3/6.4 to apply the same pattern.
+
+### Phase 6.7 cumulative diff stat: 6 → 7 scripts, 6 → 10 tests
+
+Round 2 F-R2-4. Re-derived the cumulative count directly from work items (`grep -E '^- \[ \] [0-9]+\.[0-9]+ — Author|Add' plan` shaped enumeration). Plan now lists scripts and tests by name rather than literal counts. Round 1 patched many counts but missed this one.
+
+### Phase 5a.6 surfaced-gap #1 (apply-preset.sh reuse) — confirmed non-load-bearing
+
+Round 2 F-R2-3 part A and DA Round 2 surfaced-gap #1. Read `skills/update-zskills/scripts/apply-preset.sh` (191 lines): it has a `sed_inplace` helper that hardcodes the field names `landing` and `main_protected`, and an `awk` block for execution-block insertion. Neither is a generic JSON-set-string-field helper. The plan's verifier mandate ("read apply-preset.sh, decide reuse vs. duplicate") is correctly worded — the verifier's check will conclude "no reusable helper exists, write the new file." No plan-text change needed. The Round 2 awk rewrite (above) borrows the comma-aware INSERT pattern from `apply-preset.sh:99-115` rather than reusing a function — which is the right level of factoring.
+
+### Other Round 2 finds
+
+- **F-DA-R2-3** (embedded quotes in value). The awk pattern `[^"]*` stops at the first inner quote, so values containing `\"` (JSON-escape) don't round-trip. Out of scope for v1; documented as a Phase 5a Non-Goal. The actual usage (date+hash version string) doesn't need them.
+- **F-DA-R2-4** (typo "Those two These"). Fixed in §1.6 prose.
+- **F-DA-R2-5** (5a.0 FAIL message dumps `$raw` instead of `$hits`). Fixed: changed to `printf '%s\n' "$hits" >&2` so the failure message shows only matching PRs, not every open PR's JSON.
+- **F-R2-7** (two-pass invariant unenforced). Phase 3.3 now snapshots `git ls-files -m -o --exclude-standard skills block-diagram` at start of pass 1 and compares against pass 2's snapshot, filtered to non-SKILL.md paths (since SKILL.md IS expected to change). Editor swap-files / background-process artifacts now produce a loud failure rather than a confusing hash-mismatch downstream.
+- **F-R2-8** (`chmod --reference` GNU-only). Added probe-and-fallback via `stat -c '%a' || stat -f '%Lp'` to `json-set-string-field.sh`. Defensible `2>/dev/null` use (probe-then-detect-via-exit-code), per CLAUDE.md.
+- **F-R2-9** (gh pr list 100 cap). Added a soft warn when the cap is hit, with a recommendation to re-run with `--limit 1000`. Not blocking.
+- **F-R2-10** (missing test-zskills-resolve-config.sh AC). Added two ACs to Phase 5a: `grep -c 'ZSKILLS_VERSION' tests/test-zskills-resolve-config.sh >= 1` and `bash tests/test-zskills-resolve-config.sh exits 0`. Promised work in 5a.2 now actually verified.
+- **F-R2-11** (PR #169 verification noted but not pursued by reviewer). Verifier work item; not a plan finding.
+- **F-R2-5** (Round 1 disposition prose for F-DA-9 muddled). Round 1 disposition table is EFFECTIVELY-IMMUTABLE per orchestrator constraints. Cannot rewrite. Justified — outcome was correct, only prose explanation was sloppy.
+
+---
+
+## Plan Review — Round 2 (refine-plan)
+
+| Finding | Severity | Disposition | Rationale | Verification outcome |
+|---------|----------|-------------|-----------|----------------------|
+| F-R2-1 | LOW | Fixed | Hook fallback path now emits a `WARN:` diagnostic before the silent `exit 0`, applied at both occurrences (Phase 4.1 outer + inner pseudocode). | Verified — re-read both edited blocks; diagnostic message names both `$FILE_PATH` and `$REPO_ROOT`. |
+| F-R2-2 | LOW | Fixed | Phase 6.1 setup now includes a `case "$(realpath "$PWD")"` guard against the live repo; prose generalizes to canaries 6.2/6.3/6.4. | Verified — sandbox-guard pseudocode embedded in 6.1 setup. |
+| F-R2-3 (part A) | N/A | Justified — non-load-bearing | Verifier-mandate to read `apply-preset.sh` is correctly worded; empirical check shows no reusable helper exists. | Verified — read apply-preset.sh; sed_inplace + execution-block awk only, no generic helper. |
+| F-R2-3 (part B) | HIGH | Fixed (regression) | awk update path rewritten to use single outer `match()` + slice into `pre/head/post`, then second `match(head, /"[^"]*"$/)` for surgical value replacement. Trailing context (commas, newlines, braces) preserved byte-for-byte. | Verified — empirical test on 5 canonical inputs; all outputs valid per `python3 -c "json.load(sys.stdin)"`. Reproduced original bug first (`,` dropped on middle-field update). |
+| F-R2-4 | LOW | Fixed | Phase 6.7 prose enumerates 7 scripts (by file name) and 10 tests (6 non-canary + 4 canaries) instead of literal count "6 + 6". | Verified — re-counted from `grep -E '5a\.[0-9]+ — Add' plan` and similar across phases; 7 scripts confirmed, 6 non-canary tests confirmed. |
+| F-R2-5 | LOW | Justified | Round 1 disposition table is EFFECTIVELY-IMMUTABLE per orchestrator constraints. F-DA-9's outcome was correct; only the prose rationale was muddled. Cannot rewrite without violating immutability. | Judgment — orchestrator constraint explicit. |
+| F-R2-6 | MED | Fixed (regression) | awk insert path rewritten to mirror `apply-preset.sh:99-115`'s comma-aware pattern: scan for last non-blank line before `}`, add `,` if needed, emit new field WITHOUT trailing comma. | Verified — empirical test on empty `{}` and non-empty `{...}` produced valid JSON outputs in both cases (Tests 4 and 5 of /tmp/test-fixed-awk.sh). |
+| F-R2-7 | LOW | Fixed | Phase 3.3 now snapshots non-SKILL.md `git ls-files` state at start of pass 1, compares to pass 2 snapshot, hard-fails on drift. | Verified — pseudocode embedded in Phase 3.3 prose; uses `git ls-files -m -o --exclude-standard skills block-diagram`. |
+| F-R2-8 | LOW | Fixed | `json-set-string-field.sh` now probes `chmod --reference` and falls back to `stat -c '%a'` / `stat -f '%Lp'`. Documented in helper header. | Verified — re-read helper pseudocode; probe pattern is `if ! chmod --reference="$FILE" "$TMP" 2>/dev/null; then ... fi`. |
+| F-R2-9 | LOW | Fixed | Phase 5a.0 preflight now warns when `gh pr list` returns ≥ 100 entries; recommends `--limit 1000` re-run. Not blocking. | Verified — `raw_count` derivation embedded in 5a.0; warn message names the soft cap. |
+| F-R2-10 | LOW | Fixed | Two new ACs added to Phase 5a: `grep -c ZSKILLS_VERSION tests/test-zskills-resolve-config.sh >= 1` AND test exits 0. | Verified — re-read Phase 5a Acceptance Criteria; new ACs present below the existing "verified by extending..." line. |
+| F-R2-11 | N/A | Out of scope | Reviewer noted as "verification I would do, not a finding." No action required. | N/A. |
+| F-DA-R2-1 | MED | Fixed | Hook normalization now probes `realpath --relative-to` BY INVOCATION rather than `command -v realpath` — captures BSD/macOS where flag is absent. Falls through to string-strip on either failure mode. | Verified — re-read both edited blocks; `if FILE_PATH_REL=$(realpath --relative-to=... 2>/dev/null) && [ -n "$FILE_PATH_REL" ]` pattern at both sites. |
+| F-DA-R2-2 | HIGH | Fixed (regression — same as F-R2-3 part B) | Same fix as F-R2-3 part B — awk update path rewritten. | Verified — empirical test reproduced the bug first, then verified the corrected pseudocode produces valid JSON. |
+| F-DA-R2-3 | LOW | Justified — out of scope for v1 | Embedded quotes (`\"` JSON escape) in string values explicitly excluded. Documented as Phase 5a Non-Goal. Real usage (date+hash version string) doesn't need them. | Verified — Phase 5a Non-Goals list updated. |
+| F-DA-R2-4 | LOW | Fixed | §1.6 typo "Those two These are out of scope" → "These are out of scope". | Verified — `grep 'Those two These' plan` returns no matches post-edit. |
+| F-DA-R2-5 | LOW | Fixed | Phase 5a.0 FAIL block prints `$hits` instead of `$raw` — only matching PRs surface, not every open PR's JSON. | Verified — `grep "printf '%s\\\\n' \"\\\$hits\" >&2" plan` matches the new line. |
+| F-DA-R2-6 | LOW | Fixed (consolidates with F-R2-2) | Same fix as F-R2-2 — sandbox guard added to Phase 6.1 setup with prose to apply uniformly. | Verified — see F-R2-2. |
+
+**Summary**
+
+- Round 2 substantive findings: 17 total (Reviewer 11 + DA 6).
+- Fixed: 14
+  - F-R2-1, F-R2-2, F-R2-3 (part B), F-R2-4, F-R2-6, F-R2-7, F-R2-8, F-R2-9, F-R2-10, F-DA-R2-1, F-DA-R2-2, F-DA-R2-4, F-DA-R2-5, F-DA-R2-6 (counting the awk-update-path fix once across F-R2-3-partB and F-DA-R2-2 — they are the same bug from two angles).
+- Justified: 3
+  - F-R2-3 (part A) — verifier-mandate is correctly worded; non-load-bearing.
+  - F-R2-5 — Round 1 disposition table is EFFECTIVELY-IMMUTABLE per orchestrator constraints; outcome was correct, only prose muddled.
+  - F-DA-R2-3 — embedded JSON-escapes in values are out of scope for v1; documented as Non-Goal.
+- Out of scope (no action): 1
+  - F-R2-11 — reviewer noted as "verification I would do, not a finding."
+
+**Headline**: Round 1 traded one bug class (sed-metacharacter expansion) for another (awk arithmetic produces invalid JSON on update-middle-field and insert-into-`{}`/non-empty cases). Round 2 closure rewrites both paths to match `apply-preset.sh`'s proven comma-aware pattern, expands Phase 5a.7 from 8 to 11 test cases, and gates each with a JSON validator. The portability concern (BSD/macOS `realpath --relative-to`, `chmod --reference`) was real and is now addressed via probe-and-fallback patterns. The remaining LOW/justified items are polish.
+
+Round 2 disposition complete. Convergence is the orchestrator's call.
