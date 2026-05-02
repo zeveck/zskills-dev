@@ -19,6 +19,23 @@ followed by `/run-plan` (execute).
 
 **Ultrathink throughout.**
 
+## Preflight — top-level dispatch required
+
+This skill `Skill`-loads `/research-and-plan` and `/run-plan`, which internally dispatch reviewer + devil's-advocate + refiner sub-agents in parallel. It MUST run in a context that has the `Agent` (or `Task`) tool available.
+
+Before doing any other work, verify your tool list contains `Agent` or `Task`. If neither is present, STOP and report:
+
+> ERROR: /research-and-go requires top-level Agent dispatch capability. This invocation is running as a subagent (no Agent tool — verified by inspecting your tool list). Subagents cannot dispatch sub-subagents (Anthropic design — https://code.claude.com/docs/en/sub-agents).
+>
+> Re-invoke as one of:
+>   - User slash command: `/research-and-go <description>`
+>   - Top-level `Skill` tool: `Skill(skill="research-and-go", args="<description>")`
+>   - Inline orchestration by a top-level Claude that has `Agent`
+>
+> Do NOT continue. Single-agent inline degradation produces rubber-stamp findings without the adversarial diversity this skill's value depends on. The CLAUDE.md memory anchor `feedback_multi_agent_skills_top_level.md` is the recurring failure mode this preflight catches.
+
+Do not proceed past this preflight without `Agent` access.
+
 ## Arguments
 
 ```
