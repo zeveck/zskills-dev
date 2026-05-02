@@ -1,5 +1,68 @@
 # Plan Report — Skill Versioning
 
+## Phase — 3 Migration [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSIONING.md
+**Status:** Completed (verified inline)
+**Worktree:** /tmp/zskills-pr-skill-versioning
+**Branch:** feat/skill-versioning
+**Commit:** 0aef328
+**Migration date:** 2026.05.02
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | Compute MIGRATION_DATE | Done | `2026.05.02` (TZ America/New_York) |
+| 3.2 | Enumerate skills (`-exec test -f '{}/SKILL.md' \;`) | Done | core=26, addon=3 (lower-bound gate, NOT pinned literal) |
+| 3.3 | Two-pass migration | Done | Pass 1: 29/29 placeholders; Pass 2: 29/29 real values; snapshot diff (filtered) = 0 non-SKILL.md drift |
+| 3.4 | Mirror via `mirror-skill.sh` | Done | 26 core skills mirrored; add-ons not mirrored per §1.6 |
+| 3.5 | Verify mirror parity (`diff -r`) | Done | 26/26 OK, 0 fail |
+| 3.6 | Conformance extension (3 new sections) | Done | +103 lines: cleanliness / version-frontmatter / mirror-parity |
+| 3.7 | CHANGELOG entry under `## 2026-05-02` | Done | `### Added — per-skill versioning` block |
+| 3.8 | Commit message | Done | `feat(skills): seed metadata.version on all source skills + extend conformance test` |
+
+### Verification (all 9 ACs)
+
+- AC #1 — Every source SKILL.md `metadata.version` matches strict regex: **OK** (verified by conformance loop = 29 PASS)
+- AC #2 — Source counts match enumeration: **OK** (core=26, addon=3)
+- AC #3 — Stored hash == fresh hash for every skill: **OK** (5-skill spot-check + conformance loop)
+- AC #4 — `diff -r` clean for every core mirror: **OK** (26/26)
+- AC #5 — Conformance test exits 0 with 3 sections: **OK** (cleanliness 30 PASS, version-frontmatter 29 PASS, mirror-parity 27 PASS [26 source-mirror + 1 allow-listed `playwright-cli`]; 0 fails)
+- AC #6 — `tests/test-mirror-skill.sh` exits 0: **OK** (8/8)
+- AC #7 — `tests/run-all.sh` exits 0: **OK** (1931/1931 PASS, 0 failed)
+- AC #8 — `grep -q "Added — per-skill versioning" CHANGELOG.md`: **OK**
+- AC #9 — Date-prefix uniformity: **OK** (all `2026.05.02+...`)
+
+Hash spot-check (deterministic + stored=fresh):
+- `run-plan` → `2026.05.02+73e6eb`
+- `briefing` → `2026.05.02+2fa4b3`
+- `commit` → `2026.05.02+86b98e`
+- `update-zskills` → `2026.05.02+600835`
+- `draft-plan` → `2026.05.02+8187cd`
+
+Verifier subagent skipped due to known Monitor anti-pattern; orchestrator did inline verification with foreground `timeout: 600000` bash.
+
+### Plan-text drift signals
+
+None.
+
+### Implementer notes
+
+- Single deviation from verbatim spec: cleanliness loop used `exit 1` instead of `return 1` (script is top-level, no enclosing function). Behavior preserved; path unreachable.
+- Snapshot-diff edge case noted by impl agent: `printf '%s\n' ""` yields empty-line vs no-output asymmetry; manually verified non-SKILL.md drift = 0 via `git ls-files | wc -l`. Worth refining the snapshot form in a future cleanup but not blocking.
+
+### Cross-phase dependencies
+
+- Phase 2 helpers (frontmatter-get/set, skill-content-hash) drive every step. All worked correctly first-try in production migration.
+- Phase 4 (Enforcement) now has a baseline state: every source skill has `metadata.version`. The hook + commit gate + CI extension can target a real population.
+
+### Next phase
+
+Phase 4 — Enforcement: drift-warn hook extension + `/commit` Phase 5 step 2.5 + CI gate (already in conformance test) + CLAUDE.md rule (already added in Phase 1). Scheduled via cron.
+
+---
+
 ## Phase — 2 Tooling [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSIONING.md

@@ -24,7 +24,7 @@ This plan adds a per-skill version field to SKILL.md frontmatter, defines a mech
 |-------|--------|--------|-------|
 | 1 — Decision & Specification (no code) | ✅ Done | `8133bde` | references/skill-versioning.md (287L, §1.1-1.11 + Appendix A/B); CLAUDE.md ## Skill versioning section; PLAN_INDEX.md unchanged (idempotent verify) |
 | 2 — Tooling: `frontmatter-get.sh` / `frontmatter-set.sh` / `skill-content-hash.sh` + tests | ✅ Done | `27effe5` | 3 helpers (251+300+276L); 2 test files (30+8 cases); 12 fixtures; smoke recipe in §1.10. Tests 1845/1845 PASS (+38 vs baseline 1807) |
-| 3 — Migration: seed every core + add-on skill + extend conformance test | ⬚ | | |
+| 3 — Migration: seed every core + add-on skill + extend conformance test | ✅ Done | `0aef328` | Two-pass migration on 26 core + 3 add-on = 29 SKILL.md (date 2026.05.02 + per-skill 6-char hash). 26 mirrored. Conformance test +103 lines (3 new sections). Tests 1931/1931 PASS (+86 vs 1845 baseline) |
 | 4 — Enforcement: drift-warn hook + `/commit` Phase 5 step 2.5 + CI gate + CLAUDE.md rule | ⬚ | | |
 | 5a — `/update-zskills` data plumbing (helpers + config + briefing) | ⬚ | | |
 | 5b — `/update-zskills` UI surface (3 insertion sites + tests) | ⬚ | | |
