@@ -283,6 +283,22 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    If the `commit` key is absent, add the whole block; if the `commit`
    block exists but lacks `co_author`, add only that field. Idempotent:
    re-running on an already-backfilled config is a no-op.
+3.6. **Backfill `dashboard.work_on_plans_trigger` if absent.** If the
+   existing config does not contain a `"dashboard"` block with a
+   `"work_on_plans_trigger"` field (e.g. configs written before the
+   `/zskills-dashboard` skill was introduced), splice in an empty
+   default so the dashboard server can read the field unconditionally.
+   Default value: `""` (empty string — disables the Run button until
+   the consumer wires a trigger script). The server is **read-only** on
+   `.claude/zskills-config.json` — adding the field here is the sole
+   migration point. Matches the same style as 3.5: targeted `Edit` or
+   small `sed`-based rewrite that preserves every other field
+   unchanged. If the `dashboard` key is absent, add the whole block; if
+   the `dashboard` block exists but lacks `work_on_plans_trigger`, add
+   only that field. Idempotent: re-running on an already-backfilled
+   config is a no-op. Detection regex (bash): test against
+   `\"dashboard\"[[:space:]]*:[[:space:]]*\{[^}]*\"work_on_plans_trigger\"`
+   — if it does NOT match, the backfill applies.
 4. Copy `config/zskills-config.schema.json` from `$PORTABLE` to
    `.claude/zskills-config.schema.json` in the target project (so the
    `$schema` reference in the config resolves correctly).
@@ -337,6 +353,9 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
      "ci": {
        "auto_fix": true,
        "max_fix_attempts": 2
+     },
+     "dashboard": {
+       "work_on_plans_trigger": ""
      }
    }
    ```

@@ -204,8 +204,17 @@ def resolve_port(
 
 
 # ---------------------------------------------------------------------------
-# Config load (also bootstraps the dashboard block on first run)
+# Config load (READ-ONLY on .claude/zskills-config.json)
 # ---------------------------------------------------------------------------
+#
+# The server NEVER writes to .claude/zskills-config.json. The
+# `dashboard.work_on_plans_trigger` field is declared in the schema and
+# added by /update-zskills on install/update against existing configs
+# (see skills/update-zskills/SKILL.md Step 3.6). If the field is absent
+# at server startup (consumer hasn't run /update-zskills since the field
+# was introduced), the server treats it as empty — the Run button is
+# hidden, /api/trigger returns 501. No config mutation, no json.dumps
+# reformatting churn.
 
 
 def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
@@ -220,32 +229,6 @@ def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
     except (json.JSONDecodeError, ValueError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
-
-
-def ensure_dashboard_config_block(main_root: pathlib.Path) -> None:
-    """Add `dashboard: {work_on_plans_trigger: ""}` to the config if
-    absent. This mutation is idempotent and uses an atomic write.
-
-    Per the plan: Phase 5 owns introduction of the block; downstream
-    phases assume it's present.
-    """
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    if not cfg_path.is_file():
-        return
-    try:
-        body = cfg_path.read_text(encoding="utf-8")
-        loaded = json.loads(body)
-    except (OSError, json.JSONDecodeError, ValueError):
-        return
-    if not isinstance(loaded, dict):
-        return
-    if isinstance(loaded.get("dashboard"), dict):
-        return
-    loaded["dashboard"] = {"work_on_plans_trigger": ""}
-    new_body = json.dumps(loaded, indent=2) + "\n"
-    tmp = cfg_path.with_suffix(cfg_path.suffix + ".tmp")
-    tmp.write_text(new_body, encoding="utf-8")
-    os.replace(str(tmp), str(cfg_path))
 
 
 # ---------------------------------------------------------------------------
@@ -1057,8 +1040,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Ensure .zskills/ exists before any state write
     (main_root / ".zskills").mkdir(parents=True, exist_ok=True)
 
-    # Bootstrap dashboard config block if missing
-    ensure_dashboard_config_block(main_root)
+    # Note: .claude/zskills-config.json is READ-ONLY for the server.
+    # The dashboard.work_on_plans_trigger field is added by
+    # /update-zskills (schema migration), not bootstrapped here.
 
     port = resolve_port(main_root, cli_port=args.port)
 

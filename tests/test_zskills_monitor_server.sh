@@ -201,11 +201,14 @@ else
   skip "ss not available — skipping 127.0.0.1 bind check"
 fi
 
-# Config-block bootstrap
+# Config is read-only for the server (issue #165). The fixture config
+# above does NOT include a dashboard block; the server must not mutate
+# the file on startup. /update-zskills owns the dashboard-block
+# migration (skills/update-zskills/SKILL.md Step 3.6), not the server.
 if grep -qE '"dashboard":' "$MR1/.claude/zskills-config.json"; then
-  pass "config-block bootstrap added dashboard block"
+  fail "server mutated zskills-config.json (added dashboard block) — must be read-only per issue #165"
 else
-  fail "dashboard block not added to config"
+  pass "server is read-only on zskills-config.json (dashboard block not added)"
 fi
 
 # SIGTERM exit ≤5s + PID removed
