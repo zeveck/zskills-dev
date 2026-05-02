@@ -14,7 +14,6 @@ Totals: 47 plans — 5 ready, 0 in progress, 18 complete, 21 canaries, 3 referen
 | [DRAFT_TESTS_SKILL_PLAN.md](DRAFT_TESTS_SKILL_PLAN.md) | 6 | 1 | Medium | Created 2026-04-26 |
 | [QUICKFIX_DO_TRIAGE_PLAN.md](QUICKFIX_DO_TRIAGE_PLAN.md) | 5 | 1a | Medium | Created 2026-04-26 |
 | [IMPROVE_STALENESS_DETECTION.md](IMPROVE_STALENESS_DETECTION.md) | 3 | 1 | Low | Created 2026-04-19 |
-| [SKILL_VERSIONING.md](SKILL_VERSIONING.md) | 7 (1,2,3,4,5a,5b,6) | 1 | Medium | Drafted 2026-04-30 via /draft-plan with 3 adversarial rounds (53 unique findings, 52 Fixed, 1 Justified). CalVer+hash format `YYYY.MM.DD+HHHHHH`; per-skill + repo-level versions; hook + /commit + CI 3-point enforcement; /update-zskills delta display |
 | [ZSKILLS_MONITOR_PLAN.md](ZSKILLS_MONITOR_PLAN.md) | 9 | 1 | Low | Created 2026-04-19; refined 2026-04-26 |
 
 ## In Progress
@@ -41,6 +40,7 @@ Totals: 47 plans — 5 ready, 0 in progress, 18 complete, 21 canaries, 3 referen
 | [RESTRUCTURE_RUN_PLAN.md](RESTRUCTURE_RUN_PLAN.md) | 5 | All phases done |
 | [SCRIPTS_INTO_SKILLS_PLAN.md](SCRIPTS_INTO_SKILLS_PLAN.md) | 7 | All phases done |
 | [SKILL_FILE_DRIFT_FIX.md](SKILL_FILE_DRIFT_FIX.md) | 6 | All phases done; landed 2026-04-29 |
+| [SKILL_VERSIONING.md](SKILL_VERSIONING.md) | 7 (1,2,3,4,5a,5b,6) | All phases done; completed 2026-05-02. CalVer+hash format `YYYY.MM.DD+HHHHHH`; per-skill + repo-level versions; hook + /commit + CI 3-point enforcement; /update-zskills delta display; 4 verification canaries (missed-bump, correct-bump, parallel-merge, revert) |
 | [SMOKE_DESIGN2A.md](SMOKE_DESIGN2A.md) | 2 | All phases done |
 | [TRACKING_FIX.md](TRACKING_FIX.md) | 3 | All phases done |
 | [TRACKING_SYSTEM.md](TRACKING_SYSTEM.md) | 5 | All phases done |

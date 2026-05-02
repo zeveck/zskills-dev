@@ -1,6 +1,8 @@
 ---
 name: model-design
 description: Design guidelines for creating well-laid-out block diagrams and state charts. Use when building or reviewing model files.
+metadata:
+  version: "2026.05.02+e45b5a"
 ---
 
 # Model Design Guidelines

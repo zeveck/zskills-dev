@@ -5,6 +5,8 @@ argument-hint: "[rebuild | next | details]"
 description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
+metadata:
+  version: "2026.05.02+03ddc6"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard

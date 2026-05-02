@@ -11,6 +11,8 @@ description: >-
   Completed phases are never modified (checksum-gated). Sister skill to
   /draft-plan, scoped to test specs.
   Usage: /draft-tests <plan-file> [rounds N] [guidance...]
+metadata:
+  version: "2026.05.02+778d35"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter

@@ -7,6 +7,8 @@ description: >-
   every/now/next/stop. Use sync to update trackers and verify/close
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
+metadata:
+  version: "2026.05.02+f2eea1"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint

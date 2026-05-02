@@ -6,6 +6,8 @@ description: >-
   Deep debugging for complex bugs. Enforces a disciplined workflow:
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
   it understands the root cause before writing any fix.
+metadata:
+  version: "2026.05.02+c1f5cb"
 ---
 
 # /investigate \<description or #issue> — Root-Cause Debugging

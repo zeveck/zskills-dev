@@ -5,12 +5,12 @@
 # Usage (one-line preamble at top of any skill bash fence that needs config):
 #   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 #   # vars now set: $UNIT_TEST_CMD $FULL_TEST_CMD $TIMEZONE $DEV_SERVER_CMD
-#   #               $TEST_OUTPUT_FILE $COMMIT_CO_AUTHOR
+#   #               $TEST_OUTPUT_FILE $COMMIT_CO_AUTHOR $ZSKILLS_VERSION
 #
 # Contract:
 #   - Reads .claude/zskills-config.json from $CLAUDE_PROJECT_DIR.
 #   - Pure bash regex (BASH_REMATCH); never invokes jq.
-#   - All 6 vars initialized to empty string BEFORE regex test
+#   - All 7 vars initialized to empty string BEFORE regex test
 #     (empty-pattern-guard from DRIFT_ARCH_FIX Phase 1).
 #   - Empty / missing / malformed config → empty vars, no abort.
 #   - Idempotent — sourcing twice yields the same vars.
@@ -26,13 +26,14 @@
 
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 
-# Initialize all 6 vars to empty FIRST (empty-pattern-guard).
+# Initialize all 7 vars to empty FIRST (empty-pattern-guard).
 UNIT_TEST_CMD=""
 FULL_TEST_CMD=""
 TIMEZONE=""
 DEV_SERVER_CMD=""
 TEST_OUTPUT_FILE=""
 COMMIT_CO_AUTHOR=""
+ZSKILLS_VERSION=""
 
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
@@ -57,6 +58,11 @@ if [ -f "$_ZSK_CFG" ]; then
   # from a hypothetical top-level "co_author".
   if [[ "$_ZSK_CFG_BODY" =~ \"commit\"[[:space:]]*:[[:space:]]*\{[^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     COMMIT_CO_AUTHOR="${BASH_REMATCH[1]}"
+  fi
+  # zskills_version: top-level optional string. The installed-version
+  # fingerprint of zskills (date+hash). Empty when not yet written.
+  if [[ "$_ZSK_CFG_BODY" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    ZSKILLS_VERSION="${BASH_REMATCH[1]}"
   fi
   unset _ZSK_CFG_BODY
 fi

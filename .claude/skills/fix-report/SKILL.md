@@ -7,6 +7,8 @@ description: >-
   land fixes to main, close GitHub issues, update trackers, and clean up
   worktrees. Covers the current SPRINT_REPORT.md AND any landed-but-unclosed
   issues from previous sprints.
+metadata:
+  version: "2026.05.02+a825c6"
 ---
 
 # /fix-report — Sprint Report Review & Landing

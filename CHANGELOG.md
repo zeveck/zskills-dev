@@ -1,5 +1,72 @@
 # Changelog
 
+## 2026-05-02
+
+### Added — `/update-zskills` UI surface for per-skill + repo-level version delta (Phase 5b)
+
+Phase 5b of plans/SKILL_VERSIONING.md wires the Phase 5a data plumbing
+into `skills/update-zskills/SKILL.md`'s three user-facing reports.
+**Site A** (audit gap report): appends a `Versions: zskills <inst>→<cur>;
+<N> skills changed` summary after the `Overall: ...` line, reading
+installed `zskills_version` via inline `BASH_REMATCH` on
+`.claude/zskills-config.json` (NOT `frontmatter-get.sh` — that helper
+is YAML-only) and the source clone's latest tag via
+`resolve-repo-version.sh`. **Site B** (install final report): adds a
+`Repo version:` line and a `Per-skill versions:` block listing each
+skill's `metadata.version` with `(new)` status; addon rows hidden by
+default, shown with `--with-block-diagram-addons`. **Site C** (update
+final report): replaces the single-line `Updated: N skills (list)`
+with a structured table — `Repo version: <old> → <new>`, then
+per-skill rows showing `<old> → <new>` for bumped skills and
+`<ver> (unchanged)` for the rest, plus a `New:` section. **Step F.5 /
+Pull Latest 5.7**: new mirror-the-tag-into-config step writes the
+source clone's latest tag into `.claude/zskills-config.json` as
+`zskills_version` via `json-set-string-field.sh` after install/update
+completes — surfacing the consumer-side version on subsequent audits.
+`--rerender` mode is unchanged and verified version-data-free by
+CONTRAST assertion in the new test (rerender silent /
+install+update populated). Tests:
+`tests/test-update-zskills-version-surface.sh` (23 cases) covers all
+three sites end-to-end against fixture state, the rerender CONTRAST,
+and the `json-set-string-field` round-trip; registered in
+`tests/run-all.sh`.
+
+### Added — `/update-zskills` data plumbing for per-skill + repo-level version delta (Phase 5a)
+
+Phase 5a of plans/SKILL_VERSIONING.md ships the plumbing layer for
+version-data UI. `zskills-resolve-config.sh` resolves a 7th var
+`ZSKILLS_VERSION` from a top-level `zskills_version` field in
+`.claude/zskills-config.json`. Two new helper scripts under
+`skills/update-zskills/scripts/`: `resolve-repo-version.sh` (extracts the
+latest `YYYY.MM.N` tag from the zskills source clone) and
+`skill-version-delta.sh` (iterates BOTH `skills/*/` and
+`block-diagram/*/`, emits tab-delimited `<name> <kind> <src> <inst>
+<status>` rows). A third helper, `json-set-string-field.sh`, performs
+no-jq, no-sed JSON top-level string-field writes (awk-based,
+metacharacter-clean). The `/briefing` "Z Skills Update Check" now reads
+the installed version from the canonical config helper and compares it
+against the source repo's latest tag, replacing the prior `git fetch
+--dry-run` heuristic. Schema gains an optional top-level
+`zskills_version` string field; existing `dashboard`/`commit`/
+`execution`/`testing`/`dev_server`/`ui`/`ci` blocks unchanged. Phase 5b
+will consume these helpers in `/update-zskills`'s SKILL.md UI sites.
+
+### Added — skill-version enforcement (commit: 2026.05.02+fe9135)
+
+Three-point gate on metadata.version: warn-config-drift hook
+(Edit-time, fires only on staged files), /commit Phase 5 step 2.5
+hard stop, test-skill-conformance.sh CI gate (now also validates
+hash freshness).
+
+### Added — per-skill versioning
+
+Every source skill under `skills/` and `block-diagram/` now carries
+`metadata.version: "YYYY.MM.DD+HHHHHH"` in its SKILL.md frontmatter,
+seeded to today's date and each skill's content hash. Edits to a
+skill body must bump this field; see `references/skill-versioning.md`
+and CLAUDE.md "Skill versioning" rule. Enforcement lands in subsequent
+commits (Phase 4).
+
 ## 2026-05-01
 
 ### Added — `/land-pr` skill (PR_LANDING_UNIFICATION complete)

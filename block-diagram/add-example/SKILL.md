@@ -5,6 +5,8 @@ description: >-
   registration, unit tests, codegen tests, screenshots, and verification.
   Usage: /add-example <block-type(s)> [concept hint]
 argument-hint: "<block-type(s)> [concept hint]"
+metadata:
+  version: "2026.05.02+af97fa"
 ---
 
 # Add Example Model

@@ -30,3 +30,11 @@ TZ=America/New_York
 npm run test:all
 npm start
 re:\$TEST_OUT/\.test-results\.txt
+# Skill-version literal in prose (per-skill metadata.version values must
+# live in frontmatter, not pasted into bash fences or imperative bullets).
+# Frontmatter is not scanned by the deny-list (the scanner starts from
+# the body); this entry catches body-fence and bullet leakage. Use the
+# existing <!-- allow-hardcoded: <pattern> reason: ... --> marker to
+# exempt legitimate examples (e.g., references/skill-versioning.md
+# documents the format with example values).
+re:[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}

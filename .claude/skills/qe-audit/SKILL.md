@@ -6,6 +6,8 @@ description: >-
   QE audit: check recent commits for test coverage gaps, or bash/stress-test
   features to find bugs. Supports scheduling with every/now/next/stop.
   Usage: /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next.
+metadata:
+  version: "2026.05.02+18139c"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit

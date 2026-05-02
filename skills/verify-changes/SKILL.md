@@ -7,6 +7,8 @@ description: >-
   exist and correctly test the changes, run all tests, manually verify UI changes
   with playwright-cli, fix any problems found, re-verify until clean, then report
   results with recommendations.
+metadata:
+  version: "2026.05.02+7907be"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes

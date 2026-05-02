@@ -3,6 +3,8 @@ name: land-pr
 user-invocable: false
 description: Helper skill — the canonical PR-landing primitive. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. Caller invokes only at orchestrator level (not from within Agent-dispatched subagents). Dispatched via Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix. Not designed for direct user invocation — the API (--body-file, --result-file required) is caller-oriented; users wanting to ship a branch should use /commit pr.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>]
+metadata:
+  version: "2026.05.02+bcd34b"
 ---
 
 # /land-pr — land a feature branch as a PR

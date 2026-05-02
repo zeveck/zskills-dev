@@ -6,6 +6,8 @@ description: >-
   the domain, identifies sub-problems and dependencies, then produces a
   meta-plan where each phase delegates to /run-plan.
   Usage: /research-and-plan [output FILE] <description...>
+metadata:
+  version: "2026.05.02+eb11e9"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer

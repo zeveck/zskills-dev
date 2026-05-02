@@ -4,6 +4,8 @@ argument-hint: "[report [period]] | verify | current | worktrees | [summary] | s
 description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
+metadata:
+  version: "2026.05.02+0495d8"
 ---
 
 # /briefing — Project Status Briefing
@@ -339,20 +341,31 @@ The `summary` subcommand appends warnings when:
 ## Z Skills Update Check
 
 If a Z Skills repo clone exists (`zskills/` in project root, or
-`/tmp/zskills`), the `summary` and `report` modes should check for
-upstream updates:
+`/tmp/zskills`), the `summary` and `report` modes should compare the
+installed version (resolved from `.claude/zskills-config.json` via the
+canonical config-resolution helper) against the source repo's latest
+release tag:
 
 ```bash
-ZSKILLS_DIR=""
-[ -d zskills/.git ] && ZSKILLS_DIR=zskills
-[ -d /tmp/zskills/.git ] && ZSKILLS_DIR=/tmp/zskills
-if [ -n "$ZSKILLS_DIR" ]; then
-  git -C "$ZSKILLS_DIR" fetch --dry-run 2>&1 | grep -qE '^\s+[a-f0-9]+\.\.[a-f0-9]+' && echo "updates available"
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# ZSKILLS_VERSION is the installed version (from .claude/zskills-config.json).
+source_ver=""
+if [ -d "$ZSKILLS_PATH/.git" ]; then
+  source_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+fi
+if [ -n "$source_ver" ] && [ "$source_ver" != "$ZSKILLS_VERSION" ]; then
+  echo "  zskills: $ZSKILLS_VERSION → $source_ver (run /update-zskills)"
+else
+  echo "  zskills: ${ZSKILLS_VERSION:-(unknown)} (current)"
 fi
 ```
 
-If updates are available, append to the output:
-> Z Skills: updates available (`/update-zskills`)
+`$ZSKILLS_PATH` is the source-clone discovery path (briefing's existing
+search probes `zskills/` in the project root then `/tmp/zskills`). When
+no source clone is found, `source_ver` stays empty and the line falls
+through to the "current" branch. When the installed version is missing
+(no `zskills_version` field in config), the rendered text is
+`zskills: (unknown) (current)`.
 
 ## Edge Cases
 

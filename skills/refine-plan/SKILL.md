@@ -9,6 +9,8 @@ description: >-
   refines remaining phases until convergence. Completed phases are NEVER
   modified. Appends a Drift Log and Plan Review section.
   Usage: /refine-plan <plan-file> [rounds N] [guidance...]
+metadata:
+  version: "2026.05.02+ccef22"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner

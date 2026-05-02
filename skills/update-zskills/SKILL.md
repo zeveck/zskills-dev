@@ -2,6 +2,8 @@
 name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
+metadata:
+  version: "2026.05.02+9e54a0"
 ---
 
 # Update Z Skills Infrastructure
@@ -216,7 +218,7 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
 **If it exists:**
 1. Read the file content.
-2. Extract values using bash regex (no jq dependency):
+2. Extract values using bash regex (pure bash, no external JSON tool):
    ```bash
    CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
    # Extract a string value (note: ([^\"]*) allows empty strings):
@@ -603,6 +605,57 @@ Skills with additional requirements:
 
 Overall: X/Y dependencies satisfied.
 ```
+
+After printing `Overall: ...`, append a one-line **Versions** summary
+showing the installed `zskills_version` (consumer-side) vs the source
+clone's latest tag (authoritative), plus how many skills have a different
+`metadata.version` upstream. Compute it like this:
+
+```bash
+# Repo-level version: latest YYYY.MM.N tag in the source clone.
+current_zskills_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+
+# Installed version: top-level `zskills_version` field in
+# .claude/zskills-config.json. Read with inline BASH_REMATCH (NOT
+# frontmatter-get.sh — that helper is YAML-only and exits 2 on JSON;
+# silencing that with `2>/dev/null` would be the anti-CLAUDE.md
+# "swallow failures" pattern. Same JSON-parsing idiom as
+# zskills-resolve-config.sh — single source of truth.)
+installed_zskills_ver=""
+if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
+  cfg=$(cat "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json")
+  if [[ "$cfg" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    installed_zskills_ver="${BASH_REMATCH[1]}"
+  fi
+fi
+
+# Per-skill delta: count rows whose `metadata.version` differs upstream.
+delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
+```
+
+Render (print the lines verbatim, substituting the three values; if
+`current_zskills_ver` is empty, print the literal `(unversioned) — source
+clone has no tags`; if `installed_zskills_ver` is empty, print `(none)`):
+
+```text
+Repo version: <installed_zskills_ver> → <current_zskills_ver>
+Versions: zskills <installed_zskills_ver>→<current_zskills_ver>; <n_changed> skills changed
+```
+
+The `Repo version:` line uses the same label as the install/update
+final reports (Step G / Pull Latest step 6) for cross-report
+consistency; the `Versions:` line is the audit-specific one-liner that
+also includes the per-skill delta count. Both surface the same
+underlying data.
+
+If the source clone has no tags (repo is unversioned): both lines
+still print, just with the `(unversioned)` placeholder. This surfaces
+the state instead of hiding it (CLAUDE.md surface-bugs rule). Same
+applies to a pre-Phase-5 install with no `zskills_version` field —
+print `(none)`; the install/Pull-Latest path will write the field on
+its next run via the mirror-the-tag step (see Step F.5 / Pull Latest
+step 5.7).
 
 If everything is satisfied, end with:
 ```
@@ -1218,6 +1271,27 @@ missing `execution` keys, compact JSON, idempotency, error paths).
 A prompt-side sequence of `Edit` calls is fragile against JSON
 formatting variance and legacy hook versions. Delegate to the script.
 
+#### Step F.5 — Mirror the source-repo tag into config
+
+Now that all skills, hooks, scripts, and add-ons have been installed
+from the current source clone, mirror the clone's latest tag into
+`.claude/zskills-config.json` as the consumer-side `zskills_version`.
+This is what the audit gap report (Step 6) and `/briefing` "Z Skills
+Update Check" read to detect drift on subsequent invocations:
+
+```bash
+new_repo_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+if [ -n "$new_repo_ver" ]; then
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/json-set-string-field.sh" \
+    "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
+fi
+```
+
+If the source clone has no tags (`new_repo_ver` empty), skip silently —
+nothing authoritative to mirror. The audit will print `(unversioned)`
+on the next invocation, which surfaces the state without falsely
+recording a stale tag.
+
 #### Step G — Final report
 
 ```
@@ -1233,8 +1307,38 @@ Installed:
 Skills with additional requirements:
 - /briefing: requires `.claude/skills/briefing/scripts/briefing.cjs` or `briefing.py` (see /briefing skill docs)
 
+Repo version: <new_zskills_ver>
+
+Per-skill versions:
+  <name>          <metadata.version>  (new)
+  <name>          <metadata.version>  (new)
+  ...
+
 Run /update-zskills to check for updates later.
 ```
+
+The **Per-skill versions** sub-section is generated by piping
+`skill-version-delta.sh` output through awk. For an install, every
+row's status is `new` (the prior installed state was empty). Only show
+`addon`-kind rows when `--with-block-diagram-addons` (or
+`--with-addons`) was passed OR when at least one block-diagram skill
+is already present under `.claude/skills/`; otherwise filter them out.
+Same renderer logic as the update-path table (see Pull Latest step 6).
+
+```bash
+delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+show_addons=0
+case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
+[ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
+  $2 == "addon" && show_addons == 0 { next }
+  { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
+'
+```
+
+`Repo version: <new_zskills_ver>` reflects the freshly mirrored
+`zskills_version` from Step F.5 (or `(unversioned)` if the source clone
+had no tags).
 
 ### Pull Latest and Update (already-installed path)
 
@@ -1276,16 +1380,74 @@ Run /update-zskills to check for updates later.
    the single place where preset values land into config and hook —
    regardless of install/update path.
 
-6. **Report:**
+5.7. **Mirror the source-repo tag into config.** Same step as install
+   path Step F.5: capture the source clone's latest tag and write it
+   into `.claude/zskills-config.json` as `zskills_version`. This is the
+   value the audit report (Step 6) and `/briefing` "Z Skills Update
+   Check" read on the next invocation:
+
+   ```bash
+   new_repo_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+   if [ -n "$new_repo_ver" ]; then
+     bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/json-set-string-field.sh" \
+       "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
+   fi
    ```
+
+   Skip silently if the source clone has no tags.
+
+6. **Report.** Replace the prior single-line `Updated: N skills (list)`
+   summary with a structured table generated from
+   `skill-version-delta.sh` (the same data source as `/briefing`'s
+   update check). Each row shows `<name> <old metadata.version> →
+   <new metadata.version>` for changed skills, and `<name>
+   <metadata.version> (unchanged)` for the rest. Example shape (the
+   shown date+hash literals are illustrative — the actual values come
+   from `skill-version-delta.sh` against the source/install pair):
+
+   ```text
    Z Skills updated.
 
-   Updated: N skills (list)
-   New: N items installed (list)
-   Unchanged: N skills
+   Repo version: <old_zskills_ver> → <new_zskills_ver>
+
+   Updated: N skills
+     run-plan          <old-ver>         → <new-ver>
+     briefing          <old-ver>         → <new-ver>
+     commit            <ver>             (unchanged)
+     ...
+   New: M items installed (list)
 
    Source: $ZSKILLS_PATH (pulled from origin)
    ```
+
+   `<old_zskills_ver>` is the value of `zskills_version` BEFORE Step
+   5.7's mirror — capture it at the start of the Pull Latest path
+   using the same inline `BASH_REMATCH` JSON-read idiom as Step 6 (the
+   audit gap report) so the table can show the delta. `<new_zskills_ver>`
+   is what Step 5.7 just wrote.
+
+   Generation pseudocode (pure bash + awk):
+
+   ```bash
+   delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+   show_addons=0
+   case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
+   [ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+   # Updated section (status=bumped: old → new), then unchanged:
+   printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
+     $2 == "addon" && show_addons == 0 { next }
+     $5 == "bumped"   { printf "  %-20s %s → %s\n", $1, $4, $3 }
+     $5 == "unchanged"{ printf "  %-20s %s (unchanged)\n", $1, $3 }
+   '
+   # New section (status=new):
+   printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
+     $2 == "addon" && show_addons == 0 { next }
+     $5 == "new" { printf "  %s\n", $1 }
+   '
+   ```
+
+   `(unversioned)` placeholder applies to either side of the `Repo
+   version:` arrow if the corresponding tag is missing.
 
 ---
 
