@@ -208,14 +208,16 @@ PLAN_INDEX flags it as `Reference (deferred)`. It's planning prompts for *future
 
 ## Refine-plan checklist
 
+> **Note (2026-05-02):** This section is effectively deprecated as a tracking surface — all refines since Phase D have been tracked in the main TL;DR checklist above. Kept here for historical record.
+
 Required:
 
-- [ ] `/refine-plan plans/DEFAULT_PORT_CONFIG.md` — between Phase B and Phase C. Mandatory; the plan duplicates work that Phase B will already have done.
+- [x] `/refine-plan plans/DEFAULT_PORT_CONFIG.md` — landed via PR #119 (2026-04-28).
 
 Optional / consider:
 
-- [ ] `/refine-plan plans/DRAFT_TESTS_SKILL_PLAN.md` — only if you suspect the adversarial-review wording in the plan was authored against the pre-QF2 convergence model.
-- [ ] `/refine-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md` — same caveat.
+- [x] `/refine-plan plans/DRAFT_TESTS_SKILL_PLAN.md` — landed via PR #120 (2026-04-28).
+- [x] `/refine-plan plans/QUICKFIX_DO_TRIAGE_PLAN.md` — landed via PR #146 (2026-05-01).
 
 Not needed:
 
