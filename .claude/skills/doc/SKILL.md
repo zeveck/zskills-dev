@@ -8,6 +8,8 @@ description: >-
   Also handles newsletter entries (/doc newsletter). Use when the user asks
   to "write a newsletter entry", "add to the newsletter", or "update the newsletter".
   Usage: /doc [blocks|examples|newsletter|<description>]
+metadata:
+  version: "2026.05.02+aea3f2"
 ---
 
 # /doc [blocks|examples|\<description>] — Documentation Audit & Fix

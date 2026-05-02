@@ -11,6 +11,8 @@ description: >-
   full_cmd to satisfy the project pre-commit hook), commits, pushes, and
   creates a PR via gh. No worktree; no .landed marker.
   Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
+metadata:
+  version: "2026.05.02+3852b0"
 ---
 
 # /quickfix — In-Flight Fix → PR

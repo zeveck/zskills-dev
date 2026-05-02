@@ -9,6 +9,8 @@ description: >-
   worktree-add-safe.sh call with TOCTOU-race remap, and sanitised
   .zskills-tracked / .worktreepurpose writes. Prints the worktree
   path on stdout; all progress/errors go to stderr.
+metadata:
+  version: "2026.05.02+15dae4"
 ---
 
 # /create-worktree — Unified Worktree Creation

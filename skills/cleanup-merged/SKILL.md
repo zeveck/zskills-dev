@@ -10,6 +10,8 @@ description: >-
   tree. Skips branches with unpushed commits. --dry-run reports without
   modifying anything. Use after merging a PR on GitHub to catch local
   state up and drop stale branches.
+metadata:
+  version: "2026.05.02+f6079a"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization

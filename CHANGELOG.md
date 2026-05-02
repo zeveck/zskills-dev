@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-02
+
+### Added — per-skill versioning
+
+Every source skill under `skills/` and `block-diagram/` now carries
+`metadata.version: "YYYY.MM.DD+HHHHHH"` in its SKILL.md frontmatter,
+seeded to today's date and each skill's content hash. Edits to a
+skill body must bump this field; see `references/skill-versioning.md`
+and CLAUDE.md "Skill versioning" rule. Enforcement lands in subsequent
+commits (Phase 4).
+
 ## 2026-05-01
 
 ### Added — `/land-pr` skill (PR_LANDING_UNIFICATION complete)

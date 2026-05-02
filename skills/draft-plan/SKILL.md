@@ -7,6 +7,8 @@ description: >-
   rounds of research, drafting, review, devil's advocate, and refinement
   until the plan converges. Output is a plan file ready for /run-plan.
   Usage: /draft-plan [output FILE] [rounds N] <description...>
+metadata:
+  version: "2026.05.02+8187cd"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter

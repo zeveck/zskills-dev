@@ -7,6 +7,8 @@ description: >-
   other agents' work, and optionally pushes or lands worktree commits.
   Usage: /commit [pr] [scope] [push|land]
 argument-hint: "[pr] [scope] [push|land]"
+metadata:
+  version: "2026.05.02+86b98e"
 ---
 
 # /commit [pr] [scope] [push|land] — Safe Commit Workflow

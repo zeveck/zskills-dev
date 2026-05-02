@@ -5,6 +5,8 @@ description: >-
   Full pipeline: decompose a broad goal into sub-plans, draft each with
   adversarial review, then execute all of them autonomously. One command,
   walk away. Usage: /research-and-go <description>
+metadata:
+  version: "2026.05.02+cd2316"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything

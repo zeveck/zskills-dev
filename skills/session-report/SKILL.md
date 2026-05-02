@@ -6,6 +6,8 @@ description: >-
   report gaps. Verifies session-mentioned items against ground truth (git,
   PRs, plans, worktrees) — not conversation memory — because the user may
   have completed some of them in another session.
+metadata:
+  version: "2026.05.02+a208dd"
 ---
 
 # /session-report — Session Intent vs. Actual State

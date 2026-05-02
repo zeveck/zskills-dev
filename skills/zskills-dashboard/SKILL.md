@@ -9,6 +9,8 @@ description: >-
   DEV_PORT / dev_server.default_port / port.sh; stop sends SIGTERM.
   State at .zskills/monitor-state.json. Usage:
   /zskills-dashboard [start|stop|status].
+metadata:
+  version: "2026.05.02+95ccb6"
 ---
 
 # /zskills-dashboard — Local Monitor Dashboard

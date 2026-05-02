@@ -9,6 +9,8 @@ description: >-
   finish) is honored from the queue, with a default-mode fallback.
   Also manages the queue itself (add/rank/remove/default) and recurring
   schedules. Mirrors /fix-issues for bugs.
+metadata:
+  version: "2026.05.02+a68fc4"
 ---
 
 # /work-on-plans — Batch Plan Executor

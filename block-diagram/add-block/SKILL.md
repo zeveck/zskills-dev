@@ -4,6 +4,8 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks
   to "add a block", "create a new block", "implement a block", or mentions
   adding a block type to the library.
+metadata:
+  version: "2026.05.02+2ec085"
 ---
 
 # Adding Block Types

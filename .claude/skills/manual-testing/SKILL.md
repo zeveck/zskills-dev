@@ -6,6 +6,8 @@ description: >-
   common UI operations (adding blocks, connecting ports, running simulations,
   editing parameters) using real mouse/keyboard events. Use when told to
   "test manually", "test in the browser", or "verify with playwright-cli".
+metadata:
+  version: "2026.05.02+85c33c"
 ---
 
 # Manual Testing with playwright-cli

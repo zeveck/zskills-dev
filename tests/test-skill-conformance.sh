@@ -1371,6 +1371,109 @@ else
   done
 fi
 
+# Skill-dir cleanliness: no dotfiles or build artifacts in GIT-TRACKED content.
+# Scoped to `git ls-files <skill-dir>` rather than `find` so that working-tree
+# runtime artifacts (briefing.py's __pycache__, zskills_monitor's __pycache__,
+# editor swap files, etc.) do NOT trip the gate. The cleanliness rule enforces
+# what consumers see — i.e., what's tracked in git — not what lives transiently
+# in a developer's working tree. (refine-plan F-DA-4 / F-DA-14: the prior
+# `find`-based form would hard-fail on day-zero migration because briefing and
+# zskills-dashboard both materialize __pycache__ when their Python runs, and
+# `.gitkeep` is intentionally tracked in zskills-dashboard's static dir.)
+#
+# `.gitkeep` is the universal Unix idiom for tracking an otherwise-empty
+# directory; allow-list it explicitly. Other dotfiles in tracked content
+# (e.g., `.env`, `.DS_Store`, `.swp`) remain rejected.
+echo "=== Skill-dir cleanliness ==="
+for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
+  [ -d "$skill_dir" ] || continue
+  name=$(basename "$skill_dir")
+  skill_rel="${skill_dir#$REPO_ROOT/}"
+  skill_rel="${skill_rel%/}"
+  tracked=$(git -C "$REPO_ROOT" ls-files -- "$skill_rel")
+  # Reject any tracked dotfile EXCEPT `.gitkeep` (allow-listed).
+  dotfile_hits=$(printf '%s\n' "$tracked" | awk -F/ '
+    { name=$NF }
+    name ~ /^\./ && name != ".gitkeep" { print }
+  ')
+  # __pycache__ / node_modules: should never be tracked. If git ls-files
+  # reports any, that IS a real cleanliness regression.
+  # grep returns 1 when no matches; that's the success case here. Use a
+  # conditional rather than `|| true` so a real grep error (regex syntax,
+  # broken pipe) still surfaces.
+  artifact_hits=$(printf '%s\n' "$tracked" | grep -E '(^|/)(__pycache__|node_modules)(/|$)') || \
+    [ "$?" -eq 1 ] || { echo "FAIL: grep error" >&2; exit 1; }
+  if [ -n "$dotfile_hits" ] || [ -n "$artifact_hits" ]; then
+    fail "skill $name: contains tracked dotfile/artifact (skill dirs must be clean)" \
+      "$(printf '%s\n%s\n' "$dotfile_hits" "$artifact_hits")"
+    continue
+  fi
+  pass "skill $name: clean (no tracked dotfiles/artifacts)"
+done
+
+echo ""
+echo "=== Per-skill version frontmatter ==="
+for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
+  skill_md="${skill_dir}SKILL.md"
+  [ -f "$skill_md" ] || continue
+  name=$(basename "$skill_dir")
+  version=$(bash "$REPO_ROOT/scripts/frontmatter-get.sh" "$skill_md" metadata.version) || {
+    fail "skill $name: metadata.version missing or unreadable" "from $skill_md"
+    continue
+  }
+  if [[ ! "$version" =~ ^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\+[0-9a-f]{6}$ ]]; then
+    fail "skill $name: metadata.version '$version' does not match YYYY.MM.DD+HHHHHH (validated month/day ranges)" "from $skill_md"
+    continue
+  fi
+  # Stale-hash check.
+  stored_hash="${version##*+}"
+  fresh_hash=$(bash "$REPO_ROOT/scripts/skill-content-hash.sh" "$skill_dir")
+  if [ "$stored_hash" != "$fresh_hash" ]; then
+    fail "skill $name: stored hash $stored_hash != fresh hash $fresh_hash" "version line stale"
+    continue
+  fi
+  pass "skill $name: metadata.version=$version"
+done
+
+# Mirror desync check (Round-2 F-R2-7) + allow-list for source-less mirrors
+# (Round-3 F-DA-R3-3). The allow-list is hardcoded; new entries require a
+# documented justification per §1.6.
+#
+#   playwright-cli — pre-dates the source/mirror split; vendor-bundled.
+#   social-seo     — pre-dates the source/mirror split; vendor-bundled.
+#
+# Any other source-less mirror is a CI failure (orphaned cleanup signal).
+MIRROR_ONLY_OK="playwright-cli social-seo"
+echo ""
+echo "=== Per-skill version mirror parity ==="
+for mirror_dir in "$REPO_ROOT/.claude/skills"/*/; do
+  mirror_md="${mirror_dir}SKILL.md"
+  [ -f "$mirror_md" ] || continue
+  name=$(basename "$mirror_dir")
+  src_dir="$REPO_ROOT/skills/$name"
+  if [ ! -f "$src_dir/SKILL.md" ]; then
+    # No source — must be on the allow-list.
+    if [[ " $MIRROR_ONLY_OK " == *" $name "* ]]; then
+      pass "skill $name: mirror-only (allow-listed, skipped)"
+      continue
+    fi
+    fail "mirrored skill $name: no source counterpart and not on MIRROR_ONLY_OK allow-list" \
+      "orphaned mirror — delete .claude/skills/$name or add a source dir"
+    continue
+  fi
+  mirror_ver=$(bash "$REPO_ROOT/scripts/frontmatter-get.sh" "$mirror_md" metadata.version) || {
+    fail "mirrored skill $name: metadata.version missing or unreadable" "from $mirror_md"
+    continue
+  }
+  mirror_hash="${mirror_ver##*+}"
+  src_fresh_hash=$(bash "$REPO_ROOT/scripts/skill-content-hash.sh" "$src_dir")
+  if [ "$mirror_hash" != "$src_fresh_hash" ]; then
+    fail "mirrored skill $name: stored hash $mirror_hash != source projection $src_fresh_hash" "mirror desync"
+    continue
+  fi
+  pass "mirrored skill $name: hash matches source projection"
+done
+
 echo ""
 echo "=== PROSE-IMPERATIVE substitution-discipline coverage (WI 5.7) ==="
 # refine-2 R2.12 follow-on. For each PROSE-migrated $VAR reference

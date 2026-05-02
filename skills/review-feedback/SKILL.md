@@ -5,6 +5,8 @@ description: >-
   Review exported feedback JSON from the in-app feedback panel, evaluate each
   pending entry, and selectively file GitHub issues via gh CLI. Use when the user
   says "review feedback", "triage feedback", or "file feedback issues".
+metadata:
+  version: "2026.05.02+f88c7f"
 ---
 
 # /review-feedback — Review and triage user feedback

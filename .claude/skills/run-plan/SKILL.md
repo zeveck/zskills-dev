@@ -8,6 +8,8 @@ description: >-
   tracking, write reports/plan-{slug}.md, and optionally auto-land to main. Can
   self-schedule recurring runs via cron. Use `next` to check schedule, `stop`
   to cancel.
+metadata:
+  version: "2026.05.02+73e6eb"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
