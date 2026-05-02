@@ -1,5 +1,58 @@
 # Plan Report — Skill Versioning
 
+## Phase — 2 Tooling [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSIONING.md
+**Status:** Completed (verified inline)
+**Worktree:** /tmp/zskills-pr-skill-versioning
+**Branch:** feat/skill-versioning
+**Commit:** 27effe5
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2.1 | `scripts/frontmatter-get.sh` | Done | 251L; supports stdin `-`, dotted keys, block-scalar reads |
+| 2.2 | `scripts/frontmatter-set.sh` | Done | 300L; idempotent, atomic mv, mode-preserving; exit 3 on block-scalar overwrite |
+| 2.3 | `scripts/skill-content-hash.sh` | Done | 276L; first exec line `export LC_ALL=C`; canonical projection per §1.1; rejects binary; outputs 6-char sha256 |
+| 2.4 | `tests/test-frontmatter-helpers.sh` | Done | 30 cases (≥26 required); fixtures under `tests/fixtures/frontmatter/` (7 files) |
+| 2.5 | `tests/test-skill-content-hash.sh` | Done | 8 cases including dotfile invariance + block-scalar continuation safety; fixtures under `tests/fixtures/skill-versioning/` (5 dirs) |
+| 2.6 | Register in `tests/run-all.sh` | Done | Both files alphabetically placed |
+| 2.7 | Smoke recipe in `references/skill-versioning.md` §1.10 | Done | Appended block; uses `/tmp` copy (no real-skill mutation) |
+| 2.8 | Commit message | Done | `feat(scripts): add frontmatter-get/set/skill-content-hash helpers + tests for skill versioning` |
+
+### Verification
+
+- AC #1 — All 3 scripts executable: **OK**
+- AC #2 — `bash -n` syntax-clean: **OK** (all 3)
+- AC #3 — `tests/test-frontmatter-helpers.sh`: **30/30 PASS** (≥26 required)
+- AC #4 — `tests/test-skill-content-hash.sh`: **8/8 PASS** (≥6 required, spec also asks for 8)
+- AC #5 — `grep -c` for new tests in run-all.sh: **2**
+- AC #6 — `frontmatter-get skills/run-plan/SKILL.md name` → **`run-plan`**
+- AC #7 — Stdin form → **`run-plan`**
+- AC #8 — `skill-content-hash skills/run-plan` → **`0c846e`** matches `^[0-9a-f]{6}$`
+- AC #9 — Determinism: **0c846e == 0c846e**
+- AC #10 — `grep -c jq` on all 5 files: **0** (all)
+- AC #11 — `bash tests/run-all.sh`: **1845/1845 PASS, 0 failed** (+38 vs 1807 baseline)
+- AC #12 — Round-trip property: **5/5** cases pass
+
+Verifier subagent prone to Monitor anti-pattern; orchestrator did verification inline with proper `timeout: 600000` foreground bash.
+
+### Plan-text drift signals
+
+None.
+
+### Cross-phase dependencies
+
+- Phase 1 (`references/skill-versioning.md` §1.10) — naming contract satisfied; smoke recipe appended.
+- Phases 3-6 will rely on these helpers; they are now stable + tested.
+
+### Next phase
+
+Phase 3 — Migration: seed all 26 core + 3 add-on skills via two-pass migration; extend conformance test. Scheduled via `*/1` cron with adaptive backoff.
+
+---
+
 ## Phase — 1 Decision & Specification [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSIONING.md
