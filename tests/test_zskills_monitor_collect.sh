@@ -448,13 +448,29 @@ fi
 echo ""
 echo "=== Phase 4 AC: worktree-portable repo_root resolution ==="
 
-# We can only run this if we're inside a worktree of the main checkout.
-# Detect by examining .git: a worktree has `.git` as a file (gitlink).
-if [ -f "$REPO_ROOT/.git" ]; then
-  GIT_COMMON=$(cd "$REPO_ROOT" && git rev-parse --git-common-dir 2>/dev/null)
-  MAIN_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
-  if [ -n "$MAIN_ROOT" ] && [ -d "$MAIN_ROOT" ]; then
-    PORTABLE=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+# Materialize a temp worktree on the fly so this case runs unconditionally,
+# regardless of invocation context (primary repo, secondary worktree, fresh
+# CI clone). The invariant being checked: collect_snapshot() resolves the
+# MAIN_ROOT identically whether invoked from the primary checkout or any
+# secondary worktree, so the stable subset (repo_root, plans, queues,
+# state_file_path) is byte-identical across both contexts. Issue #150 fix —
+# previously skipped silently when [ -f "$REPO_ROOT/.git" ] was false (i.e.,
+# always in CI's actions/checkout@v4 primary clone), hiding the invariant.
+
+TMP_WT="$(mktemp -d -t zskills-monitor-collect-wt-XXXXXX)"
+# git worktree add needs a non-existing path
+rmdir "$TMP_WT"
+TMP_WT_CLEANED=0
+cleanup_tmp_wt() {
+  if [ "$TMP_WT_CLEANED" -eq 0 ] && [ -e "$TMP_WT" ]; then
+    git -C "$REPO_ROOT" worktree remove --force "$TMP_WT" 2>/dev/null || rm -rf "$TMP_WT"
+    TMP_WT_CLEANED=1
+  fi
+}
+trap cleanup_tmp_wt EXIT
+
+if git -C "$REPO_ROOT" worktree add --detach --quiet "$TMP_WT" HEAD 2>/dev/null; then
+  PORTABLE=$(PYTHONPATH="$PKG_PARENT" python3 -c '
 import sys, json
 sys.path.insert(0, "'"$PKG_PARENT"'")
 from zskills_monitor.collect import collect_snapshot
@@ -471,23 +487,23 @@ def stable(snap):
         "state_file_path": snap["state_file_path"],
     }
 
-s_main = stable(collect_snapshot("'"$MAIN_ROOT"'"))
-s_wt = stable(collect_snapshot("'"$REPO_ROOT"'"))
-print("repo_root_main=" + s_main["repo_root"])
-print("repo_root_wt=" + s_wt["repo_root"])
-print("byte_id=" + str(json.dumps(s_main, sort_keys=True) == json.dumps(s_wt, sort_keys=True)))
+s_a = stable(collect_snapshot("'"$REPO_ROOT"'"))
+s_b = stable(collect_snapshot("'"$TMP_WT"'"))
+print("repo_root_a=" + s_a["repo_root"])
+print("repo_root_b=" + s_b["repo_root"])
+print("byte_id=" + str(json.dumps(s_a, sort_keys=True) == json.dumps(s_b, sort_keys=True)))
 ')
-    if printf '%s\n' "$PORTABLE" | grep -q "byte_id=True"; then
-      pass "worktree-portable: stable snapshot subset is byte-identical from main vs worktree"
-    else
-      fail "worktree-portable: snapshots differ ($PORTABLE)"
-    fi
+  if printf '%s\n' "$PORTABLE" | grep -q "byte_id=True"; then
+    pass "worktree-portable: stable snapshot subset is byte-identical from main vs worktree"
   else
-    skip "worktree-portable: could not resolve MAIN_ROOT"
+    fail "worktree-portable: snapshots differ ($PORTABLE)"
   fi
+  cleanup_tmp_wt
 else
-  skip "worktree-portable: not running inside a worktree"
+  fail "worktree-portable: could not materialize temp worktree at $TMP_WT"
+  cleanup_tmp_wt
 fi
+trap - EXIT
 
 # ---------------------------------------------------------------------------
 # AC: Test registered in tests/run-all.sh (verified by the test runner if
