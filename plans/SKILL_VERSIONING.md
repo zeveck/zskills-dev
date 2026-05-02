@@ -1,7 +1,8 @@
 ---
 title: Skill Versioning
 created: 2026-04-30
-status: active
+status: complete
+completed: 2026-05-02
 ---
 
 # Plan: Skill Versioning
