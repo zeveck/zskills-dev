@@ -142,6 +142,17 @@
           "examples": ["auto", "claude-opus-4-6", "claude-sonnet-4-6"]
         }
       }
+    },
+    "dashboard": {
+      "type": "object",
+      "description": "Local monitor dashboard configuration. Read by the zskills-dashboard server (read-only — never written by the server).",
+      "properties": {
+        "work_on_plans_trigger": {
+          "type": "string",
+          "default": "",
+          "description": "Relative path to a consumer-authored trigger script. When set, the dashboard's Run button posts to /api/trigger, which spawns the script with the selected /work-on-plans invocation as argv[1]. No default script is shipped. If absent or empty, the Run button is hidden client-side and /api/trigger returns 501."
+        }
+      }
     }
   }
 }

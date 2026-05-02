@@ -507,6 +507,14 @@ must be empty.
 
 ## Configuration
 
+**Read-only boundary.** The server reads `.claude/zskills-config.json`
+(never writes); writes only to `.zskills/*` (its own state — PID file,
+log file, monitor-state.json, tracking markers). The
+`dashboard.work_on_plans_trigger` field is declared in
+`config/zskills-config.schema.json` and added by `/update-zskills` on
+install/update (Step 3.6 backfill). The server treats absent/missing
+fields as empty rather than mutating user config.
+
 The dashboard reads `.claude/zskills-config.json` for two fields:
 
 - `dev_server.default_port` (integer) — default port when neither
