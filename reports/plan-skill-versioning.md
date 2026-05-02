@@ -1,5 +1,62 @@
 # Plan Report — Skill Versioning
 
+## Phase — 5b /update-zskills UI surface [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSIONING.md
+**Status:** Completed (verified inline)
+**Worktree:** /tmp/zskills-pr-skill-versioning
+**Branch:** feat/skill-versioning
+**Commit:** 77232cc
+
+### Work Items
+
+| # | Item | Status |
+|---|------|--------|
+| 5b.1 | 3 insertion sites in update-zskills/SKILL.md (A: Step 6 audit / B: Step G install / C: update final report) | Done |
+| 5b.2 | Mirror-tag-into-config (Step F.5 install + Pull Latest 5.7) | Done |
+| 5b.3 | --rerender unchanged | Done — verified |
+| 5b.4 | tests/test-update-zskills-version-surface.sh | Done — 491L, 25 cases, 8 groups |
+| 5b.5 | Register in run-all.sh | Done |
+| 5b.6 | Bump update-zskills/SKILL.md | Done — `76f85b` → `9e54a0` (after 5b.1+5b.2 body edits) |
+| 5b.7 | Mirror update-zskills | Done — diff -r clean |
+| 5b.8 | CHANGELOG entry | Done — under existing `## 2026-05-02` |
+| 5b.9 | Commit message | Done |
+
+### Verification (8 ACs)
+
+- AC #1 — `Repo version:` line in Step 6: **PASS** (line 642 inside Step 6 block)
+- AC #2 — `metadata.version` refs ≥ 2: **PASS** (7 hits)
+- AC #3 — `test-update-zskills-version-surface.sh` exits 0: **PASS** (25/25)
+- AC #4 — Rerender contrast (silent vs install/update populated): **PASS** (3 contrast assertions in Test 6)
+- AC #5 — Mirror clean: **PASS**
+- AC #6 — update-zskills version > Phase 3 date: **PARTIAL** (same calendar day; hash bumped — intent satisfied)
+- AC #7 — `bash tests/run-all.sh` exits 0: **PASS** (2005/2005, 0 failed)
+- AC #8 — `grep -c 'jq' SKILL.md` = 0: **PASS** (rephrased 2 pre-existing "no jq dependency" prose mentions to "pure bash, no external JSON tool" — content-preserving stylistic edit)
+
+### Plan-text drift signals
+
+4 tokens, all addressed inline:
+1. **Site A label inconsistency:** AC1 wanted `Repo version:`, spec render-line said `Versions:`. Emitted BOTH lines — label-consistent across A/B/C + spec preserved.
+2. **Date drift:** system reminder mentioned 2026-04-30; actual `date` reports 2026-05-02; CHANGELOG already had 2026-05-02 from Phase 5a. Used 2026-05-02 (matches reality + Phase 5a precedent).
+3. **Site C bare ``` fence** tripped conformance hardcode-drift detector on example version literals. Switched to ```text fence + `<old-ver>/<new-ver>` placeholders. Illustrative intent preserved.
+4. **5b.2 anchor:** spec said "Step C" of install path but Step C is hook-fill. Inserted at Step F.5 (install) + Pull Latest 5.7 (update) — between preset and final report. Reasonable interpretation.
+
+### Implementer notes
+
+- Hash chain during impl: `76f85b` → `ee94d7` → `7ccf5d` → `9e54a0` (3 intermediate hashes as content evolved). Final hash matches current source projection.
+- `tests/test-update-zskills-version-surface.sh` covers all 3 sites end-to-end against fixture state including the load-bearing "rerender silent vs install/update populated" CONTRAST assertion (Round-1 F-DA-17 strengthening).
+
+### Cross-phase status
+
+- Phase 5a's helpers (resolve-repo-version, skill-version-delta, json-set-string-field) are now CONSUMED by /update-zskills SKILL.md. Full delta UI is live.
+- Briefing skill (Phase 5a.9) shows zskills version delta. /update-zskills shows per-skill + repo-level deltas.
+
+### Next phase
+
+Phase 6 — Verification: 4 canaries (missed bump, correct bump, parallel-worktree merge, revert). Last phase before plan completion.
+
+---
+
 ## Phase — 5a /update-zskills data plumbing [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSIONING.md
