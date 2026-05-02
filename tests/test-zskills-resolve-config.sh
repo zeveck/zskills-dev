@@ -3,11 +3,12 @@
 # the canonical config-resolution helper introduced in
 # plans/SKILL_FILE_DRIFT_FIX.md Phase 1.
 #
-# Covers the 7 ACs from the phase doc:
+# Covers the 7 ACs from the phase doc + Phase 5a.2's 7th-var case
+# (ZSKILLS_VERSION resolution from a top-level `zskills_version` field).
 #   1. Synthetic-fixture: temp dir with a config containing timezone,
 #      testing.full_cmd, commit.co_author. Source helper; assert
 #      $TIMEZONE/$FULL_TEST_CMD/$COMMIT_CO_AUTHOR populated;
-#      $UNIT_TEST_CMD/$DEV_SERVER_CMD/$TEST_OUTPUT_FILE empty.
+#      $UNIT_TEST_CMD/$DEV_SERVER_CMD/$TEST_OUTPUT_FILE/$ZSKILLS_VERSION empty.
 #   2. Idempotency: source twice; vars unchanged on second source.
 #   3. Empty-config: temp dir without config; all 6 vars empty.
 #   4. Malformed-config: broken JSON; no abort, vars stay empty.
@@ -60,7 +61,7 @@ CONFIG
 # (and any previous test files) doesn't leak in or out.
 RESULT=$(
   CLAUDE_PROJECT_DIR="$T1" \
-  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$COMMIT_CO_AUTHOR" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE"'
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$COMMIT_CO_AUTHOR" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE" "$ZSKILLS_VERSION"'
 )
 T1_TIMEZONE=$(printf '%s\n' "$RESULT" | sed -n '1p')
 T1_FULL=$(printf '%s\n' "$RESULT" | sed -n '2p')
@@ -68,6 +69,7 @@ T1_COAUTHOR=$(printf '%s\n' "$RESULT" | sed -n '3p')
 T1_UNIT=$(printf '%s\n' "$RESULT" | sed -n '4p')
 T1_DEV=$(printf '%s\n' "$RESULT" | sed -n '5p')
 T1_OUTFILE=$(printf '%s\n' "$RESULT" | sed -n '6p')
+T1_ZVER=$(printf '%s\n' "$RESULT" | sed -n '7p')
 
 [ "$T1_TIMEZONE" = "Europe/London" ] \
   && pass "Test 1a: \$TIMEZONE = 'Europe/London'" \
@@ -87,6 +89,9 @@ T1_OUTFILE=$(printf '%s\n' "$RESULT" | sed -n '6p')
 [ -z "$T1_OUTFILE" ] \
   && pass "Test 1f: \$TEST_OUTPUT_FILE empty (not in fixture)" \
   || fail "Test 1f: \$TEST_OUTPUT_FILE" "got '$T1_OUTFILE'"
+[ -z "$T1_ZVER" ] \
+  && pass "Test 1g: \$ZSKILLS_VERSION empty (not in fixture)" \
+  || fail "Test 1g: \$ZSKILLS_VERSION" "got '$T1_ZVER'"
 
 rm -rf "$T1"
 
@@ -138,13 +143,13 @@ rm -rf "$T2"
 
 # --- Test 3: empty-config (AC3) ---------------------------------------------
 echo ""
-echo "=== Test 3: empty-config — no config file, all 6 vars empty strings ==="
+echo "=== Test 3: empty-config — no config file, all 7 vars empty strings ==="
 T3=$(mktemp -d /tmp/zskills-resolve-cfg-t3-XXXXXX)
 # Intentionally no .claude/zskills-config.json.
 
 RESULT3=$(
   CLAUDE_PROJECT_DIR="$T3" \
-  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE" "$COMMIT_CO_AUTHOR"'
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE" "$COMMIT_CO_AUTHOR" "$ZSKILLS_VERSION"'
 )
 RC3=$?
 
@@ -156,7 +161,7 @@ fi
 
 ALL_EMPTY=1
 i=1
-while [ $i -le 6 ]; do
+while [ $i -le 7 ]; do
   v=$(printf '%s\n' "$RESULT3" | sed -n "${i}p")
   if [ -n "$v" ]; then
     ALL_EMPTY=0
@@ -165,7 +170,7 @@ while [ $i -le 6 ]; do
   i=$((i + 1))
 done
 if [ "$ALL_EMPTY" = 1 ]; then
-  pass "Test 3b: all 6 vars are empty strings"
+  pass "Test 3b: all 7 vars are empty strings"
 else
   fail "Test 3b: all vars empty" "got: $RESULT3"
 fi
@@ -183,7 +188,7 @@ BROKEN
 
 RESULT4=$(
   CLAUDE_PROJECT_DIR="$T4" \
-  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE" "$COMMIT_CO_AUTHOR"'
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$TIMEZONE" "$FULL_TEST_CMD" "$UNIT_TEST_CMD" "$DEV_SERVER_CMD" "$TEST_OUTPUT_FILE" "$COMMIT_CO_AUTHOR" "$ZSKILLS_VERSION"'
 )
 RC4=$?
 
@@ -195,7 +200,7 @@ fi
 
 ALL_EMPTY4=1
 i=1
-while [ $i -le 6 ]; do
+while [ $i -le 7 ]; do
   v=$(printf '%s\n' "$RESULT4" | sed -n "${i}p")
   if [ -n "$v" ]; then
     ALL_EMPTY4=0
@@ -204,7 +209,7 @@ while [ $i -le 6 ]; do
   i=$((i + 1))
 done
 if [ "$ALL_EMPTY4" = 1 ]; then
-  pass "Test 4b: all 6 vars empty on malformed JSON"
+  pass "Test 4b: all 7 vars empty on malformed JSON"
 else
   fail "Test 4b: all vars empty" "got: $RESULT4"
 fi
@@ -315,6 +320,47 @@ else
 fi
 
 rm -rf "$T7"
+
+# --- Test 8: ZSKILLS_VERSION resolution (Phase 5a.2) -----------------------
+echo ""
+echo "=== Test 8: ZSKILLS_VERSION resolution from top-level zskills_version field ==="
+T8=$(mktemp -d /tmp/zskills-resolve-cfg-t8-XXXXXX)
+mkdir -p "$T8/.claude"
+cat > "$T8/.claude/zskills-config.json" <<'CFG_VER'
+{
+  "zskills_version": "2026.05.01+abc123",
+  "timezone": "UTC"
+}
+CFG_VER
+
+T8_OUT=$(
+  CLAUDE_PROJECT_DIR="$T8" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$ZSKILLS_VERSION" "$TIMEZONE"'
+)
+T8_VER=$(printf '%s\n' "$T8_OUT" | sed -n '1p')
+T8_TZ=$(printf '%s\n' "$T8_OUT" | sed -n '2p')
+
+[ "$T8_VER" = "2026.05.01+abc123" ] \
+  && pass "Test 8a: \$ZSKILLS_VERSION = '2026.05.01+abc123' (Phase 5a.2 7th-var case)" \
+  || fail "Test 8a: \$ZSKILLS_VERSION" "got '$T8_VER'"
+[ "$T8_TZ" = "UTC" ] \
+  && pass "Test 8b: other vars still resolved when zskills_version present" \
+  || fail "Test 8b: \$TIMEZONE alongside zskills_version" "got '$T8_TZ'"
+
+# Subtest 8c: zskills_version absent → ZSKILLS_VERSION stays empty (already
+# covered by Test 1g but reasserting in the dedicated test for clarity).
+T8B=$(mktemp -d /tmp/zskills-resolve-cfg-t8b-XXXXXX)
+mkdir -p "$T8B/.claude"
+echo '{ "timezone": "UTC" }' > "$T8B/.claude/zskills-config.json"
+T8B_VER=$(
+  CLAUDE_PROJECT_DIR="$T8B" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_VERSION"'
+)
+[ -z "$T8B_VER" ] \
+  && pass "Test 8c: \$ZSKILLS_VERSION empty when zskills_version field absent" \
+  || fail "Test 8c: \$ZSKILLS_VERSION empty when absent" "got '$T8B_VER'"
+
+rm -rf "$T8" "$T8B"
 
 # --- Summary ---------------------------------------------------------------
 echo ""

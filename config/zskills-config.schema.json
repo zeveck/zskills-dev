@@ -17,6 +17,11 @@
       "description": "IANA timezone for timestamps in reports and markers. Example: America/New_York",
       "default": "America/New_York"
     },
+    "zskills_version": {
+      "type": "string",
+      "default": "",
+      "description": "Installed zskills version fingerprint, formatted as YYYY.MM.D+<hash>. Written by /update-zskills install/update; read by /briefing's 'Z Skills Update Check' to compare against the source repo's latest release tag. Optional — when empty, the briefing falls back to '(unknown)'."
+    },
     "execution": {
       "type": "object",
       "description": "Controls how agent work reaches main.",

@@ -2,6 +2,26 @@
 
 ## 2026-05-02
 
+### Added — `/update-zskills` data plumbing for per-skill + repo-level version delta (Phase 5a)
+
+Phase 5a of plans/SKILL_VERSIONING.md ships the plumbing layer for
+version-data UI. `zskills-resolve-config.sh` resolves a 7th var
+`ZSKILLS_VERSION` from a top-level `zskills_version` field in
+`.claude/zskills-config.json`. Two new helper scripts under
+`skills/update-zskills/scripts/`: `resolve-repo-version.sh` (extracts the
+latest `YYYY.MM.N` tag from the zskills source clone) and
+`skill-version-delta.sh` (iterates BOTH `skills/*/` and
+`block-diagram/*/`, emits tab-delimited `<name> <kind> <src> <inst>
+<status>` rows). A third helper, `json-set-string-field.sh`, performs
+no-jq, no-sed JSON top-level string-field writes (awk-based,
+metacharacter-clean). The `/briefing` "Z Skills Update Check" now reads
+the installed version from the canonical config helper and compares it
+against the source repo's latest tag, replacing the prior `git fetch
+--dry-run` heuristic. Schema gains an optional top-level
+`zskills_version` string field; existing `dashboard`/`commit`/
+`execution`/`testing`/`dev_server`/`ui`/`ci` blocks unchanged. Phase 5b
+will consume these helpers in `/update-zskills`'s SKILL.md UI sites.
+
 ### Added — skill-version enforcement (commit: 2026.05.02+fe9135)
 
 Three-point gate on metadata.version: warn-config-drift hook
