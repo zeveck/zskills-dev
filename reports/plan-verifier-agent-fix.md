@@ -1,5 +1,57 @@
 # Plan Report — Verifier Agent Fix
 
+## Phase — 5 /update-zskills install path for verifier.md + 2 new hooks [UNFINALIZED]
+
+**Plan:** plans/VERIFIER_AGENT_FIX.md
+**Status:** Completed (verified — round 2 PASS after fix-cycle)
+**Worktree:** /tmp/zskills-pr-verifier-agent-fix (branch `feat/verifier-agent-fix`)
+**Commits:** a4b0890 (5-file bundle: SKILL.md + mirror + new test + jq-invariant fix + run-all.sh)
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 5.1 | Step C extended in place — hook list +2, agent-copy block, consumer-customization note | Done | a4b0890 |
+| 5.2 | Audit step (Installed agents + hooks + drift checks) added to install summary | Done | a4b0890 |
+| 5.3 | metadata.version bumped to `2026.05.03+a9bbe0` | Done | a4b0890 |
+| 5.4 | tests/test-update-zskills-agent-install.sh (new) — 4 sandbox sub-cases | Done | a4b0890 |
+| 5.5 | Registered in tests/run-all.sh adjacent to other test-update-zskills-* | Done | a4b0890 |
+| 5.6 | Mirror via scripts/mirror-skill.sh — diff -rq clean | Done | a4b0890 |
+
+### Verification
+- AC-5.1 — Step C heading is "Fill hook + agent gaps"; section contains `.claude/agents`, `inject-bash-timeout.sh`, `verify-response-validate.sh` references — PASS
+- AC-5.2 — auto-discovery WARN line present; only `/agents reload` mention is the explicit "no in-session reload command" disclaimer — PASS
+- AC-5.3 — `bash tests/test-update-zskills-agent-install.sh` exit 0, 4/4 sub-cases PASS
+- AC-5.4 — `bash scripts/skill-version-stage-check.sh` rc=0
+- AC-5.5 — `diff -rq skills/update-zskills/ .claude/skills/update-zskills/` empty
+- AC-5.6 — `run_suite "test-update-zskills-agent-install"` registered
+- AC-5.7 — **orchestrator-run manual install** in `/tmp/zskills-scratch-consumer` PASS: all 3 artifacts installed (verifier.md + 2 hooks), byte-equivalence, idempotency, WARN line. Transcript at `/tmp/zskills-tests/zskills-pr-verifier-agent-fix/manual-install.log`.
+- AC-5.8 — hooks → `.claude/hooks/`, `.claude/scripts/` not created — PASS
+- AC-5.9 — `commit-reviewer.md` NOT installed (D'' dropped) — PASS
+- AC-5.10 — full suite **2071/2071** PASS (+4 vs pre-Phase-5 baseline 2067/2067)
+
+### Fix-cycle (round 1 → round 2)
+Round 1 verifier surfaced AC-5.10 FAIL: `tests/test-update-zskills-version-surface.sh` AC #8 invariant `grep -c 'jq' SKILL.md == 0` tripped on the spec-mandated documentation disclaimer at SKILL.md:886 (`Bash regex parse only — no` + backtick-jq-backtick). The verifier correctly STOPPED instead of papering over.
+
+A fix agent refined the invariant from coarse substring grep to a regex matching actual jq invocation shapes (`| jq`, `$(jq …)`, `` `jq …` ``, `jq -<flag>`, `jq '…'` / `jq "…"`, `^jq +`). Documentation references like `no \`jq\`` are now exempt; the original AC #8 intent (no jq usage in update-zskills) is preserved. This is a legitimate refinement, not a weakening.
+
+The test fix was bundled into the Phase 5 commit (5 files instead of spec's 4) — the cross-plan collision is causally part of "make Phase 5 land" and the spec author didn't anticipate it. Bundling rationale is documented in the commit message.
+
+Round 2 verifier confirmed AC-5.10 PASS (2071/2071) and committed `a4b0890`.
+
+### Notes
+- **Step C is now agent-aware.** Future plans that ship `.claude/agents/*.md` get auto-installed via the same path; no skill-source changes needed.
+- **No settings.json wiring for agents.** Agent definitions are auto-discovered by Claude Code at session start from `.claude/agents/`. The frontmatter `hooks:` declaration on `verifier.md` wires the Layer 0 PreToolUse hook directly.
+- **Consumer-customization handling:** if a consumer edits `.claude/agents/verifier.md` locally, the next `/update-zskills` install OVERWRITES with source (idempotent `cmp -s` gate ensures only changed files are touched). Consumers who want custom verifier behavior should fork the source skill and ship it alongside zskills, not edit the installed copy.
+- **Auto-discovery WARN is critical.** New verifier-using skills (`/run-plan`, `/commit`, `/fix-issues`, `/do`, `/verify-changes`) won't see the verifier agent until session restart — there's no in-session reload mechanism in Claude Code. The WARN line communicates this expectation explicitly so consumers don't get cryptic "no such agent" errors.
+
+### Dependencies satisfied
+- Phases 1, 2, 3, 4 — all done
+
+### Downstream
+- Phase 6: CHANGELOG entry + Anthropic upstream issue + plan completion bookkeeping. Phase 6 is the final phase — `/land-pr` with `--auto` enables PR #189 automerge.
+
+---
+
 ## Phase — 4 Canaries: tools-allowlist, timeout-injection, failure-protocol script [UNFINALIZED]
 
 **Plan:** plans/VERIFIER_AGENT_FIX.md
