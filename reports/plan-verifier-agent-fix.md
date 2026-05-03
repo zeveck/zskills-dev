@@ -1,5 +1,43 @@
 # Plan Report — Verifier Agent Fix
 
+## Phase — 4 Canaries: tools-allowlist, timeout-injection, failure-protocol script [UNFINALIZED]
+
+**Plan:** plans/VERIFIER_AGENT_FIX.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-verifier-agent-fix (branch `feat/verifier-agent-fix`)
+**Commits:** b2a968e
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 4.1 | Canary 1 (`canary-verifier-agent-discovery-part1.sh` + `part2.sh`) — already shipped, retained | Done | (Phase 1) |
+| 4.2 | Canary 2 — `tests/canary-verifier-timeout-injection.sh` — 7 assertions (parity / frontmatter wiring / 3 invocation cases) | Done | b2a968e |
+| 4.3 | Canary 3 — `tests/canary-verify-response-validate.sh` — 11 sub-cases A-G | Done | b2a968e |
+| 4.4 | Register canaries 2 & 3 in `tests/run-all.sh` (2 new `run_suite` lines) | Done | b2a968e |
+
+### Verification
+- AC-4.1: `canary-verifier-agent-discovery-part1.sh` exit 0 (install-fixture script per Phase 1 design)
+- AC-4.2: `canary-verifier-timeout-injection.sh` exit 0 — 7/7 assertions PASS
+- AC-4.3: `canary-verify-response-validate.sh` exit 0 — 11/11 sub-cases PASS
+- AC-4.4: both `run_suite` lines present at lines 42-43
+- AC-4.5: full suite **2067/2067 PASS** (+18 vs pre-Phase-4 baseline 2049/2049)
+
+### Notes
+- **Live-dispatch property scope-out (Canary 2)**: the spec's "probe step" (live `Agent` dispatch returning `CANARY-PROBE-OK`) isn't runnable from pure shell. Canary 2 asserts everything CI-verifiable — source/mirror parity, frontmatter wiring (`.claude/agents/verifier.md` PreToolUse Bash matcher with the hook command), and the hook script's behavior across 3 invocation cases (probe-equivalent / real-injection / no-op on already-sufficient timeout). The live end-to-end property is exercised every time a real `/run-plan` Phase 3 verifier dispatch runs against a long-running test suite.
+- **Phase 3.5 auto-correction**: 1 PLAN-TEXT-DRIFT token detected and re-confirmed independently — `phase=4 bullet=4.3-G-a field=byte-count plan=8 actual=7` (`"ok done"` is 7 chars, not 8). 13% drift falls in the 10-20% band → auto-corrected with audit comment inline. Behaviorally harmless (assertion is `<200`).
+- **Threshold-calibration matrix** (sub-cases F + G) makes the 200-byte cutoff example-driven instead of arbitrary — three realistic ≥200-byte "tests skipped" attestations (F) and three sub-200-byte stubs (G) demonstrate the threshold's real-world margin.
+
+### Dependencies satisfied
+- Phase 1 (verifier.md + Layer 0 + Layer 3 hooks) — done
+- Phase 2 (`/run-plan` Layer 3 wired) — done
+- Phase 3 (4 other verifier-dispatching skills wired) — done
+
+### Downstream
+- Phase 5: `/update-zskills` install path for `verifier.md` + the 2 hooks. After Phase 5 lands, consumer repos receive the structural fix automatically.
+- Phase 6: CHANGELOG, file Anthropic upstream issue, plan completion.
+
+---
+
 ## Phase — 3 Migrate /commit, /fix-issues, /do, /verify-changes [UNFINALIZED]
 
 **Plan:** plans/VERIFIER_AGENT_FIX.md
