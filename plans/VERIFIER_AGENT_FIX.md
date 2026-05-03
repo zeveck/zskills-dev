@@ -20,7 +20,7 @@ This plan replaces the prose-only guardrail with a **structural** fix at three l
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decision, agent-definition authoring, hook script | ⬚ |        |       |
+| 1 — Decision, agent-definition authoring, hook script | 🟡 | `89d1b57` | Implemented + verified (2056/2056 tests). **Manual canary gate pending** — user runs `bash tests/canary-verifier-agent-discovery-part{1,2}.sh` (with Claude Code session restart between) to verify the structural-allowlist claim before Phase 2 commits dispatch sites. |
 | 2 — Migrate `/run-plan` Phase 3 + add failure-protocol clause | ⬚ |        |       |
 | 3 — Migrate `/commit`, `/fix-issues`, `/do`, `/verify-changes` | ⬚ |        |       |
 | 4 — Canaries: agent discovery, hook block, sub-subagent denial, failure-protocol firing | ⬚ |        |       |
