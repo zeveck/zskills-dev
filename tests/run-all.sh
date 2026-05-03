@@ -36,8 +36,8 @@ run_suite() {
 }
 
 run_suite "test-hooks.sh" "tests/test-hooks.sh"
-run_suite "test-validate-bash-no-background.sh" "tests/test-validate-bash-no-background.sh"
-run_suite "test-validate-bash-readonly.sh" "tests/test-validate-bash-readonly.sh"
+run_suite "test-inject-bash-timeout.sh" "tests/test-inject-bash-timeout.sh"
+run_suite "test-verify-response-validate.sh" "tests/test-verify-response-validate.sh"
 run_suite "canary-verifier-agent-discovery-part1.sh" "tests/canary-verifier-agent-discovery-part1.sh"
 run_suite "test-port.sh" "tests/test-port.sh"
 run_suite "test-apply-preset.sh" "tests/test-apply-preset.sh"
