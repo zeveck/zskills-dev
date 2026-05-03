@@ -8,7 +8,7 @@ description: >-
   Usage: /commit [pr] [scope] [push|land]
 argument-hint: "[pr] [scope] [push|land]"
 metadata:
-  version: "2026.05.02+fe9135"
+  version: "2026.05.03+e8e557"
 ---
 
 # /commit [pr] [scope] [push|land] — Safe Commit Workflow
@@ -283,7 +283,9 @@ For every file classified as "related":
    you have selection bias. A fresh agent catches files you missed or
    included by mistake.
 
-   **The reviewer is READ-ONLY.** Include this verbatim in the dispatch prompt:
+   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The dispatch prompt MUST include the verbatim preamble: `"You are reviewing the staged diff. Read-only review — do NOT git stash, checkout, restore, reset, add, rm, commit, push, merge, rebase, cherry-pick, revert, tag, or branch -D. Do NOT edit, write, or delete any file. Read the diff, run any read-only checks (git diff, git log, git show), and report concerns or approve."` After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP without committing.
+
+   **The reviewer is READ-ONLY.** Include this verbatim in the dispatch prompt (defense-in-depth, preserved alongside the Dispatch-shape preamble above):
 
    > You are read-only. Allowed: Read files, run read-only git (`diff`, `log`,
    > `show`, `show-ref`, `ls-files`, `ls-remote`, `status`), run existing
@@ -293,10 +295,31 @@ For every file classified as "related":
    > (Past failure: reviewer ran `git stash -u && test && git stash pop`; the
    > pop silently unstaged the caller's staged files.)
 
+   **Layer 3 — verifier response validation.** Immediately after the dispatch returns:
+
+   ```bash
+   printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+   VALIDATE_EXIT=$?
+   ```
+
+   On `VALIDATE_EXIT=1` — STOP without committing. Do NOT stage anything else, do NOT amend, do NOT proceed to step 4. Emit:
+
+   ```
+   STOP: verifier returned without meaningful results.
+
+   $(cat /tmp/last-validate-stderr)
+
+   This is a verification FAIL, not a license to commit. Resolve the
+   verifier failure (re-dispatch only after confirming the verifier
+   agent file is installed: .claude/agents/verifier.md exists; bash
+   $CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh < /dev/null
+   exits 0). If the verifier agent is missing, run /update-zskills.
+   ```
+
    If the agent raises concerns: **STOP.** Report the concerns to the user.
    Do not commit until concerns are resolved.
 
-   If the agent approves: proceed to step 4.
+   If the agent approves AND `VALIDATE_EXIT=0`: proceed to step 4.
 
 4. Resolve the Co-Authored-By trailer from config, then commit.
 

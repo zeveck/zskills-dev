@@ -14,6 +14,10 @@ __pycache__/
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
 .claude/logs/
+# Phase 1.1 canary install path — script 1 drops the fixture here, script 2
+# (developer-driven) cleans it up. Source-of-truth lives at
+# tests/fixtures/canary-agents/canary-readonly.md.
+.claude/agents/canary-readonly.md
 DOC_PARTY_COMPARISON.md
 
 # Playwright runtime artifacts (snapshots, console logs, video, traces).

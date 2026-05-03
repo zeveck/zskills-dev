@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-03
+
+### Added — Verifier subagent — D'' structural defense
+
+Replaced the prose-only `run_in_background: true` warning (PR #148) with a Claude Code custom-subagent definition at `.claude/agents/verifier.md` plus two new hook scripts. **Layer 0 (root-cause fix):** `hooks/inject-bash-timeout.sh` is a frontmatter PreToolUse hook on Bash that auto-extends every Bash call's `timeout` to 600000 ms (10 min) via the `updatedInput` envelope field — the 120s default that triggered the bg+Monitor recovery reflex no longer applies to verifier dispatches. **Layer 3 (universal failure-protocol primitive):** `hooks/verify-response-validate.sh` is a script that any verifier-dispatching skill pipes the verifier's response through (7-phrase stalled-string whitelist anchored to last 10 lines + 200-byte minimum-length signal). Five dispatch sites migrated to explicit `subagent_type: "verifier"` parameters AND the Layer 3 invocation: `/run-plan` Phase 3, `/commit` Phase 5 step 3, `/fix-issues` per-issue verification, `/do` Phase 3 (code + content paths), `/verify-changes` self-dispatch. `/update-zskills` Step C extended to install `.claude/agents/verifier.md` and the two hook scripts. CLAUDE.md gains "Verifier-cannot-run is a verification FAIL" rule. Closes #176, #180.
+
 ## 2026-05-02
 
 ### Added — `/update-zskills` UI surface for per-skill + repo-level version delta (Phase 5b)

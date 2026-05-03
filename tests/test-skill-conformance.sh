@@ -218,6 +218,17 @@ check_fixed verify-changes "test-cmd: TEST_MODE=skipped"    'TEST_MODE="skipped"
 check_fixed verify-changes "test-cmd: misconfig refusal"    'test infra detected'
 check_fixed verify-changes "test-cmd: skipped report text"  'Tests: skipped — no test infra'
 
+# VERIFIER_AGENT_FIX Phase 2 — /run-plan must dispatch the verifier subagent
+# explicitly via subagent_type:"verifier" (D'' Layer 0 timeout-injection)
+# AND pipe the verifier response through Layer 3 validation. Tripwire:
+# any future refactor that drops the explicit subagent_type or removes
+# the Layer 3 invocation reverts the fix and re-exposes the bg+Monitor
+# recovery reflex that PR #185/#186 surfaced.
+check_fixed run-plan "verifier subagent dispatch"     'subagent_type: "verifier"'
+check_fixed run-plan "Layer 3 invocation"             'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"'
+check_fixed run-plan "Failure Protocol STOP message"  'STOP: verifier returned without meaningful results'
+check_fixed run-plan "dispatcher attribution clarifier" 'Dispatcher: the orchestrator (top-level `/run-plan`), not the verifier subagent'
+
 echo ""
 echo "=== /run-plan — structural landmarks ==="
 check run-plan "Phase 5b header"    '^## Phase 5b'

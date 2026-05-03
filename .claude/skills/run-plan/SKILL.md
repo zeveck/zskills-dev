@@ -9,7 +9,7 @@ description: >-
   self-schedule recurring runs via cron. Use `next` to check schedule, `stop`
   to cancel.
 metadata:
-  version: "2026.05.02+73e6eb"
+  version: "2026.05.03+82aa34"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1281,6 +1281,8 @@ are the most common source of time waste.
 
 ### Delegate mode verification
 
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"` (same agent definition as worktree mode — `.claude/agents/verifier.md`). The Layer 3 invocation block (`### Failure Protocol — verifier response validation` below) applies identically: pipe the verifier's response through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"` immediately after the dispatch returns; on `VALIDATE_EXIT=1` OR 45-min timeout, emit the verbatim STOP message and halt the pipeline.
+
 If this phase used delegate execution, verification runs on **main**:
 
 1. **Verify commits landed** — check `git log --oneline -10` for the
@@ -1354,8 +1356,11 @@ Include this VERBATIM in the verifier dispatch prompt:
 
 ### Worktree mode verification
 
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier agent definition lives at `.claude/agents/verifier.md` — `tools: Read, Grep, Glob, Bash, Edit, Write`; frontmatter PreToolUse hook (`inject-bash-timeout.sh`) auto-extends every Bash call's timeout to 600000 ms (10 min) so the bg+Monitor recovery reflex never engages. The verifier CANNOT dispatch sub-subagents — fix-agent dispatch (Phase 3 step 3 "fresh fix agent") stays at the orchestrator level. If the dispatch returns "no such agent" or equivalent, the verifier agent file is missing — STOP and run `/update-zskills` (Phase 5 of the verifier-agent-fix plan teaches it to install `.claude/agents/verifier.md`).
+
 1. **Dispatch verification agent** targeting the worktree's changes. The
-   verification agent is dispatched **without** `isolation: "worktree"` — the
+   verification agent is dispatched with `subagent_type: "verifier"` and
+   **without** `isolation: "worktree"` — the
    Agent tool's `isolation` parameter creates a NEW worktree, it cannot attach
    to an existing one.
 
@@ -1449,9 +1454,60 @@ Include this VERBATIM in the verifier dispatch prompt:
      The fix agent is NOT the implementer — it's a fresh agent with no
      bias toward "this is good enough."
 
+     **Dispatcher: the orchestrator (top-level `/run-plan`), not the verifier subagent.** The verifier's tool allowlist excludes `Agent`; sub-subagent dispatch is categorically unavailable per https://code.claude.com/docs/en/sub-agents. The verifier reports failed-AC findings back; the orchestrator dispatches the fresh fix agent.
+
      After the fix agent finishes, re-verify (max 2 rounds). If still
      failing after 2 fix+verify cycles, **STOP** — needs human judgment.
      Invoke the Failure Protocol.
+
+### Failure Protocol — verifier response validation
+
+**Failure Protocol — verifier response validation (Layer 3).**
+
+**Detection runs immediately after the verifier `Agent` dispatch returns**, before any tracker write or commit:
+
+```bash
+printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+VALIDATE_EXIT=$?
+```
+
+The script (sourced from `hooks/verify-response-validate.sh` at zskills source; installed by `/update-zskills` Step C) checks:
+- **Stalled-string trigger** — case-insensitive substring match of any of 7 whitelisted phrases against the LAST 10 LINES of the response (`let me wait for the monitor`, `tests are running. let me wait`, `monitor will signal`, `monitor to signal`, `still searching. let me wait`, `waiting on bashoutput`, `polling bashoutput`).
+- **Min-byte threshold** — response < 200 bytes is treated as empty/stub.
+
+Exit 0 = PASS (proceed to tracker write + commit). Exit 1 = FAIL — read stderr to see which pattern or threshold fired.
+
+**AND** detect agent-timeout-exceeded: if the dispatch took longer than 45 minutes (existing rule, line ~1275-1280), treat as failed.
+
+**On detection (`VALIDATE_EXIT=1` OR timeout):** STOP. Do NOT write the verification step marker. Do NOT proceed to Phase 3.5 plan-drift correction. Do NOT proceed to Phase 4 commit. Emit the verbatim STOP message:
+
+```
+STOP: verifier returned without meaningful results.
+
+$(cat /tmp/last-validate-stderr)
+
+This is a verification FAIL, not a routing decision.
+
+Failure Protocol:
+1. Roll back any uncommitted phase work in <worktree-path>
+   (git status; user-driven cleanup).
+2. Tracker entry: requires.verify-changes.<TRACKING_ID> stays unfulfilled.
+3. If you just installed the verifier agent (this is the first
+   dispatch of the session post-install), restart Claude Code (or
+   open a new session) before re-dispatching — `.claude/agents/`
+   is auto-discovered ONLY at session start (per
+   code.claude.com/docs/en/sub-agents priority table). There is
+   no in-session reload command; `/agents reload` does not exist.
+4. Halt the pipeline. Do not auto-retry. Re-dispatch only after
+   surfacing the failure and confirming the verifier agent file is
+   installed (.claude/agents/verifier.md exists; bash
+   $CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh < /dev/null
+   exits 0).
+```
+
+**Inline self-verification is NOT acceptable recovery.** Per CLAUDE.md ## Verifier-cannot-run rule.
+
+**No automatic re-dispatch.** Re-dispatching with the same agent type hits the same wall.
 
 #### Plan-text drift signals (worktree mode verification)
 

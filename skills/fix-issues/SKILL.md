@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.02+f2eea1"
+  version: "2026.05.03+8c4e2f"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -973,6 +973,29 @@ After each agent completes, **dispatch a fresh agent** to run `/verify-changes
 worktree` in its worktree. Do NOT run verification yourself — you wrote
 the dispatch prompts, so you have implementer bias. The verification agent
 must be a fresh agent with no memory of the implementation.
+
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP that issue's flow and surface to the user. Per Anthropic's documented design, the verifier cannot dispatch sub-subagents — for the per-issue case this is fine: each verifier handles one issue's worktree. If a verification reveals a fix is needed, surface to the user (or to `/run-plan` if dispatched by it); the orchestrator dispatches any fix agent.
+
+**Layer 3 — verifier response validation.** Immediately after each verification dispatch returns:
+
+```bash
+printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+VALIDATE_EXIT=$?
+```
+
+On `VALIDATE_EXIT=1` — STOP that issue's flow. Do NOT mark the issue
+verified, do NOT write `step.fix-issues.<sprint>.verify`, do NOT proceed
+to landing for that issue. Emit:
+
+```
+STOP: verifier returned without meaningful results for issue #<N>.
+
+$(cat /tmp/last-validate-stderr)
+
+This is a verification FAIL. Surface to the user. Do not auto-retry —
+re-dispatching with the same agent type hits the same wall. If the
+verifier agent file is missing, run /update-zskills.
+```
 
 This delegates the full review workflow (diff review, test coverage audit,
 test run, manual verification, fix & re-verify cycle) to a separate agent.
