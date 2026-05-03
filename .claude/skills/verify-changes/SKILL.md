@@ -8,7 +8,7 @@ description: >-
   with playwright-cli, fix any problems found, re-verify until clean, then report
   results with recommendations.
 metadata:
-  version: "2026.05.02+7907be"
+  version: "2026.05.03+d5c06b"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -30,15 +30,32 @@ of the implementation and will catch things you'd miss because you
 
 ### Dispatch protocol
 
+**Dispatch shape (top-level invocation).** When `/verify-changes` is invoked at the top level AND the orchestrator has the `Agent` tool, dispatched sub-agents use `subagent_type: "verifier"`; pipe each agent's response through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP the sub-flow. When invoked from within a `verifier` subagent (the typical case after this plan lands), the `Agent` tool is unavailable categorically — fall through to the inline path (`:43-61`). Document the freshness mode in the verification report ("multi-agent" / "single-context fresh-subagent" / "inline self-review").
+
 **Check your tool list first.** Whether you can dispatch fresh sub-agents
 for verification depends on whether you have the `Agent` (or `Task`) tool:
 
 - **If `Agent` is in your tool list** (you are running at the top level —
   the user invoked you directly, or a parent skill cron-fired you in
-  chunked mode), dispatch fresh sub-agents per the protocol below. Each
-  sub-agent is a sibling of any other sub-agent dispatched by you, and
-  they have independent contexts. This is the multi-agent verification
-  mode and gives the strongest fresh-eyes guarantees.
+  chunked mode), dispatch fresh sub-agents per the protocol below using
+  `subagent_type: "verifier"` at every dispatch site. Each sub-agent is a
+  sibling of any other sub-agent dispatched by you, and they have
+  independent contexts. This is the multi-agent verification mode and
+  gives the strongest fresh-eyes guarantees.
+
+  **Layer 3 — verifier response validation.** After each verifier
+  sub-agent dispatch returns:
+
+  ```bash
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  VALIDATE_EXIT=$?
+  ```
+
+  On `VALIDATE_EXIT=1` — STOP this sub-flow. Do NOT roll up the
+  sub-agent's output into the verification report as a PASS. Surface the
+  failure to the dispatcher (or to the user if you ARE the top-level
+  orchestrator). Do not auto-retry — re-dispatching with the same agent
+  type hits the same wall.
 
 - **If `Agent` is NOT in your tool list** (you are running as a dispatched
   subagent yourself — Claude Code subagents do not have the Agent/Task
@@ -60,11 +77,12 @@ for verification depends on whether you have the `Agent` (or `Task`) tool:
     (you were Skill-loaded into the implementer's context — limited
     assurance, flag for the user).
 
-At minimum, dispatch an agent for Phase 1-2 (read diffs, audit coverage)
-and run tests yourself (Phase 3) when dispatch is available. Run
-everything inline when it isn't. For complex changes, dispatch separate
-agents for different verification concerns (diff review, test coverage,
-manual testing).
+At minimum, dispatch an agent (with `subagent_type: "verifier"`) for
+Phase 1-2 (read diffs, audit coverage) and run tests yourself (Phase 3)
+when dispatch is available. Run everything inline when it isn't. For
+complex changes, dispatch separate agents for different verification
+concerns (diff review, test coverage, manual testing) — each with
+`subagent_type: "verifier"` and each piped through Layer 3.
 
 Do not produce a verification report based on what you remember doing.
 Context compaction means your memory of what you changed may be incomplete
