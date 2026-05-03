@@ -440,12 +440,22 @@ if [ "$(grep -c 'metadata.version' "$SKILL_MD")" -ge 2 ]; then
 else
   fail "SKILL.md metadata.version count" "expected >=2, got $(grep -c 'metadata.version' "$SKILL_MD")"
 fi
-# AC #8: no jq mention
-if [ "$(grep -c 'jq' "$SKILL_MD")" = "0" ]; then
-  pass "SKILL.md grep -c 'jq' == 0 (AC #8)"
+# AC #8: no jq INVOCATIONS (documentation disclaimers like "no `jq`" are
+# exempt — they assert absence rather than perform a call). The regex
+# matches actual jq command shapes:
+#   `| jq`       — pipe into jq
+#   `$(jq ...)`  — command substitution
+#   `` `jq ...` `` — backtick command substitution
+#   `jq -<flag>` — jq with a CLI flag (e.g. -r, -n)
+#   `jq '...'` / `jq "..."` — jq with a quoted JSONPath argument
+#   `^jq <arg>`  — jq as the leading token on a line
+JQ_INVOCATION_RE='\| *jq( |$)|\$\(jq |`jq |jq +-[a-zA-Z]|jq +['"'"'"]|^jq +'
+JQ_INVOCATIONS=$(grep -cE "$JQ_INVOCATION_RE" "$SKILL_MD")
+if [ "$JQ_INVOCATIONS" = "0" ]; then
+  pass "SKILL.md has zero jq invocations (AC #8 — documentation disclaimers exempt)"
 else
-  fail "SKILL.md jq count" "expected 0, got $(grep -c 'jq' "$SKILL_MD"):
-$(grep -n 'jq' "$SKILL_MD")"
+  fail "SKILL.md jq invocation count" "expected 0, got $JQ_INVOCATIONS:
+$(grep -nE "$JQ_INVOCATION_RE" "$SKILL_MD")"
 fi
 
 # ----------------------------------------------------------------------

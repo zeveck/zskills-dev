@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.02+9e54a0"
+  version: "2026.05.03+a9bbe0"
 ---
 
 # Update Z Skills Infrastructure
@@ -813,7 +813,7 @@ migration removes only lines matching both value AND ±2-line template
 context. Anything the user added (their own sections, notes,
 references) is untouched.
 
-#### Step C — Fill hook gaps
+#### Step C — Fill hook + agent gaps
 
 Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
 
@@ -823,6 +823,22 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   and `ui.file_patterns` from `.claude/zskills-config.json` at runtime
   via bash regex (same idiom as `is_main_protected()`). Just copy the
   source template.
+- For `block-unsafe-generic.sh`, `block-agents.sh.template`,
+  `warn-config-drift.sh`: copy as-is. Wired into `settings.json` per
+  the canonical zskills-owned triples table below.
+- For `inject-bash-timeout.sh`: copy to
+  `.claude/hooks/inject-bash-timeout.sh`. **No `settings.json` entry**
+  — this hook is loaded via the `.claude/agents/verifier.md`
+  frontmatter `hooks.PreToolUse` declaration (Layer 0 timeout-injection
+  for verifier subagent Bash calls). Auto-discovered when the agent
+  definition is loaded at session start.
+- For `verify-response-validate.sh`: copy to
+  `.claude/hooks/verify-response-validate.sh`. **No `settings.json`
+  entry** — this hook is invoked directly from dispatcher SKILL.md
+  files (Layer 3 universal verifier-response failure-protocol
+  primitive). Standard executable shell script, called as
+  `bash .claude/hooks/verify-response-validate.sh ...` from skill
+  prose.
 - For `scripts/test-all.sh`: copy as-is from
   `$PORTABLE/scripts/`. Reads `testing.unit_cmd` from
   `.claude/zskills-config.json` at runtime — no
@@ -834,6 +850,50 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   comment. Only these two placeholders — all others listed in the
   Step 0.5 mapping table go through the template-render path (Step B),
   not the hook path.
+
+The `inject-bash-timeout.sh` and `verify-response-validate.sh` hooks
+have NO entries in the canonical zskills-owned triples table below
+(they are not registered via `settings.json`). They are loaded via the
+`.claude/agents/verifier.md` frontmatter PreToolUse declaration AND
+via direct skill invocation in dispatcher SKILL.md files. Copy them to
+`.claude/hooks/` only — do not register them.
+
+**Custom subagent definitions.** After hook copy, copy missing or
+changed agent definitions from `$PORTABLE/.claude/agents/*.md` to
+`$PROJECT_DIR/.claude/agents/`. `cp -a` preserves mode bits + mtime.
+The agent frontmatter references
+`$CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh` — that path
+is fixed, so the hook-copy step (above) is a hard prerequisite.
+
+```bash
+if [ -d "$PORTABLE/.claude/agents" ]; then
+  mkdir -p .claude/agents
+  for src in "$PORTABLE/.claude/agents"/*.md; do
+    [ -e "$src" ] || continue
+    name=$(basename "$src")
+    dst=".claude/agents/$name"
+    if [ ! -f "$dst" ]; then
+      cp -a "$src" "$dst" && echo "Installed agent: $name"
+    elif ! cmp -s "$src" "$dst"; then
+      cp -a "$src" "$dst" && echo "Updated agent: $name"
+    fi
+  done
+  echo "WARN: agent definitions auto-discover at session start. Restart Claude Code (or open a new session) before invoking verifier-using skills (/run-plan, /commit, /fix-issues, /do, /verify-changes). There is no in-session reload command."
+fi
+```
+
+**No settings.json wiring needed for agents.** Auto-discovered.
+**Bash regex parse only — no `jq`.** (Hook scripts may use Python;
+`inject-bash-timeout.sh` does, per zskills convention exemption for
+JSON round-trip.)
+
+**Consumer-customization handling:** if a consumer edits
+`.claude/agents/verifier.md`, the next install OVERWRITES with source
+(idempotent `cmp -s` gate ensures only changed files are touched).
+Document this expectation: agent definitions are framework-owned, not
+consumer-owned. Consumers wanting to customize verification behavior
+should compose around the agent (wrap dispatch in their own skill),
+not edit the agent definition file in place.
 
 Note: hooks and helper scripts read `testing.*`, `ui.file_patterns`,
 and `dev_server.main_repo_path` from `.claude/zskills-config.json` at
@@ -937,6 +997,18 @@ from a template):
    entries were missing and exit without changes.
 7. **Report:** `"Step C: registered N hook entries, skipped M already
    present, renamed R, preserved F foreign entries."`
+
+   Then append the agent + non-settings-wired hook install summary:
+
+   > Installed agents:
+   > - verifier (from .claude/agents/verifier.md, Layer 0 timeout-injection hook)
+   >
+   > Installed hook scripts (D'' structural defense):
+   > - .claude/hooks/inject-bash-timeout.sh (Layer 0 — auto-extends Bash timeout to 600000 ms for verifier subagent)
+   > - .claude/hooks/verify-response-validate.sh (Layer 3 — universal verifier-response failure-protocol primitive)
+   >
+   > Drift check: each .md is byte-equivalent to source.
+   > Drift check: each hook script is byte-equivalent to source.
 
 **Why agent-driven, not scripted.** Three prior adversarial reviews of
 bash-splice approaches (append-if-missing, overwrite-if-stock,
