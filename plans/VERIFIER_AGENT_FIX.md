@@ -21,7 +21,7 @@ This plan replaces the prose-only guardrail with a **structural** fix at two lay
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Verifier agent + Layer 0 timeout-injection hook + Layer 3 failure-protocol script | ✅ | `89d1b57` (initial) + D'' rework commit | Phase 1 originally shipped the L1+L2 architecture (allowlist exclusion + bg-rejection hook + commit-reviewer.md). User pushback + research surfaced the D'' refined architecture: drop L1/L2 (working AROUND the harness bug, not addressing root cause), add Layer 0 timeout-injection hook + Layer 3 universal script-based failure-protocol primitive. Phase 1 reworked in the same PR; commit-reviewer.md + the two old validation hooks removed; verifier.md kept with full tools allowlist. Canary `canary-verifier-agent-discovery-part1.sh` retained (verifies subagent auto-discovery, not allowlist semantics). See Drift Log 2026-05-03. |
-| 2 — Migrate `/run-plan` Phase 3 verifier dispatch + Layer 3 invocation | ⬚ |        |       |
+| 2 — Migrate `/run-plan` Phase 3 verifier dispatch + Layer 3 invocation | ✅ | `636eccb` | D'' Layer 3 invocation: subagent_type:"verifier" + verify-response-validate.sh pipe + STOP on exit 1 in /run-plan/SKILL.md Phase 3; metadata.version 2026.05.03+82aa34; conformance tripwires +4; tests 2049/2049 PASS. |
 | 3 — Migrate `/commit`, `/fix-issues`, `/do`, `/verify-changes` (4 skills, same pattern) | ⬚ |        |       |
 | 4 — Canaries: tools-allowlist, timeout-injection, failure-protocol script | ⬚ |        |       |
 | 5 — `/update-zskills` install path for verifier.md + 2 new hooks | ⬚ |        |       |
