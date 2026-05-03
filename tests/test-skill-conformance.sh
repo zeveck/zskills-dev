@@ -1384,6 +1384,28 @@ fi
 # `.gitkeep` is the universal Unix idiom for tracking an otherwise-empty
 # directory; allow-list it explicitly. Other dotfiles in tracked content
 # (e.g., `.env`, `.DS_Store`, `.swp`) remain rejected.
+
+# Issue #185 + #186 — propagate-via-prose discipline rules. Both
+# CLAUDE_TEMPLATE.md (rendered into consumers' .claude/zskills-managed-rules.md
+# via /update-zskills Step B) and zskills' own root CLAUDE.md must contain
+# the load-bearing literals from each rule. Drift here means the rule
+# silently disappears from one surface or the other; lock both.
+echo "=== Propagation-discipline prose rules (issues #185, #186) ==="
+for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/CLAUDE.md"; do
+  rel="${prose_file#$REPO_ROOT/}"
+  if grep -qF 'Memory anchors are agent-local notes' "$prose_file"; then
+    pass "[propagation-prose] $rel contains memory-anchor rule literal (#186)"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'Memory anchors are agent-local notes' (#186)"
+  fi
+  if grep -qF 'Never call `gh pr create` or `gh pr merge --auto` directly when landing a PR' "$prose_file"; then
+    pass "[propagation-prose] $rel contains PR-landing-discipline rule literal (#185)"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'Never call \`gh pr create\` or \`gh pr merge --auto\` directly when landing a PR' (#185)"
+  fi
+done
+
+echo ""
 echo "=== Skill-dir cleanliness ==="
 for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
   [ -d "$skill_dir" ] || continue
