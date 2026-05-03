@@ -7,7 +7,7 @@ description: >-
   refactoring, content updates. Supports scheduling with every/now/next/stop.
   Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop | next.
 metadata:
-  version: "2026.05.02+f46a3c"
+  version: "2026.05.03+27f0e7"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -722,6 +722,26 @@ Verification intensity matches the change type (from Phase 1):
   Do NOT invoke `/verify-changes` for content-only pushes — it will run
   the full test suite regardless. Instead, dispatch a plain review agent.
 
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is sufficient for content review (Read + Grep cover the main path); the prose preamble above keeps it from running tests. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
+
+  **Layer 3 — verifier response validation:**
+
+  ```bash
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  VALIDATE_EXIT=$?
+  ```
+
+  On `VALIDATE_EXIT=1` — STOP. Do NOT push. Emit:
+
+  ```
+  STOP: verifier returned without meaningful results.
+
+  $(cat /tmp/last-validate-stderr)
+
+  This is a verification FAIL. Surface to the user. If the verifier
+  agent file is missing, run /update-zskills.
+  ```
+
 ### Code changes (js, css, html)
 
 - **Run `$FULL_TEST_CMD`** (resolve via
@@ -746,6 +766,26 @@ Verification intensity matches the change type (from Phase 1):
   diff review, test coverage audit, `npm run test:all`, manual
   verification if UI, fix problems, re-verify until clean. Push only
   happens if this agent reports clean.
+
+  **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
+
+  **Layer 3 — verifier response validation:**
+
+  ```bash
+  printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+  VALIDATE_EXIT=$?
+  ```
+
+  On `VALIDATE_EXIT=1` — STOP. Do NOT push. Emit:
+
+  ```
+  STOP: verifier returned without meaningful results.
+
+  $(cat /tmp/last-validate-stderr)
+
+  This is a verification FAIL, not a license to push. Surface to the
+  user. If the verifier agent file is missing, run /update-zskills.
+  ```
 
 ### Mixed changes
 
