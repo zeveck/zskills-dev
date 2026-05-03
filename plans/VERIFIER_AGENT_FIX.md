@@ -1,7 +1,8 @@
 ---
 title: Verifier Agent Fix
 created: 2026-05-02
-status: active
+status: complete
+completed: 2026-05-03
 ---
 
 # Plan: Verifier Agent Fix
@@ -25,7 +26,7 @@ This plan replaces the prose-only guardrail with a **structural** fix at two lay
 | 3 — Migrate `/commit`, `/fix-issues`, `/do`, `/verify-changes` (4 skills, same pattern) | ✅ | `d6690d0` (3-A /commit) + `285bc1d` (3-B /fix-issues) + `cf2fc56` (3-C /do) + `5919ea9` (3-D /verify-changes) | All 12 ACs PASS. 4 ordered commits per spec's commit-boundary rule. Each skill: subagent_type:"verifier" + Layer 3 invocation + Dispatch-shape callout. /commit retains read-only preamble verbatim; /do has 2 dispatch sites wired (code-changes + content-only); /verify-changes documents freshness modes (multi-agent / single-context fresh-subagent / inline self-review). metadata.version bumped on all 4 (commit→`+e8e557`, fix-issues→`+8c4e2f`, do→`+27f0e7`, verify-changes→`+d5c06b`). Tests 2049/2049 PASS (parity with baseline). |
 | 4 — Canaries: tools-allowlist, timeout-injection, failure-protocol script | ✅ | `b2a968e` | All 5 ACs PASS. Canary 2 `tests/canary-verifier-timeout-injection.sh` (7 assertions): source/mirror parity for inject-bash-timeout.sh + verifier.md frontmatter PreToolUse Bash matcher + 3 hook-script invocation cases (probe / real injection / no-op on already-sufficient). Canary 3 `tests/canary-verify-response-validate.sh` (11 sub-cases A-G): 5 baseline + 3 positive threshold-calibration (F-a/b/c realistic ≥200-byte attestations) + 3 negative (G-a/b/c stubs). Both registered in tests/run-all.sh. Tests 2067/2067 PASS (+18 vs baseline). Phase 3.5 auto-corrected 1 PLAN-TEXT-DRIFT (G-a byte-count: 8→7, 13% drift, 10-20% band). |
 | 5 — `/update-zskills` install path for verifier.md + 2 new hooks | ✅ | `a4b0890` | All 10 ACs PASS (incl. AC-5.7 manual install in scratch dir at `/tmp/zskills-scratch-consumer`). Step C extended in place: heading "Fill hook + agent gaps", hook list +2 (inject-bash-timeout.sh + verify-response-validate.sh), agent-copy bash block (cmp -s gated, idempotent), auto-discovery WARN line, install-summary "Installed agents/hooks" + drift-check lines. metadata.version → `2026.05.03+a9bbe0`. tests/test-update-zskills-agent-install.sh (new): 4 sandbox sub-cases (fresh / byte-equiv / idempotent / update-on-change). tests/test-update-zskills-version-surface.sh AC #8: jq invariant refined from substring grep to invocation-shape regex (documentation disclaimers exempt) — bundled into Phase 5 commit because spec's "no jq" disclaimer at SKILL.md:886 caused the cross-plan collision the spec author didn't anticipate. Tests 2071/2071 PASS (+4 vs baseline 2067). |
-| 6 — CHANGELOG, file Anthropic issue, plan completion | ⬚ |        |       |
+| 6 — CHANGELOG, file Anthropic issue, plan completion | ✅ | `<phase6-amend>` | All 11 ACs PASS. CLAUDE.md verifier rule refreshed to reference D'' mechanics (Layer 0 + Layer 3, dropping stale L1+L2 references). CHANGELOG entry added under 2026-05-03 with verbatim spec shape. Plan frontmatter status: complete + completed: 2026-05-03. plans/PLAN_INDEX.md: VERIFIER_AGENT_FIX added to Complete section. AC-2.2 inconsistency corrected (spec said 1 line; actual is 3 — `Failure Protocol — verifier response validation` appears at heading + bold-body + delegate-mode cross-reference). Anthropic upstream issue draft written to plans/reports/VERIFIER_AGENT_FIX-anthropic-issue-draft.md (vendor tracker filing deferred to user). Tests 2071/2071 PASS (parity with baseline). Closes #176, #180. |
 
 ---
 
@@ -207,7 +208,7 @@ Bump `skills/run-plan/SKILL.md` `metadata.version`. Mirror via `scripts/mirror-s
 ### Acceptance Criteria
 
 - [ ] AC-2.1 — `grep -c 'subagent_type:[[:space:]]*"verifier"' skills/run-plan/SKILL.md` returns ≥ 2 (worktree-mode dispatch + delegate-mode dispatch).
-- [ ] AC-2.2 — `grep -F 'Failure Protocol — verifier response validation' skills/run-plan/SKILL.md` returns 1 line.
+- [ ] AC-2.2 — `grep -F 'Failure Protocol — verifier response validation' skills/run-plan/SKILL.md` returns 3 lines (heading + bold body + delegate-mode cross-reference).
 - [ ] AC-2.3 — `grep -F 'verify-response-validate.sh' skills/run-plan/SKILL.md` returns 1+ line (the script invocation).
 - [ ] AC-2.4 — `grep -F 'STOP: verifier returned without meaningful results' skills/run-plan/SKILL.md` returns 1+ line.
 - [ ] AC-2.5 — Dispatcher-attribution clarifier (D1) is in the SKILL.md verbatim: `grep -F 'Dispatcher: the orchestrator (top-level \`/run-plan\`), not the verifier subagent' skills/run-plan/SKILL.md` returns 1 line.
