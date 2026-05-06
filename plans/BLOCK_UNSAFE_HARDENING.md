@@ -1,7 +1,8 @@
 ---
 title: Block-Unsafe Hooks Hardening
 created: 2026-05-06
-status: active
+status: complete
+completed: 2026-05-06
 ---
 
 # Plan: Block-Unsafe Hooks Hardening
@@ -112,7 +113,7 @@ Round-1 R-M-5 / DA-M-4 flagged that `tests/test-skill-conformance.sh` is for SKI
 | 3 — Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests | ✅ Done | `561a73c` | 6 outer gates migrated via new hook-local `is_git_subcommand_in_chain` wrapper (segment-walks `&&`/`||`/`;`/`|`/`\n`); 20 PR1-PR10 cases added; full suite 2258/2258 PASS; pre-existing cd-chain regressions caught and fixed via the wrapper; test-helper JSON-shape latent bug also fixed |
 | 4 — Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests | ✅ Done | `d566512` | 7 git-verb sites + kill-family migrated using `is_git_subcommand_in_chain` + new emergent `is_destruct_command_in_chain` wrappers; full suite 2287/2287 PASS (+29 GR* cases); 4 surfaced deviations (curated GR1 regex, GR12b flipped to allow per wrapper-improvement, emergent destruct chain wrapper, clean-f regex extension) all justified |
 | 5 — CHANGELOG + class-pinned acceptance canaries + drift gate + finalization | ✅ Done | `e18d1e8` | CHANGELOG H3 + 13 bullets; 144 project + 192 generic + 48 adjacent + 24 positive matrix cases; new `tests/test-hook-helper-drift.sh` (3/3 PASS); PLAN_INDEX moved to Complete; full suite 2699/2699 PASS (delta +412 from Phase 4) |
-| 6 — Plan B consolidation (post-merge) | 🟡 In Progress | — | Plan B is `status:complete` — taking branch 3b: edit `tests/test-block-stale-skill-version.sh` directly per D6 / DA2-M-2 |
+| 6 — Plan B consolidation (post-merge) | ✅ Done | `38791d3` | Plan B's hook migrated to consume `hooks/_lib/git-tokenwalk.sh`'s `is_git_subcommand`; drift gate now covers all 3 hooks (4/4 PASS); Plan B test surface renamed (27/27 PASS); full suite 2700/2700 PASS |
 
 ---
 

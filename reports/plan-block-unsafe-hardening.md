@@ -1,5 +1,52 @@
 # Plan Report — Block-Unsafe Hooks Hardening
 
+## Phase — 6 Plan B consolidation [UNFINALIZED]
+
+**Plan:** plans/BLOCK_UNSAFE_HARDENING.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-unsafe-hardening (PR mode, branch `feat/block-unsafe-hardening`)
+**Commits:** `38791d3`
+
+### Decision flow
+
+Plan B (`SKILL_VERSION_PRETOOLUSE_HOOK.md`) is `status: complete` and `hooks/block-stale-skill-version.sh` was inlined with its own `is_git_commit`. Per D6 / DA2-M-2: path **3b** — edit `tests/test-block-stale-skill-version.sh` directly (no `/refine-plan` for completed plans).
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 6.1 | Verify Plan B's hook still uses `is_git_commit` | Done (3 references confirmed) | `38791d3` |
+| 6.2 | Replace `is_git_commit` body with byte-identical `is_git_subcommand` from source-of-truth; replace call site to pass `commit` arg | Done | `38791d3` |
+| 6.3 | Mirror to `.claude/hooks/block-stale-skill-version.sh` byte-equal | Done | `38791d3` |
+| 6.4 | Extend `tests/test-hook-helper-drift.sh` HOOK list to include the third hook; parallel skip for `is_destruct_command` | Done | `38791d3` |
+| 6.5 | Rename 9 functional `is_git_commit` calls in `tests/test-block-stale-skill-version.sh` to `is_git_subcommand "$cmd" commit`; 1 cosmetic mention retained as migration note | Done | `38791d3` |
+
+### Verification
+
+- AC1 (`grep -cF 'is_git_commit'` = 0): PASS
+- AC2 (`grep -cF 'is_git_subcommand'` ≥ 2): PASS (2)
+- AC3 (function body byte-equal vs source-of-truth): PASS
+- AC4 (drift gate covers third hook): PASS
+- AC5 (full suite RC 0): PASS (2700/2700, +1 from Phase 5)
+- AC6 (no-op branch): N/A (substantive path 3b)
+
+Drift gate: 4/4 PASS standalone (`hooks/block-unsafe-project.sh.template`, `hooks/block-unsafe-generic.sh` × 2 helpers, `hooks/block-stale-skill-version.sh`). Single source-of-truth contract enforced across all 3 hook consumers.
+
+Plan B's existing test surface: 27/27 PASS after rename. Mirror byte-equal. No drift tokens.
+
+### Cumulative test suite progression
+
+| Phase | Total | Delta |
+|---|---|---|
+| Pre-Phase-1 baseline | 2111 | — |
+| Phase 2 (helpers + 127 unit cases) | 2238 | +127 |
+| Phase 3 (project hook migration + 20 PR* cases) | 2258 | +20 |
+| Phase 4 (generic hook migration + 29 GR* cases) | 2287 | +29 |
+| Phase 5 (matrices + drift gate + 412 cases) | 2699 | +412 |
+| **Phase 6 (Plan B consolidation + 1 drift gate case)** | **2700** | **+1** |
+
+---
+
 ## Phase — 5 CHANGELOG + class-pinned matrices + drift gate + finalization [UNFINALIZED]
 
 **Plan:** plans/BLOCK_UNSAFE_HARDENING.md
