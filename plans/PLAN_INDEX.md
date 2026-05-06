@@ -8,7 +8,6 @@ Totals: 47 plans — 5 ready, 0 in progress, 19 complete, 21 canaries, 3 referen
 
 | Plan | Phases | Next Phase | Priority | Notes |
 |------|--------|------------|----------|-------|
-| [BLOCK_UNSAFE_HARDENING.md](BLOCK_UNSAFE_HARDENING.md) | 6 | 1 | High | Drafted 2026-05-06 (/draft-plan 2 rounds; closes block-unsafe-* over-matching bug class — 5 in-session reproducers) |
 | [SKILL_VERSION_PRETOOLUSE_HOOK.md](SKILL_VERSION_PRETOOLUSE_HOOK.md) | 5 | 1 | High | Drafted 2026-04-30; refined PR #192. Plan B — closes /commit lock-step gap with PreToolUse hook denying bare `git commit` on stale skill versions |
 | [ADAPTIVE_CRON_BACKOFF.md](ADAPTIVE_CRON_BACKOFF.md) | 4 | 1 | Medium | Drafted 2026-04-29 (issue #110, /draft-plan 2 rounds) |
 | [BLOCK_DIAGRAM_TRACKING_CATCHUP.md](BLOCK_DIAGRAM_TRACKING_CATCHUP.md) | 3 | 1 | Medium | Created 2026-04-26 |
@@ -48,6 +47,7 @@ Totals: 47 plans — 5 ready, 0 in progress, 19 complete, 21 canaries, 3 referen
 | [TRACKING_SYSTEM.md](TRACKING_SYSTEM.md) | 5 | All phases done |
 | [UNIFY_TRACKING_NAMES.md](UNIFY_TRACKING_NAMES.md) | 6 | All phases done |
 | [VERIFIER_AGENT_FIX.md](VERIFIER_AGENT_FIX.md) | 6 | All phases ✅ Done; landed 2026-05-03. PR #189. D'' structural fix for verifier subagent dispatches: Layer 0 PreToolUse hook (inject-bash-timeout.sh) + Layer 3 universal failure-protocol script (verify-response-validate.sh) + 5 dispatch sites migrated to subagent_type:"verifier". Closes #176, #180. |
+| [BLOCK_UNSAFE_HARDENING.md](BLOCK_UNSAFE_HARDENING.md) | 6 | All phases done; closes patch trail #58/#73 + #81/#87; class-pinned matrix; tokenize-then-walk pattern. |
 
 ## Canaries
 

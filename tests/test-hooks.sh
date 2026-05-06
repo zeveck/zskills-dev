@@ -1793,6 +1793,139 @@ expect_project_deny "PR10/JSON-quote-injection: git \"commit\" on main" 'git "co
 teardown_project_test
 
 
+# === BLOCK_UNSAFE_HARDENING class-pinned acceptance matrices (migrated subset) ===
+# Phase 5.2 + 5.3 of plans/BLOCK_UNSAFE_HARDENING.md. These are GENERATED-LOOP
+# acceptance canaries that pin the bug class (regex over whole-buffer scan)
+# rather than any specific shape. Negative matrices: 144 project-hook + 192
+# generic-hook + 24 adjacent-class = 360 negative cases that must ALLOW.
+# Positive matrix: 24 cases that must DENY (5.3).
+#
+# Per-iteration setup_project_test_on_main is MANDATORY (round-2 R2-H-2 /
+# DA2-H-4) — silent cross-case state contamination would otherwise let case
+# N+1 pass vacuously because case N left state. Cost ~10s acceptable.
+#
+# CHANGELOG bullet 4 documents that the bug class remains open for the
+# UNMIGRATED subset (rm -rf / find -delete / rsync --delete / xargs ... rm /
+# fuser -k); those verbs are NOT exercised by these matrices.
+
+source "$(dirname "$0")/test-hooks-helpers.sh"
+
+echo "=== Class-pinned negative matrix: project hook (144 cases) ==="
+
+# 12 read-only commands × 3 git-verbs × 4 quote-shapes = 144 negative cases.
+# Each shape contains `git $VERB` with literal space — exercises the bare-
+# substring bug class directly. Path-substring and flag-value adjacent
+# classes are exercised separately below (24 cases).
+for CMD in grep sed awk cat echo printf head tail less more file wc; do
+  for VERB in commit cherry-pick push; do
+    for SHAPE in single double unquoted-with-space flag-with-space; do
+      case "$SHAPE" in
+        single)              ARG="'git $VERB foo'" ;;
+        double)              ARG="\"git $VERB foo\"" ;;
+        unquoted-with-space) ARG="git $VERB foo bar" ;;
+        flag-with-space)     ARG="--pattern \"git $VERB\"" ;;
+      esac
+      FULL="$CMD $ARG /tmp/notes.md"
+      setup_project_test_on_main
+      expect_project_allow "matrix-$CMD-$VERB-$SHAPE" "$FULL"
+      teardown_project_test
+    done
+  done
+done
+
+# Round-2 DA2-H-4 invariant assertion (defense-in-depth): all per-iteration
+# teardowns must have removed temp state. If anything leaks, fail loudly so
+# a teardown bug or hook side-effect doesn't hide cross-case contamination.
+LEAKED=$(find /tmp -maxdepth 2 -type d -name 'tmp.*' -newer "$REPO_ROOT/CHANGELOG.md" 2>/dev/null | wc -l)
+if [ -n "$TEST_TMPDIR" ] && [ -d "$TEST_TMPDIR" ]; then
+  fail "matrix-invariant: TEST_TMPDIR=$TEST_TMPDIR still exists after teardown loop"
+else
+  pass "matrix-invariant: per-iteration teardown left TEST_TMPDIR clean"
+fi
+
+echo "=== Class-pinned negative matrix: generic hook (192 cases) ==="
+
+# 8 read-only commands × 6 verbs × 4 quote-shapes = 192 negative cases.
+# Verb set excludes the unmigrated subset (rm -rf / find -delete / rsync /
+# xargs / fuser) per round-1 DA-C-2: bare regex on those still fires on
+# `grep "rm -rf foo"` and a matrix entry would correctly FAIL. CHANGELOG
+# bullet 4 documents that as out-of-scope for this plan.
+for CMD in grep sed awk cat echo printf head tail; do
+  for VERB in "git restore" "git clean -f" "git reset --hard" "git add -A" "git commit --no-verify" "kill -9"; do
+    for SHAPE in single double unquoted-with-space flag-with-space; do
+      case "$SHAPE" in
+        single)              ARG="'$VERB foo'" ;;
+        double)              ARG="\"$VERB foo\"" ;;
+        unquoted-with-space) ARG="$VERB foo bar" ;;
+        flag-with-space)     ARG="--pattern \"$VERB\"" ;;
+      esac
+      FULL="$CMD $ARG /tmp/notes.md"
+      SAFE_VERB="$(echo "$VERB" | tr ' /-' '___')"
+      expect_allow "matrix-$CMD-$SAFE_VERB-$SHAPE" "$FULL"
+    done
+  done
+done
+
+echo "=== Adjacent-class coverage (24 cases) ==="
+
+# Path-substring (`grep git-commit-notes.md`) and flag-value
+# (`grep --pattern=git-commit`) — these do NOT exercise the bare-regex bug
+# class (no literal space between `git` and verb), but they DO exercise the
+# adjacent classes. Round-1 R-H-4 split out for honest coverage labeling.
+# Bare top-level helpers (no main_protected dependency).
+for CMD in grep sed awk cat echo printf head tail; do
+  for VERB in commit cherry-pick push; do
+    expect_project_allow "adjacent-class-pathsub-$CMD-$VERB" "$CMD git-$VERB-notes.md"
+    expect_project_allow "adjacent-class-flagval-$CMD-$VERB"  "$CMD --pattern=git-$VERB /tmp/notes.md"
+  done
+done
+
+echo "=== Class-pinned positive matrix (24 cases — must DENY) ==="
+
+# 6 destructive-verb invocations × 4 invocation-shape variants = 24 positive
+# cases that MUST DENY. Asserts the migration doesn't weaken the positive
+# surface AT THE CLASS LEVEL (complementing per-verb regressions in 3.4/4.5).
+#
+# 6 verbs spread across project + generic hooks:
+#   project-hook: git commit, git cherry-pick, git push (require on-main setup)
+#   generic-hook: git restore, git clean -f, kill -9 (no main_protected setup)
+# 4 shapes:
+#   bare         — naked invocation
+#   leading-ws   — leading whitespace before the verb
+#   env-prefix   — env-var assignment prefix (FOO=bar verb …)
+#   subdir-cd    — `cd /tmp/wt && verb …` (chain wrapper exercise)
+
+# Project-hook positives.
+for VERB_PAYLOAD in "git commit -m foo" "git cherry-pick abc123" "git push"; do
+  VERB_LABEL="$(echo "$VERB_PAYLOAD" | tr ' /-' '___' | tr -s '_')"
+  for SHAPE in bare leading-ws env-prefix subdir-cd; do
+    case "$SHAPE" in
+      bare)        FULL="$VERB_PAYLOAD" ;;
+      leading-ws)  FULL="    $VERB_PAYLOAD" ;;
+      env-prefix)  FULL="GIT_TRACE=1 $VERB_PAYLOAD" ;;
+      subdir-cd)   FULL="cd /tmp/wt && $VERB_PAYLOAD" ;;
+    esac
+    setup_project_test_on_main
+    expect_project_deny "positive-matrix-$VERB_LABEL-$SHAPE" "$FULL"
+    teardown_project_test
+  done
+done
+
+# Generic-hook positives.
+for VERB_PAYLOAD in "git restore ." "git clean -f" "kill -9 1234"; do
+  VERB_LABEL="$(echo "$VERB_PAYLOAD" | tr ' /.-' '____' | tr -s '_')"
+  for SHAPE in bare leading-ws env-prefix subdir-cd; do
+    case "$SHAPE" in
+      bare)        FULL="$VERB_PAYLOAD" ;;
+      leading-ws)  FULL="    $VERB_PAYLOAD" ;;
+      env-prefix)  FULL="GIT_TRACE=1 $VERB_PAYLOAD" ;;
+      subdir-cd)   FULL="cd /tmp/wt && $VERB_PAYLOAD" ;;
+    esac
+    expect_deny "positive-matrix-$VERB_LABEL-$SHAPE" "$FULL"
+  done
+done
+
+
 echo "=== Landing mode argument detection ==="
 
 # Test: detect "pr" argument (case-insensitive)
