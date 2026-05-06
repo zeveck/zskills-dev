@@ -32,7 +32,7 @@ Directories at repo root introduced by zskills:
 Files modified at repo root:
 
 - `.gitignore` — `/update-zskills` appends `.zskills/tracking/`, `var/`
-- `CLAUDE.md` — `/init` writes; `/update-zskills` Phase 4 migrates content into `.claude/rules/zskills/managed.md`
+- `CLAUDE.md` — left alone by zskills going forward. `/update-zskills` Phase 4 renders `.claude/rules/zskills/managed.md` from `CLAUDE_TEMPLATE.md` (independent of root CLAUDE.md). A one-time legacy cleanup removes pre-Phase-4 zskills-rendered lines from root CLAUDE.md if any are detected, saving a backup at `CLAUDE.md.pre-zskills-migration`. Out of scope here.
 
 Worktree-local files (NOT main repo, listed for completeness): `.zskills-tracked`, `.worktreepurpose`, `.landed`, `.test-results.txt`.
 
@@ -166,6 +166,24 @@ Readers (must source helper, read from resolved paths):
 
 Pre-backcompat posture (per project memory: "zskills is pre-backwards-compat") means no legacy mode flag, no dual-path support. Single migration step, default flip, done.
 
+## Compatibility with existing `.zskills/` usage
+
+Adding `.zskills/plans/`, `.zskills/audit/`, `.zskills/var/` as new subdirectories alongside the existing `tracking/`, `monitor-state.json`, `dashboard-server.{pid,log}`, `work-on-plans-state.json`, `stub-notes/`, `tier1-migration-deferred`, `triggers/` is structurally safe. Verified by independent agent audit (six claims, all VERIFIED) on 2026-04-30:
+
+1. **`clear-tracking.sh` is `tracking/`-scoped only.** `TRACKING_DIR="$MAIN_ROOT/.zskills/tracking"` at line 12; every `find`/`rm` operation rooted at `$TRACKING_DIR` (lines 32, 58, 99, 141, 146, 150, 162). Sibling subdirs are unreachable.
+
+2. **Hook protection is `tracking/`-scoped only.** `hooks/block-unsafe-project.sh.template:201` regex anchors to the literal `\.zskills/tracking`. No broader `.zskills` fence exists. **This is the one caveat**: `rm -rf .zskills/plans` would currently pass the hook. If `.zskills/plans/` will hold user-authored work, the hook regex must be broadened to cover the whole `.zskills/` tree (or per-subdir rules added) as a Phase 1 deliverable, not deferred. Single-line change recommended: replace `\.zskills/tracking` with `\.zskills` to fence the entire tree, since once `.zskills/` holds plans + audit + tracking + runtime state, the whole tree is load-bearing.
+
+3. **Dashboard `collect.py` walks `tracking/` only.** `base = main_root / ".zskills" / "tracking"` at `collect.py:612`; `iterdir()` calls at 621, 627 operate on `base` and direct children only. Specific-file reads elsewhere (`monitor-state.json` at 966, etc.). No `.zskills/*` glob.
+
+4. **No wholesale `.zskills/` wipe.** Every recursive deletion in skills/scripts/hooks targets `.zskills/tracking[/$PIPELINE_ID]/...` specifically. No `find .zskills` outside the tracking-scoped clear script. Only un-scoped `rm` of a `.zskills`-prefixed path is the `.zskills-tracked` sentinel file (not a directory) at `skills/run-plan/SKILL.md:2175`.
+
+5. **`mkdir -p` calls are idempotent and never preceded by a wipe.** Existing pattern e.g. `skills/work-on-plans/SKILL.md:116`. Sibling subdirs already proven viable by `.zskills/triggers/` (`skills/zskills-dashboard/SKILL.md:541`).
+
+6. **All readers use specific subpaths, not `.zskills/*` globs.** Closest to a glob is `zsk.mkdir(exist_ok=True)` at `server.py:248-249` — used for parent creation only, not enumeration.
+
+**Conclusion:** Safe. The one required code change is broadening the hook regex at `block-unsafe-project.sh.template:201` from `.zskills/tracking` to `.zskills` (or per-subdir alternation) so the new value-bearing subdirs get equivalent recursive-delete protection. Folded into Phase 1 of the `/draft-plan` deliverables below.
+
 ## Out of scope
 
 - `.claude/` install paths — handled by `/update-zskills` install system; orthogonal.
@@ -179,7 +197,7 @@ Pre-backcompat posture (per project memory: "zskills is pre-backwards-compat") m
 
 A phase-structured plan covering:
 
-1. **Helper + config schema** — `scripts/zskills-paths.sh`, schema entry in `.claude/zskills-config.schema.json`, conformance test.
+1. **Helper + config schema + hook fence** — `scripts/zskills-paths.sh`, schema entry in `.claude/zskills-config.schema.json`, conformance test, and **broadening of `block-unsafe-project.sh.template:201` recursive-delete regex from `.zskills/tracking` to the whole `.zskills/` tree** (load-bearing since `.zskills/` will now hold user-authored plans).
 2. **Writer migration** — every skill listed above, source helper, replace literals. Mirror to `.claude/skills/`.
 3. **Reader migration** — every skill listed above, plus `briefing.cjs`/`briefing.py` and dashboard server.
 4. **Dashboard viewer** — path-aware URL resolution.
