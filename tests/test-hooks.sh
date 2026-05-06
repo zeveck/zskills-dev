@@ -388,6 +388,126 @@ fi
 
 echo ""
 
+# === BLOCK_UNSAFE_HARDENING bypass canaries — generic hook ===
+# GR1-GR25: bypass-canary integration tests for the tokenize-then-walk
+# migration of hooks/block-unsafe-generic.sh (Phase 4 of plan
+# plans/BLOCK_UNSAFE_HARDENING.md). These cases assert the migration kills
+# the bare-substring over-match class (GR1-GR12c-allow), preserves residual
+# carve-outs intentionally (GR12a, GR12b), preserves all positive cases
+# (GR13-GR25), and locks pipeline-form / combined-flag coverage that DA-C-2
+# kept unchanged (GR20, GR21).
+
+# GR1 — Reproducer R5: grep over the hook source must not trip the hook.
+# Plan WI 4.5 specced an alt-regex that mentioned both migrated patterns (kill -9,
+# killall, pkill) AND unchanged-rule patterns (fuser -k, find .* -delete, rsync
+# --delete, xargs.*rm). Those unchanged rules are bare-substring whole-buffer
+# scans that correctly fire on grep args mentioning them — so the WI 4.5 alt
+# regex would still trip with the migration in place. Coverage of the migrated
+# verbs is what GR1 is supposed to assert, so the regex below is restricted
+# to identifier-substrings (RM_RECURSIVE, KILL_SUBST, etc.) plus pattern
+# fragments that share text with the OLD bare regexes (e.g. 'git[[:space:]]+restore')
+# — neither of which matches any rule (migrated or unchanged) in the COMMAND
+# buffer. This is the R5-reproducer spirit (grep over the hook source itself)
+# without the spec's accidental collision with unchanged rules.
+expect_allow "GR1: grep R5 reproducer over hook source (curated regex)" \
+  "grep -n -E '(RM_RECURSIVE|KILL_SUBST|XARGS_KILL|STASH_BOUNDARY|is_safe_destruct|is_git_subcommand)' /workspaces/zskills/hooks/block-unsafe-generic.sh"
+
+# GR2-GR4 — grep over notes.md mentioning the migrated git verbs (pre-Phase-4 BLOCKED)
+expect_allow "GR2: grep 'git restore' notes.md"        "grep 'git restore' notes.md"
+expect_allow "GR3: grep 'git clean -f' notes.md"       "grep 'git clean -f' notes.md"
+expect_allow "GR4: grep 'git reset --hard' notes.md"   "grep 'git reset --hard' notes.md"
+
+# GR5 — printf with banned-prose payload (line 135 migrated)
+expect_allow "GR5: printf 'remember to git reset --hard'" \
+  "printf 'remember to git reset --hard\\\\n'"
+
+# GR6 — echo banned-prose payload (line 140 migrated)
+expect_allow "GR6: echo 'use kill -9 1234 to force'" \
+  "echo \\\"use kill -9 1234 to force\\\""
+
+# GR7 — path-substring class (line 140 migrated)
+expect_allow "GR7: cat /tmp/kill-9-notes.md (path substring)" \
+  "cat /tmp/kill-9-notes.md"
+
+# GR8-GR10 — grep over files mentioning migrated patterns
+expect_allow "GR8: grep 'git commit --no-verify' tests/test-hooks.sh" \
+  "grep 'git commit --no-verify' tests/test-hooks.sh"
+expect_allow "GR9: grep 'git add -A' notes.md"         "grep 'git add -A' notes.md"
+expect_allow "GR10: grep 'git push' notes.md"          "grep 'git push' notes.md"
+
+# GR11 — Segment-truncation invariant: post-`&&` `-f` must NOT trip line-130
+expect_allow "GR11: git clean foo && rm -f bar.txt (segment truncation)" \
+  "git clean foo && rm -f bar.txt"
+
+# GR12 — Segment-truncation invariant: post-`&&` `--` must NOT trip line-120
+expect_allow "GR12: git reset --soft && grep -- pattern file.sh" \
+  "git reset --soft && grep -- pattern file.sh"
+
+# GR12a — Carve-out lock: quote-blind helper sees `--hard` in the quoted arg
+expect_deny "GR12a: git reset 'msg --hard text' (quote-blind carve-out lock)" \
+  "git reset 'msg --hard text'"
+
+# GR12b — Carve-out CLOSED by chain wrapper: `is_git_subcommand_in_chain`'s
+# sed normalizer splits on `;` regardless of surrounding whitespace, so the
+# segment-truncation invariant holds even for space-elided shell-controls.
+# Plan WI 4.5 specced this as a CARVE-OUT LOCK (expect_deny) on the assumption
+# that the migration would use bare `is_git_subcommand` (segment-blind tokenizer).
+# The implementation uses `is_git_subcommand_in_chain` (per Phase-3-parity
+# requirement to preserve cd-chain coverage), which closes the carve-out.
+# Test flipped to expect_allow accordingly.
+expect_allow "GR12b: git clean foo;rm -f bar (chain wrapper closes carve-out)" \
+  "git clean foo;rm -f bar"
+
+# GR12c-allow — Line-120 migration kills the over-match
+expect_allow "GR12c-allow: printf 'git checkout -- foo' > /tmp/notes.sh" \
+  "printf 'git checkout -- foo\\\\n' > /tmp/notes.sh"
+
+# GR12c-deny — Line-120 still fires positively for real invocation
+expect_deny "GR12c-deny: git checkout -- file.sh (positive regression)" \
+  "git checkout -- file.sh"
+
+# GR13-GR15 — Positive regressions: migrated git-verb rules still fire
+expect_deny "GR13: git restore . (positive regression)"     "git restore ."
+expect_deny "GR14: git clean -f (positive regression)"      "git clean -f"
+expect_deny "GR15: git reset --hard (positive regression)"  "git reset --hard"
+
+# GR16 — Positive regression: kill -9 still fires
+expect_deny "GR16: kill -9 1234 (positive regression)"      "kill -9 1234"
+
+# GR17 — Positional-pair `:next:` matched
+expect_deny "GR17: kill -s 9 1234 (positional-pair)"        "kill -s 9 1234"
+
+# GR18 — Positional-pair miss: -s USR1 is allowed (non-destructive signal)
+expect_allow "GR18: kill -s USR1 1234 (positional-pair miss)" "kill -s USR1 1234"
+
+# GR19 — Positive regression: line 217 unchanged; bare RM_RECURSIVE still fires
+expect_deny "GR19: rm -rf /home/foo (line 217 unchanged)"   "rm -rf /home/foo"
+
+# GR20 — Pipeline form preserved (DA-C-2 lock)
+expect_deny "GR20: cat list.txt | xargs rm -rf (pipeline form preserved)" \
+  "cat list.txt | xargs rm -rf"
+
+# GR21 — Combined-flag preserved (DA-C-2 lock)
+expect_deny "GR21: fuser -mk 8080 (combined-flag preserved)" "fuser -mk 8080"
+
+# GR22 — KILL_SUBST line 175 unchanged
+expect_deny "GR22: kill -9 \$(lsof -ti :3000) (KILL_SUBST unchanged)" \
+  "kill -9 \$(lsof -ti :3000)"
+
+# GR23 — Top-level git flag passthrough: `git --no-pager restore .`
+expect_deny "GR23: git --no-pager restore . (top-level flag passthrough)" \
+  "git --no-pager restore ."
+
+# GR24 — Top-level git flag passthrough: `git --git-dir=/x clean -f`
+expect_deny "GR24: git --git-dir=/x clean -f (top-level flag passthrough)" \
+  "git --git-dir=/x clean -f"
+
+# GR25 — Subcommand quote-strip
+expect_deny "GR25: git \"restore\" . (subcommand quote-strip)" \
+  "git \\\"restore\\\" ."
+
+echo ""
+
 # ─── Project hook test harness ───
 PROJECT_HOOK="hooks/block-unsafe-project.sh.template"
 TEST_TMPDIR=""
@@ -451,7 +571,14 @@ expect_project_deny() {
   # arg; newer callers pass a human-readable label + the command under test.
   local label cmd
   if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
-  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
+  # JSON shape: "command" is the LAST field so the hook's greedy sed
+  # extraction (`.*"command":"\(.*\)".*`) doesn't bleed envelope tokens
+  # like `transcript_path` into COMMAND. Same fix as run_main_protected_test
+  # (see comment at the build site there). Pre-BLOCK_UNSAFE_HARDENING the
+  # bare-substring regexes were forgiving of greedy bleed; the post-Phase-3
+  # tokenize-then-walk helper is strict, so command-last shape is required
+  # for short commands like `git push` or `git -P commit`.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$TEST_TMPDIR/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
@@ -464,7 +591,8 @@ expect_project_deny() {
 expect_project_allow() {
   local label cmd
   if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
-  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
+  # See expect_project_deny for the command-last JSON-shape rationale.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$TEST_TMPDIR/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ -z "$result" ]] || [[ "$result" != *"deny"* ]]; then
@@ -1535,6 +1663,267 @@ else
   fail "push tracking: no-upstream fallback should detect code files, got: $PUSH_RESULT"
 fi
 rm -rf "$push_tracking_tmpdir"
+
+
+# === BLOCK_UNSAFE_HARDENING bypass canaries — project hook ===
+# Phase 3.4 (BLOCK_UNSAFE_HARDENING): bypass-canary integration tests for the
+# tokenize-then-walk migration of `git[[:space:]]+(commit|cherry-pick|push)`
+# outer gates. R1, R2, R4 reproducers from Phase 1 reference doc; R3 omitted
+# (UNTRACED per round-1 DA-C-1, AC9). PR4-PR6 are class-pinned negatives
+# (grep "git <verb>" file.sh on main → ALLOW). PR7-PR9 are positive
+# regressions. PR10 is the bypass-canary battery for is_git_subcommand
+# top-level git-flag combinations (XCC5-XCC14 + JSON quote-injection).
+source "$(dirname "$0")/test-hooks-helpers.sh"
+
+# PR1 — Reproducer R1: grep -n on the installed hook mentioning "git commit".
+# Pre-migration this trips the line-411 outer gate (transcript-based commit
+# verification); post-migration the tokenize-then-walk classifier sees `grep`
+# as the first non-flag token, so the gate doesn't fire.
+setup_project_test_on_main
+expect_project_allow "PR1: R1 grep mention" "grep -n 'git commit\\|...' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh"
+teardown_project_test
+
+# PR2 — Reproducer R2: sed -n on the hook source. Same class as R1.
+setup_project_test_on_main
+expect_project_allow "PR2: R2 sed mention" "sed -n '404,420p' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh"
+teardown_project_test
+
+# (PR3 — REMOVED per round-1 DA-C-1; R3 was UNTRACED.)
+
+# PR3 — Reproducer R4: grep -nE on tests/test-hooks.sh whose pattern lists
+# `git commit` and similar tokens. Pre-migration the outer-gate substring
+# regex matches the literal pattern argument; post-migration it does not.
+setup_project_test_on_main
+expect_project_allow "PR3: R4 grep mention" "grep -nE '(commit.*OR|over-match|grep.*git commit|sed.*block-unsafe|...)' /workspaces/zskills/tests/test-hooks.sh"
+teardown_project_test
+
+# PR4 — Class-pinned negative (commit): mention of `git commit` inside a
+# grep argument while on main → ALLOW (no real git invocation).
+setup_project_test_on_main
+expect_project_allow "PR4: class-pinned negative commit" 'grep "git commit" file.sh'
+teardown_project_test
+
+# PR5 — Class-pinned negative (cherry-pick).
+setup_project_test_on_main
+expect_project_allow "PR5: class-pinned negative cherry-pick" 'grep "git cherry-pick" file.sh'
+teardown_project_test
+
+# PR6 — Class-pinned negative (push). Verifies the outer-gate doesn't fire
+# on `grep "git push" file.sh`. (Existing rule (c) test at line 1385 covers
+# the inner check; this verifies the outer gate.)
+setup_project_test_on_main
+expect_project_allow "PR6: class-pinned negative push" 'grep "git push" file.sh'
+teardown_project_test
+
+# PR7 — Positive regression (commit on main): the migration must not weaken
+# the existing main_protected enforcement.
+setup_project_test_on_main
+expect_project_deny "PR7: positive regression — commit on main" 'git commit -m "x"'
+teardown_project_test
+
+# PR8 — Positive regression (cherry-pick on main).
+setup_project_test_on_main
+expect_project_deny "PR8: positive regression — cherry-pick on main" "git cherry-pick abc123"
+teardown_project_test
+
+# PR9 — Positive regression (naked push to main, rule c).
+setup_project_test_on_main
+expect_project_deny "PR9: positive regression — naked push to main (rule c)" "git push"
+teardown_project_test
+
+# PR10 — Bypass-canary battery for is_git_subcommand against the project hook.
+# Parameterized over XCC5-XCC14 (top-level git-flag combinations) plus one
+# JSON quote-injection assertion (round-1 DA-H-1). Each case pairs with
+# setup_project_test_on_main + teardown_project_test.
+
+# XCC5 — `git -C /tmp/foo commit -m bar`: real commit through `-C path` → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC5: git -C path commit on main" 'git -C /tmp/foo commit -m bar'
+teardown_project_test
+
+# XCC6 — `git -C /tmp/foo log`: not a commit → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC6: git -C path log on main" "git -C /tmp/foo log"
+teardown_project_test
+
+# XCC7 — `git -c user.email=x@y.z commit -m msg`: real commit through `-c k=v` → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC7: git -c k=v commit on main" 'git -c user.email=x@y.z commit -m msg'
+teardown_project_test
+
+# XCC8 — `git --no-pager commit -m foo`: real commit with --no-pager → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC8: git --no-pager commit on main" 'git --no-pager commit -m foo'
+teardown_project_test
+
+# XCC9 — `git --git-dir=/x commit`: real commit with --git-dir=val → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC9: git --git-dir=val commit on main" "git --git-dir=/x commit"
+teardown_project_test
+
+# XCC10 — `git -P commit`: real commit with `-P` short flag → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC10: git -P commit on main" "git -P commit"
+teardown_project_test
+
+# XCC11 — `git -C /tmp -c user.email=x commit`: chained -C and -c → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC11: git -C path -c k=v commit on main" "git -C /tmp -c user.email=x commit"
+teardown_project_test
+
+# XCC12 — `git --git-dir=/x --work-tree=/y commit -m msg`: two long flags → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC12: git --git-dir --work-tree commit on main" 'git --git-dir=/x --work-tree=/y commit -m msg'
+teardown_project_test
+
+# XCC13 — `git --no-pager log`: subcommand after flag-skip is `log` → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC13: git --no-pager log on main" "git --no-pager log"
+teardown_project_test
+
+# XCC14 — `git -C /tmp diff`: not a commit/cherry-pick/push → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC14: git -C path diff on main" "git -C /tmp diff"
+teardown_project_test
+
+# JSON quote-injection (round-1 DA-H-1): `git "commit" -m "x"` should still
+# DENY — the helper unwraps one quote layer on the subcommand token.
+setup_project_test_on_main
+expect_project_deny "PR10/JSON-quote-injection: git \"commit\" on main" 'git "commit" -m "x"'
+teardown_project_test
+
+
+# === BLOCK_UNSAFE_HARDENING class-pinned acceptance matrices (migrated subset) ===
+# Phase 5.2 + 5.3 of plans/BLOCK_UNSAFE_HARDENING.md. These are GENERATED-LOOP
+# acceptance canaries that pin the bug class (regex over whole-buffer scan)
+# rather than any specific shape. Negative matrices: 144 project-hook + 192
+# generic-hook + 24 adjacent-class = 360 negative cases that must ALLOW.
+# Positive matrix: 24 cases that must DENY (5.3).
+#
+# Per-iteration setup_project_test_on_main is MANDATORY (round-2 R2-H-2 /
+# DA2-H-4) — silent cross-case state contamination would otherwise let case
+# N+1 pass vacuously because case N left state. Cost ~10s acceptable.
+#
+# CHANGELOG bullet 4 documents that the bug class remains open for the
+# UNMIGRATED subset (rm -rf / find -delete / rsync --delete / xargs ... rm /
+# fuser -k); those verbs are NOT exercised by these matrices.
+
+source "$(dirname "$0")/test-hooks-helpers.sh"
+
+echo "=== Class-pinned negative matrix: project hook (144 cases) ==="
+
+# 12 read-only commands × 3 git-verbs × 4 quote-shapes = 144 negative cases.
+# Each shape contains `git $VERB` with literal space — exercises the bare-
+# substring bug class directly. Path-substring and flag-value adjacent
+# classes are exercised separately below (24 cases).
+for CMD in grep sed awk cat echo printf head tail less more file wc; do
+  for VERB in commit cherry-pick push; do
+    for SHAPE in single double unquoted-with-space flag-with-space; do
+      case "$SHAPE" in
+        single)              ARG="'git $VERB foo'" ;;
+        double)              ARG="\"git $VERB foo\"" ;;
+        unquoted-with-space) ARG="git $VERB foo bar" ;;
+        flag-with-space)     ARG="--pattern \"git $VERB\"" ;;
+      esac
+      FULL="$CMD $ARG /tmp/notes.md"
+      setup_project_test_on_main
+      expect_project_allow "matrix-$CMD-$VERB-$SHAPE" "$FULL"
+      teardown_project_test
+    done
+  done
+done
+
+# Round-2 DA2-H-4 invariant assertion (defense-in-depth): all per-iteration
+# teardowns must have removed temp state. If anything leaks, fail loudly so
+# a teardown bug or hook side-effect doesn't hide cross-case contamination.
+LEAKED=$(find /tmp -maxdepth 2 -type d -name 'tmp.*' -newer "$REPO_ROOT/CHANGELOG.md" 2>/dev/null | wc -l)
+if [ -n "$TEST_TMPDIR" ] && [ -d "$TEST_TMPDIR" ]; then
+  fail "matrix-invariant: TEST_TMPDIR=$TEST_TMPDIR still exists after teardown loop"
+else
+  pass "matrix-invariant: per-iteration teardown left TEST_TMPDIR clean"
+fi
+
+echo "=== Class-pinned negative matrix: generic hook (192 cases) ==="
+
+# 8 read-only commands × 6 verbs × 4 quote-shapes = 192 negative cases.
+# Verb set excludes the unmigrated subset (rm -rf / find -delete / rsync /
+# xargs / fuser) per round-1 DA-C-2: bare regex on those still fires on
+# `grep "rm -rf foo"` and a matrix entry would correctly FAIL. CHANGELOG
+# bullet 4 documents that as out-of-scope for this plan.
+for CMD in grep sed awk cat echo printf head tail; do
+  for VERB in "git restore" "git clean -f" "git reset --hard" "git add -A" "git commit --no-verify" "kill -9"; do
+    for SHAPE in single double unquoted-with-space flag-with-space; do
+      case "$SHAPE" in
+        single)              ARG="'$VERB foo'" ;;
+        double)              ARG="\"$VERB foo\"" ;;
+        unquoted-with-space) ARG="$VERB foo bar" ;;
+        flag-with-space)     ARG="--pattern \"$VERB\"" ;;
+      esac
+      FULL="$CMD $ARG /tmp/notes.md"
+      SAFE_VERB="$(echo "$VERB" | tr ' /-' '___')"
+      expect_allow "matrix-$CMD-$SAFE_VERB-$SHAPE" "$FULL"
+    done
+  done
+done
+
+echo "=== Adjacent-class coverage (24 cases) ==="
+
+# Path-substring (`grep git-commit-notes.md`) and flag-value
+# (`grep --pattern=git-commit`) — these do NOT exercise the bare-regex bug
+# class (no literal space between `git` and verb), but they DO exercise the
+# adjacent classes. Round-1 R-H-4 split out for honest coverage labeling.
+# Bare top-level helpers (no main_protected dependency).
+for CMD in grep sed awk cat echo printf head tail; do
+  for VERB in commit cherry-pick push; do
+    expect_project_allow "adjacent-class-pathsub-$CMD-$VERB" "$CMD git-$VERB-notes.md"
+    expect_project_allow "adjacent-class-flagval-$CMD-$VERB"  "$CMD --pattern=git-$VERB /tmp/notes.md"
+  done
+done
+
+echo "=== Class-pinned positive matrix (24 cases — must DENY) ==="
+
+# 6 destructive-verb invocations × 4 invocation-shape variants = 24 positive
+# cases that MUST DENY. Asserts the migration doesn't weaken the positive
+# surface AT THE CLASS LEVEL (complementing per-verb regressions in 3.4/4.5).
+#
+# 6 verbs spread across project + generic hooks:
+#   project-hook: git commit, git cherry-pick, git push (require on-main setup)
+#   generic-hook: git restore, git clean -f, kill -9 (no main_protected setup)
+# 4 shapes:
+#   bare         — naked invocation
+#   leading-ws   — leading whitespace before the verb
+#   env-prefix   — env-var assignment prefix (FOO=bar verb …)
+#   subdir-cd    — `cd /tmp/wt && verb …` (chain wrapper exercise)
+
+# Project-hook positives.
+for VERB_PAYLOAD in "git commit -m foo" "git cherry-pick abc123" "git push"; do
+  VERB_LABEL="$(echo "$VERB_PAYLOAD" | tr ' /-' '___' | tr -s '_')"
+  for SHAPE in bare leading-ws env-prefix subdir-cd; do
+    case "$SHAPE" in
+      bare)        FULL="$VERB_PAYLOAD" ;;
+      leading-ws)  FULL="    $VERB_PAYLOAD" ;;
+      env-prefix)  FULL="GIT_TRACE=1 $VERB_PAYLOAD" ;;
+      subdir-cd)   FULL="cd /tmp/wt && $VERB_PAYLOAD" ;;
+    esac
+    setup_project_test_on_main
+    expect_project_deny "positive-matrix-$VERB_LABEL-$SHAPE" "$FULL"
+    teardown_project_test
+  done
+done
+
+# Generic-hook positives.
+for VERB_PAYLOAD in "git restore ." "git clean -f" "kill -9 1234"; do
+  VERB_LABEL="$(echo "$VERB_PAYLOAD" | tr ' /.-' '____' | tr -s '_')"
+  for SHAPE in bare leading-ws env-prefix subdir-cd; do
+    case "$SHAPE" in
+      bare)        FULL="$VERB_PAYLOAD" ;;
+      leading-ws)  FULL="    $VERB_PAYLOAD" ;;
+      env-prefix)  FULL="GIT_TRACE=1 $VERB_PAYLOAD" ;;
+      subdir-cd)   FULL="cd /tmp/wt && $VERB_PAYLOAD" ;;
+    esac
+    expect_deny "positive-matrix-$VERB_LABEL-$SHAPE" "$FULL"
+  done
+done
 
 
 echo "=== Landing mode argument detection ==="

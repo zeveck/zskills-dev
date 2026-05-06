@@ -89,6 +89,157 @@ block_with_reason() {
   exit 0
 }
 
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
+is_git_subcommand() {
+  local cmd="$1"
+  local want_sub="$2"
+  GIT_SUB_INDEX=-1
+  GIT_SUB_REST=""
+  local -a TOKENS
+  # shellcheck disable=SC2206
+  read -ra TOKENS <<< "$cmd"
+  local i=0 n=${#TOKENS[@]}
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  local g="${TOKENS[$i]:-}"
+  g="${g%\"}"; g="${g#\"}"
+  g="${g%\'}"; g="${g#\'}"
+  [[ "$g" != "git" ]] && return 1
+  ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
+    case "${TOKENS[$i]}" in
+      -C|-c) ((i+=2)) ;;
+      *)     ((i+=1)) ;;
+    esac
+  done
+  local sub="${TOKENS[$i]:-}"
+  sub="${sub%\"}"; sub="${sub#\"}"
+  sub="${sub%\'}"; sub="${sub#\'}"
+  [[ "$sub" != "$want_sub" ]] && return 1
+  # Match. Set GIT_SUB_INDEX and build GIT_SUB_REST scoped to the
+  # current shell segment (truncate at first &&/||/;/|).
+  GIT_SUB_INDEX=$((i + 1))
+  local j=$GIT_SUB_INDEX
+  local rest=""
+  while [[ $j -lt $n ]]; do
+    case "${TOKENS[$j]}" in
+      '&&'|'||'|';'|'|') break ;;
+    esac
+    rest="$rest ${TOKENS[$j]}"
+    ((j++))
+  done
+  # Strip the leading space introduced by the loop.
+  GIT_SUB_REST="${rest# }"
+  return 0
+}
+
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
+is_destruct_command() {
+  local cmd="$1"
+  local want_first="$2"
+  local flag_match="${3:-}"
+  local next_match=""
+  if [[ "$flag_match" == *":next:"* ]]; then
+    next_match="${flag_match##*:next:}"
+    flag_match="${flag_match%:next:*}"
+  fi
+  local -a TOKENS
+  # shellcheck disable=SC2206
+  read -ra TOKENS <<< "$cmd"
+  local i=0 n=${#TOKENS[@]}
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  local first="${TOKENS[$i]:-}"
+  first="${first%\"}"; first="${first#\"}"
+  first="${first%\'}"; first="${first#\'}"
+  [[ "$first" != "$want_first" ]] && return 1
+  [[ -z "$flag_match" ]] && return 0
+  ((i++))
+  while [[ $i -lt $n ]]; do
+    if [[ "${TOKENS[$i]}" =~ $flag_match ]]; then
+      if [[ -n "$next_match" ]]; then
+        local next_tok="${TOKENS[$((i+1))]:-}"
+        [[ "$next_tok" =~ $next_match ]] && return 0
+      else
+        return 0
+      fi
+    fi
+    ((i++))
+  done
+  return 1
+}
+
+# Hook-local wrapper around is_git_subcommand for cd-chained commands.
+# Splits $cmd on shell-segment boundaries (&&, ||, ;, |, literal newline,
+# AND the literal two-char escape `\n` that arrives via JSON-string
+# encoding) and calls is_git_subcommand on each segment, returning 0
+# if ANY segment matches. This restores the old bare-substring's
+# cd-chain semantics (cd /tmp/wt && git commit -m foo) on top of
+# is_git_subcommand's first-token-anchored core.
+#
+# Why segment-walk lives here, not in hooks/_lib/git-tokenwalk.sh:
+#   The lib helper is the single source-of-truth — its contract
+#   (first-token-anchored) is unit-tested at tests/test-tokenize-then-walk.sh.
+#   Segment-walking is a project-hook-specific need (cd-chain
+#   resolution), not a generic helper concern. Keeping it here
+#   keeps the lib's contract minimal and the hook's needs explicit.
+is_git_subcommand_in_chain() {
+  local cmd="$1"
+  local want_sub="$2"
+  # Replace shell-segment boundaries with newlines, then iterate.
+  # Handles: && || ; | (real boundaries), literal newline (multi-line
+  # commands), AND the JSON-escaped literal two-char `\n` (which arrives
+  # this way because the hook does not JSON-decode — sed-extracted
+  # values preserve the backslash-n).
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_git_subcommand "$seg" "$want_sub"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+
+# Hook-local wrapper around is_destruct_command for shell-chained commands.
+# Splits $cmd on shell-segment boundaries (&&, ||, ;, |, literal newline,
+# AND the literal two-char escape `\n`) and calls is_destruct_command on
+# each segment, returning 0 if ANY segment matches. Preserves coverage of
+# pre-existing test cases like `git commit -m "msg" && kill -9 1234` that
+# the bare-substring regex caught and that first-token-anchoring alone
+# would silently drop. Same construction as is_git_subcommand_in_chain.
+is_destruct_command_in_chain() {
+  local cmd="$1"
+  local want_first="$2"
+  local flag_match="${3:-}"
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_destruct_command "$seg" "$want_first" "$flag_match"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+
 # git stash — command-boundary matching only. A bare `git[[:space:]]+stash`
 # match (anywhere in the command) overmatches on quoted strings (commit
 # messages, echo/printf/grep args that mention stash) and on the hook's own
@@ -117,27 +268,33 @@ fi
 # whitespace or end-of-command. Otherwise benign long flags like --quiet,
 # --force, --orphan, --theirs, --ours would false-positive because their
 # leading `--` matched the bare regex.
-if [[ "$COMMAND" =~ git[[:space:]]+checkout[[:space:]]+(.*[[:space:]])?--([[:space:]]|$) ]]; then
+if is_git_subcommand_in_chain "$COMMAND" checkout && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(.*[[:space:]])?--([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git restore (any file or blanket) — modern equivalent of checkout --
-if [[ "$COMMAND" =~ git[[:space:]]+restore[[:space:]] ]]; then
+if is_git_subcommand_in_chain "$COMMAND" restore; then
   block_with_reason "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git clean -f (permanent file deletion)
-if [[ "$COMMAND" =~ git[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f ]]; then
+if is_git_subcommand_in_chain "$COMMAND" clean && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git clean -f permanently deletes untracked files. These cannot be recovered from git."
 fi
 
 # git reset --hard (discards everything)
-if [[ "$COMMAND" =~ git[[:space:]]+reset[[:space:]]+--hard ]]; then
+if is_git_subcommand_in_chain "$COMMAND" reset && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--hard([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git reset --hard discards all uncommitted changes and staged work. Use git reset (soft) or ask the user."
 fi
 
 # kill -9 / kill -KILL / kill -SIGKILL / kill -s 9 / kill -s KILL / kill -s SIGKILL / killall / pkill
-if [[ "$COMMAND" =~ kill[[:space:]]+(-9|-KILL|-SIGKILL|-s[[:space:]]+(9|KILL|SIGKILL)) ]] || [[ "$COMMAND" =~ killall[[:space:]] ]] || [[ "$COMMAND" =~ pkill[[:space:]] ]]; then
+# Chain-wrapped to preserve coverage of `git commit -m "msg" && kill -9 1234`
+# (pre-existing test). Bare is_destruct_command is first-token-anchored;
+# the chain wrapper splits on shell-segment boundaries and re-checks each.
+if is_destruct_command_in_chain "$COMMAND" kill '^-(9|KILL|SIGKILL)$' \
+   || is_destruct_command_in_chain "$COMMAND" kill '^-s$:next:^(9|KILL|SIGKILL)$' \
+   || is_destruct_command_in_chain "$COMMAND" killall '' \
+   || is_destruct_command_in_chain "$COMMAND" pkill ''; then
   block_with_reason "BLOCKED: kill -9/killall/pkill can kill container-critical processes. Ask the user to stop the process manually."
 fi
 
@@ -243,12 +400,12 @@ if [[ "$COMMAND" =~ xargs[[:space:]]+.*(rm|-delete) ]]; then
 fi
 
 # git add . / git add -A / git add --all (sweeps in unrelated changes)
-if [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+(-A|--all|\.([[:space:]]|\"|\|)) ]] || [[ "$COMMAND" =~ git[[:space:]]+add[[:space:]]+\.$ ]]; then
+if is_git_subcommand_in_chain "$COMMAND" add && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(-A|--all|\.)([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git add . / git add -A sweeps in ALL changes, including other sessions' work. Stage files by name: git add file1 file2."
 fi
 
 # git commit --no-verify (skips pre-commit hooks)
-if [[ "$COMMAND" =~ git[[:space:]]+commit[[:space:]]+.*--no-verify ]]; then
+if is_git_subcommand_in_chain "$COMMAND" commit && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--no-verify([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
 fi
 
@@ -259,7 +416,7 @@ fi
 # Detection: parse the push target from the command itself, not from
 # git branch --show-current (which returns the MAIN repo's branch even
 # when the agent is working in a worktree via cd).
-if [[ "$COMMAND" =~ git[[:space:]]+push ]]; then
+if is_git_subcommand_in_chain "$COMMAND" push; then
   PUSH_TARGET=""
   # COMMAND is already the parsed shell command (with -m bodies redacted),
   # so no need to re-extract from the JSON.

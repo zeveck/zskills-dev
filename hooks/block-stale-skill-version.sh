@@ -67,42 +67,55 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # Carve-out: this matcher does NOT recurse into `bash -c '...'` /
 # `sh -c '...'` / `eval '...'` argument strings — see header docstring
 # and test C10e.
-is_git_commit() {
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
+is_git_subcommand() {
   local cmd="$1"
+  local want_sub="$2"
+  GIT_SUB_INDEX=-1
+  GIT_SUB_REST=""
   local -a TOKENS
   # shellcheck disable=SC2206
   read -ra TOKENS <<< "$cmd"
   local i=0 n=${#TOKENS[@]}
-  # Skip env-var prefixes (KEY=VAL...) before any command.
   while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
     ((i++))
   done
-  # Optional literal `env` prefix.
   [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
-  # Skip env-var prefixes after `env`.
   while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
     ((i++))
   done
-  # Must see literal `git` (or quoted `"git"`/`'git'`).
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
   g="${g%\'}"; g="${g#\'}"
   [[ "$g" != "git" ]] && return 1
   ((i++))
-  # Skip git's top-level flags. Conservative: any token starting with
-  # `-`. `-C` and `-c` take a separate arg (consume next token too);
-  # all other `--foo`, `--foo=bar`, `-X`, `-Xvalue` consume only the
-  # flag token itself.
   while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
     case "${TOKENS[$i]}" in
       -C|-c) ((i+=2)) ;;
       *)     ((i+=1)) ;;
     esac
   done
-  # Subcommand.
-  [[ "${TOKENS[$i]:-}" == "commit" ]]
+  local sub="${TOKENS[$i]:-}"
+  sub="${sub%\"}"; sub="${sub#\"}"
+  sub="${sub%\'}"; sub="${sub#\'}"
+  [[ "$sub" != "$want_sub" ]] && return 1
+  # Match. Set GIT_SUB_INDEX and build GIT_SUB_REST scoped to the
+  # current shell segment (truncate at first &&/||/;/|).
+  GIT_SUB_INDEX=$((i + 1))
+  local j=$GIT_SUB_INDEX
+  local rest=""
+  while [[ $j -lt $n ]]; do
+    case "${TOKENS[$j]}" in
+      '&&'|'||'|';'|'|') break ;;
+    esac
+    rest="$rest ${TOKENS[$j]}"
+    ((j++))
+  done
+  # Strip the leading space introduced by the loop.
+  GIT_SUB_REST="${rest# }"
+  return 0
 }
-is_git_commit "$COMMAND" || exit 0
+is_git_subcommand "$COMMAND" commit || exit 0
 
 # Guard against `set -u` + unset `$CLAUDE_PROJECT_DIR` (rare but documented
 # harness edge case). `${X:-$PWD}` falls back to cwd; if the script is

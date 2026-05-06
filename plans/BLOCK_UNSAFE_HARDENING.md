@@ -1,7 +1,8 @@
 ---
 title: Block-Unsafe Hooks Hardening
 created: 2026-05-06
-status: active
+status: complete
+completed: 2026-05-06
 ---
 
 # Plan: Block-Unsafe Hooks Hardening
@@ -107,12 +108,12 @@ Round-1 R-M-5 / DA-M-4 flagged that `tests/test-skill-conformance.sh` is for SKI
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Reference doc + reproducer trace verifications | ⏳ Pending | — | mirrors Plan B Phase 1; no SKILL.md edits; per-reproducer empirical deny-envelope capture (R3 may demote to "untraced" pending re-run) |
-| 2 — Source-of-truth helpers + harness extension + unit tests | ⏳ Pending | — | `hooks/_lib/git-tokenwalk.sh` + `tests/test-tokenize-then-walk.sh` (~88 unit cases); harness helper `setup_project_test_on_main` shared by Phases 3 + 5 |
-| 3 — Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests | ⏳ Pending | — | lines 404, 411, 540, 546, 616, 719 (six sites; round-1 DA-M-2 corrected count) |
-| 4 — Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests | ⏳ Pending | — | 7 git-verb sites (round-2 DA2-H-1 reinstated checkout): checkout/restore/clean/reset/add/--no-verify/push; lone-verb destructive sites (kill family). Pipeline-segment-bound rules (XARGS_KILL, RM_RECURSIVE, fuser combined-flag) STAY UNCHANGED — round-1 DA-C-2 |
-| 5 — CHANGELOG + class-pinned acceptance canaries + drift gate + finalization | ⏳ Pending | — | 144-case + 192-case matrices; 4 known reproducers; new `tests/test-hook-helper-drift.sh`; PLAN_INDEX update |
-| 6 — Plan B consolidation (post-merge) | ⏳ Pending | — | Conditional: refines Plan B's hook to consume `hooks/_lib/git-tokenwalk.sh`. May be no-op if Plan B was `/refine-plan`d before its Phase 2 landed (D6) |
+| 1 — Reference doc + reproducer trace verifications | ✅ Done | `2c0c4f1` | reference doc landed (232 lines); R1/R4/R5 fire today (empirical traces captured); R2 marked UNTRACED-IN-SYNTHESIS (no destructive substring in the literal command); R3 UNTRACED per DA-C-1; line-540 cherry-pick verification: outcome (b), does NOT fire today — Overview wording stays as hypothesis form |
+| 2 — Source-of-truth helpers + harness extension + unit tests | ✅ Done | `57706e9` | helpers + 127 unit cases + harness landed; full suite 2238/2238 (+127 vs baseline 2111); 3 plan-text drift items recorded (AC9 pre-existing jq comment; AC10 XCC8 vs XCC28 typo; AC3 case count 124 vs 127) |
+| 3 — Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests | ✅ Done | `561a73c` | 6 outer gates migrated via new hook-local `is_git_subcommand_in_chain` wrapper (segment-walks `&&`/`||`/`;`/`|`/`\n`); 20 PR1-PR10 cases added; full suite 2258/2258 PASS; pre-existing cd-chain regressions caught and fixed via the wrapper; test-helper JSON-shape latent bug also fixed |
+| 4 — Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests | ✅ Done | `d566512` | 7 git-verb sites + kill-family migrated using `is_git_subcommand_in_chain` + new emergent `is_destruct_command_in_chain` wrappers; full suite 2287/2287 PASS (+29 GR* cases); 4 surfaced deviations (curated GR1 regex, GR12b flipped to allow per wrapper-improvement, emergent destruct chain wrapper, clean-f regex extension) all justified |
+| 5 — CHANGELOG + class-pinned acceptance canaries + drift gate + finalization | ✅ Done | `e18d1e8` | CHANGELOG H3 + 13 bullets; 144 project + 192 generic + 48 adjacent + 24 positive matrix cases; new `tests/test-hook-helper-drift.sh` (3/3 PASS); PLAN_INDEX moved to Complete; full suite 2699/2699 PASS (delta +412 from Phase 4) |
+| 6 — Plan B consolidation (post-merge) | ✅ Done | `38791d3` | Plan B's hook migrated to consume `hooks/_lib/git-tokenwalk.sh`'s `is_git_subcommand`; drift gate now covers all 3 hooks (4/4 PASS); Plan B test surface renamed (27/27 PASS); full suite 2700/2700 PASS |
 
 ---
 

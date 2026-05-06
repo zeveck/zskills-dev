@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.06+fbde54"
+  version: "2026.05.06+2aef27"
 ---
 
 # Update Z Skills Infrastructure
@@ -816,6 +816,9 @@ references) is untouched.
 #### Step C — Fill hook + agent gaps
 
 Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
+
+<!-- hooks/_lib/git-tokenwalk.sh is the source-of-truth for hooks/block-unsafe-*.sh* helpers. Inlined into each hook; DO NOT install separately. -->
+
 
 - For `block-unsafe-project.sh.template`: copy to
   `.claude/hooks/block-unsafe-project.sh`. No install-time placeholder

@@ -63,6 +63,91 @@ block_with_reason() {
   exit 0
 }
 
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
+is_git_subcommand() {
+  local cmd="$1"
+  local want_sub="$2"
+  GIT_SUB_INDEX=-1
+  GIT_SUB_REST=""
+  local -a TOKENS
+  # shellcheck disable=SC2206
+  read -ra TOKENS <<< "$cmd"
+  local i=0 n=${#TOKENS[@]}
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  local g="${TOKENS[$i]:-}"
+  g="${g%\"}"; g="${g#\"}"
+  g="${g%\'}"; g="${g#\'}"
+  [[ "$g" != "git" ]] && return 1
+  ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
+    case "${TOKENS[$i]}" in
+      -C|-c) ((i+=2)) ;;
+      *)     ((i+=1)) ;;
+    esac
+  done
+  local sub="${TOKENS[$i]:-}"
+  sub="${sub%\"}"; sub="${sub#\"}"
+  sub="${sub%\'}"; sub="${sub#\'}"
+  [[ "$sub" != "$want_sub" ]] && return 1
+  # Match. Set GIT_SUB_INDEX and build GIT_SUB_REST scoped to the
+  # current shell segment (truncate at first &&/||/;/|).
+  GIT_SUB_INDEX=$((i + 1))
+  local j=$GIT_SUB_INDEX
+  local rest=""
+  while [[ $j -lt $n ]]; do
+    case "${TOKENS[$j]}" in
+      '&&'|'||'|';'|'|') break ;;
+    esac
+    rest="$rest ${TOKENS[$j]}"
+    ((j++))
+  done
+  # Strip the leading space introduced by the loop.
+  GIT_SUB_REST="${rest# }"
+  return 0
+}
+
+# Hook-local wrapper around is_git_subcommand for cd-chained commands.
+# Splits $cmd on shell-segment boundaries (&&, ||, ;, |, literal newline,
+# AND the literal two-char escape `\n` that arrives via JSON-string
+# encoding) and calls is_git_subcommand on each segment, returning 0
+# if ANY segment matches. This restores the old bare-substring's
+# cd-chain semantics (cd /tmp/wt && git commit -m foo) on top of
+# is_git_subcommand's first-token-anchored core.
+#
+# Why segment-walk lives here, not in hooks/_lib/git-tokenwalk.sh:
+#   The lib helper is the single source-of-truth — its contract
+#   (first-token-anchored) is unit-tested at tests/test-tokenize-then-walk.sh.
+#   Segment-walking is a project-hook-specific need (cd-chain
+#   resolution), not a generic helper concern. Keeping it here
+#   keeps the lib's contract minimal and the hook's needs explicit.
+is_git_subcommand_in_chain() {
+  local cmd="$1"
+  local want_sub="$2"
+  # Replace shell-segment boundaries with newlines, then iterate.
+  # Handles: && || ; | (real boundaries), literal newline (multi-line
+  # commands), AND the JSON-escaped literal two-char `\n` (which arrives
+  # this way because the hook does not JSON-decode — sed-extracted
+  # values preserve the backslash-n).
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_git_subcommand "$seg" "$want_sub"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+
 # ─── Tracking enforcement helpers ───
 # Shared between the commit / cherry-pick / push reader blocks. Each helper
 # takes a marker path + the action-verb context ("committing", "landing",
@@ -401,14 +486,14 @@ else
 fi
 
 # --- main_protected: block git commit on main ---
-if [[ "$COMMAND" =~ git[[:space:]]+commit ]] && is_main_protected && is_on_main; then
+if is_git_subcommand_in_chain "$COMMAND" commit && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
 
 # ─── CONFIGURE: set your full test command ────────────────────────────
 # Safety net: transcript-based verification on git commit
 # Ensures tests were run before committing code files.
-if [[ "$COMMAND" =~ git[[:space:]]+commit ]]; then
+if is_git_subcommand_in_chain "$COMMAND" commit; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -537,13 +622,13 @@ if [[ "$COMMAND" =~ git[[:space:]]+commit ]]; then
 fi
 
 # --- main_protected: block git cherry-pick on main ---
-if [[ "$COMMAND" =~ git[[:space:]]+cherry-pick ]] && is_main_protected && is_on_main; then
+if is_git_subcommand_in_chain "$COMMAND" cherry-pick && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
 
 # Safety net: transcript-based verification on git cherry-pick
 # Cherry-picks replay existing commits and bypass the commit hook above.
-if [[ "$COMMAND" =~ git[[:space:]]+cherry-pick ]]; then
+if is_git_subcommand_in_chain "$COMMAND" cherry-pick; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -613,7 +698,7 @@ fi
 
 # Safety net: tracking enforcement on git push
 # Push is the landing gate for PR mode — same tracking checks as commit/cherry-pick.
-if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\") ]]; then
+if is_git_subcommand_in_chain "$COMMAND" push; then
   TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
@@ -716,7 +801,7 @@ fi
 # variable-bearing push-target forms) produces false-positives on
 # legitimate worktree-scoped pushes without closing a realistic attack
 # vector.
-if [[ "$COMMAND" =~ git[[:space:]]+push([[:space:]]|\"|$) ]] && is_main_protected; then
+if is_git_subcommand_in_chain "$COMMAND" push && is_main_protected; then
   # Scope rules (a) and (b) to JUST the `git push` command segment, not the
   # whole $COMMAND buffer. Without this, multi-statement commands like
   # `git fetch origin main && git push -u origin feat/foo` false-positive
