@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers the current SPRINT_REPORT.md AND any landed-but-unclosed
   issues from previous sprints.
 metadata:
-  version: "2026.05.02+a825c6"
+  version: "2026.05.06+bcf5b0"
 ---
 
 # /fix-report — Sprint Report Review & Landing
