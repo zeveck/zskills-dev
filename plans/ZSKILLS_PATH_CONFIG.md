@@ -81,7 +81,7 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
     2b (`/run-plan` writer + isolated CANARY1 gate); Phase 5 split into 5a
     (deterministic moves) and 5b (cross-reference rewrite).
     `mirror-skill.sh` extension (Locked Decision 13) lands as part of Phase
-    1.5 — a SEPARATE single-purpose commit BEFORE Phase 2a — so the 14-skill
+    1b — a SEPARATE single-purpose commit BEFORE Phase 2a — so the 14-skill
     Phase 2a commit's rollback unit excludes the runtime-tool change.
 12. **PREREQUISITE — viewer-URL cleanup.** The branch
     `cleanup/remove-zimulink-viewer-refs` (commits `85c9c32` +
@@ -154,21 +154,21 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 13. **`block-diagram/` migration scope.** `mirror-skill.sh` hardcodes
     `SRC="$REPO_ROOT/skills/$NAME"` (verified at `scripts/mirror-skill.sh:22`)
     and there are no `.claude/skills/add-block` or `.claude/skills/add-example`
-    mirror destinations today. Path-config Phase 1.5 EXTENDS `mirror-skill.sh`
-    to accept `block-diagram/<name>` as a SRC root (see Phase 1.5 work
+    mirror destinations today. Path-config Phase 1b EXTENDS `mirror-skill.sh`
+    to accept `block-diagram/<name>` as a SRC root (see Phase 1b work
     items) BEFORE migrating `add-example`/`add-block`. The extension also
     creates the missing `.claude/skills/<add-block,add-example>` mirror
-    destinations in the same Phase 1.5 commit. **`block-diagram/model-design`
+    destinations in the same Phase 1b commit. **`block-diagram/model-design`
     is intentionally NOT mirrored** under `.claude/skills/` (verified
     `grep -rln "plans/\|reports/\|SPRINT_REPORT" block-diagram/` returns
     only `block-diagram/add-block/SKILL.md` — model-design has no
     path-config literals; mirroring it now would silently change install
-    policy). The Phase 1.5 extension is therefore opt-in — a caller
+    policy). The Phase 1b extension is therefore opt-in — a caller
     explicitly running `bash scripts/mirror-skill.sh block-diagram/model-design`
-    WOULD create a mirror, but no agent in this plan does so. Phase 1.5 AC
+    WOULD create a mirror, but no agent in this plan does so. Phase 1b AC
     asserts `ls .claude/skills/ | grep -E "model-design|add-block|add-example"`
     yields exactly `add-block` and `add-example` (no `model-design`). If
-    the extension proves harder than expected, Phase 1.5 STOPS and surfaces
+    the extension proves harder than expected, Phase 1b STOPS and surfaces
     a separate `MIRROR_SKILL_BLOCKDIAG` plan; block-diagram path-config
     migration is then deferred until that plan lands.
 14. **Conformance-scanner scope is `skills/` only.** `tests/test-skill-conformance.sh:1152`
@@ -207,11 +207,11 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
     conformance gate; the delta between the two is the prose-only surface
     the implementer must visually review.
 
-16. **`git rev-parse --git-common-dir` audit is REPO-WIDE in Phase 1.5.**
+16. **`git rev-parse --git-common-dir` audit is REPO-WIDE in Phase 1b.**
     Verified at refinement time:
     `grep -rln "git rev-parse --git-common-dir" skills/ block-diagram/ scripts/ hooks/`
     returns 24 files. The PR-mode resolution-bug surface is repo-wide,
-    not run-plan-localized. Phase 1.5 (a separate single-purpose commit
+    not run-plan-localized. Phase 1b (a separate single-purpose commit
     AFTER Phase 1 and BEFORE Phase 2a) AUDITS all 24 sites and partitions
     each `git rev-parse --git-common-dir` fence into a documented class:
     - **MAIN-only** (fence is invoked from main, never from a worktree):
@@ -224,10 +224,10 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
     - **Untouched** (fence is a research/inspection idiom unrelated to
       path resolution).
 
-    Phase 1.5's audit produces an audit-table commit message section
+    Phase 1b's audit produces an audit-table commit message section
     enumerating every site by `<path>:<line>:<class>`. The actual
     rewrites for PR-mode-relevant fences happen in their owning skill's
-    phase (Phase 2a, 2b, 3, or 4); Phase 1.5 only PRODUCES THE AUDIT
+    phase (Phase 2a, 2b, 3, or 4); Phase 1b only PRODUCES THE AUDIT
     (and lands no source-code edits beyond the mirror-skill.sh extension
     + the AUDIT.md artifact).
 
@@ -236,7 +236,7 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Foundations (helper + schema + conformance + hook fence) | ⬜ | | single-commit phase |
-| 1.5 — `mirror-skill.sh` extension + repo-wide PR-mode audit | ⬜ | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
+| 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit | ⬜ | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
 | 2a — Bash writer migration (excluding `/run-plan`) | ⬜ | | one commit; 12 `skills/` + 2 `block-diagram/` = 14 skills total |
 | 2b — `/run-plan` writer migration + CANARY1 gate | ⬜ | | self-migration hazard isolated; one commit |
 | 3 — Bash reader migration + scripts | ⬜ | | readers + post-run-invariants.sh + build-prod.sh |
@@ -332,7 +332,7 @@ Phases 2a/2b/3 unwind.
 
   **Self-conformance hygiene.** This comment introduces literals
   `plans/ZSKILLS_PATH_CONFIG.md` and `docs/plans/ZSKILLS_PATH_CONFIG.md`.
-  The first matches `re:^plans/` (forbidden-literals fixture, item 1.5).
+  The first matches `re:^plans/` (forbidden-literals fixture, item 1b).
   Add an `<!-- allow-hardcoded: plans/ZSKILLS_PATH_CONFIG.md reason:
   forward-protection comment quoting pre-migration path -->` marker on
   the line IMMEDIATELY BEFORE the comment block (the marker applies to
@@ -350,7 +350,7 @@ Phases 2a/2b/3 unwind.
   Phase 5 will edit the same file (adding the `--migrate-paths` algorithm)
   in a separate commit. Do not pre-stub Phase 5 here.
 
-- [ ] **1.5 — Append literals to `tests/fixtures/forbidden-literals.txt`.**
+- [ ] **1b — Append literals to `tests/fixtures/forbidden-literals.txt`.**
   Add the path-config literal set listed in Design & Constraints, with `re:`
   prefix where word-boundary or anchor regex is needed. Allow-hardcoded
   exemptions are PER-FENCE markers ONLY (per Locked Decision 15;
@@ -375,7 +375,7 @@ Phases 2a/2b/3 unwind.
   the gate Phases 2a/2b/3 unwind to zero. **Per-phase checkpoint counts**:
   Phases 2a / 2b / 3 each spec an EXPECTED REMAINING count post-phase
   (see those phases' ACs). `2a expected = $ACTUAL_VIOLATIONS - <2a contribution>`,
-  etc. Implementer derives the contribution counts at Phase 1.5 audit
+  etc. Implementer derives the contribution counts at Phase 1b audit
   time by grepping each affected skill in isolation.
 
 - [ ] **1.6 — Broaden `hooks/block-unsafe-project.sh.template:201`.** Change
@@ -467,7 +467,7 @@ Phases 2a/2b/3 unwind.
 
   Confirm: (a) hook test count increased by 5 (per 1.7), (b)
   `test-skill-conformance.sh` has `$ACTUAL_VIOLATIONS` new failures (recorded
-  in 1.5), (c) `test-zskills-paths.sh` PASSES with ≥9 cases green, (d) all
+  in 1b), (c) `test-zskills-paths.sh` PASSES with ≥9 cases green, (d) all
   other suites green.
 
 - [ ] **1.10 — Mirror update-zskills.** `bash scripts/mirror-skill.sh
@@ -643,7 +643,7 @@ semantics, but the resolved paths are rooted under `$WORKTREE_PATH`.
 existing skill bash fences sometimes derive `MAIN_ROOT` via
 `MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)`. From a
 worktree that resolves to MAIN, NOT the worktree. The repo-wide audit
-runs in **Phase 1.5** (Locked Decision 16) and produces an
+runs in **Phase 1b** (Locked Decision 16) and produces an
 `AUDIT-PR-MODE-RESOLUTION.md` artifact enumerating all 24 sites. The
 actual rewrites for PR-mode-relevant fences happen in their owning
 skill's phase (2a, 2b, 3, or 4) per the audit's classification.
@@ -790,7 +790,7 @@ rule (intended).
   patterns (count via `grep -c '^re:\|^[A-Z]' tests/fixtures/forbidden-literals.txt`
   delta).
 - [ ] `tests/test-skill-conformance.sh` is now FAILING with `$ACTUAL_VIOLATIONS`
-  new violations (the count recorded in 1.5; expected — gates Phases 2a/2b/3).
+  new violations (the count recorded in 1b; expected — gates Phases 2a/2b/3).
   Verifier MUST attest to this in their report by quoting the
   `$ACTUAL_VIOLATIONS` value. Note: this gates `skills/` ONLY; per Locked
   Decision 14, `block-diagram/`, `scripts/`, `hooks/`, `tests/`,
@@ -814,15 +814,15 @@ rule (intended).
 ### Dependencies
 
 None. Phase 1 is the foundation. Phase 1's ACs do NOT depend on Phase
-1.5 (round-3 DA F4): Phase 1 touches no `block-diagram/` skills, so the
-`mirror-skill.sh` extension landed in 1.5 is not required for Phase 1's
-mirror-parity assertions. Phase 2a's ACs DO depend on Phase 1.5 (the
+1b (round-3 DA F4): Phase 1 touches no `block-diagram/` skills, so the
+`mirror-skill.sh` extension landed in 1b is not required for Phase 1's
+mirror-parity assertions. Phase 2a's ACs DO depend on Phase 1b (the
 extension is needed to mirror `block-diagram/add-block` and
 `block-diagram/add-example`).
 
 ---
 
-## Phase 1.5 — `mirror-skill.sh` extension + repo-wide PR-mode audit
+## Phase 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit
 
 ### Goal
 
@@ -834,7 +834,7 @@ ergonomics flagged in round-2 reviewer F11.
 
 ### Work Items
 
-- [ ] **1.5.1 — Extend `mirror-skill.sh` to accept `block-diagram/<name>`
+- [ ] **1b.1 — Extend `mirror-skill.sh` to accept `block-diagram/<name>`
   as a SRC root.** Verified: current `scripts/mirror-skill.sh:22` hardcodes
   `SRC="$REPO_ROOT/skills/$NAME"`. Edit to detect `block-diagram/<NAME>`
   invocations:
@@ -866,7 +866,7 @@ ergonomics flagged in round-2 reviewer F11.
   by `grep -rln "plans/\|reports/\|SPRINT_REPORT" block-diagram/` → only
   `block-diagram/add-block/SKILL.md`. The script extension is opt-in —
   a caller could explicitly `bash scripts/mirror-skill.sh block-diagram/model-design`
-  but no agent in this plan does. Phase 1.5 AC asserts that
+  but no agent in this plan does. Phase 1b AC asserts that
   `.claude/skills/` contains exactly `add-block` and `add-example` from
   block-diagram (NOT `model-design`).
 
@@ -911,13 +911,13 @@ ergonomics flagged in round-2 reviewer F11.
   per-file `rm` (no `-r` flag) for orphan removal — verified at
   `scripts/mirror-skill.sh:5,36-58`. The broadened hook fence (Phase 1)
   blocks recursive deletes inside `.zskills/` but does NOT block
-  per-file `rm`, so Phase 1.5 mirroring is hook-safe even before
+  per-file `rm`, so Phase 1b mirroring is hook-safe even before
   consumers re-render. **Future edits to `mirror-skill.sh` MUST preserve
   this discipline** (no `rm -r`, `rm -rf`, or `find -delete` against
-  the mirror destinations) — otherwise Phase 1.5's safety degrades.
+  the mirror destinations) — otherwise Phase 1b's safety degrades.
   Document this invariant in the script's header comment.
 
-- [ ] **1.5.2 — Author the repo-wide `git rev-parse --git-common-dir`
+- [ ] **1b.2 — Author the repo-wide `git rev-parse --git-common-dir`
   audit artifact.** New file: `docs/AUDIT-PR-MODE-RESOLUTION.md`
   (intermediate location; gets moved to `docs/plans/` adjacent at Phase
   6 self-migration). Run:
@@ -954,7 +954,7 @@ ergonomics flagged in round-2 reviewer F11.
 
   Audit table format in `AUDIT-PR-MODE-RESOLUTION.md` — REQUIRED
   columns (column headers MUST match this spec exactly; the Phase
-  1.5 verifier asserts schema match per DA F17):
+  1b verifier asserts schema match per DA F17):
 
   ```markdown
   | File | Line | Lang | Site context | Class | Owning phase |
@@ -974,7 +974,7 @@ ergonomics flagged in round-2 reviewer F11.
   `prose-only-mention`. Implementer adds new context values only if
   none of the above fit, AND notes the addition in the audit's prose.
 
-  **AC for the audit (1.5.2 specifically):**
+  **AC for the audit (1b.2 specifically):**
   - Every one of the 24 sites appears as a row.
   - Column headers match the spec EXACTLY (verifier asserts schema:
     `head -2 docs/AUDIT-PR-MODE-RESOLUTION.md` matches the header +
@@ -985,9 +985,9 @@ ergonomics flagged in round-2 reviewer F11.
     catches DA F17 phantom-citation hazard).
   - Per-skill conformance-violation contribution counts: a SECOND
     table is appended to `AUDIT-PR-MODE-RESOLUTION.md` (round-3
-    reviewer F13) — see 1.5.2.b below.
+    reviewer F13) — see 1b.2.b below.
 
-- [ ] **1.5.2.b — Append per-skill conformance-violation contribution
+- [ ] **1b.2.b — Append per-skill conformance-violation contribution
   table to `AUDIT-PR-MODE-RESOLUTION.md`.** The Phase 1 conformance
   fixture sets `$ACTUAL_VIOLATIONS` (the total skill-resident
   literal-hit count); Phases 2a/2b/3 ACs reference per-phase
@@ -997,7 +997,7 @@ ergonomics flagged in round-2 reviewer F11.
   the second table now:
 
   ```markdown
-  ## Per-skill conformance-violation contributions (set at Phase 1.5 audit time)
+  ## Per-skill conformance-violation contributions (set at Phase 1b audit time)
 
   | Skill | Owning phase | Violations contributed |
   |-------|--------------|------------------------|
@@ -1009,12 +1009,12 @@ ergonomics flagged in round-2 reviewer F11.
   ```
 
   Implementer derives each row by re-running the conformance-grep
-  scoped per skill at audit time (per Phase 1 §1.5 prose). Phase 2a /
+  scoped per skill at audit time (per Phase 1 §1b prose). Phase 2a /
   2b / 3 verifier reads this table to compute the expected post-phase
   violation count; the `$ACTUAL_VIOLATIONS - <2a contribution>`
   formula in §Phase 2a AC becomes runnable once the table is filled.
 
-- [ ] **1.5.3 — Surface and fix `scripts/build-prod.sh` block-diagram
+- [ ] **1b.3 — Surface and fix `scripts/build-prod.sh` block-diagram
   glob bug** (round-3 DA F10). Verified at refinement time:
   `scripts/build-prod.sh:81` iterates
   `block-diagram/skills/*/SKILL.md` — but the actual structure is
@@ -1023,7 +1023,7 @@ ergonomics flagged in round-2 reviewer F11.
   README.md screenshots`). The glob silently matches nothing. Per
   CLAUDE.md "skill-framework repo — surface bugs, don't patch": fold
   the one-character fix into THIS commit (the natural moment, since
-  Phase 1.5 already extends `mirror-skill.sh` for the same
+  Phase 1b already extends `mirror-skill.sh` for the same
   block-diagram structure):
 
   ```diff
@@ -1043,11 +1043,11 @@ ergonomics flagged in round-2 reviewer F11.
   AC dependency, but folding here closes the bug rather than carrying
   it forward.
 
-- [ ] **1.5.4 — Single commit.** Subject:
+- [ ] **1b.4 — Single commit.** Subject:
   `chore(paths): extend mirror-skill.sh for block-diagram + repo-wide PR-mode audit + fix block-diagram glob in build-prod`.
   File inventory:
   - `scripts/mirror-skill.sh` (modified — extension)
-  - `scripts/build-prod.sh` (modified — fix block-diagram glob, per 1.5.3)
+  - `scripts/build-prod.sh` (modified — fix block-diagram glob, per 1b.3)
   - `skills/update-zskills/references/script-ownership.md` (modified — mirror-skill.sh row update)
   - `.claude/skills/update-zskills/references/script-ownership.md` (mirror)
   - `.claude/skills/add-block/` (NEW — mirror destinations)
@@ -1091,7 +1091,7 @@ path).
 Every skill that WRITES affected paths (excluding `/run-plan`, the highest-
 risk site, isolated to Phase 2b) sources the helper and replaces hardcoded
 literals with the resolved env vars. Mirror per skill. Uses the
-`mirror-skill.sh` extension landed in Phase 1.5.
+`mirror-skill.sh` extension landed in Phase 1b.
 
 ### Writer enumeration completeness check
 
@@ -1135,7 +1135,7 @@ provided below in lieu of trusting fixed line numbers).
   `grep -n 'DOC_ISSUES\|plans/' block-diagram/add-example/SKILL.md`.
   Replace `plans/DOC_ISSUES.md` references with
   `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`. Mirror via
-  `bash scripts/mirror-skill.sh block-diagram/add-example` (uses Phase 1.5
+  `bash scripts/mirror-skill.sh block-diagram/add-example` (uses Phase 1b
   extension).
 
 - [ ] **2a.3 — `/add-block`** (block-diagram, includes NEW_BLOCKS_REPORT
@@ -1357,7 +1357,7 @@ preceding a fence (per Locked Decision 15) and be reviewed post-edit.
 - [ ] **Per-phase checkpoint count.** Conformance test fail count post-2a
   is `$ACTUAL_VIOLATIONS - <2a contribution>`, where `<2a contribution>`
   is the per-skill violation count summed across the 12 `skills/`-resident
-  writers (computed at Phase 1.5 audit time and recorded in the
+  writers (computed at Phase 1b audit time and recorded in the
   AUDIT-PR-MODE-RESOLUTION.md companion section). Verifier asserts the
   observed count equals the expected.
 - [ ] Explicit `block-diagram/` grep AC:
@@ -1376,7 +1376,7 @@ preceding a fence (per Locked Decision 15) and be reviewed post-edit.
 
 ### Dependencies
 
-Phase 1 (helper, schema, conformance fixture, hook). Phase 1.5
+Phase 1 (helper, schema, conformance fixture, hook). Phase 1b
 (`mirror-skill.sh` extension; AUDIT.md citations).
 
 ---
@@ -1408,7 +1408,7 @@ phase that dispatches via `/run-plan`).
     vars in the rendered output.
 
 - [ ] **2b.2 — Apply PR-mode rewrites for `/run-plan`-owned fences from
-  the Phase 1.5 audit.** The audit (Phase 1.5.2) classified each
+  the Phase 1b audit.** The audit (Phase 1b.2) classified each
   `git rev-parse --git-common-dir` site under `skills/run-plan/` as MAIN-
   only or PR-mode-relevant. For each PR-mode-relevant fence (cited from
   the audit table), apply the verbatim rewrite below. The PR-mode
@@ -1474,10 +1474,10 @@ immediately after." This phase IS the second sub-phase.
 - [ ] `tests/test-skill-conformance.sh` — `/run-plan` literal violations
   ZERO.
 - [ ] **Per-phase checkpoint count.** Conformance test fail count post-2b
-  is `<2a remaining> - <2b contribution>` (from Phase 1.5 audit). Verifier
+  is `<2a remaining> - <2b contribution>` (from Phase 1b audit). Verifier
   attests.
 - [ ] PR-mode audit verified: every `git rev-parse --git-common-dir` site
-  under `skills/run-plan/` classified PR-mode-relevant in Phase 1.5 has
+  under `skills/run-plan/` classified PR-mode-relevant in Phase 1b has
   been rewritten per 2b.2. Verifier cross-references the audit table.
 - [ ] CANARY1 PASSES manually (per 2b.5). Evidence cited in verify report.
 - [ ] `diff -rq skills/run-plan .claude/skills/run-plan` clean.
@@ -1486,7 +1486,7 @@ immediately after." This phase IS the second sub-phase.
 
 ### Dependencies
 
-Phase 1.5 (audit table for site classification). Phase 2a (the helper
+Phase 1b (audit table for site classification). Phase 2a (the helper
 sourcing pattern is normalized across writers).
 
 ---
@@ -1545,7 +1545,7 @@ and `scripts/build-prod.sh`.
     filenames as invariant evidence but qualify the path. Mirror all three.
 
   **PR-mode audit follow-up.** `skills/do/SKILL.md` and
-  `skills/do/modes/{pr,worktree}.md` were classified in Phase 1.5's audit.
+  `skills/do/modes/{pr,worktree}.md` were classified in Phase 1b's audit.
   Apply any PR-mode-relevant fence rewrites per the audit table; if the
   audit classified them all MAIN-only, no rewrite needed (cite the audit
   row in the verifier report).
@@ -1557,7 +1557,7 @@ and `scripts/build-prod.sh`.
   `$ZSKILLS_PLANS_DIR/blocks/`. Mirror.
 
 - [ ] **3.9 — `skills/run-plan/scripts/post-run-invariants.sh`.** This is
-  a PR-mode-relevant fence per Phase 1.5's audit (verified at refinement
+  a PR-mode-relevant fence per Phase 1b's audit (verified at refinement
   time: `post-run-invariants.sh:51-57` resolves `MAIN_ROOT` from
   `git rev-parse --git-common-dir`, but the script runs INSIDE the worktree
   at end-of-`/run-plan` and the report-existence check at line 103 is
@@ -1818,7 +1818,7 @@ fixture-worktree smoke from 3.9.
 
 ### Dependencies
 
-Phase 1 (helper). Phase 1.5 (audit table). Phases 2a + 2b (writers — readers
+Phase 1 (helper). Phase 1b (audit table). Phases 2a + 2b (writers — readers
 depend on writer paths resolving).
 
 ---
@@ -2090,7 +2090,7 @@ helper takes `main_root` as input; this is correct and unchanged.
 
 ### Dependencies
 
-Phase 1 (helper, schema). Phase 1.5 (audit). Locked Decision 12
+Phase 1 (helper, schema). Phase 1b (audit). Locked Decision 12
 prerequisite (cleanup branch merged OR user-picked abandonment-policy
 path). Phases 2a/2b/3 are independent of this phase but conformance gates
 cumulatively.
@@ -3323,7 +3323,7 @@ must NOT be classified dev-only.
 
 ### Dependencies
 
-Phases 1, 1.5, 2a, 2b, 3, 4, 5a, 5b all complete. Locked Decision 12
+Phases 1, 1b, 2a, 2b, 3, 4, 5a, 5b all complete. Locked Decision 12
 prerequisite (cleanup branch merged OR user-picked abandonment-policy
 path) verified at Phase 4.
 
@@ -3337,11 +3337,13 @@ path) verified at Phase 4.
 
 **Remaining concerns (non-blocking):**
 
-1. **Decimal phase numbering precedent partly false.** Round-3 reviewer (R3) flagged that `Phase 1.5` decimal numbering may not be parseable by `/run-plan`. The round-3 refiner Justified-not-fixed citing precedent in `run-plan/SKILL.md`, `IMPROVE_STALENESS_DETECTION.md`, and `SKILL_VERSIONING.md`. Orchestrator verification: only `run-plan/SKILL.md` and `do/SKILL.md` have `Phase X.Y` style — both are skill source documentation, NOT `/run-plan`-executable plans. Zero precedent in `plans/*.md`. Risk: low. Mitigation: if `/run-plan` rejects `1.5` at dispatch time, rename to `Phase 1b` (mechanical, ~10 occurrence find-replace across the plan).
+1. **Phase 1b `mirror-skill.sh` extension is in the same Phase 1b commit as the repo-wide audit + build-prod.sh glob fix + audit-row table authoring + script-ownership update.** Not single-purpose. If any sub-step fails verification, all four roll back. Defensible because the four sub-steps are tightly coupled (the audit drives Phase 2a/2b/3/4 work; the mirror-script extension drives block-diagram migration; the glob fix is one-char surface-bugs-don't-patch). Reviewer may want this split if executing under high-risk conditions.
 
-2. **Single Justified-not-fixed: round-1 R7 (viewer-URL site enumeration).** Superseded by Locked Decision 12's prerequisite reframing — the cleanup branch (`cleanup/remove-zimulink-viewer-refs`, commits `85c9c32` + `88b9a68`) handles all viewer-URL removal; verified clean by orchestrator (`grep -rn 'viewer/?file' /tmp/zskills-cleanup-zimulink-viewer-refs/skills` returns 0). Acceptable disposition.
+2. **Round-1 R7 (viewer-URL site enumeration) Justified-not-fixed.** Superseded by Locked Decision 12's prerequisite reframing — the cleanup branch (`cleanup/remove-zimulink-viewer-refs`, commits `85c9c32` + `88b9a68`) handles all viewer-URL removal; verified clean by orchestrator (`grep -rn 'viewer/?file' /tmp/zskills-cleanup-zimulink-viewer-refs/skills` returns 0 across `skills/`, `block-diagram/`, `hooks/`, `scripts/`, `tests/`). Acceptable disposition.
 
-3. **Phase 1.5 `mirror-skill.sh` extension is in the same Phase 1.5 commit as the repo-wide audit + build-prod.sh glob fix + audit-row table authoring + script-ownership update.** Not single-purpose. If any sub-step fails verification, all four roll back. Defensible because the four sub-steps are tightly coupled (the audit drives Phase 2a/2b/3/4 work; the mirror-script extension drives block-diagram migration; the glob fix is one-char surface-bugs-don't-patch). Reviewer may want this split if executing under high-risk conditions.
+3. **Audit count: 24 vs 26 affected `git rev-parse --git-common-dir` sites.** Plan's repo-wide audit table (Locked Decision 16) describes 24 sites. Live count at finalize is 26 — likely two sites added in the period since the round-2 research dispatch. Phase 1b's audit step regenerates the table from a fresh `grep -rln` so this self-corrects at execution; flagged here for transparency.
+
+**Note on phase numbering:** The original draft used `Phase 1.5` decimal numbering. Round-3 reviewer (R3) flagged this had zero precedent in `plans/*.md`; the refiner's Justified-not-fixed citation of precedent in `run-plan/SKILL.md` / `IMPROVE_STALENESS_DETECTION.md` / `SKILL_VERSIONING.md` was verified false (only `run-plan/SKILL.md` and `do/SKILL.md` have `Phase X.Y` style, and those are skill source docs, not run-plan-executable plans; `run-plan/SKILL.md:672` documents the convention as letter-suffix `4a, 4b, 4c`). Renamed to `Phase 1b` in the finalize fixup (52 occurrences replaced).
 
 ### Round History
 | Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
