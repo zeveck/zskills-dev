@@ -107,7 +107,7 @@ Round-1 R-M-5 / DA-M-4 flagged that `tests/test-skill-conformance.sh` is for SKI
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Reference doc + reproducer trace verifications | ⏳ Pending | — | mirrors Plan B Phase 1; no SKILL.md edits; per-reproducer empirical deny-envelope capture (R3 may demote to "untraced" pending re-run) |
+| 1 — Reference doc + reproducer trace verifications | ✅ Done | `2c0c4f1` | reference doc landed (232 lines); R1/R4/R5 fire today (empirical traces captured); R2 marked UNTRACED-IN-SYNTHESIS (no destructive substring in the literal command); R3 UNTRACED per DA-C-1; line-540 cherry-pick verification: outcome (b), does NOT fire today — Overview wording stays as hypothesis form |
 | 2 — Source-of-truth helpers + harness extension + unit tests | ⏳ Pending | — | `hooks/_lib/git-tokenwalk.sh` + `tests/test-tokenize-then-walk.sh` (~88 unit cases); harness helper `setup_project_test_on_main` shared by Phases 3 + 5 |
 | 3 — Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests | ⏳ Pending | — | lines 404, 411, 540, 546, 616, 719 (six sites; round-1 DA-M-2 corrected count) |
 | 4 — Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests | ⏳ Pending | — | 7 git-verb sites (round-2 DA2-H-1 reinstated checkout): checkout/restore/clean/reset/add/--no-verify/push; lone-verb destructive sites (kill family). Pipeline-segment-bound rules (XARGS_KILL, RM_RECURSIVE, fuser combined-flag) STAY UNCHANGED — round-1 DA-C-2 |
