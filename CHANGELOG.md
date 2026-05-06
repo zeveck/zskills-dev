@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-06
+
+### Added — block-stale-skill-version PreToolUse hook (#193)
+
+Add `hooks/block-stale-skill-version.sh`: PreToolUse Bash hook denying `git commit` when staged skill files have a stale `metadata.version` hash. Wraps `scripts/skill-version-stage-check.sh` and emits a JSON deny envelope (pure-bash escape — no `jq`, no Python). Wired in zskills `.claude/settings.json` and shipped to consumers via `/update-zskills` (canonical extension table extended; 4 helper scripts — `skill-version-stage-check.sh`, `skill-content-hash.sh`, `frontmatter-get.sh`, `frontmatter-set.sh` — now copied via the new shared `scripts/install-helpers-into.sh` driver invoked from `/update-zskills` Step D). Closes the lock-step gap: bare `git commit` (bypassing `/commit`) is now blocked locally; CI's `test-skill-conformance.sh` is no longer the only mechanical safety net. Decisions: flat hook (no `.template`); commit-only gating (push gating dropped per F2 design analysis); `/commit` Phase 5 step 2.5 retained for defense-in-depth; tokenize-then-walk `git commit` matcher (regex form was empirically bypassable per Round-2 N1). Block-unsafe-project.sh:404 over-match follow-up: see `plans/BLOCK_UNSAFE_HARDENING.md` (drafted 2026-05-06, PR #192) — recommend `/run-plan plans/BLOCK_UNSAFE_HARDENING.md finish auto` after this PR lands. See `references/skill-version-pretooluse-hook.md`. Closes lock-step gap from PR #175 (skill-versioning).
+
 ## 2026-05-03
 
 ### Added — Verifier subagent — D'' structural defense

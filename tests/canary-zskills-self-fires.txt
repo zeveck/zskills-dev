@@ -1,0 +1,66 @@
+# Canary — block-stale-skill-version PreToolUse hook fires on bare `git commit`
+
+Purpose: a one-shot LIVE canary that confirms the
+`hooks/block-stale-skill-version.sh` PreToolUse hook is actually wired in
+the running Claude Code session, not just present on disk. This is a
+**manual gate** per the SKILL_VERSION_PRETOOLUSE_HOOK plan (Phase 3 AC8 —
+deferred from Phase 3 to Phase 5 because a fresh session restart is
+required for hook re-registration after an install / `/update-zskills`).
+
+## Why a recipe and not a test
+
+Claude Code reads `.claude/settings.json` ONCE at session start. A test
+that edits `settings.json` mid-run cannot reload the hook registry — only
+a session restart does. The unit tests under `tests/` exercise the hook
+script's pure-bash logic (input/output, JSON envelope, deny vs. allow
+decisions); they cannot exercise the harness wiring. That is what this
+recipe covers.
+
+Automated unit + sandbox coverage backing the live behavior:
+- **Phase 2:** `tests/test-block-stale-skill-version.sh` — 27 cases
+  covering the hook script in isolation (allow/deny matrix, JSON envelope
+  shape, escape edge cases, exit codes, helper-script absence, the
+  tokenize-then-walk `git commit` matcher vs. heredoc/quoted-arg
+  bypass attempts).
+- **Phase 4:** `tests/test-block-stale-skill-version-sandbox.sh` — 13
+  cases verifying `/update-zskills` ships the hook + 4 helper scripts to
+  consumer repos via the new `scripts/install-helpers-into.sh` driver
+  (idempotent install, mode preservation, settings.json wire-in).
+
+## Manual procedure
+
+Run from a fresh Claude Code session (post-install / post-`/update-zskills`):
+
+1. Pick any source skill, e.g. `skills/commit/SKILL.md`.
+2. Edit ONE byte of the SKILL.md body (e.g. add a trailing newline to a
+   prose paragraph) — DO NOT bump `metadata.version`.
+3. Stage it: `git add skills/commit/SKILL.md`
+4. Issue a bare commit (NOT through `/commit`):
+   `git commit -m "test stale-skill-version hook"`
+5. Expected: the harness renders a tool-deny envelope. The
+   `permissionDecisionReason` field contains the
+   `skill-version-stage-check.sh` STOP message verbatim, including the
+   suggested bump command:
+   `bash scripts/frontmatter-set.sh skills/commit/SKILL.md metadata.version "<today>+<hash>"`
+6. The commit DOES NOT happen. `git status` shows the file still staged.
+7. Run the suggested bump command, re-issue the commit — it succeeds.
+
+## Verifiable claim
+
+The canary RECIPE is locked in this file; live canary execution is a
+manual gate per spec, not a CI requirement; see Phase 2 / Phase 4 unit +
+sandbox coverage above for automated verification of the hook script and
+install path. CI's `tests/test-skill-conformance.sh` is the push-time
+backstop covering the same drift class.
+
+## Failure mode if canary trips
+
+If the manual recipe is run and the hook DOES NOT fire (commit succeeds
+with a stale skill version), the most likely cause is that the consumer
+session has not yet absorbed an `/update-zskills` after Phase 4's helper
+ship. Re-run `/update-zskills`, restart the session, retry the recipe.
+
+If the recipe fails AFTER a fresh `/update-zskills` + restart, that is a
+real regression — file an issue with the failing skill, the
+`.claude/settings.json` excerpt for `PreToolUse`, and the hook script
+path on disk.

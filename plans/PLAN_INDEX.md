@@ -9,6 +9,7 @@ Totals: 47 plans — 5 ready, 0 in progress, 19 complete, 21 canaries, 3 referen
 | Plan | Phases | Next Phase | Priority | Notes |
 |------|--------|------------|----------|-------|
 | [BLOCK_UNSAFE_HARDENING.md](BLOCK_UNSAFE_HARDENING.md) | 6 | 1 | High | Drafted 2026-05-06 (/draft-plan 2 rounds; closes block-unsafe-* over-matching bug class — 5 in-session reproducers) |
+| [SKILL_VERSION_PRETOOLUSE_HOOK.md](SKILL_VERSION_PRETOOLUSE_HOOK.md) | 5 | 1 | High | Drafted 2026-04-30; refined PR #192. Plan B — closes /commit lock-step gap with PreToolUse hook denying bare `git commit` on stale skill versions |
 | [ADAPTIVE_CRON_BACKOFF.md](ADAPTIVE_CRON_BACKOFF.md) | 4 | 1 | Medium | Drafted 2026-04-29 (issue #110, /draft-plan 2 rounds) |
 | [BLOCK_DIAGRAM_TRACKING_CATCHUP.md](BLOCK_DIAGRAM_TRACKING_CATCHUP.md) | 3 | 1 | Medium | Created 2026-04-26 |
 | [DEFAULT_PORT_CONFIG.md](DEFAULT_PORT_CONFIG.md) | 5 | 1 | Medium | Created 2026-04-26 |

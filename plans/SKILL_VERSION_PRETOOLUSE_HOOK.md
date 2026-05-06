@@ -1,7 +1,8 @@
 ---
 title: SKILL_VERSION_PRETOOLUSE_HOOK
 created: 2026-04-30
-status: active
+status: complete
+completed: 2026-05-06
 ---
 
 # Plan: SKILL_VERSION_PRETOOLUSE_HOOK
@@ -63,11 +64,11 @@ Research finding F1 verified zero copy lines exist in `skills/update-zskills/SKI
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decision doc + manual-recipe verifications | ⏳ Pending | — | reference doc only; R1/R2/R3 already empirically confirmed in research |
-| 2 — Hook script + JSON-escape function + unit tests | ⏳ Pending | — | `hooks/block-stale-skill-version.sh` + `tests/test-block-stale-skill-version.sh` |
-| 3 — `.claude/settings.json` registration + canonical extension table | ⏳ Pending | — | zskills-side wiring + `skills/update-zskills/SKILL.md:944-948` row |
-| 4 — Helper-script install flow extension + sandbox integration test | ⏳ Pending | — | F1 fix; copy 4 scripts; sandbox edit→bare-commit→deny test |
-| 5 — CHANGELOG + CLAUDE.md note + final conformance | ⏳ Pending | — | PR-tier finalization |
+| 1 — Decision doc + manual-recipe verifications | ✅ Done | `67ff929` | All 6 ACs PASS. references/skill-version-pretooluse-hook.md (138 lines): D1-D5 verbatim + R1/R2/R3 manual-recipe verifications + Recursive-risk-NONE + run_suite dispatcher pattern. plans/PLAN_INDEX.md: Plan B added to "Ready to Run". Tests 2071/2071 PASS (parity with baseline; docs-only phase). |
+| 2 — Hook script + JSON-escape function + unit tests | ✅ Done | `0766b65` | All 12 ACs PASS. `hooks/block-stale-skill-version.sh` (150 lines, +x): tokenize-then-walk `is_git_commit` matcher per Round 2 N1 + pure-bash `json_escape` (LC_ALL=C + named escapes + POSIX `[[:cntrl:]]` strip per D4) + fail-open guard + `bash -c` carve-out documented in header. `tests/test-block-stale-skill-version.sh` (347 lines, +x): 27 cases (C1-C5 baseline + C6-C7 + C7a-j flag combinations + C8 env-prefix + C9 leading-whitespace + C10 word-boundary + C10e bash-c carve-out + C11 git-stash + C12 + C12a + C13-C15 JSON/UTF-8/control-byte). Tests 2098/2098 PASS (+27 vs baseline 2071). Block-unsafe-generic.sh extraction + deny-envelope shape byte-identical to source. |
+| 3 — `.claude/settings.json` registration + canonical extension table | ✅ Done | `62f53b5` | All ACs PASS except AC8 (one-shot live deny-canary not produced; deferred to Phase 5 final conformance — static stage-check verified rc=0 path; deny path covered by Phase 2's 27-case unit suite). 5-edit `skills/update-zskills/SKILL.md`: 3.1a canonical-table row (5→6), 3.1b prose `All 6 rows`, 3.1c explainer `Installing 3 PreToolUse Bash safety hooks`, 3.2 Step C copy bullet, version bump → `2026.05.06+829a2a`. Mirror parity clean. `.claude/hooks/block-stale-skill-version.sh` byte-equal mirror, +x. `.claude/settings.json` PreToolUse Bash entry added (deep-nested indent matches existing entries per round-2 DA2-M-2). Tests 2098/2098 PASS (parity — Phase 3 wires the hook, no new test cases). |
+| 4 — Helper-script install flow extension + sandbox integration test | ✅ Done | `841e7e1` | All 12 ACs PASS. `scripts/install-helpers-into.sh` (NEW driver, +x): copies 4 helpers from $PORTABLE/scripts/ to consumer scripts/ with mkdir -p + per-file SKIP/COPY collision policy + no .git requirement + CLAUDE_PROJECT_DIR-or-PWD fallback under set -u. `tests/test-block-stale-skill-version-sandbox.sh` (NEW, +x): 13-case end-to-end integration test (driver install + scripts/ created + 4 helpers exec + settings.json registers + deny on stale + STOP: in reason + allow after bump + SKIP/COPY mtime semantics + cleanup). `skills/update-zskills/SKILL.md` Step D extended (canonical script-install home, line 1090 — moved from Step C per round-2 R2-CO-A). metadata.version → `2026.05.06+7b1a80`. Mirror parity clean. Verifier caught + fixed `chmod +x` on install-helpers-into.sh (implementer omitted exec bit). Tests 2111/2111 PASS (+13 vs baseline 2098). Implementer's reported test-hooks.sh#17 flake was NOT reproducible by verifier across multiple full-suite + isolated runs; sandbox test cleanup discipline confirmed sound (trap-EXIT). |
+| 5 — CHANGELOG + CLAUDE.md note + final conformance | ✅ Done | `886304d` | All ACs PASS. CHANGELOG: new `## 2026-05-06` H2 + `### Added — block-stale-skill-version PreToolUse hook (#193)` H3 (Plan A's `## 2026-05-03` preserved). CLAUDE.md `## Skill versioning`: PreToolUse-backstop paragraph (composition-citation per Anthropic Code docs + verifier-side recovery via Edit+Bash allowlist + orchestrator-side recovery). CLAUDE.md `## Verifier-cannot-run rule`: 1-line cross-ref. `tests/canary-zskills-self-fires.txt` (NEW): canary RECIPE backed by Phase 2 27-case + Phase 4 13-case auto coverage. `plans/reports/SKILL_VERSION_PRETOOLUSE_HOOK-followups.md` (NEW): post-merge followups (stage-check STOP UX nit + BLOCK_UNSAFE_HARDENING /run-plan recommendation). Tests 2111/2111 PASS (parity). |
 
 ---
 
