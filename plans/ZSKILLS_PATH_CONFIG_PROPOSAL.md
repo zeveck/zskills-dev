@@ -26,12 +26,12 @@ Directories at repo root introduced by zskills:
 
 - `reports/` — `/run-plan` (`plan-{slug}.md`), `/verify-changes` (`verify-{scope}.md`), `/add-block` (`new-blocks-{slug}.md`), `/briefing report` (`briefing-{ts}.md`)
 - `plans/` — `/draft-plan`, `/refine-plan`, `/plans` (`PLAN_INDEX.md`), `/fix-issues` (`ISSUES_PLAN.md`), `/qe-audit` (`QE_ISSUES.md`), `/add-block` (`BUILD_ISSUES.md`), `/add-example` (`DOC_ISSUES.md`); also mutated in place by `/run-plan`
-- `var/` — `dev.pid`, `dev.log` written by consumer's `/update-zskills`-installed `start-dev.sh` stub
+- `var/` — `dev.pid`, `dev.log` written by consumer's `/update-zskills`-installed `start-dev.sh` stub. Note: `var/` is Unix FHS convention (`/var/log`, `/var/run`) borrowed into a project context where it's an outlier — no major framework (Rails, Django, Cargo, npm, Maven) uses project-level `var/`. The existing zskills convention is flat runtime files under `.zskills/` (`.zskills/dashboard-server.{pid,log}`, `.zskills/monitor-state.json`). This proposal eliminates `var/` and relocates the stub's PID/log files as `.zskills/dev-server.{pid,log}` to match.
 - `.zskills/` — runtime state: `tracking/$PIPELINE_ID/{step,phasestep,requires,fulfilled,meta,pipeline,verify-pending-attempts}.*`, `monitor-state.json` (+`.lock`), `work-on-plans-state.json`, `dashboard-server.{pid,log}`, `stub-notes/<stub>.noted`
 
 Files modified at repo root:
 
-- `.gitignore` — `/update-zskills` appends `.zskills/tracking/`, `var/`
+- `.gitignore` — `/update-zskills` appends `.zskills/tracking/`, `var/` (the `var/` line goes away with this proposal; superseded by `.zskills/dev-server.*`, covered by the existing `.zskills/` ignore patterns)
 - `CLAUDE.md` — left alone by zskills going forward. `/update-zskills` Phase 4 renders `.claude/rules/zskills/managed.md` from `CLAUDE_TEMPLATE.md` (independent of root CLAUDE.md). A one-time legacy cleanup removes pre-Phase-4 zskills-rendered lines from root CLAUDE.md if any are detected, saving a backup at `CLAUDE.md.pre-zskills-migration`. Out of scope here.
 
 Worktree-local files (NOT main repo, listed for completeness): `.zskills-tracked`, `.worktreepurpose`, `.landed`, `.test-results.txt`.
@@ -42,8 +42,8 @@ Out of scope for this proposal: `.claude/` install paths (handled by `/update-zs
 
 The user-meaningful axis is **curation tier**, not artifact category:
 
-- **Tier 1 — user-curated, tracked, PR-visible.** Plans (`<NAME>_PLAN.md`), issue trackers (`ISSUES_PLAN.md`, `BUILD_ISSUES.md`, `DOC_ISSUES.md`, `QE_ISSUES.md`), `PLAN_INDEX.md`. These are artifacts users author, edit, and review.
-- **Tier 2 — machine forensic / skill-to-skill / regenerated indexes.** Per-phase plan reports, verify reports, briefing snapshots, `SPRINT_REPORT.md`/`FIX_REPORT.md` (read primarily by `/fix-report`, surfaced to humans through the dashboard viewer), `PLAN_REPORT.md`/`VERIFICATION_REPORT.md` indexes.
+- **Tier 1 — tracked in git, durable project-level state.** Plans (`<NAME>_PLAN.md` — user-authored or `/draft-plan`-generated then user-edited; the only artifact users routinely *open*). Issue trackers (`ISSUES_PLAN.md`, `BUILD_ISSUES.md`, `DOC_ISSUES.md`, `QE_ISSUES.md` — skill-appended; mirror GitHub issues by number; users typically interact via the GitHub issue, not the local file). `PLAN_INDEX.md` (regenerated overview). Common structural property: persists across the project's lifetime, referenced by stable identifiers (plan slug, issue number) from PRs and other Tier 1 files. Common property NOT claimed: that humans frequently open these files directly (only plans hit that bar; trackers and indexes are mostly machine-managed).
+- **Tier 2 — forensic exhaust / skill-to-skill plumbing / regenerated indexes.** Per-phase plan reports (`reports/plan-{slug}.md`), verify reports, briefing snapshots, `SPRINT_REPORT.md`/`FIX_REPORT.md` (skill-to-skill state read primarily by `/fix-report`, viewable via the dashboard), `PLAN_REPORT.md`/`VERIFICATION_REPORT.md` indexes. Common property: regenerable, append-only forensic, or skill-internal plumbing; not stably referenced by other artifacts.
 
 Tier 1 gets one config knob. Tier 2 has a fixed location. Reasoning: (a) within each tier, sub-dividing into per-leaf keys is bikeshedding without a real user need; (b) the tracked-vs-gitignored split that motivates flexibility is structural, not configurable — it falls out of the tier boundary; (c) a single knob keeps the consumer's mental model small while solving the actual user complaint (plans visibility).
 
@@ -78,10 +78,10 @@ Tier 1 gets one config knob. Tier 2 has a fixed location. Reasoning: (a) within 
     PLAN_REPORT.md
     VERIFICATION_REPORT.md
   tracking/$PIPELINE_ID/...
-  var/                            # promoted from top-level var/
   monitor-state.json (+ .lock)
   work-on-plans-state.json
   dashboard-server.{pid,log}
+  dev-server.{pid,log}            # was top-level var/dev.{pid,log}; flat to match dashboard
   stub-notes/
 ```
 
@@ -91,7 +91,7 @@ Tier 1 gets one config knob. Tier 2 has a fixed location. Reasoning: (a) within 
 - `plans_dir: "docs/plans"` — co-locates with project docs
 - `plans_dir: "../external-plans/zskills"` — out-of-tree (advanced)
 
-**Top-level zskills footprint after migration:** `.zskills/` only, plus `.gitignore`/`CLAUDE.md` modifications. Five top-level entries removed (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`).
+**Top-level zskills footprint after migration:** `.zskills/` only, plus `.gitignore`/`CLAUDE.md` modifications. Six top-level entries removed (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `var/`).
 
 ## Open questions to resolve before /draft-plan
 
@@ -159,7 +159,7 @@ Readers (must source helper, read from resolved paths):
 1. Detect existing top-level artifacts (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `plans/`, `var/`).
 2. Move forensic + narrative reports → `.zskills/audit/`.
 3. Move `plans/` → `.zskills/plans/` UNLESS user has set `plans_dir: "plans"` (preserves visibility).
-4. Move `var/` → `.zskills/var/`.
+4. Move `var/dev.pid` → `.zskills/dev-server.pid`, `var/dev.log` → `.zskills/dev-server.log`. Remove the now-empty `var/` directory. Update the installed `start-dev.sh` and `stop-dev.sh` stubs to reference the new paths (only if they're at the shipped defaults — preserve user customizations).
 5. Update `.gitignore`: add `.zskills/audit/`, remove top-level `var/`.
 6. Write `.pre-paths-migration` backup marker (mirrors existing `.pre-zskills-migration` pattern for CLAUDE.md).
 7. Print one-line summary of moves.
