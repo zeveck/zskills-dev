@@ -52,23 +52,27 @@ Tier 1 gets one config knob. Tier 2 has a fixed location. Reasoning: (a) within 
 ```json
 {
   "output": {
-    "plans_dir": ".zskills/plans"
+    "plans_dir": "docs/plans",
+    "issues_dir": ".zskills/issues"
   }
 }
 ```
 
-**Default layout (everything zskills under `.zskills/`):**
+**Default layout:**
 
 ```
-.zskills/
-  plans/                          # configurable via plans_dir
+docs/                             # default plans_dir; configurable; tracked in git
+  plans/
     {NAME}_PLAN.md
     PLAN_INDEX.md
+
+.zskills/                         # gitignored
+  issues/                         # default issues_dir; configurable
     ISSUES_PLAN.md
     BUILD_ISSUES.md
     DOC_ISSUES.md
     QE_ISSUES.md
-  audit/                          # fixed location, gitignored, dashboard-viewable
+  audit/                          # fixed location, dashboard-viewable
     plan-{slug}.md
     verify-{scope}.md
     briefing-{ts}.md
@@ -85,94 +89,90 @@ Tier 1 gets one config knob. Tier 2 has a fixed location. Reasoning: (a) within 
   stub-notes/
 ```
 
-**Surface plans by setting `plans_dir`:**
+**Override examples:**
 
-- `plans_dir: "plans"` — restores current top-level visibility
-- `plans_dir: "docs/plans"` — co-locates with project docs
+- `plans_dir: "plans"` — old top-level location
+- `plans_dir: ".zskills/plans"` — fully hide plans inside zskills' corner
 - `plans_dir: "../external-plans/zskills"` — out-of-tree (advanced)
+- `issues_dir: "docs/issues"` — surface trackers next to plans
+- `issues_dir: ".zskills/audit"` — cohabit with forensic reports
 
-**Top-level zskills footprint after migration:** `.zskills/` only, plus `.gitignore`/`CLAUDE.md` modifications. Six top-level entries removed (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `var/`).
+**Top-level zskills footprint after migration:** `docs/plans/` (or wherever `plans_dir` points) and `.zskills/`, plus `.gitignore`/`CLAUDE.md` modifications. Six legacy top-level entries removed (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `var/`); legacy `plans/` is moved to the new default `docs/plans/` (or wherever the user set `plans_dir`).
 
-## Open questions to resolve before /draft-plan
+## Resolved decisions
 
-**Q1. Issue trackers — same dir as plans, or separate?**
+**D1. Issue trackers get a separate `issues_dir` key, defaulting to `.zskills/issues/`.** Trackers are skill-appended GitHub-issue mirrors — closer in nature to forensic state than to user-authored plans. Defaulting them gitignored under `.zskills/` is the right shape: GitHub is the canonical source, the local file is convenience. The separate key lets users override to `docs/issues/` (surface alongside plans), back into `plans_dir` (if they want trackers cohabit), or to `.zskills/audit/` (cohabit with forensic). Cost of the separate key vs. cohabiting with plans: one extra config field, one extra env var (`$ZSKILLS_ISSUES_DIR`) — negligible.
 
-`ISSUES_PLAN.md`, `BUILD_ISSUES.md`, `DOC_ISSUES.md`, `QE_ISSUES.md` are tracker files: numbered entries (R-/D-/Q-numbered) appended by skills, occasionally read by humans, reviewed in PRs when issues are added or closed.
-
-- (a) **Cohabit with plans under `plans_dir`.** Single key, simplest, matches current cohabitation. Bucket name "plans" loosely covers "user-curated tracked stuff."
-- (b) **Separate `issues_dir` key** (default same as `plans_dir`). Independently configurable. Defer until requested.
-- (c) **Move to `.zskills/audit/`.** Treat as machine state. Loses PR-review semantics for tracker edits.
-
-Recommendation: (a). No real user pain today, simplest config surface.
-
-**Q2. Default — visible plans or hidden plans?**
-
-- **Hidden default (`plans_dir: ".zskills/plans"`).** Consistent with "everything under `.zskills/`" framing. Clean repo root out of the box. Existing consumers must run `/update-zskills --migrate-paths` on upgrade or set `plans_dir: "plans"` to preserve visibility.
-- **Visible default (`plans_dir: "plans"`).** Matches today's behavior. User opts into hiding. Less surprising for existing consumers.
-
-Recommendation: hidden default, leveraging the pre-backcompat posture. The "move most things under `.zskills/`" framing is the whole point; defaulting to visible is a half-step.
+**D2. Plans default to `docs/plans/` from repo root — visible, tracked, namespaced under `docs/`.** Plans are the one zskills artifact users routinely open and edit; they belong in a discoverable location that fits common project conventions (`docs/decisions/`, `docs/runbooks/`, `docs/plans/`). Repo-root `plans/` is preserved as a one-line override (`plans_dir: "plans"`) for users who want them at top level. Pre-backcompat posture (per project memory: "zskills is pre-backwards-compat") means we ship the right default rather than the legacy default. The migration step relocates existing top-level `plans/` to `docs/plans/` automatically.
 
 ## Implementation surface
 
-**Helper: `scripts/zskills-paths.sh`** — sourceable shim, reads `output.plans_dir` from `.claude/zskills-config.json` via established bash-regex JSON-read pattern (no jq, per project convention). Exports:
+**Helper: `scripts/zskills-paths.sh`** — sourceable shim, reads `output.plans_dir` and `output.issues_dir` from `.claude/zskills-config.json` via established bash-regex JSON-read pattern (no jq, per project convention). Exports:
 
 ```
-ZSKILLS_PLANS_DIR        # config-resolved, absolute
-ZSKILLS_AUDIT_DIR        # $MAIN_ROOT/.zskills/audit
+ZSKILLS_PLANS_DIR        # config-resolved, absolute (default $MAIN_ROOT/docs/plans)
+ZSKILLS_ISSUES_DIR       # config-resolved, absolute (default $MAIN_ROOT/.zskills/issues)
+ZSKILLS_AUDIT_DIR        # fixed: $MAIN_ROOT/.zskills/audit
 ```
 
 Resolves relative to caller-supplied `$MAIN_ROOT` or `$WORKTREE_PATH` — never `pwd`. Critical for `/run-plan` PR mode where the same logical path resolves both in the worktree (where commits land on the feature branch) and on main (where the post-merge state matches).
 
-**Conformance test** — extends `scripts/test-all.sh` with grep across all skills/scripts/hooks for hardcoded literals: `SPRINT_REPORT`, `FIX_REPORT`, `PLAN_REPORT`, `VERIFICATION_REPORT`, `^plans/`, `^reports/`, `"reports/`, `"plans/`. Any match outside doc text or the helper itself fails the suite. Same shape as the existing model-dispatch / no-jq conformance tests.
+**Conformance test** — extends `scripts/test-all.sh` with grep across all skills/scripts/hooks for hardcoded literals: `SPRINT_REPORT`, `FIX_REPORT`, `PLAN_REPORT`, `VERIFICATION_REPORT`, `^plans/`, `^reports/`, `"reports/`, `"plans/`, `BUILD_ISSUES`, `DOC_ISSUES`, `QE_ISSUES`, `ISSUES_PLAN`. Any match outside doc text or the helper itself fails the suite. Same shape as the existing model-dispatch / no-jq conformance tests.
 
 **Reader/writer surface:**
 
 Writers (must source helper, write to resolved paths):
 
-- `/run-plan` — plans (mutate frontmatter), `audit/plan-{slug}.md`, `audit/PLAN_REPORT.md`, `audit/SPRINT_REPORT.md` (already-landed updates)
-- `/fix-issues` — `audit/SPRINT_REPORT.md`, `plans_dir/ISSUES_PLAN.md`
-- `/fix-report` — `audit/FIX_REPORT.md`, mutates `audit/SPRINT_REPORT.md`
-- `/verify-changes` — `audit/verify-{scope}.md`, `audit/VERIFICATION_REPORT.md`
-- `/draft-plan`, `/refine-plan` — `plans_dir/<NAME>_PLAN.md`
-- `/plans` — `plans_dir/PLAN_INDEX.md`
-- `/qe-audit` — `plans_dir/QE_ISSUES.md`
-- `/add-block` — `plans_dir/BUILD_ISSUES.md`, `audit/new-blocks-{slug}.md`
-- `/add-example` — `plans_dir/DOC_ISSUES.md`
-- `/briefing report` — `audit/briefing-{ts}.md`
+- `/run-plan` — `$ZSKILLS_PLANS_DIR/<NAME>_PLAN.md` (mutate frontmatter), `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`, `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md`, `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` (already-landed updates)
+- `/fix-issues` — `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`, `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md`
+- `/fix-report` — `$ZSKILLS_AUDIT_DIR/FIX_REPORT.md`, mutates `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+- `/verify-changes` — `$ZSKILLS_AUDIT_DIR/verify-{scope}.md`, `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`
+- `/draft-plan`, `/refine-plan` — `$ZSKILLS_PLANS_DIR/<NAME>_PLAN.md`
+- `/plans` — `$ZSKILLS_PLANS_DIR/PLAN_INDEX.md`
+- `/qe-audit` — `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`
+- `/add-block` — `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md`, `$ZSKILLS_AUDIT_DIR/new-blocks-{slug}.md`
+- `/add-example` — `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`
+- `/briefing report` — `$ZSKILLS_AUDIT_DIR/briefing-{ts}.md`
 
 Readers (must source helper, read from resolved paths):
 
-- `/briefing` (scans plans_dir + audit, was scanning root + `reports/`)
-- `/work-on-plans` (reads `plans_dir/PLAN_INDEX.md`)
-- `/fix-report` (reads `audit/SPRINT_REPORT.md`)
-- `/run-plan` (reads `plans_dir/<NAME>_PLAN.md`)
-- `/refine-plan` (reads `plans_dir/<NAME>_PLAN.md`)
+- `/briefing` (scans `$ZSKILLS_PLANS_DIR` + `$ZSKILLS_AUDIT_DIR` + `$ZSKILLS_ISSUES_DIR`; was scanning root + `reports/`)
+- `/work-on-plans` (reads `$ZSKILLS_PLANS_DIR/PLAN_INDEX.md`)
+- `/fix-report` (reads `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`)
+- `/run-plan` (reads `$ZSKILLS_PLANS_DIR/<NAME>_PLAN.md`)
+- `/refine-plan` (reads `$ZSKILLS_PLANS_DIR/<NAME>_PLAN.md`)
 - `briefing.cjs` / `briefing.py` (root `*REPORT*.md` scan must move to audit dir)
 - **zskills-dashboard** — first-class consumer; viewer URLs (`/viewer/?file=...`) must resolve through the helper. Already reads `.claude/zskills-config.json` (mutates dashboard block at runtime), so config access is established.
 
-**Gitignore** — `/update-zskills` appends `.zskills/audit/` (and removes `var/` line — superseded by `.zskills/var/` covered by existing `.zskills/` ignore). Existing `.zskills/tracking/` line stays.
+**Gitignore** — `/update-zskills` appends `.zskills/audit/`, `.zskills/issues/` (the latter only if `issues_dir` resolves under `.zskills/`; if user pointed it at `docs/issues/` or similar, leave the directory tracked). Removes the obsolete top-level `var/` line. Existing `.zskills/tracking/` line stays.
 
 ## Migration
 
-`/update-zskills --migrate-paths`:
+zskills is pre-backwards-compat: ship the right default, migrate cleanly, no legacy-mode flag. Two complementary forms:
 
-1. Detect existing top-level artifacts (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `plans/`, `var/`).
+**Form A — `/update-zskills --migrate-paths` (deterministic script):**
+
+1. Detect existing top-level artifacts (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `plans/`, `var/`, `BUILD_ISSUES.md`/`DOC_ISSUES.md`/`QE_ISSUES.md`/`ISSUES_PLAN.md` if present at root or under legacy `plans/`).
 2. Move forensic + narrative reports → `.zskills/audit/`.
-3. Move `plans/` → `.zskills/plans/` UNLESS user has set `plans_dir: "plans"` (preserves visibility).
-4. Move `var/dev.pid` → `.zskills/dev-server.pid`, `var/dev.log` → `.zskills/dev-server.log`. Remove the now-empty `var/` directory. Update the installed `start-dev.sh` and `stop-dev.sh` stubs to reference the new paths (only if they're at the shipped defaults — preserve user customizations).
-5. Update `.gitignore`: add `.zskills/audit/`, remove top-level `var/`.
-6. Write `.pre-paths-migration` backup marker (mirrors existing `.pre-zskills-migration` pattern for CLAUDE.md).
-7. Print one-line summary of moves.
+3. Move `plans/<NAME>_PLAN.md` and `plans/PLAN_INDEX.md` → resolved `$ZSKILLS_PLANS_DIR/` (default `docs/plans/`, or whatever the user set).
+4. Move `plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md` → resolved `$ZSKILLS_ISSUES_DIR/` (default `.zskills/issues/`).
+5. Move `var/dev.pid` → `.zskills/dev-server.pid`, `var/dev.log` → `.zskills/dev-server.log`. Remove the now-empty `var/` directory. Update the installed `start-dev.sh` and `stop-dev.sh` stubs to reference the new paths only if they match shipped defaults (preserve user customizations).
+6. Update `.gitignore`: add `.zskills/audit/`, conditionally `.zskills/issues/` (only if `issues_dir` resolves under `.zskills/`), remove the obsolete `var/` line.
+7. Write `.pre-paths-migration` backup marker (mirrors existing `.pre-zskills-migration` pattern for CLAUDE.md).
+8. Update any plan files containing absolute or `plans/`-prefixed cross-references to other plans or `reports/plan-*.md` files. Bash-regex rewrite scoped to `<NAME>_PLAN.md` files only; preserve user prose.
+9. Print summary of moves and a one-line agent-handoff hint for any non-default-path customizations the migration declined to touch.
 
-Pre-backcompat posture (per project memory: "zskills is pre-backwards-compat") means no legacy mode flag, no dual-path support. Single migration step, default flip, done.
+**Form B — agent-runnable upgrade prompt:**
+
+For consumers whose stubs or plans contain non-default customizations the script declined to touch, ship a documented agent prompt in CHANGELOG / `references/path-config-upgrade.md` that an agent can run inside the project to safely complete edits the deterministic step skipped. Pattern: "Read `start-dev.sh`. If it writes to `var/dev.pid`, update the path to `.zskills/dev-server.pid` and adjust accordingly. If you see customization, surface diff and ask the user before editing." This handles the long tail without forcing the script to do AI-level discrimination.
 
 ## Compatibility with existing `.zskills/` usage
 
-Adding `.zskills/plans/`, `.zskills/audit/`, `.zskills/var/` as new subdirectories alongside the existing `tracking/`, `monitor-state.json`, `dashboard-server.{pid,log}`, `work-on-plans-state.json`, `stub-notes/`, `tier1-migration-deferred`, `triggers/` is structurally safe. Verified by independent agent audit (six claims, all VERIFIED) on 2026-04-30:
+Adding `.zskills/issues/`, `.zskills/audit/`, and the flat `dev-server.{pid,log}` files alongside the existing `tracking/`, `monitor-state.json`, `dashboard-server.{pid,log}`, `work-on-plans-state.json`, `stub-notes/`, `tier1-migration-deferred`, `triggers/` is structurally safe. Verified by independent agent audit (six claims, all VERIFIED) on 2026-04-30:
 
 1. **`clear-tracking.sh` is `tracking/`-scoped only.** `TRACKING_DIR="$MAIN_ROOT/.zskills/tracking"` at line 12; every `find`/`rm` operation rooted at `$TRACKING_DIR` (lines 32, 58, 99, 141, 146, 150, 162). Sibling subdirs are unreachable.
 
-2. **Hook protection is `tracking/`-scoped only.** `hooks/block-unsafe-project.sh.template:201` regex anchors to the literal `\.zskills/tracking`. No broader `.zskills` fence exists. **This is the one caveat**: `rm -rf .zskills/plans` would currently pass the hook. If `.zskills/plans/` will hold user-authored work, the hook regex must be broadened to cover the whole `.zskills/` tree (or per-subdir rules added) as a Phase 1 deliverable, not deferred. Single-line change recommended: replace `\.zskills/tracking` with `\.zskills` to fence the entire tree, since once `.zskills/` holds plans + audit + tracking + runtime state, the whole tree is load-bearing.
+2. **Hook protection is `tracking/`-scoped only.** `hooks/block-unsafe-project.sh.template:201` regex anchors to the literal `\.zskills/tracking`. No broader `.zskills` fence exists. **This is the one caveat**: `rm -rf .zskills/issues` or `rm -rf .zskills/audit` would currently pass the hook. Once `.zskills/` holds issue trackers (skill-managed but durable), forensic audit history, and runtime state, the whole tree is load-bearing. Phase 1 deliverable: broaden the hook regex from `\.zskills/tracking` to `\.zskills` so any recursive delete targeting any `.zskills/` subdir is fenced.
 
 3. **Dashboard `collect.py` walks `tracking/` only.** `base = main_root / ".zskills" / "tracking"` at `collect.py:612`; `iterdir()` calls at 621, 627 operate on `base` and direct children only. Specific-file reads elsewhere (`monitor-state.json` at 966, etc.). No `.zskills/*` glob.
 
@@ -197,13 +197,14 @@ Adding `.zskills/plans/`, `.zskills/audit/`, `.zskills/var/` as new subdirectori
 
 A phase-structured plan covering:
 
-1. **Helper + config schema + hook fence** — `scripts/zskills-paths.sh`, schema entry in `.claude/zskills-config.schema.json`, conformance test, and **broadening of `block-unsafe-project.sh.template:201` recursive-delete regex from `.zskills/tracking` to the whole `.zskills/` tree** (load-bearing since `.zskills/` will now hold user-authored plans).
+1. **Helper + config schema + hook fence** — `scripts/zskills-paths.sh` exporting `$ZSKILLS_PLANS_DIR`, `$ZSKILLS_ISSUES_DIR`, `$ZSKILLS_AUDIT_DIR`. Schema entries for `output.plans_dir` and `output.issues_dir` in `.claude/zskills-config.schema.json`. Conformance test for hardcoded literals. **Broaden `block-unsafe-project.sh.template:201` recursive-delete regex from `.zskills/tracking` to `.zskills`** (the whole tree is load-bearing once it holds issues + audit history alongside tracking + runtime state).
 2. **Writer migration** — every skill listed above, source helper, replace literals. Mirror to `.claude/skills/`.
 3. **Reader migration** — every skill listed above, plus `briefing.cjs`/`briefing.py` and dashboard server.
-4. **Dashboard viewer** — path-aware URL resolution.
-5. **`/update-zskills --migrate-paths`** — one-shot migration with backup marker.
-6. **Gitignore update** — through `/update-zskills`.
-7. **Self-migration** — apply `--migrate-paths` to zskills repo itself; verify `git ls-files` no longer surfaces top-level reports.
-8. **Documentation** — update CLAUDE.md, CHANGELOG, any skill docs that reference the old paths.
+4. **Dashboard viewer** — path-aware URL resolution; viewer URLs computed from `$ZSKILLS_*_DIR` not hardcoded.
+5. **`/update-zskills --migrate-paths`** — deterministic one-shot migration with `.pre-paths-migration` backup marker.
+6. **Agent-runnable upgrade prompt** — documented in `references/path-config-upgrade.md` for the long tail of customizations the deterministic step declines to touch (e.g., user-modified `start-dev.sh`).
+7. **Gitignore update** — through `/update-zskills` (conditional `.zskills/issues/` line based on whether `issues_dir` resolves under `.zskills/`).
+8. **Self-migration** — apply `--migrate-paths` to zskills repo itself; verify `git ls-files` no longer surfaces top-level reports, that `docs/plans/` exists, that `.zskills/issues/` and `.zskills/audit/` are populated.
+9. **Documentation** — update CLAUDE.md, CHANGELOG, any skill docs that reference the old paths.
 
 Conformance test from Phase 1 gates every subsequent phase. Existing canaries (CANARY1–11) re-run on PR to catch path-resolution regressions in `/run-plan` PR mode and parallel pipelines specifically.
