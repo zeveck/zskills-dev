@@ -1,5 +1,53 @@
 # Plan Report — Block-Unsafe Hooks Hardening
 
+## Phase — 3 Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests [UNFINALIZED]
+
+**Plan:** plans/BLOCK_UNSAFE_HARDENING.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-unsafe-hardening (PR mode, branch `feat/block-unsafe-hardening`)
+**Commits:** `561a73c`
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 3.1 | Inline `is_git_subcommand` from `hooks/_lib/git-tokenwalk.sh` after `block_with_reason()` | Done | `561a73c` |
+| 3.2 | Replace 6 outer-gate sites (lines 404, 411, 540, 546, 616, 719 pre-edit; 489, 496, 625, 631, 701, 804 post-edit) | Done | `561a73c` |
+| 3.3 | Mirror to `.claude/hooks/block-unsafe-project.sh` (byte-identical) | Done | `561a73c` |
+| 3.4 | PR1-PR10 bypass-canary tests in `tests/test-hooks.sh` (R1, R2, R4 reproducers; class-pinned negatives; positive regressions; XCC5-XCC14 + JSON-quote-injection battery) | Done | `561a73c` |
+| 3.5 | Full suite 2258/2258 PASS | Done | `561a73c` |
+
+### Architectural drifts (Phase 3 emergent)
+
+Two emergent additions not in the plan body — surfaced by pre-existing tests and committed with documented rationale:
+
+1. **Hook-local `is_git_subcommand_in_chain` wrapper.** The plan's first-token-anchored `is_git_subcommand` (Phase 2 source-of-truth, contract: tokens[0] must be `git`) does not match `cd /tmp/wt && git commit` chains. Two pre-existing tests (`extract_cd_target: multi-line cd to main-branch worktree blocked`, `main_protected + worktree-cd: commit on main-via-worktree still blocked`) regressed under the migration. Fix: a hook-local wrapper that splits `$COMMAND` on segment boundaries (`&&`, `||`, `;`, `|`, real newline, JSON-escaped `\n`) and applies `is_git_subcommand` per segment. The 6 outer gates use the wrapper. The source-of-truth helper stays unchanged (its first-token-anchored contract is correct for its unit-test surface). Phase 5.4's drift gate enforces byte-equality of the inlined helper body. The wrapper is documented in the commit message.
+
+2. **`expect_project_deny`/`expect_project_allow` JSON-shape fix.** The harness's JSON envelope put `command` middle-of-envelope (`tool_input.command`, then `transcript_path`). The hook's greedy sed extraction otherwise bleeds `transcript_path` into the extracted `COMMAND`. The OLD bare-substring regexes were forgiving of the bleed; the new strict tokenize-then-walk classifier was not. Fix: reshape the JSON to put `command` LAST (after `transcript_path`) — same pattern as the pre-existing `run_main_protected_test` helper (with rationale comment at lines 1000-1006). The fix is "fix the code, not the test" — the helper had a latent bug exposed only by the new classifier.
+
+### Verification
+
+- AC1 (no bare-substring sites for migrated verbs): PASS
+- AC2 (`grep -cF 'is_git_subcommand'` ≥ 7): PASS (12)
+- AC3 (mirror byte-equal): PASS
+- AC4 (inlined helper byte-identical to source-of-truth): PASS
+- AC5 (test-hooks.sh exit 0; PR1-PR10 PASS): PASS
+- AC6 (full suite RC 0): PASS (2258/2258)
+- AC7 (pre-existing positive cases preserved): PASS
+- AC8 (3-path scope only): PASS
+- AC9 (R3 absent from test surface): PASS
+- AC10 (subcommand quote-strip exercised): PASS (2)
+
+Helper sanity: 3/3 spot-checks correct. Both pre-existing regressed tests recovered. Hygiene clean (no `--no-verify`, no new `jq`, no skill bumps, no `[ ]` artifacts).
+
+### Plan-text drift recorded
+
+- `PLAN-TEXT-DRIFT: phase=3 bullet=WI-3.4-case-count plan="21 new cases" actual="20 PR1-PR10 PASS lines"` — cosmetic; counting depends on whether parent PR10 line is counted alongside its 11 children.
+- `ARCH-EXTENSION-DRIFT: wrapper-helper` — `is_git_subcommand_in_chain` is an emergent addition (cd-chain segment-walker); documented in commit body.
+- `EMERGENT-FIX-DRIFT: test-helper-JSON-shape` — `expect_project_deny`/`expect_project_allow` reshape; documented in commit body and in code comment at the helper site.
+
+---
+
 ## Phase — 2 Source-of-truth helpers + harness extension + unit tests [UNFINALIZED]
 
 **Plan:** plans/BLOCK_UNSAFE_HARDENING.md
