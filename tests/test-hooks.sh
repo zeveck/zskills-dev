@@ -388,6 +388,126 @@ fi
 
 echo ""
 
+# === BLOCK_UNSAFE_HARDENING bypass canaries — generic hook ===
+# GR1-GR25: bypass-canary integration tests for the tokenize-then-walk
+# migration of hooks/block-unsafe-generic.sh (Phase 4 of plan
+# plans/BLOCK_UNSAFE_HARDENING.md). These cases assert the migration kills
+# the bare-substring over-match class (GR1-GR12c-allow), preserves residual
+# carve-outs intentionally (GR12a, GR12b), preserves all positive cases
+# (GR13-GR25), and locks pipeline-form / combined-flag coverage that DA-C-2
+# kept unchanged (GR20, GR21).
+
+# GR1 — Reproducer R5: grep over the hook source must not trip the hook.
+# Plan WI 4.5 specced an alt-regex that mentioned both migrated patterns (kill -9,
+# killall, pkill) AND unchanged-rule patterns (fuser -k, find .* -delete, rsync
+# --delete, xargs.*rm). Those unchanged rules are bare-substring whole-buffer
+# scans that correctly fire on grep args mentioning them — so the WI 4.5 alt
+# regex would still trip with the migration in place. Coverage of the migrated
+# verbs is what GR1 is supposed to assert, so the regex below is restricted
+# to identifier-substrings (RM_RECURSIVE, KILL_SUBST, etc.) plus pattern
+# fragments that share text with the OLD bare regexes (e.g. 'git[[:space:]]+restore')
+# — neither of which matches any rule (migrated or unchanged) in the COMMAND
+# buffer. This is the R5-reproducer spirit (grep over the hook source itself)
+# without the spec's accidental collision with unchanged rules.
+expect_allow "GR1: grep R5 reproducer over hook source (curated regex)" \
+  "grep -n -E '(RM_RECURSIVE|KILL_SUBST|XARGS_KILL|STASH_BOUNDARY|is_safe_destruct|is_git_subcommand)' /workspaces/zskills/hooks/block-unsafe-generic.sh"
+
+# GR2-GR4 — grep over notes.md mentioning the migrated git verbs (pre-Phase-4 BLOCKED)
+expect_allow "GR2: grep 'git restore' notes.md"        "grep 'git restore' notes.md"
+expect_allow "GR3: grep 'git clean -f' notes.md"       "grep 'git clean -f' notes.md"
+expect_allow "GR4: grep 'git reset --hard' notes.md"   "grep 'git reset --hard' notes.md"
+
+# GR5 — printf with banned-prose payload (line 135 migrated)
+expect_allow "GR5: printf 'remember to git reset --hard'" \
+  "printf 'remember to git reset --hard\\\\n'"
+
+# GR6 — echo banned-prose payload (line 140 migrated)
+expect_allow "GR6: echo 'use kill -9 1234 to force'" \
+  "echo \\\"use kill -9 1234 to force\\\""
+
+# GR7 — path-substring class (line 140 migrated)
+expect_allow "GR7: cat /tmp/kill-9-notes.md (path substring)" \
+  "cat /tmp/kill-9-notes.md"
+
+# GR8-GR10 — grep over files mentioning migrated patterns
+expect_allow "GR8: grep 'git commit --no-verify' tests/test-hooks.sh" \
+  "grep 'git commit --no-verify' tests/test-hooks.sh"
+expect_allow "GR9: grep 'git add -A' notes.md"         "grep 'git add -A' notes.md"
+expect_allow "GR10: grep 'git push' notes.md"          "grep 'git push' notes.md"
+
+# GR11 — Segment-truncation invariant: post-`&&` `-f` must NOT trip line-130
+expect_allow "GR11: git clean foo && rm -f bar.txt (segment truncation)" \
+  "git clean foo && rm -f bar.txt"
+
+# GR12 — Segment-truncation invariant: post-`&&` `--` must NOT trip line-120
+expect_allow "GR12: git reset --soft && grep -- pattern file.sh" \
+  "git reset --soft && grep -- pattern file.sh"
+
+# GR12a — Carve-out lock: quote-blind helper sees `--hard` in the quoted arg
+expect_deny "GR12a: git reset 'msg --hard text' (quote-blind carve-out lock)" \
+  "git reset 'msg --hard text'"
+
+# GR12b — Carve-out CLOSED by chain wrapper: `is_git_subcommand_in_chain`'s
+# sed normalizer splits on `;` regardless of surrounding whitespace, so the
+# segment-truncation invariant holds even for space-elided shell-controls.
+# Plan WI 4.5 specced this as a CARVE-OUT LOCK (expect_deny) on the assumption
+# that the migration would use bare `is_git_subcommand` (segment-blind tokenizer).
+# The implementation uses `is_git_subcommand_in_chain` (per Phase-3-parity
+# requirement to preserve cd-chain coverage), which closes the carve-out.
+# Test flipped to expect_allow accordingly.
+expect_allow "GR12b: git clean foo;rm -f bar (chain wrapper closes carve-out)" \
+  "git clean foo;rm -f bar"
+
+# GR12c-allow — Line-120 migration kills the over-match
+expect_allow "GR12c-allow: printf 'git checkout -- foo' > /tmp/notes.sh" \
+  "printf 'git checkout -- foo\\\\n' > /tmp/notes.sh"
+
+# GR12c-deny — Line-120 still fires positively for real invocation
+expect_deny "GR12c-deny: git checkout -- file.sh (positive regression)" \
+  "git checkout -- file.sh"
+
+# GR13-GR15 — Positive regressions: migrated git-verb rules still fire
+expect_deny "GR13: git restore . (positive regression)"     "git restore ."
+expect_deny "GR14: git clean -f (positive regression)"      "git clean -f"
+expect_deny "GR15: git reset --hard (positive regression)"  "git reset --hard"
+
+# GR16 — Positive regression: kill -9 still fires
+expect_deny "GR16: kill -9 1234 (positive regression)"      "kill -9 1234"
+
+# GR17 — Positional-pair `:next:` matched
+expect_deny "GR17: kill -s 9 1234 (positional-pair)"        "kill -s 9 1234"
+
+# GR18 — Positional-pair miss: -s USR1 is allowed (non-destructive signal)
+expect_allow "GR18: kill -s USR1 1234 (positional-pair miss)" "kill -s USR1 1234"
+
+# GR19 — Positive regression: line 217 unchanged; bare RM_RECURSIVE still fires
+expect_deny "GR19: rm -rf /home/foo (line 217 unchanged)"   "rm -rf /home/foo"
+
+# GR20 — Pipeline form preserved (DA-C-2 lock)
+expect_deny "GR20: cat list.txt | xargs rm -rf (pipeline form preserved)" \
+  "cat list.txt | xargs rm -rf"
+
+# GR21 — Combined-flag preserved (DA-C-2 lock)
+expect_deny "GR21: fuser -mk 8080 (combined-flag preserved)" "fuser -mk 8080"
+
+# GR22 — KILL_SUBST line 175 unchanged
+expect_deny "GR22: kill -9 \$(lsof -ti :3000) (KILL_SUBST unchanged)" \
+  "kill -9 \$(lsof -ti :3000)"
+
+# GR23 — Top-level git flag passthrough: `git --no-pager restore .`
+expect_deny "GR23: git --no-pager restore . (top-level flag passthrough)" \
+  "git --no-pager restore ."
+
+# GR24 — Top-level git flag passthrough: `git --git-dir=/x clean -f`
+expect_deny "GR24: git --git-dir=/x clean -f (top-level flag passthrough)" \
+  "git --git-dir=/x clean -f"
+
+# GR25 — Subcommand quote-strip
+expect_deny "GR25: git \"restore\" . (subcommand quote-strip)" \
+  "git \\\"restore\\\" ."
+
+echo ""
+
 # ─── Project hook test harness ───
 PROJECT_HOOK="hooks/block-unsafe-project.sh.template"
 TEST_TMPDIR=""
