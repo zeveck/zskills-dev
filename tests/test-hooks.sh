@@ -451,7 +451,14 @@ expect_project_deny() {
   # arg; newer callers pass a human-readable label + the command under test.
   local label cmd
   if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
-  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
+  # JSON shape: "command" is the LAST field so the hook's greedy sed
+  # extraction (`.*"command":"\(.*\)".*`) doesn't bleed envelope tokens
+  # like `transcript_path` into COMMAND. Same fix as run_main_protected_test
+  # (see comment at the build site there). Pre-BLOCK_UNSAFE_HARDENING the
+  # bare-substring regexes were forgiving of greedy bleed; the post-Phase-3
+  # tokenize-then-walk helper is strict, so command-last shape is required
+  # for short commands like `git push` or `git -P commit`.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$TEST_TMPDIR/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
@@ -464,7 +471,8 @@ expect_project_deny() {
 expect_project_allow() {
   local label cmd
   if [ -n "$2" ]; then label="$1"; cmd="$2"; else label="$1"; cmd="$1"; fi
-  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"},\"transcript_path\":\"$TEST_TMPDIR/.transcript\"}"
+  # See expect_project_deny for the command-last JSON-shape rationale.
+  local json="{\"tool_name\":\"Bash\",\"transcript_path\":\"$TEST_TMPDIR/.transcript\",\"tool_input\":{\"command\":\"$cmd\"}}"
   local result
   result=$(echo "$json" | REPO_ROOT="$TEST_TMPDIR" TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
   if [[ -z "$result" ]] || [[ "$result" != *"deny"* ]]; then
@@ -1535,6 +1543,134 @@ else
   fail "push tracking: no-upstream fallback should detect code files, got: $PUSH_RESULT"
 fi
 rm -rf "$push_tracking_tmpdir"
+
+
+# === BLOCK_UNSAFE_HARDENING bypass canaries — project hook ===
+# Phase 3.4 (BLOCK_UNSAFE_HARDENING): bypass-canary integration tests for the
+# tokenize-then-walk migration of `git[[:space:]]+(commit|cherry-pick|push)`
+# outer gates. R1, R2, R4 reproducers from Phase 1 reference doc; R3 omitted
+# (UNTRACED per round-1 DA-C-1, AC9). PR4-PR6 are class-pinned negatives
+# (grep "git <verb>" file.sh on main → ALLOW). PR7-PR9 are positive
+# regressions. PR10 is the bypass-canary battery for is_git_subcommand
+# top-level git-flag combinations (XCC5-XCC14 + JSON quote-injection).
+source "$(dirname "$0")/test-hooks-helpers.sh"
+
+# PR1 — Reproducer R1: grep -n on the installed hook mentioning "git commit".
+# Pre-migration this trips the line-411 outer gate (transcript-based commit
+# verification); post-migration the tokenize-then-walk classifier sees `grep`
+# as the first non-flag token, so the gate doesn't fire.
+setup_project_test_on_main
+expect_project_allow "PR1: R1 grep mention" "grep -n 'git commit\\|...' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh"
+teardown_project_test
+
+# PR2 — Reproducer R2: sed -n on the hook source. Same class as R1.
+setup_project_test_on_main
+expect_project_allow "PR2: R2 sed mention" "sed -n '404,420p' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh"
+teardown_project_test
+
+# (PR3 — REMOVED per round-1 DA-C-1; R3 was UNTRACED.)
+
+# PR3 — Reproducer R4: grep -nE on tests/test-hooks.sh whose pattern lists
+# `git commit` and similar tokens. Pre-migration the outer-gate substring
+# regex matches the literal pattern argument; post-migration it does not.
+setup_project_test_on_main
+expect_project_allow "PR3: R4 grep mention" "grep -nE '(commit.*OR|over-match|grep.*git commit|sed.*block-unsafe|...)' /workspaces/zskills/tests/test-hooks.sh"
+teardown_project_test
+
+# PR4 — Class-pinned negative (commit): mention of `git commit` inside a
+# grep argument while on main → ALLOW (no real git invocation).
+setup_project_test_on_main
+expect_project_allow "PR4: class-pinned negative commit" 'grep "git commit" file.sh'
+teardown_project_test
+
+# PR5 — Class-pinned negative (cherry-pick).
+setup_project_test_on_main
+expect_project_allow "PR5: class-pinned negative cherry-pick" 'grep "git cherry-pick" file.sh'
+teardown_project_test
+
+# PR6 — Class-pinned negative (push). Verifies the outer-gate doesn't fire
+# on `grep "git push" file.sh`. (Existing rule (c) test at line 1385 covers
+# the inner check; this verifies the outer gate.)
+setup_project_test_on_main
+expect_project_allow "PR6: class-pinned negative push" 'grep "git push" file.sh'
+teardown_project_test
+
+# PR7 — Positive regression (commit on main): the migration must not weaken
+# the existing main_protected enforcement.
+setup_project_test_on_main
+expect_project_deny "PR7: positive regression — commit on main" 'git commit -m "x"'
+teardown_project_test
+
+# PR8 — Positive regression (cherry-pick on main).
+setup_project_test_on_main
+expect_project_deny "PR8: positive regression — cherry-pick on main" "git cherry-pick abc123"
+teardown_project_test
+
+# PR9 — Positive regression (naked push to main, rule c).
+setup_project_test_on_main
+expect_project_deny "PR9: positive regression — naked push to main (rule c)" "git push"
+teardown_project_test
+
+# PR10 — Bypass-canary battery for is_git_subcommand against the project hook.
+# Parameterized over XCC5-XCC14 (top-level git-flag combinations) plus one
+# JSON quote-injection assertion (round-1 DA-H-1). Each case pairs with
+# setup_project_test_on_main + teardown_project_test.
+
+# XCC5 — `git -C /tmp/foo commit -m bar`: real commit through `-C path` → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC5: git -C path commit on main" 'git -C /tmp/foo commit -m bar'
+teardown_project_test
+
+# XCC6 — `git -C /tmp/foo log`: not a commit → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC6: git -C path log on main" "git -C /tmp/foo log"
+teardown_project_test
+
+# XCC7 — `git -c user.email=x@y.z commit -m msg`: real commit through `-c k=v` → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC7: git -c k=v commit on main" 'git -c user.email=x@y.z commit -m msg'
+teardown_project_test
+
+# XCC8 — `git --no-pager commit -m foo`: real commit with --no-pager → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC8: git --no-pager commit on main" 'git --no-pager commit -m foo'
+teardown_project_test
+
+# XCC9 — `git --git-dir=/x commit`: real commit with --git-dir=val → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC9: git --git-dir=val commit on main" "git --git-dir=/x commit"
+teardown_project_test
+
+# XCC10 — `git -P commit`: real commit with `-P` short flag → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC10: git -P commit on main" "git -P commit"
+teardown_project_test
+
+# XCC11 — `git -C /tmp -c user.email=x commit`: chained -C and -c → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC11: git -C path -c k=v commit on main" "git -C /tmp -c user.email=x commit"
+teardown_project_test
+
+# XCC12 — `git --git-dir=/x --work-tree=/y commit -m msg`: two long flags → DENY.
+setup_project_test_on_main
+expect_project_deny "PR10/XCC12: git --git-dir --work-tree commit on main" 'git --git-dir=/x --work-tree=/y commit -m msg'
+teardown_project_test
+
+# XCC13 — `git --no-pager log`: subcommand after flag-skip is `log` → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC13: git --no-pager log on main" "git --no-pager log"
+teardown_project_test
+
+# XCC14 — `git -C /tmp diff`: not a commit/cherry-pick/push → ALLOW.
+setup_project_test_on_main
+expect_project_allow "PR10/XCC14: git -C path diff on main" "git -C /tmp diff"
+teardown_project_test
+
+# JSON quote-injection (round-1 DA-H-1): `git "commit" -m "x"` should still
+# DENY — the helper unwraps one quote layer on the subcommand token.
+setup_project_test_on_main
+expect_project_deny "PR10/JSON-quote-injection: git \"commit\" on main" 'git "commit" -m "x"'
+teardown_project_test
 
 
 echo "=== Landing mode argument detection ==="
