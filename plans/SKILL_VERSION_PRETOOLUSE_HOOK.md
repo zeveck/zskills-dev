@@ -65,7 +65,7 @@ Research finding F1 verified zero copy lines exist in `skills/update-zskills/SKI
 |-------|--------|--------|-------|
 | 1 — Decision doc + manual-recipe verifications | ⏳ Pending | — | reference doc only; R1/R2/R3 already empirically confirmed in research |
 | 2 — Hook script + JSON-escape function + unit tests | ⏳ Pending | — | `hooks/block-stale-skill-version.sh` + `tests/test-block-stale-skill-version.sh` |
-| 3 — `.claude/settings.json` registration + canonical extension table | ⏳ Pending | — | zskills-side wiring + `skills/update-zskills/SKILL.md:882-888` row |
+| 3 — `.claude/settings.json` registration + canonical extension table | ⏳ Pending | — | zskills-side wiring + `skills/update-zskills/SKILL.md:944-948` row |
 | 4 — Helper-script install flow extension + sandbox integration test | ⏳ Pending | — | F1 fix; copy 4 scripts; sandbox edit→bare-commit→deny test |
 | 5 — CHANGELOG + CLAUDE.md note + final conformance | ⏳ Pending | — | PR-tier finalization |
 
@@ -269,6 +269,7 @@ Plus `tests/test-block-stale-skill-version.sh` with synthetic JSON inputs coveri
   - **C8: `FOO=bar git commit -m msg`** → matches (env-var prefix tolerated).
   - **C9: `   git commit` (leading whitespace)** → matches.
   - **C10: `echo "git commit"` (mention in echo arg)** → does NOT match (boundary anchor scopes to actual invocations; data-region redaction is NOT done here because the script's check is filesystem-state-driven, not argument-driven — even a false-positive match would invoke the script and the script would correctly return 0 if no stale skill is staged).
+  - **C10e (negative; Round-2 DA2-L-2 carve-out lock):** `bash -c 'git commit -m foo'` → does NOT match (first token is `bash`; tokenize-then-walk does not recurse into `-c` argument strings — see Phase 2 D&C "Known carve-out"). This is a documented local-dev hole, not a structural defeat; CI's `test-skill-conformance.sh` is the backstop.
   - **C11: `git commit && git push`** → matches `git commit` (and the chained `git push` is a different concern, not gated here per D2).
   - **C12: Script missing** (rename or `chmod -x`, fail-open path) → exit 0, stdout empty.
   - **C12a: `unset CLAUDE_PROJECT_DIR`** (or `env -i bash hooks/...`) piped a `git commit` Bash invocation → exit 0, stdout empty (fail-open). Asserts the `${CLAUDE_PROJECT_DIR:-$PWD}` guard prevents `set -u` crash on unset env (Round 2 N5 fix).
@@ -278,7 +279,7 @@ Plus `tests/test-block-stale-skill-version.sh` with synthetic JSON inputs coveri
 
 - [ ] 2.3 — Add `tests/test-block-stale-skill-version.sh` to `tests/run-all.sh` dispatcher.
 
-- [ ] 2.4 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` and verify the new test file's cases all pass; full-suite count increases by exactly the new case count (26).
+- [ ] 2.4 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` and verify the new test file's cases all pass; full-suite count increases by exactly the new case count (27 — Round-2 added C10e for the `bash -c` carve-out per DA2-L-2).
 
 ### Design & Constraints
 
@@ -287,17 +288,18 @@ Plus `tests/test-block-stale-skill-version.sh` with synthetic JSON inputs coveri
 - **NO `jq`** — `json_escape` is pure bash (per D4).
 - **`python3` is allowed in tests; NOT in hook runtime.** The hook itself uses pure-bash `json_escape` per D4. Phase 2 unit tests AND Phase 4 sandbox tests MAY use `python3 -c 'import json,sys; json.loads(...)'` for JSON-validity assertions — `python3` is on every CI image and dev container, and using it as a JSON validator avoids reinventing a parser. The runtime/test distinction is enforced by AC8 below (`grep -F 'python' hooks/block-stale-skill-version.sh` returns 0).
 - **NO `2>/dev/null` on critical operations** — the script invocation uses `STDERR=$(... 2>&1 >/dev/null)` which routes stderr to capture (not to /dev/null).
-- **Fail-open on missing `scripts/skill-version-stage-check.sh`.** This is deliberate: a consumer pre-`/update-zskills` (Phase 4) has the hook but not yet the script; failing CLOSED would brick every `git commit` in those repos. Failing OPEN matches the prior-art convention (`block-unsafe-project.sh` reads its config at runtime and silently no-ops if config is absent). Phase 4 closes the install gap; Phase 5's CLAUDE.md note documents the temporary window for early adopters.
+- **Fail-open on missing `scripts/skill-version-stage-check.sh`.** This is deliberate: a consumer pre-`/update-zskills` (Phase 4) has the hook but not yet the script; failing CLOSED would brick every `git commit` in those repos. Failing OPEN matches the prior-art convention (`block-unsafe-project.sh` reads its config at runtime and silently no-ops if config is absent). Phase 4 closes the install gap; Phase 5's CLAUDE.md note documents the temporary window for early adopters. **Fail-open is restricted to the FIRST link in the chain (Round-2 R2-N-4 documentation):** if `skill-version-stage-check.sh` itself is missing, the hook returns 0 silently (the `[ -x "$SCRIPT" ] || exit 0` guard at line 209). If stage-check IS present but ITS dependencies (`frontmatter-get.sh`, `skill-content-hash.sh`) are missing, stage-check exits non-zero and the hook DENIES with stage-check's stderr in the deny envelope's `permissionDecisionReason` — which surfaces a `frontmatter-get.sh: command not found` error rather than the expected STOP message, but is loud-and-visible (correct fail-mode ordering: a half-installed consumer is a strictly broken state and surfacing it loudly is better than silently allowing). The Phase 4 install driver copies all 4 helpers atomically — half-install is only possible via manual tampering or partial-install from a future zskills version that drops a helper.
 - **Match strategy — tokenize-then-walk (chosen over regex):** the hook tokenizes `$COMMAND` on whitespace, skips env-var prefixes, finds literal `git`, walks past every top-level flag (handling `-C path` and `-c k=v` as two-token consumes; all other `--foo`, `--foo=bar`, `-X` as single-token), and checks if the next token is `commit`. This robustly covers arbitrary git top-level flag combinations (`--no-pager`, `--git-dir=/x`, `-P`, mixed `-C path -c k=v`, `--git-dir=/x --work-tree=/y`, …) — all empirically demonstrated to bypass the earlier alternation-based regex (Round 2 finding N1). Tokenize-then-walk was chosen over a generalized regex for readability AND robustness against future flag additions; the regex form would still be combinatorial. Echo/printf args containing the literal string `git commit` do NOT match because `read -ra` on the outer command splits on whitespace and the matcher applies only to the command's leading position (verified by C10). Heredoc bodies and quoted commit messages are NOT pre-redacted (unlike `block-unsafe-generic.sh`'s data-region redaction) — because for THIS hook, even a hypothetical false-positive match harmlessly invokes the stage-check script, which is filesystem-state-driven and exits 0 on a clean stage. Adding redaction is unnecessary defensive code.
+- **Known carve-out: `bash -c '<git commit ...>'` / `sh -c '...'` / `eval '...'` (Round-2 DA2-L-2 — explicitly documented).** The tokenize-then-walk requires the FIRST non-env-prefix token to be literal `git`. A real-world invocation like `bash -c 'git commit -m foo'` puts `git commit` inside a single-quoted argument to `bash`; the first token is `bash`, so `is_git_commit` returns 1 (no match). Recursing into `bash -c`/`sh -c`/`eval` argument strings would re-introduce the regex-fragility class this hook explicitly avoids (the inner string would need its own tokenize-then-walk, with quote-handling ambiguity). **We accept this as a known bypass.** CI's `test-skill-conformance.sh` catches stale skill versions on the feature branch; the carve-out is a minor local-development hole, not a structural defeat. Test case C10e (negative) locks the carve-out behavior — see Phase 2.2.
 - **Test output capture:** `TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"; mkdir -p "$TEST_OUT"`.
 
 ### Acceptance Criteria
 
 - [ ] AC1 — `[ -x hooks/block-stale-skill-version.sh ]`.
 - [ ] AC2 — `bash tests/test-block-stale-skill-version.sh > "$TEST_OUT/.test-results.txt" 2>&1; echo $?` returns `0`.
-- [ ] AC3 — All 26 cases pass: `grep -c '^PASS' "$TEST_OUT/.test-results.txt"` returns `26` (C1–C15 plus C7a/C7b/C7c/C7d/C7e/C7f/C7g/C7h/C7i/C7j plus C12a).
+- [ ] AC3 — All 27 cases pass: `grep -c '^PASS' "$TEST_OUT/.test-results.txt"` returns `27` (C1–C15 plus C7a/C7b/C7c/C7d/C7e/C7f/C7g/C7h/C7i/C7j plus C10e plus C12a). Round-2 added C10e (negative `bash -c` carve-out per DA2-L-2).
 - [ ] AC4 — `grep -n 'test-block-stale-skill-version.sh' tests/run-all.sh` returns exactly one match AND it follows the canonical `run_suite "<filename>" "tests/<filename>"` shape.
-- [ ] AC5 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1; echo $?` returns `0`; total case count increases by 26 vs HEAD~1.
+- [ ] AC5 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1; echo $?` returns `0`; total case count increases by 27 vs HEAD~1.
 - [ ] AC6 — `grep -F 'json_escape' hooks/block-stale-skill-version.sh` returns the function definition AND the call site.
 - [ ] AC7 — `grep -F 'jq' hooks/block-stale-skill-version.sh` returns 0 matches (no jq).
 - [ ] AC8 — `grep -F 'python' hooks/block-stale-skill-version.sh` returns 0 matches (no python in hook; only in test harness).
@@ -316,26 +318,38 @@ Phase 1 complete. Reference doc exists with R1/R2/R3 manual recipes (research al
 
 ### Goal
 
-Wire `hooks/block-stale-skill-version.sh` into zskills' own `.claude/settings.json` (so the hook fires for development sessions in this repo), and extend the canonical zskills-owned hook table at `skills/update-zskills/SKILL.md:882-888` so consumer installs pick it up via Step C's existing surgical-merge algorithm. Bump `skills/update-zskills/SKILL.md`'s `metadata.version` per the PR #175 enforcement chain.
+Wire `hooks/block-stale-skill-version.sh` into zskills' own `.claude/settings.json` (so the hook fires for development sessions in this repo), and extend the canonical zskills-owned hook table at `skills/update-zskills/SKILL.md:944-948` so consumer installs pick it up via Step C's existing surgical-merge algorithm. Bump `skills/update-zskills/SKILL.md`'s `metadata.version` per the PR #175 enforcement chain.
 
 ### Work Items
 
 Ordering matters this phase: all SKILL.md content edits FIRST, then version bump + mirror, then the `.claude/hooks/` mirror copy and `.claude/settings.json` registration LAST. The settings.json edit is deliberately the last file modified before commit — once the new hook is registered AND the script is in place, every subsequent `git commit` in this worktree is gated. If the bump-and-commit fails for an unrelated reason and we have to retry, doing the registration earlier could leave the recovery commit blocked. See Design & Constraints "Phase commit ordering."
 
-- [ ] 3.1 — Edit `skills/update-zskills/SKILL.md` lines 882-888 (the canonical zskills-owned triples table). Append one row:
+Phase 3.1 is split into three independent sub-bullets (Round-2 R2-CO-C / DA2-L-1: the three edits are disjoint, target distinct anchors, and have no ordering hazard within the same single-threaded `/update-zskills` run; the version-bump in 3.5 is the FINAL operation and captures the merged final state regardless of intermediate-edit order). Sub-bullets may be applied in any order.
+
+- [ ] 3.1a — **Append canonical-table row.** Edit `skills/update-zskills/SKILL.md` (anchor by the literal table-header text `**Canonical zskills-owned triples**` at line 939; the table itself currently sits at lines 942-948 — drift-tolerant by anchor). Append one row to the table:
 
   | Event        | Matcher | Command literal                                                                  |
   |--------------|---------|----------------------------------------------------------------------------------|
   | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh"`          |
 
-  The row count goes from 5 to 6. Update the prose at line 890 (`All 5 rows...`) to `All 6 rows...`. Update the explainer block at lines 842-851 (the install user-facing message) to mention `block-stale-skill-version.sh`:
+  After: 6 rows total.
 
-  > Installing 3 safety hooks:
-  > - **block-unsafe-generic.sh** — blocks destructive commands ...
-  > - **block-unsafe-project.sh** — project-specific guards ...
+- [ ] 3.1b — **Update row-count prose.** Edit the prose at line 950 (anchor by literal text `All 5 rows carry`) → `All 6 rows carry`. Single-token swap. Verify with `grep -F 'All 6 rows' skills/update-zskills/SKILL.md` returns ≥ 1.
+
+- [ ] 3.1c — **Update install-explainer block (Round-2 carry-over R2-CO-B / DA2-H-2 — count + scope rewrite).** Edit the user-facing install message at lines 904-910 (anchor by literal text `> Installing 2 safety hooks:` at line 904, drift-tolerant by anchor). The current explainer says `Installing 2 safety hooks` and lists ONLY `block-unsafe-generic.sh` + `block-unsafe-project.sh` — but the canonical table at 942-948 wires 5 entries (PreToolUse Bash × 2, PreToolUse Agent × 1, PostToolUse Edit × 1, PostToolUse Write × 1). The explainer is already under-counting pre-existing reality; bumping `2 → 3` (the original Plan B spec) preserves the under-count.
+
+  **Resolution: scope the explainer to PreToolUse-Bash safety hooks specifically** (Plan B's hook is also PreToolUse Bash, joining its peers semantically). This avoids forcing a 6-bullet expansion that touches unrelated hook surfaces. Replace the explainer with:
+
+  > Installing 3 PreToolUse Bash safety hooks (commit-time + pre-tool-execution gates):
+  > - **block-unsafe-generic.sh** — blocks destructive commands (`git reset --hard`, `rm -rf`, `kill -9`, `git checkout --`, `--no-verify`, etc.) and discipline violations (`git add .`).
+  > - **block-unsafe-project.sh** — project-specific guards: prevents piping test output (must capture to file), verifies tests ran before commit, optionally checks for UI verification before committing UI changes, enforces tracking discipline.
   > - **block-stale-skill-version.sh** — denies `git commit` when staged skill files have a stale `metadata.version` hash; reuses `scripts/skill-version-stage-check.sh`.
+  >
+  > See the canonical table below for the full hook set (additionally: PreToolUse `Agent` matcher → `block-agents.sh`; PostToolUse `Edit`/`Write` matchers → `warn-config-drift.sh`).
 
-- [ ] 3.2 — Update Step C of `skills/update-zskills/SKILL.md` (lines 816-840) to copy `hooks/block-stale-skill-version.sh` from `$PORTABLE/hooks/` to `.claude/hooks/block-stale-skill-version.sh` (no `.template`, no placeholder fill — flat copy, identical pattern to `block-unsafe-generic.sh`). Add a one-line bullet to the existing copy-list.
+  Verify with `grep -F 'Installing 3 PreToolUse Bash safety hooks' skills/update-zskills/SKILL.md` returns ≥ 1 AND `grep -c 'block-stale-skill-version.sh' skills/update-zskills/SKILL.md` returns ≥ 3 (counting the explainer + canonical-row + Step C copy bullet from 3.2; Phase 4 raises this to ≥ 4 with the Step D mention).
+
+- [ ] 3.2 — Update Step C of `skills/update-zskills/SKILL.md` (Step C heading at line 816, "Fill hook + agent gaps"; the per-hook copy-bullet list lives at lines 820-852, post-Plan-A — Plan A added bullets for `inject-bash-timeout.sh` and `verify-response-validate.sh`) to copy `hooks/block-stale-skill-version.sh` from `$PORTABLE/hooks/` to `.claude/hooks/block-stale-skill-version.sh` (no `.template`, no placeholder fill — flat copy, identical pattern to `block-unsafe-generic.sh`). Add a one-line bullet to the existing copy-list, mirroring Plan A's bullet shape (`- For \`block-stale-skill-version.sh\`: copy as-is from \`$PORTABLE/hooks/\` to \`.claude/hooks/\`.`); insert as the last hook-copy bullet, immediately before the `scripts/test-all.sh` bullet at line 842.
 
 - [ ] 3.3 — Mirror `hooks/block-stale-skill-version.sh` to zskills' own runtime hook directory:
 
@@ -350,17 +364,17 @@ Ordering matters this phase: all SKILL.md content edits FIRST, then version bump
 
 - [ ] 3.5 — Bump `skills/update-zskills/SKILL.md` `metadata.version` (FINAL content op for this phase): `today=$(TZ=America/New_York date +%Y.%m.%d); hash=$(bash scripts/skill-content-hash.sh skills/update-zskills); bash scripts/frontmatter-set.sh skills/update-zskills/SKILL.md metadata.version "$today+$hash"`. Then mirror: `bash scripts/mirror-skill.sh update-zskills`.
 
-- [ ] 3.6 — Edit `.claude/settings.json` LAST: append a third entry to the existing `PreToolUse` `Bash` matcher's `hooks` array (after the two existing entries at lines 8-15):
+- [ ] 3.6 — Edit `.claude/settings.json` LAST: append a third entry to the existing `PreToolUse` `Bash` matcher's `hooks` array (after the two existing entries — `block-unsafe-generic.sh` and `block-unsafe-project.sh` — under the PreToolUse Bash matcher; line numbers approximate at 7-15 today, anchor by content). **Match existing indentation conventions** (Round-2 DA2-M-2): the existing entries use **10-space outer-brace indent and 12-space key indent** (4 levels of nesting: `hooks` → `PreToolUse` → matcher object → `hooks` array → object). Read the existing entries first and copy the indent style verbatim. The new entry at the file's actual indentation:
 
   ```json
-  {
-    "type": "command",
-    "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh\"",
-    "timeout": 5
-  }
+            {
+              "type": "command",
+              "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh\"",
+              "timeout": 5
+            }
   ```
 
-  Verify with `python3 -c 'import json; json.load(open(".claude/settings.json"))'` BEFORE staging.
+  Indent shown above is illustrative-with-leading-spaces; the rule is "match existing entry shape verbatim" so the diff reads as a clean append, not a re-indent. Verify with `python3 -c 'import json; json.load(open(".claude/settings.json"))'` BEFORE staging.
 
 - [ ] 3.7 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` — verify all tests still pass (no regressions). Conformance test specifically confirms the new mirror is clean and the version line is fresh.
 
@@ -368,7 +382,7 @@ Ordering matters this phase: all SKILL.md content edits FIRST, then version bump
 
 ### Design & Constraints
 
-- **Per-phase commit boundary:** ONE commit, scope = `.claude/settings.json` + `.claude/hooks/block-stale-skill-version.sh` (mirror) + `skills/update-zskills/SKILL.md` (3 edit sites: extension table + explainer + Step C copy bullet + version bump) + `.claude/skills/update-zskills/SKILL.md` (mirror via `mirror-skill.sh`). Subject: `feat(hooks): wire block-stale-skill-version into zskills + canonical table`.
+- **Per-phase commit boundary:** ONE commit, scope = `.claude/settings.json` + `.claude/hooks/block-stale-skill-version.sh` (mirror) + `skills/update-zskills/SKILL.md` (4 edit sites: 3.1a canonical-table row + 3.1b row-count prose + 3.1c explainer block + 3.2 Step C copy bullet + 3.5 version bump) + `.claude/skills/update-zskills/SKILL.md` (mirror via `mirror-skill.sh`). Subject: `feat(hooks): wire block-stale-skill-version into zskills + canonical table`.
 - **Phase commit ordering (LOAD-BEARING):** version bump and mirror MUST be the FINAL two operations among `skills/`-side content. Settings.json registration is the LAST file edit overall — once both the script-mirror AND settings.json registration land, every subsequent `git commit` in this worktree is gated by the new hook. **Recovery rule (softened in Round 2 per N4):** if the phase commit fails on first attempt with a **stage-check deny**, READ the deny message:
   - If it identifies a **sibling skill** (any skill OTHER than `update-zskills`) needing bump: bump that sibling, re-stage, retry. Sibling-skill bumps don't conflict with the just-registered version of `update-zskills`, so retry is safe and is the obvious correct action the deny message itself recommends.
   - If it identifies `update-zskills/SKILL.md` itself as stale (only happens if the bumped hash didn't capture all edits — e.g., a last-minute prose tweak after the hash was computed): revert the settings.json registration line, drop the partial stage, restart the phase from a clean working tree. This is the deadlock case the no-retry rule was originally designed for.
@@ -386,7 +400,7 @@ Ordering matters this phase: all SKILL.md content edits FIRST, then version bump
 - [ ] AC1 — `python3 -c 'import json; d=json.load(open(".claude/settings.json")); assert any("block-stale-skill-version.sh" in h["command"] for ev in d["hooks"]["PreToolUse"] for h in ev.get("hooks", []))'` returns 0.
 - [ ] AC2 — `[ -x .claude/hooks/block-stale-skill-version.sh ] && diff -q hooks/block-stale-skill-version.sh .claude/hooks/block-stale-skill-version.sh` returns 0 (mirror is byte-identical).
 - [ ] AC3 — `grep -c 'block-stale-skill-version.sh' skills/update-zskills/SKILL.md` returns ≥ 3 (extension-table row + Step C copy bullet + explainer block).
-- [ ] AC4 — `grep -E 'All [0-9]+ rows carry' skills/update-zskills/SKILL.md` matches `All 6 rows`.
+- [ ] AC4 — `grep -E 'All [0-9]+ rows carry' skills/update-zskills/SKILL.md` matches `All 6 rows`. AND `grep -F 'Installing 3 PreToolUse Bash safety hooks' skills/update-zskills/SKILL.md` returns ≥ 1 (Round-2 R2-CO-B / DA2-H-2 explainer rewrite — scoped to PreToolUse-Bash safety hooks specifically).
 - [ ] AC5 — Conformance test `bash tests/test-skill-conformance.sh` passes; `metadata.version` of `skills/update-zskills/SKILL.md` matches `^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\+[0-9a-f]{6}$` AND the hash equals `bash scripts/skill-content-hash.sh skills/update-zskills`.
 - [ ] AC6 — Mirror parity: `diff -r skills/update-zskills .claude/skills/update-zskills` returns no differences (per conformance §3).
 - [ ] AC7 — `bash tests/run-all.sh` exits 0; case count is at least the Phase 2 baseline.
@@ -407,7 +421,7 @@ Close research finding F1: extend `/update-zskills`'s install loop to copy `scri
 
 ### Work Items
 
-Ordering: helper-script driver + Step B prose + sandbox test FIRST, then version bump + mirror LAST. Per the per-phase versioning discipline (CLAUDE.md `## Skill versioning`: "Edits to a skill body, frontmatter, or any regular file under the skill directory MUST bump this field"), the bump must be the final operation that touches `skills/update-zskills/`. Multiple bumps within a single PR are normal — each phase that edits a SKILL.md bumps immediately, and per-phase commits accumulate.
+Ordering: helper-script driver + Step D prose + sandbox test FIRST, then version bump + mirror LAST. Per the per-phase versioning discipline (CLAUDE.md `## Skill versioning`: "Edits to a skill body, frontmatter, or any regular file under the skill directory MUST bump this field"), the bump must be the final operation that touches `skills/update-zskills/`. Multiple bumps within a single PR are normal — each phase that edits a SKILL.md bumps immediately, and per-phase commits accumulate.
 
 - [ ] 4.1 — Author `scripts/install-helpers-into.sh <consumer-root>`. A small driver that:
   - Validates `$1` is provided and is an existing directory. (Note: per Round 2 N6 fix, the `.git` requirement is DROPPED — `cp` to a nonexistent destination already fails with a clear error; requiring `.git` was defense-against-typo, not load-bearing.)
@@ -430,9 +444,9 @@ Ordering: helper-script driver + Step B prose + sandbox test FIRST, then version
   - Echoes one line per file for visible logging (`SKIP:` or `COPY:`).
   - Exits 0 on success, non-zero on any `cp`/`chmod`/`mkdir` failure (NO `2>/dev/null`).
 
-  This driver is the SHARED CODE PATH between (a) the sandbox integration test (work item 4.3) and (b) `/update-zskills` Step C prose (work item 4.2). Sharing the code path closes the C2 review finding: tests prove the binary works AND the install path works, because they invoke the same script.
+  This driver is the SHARED CODE PATH between (a) the sandbox integration test (work item 4.3) and (b) `/update-zskills` Step D prose (work item 4.2). Sharing the code path closes the C2 review finding: tests prove the binary works AND the install path works, because they invoke the same script.
 
-- [ ] 4.2 — Read `skills/update-zskills/SKILL.md` **Step C** (the hook/script-copy block at line 816, "Fill hook gaps") and the surrounding install prose. (Round 2 N3 corrected the prior citation: Step B is rules-render, not script-install.) Identify the canonical insertion point alongside the existing `block-unsafe-project.sh.template` and `scripts/test-all.sh` copy bullets. Update the prose to invoke `bash "$PORTABLE/scripts/install-helpers-into.sh" "$CONSUMER_ROOT"` as part of the Step C install sequence — invoked SOURCE-SIDE from `$PORTABLE`, no consumer-local copy of the driver itself. Add an explanatory paragraph: "These four helpers are dependencies of `block-stale-skill-version.sh` (the PreToolUse hook installed in this same Step C). Without them, the hook fails-open on every commit, defeating the lock-step skill-version enforcement chain. The `install-helpers-into.sh` driver is the same one exercised by `tests/test-block-stale-skill-version-sandbox.sh`, so the install path and the test path share code. Collision policy: existing identical helpers are skipped; existing different helpers are overwritten; logged either way."
+- [ ] 4.2 — Read `skills/update-zskills/SKILL.md` **Step D** (the canonical script-install block at line 1090, "Fill script gaps"; Step D body extends to line 1140 with the canonical two-source pattern documented at lines 1092-1093, the soft-skip on missing second source at lines 1103-1105, the per-script COPY bullets at lines 1107-1133, and the `Report: "Installed N scripts: [list]"` surface at line 1139). Identify the canonical insertion point immediately after the existing per-stub bullets (after line 1133), before the Tier-1 callout at lines 1135-1137. Update the prose to invoke `bash "$PORTABLE/scripts/install-helpers-into.sh" "$CONSUMER_ROOT"` as part of the Step D install sequence — invoked SOURCE-SIDE from `$PORTABLE`, no consumer-local copy of the driver itself. **Step A cross-reference (per Round 2 DA2-M-3):** Step A (`Locate portable assets`, SKILL.md line 685) provides `$PORTABLE` pointing at the zskills source clone — `$PORTABLE/scripts/install-helpers-into.sh` resolves correctly because the driver lives in the source repo's `scripts/` (not under any skill's `scripts/`). Add an explanatory paragraph: "These four helpers (`skill-version-stage-check.sh`, `skill-content-hash.sh`, `frontmatter-get.sh`, `frontmatter-set.sh`) are dependencies of `block-stale-skill-version.sh` (the PreToolUse hook installed in **Step C** above). Without them, the hook fails-open on every commit, defeating the lock-step skill-version enforcement chain. The `install-helpers-into.sh` driver is the same one exercised by `tests/test-block-stale-skill-version-sandbox.sh`, so the install path and the test path share code. Collision policy: existing identical helpers are skipped; existing different helpers are overwritten; logged either way." Ensure the helpers are listed in the existing Step D `Report: "Installed N scripts: [list]"` output (the driver's per-file `SKIP:`/`COPY:` log feeds the count). (Round-2 carry-over R2-CO-A / DA2-H-1: Step C is for hook + agent gaps; Step D is the canonical home for `scripts/` install — Round 1 left this strategy fix out-of-scope, Round 2 NORMAL scope unblocks it.)
 
 - [ ] 4.3 — Author `tests/test-block-stale-skill-version-sandbox.sh`: end-to-end sandbox integration test. Steps:
   1. `TMP=$(mktemp -d -p /tmp zskills-sandbox.XXXX)`; `trap 'rm -rf "$TMP"' EXIT INT TERM`.
@@ -455,10 +469,10 @@ Ordering: helper-script driver + Step B prose + sandbox test FIRST, then version
 
 ### Design & Constraints
 
-- **Per-phase commit boundary:** ONE commit, scope = `scripts/install-helpers-into.sh` + `skills/update-zskills/SKILL.md` (Step B prose extension + version bump) + `.claude/skills/update-zskills/SKILL.md` mirror + `tests/test-block-stale-skill-version-sandbox.sh` + `tests/run-all.sh` registration. Subject: `feat(update-zskills): install skill-version helpers + sandbox integration test`.
+- **Per-phase commit boundary:** ONE commit, scope = `scripts/install-helpers-into.sh` + `skills/update-zskills/SKILL.md` (Step D prose extension + version bump) + `.claude/skills/update-zskills/SKILL.md` mirror + `tests/test-block-stale-skill-version-sandbox.sh` + `tests/run-all.sh` registration. Subject: `feat(update-zskills): install skill-version helpers + sandbox integration test`.
 - **Phase commit ordering (LOAD-BEARING, same rule as Phase 3):** version bump and mirror MUST be the FINAL two operations of this phase, AFTER all SKILL.md content edits and AFTER the install driver and sandbox test are written. The hook installed in Phase 3 is now active in this worktree. **Recovery rule (softened in Round 2 per N4, mirrors Phase 3):** if the bump+commit fails with a stage-check deny on a sibling skill, bump it and retry; document the cause in the commit message footer. If the deny identifies `update-zskills/SKILL.md` itself, restart the phase from a clean working tree. Other failure modes: diagnose externally without in-worktree retry.
-- **`mirror-skill.sh` discipline:** the version bump in 4.6 + Step B prose extension in 4.1/4.2 ARE source skill edits, so `bash scripts/mirror-skill.sh update-zskills` MUST run in the same commit.
-- **Shared install code path (closes C2):** `scripts/install-helpers-into.sh` is invoked by both `tests/test-block-stale-skill-version-sandbox.sh` (work item 4.3) AND `/update-zskills` Step C/D prose (work item 4.2). The test does NOT manually replicate the helper-script install — it calls the same driver the real install path uses. If the driver is broken, both surfaces fail together (visible signal, no false greens).
+- **`mirror-skill.sh` discipline:** the version bump in 4.6 + Step D prose extension in 4.2 ARE source skill edits, so `bash scripts/mirror-skill.sh update-zskills` MUST run in the same commit. (Note: the install-helpers-into.sh driver lives at `scripts/`, NOT under any skill, so it is itself NOT a per-skill versioning trigger; only `skills/update-zskills/SKILL.md`'s Step D prose is.)
+- **Shared install code path (closes C2):** `scripts/install-helpers-into.sh` is invoked by both `tests/test-block-stale-skill-version-sandbox.sh` (work item 4.3) AND `/update-zskills` Step D prose (work item 4.2). The test does NOT manually replicate the helper-script install — it calls the same driver the real install path uses. If the driver is broken, both surfaces fail together (visible signal, no false greens).
 - **Sandbox cleanup is mandatory.** `trap 'rm -rf "$TMP"' EXIT INT TERM` AND explicit post-test verification `rm -rf "$TMP" && [ ! -d "$TMP" ] && echo "cleanup OK"`. No `2>/dev/null` on the rm. Verify the directory is gone — do not assume the trap fired correctly (per CLAUDE.md "Never suppress errors on operations you need to verify").
 - **Sandbox test runs in CI.** Add to `tests/run-all.sh` per the dispatcher pattern in Phase 1's reference doc.
 - **`python3` allowed in tests, NOT in hook:** same rule as Phase 2 D&C. The sandbox test uses `python3 -c 'import json …'` for JSON decoding of the deny envelope; the hook itself uses pure-bash `json_escape`.
@@ -467,7 +481,7 @@ Ordering: helper-script driver + Step B prose + sandbox test FIRST, then version
 ### Acceptance Criteria
 
 - [ ] AC1 — `[ -x scripts/install-helpers-into.sh ]` AND `bash scripts/install-helpers-into.sh /tmp/install-helpers-into-smoke-$$` succeeds against a freshly-`mkdir`ed throwaway dir (no `.git` required per N6 fix; smoke test verifies the driver creates `scripts/` via `mkdir -p` then copies all 4 helpers; clean up after). AC also asserts `[ -d /tmp/install-helpers-into-smoke-$$/scripts ]` post-install (N7 guarantee for fresh repos with no prior `scripts/`).
-- [ ] AC2 — `grep -F 'install-helpers-into.sh' skills/update-zskills/SKILL.md` returns ≥ 1 match (Step B prose references the shared driver).
+- [ ] AC2 — `grep -F 'install-helpers-into.sh' skills/update-zskills/SKILL.md` returns ≥ 1 match (Step D prose references the shared driver).
 - [ ] AC3 — `bash tests/test-block-stale-skill-version-sandbox.sh > "$TEST_OUT/.test-results.txt" 2>&1; echo $?` returns `0`. Output contains `deny on stale-version skill commit`, `allow after correct bump`, and `cleanup OK`.
 - [ ] AC4 — `metadata.version` of `skills/update-zskills/SKILL.md` is fresh (today's date) AND its hash matches `bash scripts/skill-content-hash.sh skills/update-zskills`.
 - [ ] AC5 — Mirror parity: `diff -r skills/update-zskills .claude/skills/update-zskills` returns no differences.
@@ -475,8 +489,12 @@ Ordering: helper-script driver + Step B prose + sandbox test FIRST, then version
 - [ ] AC7 — `grep -n 'test-block-stale-skill-version-sandbox.sh' tests/run-all.sh` returns exactly one match AND it follows the `run_suite` dispatcher pattern.
 - [ ] AC8 — Phase 4 commit succeeded with at most ONE retry, with cause documented in the commit message footer if a retry happened (same softened rule as Phase 3 AC9, per Round 2 N4 fix).
 - [ ] AC9 — Test/install share-the-driver invariant: `grep -F 'install-helpers-into.sh' tests/test-block-stale-skill-version-sandbox.sh` returns ≥ 1 match (the sandbox test invokes the same driver the install prose references).
-- [ ] AC10 — Collision-policy assertions (Round 2 N3): the sandbox test pre-creates `<consumer-root>/scripts/skill-version-stage-check.sh` with **identical** content to the source — driver run logs `SKIP:` and leaves the file untouched (same mtime/inode if cp would have been a no-op via cmp gate). Then it modifies the file content and re-runs — driver logs `COPY:` and the file content matches the source after.
-- [ ] AC11 — Phase 4.2 cites Step C, not Step B (Round 2 N3 correction): `grep -nE 'Step (B|C)' plans/SKILL_VERSION_PRETOOLUSE_HOOK.md` in the Phase 4 section shows only "Step C" referencing the install loop.
+- [ ] AC10 — Collision-policy assertions (Round 2 N3 + Round-2-DA2-M-4 reword to drop inode comparison; `cp` overwrites in place and inode is preserved across COPY too, making inode a useless distinguisher). The sandbox test asserts in two stages, mtime-only, with explicit `sleep 1` boundaries to guarantee `stat -c %Y` granularity:
+  1. **SKIP path:** pre-seed `$dst` from `$src` (`cp $src $dst`); record `mtime_before=$(stat -c %Y $dst)`. `sleep 1`. Run driver. Assert `grep -F 'SKIP:' driver_output` returns ≥ 1 AND `[ "$(stat -c %Y $dst)" = "$mtime_before" ]` (mtime unchanged because cmp-gated SKIP didn't touch the file).
+  2. **COPY path:** `echo 'modified' >> $dst`; `mtime_before2=$(stat -c %Y $dst)`. `sleep 1`. Re-run driver. Assert `grep -F 'COPY:' driver_output` returns ≥ 1 AND `[ "$(stat -c %Y $dst)" -gt "$mtime_before2" ]` AND `cmp -s $src $dst` (overwrite restored canonical content).
+  The mtime+cmp pair is load-bearing; inode comparison is omitted by design (does not distinguish in-place overwrite from no-op).
+- [ ] AC11 — Phase 4.2 cites Step D, not Step C (Round-2 carry-over R2-CO-A / DA2-H-1 correction): the only Step reference associated with the helper-install loop in the Phase 4 section is "Step D". Verify with `awk '/^## Phase 4/,/^## Phase 5/' plans/SKILL_VERSION_PRETOOLUSE_HOOK.md | grep -nE 'Step [A-G]\b' | grep -F install-helpers-into.sh` — all hits cite Step D (not Step B, not Step C). Sibling cite to "Step C above" inside the explanatory paragraph (the hook is in Step C; the helpers go in Step D) is allowed and expected.
+- [ ] AC12 — Post-Phase-4 row-count: `grep -c 'block-stale-skill-version.sh' skills/update-zskills/SKILL.md` returns ≥ 4 (extension-table row from Phase 3.1a + Step C copy bullet from 3.2 + explainer block from 3.1c + Step D helper-install reference from 4.2). Phase 3 AC3 set the lower bound to ≥ 3 within Phase 3 alone; this AC raises it once Phase 4 lands.
 
 ### Dependencies
 
@@ -492,29 +510,47 @@ Document the new structural backstop, mark the plan complete, and run the full P
 
 ### Work Items
 
-- [ ] 5.1 — Append a CHANGELOG entry (top of `CHANGELOG.md`) summarizing the change. Format matches existing entries:
+- [ ] 5.1 — Append a CHANGELOG entry (top of `CHANGELOG.md`).
+
+  **CHANGELOG style (Round-2 carry-over R2-N-2 / DA2-C-2 — verified against current CHANGELOG.md head):** the file uses `## YYYY-MM-DD` date-only H2 headings with `### Added — <title>` H3 blocks beneath. Multiple H3 blocks per date are permitted (each is a separate scoped change). Plan A landed `## 2026-05-03` with one `### Added — Verifier subagent — D'' structural defense` block; Plan B's spec must NOT create a duplicate H2.
+
+  **Date-collision handling:**
+  - If today's date already has a `## YYYY-MM-DD` heading (e.g. Plan A landed the same day), DO NOT create a duplicate heading. INSERT a new `### Added —` H3 block UNDER the existing date heading, immediately after the date heading line (above any sibling Added blocks for the same day).
+  - If today is a new date, create a new `## YYYY-MM-DD` heading at the top of the file (above the previous newest date), then the `### Added —` H3 block beneath.
+
+  **Block content (H3 + paragraph, matching Plan A's shape — single paragraph, NOT a bullet list):**
 
   ```
-  ## YYYY-MM-DD — block-stale-skill-version PreToolUse hook (#TBD)
-  - Add `hooks/block-stale-skill-version.sh`: PreToolUse Bash hook denying `git commit` when staged skill files have stale `metadata.version` hash. Wraps `scripts/skill-version-stage-check.sh`.
-  - Wired in zskills `.claude/settings.json` and shipped to consumers via `/update-zskills` (canonical extension table extended; 4 helper scripts now copied via the new shared `scripts/install-helpers-into.sh` driver: `skill-version-stage-check.sh`, `skill-content-hash.sh`, `frontmatter-get.sh`, `frontmatter-set.sh`).
-  - Closes the lock-step gap: bare `git commit` (bypassing `/commit`) is now blocked locally; CI is no longer the only mechanical safety net.
-  - Decisions: flat hook (no `.template`); commit-only gating (push gating dropped per F2 design analysis); `/commit` Phase 5 step 2.5 retained for defense-in-depth; pure-bash JSON escape (no `jq`, no Python). See `references/skill-version-pretooluse-hook.md`.
-  - **Rollout window note:** consumers who installed Phase 3's hook before Phase 4's helper-script ship would silently fail-open until they re-ran `/update-zskills`. Mitigated by shipping Phases 3 and 4 in the SAME PR with NO intermediate release tag — every consumer that pulls this PR gets the hook AND the helpers atomically.
+  ### Added — block-stale-skill-version PreToolUse hook (#<PR-NUM>)
+
+  Add `hooks/block-stale-skill-version.sh`: PreToolUse Bash hook denying `git commit` when staged skill files have a stale `metadata.version` hash. Wraps `scripts/skill-version-stage-check.sh` and emits a JSON deny envelope (pure-bash escape — no `jq`, no Python). Wired in zskills `.claude/settings.json` and shipped to consumers via `/update-zskills` (canonical extension table extended; 4 helper scripts — `skill-version-stage-check.sh`, `skill-content-hash.sh`, `frontmatter-get.sh`, `frontmatter-set.sh` — now copied via the new shared `scripts/install-helpers-into.sh` driver invoked from `/update-zskills` Step D). Closes the lock-step gap: bare `git commit` (bypassing `/commit`) is now blocked locally; CI's `test-skill-conformance.sh` is no longer the only mechanical safety net. Decisions: flat hook (no `.template`); commit-only gating (push gating dropped per F2 design analysis); `/commit` Phase 5 step 2.5 retained for defense-in-depth; tokenize-then-walk `git commit` matcher (regex form was empirically bypassable per Round-2 N1). **Rollout window:** consumers who installed Phase 3's hook before Phase 4's helper-script ship would silently fail-open until they re-ran `/update-zskills`. Mitigated by shipping Phases 3 and 4 in the SAME PR with NO intermediate release tag — every consumer that pulls this PR gets the hook AND the helpers atomically. See `references/skill-version-pretooluse-hook.md`. Closes lock-step gap from PR #175 (skill-versioning).
   ```
 
-- [ ] 5.2 — Append a one-paragraph note to `CLAUDE.md`'s `## Skill versioning` section (after the existing paragraph):
+  Verify after the edit:
+  - `head -10 CHANGELOG.md | grep -F '### Added — block-stale-skill-version'` returns 1 match.
+  - `grep -c '^## $TODAY' CHANGELOG.md` (where `$TODAY=$(TZ=America/New_York date +%Y-%m-%d)`) returns 1 (no duplicate H2 from a same-day collision).
+  - The new H3 block sits BENEATH a date H2, NOT as its own H2.
 
-  > **PreToolUse backstop.** A fourth enforcement point — `hooks/block-stale-skill-version.sh` — fires on every `git commit` Bash invocation in any Claude Code session. It reuses `scripts/skill-version-stage-check.sh` and emits a deny envelope on drift. This closes the bare-`git commit` bypass: `/commit` step 2.5 covers `/commit` invocations, and the hook covers everything else. `git push` is NOT gated locally (see `references/skill-version-pretooluse-hook.md` D2 for rationale; CI's `test-skill-conformance.sh` is the push-time backstop).
+- [ ] 5.2 — Append a paragraph to `CLAUDE.md`'s `## Skill versioning` section (after the existing paragraph) AND a one-line cross-reference to the `## Verifier-cannot-run rule` section (Round-2 DA2-M-1 — closes the discoverability gap by linking the two sections that share the verifier-hook-interaction concern). Resolved Round-2 critical R2-N-1 / DA2-C-1: hook composition (frontmatter PreToolUse hooks ADD to `settings.json` PreToolUse hooks, not REPLACE) confirmed empirically via Anthropic Code docs (https://code.claude.com/docs/en/sub-agents — "Frontmatter hooks fire when the agent is spawned as a subagent through the Agent tool or an @-mention, and when the agent runs as the main session via `--agent` or the `agent` setting. In the main-session case they run alongside any hooks defined in `settings.json`.") and reinforced by https://code.claude.com/docs/en/hooks (subagent frontmatter hooks active "while the component is active" — additive, not replace).
 
-- [ ] 5.3 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` and confirm 0 failures. Total case count vs main: +26 (Phase 2) + sandbox test cases (Phase 4).
+  **Append to `## Skill versioning`:**
+
+  > **PreToolUse backstop.** A fourth enforcement point — `hooks/block-stale-skill-version.sh` — fires on every `git commit` Bash invocation in any Claude Code session. It reuses `scripts/skill-version-stage-check.sh` and emits a deny envelope on drift. This closes the bare-`git commit` bypass: `/commit` step 2.5 covers `/commit` invocations, and the hook covers everything else. `git push` is NOT gated locally (see `references/skill-version-pretooluse-hook.md` D2 for rationale; CI's `test-skill-conformance.sh` is the push-time backstop). This includes commits made by the **verifier subagent** (introduced by Plan A, loaded from `.claude/agents/verifier.md`). Per Anthropic's documented design (https://code.claude.com/docs/en/sub-agents §"Hooks in subagent frontmatter"), subagent frontmatter `hooks:` declarations COMPOSE WITH (do not replace) project-level `.claude/settings.json` hooks — so the verifier's frontmatter `inject-bash-timeout.sh` AND the project's `block-unsafe-generic.sh` / `block-unsafe-project.sh` / `block-stale-skill-version.sh` ALL fire on every verifier `git commit`. **Recovery (verifier-side):** the deny envelope's `permissionDecisionReason` carries the stage-check STOP message verbatim — including the exact `bash scripts/frontmatter-set.sh <S>/SKILL.md metadata.version "$today+$hash"` command. The verifier has `Edit` and `Bash` in its tools allowlist (`tools: Read, Grep, Glob, Bash, Edit, Write` per `.claude/agents/verifier.md`) and SHOULD execute the bump inline, then re-stage and re-issue the commit. **Recovery (orchestrator-side, when a non-verifier caller hits the deny):** read the STOP message rendered in the tool-error output, run the suggested bump command, and re-issue the commit. Do NOT treat the deny as "tests failed" — it is a strict pre-flight check, not a test result.
+
+  **Append to `## Verifier-cannot-run rule` (one-line cross-reference, DA2-M-1):**
+
+  > See `## Skill versioning` for the verifier subagent's interaction with `block-stale-skill-version.sh` (Plan B PreToolUse backstop): the verifier's frontmatter `inject-bash-timeout.sh` hook composes with project hooks per Anthropic's documented additive behavior, so verifier `git commit` is gated identically to orchestrator-side commits.
+
+  **Hook chain composition (additional reference for `references/skill-version-pretooluse-hook.md` Phase 1 §"Recursive risk: NONE" sibling subsection — Round-2 R2-N-5):** when the verifier subagent runs `git commit`, the chain is (parallel-fire, AND-deny semantics): (1) `inject-bash-timeout.sh` [frontmatter, mutates `updatedInput.timeout`], (2) `block-unsafe-generic.sh`, (3) `block-unsafe-project.sh`, (4) `block-stale-skill-version.sh`. Any DENY short-circuits the tool call; all allows let the tool run with the merged `updatedInput`. Per Anthropic docs, deny short-circuits before tool execution, so an `inject-bash-timeout.sh` `updatedInput` mutation on a denied call is moot — no invariant violation.
+
+- [ ] 5.3 — `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` and confirm 0 failures. Total case count vs main: +27 (Phase 2) + sandbox test cases (Phase 4).
 
 - [ ] 5.4 — `bash tests/test-skill-conformance.sh` — confirm version frontmatter section, mirror parity section, and cleanliness section all pass. `update-zskills` mirror must be byte-identical.
 
-- [ ] 5.5 — Re-verify Claude Code harness assumptions: run `claude --version`. **Comparison is at MAJOR.MINOR granularity** (Round 2 N8 fix): re-run the three manual recipes only when the MAJOR or MINOR component differs from the recorded value (last confirmed: 2.1.x). Patch-version drift (e.g., 2.1.126 → 2.1.127) is treated as authoritative — patch bumps don't change harness contracts. **CI-skip:** if `command -v claude` does not succeed (CI image has no `claude` binary), AC5 is skipped — the conformance test (`tests/test-skill-conformance.sh`) is the CI-side backstop. Update `references/skill-version-pretooluse-hook.md` "Last confirmed against" lines only if a real MAJOR.MINOR drift triggers the re-run.
+- [ ] 5.5 — Re-verify Claude Code harness assumptions: run `claude --version`. **Comparison is at MAJOR.MINOR granularity** (Round 2 N8 fix): re-run the three manual recipes only when the MAJOR or MINOR component differs from the recorded value (last confirmed: 2.1.x). Patch-version drift (e.g., 2.1.126 → 2.1.127) is treated as authoritative — patch bumps don't change harness contracts. **CI-skip:** if `command -v claude` does not succeed (CI image has no `claude` binary), AC5 is skipped — the conformance test (`tests/test-skill-conformance.sh`) is the CI-side backstop. **Ambiguous-output skip (Round-2 DA2-L-3):** if `claude --version` produces ambiguous output (e.g. the dev container ships `claude` as a wrapper script that refuses to print its version, returns a non-version string like a help banner, or hangs awaiting interactive input), treat the same as CI-skip — AC5 is SKIPPED and the conformance test is the backstop. Document the skip in the commit message footer as `Phase 5.5 skipped: claude binary unavailable in this environment` or `Phase 5.5 skipped: claude --version ambiguous in this environment`. Update `references/skill-version-pretooluse-hook.md` "Last confirmed against" lines only if a real MAJOR.MINOR drift triggers the re-run.
 
 - [ ] 5.6 — **Surface related pre-existing bugs (different routes per scope).** Per CLAUDE.md "Skill-framework repo — surface bugs, don't patch":
-  - **block-unsafe-project.sh:404 over-matching → DRAFT a hardening plan, NOT another issue.** The bare `git[[:space:]]+commit` regex at line 404 lacks boundary anchoring + data-region redaction (DA's reproducer: heredoc bodies / grep patterns containing the literal `git commit` trip the hook). **Same root cause as Plan B's own evolution** (Round 1 regex extension → Round 2 tokenize-then-walk pivot): regex-based command-classification is fundamentally fragile. PR #73 (Issue #58) and PR #87 (Issue #81) already patched this hook for prior over-match incidents; filing another `404`-specific issue would queue a third patch in a pile rather than fix the class. Instead: in PR body and CHANGELOG, recommend `/draft-plan plans/BLOCK_UNSAFE_HARDENING.md` as a follow-up — scope is the tokenize-then-walk pivot for `block-unsafe-project.sh` + `block-unsafe-generic.sh` command-detection, plus a data-region redaction pass that handles heredoc bodies + quoted args uniformly. Do NOT file a `404`-specific issue (it would add to the pile). The follow-up plan, when authored, will reference DA's reproducer + the prior-patch trail.
+  - **block-unsafe-project.sh:404 over-matching → DRAFT a hardening plan, NOT another issue.** The bare `git[[:space:]]+commit` regex at line 404 lacks boundary anchoring + data-region redaction. **In-session reproducers (Round-2 DA2-H-3, observed live by the DA agent during this round's pass):** two read-only Bash invocations from a fresh DA agent in this same plan tripped the hook because their argument strings contained the literal `git commit`: (1) `grep -n 'git commit\|...' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh`, (2) `sed -n '404,420p' /workspaces/zskills/.claude/hooks/block-unsafe-project.sh`. Both are read-only file inspection commands that should NEVER fire a commit-protection hook. **Same root cause as Plan B's own evolution** (Round 1 regex extension → Round 2 tokenize-then-walk pivot): regex-based command-classification is fundamentally fragile. PR #73 (Issue #58) and PR #87 (Issue #81) already patched this hook for prior over-match incidents; filing another `404`-specific issue would queue a third patch in a pile rather than fix the class. Instead: in PR body and CHANGELOG, recommend `/draft-plan plans/BLOCK_UNSAFE_HARDENING.md` as a follow-up — scope is the tokenize-then-walk pivot for `block-unsafe-project.sh` + `block-unsafe-generic.sh` command-detection, plus a data-region redaction pass that handles heredoc bodies + quoted args uniformly. Do NOT file a `404`-specific issue (it would add to the pile). The follow-up plan, when authored, will reference the two in-session reproducers above + the prior-patch trail (PR #73, PR #87).
   - **skill-version-stage-check.sh STOP message ambiguity → file an issue (UX nit, not architectural).** File issue titled `skill-version-stage-check.sh STOP message: same text for "didn't bump" vs "didn't stage bump"`. Body references `scripts/skill-version-stage-check.sh:91-93`. Mark as UX clarity, not-blocking-this-plan. This one IS appropriate for an issue — it's a one-line `[ -z "$staged_ver_was_set_initially" ] && hint="(SKILL.md not staged — git add it)"` fix, not a design pivot.
 
 - [ ] 5.7 — Read `plans/PLAN_INDEX.md`. Update the SKILL_VERSION_PRETOOLUSE_HOOK row's status column from `Ready` (or whatever current) to `Complete`. Update plan frontmatter `status:` from `active` to `complete` and add `completed: <today>`.
@@ -536,9 +572,11 @@ Document the new structural backstop, mark the plan complete, and run the full P
 
 ### Acceptance Criteria
 
-- [ ] AC1 — `head -20 CHANGELOG.md | grep -F 'block-stale-skill-version'` returns ≥ 1 match.
+- [ ] AC1 — `head -20 CHANGELOG.md | grep -F '### Added — block-stale-skill-version'` returns ≥ 1 match (Round-2 R2-N-2 / DA2-C-2 — assert the literal H3 prefix, not just substring); AND `TODAY=$(TZ=America/New_York date +%Y-%m-%d); grep -c "^## $TODAY" CHANGELOG.md` returns exactly 1 (no duplicate-date H2 from a same-day collision with Plan A's entry); AND `head -20 CHANGELOG.md | awk '/^## /{date_h2++} /^### Added/{added_h3++} END{exit !(date_h2 >= 1 && added_h3 >= 2)}'` exits 0 (Plan B's H3 block sits BENEATH a date H2, alongside Plan A's H3 if same-day).
 - [ ] AC2 — `grep -F 'PreToolUse backstop' CLAUDE.md` returns 1 match in the `## Skill versioning` section.
-- [ ] AC3 — `bash tests/run-all.sh` exits 0; case count ≥ baseline + 26 (Phase 2 unit cases) + sandbox-test cases (Phase 4).
+- [ ] AC2a — Cross-reference between `## Skill versioning` and `## Verifier-cannot-run rule` is in place (Round-2 DA2-M-1): `grep -c 'block-stale-skill-version' CLAUDE.md` returns ≥ 2 (one mention in each section); AND `awk '/^## Verifier-cannot-run rule/,/^## /' CLAUDE.md | grep -F 'block-stale-skill-version'` returns ≥ 1 (the cross-reference sentence lives in the Verifier-cannot-run section).
+- [ ] AC2b — Verifier-recovery affordance is documented (Round-2 R2-N-1 / DA2-C-1): `grep -F 'Edit and Bash' CLAUDE.md` returns ≥ 1 match in the `## Skill versioning` PreToolUse-backstop paragraph (the verifier has `Edit`+`Bash` in its tools allowlist and is expected to self-bump from the deny envelope's STOP message). AND `grep -F 'COMPOSE WITH' CLAUDE.md` returns ≥ 1 (composition semantics asserted with citation to Anthropic docs, not asserted on faith).
+- [ ] AC3 — `bash tests/run-all.sh` exits 0; case count ≥ baseline + 27 (Phase 2 unit cases) + sandbox-test cases (Phase 4).
 - [ ] AC4 — `bash tests/test-skill-conformance.sh` exits 0.
 - [ ] AC5 — When `command -v claude` succeeds: `claude --version` MAJOR.MINOR matches the value recorded in `references/skill-version-pretooluse-hook.md` §"Phase 1 verifications" (patch drift is authoritative, not a re-run trigger — Round 2 N8 fix). If MAJOR or MINOR drifted, the manual recipes were re-run and the reference doc updated. When `command -v claude` fails (e.g., CI image), AC5 is SKIPPED — the conformance test (AC4) is the backstop.
 - [ ] AC6 — Plan frontmatter `status: complete`; `plans/PLAN_INDEX.md` row in "Complete" section.
@@ -558,6 +596,8 @@ Phase 4 complete. All implementation is shipped; this phase is documentation + f
 |-------|-------------------|---------------------------|-------------|----------|
 | 1     | 12                | 10                        | 17          | 16       |
 | 2     | 7                 | 5                         | 10          | 10       |
+| 1-refresh (post-Plan-A annotation refresh, 2026-05-03) | 5 anchor sites + 1 sentence | — | — | 5 anchor sites + 1 sentence (annotation-only scope; 3 substantive findings deferred) |
+| 2-refresh (post-Plan-A NORMAL scope, 2026-05-03) | 9 (3 carry-overs + 6 new) | 12 (incl. 3 dup of reviewer + 3 carry-over coverage) | 13 (after dedup) + 6 verified-positive | 13/13 hard-fixed; 0 Justified-not-fixed |
 
 ### Round History
 
@@ -631,3 +671,95 @@ Restructuring in Round 2:
 - Phase 4 AC10/AC11 added: collision-policy assertions and Step-C-citation grep.
 - Phase 5 AC8 reframed as same-PR invariant via `gh pr view`.
 - Phase 5.5 + AC5 added MAJOR.MINOR comparison and CI-skip.
+
+---
+
+## Drift Log
+
+Structural comparison of the plan vs current execution state.
+
+| Phase | Planned | Actual | Delta |
+|-------|---------|--------|-------|
+| 1-5 | All 5 phases ⏳ Pending | All 5 phases ⏳ Pending | No execution drift — refresh round 1 ran before any phase implementation |
+
+**External drift** (changes outside this plan's execution that affected its anchors):
+- **Plan A (VERIFIER_AGENT_FIX, PR #189, squash `5db8283`, 2026-05-03)** extended `skills/update-zskills/SKILL.md` Step C in place — heading "Fill hook gaps" → "Fill hook + agent gaps", new hook-copy bullets (`inject-bash-timeout.sh` + `verify-response-validate.sh`, both NO settings.json wiring), agent-copy bash block (~25 lines), Install summary lines. Step C grew from ~lines 816-840 to lines 816-1041. Plan B's pre-Plan-A annotations against this file were stale; refresh round 1 closed the drift on 5 anchor sites + added one operational-caveat sentence to Phase 5.2's CLAUDE.md note (verifier subagent inherits project PreToolUse hooks).
+- **No commit-history fallback needed** — Plan B has only one commit on its drafting branch (created 2026-04-30); structural comparison done against current file state and external reality only.
+
+## Plan Review — Round 1 refresh (post-Plan-A annotation refresh)
+
+User scope directive: annotation refresh only (no strategy / AC / commit-boundary changes). Plan A (VERIFIER_AGENT_FIX, PR #189) landed and modified `skills/update-zskills/SKILL.md` Step C in-place — Plan B's line-number anchors against that file went stale. This round refreshed those anchors only.
+
+### Edits applied (annotation refresh)
+- Tracker (line 68) + Phase 3 Goal (line 319) + Phase 3.1 (line 325): canonical-table anchor `882-888` → `944-948` (+ literal-text fallback anchor: `**Canonical zskills-owned triples**` at line 939).
+- Phase 3.1: prose anchor `line 890` → `line 950` (+ literal-text fallback `All 5 rows carry`).
+- Phase 3.1: explainer block anchor `lines 842-851` → `lines 904-910` (+ literal-text fallback `> Installing 2 safety hooks:` at line 904).
+- Phase 3.2: Step C anchor `lines 816-840` → Step C heading at line 816 ("Fill hook + agent gaps") with hook-copy bullets at `820-852`. Bullet-shape guidance added (mirror Plan A's `For \`<file>\`: copy as-is from $PORTABLE/hooks/ to .claude/hooks/.` pattern); insertion point pinned (immediately before `scripts/test-all.sh` at line 842).
+- Phase 4.2: heading quote `"Fill hook gaps"` → `"Fill hook + agent gaps"`; Step C body extent annotation added (`816-1041` post-Plan-A; hook-copy bullets at 820-852).
+- Phase 5.2 CLAUDE.md note: appended one sentence acknowledging that the verifier subagent (Plan A) inherits project PreToolUse hooks, so a verifier that edits a skill body without bumping `metadata.version` will see the deny envelope on `git commit` — recovery is bump-and-retry.
+
+### Out-of-scope findings (recorded for future refinement)
+- **DA-3 / DA-O-1 (Phase 4.2 Step C vs Step D placement).** DA pressure-tested Phase 4.2's Step-C placement of `install-helpers-into.sh` invocation. Step D ("Fill script gaps", line 1090) is the canonical home for `scripts/` install — it already documents the two-source pattern (`$PORTABLE/scripts/` AND `$PORTABLE/skills/update-zskills/stubs/`) and a "Report: 'Installed N scripts: [list]'" surface. Step C is "Fill hook + agent gaps"; the `scripts/test-all.sh` bullet inside Step C is a one-off legacy hand-out exception. Plan A widened Step C with the agent-copy block, making it more crowded — sticking another concern in Step C compounds the issue. AC11's negative-assertion (`grep -nE 'Step (B|C)' ... shows only "Step C"`) actively locks the wrong target. **Justified — out of scope this round (strategy change forbidden by user directive).** Recommend a follow-up `/refine-plan` invocation with broader scope to consider moving Phase 4.2's `install-helpers-into.sh` invocation from Step C to Step D and dropping/inverting AC11.
+- **R-O-1 (`Installing N safety hooks` under-counts pre-existing).** The current explainer at lines 904-910 mentions only `block-unsafe-generic.sh` + `block-unsafe-project.sh` even though the canonical table at 944-948 wires 3 settings.json hooks (`+block-agents.sh`) + 2 PostToolUse `warn-config-drift.sh` rows. Plan B's Phase 3.1 expansion to "Installing 3 safety hooks" still under-counts. Pre-existing drift in the SKILL.md, not Plan-B-introduced. Out of scope per user directive — surface as a follow-up issue if desired.
+- **R-O-3 (Phase 3.1 conflates 3 disjoint edit sites).** After the line-number fixes, Phase 3.1 still reads as one bullet describing three distinct edits (canonical-table append, prose update, explainer-block expansion). Refactoring for readability would not change spec — declined this round to keep changes annotation-only. Refiner's option for a future round.
+
+### Verified-positive (no edit needed)
+- Numeric arithmetic AC4 (`5 → 6`) and AC3 (`≥ 3` insertion-point count) still hold.
+- Settings.json append-anchor `lines 8-15` (Phase 3.6) still holds — Plan A added zero settings.json wiring.
+- Post-install summary at line 1003 in Plan A's new Step C end-block is for **non-settings-wired** hooks only; `block-stale-skill-version.sh` is settings.json-wired and is counted by the existing `Step C: registered N hook entries` report line at 998 — no edit needed there.
+- Plan A's refined `tests/test-update-zskills-version-surface.sh` AC #8 jq-invocation regex (refined in PR #189) doesn't trip on Plan B's planned additions — Plan B introduces zero `jq` invocations by design (D4).
+
+## Plan Review — Round 2 refresh (NORMAL scope, post-Plan-A second pass)
+
+User scope directive: NORMAL (no annotation-only cap). All three Round-1 carry-overs and all new Round-2 findings (reviewer + DA) addressed where verified.
+
+### Hook composition resolved empirically (Round 2 R2-N-1 / DA2-C-1 — critical)
+
+DA2-C-1 challenged the Round-1-added Phase 5.2 sentence asserting "verifier subagent inherits project PreToolUse hooks." Composition semantics resolved by reading Anthropic Code docs:
+- https://code.claude.com/docs/en/sub-agents §"Hooks in subagent frontmatter": *"Frontmatter hooks fire when the agent is spawned as a subagent through the Agent tool or an @-mention, and when the agent runs as the main session via `--agent` or the `agent` setting. In the main-session case they run alongside any hooks defined in `settings.json`."*
+- https://code.claude.com/docs/en/hooks: subagent frontmatter hooks active *"while the component is active"* — additive scoping, not replace.
+
+The "alongside settings.json" language is explicit for the main-session case; the subagent-case docs describe frontmatter hooks as additionally active rather than replacing project hooks. Reasonable interpretation: project PreToolUse hooks fire on EVERY tool call from EVERY context (main session AND subagent); subagent frontmatter hooks add to that set when the subagent is active. Composition is confirmed sufficiently to land Plan B without a new manual recipe; if a future Anthropic doc revision contradicts this, Phase 1's R-recipe pattern accommodates re-verification.
+
+### Round 2 findings + dispositions
+
+Reviewer (R2) and DA (DA2) overlaps de-duplicated. Net 13 findings (2 critical, 4 high — including DA2-H-3 doc-only, 4 medium, 3 low). All 13 fixed; 6 verified-positive findings recorded as no-edit.
+
+| ID | Source | Severity | Disposition |
+|----|--------|----------|-------------|
+| R2-CO-A / DA2-H-1 | reviewer + DA | High | Fixed — Phase 4.2 moved to Step D; AC2 wording fixed; AC11 inverted; D&C bullets updated; Phase 4 AC10 reworded (mtime-only); new AC12 (≥ 4 row count). |
+| R2-CO-B / DA2-H-2 | reviewer + DA | High | Fixed — Phase 3.1c explainer scoped to "Installing 3 PreToolUse Bash safety hooks" (not "6"); Phase 3 AC4 strengthened with explainer assertion. |
+| R2-CO-C / DA2-L-1 | reviewer + DA | Low | Fixed — Phase 3.1 split into 3.1a/3.1b/3.1c with order-independence note. |
+| R2-N-1 / DA2-C-1 | reviewer + DA | Critical | Fixed — Phase 5.2 paragraph rewritten with composition-semantics citation, verifier-side recovery (`Edit`+`Bash` allowlist → self-bump), orchestrator-side recovery, hook-chain composition note; new ACs 2a, 2b. |
+| R2-N-2 / DA2-C-2 | reviewer + DA | Critical | Fixed — Phase 5.1 rewritten to date-only H2 + `### Added —` H3 convention with explicit date-collision handling; Phase 5 AC1 strengthened (no duplicate H2, H3-prefix grep). |
+| R2-N-3 | reviewer | Low | Fixed — Phase 3.6 anchor reworded (drift-tolerant by content + line range). |
+| R2-N-4 | reviewer | Low (note) | Fixed — Phase 2 D&C "Fail-open is restricted to FIRST link" sentence added documenting half-install behavior. |
+| R2-N-5 | reviewer | Low (note) | Fixed — hook chain composition note added to Phase 5.2 (also references-doc sibling subsection per spec). |
+| R2-N-6 / R2-N-7 / R2-N-8 | reviewer | Low | Auto-fixed by R2-CO-A's Phase 4 edits (Step B → Step D residue cleared). |
+| R2-N-9 | reviewer | Low | Justified — left to implementer; AC5 already MAJOR.MINOR-tolerant per N8. |
+| DA2-H-3 | DA | High (doc-only) | Fixed — Phase 5.6 D3 prose strengthened with two in-session reproducers (DA-observed live grep + sed false-positives); routing decision unchanged (`/draft-plan plans/BLOCK_UNSAFE_HARDENING.md` follow-up, not a 404-specific issue). |
+| DA2-M-1 | DA | Medium | Fixed — Phase 5.2 cross-reference between `## Skill versioning` and `## Verifier-cannot-run rule` added; new AC2a. |
+| DA2-M-2 | DA | Medium | Fixed — Phase 3.6 indent guidance added (10-space outer brace, 12-space keys; "match existing entry shape verbatim"). |
+| DA2-M-3 | DA | Medium | Fixed — Phase 4.2 cites Step A explicitly for `$PORTABLE` resolution. |
+| DA2-M-4 | DA | Medium | Fixed — Phase 4 AC10 reworded to mtime-only with explicit `sleep 1` boundaries; inode-comparison dropped (cp overwrites in place; inode is preserved across COPY). |
+| DA2-L-2 | DA | Low | Fixed — `bash -c '<git commit>'` carve-out documented in Phase 2 D&C "Match strategy"; new test case C10e (negative); Phase 2.4 case count 26 → 27. |
+| DA2-L-3 | DA | Low | Fixed — Phase 5.5 ambiguous-output skip rule added alongside the no-binary CI-skip rule. |
+
+### Verified-positive (carried forward unchanged)
+- R2-VP-1..6 (numeric AC4 arithmetic, settings.json anchor still holds, helper scripts complete, Phase 2 unaffected, AC4-on-Phase-3, CHANGELOG non-overwrite — last contingent on the now-applied Phase 5.1 rewrite).
+- DA2-VP-1..4 (helper-script CLI signatures stable, run-all.sh dispatcher pattern stable, Phase 3.6 line anchors empirically held, `git commit --amend` / `-a` covered by tokenize-then-walk).
+
+### Round 2 net delta
+- Phase 2.1 / 2.2 / 2.4 / AC3 / AC5: case count 26 → 27 (added C10e).
+- Phase 2 D&C: gained "Known carve-out: bash -c" bullet and "Fail-open is restricted to FIRST link" amendment.
+- Phase 3.1 split into 3.1a/3.1b/3.1c; Phase 3 AC4 strengthened; Phase 3 D&C commit-boundary scope updated to enumerate the new sub-bullets.
+- Phase 3.6 indent guidance added.
+- Phase 4.2 moved Step C → Step D with Step A cross-ref + paragraph rewording; D&C boundary + shared-driver bullet + `mirror-skill.sh` bullet updated; AC2 wording (Step B → Step D); AC10 mtime-only reword; AC11 inverted; new AC12 (≥ 4 row count post-Phase-4).
+- Phase 5.1 rewritten to current CHANGELOG convention with date-collision spec; AC1 strengthened.
+- Phase 5.2 paragraph rewritten with composition citation + verifier/orchestrator recovery; cross-reference to Verifier-cannot-run section; new ACs 2a, 2b.
+- Phase 5.5 ambiguous-output skip rule added.
+- Phase 5.6 D3 prose strengthened with DA-observed reproducers.
+
+### Convergence judgment
+
+The Round 2 surface is complete: all 13 deduped findings have hard fixes (no Justified-not-fixed); the 5 verified-positives include the date-collision contingency that Round 2 closed. Net new gaps introduced by these edits: none material. Two cross-edit risk spots flagged for orchestrator confirmation: (a) AC2 + AC11 + AC12 cross-referencing on Phase 4 (Step D placement); (b) Phase 5.2 paragraph composition-citation + AC2b grep alignment.
