@@ -36,6 +36,7 @@ run_suite() {
 }
 
 run_suite "test-hooks.sh" "tests/test-hooks.sh"
+run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-inject-bash-timeout.sh" "tests/test-inject-bash-timeout.sh"
 run_suite "test-verify-response-validate.sh" "tests/test-verify-response-validate.sh"
 run_suite "canary-verifier-agent-discovery-part1.sh" "tests/canary-verifier-agent-discovery-part1.sh"
