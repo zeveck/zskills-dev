@@ -1,5 +1,51 @@
 # Plan Report — Skill-Version PreToolUse Hook (Plan B)
 
+## Phase — 4 Helper-script install flow + sandbox integration test [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
+**Status:** Completed (verified — all 12 ACs PASS, 1 fix applied by verifier)
+**Commits:** 841e7e1 (work), (this report commit)
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 4.1 | `scripts/install-helpers-into.sh` (NEW driver, +x) — 4 helper copy + mkdir-p + SKIP/COPY collision | Done | 841e7e1 |
+| 4.2 | `skills/update-zskills/SKILL.md` Step D extension (canonical script-install home, post-refinement) + Step A cross-ref + explanatory paragraph | Done | 841e7e1 |
+| 4.3 | `tests/test-block-stale-skill-version-sandbox.sh` (NEW, 13 cases, +x) — end-to-end integration | Done | 841e7e1 |
+| 4.4 | `tests/run-all.sh` registration (1 new run_suite line) | Done | 841e7e1 |
+| 4.5 | Pre-bump cross-edit check (only expected paths staged) | Done | (verifier confirmed) |
+| 4.6 | metadata.version bump → `2026.05.06+7b1a80` + mirror | Done | 841e7e1 |
+
+### Verification
+- All 12 ACs PASS (independently re-verified by `verifier` subagent)
+- Tests **2111/2111** PASS (+13 vs pre-Phase-4 baseline 2098/2098)
+- Mirror parity clean
+- Hygiene clean
+- Verifier caught + fixed AC1 violation: implementer wrote `scripts/install-helpers-into.sh` but didn't `chmod +x`. Single-line fix; mode 100755 now recorded in git index.
+
+### Causation analysis (resolved a flagged concern)
+Implementer reported `test-hooks.sh#17 (post-run-invariants.sh: empty args)` failing in-suite. **NOT reproducible** by verifier across:
+- Full suite, run 1: 2111/2111 PASS
+- Full suite, run 2: 2111/2111 PASS
+- `test-hooks.sh` in isolation: 365/365 PASS
+- `sandbox` in isolation: 13/13 PASS
+- `sandbox` then `test-hooks.sh` sequenced: 365/365 PASS
+- `/tmp` leftover audit after isolated sandbox: only verifier's own log file
+
+Sandbox test cleanup discipline confirmed sound: trap-EXIT + explicit cleanup + case-13 verifies cleanup ran. `$TMP` is well-namespaced via `mktemp -d -p /tmp zskills-sandbox.XXXX`. Most likely explanation: orphan state from interrupted run during implementer's iterative authoring. No persistent issue. No issue filed (would be noise for non-reproducible flake).
+
+### Notes
+- New `metadata.version`: `2026.05.06+7b1a80` (date + 6-char hash, today NY).
+- Step D extension at line 1090 area; insertion point: after existing per-stub bullets, before Tier-1 callout. Step A cross-ref clarifies `$PORTABLE` resolution.
+- Driver file lives at `scripts/install-helpers-into.sh` (repo root, not under any skill) — does NOT trigger per-skill versioning.
+- Verifier observed: `block-unsafe-generic.sh` blocked two `rm -rf "$VAR"` cleanup commands during AC verification (variable-expansion safety). Hook design validated; verifier worked around with literal `/tmp/<basename>` paths.
+
+### Dependencies satisfied
+- Phase 1 (reference doc), Phase 2 (hook + tests), Phase 3 (settings.json wiring) — all done
+
+### Downstream
+- Phase 5 (FINAL): CHANGELOG entry (date H2 + `### Added —` H3 convention) + CLAUDE.md PreToolUse-backstop note (with verifier-subagent recovery + chain-composition note from refinement) + final conformance gate + **AC8 from Phase 3 deferred live deny-canary** (run + log to `tests/canary-zskills-self-fires.txt` if applicable). After Phase 5 lands, dispatch /land-pr with --auto for PR #193 automerge.
+
 ## Phase — 3 settings.json registration + canonical extension table [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
