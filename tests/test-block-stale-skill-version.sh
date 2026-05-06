@@ -82,12 +82,15 @@ run_hook() {
 }
 
 # ──────────────────────────────────────────────────────────────
-# Source the hook in a subshell so we can unit-test is_git_commit and
+# Source the hook in a subshell so we can unit-test is_git_subcommand and
 # json_escape directly without spinning up the full pipeline. The hook
 # would normally read stdin and exit, so we extract just the function
 # bodies via bash -c sourcing with a stubbed stdin.
 # ──────────────────────────────────────────────────────────────
-# Defines is_git_commit and json_escape in the current shell.
+# Defines is_git_subcommand and json_escape in the current shell.
+# Helper rename per BLOCK_UNSAFE_HARDENING.md Phase 6 / D6 — the hook now
+# inlines `is_git_subcommand` from `hooks/_lib/git-tokenwalk.sh` (called
+# with `commit` as the second argument) instead of a local `is_git_commit`.
 load_hook_funcs() {
   # Extract everything between the function header and the closing brace.
   # Simpler: source the file with a stub stdin that drops out via early
@@ -97,7 +100,7 @@ load_hook_funcs() {
   local tmp
   tmp=$(mktemp)
   awk '
-    /^is_git_commit\(\) \{$/,/^\}$/ {print}
+    /^is_git_subcommand\(\) \{$/,/^\}$/ {print}
     /^json_escape\(\) \{$/,/^\}$/ {print}
   ' "$HOOK" > "$tmp"
   # shellcheck disable=SC1090
@@ -217,23 +220,23 @@ CLEAN_EOF
 chmod +x "$SANDBOX/scripts/skill-version-stage-check.sh"
 
 # Helper: assert hook MATCHES (i.e., script ran; clean stub returns 0 → allow).
-# We validate matching via is_git_commit directly to disambiguate "matched
+# We validate matching via is_git_subcommand directly to disambiguate "matched
 # and script said clean" from "did not match at all".
 assert_match() {
   local label="$1" cmd="$2"
-  if is_git_commit "$cmd"; then
-    pass "$label: is_git_commit('$cmd') → match"
+  if is_git_subcommand "$cmd" commit; then
+    pass "$label: is_git_subcommand('$cmd' commit) → match"
   else
-    fail "$label: should match" "is_git_commit returned 1 for: $cmd"
+    fail "$label: should match" "is_git_subcommand returned 1 for: $cmd"
   fi
 }
 
 assert_no_match() {
   local label="$1" cmd="$2"
-  if ! is_git_commit "$cmd"; then
-    pass "$label: is_git_commit('$cmd') → no match"
+  if ! is_git_subcommand "$cmd" commit; then
+    pass "$label: is_git_subcommand('$cmd' commit) → no match"
   else
-    fail "$label: should NOT match" "is_git_commit returned 0 for: $cmd"
+    fail "$label: should NOT match" "is_git_subcommand returned 0 for: $cmd"
   fi
 }
 

@@ -13,10 +13,12 @@ PASS_COUNT=0
 FAIL_COUNT=0
 pass() { echo "PASS $*"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
-for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh; do
+for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh hooks/block-stale-skill-version.sh; do
   for FN in is_git_subcommand is_destruct_command; do
     # is_destruct_command is only inlined in generic hook; skip for project.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
+    # is_destruct_command is not inlined in block-stale-skill-version.sh either.
+    [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
     if diff <(sed -n "/^$FN()/,/^}$/p" "$HOOK") \
             <(sed -n "/^$FN()/,/^}$/p" hooks/_lib/git-tokenwalk.sh) \
             > /dev/null; then
