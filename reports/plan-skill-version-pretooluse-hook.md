@@ -1,5 +1,43 @@
 # Plan Report — Skill-Version PreToolUse Hook (Plan B)
 
+## Phase — 3 settings.json registration + canonical extension table [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
+**Status:** Completed (verified — AC8 deferred to Phase 5)
+**Commits:** 62f53b5 (work), (this report commit)
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 3.1a | `skills/update-zskills/SKILL.md` canonical-table row append (5 → 6 rows) | Done | 62f53b5 |
+| 3.1b | Prose `All 5 rows` → `All 6 rows` | Done | 62f53b5 |
+| 3.1c | Explainer rewrite to `Installing 3 PreToolUse Bash safety hooks` | Done | 62f53b5 |
+| 3.2 | Step C copy bullet for `block-stale-skill-version.sh` | Done | 62f53b5 |
+| 3.3-3.4 | metadata.version bump → `2026.05.06+829a2a` + mirror via `mirror-skill.sh` | Done | 62f53b5 |
+| 3.5 | Cross-edit pre-bump check (no accidental cross-skill edits) | Done | (verifier confirmed) |
+| 3.6 | `.claude/settings.json` PreToolUse Bash entry (deep-nested indent) | Done | 62f53b5 |
+| 3.7 | `.claude/hooks/block-stale-skill-version.sh` mirror (byte-eq + executable) | Done | 62f53b5 |
+
+### Verification
+- AC1-AC7, AC9 all PASS (independently re-verified by `verifier` subagent)
+- **AC8 deferred** — one-shot live deny-canary not produced this phase. Spec calls for a sandbox session that triggers the hook to confirm the deny envelope, with the result logged to `tests/canary-zskills-self-fires.txt`. The implementer didn't produce this; it's outside the 4-file commit scope and requires a fresh session restart (the new hook needs to be loaded). Deferred to **Phase 5 final conformance**. The static stage-check rc=0 path is verified; the deny path is covered by Phase 2's 27-case unit suite (positive C1-C12 cases). End-to-end live demonstration remains pending.
+- Tests **2098/2098** PASS (parity with pre-Phase-3 baseline; no new test cases — Phase 3 wires Phase 2's hook into the live harness, doesn't add new tests).
+- Mirror parity clean.
+- Hygiene clean.
+
+### Notes
+- New `metadata.version`: `2026.05.06+829a2a`. Date is today (NY).
+- Settings.json entry indent: 10/12-space deep nesting per round-2 DA2-M-2 (matches existing entries verbatim, clean append, no re-indent noise).
+- Spec line numbers (table 944-948, explainer 904-910, prose 950) all landed within ±5 of actual (942-947, 905-911, 951) — anchor windows held.
+
+### Dependencies satisfied
+- Phase 1 (reference doc) — done
+- Phase 2 (`hooks/block-stale-skill-version.sh` + tests) — done
+
+### Downstream
+- Phase 4: helper-script install in Step D + sandbox integration test (the `install-helpers-into.sh` driver per refinement; sandbox test = edit-then-bare-commit-then-deny against fake consumer repo)
+- Phase 5: CHANGELOG + CLAUDE.md PreToolUse-backstop note (with verifier-subagent recovery + chain-composition note) + final conformance + **AC8 live deny-canary** (run + log to `tests/canary-zskills-self-fires.txt`)
+
 ## Phase — 2 Hook script + JSON-escape function + unit tests [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
