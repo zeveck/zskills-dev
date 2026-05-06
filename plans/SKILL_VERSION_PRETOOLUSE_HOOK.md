@@ -63,7 +63,7 @@ Research finding F1 verified zero copy lines exist in `skills/update-zskills/SKI
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decision doc + manual-recipe verifications | ⏳ Pending | — | reference doc only; R1/R2/R3 already empirically confirmed in research |
+| 1 — Decision doc + manual-recipe verifications | ✅ Done | `67ff929` | All 6 ACs PASS. references/skill-version-pretooluse-hook.md (138 lines): D1-D5 verbatim + R1/R2/R3 manual-recipe verifications + Recursive-risk-NONE + run_suite dispatcher pattern. plans/PLAN_INDEX.md: Plan B added to "Ready to Run". Tests 2071/2071 PASS (parity with baseline; docs-only phase). |
 | 2 — Hook script + JSON-escape function + unit tests | ⏳ Pending | — | `hooks/block-stale-skill-version.sh` + `tests/test-block-stale-skill-version.sh` |
 | 3 — `.claude/settings.json` registration + canonical extension table | ⏳ Pending | — | zskills-side wiring + `skills/update-zskills/SKILL.md:944-948` row |
 | 4 — Helper-script install flow extension + sandbox integration test | ⏳ Pending | — | F1 fix; copy 4 scripts; sandbox edit→bare-commit→deny test |
