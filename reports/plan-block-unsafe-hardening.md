@@ -1,5 +1,49 @@
 # Plan Report — Block-Unsafe Hooks Hardening
 
+## Phase — 5 CHANGELOG + class-pinned matrices + drift gate + finalization [UNFINALIZED]
+
+**Plan:** plans/BLOCK_UNSAFE_HARDENING.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-unsafe-hardening (PR mode, branch `feat/block-unsafe-hardening`)
+**Commits:** `e18d1e8`
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 5.1 | CHANGELOG H3 entry under `## 2026-05-06` with 13 body bullets (9 plan-mandated + 4 emergent-deviation) | Done | `e18d1e8` |
+| 5.2 | Class-pinned negative matrices in `tests/test-hooks.sh` (144 project + 192 generic + 48 adjacent-class) with mandatory per-iteration setup_project_test_on_main + matrix-invariant assertion | Done | `e18d1e8` |
+| 5.3 | Class-pinned positive matrix (24 cases: 6 verbs × 4 shapes) | Done | `e18d1e8` |
+| 5.4 | NEW `tests/test-hook-helper-drift.sh` (D7 drift gate) — 3/3 PASS standalone | Done | `e18d1e8` |
+| 5.5 | Full suite RC 0; 2699/2699 PASS (+412 from Phase 4 baseline 2287) | Done | `e18d1e8` |
+| 5.6 | `plans/PLAN_INDEX.md` BLOCK_UNSAFE_HARDENING moved Ready → Complete | Done | `e18d1e8` |
+| 5.7 | PR landing — orchestrator's responsibility (post-Phase 5 commit, Phase 6 follow-up if substantive) | Pending Phase 6 | — |
+
+### Verification
+
+- AC1 (CHANGELOG H3 = 1 + ≥1 BLOCK_UNSAFE_HARDENING mention): PASS
+- AC2 (project + generic negative matrix ≥ 336 PASS — spirit met; literal grep `^PASS matrix-` hits color-prefix mismatch): PASS (drift recorded)
+- AC2b (adjacent-class ≥ 24): PASS (48; loop emits both pathsub + flagval)
+- AC3 (positive matrix ≥ 24 PASS — spirit met): PASS (24; drift recorded for color-prefix)
+- AC4 (4 traced reproducers PR1/PR2/PR3/GR1 PASS): PASS
+- AC5 (full suite RC 0): PASS (2699/2699)
+- AC6 (drift gate RC 0; 0 FAIL): PASS (3/3 PASS)
+- AC7 (CI green): DEFERRED to `/land-pr`
+- AC8 (exactly 5 commits Phase 1-5): DRIFT — chunked-exec produces 13 commits including bookkeeping; squash-merge consolidates
+- AC9 (no migrated bare-substring sites): PASS (line 312 = `git add .claude/logs/?` rule, out of scope)
+- AC10 (PLAN_INDEX moved to Complete): PASS
+
+### Drift recorded
+
+- `PLAN-TEXT-DRIFT: phase=5 bullet=AC2/AC3 field=grep-pattern plan="^PASS matrix-/positive-matrix-" actual="color-prefix mismatch from helper pass()"` — semantic spirit met (336 + 24 cases all PASS).
+- `PLAN-TEXT-DRIFT: phase=5 bullet=AC2b field=case-count plan=24 actual=48` — adjacent-class loop emits 2 expects per iteration; 48 ≥ 24 satisfies AC.
+- `PLAN-TEXT-DRIFT: phase=5 bullet=AC8 field=commit-count plan=5 actual=13` — chunked-exec assumption mismatch; squash-merge collapses.
+- `PLAN-TEXT-DRIFT: phase=5 bullet=AC9 field=line-filter plan="^(56|227):" actual="^(56|227|312): — line 312 = git add .claude/logs/? rule (helper-insertion shifted from line 227)"`.
+
+Test suite delta: 2287 (post-Phase-4) → **2699 (+412)**. Drift gate verifies inlined helper bodies byte-identical to source-of-truth.
+
+---
+
 ## Phase — 4 Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests [UNFINALIZED]
 
 **Plan:** plans/BLOCK_UNSAFE_HARDENING.md
