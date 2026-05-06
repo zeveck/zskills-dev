@@ -124,15 +124,9 @@ to see the actual checkbox text. For each report file with unchecked items,
 READ the file and extract every `[ ]` line with its surrounding context
 (the heading it's under, any verification instructions).
 
-#### Step 3 — Build the output with links
+#### Step 3 — Build the output with file references
 
-Get the dev server port:
-```bash
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh"
-```
-
-For each report file, construct a viewer URL:
-`http://localhost:<port>/viewer/?file=<path>`
+For each report file, include the file path so the user can open it.
 
 Present the output in this format:
 
@@ -140,36 +134,36 @@ Present the output in this format:
 Pending sign-offs: N items across M reports
 
 FIX_REPORT.md — 33 items
-  http://localhost:<port>/viewer/?file=FIX_REPORT.md
+  FIX_REPORT.md
 
   UI / UX Fixes:
-    [ ] Block Rotation — right-click, select Rotate, check ports
-    [ ] Tooltip positioning — hover near canvas edge, verify no clipping
+    [ ] Feature X verification — exercise primary flow, confirm expected output
+    [ ] Edge case Y handling — trigger boundary input, verify graceful fallback
 
   Simulation Fixes:
-    [ ] Solver tolerance — run voltage-divider, verify output within 1e-6
+    [ ] Solver tolerance — run sample case, verify output within 1e-6
 
-reports/plan-block-expansion.md — 9 items
-  http://localhost:<port>/viewer/?file=reports/plan-block-expansion.md
+reports/plan-feature-expansion.md — 9 items
+  reports/plan-feature-expansion.md
 
   Phase 1:
-    [ ] IfBlock visible in Block Explorer
-    [ ] If/IfAction wiring works on canvas
+    [ ] Feature X verification
+    [ ] Component Y wiring works
 
 VERIFICATION_REPORT.md — 2 items
-  http://localhost:<port>/viewer/?file=VERIFICATION_REPORT.md
+  VERIFICATION_REPORT.md
 
-  [ ] Variable viewer panel sign-off
-  [ ] Toolstrip button sign-off
+  [ ] Edge case Z sign-off
+  [ ] Migration sanity check
 ```
 
 **Key formatting rules:**
 - The terminal output is a DIRECTORY, not a replica. Show the report name,
-  item count, viewer URL, and section summaries — not every checkbox line.
-  The user clicks through to the report to do the actual sign-off work.
+  item count, file path, and section summaries — not every checkbox line.
+  The user opens the file to do the actual sign-off work.
 - Group by report file, with section summaries (e.g., "UI / UX Fixes: 5
   items", "Simulation: 3 items")
-- The viewer URL is the actionable part — make it prominent
+- The file path is the actionable part — make it prominent
 
 #### Worktree verification items
 
