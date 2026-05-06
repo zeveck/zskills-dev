@@ -1,5 +1,47 @@
 # Plan Report — Skill-Version PreToolUse Hook (Plan B)
 
+## Plan Status: ✅ COMPLETE (all 5 phases landed)
+
+PR [#193](https://github.com/zeveck/zskills-dev/pull/193) ready for `/land-pr --auto` automerge after Phase 5b bookkeeping commits.
+
+## Phase — 5 CHANGELOG + CLAUDE.md note + final conformance [UNFINALIZED]
+
+**Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
+**Status:** Completed (verified — all ACs PASS)
+**Commits:** 886304d (work), (this report commit)
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 5.1 | CHANGELOG.md new `## 2026-05-06` H2 + `### Added —` H3 (Plan A's H2 preserved) | Done | 886304d |
+| 5.2 | CLAUDE.md `## Skill versioning` PreToolUse-backstop paragraph + cross-ref to `## Verifier-cannot-run rule` | Done | 886304d |
+| 5.3 | Final test suite — 2111/2111 PASS (parity with baseline) | Done | (verified) |
+| 5.4 | Phase 3 deferred AC8 — canary RECIPE doc at `tests/canary-zskills-self-fires.txt` | Done | 886304d |
+| 5.5 | Final conformance gate (skill-version-stage-check + tests) | Done | (verified) |
+| 5.6 | Phase 5.6 split routing — followups doc (stage-check UX nit + BLOCK_UNSAFE_HARDENING reference) | Done | 886304d |
+
+### Verification
+- All ACs PASS (independently re-verified by `verifier` subagent)
+- Tests **2111/2111** PASS (parity with baseline; Phase 5 is docs-only finalization)
+- Hygiene clean
+- D&C respected: NO new code in `hooks/`, `skills/`, or `tests/run-all.sh`
+
+### Notes
+- CHANGELOG H2 collision spec was N/A: today (2026-05-06) is a new date; created fresh `## 2026-05-06` H2 above existing `## 2026-05-03` (Plan A's entry preserved).
+- Composition-semantics citation in CLAUDE.md PreToolUse-backstop paragraph cites Anthropic Code docs (https://code.claude.com/docs/en/sub-agents §"Hooks in subagent frontmatter").
+- Verifier-side recovery documented: verifier has `Edit`+`Bash` in tool allowlist; SHOULD self-bump `metadata.version` from STOP message + re-stage + retry commit.
+- Canary recipe at `tests/canary-zskills-self-fires.txt` is RECIPE form (manual procedure), NOT a regression test. Backed by Phase 2's 27 unit cases + Phase 4's 13 sandbox cases for automated coverage.
+- Followups doc at `plans/reports/SKILL_VERSION_PRETOOLUSE_HOOK-followups.md` documents 2 post-merge items: (1) stage-check STOP-message UX nit (file `gh issue create` post-merge), (2) BLOCK_UNSAFE_HARDENING.md already drafted (PR #192) — recommend `/run-plan plans/BLOCK_UNSAFE_HARDENING.md finish auto` as next step.
+
+### Dependencies satisfied
+- Phases 1-4 all done
+
+### Plan completion
+- Plan frontmatter: `status: complete` + `completed: 2026-05-06`
+- Tracker rows 1-5 all ✅ Done with commit hashes
+- Lock-step gap PR #175 left open: CLOSED via this plan's hook
+- Total commits accumulated in PR #193: 5 work + 5 bookkeeping = 10 ordered commits to be squashed at automerge
+
 ## Phase — 4 Helper-script install flow + sandbox integration test [UNFINALIZED]
 
 **Plan:** plans/SKILL_VERSION_PRETOOLUSE_HOOK.md
