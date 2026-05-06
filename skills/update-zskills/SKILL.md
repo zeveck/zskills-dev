@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.03+a9bbe0"
+  version: "2026.05.06+829a2a"
 ---
 
 # Update Z Skills Infrastructure
@@ -839,6 +839,7 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   primitive). Standard executable shell script, called as
   `bash .claude/hooks/verify-response-validate.sh ...` from skill
   prose.
+- For `block-stale-skill-version.sh`: copy as-is from `$PORTABLE/hooks/` to `.claude/hooks/`.
 - For `scripts/test-all.sh`: copy as-is from
   `$PORTABLE/scripts/`. Reads `testing.unit_cmd` from
   `.claude/zskills-config.json` at runtime — no
@@ -901,13 +902,12 @@ runtime. No install-time fill needed. Only copy the source template.
 
 **Explain what each hook does** so the user understands what's being added:
 
-> Installing 2 safety hooks:
-> - **block-unsafe-generic.sh** — blocks destructive commands (git reset
->   --hard, rm -rf, kill -9, git checkout --, etc.) and discipline
->   violations (git add ., --no-verify)
-> - **block-unsafe-project.sh** — project-specific guards: prevents piping
->   test output (must capture to file), verifies tests ran before commit,
->   and optionally checks for UI verification before committing UI changes
+> Installing 3 PreToolUse Bash safety hooks (commit-time + pre-tool-execution gates):
+> - **block-unsafe-generic.sh** — blocks destructive commands (`git reset --hard`, `rm -rf`, `kill -9`, `git checkout --`, `--no-verify`, etc.) and discipline violations (`git add .`).
+> - **block-unsafe-project.sh** — project-specific guards: prevents piping test output (must capture to file), verifies tests ran before commit, optionally checks for UI verification before committing UI changes, enforces tracking discipline.
+> - **block-stale-skill-version.sh** — denies `git commit` when staged skill files have a stale `metadata.version` hash; reuses `scripts/skill-version-stage-check.sh`.
+>
+> See the canonical table below for the full hook set (additionally: PreToolUse `Agent` matcher → `block-agents.sh`; PostToolUse `Edit`/`Write` matchers → `warn-config-drift.sh`).
 
 **Main-push block (preset-controlled):** `block-unsafe-generic.sh`
 blocks `git push` to `main`/`master` when `BLOCK_MAIN_PUSH=1`, the
@@ -943,11 +943,12 @@ not in this table is foreign and preserved untouched):
 |--------------|---------|------------------------------------------------------------------------------|
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh"`           |
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh"`           |
+| PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh"`      |
 | PreToolUse   | Agent   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh"`                   |
 | PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 | PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 
-All 5 rows carry `"type": "command"` and `"timeout": 5`. The
+All 6 rows carry `"type": "command"` and `"timeout": 5`. The
 `warn-config-drift.sh` hook lands in Phase 3 of
 `plans/DRIFT_ARCH_FIX.md`; the two PostToolUse rows become live once
 that hook is installed.
