@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.06+829a2a"
+  version: "2026.05.06+7b1a80"
 ---
 
 # Update Z Skills Infrastructure
@@ -1132,6 +1132,37 @@ do not error.
   `$PORTABLE/skills/update-zskills/stubs/` (e.g.
   `post-create-worktree.sh`, `dev-port.sh`, `start-dev.sh`) if missing.
   See `references/stub-callouts.md` for the contract and inventory.
+- Install the 4 skill-version helpers required by
+  `block-stale-skill-version.sh` (the PreToolUse hook installed in
+  **Step C** above) by invoking the shared driver:
+
+  ```bash
+  bash "$PORTABLE/scripts/install-helpers-into.sh" "$CONSUMER_ROOT"
+  ```
+
+  Step A (`Locate portable assets`, SKILL.md line 685) provides
+  `$PORTABLE` pointing at the zskills source clone —
+  `$PORTABLE/scripts/install-helpers-into.sh` resolves correctly because
+  the driver lives in the source repo's `scripts/` (not under any
+  skill's `scripts/`). The driver is invoked SOURCE-SIDE from
+  `$PORTABLE`; no consumer-local copy of the driver itself is needed
+  (avoids the chicken-and-egg of a self-copying installer).
+
+  These four helpers (`skill-version-stage-check.sh`,
+  `skill-content-hash.sh`, `frontmatter-get.sh`, `frontmatter-set.sh`)
+  are dependencies of `block-stale-skill-version.sh` (the PreToolUse
+  hook installed in **Step C** above). Without them, the hook
+  fails-open on every commit, defeating the lock-step skill-version
+  enforcement chain. The `install-helpers-into.sh` driver is the same
+  one exercised by `tests/test-block-stale-skill-version-sandbox.sh`,
+  so the install path and the test path share code. Collision policy:
+  existing identical helpers are skipped; existing different helpers
+  are overwritten; logged either way.
+
+  The driver's per-file `SKIP:` / `COPY:` log feeds the count in the
+  `Report: "Installed N scripts: [list]"` output below — list each
+  helper that was COPYed (a SKIP is a no-op and does not increment
+  N).
 
 > Tier-1 scripts (skill machinery) ship via the skill mirror at
 > `.claude/skills/<owner>/scripts/`. They are NOT copied to `scripts/`.
