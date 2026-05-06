@@ -17,7 +17,7 @@ Usage:
 """
 
 # ZSKILLS INVARIANT: briefing.py and briefing.cjs are intentional Python/Node mirrors.
-# Their port-handling behavior, output structure, and degradation semantics MUST stay byte-equivalent
+# Their output structure and degradation semantics MUST stay byte-equivalent
 # except for language idioms (`'` vs `"`, `None` vs `null`, comment syntax). Edits to one require
 # a parity edit to the other. tests/test-briefing-parity.sh enforces this.
 
@@ -802,15 +802,6 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
     lines.append(f'BRIEFING — {format_et()}')
     lines.append('')
 
-    # Get port via port.sh; emit no URL on failure.
-    port = None
-    try:
-        port_sh = os.path.join(main_path, '.claude', 'skills', 'update-zskills', 'scripts', 'port.sh')
-        if os.path.exists(port_sh):
-            port = run(f'bash {port_sh}', cwd=main_path) or None
-    except Exception:
-        pass
-
     # === NEEDS ATTENTION bucket (non-verification items) ===
     needs_attention = []
 
@@ -863,11 +854,7 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
         lines.append(f'VERIFICATION ({len(source_checkboxes)} items across {file_count} topics)')
         for file_key, items in cb_by_file.items():
             topic = _topic_name(file_key)
-            if port is None:
-                lines.append(f'  {topic} ({len(items)})')
-            else:
-                viewer_url = f'http://localhost:{port}/viewer/?file={file_key}'
-                lines.append(f'  {topic} ({len(items)}) — {viewer_url}')
+            lines.append(f'  {topic} ({len(items)}) — {file_key}')
             for cb in items:
                 is_generic = bool(re.match(r'^\*?\*?Sign off\*?\*?', cb['text'])) or len(cb['text']) < 10
                 label = cb['heading'] if (is_generic and cb.get('heading')) else cb['text']
@@ -1116,15 +1103,6 @@ def format_verify(worktrees, checkboxes, opts=None):
                 cb_by_file[rel] = []
             cb_by_file[rel].append(cb)
 
-        # Get port via port.sh; emit no URL on failure.
-        port = None
-        try:
-            port_sh = os.path.join(main_path, '.claude', 'skills', 'update-zskills', 'scripts', 'port.sh')
-            if os.path.exists(port_sh):
-                port = run(f'bash {port_sh}', cwd=main_path) or None
-        except Exception:
-            pass
-
         item_count = len(source_checkboxes)
         file_count = len(cb_by_file)
         lines.append(f'SIGN-OFF NEEDED ({item_count} items across {file_count} topics)')
@@ -1141,9 +1119,7 @@ def format_verify(worktrees, checkboxes, opts=None):
                     commit_date = f' (updated {log_out})'
 
             lines.append(f'  {topic}{commit_date}')
-            if port is not None:
-                viewer_url = f'http://localhost:{port}/viewer/?file={file_key}'
-                lines.append(f'  {viewer_url}')
+            lines.append(f'  {file_key}')
             lines.append('')
 
             for cb in items:

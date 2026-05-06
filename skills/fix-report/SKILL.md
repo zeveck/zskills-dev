@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers the current SPRINT_REPORT.md AND any landed-but-unclosed
   issues from previous sprints.
 metadata:
-  version: "2026.05.02+a825c6"
+  version: "2026.05.06+bcf5b0"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -363,8 +363,7 @@ git branch -d <branch-name>   # local branch only; remote branch stays for the P
 
 ## Step 7 — Write FIX_REPORT.md
 
-Write `FIX_REPORT.md` to the repo root. Viewable in the browser:
-`http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/viewer/?file=FIX_REPORT.md`
+Write `FIX_REPORT.md` to the repo root.
 
 ### Report structure
 
@@ -427,7 +426,7 @@ Fix-report complete:
   Skipped by user: N
   Failed verification: N
   Worktrees removed: N
-  Report: FIX_REPORT.md (view at /viewer/?file=FIX_REPORT.md)
+  Report: FIX_REPORT.md
 ```
 
 ## Key Rules
