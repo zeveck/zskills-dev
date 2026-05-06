@@ -1,5 +1,70 @@
 # Plan Report — Block-Unsafe Hooks Hardening
 
+## Phase — 4 Migrate block-unsafe-generic.sh — destructive-verb sites + bypass-canary tests [UNFINALIZED]
+
+**Plan:** plans/BLOCK_UNSAFE_HARDENING.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-block-unsafe-hardening (PR mode, branch `feat/block-unsafe-hardening`)
+**Commits:** `d566512`
+
+### Work Items
+
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 4.1 | Inline `is_git_subcommand` + `is_destruct_command` (byte-identical to `hooks/_lib/git-tokenwalk.sh`) AND `is_git_subcommand_in_chain` (byte-identical to project hook) AND a NEW `is_destruct_command_in_chain` wrapper | Done | `d566512` |
+| 4.2 | Migrate 7 git-verb sites (`checkout --`, `restore`, `clean -f`, `reset --hard`, `add -A/--all/.`, `commit --no-verify`, `push` outer gate) — all use `is_git_subcommand_in_chain` for cd-chain parity | Done | `d566512` |
+| 4.3 | Migrate kill-family (line 140) to `is_destruct_command_in_chain` (4 calls: `kill -9/KILL/SIGKILL`, `kill -s 9/...` positional-pair via `:next:`, `killall`, `pkill`) | Done | `d566512` |
+| 4.4 | Mirror to `.claude/hooks/block-unsafe-generic.sh` byte-equal | Done | `d566512` |
+| 4.5 | GR1-GR25 (29 invocations) bypass-canary tests in `tests/test-hooks.sh` | Done | `d566512` |
+| 4.6 | Full suite 2287/2287 PASS (+29 from Phase 3 baseline) | Done | `d566512` |
+
+### Deviations from plan body (all surfaced + accepted)
+
+| # | Deviation | Type | Disposition |
+|---|-----------|------|-------------|
+| 1 | GR1 regex curated to identifier-only substrings | plan-text bug | Plan's literal R5 regex contains substrings that trip UNCHANGED rules (RM_RECURSIVE, fuser, find, rsync, xargs lines 146/217/225/232/239) — making `expect_allow` impossible. Curated regex preserves R5 spirit (grep over hook source); test annotated. |
+| 2 | GR12b flipped to `expect_allow` | behavior improvement | Plan locked `git clean foo;rm -f bar` as `expect_deny` assuming `read -ra` tokenization. The wrapper `is_git_subcommand_in_chain` normalizes `;` to newline before tokenizing per-segment, closing the carve-out. Net less over-match. Test annotated. |
+| 3 | `is_destruct_command_in_chain` wrapper added | architectural extension | Pre-existing tests at `tests/test-hooks.sh:165-167` exercise `cmd && kill -9 …` chain forms; first-token-anchored `is_destruct_command` would not match. Same construction as `is_git_subcommand_in_chain`. Lives only in the generic hook. |
+| 4 | `clean -f` regex extended to `-[a-zA-Z]*f[a-zA-Z]*` | plan-text correction | Plan literal `-[a-zA-Z]*f([[:space:]]\|$)` does NOT match `git clean -fd` (existing test). Original bare regex was `-[a-zA-Z]*f`. Extension preserves coverage of `-fd`/`-df`/`-fdq`. |
+
+### Verification
+
+- AC1 (no migrated bare-substring sites): PASS
+- AC2 (`grep -cF 'is_git_subcommand'` ≥ 8): PASS (14 — includes wrapper-internal references)
+- AC3 (`grep -cF 'is_destruct_command'` ≥ 5): PASS (10 — includes wrapper-internal references)
+- AC4 (mirror byte-equal): PASS
+- AC5 (3 helper-body byte-identity diffs): PASS
+- AC6 (test-hooks.sh RC 0; GR1-GR25 PASS): PASS (29 GR* PASS)
+- AC7 (full suite RC 0): PASS (2287/2287)
+- AC8 (no positive case removed): PASS
+- AC9 (3-path scope): PASS
+- AC10 (GR1 PRESENT + PASSING): PASS
+- AC11 (DA-C-2 pipeline locks GR20 + GR21): PASS
+- AC12 (segment-truncation invariant GR11/GR12): PASS
+- AC13 (positional-pair GR17/GR18): PASS
+- AC14 (carve-out lock GR12a/GR12b — GR12b flipped per deviation 2): PASS
+- AC15 (line-120 migration GR12c-allow/deny): PASS
+
+NOT migrated (per round-1 DA-C-2): RM_RECURSIVE (line 217), find -delete (225), rsync --delete (232), xargs … rm (239), fuser combined-flag (146), STASH_BOUNDARY (106), KILL_SUBST (175), XARGS_KILL (157). These remain bare-substring whole-buffer scans that intentionally cover pipeline-fed and combined-flag forms first-token-anchored helpers would lose. Phase 5 CHANGELOG documents this open-class scope.
+
+### Drift tokens recorded
+
+- `PLAN-TEXT-DRIFT: phase=4 bullet=4.2-clean-f-regex plan="-[a-zA-Z]*f([[:space:]]|$)" actual="-[a-zA-Z]*f[a-zA-Z]* required to preserve -fd coverage from existing test"`
+- `PLAN-TEXT-DRIFT: phase=4 bullet=4.5-GR1-regex plan="literal R5 grep regex" actual="curated identifier-only substrings; literal trips unchanged rules"`
+- `ARCH-EXTENSION-DRIFT: is-destruct-command-in-chain plan="line-140 uses bare is_destruct_command" actual="wrapper required for pre-existing chain tests at lines 165-167"`
+- `BEHAVIOR-IMPROVEMENT-DRIFT: GR12b plan="expect_deny (locks space-elided ; carve-out)" actual="expect_allow (wrapper closes the carve-out via sed-normalize)"`
+
+### Test suite delta
+
+Baseline (pre-Phase-1): 2111
+Post-Phase-2: 2238 (+127)
+Post-Phase-3: 2258 (+20)
+Post-Phase-4: **2287 (+29)**
+
+No regressions. Pre-existing chain tests (`commit then chained kill -9`, `commit then chained fuser -k`, `commit then chained xargs kill`) all PASS via the new `is_destruct_command_in_chain` wrapper. `clean -fd` preserved by the regex extension.
+
+---
+
 ## Phase — 3 Migrate block-unsafe-project.sh — 6 call sites + bypass-canary tests [UNFINALIZED]
 
 **Plan:** plans/BLOCK_UNSAFE_HARDENING.md
