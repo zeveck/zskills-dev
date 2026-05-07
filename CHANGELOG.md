@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-05-07
+
+### Changed — hooks/_lib/git-tokenwalk.sh: chain wrappers added to source-of-truth + drift gate extended (4→7 asserts)
+
+Follow-up to BLOCK_UNSAFE_HARDENING `/verify-changes` finding F2. The two emergent segment-walking wrappers introduced during Phase 3 + Phase 4 (`is_git_subcommand_in_chain` and `is_destruct_command_in_chain`) lived in the hook source files only — byte-identical between the project and generic hooks but not covered by the D7 drift gate. Future divergence between the two project/generic copies of `is_git_subcommand_in_chain` would have been undetected.
+
+Moves both wrappers into `hooks/_lib/git-tokenwalk.sh` (canonical source-of-truth alongside `is_git_subcommand` and `is_destruct_command`). The wrapper bodies inlined into `hooks/block-unsafe-project.sh.template` and `hooks/block-unsafe-generic.sh` are now byte-identical to the source-of-truth; the explanatory headers above each wrapper in the hooks are replaced with the canonical "Inlined from hooks/_lib/git-tokenwalk.sh" one-liner.
+
+Extends `tests/test-hook-helper-drift.sh` from 4 to 7 byte-identity assertions covering the full hook-helper coverage matrix:
+
+| Hook | is_git_subcommand | is_destruct_command | is_git_subcommand_in_chain | is_destruct_command_in_chain |
+|---|:---:|:---:|:---:|:---:|
+| block-unsafe-project.sh.template | ✓ | — | ✓ | — |
+| block-unsafe-generic.sh | ✓ | ✓ | ✓ | ✓ |
+| block-stale-skill-version.sh | ✓ | — | — | — |
+
+No behavior change — same wrapper bodies in the same hooks; test surface +3 cases (drift gate goes from 4 to 7 PASS). Mirrors to `.claude/hooks/` byte-equal.
+
 ## 2026-05-06
 
 ### Added — block-stale-skill-version PreToolUse hook (#193)

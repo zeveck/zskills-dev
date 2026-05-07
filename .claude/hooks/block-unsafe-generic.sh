@@ -179,20 +179,7 @@ is_destruct_command() {
   return 1
 }
 
-# Hook-local wrapper around is_git_subcommand for cd-chained commands.
-# Splits $cmd on shell-segment boundaries (&&, ||, ;, |, literal newline,
-# AND the literal two-char escape `\n` that arrives via JSON-string
-# encoding) and calls is_git_subcommand on each segment, returning 0
-# if ANY segment matches. This restores the old bare-substring's
-# cd-chain semantics (cd /tmp/wt && git commit -m foo) on top of
-# is_git_subcommand's first-token-anchored core.
-#
-# Why segment-walk lives here, not in hooks/_lib/git-tokenwalk.sh:
-#   The lib helper is the single source-of-truth — its contract
-#   (first-token-anchored) is unit-tested at tests/test-tokenize-then-walk.sh.
-#   Segment-walking is a project-hook-specific need (cd-chain
-#   resolution), not a generic helper concern. Keeping it here
-#   keeps the lib's contract minimal and the hook's needs explicit.
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
 is_git_subcommand_in_chain() {
   local cmd="$1"
   local want_sub="$2"
@@ -215,13 +202,7 @@ is_git_subcommand_in_chain() {
   return 1
 }
 
-# Hook-local wrapper around is_destruct_command for shell-chained commands.
-# Splits $cmd on shell-segment boundaries (&&, ||, ;, |, literal newline,
-# AND the literal two-char escape `\n`) and calls is_destruct_command on
-# each segment, returning 0 if ANY segment matches. Preserves coverage of
-# pre-existing test cases like `git commit -m "msg" && kill -9 1234` that
-# the bare-substring regex caught and that first-token-anchoring alone
-# would silently drop. Same construction as is_git_subcommand_in_chain.
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
 is_destruct_command_in_chain() {
   local cmd="$1"
   local want_first="$2"

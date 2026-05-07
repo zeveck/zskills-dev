@@ -14,11 +14,22 @@ FAIL_COUNT=0
 pass() { echo "PASS $*"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh hooks/block-stale-skill-version.sh; do
-  for FN in is_git_subcommand is_destruct_command; do
-    # is_destruct_command is only inlined in generic hook; skip for project.
+  # Helper coverage per hook (which inlined helpers are present in each):
+  #   project hook            : is_git_subcommand,                  is_git_subcommand_in_chain
+  #   generic hook            : is_git_subcommand, is_destruct_command,
+  #                             is_git_subcommand_in_chain, is_destruct_command_in_chain
+  #   stale-skill-version hook: is_git_subcommand
+  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain; do
+    # is_destruct_command is only inlined in generic hook; skip for project + stale-skill-version.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
-    # is_destruct_command is not inlined in block-stale-skill-version.sh either.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
+    # Chain wrappers are only inlined in the two block-unsafe hooks.
+    # Skip stale-skill-version (no chain wrapper needed — that hook's
+    # callers operate on the redacted single-segment COMMAND already).
+    [[ "$FN" == "is_git_subcommand_in_chain" && "$HOOK" == *stale-skill-version* ]] && continue
+    # is_destruct_command_in_chain is only inlined in the generic hook.
+    [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *project* ]] && continue
+    [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *stale-skill-version* ]] && continue
     if diff <(sed -n "/^$FN()/,/^}$/p" "$HOOK") \
             <(sed -n "/^$FN()/,/^}$/p" hooks/_lib/git-tokenwalk.sh) \
             > /dev/null; then

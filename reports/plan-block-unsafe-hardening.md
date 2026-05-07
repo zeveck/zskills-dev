@@ -45,6 +45,20 @@ Plan B's existing test surface: 27/27 PASS after rename. Mirror byte-equal. No d
 | Phase 5 (matrices + drift gate + 412 cases) | 2699 | +412 |
 | **Phase 6 (Plan B consolidation + 1 drift gate case)** | **2700** | **+1** |
 
+> **Post-merge addendum (2026-05-07).** Counts above are worktree measurements
+> at the time each phase was verified. Running `bash tests/run-all.sh` on
+> `main` post-squash-merge yields **2701** (+1) — the delta is environmental,
+> not a regression: `tests/test-skill-conformance.sh` enumerates skills under
+> `.claude/skills/` at runtime, and main has an untracked
+> `.claude/skills/social-seo/` directory absent from worktrees. Same git
+> commit, same code, +1 conformance pass for the extra installed-only skill.
+>
+> A follow-up PR landed `is_git_subcommand_in_chain` and
+> `is_destruct_command_in_chain` (the emergent Phase 3/4 wrappers) into
+> `hooks/_lib/git-tokenwalk.sh` as source-of-truth and extended the drift
+> gate from 4 → 7 byte-identity assertions. Closes the only F2 gap surfaced
+> by the post-merge `/verify-changes` review.
+
 ---
 
 ## Phase — 5 CHANGELOG + class-pinned matrices + drift gate + finalization [UNFINALIZED]

@@ -1,9 +1,28 @@
 #!/bin/bash
-# hooks/_lib/git-tokenwalk.sh — source-of-truth helper bodies for
-# is_git_subcommand + is_destruct_command. Inlined verbatim into
-# hooks/block-unsafe-project.sh.template, hooks/block-unsafe-generic.sh,
-# and hooks/block-stale-skill-version.sh (Plan B, post-D6).
-# Maintain HERE only. CI gate: tests/test-hook-helper-drift.sh.
+# hooks/_lib/git-tokenwalk.sh — source-of-truth helper bodies for the
+# tokenize-then-walk classifier family:
+#
+#   Base (first-token-anchored) helpers:
+#     - is_git_subcommand    — tokenize-walk a `git $verb` invocation
+#     - is_destruct_command  — tokenize-walk a `<verb>` invocation (kill, rm, …)
+#
+#   Hook-local segment-walking wrappers (call the base helper per shell segment):
+#     - is_git_subcommand_in_chain   — segment-walk for cd-chained git commands
+#                                      (`cd /tmp/wt && git commit -m foo`)
+#     - is_destruct_command_in_chain — segment-walk for cd-chained destruct verbs
+#                                      (`some_cmd && kill -9 1234`)
+#
+# All four are inlined verbatim into hook source files; the drift gate at
+# tests/test-hook-helper-drift.sh enforces byte-equality at CI time:
+#   - is_git_subcommand   inlined into block-unsafe-project.sh.template,
+#                                       block-unsafe-generic.sh,
+#                                       block-stale-skill-version.sh (Plan B, post-D6)
+#   - is_destruct_command inlined into block-unsafe-generic.sh
+#   - is_git_subcommand_in_chain   inlined into block-unsafe-project.sh.template
+#                                              + block-unsafe-generic.sh
+#   - is_destruct_command_in_chain inlined into block-unsafe-generic.sh only
+#
+# Maintain HERE only.
 set -u
 
 # Returns 0 iff $cmd is a git invocation whose subcommand is $want_sub.
@@ -126,5 +145,57 @@ is_destruct_command() {
     fi
     ((i++))
   done
+  return 1
+}
+
+# Returns 0 iff ANY shell segment of $cmd is a `git $want_sub` invocation.
+# Segments are split on `&&`, `||`, `;`, `|`, real newline, AND the JSON-
+# escaped two-char `\n` literal that arrives via the hook's sed-extracted
+# COMMAND value (the hook does not JSON-decode). Restores the cd-chain
+# semantics the OLD bare-substring whole-buffer regex provided
+# (e.g., `cd /tmp/wt && git commit -m foo` matches) on top of the
+# first-token-anchored is_git_subcommand core.
+is_git_subcommand_in_chain() {
+  local cmd="$1"
+  local want_sub="$2"
+  # Replace shell-segment boundaries with newlines, then iterate.
+  # Handles: && || ; | (real boundaries), literal newline (multi-line
+  # commands), AND the JSON-escaped literal two-char `\n` (which arrives
+  # this way because the hook does not JSON-decode — sed-extracted
+  # values preserve the backslash-n).
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_git_subcommand "$seg" "$want_sub"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+
+# Returns 0 iff ANY shell segment of $cmd is a destructive invocation matching
+# `is_destruct_command "$seg" "$want_first" "$flag_match"`. Same segment-split
+# rules as is_git_subcommand_in_chain. Restores cd-chain semantics for
+# destructive verbs (e.g., `some_cmd && kill -9 1234` matches) on top of the
+# first-token-anchored is_destruct_command core.
+is_destruct_command_in_chain() {
+  local cmd="$1"
+  local want_first="$2"
+  local flag_match="${3:-}"
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_destruct_command "$seg" "$want_first" "$flag_match"; then
+      return 0
+    fi
+  done <<< "$normalized"
   return 1
 }
