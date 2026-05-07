@@ -235,7 +235,7 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Foundations (helper + schema + conformance + hook fence) | 🟡 In Progress | `5b9f150` | | single-commit phase |
+| 1 — Foundations (helper + schema + conformance + hook fence) | ✅ Done | `5b9f150` | | single-commit phase |
 | 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit | ⬜ | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
 | 2a — Bash writer migration (excluding `/run-plan`) | ⬜ | | one commit; 12 `skills/` + 2 `block-diagram/` = 14 skills total |
 | 2b — `/run-plan` writer migration + CANARY1 gate | ⬜ | | self-migration hazard isolated; one commit |
