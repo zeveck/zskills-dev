@@ -274,6 +274,131 @@ SINGLE commit. The conformance test from this phase will fail on every
 unmigrated `skills/`-resident writer/reader, which is the gating signal
 Phases 2a/2b/3 unwind.
 
+### Cross-cutting versioning discipline (applies to Phases 1, 1b, 2a, 2b, 3, 4, 5a, 5b, 6)
+
+**Every phase that edits a file under `skills/<X>/` or `block-diagram/<X>/`
+MUST bump that skill's `metadata.version` in the SAME commit.** Per
+CLAUDE.md "## Skill versioning" + PR #193's `hooks/block-stale-skill-version.sh`
+PreToolUse backstop, an unbumped skill blocks every `git commit` with a
+deny envelope (orchestrator AND verifier subagent — Anthropic-documented
+additive hook composition). A missed bump costs every phase 1+ recovery
+turn.
+
+Per-skill-touched bump recipe (run BEFORE staging the commit, AFTER the
+skill body edits are complete — the recipe handles the mirror as its
+final step; `skill-content-hash.sh` reads the SOURCE dir, so the hash
+must be computed POST-edit and PRE-mirror, which is the exact ordering
+below):
+
+```bash
+TODAY=$(TZ=America/New_York date +%Y.%m.%d)
+HASH=$(bash scripts/skill-content-hash.sh skills/<X>)   # or block-diagram/<X>
+bash scripts/frontmatter-set.sh skills/<X>/SKILL.md \
+  metadata.version "$TODAY+$HASH"
+# Mirror — bump applies to the .claude/skills/<X>/SKILL.md copy too:
+bash scripts/mirror-skill.sh <X>
+```
+
+Per-phase AC (every phase below references back to this section):
+- For each touched skill, the implementer-AND-verifier asserts
+  `bash scripts/skill-version-compare.sh "$PRE" "$POST"` exits 0 (PR #200
+  same-day-bump comparator: `date(new) >= date(old) AND (date(new) >
+  date(old) OR hash(new) != hash(old))`). NO hand-rolled
+  `[[ "$NEW_DATE" > "$OLD_DATE" ]]` checks — the comparator is the
+  source of truth.
+- The pre-edit `metadata.version` value is captured in the verifier
+  report (read via `awk '/^metadata:/{f=1;next} f && /^  version:/{print
+  $2; exit}' skills/<X>/SKILL.md | tr -d '"'` BEFORE first edit).
+- Phase commit inventories (Phase 1's 12-file set, Phase 2a's 14-skill
+  set, etc.) are unchanged in file COUNT — bumps are frontmatter edits
+  to already-listed SKILL.md entries — but the verifier also asserts each
+  bump separately via `skill-version-compare.sh`.
+
+**Verifier-vs-implementer split.** Implementer bumps `metadata.version`
+BEFORE staging the commit. Verifier (per `.claude/agents/verifier.md`,
+`tools: Read, Grep, Glob, Bash, Edit, Write`) asserts
+`bash scripts/skill-version-stage-check.sh` exits 0 BEFORE issuing
+`git commit`. If the deny envelope fires (PreToolUse backstop), the
+verifier reads `permissionDecisionReason` for the exact bump command and
+re-stages — recovery is inline, not a Failure-Protocol stop.
+
+**Verifier-dispatch task body MUST quote this discipline.** `.claude/agents/verifier.md`
+itself does NOT document deny-envelope recovery (verified at refinement:
+the agent definition is 29 lines and covers only `inject-bash-timeout.sh`
+and the no-sub-subagent rule). Every phase below that dispatches the
+verifier subagent (`subagent_type: "verifier"`) MUST include in the
+verifier's task body: (1) the bump recipe above, (2) the deny-envelope
+recovery flow ("read `permissionDecisionReason` for the literal
+`bash scripts/frontmatter-set.sh ...` command, run it, re-stage,
+re-issue the commit"). Without explicit propagation in the task body,
+the verifier will treat the deny as a Failure-Protocol STOP and the
+orchestrator will be forced to re-dispatch manually.
+
+**PR-mode preflight (every phase that lands in PR mode).** Before each
+phase's commit, run `bash skills/run-plan/scripts/pr-preflight.sh
+--path-prefix <touched-prefix> --exclude-pr "$PIPELINE_PR"` (PR #199);
+abort if it exits non-zero. Particularly important for phases that touch
+`skills/update-zskills/scripts/` (Phases 1, 5a, 5b, 6), `skills/run-plan/`
+(Phase 2b — issue #177's helper exists *because* `run-plan` is a
+high-traffic surface), and the 10-skill fan-out of Phase 3 (`briefing`,
+`work-on-plans`, `fix-report`, `run-plan`, `refine-plan`, `session-report`,
+`investigate`, `quickfix`, `do`, `plans` — all popular surfaces with
+likely parallel open PRs). In short: every phase below; the named lists
+are reminders, not exhaustive.
+
+**Sequential-phase ordering (same-prefix conflicts).** `--exclude-pr`
+takes ONE PR — the current phase's own PR. For sequential phases of
+THIS plan that touch overlapping prefixes (Phases 1 → 5a → 5b → 6 all
+touch `skills/update-zskills/scripts/`), the earlier phase's PR must
+already be merged before the next phase runs preflight; otherwise the
+preflight will (correctly) flag the still-open earlier-phase PR as a
+parallel writer. Operate sequentially: do not dispatch Phase 5a until
+Phase 1 has merged, do not dispatch Phase 5b until Phase 5a has merged,
+etc. (Phases 2a/2b/3/4 touch disjoint prefixes from
+`skills/update-zskills/`, so they may run in parallel with Phase 1's
+merge wait.)
+
+**Touched skills per phase** (use as a checklist for the bump recipe):
+- Phase 1: `update-zskills`
+- Phase 1b: `update-zskills` (script-ownership row update). Note: §1b.1
+  creates `.claude/skills/add-block` and `.claude/skills/add-example`
+  mirror destinations but does NOT edit the source `block-diagram/<X>/SKILL.md`
+  files, so no `add-block`/`add-example` bump in 1b.1. If §1b.2's audit
+  classification ends up editing a source skill body (changing prose, not
+  just the table row in `script-ownership.md`), bump that skill — gate on
+  hash change via `bash scripts/skill-content-hash.sh skills/<X>` BEFORE
+  vs AFTER, never reflexively.
+- Phase 2a: `qe-audit`, `plans`, `draft-plan`, `draft-tests`, `refine-plan`,
+  `research-and-plan`, `research-and-go`, `fix-issues`, `fix-report`,
+  `verify-changes`, `work-on-plans`, `briefing`, plus block-diagram
+  `add-example`, `add-block` — 14 bumps
+- Phase 2b: `run-plan` — 1 bump
+- Phase 3: `briefing`, `work-on-plans`, `fix-report`, `run-plan`,
+  `refine-plan`, `session-report`, `investigate`, `quickfix`, `do`,
+  `plans` — UP TO 10 bumps; bump ONLY skills whose Phase 3 work item
+  produced an actual content edit. Several Phase 3 sub-steps (notably
+  §§3.3, 3.4, 3.5) are conditional reads documented as "already covered
+  by Phase 2a — verify residual reads" and may produce zero edits if 2a
+  fully covered the writers. Per `skill-version-stage-check.sh` lines
+  ~107 (symmetric "version bumped, content unchanged" → STOP),
+  reflexively bumping a no-op skill produces an over-bump deny, which is
+  the same user-visible failure as a missed bump. Gate: per skill, run
+  `bash scripts/skill-content-hash.sh skills/<X>` BEFORE Phase 3 edits;
+  after edits, re-hash; bump iff the hash changed. Same-day overlap with
+  2a means the comparator (`skill-version-compare.sh`) requires a hash
+  change to accept the bump anyway — content-truthful bumping aligns with
+  both gates.
+- Phase 4: `briefing`, `zskills-dashboard` — 2 bumps
+- Phase 5a: `update-zskills` — 1 bump
+- Phase 5b: `update-zskills` — 1 bump
+- Phase 5b note: 5b's `cross_ref_rewrite` operates on **plan files only**
+  (under `<TARGET_PLANS>/`), and plan-file frontmatter does NOT carry
+  `metadata.version`. The rewrite cannot trigger any additional skill
+  bumps beyond `update-zskills` itself. Exactly 1 bump.
+- Phase 6: `update-zskills` — 1 bump (the same plan-files-only argument
+  applies; the migration self-application rewrites cross-refs in plan
+  files, which carry no `metadata.version`).
+
 ### Work Items
 
 - [ ] **1.1 — Pre-flight mirror parity check.** Before any edit, run
@@ -308,10 +433,11 @@ Phases 2a/2b/3 unwind.
 - [ ] **1.4 — Add a forward-protection comment in `update-zskills` SKILL.md
   near the existing backfill section.** Verify the location BEFORE editing:
   `grep -n "backfill" skills/update-zskills/SKILL.md` returns multiple hits
-  (271, 283, 287, 300, 303, 1019, 1159, 1536, 1558). Insert the
-  forward-protection comment as a sub-bullet immediately AFTER the
-  `commit.co_author` backfill block (the block ending around line 303 — the
-  implementer re-derives via grep). Wording:
+  (research-time live: 271, 277, 283, 286, 287, 300, 303, 1023, 1159, 1571,
+  1593 — 11 hits). Insert the forward-protection comment as a sub-bullet
+  immediately AFTER the `commit.co_author` backfill block (the block ending
+  around line 303 — the implementer re-derives via grep; this anchor
+  survived recent churn). Wording:
 
   ```markdown
   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`
@@ -360,6 +486,15 @@ Phases 2a/2b/3 unwind.
   tool, schema, CHANGELOG, RELEASING). Prose-imperative hits cannot be
   escaped — the prose must be restructured.
 
+  **Marker placement is a LAST RESORT.** Per PR #200 the conformance
+  scanner's failure message itself recommends rewriting the literal to
+  `$VAR` form FIRST (verified live at `tests/test-skill-conformance.sh:1112`:
+  "Replace with `$VAR` (preferred), OR add on the line ABOVE this bullet:
+  `<!-- allow-hardcoded: $literal reason: <why> -->`"). Phase 2a
+  (§"Allow-hardcoded escapes are a last resort" sub-section below) inherits
+  this guidance: add a marker only when `$VAR` rewrite is genuinely
+  impossible (fenced examples, schema literals, CHANGELOG entries, etc.).
+
   Pre-flight: count actual current violations by running the conformance
   suite once with the new fixture but BEFORE any migration:
 
@@ -378,7 +513,9 @@ Phases 2a/2b/3 unwind.
   etc. Implementer derives the contribution counts at Phase 1b audit
   time by grepping each affected skill in isolation.
 
-- [ ] **1.6 — Broaden `hooks/block-unsafe-project.sh.template:201`.** Change
+- [ ] **1.6 — Broaden `hooks/block-unsafe-project.sh.template` (research-time
+  line 273; PR #197 inserted ~70 lines of chain-wrapper logic before this
+  anchor — re-derive via `grep -n '\.zskills/tracking' hooks/block-unsafe-project.sh.template`).** Change
   the literal anchor `\.zskills/tracking` → `\.zskills`. Update the
   `block_with_reason` message to mention the broader scope. Verified safe:
   the regex requires a recursive-flag token (`-[a-zA-Z]*[rR][a-zA-Z]*` or
@@ -392,8 +529,10 @@ Phases 2a/2b/3 unwind.
   source of truth.
 
 - [ ] **1.7 — Add hook regression cases to `tests/test-hooks.sh`.** Five
-  new cases modeled on the existing `test-hooks.sh:1990-2013` `mktemp`
-  fixture pattern:
+  new cases modeled on the existing `tests/test-hooks.sh:512-633`
+  `expect_project_deny`/`expect_project_allow` pattern (see e.g. the
+  existing `expect_project_deny "rm -rf .zskills/tracking"` at live line
+  610 — re-derive via `grep -n 'expect_project_deny.*\.zskills' tests/test-hooks.sh`):
   - `rm -rf .zskills/issues` — must BLOCK (broadened scope catches the
     new sibling dir).
   - `rm -rf .zskills/audit` — must BLOCK (broadened scope catches the
@@ -497,6 +636,16 @@ Phases 2a/2b/3 unwind.
   - `tests/run-all.sh` (modified — registration line)
 
   ~12 files. Verifier asserts this exact set.
+
+  **Versioning bump (per Cross-cutting versioning discipline above).** The
+  `update-zskills` skill is touched (1.4 backfill comment; potentially 1.2
+  via the new helper file in the skill's `scripts/` subdir). Bump
+  `metadata.version` per the recipe; the bump is a frontmatter edit to the
+  already-listed `skills/update-zskills/SKILL.md` and its mirror — it does
+  NOT change the 12-file count. Verifier additionally asserts `bash
+  scripts/skill-version-compare.sh "$PRE_VERSION" "$POST_VERSION"` exits 0
+  (read PRE before any edit; read POST from the staged file before
+  commit).
 
   **Note** (round-3 reviewer F7): `.claude/zskills-config.schema.json` is
   NOT in this commit. It is re-rendered from
@@ -613,11 +762,16 @@ plans_dir = os.environ["ZSKILLS_PLANS_DIR"]
 PY
 ```
 
-This pattern is enforced at every Python-embed site by an explicit grep
-AC in Phase 2a.10's owning work item:
-`grep -A3 'source.*zskills-paths\.sh' skills/work-on-plans/SKILL.md | grep -c 'export ZSKILLS_PLANS_DIR'`
-must equal the count of Python embeds (re-derived at edit time via
-`grep -c '^python3 - <<' skills/work-on-plans/SKILL.md`).
+This pattern is enforced at every TOP-LEVEL Python-embed site by an
+explicit grep AC in Phase 2a.10's owning work item: each top-level
+heredoc (re-derived via
+`grep -cE 'python3[[:space:]]+-([[:space:]]+"[^"]+")*[[:space:]]+<<' skills/work-on-plans/SKILL.md`,
+research-time count 11; helper-internal sites inherit their wrapper's
+exports) must be preceded within its wrapping bash fence by a `source
+.../zskills-paths.sh` line followed by `export ZSKILLS_PLANS_DIR …`.
+NOTE: the literal regex `^python3 - <<` matches ZERO lines on the live
+file (the actual idiom is `python3 - "$ARG" <<'PY'`). Use the working
+regex above.
 
 Caller pattern at every CALL SITE (default — main-mode, no child process):
 
@@ -742,7 +896,9 @@ grep -rn "allow-hardcoded:" skills/update-zskills/SKILL.md skills/update-zskills
 ```
 and reports the count. Phase 5a/5b ACs verify the exact counts above.
 
-**Hook regex change (`hooks/block-unsafe-project.sh.template:201`):**
+**Hook regex change (`hooks/block-unsafe-project.sh.template:273` —
+PR #197 chain-wrappers shifted the live anchor; re-derive at edit time
+via `grep -n '\.zskills/tracking' hooks/block-unsafe-project.sh.template`):**
 
 Before:
 ```
@@ -798,9 +954,11 @@ rule (intended).
 - [ ] All other tests in `tests/run-all.sh` green. Verifier runs
   `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` and reads
   the file. The failure list is exactly the conformance-fixture set.
-- [ ] `hooks/block-unsafe-project.sh.template:201` regex contains
-  `\.zskills` (not `\.zskills/tracking`). `tests/test-hooks.sh` count
-  increased by exactly 5 (per 1.7).
+- [ ] `hooks/block-unsafe-project.sh.template:273` regex contains
+  `\.zskills` (not `\.zskills/tracking`) — re-derive line via
+  `grep -n '\.zskills/tracking' hooks/block-unsafe-project.sh.template`
+  (PR #197 chain-wrappers shifted from research-time `:201`).
+  `tests/test-hooks.sh` count increased by exactly 5 (per 1.7).
 - [ ] `skills/update-zskills/SKILL.md` contains the `Path-config keys are
   EXEMPT from auto-backfill` block (single line via grep) AT or AFTER the
   existing Step B / `co_author` backfill section. The literal
@@ -876,7 +1034,8 @@ ergonomics flagged in round-2 reviewer F11.
 
   **EXTEND existing `tests/test-mirror-skill.sh`** (verified at
   refinement time: file exists at 199 lines with 8 cases, registered in
-  `tests/run-all.sh:73`; cases run inside isolated fixture repos under
+  `tests/run-all.sh` at live line 78 — re-derive via
+  `grep -n 'test-mirror-skill' tests/run-all.sh`; cases run inside isolated fixture repos under
   `/tmp/zskills-mirror-test-<label>-$$/` per the existing
   `make_fixture` helper, so they are idempotent and do not mutate the
   real `.claude/skills/qe-audit/`). Re-derive existing case count BEFORE
@@ -897,7 +1056,7 @@ ergonomics flagged in round-2 reviewer F11.
   must NOT create a `.claude/skills/block-diagram/` parent — the DST is
   `.claude/skills/<basename>`). The new case lands as `# --- Test 9`
   appended at the bottom; `tests/run-all.sh` registration is unchanged
-  (already registered at line 73).
+  (already registered — re-derive via `grep -n 'test-mirror-skill' tests/run-all.sh`).
 
   Do NOT use `Write` to overwrite the existing file — the implementer
   uses `Edit` to append the new case.
@@ -1053,7 +1212,7 @@ ergonomics flagged in round-2 reviewer F11.
   - `.claude/skills/add-block/` (NEW — mirror destinations)
   - `.claude/skills/add-example/` (NEW — mirror destinations)
   - `tests/test-mirror-skill.sh` (modified — file exists with 8 cases at refinement; this commit appends Case 9 for `block-diagram/<name>` resolution)
-  - `tests/run-all.sh` — UNCHANGED (test-mirror-skill.sh already registered at line 73; do NOT re-add)
+  - `tests/run-all.sh` — UNCHANGED (test-mirror-skill.sh already registered at line 78 — re-derive via `grep -n 'test-mirror-skill' tests/run-all.sh`; do NOT re-add)
   - `docs/AUDIT-PR-MODE-RESOLUTION.md` (NEW)
 
   Verifier asserts `git log -1 --stat` matches.
@@ -1162,8 +1321,9 @@ provided below in lieu of trusting fixed line numbers).
 
 - [ ] **2a.4 — `/plans`.** `skills/plans/SKILL.md` — re-derive via
   `grep -n 'PLAN_INDEX.md\|plans/blocks/' skills/plans/SKILL.md`. Replace
-  `PLAN_INDEX.md` site references (research-time count: 9 at 14, 84, 105,
-  204, 219, 272, 370, 408, 519) with `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
+  `PLAN_INDEX.md` site references (research-time count: 8 at 14, 84, 105,
+  204, 219, 272, 370, 408 — file is 417 lines so prior cited "519" was
+  past EOF; drop it) with `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
   (PLAN_INDEX is a regenerated index; Tier 2; lives in audit alongside
   PLAN_REPORT.md and VERIFICATION_REPORT.md, NOT in plans_dir).
   Source helper in any bash fence. The `Skip plans/blocks/ subdirectories`
@@ -1204,7 +1364,9 @@ provided below in lieu of trusting fixed line numbers).
 
 - [ ] **2a.7 — `/fix-issues`.** Re-derive via
   `grep -rn 'SPRINT_REPORT\|ISSUES_PLAN\|plans/.*ISSUES' skills/fix-issues/`:
-  - 13 SPRINT_REPORT.md prose references → `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+  - 12 SPRINT_REPORT.md prose references (research-time count from
+    `grep -c SPRINT_REPORT skills/fix-issues/SKILL.md`; re-derive at edit
+    time) → `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
   - 5 ISSUES_PLAN / `plans/*ISSUES*.md` glob references — update to
     `$ZSKILLS_ISSUES_DIR/*ISSUES*.md` (lines 517, 521, 536) and
     `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md` elsewhere.
@@ -1215,7 +1377,10 @@ provided below in lieu of trusting fixed line numbers).
 
 - [ ] **2a.8 — `/fix-report`.** Re-derive via
   `grep -n 'SPRINT_REPORT\|FIX_REPORT' skills/fix-report/SKILL.md`:
-  - 9 SPRINT_REPORT.md, 4 FIX_REPORT.md prose references → audit dir.
+  - 8 SPRINT_REPORT.md, 4 FIX_REPORT.md prose references (research-time
+    counts from `grep -c SPRINT_REPORT skills/fix-report/SKILL.md` and
+    `grep -c FIX_REPORT skills/fix-report/SKILL.md`; re-derive at edit
+    time) → audit dir.
   - Locked Decision 12 prerequisite: viewer-URL refs in
     `skills/fix-report/SKILL.md` and `skills/briefing/` are removed by the
     cleanup-branch BEFORE Phase 4. Phase 2a does NOT touch viewer URLs;
@@ -1239,8 +1404,13 @@ provided below in lieu of trusting fixed line numbers).
     (`.zskills/work-on-plans-state.json` is fixed).
   - Lines 661, 1160 — `reports/work-on-plans-<sprint-id>.md` →
     `$ZSKILLS_AUDIT_DIR/work-on-plans-<sprint-id>.md`.
-  - **Embedded Python — env-var pass (DECIDED).** Sites at lines 193, 222,
-    254, 258, 748, 775. The wrapping bash fence MUST `export
+  - **Embedded Python — env-var pass (DECIDED).** Re-derive sites at edit
+    time via `grep -nE 'python3[[:space:]]+-([[:space:]]+"[^"]+")*[[:space:]]+<<|python3[[:space:]]+-c' skills/work-on-plans/SKILL.md`
+    (research-time count: 13 sites — 11 `<<'PY'` heredocs at 188, 318, 349,
+    419, 550, 685, 743 (top-level) + 878, 925, 961, 996 (helper-internal) and
+    2 `python3 -c` invocations at 296, 828; helper-internal sites inherit
+    exports from their dispatching wrapper, so the contract is enforced
+    per-top-level-fence). The wrapping bash fence MUST `export
     ZSKILLS_PLANS_DIR` immediately after sourcing the helper (per Phase 1
     Design & Constraints — helper does NOT export; caller must). The
     Python block reads via `os.environ.get("ZSKILLS_PLANS_DIR")` and fails
@@ -1258,10 +1428,16 @@ provided below in lieu of trusting fixed line numbers).
     PY
     ```
 
-    AC: `grep -A3 'source.*zskills-paths\.sh' skills/work-on-plans/SKILL.md
-    | grep -c 'export ZSKILLS_PLANS_DIR'` matches the count of Python
-    embeds (re-derived via `grep -c "^python3 - <<" skills/work-on-plans/SKILL.md`,
-    expected count: 6). Add a Phase 1 §1.8-style helper-test case (case 9
+    AC: For each TOP-LEVEL python embed site (the 7 at 188, 318, 349, 419,
+    550, 685, 743 — re-derive at edit time), the wrapping bash fence's
+    preceding `source` line is followed within ±5 lines by `export
+    ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR`. Verifier
+    enumerates the 7 top-level sites; the 4 helper-internal embeds (878,
+    925, 961, 996) inherit from their dispatching wrapper and are NOT
+    re-counted. Re-derive the working regex via `grep -cE 'python3[[:space:]]+-([[:space:]]+"[^"]+")*[[:space:]]+<<' skills/work-on-plans/SKILL.md`
+    (expected: 11 heredocs); separate AC for the 2 `python3 -c` sites:
+    `grep -cE "python3[[:space:]]+-c" skills/work-on-plans/SKILL.md`
+    (expected: 2). Add a Phase 1 §1.8-style helper-test case (case 9
     already covers "vars NOT exported by helper itself"; this is enforced
     at the SKILL.md level via grep AC, not unit test).
 
@@ -1276,9 +1452,10 @@ provided below in lieu of trusting fixed line numbers).
 
 - [ ] **2a.11 — `/briefing report` writer side.** `skills/briefing/SKILL.md`
   — re-derive via
-  `grep -n 'reports/\|reports directory' skills/briefing/SKILL.md`. Lines
-  81-area ("write it to reports/") and 374-area ("Missing reports/
-  directory — created automatically") — update to `$ZSKILLS_AUDIT_DIR`.
+  `grep -n 'reports/\|reports directory' skills/briefing/SKILL.md`. Research-
+  time anchors near line 81-area ("write it to reports/") and 368-area
+  ("Missing reports/ directory — created automatically"; prior cited 374
+  drifted) — re-derive at edit time; update to `$ZSKILLS_AUDIT_DIR`.
   (Note: `briefing.cjs`/`briefing.py` themselves are Phase 4. Here we only
   touch SKILL.md prose.) Mirror.
 
@@ -1398,12 +1575,18 @@ phase that dispatches via `/run-plan`).
 
 - [ ] **2b.1 — `/run-plan` (writer side).** Re-derive sites via
   `grep -n 'SPRINT_REPORT\|PLAN_REPORT\|reports/plan-\|reports/verify-' skills/run-plan/SKILL.md skills/run-plan/modes/*.md skills/run-plan/references/*.md`:
-  - SPRINT_REPORT.md updates (already-landed handling) at anchors 2083,
-    2085, 2094 → `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.
-  - PLAN_REPORT.md regen at anchors 1150, 1836, 1839 → `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md`.
+  - SPRINT_REPORT.md updates (already-landed handling) at research-time
+    anchors 2117, 2119, 2128 (re-derive at edit time — PRs #195/#197 chain-
+    wrapper inserts shifted prior 2083/2085/2094 by ~33) →
+    `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.
+  - PLAN_REPORT.md regen at research-time anchors 1184, 1870, 1873 (prior
+    1150/1836/1839 drifted ~30 lines) →
+    `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md`.
   - `reports/plan-{slug}.md` writes throughout (≈14 prose hits + bash
-    fences in `modes/cherry-pick.md` lines 18, 152, 156 and `modes/pr.md`
-    lines 182, 189, 237) → `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
+    fences in `modes/cherry-pick.md` and `modes/pr.md` — re-derive line
+    anchors at edit time; prior cited cherry-pick.md lines 18/152/156 and
+    pr.md lines 182/189/237 are research-time anchors that may have
+    drifted) → `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
   - `reports/verify-worktree-...md` reads (`modes/cherry-pick.md:18`) →
     use `$ZSKILLS_AUDIT_DIR/verify-worktree-...md`.
   - `references/failure-protocol.md` lines 50, 81 — template `**Plan:**
@@ -1453,8 +1636,11 @@ phase that dispatches via `/run-plan`).
   /run-plan plans/CANARY1_HAPPY.md finish auto pr
   ```
 
-  (Pre-self-migration the path is still `plans/...`; post-self-migration
-  it would be `docs/plans/...` — Phase 6 handles that flip.) Asserts:
+  (Pre-self-migration the path is still literal `plans/...` — this is the
+  only place the literal appears in CANARY1 because the orchestrator types
+  the slash-command directly. Post-self-migration the canonical equivalent
+  is `$ZSKILLS_PLANS_DIR/CANARY1_HAPPY.md` resolved via the helper, which
+  Phase 6 §6.2's auto-canary recipe uses.) Asserts:
   (a) plan file resolves correctly via the helper, (b)
   `plan-canary1-happy.md` written under `$ZSKILLS_AUDIT_DIR`, (c) tracker
   updates commit on feature branch in PR mode, (d) verifier report cites
@@ -1509,9 +1695,11 @@ and `scripts/build-prod.sh`.
   scan is going away (those files all live under `$ZSKILLS_AUDIT_DIR`
   post-migration). Re-derive via
   `grep -n 'FIX_REPORT\|VERIFICATION_REPORT\|SPRINT_REPORT' skills/briefing/SKILL.md`.
-  Update prose around 142, 143, 159, 160 — example output snippets
-  reference report filenames. Keep the filenames in the example but
-  rewrite the surrounding path prose. Mirror.
+  Update prose around research-time anchors 136, 137, 153, 154 (and 368
+  for the "Missing reports/" prose) — prior cited 142/143/159/160 drifted
+  ~6 lines; re-derive at edit time. Example output snippets reference
+  report filenames; keep the filenames in the example but rewrite the
+  surrounding path prose. Mirror.
 
   **Note:** `briefing.cjs` and `briefing.py` themselves are Phase 4.
 
@@ -1649,6 +1837,11 @@ and `scripts/build-prod.sh`.
     && echo seed > .seed && git add -A && git commit -qm init )
   # Create a real worktree at $fwt on a feature branch — exercises invariants #2/#3
   ( cd "$fmain" && git worktree add -b smoke-feature "$fwt" )
+  # Cleanup trap — ensure repeat runs don't fail on stale registry entries.
+  # || true is acceptable here ONLY because the worktree may not exist on
+  # a clean run (per feedback_or_true_pattern's allowed exception); on an
+  # interrupted prior run we want the trap to converge silently.
+  trap '( cd "$fmain" 2>/dev/null && git worktree remove --force "$fwt" 2>&1 || true )' EXIT
   mkdir -p "$fwt/.zskills/audit" "$fwt/.claude/skills/update-zskills/scripts"
   cp skills/update-zskills/scripts/zskills-paths.sh \
      "$fwt/.claude/skills/update-zskills/scripts/zskills-paths.sh"
@@ -1708,6 +1901,14 @@ and `scripts/build-prod.sh`.
   `.claude/skills/update-zskills/scripts/zskills-paths.sh` are PRESENT in
   the produced artifact tree (the helper must NOT be classified dev-only
   or stripped).
+
+  **Phase 1b.3's `block-diagram/*/SKILL.md` glob fix is a prerequisite for
+  this AC.** The live `scripts/build-prod.sh` line 81 contains the broken
+  glob `block-diagram/skills/*/SKILL.md` (live verified). Without 1b.3's
+  fix to `block-diagram/*/SKILL.md`, the build silently produces empty
+  matches for the block-diagram tree, and the helper-presence assertion
+  for any block-diagram skill is a false negative. Cross-link: do not run
+  this Phase 3.10 AC unless Phase 1b.3 has landed.
 
 - [ ] **3.11 — Test fixture references.**
 
@@ -1837,6 +2038,14 @@ reimplementations in lockstep, plus the dashboard server's Python
 ### Work Items
 
 - [ ] **4.0 — Verify cleanup-branch prerequisite (Locked Decision 12).**
+  **Status at refinement (round 2, 2026-05-07):** PR #196
+  (`6d83778 chore(briefing,fix-report): remove Zimulink viewer URL
+  references`) has merged to main and satisfies LD-12; the grep below is
+  a defensive re-check against regression in the leak window between
+  refinement and dispatch, NOT a true BLOCKER as of 2026-05-07. Run the
+  re-check anyway — a commit landing between refinement and Phase 4
+  dispatch could re-introduce a viewer URL.
+
   BEFORE any other Phase 4 work, run:
 
   ```bash
@@ -1910,20 +2119,25 @@ reimplementations in lockstep, plus the dashboard server's Python
 - [ ] **4.2 — Replace `briefing.cjs` literals.** Re-derive via
   `grep -n "'reports'\|'plans'\|reports/\|plans/" skills/briefing/scripts/briefing.cjs`.
   Every `path.join(mainPath, 'reports')` → `paths.auditDir`. Every
-  `path.join(mainPath, 'plans')` → `paths.plansDir`. Sites (research-time
-  anchors):
-  - 482-483, 485-486 (root `reports/` scan)
-  - 491-494 (root-level `*REPORT*.md` scan) — REMOVE entirely. Those files
+  `path.join(mainPath, 'plans')` → `paths.plansDir`. Site categories
+  (DO NOT trust prior research-time line numbers — every cited anchor
+  482-483 / 491-494 / 1298 / 1302 / 1309-1310 / 1316-1319 / 1407 /
+  1445-1456 / 1490-1494 / 1500-1512 / 1591-1620 / 1868 / 1886-1895 / 784 /
+  1080 has drifted by 10-30 lines per recent churn; verified live anchors
+  at refinement: 482, 1283, 1284, 1420, 1565, 1842, 1860 — re-derive at
+  edit time per the recipe above):
+  - root `reports/` scan (verified 482)
+  - root-level `*REPORT*.md` scan — REMOVE entirely. Those files
     now live under `paths.auditDir`. Merge into the audit-dir scan.
-  - 1298, 1302, 1309-1310 (`scanPlans` function)
-  - 1316-1319 (enumerate plans)
-  - 1407 (`reportPath`)
-  - 1445-1456 (briefing reports check)
-  - 1490-1494, 1500-1512 (`preserveCheckboxes`)
-  - 1591-1620 (root-level `*REPORT*.md` — REMOVE root scan)
-  - 1868 ("Plan ${t} complete but no report in reports/") — update message
-  - 1886-1895 (mkdir + write briefing report)
-  - 784, 1080 — `// Filter out VERIFICATION_REPORT` filter is fine; the
+  - `scanPlans` function (verified 1283-1284)
+  - enumerate plans
+  - `reportPath` (verified 1420)
+  - briefing reports check
+  - `preserveCheckboxes` (verified 1565)
+  - root-level `*REPORT*.md` — REMOVE root scan
+  - "Plan ${t} complete but no report in reports/" message (verified 1842)
+  - mkdir + write briefing report (verified 1860)
+  - `// Filter out VERIFICATION_REPORT` filter is fine; the
     filename itself is unchanged.
 
   Viewer-URL sites in `briefing.cjs`, `briefing.py`, `briefing/SKILL.md`,
@@ -1961,19 +2175,21 @@ reimplementations in lockstep, plus the dashboard server's Python
 
 - [ ] **4.4 — Replace `briefing.py` literals.** Re-derive via
   `grep -n "'reports'\|'plans'\|reports/\|plans/" skills/briefing/scripts/briefing.py`.
-  Same sites as 4.2 but in Python (research-time anchors):
-  - 476-481 (reports_dir enumeration)
-  - 485-488 (root-level scan — REMOVE)
-  - 537-542 (`scan_plans`)
-  - 544 (glob plans)
-  - 619 (`report_path`)
-  - 853 (`# Filter out VERIFICATION_REPORT`)
-  - 950, 962, 966 (`generate_report_path`)
-  - 1303-1314 (briefing reports)
-  - 1344-1363 (`preserve_checkboxes`)
-  - 1432-1460 (REMOVE root-level scan)
-  - 1672 (warning message)
-  - 1684-1695 (output write).
+  Same site categories as 4.2 but in Python (DO NOT trust prior research-
+  time line numbers — verified live anchors at refinement: 476, 538, 541,
+  542, 1280, 1408, 1648, 1660; re-derive at edit time):
+  - reports_dir enumeration (verified 476)
+  - root-level scan — REMOVE
+  - `scan_plans` (verified 538, 541, 542)
+  - glob plans
+  - `report_path`
+  - `# Filter out VERIFICATION_REPORT` (filter unchanged)
+  - `generate_report_path`
+  - briefing reports (verified 1280, 1408)
+  - `preserve_checkboxes`
+  - REMOVE root-level scan
+  - warning message (verified 1648)
+  - output write (verified 1660).
 
   Viewer-URL sites — handled by cleanup-branch prerequisite, verified in
   4.0 (do not re-cite line numbers; per round-2 reviewer F3).
@@ -2014,7 +2230,9 @@ reimplementations in lockstep, plus the dashboard server's Python
     → use the resolved `audit_dir`.
   - anchors 1093, 1097 (`plans_dir = main_root / "plans"` and
     `plans_dir.glob("*.md")`).
-  - anchor 1201 (second `plans_dir.glob`).
+  - second `plans_dir = main_root / "plans"` at research-time anchor 1199
+    (prior cited 1201 drifted by 2; re-derive via
+    `grep -n 'plans_dir = main_root' skills/zskills-dashboard/scripts/zskills_monitor/collect.py`).
   - anchor 582 — relative-to-main path emission unchanged in shape, but
     verify the new path string is what the UI displays (`app.js:1514-1517`).
 
@@ -2536,17 +2754,24 @@ stop-dev.sh).
       printf '%s\n' "$line" >> "$out_file"
     done < "$file"
     # Preserve original file mode/owner across the swap (round-3
-    # reviewer F10): mktemp produces 0600; markdown plans are 0644 in
-    # tracked state. `chmod --reference` is Linux-only — the `|| true`
-    # is acceptable because absence (e.g., macOS) means the file gets
-    # 0600 once and `git add` normalizes on commit. Also reject
-    # symlinked plans defensively (plans should not be symlinks).
+    # reviewer F10; round-2 DA D2): mktemp produces 0600; markdown plans
+    # are 0644 in tracked state. `chmod --reference` is Linux-only. The
+    # earlier annotation claimed "git add normalizes on commit" — that
+    # is **empirically false**: git tracks only the executable bit
+    # (100644 vs 100755) and does NOT normalize 0600 → 0644 in either
+    # the working tree or the index. On macOS where `--reference` fails,
+    # the silent `|| true` would leave plan files 0600 in the working
+    # tree, which can break editor / file-server / build-tool
+    # expectations downstream. Use an explicit fallback: try
+    # `--reference` first, fall back to `chmod 644` when it fails. Also
+    # reject symlinked plans defensively (plans should not be symlinks).
     if [ -L "$file" ]; then
       echo "WARN: cross_ref_rewrite skipping symlink: $file" >&2
       rm -f "$out_file"
       return 0
     fi
-    chmod --reference="$file" "$out_file" 2>/dev/null || true
+    chmod --reference="$file" "$out_file" 2>/dev/null \
+      || chmod 644 "$out_file"
     mv "$out_file" "$file"
   }
   ```
@@ -2854,6 +3079,15 @@ stop-dev.sh).
     AND a NEGATIVE case (precondition enforcement): a pristine fixture
     WITHOUT `.pre-paths-migration` invoked with `--rewrite-only` exits
     non-zero with stderr containing "no prior migration to rewrite."
+  - **Case 11 (round-2 DA D2): macOS `chmod --reference` fallback.**
+    Either run on macOS, OR mock `chmod --reference` to fail (e.g.,
+    prepend a shim PATH entry whose `chmod` exits 2 when given
+    `--reference=`), OR set the source plan via `mktemp -m 600` to force
+    the post-rewrite mode to differ. Assert: after
+    `cross_ref_rewrite`-driven migration, the rewritten plan's mode is
+    `0644` (`stat -c '%a' "$file"` returns `644` on Linux; macOS-equivalent
+    `stat -f '%Lp' "$file"` returns `644`). This pins the explicit
+    `chmod 644` fallback added per D2.
 
   **Per-fence allow-hardcoded markers added to update-zskills/SKILL.md**
   during 5b: 4 markers (one per cross-ref-rewrite algorithm fence). AC:
@@ -2930,7 +3164,32 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
 ### Work Items
 
 - [ ] **6.1 — Apply `--migrate-paths` to zskills.** From a feature branch
-  (NOT main). BEFORE running:
+  (NOT main).
+
+  **Cron-fired `/run-plan` orchestrator MUST cancel its cron BEFORE this
+  step's commit (round-2 DA D1).** `/run-plan`'s `PLAN_FILE_FOR_READ`
+  (see `skills/run-plan/SKILL.md` Phase 1 "Read authority" section)
+  re-derives the plan path on every cron-fired re-entry from the LITERAL
+  `<plan-file>` arg captured in the cron prompt — joined with
+  `$MAIN_ROOT` or `$PR_WORKTREE_PATH`. After Phase 6.1 lands the
+  `git mv plans/ZSKILLS_PATH_CONFIG.md docs/plans/ZSKILLS_PATH_CONFIG.md`,
+  the next cron turn's read of the literal `plans/...` arg returns
+  file-not-found and the orchestrator stalls. Operating sequence:
+
+  1. **Pre-commit:** invoke `/run-plan stop` (or `CronList` → `CronDelete`
+     of the matching `/run-plan finish auto pr <plan-file>` job) so no
+     fresh re-entry can fire mid-rename.
+  2. Run §6.1's commit (the `git mv` lands).
+  3. **Post-commit:** re-issue the cron with the new path
+     (`docs/plans/ZSKILLS_PATH_CONFIG.md`) by invoking `/run-plan` afresh
+     against the migrated file — the new schedule's prompt embeds the
+     post-move arg.
+
+  Verifier asserts no `/run-plan` cron with the OLD literal arg remains
+  (`CronList | grep 'plans/ZSKILLS_PATH_CONFIG.md'` returns zero hits
+  AFTER §6.1's commit).
+
+  BEFORE running:
 
   ```bash
   # Copy the active plan to /tmp so the agent has a stable read source
@@ -3143,7 +3402,8 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
     `.zskills/dev-server.pid`."
 
   - **`skills/update-zskills/SKILL.md`** — verified 4 references at
-    refinement time (lines 550, 929, 1110, 1119). Re-derive via
+    refinement time (research-time anchors 550, 932, 1114, 1123 — prior
+    cited 929/1110/1119 drifted ~3 lines). Re-derive via
     `grep -n 'var/dev' skills/update-zskills/SKILL.md` and rewrite
     each `var/dev.pid` (and `var/dev.log` if present) to
     `.zskills/dev-server.pid` (or `.log`) IN PROSE. Each fence containing
@@ -3358,6 +3618,115 @@ must NOT be classified dev-only.
 Phases 1, 1b, 2a, 2b, 3, 4, 5a, 5b all complete. Locked Decision 12
 prerequisite (cleanup branch merged OR user-picked abandonment-policy
 path) verified at Phase 4.
+
+---
+
+## Drift Log
+
+This plan landed on main (PR #198, `af45aa5`, 2026-05-07) as a docs-only
+artifact — no execution had begun at refinement time. All 9 phases were
+remaining (⬜). The Drift Log here therefore records **ecosystem drift
+between the plan's drafting (2026-05-06) and the /refine-plan run
+(2026-05-07)** rather than execution drift. The Plan Quality section
+below preserves the original /draft-plan history (3 rounds, 1464 → 3343
+lines) byte-identically.
+
+| Surface | At drafting (2026-05-06) | At refinement (2026-05-07) | Delta |
+|---------|--------------------------|----------------------------|-------|
+| Plan A — verifier subagent (PR #189) | landed | landed | static (cited correctly) |
+| Plan B — skill-version PreToolUse hook (PR #193) | landed | landed + LIVE deny-envelope on every `git commit` | plan now requires explicit `metadata.version` bumps + `skill-version-compare.sh` validation in every phase touching a skill |
+| Plan C — block-unsafe hardening (PR #195 + #197 chain-wrapper drift gate 4→7) | partial (pre-#197) | landed; regex shifted by ~72 lines | Phase 1 §1.6 + ACs re-anchored from `:201` → `:273` with re-derive grep |
+| Cleanup branch (PR #196 — viewer URL removal) | OPEN, prerequisite | MERGED | Locked Decision 12's (a)/(b)/(c) abandonment policy is dead text; Phase 4.0 BLOCKER reframed as defensive re-check |
+| `scripts/skill-version-compare.sh` (PR #200) | did not exist | LIVE; correct same-day-bump comparator | plan now mandates this helper for every skill-bump verification AC |
+| `skills/run-plan/scripts/pr-preflight.sh` (PR #199) | did not exist | LIVE; open-PR conflict gate | plan now invokes this in Phases 1, 1b, 2b, 3, 5a, 5b, 6 with sequential-ordering note for same-prefix PRs |
+| `tests/test-skill-conformance.sh` failure-message text (PR #200) | research-time anchor | improved messages cite allow-hardcoded marker placement; ` ```text ` fence formally documented as exemption (Appendix C) | minor — round-1 refresh sufficient |
+| `scripts/skill-version-stage-check.sh` STOP message (PR #201) | single message | distinguishes "didn't bump" vs "didn't stage bump" | recovery flow in cross-cutting subsection now references discriminator |
+| `git rev-parse --git-common-dir` repo-wide site count | "24" (Locked Decision 16) | "24" (re-verified 2026-05-07) | NO drift; Plan Quality "Remaining concern #3" claim of 26 was incorrect at finalize and is also incorrect now |
+
+Phase-content drift (executed by /refine-plan): 32 diff hunks, all in
+mutable regions (lines 267–3623). Plan grew from 3389 → 3697 lines
+(+308 lines net, mostly the new Cross-cutting versioning discipline
+subsection at line 277 and the round-2 fixes for Phase 6 self-migration
+cron-stall, Phase 5b commit-inventory, Phase 4.0 LD-12 reframing, and
+parallel-anchor refresh sweep across Phases 2b/3/4/6). No completed
+phase content existed; immutability gate was instead applied to
+non-phase sections (Overview / Locked Decisions / Out of Scope /
+Plan Quality footer) — verified byte-identical via diff at finalize.
+
+---
+
+## Plan Review
+
+**Refinement process:** `/refine-plan` with 2 rounds of adversarial
+review (reviewer + devil's advocate parallel agents per round, refiner
+with verify-before-fix discipline). User-supplied guidance directed
+focus to post-2026-05-06 ecosystem drift, specific anchor citations
+(block-unsafe template line shift, Phase 2a.10 broken Python-embed
+regex, backfill anchors, git-common-dir count, Plan Quality stale
+concerns), and integration of the new helper scripts (`pr-preflight.sh`,
+`skill-version-compare.sh`).
+
+**Convergence:** 2 rounds completed (user-budgeted). After round-2
+refiner verification, **0 confirmed-substantive issues remain.** Round
+1's refiner self-claimed convergence at round 1, but round 2's review
+caught 13 substantive issues round 1 missed (including the highest-
+impact finding D1 — Phase 6.1 self-migration cron-stall — and 4 issues
+internal to round-1's new Cross-cutting versioning discipline
+subsection). This validated the orchestrator's decision to honor the
+full 2-round budget rather than short-circuit at round 1.
+
+### Round History
+
+| Round | Reviewer findings | DA findings | Refiner outcome |
+|-------|-------------------|-------------|-----------------|
+| 1 | 40 (incl. 4 cross-cutting) | 22 | 22 Fixed + 14 Justified-judgment + 4 Plan-Review-notes (immutable); refiner consolidated DA findings into reviewer fixes (claim partially correct — round 2 caught what was missed) |
+| 2 | 3 (V2 V3 C1) | 10 (4 in cross-cutting subsection, 2 fresh, 3 architectural failure modes, 1 logged-no-action) | 11 Fixed + 1 Judgment + 3 Plan-Review-notes; orchestrator-confirmed 0 substantive remaining |
+
+### Remaining concerns (immutable-section-bound; non-blocking)
+
+These items were surfaced in review but cannot be edited away because
+they live in preserved-byte regions (lines 1–266 Locked Decisions /
+lines 3663+ Plan Quality footer). They are documented here for the
+implementing agent to handle at execution time.
+
+- **Locked Decision 7 + Locked Decision 16 (lines 61, 230 area) cite
+  `block-unsafe-project.sh.template:201`.** Live anchor at refinement
+  is **`:273`** (PR #197 inserted ~72 lines of chain-wrapper logic).
+  Phase 1 §1.6 and its AC have been updated to `:273` with a live
+  re-derive grep. Treat the immutable `:201` cites as research-time
+  anchors only.
+
+- **Locked Decision 12 (lines 86–153) — abandonment policy now dead
+  text.** PR #196 (`6d83778`) merged 2026-05-07; the cleanup branch
+  prerequisite is satisfied. Phase 4.0's BLOCKER prose has been
+  annotated in mutable content to flag this; LD-12's (a)/(b)/(c)
+  abandonment workflow is preserved as historical record but is no
+  longer reachable.
+
+- **Plan Quality "Remaining concern #3" (line 3679 area) claims live
+  `git rev-parse --git-common-dir` count was 26 at finalize.**
+  Verified at /refine-plan time: live count is **24**, matching the
+  plan body's Locked Decision 16. The "Remaining concern #3"
+  speculation about "two sites added in the period since round-2
+  research dispatch" is a verified-false-premise (also retroactively).
+  Phase 1b's audit step regenerates the table from a fresh
+  `grep -rln` so this self-corrects at execution.
+
+### Same-day re-bump awareness (cross-cutting note)
+
+Round-2 review surfaced an over-bump risk: phases that re-edit a skill
+already edited in a prior phase (Phase 4 re-bumps `briefing` after
+Phase 2a; Phases 5a/5b/6 re-bump `update-zskills` after Phase 1) MUST
+re-compute the content hash via `bash scripts/skill-content-hash.sh
+skills/<X>` AFTER source edits but BEFORE staging, then refresh the
+`+HHHHHH` suffix. Do NOT assume the prior phase's date+hash combination
+still validates. `scripts/skill-version-compare.sh` accepts a same-day
+re-bump iff `date(new) > date(old) OR hash(new) != hash(old)` — a
+no-content-change re-bump trips `skill-version-stage-check.sh`'s
+symmetric "version bumped but content unchanged" STOP, which is the
+same user-visible failure as a missed bump. The cross-cutting
+versioning discipline subsection (line 277 area) addresses this; this
+note exists for the implementing agent's at-a-glance reference.
 
 ---
 
