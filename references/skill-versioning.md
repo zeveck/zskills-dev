@@ -82,6 +82,50 @@ metadata:
 
 ## 1.3 — Bump rule — anchored to canonical-projection diff
 
+### Comparator
+
+Two `metadata.version` strings sharing the format `YYYY.MM.DD+HHHHHH` are
+compared as a (date, hash) tuple — NOT as a single lexically-ordered string.
+A new version `<new>` is a **valid bump** from an old version `<old>` iff:
+
+```
+date(new) >= date(old)  AND  ( date(new) > date(old) OR hash(new) != hash(old) )
+```
+
+In English: the date never moves backward, and the version is not
+byte-identical to its predecessor (either the date moves forward, or the
+hash changes — or both). Same-day re-edits are valid bumps as long as the
+hash differs; pure lexical `>` comparison is wrong because it would reject
+every same-day re-edit (only the hash changes, not the date prefix). This
+gap was the root cause of issue #178.
+
+**Single source of truth for the comparator logic:**
+[`scripts/skill-version-compare.sh <old> <new>`](../scripts/skill-version-compare.sh).
+Plans and ACs cite this script rather than rolling hand-written `>=`
+comparisons; the script's exit codes are the contract:
+
+| Exit | Meaning                                            |
+|------|----------------------------------------------------|
+| 0    | `<new>` is a valid bump                            |
+| 1    | `<new>` is byte-identical to `<old>` OR a regression |
+| 2    | malformed input (regex mismatch, empty, missing arg) |
+
+Both args must match the strict regex from Appendix A; the script rejects
+malformed input with exit 2 and a stderr message. Tests live in
+[`tests/test-skill-version-compare.sh`](../tests/test-skill-version-compare.sh)
+covering the eight canonical cases (same-date diff-hash, same-date
+same-hash, newer date, older date, newer date with smaller hash, malformed
+old, malformed new, missing args).
+
+**Why a script and not inline `[[ "$new" > "$old" ]]`:** lexical `>` is
+the comparator authors reach for first; it gets the date-only cases right
+and silently misses the same-day re-edit case (issue #178 Phase 5a/5b
+verification went PARTIAL exactly because `version > previous-date` was
+inlined instead of the tuple comparator). One script, one contract,
+one place to extend if the format ever changes.
+
+
+
 **Chosen.** A bump is REQUIRED when re-computing `bash scripts/skill-content-hash.sh skills/<name>` against the worktree state produces a different 6-char hash than the value in HEAD's `metadata.version`. The bump procedure: refresh the date to today (`TZ=America/New_York date +%Y.%m.%d`) AND replace the hash with the freshly-computed value. Both halves change together — a same-day re-edit advances the hash even though the date is identical.
 
 **Hash input scope (load-bearing).** The hash covers the canonical projection defined in §1.1. In summary, the projection is three components:
@@ -324,13 +368,28 @@ re:[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}
 
 **Scope.** The deny-list scans skill content only (`skills/<name>/**.md`) — NOT `plans/**`, `references/**`, `CHANGELOG.md`, or other repo-level docs. SKILL.md frontmatter itself is not scanned (the conformance scanner enters at the body, after the closing `---`). So the deny-list never fires on legitimate `metadata.version: "..."` lines.
 
-**Exemption marker.** Reuse the SKILL_FILE_DRIFT_FIX `<!-- allow-hardcoded: <pattern> reason: ... -->` convention. The marker block above a fence-opener exempts that fence; for the version-literal regex the `<pattern>` token is the literal regex body (no `re:` prefix):
+**Exemption marker (preferred).** Reuse the SKILL_FILE_DRIFT_FIX `<!-- allow-hardcoded: <pattern> reason: ... -->` convention. The marker block above a fence-opener exempts that fence; for the version-literal regex the `<pattern>` token is the literal regex body (no `re:` prefix):
 
+<!-- allow-skill-version-literal: documenting the marker syntax in a reference doc -->
 ```markdown
 <!-- allow-hardcoded: [0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6} reason: documenting the format with an example value -->
 ```bash
 echo "Example version: 2026.04.30+a1b2c3"
 ```
 ```
+
+**Failure-message contract.** When the conformance scan fires on this regex, the failure message (in `tests/test-skill-conformance.sh`) explicitly cites the `<!-- allow-hardcoded: <pattern> reason: ... -->` marker and tells the author exactly where to put it (line above the opening backticks for fences, line above the bullet for prose-imperative hits). The wording also points at the `text` fence-language alternative described below. This means an implementer hitting the scan does not have to know the convention from cold — the failure output teaches them.
+
+**Alternative: `text` fence language (formally documented escape valve).** The conformance scanner only treats fences with language `bash`, `sh`, `shell`, or no language as "exec" fences — every other language (`json`, `markdown`, `yaml`, `text`, `ascii`, anything else) is classified "other" and not scanned for forbidden literals at all. Therefore an illustrative version example can also be written as:
+
+```markdown
+\`\`\`text
+Example version: 2026.04.30+a1b2c3
+\`\`\`
+```
+
+This is **formally documented as a supported escape valve**, not implicit. The behavior is intentional: the deny-list is for executable-shape fences where a stale literal is a real config-drift hazard; non-exec fences are illustrative by definition. Choose the marker for "I want to show a real bash incantation that legitimately contains a literal version" (rare); choose the `text` fence for "I'm showing the format itself in a non-exec context" (common). Both are first-class.
+
+**Audit (issue #179 follow-up):** as of #179 landing the audit `grep -rEn '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' skills/ block-diagram/` finds only legitimate `metadata.version: "..."` frontmatter lines (which Appendix C explicitly exempts — the scanner enters at the body, after the closing `---`). No bare-fence body literals exist in any skill SKILL.md.
 
 This file (`references/skill-versioning.md`) lives OUTSIDE the deny-list scope (it's not under `skills/`), so its multiple example values render without markers. A skill whose body legitimately needs a literal version example (rare) can use the marker above.
