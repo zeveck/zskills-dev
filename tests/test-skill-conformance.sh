@@ -1110,13 +1110,17 @@ else
            && [[ "$norm_line" =~ (^|[.\;\:][[:space:]]+|\*\*)(Run|Execute|Invoke)[[:space:]] ]]; then
           for literal in "${FIXED_LITERALS[@]}"; do
             if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
-              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no contains '$literal'. Replace with \$VAR (preferred) or add an allow-hardcoded marker if legitimately required.")
+              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no contains '$literal'. Replace with \$VAR (preferred), OR add on the line ABOVE this bullet: <!-- allow-hardcoded: $literal reason: <why> -->")
               DRIFT_FAIL=1
             fi
           done
           for pattern in "${REGEX_PATTERNS[@]}"; do
             if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
-              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches forbidden regex '$pattern'. Replace with \$VAR (preferred) or add an allow-hardcoded marker if legitimately required.")
+              if [[ "$pattern" == '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' ]]; then
+                DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches the skill-version-literal regex '$pattern'. Per-skill version values belong in metadata.version frontmatter, not pasted into prose imperatives. To mark this bullet as an illustrative example, add on the line ABOVE: <!-- allow-hardcoded: $pattern reason: documenting the format with an example value -->")
+              else
+                DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches forbidden regex '$pattern'. Replace with \$VAR (preferred), OR add on the line ABOVE this bullet: <!-- allow-hardcoded: $pattern reason: <why> -->")
+              fi
               DRIFT_FAIL=1
             fi
           done
@@ -1138,13 +1142,18 @@ else
       fi
       for literal in "${FIXED_LITERALS[@]}"; do
         if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
-          DRIFT_HITS+=("DRIFT: $skill_file:$line_no contains '$literal' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred) or add the marker if legitimately required.")
+          DRIFT_HITS+=("DRIFT: $skill_file:$line_no contains '$literal' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred), OR mark this fence as illustrative by adding on the line ABOVE the opening backticks: <!-- allow-hardcoded: $literal reason: <why> -->")
           DRIFT_FAIL=1
         fi
       done
       for pattern in "${REGEX_PATTERNS[@]}"; do
         if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
-          DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches forbidden regex '$pattern' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred) or add the marker if legitimately required.")
+          # Tailored hint for the skill-version-literal regex (issue #179).
+          if [[ "$pattern" == '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' ]]; then
+            DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches the skill-version-literal regex '$pattern' inside a bash fence. Per-skill version values belong in metadata.version frontmatter, not in fence bodies. To mark this fence as an illustrative example, add on the line ABOVE the opening backticks: <!-- allow-hardcoded: $pattern reason: documenting the format with an example value -->. Alternatively, switch the fence language to \`\`\`text (non-exec, not scanned).")
+          else
+            DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches forbidden regex '$pattern' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred), OR mark this fence as illustrative by adding on the line ABOVE the opening backticks: <!-- allow-hardcoded: $pattern reason: <why> -->")
+          fi
           DRIFT_FAIL=1
         fi
       done
