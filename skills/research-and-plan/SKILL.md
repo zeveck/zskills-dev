@@ -7,7 +7,7 @@ description: >-
   meta-plan where each phase delegates to /run-plan.
   Usage: /research-and-plan [output FILE] <description...>
 metadata:
-  version: "2026.05.02+eb11e9"
+  version: "2026.05.07+81831b"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -38,7 +38,7 @@ Do not proceed past this preflight without `Agent` access.
 ## Arguments
 
 - **output FILE** (optional) — meta-plan output path. Default:
-  `plans/<SLUG>_META.md` (slug from description).
+  `$ZSKILLS_PLANS_DIR/<SLUG>_META.md` (slug from description).
 - **auto** (optional) — skip the decomposition confirmation checkpoint.
   Proceed directly to drafting after decomposition research. Used by
   `/research-and-go` for fully autonomous operation.
@@ -152,7 +152,7 @@ precedence at execution time.
 
 For each sub-problem:
 
-1. Determine the sub-plan output path: `plans/<SLUG>_<N>.md` (or let the
+1. Determine the sub-plan output path: `$ZSKILLS_PLANS_DIR/<SLUG>_<N>.md` (or let the
    user specify).
 2. If research from Step 1 was written to a file, pass that path to the
    `/draft-plan` agent so it has the decomposition context.
@@ -160,7 +160,7 @@ For each sub-problem:
    - **If `LANDING_ARG` is non-empty**, append `. Landing mode: <LANDING_ARG>`
      to the description so `/draft-plan` can embed the matching hint in
      the generated plan. Example:
-     `/draft-plan output plans/X.md rounds 2 <description>. Landing mode: pr`
+     `/draft-plan output $ZSKILLS_PLANS_DIR/X.md rounds 2 <description>. Landing mode: pr`
    - If `LANDING_ARG` is empty, omit the suffix entirely — do NOT pass
      an empty `Landing mode:` token.
 4. Wait for each `/draft-plan` batch to complete before dispatching the
@@ -203,7 +203,7 @@ went through `/draft-plan`'s adversarial process. Two checks:
 ### Check 1 — Mechanical (grep)
 
 ```bash
-for plan in plans/<SLUG>_*.md; do
+for plan in "$ZSKILLS_PLANS_DIR"/<SLUG>_*.md; do
   if ! grep -q '## Plan Quality' "$plan" || ! grep -q '### Round History' "$plan"; then
     echo "FAILED: $plan — missing adversarial review signature"
   fi
@@ -314,7 +314,7 @@ sub-plans, no `/draft-plan` during execution.
 ### Goal
 Execute the plan for <sub-problem X>.
 
-### Execution: delegate /run-plan plans/<SUB_PLAN_X>.md finish auto
+### Execution: delegate /run-plan $ZSKILLS_PLANS_DIR/<SUB_PLAN_X>.md finish auto
 
 ### Acceptance Criteria
 - [ ] All phases in the sub-plan are marked Done
@@ -358,7 +358,7 @@ meta-plan filename gives a stable, per-run scope):
 ```bash
 # $META_PLAN_PATH is the output path where the meta-plan is (or will be)
 # written — same value used as the `output FILE` argument / default
-# (`plans/<SLUG>_META.md`). Derive a stable slug from it.
+# (`$ZSKILLS_PLANS_DIR/<SLUG>_META.md`). Derive a stable slug from it.
 META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
 PIPELINE_ID="research-and-plan.$META_PLAN_SLUG"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
@@ -383,14 +383,14 @@ preserved. Tracking supplements the verification process; it does not replace it
 ### Finalization
 
 1. Write the meta-plan to the output path.
-2. Update `plans/PLAN_INDEX.md` if it exists (add a row to "Ready to Run").
+2. Update `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` if it exists (add a row to "Ready to Run").
    If it doesn't exist, suggest `/plans rebuild`.
 3. Present the result:
-   > Meta-plan written to `plans/<FILE>.md` with N sub-plans.
+   > Meta-plan written to `$ZSKILLS_PLANS_DIR/<FILE>.md` with N sub-plans.
    > Sub-plans: [list with paths]
    >
-   > Execute with: `/run-plan plans/<FILE>.md`
-   > Or with scheduling: `/run-plan plans/<FILE>.md auto every 4h now`
+   > Execute with: `/run-plan $ZSKILLS_PLANS_DIR/<FILE>.md`
+   > Or with scheduling: `/run-plan $ZSKILLS_PLANS_DIR/<FILE>.md auto every 4h now`
 
 ## Key Rules
 

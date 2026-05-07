@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously. One command,
   walk away. Usage: /research-and-go <description>
 metadata:
-  version: "2026.05.02+cd2316"
+  version: "2026.05.07+eeacd4"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -116,8 +116,9 @@ marker checks to this pipeline only. It must happen before any git operation.
 immediately (gate is in place from pipeline start):
 
 ```bash
+source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 SCOPE_UPPER=$(echo "$SCOPE" | tr 'a-z-' 'A-Z_')
-META_PLAN_PATH="plans/META_${SCOPE_UPPER}.md"
+META_PLAN_PATH="$ZSKILLS_PLANS_DIR/META_${SCOPE_UPPER}.md"
 META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
 # Convention matches /run-plan TRACKING_ID derivation
 # (skills/run-plan/SKILL.md:388-398).

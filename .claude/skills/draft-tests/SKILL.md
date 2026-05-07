@@ -12,7 +12,7 @@ description: >-
   /draft-plan, scoped to test specs.
   Usage: /draft-tests <plan-file> [rounds N] [guidance...]
 metadata:
-  version: "2026.05.02+778d35"
+  version: "2026.05.07+8b1e64"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -63,7 +63,10 @@ Do not proceed past this preflight without `Agent` access.
 ```
 
 - **plan-file** (required) — path to the plan `.md` file. If the token
-  contains `/`, use as-is; otherwise prepend `plans/`.
+  contains `/`, use as-is; otherwise resolve via
+  `$ZSKILLS_PLANS_DIR/<token>` (sourcing
+  `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the
+  orchestrator's bash fence; falls back to `plans/` when config silent).
 - **rounds N** (optional) — max review/refine cycles. Default: 3 (matches
   `/draft-plan`; `/refine-plan`'s default is 2 because it operates on an
   already-refined plan, while `/draft-tests` is typically blank-slate
@@ -80,8 +83,8 @@ Do not proceed past this preflight without `Agent` access.
 
 **Detection:** scan `$ARGUMENTS` from the start:
 - The **first** token ending in `.md` OR containing `/` is the plan
-  file. If the token contains `/`, use as-is; otherwise prepend
-  `plans/`.
+  file. If the token contains `/`, use as-is; otherwise resolve via
+  `$ZSKILLS_PLANS_DIR/<token>` (falls back to `plans/` when config silent).
 - `rounds` followed by a numeric argument sets max cycles. (`rounds`
   not followed by a number is treated as guidance text, not the
   keyword.)
@@ -93,7 +96,7 @@ Do not proceed past this preflight without `Agent` access.
 Examples:
 - `/draft-tests plans/FEATURE.md`
 - `/draft-tests plans/FEATURE.md rounds 4`
-- `/draft-tests FEATURE.md` → reads `plans/FEATURE.md`
+- `/draft-tests FEATURE.md` → reads `$ZSKILLS_PLANS_DIR/FEATURE.md`
 - `/draft-tests plans/FOO.md focus on integration tests`
 - `/draft-tests plans/FOO.md rounds 3 emphasize property-based coverage`
 

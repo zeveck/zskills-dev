@@ -5,7 +5,7 @@ description: >-
   to "add a block", "create a new block", "implement a block", or mentions
   adding a block type to the library.
 metadata:
-  version: "2026.05.02+2ec085"
+  version: "2026.05.07+d3ad5e"
 ---
 
 # Adding Block Types
@@ -107,14 +107,14 @@ messages keep `${BLOCK_NAME}` for legibility.
 
 ## Step 0 — Pre-flight: Check for a Plan
 
-Look in `plans/blocks/{category}/` for an existing plan file for this block.
+Look in `$ZSKILLS_PLANS_DIR/blocks/{category}/` for an existing plan file for this block.
 
 - **If a plan exists:** read it and use it as the specification.
 - **If no plan exists:** STOP implementation. Spawn an Explore agent to research the block thoroughly — reference documentation, textbooks, behavior, edge cases, parameter semantics — and write a plan file before proceeding.
 
 ### Plan file convention
 
-- **Path:** `plans/blocks/{category}/{number}-{block-name}.md`
+- **Path:** `$ZSKILLS_PLANS_DIR/blocks/{category}/{number}-{block-name}.md`
 - **Numbering:** check the highest existing number across all categories and increment
 - **9 required sections:**
   1. Overview (block number, category, purpose)
@@ -127,7 +127,7 @@ Look in `plans/blocks/{category}/` for an existing plan file for this block.
   8. UI Representation (icon, port layout, label, display)
   9. Implementation Notes (data model JSON, key methods, test cases)
 
-Reference: `plans/blocks/math/12-gain.md` or `plans/blocks/continuous/34-integrator.md` for format.
+Reference: `$ZSKILLS_PLANS_DIR/blocks/math/12-gain.md` or `$ZSKILLS_PLANS_DIR/blocks/continuous/34-integrator.md` for format.
 
 ---
 
@@ -319,7 +319,7 @@ Name: {
 
 Do NOT write the documentation yourself. Instead, create tracking issues for the docs work.
 
-If `plans/DOC_ISSUES.md` does not exist, create it first using `plans/BUILD_ISSUES.md` as a format reference (summary table at top, entries with GitHub issue cross-references). Use D-numbering: D1, D2, D3...
+If `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md` does not exist, create it first using `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` as a format reference (summary table at top, entries with GitHub issue cross-references). Use D-numbering: D1, D2, D3...
 
 ### For each new block
 
@@ -330,7 +330,7 @@ If `plans/DOC_ISSUES.md` does not exist, create it first using `plans/BUILD_ISSU
      --label "documentation"
    ```
 
-2. **Add an entry to `plans/DOC_ISSUES.md`:**
+2. **Add an entry to `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`:**
    ```markdown
    ### D{next_number}: BlockName block reference
 
@@ -352,11 +352,11 @@ If `plans/DOC_ISSUES.md` does not exist, create it first using `plans/BUILD_ISSU
      --label "documentation"
    ```
 
-2. **Add an entry to `plans/DOC_ISSUES.md`** following the same format.
+2. **Add an entry to `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`** following the same format.
 
-### DOC_ISSUES.md convention
+### Issue tracker convention (e.g., `DOC_ISSUES`)
 
-- **Path:** `plans/DOC_ISSUES.md`
+- **Path:** `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`
 - **Numbering:** D1, D2, D3... — check existing entries and increment
 
 ---
@@ -545,9 +545,9 @@ Add the block to the runtime if feasible:
 2. Implement the block logic in the appropriate category file
 3. Run `cargo test` in `runtime/` to verify
 
-If runtime support cannot be added now, file a `BUILD_ISSUES.md` entry (same
-format as the codegen deferral below) noting it's a **runtime gap**, not a
-codegen gap.
+If runtime support cannot be added now, file a build-issues entry (in
+`$ZSKILLS_ISSUES_DIR/BUILD_ISSUES`, same format as the codegen deferral
+below) noting it's a **runtime gap**, not a codegen gap.
 
 ### Verify
 
@@ -565,7 +565,7 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 ### If Rust codegen cannot be implemented now
 
-Create a GitHub issue and add an entry to `plans/BUILD_ISSUES.md` following the existing format. Check the file first to find the highest R-number and increment it.
+Create a GitHub issue and add an entry to `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` following the existing format. Check the file first to find the highest R-number and increment it.
 
 ```markdown
 ### R{next_number}: {Title}
@@ -621,7 +621,7 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 ## Step 10 — Completion Report
 
-Write `reports/new-blocks-{slug}.md` where `{slug}` is derived from the
+Write `$ZSKILLS_AUDIT_DIR/new-blocks-{slug}.md` where `{slug}` is derived from the
 block name(s) (e.g., `new-blocks-resistor`, `new-blocks-math-batch`).
 APPEND if the file exists — never overwrite.
 
@@ -660,8 +660,9 @@ Command: `npm run test:all`
 Suites: unit N pass, E2E N pass, codegen N pass
 ```
 
-After writing, regenerate `NEW_BLOCKS_REPORT.md` in the repo root as an
-index of all new-blocks reports (same pattern as PLAN_REPORT.md).
+After writing, regenerate `$ZSKILLS_AUDIT_DIR/NEW_BLOCKS_REPORT.md` (resolved
+via `.claude/skills/update-zskills/scripts/zskills-paths.sh`) as an
+index of all new-blocks reports (same pattern as the plan-report index).
 
 ---
 
@@ -714,7 +715,7 @@ grep -rl '"BlockType"' examples/ || echo "NO EXAMPLE FOUND"
 
 # 8. Runtime support OR tracking issue? (Rust uses double quotes)
 grep '"BlockType"' runtime/src/blocks/mod.rs || \
-grep "BlockType" plans/BUILD_ISSUES.md
+grep "BlockType" $ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md
 
 # 9. Tests pass?
 npm run test:all
@@ -802,7 +803,7 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 Cherry-pick worktree commits to main. Same process as `/run-plan` Phase 6:
 
-1. Check `reports/new-blocks-{slug}.md` exists with sign-off items
+1. Check `$ZSKILLS_AUDIT_DIR/new-blocks-{slug}.md` exists with sign-off items
 2. If UI sign-off items have `[ ]` checkboxes: **do NOT auto-land.** Report
    to the user for review.
 3. If no sign-off items or all signed off: cherry-pick to main, run
@@ -831,16 +832,16 @@ Cherry-pick worktree commits to main. Same process as `/run-plan` Phase 6:
 
 | Step | Files |
 |------|-------|
-| 0 | `plans/blocks/{category}/{num}-{name}.md` |
+| 0 | `$ZSKILLS_PLANS_DIR/blocks/{category}/{num}-{name}.md` |
 | 1 | `src/engine/blocks/{category}/{Name}Block.js` |
 | 2 | `src/engine/blocks/register/{category}.js` |
 | 3 | `src/library/block-registry.js`, optionally `src/editor/dynamic-ports.js` |
 | 4 | `src/library/block-explorer-data.js` |
-| 5 | GitHub issues + `plans/DOC_ISSUES.md` |
+| 5 | GitHub issues + `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md` |
 | 6 | `tests/blocks/{category}.test.js` |
 | 7 | `examples/{model}/`, `src/library/block-explorer-data.js` (EXAMPLE_MODELS) |
-| 8 | `src/codegen/block-emitter.js`, optionally GitHub issue + `plans/BUILD_ISSUES.md` |
+| 8 | `src/codegen/block-emitter.js`, optionally GitHub issue + `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` |
 | 9 | (manual testing — no files) |
-| 10 | `reports/new-blocks-{slug}.md`, `NEW_BLOCKS_REPORT.md` |
+| 10 | `$ZSKILLS_AUDIT_DIR/new-blocks-{slug}.md`, `$ZSKILLS_AUDIT_DIR/NEW_BLOCKS_REPORT.md` |
 | 11 | (verification — no files) |
 | 12 | (landing — cherry-pick to main) |

@@ -50,7 +50,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      git cherry-pick --abort
      ```
      Mark the issues as "Skipped: cherry-pick conflict" in
-     `SPRINT_REPORT.md`. Continue cherry-picking from other worktrees.
+     `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`. Continue cherry-picking from other worktrees.
      Do NOT invoke the Failure Protocol for skipped worktrees.
 
      The skipped issues stay open and will be picked up in the next sprint
@@ -110,7 +110,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      ```
      If tests fail, invoke the **Failure Protocol** — do not leave broken
      code on main with the cron still running.
-  9. **Update `SPRINT_REPORT.md`** — mark which fixes were landed (add a
+  9. **Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — mark which fixes were landed (add a
      `Landed` column or update status).
   10. **Auto-remove fully landed worktrees** — for each worktree with
       `status: full` in `.landed`:
