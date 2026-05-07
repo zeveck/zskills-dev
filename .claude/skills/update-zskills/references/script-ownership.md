@@ -39,7 +39,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `insert-prerequisites.sh`    | 1      | `draft-tests`                |
 | `insert-test-spec-revisions.sh` | 1   | `draft-tests`                |
 | `land-phase.sh`              | 1      | `commit`                     |
-| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
+| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...`. Accepts both `<skill-name>` (for `skills/<name>/`) and `block-diagram/<skill-name>` (for `block-diagram/<name>/`); destination is always `.claude/skills/<basename>/` — no `block-diagram/` parent under `.claude/skills/` (Phase 1b extension). |
 | `parse-plan.sh`              | 1      | `draft-tests`                |
 | `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |

@@ -78,7 +78,7 @@ shopt -u nullglob
 # ─── 3. Remove dev-only skills (front-matter `dev_only: true`) ─────────
 log "scanning for dev_only skills"
 dev_only_count=0
-for skill_file in skills/*/SKILL.md block-diagram/skills/*/SKILL.md; do
+for skill_file in skills/*/SKILL.md block-diagram/*/SKILL.md; do
   [ -f "$skill_file" ] || continue
   # Check the front-matter (top of file between the first two `---` lines)
   # for an exact `dev_only: true` key. awk is sufficient and dependency-free.
