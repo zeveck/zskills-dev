@@ -664,7 +664,7 @@ Add a top-level `output` object with two string properties (peer of
   "properties": {
     "plans_dir": {
       "type": "string",
-      "description": "Directory for Tier-1 user-curated plans (NAME_PLAN.md, PLAN_INDEX.md). Documented default: docs/plans. Absent → legacy plans/. Resolved as: absolute (starts with /) used as-is; everything else joined with project root. Distinct from testing.output_file."
+      "description": "Directory for Tier-1 user-curated plans (<NAME>_PLAN.md). Documented default: docs/plans. Absent → legacy plans/. Resolved as: absolute (starts with /) used as-is; everything else joined with project root. Distinct from testing.output_file. Note: PLAN_INDEX.md is regenerated and lives in .zskills/audit/ (Tier 2), not in plans_dir."
     },
     "issues_dir": {
       "type": "string",
@@ -1163,7 +1163,9 @@ provided below in lieu of trusting fixed line numbers).
 - [ ] **2a.4 — `/plans`.** `skills/plans/SKILL.md` — re-derive via
   `grep -n 'PLAN_INDEX.md\|plans/blocks/' skills/plans/SKILL.md`. Replace
   `PLAN_INDEX.md` site references (research-time count: 9 at 14, 84, 105,
-  204, 219, 272, 370, 408, 519) with `$ZSKILLS_PLANS_DIR/PLAN_INDEX.md`.
+  204, 219, 272, 370, 408, 519) with `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
+  (PLAN_INDEX is a regenerated index; Tier 2; lives in audit alongside
+  PLAN_REPORT.md and VERIFICATION_REPORT.md, NOT in plans_dir).
   Source helper in any bash fence. The `Skip plans/blocks/ subdirectories`
   prose around line 405-407 → `Skip $ZSKILLS_PLANS_DIR/blocks/ subdirectories`.
   Mirror.
@@ -1190,7 +1192,7 @@ provided below in lieu of trusting fixed line numbers).
   - `skills/research-and-plan/SKILL.md` (anchors 41, 155, 163, 206, 317,
     361, 386, 389, 392-393) — sub-plan output `plans/<SLUG>_<N>.md` →
     `$ZSKILLS_PLANS_DIR/<SLUG>_<N>.md`. Line-386-area "Update
-    plans/PLAN_INDEX.md" → "Update `$ZSKILLS_PLANS_DIR/PLAN_INDEX.md`".
+    plans/PLAN_INDEX.md" → "Update `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`".
   - `skills/research-and-go/SKILL.md` (anchor 120) —
     `META_PLAN_PATH="plans/META_${SCOPE_UPPER}.md"` →
     `META_PLAN_PATH="$ZSKILLS_PLANS_DIR/META_${SCOPE_UPPER}.md"` (source
@@ -1232,7 +1234,8 @@ provided below in lieu of trusting fixed line numbers).
   - Line 116-area — the ONLY `mkdir -p "$MAIN_ROOT/reports"` invocation in
     skills. Replace with `mkdir -p "$ZSKILLS_AUDIT_DIR"` (source helper above).
   - Lines 119-120 — `WORK_STATE` and `PLAN_INDEX` — rewrite `PLAN_INDEX` to
-    use `$ZSKILLS_PLANS_DIR/PLAN_INDEX.md`. `WORK_STATE` stays unchanged
+    use `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` (PLAN_INDEX is Tier 2,
+    regenerated; lives in audit). `WORK_STATE` stays unchanged
     (`.zskills/work-on-plans-state.json` is fixed).
   - Lines 661, 1160 — `reports/work-on-plans-<sprint-id>.md` →
     `$ZSKILLS_AUDIT_DIR/work-on-plans-<sprint-id>.md`.
@@ -1321,12 +1324,12 @@ becomes:
 
 A bash assignment that previously read:
 ```bash
-PLAN_INDEX="$MAIN_ROOT/plans/PLAN_INDEX.md"
+PLAN_INDEX="$MAIN_ROOT/.zskills/audit/PLAN_INDEX.md"
 ```
 becomes:
 ```bash
 source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-PLAN_INDEX="$ZSKILLS_PLANS_DIR/PLAN_INDEX.md"
+PLAN_INDEX="$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"
 ```
 
 **Byte-preservation discipline:** apart from the literal path swap and the
@@ -2211,9 +2214,16 @@ leaves the consumer recovering via the helper's legacy-`plans/` fallback.
 
   4. **Move plans → `$TARGET_PLANS`.** `mkdir -p "$TARGET_PLANS"`.
      `git mv plans/<NAME>_PLAN.md "$TARGET_PLANS/"` for each. Same for
-     `plans/PLAN_INDEX.md` and any `plans/CANARY*.md`. Recursively move
-     `plans/blocks/` to `$TARGET_PLANS/blocks/`. Use the same explicit
-     verification pattern from step 3.
+     any `plans/CANARY*.md`. Recursively move `plans/blocks/` to
+     `$TARGET_PLANS/blocks/`. Use the same explicit verification pattern
+     from step 3.
+
+  4b. **Move PLAN_INDEX.md → `.zskills/audit/`** (Tier 2 regenerated index).
+      `mkdir -p .zskills/audit && git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md`.
+      PLAN_INDEX is regenerable from plan frontmatter via `/plans rebuild`,
+      so this is structurally the same as PLAN_REPORT.md and
+      VERIFICATION_REPORT.md (also Tier 2, also in audit). Cross-references
+      in plan files to `plans/PLAN_INDEX.md` get rewritten in Phase 5b.
 
   5. **Move issue trackers → `$TARGET_ISSUES`.** `mkdir -p "$TARGET_ISSUES"`.
      `git mv plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md
@@ -2612,7 +2622,7 @@ stop-dev.sh).
   |------|---------|
   | `[See PLAN_X](plans/PLAN_X.md)` | MATCH (markdown link) → `[See PLAN_X](docs/plans/PLAN_X.md)` |
   | `Run \`/run-plan plans/CANARY1_HAPPY.md\`` | MATCH (slash-command + backtick) → `Run \`/run-plan docs/plans/CANARY1_HAPPY.md\`` |
-  | `cp plans/PLAN_INDEX.md /tmp/` (inside `bash` fence) | MATCH (shell line) → `cp docs/plans/PLAN_INDEX.md /tmp/` |
+  | `cp plans/PLAN_INDEX.md /tmp/` (inside `bash` fence) | MATCH (shell line) → `cp .zskills/audit/PLAN_INDEX.md /tmp/` (PLAN_INDEX is Tier 2, lives in audit, NOT plans_dir) |
   | `we previously kept plans/ at the repo root` | NON-MATCH (naked prose) — preserve |
   | `the user types plans/FOO.md as the argument` | NON-MATCH (naked prose) — preserve |
 
@@ -3169,9 +3179,10 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
   For each match in active context, rewrite to the new locations. Mirror
   affected skills.
 
-- [ ] **6.9 — Plan registry: `docs/plans/PLAN_INDEX.md`.** Add a row for
-  this plan's post-migration filename following sibling format. Use
-  `/plans` to regenerate if available.
+- [ ] **6.9 — Plan registry: `.zskills/audit/PLAN_INDEX.md`.** Run
+  `/plans rebuild` to regenerate the index from current plan frontmatter
+  (auto-includes this plan's post-migration filename). Manual row addition
+  is unnecessary — PLAN_INDEX is regenerated, not edited.
 
 - [ ] **6.10 — Plan frontmatter flip.** Edit
   `docs/plans/ZSKILLS_PATH_CONFIG.md`: `status: active` → `status:
