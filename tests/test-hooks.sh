@@ -2585,61 +2585,65 @@ echo "=== post-run-invariants.sh ==="
 
 INV_SCRIPT="$REPO_ROOT/skills/run-plan/scripts/post-run-invariants.sh"
 
+# Per-process scoped tempfile to avoid race when concurrent test runs share /tmp (issue #202).
+INV_TEST=$(mktemp /tmp/inv-test.XXXXXX)
+trap 'rm -f "$INV_TEST"' EXIT
+
 # 17. All checks skipped (empty args, must run in a git repo) → pass with message
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" > "$INV_TEST" 2>&1)
 INV_RC=$?
-if [ $INV_RC -eq 0 ] && grep -q "all checks passed" /tmp/inv-test.txt; then
+if [ $INV_RC -eq 0 ] && grep -q "all checks passed" "$INV_TEST"; then
   pass "post-run-invariants.sh: empty args → skips all → pass"
 else
-  fail "post-run-invariants.sh: empty args — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: empty args — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 18. Nonexistent worktree path (should skip — invariant #1/#2 only fires when path provided AND exists)
 # Actually invariant #1 requires the path NOT to exist; passing a nonexistent path should PASS.
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree /tmp/nonexistent-invariant-test-$$ > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree /tmp/nonexistent-invariant-test-$$ > "$INV_TEST" 2>&1)
 INV_RC=$?
 if [ $INV_RC -eq 0 ]; then
   pass "post-run-invariants.sh: nonexistent worktree path → invariant #1 passes"
 else
-  fail "post-run-invariants.sh: nonexistent worktree — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: nonexistent worktree — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 19. Existing worktree path (fail invariant #1)
 TMP_WT=$(mktemp -d)
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree "$TMP_WT" > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --worktree "$TMP_WT" > "$INV_TEST" 2>&1)
 INV_RC=$?
 rm -rf "$TMP_WT"
-if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#1)" /tmp/inv-test.txt; then
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#1)" "$INV_TEST"; then
   pass "post-run-invariants.sh: existing worktree path → invariant #1 fails loudly"
 else
-  fail "post-run-invariants.sh: existing worktree — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: existing worktree — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 20. Plan file with 🟡 row → fail invariant #6
 TMP_PLAN=$(mktemp)
 printf '# Plan\n| 1 | 🟡 In Progress | abc |\n' > "$TMP_PLAN"
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-file "$TMP_PLAN" > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-file "$TMP_PLAN" > "$INV_TEST" 2>&1)
 INV_RC=$?
 rm -f "$TMP_PLAN"
-if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#6)" /tmp/inv-test.txt; then
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#6)" "$INV_TEST"; then
   pass "post-run-invariants.sh: plan with 🟡 → invariant #6 fails"
 else
-  fail "post-run-invariants.sh: plan with 🟡 — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: plan with 🟡 — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 21. Not in git repo → exits 1 with clear error
-(cd /tmp && bash "$INV_SCRIPT" > /tmp/inv-test.txt 2>&1)
+(cd /tmp && bash "$INV_SCRIPT" > "$INV_TEST" 2>&1)
 INV_RC=$?
-if [ $INV_RC -ne 0 ] && grep -q "must run from inside a git repository" /tmp/inv-test.txt; then
+if [ $INV_RC -ne 0 ] && grep -q "must run from inside a git repository" "$INV_TEST"; then
   pass "post-run-invariants.sh: outside git repo → loud error, exit 1"
 else
-  fail "post-run-invariants.sh: outside git repo — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: outside git repo — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 22. land-phase.sh MAIN_ROOT guard: a valid path + .landed but running from
 # outside a git repo must hit the guard and error loudly. The prior version
@@ -2702,43 +2706,43 @@ fi
 
 # 25. post-run-invariants.sh: plan report missing → invariant #5 fails
 TMP_SLUG="nonexistent-plan-$$"
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-slug "$TMP_SLUG" > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --plan-slug "$TMP_SLUG" > "$INV_TEST" 2>&1)
 INV_RC=$?
-if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#5)" /tmp/inv-test.txt; then
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#5)" "$INV_TEST"; then
   pass "post-run-invariants.sh: missing plan report → invariant #5 fails"
 else
-  fail "post-run-invariants.sh: missing plan report — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: missing plan report — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 26. post-run-invariants.sh: lingering local branch after 'landed' → invariant #3 fails.
 # Create a branch named 'invariant-zombie-test-$$' referencing HEAD; pass landed status.
 ZOMBIE_BRANCH="invariant-zombie-test-$$"
 git -C "$REPO_ROOT" branch "$ZOMBIE_BRANCH" HEAD 2>/dev/null
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$ZOMBIE_BRANCH" --landed-status landed > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$ZOMBIE_BRANCH" --landed-status landed > "$INV_TEST" 2>&1)
 INV_RC=$?
 git -C "$REPO_ROOT" branch -D "$ZOMBIE_BRANCH" >/dev/null 2>&1
-if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#3)" /tmp/inv-test.txt; then
+if [ $INV_RC -ne 0 ] && grep -q "INVARIANT-FAIL (#3)" "$INV_TEST"; then
   pass "post-run-invariants.sh: local branch lingers after landed → invariant #3 fails"
 else
-  fail "post-run-invariants.sh: zombie local branch — rc=$INV_RC, output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: zombie local branch — rc=$INV_RC, output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 # 27. post-run-invariants.sh: local branch with 'pr-ready' status → does NOT fail
 # (intentional — pr-ready means work not fully landed, branch is kept).
 KEEP_BRANCH="invariant-keep-test-$$"
 git -C "$REPO_ROOT" branch "$KEEP_BRANCH" HEAD 2>/dev/null
-(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$KEEP_BRANCH" --landed-status pr-ready > /tmp/inv-test.txt 2>&1)
+(cd "$REPO_ROOT" && bash "$INV_SCRIPT" --branch "$KEEP_BRANCH" --landed-status pr-ready > "$INV_TEST" 2>&1)
 INV_RC=$?
 git -C "$REPO_ROOT" branch -D "$KEEP_BRANCH" >/dev/null 2>&1
 # Exit may be nonzero if other invariants fire (fetch warning etc.), but invariant #3 must NOT fire.
-if ! grep -q "INVARIANT-FAIL (#3)" /tmp/inv-test.txt; then
+if ! grep -q "INVARIANT-FAIL (#3)" "$INV_TEST"; then
   pass "post-run-invariants.sh: pr-ready status → invariant #3 does NOT fire (branch kept intentionally)"
 else
-  fail "post-run-invariants.sh: pr-ready incorrectly triggered #3 — output: $(cat /tmp/inv-test.txt)"
+  fail "post-run-invariants.sh: pr-ready incorrectly triggered #3 — output: $(cat "$INV_TEST")"
 fi
-rm -f /tmp/inv-test.txt
+: > "$INV_TEST"
 
 echo ""
 echo "=== Phase C — real-git-state integration tests ==="
