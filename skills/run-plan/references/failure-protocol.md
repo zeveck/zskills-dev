@@ -44,10 +44,14 @@ state than to lose files trying to clean up.
 
 Add a `## Run Failed` section at the top of the report:
 
+<!-- The template below uses literal `plans/...` for illustration of a
+user-typed plan-file argument; the actual plans-dir is resolved via
+$ZSKILLS_PLANS_DIR (zskills-paths.sh) when the orchestrator reads the file. -->
+<!-- allow-hardcoded: "plans/ reason: illustrative example showing user-typed plan-file argument value in a Run-Failed report template; the rendered output uses $ZSKILLS_PLANS_DIR / $ZSKILLS_AUDIT_DIR resolved via zskills-paths.sh -->
 ```markdown
 ## Run Failed — YYYY-MM-DD HH:MM
 
-**Plan:** plans/FEATURE_PLAN.md
+**Plan:** $ZSKILLS_PLANS_DIR/FEATURE_PLAN.md
 **Phase:** 4b — Translational Mechanical Domain
 **Failed at:** Phase N — [description]
 **Error:** [what went wrong]
@@ -78,7 +82,7 @@ What happened:
   - Stash was [restored / not needed]
   - Cron job [ID] has been CANCELLED
 
-Working tree is clean. See reports/plan-{slug}.md for full details.
+Working tree is clean. See $ZSKILLS_AUDIT_DIR/plan-{slug}.md for full details.
 To restart: /run-plan <plan-file> auto every INTERVAL
 To cancel: /run-plan stop
 ```
@@ -90,10 +94,18 @@ re-invocation of `/run-plan <plan-file> finish auto` starts fresh
 (Issue #110):
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# Failure-protocol cleanup runs from the orchestrator's main session — anchor
+# on $CLAUDE_PROJECT_DIR. PR-mode pipelines that wrote counters inside the
+# worktree get cleaned up by the worktree's own .landed flow.
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')}"
-rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
-rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts."*
-rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
+rm -f "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
+rm -f "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts."*
+rm -f "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
 ```
 
 Position rationale (R9 fix): step 5 lands AFTER step 4 (Alert) because

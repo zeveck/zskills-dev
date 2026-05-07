@@ -6,7 +6,14 @@ Default worktree landing: pre-landing checklist, cherry-pick with dirty-tree LLM
 
 Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
 
-1. `ls reports/plan-{slug}.md` — report file exists (Phase 5 ran)
+Resolve audit paths via the path-config helper at the top of the fence:
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
+  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+```
+
+1. `ls $ZSKILLS_AUDIT_DIR/plan-{slug}.md` — report file exists (Phase 5 ran)
 2. Report has a `## Phase` section for every completed phase
 3. In `finish` mode: cross-phase `/verify-changes worktree` returned clean
 4. If UI-touching phases: playwright-cli agent ran and produced screenshots
@@ -15,7 +22,10 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
    scope-violation flag. If found, STOP.
 
    ```bash
-   VERIFY_REPORT="reports/verify-worktree-$(basename "$WORKTREE_PATH").md"
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   VERIFY_REPORT="$ZSKILLS_AUDIT_DIR/verify-worktree-$(basename "$WORKTREE_PATH").md"
    if [ -f "$VERIFY_REPORT" ] && grep -q "⚠️ Flag" "$VERIFY_REPORT"; then
      echo "HALTED: /verify-changes flagged scope violations in $VERIFY_REPORT." >&2
      echo "Review the Scope Assessment section, fix the diff, re-verify, and re-run." >&2
@@ -32,7 +42,7 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
    dispatching and reuse that variable here for the halt check.
 
 - **Without `auto`:** Phase complete. Output:
-  > Phase complete. Report written to `reports/plan-{slug}.md`.
+  > Phase complete. Report written to `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
   > Review the worktree and cherry-pick when ready, or use `/commit land`.
 
   All interactive landing and cleanup is the user's decision.
@@ -42,7 +52,7 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
   wrote in Phase 5 — if it has a `### User Verification` section with
   unchecked `[ ]` items, UI changes need human sign-off before landing.
   Output:
-  > Phase complete. Report written to `reports/plan-{slug}.md`.
+  > Phase complete. Report written to `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
   > **User verification needed before landing** — review the report,
   > sign off on UI changes, then run `/commit land` from the worktree.
   >
@@ -152,7 +162,8 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
      git add <plan-file>
      git commit -m "chore: mark phase <name> done (landed)"
      ```
-  10. **Update the plan report** (`reports/plan-{slug}.md`) — mark the
-      phase section as landed. Regenerate `PLAN_REPORT.md` index.
+  10. **Update the plan report** (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`) —
+      mark the phase section as landed. Regenerate
+      `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md` index.
 
 ### PR mode landing
