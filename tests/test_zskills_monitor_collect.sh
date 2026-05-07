@@ -179,6 +179,47 @@ import json,sys; d=json.load(sys.stdin); print(d["plans"][0]["meta_plan"])')
   || fail "category-canary meta_plan should be False, got '$META_CANARY'"
 
 # ---------------------------------------------------------------------------
+# AC: Phase-heading separator coverage (issue #183)
+# ---------------------------------------------------------------------------
+# A plan whose phases use colon, en-dash, em-dash, or hyphen separators MUST
+# be classified as executable with phase_count == 4. The pre-fix regex
+# `[—-]` accepted only em-dash + hyphen, silently demoting colon-separated
+# plans (the most common hand-authored form) to Reference. This test would
+# have caught the original bug — pre-fix `phase_count` would be 1 (only the
+# em-dash heading would match) and `category` would be `reference`.
+echo ""
+echo "=== Issue #183: phase-heading separator coverage ==="
+
+SEP_OUT=$(run_collect phase-heading-separators)
+SEP_RESULT=$(printf '%s' "$SEP_OUT" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+p = d["plans"][0]
+print(p["category"], p["phase_count"])
+')
+if [ "$SEP_RESULT" = "executable 4" ]; then
+  pass "phase-heading-separators: em-dash/colon/en-dash/hyphen all match (category=executable, phase_count=4)"
+else
+  fail "phase-heading-separators: got '$SEP_RESULT' (expected 'executable 4')"
+fi
+
+# Direct regex unit test on the parser entry point — guards the regex even
+# if categorize logic shifts in future.
+SEP_PARSE=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+from zskills_monitor.collect import _parse_phase_headings
+content = "## Phase 1 — Em-dash\n## Phase 2: Colon\n## Phase 3 – En-dash\n## Phase 4 - Hyphen\n"
+phases = _parse_phase_headings(content)
+print(",".join(p["n"] + "=" + p["name"] for p in phases))
+')
+if [ "$SEP_PARSE" = "1=Em-dash,2=Colon,3=En-dash,4=Hyphen" ]; then
+  pass "_parse_phase_headings: all four separators (em-dash, colon, en-dash, hyphen) recognised"
+else
+  fail "_parse_phase_headings separator coverage: got '$SEP_PARSE'"
+fi
+
+# ---------------------------------------------------------------------------
 # AC: Queue annotation (v1.1 ready/finish)
 # ---------------------------------------------------------------------------
 echo ""

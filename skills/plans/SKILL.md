@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.02+03ddc6"
+  version: "2026.05.07+38ab19"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -385,7 +385,11 @@ components don't follow the `*Block.js` naming convention.
    The "starting at Phase 1 -- …" comes from the first entry in the
    snapshot plan's `phases[]` whose `status != "done"` (or, if
    `phases[]` is empty, from the first `## Phase` heading captured by
-   `collect.py` and exposed via `phase_count`).
+   `collect.py` and exposed via `phase_count`). Phase headings match
+   the form `## Phase <N> <sep> Name` where `<sep>` is one of em-dash
+   (`—`, canonical), en-dash (`–`), colon (`:`), or hyphen (`-`).
+   Plans whose phase headings use any other separator are classified
+   as Reference (`phase_count=0`) and will not appear in Ready-to-Run.
 5. If the Ready-to-Run set is empty:
    > No plans ready to run. All executable plans are either in progress or complete.
    > Check "In Progress" plans in the index for plans that need attention.

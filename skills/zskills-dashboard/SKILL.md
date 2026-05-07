@@ -10,7 +10,7 @@ description: >-
   State at .zskills/monitor-state.json. Usage:
   /zskills-dashboard [start|stop|status].
 metadata:
-  version: "2026.05.02+95ccb6"
+  version: "2026.05.07+4218c6"
 ---
 
 # /zskills-dashboard — Local Monitor Dashboard

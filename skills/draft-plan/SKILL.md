@@ -8,7 +8,7 @@ description: >-
   until the plan converges. Output is a plan file ready for /run-plan.
   Usage: /draft-plan [output FILE] [rounds N] <description...>
 metadata:
-  version: "2026.05.02+8187cd"
+  version: "2026.05.07+a7f2d9"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -295,6 +295,12 @@ status: active    # active | complete
 - **`status`** — always starts as `active`. `/run-plan` updates this to
   `complete` when all phases finish, which also signals it to close the
   linked GitHub issue (if one is present).
+
+**Phase heading format.** Use `## Phase <N> — <Name>` with an em-dash
+(`—`) as the canonical separator. The aggregator (`collect.py`) also
+accepts en-dash (`–`), colon (`:`), and hyphen (`-`) so hand-authored
+plans are not silently demoted to Reference (issue #183), but every
+template in this skill emits em-dash for consistency.
 
 ```markdown
 # Plan: <Title>

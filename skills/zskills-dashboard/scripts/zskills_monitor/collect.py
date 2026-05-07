@@ -55,8 +55,12 @@ LANDING_MODE_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
-# Phase heading: `## Phase N — Name` (em-dash or hyphen).
-PHASE_HEADING_RE = re.compile(r"^##\s+Phase\s+(\S+)\s*[—-]\s*(.+)$", re.MULTILINE)
+# Phase heading: `## Phase N <sep> Name` where <sep> is em-dash, en-dash,
+# colon, or hyphen. All four are accepted because hand-authored plans use
+# them interchangeably; the canonical form documented in /draft-plan and
+# /plans is em-dash, but rejecting `:` silently demotes valid plans to
+# Reference (issue #183).
+PHASE_HEADING_RE = re.compile(r"^##\s+Phase\s+(\S+)\s*[—–:\-]\s*(.+)$", re.MULTILINE)
 
 # Progress-tracker row marker — used to find the table.
 TRACKER_HEADER_RE = re.compile(r"^\|\s*Phase\s*\|", re.MULTILINE)
@@ -333,8 +337,9 @@ def _resolve_landing_mode(
 
 
 def _parse_phase_headings(content: str) -> List[Dict[str, Any]]:
-    """Return [{n, name}] from `## Phase <N> — Name` (em-dash or hyphen).
+    """Return [{n, name}] from `## Phase <N> <sep> Name`.
 
+    `<sep>` may be em-dash (—), en-dash (–), colon (:), or hyphen (-).
     `n` is the phase token as a string (alphanumeric: '1', '5c', 'A').
     """
     out: List[Dict[str, Any]] = []
