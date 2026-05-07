@@ -1,6 +1,6 @@
 # Sprint Report
 
-## Sprint — 2026-05-02 19:35 [UNFINALIZED]
+## Sprint — 2026-05-02 19:35 [FINALIZED 2026-05-07]
 
 **Mode:** auto | **Focus:** process-discipline (issues #185, #186 — agent dispatch + memory-anchor meta-rule)
 
@@ -116,7 +116,7 @@ User invoked `/fix-issues 123 126 93 89 110`. Phase 1b read all 5 verbatim issue
 - Tracking dir: `.zskills/tracking/fix-issues.sprint-20260429-163758-batch5/`
 - Markers: `pipeline.fix-issues.<sprint>`, `requires.verify-changes.<sprint>`, `step.fix-issues.<sprint>.verify`
 
-## Sprint — 2026-04-30 20:41 ET [UNFINALIZED]
+## Sprint — 2026-04-30 20:41 ET [FINALIZED 2026-05-07]
 
 **Mode:** auto | **Focus:** explicit-issues (#132, #133)
 
@@ -160,7 +160,7 @@ User invoked `/fix-issues 132 133 auto`. Both issues were pre-routed in `RUN_ORD
 - Tracking dir: `.zskills/tracking/fix-issues.sprint-20260501-004143-fixflake/`
 - Markers: `pipeline.fix-issues.<sprint>`, `step.fix-issues.<sprint>.preflight`
 
-## Sprint — 2026-05-01 22:45 ET [UNFINALIZED]
+## Sprint — 2026-05-01 22:45 ET [FINALIZED 2026-05-07]
 
 **Mode:** auto | **Focus:** explicit-issues (#143, #150, #165)
 
@@ -224,4 +224,32 @@ None.
 
 - **`/land-pr` step 8 commits-list bug**: `git log --format=%H "$BASE_BRANCH..HEAD"` uses local `main` ref (potentially stale after parallel PR merges in same session) instead of `origin/main`. The `.landed` marker for #150 records 2 commits, for #165 records 3 commits — those extra SHAs are the merge commits of preceding PRs in this same sprint that landed on origin/main but weren't yet in the local main ref. Cosmetic-only; doesn't affect the actual merge correctness (squash-merge handles dedupe). Worth filing as a separate `/fix-issues` candidate for the `/land-pr` skill.
 - **Multi-agent suite-flake observations** (test-briefing-parity worktrees + test-hooks post-run-invariants `/tmp/inv-test.txt`) noted under "Notable mid-sprint observations" above. CI doesn't run multiple suites concurrently, so these don't bite there. Worth filing as test-isolation-discipline issue if it recurs.
+
+
+## Sprint — 2026-05-07 06:28 [FINALIZED 2026-05-07]
+
+**Mode:** auto | **Focus:** skill-versioning + run-plan PR-preflight cleanup | **Landing:** PR mode
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #177 | /run-plan PR-mode preflights need to self-filter pipeline's own PR | fix-issue-177 | da03075 | 9 unit | PASS (2712/2712) | N/A |
+| #178 | skill-versioning AC version-monotone same-day-bump comparator | fix-issue-178 | 0633e80 | 18 unit | PASS (2721/2721; main also 2704/2704 clean) | N/A |
+| #179 | forbidden-literals scan trips on illustrative version literals (bundled with #178) | fix-issue-178 | 0633e80 | covered by #178 | PASS | N/A |
+| #194 | skill-version-stage-check.sh STOP message UX | fix-issue-194 | b3bcece | 2 unit (s9, s10) | PASS (2704/2705 — see flake note) | N/A |
+
+**Agent Verify:** all three verifiers ran the full test suite, dispatched as `subagent_type: "verifier"` per Plan A's structural defense (Layer 0 timeout-injection + Layer 3 response-validate). All three reviewed the implementer's diff before committing. None applied `--no-verify`.
+
+**User Verify:** N/A for all four — no UI/editor/styles files touched. Pure helper scripts + docs + test additions.
+
+### Notable surfaces
+- **#178+#179 grouping:** both touched `references/skill-versioning.md`. Bundled into one commit (`0633e80`) to avoid cherry-pick conflict; one PR will close both.
+- **#194 variable name discrepancy:** issue body suggested `staged_ver_was_set_initially`, which doesn't exist in the script. Implementer used the actual signal `on_disk_ver != staged_ver && on_disk_ver != head_ver` — more precise. Verifier confirmed correctness for both case (a) and case (b).
+- **Pre-existing flake in `tests/test-hooks.sh` post-run-invariants block** (race on unscoped `/tmp/inv-test.txt`). Reproduced by #194 verifier; root-caused. Last touched by PR #195 (block-unsafe-hardening) + PR #129. Independent of all 4 fixes. **Recommended follow-up: file an issue against test-hooks.sh to scope `/tmp/inv-test.txt` per worktree (`mktemp` or `$$`-suffix).**
+
+### Skipped
+None.
+
+### Not Fixed
+None.
 
