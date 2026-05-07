@@ -253,3 +253,27 @@ None.
 ### Not Fixed
 None.
 
+
+## Sprint — 2026-05-07 11:45 [FINALIZED 2026-05-07]
+
+**Mode:** auto | **Focus:** /land-pr discipline + test-hooks isolation + plans regex | **Landing:** PR mode
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #183 | /plans regex rejects colon-separated phase headings | fix-issue-183 | d4ef812 | +2 (29→31 in test_zskills_monitor_collect.sh); full suite 2722/2722 | PASS (verifier confirmed regex fix accepts em-dash, en-dash, colon, hyphen; new fixture exercises all 4; would have caught original bug) | N/A |
+| #188 | pr-push-and-create.sh wrong-branch push (bundled) | fix-issue-188 | 76d1311 | +3 cases test-land-pr-scripts.sh + 2 conformance asserts | PASS (verifier confirmed always-explicit `git push -u origin "$BRANCH"` + ls-remote post-push verify) | N/A |
+| #203 | .landed `commits:` over-population (bundled) | fix-issue-188 | 76d1311 | (test gap documented; one-char ref change) | PASS (verifier ratified test gap as proportionate; existing empty-guard handles edges) | N/A |
+| #205 | .landed marker fail-quiet — auto-detect (bundled) | fix-issue-188 | 76d1311 | +8 cases test-land-pr-worktree-detect.sh (NEW file) | PASS (verifier confirmed all 4 behavioral cases A/B/C/D + 4 anchor checks; full suite 2745/2745) | N/A |
+| #202 | tests/test-hooks.sh /tmp/inv-test.txt race | fix-issue-202 | 269db8d | mktemp + EXIT trap; full suite 2732/2732; passed under concurrent sibling-worktree load (3 verifiers running simultaneously, all 11 post-run-invariants assertions clean) | PASS (verifier ratified hermetic-under-load; "out of scope" call on $REPO_ROOT separate hazard reasonable) | N/A |
+
+### Notable surfaces
+- **#188 + #203 + #205 bundled** into one PR (commit 76d1311) because all three touch `skills/land-pr/` and would have rebase-conflicted on `metadata.version` if separated. Single commit, single PR, three `Fixes #NNN` trailers for auto-close.
+- **Same-day flake observed under sibling-worktree load:** during parallel verification of 3 sprints, fixture cross-contamination surfaced in `tests/test-briefing-parity.sh` (port-failure cases) and `tests/test-hooks.sh post-run-invariants` (intermittent). #202's fix demonstrably resolved the post-run-invariants instance; the briefing-parity instance is the SAME CLASS of bug (unscoped /tmp paths shared between concurrent runs) in a different file — **recommended follow-up: file as a new issue** for `tests/test-briefing-parity.sh` `/tmp/zskills-briefing-fixture-noport/` scoping.
+- **Verifier discipline:** all 3 used `subagent_type: "verifier"` per Plan A's structural defense; all 3 applied 5-step "pre-existing" audit on flakes before classifying; none weakened tests.
+
+### Skipped
+None.
+
+### Not Fixed
+None.
