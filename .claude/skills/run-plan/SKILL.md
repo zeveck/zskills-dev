@@ -9,7 +9,7 @@ description: >-
   self-schedule recurring runs via cron. Use `next` to check schedule, `stop`
   to cancel.
 metadata:
-  version: "2026.05.03+82aa34"
+  version: "2026.05.07+392b64"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -657,6 +657,40 @@ Before parsing, check for stale state from a previous failed run:
    This catches stragglers from crashed agents, container restarts, or any
    remaining edge cases. Defense in depth — `.claude/skills/commit/scripts/land-phase.sh` is the
    primary fix (called after each phase landing), the preflight is the safety net.
+
+### Plan-cited preflights — open-PR file-path conflict gate
+
+When a plan touches a path prefix (e.g. `skills/update-zskills/`) across
+multiple phases AND runs in PR mode, every phase's preflight needs to
+self-filter the pipeline's OWN PR. Inlining `gh pr list --state open --limit
+100 --json number,title,files | grep -F '<prefix>'` in each phase trips the
+gate from Phase 2 onward, because the pipeline's own feature branch becomes
+the only matching PR (issue #177).
+
+Plans MUST cite the helper instead of inlining the gh+grep pattern:
+
+```bash
+# In a plan phase that needs an open-PR conflict gate. The orchestrator
+# already tracks $RUN_PLAN_PR_NUMBER (the pipeline's own PR) — pass it via
+# --exclude-pr so the gate self-filters.
+if ! bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/pr-preflight.sh" \
+     --path-prefix "skills/update-zskills/" \
+     --exclude-pr "${RUN_PLAN_PR_NUMBER:-}"; then
+  echo "FAIL: open PR(s) touch the path; coordinate before continuing." >&2
+  exit 1
+fi
+```
+
+The helper:
+- Takes `--path-prefix <prefix>` (required) and `--exclude-pr <num>` (optional).
+- Emits matching PR numbers on stdout, one per line; empty when clean.
+- Exit 0 when clean, 1 when at least one matching PR remains, 2 on arg or
+  gh error.
+- `--exclude-pr` may be empty — the script then performs no exclusion, so
+  it is safe to call BEFORE the orchestrator knows the pipeline's PR
+  number (e.g. Phase 1 of a plan that has not yet been pushed).
+
+Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
 
 ### Parse plan
 
