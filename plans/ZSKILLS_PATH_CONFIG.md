@@ -2219,7 +2219,25 @@ leaves the consumer recovering via the helper's legacy-`plans/` fallback.
      from step 3.
 
   4b. **Move PLAN_INDEX.md → `.zskills/audit/`** (Tier 2 regenerated index).
-      `mkdir -p .zskills/audit && git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md`.
+      Use the same explicit-failure verification pattern as step 3, with
+      a guard for missing-source (a fresh consumer may not have
+      PLAN_INDEX.md yet — `/plans rebuild` is what generates it):
+
+      ```bash
+      mkdir -p .zskills/audit
+      if [ -e plans/PLAN_INDEX.md ]; then
+        git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
+        if [ -e .zskills/audit/PLAN_INDEX.md ] && [ ! -e plans/PLAN_INDEX.md ]; then
+          echo "moved: plans/PLAN_INDEX.md → .zskills/audit/PLAN_INDEX.md"
+        else
+          echo "FAIL: move plans/PLAN_INDEX.md → .zskills/audit/ did not complete" >&2
+          exit 1
+        fi
+      else
+        echo "skipped: plans/PLAN_INDEX.md absent (will be regenerated via /plans rebuild)"
+      fi
+      ```
+
       PLAN_INDEX is regenerable from plan frontmatter via `/plans rebuild`,
       so this is structurally the same as PLAN_REPORT.md and
       VERIFICATION_REPORT.md (also Tier 2, also in audit). Cross-references
@@ -2345,8 +2363,11 @@ leaves the consumer recovering via the helper's legacy-`plans/` fallback.
 
   **Phase 5a cases:**
   - **Case 1: legacy-only fixture.** Synthetic repo with `plans/FOO_PLAN.md`,
-    `reports/plan-foo.md`, `SPRINT_REPORT.md`, `var/dev.pid`. Run
-    `migrate-paths.sh`. Assert: legacy paths absent, new paths present,
+    `plans/PLAN_INDEX.md`, `reports/plan-foo.md`, `SPRINT_REPORT.md`,
+    `var/dev.pid`. Run `migrate-paths.sh`. Assert: legacy paths absent,
+    new paths present (specifically `docs/plans/FOO_PLAN.md` AND
+    `.zskills/audit/PLAN_INDEX.md` — note the per-tier split: PLAN_PLAN
+    files go to plans_dir, PLAN_INDEX.md goes to audit_dir per step 4b),
     `.pre-paths-migration` exists, manifest matches moves, config gained
     `output.plans_dir = "docs/plans"` AND `output.issues_dir = ".zskills/issues"`
     (BOTH keys, atomic — locked decision 4).
