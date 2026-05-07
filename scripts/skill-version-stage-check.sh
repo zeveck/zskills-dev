@@ -79,17 +79,29 @@ for sk in "${!SKILLS_TO_CHECK[@]}"; do
   staged_hash="${staged_ver##*+}"
   head_hash="${head_ver##*+}"
 
+  # On-disk version is always read — used both as the staged-ver fallback
+  # when SKILL.md isn't staged, and as a discriminator below for the
+  # "bumped on disk but not staged" hint in the asymmetric STOP message.
+  on_disk_ver=$(bash "$GET" "$skill_md" metadata.version) || on_disk_ver=""
+
   # When SKILL.md isn't staged but child files are, the on-disk version
   # IS the comparison target — fall through to staged_ver == on_disk_ver.
   if [ -z "$staged_ver" ]; then
-    on_disk_ver=$(bash "$GET" "$skill_md" metadata.version) || on_disk_ver=""
     staged_ver="$on_disk_ver"
     staged_hash="${staged_ver##*+}"
   fi
 
   # Asymmetric: content changed, version unchanged.
   if [ "$cur_hash" != "$head_hash" ] && [ "$staged_ver" = "$head_ver" ]; then
-    FAIL_LIST+=("$sk: content changed (hash $head_hash → $cur_hash) but staged metadata.version still $staged_ver")
+    # Hint: did the user bump on disk but forget to `git add`? If
+    # on_disk_ver differs from staged_ver (and is non-empty / non-head),
+    # the bump exists in the working tree but isn't staged.
+    hint=""
+    if [ -n "$on_disk_ver" ] && [ "$on_disk_ver" != "$staged_ver" ] \
+       && [ "$on_disk_ver" != "$head_ver" ]; then
+      hint=" (SKILL.md not staged — git add it)"
+    fi
+    FAIL_LIST+=("$sk: content changed (hash $head_hash → $cur_hash) but staged metadata.version still $staged_ver$hint")
   fi
   # Symmetric: version bumped, content unchanged.
   if [ "$cur_hash" = "$head_hash" ] && [ -n "$staged_ver" ] && [ "$staged_ver" != "$head_ver" ]; then

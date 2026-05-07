@@ -500,6 +500,43 @@ else
   fail "case 20: expected exit 1 with skills/bar but not skills/foo, got exit=$ec err=$err"
 fi
 
+# Case 21 (s9): body edited and STAGED without bump (case (a) from
+# issue #194) → STOP without "(SKILL.md not staged — git add it)" hint.
+case_no=21
+sandbox=$(make_sandbox "$case_no")
+echo "Body edit." >> "$sandbox/skills/foo/SKILL.md"
+(cd "$sandbox" && git add skills/foo/SKILL.md)
+err=$(run_stage_check "$sandbox" 2>&1)
+ec=$?
+if [ "$ec" -ne 0 ] && [[ "$err" == *"STOP:"* ]] && [[ "$err" != *"not staged"* ]]; then
+  pass "case 21: edited+staged without bump → STOP without 'not staged' hint"
+else
+  fail "case 21: expected STOP without 'not staged' hint, got exit=$ec err=$err"
+fi
+
+# Case 22 (s10): body edited AND staged, SKILL.md bumped on disk but
+# bump NOT re-staged (case (b) from issue #194) → STOP WITH
+# "(SKILL.md not staged — git add it)" hint.
+#
+# Repro: stage the body edit (with old version), then bump version on
+# disk WITHOUT re-staging. staged_blob carries old version; on_disk_ver
+# carries new version. Asymmetric branch fires; hint should appear.
+case_no=22
+sandbox=$(make_sandbox "$case_no")
+# Step 1: edit body and stage it (with old version still in place).
+echo "Body edit." >> "$sandbox/skills/foo/SKILL.md"
+(cd "$sandbox" && git add skills/foo/SKILL.md)
+# Step 2: bump version on disk only — DO NOT re-stage.
+bump_version "$sandbox"
+err=$(run_stage_check "$sandbox" 2>&1)
+ec=$?
+if [ "$ec" -ne 0 ] && [[ "$err" == *"STOP:"* ]] \
+   && [[ "$err" == *"SKILL.md not staged — git add it"* ]]; then
+  pass "case 22: bump on disk but not re-staged → STOP with 'not staged' hint"
+else
+  fail "case 22: expected STOP with 'not staged' hint, got exit=$ec err=$err"
+fi
+
 # ----------------------------------------------------------------------
 # Summary.
 # ----------------------------------------------------------------------
