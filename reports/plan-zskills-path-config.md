@@ -1,5 +1,41 @@
 # Plan Report — zskills Path Configuration
 
+## Phase — 2b /run-plan writer migration + CANARY1 gate [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_PATH_CONFIG.md
+**Status:** Completed (verified — CANARY1 deferred)
+**Worktree:** /tmp/zskills-pr-zskills-path-config (PR mode — `feat/zskills-path-config`)
+**Commit:** `6b9552f`
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 2b.1 | /run-plan writer migration | Done | SPRINT_REPORT/PLAN_REPORT/reports/plan-/reports/verify- → `$ZSKILLS_AUDIT_DIR/<file>`; failure-protocol template Plan field uses `$ZSKILLS_PLANS_DIR/...` |
+| 2b.2 | PR-mode rewrites for /run-plan-owned fences | Done | 15 of 15 PR-mode-relevant fences rewritten per AUDIT.md classification using BOOKKEEPING_ROOT pattern (CLAUDE_PROJECT_DIR for cherry-pick/direct/bootstrap; WORKTREE_PATH for PR mode) |
+| 2b.3 | Mirror /run-plan | Done | `diff -rq skills/run-plan .claude/skills/run-plan` clean |
+| 2b.4 | Single-commit landing | Done | `6b9552f` |
+| 2b.5 | Manual CANARY1 run | **Deferred** | Verifier subagent's tool allowlist excludes Skill (can't dispatch /run-plan inline); deferred to post-commit smoke / manual user-driven validation. Migration correctness covered by conformance test sweep + full 2772/2772 suite + diff inspection. |
+
+### Verification
+- Test suite: **2772/2772 pass, 0 failed** (improvement from baseline 2771/2772 — the 1 expected fail is now resolved)
+- Conformance fail count: **3 → 0** (the run-plan trio unwound; phase-2b-AC met)
+- Mirror parity: clean
+- Version bump: `2026.05.07+392b64` → `2026.05.07+50cbf2`; `scripts/skill-version-compare.sh` exits 0; `skill-content-hash.sh` matches
+- Verifier discipline: `subagent_type: "verifier"` per Plan A; PASS first round (no fix cycle needed)
+- All commit-time hooks fired clean: `block-stale-skill-version.sh`, `block-unsafe-generic.sh`, `block-unsafe-project.sh`, `inject-bash-timeout.sh`
+
+### CANARY1 deferral note
+Plan §2b.5 specifies `/run-plan plans/CANARY1_HAPPY.md finish auto pr` as a manual smoke. The verifier subagent's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) does NOT include `Skill`, so /run-plan dispatch cannot happen inline during verification. Practical resolution: the migration correctness is already validated by:
+1. **Conformance test sweep** — 0 DRIFT hits post-2b (was 3 pre-2b)
+2. **Full test suite** — 2772/2772 (improved from 2771/2772)
+3. **Verifier diff inspection** — all PR-mode-relevant fences rewritten per AUDIT classification
+4. **PR-mode rewrite verification** — only `scripts/post-run-invariants.sh:52` retains `git rev-parse --git-common-dir`, matching audit's Phase 3 owner classification
+
+CANARY1 can be run by the user manually post-merge if desired, or by a future fresh top-level orchestrator session.
+
+### User Sign-off
+N/A — no UI files changed.
+
 ## Phase — 2a Bash writer migration (excluding /run-plan) [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_PATH_CONFIG.md
