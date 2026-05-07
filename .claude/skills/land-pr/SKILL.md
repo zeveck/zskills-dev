@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper skill — the canonical PR-landing primitive **for agent dispatch via the Skill tool**. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. **Designed for orchestrator agents** (the Skill tool with --body-file / --result-file args) — including both the 5 conformance-locked caller skills (/run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix) AND any top-level orchestrator agent landing a one-off PR. **Not designed for interactive human slash-command invocation** — humans wanting to ship a branch should type /commit pr instead (which dispatches /land-pr).
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>]
 metadata:
-  version: "2026.05.02+e41e24"
+  version: "2026.05.07+74a34a"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -391,7 +391,7 @@ if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "
 fi
 ```
 
-### Step 8 — Compose `.landed` (only if `--worktree-path`)
+### Step 8 — Compose `.landed` (auto-detect worktree if `--worktree-path` omitted)
 
 Use this **status mapping table** to derive `.landed`'s `status` field.
 **Evaluation: top-down, first-match-wins.** Failure-exits and
@@ -413,10 +413,37 @@ changed after) should NOT be reported as `landed`.
 | 9 | MERGE_REQUESTED=false (auto-merge-disabled-on-repo) AND CI_STATUS in {pass, none, skipped} | pr-ready |
 | 10 | MERGE_REQUESTED=false (auto-not-requested) AND CI_STATUS in {pass, none, skipped} | pr-ready |
 
-Compose the body and pipe to `write-landed.sh`:
+Compose the body and pipe to `write-landed.sh`. When `--worktree-path`
+is omitted, auto-detect from cwd: if cwd is a registered **linked**
+worktree of the current repo (NOT the main worktree, which has no
+associated branch-of-work to mark), use it as the marker target. This
+closes the Issue #205 gap where orchestrator-direct `/land-pr` dispatch
+from inside a worktree but without `--worktree-path` silently skipped
+the `.landed` write. `--worktree-path` remains an explicit override.
 
 <!-- allow-hardcoded: TZ=America/New_York reason: matches the schema doc above and the established idiom across skills; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this plan -->
 ```bash
+# Auto-detect WORKTREE_PATH from cwd when caller didn't pass --worktree-path.
+# Detection uses `git rev-parse` (worktree root + git-dir vs git-common-dir
+# divergence indicates a LINKED worktree, not the main worktree) plus
+# membership in `git worktree list --porcelain` for defense-in-depth.
+if [ -z "$WORKTREE_PATH" ]; then
+  CANDIDATE=$(git rev-parse --show-toplevel 2>/dev/null) || CANDIDATE=""
+  if [ -n "$CANDIDATE" ]; then
+    GIT_DIR=$(git -C "$CANDIDATE" rev-parse --git-dir 2>/dev/null) || GIT_DIR=""
+    GIT_COMMON_DIR=$(git -C "$CANDIDATE" rev-parse --git-common-dir 2>/dev/null) || GIT_COMMON_DIR=""
+    # Linked worktree: per-worktree git-dir differs from common-dir.
+    # Main worktree (or non-worktree dir): they match (or are empty on failure).
+    if [ -n "$GIT_DIR" ] && [ -n "$GIT_COMMON_DIR" ] && [ "$GIT_DIR" != "$GIT_COMMON_DIR" ]; then
+      # Verify membership in `git worktree list` to guard against odd
+      # checkout layouts that happen to expose distinct git-dirs.
+      if git -C "$CANDIDATE" worktree list --porcelain 2>/dev/null | grep -qF "worktree $CANDIDATE"; then
+        WORKTREE_PATH="$CANDIDATE"
+      fi
+    fi
+  fi
+fi
+
 if [ -n "$WORKTREE_PATH" ]; then
   # Derive .landed status from the table above.
   LANDED_STATUS="pr-ready"  # default fallback
@@ -445,11 +472,18 @@ if [ -n "$WORKTREE_PATH" ]; then
   esac
 
   # Metadata-only capture; on rare git failures (detached HEAD with
-  # missing $BASE_BRANCH ref) COMMITS_LIST stays empty rather than
+  # missing origin/$BASE_BRANCH ref) COMMITS_LIST stays empty rather than
   # aborting .landed write. Stderr goes to a discarded log, not the
   # null device — keeps the file inspectable post-mortem.
+  #
+  # Use `origin/$BASE_BRANCH` (NOT local `$BASE_BRANCH`): in multi-PR
+  # sequential sprints, local main goes stale relative to origin/main
+  # after each auto-merge, which over-populates this list with squash
+  # commits from prior sprints' PRs (Issue #203). pr-rebase.sh fetches
+  # origin/$BASE_BRANCH earlier in the pipeline, so it's always current
+  # by the time we reach Step 8.
   GIT_LOG_STDERR="/tmp/land-pr-commits-list-stderr-$BRANCH_SLUG-$$.log"
-  COMMITS_LIST=$(cd "$WORKTREE_PATH" && git log --format=%H "$BASE_BRANCH..HEAD" 2>"$GIT_LOG_STDERR" | tr '\n' ' ' | sed 's/ $//')
+  COMMITS_LIST=$(cd "$WORKTREE_PATH" && git log --format=%H "origin/$BASE_BRANCH..HEAD" 2>"$GIT_LOG_STDERR" | tr '\n' ' ' | sed 's/ $//')
   LANDED_DATE=$(TZ=America/New_York date -Iseconds)
 
   {

@@ -620,6 +620,18 @@ check_fixed land-pr "pr number from url"           'PR_NUMBER="${PR_URL##*/}"'
 check       land-pr "pr number numeric check"      'PR_NUMBER" =~ \^\[0-9\]\+\$'
 check       land-pr "push error-check first-time"  'if ! git push -u origin'
 
+# --- Issue #188 regression guard: pr-push-and-create.sh must NOT use
+# bare `git push` (which silently no-ops when CWD's current branch
+# differs from $BRANCH). The push must always be `git push -u origin
+# "$BRANCH"` explicitly.
+check_not_in_file land-pr scripts/pr-push-and-create.sh \
+  "no bare git push (Issue #188)" \
+  '^[[:space:]]*git push[[:space:]]*$|^[[:space:]]*if ! git push[[:space:]]*>'
+# Companion: post-push verification via ls-remote must be present.
+check_in_file land-pr scripts/pr-push-and-create.sh \
+  "post-push verification via ls-remote (Issue #188)" \
+  'git ls-remote origin'
+
 # --- BRANCH_SLUG derivation (foundation bug fix from Phase 1A) ---
 check_fixed land-pr "BRANCH_SLUG derivation"  'BRANCH_SLUG'
 

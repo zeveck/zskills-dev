@@ -77,6 +77,7 @@ run_suite "test-update-zskills-agent-install" "tests/test-update-zskills-agent-i
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-land-pr-scripts.sh" "tests/test-land-pr-scripts.sh"
+run_suite "test-land-pr-worktree-detect.sh" "tests/test-land-pr-worktree-detect.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-zskills-resolve-config.sh" "tests/test-zskills-resolve-config.sh"
 run_suite "test-json-set-string-field.sh" "tests/test-json-set-string-field.sh"
