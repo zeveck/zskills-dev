@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.06+2aef27"
+  version: "2026.05.07+5a9de3"
 ---
 
 # Update Z Skills Infrastructure
@@ -301,6 +301,19 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    config is a no-op. Detection regex (bash): test against
    `\"dashboard\"[[:space:]]*:[[:space:]]*\{[^}]*\"work_on_plans_trigger\"`
    — if it does NOT match, the backfill applies.
+
+   <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
+   ```markdown
+   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`
+   > and `output.issues_dir` MUST NOT be inserted into
+   > `.claude/zskills-config.json` during install or `--rerender`. Their
+   > absence is meaningful — the helper falls back to legacy `plans/`,
+   > preserving consumer-current behavior. Only `/update-zskills
+   > --migrate-paths` writes these keys (and writes BOTH or NEITHER).
+   > See plan `docs/plans/ZSKILLS_PATH_CONFIG.md` (or
+   > `plans/ZSKILLS_PATH_CONFIG.md` pre-migration).
+   ```
+
 4. Copy `config/zskills-config.schema.json` from `$PORTABLE` to
    `.claude/zskills-config.schema.json` in the target project (so the
    `$schema` reference in the config resolves correctly).
@@ -1219,6 +1232,7 @@ STALE_LIST=(
   verify-completed-checksums.sh
   worktree-add-safe.sh
   write-landed.sh
+  zskills-paths.sh
   zskills-stub-lib.sh
 )
 ```

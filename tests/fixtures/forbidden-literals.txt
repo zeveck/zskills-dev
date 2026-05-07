@@ -38,3 +38,30 @@ re:\$TEST_OUT/\.test-results\.txt
 # exempt legitimate examples (e.g., references/skill-versioning.md
 # documents the format with example values).
 re:[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}
+
+# --- Path-config conformance (ZSKILLS_PATH_CONFIG plan, Phase 1) ---
+# These literals are forbidden outside zskills-paths.sh, the migration tool,
+# the schema, and explicit per-fence allow-hardcoded markers. Anchor patterns
+# require word-boundary or punctuation context to avoid false positives on
+# user prose.
+re:(^|[^A-Za-z0-9_])SPRINT_REPORT\.md
+re:(^|[^A-Za-z0-9_])FIX_REPORT\.md
+re:(^|[^A-Za-z0-9_])PLAN_REPORT\.md
+re:(^|[^A-Za-z0-9_])VERIFICATION_REPORT\.md
+re:(^|[^A-Za-z0-9_])NEW_BLOCKS_REPORT\.md
+re:(^|[^A-Za-z0-9_])BUILD_ISSUES\.md
+re:(^|[^A-Za-z0-9_])DOC_ISSUES\.md
+re:(^|[^A-Za-z0-9_])QE_ISSUES\.md
+re:(^|[^A-Za-z0-9_])ISSUES_PLAN\.md
+re:^plans/
+re:^reports/
+re:"plans/
+re:"reports/
+re:'plans/
+re:'reports/
+re:\$MAIN_ROOT/plans
+re:\$MAIN_ROOT/reports
+re:\$WORKTREE_PATH/plans
+re:\$WORKTREE_PATH/reports
+re:(^|[^A-Za-z0-9_])var/dev\.(pid|log)
+re:^[[:space:]]*mkdir[[:space:]].*[^A-Za-z0-9_]reports/

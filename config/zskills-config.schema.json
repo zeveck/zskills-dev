@@ -158,6 +158,21 @@
           "description": "Relative path to a consumer-authored trigger script. When set, the dashboard's Run button posts to /api/trigger, which spawns the script with the selected /work-on-plans invocation as argv[1]. No default script is shipped. If absent or empty, the Run button is hidden client-side and /api/trigger returns 501."
         }
       }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Output-path overrides for zskills-managed files. Distinct from `testing.output_file` (which configures test-result capture). Absent keys fall back to legacy `plans/` (NOT to the documented defaults). Set explicitly via /update-zskills --migrate-paths.",
+      "properties": {
+        "plans_dir": {
+          "type": "string",
+          "description": "Directory for Tier-1 user-curated plans (<NAME>_PLAN.md). Documented default: docs/plans. Absent → legacy plans/. Resolved as: absolute (starts with /) used as-is; everything else joined with project root. Distinct from testing.output_file. Note: PLAN_INDEX.md is regenerated and lives in .zskills/audit/ (Tier 2), not in plans_dir."
+        },
+        "issues_dir": {
+          "type": "string",
+          "description": "Directory for issue trackers (ISSUES_PLAN.md, BUILD_ISSUES.md, DOC_ISSUES.md, QE_ISSUES.md). Documented default: .zskills/issues. Absent → legacy plans/. Same resolution rules as plans_dir. Distinct from testing.output_file."
+        }
+      }
     }
   }
 }

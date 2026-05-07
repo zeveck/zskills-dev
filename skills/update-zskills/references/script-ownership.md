@@ -53,9 +53,10 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `verify-completed-checksums.sh` | 1   | `draft-tests`                |
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
+| `zskills-paths.sh`           | 1      | sourceable helper setting $ZSKILLS_PLANS_DIR / $ZSKILLS_ISSUES_DIR / $ZSKILLS_AUDIT_DIR; sibling to zskills-resolve-config.sh; vars are NOT exported (callers spawning child processes export explicitly) |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 
-Total: 29 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+Total: 30 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.cjs`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
 `create-worktree`, `detect-language`, `draft-orchestrator`,
@@ -64,7 +65,7 @@ Total: 29 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `plan-drift-correct`, `port`, `post-run-invariants`,
 `re-invocation-detect`, `review-loop`, `sanitize-pipeline-id`,
 `statusline`, `verify-completed-checksums`, `worktree-add-safe`,
-`write-landed`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
+`write-landed`, `zskills-paths`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
 `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
 
 ## Format contract
