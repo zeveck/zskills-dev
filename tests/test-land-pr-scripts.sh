@@ -184,12 +184,11 @@ cleanup_fixture "$F"
 # Failure mode #4 — push-failed
 # ----------------------------------------------------------------------
 F=$(new_fixture mode4)
-# pr-push-and-create.sh sequence:
+# pr-push-and-create.sh sequence (post-Issue-#188 fix):
 #   gh pr list --head ... --json --> empty array, exit 0
-#   git rev-parse --abbrev-ref --symbolic-full-name @{u} --> exit 0 (upstream set)
-#   git push --> exit 1, stderr captured to sidecar
+#   git push -u origin <branch> --> exit 1, stderr captured to sidecar
+#   (no rev-parse/ls-remote verify — push fails first, error short-circuits)
 prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
-prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" push      1 exit 1
 prep_git "$F/state-git" push      1 stderr 'remote: Permission denied'
 mkdir -p "$F/work"
@@ -211,8 +210,10 @@ cleanup_fixture "$F"
 F=$(new_fixture mode5)
 # pr_list returns empty (no existing PR detected at read time)
 prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
-prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" push      1 exit 0
+# Post-push verification (Issue #188 fix): rev-parse local + ls-remote remote.
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout 'abc123	refs/heads/feat/x'
 # pr_create fails with "already exists" — race
 prep_gh  "$F/state-gh"  pr_create 1 exit 1
 prep_gh  "$F/state-gh"  pr_create 1 stderr 'pull request already exists for branch feat/x'
@@ -234,8 +235,9 @@ cleanup_fixture "$F"
 # ----------------------------------------------------------------------
 F=$(new_fixture mode6a)
 prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
-prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout 'abc123	refs/heads/feat/x'
 prep_gh  "$F/state-gh"  pr_create 1 stdout 'https://github.com/o/r/pull/abc'
 mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
 run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
@@ -251,8 +253,9 @@ cleanup_fixture "$F"
 # `gh pr view` is NOT invoked.
 F=$(new_fixture mode6b)
 prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
-prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout 'abc123	refs/heads/feat/x'
 prep_gh  "$F/state-gh"  pr_create 1 stdout 'https://github.com/o/r/pull/42'
 mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
 run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
@@ -373,8 +376,9 @@ cleanup_fixture "$F"
 F=$(new_fixture idem2)
 # pr_list returns existing PR
 prep_gh  "$F/state-gh"  pr_list   1 stdout '[{"number":7,"url":"https://github.com/o/r/pull/7"}]'
-prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout 'abc123	refs/heads/feat/x'
 mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
 run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
   --branch feat/x --base main --title 'T' --body-file "$F/work/body.md"
@@ -482,6 +486,72 @@ if [ "$SUT_RC" -eq 10 ] \
   fi
 else
   fail "[slug] branch-slash sanitized" "rc=$SUT_RC out=$SUT_OUT"
+fi
+cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
+# Issue #188 regression: pr-push-and-create.sh must push $BRANCH
+# explicitly (not bare `git push`). Pre-fix code used CWD's current
+# branch via @{u}, which silently no-opped when CWD != $BRANCH.
+# Assertion: the recorded `git push` invocation log contains the
+# explicit `-u origin <branch>` form.
+# ----------------------------------------------------------------------
+F=$(new_fixture issue188_explicit_push)
+prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
+prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout 'abc123	refs/heads/feat/x'
+prep_gh  "$F/state-gh"  pr_create 1 stdout 'https://github.com/o/r/pull/77'
+mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
+run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
+  --branch feat/x --base main --title 'T' --body-file "$F/work/body.md"
+INVOCATIONS_FILE="$F/state-git/_invocations.log"
+PUSH_LINE=$(grep '^push ' "$INVOCATIONS_FILE" 2>/dev/null || echo "")
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$PUSH_LINE" == *"-u"*"origin"*"feat/x"* ]]; then
+  pass "[issue188] pr-push-and-create always pushes \$BRANCH explicitly (-u origin <branch>)"
+else
+  fail "[issue188] pr-push-and-create explicit-branch push" "rc=$SUT_RC push_line='$PUSH_LINE'"
+fi
+cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
+# Issue #188 defense-in-depth: post-push verification catches silent
+# no-op pushes. Mock push exits 0 but ls-remote returns a different
+# (or empty) SHA — assertion: script exits 12 with CALL_ERROR_FILE.
+# ----------------------------------------------------------------------
+F=$(new_fixture issue188_verify_mismatch)
+prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
+prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+# ls-remote returns a different SHA — silent no-op simulation
+prep_git "$F/state-git" ls-remote 1 stdout 'deadbeef	refs/heads/feat/x'
+mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
+run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
+  --branch feat/x --base main --title 'T' --body-file "$F/work/body.md"
+if [ "$SUT_RC" -eq 12 ] \
+   && [[ "$SUT_OUT" =~ CALL_ERROR_FILE=([^[:space:]]+) ]] \
+   && [[ "$SUT_ERR" == *"post-push verification failed"* ]]; then
+  pass "[issue188] post-push verification catches local/remote SHA mismatch (exit 12)"
+else
+  fail "[issue188] post-push verification mismatch" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR"
+fi
+cleanup_fixture "$F"
+
+# Companion: ls-remote returns empty (remote ref not present) — also exit 12.
+F=$(new_fixture issue188_verify_empty)
+prep_gh  "$F/state-gh"  pr_list   1 stdout '[]'
+prep_git "$F/state-git" push      1 exit 0
+prep_git "$F/state-git" rev-parse 1 stdout 'abc123'
+prep_git "$F/state-git" ls-remote 1 stdout ''
+mkdir -p "$F/work"; echo "PR body" > "$F/work/body.md"
+run_sut "$F" bash "$SCRIPTS_DIR/pr-push-and-create.sh" \
+  --branch feat/x --base main --title 'T' --body-file "$F/work/body.md"
+if [ "$SUT_RC" -eq 12 ] \
+   && [[ "$SUT_ERR" == *"post-push verification failed"* ]]; then
+  pass "[issue188] post-push verification catches empty remote ref (exit 12)"
+else
+  fail "[issue188] post-push verification empty-remote" "rc=$SUT_RC err=$SUT_ERR"
 fi
 cleanup_fixture "$F"
 

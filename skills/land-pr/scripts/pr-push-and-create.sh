@@ -7,7 +7,10 @@
 # Behavior:
 #   1. Detect existing PR via `gh pr list --head <branch> --base <base> --json`.
 #      Parse with bash regex (no jq binary).
-#   2. Push (-u origin <branch>; or `git push` if upstream is set).
+#   2. Push (-u origin <branch>); always push $BRANCH explicitly
+#      (NOT bare `git push` — which silently no-ops when CWD's current
+#      branch differs from $BRANCH; Issue #188). Verify post-push that
+#      remote HEAD == local HEAD via `git ls-remote`.
 #   3. If a PR already exists: emit PR_EXISTING=true and the URL/number,
 #      exit 0. Body update is the CALLER's responsibility, not /land-pr's
 #      (HTML-comment-marker splice preservation).
@@ -98,26 +101,31 @@ if [[ "$PR_LIST_JSON" =~ \"number\":[[:space:]]*([0-9]+) ]]; then
   fi
 fi
 
-# Step 2 — Push the branch. Use -u origin if no upstream is configured;
-# otherwise plain `git push` (preserves any user-configured remote name).
-if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>"$STDERR_LOG"; then
-  if ! git push >"$STDERR_LOG" 2>&1; then
-    ERR_FILE="/tmp/land-pr-push-error-$BRANCH_SLUG-$$.txt"
-    cp "$STDERR_LOG" "$ERR_FILE"
-    echo "ERROR: pr-push-and-create.sh: git push failed — see $ERR_FILE" >&2
-    cat "$STDERR_LOG" >&2
-    echo "CALL_ERROR_FILE=$ERR_FILE"
-    exit 12
-  fi
-else
-  if ! git push -u origin "$BRANCH" >"$STDERR_LOG" 2>&1; then
-    ERR_FILE="/tmp/land-pr-push-error-$BRANCH_SLUG-$$.txt"
-    cp "$STDERR_LOG" "$ERR_FILE"
-    echo "ERROR: pr-push-and-create.sh: git push -u origin $BRANCH failed — see $ERR_FILE" >&2
-    cat "$STDERR_LOG" >&2
-    echo "CALL_ERROR_FILE=$ERR_FILE"
-    exit 12
-  fi
+# Step 2 — Push $BRANCH explicitly. Do NOT use bare `git push` (which
+# pushes CWD's current branch and silently no-ops when current != $BRANCH;
+# Issue #188 root cause). `-u` sets upstream tracking idempotently
+# (no-op if already set).
+if ! git push -u origin "$BRANCH" >"$STDERR_LOG" 2>&1; then
+  ERR_FILE="/tmp/land-pr-push-error-$BRANCH_SLUG-$$.txt"
+  cp "$STDERR_LOG" "$ERR_FILE"
+  echo "ERROR: pr-push-and-create.sh: git push -u origin $BRANCH failed — see $ERR_FILE" >&2
+  cat "$STDERR_LOG" >&2
+  echo "CALL_ERROR_FILE=$ERR_FILE"
+  exit 12
+fi
+
+# Defense-in-depth: post-push verification. Confirm the remote ref now
+# matches the local ref. Catches silent no-op pushes (e.g., if origin
+# was misconfigured, if a sibling agent force-pushed something else,
+# or if a future regression of the push command reintroduces Issue #188).
+LOCAL_HEAD=$(git rev-parse "refs/heads/$BRANCH" 2>"$STDERR_LOG")
+REMOTE_HEAD=$(git ls-remote origin "refs/heads/$BRANCH" 2>>"$STDERR_LOG" | awk '{print $1}')
+if [ -z "$REMOTE_HEAD" ] || [ "$LOCAL_HEAD" != "$REMOTE_HEAD" ]; then
+  ERR_FILE="/tmp/land-pr-push-verify-error-$BRANCH_SLUG-$$.txt"
+  cp "$STDERR_LOG" "$ERR_FILE"
+  echo "ERROR: pr-push-and-create.sh: post-push verification failed — local HEAD $LOCAL_HEAD does not match remote HEAD ${REMOTE_HEAD:-<empty>}; remote ref may not exist or may be at the wrong commit. See $ERR_FILE" >&2
+  echo "CALL_ERROR_FILE=$ERR_FILE"
+  exit 12
 fi
 
 # Step 3 — Existing PR detected? Emit and exit. Caller owns body update.
