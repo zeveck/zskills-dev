@@ -241,7 +241,7 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 | 2b — `/run-plan` writer migration + CANARY1 gate | ✅ Done | `6b9552f` | | self-migration hazard isolated; one commit |
 | 3 — Bash reader migration + scripts | ✅ Done | `59aeff7` | | readers + post-run-invariants.sh + build-prod.sh |
 | 4 — Briefing + dashboard migration | ✅ Done | `99ad5df` | | depends on cleanup/remove-zimulink-viewer-refs merge (locked decision 12) |
-| 5a — Migration tool deterministic moves | ⬜ | | --migrate-paths flag + 4 simple test cases |
+| 5a — Migration tool deterministic moves | ✅ Done | `12042ae` | | --migrate-paths flag + new Tier-1 migrate-paths.sh + 4 test cases (15 sub-assertions) |
 | 5b — Cross-reference rewrite + complex test cases | ⬜ | | adapted context-signature; 6 cross-ref test cases incl. `--rewrite-only` recovery (5b's 6 + 5a's 4 = 10 total) |
 | 6 — Self-migration + canary gating + docs | ⬜ | | apply --migrate-paths to zskills repo; CANARY1/6/7/8/9/10; docs |
 

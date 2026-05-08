@@ -1,5 +1,46 @@
 # Plan Report — zskills Path Configuration
 
+## Phase — 5a Migration tool: deterministic moves [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_PATH_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-path-config (PR mode — `feat/zskills-path-config`)
+**Commit:** `12042ae`
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 5a.1 | Implement `migrate-paths.sh` (605 lines, executable, Tier-1 owned by update-zskills) | Done | `12042ae` |
+| 5a.2 | `--migrate-paths` flag handling + 4 allow-hardcoded fences in `update-zskills/SKILL.md` | Done | `12042ae` |
+| 5a.3 | 11-step deterministic algorithm (rerender hoisted to 2.5; atomic config write LAST) | Done | `12042ae` |
+| 5a.4 | New test suite `tests/test-update-zskills-paths-migration.sh` (4 cases / 15 sub-assertions) | Done | `12042ae` |
+| 5a.5 | New Tier-1 row in `script-ownership.md` for `migrate-paths.sh` | Done | `12042ae` |
+| 5a.6 | Mirror to `.claude/skills/update-zskills/` (`diff -rq` clean) | Done | `12042ae` |
+| 5a.7 | Single commit `feat(update-zskills): add --migrate-paths deterministic mover and 4 test cases` | Done | `12042ae` |
+
+### Verification
+- Test suite: 2787/2787 (baseline 2772 → +15 from new sub-assertions). RC=0.
+- Phase 5a test in isolation: 15/15 sub-assertions PASS.
+- All 4 Phase 5a cases (legacy-only, pre-configured, idempotent re-run, empty fixture) PASS.
+- Skill versioning: `update-zskills` metadata.version `2026.05.07+e70112` → `2026.05.07+0994ca` (mandatory bump enforced via pre-commit hook).
+- Tier-1 cohabitation: new SHA `03dca86406bff…` registered in `tier1-shipped-hashes.txt` AND added to STALE_LIST AND added to `script-ownership.md` row, all in same commit.
+- Mirror clean: `diff -rq skills/update-zskills .claude/skills/update-zskills` produces no output.
+- Layer 3 verifier-response validation: PASS (no stalled-string trigger; 2787/2787 attest).
+- PLAN-TEXT-DRIFT tokens: none. Acceptance band exact (4 fences = 4 measured; 4 cases = 4 measured; 11 steps = 11 measured; +15 sub-asserts = +15 delta).
+
+### Notes
+- Verifier-pre-commit transient: implementer ran `git hash-object -w` on `migrate-paths.sh` to insert the blob into the object store before running `tests/test-update-zskills-migration.sh` Case 2c, which uses `find_blob_for` + `git cat-file blob` and would otherwise fail on the uncommitted blob. The verifier's commit resolved this permanently — no special handling needed downstream. Pattern matches the existing Case 6c "uncommitted in this worktree (pre-commit state)" precedent.
+- Hook rerender ordering verified: step 2.5 sits at line 107; first move (step 3) at line 154 of `migrate-paths.sh` — hook strengthens before any filesystem mutations.
+- Atomic config write verified: lines 577-585 use `if [ HAS_PLANS_KEY -eq 0 ] OR [ HAS_ISSUES_KEY -eq 0 ]; write BOTH` — no partial-state path.
+
+### Dependencies satisfied
+- Phase 1 (schema, helper, conformance, hook fence) — `5b9f150`
+- Phases 2a/2b/3/4 (writer + reader + briefing migrations) — `6c2dc50`, `6b9552f`, `59aeff7`, `99ad5df`
+
+### Next phases
+- 5b — Cross-reference rewrite + complex test cases (6 more cases; total 10)
+- 6 — Self-migration + canary gating + docs
+
 ## Phase — 4 Briefing + dashboard migration [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_PATH_CONFIG.md
