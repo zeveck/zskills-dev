@@ -1,5 +1,51 @@
 # Plan Report — zskills Path Configuration
 
+## Phase — 4 Briefing + dashboard migration [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_PATH_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-path-config (PR mode — `feat/zskills-path-config`)
+**Commit:** `99ad5df` (impl + verifier-attest), `41e6701` (Phase 3 follow-up landed pre-Phase-4 to fix Tier-1 commit-cohabitation)
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 4.0 | LD-12 cleanup-branch prerequisite | Done | PR #196 satisfied; 0 viewer URLs in skills/briefing/ + skills/fix-report/ |
+| 4.1 | JS config-read helper in briefing.cjs | Done | `readZskillsPaths(mainPath)` at lines 48-63; silent-fallback to legacy `plans/`; absolute-path passthrough; relative-to-mainPath join |
+| 4.2 | briefing.cjs migration | Done | 6 sites (`mainPath/'reports'/...` → `paths.auditDir`, etc.); root-level `*REPORT*.md` scans removed |
+| 4.3 | Python config-read helper in briefing.py | Done | `read_zskills_paths(main_path)` at lines 47-78 — IDENTICAL semantics to JS helper (verified by parity test) |
+| 4.4 | briefing.py migration | Done | 6 sites in lockstep with .cjs |
+| 4.5 | Briefing parity test | Done | 21/21 PASS (no new test added — spec §4.5 only required verification, not extension) |
+| 4.6 | server.py migration | Done | `_resolve_paths` helper at line 234; 1 site at `_handle_plan_detail` (line 724); 404 message names resolved path |
+| 4.7 | collect.py migration | Done | `_resolve_paths` helper at line 215; 3 sites: parse_report (533), collect_snapshot (1098), fixture-mode main (1204). Inline cross-reference comment notes lockstep duplication |
+| 4.8 | Mirror briefing | Done | `diff -rq` clean |
+| 4.9 | Mirror zskills-dashboard | Done | `diff -rq` clean (modulo __pycache__ bytecode) |
+| 4.10 | End-of-phase leak-window re-check | Done | 0 viewer URLs ✓ |
+| 4.11 | Single-commit landing | Done | `99ad5df` |
+
+### Verification
+- Test suite: **2772/2772 pass, 0 failed** (unchanged from Phase 3 baseline)
+- Briefing parity: **21/21 PASS** (JS+Python reimps produce identical output under non-default path-config)
+- `metadata.version` bumps verified: briefing → `2026.05.07+6fe1fc`, zskills-dashboard → `2026.05.07+a3fc3c`, update-zskills → `2026.05.07+e70112`
+- Tier-1 hash registry updated: briefing.cjs (`0ae38af2`) + briefing.py (`c551d880`) added; collect.py/server.py correctly excluded (live under `skills/zskills-dashboard/scripts/zskills_monitor/`, not `/scripts/`, so not in `script-ownership.md`'s Tier-1 list)
+- Mirror parity: clean for all 3 touched skills
+- Verifier discipline: `subagent_type: "verifier"` per Plan A; PASS first round
+- 0 conformance hits (briefing.cjs/.py + collect.py/server.py aren't conformance-walked anyway — explicit grep AC for Python sites verified)
+
+### Phase 3 follow-up landed pre-Phase-4 (`41e6701`)
+Phase 3's commit `59aeff7` modified `post-run-invariants.sh` (content hash → `88f04ccc`) but missed updating `tier1-shipped-hashes.txt`. test-update-zskills-migration cases 6b + 6c failed at Phase 4 baseline. Fixed by adding the new hash to the registry + bumping `update-zskills` metadata.version. Lesson propagated to Phase 4: implementer eagerly updated registry for briefing.cjs/.py.
+
+### PLAN-TEXT-DRIFT (informational, anchor drift)
+- `phase=4 bullet=4.5 field=parity-test-case-count plan=24 actual=21`
+- `phase=4 bullet=4.7 field=parse_report-anchor plan=528 actual=533`
+- `phase=4 bullet=4.7 field=plans_dir-anchor1 plan=1093,1097 actual=1098`
+- `phase=4 bullet=4.7 field=plans_dir-anchor2 plan=1199 actual=1204`
+- `phase=4 bullet=4.7 field=relative-to-main-anchor plan=582 actual=587`
+- (2 more anchors verified-correct, no drift)
+
+### User Sign-off
+N/A — no UI files changed (skill prose + scripts only).
+
 ## Phase — 3 Bash reader migration + scripts [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_PATH_CONFIG.md
