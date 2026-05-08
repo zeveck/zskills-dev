@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.07+0994ca"
+  version: "2026.05.08+95cfbe"
 ---
 
 # Update Z Skills Infrastructure
@@ -285,6 +285,67 @@ For start-dev.sh / stop-dev.sh customizations, see
 
 After dispatch, `/update-zskills --migrate-paths` exits with the script's
 exit code. Do NOT proceed to Step 0.25 / 0.5 / audit.
+
+### Cross-reference rewrite (Phase 5b)
+
+`migrate-paths.sh` runs a structural-reference rewriter immediately after
+gitignore update (step 7) and before the manifest write (step 9). The
+rewriter scans every `.md` under `<TARGET_PLANS>` and rewrites legacy
+`plans/X.md` and `reports/Y.md` tokens to the migrated paths, gated by
+the YAML frontmatter `status:` field.
+
+**Frontmatter decision tree:**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ reason: Phase 5b cross-ref-rewrite decision tree names the legacy path tokens the rewriter substitutes inside plan content -->
+```text
+status: active     → REWRITE (all 4 enclosure types)
+status: proposal   → REWRITE
+(no frontmatter)   → REWRITE
+status: complete + filename CANARY*.md   → REWRITE (slash-command lines
+                                            naturally limited by rule 4)
+status: complete + non-canary filename   → PRESERVE (frozen) + scan/warn
+status: deferred / paused / other        → PRESERVE + scan/warn
+```
+
+**Four enclosure types** triggering rewrite — token must appear inside ONE:
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:run-plan reason: Phase 5b cross-ref-rewrite enumerates the four structural enclosures that promote a path token from naked-prose to rewritable -->
+```text
+1. Markdown link:   [...](plans/X.md)  or  [...](reports/Y.md)
+2. Backtick span:   `plans/X.md`       or  `reports/Y.md`
+3. Shell line:      inside ```bash/```sh/```shell/``` fence,
+                    OR line starts with "$ ",
+                    OR line ends with shell metachar | > < ;
+4. Slash-command:   /run-plan plans/X.md  (also draft-plan, refine-plan,
+                    draft-tests, work-on-plans, research-and-plan,
+                    research-and-go)
+```
+
+**Substitution targets:**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:.zskills/audit reason: Phase 5b cross-ref-rewrite substitution rules name the legacy → migrated path mappings -->
+```text
+plans/X.md           → <TARGET_PLANS>/X.md   (e.g., docs/plans/X.md)
+reports/<slug>-Y.md  → .zskills/audit/<slug>-Y.md
+                       (slug ∈ {plan, verify, briefing, new-blocks})
+```
+
+**Warning emission contract.** For PRESERVED plans containing legacy
+tokens, the rewriter emits a stderr `WARN` line per hit AND appends the
+same line to `.pre-paths-migration-warnings` at the repo root:
+
+<!-- allow-hardcoded: re:plans/ re:reports/ reason: Phase 5b cross-ref-rewrite warning format documents the WARN line emitted to stderr + .pre-paths-migration-warnings for legacy tokens preserved in frozen plans -->
+```text
+WARN docs/plans/OLD_FEATURE.md:42: legacy token 'plans/OTHER.md' preserved (frozen plan; see path-config-upgrade.md)
+```
+
+**`--rewrite-only` flag.** For mid-version-skip recovery (when an older
+5a-only `migrate-paths.sh` ran without cross-ref rewrite), the agent-
+runnable upgrade prompt at `references/path-config-upgrade.md` invokes
+`migrate-paths.sh --rewrite-only "$MAIN_ROOT"`. This skips steps 1–7,
+resolves `<TARGET_PLANS>` from the existing config, runs ONLY the cross-
+ref rewrite, and appends a `rewrite-only:	<ts>	<count>` trailer to the
+existing manifest. Config keys are not re-written. Idempotent.
 
 ---
 

@@ -29,8 +29,27 @@
 
 set -u
 
+# ─── Argument parsing ──────────────────────────────────────────────────────
+# Optional `--rewrite-only` flag (Phase 5b) before the positional <main-root>.
+# Behavior under --rewrite-only:
+#   (a) Precondition — `.pre-paths-migration` MUST already exist.
+#   (b) Skip steps 1–7 entirely.
+#   (c) Resolve TARGET_PLANS from the existing config's output.plans_dir.
+#   (d) Execute ONLY the cross-ref rewrite over plan files (decision tree).
+#   (e) Append a `rewrite-only:` trailer line to .pre-paths-migration.
+#   (f) Skip the config-key write (step 10).
+#   (g) Print a summary; exit 0 on success.
+REWRITE_ONLY=0
+if [ "${1:-}" = "--rewrite-only" ]; then
+  REWRITE_ONLY=1
+  shift
+fi
+
 MAIN_ROOT="${1:-}"
-[ -z "$MAIN_ROOT" ] && { echo "usage: migrate-paths.sh <main-root>" >&2; exit 1; }
+[ -z "$MAIN_ROOT" ] && {
+  echo "usage: migrate-paths.sh [--rewrite-only] <main-root>" >&2
+  exit 1
+}
 cd "$MAIN_ROOT" || exit 1
 
 # Manifest accumulator: each entry is "from\tto" appended with $'\n'.
@@ -41,6 +60,255 @@ manifest_add() {
   MANIFEST="${MANIFEST}${1}	${2}
 "
 }
+
+# ─── cross_ref_rewrite() — Phase 5b structural-reference rewriter ──────────
+# Scans a plan file line-by-line maintaining fence state (mirrors the
+# conformance-scanner idiom in tests/test-skill-conformance.sh:1066-1124).
+# A line is rewritten iff a path token (`plans/X.md` or
+# `reports/(plan|verify|briefing|new-blocks)-Y.md`) is enclosed by ONE of:
+#   1. Markdown link  [...](...)
+#   2. Backtick code-span  `...`
+#   3. Bash/shell command-line (inside bash/sh/shell/empty-lang fence,
+#      OR starts with "$ ", OR ends with shell metachar |, >, <, ;)
+#   4. Slash-command invocation  /run-plan, /draft-plan, /refine-plan,
+#      /draft-tests, /work-on-plans, /research-and-plan, /research-and-go
+# Substitution:
+#   plans/X.md           → <TARGET_PLANS>/X.md
+#   reports/Y.md         → .zskills/audit/Y.md  (only plan/verify/briefing/
+#                                                new-blocks prefix slugs)
+# Mode preservation: chmod --reference (Linux); fall back to chmod 644 on
+# macOS (round-2 DA D2). Symlinked plans are defensively skipped.
+cross_ref_rewrite() {
+  local file="$1"
+  local target_plans="$2"
+  if [ -L "$file" ]; then
+    echo "WARN: cross_ref_rewrite skipping symlink: $file" >&2
+    return 0
+  fi
+  # Bash `[[ =~ ]]` only handles backslash-escaped metachars correctly when
+  # the regex is in a variable (inline-quoted backslashes get pre-processed
+  # by the shell). Store every regex used below in a variable.
+  local re_fence='^[[:space:]]*```([a-zA-Z0-9_+-]*)[[:space:]]*$'
+  local re_token='(plans/[A-Za-z][A-Za-z0-9_-]*\.md|reports/(plan|verify|briefing|new-blocks)-[a-z0-9-]+\.md)'
+  local re_link='\[[^]]*\]\('"$re_token"
+  local re_backtick='`[^`]*'"$re_token"'[^`]*`'
+  local re_dollar_prefix='^\$[[:space:]]'
+  local re_meta_suffix='[|><;][[:space:]]*$'
+  local re_slash='/(run-plan|draft-plan|refine-plan|draft-tests|work-on-plans|research-and-plan|research-and-go)[[:space:]]+'"$re_token"
+  # Idempotency guard — if `target_plans` already contains `plans/` (e.g.,
+  # `docs/plans`), a naive `${line//plans\//.../}` replace will double-
+  # rewrite an already-migrated path. Build a "negative-prefix" guard: a
+  # line is only rewritten if its `plans/X.md` token is NOT already
+  # preceded by the target_plans prefix.
+  local in_fence=0
+  local fence_lang=""
+  local out_file
+  out_file=$(mktemp)
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Fence open/close detection.
+    if [[ "$line" =~ $re_fence ]]; then
+      if [ "$in_fence" -eq 0 ]; then
+        in_fence=1
+        fence_lang="${BASH_REMATCH[1]}"
+      else
+        in_fence=0
+        fence_lang=""
+      fi
+      printf '%s\n' "$line" >> "$out_file"
+      continue
+    fi
+    # Decide if line is a structural reference (4 enclosure types).
+    local rewrite=0
+    # Enclosure 1: markdown link [...](TOKEN)
+    if [[ "$line" =~ $re_link ]]; then rewrite=1; fi
+    # Enclosure 2: backticked code-span containing TOKEN
+    if [[ "$line" =~ $re_backtick ]]; then rewrite=1; fi
+    # Enclosure 3: bash/shell command-line — fence-anchored.
+    if [ "$in_fence" -eq 1 ] && { [ "$fence_lang" = "bash" ] || [ "$fence_lang" = "sh" ] || [ "$fence_lang" = "shell" ] || [ -z "$fence_lang" ]; }; then
+      if [[ "$line" =~ $re_token ]]; then rewrite=1; fi
+    fi
+    # Enclosure 3': prose-line shell heuristic ($ prefix or trailing metachars).
+    if [[ "$line" =~ $re_dollar_prefix ]] || [[ "$line" =~ $re_meta_suffix ]]; then
+      if [[ "$line" =~ $re_token ]]; then rewrite=1; fi
+    fi
+    # Enclosure 4: slash-command invocation.
+    if [[ "$line" =~ $re_slash ]]; then rewrite=1; fi
+    if [ "$rewrite" -eq 1 ]; then
+      # Substitute `plans/X.md` → `<TARGET_PLANS>/X.md`; `reports/Y.md` → `.zskills/audit/Y.md`.
+      # Idempotency: only substitute `plans/` when NOT preceded by the target prefix.
+      # Use sed with a negative lookbehind-equivalent: anchor on a character
+      # class that excludes the path-character set (and start-of-line).
+      # Pattern: `(^|[^A-Za-z0-9_/.-])plans/` — matches plans/ only when
+      # preceded by a non-path char or line start. Exception: target_plans
+      # itself ends with plans/, e.g., `docs/plans/` — but then the prior
+      # char is `/`, which is in the exclusion set, so the negative-prefix
+      # holds and we don't double-rewrite.
+      line=$(printf '%s\n' "$line" \
+        | sed -E "s#(^|[^A-Za-z0-9_/.-])plans/#\\1${target_plans}/#g")
+      line=$(printf '%s\n' "$line" \
+        | sed -E "s#(^|[^A-Za-z0-9_/.-])reports/(plan|verify|briefing|new-blocks)-#\\1.zskills/audit/\\2-#g")
+    fi
+    printf '%s\n' "$line" >> "$out_file"
+  done < "$file"
+  # Preserve original file mode across the swap. mktemp produces 0600;
+  # markdown plans are 0644 in tracked state. `chmod --reference` is Linux-
+  # only; fall back to explicit `chmod 644` on macOS (round-2 DA D2).
+  chmod --reference="$file" "$out_file" 2>/dev/null \
+    || chmod 644 "$out_file"
+  if mv "$out_file" "$file"; then
+    return 0
+  else
+    rm -f "$out_file"
+    return 1
+  fi
+}
+
+# Scan a plan file and emit one stderr WARN line per legacy-token hit
+# (preserved-frozen plans; round-3 DA F13/F16). Also append the same
+# lines to .pre-paths-migration-warnings at $MAIN_ROOT.
+cross_ref_scan_warn() {
+  local file="$1"
+  local line_no=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$((line_no + 1))
+    if [[ "$line" =~ (plans/[A-Za-z][A-Za-z0-9_-]*\.md|reports/(plan|verify|briefing|new-blocks)-[a-z0-9-]+\.md) ]]; then
+      local token="${BASH_REMATCH[1]}"
+      local msg="WARN $file:$line_no: legacy token '$token' preserved (frozen plan; see path-config-upgrade.md)"
+      printf '%s\n' "$msg" >&2
+      printf '%s\n' "$msg" >> .pre-paths-migration-warnings
+    fi
+  done < "$file"
+}
+
+# Read YAML frontmatter `status:` value (best-effort).
+read_frontmatter_status() {
+  local file="$1"
+  awk '
+    BEGIN { in_fm = 0 }
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { exit }
+    in_fm && /^[[:space:]]*status[[:space:]]*:/ {
+      sub(/^[[:space:]]*status[[:space:]]*:[[:space:]]*/, "")
+      sub(/[[:space:]]*$/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
+# Apply the frontmatter decision tree to one plan file. Echoes
+# "REWROTE", "REWROTE_CANARY", or "PRESERVED".
+apply_decision_tree() {
+  local file="$1"
+  local target_plans="$2"
+  local status base
+  status=$(read_frontmatter_status "$file")
+  base=$(basename "$file")
+  case "$status" in
+    active|proposal|"")
+      if cross_ref_rewrite "$file" "$target_plans"; then
+        echo "REWROTE"
+      else
+        echo "FAIL: cross_ref_rewrite on $file" >&2
+        return 1
+      fi
+      ;;
+    complete)
+      if [[ "$base" =~ ^CANARY ]]; then
+        if cross_ref_rewrite "$file" "$target_plans"; then
+          echo "REWROTE_CANARY"
+        else
+          echo "FAIL: cross_ref_rewrite on $file" >&2
+          return 1
+        fi
+      else
+        cross_ref_scan_warn "$file"
+        echo "PRESERVED"
+      fi
+      ;;
+    *)
+      cross_ref_scan_warn "$file"
+      echo "PRESERVED"
+      ;;
+  esac
+}
+
+# Iterate every *.md under <TARGET_PLANS>, apply decision tree, emit
+# post-rewrite SCAN-and-warn fallback for $MAIN_ROOT/, $WORKTREE_PATH/,
+# /workspaces/zskills/ absolute-path forms (round-2 DA F5).
+# Echoes "<rewrote_count> <preserved_count> <files_seen>".
+run_cross_ref_pass() {
+  local target_plans="$1"
+  local rewrote=0
+  local preserved=0
+  local seen=0
+  if [ ! -d "$target_plans" ]; then
+    echo "0 0 0"
+    return 0
+  fi
+  while IFS= read -r -d '' f; do
+    seen=$((seen + 1))
+    local result
+    result=$(apply_decision_tree "$f" "$target_plans") || return 1
+    case "$result" in
+      REWROTE|REWROTE_CANARY) rewrote=$((rewrote + 1)) ;;
+      PRESERVED)              preserved=$((preserved + 1)) ;;
+    esac
+  done < <(find "$target_plans" -type f -name '*.md' -print0)
+  # Post-rewrite SCAN-and-warn fallback for absolute-path forms.
+  local hits
+  hits=$(grep -rnE '(\$MAIN_ROOT|\$WORKTREE_PATH|/workspaces/zskills)/plans/[A-Za-z]' "$target_plans" 2>/dev/null || true)
+  if [ -n "$hits" ]; then
+    while IFS= read -r hit; do
+      local msg="WARN absolute-path legacy token: $hit (review and rewrite manually; see path-config-upgrade.md)"
+      printf '%s\n' "$msg" >&2
+      printf '%s\n' "$msg" >> .pre-paths-migration-warnings
+    done <<< "$hits"
+  fi
+  echo "$rewrote $preserved $seen"
+}
+
+# ─── --rewrite-only short-circuit ──────────────────────────────────────────
+if [ "$REWRITE_ONLY" -eq 1 ]; then
+  # (a) Precondition.
+  if [ ! -f .pre-paths-migration ]; then
+    echo "no prior migration to rewrite — run \`migrate-paths.sh <main-root>\` first." >&2
+    exit 1
+  fi
+  # (c) Resolve TARGET_PLANS from existing config.
+  CFG=".claude/zskills-config.json"
+  TARGET_PLANS=""
+  if [ -f "$CFG" ]; then
+    CFG_BODY=$(cat "$CFG" 2>/dev/null || true)
+    if [[ "$CFG_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+      TARGET_PLANS="${BASH_REMATCH[1]}"
+    fi
+    unset CFG_BODY
+  fi
+  if [ -z "$TARGET_PLANS" ]; then
+    echo "config missing output.plans_dir; rewrite cannot proceed." >&2
+    exit 1
+  fi
+  # (d) Execute ONLY the cross-ref rewrite.
+  pass_out=$(run_cross_ref_pass "$TARGET_PLANS") || {
+    echo "FAIL: cross-ref rewrite pass failed" >&2
+    exit 1
+  }
+  # parse counts
+  rewrote=$(echo "$pass_out" | awk '{print $1}')
+  preserved=$(echo "$pass_out" | awk '{print $2}')
+  seen=$(echo "$pass_out" | awk '{print $3}')
+  # (e) Append manifest trailer.
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf 'rewrite-only:\t%s\t%s\n' "$ts" "$rewrote" >> .pre-paths-migration
+  # (f/g) skip config write; print summary.
+  echo
+  echo "── Rewrite-only summary ────────────────────────────────────────────"
+  echo "REWROTE: $rewrote structural references in $seen plan files"
+  echo "(--rewrite-only — manifest preserved; config unchanged)"
+  echo "PRESERVED (frozen): $preserved"
+  exit 0
+fi
 
 # ─── Step 1 — Detection ────────────────────────────────────────────────────
 # Idempotent guard: if .pre-paths-migration already exists, refuse re-run.
@@ -403,6 +671,25 @@ case "$match" in
     exit 1 ;;
 esac
 rm -f .zskills/audit/.tmp-ignore-check
+
+# ─── Step 7.5 — Cross-reference rewrite (Phase 5b) ────────────────────────
+# Rewrites legacy `plans/` and `reports/` structural references inside the
+# moved plan files (active / proposal / no-frontmatter REWRITE; canary
+# self-invocations REWRITE; status:complete non-canary PRESERVE + warn).
+# Runs BEFORE manifest write so a mid-rewrite abort leaves the idempotent
+# guard inactive (re-run resumes cleanly).
+if [ -d "$TARGET_PLANS" ]; then
+  pass_out=$(run_cross_ref_pass "$TARGET_PLANS") || {
+    echo "FAIL: cross-ref rewrite pass failed (step 7.5)" >&2
+    exit 1
+  }
+  CR_REWROTE=$(echo "$pass_out" | awk '{print $1}')
+  CR_PRESERVED=$(echo "$pass_out" | awk '{print $2}')
+  CR_SEEN=$(echo "$pass_out" | awk '{print $3}')
+  echo "cross-ref rewrite: rewrote $CR_REWROTE files; preserved $CR_PRESERVED; scanned $CR_SEEN"
+else
+  CR_REWROTE=0; CR_PRESERVED=0; CR_SEEN=0
+fi
 
 # ─── Step 8 — (reserved; --rerender step hoisted to 2.5) ──────────────────
 

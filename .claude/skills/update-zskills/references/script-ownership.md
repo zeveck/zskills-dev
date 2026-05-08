@@ -56,6 +56,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `write-landed.sh`            | 1      | `commit`                     |
 | `zskills-paths.sh`           | 1      | sourceable helper setting $ZSKILLS_PLANS_DIR / $ZSKILLS_ISSUES_DIR / $ZSKILLS_AUDIT_DIR; sibling to zskills-resolve-config.sh; vars are NOT exported (callers spawning child processes export explicitly) |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
+| `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
 Total: 31 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.cjs`, `briefing.py`, `clear-tracking`,

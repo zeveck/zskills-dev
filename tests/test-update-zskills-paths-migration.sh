@@ -308,12 +308,448 @@ case_4_empty() {
   fi
 }
 
+# ─── Case 5: customized stub ──────────────────────────────────────────────
+# A consumer's `scripts/start-dev.sh` differs from the shipped failing-stub
+# default. Per DA finding 5 deferral rule: migrate-paths.sh does NOT touch
+# the file; it prints a deferral notice naming the upgrade prompt.
+case_5_customized_stub() {
+  local D="$TEST_OUT/paths-migration-fixture-5"
+  init_repo "$D"
+  mkdir -p "$D/scripts" "$D/var"
+  echo "12345" > "$D/var/dev.pid"
+  # Customized start-dev.sh body (different from any shipped default).
+  cat > "$D/scripts/start-dev.sh" <<'SDS'
+#!/bin/bash
+# Custom dev server launcher (consumer-modified)
+echo $$ > var/dev.pid
+nohup ./bin/my-server --custom-flag > var/dev.log 2>&1 &
+SDS
+  chmod +x "$D/scripts/start-dev.sh"
+  local pre_body
+  pre_body=$(cat "$D/scripts/start-dev.sh")
+  write_config "$D"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 5: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  # Sub-assertion: scripts/start-dev.sh body unchanged.
+  local post_body
+  post_body=$(cat "$D/scripts/start-dev.sh")
+  if [ "$pre_body" = "$post_body" ]; then
+    pass "case 5: customized scripts/start-dev.sh unchanged"
+  else
+    fail "case 5: customized stub was modified" \
+      "$(diff <(echo "$pre_body") <(echo "$post_body"))"
+  fi
+
+  # Sub-assertion: summary mentions upgrade prompt.
+  if echo "$out" | grep -q "path-config-upgrade.md"; then
+    pass "case 5: deferral notice references path-config-upgrade.md"
+  else
+    fail "case 5: deferral notice missing" "out=$out"
+  fi
+}
+
+# ─── Case 6: cross-reference rewrite — structural references ──────────────
+case_6_cross_ref_rewrite() {
+  local D="$TEST_OUT/paths-migration-fixture-6"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  cat > "$D/plans/CASE6_PLAN.md" <<'CASE6'
+---
+status: active
+---
+
+# CASE6 plan
+
+[See BAR](plans/BAR.md) inline link.
+
+`plans/BAZ.md` is backticked.
+
+we used to keep these in `plans/` before this migration
+
+A backup file plans/foo.md.bak should remain bare prose.
+CASE6
+  write_config "$D"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 6: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  local body
+  body=$(cat "$D/docs/plans/CASE6_PLAN.md")
+
+  # Link rewritten.
+  if echo "$body" | grep -qF "[See BAR](docs/plans/BAR.md)"; then
+    pass "case 6: markdown link rewritten plans/ → docs/plans/"
+  else
+    fail "case 6: markdown link not rewritten" "$body"
+  fi
+
+  # Backtick span rewritten.
+  if echo "$body" | grep -qF '`docs/plans/BAZ.md`'; then
+    pass "case 6: backtick span rewritten plans/ → docs/plans/"
+  else
+    fail "case 6: backtick span not rewritten" "$body"
+  fi
+
+  # Naked prose preserved.
+  if echo "$body" | grep -qF "we used to keep these in"; then
+    pass "case 6: naked prose preserved (no rewrite)"
+  else
+    fail "case 6: naked prose was modified" "$body"
+  fi
+  # The naked-prose mention of `plans/` (in a backtick around just
+  # `plans/`) is NOT a token match (no `.md` suffix), so should remain.
+  if echo "$body" | grep -qF '`plans/`'; then
+    pass "case 6: bare \`plans/\` token (no .md) preserved"
+  else
+    fail "case 6: bare backtick plans/ was incorrectly modified" "$body"
+  fi
+}
+
+# ─── Case 7: completed-canary self-invocation ────────────────────────────
+case_7_canary_self_invocation() {
+  local D="$TEST_OUT/paths-migration-fixture-7"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  cat > "$D/plans/CANARY7_TEST.md" <<'CANARY7'
+---
+status: complete
+---
+
+# CANARY7 archived narrative
+
+Run /run-plan plans/CANARY7_TEST.md finish auto
+
+Some prose mentioning plans/CANARY7_TEST.md without enclosure stays bare.
+CANARY7
+  write_config "$D"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 7: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  local body
+  body=$(cat "$D/docs/plans/CANARY7_TEST.md")
+
+  # Slash-command line REWRITTEN despite status: complete.
+  if echo "$body" | grep -qF "/run-plan docs/plans/CANARY7_TEST.md"; then
+    pass "case 7: completed-canary slash-command self-invocation rewritten"
+  else
+    fail "case 7: canary slash-command line not rewritten" "$body"
+  fi
+}
+
+# ─── Case 8: completed non-canary plan with legacy tokens ────────────────
+case_8_completed_noncanary_warn() {
+  local D="$TEST_OUT/paths-migration-fixture-8"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  # Build a fixture where the legacy-token line lands on line 42.
+  {
+    printf -- '---\n'
+    printf -- 'status: complete\n'
+    printf -- '---\n'
+    printf -- '\n'
+    printf -- '# OLD_FEATURE_PLAN archived narrative\n'
+    printf -- '\n'
+    # Pad lines until we are about to write line 42.
+    local i
+    for i in $(seq 7 41); do
+      printf -- 'pad line %s\n' "$i"
+    done
+    # Line 42:
+    printf -- '[See OTHER](plans/OTHER.md)\n'
+  } > "$D/plans/OLD_FEATURE_PLAN.md"
+  write_config "$D"
+
+  # Capture pre-migration body bytes for the byte-equal comparison
+  # (after migration the file lives under docs/plans/, but body bytes
+  # should be identical for the PRESERVED case).
+  local pre_body
+  pre_body=$(cat "$D/plans/OLD_FEATURE_PLAN.md")
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 8: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  local post_body
+  post_body=$(cat "$D/docs/plans/OLD_FEATURE_PLAN.md")
+  if [ "$pre_body" = "$post_body" ]; then
+    pass "case 8: PRESERVED frozen plan body byte-equal"
+  else
+    fail "case 8: PRESERVED plan was rewritten" \
+      "$(diff <(echo "$pre_body") <(echo "$post_body"))"
+  fi
+
+  # Stderr WARN line matching the regex.
+  if echo "$out" | grep -qE "^WARN .*OLD_FEATURE_PLAN\.md:42: legacy token 'plans/OTHER\.md' preserved"; then
+    pass "case 8: stderr WARN line emitted in correct format"
+  else
+    fail "case 8: stderr WARN line missing" "$out"
+  fi
+
+  # Sibling .pre-paths-migration-warnings file.
+  if [ -f "$D/.pre-paths-migration-warnings" ]; then
+    if grep -qE "^WARN .*OLD_FEATURE_PLAN\.md:42: legacy token 'plans/OTHER\.md' preserved" "$D/.pre-paths-migration-warnings"; then
+      pass "case 8: .pre-paths-migration-warnings contains WARN line"
+    else
+      fail "case 8: warnings file lacks WARN line" "$(cat "$D/.pre-paths-migration-warnings")"
+    fi
+  else
+    fail "case 8: .pre-paths-migration-warnings absent" "expected sibling of manifest"
+  fi
+}
+
+# ─── Case 9: hook re-render and effective gitignore ──────────────────────
+case_9_hook_rerender_gitignore() {
+  local D="$TEST_OUT/paths-migration-fixture-9"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  echo "QUUX plan" > "$D/plans/QUUX_PLAN.md"
+  write_config "$D"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 9: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  # (a) block-unsafe-project.sh has the broadened \.zskills regex (NOT
+  # \.zskills/tracking).
+  local hook="$D/.claude/hooks/block-unsafe-project.sh"
+  if [ ! -f "$hook" ]; then
+    fail "case 9: block-unsafe-project.sh missing" "no hook copied"
+    return
+  fi
+  if grep -q '\\\.zskills/tracking' "$hook"; then
+    fail "case 9: hook still has narrow \\\.zskills/tracking regex" \
+      "broadened regex not in place"
+  else
+    if grep -q '\\\.zskills' "$hook"; then
+      pass "case 9: hook has broadened \\\.zskills regex (no /tracking suffix)"
+    else
+      fail "case 9: hook missing any \\\.zskills regex" "$hook"
+    fi
+  fi
+
+  # (b) git check-ignore -v .zskills/audit/dummy exits 0 with non-`!`
+  # match.
+  mkdir -p "$D/.zskills/audit"
+  touch "$D/.zskills/audit/dummy"
+  local check_out
+  check_out=$( cd "$D" && git check-ignore -v .zskills/audit/dummy 2>&1 )
+  local check_rc=$?
+  if [ "$check_rc" -ne 0 ]; then
+    fail "case 9: git check-ignore -v failed" "rc=$check_rc out=$check_out"
+    return
+  fi
+  case "$check_out" in
+    *!*) fail "case 9: positive include rule overrides ignore" "$check_out" ;;
+    *) pass "case 9: .zskills/audit/dummy effectively ignored (no \`!\` override)" ;;
+  esac
+}
+
+# ─── Case 10: --rewrite-only mid-version-skip recovery ───────────────────
+case_10_rewrite_only_recovery() {
+  local D="$TEST_OUT/paths-migration-fixture-10"
+  init_repo "$D"
+
+  # Phase A: simulate migrated tree under an older 5a-only run.
+  mkdir -p "$D/docs/plans"
+  cat > "$D/docs/plans/STILL_LEGACY.md" <<'SL'
+---
+status: active
+---
+
+# STILL_LEGACY plan
+
+Run `/run-plan plans/SOMETHING.md`
+SL
+  printf 'plans/OLD\tdocs/plans/OLD\n' > "$D/.pre-paths-migration"
+  write_config "$D" "docs/plans" ".zskills/issues"
+
+  # Capture pre-trailer manifest bytes.
+  local pre_manifest
+  pre_manifest=$(cat "$D/.pre-paths-migration")
+
+  # Phase B: invoke --rewrite-only.
+  local out rc
+  out=$( PORTABLE="$REPO_ROOT" bash "$MIGRATE_SCRIPT" --rewrite-only "$D" 2>&1 ); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 10: --rewrite-only exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  # Plan content rewritten.
+  local body
+  body=$(cat "$D/docs/plans/STILL_LEGACY.md")
+  if echo "$body" | grep -qF '/run-plan docs/plans/SOMETHING.md'; then
+    pass "case 10: --rewrite-only rewrote slash-command line"
+  else
+    fail "case 10: slash-command line not rewritten" "$body"
+  fi
+
+  # .pre-paths-migration still exists, gained a trailer.
+  if [ ! -f "$D/.pre-paths-migration" ]; then
+    fail "case 10: --rewrite-only deleted manifest" "manifest missing"
+    return
+  fi
+  if grep -qE '^rewrite-only:	[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z	[0-9]+$' "$D/.pre-paths-migration"; then
+    pass "case 10: manifest gained rewrite-only trailer"
+  else
+    fail "case 10: manifest lacks expected trailer" "$(cat "$D/.pre-paths-migration")"
+  fi
+
+  # Config keys unchanged.
+  local cfg_body
+  cfg_body=$(cat "$D/.claude/zskills-config.json")
+  if echo "$cfg_body" | grep -q '"plans_dir"[[:space:]]*:[[:space:]]*"docs/plans"' \
+     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"\.zskills/issues"'; then
+    pass "case 10: config keys unchanged after --rewrite-only"
+  else
+    fail "case 10: config mutated by --rewrite-only" "$cfg_body"
+  fi
+
+  # Idempotent re-run: invoke again, no plan content change, second
+  # trailer line appears.
+  local body_before second_out second_rc
+  body_before=$(cat "$D/docs/plans/STILL_LEGACY.md")
+  second_out=$( PORTABLE="$REPO_ROOT" bash "$MIGRATE_SCRIPT" --rewrite-only "$D" 2>&1 ); second_rc=$?
+  if [ "$second_rc" -ne 0 ]; then
+    fail "case 10: --rewrite-only second-run exit code" "rc=$second_rc out=$second_out"
+    return
+  fi
+  local body_after
+  body_after=$(cat "$D/docs/plans/STILL_LEGACY.md")
+  if [ "$body_before" = "$body_after" ]; then
+    pass "case 10: --rewrite-only second run is content-idempotent"
+  else
+    fail "case 10: --rewrite-only second run modified plan content" \
+      "$(diff <(echo "$body_before") <(echo "$body_after"))"
+  fi
+  local trailer_count
+  trailer_count=$(grep -cE '^rewrite-only:' "$D/.pre-paths-migration")
+  if [ "$trailer_count" -eq 2 ]; then
+    pass "case 10: manifest gained second rewrite-only trailer"
+  else
+    fail "case 10: expected 2 rewrite-only trailers, found $trailer_count" \
+      "$(cat "$D/.pre-paths-migration")"
+  fi
+
+  # NEGATIVE precondition: pristine fixture WITHOUT .pre-paths-migration.
+  local D2="$TEST_OUT/paths-migration-fixture-10-neg"
+  init_repo "$D2"
+  mkdir -p "$D2/docs/plans"
+  echo "stub" > "$D2/docs/plans/X.md"
+  write_config "$D2" "docs/plans" ".zskills/issues"
+  local neg_out neg_rc
+  neg_out=$( PORTABLE="$REPO_ROOT" bash "$MIGRATE_SCRIPT" --rewrite-only "$D2" 2>&1 ); neg_rc=$?
+  if [ "$neg_rc" -ne 0 ] && echo "$neg_out" | grep -qF "no prior migration to rewrite"; then
+    pass "case 10: --rewrite-only refuses pristine fixture (precondition)"
+  else
+    fail "case 10: --rewrite-only did not enforce precondition" \
+      "rc=$neg_rc out=$neg_out"
+  fi
+}
+
+# ─── Case 11: macOS chmod --reference fallback (round-2 DA D2) ───────────
+# Force the `chmod --reference=...` call to fail (via a PATH shim whose
+# `chmod` exits 2 when given `--reference=` on its arg list). The fallback
+# `chmod 644` must run, so the rewritten plan ends up at mode 0644.
+case_11_chmod_fallback() {
+  local D="$TEST_OUT/paths-migration-fixture-11"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  cat > "$D/plans/CASE11_PLAN.md" <<'CASE11'
+---
+status: active
+---
+
+# CASE11 plan
+
+[See FOO](plans/FOO.md)
+CASE11
+  # Force the source mode to 0600 so any silent failure of the post-
+  # rewrite chmod will leave the mode visibly wrong (not coincidentally
+  # 0644).
+  chmod 600 "$D/plans/CASE11_PLAN.md"
+  write_config "$D"
+
+  # Build a PATH shim that fails on `chmod --reference=...` (simulates
+  # macOS) and falls through to /bin/chmod for everything else.
+  local shim_dir="$TEST_OUT/case11-shim"
+  rm -rf -- "$shim_dir"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/chmod" <<'SHIM'
+#!/bin/bash
+# Shim chmod: refuse --reference= (simulating macOS), defer to /bin/chmod
+# for every other invocation.
+for a in "$@"; do
+  case "$a" in
+    --reference=*)
+      echo "shim chmod: --reference= not supported" >&2
+      exit 2 ;;
+  esac
+done
+exec /bin/chmod "$@"
+SHIM
+  chmod +x "$shim_dir/chmod"
+
+  local out rc
+  out=$( PATH="$shim_dir:$PATH" PORTABLE="$REPO_ROOT" bash "$MIGRATE_SCRIPT" "$D" 2>&1 ); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 11: migrate-paths.sh exit code with chmod shim" "rc=$rc out=$out"
+    return
+  fi
+
+  # The plan's mode after fallback should be 0644.
+  local mode
+  mode=$(stat -c '%a' "$D/docs/plans/CASE11_PLAN.md" 2>/dev/null \
+         || stat -f '%Lp' "$D/docs/plans/CASE11_PLAN.md")
+  if [ "$mode" = "644" ]; then
+    pass "case 11: chmod 644 fallback applied (plan mode = 0644)"
+  else
+    fail "case 11: plan mode incorrect after fallback" "mode=$mode (expected 644)"
+  fi
+
+  # Sanity: rewrite still happened (link rewritten).
+  if grep -qF "[See FOO](docs/plans/FOO.md)" "$D/docs/plans/CASE11_PLAN.md"; then
+    pass "case 11: rewrite still applied under chmod shim"
+  else
+    fail "case 11: rewrite did not apply under chmod shim" \
+      "$(cat "$D/docs/plans/CASE11_PLAN.md")"
+  fi
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
 case_2_preconfigured
 case_3_idempotent
 case_4_empty
+case_5_customized_stub
+case_6_cross_ref_rewrite
+case_7_canary_self_invocation
+case_8_completed_noncanary_warn
+case_9_hook_rerender_gitignore
+case_10_rewrite_only_recovery
+case_11_chmod_fallback
 
 echo
 echo "---"
