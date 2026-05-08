@@ -7,7 +7,7 @@ description: >-
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
   it understands the root cause before writing any fix.
 metadata:
-  version: "2026.05.02+c1f5cb"
+  version: "2026.05.07+b6ae76"
 ---
 
 # /investigate \<description or #issue> — Root-Cause Debugging
@@ -279,7 +279,7 @@ cause, fix failed twice), report what was learned and what remains unknown.
 - **Use `git show`, not `git checkout`, for investigation.** Never check
   out old commits to compare — it modifies the working tree.
 - **No persistent report file.** The fix, the regression test, and the
-  inline report are the deliverables. No `reports/investigate-*.md`.
+  inline report are the deliverables. No `$ZSKILLS_AUDIT_DIR/investigate-*.md`.
 - **Ask when stuck.** If reproduction is flaky, root cause is unclear, or
   the fix has unexpected consequences — report your findings and ask the
   user. "I don't know" is a valid answer. Fabricating an explanation is not.

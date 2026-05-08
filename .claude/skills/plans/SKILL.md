@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.07+56a4e8"
+  version: "2026.05.07+c5246c"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -262,8 +262,8 @@ the meta-plan's children.
   user-set priority from `/zskills-dashboard`). Then default-column
   Ready entries, ordered by recency (newest first; tiebreak alphabetical
   by `slug`). Assign priority labels: `High` for plans referenced as
-  fix-issues "too complex" skips (check `SPRINT_REPORT.md` if it
-  exists for context); `Medium` for plans created within the last 14
+  fix-issues "too complex" skips (check `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+  if it exists for context); `Medium` for plans created within the last 14
   days; `Low` otherwise.
 - **In Progress / Complete / Reference / Canaries**: alphabetical by
   `slug`.
@@ -338,7 +338,7 @@ for its output file or a PR with its name.
 - If a section would be empty, include the table header with a single row:
   `| (none) | | | | |`.
 - Use relative links (just the filename, since the index lives in
-  `plans/`).
+  `$ZSKILLS_PLANS_DIR`).
 - `phase_count` from the snapshot drives the "Phases" column; for
   In Progress entries, the "Current Phase" is the last `phases[]` row
   with `status=="done"` and "Next Phase" is the first remaining row.
@@ -410,8 +410,8 @@ components don't follow the `*Block.js` naming convention.
   plan files managed by `/add-block`, not executable plans.
   `collect.py` already restricts to top-level `$ZSKILLS_PLANS_DIR/*.md`.
 - **Skip `PLAN_INDEX.md` itself** — don't index the index.
-- **Relative links** — since the index lives in `plans/`, links are
-  just filenames (e.g., `[FOO.md](FOO.md)`), not `plans/FOO.md`.
+- **Relative links** — since the index lives in `$ZSKILLS_PLANS_DIR`, links are
+  just filenames (e.g., `[FOO.md](FOO.md)`), not the full path.
 - **Timezone** — always use America/New_York (ET) for the "Last
   rebuilt" timestamp.
 - **No bash fallback.** If `python3 -m zskills_monitor.collect` fails,

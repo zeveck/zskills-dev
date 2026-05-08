@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers the current $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md AND any landed-but-unclosed
   issues from previous sprints.
 metadata:
-  version: "2026.05.07+8a001e"
+  version: "2026.05.07+8a9216"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -284,7 +284,7 @@ Then for each approved issue:
    gh issue close <number> --comment "Fixed in <commit-hash>"
    ```
 
-2. Update ALL relevant issue tracker files — scan `plans/*ISSUES*.md`
+2. Update ALL relevant issue tracker files — scan `$ZSKILLS_PLANS_DIR/*ISSUES*.md`
    for the issue number and mark it done (`[x]`, ~~FIXED~~, RESOLVED,
    etc. — match the convention used in each file).
 

@@ -25,6 +25,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Source the path-config helper so canary glob uses $ZSKILLS_PLANS_DIR
+# instead of a hardcoded `plans/` literal. The helper itself fails loud
+# on missing project root.
+ZSKILLS_PATHS_ROOT="$PROJECT_ROOT"
+source "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+
 BOLD='\033[1m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
@@ -65,7 +71,7 @@ done
 # ─── 2. Remove canary plans ────────────────────────────────────────────
 log "removing CANARY_* plans"
 shopt -s nullglob
-canaries=( plans/CANARY_*.md CANARY_*.md )
+canaries=( "$ZSKILLS_PLANS_DIR"/CANARY_*.md CANARY_*.md )
 if [ "${#canaries[@]}" -eq 0 ]; then
   printf "  ${DIM}(none found)${RESET}\n"
 else

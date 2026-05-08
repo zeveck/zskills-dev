@@ -12,7 +12,7 @@ description: >-
   creates a PR via gh. No worktree; no .landed marker.
   Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
 metadata:
-  version: "2026.05.02+3852b0"
+  version: "2026.05.07+d5471f"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -323,7 +323,7 @@ text and dirty-tree shape, no LOC counting:
 | `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` | both |
 | Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user | both |
 | References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` | both |
-| References an existing plan file under `plans/` | REDIRECT → `/run-plan` | both |
+| References an existing plan file under `$ZSKILLS_PLANS_DIR` | REDIRECT → `/run-plan` | both |
 | Dirty tree (user-edited mode) spans heterogeneous subsystems (model judgment) | REDIRECT → `/draft-plan` | user-edited only |
 
 **Worked examples (calibrate the model's PROCEED/REDIRECT calls):**

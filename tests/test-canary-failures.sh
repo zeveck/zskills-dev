@@ -81,6 +81,12 @@ setup_fixture_repo() {
   git -C "$tmp" config user.email "canary@test.local"
   git -C "$tmp" config user.name "canary"
   git -C "$tmp" commit --allow-empty -q -m "init"
+  # Install the zskills-paths helper so post-run-invariants.sh can source
+  # it (Phase 3 path-config migration).
+  mkdir -p "$tmp/.claude/skills/update-zskills/scripts"
+  cp "$REPO_ROOT/skills/update-zskills/scripts/zskills-paths.sh" \
+     "$tmp/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  echo '{}' > "$tmp/.claude/zskills-config.json"
   echo "$tmp"
 }
 
@@ -496,9 +502,14 @@ expect_script_exit \
   bash -c "cd \"$i5a_primary\" && bash \"$INVARIANTS_SCRIPT\" --worktree \"\" --branch \"\" --landed-status \"\" --plan-slug canary-5 --plan-file \"\""
 
 # Negative case: create the report, assert rc=0.
+# Path-config migration (Phase 3.11, interpretation A): post-migration
+# the script resolves REPORT_PATH to $ZSKILLS_AUDIT_DIR/plan-<slug>.md,
+# which the helper resolves to .zskills/audit/. The fixture moves to
+# match the new canonical location — this is NOT weakening the test,
+# it's tracking the spec change.
 i5b_primary=$(setup_fixture_repo)
-mkdir -p "$i5b_primary/reports"
-touch "$i5b_primary/reports/plan-canary-5.md"
+mkdir -p "$i5b_primary/.zskills/audit"
+touch "$i5b_primary/.zskills/audit/plan-canary-5.md"
 i5b_out=$(cd "$i5b_primary" && bash "$INVARIANTS_SCRIPT" \
   --worktree "" --branch "" --landed-status "" \
   --plan-slug canary-5 --plan-file "" 2>&1); i5b_rc=$?

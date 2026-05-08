@@ -10,7 +10,7 @@ description: >-
   Also manages the queue itself (add/rank/remove/default) and recurring
   schedules. Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.05.07+1283ef"
+  version: "2026.05.07+3c4b42"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -164,7 +164,7 @@ file.
 ## Step 1 — sync (read monitor-state.json)
 
 Read `$MONITOR_STATE` and extract `plans.ready`. The schema is
-documented in `plans/ZSKILLS_MONITOR_PLAN.md` § "Shared Schemas".
+documented in `$ZSKILLS_PLANS_DIR/ZSKILLS_MONITOR_PLAN.md` § "Shared Schemas".
 
 ### Missing-file behaviour (auto-create on first read)
 
@@ -173,9 +173,9 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
 1. **Pick the seed source** by precedence:
    - **(1)** if `$PLAN_INDEX` exists AND `[ -r "$PLAN_INDEX" ]`,
      parse it for the drafted/reviewed classification.
-   - **(2)** else, scan `plans/*.md` frontmatter and apply the
+   - **(2)** else, scan `$ZSKILLS_PLANS_DIR/*.md` frontmatter and apply the
      default-column inference table from
-     `plans/ZSKILLS_MONITOR_PLAN.md` § "Default column inference".
+     `$ZSKILLS_PLANS_DIR/ZSKILLS_MONITOR_PLAN.md` § "Default column inference".
 
    If `$PLAN_INDEX` exists but is **unreadable** (e.g., `chmod 000`)
    or fails to parse, fall back to the frontmatter scan and warn to
