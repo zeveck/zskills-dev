@@ -26,6 +26,43 @@ const path = require('node:path');
 const SELF = path.basename(__filename);
 
 // ---------------------------------------------------------------------------
+// Path config (zskills-paths.sh JS mirror)
+// ---------------------------------------------------------------------------
+
+/**
+ * Read .claude/zskills-config.json and resolve the audit/plans/issues dirs.
+ * Mirrors the bash helper at .claude/skills/update-zskills/scripts/zskills-paths.sh
+ * and the Python mirror in briefing.py:read_zskills_paths.
+ *
+ * Use-as-is is absolute-only: only paths starting with `/` are absolute.
+ * All other forms (including `..foo`) are joined with mainPath. This
+ * mirrors the bash helper semantics (Locked Decision 1) and avoids the
+ * `..hidden` false-positive flagged in domain research.
+ *
+ * Missing/malformed config → silent empty fallback (legacy `plans` for
+ * plansDir/issuesDir, `.zskills/audit` for auditDir).
+ *
+ * @param {string} mainPath - main repo root (NOT a worktree)
+ * @returns {{plansDir: string, issuesDir: string, auditDir: string}}
+ */
+function readZskillsPaths(mainPath) {
+  const cfgPath = path.join(mainPath, '.claude', 'zskills-config.json');
+  let cfg = {};
+  try {
+    cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  } catch (e) { /* missing/malformed → empty (silent fallback) */ }
+  const output = (cfg && cfg.output) || {};
+  const plansDir = output.plans_dir || 'plans';   // legacy fallback
+  const issuesDir = output.issues_dir || 'plans'; // legacy fallback
+  const resolve = (rel) => path.isAbsolute(rel) ? rel : path.join(mainPath, rel);
+  return {
+    plansDir: resolve(plansDir),
+    issuesDir: resolve(issuesDir),
+    auditDir: path.join(mainPath, '.zskills', 'audit'),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -478,24 +515,18 @@ function scanCheckboxes(opts = {}) {
   const results = [];
   const files = [];
 
-  // Collect report files
-  const reportsDir = path.join(mainPath, 'reports');
-  if (fs.existsSync(reportsDir)) {
+  // Collect report files from the audit dir (resolved via zskills-config).
+  // The legacy `mainPath/reports/` AND root-level `*REPORT*.md` scans are
+  // gone — those files now live under the audit dir per Phase 4 migration.
+  const paths = readZskillsPaths(mainPath);
+  const auditDir = paths.auditDir;
+  if (fs.existsSync(auditDir)) {
     try {
-      for (const f of fs.readdirSync(reportsDir)) {
-        if (f.endsWith('.md')) files.push(path.join(reportsDir, f));
+      for (const f of fs.readdirSync(auditDir)) {
+        if (f.endsWith('.md')) files.push(path.join(auditDir, f));
       }
     } catch { /* skip */ }
   }
-
-  // Root-level *REPORT*.md files (exclude timestamped snapshots like FIX_REPORT_2026-03-17.md)
-  try {
-    for (const f of fs.readdirSync(mainPath)) {
-      if (f.endsWith('.md') && /REPORT/i.test(f) && !/\d{4}-\d{2}-\d{2}/.test(f)) {
-        files.push(path.join(mainPath, f));
-      }
-    }
-  } catch { /* skip */ }
 
   return scanCheckboxesInFiles(files);
 }
@@ -1280,8 +1311,9 @@ function formatCurrent(worktrees, opts = {}) {
 function scanPlans(repoRoot) {
   repoRoot = repoRoot || findRepoRoot();
   const mainPath = repoRoot.replace(/\/.claude\/worktrees\/[^/]+$/, '');
-  const plansDir = path.join(mainPath, 'plans');
-  const reportsDir = path.join(mainPath, 'reports');
+  const paths = readZskillsPaths(mainPath);
+  const plansDir = paths.plansDir;
+  const reportsDir = paths.auditDir;
 
   if (!fs.existsSync(plansDir)) return [];
 
@@ -1417,7 +1449,7 @@ function checkStaleness(worktrees, opts = {}) {
   const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 
   // Check for briefing reports
-  const reportsDir = path.join(mainPath, 'reports');
+  const reportsDir = readZskillsPaths(mainPath).auditDir;
   let latestBriefing = null;
   if (fs.existsSync(reportsDir)) {
     try {
@@ -1561,8 +1593,10 @@ function scanCheckboxesRecent(opts = {}) {
   const results = [];
   const files = [];
 
-  // Collect report files with mtime
-  const reportsDir = path.join(mainPath, 'reports');
+  // Collect report files with mtime from the audit dir.
+  // Legacy root-level `*REPORT*.md` scan is REMOVED — Phase 4 migration:
+  // those files live under the audit dir.
+  const reportsDir = readZskillsPaths(mainPath).auditDir;
   if (fs.existsSync(reportsDir)) {
     try {
       const entries = fs.readdirSync(reportsDir).filter(f => f.endsWith('.md'));
@@ -1587,21 +1621,6 @@ function scanCheckboxesRecent(opts = {}) {
       files.push(...others);
     } catch { /* skip */ }
   }
-
-  // Root-level *REPORT*.md files (always included if recent enough, exclude snapshots)
-  try {
-    for (const f of fs.readdirSync(mainPath)) {
-      if (f.endsWith('.md') && /REPORT/i.test(f) && !/\d{4}-\d{2}-\d{2}/.test(f)) {
-        const filePath = path.join(mainPath, f);
-        try {
-          const stat = fs.statSync(filePath);
-          if ((now - stat.mtimeMs) <= maxAge) {
-            files.push(filePath);
-          }
-        } catch { /* skip */ }
-      }
-    }
-  } catch { /* skip */ }
 
   return scanCheckboxesInFiles(files);
 }
@@ -1839,7 +1858,7 @@ if (require.main === module) {
             planWarnings.push(`Plan ${t} appears complete but status is still 'active'`);
           }
           if (!pf.has_report) {
-            planWarnings.push(`Plan ${t} complete but no report in reports/`);
+            planWarnings.push(`Plan ${t} complete but no report in audit dir`);
           }
           if (pf.issue) {
             planWarnings.push(`Plan ${t} complete — issue #${pf.issue} may need closing (run /briefing verify or check manually)`);
@@ -1857,7 +1876,7 @@ if (require.main === module) {
     case 'report': {
       const repoRoot = findRepoRoot();
       const mainPath = repoRoot.replace(/\/.claude\/worktrees\/[^/]+$/, '');
-      const reportsDir = path.join(mainPath, 'reports');
+      const reportsDir = readZskillsPaths(mainPath).auditDir;
       if (!fs.existsSync(reportsDir)) {
         fs.mkdirSync(reportsDir, { recursive: true });
       }

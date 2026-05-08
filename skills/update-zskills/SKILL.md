@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.07+5a849c"
+  version: "2026.05.07+e70112"
 ---
 
 # Update Z Skills Infrastructure

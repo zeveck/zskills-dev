@@ -208,6 +208,51 @@ def _resolve_main_root(repo_root: Any) -> pathlib.Path:
 
 
 # ---------------------------------------------------------------------------
+# Path config (mirrors zskills-paths.sh / briefing helpers)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
+    """Resolve audit / plans / issues dirs from zskills-config.json.
+
+    Mirrors the bash zskills-paths.sh helper, briefing.cjs:readZskillsPaths,
+    briefing.py:read_zskills_paths, and server.py:_resolve_paths.
+
+    Use-as-is is absolute-only: only paths starting with `/` are absolute;
+    all other forms are joined with main_root (Locked Decision 1).
+
+    LOCKSTEP NOTE: when editing this body, mirror the change in
+    server.py:_resolve_paths — they are intentional duplicates per Phase 4
+    helper-share decision (separate processes, no shared module).
+
+    Missing/malformed config -> silent empty fallback (legacy `plans`).
+    """
+    cfg_path = main_root / ".claude" / "zskills-config.json"
+    text = _read_text(cfg_path)
+    cfg: Any = {}
+    if text is not None:
+        try:
+            cfg = json.loads(text)
+        except Exception:
+            cfg = {}
+    output = cfg.get("output", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(output, dict):
+        output = {}
+    plans_rel = output.get("plans_dir") or "plans"
+    issues_rel = output.get("issues_dir") or "plans"
+
+    def _resolve(rel: str) -> pathlib.Path:
+        p = pathlib.Path(rel)
+        return p if p.is_absolute() else main_root / rel
+
+    return {
+        "plans_dir": _resolve(plans_rel),
+        "issues_dir": _resolve(issues_rel),
+        "audit_dir": main_root / ".zskills" / "audit",
+    }
+
+
+# ---------------------------------------------------------------------------
 # errors[] helpers (sorting + cap)
 # ---------------------------------------------------------------------------
 
@@ -529,8 +574,8 @@ REPORT_PHASE_RE = re.compile(
 
 
 def parse_report(slug: str, main_root: pathlib.Path) -> Optional[Dict[str, Any]]:
-    """Parse `reports/plan-<slug>.md`. Returns None if absent."""
-    report_path = main_root / "reports" / f"plan-{slug}.md"
+    """Parse `<audit_dir>/plan-<slug>.md`. Returns None if absent."""
+    report_path = _resolve_paths(main_root)["audit_dir"] / f"plan-{slug}.md"
     content = _read_text(report_path)
     if content is None:
         return None
@@ -1095,7 +1140,7 @@ def collect_snapshot(
     main_root = _resolve_main_root(repo_root)
     errors: List[Dict[str, str]] = []
 
-    plans_dir = main_root / "plans"
+    plans_dir = _resolve_paths(main_root)["plans_dir"]
     plans: List[Dict[str, Any]] = []
     if plans_dir.is_dir():
         try:
@@ -1201,7 +1246,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         main_root = pathlib.Path(args.fixture).resolve()
         errors: List[Dict[str, str]] = []
         plans: List[Dict[str, Any]] = []
-        plans_dir = main_root / "plans"
+        plans_dir = _resolve_paths(main_root)["plans_dir"]
         if plans_dir.is_dir():
             for plan_file in sorted(plans_dir.glob("*.md")):
                 parsed = parse_plan(plan_file)

@@ -231,6 +231,35 @@ def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
+    """Resolve audit / plans / issues dirs from zskills-config.json.
+
+    Mirrors the bash zskills-paths.sh helper and briefing.cjs/py mirrors.
+    Use-as-is is absolute-only: only paths starting with `/` are absolute;
+    all other forms are joined with main_root (Locked Decision 1).
+
+    LOCKSTEP NOTE: when editing this body, mirror the change in
+    collect.py:_resolve_paths — they are intentional duplicates per Phase
+    4 helper-share decision (separate processes, no shared module).
+    """
+    cfg = _read_config(main_root)
+    output = cfg.get("output", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(output, dict):
+        output = {}
+    plans_rel = output.get("plans_dir") or "plans"
+    issues_rel = output.get("issues_dir") or "plans"
+
+    def _resolve(rel: str) -> pathlib.Path:
+        p = pathlib.Path(rel)
+        return p if p.is_absolute() else main_root / rel
+
+    return {
+        "plans_dir": _resolve(plans_rel),
+        "issues_dir": _resolve(issues_rel),
+        "audit_dir": main_root / ".zskills" / "audit",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Locking + atomic write helper for the state files
 # ---------------------------------------------------------------------------
@@ -721,9 +750,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
             return
         ctx = self._ctx()
         main_root: pathlib.Path = ctx["main_root"]
-        plans_dir = main_root / "plans"
+        plans_dir = _resolve_paths(main_root)["plans_dir"]
         if not plans_dir.is_dir():
-            self._send_json(404, {"error": "plans/ directory not found"})
+            self._send_json(404, {"error": f"plans dir not found: {plans_dir}"})
             return
         # Build slug→file dict every request — small cost, fresh data.
         slug_to_file: Dict[str, pathlib.Path] = {}
