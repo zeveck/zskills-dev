@@ -5,6 +5,12 @@ This file documents the dev→prod release pipeline. It is stripped from the
 public mirror by `scripts/build-prod.sh` — you shouldn't see this on
 `github.com/zeveck/zskills`.
 
+### Migration: ZSKILLS_PATH_CONFIG (post-2026-05-08)
+
+See CHANGELOG entry for `feat(paths)` and
+`.claude/skills/update-zskills/references/path-config-upgrade.md` for
+the long-tail customization upgrade prompt.
+
 ## TL;DR
 
 1. Click **🚀 Ship to Prod** in the README (or go to Actions → "🚀 Ship to Prod" → Run workflow).

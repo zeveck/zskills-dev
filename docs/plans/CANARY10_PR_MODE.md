@@ -82,7 +82,7 @@ Append a second line.
 
 ## Procedure
 
-Run: `/run-plan plans/CANARY10_PR_MODE.md finish auto pr`
+Run: `/run-plan docs/plans/CANARY10_PR_MODE.md finish auto pr`
 
 Walk away. Monitor the PR after ~3 min:
 - `gh pr list --state open --label canary` (or by branch name).

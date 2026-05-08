@@ -49,10 +49,10 @@ Before starting:
 **Launch — sequential per-phase PRs (intentional, not `finish auto pr`):**
 
 ```
-/run-plan plans/CANARY_FAILURE_INJECTION.md 1 auto pr
+/run-plan docs/plans/CANARY_FAILURE_INJECTION.md 1 auto pr
 # wait for PR to merge, then:
 git pull --ff-only origin main
-/run-plan plans/CANARY_FAILURE_INJECTION.md 2 auto pr
+/run-plan docs/plans/CANARY_FAILURE_INJECTION.md 2 auto pr
 # ... repeat for phases 3, 4, 5
 ```
 
@@ -709,7 +709,7 @@ must fail the canary.
     - `hook blocks` appears ≥ 1 time.
   - Two tests total.
 
-- [ ] Write `reports/plan-canary-failure-injection.md` summarizing:
+- [ ] Write `.zskills/audit/plan-canary-failure-injection.md` summarizing:
   - Final test count (either 67 or 57 depending on installed-copy state).
   - Enforcing layers covered (hook: stash + agents; script: land-phase
     + invariants; skill prompt: /commit reviewer + Phase 7).
@@ -737,7 +737,7 @@ must fail the canary.
 - [ ] Phase 7 anti-stash: 2 tests pass.
 - [ ] Key Rules stash prohibition: 2 tests pass.
 - [ ] Progress Tracker all 5 rows ✅ with SHAs.
-- [ ] `reports/plan-canary-failure-injection.md` exists.
+- [ ] `.zskills/audit/plan-canary-failure-injection.md` exists.
 - [ ] Final `bash tests/test-canary-failures.sh` reports
       `78 passed, 0 failed` (installed-copy present: 18+9+13+12+26) or
       `68 passed, 0 failed` (installed-copy skipped: 18+9+13+12+16).
@@ -759,7 +759,7 @@ When all 5 phases are ✅ on main:
 4. `tests/fixtures/canary/` contains: `plan-with-sentinel.md`,
    `plan-without-sentinel.md`, `transcript-synthetic.jsonl`,
    `transcript-opus.jsonl`, and `.gitkeep`.
-5. `reports/plan-canary-failure-injection.md` summarizes the suite.
+5. `.zskills/audit/plan-canary-failure-injection.md` summarizes the suite.
 6. Progress Tracker above all ✅.
 7. No unrelated changes landed in these 5 PRs.
 

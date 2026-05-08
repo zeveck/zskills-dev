@@ -1,6 +1,6 @@
 # AUDIT: `git rev-parse --git-common-dir` PR-mode resolution
 
-**Phase:** 1b (zskills path-config plan, `plans/ZSKILLS_PATH_CONFIG.md`)
+**Phase:** 1b (zskills path-config plan, `docs/plans/ZSKILLS_PATH_CONFIG.md`)
 **Generated:** 2026-05-07 (America/New_York)
 **Source command:**
 

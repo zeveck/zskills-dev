@@ -655,7 +655,7 @@ setup_project_test() {
   # Create mock transcript with test command AND a pipeline skill invocation
   # (the latter satisfies the Change 6 session-aware guard so tracking
   # enforcement actually fires when expected)
-  printf '/run-plan plans/foo.md\nnpm run test:all\n' > "$TEST_TMPDIR/.transcript"
+  printf '/run-plan docs/plans/foo.md\nnpm run test:all\n' > "$TEST_TMPDIR/.transcript"
 
   # Initialize git repo (needed for git diff --cached, etc.)
   (cd "$TEST_TMPDIR" && git init -q && git add -A && git commit -q -m "init" 2>/dev/null)
@@ -681,7 +681,7 @@ setup_project_test() {
   # Create mock transcript with test command AND a pipeline skill invocation
   # (the latter satisfies the transcript fallback guard so tracking
   # enforcement fires when expected for orchestrator-on-main tests)
-  printf '/run-plan plans/foo.md\nnpm run test:all\n' > "$TEST_TMPDIR/.transcript"
+  printf '/run-plan docs/plans/foo.md\nnpm run test:all\n' > "$TEST_TMPDIR/.transcript"
 
   # Initialize git repo (needed for git diff --cached, git-common-dir, etc.)
   (cd "$TEST_TMPDIR" && git init -q && git add -A && git commit -q -m "init" 2>/dev/null)

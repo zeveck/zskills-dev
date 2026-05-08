@@ -127,11 +127,12 @@ Once installed:
 
 ```
 /draft-plan Add a dark-mode toggle to the settings page.
-/run-plan plans/<generated-file>.md
+/run-plan docs/plans/<generated-file>.md
 ```
 
 `/draft-plan` drafts a plan with adversarial review and writes it to
-`plans/`. `/run-plan` reads that plan and executes it phase by phase
+`docs/plans/` (configurable via `output.plans_dir` in
+`.claude/zskills-config.json`). `/run-plan` reads that plan and executes it phase by phase
 inside an isolated worktree, verifying each phase with a fresh reviewer
 and landing results via your configured landing mode.
 
@@ -169,7 +170,7 @@ reference three install-time knobs:
 You can override the config default on a single invocation:
 
 ```
-/run-plan plans/X.md finish auto pr
+/run-plan docs/plans/X.md finish auto pr
 /fix-issues 10 pr
 /do Add dark mode. pr
 ```
@@ -337,7 +338,7 @@ denial and must take a different path, not route around it.
 
 ## Canary suite
 
-The canary plans under [`plans/CANARY*.md`](plans) are real regression
+The canary plans under [`docs/plans/CANARY*.md`](docs/plans) are real regression
 scaffolds — each one is a plan that was executed end-to-end to validate
 a specific behavior.
 
@@ -354,7 +355,7 @@ Runnable test scripts (always green):
 - `tests/e2e-parallel-pipelines.sh` (opt-in, `RUN_E2E=1`) — two concurrent
   `/run-plan` sessions on the same repo without marker collisions.
 
-Manually-run canary plans (markdown plans under `plans/`):
+Manually-run canary plans (markdown plans under `docs/plans/`):
 
 | Canary | What it validates |
 |---|---|
@@ -472,7 +473,7 @@ Agent guardrails that prevent the most common failure modes:
 
 - `test-all.sh` — failing-stub by default; consumer fills with their test orchestrator.
 - `stop-dev.sh` — failing-stub by default; consumer fills with their dev-server stop logic.
-- `start-dev.sh` — failing-stub by default; consumer fills with their dev-server start command (writes child PIDs to `var/dev.pid`).
+- `start-dev.sh` — failing-stub by default; consumer fills with their dev-server start command (writes child PIDs to `.zskills/dev-server.pid`).
 
 Skill machinery scripts moved into their owning skills under `.claude/skills/<owner>/scripts/` — see the `update-zskills` skill's `references/script-ownership.md` for the full table.
 

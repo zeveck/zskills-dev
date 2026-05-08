@@ -156,7 +156,7 @@ zskills is pre-backwards-compat: ship the right default, migrate cleanly, no leg
 
 1. Detect existing top-level artifacts (`SPRINT_REPORT.md`, `FIX_REPORT.md`, `PLAN_REPORT.md`, `VERIFICATION_REPORT.md`, `reports/`, `plans/`, `var/`, `BUILD_ISSUES.md`/`DOC_ISSUES.md`/`QE_ISSUES.md`/`ISSUES_PLAN.md` if present at root or under legacy `plans/`).
 2. Move forensic + narrative reports → `.zskills/audit/`.
-3. Move `plans/<NAME>_PLAN.md` → resolved `$ZSKILLS_PLANS_DIR/` (default `docs/plans/`, or whatever the user set). Move `plans/PLAN_INDEX.md` → fixed `.zskills/audit/PLAN_INDEX.md` (Tier 2 regenerated index).
+3. Move `docs/plans/<NAME>_PLAN.md` → resolved `$ZSKILLS_PLANS_DIR/` (default `docs/plans/`, or whatever the user set). Move `docs/plans/PLAN_INDEX.md` → fixed `.zskills/audit/PLAN_INDEX.md` (Tier 2 regenerated index).
 4. Move `plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md` → resolved `$ZSKILLS_ISSUES_DIR/` (default `.zskills/issues/`).
 5. Move `var/dev.pid` → `.zskills/dev-server.pid`, `var/dev.log` → `.zskills/dev-server.log`. Remove the now-empty `var/` directory. Update the installed `start-dev.sh` and `stop-dev.sh` stubs to reference the new paths only if they match shipped defaults (preserve user customizations).
 6. Update `.gitignore`: add `.zskills/audit/`, conditionally `.zskills/issues/` (only if `issues_dir` resolves under `.zskills/`), remove the obsolete `var/` line.

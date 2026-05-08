@@ -3,7 +3,7 @@
 Authoritative specification for the tracking-marker naming scheme used by
 `hooks/block-unsafe-project.sh.template` and by every skill that writes
 under `.zskills/tracking/`. Adopted as the baseline for Phases 2-6 of
-`plans/UNIFY_TRACKING_NAMES.md`.
+`docs/plans/UNIFY_TRACKING_NAMES.md`.
 
 ## Background
 
@@ -48,7 +48,7 @@ three or fewer glob sites. Delegation is natural: a child skill writes
 siblings into the parent's subdirectory using the parent's
 `PIPELINE_ID`.
 
-This is a prescriptive choice by `plans/UNIFY_TRACKING_NAMES.md`, not a
+This is a prescriptive choice by `docs/plans/UNIFY_TRACKING_NAMES.md`, not a
 deferral. No blocker was uncovered during Phase 1 research, so the
 baseline stands; the **implementer override clause** (§"Blocker
 evidence" in the plan) was not triggered.
@@ -222,7 +222,7 @@ kicked off by a human interaction at least a second apart). The
 8-char issue-title slug is a convenience tag so the `PIPELINE_ID` is
 still legible to a human reading logs.
 
-Per the shared conventions in `plans/UNIFY_TRACKING_NAMES.md`, every
+Per the shared conventions in `docs/plans/UNIFY_TRACKING_NAMES.md`, every
 writer sources `.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh` before writing the
 constructed ID to disk. The sanitizer collapses any character outside
 `[a-zA-Z0-9._-]` into `_` and truncates to 128 bytes — safe for
@@ -460,13 +460,13 @@ Currently defined informational prefixes:
 - `phasestep.<skill>.<id>.<phase>.<event>` — per-phase progress notes
   emitted by `/run-plan` and friends. Examples:
   - `phasestep.run-plan.<id>.<phase>.drift-detect` — emitted by Phase 3.5
-    (introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 2) when
+    (introduced in `docs/plans/IMPROVE_STALENESS_DETECTION.md` Phase 2) when
     the orchestrator runs `.claude/skills/run-plan/scripts/plan-drift-correct.sh --parse` over
     the implementation + verification reports. Informational only; the
     hook ignores `phasestep.*`.
   - `phasestep.run-plan.<id>.<phase>.drift-fail` — emitted by `/run-plan`
     Phase 3.5 (and the Phase 1 step 6 sub-check b pre-dispatch gate
-    introduced in `plans/IMPROVE_STALENESS_DETECTION.md` Phase 3) when a
+    introduced in `docs/plans/IMPROVE_STALENESS_DETECTION.md` Phase 3) when a
     PLAN-TEXT-DRIFT token cannot be auto-corrected — drift exceeds the
     20% safe-band, an extraction rule is non-derivable, or
     `.claude/skills/run-plan/scripts/plan-drift-correct.sh --correct` fails. Records the failure
@@ -481,7 +481,7 @@ prefix set.
 
 ## References
 
-- `plans/UNIFY_TRACKING_NAMES.md` — the plan that commissions this doc
+- `docs/plans/UNIFY_TRACKING_NAMES.md` — the plan that commissions this doc
 - `hooks/block-unsafe-project.sh.template:231` — `TRACKING_DIR` guard
 - `hooks/block-unsafe-project.sh.template:246-283` — first enforcement
   block (commit path)

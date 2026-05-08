@@ -176,7 +176,11 @@ Use the sanitize-pipeline-id script (bundled in the `create-worktree` skill;
 lands in Phase 2 of the unify plan) before writing any constructed
 `PIPELINE_ID` to disk. `.landed` is NOT a tracking marker — it is a separate
 worktree-state artifact managed by `/commit land` (via the landing script
-bundled in the `commit` skill).
+bundled in the `commit` skill). The `block-unsafe-generic.sh` hook fence has
+been broadened to protect every `.zskills/<subtree>/` (tracking, audit,
+issues, dev-server.{pid,log}) — not just `.zskills/tracking/` — so the
+ZSKILLS_PATH_CONFIG migration's audit + issues subtrees are equally
+guarded against accidental recursive deletion.
 
 ## Skill versioning
 

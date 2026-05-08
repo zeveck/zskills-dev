@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.08+95cfbe"
+  version: "2026.05.08+6c5bbd"
 ---
 
 # Update Z Skills Infrastructure
@@ -220,7 +220,7 @@ Issue trackers:
     → .zskills/issues/  (or $output.issues_dir if user-set)
 
 Runtime files:
-  var/dev.pid, var/dev.log
+  legacy var/dev.{pid,log}
     → .zskills/dev-server.pid, .zskills/dev-server.log
 ```
 
@@ -252,7 +252,7 @@ recovering via the helper's legacy-`plans/` fallback.
 **Stub-script handling (DEFER).** `tier1-shipped-hashes.txt` does NOT
 cover `start-dev.sh` / `stop-dev.sh`. The migration script does NOT
 attempt auto-edit of these scripts; it prints a deferral notice naming
-both files when `var/dev.pid` / `var/dev.log` are moved. The agent-
+both files when the legacy `var/dev.{pid,log}` are moved. The agent-
 runnable upgrade prompt (Phase 5b, `references/path-config-upgrade.md`)
 handles them.
 
@@ -750,7 +750,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
 - `apply-preset.sh` — required by the preset UX (Step F); splices/flips the `BLOCK_MAIN_PUSH` line in `block-unsafe-generic.sh` and updates `execution.landing`/`execution.main_protected` in config
 - `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
-- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `var/dev.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
+- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `.zskills/dev-server.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
 - `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
 
 ### Step 5 — Check skills with additional requirements
@@ -1131,10 +1131,11 @@ has no placeholders — it works out of the box. No configuration needed.
 `.zskills/tracking/` to the project's `.gitignore` if not already present.
 Tracking files are ephemeral session state and should never be committed.
 
-**Add `var/` to `.gitignore`:** Also add `var/` if not already present.
-`scripts/stop-dev.sh` reads PIDs from `var/dev.pid` (written by the
-project's dev server launcher); PID files are per-worktree runtime state
-and must never be committed.
+**Add `.zskills/dev-server.pid` and `.zskills/dev-server.log` to
+`.gitignore`:** Also add these lines if not already present.
+`scripts/stop-dev.sh` reads PIDs from `.zskills/dev-server.pid` (written
+by the project's dev server launcher); PID files are per-worktree runtime
+state and must never be committed.
 
 Then register the hooks in `.claude/settings.json` via a **surgical
 agent-driven merge** — `Read` + `Edit` only, never `Write`-from-template.
@@ -1314,8 +1315,8 @@ do not error.
 - For scripts with placeholders: prompt user for values and replace.
 - Copy `stop-dev.sh` if missing — sanctioned way to stop a
   dev server. Initial install is a failing stub the user
-  replaces (contract: read PIDs from `var/dev.pid`, SIGTERM
-  each). Pair: `start-dev.sh`.
+  replaces (contract: read PIDs from `.zskills/dev-server.pid`,
+  SIGTERM each). Pair: `start-dev.sh`.
 - Copy `test-all.sh` if missing — invoked by `/run-plan`,
   `/verify-changes`, etc. when `testing.full_cmd` is
   `bash scripts/test-all.sh`. Initial install is a failing
@@ -1323,7 +1324,7 @@ do not error.
 - Copy `start-dev.sh` if missing — sanctioned way to start a
   dev server. Initial install is a failing stub the user
   replaces with their start command (and a write to
-  `var/dev.pid`).
+  `.zskills/dev-server.pid`).
 - Copy `post-create-worktree.sh` if missing — invoked by the
   `/create-worktree` skill's worktree-creation script after a
   successful create. Stub is a documented no-op; consumer

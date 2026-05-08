@@ -35,7 +35,7 @@ section of its report.
 
 ### Step 1: Prepare the synthetic plan
 
-Write a minimal 1-phase plan to `plans/CANARY11_TEST_PLAN.md`:
+Write a minimal 1-phase plan to `docs/plans/CANARY11_TEST_PLAN.md`:
 
 ```markdown
 ---
@@ -109,7 +109,7 @@ fi
 Expected: exit non-zero, HALTED message printed. This confirms the
 bash detection wired through correctly.
 
-Alternatively, run `/run-plan plans/CANARY11_TEST_PLAN.md 1 auto`
+Alternatively, run `/run-plan docs/plans/CANARY11_TEST_PLAN.md 1 auto`
 after staging the over-reach and observe that Phase 6 (pre-landing
 checklist) halts before cherry-picking.
 
@@ -163,4 +163,4 @@ The bash mechanism (halt when flag present) IS automated
 
 | Date       | Result | Notes |
 |------------|--------|-------|
-| 2026-04-16 | PASS   | Reviewer flagged `canary/unrelated.txt` deletion with `⚠️ Flag`, citing plan's Acceptance Criterion #2 ("Only canary11.txt changed"). Halt detection fired with exit 1 + `HALTED` on stderr. Worktree not cherry-picked. Fixtures left on main (`canary/canary11.txt`, `canary/unrelated.txt`, `plans/CANARY11_TEST_PLAN.md`) for future re-runs; setup commit `ca43e7b`. |
+| 2026-04-16 | PASS   | Reviewer flagged `canary/unrelated.txt` deletion with `⚠️ Flag`, citing plan's Acceptance Criterion #2 ("Only canary11.txt changed"). Halt detection fired with exit 1 + `HALTED` on stderr. Worktree not cherry-picked. Fixtures left on main (`canary/canary11.txt`, `canary/unrelated.txt`, `docs/plans/CANARY11_TEST_PLAN.md`) for future re-runs; setup commit `ca43e7b`. |

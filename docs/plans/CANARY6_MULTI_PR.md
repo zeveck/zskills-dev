@@ -92,6 +92,6 @@ After both phases merge:
 3. `git worktree list` — no leftover canary6 worktrees.
 4. `git ls-remote --heads origin | grep canary6` — no leftover remote branch.
 5. `cat canary/canary6.txt` (on main) — exactly two lines as specified above.
-6. `reports/plan-canary6-multi-pr.md` exists with both phase sections, both marked Landed.
+6. `.zskills/audit/plan-canary6-multi-pr.md` exists with both phase sections, both marked Landed.
 
 If all 6 checks pass, the PR-mode fix is empirically validated. If any fail, the fix is incomplete.

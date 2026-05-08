@@ -737,6 +737,72 @@ SHIM
   fi
 }
 
+# ─── Case 12: non-_PLAN.md plain plans get migrated ──────────────────────
+# Regression for the catchall loop that covers kebab-case plans (e.g.
+# cross-platform-hooks.md) and SCREAMING_SNAKE_CASE plans without the
+# _PLAN suffix (e.g. EXECUTION_MODES.md). Without the catchall, ~35
+# zskills plan files would be left under plans/ (Phase 6 self-migration
+# surfaced the gap).
+case_12_plain_plans_catchall() {
+  local D="$TEST_OUT/paths-migration-fixture-12"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  # Mix of patterns: matches old _PLAN, matches CANARY, kebab-case, and
+  # SCREAMING_SNAKE without _PLAN.
+  echo "FOO plan body" > "$D/plans/FOO_PLAN.md"
+  echo "kebab plan body" > "$D/plans/cross-platform-hooks.md"
+  echo "screaming plan body" > "$D/plans/EXECUTION_MODES.md"
+  echo "canary body" > "$D/plans/CANARY1_HAPPY.md"
+  write_config "$D"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 12: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  # Sub-assertion: plans/ has no remaining *.md files.
+  local leftover
+  leftover=$(ls "$D"/plans/*.md 2>/dev/null | wc -l)
+  if [ "$leftover" -eq 0 ]; then
+    pass "case 12: plans/*.md all moved (no leftovers)"
+  else
+    fail "case 12: plans/*.md still present" "$(ls "$D"/plans/*.md 2>&1)"
+  fi
+
+  # Sub-assertion: each expected destination exists under docs/plans/.
+  local missing=()
+  for f in FOO_PLAN.md cross-platform-hooks.md EXECUTION_MODES.md \
+           CANARY1_HAPPY.md; do
+    [ -e "$D/docs/plans/$f" ] || missing+=("$f")
+  done
+  if [ "${#missing[@]}" -eq 0 ]; then
+    pass "case 12: all 4 plans landed under docs/plans/"
+  else
+    fail "case 12: missing destinations" "${missing[*]}"
+  fi
+
+  # Sub-assertion: manifest lists all 4 source paths.
+  if [ ! -f "$D/.pre-paths-migration" ]; then
+    fail "case 12: .pre-paths-migration absent" "manifest not written"
+    return
+  fi
+  local manifest_misses=0
+  for src in plans/FOO_PLAN.md plans/cross-platform-hooks.md \
+             plans/EXECUTION_MODES.md plans/CANARY1_HAPPY.md; do
+    if ! grep -qF "$(printf '%s\t' "$src")" "$D/.pre-paths-migration"; then
+      manifest_misses=$((manifest_misses + 1))
+    fi
+  done
+  if [ "$manifest_misses" -eq 0 ]; then
+    pass "case 12: manifest lists all 4 moves"
+  else
+    fail "case 12: manifest missing entries" \
+      "$manifest_misses missing; manifest=$(cat "$D/.pre-paths-migration")"
+  fi
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
@@ -750,6 +816,7 @@ case_8_completed_noncanary_warn
 case_9_hook_rerender_gitignore
 case_10_rewrite_only_recovery
 case_11_chmod_fallback
+case_12_plain_plans_catchall
 
 echo
 echo "---"

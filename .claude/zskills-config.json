@@ -36,5 +36,9 @@
   },
   "dashboard": {
     "work_on_plans_trigger": ""
+  },
+  "output": {
+    "plans_dir": "docs/plans",
+    "issues_dir": ".zskills/issues"
   }
 }

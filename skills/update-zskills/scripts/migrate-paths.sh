@@ -510,6 +510,29 @@ if [ -d plans ]; then
     fi
   done
 
+  # Move any remaining plans/*.md not matched above (covers kebab-case
+  # plans like cross-platform-hooks.md and SCREAMING_SNAKE_CASE without
+  # _PLAN suffix like EXECUTION_MODES.md). Skip PLAN_INDEX.md — Step 4b
+  # routes it to .zskills/audit/ instead of $TARGET_PLANS.
+  for src in plans/*.md; do
+    [ -e "$src" ] || continue
+    base=$(basename "$src")
+    [ "$base" = "PLAN_INDEX.md" ] && continue
+    dst="$TARGET_PLANS/$base"
+    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+      git mv "$src" "$dst"
+    else
+      mv "$src" "$dst"
+    fi
+    if [ -e "$dst" ] && [ ! -e "$src" ]; then
+      echo "moved: $src → $dst"
+      manifest_add "$src" "$dst"
+    else
+      echo "FAIL: move $src → $dst did not complete" >&2
+      exit 1
+    fi
+  done
+
   # Recursively move plans/blocks/ → $TARGET_PLANS/blocks/.
   if [ -d plans/blocks ]; then
     mkdir -p "$TARGET_PLANS/blocks"

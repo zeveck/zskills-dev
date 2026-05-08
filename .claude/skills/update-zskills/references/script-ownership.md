@@ -49,7 +49,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `review-loop.sh`             | 1      | `draft-tests`                |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
 | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
-| `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `var/dev.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
+| `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `.zskills/dev-server.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
 | `test-all.sh`                | 2      | already a partial template (`{{E2E_TEST_CMD}}` placeholders); customized by consumer with their own test commands. **Note:** full conversion to a formal failing stub is deferred to the same follow-up plan. |
 | `verify-completed-checksums.sh` | 1   | `draft-tests`                |
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |

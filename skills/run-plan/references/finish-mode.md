@@ -40,7 +40,7 @@ check the next-target phase. If it's already marked Done OR In Progress,
    The new turn defers and exits.
 
 Output for the no-work-to-do case:
-> /run-plan plans/X.md: phase N is already Done/In Progress. Skipping
+> /run-plan docs/plans/X.md: phase N is already Done/In Progress. Skipping
 > this cron fire (likely a stale cron). The pipeline is still proceeding
 > via its actual current phase.
 
@@ -249,8 +249,8 @@ pipeline at any time.
 
 ### Single-phase mode (no chunking)
 
-When invoked WITHOUT `finish auto` (e.g., `/run-plan plans/X.md` or
-`/run-plan plans/X.md 4b`), do NOT chunk. Run the single specified phase
+When invoked WITHOUT `finish auto` (e.g., `/run-plan docs/plans/X.md` or
+`/run-plan docs/plans/X.md 4b`), do NOT chunk. Run the single specified phase
 to completion in this turn, then exit normally. Chunking is exclusively
 for `finish auto` mode.
 
