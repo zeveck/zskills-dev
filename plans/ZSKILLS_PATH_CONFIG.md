@@ -239,7 +239,7 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 | 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit | ✅ Done | `6082e1f` | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
 | 2a — Bash writer migration (excluding `/run-plan`) | ✅ Done | `6c2dc50` | | one commit; 12 `skills/` + 2 `block-diagram/` = 14 skills total |
 | 2b — `/run-plan` writer migration + CANARY1 gate | ✅ Done | `6b9552f` | | self-migration hazard isolated; one commit |
-| 3 — Bash reader migration + scripts | ⬜ | | readers + post-run-invariants.sh + build-prod.sh |
+| 3 — Bash reader migration + scripts | ✅ Done | `59aeff7` | | readers + post-run-invariants.sh + build-prod.sh |
 | 4 — Briefing + dashboard migration | ⬜ | | depends on cleanup/remove-zimulink-viewer-refs merge (locked decision 12) |
 | 5a — Migration tool deterministic moves | ⬜ | | --migrate-paths flag + 4 simple test cases |
 | 5b — Cross-reference rewrite + complex test cases | ⬜ | | adapted context-signature; 6 cross-ref test cases incl. `--rewrite-only` recovery (5b's 6 + 5a's 4 = 10 total) |

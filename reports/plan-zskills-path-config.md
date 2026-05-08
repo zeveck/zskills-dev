@@ -1,5 +1,53 @@
 # Plan Report — zskills Path Configuration
 
+## Phase — 3 Bash reader migration + scripts [UNFINALIZED]
+
+**Plan:** plans/ZSKILLS_PATH_CONFIG.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-zskills-path-config (PR mode — `feat/zskills-path-config`)
+**Commit:** `59aeff7`
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 3.1 | /briefing reader prose | Done | already migrated in 2a (no edits needed) |
+| 3.2 | /work-on-plans reader | Done | 2-3 prose edits (167, 176-178) |
+| 3.3 | /fix-report reader | Done | 1 edit (287, *ISSUES*.md scan) |
+| 3.4 | /run-plan reader | Done | PLAN_FILE_FOR_READ verified; covered in 2b |
+| 3.5 | /refine-plan reader | Done | already covered in 2a (no remaining edits) |
+| 3.6 | /session-report reader | Done | 3 edits (62/77/142) |
+| 3.7 | /investigate, /quickfix, /do reader prose | Done | 4 edits across 3 skills |
+| 3.8 | /plans SKILL.md remaining | Done | 4 edits (265/341/413/414) |
+| 3.9 | post-run-invariants.sh — TWO-VARIABLE resolution | Done | MAIN_ROOT for git-state queries (6 sites: 99/107/119/160/162/163), PROJECT_ROOT for path resolution; REPORT_PATH at L127 → `$ZSKILLS_AUDIT_DIR/plan-${PLAN_SLUG}.md`. Implementer used `git rev-parse --show-toplevel` as PROJECT_ROOT fallback (improvement over spec's bare MAIN_ROOT) for ad-hoc invocations from worktrees without `--worktree`. |
+| 3.10 | scripts/build-prod.sh | Done | helper sourced at top; canary glob `$ZSKILLS_PLANS_DIR/CANARY_*.md`. Sanity smoke: rc=0; both helper paths in artifact tree. |
+| 3.11 | Test fixture — interpretation A | Done | canary-5 fixture moved to `.zskills/audit/` (canonical-location change, NOT test-weakening). setup_fixture_repo() also extended to install zskills-paths.sh + zskills-config.json so post-run-invariants.sh can source the helper from fixture trees. |
+| 3.12 | Mirror + commit | Done | 9 mirror skills clean; single commit `59aeff7` |
+
+### Verification
+- Test suite: **2772/2772 pass, 0 failed** (unchanged from 2b baseline)
+- Conformance: **0 DRIFT hits** (still clean post-3); explicit-grep ACs for `scripts/` + `tests/` + `post-run-invariants.sh` + `build-prod.sh` all return 0 non-allow-hardcoded hits
+- Mirror parity: clean for all 8 mirrored skills
+- 8 metadata.version bumps verified (do, fix-report, investigate, plans, quickfix, run-plan, session-report, work-on-plans)
+- Verifier discipline: `subagent_type: "verifier"` per Plan A; PASS first round
+- Smoke results: build-prod.sh sanity rc=0 (both helper paths present); post-run-invariants 8-case canary suite all PASS (validates new `$ZSKILLS_AUDIT_DIR` REPORT_PATH resolution)
+
+### Notable structural choice — PROJECT_ROOT fallback in post-run-invariants.sh
+Implementer used `git rev-parse --show-toplevel` (with MAIN_ROOT as last-resort fallback) instead of the spec's bare `PROJECT_ROOT=$MAIN_ROOT` else branch. Rationale: tests/real-world ad-hoc invocations from inside a worktree without `--worktree` must resolve to the worktree's helper, not main's. Pure MAIN_ROOT fallback breaks test-hooks.sh case 25 in PR-mode worktrees where main hasn't yet received the helper. Verifier ratified as a strict improvement (never collapses MAIN-rooted git-state queries — those still use `MAIN_ROOT`).
+
+### CANARY7 deferral
+Plan §3 AC mentions `plans/CANARY7_CHUNKED_FINISH.md` cron-chunked multi-phase canary as a manual gate. Same constraint as Phase 2b's CANARY1: verifier subagent's tool allowlist excludes Skill, so /run-plan dispatch can't happen inline. Coverage already provided by:
+- 8-case canary suite in `tests/test-canary-failures.sh` exercising the new REPORT_PATH resolution end-to-end
+- Full suite 2772/2772 pass
+- Verifier diff inspection of post-run-invariants.sh
+
+### PLAN-TEXT-DRIFT (informational)
+- `phase=3 bullet=3.9-smoke-1-happy field=fixture-state` — happy smoke fixture state wording inconsistent with script semantics (worktree must be removed before script runs for rc=0)
+- `phase=3 bullet=3.9-PROJECT_ROOT-fallback field=else-branch` — implementer used show-toplevel fallback (improvement justified)
+- `phase=3 bullet=3.11-fixture field=test-canary-failures-setup` — fixture also installs helper (required for sourcing in fixture trees)
+
+### User Sign-off
+N/A — no UI files changed.
+
 ## Phase — 2b /run-plan writer migration + CANARY1 gate [UNFINALIZED]
 
 **Plan:** plans/ZSKILLS_PATH_CONFIG.md
