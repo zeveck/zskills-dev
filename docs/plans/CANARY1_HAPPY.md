@@ -1,7 +1,8 @@
 ---
 title: Canary 1 — Happy Path
 created: 2026-04-14
-status: active
+status: complete
+completed: 2026-05-10
 ---
 
 # Plan: Canary 1 — Happy Path
@@ -12,7 +13,7 @@ Trivial 1-phase plan to validate full PR mode + CI + auto-merge.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Add canary file | ⬜ | | Trivial |
+| 1 -- Add canary file | ✅ Done | `a47c567` | Tests 2821/2821 PASS post-migration |
 
 ## Phase 1 -- Add canary file
 
