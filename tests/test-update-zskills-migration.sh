@@ -517,6 +517,49 @@ test_case_6c_commit_cohabitation() {
   fi
 }
 
+# Case 6d: every registry hash must be reachable in the local git object
+# store (i.e., resolvable via `git cat-file -e <hash>`). After a feature
+# branch squash-merges to main, intermediate-commit blobs become orphaned
+# and disappear from any fresh clone of main. Registering an intermediate
+# blob's hash (instead of only the final main-reachable content's hash)
+# leaves a time-bomb: case 2c's find_blob_for() picks the orphan, the
+# fixture write produces empty content, and the migration test silently
+# fails post-merge in CI while passing locally for whoever still has the
+# un-squashed branch in their reflog.
+#
+# Past failure (2026-05-10, PR #213): 4 successive migrate-paths.sh hashes
+# accumulated in the registry during PR #211's recovery iteration; only
+# the last (80befeb...) was reachable post-squash-merge, the other 4 were
+# orphans, and case 2c failed on PR #213 CI (which was a fresh clone of
+# the canary branch off post-squash main). Hot-fixed in cf82c77 by
+# trimming the orphans.
+#
+# This test fires both at PR-context CI (fresh clone of branch — catches
+# a developer registering an unreachable hash before squash-merge) and
+# at post-merge push to main (catches squash-merge orphans within minutes
+# of merge, before the bug propagates further).
+test_case_6d_registry_reachability() {
+  local f="$REPO_ROOT/skills/update-zskills/references/tier1-shipped-hashes.txt"
+  if [ ! -f "$f" ]; then
+    fail "case 6d: hash file present" "$f missing"
+    return
+  fi
+  local orphans=()
+  local hash
+  while IFS= read -r hash; do
+    [ -z "$hash" ] && continue
+    if ! git -C "$REPO_ROOT" cat-file -e "$hash" 2>/dev/null; then
+      orphans+=("$hash")
+    fi
+  done < "$f"
+  if [ "${#orphans[@]}" -eq 0 ]; then
+    pass "case 6d: every registry hash reachable in git object store"
+  else
+    fail "case 6d: ${#orphans[@]} orphan hash(es) — likely intermediate-PR state added to registry that became unreachable post-squash-merge; remove them and keep only hashes whose blobs land on main HEAD" \
+      "$(printf '%s\n' "${orphans[@]}")"
+  fi
+}
+
 # --- Run ------------------------------------------------------------------
 
 echo "Running tests/test-update-zskills-migration.sh"
@@ -532,6 +575,7 @@ test_case_5_user_says_no
 test_case_6a_stale_list_drift
 test_case_6b_hash_format
 test_case_6c_commit_cohabitation
+test_case_6d_registry_reachability
 
 echo
 TOTAL=$((PASS_COUNT + FAIL_COUNT + SKIP_COUNT))
