@@ -8,7 +8,7 @@ description: >-
   until the plan converges. Output is a plan file ready for /run-plan.
   Usage: /draft-plan [output FILE] [rounds N] <description...>
 metadata:
-  version: "2026.05.07+a87f35"
+  version: "2026.05.10+3d0980"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -539,12 +539,10 @@ After each round of review + refinement:
    they can't read — plans are often too large to meaningfully summarize
    in chat. Write first, then let the user read the actual file.
 
-3. **Update the plan index:**
-   - If `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` exists, add a row to the "Ready to Run" table
-     with the new plan's filename (as a relative link), phase count, first
-     phase name, priority `Medium`, and a one-line note from the overview.
-   - If `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` does not exist, include in the report:
-     > Run `/plans rebuild` to generate a plan index.
+3. **Plan index — do not touch.** The plan index is regenerated from
+   source-of-truth by `/plans rebuild` and auto-refreshed by `/plans`
+   Mode: Show when the source has changed. No manual update needed
+   here.
 
 4. **Present the result:**
    > Plan drafted in N rounds (converged / max rounds reached).
@@ -558,8 +556,8 @@ After each round of review + refinement:
 
 ### Post-finalize tracking
 
-After writing the plan file and updating the index, create the finalize
-step marker and update the fulfillment file to complete:
+After writing the plan file, create the finalize step marker and
+update the fulfillment file to complete:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
