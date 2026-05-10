@@ -153,6 +153,26 @@ if [ -n "$WORKTREE_PATH" ] && [ -f "$WORKTREE_PATH/.landed" ]; then
   fi
 fi
 
+# #9: requires.land-pr.<id> exists but fulfilled.land-pr.<id> missing.
+# In-session signal for the Phase-6-skip case where /run-plan PR mode
+# wrote requires.land-pr.<id> at skill entry but /land-pr never reached
+# the merge gate (skipped, errored, or completed without fulfilling).
+# Only fails when LANDED_STATUS=landed — direct/cherry-pick modes never
+# write requires.land-pr, and pr-ready/conflict states legitimately
+# leave the requires unmet pending follow-up.
+# The hook (block-unsafe-project.sh) catches this on the *next* git op;
+# this invariant catches it in-session before the orchestrator exits.
+if [ -n "$PLAN_SLUG" ] && [ "$LANDED_STATUS" = "landed" ]; then
+  TRACKING_ID="$PLAN_SLUG"
+  PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+  EXPECTED_REQUIRES="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
+  EXPECTED_FULFILLED="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$TRACKING_ID"
+  if [ -f "$EXPECTED_REQUIRES" ] && [ ! -f "$EXPECTED_FULFILLED" ]; then
+    echo "INVARIANT-FAIL (#9): $EXPECTED_REQUIRES exists but $EXPECTED_FULFILLED missing — /land-pr was supposed to write fulfillment on row-6 merge gate (MERGE_REQUESTED=true AND PR_STATE=MERGED AND CI_STATUS pass-or-none) but didn't" >&2
+    INVARIANT_FAILED=1
+  fi
+fi
+
 # 7. Local main reconcilable with origin/main — WARN not FAIL
 # Users may have legitimate unpushed work on local main; we don't reject,
 # but we surface it clearly so squash-merge divergence doesn't accumulate

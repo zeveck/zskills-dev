@@ -333,6 +333,13 @@ while :; do
   LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE"
   [ -n "$WORKTREE_PATH" ] && LAND_ARGS="$LAND_ARGS --worktree-path=$WORKTREE_PATH"
   [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+  # Pass --tracking-id so /land-pr writes fulfilled.land-pr.<id> on
+  # successful merge, satisfying the requires.land-pr.<id> marker written
+  # at /run-plan skill entry. Only /run-plan PR mode passes this — the 4
+  # other /land-pr callers (/quickfix, /commit pr, /do pr, /fix-issues pr)
+  # don't write requires.land-pr and don't pass --tracking-id, preserving
+  # their current behavior.
+  [ -n "$TRACKING_ID" ] && LAND_ARGS="$LAND_ARGS --tracking-id=$TRACKING_ID"
 
   # Invoke /land-pr via the Skill tool. The Skill tool loads /land-pr's
   # prose into the current (orchestrator) context — so its internal bash
