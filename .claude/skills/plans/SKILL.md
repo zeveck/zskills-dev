@@ -6,12 +6,12 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.07+38ab19"
+  version: "2026.05.07+c5246c"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
 
-Maintains `plans/PLAN_INDEX.md` — a structured index of all plan files with
+Maintains `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` — a structured index of all plan files with
 their classification, status, and priority.
 
 **Modes:**
@@ -81,7 +81,7 @@ removed when this skill migrated to the aggregator.
 
 ## Index → snapshot section mapping
 
-The six sections of `plans/PLAN_INDEX.md` are derived from the
+The six sections of `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` are derived from the
 aggregator's `category`, `status`, `phases_done`, and `queue.column`
 fields per this mapping (used by Mode: Rebuild, Mode: Show, and Mode:
 Details to group plans):
@@ -102,7 +102,7 @@ NOT appear as separate top-level entries.
 
 ## Mode: Show (bare `/plans`)
 
-1. Read `plans/PLAN_INDEX.md`.
+1. Read `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`.
 2. If the file does not exist, **auto-run rebuild** (Mode: Rebuild below) to
    create it, then display the newly generated index.
 3. If the file exists, display an **actionable dashboard** — not a one-line
@@ -201,7 +201,7 @@ when you have many plans and can't remember what each one is about.
 
 ## Mode: Rebuild (`/plans rebuild`)
 
-Regenerate `plans/PLAN_INDEX.md` from the aggregator snapshot. The
+Regenerate `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` from the aggregator snapshot. The
 implementing agent shells out to `python3 -m zskills_monitor.collect`
 and renders the six-section index from the returned JSON — there is
 **no in-prose classifier**. All status, category, phase-count, and
@@ -216,7 +216,7 @@ SNAPSHOT_JSON=$(PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
 RC=$?
 if [ "$RC" -ne 0 ]; then
   echo "ERROR: python3 -m zskills_monitor.collect failed (rc=$RC)" >&2
-  echo "Cannot regenerate plans/PLAN_INDEX.md — bailing out." >&2
+  echo "Cannot regenerate $ZSKILLS_AUDIT_DIR/PLAN_INDEX.md — bailing out." >&2
   exit 1
 fi
 ```
@@ -262,14 +262,14 @@ the meta-plan's children.
   user-set priority from `/zskills-dashboard`). Then default-column
   Ready entries, ordered by recency (newest first; tiebreak alphabetical
   by `slug`). Assign priority labels: `High` for plans referenced as
-  fix-issues "too complex" skips (check `SPRINT_REPORT.md` if it
-  exists for context); `Medium` for plans created within the last 14
+  fix-issues "too complex" skips (check `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+  if it exists for context); `Medium` for plans created within the last 14
   days; `Low` otherwise.
 - **In Progress / Complete / Reference / Canaries**: alphabetical by
   `slug`.
 - **Needs Review**: alphabetical by `slug`.
 
-### Step 4 — Write `plans/PLAN_INDEX.md`
+### Step 4 — Write `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
 
 Render with this structure (preserves the historical six-section shape):
 
@@ -330,7 +330,7 @@ for its output file or a PR with its name.
 |------|------|-------------|
 | [OVERVIEW.md](OVERVIEW.md) | Reference | Project overview |
 | [ISSUES_PLAN.md](ISSUES_PLAN.md) | Issue Tracker | Master issue index |
-| Block Plans (`plans/blocks/`) | Reference | {BLOCK_IMPLS}/{BLOCK_PLANS} implemented |
+| Block Plans (`$ZSKILLS_PLANS_DIR/blocks/`) | Reference | {BLOCK_IMPLS}/{BLOCK_PLANS} implemented |
 ```
 
 **Notes for each section:**
@@ -338,7 +338,7 @@ for its output file or a PR with its name.
 - If a section would be empty, include the table header with a single row:
   `| (none) | | | | |`.
 - Use relative links (just the filename, since the index lives in
-  `plans/`).
+  `$ZSKILLS_PLANS_DIR`).
 - `phase_count` from the snapshot drives the "Phases" column; for
   In Progress entries, the "Current Phase" is the last `phases[]` row
   with `status=="done"` and "Next Phase" is the first remaining row.
@@ -354,7 +354,7 @@ The "Reference (not executable)" footer line can include a count of
 implemented blocks vs. block plans:
 
 ```bash
-BLOCK_PLANS=$(find plans/blocks -name '*.md' 2>/dev/null | wc -l)
+BLOCK_PLANS=$(find "$ZSKILLS_PLANS_DIR/blocks" -name '*.md' 2>/dev/null | wc -l)
 BLOCK_IMPLS=$(grep -c "    type: '" src/library/registry.js 2>/dev/null)
 ```
 
@@ -367,7 +367,7 @@ components don't follow the `*Block.js` naming convention.
 1. Invoke the canonical aggregator CLI (see "Single source of truth"
    above) and parse the JSON. Apply the section mapping to identify
    the **Ready to Run** set.
-2. If `plans/PLAN_INDEX.md` is missing, **also auto-run rebuild** so
+2. If `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` is missing, **also auto-run rebuild** so
    the file exists for subsequent `/plans` calls. This is a
    side-effect, not the source of truth — `Mode: Next` reads its
    answer from the snapshot, not from the regenerated index.
@@ -406,12 +406,12 @@ components don't follow the `*Block.js` naming convention.
   (assuming no plan files changed between runs).
 - **Never modify plan files** — the index is read-only metadata. It
   reads plans (via the aggregator) but never changes them.
-- **Skip `plans/blocks/` subdirectories** — those are block-specific
+- **Skip `$ZSKILLS_PLANS_DIR/blocks/` subdirectories** — those are block-specific
   plan files managed by `/add-block`, not executable plans.
-  `collect.py` already restricts to top-level `plans/*.md`.
+  `collect.py` already restricts to top-level `$ZSKILLS_PLANS_DIR/*.md`.
 - **Skip `PLAN_INDEX.md` itself** — don't index the index.
-- **Relative links** — since the index lives in `plans/`, links are
-  just filenames (e.g., `[FOO.md](FOO.md)`), not `plans/FOO.md`.
+- **Relative links** — since the index lives in `$ZSKILLS_PLANS_DIR`, links are
+  just filenames (e.g., `[FOO.md](FOO.md)`), not the full path.
 - **Timezone** — always use America/New_York (ET) for the "Last
   rebuilt" timestamp.
 - **No bash fallback.** If `python3 -m zskills_monitor.collect` fails,

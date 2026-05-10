@@ -24,3 +24,5 @@ DOC_PARTY_COMPARISON.md
 # Track only the cli.config.json that .devcontainer/setup.sh writes.
 .playwright/*
 !.playwright/cli.config.json
+.zskills/audit/
+.zskills/issues/

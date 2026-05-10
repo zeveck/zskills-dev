@@ -1,10 +1,25 @@
 #!/bin/bash
 # scripts/mirror-skill.sh — Regenerate .claude/skills/<name>/ mirror from
-# skills/<name>/. Hook-compatible: uses per-file rm (no -r flag) for
-# orphan removal instead of `rm -rf`, avoiding block-unsafe-generic.sh's
-# recursive-rm gate.
+# skills/<name>/ OR block-diagram/<name>/. Hook-compatible: uses per-file
+# rm (no -r flag) for orphan removal instead of `rm -rf`, avoiding
+# block-unsafe-generic.sh's recursive-rm gate.
 #
-# Usage: bash scripts/mirror-skill.sh <skill-name>
+# Usage:
+#   bash scripts/mirror-skill.sh <skill-name>
+#     Mirrors skills/<skill-name>/ -> .claude/skills/<skill-name>/
+#   bash scripts/mirror-skill.sh block-diagram/<skill-name>
+#     Mirrors block-diagram/<skill-name>/ -> .claude/skills/<skill-name>/
+#     (the .claude/skills destination uses the BASENAME — no
+#     `.claude/skills/block-diagram/` parent is created).
+#
+# Hook-safety invariant (Phase 1b §1b.1): this script MUST continue to
+# use per-file `rm` (no `-r`/`-R` flag) and `find ... -type f` walks for
+# orphan removal. The Phase-1 broadened block-unsafe-project.sh fence
+# blocks any recursive delete inside `.zskills/`; the same discipline
+# applied here keeps `mirror-skill.sh` hook-safe even before consumer
+# repos re-render. Future edits MUST NOT introduce `rm -r`, `rm -rf`,
+# or `find -delete` against the mirror destinations.
+#
 # Exit:
 #   0 — mirror updated, diff -rq clean.
 #   1 — usage error, source path missing, or post-regen diff non-clean.
@@ -13,14 +28,27 @@ set -u
 
 NAME="${1:-}"
 if [ -z "$NAME" ]; then
-  echo "Usage: bash scripts/mirror-skill.sh <skill-name>" >&2
+  echo "Usage: bash scripts/mirror-skill.sh <skill-name>|block-diagram/<skill-name>" >&2
   exit 1
 fi
 
 # Resolve repo root (allow caller to be in any subdir).
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-SRC="$REPO_ROOT/skills/$NAME"
-DST="$REPO_ROOT/.claude/skills/$NAME"
+
+# Two-tree resolution: if NAME contains "/" and matches block-diagram/X,
+# use that as SRC; otherwise default to skills/<NAME>. The destination
+# always lives at .claude/skills/<basename> — no block-diagram parent
+# directory is materialised under .claude/skills/.
+case "$NAME" in
+  block-diagram/*)
+    SRC="$REPO_ROOT/$NAME"
+    DST="$REPO_ROOT/.claude/skills/${NAME#block-diagram/}"
+    ;;
+  *)
+    SRC="$REPO_ROOT/skills/$NAME"
+    DST="$REPO_ROOT/.claude/skills/$NAME"
+    ;;
+esac
 
 if [ ! -d "$SRC" ]; then
   echo "ERROR: source dir not found: $SRC" >&2
@@ -70,5 +98,5 @@ if [ -n "$DIFF_OUT" ]; then
   exit 1
 fi
 
-echo "Mirror clean: skills/$NAME/ -> .claude/skills/$NAME/"
+echo "Mirror clean: $SRC/ -> $DST/"
 exit 0

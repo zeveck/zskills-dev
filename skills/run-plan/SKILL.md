@@ -5,11 +5,11 @@ argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHE
 description: >-
   Execute the next phase of a plan document: parse phases and status, dispatch
   implementation in a worktree, verify with a separate agent, update progress
-  tracking, write reports/plan-{slug}.md, and optionally auto-land to main. Can
-  self-schedule recurring runs via cron. Use `next` to check schedule, `stop`
-  to cancel.
+  tracking, write the plan report (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`), and
+  optionally auto-land to main. Can self-schedule recurring runs via cron. Use
+  `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.07+392b64"
+  version: "2026.05.08+fc671e"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -230,7 +230,9 @@ If `$ARGUMENTS` contains `status` (case-insensitive):
    before Phase 1 preflight:
    ```bash
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   # Pre-worktree bootstrap: anchor on $CLAUDE_PROJECT_DIR (orchestrator's
+   # project root, set by the harness) — WORKTREE_PATH is not yet in scope.
+   MAIN_ROOT="$CLAUDE_PROJECT_DIR"
    PROJECT_NAME=$(basename "$MAIN_ROOT")
    PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
    if [ "$LANDING_MODE" = "pr" ] && [ -d "$PR_WORKTREE_PATH" ]; then
@@ -305,7 +307,10 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    compute them inline:
    ```bash
    TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')
-   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   # `stop` is invoked from main session before any worktree exists — anchor
+   # on $CLAUDE_PROJECT_DIR. Counters in PR-mode runs that wrote inside the
+   # worktree get cleaned up by the worktree's own .landed-marker flow.
+   MAIN_ROOT="$CLAUDE_PROJECT_DIR"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
@@ -402,7 +407,9 @@ main is authoritative there.
 # Compute BEFORE Step 0. LANDING_MODE is already resolved from args/config
 # in the argument-detection section at the top of this skill.
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# Pre-worktree bootstrap: anchor on $CLAUDE_PROJECT_DIR (orchestrator session
+# root) — WORKTREE_PATH is not yet in scope at the read-authority block.
+MAIN_ROOT="$CLAUDE_PROJECT_DIR"
 PROJECT_NAME=$(basename "$MAIN_ROOT")
 PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 
@@ -804,7 +811,17 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   # PR mode: bookkeeping commits inside the worktree on the feature branch
+   # (PR-mode bookkeeping rule). Pre-worktree fences (Phase 1 step 8 runs
+   # before Phase 2 worktree creation) anchor on $PR_WORKTREE_PATH if PR-mode
+   # resume detected the worktree above; otherwise on $CLAUDE_PROJECT_DIR.
+   BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+   if [ "$LANDING_MODE" = "pr" ] && [ -n "$PR_WORKTREE_PATH" ] && [ -d "$PR_WORKTREE_PATH" ]; then
+     BOOKKEEPING_ROOT="$PR_WORKTREE_PATH"
+   fi
+   ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   MAIN_ROOT="$BOOKKEEPING_ROOT"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
@@ -945,7 +962,7 @@ it once before the first phase, pass the same path to every phase's agent:
 
 **Agent timeout: 2 hours.** Note the dispatch time. If the implementation
 agent hasn't returned after 2 hours, declare it **failed**:
-- Mark the phase as "Timed out" in `reports/plan-{slug}.md`
+- Mark the phase as "Timed out" in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`
 - The phase stays incomplete for the next run
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
@@ -955,7 +972,6 @@ agent hasn't returned after 2 hours, declare it **failed**:
 1. **Create worktree via `.claude/skills/create-worktree/scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
    ```bash
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
    WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
      --prefix cp \
      --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}" \
@@ -1167,11 +1183,12 @@ plan). The worktree persists across cron turns for chunked execution.
 **Branch naming:** `{branch_prefix}{plan-slug}`
 - `branch_prefix` from config (`execution.branch_prefix`), default `"feat/"`
 - `plan-slug` derived from plan file path: lowercase, hyphens, no extension
-  - `plans/THERMAL_DOMAIN.md` → `thermal-domain`
-  - `plans/ADD_FILTER_BLOCK.md` → `add-filter-block`
+  - `$ZSKILLS_PLANS_DIR/THERMAL_DOMAIN.md` → `thermal-domain`
+  - `$ZSKILLS_PLANS_DIR/ADD_FILTER_BLOCK.md` → `add-filter-block`
 
+<!-- allow-hardcoded: "plans/ reason: illustrative example showing user-typed plan-file argument value (the literal slash-command form `/run-plan plans/THERMAL_DOMAIN.md`); the actual plans-dir is resolved via $ZSKILLS_PLANS_DIR (zskills-paths.sh) at the read-authority block earlier in the skill -->
 ```bash
-# Derive plan slug
+# Derive plan slug — example with user-typed plan path
 PLAN_FILE="plans/THERMAL_DOMAIN.md"
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 
@@ -1181,12 +1198,11 @@ PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"
 ```
 
-**PR-mode bookkeeping rule:** in PR mode, orchestrator bookkeeping (tracker updates, plan reports, `PLAN_REPORT.md` regen, plan-frontmatter completion, mark-Done) commits **inside the worktree on the feature branch**, not on `main`. The feature branch is the single source of truth; the squash merge lands everything atomically on `origin/main`, keeping local `main` in lockstep. In cherry-pick/direct mode these commits stay on `main` as before. Every "commit on main" instruction below for bookkeeping must be read through this lens.
+**PR-mode bookkeeping rule:** in PR mode, orchestrator bookkeeping (tracker updates, plan reports, `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md` regen, plan-frontmatter completion, mark-Done) commits **inside the worktree on the feature branch**, not on `main`. The feature branch is the single source of truth; the squash merge lands everything atomically on `origin/main`, keeping local `main` in lockstep. In cherry-pick/direct mode these commits stay on `main` as before. Every "commit on main" instruction below for bookkeeping must be read through this lens.
 
 **Worktree creation — via `.claude/skills/create-worktree/scripts/create-worktree.sh`, NOT `isolation: "worktree"`:**
 
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # Resume detection stays directory-based (R2-M1): an existing PR worktree
 # means we're resuming the same plan across cron turns.
 if [ -d "$WORKTREE_PATH" ]; then
@@ -1256,13 +1272,18 @@ fi
 ### Post-implementation tracking
 
 After the implementation agent finishes (whether worktree or delegate mode),
-create the implementation step marker:
+create the implementation step marker. Per the PR-mode bookkeeping rule,
+the bookkeeping anchor is `$WORKTREE_PATH` in PR mode and `$CLAUDE_PROJECT_DIR`
+otherwise — sourced via the path-config helper:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
+  > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
 ```
 
 ### Pre-verification tracking
@@ -1602,13 +1623,18 @@ Include this VERBATIM in the verifier dispatch prompt:
 
 ### Post-verification tracking
 
-After verification passes, create the verification step marker:
+After verification passes, create the verification step marker. Per the
+PR-mode bookkeeping rule, the bookkeeping anchor is `$WORKTREE_PATH` in PR
+mode and `$CLAUDE_PROJECT_DIR` otherwise — sourced via the path-config helper:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
+  > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
 ```
 
 ## Phase 3.5 — Detect and auto-correct plan-text drift
@@ -1668,11 +1694,14 @@ informational marker:
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\ncompleted: %s\n' \
   "$PHASE" "$FOUND" "$CORRECTED" "$ESCALATED" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.drift-detect"
+  > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.drift-detect"
 ```
 Uses the `phasestep.*` prefix (informational; hook ignores). The
 `step.*.verify` marker stays as-is.
@@ -1857,22 +1886,33 @@ ${SUFFIX}"
 
 ## Phase 5 — Write Report
 
-**PREPEND** new phase sections after the H1 in `reports/plan-{slug}.md`
+**PREPEND** new phase sections after the H1 in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`
 (`{slug}` from plan filename, e.g., `FEATURE_PLAN.md` → `plan-physics module`).
 Newest phase at the top — the reader's question is "what needs my
 attention?" and that's always the newest phase.
+
+Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper at the top of the
+fence (PR mode anchors on `$WORKTREE_PATH`, otherwise `$CLAUDE_PROJECT_DIR`):
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+mkdir -p "$ZSKILLS_AUDIT_DIR"  # idempotent — always create before write
+```
 
 If the file doesn't exist, create it with a `# Plan Report — {plan name}`
 heading. Never overwrite the file — each phase adds a section.
 
 **File location and commit follow the PR-mode bookkeeping rule**: in PR
-mode, write to `$WORKTREE_PATH/reports/plan-{slug}.md`, regenerate
-`$WORKTREE_PATH/PLAN_REPORT.md`, and commit on the feature branch.
-Cherry-pick/direct: write/regen/commit on main (unchanged).
+mode, the helper above resolves `$ZSKILLS_AUDIT_DIR` to a worktree-relative
+path and the commit lands on the feature branch. Cherry-pick/direct:
+write/regen/commit on main (unchanged).
 
-After writing, regenerate `PLAN_REPORT.md` in the repo root as an **index**
+After writing, regenerate `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md` as an **index**
 of all plan reports:
-1. Scan `reports/plan-*.md` files
+1. Scan `$ZSKILLS_AUDIT_DIR/plan-*.md` files
 2. For each: extract plan name, phase count, overall status, unchecked `[ ]`
 3. Write index with Needs Sign-off section (linked items) + Plans table
 4. Staleness rule: items >7 days flagged STALE
@@ -1933,10 +1973,13 @@ of all plan reports:
 After writing the report and regenerating the index, create the report step marker:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
+  > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
 ```
 
 ## Phase 5b — Plan Completion
@@ -1956,12 +1999,14 @@ Exit cleanly without re-committing. Output "Plan already complete (no-op)."
 final-verify marker:
 
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # The final-verify marker is written by /research-and-go into ITS pipeline
 # subdir (research-and-go.$META_PLAN_SLUG/), not into this /run-plan's own
-# subdir. Use glob-dual-lookup: prefer any research-and-go.*/ subdir whose
-# marker basename matches this TRACKING_ID; fall back to the legacy flat
-# path during the Phase 2-6 transitional window.
+# subdir. /research-and-go runs in the main session, so the marker lives
+# under $CLAUDE_PROJECT_DIR/.zskills/tracking — not the PR-mode worktree.
+# Use glob-dual-lookup: prefer any research-and-go.*/ subdir whose marker
+# basename matches this TRACKING_ID; fall back to the legacy flat path
+# during the Phase 2-6 transitional window.
+MAIN_ROOT="$CLAUDE_PROJECT_DIR"
 MARKER=$(ls "$MAIN_ROOT/.zskills/tracking/"research-and-go.*/requires.verify-changes.final."$TRACKING_ID" 2>/dev/null | head -1)
 [ -z "$MARKER" ] && MARKER="$MAIN_ROOT/.zskills/tracking/requires.verify-changes.final.$TRACKING_ID"
 FULFILLED=$(ls "$MAIN_ROOT/.zskills/tracking/"research-and-go.*/fulfilled.verify-changes.final."$TRACKING_ID" 2>/dev/null | head -1)
@@ -2067,7 +2112,7 @@ Before declaring the plan complete, verify every phase has a clean status:
    > Phase 3 has no completion indicator — review before closing.
 
 2. **Scan for unresolved gaps** — check each phase's status line AND its
-   corresponding section in `reports/plan-{slug}.md` for any of these
+   corresponding section in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md` for any of these
    phrases (case-insensitive): "noted as gap", "deferred", "skipped",
    "future work". If found, WARN (do not hard-block):
    > Phase 3 has unresolved gaps — review before closing.
@@ -2096,7 +2141,7 @@ If the plan file has YAML frontmatter with an `issue:` field (e.g.,
    Key commits: <comma-separated list of commit hashes from all phases>
    Phases completed: <count>
 
-   All phases passed verification. See reports/plan-{slug}.md for details."
+   All phases passed verification. See $ZSKILLS_AUDIT_DIR/plan-{slug}.md for details."
    ```
 
 3. **If already closed:** no action needed — log "Issue #N already closed."
@@ -2114,9 +2159,16 @@ git add <plan-file>
 git commit -m "chore: mark plan complete — <plan-name>"
 ```
 
-### 4. Update SPRINT_REPORT.md
+### 4. Update sprint report
 
-Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
+Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper:
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
+  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+```
+
+Check if `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` exists. If it does:
 
 1. Search for the closed issue number (from step 2) or the plan filename
    in a "Skipped" section (look for headers or list items containing
@@ -2125,7 +2177,7 @@ Check if `SPRINT_REPORT.md` exists in the repo root. If it does:
 2. If found, append a note to that entry:
    > Resolved via /run-plan (plan: <plan-file>)
 
-3. If `SPRINT_REPORT.md` does not exist, or the issue/plan is not
+3. If the sprint report file does not exist, or the issue/plan is not
    mentioned in a skipped section, skip this step.
 
 ### 5. Remind about stale tracking markers
@@ -2145,7 +2197,10 @@ to run plans, not manage long-term tracking state. The user runs
 `bash .claude/skills/update-zskills/scripts/clear-tracking.sh` when they're ready.
 
 ```bash
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# This count surfaces accumulated bookkeeping across ALL pipelines (not just
+# this run's) — anchor on $CLAUDE_PROJECT_DIR so it always inspects main's
+# tracking even when a PR-mode run is in progress.
+MAIN_ROOT="$CLAUDE_PROJECT_DIR"
 # Count markers from both layouts during the Phase 2-6 transitional window:
 # (1) per-pipeline subdirs (.zskills/tracking/*/…) — Option B primary, and
 # (2) legacy flat basenames directly under .zskills/tracking/ — flat fallback.
@@ -2191,10 +2246,14 @@ reading this file.
 ### Post-landing tracking
 
 After successful landing (cherry-pick + tests pass), create the land step
-marker and update the fulfillment file:
+marker and update the fulfillment file. Post-landing happens on `main`
+regardless of `LANDING_MODE` (cherry-pick: after cherry-pick to main; PR:
+after PR merge), so anchor on `$CLAUDE_PROJECT_DIR`:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
+  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+MAIN_ROOT="$CLAUDE_PROJECT_DIR"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.land"
@@ -2213,20 +2272,26 @@ In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
 ignores these — they are informational only):
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-  > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
+  > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.implement"
 ```
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
+[ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
+ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
+  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 for stage in implement verify report land; do
   printf 'phases: all\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
-    > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.$stage"
+    > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.$stage"
 done
 ```
 
@@ -2260,7 +2325,7 @@ The script asserts 7 invariants:
 2. Worktree removed from git's worktree registry
 3. Local feature branch deleted (when `--landed-status landed`)
 4. Remote feature branch deleted (when `--landed-status landed`)
-5. Plan report exists at `reports/plan-<slug>.md`
+5. Plan report exists at `$ZSKILLS_AUDIT_DIR/plan-<slug>.md`
 6. No 🟡 In Progress rows linger in the tracker
 7. Local main reconcilable with origin/main (WARN-level; user may have
    legitimate unpushed local commits)
@@ -2321,7 +2386,7 @@ template is in the same file.
 - **Existing worktree for phase:** previous incomplete run — ask user
   (interactive) or try to resume from the existing worktree (auto)
 - **Implementation produces no commits:** the agent worked but committed
-  nothing. Report in `reports/plan-{slug}.md` as "No commits produced — investigate
+  nothing. Report in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md` as "No commits produced — investigate
   worktree." Do not attempt to cherry-pick nothing. In auto mode, invoke
   the Failure Protocol (this is an unrecoverable state for cron)
 - **Plan file not found:** stop immediately, report the error

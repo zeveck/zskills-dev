@@ -10,7 +10,7 @@ description: >-
   modified. Appends a Drift Log and Plan Review section.
   Usage: /refine-plan <plan-file> [rounds N] [guidance...]
 metadata:
-  version: "2026.05.02+ccef22"
+  version: "2026.05.07+8c2012"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
@@ -64,7 +64,7 @@ Do not proceed past this preflight without `Agent` access.
   pass on an existing plan, not blank-slate creation.
 
 **Detection:** scan `$ARGUMENTS` from the start:
-- The **first token** ending in `.md` is the plan file. If the token contains `/`, use as-is; otherwise prepend `plans/`.
+- The **first token** ending in `.md` is the plan file. If the token contains `/`, use as-is; otherwise resolve via `$ZSKILLS_PLANS_DIR/<token>` (sourcing `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the orchestrator's bash fence; falls back to `plans/` when config silent).
 - `rounds` followed by a numeric argument sets max cycles. (`rounds` not followed by a number is treated as guidance text, not the keyword.)
 - Any tokens not matched as the plan file or `rounds N` keyword are joined with spaces into **guidance text** — prepended to the reviewer + devil's advocate agent prompts in Phase 2 as a "User-driven scope/focus directive" section.
 - Empty guidance preserves today's reviewer/DA prompt output (no behavior change for invocations without trailing guidance tokens).
@@ -73,7 +73,7 @@ Do not proceed past this preflight without `Agent` access.
 Examples:
 - `/refine-plan plans/EXECUTION_MODES.md`
 - `/refine-plan plans/EXECUTION_MODES.md rounds 3`
-- `/refine-plan THERMAL_PLAN.md` -> reads `plans/THERMAL_PLAN.md`
+- `/refine-plan THERMAL_PLAN.md` -> reads `$ZSKILLS_PLANS_DIR/THERMAL_PLAN.md`
 - `/refine-plan rounds 2 plans/FEATURE.md` -> plan file is `plans/FEATURE.md`, 2 rounds
 - `/refine-plan plans/FOO.md anti-deferral focus`
 - `/refine-plan plans/FOO.md rounds 3 expand audit to all config fields`

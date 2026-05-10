@@ -263,12 +263,24 @@ print(f"{section}|queue_col={queue_col}")
 
   # ---------------------------------------------------------------------------
   # AC-7: smoke — invoke aggregator against the live repo and verify
-  # the plan-set matches what plans/PLAN_INDEX.md references.
+  # the plan-set matches what PLAN_INDEX.md references. Path-config-aware:
+  # tries .zskills/audit/PLAN_INDEX.md (post-migration default per Phase 5a
+  # step 4b — Tier-2 regenerated index) first, falls back to legacy
+  # plans/PLAN_INDEX.md for pre-migration consumers. NEVER silent-skip:
+  # PLAN_INDEX.md absent everywhere is a LOUD fail (signal that
+  # /plans rebuild needs to run, OR the migration broke).
   # ---------------------------------------------------------------------------
   echo ""
   echo "=== Phase 9 AC-7: live smoke — plan-set parity with PLAN_INDEX.md ==="
 
-  if [ -f "$REPO_ROOT/plans/PLAN_INDEX.md" ]; then
+  PLAN_INDEX_PATH=""
+  if [ -f "$REPO_ROOT/.zskills/audit/PLAN_INDEX.md" ]; then
+    PLAN_INDEX_PATH="$REPO_ROOT/.zskills/audit/PLAN_INDEX.md"
+  elif [ -f "$REPO_ROOT/plans/PLAN_INDEX.md" ]; then
+    PLAN_INDEX_PATH="$REPO_ROOT/plans/PLAN_INDEX.md"
+  fi
+
+  if [ -n "$PLAN_INDEX_PATH" ]; then
     LIVE_OUT=$(PYTHONPATH="$PKG_PARENT" python3 -m zskills_monitor.collect \
       --repo-root "$REPO_ROOT" 2>&1)
     LIVE_RC=$?
@@ -285,7 +297,7 @@ names = sorted(os.path.basename(p["file"]) for p in d["plans"])
 print("\n".join(names))
 ')
       # Plan filenames referenced in PLAN_INDEX.md (markdown link basenames).
-      INDEX_PLANS=$(grep -oE '\[[A-Z][A-Za-z0-9_]*\.md\]' "$REPO_ROOT/plans/PLAN_INDEX.md" \
+      INDEX_PLANS=$(grep -oE '\[[A-Z][A-Za-z0-9_]*\.md\]' "$PLAN_INDEX_PATH" \
         | sed 's/^\[//; s/\]$//' \
         | sort -u)
       # The aggregator reports ALL top-level plans/*.md including the
@@ -351,7 +363,7 @@ print("|".join(bad))
       fi
     fi
   else
-    skip "AC-7: plans/PLAN_INDEX.md absent (skipping live smoke)"
+    fail "AC-7: PLAN_INDEX.md absent at both .zskills/audit/PLAN_INDEX.md (post-migration) and plans/PLAN_INDEX.md (legacy) — run /plans rebuild to regenerate, or investigate whether --migrate-paths broke the move"
   fi
 
   # ---------------------------------------------------------------------------

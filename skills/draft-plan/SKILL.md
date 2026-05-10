@@ -8,7 +8,7 @@ description: >-
   until the plan converges. Output is a plan file ready for /run-plan.
   Usage: /draft-plan [output FILE] [rounds N] <description...>
 metadata:
-  version: "2026.05.07+a7f2d9"
+  version: "2026.05.07+a87f35"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -47,7 +47,7 @@ Do not proceed past this preflight without `Agent` access.
 ```
 
 - **output FILE** (optional) — where to write the plan. Default:
-  `plans/<slug-from-description>.md`
+  `$ZSKILLS_PLANS_DIR/<slug-from-description>.md`
 - **rounds N** (optional) — max review/refine cycles. Default: 3. The
   process exits early if a round converges (no substantive new issues).
 - **description** (required) — everything after the recognized keywords.
@@ -60,14 +60,17 @@ Do not proceed past this preflight without `Agent` access.
 - The **first token** ending in `.md` — output file (only when it's the
   first argument, before the description starts). This avoids false
   positives on description words like `README.md` or `CLAUDE.md`.
-  If the token contains `/`, use as-is; otherwise prepend `plans/`.
+  If the token contains `/`, use as-is; otherwise resolve via
+  `$ZSKILLS_PLANS_DIR/<token>` (sourcing
+  `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the
+  orchestrator's bash fence; falls back to `plans/` when config silent).
 - `rounds` followed by a number — max review cycles
 - Everything else (from the first unrecognized non-flag token onward) is
   the description
 
 Examples:
 - `/draft-plan Add dark mode to the editor`
-- `/draft-plan THERMAL_PLAN.md Implement thermal domain` → writes `plans/THERMAL_PLAN.md`
+- `/draft-plan THERMAL_PLAN.md Implement thermal domain` → writes `$ZSKILLS_PLANS_DIR/THERMAL_PLAN.md`
 - `/draft-plan plans/THERMAL_PLAN.md Implement thermal domain` → same
 - `/draft-plan output plans/THERMAL_PLAN.md rounds 5 Implement thermal domain`
 - `/draft-plan rounds 5 Implement thermal domain with multi-domain coupling`
@@ -537,10 +540,10 @@ After each round of review + refinement:
    in chat. Write first, then let the user read the actual file.
 
 3. **Update the plan index:**
-   - If `plans/PLAN_INDEX.md` exists, add a row to the "Ready to Run" table
+   - If `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` exists, add a row to the "Ready to Run" table
      with the new plan's filename (as a relative link), phase count, first
      phase name, priority `Medium`, and a one-line note from the overview.
-   - If `plans/PLAN_INDEX.md` does not exist, include in the report:
+   - If `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` does not exist, include in the report:
      > Run `/plans rebuild` to generate a plan index.
 
 4. **Present the result:**

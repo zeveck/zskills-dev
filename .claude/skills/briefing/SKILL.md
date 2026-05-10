@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.06+73abe0"
+  version: "2026.05.07+6fe1fc"
 ---
 
 # /briefing — Project Status Briefing
@@ -78,7 +78,7 @@ Present the output **verbatim** — it is already formatted with three buckets:
 
 ### `report`
 
-Generate a detailed markdown report and write it to `reports/`.
+Generate a detailed markdown report and write it to `$ZSKILLS_AUDIT_DIR/`.
 
 ```bash
 node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" report --since=<period>
@@ -130,11 +130,13 @@ For each report file, include the file path so the user can open it.
 
 Present the output in this format:
 
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])FIX_REPORT\.md reason: illustrative terminal-output fence (no-lang) showing what the user sees printed; all path tokens use $ZSKILLS_AUDIT_DIR resolved upstream -->
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])VERIFICATION_REPORT\.md reason: illustrative terminal-output fence (no-lang) showing what the user sees printed; all path tokens use $ZSKILLS_AUDIT_DIR resolved upstream -->
 ```
 Pending sign-offs: N items across M reports
 
-FIX_REPORT.md — 33 items
-  FIX_REPORT.md
+$ZSKILLS_AUDIT_DIR/FIX_REPORT.md — 33 items
+  $ZSKILLS_AUDIT_DIR/FIX_REPORT.md
 
   UI / UX Fixes:
     [ ] Feature X verification — exercise primary flow, confirm expected output
@@ -143,15 +145,15 @@ FIX_REPORT.md — 33 items
   Simulation Fixes:
     [ ] Solver tolerance — run sample case, verify output within 1e-6
 
-reports/plan-feature-expansion.md — 9 items
-  reports/plan-feature-expansion.md
+$ZSKILLS_AUDIT_DIR/plan-feature-expansion.md — 9 items
+  $ZSKILLS_AUDIT_DIR/plan-feature-expansion.md
 
   Phase 1:
     [ ] Feature X verification
     [ ] Component Y wiring works
 
-VERIFICATION_REPORT.md — 2 items
-  VERIFICATION_REPORT.md
+$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md — 2 items
+  $ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md
 
   [ ] Edge case Z sign-off
   [ ] Migration sanity check
@@ -365,6 +367,6 @@ through to the "current" branch. When the installed version is missing
 
 - **Orphaned worktrees** — directories in `.claude/worktrees/` or `worktrees/` not
   registered with `git worktree list`. Shown with `orphaned` category.
-- **Missing `reports/` directory** — created automatically when writing a report.
+- **Missing `$ZSKILLS_AUDIT_DIR` directory** — created automatically when writing a report.
 - **Recency filter** — checkbox scanning only checks files modified in last 30 days
   (or top 10 most recent briefing files) to avoid scanning stale history.

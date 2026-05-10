@@ -1,7 +1,8 @@
 ---
 title: zskills Path Configuration
 created: 2026-05-06
-status: active
+status: complete
+completed: 2026-05-08
 ---
 
 # Plan: zskills Path Configuration
@@ -235,15 +236,15 @@ implementing agents do NOT re-litigate D1 (separate `issues_dir` key), D2
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Foundations (helper + schema + conformance + hook fence) | ⬜ | | single-commit phase |
-| 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit | ⬜ | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
-| 2a — Bash writer migration (excluding `/run-plan`) | ⬜ | | one commit; 12 `skills/` + 2 `block-diagram/` = 14 skills total |
-| 2b — `/run-plan` writer migration + CANARY1 gate | ⬜ | | self-migration hazard isolated; one commit |
-| 3 — Bash reader migration + scripts | ⬜ | | readers + post-run-invariants.sh + build-prod.sh |
-| 4 — Briefing + dashboard migration | ⬜ | | depends on cleanup/remove-zimulink-viewer-refs merge (locked decision 12) |
-| 5a — Migration tool deterministic moves | ⬜ | | --migrate-paths flag + 4 simple test cases |
-| 5b — Cross-reference rewrite + complex test cases | ⬜ | | adapted context-signature; 6 cross-ref test cases incl. `--rewrite-only` recovery (5b's 6 + 5a's 4 = 10 total) |
-| 6 — Self-migration + canary gating + docs | ⬜ | | apply --migrate-paths to zskills repo; CANARY1/6/7/8/9/10; docs |
+| 1 — Foundations (helper + schema + conformance + hook fence) | ✅ Done | `5b9f150` | | single-commit phase |
+| 1b — `mirror-skill.sh` extension + repo-wide PR-mode audit | ✅ Done | `6082e1f` | | one commit; produces AUDIT.md artifact + extends mirror-skill.sh; no skill rewrites |
+| 2a — Bash writer migration (excluding `/run-plan`) | ✅ Done | `6c2dc50` | | one commit; 12 `skills/` + 2 `block-diagram/` = 14 skills total |
+| 2b — `/run-plan` writer migration + CANARY1 gate | ✅ Done | `6b9552f` | | self-migration hazard isolated; one commit |
+| 3 — Bash reader migration + scripts | ✅ Done | `59aeff7` | | readers + post-run-invariants.sh + build-prod.sh |
+| 4 — Briefing + dashboard migration | ✅ Done | `99ad5df` | | depends on cleanup/remove-zimulink-viewer-refs merge (locked decision 12) |
+| 5a — Migration tool deterministic moves | ✅ Done | `12042ae` | | --migrate-paths flag + new Tier-1 migrate-paths.sh + 4 test cases (15 sub-assertions) |
+| 5b — Cross-reference rewrite + complex test cases | ✅ Done | `0e12b4e` | | cross_ref_rewrite + --rewrite-only flag + 7 cases (5-11; 5b's 7 + 5a's 4 = 11 total) + path-config-upgrade.md |
+| 6 — Self-migration + canary gating + docs | ✅ Done | `9479e09` | | self-migration: 105 renames (0 plans/, 55 docs/plans/, 50 .zskills/audit/); migrate-paths.sh widened with plans/*.md catchall (Case 12 regression); var/dev → .zskills/dev-server in install sources; docs swept; conformance + 2805/2805 tests green; CANARY1/6/7 auto-dispatch deferred (orchestrator subagent constraint); CANARY8/9/10 manual per runbooks |
 
 ## Out of Scope
 
@@ -2676,7 +2677,7 @@ unmigrated skills/scripts won't find.
 ### Goal
 
 Add the cross-reference rewrite step to `migrate-paths.sh` plus the
-remaining 5 test cases (so 4 + 5 = 9 cases total). Authors the agent-
+remaining 7 test cases (so 4 + 7 = 11 cases total). <!-- Auto-corrected 2026-05-08: was "5 test cases (so 4 + 5 = 9 cases total)"; arithmetic says 7+4=11 — round-3 added Cases 10 and 11 without updating this summary --> Authors the agent-
 runnable upgrade prompt for long-tail customizations (start-dev.sh /
 stop-dev.sh).
 
@@ -3139,8 +3140,9 @@ canary plans rewrites correctly.
   mirrored, includes the mid-version-skip recovery task (per Case 5b.2
   task 4).
 - [ ] `tests/test-update-zskills-paths-migration.sh` cases 5, 6, 7, 8, 9,
-  10 PASS — total case count is 10 (4 from Phase 5a + 6 from Phase 5b,
-  including `--rewrite-only` recovery in Case 10).
+  10, 11 PASS — total case count is 11 (4 from Phase 5a + 7 from Phase 5b,
+  including `--rewrite-only` recovery in Case 10 and macOS chmod fallback
+  in Case 11). <!-- Auto-corrected 2026-05-08: was "5,6,7,8,9,10 PASS — total=10 (4+6)"; arithmetic says 4+7=11 — Case 11 (round-2 DA D2 macOS chmod fallback) was added in 5b.4 work-item but missed by this AC summary -->
 - [ ] `bash tests/run-all.sh > "$TEST_OUT/.test-results.txt" 2>&1` green.
 - [ ] `grep -c "allow-hardcoded.*Phase 5b" skills/update-zskills/SKILL.md`
   returns 4; total `Phase 5a + 5b` allow-hardcoded markers = 8.

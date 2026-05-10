@@ -270,8 +270,8 @@ is_on_main() {
 # bash blob). Past failure: `rm -f X; bash ... --worktree ... .zskills/tracking/...`
 # false-positived because `--worktree`'s `-r-letters` satisfied the flag
 # slot mid-regex.
-if [[ "$COMMAND" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills/tracking ]]; then
-  block_with_reason "BLOCKED: Cannot recursively delete tracking directory. To clear tracking state: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
+if [[ "$COMMAND" =~ rm[[:space:]]+([^\;\&\|]*[[:space:]])?(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|$)[^\;\&\|]*\.zskills ]]; then
+  block_with_reason "BLOCKED: Cannot recursively delete inside .zskills/. The tree holds tracking markers, audit history, issues, monitor state, and dashboard runtime. To clear tracking specifically: ! bash .claude/skills/update-zskills/scripts/clear-tracking.sh"
 fi
 
 # Block agent execution of clear-tracking script (reading is OK).

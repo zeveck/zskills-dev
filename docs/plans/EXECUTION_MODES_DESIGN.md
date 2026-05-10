@@ -155,8 +155,8 @@ Same pattern as `auto`, `finish`, `stop`:
 - Neither → use config default, or `cherry-pick` if no config
 
 ```
-/run-plan plans/X.md finish auto pr
-/run-plan plans/X.md finish auto direct
+/run-plan docs/plans/X.md finish auto pr
+/run-plan docs/plans/X.md finish auto direct
 /fix-issues 10 pr
 /research-and-go Build an RPG. pr
 ```

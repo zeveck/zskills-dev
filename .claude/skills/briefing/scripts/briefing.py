@@ -38,6 +38,45 @@ try:
 except ImportError:
     ZoneInfo = None
 
+
+# ---------------------------------------------------------------------------
+# Path config (zskills-paths.sh Python mirror)
+# ---------------------------------------------------------------------------
+
+
+def read_zskills_paths(main_path):
+    """Read .claude/zskills-config.json and resolve audit/plans/issues dirs.
+
+    Mirrors the bash helper at
+    .claude/skills/update-zskills/scripts/zskills-paths.sh and the JS
+    mirror in briefing.cjs:readZskillsPaths.
+
+    Use-as-is is absolute-only: only paths starting with `/` are absolute.
+    All other forms (including `..foo`) are joined with main_path. Mirrors
+    bash helper semantics (Locked Decision 1).
+
+    Missing/malformed config -> silent empty fallback.
+    """
+    cfg_path = os.path.join(main_path, '.claude', 'zskills-config.json')
+    cfg = {}
+    try:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        pass
+    output = (cfg.get('output') if isinstance(cfg, dict) else None) or {}
+    plans_rel = output.get('plans_dir') or 'plans'
+    issues_rel = output.get('issues_dir') or 'plans'
+
+    def _resolve(rel):
+        return rel if os.path.isabs(rel) else os.path.join(main_path, rel)
+
+    return {
+        'plans_dir': _resolve(plans_rel),
+        'issues_dir': _resolve(issues_rel),
+        'audit_dir': os.path.join(main_path, '.zskills', 'audit'),
+    }
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -472,8 +511,10 @@ def scan_checkboxes(repo_root=None):
 
     files = []
 
-    # Collect report files
-    reports_dir = os.path.join(main_path, 'reports')
+    # Collect report files from the audit dir (resolved via zskills-config).
+    # The legacy `main_path/reports/` AND root-level `*REPORT*.md` scans are
+    # gone — those files now live under the audit dir per Phase 4 migration.
+    reports_dir = read_zskills_paths(main_path)['audit_dir']
     if os.path.exists(reports_dir):
         try:
             for f in os.listdir(reports_dir):
@@ -481,14 +522,6 @@ def scan_checkboxes(repo_root=None):
                     files.append(os.path.join(reports_dir, f))
         except Exception:
             pass
-
-    # Root-level *REPORT*.md files (exclude timestamped snapshots)
-    try:
-        for f in os.listdir(main_path):
-            if f.endswith('.md') and re.search(r'REPORT', f, re.IGNORECASE) and not re.search(r'\d{4}-\d{2}-\d{2}', f):
-                files.append(os.path.join(main_path, f))
-    except Exception:
-        pass
 
     return scan_checkboxes_in_files(files)
 
@@ -538,8 +571,9 @@ def scan_plans(repo_root=None):
     """Scan plans/*.md for completion status and missing reports."""
     repo_root = repo_root or find_repo_root()
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
-    plans_dir = os.path.join(main_path, 'plans')
-    reports_dir = os.path.join(main_path, 'reports')
+    paths = read_zskills_paths(main_path)
+    plans_dir = paths['plans_dir']
+    reports_dir = paths['audit_dir']
 
     plan_files = sorted(glob.glob(os.path.join(plans_dir, '*.md')))
     results = []
@@ -1277,7 +1311,7 @@ def check_staleness(worktrees, opts=None):
     FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000
 
     # Check for briefing reports
-    reports_dir = os.path.join(main_path, 'reports')
+    reports_dir = read_zskills_paths(main_path)['audit_dir']
     latest_briefing = None
     if os.path.exists(reports_dir):
         try:
@@ -1404,8 +1438,10 @@ def scan_checkboxes_recent(repo_root=None, max_age=None, max_briefings=None):
 
     files = []
 
-    # Collect report files with mtime
-    reports_dir = os.path.join(main_path, 'reports')
+    # Collect report files with mtime from the audit dir.
+    # Legacy root-level `*REPORT*.md` scan is REMOVED — Phase 4 migration:
+    # those files live under the audit dir.
+    reports_dir = read_zskills_paths(main_path)['audit_dir']
     if os.path.exists(reports_dir):
         try:
             entries = [f for f in os.listdir(reports_dir) if f.endswith('.md')]
@@ -1429,21 +1465,6 @@ def scan_checkboxes_recent(repo_root=None, max_age=None, max_briefings=None):
             files.extend(others)
         except Exception:
             pass
-
-    # Root-level *REPORT*.md files
-    try:
-        for f in os.listdir(main_path):
-            if f.endswith('.md') and re.search(r'REPORT', f, re.IGNORECASE) and not re.search(r'\d{4}-\d{2}-\d{2}', f):
-                file_path = os.path.join(main_path, f)
-                try:
-                    st = os.stat(file_path)
-                    mtime_ms = st.st_mtime * 1000
-                    if (now - mtime_ms) <= max_age:
-                        files.append(file_path)
-                except Exception:
-                    pass
-    except Exception:
-        pass
 
     return scan_checkboxes_in_files(files)
 
@@ -1645,7 +1666,7 @@ def main():
                 if pf['status'] and pf['status'].lower() == 'active':
                     plan_warnings.append(f"Plan {t} appears complete but status is still 'active'")
                 if not pf['has_report']:
-                    plan_warnings.append(f'Plan {t} complete but no report in reports/')
+                    plan_warnings.append(f'Plan {t} complete but no report in audit dir')
                 if pf['issue']:
                     plan_warnings.append(f"Plan {t} complete — issue #{pf['issue']} may need closing (run /briefing verify or check manually)")
         all_warnings = staleness_warnings + plan_warnings
@@ -1657,7 +1678,7 @@ def main():
     elif subcommand == 'report':
         repo_root = find_repo_root()
         main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
-        reports_dir = os.path.join(main_path, 'reports')
+        reports_dir = read_zskills_paths(main_path)['audit_dir']
         wts = classify_worktrees()
         cbs = scan_checkboxes()
         commits = parse_commits(since=since_git)

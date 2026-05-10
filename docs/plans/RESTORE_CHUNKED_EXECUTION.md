@@ -11,7 +11,7 @@ status: active
 On 2026-04-12, commit `faab84b` ("feat: fix tracking enforcement")
 deleted 232 lines from `skills/run-plan/SKILL.md` plus sweeping
 changes across 23 files. The commit message described none of the
-deletions. The plan that drove it (`plans/TRACKING_FIX.md`) made zero
+deletions. The plan that drove it (`docs/plans/TRACKING_FIX.md`) made zero
 references to any of the deleted features. Out-of-scope over-reach.
 
 This plan restores every destroyed feature and adds the defense
@@ -838,14 +838,14 @@ procedure + expected observation, but NOT in `tests/run-all.sh`.
 - **CANARY7 — Chunked finish auto end-to-end**: requires real
   CronCreate firing, fresh sessions per turn. User executes,
   observes timestamps and cron IDs. Procedure documented in
-  `plans/CANARY7_CHUNKED_FINISH.md`.
+  `docs/plans/CANARY7_CHUNKED_FINISH.md`.
 - **CANARY9 — Cross-branch final-verify gating end-to-end**:
   requires real `/research-and-go` execution, multiple cron fires,
   real `/verify-changes branch` run. User executes. Procedure in
-  `plans/CANARY9_FINAL_VERIFY.md`.
+  `docs/plans/CANARY9_FINAL_VERIFY.md`.
 - **CANARY10 — PR mode end-to-end**: requires real GitHub state
   (PR creation, CI execution, merge). User executes. Procedure in
-  `plans/CANARY10_PR_MODE.md`. (User confirmed: happy to do
+  `docs/plans/CANARY10_PR_MODE.md`. (User confirmed: happy to do
   manually.)
 - **CANARY11 — Scope-vs-plan LLM judgment**: tests whether
   `/verify-changes`'s LLM reviewer actually CATCHES deliberate
@@ -853,7 +853,7 @@ procedure + expected observation, but NOT in `tests/run-all.sh`.
   the LLM-judgment quality is what's manual. User runs a
   synthetic plan with a deliberate over-reaching commit;
   inspects whether `/verify-changes` flagged it. Procedure in
-  `plans/CANARY11_SCOPE_VIOLATION.md`.
+  `docs/plans/CANARY11_SCOPE_VIOLATION.md`.
 
 ### Why the split matters
 
@@ -1063,9 +1063,9 @@ foundation tests fail.
 
 #### Manual canary specs (irreducibly user-executed)
 
-- [ ] **CANARY7 — Chunked finish auto** (`plans/CANARY7_CHUNKED_FINISH.md`):
+- [ ] **CANARY7 — Chunked finish auto** (`docs/plans/CANARY7_CHUNKED_FINISH.md`):
       2-phase plan with trivial file ops. Run
-      `/run-plan plans/CANARY7_CHUNKED_FINISH.md finish auto`.
+      `/run-plan docs/plans/CANARY7_CHUNKED_FINISH.md finish auto`.
       Verification asserts:
   - Phase 1 fires in turn 1; Phase 2 fires in turn 2 (separate cron-
     fired turns). Use `tracking/step.run-plan.canary7-chunked-finish.implement`
@@ -1077,7 +1077,7 @@ foundation tests fail.
   - Step 0's idempotent re-entry executes on Phase 2's turn (verify
     via tracker state — Phase 1 status = Done at moment Phase 2's
     turn starts).
-- [ ] **CANARY8 — Parallel pipelines** (`plans/CANARY8_PARALLEL.md`):
+- [ ] **CANARY8 — Parallel pipelines** (`docs/plans/CANARY8_PARALLEL.md`):
       two simultaneous /run-plan invocations on disjoint trivial
       plans. Verify:
   - Both pipelines complete without one blocking the other.
@@ -1087,7 +1087,7 @@ foundation tests fail.
     a manual canary (parallel session orchestration is hard to
     automate).
 - [ ] **CANARY9 — Cross-branch final-verify gating**
-      (`plans/CANARY9_FINAL_VERIFY.md`):
+      (`docs/plans/CANARY9_FINAL_VERIFY.md`):
       A minimal `/research-and-go` invocation on a synthetic
       goal that produces a 1-sub-plan meta-plan. Verify:
   - At Step 0, `requires.verify-changes.final.<META_SLUG>` marker
@@ -1104,7 +1104,7 @@ foundation tests fail.
     proceeds and completes.
   - Likely a manual canary because it requires multiple cron-fired
     turns over real wall-clock time.
-- [ ] **CANARY10 — PR mode end-to-end** (`plans/CANARY10_PR_MODE.md`):
+- [ ] **CANARY10 — PR mode end-to-end** (`docs/plans/CANARY10_PR_MODE.md`):
       2-phase plan run with `pr` arg. Verify:
   - Per-phase commits land on the feature branch (not main).
   - At pipeline end, `git push origin <feature-branch>` runs.
@@ -1113,7 +1113,7 @@ foundation tests fail.
   - PR auto-merges; feature branch cleanup happens.
   - Manual canary (requires real GitHub state).
 - [ ] **CANARY11 — Scope-vs-plan judgment**
-      (`plans/CANARY11_SCOPE_VIOLATION.md`):
+      (`docs/plans/CANARY11_SCOPE_VIOLATION.md`):
       Synthetic plan whose stated goal is "fix typo in CANARY11.txt"
       but whose implementation agent is INSTRUCTED to also delete an
       unrelated file (simulating `faab84b`-class over-reach).
@@ -1141,15 +1141,15 @@ foundation tests fail.
 
 **Manual canary specs exist as plan files (not auto-tested):**
 
-- [ ] `plans/CANARY7_CHUNKED_FINISH.md` — 2-phase plan, mtime-based
+- [ ] `docs/plans/CANARY7_CHUNKED_FINISH.md` — 2-phase plan, mtime-based
       timing assertions, user procedure documented.
-- [ ] `plans/CANARY8_PARALLEL.md` — two-pipeline procedure, even
+- [ ] `docs/plans/CANARY8_PARALLEL.md` — two-pipeline procedure, even
       though hook-scoping logic is auto-tested, real-session
       observation has separate value.
-- [ ] `plans/CANARY9_FINAL_VERIFY.md` — research-and-go end-to-end.
-- [ ] `plans/CANARY10_PR_MODE.md` — PR mode end-to-end (user has
+- [ ] `docs/plans/CANARY9_FINAL_VERIFY.md` — research-and-go end-to-end.
+- [ ] `docs/plans/CANARY10_PR_MODE.md` — PR mode end-to-end (user has
       committed to running this manually).
-- [ ] `plans/CANARY11_SCOPE_VIOLATION.md` — scope-vs-plan LLM
+- [ ] `docs/plans/CANARY11_SCOPE_VIOLATION.md` — scope-vs-plan LLM
       judgment quality.
 
 **Diff review**: commit touches ONLY:
@@ -1158,11 +1158,11 @@ foundation tests fail.
 - `tests/test-scope-halt.sh` (new)
 - `tests/test-hooks.sh` (extended with new test functions)
 - `tests/run-all.sh` (extended with new run_suite calls)
-- `plans/CANARY7_CHUNKED_FINISH.md` (new)
-- `plans/CANARY8_PARALLEL.md` (new)
-- `plans/CANARY9_FINAL_VERIFY.md` (new)
-- `plans/CANARY10_PR_MODE.md` (new)
-- `plans/CANARY11_SCOPE_VIOLATION.md` (new)
+- `docs/plans/CANARY7_CHUNKED_FINISH.md` (new)
+- `docs/plans/CANARY8_PARALLEL.md` (new)
+- `docs/plans/CANARY9_FINAL_VERIFY.md` (new)
+- `docs/plans/CANARY10_PR_MODE.md` (new)
+- `docs/plans/CANARY11_SCOPE_VIOLATION.md` (new)
 
 10 files. No others.
 
@@ -1192,11 +1192,11 @@ references that describe it and reconcile wording. Minimum touch.
       restores Phase 5c, this reference is accurate. Likely zero-diff.
 - [ ] **`skills/run-plan/SKILL.md:730`** (same phrase near Phase 6
       Land). Same treatment.
-- [ ] **`plans/EXECUTION_MODES_DESIGN.md:23`** ("progress tracking
+- [ ] **`docs/plans/EXECUTION_MODES_DESIGN.md:23`** ("progress tracking
       failure across cron turns"). Historical context describing
       why worktrees were chosen — preserve as historical rationale.
       Zero-diff.
-- [ ] **`plans/EXECUTION_MODES_DESIGN.md:30`** ("across cron turns
+- [ ] **`docs/plans/EXECUTION_MODES_DESIGN.md:30`** ("across cron turns
       for chunked execution"). Accurate against restored chunked
       model. Zero-diff.
 - [ ] Mirror any changes to `.claude/skills/run-plan/SKILL.md`.
@@ -1210,7 +1210,7 @@ references that describe it and reconcile wording. Minimum touch.
 - [ ] **Diff review** (zero-diff outcome is expected and acceptable):
       if any change, commit touches ONLY
       `skills/run-plan/SKILL.md`, `.claude/skills/run-plan/SKILL.md`,
-      and `plans/EXECUTION_MODES_DESIGN.md` (any subset).
+      and `docs/plans/EXECUTION_MODES_DESIGN.md` (any subset).
 
 ### Dependencies
 

@@ -39,7 +39,8 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `insert-prerequisites.sh`    | 1      | `draft-tests`                |
 | `insert-test-spec-revisions.sh` | 1   | `draft-tests`                |
 | `land-phase.sh`              | 1      | `commit`                     |
-| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...` |
+| `migrate-paths.sh`           | 1      | `update-zskills` (one-shot deterministic mover for /update-zskills --migrate-paths; writes .pre-paths-migration; updates .gitignore; rerenders hook EARLY (step 2.5), writes output.plans_dir / output.issues_dir LAST) |
+| `mirror-skill.sh`            | 2      | release/repo tooling; called by `tests/test-mirror-skill.sh` and (per Phase 1 Design) by every phase's mirror-discipline step in lieu of `rm -rf .claude/skills/<name> && cp -a ...`. Accepts both `<skill-name>` (for `skills/<name>/`) and `block-diagram/<skill-name>` (for `block-diagram/<name>/`); destination is always `.claude/skills/<basename>/` — no `block-diagram/` parent under `.claude/skills/` (Phase 1b extension). |
 | `parse-plan.sh`              | 1      | `draft-tests`                |
 | `plan-drift-correct.sh`      | 1      | `run-plan`                   |
 | `port.sh`                    | 1      | `update-zskills`             |
@@ -48,23 +49,25 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `review-loop.sh`             | 1      | `draft-tests`                |
 | `sanitize-pipeline-id.sh`    | 1      | `create-worktree`            |
 | `statusline.sh`              | 1      | `update-zskills` (source moves; install destination still `~/.claude/statusline-command.sh`) |
-| `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `var/dev.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
+| `stop-dev.sh`                | 2      | currently functional generic implementation; consumer stack writes PIDs to `.zskills/dev-server.pid`. **Note:** full conversion to a formal failing stub is deferred to a follow-up plan covering the consumer stub-callout pattern. |
 | `test-all.sh`                | 2      | already a partial template (`{{E2E_TEST_CMD}}` placeholders); customized by consumer with their own test commands. **Note:** full conversion to a formal failing stub is deferred to the same follow-up plan. |
 | `verify-completed-checksums.sh` | 1   | `draft-tests`                |
 | `worktree-add-safe.sh`       | 1      | `create-worktree`            |
 | `write-landed.sh`            | 1      | `commit`                     |
+| `zskills-paths.sh`           | 1      | sourceable helper setting $ZSKILLS_PLANS_DIR / $ZSKILLS_ISSUES_DIR / $ZSKILLS_AUDIT_DIR; sibling to zskills-resolve-config.sh; vars are NOT exported (callers spawning child processes export explicitly) |
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
+| `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
-Total: 29 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+Total: 31 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.cjs`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
 `create-worktree`, `detect-language`, `draft-orchestrator`,
 `flip-frontmatter-status`, `gap-detect`, `insert-prerequisites`,
-`insert-test-spec-revisions`, `land-phase`, `parse-plan`,
+`insert-test-spec-revisions`, `land-phase`, `migrate-paths`, `parse-plan`,
 `plan-drift-correct`, `port`, `post-run-invariants`,
 `re-invocation-detect`, `review-loop`, `sanitize-pipeline-id`,
 `statusline`, `verify-completed-checksums`, `worktree-add-safe`,
-`write-landed`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
+`write-landed`, `zskills-paths`, `zskills-stub-lib`); 4 Tier 2 (`build-prod.sh`,
 `mirror-skill.sh`, `stop-dev.sh`, `test-all.sh`).
 
 ## Format contract

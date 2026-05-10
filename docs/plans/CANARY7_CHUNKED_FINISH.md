@@ -10,7 +10,7 @@ status: complete
 
 Regression canary for the **chunked finish auto** execution mode that
 `faab84b` silently deleted and Phase A restored. A 2-phase plan is run
-with `/run-plan plans/CANARY7_CHUNKED_FINISH.md finish auto`. The point:
+with `/run-plan docs/plans/CANARY7_CHUNKED_FINISH.md finish auto`. The point:
 each plan phase must fire as its own top-level cron-fired turn, NOT as
 two phases looped inside one long session.
 
@@ -46,7 +46,7 @@ to build anything substantive.
 - [ ] `canary/canary7.txt` exists on the worktree branch.
 - [ ] File has exactly one line: `Canary 7 Phase 1: chunked turn 1`.
 - [ ] Phase 1 lands (worktree-mode cherry-pick to main, or PR merge).
-- [ ] A one-shot cron for `/run-plan plans/CANARY7_CHUNKED_FINISH.md finish auto`
+- [ ] A one-shot cron for `/run-plan docs/plans/CANARY7_CHUNKED_FINISH.md finish auto`
       exists in `CronList` output when Phase 1's cron-fired turn exits.
 
 ### Dependencies
@@ -132,4 +132,4 @@ CronList snapshot, and the transcript of the turn that fails the check.
 
 | Date       | Result | Notes |
 |------------|--------|-------|
-| 2026-04-16 | PASS   | All 5 checks (see `reports/plan-canary7-chunked-finish.md`). Phase 1 mtime 12:22:36 UTC, Phase 2 12:43:58 UTC, delta 1282s. Cron `7ca5e96b` (replaced `fa5ad488` which had a TZ bug) observed between turns. Surfaced a skill fix: don't `TZ=America/New_York date +%M` override the cron expression (commit `d1b96bb`). |
+| 2026-04-16 | PASS   | All 5 checks (see `.zskills/audit/plan-canary7-chunked-finish.md`). Phase 1 mtime 12:22:36 UTC, Phase 2 12:43:58 UTC, delta 1282s. Cron `7ca5e96b` (replaced `fa5ad488` which had a TZ bug) observed between turns. Surfaced a skill fix: don't `TZ=America/New_York date +%M` override the cron expression (commit `d1b96bb`). |

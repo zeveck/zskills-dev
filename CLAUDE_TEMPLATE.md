@@ -17,7 +17,7 @@ When using the Agent tool:
 
 ## Dev Server
 
-Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `var/dev.pid`; `stop-dev.sh` reads `var/dev.pid` and SIGTERMs each. `var/` is gitignored.
+Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `.zskills/dev-server.pid`; `stop-dev.sh` reads `.zskills/dev-server.pid` and SIGTERMs each. `.zskills/` is gitignored.
 
 The port is determined automatically: by default `{{DEFAULT_PORT}}` for the main repo `{{MAIN_REPO_PATH}}`, and a deterministic per-worktree port otherwise. If a `scripts/dev-port.sh` consumer stub is present, it overrides the default for the main repo. Run `bash .claude/skills/update-zskills/scripts/port.sh` to see your actual port. Override per-invocation with `DEV_PORT=NNNN`. See `.claude/skills/update-zskills/references/stub-callouts.md` for the stub contract.
 

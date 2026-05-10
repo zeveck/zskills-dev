@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- feat(paths): introduce `output.plans_dir` and `output.issues_dir`
+  config keys; default `docs/plans/` and `.zskills/issues/`; new
+  `/update-zskills --migrate-paths` for in-place upgrade. Note:
+  consumers who hand-edited `.claude/zskills-config.schema.json` will
+  see those edits overwritten on re-install (rare; schema source of
+  truth is `config/zskills-config.schema.json`).
+
 ## 2026-05-07
 
 ### Changed — hooks/_lib/git-tokenwalk.sh: chain wrappers added to source-of-truth + drift gate extended (4→7 asserts)

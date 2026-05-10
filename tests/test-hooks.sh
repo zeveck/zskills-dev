@@ -620,6 +620,19 @@ expect_project_deny "rm -rf /workspaces/zskills/.zskills/tracking"
 expect_project_deny "rm --recursive .zskills/tracking"
 expect_project_deny "rm /tmp/a -r .zskills/tracking/foo"
 
+# Path-config plan Phase 1 (1.7) — broadened regex catches all .zskills/* siblings.
+# Original behavior preserved (.zskills/tracking still blocks); broadened scope
+# also covers .zskills/issues, .zskills/audit (and any other future sibling).
+# The recursive-flag requirement is unchanged: non-recursive flags pass through
+# regardless of path shape.
+expect_project_deny "rm -rf .zskills/issues"
+expect_project_deny "rm -rf .zskills/audit"
+expect_project_deny "rm -rf .zskills/tracking"
+expect_project_allow "rm -f .zskills-tracked (no recursive flag — passes broader regex too)" \
+  "rm -f .zskills-tracked"
+expect_project_allow "rm -f x.zskills.bak (no recursive flag — recursive-flag clause gates the block regardless of path shape)" \
+  "rm -f x.zskills.bak"
+
 # False-positive guards for anchor drift in the -r flag pattern.
 # Past failure: the original pattern was `rm[[:space:]].*-[a-zA-Z]*r[a-zA-Z]*.*\.zskills/tracking`
 # which matched ANY `-word-containing-r` token in the rm's buffer (including

@@ -21,7 +21,7 @@ requires `origin/main` to advance DURING the canary's run, between
 verification and push. A single-session `/run-plan` invocation cannot
 produce the conflict on its own.
 
-Session 1 (canary): runs `/run-plan plans/REBASE_CONFLICT_CANARY.md auto pr`.
+Session 1 (canary): runs `/run-plan docs/plans/REBASE_CONFLICT_CANARY.md auto pr`.
 Session 2 (coordinator): pushes a conflicting change to
 `docs/rebase-conflict-target.md` on main while Session 1 is between
 verification and push.

@@ -7,7 +7,7 @@ description: >-
   refactoring, content updates. Supports scheduling with every/now/next/stop.
   Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop | next.
 metadata:
-  version: "2026.05.03+27f0e7"
+  version: "2026.05.07+3762b5"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -270,7 +270,7 @@ needed).
 | `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` |
 | Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user |
 | References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` |
-| References an existing plan file under `plans/` | REDIRECT → `/run-plan` |
+| References an existing plan file under `$ZSKILLS_PLANS_DIR` | REDIRECT → `/run-plan` |
 
 **Worked examples (calibrate the model's PROCEED/REDIRECT calls):**
 
@@ -908,7 +908,8 @@ Status: pr-ready | pr-ci-failing | landed
   a named branch `<branch_prefix>do-<slug>`. Both BRANCH_NAME and
   WORKTREE_PATH derive from TASK_SLUG (after any collision suffix).
 - **No persistent report files** — `/do` outputs results inline. It does
-  NOT write SPRINT_REPORT.md, PLAN_REPORT.md, or any other report file.
+  NOT write any report file under `$ZSKILLS_AUDIT_DIR`
+  (e.g., the canonical `SPRINT_REPORT.md` / `PLAN_REPORT.md` artifacts owned by other skills).
   The commit is the artifact.
 - **Push requires verification** — `push` always dispatches a separate
   verification agent before pushing. No exceptions.

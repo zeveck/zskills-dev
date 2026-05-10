@@ -1,9 +1,9 @@
 ---
 name: update-zskills
-argument-hint: "[install | --rerender] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
+argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.06+2aef27"
+  version: "2026.05.10+28d952"
 ---
 
 # Update Z Skills Infrastructure
@@ -15,7 +15,7 @@ dependencies.
 **Invocation:**
 
 ```
-/update-zskills [install | --rerender] [cherry-pick | locked-main-pr | direct]
+/update-zskills [install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct]
                 [--with-addons | --with-block-diagram-addons]
 ```
 
@@ -32,6 +32,22 @@ was found and what was done about it.
   of the zskills-owned rules file; root `./CLAUDE.md` is never touched.
   No audit, no preset, no hooks/scripts touched. See
   `### Step D — --rerender` for the algorithm.
+- `--migrate-paths` — one-shot deterministic relocation of legacy
+  artifacts into the path-config layout (`docs/plans/` for plan files,
+  `.zskills/audit/` for forensic + narrative reports, `.zskills/issues/`
+  for issue trackers, `.zskills/dev-server.{pid,log}` for runtime
+  state). Dispatches to
+  `bash $ZSK/scripts/migrate-paths.sh "$MAIN_ROOT"` (where `$ZSK` is
+  `.claude/skills/update-zskills` shipped, or `skills/update-zskills`
+  in zskills source tree). Writes a `.pre-paths-migration` manifest
+  (write-once), updates `.gitignore`, and writes `output.plans_dir`
+  + `output.issues_dir` LAST (atomic both-or-neither). The script
+  triggers `--rerender` AS THE FIRST FILE-SYSTEM CHANGE so the
+  broadened recursive-delete hook regex protects the migration's own
+  filesystem actions. Idempotent — refuses to re-run if
+  `.pre-paths-migration` already exists. The agent-runnable
+  follow-up (path-config-upgrade prompt) handles `start-dev.sh` /
+  `stop-dev.sh` rewrites and any cross-references in plan content.
 
 **Preset keywords (bare word, anywhere in the args):**
 
@@ -156,6 +172,180 @@ portable assets are not needed and Step 0 can return early.
 Store the resolved path as `$PORTABLE` for use in install/update modes.
 If the source is a git repo, also store it as `$ZSKILLS_PATH` for use
 in update mode.
+
+---
+
+## Step 0.1 — `--migrate-paths` short-circuit (Phase 5a)
+
+If the invocation arguments contain the bare flag `--migrate-paths`, this
+takes precedence over every other mode (preset, install, --rerender). Run
+the deterministic mover and exit; do not run the audit or any install/
+update path.
+
+**Per-fence allow-hardcoded markers.** The four fenced code blocks in this
+section contain forbidden literals (`plans/`, `reports/`, `SPRINT_REPORT.md`,
+etc.) that the conformance hook flags. The marker on the line preceding
+each fence whitelists the block. Phase 5a ships 4 such markers; Phase 5b
+adds 4 more in a separate section (total 8).
+
+**Dispatcher:**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:SPRINT_REPORT\.md reason: Phase 5a migrate-paths dispatcher names the legacy paths the mover relocates -->
+```bash
+# $ZSK = .claude/skills/update-zskills (shipped) or skills/update-zskills
+# (zskills source tree).
+ZSK=".claude/skills/update-zskills"
+[ -d "skills/update-zskills" ] && ZSK="skills/update-zskills"
+MAIN_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+bash "$ZSK/scripts/migrate-paths.sh" "$MAIN_ROOT"
+```
+
+**What the script moves (summary):**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:SPRINT_REPORT\.md re:FIX_REPORT\.md re:PLAN_REPORT\.md re:VERIFICATION_REPORT\.md re:NEW_BLOCKS_REPORT\.md reason: Phase 5a migrate-paths summary lists legacy filenames the mover relocates -->
+```text
+Forensic + narrative reports (Tier 2 — regenerable):
+  SPRINT_REPORT.md, FIX_REPORT.md, PLAN_REPORT.md,
+  VERIFICATION_REPORT.md, NEW_BLOCKS_REPORT.md
+  reports/**
+  plans/PLAN_INDEX.md
+    → .zskills/audit/
+
+Plans (Tier 1 — durable):
+  plans/*_PLAN.md, plans/CANARY*.md, plans/blocks/**
+    → docs/plans/  (or $output.plans_dir if user-set)
+
+Issue trackers:
+  plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md
+    → .zskills/issues/  (or $output.issues_dir if user-set)
+
+Runtime files:
+  legacy var/dev.{pid,log}
+    → .zskills/dev-server.pid, .zskills/dev-server.log
+```
+
+**Algorithm ordering (Phase 5a Locked Decisions):**
+
+The script executes 11 steps in a deterministic order. Hook-rerender is
+HOISTED to step 2.5 (BEFORE any file moves) so the broadened recursive-
+delete hook regex protects the migration's own filesystem actions. The
+config-key write (step 10) is LAST so a mid-failure leaves the consumer
+recovering via the helper's legacy-`plans/` fallback.
+
+<!-- allow-hardcoded: re:plans/ re:.zskills/audit re:.zskills/issues reason: Phase 5a migrate-paths algorithm shows the per-step file-move targets -->
+```text
+1.  Detection — refuse re-run if .pre-paths-migration already exists.
+2.  Resolve target dirs in memory only (no config write yet).
+2.5 Trigger --rerender BEFORE any file moves (hook strengthens FIRST).
+3.  Move forensic + narrative reports → .zskills/audit/.
+4.  Move plans → $TARGET_PLANS (default docs/plans/).
+4b. Move plans/PLAN_INDEX.md → .zskills/audit/.
+5.  Move issue trackers → $TARGET_ISSUES (default .zskills/issues/).
+6.  Move var/ runtime files → .zskills/dev-server.{pid,log}.
+7.  Update .gitignore (idempotent) + verify via git check-ignore -v.
+8.  (reserved — was --rerender step before round-2 plan hoisted to 2.5).
+9.  Write .pre-paths-migration manifest (write-once).
+10. Write config keys (BOTH or NEITHER — atomic) LAST.
+11. Print summary.
+```
+
+**Stub-script handling (DEFER).** `tier1-shipped-hashes.txt` does NOT
+cover `start-dev.sh` / `stop-dev.sh`. The migration script does NOT
+attempt auto-edit of these scripts; it prints a deferral notice naming
+both files when the legacy `var/dev.{pid,log}` are moved. The agent-
+runnable upgrade prompt (Phase 5b, `references/path-config-upgrade.md`)
+handles them.
+
+**Recovery.** If the mover aborts mid-way (a `git mv` fails, a `git
+check-ignore -v` returns negative, etc.) it exits non-zero and leaves
+the partial state. Because the config write is LAST, the helper falls
+back to legacy `plans/` for any un-moved files — partial-but-functional
+state, not broken. The user can re-run after fixing the underlying
+cause; the idempotent guard (manifest existence) prevents double-moves.
+
+**Idempotent re-run.** If `.pre-paths-migration` already exists, the
+script prints "already migrated" and exits 0 without making any
+changes. To force a fresh migration after a prior aborted run, the
+user removes `.pre-paths-migration` AND restores files from the
+manifest's `from`-column paths.
+
+**Example output:**
+
+<!-- allow-hardcoded: re:SPRINT_REPORT\.md re:plans/ re:.zskills/audit reason: Phase 5a migrate-paths sample output names the legacy → migrated paths -->
+```text
+moved: SPRINT_REPORT.md → .zskills/audit/SPRINT_REPORT.md
+moved: plans/FOO_PLAN.md → docs/plans/FOO_PLAN.md
+...
+Wrote .pre-paths-migration with N entries.
+Re-rendered hooks (broadened recursive-delete fence — applied EARLY).
+Wrote output.plans_dir = "docs/plans" and output.issues_dir = ".zskills/issues".
+For start-dev.sh / stop-dev.sh customizations, see
+.claude/skills/update-zskills/references/path-config-upgrade.md.
+```
+
+After dispatch, `/update-zskills --migrate-paths` exits with the script's
+exit code. Do NOT proceed to Step 0.25 / 0.5 / audit.
+
+### Cross-reference rewrite (Phase 5b)
+
+`migrate-paths.sh` runs a structural-reference rewriter immediately after
+gitignore update (step 7) and before the manifest write (step 9). The
+rewriter scans every `.md` under `<TARGET_PLANS>` and rewrites legacy
+`plans/X.md` and `reports/Y.md` tokens to the migrated paths, gated by
+the YAML frontmatter `status:` field.
+
+**Frontmatter decision tree:**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ reason: Phase 5b cross-ref-rewrite decision tree names the legacy path tokens the rewriter substitutes inside plan content -->
+```text
+status: active     → REWRITE (all 4 enclosure types)
+status: proposal   → REWRITE
+(no frontmatter)   → REWRITE
+status: complete + filename CANARY*.md   → REWRITE (slash-command lines
+                                            naturally limited by rule 4)
+status: complete + non-canary filename   → PRESERVE (frozen) + scan/warn
+status: deferred / paused / other        → PRESERVE + scan/warn
+```
+
+**Four enclosure types** triggering rewrite — token must appear inside ONE:
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:run-plan reason: Phase 5b cross-ref-rewrite enumerates the four structural enclosures that promote a path token from naked-prose to rewritable -->
+```text
+1. Markdown link:   [...](plans/X.md)  or  [...](reports/Y.md)
+2. Backtick span:   `plans/X.md`       or  `reports/Y.md`
+3. Shell line:      inside ```bash/```sh/```shell/``` fence,
+                    OR line starts with "$ ",
+                    OR line ends with shell metachar | > < ;
+4. Slash-command:   /run-plan plans/X.md  (also draft-plan, refine-plan,
+                    draft-tests, work-on-plans, research-and-plan,
+                    research-and-go)
+```
+
+**Substitution targets:**
+
+<!-- allow-hardcoded: re:plans/ re:reports/ re:.zskills/audit reason: Phase 5b cross-ref-rewrite substitution rules name the legacy → migrated path mappings -->
+```text
+plans/X.md           → <TARGET_PLANS>/X.md   (e.g., docs/plans/X.md)
+reports/<slug>-Y.md  → .zskills/audit/<slug>-Y.md
+                       (slug ∈ {plan, verify, briefing, new-blocks})
+```
+
+**Warning emission contract.** For PRESERVED plans containing legacy
+tokens, the rewriter emits a stderr `WARN` line per hit AND appends the
+same line to `.pre-paths-migration-warnings` at the repo root:
+
+<!-- allow-hardcoded: re:plans/ re:reports/ reason: Phase 5b cross-ref-rewrite warning format documents the WARN line emitted to stderr + .pre-paths-migration-warnings for legacy tokens preserved in frozen plans -->
+```text
+WARN docs/plans/OLD_FEATURE.md:42: legacy token 'plans/OTHER.md' preserved (frozen plan; see path-config-upgrade.md)
+```
+
+**`--rewrite-only` flag.** For mid-version-skip recovery (when an older
+5a-only `migrate-paths.sh` ran without cross-ref rewrite), the agent-
+runnable upgrade prompt at `references/path-config-upgrade.md` invokes
+`migrate-paths.sh --rewrite-only "$MAIN_ROOT"`. This skips steps 1–7,
+resolves `<TARGET_PLANS>` from the existing config, runs ONLY the cross-
+ref rewrite, and appends a `rewrite-only:	<ts>	<count>` trailer to the
+existing manifest. Config keys are not re-written. Idempotent.
 
 ---
 
@@ -301,6 +491,19 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    config is a no-op. Detection regex (bash): test against
    `\"dashboard\"[[:space:]]*:[[:space:]]*\{[^}]*\"work_on_plans_trigger\"`
    — if it does NOT match, the backfill applies.
+
+   <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
+   ```markdown
+   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`
+   > and `output.issues_dir` MUST NOT be inserted into
+   > `.claude/zskills-config.json` during install or `--rerender`. Their
+   > absence is meaningful — the helper falls back to legacy `plans/`,
+   > preserving consumer-current behavior. Only `/update-zskills
+   > --migrate-paths` writes these keys (and writes BOTH or NEITHER).
+   > See plan `docs/plans/ZSKILLS_PATH_CONFIG.md` (or
+   > `plans/ZSKILLS_PATH_CONFIG.md` pre-migration).
+   ```
+
 4. Copy `config/zskills-config.schema.json` from `$PORTABLE` to
    `.claude/zskills-config.schema.json` in the target project (so the
    `$schema` reference in the config resolves correctly).
@@ -547,7 +750,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
 - `apply-preset.sh` — required by the preset UX (Step F); splices/flips the `BLOCK_MAIN_PUSH` line in `block-unsafe-generic.sh` and updates `execution.landing`/`execution.main_protected` in config
 - `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
-- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `var/dev.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
+- `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `.zskills/dev-server.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
 - `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
 
 ### Step 5 — Check skills with additional requirements
@@ -928,10 +1131,11 @@ has no placeholders — it works out of the box. No configuration needed.
 `.zskills/tracking/` to the project's `.gitignore` if not already present.
 Tracking files are ephemeral session state and should never be committed.
 
-**Add `var/` to `.gitignore`:** Also add `var/` if not already present.
-`scripts/stop-dev.sh` reads PIDs from `var/dev.pid` (written by the
-project's dev server launcher); PID files are per-worktree runtime state
-and must never be committed.
+**Add `.zskills/dev-server.pid` and `.zskills/dev-server.log` to
+`.gitignore`:** Also add these lines if not already present.
+`scripts/stop-dev.sh` reads PIDs from `.zskills/dev-server.pid` (written
+by the project's dev server launcher); PID files are per-worktree runtime
+state and must never be committed.
 
 Then register the hooks in `.claude/settings.json` via a **surgical
 agent-driven merge** — `Read` + `Edit` only, never `Write`-from-template.
@@ -1111,8 +1315,8 @@ do not error.
 - For scripts with placeholders: prompt user for values and replace.
 - Copy `stop-dev.sh` if missing — sanctioned way to stop a
   dev server. Initial install is a failing stub the user
-  replaces (contract: read PIDs from `var/dev.pid`, SIGTERM
-  each). Pair: `start-dev.sh`.
+  replaces (contract: read PIDs from `.zskills/dev-server.pid`,
+  SIGTERM each). Pair: `start-dev.sh`.
 - Copy `test-all.sh` if missing — invoked by `/run-plan`,
   `/verify-changes`, etc. when `testing.full_cmd` is
   `bash scripts/test-all.sh`. Initial install is a failing
@@ -1120,7 +1324,7 @@ do not error.
 - Copy `start-dev.sh` if missing — sanctioned way to start a
   dev server. Initial install is a failing stub the user
   replaces with their start command (and a write to
-  `var/dev.pid`).
+  `.zskills/dev-server.pid`).
 - Copy `post-create-worktree.sh` if missing — invoked by the
   `/create-worktree` skill's worktree-creation script after a
   successful create. Stub is a documented no-op; consumer
@@ -1208,6 +1412,7 @@ STALE_LIST=(
   insert-prerequisites.sh
   insert-test-spec-revisions.sh
   land-phase.sh
+  migrate-paths.sh
   parse-plan.sh
   plan-drift-correct.sh
   port.sh
@@ -1219,6 +1424,7 @@ STALE_LIST=(
   verify-completed-checksums.sh
   worktree-add-safe.sh
   write-landed.sh
+  zskills-paths.sh
   zskills-stub-lib.sh
 )
 ```

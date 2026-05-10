@@ -10,7 +10,7 @@ description: >-
   Also manages the queue itself (add/rank/remove/default) and recurring
   schedules. Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.05.02+a68fc4"
+  version: "2026.05.07+3c4b42"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -111,13 +111,16 @@ Order-insensitive: `N finish continue` ≡ `N continue finish`.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
+  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
 SANITIZE="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
 [ ! -x "$SANITIZE" ] && SANITIZE="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
-mkdir -p "$MAIN_ROOT/.zskills/tracking" "$MAIN_ROOT/.zskills" "$MAIN_ROOT/reports"
+mkdir -p "$MAIN_ROOT/.zskills/tracking" "$MAIN_ROOT/.zskills" "$ZSKILLS_AUDIT_DIR"
 MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
 MONITOR_LOCK="$MAIN_ROOT/.zskills/monitor-state.json.lock"
 WORK_STATE="$MAIN_ROOT/.zskills/work-on-plans-state.json"
-PLAN_INDEX="$MAIN_ROOT/plans/PLAN_INDEX.md"
+PLAN_INDEX="$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"
 ```
 
 The sanitizer fallback path covers source-tree development. In normal
@@ -161,7 +164,7 @@ file.
 ## Step 1 — sync (read monitor-state.json)
 
 Read `$MONITOR_STATE` and extract `plans.ready`. The schema is
-documented in `plans/ZSKILLS_MONITOR_PLAN.md` § "Shared Schemas".
+documented in `$ZSKILLS_PLANS_DIR/ZSKILLS_MONITOR_PLAN.md` § "Shared Schemas".
 
 ### Missing-file behaviour (auto-create on first read)
 
@@ -170,9 +173,9 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
 1. **Pick the seed source** by precedence:
    - **(1)** if `$PLAN_INDEX` exists AND `[ -r "$PLAN_INDEX" ]`,
      parse it for the drafted/reviewed classification.
-   - **(2)** else, scan `plans/*.md` frontmatter and apply the
+   - **(2)** else, scan `$ZSKILLS_PLANS_DIR/*.md` frontmatter and apply the
      default-column inference table from
-     `plans/ZSKILLS_MONITOR_PLAN.md` § "Default column inference".
+     `$ZSKILLS_PLANS_DIR/ZSKILLS_MONITOR_PLAN.md` § "Default column inference".
 
    If `$PLAN_INDEX` exists but is **unreadable** (e.g., `chmod 000`)
    or fails to parse, fall back to the frontmatter scan and warn to
@@ -185,12 +188,20 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
    only) to emit the file:
 
    ```bash
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
    python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
+   # plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.
    import json, os, sys, pathlib, re, tempfile
    out_path = sys.argv[1]
    main_root = pathlib.Path(sys.argv[2])
-   plans_dir = main_root / "plans"
-   index = plans_dir / "PLAN_INDEX.md"
+   plans_dir_env = os.environ.get("ZSKILLS_PLANS_DIR")
+   audit_dir_env = os.environ.get("ZSKILLS_AUDIT_DIR")
+   if not plans_dir_env or not audit_dir_env:
+       print("FATAL: ZSKILLS_PLANS_DIR / ZSKILLS_AUDIT_DIR not exported by wrapping bash fence", file=sys.stderr)
+       sys.exit(1)
+   plans_dir = pathlib.Path(plans_dir_env)
+   index = pathlib.Path(audit_dir_env) / "PLAN_INDEX.md"
 
    drafted, reviewed = [], []
    def emit_warn(msg):
@@ -314,7 +325,10 @@ Read the JSON and emit `slug<TAB>mode` lines on stdout (one per ready
 entry, in order). `mode` is `phase`, `finish`, or empty (inherits
 default):
 
+<!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
 ```bash
+# No ZSKILLS_* env vars needed: this embed operates on $MONITOR_STATE
+# only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
 READY_TSV=$(python3 - "$MONITOR_STATE" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
@@ -345,7 +359,10 @@ If present but unparseable as JSON, **rewrite** it to
 `{"state":"idle"}` with a stderr warning and proceed — never block
 dispatch on a corrupt state file:
 
+<!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
 ```bash
+# No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
+# only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
 WORK_STATE_VALUE=$(python3 - "$WORK_STATE" <<'PY'
 import json, os, sys, tempfile
 path = sys.argv[1]
@@ -415,7 +432,10 @@ Print the active schedule line. Read `$WORK_STATE` and:
 Implementation reads `$WORK_STATE` once via Python (stdlib only) and
 emits the appropriate line:
 
+<!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
 ```bash
+# No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
+# only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
 python3 - "$WORK_STATE" <<'PY'
 import json, os, sys, datetime, re
 
@@ -512,8 +532,10 @@ rule as a shared helper for reuse; Phase 1 must NOT depend on that
 helper (it has not landed yet).
 
 ```bash
+ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
+  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 declare -A SLUG_TO_FILE
-for f in "$MAIN_ROOT"/plans/*.md; do
+for f in "$ZSKILLS_PLANS_DIR"/*.md; do
   [ -e "$f" ] || continue
   bn=$(basename "$f" .md)
   [ "$bn" = "PLAN_INDEX" ] && continue
@@ -532,6 +554,7 @@ depend on that helper (it has not landed).
 For each ready entry, look up `SLUG_TO_FILE[$slug]`. On miss, fail
 loud (no silent skip):
 
+<!-- allow-hardcoded: ^plans/ reason: illustrative error-message fence (no-lang); the prose mentions plans/ as a generic concept in user-facing output, and the actual resolution uses $ZSKILLS_PLANS_DIR upstream -->
 ```
 /work-on-plans: queued slug '<slug>' has no matching plan file in
 plans/. The monitor state file references a plan that no longer
@@ -546,7 +569,10 @@ Exit 1.
 Write `state=sprint` to `$WORK_STATE` before the first dispatch. The
 file is rewritten between dispatches (heartbeat) and at the end:
 
+<!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
 ```bash
+# No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
+# only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
 python3 - "$WORK_STATE" "$SPRINT_ID" "$DISPATCH_COUNT" <<'PY'
 import json, os, sys, socket, tempfile, datetime
 path, sprint_id, total = sys.argv[1], sys.argv[2], int(sys.argv[3])
@@ -605,10 +631,10 @@ For each ready entry in `plans.ready[0:N]`:
 5. **Invoke `/run-plan` via the Skill tool.** Phase 1 always passes
    `auto`; for `finish` mode also pass `finish`:
 
-   - Phase mode → `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto" }`
-   - Finish mode → `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto finish" }`
+   - Phase mode → `Skill: { skill: "run-plan", args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto" }`
+   - Finish mode → `Skill: { skill: "run-plan", args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto finish" }`
 
-   Where `plans/<FILE>.md` is `SLUG_TO_FILE[$SLUG]` rendered as a
+   Where `$ZSKILLS_PLANS_DIR/<FILE>.md` is `SLUG_TO_FILE[$SLUG]` rendered as a
    path relative to `$MAIN_ROOT`. **Do not pass a landing-mode flag.**
    `/run-plan` resolves its own landing mode (currently `pr` per
    `.claude/zskills-config.json`).
@@ -658,7 +684,7 @@ For each ready entry in `plans.ready[0:N]`:
 
 8. **On failure:**
    - **Without `continue`:** stop the loop. Write a one-section
-     summary to `reports/work-on-plans-<sprint-id>.md` listing the
+     summary to `$ZSKILLS_AUDIT_DIR/work-on-plans-<sprint-id>.md` listing the
      dispatched plans and the failure reason. Exit non-zero.
    - **With `continue`:** log the failure to stderr and proceed to
      the next entry.
@@ -681,7 +707,10 @@ empty-after-failure):
 
 2. Rewrite `$WORK_STATE` to `{"state":"idle"}` (last-writer-wins):
 
+   <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
    ```bash
+   # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
+   # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
    python3 - "$WORK_STATE" <<'PY'
    import json, os, sys, tempfile
    path = sys.argv[1]
@@ -740,12 +769,20 @@ as Step 1.
 ensure_monitor_state() {
   if [ ! -f "$MONITOR_STATE" ]; then
     # Re-run the Step 1 bootstrap helper. Same shape, same path.
+    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+    export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
     python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
+# plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.
 import json, os, sys, pathlib, re, tempfile
 out_path = sys.argv[1]
 main_root = pathlib.Path(sys.argv[2])
-plans_dir = main_root / "plans"
-index = plans_dir / "PLAN_INDEX.md"
+plans_dir_env = os.environ.get("ZSKILLS_PLANS_DIR")
+audit_dir_env = os.environ.get("ZSKILLS_AUDIT_DIR")
+if not plans_dir_env or not audit_dir_env:
+    print("FATAL: ZSKILLS_PLANS_DIR / ZSKILLS_AUDIT_DIR not exported by wrapping bash fence", file=sys.stderr)
+    sys.exit(1)
+plans_dir = pathlib.Path(plans_dir_env)
+index = pathlib.Path(audit_dir_env) / "PLAN_INDEX.md"
 
 drafted, reviewed = [], []
 
@@ -1021,7 +1058,7 @@ SCHEDULE) > current `default_mode` from `$MONITOR_STATE` > `"phase"`.
 `default_mode`.** To change mode, `stop` and re-register.
 
 **`schedule_mode = finish`** does NOT call `/run-plan finish` once
-across all plans. It dispatches `/run-plan plans/<file>.md auto
+across all plans. It dispatches `/run-plan $ZSKILLS_PLANS_DIR/<file>.md auto
 finish` per ready plan (one PR per plan); the cron then waits for
 the next fire.
 
@@ -1157,7 +1194,7 @@ sprints write at completion (Step 6).
 ## Sprint report (failure path)
 
 When stopping on first failure without `continue`, write
-`reports/work-on-plans-<sprint-id>.md`:
+`$ZSKILLS_AUDIT_DIR/work-on-plans-<sprint-id>.md`:
 
 ```markdown
 # /work-on-plans sprint — <sprint-id>
@@ -1206,7 +1243,7 @@ does not modify that file.
   refuses to run from a subagent context. Same defense as
   `/fix-issues`.
 - **Skill tool dispatch.** `/run-plan` is invoked as
-  `Skill: { skill: "run-plan", args: "plans/<FILE>.md auto [finish]" }`.
+  `Skill: { skill: "run-plan", args: "$ZSKILLS_PLANS_DIR/<FILE>.md auto [finish]" }`.
   Never the Agent tool — the chain would lose the Agent tool one
   level deeper and `/run-plan`'s internal dispatches would fail.
 - **CLI mode override is per-batch.** It does not mutate saved

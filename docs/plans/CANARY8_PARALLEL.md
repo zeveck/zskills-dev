@@ -27,8 +27,8 @@ to automate without a fleet harness.
 Before running:
 
 1. Pick two disjoint canary plans (both trivial, 1 phase each):
-   - Pipeline A: `plans/CANARY8_P_A.md` — creates `canary/p-a.txt`
-   - Pipeline B: `plans/CANARY8_P_B.md` — creates `canary/p-b.txt`
+   - Pipeline A: `docs/plans/CANARY8_P_A.md` — creates `canary/p-a.txt`
+   - Pipeline B: `docs/plans/CANARY8_P_B.md` — creates `canary/p-b.txt`
 
    (Draft these ahead of time with `/draft-plan` if they don't exist.)
 
@@ -42,8 +42,8 @@ Before running:
 In two separate top-level Claude Code sessions (or two REPL windows
 connected to the same repo), run simultaneously:
 
-- Session 1: `/run-plan plans/CANARY8_P_A.md 1 auto`
-- Session 2: `/run-plan plans/CANARY8_P_B.md 1 auto`
+- Session 1: `/run-plan docs/plans/CANARY8_P_A.md 1 auto`
+- Session 2: `/run-plan docs/plans/CANARY8_P_B.md 1 auto`
 
 (Start them within 10 seconds of each other. Exact simultaneity doesn't
 matter — overlap during the implement/verify window does.)

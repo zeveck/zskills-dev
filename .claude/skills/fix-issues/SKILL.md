@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.03+8c4e2f"
+  version: "2026.05.07+2d4df3"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -28,7 +28,7 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 
 - **N** (required for sprints) — number of issues to fix (e.g., `30`)
 - **focus** (optional) — prioritize a specific domain. The agent scans
-  `plans/*_ISSUES.md` and `plans/ISSUES_PLAN.md` to discover tracker files
+  `$ZSKILLS_ISSUES_DIR/*_ISSUES.md` and `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md` to discover tracker files
   and their domains. Common focus values: `new`, `correctness`, `codegen`,
   `ui`, `tests` — but any domain found in your tracker files works.
   Omit for default priority order.
@@ -58,7 +58,7 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   the codebase. Always interactive — presents findings and asks before
   closing. See Sync section for the full flow.
 - **plan** — draft plans for issues previously skipped as "too complex."
-  Scans `SPRINT_REPORT.md` for skipped items, dispatches `/draft-plan`
+  Scans `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` for skipped items, dispatches `/draft-plan`
   for each. No fixing — just creates plans for `/run-plan` to execute later.
 - **stop** — cancel any existing `/fix-issues` cron and exit. **Takes
   precedence over all other arguments.**
@@ -233,7 +233,7 @@ produces a **verdict:**
 Also scan for additional close candidates from:
 - **Tracker files** — `[x]` items that are still open on GitHub
 - **Sprint reports** — entries in "Already Implemented" or "Already Fixed
-  on Main" sections of `SPRINT_REPORT.md`
+  on Main" sections of `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
 
 For these candidates, dispatch verification agents with the same checklist
 above (read issue body, check code, check tests, produce verdict).
@@ -274,7 +274,7 @@ For each approved issue:
 
 2. **Update tracker files** — mark the issue `[x]` in all relevant trackers.
 
-3. **Update SPRINT_REPORT.md** — if the issue appears in an "Already
+3. **Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — if the issue appears in an "Already
    Implemented" section, add a note: `Closed by /fix-issues sync`.
 
 ### Step 5 — Commit & report
@@ -300,18 +300,20 @@ Draft plans for issues previously skipped as "too complex for batch fix."
 Accepts optional `auto` — `/fix-issues plan auto` skips the selection gate
 and drafts plans for all found issues.
 
-1. **Find skipped issues from `plans/SPRINT_REPORT.md`.** Scan the entire
+1. **Find skipped issues from `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.** Scan the entire
    sprint report for issue numbers under "Skipped" / "Too Complex" /
    "Remaining Open" headings. Use grep to extract candidate numbers
    (handles bare `#NNN`, ranges like `#148-#168`, and `#NNN, #MMM` lists):
 
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
-   grep -nE '#[0-9]+' plans/SPRINT_REPORT.md | grep -iE 'skip|complex|remain'
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   grep -nE '#[0-9]+' "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" | grep -iE 'skip|complex|remain'
    ```
 
    Then for each candidate `#N`:
-   - Check `plans/` for an existing executable plan covering it:
-     `grep -l "#$N\b" plans/*.md` (existing plan = skip)
+   - Check `$ZSKILLS_PLANS_DIR/` for an existing executable plan covering it:
+     `grep -l "#$N\b" "$ZSKILLS_PLANS_DIR"/*.md` (existing plan = skip)
    - Check GitHub state: `gh issue view "$N" --json state -q .state`
      (`OPEN` = candidate; `CLOSED` = skip)
 
@@ -513,12 +515,14 @@ alert user, write failure to report).
    the trackers, then for each open GH issue number check whether it
    appears in any tracker:
 
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
-   ls plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   ls "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null
 
    gh issue list --state open --limit 500 --json number -q '.[].number' \
      | while read -r N; do
-         if ! grep -q "#$N\b" plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null; then
+         if ! grep -q "#$N\b" "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
            echo "GAP: #$N not in any tracker"
          fi
        done
@@ -531,9 +535,11 @@ alert user, write failure to report).
      -q '.[].labels[].name' | sort | uniq -c | sort -rn
    ```
 
-4. **Update ALL issue trackers** — scan `plans/` for tracker files:
+4. **Update ALL issue trackers** — scan `$ZSKILLS_ISSUES_DIR/` for tracker files:
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
-   ls plans/*ISSUES*.md plans/ISSUES_PLAN.md 2>/dev/null
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   ls "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null
    ```
    Ensure each tracker reflects current GitHub state. Add new issues to
    the appropriate tracker based on domain.
@@ -569,7 +575,8 @@ alert user, write failure to report).
 
 2. **Fetch the research blurb from plan files:**
    ```bash
-   grep -A 30 '#<N>' plans/*ISSUES*.md 2>/dev/null
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   grep -A 30 '#<N>' "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md 2>/dev/null
    ```
    Plan blurbs contain root cause analysis, affected files, suggested fixes,
    and effort estimates. This context was gathered when the issue was filed —
@@ -624,7 +631,7 @@ While building the ranked list, classify each candidate:
   just "it's broken." You don't know WHAT to fix.
   - Interactive: flag it and ask the user for clarification
   - Auto: skip it, report as "Skipped: insufficient context" in
-    SPRINT_REPORT.md
+    $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md
 - **Too complex** — clear spec but would require 500+ lines, major
   refactoring, or architectural changes. Not a batch-fix item.
   - Interactive: report "this needs `/run-plan`, not `/fix-issues`"
@@ -686,7 +693,7 @@ If ALL candidates are too vague, too complex, or already attempted:
    **Only sync once per sprint.** If still empty after, proceed to step 2.
 
 2. **If still no actionable issues after refresh:**
-   - Write a minimal sprint section to SPRINT_REPORT.md: `## Sprint —
+   - Write a minimal sprint section to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`: `## Sprint —
      YYYY-MM-DD HH:MM [UNFINALIZED]` with "No actionable issues found
      (synced twice)" and the skip reasons.
    - **Do NOT kill the cron** — new issues may be filed before the next run.
@@ -739,7 +746,7 @@ out, leaving orphaned worktree directories.
 
 **Agent timeout: 1 hour.** Note the dispatch time for each agent. If an
 agent hasn't returned after 1 hour, declare it **failed**:
-- Mark its issues as "Timed out" in SPRINT_REPORT.md
+- Mark its issues as "Timed out" in `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
 - Issues stay open for the next sprint
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
@@ -749,7 +756,7 @@ agent hasn't returned after 1 hour, declare it **failed**:
 1. **The verbatim issue body** from Phase 1b (`gh issue view`). Do NOT
    paraphrase or summarize — include the full text the user wrote. Titles are
    often vague; the body is the spec. If the body is empty, say so explicitly.
-2. **The research blurb from issue tracker files** (`plans/*ISSUES*.md`).
+2. **The research blurb from issue tracker files** (`$ZSKILLS_ISSUES_DIR/*ISSUES*.md`).
    These contain root cause analysis, affected files, suggested fixes, and
    effort estimates written when the issue was filed. Grep the tracker files
    for the issue number and include any matching section verbatim.
@@ -1014,7 +1021,7 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
 
 ## Phase 5 — Write Sprint Report (BEFORE landing)
 
-**APPEND** a new sprint section to `SPRINT_REPORT.md` BEFORE Phase 6
+**APPEND** a new sprint section to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` BEFORE Phase 6
 (landing). The report is a prerequisite for landing — if it's not written,
 Phase 6 does not execute.
 
@@ -1026,7 +1033,7 @@ processes all UNFINALIZED sections when the user reviews.
 If the file doesn't exist, create it with a `# Sprint Report` heading.
 
 Past failure: an agent skipped Phase 5 for 8 consecutive sprints to "keep
-the hourly cadence fast." SPRINT_REPORT.md was stale for 8 sprints,
+the hourly cadence fast." `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` was stale for 8 sprints,
 making `/fix-report` useless. Another failure: the file was overwritten
 each sprint, losing results from earlier sprints that were never reviewed.
 
@@ -1108,7 +1115,7 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   without it, the PR sits at status `pr-ready` (or `pr-ci-failing` if
   fix-cycle was exhausted) awaiting human review and merge on GitHub.
 - **`LANDING_MODE == cherry-pick`:** Sprint complete. Output:
-  > Sprint complete. Report written to `SPRINT_REPORT.md`.
+  > Sprint complete. Report written to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.
   > Run `/fix-report` to review fixes, land to main, and close issues.
 
   Cherry-picks land via `/fix-report`'s interactive walk-through.
@@ -1170,7 +1177,7 @@ failure reporting.
   skip all commits from that worktree (grouped issues depend on each
   other), mark as "Skipped: conflict" in the report, and continue
   landing from other worktrees. The skipped issues self-heal next sprint.
-- **Always write `SPRINT_REPORT.md`** — it's the handoff to `/fix-report`.
+- **Always write `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — it's the handoff to `/fix-report`.
 - **Never close GH issues, update trackers, or remove worktrees** — that's
   `/fix-report`'s job.
 - **One issue per commit** — clean git history in worktrees.

@@ -7,7 +7,7 @@ description: >-
   PRs, plans, worktrees) — not conversation memory — because the user may
   have completed some of them in another session.
 metadata:
-  version: "2026.05.02+a208dd"
+  version: "2026.05.07+16868a"
 ---
 
 # /session-report — Session Intent vs. Actual State
@@ -59,7 +59,7 @@ that resolves the item:
 | Intent item type | Minimal verification |
 |---|---|
 | File written/edited (skill, script, hook, plan, doc) | `git status -s <path>`; if path has a mirror (e.g. `skills/X/` ↔ `.claude/skills/X/`), `diff -q` both. Untracked = uncommitted; modified = uncommitted edit. |
-| Plan drafted | `git status -s plans/<name>.md` + `Read` the file (count `[ ]` vs `[x]`, note Phase status lines). |
+| Plan drafted | `git status -s "$ZSKILLS_PLANS_DIR/<name>.md"` + `Read` the file (count `[ ]` vs `[x]`, note Phase status lines). |
 | Plan executed (some/all phases) | `Read` the plan's Phase status; `git log --oneline main` for matching commits; if `/run-plan` was used, check `.zskills/tracking/fulfilled.run-plan.<slug>` and `requires.*`. |
 | PR opened | `gh pr view <N> --json state,mergeable,reviewDecision,statusCheckRollup` + `gh pr checks <N>`. |
 | PR merged | `gh pr view <N> --json state,mergeCommit` — confirm `MERGED` and the merge commit is on main. |
@@ -74,7 +74,7 @@ of which session produced the change.
 
 **Do NOT** run any of these unless they map to a specific intent item:
 - Bulk `gh pr list` of all open/merged PRs
-- `ls plans/*.md` enumeration
+- `ls "$ZSKILLS_PLANS_DIR"/*.md` enumeration
 - `git worktree list` walks of every worktree
 - Full `.zskills/tracking/` directory listings
 
@@ -139,5 +139,5 @@ session didn't touch.
   (uncommitted file → "commit and PR"; red CI → "investigate failing
   check"). If everything is in good shape, no next action is needed.
 - **Do not run bulk repo scans.** No `gh pr list --limit 30`, no
-  `git log --since="2 days ago"`, no walking `plans/*.md`. Each check is
+  `git log --since="2 days ago"`, no walking `"$ZSKILLS_PLANS_DIR"/*.md`. Each check is
   scoped to a specific intent item.

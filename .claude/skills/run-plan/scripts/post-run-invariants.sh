@@ -48,7 +48,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Resolve MAIN_ROOT the same careful way land-phase.sh does.
+# Resolve MAIN_ROOT for git-state queries (worktree registry, branch
+# refs, origin, fetch+merge-base). These ALWAYS point at main, even in
+# PR mode — the registry, local branch list, and remote-tracking refs
+# live on main's .git, not the worktree's.
 MAIN_ROOT_GIT_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
 if [ -z "$MAIN_ROOT_GIT_DIR" ]; then
   echo "ERROR: post-run-invariants.sh must run from inside a git repository" >&2
@@ -59,6 +62,27 @@ if [ -z "$MAIN_ROOT" ] || [ "$MAIN_ROOT" = "/" ]; then
   echo "ERROR: MAIN_ROOT resolved to '$MAIN_ROOT' — aborting" >&2
   exit 1
 fi
+
+# Resolve PROJECT_ROOT for path resolution (REPORT_PATH, plan tracker
+# reads). When the orchestrator passed --worktree <path> AND that path
+# exists on disk, the worktree IS the project root — the feature-branch
+# bookkeeping (audit dir, tracker) lives there in PR mode. Otherwise
+# PROJECT_ROOT defaults to the current repo's working tree (show-toplevel),
+# which equals MAIN_ROOT in direct/main mode but resolves correctly when
+# the script is invoked from inside a worktree without the --worktree arg
+# (e.g., test fixtures, ad-hoc invocations). Falls back to MAIN_ROOT if
+# show-toplevel is unavailable.
+if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+  PROJECT_ROOT="$WORKTREE_PATH"
+else
+  PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+  [ -z "$PROJECT_ROOT" ] && PROJECT_ROOT="$MAIN_ROOT"
+fi
+
+# Source the helper with PROJECT_ROOT (worktree path in PR mode, main
+# in direct mode) so $ZSKILLS_AUDIT_DIR resolves to the right tree.
+ZSKILLS_PATHS_ROOT="$PROJECT_ROOT"
+source "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 
 INVARIANT_FAILED=0
 
@@ -100,7 +124,7 @@ fi
 
 # 5. Plan report exists
 if [ -n "$PLAN_SLUG" ]; then
-  REPORT_PATH="$MAIN_ROOT/reports/plan-${PLAN_SLUG}.md"
+  REPORT_PATH="$ZSKILLS_AUDIT_DIR/plan-${PLAN_SLUG}.md"
   if [ ! -f "$REPORT_PATH" ]; then
     echo "INVARIANT-FAIL (#5): plan report missing at $REPORT_PATH — Phase 5 didn't run or wrote elsewhere" >&2
     INVARIANT_FAILED=1
