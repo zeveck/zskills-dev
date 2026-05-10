@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.10+c4a711"
+  version: "2026.05.10+1ec0ef"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
