@@ -448,7 +448,7 @@ merge wait.)
   > preserving consumer-current behavior. Only `/update-zskills
   > --migrate-paths` writes these keys (and writes BOTH or NEITHER).
   > See plan `docs/plans/ZSKILLS_PATH_CONFIG.md` (or
-  > `docs/plans/ZSKILLS_PATH_CONFIG.md` pre-migration).
+  > `plans/ZSKILLS_PATH_CONFIG.md` pre-migration).
   ```
 
   Re-verify post-edit:
@@ -458,7 +458,7 @@ merge wait.)
   `grep -n "^#### Step [A-Z]" skills/update-zskills/SKILL.md`).
 
   **Self-conformance hygiene.** This comment introduces literals
-  `docs/plans/ZSKILLS_PATH_CONFIG.md` and `docs/plans/ZSKILLS_PATH_CONFIG.md`.
+  `plans/ZSKILLS_PATH_CONFIG.md` and `docs/plans/ZSKILLS_PATH_CONFIG.md`.
   The first matches `re:^plans/` (forbidden-literals fixture, item 1b).
   Add an `<!-- allow-hardcoded: plans/ZSKILLS_PATH_CONFIG.md reason:
   forward-protection comment quoting pre-migration path -->` marker on
@@ -963,7 +963,7 @@ rule (intended).
 - [ ] `skills/update-zskills/SKILL.md` contains the `Path-config keys are
   EXEMPT from auto-backfill` block (single line via grep) AT or AFTER the
   existing Step B / `co_author` backfill section. The literal
-  `docs/plans/ZSKILLS_PATH_CONFIG.md` in the comment is escaped via
+  `plans/ZSKILLS_PATH_CONFIG.md` in the comment is escaped via
   `<!-- allow-hardcoded: ... -->` so the conformance test count delta
   remains exactly `$ACTUAL_VIOLATIONS` (no new uncaught hit).
 - [ ] `diff -rq skills/update-zskills .claude/skills/update-zskills` empty.
@@ -1284,7 +1284,7 @@ provided below in lieu of trusting fixed line numbers).
 - [ ] **2a.1 — `/qe-audit`** (smallest first, warm-up).
   `skills/qe-audit/SKILL.md` — re-derive sites via
   `grep -n 'plans/QE_ISSUES\|QE_ISSUES.md' skills/qe-audit/SKILL.md`.
-  Replace each occurrence of `docs/plans/QE_ISSUES.md` with
+  Replace each occurrence of `plans/QE_ISSUES.md` with
   `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md` (research-time anchor count: 4 — at
   lines 23, 169, 194, 279). Source helper at top of any new bash fence;
   for prose-doc references, keep prose form but rewrite the path token.
@@ -1293,7 +1293,7 @@ provided below in lieu of trusting fixed line numbers).
 - [ ] **2a.2 — `/add-example`** (block-diagram).
   `block-diagram/add-example/SKILL.md` — re-derive sites via
   `grep -n 'DOC_ISSUES\|plans/' block-diagram/add-example/SKILL.md`.
-  Replace `docs/plans/DOC_ISSUES.md` references with
+  Replace `plans/DOC_ISSUES.md` references with
   `$ZSKILLS_ISSUES_DIR/DOC_ISSUES.md`. Mirror via
   `bash scripts/mirror-skill.sh block-diagram/add-example` (uses Phase 1b
   extension).
@@ -1321,7 +1321,7 @@ provided below in lieu of trusting fixed line numbers).
   Surfacing here per "surface bugs don't patch."
 
 - [ ] **2a.4 — `/plans`.** `skills/plans/SKILL.md` — re-derive via
-  `grep -n 'PLAN_INDEX.md\|docs/plans/blocks/' skills/plans/SKILL.md`. Replace
+  `grep -n 'PLAN_INDEX.md\|plans/blocks/' skills/plans/SKILL.md`. Replace
   `PLAN_INDEX.md` site references (research-time count: 8 at 14, 84, 105,
   204, 219, 272, 370, 408 — file is 417 lines so prior cited "519" was
   past EOF; drop it) with `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
@@ -1373,7 +1373,7 @@ provided below in lieu of trusting fixed line numbers).
     `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md` elsewhere.
   - cherry-pick mode references in `skills/fix-issues/modes/cherry-pick.md` (anchors 53, 113).
   - failure-protocol references in `skills/fix-issues/references/failure-protocol.md` (45, 84).
-  Critical: lines 303-309 area has `docs/plans/SPRINT_REPORT.md` (wrong path) —
+  Critical: lines 303-309 area has `plans/SPRINT_REPORT.md` (wrong path) —
   rewrite to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`. Mirror.
 
 - [ ] **2a.8 — `/fix-report`.** Re-derive via
@@ -1396,7 +1396,7 @@ provided below in lieu of trusting fixed line numbers).
     `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`. Mirror.
 
 - [ ] **2a.10 — `/work-on-plans` (writer side).** Re-derive via
-  `grep -n 'reports/\|PLAN_INDEX\|docs/plans/' skills/work-on-plans/SKILL.md`:
+  `grep -n 'reports/\|PLAN_INDEX\|plans/' skills/work-on-plans/SKILL.md`:
   - Line 116-area — the ONLY `mkdir -p "$MAIN_ROOT/reports"` invocation in
     skills. Replace with `mkdir -p "$ZSKILLS_AUDIT_DIR"` (source helper above).
   - Lines 119-120 — `WORK_STATE` and `PLAN_INDEX` — rewrite `PLAN_INDEX` to
@@ -1634,7 +1634,7 @@ phase that dispatches via `/run-plan`).
   pushed yet), verifier executes:
 
   ```bash
-  /run-plan docs/plans/CANARY1_HAPPY.md finish auto pr
+  /run-plan plans/CANARY1_HAPPY.md finish auto pr
   ```
 
   (Pre-self-migration the path is still literal `plans/...` — this is the
@@ -2017,7 +2017,7 @@ fixture-worktree smoke from 3.9.
   AND `.claude/skills/update-zskills/scripts/zskills-paths.sh`.
 - [ ] `diff -rq skills/<X> .claude/skills/<X>` clean for every touched
   skill.
-- [ ] CANARY7 (`docs/plans/CANARY7_CHUNKED_FINISH.md`, cron-chunked
+- [ ] CANARY7 (`plans/CANARY7_CHUNKED_FINISH.md`, cron-chunked
   multi-phase) passes manually — gates cross-cron-turn path stability.
 - [ ] One commit.
 
@@ -2444,23 +2444,23 @@ leaves the consumer recovering via the helper's legacy-`plans/` fallback.
 
       ```bash
       mkdir -p .zskills/audit
-      if [ -e docs/plans/PLAN_INDEX.md ]; then
-        git mv docs/plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
-        if [ -e .zskills/audit/PLAN_INDEX.md ] && [ ! -e docs/plans/PLAN_INDEX.md ]; then
-          echo "moved: docs/plans/PLAN_INDEX.md → .zskills/audit/PLAN_INDEX.md"
+      if [ -e plans/PLAN_INDEX.md ]; then
+        git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
+        if [ -e .zskills/audit/PLAN_INDEX.md ] && [ ! -e plans/PLAN_INDEX.md ]; then
+          echo "moved: plans/PLAN_INDEX.md → .zskills/audit/PLAN_INDEX.md"
         else
-          echo "FAIL: move docs/plans/PLAN_INDEX.md → .zskills/audit/ did not complete" >&2
+          echo "FAIL: move plans/PLAN_INDEX.md → .zskills/audit/ did not complete" >&2
           exit 1
         fi
       else
-        echo "skipped: docs/plans/PLAN_INDEX.md absent (will be regenerated via /plans rebuild)"
+        echo "skipped: plans/PLAN_INDEX.md absent (will be regenerated via /plans rebuild)"
       fi
       ```
 
       PLAN_INDEX is regenerable from plan frontmatter via `/plans rebuild`,
       so this is structurally the same as PLAN_REPORT.md and
       VERIFICATION_REPORT.md (also Tier 2, also in audit). Cross-references
-      in plan files to `docs/plans/PLAN_INDEX.md` get rewritten in Phase 5b.
+      in plan files to `plans/PLAN_INDEX.md` get rewritten in Phase 5b.
 
   5. **Move issue trackers → `$TARGET_ISSUES`.** `mkdir -p "$TARGET_ISSUES"`.
      `git mv plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md
@@ -2581,8 +2581,8 @@ leaves the consumer recovering via the helper's legacy-`plans/` fallback.
   4 of the 9 test cases (the simple ones); Phase 5b adds 5 more.
 
   **Phase 5a cases:**
-  - **Case 1: legacy-only fixture.** Synthetic repo with `docs/plans/FOO_PLAN.md`,
-    `docs/plans/PLAN_INDEX.md`, `.zskills/audit/plan-foo.md`, `SPRINT_REPORT.md`,
+  - **Case 1: legacy-only fixture.** Synthetic repo with `plans/FOO_PLAN.md`,
+    `plans/PLAN_INDEX.md`, `reports/plan-foo.md`, `SPRINT_REPORT.md`,
     `var/dev.pid`. Run `migrate-paths.sh`. Assert: legacy paths absent,
     new paths present (specifically `docs/plans/FOO_PLAN.md` AND
     `.zskills/audit/PLAN_INDEX.md` — note the per-tier split: PLAN_PLAN
@@ -2746,7 +2746,7 @@ stop-dev.sh).
         rewrite=1
       fi
       if [ "$rewrite" -eq 1 ]; then
-        # Substitute `docs/plans/X.md` → `<TARGET_PLANS>/X.md`; `reports/Y.md` → `.zskills/audit/Y.md`.
+        # Substitute `plans/X.md` → `<TARGET_PLANS>/X.md`; `reports/Y.md` → `.zskills/audit/Y.md`.
         line="${line//plans\//${target_plans}\/}"
         # The reports/ regex is narrower (only plan-/verify-/briefing-/new-blocks- prefix).
         line=$(printf '%s\n' "$line" \
@@ -2800,7 +2800,7 @@ stop-dev.sh).
 
   **What gets rewritten — STRUCTURAL REFERENCES only:**
 
-  A line is a "structural reference" iff the path token (`docs/plans/X.md` or
+  A line is a "structural reference" iff the path token (`plans/X.md` or
   `reports/Y.md` for matching slugs) is enclosed by ONE of:
   1. **Markdown link:** `[<anything>](<TOKEN>)` or
      `[<anything>](<TOKEN>#anchor)`
@@ -2829,17 +2829,17 @@ stop-dev.sh).
   ```
 
   **Why broadened (round-3 DA F12):** real plan filenames in zskills
-  include kebab-case (`docs/plans/cross-platform-hooks.md` verified at
+  include kebab-case (`plans/cross-platform-hooks.md` verified at
   refinement time); the original `[A-Z][A-Z0-9_]*` would have left such
   links broken post-migration. The broader char class
   `[A-Za-z][A-Za-z0-9_-]*` matches both ALL_CAPS_UNDERSCORE
   (e.g., `ZSKILLS_PATH_CONFIG`) and kebab-or-mixed
   (`cross-platform-hooks`). The leading char class excludes leading
   digits/hyphens, and the trailing `\.md` anchor excludes
-  `docs/plans/foo.md.bak`-style false positives (verify post-edit:
-  `echo 'docs/plans/foo.md.bak' | grep -E 'docs/plans/[A-Za-z][A-Za-z0-9_-]*\.md'`
-  must NOT match `docs/plans/foo.md.bak` as a whole token — but **note**: the
-  regex DOES match the leading `docs/plans/foo.md` substring. That is fine
+  `plans/foo.md.bak`-style false positives (verify post-edit:
+  `echo 'plans/foo.md.bak' | grep -E 'plans/[A-Za-z][A-Za-z0-9_-]*\.md'`
+  must NOT match `plans/foo.md.bak` as a whole token — but **note**: the
+  regex DOES match the leading `plans/foo.md` substring. That is fine
   for backup-file references because the cross-ref rewrite operates per
   enclosure, and backup names are not enclosed in markdown links /
   backticks / shell args / slash-commands. Implementer verifies the
@@ -2847,7 +2847,7 @@ stop-dev.sh).
   through enclosure-rule).
 
   **Substitution:**
-  - `docs/plans/X.md` → `<TARGET_PLANS>/X.md` (where `<TARGET_PLANS>` is the
+  - `plans/X.md` → `<TARGET_PLANS>/X.md` (where `<TARGET_PLANS>` is the
     resolved value from step 2 of 5a.3).
   - `reports/Y.md` → `.zskills/audit/Y.md`.
 
@@ -2867,11 +2867,11 @@ stop-dev.sh).
 
   | Line | Verdict |
   |------|---------|
-  | `[See PLAN_X](docs/plans/PLAN_X.md)` | MATCH (markdown link) → `[See PLAN_X](docs/plans/PLAN_X.md)` |
-  | `Run \`/run-plan docs/plans/CANARY1_HAPPY.md\`` | MATCH (slash-command + backtick) → `Run \`/run-plan docs/plans/CANARY1_HAPPY.md\`` |
-  | `cp docs/plans/PLAN_INDEX.md /tmp/` (inside `bash` fence) | MATCH (shell line) → `cp .zskills/audit/PLAN_INDEX.md /tmp/` (PLAN_INDEX is Tier 2, lives in audit, NOT plans_dir) |
+  | `[See PLAN_X](plans/PLAN_X.md)` | MATCH (markdown link) → `[See PLAN_X](docs/plans/PLAN_X.md)` |
+  | `Run \`/run-plan plans/CANARY1_HAPPY.md\`` | MATCH (slash-command + backtick) → `Run \`/run-plan docs/plans/CANARY1_HAPPY.md\`` |
+  | `cp plans/PLAN_INDEX.md /tmp/` (inside `bash` fence) | MATCH (shell line) → `cp .zskills/audit/PLAN_INDEX.md /tmp/` (PLAN_INDEX is Tier 2, lives in audit, NOT plans_dir) |
   | `we previously kept plans/ at the repo root` | NON-MATCH (naked prose) — preserve |
-  | `the user types docs/plans/FOO.md as the argument` | NON-MATCH (naked prose) — preserve |
+  | `the user types plans/FOO.md as the argument` | NON-MATCH (naked prose) — preserve |
 
   **Scope — which plan files get rewritten (frontmatter decision tree):**
 
@@ -2896,7 +2896,7 @@ stop-dev.sh).
      hit, in the format
      `WARN <plan-file>:<line>: legacy token '<token>' preserved (frozen plan; see path-config-upgrade.md)`.
      Example:
-     `WARN docs/plans/OLD_FEATURE.md:42: legacy token 'docs/plans/OTHER.md' preserved (frozen plan; see path-config-upgrade.md)`.
+     `WARN docs/plans/OLD_FEATURE.md:42: legacy token 'plans/OTHER.md' preserved (frozen plan; see path-config-upgrade.md)`.
   2. **`.pre-paths-migration-warnings`** (a sibling of the manifest at
      repo root): the same lines, appended. The file is created on
      first warning; subsequent rewrites (e.g., `--rewrite-only` reruns)
@@ -3038,17 +3038,17 @@ stop-dev.sh).
     file (per DA finding 5 deferral rule); summary mentions upgrade
     prompt.
   - **Case 6: cross-reference rewrite — structural references.** Plan
-    with `[See docs/plans/BAR.md](docs/plans/BAR.md)` inline link, `\`docs/plans/BAZ.md\``
+    with `[See plans/BAR.md](plans/BAR.md)` inline link, `\`plans/BAZ.md\``
     backticked, "we used to keep these in `plans/`" prose. Assert: link
     rewritten, backtick rewritten, prose NOT rewritten.
   - **Case 7: completed-canary self-invocation.** Plan with
     `status: complete` AND filename `CANARY7_TEST.md` containing line
-    `Run /run-plan docs/plans/CANARY7_TEST.md finish auto`. Assert: REWRITTEN
+    `Run /run-plan plans/CANARY7_TEST.md finish auto`. Assert: REWRITTEN
     to `docs/plans/CANARY7_TEST.md`. Compare to the non-canary completed
     case below.
   - **Case 8: completed-non-canary plan with legacy tokens.** Plan with
     `status: complete` AND filename `OLD_FEATURE.md` containing
-    `[See OTHER](docs/plans/OTHER.md)` link at line 42. Assert (per round-3
+    `[See OTHER](plans/OTHER.md)` link at line 42. Assert (per round-3
     DA F16):
     - The plan file is NOT rewritten (byte-equal to pre-run).
     - Captured stderr contains a line matching the regex
@@ -3066,7 +3066,7 @@ stop-dev.sh).
     (`.pre-paths-migration` present, plans moved to `docs/plans/`,
     config has `output.plans_dir = "docs/plans"`) BUT leave a plan file
     `docs/plans/STILL_LEGACY.md` (status: active) containing the line
-    `Run \`/run-plan docs/plans/SOMETHING.md\`` (not yet rewritten). **Phase
+    `Run \`/run-plan plans/SOMETHING.md\`` (not yet rewritten). **Phase
     B**: invoke `bash migrate-paths.sh --rewrite-only "$FIXTURE"`.
     Assert:
     - exit 0;
@@ -3123,7 +3123,7 @@ section as the reference; do NOT freelance an alternative state machine.
 
 **Why slash-command is its own enclosure type:** the shell-line check
 catches lines inside fenced code blocks. Slash commands often appear in
-prose — "Then run `/run-plan docs/plans/X.md`." Treating slash-command-prefix
+prose — "Then run `/run-plan plans/X.md`." Treating slash-command-prefix
 as a structural enclosure means the test-case 7 self-invocation in
 canary plans rewrites correctly.
 
@@ -3174,7 +3174,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
   re-derives the plan path on every cron-fired re-entry from the LITERAL
   `<plan-file>` arg captured in the cron prompt — joined with
   `$MAIN_ROOT` or `$PR_WORKTREE_PATH`. After Phase 6.1 lands the
-  `git mv docs/plans/ZSKILLS_PATH_CONFIG.md docs/plans/ZSKILLS_PATH_CONFIG.md`,
+  `git mv plans/ZSKILLS_PATH_CONFIG.md docs/plans/ZSKILLS_PATH_CONFIG.md`,
   the next cron turn's read of the literal `plans/...` arg returns
   file-not-found and the orchestrator stalls. Operating sequence:
 
@@ -3188,7 +3188,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
      post-move arg.
 
   Verifier asserts no `/run-plan` cron with the OLD literal arg remains
-  (`CronList | grep 'docs/plans/ZSKILLS_PATH_CONFIG.md'` returns zero hits
+  (`CronList | grep 'plans/ZSKILLS_PATH_CONFIG.md'` returns zero hits
   AFTER §6.1's commit).
 
   BEFORE running:
@@ -3197,7 +3197,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
   # Copy the active plan to /tmp so the agent has a stable read source
   # mid-migration (the plan file itself is being moved). ALSO copy the
   # post-rewrite version for canary self-invocations (per round-2 DA F14).
-  cp docs/plans/ZSKILLS_PATH_CONFIG.md /tmp/ZSKILLS_PATH_CONFIG.md.preserve
+  cp plans/ZSKILLS_PATH_CONFIG.md /tmp/ZSKILLS_PATH_CONFIG.md.preserve
   # Snapshot tracking markers (none should reference plan PATHS, but
   # verify before moving).
   ls .zskills/tracking/*/ 2>/dev/null \
@@ -3272,7 +3272,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
 
   - **CANARY1** (smoke happy path): RE-DERIVE the path POST-MIGRATION
     before invoking (using `$CANARY1_PATH` above). Pre-migration:
-    `/run-plan docs/plans/CANARY1_HAPPY.md`. Post-migration:
+    `/run-plan plans/CANARY1_HAPPY.md`. Post-migration:
     `/run-plan "$CANARY1_PATH"` (resolves to
     `docs/plans/CANARY1_HAPPY.md` for zskills self-migration). Asserts:
     plan resolves, audit-dir report written, tracker updated.
@@ -3291,7 +3291,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
     final-verify markers under `.zskills/tracking/`. **Manual canary**
     (per round-2 reviewer F1 + DA F13: corrected from round-1's incorrect
     auto-dispatch claim). Cited reason from
-    `docs/plans/CANARY9_FINAL_VERIFY.md:21` verbatim: *"This is a manual canary
+    `plans/CANARY9_FINAL_VERIFY.md:21` verbatim: *"This is a manual canary
     — it requires multiple cron-fired turns over real wall-clock time
     (10 min minimum, up to ~2 h if the verify takes a while)."* The
     implementing agent does NOT dispatch this; the user runs it manually
@@ -3301,7 +3301,7 @@ RELEASING, CLAUDE_TEMPLATE, README, and the plan registry.
   - **CANARY10** (PR mode finish): single-PR happy path complement to
     CANARY6. **Manual canary** (per round-2 reviewer F1: corrected from
     round-1's incorrect auto-dispatch claim). Cited reason from
-    `docs/plans/CANARY10_PR_MODE.md:22` verbatim: *"This is a manual canary —
+    `plans/CANARY10_PR_MODE.md:22` verbatim: *"This is a manual canary —
     it requires real GitHub state (PR creation, GitHub Actions run,
     merge). The user has explicitly confirmed they're happy to run this
     manually."*

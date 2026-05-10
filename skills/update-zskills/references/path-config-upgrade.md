@@ -24,13 +24,16 @@ Tasks:
 2. **Update `scripts/stop-dev.sh`.** Same pattern as task 1; the PID-read
    path moves identically (`var/dev.pid` → `.zskills/dev-server.pid`).
 
-3. **Audit active plan files.** Read your active plan files (frontmatter
-   `status: active` or `proposal`). If any contain shell commands
-   referencing `plans/<NAME>.md` or `reports/<...>.md` paths AND the
-   previous `--migrate-paths` cross-ref rewrite missed them (e.g., they
-   appear in a `status: complete` plan with a non-canary slug), propose
-   updates pointing at the new locations. Show diffs; ask before
-   applying.
+3. **Audit preserved-token list at `.zskills/audit/migration-warnings.md`.**
+   `migrate-paths.sh` writes this file (when present, with a markdown H1
+   header) to enumerate every legacy `plans/X.md` or `reports/Y.md` token
+   it preserved in frozen `status: complete` non-canary plans. Read each
+   entry, decide per-token whether the reference should be manually
+   upgraded to the new location, propose diffs, ask the user before
+   applying. Also re-scan active plan files (`status: active` or
+   `proposal`) for any shell commands referencing legacy paths the
+   cross-ref rewrite missed (e.g., absolute-path forms like
+   `$MAIN_ROOT/plans/...` — those are flagged in the same warnings file).
 
 4. **Mid-version-skip recovery.** If `.pre-paths-migration` already
    exists AND the `migrate-paths.sh` script has been updated to include

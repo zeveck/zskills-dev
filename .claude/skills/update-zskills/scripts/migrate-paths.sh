@@ -92,9 +92,20 @@ cross_ref_rewrite() {
   local re_token='(plans/[A-Za-z][A-Za-z0-9_-]*\.md|reports/(plan|verify|briefing|new-blocks)-[a-z0-9-]+\.md)'
   local re_link='\[[^]]*\]\('"$re_token"
   local re_backtick='`[^`]*'"$re_token"'[^`]*`'
-  local re_dollar_prefix='^\$[[:space:]]'
-  local re_meta_suffix='[|><;][[:space:]]*$'
   local re_slash='/(run-plan|draft-plan|refine-plan|draft-tests|work-on-plans|research-and-plan|research-and-go)[[:space:]]+'"$re_token"
+  # Migration-documentation guard (PR #211 follow-up). The original 4-
+  # enclosure rule blindly rewrote tokens inside instruction prose like
+  # "Replace `plans/X.md` with `$ZSKILLS_DIR/X.md`" and inside bash fences
+  # documenting the migration's own `git mv plans/X.md ...` command. That
+  # damaged the plan that DOCUMENTS the migration (PR #211 Phase 6 surfaced
+  # 13 corrupted sites in ZSKILLS_PATH_CONFIG.md alone). The fix:
+  # (a) drop the over-aggressive shell-line rule (Enclosure 3); shell-form
+  #     invocations against plan files in active plans are rare and
+  #     manually-upgradable via path-config-upgrade.md task 3;
+  # (b) detect migration-documentation lines via the verbs/markers below
+  #     and skip rewriting them entirely (preserve the legacy form so
+  #     instruction prose continues to make sense).
+  local re_migration_doc='([Rr]eplace|[Ss]ubstitute|[Rr]ewrite|[Mm]oved?:|git[[:space:]]+mv|wrong[[:space:]]path|legacy[[:space:]]token|pre-migration|post-migration|skipped:|MATCH[[:space:]]*\(|NON-MATCH[[:space:]]*\(|→)'
   # Idempotency guard — if `target_plans` already contains `plans/` (e.g.,
   # `docs/plans`), a naive `${line//plans\//.../}` replace will double-
   # rewrite an already-migrated path. Build a "negative-prefix" guard: a
@@ -117,21 +128,29 @@ cross_ref_rewrite() {
       printf '%s\n' "$line" >> "$out_file"
       continue
     fi
-    # Decide if line is a structural reference (4 enclosure types).
+    # Decide if line is a structural reference. PR-#211-follow-up rules:
+    # (1) skip migration-documentation lines (preserve the legacy form
+    #     so instruction prose remains intelligible);
+    # (2) shell-line rule dropped (used to be Enclosures 3 + 3' — too
+    #     aggressive against bash fences documenting `git mv` etc.);
+    # (3) only rewrite high-confidence forms: markdown link, backtick,
+    #     slash-command. These have low false-positive rates.
     local rewrite=0
+    # Migration-doc guard — never rewrite. Examples this catches:
+    #   "Replace `plans/X.md` with ..."     (instruction prose)
+    #   "git mv plans/X.md docs/plans/..."  (the migration's own cmd)
+    #   "moved: plans/X.md → .zskills/..."  (migration stdout)
+    #   "MATCH (markdown link)"             (example tables before/after)
+    #   "(wrong path)"                      (annotation on legacy refs)
+    if [[ "$line" =~ $re_migration_doc ]]; then
+      printf '%s\n' "$line" >> "$out_file"
+      continue
+    fi
     # Enclosure 1: markdown link [...](TOKEN)
     if [[ "$line" =~ $re_link ]]; then rewrite=1; fi
     # Enclosure 2: backticked code-span containing TOKEN
     if [[ "$line" =~ $re_backtick ]]; then rewrite=1; fi
-    # Enclosure 3: bash/shell command-line — fence-anchored.
-    if [ "$in_fence" -eq 1 ] && { [ "$fence_lang" = "bash" ] || [ "$fence_lang" = "sh" ] || [ "$fence_lang" = "shell" ] || [ -z "$fence_lang" ]; }; then
-      if [[ "$line" =~ $re_token ]]; then rewrite=1; fi
-    fi
-    # Enclosure 3': prose-line shell heuristic ($ prefix or trailing metachars).
-    if [[ "$line" =~ $re_dollar_prefix ]] || [[ "$line" =~ $re_meta_suffix ]]; then
-      if [[ "$line" =~ $re_token ]]; then rewrite=1; fi
-    fi
-    # Enclosure 4: slash-command invocation.
+    # Enclosure 3: slash-command invocation.
     if [[ "$line" =~ $re_slash ]]; then rewrite=1; fi
     if [ "$rewrite" -eq 1 ]; then
       # Substitute `plans/X.md` → `<TARGET_PLANS>/X.md`; `reports/Y.md` → `.zskills/audit/Y.md`.
@@ -165,9 +184,13 @@ cross_ref_rewrite() {
 
 # Scan a plan file and emit one stderr WARN line per legacy-token hit
 # (preserved-frozen plans; round-3 DA F13/F16). Also append the same
-# lines to .pre-paths-migration-warnings at $MAIN_ROOT.
+# lines to .zskills/audit/migration-warnings.md (user-discoverable
+# review surface, alongside other audit-dir reports). Pre-create
+# the file with a header on first write so a markdown viewer treats
+# it as a document rather than a stream of bare WARN lines.
 cross_ref_scan_warn() {
   local file="$1"
+  local warnings_file=".zskills/audit/migration-warnings.md"
   local line_no=0
   while IFS= read -r line || [ -n "$line" ]; do
     line_no=$((line_no + 1))
@@ -175,7 +198,11 @@ cross_ref_scan_warn() {
       local token="${BASH_REMATCH[1]}"
       local msg="WARN $file:$line_no: legacy token '$token' preserved (frozen plan; see path-config-upgrade.md)"
       printf '%s\n' "$msg" >&2
-      printf '%s\n' "$msg" >> .pre-paths-migration-warnings
+      if [ ! -s "$warnings_file" ]; then
+        mkdir -p "$(dirname "$warnings_file")"
+        printf '# Migration warnings — preserved legacy tokens in frozen plans\n\nGenerated by `migrate-paths.sh` cross_ref_scan_warn. Each line lists a `plans/X.md` or `reports/Y.md` token that was preserved (not rewritten) because its containing plan has `status: complete` and is non-canary, OR is otherwise frozen. Review each entry and decide whether to manually upgrade per `.claude/skills/update-zskills/references/path-config-upgrade.md` task 3.\n\n' > "$warnings_file"
+      fi
+      printf '%s\n' "$msg" >> "$warnings_file"
     fi
   done < "$file"
 }
@@ -256,13 +283,17 @@ run_cross_ref_pass() {
     esac
   done < <(find "$target_plans" -type f -name '*.md' -print0)
   # Post-rewrite SCAN-and-warn fallback for absolute-path forms.
-  local hits
+  local hits warnings_file=".zskills/audit/migration-warnings.md"
   hits=$(grep -rnE '(\$MAIN_ROOT|\$WORKTREE_PATH|/workspaces/zskills)/plans/[A-Za-z]' "$target_plans" 2>/dev/null || true)
   if [ -n "$hits" ]; then
     while IFS= read -r hit; do
       local msg="WARN absolute-path legacy token: $hit (review and rewrite manually; see path-config-upgrade.md)"
       printf '%s\n' "$msg" >&2
-      printf '%s\n' "$msg" >> .pre-paths-migration-warnings
+      if [ ! -s "$warnings_file" ]; then
+        mkdir -p "$(dirname "$warnings_file")"
+        printf '# Migration warnings — preserved legacy tokens in frozen plans\n\nGenerated by `migrate-paths.sh` cross_ref_scan_warn. Each line lists a `plans/X.md` or `reports/Y.md` token that was preserved (not rewritten) because its containing plan has `status: complete` and is non-canary, OR is otherwise frozen. Review each entry and decide whether to manually upgrade per `.claude/skills/update-zskills/references/path-config-upgrade.md` task 3.\n\n' > "$warnings_file"
+      fi
+      printf '%s\n' "$msg" >> "$warnings_file"
     done <<< "$hits"
   fi
   echo "$rewrote $preserved $seen"

@@ -503,15 +503,29 @@ case_8_completed_noncanary_warn() {
     fail "case 8: stderr WARN line missing" "$out"
   fi
 
-  # Sibling .pre-paths-migration-warnings file.
-  if [ -f "$D/.pre-paths-migration-warnings" ]; then
-    if grep -qE "^WARN .*OLD_FEATURE_PLAN\.md:42: legacy token 'plans/OTHER\.md' preserved" "$D/.pre-paths-migration-warnings"; then
-      pass "case 8: .pre-paths-migration-warnings contains WARN line"
+  # User-discoverable warnings file at .zskills/audit/migration-warnings.md
+  # (relocated from repo-root .pre-paths-migration-warnings — placement
+  # made user-discoverable per the audit-dir convention).
+  if [ -f "$D/.zskills/audit/migration-warnings.md" ]; then
+    if grep -qE "^WARN .*OLD_FEATURE_PLAN\.md:42: legacy token 'plans/OTHER\.md' preserved" "$D/.zskills/audit/migration-warnings.md"; then
+      pass "case 8: .zskills/audit/migration-warnings.md contains WARN line"
     else
-      fail "case 8: warnings file lacks WARN line" "$(cat "$D/.pre-paths-migration-warnings")"
+      fail "case 8: warnings file lacks WARN line" "$(cat "$D/.zskills/audit/migration-warnings.md")"
+    fi
+    # Markdown header should be present (user-discoverable doc).
+    if head -1 "$D/.zskills/audit/migration-warnings.md" | grep -qE '^# Migration warnings'; then
+      pass "case 8: warnings file has markdown H1 header"
+    else
+      fail "case 8: warnings file missing markdown header" "$(head -3 "$D/.zskills/audit/migration-warnings.md")"
+    fi
+    # Legacy repo-root location must NOT be created.
+    if [ -e "$D/.pre-paths-migration-warnings" ]; then
+      fail "case 8: legacy repo-root .pre-paths-migration-warnings should NOT exist" "found at $D/.pre-paths-migration-warnings"
+    else
+      pass "case 8: legacy repo-root .pre-paths-migration-warnings not created (relocated)"
     fi
   else
-    fail "case 8: .pre-paths-migration-warnings absent" "expected sibling of manifest"
+    fail "case 8: .zskills/audit/migration-warnings.md absent" "expected at audit dir"
   fi
 }
 
@@ -803,6 +817,123 @@ case_12_plain_plans_catchall() {
   fi
 }
 
+# ─── Case 13: cross_ref_rewrite preserves migration-doc lines (PR #211 fix) ─
+# Regression test for the spec-corruption bug found post-Phase-6:
+# the original 4-enclosure rule blindly rewrote tokens inside instruction
+# prose ("Replace `plans/X.md` with ...") and bash fences documenting the
+# migration's own `git mv plans/X.md ...` command. Damaged 13 sites in
+# ZSKILLS_PATH_CONFIG.md alone. This case fixtures every shape of
+# migration-doc context and asserts the legacy form is PRESERVED.
+case_13_cross_ref_rewrite_migration_doc_guard() {
+  local D="$TEST_OUT/paths-migration-fixture-13"
+  init_repo "$D"
+  write_config "$D"
+  mkdir -p "$D/plans"
+
+  # Active plan (so cross_ref_rewrite runs on it). Mix of:
+  #  (a) lines that SHOULD be rewritten (real cross-refs)
+  #  (b) lines that MUST be preserved (migration-doc context)
+  cat > "$D/plans/MIXED_REFS_PLAN.md" <<'PLAN'
+---
+title: Mixed Refs Plan
+status: active
+---
+
+# Plan
+
+## Real cross-refs (should be REWRITTEN)
+
+- See [the canary](plans/CANARY1_HAPPY.md) for happy path.
+- Run `/run-plan plans/THERMAL_DOMAIN.md finish auto` to ship it.
+- Backticked: `plans/FOO_PLAN.md` is the next thing.
+
+## Migration-doc context (must be PRESERVED — legacy form intentional)
+
+- Replace each occurrence of `plans/QE_ISSUES.md` with `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`.
+- The bash fence below documents the migration's own command:
+
+```bash
+if [ -e plans/PLAN_INDEX.md ]; then
+  git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
+  echo "moved: plans/PLAN_INDEX.md to .zskills/audit/PLAN_INDEX.md"
+fi
+```
+
+- Critical: `plans/SPRINT_REPORT.md` (wrong path) — old skill hardcoded this.
+- MATCH/NON-MATCH table:
+  | `[See PLAN_X](plans/PLAN_X.md)` | MATCH (markdown link) gives `[See PLAN_X](docs/plans/PLAN_X.md)` |
+- WARN format example: `WARN docs/plans/OLD.md:42: legacy token 'plans/OTHER.md' preserved`.
+PLAN
+
+  ( cd "$D" && git add -A && git commit -q -m "fixture init" )
+
+  # Run migration via the standard helper (sets $PORTABLE).
+  run_migrate "$D" >/dev/null 2>&1
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 13: migration exited non-zero" "rc=$rc"
+    return
+  fi
+
+  local out="$D/docs/plans/MIXED_REFS_PLAN.md"
+  if [ ! -f "$out" ]; then
+    fail "case 13: post-migration plan absent" "expected $out"
+    return
+  fi
+
+  # (a) Real cross-refs SHOULD have been rewritten.
+  if grep -q '\[the canary\](docs/plans/CANARY1_HAPPY.md)' "$out"; then
+    pass "case 13: markdown link real-cross-ref REWRITTEN"
+  else
+    fail "case 13: markdown link should be rewritten to docs/plans/" "$(grep -F 'the canary' "$out")"
+  fi
+  if grep -qE '/run-plan[[:space:]]+docs/plans/THERMAL_DOMAIN\.md' "$out"; then
+    pass "case 13: slash-command real-cross-ref REWRITTEN"
+  else
+    fail "case 13: slash-command should be rewritten" "$(grep -F THERMAL_DOMAIN "$out")"
+  fi
+  if grep -q '`docs/plans/FOO_PLAN.md`' "$out"; then
+    pass "case 13: backticked real-cross-ref REWRITTEN"
+  else
+    fail "case 13: backtick real-cross-ref should be rewritten" "$(grep -F FOO_PLAN "$out")"
+  fi
+
+  # (b) Migration-doc context MUST be preserved (legacy form intact).
+  if grep -qF '`plans/QE_ISSUES.md`' "$out"; then
+    pass "case 13: 'Replace .plans/X.md.' instruction prose PRESERVED"
+  else
+    fail "case 13: instruction prose was incorrectly rewritten" "$(grep -F QE_ISSUES "$out")"
+  fi
+  if grep -qE 'git mv plans/PLAN_INDEX\.md \.zskills/audit/PLAN_INDEX\.md' "$out"; then
+    pass "case 13: 'git mv plans/X.md ...' bash fence PRESERVED"
+  else
+    fail "case 13: git mv command was incorrectly rewritten" "$(grep -F 'git mv' "$out")"
+  fi
+  if grep -qE 'moved: plans/PLAN_INDEX\.md' "$out"; then
+    pass "case 13: migration-stdout 'moved:' line PRESERVED"
+  else
+    fail "case 13: 'moved:' line was incorrectly rewritten" "$(grep -F 'moved:' "$out")"
+  fi
+  if grep -qF '`plans/SPRINT_REPORT.md` (wrong path)' "$out"; then
+    pass "case 13: '(wrong path)' annotation PRESERVED"
+  else
+    fail "case 13: '(wrong path)' line was incorrectly rewritten" "$(grep -F 'wrong path' "$out")"
+  fi
+  if grep -qE 'PLAN_X\]\(plans/PLAN_X\.md\)' "$out"; then
+    pass "case 13: MATCH-table 'before' column PRESERVED"
+  else
+    fail "case 13: MATCH-table before column was incorrectly rewritten" "$(grep -F 'PLAN_X' "$out")"
+  fi
+  if grep -qF "legacy token 'plans/OTHER.md'" "$out"; then
+    pass "case 13: WARN-format example PRESERVED"
+  else
+    fail "case 13: WARN-format example was incorrectly rewritten" "$(grep -F 'legacy token' "$out")"
+  fi
+
+  cd "$REPO_ROOT" || true
+  rm -rf -- "$D"
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
@@ -817,6 +948,7 @@ case_9_hook_rerender_gitignore
 case_10_rewrite_only_recovery
 case_11_chmod_fallback
 case_12_plain_plans_catchall
+case_13_cross_ref_rewrite_migration_doc_guard
 
 echo
 echo "---"
