@@ -184,23 +184,44 @@ check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.fin
 check_fixed run-plan "read-auth: PR worktree path"  'PR_WORKTREE_PATH="/tmp/${PROJECT_NAME}-pr-${PLAN_SLUG}"'
 check_fixed run-plan "read-auth: feature-branch branch" 'PLAN_FILE_FOR_READ="$PR_WORKTREE_PATH/$PLAN_FILE"'
 check_fixed run-plan "read-auth: main fallback"     'PLAN_FILE_FOR_READ="$MAIN_ROOT/$PLAN_FILE"'
-# PR-body progress sync (issue #60): PR mode opens the PR once in Phase 6
-# and used to never revisit the body, leaving the progress checklist frozen
-# at Phase 1. The fix wraps the PR body's progress section in HTML-comment
-# markers at open time (modes/pr.md) and adds a Phase 4 splice step
-# (SKILL.md) that rewrites only the marker-enclosed region, preserving
-# user-authored prose outside. Conformance assertions:
-#   1. Both markers exist in the PR body template.
-#   2. Phase 4 invokes gh pr edit for the body sync.
-#   3. Phase 4 splices between the same two markers.
-#   4. Phase 4 emits the NOTICE-on-missing-markers fallback text (skipping
-#      rather than erroring), preserving graceful behavior for PRs not
-#      opened by /run-plan.
+# PR-body progress sync (issue #60, helper-extraction issue #212): PR mode
+# opens the PR once in Phase 6 and used to never revisit the body, leaving
+# the progress checklist frozen at Phase 1. The fix wraps the PR body's
+# progress section in HTML-comment markers at open time (modes/pr.md) and
+# Phase 4 step 5 invokes `scripts/sync-pr-body-progress.sh` to splice an
+# updated progress block between the markers. Conformance assertions:
+#   1. Both markers exist somewhere under the skill tree (modes/pr.md
+#      writes them at PR-open; the helper greps for them at splice time).
+#   2. Phase 4 step 5 references the helper script by name (collapsed-prose
+#      check — if the orchestrator silently drops the invocation, this
+#      tripwires).
+#   3. The helper exists and is executable.
+#   4. The helper itself contains both marker literals (typo-guard).
+#   5. The helper performs the splice with the canonical regex.
+#   6. The helper emits the NOTICE-on-missing-markers fallback.
+#   7. The helper invokes `gh pr edit --body-file` (safer than --body for
+#      multi-line content).
 check_fixed run-plan "pr body: start marker"          '<!-- run-plan:progress:start -->'
 check_fixed run-plan "pr body: end marker"            '<!-- run-plan:progress:end -->'
-check_fixed run-plan "phase4: gh pr edit body sync"   'gh pr edit "$PR_NUMBER" --body'
-check_fixed run-plan "phase4: splice between markers" '(.*$START_MARKER)(.*)($END_MARKER.*)'
-check       run-plan "phase4: NOTICE on missing markers" 'markers not found.*expected for PRs not opened by /run-plan'
+check_fixed run-plan "phase4: references sync-pr-body-progress.sh helper" \
+            'sync-pr-body-progress.sh'
+check_executable run-plan "scripts/sync-pr-body-progress.sh" \
+                 "phase4: helper exists+executable"
+check_in_file run-plan "scripts/sync-pr-body-progress.sh" \
+              "phase4 helper: start marker literal" \
+              'run-plan:progress:start'
+check_in_file run-plan "scripts/sync-pr-body-progress.sh" \
+              "phase4 helper: end marker literal" \
+              'run-plan:progress:end'
+check_in_file run-plan "scripts/sync-pr-body-progress.sh" \
+              "phase4 helper: splice between markers" \
+              '\(\.\*\$START_MARKER\)\(\.\*\)\(\$END_MARKER\.\*\)'
+check_in_file run-plan "scripts/sync-pr-body-progress.sh" \
+              "phase4 helper: NOTICE on missing markers" \
+              'markers not found.*expected for PRs not opened by /run-plan'
+check_in_file run-plan "scripts/sync-pr-body-progress.sh" \
+              "phase4 helper: gh pr edit --body-file" \
+              'gh pr edit.*--body-file|"\$GH" pr edit.*--body-file'
 # Test-command resolution (caught by CANARY10 re-run — verifier defaulted to
 # a template file because no skill resolved testing.full_cmd). Both /run-plan
 # and /verify-changes MUST have the three-case decision tree: config → use,
