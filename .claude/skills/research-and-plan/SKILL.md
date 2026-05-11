@@ -7,7 +7,7 @@ description: >-
   meta-plan where each phase delegates to /run-plan.
   Usage: /research-and-plan [output FILE] <description...>
 metadata:
-  version: "2026.05.07+81831b"
+  version: "2026.05.10+6dec96"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -383,8 +383,10 @@ preserved. Tracking supplements the verification process; it does not replace it
 ### Finalization
 
 1. Write the meta-plan to the output path.
-2. Update `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` if it exists (add a row to "Ready to Run").
-   If it doesn't exist, suggest `/plans rebuild`.
+2. **Plan index — do not touch.** The plan index is regenerated from
+   source-of-truth by `/plans rebuild` and auto-refreshed by `/plans`
+   Mode: Show when the source has changed. No manual update needed
+   here.
 3. Present the result:
    > Meta-plan written to `$ZSKILLS_PLANS_DIR/<FILE>.md` with N sub-plans.
    > Sub-plans: [list with paths]

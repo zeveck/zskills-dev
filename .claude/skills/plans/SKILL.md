@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.07+c5246c"
+  version: "2026.05.10+c474f6"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -102,12 +102,53 @@ NOT appear as separate top-level entries.
 
 ## Mode: Show (bare `/plans`)
 
-1. Read `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`.
-2. If the file does not exist, **auto-run rebuild** (Mode: Rebuild below) to
-   create it, then display the newly generated index.
-3. If the file exists, display an **actionable dashboard** — not a one-line
-   summary. Show the actual plan names and status so the user can decide
-   what to work on:
+1. Compute the source mtime — the most recently modified of
+   `$ZSKILLS_PLANS_DIR/*.md` and `.zskills/monitor-state.json`. Compare
+   against `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`'s mtime. If the index is
+   missing OR the source is newer, **auto-run Mode: Rebuild** before
+   reading. There is no staleness warning — the source-staleness check
+   guarantees the index reflects current source on every Mode: Show
+   invocation. Drop-in script:
+
+   <!-- allow-hardcoded: TZ=America/New_York reason: the "Last rebuilt" timestamp embedded in PLAN_INDEX.md is documented as ET in the user-visible header line; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
+   ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   MAIN_ROOT=$(git rev-parse --show-toplevel)
+   ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
+     source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+
+   INDEX="$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"
+   STATE="$MAIN_ROOT/.zskills/monitor-state.json"
+
+   needs_rebuild() {
+     [ ! -f "$INDEX" ] && return 0
+     local idx_mtime src_mtime f
+     idx_mtime=$(stat -c %Y "$INDEX" 2>/dev/null || stat -f %m "$INDEX")
+     src_mtime=0
+     for f in "$ZSKILLS_PLANS_DIR"/*.md "$STATE"; do
+       [ -e "$f" ] || continue
+       local m
+       m=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")
+       [ "$m" -gt "$src_mtime" ] && src_mtime="$m"
+     done
+     [ "$src_mtime" -gt "$idx_mtime" ]
+   }
+
+   if needs_rebuild; then
+     # Invoke Mode: Rebuild (see below).
+     REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+     mkdir -p "$ZSKILLS_AUDIT_DIR"
+     PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
+       python3 -m zskills_monitor.collect \
+       | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+           --rebuilt-at "$REBUILT_AT" \
+       > "$INDEX"
+   fi
+   ```
+
+2. Read `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`.
+3. Display an **actionable dashboard** — not a one-line summary. Show the
+   actual plan names and status so the user can decide what to work on:
 
    ```
    Plans: 5 ready, 2 in progress, 10 complete, 6 canaries
@@ -134,12 +175,15 @@ NOT appear as separate top-level entries.
    Canaries count comes from the index's Canaries section; never promote
    a canary into Ready/In Progress in the dashboard view.
 
-4. If the file is older than 24 hours (check mtime), append:
-   > ⚠️ Index is older than 24 hours. Run `/plans rebuild` to refresh.
-5. Append a one-line footer:
+4. Append a one-line footer:
    > Note: this ranking is independent of the monitor dashboard's Ready
    > queue. For interactive prioritization, open /zskills-dashboard.
-6. **Exit.**
+5. **Exit.**
+
+No 24-hour staleness warning is emitted — Step 1's source-staleness
+auto-rebuild guarantees the index is never stale at display time. If
+you ever see "this looks out of date" output, the bug is in Step 1's
+mtime comparison, not a missing manual rebuild.
 
 ## Mode: Details (`/plans details`)
 
@@ -201,157 +245,57 @@ when you have many plans and can't remember what each one is about.
 
 ## Mode: Rebuild (`/plans rebuild`)
 
-Regenerate `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` from the aggregator snapshot. The
-implementing agent shells out to `python3 -m zskills_monitor.collect`
-and renders the six-section index from the returned JSON — there is
-**no in-prose classifier**. All status, category, phase-count, and
-meta-plan inference happens inside `collect.py`.
+Regenerate `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md` from the aggregator
+snapshot. **There is no in-prose classifier and no in-prose
+renderer.** Classification (`category`, `status`, `phase_count`,
+`meta_plan`, `queue.column`) lives in `collect.py`; section
+bucketing, ordering, meta-plan sub-plan indentation, and markdown
+emission live in `skills/plans/scripts/render-index.py`. The
+implementing agent runs a single pipeline and exits.
 
-### Step 1 — Invoke the aggregator
-
+<!-- allow-hardcoded: TZ=America/New_York reason: the "Last rebuilt" timestamp embedded in PLAN_INDEX.md is documented as ET in the user-visible header line; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(git rev-parse --show-toplevel)
-SNAPSHOT_JSON=$(PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
-  python3 -m zskills_monitor.collect)
-RC=$?
-if [ "$RC" -ne 0 ]; then
-  echo "ERROR: python3 -m zskills_monitor.collect failed (rc=$RC)" >&2
+ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
+  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+
+REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+mkdir -p "$ZSKILLS_AUDIT_DIR"
+
+set -o pipefail
+if ! PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
+       python3 -m zskills_monitor.collect \
+     | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+         --rebuilt-at "$REBUILT_AT" \
+     > "$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"; then
+  echo "ERROR: python3 -m zskills_monitor.collect failed (or render-index.py rejected its output)" >&2
   echo "Cannot regenerate $ZSKILLS_AUDIT_DIR/PLAN_INDEX.md — bailing out." >&2
   exit 1
 fi
 ```
 
-If the invocation fails (e.g. `python3` missing, `zskills_monitor`
-package unimportable, runtime exception), the rebuild aborts with a
-non-zero exit and the diagnostic above. **Do not** synthesize a
-fallback classifier — Phase 9 of `plans/ZSKILLS_MONITOR_PLAN.md`
-explicitly removes the legacy bash classifier so that
-`collect.py` is the single source of truth for plan classification.
+The script ownership split — `collect.py` for classification,
+`render-index.py` for rendering — is deliberate. PR #214 surfaced
+a prose-driven rebuild that misclassified 5 canaries as Complete
+because the precedence rule was buried in a parenthetical inside a
+prose table; pulling rendering into a deterministic Python helper
+removes that bug class. Section precedence (`category=="canary"`
+NEVER promotes; `category` in `{reference, issue_tracker}` is the
+second filter; only then does `status` apply), ordering (explicit
+`queue.column=="ready"` by index, then default by recency), and
+meta-plan sub-plan indentation are all enforced in code in
+`render-index.py`.
 
-### Step 2 — Group `snapshot.plans[]` into sections
+The "Index → snapshot section mapping" table above stays as
+documentation but is no longer load-bearing for execution — the
+single source of truth is `render-index.py`.
 
-Apply the section-selector table from "Index → snapshot section
-mapping" above. Concretely (parse `$SNAPSHOT_JSON` with a JSON-aware
-helper — `python3 -c 'import json,sys; …'` is fine):
+### Optional context — block-plan coverage line
 
-- **Ready to Run** ← plan where (`category=="executable"` AND
-  `status=="active"` AND `phases_done == 0` AND
-  `queue.column != "ready"`) OR (`queue.column == "ready"`).
-- **In Progress** ← plan where `category=="executable"` AND
-  `status=="active"` AND `1 <= phases_done < phase_count`.
-- **Needs Review** ← plan where `category=="executable"` AND
-  `status=="conflict"`.
-- **Complete** ← plan where `status` is `"complete"` or `"landed"`.
-- **Canaries** ← plan where `category=="canary"`. Render
-  per-canary tracker status from the snapshot's `phases[]`:
-  all done → `Complete`; some done → `In Progress`; none done →
-  `Ready`; no `phases[]` → `Manual — no tracker`.
-- **Reference (not executable)** ← plan where `category` is
-  `"reference"` or `"issue_tracker"`.
-
-For each meta-plan (`meta_plan==true`), list its top-level entry under
-its own section, then indent each slug in its `sub_plans[]` underneath
-with `↳`. Sub-plans MUST NOT appear as separate top-level entries —
-look them up in `snapshot.plans[]` by `slug` and write them only as
-the meta-plan's children.
-
-### Step 3 — Order within each section
-
-- **Ready to Run**: items whose `queue.column == "ready"` come first
-  (in their `queue.index` order from the snapshot — this preserves
-  user-set priority from `/zskills-dashboard`). Then default-column
-  Ready entries, ordered by recency (newest first; tiebreak alphabetical
-  by `slug`). Assign priority labels: `High` for plans referenced as
-  fix-issues "too complex" skips (check `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
-  if it exists for context); `Medium` for plans created within the last 14
-  days; `Low` otherwise.
-- **In Progress / Complete / Reference / Canaries**: alphabetical by
-  `slug`.
-- **Needs Review**: alphabetical by `slug`.
-
-### Step 4 — Write `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`
-
-Render with this structure (preserves the historical six-section shape):
-
-```markdown
-# Plan Index
-
-Auto-generated by `/plans rebuild`. Last rebuilt: YYYY-MM-DD HH:MM ET.
-
-Totals: N plans — A ready, B in progress, C complete, D canaries, E reference.
-
-## Ready to Run
-
-| Plan | Phases | Next Phase | Priority | Notes |
-|------|--------|------------|----------|-------|
-| [EXAMPLE_PLAN.md](EXAMPLE_PLAN.md) | 5 | 1 -- Setup | High | Referenced by fix-issues skip #NNN |
-
-## In Progress
-
-| Plan | Phases | Current Phase | Next Phase | Notes |
-|------|--------|---------------|------------|-------|
-| [FEATURE_PLAN.md](FEATURE_PLAN.md) | 8 | 4b -- Phase B | 4c -- Phase C | 4 of 8 phases done |
-
-## Needs Review
-
-Old-format plans without progress trackers, OR plans whose frontmatter
-`status` is `conflict`. Status is ambiguous — may be complete, partially
-done, or not started. Triage these once: mark as Complete, move to
-Ready, or rewrite with `/draft-plan plans/FILE.md`.
-
-| Plan | Phases | Issue | Notes |
-|------|--------|-------|-------|
-| [BETTER_SCOPE_PLAN.md](BETTER_SCOPE_PLAN.md) | 3 | No progress tracker | Check if scope overhaul was implemented |
-
-## Complete
-
-| Plan | Phases | Notes |
-|------|--------|-------|
-| [RUNTIME_PARITY_META.md](RUNTIME_PARITY_META.md) | 4 | Meta-plan — all sub-plans done |
-|   ↳ [RUNTIME_SIGNAL_FLOW_BLOCKS.md](RUNTIME_SIGNAL_FLOW_BLOCKS.md) | 3 | Sub-plan of RUNTIME_PARITY_META |
-|   ↳ [RUNTIME_DEPLOY_SERIALIZATION.md](RUNTIME_DEPLOY_SERIALIZATION.md) | 2 | Sub-plan of RUNTIME_PARITY_META |
-| [CODEGEN_PLAN.md](CODEGEN_PLAN.md) | 3 | All phases done |
-
-## Canaries
-
-Canaries are re-runnable test fixtures; their tracker state may not reflect
-actual run history. To check whether a canary has run, examine git history
-for its output file or a PR with its name.
-
-| Canary | Tracker Status | Phases | Notes |
-|--------|----------------|--------|-------|
-| [CANARY1_HAPPY.md](CANARY1_HAPPY.md) | Ready | 3 | Symbol: ⬜ |
-| [REBASE_CONFLICT_CANARY.md](REBASE_CONFLICT_CANARY.md) | In Progress | 4 | 2 of 4 phases done |
-| [CANARY11_SCOPE_VIOLATION.md](CANARY11_SCOPE_VIOLATION.md) | Manual — no tracker | n/a | No Progress Tracker |
-
-## Reference (not executable)
-
-| File | Type | Description |
-|------|------|-------------|
-| [OVERVIEW.md](OVERVIEW.md) | Reference | Project overview |
-| [ISSUES_PLAN.md](ISSUES_PLAN.md) | Issue Tracker | Master issue index |
-| Block Plans (`$ZSKILLS_PLANS_DIR/blocks/`) | Reference | {BLOCK_IMPLS}/{BLOCK_PLANS} implemented |
-```
-
-**Notes for each section:**
-
-- If a section would be empty, include the table header with a single row:
-  `| (none) | | | | |`.
-- Use relative links (just the filename, since the index lives in
-  `$ZSKILLS_PLANS_DIR`).
-- `phase_count` from the snapshot drives the "Phases" column; for
-  In Progress entries, the "Current Phase" is the last `phases[]` row
-  with `status=="done"` and "Next Phase" is the first remaining row.
-- Do NOT recompute classification by reading plan files in this skill;
-  every category/status/phase value comes from the snapshot.
-- Canary tracker status: derive from the snapshot's `phases[]` per
-  Step 2's Canaries rule. Stale entries are acceptable — the section
-  is for visual segregation, not ground-truth run history.
-
-### Step 5 — Block-plan coverage line (optional context)
-
-The "Reference (not executable)" footer line can include a count of
-implemented blocks vs. block plans:
+The renderer's "Reference (not executable)" section is generated
+from the snapshot. If a downstream agent wants a block-plan coverage
+note in the dashboard view, the count is available via:
 
 ```bash
 BLOCK_PLANS=$(find "$ZSKILLS_PLANS_DIR/blocks" -name '*.md' 2>/dev/null | wc -l)
@@ -360,7 +304,9 @@ BLOCK_IMPLS=$(grep -c "    type: '" src/library/registry.js 2>/dev/null)
 
 Use the registry file for the implementation count — it's the
 authoritative registry. `find *Block.js` undercounts because some
-components don't follow the `*Block.js` naming convention.
+components don't follow the `*Block.js` naming convention. The
+renderer itself does not consult this — it's context for Mode: Show
+prose if desired.
 
 ## Mode: Next (`/plans next`)
 
@@ -371,10 +317,11 @@ components don't follow the `*Block.js` naming convention.
    the file exists for subsequent `/plans` calls. This is a
    side-effect, not the source of truth — `Mode: Next` reads its
    answer from the snapshot, not from the regenerated index.
-3. Pick the highest-priority Ready entry using Mode: Rebuild Step 3's
-   ordering: `queue.column == "ready"` items first (in
-   `queue.index` order), then default-column Ready entries by
-   recency.
+3. Pick the highest-priority Ready entry using the renderer's ordering
+   (mirrored in `render-index.py`'s `_sort_ready`):
+   `queue.column == "ready"` items first (in `queue.index` order),
+   then default-column Ready entries by recency (newest first;
+   alphabetical tiebreak by `slug`).
 4. If found, output:
    > **Next plan to run:** `EXAMPLE_PLAN.md`
    > Phases: 5, starting at Phase 1 -- Setup
