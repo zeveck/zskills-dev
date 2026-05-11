@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.08+fc671e"
+  version: "2026.05.10+c4a711"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1810,79 +1810,36 @@ commits on the feature branch.
    wrapped with HTML-comment markers (`<!-- run-plan:progress:start -->`
    and `<!-- run-plan:progress:end -->`). As subsequent phases land on the
    feature branch, the PR body must be updated so readers see current
-   progress — not the stale Phase 1 snapshot. Splice ONLY the
-   marker-enclosed region; preserve user-authored prose outside the
-   markers verbatim.
+   progress — not the stale Phase 1 snapshot.
 
    Skip this step entirely in cherry-pick / direct modes — there is no PR.
-   Skip this step in PR mode if no PR exists yet (Phase 6 hasn't opened
-   one), e.g. when Phase 4 runs between phases in finish mode before any
-   push has happened. Phase 6's Create PR step is authoritative for the
-   initial body.
+   The helper handles all in-PR-mode gating (missing PR, missing markers,
+   gh failure) gracefully and never blocks Phase 4 since the worktree
+   tracker commit is the source of truth and the PR body is a convenience
+   surface.
 
    ```bash
-   # Only run in PR mode, and only if a PR already exists for this branch.
+   # Resolve PR_NUMBER for this branch when not already set, then invoke
+   # the splice helper. Trailing `|| true` ensures Phase 4 never fails on
+   # a body-sync failure — the helper itself exits 0 for the documented
+   # graceful failure modes (missing PR, missing markers, gh edit error).
    if [ "$LANDING_MODE" = "pr" ]; then
-     PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)
+     PR_NUMBER="${PR_NUMBER:-$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null)}"
      if [ -n "$PR_NUMBER" ]; then
-       # Capture current PR body to a temp file (per-PR path avoids cross-run
-       # collisions). Use gh's --jq to extract the JSON string cleanly; this
-       # yields raw markdown with real newlines (no JSON escaping).
-       PR_BODY_FILE="/tmp/pr-body-${PLAN_SLUG}-${PR_NUMBER}.md"
-       if ! gh pr view "$PR_NUMBER" --json body --jq '.body' > "$PR_BODY_FILE" 2>/dev/null; then
-         echo "NOTICE: skipping PR body sync: gh pr view #$PR_NUMBER failed" >&2
-       else
-         CURRENT_BODY=$(cat "$PR_BODY_FILE")
-         START_MARKER='<!-- run-plan:progress:start -->'
-         END_MARKER='<!-- run-plan:progress:end -->'
-
-         # Regenerate the progress section from the plan tracker — SAME
-         # format as Phase 6 (Step 5) writes at PR-open time. Keep this in
-         # sync with that template.
-         COMPLETED_PHASES=$(grep -E '^\| .* \| ✅' "$PLAN_FILE" | sed 's/|//g' | awk '{$1=$1};1' || echo "See plan file")
-         NEW_PROGRESS="**Phases completed:**
-$COMPLETED_PHASES"
-
-         # Splice with bash regex (NO jq — zskills avoids jq in skills).
-         # The regex captures: (prefix-up-to-and-including-start-marker)
-         # (anything-in-between) (end-marker-and-rest). We keep groups 1
-         # and 3 and replace group 2 with the new progress content.
-         # Graceful on missing markers: emit NOTICE and skip the update.
-         if [[ "$CURRENT_BODY" =~ (.*$START_MARKER)(.*)($END_MARKER.*) ]]; then
-           PREFIX="${BASH_REMATCH[1]}"
-           SUFFIX="${BASH_REMATCH[3]}"
-           UPDATED_BODY="${PREFIX}
-${NEW_PROGRESS}
-${SUFFIX}"
-           if ! gh pr edit "$PR_NUMBER" --body "$UPDATED_BODY" >/dev/null 2>&1; then
-             echo "WARNING: gh pr edit #$PR_NUMBER failed — PR body not synced (auth/network?)" >&2
-           else
-             echo "Synced PR #$PR_NUMBER body progress section."
-           fi
-         else
-           echo "NOTICE: skipping PR body sync: markers not found; this is expected for PRs not opened by /run-plan PR mode" >&2
-         fi
-         rm -f "$PR_BODY_FILE"
-       fi
+       bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/sync-pr-body-progress.sh" \
+         --pr "$PR_NUMBER" \
+         --plan-file "$PLAN_FILE" \
+         --branch "$BRANCH_NAME" || true
      fi
    fi
    ```
 
-   **Design properties:**
-   - **Idempotent:** the splice only rewrites the marker-enclosed region;
-     safe to run multiple times per phase.
-   - **Headless-safe:** no interactive prompts; operates via `gh pr view`
-     + `gh pr edit`.
-   - **Preserves user edits outside markers:** user-authored prose
-     (additional sections, links, review notes) outside the marker pair
-     survives the splice.
-   - **Graceful on missing markers:** emit a NOTICE to stderr and skip
-     the update. Do NOT fail Phase 4 — the plan-tracker commit on the
-     feature branch is the source of truth; the PR body is a convenience
-     surface.
-   - **No jq:** splice is pure bash regex (`BASH_REMATCH`). `gh pr view
-     --json body --jq '.body'` is used only to extract the JSON string
-     cleanly (`.jq` is a flag on `gh`, not a separate binary dep).
+   **Design properties:** idempotent (re-run with no tracker change leaves
+   the body byte-identical); preserves user-authored prose outside the
+   markers; pure bash (no jq, no python). See
+   `skills/run-plan/scripts/sync-pr-body-progress.sh` for the
+   implementation, marker sentinels, and graceful-failure discriminator
+   lines (NOTICE / WARNING / ERROR).
 
 ## Phase 5 — Write Report
 
