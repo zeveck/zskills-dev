@@ -307,3 +307,16 @@ N/A for all 3 issues. No UI, editor, or styles files changed. Pure skill-prose +
 ### Landing
 
 PR mode (per `execution.landing: "pr"` config). Two separate PRs (one per worktree). Both PRs base on `ef3e36f` (current local main, which includes the PR #218 untrack commit). When PR #218 merges first, the fix branches will need rebase onto new main — `/land-pr` handles this in its rebase step.
+
+## Sprint — 2026-05-11 16:40 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** issue-225
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #225 | create-worktree.sh: assert local main is not ahead of origin/main | /tmp/zskills-fix-issue-225 | da9729d | +1 case (test-create-worktree.sh #23 AHEAD-check) | PASS (verifier subagent ran tests/run-all.sh 2867/2867) | N/A (script change, no UI) |
+
+**Sprint scope:** Single mechanical fix per the rewritten #225 (Layer 2 only). Added `AHEAD_COUNT=$(git -C "$MAIN_ROOT" rev-list --count "origin/$BASE..$BASE")` check after the existing ff-merge BEHIND-check in `skills/create-worktree/scripts/create-worktree.sh`. New exit code 10. Tier-1 registry updated; mirrors regenerated; `metadata.version` bumped on `create-worktree` (2026.05.11+410738) and `update-zskills` (2026.05.11+dd37bf) since `tier1-shipped-hashes.txt` lives under update-zskills.
+
+**Implementer-verifier handoff note:** The exit-code header table in the script grew from 5/6/7/8 to 5/6/7/8/9/10 — exit 9 (consumer post-create-worktree.sh failure) was a pre-existing-but-undocumented code that the implementer added to the header alongside the new 10. Minor in-scope cleanup, verified correct.
