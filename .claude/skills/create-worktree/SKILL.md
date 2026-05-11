@@ -10,7 +10,7 @@ description: >-
   .zskills-tracked / .worktreepurpose writes. Prints the worktree
   path on stdout; all progress/errors go to stderr.
 metadata:
-  version: "2026.05.02+15dae4"
+  version: "2026.05.11+410738"
 ---
 
 # /create-worktree — Unified Worktree Creation
