@@ -280,6 +280,30 @@ print(f"{section}|queue_col={queue_col}")
     PLAN_INDEX_PATH="$REPO_ROOT/plans/PLAN_INDEX.md"
   fi
 
+  # Regenerable-cache model (post-PR #218 untrack of PLAN_INDEX.md): on
+  # fresh checkouts (CI runners), the file is absent by design — it's
+  # regenerated on demand by `/plans rebuild` via the render-index.py
+  # helper shipped in this PR (#215+#216). Regenerate before the parity
+  # check rather than fail-loud on absence. The loud-fail signal is now
+  # "regeneration produced empty/missing output" (helper or aggregator
+  # broken), not "file doesn't exist."
+  if [ -z "$PLAN_INDEX_PATH" ]; then
+    RENDER_HELPER="$REPO_ROOT/skills/plans/scripts/render-index.py"
+    if [ -f "$RENDER_HELPER" ]; then
+      PLAN_INDEX_PATH="$REPO_ROOT/.zskills/audit/PLAN_INDEX.md"
+      mkdir -p "$(dirname "$PLAN_INDEX_PATH")"
+      REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+      PYTHONPATH="$PKG_PARENT" python3 -m zskills_monitor.collect \
+        --repo-root "$REPO_ROOT" \
+        | python3 "$RENDER_HELPER" --rebuilt-at "$REBUILT_AT" \
+        > "$PLAN_INDEX_PATH"
+      if [ ! -s "$PLAN_INDEX_PATH" ]; then
+        fail "AC-7: regeneration via render-index.py produced empty/missing PLAN_INDEX.md — helper or aggregator broken"
+        PLAN_INDEX_PATH=""
+      fi
+    fi
+  fi
+
   if [ -n "$PLAN_INDEX_PATH" ]; then
     LIVE_OUT=$(PYTHONPATH="$PKG_PARENT" python3 -m zskills_monitor.collect \
       --repo-root "$REPO_ROOT" 2>&1)
