@@ -871,6 +871,72 @@ rm -f -- "$ERR_22"
 [ -n "$STDOUT_22" ] && [ -d "$STDOUT_22" ] && git -C "$FIX_22" worktree remove --force "$STDOUT_22" 2>/dev/null || true
 rm -rf "$FIX_22" "$EXPECTED_WT_22"
 
+# ────────────────────────────────────────────────────────────────────
+# Case 23 (#225) — Pre-flight AHEAD-check: local $BASE ahead of
+# origin/$BASE → rc 10 with stderr naming the ahead state. Symmetric
+# to exit 7's BEHIND-check on the ff-merge. Fixture: a fresh local
+# repo + a bare "fake origin" remote; seed both with one shared commit
+# (origin/main), then add a second commit only on local main. With
+# preflight ON (default), create-worktree.sh's fetch + ff-merge no-op
+# (origin is an ancestor), so the AHEAD-check must fire.
+# ────────────────────────────────────────────────────────────────────
+FIX_23="/tmp/cw-c23-fixture-$$"
+FAKE_ORIGIN_23="/tmp/cw-c23-origin-$$.git"
+rm -rf "$FIX_23" "$FAKE_ORIGIN_23"
+mkdir -p "$FIX_23/scripts"
+
+# Bare fake origin to fetch from (one commit on main).
+git init --bare --quiet -b main "$FAKE_ORIGIN_23"
+
+# Local repo cloned style: init + remote add + seed shared commit, push,
+# then add a second LOCAL-only commit so local main is ahead by 1.
+git init --quiet -b main "$FIX_23"
+git -C "$FIX_23" config user.email "t@t"
+git -C "$FIX_23" config user.name "t"
+git -C "$FIX_23" remote add origin "$FAKE_ORIGIN_23"
+cp "$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_23/scripts/"
+cp "$REPO_ROOT/skills/create-worktree/scripts/worktree-add-safe.sh" "$FIX_23/scripts/"
+chmod +x "$FIX_23/scripts/sanitize-pipeline-id.sh" "$FIX_23/scripts/worktree-add-safe.sh"
+
+# Shared commit: present on both local and origin.
+echo "shared" > "$FIX_23/README.md"
+git -C "$FIX_23" add README.md
+git -C "$FIX_23" commit --quiet -m "shared base"
+git -C "$FIX_23" push --quiet origin main
+
+# Local-only commit: local main is now 1 ahead of origin/main.
+echo "local-only" > "$FIX_23/extra.txt"
+git -C "$FIX_23" add extra.txt
+git -C "$FIX_23" commit --quiet -m "local divergent commit"
+LOCAL_HEAD_23=$(git -C "$FIX_23" rev-parse HEAD)
+
+SLUG_23="c23"
+EXPECTED_WT_23="/tmp/$(basename "$FIX_23")-$SLUG_23"
+
+ERR_23=$(mktemp)
+STDOUT_23=$(cd "$FIX_23" && bash "$SCRIPT" --pipeline-id "test.c23.$$" "$SLUG_23" 2>"$ERR_23")
+RC_23=$?
+ERR_BODY_23="$(cat "$ERR_23" 2>/dev/null || true)"
+
+# Three asserts: rc must be 10; stderr must mention "ahead"; no worktree
+# may have been created on disk; AND local main must NOT have moved (the
+# check fires AFTER fetch+ff-merge, so a fetch did happen, but local
+# main is still at LOCAL_HEAD_23 because ff-merge no-op'd).
+POST_HEAD_23=$(git -C "$FIX_23" rev-parse HEAD 2>/dev/null || echo "")
+if [ "$RC_23" -eq 10 ] \
+   && echo "$ERR_BODY_23" | grep -q 'ahead of origin/main' \
+   && [ ! -d "$EXPECTED_WT_23" ] \
+   && [ "$POST_HEAD_23" = "$LOCAL_HEAD_23" ]; then
+  pass "23 (#225) AHEAD-check: rc=10, stderr names ahead state, no worktree created, local main unchanged"
+else
+  fail "23 (#225) AHEAD-check: rc=$RC_23 wt-exists=$([ -d "$EXPECTED_WT_23" ] && echo yes || echo no) head-pre='$LOCAL_HEAD_23' head-post='$POST_HEAD_23'"
+  echo "  --- stderr ---"; echo "$ERR_BODY_23"
+fi
+rm -f -- "$ERR_23"
+# No worktree to remove (rc 10 = pre-create exit). Wipe the fixture and the
+# (non-existent but defensive) expected WT path.
+rm -rf "$FIX_23" "$FAKE_ORIGIN_23" "$EXPECTED_WT_23"
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

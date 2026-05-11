@@ -20,8 +20,10 @@
 #   4  Branch ahead of base without --allow-resume
 #   5  Input validation (bad slug, slash in --prefix, unknown flag, not in git, install-integrity)
 #   6  Pre-flight fetch failed (retryable)
-#   7  Pre-flight ff-merge not possible (divergent main)
+#   7  Pre-flight ff-merge not possible (divergent base behind)
 #   8  Post-create write failed (rolled back)
+#   9  Consumer post-create-worktree.sh stub failed
+#  10  Pre-flight: local $BASE is ahead of origin/$BASE (divergent ahead — #225)
 
 # Print usage on --help (positive-pass invocation signal for Phase 3a AC).
 case "${1:-}" in
@@ -271,6 +273,19 @@ if [ "$NO_PREFLIGHT" -eq 0 ]; then
   if ! git -C "$MAIN_ROOT" merge --ff-only "origin/$BASE" 1>&2; then
     echo "create-worktree: 'git merge --ff-only origin/$BASE' failed — divergent base (resolve before creating worktree)" >&2
     exit 7
+  fi
+
+  # AHEAD check (symmetric to ff-merge BEHIND-check above): when local
+  # $BASE has commits not on origin/$BASE, ff-merge is a no-op (origin is
+  # already an ancestor) and a new feature branch silently inherits the
+  # unpushed commits. Refuse to create the worktree from divergent local
+  # state. State-based (rev-list count), so robust to whatever path caused
+  # the local divergence. Closes Issue #225.
+  AHEAD_COUNT=$(git -C "$MAIN_ROOT" rev-list --count "origin/$BASE..$BASE" 2>/dev/null || echo "0")
+  if [ "$AHEAD_COUNT" -gt 0 ]; then
+    echo "create-worktree: local $BASE is $AHEAD_COUNT commit(s) ahead of origin/$BASE — refusing to create worktree from divergent local state" >&2
+    echo "  Resolve by pushing the divergent commit(s) through normal review, or by resetting local $BASE to origin/$BASE if they should be discarded." >&2
+    exit 10
   fi
 fi
 
