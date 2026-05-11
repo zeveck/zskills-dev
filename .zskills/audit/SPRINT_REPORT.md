@@ -277,3 +277,33 @@ None.
 
 ### Not Fixed
 None.
+
+## Sprint — 2026-05-10 18:16 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** explicit list (#212, #215, #216 — three "extract prose-driven loop to mechanical helper" architectural-pattern fixes)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #212 | extract /run-plan Phase 4 PR-body progress sync to sync-pr-body-progress.sh | `fix-issue-212` | `426014e` | 7 new unit cases + 9 new conformance asserts | PASS (verifier confirmed: diff matches spec, 7 cases mock with capture wrappers asserting byte-content, conformance tripwires structural skip; 5-step pre-existing audit on AC-7 reproduced on fresh worktree at ef3e36f) | N/A (no UI changes — pure bash helper + skill prose) |
+| #215 + #216 | extract /plans rebuild renderer to render-index.py (#215) + /draft-plan + /research-and-plan stop touching PLAN_INDEX.md (#216) | `fix-issue-215` (bundled — both touch skills/plans/SKILL.md per skill rule) | `90dc8bb` | 7 cases (26 sub-assertions) in test-plans-render-index.sh + 5 new conformance asserts | PASS (verifier confirmed: canary-precedence at render-index.py:62-64 is FIRST branch — structurally impossible to misclassify; Mode:Show auto-rebuild at skills/plans/SKILL.md:123-146 uses mtime comparison; grep confirms PLAN_INDEX mutations removed from both writers; Case 1 explicitly tests canary precedence; cross-platform stat -c %Y / stat -f %m for GNU vs BSD) | N/A (no UI changes — Python helper + skill prose) |
+
+**Grouping rationale:** Issues #215 and #216 both touch `skills/plans/SKILL.md` (different sections — Mode: Rebuild for #215, Mode: Show for #216) AND have a sequencing dependency (#216's Mode: Show auto-rebuild invokes the helper that #215 ships). Per the /fix-issues skill rule "same file → group them for the same agent" (separate worktrees would conflict at cherry-pick / PR merge), one fix agent in one worktree (`fix/issue-215`) closed both. The lower issue number is the primary identifier; #216 is bundled.
+
+**Architectural pattern this sprint addresses:** all three issues are the same shape — prose-driven structured-document editing or splice loops that orchestrators skip without mechanical signal. PR #211's 9-phase run silently froze its PR body at the Phase 1 snapshot (#212). A manual `/plans rebuild` misclassified 5 canaries with `status: complete` into Complete (#215). `/draft-plan` mutating PLAN_INDEX.md incrementally is the same fragility class (#216). The fixes convert all three to mechanical helpers + conformance tripwires.
+
+### Agent Verify
+
+Both verifier subagents (`subagent_type: "verifier"` per Plan A) returned APPROVE with anchored evidence. Layer 0 (`inject-bash-timeout.sh` extending Bash timeout to 600000ms) prevented the Monitor anti-pattern trigger. Layer 3 (`verify-response-validate.sh`) ran on both responses; both exited 0 (no stalled-string match, >200 bytes). All verifier claims include anchored file:line evidence; both verifiers applied the 5-step pre-existing audit on the single `test_plans_rebuild_uses_collect.sh AC-7` failure and confirmed it pre-dates this sprint (caused by commit `ef3e36f` — PR #218's untrack of `.zskills/audit/PLAN_INDEX.md`).
+
+### User Verify
+
+N/A for all 3 issues. No UI, editor, or styles files changed. Pure skill-prose + helper-script + conformance-test work.
+
+### Surfaced follow-up (out of scope)
+
+- `tests/test_plans_rebuild_uses_collect.sh` AC-7 expects `.zskills/audit/PLAN_INDEX.md` on disk; commit `ef3e36f` (PR #218) untracked the file. The test wasn't updated to match. Note: once #216's PRs land (with Mode: Show auto-rebuild), AC-7 may naturally pass because Mode: Show regenerates the file before reading — worth re-checking post-merge. Filable as separate fix if it doesn't self-resolve.
+
+### Landing
+
+PR mode (per `execution.landing: "pr"` config). Two separate PRs (one per worktree). Both PRs base on `ef3e36f` (current local main, which includes the PR #218 untrack commit). When PR #218 merges first, the fix branches will need rebase onto new main — `/land-pr` handles this in its rebase step.
