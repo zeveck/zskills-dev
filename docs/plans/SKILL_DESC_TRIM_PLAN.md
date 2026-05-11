@@ -173,7 +173,7 @@ descriptions):**
 |------:|:-------|:-------|:------|
 | 0 — Worktree setup                                   | ✅ Done | (tracker-only) | Worktree at /tmp/zskills-pr-skill-desc-trim on feat/skill-desc-trim |
 | 1 — Body-grounded inventory                          | ✅ Done | (artifact-only) | 29 skills inventoried; total 8586 chars (drift 0); 25 candidates confirmed |
-| 2 — Per-skill trim drafting (with EVIDENCE)          | ⬚ | | Per-skill artifact with body file:line citations |
+| 2 — Per-skill trim drafting (with EVIDENCE)          | ✅ Done | (artifact-only) | 25 drafts; aggregate 6164/6522 (358 headroom); 72 EVIDENCE rows; orchestrator spot-checked 7 citations + 3 policy claims, all PASS |
 | 3 — Adversarial citation spot-check                  | ⬚ | | BLOCKING gate; ≥30% of citations sampled |
 | 4 — Add description-budget conformance gate          | ⬚ | | PERMANENT drift prevention |
 | 5 — Apply edits + version bumps + mirror             | ⬚ | | 25 source edits + 25 mirror regens, single commit |
