@@ -171,7 +171,7 @@ descriptions):**
 
 | Phase | Status | Commit | Notes |
 |------:|:-------|:-------|:------|
-| 0 — Worktree setup                                   | ⬚ | | `feat/skill-desc-trim`; via `/create-worktree` |
+| 0 — Worktree setup                                   | ✅ Done | (tracker-only) | Worktree at /tmp/zskills-pr-skill-desc-trim on feat/skill-desc-trim |
 | 1 — Body-grounded inventory                          | ⬚ | | Foundation; SHA256 proof-of-work |
 | 2 — Per-skill trim drafting (with EVIDENCE)          | ⬚ | | Per-skill artifact with body file:line citations |
 | 3 — Adversarial citation spot-check                  | ⬚ | | BLOCKING gate; ≥30% of citations sampled |
