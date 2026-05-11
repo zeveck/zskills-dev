@@ -2,9 +2,9 @@
 name: land-pr
 user-invocable: false
 description: Helper skill — the canonical PR-landing primitive **for agent dispatch via the Skill tool**. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. **Designed for orchestrator agents** (the Skill tool with --body-file / --result-file args) — including both the 5 conformance-locked caller skills (/run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix) AND any top-level orchestrator agent landing a one-off PR. **Not designed for interactive human slash-command invocation** — humans wanting to ship a branch should type /commit pr instead (which dispatches /land-pr).
-argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>]
+argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.07+74a34a"
+  version: "2026.05.10+b7c759"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -47,7 +47,10 @@ Optional: `--auto` (bool, default false), `--worktree-path`,
 `--landed-source` (default `land-pr`), `--ci-timeout` (default 600),
 `--no-monitor` (skip CI poll, return after create), `--pr <num>` (resume
 mode: skip rebase/push/create, jump to monitor), `--issue <num>`
-(passes through to `.landed` schema).
+(passes through to `.landed` schema), `--tracking-id <id>` (when present,
+write `fulfilled.land-pr.<id>` on successful merge to satisfy a parent
+skill's `requires.land-pr.<id>` marker — `/run-plan` PR mode passes this;
+the other 4 callers do not, preserving their no-fulfillment behavior).
 
 ```bash
 ARGS=( "$@" )
@@ -63,6 +66,7 @@ NO_MONITOR=false
 PR_RESUME=""
 ISSUE_NUM=""
 BASE_BRANCH="main"
+TRACKING_ID=""
 
 i=0
 while [ $i -lt ${#ARGS[@]} ]; do
@@ -80,6 +84,7 @@ while [ $i -lt ${#ARGS[@]} ]; do
     --pr)             i=$((i+1)); PR_RESUME="${ARGS[$i]:-}" ;;
     --issue)          i=$((i+1)); ISSUE_NUM="${ARGS[$i]:-}" ;;
     --base)           i=$((i+1)); BASE_BRANCH="${ARGS[$i]:-}" ;;
+    --tracking-id)    i=$((i+1)); TRACKING_ID="${ARGS[$i]:-}" ;;
     *) echo "ERROR: /land-pr: unknown arg: $arg" >&2; exit 2 ;;
   esac
   i=$((i+1))
@@ -499,6 +504,36 @@ if [ -n "$WORKTREE_PATH" ]; then
     [ -n "$ISSUE_NUM" ]      && printf 'issue: %s\n'     "$ISSUE_NUM"
     [ -n "$REASON" ]         && printf 'reason: %s\n'    "$REASON"
   } | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
+fi
+```
+
+### Step 8b — Write `fulfilled.land-pr.<id>` (only when `--tracking-id` given AND row-6 merge gate holds)
+
+Write the fulfillment marker ONLY when the caller passed `--tracking-id`
+AND the PR is actually merged on main. Match the row-6 gate from Step 8's
+`.landed` status-mapping table:
+
+> `MERGE_REQUESTED=true AND PR_STATE=MERGED AND CI_STATUS in {pass, none, skipped}`
+
+Any other state (pr-ready, pr-ci-failing, push-failed, rebase-conflict,
+pr-state-unknown, etc.) means the work isn't actually landed — do NOT
+fulfill. The 4 non-/run-plan callers never pass `--tracking-id`, so this
+block is a no-op for them (preserves current behavior exactly).
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "$TRACKING_ID" ] \
+   && [ "$MERGE_REQUESTED" = "true" ] \
+   && [ "$PR_STATE" = "MERGED" ] \
+   && { [ "$CI_STATUS" = "pass" ] || [ "$CI_STATUS" = "none" ] || [ "$CI_STATUS" = "skipped" ]; }; then
+  PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+  MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." && pwd)
+  PIPELINE_SUBDIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+  if [ -d "$PIPELINE_SUBDIR" ]; then
+    printf 'skill: land-pr\nid: %s\npr: %s\ndate: %s\n' \
+      "$TRACKING_ID" "$PR_URL" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+      > "$PIPELINE_SUBDIR/fulfilled.land-pr.$TRACKING_ID"
+  fi
 fi
 ```
 

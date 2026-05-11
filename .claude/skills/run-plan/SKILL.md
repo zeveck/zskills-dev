@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.10+c4a711"
+  version: "2026.05.10+1ec0ef"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -836,6 +836,23 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    printf 'skill: verify-changes\nparent: run-plan\nid: %s\ndate: %s\n' \
      "$TRACKING_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.$TRACKING_ID"
+
+   # PR-mode only: lock down landing requirement at skill entry. Closes the
+   # Phase-6-skip hole observed in PR #211 (chunked finish-auto exited after
+   # Phase 5b's frontmatter flip without dispatching /land-pr in Phase 6 —
+   # PR sat open and unmerged). The parent-writes-requires convention follows
+   # the existing requires.verify-changes write above and the 4 other
+   # writers documented in plans/REQUIRES_LAND_PR.md. The matching
+   # fulfilled.land-pr.<id> is written by /land-pr when row 6 of its
+   # .landed status-mapping table holds (MERGE_REQUESTED=true AND
+   # PR_STATE=MERGED AND CI_STATUS in {pass, none, skipped}). Idempotent:
+   # chunked finish-auto invokes /run-plan once per phase, overwrite is fine
+   # (same content each invocation).
+   if [ "$LANDING_MODE" = "pr" ]; then
+     printf 'skill: land-pr\nparent: run-plan\nid: %s\ndate: %s\n' \
+       "$TRACKING_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+       > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
+   fi
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description

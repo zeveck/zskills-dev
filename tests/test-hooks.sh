@@ -761,6 +761,31 @@ touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
 expect_project_deny "git cherry-pick abc123"
 teardown_project_test
 
+# Test: requires.land-pr without fulfilled.land-pr blocks git commit
+# (closes Phase-6-skip hole in /run-plan PR mode — PR #211)
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_deny "git commit -m test"
+teardown_project_test
+
+# Test: requires.land-pr with fulfilled.land-pr allows git commit
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/fulfilled.land-pr.test-plan"
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_allow "git commit -m test"
+teardown_project_test
+
+# Test: requires.land-pr also blocks git cherry-pick (parity with verify-changes)
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
+expect_project_deny "git cherry-pick abc123"
+teardown_project_test
+
 echo ""
 echo "=== Project hook: step enforcement ==="
 
