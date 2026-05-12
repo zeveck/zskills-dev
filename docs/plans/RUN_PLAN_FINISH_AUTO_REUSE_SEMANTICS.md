@@ -2,7 +2,7 @@
 issue: 191
 title: /run-plan finish — cherry-pick mode reuses plan-scoped worktree
 created: 2026-05-11
-status: active
+status: complete
 ---
 
 # Plan: /run-plan finish — cherry-pick mode reuses plan-scoped worktree
@@ -35,9 +35,9 @@ PR mode already implements this correctly (`SKILL.md:1198`: `WORKTREE_PATH="/tmp
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Cherry-pick worktree-creation gating on finish mode | 🟡 | `d4ef3dc` | Done on feature branch; awaits PR squash to main. AC1.6 plan-drift logged (see report) |
-| 2 — Cherry-pick landing-flow gating on final-phase + finish-mode.md/cherry-pick.md prose updates | 🟡 | `cddef95` | Done on feature branch; awaits PR squash to main |
-| 3 — Conformance test + CANARY7 + modes/pr.md comment cleanup | ⬚ | | tests/test-skill-conformance.sh:146 + CANARY7 ACs + pr.md:298/301 |
+| 1 — Cherry-pick worktree-creation gating on finish mode | ✅ | `1ec786b` | AC1.6 plan-drift logged (see report) |
+| 2 — Cherry-pick landing-flow gating on final-phase + finish-mode.md/cherry-pick.md prose updates | ✅ | `bb0319d` | |
+| 3 — Conformance test + CANARY7 + modes/pr.md comment cleanup | ✅ | `bf984db` | Conformance 358→359 (+1 from slug-shape split); CANARY7 ACs updated |
 
 ## Phase 1 — Cherry-pick worktree-creation gating on finish mode
 
