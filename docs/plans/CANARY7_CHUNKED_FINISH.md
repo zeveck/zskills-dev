@@ -45,7 +45,7 @@ to build anything substantive.
 
 - [ ] `canary/canary7.txt` exists on the worktree branch.
 - [ ] File has exactly one line: `Canary 7 Phase 1: chunked turn 1`.
-- [ ] Phase 1 lands (worktree-mode cherry-pick to main, or PR merge).
+- [ ] Phase 1 commit exists in the shared cherry-pick worktree on branch `cp-canary7-chunked-finish`.
 - [ ] A one-shot cron for `/run-plan docs/plans/CANARY7_CHUNKED_FINISH.md finish auto`
       exists in `CronList` output when Phase 1's cron-fired turn exits.
 
@@ -74,8 +74,7 @@ Append a second line to `canary/canary7.txt`. This phase must fire in a
   Canary 7 Phase 1: chunked turn 1
   Canary 7 Phase 2: chunked turn 2
   ```
-- [ ] Phase 2 lands successfully.
-- [ ] Plan frontmatter status is set to `complete`.
+- [ ] After Phase 2 completes, all accumulated commits (Phase 1 + Phase 2) land via single cherry-pick sequence to main. Plan frontmatter status is set to `complete`.
 
 ### Dependencies
 
