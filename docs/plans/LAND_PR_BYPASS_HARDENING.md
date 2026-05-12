@@ -27,8 +27,11 @@ coupled deliverables:
 
 2. **Caller tracker parity** — extend the `requires.land-pr.<id>` /
    `--tracking-id` pattern that `/run-plan` PR-mode already partially
-   wires (commit `2bdbeda`, PR #219; see `skills/run-plan/SKILL.md:851-855`
-   and `skills/run-plan/modes/pr.md:342`) across the other four callers.
+   wires (commit `2bdbeda`, PR #219; see the `requires.land-pr.<id>`
+   write block in Phase 1 Step 8's tracking fence at
+   `skills/run-plan/SKILL.md` — currently lines 870-874, anchor: the
+   `printf 'skill: land-pr\nparent: run-plan\nid: %s\ndate: %s\n'`
+   block) across the other four callers.
    This plan ALSO completes /run-plan's wiring by adding the missing
    `branch:` field to its requires marker and the missing explicit-
    finalize cleanup of the marker at end of caller-loop (Round 3 gaps
@@ -134,7 +137,9 @@ gated alongside `is_git_subcommand`.
 No new sanitization rule needed — each caller's existing variable is
 already filename-safe. `sanitize-pipeline-id.sh` continues to apply only
 at PIPELINE_ID basename construction, not to `<id>` itself (matches
-`/run-plan` SKILL.md:825 pattern).
+the `/run-plan` SKILL.md tracking-marker convention in Phase 1 Step 8
+— currently around line 844 where `PIPELINE_ID` is constructed via
+`"${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"`).
 
 **D6. PIPELINE_ID & MAIN_ROOT resolution per caller.** Markers are
 written to `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/` where `$MAIN_ROOT`
@@ -156,7 +161,9 @@ finalizes to `status: complete` (or `failed` / `cancelled`) at the end
 of the caller-loop via the **explicit-finalize** pattern documented in
 Phase 2 (NOT trap-on-EXIT — see DA-2-1 / DA-3-1 lessons).
 `/quickfix`'s existing `fulfilled.quickfix.$SLUG` write is preserved.
-`/run-plan` already writes `fulfilled.run-plan.<id>` (`SKILL.md:826-829`);
+`/run-plan` already writes `fulfilled.run-plan.<id>` (anchor: the
+`printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n'`
+block in Phase 1 Step 8, currently `skills/run-plan/SKILL.md:846-848`);
 also unchanged.
 
 **Pre-existing `/quickfix` trap bug (DA-3-3 — out of scope).** /quickfix
@@ -173,10 +180,25 @@ to avoid scope creep. This means #228 Part B's AC for /quickfix
 NOT strictly met by current /quickfix; this plan's other callers DO
 meet the AC via explicit-finalize.
 
-This satisfies #228 Part B's literal AC for `/commit`, `/do`,
-`/fix-issues`, `/run-plan`, `/land-pr`; /quickfix is partial-AC (marker
-exists but status field is unreliable per pre-existing bug). The
-markers are **independent of and parallel to** `fulfilled.land-pr.<id>`
+This plan satisfies #228 Part B's literal AC for `/commit`, `/do`,
+`/fix-issues`, `/run-plan`, `/land-pr` only.
+
+**`/quickfix`'s AC is structurally unmet (R-4-18 / DA-4-9 hedge
+strengthening).** The `fulfilled.quickfix.<slug>` marker exists, but
+its `status` field cannot be trusted until issue #241's trap bug is
+fixed: `trap 'finalize_marker $?' EXIT` (SKILL.md:677) fires when the
+*setting* fence exits — which is `rc=0` immediately, stamping
+`status: complete` on entry rather than on actual /quickfix completion.
+Aborted /quickfix runs (any `exit 1/2/5/6` path between fence 631-678
+entry and the actual caller-loop completion at line 1244) ALSO report
+`status: complete`. /quickfix is therefore documented-deferred from
+#228 Part B until #241 lands. **Dashboard consumers should treat
+`fulfilled.quickfix.<slug>` entries as 'attempted, not necessarily
+completed' until #241 lands** — explicitly document this consumer-side
+caveat so downstream code does not trust the status field for
+/quickfix.
+
+The markers are **independent of and parallel to** `fulfilled.land-pr.<id>`
 (which signals merge, not skill-completion).
 
 **D8. STOP-message wording branches on tracking state.** When the hook
@@ -187,7 +209,10 @@ MAIN_ROOT and WORKTREE_ROOT) and reads the body's `branch:` field:
   recovery is to fix the `/land-pr` args (check the `--result-file` for
   the failure reason and the caller-loop pattern at
   `skills/land-pr/references/caller-loop-pattern.md`), NOT to fall back
-  to direct `gh pr create` / `gh pr merge --auto`."
+  to direct `gh pr create` / `gh pr merge --auto`. If you believe this
+  is a stale marker from a prior crashed session, run
+  `bash skills/update-zskills/scripts/clear-tracking.sh` to clear and
+  retry." (DA-4-11)
 - **Pattern 1** (no matching requires.land-pr.* for current branch)
   → "You're outside a caller skill (or your caller hasn't reached the
   land step). Use one of: `/commit pr` (typed feature branch), `/quickfix
@@ -212,13 +237,28 @@ new families: `fulfilled.land-pr.*`, `fulfilled.commit.*`,
 (pre-existing but currently wiped against #228 Part B's intent).
 
 **The post-clear residual-count assertion at `:150-157` does NOT need
-modification** — verified empirically against the source: it lists
-*classes that SHOULD be cleared* (`requires.*`, `step.*`,
-`fulfilled.verify-changes.*`, `fulfilled.draft-plan.*`,
-`fulfilled.refine-plan.*`, `verify-pending-attempts.*`), and the new
-preserved markers are not among them. The "lockstep" concern from
-`97c7d19`'s commit message applies when we change which markers are
-*cleared*, which this plan doesn't. (R-2-1 verification correction.)
+modification** — verified empirically against the source (DA-4-10:
+quoted in plan for self-contained verifiability):
+```bash
+residual=$(find "$TRACKING_DIR" -type f \
+  \( -name 'requires.*' \
+     -o -name 'step.*' -o -name 'phasestep.*' \
+     -o -name 'fulfilled.verify-changes.*' \
+     -o -name 'fulfilled.draft-plan.*' \
+     -o -name 'fulfilled.refine-plan.*' \
+     -o -name 'verify-pending-attempts.*' \) \
+  | wc -l | tr -d ' ')
+```
+It lists *classes that SHOULD have been cleared* (`requires.*`,
+`step.*`/`phasestep.*`, `fulfilled.verify-changes.*`,
+`fulfilled.draft-plan.*`, `fulfilled.refine-plan.*`,
+`verify-pending-attempts.*`), and the new preserved markers
+(`fulfilled.land-pr.*`, `fulfilled.commit.*`, `fulfilled.do.*`,
+`fulfilled.fix-issues.*`, `fulfilled.quickfix.*`) are not among them.
+The "lockstep" concern from `97c7d19`'s commit message applies when
+we change which markers are *cleared*, which this plan doesn't.
+(R-2-1 verification correction; R-4-11 contradiction resolution;
+DA-4-10 in-plan verifiability.)
 
 Wave 1 will subsume this with a broader `fulfilled.*.*` rule; this
 narrow patch is strictly a subset and lands here to avoid hard cross-
@@ -298,13 +338,38 @@ STOP message that branches on tracking-state diagnostics.
   - Emit deny envelope via inlined pure-bash `json_escape` (verbatim from
     `block-stale-skill-version.sh:132-159` — `LC_ALL=C`, `[[:cntrl:]]`
     strip, NOT the broken bash range form).
-  - **Defensive: empty stderr from script triggers static fallback**
-    (DA-3-6 fix). If the message-script exited but `$STDERR` is empty
-    OR shorter than 50 chars, use the static fallback STOP message
-    text below instead of the captured stderr. Rationale: a bug in the
-    message script (returns rc=1 but no stderr) would otherwise produce
-    a deny envelope with empty `permissionDecisionReason`, leaving the
-    agent with no diagnostics.
+  - **Defensive: sentinel-anchored static fallback** (DA-3-6 fix +
+    R-4-4 refinement + DA-5-5 sentinel-strengthening). If the
+    message-script exited but `$STDERR` does NOT contain the canonical
+    anchor `STOP: direct gh pr`, use the static fallback STOP message
+    text below instead of the captured stderr. Concretely:
+    ```bash
+    if ! printf '%s' "$STDERR" | grep -qF 'STOP: direct gh pr'; then
+      USE_STATIC_FALLBACK=1
+    fi
+    ```
+    Rationale (DA-5-5 escalation): the prior "empty after whitespace
+    strip" check handled the "script bug → rc=1 with no body" case but
+    did NOT handle the "script bug → bash error trace as stderr" case
+    (e.g., `bash: scripts/land-pr-bypass-message.sh: line 47: foo:
+    command not found`). Without the sentinel check, that error trace
+    would be served verbatim as `permissionDecisionReason`, exposing
+    internal stack-traces to the agent and confusing the
+    Pattern 1 / Pattern 2 distinction — risking the agent
+    misinterpreting "the hook itself is broken — try `bash -c` bypass."
+    Anchoring on the canonical `STOP: direct gh pr` sentinel proves
+    the script ran to completion correctly. This subsumes the previous
+    "empty after whitespace-strip" check (empty stderr also lacks the
+    anchor → falls back). The "shorter than 50 chars" threshold from
+    the pre-Round-1 plan was arbitrary; sentinel-based is principled.
+
+    **AC1.6b (new) — sentinel-anchored fallback:** synthesize a
+    bypass-trigger PreToolUse stdin envelope, then run the hook with
+    `scripts/land-pr-bypass-message.sh` replaced by a stub that emits
+    `bash: scripts/land-pr-bypass-message.sh: line 47: foo: command not found`
+    to stderr (a synthetic bash error trace, NO `STOP: direct gh pr`
+    anchor). Assert the deny envelope's `permissionDecisionReason`
+    equals the STATIC fallback text (NOT the bash error trace).
   - **Fail-open scope** if `scripts/land-pr-bypass-message.sh` is missing
     or not executable: `[ -x "$SCRIPT" ] || USE_STATIC_FALLBACK=1`. The
     hook STILL DENIES the match — it just falls back to a static
@@ -347,6 +412,8 @@ STOP message that branches on tracking-state diagnostics.
     `outside a caller skill`.
   - Pattern 2 unique anchor substring: `STOP: direct gh pr` and
     `/land-pr invocation appears to have errored`.
+  - Pattern 2 also contains (DA-4-11 stale-marker recovery hint):
+    `clear-tracking.sh` (anchor substring; full sentence per D8).
   - Both end with: `If you need a true manual one-off, open a SEPARATE
     terminal outside the Claude Code session.`
 
@@ -407,9 +474,31 @@ STOP message that branches on tracking-state diagnostics.
   is removed; emits the static fallback STOP message via its inlined
   json_escape. (Differs from block-stale-skill-version.sh's "fail-open
   means allow" — see D&C above.)
-- [ ] AC1.7: Hook matches all 4 flag-order permutations of merge+auto:
-  `gh pr merge --auto`, `gh pr merge --auto --squash`,
-  `gh pr merge --squash --auto`, `gh pr merge --merge --auto`. All deny.
+- [ ] AC1.7: Hook matches arbitrary flag-order permutations of
+  merge+auto (the helper is documented flag-order-agnostic). DA-5-6
+  generalized to programmatic enumeration: for every combination of
+  `--auto` (required) × subset of `{--squash, --merge, --rebase}`
+  (at most one merge-strategy flag) × `{--delete-branch, absent}`,
+  test every permutation of the chosen flags. The combinatorial set is
+  ~24 commands. All MUST deny. Representative subset (all must pass):
+  - `gh pr merge --auto`
+  - `gh pr merge --auto --squash`
+  - `gh pr merge --squash --auto`
+  - `gh pr merge --merge --auto`
+  - `gh pr merge --auto --squash --delete-branch` (3-flag, --auto first)
+  - `gh pr merge --squash --auto --delete-branch` (3-flag, --auto middle)
+  - `gh pr merge --delete-branch --squash --auto` (3-flag, --auto last
+    — the common /land-pr `pr-merge.sh` shape)
+  - `gh pr merge --rebase --auto`
+  - `gh pr merge --auto --rebase --delete-branch`
+  - `gh pr merge --delete-branch --rebase --auto` (DA-5-6 fix —
+    `--auto` last with `--rebase` middle)
+  - `gh pr merge --delete-branch --merge --auto`
+  - `gh pr merge --auto --merge --delete-branch`
+  AC fails if any permutation allows. Implementer-agent SHOULD generate
+  the full ~24-perm set programmatically (e.g., python `itertools.permutations`)
+  rather than hand-enumerating; the list above is the
+  ground-truth subset that MUST pass.
 - [ ] AC1.8: Hook does NOT match bare `gh pr merge` (no `--auto`) — exit 0.
 - [ ] AC1.9: Hook does NOT match `gh -R foo/bar pr view 123`, `gh pr
   --help`, `gh --help`, `gh pr checks --watch` — all exit 0.
@@ -467,35 +556,178 @@ one fence does NOT persist to the next. So this plan uses the
     merge-failed, rebase-failed): `LAND_OUTCOME=$STATUS`.
   - In the inner `case "$CI_STATUS"` block (reached only when
     `STATUS ∈ {created, monitored, merged}`): set LAND_OUTCOME based
-    on the settle:
+    on the settle (mapping covers ALL arms present in source —
+    R-4-6 / DA-4-2 blocking fix — including the `unknown` and `*`
+    catch-all arms whose source comments say "settle at pr-ready"):
     - `pass|none|skipped` and PR_STATE=MERGED → `LAND_OUTCOME=merged`
     - `pass|none|skipped` and PR_STATE=OPEN → `LAND_OUTCOME=pr-ready`
     - `pending` → `LAND_OUTCOME=pr-ready`
     - `not-monitored` → `LAND_OUTCOME=created`
     - `fail` after fix-cycle exhaustion → `LAND_OUTCOME=pr-ci-failing`
+      (R-5-4 exact insertion point: in the `fail)` case arm, INSIDE the
+      `if [ "$ATTEMPT" -ge "$MAX" ]; then` block, IMMEDIATELY BEFORE
+      the existing `break` statement. Verified shape from
+      `skills/commit/modes/pr.md:145-148`:
+      ```bash
+      fail)
+        if [ "$ATTEMPT" -ge "$MAX" ]; then
+          echo "INFO: CI fix-cycle exhausted ..." >&2
+          LAND_OUTCOME=pr-ci-failing   # ← INSERT HERE
+          break
+        fi
+        # ... fix-cycle dispatch ...
+        ATTEMPT=$((ATTEMPT + 1))
+        continue ;;
+      ```
+      DO NOT set `LAND_OUTCOME` outside the `if` (would fire on every
+      pre-exhaustion iteration). DO NOT set after `break` (unreachable).
+      Same shape applies symmetrically to all 5 callers — verified by
+      grep: `commit/modes/pr.md:145`, `do/modes/pr.md`,
+      `run-plan/modes/pr.md`, `fix-issues/modes/pr.md`,
+      `quickfix/SKILL.md` all have the identical `fail)` /
+      `if ATTEMPT >= MAX` / `break` structure per the canonical
+      caller-loop pattern.)
+    - `unknown` → `LAND_OUTCOME=pr-ready` (matches source comment at
+      `skills/commit/modes/pr.md:196` "settle at pr-ready" — and the
+      mirrored arms in `/do/modes/pr.md`, `/run-plan/modes/pr.md`)
+    - `*` (catch-all) → `LAND_OUTCOME=pr-ready` (matches source
+      comment at `skills/commit/modes/pr.md:199` "settle at pr-ready")
   - **Default initialization** at top of caller-loop:
-    `LAND_OUTCOME=unknown`. If the loop exits with LAND_OUTCOME still
-    `unknown`, treat as failed-class.
-- After the caller-loop completes (last bash fence of the skill's
-  procedure), apply the explicit-finalize:
-  - `FINAL=complete` if `$LAND_OUTCOME ∈ {merged, created, monitored, pr-ready}`
+    `LAND_OUTCOME=__init__` (R-5-8 — renamed from `unknown` to avoid
+    token-overload with the CI_STATUS=`unknown` arm which maps to
+    `pr-ready`; same identifier with opposite semantics was a
+    cognitive trap for verifiers reading the case statement). If the
+    loop exits with LAND_OUTCOME still `__init__` (i.e., the loop
+    broke before any case arm set it, which should not happen given
+    the comprehensive case coverage above), the explicit-finalize's
+    `*) FINAL=failed` default catches it. With the case-arm
+    CI_STATUS=`unknown` and `*) ` mapped to `pr-ready`, this
+    default-tail fires ONLY on truly unreachable paths (e.g., the
+    loop exits via an unstructured `break` we haven't enumerated).
+  - **`continue` semantics (DA-4-6).** The inner `case "$CI_STATUS"`'s
+    `fail`-before-exhaustion arm `continue`s back to the loop top
+    WITHOUT touching LAND_OUTCOME — this is deliberate; the next loop
+    iteration's `break` (whatever arm it lands in) will set LAND_OUTCOME
+    correctly. Only `fail`-AFTER-exhaustion (`ATTEMPT >= MAX`, `break`
+    path) sets `LAND_OUTCOME=pr-ci-failing`. Default-`unknown`
+    initialization at the top of the loop AND the `unknown → pr-ready`
+    + `*) → pr-ready` arms together ensure that any unreached-tail
+    cases default to a success-equivalent FINAL rather than `failed`.
+- After the caller-loop completes (`# === END CANONICAL /land-pr CALLER
+  LOOP ===`), apply the explicit-finalize:
+  - `FINAL=complete` if `$LAND_OUTCOME ∈ {merged, created, pr-ready}`
+    (R-5-7: `monitored` removed — the inner CI_STATUS case never
+    assigns `LAND_OUTCOME=monitored`; the outer `created|monitored|merged)`
+    STATUS arm is a no-op fall-through to the inner CI_STATUS case,
+    which then sets one of {merged, pr-ready, created, pr-ci-failing}.
+    No source path produces `LAND_OUTCOME=monitored`.)
   - `FINAL=failed` if `$LAND_OUTCOME ∈ {rebase-conflict, push-failed,
     create-failed, merge-failed, monitor-failed, rebase-failed,
-    pr-ci-failing, unknown}`
+    pr-ci-failing, __init__}` (R-5-8: `__init__` replaces `unknown`
+    as the unreachable-tail sentinel; the CI_STATUS=`unknown` arm
+    maps to `LAND_OUTCOME=pr-ready` which is success-equivalent —
+    different runtime value from the default-init sentinel)
   - `FINAL=cancelled` if `$CANCELLED -eq 1`
   - `sed -i "s/^status: started$/status: $FINAL/"` on the fulfilled
     marker.
 - ALWAYS remove `requires.land-pr.<id>` at this final step (regardless
   of outcome — transient diagnostic).
 
-**Defensive `exit 1` paths (DA-3-1):** Each caller has defensive
-`exit 1` paths (e.g., `skills/commit/modes/pr.md:96` when RESULT_FILE
-is missing). These bypass the explicit-finalize. Acceptance criterion:
-each `exit 1` path MUST be preceded by an inline call to the same
-cleanup logic (or a small helper function that is sourced into each
-relevant bash fence — note: function-source pattern works because the
-function body is re-defined per fence, not preserved). The plan adds
-the cleanup inline before each defensive `exit 1` for simplicity.
+**Same-fence requirement (R-4-7 / DA-4-4 BLOCKING fix).** The
+explicit-finalize block MUST be inserted INSIDE the same `` ```bash
+... ``` `` fence as the caller-loop (i.e., between the `# === END
+CANONICAL /land-pr CALLER LOOP ===` marker line and the closing
+triple-backtick of that fence), NOT in a new bash fence after the
+closing triple-backtick. This is non-negotiable for correctness:
+
+- All 5 callers have BEGIN/END CANONICAL inside ONE bash fence
+  (verified by `grep -n '^\`\`\`' <file>`):
+  - `/commit pr` — fence 68-215, END CANONICAL at 214
+  - `/do pr` — fence 181-329, END CANONICAL at 328
+  - `/quickfix` — fence 1071-1245, END CANONICAL at 1244
+  - `/fix-issues pr` — caller-loop fence with END CANONICAL at 232
+  - `/run-plan modes/pr.md` — fence 291-543, END CANONICAL at 542
+- `$LAND_OUTCOME` is set by case arms INSIDE the caller-loop fence;
+  variables do NOT survive across bash fences (separate Bash tool
+  invocations, separate shell sessions — explicitly noted in
+  `skills/run-plan/SKILL.md:1326-1328` "Resolve config-derived vars at
+  fence-top — context compaction may have lost vars set in earlier
+  fences").
+- If the implementer adds the explicit-finalize as a NEW bash fence
+  after the caller-loop fence, `$LAND_OUTCOME` is unset in the new
+  fence → case statement falls to `*) FINAL=failed` → every
+  successful run stamps `status: failed`. This silently breaks the
+  dashboard's activity feed for ALL 5 callers.
+- The per-caller Work Items below use language like "append a finalize
+  block" — read this as "insert the finalize block immediately after
+  the `# === END CANONICAL ... ===` line, BEFORE the closing
+  ` ``` ` of the same fence." Do NOT start a new fence.
+
+Phase 4 conformance grep-anchors on this property (see
+"sed/rm-must-be-inside-fence" assert).
+
+**Defensive `exit 1` paths (DA-3-1 + R-4-9 / DA-4-8).** Each caller
+has defensive `exit 1` paths that bypass the explicit-finalize. The
+plan's enforcement strategy varies by caller based on how many
+`exit` paths exist and where they sit relative to the marker-setup
+site:
+
+**`/commit pr`, `/do pr`, `/fix-issues pr` — INLINE CLEANUP REQUIRED**
+(small, enumerable exit count, all AFTER marker-setup):
+- `/commit modes/pr.md:96` (inside caller-loop fence; RESULT_FILE
+  missing). Prepend inline cleanup before this `exit 1`:
+  ```bash
+  rm -f "$TRACK_DIR/requires.land-pr.$BRANCH_SLUG"
+  sed -i "s/^status: started$/status: failed/" "$TRACK_DIR/fulfilled.commit.$BRANCH_SLUG"
+  exit 1
+  ```
+  Variables are in scope at line 96 (same fence as the marker setup).
+- `/do modes/pr.md:210` — same shape with `$TASK_SLUG`.
+- `/fix-issues modes/pr.md` — verify exit-1 count via `grep -nE
+  "^\s*exit [0-9]" skills/fix-issues/modes/pr.md`; per current source,
+  zero such exits between per-issue marker-setup and per-issue
+  explicit-finalize, so no inline cleanup needed (but verify before
+  shipping; if any are added during the implementation pass, retrofit
+  per the /commit pattern).
+- `/run-plan modes/pr.md` — single `exit 1` at line ~360 (after the
+  caller-loop, in PR-body sync); this is AFTER explicit-finalize so
+  the requires.land-pr marker was already removed — no inline cleanup
+  needed. Confirm via line numbers before shipping.
+
+**`/quickfix` — ACCEPT THE RISK + DOCUMENT** (DA-4-8 BLOCKING fix /
+R-4-9 enumeration):
+- `grep -nE "^\s*exit [0-9]" skills/quickfix/SKILL.md` returns 11
+  `exit 1` paths (lines 58, 157, 193, 209, 213, 235, 259, 267, 704
+  + multiple `exit 2/5/6` paths). Many are PRE-marker-setup (the
+  marker-setup is at fence 631-678; exits at lines 58-295 are before).
+  Pre-marker-setup exits leave no marker to clean up — no action
+  needed there.
+- Post-marker-setup `/quickfix` exits (line 704 onward) leave
+  `requires.land-pr.$SLUG` and `fulfilled.quickfix.$SLUG started`
+  orphaned. Retrofitting all 11+ exits with `$TRACK_DIR`/`$SLUG`
+  re-resolution (per DA-4-5 fix pattern) is mechanically possible
+  but adds substantial surface area to this plan and risks
+  introducing bugs in /quickfix's existing tested flow.
+- **Decision: accept the orphan-marker risk for /quickfix mid-exit
+  paths.** Document explicitly in Residual Risks (#8 — new entry):
+  "/quickfix has 11+ `exit 1/2/5/6` paths between fence 631-678
+  marker-setup and the line 1244 explicit-finalize. Any exit on
+  these paths leaves `requires.land-pr.$SLUG` orphaned (recovered
+  by `bash skills/update-zskills/scripts/clear-tracking.sh` or next
+  session's marker overwrite) AND leaves
+  `fulfilled.quickfix.$SLUG status: started` (pre-existing bug per
+  D7 / #241 — orthogonal to this plan)." This is honest scoping,
+  not a fix-all-or-fail blocker.
+
+**Phase 4 conformance backstop.** Phase 4's positive-precedence
+assert enforces that the marker-setup write block appears textually
+BEFORE the `LAND_ARGS=` line; it does NOT enforce inline cleanup
+before every `exit` path (that's effectively unenforceable without a
+control-flow analyzer). The inline-cleanup requirement above is for
+the specific named exits in /commit and /do only — both are listed
+explicitly so future skill edits adding new exits will need the
+plan reader to consciously decide whether to retrofit cleanup or
+accept the risk per the /quickfix precedent.
 
 DA-2-1 verification confirms `break` in the caller-loop returns rc=0
 universally, so the previous trap-`$?` design was incorrect. The
@@ -537,14 +769,21 @@ lifecycle and rc semantics.
   - After the caller-loop closes (`# === END CANONICAL /land-pr CALLER LOOP ===`,
     line ~213), append a finalize block:
     ```bash
+    # R-5-6: `cancelled)` arm omitted — `CANCELLED` is /quickfix-only;
+    # `LAND_OUTCOME=cancelled` is never assigned by /commit pr's
+    # case-arm machinery. The `*) FINAL=failed` default-tail covers
+    # any unexpected unreachable path.
     case "$LAND_OUTCOME" in
-      merged|created|monitored|pr-ready) FINAL=complete ;;
-      cancelled) FINAL=cancelled ;;
+      merged|created|pr-ready) FINAL=complete ;;
       *) FINAL=failed ;;
     esac
     sed -i "s/^status: started$/status: $FINAL/" "$TRACK_DIR/fulfilled.commit.$BRANCH_SLUG"
     rm -f "$TRACK_DIR/requires.land-pr.$BRANCH_SLUG"
     ```
+    Same case-statement shape (4 success-class arms, no `cancelled`
+    arm, `*` default-failed) applies to `/do pr`, `/fix-issues pr`,
+    `/run-plan modes/pr.md`. /quickfix retains its existing trap +
+    `cancelled` semantics (out of scope per Decisions D7).
   - Append `--tracking-id=$BRANCH_SLUG` to `LAND_ARGS` at line ~77.
 
 - [ ] **`/do pr`** — `skills/do/modes/pr.md`:
@@ -568,14 +807,79 @@ lifecycle and rc semantics.
     work for it specifically per its single-fence structure — we do
     NOT modify `/quickfix`'s lifecycle plumbing).
   - Insert `requires.land-pr.$SLUG` write IMMEDIATELY AFTER the existing
-    fulfilled.quickfix write block (after line ~650), with `branch:
-    $BRANCH` field.
-  - At the **end of the caller-loop** in `/quickfix` (around line 1244,
-    after `# === END CANONICAL /land-pr CALLER LOOP ===`), append a
-    one-line cleanup: `rm -f "$TRACK_DIR/requires.land-pr.$SLUG"` (the
-    fulfilled.quickfix finalize is already handled by /quickfix's
-    existing trap; this just cleans up the new requires marker so it
-    doesn't orphan).
+    fulfilled.quickfix write block (inside the fence 631-678, before
+    the closing ` ``` ` at line 678), with `branch: $BRANCH` field.
+    At this site `$TRACK_DIR`, `$SLUG`, `$BRANCH`, `$NOW_ISO` are all
+    in scope (verified in fence A at lines 633-647).
+  - **DA-4-5 BLOCKING fix — `$TRACK_DIR` and `$SLUG` are out of scope
+    at the new cleanup site (line 1244).** The caller-loop fence
+    1071-1245 is a SEPARATE bash invocation from fence A (631-678)
+    where `$TRACK_DIR` and `$SLUG` were defined; variables do NOT
+    survive across fences. Adding `rm -f "$TRACK_DIR/requires.land-pr.$SLUG"`
+    naively at line 1244 expands to `rm -f "/requires.land-pr."`
+    (with empty `$TRACK_DIR` → leading `/` ; empty `$SLUG` → no
+    file-specific suffix) — silently fails to remove the marker.
+
+    **Resolution: pattern-based cleanup using a glob over the pipeline
+    subdir (R-5-5 fix — supersedes Round-1's circular
+    `SLUG="${BRANCH#quickfix/}"` fallback).** Round 2 audit confirmed
+    that `$SLUG` and `$BRANCH` are BOTH out of fence-scope at line
+    1244 (the caller-loop fence 1071-1245 contains no runtime
+    `SLUG=` or `BRANCH=` assignments — verified by
+    `awk 'NR>=1071 && NR<=1245' skills/quickfix/SKILL.md |
+    grep -nE '^[[:space:]]*(SLUG|BRANCH)='` → empty). /quickfix's
+    convention is **model-substitution across fences**: Claude reads
+    `$SLUG`/`$BRANCH` set in earlier prose and substitutes the literal
+    value when emitting the next fence. This contract is implicit and
+    fragile to rely on for runtime correctness in cleanup.
+
+    Instead of re-deriving `$SLUG` (which has no in-scope source at
+    the cleanup site), use a **best-effort glob cleanup** scoped to
+    the active /quickfix pipeline. At the **end of the caller-loop**
+    (after `# === END CANONICAL /land-pr CALLER LOOP ===` line 1244
+    and BEFORE the closing ` ``` ` at line 1245 — same-fence
+    requirement per R-4-7), insert:
+    ```bash
+    # Cleanup transient requires marker (R-5-5 / DA-4-5 — best-effort
+    # since $SLUG is out-of-fence-scope and the only reliable
+    # reconstruction path would require re-running /quickfix's
+    # branch-derivation logic, which is fragile). Glob cleanup
+    # targets ANY requires.land-pr.* in the active quickfix.* pipeline
+    # subdir under MAIN_ROOT; the find-rm pattern is safe because
+    # only the current invocation's requires.land-pr.<id> can exist
+    # there at this point (pre-existing requires would have been
+    # cleaned by prior invocations or by /update-zskills clear-tracking).
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+    # If ZSKILLS_PIPELINE_ID is set (passed via env from the orchestrator),
+    # target its specific subdir; otherwise glob across quickfix.*.
+    if [ -n "$ZSKILLS_PIPELINE_ID" ]; then
+      rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr."*
+    else
+      # Fallback: glob ALL quickfix.* subdirs. Acceptable per Residual
+      # Risk #8 (cleanup race); orphans recovered by clear-tracking.sh.
+      find "$MAIN_ROOT/.zskills/tracking" \
+        -maxdepth 2 -type d -name 'quickfix.*' \
+        -exec sh -c 'rm -f "$1"/requires.land-pr.*' _ {} \;
+    fi
+    ```
+
+    The `$MAIN_ROOT` IS in scope because the fence-top sources
+    `zskills-resolve-config.sh` which sets it. The `$ZSKILLS_PIPELINE_ID`
+    branch handles the typical case (env-propagated from the
+    orchestrator); the glob fallback handles the case where /quickfix
+    was invoked without that env. The fulfilled.quickfix finalize is
+    already handled by /quickfix's existing trap; this block just
+    cleans up the new requires marker so it doesn't orphan across
+    sessions.
+
+    **Why not re-derive `$SLUG`?** The only in-scope reconstruction
+    paths are (a) `git symbolic-ref --short HEAD` (returns the
+    quickfix-prefixed branch name, but stripping the prefix requires
+    knowing the prefix, which is config-derived AND not necessarily
+    in scope), and (b) re-running /quickfix's full branch-derivation
+    machinery (substantial surface area inside a cleanup block). The
+    glob approach is best-effort by design and aligns with /quickfix's
+    documented Residual Risk #8 (cleanup race acceptable).
   - Append `--tracking-id=$SLUG` to `LAND_ARGS` at line ~1080.
 
 - [ ] **`/fix-issues pr`** — `skills/fix-issues/modes/pr.md`:
@@ -593,27 +897,139 @@ lifecycle and rc semantics.
     all `complete` → sprint `complete`).
   - Append `--tracking-id=$ISSUE_NUM` to per-issue `LAND_ARGS`.
 
-- [ ] **`/run-plan` SKILL.md:851-855 — add `branch:` field (DA-2-2 +
-  R-3-1 fix).** Modify the existing `requires.land-pr.<id>` write to
-  include the branch field. Verified empirically: current shape is
+- [ ] **`/run-plan` SKILL.md — add `branch:` field to the
+  `requires.land-pr.<id>` write block (DA-2-2 + R-3-1 + R-4-2 / DA-4-1
+  fix).** Modify the existing `requires.land-pr.<id>` write inside the
+  Phase 1 Step 8 tracking-marker fence (currently lines 870-874; anchor:
+  the `printf 'skill: land-pr\nparent: run-plan\nid: %s\ndate: %s\n'`
+  block guarded by `if [ "$LANDING_MODE" = "pr" ]; then`) to include
+  the branch field. Current shape:
   `printf 'skill: land-pr\nparent: run-plan\nid: %s\ndate: %s\n'`;
-  modify to `printf 'skill: land-pr\nparent: run-plan\nid: %s\nbranch: %s\ndate: %s\n'`
-  with `"$(git symbolic-ref --short HEAD)"` as the new arg. (R-3-1
-  verified: `$BRANCH_NAME` is defined at line 1212, well AFTER line 851
-  — out of scope. Use inline `git symbolic-ref` instead.)
+  new shape:
+  `printf 'skill: land-pr\nparent: run-plan\nid: %s\nbranch: %s\ndate: %s\n'`
+  with the branch name as the new arg.
+
+  **Branch-name resolution at the write site (R-4-2 / DA-4-1 blocking
+  fix — supersedes R-3-1's `git symbolic-ref` proposal).** Phase 1
+  Step 8 runs BEFORE Phase 2 creates the worktree and `cd`'s into it;
+  therefore the bash fence runs in the orchestrator's CWD (typically
+  `$CLAUDE_PROJECT_DIR` on `main`). Both R-3-1's proposed
+  `git symbolic-ref --short HEAD` AND the previously-considered
+  `$BRANCH_NAME` (defined at `skills/run-plan/SKILL.md:1263`, ~390
+  lines after the write site) resolve to the WRONG branch:
+  - `git symbolic-ref --short HEAD` returns `main` (the orchestrator's
+    branch), not the feature branch the PR will live on.
+  - `$BRANCH_NAME` is out of scope at line 870.
+
+  **Resolution: re-derive both `$BRANCH_PREFIX` and `$PLAN_SLUG` at
+  fence-top of the marker-write fence (831-875).** Round 2 empirical
+  audit (R-5-1 BLOCKING) confirmed both vars are OUT OF SCOPE at the
+  write site — `BRANCH_PREFIX` was defined in fence 147-157 and
+  `PLAN_SLUG` in fences 250-262 and 425-441 (all disjoint from fence
+  831-875). Textual precedence in SKILL.md is NOT runtime scope:
+  separate fenced bash blocks are separate Bash tool invocations
+  (separate shell sessions). Inserting `"${BRANCH_PREFIX}${PLAN_SLUG}"`
+  naively into the printf would expand to the empty string and write
+  `branch:` (empty value) — the same defect class R-4-7 fixed for
+  `$LAND_OUTCOME`. This is exactly the "Resolve config-derived vars
+  at fence-top" rule articulated at `skills/run-plan/SKILL.md:1326-1328`.
+
+  Concretely: insert the BRANCH_PREFIX-resolution block AND the
+  PLAN_SLUG computation immediately AFTER the existing
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  line at fence-top (currently `skills/run-plan/SKILL.md:832`) and
+  BEFORE the `BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"` line (currently
+  :837). The block to insert:
+  ```bash
+  # Re-derive BRANCH_PREFIX and PLAN_SLUG at fence-top (R-5-1):
+  # both were set in earlier disjoint fences (BRANCH_PREFIX@149-157,
+  # PLAN_SLUG@425-441) and do NOT survive cross-fence per
+  # SKILL.md:1326-1328 ("Resolve config-derived vars at fence-top").
+  BRANCH_PREFIX="feat/"
+  if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
+    CONFIG_CONTENT=$(cat "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json")
+    # ([^"]*) allows empty string match -- empty prefix means no prefix
+    if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+      BRANCH_PREFIX="${BASH_REMATCH[1]}"
+    fi
+  fi
+  PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+  ```
+  (`$PLAN_FILE` IS already presumed in scope at the marker-write fence
+  — line 847 already references `"$PLAN_FILE"` in the start-marker
+  printf, so it's model-substituted at emission consistent with the
+  other model-substituted vars at this site.)
+
+  Then inside the `if [ "$LANDING_MODE" = "pr" ]; then` block (before
+  the printf), construct:
+  ```bash
+  BRANCH_NAME_FOR_MARKER="${BRANCH_PREFIX}${PLAN_SLUG}"
+  ```
+  Then pass `"$BRANCH_NAME_FOR_MARKER"` as the new printf arg. This
+  matches the deterministic `BRANCH_NAME="${BRANCH_PREFIX}${PLAN_SLUG}"`
+  construction at line 1263, ensuring the marker's `branch:` value is
+  identical to what Phase 2's worktree-creation step will assign — the
+  value the hook's STOP-message script will compare against the
+  current HEAD inside the feature-branch worktree.
+
+  **Why fence-top re-derivation, not env-export (rejected alternative).**
+  Round 2 considered `export BRANCH_PREFIX` / `export PLAN_SLUG` at the
+  definition sites (fences 147-157 and 425-441) to propagate via env. We
+  rejected this because (a) it requires modifying THREE fences instead
+  of one for a single feature, (b) the env-survival contract across
+  separate Bash tool invocations is not explicitly guaranteed by the
+  Claude Code harness (`$ZSKILLS_PIPELINE_ID` survives because it's
+  written by parent skills via the Skill tool's env, not because bash
+  fences inherit env across separate invocations), and (c) fence-top
+  re-derivation matches the existing convention used at lines 254-256
+  (Status command's `MAIN_ROOT`/`PROJECT_NAME` re-derivation) and at
+  lines 431-433 (Read-authority block's same re-derivation). Small
+  duplication, large correctness gain.
+
+  **AC2.9 update:** verify the marker file contains a `branch:` line
+  whose value equals `${BRANCH_PREFIX}${PLAN_SLUG}` (NOT `main` and
+  NOT the orchestrator's HEAD). Pre-condition: synthesized run with
+  `LANDING_MODE=pr` and a known plan file; read the marker after Step 8;
+  assert `grep -q "^branch: ${BRANCH_PREFIX}${PLAN_SLUG}$"`.
 - [ ] **`/run-plan` modes/pr.md caller-loop — add explicit-finalize
   for `requires.land-pr.<id>` (DA-3-4 fix).** /run-plan's caller-loop
-  ends at `skills/run-plan/modes/pr.md:536` without removing the
-  requires marker. Add at line 537+ (after `# === END CANONICAL ... ===`):
+  ends at the `# === END CANONICAL /land-pr CALLER LOOP ===` marker
+  in `skills/run-plan/modes/pr.md` (currently line 542) without
+  removing the requires marker. **Same-fence requirement:** the new
+  cleanup MUST be inserted INSIDE the same `` ```bash ... ``` `` fence
+  as the caller-loop (the fence opens at line 291 `` ```bash `` and
+  closes at line 543 `` ``` ``), AFTER the `# === END CANONICAL ===`
+  line (542) and BEFORE the closing triple-backtick (543). Do NOT
+  start a new fence — `$MAIN_ROOT`, `$PIPELINE_ID`, `$TRACKING_ID`
+  must be in scope at the rm site.
+
+  **Variable-scope precondition (R-5-10 — tightened):** `$MAIN_ROOT`,
+  `$PIPELINE_ID`, `$TRACKING_ID` ARE in scope at the cleanup site —
+  verified empirically by fence-map: `awk '/^[[:space:]]*```bash$/...'
+  skills/run-plan/modes/pr.md` shows fence 291-543 contains the
+  entire caller-loop AND the explicit-finalize cleanup-site (END
+  CANONICAL at line 542, closing ``` at 543). The fence-top at line
+  291 sets these vars (verified by reading the fence). Same-fence
+  guarantees survival per R-4-7.
+
+  Therefore, do NOT re-source `zskills-resolve-config.sh` at the
+  cleanup site (the conditional hedge previously in the plan was
+  unnecessary and created drift opportunity). Insert the cleanup
+  inline:
   ```bash
   # Cleanup transient requires marker (explicit-finalize per
-  # docs/plans/LAND_PR_BYPASS_HARDENING.md D2/D8).
+  # docs/plans/LAND_PR_BYPASS_HARDENING.md D2/D8). $MAIN_ROOT,
+  # $PIPELINE_ID, $TRACKING_ID are in scope (same-fence as
+  # fence-top at line 291).
   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
   ```
+
   /run-plan does NOT need a `fulfilled.run-plan.<id>` finalize because
   it ALREADY writes `fulfilled.run-plan.<id> status: started` at Phase
-  1 step 8 (SKILL.md:826-829) and is presumed complete at end of
-  run-plan flow — that lifecycle is pre-existing and out of scope.
+  1 Step 8 (anchor: `printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n'`,
+  currently `skills/run-plan/SKILL.md:846-848`) and is presumed
+  complete at end of run-plan flow — that lifecycle is pre-existing
+  and out of scope.
 
 - [ ] **`/land-pr` SKILL.md:533 — modify printf to add `branch:` field**
   (specified in Phase 1 D&C). Format-string change + one new printf
@@ -626,7 +1042,9 @@ lifecycle and rc semantics.
 
 ### Design & Constraints
 
-- **Marker shape mirrors `/run-plan` SKILL.md:851-855** exactly:
+- **Marker shape mirrors `/run-plan` SKILL.md's `requires.land-pr.<id>`
+  write** (currently at lines 870-874, anchor: the `printf 'skill:
+  land-pr\nparent: run-plan\n...'` block) exactly:
   `skill: land-pr\nparent: <caller>\nid: %s\nbranch: %s\ndate: %s\n`.
   The new `branch:` field is the additional element this plan introduces.
 - **`/commit pr` and `/quickfix` do not pass `--auto`** to /land-pr per
@@ -668,13 +1086,18 @@ lifecycle and rc semantics.
   `fulfilled.fix-issues.$SPRINT_ID`.
 - [ ] AC2.5: After the caller-loop's `# === END CANONICAL ... ===`
   marker, the explicit-finalize block removes `requires.land-pr.<id>`
-  in `/commit pr`, `/do pr`, `/quickfix`, AND per-issue in
-  `/fix-issues pr` — regardless of LAND_OUTCOME (verified by simulating
-  each STATUS arm: merged, pr-ready, rebase-conflict).
+  in `/commit pr`, `/do pr`, `/quickfix`, `/run-plan modes/pr.md`,
+  AND per-issue in `/fix-issues pr` — regardless of LAND_OUTCOME
+  (verified by simulating each STATUS arm: merged, pr-ready,
+  rebase-conflict). All 5 callers in scope.
 - [ ] AC2.6: Explicit-finalize block in each new caller (commit, do,
   fix-issues) rewrites `fulfilled.<skill>.<id>` to:
-  - `status: complete` when LAND_OUTCOME ∈ {merged, created, monitored, pr-ready}
-  - `status: failed` when LAND_OUTCOME ∈ {rebase-conflict, push-failed, create-failed, merge-failed, monitor-failed, rebase-failed}
+  - `status: complete` when LAND_OUTCOME ∈ {merged, created, pr-ready}
+    (R-5-7: `monitored` dropped — never assigned by source path; the
+    outer `monitored` STATUS arm falls through to inner CI_STATUS;
+    `pr-ready` includes the inner `unknown`/`*` settle paths per R-4-6
+    / DA-4-2 fix — these are success-equivalent, not failures)
+  - `status: failed` when LAND_OUTCOME ∈ {rebase-conflict, push-failed, create-failed, merge-failed, monitor-failed, rebase-failed, pr-ci-failing}
   - `status: cancelled` when CANCELLED=1.
 - [ ] AC2.7: End-to-end `/do pr` auto-mode invocation produces:
   `fulfilled.do.$SLUG status: complete` + `fulfilled.land-pr.$SLUG
@@ -682,12 +1105,62 @@ lifecycle and rc semantics.
 - [ ] AC2.8 (regression): `/quickfix`'s pre-existing
   `fulfilled.quickfix.$SLUG` shape (status fields, finalize_marker
   behavior) is byte-identical pre- and post-this-plan.
-- [ ] AC2.9 (DA-2-2): `/run-plan`'s `requires.land-pr.<id>` write at
-  `SKILL.md:851-855` now includes `branch: <branch_name>` field.
-  Verified by reading the file post-edit.
+- [ ] AC2.9 (DA-2-2 + R-4-2 + R-5-1 + R-5-9 + DA-5-3): `/run-plan`'s
+  `requires.land-pr.<id>` write inside Phase 1 Step 8's tracking fence
+  (anchor: the `printf 'skill: land-pr\nparent: run-plan\nid: %s\nbranch: %s\ndate: %s\n'`
+  block guarded by `if [ "$LANDING_MODE" = "pr" ]; then`, currently
+  `skills/run-plan/SKILL.md:870-874`) now includes a `branch:` field
+  AND derives the branch name from `${BRANCH_PREFIX}${PLAN_SLUG}`
+  (NOT from `git symbolic-ref --short HEAD` and NOT from `$BRANCH_NAME`
+  which is out of scope at the write site). Both `BRANCH_PREFIX` and
+  `PLAN_SLUG` are re-derived at fence-top of the marker-write fence
+  (831-875) per R-5-1 fix; the construction MUST appear AFTER the
+  re-derivation block AND BEFORE the printf.
+
+  **Behavioral assert — reproducible script (R-5-9 — replaces prose-only
+  recipe; DA-5-3 — config-derived parity rather than hard-coded literal):**
+  ```bash
+  AC29_ROOT=$(mktemp -d)
+  cd "$AC29_ROOT"
+  mkdir -p .claude/skills/update-zskills/scripts plans
+  # Synthesize a minimal zskills-config with a non-default branch_prefix
+  # so the assert is sensitive to actual config-driven behavior.
+  cat > .claude/zskills-config.json <<'CFG'
+  {"branch_prefix": "ftest/"}
+  CFG
+  # Provide a stub zskills-resolve-config.sh (the fence sources it):
+  cat > .claude/skills/update-zskills/scripts/zskills-resolve-config.sh <<'STUB'
+  : ${TRACKING_ID:?}; : ${PLAN_FILE:?}; : ${LANDING_MODE:?}
+  STUB
+  PLAN_FILE="plans/FOO_BAR.md"
+  echo -e "---\nstatus: planning\n---\n# FOO_BAR" > "$PLAN_FILE"
+  export CLAUDE_PROJECT_DIR="$AC29_ROOT" TRACKING_ID="foo-bar" \
+    PHASE="1" LANDING_MODE="pr" PR_WORKTREE_PATH="" TIMEZONE="UTC"
+  # Execute the fence's bash content (with R-5-1 in-fence derivation):
+  # ... run the bash block from skills/run-plan/SKILL.md fence 831-875
+  # verbatim against the test root ...
+  # Then assert:
+  grep -q '^branch: ftest/foo-bar$' \
+    "$AC29_ROOT/.zskills/tracking/run-plan.foo-bar/requires.land-pr.foo-bar"
+  ```
+  The assert reads the marker's `branch:` line and expects
+  `ftest/foo-bar` (NOT hard-coded `feat/foo-bar`) — derived from the
+  test config's `branch_prefix: ftest/` value times the plan slug.
+  Failure modes the assert catches: (a) BRANCH_PREFIX unset at write
+  site → `branch:` empty (R-5-1 defect); (b) PLAN_SLUG unset →
+  `branch: ftest/` (also R-5-1 defect); (c) printf format-string typo
+  glues `branch:` to `date:` (DA-5-9 concern — the line-anchored
+  `^branch:` regex catches malformed shape).
 - [ ] AC2.10: Synthesizing a failure mid-caller-loop (e.g., STATUS=push-failed
   break path) followed by explicit-finalize → `fulfilled.<skill>.<id>`
   ends as `status: failed`, NOT `complete` (DA-2-1 fix verification).
+- [ ] AC2.11 (R-4-6 / DA-4-2): Synthesizing CI_STATUS=unknown OR an
+  unrecognized CI_STATUS value (catch-all `*` arm) → loop breaks at the
+  "settle at pr-ready" arm → `LAND_OUTCOME=pr-ready` → explicit-finalize
+  stamps `fulfilled.<skill>.<id>` as `status: complete`, NOT `failed`.
+  Negative-test the regression: if implementer forgets the `unknown`/`*`
+  arms, LAND_OUTCOME stays default `unknown` and FINAL=failed — assert
+  catches this.
 
 ### Dependencies
 
@@ -731,29 +1204,46 @@ clear-tracking until Wave 1 lands its broader widening.
   (per codebase agent §C, lines 1149-1156): add the new hook entry.
   Triggers a `metadata.version` bump on `/update-zskills` (Phase 6).
 - [ ] **Narrow `clear-tracking.sh` preservation patch (D9):**
-  - Edit `skills/update-zskills/scripts/clear-tracking.sh:48-57` case statement:
+  - **Pre-flight (per Residual Risk #7):** run
+    `grep -nE 'fulfilled\.(land-pr|commit|do|fix-issues|quickfix)\.\*' skills/update-zskills/scripts/clear-tracking.sh`.
+    If all five families already appear in the preserve arm (Wave 1
+    landed first), skip this sub-bullet — record "no-op (Wave 1
+    landed first)" in the implementation log.
+  - Otherwise, edit `skills/update-zskills/scripts/clear-tracking.sh`
+    around lines 46-57 (anchor: the `while IFS= read -r f; do`
+    classification loop's `case "$base" in` block) to extend the
+    existing `fulfilled.run-plan.*)` preserve arm:
     ```bash
     case "$base" in
       fulfilled.run-plan.*|fulfilled.land-pr.*|fulfilled.commit.*|fulfilled.do.*|fulfilled.fix-issues.*|fulfilled.quickfix.*)
         preserve_count=$((preserve_count+1)) ;;
-      requires.*)
-        c_requires=$((c_requires+1)) ;;
-      step.*|phasestep.*)
-        c_step=$((c_step+1)) ;;
-      verify-pending-attempts.*)
-        c_vpa=$((c_vpa+1)) ;;
-      fulfilled.verify-changes.*|fulfilled.draft-plan.*|fulfilled.refine-plan.*)
-        # Wave 1 (issue #228 Part A) will widen; preserved here as bookkeeping for now.
-        c_other=$((c_other+1)) ;;
-      *)
-        c_other=$((c_other+1)) ;;
+      fulfilled.verify-changes.*) c_verify=$((c_verify+1)) ;;
+      fulfilled.draft-plan.*)     c_draft=$((c_draft+1)) ;;
+      fulfilled.refine-plan.*)    c_refine=$((c_refine+1)) ;;
+      requires.*)                 c_requires=$((c_requires+1)) ;;
+      step.*|phasestep.*)         c_step=$((c_step+1)) ;;
+      verify-pending-attempts.*)  c_vpa=$((c_vpa+1)) ;;
+      *)                          c_other=$((c_other+1)) ;;
     esac
     ```
-  - Edit the residual-count assertion at lines 150-157: remove
-    `fulfilled.land-pr.*`, `fulfilled.commit.*`, `fulfilled.do.*`,
-    `fulfilled.fix-issues.*`, `fulfilled.quickfix.*` from the
-    residual-class enumeration (they are now preserved, so they MUST
-    not trip the assert).
+    Also update the `clear_count` arithmetic (line 60) if the
+    classification counters change shape (they do NOT in the above
+    patch — same counter names preserved). And the verbose-output
+    `printf` block (lines 102-113) only displays counters that exist;
+    since no counters were renamed, no display changes needed beyond
+    optionally updating the preserve-display line at line 104 to
+    reflect the new family list (purely cosmetic).
+  - **The residual-count assertion at `clear-tracking.sh:150-157` does
+    NOT need modification** — verified empirically by reading the
+    source: it enumerates `requires.*`, `step.*`, `phasestep.*`,
+    `fulfilled.verify-changes.*`, `fulfilled.draft-plan.*`,
+    `fulfilled.refine-plan.*`, `verify-pending-attempts.*`. None of
+    the new families being added to the preserve arm appear in the
+    assertion's `-name` enumeration, so adding them to preserve does
+    NOT break the assertion. D9 was correct on this point; the
+    previous Phase 3 work item bullet asking to "remove [families]
+    from the residual-class enumeration" was a contradiction with D9
+    and is REMOVED per R-4-11. **Do NOT edit lines 150-157.**
   - Mirror via `bash scripts/mirror-skill.sh update-zskills` (since
     clear-tracking lives in update-zskills's `scripts/` subdir per
     codebase agent §A).
@@ -793,8 +1283,12 @@ clear-tracking until Wave 1 lands its broader widening.
   session that wrote `fulfilled.land-pr.foo` + `fulfilled.commit.bar`
   + `fulfilled.draft-plan.baz` preserves the first two and clears the
   third (the third is Wave 1's responsibility).
-- [ ] AC3.5: `bash skills/update-zskills/scripts/clear-tracking.sh` residual assertion
-  (lines 150-157) returns 0 (no residual; lockstep with new preservation).
+- [ ] AC3.5: `bash skills/update-zskills/scripts/clear-tracking.sh`
+  residual assertion (lines 150-157, UNCHANGED per R-4-11 / D9) returns
+  0 after a synthesized session — the new families (`fulfilled.land-pr.*`,
+  `fulfilled.commit.*`, etc.) are now preserved by the extended arm and
+  are NOT in the residual-class `-name` enumeration, so the assertion
+  passes naturally.
 - [ ] AC3.6: Mirror diff: `diff hooks/block-bypassed-land-pr.sh
   .claude/hooks/block-bypassed-land-pr.sh` returns empty.
 - [ ] AC3.7: `/update-zskills` (dry-run) reports the new hook in its
@@ -838,14 +1332,73 @@ asserts** that no skill source contains a bypass pattern (DA-1-5).
     an `explicit-finalize` block AFTER the `# === END CANONICAL ... ===`
     anchor that contains a `sed -i "s/^status: started$/status:` line
     (the rewrite) AND an `rm -f .*requires.land-pr.` line (the cleanup).
+  - **Fence-survival assert (R-4-7 / DA-4-4 + R-5-11 indentation
+    tolerance + DA-5-4 counter-assert):** the `sed -i "s/^status:
+    started$/status:` line for each caller MUST appear BEFORE the
+    closing ` ``` ` of the caller-loop's bash fence.
+    Procedure:
+    1. Locate the line number of `# === END CANONICAL /land-pr CALLER
+       LOOP ===` (use `grep -nF` — substring match — to handle the
+       fix-issues case where the anchor is 2-space indented inside a
+       per-issue loop wrapper).
+    2. Locate the line number of the NEXT closing fence delimiter
+       AFTER that anchor. Use `grep -nE "^[[:space:]]*\`\`\`$"` (R-5-11:
+       allow leading whitespace — the SKILL.md:875 closing fence in
+       /run-plan SKILL.md is 3-space indented inside a numbered-list
+       bullet; current callers all use unindented closing fences but
+       a future indented case must not silently slip through).
+    3. Positive assert: BOTH the `sed -i "s/^status: started$/status:`
+       line AND the `rm -f .*requires.land-pr.` line are BETWEEN those
+       two line numbers. If the `sed`/`rm` lines appear AFTER the
+       closing triple-backtick, the assert FAILS (the finalize was
+       placed in a new fence — `$LAND_OUTCOME` would be unset there).
+    4. **Counter-assert (DA-5-4):** locate the line AFTER the closing
+       ``` of the caller-loop fence (i.e., line N+1 where N is the
+       closing-``` line); grep from there to EOF for
+       `sed -i "s/^status: started$/status:` AND
+       `rm -f .*requires.land-pr.` matching the same caller's marker
+       basename — assert ZERO hits. This catches the duplicate-fence
+       failure mode where an implementer adds a NEW fence after the
+       caller-loop and replicates the finalize there with stale
+       (unset) `$LAND_OUTCOME`. The positive assert finds the
+       in-fence copy; the counter-assert proves no out-of-fence copy
+       exists.
   - `/quickfix`'s pre-existing `fulfilled.quickfix.$SLUG` write at
     `SKILL.md:637` is unchanged (byte-anchor on the surrounding lines).
   - `/quickfix` contains an `rm -f .*requires.land-pr.` line AFTER the
     `# === END CANONICAL ... ===` anchor (the new requires-cleanup).
   - `/run-plan modes/pr.md` contains an `rm -f .*requires.land-pr.`
     line AFTER its `# === END CANONICAL ... ===` anchor (DA-3-4 fix).
-  - `/run-plan SKILL.md` line 851-855 write block contains `branch:`
-    in its printf format string (DA-2-2 + R-3-1).
+  - `/run-plan SKILL.md` `requires.land-pr.<id>` write block (anchor:
+    the `printf 'skill: land-pr\nparent: run-plan\nid: %s\nbranch:
+    %s\ndate: %s\n'` block guarded by `if [ "$LANDING_MODE" = "pr" ];
+    then`; currently lines 870-874) contains `branch:` in its printf
+    format string AND derives the branch value from
+    `${BRANCH_PREFIX}${PLAN_SLUG}` (NOT from `git symbolic-ref` and
+    NOT from `$BRANCH_NAME`) — DA-2-2 + R-3-1 + R-4-2 / DA-4-1.
+
+    **Grep anchors (DA-5-8 — anchor on the NEW variable name introduced
+    by this plan to avoid false positives from pre-existing prose
+    mentions of `${BRANCH_PREFIX}${PLAN_SLUG}` at lines 1263, 2383,
+    2414):**
+
+    Assert 1 — the new variable assignment exists in the fence:
+    `grep -nE '^[[:space:]]*BRANCH_NAME_FOR_MARKER=' skills/run-plan/SKILL.md`
+    returns at least one hit. The literal variable name
+    `BRANCH_NAME_FOR_MARKER=` is introduced by this plan and appears
+    nowhere else in the file pre-refactor.
+
+    Assert 2 — fence-top re-derivation lands inside the marker-write
+    fence (831-875): identify the closing-``` line number AFTER the
+    `printf .* requires.land-pr.\$TRACKING_ID` line; assert the
+    `BRANCH_PREFIX="feat/"` line AND the `PLAN_SLUG=$(basename` line
+    both appear at line numbers BETWEEN the OPENING ``` of the same
+    fence and the `BRANCH_NAME_FOR_MARKER=` line (R-5-1 — fence-top
+    re-derivation discipline).
+
+    Assert 3 — textual precedence: the `BRANCH_NAME_FOR_MARKER=` line
+    must appear BEFORE the `requires.land-pr.\$TRACKING_ID` printf
+    line.
   - `.claude/settings.json` contains the new hook entry.
   - `hooks/block-bypassed-land-pr.sh` is executable AND contains the
     inlined `is_gh_pr_subcommand` function header line.
@@ -854,23 +1407,105 @@ asserts** that no skill source contains a bypass pattern (DA-1-5).
     skill` AND the Pattern 2 anchor `/land-pr invocation appears to have
     errored`.
 
-  Negative asserts (DA-1-5 + DA-1-6 + R-2-5 + R-3-4):
-  - `grep -nE "^[[:space:]]*[^#[:space:]\`].*[^\`]gh pr create[^\`]" skills/land-pr/SKILL.md`
-    returns zero matches — anchors exclude lines starting with `\``
-    (prose mentioning `\`gh pr create\``) AND require non-backtick
-    chars immediately around `gh pr create` (so backtick-wrapped prose
-    matches are excluded). **R-3-4 verified false-positive at line 601**
-    (` `gh pr create` again. The script does NOT call \`gh pr edit\``)
-    is now excluded by this regex. Pre-verify against current source
-    before adding the assert — any non-prose match would be a regression.
-  - `grep -nrE "(bash|sh)[[:space:]]+-c[[:space:]]*['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" skills/`
-    returns zero matches across ALL skills (no `bash -c '...gh pr...'`
-    or `sh -c '...gh pr...'` bypass idiom).
-  - `grep -nrE "eval[[:space:]]+['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" skills/`
-    returns zero matches (no `eval 'gh pr create'` bypass idiom).
+  Negative asserts (DA-1-5 + DA-1-6 + R-2-5 + R-3-4 + R-4-3 / DA-4-3 +
+  R-5-2 / DA-5-2 + R-5-3 / DA-5-1):
+  - **Pattern 1 (R-4-3 / DA-4-3 fix — catches bare-line bypass; R-5-2 /
+    DA-5-2 tightening — anchored to shell-command position to exclude
+    prose false positives; R-5-3 / DA-5-1 scope fix — recursive across
+    all `skills/` `.md` sources with `*.md` carve-out for legitimate
+    `gh pr create`/`gh pr merge --auto` invocations inside
+    `skills/land-pr/scripts/*.sh`).** The regex requires the
+    `gh pr (create|merge --auto)` token to sit in a shell-command
+    position — either start-of-line (with optional leading whitespace)
+    OR after a shell separator (`;`, `&&`, `||`). It excludes comment
+    lines (`#` first-non-space char) AND `echo`/`printf` prose
+    invocations (per DA-5-2's empirical verification that the prior
+    regex matched `echo "running gh pr create now"`):
+    ```bash
+    grep -rnE "(^|;|\|\||&&)[[:space:]]*gh pr (create|merge[^\`]*--auto)([[:space:]]|$)" \
+      skills/ --include='*.md' \
+      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+      | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(echo|printf)[[:space:]]'
+    ```
+    returns zero matches across ALL skills (recursive scope —
+    consistent with Patterns 2/3).
+
+    **Scope rationale (R-5-3 / DA-5-1).** AC4.5's threat model is
+    "future maintainer pastes `gh pr create` into a caller skill"
+    (bypasses #218, #221, #223 all originated in non-land-pr skills).
+    Single-file scope (`skills/land-pr/SKILL.md` only) misses the
+    primary threat vector. The `--include='*.md'` carve-out excludes
+    `skills/land-pr/scripts/*.sh` (the only sanctioned `gh pr create`
+    / `gh pr merge --auto` callsites, at
+    `skills/land-pr/scripts/pr-push-and-create.sh:142,145,156` and
+    `skills/land-pr/scripts/pr-merge.sh:87` — verified by reading
+    those files); SKILL.md sources are the bypass-vulnerable surface.
+
+    **Regex rationale (R-5-2 / DA-5-2).** Anchoring on `(^|;|\|\||&&)`
+    requires the token to appear in shell-command-position context, not
+    inside prose. The trailing `([[:space:]]|$)` requires a space or
+    EOL after the verb (excludes `gh pr created.` past-tense prose).
+    The two `grep -v` filters strip comments and `echo`/`printf` prose.
+    Empirically tested fixtures:
+
+    **Must-match fixtures** (add to Phase 5 test corpus):
+    - `gh pr create -B main` (bare)
+    - `  gh pr create -B main` (indented)
+    - `cd /tmp/wt && gh pr create -B main` (chained via `&&`)
+    - `foo; gh pr create -B main` (chained via `;`)
+    - `gh pr merge --auto`
+    - `gh pr merge --auto --squash --delete-branch` (3-flag)
+    - `gh pr merge --delete-branch --squash --auto` (auto at end)
+
+    **Must-NOT-match fixtures**:
+    - `` `gh pr create` again. `` (backtick-wrapped prose; line 601 case)
+    - `# gh pr create -B main` (comment line)
+    - `   # gh pr create` (indented comment)
+    - `echo gh pr create` (echo prose; DA-5-2)
+    - `echo "running gh pr create now"` (echo with double-quotes; DA-5-2)
+    - `printf 'gh pr create'` (printf prose)
+    - `But avoid gh pr create directly per CLAUDE.md.` (English prose,
+      no shell separator)
+    - `do not use gh pr create` (English prose)
+    - `foo gh pr create bar` (no shell separator before token)
+    - `some_cmd  # avoids gh pr create` (trailing-comment prose;
+      caught by `echo|printf` filter? NO — caught because the comment-
+      strip would not strip this line. Verify: this line does NOT
+      start with `#`, so first `grep -v` does not strip; but the
+      regex itself requires shell-separator precedence — `# avoids`
+      is text not a shell separator — so primary regex does not
+      match. Verified empirically.)
+    - `gh pr edit --body-file ...`
+    - `gh pr merge` (bare, no `--auto`)
+    - `gh pr --help`
+    - `bash -c 'gh pr create'` (Pattern 2 catches this; Pattern 1
+      intentionally does NOT — bash -c wrapping is a separate
+      threat class)
+
+    Implementer-agent runs the must-match/must-NOT-match assertions
+    against fixture files (NOT against live skill source — the live
+    source must produce zero matches after Pattern 1 is corrected).
+    **Empirical verification gate:** before committing the assert,
+    the implementer MUST run the recursive pipeline against current
+    `skills/` and confirm zero matches (verified by refiner Round 2:
+    zero matches against post-Round-1 source).
+  - **Pattern 2** (idiomatic `bash -c` / `sh -c` wrapper — backstop for
+    `bash -c '...gh pr create...'`):
+    ```bash
+    grep -nrE "(bash|sh)[[:space:]]+-c[[:space:]]*['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" skills/
+    ```
+    returns zero matches across ALL skills.
+  - **Pattern 3** (`eval` wrapper):
+    ```bash
+    grep -nrE "eval[[:space:]]+['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" skills/
+    ```
+    returns zero matches.
   - **Verified against current source:** these patterns return zero
-    matches today; verify before adding the assert (so the assert
-    doesn't immediately fail on a pre-existing legitimate use).
+    matches today (verified by running the corrected Pattern 1 against
+    `skills/land-pr/SKILL.md` — only line 601's backtick-wrapped prose
+    needs to be tolerated, and the regex correctly excludes it).
+    Implementer must re-verify before committing the assert (so the
+    assert doesn't immediately fail on a pre-existing legitimate use).
   - If a skill genuinely needs to wrap a gh pr call, it MUST use the
     supporting-script architecture (a separate `.sh` file referenced by
     SKILL.md, NOT a `bash -c` / `eval` inline).
@@ -904,10 +1539,26 @@ asserts** that no skill source contains a bypass pattern (DA-1-5).
   conformance FAILS on that specific assert (negative test).
 - [ ] AC4.4: Editing `hooks/_lib/git-tokenwalk.sh`'s `is_gh_pr_subcommand`
   body without updating the inlined copy → drift-gate FAILS (negative test).
-- [ ] AC4.5: Adding a `bash -c 'gh pr create'` snippet to any skill
-  source → conformance negative-assert FAILS (negative test).
-- [ ] AC4.6: Adding an inline `gh pr create` to `skills/land-pr/SKILL.md`
-  bash fence → conformance negative-assert FAILS (negative test).
+- [ ] AC4.5: Adding any of the following to any skill source →
+  conformance negative-assert FAILS (DA-4-7 coverage expansion):
+  - `bash -c 'gh pr create'` (Pattern 2)
+  - `sh -c 'gh pr create'` (Pattern 2 variant)
+  - `eval 'gh pr create'` (Pattern 3)
+  - `cd /tmp/wt && gh pr create -B main` (Pattern 1 chained — start-of-
+    line + chained shell ops; the corrected R-4-3 regex catches this)
+  - `gh pr create -B main` bare at start-of-line (Pattern 1 — DA-4-3
+    case)
+  Each is tested by inserting the line into a bash fence in a known
+  skill, running the conformance script, and asserting FAIL; then
+  reverting and asserting PASS.
+- [ ] AC4.6: Adding an UNQUOTED (no backticks) `gh pr create` line to
+  a `skills/land-pr/SKILL.md` bash fence → conformance negative-assert
+  FAILS (negative test). The current line 601
+  (` `gh pr create` again. The script does NOT call \`gh pr edit\``
+  — backtick-wrapped prose) MUST NOT trigger the assert (regression
+  smoke). Test by (a) adding a fixture line `gh pr create -B main`
+  inside an existing bash fence → assert FAILS; (b) reverting →
+  assert PASSES.
 
 ### Dependencies
 
@@ -930,7 +1581,7 @@ bypass-detect path under live `/run-plan` execution.
 
 - [ ] **`tests/test-block-bypassed-land-pr.sh`** — follow
   `tests/test-block-stale-skill-version.sh` shape (sandbox-stub
-  pattern). Test matrix (16 cases):
+  pattern). Test matrix (20 cases — R-4-14):
   - **C1**: `gh pr create -B main`, no markers → deny, Pattern 1
     STOP message (`outside a caller skill` substring).
   - **C2**: `gh pr create -B main`, `requires.land-pr.foo` with
@@ -1012,6 +1663,17 @@ bypass-detect path under live `/run-plan` execution.
   sourcing — source `hooks/_lib/git-tokenwalk.sh` and call
   `is_gh_pr_subcommand "gh pr create -B main" create` directly; assert
   rc=0 + `GH_PR_SUB_INDEX` set.
+- [ ] AC5.6 (DA-5-9 — marker-shape integration smoke): after exercising
+  the synthesized `/run-plan auto` and `/commit pr` invocations from
+  AC2.1 / AC2.9, parse each generated `requires.land-pr.<id>` marker
+  line-by-line and assert (a) `skill:`, `parent:`, `id:`, `branch:`,
+  `date:` each appear on a separate line (no glued fields); (b) the
+  `branch:` value matches `^[a-zA-Z0-9./_-]+$` (no shell-metacharacters
+  or empty value); (c) the `date:` value parses as ISO-8601 (e.g.,
+  `date -d "$(grep '^date:' marker | cut -d' ' -f2-)" >/dev/null 2>&1`).
+  Catches printf format-string typos (missing `\n` between fields)
+  and any expansion-failure that produces empty `branch:`. Smoke
+  must run AFTER AC2.1-2.9 produce live markers.
 
 ### Dependencies
 
@@ -1043,7 +1705,9 @@ touched skill and mirror to `.claude/skills/`.
   - `skills/land-pr/SKILL.md` — Phase 1 modifies the `fulfilled.land-pr.<id>`
     printf at line 533 to add the `branch:` field.
   - `skills/run-plan/SKILL.md` — Phase 2 adds `branch:` field to
-    `requires.land-pr.<id>` write at line 851-855 (DA-2-2 fix).
+    `requires.land-pr.<id>` write (anchor: the `printf 'skill:
+    land-pr\nparent: run-plan\n...'` block in Phase 1 Step 8;
+    currently lines 870-874) per DA-2-2 / R-4-2 fix.
   - `skills/update-zskills/SKILL.md` — install-triples table edited
     in Phase 3.
 - [ ] **Final mirror to `.claude/skills/`** via batch `cp -a` (memory:
@@ -1066,6 +1730,26 @@ touched skill and mirror to `.claude/skills/`.
 - **Skill versioning enforced at 4 points** (CLAUDE.md): warn-config-drift,
   /commit Phase 5 step 2.5, test-skill-conformance, PreToolUse backstop.
   The commit MUST pass all four.
+- **Cascade rule (R-4-15 — documented for future readers).** Any edit
+  under `skills/<owner>/...` — including `scripts/`, `references/`,
+  `modes/`, fixtures, install manifests — triggers a `metadata.version`
+  bump on the parent `<owner>/SKILL.md`. This plan's 7-skill bump
+  list is the application of this rule across all touched subtrees
+  (e.g., `modes/pr.md` edits → parent SKILL.md bump even though
+  SKILL.md content didn't change; `scripts/clear-tracking.sh` edits →
+  parent `update-zskills/SKILL.md` bump). Verifier should reapply
+  this rule independently before approving Phase 6.
+- **Non-cascade scope (DA-5-7 clarification).** Edits to
+  `hooks/_lib/*.sh` (this plan touches `hooks/_lib/git-tokenwalk.sh`
+  to add `is_gh_pr_subcommand`) and top-level `scripts/*.sh` (this
+  plan adds `scripts/land-pr-bypass-message.sh`) do NOT trigger any
+  skill `metadata.version` bump — these locations are outside the
+  per-skill cascade scope by design. They're versioned via the
+  repo-level zskills tag only. Drift between source `hooks/_lib/`
+  and inlined hook copies is caught by `tests/test-hook-helper-drift.sh`
+  (extended to 4 hooks per AC4.4). Drift between source
+  `scripts/land-pr-bypass-message.sh` and any consumer copy is
+  not relevant (consumers re-mirror on `/update-zskills`).
 
 ### Acceptance Criteria
 
@@ -1113,13 +1797,23 @@ and either accepted, mitigated by source-conformance, or out of scope:
    the PR creation by direct call. Recovery is: re-dispatch `/land-pr`
    (which is idempotent per `skills/land-pr/SKILL.md:592-606`). This
    constrains the agent to skill-mediated recovery only.
-4. **Stale `requires.land-pr.<id>` across sessions** — the explicit-
-   finalize at end of each caller's bash flow removes the marker, but
-   if the caller's last bash fence didn't run (Claude session crashed
-   mid-flow), the marker persists. Next session's hook would emit
-   Pattern 2 wording (mid-flight) incorrectly. User can run
-   `bash skills/update-zskills/scripts/clear-tracking.sh` to clear all `requires.*` markers
-   (NOT preserved per D9 — they're transient by design).
+4. **Stale `requires.land-pr.<id>` across sessions (DA-4-11
+   refinement)** — the explicit-finalize at end of each caller's bash
+   flow removes the marker, but if the caller's last bash fence didn't
+   run (Claude session crashed mid-flow) OR if a /quickfix mid-exit
+   path orphaned the marker (Residual Risk #8), the marker persists.
+   Next session's hook would emit Pattern 2 wording (mid-flight)
+   incorrectly on a fraction of legitimate `gh pr` typing attempts.
+   Recovery: user runs
+   `bash skills/update-zskills/scripts/clear-tracking.sh` to clear
+   all `requires.*` markers (NOT preserved per D9 — they're transient
+   by design). The Pattern 2 STOP message body MUST include a hint to
+   this effect: append the sentence "If you believe this is a stale
+   marker from a prior crashed session, run
+   `bash skills/update-zskills/scripts/clear-tracking.sh` to clear
+   and retry." to Pattern 2 (in addition to the existing recovery
+   guidance). Pattern 1 does NOT need this hint (Pattern 1 fires when
+   NO matching marker exists, so the stale-marker case doesn't apply).
 5. **Pre-existing `fulfilled.land-pr.*` markers without `branch:` field**
    (legacy from before this plan) — STOP-message script treats as
    Pattern 2 fallback (DA-2-2 mitigation). Forward-compat preserved.
@@ -1134,7 +1828,28 @@ and either accepted, mitigated by source-conformance, or out of scope:
    lands BEFORE this plan, the narrow D9 patch is redundant — the
    regex-extension in this plan's Phase 3 work item must be re-checked
    against the Wave 1 final shape; expected outcome is "the new arm is
-   already there, no-op."
+   already there, no-op." Phase 3 implementer MUST run
+   `grep -nE 'fulfilled\.(land-pr|commit|do|fix-issues|quickfix)\.\*' skills/update-zskills/scripts/clear-tracking.sh`
+   as a pre-flight check before applying the Phase 3 sub-bullet; if all
+   five families are present, mark Phase 3 sub-bullet "no-op (Wave 1
+   landed first)" and proceed.
+8. **`/quickfix` mid-exit orphan markers (DA-4-8 / R-4-9 acknowledged
+   risk).** `/quickfix` has 11+ `exit 1/2/5/6` paths between fence
+   631-678 (`requires.land-pr.$SLUG` marker-setup) and the line 1244
+   explicit-finalize site. Any of these exits leaves the marker
+   orphaned. Recovery: (a) `bash skills/update-zskills/scripts/clear-tracking.sh`
+   clears `requires.*` markers (they are NOT preserved per D9 — transient
+   by design); (b) next /quickfix session's marker overwrite (same
+   `$SLUG` produces same path). User-visible impact: hook may emit
+   Pattern 2 STOP message ("/land-pr invocation appears to have
+   errored mid-flight") on direct `gh pr create` attempts after a
+   crashed /quickfix run, until the marker is cleared. This is bounded
+   noise, not silent correctness loss. Mitigation NOT shipped because
+   retrofitting 11+ exits with inline cleanup risks introducing bugs
+   in /quickfix's tested flow; cost-benefit favors documenting +
+   accepting. Tracked as informational (not a blocker for #228 Part B).
+   Orthogonal to the /quickfix `finalize_marker` trap bug (D7 / #241),
+   which is also acknowledged-deferred.
 
 ## Drift Log
 
@@ -1142,20 +1857,44 @@ and either accepted, mitigated by source-conformance, or out of scope:
 
 | Date | Change | Reason |
 |------|--------|--------|
-|      |        |        |
+| 2026-05-12 | /refine-plan R1: replaced `git symbolic-ref --short HEAD` with `${BRANCH_PREFIX}${PLAN_SLUG}` at /run-plan SKILL.md:873 marker-write site. | R-4-2 / DA-4-1: Phase 1 Step 8 runs BEFORE worktree cd; symbolic-ref returned orchestrator branch (typically `main`) instead of feature branch — broke Pattern-2 branch-correlation. |
+| 2026-05-12 | /refine-plan R1: revised AC4.5 Pattern 1 regex to allow start-of-line bare `gh pr create`. | R-4-3 / DA-4-3: Round 3 regex missed bare bypass case. |
+| 2026-05-12 | /refine-plan R1: added `unknown` and `*` arms to LAND_OUTCOME mapping → `pr-ready` → `FINAL=complete`. | R-4-6 / DA-4-2: incomplete mapping silently stamped success as `failed`. |
+| 2026-05-12 | /refine-plan R1: added Phase 2 "Same-fence requirement" clause + Phase 4 positive conformance assert for `sed -i` placement. | R-4-7 / DA-4-4: variable-survival of `$LAND_OUTCOME` requires same-fence placement; prior prose ambiguous. |
+| 2026-05-12 | /refine-plan R1: /quickfix + other callers' cleanup-site re-resolve config explicitly. | DA-4-5: vars defined in tracking-setup fence don't survive to caller-loop fence. |
+| 2026-05-12 | /refine-plan R1: accepted /quickfix's 11 mid-exit paths as Residual Risk #8 (orphan-marker rate, recoverable). | DA-4-8: retrofit risk > orphan recovery cost. |
+| 2026-05-12 | /refine-plan R1: reconciled D9-vs-Phase-3 contradiction on residual-count assertion. | R-4-11: assertion enumerates classes-to-be-cleared, not preserved — D9 was canonical. |
+| 2026-05-12 | /refine-plan R1: removed stale line-number citations (`:851-855` → `:870-873`, etc.); switched to anchor-based citations where possible. | R-4-1 / DA-4-12: post-PR-#239/#240 line-number drift. |
+| 2026-05-12 | /refine-plan R2: R-5-1 BLOCKER fix — added fence-top re-derivation of `BRANCH_PREFIX` + `PLAN_SLUG` at the marker-write fence. | R-5-1: R1's substitution vars were ALSO in disjoint fences from the write site, recreating the original fence-survival defect class. |
+| 2026-05-12 | /refine-plan R2: AC4.5 regex tightened to shell-command-position anchor + 2-step `echo`/`printf` prose-strip pipeline. | R-5-2 / DA-5-2: R1 regex matched `# gh pr create`, `echo gh pr create`, double-quoted prose (false positives). |
+| 2026-05-12 | /refine-plan R2: AC4.5 Pattern 1 made recursive across `skills/` with `--include='*.md'` carve-out exempting `skills/land-pr/scripts/`. | R-5-3 / DA-5-1: Pattern 1 was single-file-scoped while threat model is multi-skill. |
+| 2026-05-12 | /refine-plan R2: added counter-assert against `sed -i` AFTER caller-loop's closing ```. | DA-5-4: R1's positive assert allowed implementer to write a SECOND `sed -i` in a new fence (variable unset) without tripping. |
+| 2026-05-12 | /refine-plan R2: explicit `LAND_OUTCOME=pr-ci-failing` insertion-point spec for fix-cycle-exhausted path. | R-5-4: ambiguous prose for where in nested `if ATTEMPT >= MAX` block the assignment goes. |
+| 2026-05-12 | /refine-plan R2: 14 minor consistency + documentation fixes (cancelled-arm cleanup; monitored drop from success-set; AC2.9 config-derived assert; non-cascade scope clarification; etc.) | Round 2 substantive + minor findings. |
 
 ## Plan Quality
 
-**Drafting process:** /draft-plan with 3 rounds of adversarial review
-(orchestrator-judged max-rounds-reached)
-**Convergence:** Max rounds reached — substantive Round 3 findings
-addressed via final refinement pass without an additional review round.
-Plan is shippable; remaining concerns enumerated in Residual Risks
-section.
-**Remaining concerns:** /quickfix's pre-existing trap-on-EXIT bug
-(DA-3-3) is documented but NOT fixed in this plan — file as separate
-Wave 1 follow-up. Wave 1's clear-tracking widening is a parallel
-dependency (Residual Risks #7). All other findings dispositioned.
+**Drafting process:** /draft-plan with 3 rounds (orchestrator-judged
+max-rounds-reached, post-PR-#238), then /refine-plan with 2 rounds
+(post-PR-#238 drift correction + Round-1-fix-introduced-bug correction).
+**Convergence:** Orchestrator-judged max-rounds-reached for /refine-plan.
+Trend: /draft-plan Round 3 = 4 inline-patched blockers → /refine-plan
+Round 1 = 5 blockers FIXED → /refine-plan Round 2 = 1 blocker FIXED
++ 4 substantive + 6 minor (all dispositioned). Diminishing-returns
+trajectory pronounced. Plan is shippable.
+
+**Remaining concerns (acknowledged, not blockers):**
+- /quickfix's pre-existing trap-on-EXIT bug (DA-3-3 / issue #241) is
+  documented but NOT fixed in this plan — separate Wave 1 follow-up.
+- /quickfix has 11+ mid-exit paths that can orphan `requires.land-pr.$SLUG`
+  markers (Residual Risk #8 — accepted with documented recovery).
+- Wave 1's clear-tracking widening is a parallel dependency
+  (Residual Risk #7).
+- DA-5-6 "SHOULD generate programmatically" is a soft directive
+  (verifier judgment call).
+- DA-5-4 counter-assert scope is same-skill files only; cross-skill
+  duplicate-fence pattern remains speculative.
+- All other findings dispositioned.
 
 ### Round History
 
@@ -1164,6 +1903,8 @@ dependency (Residual Risks #7). All other findings dispositioned.
 | 1     | 12 (R-1-1..12)    | 13 (DA-1-1..13)           | 25/25 (5 no-action; rest fixed; DA-1-7 / DA-1-10 justified-not-fixed) |
 | 2     | 13 (R-2-1..13)    | 10 (DA-2-1..10)           | 23/23 (Round 2 refinement complete) |
 | 3     | 8 (R-3-1..8)      | 7 (DA-3-1..7, DA-3-8)     | 14/15 (DA-3-3 documented as pre-existing /quickfix bug — defer-fix scope decision) |
+| 4 (/refine-plan post-PR-#238) | 18 (R-4-1..18) | 12 (DA-4-1..12) | 28 FIXED + 1 no-action (R-4-17) + 1 ACCEPTED-DOCUMENTED (DA-4-8 via Residual Risk #8) = 30 dispositioned (DA-5-10 wording fix — "dispositioned" not "resolved" since accepted-risk is not code-level fixed) |
+| 5 (/refine-plan Round 2) | 11 (R-5-1..11) | 10 (DA-5-1..10) | 1 BLOCKING (R-5-1 fence-survival sister-site) + 4 substantive + 6 minor (Round 2 refiner) = 21 findings; all 11 R-5-* fixed; all 10 DA-5-* fixed/justified per Round 2 disposition table |
 
 ### Plan Review
 
@@ -1241,3 +1982,59 @@ dependency (Residual Risks #7). All other findings dispositioned.
 | DA-3-6 (empty-stderr defensive gap) | Judgment | **Fixed** — Phase 1 hook spec adds "empty or short stderr → static fallback" defensive condition |
 | DA-3-7 (= portion of DA-3-3) | | **Documented** (same as DA-3-3) |
 | DA-3-8 (no Wave-1-already-landed pre-flight) | Speculative | **Justified-not-fixed** — Phase 6 runs full conformance before commit; if Wave 1 has already landed and broadened the case statement, this plan's narrow patch becomes a no-op (the new arm is already a subset); no special detection needed |
+
+#### Round 4 — disposition table (/refine-plan post-PR-#238 drift)
+
+| Finding | Verification | Disposition |
+|---------|--------------|-------------|
+| R-4-1 (stale line refs to /run-plan SKILL.md throughout plan) | Verified — actual write at lines 870-874 (commits bbf9742, c29b7a9 inserted code above) | **Fixed** — all 851-855 / 825 / 826-829 refs re-anchored to printf-block anchors with currently-line-N annotations |
+| R-4-2 BLOCKING (`git symbolic-ref --short HEAD` at write site returns wrong branch) | Verified — Phase 1 Step 8 runs in orchestrator CWD (= main repo); HEAD = `main`, not feature branch | **Fixed** — derive branch from `${BRANCH_PREFIX}${PLAN_SLUG}` (both in scope: BRANCH_PREFIX:149, PLAN_SLUG:428); AC2.9 strengthened with behavioral assert |
+| R-4-3 BLOCKING (AC4.5 Pattern 1 regex misses bare `gh pr create`) | Verified empirically via /tmp/regex-test.txt | **Fixed** — new regex `(^[[:space:]]*\|[^\`])gh pr (create\|merge[^\`]*--auto)([^\`]\|$)` + comment-strip pipeline; must-match and must-NOT-match fixtures specified |
+| R-4-4 (50-char threshold arbitrary) | Verified — static fallback ~250 chars, no legitimate dynamic message < 67 chars | **Fixed** — "empty after whitespace-strip" replaces "shorter than 50 chars" |
+| R-4-5 (AC1.7 missing 3+ flag permutations) | Verified | **Fixed** — AC1.7 extended with 9 flag-order permutations including `--delete-branch --squash --auto` |
+| R-4-6 BLOCKING (LAND_OUTCOME mapping omits CI_STATUS=unknown and `*`) | Verified at `skills/commit/modes/pr.md:195-200` — both arms break with "settle at pr-ready" comment | **Fixed** — mapping extended; `unknown → pr-ready`, `*) → pr-ready`; AC2.11 added; AC2.6 updated |
+| R-4-7 BLOCKING (fence-survival of $LAND_OUTCOME unspecified) | Verified — all 5 callers have single-fence caller-loops; vars don't survive across fences | **Fixed** — "Same-fence requirement" section added to Phase 2 marker-lifecycle; Phase 4 fence-survival assert added (sed/rm lines must be inside caller-loop fence) |
+| R-4-8 (stale `END CANONICAL` line refs in /run-plan modes/pr.md) | Verified — END CANONICAL at line 542 | **Fixed** — re-anchored on `# === END CANONICAL ===` marker not line numbers |
+| R-4-9 (inline cleanup before exit-1 underspecified, especially /quickfix 11 exits) | Verified | **Fixed** — split into per-caller strategy: commit/do/fix-issues INLINE; /quickfix ACCEPT-RISK + Residual Risk #8 |
+| R-4-10 (AC2.5 omits /run-plan) | Verified — Work Items add /run-plan finalize but AC2.5 wording predated | **Fixed** — AC2.5 enumeration expanded to all 5 callers |
+| R-4-11 (D9 vs Phase 3 Work Item contradiction on residual assertion edit) | Verified by reading `clear-tracking.sh:150-157` — assertion lists classes that should be CLEARED, not preserved; D9 is correct | **Fixed** — Phase 3 Work Item's "edit residual-count assertion" sub-bullet REMOVED; explicit "Do NOT edit lines 150-157" note added |
+| R-4-12 (AC4.5 same regex flaw as R-4-3) | Duplicate of R-4-3 | **Fixed** — same fix |
+| R-4-13 (AC4.6 ambiguity — "any bash fence" vs backtick-prose) | Verified | **Fixed** — AC4.6 reworded with UNQUOTED requirement + regression-smoke against line 601 |
+| R-4-14 (numeric drift "16 cases" vs C1-C20) | Verified | **Fixed** — Phase 5 work item updated to "20 cases" |
+| R-4-15 (cascade-rule note missing in Phase 6) | Judgment | **Fixed** — cascade-rule note added to Phase 6 D&C |
+| R-4-16 (Wave 1 pre-flight grep guidance) | Judgment | **Fixed** — Phase 3 Work Item pre-flight grep added; Residual Risk #7 expanded with explicit grep |
+| R-4-17 (`/quickfix unchanged` prose precision) | Verified clear | **No action** |
+| R-4-18 (D7 hedge weak — "/quickfix partial-AC" ambiguous) | Judgment | **Fixed** — D7 strengthened to "structurally unmet"; consumer-side caveat added |
+| DA-4-1 BLOCKING (= R-4-2 — branch substitution returns wrong branch) | Verified | **Fixed** — same as R-4-2 |
+| DA-4-2 BLOCKING (= R-4-6 — LAND_OUTCOME unknown/* missing) | Verified | **Fixed** — same as R-4-6 |
+| DA-4-3 BLOCKING (= R-4-3 — regex misses bare gh pr create) | Verified empirically | **Fixed** — same as R-4-3 |
+| DA-4-4 BLOCKING (= R-4-7 — fence-survival unspecified) | Verified | **Fixed** — same as R-4-7 |
+| DA-4-5 BLOCKING (/quickfix $TRACK_DIR & $SLUG out of scope at line 1244) | Verified — fence 631-678 ≠ fence 1071-1245; vars don't survive | **Fixed** — /quickfix Work Item now re-resolves config + reconstructs PIPELINE_ID + SLUG at cleanup site |
+| DA-4-6 (`continue` semantics on fail-arm) | Verified at `commit/modes/pr.md:145-194` | **Fixed** — explicit `continue`-semantics paragraph added to marker-lifecycle section |
+| DA-4-7 (regex doesn't catch &&-chained or piped variants) | Verified | **Fixed** — corrected Pattern 1 (R-4-3) catches `cd && gh pr create`; AC4.5 expanded with explicit fixtures |
+| DA-4-8 (/quickfix 11 exit-1 paths unenforceable) | Verified — 11 hits via grep | **ACCEPTED-DOCUMENTED** — Residual Risk #8 added; commit/do/fix-issues use INLINE strategy; /quickfix accepts orphan-marker risk with explicit recovery via clear-tracking |
+| DA-4-9 (= R-4-18 — D7 hedge tightening) | Judgment | **Fixed** — same as R-4-18 |
+| DA-4-10 (Phase 3 residual-assertion verifiability) | Judgment | **Fixed** — D9 now quotes the actual residual-block source so claim is self-contained |
+| DA-4-11 (Residual Risk #4 understates orphan rate) | Verified | **Fixed** — Risk #4 expanded; Pattern 2 STOP message now includes `clear-tracking.sh` hint |
+| DA-4-12 (= R-4-1 / R-4-2 — AC4 stale 851-855 line range) | Verified | **Fixed** — AC4 positive-assert re-anchored on printf-block, with grep anchor for `${BRANCH_PREFIX}${PLAN_SLUG}` construction |
+
+#### Round 5 — disposition table (/refine-plan Round 2 — adversarial against Round 1 fixes)
+
+| Finding | Verification | Disposition |
+|---------|--------------|-------------|
+| R-5-1 BLOCKING (Round 1's `${BRANCH_PREFIX}${PLAN_SLUG}` substitution recreates fence-survival defect at sister site) | Verified empirically — BRANCH_PREFIX@149 in fence 147-157; PLAN_SLUG@428 in fence 425-441; write site @873 in fence ~825-906; all disjoint | **Fixed** — added fence-top re-derivation of both vars at marker-write fence; matches the same `:1326-1328` convention used elsewhere |
+| R-5-2 (Pattern 1 regex matches `# gh pr create` + `echo gh pr create` — false positives) | Verified empirically via grep | **Fixed** — regex tightened to shell-command-position anchor; 2-step `echo`/`printf` prose-strip pipeline |
+| R-5-3 (Pattern 1 single-file vs Patterns 2/3 recursive — scope mismatch) | Verified | **Fixed** — Pattern 1 made recursive across `skills/` with `--include='*.md'` + `skills/land-pr/scripts/` carve-out |
+| R-5-4 (LAND_OUTCOME=pr-ci-failing insertion point underspecified) | Verified at `skills/commit/modes/pr.md:145-148` | **Fixed** — exact insertion-point spec for nested-`if` `fail` arm |
+| R-5-5 (/quickfix `$SLUG` fallback is circular — `$BRANCH` also out-of-fence) | Verified | **Fixed** — glob-based cleanup replaces fragile re-derivation; covered by Residual Risk #8 |
+| R-5-6 — R-5-11 (minor consistency: cancelled-arm dead code, monitored success-set, unknown overload, AC2.9 recipe, hedge wording, indented fence regex) | Mix of verified + judgment | **Fixed** — 6 minor corrections applied |
+| DA-5-1 (= R-5-3) | Verified — duplicate | **Fixed** — same as R-5-3 |
+| DA-5-2 (= R-5-2 — regex prose false-positive) | Verified empirically | **Fixed** — same as R-5-2 |
+| DA-5-3 (AC2.9 hardcodes `feat/foo-bar`) | Verified | **Fixed** — AC2.9 rewritten as reproducible config-derived script |
+| DA-5-4 (fence-survival positive-assert lacks negative counter-assert) | Judgment | **Fixed** — counter-assert added: no `sed -i` AFTER caller-loop's closing ``` |
+| DA-5-5 (empty-stderr fallback doesn't handle corrupt non-empty stderr) | Judgment | **Fixed** — sentinel-anchored fallback: requires `STOP: direct gh pr` substring, else use static |
+| DA-5-6 (AC1.7 should generate flag-perms programmatically) | Judgment | **Soft directive** — verifier judgment call; AC1.7 expanded to 9 perms but generation left to implementer |
+| DA-5-7 (Phase 6 cascade rule silent on `hooks/_lib/` + top-level `scripts/`) | Verified | **Fixed** — non-cascade scope clarified |
+| DA-5-8 (AC4 grep-anchor matches pre-existing prose) | Verified | **Fixed** — 3 specific asserts on `BRANCH_NAME_FOR_MARKER=` variable name |
+| DA-5-9 (no marker-shape integration smoke for AC2.9) | Judgment | **Fixed** — AC5.6 added |
+| DA-5-10 (Round History wording "resolved" vs "dispositioned") | Stylistic | **Fixed** — table wording corrected |
