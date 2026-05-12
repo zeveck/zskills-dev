@@ -295,10 +295,10 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 
 # /run-plan customizations of the canonical pattern:
 #   $LANDED_SOURCE = "run-plan"
-#   $WORKTREE_PATH = the per-phase PR-mode worktree
+#   $WORKTREE_PATH = the plan-scoped PR-mode worktree (one per plan, reused across all phases in finish/finish-auto modes; see Issue #191)
 #   $AUTO          = "true" when /run-plan was invoked with `auto` finish-mode
 #   $BODY_FILE     = constructed above
-#   $BRANCH_NAME   = the per-phase or per-plan feature branch
+#   $BRANCH_NAME   = the plan-scoped feature branch (one per plan; phase number does NOT appear in branch name)
 #   $PR_TITLE      = constructed above
 LANDED_SOURCE="run-plan"
 

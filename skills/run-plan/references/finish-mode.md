@@ -91,10 +91,15 @@ time):
 
 ### User Verify items in chunked mode
 
-In chunked mode, landing happens per-phase. If the just-landed phase has
-User Verify items, schedule the next-phase cron AND output the User Verify
-items in this turn's completion message. Per-phase landing IS the chunked
-model — do NOT hold landing until all phases complete.
+In chunked `finish` / `finish auto` modes (cherry-pick AND PR mode),
+landing happens ONCE after the final phase.
+Per-phase landing is NOT the chunked model — it was the previous
+cherry-pick behavior fixed by Issue #191.
+
+If individual phases have User Verify items, accumulate them across
+phases. In the FINAL phase's completion message, output the accumulated
+User Verify items from all phases together, then land once after the
+user has reviewed all of them.
 
 ### How to schedule the next cron (Design 2a — single persistent recurring cron)
 

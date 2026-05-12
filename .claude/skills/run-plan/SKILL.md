@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.11+911c6f"
+  version: "2026.05.11+15c0b8"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -2240,6 +2240,50 @@ handling, and Phase 5b gating. Do not proceed past Phase 5b without
 reading this file.
 
 ## Phase 6 — Land
+
+### Final-phase gating in finish/finish-auto modes (Issue #191)
+
+In `finish` and `finish-auto` modes, the cherry-pick worktree is
+plan-scoped (one worktree shared across all phases — see Phase 2 worktree
+creation). Commits accumulate across phases and landing happens ONCE
+after the FINAL phase. Per-phase landing is NOT the chunked model.
+
+Before dispatching to `modes/cherry-pick.md`, compute whether any
+incomplete phases remain in the plan's Progress Tracker. Use
+`$PLAN_FILE_FOR_READ` (the authoritative source resolved at the top of
+Phase 1 — main's copy in cherry-pick/direct modes, the feature-branch
+worktree's copy in PR mode).
+
+```bash
+# Count rows in the Progress Tracker whose Status column is ⬚ (not started).
+# 🟡 (in progress) does NOT count as remaining — the current phase is
+# itself 🟡 at the moment Phase 6 runs (it flips to ✅ after landing).
+REMAINING_PHASES=$(grep -cE '^\|[^|]*\|[^|]*⬚' "$PLAN_FILE_FOR_READ" || true)
+REMAINING_PHASES="${REMAINING_PHASES:-0}"
+```
+
+Gate the landing dispatch:
+
+```bash
+# Single-phase invocations land as today. Finish/finish-auto modes land
+# only when no incomplete phases remain (i.e., the current phase is the
+# final one).
+if [ "$FINISH_MODE" != "finish" ] && [ "$FINISH_MODE" != "finish-auto" ] || [ "$REMAINING_PHASES" -eq 0 ]; then
+  LAND_NOW=true
+else
+  LAND_NOW=false
+fi
+```
+
+When `LAND_NOW=false`, skip the landing dispatch below and proceed to
+Phase 5c (next-phase cron). Commits remain on the plan-scoped feature
+branch; the worktree is preserved for the next phase. When `LAND_NOW=true`,
+dispatch to the landing mode below as normal.
+
+If individual non-final phases have User Verify items, accumulate them
+across phases — surface in the per-phase completion message and re-surface
+them all in the final phase's completion message. The final landing waits
+on cumulative sign-off.
 
 **If LANDING_MODE = direct**: Read [modes/direct.md](modes/direct.md) in full and follow it.
 
