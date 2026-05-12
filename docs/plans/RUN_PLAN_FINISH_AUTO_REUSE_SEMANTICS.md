@@ -35,7 +35,7 @@ PR mode already implements this correctly (`SKILL.md:1198`: `WORKTREE_PATH="/tmp
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Cherry-pick worktree-creation gating on finish mode | ⬚ | | SKILL.md:972-989 + final-phase detection |
+| 1 — Cherry-pick worktree-creation gating on finish mode | 🟡 | `d4ef3dc` | Done on feature branch; awaits PR squash to main. AC1.6 plan-drift logged (see report) |
 | 2 — Cherry-pick landing-flow gating on final-phase + finish-mode.md/cherry-pick.md prose updates | ⬚ | | modes/cherry-pick.md + finish-mode.md |
 | 3 — Conformance test + CANARY7 + modes/pr.md comment cleanup | ⬚ | | tests/test-skill-conformance.sh:146 + CANARY7 ACs + pr.md:298/301 |
 
