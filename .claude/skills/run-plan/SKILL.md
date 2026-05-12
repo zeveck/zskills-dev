@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.10+1ec0ef"
+  version: "2026.05.11+911c6f"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -989,25 +989,57 @@ agent hasn't returned after 2 hours, declare it **failed**:
 1. **Create worktree via `.claude/skills/create-worktree/scripts/create-worktree.sh`** (do NOT use `isolation: "worktree"`):
    ```bash
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
-   WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
-     --prefix cp \
-     --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}" \
-     --pipeline-id "run-plan.${TRACKING_ID}" \
-     "${PLAN_SLUG}-phase-${PHASE}")
-   RC=$?
-   if [ "$RC" -ne 0 ]; then
-     echo "create-worktree failed (rc=$RC) for cherry-pick mode" >&2
-     exit "$RC"
+   PROJECT_NAME=$(basename "$PROJECT_ROOT")
+
+   # In finish/finish-auto modes, use one plan-scoped worktree shared
+   # across all phases (Issue #191). In explicit single-phase invocations,
+   # use a phase-scoped worktree.
+   if [ "$FINISH_MODE" = "finish" ] || [ "$FINISH_MODE" = "finish-auto" ]; then
+     CP_WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}"
+     CP_SLUG="${PLAN_SLUG}"
+   else
+     CP_WORKTREE_PATH="/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}"
+     CP_SLUG="${PLAN_SLUG}-phase-${PHASE}"
    fi
-   WORKTREE_PATH="$WT"
-   # Derived by create-worktree.sh: path ${WORKTREE_ROOT}/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE},
-   # branch cp-${PLAN_SLUG}-phase-${PHASE} (unified across modes — used by post-run-invariants.sh).
+
+   # Resume detection: directory-based, symmetric to PR mode's check at
+   # SKILL.md:1206-1209. An existing plan-scoped cherry-pick worktree
+   # means we're resuming the same plan across cron turns.
+   if [ -d "$CP_WORKTREE_PATH" ]; then
+     echo "Resuming existing cherry-pick worktree at $CP_WORKTREE_PATH"
+     WORKTREE_PATH="$CP_WORKTREE_PATH"
+   else
+     WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+       --prefix cp \
+       --allow-resume \
+       --purpose "run-plan cherry-pick; plan=${PLAN_SLUG}; phase=${PHASE}; finish-mode=${FINISH_MODE:-single}" \
+       --pipeline-id "run-plan.${TRACKING_ID}" \
+       "${CP_SLUG}")
+     RC=$?
+     if [ "$RC" -ne 0 ]; then
+       echo "create-worktree failed (rc=$RC) for cherry-pick mode" >&2
+       exit "$RC"
+     fi
+     WORKTREE_PATH="$WT"
+   fi
+   # Derived by create-worktree.sh: path ${WORKTREE_ROOT}/${PROJECT_NAME}-cp-${CP_SLUG},
+   # branch cp-${CP_SLUG} (unified across modes — used by post-run-invariants.sh).
+   # The --allow-resume flag is required because in finish/finish-auto modes
+   # the same branch (cp-${PLAN_SLUG}) is reused across phases.
    # Pre-flight prune+fetch+ff-merge, .zskills-tracked write, and .worktreepurpose
    # write are all owned by the script; do NOT duplicate them here.
    ```
 
-   Cherry-pick mode: one worktree per phase, auto-named branch, `/tmp/` path.
-   After landing (cherry-pick to main), worktree is removed.
+   Cherry-pick mode worktree scope:
+   - finish / finish-auto: one plan-scoped worktree shared across phases
+     (path `/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}`, branch
+     `cp-${PLAN_SLUG}`). Commits accumulate across phases; landing happens
+     once after the final phase (see Phase 2's landing flow). Worktree is
+     removed only after the final landing.
+   - Single-phase invocations (`/run-plan plan.md <phase>`): one phase-
+     scoped worktree (path `/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}-phase-${PHASE}`,
+     branch `cp-${PLAN_SLUG}-phase-${PHASE}`). Lands that one phase.
+     Worktree removed after that phase's landing.
 
 2. **Dispatch implementation agent WITHOUT `isolation: "worktree"`.** The
    prompt tells the agent the worktree path and requires absolute paths:
