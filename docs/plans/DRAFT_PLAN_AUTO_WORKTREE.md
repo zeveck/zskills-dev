@@ -2,10 +2,17 @@
 issue: 226
 title: /draft-plan auto-worktree + auto-commit (PR-mode projects)
 created: 2026-05-12
-status: active
+status: superseded
+superseded_by: docs/plans/PREAMBLE_WORKTREE_GATE.md
 ---
 
 # Plan: /draft-plan auto-worktree + auto-commit (PR-mode projects)
+
+> **SUPERSEDED 2026-05-12** — this plan over-engineered #226 as a /draft-plan-specific
+> auto-worktree feature (2000+ lines, 5-condition gate, parent= detection, state
+> file, multi-fence Phase 0). The real shape is a shared preamble used by 6
+> file-writing skills. See `PREAMBLE_WORKTREE_GATE.md`. PR #244 landed this plan
+> as a planning artifact; do NOT implement from this file.
 
 > **Landing mode: PR** -- This plan targets PR-based landing. All phases
 > use worktree isolation with a named feature branch.
