@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.11+15c0b8"
+  version: "2026.05.12+27b3fc"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -103,6 +103,25 @@ else
         LANDING_MODE="$CFG_LANDING"
       fi
     fi
+  fi
+fi
+```
+
+**Finish-mode resolution.** `$FINISH_MODE` is set deterministically from
+args (NOT orchestrator-tracked) so downstream conditionals (cherry-pick
+worktree gating, PR title construction, etc.) see a single canonical
+value. Values are exactly `"finish"`, `"finish-auto"`, or empty —
+nothing else is valid. Any downstream check that reads `$FINISH_MODE`
+must match against these three states.
+
+```bash
+# Detect finish mode (canonical values: "finish", "finish-auto", "")
+FINISH_MODE=""
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][iI][nN][iI][sS][hH]($|[[:space:]]) ]]; then
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+    FINISH_MODE="finish-auto"
+  else
+    FINISH_MODE="finish"
   fi
 fi
 ```

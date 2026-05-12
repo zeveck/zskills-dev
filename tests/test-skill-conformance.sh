@@ -141,6 +141,8 @@ check_not_in_file_filtered() {
 echo "=== /run-plan — behavior contracts ==="
 check       run-plan "stop-precedence"              'Takes precedence'
 check_fixed run-plan "landing-default"              'LANDING_MODE="cherry-pick"'
+check_fixed run-plan "finish-mode resolution"       'FINISH_MODE="finish-auto"'
+check_fixed run-plan "finish-mode default empty"    'FINISH_MODE=""'
 check       run-plan "direct+main_protected guard"  'direct mode is incompatible with main_protected'
 check_fixed run-plan "cherry-pick create-worktree"  '--prefix cp'
 check_fixed run-plan "cp worktree slug (single-phase)" '"${PLAN_SLUG}-phase-${PHASE}"'
@@ -1252,14 +1254,16 @@ else
 fi
 rm -f "$BQ_TMP"
 
-# Substitution-discipline rule at SKILL.md:179-187 must enumerate all 3 vars.
-DISCIPLINE_BLOCK=$(sed -n '179,187p' "$REPO_ROOT/skills/run-plan/SKILL.md")
+# Substitution-discipline rule (anchored by the "Never hardcode" prose
+# header) must enumerate all 3 vars. Content-anchored — robust against
+# upstream edits that shift line numbers.
+DISCIPLINE_BLOCK=$(awk '/\*\*Never hardcode `npm run test:all`/,/^$/' "$REPO_ROOT/skills/run-plan/SKILL.md")
 if echo "$DISCIPLINE_BLOCK" | grep -q '\$DEV_SERVER_CMD' \
    && echo "$DISCIPLINE_BLOCK" | grep -q '\$FULL_TEST_CMD' \
    && echo "$DISCIPLINE_BLOCK" | grep -q '\$TEST_OUTPUT_FILE'; then
-  pass "substitution-discipline at SKILL.md:179-187 names all 3 vars"
+  pass "substitution-discipline (Never-hardcode block) names all 3 vars"
 else
-  fail "substitution-discipline at SKILL.md:179-187 names all 3 vars" "block: $DISCIPLINE_BLOCK"
+  fail "substitution-discipline (Never-hardcode block) names all 3 vars" "block: $DISCIPLINE_BLOCK"
 fi
 
 echo ""

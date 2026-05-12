@@ -218,9 +218,15 @@ cd "$WORKTREE_PATH"
 # --- Construct PR title and body ---
 # $PLAN_SLUG, $PLAN_TITLE, $CURRENT_PHASE_NUM, $CURRENT_PHASE_TITLE come from
 # the plan parser (Phase 1 of /run-plan's execution).
-# $FINISH_MODE is true when running in finish mode (all remaining phases).
+# $FINISH_MODE is set deterministically from args by the resolution block
+# in SKILL.md's argument-detection section. Canonical values:
+#   "finish"      — interactive finish mode (all remaining phases, paused between)
+#   "finish-auto" — autonomous chunked finish mode (one phase per cron-fired turn)
+#   ""            — single-phase invocation (default)
+# Both finish-mode flavors share the plan-scoped PR title shape;
+# single-phase invocations get the per-phase title shape.
 
-if [ "$FINISH_MODE" = "true" ]; then
+if [ "$FINISH_MODE" = "finish" ] || [ "$FINISH_MODE" = "finish-auto" ]; then
   PR_TITLE="[${PLAN_SLUG}] ${PLAN_TITLE}"
 else
   PR_TITLE="[${PLAN_SLUG}] Phase ${CURRENT_PHASE_NUM}: ${CURRENT_PHASE_TITLE}"
