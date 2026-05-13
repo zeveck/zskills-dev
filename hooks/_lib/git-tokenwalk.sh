@@ -5,14 +5,18 @@
 #   Base (first-token-anchored) helpers:
 #     - is_git_subcommand    — tokenize-walk a `git $verb` invocation
 #     - is_destruct_command  — tokenize-walk a `<verb>` invocation (kill, rm, …)
+#     - is_gh_pr_subcommand  — tokenize-walk a `gh pr $verb` invocation,
+#                              with optional flag-order-agnostic flag match
 #
 #   Hook-local segment-walking wrappers (call the base helper per shell segment):
 #     - is_git_subcommand_in_chain   — segment-walk for cd-chained git commands
 #                                      (`cd /tmp/wt && git commit -m foo`)
 #     - is_destruct_command_in_chain — segment-walk for cd-chained destruct verbs
 #                                      (`some_cmd && kill -9 1234`)
+#     - is_gh_pr_subcommand_in_chain — segment-walk for cd-chained gh-pr verbs
+#                                      (`cd /tmp/wt && gh pr create -B main`)
 #
-# All four are inlined verbatim into hook source files; the drift gate at
+# All helpers are inlined verbatim into hook source files; the drift gate at
 # tests/test-hook-helper-drift.sh enforces byte-equality at CI time:
 #   - is_git_subcommand   inlined into block-unsafe-project.sh.template,
 #                                       block-unsafe-generic.sh,
@@ -21,6 +25,8 @@
 #   - is_git_subcommand_in_chain   inlined into block-unsafe-project.sh.template
 #                                              + block-unsafe-generic.sh
 #   - is_destruct_command_in_chain inlined into block-unsafe-generic.sh only
+#   - is_gh_pr_subcommand          inlined into block-bypassed-land-pr.sh
+#   - is_gh_pr_subcommand_in_chain inlined into block-bypassed-land-pr.sh
 #
 # Maintain HERE only.
 set -u
@@ -194,6 +200,126 @@ is_destruct_command_in_chain() {
   while IFS= read -r seg; do
     [ -z "$seg" ] && continue
     if is_destruct_command "$seg" "$want_first" "$flag_match"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+
+# Returns 0 iff $cmd is a `gh pr $want_sub` invocation. On match, also sets:
+#   GH_PR_SUB_INDEX = array index immediately after the matched subcommand
+#     token (i.e., the first arg position).
+#   GH_PR_SUB_REST  = post-subcommand args joined by single spaces, TRUNCATED
+#     at the first shell-segment boundary token (`&&`, `||`, `;`, `|`).
+# On no-match, GH_PR_SUB_INDEX=-1 and GH_PR_SUB_REST="".
+#
+# Tokenize-then-walk: skip env-var prefixes (KEY=VAL...), optional `env`,
+# find literal `gh`, walk past gh-level flags:
+#   -R val / --repo val      → consume 2 tokens
+#   --repo=val               → consume 1 token (embedded value)
+#   -h / --help / --version / --no-pager → consume 1 token
+#   any other --foo=bar      → consume 1 token
+# Then require next token == `pr` and next-next token == $want_sub.
+#
+# If $flag_regex is non-empty, ALSO require some subsequent token in the
+# current shell segment to match it (flag-order-agnostic, e.g., both
+# `gh pr merge --auto --squash` and `gh pr merge --squash --auto` match
+# `is_gh_pr_subcommand cmd merge '^--auto$'`).
+#
+# Quoted-`gh` / quoted-`pr` / quoted-subcommand are unwrapped one quote
+# layer to tolerate JSON-wire-format double-quote injection (mirrors
+# is_git_subcommand's defense).
+is_gh_pr_subcommand() {
+  local cmd="$1"
+  local want_sub="$2"
+  local flag_regex="${3:-}"
+  GH_PR_SUB_INDEX=-1
+  GH_PR_SUB_REST=""
+  local -a TOKENS
+  # shellcheck disable=SC2206
+  read -ra TOKENS <<< "$cmd"
+  local i=0 n=${#TOKENS[@]}
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+  while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+    ((i++))
+  done
+  local g="${TOKENS[$i]:-}"
+  g="${g%\"}"; g="${g#\"}"
+  g="${g%\'}"; g="${g#\'}"
+  [[ "$g" != "gh" ]] && return 1
+  ((i++))
+  # Walk past gh-level flags. -R/--repo take a separate value (2 tokens);
+  # --repo=value embeds the value (1 token); other --foo=bar / -h /
+  # --help / --version / --no-pager all consume a single token.
+  while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
+    case "${TOKENS[$i]}" in
+      -R|--repo) ((i+=2)) ;;
+      *)         ((i+=1)) ;;
+    esac
+  done
+  local pr_tok="${TOKENS[$i]:-}"
+  pr_tok="${pr_tok%\"}"; pr_tok="${pr_tok#\"}"
+  pr_tok="${pr_tok%\'}"; pr_tok="${pr_tok#\'}"
+  [[ "$pr_tok" != "pr" ]] && return 1
+  ((i++))
+  local sub="${TOKENS[$i]:-}"
+  sub="${sub%\"}"; sub="${sub#\"}"
+  sub="${sub%\'}"; sub="${sub#\'}"
+  [[ "$sub" != "$want_sub" ]] && return 1
+  # Match (so far). Compute scoped rest first so the optional flag-regex
+  # check is flag-order-agnostic AND segment-scoped.
+  GH_PR_SUB_INDEX=$((i + 1))
+  local j=$GH_PR_SUB_INDEX
+  local rest=""
+  local -a REST_TOKENS=()
+  while [[ $j -lt $n ]]; do
+    case "${TOKENS[$j]}" in
+      '&&'|'||'|';'|'|') break ;;
+    esac
+    rest="$rest ${TOKENS[$j]}"
+    REST_TOKENS+=( "${TOKENS[$j]}" )
+    ((j++))
+  done
+  GH_PR_SUB_REST="${rest# }"
+  if [[ -n "$flag_regex" ]]; then
+    local found=0 tok
+    for tok in "${REST_TOKENS[@]:-}"; do
+      [[ -z "$tok" ]] && continue
+      if [[ "$tok" =~ $flag_regex ]]; then
+        found=1
+        break
+      fi
+    done
+    if [[ $found -eq 0 ]]; then
+      GH_PR_SUB_INDEX=-1
+      GH_PR_SUB_REST=""
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# Returns 0 iff ANY shell segment of $cmd is a `gh pr $want_sub` invocation
+# (with optional $flag_regex match). Same segment-split rules as
+# is_git_subcommand_in_chain: `&&`, `||`, `;`, `|`, real newline, JSON-
+# escaped two-char `\n`. Restores cd-chain semantics
+# (e.g., `cd /tmp/wt && gh pr create -B main` matches) on top of the
+# first-token-anchored is_gh_pr_subcommand core.
+is_gh_pr_subcommand_in_chain() {
+  local cmd="$1"
+  local want_sub="$2"
+  local flag_regex="${3:-}"
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_gh_pr_subcommand "$seg" "$want_sub" "$flag_regex"; then
       return 0
     fi
   done <<< "$normalized"
