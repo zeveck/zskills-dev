@@ -43,6 +43,7 @@ run_suite "test-verify-response-validate.sh" "tests/test-verify-response-validat
 run_suite "canary-verifier-agent-discovery-part1.sh" "tests/canary-verifier-agent-discovery-part1.sh"
 run_suite "canary-verifier-timeout-injection.sh" "tests/canary-verifier-timeout-injection.sh"
 run_suite "canary-verify-response-validate.sh" "tests/canary-verify-response-validate.sh"
+run_suite "canary-ensure-worktree.sh" "tests/canary-ensure-worktree.sh"
 run_suite "test-port.sh" "tests/test-port.sh"
 run_suite "test-apply-preset.sh" "tests/test-apply-preset.sh"
 run_suite "test-compute-cron-fire.sh" "tests/test-compute-cron-fire.sh"

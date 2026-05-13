@@ -141,7 +141,18 @@ if [ -n "$WORKTREE_OVERRIDE" ]; then
   [ -d "$WORKTREE_OVERRIDE" ] || { echo "ensure-worktree: --worktree-override path does not exist or is not a directory: $WORKTREE_OVERRIDE" >&2; exit 2; }
   OVERRIDE_ABS=$(cd "$WORKTREE_OVERRIDE" && pwd)  # symlink-resolve
   OVERRIDE_COMMON=$(git -C "$OVERRIDE_ABS" rev-parse --git-common-dir 2>/dev/null) || { echo "ensure-worktree: --worktree-override is not a git repo: $WORKTREE_OVERRIDE" >&2; exit 2; }
-  OVERRIDE_COMMON_ABS=$(cd "$OVERRIDE_ABS/$OVERRIDE_COMMON" && pwd)
+  # `--git-common-dir` returns a RELATIVE path (".git") when the caller
+  # is inside the main repo, but an ABSOLUTE path
+  # ("/abs/main/.git") when the caller is inside a linked worktree —
+  # which is the common case for a valid `--worktree-override` (a
+  # sibling worktree of the same repo). Bash `cd "$prefix/$absolute"`
+  # does NOT collapse to `cd "$absolute"`; it tries the literal joined
+  # path and fails (Phase 5 canary E/I surfaced this). Branch on
+  # leading "/" to handle both forms.
+  case "$OVERRIDE_COMMON" in
+    /*) OVERRIDE_COMMON_ABS=$(cd "$OVERRIDE_COMMON" && pwd) ;;
+    *)  OVERRIDE_COMMON_ABS=$(cd "$OVERRIDE_ABS/$OVERRIDE_COMMON" && pwd) ;;
+  esac
   MAIN_COMMON_ABS=$(cd "$(git rev-parse --git-common-dir)" && pwd)
   [ "$OVERRIDE_COMMON_ABS" = "$MAIN_COMMON_ABS" ] || { echo "ensure-worktree: --worktree-override belongs to a different repo" >&2; exit 2; }
   [ "$OVERRIDE_ABS" != "$MAIN_ROOT" ] || { echo "ensure-worktree: --worktree-override cannot be MAIN_ROOT itself" >&2; exit 2; }
