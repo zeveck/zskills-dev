@@ -533,15 +533,18 @@ echo "=== Phase 7 AC: live write-back smoke ==="
 
 # Re-use the running server from Block 2 — same port, same MAIN_ROOT ($MR).
 
-# AC: POST /api/queue WITHOUT Origin → 403.
+# AC: POST /api/queue WITHOUT Origin → 200 (Phase 5b: relaxed policy).
+# Cross-origin still 403; that invariant is exercised by
+# tests/test_zskills_monitor_csrf.sh and the wrong-Origin case in
+# tests/test_zskills_monitor_server.sh.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H 'Content-Type: application/json' \
   -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
   "http://127.0.0.1:$PORT/api/queue")
-if [ "$CODE" = "403" ]; then
-  pass "AC: POST /api/queue without Origin → 403"
+if [ "$CODE" = "200" ]; then
+  pass "AC: POST /api/queue without Origin → 200 (relaxed in Phase 5b)"
 else
-  fail "AC: POST /api/queue no-origin → $CODE"
+  fail "AC: POST /api/queue no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
 # AC: POST /api/queue WITH valid Origin → 200 + state file written.
@@ -726,13 +729,15 @@ else
   fail "AC: reset → $CODE; file=$(cat "$MR/.zskills/work-on-plans-state.json")"
 fi
 
-# AC: reset without Origin → 403.
+# AC: reset without Origin → 200 (Phase 5b: relaxed policy).
+# Cross-origin defense exercised by tests/test_zskills_monitor_csrf.sh
+# and the cross-origin reset case in tests/test_zskills_monitor_server.sh.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "http://127.0.0.1:$PORT/api/work-state/reset")
-if [ "$CODE" = "403" ]; then
-  pass "AC: POST /api/work-state/reset without Origin → 403"
+if [ "$CODE" = "200" ]; then
+  pass "AC: POST /api/work-state/reset without Origin → 200 (relaxed in Phase 5b)"
 else
-  fail "AC: reset no-origin → $CODE"
+  fail "AC: reset no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
 # Stop server cleanly via SIGTERM and verify port is released.

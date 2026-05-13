@@ -371,15 +371,17 @@ if start_server "$MR5" "$PORT_D"; then
   echo ""
   echo "=== Phase 5 AC: POST /api/queue ==="
 
-  # CSRF: missing Origin → 403
+  # CSRF: missing Origin → 200 (Phase 5b: broadened policy accepts
+  # empty-Origin same-origin POSTs; OWASP-recommended posture for
+  # localhost-bound services). Body validation still applies downstream.
   CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' \
     -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
     "http://127.0.0.1:$PORT_D/api/queue")
-  if [ "$CODE" = "403" ]; then
-    pass "POST /api/queue without Origin → 403"
+  if [ "$CODE" = "200" ]; then
+    pass "POST /api/queue without Origin → 200 (relaxed in Phase 5b)"
   else
-    fail "POST /api/queue no-origin → $CODE"
+    fail "POST /api/queue no-origin → $CODE (expected 200 per Phase 5b)"
   fi
 
   # CSRF: mismatched Origin → 403
@@ -520,13 +522,24 @@ EOF
     fail "/api/work-state/reset did not write idle"
   fi
 
-  # CSRF: reset without Origin → 403
+  # CSRF: reset without Origin → 200 (Phase 5b: relaxed policy accepts
+  # empty Origin via _origin_ok; reset endpoint reuses _origin_ok).
   CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
     "http://127.0.0.1:$PORT_D/api/work-state/reset")
-  if [ "$CODE" = "403" ]; then
-    pass "POST /api/work-state/reset without Origin → 403"
+  if [ "$CODE" = "200" ]; then
+    pass "POST /api/work-state/reset without Origin → 200 (relaxed in Phase 5b)"
   else
-    fail "POST /api/work-state/reset no-origin → $CODE"
+    fail "POST /api/work-state/reset no-origin → $CODE (expected 200 per Phase 5b)"
+  fi
+
+  # CSRF defense: reset with cross-origin Origin → 403 (invariant preserved)
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Origin: http://evil.example.com" \
+    "http://127.0.0.1:$PORT_D/api/work-state/reset")
+  if [ "$CODE" = "403" ]; then
+    pass "POST /api/work-state/reset with cross-origin → 403 (invariant)"
+  else
+    fail "POST /api/work-state/reset cross-origin → $CODE (expected 403)"
   fi
 
   ###############################################################################
@@ -559,15 +572,30 @@ EOF
     fail "/api/trigger bad command → $CODE"
   fi
 
-  # CSRF
+  # CSRF: trigger without Origin → 501 (Phase 5b: _origin_ok accepts
+  # empty Origin; trigger config remains empty for this MR so the
+  # response is 501 — proving the Origin check no longer short-circuits
+  # to 403 for missing Origin).
   CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' \
     -d '{"command":"/work-on-plans 1"}' \
     "http://127.0.0.1:$PORT_D/api/trigger")
-  if [ "$CODE" = "403" ]; then
-    pass "/api/trigger without Origin → 403"
+  if [ "$CODE" = "501" ]; then
+    pass "/api/trigger without Origin → 501 (relaxed CSRF in Phase 5b; empty trigger config)"
   else
-    fail "/api/trigger no-origin → $CODE"
+    fail "/api/trigger no-origin → $CODE (expected 501 per Phase 5b + empty trigger config)"
+  fi
+
+  # CSRF defense: trigger with cross-origin Origin → 403 (invariant preserved)
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Origin: http://evil.example.com" \
+    -H 'Content-Type: application/json' \
+    -d '{"command":"/work-on-plans 1"}' \
+    "http://127.0.0.1:$PORT_D/api/trigger")
+  if [ "$CODE" = "403" ]; then
+    pass "/api/trigger with cross-origin → 403 (invariant)"
+  else
+    fail "/api/trigger cross-origin → $CODE (expected 403)"
   fi
 
   # Configure a real trigger script that echos argv + env + pwd
