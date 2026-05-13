@@ -1,2 +1,0 @@
-Canary 7 Phase 1: chunked turn 1
-Canary 7 Phase 2: chunked turn 2
