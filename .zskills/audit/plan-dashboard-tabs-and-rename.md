@@ -1,5 +1,99 @@
 # Plan Report — Dashboard Tabs and Rename
 
+## Phase — 4 Manual playwright verification + automated tests
+
+**Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
+**Status:** Completed (verified) — substantively PASSED with 1 PLAN-TEXT-DRIFT documented
+**Worktree:** /tmp/zskills-pr-dashboard-tabs-and-rename
+**Branch:** feat/dashboard-tabs-and-rename
+**Commits:** a361685 (Phase 4 marked done) + 8fad769 (tracker row fix)
+**Server:** started by orchestrator on port 8181 with `--main-root /tmp/zskills-pr-dashboard-tabs-and-rename`; verifier ran checklist against it; orchestrator stops it post-phase
+
+### Step-by-step PASS/FAIL summary
+
+| Step | Result | Evidence |
+|------|--------|----------|
+| 1 — Default state on load | PASS | title + h1 = "Z Skills Dashboard"; active tab = `tab-plans`; activity-strip visible; 3 tabs; no `tab-worktrees` |
+| 2 — Click each tab (Issues) | PASS | aria-selected flip + hash + visibility correct |
+| 2 — Click each tab (Branches) | PASS | 20 `.pill-landed-*` elements present in Branches body (worktree info inline confirmed) |
+| 2 — Click each tab (Plans) | PASS | aria-selected flip + hash + visibility correct |
+| 3 — Keyboard reachability | PASS | Tab reaches tab buttons via DOM order; Enter activates focused inactive tab; DOM-forward Tab traversal |
+| 4 — Drag-and-drop within Plans | PASS | `plans-live` textContent has literal `"Moved plan "` prefix; no `#conn-banner` during/after drag |
+| 5 — Switch tabs during poll | PASS | 5× rapid switches; no new JS errors; `#issues-body` re-populates on next poll |
+| 6 — Modal flow inside tab | PASS | Double-click → modal open; Esc → modal close + focus returns to card |
+| 7 — Globals stay visible across tabs | PASS | After SIGTERM, `#conn-banner` visible on all 3 tabs; `closest("[role=tabpanel]") === null` confirmed (banner outside tab structure); server restarted, banner returned to hidden |
+| 8 — Narrow viewport (600×900) | PASS | `.tablist` overflowX `auto`; tabs still clickable; screenshot saved |
+| 9 — URL hash deep-link | PASS | `/#branches` activates branches tab; reload preserves; `/#worktrees` falls back to `tab-plans` (hash kept as-is, no rewrite) |
+| 9b — Browser back/forward | DRIFT | Plan asserts back → `#issues`; implementation uses `history.replaceState` (per Phase 3 design — no back-stack pollution). Back skips past tab clicks. See drift section below. |
+| 10 — Screenshots (4 total) | PASS | All 4 files saved + renamed |
+| 11 — Connection banner during 5 rapid drags (DOWNGRADED) | PASS | Phase 5d not yet run; baseline observation: `#conn-banner.hidden === true` throughout (no flap observed; banner element exists with static template) |
+| 12 — Origin-check | N/A | Phase 5b deferred (4→5 order) — reproducers don't exist; skipped per prompt-template gating |
+
+### Test run
+
+**Overall: 2933/2933 passed, 0 failed.** Exit code: 0.
+
+Required-green tests confirmed:
+- `tests/test_zskills_monitor_dashboard_ui.sh` — PASS
+- `tests/test_zskills_dashboard_skill.sh` — PASS
+- `tests/test_zskills_monitor_server.sh` — PASS
+- `tests/test_zskills_monitor_collect.sh` — PASS
+- `tests/test-skill-conformance.sh` — PASS
+
+Phase 5 tests (`test_zskills_monitor_csrf.sh`, `test_zskills_dashboard_disconnect_debounce.sh`) don't exist yet — expected for 4→5 order.
+
+### Programmatic AC checks (orchestrator)
+
+- ≥13 rows in PASS/FAIL pipe table: ✓ (14 rows)
+- ≥13 PASS/FAIL literals: ✓
+- ≥4 screenshot paths matching `/.../\.playwright/output/.*\.png`: ✓ (4 paths, all `test -f` confirmed)
+- Response contains literal "exit code": ✓
+- Layer 3 (`verify-response-validate.sh`): PASS
+
+### Screenshots
+
+- `/tmp/zskills-pr-dashboard-tabs-and-rename/.playwright/output/phase4-tab-plans.png` (133634 bytes)
+- `/tmp/zskills-pr-dashboard-tabs-and-rename/.playwright/output/phase4-tab-issues.png` (89872 bytes)
+- `/tmp/zskills-pr-dashboard-tabs-and-rename/.playwright/output/phase4-tab-branches.png` (110490 bytes)
+- `/tmp/zskills-pr-dashboard-tabs-and-rename/.playwright/output/phase4-tab-narrow.png` (104226 bytes)
+
+### PLAN-TEXT-DRIFT — Step 9b (logical contradiction with Phase 3 design)
+
+**Token:** `PLAN-TEXT-DRIFT: phase=4 bullet=9b field=back-button-history-semantics plan=back-returns-to-#issues actual=back-skips-tab-clicks-due-to-replaceState`
+
+The verifier flagged that Phase 4 step 9b's assertion ("press browser back, assert URL ends with `#issues`") is logically impossible under Phase 3's design choice. Specifically:
+
+- **Phase 3 design constraint** (`/tmp/phase-3-text.md` line 165): "`history.replaceState` not `pushState` — tab switches should not pollute the back-stack with one entry per click. Reload-survival is the goal; navigation history is not."
+- **Phase 3 AC #1 (re-verified Phase 3)**: `history.replaceState` confirmed at app.js:1693; zero new `pushState` usages.
+- **Phase 4 step 9b assertion (this phase)**: "press back, URL → `#issues`" — requires `pushState` so that the tab click creates a history entry that back can navigate to.
+
+These two are mutually exclusive. The implementation correctly follows Phase 3's chosen UX (tabs are a view-state, not navigation; back exits the dashboard rather than cycling tabs). Step 9b's assertion is a plan-text bug, NOT an implementation defect.
+
+**Resolution path for plan author:**
+1. **Option A (recommended):** amend step 9b to read "press back, assert browser navigates away from dashboard (e.g., to previous page in the back-stack), since `replaceState` means tab clicks do not enter history." This matches Phase 3 design and is the verifier's observed behavior.
+2. **Option B:** change Phase 3 to use `pushState` (one history entry per tab click) — but this conflicts with the explicit design rationale ("should not pollute the back-stack").
+
+The user should choose Option A unless they want tab clicks in history. Either way, **no implementation change is required** — Phase 3 + Phase 4 are correct except for this one AC text.
+
+### Verification
+
+- Verifier subagent (manual playwright + automated tests): all structural ACs met (14 rows, 4 screenshots, exit-code surfaced)
+- Layer 3 response validation: PASS (no stalled-string match; response >>200 bytes; substantive content)
+- 12 of 14 step rows PASS; 1 N/A (deferred to Phase 5b); 1 DRIFT (documented above)
+- Tests: **2933/2933 PASS**
+
+### User Sign-off
+
+- [ ] **P4-1 — Title rename visible:** open the dashboard at `http://127.0.0.1:<port>/` in a real browser. Confirm the window title says "Z Skills Dashboard" (not "Z Skills Monitor"). See screenshot: `.playwright/output/phase4-tab-plans.png`.
+- [ ] **P4-2 — 3 tabs visible, no Worktrees tab:** confirm the tablist shows only PLANS / ISSUES / BRANCHES. No WORKTREES button. See screenshot: `.playwright/output/phase4-tab-plans.png`.
+- [ ] **P4-3 — Activity strip persistent above tablist:** confirm the activity strip is above the tablist on every tab (Plans, Issues, Branches). See all 3 tab screenshots.
+- [ ] **P4-4 — Branches tab shows worktree info inline:** click the Branches tab. For backed branches, confirm a sub-row appears showing path basename + age + landed-status pill. See screenshot: `.playwright/output/phase4-tab-branches.png` (20 `.pill-landed-*` elements verified).
+- [ ] **P4-5 — Narrow viewport works:** resize browser to ~600px wide. Confirm the tablist scrolls horizontally instead of wrapping; tabs remain clickable. See screenshot: `.playwright/output/phase4-tab-narrow.png`.
+- [ ] **P4-6 — URL hash deep-link works:** open `/#branches` directly; the Branches tab should be active on load (brief Plans flash <200ms acceptable).
+- [ ] **P4-7 — Plan author to decide Step 9b resolution:** review the back-button drift signal above; pick Option A (amend plan AC text — recommended) or Option B (change implementation to pushState). Either way, file a follow-up commit. This is a plan-text fix, not a code fix.
+
+---
+
 ## Phase — 3 Tab behavior (JS + URL hash, mouse-first)
 
 **Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
