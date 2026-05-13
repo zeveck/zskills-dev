@@ -281,7 +281,7 @@ includes every regular file under the skill dir.
 | 2 — Tab scaffold (HTML + CSS) | ✅ Done | 2233a91 | 3 tabs (PLANS/ISSUES/BRANCHES) + activity strip; renderBranches enriched with worktree info; renderWorktrees removed |
 | 3 — Tab behavior (JS + URL hash, mouse-first) | ✅ Done | 04f945a | Click + hashchange only; no arrow-key/Home/End handler; no roving tabindex |
 | 4 — Manual playwright verification + automated tests | ✅ Done | a361685 | 12+9b playwright steps + 4 screenshots; tests 2933/2933; step 9b plan-text drift documented |
-| 5 — Dashboard functional fixes | 🟡 | | Investigate-first sub-sections: Origin/CSRF (5b), READY drop (5c), disconnect-flap (5d), /work-on-plans verification (5e) |
+| 5 — Dashboard functional fixes | ✅ Done | b9763d6+ccb33df | 5a diag; 5b shipped (Origin policy); 5c deferred (subsumption FAILED); 5d shipped (debounce); 5e no-bug; +2 test files |
 
 ---
 
