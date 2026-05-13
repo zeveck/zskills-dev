@@ -111,7 +111,7 @@ Change cherry-pick mode's worktree-creation block (`SKILL.md:972-989`) so finish
 - [ ] AC1.3 — `grep -F '/tmp/${PROJECT_NAME}-cp-${PLAN_SLUG}"' skills/run-plan/SKILL.md` returns at least one hit (the finish-mode path, no phase suffix).
 - [ ] AC1.4 — `diff -rq skills/run-plan .claude/skills/run-plan` empty.
 - [ ] AC1.5 — `bash scripts/skill-version-stage-check.sh` exits 0.
-- [ ] AC1.6 — `bash tests/run-all.sh` reports exactly 1 conformance failure (the old `cp worktree slug suffix` check). This is intentional and unwound in Phase 3.
+- [x] AC1.6 — ~~`bash tests/run-all.sh` reports exactly 1 conformance failure (the old `cp worktree slug suffix` check). This is intentional and unwound in Phase 3.~~ **Plan-text drift, post-run amendment:** predicted 1 failure, actual 0. WI 1.2's spec preserves the `${PLAN_SLUG}-phase-${PHASE}` substring in the else branch, so the existing recursive `grep -rF` in conformance test 146 continues to find it — the test never failed. Phase 3's WI 3.1 still added a NEW conformance assertion for the finish-mode `${PLAN_SLUG}` shape, so both shapes are now locked; net effect was +1 test rather than the predicted 0-change unwind. The AC as written was internally contradictory with WI 1.2 — the WI took precedence and the impl is correct. See `$ZSKILLS_AUDIT_DIR/plan-run-plan-finish-auto-reuse-semantics.md` (Phase 1 Plan Drift section) for the discovery trail.
 - [ ] AC1.7 — Single commit.
 
 ### Dependencies
