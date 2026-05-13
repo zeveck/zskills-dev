@@ -126,13 +126,29 @@ let suppressNextStatePollUntil = 0;
 let lastGoodQueues = null;
 let lastGoodDefaultMode = "phase";
 
+// Phase 5d: debounce setConnected(false) to avoid banner flap on a
+// single transient fetchState failure. Require DISCONNECT_FAILURE_THRESHOLD
+// consecutive failures before showing the banner; any success resets.
+const DISCONNECT_FAILURE_THRESHOLD = 2;
+let connectionFailureCount = 0;
+
 function setConnected(ok) {
   const banner = $("conn-banner");
   if (ok) {
+    connectionFailureCount = 0;
     banner.hidden = true;
-  } else {
+    return;
+  }
+  connectionFailureCount += 1;
+  if (connectionFailureCount >= DISCONNECT_FAILURE_THRESHOLD) {
     banner.hidden = false;
   }
+}
+
+// Test hook: reset disconnect-debounce state. Used by
+// tests/test_zskills_dashboard_disconnect_debounce.sh only.
+function _resetConnectionDebounceForTests() {
+  connectionFailureCount = 0;
 }
 
 async function fetchState() {

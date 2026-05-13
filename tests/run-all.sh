@@ -100,6 +100,7 @@ run_suite "test-post-create-worktree.sh" "tests/test-post-create-worktree.sh"
 run_suite "test-pr-preflight.sh" "tests/test-pr-preflight.sh"
 run_suite "test_zskills_monitor_dashboard_ui.sh" "tests/test_zskills_monitor_dashboard_ui.sh"
 run_suite "test_zskills_dashboard_skill.sh" "tests/test_zskills_dashboard_skill.sh"
+run_suite "test_zskills_dashboard_disconnect_debounce.sh" "tests/test_zskills_dashboard_disconnect_debounce.sh"
 run_suite "test_plans_rebuild_uses_collect.sh" "tests/test_plans_rebuild_uses_collect.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
