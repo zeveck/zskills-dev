@@ -1,7 +1,7 @@
 ---
 title: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook
@@ -273,7 +273,7 @@ plan ordering coupling. (DA-1-4 resolution.)
 | 3 — Hook registration + clear-tracking narrow widening | ✅ Done | `994321f` | `.claude/settings.json` + mirror + clear-tracking patch (TWO arms — spec only had one; surfaced + fixed); update-zskills version bumped inline |
 | 4 — Conformance tripwires | ✅ Done | `013071d` | +35 conformance asserts +2 drift-gate asserts; tier-1 hash for clear-tracking added inline (Phase 3 regression fix); update-zskills re-bumped |
 | 5 — Hook integration test + canary | ✅ Done | `2568831` | `tests/test-block-bypassed-land-pr.sh` (26 cases) + `docs/plans/CANARY_BYPASS_DETECT.md`; ROG row deferred per ROG workflow |
-| 6 — metadata.version bumps + final mirror | ⬚ | | per-skill bumps; final `cp -a` to `.claude/{skills,hooks}` |
+| 6 — metadata.version bumps + final mirror | ✅ Done | (verify-only) | all 7 skill bumps + mirrors completed inline in Phases 1-4 (plan-drift); 2933/2933 final conformance gate |
 
 ## Phase 1 — Tokenize-walk helper + new hook
 
