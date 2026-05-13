@@ -280,7 +280,7 @@ includes every regular file under the skill dir.
 | 1 — Rename "Z Skills Monitor" → "Z Skills Dashboard" | ✅ Done | 57907a9 | All user-facing strings + test assertions in lockstep |
 | 2 — Tab scaffold (HTML + CSS) | ✅ Done | 2233a91 | 3 tabs (PLANS/ISSUES/BRANCHES) + activity strip; renderBranches enriched with worktree info; renderWorktrees removed |
 | 3 — Tab behavior (JS + URL hash, mouse-first) | ✅ Done | 04f945a | Click + hashchange only; no arrow-key/Home/End handler; no roving tabindex |
-| 4 — Manual playwright verification + automated tests | ⬚ | | Real events; resize to 700px; full test suite green |
+| 4 — Manual playwright verification + automated tests | 🟡 | | Real events; resize to 700px; full test suite green |
 | 5 — Dashboard functional fixes | ⬚ | | Investigate-first sub-sections: Origin/CSRF (5b), READY drop (5c), disconnect-flap (5d), /work-on-plans verification (5e) |
 
 ---
