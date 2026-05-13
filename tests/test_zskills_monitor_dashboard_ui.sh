@@ -288,8 +288,8 @@ if printf '%s' "$CT" | grep -qi 'text/html'; then
 else
   fail "GET / Content-Type unexpected: $CT"
 fi
-if grep -q '<title>Z Skills Monitor</title>' "$MR/root.body"; then
-  pass "GET / body contains <title>Z Skills Monitor</title>"
+if grep -q '<title>Z Skills Dashboard</title>' "$MR/root.body"; then
+  pass "GET / body contains <title>Z Skills Dashboard</title>"
 else
   fail "GET / body missing dashboard title"
 fi

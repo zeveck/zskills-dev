@@ -1,4 +1,4 @@
-// Z Skills Monitor — interactive dashboard renderer (Phase 7).
+// Z Skills Dashboard — interactive dashboard renderer (Phase 7).
 //
 // Loaded as a single ES module from /app.js. Polls /api/state every 2s
 // via setTimeout recursion (NOT setInterval), pauses while document is

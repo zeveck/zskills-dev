@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-zskills_monitor.server — localhost-only HTTP API for the zskills monitor
-dashboard (Phase 5 of ZSKILLS_MONITOR_PLAN).
+zskills_monitor.server — localhost-only HTTP API for the zskills dashboard
+(Phase 5 of ZSKILLS_MONITOR_PLAN).
 
 stdlib-only. Wraps Phase 4's `collect_snapshot()` plus interactive
 write-back for the queue + work-on-plans state. Static files from the
@@ -542,7 +542,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
     to the bound `server.context` dict (set in `main()`).
     """
 
-    server_version = "zskills-monitor/0.1"
+    server_version = "zskills-dashboard/0.1"
     sys_version = ""  # Suppress Python/<ver> in Server header
 
     # --------------------------------------------------------------- helpers
@@ -691,7 +691,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # Phase 6 hasn't shipped UI yet — return a friendly placeholder
         # rather than 404 so /api/health and curl smoke land cleanly.
         body = (
-            b"<!DOCTYPE html><meta charset=utf-8><title>zskills monitor</title>"
+            b"<!DOCTYPE html><meta charset=utf-8><title>zskills dashboard</title>"
             b"<p>Dashboard UI ships in Phase 6. The HTTP API is live; try "
             b"<code>/api/health</code> or <code>/api/state</code>.</p>"
         )
@@ -1048,7 +1048,7 @@ def _bind_or_die(host: str, port: int) -> ThreadingHTTPServer:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python3 -m zskills_monitor.server",
-        description="Localhost HTTP API for zskills monitor (Phase 5).",
+        description="Localhost HTTP API for the zskills dashboard (Phase 5).",
     )
     p.add_argument("--port", type=int, default=None,
                    help="Override port (highest priority).")
@@ -1112,7 +1112,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGINT, _shutdown)
 
     sys.stderr.write(
-        f"zskills monitor listening on http://{BIND_HOST}:{port} "
+        f"zskills dashboard listening on http://{BIND_HOST}:{port} "
         f"(main_root={main_root}, pid={os.getpid()})\n"
     )
     sys.stderr.flush()

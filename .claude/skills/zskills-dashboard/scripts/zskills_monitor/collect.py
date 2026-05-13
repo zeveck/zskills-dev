@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 zskills_monitor.collect — Pure-Python aggregation library for the
-zskills monitor dashboard (Phase 4 of ZSKILLS_MONITOR_PLAN).
+zskills dashboard (Phase 4 of ZSKILLS_MONITOR_PLAN).
 
 stdlib-only. No HTTP coupling. Importable + callable from a fresh REPL.
 
@@ -1217,7 +1217,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python3 -m zskills_monitor.collect",
         description=(
-            "Collect a single JSON snapshot of zskills monitor state "
+            "Collect a single JSON snapshot of zskills dashboard state "
             "(plans, issues, worktrees, branches, tracking activity, "
             "queues, errors). Emits to stdout."
         ),
