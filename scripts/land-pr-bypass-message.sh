@@ -63,20 +63,27 @@ emit_pattern_2() {
 STOP: direct gh pr create / merge --auto from agent Bash bypasses /land-pr.
 
 A requires.land-pr.* marker for this branch is present in the tracking
-tree, which means a /land-pr invocation appears to have errored or
-exited without writing its fulfilled.land-pr.* marker. Re-invoking
-`gh pr create` / `gh pr merge --auto` directly is not the recovery path
-- it bypasses rebase, CI polling, and the fix-cycle loop.
+tree. That means a caller skill on this pipeline (e.g., /run-plan,
+/commit pr, /do pr, /fix-issues pr, /quickfix) declared an intent to
+land the PR via /land-pr - and you are running gh pr create / gh pr
+merge --auto directly instead. Don't do that. The caller pipeline
+expects /land-pr to do the work; bypassing it skips rebase, CI
+polling, the fix-cycle loop, the .landed marker, and the fulfilled
+marker the pipeline needs to consider itself done.
 
-Recovery options:
-- Re-dispatch /land-pr (or the caller skill that owns this pipeline)
-  via the Skill tool so it can pick up where the previous run left off.
-- If the previous run is genuinely stuck and you have confirmed there
-  is no live process owning it, clear the stale tracking marker with
-  bash .claude/skills/update-zskills/scripts/clear-tracking.sh
-  and then re-dispatch the caller skill cleanly.
+What to do:
+- Dispatch /land-pr via the Skill tool (it is idempotent, so if a
+  previous attempt errored mid-way it picks up cleanly):
+    Skill { skill: "land-pr", args: "..." }
+  In practice the caller skill that owns this pipeline should drive
+  the landing - re-invoke whichever skill set up the requires marker
+  (/run-plan, /commit pr, etc.) and let it dispatch /land-pr.
+- If you have confirmed the marker is stale (no live caller, prior
+  session crashed, pipeline was abandoned), clear it with:
+    bash .claude/skills/update-zskills/scripts/clear-tracking.sh
+  Then re-dispatch the caller skill cleanly.
 
-If you need a true manual one-off, open a SEPARATE terminal outside the Claude Code session.
+If you need a true manual one-off outside any pipeline, open a SEPARATE terminal outside the Claude Code session.
 STOP
 }
 

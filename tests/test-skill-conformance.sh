@@ -902,10 +902,10 @@ if [ -f "$msg_script" ]; then
   else
     fail "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 1 'outside a caller skill' anchor" "anchor not found"
   fi
-  if grep -qF '/land-pr invocation appears to have errored' "$msg_script"; then
-    pass "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 '/land-pr invocation appears to have errored' anchor"
+  if grep -qF 'declared an intent to' "$msg_script"; then
+    pass "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 'declared an intent to' anchor (caller-declared-intent framing)"
   else
-    fail "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 errored anchor" "anchor not found"
+    fail "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 caller-intent anchor" "anchor not found"
   fi
 else
   fail "[bypass-hardening] scripts/land-pr-bypass-message.sh exists" "missing"

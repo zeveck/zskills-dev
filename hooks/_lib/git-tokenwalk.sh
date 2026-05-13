@@ -249,6 +249,13 @@ is_gh_pr_subcommand() {
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
   g="${g%\'}"; g="${g#\'}"
+  # Strip absolute/relative path prefix so `/usr/local/bin/gh pr create`
+  # and `./gh pr create` are recognized as gh invocations. PR #250's
+  # original walker compared the first token literally to "gh", which
+  # let path-prefixed invocations slip through.
+  case "$g" in
+    */*) g="${g##*/}" ;;
+  esac
   [[ "$g" != "gh" ]] && return 1
   ((i++))
   # Walk past gh-level flags. -R/--repo take a separate value (2 tokens);
@@ -323,5 +330,149 @@ is_gh_pr_subcommand_in_chain() {
       return 0
     fi
   done <<< "$normalized"
+  return 1
+}
+
+# Returns 0 iff $cmd contains a `gh pr $want_sub` invocation either
+# directly, in any chain segment, OR inside an inline-string wrapper
+# (bash -c '<inner>', sh -c '<inner>', dash -c '<inner>', or
+# eval '<inner>'). The inner string is extracted and the matcher is
+# re-applied recursively (bounded depth, default 3).
+#
+# This is the proper closure of the "documented hole" in PR #250: the
+# tokenize-walker correctly handles direct gh, walk-past flags, segment
+# chains (&&, ||, ;, |, real newline, JSON-escaped \n), and quote
+# elision around verb tokens. The one thing it didn't handle was an
+# agent wrapping its gh call in `bash -c '...'`, which presents `bash`
+# as the first token. This helper extracts the wrapped inner string and
+# matches it through the same chain-walker, closing that hole.
+#
+# Out of scope (deliberate evasion, not racing-to-done):
+#   - Variable indirection: `cmd='gh pr create'; bash -c "$cmd"` — we
+#     cannot resolve $cmd at hook time.
+#   - Process substitution: `bash <(echo gh pr create)` — gh runs in a
+#     separate fork the hook never sees and isn't accurately matched by
+#     parsing the outer command.
+#   - String concatenation across tokens: `c='gh pr cr'; c="${c}eate";
+#     bash -c "$c"` — same issue as variable indirection.
+#   - Base64-encoded payloads, scripts fetched from URLs.
+# These shapes require a behavioral defense (PostToolUse transcript
+# scan), not syntactic gating, and are out of scope here.
+is_gh_pr_subcommand_in_wrappers() {
+  local cmd="$1"
+  local want_sub="$2"
+  local flag_regex="${3:-}"
+  local depth="${4:-3}"
+
+  # First, check the direct + chain case via existing helper.
+  if is_gh_pr_subcommand_in_chain "$cmd" "$want_sub" "$flag_regex"; then
+    return 0
+  fi
+
+  # Bounded recursion depth.
+  [ "$depth" -le 0 ] && return 1
+
+  # Split on chain operators (same as _in_chain) and inspect each
+  # segment for a wrapper pattern.
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+
+    # Look for an inline-string wrapper. Use bash regex to capture the
+    # inner string after a `-c` flag or after an `eval`. The captured
+    # group is the rest of the segment starting at the inner-arg
+    # boundary; we then strip outer quotes (single or double).
+    local wrapper_inner=""
+
+    # Tokenize the segment to find the wrapper command and its -c arg.
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$seg"
+    local i=0 n=${#TOKENS[@]}
+
+    # Skip env-var prefixes (KEY=val ... cmd ...).
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+
+    local first="${TOKENS[$i]:-}"
+    # Allow a possible absolute path: /bin/bash → match the basename.
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        # Walk shell-level flags to find -c (or -lc/-ic/-cx combined
+        # short-flag forms). All of these put the next token as the
+        # inline string to execute.
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          # Reconstruct the inner string from token j to end of segment.
+          # read -ra split on whitespace, so a quoted multi-word string
+          # like 'gh pr create' became three tokens: "'gh" "pr" "create'".
+          # Rejoin with spaces.
+          local inner=""
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          # Strip one layer of outer quotes (single or double).
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+          wrapper_inner="$inner"
+        fi
+        ;;
+      eval)
+        # All args to eval are the string to execute. Rejoin and strip
+        # outer quotes.
+        local inner=""
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        wrapper_inner="$inner"
+        ;;
+    esac
+
+    if [ -n "$wrapper_inner" ]; then
+      if is_gh_pr_subcommand_in_wrappers "$wrapper_inner" "$want_sub" "$flag_regex" $((depth - 1)); then
+        return 0
+      fi
+    fi
+  done <<< "$normalized"
+
   return 1
 }
