@@ -1,5 +1,63 @@
 # Plan Report — Dashboard Tabs and Rename
 
+## Phase — 3 Tab behavior (JS + URL hash, mouse-first)
+
+**Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-dashboard-tabs-and-rename
+**Branch:** feat/dashboard-tabs-and-rename
+**Commits:** 04f945a (impl, 4 files, +112/-2) + 9827845 (tracker → ✅ Done)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | `TAB_SLUGS = ["plans", "issues", "branches"]` constant | Done | line 1671 |
+| 2 | `readTabFromHash()` function | Done | line 1673 |
+| 3 | `setActiveTab(slug, {pushHash})` function | Done | line 1678; uses `history.replaceState` (not pushState) |
+| 4 | `bindTabEvents()` function — click + hashchange listeners | Done | line 1697 |
+| 5 | `boot()` integration — `bindTabEvents()` + `setActiveTab(readTabFromHash(), {pushHash: false})` between `bindActionEvents()` and `schedulePoll(0)` | Done | lines 1726-1727 |
+| 6 | Inline early-init block (best-effort flash mitigation) | Done | line 1718; guarded by `document.readyState !== "loading"` |
+| 7 | Version bump + mirror + verify-no-drift | Done | 2026.05.13+2681bb → 2026.05.13+acfe93 |
+
+### Mouse-first lock (verified)
+
+- NO `keydown` handler added in new code
+- NO `Arrow`/`Home`/`End` key references
+- NO roving `tab.tabIndex` management
+- NO `pushState`; only `replaceState` (no back-stack pollution)
+- NO `innerHTML =`, NO `eval(`, NO `new Function`, NO `setInterval(`
+
+### Verification
+
+- Implementation agent: 8 ACs PASS (with one false-alarm drift signal about version-bump history; verifier confirmed no actual issue)
+- Verifier agent (independent): 12 ACs PASS — all `git diff --cached` `^+` line checks return zero new prohibited tokens; boot() body verified verbatim
+- Layer 3 response validation: PASS
+- Tests: **2933/2933 passed** on clean re-run (one transient flake on `test-briefing-parity.sh` — unrelated to Phase 3; root cause: parity test reads live `git worktree list` and another concurrent process can flip the count mid-suite)
+- Mirror diff: empty
+- Phase 1 rename intact: 0 hits
+- Untouched symbols: `pollOnce`/`schedulePoll`/`pollAbort`/`applySnapshot`/all `render*`/all `fingerprint*`/`visibilitychange` confirmed unchanged
+
+### Ambient flake observation
+
+`test-briefing-parity.sh` had a one-off `worktrees: node keys=[list:21] vs py keys=[list:22]` mismatch on the first run, then passed cleanly on re-run. The test reads `git worktree list` from two subprocesses; another agent creating/removing a worktree between the two reads produces a one-off diff. Not blocking. Worth filing as an ambient-flake issue post-pipeline if it recurs.
+
+### User Sign-off
+
+- [ ] **P3-1** — Tab switching (mouse): open the dashboard at `http://127.0.0.1:<port>/`, click each tab (Plans → Issues → Branches → Plans). Expect:
+  1. Clicked tab gains underline + bold (`aria-selected="true"`).
+  2. Previously-active tab's panel hides; clicked tab's panel becomes visible.
+  3. URL bar updates to `#plans` / `#issues` / `#branches`.
+  4. Browser back/forward (or external `#issues` link) updates active tab via `hashchange`.
+  5. Reload preserves the active tab (URL hash is the source of truth).
+- [ ] **P3-2** — Tab key behavior: `Tab` cycles through `Plans → Issues → Branches → <next focusable in active tabpanel>` in DOM order. No roving tabindex; all three tab buttons are reachable. Enter/Space on focused tab activates it (native button semantics).
+- [ ] **P3-3** — Deep-link `/#branches` opens the Branches tab. A brief sub-200ms transient frame showing Plans first is acceptable (module scripts defer to after parse; flash mitigation is best-effort).
+- [ ] **P3-4** — Polling unaffected: with Issues tab active, watch a plan progress through phases; switch to Plans — see fresh state. The 2s poll renders into all slots regardless of active tab.
+
+(Phase 4 will exercise all of these via playwright-cli with screenshots.)
+
+---
+
 ## Phase — 2 Tab scaffold (HTML + CSS)
 
 **Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
