@@ -27,7 +27,7 @@ file-write surface) and #233 (`/fix-issues` SPRINT_REPORT.md commit).
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Helper script (`ensure-worktree.sh`) | 🟡 | `bba4ecf` | source + mirror; jq-free config read; opt-in `--allow-resume`; install-integrity check |
-| 2 — Adopt in plan-family skills (/draft-plan, /refine-plan, /draft-tests) | ⬚ | | preamble + `ZSKILLS_PATHS_ROOT` export + path-remap + self-contained auto-commit; closes #226 |
+| 2 — Adopt in plan-family skills (/draft-plan, /refine-plan, /draft-tests) | 🟡 | `c724a52` | preamble + `ZSKILLS_PATHS_ROOT` export + path-remap + self-contained auto-commit; closes #226 |
 | 3 — Adopt in block-diagram skills (/add-block, /add-example) | ⬚ | | preamble only; /add-block REPLACES existing inline call |
 | 4 — Adopt in /fix-issues sync mode | ⬚ | | preamble BEFORE Step 1 (R3-fixed); SPRINT_REPORT.md write happens in worktree; closes #233 |
 | 5 — Conformance + canary | ⬚ | | extend ALL SEVEN `check_*` helpers; NEW caller-contract scan; 10-case canary (adds path-root sub-case) |
