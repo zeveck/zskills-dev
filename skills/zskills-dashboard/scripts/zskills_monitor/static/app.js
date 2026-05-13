@@ -1667,9 +1667,64 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// ─── Tab navigation (mouse-first; click + hashchange only) ───
+const TAB_SLUGS = ["plans", "issues", "branches"];
+
+function readTabFromHash() {
+  const h = (location.hash || "").replace(/^#/, "");
+  return TAB_SLUGS.includes(h) ? h : "plans";
+}
+
+function setActiveTab(slug, { pushHash = true } = {}) {
+  if (!TAB_SLUGS.includes(slug)) slug = "plans";
+  for (const s of TAB_SLUGS) {
+    const tab = document.getElementById("tab-" + s);
+    const panel = document.getElementById(s);
+    if (!tab || !panel) continue;
+    const isActive = (s === slug);
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    if (isActive) {
+      panel.removeAttribute("hidden");
+    } else {
+      panel.setAttribute("hidden", "");
+    }
+  }
+  if (pushHash && location.hash !== "#" + slug) {
+    history.replaceState(null, "", "#" + slug);
+  }
+}
+
+function bindTabEvents() {
+  const tablist = document.querySelector('[role="tablist"]');
+  if (!tablist) return;
+  // Click handler — native <button> handles Enter/Space → click automatically.
+  tablist.addEventListener("click", (ev) => {
+    const btn = ev.target.closest('[role="tab"]');
+    if (!btn) return;
+    const slug = btn.getAttribute("aria-controls");
+    if (slug) setActiveTab(slug);
+  });
+  // hashchange (browser back/forward, or external link)
+  window.addEventListener("hashchange", () => {
+    setActiveTab(readTabFromHash(), { pushHash: false });
+  });
+}
+
+// Inline initialization — best-effort flash mitigation. Module
+// scripts defer to after parse, so this often runs after first
+// paint; the boot() call (which also runs setActiveTab) is the
+// authoritative initializer. setActiveTab is idempotent; the
+// console.warn surfaces unexpected failures rather than swallowing.
+if (typeof document !== "undefined" && document.readyState !== "loading") {
+  try { setActiveTab(readTabFromHash(), { pushHash: false }); }
+  catch (e) { console.warn("tab-init early call failed:", e); }
+}
+
 function boot() {
   modalInit();
   bindActionEvents();
+  bindTabEvents();                                       // NEW
+  setActiveTab(readTabFromHash(), { pushHash: false });  // NEW
   schedulePoll(0);
   scheduleWorkPoll(0);
 }
