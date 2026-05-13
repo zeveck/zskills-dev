@@ -6,7 +6,7 @@ description: >-
   Usage: /add-example <block-type(s)> [concept hint]
 argument-hint: "<block-type(s)> [concept hint]"
 metadata:
-  version: "2026.05.02+af97fa"
+  version: "2026.05.13+c07420"
 ---
 
 # Add Example Model
@@ -18,6 +18,39 @@ verification, distilled from real mistakes.
 **Arguments:**
 - `<block-type>` — which block(s) the example must feature (comma-separated for batch)
 - `[concept hint]` — optional real-world model concept (e.g., "PID temperature control")
+
+---
+
+**All implementation happens in a pre-created worktree.** Before any
+fulfillment-marker writes or model construction, front-run the shared
+`ensure-worktree.sh` gate. When /add-example is dispatched FROM
+/add-block, the helper's in-worktree gate returns empty + exits 0, so this
+preamble is a no-op in that case; the parent's `ZSKILLS_PATHS_ROOT` is
+preserved.
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+if [ ! -x "$HELPER" ]; then
+  echo "add-example: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+WT_PATH=$(bash "$HELPER" \
+  --prefix add-example \
+  --pipeline-id "add-example.${NAME}" \
+  --purpose "add-example; name=${NAME}" \
+  "${NAME}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ensure-worktree failed (rc=$RC) for /add-example" >&2
+  exit "$RC"
+fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "add-example: cd $WT_PATH failed" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"  # R3-1 — re-anchor downstream path resolution
+fi
+```
 
 ---
 
@@ -36,7 +69,7 @@ triggers and markers correctly land in the parent's subdir.
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
-# (parent's PIPELINE_ID, written by add-block's create-worktree.sh
+# (parent's PIPELINE_ID, written by add-block's ensure-worktree.sh
 # --pipeline-id call) → synthesized fallback for standalone use.
 # In delegated mode tier 2 always fires; tier 3 fires only when
 # /add-example is invoked directly with no parent worktree.
@@ -61,7 +94,7 @@ Where `$NAME` is derived from the block type(s) or model name (e.g.,
 `/add-example` runs as a sub-skill inside its parent's worktree (Claude
 Code subagents cannot dispatch their own subagents). Do **not** write
 `.zskills-tracked` here — the worktree's existing file (written by the
-parent's `create-worktree.sh --pipeline-id` call) defines the active
+parent's `ensure-worktree.sh --pipeline-id` call) defines the active
 pipeline ID, and overwriting it would corrupt the parent's tracking
 scope.
 
