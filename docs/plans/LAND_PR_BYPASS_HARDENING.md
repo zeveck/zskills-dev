@@ -1,7 +1,7 @@
 ---
 title: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook
@@ -268,12 +268,12 @@ plan ordering coupling. (DA-1-4 resolution.)
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — tokenize-walk helper + hook | ⬚ | | new `is_gh_pr_subcommand` + `block-bypassed-land-pr.sh` |
-| 2 — Caller edits (4 skills) | ⬚ | | `requires.land-pr.<id>` + `--tracking-id` + new `fulfilled.<skill>.<id>` |
-| 3 — Hook registration + clear-tracking narrow widening | ⬚ | | `.claude/settings.json` + mirror + 6-line clear-tracking patch |
-| 4 — Conformance tripwires | ⬚ | | `test-skill-conformance.sh` asserts (positive + negative) + `test-hook-helper-drift.sh` |
-| 5 — Hook integration test + canary | ⬚ | | `tests/test-block-bypassed-land-pr.sh` + `docs/plans/CANARY_BYPASS_DETECT.md` |
-| 6 — metadata.version bumps + final mirror | ⬚ | | per-skill bumps; final `cp -a` to `.claude/{skills,hooks}` |
+| 1 — tokenize-walk helper + hook | ✅ Done | `eaccbf4` | new `is_gh_pr_subcommand` + `block-bypassed-land-pr.sh`; land-pr version bumped inline (plan-drift, see report) |
+| 2 — Caller edits (4 skills) | ✅ Done | `71f8770` | `requires.land-pr.<id>` + `--tracking-id` + new `fulfilled.<skill>.<id>`; 5 skill versions bumped inline (plan-drift, see report) |
+| 3 — Hook registration + clear-tracking narrow widening | ✅ Done | `994321f` | `.claude/settings.json` + mirror + clear-tracking patch (TWO arms — spec only had one; surfaced + fixed); update-zskills version bumped inline |
+| 4 — Conformance tripwires | ✅ Done | `013071d` | +35 conformance asserts +2 drift-gate asserts; tier-1 hash for clear-tracking added inline (Phase 3 regression fix); update-zskills re-bumped |
+| 5 — Hook integration test + canary | ✅ Done | `2568831` | `tests/test-block-bypassed-land-pr.sh` (26 cases) + `docs/plans/CANARY_BYPASS_DETECT.md`; ROG row deferred per ROG workflow |
+| 6 — metadata.version bumps + final mirror | ✅ Done | (verify-only) | all 7 skill bumps + mirrors completed inline in Phases 1-4 (plan-drift); 2933/2933 final conformance gate |
 
 ## Phase 1 — Tokenize-walk helper + new hook
 

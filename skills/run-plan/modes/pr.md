@@ -540,6 +540,17 @@ done
 # the PR doesn't exist yet).
 rm -f "$BODY_FILE"
 # === END CANONICAL /land-pr CALLER LOOP ===
+# Cleanup transient requires marker (explicit-finalize per
+# docs/plans/LAND_PR_BYPASS_HARDENING.md D2/D8). $TRACKING_ID is
+# model-substituted from /run-plan's earlier prose (the same way the
+# LAND_ARGS line above consumes it). Re-derive $MAIN_ROOT and
+# $PIPELINE_ID at the cleanup site — the caller-loop fence's fence-top
+# does NOT assign them (they were model-substituted, not bash-assigned),
+# so explicit re-derivation is required for runtime correctness rather
+# than relying on cross-step env survival.
+CLEANUP_MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." && pwd)
+CLEANUP_PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+rm -f "$CLEANUP_MAIN_ROOT/.zskills/tracking/$CLEANUP_PIPELINE_ID/requires.land-pr.$TRACKING_ID"
 ```
 
 **`.landed` status values for PR mode (`/land-pr`-owned):**

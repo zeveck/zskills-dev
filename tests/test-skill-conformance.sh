@@ -578,6 +578,371 @@ if [ "$ORCH_DISPATCH_FAIL" -eq 0 ]; then
 fi
 
 echo ""
+echo "=== LAND_PR_BYPASS_HARDENING — Phase 4 conformance tripwires ==="
+# Phase 4 of plan docs/plans/LAND_PR_BYPASS_HARDENING.md. Locks structural
+# defense: positive asserts that new caller code is present, fence-survival
+# asserts that finalize stays inside the caller-loop bash fence, negative
+# asserts that no skill source contains a bypass pattern (gh pr create /
+# gh pr merge --auto outside skills/land-pr/scripts/).
+
+# --- Caller-loop anchor positions (per-file) ---
+# Each caller has a `# === BEGIN CANONICAL /land-pr CALLER LOOP ===` and
+# `# === END CANONICAL /land-pr CALLER LOOP ===` anchor pair. fix-issues
+# is 2-space indented (it lives inside a per-issue loop wrapper) — use
+# substring match (grep -nF) so indentation doesn't trip the locator.
+
+# Mapping: caller-file → fulfilled-marker-basename (used for textual checks).
+declare -A LANDPR_MARKER_BASENAME=(
+  ["skills/commit/modes/pr.md"]="fulfilled.commit."
+  ["skills/do/modes/pr.md"]="fulfilled.do."
+  ["skills/fix-issues/modes/pr.md"]="fulfilled.fix-issues."
+  ["skills/quickfix/SKILL.md"]="fulfilled.quickfix."
+)
+
+# Callers that get the new fulfilled.<skill>.<id> start-marker AND
+# explicit-finalize block (commit/do/fix-issues). quickfix already had
+# its fulfilled.quickfix start-marker pre-plan (SKILL.md:637); it gets
+# the requires.land-pr cleanup but not a new fulfilled write.
+NEW_CALLERS=(
+  "skills/commit/modes/pr.md"
+  "skills/do/modes/pr.md"
+  "skills/fix-issues/modes/pr.md"
+)
+
+# All 4 caller files (positive --tracking-id= + requires.land-pr precedence
+# asserts apply to all four).
+ALL_CALLERS=(
+  "skills/commit/modes/pr.md"
+  "skills/do/modes/pr.md"
+  "skills/fix-issues/modes/pr.md"
+  "skills/quickfix/SKILL.md"
+)
+
+# Helper: get line number of "BEGIN CANONICAL ... " (substring match).
+landpr_begin_line() {
+  grep -nF "# === BEGIN CANONICAL /land-pr CALLER LOOP ===" "$1" | head -1 | cut -d: -f1
+}
+landpr_end_line() {
+  grep -nF "# === END CANONICAL /land-pr CALLER LOOP ===" "$1" | head -1 | cut -d: -f1
+}
+# Helper: closing fence line AFTER given line N (allows leading whitespace
+# per R-5-11 — future indented case must not silently slip through; current
+# callers all use unindented closing fences).
+landpr_close_fence_after() {
+  local file="$1" after="$2"
+  awk -v start="$after" 'NR>start && /^[[:space:]]*```[[:space:]]*$/ {print NR; exit}' "$file"
+}
+
+# --- Positive: each caller contains --tracking-id= between BEGIN and END ---
+for caller in "${ALL_CALLERS[@]}"; do
+  caller_path="$REPO_ROOT/$caller"
+  if [ ! -f "$caller_path" ]; then
+    fail "[bypass-hardening] $caller --tracking-id= in caller loop" "file does not exist"
+    continue
+  fi
+  begin=$(landpr_begin_line "$caller_path")
+  end=$(landpr_end_line "$caller_path")
+  if [ -z "$begin" ] || [ -z "$end" ]; then
+    fail "[bypass-hardening] $caller --tracking-id= in caller loop" "BEGIN/END anchor not found (begin=$begin end=$end)"
+    continue
+  fi
+  if sed -n "${begin},${end}p" "$caller_path" | grep -qF -- '--tracking-id='; then
+    pass "[bypass-hardening] $caller contains --tracking-id= between BEGIN/END anchors"
+  else
+    fail "[bypass-hardening] $caller contains --tracking-id= between BEGIN/END anchors" "--tracking-id= literal not found in caller-loop region"
+  fi
+done
+
+# --- Positive: each caller has a requires.land-pr.* write BEFORE LAND_ARGS= ---
+# R-1-3 textual-precedence assert. fix-issues writes the marker inside its
+# per-issue loop, BEFORE LAND_ARGS=. quickfix writes it at SKILL.md:656,
+# well before the caller-loop fence at 1085.
+for caller in "${ALL_CALLERS[@]}"; do
+  caller_path="$REPO_ROOT/$caller"
+  [ ! -f "$caller_path" ] && continue
+  req_line=$(grep -nE 'requires\.land-pr\.' "$caller_path" | head -1 | cut -d: -f1)
+  args_line=$(grep -nE '^[[:space:]]*LAND_ARGS=' "$caller_path" | head -1 | cut -d: -f1)
+  if [ -z "$req_line" ] || [ -z "$args_line" ]; then
+    fail "[bypass-hardening] $caller requires.land-pr.* precedes LAND_ARGS=" "req_line=$req_line args_line=$args_line"
+    continue
+  fi
+  if [ "$req_line" -lt "$args_line" ]; then
+    pass "[bypass-hardening] $caller requires.land-pr.* write (L$req_line) precedes LAND_ARGS= (L$args_line)"
+  else
+    fail "[bypass-hardening] $caller requires.land-pr.* write precedes LAND_ARGS=" "req at L$req_line is NOT before LAND_ARGS at L$args_line"
+  fi
+done
+
+# --- Positive: NEW callers (commit, do, fix-issues) have fulfilled.<skill>.
+# start-marker write block. ---
+for caller in "${NEW_CALLERS[@]}"; do
+  caller_path="$REPO_ROOT/$caller"
+  basename_marker="${LANDPR_MARKER_BASENAME[$caller]}"
+  [ ! -f "$caller_path" ] && continue
+  # The block writes the marker via `cat > "$TRACK_DIR/<basename>..." <<MARK`
+  # or similar; the literal `fulfilled.<skill>.` substring suffices.
+  if grep -qF -- "$basename_marker" "$caller_path"; then
+    pass "[bypass-hardening] $caller writes $basename_marker start-marker"
+  else
+    fail "[bypass-hardening] $caller writes $basename_marker start-marker" "literal '$basename_marker' not found"
+  fi
+done
+
+# --- Fence-survival assert (R-4-7 / DA-4-4 + R-5-11 + DA-5-4) ---
+# For each new caller AND quickfix: locate END anchor, locate next closing
+# fence, assert that the relevant sed/rm finalize lines fall BETWEEN them.
+# Then counter-assert that no out-of-fence duplicate exists below the
+# closing fence (matched on the same marker basename).
+FENCE_CALLERS=(
+  "skills/commit/modes/pr.md"
+  "skills/do/modes/pr.md"
+  "skills/fix-issues/modes/pr.md"
+  "skills/quickfix/SKILL.md"
+)
+for caller in "${FENCE_CALLERS[@]}"; do
+  caller_path="$REPO_ROOT/$caller"
+  basename_marker="${LANDPR_MARKER_BASENAME[$caller]}"
+  if [ ! -f "$caller_path" ]; then
+    fail "[bypass-hardening] $caller fence-survival" "file does not exist"
+    continue
+  fi
+  end_line=$(landpr_end_line "$caller_path")
+  if [ -z "$end_line" ]; then
+    fail "[bypass-hardening] $caller fence-survival" "END anchor not found"
+    continue
+  fi
+  close_fence=$(landpr_close_fence_after "$caller_path" "$end_line")
+  if [ -z "$close_fence" ]; then
+    fail "[bypass-hardening] $caller fence-survival" "no closing fence found after END anchor at L$end_line"
+    continue
+  fi
+
+  # Region IN-FENCE between END anchor and closing ```.
+  region=$(sed -n "${end_line},${close_fence}p" "$caller_path")
+
+  # For commit/do (and fix-issues, sprint-level): both `sed -i "s/^status:
+  # started$/status:` and `rm -f .*requires.land-pr.` MUST appear in the
+  # in-fence region. For quickfix: only the requires.land-pr cleanup must
+  # appear in-fence (its fulfilled.quickfix finalize lives elsewhere — see
+  # SKILL.md:678, gated by exit code logic outside the caller loop; spec
+  # only requires the requires.land-pr cleanup AFTER the END anchor for
+  # quickfix).
+  has_sed_in=$(echo "$region" | grep -cE 'sed -i "s/\^status: started\$/status:' || true)
+  has_rm_in=$(echo "$region"  | grep -cE 'rm -f .*requires\.land-pr\.' || true)
+
+  if [ "$caller" = "skills/quickfix/SKILL.md" ]; then
+    if [ "$has_rm_in" -ge 1 ]; then
+      pass "[bypass-hardening] $caller requires.land-pr cleanup in-fence (L$end_line..L$close_fence)"
+    else
+      fail "[bypass-hardening] $caller requires.land-pr cleanup in-fence" "no 'rm -f .*requires.land-pr.' between END anchor L$end_line and closing fence L$close_fence"
+    fi
+  else
+    if [ "$has_sed_in" -ge 1 ] && [ "$has_rm_in" -ge 1 ]; then
+      pass "[bypass-hardening] $caller explicit-finalize in-fence (sed+rm between L$end_line..L$close_fence)"
+    else
+      fail "[bypass-hardening] $caller explicit-finalize in-fence" "sed_hits=$has_sed_in rm_hits=$has_rm_in between END L$end_line and close-fence L$close_fence"
+    fi
+  fi
+
+  # Counter-assert (DA-5-4): no duplicate finalize AFTER the closing fence.
+  # Match on the same caller's marker basename so we don't false-positive
+  # on unrelated fulfilled.* lines elsewhere in the file.
+  after_close=$((close_fence + 1))
+  tail_region=$(tail -n +"$after_close" "$caller_path")
+  dup_sed=$(echo "$tail_region" | grep -cE "sed -i \"s/\^status: started\\\$/status:.*${basename_marker}" || true)
+  dup_rm=$(echo "$tail_region"  | grep -cE "rm -f .*requires\.land-pr\." || true)
+
+  # For quickfix the spec only asserts no duplicate `rm -f .*requires.land-pr.`
+  # below the closing fence (its fulfilled.quickfix finalize at L678 lives
+  # in a DIFFERENT fence, far above the caller loop — not a duplicate). The
+  # counter-check below is scoped to lines AFTER the caller-loop close
+  # fence, so SKILL.md:678 is excluded automatically (close_fence=1282 >
+  # 678). Apply uniform counter-assert across all 4 callers.
+  if [ "$caller" = "skills/quickfix/SKILL.md" ]; then
+    if [ "$dup_rm" -eq 0 ]; then
+      pass "[bypass-hardening] $caller no duplicate requires.land-pr cleanup after close-fence L$close_fence"
+    else
+      fail "[bypass-hardening] $caller no duplicate requires.land-pr cleanup after close-fence" "found $dup_rm match(es) below L$close_fence"
+    fi
+  else
+    if [ "$dup_sed" -eq 0 ] && [ "$dup_rm" -eq 0 ]; then
+      pass "[bypass-hardening] $caller no duplicate finalize after close-fence L$close_fence (sed=$dup_sed rm=$dup_rm)"
+    else
+      fail "[bypass-hardening] $caller no duplicate finalize after close-fence" "dup_sed=$dup_sed dup_rm=$dup_rm below L$close_fence (status-rewrite in a stray fence would have unset \$LAND_OUTCOME)"
+    fi
+  fi
+done
+
+# --- /quickfix pre-existing fulfilled.quickfix.$SLUG byte anchor ---
+# SKILL.md:637 (per spec). Anchor on the surrounding lines as a byte-anchor
+# regression smoke. Use grep -nF and assert literal substring.
+if grep -nF 'MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG"' "$REPO_ROOT/skills/quickfix/SKILL.md" > /dev/null; then
+  pass "[bypass-hardening] quickfix preserves fulfilled.quickfix.\$SLUG byte anchor (SKILL.md:637)"
+else
+  fail "[bypass-hardening] quickfix preserves fulfilled.quickfix.\$SLUG byte anchor" 'MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG" not found'
+fi
+
+# --- /run-plan modes/pr.md: requires.land-pr cleanup AFTER END anchor ---
+# DA-3-4 fix per spec.
+rp_pr="$REPO_ROOT/skills/run-plan/modes/pr.md"
+if [ -f "$rp_pr" ]; then
+  end_line=$(landpr_end_line "$rp_pr")
+  if [ -n "$end_line" ]; then
+    tail_region=$(tail -n +"$end_line" "$rp_pr")
+    if echo "$tail_region" | grep -qE 'rm -f .*requires\.land-pr\.'; then
+      pass "[bypass-hardening] run-plan/modes/pr.md requires.land-pr cleanup AFTER END anchor (L$end_line)"
+    else
+      fail "[bypass-hardening] run-plan/modes/pr.md requires.land-pr cleanup AFTER END anchor" "no 'rm -f .*requires.land-pr.' below L$end_line"
+    fi
+  else
+    fail "[bypass-hardening] run-plan/modes/pr.md END anchor present" "END anchor not found"
+  fi
+fi
+
+# --- /run-plan SKILL.md: BRANCH_NAME_FOR_MARKER + fence-top re-derivation ---
+# Per spec (DA-2-2 + R-3-1 + R-4-2 / DA-4-1 + DA-5-8): the requires.land-pr
+# marker-write fence (~lines 831-890) writes `branch: %s` derived from
+# `${BRANCH_PREFIX}${PLAN_SLUG}` via the new variable BRANCH_NAME_FOR_MARKER.
+#
+# Assert 1: BRANCH_NAME_FOR_MARKER= exists somewhere in the file (the new
+# variable name introduced by this plan).
+# Assert 2: BRANCH_PREFIX="feat/" AND PLAN_SLUG=$(basename both fall between
+# the OPENING ``` of the fence containing BRANCH_NAME_FOR_MARKER= and the
+# BRANCH_NAME_FOR_MARKER= line itself (fence-top re-derivation discipline,
+# R-5-1).
+# Assert 3: BRANCH_NAME_FOR_MARKER= line appears BEFORE the
+# requires.land-pr.$TRACKING_ID printf line.
+rp_skill="$REPO_ROOT/skills/run-plan/SKILL.md"
+if [ -f "$rp_skill" ]; then
+  # Assert 1.
+  bnfm_line=$(grep -nE '^[[:space:]]*BRANCH_NAME_FOR_MARKER=' "$rp_skill" | head -1 | cut -d: -f1)
+  if [ -n "$bnfm_line" ]; then
+    pass "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER= assignment exists (L$bnfm_line)"
+  else
+    fail "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER= assignment exists" "no BRANCH_NAME_FOR_MARKER= line found"
+  fi
+
+  # Determine fence boundaries containing $bnfm_line.
+  if [ -n "$bnfm_line" ]; then
+    # Opening ``` line — most-recent ```bash or ``` (with leading whitespace
+    # tolerated) BEFORE $bnfm_line.
+    open_fence=$(awk -v end="$bnfm_line" 'NR<end && /^[[:space:]]*```/ {last=NR} END{print last}' "$rp_skill")
+    # Closing ``` line AFTER bnfm — first ``` line after $bnfm_line.
+    close_fence=$(awk -v start="$bnfm_line" 'NR>start && /^[[:space:]]*```[[:space:]]*$/ {print NR; exit}' "$rp_skill")
+
+    # Locate requires.land-pr.$TRACKING_ID printf line.
+    req_printf_line=$(grep -nE 'requires\.land-pr\.\$TRACKING_ID' "$rp_skill" | head -1 | cut -d: -f1)
+
+    # Assert 2: BRANCH_PREFIX="feat/" AND PLAN_SLUG=$(basename both
+    # appear between open_fence and bnfm_line.
+    bp_line=$(awk -v lo="$open_fence" -v hi="$bnfm_line" 'NR>lo && NR<hi && /^[[:space:]]*BRANCH_PREFIX="feat\/"/ {print NR; exit}' "$rp_skill")
+    ps_line=$(awk -v lo="$open_fence" -v hi="$bnfm_line" 'NR>lo && NR<hi && /^[[:space:]]*PLAN_SLUG=\$\(basename/ {print NR; exit}' "$rp_skill")
+    if [ -n "$bp_line" ] && [ -n "$ps_line" ]; then
+      pass "[bypass-hardening] run-plan SKILL.md fence-top re-derivation: BRANCH_PREFIX (L$bp_line) + PLAN_SLUG (L$ps_line) inside fence L$open_fence..L$bnfm_line"
+    else
+      fail "[bypass-hardening] run-plan SKILL.md fence-top re-derivation discipline" "BRANCH_PREFIX line=$bp_line, PLAN_SLUG line=$ps_line in fence-open=$open_fence..bnfm=$bnfm_line (R-5-1)"
+    fi
+
+    # Assert 3: BRANCH_NAME_FOR_MARKER= precedes requires.land-pr.$TRACKING_ID
+    # printf line.
+    if [ -n "$req_printf_line" ] && [ "$bnfm_line" -lt "$req_printf_line" ]; then
+      pass "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER= (L$bnfm_line) precedes requires.land-pr.\$TRACKING_ID printf (L$req_printf_line)"
+    else
+      fail "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER= textual precedence" "bnfm=$bnfm_line, req_printf=$req_printf_line (must have bnfm < req_printf)"
+    fi
+  fi
+
+  # The branch value in the printf format string must derive from
+  # ${BRANCH_PREFIX}${PLAN_SLUG} (not from `git symbolic-ref` or
+  # $BRANCH_NAME). Anchor on the assignment.
+  if grep -qE '^[[:space:]]*BRANCH_NAME_FOR_MARKER="\$\{BRANCH_PREFIX\}\$\{PLAN_SLUG\}"' "$rp_skill"; then
+    pass "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER derives from \${BRANCH_PREFIX}\${PLAN_SLUG}"
+  else
+    fail "[bypass-hardening] run-plan SKILL.md BRANCH_NAME_FOR_MARKER derives from \${BRANCH_PREFIX}\${PLAN_SLUG}" "no 'BRANCH_NAME_FOR_MARKER=\"\${BRANCH_PREFIX}\${PLAN_SLUG}\"' line"
+  fi
+
+  # The printf format string must include `branch:`.
+  if grep -nE 'printf .*skill: land-pr.*\\nbranch: %s\\n' "$rp_skill" > /dev/null; then
+    pass "[bypass-hardening] run-plan SKILL.md requires.land-pr printf includes 'branch: %s'"
+  else
+    fail "[bypass-hardening] run-plan SKILL.md requires.land-pr printf includes 'branch: %s'" "no 'skill: land-pr\\nparent: run-plan\\n... branch: %s' format string match"
+  fi
+fi
+
+# --- Settings.json contains hook entry ---
+if [ -f "$REPO_ROOT/.claude/settings.json" ] && grep -qF 'block-bypassed-land-pr.sh' "$REPO_ROOT/.claude/settings.json"; then
+  pass "[bypass-hardening] .claude/settings.json registers block-bypassed-land-pr.sh"
+else
+  fail "[bypass-hardening] .claude/settings.json registers block-bypassed-land-pr.sh" "literal 'block-bypassed-land-pr.sh' not found in settings.json"
+fi
+
+# --- Hook is executable + inlines is_gh_pr_subcommand ---
+hook_path="$REPO_ROOT/hooks/block-bypassed-land-pr.sh"
+if [ -x "$hook_path" ]; then
+  pass "[bypass-hardening] hooks/block-bypassed-land-pr.sh is executable"
+else
+  fail "[bypass-hardening] hooks/block-bypassed-land-pr.sh is executable" "not present or not +x: $hook_path"
+fi
+if [ -f "$hook_path" ] && grep -qE '^is_gh_pr_subcommand\(\)' "$hook_path"; then
+  pass "[bypass-hardening] hooks/block-bypassed-land-pr.sh contains 'is_gh_pr_subcommand()' header line"
+else
+  fail "[bypass-hardening] hooks/block-bypassed-land-pr.sh contains 'is_gh_pr_subcommand()' header" "header not found"
+fi
+
+# --- STOP-message script contains ASCII anchors ---
+msg_script="$REPO_ROOT/scripts/land-pr-bypass-message.sh"
+if [ -f "$msg_script" ]; then
+  if grep -qF 'STOP: direct gh pr' "$msg_script"; then
+    pass "[bypass-hardening] land-pr-bypass-message.sh contains 'STOP: direct gh pr' anchor"
+  else
+    fail "[bypass-hardening] land-pr-bypass-message.sh contains 'STOP: direct gh pr' anchor" "anchor not found"
+  fi
+  if grep -qF 'outside a caller skill' "$msg_script"; then
+    pass "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 1 'outside a caller skill' anchor"
+  else
+    fail "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 1 'outside a caller skill' anchor" "anchor not found"
+  fi
+  if grep -qF '/land-pr invocation appears to have errored' "$msg_script"; then
+    pass "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 '/land-pr invocation appears to have errored' anchor"
+  else
+    fail "[bypass-hardening] land-pr-bypass-message.sh contains Pattern 2 errored anchor" "anchor not found"
+  fi
+else
+  fail "[bypass-hardening] scripts/land-pr-bypass-message.sh exists" "missing"
+fi
+
+# --- Negative asserts (DA-1-5 + R-4-3 / DA-4-3 + R-5-2 / DA-5-2 + R-5-3 / DA-5-1) ---
+# Pattern 1: `gh pr (create|merge --auto)` in shell-command position.
+# Recursive scope across skills/*.md; the --include='*.md' carve-out
+# excludes skills/land-pr/scripts/*.sh where the sanctioned invocations
+# live. Excludes comment lines and echo/printf prose.
+p1_hits=$(grep -rnE "(^|;|\|\||&&)[[:space:]]*gh pr (create|merge[^\`]*--auto)([[:space:]]|$)" \
+  "$REPO_ROOT/skills/" --include='*.md' 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(echo|printf)[[:space:]]' || true)
+if [ -z "$p1_hits" ]; then
+  pass "[bypass-hardening] negative: no inline 'gh pr create|merge --auto' in skill SKILL.md sources (Pattern 1, R-4-3/R-5-2/R-5-3)"
+else
+  fail "[bypass-hardening] negative: no inline 'gh pr create|merge --auto' (Pattern 1)" "$(echo "$p1_hits" | head -5 | tr '\n' '|')"
+fi
+
+# Pattern 2: bash -c '...gh pr create...' / sh -c '...gh pr merge --auto...'
+p2_hits=$(grep -nrE "(bash|sh)[[:space:]]+-c[[:space:]]*['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" "$REPO_ROOT/skills/" 2>/dev/null || true)
+if [ -z "$p2_hits" ]; then
+  pass "[bypass-hardening] negative: no 'bash -c'/'sh -c' wrapping gh pr create|merge --auto (Pattern 2)"
+else
+  fail "[bypass-hardening] negative: no 'bash -c'/'sh -c' wrapping gh pr (Pattern 2)" "$(echo "$p2_hits" | head -5 | tr '\n' '|')"
+fi
+
+# Pattern 3: eval '...gh pr create...' / eval "...gh pr merge --auto..."
+p3_hits=$(grep -nrE "eval[[:space:]]+['\"][^'\"]*gh pr (create|merge[^'\"]*--auto)" "$REPO_ROOT/skills/" 2>/dev/null || true)
+if [ -z "$p3_hits" ]; then
+  pass "[bypass-hardening] negative: no 'eval' wrapping gh pr create|merge --auto (Pattern 3)"
+else
+  fail "[bypass-hardening] negative: no 'eval' wrapping gh pr (Pattern 3)" "$(echo "$p3_hits" | head -5 | tr '\n' '|')"
+fi
+
+echo ""
 echo "=== /verify-changes — RESTRUCTURE-adjacent invariants ==="
 check       verify-changes "Scope Assessment header"  '^## Scope Assessment'
 check_fixed verify-changes "flag glyph literal"       '⚠️ Flag'

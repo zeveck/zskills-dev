@@ -12,7 +12,7 @@ description: >-
   creates a PR via gh. No worktree; no .landed marker.
   Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
 metadata:
-  version: "2026.05.07+d5471f"
+  version: "2026.05.13+22fdec"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -648,6 +648,19 @@ branch: $BRANCH
 base: $BASE_BRANCH
 MARK
 
+# requires.land-pr.<id> (Plan LAND_PR_BYPASS_HARDENING Phase 2 — drives
+# hook STOP-message Pattern 2 + dashboard). Variables $TRACK_DIR, $SLUG,
+# $BRANCH, $NOW_ISO are all in scope here (fence A 631-678). Cleanup is
+# best-effort glob at end of caller-loop (DA-4-5) since $SLUG is
+# out-of-fence-scope at the line 1244 cleanup site.
+cat > "$TRACK_DIR/requires.land-pr.$SLUG" <<MARK
+skill: land-pr
+parent: quickfix
+id: $SLUG
+branch: $BRANCH
+date: $NOW_ISO
+MARK
+
 CANCELLED=0
 CANCEL_REASON=""
 finalize_marker() {
@@ -1077,7 +1090,7 @@ MAX="${CI_MAX_ATTEMPTS:-2}"
 RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 
 LANDED_SOURCE="quickfix"
-LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE"
+LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --tracking-id=$SLUG"
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /quickfix.
@@ -1242,6 +1255,30 @@ if ! git checkout "$BASE_BRANCH"; then
   echo "WARN: PR created at $PR_URL but failed to checkout back to $BASE_BRANCH. Run 'git checkout $BASE_BRANCH' manually." >&2
 fi
 # === END CANONICAL /land-pr CALLER LOOP ===
+# Cleanup transient requires marker (Plan LAND_PR_BYPASS_HARDENING Phase 2
+# / R-5-5 / DA-4-5 — best-effort since $SLUG is out-of-fence-scope and the
+# only reliable reconstruction path would require re-running /quickfix's
+# branch-derivation logic, which is fragile). Glob cleanup targets ANY
+# requires.land-pr.* in the active quickfix.* pipeline subdir under
+# MAIN_ROOT; the find-rm pattern is safe because only the current
+# invocation's requires.land-pr.<id> can exist there at this point
+# (pre-existing requires would have been cleaned by prior invocations or
+# by /update-zskills clear-tracking). The fulfilled.quickfix finalize is
+# already handled by the trap registered in fence A; this block just
+# cleans up the new requires marker so it doesn't orphan across sessions.
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+# If ZSKILLS_PIPELINE_ID is set (passed via env from the orchestrator),
+# target its specific subdir; otherwise glob across quickfix.*.
+if [ -n "$ZSKILLS_PIPELINE_ID" ]; then
+  rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr."*
+else
+  # Fallback: glob ALL quickfix.* subdirs. Acceptable per Residual
+  # Risk #8 (cleanup race); orphans recovered by clear-tracking.sh.
+  find "$MAIN_ROOT/.zskills/tracking" \
+    -maxdepth 2 -type d -name 'quickfix.*' \
+    -exec sh -c 'rm -f "$1"/requires.land-pr.*' _ {} \;
+fi
 ```
 
 The EXIT trap finalizes the marker to `complete` on success. The CI poll
