@@ -30,7 +30,7 @@ file-write surface) and #233 (`/fix-issues` SPRINT_REPORT.md commit).
 | 2 — Adopt in plan-family skills (/draft-plan, /refine-plan, /draft-tests) | 🟡 | `c724a52` | preamble + `ZSKILLS_PATHS_ROOT` export + path-remap + self-contained auto-commit; closes #226 |
 | 3 — Adopt in block-diagram skills (/add-block, /add-example) | 🟡 | `3522882` | preamble only; /add-block REPLACES existing inline call |
 | 4 — Adopt in /fix-issues sync mode | 🟡 | `8a55ce0` | preamble BEFORE Step 1 (R3-fixed); SPRINT_REPORT.md write happens in worktree; closes #233 |
-| 5 — Conformance + canary | ⬚ | | extend ALL SEVEN `check_*` helpers; NEW caller-contract scan; 10-case canary (adds path-root sub-case) |
+| 5 — Conformance + canary | 🟡 | `2528eb3` | extend ALL SEVEN `check_*` helpers; NEW caller-contract scan; 10-case canary (adds path-root sub-case) |
 | 6 — Verification (automated) | ⬚ | | run-all + conformance + canary all green; CI gate via `/land-pr` dispatch; post-merge smoke in appendix |
 
 ---
