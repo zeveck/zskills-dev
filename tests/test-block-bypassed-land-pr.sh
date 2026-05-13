@@ -25,10 +25,19 @@
 #   C15  bash $CLAUDE_PROJECT_DIR/.claude/skills/...   → ALLOW (wrapper carve-out)
 #         /pr-push-and-create.sh ...
 #   C16  cd /tmp/wt && gh pr create -B main            → DENY (segment-walk)
-#   C17  bash -c 'gh pr create -B main'                → ALLOW (documented hole)
+#   C17  bash -c 'gh pr create -B main'                → DENY (was the PR #250
+#         documented hole; closed by is_gh_pr_subcommand_in_wrappers)
 #   C18  gh pr create, script missing/non-exec         → STILL DENY, static fallback
 #   C19  gh --repo foo/bar pr create                   → DENY
 #   C20  gh --repo=foo/bar pr create                   → DENY
+#   C21  sh -c 'gh pr create'                          → DENY (sh -c wrapper)
+#   C22  eval 'gh pr create'                           → DENY (eval wrapper)
+#   C23  bash -c 'gh pr merge --auto'                  → DENY (merge variant)
+#   C24  bash -lc 'gh pr create'                       → DENY (combined-flag)
+#   C25  /usr/local/bin/gh pr create                   → DENY (absolute-path)
+#   C26  ./gh pr create                                → DENY (relative-path)
+#   C27  legitimate FPs (git commit -m, grep, etc.)    → ALLOW (token-aware)
+#   C28  legitimate gh pr verbs (view/list/checks/...) → ALLOW
 #
 #   AC5.4  Instrumented stub: hook on non-`gh pr ` commands must NOT
 #          invoke land-pr-bypass-message.sh.
@@ -195,7 +204,7 @@ clean_tracking
 write_requires_marker "commit.test" "test" "$SANDBOX_HEAD"
 run_hook "$(mkenv "gh pr create -B main")"
 assert_deny "C2: gh pr create + matching-branch marker → DENY Pattern 2" \
-  "$HOOK_OUT" "/land-pr invocation appears to have errored"
+  "$HOOK_OUT" "declared an intent to"
 
 # ─────────────────── C3: gh pr create + mismatched-branch marker ─
 clean_tracking
@@ -216,7 +225,7 @@ clean_tracking
 write_malformed_marker_no_branch "commit.malformed" "malformed"
 run_hook "$(mkenv "gh pr create -B main")"
 assert_deny "C4: gh pr create + malformed-marker (no branch line) → DENY Pattern 2 (DA-2-2 fallback)" \
-  "$HOOK_OUT" "/land-pr invocation appears to have errored"
+  "$HOOK_OUT" "declared an intent to"
 
 # ─────────────────── C5..C8: gh pr merge variants → DENY ─────────
 clean_tracking
@@ -267,15 +276,15 @@ run_hook "$(mkenv "cd /tmp/wt && gh pr create -B main")"
 assert_deny "C16: chained cd && gh pr create → DENY (segment-walk)" \
   "$HOOK_OUT" ""
 
-# ─────────────────── C17: bash -c 'gh pr create' → ALLOW ─────────
-# Documented hole (DA-1-5). The bash -c carve-out is inherited from
-# is_git_subcommand's first-token-anchored design; bash -c wraps the
-# inner command in a string arg so the tokenize-walk never sees `gh` at
-# the head of the command. The Phase 4 negative-conformance assert is
-# the source-side backstop that catches in-skill regressions.
+# ─────────────────── C17: bash -c 'gh pr create' → DENY ─────────
+# Previously DA-1-5 "documented hole" of PR #250. Closed by the new
+# is_gh_pr_subcommand_in_wrappers helper, which extracts the inline
+# string from `bash -c '<inner>'` (also sh/dash/ksh/zsh and eval) and
+# recursively re-matches it through the chain-walker.
 clean_tracking
 run_hook "$(mkenv "bash -c 'gh pr create -B main'")"
-assert_allow "C17: bash -c 'gh pr create' → ALLOW (documented hole)" "$HOOK_EXIT" "$HOOK_OUT"
+assert_deny "C17: bash -c 'gh pr create' → DENY (wrapper-c recursion closes PR-#250 hole)" \
+  "$HOOK_OUT" ""
 
 # ─────────────────── C18: script missing → STILL DENY (static) ───
 # Move (don't delete) the script so we can restore it. Set non-exec by
@@ -310,6 +319,67 @@ assert_deny "C19: gh --repo foo/bar pr create (2-token form) → DENY" \
 run_hook "$(mkenv "gh --repo=foo/bar pr create -B main")"
 assert_deny "C20: gh --repo=foo/bar pr create (=-form) → DENY" \
   "$HOOK_OUT" ""
+
+# ─────────────────── C21: sh -c 'gh pr create' → DENY ────────────
+clean_tracking
+run_hook "$(mkenv "sh -c 'gh pr create -B main'")"
+assert_deny "C21: sh -c 'gh pr create' → DENY (sh -c wrapper)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C22: eval 'gh pr create' → DENY ─────────────
+clean_tracking
+run_hook "$(mkenv "eval 'gh pr create -B main'")"
+assert_deny "C22: eval 'gh pr create' → DENY (eval wrapper)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C23: bash -c '... merge --auto' → DENY ──────
+clean_tracking
+run_hook "$(mkenv "bash -c 'gh pr merge 123 --auto'")"
+assert_deny "C23: bash -c 'gh pr merge --auto' → DENY (merge variant in wrapper)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C24: bash -lc 'gh pr create' → DENY ─────────
+clean_tracking
+run_hook "$(mkenv "bash -lc 'gh pr create'")"
+assert_deny "C24: bash -lc 'gh pr create' → DENY (combined-flag wrapper)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C25: /usr/local/bin/gh pr create → DENY ─────
+# Absolute-path gh invocation. The first-token check basenames the
+# path before comparing to "gh".
+clean_tracking
+run_hook "$(mkenv "/usr/local/bin/gh pr create -B main")"
+assert_deny "C25: /usr/local/bin/gh pr create → DENY (absolute-path basename)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C26: ./gh pr create → DENY ──────────────────
+clean_tracking
+run_hook "$(mkenv "./gh pr create")"
+assert_deny "C26: ./gh pr create → DENY (relative-path basename)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C27: legitimate FP cases all ALLOW ──────────
+# These contain the literal text `gh pr create` in quoted args of
+# OTHER commands. The token-aware walker correctly treats them as
+# arguments, not invocations.
+for legit in \
+  "git commit -m 'fix gh pr create bug'" \
+  "grep 'gh pr create' tests/" \
+  "gh issue create --title 'use gh pr create instead'" \
+  "echo 'gh pr create'"; do
+  clean_tracking
+  run_hook "$(mkenv "$legit")"
+  assert_allow "C27/$legit → ALLOW (token-aware: literal in quoted arg)" \
+    "$HOOK_EXIT" "$HOOK_OUT"
+done
+
+# ─────────────────── C28: legitimate gh subcommands ALLOW ────────
+for legit in "gh pr view 123" "gh pr checks --watch" "gh pr list" "gh pr diff" "gh pr edit 5 --title=x" "gh pr merge 123" "gh pr merge --auto-fill"; do
+  clean_tracking
+  run_hook "$(mkenv "$legit")"
+  assert_allow "C28/$legit → ALLOW (legitimate gh pr verb)" \
+    "$HOOK_EXIT" "$HOOK_OUT"
+done
 
 # ──────────────────────────────────────────────────────────────
 # AC5.4 — instrumented-stub early-exit assertion.

@@ -21,7 +21,7 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
   #   stale-skill-version hook  : is_git_subcommand
   #   block-bypassed-land-pr.sh : is_gh_pr_subcommand, is_gh_pr_subcommand_in_chain
   #     (Plan LAND_PR_BYPASS_HARDENING Phase 4 — 4th drift-gated hook)
-  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_gh_pr_subcommand is_gh_pr_subcommand_in_chain; do
+  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers; do
     # is_destruct_command is only inlined in generic hook; skip for project + stale-skill-version + bypassed-land-pr.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
@@ -38,9 +38,10 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     # is_git_subcommand is NOT inlined in bypassed-land-pr (that hook only
     # walks gh pr tokens, not git tokens).
     [[ "$FN" == "is_git_subcommand" && "$HOOK" == *bypassed-land-pr* ]] && continue
-    # is_gh_pr_subcommand{,_in_chain} are ONLY inlined in bypassed-land-pr.
+    # is_gh_pr_subcommand{,_in_chain,_in_wrappers} are ONLY inlined in bypassed-land-pr.
     [[ "$FN" == "is_gh_pr_subcommand" && "$HOOK" != *bypassed-land-pr* ]] && continue
     [[ "$FN" == "is_gh_pr_subcommand_in_chain" && "$HOOK" != *bypassed-land-pr* ]] && continue
+    [[ "$FN" == "is_gh_pr_subcommand_in_wrappers" && "$HOOK" != *bypassed-land-pr* ]] && continue
     if diff <(sed -n "/^$FN()/,/^}$/p" "$HOOK") \
             <(sed -n "/^$FN()/,/^}$/p" hooks/_lib/git-tokenwalk.sh) \
             > /dev/null; then
