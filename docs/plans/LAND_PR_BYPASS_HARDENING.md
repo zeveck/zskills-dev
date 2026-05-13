@@ -269,7 +269,7 @@ plan ordering coupling. (DA-1-4 resolution.)
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — tokenize-walk helper + hook | ✅ Done | `eaccbf4` | new `is_gh_pr_subcommand` + `block-bypassed-land-pr.sh`; land-pr version bumped inline (plan-drift, see report) |
-| 2 — Caller edits (4 skills) | ⬚ | | `requires.land-pr.<id>` + `--tracking-id` + new `fulfilled.<skill>.<id>` |
+| 2 — Caller edits (4 skills) | ✅ Done | `71f8770` | `requires.land-pr.<id>` + `--tracking-id` + new `fulfilled.<skill>.<id>`; 5 skill versions bumped inline (plan-drift, see report) |
 | 3 — Hook registration + clear-tracking narrow widening | ⬚ | | `.claude/settings.json` + mirror + 6-line clear-tracking patch |
 | 4 — Conformance tripwires | ⬚ | | `test-skill-conformance.sh` asserts (positive + negative) + `test-hook-helper-drift.sh` |
 | 5 — Hook integration test + canary | ⬚ | | `tests/test-block-bypassed-land-pr.sh` + `docs/plans/CANARY_BYPASS_DETECT.md` |
