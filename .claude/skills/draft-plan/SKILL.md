@@ -8,7 +8,7 @@ description: >-
   until the plan converges. Output is a plan file ready for /run-plan.
   Usage: /draft-plan [output FILE] [rounds N] <description...>
 metadata:
-  version: "2026.05.10+3d0980"
+  version: "2026.05.13+191da1"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -39,6 +39,54 @@ Before doing any other work, verify your tool list contains `Agent` or `Task`. I
 > Do NOT continue. Single-agent inline degradation produces rubber-stamp findings without the adversarial diversity this skill's value depends on. The CLAUDE.md memory anchor `feedback_multi_agent_skills_top_level.md` is the recurring failure mode this preflight catches.
 
 Do not proceed past this preflight without `Agent` access.
+
+## Worktree preamble — ensure isolation when main is protected
+
+Before parsing arguments, ensure a worktree exists when main is protected.
+Dispatch the canonical helper; if `main_protected: true` and the caller is
+in main, the helper creates a worktree and prints its path on stdout
+(empty string when no worktree is required). When non-empty, `cd` into it
+and export `ZSKILLS_PATHS_ROOT` so downstream path-resolution anchors on
+the worktree, not main:
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+# Caller-side install-integrity fallback (DA-R3-2): if /update-zskills
+# Step 3 ran as per-file-diff and skipped the new file, the helper itself
+# is missing. Emit an actionable exit-11 message instead of bash's
+# `No such file or directory`.
+if [ ! -x "$HELPER" ]; then
+  echo "draft-plan: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+WT_PATH=$(bash "$HELPER" \
+  --prefix draftplan \
+  --pipeline-id "draft-plan.${TRACKING_ID}" \
+  --allow-resume \
+  --purpose "draft-plan auto-worktree; isolate plan drafting from main" \
+  "${TRACKING_ID}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ensure-worktree failed (rc=$RC) for /draft-plan" >&2
+  # rc=3 (poisoned branch): suggest `/create-worktree resume <slug>` or
+  # delete the poisoned branch. rc=11: helper install-integrity — run
+  # `/update-zskills` to repair. Other codes: see helper script header.
+  exit "$RC"
+fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "draft-plan: cd $WT_PATH failed" >&2; exit 1; }
+  # R3-1 path-resolution fix: re-anchor zskills-paths.sh under the
+  # worktree so subsequent $ZSKILLS_PLANS_DIR / $ZSKILLS_AUDIT_DIR /
+  # $ZSKILLS_ISSUES_DIR resolutions land in WT, not main. Export (not
+  # just set) so child shells / re-sourcing inherits it.
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"
+fi
+# Empty $WT_PATH means no worktree was created (caller already in one OR
+# main not protected); proceed in cwd. $ZSKILLS_PATHS_ROOT stays unset
+# in that case, so paths fall back to $CLAUDE_PROJECT_DIR as before.
+```
 
 ## Arguments
 
@@ -539,12 +587,85 @@ After each round of review + refinement:
    they can't read — plans are often too large to meaningfully summarize
    in chat. Write first, then let the user read the actual file.
 
-3. **Plan index — do not touch.** The plan index is regenerated from
+3. **Auto-commit the plan file (if in a worktree).** When `$TOPLEVEL` is
+   a worktree (not main), stage and commit `$OUTPUT_FILE` so the plan is
+   captured on the feature branch rather than left as a dirty file in
+   main. This is the file-write-time backstop that pairs with the
+   preamble's structural isolation:
+
+   ```bash
+   # Self-contained; belt-and-suspenders cd in case WT_PATH was set above.
+   [ -n "${WT_PATH:-}" ] && cd "$WT_PATH" 2>/dev/null || true
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   TOPLEVEL=$(git rev-parse --show-toplevel)
+   if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
+     # Re-source path-config under the worktree root so $ZSKILLS_PLANS_DIR
+     # etc resolve to TOPLEVEL/... rather than $CLAUDE_PROJECT_DIR/... — R3-1.
+     # Belt-and-suspenders: the preamble already exported this, but the
+     # fence re-exports in case the preamble code path was bypassed
+     # (e.g., caller-in-worktree, where WT_PATH was empty but TOPLEVEL is
+     # already a worktree — we want paths anchored on TOPLEVEL).
+     export ZSKILLS_PATHS_ROOT="$TOPLEVEL"
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+
+     # R3-1 path-remap: if $OUTPUT_FILE was computed BEFORE the preamble set
+     # $ZSKILLS_PATHS_ROOT (e.g., a stale value cached in the caller's
+     # argument-resolution block), it may still be MAIN-anchored. Re-anchor
+     # to TOPLEVEL. This is the load-bearing remap.
+     case "$OUTPUT_FILE" in
+       "$MAIN_ROOT"/*) OUTPUT_FILE="$TOPLEVEL/${OUTPUT_FILE#"$MAIN_ROOT/"}" ;;
+     esac
+
+     # Portable FILE_REL (DA-R2-1, R3-6: adapted from warn-config-drift.sh:181-203).
+     FILE_REL=""
+     if FILE_REL=$(realpath --relative-to="$TOPLEVEL" "$OUTPUT_FILE" 2>/dev/null) \
+          && [ -n "$FILE_REL" ]; then
+       case "$FILE_REL" in /*) FILE_REL="" ;; esac
+     fi
+     if [ -z "$FILE_REL" ]; then
+       ABS_FILE=$(cd "$(dirname "$OUTPUT_FILE")" 2>/dev/null && pwd)/$(basename "$OUTPUT_FILE")
+       case "$ABS_FILE" in
+         "$TOPLEVEL"/*) FILE_REL="${ABS_FILE#"$TOPLEVEL"/}" ;;
+         *) echo "draft-plan: cannot normalize $OUTPUT_FILE vs $TOPLEVEL" >&2; exit 1 ;;
+       esac
+     fi
+     # Out-of-tree guard (DA-R2-5). After the path-remap above, FILE_REL
+     # should never be `../*` for legitimate inputs; if it is, fail loud
+     # (something is wrong with the caller's resolution).
+     case "$FILE_REL" in
+       /*|../*) echo "draft-plan: $OUTPUT_FILE is outside worktree $TOPLEVEL" >&2; exit 1 ;;
+     esac
+
+     git -C "$TOPLEVEL" add "$FILE_REL"
+     STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+     if [ "$STAGED" != "$FILE_REL" ]; then
+       echo "draft-plan: unexpected staged set: $STAGED (expected $FILE_REL only)" >&2
+       exit 1
+     fi
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
+     # Per-skill commit subject (R2-F8: case-stmt, not table cell).
+     BASE=$(basename "$FILE_REL" .md)
+     case "draft-plan" in
+       draft-plan)  COMMIT_MSG_SUBJECT="docs(plans): draft $BASE" ;;
+       refine-plan) COMMIT_MSG_SUBJECT="docs(plans): refine $BASE" ;;
+       draft-tests) COMMIT_MSG_SUBJECT="docs(tests): draft test specs for $BASE" ;;
+     esac
+
+     if [ -n "$COMMIT_CO_AUTHOR" ]; then
+       git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "$COMMIT_MSG_SUBJECT"
+     else
+       git -C "$TOPLEVEL" commit -m "$COMMIT_MSG_SUBJECT"
+     fi
+   fi
+   ```
+
+4. **Plan index — do not touch.** The plan index is regenerated from
    source-of-truth by `/plans rebuild` and auto-refreshed by `/plans`
    Mode: Show when the source has changed. No manual update needed
    here.
 
-4. **Present the result:**
+5. **Present the result:**
    > Plan drafted in N rounds (converged / max rounds reached).
    > [Remaining concerns if any]
    >

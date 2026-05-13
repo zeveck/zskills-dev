@@ -30,9 +30,21 @@ fail() { printf '\033[31m  FAIL\033[0m %s — pattern not found: %s\n' "$1" "$2"
 # Greps skills/<skill>/ recursively. Pattern is extended regex.
 # Uses `-e` to ensure patterns starting with `-` (e.g. `--watch`) aren't
 # treated as flags.
+#
+# Slug form (uniform across all 7 helpers): bare `<name>` reroots to
+# `$REPO_ROOT/skills/<name>/`; a slug containing `/` (e.g.
+# `block-diagram/add-block`) reroots to `$REPO_ROOT/<slug>/` so callers
+# can target the block-diagram/ subtree (and future subtrees) without
+# helper churn.
 check() {
   local skill="$1" label="$2" pattern="$3"
-  if grep -rE -e "$pattern" "$REPO_ROOT/skills/$skill/" > /dev/null 2>&1; then
+  local skill_dir
+  if [[ "$skill" == */* ]]; then
+    skill_dir="$REPO_ROOT/$skill"
+  else
+    skill_dir="$REPO_ROOT/skills/$skill"
+  fi
+  if grep -rE -e "$pattern" "$skill_dir/" > /dev/null 2>&1; then
     pass "[$skill] $label"
   else
     fail "[$skill] $label" "$pattern"
@@ -43,7 +55,13 @@ check() {
 # Like `check` but uses fixed-string (-F) matching for literals with regex metachars.
 check_fixed() {
   local skill="$1" label="$2" pattern="$3"
-  if grep -rF -e "$pattern" "$REPO_ROOT/skills/$skill/" > /dev/null 2>&1; then
+  local skill_dir
+  if [[ "$skill" == */* ]]; then
+    skill_dir="$REPO_ROOT/$skill"
+  else
+    skill_dir="$REPO_ROOT/skills/$skill"
+  fi
+  if grep -rF -e "$pattern" "$skill_dir/" > /dev/null 2>&1; then
     pass "[$skill] $label"
   else
     fail "[$skill] $label" "$pattern"
@@ -56,7 +74,13 @@ check_fixed() {
 # Pattern is extended regex.
 check_not() {
   local skill="$1" label="$2" pattern="$3"
-  if grep -rE -e "$pattern" "$REPO_ROOT/skills/$skill/" > /dev/null 2>&1; then
+  local skill_dir
+  if [[ "$skill" == */* ]]; then
+    skill_dir="$REPO_ROOT/$skill"
+  else
+    skill_dir="$REPO_ROOT/skills/$skill"
+  fi
+  if grep -rE -e "$pattern" "$skill_dir/" > /dev/null 2>&1; then
     fail "[$skill] $label" "pattern '$pattern' found but should NOT exist"
   else
     pass "[$skill] $label"
@@ -69,7 +93,12 @@ check_not() {
 # that mean "in this specific file" not "anywhere in the skill tree".
 check_in_file() {
   local skill="$1" relpath="$2" label="$3" pattern="$4"
-  local target="$REPO_ROOT/skills/$skill/$relpath"
+  local target
+  if [[ "$skill" == */* ]]; then
+    target="$REPO_ROOT/$skill/$relpath"
+  else
+    target="$REPO_ROOT/skills/$skill/$relpath"
+  fi
   if [ ! -f "$target" ]; then
     fail "[$skill/$relpath] $label" "file does not exist"
     return
@@ -85,7 +114,12 @@ check_in_file() {
 # Inverted check_in_file.
 check_not_in_file() {
   local skill="$1" relpath="$2" label="$3" pattern="$4"
-  local target="$REPO_ROOT/skills/$skill/$relpath"
+  local target
+  if [[ "$skill" == */* ]]; then
+    target="$REPO_ROOT/$skill/$relpath"
+  else
+    target="$REPO_ROOT/skills/$skill/$relpath"
+  fi
   if [ ! -f "$target" ]; then
     fail "[$skill/$relpath] $label" "file does not exist"
     return
@@ -101,7 +135,12 @@ check_not_in_file() {
 # Asserts a file exists AND has the executable bit set.
 check_executable() {
   local skill="$1" relpath="$2" label="$3"
-  local target="$REPO_ROOT/skills/$skill/$relpath"
+  local target
+  if [[ "$skill" == */* ]]; then
+    target="$REPO_ROOT/$skill/$relpath"
+  else
+    target="$REPO_ROOT/skills/$skill/$relpath"
+  fi
   if [ ! -f "$target" ]; then
     fail "[$skill/$relpath] $label" "file does not exist"
     return
@@ -120,7 +159,12 @@ check_executable() {
 # silencing-fallible-op `|| true` while allowing the documented sentinel.
 check_not_in_file_filtered() {
   local skill="$1" relpath="$2" label="$3" pattern="$4" ignore="$5"
-  local target="$REPO_ROOT/skills/$skill/$relpath"
+  local target
+  if [[ "$skill" == */* ]]; then
+    target="$REPO_ROOT/$skill/$relpath"
+  else
+    target="$REPO_ROOT/skills/$skill/$relpath"
+  fi
   if [ ! -f "$target" ]; then
     fail "[$skill/$relpath] $label" "file does not exist"
     return
@@ -1417,6 +1461,57 @@ if grep -rn --include='*.md' -E 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$REPO_R
   grep -rn --include='*.md' -E 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$REPO_ROOT/skills/" >&2
 else
   pass "no 'export ZSKILLS_PIPELINE_ID' in skills/ (flag is the only interface)"
+fi
+
+echo ""
+echo "=== ensure-worktree preamble adoption ==="
+# Phase 5 (PREAMBLE_WORKTREE_GATE): every adopter skill MUST embed the
+# `bash "$HELPER"` invocation form of the shared ensure-worktree.sh
+# preamble. The preamble defines:
+#   HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+# and dispatches via `WT_PATH=$(bash "$HELPER" \ ...)`. A fixed-string
+# match on `bash "$HELPER"` is the load-bearing literal — if the slug
+# routing in any adopter regresses (e.g. someone open-codes
+# create-worktree.sh again), this assertion catches it.
+check_fixed draft-plan                "ensure-worktree invocation" 'bash "$HELPER"'
+check_fixed refine-plan               "ensure-worktree invocation" 'bash "$HELPER"'
+check_fixed draft-tests               "ensure-worktree invocation" 'bash "$HELPER"'
+check_fixed block-diagram/add-block   "ensure-worktree invocation" 'bash "$HELPER"'
+check_fixed block-diagram/add-example "ensure-worktree invocation" 'bash "$HELPER"'
+check_fixed fix-issues                "ensure-worktree invocation" 'bash "$HELPER"'
+
+echo ""
+echo "=== ensure-worktree.sh caller contract ==="
+# Companion to the create-worktree.sh caller-contract scan above.
+# Every multi-line `bash "$HELPER" \` invocation in skills/ AND
+# block-diagram/ (the preamble HELPER literal form — see "ensure-worktree
+# preamble adoption" above) must include `--pipeline-id` within the next
+# 12 lines. The block-diagram/ subtree is scanned here (but NOT in the
+# create-worktree.sh scan above — post-Phase-3 /add-block has 0
+# create-worktree.sh calls so extending that scan adds no value, DA-12).
+#
+# Floor: ≥6 callers (one per adopter: draft-plan, refine-plan,
+# draft-tests, block-diagram/add-block, block-diagram/add-example,
+# fix-issues). If the regex breaks and matches fewer, fail loudly
+# rather than vacuously pass.
+EW_PIPELINE_ID_CONTRACT_FAIL=0
+EW_PIPELINE_ID_CONTRACT_CALLS=0
+while IFS=: read -r file lineno _; do
+  [ -z "$file" ] && continue
+  EW_PIPELINE_ID_CONTRACT_CALLS=$((EW_PIPELINE_ID_CONTRACT_CALLS + 1))
+  # Look at lines $lineno through $lineno+12 in $file.
+  slice=$(sed -n "${lineno},$((lineno + 12))p" "$file" 2>/dev/null)
+  if ! echo "$slice" | grep -q -- '--pipeline-id'; then
+    fail "ensure-worktree caller missing --pipeline-id" "$file:$lineno"
+    EW_PIPELINE_ID_CONTRACT_FAIL=$((EW_PIPELINE_ID_CONTRACT_FAIL + 1))
+  fi
+done < <(grep -rn --include='*.md' -E 'bash[[:space:]]+"\$HELPER".*\\$' "$REPO_ROOT/skills/" "$REPO_ROOT/block-diagram/")
+if [ "$EW_PIPELINE_ID_CONTRACT_CALLS" -lt 6 ]; then
+  fail "ensure-worktree caller scan found too few invocations (${EW_PIPELINE_ID_CONTRACT_CALLS} < 6) — pattern broken?" "grep regex drift"
+  EW_PIPELINE_ID_CONTRACT_FAIL=$((EW_PIPELINE_ID_CONTRACT_FAIL + 1))
+fi
+if [ "$EW_PIPELINE_ID_CONTRACT_FAIL" -eq 0 ]; then
+  pass "every ensure-worktree.sh invocation in skills/+block-diagram/ passes --pipeline-id (scanned ${EW_PIPELINE_ID_CONTRACT_CALLS})"
 fi
 
 echo ""

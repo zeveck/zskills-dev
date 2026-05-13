@@ -2,7 +2,7 @@
 issue: 226
 title: Shared preamble worktree gate for file-writing skills
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: Shared preamble worktree gate for file-writing skills
@@ -26,12 +26,12 @@ file-write surface) and #233 (`/fix-issues` SPRINT_REPORT.md commit).
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Helper script (`ensure-worktree.sh`) | ⬚ | | source + mirror; jq-free config read; opt-in `--allow-resume`; install-integrity check |
-| 2 — Adopt in plan-family skills (/draft-plan, /refine-plan, /draft-tests) | ⬚ | | preamble + `ZSKILLS_PATHS_ROOT` export + path-remap + self-contained auto-commit; closes #226 |
-| 3 — Adopt in block-diagram skills (/add-block, /add-example) | ⬚ | | preamble only; /add-block REPLACES existing inline call |
-| 4 — Adopt in /fix-issues sync mode | ⬚ | | preamble BEFORE Step 1 (R3-fixed); SPRINT_REPORT.md write happens in worktree; closes #233 |
-| 5 — Conformance + canary | ⬚ | | extend ALL SEVEN `check_*` helpers; NEW caller-contract scan; 10-case canary (adds path-root sub-case) |
-| 6 — Verification (automated) | ⬚ | | run-all + conformance + canary all green; CI gate via `/land-pr` dispatch; post-merge smoke in appendix |
+| 1 — Helper script (`ensure-worktree.sh`) | ✅ | `caf0d1f` (+ `3a031bd` fix-up) | source + mirror; jq-free config read; opt-in `--allow-resume`; install-integrity check |
+| 2 — Adopt in plan-family skills (/draft-plan, /refine-plan, /draft-tests) | ✅ | `1d7ab5d` | preamble + `ZSKILLS_PATHS_ROOT` export + path-remap + self-contained auto-commit; closes #226 |
+| 3 — Adopt in block-diagram skills (/add-block, /add-example) | ✅ | `15a107d` | preamble only; /add-block REPLACES existing inline call |
+| 4 — Adopt in /fix-issues sync mode | ✅ | `37f4af1` | preamble BEFORE Step 1 (R3-fixed); SPRINT_REPORT.md write happens in worktree; closes #233 |
+| 5 — Conformance + canary | ✅ | `54d12cb` | extend ALL SEVEN `check_*` helpers; NEW caller-contract scan; 10-case canary (adds path-root sub-case) |
+| 6 — Verification (automated) | ✅ | (phase 6 tracker commit) | run-all + conformance + canary all green; CI gate via `/land-pr` dispatch; post-merge smoke in appendix |
 
 ---
 
@@ -1154,7 +1154,7 @@ enforcement through `/land-pr` instead of snapshot `gh pr checks`
 | 10 | `check_fixed` block-diagram form (R-F10, DA-3) | MAJ | Fixed — WI 5.1 extends ALL SEVEN (R3-3 corrects 5→7). |
 | 11 | Canary A missing origin (R-F11) | MAJ | Fixed — bare-origin fixture. |
 | 12 | Helper duplicates resolve-config (R-F12) | MIN | Justified — inline parser scoped to `execution`. |
-| 13 | Glyph `⬚` parse (R-F13) | MIN | Justified — repo convention. |
+| 13 | Status-glyph parse (R-F13) | MIN | Justified — repo convention. Glyph reference neutralized in this row at land time so the SKILL's `REMAINING_PHASES` regex doesn't false-positive — see SKILL.md "tracker-shape" caveat. |
 | 14 | AC6.4 self-bootstrap (R-F14) | MIN | Restructured — smoke in appendix; R3-4: CI gate via `/land-pr`. |
 | 15 | Override+in-worktree precedence (R-F15) | MIN | Fixed — canary case I covers. |
 | 16 | `$ZSKILLS_AUDIT_DIR_REL` undefined (DA-2) | CRIT | Fixed — `SPRINT_REL` via portable-realpath; R3-1 +ZSKILLS_PATHS_ROOT. |

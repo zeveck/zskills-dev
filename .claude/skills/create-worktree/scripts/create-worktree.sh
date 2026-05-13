@@ -7,6 +7,8 @@
 # and optional .worktreepurpose write. Prints the final worktree path
 # on stdout (exactly one line). All progress/errors go to stderr.
 #
+# Exit codes: 1-10 reserved for create-worktree.sh; 11-19 reserved for ensure-worktree.sh; 20+ reserved for future helpers.
+#
 # Usage:
 #   bash $(basename "$0") \
 #     [--prefix P] [--branch-name REF] [--from B] [--root R] \

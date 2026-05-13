@@ -5,7 +5,7 @@ description: >-
   to "add a block", "create a new block", "implement a block", or mentions
   adding a block type to the library.
 metadata:
-  version: "2026.05.07+d3ad5e"
+  version: "2026.05.13+e6ea94"
 ---
 
 # Adding Block Types
@@ -14,27 +14,35 @@ Every new block must complete all steps (0–12). Steps 0–10 are the
 implementation workflow. Steps 11–12 are verification and landing.
 
 **All implementation happens in a pre-created worktree.** Before dispatching
-the implementation agent, the orchestrator creates the worktree via
-`.claude/skills/create-worktree/scripts/create-worktree.sh`:
+the implementation agent, the orchestrator front-runs the shared
+`ensure-worktree.sh` gate, which handles pre-flight (`prune`/`fetch`/
+`ff-merge` against `main`), the underlying safe `git worktree add`, and an
+atomic `.zskills-tracked` write from `--pipeline-id`. No manual
+`.zskills-tracked` write is needed.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+if [ ! -x "$HELPER" ]; then
+  echo "add-block: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+WT_PATH=$(bash "$HELPER" \
   --prefix add-block \
-  --purpose "add-block; block=${BLOCK_NAME}" \
   --pipeline-id "add-block.${BLOCK_NAME}" \
+  --purpose "add-block; block=${BLOCK_NAME}" \
   "${BLOCK_NAME}")
 RC=$?
 if [ "$RC" -ne 0 ]; then
-  echo "create-worktree failed (rc=$RC) for /add-block" >&2
+  echo "ensure-worktree failed (rc=$RC) for /add-block" >&2
   exit "$RC"
 fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "add-block: cd $WT_PATH failed" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"  # R3-1 — re-anchor downstream path resolution
+fi
 ```
-
-`create-worktree.sh` handles pre-flight (`prune`/`fetch`/`ff-merge` against
-`main`), the underlying safe `git worktree add`, and an atomic
-`.zskills-tracked` write from `--pipeline-id`. No manual `.zskills-tracked`
-write is needed.
 
 Then dispatch the implementation agent **WITHOUT** `isolation: "worktree"`
 — the worktree already exists. The agent prompt MUST start with
@@ -65,7 +73,7 @@ Do NOT do step 7 per-block when batching. Defer it until all blocks are implemen
 
 **Worktree pipeline-id in batch mode:** All grouped blocks share one worktree.
 Use the **first** block name from the user's invocation as the `${BLOCK_NAME}`
-slug for the orchestrator's `create-worktree.sh` call (mirrors fix-issues's
+slug for the orchestrator's `ensure-worktree.sh` call (mirrors fix-issues's
 "lowest issue number" convention for grouped issues).
 
 ---
@@ -82,7 +90,7 @@ PIPELINE_ID and BLOCK_SLUG given the same `$BLOCK_NAME`.
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
 # (parent's PIPELINE_ID inherited via the worktree file written by
-# create-worktree.sh --pipeline-id) → fallback synthesized id.
+# ensure-worktree.sh --pipeline-id) → fallback synthesized id.
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"
 if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
@@ -96,7 +104,7 @@ mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 Tier-1 (env) covers cron-fired top-level turns. Tier-2 (`.zskills-tracked`)
 is the path that fires in practice for `/add-block`'s normal flow, since
-the preamble dispatches through `create-worktree.sh --pipeline-id`. Tier-3
+the preamble dispatches through `ensure-worktree.sh --pipeline-id`. Tier-3
 (`add-block.${BLOCK_NAME}` synthesized) covers truly standalone direct
 invocations.
 
