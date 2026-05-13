@@ -1,5 +1,58 @@
 # Plan Report — Dashboard Tabs and Rename
 
+## Phase — 1 Rename "Z Skills Monitor" → "Z Skills Dashboard"
+
+**Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-dashboard-tabs-and-rename
+**Branch:** feat/dashboard-tabs-and-rename
+**Commits:** 57907a9 (rename impl, 13 files, 87/87 ins/del) + e969fcc (tracker → ✅ Done)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | index.html — title + h1 | Done | "Z Skills Monitor" → "Z Skills Dashboard" |
+| 2 | app.js — banner comment | Done | Line 1 |
+| 3 | server.py — docstring, fallback HTML, argparse, log, `server_version` | Done | line 545: `"zskills-dashboard/0.1"`; class `MonitorHandler` preserved |
+| 4 | collect.py — docstring prose | Done | module path `zskills_monitor.collect` preserved; +1 hit found at line 1220 ("zskills monitor state") edited per intent |
+| 5 | SKILL.md — H1, prose, ~11 echo strings, `zskills-monitor` diagnostic | Done | filename `monitor-state.json` and `verify_monitor_identity` preserved |
+| 6 | README.md — work-on-plans row | Done | "monitor dashboard" → "dashboard" |
+| 7 | test_zskills_monitor_dashboard_ui.sh — title grep | Done | lines 291-292 |
+| 8 | test_zskills_dashboard_skill.sh — sed pass + comment-prose hits | Done | 9 echo-string sites + 3 prose-in-comment hits (745/785/791) |
+| 9 | Skill version bump + mirror | Done | 2026.05.07+a3fc3c → 2026.05.13+957fa2 |
+| 10 | Verify-no-drift smoke | Done | fresh=957fa2 stored=957fa2 |
+| 11 | `diff -rq` source vs mirror | Done | empty (no `__pycache__` drift after cleanup) |
+
+### Verification
+
+- Implementation agent: all ACs PASS
+- Verifier agent (independent): 8/8 verification checks PASS
+- Layer 3 response validation: PASS
+- Tests: **2933/2933 passed, 0 failed** (full suite — baseline-truncated last suite ran cleanly post-impl)
+- `test_zskills_monitor_dashboard_ui.sh`: 92/92 PASS
+- `test_zskills_dashboard_skill.sh`: 35/35 PASS
+- Baseline comparison: zero regressions, zero pre-existing failures
+
+### PLAN-TEXT-DRIFT signals (informational; intent satisfied)
+
+Four drift signals emitted during impl + verify; none required Phase 3.5 rollback. All ACs intent-satisfied even where the literal regex didn't match its prose description.
+
+1. `phase=1 bullet=collect.py field=enumerated-prose-sites` — argparse description at line 1220 also had a prose hit ("zskills monitor state"); edited in lockstep with plan intent.
+2. `phase=1 bullet=server.py field=line-3-docstring` — docstring was multi-line wrapped, not single-line; edited per intent.
+3. `phase=1 bullet=AC7-audit-filter field=filter-regex` — AC filter regex doesn't escape `\.` correctly; line 211's load-bearing pattern slips through. Intent (filter out load-bearing hits) is met; the AC's filter regex is the imperfection.
+4. `phase=1 bullet=AC4 field=expected-result` — AC text says "ONLY load-bearing hits" but its regex `[- ]` only matches hyphen/space, both of which were renamed; "zero hits" is the regex-correct result and consistent with rename success.
+
+### Branch-name discrepancy (carried from Phase 0)
+
+Plan literal: `feat/dashboard-tabs-rename`. Actual: `feat/dashboard-tabs-and-rename`. All ACs evaluated against the actual branch.
+
+### User Sign-off
+
+None required for Phase 1 (mechanical text rename; no behavior change; no UI flow change). The dashboard's window title now says "Z Skills Dashboard" but the user will see this confirmed in Phase 4's manual playwright verification.
+
+---
+
 ## Phase — 0 Worktree setup
 
 **Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
