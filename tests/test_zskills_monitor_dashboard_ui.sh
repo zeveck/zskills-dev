@@ -137,14 +137,24 @@ else
   fail "AC: index.html missing /app.css <link>"
 fi
 
-# AC: five panels (Plans, Issues, Worktrees, Branches, Activity) + errors banner element.
-for panel in panel-plans panel-issues panel-worktrees panel-branches panel-activity; do
+# AC: three panels (Plans, Issues, Branches) + errors banner element.
+for panel in panel-plans panel-issues panel-branches; do
   if grep -q "$panel" "$INDEX_HTML"; then
     pass "AC: panel class present: $panel"
   else
     fail "AC: missing panel class: $panel"
   fi
 done
+if grep -q 'id="activity-strip"' "$INDEX_HTML"; then
+  pass "AC: activity-strip present"
+else
+  fail "AC: activity-strip missing"
+fi
+if ! grep -q 'panel-worktrees\|id="worktrees-body"\|id="tab-worktrees"' "$INDEX_HTML"; then
+  pass "AC: worktrees panel removed from index.html"
+else
+  fail "AC: worktrees panel still present in index.html"
+fi
 if grep -q 'id="errors-banner"' "$INDEX_HTML"; then
   pass "AC: errors-banner element exists"
 else

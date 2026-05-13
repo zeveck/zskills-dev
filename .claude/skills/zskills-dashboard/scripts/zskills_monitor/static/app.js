@@ -111,7 +111,6 @@ const lastFingerprint = {
   errors: null,
   plans: null,
   branches: null,
-  worktrees: null,
   issues: null,
   activity: null,
   workState: null,
@@ -259,12 +258,6 @@ function applySnapshot(snap) {
     renderIssues(snap.issues || [], queues);
   }
 
-  const wtFp = fingerprintWorktrees(snap.worktrees || []);
-  if (wtFp !== lastFingerprint.worktrees) {
-    lastFingerprint.worktrees = wtFp;
-    renderWorktrees(snap.worktrees || []);
-  }
-
   const actFp = fingerprintActivity(snap.activity || []);
   if (actFp !== lastFingerprint.activity) {
     lastFingerprint.activity = actFp;
@@ -375,13 +368,6 @@ function fingerprintIssues(issues, queues) {
   return JSON.stringify(issues.map(i => [
     i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
     pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
-  ]));
-}
-
-function fingerprintWorktrees(wts) {
-  return JSON.stringify(wts.map(w => [
-    w.path, w.branch, w.category, w.age_seconds,
-    w.landed ? w.landed.status : null,
   ]));
 }
 
@@ -651,6 +637,14 @@ function backedBranchSet(worktrees) {
   return set;
 }
 
+function worktreesByBranch(worktrees) {
+  const m = new Map();
+  for (const w of worktrees || []) {
+    if (w && w.branch) m.set(w.branch, w);
+  }
+  return m;
+}
+
 function renderBranches(branches, worktrees) {
   const body = $("branches-body");
   const empty = $("branches-empty");
@@ -661,6 +655,7 @@ function renderBranches(branches, worktrees) {
   }
   empty.hidden = true;
   const backed = backedBranchSet(worktrees);
+  const byBranch = worktreesByBranch(worktrees);
   for (const b of branches) {
     const dim = backed.has(b.name);
     const card = el("article", {
@@ -684,6 +679,25 @@ function renderBranches(branches, worktrees) {
     }
     if (b.upstream) {
       card.appendChild(el("div", { cls: "card-sub", text: "upstream: " + b.upstream }));
+    }
+    const w = byBranch.get(b.name);
+    if (w) {
+      const status = w.landed ? w.landed.status : "not-landed";
+      const wtRow = el("div", { cls: "card-row card-worktree-row" });
+      wtRow.appendChild(el("span", {
+        cls: "pill " + landedPillClass(status),
+        text: status,
+      }));
+      if (w.path) {
+        wtRow.appendChild(el("span", { cls: "mono card-sub", text: basename(w.path) }));
+      }
+      if (typeof w.age_seconds === "number") {
+        wtRow.appendChild(el("span", {
+          cls: "card-sub",
+          text: ageSecondsToText(w.age_seconds),
+        }));
+      }
+      card.appendChild(wtRow);
     }
     body.appendChild(card);
   }
@@ -793,44 +807,6 @@ function landedPillClass(status) {
   if (s === "full") return "pill-landed-full";
   if (s === "partial") return "pill-landed-partial";
   return "pill-landed-not";
-}
-
-function renderWorktrees(wts) {
-  const body = $("worktrees-body");
-  const empty = $("worktrees-empty");
-  clear(body);
-  if (!wts.length) {
-    empty.hidden = false;
-    return;
-  }
-  empty.hidden = true;
-  for (const w of wts) {
-    const row = el("article", {
-      cls: "card",
-      attrs: {
-        tabindex: "0",
-        role: "button",
-        "data-kind": "worktree",
-        "data-path": w.path,
-        "aria-label": "Worktree " + basename(w.path),
-      },
-    });
-    const head = el("div", { cls: "card-row" });
-    head.appendChild(el("span", { cls: "card-title mono", text: basename(w.path) }));
-    const status = w.landed ? w.landed.status : "not-landed";
-    head.appendChild(el("span", {
-      cls: "pill " + landedPillClass(status),
-      text: status,
-    }));
-    row.appendChild(head);
-    const meta = el("div", { cls: "card-sub" });
-    meta.appendChild(el("span", { text: "branch: " + (w.branch || "?") }));
-    if (w.age_seconds != null) {
-      meta.appendChild(el("span", { text: " · " + ageSecondsToText(w.age_seconds) }));
-    }
-    row.appendChild(meta);
-    body.appendChild(row);
-  }
 }
 
 // --------------------------------------------------------------- activity

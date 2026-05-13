@@ -86,28 +86,99 @@ code, pre, .mono {
   margin-right: 8px;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  padding: 24px;
+.activity-strip {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 24px;
   max-width: 1600px;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 12px;
+  align-items: start;
+  max-height: 140px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.strip-title {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  align-self: center;
+}
+.activity-strip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;          /* Allow grid track to shrink below content min */
+}
+.activity-strip-body .activity-row { min-width: 0; }
+.activity-strip-body .activity-row > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (min-width: 900px) {
-  .grid {
-    grid-template-columns: 2fr 1fr 1fr;
-    grid-template-areas:
-      "plans     issues    worktrees"
-      "branches  issues    activity";
-  }
-  .panel-plans     { grid-area: plans; }
-  .panel-branches  { grid-area: branches; }
-  .panel-issues    { grid-area: issues; }
-  .panel-worktrees { grid-area: worktrees; }
-  .panel-activity  { grid-area: activity; }
+.tablist {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  max-width: 1600px;
+  margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
 }
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  scroll-snap-align: start;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: var(--text);
+  border-bottom-color: var(--border);
+}
+.tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.4);
+  border-radius: 2px 2px 0 0;
+}
+.tabpanels {
+  padding: 16px 24px;
+  max-width: 1600px;
+  margin: 0 auto;
+  display: block;
+}
+.tabpanel { display: block; }
+.tabpanel[hidden] { display: none; }
+@media (max-width: 700px) {
+  .tablist { padding: 0 12px; }
+  .tab { padding: 10px 12px; }
+  .activity-strip { padding: 8px 12px; }
+  .tabpanels { padding: 12px; }
+}
+
+.card-worktree-row .mono { font-size: 0.8em; }
 
 .panel {
   background: var(--surface);

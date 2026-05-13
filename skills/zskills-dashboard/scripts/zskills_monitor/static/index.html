@@ -24,53 +24,59 @@
 
   <div id="toast-region" class="toast-region" aria-live="polite" role="status"></div>
 
-  <main id="grid" class="grid">
-    <section class="panel panel-plans" aria-label="Plans">
-      <div class="panel-head">
-        <h2 class="panel-title">Plans</h2>
-        <div class="plans-controls">
-          <div id="default-mode-area" class="default-mode-area">
-            <span class="muted" id="default-mode-label">Default mode:</span>
-            <div class="seg" role="group" aria-labelledby="default-mode-label">
-              <button type="button" id="dm-phase" class="seg-btn" aria-pressed="false">Phase-by-phase</button>
-              <button type="button" id="dm-finish" class="seg-btn" aria-pressed="false">Finish (one PR)</button>
+  <section id="activity-strip" class="activity-strip" aria-label="Recent activity">
+    <h2 class="strip-title">Recent</h2>
+    <div id="activity-body" class="activity-strip-body"></div>
+    <p id="activity-empty" class="empty muted" hidden>No recent activity.</p>
+  </section>
+
+  <nav class="tablist" role="tablist" aria-label="Dashboard sections" aria-orientation="horizontal">
+    <button type="button" role="tab" id="tab-plans"     aria-controls="plans"     aria-selected="true">Plans</button>
+    <button type="button" role="tab" id="tab-issues"    aria-controls="issues"    aria-selected="false">Issues</button>
+    <button type="button" role="tab" id="tab-branches"  aria-controls="branches"  aria-selected="false">Branches</button>
+  </nav>
+
+  <main id="tabpanels" class="tabpanels">
+    <div role="tabpanel" id="plans" aria-labelledby="tab-plans" tabindex="0">
+      <section class="panel panel-plans" aria-label="Plans">
+        <div class="panel-head">
+          <h2 class="panel-title">Plans</h2>
+          <div class="plans-controls">
+            <div id="default-mode-area" class="default-mode-area">
+              <span class="muted" id="default-mode-label">Default mode:</span>
+              <div class="seg" role="group" aria-labelledby="default-mode-label">
+                <button type="button" id="dm-phase" class="seg-btn" aria-pressed="false">Phase-by-phase</button>
+                <button type="button" id="dm-finish" class="seg-btn" aria-pressed="false">Finish (one PR)</button>
+              </div>
+              <span id="default-mode-footnote" class="dm-footnote muted" hidden>
+                Sprint in flight: change applies to plans not yet dispatched and to future sprints; in-flight plans keep their captured mode.
+              </span>
             </div>
-            <span id="default-mode-footnote" class="dm-footnote muted" hidden>
-              Sprint in flight: change applies to plans not yet dispatched and to future sprints; in-flight plans keep their captured mode.
-            </span>
           </div>
         </div>
-      </div>
-      <div id="run-status" class="run-status" aria-label="Run status"></div>
-      <div id="plans-body" class="panel-body"></div>
-      <p id="plans-empty" class="empty muted" hidden>No plans found.</p>
-      <div id="plans-live" class="sr-only" aria-live="polite"></div>
-    </section>
+        <div id="run-status" class="run-status" aria-label="Run status"></div>
+        <div id="plans-body" class="panel-body"></div>
+        <p id="plans-empty" class="empty muted" hidden>No plans found.</p>
+        <div id="plans-live" class="sr-only" aria-live="polite"></div>
+      </section>
+    </div>
 
-    <section class="panel panel-branches" aria-label="Branches">
-      <h2 class="panel-title">Branches</h2>
-      <div id="branches-body" class="panel-body"></div>
-      <p id="branches-empty" class="empty muted" hidden>No branches.</p>
-    </section>
+    <div role="tabpanel" id="issues" aria-labelledby="tab-issues" tabindex="0" hidden>
+      <section class="panel panel-issues" aria-label="Issues">
+        <h2 class="panel-title">Issues</h2>
+        <div id="issues-body" class="panel-body"></div>
+        <p id="issues-empty" class="empty muted" hidden>No open issues.</p>
+        <div id="issues-live" class="sr-only" aria-live="polite"></div>
+      </section>
+    </div>
 
-    <section class="panel panel-issues" aria-label="Issues">
-      <h2 class="panel-title">Issues</h2>
-      <div id="issues-body" class="panel-body"></div>
-      <p id="issues-empty" class="empty muted" hidden>No open issues.</p>
-      <div id="issues-live" class="sr-only" aria-live="polite"></div>
-    </section>
-
-    <section class="panel panel-worktrees" aria-label="Worktrees">
-      <h2 class="panel-title">Worktrees</h2>
-      <div id="worktrees-body" class="panel-body"></div>
-      <p id="worktrees-empty" class="empty muted" hidden>No worktrees.</p>
-    </section>
-
-    <section class="panel panel-activity" aria-label="Recent Activity">
-      <h2 class="panel-title">Recent Activity</h2>
-      <div id="activity-body" class="panel-body"></div>
-      <p id="activity-empty" class="empty muted" hidden>No recent activity.</p>
-    </section>
+    <div role="tabpanel" id="branches" aria-labelledby="tab-branches" tabindex="0" hidden>
+      <section class="panel panel-branches" aria-label="Branches">
+        <h2 class="panel-title">Branches</h2>
+        <div id="branches-body" class="panel-body"></div>
+        <p id="branches-empty" class="empty muted" hidden>No branches.</p>
+      </section>
+    </div>
   </main>
 
   <div id="modal-root" class="modal-root" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
