@@ -1,5 +1,55 @@
 # Plan Report — Dashboard Tabs and Rename
 
+## Phase — 2 Tab scaffold (HTML + CSS)
+
+**Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-dashboard-tabs-and-rename
+**Branch:** feat/dashboard-tabs-and-rename
+**Commits:** 2233a91 (impl, 9 files, +342/-226) + 59b1776 (tracker → ✅ Done)
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| 1 | index.html — body restructure | Done | activity-strip + tablist (3 tabs) + tabpanels around Plans/Issues/Branches; worktrees panel removed |
+| 2 | app.css — delete `.grid` + media-query block | Done | lines 89-110 of old file removed |
+| 3 | app.css — add `.activity-strip`, `.tablist`, `.tab`, `.tabpanels`, `.tabpanel`, `.card-worktree-row .mono` | Done | `.pill-landed-*` retained (existing); `.tabpanel[hidden]{display:none}` defensive rule present |
+| 4 | app.js — add `worktreesByBranch` helper near `backedBranchSet` | Done | exactly 2 grep hits (def + use) |
+| 5 | app.js — enrich `renderBranches(branches, worktrees)` with worktree sub-row | Done | reuses `landedPillClass`, `basename`, `ageSecondsToText`; uses `textContent`/`appendChild` only (no `innerHTML`) |
+| 6 | app.js — delete `renderWorktrees`, `fingerprintWorktrees`, `lastFingerprint.worktrees`, worktrees arm of `applySnapshot` | Done | 0 grep hits for any removed symbol |
+| 7 | app.js — retain `landedPillClass` + `basename` for reuse | Done | both present |
+| 8 | tests/test_zskills_monitor_dashboard_ui.sh — panel-class loop 5→3 + new assertions | Done | activity-strip-present + worktrees-removed pass |
+| 9 | Version bump + mirror + verify-no-drift smoke | Done | 2026.05.13+957fa2 → 2026.05.13+2681bb; diff empty; smoke PASS |
+
+### Verification
+
+- Implementation agent: 16 ACs PASS
+- Verifier agent (independent): 20 ACs PASS + 7 function-body diffs all CLEAN (renderPlans, renderIssues, renderActivity, fingerprintPlans, fingerprintBranches, fingerprintIssues, fingerprintActivity byte-equal vs main)
+- Layer 3 response validation: PASS
+- Tests: **2933/2933 passed, 0 failed** (`test_zskills_monitor_dashboard_ui.sh` includes 3 new PASS lines)
+- Initial visibility: Plans tabpanel NO `hidden`; Issues + Branches both `hidden` (matches plan)
+- `diff -rq` source vs mirror: empty
+- Phase 1 rename intact: `grep -rn 'Z Skills Monitor' skills/zskills-dashboard/` → 0 hits
+
+### Independent drift signals
+
+None.
+
+### User Sign-off
+
+The dashboard now visually has 3 tabs (Plans / Issues / Branches) and a persistent activity strip — but tab click switching is **NOT WIRED YET** (that's Phase 3). The Branches tab also gains inline worktree info (path/age/landed-status pill) when made visible.
+
+Manual sign-off for this phase's UI visuals is bundled into Phase 4's manual playwright verification — clicking tabs won't switch them until Phase 3 lands, so spot-checking Phase 2 in isolation isn't meaningful (the static markup is what tests + greps already verified).
+
+- [ ] **P2-1** — Once Phase 3 lands and you can navigate, confirm:
+  1. Open `http://127.0.0.1:<port>/` in a browser.
+  2. Confirm Plans tab is active by default (underline + bold).
+  3. Confirm activity strip appears persistently above the tablist.
+  4. Confirm Branches panel (once clickable) shows worktree info sub-rows for backed branches.
+
+---
+
 ## Phase — 1 Rename "Z Skills Monitor" → "Z Skills Dashboard"
 
 **Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
