@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.12+27b3fc"
+  version: "2026.05.13+ed26e1"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -2277,6 +2277,20 @@ worktree's copy in PR mode).
 # Count rows in the Progress Tracker whose Status column is ⬚ (not started).
 # 🟡 (in progress) does NOT count as remaining — the current phase is
 # itself 🟡 at the moment Phase 6 runs (it flips to ✅ after landing).
+#
+# Tracker-shape assumption (the regex's hidden contract):
+#   - The Progress Tracker is a markdown pipe table whose first column is
+#     Phase and second column is Status.
+#   - The Status column is where ⬚ / 🟡 / ✅ markers live.
+#   - Header / separator rows (`| Phase | Status | ... |` and
+#     `|-------|--------|...|`) don't contain ⬚, so the regex's
+#     `^\|[^|]*\|[^|]*⬚` (literal `|`, any non-`|`, literal `|`, any
+#     non-`|`, ⬚) matches phase rows only.
+#   - Plans following the project convention always have Phase in column 1
+#     and Status in column 2 (every plan in docs/plans/ as of #240 does).
+#   - If a future plan reorders columns or uses ⬚ outside the Status
+#     column, this regex will miscount. That's a structural-drift case,
+#     not handled here — fix the plan's tracker shape if it happens.
 REMAINING_PHASES=$(grep -cE '^\|[^|]*\|[^|]*⬚' "$PLAN_FILE_FOR_READ" || true)
 REMAINING_PHASES="${REMAINING_PHASES:-0}"
 ```
