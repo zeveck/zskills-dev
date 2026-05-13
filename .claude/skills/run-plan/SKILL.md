@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.13+ed26e1"
+  version: "2026.05.13+16b5f4"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -830,6 +830,20 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   # Re-derive BRANCH_PREFIX and PLAN_SLUG at fence-top (R-5-1):
+   # both were set in earlier disjoint fences (BRANCH_PREFIX@149-157,
+   # PLAN_SLUG@425-441) and do NOT survive cross-fence per
+   # SKILL.md:1326-1328 ("Resolve config-derived vars at fence-top").
+   # Needed below for the requires.land-pr.<id> marker's branch: field.
+   BRANCH_PREFIX="feat/"
+   if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
+     CONFIG_CONTENT=$(cat "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json")
+     # ([^"]*) allows empty string match -- empty prefix means no prefix
+     if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+       BRANCH_PREFIX="${BASH_REMATCH[1]}"
+     fi
+   fi
+   PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
    # PR mode: bookkeeping commits inside the worktree on the feature branch
    # (PR-mode bookkeeping rule). Pre-worktree fences (Phase 1 step 8 runs
    # before Phase 2 worktree creation) anchor on $PR_WORKTREE_PATH if PR-mode
@@ -868,8 +882,9 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    # chunked finish-auto invokes /run-plan once per phase, overwrite is fine
    # (same content each invocation).
    if [ "$LANDING_MODE" = "pr" ]; then
-     printf 'skill: land-pr\nparent: run-plan\nid: %s\ndate: %s\n' \
-       "$TRACKING_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+     BRANCH_NAME_FOR_MARKER="${BRANCH_PREFIX}${PLAN_SLUG}"
+     printf 'skill: land-pr\nparent: run-plan\nid: %s\nbranch: %s\ndate: %s\n' \
+       "$TRACKING_ID" "$BRANCH_NAME_FOR_MARKER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
        > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
    fi
    ```

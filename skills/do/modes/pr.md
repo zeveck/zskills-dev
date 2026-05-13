@@ -186,8 +186,46 @@ ATTEMPT=0
 MAX="${CI_MAX_ATTEMPTS:-2}"
 RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 
+# Tracking-setup block (Plan LAND_PR_BYPASS_HARDENING Phase 2): write
+# requires.land-pr.<id> and fulfilled.do.<id> markers BEFORE LAND_ARGS
+# assembly. Re-resolve $MAIN_ROOT / $PIPELINE_ID at fence-top per the
+# "Resolve config-derived vars at fence-top" rule (separate Bash tool
+# invocations → variables do NOT survive across fences). $TASK_SLUG and
+# $BRANCH_NAME were model-substituted at fence emission per /do's
+# existing convention (Step A1 + Step A3).
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PIPELINE_ID="do.$TASK_SLUG"
+# Echo (do not env-export) the pipeline id — matches /quickfix's tier-2
+# transcript-propagation idiom (`skills/quickfix/SKILL.md:634`) and
+# satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
+# which forbids the env-export side-channel form.
+echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+mkdir -p "$TRACK_DIR"
+NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
+# fulfilled.<skill>.<id> start-marker (per #228 Part B).
+cat > "$TRACK_DIR/fulfilled.do.$TASK_SLUG" <<MARK
+status: started
+date: $NOW_ISO
+skill: do
+mode: pr
+branch: $BRANCH_NAME
+MARK
+# requires.land-pr.<id> (drives hook STOP-message Pattern 2 + dashboard).
+cat > "$TRACK_DIR/requires.land-pr.$TASK_SLUG" <<MARK
+skill: land-pr
+parent: do
+id: $TASK_SLUG
+branch: $BRANCH_NAME
+date: $NOW_ISO
+MARK
+
+# LAND_OUTCOME tracker (R-5-8). Set by case arms below.
+LAND_OUTCOME=__init__
+
 LANDED_SOURCE="do"
-LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH"
+LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --tracking-id=$TASK_SLUG"
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /do pr.
@@ -207,6 +245,10 @@ while :; do
 
   if [ ! -f "$RESULT_FILE" ]; then
     echo "ERROR: /land-pr produced no result file at $RESULT_FILE" >&2
+    # Inline cleanup before exit (DA-3-1 / R-4-9 — this exit bypasses the
+    # explicit-finalize block at end-of-fence). Variables in scope (same fence).
+    rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
+    sed -i "s/^status: started$/status: failed/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
     exit 1
   fi
 
@@ -242,23 +284,33 @@ while :; do
       # already wrote `.landed status=conflict` and aborted the rebase —
       # break and surface to user.
       echo "/land-pr returned rebase-conflict. Resolve manually in $WORKTREE_PATH and re-run \`/do pr\` (or land manually)." >&2
+      LAND_OUTCOME=$STATUS
       break ;;
     push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
       echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
+      LAND_OUTCOME=$STATUS
       break ;;
     created|monitored|merged) ;;  # fall through to CI-status check
   esac
 
   case "$CI_STATUS" in
     pass|none|skipped)
+      if [ "${LP[PR_STATE]:-}" = "MERGED" ]; then
+        LAND_OUTCOME=merged
+      else
+        LAND_OUTCOME=pr-ready
+      fi
       break ;;  # /land-pr already requested merge if --auto (none for /do pr)
     pending)
+      LAND_OUTCOME=pr-ready
       break ;;  # settle at pr-ready
     not-monitored)
+      LAND_OUTCOME=created
       break ;;  # --no-monitor was used (none of /do pr's flows do this)
     fail)
       if [ "$ATTEMPT" -ge "$MAX" ]; then
         echo "INFO: CI fix-cycle exhausted ($ATTEMPT/$MAX); PR settles at pr-ci-failing" >&2
+        LAND_OUTCOME=pr-ci-failing
         break
       fi
       # ===== <DISPATCH_FIX_CYCLE_AGENT_HERE> — /do pr customization =====
@@ -308,9 +360,11 @@ while :; do
       continue ;;  # re-enter loop, /land-pr is idempotent
     unknown)
       echo "WARN: CI_STATUS=unknown — settling at pr-ready" >&2
+      LAND_OUTCOME=pr-ready
       break ;;
     *)
       echo "WARN: CI_STATUS='$CI_STATUS' unrecognized — settling at pr-ready" >&2
+      LAND_OUTCOME=pr-ready
       break ;;
   esac
 done
@@ -326,6 +380,15 @@ done
 # exist yet, but defensive).
 rm -f "$BODY_FILE"
 # === END CANONICAL /land-pr CALLER LOOP ===
+# Explicit-finalize block (Plan LAND_PR_BYPASS_HARDENING Phase 2 — must
+# live in the SAME fence as the caller-loop per R-4-7 so $LAND_OUTCOME
+# survives). R-5-6: no `cancelled)` arm — /do pr has no $CANCELLED.
+case "$LAND_OUTCOME" in
+  merged|created|pr-ready) FINAL=complete ;;
+  *) FINAL=failed ;;
+esac
+sed -i "s/^status: started$/status: $FINAL/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
+rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
 ```
 
 **Note on the `.landed` schema:** `/land-pr` writes the canonical schema

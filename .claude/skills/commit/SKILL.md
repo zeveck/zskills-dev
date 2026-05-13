@@ -8,7 +8,7 @@ description: >-
   Usage: /commit [pr] [scope] [push|land]
 argument-hint: "[pr] [scope] [push|land]"
 metadata:
-  version: "2026.05.03+e8e557"
+  version: "2026.05.13+63c9a4"
 ---
 
 # /commit [pr] [scope] [push|land] — Safe Commit Workflow

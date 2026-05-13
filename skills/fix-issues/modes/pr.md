@@ -48,12 +48,49 @@ have verified commits on `fix/issue-NNN`.
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+# Sprint-level fulfilled.fix-issues.$SPRINT_ID start-marker (Plan
+# LAND_PR_BYPASS_HARDENING Phase 2). Written ONCE at sprint start
+# (i.e., at the top of the per-issue loop flow); finalized at sprint
+# end via explicit-finalize based on $SPRINT_OUTCOME below. Variables
+# $PIPELINE_ID and $SPRINT_ID are presumed set by the sprint-tracking
+# sentinel at skills/fix-issues/SKILL.md:445-470.
+NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
+mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+cat > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.fix-issues.$SPRINT_ID" <<MARK
+status: started
+date: $NOW_ISO
+skill: fix-issues
+mode: pr
+sprint: $SPRINT_ID
+MARK
+
+# Per-issue land-outcome accumulator → sprint-level $SPRINT_OUTCOME.
+# Any per-issue `failed` outcome makes the sprint `failed`; all
+# `complete` → `complete`.
+SPRINT_OUTCOME=complete
+
 for issue in "${FIXED_ISSUES[@]}"; do
   ISSUE_NUM="$issue"
   BRANCH_NAME="fix/issue-${ISSUE_NUM}"
   PROJECT_NAME=$(basename "$PROJECT_ROOT")
   WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
   BRANCH_SLUG="${BRANCH_NAME//\//-}"
+
+  # Per-issue requires.land-pr.<ISSUE_NUM> (drives hook STOP-message
+  # Pattern 2 + dashboard for this issue's PR land).
+  ISSUE_NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
+  cat > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$ISSUE_NUM" <<MARK
+skill: land-pr
+parent: fix-issues
+id: $ISSUE_NUM
+branch: $BRANCH_NAME
+date: $ISSUE_NOW_ISO
+MARK
+
+  # Per-issue LAND_OUTCOME tracker (R-5-8 default).
+  LAND_OUTCOME=__init__
 
   # Fetch issue title for the PR title (fix-issues-specific template).
   ISSUE_TITLE=$(gh issue view "$ISSUE_NUM" --json title --jq '.title')
@@ -85,7 +122,7 @@ BODY
   RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 
   LANDED_SOURCE="fix-issues"
-  LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --issue=$ISSUE_NUM"
+  LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --worktree-path=$WORKTREE_PATH --issue=$ISSUE_NUM --tracking-id=$ISSUE_NUM"
   [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
 
   while :; do
@@ -106,6 +143,7 @@ BODY
 
     if [ ! -f "$RESULT_FILE" ]; then
       echo "ERROR: /land-pr produced no result file at $RESULT_FILE for issue #$ISSUE_NUM" >&2
+      LAND_OUTCOME=monitor-failed
       break
     fi
 
@@ -143,23 +181,33 @@ BODY
         # --issue passthrough) and aborted the rebase — break out of
         # the inner loop and `continue` to the next issue.
         echo "/land-pr returned rebase-conflict for issue #$ISSUE_NUM. Resolve manually in $WORKTREE_PATH or re-run." >&2
+        LAND_OUTCOME=$STATUS
         break ;;
       push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
         echo "ERROR: /land-pr STATUS=$STATUS for issue #$ISSUE_NUM REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
+        LAND_OUTCOME=$STATUS
         break ;;
       created|monitored|merged) ;;  # fall through to CI-status check
     esac
 
     case "$CI_STATUS" in
       pass|none|skipped)
+        if [ "${LP[PR_STATE]:-}" = "MERGED" ]; then
+          LAND_OUTCOME=merged
+        else
+          LAND_OUTCOME=pr-ready
+        fi
         break ;;  # /land-pr already requested merge if --auto
       pending)
+        LAND_OUTCOME=pr-ready
         break ;;  # settle at pr-ready
       not-monitored)
+        LAND_OUTCOME=created
         break ;;  # --no-monitor was used (none of /fix-issues pr's flows do this)
       fail)
         if [ "$ATTEMPT" -ge "$MAX" ]; then
           echo "INFO: CI fix-cycle exhausted for issue #$ISSUE_NUM ($ATTEMPT/$MAX); PR settles at pr-ci-failing" >&2
+          LAND_OUTCOME=pr-ci-failing
           break
         fi
         # ===== <DISPATCH_FIX_CYCLE_AGENT_HERE> — /fix-issues pr customization =====
@@ -212,9 +260,11 @@ BODY
         continue ;;  # re-enter loop, /land-pr is idempotent
       unknown)
         echo "WARN: CI_STATUS=unknown for issue #$ISSUE_NUM — settling at pr-ready" >&2
+        LAND_OUTCOME=pr-ready
         break ;;
       *)
         echo "WARN: CI_STATUS='$CI_STATUS' unrecognized for issue #$ISSUE_NUM — settling at pr-ready" >&2
+        LAND_OUTCOME=pr-ready
         break ;;
     esac
   done
@@ -231,8 +281,25 @@ BODY
   rm -f "$BODY_FILE"
   # === END CANONICAL /land-pr CALLER LOOP ===
 
+  # Per-issue explicit-finalize (Plan LAND_PR_BYPASS_HARDENING Phase 2).
+  # Remove the per-issue requires.land-pr.<ISSUE_NUM> marker regardless
+  # of LAND_OUTCOME. Update sprint-level $SPRINT_OUTCOME based on this
+  # issue's outcome (any non-success → sprint failed).
+  rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$ISSUE_NUM"
+  case "$LAND_OUTCOME" in
+    merged|created|pr-ready) ;;  # success-equivalent; sprint outcome unchanged
+    *) SPRINT_OUTCOME=failed ;;
+  esac
+
   echo "Issue #$ISSUE_NUM -> PR: ${PR_URL:-<not-created>} (status: ${STATUS:-unknown}, ci: ${CI_STATUS:-unknown})"
 done
+
+# Sprint-level explicit-finalize: rewrite fulfilled.fix-issues.$SPRINT_ID
+# from `status: started` to `status: $SPRINT_OUTCOME` (one of {complete,
+# failed}). Sprint-level fulfillment signals "all issues' PR-land loops
+# have completed" regardless of per-issue outcome.
+sed -i "s/^status: started$/status: $SPRINT_OUTCOME/" \
+  "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.fix-issues.$SPRINT_ID"
 ```
 
 **`.landed` status values for PR mode** (`/land-pr`-owned, per its WI
