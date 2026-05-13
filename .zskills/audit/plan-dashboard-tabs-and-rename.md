@@ -1,5 +1,59 @@
 # Plan Report — Dashboard Tabs and Rename
 
+## Phase — 5 Dashboard functional fixes (5a/5b/5c/5d/5e)
+
+**Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-dashboard-tabs-and-rename
+**Branch:** feat/dashboard-tabs-and-rename
+**Commits (Phase 5):** b753b03 (5a diag) + 08f23df (5b fix) + 8fcc83a (5c deferred) + b9763d6 (5d fix) + 827ff01 (5e verification) + ccb33df (test-contract update) + 6044dec (tracker → ✅)
+
+### Sub-section results
+
+| Sub | Status | Outcome | Time / Budget |
+|-----|--------|---------|---------------|
+| 5a — Diagnose | Shipped | 9972-byte diagnosis doc + 3 reproducer artifacts at `/tmp/dashboard-phase5/` | 25/30 min |
+| 5b — Origin-check fix | Shipped | New `_origin_ok` policy (4 rules: empty/null → accept; same-host 127.0.0.1/localhost any-scheme → accept; everything else → reject). 11/11 csrf tests pass. Live curl re-test confirmed cross-origin (`evil.example`) → 403 PRESERVED. | 30/60 min |
+| 5c — READY drop | Deferred | Falsifiable subsumed-by-5b predicate failed both conditions (5c-repro returned 200 not 403; post-5b state still empty). Real local cause: worktree path asymmetry — POST writes to `ctx['main_root']`, GET reads via `collect._resolve_main_root()` (hops to main repo). Out of Phase 5 surgical scope; not the user-reported bug. | 10/60 min |
+| 5d — Disconnect-flap fix | Shipped | `DISCONNECT_FAILURE_THRESHOLD=2` debounce in `setConnected(false)` (~14 LOC at app.js:128-146). 7/7 disconnect-debounce tests pass. | 30/60 min |
+| 5e — /work-on-plans verification | No-bug | Source-read verification per V5/R5; queue-honoring works as designed (SKILL.md lines 7, 120-121, 164-166, 327-339). Docs-only verification commit. | 10/30 min |
+
+**Total phase time:** ~110 min of 180 min budget.
+
+### Phase 5 totals
+
+- **6 code/doc commits + 1 tracker commit.**
+- **Net LOC changed** (excluding new test files): ~120 (server.py +28, app.js +14, run-all.sh +2, existing tests +30 + 2 SKILL.md version-line bumps). Under plan's ≤150 budget.
+- **2 new test files** registered in `tests/run-all.sh`:
+  - `tests/test_zskills_monitor_csrf.sh` — 11 assertions covering same-host accept, cross-origin reject (`evil.example`), null Origin accept, https same-host accept, missing Origin, etc.
+  - `tests/test_zskills_dashboard_disconnect_debounce.sh` — 7 assertions covering single-failure no banner, threshold flips banner, intervening success resets, `DISCONNECT_FAILURE_THRESHOLD === 2` invariant.
+
+### Verification
+
+- Implementation agent: 6 sub-section commits + 1 contract-update commit (independently judged sound by verifier).
+- Verifier agent (independent): all 5 sub-sections confirmed PASS; live cross-origin curl confirmed 403; standalone test runs both PASS; mirror diff empty; Phase 1 rename intact.
+- Layer 3 response validation: PASS.
+- Test-contract commit `ccb33df`: scrutinized for test-weakening → confirmed NOT weakening (adjusts to new policy AND adds new cross-origin assertions for previously-uncovered `/api/work-state/reset` and `/api/trigger`; net security coverage INCREASED).
+- Version-bump sequence verified: only skill-touching commits bumped (`08f23df` → `2026.05.13+5b74d1`, `b9763d6` → `2026.05.13+0f19eb`); docs-only commits correctly left version alone.
+- Tests: **2953/2953 passed, 0 failed**.
+
+### Independent drift signals
+
+None observed by the verifier. The 5c deferral is documented with explicit predicate evaluation (not a hand-wave).
+
+### Notable diagnosis: 5c local-cause documented
+
+The user's reported "READY drop not accepting" was NOT reproducible in the worktree environment because of an unrelated path-resolution asymmetry: POST `/api/queue` writes state to `ctx['main_root']` (the worktree path passed via `--main-root`), but GET `/api/state` reads via `collect._resolve_main_root()` which hops to the main repo. State silently diverges. This causes the symptom "I dragged but the next poll didn't show it." Fixing the asymmetry would touch >50 LOC across `collect/server` boundaries and was deemed out of Phase 5 surgical scope. **Filed implicit follow-up:** consider a separate plan to unify `main_root` resolution between POST and GET paths.
+
+### User Sign-off
+
+- [ ] **P5b-1 — Origin policy works for your deployment:** access the dashboard from your actual user environment. Drag-and-drop should now persist (was 403'ing pre-fix per the user report). If still 403, re-open issue with `curl -v http://<your-host>:<port>/api/queue` output showing the `Origin` header.
+- [ ] **P5d-1 — Disconnect banner no longer flaps during drag:** drag a plan card 5 times rapidly. Confirm the disconnect banner does NOT flash visible during the sequence. Even with a transient 2s-poll failure, the banner only appears after 2 consecutive failures.
+- [ ] **P5c — Deferral context:** review `docs/plans/DASHBOARD_TABS_AND_RENAME_5C_DEFERRED.md`. The reported "READY drop not accepting" did not reproduce locally because of a path-resolution asymmetry (not user's bug). If you can still reproduce in production after 5b ships, file a separate issue with a fresh reproducer.
+- [ ] **P5e — /work-on-plans honors monitor queue:** drag two plans into READY, run `/work-on-plans 1`. Confirm dispatched slug matches the front of `plans.ready`. (Verified in source; runtime sign-off welcome.)
+
+---
+
 ## Phase — 4 Manual playwright verification + automated tests
 
 **Plan:** docs/plans/DASHBOARD_TABS_AND_RENAME.md

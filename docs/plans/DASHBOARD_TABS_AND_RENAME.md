@@ -2,7 +2,7 @@
 issue: 229
 title: Dashboard Tabs and Rename (Z Skills Monitor → Z Skills Dashboard)
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: Dashboard Tabs and Rename
