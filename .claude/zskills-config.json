@@ -3,8 +3,8 @@
   "project_name": "zskills",
   "timezone": "America/New_York",
   "execution": {
-    "landing": "cherry-pick",
-    "main_protected": false,
+    "landing": "pr",
+    "main_protected": true,
     "branch_prefix": "feat/"
   },
   "commit": {
