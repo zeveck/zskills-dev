@@ -2,7 +2,7 @@
 issue: 229
 title: Dashboard Tabs and Rename (Z Skills Monitor → Z Skills Dashboard)
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: Dashboard Tabs and Rename
@@ -276,12 +276,12 @@ includes every regular file under the skill dir.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 0 — Worktree setup | ⬚ | | Layer 0/3 hooks verified |
-| 1 — Rename "Z Skills Monitor" → "Z Skills Dashboard" | ⬚ | | All user-facing strings + test assertions in lockstep |
-| 2 — Tab scaffold (HTML + CSS) | ⬚ | | 3 tabs (PLANS/ISSUES/BRANCHES) + activity strip; renderBranches enriched with worktree info; renderWorktrees removed |
-| 3 — Tab behavior (JS + URL hash, mouse-first) | ⬚ | | Click + hashchange only; no arrow-key/Home/End handler; no roving tabindex |
-| 4 — Manual playwright verification + automated tests | ⬚ | | Real events; resize to 700px; full test suite green |
-| 5 — Dashboard functional fixes | ⬚ | | Investigate-first sub-sections: Origin/CSRF (5b), READY drop (5c), disconnect-flap (5d), /work-on-plans verification (5e) |
+| 0 — Worktree setup | ✅ Done | (verification) | Layer 0/3 hooks verified |
+| 1 — Rename "Z Skills Monitor" → "Z Skills Dashboard" | ✅ Done | 57907a9 | All user-facing strings + test assertions in lockstep |
+| 2 — Tab scaffold (HTML + CSS) | ✅ Done | 2233a91 | 3 tabs (PLANS/ISSUES/BRANCHES) + activity strip; renderBranches enriched with worktree info; renderWorktrees removed |
+| 3 — Tab behavior (JS + URL hash, mouse-first) | ✅ Done | 04f945a | Click + hashchange only; no arrow-key/Home/End handler; no roving tabindex |
+| 4 — Manual playwright verification + automated tests | ✅ Done | a361685 | 12+9b playwright steps + 4 screenshots; tests 2933/2933; step 9b plan-text drift documented |
+| 5 — Dashboard functional fixes | ✅ Done | b9763d6+ccb33df | 5a diag; 5b shipped (Origin policy); 5c deferred (subsumption FAILED); 5d shipped (debounce); 5e no-bug; +2 test files |
 
 ---
 

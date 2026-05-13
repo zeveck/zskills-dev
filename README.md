@@ -397,7 +397,7 @@ data pipeline.
 | `/research-and-plan` | Decompose broad goals into focused sub-plans with dependency ordering |
 | `/research-and-go` | Full autonomous pipeline: decompose, plan, execute — one command, walk away |
 | `/plans` | Plan dashboard: index, status tracking, priority ranking |
-| `/work-on-plans` | Batch-execute prioritized ready queue from the monitor dashboard |
+| `/work-on-plans` | Batch-execute prioritized ready queue from the dashboard |
 
 #### Build
 

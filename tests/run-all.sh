@@ -94,11 +94,13 @@ run_suite "test-plans-render-index.sh" "tests/test-plans-render-index.sh"
 run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"
 run_suite "test_zskills_monitor_server.sh" "tests/test_zskills_monitor_server.sh"
+run_suite "test_zskills_monitor_csrf.sh" "tests/test_zskills_monitor_csrf.sh"
 run_suite "test-stub-callouts.sh" "tests/test-stub-callouts.sh"
 run_suite "test-post-create-worktree.sh" "tests/test-post-create-worktree.sh"
 run_suite "test-pr-preflight.sh" "tests/test-pr-preflight.sh"
 run_suite "test_zskills_monitor_dashboard_ui.sh" "tests/test_zskills_monitor_dashboard_ui.sh"
 run_suite "test_zskills_dashboard_skill.sh" "tests/test_zskills_dashboard_skill.sh"
+run_suite "test_zskills_dashboard_disconnect_debounce.sh" "tests/test_zskills_dashboard_disconnect_debounce.sh"
 run_suite "test_plans_rebuild_uses_collect.sh" "tests/test_plans_rebuild_uses_collect.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests

@@ -1,4 +1,4 @@
-// Z Skills Monitor — interactive dashboard renderer (Phase 7).
+// Z Skills Dashboard — interactive dashboard renderer (Phase 7).
 //
 // Loaded as a single ES module from /app.js. Polls /api/state every 2s
 // via setTimeout recursion (NOT setInterval), pauses while document is
@@ -111,7 +111,6 @@ const lastFingerprint = {
   errors: null,
   plans: null,
   branches: null,
-  worktrees: null,
   issues: null,
   activity: null,
   workState: null,
@@ -127,13 +126,29 @@ let suppressNextStatePollUntil = 0;
 let lastGoodQueues = null;
 let lastGoodDefaultMode = "phase";
 
+// Phase 5d: debounce setConnected(false) to avoid banner flap on a
+// single transient fetchState failure. Require DISCONNECT_FAILURE_THRESHOLD
+// consecutive failures before showing the banner; any success resets.
+const DISCONNECT_FAILURE_THRESHOLD = 2;
+let connectionFailureCount = 0;
+
 function setConnected(ok) {
   const banner = $("conn-banner");
   if (ok) {
+    connectionFailureCount = 0;
     banner.hidden = true;
-  } else {
+    return;
+  }
+  connectionFailureCount += 1;
+  if (connectionFailureCount >= DISCONNECT_FAILURE_THRESHOLD) {
     banner.hidden = false;
   }
+}
+
+// Test hook: reset disconnect-debounce state. Used by
+// tests/test_zskills_dashboard_disconnect_debounce.sh only.
+function _resetConnectionDebounceForTests() {
+  connectionFailureCount = 0;
 }
 
 async function fetchState() {
@@ -259,12 +274,6 @@ function applySnapshot(snap) {
     renderIssues(snap.issues || [], queues);
   }
 
-  const wtFp = fingerprintWorktrees(snap.worktrees || []);
-  if (wtFp !== lastFingerprint.worktrees) {
-    lastFingerprint.worktrees = wtFp;
-    renderWorktrees(snap.worktrees || []);
-  }
-
   const actFp = fingerprintActivity(snap.activity || []);
   if (actFp !== lastFingerprint.activity) {
     lastFingerprint.activity = actFp;
@@ -375,13 +384,6 @@ function fingerprintIssues(issues, queues) {
   return JSON.stringify(issues.map(i => [
     i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
     pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
-  ]));
-}
-
-function fingerprintWorktrees(wts) {
-  return JSON.stringify(wts.map(w => [
-    w.path, w.branch, w.category, w.age_seconds,
-    w.landed ? w.landed.status : null,
   ]));
 }
 
@@ -651,6 +653,14 @@ function backedBranchSet(worktrees) {
   return set;
 }
 
+function worktreesByBranch(worktrees) {
+  const m = new Map();
+  for (const w of worktrees || []) {
+    if (w && w.branch) m.set(w.branch, w);
+  }
+  return m;
+}
+
 function renderBranches(branches, worktrees) {
   const body = $("branches-body");
   const empty = $("branches-empty");
@@ -661,6 +671,7 @@ function renderBranches(branches, worktrees) {
   }
   empty.hidden = true;
   const backed = backedBranchSet(worktrees);
+  const byBranch = worktreesByBranch(worktrees);
   for (const b of branches) {
     const dim = backed.has(b.name);
     const card = el("article", {
@@ -684,6 +695,25 @@ function renderBranches(branches, worktrees) {
     }
     if (b.upstream) {
       card.appendChild(el("div", { cls: "card-sub", text: "upstream: " + b.upstream }));
+    }
+    const w = byBranch.get(b.name);
+    if (w) {
+      const status = w.landed ? w.landed.status : "not-landed";
+      const wtRow = el("div", { cls: "card-row card-worktree-row" });
+      wtRow.appendChild(el("span", {
+        cls: "pill " + landedPillClass(status),
+        text: status,
+      }));
+      if (w.path) {
+        wtRow.appendChild(el("span", { cls: "mono card-sub", text: basename(w.path) }));
+      }
+      if (typeof w.age_seconds === "number") {
+        wtRow.appendChild(el("span", {
+          cls: "card-sub",
+          text: ageSecondsToText(w.age_seconds),
+        }));
+      }
+      card.appendChild(wtRow);
     }
     body.appendChild(card);
   }
@@ -793,44 +823,6 @@ function landedPillClass(status) {
   if (s === "full") return "pill-landed-full";
   if (s === "partial") return "pill-landed-partial";
   return "pill-landed-not";
-}
-
-function renderWorktrees(wts) {
-  const body = $("worktrees-body");
-  const empty = $("worktrees-empty");
-  clear(body);
-  if (!wts.length) {
-    empty.hidden = false;
-    return;
-  }
-  empty.hidden = true;
-  for (const w of wts) {
-    const row = el("article", {
-      cls: "card",
-      attrs: {
-        tabindex: "0",
-        role: "button",
-        "data-kind": "worktree",
-        "data-path": w.path,
-        "aria-label": "Worktree " + basename(w.path),
-      },
-    });
-    const head = el("div", { cls: "card-row" });
-    head.appendChild(el("span", { cls: "card-title mono", text: basename(w.path) }));
-    const status = w.landed ? w.landed.status : "not-landed";
-    head.appendChild(el("span", {
-      cls: "pill " + landedPillClass(status),
-      text: status,
-    }));
-    row.appendChild(head);
-    const meta = el("div", { cls: "card-sub" });
-    meta.appendChild(el("span", { text: "branch: " + (w.branch || "?") }));
-    if (w.age_seconds != null) {
-      meta.appendChild(el("span", { text: " · " + ageSecondsToText(w.age_seconds) }));
-    }
-    row.appendChild(meta);
-    body.appendChild(row);
-  }
 }
 
 // --------------------------------------------------------------- activity
@@ -1691,9 +1683,64 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// ─── Tab navigation (mouse-first; click + hashchange only) ───
+const TAB_SLUGS = ["plans", "issues", "branches"];
+
+function readTabFromHash() {
+  const h = (location.hash || "").replace(/^#/, "");
+  return TAB_SLUGS.includes(h) ? h : "plans";
+}
+
+function setActiveTab(slug, { pushHash = true } = {}) {
+  if (!TAB_SLUGS.includes(slug)) slug = "plans";
+  for (const s of TAB_SLUGS) {
+    const tab = document.getElementById("tab-" + s);
+    const panel = document.getElementById(s);
+    if (!tab || !panel) continue;
+    const isActive = (s === slug);
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    if (isActive) {
+      panel.removeAttribute("hidden");
+    } else {
+      panel.setAttribute("hidden", "");
+    }
+  }
+  if (pushHash && location.hash !== "#" + slug) {
+    history.replaceState(null, "", "#" + slug);
+  }
+}
+
+function bindTabEvents() {
+  const tablist = document.querySelector('[role="tablist"]');
+  if (!tablist) return;
+  // Click handler — native <button> handles Enter/Space → click automatically.
+  tablist.addEventListener("click", (ev) => {
+    const btn = ev.target.closest('[role="tab"]');
+    if (!btn) return;
+    const slug = btn.getAttribute("aria-controls");
+    if (slug) setActiveTab(slug);
+  });
+  // hashchange (browser back/forward, or external link)
+  window.addEventListener("hashchange", () => {
+    setActiveTab(readTabFromHash(), { pushHash: false });
+  });
+}
+
+// Inline initialization — best-effort flash mitigation. Module
+// scripts defer to after parse, so this often runs after first
+// paint; the boot() call (which also runs setActiveTab) is the
+// authoritative initializer. setActiveTab is idempotent; the
+// console.warn surfaces unexpected failures rather than swallowing.
+if (typeof document !== "undefined" && document.readyState !== "loading") {
+  try { setActiveTab(readTabFromHash(), { pushHash: false }); }
+  catch (e) { console.warn("tab-init early call failed:", e); }
+}
+
 function boot() {
   modalInit();
   bindActionEvents();
+  bindTabEvents();                                       // NEW
+  setActiveTab(readTabFromHash(), { pushHash: false });  // NEW
   schedulePoll(0);
   scheduleWorkPoll(0);
 }

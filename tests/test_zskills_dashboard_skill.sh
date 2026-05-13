@@ -349,7 +349,7 @@ do_start() {
     NEW_PID="${BASH_REMATCH[2]}"
   fi
 
-  echo "Monitor running at http://127.0.0.1:$PORT/ (pid ${NEW_PID:-?})"
+  echo "Dashboard running at http://127.0.0.1:$PORT/ (pid ${NEW_PID:-?})"
   TRACKED_PIDS="$TRACKED_PIDS ${NEW_PID:-}"
   write_tracking_marker "$MAIN_ROOT" "start" "$NEW_PID" "$PORT"
   return 0
@@ -360,7 +360,7 @@ do_stop() {
   local PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
 
   if [ ! -f "$PID_FILE" ]; then
-    echo "No running monitor (no PID file)."
+    echo "No running dashboard (no PID file)."
     write_tracking_marker "$MAIN_ROOT" "stop-no-pidfile"
     return 0
   fi
@@ -381,7 +381,7 @@ do_stop() {
   fi
 
   if ! kill -0 "$stop_pid" 2>/dev/null; then
-    echo "Monitor PID file is stale (PID $stop_pid not running). Removing $PID_FILE."
+    echo "Dashboard PID file is stale (PID $stop_pid not running). Removing $PID_FILE."
     rm -- "$PID_FILE"
     write_tracking_marker "$MAIN_ROOT" "stop-stale-pidfile" "$stop_pid" "${stop_port:-}"
     return 0
@@ -394,7 +394,7 @@ do_stop() {
     DIAG_CWD=$(readlink "/proc/$stop_pid/cwd" 2>/dev/null \
       || lsof -p "$stop_pid" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}' \
       || echo "<unknown>")
-    echo "PID $stop_pid does not appear to be zskills-monitor for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
+    echo "PID $stop_pid does not appear to be zskills-dashboard for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
     return 1
   fi
 
@@ -412,7 +412,7 @@ do_stop() {
     sleep 0.2
   done
   if [ "$EXITED" -ne 1 ]; then
-    echo "Monitor did not exit within 5s. Refusing to escalate." >&2
+    echo "Dashboard did not exit within 5s. Refusing to escalate." >&2
     return 1
   fi
 
@@ -425,7 +425,7 @@ do_stop() {
   if [ -f "$PID_FILE" ]; then
     rm -- "$PID_FILE"
   fi
-  echo "Monitor stopped (pid $stop_pid, port ${stop_port:-?})."
+  echo "Dashboard stopped (pid $stop_pid, port ${stop_port:-?})."
   write_tracking_marker "$MAIN_ROOT" "stop" "$stop_pid" "${stop_port:-}"
   return 0
 }
@@ -436,7 +436,7 @@ do_status() {
   local LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
 
   if [ ! -f "$PID_FILE" ]; then
-    echo "Monitor not running."
+    echo "Dashboard not running."
     return 0
   fi
 
@@ -464,7 +464,7 @@ do_status() {
     return 1
   fi
   if ! kill -0 "$st_pid" 2>/dev/null; then
-    echo "Monitor PID file is stale (PID $st_pid not running). Run 'lsof -i :$st_port' to verify port is free, then retry /zskills-dashboard start." >&2
+    echo "Dashboard PID file is stale (PID $st_pid not running). Run 'lsof -i :$st_port' to verify port is free, then retry /zskills-dashboard start." >&2
     return 1
   fi
 
@@ -483,7 +483,7 @@ do_status() {
   fi
 
   cat <<STATUS_EOF
-Monitor running at http://127.0.0.1:$st_port/
+Dashboard running at http://127.0.0.1:$st_port/
   pid:      $st_pid
   started:  $st_started
   uptime:   $UPTIME_STR
@@ -519,7 +519,7 @@ BASE_C=$(( BASE_A + 2 ))
 
 ###############################################################################
 # AC-5: start writes a PID file and /api/health returns 200 within 1s;
-#       status after start prints `^Monitor running`.
+#       status after start prints `^Dashboard running`.
 # AC-6: PID-file shape (pid=<int>, port=<int>, started_at=ISO).
 ###############################################################################
 
@@ -529,8 +529,8 @@ echo "=== Phase 8 AC: live start/stop/status (lifecycle) ==="
 FX_A=$(make_fixture A "$BASE_A")
 
 if do_start "$FX_A" >"$TMP_ROOT/A.start.out" 2>&1; then
-  if grep -qE '^Monitor running at http://127\.0\.0\.1:' "$TMP_ROOT/A.start.out"; then
-    pass "AC-5: start prints 'Monitor running at http://127.0.0.1:...'"
+  if grep -qE '^Dashboard running at http://127\.0\.0\.1:' "$TMP_ROOT/A.start.out"; then
+    pass "AC-5: start prints 'Dashboard running at http://127.0.0.1:...'"
   else
     fail "AC-5: start output missing expected line: $(cat "$TMP_ROOT/A.start.out")"
   fi
@@ -567,12 +567,12 @@ if do_start "$FX_A" >"$TMP_ROOT/A.start.out" 2>&1; then
     fail "AC-6: PID file started_at= line malformed: $(cat "$PID_FILE_A")"
   fi
 
-  # AC-5 (status side): status after start prints `^Monitor running`.
+  # AC-5 (status side): status after start prints `^Dashboard running`.
   if do_status "$FX_A" >"$TMP_ROOT/A.status.out" 2>&1; then
-    if grep -qE '^Monitor running' "$TMP_ROOT/A.status.out"; then
-      pass "AC-5: status after start prints '^Monitor running'"
+    if grep -qE '^Dashboard running' "$TMP_ROOT/A.status.out"; then
+      pass "AC-5: status after start prints '^Dashboard running'"
     else
-      fail "AC-5: status output missing 'Monitor running': $(cat "$TMP_ROOT/A.status.out")"
+      fail "AC-5: status output missing 'Dashboard running': $(cat "$TMP_ROOT/A.status.out")"
     fi
   else
     fail "AC-5: status returned non-zero after start"
@@ -660,7 +660,7 @@ else
 fi
 
 ###############################################################################
-# AC-14: PID-reuse defense — PID file pointing at a non-monitor process
+# AC-14: PID-reuse defense — PID file pointing at a non-dashboard process
 #         (e.g. bash/sleep) is treated as stale; start does NOT print
 #         "already running" against it.
 ###############################################################################
@@ -670,7 +670,7 @@ FX_REUSE=$(make_fixture reuse "$BASE_C")
 sleep 30 &
 DECOY_PID=$!
 TRACKED_PIDS="$TRACKED_PIDS $DECOY_PID"
-# Write a PID file claiming this PID is the monitor.
+# Write a PID file claiming this PID is the dashboard.
 cat > "$FX_REUSE/.zskills/dashboard-server.pid" <<EOF
 pid=$DECOY_PID
 port=$BASE_C
@@ -726,7 +726,7 @@ if [ "$CMDMISS_RC" -eq 1 ]; then
 else
   fail "AC-10: stop PID-mismatch (command-name) — exit was $CMDMISS_RC, expected 1"
 fi
-if grep -q 'does not appear to be zskills-monitor' "$TMP_ROOT/cmdmiss.stop.out"; then
+if grep -q 'does not appear to be zskills-dashboard' "$TMP_ROOT/cmdmiss.stop.out"; then
   pass "AC-10: stop PID-mismatch (command-name) — diagnostic printed"
 else
   fail "AC-10: stop PID-mismatch (command-name) — diagnostic missing: $(cat "$TMP_ROOT/cmdmiss.stop.out")"
@@ -740,9 +740,9 @@ kill -TERM "$DECOY2_PID" 2>/dev/null || true
 
 ###############################################################################
 # AC-11: stop mode PID-mismatch defense (cwd).
-#   Launch a second monitor in a different MAIN_ROOT (FX_B). From FX_A,
-#   write a PID file pointing at FX_B's monitor PID and run stop.
-#   The cwd check must fail and the monitor must NOT be killed.
+#   Launch a second dashboard in a different MAIN_ROOT (FX_B). From FX_A,
+#   write a PID file pointing at FX_B's dashboard PID and run stop.
+#   The cwd check must fail and the dashboard must NOT be killed.
 ###############################################################################
 
 FX_B=$(make_fixture B "$BASE_B")
@@ -752,7 +752,7 @@ if [ -f "$FX_B/.zskills/dashboard-server.pid" ]; then
   B_PID=$(grep -oE '^pid=[0-9]+' "$FX_B/.zskills/dashboard-server.pid" | cut -d= -f2)
 fi
 if [ -n "$B_PID" ] && kill -0 "$B_PID" 2>/dev/null; then
-  pass "AC-11: pre-condition — second monitor running in FX_B (pid $B_PID)"
+  pass "AC-11: pre-condition — second dashboard running in FX_B (pid $B_PID)"
 
   # Cross-write FX_B's PID into FX_A's PID file.
   cat > "$FX_A/.zskills/dashboard-server.pid" <<EOF
@@ -770,25 +770,25 @@ EOF
   else
     fail "AC-11: stop PID-mismatch (cwd) — exit was $CWDMISS_RC, expected 1"
   fi
-  if grep -q 'does not appear to be zskills-monitor for this repo' "$TMP_ROOT/cwdmiss.stop.out"; then
+  if grep -q 'does not appear to be zskills-dashboard for this repo' "$TMP_ROOT/cwdmiss.stop.out"; then
     pass "AC-11: stop PID-mismatch (cwd) — diagnostic printed"
   else
     fail "AC-11: stop PID-mismatch (cwd) — diagnostic missing: $(cat "$TMP_ROOT/cwdmiss.stop.out")"
   fi
   if kill -0 "$B_PID" 2>/dev/null; then
-    pass "AC-11: stop PID-mismatch (cwd) — FX_B's monitor untouched"
+    pass "AC-11: stop PID-mismatch (cwd) — FX_B's dashboard untouched"
   else
-    fail "AC-11: stop PID-mismatch (cwd) — FX_B's monitor was killed!"
+    fail "AC-11: stop PID-mismatch (cwd) — FX_B's dashboard was killed!"
   fi
 
   # Stop FX_B cleanly. FX_A's PID file currently points at FX_B's
-  # (now-killed) PID. Rewrite it to FX_A's actual monitor PID so AC-7
+  # (now-killed) PID. Rewrite it to FX_A's actual dashboard PID so AC-7
   # has a real target. We saved FX_A's own pid in NEW_PID inside the
   # earlier do_start, but that's a function-local; recover it from
   # `pgrep`-equivalent on FX_A's MAIN_ROOT (readlink /proc/$$/cwd).
   do_stop "$FX_B" >/dev/null 2>&1 || true
   rm -f "$FX_A/.zskills/dashboard-server.pid"
-  # Find FX_A's still-running monitor (cwd matches FX_A) and rewrite
+  # Find FX_A's still-running dashboard (cwd matches FX_A) and rewrite
   # the PID file so AC-7's stop has a legitimate target. We scan all
   # python3 zskills_monitor.server processes' /proc cwd's.
   for cand in $(pgrep -f 'python3.*zskills_monitor.server' 2>/dev/null); do
@@ -809,7 +809,7 @@ EOF
     fi
   done
 else
-  fail "AC-11: pre-condition — second monitor in FX_B did not start (skipping cwd-mismatch test)"
+  fail "AC-11: pre-condition — second dashboard in FX_B did not start (skipping cwd-mismatch test)"
 fi
 
 ###############################################################################
@@ -817,7 +817,7 @@ fi
 # AC-9: stop twice → second prints no-PID-file message, exits 0.
 ###############################################################################
 
-# AC-7 needs a live monitor with a matching PID file. The PID file was
+# AC-7 needs a live dashboard with a matching PID file. The PID file was
 # rewritten in the AC-11 cleanup above; if missing (recovery branch
 # failed), we cannot exercise AC-7.
 if [ -f "$FX_A/.zskills/dashboard-server.pid" ]; then
@@ -849,8 +849,8 @@ if [ -f "$FX_A/.zskills/dashboard-server.pid" ]; then
 
   # AC-9: stop twice → second is no-op, exit 0.
   if do_stop "$FX_A" >"$TMP_ROOT/A.stop2.out" 2>&1; then
-    if grep -q 'No running monitor' "$TMP_ROOT/A.stop2.out"; then
-      pass "AC-9: stop twice — second prints 'No running monitor' (idempotent)"
+    if grep -q 'No running dashboard' "$TMP_ROOT/A.stop2.out"; then
+      pass "AC-9: stop twice — second prints 'No running dashboard' (idempotent)"
     else
       fail "AC-9: stop twice — unexpected output: $(cat "$TMP_ROOT/A.stop2.out")"
     fi

@@ -137,14 +137,24 @@ else
   fail "AC: index.html missing /app.css <link>"
 fi
 
-# AC: five panels (Plans, Issues, Worktrees, Branches, Activity) + errors banner element.
-for panel in panel-plans panel-issues panel-worktrees panel-branches panel-activity; do
+# AC: three panels (Plans, Issues, Branches) + errors banner element.
+for panel in panel-plans panel-issues panel-branches; do
   if grep -q "$panel" "$INDEX_HTML"; then
     pass "AC: panel class present: $panel"
   else
     fail "AC: missing panel class: $panel"
   fi
 done
+if grep -q 'id="activity-strip"' "$INDEX_HTML"; then
+  pass "AC: activity-strip present"
+else
+  fail "AC: activity-strip missing"
+fi
+if ! grep -q 'panel-worktrees\|id="worktrees-body"\|id="tab-worktrees"' "$INDEX_HTML"; then
+  pass "AC: worktrees panel removed from index.html"
+else
+  fail "AC: worktrees panel still present in index.html"
+fi
 if grep -q 'id="errors-banner"' "$INDEX_HTML"; then
   pass "AC: errors-banner element exists"
 else
@@ -288,8 +298,8 @@ if printf '%s' "$CT" | grep -qi 'text/html'; then
 else
   fail "GET / Content-Type unexpected: $CT"
 fi
-if grep -q '<title>Z Skills Monitor</title>' "$MR/root.body"; then
-  pass "GET / body contains <title>Z Skills Monitor</title>"
+if grep -q '<title>Z Skills Dashboard</title>' "$MR/root.body"; then
+  pass "GET / body contains <title>Z Skills Dashboard</title>"
 else
   fail "GET / body missing dashboard title"
 fi
@@ -523,15 +533,18 @@ echo "=== Phase 7 AC: live write-back smoke ==="
 
 # Re-use the running server from Block 2 — same port, same MAIN_ROOT ($MR).
 
-# AC: POST /api/queue WITHOUT Origin → 403.
+# AC: POST /api/queue WITHOUT Origin → 200 (Phase 5b: relaxed policy).
+# Cross-origin still 403; that invariant is exercised by
+# tests/test_zskills_monitor_csrf.sh and the wrong-Origin case in
+# tests/test_zskills_monitor_server.sh.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H 'Content-Type: application/json' \
   -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[]}}' \
   "http://127.0.0.1:$PORT/api/queue")
-if [ "$CODE" = "403" ]; then
-  pass "AC: POST /api/queue without Origin → 403"
+if [ "$CODE" = "200" ]; then
+  pass "AC: POST /api/queue without Origin → 200 (relaxed in Phase 5b)"
 else
-  fail "AC: POST /api/queue no-origin → $CODE"
+  fail "AC: POST /api/queue no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
 # AC: POST /api/queue WITH valid Origin → 200 + state file written.
@@ -716,13 +729,15 @@ else
   fail "AC: reset → $CODE; file=$(cat "$MR/.zskills/work-on-plans-state.json")"
 fi
 
-# AC: reset without Origin → 403.
+# AC: reset without Origin → 200 (Phase 5b: relaxed policy).
+# Cross-origin defense exercised by tests/test_zskills_monitor_csrf.sh
+# and the cross-origin reset case in tests/test_zskills_monitor_server.sh.
 CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   "http://127.0.0.1:$PORT/api/work-state/reset")
-if [ "$CODE" = "403" ]; then
-  pass "AC: POST /api/work-state/reset without Origin → 403"
+if [ "$CODE" = "200" ]; then
+  pass "AC: POST /api/work-state/reset without Origin → 200 (relaxed in Phase 5b)"
 else
-  fail "AC: reset no-origin → $CODE"
+  fail "AC: reset no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
 # Stop server cleanly via SIGTERM and verify port is released.

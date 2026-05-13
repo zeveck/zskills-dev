@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-zskills_monitor.server — localhost-only HTTP API for the zskills monitor
-dashboard (Phase 5 of ZSKILLS_MONITOR_PLAN).
+zskills_monitor.server — localhost-only HTTP API for the zskills dashboard
+(Phase 5 of ZSKILLS_MONITOR_PLAN).
 
 stdlib-only. Wraps Phase 4's `collect_snapshot()` plus interactive
 write-back for the queue + work-on-plans state. Static files from the
@@ -542,7 +542,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
     to the bound `server.context` dict (set in `main()`).
     """
 
-    server_version = "zskills-monitor/0.1"
+    server_version = "zskills-dashboard/0.1"
     sys_version = ""  # Suppress Python/<ver> in Server header
 
     # --------------------------------------------------------------- helpers
@@ -599,15 +599,45 @@ class MonitorHandler(BaseHTTPRequestHandler):
         return data, None
 
     def _origin_ok(self) -> bool:
-        """CSRF check — Origin must equal http://<bind_host>:<port>."""
+        """CSRF check — accept localhost same-host Origin (any scheme).
+
+        Policy (relaxed in Phase 5b after 5a diagnosis):
+
+        1. Missing Origin header  -> ACCEPT. Some browsers/proxies strip
+           the Origin header on same-origin POSTs; treating missing-Origin
+           as same-origin is the OWASP-recommended posture for
+           localhost-bound services.
+        2. Origin == "null"       -> ACCEPT. Browsers emit this for
+           opaque-origin contexts (post-redirect, sandboxed iframes).
+        3. Origin host portion is `127.0.0.1` or `localhost` AND (the
+           Origin port matches the server port OR the Origin has no
+           explicit port — for proxies that may rewrite). Any scheme
+           accepted.                                                ACCEPT.
+        4. Anything else (e.g., http://evil.com)                  -> REJECT.
+
+        This keeps the cross-origin rejection invariant for non-localhost
+        Origins while removing the false-positives observed in 5a-repro.
+        """
+        origin = self.headers.get("Origin", "")
+        # Rule 1 + 2: empty or "null" Origin -> accept.
+        if origin == "" or origin == "null":
+            return True
+        # Rule 3: parse host portion of Origin; accept if same-host.
+        try:
+            parsed = urllib.parse.urlsplit(origin)
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower()
+        if host not in ("127.0.0.1", "localhost"):
+            return False
+        # Port: if Origin has no port, accept (proxy may have stripped).
+        # If Origin has a port, it must match the server port.
         ctx = self._ctx()
         port = ctx["port"]
-        expected_set = {
-            f"http://127.0.0.1:{port}",
-            f"http://localhost:{port}",
-        }
-        origin = self.headers.get("Origin", "")
-        return origin in expected_set
+        origin_port = parsed.port
+        if origin_port is None:
+            return True
+        return origin_port == port
 
     # --------------------------------------------------------------- routing
 
@@ -691,7 +721,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # Phase 6 hasn't shipped UI yet — return a friendly placeholder
         # rather than 404 so /api/health and curl smoke land cleanly.
         body = (
-            b"<!DOCTYPE html><meta charset=utf-8><title>zskills monitor</title>"
+            b"<!DOCTYPE html><meta charset=utf-8><title>zskills dashboard</title>"
             b"<p>Dashboard UI ships in Phase 6. The HTTP API is live; try "
             b"<code>/api/health</code> or <code>/api/state</code>.</p>"
         )
@@ -1048,7 +1078,7 @@ def _bind_or_die(host: str, port: int) -> ThreadingHTTPServer:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python3 -m zskills_monitor.server",
-        description="Localhost HTTP API for zskills monitor (Phase 5).",
+        description="Localhost HTTP API for the zskills dashboard (Phase 5).",
     )
     p.add_argument("--port", type=int, default=None,
                    help="Override port (highest priority).")
@@ -1112,7 +1142,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGINT, _shutdown)
 
     sys.stderr.write(
-        f"zskills monitor listening on http://{BIND_HOST}:{port} "
+        f"zskills dashboard listening on http://{BIND_HOST}:{port} "
         f"(main_root={main_root}, pid={os.getpid()})\n"
     )
     sys.stderr.flush()

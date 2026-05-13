@@ -10,12 +10,12 @@ description: >-
   State at .zskills/monitor-state.json. Usage:
   /zskills-dashboard [start|stop|status].
 metadata:
-  version: "2026.05.07+a3fc3c"
+  version: "2026.05.13+0f19eb"
 ---
 
-# /zskills-dashboard — Local Monitor Dashboard
+# /zskills-dashboard — Local Dashboard
 
-`/zskills-dashboard` exposes the Phase 5 Python monitor server as a
+`/zskills-dashboard` exposes the Phase 5 Python dashboard server as a
 first-class skill. It launches the server detached (so it survives the
 parent shell), records the live PID/port in
 `.zskills/dashboard-server.pid`, and provides start/stop/status modes.
@@ -84,7 +84,7 @@ trusting it:
 
 If EITHER check fails (command-name mismatch OR cwd-mismatch when
 verifiable), the PID is stale, PID-reused, or belongs to a different
-worktree's monitor — do NOT kill it. Treat the PID file as stale.
+worktree's dashboard — do NOT kill it. Treat the PID file as stale.
 
 ```bash
 # Returns 0 if PID is alive AND identity matches; 1 otherwise.
@@ -303,7 +303,7 @@ if [ "$SUB" = "start" ]; then
     NEW_PID="${BASH_REMATCH[2]}"
   fi
 
-  echo "Monitor running at http://127.0.0.1:$PORT/  (pid ${NEW_PID:-?}, log $LOG_FILE)"
+  echo "Dashboard running at http://127.0.0.1:$PORT/  (pid ${NEW_PID:-?}, log $LOG_FILE)"
   write_tracking_marker "start" "$NEW_PID" "$PORT"
   exit 0
 fi
@@ -311,7 +311,7 @@ fi
 
 ## stop — SIGTERM and clean up
 
-1. No PID file → "No running monitor (no PID file)." Exit 0
+1. No PID file → "No running dashboard (no PID file)." Exit 0
    (idempotent).
 
 2. Parse `pid` and `port`. If the PID is not alive, the file is stale
@@ -332,7 +332,7 @@ fi
 ```bash
 if [ "$SUB" = "stop" ]; then
   if [ ! -f "$PID_FILE" ]; then
-    echo "No running monitor (no PID file)."
+    echo "No running dashboard (no PID file)."
     write_tracking_marker "stop-no-pidfile"
     exit 0
   fi
@@ -355,7 +355,7 @@ if [ "$SUB" = "stop" ]; then
   # kill -0 — failure is the expected branch (dead PID), so 2>/dev/null
   # is allowed here per CLAUDE.md rule.
   if ! kill -0 "$STOP_PID" 2>/dev/null; then
-    echo "Monitor PID file is stale (PID $STOP_PID is not running). Removing $PID_FILE."
+    echo "Dashboard PID file is stale (PID $STOP_PID is not running). Removing $PID_FILE."
     rm -- "$PID_FILE"
     write_tracking_marker "stop-stale-pidfile" "$STOP_PID" "${STOP_PORT:-}"
     exit 0
@@ -369,7 +369,7 @@ if [ "$SUB" = "stop" ]; then
     DIAG_CWD=$(readlink "/proc/$STOP_PID/cwd" 2>/dev/null \
       || lsof -p "$STOP_PID" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}' \
       || echo "<unknown>")
-    echo "PID $STOP_PID does not appear to be zskills-monitor for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
+    echo "PID $STOP_PID does not appear to be zskills-dashboard for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
     exit 1
   fi
 
@@ -390,7 +390,7 @@ if [ "$SUB" = "stop" ]; then
   done
 
   if [ "$EXITED" -ne 1 ]; then
-    echo "Monitor did not exit within 5s. Run 'lsof -i :$STOP_PORT' and stop manually; do NOT escalate to SIGKILL." >&2
+    echo "Dashboard did not exit within 5s. Run 'lsof -i :$STOP_PORT' and stop manually; do NOT escalate to SIGKILL." >&2
     exit 1
   fi
 
@@ -407,7 +407,7 @@ if [ "$SUB" = "stop" ]; then
     rm -- "$PID_FILE"
   fi
 
-  echo "Monitor stopped (pid $STOP_PID, port ${STOP_PORT:-?})."
+  echo "Dashboard stopped (pid $STOP_PID, port ${STOP_PORT:-?})."
   write_tracking_marker "stop" "$STOP_PID" "${STOP_PORT:-}"
   exit 0
 fi
@@ -415,7 +415,7 @@ fi
 
 ## status — read-only health report
 
-1. No PID file → "Monitor not running." Exit 0.
+1. No PID file → "Dashboard not running." Exit 0.
 
 2. Parse `pid`, `port`, `started_at` via `BASH_REMATCH`. If
    `started_at` does not match `^[0-9T:+-]+$`, treat the PID file as
@@ -431,7 +431,7 @@ fi
 ```bash
 if [ "$SUB" = "status" ]; then
   if [ ! -f "$PID_FILE" ]; then
-    echo "Monitor not running."
+    echo "Dashboard not running."
     exit 0
   fi
 
@@ -462,7 +462,7 @@ if [ "$SUB" = "status" ]; then
   # kill -0 — failure is the expected branch (dead PID), so 2>/dev/null
   # is allowed here per CLAUDE.md rule.
   if ! kill -0 "$ST_PID" 2>/dev/null; then
-    echo "Monitor PID file is stale (PID $ST_PID not running). Run 'lsof -i :$ST_PORT' to verify port is free, then retry /zskills-dashboard start." >&2
+    echo "Dashboard PID file is stale (PID $ST_PID not running). Run 'lsof -i :$ST_PORT' to verify port is free, then retry /zskills-dashboard start." >&2
     exit 1
   fi
 
@@ -482,7 +482,7 @@ if [ "$SUB" = "status" ]; then
   fi
 
   cat <<STATUS_EOF
-Monitor running at http://127.0.0.1:$ST_PORT/
+Dashboard running at http://127.0.0.1:$ST_PORT/
   pid:      $ST_PID
   started:  $ST_STARTED
   uptime:   $UPTIME_STR
