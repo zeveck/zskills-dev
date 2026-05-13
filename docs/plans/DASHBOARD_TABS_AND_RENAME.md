@@ -276,7 +276,7 @@ includes every regular file under the skill dir.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 0 — Worktree setup | ⬚ | | Layer 0/3 hooks verified |
+| 0 — Worktree setup | ✅ Done | (verification) | Layer 0/3 hooks verified |
 | 1 — Rename "Z Skills Monitor" → "Z Skills Dashboard" | ⬚ | | All user-facing strings + test assertions in lockstep |
 | 2 — Tab scaffold (HTML + CSS) | ⬚ | | 3 tabs (PLANS/ISSUES/BRANCHES) + activity strip; renderBranches enriched with worktree info; renderWorktrees removed |
 | 3 — Tab behavior (JS + URL hash, mouse-first) | ⬚ | | Click + hashchange only; no arrow-key/Home/End handler; no roving tabindex |
