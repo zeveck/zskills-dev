@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.13+3f3428"
+  version: "2026.05.13+f4952b"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -190,6 +190,36 @@ hygiene — it both syncs state AND cleans up resolved issues in one pass.
 there is no `auto` mode for sync. The agent presents verified-fixed
 candidates and waits for the user to select which to close.
 
+**All sync-mode work happens in a pre-created worktree.** Before fetching
+trackers, dispatching research agents, or writing the SPRINT_REPORT.md
+section, front-run the shared `ensure-worktree.sh` gate. Steps 1–5 then
+run inside the worktree, so Step 4's SPRINT_REPORT.md write and Step 5's
+commit naturally land on the feature branch (not main).
+
+```bash
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+if [ ! -x "$HELPER" ]; then
+  echo "fix-issues: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+WT_PATH=$(bash "$HELPER" \
+  --prefix fix-issues \
+  --pipeline-id "fix-issues.${TRACKING_ID}" \
+  --purpose "fix-issues sync; tracking=${TRACKING_ID}" \
+  "${TRACKING_ID}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ensure-worktree failed (rc=$RC) for /fix-issues" >&2
+  exit "$RC"
+fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"  # R3-1 — re-anchor downstream path resolution
+fi
+```
+
 ### Step 1 — Fetch & update trackers
 
 1. **Run Phase 1a** (Preflight & Sync) — fetch all open issues, run sync
@@ -279,7 +309,59 @@ For each approved issue:
 
 ### Step 5 — Commit & report
 
-1. **Commit** updated tracker files.
+1. **Commit** the SPRINT_REPORT.md section to the worktree's feature branch.
+   SPRINT_REPORT.md is the ONLY tracked file sync mode commits. The
+   `*ISSUES*.md` tracker files are gitignored (interactive observability
+   only) and MUST NOT be staged. The preamble (top of `## Sync`) already
+   `cd`-ed into the worktree and exported `ZSKILLS_PATHS_ROOT`, so Step
+   4's SPRINT_REPORT.md write landed in `$TOPLEVEL/.zskills/audit/`.
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
+   ```bash
+   # Defensive cwd restore; WT_PATH set by preamble at top of sync mode.
+   [ -n "${WT_PATH:-}" ] && cd "$WT_PATH" 2>/dev/null || true
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   TOPLEVEL=$(git rev-parse --show-toplevel)
+   if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
+     # R3-1: re-anchor under the worktree so $ZSKILLS_AUDIT_DIR resolves
+     # to TOPLEVEL/.zskills/audit, not $CLAUDE_PROJECT_DIR/.zskills/audit.
+     export ZSKILLS_PATHS_ROOT="$TOPLEVEL"
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
+     ABS_FILE="$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md"
+     # Portable realpath (DA-R2-1; R3-6: adapted from warn-config-drift.sh:181-203).
+     SPRINT_REL=""
+     if SPRINT_REL=$(realpath --relative-to="$TOPLEVEL" "$ABS_FILE" 2>/dev/null) \
+          && [ -n "$SPRINT_REL" ]; then
+       case "$SPRINT_REL" in /*) SPRINT_REL="" ;; esac
+     fi
+     if [ -z "$SPRINT_REL" ]; then
+       ABS_FILE_CANON=$(cd "$(dirname "$ABS_FILE")" 2>/dev/null && pwd)/$(basename "$ABS_FILE")
+       case "$ABS_FILE_CANON" in
+         "$TOPLEVEL"/*) SPRINT_REL="${ABS_FILE_CANON#"$TOPLEVEL"/}" ;;
+         *) echo "fix-issues: cannot normalize $ABS_FILE vs $TOPLEVEL" >&2; exit 1 ;;
+       esac
+     fi
+     case "$SPRINT_REL" in
+       /*|../*) echo "fix-issues: $ABS_FILE is outside worktree $TOPLEVEL" >&2; exit 1 ;;
+     esac
+
+     # SPRINT_REPORT.md is the ONLY tracked file sync mode commits.
+     # *ISSUES*.md are gitignored and MUST NOT be staged.
+     git -C "$TOPLEVEL" add "$SPRINT_REL"
+     STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+     if [ "$STAGED" != "$SPRINT_REL" ]; then
+       echo "fix-issues: unexpected staged set: $STAGED (expected $SPRINT_REL only)" >&2
+       exit 1
+     fi
+     if [ -n "$COMMIT_CO_AUTHOR" ]; then
+       git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "docs(sprint): record /fix-issues sprint section"
+     else
+       git -C "$TOPLEVEL" commit -m "docs(sprint): record /fix-issues sprint section"
+     fi
+   fi
+   ```
 
 2. **Report:**
    ```
