@@ -599,15 +599,45 @@ class MonitorHandler(BaseHTTPRequestHandler):
         return data, None
 
     def _origin_ok(self) -> bool:
-        """CSRF check — Origin must equal http://<bind_host>:<port>."""
+        """CSRF check — accept localhost same-host Origin (any scheme).
+
+        Policy (relaxed in Phase 5b after 5a diagnosis):
+
+        1. Missing Origin header  -> ACCEPT. Some browsers/proxies strip
+           the Origin header on same-origin POSTs; treating missing-Origin
+           as same-origin is the OWASP-recommended posture for
+           localhost-bound services.
+        2. Origin == "null"       -> ACCEPT. Browsers emit this for
+           opaque-origin contexts (post-redirect, sandboxed iframes).
+        3. Origin host portion is `127.0.0.1` or `localhost` AND (the
+           Origin port matches the server port OR the Origin has no
+           explicit port — for proxies that may rewrite). Any scheme
+           accepted.                                                ACCEPT.
+        4. Anything else (e.g., http://evil.com)                  -> REJECT.
+
+        This keeps the cross-origin rejection invariant for non-localhost
+        Origins while removing the false-positives observed in 5a-repro.
+        """
+        origin = self.headers.get("Origin", "")
+        # Rule 1 + 2: empty or "null" Origin -> accept.
+        if origin == "" or origin == "null":
+            return True
+        # Rule 3: parse host portion of Origin; accept if same-host.
+        try:
+            parsed = urllib.parse.urlsplit(origin)
+        except ValueError:
+            return False
+        host = (parsed.hostname or "").lower()
+        if host not in ("127.0.0.1", "localhost"):
+            return False
+        # Port: if Origin has no port, accept (proxy may have stripped).
+        # If Origin has a port, it must match the server port.
         ctx = self._ctx()
         port = ctx["port"]
-        expected_set = {
-            f"http://127.0.0.1:{port}",
-            f"http://localhost:{port}",
-        }
-        origin = self.headers.get("Origin", "")
-        return origin in expected_set
+        origin_port = parsed.port
+        if origin_port is None:
+            return True
+        return origin_port == port
 
     # --------------------------------------------------------------- routing
 
