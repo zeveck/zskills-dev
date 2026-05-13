@@ -22,7 +22,7 @@ original failure mode this mode exists to prevent.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 -- Create canary7 file | ⬚ | | Trivial file create (turn 1) |
+| 1 -- Create canary7 file | 🟡 | `7036b12` | Done on cp branch; awaits final-phase land |
 | 2 -- Append second line  | ⬚ | | Trivial file append (turn 2) |
 
 ## Phase 1 -- Create canary7 file
