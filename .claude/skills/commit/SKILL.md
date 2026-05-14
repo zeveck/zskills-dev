@@ -5,13 +5,15 @@ description: >-
   Safe commit workflow with optional scope hint. Inventories all changes,
   classifies related vs. unrelated files, traces dependencies, protects
   other agents' work, and optionally pushes or lands worktree commits.
-  Usage: /commit [pr] [scope] [push|land]
-argument-hint: "[pr] [scope] [push|land]"
+  Positional `auto` (PR mode only) enables auto-merge via /land-pr
+  (matches /run-plan, /fix-issues, /do).
+  Usage: /commit [pr] [scope] [push|land|auto]
+argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.05.13+63c9a4"
+  version: "2026.05.14+53583d"
 ---
 
-# /commit [pr] [scope] [push|land] — Safe Commit Workflow
+# /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
 
 Commit current work without picking up or harming unrelated changes.
 
@@ -33,9 +35,23 @@ When no explicit mode token is supplied, the skill consults
 
 ```bash
 FIRST_TOKEN=$(echo "$ARGUMENTS" | awk '{print $1}')
+# Positional `auto` token (case-insensitive). Recognized ONLY in PR mode
+# (`/commit pr auto` or — via the config-default-to-pr branch below —
+# `/commit auto`). Matches the convention in /run-plan, /fix-issues, /do.
+# The token never falls through to SCOPE_HINT (stripped in both PR-mode
+# parse paths). Setting AUTO_FLAG outside PR mode is a no-op — `push`
+# and `land` modes do not consult it.
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])([aA][uU][tT][oO])($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
 if [[ "$FIRST_TOKEN" == "pr" ]]; then
   # PR subcommand mode
   SCOPE_HINT=$(echo "$ARGUMENTS" | cut -d' ' -f2-)  # rest after 'pr' (may be empty)
+  # Strip the positional `auto` token from SCOPE_HINT so it does not leak
+  # into the PR title / scope-hint downstream. Match `auto` as a
+  # whitespace-bounded token (case-insensitive).
+  SCOPE_HINT=$(echo "$SCOPE_HINT" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
   # ... see Phase 6 (PR mode) below
 fi
 ```
@@ -74,8 +90,10 @@ if [ "$HAS_EXPLICIT_MODE" -eq 0 ]; then
         pr)
           # Treat as `/commit pr` — drop into PR subcommand mode below.
           # SCOPE_HINT keeps any scope words from $ARGUMENTS (no `pr` prefix
-          # to strip, since the user didn't type it).
-          SCOPE_HINT="$ARGUMENTS"
+          # to strip, since the user didn't type it). Strip the positional
+          # `auto` token (AUTO_FLAG was already set above) so it does not
+          # leak into the PR title / downstream scope-hint usage.
+          SCOPE_HINT=$(echo "$ARGUMENTS" | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/\1\2/g' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g')
           DEFAULT_MODE="pr"
           ;;
         direct|"")
@@ -122,6 +140,8 @@ Disambiguation:
 - `/commit` with `execution.landing: "pr"` in config → PR mode (config default)
 - `/commit` with `execution.landing: "direct"` or no config → commit-only (preserved default)
 - `/commit push` or `/commit land` always overrides config — explicit wins
+- `/commit pr auto` → PR mode + auto-merge via `/land-pr --auto`
+- `/commit auto` (config default = pr) → PR mode + auto-merge
 
 Examples:
 - `/commit` → scope: *(none)*, action: commit
@@ -130,8 +150,10 @@ Examples:
 - `/commit push` → scope: *(none)*, action: commit + push
 - `/commit land` → scope: *(none)*, action: land
 - `/commit parser fixes land` → scope: "parser fixes", action: land
-- `/commit pr` → action: PR mode (push + create PR)
+- `/commit pr` → action: PR mode (push + create PR; settles at `pr-ready`)
 - `/commit pr fix pr comments` → PR mode, scope hint: "fix pr comments"
+- `/commit pr auto` → PR mode + auto-merge (passes `--auto` to `/land-pr`)
+- `/commit auto` (config default = pr) → PR mode + auto-merge
 
 PR subcommand behavior is defined in [modes/pr.md](modes/pr.md); land behavior in [modes/land.md](modes/land.md).
 

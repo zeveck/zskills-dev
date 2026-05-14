@@ -57,7 +57,12 @@ sent at orchestrator level.
 `/commit pr` customizations of the canonical pattern:
 - `$LANDED_SOURCE = "commit"`
 - No `--worktree-path` (no worktree — `/commit pr` runs in the main repo)
-- No `--auto` (auto-merge stays OFF for `/commit pr`)
+- **`--auto` is gated on the positional `auto` token** (issue #236 —
+  matches /run-plan, /fix-issues, /do, /quickfix). Without `auto`,
+  auto-merge stays OFF and the PR settles at `pr-ready` after CI passes;
+  with `auto`, `LAND_ARGS` includes `--auto` and `/land-pr`'s existing
+  auto-merge path takes over (same CI gate, same behavior as the other
+  4 skills).
 - `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (commit's body is fixed at PR
   creation; no per-phase update like /run-plan does)
 - `<CALLER_REBASE_CONFLICT_HANDLER>` = no agent-assisted resolution (no
@@ -116,6 +121,14 @@ LAND_OUTCOME=__init__
 
 LANDED_SOURCE="commit"
 LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --tracking-id=$BRANCH_SLUG"
+
+# Auto-merge gate (issue #236) — append `--auto` when the caller passed
+# the positional `auto` token (parsed in skills/commit/SKILL.md and
+# propagated as $AUTO_FLAG=1). Mirrors /run-plan, /fix-issues, /do,
+# /quickfix. Without the token, `/land-pr` runs through PR creation +
+# CI poll + fix-cycle but does NOT call `gh pr merge --auto --squash`;
+# the PR settles at `pr-ready` for human review.
+[ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /commit pr.
@@ -190,7 +203,7 @@ while :; do
       else
         LAND_OUTCOME=pr-ready
       fi
-      break ;;  # /land-pr already requested merge if --auto (none for /commit pr)
+      break ;;  # /land-pr already requested merge if --auto (gated on AUTO_FLAG per issue #236)
     pending)
       LAND_OUTCOME=pr-ready
       break ;;  # settle at pr-ready
@@ -282,7 +295,11 @@ rm -f "$TRACK_DIR/requires.land-pr.$BRANCH_SLUG"
 ```
 
 **PR mode does NOT:**
-- Auto-merge (no `--auto` passed to `/land-pr`)
+- Auto-merge **unless the positional `auto` token is passed** (issue #236
+  — `/commit pr auto` or, via config-default-to-pr, `/commit auto`).
+  Without `auto`, `LAND_ARGS` omits `--auto` and the PR settles at
+  `pr-ready` after CI passes; with `auto`, `--auto` is appended and
+  `/land-pr` invokes `gh pr merge --auto --squash`.
 - Write `.landed` markers (`/commit pr` has no worktree)
 - Run Phases 1–5 (all commits must already exist — clean tree is required)
 

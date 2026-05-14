@@ -74,6 +74,7 @@ run_suite "test-block-bypassed-land-pr.sh" "tests/test-block-bypassed-land-pr.sh
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
 run_suite "test-quickfix.sh" "tests/test-quickfix.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
+run_suite "test-commit.sh" "tests/test-commit.sh"
 run_suite "test-frontmatter-helpers.sh" "tests/test-frontmatter-helpers.sh"
 run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migration.sh"
 run_suite "test-update-zskills-agent-install" "tests/test-update-zskills-agent-install.sh"
