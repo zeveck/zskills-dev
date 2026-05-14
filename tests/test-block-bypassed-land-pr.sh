@@ -38,6 +38,12 @@
 #   C26  ./gh pr create                                → DENY (relative-path)
 #   C27  legitimate FPs (git commit -m, grep, etc.)    → ALLOW (token-aware)
 #   C28  legitimate gh pr verbs (view/list/checks/...) → ALLOW
+#   C29  transparent-prefix wrappers (command/exec/    → DENY (prefix-skip
+#         nohup/nice/time/timeout) + gh pr create        in is_gh_pr_subcommand)
+#   C30  timeout 30 gh pr merge --auto                 → DENY (prefix + merge)
+#   C31  time git push origin main / timeout 60 ls     → ALLOW (prefix-skip
+#         (prefix-skip is conservative: doesn't match     reaches non-gh; exits)
+#          non-gh commands after prefix)
 #
 #   AC5.4  Instrumented stub: hook on non-`gh pr ` commands must NOT
 #          invoke land-pr-bypass-message.sh.
@@ -380,6 +386,46 @@ for legit in "gh pr view 123" "gh pr checks --watch" "gh pr list" "gh pr diff" "
   assert_allow "C28/$legit → ALLOW (legitimate gh pr verb)" \
     "$HOOK_EXIT" "$HOOK_OUT"
 done
+
+# ─────────────────── C29: transparent-prefix wrappers → DENY ─────
+# These prefixes execute the next argv as a separate process (or
+# in-place for `exec`/`command`); operationally equivalent to direct
+# invocation. Closes the prefix-class hole an agent could reach for
+# (e.g., `timeout 30 gh pr create` after a previous PR-create hung).
+for prefix_form in \
+  "command gh pr create -B main" \
+  "exec gh pr create -B main" \
+  "nohup gh pr create" \
+  "nice gh pr create" \
+  "time gh pr create" \
+  "timeout 30 gh pr create" \
+  "/usr/bin/timeout 60 gh pr create -B main"; do
+  clean_tracking
+  run_hook "$(mkenv "$prefix_form")"
+  assert_deny "C29/$prefix_form → DENY (transparent-prefix wrapper)" \
+    "$HOOK_OUT" ""
+done
+
+# ─────────────────── C30: prefix + merge --auto → DENY ───────────
+clean_tracking
+run_hook "$(mkenv "timeout 30 gh pr merge 123 --auto")"
+assert_deny "C30: timeout 30 gh pr merge --auto → DENY (prefix + merge variant)" \
+  "$HOOK_OUT" ""
+
+# ─────────────────── C31: prefix is NOT a generic allow ──────────
+# Adding `command/time/timeout/...` to the transparent-prefix skip MUST
+# NOT cause unrelated invocations to fall through. Confirm a non-gh
+# command after the prefix correctly ALLOWs (because the walker reaches
+# `git`, not `gh`, and exits without matching).
+clean_tracking
+run_hook "$(mkenv "time git push origin main")"
+assert_allow "C31: time git push origin main → ALLOW (prefix-skip doesn't make non-gh commands match)" \
+  "$HOOK_EXIT" "$HOOK_OUT"
+
+clean_tracking
+run_hook "$(mkenv "timeout 60 ls -la")"
+assert_allow "C31b: timeout 60 ls -la → ALLOW (no gh anywhere)" \
+  "$HOOK_EXIT" "$HOOK_OUT"
 
 # ──────────────────────────────────────────────────────────────
 # AC5.4 — instrumented-stub early-exit assertion.
