@@ -381,3 +381,28 @@ N/A for both rows. No UI, editor, or styles files changed. Pure skill-prose + ba
 ### Landing
 
 PR mode (per `execution.landing: "pr"` config). Two separate PRs: one per worktree. **First sprint to benefit from `/land-pr` Step 7b** (landed in PR #257 just before this sprint) — local main auto-ff-pulls after each squash merge instead of requiring manual `git pull --ff-only` recovery.
+
+## Sprint — 2026-05-14 15:35 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** issue-256
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #256 | /run-plan REMAINING_PHASES regex false-positives on ⬚ outside Status column | /tmp/zskills-fix-issue-256 | `c0b8f3e` | +2 cases in tests/test-phase-5b-gate.sh (Case 8 mktemp fixture with tight-vs-loose contrast assertion; Case 8b SKILL.md sentinel grep); suite 3022 → 3023 PASS | PASS (verifier subagent APPROVE; regex change at SKILL.md:2316; comment block 2291-2315 updated; mirror clean) | N/A (skill prose + bash + tests; no UI) |
+
+**Sprint scope:** Single 1-line regex tighten at `skills/run-plan/SKILL.md` REMAINING_PHASES gate. New pattern `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` requires Status cell to be ONLY whitespace+⬚+whitespace+closing-pipe. Progress Tracker rows still match; narrative-prose mentions of ⬚ structurally cannot. Closes the "land-time rewrite review history" pattern observed at PR #252 PREAMBLE Phase 6.
+
+**Test discipline:** Case 8 includes a CONTRAST assertion (runs BOTH new and old regex against same fixture, asserts new=2 AND old=3) — proves the fixture exercises the difference. Case 8b is a sentinel grep against SKILL.md source.
+
+### Agent Verify
+
+Verifier subagent (`subagent_type: "verifier"`) returned APPROVE. Layer 3 exit 0. Full suite 3023/3023 PASS in verifier's own run. Mirror parity clean. Committed `c0b8f3e`.
+
+### User Verify
+
+N/A. No UI changes.
+
+### Landing
+
+PR mode. /land-pr --auto dispatch. Step 7b (#254) will auto-ff local main on merge.
