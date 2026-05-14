@@ -95,6 +95,30 @@ is_gh_pr_subcommand() {
   while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
     ((i++))
   done
+  # Skip transparent command-prefix wrappers. These execute the next
+  # argv as a separate process (or in-place for `exec`), so
+  # `nohup gh pr create`, `time gh pr create`, `timeout 30 gh pr create`,
+  # etc. are operationally equivalent to `gh pr create`. Without this
+  # skip an agent reaching for `timeout 30 gh pr create` (e.g., after a
+  # previous PR-create hung) would bypass the gate.
+  #
+  # `timeout` consumes its DURATION arg as well (2 tokens); the others
+  # consume just 1. List is small and curated; do NOT generalize to
+  # "skip any unknown leading word" — that would whitelist user aliases.
+  while [[ $i -lt $n ]]; do
+    local _pref="${TOKENS[$i]}"
+    case "$_pref" in
+      */*) _pref="${_pref##*/}" ;;
+    esac
+    case "$_pref" in
+      command|exec|nohup|nice|time)
+        ((i++)) ;;
+      timeout)
+        ((i+=2)) ;;
+      *)
+        break ;;
+    esac
+  done
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
   g="${g%\'}"; g="${g#\'}"
