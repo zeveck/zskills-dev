@@ -8,6 +8,14 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
+- **2026-05-14 (continued — #256 landed via PR #265)** — `/fix-issues 256 auto` executed clean end-to-end. PR [#265](https://github.com/zeveck/zskills-dev/pull/265) (squash `712eae8`, MERGED 2026-05-14 ~15:55 ET) closes #256. Tightened the `/run-plan REMAINING_PHASES` regex at `skills/run-plan/SKILL.md:2316` from `^\|[^|]*\|[^|]*⬚` to `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` — Status cell must now be ONLY whitespace+⬚+whitespace+closing-pipe. Narrative-prose mentions of `⬚` (in disposition tables, review-history rows, design notes) can no longer false-positive. The "fix the plan's tracker shape if it happens" land-time workaround pattern is gone — the regex enforces the convention structurally rather than aspirationally.
+
+  **First clean exercise of #254's Step 7b post-fix:** PR #265 went straight to MERGED (no BEHIND case this time — main hadn't moved between rebase and merge). Step 7b fired automatically, ff-pulling local main from `7c439ca` → `712eae8` without orchestrator intervention. The pattern is now mature: rebase → push → CI → auto-merge → Step 7b ff-pull → .landed write. Comparison: the prior session's #260/#261 sprint needed manual rebase+force-push twice when sibling PRs landed mid-flight (the BEHIND-after-CI-green follow-up gap remains; worth filing as a real issue).
+
+  **Test discipline win:** verifier audit caught the test's contrast-assertion design — Case 8 in `tests/test-phase-5b-gate.sh` runs BOTH the new tight regex AND the old loose regex against the same fixture, asserts new=2 AND old=3. Without the old-regex contrast assertion, the test couldn't prove the fixture actually exercises the difference (passing trivially on identical counts). This is a regression-guard pattern worth replicating for any future tight-vs-loose regex change.
+
+  **Minor field-population issue (not blocking, not the skill's fault):** my hand-rolled bash orchestration of /land-pr's procedure had a sed bug — `^CI_STATUS=` anchor didn't match because the state file had multiple vars on one line. Result: `.landed` shows empty `ci:` and `pr_state:` fields. Actual `status: landed` is correct; PR genuinely merged. The /land-pr skill's actual prose-driven procedure would handle this correctly (it uses while-read parsing, not sed line-anchors). Cosmetic-only, single-marker scope.
+
 - **2026-05-14 (continued — retroactive `/verify-changes` of session's 3 PRs APPROVE; #256 surfaced)** — Top-level `/verify-changes recent issue fixes from this session` dispatched a fresh `subagent_type: "verifier"` (multi-agent mode) to audit the 3 squashes: `9a87382` (#254 → Step 7b), `25d28e6` (#235+#241 → /quickfix), `be3611a` (#236 → /commit pr). Verdict: **APPROVE**. Full suite 3022/3022 PASS on current main; mirror parity clean on all 3 affected skills; no `faab84b`-class scope creep; no pre-existing failures discovered; Layer 3 response validator exit 0.
 
   **Verifier's per-PR audit summary:** Step 7b (skills/land-pr/SKILL.md:399-441) — all 4 skip conditions present in if/elif ladder; ahead-of-origin check uses `git rev-list --count "origin/$BASE_BRANCH..$BASE_BRANCH"` mirroring `create-worktree.sh:268-291`; fetch+merge uses `merge --ff-only` not `pull`. Explicit-finalize (#241) — `finalize_marker()` function definition and `trap … EXIT` registration both gone; remaining `finalize_marker` references are explanatory prose only. Positional `auto` (#235, #236) — both recognized in either ordering; conditional `--auto` append at `quickfix/SKILL.md:1109` and `commit/modes/pr.md:131`; no `--auto` flag-style alternative introduced.
@@ -305,23 +313,21 @@ Issues filed but not yet routed to a phase. Default to running clear-and-doable 
 
 - [x] **Issue [#254](https://github.com/zeveck/zskills-dev/issues/254)** — Closed via `/fix-issues 254 auto` PR [#257](https://github.com/zeveck/zskills-dev/pull/257) (squash `9a87382`, MERGED 2026-05-14 ~02:50 ET). Added `Step 7b — Fast-forward local main after successful merge` to `skills/land-pr/SKILL.md` lines 399–441 (4 skip conditions: not-on-base / dirty / ahead / fetch-failed). New `tests/test-land-pr-post-merge-ff.sh` (11 cases), conformance sentinel, CANARY10 AC. Full suite 3010/3010. Bootstrap irony: this PR landed via the PRE-fix `/land-pr`, so local main went stale one last time and was manually ff-pulled.
 
-- [ ] **Issue [#256](https://github.com/zeveck/zskills-dev/issues/256)** — `/run-plan REMAINING_PHASES regex false-positives on ⬚ outside Status column`. Filed 2026-05-14 during PREAMBLE_WORKTREE_GATE (PR #252) Phase 6 landing — the plan's disposition table row reviewing this very regex tripped it, requiring a land-time rewrite of review history. Issue body has the exact 1-line fix: tighten the regex at `skills/run-plan/SKILL.md:2309` from `^\|[^|]*\|[^|]*⬚` to `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` (forces second column to be ONLY the glyph). Plus suggested fixture test in `tests/test-phase-5b-gate.sh` (or sibling). **Route: `/fix-issues 256 auto`** — small, mechanical, well-specified.
+- [x] **Issue [#256](https://github.com/zeveck/zskills-dev/issues/256)** — Closed via `/fix-issues 256 auto` PR [#265](https://github.com/zeveck/zskills-dev/pull/265) (squash `712eae8`, MERGED 2026-05-14 ~15:55 ET). Regex at `skills/run-plan/SKILL.md:2316` tightened to `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|`. Comment block at lines 2291-2315 rewritten (dropped the "regex will miscount / fix the plan's tracker shape" warning; now documents the tight contract as structurally enforced). New `tests/test-phase-5b-gate.sh:249-288` Cases 8 + 8b (mktemp fixture with tight-vs-loose contrast assertion + SKILL.md sentinel grep). metadata.version 2026.05.14+c9f343. Mirror clean. Full suite 3023/3023 PASS. First clean Step 7b exercise — local main auto-ff-pulled post-merge.
 
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-**Suggested next step (2026-05-14 late update — after `/verify-changes` APPROVE'd the session's 3 PRs; #256 surfaced):**
+**Suggested next step (2026-05-14 late update — after #256 landed via PR #265):**
 
-The non-deferred queue is two items, both small and independent:
+The queue collapses to a single action:
 
-1. **`/fix-issues 256 auto`** — fix the `/run-plan REMAINING_PHASES` regex (forces second column to be ONLY the `⬚` glyph, not contain it). 1-line change at `skills/run-plan/SKILL.md:2309` + fixture test in `tests/test-phase-5b-gate.sh` (or sibling). Tiny PR.
+1. **`/run-plan docs/plans/FIX_ISSUES_SYNC_HARDENING.md finish auto pr`** — closes #231. The only non-deferred plan-driven item remaining. ~457-line refined plan, has all the post-PREAMBLE delegations already wired in (#233 was resolved by PREAMBLE Phase 4).
 
-2. **`/run-plan docs/plans/FIX_ISSUES_SYNC_HARDENING.md finish auto pr`** — closes #231. ~457-line plan post-refinement.
+After #231 lands, only **#217** (deferred per body's trigger criteria) and **#67** (deferred — Phase G, real GitLab project needed) remain. Both intentional defers.
 
-**Sequencing:** run #256 FIRST (or in a separate session in parallel — they touch different skills: #256 is in `/run-plan` SKILL.md, FIX_ISSUES_SYNC_HARDENING runs `/run-plan` and modifies `/fix-issues` SKILL.md). The reason for #256-first: FIX_ISSUES_SYNC_HARDENING's `/run-plan` execution exercises the very regex #256 fixes. If FIX_ISSUES_SYNC_HARDENING's plan happens to mention `⬚` in any disposition/review context, the workaround pattern (editing review history at land time) would repeat. Running #256 first removes that risk.
-
-After both, only **#217** (deferred per body's trigger criteria) and **#67** (deferred — Phase G) remain.
-
-**Worth filing as a new issue** (surfaced this session): `/land-pr` doesn't auto-rebase BEHIND-after-CI-green PRs. Manual recovery needed twice this sprint when sibling PRs landed mid-flight. Natural Step 6b (or extension to `pr-merge.sh`) could detect `BEHIND` post-CI-green and trigger auto-rebase-and-push. Extends #254's spirit.
+**Surfaced follow-ups worth filing as separate issues** (not blockers, both small):
+1. **`/land-pr` BEHIND-after-CI-green auto-rebase gap.** Manual rebase+force-push needed twice in the 2026-05-14 morning sprint when sibling PRs landed mid-flight. Natural Step 6b (or pr-merge.sh extension): when `MERGE_REQUESTED=true PR_STATE=OPEN CI=pass` with `mergeStateStatus=BEHIND`, auto-rebase the branch and force-push. Extends #254's spirit (close the operational gap between merge-requested and merged).
+2. **`/quickfix` case-pattern asymmetry vs `/commit`.** `/quickfix`'s `auto|AUTO|Auto` covers 3 case variants; `/commit`'s `[aA][uU][tT][oO]` covers 16. Cosmetic, not behavioral. 1-line tightening of `skills/quickfix/SKILL.md:112`.
 
 **Remaining backlog after that:** **#217** (relocate audit-dir reports — `/draft-plan` when triggered; none of its trigger criteria have fired yet), **#67** (GitLab — Phase G, needs real GitLab project to test against).
 
