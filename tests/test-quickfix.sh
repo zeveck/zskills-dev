@@ -310,6 +310,7 @@ PARSER_SCRIPT="$TEST_TMPDIR/parser.sh"
   echo 'printf "DESCRIPTION=%s\n" "$DESCRIPTION"'
   echo 'printf "YES_FLAG=%s\n" "$YES_FLAG"'
   echo 'printf "BRANCH_OVERRIDE=%s\n" "$BRANCH_OVERRIDE"'
+  echo 'printf "AUTO_FLAG=%s\n" "$AUTO_FLAG"'
   # Also report whether the entry-point unset guard cleared the seam vars.
   echo 'printf "TRIAGE_VAR_STATE=%s\n" "${_ZSKILLS_TEST_TRIAGE_VERDICT-UNSET}"'
   echo 'printf "REVIEW_VAR_STATE=%s\n" "${_ZSKILLS_TEST_REVIEW_VERDICT-UNSET}"'
@@ -335,10 +336,11 @@ fi
 if grep -q '[-][-]branch)' "$SKILL" \
    && grep -q '[-][-]yes|[-]y)' "$SKILL" \
    && grep -q '[-][-]from-here)' "$SKILL" \
-   && grep -q '[-][-]skip-tests)' "$SKILL"; then
-  pass "2  argument parser: --branch / --yes|-y / --from-here / --skip-tests"
+   && grep -q '[-][-]skip-tests)' "$SKILL" \
+   && grep -qE '^[[:space:]]*auto\|AUTO\|Auto\)' "$SKILL"; then
+  pass "2  argument parser: --branch / --yes|-y / --from-here / --skip-tests / positional auto (issue #235)"
 else
-  fail "2  argument parser: one or more flags missing"
+  fail "2  argument parser: one or more flags missing (including positional 'auto' for issue #235)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -475,15 +477,41 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 9 — Tracking setup (WI 1.8)
+# Case 9 — Tracking setup (WI 1.8) — explicit-finalize, NO trap.
+#
+# Issue #241 (2026-05-14): the prior `trap 'finalize_marker $?' EXIT`
+# pattern fired when WI 1.8's bash code fence ended (skill entry), NOT
+# when the skill flow ended — every /quickfix invocation stamped
+# `status: complete` almost immediately regardless of actual outcome.
+# Fix: replace with explicit-finalize matching /commit pr / /do pr /
+# /fix-issues pr — start-marker write at WI 1.8 (unchanged); end-of-
+# Phase-7-fence finalize based on $LAND_OUTCOME; per-failure-path
+# inline `sed -i` cleanup at WI 1.10 / Phase 4 / 5 / 6 / no-result.
+#
+# Assertions:
+#   (a) WI 1.8 wiring elements still present (sanitize + echo + marker path).
+#   (b) The trap literal is GONE from source (regression guard against
+#       reintroducing the broken pattern).
+#   (c) The explicit-finalize block (matching /commit pr) is present:
+#       a `case "${LAND_OUTCOME:-__init__}" in` followed by a sed -i
+#       rewriting `status: started` → `status: $FINAL`.
 # ────────────────────────────────────────────────────────────────────
+TRAP_LITERAL_COUNT=$(grep -c "trap 'finalize_marker \$?' EXIT" "$SKILL" 2>/dev/null | head -1)
+TRAP_LITERAL_COUNT=${TRAP_LITERAL_COUNT:-0}
+LAND_OUTCOME_FINALIZE=$(grep -c 'case "${LAND_OUTCOME:-__init__}" in' "$SKILL" 2>/dev/null | head -1)
+LAND_OUTCOME_FINALIZE=${LAND_OUTCOME_FINALIZE:-0}
+EXPLICIT_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' "$SKILL" 2>/dev/null | head -1)
+EXPLICIT_SED=${EXPLICIT_SED:-0}
+
 if grep -q 'skills/create-worktree/scripts/sanitize-pipeline-id.sh' "$SKILL" \
    && grep -qE 'echo.*ZSKILLS_PIPELINE_ID=\$PIPELINE_ID' "$SKILL" \
    && grep -q 'fulfilled.quickfix' "$SKILL" \
-   && grep -q "trap 'finalize_marker \$?' EXIT" "$SKILL"; then
-  pass "9  tracking: sanitize + echo + marker path + EXIT trap"
+   && [ "$TRAP_LITERAL_COUNT" -eq 0 ] \
+   && [ "$LAND_OUTCOME_FINALIZE" -ge 1 ] \
+   && [ "$EXPLICIT_SED" -ge 1 ]; then
+  pass "9  tracking: sanitize + echo + marker path; trap gone; LAND_OUTCOME case + explicit sed-finalize present (issue #241)"
 else
-  fail "9  tracking: one or more wiring elements missing"
+  fail "9  tracking: trap-literal-count=$TRAP_LITERAL_COUNT (want 0), land-outcome-case=$LAND_OUTCOME_FINALIZE (want >=1), explicit-sed=$EXPLICIT_SED (want >=1)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -998,10 +1026,11 @@ fi
 # ────────────────────────────────────────────────────────────────────
 # Case 40 — Happy path end-to-end (user-edited).
 # Dirty tree + description → run the preflight slice, verify it
-# succeeds through branch creation. The EXIT trap in WI 1.8 fires at
-# preflight-script end with rc=0 and maps status to 'complete', so
-# we assert: rc=0, branch created, marker mode=user-edited, status
-# is 'complete' (EXIT trap terminal state).
+# succeeds through branch creation. Post-#241 the marker reflects ONLY
+# what the preflight slice did: tracking set up with `status: started`.
+# `status: complete` is now written by the Phase 7 explicit-finalize
+# block (not extracted by PREFLIGHT_SCRIPT), so the correct invariant
+# after preflight-only is `status: started` (the in-progress state).
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c40)
 echo "edit" >> "$FIX/README.md"
@@ -1011,10 +1040,10 @@ RC=$?
 CURRENT=$(git -C "$FIX" branch --show-current)
 MARKER="$FIX/.zskills/tracking/quickfix.fix-readme-typo/fulfilled.quickfix.fix-readme-typo"
 if [ "$RC" -eq 0 ] && [ "$CURRENT" = "quickfix/fix-readme-typo" ] \
-   && [ -f "$MARKER" ] && grep -q '^status: complete$' "$MARKER" \
+   && [ -f "$MARKER" ] && grep -q '^status: started$' "$MARKER" \
    && grep -q '^mode: user-edited$' "$MARKER" \
    && grep -q '^base: main$' "$MARKER"; then
-  pass "40 happy path (user-edited): rc=0, branch created, marker complete/user-edited"
+  pass "40 happy path (user-edited): rc=0, branch created, marker status: started (Phase 7 finalize not extracted; issue #241)"
 else
   fail "40 happy path (user-edited): rc=$RC current='$CURRENT' marker=$( [ -f "$MARKER" ] && echo present || echo missing)"
   [ -f "$MARKER" ] && cat "$MARKER" | sed 's/^/    /'
@@ -1106,17 +1135,24 @@ RC=$?
 BRANCH_EXISTS_LOCAL=$(git -C "$FIX" show-ref --verify --quiet "refs/heads/quickfix/fix-readme-typo" && echo yes || echo no)
 BRANCH_EXISTS_REMOTE=$(git -C "$FIX" show-ref --verify --quiet "refs/remotes/origin/quickfix/fix-readme-typo" && echo yes || echo no)
 MARKER="$FIX/.zskills/tracking/quickfix.fix-readme-typo/fulfilled.quickfix.fix-readme-typo"
-MARKER_STATUS_COMPLETE=$( [ -f "$MARKER" ] && grep -q '^status: complete$' "$MARKER" && echo yes || echo no)
+# Post-#241: the FULL_FLOW_SCRIPT extractor stops at `## Phase 7`, so the
+# end-of-Phase-7 explicit-finalize block does NOT run as part of this
+# test. The correct invariant after the user-edited subflow (preflight
+# → branch → commit → push, Phase 6 successful) is `status: started` —
+# the in-progress state pending Phase 7's finalize. Pre-#241 this slot
+# was `status: complete` due to the trap firing on script-exit, but
+# that was the bug being fixed.
+MARKER_STATUS_STARTED=$( [ -f "$MARKER" ] && grep -q '^status: started$' "$MARKER" && echo yes || echo no)
 COMMIT_TRAILER=$(git -C "$FIX" log -1 --pretty=%B quickfix/fix-readme-typo 2>/dev/null | grep -c 'Generated with /quickfix (user-edited)')
 
 if [ "$RC" -eq 0 ] \
    && [ "$BRANCH_EXISTS_LOCAL" = "yes" ] \
    && [ "$BRANCH_EXISTS_REMOTE" = "yes" ] \
-   && [ "$MARKER_STATUS_COMPLETE" = "yes" ] \
+   && [ "$MARKER_STATUS_STARTED" = "yes" ] \
    && [ "$COMMIT_TRAILER" -ge 1 ]; then
-  pass "43 true end-to-end (user-edited bash subflow): branch pushed, marker status: complete, mode-aware trailer present"
+  pass "43 true end-to-end (user-edited bash subflow): branch pushed, marker status: started (Phase 7 finalize not extracted; issue #241), mode-aware trailer present"
 else
-  fail "43 end-to-end (bash subflow): rc=$RC local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-complete=$MARKER_STATUS_COMPLETE trailer-count=$COMMIT_TRAILER"
+  fail "43 end-to-end (bash subflow): rc=$RC local=$BRANCH_EXISTS_LOCAL remote=$BRANCH_EXISTS_REMOTE marker-started=$MARKER_STATUS_STARTED trailer-count=$COMMIT_TRAILER"
   echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
   echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
   [ -f "$MARKER" ] && { echo "  --- marker ---"; sed 's/^/    /' "$MARKER"; }
@@ -1632,6 +1668,109 @@ if [ "$PROSE_DOC" -ge 1 ] && [ "$WARN_DOC" -ge 1 ]; then
   pass "53 --rounds 0 skip path: prose mention ($PROSE_DOC) AND 'WARN: --rounds 0 skips' literal ($WARN_DOC) present"
 else
   fail "53 --rounds 0 skip path: prose=$PROSE_DOC warn=$WARN_DOC"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 54 — Issue #235: positional `auto` token at END of args.
+# `/quickfix <description> auto` → AUTO_FLAG=1, DESCRIPTION='<description>'
+# (the `auto` token does NOT fall through to DESCRIPTION).
+# ────────────────────────────────────────────────────────────────────
+OUT=$(bash "$PARSER_SCRIPT" "fix readme typo" auto)
+if echo "$OUT" | grep -q '^AUTO_FLAG=1$' \
+   && echo "$OUT" | grep -q '^DESCRIPTION=fix readme typo$'; then
+  pass "54 positional auto (end): AUTO_FLAG=1, DESCRIPTION clean (no 'auto' token leak) — issue #235"
+else
+  fail "54 positional auto (end): $(echo "$OUT" | tr '\n' '|')"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 55 — Issue #235: positional `auto` token at START of args.
+# `/quickfix auto <description>` → AUTO_FLAG=1 (same as above; mirrors
+# /run-plan and /fix-issues which accept `auto` anywhere in the args).
+# ────────────────────────────────────────────────────────────────────
+OUT=$(bash "$PARSER_SCRIPT" auto "fix readme typo")
+if echo "$OUT" | grep -q '^AUTO_FLAG=1$' \
+   && echo "$OUT" | grep -q '^DESCRIPTION=fix readme typo$'; then
+  pass "55 positional auto (start): AUTO_FLAG=1, DESCRIPTION clean — issue #235"
+else
+  fail "55 positional auto (start): $(echo "$OUT" | tr '\n' '|')"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 56 — Issue #235: no `auto` token → AUTO_FLAG=0 (preserves
+# pre-#235 pr-ready-without-merge behavior).
+# Also assert Phase 7 LAND_ARGS conditionally appends `--auto` when
+# AUTO_FLAG=1 (textual presence of the gated append).
+# ────────────────────────────────────────────────────────────────────
+OUT=$(bash "$PARSER_SCRIPT" "fix readme typo")
+GATED_APPEND=$(grep -cE '\[ "\$\{AUTO_FLAG:-0\}" = "1" \] && LAND_ARGS="\$LAND_ARGS --auto"' "$SKILL" 2>/dev/null || echo 0)
+GATED_APPEND=${GATED_APPEND:-0}
+if echo "$OUT" | grep -q '^AUTO_FLAG=0$' \
+   && echo "$OUT" | grep -q '^DESCRIPTION=fix readme typo$' \
+   && [ "$GATED_APPEND" -ge 1 ]; then
+  pass "56 no-auto (default off) + Phase 7 LAND_ARGS conditional --auto append present — issue #235"
+else
+  fail "56 no-auto: parser-out=$(echo "$OUT" | tr '\n' '|') land-args-gated-append-count=$GATED_APPEND"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 57 — Issue #241: `/quickfix` cancelled mid-flow at WI 1.10
+# leaves the marker `status: cancelled`. Same as Case 49 but explicitly
+# documents this as the #241 regression guard — under the broken trap
+# pattern the marker would have been stamped `complete` on skill entry
+# regardless of cancellation. Case 49 already exercises the full path;
+# this case asserts the SOURCE-LEVEL invariant that the cancel-fence
+# now contains an explicit `sed -i "s/^status: started$/status:
+# cancelled/"` line (NOT the prior trap-driven path).
+# ────────────────────────────────────────────────────────────────────
+CANCEL_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: cancelled/"' "$SKILL" 2>/dev/null || echo 0)
+CANCEL_SED=${CANCEL_SED:-0}
+REASON_APPEND=$(grep -cE "printf 'reason: %s\\\\n' \"\\\$CANCEL_REASON\"" "$SKILL" 2>/dev/null || echo 0)
+REASON_APPEND=${REASON_APPEND:-0}
+if [ "$CANCEL_SED" -ge 1 ] && [ "$REASON_APPEND" -ge 1 ]; then
+  pass "57 explicit cancel-finalize (issue #241): inline sed cancel ($CANCEL_SED) + reason: append ($REASON_APPEND) present"
+else
+  fail "57 explicit cancel-finalize: cancel-sed=$CANCEL_SED reason-append=$REASON_APPEND"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 58 — Issue #241: every documented failure path (Phase 4 test
+# failure, Phase 5 commit failure, Phase 6 push failure, Phase 7
+# no-result-file) has an inline `sed -i "s/^status: started$/status:
+# failed/"` BEFORE its exit. Counts the inline-fail-finalize literal
+# and requires at least 4 occurrences (1 per failure path) to ensure
+# no path slips back to silent unfinalized state.
+# ────────────────────────────────────────────────────────────────────
+INLINE_FAIL_FINALIZE=$(grep -cE 'sed -i "s/\^status: started\$/status: failed/"' "$SKILL" 2>/dev/null || echo 0)
+INLINE_FAIL_FINALIZE=${INLINE_FAIL_FINALIZE:-0}
+if [ "$INLINE_FAIL_FINALIZE" -ge 4 ]; then
+  pass "58 explicit fail-finalize on every cleanup path (issue #241): $INLINE_FAIL_FINALIZE occurrences (>=4 expected)"
+else
+  fail "58 explicit fail-finalize: $INLINE_FAIL_FINALIZE occurrence(s) of inline status: failed sed (expected >=4 for Phase 4/5/6/7-no-result paths)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 59 — Issue #241: end-of-Phase-7-fence explicit-finalize block
+# (the success-path finalize). Matches /commit pr's pattern: a
+# `case "${LAND_OUTCOME:-__init__}" in` followed by `sed -i ... status:
+# $FINAL`. Asserts the block lives BETWEEN the BEGIN/END canonical
+# anchors (in-fence with the caller loop so $LAND_OUTCOME survives).
+# ────────────────────────────────────────────────────────────────────
+BEGIN_LINE=$(grep -nF '# === BEGIN CANONICAL /land-pr CALLER LOOP ===' "$SKILL" | head -1 | cut -d: -f1)
+CLOSE_LINE=$(awk -v start="$BEGIN_LINE" 'NR>start && /^```[[:space:]]*$/ {print NR; exit}' "$SKILL")
+if [ -n "$BEGIN_LINE" ] && [ -n "$CLOSE_LINE" ]; then
+  FENCE_BODY=$(sed -n "${BEGIN_LINE},${CLOSE_LINE}p" "$SKILL")
+  CASE_IN_FENCE=$(echo "$FENCE_BODY" | grep -cE 'case "\$\{LAND_OUTCOME:-__init__\}" in' || true)
+  CASE_IN_FENCE=${CASE_IN_FENCE:-0}
+  SED_IN_FENCE=$(echo "$FENCE_BODY" | grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' || true)
+  SED_IN_FENCE=${SED_IN_FENCE:-0}
+  if [ "$CASE_IN_FENCE" -ge 1 ] && [ "$SED_IN_FENCE" -ge 1 ]; then
+    pass "59 end-of-Phase-7 explicit-finalize in-fence (issue #241): LAND_OUTCOME case + sed-status-FINAL between L$BEGIN_LINE..L$CLOSE_LINE"
+  else
+    fail "59 end-of-Phase-7 explicit-finalize: case-in-fence=$CASE_IN_FENCE sed-in-fence=$SED_IN_FENCE (BEGIN L$BEGIN_LINE END L$CLOSE_LINE)"
+  fi
+else
+  fail "59 end-of-Phase-7 explicit-finalize: BEGIN/CLOSE anchors not located (BEGIN_LINE=$BEGIN_LINE CLOSE_LINE=$CLOSE_LINE)"
 fi
 
 echo ""

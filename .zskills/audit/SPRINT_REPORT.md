@@ -349,3 +349,35 @@ The phantom-staged-revert incident that motivated #254 (2026-05-13): an orchestr
 ### Landing
 
 PR mode (per `execution.landing: "pr"` config). Single PR for the single issue. `/land-pr --auto` dispatched by the orchestrator after this sprint section commits inside the worktree — PR squash includes the SPRINT_REPORT.md write per PR-mode bookkeeping rule. Auto-merge gated on CI green.
+
+## Sprint — 2026-05-14 02:30 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** explicit list (#235, #236, #241 — positional `auto` parity + /quickfix finalize_marker trap fix)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #235 + #241 | positional `auto` for /quickfix (#235) + replace finalize_marker EXIT trap with explicit-finalize (#241) | /tmp/zskills-fix-issue-235 | `aba916f` | new cases in `tests/test-quickfix.sh` (positional auto + explicit-finalize) + conformance updates; full suite 3010 → 3016 PASS | PASS (verifier subagent APPROVE; caught stale prose at SKILL.md:543-555 still describing the removed trap, fixed inline, re-bumped version to `2026.05.14+049699`, re-ran suite) | N/A (skill prose + bash + tests; no UI) |
+| #236 | positional `auto` mode for /commit pr (sibling of #235, same arg-style constraint) | /tmp/zskills-fix-issue-236 | `49f91c9` | new `tests/test-commit.sh` (120 lines, 5 cases: arg-hint, default + recognition, SCOPE_HINT strip, LAND_ARGS append, pr.md doc-update); full suite 3010 → 3015 PASS | PASS (verifier subagent APPROVE; all 4 ACs anchored to file:line; mirror clean) | N/A (skill prose + tests; no UI) |
+
+**Grouping rationale:** #235 + #241 both touch `skills/quickfix/SKILL.md` (argument parser vs finalize_marker trap region — different sections, same file). Per the `/fix-issues` skill rule "same file → group them for the same agent," one worktree (`fix/issue-235`) handles both with one commit closing both. #236 touches `skills/commit/SKILL.md` + `modes/pr.md` — disjoint from /quickfix, separate worktree (`fix/issue-236`) with its own PR.
+
+**Sibling-coordinated constraint observed:** #235 and #236 explicitly require positional `auto` token (NOT `--auto` flag), matching the convention in `/run-plan`, `/fix-issues`, `/do`. Both implementations honor this — no `--flag` style introduced for either.
+
+**Source of explicit-finalize pattern for #241:** copied from `skills/commit/SKILL.md` (per the issue body's option A guidance), where LAND_PR_BYPASS_HARDENING (PR #250) had established the pattern in `/commit`, `/do`, and `/fix-issues`. The pattern sets marker status explicitly at the success exit path AND at the failure exit path, rather than relying on an EXIT trap that fires unconditionally on entry.
+
+### Agent Verify
+
+Both verifier subagents (`subagent_type: "verifier"` per Plan A) returned APPROVE with anchored file:line evidence at every AC. Layer 0 (`inject-bash-timeout.sh`) extended Bash timeout to 600000ms; Layer 3 (`verify-response-validate.sh`) inspected both responses and passed (no stalled-string match, substantial content, real evidence). Verifier A caught and fixed stale prose inline — a quality verification catch (the implementer removed the trap function but left a paragraph describing it as live behavior; verifier rewrote that paragraph to reflect the inline-cancel pattern). Both verifiers committed after their own re-run of the full suite confirmed green.
+
+### User Verify
+
+N/A for both rows. No UI, editor, or styles files changed. Pure skill-prose + bash + test work.
+
+### Surfaced context (not separate follow-ups)
+
+- Both fix-agent dispatches had their `bash tests/run-all.sh` stdout capture truncated mid-suite in the subagent context (file ends mid-`Tests: test-update-zskills-migration.sh` with no `Overall:` summary line). Re-running from the orchestrator session captured the full output cleanly (3016/3016 for A, 3015/3015 for B). Possible root cause: subagent stdout/file-buffer interaction at certain suite sizes. Worth filing as a separate observation if it recurs; the verifier subagents' OWN test runs (after entry) captured cleanly.
+
+### Landing
+
+PR mode (per `execution.landing: "pr"` config). Two separate PRs: one per worktree. **First sprint to benefit from `/land-pr` Step 7b** (landed in PR #257 just before this sprint) — local main auto-ff-pulls after each squash merge instead of requiring manual `git pull --ff-only` recovery.

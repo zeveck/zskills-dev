@@ -1,7 +1,7 @@
 ---
 name: quickfix
 disable-model-invocation: true
-argument-hint: "[<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
+argument-hint: "[<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) as a PR without a
   worktree. Two auto-detected modes: user-edited (dirty tree + description →
@@ -9,10 +9,11 @@ description: >-
   description → model-layer dispatch performs edits, then we commit). PR-only:
   requires execution.landing == "pr". Runs testing.unit_cmd (aligned with
   full_cmd to satisfy the project pre-commit hook), commits, pushes, and
-  creates a PR via gh. No worktree; no .landed marker.
-  Usage: /quickfix [<description>] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
+  creates a PR via gh. No worktree; no .landed marker. Positional `auto`
+  enables auto-merge via /land-pr (matches /run-plan, /fix-issues, /do).
+  Usage: /quickfix [<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
 metadata:
-  version: "2026.05.13+22fdec"
+  version: "2026.05.14+049699"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -66,10 +67,12 @@ fi
 ## Argument parser (WI 1.2)
 
 Bash-regex idiom matching `skills/do/SKILL.md:70-92`. Recognized flags:
-`--branch <name>`, `--yes` / `-y`, `--from-here`, `--skip-tests`. Everything
-else becomes the DESCRIPTION (trimmed of leading/trailing whitespace).
-Empty DESCRIPTION is allowed at parse time — mode detection (WI 1.5)
-decides whether it is fatal.
+`--branch <name>`, `--yes` / `-y`, `--from-here`, `--skip-tests`. The
+positional `auto` token (case-insensitive, anywhere in the args) enables
+auto-merge via `/land-pr` and matches the convention in `/run-plan`,
+`/fix-issues`, and `/do`. Everything else becomes the DESCRIPTION
+(trimmed of leading/trailing whitespace). Empty DESCRIPTION is allowed
+at parse time — mode detection (WI 1.5) decides whether it is fatal.
 
 ```bash
 # Entry-point unset guard for the model-layer test seam. Without the
@@ -88,6 +91,7 @@ FROM_HERE=0
 SKIP_TESTS=0
 FORCE=0
 ROUNDS=1
+AUTO_FLAG=0
 
 i=0
 while [ $i -lt ${#ARGS[@]} ]; do
@@ -101,6 +105,11 @@ while [ $i -lt ${#ARGS[@]} ]; do
     --from-here) FROM_HERE=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --force) FORCE=1 ;;
+    # Positional `auto` token (case-insensitive). Recognized anywhere in
+    # the arg vector — `/quickfix <desc> auto` and `/quickfix auto <desc>`
+    # both set AUTO_FLAG=1. Mirrors the convention in /run-plan,
+    # /fix-issues, /do. The token never falls through to DESCRIPTION.
+    auto|AUTO|Auto) AUTO_FLAG=1 ;;
     --rounds)
       # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
       # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),
@@ -533,17 +542,17 @@ MUST, before proceeding to slug/branch creation:
 
    1. **Production (model-layer) decline.** When the model itself
       executes WI 1.5.5 and the user types `n`, the script exits BEFORE
-      WI 1.8 has run — no marker has been written, the EXIT trap is not
-      registered, and no branch has been created. Identical observable
-      end state to triage-redirect and review-reject: empty disk.
+      WI 1.8 has run — no marker has been written, and no branch has
+      been created. Identical observable end state to triage-redirect
+      and review-reject: empty disk.
    2. **Test-fixture (bash-fallback) decline.** When the bash extractor
       in the test suite hits the `case "$answer" in *)` arm at WI 1.10
       (with `--yes`-bypassed prompt), WI 1.8 has already run — the
-      marker exists at `status: started` and the EXIT trap is
-      registered. WI 1.10 sets `CANCEL_REASON='user-declined'` and
-      `CANCELLED=1`; the trap then runs `finalize_marker` which
-      transitions `status: started` → `status: cancelled` and appends
-      `reason: user-declined`.
+      marker exists at `status: started`. WI 1.10 sets
+      `CANCEL_REASON='user-declined'` and runs the inline explicit
+      cancel-finalize (issue #241) — `sed -i` rewrites `status: started`
+      → `status: cancelled` and appends `reason: user-declined` —
+      before exiting. No `trap … EXIT` is involved.
 
    No branch is created at this confirmation point in either path, so
    no branch rollback is needed. (Triage redirect and review reject
@@ -663,31 +672,16 @@ MARK
 
 CANCELLED=0
 CANCEL_REASON=""
-finalize_marker() {
-  local rc="$1"
-  local final
-  if [ "$CANCELLED" -eq 1 ]; then
-    final="cancelled"
-  elif [ "$rc" -eq 0 ]; then
-    final="complete"
-  else
-    final="failed"
-  fi
-  # Rewrite the status line, preserving the rest.
-  if [ -f "$MARKER" ]; then
-    sed -i "s/^status: started$/status: $final/" "$MARKER"
-  fi
-  # Append `reason:` for the user-decline path only. Placed AFTER the
-  # outer `fi` (not nested inside it) so the new block is self-guarding
-  # via its own `[ -f "$MARKER" ]` check — pinning OUTSIDE prevents
-  # future refactors of the outer guard from accidentally breaking the
-  # reason-write path.
-  if [ "$CANCELLED" -eq 1 ] && [ -n "${CANCEL_REASON:-}" ] && [ -f "$MARKER" ] \
-     && ! grep -q '^reason:' "$MARKER"; then
-    printf 'reason: %s\n' "$CANCEL_REASON" >> "$MARKER"
-  fi
-}
-trap 'finalize_marker $?' EXIT
+# Explicit-finalize pattern (Plan LAND_PR_BYPASS_HARDENING Phase 2; issue
+# #241 — matches /commit pr / /do pr / /fix-issues pr). The marker
+# starts as `status: started`; each terminal path (cancel at WI 1.10,
+# test fail at Phase 4, commit/push fail at Phase 5/6, /land-pr fail or
+# success at Phase 7) explicitly rewrites the status via inline `sed -i`
+# before exiting OR at the end of the Phase 7 caller-loop fence. NO
+# `trap … EXIT` is used: a bash `trap EXIT` set inside a SKILL.md ```bash
+# code fence fires when THAT fence's `bash` invocation ends — not when
+# the skill flow ends — so the trap-based pattern stamped `complete`
+# almost immediately on skill entry, regardless of actual outcome.
 ```
 
 ### WI 1.9 — Branch creation
@@ -780,6 +774,17 @@ if [ "$MODE" = "user-edited" ]; then
           echo "ERROR: cleanup: failed to delete branch $BRANCH. Manual recovery: 'git branch -D $BRANCH'." >&2
           exit 6
         fi
+        # Explicit cancel-finalize (issue #241 — replaces the broken
+        # `trap … EXIT` pattern). Rewrite `status: started` → `cancelled`
+        # and append `reason:` (user-decline is the only documented
+        # cancellation cause; the `! grep -q '^reason:'` guard makes the
+        # append idempotent).
+        if [ -f "$MARKER" ]; then
+          sed -i "s/^status: started$/status: cancelled/" "$MARKER"
+          if [ -n "${CANCEL_REASON:-}" ] && ! grep -q '^reason:' "$MARKER"; then
+            printf 'reason: %s\n' "$CANCEL_REASON" >> "$MARKER"
+          fi
+        fi
         exit 0
         ;;
     esac
@@ -858,6 +863,8 @@ else
       echo "ERROR: cleanup: failed to delete branch $BRANCH after test failure." >&2
       exit 6
     fi
+    # Explicit fail-finalize (issue #241).
+    [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
     exit 4
   fi
 fi
@@ -982,6 +989,8 @@ if ! git commit -m "$COMMIT_BODY"; then
     echo "ERROR: cleanup: failed to delete branch $BRANCH." >&2
     exit 6
   fi
+  # Explicit fail-finalize (issue #241).
+  [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
   exit 5
 fi
 ```
@@ -1001,6 +1010,8 @@ On push failure, leave branch and commit intact; the user retries manually.
 ```bash
 if ! git push -u origin "$BRANCH"; then
   echo "ERROR: git push failed. Branch '$BRANCH' and its commit are intact locally; retry manually once the remote is reachable." >&2
+  # Explicit fail-finalize (issue #241).
+  [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
   exit 5
 fi
 ```
@@ -1070,9 +1081,11 @@ cat > "$BODY_FILE" <<-EOF
   coexist intentionally: `/quickfix`'s fulfillment marker (with `pr:` URL
   appended below) tracks the `/quickfix` lifecycle; `.landed` is for
   worktree-using callers.
-- **No `--auto`** — auto-merge stays OFF for `/quickfix` (matches
-  pre-migration behavior; the change here is additive CI monitoring +
-  fix-cycle, not auto-merge).
+- **`--auto` is gated on the positional `auto` token** (issue #235 —
+  matches /run-plan, /fix-issues, /do). Without `auto`, auto-merge stays
+  OFF and the PR settles at `pr-ready` after CI passes; with `auto`,
+  `LAND_ARGS` includes `--auto` and `/land-pr`'s existing auto-merge
+  path takes over (same CI gate, same behavior as the other 3 skills).
 - `<CALLER_PRE_INVOKE_BODY_PREP>` = empty (`/quickfix` composes the body
   once above; no per-phase update like /run-plan does).
 - `<CALLER_REBASE_CONFLICT_HANDLER>` = no agent-assisted resolution
@@ -1091,6 +1104,14 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 
 LANDED_SOURCE="quickfix"
 LAND_ARGS="--branch=$BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=$LANDED_SOURCE --tracking-id=$SLUG"
+# Issue #235: positional `auto` token (parsed in WI 1.2) opts /quickfix
+# into /land-pr's auto-merge path. Mirrors /run-plan, /fix-issues, /do.
+[ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"
+
+# LAND_OUTCOME tracker (issue #241 — explicit-finalize pattern matches
+# /commit pr / /do pr / /fix-issues pr). Set by case arms below; read by
+# the post-loop explicit-finalize block.
+LAND_OUTCOME=__init__
 
 while :; do
   # <CALLER_PRE_INVOKE_BODY_PREP> — empty for /quickfix.
@@ -1109,6 +1130,11 @@ while :; do
 
   if [ ! -f "$RESULT_FILE" ]; then
     echo "ERROR: /land-pr produced no result file at $RESULT_FILE" >&2
+    # Inline cleanup before exit (issue #241; bypasses the end-of-fence
+    # explicit-finalize block). $MARKER survives from WI 1.8 in the
+    # persistent shell.
+    [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
+    rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr.$SLUG" 2>/dev/null
     exit 5
   fi
 
@@ -1154,23 +1180,34 @@ while :; do
       # no plan context, so no agent-assisted resolution path. /land-pr
       # already aborted the rebase — break and surface to user.
       echo "/land-pr returned rebase-conflict. Resolve manually and re-run \`/quickfix\` (or land manually)." >&2
+      LAND_OUTCOME=$STATUS
       break ;;
     push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
       echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
+      LAND_OUTCOME=$STATUS
       break ;;
     created|monitored|merged) ;;  # fall through to CI-status check
   esac
 
   case "$CI_STATUS" in
     pass|none|skipped)
-      break ;;  # /land-pr already requested merge if --auto (none for /quickfix)
+      # PR_STATE=MERGED → merged; PR_STATE=OPEN (or anything else) → pr-ready.
+      if [ "${LP[PR_STATE]:-}" = "MERGED" ]; then
+        LAND_OUTCOME=merged
+      else
+        LAND_OUTCOME=pr-ready
+      fi
+      break ;;  # /land-pr already requested merge if --auto
     pending)
+      LAND_OUTCOME=pr-ready
       break ;;  # settle at pr-ready
     not-monitored)
+      LAND_OUTCOME=created
       break ;;  # --no-monitor was used (none of /quickfix's flows do this)
     fail)
       if [ "$ATTEMPT" -ge "$MAX" ]; then
         echo "INFO: CI fix-cycle exhausted ($ATTEMPT/$MAX); PR settles at pr-ci-failing" >&2
+        LAND_OUTCOME=pr-ci-failing
         break
       fi
       # ===== <DISPATCH_FIX_CYCLE_AGENT_HERE> — /quickfix customization =====
@@ -1223,9 +1260,11 @@ while :; do
       continue ;;  # re-enter loop, /land-pr is idempotent
     unknown)
       echo "WARN: CI_STATUS=unknown — settling at pr-ready" >&2
+      LAND_OUTCOME=pr-ready
       break ;;
     *)
       echo "WARN: CI_STATUS='$CI_STATUS' unrecognized — settling at pr-ready" >&2
+      LAND_OUTCOME=pr-ready
       break ;;
   esac
 done
@@ -1255,21 +1294,34 @@ if ! git checkout "$BASE_BRANCH"; then
   echo "WARN: PR created at $PR_URL but failed to checkout back to $BASE_BRANCH. Run 'git checkout $BASE_BRANCH' manually." >&2
 fi
 # === END CANONICAL /land-pr CALLER LOOP ===
-# Cleanup transient requires marker (Plan LAND_PR_BYPASS_HARDENING Phase 2
-# / R-5-5 / DA-4-5 — best-effort since $SLUG is out-of-fence-scope and the
-# only reliable reconstruction path would require re-running /quickfix's
-# branch-derivation logic, which is fragile). Glob cleanup targets ANY
-# requires.land-pr.* in the active quickfix.* pipeline subdir under
-# MAIN_ROOT; the find-rm pattern is safe because only the current
-# invocation's requires.land-pr.<id> can exist there at this point
-# (pre-existing requires would have been cleaned by prior invocations or
-# by /update-zskills clear-tracking). The fulfilled.quickfix finalize is
-# already handled by the trap registered in fence A; this block just
-# cleans up the new requires marker so it doesn't orphan across sessions.
+# Explicit-finalize block (Plan LAND_PR_BYPASS_HARDENING Phase 2 / issue
+# #241 — must live in the SAME fence as the caller-loop per R-4-7 so
+# $LAND_OUTCOME survives). Replaces the broken `trap 'finalize_marker $?'
+# EXIT` pattern that fired at WI 1.8 fence-exit (skill entry) instead of
+# at flow end. Mirrors /commit pr / /do pr / /fix-issues pr.
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-# If ZSKILLS_PIPELINE_ID is set (passed via env from the orchestrator),
-# target its specific subdir; otherwise glob across quickfix.*.
+# Reconstruct $MARKER path from $ZSKILLS_PIPELINE_ID + $SLUG (both
+# preserved across fences by the persistent-shell harness; $SLUG also
+# round-trips through the model-layer composition step at WI 1.6).
+if [ -n "${ZSKILLS_PIPELINE_ID:-}" ] && [ -n "${SLUG:-}" ]; then
+  _FINALIZE_MARKER="$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/fulfilled.quickfix.$SLUG"
+elif [ -n "${MARKER:-}" ]; then
+  _FINALIZE_MARKER="$MARKER"
+else
+  _FINALIZE_MARKER=""
+fi
+case "${LAND_OUTCOME:-__init__}" in
+  merged|created|pr-ready) FINAL=complete ;;
+  *) FINAL=failed ;;
+esac
+if [ -n "$_FINALIZE_MARKER" ] && [ -f "$_FINALIZE_MARKER" ]; then
+  sed -i "s/^status: started$/status: $FINAL/" "$_FINALIZE_MARKER"
+fi
+
+# Cleanup transient requires marker (Plan LAND_PR_BYPASS_HARDENING Phase 2
+# / R-5-5 / DA-4-5). Glob cleanup targets ANY requires.land-pr.* in the
+# active quickfix.* pipeline subdir under MAIN_ROOT.
 if [ -n "$ZSKILLS_PIPELINE_ID" ]; then
   rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr."*
 else
@@ -1281,11 +1333,16 @@ else
 fi
 ```
 
-The EXIT trap finalizes the marker to `complete` on success. The CI poll
-and fix-cycle are owned by `/land-pr`; `/quickfix`'s pre-PR triage
-(WI 1.5.4) and plan-review (WI 1.5.4b) gates remain upstream of this
-phase — CI monitoring is additive coverage on top, not a replacement for
-them.
+The end-of-fence explicit-finalize block (issue #241) rewrites the
+marker's `status` based on `$LAND_OUTCOME` — `merged`/`created`/`pr-ready`
+→ `status: complete`; anything else → `status: failed`. Early-exit
+cleanup paths (Phase 1.10 user-decline, Phase 4 test failure, Phase 5
+commit failure, Phase 6 push failure, and the no-result-file exit-5 path
+inside the caller-loop) write `status: cancelled` or `status: failed`
+inline before exiting. The CI poll and fix-cycle are owned by
+`/land-pr`; `/quickfix`'s pre-PR triage (WI 1.5.4) and plan-review (WI
+1.5.4b) gates remain upstream of this phase — CI monitoring is additive
+coverage on top, not a replacement for them.
 
 ### Terminal marker states
 

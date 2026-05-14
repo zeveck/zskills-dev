@@ -645,8 +645,10 @@ declare -A LANDPR_MARKER_BASENAME=(
 
 # Callers that get the new fulfilled.<skill>.<id> start-marker AND
 # explicit-finalize block (commit/do/fix-issues). quickfix already had
-# its fulfilled.quickfix start-marker pre-plan (SKILL.md:637); it gets
-# the requires.land-pr cleanup but not a new fulfilled write.
+# its fulfilled.quickfix start-marker pre-plan (SKILL.md:637); after
+# issue #241 it ALSO has an in-fence explicit-finalize block — the
+# trap-on-EXIT pattern was unreliable (fired on skill entry, not flow
+# end). The in-fence check below now treats all 4 callers uniformly.
 NEW_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
@@ -764,28 +766,18 @@ for caller in "${FENCE_CALLERS[@]}"; do
   # Region IN-FENCE between END anchor and closing ```.
   region=$(sed -n "${end_line},${close_fence}p" "$caller_path")
 
-  # For commit/do (and fix-issues, sprint-level): both `sed -i "s/^status:
+  # For all 4 callers (issue #241 unification): both `sed -i "s/^status:
   # started$/status:` and `rm -f .*requires.land-pr.` MUST appear in the
-  # in-fence region. For quickfix: only the requires.land-pr cleanup must
-  # appear in-fence (its fulfilled.quickfix finalize lives elsewhere — see
-  # SKILL.md:678, gated by exit code logic outside the caller loop; spec
-  # only requires the requires.land-pr cleanup AFTER the END anchor for
-  # quickfix).
+  # in-fence region. Pre-#241 /quickfix used a `trap … EXIT` registered in
+  # WI 1.8's fence which mis-fired on skill entry; after #241 it has the
+  # same in-fence explicit-finalize as commit/do/fix-issues.
   has_sed_in=$(echo "$region" | grep -cE 'sed -i "s/\^status: started\$/status:' || true)
   has_rm_in=$(echo "$region"  | grep -cE 'rm -f .*requires\.land-pr\.' || true)
 
-  if [ "$caller" = "skills/quickfix/SKILL.md" ]; then
-    if [ "$has_rm_in" -ge 1 ]; then
-      pass "[bypass-hardening] $caller requires.land-pr cleanup in-fence (L$end_line..L$close_fence)"
-    else
-      fail "[bypass-hardening] $caller requires.land-pr cleanup in-fence" "no 'rm -f .*requires.land-pr.' between END anchor L$end_line and closing fence L$close_fence"
-    fi
+  if [ "$has_sed_in" -ge 1 ] && [ "$has_rm_in" -ge 1 ]; then
+    pass "[bypass-hardening] $caller explicit-finalize in-fence (sed+rm between L$end_line..L$close_fence)"
   else
-    if [ "$has_sed_in" -ge 1 ] && [ "$has_rm_in" -ge 1 ]; then
-      pass "[bypass-hardening] $caller explicit-finalize in-fence (sed+rm between L$end_line..L$close_fence)"
-    else
-      fail "[bypass-hardening] $caller explicit-finalize in-fence" "sed_hits=$has_sed_in rm_hits=$has_rm_in between END L$end_line and close-fence L$close_fence"
-    fi
+    fail "[bypass-hardening] $caller explicit-finalize in-fence" "sed_hits=$has_sed_in rm_hits=$has_rm_in between END L$end_line and close-fence L$close_fence"
   fi
 
   # Counter-assert (DA-5-4): no duplicate finalize AFTER the closing fence.
@@ -796,24 +788,10 @@ for caller in "${FENCE_CALLERS[@]}"; do
   dup_sed=$(echo "$tail_region" | grep -cE "sed -i \"s/\^status: started\\\$/status:.*${basename_marker}" || true)
   dup_rm=$(echo "$tail_region"  | grep -cE "rm -f .*requires\.land-pr\." || true)
 
-  # For quickfix the spec only asserts no duplicate `rm -f .*requires.land-pr.`
-  # below the closing fence (its fulfilled.quickfix finalize at L678 lives
-  # in a DIFFERENT fence, far above the caller loop — not a duplicate). The
-  # counter-check below is scoped to lines AFTER the caller-loop close
-  # fence, so SKILL.md:678 is excluded automatically (close_fence=1282 >
-  # 678). Apply uniform counter-assert across all 4 callers.
-  if [ "$caller" = "skills/quickfix/SKILL.md" ]; then
-    if [ "$dup_rm" -eq 0 ]; then
-      pass "[bypass-hardening] $caller no duplicate requires.land-pr cleanup after close-fence L$close_fence"
-    else
-      fail "[bypass-hardening] $caller no duplicate requires.land-pr cleanup after close-fence" "found $dup_rm match(es) below L$close_fence"
-    fi
+  if [ "$dup_sed" -eq 0 ] && [ "$dup_rm" -eq 0 ]; then
+    pass "[bypass-hardening] $caller no duplicate finalize after close-fence L$close_fence (sed=$dup_sed rm=$dup_rm)"
   else
-    if [ "$dup_sed" -eq 0 ] && [ "$dup_rm" -eq 0 ]; then
-      pass "[bypass-hardening] $caller no duplicate finalize after close-fence L$close_fence (sed=$dup_sed rm=$dup_rm)"
-    else
-      fail "[bypass-hardening] $caller no duplicate finalize after close-fence" "dup_sed=$dup_sed dup_rm=$dup_rm below L$close_fence (status-rewrite in a stray fence would have unset \$LAND_OUTCOME)"
-    fi
+    fail "[bypass-hardening] $caller no duplicate finalize after close-fence" "dup_sed=$dup_sed dup_rm=$dup_rm below L$close_fence (status-rewrite in a stray fence would have unset \$LAND_OUTCOME)"
   fi
 done
 
