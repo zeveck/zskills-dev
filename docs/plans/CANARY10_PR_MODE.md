@@ -136,6 +136,11 @@ Walk away. Monitor the PR after ~3 min:
    bookkeeping leaked onto main instead of the feature branch, this
    will fail.)
 
+   Equivalently (Issue #254 Step 7b post-merge FF acceptance):
+   `git rev-parse main` MUST equal `git rev-parse origin/main` after
+   the merge cycle. If it doesn't, /land-pr's Step 7b fast-forward
+   failed (or was silently skipped) — surface as a CANARY10 fail.
+
 9. **No leftover worktrees.** `git worktree list` has no `canary10`
    entries.
 

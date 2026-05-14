@@ -1129,6 +1129,14 @@ check_fixed land-pr 'never source: parser rationale'  'allow-list parser, not `s
 check_not land-pr "no source-based result parsing in caller pattern" \
   'source[[:space:]]+.*RESULT_FILE|^\.[[:space:]]+.*RESULT_FILE'
 
+# --- Step 7b post-merge fast-forward (Issue #254) ---
+# Guard the literal sentinel so a future refactor can't silently drop the
+# step that fast-forwards local main after a successful squash-merge.
+# Without this step, downstream skills (worktree creation, status checks)
+# anchor on stale main and orchestrators improvise destructive fixes.
+check_fixed land-pr "Step 7b post-merge fast-forward sentinel" \
+  'Step 7b — Fast-forward local main'
+
 echo ""
 echo "=== /update-zskills — Step C / C.9 / D contract (DRIFT_ARCH_FIX Phase 2) ==="
 # Step C is the agent-driven settings.json merge — Read+Edit, never Write-from-template.

@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper skill — the canonical PR-landing primitive **for agent dispatch via the Skill tool**. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. **Designed for orchestrator agents** (the Skill tool with --body-file / --result-file args) — including both the 5 conformance-locked caller skills (/run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix) AND any top-level orchestrator agent landing a one-off PR. **Not designed for interactive human slash-command invocation** — humans wanting to ship a branch should type /commit pr instead (which dispatches /land-pr).
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.13+ab876f"
+  version: "2026.05.13+8867dc"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -392,6 +392,49 @@ if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "
     REASON="${REASON:-merge-rc-30}"
   elif [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ]; then
     STATUS="merged"
+  fi
+fi
+```
+
+### Step 7b — Fast-forward local main after successful merge
+
+When `pr-merge.sh` confirmed `PR_STATE=MERGED`, refresh local `$BASE_BRANCH`
+so subsequent worktree creations and any consumer of `main` see ground
+truth. Without this step, local `main`'s ref + working tree stay at the
+pre-merge SHA after a squash-merge, and downstream skills anchor on stale
+ground state. Issue #254. Failure modes are surfaced loud — never silent —
+and never destructive (mirrors the fetch+ff-merge+ahead-check discipline
+from `create-worktree.sh:268-291`, landed via #225 / PR #232).
+
+```bash
+if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ]; then
+  MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." && pwd)
+  if [ -z "$MAIN_ROOT" ] || { [ ! -d "$MAIN_ROOT/.git" ] && [ ! -f "$MAIN_ROOT/.git" ]; }; then
+    echo "WARN: /land-pr Step 7b: could not resolve MAIN_ROOT; skipping local-main FF" >&2
+  else
+    MAIN_HEAD_REF=$(git -C "$MAIN_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "")
+    MAIN_DIRTY=""
+    if [ -n "$MAIN_HEAD_REF" ]; then
+      MAIN_DIRTY=$(git -C "$MAIN_ROOT" status --porcelain 2>/dev/null | head -1)
+    fi
+    AHEAD=$(git -C "$MAIN_ROOT" rev-list --count "origin/$BASE_BRANCH..$BASE_BRANCH" 2>/dev/null || echo "0")
+
+    if [ "$MAIN_HEAD_REF" != "$BASE_BRANCH" ]; then
+      echo "INFO: /land-pr Step 7b: MAIN_ROOT not on $BASE_BRANCH (HEAD=$MAIN_HEAD_REF); skipping local-main FF" >&2
+    elif [ -n "$MAIN_DIRTY" ]; then
+      echo "WARN: /land-pr Step 7b: MAIN_ROOT working tree dirty; skipping local-main FF" >&2
+    elif [ "$AHEAD" -gt 0 ]; then
+      echo "WARN: /land-pr Step 7b: local $BASE_BRANCH is $AHEAD commit(s) ahead of origin — refusing FF" >&2
+    else
+      FF_STDERR="/tmp/land-pr-ff-stderr-$BRANCH_SLUG-$$.log"
+      if git -C "$MAIN_ROOT" fetch origin "$BASE_BRANCH" 2>"$FF_STDERR" \
+         && git -C "$MAIN_ROOT" merge --ff-only "origin/$BASE_BRANCH" 2>>"$FF_STDERR"; then
+        echo "INFO: /land-pr Step 7b: fast-forwarded local $BASE_BRANCH to origin/$BASE_BRANCH"
+        rm -f "$FF_STDERR"
+      else
+        echo "WARN: /land-pr Step 7b: fetch+ff-merge failed (see $FF_STDERR); local $BASE_BRANCH not updated" >&2
+      fi
+    fi
   fi
 fi
 ```
