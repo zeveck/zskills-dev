@@ -37,7 +37,7 @@ This plan depends on `docs/plans/PREAMBLE_WORKTREE_GATE.md` Phase 4 (status: com
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Worktree setup + plan scaffold | ⬚ | | Branch + frontmatter + plan parses |
+| 1 — Worktree setup + plan scaffold | ✅ | (bookkeeping) | Branch + frontmatter + plan parses |
 | 2 — Bootstrap detector for empty issues_dir | ⬚ | | #231 root site fix; covers both Sync paths |
 | 3 — `/land-pr` dispatch + tracking marker | ⬚ | | Residual gap PREAMBLE didn't cover; inserts after PREAMBLE's commit |
 | 4 — Edge cases | ⬚ | | Hardening |
