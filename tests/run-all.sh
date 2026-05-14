@@ -82,6 +82,7 @@ run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-land-pr-scripts.sh" "tests/test-land-pr-scripts.sh"
 run_suite "test-land-pr-worktree-detect.sh" "tests/test-land-pr-worktree-detect.sh"
+run_suite "test-land-pr-post-merge-ff.sh" "tests/test-land-pr-post-merge-ff.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-zskills-paths.sh" "tests/test-zskills-paths.sh"
 run_suite "test-zskills-resolve-config.sh" "tests/test-zskills-resolve-config.sh"
