@@ -320,3 +320,32 @@ PR mode (per `execution.landing: "pr"` config). Two separate PRs (one per worktr
 **Sprint scope:** Single mechanical fix per the rewritten #225 (Layer 2 only). Added `AHEAD_COUNT=$(git -C "$MAIN_ROOT" rev-list --count "origin/$BASE..$BASE")` check after the existing ff-merge BEHIND-check in `skills/create-worktree/scripts/create-worktree.sh`. New exit code 10. Tier-1 registry updated; mirrors regenerated; `metadata.version` bumped on `create-worktree` (2026.05.11+410738) and `update-zskills` (2026.05.11+dd37bf) since `tier1-shipped-hashes.txt` lives under update-zskills.
 
 **Implementer-verifier handoff note:** The exit-code header table in the script grew from 5/6/7/8 to 5/6/7/8/9/10 — exit 9 (consumer post-create-worktree.sh failure) was a pre-existing-but-undocumented code that the implementer added to the header alongside the new 10. Minor in-scope cleanup, verified correct.
+
+## Sprint — 2026-05-13 22:21 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** issue-254
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #254 | /land-pr leaves local main stale after squash-merge; agent improvisations dirty the working tree | /tmp/zskills-fix-issue-254 | `2ce170f` | +11 new cases (`tests/test-land-pr-post-merge-ff.sh` 4 fixture states + log assertions) + 1 conformance sentinel + 1 canary AC; full suite 3010/3010 | PASS (verifier subagent ran full suite to green; Step 7b matches the issue body's "Concrete diff sketch" byte-for-byte at `skills/land-pr/SKILL.md:399-441`; mirror clean) | N/A (skill prose + bash + tests; no UI files changed) |
+
+**Sprint scope:** Single mechanical fix per the issue's complete diff sketch. Adds **Step 7b — Fast-forward local main after successful merge** to `skills/land-pr/SKILL.md` immediately after Step 7 (`pr-merge.sh` block) and before Step 8 (`.landed` write). Fires only on `MERGE_REQUESTED=true AND PR_STATE=MERGED`. Four skip conditions surface as WARN/INFO and never mutate state: (1) MAIN_ROOT not on $BASE_BRANCH → INFO; (2) MAIN_ROOT dirty → WARN; (3) local $BASE_BRANCH ahead of origin → WARN (mirrors `create-worktree.sh:268-291`'s ahead-check from #225/PR #232); (4) fetch failure → WARN, sidecar log, non-fatal. Otherwise: `git fetch origin $BASE_BRANCH && git merge --ff-only origin/$BASE_BRANCH` from `MAIN_ROOT`. `metadata.version` bumped `2026.05.13+ab876f` → `2026.05.13+8867dc`; mirror regenerated via `scripts/mirror-skill.sh land-pr`.
+
+**Architectural framing:** Five callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`, `/quickfix`) + direct orchestrator-via-Skill-tool `/land-pr` dispatches all share this surface. Placing the fix in `/land-pr` (not `/run-plan modes/pr.md`) means all 5 callers benefit. Inverse case considered and rejected: `pr-merge.sh`'s contract is "request auto-merge + report state via KEY=VALUE stdout" — adding cross-worktree mutation breaks single-purpose shape. `post-run-invariants.sh` invariant #7 (WARN-only) stays as defense-in-depth.
+
+### Agent Verify
+
+Verifier subagent (`subagent_type: "verifier"` per Plan A's structural defense) returned APPROVE with anchored file:line evidence for each AC. Layer 0 (`inject-bash-timeout.sh` extending Bash timeout to 600000ms) prevented the Monitor anti-pattern trigger; Layer 3 (`verify-response-validate.sh`) exit 0 (no stalled-string match, >200 bytes). Verifier confirmed: (a) Step 7b byte-for-byte spec match; (b) placement between Step 7 (line 371) → Step 7b (line 399) → Step 8 (line 442); (c) all 4 edge cases in elif ladder; (d) `metadata.version` bumped and mirror clean (`diff -rq` empty); (e) conformance sentinel at `tests/test-skill-conformance.sh:1135-1136`; (f) canary AC at `docs/plans/CANARY10_PR_MODE.md:139-143`. Verifier committed `2ce170f` after verification per the `/fix-issues` skill rule ("implementer writes, verifier commits"). Working tree clean post-commit.
+
+### User Verify
+
+N/A. No UI, editor, or styles files changed. Pure skill-prose + bash + test work.
+
+### Surfaced context (not a separate follow-up)
+
+The phantom-staged-revert incident that motivated #254 (2026-05-13): an orchestrator agent ran `git update-ref refs/heads/main origin/main` from inside its worktree after PR #252 merged. Result: local main's ref jumped to origin/main, but main's working tree + index stayed at the OLD SHA, producing a phantom-staged-revert of ~1936 lines on the next `git status` in main. The fix lands as `/land-pr`'s own Step 7b so the agent never needs to improvise — the skill does the right thing automatically. Recovery from that incident was `git reset --hard origin/main` (safe given exhaustive working-tree/stash/untracked audit confirmed the staged delta was preserved in main's history).
+
+### Landing
+
+PR mode (per `execution.landing: "pr"` config). Single PR for the single issue. `/land-pr --auto` dispatched by the orchestrator after this sprint section commits inside the worktree — PR squash includes the SPRINT_REPORT.md write per PR-mode bookkeeping rule. Auto-merge gated on CI green.
