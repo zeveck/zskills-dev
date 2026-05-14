@@ -315,19 +315,22 @@ Issues filed but not yet routed to a phase. Default to running clear-and-doable 
 
 - [x] **Issue [#256](https://github.com/zeveck/zskills-dev/issues/256)** — Closed via `/fix-issues 256 auto` PR [#265](https://github.com/zeveck/zskills-dev/pull/265) (squash `712eae8`, MERGED 2026-05-14 ~15:55 ET). Regex at `skills/run-plan/SKILL.md:2316` tightened to `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|`. Comment block at lines 2291-2315 rewritten (dropped the "regex will miscount / fix the plan's tracker shape" warning; now documents the tight contract as structurally enforced). New `tests/test-phase-5b-gate.sh:249-288` Cases 8 + 8b (mktemp fixture with tight-vs-loose contrast assertion + SKILL.md sentinel grep). metadata.version 2026.05.14+c9f343. Mirror clean. Full suite 3023/3023 PASS. First clean Step 7b exercise — local main auto-ff-pulled post-merge.
 
+- [ ] **Issue [#266](https://github.com/zeveck/zskills-dev/issues/266)** — `/land-pr doesn't auto-rebase BEHIND-after-CI-green PRs — manual rebase+force-push required`. Filed 2026-05-14 from /fix-issues 235/236/241 sprint observation (manual recovery needed twice when sibling PRs landed mid-flight). Medium severity. Proposed fix: new Step 6b (or pr-merge.sh extension) detects `MERGE_REQUESTED=true PR_STATE=OPEN CI=pass mergeStateStatus=BEHIND` and auto-rebases+force-pushes with bounded retry (max 3 iterations). Extends #254's spirit. **Route: `/fix-issues 266 267 auto`** (paired with #267 as a small post-#231 cleanup batch).
+
+- [ ] **Issue [#267](https://github.com/zeveck/zskills-dev/issues/267)** — `/quickfix case-pattern auto|AUTO|Auto is narrower than /commit's [aA][uU][tT][oO]`. Filed 2026-05-14 from retroactive verifier audit of session PRs. Low severity, cosmetic asymmetry. 1-line fix at `skills/quickfix/SKILL.md:112`. **Route: `/fix-issues 266 267 auto`** (paired with #266).
+
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-**Suggested next step (2026-05-14 late update — after #256 landed via PR #265):**
+**Suggested next step (2026-05-14 late update — after #256 landed via PR #265; #266 + #267 filed for post-plan cleanup):**
 
-The queue collapses to a single action:
+1. **`/run-plan docs/plans/FIX_ISSUES_SYNC_HARDENING.md finish auto pr`** — closes #231. The only non-deferred plan-driven item remaining. ~457-line refined plan, has all post-PREAMBLE delegations already wired in (#233 was resolved by PREAMBLE Phase 4).
 
-1. **`/run-plan docs/plans/FIX_ISSUES_SYNC_HARDENING.md finish auto pr`** — closes #231. The only non-deferred plan-driven item remaining. ~457-line refined plan, has all the post-PREAMBLE delegations already wired in (#233 was resolved by PREAMBLE Phase 4).
+2. **`/fix-issues 266 267 auto`** — small cleanup batch picking up the two operational follow-ups surfaced this session:
+   - **#266** (medium severity) — `/land-pr` BEHIND-after-CI-green auto-rebase gap. New Step 6b in `/land-pr` (or `pr-merge.sh` extension) detects `mergeStateStatus=BEHIND` post-CI-green and auto-rebases+force-pushes with bounded retry. Extends #254's spirit.
+   - **#267** (low, cosmetic) — `/quickfix` case-pattern asymmetry vs `/commit`. 1-line tightening of `skills/quickfix/SKILL.md:112` (`auto|AUTO|Auto` → `[aA][uU][tT][oO]`).
+   - Two issues, different files, can run as separate worktrees in one /fix-issues sprint (same pattern as 235/236 earlier).
 
-After #231 lands, only **#217** (deferred per body's trigger criteria) and **#67** (deferred — Phase G, real GitLab project needed) remain. Both intentional defers.
-
-**Surfaced follow-ups worth filing as separate issues** (not blockers, both small):
-1. **`/land-pr` BEHIND-after-CI-green auto-rebase gap.** Manual rebase+force-push needed twice in the 2026-05-14 morning sprint when sibling PRs landed mid-flight. Natural Step 6b (or pr-merge.sh extension): when `MERGE_REQUESTED=true PR_STATE=OPEN CI=pass` with `mergeStateStatus=BEHIND`, auto-rebase the branch and force-push. Extends #254's spirit (close the operational gap between merge-requested and merged).
-2. **`/quickfix` case-pattern asymmetry vs `/commit`.** `/quickfix`'s `auto|AUTO|Auto` covers 3 case variants; `/commit`'s `[aA][uU][tT][oO]` covers 16. Cosmetic, not behavioral. 1-line tightening of `skills/quickfix/SKILL.md:112`.
+After both, only **#217** (deferred per body's trigger criteria) and **#67** (deferred — Phase G, real GitLab project needed) remain. Both intentional defers.
 
 **Remaining backlog after that:** **#217** (relocate audit-dir reports — `/draft-plan` when triggered; none of its trigger criteria have fired yet), **#67** (GitLab — Phase G, needs real GitLab project to test against).
 
