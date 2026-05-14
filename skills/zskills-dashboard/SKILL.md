@@ -1,16 +1,18 @@
 ---
 name: zskills-dashboard
 disable-model-invocation: true
-argument-hint: "[start|stop|status]"
+argument-hint: "[start|stop|status|restart]"
 description: >-
   Local web dashboard for this repo — plans, issues, worktrees,
   branches, tracking activity, drag-and-drop priority queue.
   Starts a detached Python HTTP server on a port resolved from
-  DEV_PORT / dev_server.default_port / port.sh; stop sends SIGTERM.
-  State at .zskills/monitor-state.json. Usage:
-  /zskills-dashboard [start|stop|status].
+  DEV_PORT / dev_server.default_port / port.sh; stop sends SIGTERM;
+  restart = stop then start (useful for picking up Python source
+  changes since the long-running process imports modules once at
+  startup). State at .zskills/monitor-state.json. Usage:
+  /zskills-dashboard [start|stop|status|restart].
 metadata:
-  version: "2026.05.14+3574f7"
+  version: "2026.05.14+65e8d6"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -33,15 +35,16 @@ to SIGKILL).
 /zskills-dashboard start    # launch detached server, write PID file
 /zskills-dashboard stop     # SIGTERM the server, remove PID file
 /zskills-dashboard status   # report PID, port, uptime, log path
+/zskills-dashboard restart  # stop then start (pick up Python changes)
 ```
 
 `status` is the default when `$ARGUMENTS` is empty.
 
 **Parsing rule.** Treat `$ARGUMENTS` as a single token (lowercased,
-trimmed). Anything that is not `start`, `stop`, `status`, or empty is
-a usage error:
+trimmed). Anything that is not `start`, `stop`, `status`, `restart`,
+or empty is a usage error:
 
-> Usage: /zskills-dashboard [start|stop|status]
+> Usage: /zskills-dashboard [start|stop|status|restart]
 
 Exit 2.
 
@@ -172,11 +175,12 @@ SUB=$(printf '%s' "$SUB" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
 [ -z "$SUB" ] && SUB="status"
 
 case "$SUB" in
-  start)  ;;
-  stop)   ;;
-  status) ;;
+  start)   ;;
+  stop)    ;;
+  status)  ;;
+  restart) ;;
   *)
-    echo "Usage: /zskills-dashboard [start|stop|status]" >&2
+    echo "Usage: /zskills-dashboard [start|stop|status|restart]" >&2
     exit 2
     ;;
 esac
@@ -491,6 +495,20 @@ STATUS_EOF
   exit 0
 fi
 ```
+
+## restart — stop then start
+
+Equivalent to `/zskills-dashboard stop` followed by `/zskills-dashboard start`. The long-running Python process imports modules once at startup; static HTML/CSS/JS is read from disk per-request, but a change to `skills/zskills-dashboard/scripts/zskills_monitor/*.py` (server, collector, route handlers) requires the process to restart to take effect. Use `restart` to pick up Python source changes without manually issuing two commands.
+
+**Procedure when `$SUB == "restart"`:**
+
+1. **Run the stop procedure** (the entire `## stop — SIGTERM and clean up` section above):
+   - If `$PID_FILE` does not exist, the stop is a no-op (no running server to terminate); continue to step 2.
+   - If `$PID_FILE` exists, run stop's steps 1–6 verbatim. Identity-check refusals abort the restart with the same exit-1 contract as plain `stop`; do NOT proceed to start a competing server.
+   - On successful stop (or stale-pid cleanup), the PID file is removed and a tracking marker is written.
+2. **Run the start procedure** (the entire `## start — launch detached server` section above), steps 1–5 verbatim. A second tracking marker is written. The restart event is captured as the marker pair.
+
+The skill is interpreted by Claude top-to-bottom. When dispatching `restart`, run the two procedures above in sequence — there is no duplicate bash block here because both pieces already exist verbatim higher in this file. Treat the restart as the literal composition `stop && start`.
 
 ## Mirror
 

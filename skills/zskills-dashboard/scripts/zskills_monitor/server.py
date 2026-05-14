@@ -741,6 +741,17 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
     def _handle_health(self) -> None:
         ctx = self._ctx()
+        # Self-heal the PID file if it was removed externally while we live
+        # (e.g., a stale `rm` from another session). Cheap: existence check
+        # short-circuits when the file is present, which is the hot path.
+        pid_path = ctx["main_root"] / ".zskills" / "dashboard-server.pid"
+        if not pid_path.exists():
+            try:
+                write_pid_file(ctx["main_root"], ctx["port"])
+            except OSError:
+                # Best-effort; do not fail the health check on a transient
+                # filesystem error. The next health request will retry.
+                pass
         payload = {
             "status": "ok",
             "uptime": int(time.time() - ctx["started_mono"]),

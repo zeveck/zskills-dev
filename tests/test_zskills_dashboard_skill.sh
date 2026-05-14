@@ -105,8 +105,8 @@ if grep -q '^disable-model-invocation: true$' "$SKILL_MD"; then
 else
   fail "AC-1: frontmatter disable-model-invocation flag missing"
 fi
-if grep -q '^argument-hint:.*\[start|stop|status\]' "$SKILL_MD"; then
-  pass "AC-1: frontmatter argument-hint covers [start|stop|status]"
+if grep -q '^argument-hint:.*\[start|stop|status|restart\]' "$SKILL_MD"; then
+  pass "AC-1: frontmatter argument-hint covers [start|stop|status|restart]"
 else
   fail "AC-1: frontmatter argument-hint missing or wrong"
 fi
