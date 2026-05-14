@@ -15,6 +15,19 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Dark-mode scrollbars (Firefox + WebKit/Chromium). Applies globally to
+   every scrollable container in the dashboard. */
+html { scrollbar-color: var(--border) var(--surface); scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--surface); }
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+  border: 2px solid var(--surface);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+*::-webkit-scrollbar-corner { background: var(--surface); }
+
 html, body {
   background: var(--bg);
   color: var(--text);
@@ -103,6 +116,22 @@ code, pre, .mono {
   overflow-y: auto;
   resize: vertical;
 }
+/* Dark-mode-visible resize grip on the bottom-right corner. The default
+   browser handle is light-gray dots that disappear on the dark surface.
+   Lines drawn at 45° in --text-dim against --surface remain legible. */
+.activity-strip::-webkit-resizer {
+  background-color: var(--surface);
+  background-image: linear-gradient(
+    135deg,
+    transparent 0%, transparent 30%,
+    var(--text-dim) 30%, var(--text-dim) 40%,
+    transparent 40%, transparent 55%,
+    var(--text-dim) 55%, var(--text-dim) 65%,
+    transparent 65%, transparent 80%,
+    var(--text-dim) 80%, var(--text-dim) 90%,
+    transparent 90%
+  );
+}
 .strip-title {
   margin: 0;
   font-size: 0.85rem;
@@ -134,6 +163,7 @@ code, pre, .mono {
   max-width: 1600px;
   margin: 0 auto;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
   scroll-snap-type: x proximity;
   position: relative;
