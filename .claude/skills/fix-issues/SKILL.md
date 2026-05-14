@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.13+f4952b"
+  version: "2026.05.14+c0a50b"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -221,6 +221,8 @@ fi
 ```
 
 ### Step 1 — Fetch & update trackers
+
+<!-- Bootstrap of empty $ZSKILLS_ISSUES_DIR/ happens in Phase 1a Sync; Standalone Sync inherits it via step 1's "Run Phase 1a" delegation. -->
 
 1. **Run Phase 1a** (Preflight & Sync) — fetch all open issues, run sync
    script, update all tracker files.
@@ -591,6 +593,88 @@ alert user, write failure to report).
 1. **Fetch all open GitHub issues:**
    ```bash
    gh issue list --state open --limit 500 --json number,title,labels,createdAt
+   ```
+
+   **Fetch the open-issue list AND count safely** for the bootstrap and
+   row-writer steps below (single `gh` call, parsed for both count and
+   number array). `grep -cE` over single-line JSON would return line-count
+   not match-count — use `grep -oE | mapfile`:
+
+   ```bash
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
+     || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
+   mapfile -t OPEN_NUMS < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
+   OPEN_COUNT=${#OPEN_NUMS[@]}
+   ```
+
+   **Bootstrap empty `$ZSKILLS_ISSUES_DIR/`.** If the issues directory has
+   zero tracker files AND there are open issues, create
+   `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md` from a frontmatter+header template
+   so subsequent steps have something to write rows into. If there are zero
+   open issues, exit early — no empty tracker, no PR, no noise. Empty
+   `issues_dir` now triggers bootstrap; this failure mode is structurally
+   prevented.
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
+   <!-- allow-hardcoded: TZ=America/New_York reason: bootstrap stamps the "created" date and the in-body "Created by /fix-issues sync on $TODAY" line in America/New_York to match the established tracker idiom across skills; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
+```bash
+mkdir -p "$ZSKILLS_ISSUES_DIR"
+EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)
+if [ -z "$EXISTING_TRACKERS" ]; then
+  if [ "$OPEN_COUNT" -eq 0 ]; then
+    echo "Sync complete. 0 open issues, no trackers needed."
+    exit 0
+  fi
+  TODAY=$(TZ=America/New_York date +%Y-%m-%d)
+  cat > "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" <<TRACKER
+---
+title: Issues — Auto-Bootstrapped Tracker
+status: active
+created: $TODAY
+---
+
+# Issues — Auto-Bootstrapped Tracker
+
+Created by \`/fix-issues sync\` on $TODAY because this repo had no tracker files in \`\$ZSKILLS_ISSUES_DIR/\` when sync ran.
+
+## Open Issues
+
+(rows added by sync step 5 below)
+TRACKER
+  echo "Bootstrapped $ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+  BOOTSTRAP_NEW=yes
+else
+  BOOTSTRAP_NEW=no
+fi
+```
+
+   **Row-writer for residual issues.** For each open GH issue not yet
+   referenced in any tracker, fetch its title+labels and append a
+   `### #N — <title>` row with `**Labels:**` and
+   `**Verdict:** NOT YET RESEARCHED`. The membership check is **anchored**
+   so `bug#23` does not match `#23`. Title/labels parsing uses `grep -oE`
+   (no jq).
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
+   ```bash
+   NEW_RESEARCHED_COUNT=0
+   for N in "${OPEN_NUMS[@]}"; do
+     if grep -qE '(^|[^0-9A-Za-z_])#'"$N"'($|[^0-9])' \
+          "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
+       continue
+     fi
+     ISSUE_JSON=$(gh issue view "$N" --json title,labels 2>&1) \
+       || { echo "ERROR: 'gh issue view $N' failed:" >&2; echo "$ISSUE_JSON" >&2; exit 1; }
+     ISSUE_TITLE_RAW=$(echo "$ISSUE_JSON" | grep -oE '"title":"[^"]*"' | head -1 | sed 's/^"title":"//; s/"$//')
+     ISSUE_LABELS=$(echo "$ISSUE_JSON" | grep -oE '"name":"[^"]*"' | sed 's/^"name":"//; s/"$//' | paste -sd ',' -)
+     {
+       printf '\n### #%s — %s\n' "$N" "$ISSUE_TITLE_RAW"
+       printf '\n**Labels:** %s\n' "${ISSUE_LABELS:-(none)}"
+       printf '\n**Verdict:** NOT YET RESEARCHED\n'
+     } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+     NEW_RESEARCHED_COUNT=$((NEW_RESEARCHED_COUNT + 1))
+   done
    ```
 
 2. **Find gaps** between GitHub open issues and plan tracker files. List
