@@ -9,7 +9,7 @@ description: >-
   optionally auto-land to main. Can self-schedule recurring runs via cron. Use
   `next` to check schedule, `stop` to cancel.
 metadata:
-  version: "2026.05.13+16b5f4"
+  version: "2026.05.14+c9f343"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -2299,14 +2299,21 @@ worktree's copy in PR mode).
 #   - The Status column is where ⬚ / 🟡 / ✅ markers live.
 #   - Header / separator rows (`| Phase | Status | ... |` and
 #     `|-------|--------|...|`) don't contain ⬚, so the regex's
-#     `^\|[^|]*\|[^|]*⬚` (literal `|`, any non-`|`, literal `|`, any
-#     non-`|`, ⬚) matches phase rows only.
+#     `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` (literal `|`, any non-`|`,
+#     literal `|`, optional whitespace, ⬚, optional whitespace, literal
+#     `|`) matches phase rows only.
 #   - Plans following the project convention always have Phase in column 1
 #     and Status in column 2 (every plan in docs/plans/ as of #240 does).
-#   - If a future plan reorders columns or uses ⬚ outside the Status
-#     column, this regex will miscount. That's a structural-drift case,
-#     not handled here — fix the plan's tracker shape if it happens.
-REMAINING_PHASES=$(grep -cE '^\|[^|]*\|[^|]*⬚' "$PLAN_FILE_FOR_READ" || true)
+#   - The regex requires the Status cell to contain ONLY the glyph (modulo
+#     whitespace). Narrative prose elsewhere on the page mentioning `⬚`
+#     (disposition tables, design notes, review-history rows that name the
+#     glyph) does NOT match — the col-2 anchor + whitespace-only fence
+#     makes false positives structurally impossible (#256).
+#   - Dependency: Progress Tracker Status cells MUST contain just the glyph
+#     (no trailing text like "⬚ (blocked)") for the regex to count them.
+#     This convention is already in use across plans; the tight regex
+#     makes it structurally required rather than aspirational.
+REMAINING_PHASES=$(grep -cE '^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|' "$PLAN_FILE_FOR_READ" || true)
 REMAINING_PHASES="${REMAINING_PHASES:-0}"
 ```
 

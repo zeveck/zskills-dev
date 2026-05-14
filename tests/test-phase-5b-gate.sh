@@ -246,6 +246,47 @@ else
   fail "skill missing 'On attempt 1 only' guidance"
 fi
 
+# Case 8: REMAINING_PHASES regex (#256) — the tightened pattern matches
+# ONLY rows whose Status column contains the glyph alone (modulo
+# whitespace). Narrative prose mentioning ⬚ in OTHER columns (e.g., a
+# disposition table's Finding column reviewing this very glyph) must
+# NOT inflate the count. Regression-guard: the old loose regex would
+# have miscounted the same fixture as 3 — that contrast assertion
+# proves the fixture actually exercises the difference.
+REGEX_FIXTURE=$(mktemp)
+trap '[ -n "$REGEX_FIXTURE" ] && rm -f "$REGEX_FIXTURE"' EXIT
+cat > "$REGEX_FIXTURE" <<'FIXTURE'
+## Progress Tracker
+
+| Phase | Status | Commit | Notes |
+|-------|--------|--------|-------|
+| 1 — Foo | ⬚ |  | |
+| 2 — Bar | ⬚ |  | |
+| 3 — Baz | ✅ | abc1234 | |
+
+## Round Disposition Table
+
+| # | Finding | Severity | Disposition |
+|---|---------|----------|-------------|
+| 1 | Glyph `⬚` parse fragility | MIN | Fixed via regex tightening (#256) |
+FIXTURE
+
+TIGHT_COUNT=$(grep -cE '^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|' "$REGEX_FIXTURE" || true)
+LOOSE_COUNT=$(grep -cE '^\|[^|]*\|[^|]*⬚' "$REGEX_FIXTURE" || true)
+
+if [ "$TIGHT_COUNT" = "2" ] && [ "$LOOSE_COUNT" = "3" ]; then
+  pass "case 8: REMAINING_PHASES tight regex counts 2 (only Status-col ⬚); loose regex would have miscounted 3"
+else
+  fail "case 8: REMAINING_PHASES regex — tight=$TIGHT_COUNT (expected 2), loose=$LOOSE_COUNT (expected 3)"
+fi
+
+# Case 8b: verify the skill source ships the TIGHT pattern, not the loose one.
+if grep -qF "'^\\|[^|]*\\|[[:space:]]*⬚[[:space:]]*\\|'" "$REPO_ROOT/skills/run-plan/SKILL.md"; then
+  pass "case 8b: skill source uses tight REMAINING_PHASES regex (#256)"
+else
+  fail "case 8b: skill source missing tight REMAINING_PHASES regex"
+fi
+
 echo ""
 echo "---"
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed"
