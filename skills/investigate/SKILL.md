@@ -3,11 +3,11 @@ name: investigate
 disable-model-invocation: false
 argument-hint: "<description or #issue>"
 description: >-
-  Deep debugging for complex bugs. Enforces a disciplined workflow:
+  Deep debugging for one complex bug at a time. Disciplined workflow:
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
-  it understands the root cause before writing any fix.
+  root-cause understanding before writing a fix.
 metadata:
-  version: "2026.05.07+b6ae76"
+  version: "2026.05.15+6336ef"
 ---
 
 # /investigate \<description or #issue> — Root-Cause Debugging

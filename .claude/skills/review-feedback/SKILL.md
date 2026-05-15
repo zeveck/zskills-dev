@@ -2,11 +2,12 @@
 name: review-feedback
 argument-hint: "[path-to-feedback.json]"
 description: >-
-  Review exported feedback JSON from the in-app feedback panel, evaluate each
-  pending entry, and selectively file GitHub issues via gh CLI. Use when the user
-  says "review feedback", "triage feedback", or "file feedback issues".
+  Review exported feedback JSON from the in-app feedback panel, evaluate
+  each pending entry, and selectively file GitHub issues. Use when the
+  user says "review feedback", "triage feedback", or "file feedback
+  issues".
 metadata:
-  version: "2026.05.02+f88c7f"
+  version: "2026.05.15+903532"
 ---
 
 # /review-feedback — Review and triage user feedback

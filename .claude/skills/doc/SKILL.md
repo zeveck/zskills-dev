@@ -3,13 +3,12 @@ name: doc
 disable-model-invocation: true
 argument-hint: "[blocks|examples|newsletter|<description>]"
 description: >-
-  Audit and fix documentation gaps: block library panel entries, example models,
-  getting-started guides, block library, presentations, README updates.
-  Also handles newsletter entries (/doc newsletter). Use when the user asks
-  to "write a newsletter entry", "add to the newsletter", or "update the newsletter".
-  Usage: /doc [blocks|examples|newsletter|<description>]
+  Audit and fix documentation gaps: block library entries, example models,
+  getting-started guides, presentations, README updates. Also handles
+  newsletter entries (/doc newsletter). Use when the user asks to "write a
+  newsletter entry", "add to the newsletter", or "update the newsletter".
 metadata:
-  version: "2026.05.02+aea3f2"
+  version: "2026.05.15+550c1f"
 ---
 
 # /doc [blocks|examples|\<description>] — Documentation Audit & Fix

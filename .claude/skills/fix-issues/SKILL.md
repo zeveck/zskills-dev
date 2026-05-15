@@ -3,12 +3,12 @@ name: fix-issues
 disable-model-invocation: true
 argument-hint: "N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next"
 description: >-
-  Orchestrate a batch bug-fixing sprint. Supports scheduling with
-  every/now/next/stop. Use sync to update trackers and verify/close
-  already-fixed issues. Use plan to draft plans for skipped issues.
-  Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
+  Orchestrate a batch bug-fixing sprint: dispatch fixers in per-issue
+  worktrees, verify, optionally auto-land via /land-pr. Recurring via
+  every SCHEDULE; stop/next manage it. sync updates trackers + closes
+  already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.15+ab4898"
+  version: "2026.05.15+509e96"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint

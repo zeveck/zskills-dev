@@ -2,12 +2,11 @@
 name: research-and-plan
 argument-hint: "[output FILE] <broad goal description>"
 description: >-
-  Decompose a broad goal into a sequence of executable sub-plans. Researches
-  the domain, identifies sub-problems and dependencies, then produces a
-  meta-plan where each phase delegates to /run-plan.
-  Usage: /research-and-plan [output FILE] <description...>
+  Decompose a broad goal into a sequence of executable sub-plans.
+  Researches the domain, identifies sub-problems and dependencies,
+  produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.10+6dec96"
+  version: "2026.05.15+3617bb"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer

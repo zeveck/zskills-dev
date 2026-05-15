@@ -3,11 +3,11 @@ name: qe-audit
 disable-model-invocation: true
 argument-hint: "[bash [area]] [every SCHEDULE] [now] | stop | next"
 description: >-
-  QE audit: check recent commits for test coverage gaps, or bash/stress-test
-  features to find bugs. Supports scheduling with every/now/next/stop.
-  Usage: /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next.
+  QE audit: check recent commits for test coverage gaps, or
+  bash/stress-test features to find bugs. Files GitHub issues for
+  findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.07+91d3aa"
+  version: "2026.05.15+d05bad"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit

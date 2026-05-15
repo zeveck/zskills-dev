@@ -1,11 +1,10 @@
 ---
 name: add-block
 description: >-
-  Step-by-step guide for adding new block types. Use when the user asks
-  to "add a block", "create a new block", "implement a block", or mentions
-  adding a block type to the library.
+  Step-by-step guide for adding new block types. Use when the user asks to
+  "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.13+e6ea94"
+  version: "2026.05.15+43ef2f"
 ---
 
 # Adding Block Types

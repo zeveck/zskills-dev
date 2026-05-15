@@ -3,14 +3,13 @@ name: work-on-plans
 disable-model-invocation: true
 argument-hint: "(no args = list ready queue) | [N|all] [phase|finish] [continue] | add <slug> [pos] | rank <slug> <pos> | remove <slug> | default <phase|finish> | every SCHEDULE [phase|finish] [--force] | stop | next"
 description: >-
-  Batch-execute the prioritized ready queue from the dashboard. Reads
-  .zskills/monitor-state.json (plans.ready) in order and dispatches
-  /run-plan <plan> auto [finish] per entry. Per-plan mode (phase or
-  finish) is honored from the queue, with a default-mode fallback.
-  Also manages the queue itself (add/rank/remove/default) and recurring
-  schedules. Mirrors /fix-issues for bugs.
+  Batch-execute the prioritized ready queue from the dashboard: reads
+  .zskills/monitor-state.json (plans.ready) and dispatches /run-plan auto
+  [finish] per entry, honoring each plan's queued mode. Also manages the
+  queue (add/rank/remove/default) and recurring schedules. Mirrors
+  /fix-issues for bugs.
 metadata:
-  version: "2026.05.07+3c4b42"
+  version: "2026.05.15+2d47a4"
 ---
 
 # /work-on-plans — Batch Plan Executor

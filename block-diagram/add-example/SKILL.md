@@ -1,12 +1,12 @@
 ---
 name: add-example
 description: >-
-  Create an example model for one or more block types. Handles model file construction,
-  registration, unit tests, codegen tests, screenshots, and verification.
-  Usage: /add-example <block-type(s)> [concept hint]
+  Create an example model for one or more block types. Handles model file
+  construction, registration, unit + codegen tests, screenshots, and
+  verification.
 argument-hint: "<block-type(s)> [concept hint]"
 metadata:
-  version: "2026.05.13+c07420"
+  version: "2026.05.15+cb93b5"
 ---
 
 # Add Example Model

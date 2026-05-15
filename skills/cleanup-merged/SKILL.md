@@ -3,15 +3,13 @@ name: cleanup-merged
 disable-model-invocation: true
 argument-hint: "[--dry-run | -n]"
 description: >-
-  Post-PR-merge local state normalization. Fetches origin with --prune,
-  switches off a feature branch whose PR has merged (or whose upstream is
-  gone), pulls the main branch, and deletes local feature branches whose
-  upstream was removed or whose PR has merged. Bails on a dirty working
-  tree. Skips branches with unpushed commits. --dry-run reports without
-  modifying anything. Use after merging a PR on GitHub to catch local
-  state up and drop stale branches.
+  Post-PR-merge local normalization: fetch-and-prune origin, switch off
+  merged feature branches, pull main, and delete local branches whose
+  upstream is gone or whose PR has merged. Bails on a dirty tree; skips
+  branches with unpushed commits. --dry-run previews. Use after merging a
+  PR to catch local state up.
 metadata:
-  version: "2026.05.02+f6079a"
+  version: "2026.05.15+be2d31"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization

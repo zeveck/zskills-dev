@@ -3,10 +3,10 @@ name: research-and-go
 argument-hint: "<broad goal description>"
 description: >-
   Full pipeline: decompose a broad goal into sub-plans, draft each with
-  adversarial review, then execute all of them autonomously. One command,
-  walk away. Usage: /research-and-go <description>
+  adversarial review, then execute all of them autonomously via /run-plan.
+  One command, walk away.
 metadata:
-  version: "2026.05.07+eeacd4"
+  version: "2026.05.15+e5bbe7"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
