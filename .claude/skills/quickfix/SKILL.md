@@ -13,7 +13,7 @@ description: >-
   enables auto-merge via /land-pr (matches /run-plan, /fix-issues, /do).
   Usage: /quickfix [<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
 metadata:
-  version: "2026.05.14+049699"
+  version: "2026.05.15+87a555"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -109,7 +109,7 @@ while [ $i -lt ${#ARGS[@]} ]; do
     # the arg vector — `/quickfix <desc> auto` and `/quickfix auto <desc>`
     # both set AUTO_FLAG=1. Mirrors the convention in /run-plan,
     # /fix-issues, /do. The token never falls through to DESCRIPTION.
-    auto|AUTO|Auto) AUTO_FLAG=1 ;;
+    [aA][uU][tT][oO]) AUTO_FLAG=1 ;;
     --rounds)
       # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
       # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),

@@ -337,10 +337,10 @@ if grep -q '[-][-]branch)' "$SKILL" \
    && grep -q '[-][-]yes|[-]y)' "$SKILL" \
    && grep -q '[-][-]from-here)' "$SKILL" \
    && grep -q '[-][-]skip-tests)' "$SKILL" \
-   && grep -qE '^[[:space:]]*auto\|AUTO\|Auto\)' "$SKILL"; then
-  pass "2  argument parser: --branch / --yes|-y / --from-here / --skip-tests / positional auto (issue #235)"
+   && grep -qE '^[[:space:]]*\[aA\]\[uU\]\[tT\]\[oO\]\)' "$SKILL"; then
+  pass "2  argument parser: --branch / --yes|-y / --from-here / --skip-tests / positional auto (case-insensitive [aA][uU][tT][oO], issues #235/#267)"
 else
-  fail "2  argument parser: one or more flags missing (including positional 'auto' for issue #235)"
+  fail "2  argument parser: one or more flags missing (including positional case-insensitive 'auto' for issues #235/#267)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1711,6 +1711,22 @@ if echo "$OUT" | grep -q '^AUTO_FLAG=0$' \
   pass "56 no-auto (default off) + Phase 7 LAND_ARGS conditional --auto append present — issue #235"
 else
   fail "56 no-auto: parser-out=$(echo "$OUT" | tr '\n' '|') land-args-gated-append-count=$GATED_APPEND"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 56b — Issue #267: positional `auto` token is fully case-
+# insensitive. The pattern was widened from `auto|AUTO|Auto` to
+# `[aA][uU][tT][oO]` so that mixed-case variants (e.g. `AuTo`, `aUtO`,
+# `AUto`) also set AUTO_FLAG=1. Mirrors /commit's [aA][uU][tT][oO]
+# convention — fixes the cosmetic asymmetry where /quickfix was
+# narrower than /commit.
+# ────────────────────────────────────────────────────────────────────
+OUT=$(bash "$PARSER_SCRIPT" "fix readme typo" AuTo)
+if echo "$OUT" | grep -q '^AUTO_FLAG=1$' \
+   && echo "$OUT" | grep -q '^DESCRIPTION=fix readme typo$'; then
+  pass "56b positional auto (mixed-case 'AuTo'): AUTO_FLAG=1, DESCRIPTION clean — issue #267"
+else
+  fail "56b positional auto (mixed-case 'AuTo'): $(echo "$OUT" | tr '\n' '|')"
 fi
 
 # ────────────────────────────────────────────────────────────────────
