@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper skill — the canonical PR-landing primitive **for agent dispatch via the Skill tool**. Rebase, push, create-or-detect PR, poll CI, and (gated on caller's --auto flag) auto-merge an existing feature branch. Returns structured state via --result-file for caller-driven fix-cycle loops on CI failure. **Designed for orchestrator agents** (the Skill tool with --body-file / --result-file args) — including both the 5 conformance-locked caller skills (/run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix) AND any top-level orchestrator agent landing a one-off PR. **Not designed for interactive human slash-command invocation** — humans wanting to ship a branch should type /commit pr instead (which dispatches /land-pr).
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.13+8867dc"
+  version: "2026.05.15+75fc8e"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -155,7 +155,7 @@ the old file or the new file, never a partial write.
 ### Result-file schema
 
 ```
-STATUS=created|monitored|merged|push-failed|rebase-conflict|create-failed|monitor-failed|merge-failed|rebase-failed
+STATUS=created|monitored|merged|push-failed|rebase-conflict|create-failed|monitor-failed|merge-failed|rebase-failed|behind-thrash|auto-rebase-conflict|auto-rebase-blocked
 PR_URL=<https-url-no-metacharacters-or-empty>
 PR_NUMBER=<digits-or-empty>
 PR_EXISTING=true|false
@@ -164,9 +164,10 @@ CI_LOG_FILE=<path-or-empty>
 MERGE_REQUESTED=true|false
 MERGE_REASON=auto-not-requested|ci-not-passing|auto-merge-disabled-on-repo|gh-error|empty
 PR_STATE=OPEN|MERGED|UNKNOWN|not-checked
-REASON=<short-token-or-empty>           # e.g., rebase-conflict, network, abort-failed
+REASON=<short-token-or-empty>           # e.g., rebase-conflict, network, abort-failed, auto-rebase-exhausted, auto-rebase-push-failed-rcN, mergeStateStatus-<status>, auto-rebase-unknown
 CONFLICT_FILES_LIST=<path-or-empty>     # sidecar file with one conflict path per line
 CALL_ERROR_FILE=<path-or-empty>         # sidecar file with stderr text from failed gh/git call
+REBASE_STDERR_FILE=<path-or-empty>      # sidecar file with stderr from Step 6b auto-rebase loop
 ```
 
 Caller parsing pattern: see `references/caller-loop-pattern.md`. Never
@@ -368,12 +369,193 @@ if [ -z "$STATUS" ] || { [ "$STATUS" = "created" ] && [ "$CI_STATUS" != "not-mon
 fi
 ```
 
+### Step 6b — Auto-rebase BEHIND PRs post-CI-green (Issue #266)
+
+After Step 6 returns `CI_STATUS=pass`, the PR's `mergeStateStatus` may
+be `BEHIND` because `origin/$BASE_BRANCH` advanced while CI was running
+(a sibling PR landed). On repos with "Require branches to be up to date
+before merging" branch protection, GitHub's auto-merge waits indefinitely
+in this state — the auto-merge does NOT auto-rebase the branch. Without
+this step, the PR sits at `OPEN/BEHIND` until someone manually rebases
+and force-pushes.
+
+This step closes that loop: detect BEHIND, rebase locally onto current
+`origin/$BASE_BRANCH`, force-push with lease, re-poll CI, re-check
+`mergeStateStatus`. Bounded at **3 iterations** to avoid pathological
+churn when many PRs are landing rapidly.
+
+**Skip conditions (skip the whole Step 6b loop):**
+- `$AUTO_FLAG != true` — BEHIND recovery is only useful when auto-merge
+  is requested. Without `--auto`, BEHIND is the caller's problem to
+  resolve manually.
+- `$STATUS` already set to a failure terminus (`rebase-conflict`,
+  `push-failed`, `create-failed`, `monitor-failed`, `rebase-failed`,
+  `merge-failed`) — Step 6b shouldn't run after upstream failures.
+- `$CI_STATUS != pass` — only act on green CI (avoid spinning on a
+  permanently-failing PR).
+- `$PR_NUMBER` empty — nothing to rebase against.
+
+**`mergeStateStatus` handling (the loop is keyed off this):**
+- `CLEAN` / `HAS_HOOKS` / `UNSTABLE` → mergeable, break loop, proceed
+  to Step 7.
+- `BEHIND` → fire the rebase + force-push + re-poll iteration.
+- `BLOCKED` → branch protection blocking (e.g., review required); break
+  loop with `STATUS=auto-rebase-blocked REASON=mergeStateStatus-BLOCKED`.
+- `CONFLICTING` → genuine GitHub-side merge conflict; break loop with
+  `STATUS=auto-rebase-blocked REASON=mergeStateStatus-CONFLICTING`.
+- `UNKNOWN` → break loop with `STATUS=auto-rebase-blocked
+  REASON=auto-rebase-unknown`.
+
+**Iteration cap is hardcoded 3.** If exhausted still BEHIND, set
+`STATUS=behind-thrash REASON=auto-rebase-exhausted`, skip Step 7
+(merge), proceed to Step 8 where the status mapping table maps
+`behind-thrash → pr-ready` (the PR is real and reviewable; the
+auto-rebase loop just gave up).
+
+All rebase/push/fetch stderr is captured to a single sidecar
+`/tmp/land-pr-auto-rebase-stderr-$BRANCH_SLUG-$$.log`, referenced via
+`REBASE_STDERR_FILE` in the result file when the loop fails.
+
+```bash
+if [ -z "$STATUS" ] \
+   && [ "$AUTO_FLAG" = "true" ] \
+   && [ "$CI_STATUS" = "pass" ] \
+   && [ -n "$PR_NUMBER" ]; then
+  REBASE_STDERR="/tmp/land-pr-auto-rebase-stderr-$BRANCH_SLUG-$$.log"
+  : > "$REBASE_STDERR"
+  AUTO_REBASE_ITER=0
+  AUTO_REBASE_MAX=3
+
+  # Initial mergeStateStatus probe.
+  MS_JSON=$(gh pr view "$PR_NUMBER" --json mergeStateStatus 2>>"$REBASE_STDERR")
+  MS_STATE=""
+  if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+    MS_STATE="${BASH_REMATCH[1]}"
+  fi
+
+  while [ "$MS_STATE" = "BEHIND" ] && [ "$AUTO_REBASE_ITER" -lt "$AUTO_REBASE_MAX" ]; do
+    AUTO_REBASE_ITER=$((AUTO_REBASE_ITER + 1))
+    echo "INFO: /land-pr Step 6b: PR #$PR_NUMBER is BEHIND (iter $AUTO_REBASE_ITER/$AUTO_REBASE_MAX); rebasing + force-pushing" >&2
+
+    # Rebase onto current origin/$BASE_BRANCH. Use WORKTREE_PATH when
+    # provided; otherwise operate against current working dir.
+    REBASE_DIR="${WORKTREE_PATH:-$(pwd)}"
+    if ! git -C "$REBASE_DIR" fetch origin "$BASE_BRANCH" 2>>"$REBASE_STDERR"; then
+      STATUS="auto-rebase-conflict"
+      REASON="auto-rebase-fetch-failed-rc$?"
+      break
+    fi
+    if ! git -C "$REBASE_DIR" rebase "origin/$BASE_BRANCH" 2>>"$REBASE_STDERR"; then
+      # Rebase conflict — capture conflict files, abort, surface.
+      CONFLICT_PATHS=$(git -C "$REBASE_DIR" diff --name-only --diff-filter=U 2>>"$REBASE_STDERR" | tr '\n' ' ' | sed 's/ $//')
+      git -C "$REBASE_DIR" rebase --abort 2>>"$REBASE_STDERR" || true
+      if [ -n "$CONFLICT_PATHS" ]; then
+        CONFLICT_FILES_SIDECAR="/tmp/land-pr-auto-rebase-conflicts-$BRANCH_SLUG-$$.list"
+        printf '%s\n' $CONFLICT_PATHS > "$CONFLICT_FILES_SIDECAR"
+        CONFLICT_FILES_LIST="$CONFLICT_FILES_SIDECAR"
+      fi
+      STATUS="auto-rebase-conflict"
+      REASON="auto-rebase-conflict-iter$AUTO_REBASE_ITER"
+      break
+    fi
+
+    # Force-push with lease.
+    if ! git -C "$REBASE_DIR" push --force-with-lease origin "$BRANCH" 2>>"$REBASE_STDERR"; then
+      PUSH_RC=$?
+      # On non-final iterations, retry: fetch+rebase loop top will pick
+      # up any new origin moves. On final iteration, surface failure.
+      if [ "$AUTO_REBASE_ITER" -ge "$AUTO_REBASE_MAX" ]; then
+        STATUS="auto-rebase-blocked"
+        REASON="auto-rebase-push-failed-rc$PUSH_RC"
+        break
+      fi
+      echo "WARN: /land-pr Step 6b: push --force-with-lease failed (rc=$PUSH_RC); retrying" >&2
+      # Refresh mergeStateStatus and continue loop.
+      MS_JSON=$(gh pr view "$PR_NUMBER" --json mergeStateStatus 2>>"$REBASE_STDERR")
+      MS_STATE=""
+      if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+        MS_STATE="${BASH_REMATCH[1]}"
+      fi
+      continue
+    fi
+
+    # Re-poll CI on the rebased commit.
+    CI_LOG_OUT="/tmp/land-pr-ci-log-$BRANCH_SLUG-rebase$AUTO_REBASE_ITER-$$.txt"
+    MONITOR_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-monitor.sh" \
+      --pr "$PR_NUMBER" --timeout "$CI_TIMEOUT" --log-out "$CI_LOG_OUT")
+    MONITOR_RC=$?
+    while IFS='=' read -r KEY VALUE; do
+      case "$KEY" in
+        CI_STATUS) CI_STATUS="$VALUE" ;;
+        CI_LOG_FILE) CI_LOG_FILE="$VALUE" ;;
+      esac
+    done <<<"$MONITOR_STDOUT"
+    if [ "$MONITOR_RC" -ne 0 ] || [ "$CI_STATUS" != "pass" ]; then
+      # CI failed (or monitor failed) on the rebased commit. Don't keep
+      # spinning the rebase loop — surface and let the caller's fix-cycle
+      # take over.
+      STATUS="auto-rebase-blocked"
+      REASON="auto-rebase-ci-${CI_STATUS:-monitor-failed}-iter$AUTO_REBASE_ITER"
+      break
+    fi
+
+    # Re-check mergeStateStatus.
+    MS_JSON=$(gh pr view "$PR_NUMBER" --json mergeStateStatus 2>>"$REBASE_STDERR")
+    MS_STATE=""
+    if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+      MS_STATE="${BASH_REMATCH[1]}"
+    fi
+
+    case "$MS_STATE" in
+      CLEAN|HAS_HOOKS|UNSTABLE)
+        echo "INFO: /land-pr Step 6b: mergeStateStatus=$MS_STATE after rebase (iter $AUTO_REBASE_ITER); proceeding to merge" >&2
+        break
+        ;;
+      BEHIND)
+        # Loop continues.
+        ;;
+      BLOCKED|CONFLICTING)
+        STATUS="auto-rebase-blocked"
+        REASON="mergeStateStatus-$MS_STATE"
+        break
+        ;;
+      UNKNOWN|"")
+        STATUS="auto-rebase-blocked"
+        REASON="auto-rebase-unknown"
+        break
+        ;;
+      *)
+        STATUS="auto-rebase-blocked"
+        REASON="mergeStateStatus-$MS_STATE"
+        break
+        ;;
+    esac
+  done
+
+  # Loop exhausted still BEHIND → behind-thrash.
+  if [ -z "$STATUS" ] && [ "$MS_STATE" = "BEHIND" ] && [ "$AUTO_REBASE_ITER" -ge "$AUTO_REBASE_MAX" ]; then
+    STATUS="behind-thrash"
+    REASON="auto-rebase-exhausted"
+  fi
+
+  # Reference the sidecar in the result file if the loop failed.
+  if [ -s "$REBASE_STDERR" ] \
+     && { [ "$STATUS" = "behind-thrash" ] \
+          || [ "$STATUS" = "auto-rebase-conflict" ] \
+          || [ "$STATUS" = "auto-rebase-blocked" ]; }; then
+    REBASE_STDERR_FILE="$REBASE_STDERR"
+  else
+    rm -f "$REBASE_STDERR"
+  fi
+fi
+```
+
 ### Step 7 — Merge (gated on `--auto`)
 
 Always run `pr-merge.sh` — it owns the auto/CI gating internally.
 
 ```bash
-if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "rebase-failed" ] && [ "$STATUS" != "push-failed" ] && [ "$STATUS" != "create-failed" ]; then
+if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "rebase-failed" ] && [ "$STATUS" != "push-failed" ] && [ "$STATUS" != "create-failed" ] && [ "$STATUS" != "behind-thrash" ] && [ "$STATUS" != "auto-rebase-conflict" ] && [ "$STATUS" != "auto-rebase-blocked" ]; then
   MERGE_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-merge.sh" \
     --pr "$PR_NUMBER" --auto-flag "$AUTO_FLAG" --ci-status "${CI_STATUS:-not-monitored}")
   MERGE_RC=$?
@@ -451,7 +633,10 @@ changed after) should NOT be reported as `landed`.
 | # | Condition (top-down, first match wins) | → `.landed status` |
 |---|----------------------------------------|--------------------|
 | 1 | STATUS=rebase-conflict | conflict |
+| 1b | STATUS=auto-rebase-conflict | conflict |
 | 2 | STATUS in {push-failed, create-failed, rebase-failed, merge-failed, monitor-failed} | pr-failed |
+| 2b | STATUS=behind-thrash | pr-ready |
+| 2c | STATUS=auto-rebase-blocked | pr-ready |
 | 3 | CI_STATUS=fail | pr-ci-failing |
 | 4 | CI_STATUS=pending | pr-ready |
 | 5 | CI_STATUS=unknown | pr-ready |
@@ -496,9 +681,10 @@ if [ -n "$WORKTREE_PATH" ]; then
   # Derive .landed status from the table above.
   LANDED_STATUS="pr-ready"  # default fallback
   case "$STATUS" in
-    rebase-conflict) LANDED_STATUS="conflict" ;;
+    rebase-conflict|auto-rebase-conflict) LANDED_STATUS="conflict" ;;
     push-failed|create-failed|rebase-failed|merge-failed|monitor-failed)
       LANDED_STATUS="pr-failed" ;;
+    behind-thrash|auto-rebase-blocked) LANDED_STATUS="pr-ready" ;;
     *)
       case "$CI_STATUS" in
         fail) LANDED_STATUS="pr-ci-failing" ;;
@@ -599,6 +785,7 @@ value before writing. Atomic write via `.tmp` + `mv`.
 : "${REASON:=}"
 : "${CONFLICT_FILES_LIST:=}"
 : "${CALL_ERROR_FILE:=}"
+: "${REBASE_STDERR_FILE:=}"
 
 TMP_RESULT="$RESULT_FILE.tmp"
 : > "$TMP_RESULT"
@@ -621,6 +808,7 @@ write_kv PR_STATE            "$PR_STATE"            || exit 40
 write_kv REASON              "$REASON"              || exit 40
 write_kv CONFLICT_FILES_LIST "$CONFLICT_FILES_LIST" || exit 40
 write_kv CALL_ERROR_FILE     "$CALL_ERROR_FILE"     || exit 40
+write_kv REBASE_STDERR_FILE  "$REBASE_STDERR_FILE"  || exit 40
 
 mv "$TMP_RESULT" "$RESULT_FILE"
 ```

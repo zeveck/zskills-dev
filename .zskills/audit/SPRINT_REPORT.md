@@ -406,3 +406,33 @@ N/A. No UI changes.
 ### Landing
 
 PR mode. /land-pr --auto dispatch. Step 7b (#254) will auto-ff local main on merge.
+
+## Sprint — 2026-05-15 07:38 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** explicit list (#266, #267 — operational follow-ups)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #266 | /land-pr doesn't auto-rebase BEHIND-after-CI-green PRs | /tmp/zskills-fix-issue-266 | `ea83368` | new tests/test-land-pr-auto-rebase-behind.sh (32 cases); full suite 3072/3072 PASS | PASS (verifier APPROVE; Step 6b at SKILL.md:372-551, bounded retry max 3, all break paths covered; mirror clean) | N/A |
+| #267 | /quickfix case-pattern auto\|AUTO\|Auto narrower than /commit's [aA][uU][tT][oO] | /tmp/zskills-fix-issue-267 | `9da17f9` | Case 56b mixed-case AuTo + conformance grep updated; suite 3041/3041 PASS | PASS (verifier APPROVE; 1-line change at SKILL.md:112; mirror clean) | N/A |
+
+**Sprint scope:** Two operational follow-ups filed during the 2026-05-14 session, picked up as a small batch per the ROG's predicted post-FIX_ISSUES_SYNC sequence. Different files (`/land-pr` vs `/quickfix`), separate worktrees.
+
+**#266 fix shape:** New Step 6b in `skills/land-pr/SKILL.md` (lines 372-551, +198 lines) detects `MERGE_REQUESTED=true PR_STATE=OPEN CI=pass mergeStateStatus=BEHIND` and runs a bounded auto-rebase-and-repush loop. Max 3 iterations; exhaustion sets `STATUS=behind-thrash REASON=auto-rebase-exhausted`. Step 7 skipped on behind-thrash/auto-rebase-conflict/auto-rebase-blocked. Step 8 status-mapping table extended.
+
+**#267 fix shape:** 1-line case-pattern tighten at `skills/quickfix/SKILL.md:112`: `auto|AUTO|Auto)` → `[aA][uU][tT][oO])`. Cross-skill symmetry with `/commit`'s regex (#236).
+
+**Mid-sprint BEHIND drift handled proactively.** PR #273 landed during the sprint after worktree creation. Orchestrator rebased both feature branches onto current main BEFORE verifier dispatch — verifiers saw clean diffs. This is the pattern #266 bakes into `/land-pr` itself.
+
+### Agent Verify
+
+Both verifier subagents returned APPROVE with anchored file:line evidence. Layer 3 exit 0. Mirror parity confirmed via `diff -rq` on both. Both committed cleanly through all hooks.
+
+### User Verify
+
+N/A for both. No UI changes.
+
+### Landing
+
+PR mode. **#266 first** (lands Step 6b onto main); **#267 second** (will benefit from the just-landed Step 6b if a BEHIND case fires post-A-merge — meta-test of the fix). Step 7b (#254) handles local-main ff-pull on each merge.
