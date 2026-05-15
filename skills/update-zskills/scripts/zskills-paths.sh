@@ -26,13 +26,26 @@
 #     processes (Python, node) MUST `export ZSKILLS_PLANS_DIR` etc.
 #     themselves immediately after sourcing. See caller-side examples below.
 
-# Resolve project root with override-then-default precedence.
+# Resolve project root with precedence: ZSKILLS_PATHS_ROOT (PR-mode
+# worktree anchor) → CLAUDE_PROJECT_DIR (harness-set) → git-common-dir
+# fallback (orchestrator-side Bash where harness didn't inject the var
+# — see zskills-resolve-config.sh for the documented-design rationale).
 _ZSK_PATHS_ROOT="${ZSKILLS_PATHS_ROOT:-${CLAUDE_PROJECT_DIR:-}}"
 if [ -z "$_ZSK_PATHS_ROOT" ]; then
-  echo "zskills-paths.sh: neither ZSKILLS_PATHS_ROOT nor CLAUDE_PROJECT_DIR is set — caller must provide one (absolute path)" >&2
-  # Use return when sourced, exit when executed (mirror dual-mode pattern
-  # from sanitize-pipeline-id.sh).
-  (return 0 2>/dev/null) && return 1 || exit 1
+  if _ZSK_PATHS_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) \
+       && _ZSK_PATHS_ROOT=$(cd "$_ZSK_PATHS_COMMON_DIR/.." && pwd); then
+    if [ -z "${_ZSK_FALLBACK_WARNED:-}" ]; then
+      echo "WARN: zskills: neither ZSKILLS_PATHS_ROOT nor CLAUDE_PROJECT_DIR set; fell back to $_ZSK_PATHS_ROOT via git-common-dir" >&2
+      _ZSK_FALLBACK_WARNED=1
+    fi
+    unset _ZSK_PATHS_COMMON_DIR
+  else
+    echo "zskills-paths.sh: neither ZSKILLS_PATHS_ROOT nor CLAUDE_PROJECT_DIR is set, and not in a git repo — caller must provide one (absolute path)" >&2
+    unset _ZSK_PATHS_COMMON_DIR
+    # Use return when sourced, exit when executed (mirror dual-mode pattern
+    # from sanitize-pipeline-id.sh).
+    (return 0 2>/dev/null) && return 1 || exit 1
+  fi
 fi
 
 # Pre-init vars to empty (empty-pattern-guard from DRIFT_ARCH_FIX). NOT export.

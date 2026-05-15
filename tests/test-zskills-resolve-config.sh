@@ -31,6 +31,11 @@ PRELUDE_DOC="$REPO_ROOT/references/canonical-config-prelude.md"
 PASS_COUNT=0
 FAIL_COUNT=0
 
+# TEST_OUT for stderr-capture fixtures (Test 9). Per-worktree path so
+# parallel pipelines do not collide (matches the idiom from test-zskills-paths.sh).
+TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")"
+mkdir -p "$TEST_OUT"
+
 pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 fail() { printf '\033[31m  FAIL\033[0m %s — %s\n' "$1" "$2"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 
@@ -361,6 +366,78 @@ T8B_VER=$(
   || fail "Test 8c: \$ZSKILLS_VERSION empty when absent" "got '$T8B_VER'"
 
 rm -rf "$T8" "$T8B"
+
+# --- Test 9: CLAUDE_PROJECT_DIR fallback via git-common-dir -----------------
+#
+# When the harness doesn't inject $CLAUDE_PROJECT_DIR (e.g. orchestrator-side
+# Bash from inside a skill — Anthropic only documents the var as set for
+# hook subprocesses), the helper falls back to the canonical "find main
+# repo from anywhere" idiom (`git rev-parse --git-common-dir | dirname`)
+# and emits a one-time stderr WARN. Outside any git repo, no clean fallback
+# exists and the helper fails loud.
+
+echo ""
+echo "=== Test 9a: \$CLAUDE_PROJECT_DIR unset, IN a git repo → fallback succeeds ==="
+( unset CLAUDE_PROJECT_DIR _ZSK_FALLBACK_WARNED
+  source "$HELPER"
+) 2> "$TEST_OUT/test9a.stderr"
+T9A_RC=$?
+if [ "$T9A_RC" = "0" ]; then
+  pass "Test 9a: helper rc=0 via git-common-dir fallback"
+else
+  fail "Test 9a: helper rc=0 via fallback" \
+    "expected 0, got $T9A_RC; stderr: $(cat "$TEST_OUT/test9a.stderr")"
+fi
+if grep -qE "WARN.*fell back.*git-common-dir" "$TEST_OUT/test9a.stderr"; then
+  pass "Test 9a: stderr contains 'WARN ... fell back ... git-common-dir'"
+else
+  fail "Test 9a: stderr fallback WARN" \
+    "got: $(cat "$TEST_OUT/test9a.stderr")"
+fi
+
+echo ""
+echo "=== Test 9b: \$CLAUDE_PROJECT_DIR unset, NOT in a git repo → fail loud ==="
+T9B=$(mktemp -d /tmp/zskills-resolve-cfg-t9b-XXXXXX)
+( cd "$T9B"
+  unset CLAUDE_PROJECT_DIR _ZSK_FALLBACK_WARNED GIT_DIR GIT_WORK_TREE
+  source "$HELPER"
+) 2> "$TEST_OUT/test9b.stderr"
+T9B_RC=$?
+if [ "$T9B_RC" != "0" ]; then
+  pass "Test 9b: helper exits non-zero outside git repo (rc=$T9B_RC)"
+else
+  fail "Test 9b: helper exit code" \
+    "expected non-zero, got $T9B_RC; stderr: $(cat "$TEST_OUT/test9b.stderr")"
+fi
+if grep -q "CLAUDE_PROJECT_DIR" "$TEST_OUT/test9b.stderr"; then
+  pass "Test 9b: stderr names CLAUDE_PROJECT_DIR"
+else
+  fail "Test 9b: stderr CLAUDE_PROJECT_DIR mention" \
+    "got: $(cat "$TEST_OUT/test9b.stderr")"
+fi
+if grep -qiE "not in a git repo|not.*git" "$TEST_OUT/test9b.stderr"; then
+  pass "Test 9b: stderr explains 'not in a git repo'"
+else
+  fail "Test 9b: stderr git-repo mention" \
+    "got: $(cat "$TEST_OUT/test9b.stderr")"
+fi
+rm -rf "$T9B"
+
+echo ""
+echo "=== Test 9c: WARN suppressed on second source via _ZSK_FALLBACK_WARNED sentinel ==="
+# Both sources run in the SAME subshell so the sentinel set by the first
+# source persists into the second. Expect exactly one WARN line emitted.
+T9C_STDERR=$(
+  unset CLAUDE_PROJECT_DIR _ZSK_FALLBACK_WARNED
+  { source "$HELPER"; source "$HELPER"; } 2>&1 >/dev/null
+)
+T9C_WARN_COUNT=$(printf '%s\n' "$T9C_STDERR" | grep -cE "WARN.*fell back.*git-common-dir" || true)
+if [ "$T9C_WARN_COUNT" = "1" ]; then
+  pass "Test 9c: WARN emitted exactly once across two sources (sentinel works)"
+else
+  fail "Test 9c: WARN once-per-shell" \
+    "expected 1 occurrence, got $T9C_WARN_COUNT; stderr: $T9C_STDERR"
+fi
 
 # --- Summary ---------------------------------------------------------------
 echo ""

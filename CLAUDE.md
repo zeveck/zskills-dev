@@ -163,6 +163,31 @@ URLs, or creating files from scratch, check what already exists: `ls` the
 directory, `grep` for the term, read the relevant file. Agents consistently
 skip this step and guess instead of looking.
 
+**Read before claiming.** Do not describe, comment on, or plan around a
+file, function, test, skill, env var, or harness behavior you have not
+just read. "Let CI tell us" and "I'll find out when it breaks" are not
+paths forward -- they are guesses with a deadline. Specifically:
+
+- Before commenting on what a test asserts or a function does -- open
+  the file and quote the relevant lines.
+- Before recommending a workflow that chains skills (`/X then /Y`) --
+  read each skill's `SKILL.md`; do not infer behavior from the name.
+- Before changing a script, config, or invariant -- grep for tests that
+  lock it (`tests/test-*.sh`, fixtures, conformance lists) and read
+  the assertions you'd be invalidating.
+- Before relying on an env var, config field, or harness affordance --
+  confirm it's documented for *your* call context (Bash tool vs. hook
+  subprocess vs. subagent), not an adjacent one. Past failure: assumed
+  `CLAUDE_PROJECT_DIR` was set in Bash tool subshells; Anthropic only
+  documents it for hook subprocesses.
+- Before asserting falsifiable state ("pre-existing on main," "X is
+  unused," "passes elsewhere") -- run the check that would falsify it
+  and cite the command.
+
+If the verifying read is too expensive to do now, say so and stop -- do
+not substitute a guess and let downstream failure do the verification.
+The only research you can skip is what you just verified in this turn.
+
 ## Tracking markers
 
 Tracking markers live in `.zskills/tracking/` and are scoped per pipeline
