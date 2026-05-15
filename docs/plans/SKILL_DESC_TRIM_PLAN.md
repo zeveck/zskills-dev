@@ -1,7 +1,8 @@
 ---
 title: Trim Skill Descriptions to Default 1% Budget
 created: 2026-05-10
-status: active
+status: complete
+completed: 2026-05-15
 ---
 
 # Plan: Trim Skill Descriptions to Default 1% Budget
@@ -177,7 +178,7 @@ descriptions):**
 | 3 — Adversarial citation spot-check                  | ✅ Done | (artifact-only) | 22/22 PASS; 13 skills represented; D10 30-char re-anchoring used on 6 line-drifted citations; Layer-3 validation passed |
 | 4 — Add description-budget conformance gate          | ✅ Done | `1f691fc` | 2-tier test (hard 7500, warn 7000); awk handles both scalar forms; registered in run-all.sh; 5-section rationale doc; pre-trim FAIL confirmed (8955 > 7500) |
 | 5 — Apply edits + version bumps + mirror             | ✅ Done | `33035d9` | 25 trims + version bumps + mirrors; 50 files, 234+/266-; full suite GREEN 3039/3039; round-1 caught YAML-fold bug in quickfix, fix agent rewrapped |
-| 6 — Verify + land                                    | ⬚ | | Tests + spot-checks + PR + CI |
+| 6 — Verify + land                                    | ✅ Done | (landed by /land-pr) | 8/8 verification tasks PASS; full suite 3039/3039; conformance 404/404; budget 6795 (no WARN); landing dispatched via /land-pr |
 
 ---
 
