@@ -8,6 +8,20 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
+- **2026-05-15 (continued — #266 + #267 landed; non-deferred queue is now EMPTY)** — `/fix-issues 266 267 auto` executed end-to-end. Two parallel worktrees per the "different file" rule: A=#266 on `skills/land-pr/`, B=#267 on `skills/quickfix/`. Both verifier subagents APPROVE with anchored evidence. Both committed cleanly.
+
+  **Landed:**
+  - PR [#275](https://github.com/zeveck/zskills-dev/pull/275) (squash `7010c87`, MERGED 2026-05-15 ~08:45 UTC) — `fix(land-pr): Step 6b auto-rebase BEHIND PRs post-CI-green`. Closes #266. Adds new Step 6b (198 lines) between Step 6 and Step 7: detects `mergeStateStatus=BEHIND` post-CI-green and runs bounded auto-rebase-and-repush loop (max 3 iterations); exhaustion → `STATUS=behind-thrash REASON=auto-rebase-exhausted`. Status mapping table extended for 3 new STATUS values. New `tests/test-land-pr-auto-rebase-behind.sh` (462 lines, 32 cases — hybrid sentinel-grep + mock-queue-driven).
+  - PR [#276](https://github.com/zeveck/zskills-dev/pull/276) (squash `0aedaf9`, MERGED 2026-05-15 ~08:55 UTC) — `fix(quickfix): widen positional auto case-pattern`. Closes #267. 1-line tighten at `skills/quickfix/SKILL.md:112`: `auto|AUTO|Auto)` → `[aA][uU][tT][oO])`. Cross-skill symmetry with `/commit`'s regex. Conformance test at `:340` updated; new Case 56b for mixed-case `AuTo`.
+
+  **Two BEHIND-cases this sprint — meta-test of #266:**
+  1. **PR #275 itself** went BEHIND when PR #274 (dashboard activity feed) landed mid-flight. Manual rebase+force-push required — the very fix this PR was adding to /land-pr was not yet on main. Same bootstrap-irony as #254/#257.
+  2. **PR #276** went BEHIND when #275 merged (which advanced main with the Step 6b code itself). **Step 6b then auto-recovered #276** — orchestrator-side execution of the Step 6b prose (fetch + rebase + force-push + re-poll CI) successfully detected BEHIND, rebased onto post-#275 main, force-pushed, re-polled CI green. **Meta-test PASS: the fix works on its own first non-bootstrap exposure.** One CI re-poll glitch (pr-monitor returned `CI=fail` once before settling to `CI=pass` — appears to be a transient state during run-replacement after force-push; not blocking, worth noting as a minor pr-monitor sensitivity).
+
+  **Worktree-prep discipline observed.** PR #273 had also landed pre-sprint (after worktree creation). Orchestrator rebased both worktrees onto current main BEFORE verifier dispatch — verifiers saw clean diffs against `git diff main` instead of seeing 73-line "phantom" PR #273 noise. This anticipated the BEHIND case proactively; same pattern Step 6b now automates.
+
+  **Non-deferred queue is now EMPTY.** Only #217 (deferred per its own body's trigger criteria — relocate audit reports) and #67 (deferred — Phase G, GitLab support gated on real project consumer) remain. Both are intentional defers waiting on external conditions, not work-blocked items.
+
 - **2026-05-15 (FIX_ISSUES_SYNC_HARDENING landed via PR #269; AC-P.3 enforcement gap caught + fixed via #271)** — `/run-plan docs/plans/FIX_ISSUES_SYNC_HARDENING.md finish auto pr` executed all 5 phases. PR [#269](https://github.com/zeveck/zskills-dev/pull/269) (squash `c5c928c`, MERGED 2026-05-15 ~06:28 UTC) closes #231. Plan frontmatter flipped to `status: complete`. Adds empty-`$ZSKILLS_ISSUES_DIR/` bootstrap subroutine to `/fix-issues sync` Phase 1a + `/land-pr` dispatch step + `requires.land-pr.${SYNC_ID}` tracking marker discipline. Tests 3023 → 3039 (+16). Mirror clean.
 
   **Post-merge `/verify-changes` audit caught AC-P.3 enforcement gap.** AC-P.3 specified: "`gh issue close` calls deferred until AFTER `/land-pr` returns a success status (`created`, `monitored`, or `merged`). If `/land-pr` fails, no GitHub issues are closed." The landed implementation had `gh issue close` textually+executionally BEFORE the `/land-pr` dispatch — exactly the state divergence AC-P.3 promised to prevent. PR [#271](https://github.com/zeveck/zskills-dev/pull/271) (squash `d6c39b0`, MERGED 2026-05-15) re-ordered Step 4 (stage local edits only, no close) + Step 5 sub-step 3 (close guarded by `case "${LP[STATUS]:-}" in created|monitored|merged) ... ;; *) skip+stderr-warn ;; esac`). Worth noting as a verifier-catch win: the verification agent surfaced an AC-vs-implementation drift that the original `/run-plan` execution missed. `metadata.version` 2026.05.14+5f21d5 → 2026.05.15+ab4898.
@@ -321,26 +335,20 @@ Issues filed but not yet routed to a phase. Default to running clear-and-doable 
 
 - [x] **Issue [#256](https://github.com/zeveck/zskills-dev/issues/256)** — Closed via `/fix-issues 256 auto` PR [#265](https://github.com/zeveck/zskills-dev/pull/265) (squash `712eae8`, MERGED 2026-05-14 ~15:55 ET). Regex at `skills/run-plan/SKILL.md:2316` tightened to `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|`. Comment block at lines 2291-2315 rewritten (dropped the "regex will miscount / fix the plan's tracker shape" warning; now documents the tight contract as structurally enforced). New `tests/test-phase-5b-gate.sh:249-288` Cases 8 + 8b (mktemp fixture with tight-vs-loose contrast assertion + SKILL.md sentinel grep). metadata.version 2026.05.14+c9f343. Mirror clean. Full suite 3023/3023 PASS. First clean Step 7b exercise — local main auto-ff-pulled post-merge.
 
-- [ ] **Issue [#266](https://github.com/zeveck/zskills-dev/issues/266)** — `/land-pr doesn't auto-rebase BEHIND-after-CI-green PRs — manual rebase+force-push required`. Filed 2026-05-14 from /fix-issues 235/236/241 sprint observation (manual recovery needed twice when sibling PRs landed mid-flight). Medium severity. Proposed fix: new Step 6b (or pr-merge.sh extension) detects `MERGE_REQUESTED=true PR_STATE=OPEN CI=pass mergeStateStatus=BEHIND` and auto-rebases+force-pushes with bounded retry (max 3 iterations). Extends #254's spirit. **Route: `/fix-issues 266 267 auto`** (paired with #267 as a small post-#231 cleanup batch).
+- [x] **Issue [#266](https://github.com/zeveck/zskills-dev/issues/266)** — Closed 2026-05-15 ~08:45 UTC via `/fix-issues 266 267 auto` PR [#275](https://github.com/zeveck/zskills-dev/pull/275) (squash `7010c87`). New Step 6b at `skills/land-pr/SKILL.md:372-551` (+198 lines) detects `mergeStateStatus=BEHIND` post-CI-green and runs bounded auto-rebase-and-repush loop (AUTO_REBASE_MAX=3); exhaustion → `STATUS=behind-thrash REASON=auto-rebase-exhausted`. Step 7 merge skipped on `behind-thrash|auto-rebase-conflict|auto-rebase-blocked`. Step 8 status mapping extended (3 new rows). Result-file schema extended. New `tests/test-land-pr-auto-rebase-behind.sh` (462 lines, 32 cases). metadata.version 2026.05.15+75fc8e. **First post-bootstrap exercise:** PR #276 (#267 fix) hit BEHIND when #275 merged and Step 6b auto-recovered it.
 
-- [ ] **Issue [#267](https://github.com/zeveck/zskills-dev/issues/267)** — `/quickfix case-pattern auto|AUTO|Auto is narrower than /commit's [aA][uU][tT][oO]`. Filed 2026-05-14 from retroactive verifier audit of session PRs. Low severity, cosmetic asymmetry. 1-line fix at `skills/quickfix/SKILL.md:112`. **Route: `/fix-issues 266 267 auto`** (paired with #266).
+- [x] **Issue [#267](https://github.com/zeveck/zskills-dev/issues/267)** — Closed 2026-05-15 ~08:55 UTC via `/fix-issues 266 267 auto` PR [#276](https://github.com/zeveck/zskills-dev/pull/276) (squash `0aedaf9`). 1-line case-pattern tighten at `skills/quickfix/SKILL.md:112`: `auto|AUTO|Auto)` → `[aA][uU][tT][oO])`. Cross-skill symmetry with `/commit`'s regex. Conformance assertion at `tests/test-quickfix.sh:340` updated; new Case 56b for mixed-case `AuTo`. metadata.version 2026.05.15+87a555. **Beneficiary of #266's just-landed Step 6b:** when #275 merged and pushed main forward, #276 went BEHIND and Step 6b auto-recovered it (one CI-poll glitch — pr-monitor transient `CI=fail` during run-replacement after force-push, settled on retry to `CI=pass`).
 
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-**Suggested next step (2026-05-15 update — after FIX_ISSUES_SYNC_HARDENING landed via PR #269 + AC-P.3 fix via #271):**
+**Suggested next step (2026-05-15 update — non-deferred queue is EMPTY):**
 
-The queue collapses to **one action**:
+After #266 + #267 landed (PRs #275 + #276), there are **no non-deferred items remaining**. Only intentional defers:
 
-1. **`/fix-issues 266 267 auto`** — small cleanup batch picking up the two operational follow-ups filed during the 2026-05-14 session:
-   - **#266** (medium severity) — `/land-pr` BEHIND-after-CI-green auto-rebase gap. New Step 6b in `/land-pr` (or `pr-merge.sh` extension) detects `mergeStateStatus=BEHIND` post-CI-green and auto-rebases+force-pushes with bounded retry. Extends #254's spirit.
-   - **#267** (low, cosmetic) — `/quickfix` case-pattern asymmetry vs `/commit`. 1-line tightening of `skills/quickfix/SKILL.md:112` (`auto|AUTO|Auto` → `[aA][uU][tT][oO]`).
-   - Two issues, different files (`skills/land-pr/` vs `skills/quickfix/`) — /fix-issues groups by file, so two parallel worktrees (same pattern as #235+#241 / #236 earlier).
+- **#217** — relocate plan execution reports out of `.zskills/audit/`. Issue body's trigger criteria have not fired (consumer hits the audit-dir tracking inconsistency in practice, next minor zskills release scoped, or a user asks "where is plan X's report"). Until one of those fires, the architectural rationale stays captured in the issue body for whenever it gets prioritized.
+- **#67** — GitLab support. Phase G; needs a real GitLab project consumer to validate the integration end-to-end. Without that, building it would be guesswork against unverified assumptions. The draft-plan-prompts plan at `docs/plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md` (status: `deferred`) captures the design intent.
 
-After that, **only deferred items remain**:
-- **#217** — relocate plan execution reports out of `.zskills/audit/`. Issue body trigger criteria not yet fired (consumer hits the audit-dir tracking inconsistency, next minor release scoped, or user asks "where is plan X's report").
-- **#67** — GitLab support. Phase G; needs a real GitLab project to test against.
-
-The non-deferred queue will be empty after the next sprint.
+**No active work-blocked items.** New issues filed in the future will get queued per the standard `/fix-issues` vs `/draft-plan` routing rule (small fix → `/fix-issues`; design surface or multi-skill integration → `/draft-plan` first).
 
 **Remaining backlog after that:** **#217** (relocate audit-dir reports — `/draft-plan` when triggered; none of its trigger criteria have fired yet), **#67** (GitLab — Phase G, needs real GitLab project to test against).
 
