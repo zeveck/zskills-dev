@@ -10,7 +10,7 @@ description: >-
   requires execution.landing == "pr". No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.15+12451b"
+  version: "2026.05.15+abf853"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -43,23 +43,6 @@ the new feature branch.
 
 Pick `/quickfix` when the edit is small enough that leaving main is more
 ceremony than the change is worth, but a PR is still required.
-
-## Entry self-assertion (WI 1.1)
-
-At entry, when the SDK exposes `$SKILL_SELF` (path to this file), assert
-that the frontmatter still carries `disable-model-invocation: true`:
-
-```bash
-if [ -n "${SKILL_SELF:-}" ] && [ -f "$SKILL_SELF" ]; then
-  if ! grep -q '^disable-model-invocation: true$' "$SKILL_SELF"; then
-    echo "ERROR: /quickfix SKILL.md missing 'disable-model-invocation: true'" >&2
-    exit 1
-  fi
-fi
-# If $SKILL_SELF cannot be located (test-harness injection, older runtime),
-# the check is a no-op — the frontmatter grep in tests/run-all.sh still
-# enforces the invariant at CI time.
-```
 
 ## Argument parser (WI 1.2)
 
