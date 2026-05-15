@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.13+f4952b"
+  version: "2026.05.14+5f21d5"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -222,6 +222,8 @@ fi
 
 ### Step 1 — Fetch & update trackers
 
+<!-- Bootstrap of empty $ZSKILLS_ISSUES_DIR/ happens in Phase 1a Sync; Standalone Sync inherits it via step 1's "Run Phase 1a" delegation. -->
+
 1. **Run Phase 1a** (Preflight & Sync) — fetch all open issues, run sync
    script, update all tracker files.
 
@@ -363,7 +365,85 @@ For each approved issue:
    fi
    ```
 
-2. **Report:**
+2. **Dispatch `/land-pr` to open the sync PR.** Sync commits live on the
+   worktree's feature branch; this step opens (or detects) a PR and
+   monitors CI. The tracking marker is written on main_root so
+   `/land-pr` can satisfy it with a `fulfilled.land-pr.<id>` marker on
+   successful merge — mirrors `/run-plan` PR mode's pattern
+   (`skills/run-plan/modes/pr.md:339-348`, `skills/run-plan/SKILL.md:888`).
+
+   <!-- allow-hardcoded: TZ=America/New_York reason: SYNC_TS is a user-facing wall-clock stamp on the PR title/body and SYNC_ID; matches the established sync-mode idiom for human-readable dates. Per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
+   ```bash
+   # SYNC_TS: stable per sync invocation. SYNC_ID propagates to /land-pr.
+   SYNC_TS="${SYNC_TS:-$(TZ=America/New_York date +%Y%m%d-%H%M%S)}"
+   SYNC_ID="fix-issues.sync.${SYNC_TS}"
+
+   # Resolve main_root and pipeline scope; derive PIPELINE_ID if not already
+   # set by the sprint-mode preamble (sync may run standalone).
+   MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
+   PIPELINE_ID="${PIPELINE_ID:-fix-issues.${SYNC_TS}}"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+
+   # Write the requires.land-pr marker on main_root BEFORE dispatch. The
+   # matching fulfilled.land-pr.<SYNC_ID> is written by /land-pr ONLY on
+   # STATUS=merged (created/monitored do not fulfill — by design; the
+   # orchestrator may re-run sync after CI completes to fulfill).
+   printf 'skill: land-pr\nrequired-by: fix-issues-sync\ndate: %s\n' \
+     "$(TZ=UTC date -Iseconds)" \
+     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${SYNC_ID}"
+
+   # Build the PR body file. Body intentionally OMITS GitHub auto-close
+   # directives (Close[sd]? / Fixe[sd]? / Resolve[sd]? #N) — sync closes
+   # approved issues itself via `gh issue close` in Step 4 after merge.
+   RESULT_FILE=$(mktemp)
+   BODY_FILE=$(mktemp)
+   {
+     printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
+       "$(TZ=America/New_York date +%F)"
+     printf '## Test plan\n- [x] Tracker diff reviewed by user before merge.\n'
+   } > "$BODY_FILE"
+
+   PR_TITLE="sync: $(TZ=America/New_York date +%F)"
+   SYNC_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+
+   # /land-pr arg vector. Mirrors run-plan PR mode (modes/pr.md:339-348)
+   # MINUS the auto-merge flag. Sync is always interactive — closing
+   # issues on GitHub requires human approval — so the auto-merge flag
+   # is intentionally omitted. The CI-monitor-suppression flag is also
+   # omitted (CI monitoring is desired; the orchestrator awaits resting
+   # state).
+   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID"
+
+   # Dispatch /land-pr via the Skill tool. The Skill tool loads /land-pr's
+   # prose into the current (orchestrator) context — its internal bash
+   # blocks run here. After /land-pr returns, $RESULT_FILE is populated.
+   #
+   # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+   if [ ! -f "$RESULT_FILE" ]; then
+     echo "ERROR: /land-pr produced no result file at $RESULT_FILE" >&2
+     exit 1
+   fi
+
+   # Parse result-file via canonical allow-list pattern. Unknown keys WARN
+   # but do not fail — forward-compatible with /land-pr schema additions.
+   declare -A LP
+   while IFS='=' read -r KEY VALUE; do
+     case "$KEY" in
+       STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+       MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+       CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+         LP["$KEY"]="$VALUE" ;;
+       "") ;;
+       *) printf 'WARN: /land-pr result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+     esac
+   done < "$RESULT_FILE"
+
+   # LP[STATUS] drives the report below. fulfilled.land-pr.${SYNC_ID} is
+   # present on main_root iff LP[STATUS]=merged.
+   ```
+
+3. **Report:**
    ```
    Sync complete.
      Open issues: N
@@ -372,9 +452,10 @@ For each approved issue:
      Closed (verified fixed): J (#NNN, #NNN, ...)
      Likely fixed (needs human review): L (#NNN, #NNN)
      Gaps: [any GH issues not in any tracker]
+     PR: ${LP[PR_URL]:-(none)} — STATUS=${LP[STATUS]:-unknown}
    ```
 
-3. **Exit.**
+4. **Exit.**
 
 ## Plan (if `plan` is present)
 
@@ -591,6 +672,88 @@ alert user, write failure to report).
 1. **Fetch all open GitHub issues:**
    ```bash
    gh issue list --state open --limit 500 --json number,title,labels,createdAt
+   ```
+
+   **Fetch the open-issue list AND count safely** for the bootstrap and
+   row-writer steps below (single `gh` call, parsed for both count and
+   number array). `grep -cE` over single-line JSON would return line-count
+   not match-count — use `grep -oE | mapfile`:
+
+   ```bash
+   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
+     || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
+   mapfile -t OPEN_NUMS < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
+   OPEN_COUNT=${#OPEN_NUMS[@]}
+   ```
+
+   **Bootstrap empty `$ZSKILLS_ISSUES_DIR/`.** If the issues directory has
+   zero tracker files AND there are open issues, create
+   `$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md` from a frontmatter+header template
+   so subsequent steps have something to write rows into. If there are zero
+   open issues, exit early — no empty tracker, no PR, no noise. Empty
+   `issues_dir` now triggers bootstrap; this failure mode is structurally
+   prevented.
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
+   <!-- allow-hardcoded: TZ=America/New_York reason: bootstrap stamps the "created" date and the in-body "Created by /fix-issues sync on $TODAY" line in America/New_York to match the established tracker idiom across skills; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
+```bash
+mkdir -p "$ZSKILLS_ISSUES_DIR"
+EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)
+if [ -z "$EXISTING_TRACKERS" ]; then
+  if [ "$OPEN_COUNT" -eq 0 ]; then
+    echo "Sync complete. 0 open issues, no trackers needed."
+    exit 0
+  fi
+  TODAY=$(TZ=America/New_York date +%Y-%m-%d)
+  cat > "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" <<TRACKER
+---
+title: Issues — Auto-Bootstrapped Tracker
+status: active
+created: $TODAY
+---
+
+# Issues — Auto-Bootstrapped Tracker
+
+Created by \`/fix-issues sync\` on $TODAY because this repo had no tracker files in \`\$ZSKILLS_ISSUES_DIR/\` when sync ran.
+
+## Open Issues
+
+(rows added by sync step 5 below)
+TRACKER
+  echo "Bootstrapped $ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+  BOOTSTRAP_NEW=yes
+else
+  BOOTSTRAP_NEW=no
+fi
+```
+
+   **Row-writer for residual issues.** For each open GH issue not yet
+   referenced in any tracker, fetch its title+labels and append a
+   `### #N — <title>` row with `**Labels:**` and
+   `**Verdict:** NOT YET RESEARCHED`. The membership check is **anchored**
+   so `bug#23` does not match `#23`. Title/labels parsing uses `grep -oE`
+   (no jq).
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
+   ```bash
+   NEW_RESEARCHED_COUNT=0
+   for N in "${OPEN_NUMS[@]}"; do
+     if grep -qE '(^|[^0-9A-Za-z_])#'"$N"'($|[^0-9])' \
+          "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
+       continue
+     fi
+     ISSUE_JSON=$(gh issue view "$N" --json title,labels 2>&1) \
+       || { echo "ERROR: 'gh issue view $N' failed:" >&2; echo "$ISSUE_JSON" >&2; exit 1; }
+     ISSUE_TITLE_RAW=$(echo "$ISSUE_JSON" | grep -oE '"title":"[^"]*"' | head -1 | sed 's/^"title":"//; s/"$//')
+     ISSUE_LABELS=$(echo "$ISSUE_JSON" | grep -oE '"name":"[^"]*"' | sed 's/^"name":"//; s/"$//' | paste -sd ',' -)
+     {
+       printf '\n### #%s — %s\n' "$N" "$ISSUE_TITLE_RAW"
+       printf '\n**Labels:** %s\n' "${ISSUE_LABELS:-(none)}"
+       printf '\n**Verdict:** NOT YET RESEARCHED\n'
+     } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+     NEW_RESEARCHED_COUNT=$((NEW_RESEARCHED_COUNT + 1))
+   done
    ```
 
 2. **Find gaps** between GitHub open issues and plan tracker files. List

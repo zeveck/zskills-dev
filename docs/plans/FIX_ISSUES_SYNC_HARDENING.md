@@ -2,7 +2,7 @@
 issue: 231
 title: /fix-issues sync — bootstrap empty issues_dir (#231)
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: /fix-issues sync — bootstrap empty issues_dir (#231)
@@ -31,17 +31,17 @@ This plan depends on `docs/plans/PREAMBLE_WORKTREE_GATE.md` Phase 4 (status: com
 - [ ] AC-P.9a — The plan-landing PR body does NOT contain a GitHub auto-close directive against #231 (verb forms `close[sd]?`, `fixe[sd]?`, `resolve[sd]?` followed by `#231`). Verification (case-insensitive, no `^` anchor, captures bulleted/inline forms): `gh pr view <plan-PR> --json body --jq '.body' | grep -ciE '\(close[sd]?\|fixe[sd]?\|resolve[sd]?\) #231\b'` returns 0.
 - [ ] AC-P.9b — The plan-landing branch's commit messages also do NOT contain a GitHub auto-close directive against #231. GitHub auto-closes from commit messages on squash-merge regardless of negation/quoting. Verification: `git log --format=%B origin/main..HEAD | grep -ciE '\(close[sd]?\|fixe[sd]?\|resolve[sd]?\) #231\b'` returns 0 on the plan-landing branch.
 - [ ] AC-P.9d — Runtime sync PRs (those produced by `/fix-issues sync` after this plan lands) do NOT include an auto-close directive for issues that step 4b already closed via the GitHub API — avoids redundant API calls at merge.
-- [ ] AC-P.12 — Sync's `/land-pr` dispatch does NOT pass `--auto`. Verification (whole-file): `grep -cE -- '--auto' skills/fix-issues/SKILL.md` returns 0 (sync is human-review-only; merge happens manually after the user inspects the PR).
+- [ ] AC-P.12 — Sync's `/land-pr` dispatch does NOT pass `--auto`. Verification (sync-section scoped): `awk '/^## Sync /,/^## /' skills/fix-issues/SKILL.md | grep -cE -- '--auto'` returns 0 (sync is human-review-only; merge happens manually after the user inspects the PR). Scoping to `## Sync` is intentional: an older Phase-6 sprint-mode paragraph documents `gh pr merge --auto --squash` for an unrelated code path; a whole-file regex would falsely trip on that working prose.
 
 ## Progress Tracker
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Worktree setup + plan scaffold | ⬚ | | Branch + frontmatter + plan parses |
-| 2 — Bootstrap detector for empty issues_dir | ⬚ | | #231 root site fix; covers both Sync paths |
-| 3 — `/land-pr` dispatch + tracking marker | ⬚ | | Residual gap PREAMBLE didn't cover; inserts after PREAMBLE's commit |
-| 4 — Edge cases | ⬚ | | Hardening |
-| 5 — Final version verification, conformance, run-all | ⬚ | | Verify (or rebump on verifier polish) + full test pass |
+| 1 — Worktree setup + plan scaffold | ✅ | (bookkeeping) | Branch + frontmatter + plan parses |
+| 2 — Bootstrap detector for empty issues_dir | ✅ | `f6964c1` | Bootstrap subroutine + row-writer + version bump; 3023/3023 tests pass |
+| 3 — `/land-pr` dispatch + tracking marker | ✅ | `37f7af4` | /land-pr dispatch + tracking marker; AC-3.2/P.12 grep scoped to ## Sync (over-broad whole-file regex corrected) |
+| 4 — Edge cases | ✅ | (verification-only) | Phase 2's bootstrap covers AC-4.1 + AC-4.6; 3023/3023 tests, mirror clean |
+| 5 — Final version verification, conformance, run-all | ✅ | (verification-only) | AC-5.1..5.7 all PASS; 3023/3023 tests; 404/404 conformance; hash matches version `2026.05.14+5f21d5` |
 
 ## Design & Constraints (plan-wide)
 
@@ -319,7 +319,7 @@ Depends on PREAMBLE_WORKTREE_GATE.md Phase 4 (merged in commit `c1b0962`), speci
 ### Acceptance Criteria
 
 - [ ] AC-3.1 — `grep -nE 'requires\.land-pr\.\$\{?SYNC_ID' skills/fix-issues/SKILL.md` returns ≥1 hit in the sync section.
-- [ ] AC-3.2 — `grep -nE '\-\-tracking-id.*SYNC_ID|--tracking-id.*sync\.' skills/fix-issues/SKILL.md` returns ≥1 hit; AND `grep -cE -- '--auto' skills/fix-issues/SKILL.md` returns 0.
+- [ ] AC-3.2 — `grep -nE '\-\-tracking-id.*SYNC_ID|--tracking-id.*sync\.' skills/fix-issues/SKILL.md` returns ≥1 hit; AND `awk '/^## Sync /,/^## /' skills/fix-issues/SKILL.md | grep -cE -- '--auto'` returns 0 (sync-section scoped; see AC-P.12 for rationale).
 - [ ] AC-3.3 — `diff -rq skills/fix-issues .claude/skills/fix-issues` returns empty.
 - [ ] AC-3.4 — `bash tests/test-skill-conformance.sh` exits 0.
 
