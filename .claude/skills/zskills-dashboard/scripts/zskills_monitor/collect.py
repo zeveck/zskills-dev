@@ -39,6 +39,7 @@ SNAPSHOT_TOP_LEVEL_KEYS = {
     "version",
     "updated_at",
     "repo_root",
+    "repo_url",
     "plans",
     "issues",
     "worktrees",
@@ -778,6 +779,44 @@ def _scan_tracking_markers(
 
 
 # ---------------------------------------------------------------------------
+# Repo URL helper (for client-side entry-link construction)
+# ---------------------------------------------------------------------------
+
+# Accept both HTTPS and SSH origin forms, produce the canonical https URL
+# WITHOUT the trailing .git. Returns "" on any failure — client side
+# treats empty as "no links available, fall back to plain text."
+_GIT_HTTPS_RE = re.compile(r"^https?://([^/]+)/([^/]+/[^/]+?)(?:\.git)?/?$")
+_GIT_SSH_RE = re.compile(r"^git@([^:]+):([^/]+/[^/]+?)(?:\.git)?$")
+
+
+def _derive_repo_url(main_root: pathlib.Path) -> str:
+    if not (main_root / ".git").exists():
+        return ""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(main_root), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if result.returncode != 0:
+        return ""
+    url = result.stdout.strip()
+    if not url:
+        return ""
+    m = _GIT_HTTPS_RE.match(url)
+    if m:
+        return f"https://{m.group(1)}/{m.group(2)}"
+    m = _GIT_SSH_RE.match(url)
+    if m:
+        return f"https://{m.group(1)}/{m.group(2)}"
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Git-history activity (commits that don't have a tracking marker)
 # ---------------------------------------------------------------------------
 
@@ -1356,6 +1395,7 @@ def collect_snapshot(
         "version": VERSION,
         "updated_at": _now_iso(),
         "repo_root": str(main_root),
+        "repo_url": _derive_repo_url(main_root),
         "plans": plans,
         "issues": issues,
         "worktrees": worktrees,
@@ -1461,6 +1501,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "version": VERSION,
             "updated_at": _now_iso(),
             "repo_root": str(main_root),
+            "repo_url": "",
             "plans": plans,
             "issues": issues,
             "worktrees": worktrees,

@@ -286,6 +286,31 @@ code, pre, .mono {
   color: var(--text);
 }
 
+/* card-title-link — used when an entry (plan / issue / branch) has a
+   GitHub URL we can link to. Matches card-title visual weight; underline
+   only on hover so cards still feel like cards, not link lists. */
+.card-title-link {
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+.card-title-link:hover,
+.card-title-link:focus {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* PR link in the activity strip — subtle, matches surrounding a-parent
+   styling but turns into a link on hover. */
+.activity-row .a-pr-link {
+  text-decoration: none;
+}
+.activity-row .a-pr-link:hover,
+.activity-row .a-pr-link:focus {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .card-sub {
   color: var(--text-dim);
   font-size: 0.85rem;

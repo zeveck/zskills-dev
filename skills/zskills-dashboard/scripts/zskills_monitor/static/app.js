@@ -59,6 +59,41 @@ function el(tag, opts) {
   return node;
 }
 
+// titleNode(text, href) — returns a span containing either plain text
+// (when href is empty) or an <a> with target=_blank. Anchors carry
+// draggable=false so they don't fight the card's HTML5 drag handler;
+// click+drag from anywhere ELSE on the card still works.
+function titleNode(text, href) {
+  if (href) {
+    return el("a", {
+      cls: "card-title-link",
+      text: text,
+      attrs: {
+        href: href,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        draggable: "false",
+      },
+    });
+  }
+  return el("span", { cls: "card-title", text: text });
+}
+
+function planUrl(plan) {
+  if (!repoUrl || !plan || !plan.file) return "";
+  return repoUrl + "/blob/main/" + plan.file;
+}
+
+function issueUrl(issueNum) {
+  if (!repoUrl || !issueNum) return "";
+  return repoUrl + "/issues/" + issueNum;
+}
+
+function branchUrl(branchName) {
+  if (!repoUrl || !branchName) return "";
+  return repoUrl + "/tree/" + branchName;
+}
+
 function relativeTime(iso) {
   if (!iso) return "";
   const t = Date.parse(iso);
@@ -107,6 +142,10 @@ function formatLocalTime(iso) {
 
 let lastSnapshot = null;
 let lastWorkState = null;
+// Repo URL ("https://github.com/<owner>/<repo>") for entry-link
+// construction. Populated from /api/state.repo_url; empty when origin
+// is missing, unparseable, or running in fixture mode.
+let repoUrl = "";
 const lastFingerprint = {
   errors: null,
   plans: null,
@@ -250,6 +289,10 @@ function applySnapshot(snap) {
   // is lexicographic-monotonic; sufficient here.
   if (lastCommittedAt && snap && snap.updated_at && snap.updated_at < lastCommittedAt) {
     return;
+  }
+  // Capture repo_url for entry-link construction in render*().
+  if (snap && typeof snap.repo_url === "string") {
+    repoUrl = snap.repo_url;
   }
   const updated = $("updated-at");
   if (updated) updated.textContent = "Updated " + relativeTime(snap.updated_at);
@@ -469,10 +512,7 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     },
   });
   const head = el("div", { cls: "card-row" });
-  head.appendChild(el("span", {
-    cls: "card-title",
-    text: (plan && plan.title) || slug,
-  }));
+  head.appendChild(titleNode((plan && plan.title) || slug, planUrl(plan)));
   if (plan && plan.status) {
     const statusPill = el("span", {
       cls: "pill " + statusPillClass(plan.status),
@@ -702,7 +742,21 @@ function renderBranches(branches, worktrees) {
       },
     });
     const head = el("div", { cls: "card-row" });
-    head.appendChild(el("span", { cls: "card-title mono", text: b.name }));
+    const url = branchUrl(b.name);
+    if (url) {
+      head.appendChild(el("a", {
+        cls: "card-title-link mono",
+        text: b.name,
+        attrs: {
+          href: url,
+          target: "_blank",
+          rel: "noopener noreferrer",
+          draggable: "false",
+        },
+      }));
+    } else {
+      head.appendChild(el("span", { cls: "card-title mono", text: b.name }));
+    }
     if (b.last_commit_at) {
       head.appendChild(el("span", { cls: "card-sub", text: relativeTime(b.last_commit_at) }));
     }
@@ -752,10 +806,10 @@ function buildIssueCard(issue, num, col) {
     },
   });
   const head = el("div", { cls: "card-row" });
-  head.appendChild(el("span", {
-    cls: "card-title",
-    text: issue ? ("#" + num + " " + (issue.title || "")) : ("#" + num),
-  }));
+  head.appendChild(titleNode(
+    issue ? ("#" + num + " " + (issue.title || "")) : ("#" + num),
+    issueUrl(num),
+  ));
   if (issue && issue.created_at) {
     head.appendChild(el("span", { cls: "card-sub", text: relativeTime(issue.created_at) }));
   }
@@ -871,7 +925,20 @@ function renderActivity(activity) {
       const mid = el("span");
       mid.appendChild(el("span", { cls: "a-subject", text: a.subject || "" }));
       if (a.pr) {
-        mid.appendChild(el("span", { cls: "a-parent", text: " #" + a.pr }));
+        const prHref = repoUrl ? (repoUrl + "/pull/" + a.pr) : "";
+        if (prHref) {
+          mid.appendChild(el("a", {
+            cls: "a-parent a-pr-link",
+            text: " #" + a.pr,
+            attrs: {
+              href: prHref,
+              target: "_blank",
+              rel: "noopener noreferrer",
+            },
+          }));
+        } else {
+          mid.appendChild(el("span", { cls: "a-parent", text: " #" + a.pr }));
+        }
       }
       row.appendChild(mid);
       row.appendChild(el("span", { cls: "a-time", text: relativeTime(a.timestamp) }));
