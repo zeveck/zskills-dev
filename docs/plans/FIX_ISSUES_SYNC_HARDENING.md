@@ -39,7 +39,7 @@ This plan depends on `docs/plans/PREAMBLE_WORKTREE_GATE.md` Phase 4 (status: com
 |-------|--------|--------|-------|
 | 1 — Worktree setup + plan scaffold | ✅ | (bookkeeping) | Branch + frontmatter + plan parses |
 | 2 — Bootstrap detector for empty issues_dir | ✅ | `f6964c1` | Bootstrap subroutine + row-writer + version bump; 3023/3023 tests pass |
-| 3 — `/land-pr` dispatch + tracking marker | ⬚ | | Residual gap PREAMBLE didn't cover; inserts after PREAMBLE's commit |
+| 3 — `/land-pr` dispatch + tracking marker | ✅ | `37f7af4` | /land-pr dispatch + tracking marker; AC-3.2/P.12 grep scoped to ## Sync (over-broad whole-file regex corrected) |
 | 4 — Edge cases | ⬚ | | Hardening |
 | 5 — Final version verification, conformance, run-all | ⬚ | | Verify (or rebump on verifier polish) + full test pass |
 
