@@ -186,15 +186,28 @@ else
   fail "https same-host Origin returned $CODE (expected 200 post-5b)"
 fi
 
-# --- Acceptance Criterion: port-mismatch is rejected (defense). ---
-# A localhost Origin pointing at a DIFFERENT port should still be 403:
-# it's a different origin per the same-origin policy.
+# --- Acceptance Criterion: loopback Origin with mismatched port accepted. ---
+# Container port-forwarding scenario (docker, devcontainer auto-forward,
+# codespaces, ssh -L): browser sees forwarded port (e.g., 8081), server
+# binds internal port (e.g., 8080). The browser sends Origin with the
+# forwarded port; the server must accept since the host is still loopback.
+# Port-matching adds zero security here — see the rationale block in
+# server.py _origin_ok. The load-bearing defense is the host-is-loopback
+# check (asserted by the cross-origin cases above).
 OTHER_PORT=$((PORT + 1))
 CODE=$(post_with_origin "http://127.0.0.1:$OTHER_PORT" "$BODY")
-if [ "$CODE" = "403" ]; then
-  pass "localhost Origin with mismatched port rejected (403)"
+if [ "$CODE" = "200" ]; then
+  pass "loopback Origin with mismatched port accepted (200) — covers container port-forwarding"
 else
-  fail "localhost Origin different port returned $CODE (expected 403)"
+  fail "loopback Origin different port returned $CODE (expected 200 — container forward case)"
+fi
+
+# Also assert localhost (the name) with mismatched port — same policy.
+CODE=$(post_with_origin "http://localhost:$OTHER_PORT" "$BODY")
+if [ "$CODE" = "200" ]; then
+  pass "localhost Origin with mismatched port accepted (200)"
+else
+  fail "localhost Origin different port returned $CODE (expected 200)"
 fi
 
 # --- Acceptance Criterion: localhost Origin without port (proxy-stripped) accepted. ---
