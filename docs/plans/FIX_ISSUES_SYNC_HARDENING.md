@@ -2,7 +2,7 @@
 issue: 231
 title: /fix-issues sync — bootstrap empty issues_dir (#231)
 created: 2026-05-12
-status: active
+status: complete
 ---
 
 # Plan: /fix-issues sync — bootstrap empty issues_dir (#231)
