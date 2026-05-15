@@ -1,6 +1,5 @@
 ---
 name: quickfix
-disable-model-invocation: true
 argument-hint: "[<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
@@ -11,7 +10,7 @@ description: >-
   requires execution.landing == "pr". No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.15+03e6a0"
+  version: "2026.05.15+12451b"
 ---
 
 # /quickfix — In-Flight Fix → PR

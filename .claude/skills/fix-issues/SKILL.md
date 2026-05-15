@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.15+509e96"
+  version: "2026.05.15+d7d321"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -893,28 +893,62 @@ top, then the remaining slots filled by default priority.
 
 ### Triage: vague, complex, or interrelated issues
 
-While building the ranked list, classify each candidate:
+While building the ranked list, classify each candidate into ONE of the
+five routing tiers below. Picking the right tier is the whole point of
+triage — the wrong tier produces either a 1000-line plan for a 50-line
+fix (over-routing to `/draft-plan`) or an unreviewed PR for a subtle
+bug (under-routing to in-batch fix-agent).
 
-- **Clear and doable** — repro steps, expected behavior, affected files
-  identified. Include in the sprint.
+- **Clear and doable as one PR** — repro steps, expected behavior,
+  affected files identified, scope fits a single coherent commit.
+  Include in the sprint as an in-batch fix-agent dispatch. This is the
+  default and the cheapest path.
+
+- **Clear and doable as one PR, but needs review** — clear spec, single
+  PR scope, but the fix has multiple coordinate-with-discipline steps
+  (e.g., touches multiple files, requires version bumps, has subtle
+  scope-creep risk). Dispatch `/quickfix` for the issue, which adds
+  pre-execution plan-review (catches scope drift before commit) plus CI
+  poll + fix-cycle without you hand-orchestrating each step. Per-issue
+  /quickfix dispatch replaces the in-batch fix-agent for this category.
+
+- **Bug with unclear cause** — symptom is reported but no root-cause
+  hypothesis emerges from the issue body or research blurb. Don't guess.
+  Skip the issue with note: "Needs deeper investigation — could not
+  determine root cause in batch mode. Run `/investigate #NNN`." This is
+  a manual handoff (`/investigate` runs interactively, not in-batch).
+
+- **Plan-scale** — clear spec but would require 500+ lines across
+  multiple subsystems, multi-phase coordination, integration-point
+  design, or hook interactions. Not a batch-fix item.
+  - Interactive: report "this needs `/run-plan`, not `/fix-issues`"
+  - Auto: skip it, report as "Skipped: plan-scale, run /draft-plan"
+  - If `plans/PLAN_INDEX.md` exists, grep plan files for the issue
+    number (e.g., `#NNN`). If a plan already covers this issue, note
+    which plan in the skip reason. If no plan covers it, add to the
+    skip note: "Consider `/draft-plan` for #NNN."
+
 - **Too vague** — no repro steps, no expected behavior, body is empty or
   just "it's broken." You don't know WHAT to fix.
   - Interactive: flag it and ask the user for clarification
   - Auto: skip it, report as "Skipped: insufficient context" in
     $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md
-- **Too complex** — clear spec but would require 500+ lines, major
-  refactoring, or architectural changes. Not a batch-fix item.
-  - Interactive: report "this needs `/run-plan`, not `/fix-issues`"
-  - Auto: skip it, report as "Skipped: too complex for batch fix"
-  - If `plans/PLAN_INDEX.md` exists, grep plan files for the issue number
-    (e.g., `#NNN`). If a plan already covers this issue, note which plan
-    in the skip reason. If no plan covers it, add to the skip note:
-    "Consider `/draft-plan` for #NNN."
 
 **"Too vague" means you don't know WHAT to do — not that you don't know
 HOW.** If the issue clearly describes the problem but the fix is hard,
 that's not vague — that's work. Never use "vague" as an excuse to skip
 hard issues.
+
+**Picking between in-batch fix-agent and `/quickfix`.** The in-batch
+fix-agent is appropriate when the fix is mechanical enough that
+post-execution diff review (which `/fix-issues` Phase 4 already
+dispatches) is sufficient. `/quickfix` is appropriate when *before* the
+fix, you want a second pair of eyes on the plan — typically when the
+issue has multiple discipline surfaces (version bumps + mirror, test
+updates + source change, doc update + behavior change). The
+`/quickfix` plan-reviewer's auto-REVISE on >4 Acceptance bullets is
+the mechanical signal that says "this is bigger than `/quickfix` —
+escalate to `/draft-plan`."
 
 ### Group by dependency and file overlap
 
