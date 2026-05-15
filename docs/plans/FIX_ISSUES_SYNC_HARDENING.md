@@ -41,7 +41,7 @@ This plan depends on `docs/plans/PREAMBLE_WORKTREE_GATE.md` Phase 4 (status: com
 | 2 — Bootstrap detector for empty issues_dir | ✅ | `f6964c1` | Bootstrap subroutine + row-writer + version bump; 3023/3023 tests pass |
 | 3 — `/land-pr` dispatch + tracking marker | ✅ | `37f7af4` | /land-pr dispatch + tracking marker; AC-3.2/P.12 grep scoped to ## Sync (over-broad whole-file regex corrected) |
 | 4 — Edge cases | ✅ | (verification-only) | Phase 2's bootstrap covers AC-4.1 + AC-4.6; 3023/3023 tests, mirror clean |
-| 5 — Final version verification, conformance, run-all | ⬚ | | Verify (or rebump on verifier polish) + full test pass |
+| 5 — Final version verification, conformance, run-all | ✅ | (verification-only) | AC-5.1..5.7 all PASS; 3023/3023 tests; 404/404 conformance; hash matches version `2026.05.14+5f21d5` |
 
 ## Design & Constraints (plan-wide)
 
