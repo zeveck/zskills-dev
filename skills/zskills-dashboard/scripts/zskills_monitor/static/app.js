@@ -406,6 +406,7 @@ function fingerprintIssues(issues, queues) {
 function fingerprintActivity(act) {
   return JSON.stringify(act.slice(0, 20).map(a => [
     a.timestamp, a.pipeline, a.kind, a.id, a.skill, a.status, a.parent,
+    a.subject, a.pr,
   ]));
 }
 
@@ -863,21 +864,34 @@ function renderActivity(activity) {
   empty.hidden = true;
   for (const a of rows) {
     const row = el("div", { cls: "activity-row" });
-    row.appendChild(el("span", { cls: "a-pipe mono", text: a.pipeline || "(legacy)" }));
-    const mid = el("span");
-    if (a.skill) {
-      mid.appendChild(el("span", { cls: "a-skill mono", text: a.skill }));
+    if (a.kind === "commit") {
+      // Git-history row: short SHA + commit subject. Subject already
+      // conveys what changed; no need for pipeline/skill columns.
+      row.appendChild(el("span", { cls: "a-pipe mono", text: a.id || "" }));
+      const mid = el("span");
+      mid.appendChild(el("span", { cls: "a-subject", text: a.subject || "" }));
+      if (a.pr) {
+        mid.appendChild(el("span", { cls: "a-parent", text: " #" + a.pr }));
+      }
+      row.appendChild(mid);
+      row.appendChild(el("span", { cls: "a-time", text: relativeTime(a.timestamp) }));
+    } else {
+      row.appendChild(el("span", { cls: "a-pipe mono", text: a.pipeline || "(legacy)" }));
+      const mid = el("span");
+      if (a.skill) {
+        mid.appendChild(el("span", { cls: "a-skill mono", text: a.skill }));
+      }
+      mid.appendChild(el("span", { text: " " + (a.kind || "") + (a.id ? " " + a.id : "") }));
+      if (a.status) {
+        const cls = activityStatusClass(a.status);
+        mid.appendChild(el("span", { cls: cls ? "pill " + cls : "pill", text: a.status }));
+      }
+      if (a.parent) {
+        mid.appendChild(el("span", { cls: "a-parent", text: "← " + a.parent }));
+      }
+      row.appendChild(mid);
+      row.appendChild(el("span", { cls: "a-time", text: relativeTime(a.timestamp) }));
     }
-    mid.appendChild(el("span", { text: " " + (a.kind || "") + (a.id ? " " + a.id : "") }));
-    if (a.status) {
-      const cls = activityStatusClass(a.status);
-      mid.appendChild(el("span", { cls: cls ? "pill " + cls : "pill", text: a.status }));
-    }
-    if (a.parent) {
-      mid.appendChild(el("span", { cls: "a-parent", text: "← " + a.parent }));
-    }
-    row.appendChild(mid);
-    row.appendChild(el("span", { cls: "a-time", text: relativeTime(a.timestamp) }));
     body.appendChild(row);
   }
 }

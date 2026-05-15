@@ -369,6 +369,7 @@ code, pre, .mono {
 .activity-row .a-status-fail    { color: var(--red); }
 .activity-row .a-status-running { color: var(--orange); }
 .activity-row .a-parent { color: var(--text-dim); font-style: italic; margin-left: 6px; }
+.activity-row .a-subject { color: var(--text); }
 .activity-row .a-time { color: var(--text-dim); }
 
 .modal-root {
