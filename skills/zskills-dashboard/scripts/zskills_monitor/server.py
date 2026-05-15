@@ -599,9 +599,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
         return data, None
 
     def _origin_ok(self) -> bool:
-        """CSRF check — accept localhost same-host Origin (any scheme).
+        """CSRF check — accept localhost same-host Origin (any port, any scheme).
 
-        Policy (relaxed in Phase 5b after 5a diagnosis):
+        Policy:
 
         1. Missing Origin header  -> ACCEPT. Some browsers/proxies strip
            the Origin header on same-origin POSTs; treating missing-Origin
@@ -609,35 +609,44 @@ class MonitorHandler(BaseHTTPRequestHandler):
            localhost-bound services.
         2. Origin == "null"       -> ACCEPT. Browsers emit this for
            opaque-origin contexts (post-redirect, sandboxed iframes).
-        3. Origin host portion is `127.0.0.1` or `localhost` AND (the
-           Origin port matches the server port OR the Origin has no
-           explicit port — for proxies that may rewrite). Any scheme
-           accepted.                                                ACCEPT.
-        4. Anything else (e.g., http://evil.com)                  -> REJECT.
+        3. Origin host portion is `127.0.0.1` or `localhost`. ACCEPT
+           regardless of port or scheme.
+        4. Anything else (e.g., http://evil.com)                 -> REJECT.
 
-        This keeps the cross-origin rejection invariant for non-localhost
-        Origins while removing the false-positives observed in 5a-repro.
+        Rationale for accepting any port on loopback (relaxed after the
+        Phase 5b port-match check broke container-port-forwarded
+        deployments — see issue trail PR #253 → #268):
+
+        The cross-origin rejection invariant lives in rule 4. An attacker
+        page at http://evil.example/ sends `Origin: http://evil.example`
+        on its fetches — host fails the loopback check and rule 4 rejects
+        with 403. A browser cannot forge `Origin: http://127.0.0.1:<n>`
+        from a remote context — the Origin header is set by the browser
+        from the page's actual location, not by JS. So the only way an
+        `Origin: http://127.0.0.1:<port>` reaches the server is if the
+        user is loading the page from their own loopback, which means
+        they already control that surface and CSRF is moot.
+
+        Port-matching adds zero security here; it only breaks
+        port-forwarded dev environments (docker auto-forward, VS Code
+        devcontainers, codespaces, `ssh -L`). In each of those cases,
+        the browser sees the forwarded port (e.g., 8081) while the
+        server binds the internal port (e.g., 8080), so a port-strict
+        check produces a 403 on every POST despite identical loopback
+        host. The relaxed policy accepts these.
         """
         origin = self.headers.get("Origin", "")
         # Rule 1 + 2: empty or "null" Origin -> accept.
         if origin == "" or origin == "null":
             return True
-        # Rule 3: parse host portion of Origin; accept if same-host.
+        # Rules 3 + 4: parse host portion; loopback is the only same-host
+        # signal that matters (port is irrelevant on a non-routable host).
         try:
             parsed = urllib.parse.urlsplit(origin)
         except ValueError:
             return False
         host = (parsed.hostname or "").lower()
-        if host not in ("127.0.0.1", "localhost"):
-            return False
-        # Port: if Origin has no port, accept (proxy may have stripped).
-        # If Origin has a port, it must match the server port.
-        ctx = self._ctx()
-        port = ctx["port"]
-        origin_port = parsed.port
-        if origin_port is None:
-            return True
-        return origin_port == port
+        return host in ("127.0.0.1", "localhost")
 
     # --------------------------------------------------------------- routing
 
