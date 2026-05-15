@@ -112,14 +112,63 @@ else
   fail "/api/health re-writes PID file even when present (mtime changed: $MTIME_BEFORE → $MTIME_AFTER)"
 fi
 
-# Cleanup: SIGTERM the server. CLAUDE.md rule — never SIGKILL.
+# Case 5: SIGTERM mid-flight — self-heal MUST NOT re-create the PID file
+# once the shutdown handler has started. Otherwise the next
+# /zskills-dashboard restart sees a "fresh" PID file pointing at the dying
+# process and reports "still healthy" while the old server limps to exit.
+#
+# To exercise this deterministically, send SIGTERM, then immediately remove
+# the PID file ourselves (simulating the race where remove_pid_file has run
+# but a handler thread is still in flight). The next /api/health must NOT
+# rewrite the file.
+#
+# Note: server.serve_forever exits quickly after SIGTERM, so we have a
+# narrow window. Send SIGTERM and within that window try /api/health a
+# few times — at least one should succeed before the listener closes, and
+# every one of them must leave PID_FILE absent (suppressed by
+# shutting_down event).
+# CLAUDE.md rule — never SIGKILL.
+
+# Pre-condition: PID file exists right now (from Case 2 self-heal).
+[ -f "$PID_FILE" ] || fail "Case 5 preflight — PID file missing before SIGTERM"
+
 kill -TERM "$SERVER_PID" 2>/dev/null
+# Remove pidfile ourselves to simulate the race window (post-remove,
+# pre-process-exit). If self-heal suppression works, subsequent /api/health
+# calls that get through the still-draining server won't re-create it.
+rm -f "$PID_FILE"
+
+# Hit /api/health repeatedly while server drains. Some will succeed, some
+# will fail with ECONNREFUSED — either is fine; what matters is that NO
+# call re-creates the PID file.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
+  curl -sf -m 1 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 || true
+  if [ -f "$PID_FILE" ]; then
+    break  # bug fired — bail out of the loop so we can fail diagnostically
+  fi
+  sleep 0.05
+done
+
+# Wait for full exit.
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then
     break
   fi
   sleep 0.2
 done
+
+if kill -0 "$SERVER_PID" 2>/dev/null; then
+  fail "Case 5 — server did not exit within 3s of SIGTERM"
+else
+  if [ -f "$PID_FILE" ]; then
+    fail "Case 5 — PID file re-created after SIGTERM (self-heal raced shutdown)"
+    echo "  content:"
+    cat "$PID_FILE" 2>&1 | sed 's/^/    /'
+  else
+    pass "Case 5 — PID file stays absent after SIGTERM + active /api/health polling (suppression works)"
+  fi
+fi
+
 rm -rf "$FIXTURE"
 
 echo

@@ -753,8 +753,13 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # Self-heal the PID file if it was removed externally while we live
         # (e.g., a stale `rm` from another session). Cheap: existence check
         # short-circuits when the file is present, which is the hot path.
+        # Suppressed during shutdown: the SIGTERM handler removed the file
+        # intentionally, and re-writing it would race cleanup and leave a
+        # pidfile pointing at a dying process.
         pid_path = ctx["main_root"] / ".zskills" / "dashboard-server.pid"
-        if not pid_path.exists():
+        shutting_down = ctx.get("shutting_down")
+        is_shutting_down = shutting_down is not None and shutting_down.is_set()
+        if not pid_path.exists() and not is_shutting_down:
             try:
                 write_pid_file(ctx["main_root"], ctx["port"])
             except OSError:
@@ -1129,16 +1134,19 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     static_dir = pathlib.Path(__file__).resolve().parent / "static"
     started_mono = time.time()
+    shutdown_done = threading.Event()
     server.context = {  # type: ignore[attr-defined]
         "main_root": main_root,
         "port": port,
         "started_mono": started_mono,
         "static_dir": static_dir,
+        # _handle_health checks this to suppress PID-file self-heal once
+        # SIGTERM has fired (otherwise inflight polls re-create the file
+        # the shutdown handler just removed).
+        "shutting_down": shutdown_done,
     }
 
     pid_path = write_pid_file(main_root, port)
-
-    shutdown_done = threading.Event()
 
     def _shutdown(signum, frame):  # noqa: ARG001
         if shutdown_done.is_set():
