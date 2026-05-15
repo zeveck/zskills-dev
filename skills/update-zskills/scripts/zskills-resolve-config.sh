@@ -20,9 +20,39 @@
 # Coexistence: same directory hosts zskills-stub-lib.sh, which exposes
 # `zskills_dispatch_stub`. Domain-disjoint — no naming collisions.
 
-# Fail loud if CLAUDE_PROJECT_DIR is absent. The harness sets it for spawned
-# bash blocks; tests/run-all.sh exports it from REPO_ROOT.
-: "${CLAUDE_PROJECT_DIR:?CLAUDE_PROJECT_DIR not set — harness or tests/run-all.sh export missing}"
+# CLAUDE_PROJECT_DIR resolution.
+#
+# Anthropic's harness only documents this var as set for hook subprocesses
+# (https://code.claude.com/docs/en/hooks — "Command hook fields / Exec
+# form and shell form"); it is NOT documented to be set in Bash-tool
+# subshells. tests/run-all.sh exports it for tests. When neither path
+# applies (orchestrator-side Bash from inside a skill), we fall back to
+# the canonical "find main repo from anywhere" idiom used elsewhere in
+# this codebase (ensure-worktree.sh, create-worktree.sh, land-phase.sh):
+# `git rev-parse --git-common-dir`, whose result resolves through
+# worktree links back to the main repo's `.git`. Then dirname gives the
+# main repo root — matching the harness-set semantics.
+#
+# The stderr WARN fires once per shell (via _ZSK_FALLBACK_WARNED sentinel)
+# so the harness gap stays visible without spamming every source.
+#
+# Outside a git repo, no clean fallback exists and zskills cannot function;
+# fail with a clear error.
+if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
+  if _ZSK_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) \
+       && CLAUDE_PROJECT_DIR=$(cd "$_ZSK_COMMON_DIR/.." && pwd); then
+    export CLAUDE_PROJECT_DIR
+    if [ -z "${_ZSK_FALLBACK_WARNED:-}" ]; then
+      echo "WARN: zskills: CLAUDE_PROJECT_DIR not set by harness; fell back to $CLAUDE_PROJECT_DIR via git-common-dir" >&2
+      _ZSK_FALLBACK_WARNED=1
+    fi
+    unset _ZSK_COMMON_DIR
+  else
+    echo "ERROR: zskills: CLAUDE_PROJECT_DIR not set and not in a git repo — cannot resolve project root" >&2
+    unset _ZSK_COMMON_DIR
+    return 127 2>/dev/null || exit 127
+  fi
+fi
 
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 

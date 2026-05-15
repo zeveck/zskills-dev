@@ -130,32 +130,66 @@ C4_PLANS=$(
   || fail "Case 4: relative-up path" "got '$C4_PLANS', expected '$T4/../external/zskills'"
 rm -rf "$T4"
 
-# --- Case 5: both vars unset → fail loud -----------------------------------
+# --- Case 5: both vars unset, contract depends on whether cwd is in a git repo
+#
+# Old contract (pre-CLAUDE_PROJECT_DIR-fallback PR): both unset → fail loud
+# everywhere. New contract: in a git repo, fall back to git-common-dir with
+# a one-time stderr WARN; outside a git repo, the old loud-failure path
+# still applies because no clean fallback exists. See zskills-resolve-config.sh
+# header and zskills-paths.sh resolution block.
+
 echo ""
-echo "=== Case 5: both \$CLAUDE_PROJECT_DIR and \$ZSKILLS_PATHS_ROOT unset → non-zero ==="
-# Crucial: tests/run-all.sh exports CLAUDE_PROJECT_DIR globally, so unset
-# must happen INSIDE a subshell that inherits then unsets both.
-( unset CLAUDE_PROJECT_DIR ZSKILLS_PATHS_ROOT
+echo "=== Case 5a: both vars unset, IN a git repo → succeed via git-common-dir fallback ==="
+# tests/run-all.sh exports CLAUDE_PROJECT_DIR globally; unset must happen
+# INSIDE a subshell that inherits then unsets both. Subshell stays in the
+# repo root, so `git rev-parse --git-common-dir` resolves successfully.
+( unset CLAUDE_PROJECT_DIR ZSKILLS_PATHS_ROOT _ZSK_FALLBACK_WARNED
   source "$HELPER"
-) 2> "$TEST_OUT/case5.stderr"
+) 2> "$TEST_OUT/case5a.stderr"
+rc=$?
+if [ "$rc" = "0" ]; then
+  pass "Case 5a: helper rc=0 via git-common-dir fallback"
+else
+  fail "Case 5a: helper rc=0 via fallback" \
+    "expected 0, got $rc; stderr: $(cat "$TEST_OUT/case5a.stderr")"
+fi
+if grep -qE "WARN.*fell back.*git-common-dir" "$TEST_OUT/case5a.stderr"; then
+  pass "Case 5a: stderr contains 'WARN ... fell back ... git-common-dir'"
+else
+  fail "Case 5a: stderr fallback WARN" \
+    "got: $(cat "$TEST_OUT/case5a.stderr")"
+fi
+
+echo ""
+echo "=== Case 5b: both vars unset, NOT in a git repo → fail loud ==="
+# Fixture: a tempdir with no .git ancestor (mktemp paths under /tmp have
+# no git parent). cd there before sourcing so git-common-dir returns
+# non-zero and the fallback path falls through to the error branch.
+T5B=$(mktemp -d /tmp/zskills-paths-t5b-XXXXXX)
+( cd "$T5B"
+  unset CLAUDE_PROJECT_DIR ZSKILLS_PATHS_ROOT _ZSK_FALLBACK_WARNED GIT_DIR GIT_WORK_TREE
+  source "$HELPER"
+) 2> "$TEST_OUT/case5b.stderr"
 rc=$?
 if [ "$rc" != "0" ]; then
-  pass "Case 5a: helper exits non-zero when both vars unset (rc=$rc)"
+  pass "Case 5b: helper exits non-zero when both vars unset and not in git repo (rc=$rc)"
 else
-  fail "Case 5a: helper exit code" "expected non-zero, got $rc"
+  fail "Case 5b: helper exit code" \
+    "expected non-zero, got $rc; stderr: $(cat "$TEST_OUT/case5b.stderr")"
 fi
-if grep -q "ZSKILLS_PATHS_ROOT" "$TEST_OUT/case5.stderr"; then
+if grep -q "ZSKILLS_PATHS_ROOT" "$TEST_OUT/case5b.stderr"; then
   pass "Case 5b: stderr names ZSKILLS_PATHS_ROOT"
 else
   fail "Case 5b: stderr ZSKILLS_PATHS_ROOT mention" \
-    "got: $(cat "$TEST_OUT/case5.stderr")"
+    "got: $(cat "$TEST_OUT/case5b.stderr")"
 fi
-if grep -q "CLAUDE_PROJECT_DIR" "$TEST_OUT/case5.stderr"; then
-  pass "Case 5c: stderr names CLAUDE_PROJECT_DIR"
+if grep -q "CLAUDE_PROJECT_DIR" "$TEST_OUT/case5b.stderr"; then
+  pass "Case 5b: stderr names CLAUDE_PROJECT_DIR"
 else
-  fail "Case 5c: stderr CLAUDE_PROJECT_DIR mention" \
-    "got: $(cat "$TEST_OUT/case5.stderr")"
+  fail "Case 5b: stderr CLAUDE_PROJECT_DIR mention" \
+    "got: $(cat "$TEST_OUT/case5b.stderr")"
 fi
+rm -rf "$T5B"
 
 # --- Case 6a: garbage (non-JSON) config → silent fallback ------------------
 echo ""
