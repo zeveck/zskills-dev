@@ -383,12 +383,20 @@ function deepCloneQueues(queues, plans, issues) {
     out.plans[col].push({ slug: p.slug });
   }
 
+  // GitHub owns issue existence; this file only owns ordering. Drop any
+  // queue entry whose number isn't in the live `issues` array so closed
+  // issues self-prune from monitor-state.json on the next POST.
+  const liveIssueNumbers = new Set();
+  for (const it of issues) {
+    if (typeof it.number === "number") liveIssueNumbers.add(it.number);
+  }
   const seenNums = new Set();
   for (const c of ISSUE_COLUMNS) {
     const arr = (queues.issues && queues.issues[c]) || [];
     for (const n of arr) {
       const num = parseInt(n, 10);
       if (!Number.isFinite(num) || seenNums.has(num)) continue;
+      if (!liveIssueNumbers.has(num)) continue;
       seenNums.add(num);
       out.issues[c].push(num);
     }
@@ -847,7 +855,7 @@ function renderIssues(issues, queues) {
   const body = $("issues-body");
   const empty = $("issues-empty");
   clear(body);
-  if (!issues.length && allColumnsEmpty(queues.issues, ISSUE_COLUMNS)) {
+  if (!issues.length) {
     empty.hidden = false;
     return;
   }
@@ -856,14 +864,31 @@ function renderIssues(issues, queues) {
   const numToIssue = {};
   for (const it of issues) numToIssue[it.number] = it;
 
+  // GitHub owns issue existence; we render one card per live issue and
+  // group by its annotated queue.column. Queue-only entries are never
+  // rendered, so closed issues stop producing blank cards.
+  const UNQUEUED = Number.MAX_SAFE_INTEGER;
+  const grouped = {};
+  for (const c of ISSUE_COLUMNS) grouped[c] = [];
+  for (const it of issues) {
+    if (typeof it.number !== "number") continue;
+    const col = (it.queue && it.queue.column) || "triage";
+    if (ISSUE_COLUMNS.indexOf(col) < 0) continue;
+    let idx = (it.queue && typeof it.queue.index === "number") ? it.queue.index : -1;
+    if (idx < 0) idx = UNQUEUED;
+    grouped[col].push({ num: it.number, idx });
+  }
+  for (const c of ISSUE_COLUMNS) {
+    grouped[c].sort((a, b) => (a.idx - b.idx) || (b.num - a.num));
+  }
+
   const cols = el("div", { cls: "columns columns-2" });
   for (const c of ISSUE_COLUMNS) {
     const colDiv = el("div", { cls: "column" });
     const headId = "issues-col-" + c;
     const head = el("div", { cls: "column-head", attrs: { id: headId } });
     head.appendChild(el("span", { text: ISSUE_COLUMN_LABELS[c] }));
-    const arr = (lastGoodQueues && lastGoodQueues.issues[c]) || [];
-    head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    head.appendChild(el("span", { cls: "muted", text: String(grouped[c].length) }));
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -875,10 +900,8 @@ function renderIssues(issues, queues) {
         "aria-labelledby": headId,
       },
     });
-    for (const num of arr) {
-      const n = parseInt(num, 10);
-      if (!Number.isFinite(n)) continue;
-      const card = buildIssueCard(numToIssue[n] || null, n, c);
+    for (const entry of grouped[c]) {
+      const card = buildIssueCard(numToIssue[entry.num], entry.num, c);
       ul.appendChild(card);
     }
     colDiv.appendChild(ul);
