@@ -121,6 +121,13 @@ let pollAbort = null;
 let workPollTimer = null;
 let workPollAbort = null;
 let suppressNextStatePollUntil = 0;
+// updated_at (ISO string) returned by the most recent successful POST
+// /api/queue. Used by applySnapshot to discard stale GET snapshots that
+// were produced BEFORE our last commit hit the server — closes the
+// in-flight-GET race that survived the suppressNextStatePollUntil
+// window (which only skips the NEXT scheduled poll, not a poll already
+// awaiting fetchState()).
+let lastCommittedAt = null;
 
 // last-known-good queues — used to revert local DOM on POST failure.
 let lastGoodQueues = null;
@@ -235,6 +242,15 @@ async function pollWorkOnce() {
 }
 
 function applySnapshot(snap) {
+  // Stale-snapshot guard: if our most recent committed POST has an
+  // updated_at newer than this snapshot's updated_at, the server hadn't
+  // yet processed our write when this GET was generated. Applying it
+  // would clobber the user's just-applied reorder with the pre-commit
+  // state ("snap-back"). String comparison on ISO-8601 with UTC offset
+  // is lexicographic-monotonic; sufficient here.
+  if (lastCommittedAt && snap && snap.updated_at && snap.updated_at < lastCommittedAt) {
+    return;
+  }
   const updated = $("updated-at");
   if (updated) updated.textContent = "Updated " + relativeTime(snap.updated_at);
 
@@ -1028,6 +1044,18 @@ async function postQueue(queues, opts) {
     showToast(action + " failed (" + res.status + "): " + body.slice(0, 240), "err");
     return false;
   }
+  // Capture updated_at from the response so applySnapshot can discard
+  // any stale GET snapshot that was generated before this commit landed
+  // on the server. Belt-and-suspenders with the
+  // suppressNextStatePollUntil window below: that handles the NEXT
+  // scheduled poll; this handles an in-flight poll whose GET was
+  // awaiting fetchState() at the moment this POST returned.
+  try {
+    const body = await res.json();
+    if (body && typeof body.updated_at === "string") {
+      lastCommittedAt = body.updated_at;
+    }
+  } catch (_e) { /* tolerable — guard just becomes a no-op for this commit */ }
   // Reconcile: suppress next state poll for ~1.5s to avoid stale-GET flicker.
   suppressNextStatePollUntil = Date.now() + POST_RECONCILE_SUPPRESS_MS;
   return true;
@@ -1316,6 +1344,7 @@ function onDragEnd(ev) {
   dragState = null;
   const dropzones = document.querySelectorAll(".dropzone.drop-target");
   for (const dz of dropzones) dz.classList.remove("drop-target");
+  removeInsertIndicator();
 }
 
 function onDragOver(ev) {
@@ -1326,6 +1355,9 @@ function onDragOver(ev) {
   if (dz.getAttribute("data-kind") !== dragState.kind) return;
   ev.preventDefault();
   if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+  // Visible insertion-point feedback: blue line at the computed index.
+  // Required for intra-column reordering to feel precise.
+  updateInsertIndicator(dz, ev.clientY);
 }
 
 function onDragEnter(ev) {
@@ -1343,6 +1375,7 @@ function onDragLeave(ev) {
   const rel = ev.relatedTarget;
   if (rel && dz.contains(rel)) return;
   dz.classList.remove("drop-target");
+  removeInsertIndicator();
 }
 
 function computeInsertIndex(dz, clientY) {
@@ -1354,6 +1387,33 @@ function computeInsertIndex(dz, clientY) {
   return cards.length;
 }
 
+// Insertion-point indicator: a thin --accent line rendered inside the
+// dropzone at the computed insertion position. Lets the user see WHERE
+// the drop will land before releasing the mouse. Inserted/moved on
+// every dragover; removed on dragend / dragleave (full leave) / drop.
+// pointer-events: none in the CSS prevents the indicator itself from
+// firing dragenter/dragleave on the parent.
+function updateInsertIndicator(dz, clientY) {
+  removeInsertIndicator();
+  if (!dz) return;
+  const cards = Array.from(dz.querySelectorAll("li.card:not(.dragging)"));
+  const idx = computeInsertIndex(dz, clientY);
+  const indicator = document.createElement("div");
+  indicator.className = "drop-indicator";
+  if (idx >= cards.length) {
+    dz.appendChild(indicator);
+  } else {
+    dz.insertBefore(indicator, cards[idx]);
+  }
+}
+
+function removeInsertIndicator() {
+  const els = document.querySelectorAll(".drop-indicator");
+  for (const el of els) {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }
+}
+
 async function onDrop(ev) {
   const dz = ev.target.closest && ev.target.closest("ul.dropzone");
   if (!dz) return;
@@ -1361,8 +1421,11 @@ async function onDrop(ev) {
   if (dz.getAttribute("data-kind") !== dragState.kind) return;
   ev.preventDefault();
   dz.classList.remove("drop-target");
+  // Compute the index BEFORE removing the indicator (so insertion math
+  // uses the same DOM state the user saw on the indicator).
   const targetCol = dz.getAttribute("data-column");
   const targetIdx = computeInsertIndex(dz, ev.clientY);
+  removeInsertIndicator();
   if (dragState.kind === "plan" && dragState.slug) {
     await movePlan(dragState.slug, { col: targetCol, idx: targetIdx });
   } else if (dragState.kind === "issue" && dragState.num) {

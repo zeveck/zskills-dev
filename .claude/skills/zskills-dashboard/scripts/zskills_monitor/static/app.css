@@ -729,6 +729,20 @@ code, pre, .mono {
   opacity: 0.4;
 }
 
+/* Insertion-point indicator rendered during drag at the computed drop
+   position inside .dropzone. pointer-events: none keeps the element
+   from firing dragenter/dragleave on the parent (would cause flicker).
+   Subtle horizontal accent line; takes no flex-basis so it doesn't
+   shift surrounding cards perceptibly. */
+.drop-indicator {
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  flex: 0 0 3px;
+  margin: 0;
+}
+
 .card-controls {
   display: flex;
   gap: 2px;
