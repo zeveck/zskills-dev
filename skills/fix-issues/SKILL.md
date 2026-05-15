@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.14+c0a50b"
+  version: "2026.05.14+5f21d5"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -365,7 +365,85 @@ For each approved issue:
    fi
    ```
 
-2. **Report:**
+2. **Dispatch `/land-pr` to open the sync PR.** Sync commits live on the
+   worktree's feature branch; this step opens (or detects) a PR and
+   monitors CI. The tracking marker is written on main_root so
+   `/land-pr` can satisfy it with a `fulfilled.land-pr.<id>` marker on
+   successful merge — mirrors `/run-plan` PR mode's pattern
+   (`skills/run-plan/modes/pr.md:339-348`, `skills/run-plan/SKILL.md:888`).
+
+   <!-- allow-hardcoded: TZ=America/New_York reason: SYNC_TS is a user-facing wall-clock stamp on the PR title/body and SYNC_ID; matches the established sync-mode idiom for human-readable dates. Per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
+   ```bash
+   # SYNC_TS: stable per sync invocation. SYNC_ID propagates to /land-pr.
+   SYNC_TS="${SYNC_TS:-$(TZ=America/New_York date +%Y%m%d-%H%M%S)}"
+   SYNC_ID="fix-issues.sync.${SYNC_TS}"
+
+   # Resolve main_root and pipeline scope; derive PIPELINE_ID if not already
+   # set by the sprint-mode preamble (sync may run standalone).
+   MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
+   PIPELINE_ID="${PIPELINE_ID:-fix-issues.${SYNC_TS}}"
+   mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+
+   # Write the requires.land-pr marker on main_root BEFORE dispatch. The
+   # matching fulfilled.land-pr.<SYNC_ID> is written by /land-pr ONLY on
+   # STATUS=merged (created/monitored do not fulfill — by design; the
+   # orchestrator may re-run sync after CI completes to fulfill).
+   printf 'skill: land-pr\nrequired-by: fix-issues-sync\ndate: %s\n' \
+     "$(TZ=UTC date -Iseconds)" \
+     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${SYNC_ID}"
+
+   # Build the PR body file. Body intentionally OMITS GitHub auto-close
+   # directives (Close[sd]? / Fixe[sd]? / Resolve[sd]? #N) — sync closes
+   # approved issues itself via `gh issue close` in Step 4 after merge.
+   RESULT_FILE=$(mktemp)
+   BODY_FILE=$(mktemp)
+   {
+     printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
+       "$(TZ=America/New_York date +%F)"
+     printf '## Test plan\n- [x] Tracker diff reviewed by user before merge.\n'
+   } > "$BODY_FILE"
+
+   PR_TITLE="sync: $(TZ=America/New_York date +%F)"
+   SYNC_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+
+   # /land-pr arg vector. Mirrors run-plan PR mode (modes/pr.md:339-348)
+   # MINUS the auto-merge flag. Sync is always interactive — closing
+   # issues on GitHub requires human approval — so the auto-merge flag
+   # is intentionally omitted. The CI-monitor-suppression flag is also
+   # omitted (CI monitoring is desired; the orchestrator awaits resting
+   # state).
+   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID"
+
+   # Dispatch /land-pr via the Skill tool. The Skill tool loads /land-pr's
+   # prose into the current (orchestrator) context — its internal bash
+   # blocks run here. After /land-pr returns, $RESULT_FILE is populated.
+   #
+   # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+   if [ ! -f "$RESULT_FILE" ]; then
+     echo "ERROR: /land-pr produced no result file at $RESULT_FILE" >&2
+     exit 1
+   fi
+
+   # Parse result-file via canonical allow-list pattern. Unknown keys WARN
+   # but do not fail — forward-compatible with /land-pr schema additions.
+   declare -A LP
+   while IFS='=' read -r KEY VALUE; do
+     case "$KEY" in
+       STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+       MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+       CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+         LP["$KEY"]="$VALUE" ;;
+       "") ;;
+       *) printf 'WARN: /land-pr result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+     esac
+   done < "$RESULT_FILE"
+
+   # LP[STATUS] drives the report below. fulfilled.land-pr.${SYNC_ID} is
+   # present on main_root iff LP[STATUS]=merged.
+   ```
+
+3. **Report:**
    ```
    Sync complete.
      Open issues: N
@@ -374,9 +452,10 @@ For each approved issue:
      Closed (verified fixed): J (#NNN, #NNN, ...)
      Likely fixed (needs human review): L (#NNN, #NNN)
      Gaps: [any GH issues not in any tracker]
+     PR: ${LP[PR_URL]:-(none)} — STATUS=${LP[STATUS]:-unknown}
    ```
 
-3. **Exit.**
+4. **Exit.**
 
 ## Plan (if `plan` is present)
 
