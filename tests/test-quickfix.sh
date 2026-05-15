@@ -321,13 +321,17 @@ echo "=== quickfix — structural and algorithmic invariants ==="
 
 # ────────────────────────────────────────────────────────────────────
 # Case 1 — YAML frontmatter (WI 1.1)
+# Note: disable-model-invocation was lifted in #287 so the Skill-tool
+# can dispatch /quickfix from /fix-issues' middle-tier triage. The
+# previous assertion that the flag MUST be present is obsolete; the
+# new invariant is that the flag must be ABSENT (or not set true).
 # ────────────────────────────────────────────────────────────────────
-if grep -q '^disable-model-invocation: true$' "$SKILL" \
-   && grep -q '^name: quickfix$' "$SKILL" \
-   && grep -q '^argument-hint: "\[<description>\]' "$SKILL"; then
-  pass "1  frontmatter: name/disable-model-invocation/argument-hint present"
+if grep -q '^name: quickfix$' "$SKILL" \
+   && grep -q '^argument-hint: "\[<description>\]' "$SKILL" \
+   && ! grep -q '^disable-model-invocation: true$' "$SKILL"; then
+  pass "1  frontmatter: name/argument-hint present, dmi-true absent (per #287)"
 else
-  fail "1  frontmatter: missing one of name|disable-model-invocation|argument-hint"
+  fail "1  frontmatter: missing one of name|argument-hint, OR dmi-true still present"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1002,16 +1006,10 @@ else
   fail "37 DIRTY_AFTER includes untracked: union-def missing or old exclusion wording still present"
 fi
 
-# ────────────────────────────────────────────────────────────────────
-# Case 38 — Entry self-assertion: disable-model-invocation check
-# block present (WI 1.1).
-# ────────────────────────────────────────────────────────────────────
-if grep -q 'SKILL_SELF' "$SKILL" \
-   && grep -q "missing 'disable-model-invocation: true'" "$SKILL"; then
-  pass "38 self-assertion: disable-model-invocation guard present"
-else
-  fail "38 self-assertion: disable-model-invocation guard missing"
-fi
+# Case 38 was removed in #287 — the entry self-assertion that grepped
+# for `disable-model-invocation: true` in the SKILL.md body was obsolete
+# after the dmi flag was lifted to make /quickfix Skill-tool-dispatchable.
+# Numbering preserved for continuity; the assertion itself does not exist.
 
 # ────────────────────────────────────────────────────────────────────
 # Case 39 — /tmp/zskills-tests test-output-dir idiom present (per
