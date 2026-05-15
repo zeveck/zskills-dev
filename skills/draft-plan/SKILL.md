@@ -3,12 +3,11 @@ name: draft-plan
 disable-model-invocation: false
 argument-hint: "[output FILE] [rounds N] <description...>"
 description: >-
-  Draft a high-quality plan through iterative adversarial review. Multiple
-  rounds of research, drafting, review, devil's advocate, and refinement
-  until the plan converges. Output is a plan file ready for /run-plan.
-  Usage: /draft-plan [output FILE] [rounds N] <description...>
+  Draft a high-quality plan through iterative adversarial review:
+  research, draft, review, devil's-advocate, refine — repeated until
+  convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.05.13+191da1"
+  version: "2026.05.15+2af5da"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter

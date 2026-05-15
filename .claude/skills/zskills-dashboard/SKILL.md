@@ -3,16 +3,13 @@ name: zskills-dashboard
 disable-model-invocation: true
 argument-hint: "[start|stop|status|restart]"
 description: >-
-  Local web dashboard for this repo — plans, issues, worktrees,
-  branches, tracking activity, drag-and-drop priority queue.
-  Starts a detached Python HTTP server on a port resolved from
-  DEV_PORT / dev_server.default_port / port.sh; stop sends SIGTERM;
-  restart = stop then start (useful for picking up Python source
-  changes since the long-running process imports modules once at
-  startup). State at .zskills/monitor-state.json. Usage:
-  /zskills-dashboard [start|stop|status|restart].
+  Local web dashboard — plans, issues, worktrees, branches, tracking
+  activity, drag-and-drop priority queue. Starts a detached Python HTTP
+  server on a port from DEV_PORT / dev_server.default_port / port.sh; stop
+  sends SIGTERM; restart = stop+start (for code reloads). State at
+  .zskills/monitor-state.json.
 metadata:
-  version: "2026.05.15+7b3fd7"
+  version: "2026.05.15+1556ea"
 ---
 
 # /zskills-dashboard — Local Dashboard

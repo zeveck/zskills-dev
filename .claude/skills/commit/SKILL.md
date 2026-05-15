@@ -4,13 +4,12 @@ disable-model-invocation: true
 description: >-
   Safe commit workflow with optional scope hint. Inventories all changes,
   classifies related vs. unrelated files, traces dependencies, protects
-  other agents' work, and optionally pushes or lands worktree commits.
-  Positional `auto` (PR mode only) enables auto-merge via /land-pr
-  (matches /run-plan, /fix-issues, /do).
-  Usage: /commit [pr] [scope] [push|land|auto]
+  other agents' work, and optionally pushes, lands worktree commits, or
+  opens a PR via /land-pr. Positional auto enables auto-merge (PR mode
+  only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.05.14+53583d"
+  version: "2026.05.15+6a698c"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow

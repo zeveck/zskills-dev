@@ -4,11 +4,11 @@ disable-model-invocation: true
 argument-hint: ""
 description: >-
   Review ALL unreported sprint results: walk through manual verifications,
-  land fixes to main, close GitHub issues, update trackers, and clean up
-  worktrees. Covers the current $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md AND any landed-but-unclosed
-  issues from previous sprints.
+  land fixes to main, close GitHub issues, update trackers, clean up
+  worktrees. Covers $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md and any
+  landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.07+8a9216"
+  version: "2026.05.15+37d11b"
 ---
 
 # /fix-report — Sprint Report Review & Landing

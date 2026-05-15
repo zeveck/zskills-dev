@@ -4,13 +4,12 @@ disable-model-invocation: false
 argument-hint: "<slug> [--prefix P] [--branch-name REF] [--from B] [--root R] [--purpose TEXT] [--pipeline-id ID] [--allow-resume] [--no-preflight]"
 description: >-
   Create a git worktree for agent work. Thin wrapper around
-  .claude/skills/create-worktree/scripts/create-worktree.sh — owns prefix-derived path, optional
-  --branch-name override, optional pre-flight prune+fetch+ff-merge,
-  worktree-add-safe.sh call with TOCTOU-race remap, and sanitised
-  .zskills-tracked / .worktreepurpose writes. Prints the worktree
-  path on stdout; all progress/errors go to stderr.
+  create-worktree.sh — owns prefix-derived path, optional --branch-name
+  override, optional pre-flight prune+fetch+ff-merge, safe worktree-add,
+  and sanitised .zskills-tracked / .worktreepurpose writes. Prints the
+  worktree path on stdout.
 metadata:
-  version: "2026.05.13+7e241d"
+  version: "2026.05.15+1d36aa"
 ---
 
 # /create-worktree — Unified Worktree Creation

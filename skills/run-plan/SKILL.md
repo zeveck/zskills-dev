@@ -3,13 +3,13 @@ name: run-plan
 disable-model-invocation: false
 argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHEDULE] [now] | stop | next"
 description: >-
-  Execute the next phase of a plan document: parse phases and status, dispatch
-  implementation in a worktree, verify with a separate agent, update progress
-  tracking, write the plan report (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`), and
-  optionally auto-land to main. Can self-schedule recurring runs via cron. Use
-  `next` to check schedule, `stop` to cancel.
+  Execute the next phase of a plan: parse status, dispatch implementation
+  in a worktree, verify via a separate agent, update progress, write the
+  plan report (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`), and optionally
+  auto-land to main. Self-schedules via cron; use `next` to check, `stop`
+  to cancel.
 metadata:
-  version: "2026.05.14+c9f343"
+  version: "2026.05.15+d39299"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor

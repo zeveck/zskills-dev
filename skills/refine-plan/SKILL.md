@@ -3,14 +3,13 @@ name: refine-plan
 disable-model-invocation: false
 argument-hint: "<plan-file> [rounds N] [guidance...]"
 description: >-
-  Refine an in-progress plan by reviewing remaining phases against completed
-  work. Dispatches adversarial reviewer and devil's advocate agents to find
-  stale references, invalidated assumptions, and specification gaps — then
-  refines remaining phases until convergence. Completed phases are NEVER
-  modified. Appends a Drift Log and Plan Review section.
-  Usage: /refine-plan <plan-file> [rounds N] [guidance...]
+  Refine an in-progress plan by reviewing remaining phases against
+  completed work. Dispatches reviewer + devil's-advocate agents to surface
+  stale references, invalidated assumptions, and specification gaps, then
+  refines until convergence. Completed phases are NEVER modified. Appends
+  a Drift Log + Plan Review.
 metadata:
-  version: "2026.05.13+bec853"
+  version: "2026.05.15+b8057f"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner

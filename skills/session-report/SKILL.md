@@ -2,12 +2,12 @@
 name: session-report
 argument-hint: ""
 description: >-
-  Audit what THIS session said it would do vs. what's actually shipped, and
-  report gaps. Verifies session-mentioned items against ground truth (git,
-  PRs, plans, worktrees) — not conversation memory — because the user may
-  have completed some of them in another session.
+  Audit what THIS session said it would do vs. what's actually shipped.
+  Verifies session-mentioned items against ground truth (git, PRs, plans,
+  worktrees), not conversation memory — items may have been completed in
+  another session.
 metadata:
-  version: "2026.05.07+16868a"
+  version: "2026.05.15+593f05"
 ---
 
 # /session-report — Session Intent vs. Actual State

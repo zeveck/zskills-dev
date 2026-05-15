@@ -4,15 +4,12 @@ disable-model-invocation: false
 argument-hint: "<plan-file> [rounds N] [guidance...]"
 description: >-
   Draft test specifications into an existing plan through iterative
-  adversarial review. Given a plan file, classifies phases, computes
-  immutability checksums of completed phases, assigns AC IDs, then
-  appends a `### Tests` subsection per pending phase, running a senior-QE
-  reviewer + devil's-advocate + refiner loop until the specs hold up.
-  Completed phases are never modified (checksum-gated). Sister skill to
-  /draft-plan, scoped to test specs.
-  Usage: /draft-tests <plan-file> [rounds N] [guidance...]
+  adversarial review. Appends a `### Tests` subsection per pending phase
+  via a senior-QE reviewer + devil's-advocate + refiner loop. Completed
+  phases are never modified (checksum-gated). Sister skill to /draft-plan,
+  scoped to test specs.
 metadata:
-  version: "2026.05.13+91e5a0"
+  version: "2026.05.15+b8752d"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter

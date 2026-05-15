@@ -3,12 +3,12 @@ name: verify-changes
 disable-model-invocation: false
 argument-hint: "[scope: worktree | branch | last [N]]"
 description: >-
-  Verify all recent changes: review diffs, check that appropriate unit/e2e tests
-  exist and correctly test the changes, run all tests, manually verify UI changes
-  with playwright-cli, fix any problems found, re-verify until clean, then report
-  results with recommendations.
+  Verify all recent changes: review diffs, check that unit/e2e tests cover
+  the changes, run all tests, manually verify UI changes with
+  playwright-cli, fix problems, re-verify until clean, then report with
+  recommendations.
 metadata:
-  version: "2026.05.07+2d94d5"
+  version: "2026.05.15+e1d07b"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes

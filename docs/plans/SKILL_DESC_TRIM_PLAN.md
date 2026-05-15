@@ -1,7 +1,8 @@
 ---
 title: Trim Skill Descriptions to Default 1% Budget
 created: 2026-05-10
-status: active
+status: complete
+completed: 2026-05-15
 ---
 
 # Plan: Trim Skill Descriptions to Default 1% Budget
@@ -171,13 +172,13 @@ descriptions):**
 
 | Phase | Status | Commit | Notes |
 |------:|:-------|:-------|:------|
-| 0 — Worktree setup                                   | ⬚ | | `feat/skill-desc-trim`; via `/create-worktree` |
-| 1 — Body-grounded inventory                          | ⬚ | | Foundation; SHA256 proof-of-work |
-| 2 — Per-skill trim drafting (with EVIDENCE)          | ⬚ | | Per-skill artifact with body file:line citations |
-| 3 — Adversarial citation spot-check                  | ⬚ | | BLOCKING gate; ≥30% of citations sampled |
-| 4 — Add description-budget conformance gate          | ⬚ | | PERMANENT drift prevention |
-| 5 — Apply edits + version bumps + mirror             | ⬚ | | 25 source edits + 25 mirror regens, single commit |
-| 6 — Verify + land                                    | ⬚ | | Tests + spot-checks + PR + CI |
+| 0 — Worktree setup                                   | ✅ Done | (tracker-only) | Worktree at /tmp/zskills-pr-skill-desc-trim on feat/skill-desc-trim |
+| 1 — Body-grounded inventory                          | ✅ Done | (artifact-only) | 29 skills inventoried; total 8586 chars (drift 0); 25 candidates confirmed |
+| 2 — Per-skill trim drafting (with EVIDENCE)          | ✅ Done | (artifact-only) | 25 drafts; aggregate 6164/6522 (358 headroom); 72 EVIDENCE rows; orchestrator spot-checked 7 citations + 3 policy claims, all PASS |
+| 3 — Adversarial citation spot-check                  | ✅ Done | (artifact-only) | 22/22 PASS; 13 skills represented; D10 30-char re-anchoring used on 6 line-drifted citations; Layer-3 validation passed |
+| 4 — Add description-budget conformance gate          | ✅ Done | `1f691fc` | 2-tier test (hard 7500, warn 7000); awk handles both scalar forms; registered in run-all.sh; 5-section rationale doc; pre-trim FAIL confirmed (8955 > 7500) |
+| 5 — Apply edits + version bumps + mirror             | ✅ Done | `33035d9` | 25 trims + version bumps + mirrors; 50 files, 234+/266-; full suite GREEN 3039/3039; round-1 caught YAML-fold bug in quickfix, fix agent rewrapped |
+| 6 — Verify + land                                    | ✅ Done | (landed by /land-pr) | 8/8 verification tasks PASS; full suite 3039/3039; conformance 404/404; budget 6795 (no WARN); landing dispatched via /land-pr |
 
 ---
 

@@ -2,12 +2,12 @@
 name: manual-testing
 argument-hint: ""
 description: >-
-  Block-diagram editor manual testing recipes for playwright-cli. Covers
-  common UI operations (adding blocks, connecting ports, running simulations,
-  editing parameters) using real mouse/keyboard events. Use when told to
-  "test manually", "test in the browser", or "verify with playwright-cli".
+  Block-diagram editor manual testing recipes for playwright-cli using
+  real mouse/keyboard events (add blocks, connect ports, run simulations,
+  edit parameters). Use when told to "test manually", "test in the
+  browser", or "verify with playwright-cli".
 metadata:
-  version: "2026.05.02+85c33c"
+  version: "2026.05.15+bb07e4"
 ---
 
 # Manual Testing with playwright-cli

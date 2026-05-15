@@ -3,17 +3,15 @@ name: quickfix
 disable-model-invocation: true
 argument-hint: "[<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
 description: >-
-  Ship an in-flight edit (or short agent-authored fix) as a PR without a
-  worktree. Two auto-detected modes: user-edited (dirty tree + description →
-  carry edits to a branch and commit) and agent-dispatched (clean tree +
-  description → model-layer dispatch performs edits, then we commit). PR-only:
-  requires execution.landing == "pr". Runs testing.unit_cmd (aligned with
-  full_cmd to satisfy the project pre-commit hook), commits, pushes, and
-  creates a PR via gh. No worktree; no .landed marker. Positional `auto`
-  enables auto-merge via /land-pr (matches /run-plan, /fix-issues, /do).
-  Usage: /quickfix [<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]
+  Ship an in-flight edit (or short agent-authored fix) from main as a
+  one-commit PR without a worktree. Two auto-detected modes: user-edited
+  (dirty tree + description) and agent-dispatched (clean tree +
+  description). Lifecycle: triage → review → commit → push → PR → CI poll
+  → fix cycle (dispatched via 'land-pr'). PR-only:
+  requires execution.landing == "pr". No .landed marker.
+  Positional auto: auto-merge.
 metadata:
-  version: "2026.05.15+87a555"
+  version: "2026.05.15+03e6a0"
 ---
 
 # /quickfix — In-Flight Fix → PR

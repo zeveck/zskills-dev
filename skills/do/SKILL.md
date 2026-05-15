@@ -4,10 +4,11 @@ disable-model-invocation: true
 argument-hint: "<description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
-  refactoring, content updates. Supports scheduling with every/now/next/stop.
-  Usage: /do <description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop | next.
+  refactoring, content updates. Worktree/direct/pr landing modes via flag
+  or execution.landing config. Recurring via every SCHEDULE; stop/next
+  manage the schedule.
 metadata:
-  version: "2026.05.13+96a458"
+  version: "2026.05.15+8ed6a6"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
