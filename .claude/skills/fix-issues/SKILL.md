@@ -8,7 +8,7 @@ description: >-
   already-fixed issues. Use plan to draft plans for skipped issues.
   Usage: /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next.
 metadata:
-  version: "2026.05.14+5f21d5"
+  version: "2026.05.15+ab4898"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -295,19 +295,20 @@ Close 3 FIXED issues? (all / comma-separated numbers / none)
 - **If no close candidates found:** skip this step, just show the sync
   summary.
 
-### Step 4 — Close approved issues on GitHub
+### Step 4 — Stage local tracker + sprint-report updates for approved issues
 
 For each approved issue:
 
-1. **Close with a comment** explaining what fixed it:
-   ```bash
-   gh issue close <N> --comment "Fixed in commit <hash>. <brief description of fix>. Tests: <test file(s)>."
-   ```
+1. **Update tracker files** — mark the issue `[x]` in all relevant trackers.
 
-2. **Update tracker files** — mark the issue `[x]` in all relevant trackers.
-
-3. **Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — if the issue appears in an "Already
+2. **Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — if the issue appears in an "Already
    Implemented" section, add a note: `Closed by /fix-issues sync`.
+
+The `gh issue close` calls are deferred to Step 5 sub-step 3, AFTER
+`/land-pr` returns a success status (`created`, `monitored`, or `merged`).
+If `/land-pr` fails, the issues remain OPEN on GitHub — preventing
+state divergence between closed-on-GH and unmerged-in-main (AC-P.3 of
+`docs/plans/FIX_ISSUES_SYNC_HARDENING.md`).
 
 ### Step 5 — Commit & report
 
@@ -394,7 +395,9 @@ For each approved issue:
 
    # Build the PR body file. Body intentionally OMITS GitHub auto-close
    # directives (Close[sd]? / Fixe[sd]? / Resolve[sd]? #N) — sync closes
-   # approved issues itself via `gh issue close` in Step 4 after merge.
+   # approved issues itself via `gh issue close` in Step 5 sub-step 3,
+   # only after /land-pr returns a success status (AC-P.3 of
+   # `docs/plans/FIX_ISSUES_SYNC_HARDENING.md`).
    RESULT_FILE=$(mktemp)
    BODY_FILE=$(mktemp)
    {
@@ -439,11 +442,32 @@ For each approved issue:
      esac
    done < "$RESULT_FILE"
 
-   # LP[STATUS] drives the report below. fulfilled.land-pr.${SYNC_ID} is
-   # present on main_root iff LP[STATUS]=merged.
+   # LP[STATUS] drives sub-step 3 (close approved issues on success) and
+   # the report below. fulfilled.land-pr.${SYNC_ID} is present on
+   # main_root iff LP[STATUS]=merged.
    ```
 
-3. **Report:**
+3. **Close approved issues on GitHub** — only if `/land-pr` returned a
+   success status (`created`, `monitored`, or `merged`). On any other
+   status (`push-failed`, `rebase-conflict`, `create-failed`,
+   `monitor-failed`, `merge-failed`, `rebase-failed`), leave issues OPEN
+   to prevent state divergence between closed-on-GH and unmerged-in-main
+   (AC-P.3). The next sync run can re-attempt the close after the
+   underlying landing failure is resolved.
+
+   ```bash
+   case "${LP[STATUS]:-}" in
+     created|monitored|merged)
+       # For each approved issue, close with the fix-commit reference.
+       gh issue close <N> --comment "Fixed in commit <hash>. <brief description of fix>. Tests: <test file(s)>."
+       ;;
+     *)
+       echo "Skipping gh issue close — /land-pr STATUS=${LP[STATUS]:-unknown}. Approved issues remain OPEN; re-run sync after the underlying landing failure is resolved." >&2
+       ;;
+   esac
+   ```
+
+4. **Report:**
    ```
    Sync complete.
      Open issues: N
@@ -453,9 +477,10 @@ For each approved issue:
      Likely fixed (needs human review): L (#NNN, #NNN)
      Gaps: [any GH issues not in any tracker]
      PR: ${LP[PR_URL]:-(none)} — STATUS=${LP[STATUS]:-unknown}
+     Closed on GitHub (only if /land-pr success): J (#NNN, ...) or "deferred — /land-pr STATUS=<status>"
    ```
 
-4. **Exit.**
+5. **Exit.**
 
 ## Plan (if `plan` is present)
 
