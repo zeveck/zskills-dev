@@ -8,6 +8,18 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
+- **2026-05-15 (audit — verified prior session's claims; one pending plan resurfaced)** — Fresh-agent verification pass against current `main` (HEAD `338017f`, == `origin/main`). All 8 session-claimed issue closures (#254, #235, #236, #241, #256, #231, #266, #267) confirmed CLOSED on GitHub with squashes on `origin/main`. Spot-checked the 4 load-bearing diffs survived intact: `/land-pr` Step 6b at `skills/land-pr/SKILL.md:372` + Step 7b at `:581`; `/fix-issues` AC-P.3 close-gating at `skills/fix-issues/SKILL.md:399–467`; `/run-plan` tight `REMAINING_PHASES` regex `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` at `:2316`; `/quickfix` `[aA][uU][tT][oO])` at `skills/quickfix/SKILL.md:112`. Full suite **3074/3074 PASS** (+33 vs the post-#267 baseline of 3041 — increment from #271 AC-P.3 follow-up tests + dashboard polish PRs).
+
+  **PR landed since the prior drift entry (not in this guide's tracked queue):** [#277](https://github.com/zeveck/zskills-dev/pull/277) `feat(dashboard): entry links + plan-text drifts in DASHBOARD_TABS_AND_RENAME` (squash `338017f`, MERGED 2026-05-15T09:14:31Z) — dashboard polish on the already-complete DASHBOARD_TABS_AND_RENAME plan. No queue impact.
+
+  **One pending non-deferred item surfaced — `SKILL_DESC_TRIM_PLAN.md`** (`status: active`, drafted via PR #227 2026-05-11, never executed end-to-end). Worktree at `/tmp/zskills-pr-skill-desc-trim` (branch `feat/skill-desc-trim`) has Phase 0/1/2 commits landed in the worktree (`9681cdc` Phase 2 done, `bf99307` Phase 1 done, `65ddd92` Phase 0 done) but Phases 3-6 (adversarial citation spot-check, conformance gate, apply edits + mirror, verify + land) never ran. No `.landed` marker. The plan's Progress Tracker on `main` still shows all phases as ⬚ because per-phase commits live in the worktree, not on `main`. **The prior session's "non-deferred queue is EMPTY" claim was scoped to open GitHub issues, not drafted-and-stalled plans.** Real next-non-deferred work, if the user wants to continue: `/run-plan docs/plans/SKILL_DESC_TRIM_PLAN.md finish auto pr` to resume from Phase 3.
+
+  **Two other `status: active` plans are stale-frontmatter, not pending work** — `docs/plans/TRACKING_FIX.md` (2026-04-11) and `docs/plans/RESTORE_CHUNKED_EXECUTION.md` (2026-04-15) describe work that was implemented or superseded by the path-config migration (PR #211) and the chunked-execution restore commit `f0e51b9`. Their frontmatter `status:` was never flipped to `complete`. Low-priority cleanup, no skill/code change.
+
+  **pr-monitor.sh transient sensitivity from sprint #275/#276** — accepted as lossy-edge in the drift log rather than filed. The single `CI=fail` glitch during run-replacement after force-push self-recovered on retry inside Step 6b's bounded loop, and a precise reproducer was not captured. If it recurs with grounding, file then.
+
+  **Working tree:** local `main` is clean except for one untracked 0-byte file named `-` (shell-redirect artifact from prior session's `unbound variable: auto` shell-quote errors; harmless, left in place per "don't clean changes you didn't make"). Worktree census: ~25 `/tmp/zskills-*` directories from recent sprints — `.landed status: landed` markers present on most; defer the full cleanup sweep to `/fix-report` per skill convention.
+
 - **2026-05-15 (continued — #266 + #267 landed; non-deferred queue is now EMPTY)** — `/fix-issues 266 267 auto` executed end-to-end. Two parallel worktrees per the "different file" rule: A=#266 on `skills/land-pr/`, B=#267 on `skills/quickfix/`. Both verifier subagents APPROVE with anchored evidence. Both committed cleanly.
 
   **Landed:**
@@ -341,12 +353,18 @@ Issues filed but not yet routed to a phase. Default to running clear-and-doable 
 
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-**Suggested next step (2026-05-15 update — non-deferred queue is EMPTY):**
+**Suggested next step (2026-05-15 audit update — open-issue queue is EMPTY; one drafted plan stalled mid-execution):**
 
-After #266 + #267 landed (PRs #275 + #276), there are **no non-deferred items remaining**. Only intentional defers:
+The open GitHub-issue queue is empty of non-deferred items (only #217 and #67 remain, both intentional defers — see below). However, an audit pass surfaced one drafted-and-stalled plan that the prior session's queue scoping had missed:
+
+- **`docs/plans/SKILL_DESC_TRIM_PLAN.md`** (`status: active`; plan drafted via PR #227 on 2026-05-11; worktree `/tmp/zskills-pr-skill-desc-trim` on branch `feat/skill-desc-trim`). Phases 0/1/2 are complete in the worktree (commits `65ddd92` / `bf99307` / `9681cdc`); Phases 3-6 (adversarial citation spot-check → conformance gate → apply edits + version bumps + mirror → verify + land) have not run. Resume with `/run-plan docs/plans/SKILL_DESC_TRIM_PLAN.md finish auto pr` — the plan's frontmatter declares PR landing mode and the worktree is in place.
+
+After that completes (or if the user wants to skip it), intentional defers below remain:
 
 - **#217** — relocate plan execution reports out of `.zskills/audit/`. Issue body's trigger criteria have not fired (consumer hits the audit-dir tracking inconsistency in practice, next minor zskills release scoped, or a user asks "where is plan X's report"). Until one of those fires, the architectural rationale stays captured in the issue body for whenever it gets prioritized.
 - **#67** — GitLab support. Phase G; needs a real GitLab project consumer to validate the integration end-to-end. Without that, building it would be guesswork against unverified assumptions. The draft-plan-prompts plan at `docs/plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md` (status: `deferred`) captures the design intent.
+
+**Stale-frontmatter cleanup (low-priority, no behavior change):** `docs/plans/TRACKING_FIX.md` (2026-04-11) and `docs/plans/RESTORE_CHUNKED_EXECUTION.md` (2026-04-15) carry `status: active` but their work was implemented or superseded long ago (path-config migration + `f0e51b9` chunked-execution restore). Flip frontmatter to `complete` (or `superseded`) when convenient.
 
 **No active work-blocked items.** New issues filed in the future will get queued per the standard `/fix-issues` vs `/draft-plan` routing rule (small fix → `/fix-issues`; design surface or multi-skill integration → `/draft-plan` first).
 
