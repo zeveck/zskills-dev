@@ -778,6 +778,145 @@ def _scan_tracking_markers(
 
 
 # ---------------------------------------------------------------------------
+# Git-history activity (commits that don't have a tracking marker)
+# ---------------------------------------------------------------------------
+
+# Subject patterns we extract: trailing "(#N)" PR ref (squash-merge style)
+# and any "#N" issue reference. PR_RE is anchored to end-of-string so
+# inline "(#999)" body refs don't trigger.
+_PR_TRAILER_RE = re.compile(r"\(#(\d+)\)\s*$")
+_ISSUE_HASH_RE = re.compile(r"(?:^|\W)#(\d+)\b")
+
+
+def _scan_git_history(
+    main_root: pathlib.Path,
+    errors: List[Dict[str, str]],
+    *,
+    since_hours: int = 72,
+    max_commits: int = 200,
+    fulfilled_pr_numbers: Optional[set] = None,
+) -> List[Dict[str, Any]]:
+    """Read commits from `git log` and emit activity-row records.
+
+    Each commit becomes a record shaped like a tracking-marker record so
+    the existing _sort_key + UI renderer accept it without special-casing.
+    Commits whose trailing `(#N)` PR number is in `fulfilled_pr_numbers`
+    (built from fulfilled.land-pr.* markers) are skipped — the marker is
+    richer.
+    """
+    if not (main_root / ".git").exists():
+        return []
+    if fulfilled_pr_numbers is None:
+        fulfilled_pr_numbers = set()
+    since_arg = f"--since={int(since_hours)} hours ago"
+    fmt = "%H%x1f%cI%x1f%s"  # SHA, ISO commit date, subject — unit-separator-joined
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(main_root),
+                "log",
+                since_arg,
+                f"--max-count={int(max_commits)}",
+                f"--pretty=format:{fmt}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        errors.append({
+            "source": "git history",
+            "message": f"git log failed: {exc}",
+        })
+        return []
+    if result.returncode != 0:
+        # Empty repo / no commits in window is not an error here.
+        if result.stderr.strip():
+            errors.append({
+                "source": "git history",
+                "message": f"git log rc={result.returncode}: {result.stderr.strip()[:200]}",
+            })
+        return []
+
+    out: List[Dict[str, Any]] = []
+    for line in result.stdout.split("\n"):
+        line = line.rstrip()
+        if not line:
+            continue
+        parts = line.split("\x1f", 2)
+        if len(parts) != 3:
+            continue
+        sha, iso_date, subject = parts
+        pr_num = ""
+        m = _PR_TRAILER_RE.search(subject)
+        if m:
+            pr_num = m.group(1)
+            if pr_num in fulfilled_pr_numbers:
+                continue  # dedup'd by richer marker
+        issue_num = ""
+        m2 = _ISSUE_HASH_RE.search(subject)
+        if m2 and m2.group(1) != pr_num:
+            issue_num = m2.group(1)
+        record: Dict[str, Any] = {
+            "timestamp": iso_date,
+            "pipeline": "",
+            "kind": "commit",
+            "id": sha[:7],
+            "skill": "",
+            "status": "",
+            "output": "",
+            "location": "git",
+            "parent": None,
+            "subject": subject,
+            "sha": sha,
+            "pr": pr_num,
+            "issue": issue_num,
+        }
+        out.append(record)
+    return out
+
+
+def _extract_pr_numbers_from_markers(
+    activity: List[Dict[str, Any]],
+    main_root: pathlib.Path,
+) -> set:
+    """Walk fulfilled.land-pr.* markers to collect PR numbers for dedup."""
+    nums: set = set()
+    base = main_root / ".zskills" / "tracking"
+    if not base.is_dir():
+        return nums
+    # Match either flat or per-pipeline subdir; the basename is what carries
+    # the marker kind/id, and we only care about fulfilled.land-pr.*.
+    pr_url_re = re.compile(r"github\.com/[^/]+/[^/]+/pull/(\d+)")
+    try:
+        for entry in base.iterdir():
+            candidates: List[pathlib.Path] = []
+            if entry.is_file() and entry.name.startswith("fulfilled.land-pr."):
+                candidates.append(entry)
+            elif entry.is_dir():
+                try:
+                    for sub in entry.iterdir():
+                        if sub.is_file() and sub.name.startswith("fulfilled.land-pr."):
+                            candidates.append(sub)
+                except OSError:
+                    continue
+            for p in candidates:
+                fields = _parse_marker_file(p)
+                if fields is None:
+                    continue
+                pr_field = fields.get("pr", "")
+                m = pr_url_re.search(pr_field)
+                if m:
+                    nums.add(m.group(1))
+    except OSError:
+        return nums
+    return nums
+
+
+# ---------------------------------------------------------------------------
 # Worktree + branch listing (reuse briefing.py helpers)
 # ---------------------------------------------------------------------------
 
@@ -1182,8 +1321,29 @@ def collect_snapshot(
     worktrees = _list_worktrees(main_root, errors)
     branches = _list_branches(main_root, errors)
 
-    # Tracking activity
-    activity = _scan_tracking_markers(main_root, errors)
+    # Tracking activity + git-history events (commits with no marker).
+    # Tracking markers are richer (skill, id, pipeline) so they win on
+    # dedup; commits whose trailing `(#N)` matches a fulfilled.land-pr.*
+    # marker's PR number are dropped.
+    marker_activity = _scan_tracking_markers(main_root, errors)
+    fulfilled_prs = _extract_pr_numbers_from_markers(marker_activity, main_root)
+    git_activity = _scan_git_history(
+        main_root, errors, fulfilled_pr_numbers=fulfilled_prs,
+    )
+    activity = marker_activity + git_activity
+
+    def _activity_sort_key(rec: Dict[str, Any]):
+        ts = rec.get("timestamp", "")
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return -dt.astimezone(timezone.utc).timestamp()
+        except Exception:
+            return 0.0
+
+    activity.sort(key=_activity_sort_key)
+    activity = activity[:200]
 
     # Queues block (raw state-file-shape mirror, plus default_mode)
     queues_block: Dict[str, Any] = {

@@ -12,7 +12,7 @@ description: >-
   startup). State at .zskills/monitor-state.json. Usage:
   /zskills-dashboard [start|stop|status|restart].
 metadata:
-  version: "2026.05.15+629f7f"
+  version: "2026.05.15+bc1c37"
 ---
 
 # /zskills-dashboard — Local Dashboard
