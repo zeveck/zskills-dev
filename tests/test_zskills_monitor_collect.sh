@@ -62,7 +62,7 @@ else
   fail "CLI --fixture minimal exits 0 (rc=$RC, output: $OUT)"
 fi
 
-EXPECTED_KEYS="activity branches errors issues plans queues repo_root state_file_path updated_at version worktrees"
+EXPECTED_KEYS="activity branches errors issues plans queues repo_root repo_url state_file_path updated_at version worktrees"
 ACTUAL_KEYS=$(printf '%s' "$OUT" | python3 -c '
 import json,sys
 print(" ".join(sorted(json.load(sys.stdin).keys())))

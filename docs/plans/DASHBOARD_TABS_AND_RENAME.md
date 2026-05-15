@@ -8,7 +8,7 @@ status: complete
 # Plan: Dashboard Tabs and Rename
 
 > **Landing mode: PR** -- This plan targets PR-based landing. All phases run
-> inside a worktree on the feature branch **`feat/dashboard-tabs-rename`**
+> inside a worktree on the feature branch **`feat/dashboard-tabs-and-rename`**
 > (created in Phase 0 via `/create-worktree`). Each phase commits to that
 > branch; the orchestrator dispatches `/land-pr` after Phase 4 completes.
 
@@ -289,16 +289,16 @@ includes every regular file under the skill dir.
 
 ### Goal
 
-Establish the `feat/dashboard-tabs-rename` worktree with verifier-cannot-run
+Establish the `feat/dashboard-tabs-and-rename` worktree with verifier-cannot-run
 defenses (Layer 0 + Layer 3 hooks) in place before any code edits.
 
 ### Work Items
 
-- [ ] Run `bash .claude/skills/create-worktree/scripts/create-worktree.sh dashboard-tabs-rename --pipeline-id dashboard-tabs-rename --branch-name feat/dashboard-tabs-rename` from the main checkout root. Capture the printed worktree path; all subsequent phases `cd` to that worktree.
+- [ ] Run `bash .claude/skills/create-worktree/scripts/create-worktree.sh dashboard-tabs-and-rename --pipeline-id dashboard-tabs-and-rename --branch-name feat/dashboard-tabs-and-rename` from the main checkout root. Capture the printed worktree path; all subsequent phases `cd` to that worktree.
 - [ ] Verify Layer 0 hook present: `test -x .claude/hooks/inject-bash-timeout.sh && head -5 .claude/hooks/inject-bash-timeout.sh`.
 - [ ] Verify Layer 3 hook present: `test -x .claude/hooks/verify-response-validate.sh && head -5 .claude/hooks/verify-response-validate.sh`.
 - [ ] Verify the verifier agent definition is present and has the full tools allowlist: `grep -E '^tools:.*Read.*Grep.*Glob.*Bash.*Edit.*Write' .claude/agents/verifier.md` returns a non-empty match (exit 0).
-- [ ] Verify the worktree is clean: `git status` in the worktree returns "working tree clean" and is on branch `feat/dashboard-tabs-rename` tracking `dev/feat/dashboard-tabs-rename` (or equivalent remote).
+- [ ] Verify the worktree is clean: `git status` in the worktree returns "working tree clean" and is on branch `feat/dashboard-tabs-and-rename` tracking `dev/feat/dashboard-tabs-and-rename` (or equivalent remote).
 - [ ] Confirm `.claude/zskills-config.json` resolves `execution.landing` to `pr` and `execution.branch_prefix` to `feat/` (matching the landing-mode hint in this plan).
 
 ### Design & Constraints
@@ -311,7 +311,7 @@ defenses (Layer 0 + Layer 3 hooks) in place before any code edits.
 
 ### Acceptance Criteria
 
-- [ ] `git worktree list` shows the `feat/dashboard-tabs-rename` branch checked out at the worktree path.
+- [ ] `git worktree list` shows the `feat/dashboard-tabs-and-rename` branch checked out at the worktree path.
 - [ ] All four hook/agent verification commands exit 0 with the expected file content.
 - [ ] No `skills/zskills-dashboard/` files modified in this phase (`git diff main -- skills/zskills-dashboard/` is empty).
 
@@ -459,7 +459,7 @@ assertion strings in lockstep. Internal identifiers (Python package name
 
 ### Dependencies
 
-Phase 0 (worktree on `feat/dashboard-tabs-rename`).
+Phase 0 (worktree on `feat/dashboard-tabs-and-rename`).
 
 ---
 
@@ -1303,7 +1303,7 @@ implementing agent is an anti-pattern.
   7. **Globals stay visible regardless of tab**: kill the server (`kill -TERM "$(cat /tmp/dashboard-phase4.pid)"`). Wait 5s. Switch through **all three tabs**. Assert `#conn-banner` is visible on every tab AND that `#conn-banner.closest("[role=tabpanel]")` is `null` (banner lives outside the tab structure). Restart the server via the same `nohup python3 ...` command used above.
   8. **Narrow viewport**: `playwright-cli resize 600 900` (NOT `--viewport-size`; the actual command is `resize <w> <h>` — verify via `playwright-cli --help | grep -i resize` first if the local build syntax differs). Assert: the tablist overflows horizontally with scroll (`eval 'getComputedStyle(document.querySelector(".tablist")).overflowX'` returns `"auto"`), tabs are still individually clickable, scroll-snap works. Take a screenshot.
   9. **URL hash deep-link**: navigate directly to `http://127.0.0.1:8181/#branches`. Assert page loads with `#tab-branches` active and `#branches` visible. (A brief sub-200ms flash of Plans is acceptable on slow devices; assert end-state, not transient frame.) Refresh (`playwright-cli reload`). Assert tab state survives. Then navigate to `http://127.0.0.1:8181/#worktrees`: assert page falls back to `#plans` active (since `worktrees` is not in `TAB_SLUGS`); `location.hash` may still read `#worktrees` (we never rewrite an unknown hash to avoid the back-stack churn) but `aria-selected="true"` is on `#tab-plans`.
-  9b. **Browser back/forward**: from `/`, click `#tab-issues`, then `#tab-branches`. Press browser back (`playwright-cli back` or `window.history.back()` via `eval`). Assert URL is `/#issues` AND `#tab-issues` is `aria-selected="true"`. Press back again. Assert URL `/#plans` (default — replaceState wrote `#plans` on initial load if hash was empty) OR `/` (if initial hash was absent and never written). Either is correct given `history.replaceState` semantics. Document which behavior is observed.
+  9b. **Browser back/forward under `replaceState` semantics**: from `/`, click `#tab-issues`, then `#tab-branches`. Because tab switches use `history.replaceState` (NOT `pushState`) per the design at line 1098-1100, the back-stack is NOT augmented per click — there is only ever one current entry. Press browser back (`playwright-cli back` or `window.history.back()` via `eval`). Expected: the browser navigates AWAY from the dashboard (e.g., to `about:blank` or the previous page in the playwright session), NOT to `#issues`. Document the observed behavior. This step verifies that we do NOT accidentally pollute the back-stack with one entry per tab click — the user goal is reload-survival, not in-page navigation history.
   10. **Screenshots** (without `--filename`, so files land in `.playwright/output/` per `.devcontainer/setup.sh` config): take one per tab, plus one of the narrow viewport — **4 total**. Rename to `phase4-tab-{plans,issues,branches,narrow}.png` after capture.
   11. **Connection-banner-no-flap (validates Phase 5d fix)**: with
       server running and `#tab-plans` active, drag a plan card 5 times
