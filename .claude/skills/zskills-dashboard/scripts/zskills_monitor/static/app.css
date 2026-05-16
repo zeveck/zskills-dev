@@ -47,6 +47,8 @@ code, pre, .mono {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 16px 24px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
@@ -60,6 +62,20 @@ code, pre, .mono {
   letter-spacing: 0.02em;
   color: var(--accent);
   font-weight: 600;
+}
+
+.under-construction {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 12px;
+  margin-right: auto;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: var(--accent2);
+  border: 1px solid var(--accent2);
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: help;
 }
 
 .topbar-meta {
