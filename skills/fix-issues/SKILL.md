@@ -1,17 +1,17 @@
 ---
 name: fix-issues
 disable-model-invocation: true
-argument-hint: "N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next"
+argument-hint: "N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
 description: >-
   Orchestrate a batch bug-fixing sprint: dispatch fixers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.16+e5a94d"
+  version: "2026.05.16+6587c9"
 ---
 
-# /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
+# /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
 
 Orchestrates large-scale bug fixing. Syncs trackers, prioritizes issues,
 dispatches agent teams in worktrees, verifies fixes, writes a persistent
@@ -22,7 +22,7 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 ## Arguments
 
 ```
-/fix-issues N [focus] [auto] [every SCHEDULE] [now]
+/fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct]
 /fix-issues sync | plan [auto] | stop | next
 ```
 
@@ -32,6 +32,15 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   and their domains. Common focus values: `new`, `correctness`, `codegen`,
   `ui`, `tests` — but any domain found in your tracker files works.
   Omit for default priority order.
+- **dashboard** (optional) — source candidate issues from the dashboard's
+  Ready queue (`.zskills/monitor-state.json` `issues.ready`) instead of
+  the model-layer priority rubric. The Ready list reflects user drag
+  order from the in-app feedback dashboard — it IS the priority.
+  Intersects with the live open-issue list so closed issues drop out
+  silently. Capped to N. Mutually exclusive with `focus`, `sync`,
+  `plan`, `stop`, and `next`. Empty queue → exit 0 cleanly (no
+  fall-through to default rubric). Designed for the queue-worker
+  pattern: `/fix-issues 1 every 30m dashboard auto`.
 - **auto** (optional) — bypass confirmation gates for autonomous operation.
   Behavior depends on context:
   - **Sprints:** skip Phase 2 issue list approval, auto-land to main via
@@ -82,6 +91,8 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - `every` followed by a schedule expression — scheduling mode
 - `pr` (case-insensitive) — PR landing mode (per-issue branches + PRs)
 - `direct` (case-insensitive) — direct landing mode (commit on main)
+- `dashboard` (case-insensitive) — source candidates from
+  `.zskills/monitor-state.json` `issues.ready` instead of the model rubric
 
 **Landing mode resolution** (same pattern as `/run-plan`):
 1. Explicit argument wins: `pr` or `direct` in `$ARGUMENTS`
@@ -124,6 +135,60 @@ or other tokens (same pattern as stripping `auto`, `now`, etc.). The
 downstream N/focus parser must not see `pr` or `direct` as an issue count
 or domain name.
 
+**Detect `dashboard` source mode.** Place this detection in the same
+Phase 0 arg-detection block as `auto`/`pr`/`direct`/`now`. When
+`DASHBOARD_MODE=1`, Phase 2 sources candidate issues from the
+dashboard's Ready queue (`.zskills/monitor-state.json` `issues.ready`)
+rather than the model-layer priority rubric. The strip line below
+ensures `dashboard` never leaks into the leading-N integer parser.
+
+```bash
+DASHBOARD_MODE=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]]) ]]; then
+  DASHBOARD_MODE=1
+fi
+
+# Strip dashboard from arguments before the leading-N integer parser
+# (same pattern as stripping pr/direct/auto/now).
+ARGUMENTS=$(printf '%s' "$ARGUMENTS" \
+  | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]])/ /')
+```
+
+**Mutual exclusion for `dashboard`.** `dashboard` is a source-of-truth
+override for the candidate-selection step (Phase 2). It is incompatible
+with any mode that either (a) defines its own priority rubric (`focus`)
+or (b) is a different subcommand entirely (`sync`, `plan`, `stop`,
+`next`). Place these checks AFTER all subcommands are detected and
+BEFORE Phase 1 starts (i.e., after Phase 0 arg detection so we know
+which mode is active):
+
+```bash
+if [ "$DASHBOARD_MODE" = "1" ]; then
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][oO][cC][uU][sS]($|[[:space:]]) ]]; then
+    echo "ERROR: dashboard is incompatible with focus mode" >&2
+    exit 2
+  fi
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[sS][yY][nN][cC]($|[[:space:]]) ]]; then
+    echo "ERROR: dashboard is incompatible with sync mode" >&2
+    exit 2
+  fi
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][lL][aA][nN]($|[[:space:]]) ]]; then
+    echo "ERROR: dashboard is incompatible with plan mode" >&2
+    exit 2
+  fi
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[sS][tT][oO][pP]($|[[:space:]]) ]]; then
+    echo "ERROR: dashboard is incompatible with stop mode" >&2
+    exit 2
+  fi
+  if [[ "$ARGUMENTS" =~ (^|[[:space:]])[nN][eE][xX][tT]($|[[:space:]]) ]]; then
+    echo "ERROR: dashboard is incompatible with next mode" >&2
+    exit 2
+  fi
+fi
+```
+
 Examples:
 - `/fix-issues 30` — interactive, 30 issues, run now
 - `/fix-issues 10 correctness` — interactive, solver focus, run now
@@ -139,6 +204,11 @@ Examples:
 - `/fix-issues next` — check when the next sprint will run
 - `/fix-issues 5 auto pr` — autonomous sprint, per-issue PR landing
 - `/fix-issues 3 auto direct` — autonomous sprint, land commits on main directly
+- `/fix-issues 1 every 30m dashboard auto` — queue-worker pattern: 1 issue
+  every 30m sourced from dashboard Ready, auto-merge
+- `/fix-issues 3 dashboard` — fix the top 3 issues from dashboard Ready
+- `/fix-issues 1 dashboard auto pr` — single fix from dashboard Ready,
+  auto-merge in PR mode
 
 ## Now (standalone — no N provided)
 
@@ -692,6 +762,11 @@ active, always include the estimated next run time with timezone in the
 completion message. Example:
 > Sprint complete. Next auto-sprint in ~3h 45m (~11:30 PM ET, cron XXXX).
 
+**Dashboard + cron lifecycle note:** when `dashboard` is the source and
+Ready is empty, each cron fire still re-registers normally (queue-worker
+pattern — user manages lifecycle via `/fix-issues stop`). Do NOT auto-kill
+the cron on empty Ready; new issues may drag onto Ready before the next fire.
+
 If `every` is NOT present, skip this phase entirely and proceed to Phase 1
 (bare invocation always runs immediately).
 
@@ -974,6 +1049,117 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
 ```
 
 ## Phase 2 — Prioritize
+
+### Dashboard source branch (if `dashboard` is present)
+
+When `$DASHBOARD_MODE=1`, REPLACE the model-layer ranking below with a
+direct read from the dashboard's Ready queue. The Ready array reflects
+user drag order from the in-app feedback dashboard — it IS the priority.
+No rubric, no boosting, no triage at the candidate-selection step (Phase
+2's triage subsection still applies once the candidates are chosen).
+
+Pure reads of `$MAIN_ROOT/.zskills/monitor-state.json` do NOT need
+`flock -x` because dashboard writes use `os.replace()` (atomic on POSIX),
+so concurrent readers always see a complete file — see
+`skills/work-on-plans/SKILL.md:128-154` for the lock-on-write-only
+convention. Parse the JSON with Python json (NOT bash regex on JSON
+arrays — same discipline as Phase 1's row-writer).
+
+```bash
+if [ "$DASHBOARD_MODE" = "1" ]; then
+  MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
+  MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
+
+  # Reuse the cached OPEN_NUMS array fetched in Phase 1's sync step (gh
+  # issue list --state open ...). If for some reason it is not set in
+  # this scope, refetch it the same way Phase 1 does.
+  if [ -z "${OPEN_NUMS+x}" ]; then
+    GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
+      || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
+    mapfile -t OPEN_NUMS < <(printf '%s' "$GH_OUT" | python3 -c '
+import json, sys
+for it in json.load(sys.stdin):
+    n = it.get("number")
+    if isinstance(n, int):
+        print(n)
+')
+  fi
+
+  # Three empty cases all behave the same:
+  #   (1) monitor-state.json missing
+  #   (2) .issues or .issues.ready key absent
+  #   (3) issues.ready empty, OR intersection-with-open is empty
+  # All three -> print message + exit 0. Do NOT fall through to the
+  # default rubric. Do NOT error.
+  if [ ! -f "$MONITOR_STATE" ]; then
+    echo "Dashboard Ready is empty — nothing to do"
+    exit 0
+  fi
+
+  # Read issues.ready in drag order; intersect with live open issues;
+  # cap to N. Python json — never bash regex on a JSON array.
+  DASHBOARD_PICKS=$(OPEN_NUMS_JOINED="$(printf '%s,' "${OPEN_NUMS[@]}")" \
+    N="$N" python3 -c '
+import json, os, sys
+state_path = sys.argv[1]
+try:
+    with open(state_path, "r") as f:
+        state = json.load(f)
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+issues = state.get("issues") or {}
+ready = issues.get("ready") or []
+if not isinstance(ready, list) or not ready:
+    sys.exit(0)
+open_raw = os.environ.get("OPEN_NUMS_JOINED", "")
+open_set = set()
+for tok in open_raw.split(","):
+    tok = tok.strip()
+    if tok.isdigit():
+        open_set.add(int(tok))
+n_cap = int(os.environ.get("N") or "0") or len(ready)
+picks = []
+for entry in ready:
+    # ready entries may be ints or dicts with .number — be permissive
+    if isinstance(entry, int):
+        num = entry
+    elif isinstance(entry, dict):
+        num = entry.get("number")
+    else:
+        try:
+            num = int(entry)
+        except (TypeError, ValueError):
+            continue
+    if not isinstance(num, int):
+        continue
+    if num in open_set:
+        picks.append(num)
+        if len(picks) >= n_cap:
+            break
+print(" ".join(str(p) for p in picks))
+' "$MONITOR_STATE")
+
+  if [ -z "$DASHBOARD_PICKS" ]; then
+    echo "Dashboard Ready is empty — nothing to do"
+    exit 0
+  fi
+
+  # Hand the picks to the rest of Phase 2 via a CANDIDATE_ISSUES array.
+  # Downstream triage subsection + Phase 3 dispatch consume this array
+  # the same way they would consume the rubric's output. Skip the
+  # rubric/focus/default-ranking text below — the picks ARE the order.
+  read -r -a CANDIDATE_ISSUES <<<"$DASHBOARD_PICKS"
+  echo "Dashboard candidates (drag order, capped to N=$N): ${CANDIDATE_ISSUES[*]}"
+fi
+```
+
+When the dashboard branch returns picks, skip the ranking/focus rubric
+below and proceed directly to the **Triage** subsection with
+`CANDIDATE_ISSUES` as the input list. The triage routing (in-batch
+fix-agent vs `/quickfix` vs `/draft-plan` vs skip) still applies — the
+dashboard only overrides the *selection*, not the *routing*.
+
+### Default rubric (when `dashboard` is NOT present)
 
 Present the next N issues to fix as a ranked table:
 
