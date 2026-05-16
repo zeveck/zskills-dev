@@ -436,3 +436,70 @@ N/A for both. No UI changes.
 ### Landing
 
 PR mode. **#266 first** (lands Step 6b onto main); **#267 second** (will benefit from the just-landed Step 6b if a BEHIND case fires post-A-merge — meta-test of the fix). Step 7b (#254) handles local-main ff-pull on each merge.
+
+## Sprint — 2026-05-16 01:23 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default (correctness backlog)
+**Pipeline:** `fix-issues.sprint-20260516-052325-bugfix` (sprint 1 of 2 this session — cron-fired round 1 of 1)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #288 | `ZSKILLS_PYTHON` env override (handle python3-vs-python on Windows / non-standard distros) | /tmp/zskills-fix-issue-288 | `10c1d9f` | suite 3080/3080 PASS; hook smoke-test confirms `timeout=600000` injects in default + `ZSKILLS_PYTHON=python3` override paths | PASS (verifier ran suite foreground; mirror byte-identical; narrow scope honored — no `PYTHON_CMD` helper, no test sed-sweep) | N/A (hook + CLAUDE.md/CLAUDE_TEMPLATE.md prose; no UI) |
+| #297 | `/do` positional `auto` token (parity with /quickfix PR #260) | /tmp/zskills-fix-issue-297 | `8e3eea0` | new `tests/test-do.sh` cases 14, 15, 16, 16b (parse + AUTO_FLAG + modes/pr.md injection + stale-comment absence); suite 3082/3084 (2 unrelated pre-existing failures) | PASS (verifier independently confirmed AUTO_FLAG case-insensitive, `auto` stripped from TASK_DESCRIPTION, `--auto` injected into LAND_ARGS, two stale "No --auto" comments removed; mirror byte-identical; version 2026.05.16+f227d5 source==mirror; stage-check exit 0); verifier ALSO caught that the implementer's failure-name list was inaccurate — different tests than reported — confirming the value of the independent-verifier discipline | N/A (skill prose + tests; no UI) |
+| #280 + #282 + #300 + #301 | 4 grouped /fix-issues sync correctness bugs (gh-JSON escape-quote parser, success-set drops `created`/`monitored`, pipeline-id propagation, regex matches `**#NNN**`/`### #NNN`) | /tmp/zskills-fix-issue-280 | `14daf65` | new `tests/test-fix-issues.sh` (18 assertions, 266 lines) covers all 4 fixes + conformance test asserting SKILL.md does NOT `export ZSKILLS_PIPELINE_ID`; suite 3097/3098 (1 known parallel-test race in test-briefing-parity.sh "parity: worktreees" — disregard list) | PASS (verifier verified all 4 fixes per-issue with grep evidence; mirror byte-identical; version 2026.05.16+e5a94d source==mirror; stage-check exit 0). **Notable in-spec deviation by implementer:** chose `fulfilled.land-pr.*` marker self-write over `export ZSKILLS_PIPELINE_ID` because the export would have failed `test-skill-conformance.sh:1445`. Conformance preserved; bundle still closes #300. | N/A (skill prose + bash + tests; no UI) |
+
+**Sprint scope (grouping rationale):** Bundle 1 grouped 4 issues into one worktree because all four touch `skills/fix-issues/SKILL.md` sync mode at adjacent prose sites — per the `/fix-issues` skill rule "same file → group them for the same agent." Three separate worktrees overall, file-disjoint from each other. Per memory `feedback_parallel_pipelines_core.md`, parallel dispatch is the core requirement.
+
+### Agent Verify
+
+Three verifier subagents (`subagent_type: "verifier"` per Plan A's structural defense) — three APPROVE results. Layer 0 (`inject-bash-timeout.sh`) extended Bash timeout to 600000ms; Layer 3 (`verify-response-validate.sh`) passed on all three responses (>200 bytes, no stalled-string match, anchored evidence). Bundle 1's verifier had to assess a worktree whose implementation agent STALLED before reporting (see Surfaced context below) — the verifier's independent re-check (read diff, run tests, verify per-fix evidence) is exactly the recovery the spec prescribes, and it worked cleanly.
+
+### User Verify
+
+N/A for all three rows. No UI, editor, or styles files changed. Pure skill/hook/doc prose + bash + test work.
+
+### Surfaced context (NEW follow-up worth filing — not deferred, intentional surface)
+
+**1. Systemic stall pattern: 3/6 fix-agents in this session hit the `run_in_background: true` + Monitor anti-pattern.** Bundle 1 (#280): "I'll wait for the task notification to arrive." Sprint 2 #278: "File is growing. Let me wait for the Monitor event." Sprint 2 #279: "Good — no version bump needed. Waiting for tests to finish." All three despite explicit prompts saying "Foreground only, never `run_in_background: true` + Monitor." Independent verifiers recovered all three via the spec's prescribed Phase 4 recovery (read diff, re-run tests foreground, commit if green). Worth filing as: agents reflexively background tests when they see the 120s default-timeout warning, not realizing CLAUDE.md Layer 0 (`inject-bash-timeout.sh`) silently extends to 600000ms. The verifier-cannot-run rule's structural defense worked — but consumer-side prompt discipline still degrades. Possible fix: subagent-dispatch-time prelude that explicitly states "the harness already extended your Bash timeout to 600000ms; do not background tests on the assumption of a 120s cap." Verifier #288's notes corroborate the harness auto-backgrounding even when `timeout: 600000` is explicitly passed.
+
+**2. Parallel-test races on hardcoded /tmp paths.** `tests/test-briefing-parity.sh` "parity: worktrees" and "port-failure" tests + `tests/test-block-stale-skill-version.sh C5` + `tests/test-create-worktree.sh Case 18` + `tests/test-migrate-flat-tracking-markers.sh` mixed-batch all write to or assert against hardcoded `/tmp/...` paths and race when many fix-issue worktrees run tests concurrently. Surfaced by every verifier in this sprint. Worth filing as a single follow-up issue — use per-worktree `$TEST_OUT` paths or basename-derived prefixes for the affected fixtures.
+
+**3. Bundle 1 implementer's smart deviation.** Implementation prompt said "add `export ZSKILLS_PIPELINE_ID="$PIPELINE_ID"` before /land-pr dispatch." Implementer surfaced that `test-skill-conformance.sh:1445` forbids the export and chose a `fulfilled.land-pr.*` marker self-write instead. That's a higher-skill response than rubber-stamping the prompt. Captured in the new conformance test asserting SKILL.md does NOT do the export. The fix still closes #300 (no marker drift on successful sync).
+
+### Landing
+
+PR mode (per `execution.landing: "pr"` config + `auto` flag). 3 separate PRs (one per worktree). `/land-pr --auto` dispatched in parallel per branch. Auto-merge enabled — gated on CI green. Step 7b ff-pulls local main on each successful merge.
+
+## Sprint — 2026-05-16 01:55 ET [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default (non-conflict overflow from cron fire while sprint 1 was in flight)
+**Pipeline:** `fix-issues.sprint-20260516-055509-cron2` (cron-fired at ~01:46 ET while sprint 1 still active; non-conflict triage)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #278 | `/research-and-go` pipeline abandoned after user interrupt + permissions fix (Fix #1 + Fix #4 only) | /tmp/zskills-fix-issue-278 | `5d53099` | full suite 3079/3080 (1 known race in test-briefing-parity.sh disregard list; re-ran in isolation 21/21 PASS); no new tests (prose-only change) | PASS (verifier independently confirmed atomicity-gate prose joining Step 0 last bash and Step 1 Skill call into one response, guardrail sentence verbatim, step.* marker pointer added; Fix #2 and Fix #3 NOT in diff per deferral; mirror byte-identical; version 2026.05.16+087b59 source==mirror; stage-check exit 0) | N/A (skill prose only; no UI) |
+| #279 | `block-bypassed-land-pr`: 4 remaining prefix-flag bypass forms (9838431 follow-up) | /tmp/zskills-fix-issue-279 | `e667ff3` | 4 new DENY cases (`time -v`, `timeout --foreground 30`, `nohup --`, `command -p`) all PASS; existing C29-C31 + C31b still PASS; targeted test 57/57; full suite 3083/3084 (1 known race — same disregard list) | PASS (verifier confirmed transparent-prefix-skip extended to consume leading `-*` flags after prefix word + `--` as one-shot end-of-options; no `.claude/hooks/_lib/` mirror exists so only source git-tokenwalk.sh staged; hooks aren't skills, no version bump) | N/A (hook + tests; no UI) |
+| #293 | `/quickfix` drop PR-only constraint (Approach A — soft redirect) | /tmp/zskills-fix-issue-293 | _(in flight)_ | _(pending — fix-agent still running at sprint-report write time)_ | _(pending)_ | _(pending)_ |
+
+**Sprint scope:** Cron fired the 30-min recurrence (`16,46 * * * *`) at ~01:46 ET while sprint 1 was still verifying. Re-triaged to non-conflicting issues so sprint 1's PRs and sprint 2's PRs would not collide on shared `skills/fix-issues/SKILL.md`, `skills/do/`, `hooks/inject-bash-timeout.sh`, `CLAUDE.md`, or `CLAUDE_TEMPLATE.md`. All 3 picks land in disjoint files; each closes 1 issue (no bundles).
+
+### Agent Verify
+
+Two verifier subagents APPROVE. Both implementation agents for #278 and #279 STALLED with the same Monitor anti-pattern as bundle 1 — independent verifiers recovered both via the spec's Phase 4 recovery (read diff, run tests foreground, commit if green). Layer 0 + Layer 3 protections held throughout.
+
+### User Verify
+
+N/A for both committed rows.
+
+### Surfaced context
+
+**Cron killed mid-sprint per Failure Protocol.** After 3 stalls in this session (4 if #293 also stalls — TBD), the cron was deleted (`CronDelete f2ce3b03`) at ~01:55 ET to prevent the 02:16 ET fire from spawning 3 more potentially-stalling agents. The user can re-arm with `/fix-issues N every <interval> auto now` after the systemic Monitor anti-pattern is addressed.
+
+**3-worktree cap rationale validated.** Per #295 (already in the backlog), the existing 3-per-message cap is about checkout contention at dispatch — not aggregate live-worktree load. This sprint's pile-up (6 worktrees concurrent + their test runs) corroborates that #295's `execution.max_concurrent_worktrees` proposal is worth implementing.
+
+### Landing
+
+PR mode + auto. 2 committed PRs land via `/land-pr --auto` in parallel with sprint 1's 3 PRs. #293 PR pending fix-agent completion.
+
