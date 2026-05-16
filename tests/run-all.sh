@@ -74,6 +74,7 @@ run_suite "test-block-stale-skill-version-sandbox.sh" "tests/test-block-stale-sk
 run_suite "test-block-bypassed-land-pr.sh" "tests/test-block-bypassed-land-pr.sh"
 run_suite "test-tracking-integration.sh" "tests/test-tracking-integration.sh"
 run_suite "test-quickfix.sh" "tests/test-quickfix.sh"
+run_suite "test-fix-issues.sh" "tests/test-fix-issues.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-commit.sh" "tests/test-commit.sh"
 run_suite "test-frontmatter-helpers.sh" "tests/test-frontmatter-helpers.sh"
