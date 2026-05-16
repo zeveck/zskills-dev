@@ -14,9 +14,11 @@
 #
 # Implementation note: the `command` field can contain arbitrary quotes,
 # backslashes, and newlines that are awkward to round-trip through pure
-# bash regex. We use python3 for the JSON parse + reserialize to keep the
+# bash regex. We use Python for the JSON parse + reserialize to keep the
 # escaping correct. Per zskills convention: no jq; python is acceptable
-# in hook scripts when bash JSON construction would be brittle.
+# in hook scripts when bash JSON construction would be brittle. The
+# interpreter is resolved via $ZSKILLS_PYTHON (env override, for
+# Windows / non-standard distros) → `python3` → `python`.
 #
 # Stdin shape: PreToolUse harness envelopes vary. Two supported shapes —
 #   1. The full envelope `{"tool_name":"Bash","tool_input":{...},...}`
@@ -26,6 +28,12 @@
 # hook usable from both the live harness and direct unit tests.
 
 set -u
+
+# Resolve Python interpreter once. Override via ZSKILLS_PYTHON for
+# Windows / non-standard distros where only `python` exists. Default
+# precedence: python3 (POSIX-standard zskills target), then python.
+PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
 
 INPUT=$(cat)
 MIN_TIMEOUT=600000
@@ -48,7 +56,7 @@ fi
 # Need to inject. Round-trip via python3 for correct JSON escaping.
 # We pass MIN_TIMEOUT as an env var (stdin must stay free for the JSON
 # envelope; argv-vs-stdin separation is what `python3 -c` gets us).
-PY_OUT=$(printf '%s' "$INPUT" | MIN_TIMEOUT="$MIN_TIMEOUT" python3 -c '
+PY_OUT=$(printf '%s' "$INPUT" | MIN_TIMEOUT="$MIN_TIMEOUT" "$PYTHON" -c '
 import json, os, sys
 min_timeout = int(os.environ["MIN_TIMEOUT"])
 raw = sys.stdin.read()
@@ -70,7 +78,7 @@ sys.stdout.write(json.dumps(out))
 ' 2>/dev/null)
 
 if [ -z "$PY_OUT" ]; then
-  # python failed (missing python3 / parse error / unexpected). Permissive
+  # python failed (parse error / unexpected; missing interpreter exits earlier). Permissive
   # fallback: allow as-is. Layer 3 (verify-response-validate.sh) catches
   # any downstream verifier failure regardless.
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'

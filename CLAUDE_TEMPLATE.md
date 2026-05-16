@@ -15,6 +15,23 @@ When using the Agent tool:
 - Treat any subagent type as Haiku-by-default until you have read its agent definition and confirmed otherwise. When in doubt, pass `model: "opus"` explicitly, or use `general-purpose`.
 - **Sonnet** is acceptable only for rare simple+mechanical work (bulk renames, find-replace, format conversion). Never for analysis, review, verification, or judgment.
 
+## Python is required
+
+zskills hooks and helper scripts depend on Python 3 for JSON round-tripping where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
+
+The interpreter is resolved via this precedence:
+
+```
+PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+```
+
+- Default is `python3` (POSIX-standard zskills target).
+- Falls back to `python` for Windows / distros where only `python` exists (pointing at Python 3).
+- Set `ZSKILLS_PYTHON` to override both — useful when both binaries exist but you need a specific interpreter (e.g. a venv).
+
+Python 2 is unsupported.
+
 ## Dev Server
 
 Run `bash scripts/start-dev.sh` to start the dev server and `bash scripts/stop-dev.sh` to stop it. Both ship as failing stubs that the consumer customizes (see in-file comments for the contract). The pairing: `start-dev.sh` runs `{{DEV_SERVER_CMD}}` and writes each spawned child PID (one per line) to `.zskills/dev-server.pid`; `stop-dev.sh` reads `.zskills/dev-server.pid` and SIGTERMs each. `.zskills/` is gitignored.
