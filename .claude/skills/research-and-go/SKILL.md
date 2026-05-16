@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.15+e5bbe7"
+  version: "2026.05.16+087b59"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -55,6 +55,15 @@ Examples:
 ## Step 0 — Tracking Setup
 
 Before anything else, check whether another pipeline is already in progress.
+
+**On resume, also check `step.*` markers.** Child `/run-plan` invocations
+emit per-phase `step.<phase>.{implement,verify,report}` markers under
+their own pipeline subdirs (convention documented at
+`docs/tracking/TRACKING_NAMING.md:413-415`). If you are resuming an
+existing pipeline (sentinel already exists), inspect those `step.*`
+markers across the child pipelines' subdirs to determine which sub-plan
+phase last made progress before re-dispatching — they are the
+authoritative per-phase progress signal.
 
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -170,9 +179,25 @@ already exists and this is a deliberate re-run of the same goal:
    false positives).
 5. Overwrite the `pipeline.research-and-go.$SCOPE` sentinel with a fresh timestamp.
 
+### Atomicity gate — Step 0 → Step 1 ships in ONE response
+
+**Do NOT split Step 0's last bash and Step 1's Skill call across separate responses — interrupt-resilience requires they ship together.**
+
+The moment Step 0's final bash block completes (sentinel written, pipeline
+ID echoed, requirement marker written, and — on re-run — staleness
+touches done), the very next tool call in the SAME assistant response MUST
+be the `Skill` invocation in Step 1 below. Do not end your turn between
+Step 0 and Step 1. Do not narrate "now I will invoke /research-and-plan"
+and stop — actually invoke it, in this same response. This atomicity is
+the only thing protecting the pipeline against a user interrupt (e.g., a
+permissions prompt) that arrives between turns and leaves a tracking
+sentinel with no follow-through.
+
 ## Step 1 — Decompose and Draft
 
-Invoke `/research-and-plan` with `auto`, `parent=research-and-go`, and the full description:
+**This step MUST execute in the same response as Step 0's last bash block (see Atomicity gate above).**
+
+Invoke `/research-and-plan` (via the `Skill` tool) with `auto`, `parent=research-and-go`, and the full description:
 
 `/research-and-plan output $META_PLAN_PATH auto parent=research-and-go <description>`
 
