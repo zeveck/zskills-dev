@@ -1,6 +1,12 @@
 #!/bin/bash
-# Tests for skills/briefing/scripts/briefing.py (and parity with briefing.cjs)
+# Tests for skills/briefing/scripts/briefing.py
 # Run from repo root: bash tests/test-briefing-parity.sh
+#
+# Historical note: this file previously asserted runtime parity between
+# briefing.cjs and briefing.py. The cjs fork was retired in #289 (Python
+# became the single runtime; see CLAUDE.md "Python is required"). The
+# filename is retained for git-history continuity; the contents are now
+# pure smoke tests against briefing.py.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -25,9 +31,7 @@ skip() {
   ((SKIP_COUNT++))
 }
 
-HAS_NODE=false
 HAS_PYTHON=false
-command -v node >/dev/null 2>&1 && HAS_NODE=true
 command -v python3 >/dev/null 2>&1 && HAS_PYTHON=true
 
 echo "=== briefing.py smoke tests ==="
@@ -71,218 +75,6 @@ for cmd in "${smoke_cmds[@]}"; do
     fail "python3 briefing.py $cmd (exit=$exit_code)"
   fi
 done
-
-echo ""
-echo "=== Parity tests (node vs python3) ==="
-
-if [[ "$HAS_NODE" == "false" ]]; then
-  skip "parity tests (node not available)"
-else
-  # JSON subcommands: compare structure
-  json_cmds=("commits --since=24h" "worktrees" "checkboxes")
-  for cmd in "${json_cmds[@]}"; do
-    # shellcheck disable=SC2086
-    node_out=$(cd "$REPO_ROOT" && node "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" $cmd 2>/dev/null)
-    # shellcheck disable=SC2086
-    py_out=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" $cmd 2>/dev/null)
-
-    # Both should produce valid JSON — compare top-level keys
-    node_keys=$(echo "$node_out" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    if isinstance(d, dict):
-        print(' '.join(sorted(d.keys())))
-    elif isinstance(d, list):
-        print('list:' + str(len(d)))
-    else:
-        print(type(d).__name__)
-except:
-    print('PARSE_ERROR')
-" 2>/dev/null)
-
-    py_keys=$(echo "$py_out" | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    if isinstance(d, dict):
-        print(' '.join(sorted(d.keys())))
-    elif isinstance(d, list):
-        print('list:' + str(len(d)))
-    else:
-        print(type(d).__name__)
-except:
-    print('PARSE_ERROR')
-" 2>/dev/null)
-
-    if [[ "$node_keys" == "PARSE_ERROR" && "$py_keys" == "PARSE_ERROR" ]]; then
-      # Both failed to parse — might be empty results, still parity
-      pass "parity: $cmd (both returned non-JSON, consistent)"
-    elif [[ "$node_keys" == "$py_keys" ]]; then
-      pass "parity: $cmd (keys match: $node_keys)"
-    else
-      fail "parity: $cmd — node keys=[$node_keys] vs py keys=[$py_keys]"
-    fi
-  done
-
-  # Text subcommand: summary — compare line count
-  node_summary=$(cd "$REPO_ROOT" && node "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" summary --since=24h 2>/dev/null)
-  py_summary=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" summary --since=24h 2>/dev/null)
-
-  node_lines=$(echo "$node_summary" | wc -l)
-  py_lines=$(echo "$py_summary" | wc -l)
-
-  # Allow line counts to differ by up to 30% or 5 lines
-  diff=$((node_lines - py_lines))
-  diff=${diff#-}  # absolute value
-  if [[ "$diff" -le 5 || "$diff" -le $((node_lines * 30 / 100)) ]]; then
-    pass "parity: summary (line counts close: node=$node_lines, py=$py_lines)"
-  else
-    fail "parity: summary (line counts diverge: node=$node_lines, py=$py_lines)"
-  fi
-
-  # ---------------------------------------------------------------------
-  # Port-failure parity tests (Phase 4 of DEFAULT_PORT_CONFIG)
-  # ---------------------------------------------------------------------
-  # Fixture: a fake "main repo" that has NO port.sh installed. briefing.py /
-  # briefing.cjs must run to completion AND emit no localhost: URL AND produce
-  # equivalent output. Pre-Phase-4 fallback (`port = '8080'`) would emit
-  # localhost:8080/... unconditionally; this test guards against regression.
-  echo ""
-  echo "=== Port-failure parity (no port.sh installed) ==="
-
-  FIXTURE_DIR="/tmp/zskills-briefing-fixture-noport"
-  rm -rf "$FIXTURE_DIR"
-  mkdir -p "$FIXTURE_DIR/skills/briefing/scripts"
-  # .git marker so find_repo_root / findRepoRoot anchors at FIXTURE_DIR.
-  mkdir -p "$FIXTURE_DIR/.git"
-  # NO .claude/skills/update-zskills/scripts/port.sh — that's the whole point.
-  # Copy briefing scripts into fixture so __file__ / __filename resolve to fixture
-  # paths. (find_repo_root walks up from the script's directory, not cwd.)
-  cp "$REPO_ROOT/skills/briefing/scripts/briefing.py" "$FIXTURE_DIR/skills/briefing/scripts/briefing.py"
-  cp "$REPO_ROOT/skills/briefing/scripts/briefing.cjs" "$FIXTURE_DIR/skills/briefing/scripts/briefing.cjs"
-
-  noport_node_out="$FIXTURE_DIR/.node-summary.txt"
-  noport_py_out="$FIXTURE_DIR/.py-summary.txt"
-
-  # Run both, capturing stderr separately to inspect crashes.
-  node_exit=0
-  py_exit=0
-  (cd "$FIXTURE_DIR" && node "$FIXTURE_DIR/skills/briefing/scripts/briefing.cjs" summary --since=24h) \
-    >"$noport_node_out" 2>"$FIXTURE_DIR/.node-err.txt" || node_exit=$?
-  (cd "$FIXTURE_DIR" && python3 "$FIXTURE_DIR/skills/briefing/scripts/briefing.py" summary --since=24h) \
-    >"$noport_py_out" 2>"$FIXTURE_DIR/.py-err.txt" || py_exit=$?
-
-  # AC: both run to completion (exit 0).
-  if [[ "$node_exit" -eq 0 ]]; then
-    pass "port-failure: briefing.cjs exits 0 on missing port.sh"
-  else
-    fail "port-failure: briefing.cjs exit=$node_exit on missing port.sh"
-  fi
-  if [[ "$py_exit" -eq 0 ]]; then
-    pass "port-failure: briefing.py exits 0 on missing port.sh"
-  else
-    fail "port-failure: briefing.py exit=$py_exit on missing port.sh"
-  fi
-
-  # AC: neither emits a localhost: URL.
-  # Note: `grep -c` returns 0 (no match) with exit-code 1; we want the count.
-  node_localhost=$(grep -c 'localhost:' "$noport_node_out" 2>/dev/null)
-  [[ -z "$node_localhost" ]] && node_localhost=0
-  py_localhost=$(grep -c 'localhost:' "$noport_py_out" 2>/dev/null)
-  [[ -z "$py_localhost" ]] && py_localhost=0
-  if [[ "$node_localhost" -eq 0 ]]; then
-    pass "port-failure: briefing.cjs emits no localhost: URL"
-  else
-    fail "port-failure: briefing.cjs emitted $node_localhost localhost: URL(s)"
-  fi
-  if [[ "$py_localhost" -eq 0 ]]; then
-    pass "port-failure: briefing.py emits no localhost: URL"
-  else
-    fail "port-failure: briefing.py emitted $py_localhost localhost: URL(s)"
-  fi
-
-  # AC: outputs are equivalent. We compare verbatim — the port-handling code
-  # paths in briefing.py and briefing.cjs do NOT interpolate language-specific
-  # literals (None/null/True/False) into stdout (verified by
-  #   grep -nE 'lines\.(append|push)\(.*\b(None|null|True|False|true|false)\b'
-  # returning empty for both files at the time of this writing). If a future
-  # edit introduces a literal divergence, fix the source so output stays
-  # byte-equivalent rather than weakening this test.
-  if diff -q "$noport_node_out" "$noport_py_out" >/dev/null 2>&1; then
-    pass "port-failure: outputs are byte-equivalent"
-  else
-    # Show first 5 differing lines for debug, but still fail.
-    diff_lines=$(diff "$noport_node_out" "$noport_py_out" | head -10 | tr '\n' '|')
-    fail "port-failure: outputs diverge — diff: $diff_lines"
-  fi
-
-  rm -rf "$FIXTURE_DIR"
-
-  # ---------------------------------------------------------------------
-  # Midnight-ET formatter regression test (issue #132)
-  # ---------------------------------------------------------------------
-  # At 00:xx ET (~04:xx UTC) some Node/ICU builds resolve `hour12: false`
-  # to hourCycle h24, emitting `24:30 ET` instead of `00:30 ET` and
-  # diverging from briefing.py (which uses %H, always 0-23). This test
-  # pins a Date / datetime to midnight ET and asserts both formatters
-  # emit the 00 hour, not 24.
-  echo ""
-  echo "=== Midnight-ET formatter parity (issue #132) ==="
-
-  # Node: 04:30 UTC = 00:30 ET (after DST cutover; works year-round at this
-  # particular wall-clock minute since EDT is UTC-4 and EST is UTC-5;
-  # we test 04:30 UTC which is 00:30 EDT or 23:30 EST. Use a Spring date
-  # to be unambiguous.)
-  node_midnight_out=$(node -e "
-    const { formatET } = require('$REPO_ROOT/skills/briefing/scripts/briefing.cjs');
-    // 2026-04-30T04:30:00Z = 2026-04-30 00:30 EDT (April is in DST)
-    process.stdout.write(formatET(new Date('2026-04-30T04:30:00Z')));
-  " 2>/dev/null)
-  py_midnight_out=$(python3 -c "
-import sys, os
-sys.path.insert(0, '$REPO_ROOT/skills/briefing/scripts')
-from datetime import datetime, timezone
-import briefing
-# 2026-04-30T04:30:00Z = 2026-04-30 00:30 EDT
-d = datetime(2026, 4, 30, 4, 30, 0, tzinfo=timezone.utc)
-sys.stdout.write(briefing.format_et(d))
-" 2>/dev/null)
-
-  expected="2026-04-30 00:30 ET"
-
-  if [[ "$node_midnight_out" == "$expected" ]]; then
-    pass "midnight-ET: briefing.cjs emits '00:30 ET' at 00:30 ET"
-  else
-    fail "midnight-ET: briefing.cjs emitted '$node_midnight_out', expected '$expected'"
-  fi
-
-  if [[ "$py_midnight_out" == "$expected" ]]; then
-    pass "midnight-ET: briefing.py emits '00:30 ET' at 00:30 ET"
-  else
-    fail "midnight-ET: briefing.py emitted '$py_midnight_out', expected '$expected'"
-  fi
-
-  # Belt-and-suspenders: explicitly assert no '24:' hour anywhere.
-  if [[ "$node_midnight_out" != *"24:"* ]]; then
-    pass "midnight-ET: briefing.cjs output has no '24:' hour"
-  else
-    fail "midnight-ET: briefing.cjs output contains '24:' — '$node_midnight_out'"
-  fi
-
-  if [[ "$py_midnight_out" != *"24:"* ]]; then
-    pass "midnight-ET: briefing.py output has no '24:' hour"
-  else
-    fail "midnight-ET: briefing.py output contains '24:' — '$py_midnight_out'"
-  fi
-
-  # Final parity check: outputs are byte-equivalent at midnight ET.
-  if [[ "$node_midnight_out" == "$py_midnight_out" ]]; then
-    pass "midnight-ET: briefing.cjs and briefing.py outputs match"
-  else
-    fail "midnight-ET: outputs diverge — node='$node_midnight_out' py='$py_midnight_out'"
-  fi
-fi
 
 echo ""
 echo "---"

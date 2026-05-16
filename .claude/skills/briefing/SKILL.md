@@ -5,29 +5,21 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.07+6fe1fc"
+  version: "2026.05.16+5a7b1a"
 ---
 
 # /briefing — Project Status Briefing
 
 Gather project state and present a structured briefing.
 
-## Runtime Check
+## Runtime
 
-Before executing any mode, determine which runtime is available for the
-briefing helper script:
+The briefing helper is `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"`.
+Python 3 is required (per CLAUDE.md "Python is required"). If `python3`
+is not on PATH, output a clear error and stop:
 
-1. Try `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"` first (preferred).
-2. If `node` is not found, try `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"` (fallback).
-3. If neither `node` nor `python3` is available, output a clear error and stop:
-
-   > /briefing requires Node.js or Python 3. Install one and ensure it's on PATH.
-   > - Node.js: https://nodejs.org/
-   > - Python: https://python.org/
-
-Use the detected runtime for all `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"` commands below.
-If using the Python fallback, substitute `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"` wherever
-the instructions say `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs"`.
+> /briefing requires Python 3. Install it and ensure it's on PATH.
+> Python: https://python.org/
 
 ## Argument Parsing
 
@@ -66,7 +58,7 @@ extraction and which commits are unlanded.
 Quick terminal-only triage view. The helper outputs pre-formatted text.
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" summary --since=<period>
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" summary --since=<period>
 ```
 
 Present the output **verbatim** — it is already formatted with three buckets:
@@ -81,7 +73,7 @@ Present the output **verbatim** — it is already formatted with three buckets:
 Generate a detailed markdown report and write it to `$ZSKILLS_AUDIT_DIR/`.
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" report --since=<period>
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" report --since=<period>
 ```
 
 The helper writes the file directly and prints its path. Report includes:
@@ -110,7 +102,7 @@ fix reports, and plan reports that need human sign-off.
 #### Step 1 — Gather data
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" verify
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" verify
 ```
 
 The script output includes both report sign-off data and worktree data.
@@ -188,7 +180,7 @@ Empty state: `ALL CLEAR — no pending sign-off items.`
 Show what's actively in flight right now.
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" current
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" current
 ```
 
 Present the output **verbatim**. Sections:
@@ -205,7 +197,7 @@ Detailed worktree analysis with cleanup readiness. Read-only — shows what's
 safe to remove but does not remove anything.
 
 ```bash
-node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" worktrees-status
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" worktrees-status
 ```
 
 Present the output **verbatim**. Sections:
@@ -219,7 +211,7 @@ Present the output **verbatim**. Sections:
 
 ## Data Gathering
 
-The agent runs `node "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.cjs" <subcommand>` and captures stdout.
+The agent runs `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" <subcommand>` and captures stdout.
 
 | Subcommand   | Output   | Description                              |
 |-------------|----------|------------------------------------------|

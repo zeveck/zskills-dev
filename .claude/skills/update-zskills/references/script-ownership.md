@@ -24,7 +24,6 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `append-backfill-phase.sh`   | 1      | `draft-tests`                |
 | `append-tests-section.sh`    | 1      | `draft-tests`                |
 | `apply-preset.sh`            | 1      | `update-zskills`             |
-| `briefing.cjs`               | 1      | `briefing`                   |
 | `briefing.py`                | 1      | `briefing`                   |
 | `build-prod.sh`              | 2      | release-only repo tooling; never installed to consumers (called by `.github/workflows/ship-to-prod.yml:80`; documented in `RELEASING.md:5,47,64,71,78,82`) |
 | `clear-tracking.sh`          | 1      | `update-zskills`             |
@@ -59,8 +58,8 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 | `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
-Total: 32 Tier 1 (`append-backfill-phase`, `append-tests-section`,
-`apply-preset`, `briefing.cjs`, `briefing.py`, `clear-tracking`,
+Total: 31 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+`apply-preset`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
 `create-worktree`, `detect-language`, `draft-orchestrator`,
 `flip-frontmatter-status`, `gap-detect`, `insert-prerequisites`,
@@ -130,7 +129,6 @@ Tier-1 name set with a `scripts/` prefix:
 
 ```
 scripts/apply-preset.sh
-scripts/briefing.cjs
 scripts/briefing.py
 scripts/clear-tracking.sh
 scripts/compute-cron-fire.sh

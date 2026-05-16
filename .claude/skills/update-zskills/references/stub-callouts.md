@@ -75,7 +75,7 @@ unaffected.
 | `start-dev.sh`             | (consumer-invoked)            | NEW (failing stub)     | n/a (stub IS the file)    |
 | `stop-dev.sh`              | (consumer-invoked, hook help) | CONVERT to failing stub| n/a (stub IS the file)    |
 | `test-all.sh`              | run-plan / verify-changes     | CONVERT to failing stub| `command not found` → `exit 1` with message |
-| `briefing-extra.sh`        | `briefing.cjs`                | DEFERRED (Phase 6)     | n/a                        |
+| `briefing-extra.sh`        | `briefing.py`                 | DEFERRED (Phase 6)     | n/a                        |
 
 ### `dev-port.sh`
 
