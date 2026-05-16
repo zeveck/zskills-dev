@@ -70,7 +70,7 @@ cat > "$T2/.claude/zskills-config.json" <<'CFG'
 {
   "output": {
     "plans_dir": "docs/plans",
-    "issues_dir": ".zskills/issues"
+    "issues_dir": "docs/issues"
   }
 }
 CFG
@@ -83,9 +83,9 @@ C2_ISSUES=$(printf '%s\n' "$RESULT2" | sed -n '2p')
 [ "$C2_PLANS" = "$T2/docs/plans" ] \
   && pass "Case 2a: \$ZSKILLS_PLANS_DIR = '<root>/docs/plans'" \
   || fail "Case 2a: \$ZSKILLS_PLANS_DIR" "got '$C2_PLANS', expected '$T2/docs/plans'"
-[ "$C2_ISSUES" = "$T2/.zskills/issues" ] \
-  && pass "Case 2b: \$ZSKILLS_ISSUES_DIR = '<root>/.zskills/issues'" \
-  || fail "Case 2b: \$ZSKILLS_ISSUES_DIR" "got '$C2_ISSUES', expected '$T2/.zskills/issues'"
+[ "$C2_ISSUES" = "$T2/docs/issues" ] \
+  && pass "Case 2b: \$ZSKILLS_ISSUES_DIR = '<root>/docs/issues'" \
+  || fail "Case 2b: \$ZSKILLS_ISSUES_DIR" "got '$C2_ISSUES', expected '$T2/docs/issues'"
 rm -rf "$T2"
 
 # --- Case 3: absolute plans_dir → used as-is --------------------------------

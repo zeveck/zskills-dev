@@ -14,7 +14,7 @@
 #      .zskills/audit/PLAN_INDEX.md per the per-tier split),
 #      .pre-paths-migration exists, manifest matches moves, config
 #      gained output.plans_dir = "docs/plans" AND output.issues_dir =
-#      ".zskills/issues" (BOTH keys, atomic).
+#      "docs/issues" (BOTH keys, atomic).
 #      Plus rerender-ordering CI guard sub-assertion: scan
 #      update-zskills/SKILL.md Step C section for any new {{...}}
 #      template placeholders that reference path-config keys; fail if
@@ -70,7 +70,7 @@ write_config() {
       printf '  "project_name": "fixture",\n'
       printf '  "output": {\n'
       printf '    "plans_dir": "%s",\n' "${plans:-docs/plans}"
-      printf '    "issues_dir": "%s"\n' "${issues:-.zskills/issues}"
+      printf '    "issues_dir": "%s"\n' "${issues:-docs/issues}"
       printf '  }\n'
       printf '}\n'
     } > "$dir/.claude/zskills-config.json"
@@ -169,7 +169,7 @@ case_1_legacy_only() {
   local cfg_body
   cfg_body=$(cat "$D/.claude/zskills-config.json")
   if echo "$cfg_body" | grep -q '"plans_dir"[[:space:]]*:[[:space:]]*"docs/plans"' \
-     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"\.zskills/issues"'; then
+     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"docs/issues"'; then
     pass "case 1: config gained BOTH output.plans_dir AND output.issues_dir"
   else
     fail "case 1: config missing one or both output keys" "$cfg_body"

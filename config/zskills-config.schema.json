@@ -170,7 +170,7 @@
         },
         "issues_dir": {
           "type": "string",
-          "description": "Directory for issue trackers (ISSUES_PLAN.md, BUILD_ISSUES.md, DOC_ISSUES.md, QE_ISSUES.md). Documented default: .zskills/issues. Absent → legacy plans/. Same resolution rules as plans_dir. Distinct from testing.output_file."
+          "description": "Directory for issue trackers (ISSUES_PLAN.md, BUILD_ISSUES.md, DOC_ISSUES.md, QE_ISSUES.md). Documented default: docs/issues. Absent → legacy plans/. Same resolution rules as plans_dir. Distinct from testing.output_file."
         }
       }
     }
