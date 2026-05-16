@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.15+ddad50"
+  version: "2026.05.16+e5a94d"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -305,10 +305,13 @@ For each approved issue:
    Implemented" section, add a note: `Closed by /fix-issues sync`.
 
 The `gh issue close` calls are deferred to Step 5 sub-step 3, AFTER
-`/land-pr` returns a success status (`created`, `monitored`, or `merged`).
-If `/land-pr` fails, the issues remain OPEN on GitHub — preventing
-state divergence between closed-on-GH and unmerged-in-main (AC-P.3 of
-`docs/plans/FIX_ISSUES_SYNC_HARDENING.md`).
+`/land-pr` returns `merged`. `created` and `monitored` mean the PR is
+open but unmerged — closing on those statuses recreates the same AC-P.3
+divergence PR #271 fixed (issue #282). If `/land-pr` returns any other
+status, the issues remain OPEN on GitHub — preventing state divergence
+between closed-on-GH and unmerged-in-main (AC-P.3 of
+`docs/plans/FIX_ISSUES_SYNC_HARDENING.md`); the next sync run after
+auto-merge completes will close them.
 
 ### Step 5 — Commit & report
 
@@ -460,6 +463,20 @@ EOF
    # state).
    LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID"
 
+   # Echo the pipeline id for transcript-propagation (matches /do pr's
+   # tier-2 idiom at `skills/do/modes/pr.md:203`). Do NOT env-export
+   # the variable — the conformance test at
+   # `tests/test-skill-conformance.sh:1445` forbids the env-export form
+   # of this variable as a side-channel; the echo form is the canonical
+   # propagation idiom. Note: this means `/land-pr`'s Step 8b cannot
+   # read PIPELINE_ID from the env in the same-shell case (it falls
+   # back to `run-plan.$TRACKING_ID` which doesn't exist for sync —
+   # issue #300). Sync therefore writes its own
+   # `fulfilled.land-pr.<id>` marker after /land-pr returns merged
+   # (Step 5 sub-step 3 below), closing the #300 hole without violating
+   # the conformance discipline.
+   echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+
    # Dispatch /land-pr via the Skill tool. The Skill tool loads /land-pr's
    # prose into the current (orchestrator) context — its internal bash
    # blocks run here. After /land-pr returns, $RESULT_FILE is populated.
@@ -490,22 +507,37 @@ EOF
    # main_root iff LP[STATUS]=merged.
    ```
 
-3. **Close approved issues on GitHub** — only if `/land-pr` returned a
-   success status (`created`, `monitored`, or `merged`). On any other
-   status (`push-failed`, `rebase-conflict`, `create-failed`,
-   `monitor-failed`, `merge-failed`, `rebase-failed`), leave issues OPEN
-   to prevent state divergence between closed-on-GH and unmerged-in-main
-   (AC-P.3). The next sync run can re-attempt the close after the
-   underlying landing failure is resolved.
+3. **Close approved issues on GitHub** — only if `/land-pr` returned
+   `merged`. `created` and `monitored` mean the PR is open but unmerged;
+   the close happens on the NEXT sync run after auto-merge completes (or
+   after a human merges the PR). Per memory
+   `feedback_automerge_blocked_means_act.md`: auto-merge BLOCKED is the
+   rest state to wait through, not to close on (issue #282 — closing on
+   `created`/`monitored` recreates the AC-P.3 divergence that PR #271
+   fixed). On any non-`merged` status (`created`, `monitored`,
+   `push-failed`, `rebase-conflict`, `create-failed`, `monitor-failed`,
+   `merge-failed`, `rebase-failed`), leave issues OPEN to prevent state
+   divergence between closed-on-GH and unmerged-in-main (AC-P.3).
 
    ```bash
    case "${LP[STATUS]:-}" in
-     created|monitored|merged)
+     merged)
+       # Write the fulfilled.land-pr marker into the sync pipeline subdir
+       # (issue #300). /land-pr's Step 8b can't write it itself: it falls
+       # back to PIPELINE_ID=run-plan.$TRACKING_ID when ZSKILLS_PIPELINE_ID
+       # is unset, and the conformance test (test-skill-conformance.sh:1445)
+       # forbids env-exporting this variable. Sync therefore writes the
+       # marker itself once /land-pr returns merged — same end-state, no
+       # side-channel.
+       printf 'skill: land-pr\nid: %s\npr: %s\nbranch: %s\ndate: %s\n' \
+         "$SYNC_ID" "${LP[PR_URL]:-}" "$SYNC_BRANCH" \
+         "$(TZ=UTC date -Iseconds)" \
+         > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$SYNC_ID"
        # For each approved issue, close with the fix-commit reference.
        gh issue close <N> --comment "Fixed in commit <hash>. <brief description of fix>. Tests: <test file(s)>."
        ;;
      *)
-       echo "Skipping gh issue close — /land-pr STATUS=${LP[STATUS]:-unknown}. Approved issues remain OPEN; re-run sync after the underlying landing failure is resolved." >&2
+       echo "Skipping gh issue close — /land-pr STATUS=${LP[STATUS]:-unknown}. Approved issues remain OPEN; re-run sync after CI completes (auto-merge) or after the underlying landing failure is resolved." >&2
        ;;
    esac
    ```
@@ -749,7 +781,9 @@ alert user, write failure to report).
 
    ```bash
    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-   GH_OUT=$(gh issue list --state open --limit 500 --json number 2>&1) \
+   # Fetch number+title+labels in ONE call so the row-writer below can
+   # reuse this blob (no N+1 `gh issue view` loop — see issue #280).
+   GH_OUT=$(gh issue list --state open --limit 500 --json number,title,labels 2>&1) \
      || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; exit 1; }
    mapfile -t OPEN_NUMS < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
    OPEN_COUNT=${#OPEN_NUMS[@]}
@@ -797,24 +831,45 @@ fi
 ```
 
    **Row-writer for residual issues.** For each open GH issue not yet
-   referenced in any tracker, fetch its title+labels and append a
+   referenced in any tracker, look up its title+labels in the batched
+   `$GH_OUT` blob (single `gh issue list` call from the bootstrap step
+   above — no N+1 `gh issue view` loop; see issue #280) and append a
    `### #N — <title>` row with `**Labels:**` and
    `**Verdict:** NOT YET RESEARCHED`. The membership check is **anchored**
-   so `bug#23` does not match `#23`. Title/labels parsing uses `grep -oE`
-   (no jq).
+   so `bug#23` does not match `#23`; it uses `grep -qP` with PCRE
+   lookarounds so markdown-bold (`**#NNN**`) and `### #NNN` headings match
+   (issue #301 — the prior ERE alternation `(^|[^0-9A-Za-z_])#$N($|[^0-9])`
+   silently missed those formats). Title/labels parsing uses Python json
+   so JSON-escaped quotes (`"Fix \"foo\" handling"`) don't truncate the
+   row (issue #280 — `grep -oE '"title":"[^"]*"'` stopped at the first
+   literal `"` and corrupted the tracker).
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
    NEW_RESEARCHED_COUNT=0
    for N in "${OPEN_NUMS[@]}"; do
-     if grep -qE '(^|[^0-9A-Za-z_])#'"$N"'($|[^0-9])' \
+     if grep -qP "(?<![0-9])#$N(?![0-9])" \
           "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
        continue
      fi
-     ISSUE_JSON=$(gh issue view "$N" --json title,labels 2>&1) \
-       || { echo "ERROR: 'gh issue view $N' failed:" >&2; echo "$ISSUE_JSON" >&2; exit 1; }
-     ISSUE_TITLE_RAW=$(echo "$ISSUE_JSON" | grep -oE '"title":"[^"]*"' | head -1 | sed 's/^"title":"//; s/"$//')
-     ISSUE_LABELS=$(echo "$ISSUE_JSON" | grep -oE '"name":"[^"]*"' | sed 's/^"name":"//; s/"$//' | paste -sd ',' -)
+     # Look up title+labels for issue $N in the cached $GH_OUT blob via
+     # Python json. Per memory feedback_python_is_required.md + feedback_no_jq_in_skills.md:
+     # Python json is the canonical parser for non-trivial JSON here; `jq`
+     # the binary is what's prohibited, not all JSON parsers.
+     ISSUE_META=$(printf '%s' "$GH_OUT" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+target = int(sys.argv[1])
+for it in data:
+    if it.get("number") == target:
+        title = it.get("title", "")
+        labels = ",".join(l.get("name", "") for l in it.get("labels", []) or [])
+        # Two NUL-delimited fields so titles/labels with newlines/commas survive.
+        sys.stdout.write(title + "\x1f" + labels)
+        break
+' "$N") || { echo "ERROR: python3 parse of cached gh issue list failed for #$N" >&2; exit 1; }
+     ISSUE_TITLE_RAW="${ISSUE_META%%$'\x1f'*}"
+     ISSUE_LABELS="${ISSUE_META#*$'\x1f'}"
      {
        printf '\n### #%s — %s\n' "$N" "$ISSUE_TITLE_RAW"
        printf '\n**Labels:** %s\n' "${ISSUE_LABELS:-(none)}"
@@ -835,7 +890,9 @@ fi
 
    gh issue list --state open --limit 500 --json number -q '.[].number' \
      | while read -r N; do
-         if ! grep -q "#$N\b" "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
+         # PCRE lookarounds so markdown-bold (`**#NNN**`) and `### #NNN`
+         # headings match — see issue #301.
+         if ! grep -qP "(?<![0-9])#$N(?![0-9])" "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
            echo "GAP: #$N not in any tracker"
          fi
        done
