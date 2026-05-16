@@ -253,22 +253,44 @@ is_gh_pr_subcommand() {
   # skip an agent reaching for `timeout 30 gh pr create` (e.g., after a
   # previous PR-create hung) would bypass the gate.
   #
-  # `timeout` consumes its DURATION arg as well (2 tokens); the others
-  # consume just 1. List is small and curated; do NOT generalize to
+  # After the prefix word, consume zero-or-more leading `-*` flag tokens
+  # (e.g., `time -v gh ...`, `timeout --foreground 30 gh ...`,
+  # `command -p gh ...`), with `--` treated as a one-shot end-of-options
+  # marker (`nohup -- gh ...`). For `timeout`, also consume one DURATION
+  # token AFTER the flag run (it is a required positional argument).
+  # List of prefix words is small and curated; do NOT generalize to
   # "skip any unknown leading word" — that would whitelist user aliases.
+  # Issue #279 closure: 9838431 (PR #255) consumed a fixed token budget
+  # (1 for command|exec|nohup|nice|time, 2 for timeout); flag-form
+  # bypasses (`time -v`, `timeout --foreground 30`, `nohup --`,
+  # `command -p`) all slipped past.
   while [[ $i -lt $n ]]; do
     local _pref="${TOKENS[$i]}"
     case "$_pref" in
       */*) _pref="${_pref##*/}" ;;
     esac
+    local _need_duration=0
     case "$_pref" in
       command|exec|nohup|nice|time)
         ((i++)) ;;
       timeout)
-        ((i+=2)) ;;
+        ((i++)); _need_duration=1 ;;
       *)
         break ;;
     esac
+    # Consume zero-or-more leading flag tokens. `--` is a one-shot
+    # end-of-options marker (consume it, stop the flag run).
+    while [[ $i -lt $n ]]; do
+      if [[ "${TOKENS[$i]}" == "--" ]]; then
+        ((i++)); break
+      fi
+      [[ "${TOKENS[$i]:0:1}" != "-" ]] && break
+      ((i++))
+    done
+    # `timeout` requires a DURATION positional after any leading flags.
+    if [[ $_need_duration -eq 1 && $i -lt $n ]]; then
+      ((i++))
+    fi
   done
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
