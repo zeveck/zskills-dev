@@ -239,6 +239,81 @@ for it in data:
   fi
 }
 
+# --- dashboard token: detection + Phase 2 branch + Python-not-regex -----
+#
+# Three regression-grep guards mirroring the existing pattern above:
+#   Case A: Phase 0 detection — the case-insensitive bash-regex for
+#           `dashboard` (matches the `auto`/`pr`/`direct`/`now` idiom).
+#   Case B: Phase 2 contains a `$DASHBOARD_MODE` branch that gates the
+#           dashboard-Ready source path.
+#   Case C: The state-file read uses `python3 -c` against
+#           `monitor-state.json`, NOT bash regex on the JSON array shape.
+
+test_dashboard_token_recognized_in_phase0() {
+  # Case A: the case-insensitive bash-regex token-match pattern for
+  # `dashboard` must appear in the Phase 0 detection block.
+  if grep -qF '[dD][aA][sS][hH][bB][oO][aA][rR][dD]' "$SKILL"; then
+    pass "dashboard Phase 0 detection regex present"
+  else
+    fail "dashboard Phase 0 detection regex present" "case-insensitive bash-regex pattern for 'dashboard' not found"
+  fi
+
+  # And DASHBOARD_MODE must be assigned (the canonical sentinel).
+  if grep -qE 'DASHBOARD_MODE=0' "$SKILL"; then
+    pass "dashboard DASHBOARD_MODE sentinel assigned"
+  else
+    fail "dashboard DASHBOARD_MODE sentinel assigned" "DASHBOARD_MODE=0 init not found"
+  fi
+}
+
+test_dashboard_phase2_branch_present() {
+  # Case B: Phase 2 must reference $DASHBOARD_MODE so the dashboard
+  # source branch gates the model-layer rubric. We assert >=1 such
+  # reference appears AFTER the "## Phase 2" header line.
+  local phase2_line dashboard_hits
+  phase2_line=$(grep -nE '^## Phase 2' "$SKILL" | head -1 | cut -d: -f1)
+  if [ -z "$phase2_line" ]; then
+    fail "dashboard Phase 2 branch present" "no '## Phase 2' header found"
+    return
+  fi
+  # Count $DASHBOARD_MODE references at or after the Phase 2 header.
+  dashboard_hits=$(awk -v start="$phase2_line" 'NR>=start && /DASHBOARD_MODE/ { c++ } END { print c+0 }' "$SKILL")
+  if [ "$dashboard_hits" -ge 1 ]; then
+    pass "dashboard Phase 2 has DASHBOARD_MODE branch ($dashboard_hits references)"
+  else
+    fail "dashboard Phase 2 has DASHBOARD_MODE branch" "no DASHBOARD_MODE references at/after line $phase2_line"
+  fi
+}
+
+test_dashboard_uses_python_json_not_bash_regex() {
+  # Case C: the state-file read must use python3 reading
+  # monitor-state.json, AND must NOT parse issues.ready via bash regex
+  # on a JSON-array shape like `\[[0-9,[:space:]]+\]`.
+  #
+  # We look for the python3 invocation referencing the state file.
+  if grep -qF 'monitor-state.json' "$SKILL"; then
+    pass "dashboard reads monitor-state.json"
+  else
+    fail "dashboard reads monitor-state.json" "no reference to monitor-state.json"
+  fi
+  if grep -qE 'python3 -c' "$SKILL"; then
+    pass "dashboard uses python3 -c to parse JSON"
+  else
+    fail "dashboard uses python3 -c to parse JSON" "no python3 -c invocation"
+  fi
+
+  # Negative assertion: the prohibited bash-regex shape MUST NOT appear
+  # anywhere in the skill. The pattern `\[[0-9,[:space:]]+\]` is exactly
+  # what someone would write if they tried to bash-regex an integer JSON
+  # array — banned per /fix-issues' Python-json discipline (issue #280
+  # established this rule).
+  if grep -qE '\[\[0-9,\[\:space\:\]\]\+\]' "$SKILL"; then
+    fail "dashboard does NOT bash-regex issues.ready array" "found prohibited bash-regex JSON-array pattern"
+  else
+    pass "dashboard does NOT bash-regex issues.ready array"
+  fi
+}
+
 # --- Mirror parity -------------------------------------------------------
 
 test_mirror_in_sync() {
@@ -258,6 +333,9 @@ test_282_success_set_is_merged_only
 test_300_echo_precedes_land_pr_and_marker_on_merge
 test_280_no_n_plus_one_loop_uses_python_json
 test_280_python_json_handles_escaped_quotes
+test_dashboard_token_recognized_in_phase0
+test_dashboard_phase2_branch_present
+test_dashboard_uses_python_json_not_bash_regex
 test_mirror_in_sync
 
 echo ""
