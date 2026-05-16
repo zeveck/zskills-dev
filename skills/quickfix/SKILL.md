@@ -6,11 +6,12 @@ description: >-
   one-commit PR without a worktree. Two auto-detected modes: user-edited
   (dirty tree + description) and agent-dispatched (clean tree +
   description). Lifecycle: triage → review → commit → push → PR → CI poll
-  → fix cycle (dispatched via 'land-pr'). PR-only:
-  requires execution.landing == "pr". No .landed marker.
+  → fix cycle (dispatched via 'land-pr'). PR-lifecycle: when
+  execution.landing is 'worktree' or 'direct', soft-redirects to
+  '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.15+abf853"
+  version: "2026.05.16+7ea279"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -174,12 +175,27 @@ if [[ "$CONFIG_CONTENT" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]];
 fi
 ```
 
-**Check 2 — landing == pr.**
+**Check 2 — landing == pr (soft redirect for non-PR modes).**
+
+`/quickfix` is PR-shaped end-to-end (push, PR creation, CI poll, fix
+cycle — all dispatched via `/land-pr`). When `execution.landing` is `worktree`
+or `direct`, we cannot meaningfully execute the lifecycle here — but
+emitting a hard error contradicts the project principle "all skills
+should work in all landing modes" (PR #290 review, issue #293). Instead,
+print a two-line redirect to the right skill for the configured landing
+mode and `exit 0` so the user can re-invoke the suggested skill. The
+redirect uses the same two-line printf template `/quickfix` uses for
+triage redirects (WI 1.5.4 — line 1 names the target + reason, line 2
+gives the exact re-invocation hint). `pr` (or unset) falls through and
+preserves the current PR-lifecycle behavior.
 
 ```bash
-if [ "$LANDING" != "pr" ]; then
-  echo "ERROR: /quickfix requires execution.landing == \"pr\" (got \"$LANDING\"). Use /commit or /do for non-PR landing." >&2
-  exit 1
+if [ "$LANDING" = "worktree" ]; then
+  printf 'Triage: redirecting to /do worktree. Reason: /quickfix requires execution.landing == "pr" (got "worktree").\nThe project is configured for worktree-based landing. Run `/do worktree <description>` instead — it creates an isolated worktree, lands via cherry-pick, and matches your config.\n'
+  exit 0
+elif [ "$LANDING" = "direct" ]; then
+  printf 'Triage: redirecting to /commit. Reason: /quickfix requires execution.landing == "pr" (got "direct").\nThe project is configured for direct-to-main landing. Run `/commit` instead — it commits in place without the PR scaffolding /quickfix layers on.\n'
+  exit 0
 fi
 ```
 
@@ -1346,8 +1362,8 @@ via `gh pr view` — there is no cherry-pick-landing step to attest to.
 
 | Code | Meaning |
 |------|---------|
-| 0 | Success (PR created) or user-cancelled confirmation |
-| 1 | Config / environment error (landing, gh, not-on-main, fetch failed, unit_cmd unset, full_cmd mismatch, parallel in progress, ls-remote network) |
+| 0 | Success (PR created), user-cancelled confirmation, or soft-redirect on non-PR landing modes (`worktree` → `/do worktree`, `direct` → `/commit`) |
+| 1 | Config / environment error (gh, not-on-main, fetch failed, unit_cmd unset, full_cmd mismatch, parallel in progress, ls-remote network) |
 | 2 | Input error (no edits + no description; user-edited no description; branch exists local/remote; slug empty or contains slash) |
 | 4 | Test failure (`unit_cmd` non-zero) |
 | 5 | Commit / push / PR-create / agent failure |
@@ -1355,7 +1371,7 @@ via `gh pr view` — there is no cherry-pick-landing step to attest to.
 
 ## Key Rules
 
-- **PR-only.** `execution.landing != "pr"` → hard error; point to `/commit` or `/do`.
+- **PR-lifecycle (soft-redirect on non-PR landing).** `/quickfix` runs the PR lifecycle (push → PR creation → CI poll, all via `/land-pr`). When `execution.landing == "worktree"` it prints a two-line redirect to `/do worktree` and exits 0; when `== "direct"` it redirects to `/commit` and exits 0. `pr` (or unset) falls through. Hard-error replaced with redirect per issue #293 / PR #290 review.
 - **Aligned test-cmd.** `unit_cmd` set and (if `full_cmd` set) `unit_cmd == full_cmd`; otherwise the project pre-commit hook will block our commit.
 - **Dirty tree is input.** Show diff, optionally confirm, carry across via `git checkout -b`. Never stash.
 - **Never bypass the pre-commit hook.** Hooks exist for safety; fix the root cause.
