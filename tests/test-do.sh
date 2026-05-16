@@ -17,6 +17,9 @@
 #   11. Entry-point unset guard: harness env vars without harness flag get unset
 #   12. Phase 1.5 re-validation does NOT exit 2 on non-numeric --rounds (R2)
 #   13. Quoted-description protection in TASK_DESCRIPTION_FOR_CRON (DA3)
+#   14. Phase 1.5 Step 2 strips positional `auto` from TASK_DESCRIPTION (#297)
+#   15. Pre-flight pre-parse sets AUTO_FLAG=1 on positional `auto` (#297)
+#   16. modes/pr.md conditionally injects --auto into LAND_ARGS when AUTO_FLAG=1 (#297)
 #
 # Cron-zombie regression cases: Cases 2 (ordering) plus the seam-driven
 # triage REDIRECT and review REJECT paths assert NO cron is registered when
@@ -454,6 +457,79 @@ if [ "$GOT_C13" = "$EXPECTED_C13" ]; then
   pass "13 quoted-description protection: trailing --force stripped, in-quotes --force preserved"
 else
   fail "13 quoted-description protection: expected='$EXPECTED_C13' got='$GOT_C13'"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 14 — Phase 1.5 Step 2 strips positional `auto` from
+# TASK_DESCRIPTION (issue #297; symmetric to /quickfix's `auto` strip).
+#
+# Run input `fix tooltip auto pr` and assert output `fix tooltip` —
+# both `auto` and `pr` are stripped to leave the bare description.
+# Also assert case-insensitivity (`AUTO` → stripped).
+# ────────────────────────────────────────────────────────────────────
+GOT_C14a=$(bash "$TASKDESC_SCRIPT" "fix tooltip auto pr" 2>/dev/null)
+GOT_C14b=$(bash "$TASKDESC_SCRIPT" "fix tooltip AUTO pr" 2>/dev/null)
+GOT_C14c=$(bash "$TASKDESC_SCRIPT" "auto fix tooltip pr" 2>/dev/null)
+if [ "$GOT_C14a" = "fix tooltip" ] \
+   && [ "$GOT_C14b" = "fix tooltip" ] \
+   && [ "$GOT_C14c" = "fix tooltip" ]; then
+  pass "14 Phase 1.5 Step 2 strip: positional 'auto' (case-insensitive, any position) removed from TASK_DESCRIPTION (#297)"
+else
+  fail "14 'auto' strip: trailing='$GOT_C14a' upper='$GOT_C14b' leading='$GOT_C14c' (expected all 'fix tooltip')"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 15 — Pre-flight pre-parse sets AUTO_FLAG=1 when positional
+# `auto` is in $ARGUMENTS (issue #297). Symmetric to /quickfix's
+# WI 1.2 AUTO_FLAG. Run pre-flight against `fix tooltip auto pr`
+# and assert AUTO_FLAG=1. Also negative case: no `auto` → AUTO_FLAG=0.
+# ────────────────────────────────────────────────────────────────────
+AUTOFLAG_SCRIPT="$TEST_TMPDIR/autoflag.sh"
+{
+  echo '#!/bin/bash'
+  echo 'set -u'
+  echo 'ARGUMENTS="$1"'
+  echo "$PREFLIGHT_BLOCK"
+  echo 'printf "AUTO_FLAG=%s\n" "$AUTO_FLAG"'
+} > "$AUTOFLAG_SCRIPT"
+chmod +x "$AUTOFLAG_SCRIPT"
+
+OUT_C15a=$(bash "$AUTOFLAG_SCRIPT" "fix tooltip auto pr" 2>/dev/null)
+OUT_C15b=$(bash "$AUTOFLAG_SCRIPT" "fix tooltip pr" 2>/dev/null)
+OUT_C15c=$(bash "$AUTOFLAG_SCRIPT" "fix tooltip AUTO pr" 2>/dev/null)
+if echo "$OUT_C15a" | grep -q '^AUTO_FLAG=1$' \
+   && echo "$OUT_C15b" | grep -q '^AUTO_FLAG=0$' \
+   && echo "$OUT_C15c" | grep -q '^AUTO_FLAG=1$'; then
+  pass "15 Pre-flight pre-parse: AUTO_FLAG=1 with 'auto'/'AUTO', AUTO_FLAG=0 without (#297)"
+else
+  fail "15 AUTO_FLAG: with-auto='$OUT_C15a' without='$OUT_C15b' upper='$OUT_C15c'"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 16 — modes/pr.md conditionally injects --auto into LAND_ARGS
+# when AUTO_FLAG=1 (issue #297; mirrors /quickfix's
+# `[ "${AUTO_FLAG:-0}" = "1" ] && LAND_ARGS="$LAND_ARGS --auto"`).
+#
+# Static-grep against skills/do/modes/pr.md for the conditional. This
+# is a source-level assertion — the bash block is too tightly coupled
+# to /land-pr's surrounding context to run in isolation.
+# ────────────────────────────────────────────────────────────────────
+PR_MODE="$REPO_ROOT/skills/do/modes/pr.md"
+if grep -qE '\[\s*"\$\{AUTO_FLAG:-0\}"\s*=\s*"1"\s*\]\s*&&\s*LAND_ARGS="\$LAND_ARGS --auto"' "$PR_MODE"; then
+  pass "16 modes/pr.md: conditional --auto injection present (AUTO_FLAG-gated; #297)"
+else
+  fail "16 modes/pr.md: AUTO_FLAG-gated --auto injection missing"
+  grep -nE "AUTO_FLAG|--auto" "$PR_MODE" | sed 's/^/    /' | head -10
+fi
+
+# Companion: ensure the stale "No --auto" comment is removed and the
+# "(none for /do pr)" parenthetical at the CI-status break is gone.
+if grep -qE 'No `?--auto`?.*auto-merge stays OFF for `?/do pr`?' "$PR_MODE" \
+   || grep -qE 'none for /do pr' "$PR_MODE"; then
+  fail "16b modes/pr.md: stale 'No --auto' / 'none for /do pr' prose still present"
+  grep -nE 'No `?--auto`?|none for /do pr' "$PR_MODE" | sed 's/^/    /'
+else
+  pass "16b modes/pr.md: stale 'No --auto' / 'none for /do pr' prose removed"
 fi
 
 # ────────────────────────────────────────────────────────────────────
