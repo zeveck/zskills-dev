@@ -85,7 +85,6 @@ run_step_d5() {
 
   local STALE_LIST=(
     apply-preset.sh
-    briefing.cjs
     briefing.py
     clear-tracking.sh
     compute-cron-fire.sh

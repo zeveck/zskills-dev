@@ -234,7 +234,7 @@ def _read_config(main_root: pathlib.Path) -> Dict[str, Any]:
 def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
     """Resolve audit / plans / issues dirs from zskills-config.json.
 
-    Mirrors the bash zskills-paths.sh helper and briefing.cjs/py mirrors.
+    Mirrors the bash zskills-paths.sh helper and briefing.py.
     Use-as-is is absolute-only: only paths starting with `/` are absolute;
     all other forms are joined with main_root (Locked Decision 1).
 

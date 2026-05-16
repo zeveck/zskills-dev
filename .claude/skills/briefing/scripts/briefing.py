@@ -3,7 +3,9 @@
 briefing.py — Data-gathering helper for the /briefing skill.
 
 Standalone Python script. No dependencies beyond the standard library.
-Ported from briefing.cjs (Node.js/CommonJS).
+Sole runtime as of #289 — the briefing.cjs Node fork was retired (the
+portability promise it defended had already been lost to other Python-only
+components; Python is required per CLAUDE.md "Python is required").
 
 Usage:
   python3 briefing.py worktrees          — JSON worktree classification
@@ -15,11 +17,6 @@ Usage:
   python3 briefing.py current            — Current session status
   python3 briefing.py worktrees-status   — Detailed worktree cleanup report
 """
-
-# ZSKILLS INVARIANT: briefing.py and briefing.cjs are intentional Python/Node mirrors.
-# Their output structure and degradation semantics MUST stay byte-equivalent
-# except for language idioms (`'` vs `"`, `None` vs `null`, comment syntax). Edits to one require
-# a parity edit to the other. tests/test-briefing-parity.sh enforces this.
 
 import glob
 import json
@@ -48,8 +45,7 @@ def read_zskills_paths(main_path):
     """Read .claude/zskills-config.json and resolve audit/plans/issues dirs.
 
     Mirrors the bash helper at
-    .claude/skills/update-zskills/scripts/zskills-paths.sh and the JS
-    mirror in briefing.cjs:readZskillsPaths.
+    .claude/skills/update-zskills/scripts/zskills-paths.sh.
 
     Use-as-is is absolute-only: only paths starting with `/` are absolute.
     All other forms (including `..foo`) are joined with main_path. Mirrors

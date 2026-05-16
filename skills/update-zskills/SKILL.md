@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.16+63305f"
+  version: "2026.05.16+709e61"
 ---
 
 # Update Z Skills Infrastructure
@@ -676,10 +676,9 @@ List all `.claude/skills/*/SKILL.md` files. For each skill:
     `{{FULL_TEST_CMD}}`) — check if test commands are configured.
   - Tool references (`playwright-cli`, `gh`) — check if the tool is
     available via `which`.
-  - Optional tool references (`node`, `python3`) — check via `which`.
-    These are not required but enable features:
-    - `node`: enables `.claude/skills/briefing/scripts/briefing.cjs` (preferred for /briefing)
-    - `python3`: enables `.claude/skills/briefing/scripts/briefing.py` (fallback for /briefing)
+  - Required tool reference (`python3`) — check via `which`. Python 3 is
+    required (per CLAUDE.md "Python is required"). Powers `/briefing`,
+    `/plans rebuild`, the dashboard, and other Python-only helpers.
   - Hook references (`block-unsafe`) — check if the hook file
     exists in `.claude/hooks/`.
   - Script references (`.claude/skills/update-zskills/scripts/port.sh`, `scripts/test-all.sh`) — check if
@@ -740,7 +739,7 @@ Look in `scripts/` for these files (all required by installed skills):
 
 - `port.sh`
 - `test-all.sh`
-- `briefing.cjs` OR `briefing.py` (either counts — Node or Python version)
+- `briefing.py`
 - `clear-tracking.sh`
 - `land-phase.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for atomic post-landing cleanup
 - `post-run-invariants.sh` — referenced by `/run-plan` as mandatory end-of-run gate (7 invariants)
@@ -755,10 +754,9 @@ Look in `scripts/` for these files (all required by installed skills):
 
 ### Step 5 — Check skills with additional requirements
 
-If `/briefing` is installed, check for `[ -f .claude/skills/briefing/scripts/briefing.cjs ]`
-or `[ -f .claude/skills/briefing/scripts/briefing.py ]` (the artifact half catches
-partial skill-mirror installs). If neither is found, add a note: "The /briefing
-skill requires `.claude/skills/briefing/scripts/briefing.cjs` (or `briefing.py`)
+If `/briefing` is installed, check for `[ -f .claude/skills/briefing/scripts/briefing.py ]`
+(the artifact half catches partial skill-mirror installs). If not found, add a
+note: "The /briefing skill requires `.claude/skills/briefing/scripts/briefing.py`
 — see /briefing skill documentation."
 
 ### Step 6 — Produce the gap report
@@ -803,7 +801,7 @@ Tools: M/N available (K missing)
   ...
 
 Skills with additional requirements:
-  - /briefing: requires `.claude/skills/briefing/scripts/briefing.cjs` or `briefing.py` (not found)
+  - /briefing: requires `.claude/skills/briefing/scripts/briefing.py` (not found)
   ...
 
 Overall: X/Y dependencies satisfied.
@@ -1399,7 +1397,6 @@ STALE_LIST=(
   append-backfill-phase.sh
   append-tests-section.sh
   apply-preset.sh
-  briefing.cjs
   briefing.py
   clear-tracking.sh
   compute-cron-fire.sh
@@ -1620,7 +1617,7 @@ Installed:
 - Add-ons: N add-on skills installed (omit this line if no add-on flag was used)
 
 Skills with additional requirements:
-- /briefing: requires `.claude/skills/briefing/scripts/briefing.cjs` or `briefing.py` (see /briefing skill docs)
+- /briefing: requires `.claude/skills/briefing/scripts/briefing.py` (see /briefing skill docs)
 
 Repo version: <new_zskills_ver>
 
