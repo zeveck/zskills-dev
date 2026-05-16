@@ -207,6 +207,23 @@ issues, dev-server.{pid,log}) — not just `.zskills/tracking/` — so the
 ZSKILLS_PATH_CONFIG migration's audit + issues subtrees are equally
 guarded against accidental recursive deletion.
 
+## Python is required
+
+zskills depends on Python 3 for JSON round-tripping in hooks and helper scripts where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
+
+The interpreter is resolved via this precedence (in `hooks/inject-bash-timeout.sh` and any script that adopts the same idiom):
+
+```
+PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+```
+
+- Default is `python3` (POSIX-standard zskills target).
+- Falls back to `python` for Windows / distros where only `python` exists (pointing at Python 3).
+- `ZSKILLS_PYTHON` overrides both — set it explicitly when both `python3` and `python` exist but you want a specific interpreter (e.g. a venv).
+
+Python 2 is unsupported. Scripts may assume Python 3 stdlib without a version check.
+
 ## Skill versioning
 
 **Skill versioning.** Every source skill under `skills/<name>/SKILL.md` and `block-diagram/<name>/SKILL.md` carries a `metadata.version: "YYYY.MM.DD+HHHHHH"` field — date in `America/New_York` plus a 6-char content hash. Edits to a skill body, frontmatter (other than `metadata.version` itself), or any regular file under the skill directory (mode files, references, scripts, fixtures, stubs, etc.) MUST bump this field; the date refreshes to today, the hash is recomputed via `scripts/skill-content-hash.sh`. Pure typo / formatting / whitespace edits do not require a bump (the hash naturally absorbs them since the canonical projection normalizes whitespace; see `references/skill-versioning.md` §3). Enforcement fires at three points: `warn-config-drift.sh` (Edit-time warn, fires only when the file is staged), `/commit` Phase 5 step 2.5 (commit-time hard stop), `test-skill-conformance.sh` (CI gate). The repo-level zskills version (`YYYY.MM.N`) lives in git tags and is mirrored into `.claude/zskills-config.json` by `/update-zskills`.
