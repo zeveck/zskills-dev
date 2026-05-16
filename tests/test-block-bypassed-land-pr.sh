@@ -406,6 +406,24 @@ for prefix_form in \
     "$HOOK_OUT" ""
 done
 
+# ─────────────────── C29b: prefix flag-form bypasses → DENY ──────
+# Issue #279 closure: 9838431 (PR #255) closed the fixed-budget
+# transparent-prefix forms but left 4 flag-form variants open. The
+# prefix-skip now consumes leading `-*` flag tokens after the prefix
+# word (with `--` as a one-shot end-of-options marker), and for
+# `timeout` continues to consume one DURATION token AFTER any leading
+# flags. All four below MUST DENY.
+for prefix_form in \
+  "time -v gh pr create" \
+  "timeout --foreground 30 gh pr create" \
+  "nohup -- gh pr create" \
+  "command -p gh pr create"; do
+  clean_tracking
+  run_hook "$(mkenv "$prefix_form")"
+  assert_deny "C29b/$prefix_form → DENY (prefix flag-form bypass)" \
+    "$HOOK_OUT" ""
+done
+
 # ─────────────────── C30: prefix + merge --auto → DENY ───────────
 clean_tracking
 run_hook "$(mkenv "timeout 30 gh pr merge 123 --auto")"
