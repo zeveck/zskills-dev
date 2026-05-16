@@ -1,0 +1,266 @@
+#!/bin/bash
+# test-fix-issues.sh — regression guards for skills/fix-issues/SKILL.md
+# sync-mode fixes landed as a bundle (closes #280 #282 #300 #301).
+#
+# Each test is a tightly-scoped regression check:
+#   - #301: the grep regex used by the row-writer + gap-listing loop must
+#     match `**#NNN**` (markdown bold) and `### #NNN —` (heading). The
+#     OLD ERE alternation `(^|[^0-9A-Za-z_])#$N($|[^0-9])` did NOT —
+#     reproducible via a tiny fixture.
+#   - #282: the close-on-success case statement in Step 5 sub-step 3 must
+#     only fire on `merged)`. `created)` / `monitored)` reappearing would
+#     re-introduce the AC-P.3 divergence that PR #271 fixed.
+#   - #300: sync must (a) echo ZSKILLS_PIPELINE_ID=$PIPELINE_ID for
+#     transcript propagation before the /land-pr dispatch (matches
+#     /do pr's tier-2 idiom), AND (b) write its own
+#     `fulfilled.land-pr.<id>` marker on /land-pr STATUS=merged, since
+#     the conformance test forbids `export ZSKILLS_PIPELINE_ID`.
+#     The marker write closes the original hole (#300) without using
+#     the prohibited env-export side channel.
+#   - #280: the per-issue `gh issue view` N+1 loop is gone; the row-writer
+#     looks up title+labels in the cached `$GH_OUT` blob via Python json
+#     so JSON-escaped quotes don't truncate titles.
+
+set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+
+PASS_COUNT=0
+FAIL_COUNT=0
+
+pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1)); }
+fail() { printf '\033[31m  FAIL\033[0m %s — %s\n' "$1" "$2"; FAIL_COUNT=$((FAIL_COUNT+1)); }
+
+# --- #301: regex behavior fixture ---------------------------------------
+# Build a tiny tracker fragment with the two markdown shapes that the
+# membership-check regex must recognize: bold `**#NNN**` and heading
+# `### #NNN —`. The post-fix regex is `grep -qP "(?<![0-9])#N(?![0-9])"`;
+# this test asserts the NEW pattern matches both shapes. (The OLD ERE
+# alternation `(^|[^0-9A-Za-z_])#N($|[^0-9])` is grep-version-sensitive
+# — on some GNU grep builds it matches, on the reporter's environment it
+# did not — so we don't gate on its non-match. Source-grep below catches
+# the substantive regression: the new -qP pattern must be wired in.)
+
+test_301_regex_matches_markdown_bold_and_heading() {
+  local fixture
+  fixture=$(mktemp)
+  cat > "$fixture" <<'TRACKER'
+## Open issues
+
+- **#279** — block-bypassed-land-pr
+### #288 — ZSKILLS_PYTHON env override
+TRACKER
+
+  # NEW: PCRE lookarounds (what the skill uses post-fix)
+  if grep -qP "(?<![0-9])#279(?![0-9])" "$fixture"; then
+    pass "#301 new -qP regex matches **#279** markdown bold"
+  else
+    fail "#301 new -qP regex matches **#279** markdown bold" "no match"
+  fi
+  if grep -qP "(?<![0-9])#288(?![0-9])" "$fixture"; then
+    pass "#301 new -qP regex matches '### #288' heading"
+  else
+    fail "#301 new -qP regex matches '### #288' heading" "no match"
+  fi
+
+  # Anchor-correctness: the new pattern still rejects `bug#23` (substring
+  # match of `#239` would be wrong; the `(?<![0-9])` and `(?![0-9])`
+  # boundaries protect both ends).
+  if grep -qP "(?<![0-9])#23(?![0-9])" <(echo "bug#239 unrelated"); then
+    fail "#301 new -qP regex must NOT match #23 inside #239" "matched"
+  else
+    pass "#301 new -qP regex correctly rejects #23 inside #239"
+  fi
+
+  rm -f "$fixture"
+}
+
+# --- #301: source-grep — both sites use -qP -----------------------------
+
+test_301_source_uses_qP_lookarounds() {
+  # The replacement pattern appears at both sites: the row-writer
+  # membership check AND the gap-listing while loop. Both must use
+  # grep -qP with `(?<![0-9])#...(?![0-9])`. Source-grep:
+  local hits
+  hits=$(grep -cF 'grep -qP "(?<![0-9])#' "$SKILL")
+  if [ "$hits" -ge 2 ]; then
+    pass "#301 SKILL.md uses grep -qP lookarounds at >=2 sites ($hits)"
+  else
+    fail "#301 SKILL.md uses grep -qP lookarounds at >=2 sites" "only $hits site(s) found"
+  fi
+
+  # The OLD ERE alternation must not survive in any EXECUTABLE bash
+  # block. A grep_F count of <=1 is OK because the post-fix prose
+  # comment cites the old pattern once for context. Two or more
+  # occurrences means at least one site still has the executable form.
+  local old_hits
+  old_hits=$(grep -cF '(^|[^0-9A-Za-z_])#' "$SKILL")
+  if [ "$old_hits" -le 1 ]; then
+    pass "#301 OLD ERE alternation only present in explanatory prose ($old_hits occurrence)"
+  else
+    fail "#301 OLD ERE alternation only present in explanatory prose" "$old_hits occurrences — at least one executable site still uses it"
+  fi
+}
+
+# --- #282: close-on-success case is `merged)` only ----------------------
+
+test_282_success_set_is_merged_only() {
+  # Extract the close-on-success case block from sub-step 3 and assert
+  # only `merged)` is the success arm. `created|monitored|merged)`
+  # reappearing — even partially — would re-introduce the bug.
+  if grep -qE '^\s*merged\)' "$SKILL"; then
+    pass "#282 close-on-success case has 'merged)' arm"
+  else
+    fail "#282 close-on-success case has 'merged)' arm" "not found"
+  fi
+
+  # The composite arm MUST NOT exist.
+  if grep -qE 'created\|monitored\|merged\)' "$SKILL"; then
+    fail "#282 'created|monitored|merged)' arm removed" "still present"
+  else
+    pass "#282 'created|monitored|merged)' arm removed"
+  fi
+
+  # Defense in depth: no `created)` or `monitored)` arm before `merged)`
+  # that would re-enable closing on unmerged PRs.
+  if grep -qE '^\s*created\)' "$SKILL"; then
+    fail "#282 no 'created)' arm in success path" "found"
+  else
+    pass "#282 no 'created)' arm in success path"
+  fi
+  if grep -qE '^\s*monitored\)' "$SKILL"; then
+    fail "#282 no 'monitored)' arm in success path" "found"
+  else
+    pass "#282 no 'monitored)' arm in success path"
+  fi
+}
+
+# --- #300: transcript echo precedes /land-pr; marker written on merge ---
+
+test_300_echo_precedes_land_pr_and_marker_on_merge() {
+  # The transcript echo must precede the Skill dispatch line.
+  local echo_line skill_line
+  echo_line=$(grep -nF 'echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"' "$SKILL" | head -1 | cut -d: -f1)
+  skill_line=$(grep -nF 'Skill: { skill: "land-pr"' "$SKILL" | head -1 | cut -d: -f1)
+  if [ -z "$echo_line" ]; then
+    fail "#300 transcript echo ZSKILLS_PIPELINE_ID=... present" "not found"
+    return
+  fi
+  if [ -z "$skill_line" ]; then
+    fail "#300 /land-pr dispatch comment present" "no Skill: land-pr comment found"
+    return
+  fi
+  if [ "$echo_line" -lt "$skill_line" ]; then
+    pass "#300 transcript echo precedes /land-pr dispatch (lines $echo_line < $skill_line)"
+  else
+    fail "#300 transcript echo precedes /land-pr dispatch" "echo at line $echo_line, dispatch at $skill_line"
+  fi
+
+  # Sync must NOT use the prohibited `export ZSKILLS_PIPELINE_ID` form
+  # (mirrors the conformance-test discipline).
+  if grep -qE 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$SKILL"; then
+    fail "#300 SKILL.md does NOT 'export ZSKILLS_PIPELINE_ID'" "side-channel re-introduced"
+  else
+    pass "#300 SKILL.md does NOT 'export ZSKILLS_PIPELINE_ID' (conformance preserved)"
+  fi
+
+  # The fulfilled.land-pr marker write must live inside the merged) arm
+  # so sync closes the issue #300 hole itself when /land-pr returns
+  # merged. We look for the marker filename literal and its `$SYNC_ID`
+  # interpolation.
+  if grep -qF 'fulfilled.land-pr.$SYNC_ID' "$SKILL"; then
+    pass "#300 sync writes fulfilled.land-pr.\$SYNC_ID marker on merge"
+  else
+    fail "#300 sync writes fulfilled.land-pr.\$SYNC_ID marker on merge" "marker write not found"
+  fi
+}
+
+# --- #280: no N+1 gh issue view loop; row-writer uses Python json -------
+
+test_280_no_n_plus_one_loop_uses_python_json() {
+  # The old code did `gh issue view "$N" --json title,labels` inside the
+  # row-writer loop. That call must be gone from SKILL.md.
+  if grep -qE 'gh issue view "\$N" --json title,labels' "$SKILL"; then
+    fail "#280 N+1 'gh issue view \$N --json title,labels' removed" "still present"
+  else
+    pass "#280 N+1 'gh issue view \$N --json title,labels' removed"
+  fi
+
+  # And the cached batched fetch must request title+labels so the lookup
+  # has data to find. (Bootstrap call used to be `--json number` only.)
+  if grep -qF 'gh issue list --state open --limit 500 --json number,title,labels' "$SKILL"; then
+    pass "#280 cached batched fetch requests number,title,labels"
+  else
+    fail "#280 cached batched fetch requests number,title,labels" "not found"
+  fi
+
+  # And the row-writer parses via Python json. The literal token
+  # `python3 -c` must appear inside the residual-row block. We look for
+  # the import line as a high-signal marker.
+  if grep -qF 'import json, sys' "$SKILL"; then
+    pass "#280 row-writer parses via Python json"
+  else
+    fail "#280 row-writer parses via Python json" "no python3 json import found"
+  fi
+
+  # The old grep-oE title parser must not survive as an EXECUTABLE call.
+  # The post-fix prose cites the broken pattern once for context, so a
+  # count <=1 is acceptable; >=2 means an executable site still has it.
+  local old_hits
+  old_hits=$(grep -cF "'\"title\":\"[^\"]*\"'" "$SKILL")
+  if [ "$old_hits" -le 1 ]; then
+    pass "#280 old grep -oE '\"title\":\"[^\"]*\"' parser only present in prose ($old_hits)"
+  else
+    fail "#280 old grep -oE '\"title\":\"[^\"]*\"' parser only present in prose" "$old_hits occurrences"
+  fi
+}
+
+# --- #280: behavior — Python json correctly extracts escaped-quote title -
+
+test_280_python_json_handles_escaped_quotes() {
+  # Repro the original bug — but with the fixed code path. Construct a
+  # JSON blob with an escaped-quote title and confirm Python json
+  # extracts it cleanly. This isn't a SKILL.md grep; it's a behavioral
+  # sanity check that the fix's pattern actually works.
+  local got
+  got=$(printf '%s' '[{"number":42,"title":"Fix \"foo\" handling","labels":[]}]' | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for it in data:
+    if it.get("number") == 42:
+        sys.stdout.write(it["title"])
+        break
+')
+  if [ "$got" = 'Fix "foo" handling' ]; then
+    pass "#280 Python json extracts title with escaped quotes intact"
+  else
+    fail "#280 Python json extracts title with escaped quotes intact" "got: [$got]"
+  fi
+}
+
+# --- Mirror parity -------------------------------------------------------
+
+test_mirror_in_sync() {
+  local src="$REPO_ROOT/skills/fix-issues/SKILL.md"
+  local mirror="$REPO_ROOT/.claude/skills/fix-issues/SKILL.md"
+  if diff -q "$src" "$mirror" > /dev/null 2>&1; then
+    pass "skills/fix-issues/SKILL.md mirror matches source"
+  else
+    fail "skills/fix-issues/SKILL.md mirror matches source" "diff between source and .claude/ mirror"
+  fi
+}
+
+echo "=== /fix-issues sync-mode bundle (#280 #282 #300 #301) regression guards ==="
+test_301_regex_matches_markdown_bold_and_heading
+test_301_source_uses_qP_lookarounds
+test_282_success_set_is_merged_only
+test_300_echo_precedes_land_pr_and_marker_on_merge
+test_280_no_n_plus_one_loop_uses_python_json
+test_280_python_json_handles_escaped_quotes
+test_mirror_in_sync
+
+echo ""
+echo "---"
+echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed (of $((PASS_COUNT + FAIL_COUNT)))"
+[ "$FAIL_COUNT" -eq 0 ]
