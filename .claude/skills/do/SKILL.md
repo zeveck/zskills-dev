@@ -1,13 +1,13 @@
 ---
 name: do
-argument-hint: "<description> [worktree] [push] [pr] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [worktree] [push] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Worktree/direct/pr landing modes via flag
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.15+210d28"
+  version: "2026.05.16+f227d5"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -37,7 +37,7 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
 ## Arguments
 
 ```
-/do <description> [worktree|direct|pr] [push] [every SCHEDULE] [now]
+/do <description> [worktree|direct|pr] [push] [auto] [every SCHEDULE] [now]
 /do stop | next
 ```
 
@@ -57,6 +57,11 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   Upgrades verification to use a **separate verification agent** running
   `/verify-changes`. Push never happens without verification passing
   first. Ignored in `pr` mode (PR mode handles push internally).
+- **auto** (optional, positional, case-insensitive) — opt into auto-merge
+  in PR mode. Mirrors the convention in `/quickfix`, `/run-plan`,
+  `/fix-issues`. Passes `--auto` to `/land-pr`, which requests GitHub
+  auto-merge once required checks pass. No effect in `direct` or
+  `worktree` mode (only `modes/pr.md` reads `AUTO_FLAG`).
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -91,6 +96,7 @@ trailing flags from the END backward:
 - `worktree` — recognized at the end (landing flag)
 - `direct` — recognized at the end (landing flag)
 - `pr` — recognized at the end (landing flag; use extended pattern with `.!?` punctuation, since task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
+- `auto` — recognized anywhere (case-insensitive positional token; PR-mode auto-merge opt-in. Mirrors /quickfix, /run-plan, /fix-issues. No effect outside PR mode.)
 - `every <schedule>` — recognized at the end (e.g., `every 4h`, `every day at 9am`)
 - `now` — recognized at the end (only meaningful with `every`: run now AND schedule)
 
@@ -113,6 +119,7 @@ This means:
 - `/do Fix the tooltip bug worktree push` — description + both flags
 - `/do Check docs every day at 9am` — schedule "Check docs" daily
 - `/do Add dark mode. pr` — description + pr flag (PR mode)
+- `/do Add dark mode pr auto` — PR mode + auto-merge opt-in
 
 Examples:
 - `/do Add example models for Integrator and Derivative blocks`
@@ -184,11 +191,13 @@ cron by comparing the description against all `/do` cron prompts:
 
 Phase 0a (triage) and Phase 0b (review) need to know `--force` and
 `--rounds N`; Phase 0c (cron registration) needs them so the cron prompt
-template can include them verbatim. Phase 1.5's argument parser runs AFTER
-Phase 0c today, so this pre-parse runs first — at the very top of the
-skill, before Phase 0a. This pre-parse is non-destructive: it sets `FORCE`
-and `ROUNDS` shell variables but does NOT mutate `$ARGUMENTS` (Phase 1.5's
-parser remains source of truth for the canonical strip).
+template can include them verbatim. Phase 2 (PR mode) needs to know the
+positional `auto` token so it can pass `--auto` to `/land-pr`. Phase 1.5's
+argument parser runs AFTER Phase 0c today, so this pre-parse runs first —
+at the very top of the skill, before Phase 0a. This pre-parse is
+non-destructive: it sets `FORCE`, `ROUNDS`, and `AUTO_FLAG` shell
+variables but does NOT mutate `$ARGUMENTS` (Phase 1.5's parser remains
+source of truth for the canonical strip).
 
 ```bash
 # Pre-flight (runs before Phase 0a/0b/0c): read --force and --rounds N out
@@ -206,6 +215,15 @@ fi
 FORCE=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
   FORCE=1
+fi
+# Issue #297: positional `auto` token (case-insensitive, anywhere in the
+# args) opts /do pr into /land-pr's auto-merge path. Mirrors /quickfix,
+# /run-plan, /fix-issues. Pre-parsed here so Phase 1.5's strip chain and
+# Phase 2 mode dispatch both see AUTO_FLAG. No-op for non-PR modes (only
+# modes/pr.md reads AUTO_FLAG).
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
 fi
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
@@ -645,6 +663,7 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
   | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
@@ -654,8 +673,12 @@ if [ -z "$TASK_DESCRIPTION" ]; then
 fi
 ```
 
-The two new `sed -E` lines strip `--force` and `--rounds N` (numeric N
+The `sed -E` lines strip `auto`, `--force`, and `--rounds N` (numeric N
 only) from `TASK_DESCRIPTION` so they don't leak into downstream prompts.
+`auto` is the positional auto-merge opt-in (issue #297; mirrors /quickfix,
+/run-plan, /fix-issues) — it is pre-parsed at WI 2a.0 into `AUTO_FLAG`,
+read by `modes/pr.md` to inject `--auto` into the `/land-pr` invocation,
+and stripped here so it never appears as user prose in the task prompt.
 Non-numeric `--rounds <prose>` is left in place — symmetric with the
 pre-flight greedy-fallthrough rule (WI 2a.0): a non-numeric trailing
 token after `--rounds` is user prose, not a flag, and must NOT raise
