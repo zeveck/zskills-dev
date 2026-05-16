@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.15+d7d321"
+  version: "2026.05.15+ddad50"
 ---
 
 # /fix-issues N [focus] [auto] [every SCHEDULE] [now] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -312,12 +312,15 @@ state divergence between closed-on-GH and unmerged-in-main (AC-P.3 of
 
 ### Step 5 — Commit & report
 
-1. **Commit** the SPRINT_REPORT.md section to the worktree's feature branch.
-   SPRINT_REPORT.md is the ONLY tracked file sync mode commits. The
-   `*ISSUES*.md` tracker files are gitignored (interactive observability
-   only) and MUST NOT be staged. The preamble (top of `## Sync`) already
-   `cd`-ed into the worktree and exported `ZSKILLS_PATHS_ROOT`, so Step
-   4's SPRINT_REPORT.md write landed in `$TOPLEVEL/.zskills/audit/`.
+1. **Commit** the SPRINT_REPORT.md section AND any modified tracker files
+   (`*_ISSUES.md`, `ISSUES_PLAN.md`) to the worktree's feature branch.
+   Tracker files now live under `output.issues_dir` (default `docs/issues/`)
+   and are tracked in git, so the research blurbs and `[x]` annotations
+   produced by sync mode persist via the resulting PR. The preamble (top
+   of `## Sync`) already `cd`-ed into the worktree and exported
+   `ZSKILLS_PATHS_ROOT`, so Step 4's SPRINT_REPORT.md write landed in
+   `$TOPLEVEL/.zskills/audit/` and tracker writes landed in
+   `$TOPLEVEL/$ZSKILLS_ISSUES_DIR/`.
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
@@ -350,18 +353,58 @@ state divergence between closed-on-GH and unmerged-in-main (AC-P.3 of
        /*|../*) echo "fix-issues: $ABS_FILE is outside worktree $TOPLEVEL" >&2; exit 1 ;;
      esac
 
-     # SPRINT_REPORT.md is the ONLY tracked file sync mode commits.
-     # *ISSUES*.md are gitignored and MUST NOT be staged.
+     # Stage SPRINT_REPORT.md plus any modified tracker files
+     # (the *ISSUES* basenames) under $ZSKILLS_ISSUES_DIR. Tracker
+     # files are now tracked in git (default docs/issues/), so research
+     # blurbs and [x] annotations persist via the sync PR.
      git -C "$TOPLEVEL" add "$SPRINT_REL"
-     STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
-     if [ "$STAGED" != "$SPRINT_REL" ]; then
-       echo "fix-issues: unexpected staged set: $STAGED (expected $SPRINT_REL only)" >&2
-       exit 1
+     if [ -n "${ZSKILLS_ISSUES_DIR:-}" ] && [ -d "$ZSKILLS_ISSUES_DIR" ]; then
+       ISSUES_REL=$(realpath --relative-to="$TOPLEVEL" "$ZSKILLS_ISSUES_DIR" 2>/dev/null) || ISSUES_REL=""
+       if [ -n "$ISSUES_REL" ]; then
+         case "$ISSUES_REL" in /*|../*) ISSUES_REL="" ;; esac
+       fi
+       if [ -n "$ISSUES_REL" ]; then
+         # Add only modified/new tracker files; -A scoped to the issues dir.
+         git -C "$TOPLEVEL" add -A "$ISSUES_REL" 2>/dev/null || true
+       fi
      fi
-     if [ -n "$COMMIT_CO_AUTHOR" ]; then
-       git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "docs(sprint): record /fix-issues sprint section"
+     STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+     # Skip-if-empty guard: an empty sync (no FIXED candidates, nothing
+     # annotated) leaves nothing staged — exit cleanly without erroring.
+     if [ -z "$STAGED" ]; then
+       echo "fix-issues: nothing to commit (empty sync); skipping commit" >&2
      else
-       git -C "$TOPLEVEL" commit -m "docs(sprint): record /fix-issues sprint section"
+       # Loosened check: any superset of staged files that includes
+       # SPRINT_REPORT.md and/or tracker files is acceptable. Reject only
+       # files outside the expected SPRINT_REL + ISSUES_REL footprint.
+       UNEXPECTED=""
+       while IFS= read -r f; do
+         [ -z "$f" ] && continue
+         case "$f" in
+           "$SPRINT_REL") ;;
+           *)
+             if [ -n "${ISSUES_REL:-}" ]; then
+               case "$f" in
+                 "$ISSUES_REL"/*) ;;
+                 *) UNEXPECTED="$UNEXPECTED $f" ;;
+               esac
+             else
+               UNEXPECTED="$UNEXPECTED $f"
+             fi
+             ;;
+         esac
+       done <<EOF
+$STAGED
+EOF
+       if [ -n "$UNEXPECTED" ]; then
+         echo "fix-issues: unexpected staged files outside SPRINT_REPORT.md / $ISSUES_REL:$UNEXPECTED" >&2
+         exit 1
+       fi
+       if [ -n "$COMMIT_CO_AUTHOR" ]; then
+         git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "docs(sync): tracker research + sprint annotation"
+       else
+         git -C "$TOPLEVEL" commit -m "docs(sync): tracker research + sprint annotation"
+       fi
      fi
    fi
    ```

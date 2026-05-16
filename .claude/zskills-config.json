@@ -39,6 +39,6 @@
   },
   "output": {
     "plans_dir": "docs/plans",
-    "issues_dir": ".zskills/issues"
+    "issues_dir": "docs/issues"
   }
 }

@@ -400,7 +400,7 @@ fi
 if [ "$HAS_ISSUES_KEY" -eq 1 ] && [ -n "$EXISTING_ISSUES" ]; then
   TARGET_ISSUES="$EXISTING_ISSUES"
 else
-  TARGET_ISSUES=".zskills/issues"
+  TARGET_ISSUES="docs/issues"
 fi
 
 # ─── Step 2.5 — Trigger --rerender BEFORE any file moves ───────────────────
@@ -691,14 +691,10 @@ if ! grep -qE '^\.zskills/audit/$' "$GI"; then
   echo ".zskills/audit/" >> "$GI"
 fi
 
-# Add .zskills/issues/ ONLY if $TARGET_ISSUES is under .zskills/.
-case "$TARGET_ISSUES" in
-  .zskills/*|"$MAIN_ROOT/.zskills/"*)
-    if ! grep -qE '^\.zskills/issues/$' "$GI"; then
-      echo ".zskills/issues/" >> "$GI"
-    fi
-    ;;
-esac
+# Note: .zskills/issues/ is no longer auto-appended. The new default
+# (docs/issues/) is tracked, and the broader .zskills/ umbrella ignore
+# (if present in the consumer's .gitignore) already covers any opt-in
+# .zskills/issues/ override without needing a per-subdir entry here.
 
 # Remove obsolete var/ line if present (no-op if absent).
 if grep -qE '^var/$' "$GI"; then

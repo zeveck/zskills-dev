@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- feat(paths): flip `output.issues_dir` default from `.zskills/issues/`
+  to `docs/issues/` so `/fix-issues sync` research blurbs and tracker
+  `[x]` annotations persist via PR to main instead of dying in
+  worktree-local gitignored space. `/fix-issues sync` now stages and
+  commits modified `*_ISSUES.md` / `ISSUES_PLAN.md` alongside
+  `SPRINT_REPORT.md` (loosened STAGED check, added skip-if-empty guard,
+  commit message updated to `docs(sync): tracker research + sprint
+  annotation`). `migrate-paths.sh` no longer auto-appends
+  `.zskills/issues/` to consumer `.gitignore` (the new default is
+  tracked). Repo `.gitignore` collapsed: eight nested `.zskills/...`
+  entries replaced with a single `.zskills/` umbrella line;
+  `.zskills-tracked` preserved as its own sibling-marker line. Existing
+  `.zskills/issues/QE_ISSUES.md` migrated to `docs/issues/QE_ISSUES.md`.
 - feat(paths): introduce `output.plans_dir` and `output.issues_dir`
   config keys; default `docs/plans/` and `.zskills/issues/`; new
   `/update-zskills --migrate-paths` for in-place upgrade. Note:

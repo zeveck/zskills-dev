@@ -1,12 +1,7 @@
 .claude/settings.local.json
 .claude/skills/social-seo/
 __pycache__/
-.zskills/tracking/
-.zskills/monitor-state.json
-.zskills/monitor-state.json.lock
-.zskills/work-on-plans-state.json
-.zskills/dashboard-server.pid
-.zskills/dashboard-server.log
+.zskills/
 .zskills-tracked
 
 .worktreepurpose
@@ -24,5 +19,3 @@ DOC_PARTY_COMPARISON.md
 # Track only the cli.config.json that .devcontainer/setup.sh writes.
 .playwright/*
 !.playwright/cli.config.json
-.zskills/audit/
-.zskills/issues/

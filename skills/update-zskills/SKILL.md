@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.15+7d4271"
+  version: "2026.05.15+b86b97"
 ---
 
 # Update Z Skills Infrastructure
@@ -34,7 +34,7 @@ was found and what was done about it.
   `### Step D — --rerender` for the algorithm.
 - `--migrate-paths` — one-shot deterministic relocation of legacy
   artifacts into the path-config layout (`docs/plans/` for plan files,
-  `.zskills/audit/` for forensic + narrative reports, `.zskills/issues/`
+  `.zskills/audit/` for forensic + narrative reports, `docs/issues/`
   for issue trackers, `.zskills/dev-server.{pid,log}` for runtime
   state). Dispatches to
   `bash $ZSK/scripts/migrate-paths.sh "$MAIN_ROOT"` (where `$ZSK` is
@@ -217,7 +217,7 @@ Plans (Tier 1 — durable):
 
 Issue trackers:
   plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md
-    → .zskills/issues/  (or $output.issues_dir if user-set)
+    → docs/issues/  (or $output.issues_dir if user-set)
 
 Runtime files:
   legacy var/dev.{pid,log}
@@ -240,7 +240,7 @@ recovering via the helper's legacy-`plans/` fallback.
 3.  Move forensic + narrative reports → .zskills/audit/.
 4.  Move plans → $TARGET_PLANS (default docs/plans/).
 4b. Move plans/PLAN_INDEX.md → .zskills/audit/.
-5.  Move issue trackers → $TARGET_ISSUES (default .zskills/issues/).
+5.  Move issue trackers → $TARGET_ISSUES (default docs/issues/).
 6.  Move var/ runtime files → .zskills/dev-server.{pid,log}.
 7.  Update .gitignore (idempotent) + verify via git check-ignore -v.
 8.  (reserved — was --rerender step before round-2 plan hoisted to 2.5).
@@ -278,7 +278,7 @@ moved: plans/FOO_PLAN.md → docs/plans/FOO_PLAN.md
 ...
 Wrote .pre-paths-migration with N entries.
 Re-rendered hooks (broadened recursive-delete fence — applied EARLY).
-Wrote output.plans_dir = "docs/plans" and output.issues_dir = ".zskills/issues".
+Wrote output.plans_dir = "docs/plans" and output.issues_dir = "docs/issues".
 For start-dev.sh / stop-dev.sh customizations, see
 .claude/skills/update-zskills/references/path-config-upgrade.md.
 ```
