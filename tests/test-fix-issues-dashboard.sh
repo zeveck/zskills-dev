@@ -100,8 +100,11 @@ test_empty_missing_state_file() {
 # Also assert the bash guard is wired (defense in depth for the missing
 # file case, which short-circuits before invoking Python).
 test_bash_guard_missing_file_exits_zero() {
+  # The guard's block grew from 2 lines (echo + exit) to 3 lines
+  # (echo + ship_sync_only_or_cleanup call + exit) when the dashboard-empty
+  # ship-or-cleanup routing landed. Widen the context window to -A3.
   if grep -qE 'if \[ ! -f "\$MONITOR_STATE" \]; then' "$SKILL" \
-     && grep -A2 'if \[ ! -f "\$MONITOR_STATE" \]; then' "$SKILL" | grep -qF 'exit 0'; then
+     && grep -A3 'if \[ ! -f "\$MONITOR_STATE" \]; then' "$SKILL" | grep -qF 'exit 0'; then
     pass "bash guard: missing state file -> echo + exit 0"
   else
     fail "bash guard: missing state file -> echo + exit 0" "guard or 'exit 0' not found near missing-file check"

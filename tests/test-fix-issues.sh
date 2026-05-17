@@ -344,6 +344,153 @@ test_dashboard_mutex_error_strings_present() {
   fi
 }
 
+# --- tracker-PR auto-merge content-stream semantics (post-PR #357 revert) -
+#
+# Four dispatch sites in /fix-issues open tracker-style PRs via /land-pr.
+# Their `--auto` semantics follow what each PR commits, NOT what the user
+# said:
+#   Site 1 (Phase 6 sprint-land):     fix-work content → follows user's `auto`
+#   Site 2 (standalone sync Phase 5): sync-only content → unconditional --auto
+#   Site 3 (sprint no-actionable):    sync-only content → unconditional --auto
+#   Site 4 (dashboard-empty exits):   route through ship-or-cleanup (sync-only
+#                                      content → unconditional --auto)
+#
+# The PR #356 attempt over-corrected and dropped the `auto` honor on the
+# Phase 6 sprint-land PR too — content-stream-blind. PR #357 reverted it;
+# this regression bundle pins the corrected asymmetry.
+
+test_site2_sync_phase5_unconditional_auto() {
+  # The standalone sync Phase 5 LAND_ARGS line must end with `--auto`.
+  # Identified by --landed-source=fix-issues-sync (site 2 only).
+  local line
+  line=$(grep -nF 'landed-source=fix-issues-sync ' "$SKILL" \
+         | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
+  if [ -z "$line" ]; then
+    fail "site 2: standalone sync LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-sync"
+    return
+  fi
+  local content
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  if echo "$content" | grep -qE -- '--auto"?$'; then
+    pass "site 2: standalone sync LAND_ARGS ends with --auto (unconditional)"
+  else
+    fail "site 2: standalone sync LAND_ARGS ends with --auto" "line $line does not end --auto: [$content]"
+  fi
+}
+
+test_site3_no_actionable_unconditional_auto() {
+  # The sprint no-actionable LAND_ARGS line must end with `--auto`.
+  # Identified by --landed-source=fix-issues-no-actionable (site 3 only).
+  local line
+  line=$(grep -nF 'landed-source=fix-issues-no-actionable ' "$SKILL" \
+         | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
+  if [ -z "$line" ]; then
+    fail "site 3: no-actionable LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-no-actionable"
+    return
+  fi
+  local content
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  if echo "$content" | grep -qE -- '--auto"?$'; then
+    pass "site 3: no-actionable LAND_ARGS ends with --auto (unconditional)"
+  else
+    fail "site 3: no-actionable LAND_ARGS ends with --auto" "line $line does not end --auto: [$content]"
+  fi
+
+  # And the AUTO-conditional must NOT appear immediately after the
+  # no-actionable LAND_ARGS line (would re-introduce content-stream
+  # confusion).
+  local next
+  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL")
+  if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
+    fail "site 3: no AUTO-conditional after no-actionable LAND_ARGS" "found on line $((line+1)): [$next]"
+  else
+    pass "site 3: no AUTO-conditional immediately after no-actionable LAND_ARGS"
+  fi
+}
+
+test_site1_sprint_land_honors_auto() {
+  # CRITICAL INVARIANT from PR #357 revert: the Phase 6 sprint-land
+  # LAND_ARGS must NOT have unconditional --auto, and the AUTO-conditional
+  # MUST be present immediately after it. Identified by
+  # --landed-source=fix-issues-sprint (site 1 only).
+  local line
+  line=$(grep -nF 'landed-source=fix-issues-sprint ' "$SKILL" \
+         | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
+  if [ -z "$line" ]; then
+    fail "site 1: Phase 6 sprint-land LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-sprint"
+    return
+  fi
+  local content
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  if echo "$content" | grep -qE -- '--auto"?$'; then
+    fail "site 1: Phase 6 sprint-land LAND_ARGS must NOT end --auto" "PR #356 regression: line $line ends --auto unconditionally: [$content]"
+  else
+    pass "site 1: Phase 6 sprint-land LAND_ARGS does NOT end --auto (honors user's auto)"
+  fi
+
+  # The AUTO-conditional MUST be on the very next line.
+  local next
+  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL")
+  if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
+    pass "site 1: AUTO-conditional present immediately after sprint-land LAND_ARGS"
+  else
+    fail "site 1: AUTO-conditional present immediately after sprint-land LAND_ARGS" \
+         "PR #356 regression — line $((line+1)) is not the AUTO-conditional: [$next]"
+  fi
+}
+
+test_site4_dashboard_empty_exits_route_through_ship_or_cleanup() {
+  # The two dashboard-empty exits must route through ship-or-cleanup
+  # (Option A: function call) instead of bare `exit 0` immediately after
+  # the "Dashboard Ready is empty" echo. Phase 1a sync may have written
+  # tracker updates to the worktree; bare `exit 0` would strand them.
+  #
+  # Locate both echo lines and assert the line BEFORE `exit 0` is the
+  # ship_sync_only_or_cleanup call (Option A) — not a bare echo + exit.
+  local echo_lines
+  echo_lines=$(grep -nF 'Dashboard Ready is empty — nothing to do' "$SKILL" | cut -d: -f1)
+  local n_lines
+  n_lines=$(printf '%s\n' "$echo_lines" | wc -l)
+  if [ "$n_lines" -lt 2 ]; then
+    fail "site 4: both dashboard-empty echo lines present" "found $n_lines, expected 2"
+    return
+  fi
+
+  local missing=0
+  for el in $echo_lines; do
+    # The line immediately after the echo should be the ship_sync_only_or_cleanup
+    # call (not exit 0 directly).
+    local next_line
+    next_line=$(awk -v n="$el" 'NR==n+1 { print }' "$SKILL")
+    if ! echo "$next_line" | grep -qE 'ship_sync_only_or_cleanup'; then
+      fail "site 4: dashboard-empty echo at line $el routes through ship-or-cleanup" \
+           "next line is not ship_sync_only_or_cleanup: [$next_line]"
+      missing=1
+    fi
+  done
+  if [ "$missing" -eq 0 ]; then
+    pass "site 4: both dashboard-empty exits route through ship_sync_only_or_cleanup ($n_lines sites)"
+  fi
+
+  # And ship_sync_only_or_cleanup must be defined somewhere in the file.
+  if grep -qE '^\s*ship_sync_only_or_cleanup\s*\(\s*\)\s*\{' "$SKILL"; then
+    pass "site 4: ship_sync_only_or_cleanup() helper defined"
+  else
+    fail "site 4: ship_sync_only_or_cleanup() helper defined" "function definition not found"
+  fi
+}
+
+test_no_intentionally_omitted_rationale() {
+  # The deprecated "intentionally omitted" rationale was tied to the old
+  # claim that sync is always interactive at the PR level. With unconditional
+  # --auto on site 2, that prose is wrong and must be removed.
+  if grep -qF 'intentionally omitted' "$SKILL"; then
+    fail "deprecated 'intentionally omitted' rationale removed" "still present"
+  else
+    pass "deprecated 'intentionally omitted' rationale removed"
+  fi
+}
+
 # --- Mirror parity -------------------------------------------------------
 
 test_mirror_in_sync() {
@@ -367,6 +514,11 @@ test_dashboard_token_recognized_in_phase0
 test_dashboard_phase2_branch_present
 test_dashboard_uses_python_json_not_bash_regex
 test_dashboard_mutex_error_strings_present
+test_site2_sync_phase5_unconditional_auto
+test_site3_no_actionable_unconditional_auto
+test_site1_sprint_land_honors_auto
+test_site4_dashboard_empty_exits_route_through_ship_or_cleanup
+test_no_intentionally_omitted_rationale
 test_mirror_in_sync
 
 echo ""
