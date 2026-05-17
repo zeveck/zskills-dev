@@ -52,7 +52,7 @@ Issue [#310](https://github.com/zeveck/zskills-dev/issues/310) reports two coupl
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decisions reference doc + CLAUDE_TEMPLATE prose + PR #303 close | ⬚ | | Locks D1–D11 into `references/auto-unattended-semantics.md`; closes #303 with redirect |
+| 1 — Decisions reference doc + CLAUDE_TEMPLATE prose + PR #303 close | 🟡 | `d02b8a8` | Locks D1–D11 into `references/auto-unattended-semantics.md`; #303 was already MERGED at draft-time so close was substituted with redirect comment (AC1.3/1.4 reformulated; see drift tokens) |
 | 2 — Real `AUTO_FLAG` + `UNATTENDED_FLAG` parser arms in all 4 skills | ⬚ | | Per-skill mechanism specified explicitly; cherry-picks #303 wiring; one PR-feature-branch phase boundary (not single commit) |
 | 3 — Model-layer prose rewrite for narrow `auto` + `unattended` gating | ⬚ | | Per-site enumeration; covers /run-plan + /fix-issues prose sites; unified migration auto-promote (cron-fire detection dropped per round-2 H3); all cron-prompt construction sites covered |
 | 4 — `/quickfix` grammar rework (drop `--yes`, positional booleans) | ⬚ | | Removes WI 1.10 `read -r` block entirely (per DA H7); rewrites Case 43 without env-var seam |
