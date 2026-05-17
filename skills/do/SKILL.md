@@ -7,10 +7,10 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.17+0b6de4"
+  version: "2026.05.17+18f7d9"
 ---
 
-# /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
+# /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
 
 Execute small, ad-hoc tasks with structured research, verification, and
 optional isolation or autonomous landing. Can be scheduled for recurring maintenance
@@ -216,8 +216,11 @@ fi
 # Issue #297: positional `auto` token (case-insensitive, anywhere in the
 # args) opts /do pr into /land-pr's auto-merge path. Mirrors /quickfix,
 # /run-plan, /fix-issues. Pre-parsed here so Phase 1.5's strip chain and
-# Phase 2 mode dispatch both see AUTO_FLAG. No-op for non-PR modes (only
-# modes/pr.md reads AUTO_FLAG).
+# Phase 2 mode dispatch both see AUTO_FLAG.
+# AUTO_FLAG is consumed by:
+#   - modes/pr.md to inject --auto into LAND_ARGS for /land-pr (PR mode)
+#   - Phase 3 to dispatch /verify-changes (direct/worktree modes)
+#   - Phase 4 (Land) as the gate to push/cherry-pick+push (direct/worktree modes)
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1

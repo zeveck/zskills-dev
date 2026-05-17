@@ -5,6 +5,8 @@ created: 2026-05-16
 status: complete
 ---
 
+> **⚠ SUPERSEDED.** This plan was executed via /run-plan (landed PR #342), then largely reverted in PR #349 because the `auto`/`unattended` split was over-engineering per `feedback_no_premature_backcompat.md`. Subsequent cleanup in PRs #352 + #354 finalized the simpler design. Retained as historical record. Anyone grepping `unattended` lands here — that's expected; the token does not exist anywhere else in the codebase.
+
 # Plan: /quickfix argument-grammar redesign + cross-skill `auto`/`unattended` alignment
 
 > **Landing mode: PR** — This plan targets PR-based landing. All phases use worktree isolation with a named feature branch.
