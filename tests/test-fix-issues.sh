@@ -314,6 +314,36 @@ test_dashboard_uses_python_json_not_bash_regex() {
   fi
 }
 
+# --- dashboard mutex: 5 verbatim ERROR strings present ------------------
+#
+# PR #313 added mutual-exclusion guards between `dashboard` and each of
+# focus/sync/plan/stop/next modes. Each guard emits a specific
+# user-facing ERROR string. This test asserts all 5 strings exist
+# verbatim in SKILL.md so a future edit can't silently drop or rename
+# one of them without tripping a regression.
+
+test_dashboard_mutex_error_strings_present() {
+  local EXPECTED_MUTEX_ERRORS=(
+    "ERROR: dashboard is incompatible with focus mode"
+    "ERROR: dashboard is incompatible with sync mode"
+    "ERROR: dashboard is incompatible with plan mode"
+    "ERROR: dashboard is incompatible with stop mode"
+    "ERROR: dashboard is incompatible with next mode"
+  )
+  local missing=()
+  local s
+  for s in "${EXPECTED_MUTEX_ERRORS[@]}"; do
+    if ! grep -qF "$s" "$SKILL"; then
+      missing+=("$s")
+    fi
+  done
+  if [ "${#missing[@]}" -eq 0 ]; then
+    pass "dashboard mutex: all 5 verbatim ERROR strings present (focus/sync/plan/stop/next)"
+  else
+    fail "dashboard mutex: all 5 verbatim ERROR strings present" "missing: ${missing[*]}"
+  fi
+}
+
 # --- Mirror parity -------------------------------------------------------
 
 test_mirror_in_sync() {
@@ -336,6 +366,7 @@ test_280_python_json_handles_escaped_quotes
 test_dashboard_token_recognized_in_phase0
 test_dashboard_phase2_branch_present
 test_dashboard_uses_python_json_not_bash_regex
+test_dashboard_mutex_error_strings_present
 test_mirror_in_sync
 
 echo ""
