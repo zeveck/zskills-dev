@@ -238,6 +238,35 @@ If the verifying read is too expensive to do now, say so and stop -- do
 not substitute a guess and let downstream failure do the verification.
 The only research you can skip is what you just verified in this turn.
 
+## Which skill for which input
+
+Decision table for picking a skill when a user describes a generic action. Match on the LEFT, dispatch the RIGHT. When multiple rows could fit, prefer the shorter/lighter one — the heavier skills (`/draft-plan`, `/research-and-*`) cost more rounds and should only be used when the lighter ones cannot.
+
+| You have | Run |
+|---|---|
+| Clear small bug or doc tweak, ready to ship as one PR | `/quickfix` |
+| Several small bugs / issues in a backlog | `/fix-issues N` |
+| Bug, but root cause is unclear | `/investigate` |
+| Ad-hoc task (docs, refactor, content) larger than `/quickfix` | `/do` |
+| Plan file already drafted, ready to execute | `/run-plan <path>` |
+| Plan-scale design surface — needs adversarial review before execution | `/draft-plan` |
+| Broad goal that decomposes into multiple sub-plans | `/research-and-plan` |
+| Same as above, but execute all sub-plans autonomously after drafting | `/research-and-go` |
+| Plan is mid-execution and reality has drifted from the spec | `/refine-plan` |
+| Want to confirm recent changes really work (diffs + tests + manual UI) | `/verify-changes` |
+| Staged work in main, ready to commit (and optionally push/land/PR) | `/commit` |
+| Just merged a PR, want local clone caught up | `/cleanup-merged` |
+| Want to file bug/test-gap issues from a QE pass over recent work | `/qe-audit` |
+
+**Common confusions:**
+
+- `/quickfix` vs `/do`: `/quickfix` is the FLOOR of "with review" — no worktree, picks up an in-flight edit in main, one-commit PR. `/do` runs in a worktree and is for ad-hoc tasks too big for one commit but too small to draft a plan for. If the user is mid-edit in main, `/quickfix`. If they're describing the task fresh and it's >1 commit, `/do`.
+- `/draft-plan` vs `/run-plan`: `/draft-plan` produces a plan file; `/run-plan` executes one. They are sequential, not alternatives. If the user has a plan file path, `/run-plan`. If they have a goal but no plan, `/draft-plan` first.
+- `/research-and-plan` vs `/research-and-go`: same drafting machinery; `-and-plan` stops after the meta-plan is ready for review, `-and-go` continues into execution. Use `-and-plan` when the user wants a checkpoint before commit-volume work begins; `-and-go` when they've said "walk away."
+- `/draft-plan` vs `/quickfix` / `/do`: `/draft-plan` is reserved for skills/workflows with non-trivial design surface (integration points, multiple commands, hook interactions). Thin prompt-wrapper changes and prose edits don't need adversarial review — go straight to `/quickfix` or `/do`.
+- `/investigate` vs `/quickfix`: `/quickfix` assumes the fix is known. `/investigate` is for bugs where the root cause must be proven before a fix is written. Once `/investigate` lands on a root cause, the fix itself may dispatch `/quickfix` or `/do`.
+- `/verify-changes` vs `/qe-audit`: `/verify-changes` checks YOUR recent changes are sound. `/qe-audit` proactively looks for coverage gaps or bugs in the repo at large and files issues. The former gates a commit; the latter generates work.
+
 ## Execution Modes
 
 Three landing modes control how agent work reaches main:
