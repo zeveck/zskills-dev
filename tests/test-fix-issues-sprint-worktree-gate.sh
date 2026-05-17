@@ -367,6 +367,34 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────
+# Assertion 11: sync Step 5 `git add -A "$ISSUES_REL"` must fail
+# loud (issue #335). The original pattern
+#   `git -C "$TOPLEVEL" add -A "$ISSUES_REL" 2>/dev/null || true`
+# suppressed both stderr AND the exit status, so a real failure
+# (permissions, repo corruption, race) silently desynced the
+# tracker from the working tree while sync proceeded as if nothing
+# happened — direct violation of CLAUDE.md's "never suppress
+# errors on operations you need to verify" rule.
+# Pin: the literal suppression pattern is GONE, and the line is
+# now guarded by an `if ! git ... add -A "$ISSUES_REL"; then ...
+# exit 1; fi` block.
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== sync Step 5 git add -A fails loud (issue #335) ==="
+
+if grep -E 'git -C "\$TOPLEVEL" add -A "\$ISSUES_REL" 2>/dev/null \|\| true' "$FI_SKILL" >/dev/null; then
+  fail "sync Step 5 still uses suppressed 'git add -A ... 2>/dev/null || true' pattern (#335 regression)"
+else
+  pass "sync Step 5 no longer suppresses 'git add -A \$ISSUES_REL' errors"
+fi
+
+if grep -E 'if ! git -C "\$TOPLEVEL" add -A "\$ISSUES_REL"; then' "$FI_SKILL" >/dev/null; then
+  pass "sync Step 5 guards 'git add -A \$ISSUES_REL' with 'if ! ...; then exit 1; fi'"
+else
+  fail "sync Step 5 missing 'if ! git ... add -A \$ISSUES_REL; then ... fi' fail-loud guard"
+fi
+
+# ─────────────────────────────────────────────────────────────────
 # Source/mirror parity (general invariant; pinned here so a broken
 # mirror surfaces in THIS test too, not only the conformance test).
 # ─────────────────────────────────────────────────────────────────

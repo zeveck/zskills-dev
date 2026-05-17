@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+9dcfe6"
+  version: "2026.05.17+f1cb8a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -482,7 +482,13 @@ auto-merge completes will close them.
        fi
        if [ -n "$ISSUES_REL" ]; then
          # Add only modified/new tracker files; -A scoped to the issues dir.
-         git -C "$TOPLEVEL" add -A "$ISSUES_REL" 2>/dev/null || true
+         # Fail loud: if git add fails (permissions, repo corruption, race
+         # against another writer), the tracker would desync from the
+         # working tree and sync would silently proceed — abort instead.
+         if ! git -C "$TOPLEVEL" add -A "$ISSUES_REL"; then
+           echo "fix-issues: git add -A $ISSUES_REL failed under $TOPLEVEL — aborting sync." >&2
+           exit 1
+         fi
        fi
      fi
      STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
