@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+992d09"
+  version: "2026.05.17+ba2b4f"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -43,13 +43,20 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   pattern: `/fix-issues 1 every 30m dashboard auto`.
 - **auto** (optional) — bypass confirmation gates for autonomous operation.
   Behavior depends on context:
-  - **Sprints:** skip Phase 2 issue list approval, auto-land to main via
-    cherry-pick. Does NOT close GH issues or remove worktrees — those are
-    `/fix-report` actions.
+  - **Sprints:** skip Phase 2 issue list approval, and (in PR landing
+    mode) auto-merge the **per-issue fix PRs** dispatched in Phase 3 —
+    those carry real code changes that legitimately may want human
+    review. The **sprint-level tracker PR** dispatched in Phase 5 (tracker
+    row adds + SPRINT_REPORT section append; agent-facing markdown)
+    always auto-merges regardless of this flag. Does NOT close GH issues
+    or remove worktrees — those are `/fix-report` actions.
   - **plan auto:** draft plans for all found issues without selection
     (see Plan section).
-  - **Not applicable to sync.** `sync` is always interactive — closing
-    issues on GitHub requires human approval.
+  - **Sync — partially applicable.** The sync **tracker PR** itself
+    always auto-merges (agent-facing markdown, no human review value);
+    `auto` does not change that. The interactive bit referred to by
+    "sync is always interactive" is ONLY the subsequent `gh issue close`
+    step — closing issues on GitHub remains gated on human approval.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -64,8 +71,10 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - **sync** — update all issue tracker files from GitHub, research new
   issues, AND verify/close issues that appear already fixed. Dispatches
   research agents that also check if open issues are already resolved in
-  the codebase. Always interactive — presents findings and asks before
-  closing. See Sync section for the full flow.
+  the codebase. The tracker PR itself auto-merges (agent-facing
+  markdown); only the subsequent `gh issue close` step is interactive —
+  presents findings and asks before closing. See Sync section for the
+  full flow.
 - **plan** — draft plans for issues previously skipped as "too complex."
   Scans `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` for skipped items, dispatches `/draft-plan`
   for each. No fixing — just creates plans for `/run-plan` to execute later.
@@ -213,7 +222,7 @@ Examples:
 - `/fix-issues 5 auto every 4h now` — schedule every 4h + run immediately
 - `/fix-issues 10 auto every day at 9am` — schedule daily at 9am
 - `/fix-issues 10 auto every weekday at 9am now` — schedule + run now
-- `/fix-issues sync` — update trackers + verify/close fixed issues (always interactive)
+- `/fix-issues sync` — update trackers + verify/close fixed issues (tracker PR auto-merges; `gh issue close` step interactive)
 - `/fix-issues plan` — draft plans for issues skipped as "too complex"
 - `/fix-issues plan auto` — same, but plan all without selection
 - `/fix-issues stop` — cancel the recurring cron
@@ -541,19 +550,22 @@ EOF
    {
      printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
        "$(TZ=America/New_York date +%F)"
-     printf '## Test plan\n- [x] Tracker diff reviewed by user before merge.\n'
+     printf '## Test plan\n- [x] Tracker hygiene only (agent-facing markdown). Auto-merges on CI green.\n'
    } > "$BODY_FILE"
 
    PR_TITLE="sync: $(TZ=America/New_York date +%F)"
    SYNC_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
 
-   # /land-pr arg vector. Mirrors run-plan PR mode (modes/pr.md:339-348)
-   # MINUS the auto-merge flag. Sync is always interactive — closing
-   # issues on GitHub requires human approval — so the auto-merge flag
-   # is intentionally omitted. The CI-monitor-suppression flag is also
-   # omitted (CI monitoring is desired; the orchestrator awaits resting
-   # state).
-   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID"
+   # /land-pr arg vector. Includes --auto unconditionally: the sync PR is
+   # pure tracker hygiene (research blurbs, ISSUES_PLAN row adds,
+   # SPRINT_REPORT section append) — agent-facing markdown the agent reads
+   # back, not user-facing artifacts warranting human review. The
+   # SUBSEQUENT "close approved issues on GitHub" sub-step (Step 5
+   # sub-step 3 below) is what remains interactive — that step requires
+   # human approval for the irreversible `gh issue close` calls. The
+   # CI-monitor-suppression flag is also omitted (CI monitoring is
+   # desired; the orchestrator awaits resting state).
+   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID --auto"
 
    # Echo the pipeline id for transcript-propagation (matches /do pr's
    # tier-2 idiom at `skills/do/modes/pr.md:203`). Do NOT env-export
@@ -2156,13 +2168,19 @@ if [ -n "${WT_PATH:-}" ]; then
     BODY_FILE=$(mktemp)
     {
       printf '## Summary\n`/fix-issues` sprint %s.\n\n' "$SPRINT_ID"
-      printf '## Test plan\n- [x] Sprint report content reviewed by user before merge.\n'
+      printf '## Test plan\n- [x] Sprint report (agent-facing log). Auto-merges on CI green.\n'
     } > "$BODY_FILE"
 
     PR_TITLE="sprint-report: $SPRINT_ID"
     SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
-    LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sprint --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
-    [ "${AUTO:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+    # Sprint-level tracker PR ALWAYS auto-merges, independent of the
+    # user's `auto` arg. The tracker PR carries tracker-row adds and
+    # SPRINT_REPORT updates — agent-facing markdown the agent reads
+    # back, not artifacts warranting human review. The user's `auto`
+    # arg continues to govern the per-issue Phase 3 fix-PR dispatches
+    # (which legitimately may want human review of code changes); only
+    # THIS sprint-level dispatch is unconditionally auto-merged.
+    LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sprint --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto"
 
     echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
