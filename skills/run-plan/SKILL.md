@@ -1,7 +1,7 @@
 ---
 name: run-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHEDULE] [now] | stop | next"
+argument-hint: "<plan-file> [phase|finish|status] [auto] [unattended] [pr|direct] [every SCHEDULE] [now] | stop | next"
 description: >-
   Execute the next phase of a plan: parse status, dispatch implementation
   in a worktree, verify via a separate agent, update progress, write the
@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.15+d39299"
+  version: "2026.05.17+b05b9b"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -48,6 +48,11 @@ through multi-phase plans autonomously.
   cron at user-set cadence. Combining them would produce two overlapping
   cron schedules. Use one or the other.
 - **auto** (optional) — bypass approval gates, auto-land to main via cherry-pick
+- **unattended** (optional) — skip scope-confirmation / approval prompts so
+  the skill can run without an attended user. Phase 3 binds this to the
+  model-layer "Without `auto` / With `auto`" gates. The `finish auto`
+  composite hoists BOTH `auto` and `unattended` (backward-compat alias per
+  D2-RP). See references/auto-unattended-semantics.md.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -74,6 +79,7 @@ through multi-phase plans autonomously.
 - `finish` (case-insensitive) — run all remaining phases sequentially
 - `now` (case-insensitive) — run immediately
 - `auto` (case-insensitive) — autonomous mode
+- `unattended` (case-insensitive) — skip approval/scope-confirmation prompts
 - `every` followed by a schedule expression — scheduling mode
 - `pr` (case-insensitive) — PR landing mode
 - `direct` (case-insensitive) — direct landing mode
@@ -124,6 +130,34 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[fF][iI][nN][iI][sS][hH]($|[[:space:]]) ]];
     FINISH_MODE="finish"
   fi
 fi
+
+# AUTO_FLAG: set by standalone `auto` (regardless of finish), OR by the
+# `finish auto` composite (backward-compatible alias per D2-RP).
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
+UNATTENDED_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]]) ]]; then
+  UNATTENDED_FLAG=1
+fi
+# Backward-compatible composite: `finish auto` implies BOTH flags.
+# The post-detection hoist preserves the load-bearing user workflow
+# `/run-plan plan.md finish auto every 4h`.
+if [ "$FINISH_MODE" = "finish-auto" ]; then
+  AUTO_FLAG=1
+  UNATTENDED_FLAG=1
+fi
+
+# Token strip (DA M4 round-2): strip the `unattended` token from
+# $ARGUMENTS so downstream consumers (cron-prompt templates that may
+# interpolate $ARGUMENTS, plan-file path extraction, future focus
+# parsing) never see it as data. /run-plan has no existing strip chain
+# today (all $ARGUMENTS uses are word-boundary regex matches), so this
+# is the first link. Symmetric to /quickfix and /do post-#303 strip
+# semantics.
+ARGUMENTS=$(printf '%s' "$ARGUMENTS" \
+  | sed -E 's/(^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]([[:space:]]|$)/\1\2/g')
 ```
 
 **Validation:**

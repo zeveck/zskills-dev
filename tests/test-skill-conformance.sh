@@ -454,6 +454,46 @@ check_not   fix-issues "no inline gh pr checks --watch" 'gh pr checks.*--watch'
 check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTO_FLAG guard" 'if \[ "\$AUTO_FLAG" != "true" \]; then'
 
 echo ""
+echo "=== auto/unattended grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
+# AC2.1 — all 4 PR-landing callers must initialize UNATTENDED_FLAG and have
+# a positional token detection arm/regex. AC2.2 — same for AUTO_FLAG (already
+# present in /quickfix and /do; newly introduced for /run-plan and /fix-issues).
+# AC2.3 — argument-hint must list [unattended] in all 4. AC2.1b — bash case
+# matches standalone token only (suffix `unattended-mode` falls through to *).
+check_fixed quickfix    "AUTO_FLAG init"        'AUTO_FLAG=0'
+check_fixed quickfix    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
+check_fixed quickfix    "unattended case arm"   '[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) UNATTENDED_FLAG=1'
+check       quickfix    "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
+
+check_fixed run-plan    "AUTO_FLAG init"        'AUTO_FLAG=0'
+check_fixed run-plan    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
+check       run-plan    "unattended regex arm"  'UNATTENDED_FLAG=1'
+check_fixed run-plan    "finish-auto hoists both flags" 'FINISH_MODE" = "finish-auto"'
+check       run-plan    "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
+
+check_fixed fix-issues  "AUTO_FLAG init"        'AUTO_FLAG=0'
+check_fixed fix-issues  "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
+check       fix-issues  "unattended regex arm"  'UNATTENDED_FLAG=1'
+check       fix-issues  "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
+
+check_fixed do          "AUTO_FLAG init"        'AUTO_FLAG=0'
+check_fixed do          "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
+check       do          "unattended regex arm"  'UNATTENDED_FLAG=1'
+check       do          "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
+
+# AC2.1b — Bash-pattern guard. Run the smoke test directly so a future
+# regex tweak (e.g. adding `*`) that silently breaks the standalone-only
+# invariant gets caught here. Tested against bash 5.x in plan §92.
+PATTERN_MATCH=$(bash -c 'case "unattended" in [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) echo match;; *) echo nomatch;; esac')
+PATTERN_NOMATCH=$(bash -c 'case "unattended-mode" in [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) echo match;; *) echo nomatch;; esac')
+if [ "$PATTERN_MATCH" = "match" ] && [ "$PATTERN_NOMATCH" = "nomatch" ]; then
+  pass "[bash-pattern] unattended case matches standalone only (AC2.1b)"
+else
+  fail "[bash-pattern] unattended case matches standalone only (AC2.1b)" \
+       "match='$PATTERN_MATCH' (want 'match'), nomatch='$PATTERN_NOMATCH' (want 'nomatch')"
+fi
+
+echo ""
 echo "=== /fix-issues — structural landmarks ==="
 check fix-issues "Phase 3"           '^## Phase 3'
 check fix-issues "Phase 6 Land"      '^## Phase 6'

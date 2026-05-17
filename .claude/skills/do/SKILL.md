@@ -1,13 +1,13 @@
 ---
 name: do
-argument-hint: "<description> [worktree] [push] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [worktree] [push] [pr] [auto] [unattended] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Worktree/direct/pr landing modes via flag
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.16+f227d5"
+  version: "2026.05.17+09f18a"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -62,6 +62,11 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   `/fix-issues`. Passes `--auto` to `/land-pr`, which requests GitHub
   auto-merge once required checks pass. No effect in `direct` or
   `worktree` mode (only `modes/pr.md` reads `AUTO_FLAG`).
+- **unattended** (optional, positional, case-insensitive) — skip
+  scope-confirmation / approval prompts so the skill can run without
+  an attended user. Symmetric to `/quickfix`, `/run-plan`, `/fix-issues`.
+  Phase 3 binds the model-layer gates to `$UNATTENDED_FLAG`. See
+  references/auto-unattended-semantics.md.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -224,6 +229,14 @@ fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
+fi
+# WI 2.4: positional `unattended` token, symmetric to `auto`. Skips
+# scope-confirmation / approval prompts in modes that have them (Phase 3
+# binds the model-layer prose). No effect on the existing /do triage or
+# review gates today.
+UNATTENDED_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]]) ]]; then
+  UNATTENDED_FLAG=1
 fi
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
@@ -664,6 +677,7 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
   | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')

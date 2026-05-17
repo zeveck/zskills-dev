@@ -1,14 +1,14 @@
 ---
 name: fix-issues
 disable-model-invocation: true
-argument-hint: "N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
+argument-hint: "N [focus|dashboard] [auto] [unattended] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
 description: >-
   Orchestrate a batch bug-fixing sprint: dispatch fixers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+b03c6e"
+  version: "2026.05.17+a003ce"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -94,6 +94,28 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - `dashboard` (case-insensitive) — source candidates from
   `.zskills/monitor-state.json` `issues.ready` instead of the model rubric
 
+**Flag pre-parse — `AUTO_FLAG` / `UNATTENDED_FLAG`** (WI 2.3). Today
+all `auto` decisions live at the model layer; Phase 2 introduces the
+real bash variables so Phase 3 can bind the model-layer "Without `auto`
+/ With `auto`" gates to a single source of truth. Placement: BEFORE
+ANY inline `[[ "$ARGUMENTS" =~ ... [aA][uU][tT][oO] ... ]]` check (there
+are none today) and BEFORE the first user-facing prose that references
+the flags. Per D8 round-2: do NOT add an AUTO_FLAG gate to `gh issue
+close` — the existing `case "${LP[STATUS]:-}" in merged) ...` gate
+stays unchanged.
+
+```bash
+# Argument parsing — extract canonical flags from $ARGUMENTS.
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
+UNATTENDED_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]]) ]]; then
+  UNATTENDED_FLAG=1
+fi
+```
+
 **Landing mode resolution** (same pattern as `/run-plan`):
 1. Explicit argument wins: `pr` or `direct` in `$ARGUMENTS`
 2. Config default: read `.claude/zskills-config.json` `execution.landing` field
@@ -149,11 +171,16 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:s
 fi
 
 # Strip dashboard from arguments before the leading-N integer parser
-# (same pattern as stripping pr/direct/auto/now).
+# (same pattern as stripping pr/direct/auto/now). Per DA M4 round-2:
+# strip BOTH `auto` and `unattended` symmetrically so neither leaks into
+# the focus-extraction site (which extracts the "focus" string after
+# removing known tokens) or the cron-prompt construction.
 ARGUMENTS=$(printf '%s' "$ARGUMENTS" \
   | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
-  | sed -E 's/(^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]])/ /')
+  | sed -E 's/(^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])/ /')
 ```
 
 **Mutual exclusion for `dashboard`.** `dashboard` is a source-of-truth

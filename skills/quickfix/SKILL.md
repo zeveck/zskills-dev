@@ -1,6 +1,6 @@
 ---
 name: quickfix
-argument-hint: "[<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
+argument-hint: "[<description>] [auto] [unattended] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
   one-commit PR without a worktree. Two auto-detected modes: user-edited
@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.16+7ea279"
+  version: "2026.05.17+4f43ce"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -55,6 +55,10 @@ auto-merge via `/land-pr` and matches the convention in `/run-plan`,
 (trimmed of leading/trailing whitespace). Empty DESCRIPTION is allowed
 at parse time — mode detection (WI 1.5) decides whether it is fatal.
 
+- **unattended** (optional) — skip the WI 1.5.5 scope-confirmation prompt.
+  Forces the WI 1.5.5a SKIP branch unconditionally; the model bypasses
+  scope confirmation (per D3-QF). See references/auto-unattended-semantics.md.
+
 ```bash
 # Entry-point unset guard for the model-layer test seam. Without the
 # REQUIRED companion flag _ZSKILLS_TEST_HARNESS=1, clear any inherited
@@ -73,6 +77,7 @@ SKIP_TESTS=0
 FORCE=0
 ROUNDS=1
 AUTO_FLAG=0
+UNATTENDED_FLAG=0
 
 i=0
 while [ $i -lt ${#ARGS[@]} ]; do
@@ -91,6 +96,15 @@ while [ $i -lt ${#ARGS[@]} ]; do
     # both set AUTO_FLAG=1. Mirrors the convention in /run-plan,
     # /fix-issues, /do. The token never falls through to DESCRIPTION.
     [aA][uU][tT][oO]) AUTO_FLAG=1 ;;
+    # Positional `unattended` token (case-insensitive). Symmetric to `auto`
+    # — recognized anywhere in the arg vector and never falls through to
+    # DESCRIPTION. Bash case matches the token only when it stands alone
+    # as a word (`unattended-mode` falls to `*)`). If the user's
+    # description literally contains the standalone word `unattended`, the
+    # token is consumed (same known limitation as the `auto` token).
+    # Skips the WI 1.5.5 scope-confirmation prompt — forces the WI 1.5.5a
+    # SKIP branch unconditionally. See references/auto-unattended-semantics.md.
+    [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) UNATTENDED_FLAG=1 ;;
     --rounds)
       # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
       # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),
