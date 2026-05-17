@@ -795,3 +795,23 @@ This sprint exercises the post-PR-#343 design end-to-end:
 
 PR mode + auto. Per-issue /land-pr serially for #334, #335, #339. Then sprint-level /land-pr to ship this SPRINT_REPORT.md commit (per #325 Phase 6 dispatch).
 
+
+## Sprint — 2026-05-17 12:00 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr
+**Pipeline:** `fix-issues.sprint-20260517-152538-337`
+
+### Fixed
+
+| # | Title | Commit | Tests | Verify |
+|---|-------|--------|-------|--------|
+| #337 | Sprint-level `/land-pr` dispatch block ships with schema-only coverage | `b6e52f9` | full suite 3327/3327 pre AND post-commit; 17 new behavioral cases | PASS (extraction-from-source for BOTH dispatch blocks — Phase 6 sprint-land AND no-actionable SHIP from PR #343; realpath fallback, marker sequencing, AUTO conditional, `set -u` safety, result-file parse robustness all exercised; AUTO bare-var hardening applied at SKILL.md L1539+L2200 with version bump to `2026.05.17+0e0e90`) |
+
+### Skipped — Author-deferred / design discussion
+
+#67, #217 author-deferred; #336 (queue normalization — needs /draft-plan), #338 (briefing port-failure invariant), #340 (/qe-audit verification gate) all design judgment.
+
+### Landing
+
+Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for this section.
+
