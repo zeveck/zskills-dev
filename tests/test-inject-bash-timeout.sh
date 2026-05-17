@@ -110,6 +110,67 @@ else
   fail "case 6: command with embedded quotes should be preserved" "got: $RESULT"
 fi
 
+# --- ZSKILLS_PYTHON env-override shim (PR #302, issue #321) ---
+#
+# The shim is:
+#   PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+#   [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+#
+# Three behaviors to lock in:
+#   7. Default — unset ZSKILLS_PYTHON, python3 on PATH → normal injection works
+#      (proves the default branch of the shim still resolves a working interpreter).
+#   8. Env override honored — ZSKILLS_PYTHON=/nonexistent/python causes the python
+#      step to fail (binary not executable); the hook does NOT fall back to the
+#      default python3 — it hits the permissive fallback (allow with no
+#      updatedInput). If the override were ignored, the default python3 would
+#      succeed and we'd see updatedInput.
+#   9. Loud-error branch — unset ZSKILLS_PYTHON AND mask python3/python from
+#      PATH → hook prints "ERROR: install Python 3" to stderr and exits non-zero.
+
+# Case 7 — default behavior: unset ZSKILLS_PYTHON, normal PATH, injection works.
+INPUT_7='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(unset ZSKILLS_PYTHON && printf '%s' "$INPUT_7" | bash "$HOOK")
+if [[ "$RESULT" == *'"updatedInput"'* ]] \
+  && [[ "$RESULT" == *'"timeout": 600000'* || "$RESULT" == *'"timeout":600000'* ]]; then
+  pass "case 7: ZSKILLS_PYTHON unset → default python3 resolution, injection works"
+else
+  fail "case 7: default branch should still inject timeout" "got: $RESULT"
+fi
+
+# Case 8 — env override is honored. Point ZSKILLS_PYTHON at a non-executable path.
+# The hook's [ -n "$PYTHON" ] guard passes (string is non-empty), then the python
+# invocation fails (no such binary), PY_OUT is empty, and the permissive fallback
+# returns a bare allow with no updatedInput. If the override were silently
+# ignored, the default python3 would succeed and we'd see updatedInput — so
+# "no updatedInput" is the positive signal that the override took effect.
+INPUT_8='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+RESULT=$(printf '%s' "$INPUT_8" | ZSKILLS_PYTHON=/nonexistent/python-binary-xyz bash "$HOOK" 2>/dev/null)
+if [[ "$RESULT" == *'"permissionDecision":"allow"'* ]] && [[ "$RESULT" != *'updatedInput'* ]]; then
+  pass "case 8: ZSKILLS_PYTHON=/nonexistent → override honored (permissive fallback, no updatedInput)"
+else
+  fail "case 8: bad ZSKILLS_PYTHON override should NOT fall through to default python3" "got: $RESULT"
+fi
+
+# Case 9 — loud-error branch. Mask python3 AND python from PATH (point PATH at
+# an empty directory) and unset ZSKILLS_PYTHON. The shim's `command -v` lookups
+# both fail, $PYTHON ends up empty, the guard fires, hook prints to stderr and
+# exits non-zero. We resolve bash by absolute path because the wiped PATH won't
+# find `bash` either.
+BASH_BIN=$(command -v bash)
+EMPTY_PATH_DIR=$(mktemp -d)
+INPUT_9='{"tool_name":"Bash","tool_input":{"command":"npm test"}}'
+# Run hook in a subshell with sanitized env. Capture stderr; redirect stdout
+# away so it doesn't pollute the captured string. Exit code of the rightmost
+# command of the pipe is propagated out of `$(...)`.
+STDERR_OUT=$(printf '%s' "$INPUT_9" | (unset ZSKILLS_PYTHON; PATH="$EMPTY_PATH_DIR" "$BASH_BIN" "$HOOK") 2>&1 >/dev/null)
+EXIT_CODE=$?
+rmdir "$EMPTY_PATH_DIR"
+if [[ "$STDERR_OUT" == *"ERROR: install Python 3"* ]] && [[ "$EXIT_CODE" -ne 0 ]]; then
+  pass "case 9: no python3/python on PATH + no ZSKILLS_PYTHON → loud error + non-zero exit"
+else
+  fail "case 9: missing python should produce loud error" "exit=$EXIT_CODE stderr=$STDERR_OUT"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
