@@ -511,6 +511,12 @@ check_fixed do          "AUTO_FLAG init"        'AUTO_FLAG=0'
 check_fixed do          "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
 check       do          "unattended regex arm"  'UNATTENDED_FLAG=1'
 check       do          "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
+# AC6.8 (Phase 6) — explicit /do parser-arm assertion. /do uses a bash
+# `=~` regex (not the `case` statement form the other 3 PR-landing
+# callers use), so the literal pattern differs. This makes the /do
+# UNATTENDED_FLAG parser-arm coverage explicit per the Phase 6 spec,
+# not just an implicit `UNATTENDED_FLAG=1` substring match.
+check_fixed do          "unattended regex full"  '=~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])'
 
 # AC2.1b — Bash-pattern guard. Run the smoke test directly so a future
 # regex tweak (e.g. adding `*`) that silently breaks the standalone-only

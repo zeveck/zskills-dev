@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.17+09f18a"
+  version: "2026.05.17+65b79b"
 ---
 
 # /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -62,11 +62,11 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   `/fix-issues`. Passes `--auto` to `/land-pr`, which requests GitHub
   auto-merge once required checks pass. No effect in `direct` or
   `worktree` mode (only `modes/pr.md` reads `AUTO_FLAG`).
-- **unattended** (optional, positional, case-insensitive) — skip
-  scope-confirmation / approval prompts so the skill can run without
-  an attended user. Symmetric to `/quickfix`, `/run-plan`, `/fix-issues`.
-  Phase 3 binds the model-layer gates to `$UNATTENDED_FLAG`. See
-  references/auto-unattended-semantics.md.
+- **unattended** (optional, positional, case-insensitive) — currently a
+  forward-placeholder for skill-internal gate bypass. `/do` has no
+  confirmation gate today; this token is recognized for cross-skill
+  consistency. Composes with `auto` which independently controls
+  `/land-pr` auto-merge. See `references/auto-unattended-semantics.md`.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
