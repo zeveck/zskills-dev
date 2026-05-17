@@ -878,31 +878,19 @@ function renderIssues(issues, queues) {
   const numToIssue = {};
   for (const it of issues) numToIssue[it.number] = it;
 
-  // GitHub owns issue existence; we render one card per live issue and
-  // group by its annotated queue.column. Queue-only entries are never
-  // rendered, so closed issues stop producing blank cards.
-  const UNQUEUED = Number.MAX_SAFE_INTEGER;
-  const grouped = {};
-  for (const c of ISSUE_COLUMNS) grouped[c] = [];
-  for (const it of issues) {
-    if (typeof it.number !== "number") continue;
-    const col = (it.queue && it.queue.column) || "triage";
-    if (ISSUE_COLUMNS.indexOf(col) < 0) continue;
-    let idx = (it.queue && typeof it.queue.index === "number") ? it.queue.index : -1;
-    if (idx < 0) idx = UNQUEUED;
-    grouped[col].push({ num: it.number, idx });
-  }
-  for (const c of ISSUE_COLUMNS) {
-    grouped[c].sort((a, b) => (a.idx - b.idx) || (b.num - a.num));
-  }
-
+  // Mirror renderPlans: column membership and order come from the
+  // `queues` argument (typically lastGoodQueues.issues), NOT from the
+  // per-issue server annotation. This lets commitQueueChange's
+  // optimistic lastGoodQueues update render the dragged card in its
+  // new column immediately, before the next poll arrives.
   const cols = el("div", { cls: "columns columns-2" });
   for (const c of ISSUE_COLUMNS) {
     const colDiv = el("div", { cls: "column" });
     const headId = "issues-col-" + c;
     const head = el("div", { cls: "column-head", attrs: { id: headId } });
     head.appendChild(el("span", { text: ISSUE_COLUMN_LABELS[c] }));
-    head.appendChild(el("span", { cls: "muted", text: String(grouped[c].length) }));
+    const arr = (queues && queues.issues && queues.issues[c]) || [];
+    head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -914,9 +902,10 @@ function renderIssues(issues, queues) {
         "aria-labelledby": headId,
       },
     });
-    for (const entry of grouped[c]) {
-      const card = buildIssueCard(numToIssue[entry.num], entry.num, c);
-      ul.appendChild(card);
+    for (const num of arr) {
+      const issue = numToIssue[num];
+      if (!issue) continue;
+      ul.appendChild(buildIssueCard(issue, num, c));
     }
     colDiv.appendChild(ul);
     cols.appendChild(colDiv);
