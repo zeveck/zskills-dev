@@ -6,15 +6,19 @@
 #   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 #   # vars now set: $UNIT_TEST_CMD $FULL_TEST_CMD $TIMEZONE $DEV_SERVER_CMD
 #   #               $TEST_OUTPUT_FILE $COMMIT_CO_AUTHOR $ZSKILLS_VERSION
+#   #               $ZSKILLS_MAX_CONCURRENT_WORKTREES
 #
 # Contract:
 #   - Reads .claude/zskills-config.json from $CLAUDE_PROJECT_DIR.
 #   - Pure bash regex (BASH_REMATCH); never invokes jq.
-#   - All 7 vars initialized to empty string BEFORE regex test
+#   - String vars initialized to empty string BEFORE regex test
 #     (empty-pattern-guard from DRIFT_ARCH_FIX Phase 1).
-#   - Empty / missing / malformed config → empty vars, no abort.
+#   - Empty / missing / malformed config → empty string vars, no abort.
 #   - Idempotent — sourcing twice yields the same vars.
-#   - No opinionated defaults; consumer decides empty handling.
+#   - No opinionated defaults for string vars; consumer decides empty handling.
+#   - $ZSKILLS_MAX_CONCURRENT_WORKTREES is the ONE exception: it defaults
+#     to 3 when absent/malformed so /fix-issues' aggregate live-worktree
+#     cap stays bounded for consumers who haven't touched config (#295).
 #   - Unsets _ZSK_-prefixed internals at end so caller env stays clean.
 #
 # Coexistence: same directory hosts zskills-stub-lib.sh, which exposes
@@ -56,7 +60,7 @@ fi
 
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 
-# Initialize all 7 vars to empty FIRST (empty-pattern-guard).
+# Initialize string vars to empty FIRST (empty-pattern-guard).
 UNIT_TEST_CMD=""
 FULL_TEST_CMD=""
 TIMEZONE=""
@@ -64,6 +68,9 @@ DEV_SERVER_CMD=""
 TEST_OUTPUT_FILE=""
 COMMIT_CO_AUTHOR=""
 ZSKILLS_VERSION=""
+# Default the live-worktree-cap to 3 (preserves status quo behavior pre-#295
+# for consumers who never set this field). Re-evaluated below if config sets it.
+ZSKILLS_MAX_CONCURRENT_WORKTREES=3
 
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
@@ -93,6 +100,17 @@ if [ -f "$_ZSK_CFG" ]; then
   # fingerprint of zskills (date+hash). Empty when not yet written.
   if [[ "$_ZSK_CFG_BODY" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     ZSKILLS_VERSION="${BASH_REMATCH[1]}"
+  fi
+  # execution.max_concurrent_worktrees: integer (unquoted in JSON). Used by
+  # /fix-issues to bound sprint-wide aggregate live worktrees (issue #295).
+  # We accept any positive integer; if the value is malformed (non-integer
+  # or <=0), keep the default of 3 from the initializer above.
+  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"max_concurrent_worktrees\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    _ZSK_MCW="${BASH_REMATCH[1]}"
+    if [ "$_ZSK_MCW" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_MAX_CONCURRENT_WORKTREES="$_ZSK_MCW"
+    fi
+    unset _ZSK_MCW
   fi
   unset _ZSK_CFG_BODY
 fi
