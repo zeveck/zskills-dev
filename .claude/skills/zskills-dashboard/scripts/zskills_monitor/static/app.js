@@ -341,10 +341,16 @@ function applySnapshot(snap) {
     renderBranches(snap.branches || [], snap.worktrees || []);
   }
 
-  const issuesFp = fingerprintIssues(snap.issues || [], queues);
+  // Use lastGoodQueues (deepCloneQueues output, includes inferred entries
+  // for new GH issues not yet in monitor-state.json's queue arrays), NOT
+  // raw snap.queues. Post-#353 renderIssues honors its queues arg and
+  // only renders cards present in queues.issues[c] — a new issue that
+  // gh returned but monitor-state.json hasn't seen yet would otherwise
+  // never appear. Mirror commitQueueChange's pattern (lines 1182-1202).
+  const issuesFp = fingerprintIssues(snap.issues || [], lastGoodQueues);
   if (issuesFp !== lastFingerprint.issues) {
     lastFingerprint.issues = issuesFp;
-    renderIssues(snap.issues || [], queues);
+    renderIssues(snap.issues || [], lastGoodQueues);
   }
 
   const actFp = fingerprintActivity(snap.activity || []);
