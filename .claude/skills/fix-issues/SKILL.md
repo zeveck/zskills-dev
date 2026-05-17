@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+5a0469"
+  version: "2026.05.17+987e2e"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -777,11 +777,13 @@ skip tracker updates or research to "save time." Dispatching agents without
 research blurbs causes misinterpretation — agents guess from titles and
 implement the wrong fix. This has happened repeatedly.
 
-### Sprint tracking sentinel
+### Sprint identity
 
 When mode is sprint (N provided), construct the per-sprint unique
-`$SPRINT_ID` and `$PIPELINE_ID` FIRST (before any other tracking write),
-then create the pipeline sentinel:
+`$SPRINT_ID` and `$PIPELINE_ID` FIRST — BEFORE the worktree gate
+below and before any tracking write — so both the gate's
+`--pipeline-id` arg and the downstream sentinel write agree on the
+same id:
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -799,6 +801,56 @@ PIPELINE_ID="fix-issues.$SPRINT_ID"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SPRINT_ID after sanitization (strip the "fix-issues." prefix).
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
+```
+
+### Sprint worktree gate
+
+**All sprint-mode work happens in a pre-created worktree.** Before
+preflight checks, tracker fetches, Phase 3 dispatches, or the Phase 5
+SPRINT_REPORT.md write, front-run the shared `ensure-worktree.sh` gate.
+Phases 1–5 then run inside the worktree, so Phase 5's SPRINT_REPORT.md
+append naturally lands on the sprint feature branch (not main). Closes
+the same hole PR #252 closed for sync mode — sprint mode was missed in
+that rollout (issue #325). Per-issue worktrees dispatched in Phase 3
+remain independent of the sprint-level worktree; only the
+SPRINT_REPORT.md append rides this gate. When `execution.main_protected`
+is `false` (or unset), the helper no-ops and the sprint runs on main
+as before.
+
+```bash
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+if [ ! -x "$HELPER" ]; then
+  echo "fix-issues: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+WT_PATH=$(bash "$HELPER" \
+  --prefix fix-issues \
+  --pipeline-id "$PIPELINE_ID" \
+  --purpose "fix-issues sprint; sprint=${SPRINT_ID}" \
+  "${SPRINT_ID}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ensure-worktree failed (rc=$RC) for /fix-issues sprint" >&2
+  exit "$RC"
+fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"  # R3-1 — re-anchor downstream path resolution
+fi
+```
+
+### Sprint tracking sentinel
+
+Now that `$SPRINT_ID` and `$PIPELINE_ID` are set and the worktree gate
+has run, create the pipeline sentinel. The sentinel lives on
+`$MAIN_ROOT` (NOT inside the sprint worktree) — tracking markers are
+always read from `$MAIN_ROOT/.zskills/tracking/` so cross-worktree
+sibling-check (the requires.*/fulfilled.* protocol) works regardless of
+which worktree any sub-dispatch runs in:
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
@@ -1706,6 +1758,15 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
 (landing). The report is a prerequisite for landing — if it's not written,
 Phase 6 does not execute.
 
+**The Sprint worktree gate at Phase 1 already `cd`-ed into the sprint
+worktree and exported `ZSKILLS_PATHS_ROOT`.** Under
+`execution.main_protected: true`, this append lands inside the sprint
+worktree's `.zskills/audit/SPRINT_REPORT.md` — not on main. Phase 6
+ships it via a sprint-level `/land-pr` dispatch after the per-issue
+landing loop completes. Under `main_protected: false`, the gate
+no-ops and the append lands on main as before (preserves the
+pre-#325 behaviour for unprotected repos).
+
 **APPEND, do not overwrite.** Multiple sprints may run between `/fix-report`
 reviews (e.g., cron every 2h, user checks once a day). Each sprint adds a
 new `## Sprint — YYYY-MM-DD HH:MM [UNFINALIZED]` section. `/fix-report`
@@ -1820,6 +1881,115 @@ Do not proceed until you have read the file.
 All mode files assume Phase 5 (Sprint Report) has written the
 persistent report and Phase 4 (Review) has populated the
 before-landing summary.
+
+### Sprint-level SPRINT_REPORT.md landing (after per-issue loop)
+
+When the Sprint worktree gate at Phase 1 created a worktree (i.e.
+`$WT_PATH` is non-empty — `execution.main_protected: true`), Phase 5
+wrote `SPRINT_REPORT.md` inside that worktree. After all per-issue
+landing dispatches (cherry-pick / direct / PR mode) have completed,
+ship the SPRINT_REPORT.md commit via a dedicated sprint-level
+`/land-pr`. Mirrors sync mode Step 5's `/land-pr` dispatch
+(`skills/fix-issues/SKILL.md` `## Sync` Step 5) — one commit, one PR,
+one tracking pair on `$MAIN_ROOT`. Skipped under `main_protected:
+false` (gate no-op'd; SPRINT_REPORT.md is already on main and Phase
+6's per-issue cherry-picks include it transitively via `/fix-report`).
+
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail; mirrors the sync-mode Step 5 fence at the top of the same skill -->
+```bash
+if [ -n "${WT_PATH:-}" ]; then
+  # Re-anchor in case any per-issue dispatch cd'd away.
+  cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed (sprint-land)" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+
+  TOPLEVEL=$(git rev-parse --show-toplevel)
+  MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+  # Stage + commit SPRINT_REPORT.md if Phase 5 wrote anything.
+  ABS_FILE="$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md"
+  SPRINT_REL=""
+  if SPRINT_REL=$(realpath --relative-to="$TOPLEVEL" "$ABS_FILE" 2>/dev/null) \
+       && [ -n "$SPRINT_REL" ]; then
+    case "$SPRINT_REL" in /*) SPRINT_REL="" ;; esac
+  fi
+  if [ -z "$SPRINT_REL" ]; then
+    ABS_FILE_CANON=$(cd "$(dirname "$ABS_FILE")" 2>/dev/null && pwd)/$(basename "$ABS_FILE")
+    case "$ABS_FILE_CANON" in
+      "$TOPLEVEL"/*) SPRINT_REL="${ABS_FILE_CANON#"$TOPLEVEL"/}" ;;
+      *) echo "fix-issues: cannot normalize $ABS_FILE vs $TOPLEVEL (sprint-land)" >&2; exit 1 ;;
+    esac
+  fi
+  case "$SPRINT_REL" in
+    /*|../*) echo "fix-issues: $ABS_FILE is outside worktree $TOPLEVEL (sprint-land)" >&2; exit 1 ;;
+  esac
+
+  git -C "$TOPLEVEL" add "$SPRINT_REL"
+  STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+  if [ -z "$STAGED" ]; then
+    echo "fix-issues: nothing to commit at sprint-land (no SPRINT_REPORT.md changes)" >&2
+  else
+    if [ -n "$COMMIT_CO_AUTHOR" ]; then
+      git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" \
+        -m "docs(sprint-report): sprint $SPRINT_ID results"
+    else
+      git -C "$TOPLEVEL" commit -m "docs(sprint-report): sprint $SPRINT_ID results"
+    fi
+
+    # Dispatch /land-pr for the sprint-level SPRINT_REPORT.md commit.
+    # Mirrors sync mode's /land-pr arg vector at $TOPLEVEL.
+    SPRINT_LAND_ID="fix-issues.sprint.${SPRINT_ID}"
+    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+    printf 'skill: land-pr\nrequired-by: fix-issues-sprint\ndate: %s\n' \
+      "$(TZ=UTC date -Iseconds)" \
+      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${SPRINT_LAND_ID}"
+
+    RESULT_FILE=$(mktemp)
+    BODY_FILE=$(mktemp)
+    {
+      printf '## Summary\n`/fix-issues` sprint %s.\n\n' "$SPRINT_ID"
+      printf '## Test plan\n- [x] Sprint report content reviewed by user before merge.\n'
+    } > "$BODY_FILE"
+
+    PR_TITLE="sprint-report: $SPRINT_ID"
+    SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+    LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sprint --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
+    [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+
+    echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+
+    # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+    if [ ! -f "$RESULT_FILE" ]; then
+      echo "ERROR: /land-pr (sprint-land) produced no result file at $RESULT_FILE" >&2
+    else
+      declare -A LP_SPRINT
+      while IFS='=' read -r KEY VALUE; do
+        case "$KEY" in
+          STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+          MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+          CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+            LP_SPRINT["$KEY"]="$VALUE" ;;
+          "") ;;
+          *) printf 'WARN: /land-pr (sprint-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+        esac
+      done < "$RESULT_FILE"
+      case "${LP_SPRINT[STATUS]:-}" in
+        merged)
+          printf 'skill: land-pr\nid: %s\npr: %s\nbranch: %s\ndate: %s\n' \
+            "$SPRINT_LAND_ID" "${LP_SPRINT[PR_URL]:-}" "$SPRINT_BRANCH" \
+            "$(TZ=UTC date -Iseconds)" \
+            > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$SPRINT_LAND_ID"
+          ;;
+        *)
+          echo "fix-issues sprint-land: /land-pr STATUS=${LP_SPRINT[STATUS]:-unknown} — sprint report PR left open" >&2
+          ;;
+      esac
+    fi
+  fi
+fi
+```
 
 ### Post-land tracking
 

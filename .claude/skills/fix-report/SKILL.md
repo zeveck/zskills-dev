@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.15+37d11b"
+  version: "2026.05.17+9b6361"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -24,6 +24,49 @@ counterpart to `/fix-issues auto`.
 **Every step ends with STOP AND WAIT.** Do not advance to the next step until
 the user explicitly says to proceed. Present information, then stop. The user
 drives the pace — not you.
+
+## Worktree gate (run before Step 1)
+
+**All `/fix-report` work happens in a pre-created worktree under
+`execution.main_protected: true`.** Steps 2, 5, 7, and 8 modify
+`$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`, `$ZSKILLS_AUDIT_DIR/FIX_REPORT.md`,
+and tracker files under `$ZSKILLS_ISSUES_DIR/` — all of which are
+tracked in git. Without the gate, running `/fix-report` on
+`main_protected: true` repos dirties main exactly the way
+`/fix-issues` sprint mode did before #325 was closed. Mirror the sync /
+sprint-mode preamble at entry; the helper no-ops under `main_protected:
+false` so unprotected repos keep their existing in-place flow. The
+final landing of audit + tracker file changes is the user's call
+(typically `/commit pr` from the worktree once the user has approved
+finalization in Step 3).
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+TOPLEVEL=$(git rev-parse --show-toplevel)
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+if [ ! -x "$HELPER" ]; then
+  echo "fix-report: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
+  exit 11
+fi
+FIX_REPORT_TS=$(date -u +%Y%m%d-%H%M%S)
+FIX_REPORT_PIPELINE_ID="fix-report.${FIX_REPORT_TS}"
+FIX_REPORT_PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_REPORT_PIPELINE_ID")
+WT_PATH=$(bash "$HELPER" \
+  --prefix fix-report \
+  --pipeline-id "$FIX_REPORT_PIPELINE_ID" \
+  --purpose "fix-report finalize; pipeline=${FIX_REPORT_PIPELINE_ID}" \
+  "${FIX_REPORT_TS}")
+RC=$?
+if [ "$RC" -ne 0 ]; then
+  echo "ensure-worktree failed (rc=$RC) for /fix-report" >&2
+  exit "$RC"
+fi
+if [ -n "$WT_PATH" ]; then
+  cd "$WT_PATH" || { echo "fix-report: cd $WT_PATH failed" >&2; exit 1; }
+  export ZSKILLS_PATHS_ROOT="$WT_PATH"  # R3-1 — re-anchor downstream path resolution
+fi
+```
 
 ## Step 1 — Present Summary
 
