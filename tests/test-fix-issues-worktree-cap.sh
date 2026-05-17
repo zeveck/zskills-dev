@@ -205,23 +205,45 @@ if grep -qF 'git worktree list --porcelain' "$SKILL"; then
 else
   fail "Test 5c: gate uses worktree porcelain" "not found"
 fi
-if grep -qF 'branch refs/heads/fix[/-]issue-' "$SKILL"; then
-  pass "Test 5d: gate regex matches both fix/issue-NNN and fix-issue-NNN"
+# Gate regex — matches BOTH fix/issue-NNN and fix-issue-NNN. The shape
+# changed in the #329 follow-up from a single `grep -cE` to an
+# `awk`-then-`while` pipeline that also filters out `.landed status:
+# landed` worktrees, but the bracket-alternation literal that selects
+# the fix-branch lines is preserved.
+if grep -qF 'refs\/heads\/fix[/-]issue-' "$SKILL" || grep -qF 'refs/heads/fix[/-]issue-' "$SKILL"; then
+  pass "Test 5d: gate regex matches both fix/issue-NNN and fix-issue-NNN (awk or grep variant)"
 else
-  fail "Test 5d: gate regex" "not found"
+  fail "Test 5d: gate regex" "neither awk-escaped nor grep-form bracket alternation found"
 fi
 
-# Deferral path must append to SPRINT_REPORT.md (auditable) — match the
-# section heading literal.
+# Defer-path no longer writes to SPRINT_REPORT.md. The #329 follow-up
+# moved the cap-check ahead of the sprint worktree gate so a defer-all
+# exits before the worktree is created — appending to SPRINT_REPORT.md
+# from there would strand the write (Phase 6's sprint-level /land-pr
+# is past `exit 0`). The partial-dispatch trim drops the audit-write
+# for symmetry. Both paths are now stderr-only; the section-heading
+# literals from the old shape are negative pinned here.
 if grep -qF 'Sprint deferred — at live-worktree cap' "$SKILL"; then
-  pass "Test 5e: defer-all path writes auditable section to SPRINT_REPORT.md"
+  fail "Test 5e: defer-all path still writes 'Sprint deferred' to SPRINT_REPORT.md" "should have been dropped in the #329 follow-up (strand bug)"
 else
-  fail "Test 5e: defer-all SPRINT_REPORT.md write" "not found"
+  pass "Test 5e: defer-all path no longer appends to SPRINT_REPORT.md (strand bug from #329 closed)"
 fi
 if grep -qF 'Sprint partially deferred — at live-worktree cap' "$SKILL"; then
-  pass "Test 5f: partial-defer path writes auditable section to SPRINT_REPORT.md"
+  fail "Test 5f: partial-defer path still writes 'Sprint partially deferred' to SPRINT_REPORT.md" "should have been dropped for symmetry with defer-all"
 else
-  fail "Test 5f: partial-defer SPRINT_REPORT.md write" "not found"
+  pass "Test 5f: partial-defer path no longer appends to SPRINT_REPORT.md (symmetric with defer-all)"
+fi
+
+# Test 5g (new): predicate skips `.landed status: landed` worktrees.
+# This is the load-bearing behavioural change from #329 follow-up —
+# done-but-uncleaned worktrees no longer trip the cap. The schema
+# test/test-fix-issues-sprint-worktree-gate.sh has the full fixture
+# eval; here we pin the literal presence of the `.landed`-skip
+# branch in the predicate body.
+if grep -qF "grep -q '^status: landed'" "$SKILL"; then
+  pass "Test 5g: predicate skips '.landed status: landed' worktrees (cap-over-count bug from #320 closed)"
+else
+  fail "Test 5g: predicate skips '.landed status: landed' worktrees" "the grep against \$wt/.landed for 'status: landed' is missing — done-but-uncleaned worktrees will over-count toward the cap"
 fi
 
 # --- Test 6: two-cap distinction documented ---------------------------------
