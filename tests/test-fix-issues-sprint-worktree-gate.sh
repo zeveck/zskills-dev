@@ -286,6 +286,41 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────
+# Assertion 9: no-actionable arm does NOT `cat >> SPRINT_REPORT.md`.
+# Sibling strand bug to the defer-all arm (Assertion 8): the
+# no-actionable branch under `### If no actionable issues found`
+# previously wrote a `## Sprint — ... [UNFINALIZED]` section to
+# SPRINT_REPORT.md and `exit 0`. After PR #329's sprint worktree
+# gate, that write strands inside the sprint-level worktree and
+# never ships (Phase 6's sprint-level /land-pr is past the exit).
+# Pin the predicate negative so a future refactor cannot re-open
+# the strand. Also pins the "no nag counter" decision: any
+# `consecutive` / `empty run` references in the block would
+# indicate the dropped nag mechanism crept back in.
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== no-actionable arm does not append to SPRINT_REPORT.md (and no nag counter) ==="
+
+NO_ACT_BLOCK=$(awk '
+  /^### If no actionable issues found/{capture=1; next}
+  capture && /^### /{exit}
+  capture && /^## /{exit}
+  capture {print}
+' "$FI_SKILL")
+
+if echo "$NO_ACT_BLOCK" | grep -E '^[[:space:]]*cat[[:space:]]+>>.*SPRINT_REPORT\.md.*<<' >/dev/null; then
+  fail "no-actionable arm contains 'cat >> ...SPRINT_REPORT.md <<TAG' heredoc — re-opens the strand bug sibling to #331"
+else
+  pass "no-actionable arm has no 'cat >> SPRINT_REPORT.md <<' heredoc (strand bug sibling to #331 stays closed)"
+fi
+
+if echo "$NO_ACT_BLOCK" | grep -iE 'consecutive|empty run' >/dev/null; then
+  fail "no-actionable arm contains 'consecutive' / 'empty run' — the dropped 3-empty-runs nag mechanism crept back in"
+else
+  pass "no-actionable arm has no nag counter / 'consecutive empty runs' logic (per-user-judgment: commit noise)"
+fi
+
+# ─────────────────────────────────────────────────────────────────
 # Source/mirror parity (general invariant; pinned here so a broken
 # mirror surfaces in THIS test too, not only the conformance test).
 # ─────────────────────────────────────────────────────────────────

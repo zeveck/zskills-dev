@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+64b77a"
+  version: "2026.05.17+b03c6e"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1389,15 +1389,19 @@ If ALL candidates are too vague, too complex, or already attempted:
 
    **Only sync once per sprint.** If still empty after, proceed to step 2.
 
-2. **If still no actionable issues after refresh:**
-   - Write a minimal sprint section to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`: `## Sprint —
-     YYYY-MM-DD HH:MM [UNFINALIZED]` with "No actionable issues found
-     (synced twice)" and the skip reasons.
-   - **Do NOT kill the cron** — new issues may be filed before the next run.
-   - After **3 consecutive empty runs**, add a note: "3 consecutive runs
-     with no actionable issues. Run `/fix-issues stop` if no new issues
-     are expected." Do NOT auto-stop — that's the user's call.
-   - **Exit.** Skip Phases 3-6.
+2. **If still no actionable issues after refresh:** emit one stderr
+   notice and exit 0 — the cron retries on the next fire. **Do NOT**
+   write to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` here (mirrors the
+   defer-all arm's stderr-only shape — Phase 5's sprint worktree gate
+   has not run yet at this point, but symmetry with the defer-all arm
+   from #331 keeps no-actionable events out of the report regardless).
+   The user decides when to stop the cron from cron list + recent PR
+   history signals; no nag counter, no marker, no read-back.
+
+   ```bash
+   echo "fix-issues: no actionable issues this fire (open=$OPEN_COUNT); cron will retry on next fire." >&2
+   exit 0
+   ```
 
 ### Post-prioritize tracking
 
