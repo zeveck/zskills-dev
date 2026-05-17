@@ -321,6 +321,52 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────
+# Assertion 10: no-actionable arm handles the sprint worktree the
+# Phase 1 gate created. Two branches, both ending in exit 0:
+#   • SHIP — dirty tree (sync wrote tracker updates): commit +
+#     dispatch sprint-level /land-pr (mirror of the Phase 6
+#     sprint-level land — see Assertion 5).
+#   • CLEANUP — clean tree: `git worktree remove --force "$WT_PATH"`
+#     so /tmp does not accumulate empty worktrees across exhausted-
+#     queue cron fires.
+# Without BOTH paths, either sync's discoveries strand (no ship) or
+# empty worktrees pile up (no cleanup). Pin both presence + the
+# trailing exit 0.
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== no-actionable arm ships sync OR cleans worktree (#341 follow-up) ==="
+
+# CLEANUP path — must call git worktree remove on $WT_PATH.
+if echo "$NO_ACT_BLOCK" | grep -E 'git worktree remove .*"\$WT_PATH"' >/dev/null; then
+  pass "no-actionable arm has 'git worktree remove ... \"\$WT_PATH\"' cleanup path"
+else
+  fail "no-actionable arm missing 'git worktree remove ... \"\$WT_PATH\"' — empty worktrees will accumulate in /tmp"
+fi
+
+# SHIP path — must dispatch /land-pr (mirror Assertion 5's check
+# shape: skill: "land-pr"). Pin the tracking-id namespace so the
+# Phase 6 sprint-report land's SPRINT_LAND_ID does not collide.
+if echo "$NO_ACT_BLOCK" | grep -E 'Skill:.*"land-pr"' >/dev/null; then
+  pass "no-actionable arm has /land-pr dispatch (ship path)"
+else
+  fail "no-actionable arm missing /land-pr dispatch — sync's tracker discoveries would strand"
+fi
+
+if echo "$NO_ACT_BLOCK" | grep -E 'SPRINT_LAND_ID="fix-issues\.sync\.' >/dev/null; then
+  pass "no-actionable arm uses distinct SPRINT_LAND_ID namespace (fix-issues.sync.*)"
+else
+  fail "no-actionable arm SPRINT_LAND_ID must use fix-issues.sync.* namespace to avoid colliding with Phase 6 fix-issues.sprint.*"
+fi
+
+# Trailing exit 0 — the arm must still terminate (cron retries next
+# fire). Check for `exit 0` somewhere in the block.
+if echo "$NO_ACT_BLOCK" | grep -E '^[[:space:]]*exit 0' >/dev/null; then
+  pass "no-actionable arm ends with 'exit 0' (cron retries next fire)"
+else
+  fail "no-actionable arm missing 'exit 0' — pipeline would fall through into Post-prioritize tracking"
+fi
+
+# ─────────────────────────────────────────────────────────────────
 # Source/mirror parity (general invariant; pinned here so a broken
 # mirror surfaces in THIS test too, not only the conformance test).
 # ─────────────────────────────────────────────────────────────────

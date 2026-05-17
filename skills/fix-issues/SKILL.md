@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+95e1de"
+  version: "2026.05.17+9dcfe6"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1462,16 +1462,115 @@ If ALL candidates are too vague, too complex, or already attempted:
 
    **Only sync once per sprint.** If still empty after, proceed to step 2.
 
-2. **If still no actionable issues after refresh:** emit one stderr
-   notice and exit 0 — the cron retries on the next fire. **Do NOT**
-   write to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` here (mirrors the
-   defer-all arm's stderr-only shape — Phase 5's sprint worktree gate
-   has not run yet at this point, but symmetry with the defer-all arm
-   from #331 keeps no-actionable events out of the report regardless).
-   The user decides when to stop the cron from cron list + recent PR
-   history signals; no nag counter, no marker, no read-back.
+2. **If still no actionable issues after refresh:** the sprint-level
+   worktree the gate at Phase 1 created earlier (`$WT_PATH`) is still
+   on disk. Two branches — ship sync's tracker discoveries if it
+   wrote anything, otherwise remove the empty worktree. Either way,
+   end with `exit 0` and no stranded `/tmp/zskills-fix-issues-sprint-*`
+   directory. **Do NOT** write to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+   in either branch (mirrors the defer-all arm's stderr-only shape from
+   #331). The user decides when to stop the cron from cron list +
+   recent PR history signals; no nag counter, no marker, no read-back.
 
+   The ship branch mirrors the Phase 6 sprint-level `/land-pr`
+   dispatch (`### Sprint-level SPRINT_REPORT.md landing` later in this
+   skill) — same arg vector, same tracking-pair pattern — scoped to
+   the tracker-only changes Phase 1a sync produced, with a different
+   `SPRINT_LAND_ID` namespace (`fix-issues.sync.${SPRINT_ID}`) so it
+   does not collide with the Phase 6 sprint-report land. The cleanup
+   branch leaves the worktree (`git worktree remove --force`) so disk
+   does not accumulate across exhausted-queue cron fires.
+
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside a comment explaining WHY the no-actionable arm does NOT write to it (strand bug sibling to #331); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 9 -->
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+   if [ -n "${WT_PATH:-}" ]; then
+     # Re-anchor in case Phase 1a sync or any sub-dispatch cd'd away.
+     cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed (no-actionable)" >&2; exit 1; }
+     export ZSKILLS_PATHS_ROOT="$WT_PATH"
+
+     TOPLEVEL=$(git rev-parse --show-toplevel)
+     # Detect tracker changes Phase 1a sync may have produced in the
+     # sprint worktree. Use --porcelain so a clean tree yields empty
+     # stdout. Includes both unstaged and staged.
+     if [ -n "$(git -C "$TOPLEVEL" status --porcelain)" ]; then
+       # SHIP branch — tracker refresh from sync. Mirrors the Phase 6
+       # sprint-level /land-pr dispatch shape (see "### Sprint-level
+       # SPRINT_REPORT.md landing" later in this skill).
+       git -C "$TOPLEVEL" add -A
+       STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+       if [ -z "$STAGED" ]; then
+         # Defensive: somehow nothing staged after add -A → fall through
+         # to cleanup to avoid an empty commit.
+         echo "fix-issues no-actionable: status reported dirty but nothing staged — removing worktree" >&2
+         cd "$MAIN_ROOT" && git worktree remove --force "$WT_PATH"
+       else
+         if [ -n "${COMMIT_CO_AUTHOR:-}" ]; then
+           git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" \
+             -m "docs(sync): tracker refresh from /fix-issues fire $SPRINT_ID"
+         else
+           git -C "$TOPLEVEL" commit -m "docs(sync): tracker refresh from /fix-issues fire $SPRINT_ID"
+         fi
+
+         SPRINT_LAND_ID="fix-issues.sync.${SPRINT_ID}"
+         mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+         printf 'skill: land-pr\nrequired-by: fix-issues-no-actionable\ndate: %s\n' \
+           "$(TZ=UTC date -Iseconds)" \
+           > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${SPRINT_LAND_ID}"
+
+         RESULT_FILE=$(mktemp)
+         BODY_FILE=$(mktemp)
+         {
+           printf '## Summary\n`/fix-issues` fire %s found no actionable issues; Phase 1a sync produced tracker updates that ship here.\n\n' "$SPRINT_ID"
+           printf '## Test plan\n- [x] Sync-only diff; no per-issue work executed this fire.\n'
+         } > "$BODY_FILE"
+
+         PR_TITLE="sync: tracker refresh from /fix-issues fire $SPRINT_ID"
+         SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+         LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
+         [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+
+         echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+
+         # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+         if [ ! -f "$RESULT_FILE" ]; then
+           echo "ERROR: /land-pr (no-actionable sync-land) produced no result file at $RESULT_FILE" >&2
+         else
+           declare -A LP_NOACT
+           while IFS='=' read -r KEY VALUE; do
+             case "$KEY" in
+               STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+               MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+               CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+                 LP_NOACT["$KEY"]="$VALUE" ;;
+               "") ;;
+               *) printf 'WARN: /land-pr (no-actionable sync-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+             esac
+           done < "$RESULT_FILE"
+           case "${LP_NOACT[STATUS]:-}" in
+             merged)
+               printf 'skill: land-pr\nid: %s\npr: %s\nbranch: %s\ndate: %s\n' \
+                 "$SPRINT_LAND_ID" "${LP_NOACT[PR_URL]:-}" "$SPRINT_BRANCH" \
+                 "$(TZ=UTC date -Iseconds)" \
+                 > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$SPRINT_LAND_ID"
+               ;;
+             *)
+               echo "fix-issues no-actionable sync-land: /land-pr STATUS=${LP_NOACT[STATUS]:-unknown} — sync PR left open" >&2
+               ;;
+           esac
+         fi
+       fi
+     else
+       # CLEANUP branch — sync wrote nothing; worktree is empty.
+       # Leave $WT_PATH before `git worktree remove` so we are not
+       # standing inside the directory being removed.
+       cd "$MAIN_ROOT" && git worktree remove --force "$WT_PATH"
+     fi
+   fi
+
    echo "fix-issues: no actionable issues this fire (open=$OPEN_COUNT); cron will retry on next fire." >&2
    exit 0
    ```
