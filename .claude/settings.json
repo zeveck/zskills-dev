@@ -35,6 +35,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
