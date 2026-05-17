@@ -42,6 +42,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOK="$REPO_ROOT/hooks/block-stale-skill-version.sh"
 STAGE_CHECK="$REPO_ROOT/scripts/skill-version-stage-check.sh"
 
+# Per-worktree scratch dir so parallel suite runs in different worktrees
+# don't race on $TEST_OUT/c5.out etc (issue #322).
+TEST_OUT="/tmp/zskills-tests/$(basename "$REPO_ROOT")-block-stale-skill-version"
+mkdir -p "$TEST_OUT"
+
 PASS_COUNT=0
 FAIL_COUNT=0
 SKIP_COUNT=0
@@ -168,15 +173,15 @@ clean_env() {
 (
   export CLAUDE_PROJECT_DIR="$SANDBOX"
   printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m hi"}}' | bash "$HOOK"
-) > /tmp/c4.out 2>/tmp/c4.err
+) > $TEST_OUT/c4.out 2>$TEST_OUT/c4.err
 C4_EXIT=$?
-C4_OUT=$(cat /tmp/c4.out)
+C4_OUT=$(cat $TEST_OUT/c4.out)
 if [ "$C4_EXIT" -eq 0 ] && [ -z "$C4_OUT" ]; then
   pass "C4: git commit, clean stage → allow, no stdout"
 else
-  fail "C4: git commit, clean stage" "exit=$C4_EXIT stdout=$C4_OUT err=$(cat /tmp/c4.err)"
+  fail "C4: git commit, clean stage" "exit=$C4_EXIT stdout=$C4_OUT err=$(cat $TEST_OUT/c4.err)"
 fi
-rm -f /tmp/c4.out /tmp/c4.err
+rm -f $TEST_OUT/c4.out $TEST_OUT/c4.err
 
 # ─────────────────── C5: git commit, stale (DENY) ────────────
 # Swap in a stale-printing stub.
@@ -193,9 +198,9 @@ chmod +x "$STALE_SCRIPT"
 (
   export CLAUDE_PROJECT_DIR="$SANDBOX"
   printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m hi"}}' | bash "$HOOK"
-) > /tmp/c5.out 2>/tmp/c5.err
+) > $TEST_OUT/c5.out 2>$TEST_OUT/c5.err
 C5_EXIT=$?
-C5_OUT=$(cat /tmp/c5.out)
+C5_OUT=$(cat $TEST_OUT/c5.out)
 # Validate JSON structure with python3 if available; assert deny + STOP.
 C5_OK=1
 if [ "$C5_EXIT" -ne 0 ]; then C5_OK=0; fi
@@ -207,9 +212,9 @@ fi
 if [ "$C5_OK" -eq 1 ]; then
   pass "C5: git commit, stale stage → DENY envelope, valid JSON, includes STOP:"
 else
-  fail "C5: git commit, stale stage" "exit=$C5_EXIT stdout=$C5_OUT err=$(cat /tmp/c5.err)"
+  fail "C5: git commit, stale stage" "exit=$C5_EXIT stdout=$C5_OUT err=$(cat $TEST_OUT/c5.err)"
 fi
-rm -f /tmp/c5.out /tmp/c5.err
+rm -f $TEST_OUT/c5.out $TEST_OUT/c5.err
 
 # Restore CLEAN script for the rest of the matching cases.
 cp "$SANDBOX/scripts/skill-version-stage-check.sh" "$SANDBOX/scripts/skill-version-stage-check.sh.stale"
@@ -266,29 +271,29 @@ mkdir -p "$EMPTY_SANDBOX/scripts"
 (
   export CLAUDE_PROJECT_DIR="$EMPTY_SANDBOX"
   printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit -m hi"}}' | bash "$HOOK"
-) > /tmp/c12.out 2>/tmp/c12.err
+) > $TEST_OUT/c12.out 2>$TEST_OUT/c12.err
 C12_EXIT=$?
-C12_OUT=$(cat /tmp/c12.out)
+C12_OUT=$(cat $TEST_OUT/c12.out)
 if [ "$C12_EXIT" -eq 0 ] && [ -z "$C12_OUT" ]; then
   pass "C12: stage-check script missing → fail-open (allow)"
 else
-  fail "C12: missing script should fail-open" "exit=$C12_EXIT stdout=$C12_OUT err=$(cat /tmp/c12.err)"
+  fail "C12: missing script should fail-open" "exit=$C12_EXIT stdout=$C12_OUT err=$(cat $TEST_OUT/c12.err)"
 fi
-rm -f /tmp/c12.out /tmp/c12.err
+rm -f $TEST_OUT/c12.out $TEST_OUT/c12.err
 rm -rf "$EMPTY_SANDBOX"
 
 # ─────────────────── C12a: unset CLAUDE_PROJECT_DIR ──────────
 # Use env -i bash to ensure CLAUDE_PROJECT_DIR is genuinely unset; the
 # ${X:-$PWD} fallback should resolve to a path where stage-check is absent
 # → fail-open. Critically, this also asserts set -u doesn't crash.
-C12A_OUT=$(env -i HOME="$HOME" PATH="$PATH" bash -c "cd /tmp && printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m hi\"}}' | bash \"$HOOK\"" 2>/tmp/c12a.err)
+C12A_OUT=$(env -i HOME="$HOME" PATH="$PATH" bash -c "cd /tmp && printf '%s' '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m hi\"}}' | bash \"$HOOK\"" 2>$TEST_OUT/c12a.err)
 C12A_EXIT=$?
 if [ "$C12A_EXIT" -eq 0 ] && [ -z "$C12A_OUT" ]; then
   pass "C12a: unset CLAUDE_PROJECT_DIR → fail-open (no set -u crash)"
 else
-  fail "C12a: unset env should fail-open" "exit=$C12A_EXIT stdout=$C12A_OUT err=$(cat /tmp/c12a.err)"
+  fail "C12a: unset env should fail-open" "exit=$C12A_EXIT stdout=$C12A_OUT err=$(cat $TEST_OUT/c12a.err)"
 fi
-rm -f /tmp/c12a.err
+rm -f $TEST_OUT/c12a.err
 
 # ─────────────────── C13: Multi-line reason w/ " and \ ───────
 # Drive json_escape directly with awkward content; check the resulting
