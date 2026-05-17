@@ -5,16 +5,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCRIPT="$REPO_ROOT/scripts/migrate-flat-tracking-markers.sh"
 
+# Per-worktree+per-PID scratch namespace so concurrent suite runs in
+# different worktrees don't race on shared fixture paths (issue #322).
+FIXTURE_NS="$(basename "$REPO_ROOT")-$$"
+
 PASS_COUNT=0
 FAIL_COUNT=0
 
 pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 
-# Each test runs in a fresh fixture directory under /tmp.
+# Each test runs in a fresh fixture directory under /tmp, namespaced by
+# worktree + PID to keep parallel suite runs isolated.
 fixture() {
   local name="$1"
-  local dir="/tmp/zskills-migration-test-${name}"
+  local dir="/tmp/zskills-migration-test-${FIXTURE_NS}-${name}"
   rm -rf "$dir"
   mkdir -p "$dir/.zskills/tracking"
   printf '%s' "$dir"
@@ -40,7 +45,7 @@ cleanup "$DIR"
 
 echo
 echo "=== Case 2 — missing tracking dir is a no-op ==="
-DIR=/tmp/zskills-migration-test-missing
+DIR="/tmp/zskills-migration-test-${FIXTURE_NS}-missing"
 rm -rf "$DIR"
 mkdir -p "$DIR"
 out=$(bash "$SCRIPT" "$DIR" 2>&1); rc=$?
