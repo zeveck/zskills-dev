@@ -487,6 +487,22 @@ else
   fail "AC: column constants missing"
 fi
 
+# AC: renderIssues honors its `queues` argument for column membership
+# (mirrors renderPlans). Without this, optimistic drag-and-drop renders
+# from the stale per-issue server annotation `it.queue.column` and the
+# card snaps back until the next poll. Regression guard for the
+# renderIssues-ignores-queues bug.
+RENDER_ISSUES_BODY=$(awk '
+  /^function renderIssues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$RENDER_ISSUES_BODY" | grep -qE 'queues\.issues'; then
+  pass "AC: renderIssues references queues.issues (optimistic-render contract)"
+else
+  fail "AC: renderIssues does not reference queues.issues — regression of optimistic-render bug"
+fi
+
 # AC: Reconciliation suppress window present (1500ms).
 if grep -q 'POST_RECONCILE_SUPPRESS_MS' "$APP_JS" && grep -q '1500' "$APP_JS"; then
   pass "AC: reconciliation suppress window 1500ms present"
