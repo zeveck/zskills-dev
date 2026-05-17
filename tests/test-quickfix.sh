@@ -337,24 +337,19 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 2 — Argument-parser flags (WI 1.2)
-# Post-Phase 4 (QUICKFIX_GRAMMAR_REDESIGN): --yes is REMOVED entirely;
-# --from-here / --skip-tests / --force are HARD-STOP migration redirects
-# (the bare `--`-form case arm exists, but it prints an error and exits
-# 1 rather than setting any flag); the working forms are the positional
-# bracket-class tokens.
+# Post-migration-redirect-removal: --yes / --from-here / --skip-tests /
+# --force migration arms were dropped entirely (per
+# feedback_no_premature_backcompat.md). Only positional bracket-class
+# tokens remain (plus --branch / --rounds value-takers).
 # ────────────────────────────────────────────────────────────────────
 if grep -q '[-][-]branch)' "$SKILL" \
-   && grep -q '[-][-]yes|[-]y)' "$SKILL" \
-   && grep -q '[-][-]from-here)' "$SKILL" \
-   && grep -q '[-][-]skip-tests)' "$SKILL" \
-   && grep -q '[-][-]force)' "$SKILL" \
    && grep -qE '^[[:space:]]*\[fF\]\[rR\]\[oO\]\[mM\]-\[hH\]\[eE\]\[rR\]\[eE\]\) FROM_HERE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[sS\]\[kK\]\[iI\]\[pP\]-\[tT\]\[eE\]\[sS\]\[tT\]\[sS\]\) SKIP_TESTS=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[aA\]\[uU\]\[tT\]\[oO\]\)' "$SKILL"; then
-  pass "2  argument parser: migration arms (--yes / --from-here / --skip-tests / --force) + positional from-here/skip-tests/force/auto (Phase 4 grammar)"
+  pass "2  argument parser: --branch + positional from-here/skip-tests/force/auto (Phase 4 grammar)"
 else
-  fail "2  argument parser: one or more arms missing (migration redirects + positional bracket-class tokens, Phase 4 grammar)"
+  fail "2  argument parser: one or more arms missing (--branch + positional bracket-class tokens)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -752,9 +747,8 @@ rm -f -- "$ERR"
 # at branch creation), we assert that the preflight goes BEYOND the
 # unit_cmd gate — i.e., stderr does NOT contain 'requires
 # testing.unit_cmd'.
-# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): the `--skip-tests` form
-# is a migration hard-stop; the positional `skip-tests` is the
-# working form.
+# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): positional `skip-tests`
+# is the working form.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c20 "" "")
 ERR=$(mktemp)
@@ -790,8 +784,7 @@ rm -f -- "$ERR"
 # ────────────────────────────────────────────────────────────────────
 # Case 22 — positional from-here overrides the main-required gate:
 # feature branch + from-here proceeds past the branch check.
-# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): the legacy `--from-here`
-# form is a hard-stop migration redirect; the positional `from-here`
+# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): positional `from-here`
 # is the working form.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c22)
@@ -1266,8 +1259,7 @@ fi
 # Exercises WI 1.2's parser fence in isolation (no preflight side
 # effects). Asserts the new positional `[fF][oO][rR][cC][eE]) FORCE=1`
 # arm sets FORCE=1 and does not consume any positional arg as a value.
-# Phase 4 grammar: the legacy `--force` form is a hard-stop migration
-# redirect; this case uses the working positional form.
+# Phase 4 grammar: positional `force` is the working form.
 # ────────────────────────────────────────────────────────────────────
 OUT=$(bash "$PARSER_SCRIPT" force "fix typo")
 if echo "$OUT" | grep -q '^FORCE=1$' \
@@ -1776,51 +1768,36 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Cases 60–69 — WI 4.7 smoke tests (Phase 4 grammar): migration
-# redirects exit 1 with the corrective error; new positional tokens
-# set the corresponding flag (case-insensitive); `--branch` still
-# consumes its next arg verbatim; `--rounds` greedy-fallthrough on
-# non-numeric arg leaves description/force token semantics intact.
-#
-# Each migration-redirect case re-uses $PARSER_SCRIPT (the extracted
-# parser fence wrapped to emit FLAG=VALUE lines). For the migration
-# redirects we capture stderr separately and assert rc=1 + the
-# expected error stem.
+# Cases 62a–69 — WI 4.7 smoke tests (Phase 4 grammar): legacy
+# `--`-prefixed forms fall through to DESCRIPTION as prose (migration
+# redirects deleted per feedback_no_premature_backcompat.md); new
+# positional tokens set the corresponding flag (case-insensitive);
+# `--branch` still consumes its next arg verbatim; `--rounds`
+# greedy-fallthrough on non-numeric arg leaves description/force token
+# semantics intact.
 # ────────────────────────────────────────────────────────────────────
 
-# Case 60 — --yes migration: hard-stop with corrective error (AC4.1).
-ERR60=$(mktemp)
-bash "$PARSER_SCRIPT" --yes 2>"$ERR60" >/dev/null
-RC60=$?
-if [ "$RC60" -eq 1 ] && grep -q "'--yes' / '-y' was removed" "$ERR60"; then
-  pass "60 migration: --yes exits 1 with WI 4.2 corrective error"
-else
-  fail "60 migration: --yes rc=$RC60 stderr=$(tr '\n' '|' <"$ERR60")"
-fi
-rm -f -- "$ERR60"
+# Cases 60-62 — DELETED: previously asserted --yes / --from-here /
+# --skip-tests / --force hard-stop with corrective error. The migration
+# redirects were removed per feedback_no_premature_backcompat.md; legacy
+# `--`-prefixed tokens now fall through to DESCRIPTION as prose (see new
+# Case 62a below).
 
-# Case 61 — --from-here migration: hard-stop (AC4.2).
-ERR61=$(mktemp)
-bash "$PARSER_SCRIPT" --from-here 2>"$ERR61" >/dev/null
-RC61=$?
-if [ "$RC61" -eq 1 ] && grep -q "'--from-here' was replaced by positional 'from-here'" "$ERR61"; then
-  pass "61 migration: --from-here exits 1 with corrective error pointing to positional"
+# Case 62a — positive fallthrough: `--from-here` (legacy `--`-prefixed
+# form) is no longer a recognized arm; it falls through to DESCRIPTION
+# as user-prose. Exit code is 0 and the token appears in DESCRIPTION.
+# Locks in the post-removal behavior.
+ERR62a=$(mktemp)
+OUT62a=$(bash "$PARSER_SCRIPT" --from-here 2>"$ERR62a")
+RC62a=$?
+if [ "$RC62a" -eq 0 ] \
+   && echo "$OUT62a" | grep -q '^FROM_HERE=0$' \
+   && echo "$OUT62a" | grep -q '^DESCRIPTION=--from-here$'; then
+  pass "62a positive fallthrough: --from-here exits 0, treated as DESCRIPTION prose (FROM_HERE=0)"
 else
-  fail "61 migration: --from-here rc=$RC61 stderr=$(tr '\n' '|' <"$ERR61")"
+  fail "62a positive fallthrough: rc=$RC62a out=$(echo "$OUT62a" | tr '\n' '|') stderr=$(tr '\n' '|' <"$ERR62a")"
 fi
-rm -f -- "$ERR61"
-
-# Case 62 — --skip-tests / --force migration (AC4.3).
-ERR62a=$(mktemp); ERR62b=$(mktemp)
-bash "$PARSER_SCRIPT" --skip-tests 2>"$ERR62a" >/dev/null; RC62a=$?
-bash "$PARSER_SCRIPT" --force 2>"$ERR62b" >/dev/null; RC62b=$?
-if [ "$RC62a" -eq 1 ] && grep -q "'--skip-tests' was replaced by positional 'skip-tests'" "$ERR62a" \
-   && [ "$RC62b" -eq 1 ] && grep -q "'--force' was replaced by positional 'force'" "$ERR62b"; then
-  pass "62 migration: --skip-tests & --force both exit 1 with corrective errors"
-else
-  fail "62 migration: skip-tests rc=$RC62a force rc=$RC62b"
-fi
-rm -f -- "$ERR62a" "$ERR62b"
+rm -f -- "$ERR62a"
 
 # Case 63 — positional from-here sets FROM_HERE=1, DESCRIPTION unchanged (AC4.4).
 OUT63=$(bash "$PARSER_SCRIPT" "fix broken docs link" from-here 2>&1)
@@ -1884,12 +1861,11 @@ else
   fail "68 fromhere boundary: $(echo "$OUT68" | tr '\n' '|')"
 fi
 
-# Case 69 — argument-hint shape (AC4.9): exact new hint with legacy
-# --yes/--from-here/--skip-tests/--force brackets ABSENT.
+# Case 69 — argument-hint shape (AC4.9): exact positional hint.
 HINT=$(grep '^argument-hint' "$SKILL" | sed -E 's/^argument-hint: "(.*)"$/\1/')
 EXPECTED='[<description>] [auto] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]'
 if [ "$HINT" = "$EXPECTED" ]; then
-  pass "69 argument-hint (AC4.9, AC4.12): new Phase 4 positional shape; legacy --yes/[--from-here]/[--skip-tests]/[--force] brackets removed (len=${#HINT})"
+  pass "69 argument-hint (AC4.9, AC4.12): positional shape (len=${#HINT})"
 else
   fail "69 argument-hint: got='$HINT' expected='$EXPECTED'"
 fi
