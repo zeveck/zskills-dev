@@ -778,8 +778,17 @@ class MonitorHandler(BaseHTTPRequestHandler):
         ctx = self._ctx()
         main_root = ctx["main_root"]
         # Phase 4 collect_snapshot — produces JSON-serializable dict.
+        # Issue #281: ctx['main_root'] is set ONCE at startup
+        # (main(), bind+context block). All handlers (POST + GET) read
+        # from ctx unmutated. Pass pre_resolved=True so collect_snapshot
+        # does NOT redundantly invoke `_resolve_main_root` (a
+        # subprocess `git rev-parse --git-common-dir`) on every state
+        # GET, and — more importantly — so the GET path is structurally
+        # symmetric with POST handlers (both anchor on ctx).
         try:
-            snapshot = _collect.collect_snapshot(str(main_root))
+            snapshot = _collect.collect_snapshot(
+                main_root, pre_resolved=True
+            )
         except Exception as exc:
             self._send_json(500, {"error": f"collect_snapshot failed: {exc!r}"})
             return

@@ -1308,14 +1308,28 @@ def collect_snapshot(
     repo_root: Any,
     *,
     issue_runner: Optional[Any] = None,
+    pre_resolved: bool = False,
 ) -> Dict[str, Any]:
     """Collect the full dashboard snapshot.
 
     `repo_root` may be a `Path` or `str`. If it's a worktree, the
     snapshot still references the MAIN_ROOT for `.zskills/`, `plans/`,
     and `reports/` (worktree-portable).
+
+    Issue #281 — asymmetric main_root resolution. Long-running callers
+    (the dashboard server) resolve MAIN_ROOT once at startup and store
+    it in `ctx['main_root']`; every request handler reads from `ctx`.
+    Re-resolving inside `collect_snapshot` on every `/api/state` GET
+    is redundant *and* — if the server process's cwd ever shifted —
+    could diverge from the value POST handlers commit against.
+    Callers that have a vetted MAIN_ROOT pass `pre_resolved=True` to
+    skip the redundant resolution; CLI / fresh entry points keep the
+    default (False) so worktree → main hop still happens.
     """
-    main_root = _resolve_main_root(repo_root)
+    if pre_resolved:
+        main_root = pathlib.Path(str(repo_root)).resolve()
+    else:
+        main_root = _resolve_main_root(repo_root)
     errors: List[Dict[str, str]] = []
 
     plans_dir = _resolve_paths(main_root)["plans_dir"]

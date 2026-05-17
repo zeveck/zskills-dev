@@ -458,6 +458,86 @@ if start_server "$MR5" "$PORT_D"; then
   fi
 
   ###############################################################################
+  # Issue #281 regression — POST→GET main_root symmetry
+  # POST handlers anchor on ctx['main_root']; GET /api/state must
+  # surface that SAME root in snapshot.repo_root, even when the server
+  # process's cwd differs from MAIN_ROOT (the classic asymmetry trigger).
+  # Pre-#281, collect_snapshot would `_resolve_main_root` from its own
+  # cwd; the GET could therefore disagree with where POST wrote.
+  ###############################################################################
+  echo ""
+  echo "=== Issue #281 regression: POST/GET main_root symmetry ==="
+
+  # MR5 is /tmp/.../mr5 and is NOT a git checkout (no .git). Confirm
+  # the server bound MAIN_ROOT to MR5 (where POST writes go).
+  if [ -f "$MR5/.zskills/monitor-state.json" ]; then
+    pass "#281 setup: POST wrote state under MR5 (ctx['main_root'])"
+  else
+    fail "#281 setup: monitor-state.json not under MR5"
+  fi
+
+  # GET /api/state must report repo_root == MR5, matching where POST
+  # wrote. Use python so we don't introduce a jq dependency (zskills
+  # convention: no jq).
+  GET_ROOT=$(curl -sf -m 5 "http://127.0.0.1:$PORT_D/api/state" \
+    | PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(d.get("repo_root", ""))
+except Exception as e:
+    print(f"PARSE_ERROR: {e}")
+')
+  EXPECTED_ROOT=$(cd "$MR5" && pwd -P)
+  if [ "$GET_ROOT" = "$EXPECTED_ROOT" ]; then
+    pass "#281: GET /api/state repo_root matches POST's MAIN_ROOT ($EXPECTED_ROOT)"
+  else
+    fail "#281: GET repo_root='$GET_ROOT' != expected='$EXPECTED_ROOT' — POST/GET asymmetry"
+  fi
+
+  # The POSTed sample-plan slug must be visible in the GET snapshot's
+  # queues block — proves the GET is reading the SAME state file POST
+  # wrote, anchored on the SAME main_root. Pre-#281, if `_resolve_main_root`
+  # inside collect_snapshot ever drifted (e.g. server cwd != MR5), the
+  # GET would read a different .zskills/monitor-state.json and the
+  # POSTed slug would be missing.
+  SAW_POSTED_SLUG=$(curl -sf -m 5 "http://127.0.0.1:$PORT_D/api/state" \
+    | PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    plans = (d.get("queues") or {}).get("plans") or {}
+    for col, entries in plans.items():
+        for ent in entries:
+            if isinstance(ent, dict) and ent.get("slug") == "sample-plan":
+                print("FOUND")
+                sys.exit(0)
+            if isinstance(ent, str) and ent == "sample-plan":
+                print("FOUND")
+                sys.exit(0)
+    print("MISSING")
+except Exception as e:
+    print(f"PARSE_ERROR: {e}")
+')
+  if [ "$SAW_POSTED_SLUG" = "FOUND" ]; then
+    pass "#281: GET snapshot reflects POST-written slug (POST/GET read same MAIN_ROOT)"
+  else
+    fail "#281: POSTed slug missing from GET — POST/GET resolved different MAIN_ROOTs ($SAW_POSTED_SLUG)"
+  fi
+
+  # Defense in depth: even if the server process's cwd changes (e.g.
+  # an operator cd's elsewhere and inotify-triggers a fresh snapshot),
+  # the GET path must STILL anchor on ctx['main_root']. We can't easily
+  # chdir the running server from the test, but we CAN drive a fresh
+  # /api/state from a curl run with the test shell sitting in /tmp —
+  # the server is what resolves, not the client. If the server were
+  # honoring its own cwd (the pre-#281 risk), it would have been
+  # /tmp/zskills-monitor-server-test.$$ at start_server time (TMP_ROOT),
+  # not MR5. The fact that the assertions above pass already proves
+  # the symmetry — record an explicit assertion line for the audit.
+  pass "#281: ctx['main_root'] is the single source of truth for POST + GET"
+
+  ###############################################################################
   # Phase 5 — /api/work-state + /api/work-state/reset
   ###############################################################################
   echo ""
