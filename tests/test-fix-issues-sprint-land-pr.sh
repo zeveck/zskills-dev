@@ -372,17 +372,21 @@ test_A4_other_statuses_no_fulfilled() {
   fi
 }
 
-# Case A5: --auto conditional ON (AUTO=true) — LAND_ARGS contains --auto.
-#  Trace via a wrapper that captures LAND_ARGS into a file. We patch the
-#  block to additionally `printf '%s' "$LAND_ARGS" > $TMP_ROOT/A5.land_args`
-#  right after the `LAND_ARGS=...` assignment.
+# Case A5: sprint-level tracker PR always includes --auto, regardless
+#  of $AUTO. Trace via a wrapper that captures LAND_ARGS into a file. We
+#  patch the block to additionally `printf '%s' "$LAND_ARGS" >
+#  $TMP_ROOT/A5.land_args` right after the `LAND_ARGS=...` assignment
+#  for landed-source=fix-issues-sprint.
 # Helper: patch a block with an extra capture line that writes the
-# final $LAND_ARGS value to a file after the AUTO-conditional fires.
+# final $LAND_ARGS value to a file. The anchor is the sprint-land
+# `LAND_ARGS=...` assignment itself — after the tracker-auto decoupling
+# there is no AUTO conditional below it; the assignment is the
+# final-value line.
 patch_block_capturing_land_args() {
   local src="$1" out="$2" capture_file="$3"
   patch_block "$src" "$out"
   awk -v out="$capture_file" '
-    /\[ "\$\{AUTO:-false\}" = "true" \] && LAND_ARGS=/ {
+    /^[[:space:]]*LAND_ARGS=.*landed-source=fix-issues-sprint/ {
       print
       print "printf \"%s\" \"$LAND_ARGS\" > " out
       next
@@ -410,8 +414,10 @@ test_A5_auto_true_emits_flag() {
   unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
-# Case A6: AUTO=false — LAND_ARGS must NOT contain --auto.
-test_A6_auto_false_no_flag() {
+# Case A6: AUTO=false — sprint-level tracker PR STILL contains --auto
+#   (tracker PRs always auto-merge, decoupled from caller's `auto` arg).
+#   This is the regression guard for the tracker-PR-always-auto behavior.
+test_A6_auto_false_still_has_flag() {
   setup_case_a "6" "gnu"
   local patched="$CASE_DIR/block.sh"
   local cap="$TMP_ROOT/A6.land_args"
@@ -422,18 +428,18 @@ test_A6_auto_false_no_flag() {
   mk_result_file "$PREPARED_RESULT_FILE" "STATUS=merged"
   export AUTO="false"
   run_block "A-6cap" "$patched" "$CASE_DIR/bin"
-  if [ -f "$cap" ] && ! grep -q -- '--auto' "$cap"; then
-    pass "A6: AUTO=false → LAND_ARGS does NOT contain --auto"
+  if [ -f "$cap" ] && grep -q -- '--auto' "$cap"; then
+    pass "A6: AUTO=false → sprint LAND_ARGS still contains --auto (tracker PR always auto-merges)"
   else
-    fail "A6: AUTO=false → LAND_ARGS does NOT contain --auto" "captured=$(cat "$cap" 2>/dev/null || echo missing)"
+    fail "A6: AUTO=false → sprint LAND_ARGS still contains --auto" "captured=$(cat "$cap" 2>/dev/null || echo missing)"
   fi
   unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
-# Case A7: AUTO unset + `set -u` — block must NOT crash, LAND_ARGS no --auto.
-#   This pins the fix from issue #337 secondary: `[ "${AUTO:-false}" = ... ]`
-#   defaults under set -u; the prior `[ "$AUTO" = "true" ]` would have
-#   triggered `unbound variable`.
+# Case A7: AUTO unset + `set -u` — block must NOT crash. Sprint LAND_ARGS
+#   contains --auto unconditionally (decoupling); since the AUTO-conditional
+#   was removed in the tracker-auto decoupling, the `set -u` unbound-variable
+#   risk from referencing $AUTO is also gone.
 test_A7_auto_unset_no_crash() {
   setup_case_a "7" "gnu"
   local patched="$CASE_DIR/block.sh"
@@ -447,10 +453,10 @@ test_A7_auto_unset_no_crash() {
   run_block "A-7cap" "$patched" "$CASE_DIR/bin"
   local err; err=$(cat "$TMP_ROOT/A-7cap.err" 2>/dev/null || echo "")
   if [ "$LAST_RC" -eq 0 ] && ! echo "$err" | grep -qi 'unbound variable' \
-     && [ -f "$cap" ] && ! grep -q -- '--auto' "$cap"; then
-    pass "A7: AUTO unset + set -u → no 'unbound variable', LAND_ARGS without --auto"
+     && [ -f "$cap" ] && grep -q -- '--auto' "$cap"; then
+    pass "A7: AUTO unset + set -u → no 'unbound variable', sprint LAND_ARGS has --auto"
   else
-    fail "A7: AUTO unset + set -u → no crash" "rc=$LAST_RC err=$err captured=$(cat "$cap" 2>/dev/null || echo missing)"
+    fail "A7: AUTO unset + set -u → no crash + sprint --auto present" "rc=$LAST_RC err=$err captured=$(cat "$cap" 2>/dev/null || echo missing)"
   fi
   unset WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
@@ -647,7 +653,7 @@ test_A2_merged_fallback_realpath
 test_A3_created_no_fulfilled
 test_A4_other_statuses_no_fulfilled
 test_A5_auto_true_emits_flag
-test_A6_auto_false_no_flag
+test_A6_auto_false_still_has_flag
 test_A7_auto_unset_no_crash
 test_A8_unknown_key_warns_but_proceeds
 test_A9_missing_status_logs_left_open
