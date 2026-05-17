@@ -1207,6 +1207,7 @@ def _read_state_file(
         "default_mode": "phase",
         "plans": {},
         "issues": {},
+        "updated_at": "",
     }
     if text is None:
         return empty
@@ -1256,6 +1257,7 @@ def _read_state_file(
         "default_mode": default_mode,
         "plans": plans_out,
         "issues": issues_out,
+        "updated_at": raw.get("updated_at", ""),
     }
 
 
@@ -1374,6 +1376,7 @@ def collect_snapshot(
 
     # State file merge (drives queue annotations + queues block)
     state = _read_state_file(main_root, errors)
+    state_updated_at = state.get("updated_at", "")
     _annotate_plans_queue(plans, state)
 
     # Issues
@@ -1418,6 +1421,7 @@ def collect_snapshot(
     snapshot: Dict[str, Any] = {
         "version": VERSION,
         "updated_at": _now_iso(),
+        "state_updated_at": state_updated_at,
         "repo_root": str(main_root),
         "repo_url": _derive_repo_url(main_root),
         "plans": plans,
@@ -1524,6 +1528,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         snapshot = {
             "version": VERSION,
             "updated_at": _now_iso(),
+            "state_updated_at": state.get("updated_at", ""),
             "repo_root": str(main_root),
             "repo_url": "",
             "plans": plans,

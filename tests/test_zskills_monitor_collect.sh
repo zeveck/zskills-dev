@@ -62,7 +62,7 @@ else
   fail "CLI --fixture minimal exits 0 (rc=$RC, output: $OUT)"
 fi
 
-EXPECTED_KEYS="activity branches errors issues plans queues repo_root repo_url state_file_path updated_at version worktrees"
+EXPECTED_KEYS="activity branches errors issues plans queues repo_root repo_url state_file_path state_updated_at updated_at version worktrees"
 ACTUAL_KEYS=$(printf '%s' "$OUT" | python3 -c '
 import json,sys
 print(" ".join(sorted(json.load(sys.stdin).keys())))
@@ -303,6 +303,87 @@ if [ "$CORRUPT_ERR" = "1 True" ]; then
   pass "corrupt-state: errors[] has 1 .zskills/monitor-state.json entry with non-empty message"
 else
   fail "corrupt-state: errors[] wrong: '$CORRUPT_ERR'"
+fi
+
+# ---------------------------------------------------------------------------
+# AC: snapshot.state_updated_at — propagates state file's `updated_at`
+# (race-condition fix: applySnapshot stale-guard compares against the state
+# file's authoritative timestamp, not snapshot composition time).
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== state_updated_at field propagation ==="
+
+# Case 1: key always present in snapshot (minimal fixture: no state file)
+HAS_KEY=$(run_collect minimal | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print("state_updated_at" in d, repr(d.get("state_updated_at")))
+')
+if [ "$HAS_KEY" = "True ''" ]; then
+  pass "state_updated_at present and empty when state file absent (minimal)"
+else
+  fail "state_updated_at missing/wrong for state-absent: '$HAS_KEY'"
+fi
+
+# Case 2: corrupt state file → state_updated_at is ""
+CORRUPT_SUA=$(run_collect corrupt-state | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+print(repr(d.get("state_updated_at")))
+')
+if [ "$CORRUPT_SUA" = "''" ]; then
+  pass "state_updated_at == '' when state file is corrupt"
+else
+  fail "state_updated_at wrong for corrupt-state: '$CORRUPT_SUA'"
+fi
+
+# Case 3: synthesize a fixture with a known updated_at and verify propagation.
+SUA_PROP=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import json, sys, tempfile, pathlib
+sys.path.insert(0, "'"$PKG_PARENT"'")
+from zskills_monitor.collect import collect_snapshot
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+(tmp / ".zskills").mkdir()
+state_doc = {
+    "version": "1.1",
+    "default_mode": "phase",
+    "plans": {},
+    "issues": {},
+    "updated_at": "2026-05-17T07:00:00+00:00",
+}
+(tmp / ".zskills" / "monitor-state.json").write_text(json.dumps(state_doc))
+snap = collect_snapshot(tmp, pre_resolved=True)
+print(snap.get("state_updated_at"))
+')
+if [ "$SUA_PROP" = "2026-05-17T07:00:00+00:00" ]; then
+  pass "state_updated_at propagates state file's updated_at verbatim"
+else
+  fail "state_updated_at propagation wrong: '$SUA_PROP'"
+fi
+
+# Case 4: state file without `updated_at` key → state_updated_at == ""
+SUA_NO_KEY=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import json, sys, tempfile, pathlib
+sys.path.insert(0, "'"$PKG_PARENT"'")
+from zskills_monitor.collect import collect_snapshot
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+(tmp / ".zskills").mkdir()
+state_doc = {
+    "version": "1.1",
+    "default_mode": "phase",
+    "plans": {},
+    "issues": {},
+}
+(tmp / ".zskills" / "monitor-state.json").write_text(json.dumps(state_doc))
+snap = collect_snapshot(tmp, pre_resolved=True)
+print(repr(snap.get("state_updated_at")))
+')
+if [ "$SUA_NO_KEY" = "''" ]; then
+  pass "state_updated_at == '' when state file lacks updated_at key"
+else
+  fail "state_updated_at wrong when key absent: '$SUA_NO_KEY'"
 fi
 
 # ---------------------------------------------------------------------------

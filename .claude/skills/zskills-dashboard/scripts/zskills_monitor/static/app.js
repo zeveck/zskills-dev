@@ -167,6 +167,10 @@ let suppressNextStatePollUntil = 0;
 // window (which only skips the NEXT scheduled poll, not a poll already
 // awaiting fetchState()).
 let lastCommittedAt = null;
+// Incremented while a /api/queue POST is in flight; applySnapshot drops
+// snapshots that arrive during this window, since their `queues` block
+// may be older than the in-flight write.
+let pendingPosts = 0;
 
 // last-known-good queues — used to revert local DOM on POST failure.
 let lastGoodQueues = null;
@@ -281,13 +285,23 @@ async function pollWorkOnce() {
 }
 
 function applySnapshot(snap) {
+  // In-flight-POST guard: while a /api/queue POST is awaiting its
+  // response, any GET snapshot already composed by the server has a
+  // `queues` block older than what we're about to commit. Drop it
+  // outright; postQueue's lastCommittedAt update will gate subsequent
+  // late-arriving snapshots once the POST settles.
+  if (pendingPosts > 0) return;
   // Stale-snapshot guard: if our most recent committed POST has an
-  // updated_at newer than this snapshot's updated_at, the server hadn't
-  // yet processed our write when this GET was generated. Applying it
-  // would clobber the user's just-applied reorder with the pre-commit
-  // state ("snap-back"). String comparison on ISO-8601 with UTC offset
-  // is lexicographic-monotonic; sufficient here.
-  if (lastCommittedAt && snap && snap.updated_at && snap.updated_at < lastCommittedAt) {
+  // updated_at newer than this snapshot's state_updated_at (the state
+  // file's authoritative timestamp, propagated through collect_snapshot),
+  // the server hadn't yet processed our write when this GET was
+  // generated. Applying it would clobber the user's just-applied reorder
+  // with the pre-commit state ("snap-back"). Comparing against
+  // state_updated_at — not snap.updated_at (snapshot composition time) —
+  // closes the TOCTOU window where composition time outraces the
+  // state-file write. String comparison on ISO-8601 with UTC offset is
+  // lexicographic-monotonic; sufficient here.
+  if (lastCommittedAt && snap && snap.state_updated_at && snap.state_updated_at < lastCommittedAt) {
     return;
   }
   // Capture repo_url for entry-link construction in render*().
@@ -1156,8 +1170,8 @@ async function postQueue(queues, opts) {
   // awaiting fetchState() at the moment this POST returned.
   try {
     const body = await res.json();
-    if (body && typeof body.updated_at === "string") {
-      lastCommittedAt = body.updated_at;
+    if (body && typeof body.state_updated_at === "string") {
+      lastCommittedAt = body.state_updated_at;
     }
   } catch (_e) { /* tolerable — guard just becomes a no-op for this commit */ }
   // Reconcile: suppress next state poll for ~1.5s to avoid stale-GET flicker.
@@ -1181,7 +1195,13 @@ async function commitQueueChange(newQueues, opts) {
   lastFingerprint.issues = fingerprintIssues(snap.issues || [], lastGoodQueues);
   lastFingerprint.defaultMode = String(lastGoodDefaultMode);
 
-  const ok = await postQueue(newQueues, opts);
+  pendingPosts++;
+  let ok;
+  try {
+    ok = await postQueue(newQueues, opts);
+  } finally {
+    pendingPosts--;
+  }
   if (!ok && previous) {
     // Revert immediately; do not wait for next poll.
     lastGoodQueues = previous;
