@@ -344,6 +344,122 @@ test_dashboard_mutex_error_strings_present() {
   fi
 }
 
+# --- #325: sprint-mode worktree gate (Phase 1 preamble + Phase 5 land) ---
+#
+# Sprint mode previously wrote ISSUES_PLAN.md (Phase 1 row-writer) and
+# SPRINT_REPORT.md (Phase 5 append) directly to main's working tree when
+# main_protected: true. PR #252 fixed standalone `## Sync` with an
+# ensure-worktree.sh preamble; sprint mode was missed. These tests guard
+# the parity fix shipped for #325.
+
+test_325_sprint_phase1_has_ensure_worktree_preamble() {
+  # Locate the Phase 1 header. The preamble lives under "## Phase 1 —
+  # Preflight & Sync" inside the "### Sprint tracking sentinel" block.
+  local phase1_line phase1b_line preamble_line
+  phase1_line=$(grep -nE '^## Phase 1 — Preflight & Sync' "$SKILL" | head -1 | cut -d: -f1)
+  phase1b_line=$(grep -nE '^## Phase 1b' "$SKILL" | head -1 | cut -d: -f1)
+  if [ -z "$phase1_line" ] || [ -z "$phase1b_line" ]; then
+    fail "#325 Phase 1 has ensure-worktree.sh preamble" "Phase 1 / Phase 1b header not found"
+    return
+  fi
+  # The preamble's distinguishing signature: the helper-path assignment
+  # to the create-worktree ensure-worktree.sh script.
+  preamble_line=$(awk -v start="$phase1_line" -v end="$phase1b_line" \
+    'NR>=start && NR<end && /create-worktree\/scripts\/ensure-worktree\.sh/ { print NR; exit }' "$SKILL")
+  if [ -n "$preamble_line" ]; then
+    pass "#325 Phase 1 has ensure-worktree.sh preamble (line $preamble_line)"
+  else
+    fail "#325 Phase 1 has ensure-worktree.sh preamble" "ensure-worktree.sh not invoked between Phase 1 and Phase 1b"
+  fi
+
+  # The preamble must also pass --pipeline-id "$PIPELINE_ID" so the
+  # worktree's purpose tag is bound to the per-sprint scope. Look for
+  # the flag AFTER the helper line (so we don't accept a prose comment
+  # mentioning the flag as proof that the preamble passes it).
+  local pid_line
+  pid_line=$(awk -v start="$preamble_line" -v end="$phase1b_line" \
+    'NR>start && NR<end && /--pipeline-id "\$PIPELINE_ID"/ { print NR; exit }' "$SKILL")
+  if [ -n "$pid_line" ]; then
+    pass "#325 Phase 1 preamble passes --pipeline-id \"\$PIPELINE_ID\" (line $pid_line)"
+  else
+    fail "#325 Phase 1 preamble passes --pipeline-id \"\$PIPELINE_ID\"" "flag not found in preamble body (after helper line $preamble_line)"
+  fi
+}
+
+test_325_sprint_id_lifted_above_preamble() {
+  # The plan's correctness condition: SPRINT_ID/PIPELINE_ID must be
+  # constructed BEFORE the ensure-worktree.sh helper is invoked, because
+  # the helper consumes --pipeline-id "$PIPELINE_ID". A prior version
+  # of the sentinel block had the construction AFTER the (non-existent)
+  # preamble; lifting it above is the structural fix.
+  local sprint_id_line preamble_line
+  # Find the SPRINT_ID assignment line within Phase 1 (first occurrence
+  # of the canonical assignment idiom; sentinel block lifts it).
+  local phase1_line phase1b_line
+  phase1_line=$(grep -nE '^## Phase 1 — Preflight & Sync' "$SKILL" | head -1 | cut -d: -f1)
+  phase1b_line=$(grep -nE '^## Phase 1b' "$SKILL" | head -1 | cut -d: -f1)
+  if [ -z "$phase1_line" ] || [ -z "$phase1b_line" ]; then
+    fail "#325 SPRINT_ID lifted above preamble" "Phase 1 / Phase 1b header not found"
+    return
+  fi
+  sprint_id_line=$(awk -v start="$phase1_line" -v end="$phase1b_line" \
+    'NR>=start && NR<end && /^SPRINT_ID="sprint-\$\(date -u/ { print NR; exit }' "$SKILL")
+  preamble_line=$(awk -v start="$phase1_line" -v end="$phase1b_line" \
+    'NR>=start && NR<end && /create-worktree\/scripts\/ensure-worktree\.sh/ { print NR; exit }' "$SKILL")
+  if [ -z "$sprint_id_line" ]; then
+    fail "#325 SPRINT_ID lifted above preamble" "SPRINT_ID construction line not found in Phase 1"
+    return
+  fi
+  if [ -z "$preamble_line" ]; then
+    fail "#325 SPRINT_ID lifted above preamble" "ensure-worktree.sh preamble not found in Phase 1"
+    return
+  fi
+  if [ "$sprint_id_line" -lt "$preamble_line" ]; then
+    pass "#325 SPRINT_ID construction precedes preamble (lines $sprint_id_line < $preamble_line)"
+  else
+    fail "#325 SPRINT_ID construction precedes preamble" "SPRINT_ID at $sprint_id_line, preamble at $preamble_line — must be lifted above"
+  fi
+}
+
+test_325_phase5_has_commit_and_landpr_dispatch() {
+  # The Phase 5 commit + /land-pr dispatch block lives between the Phase 5
+  # header and the Phase 6 header. Two distinguishing signatures:
+  #  (a) a `docs(sprint): tracker rows + sprint report` commit message
+  #  (b) a `Skill: { skill: "land-pr"` dispatch comment with --landed-source=fix-issues-sprint
+  local phase5_line phase6_line commit_line dispatch_line
+  phase5_line=$(grep -nE '^## Phase 5 — Write Sprint Report' "$SKILL" | head -1 | cut -d: -f1)
+  phase6_line=$(grep -nE '^## Phase 6 — Land' "$SKILL" | head -1 | cut -d: -f1)
+  if [ -z "$phase5_line" ] || [ -z "$phase6_line" ]; then
+    fail "#325 Phase 5 has commit + /land-pr dispatch" "Phase 5 / Phase 6 header not found"
+    return
+  fi
+  commit_line=$(awk -v start="$phase5_line" -v end="$phase6_line" \
+    'NR>=start && NR<end && /docs\(sprint\): tracker rows \+ sprint report/ { print NR; exit }' "$SKILL")
+  dispatch_line=$(awk -v start="$phase5_line" -v end="$phase6_line" \
+    'NR>=start && NR<end && /Skill: \{ skill: "land-pr"/ && /\$LAND_ARGS/ { print NR; exit }' "$SKILL")
+  if [ -n "$commit_line" ]; then
+    pass "#325 Phase 5 has 'docs(sprint): tracker rows + sprint report' commit (line $commit_line)"
+  else
+    fail "#325 Phase 5 has 'docs(sprint): tracker rows + sprint report' commit" "commit message not found between Phase 5 and Phase 6"
+  fi
+  if [ -n "$dispatch_line" ]; then
+    pass "#325 Phase 5 has /land-pr Skill dispatch (line $dispatch_line)"
+  else
+    fail "#325 Phase 5 has /land-pr Skill dispatch" "Skill: { skill: \"land-pr\" ... \$LAND_ARGS } not found between Phase 5 and Phase 6"
+  fi
+
+  # The Phase 5 dispatch must NOT pass an auto-merge flag — sprint
+  # landing is interactive (matches standalone sync convention).
+  local auto_in_args
+  auto_in_args=$(awk -v start="$phase5_line" -v end="$phase6_line" \
+    'NR>=start && NR<end && /LAND_ARGS=/ && /--auto/ { print NR }' "$SKILL")
+  if [ -z "$auto_in_args" ]; then
+    pass "#325 Phase 5 /land-pr dispatch is interactive (no --auto)"
+  else
+    fail "#325 Phase 5 /land-pr dispatch is interactive (no --auto)" "found --auto in LAND_ARGS at line(s): $auto_in_args"
+  fi
+}
+
 # --- Mirror parity -------------------------------------------------------
 
 test_mirror_in_sync() {
@@ -356,7 +472,7 @@ test_mirror_in_sync() {
   fi
 }
 
-echo "=== /fix-issues sync-mode bundle (#280 #282 #300 #301) regression guards ==="
+echo "=== /fix-issues sync-mode + sprint-mode (#280 #282 #300 #301 #325) regression guards ==="
 test_301_regex_matches_markdown_bold_and_heading
 test_301_source_uses_qP_lookarounds
 test_282_success_set_is_merged_only
@@ -367,6 +483,9 @@ test_dashboard_token_recognized_in_phase0
 test_dashboard_phase2_branch_present
 test_dashboard_uses_python_json_not_bash_regex
 test_dashboard_mutex_error_strings_present
+test_325_sprint_phase1_has_ensure_worktree_preamble
+test_325_sprint_id_lifted_above_preamble
+test_325_phase5_has_commit_and_landpr_dispatch
 test_mirror_in_sync
 
 echo ""
