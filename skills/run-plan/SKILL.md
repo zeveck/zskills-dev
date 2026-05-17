@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.17+b05b9b"
+  version: "2026.05.17+193545"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -35,24 +35,36 @@ through multi-phase plans autonomously.
 - **finish** (optional) — run ALL remaining phases sequentially until the
   plan is complete. `finish` is approval to START — do not ask for
   confirmation before the first phase (the user already said "finish").
-  Without `auto`: pauses BETWEEN phases to show results and ask "continue
-  to next phase?" With `auto`: each phase runs as its own cron-fired
-  top-level turn (~5 min between phases via one-shot crons scheduled by
-  Phase 5c). The first phase runs immediately; each subsequent phase is
-  scheduled after the prior phase lands. Preserves fresh context per
-  phase — no late-phase fatigue.
+  Without `unattended` (or the `finish auto` composite alias): pauses
+  BETWEEN phases to show results and ask "continue to next phase?" With
+  `unattended` (or the `finish auto` composite alias): each phase runs
+  as its own cron-fired top-level turn (~5 min between phases via
+  one-shot crons scheduled by Phase 5c). The first phase runs immediately;
+  each subsequent phase is scheduled after the prior phase lands. Preserves
+  fresh context per phase — no late-phase fatigue. `auto` (without
+  `unattended`) independently controls whether per-phase `/land-pr`
+  dispatches request auto-merge (passes `--auto`); it no longer implies
+  between-phase autonomy on its own.
   Each phase still gets full verification, testing, and all safety rails.
   If any phase fails verification or hits a conflict, stops there.
   **`finish` and `every` are mutually exclusive.** `finish auto` schedules
   its own ~5-min one-shot crons internally. `every N` schedules a recurring
   cron at user-set cadence. Combining them would produce two overlapping
   cron schedules. Use one or the other.
-- **auto** (optional) — bypass approval gates, auto-land to main via cherry-pick
-- **unattended** (optional) — skip scope-confirmation / approval prompts so
-  the skill can run without an attended user. Phase 3 binds this to the
-  model-layer "Without `auto` / With `auto`" gates. The `finish auto`
-  composite hoists BOTH `auto` and `unattended` (backward-compat alias per
-  D2-RP). See references/auto-unattended-semantics.md.
+- **auto** (optional) — narrow auto-merge pass-through (Phase 3 D2/D9):
+  controls ONLY whether per-phase `/land-pr` dispatches request auto-merge
+  (i.e. passes `--auto`). On its own, `auto` no longer implies autonomous
+  between-phase advance — use `unattended` for that. During the 3-month D5
+  migration window (`MIGRATION_END_DATE`, see parser), standalone `auto`
+  is silently promoted to `auto unattended` with a stderr NOTE; after
+  that date, the promote is removed.
+- **unattended** (optional) — skip scope-confirmation / approval prompts
+  and human-review pauses (between-phase pause, drift findings,
+  staleness check, verifier-fail review) so the skill can run without
+  an attended user. Phase 3 binds this to all the model-layer
+  "Without `unattended` / With `unattended`" gates. The `finish auto`
+  composite hoists BOTH `auto` and `unattended` (backward-compat alias
+  per D2-RP). See references/auto-unattended-semantics.md.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -120,6 +132,7 @@ value. Values are exactly `"finish"`, `"finish-auto"`, or empty —
 nothing else is valid. Any downstream check that reads `$FINISH_MODE`
 must match against these three states.
 
+<!-- allow-hardcoded: TZ=America/New_York reason: WI 3.3 migration auto-promote uses America/New_York to compare against the hardcoded MIGRATION_END_DATE (also in America/New_York per the design note); per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
 ```bash
 # Detect finish mode (canonical values: "finish", "finish-auto", "")
 FINISH_MODE=""
@@ -141,9 +154,26 @@ UNATTENDED_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]]) ]]; then
   UNATTENDED_FLAG=1
 fi
+
+# Migration auto-promote (WI 3.3, D5 Layer 1 — 3-month migration window).
+# Until MIGRATION_END_DATE, treat standalone `auto` (no `unattended`, no
+# `finish auto` composite) as both flags — preserves the legacy "autonomous
+# between-phase advance" semantic while users (and crons that were born
+# pre-migration) update their invocations to explicit `auto unattended`.
+# After MIGRATION_END_DATE, this entire block is removed; legacy `auto`-only
+# invocations no longer auto-advance between phases.
+MIGRATION_END_DATE="2026-08-17"
+if [ "$AUTO_FLAG" = "1" ] && [ "$UNATTENDED_FLAG" = "0" ] && [ "$FINISH_MODE" != "finish-auto" ]; then
+  if [ "$(TZ=America/New_York date +%Y-%m-%d)" \< "$MIGRATION_END_DATE" ]; then
+    UNATTENDED_FLAG=1
+    echo "NOTE: 'auto' now means auto-merge ONLY (no autonomous between-phase advance). Promoting to 'auto unattended' for compatibility through $MIGRATION_END_DATE. Update your invocation (or cron prompt) to include 'unattended' explicitly. See references/auto-unattended-semantics.md." >&2
+  fi
+fi
+
 # Backward-compatible composite: `finish auto` implies BOTH flags.
 # The post-detection hoist preserves the load-bearing user workflow
-# `/run-plan plan.md finish auto every 4h`.
+# `/run-plan plan.md finish auto every 4h`. Composite always takes
+# precedence (no-op when migration promote already set both flags).
 if [ "$FINISH_MODE" = "finish-auto" ]; then
   AUTO_FLAG=1
   UNATTENDED_FLAG=1
@@ -345,7 +375,7 @@ If `$ARGUMENTS` contains `next` (case-insensitive):
    - If found: parse the cron expression and compute the next fire time.
      Use `date +%Z` for the timezone. Show both relative and absolute:
      > Next run-plan phase in ~2h 15m (~8:30 PM ET, cron XXXX).
-     > Prompt: Run /run-plan plans/FEATURE_PLAN.md auto every 4h
+     > Prompt: Run /run-plan plans/FEATURE_PLAN.md auto unattended every 4h
    - If none found: `No active /run-plan cron in this session.`
 4. **Exit.** Do not proceed to any phase.
 
@@ -401,10 +431,24 @@ If `$ARGUMENTS` contains `every <schedule>`:
 3. **Construct the cron prompt.** Strip the phase number (so each invocation
    auto-detects the next incomplete phase). Always include `now` in the cron
    prompt so each cron fire runs immediately AND re-registers itself. Note:
-   this `now` is for the CRON's invocation, not the current invocation:
+   this `now` is for the CRON's invocation, not the current invocation.
+
+   **Assemble the prompt from `$AUTO_FLAG` / `$UNATTENDED_FLAG` state, not
+   from literal `$ARGUMENTS` substrings** (WI 3.2 — prevents legacy-shape
+   prompts from being born stale during/after the D5 migration window).
+   Cron-fired `every`-mode runs MUST advance between phases without human
+   interaction, so include `unattended` unconditionally for new `every`
+   crons. Include `auto` if `$AUTO_FLAG=1` (preserves auto-merge pass-through
+   on the cron-fired land):
+   ```bash
+   CRON_TOKENS=""
+   [ "${AUTO_FLAG:-0}" = "1" ] && CRON_TOKENS="$CRON_TOKENS auto"
+   # `unattended` is mandatory for `every`-mode crons (between-phase advance
+   # must be non-interactive). Default-on regardless of $UNATTENDED_FLAG.
+   CRON_TOKENS="$CRON_TOKENS unattended"
+   CRON_PROMPT="Run /run-plan $PLAN_FILE$CRON_TOKENS every $SCHEDULE now"
    ```
-   Run /run-plan <plan-file> auto every <schedule> now
-   ```
+   Default new-cron shape: `Run /run-plan <plan-file> auto unattended every <schedule> now`.
    Note: the phase number is intentionally omitted so the cron auto-advances.
 
 4. **Create the cron** — use `CronCreate`:
@@ -512,7 +556,11 @@ Before parsing, check for stale state from a previous failed run:
    if compgen -G "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed.*" >/dev/null 2>&1; then
      # CronList → check if a "Run /run-plan <plan-file> finish auto" cron
      # already exists (a stale fire from before the failed Delete may have
-     # raced ahead of us).
+     # raced ahead of us). The literal `finish auto` composite alias is
+     # preserved indefinitely (D2-RP load-bearing user workflow): on
+     # /run-plan re-entry, the parser sets FINISH_MODE=finish-auto and
+     # hoists BOTH AUTO_FLAG=1 and UNATTENDED_FLAG=1, so the cron-fired
+     # turn runs autonomously and lands with --auto.
      # If exists AND cadence ∈ {*/1, */10, */30, */60} (sane backoff cadence
      #   set, A1 fix): rm cron-recovery-needed.* (already recovered at a
      #   sane cadence; trust it).
@@ -793,9 +841,11 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    contains language like "drafted before," "may need refresh," or "APIs
    and data structures referenced here are based on [another plan's]
    design, not actual code," the plan may be stale:
-   - Without `auto`: tell the user "this plan was drafted before its
-     dependency was implemented. Want me to refresh it with `/draft-plan`?"
-   - With `auto`: dispatch `/draft-plan` on the plan file to update it.
+   - Without `unattended` (or the `finish auto` composite alias): tell
+     the user "this plan was drafted before its dependency was
+     implemented. Want me to refresh it with `/draft-plan`?"
+   - With `unattended` (or the `finish auto` composite alias): dispatch
+     `/draft-plan` on the plan file to update it.
      `/draft-plan` handles existing files as modernizations. After the
      refresh, re-read the plan and continue.
    - Skip this check if the plan file was modified more recently than
@@ -828,7 +878,8 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    5. Collect findings per bullet.
 
    Decision:
-   - **Without `auto`:** present findings:
+   - **Without `unattended` (or the `finish auto` composite alias):**
+     present findings:
      ```
      Pre-dispatch arithmetic drift:
      Phase <N>: <bullet-text>
@@ -839,7 +890,8 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
      Ask user: "(1) proceed (Phase 3.5 will post-correct small
      drift), (2) pause for `/refine-plan`, (3) override (suppress
      this check for this phase)?"
-   - **With `auto`:** if any bullet has drift >20%, dispatch
+   - **With `unattended` (or the `finish auto` composite alias):** if
+     any bullet has drift >20%, dispatch
      `/refine-plan <plan-file>` (plan-level issue, not per-band);
      after refresh, re-read and continue. If all drifts are
      ≤20%, log findings to the phase report and proceed — Phase
@@ -937,9 +989,11 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    or will need their review before landing. No surprises at Phase 6.
 
 9. **Present the phase plan:**
-   - Without `auto`: display the phase summary (name, status, dependencies,
-     work items, UI classification) and **wait for user approval**
-   - With `auto`: proceed immediately
+   - Without `unattended` (or the `finish auto` composite alias):
+     display the phase summary (name, status, dependencies, work items,
+     UI classification) and **wait for user approval**
+   - With `unattended` (or the `finish auto` composite alias): proceed
+     immediately
 
 ### `finish` mode: overall verification after all phases
 
@@ -1616,8 +1670,10 @@ Include this VERBATIM in the verifier dispatch prompt:
    Failure Protocol. The phase was reported as complete with missing work.
 
 3. **If verification fails:**
-   - Without `auto`: present findings, ask user what to do
-   - With `auto`: dispatch a **fresh fix agent** for the missing items.
+   - Without `unattended` (or the `finish auto` composite alias):
+     present findings, ask user what to do
+   - With `unattended` (or the `finish auto` composite alias): dispatch
+     a **fresh fix agent** for the missing items.
      The fix agent receives: the worktree path, the verbatim plan text,
      the specific items that failed verification, and instructions to
      complete them — not summarize them, not note them, COMPLETE them.

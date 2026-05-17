@@ -187,6 +187,17 @@ check       run-plan "stop-precedence"              'Takes precedence'
 check_fixed run-plan "landing-default"              'LANDING_MODE="cherry-pick"'
 check_fixed run-plan "finish-mode resolution"       'FINISH_MODE="finish-auto"'
 check_fixed run-plan "finish-mode default empty"    'FINISH_MODE=""'
+# Phase 3 AC3.8: assert unattended-gating prose lands at the model-layer
+# sites previously gated on `auto`. The phrase "Without `unattended`"
+# appears at each rewritten site (phase summary, drift findings,
+# staleness check, finish/finish-auto pause). The composite-alias
+# annotation "(or the `finish auto` composite alias)" is also asserted.
+check       run-plan "unattended-gating prose"      'Without `unattended`'
+check_fixed run-plan "finish-auto composite-alias annotation" '(or the `finish auto` composite alias)'
+# Phase 3 WI 3.3: migration auto-promote NOTE block must be present and
+# bound to MIGRATION_END_DATE.
+check_fixed run-plan "WI 3.3 migration auto-promote" 'MIGRATION_END_DATE="2026-08-17"'
+check       run-plan "WI 3.3 promote NOTE"          "Promoting to 'auto unattended' for compatibility"
 check       run-plan "direct+main_protected guard"  'direct mode is incompatible with main_protected'
 check_fixed run-plan "cherry-pick create-worktree"  '--prefix cp'
 check_fixed run-plan "cp worktree slug (single-phase)" '"${PLAN_SLUG}-phase-${PHASE}"'
@@ -432,6 +443,15 @@ check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
 #     /fix-issues unconditionally dispatches /land-pr per-issue
 #     (regardless of AUTO).
 check       fix-issues "auto-gating prose"          'Auto-flag gating depends on landing mode|gated on \$AUTO'
+# Phase 3 AC3.8: post-rewrite, the auto-flag block must explicitly clarify
+# it governs auto-merge pass-through, not approval-skip (which moved to
+# `unattended` per D2/D9). Also assert the new `unattended`-gating prose
+# lands for the issue-list approval gate.
+check_fixed fix-issues "auto-gating clarified to merge" '(auto-merge) pass-through to `/land-pr` per landing mode'
+check       fix-issues "unattended-gating prose"     'Without `unattended`:'
+# Phase 3 WI 3.7: /fix-issues migration auto-promote NOTE block.
+check_fixed fix-issues "WI 3.7 migration auto-promote" 'MIGRATION_END_DATE="2026-08-17"'
+check       fix-issues "WI 3.7 promote NOTE"        "Promoting to 'auto unattended' for compatibility"
 check_fixed fix-issues "pr ci+fix-cycle always run" 'CI polling, and the fix cycle ALL run regardless of'
 check_fixed fix-issues "only merge gated on auto"   'Only `gh pr merge --auto --squash` is gated on `auto`'
 check_fixed fix-issues "cherry-pick defers to fix-report" 'Cherry-picks land via `/fix-report`'
