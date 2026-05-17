@@ -29,15 +29,23 @@ Anthropic's published skill-development guidance suggests roughly
 to ~30 skills, that's ~3,000 words ≈ ~12,000 tokens ≈ ~6% of a 200k
 context.
 
-This project's chosen target is tighter: ~7,500 chars ≈ ~1,875 tokens
+This project's chosen target is tighter: ~7,500 bytes ≈ ~1,875 tokens
 ≈ <1% of context. The motivation is to leave headroom for skill growth
 (more skills, occasional necessary description expansion) without
 crossing the threshold where descriptions begin meaningfully crowding
 out task context.
 
-- **Hard cap: 7,500 chars** — test exits 1 above.
-- **Soft warn: 7,000 chars** — test prints WARN, exits 0 between 7,000
+- **Hard cap: 7,500 bytes** — test exits 1 above.
+- **Soft warn: 7,000 bytes** — test prints WARN, exits 0 between 7,000
   and 7,500.
+
+Units note: the budget and the enforcing test count BYTES, not
+characters. The test runs under `LC_ALL=C` and uses bash `${#var}`,
+which is a byte count in the C locale. Multibyte UTF-8 code points
+(e.g. em-dash U+2014 = 3 bytes) contribute more than one byte each.
+Bytes are the right proxy for token/context cost on the wire, and a
+byte count avoids an awk/python detour for what bash measures natively.
+See issue #339 for history.
 
 Both thresholds are project policy, not Anthropic mandates. The
 two-tier design (vs. a single hard cap) ensures that growth into the
@@ -46,15 +54,15 @@ hard-fails CI, giving authors one round of warning to trim.
 
 ## 3. Per-skill ceiling
 
-Normal-case skills aim for **≤ 350 chars** in their description.
+Normal-case skills aim for **≤ 350 bytes** in their description.
 Documented exceptions:
 
-- **`/land-pr` — 450 chars.** Helper-only contract from PR #173.
+- **`/land-pr` — 450 bytes.** Helper-only contract from PR #173.
   The description carries explicit "designed for agent dispatch /
   not for interactive human use" framing to prevent humans from
   invoking it directly; that framing is non-negotiable and pushes
   the description over the 350 default.
-- **`/quickfix` — 400 chars.** Full-lifecycle framing from PR #164.
+- **`/quickfix` — 400 bytes.** Full-lifecycle framing from PR #164.
   The description enumerates the multi-stage workflow (research →
   fix → land) to disambiguate quickfix from neighboring one-shot
   skills; the enumeration earns the additional budget.
@@ -98,7 +106,7 @@ Two tests in `tests/`:
   pure bash + awk; no jq. Extracts `description:` from every source
   SKILL.md, handling both block-scalar (`description: >-` + indented
   continuation) and single-line (`description: <text>`) forms.
-  Computes the total char count. Hard-fails above 7,500; soft-warns
+  Computes the total byte count. Hard-fails above 7,500; soft-warns
   between 7,000 and 7,500. Registered in `tests/run-all.sh` between
   the content-hash and version-compare entries.
 - **`tests/test-skill-conformance.sh`** — literal-grep checks for
