@@ -379,7 +379,7 @@ if [ -f "$_STUB_LIB" ]; then
     echo "create-worktree: post-create-worktree.sh exited ${ZSKILLS_STUB_RC}; worktree $WT_PATH left in place for inspection" >&2
     exit 9
   fi
-elif [ -n "$CLAUDE_PROJECT_DIR" ]; then
+elif [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
   echo "create-worktree: stub-lib missing at $_STUB_LIB; consumer stubs disabled. Run /update-zskills to repair." >&2
 fi
 unset _STUB_LIB
