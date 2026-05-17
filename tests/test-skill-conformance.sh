@@ -442,7 +442,8 @@ check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
 #     comment-text pattern is brittle; assertion now verifies that
 #     /fix-issues unconditionally dispatches /land-pr per-issue
 #     (regardless of AUTO).
-check       fix-issues "auto-gating prose"          'Auto-flag gating depends on landing mode|gated on \$AUTO'
+check       fix-issues "auto-gating prose (Phase 3+ — gates on auto for merge, unattended for approval)" 'Auto-flag gating depends on landing mode'
+check       fix-issues "approval-skip gated on unattended (Phase 3 D2/D9)" 'approval-skip.*unattended|governed by `unattended`|approval gates? (when|on).*unattended'
 # Phase 3 AC3.8: post-rewrite, the auto-flag block must explicitly clarify
 # it governs auto-merge pass-through, not approval-skip (which moved to
 # `unattended` per D2/D9). Also assert the new `unattended`-gating prose
@@ -517,6 +518,32 @@ check       do          "argument-hint [unattended]" 'argument-hint:.*\[unattend
 # UNATTENDED_FLAG parser-arm coverage explicit per the Phase 6 spec,
 # not just an implicit `UNATTENDED_FLAG=1` substring match.
 check_fixed do          "unattended regex full"  '=~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])'
+
+# QUICKFIX_GRAMMAR_REDESIGN Phase 7 WI 7.1 — explicit per-skill UNATTENDED_FLAG
+# initializers + composite-block lock for /run-plan's `finish auto` hoist
+# (multi-line; uses `grep -Pz` for multiline match — falls back to inline
+# `awk` if `grep -P` is unsupported in target environment, but we ship with
+# the -Pz form since GNU grep is the project baseline).
+echo ""
+echo "=== Phase 7 WI 7.1 — auto/unattended convention lock ==="
+# Composite-block multi-line assertion. The block lives in run-plan/SKILL.md
+# and looks like:
+#   if [ "$FINISH_MODE" = "finish-auto" ]; then
+#     AUTO_FLAG=1
+#     UNATTENDED_FLAG=1
+#   fi
+# This single-line pattern can't catch it, so use grep -Pz (multiline).
+if grep -Pzo 'FINISH_MODE.*finish-auto.*\n[[:space:]]+AUTO_FLAG=1.*\n[[:space:]]+UNATTENDED_FLAG=1' "$REPO_ROOT/skills/run-plan/SKILL.md" > /dev/null 2>&1; then
+  pass "[run-plan] finish-auto composite hoists both flags (multi-line)"
+else
+  fail "[run-plan] finish-auto composite hoists both flags (multi-line)" 'FINISH_MODE="finish-auto" → AUTO_FLAG=1 → UNATTENDED_FLAG=1 block'
+fi
+
+# Negative: no --yes arm anywhere in /quickfix beyond the migration-redirect
+# error message itself (that single mention is acceptable as a hard-error
+# legacy redirect; absence of YES_FLAG variable already covered above by
+# `no YES_FLAG variable (AC4.13)`).
+check_not   quickfix    "no --yes accept arm (Phase 4)" '--yes\)[[:space:]]*YES_FLAG'
 
 # AC2.1b — Bash-pattern guard. Run the smoke test directly so a future
 # regex tweak (e.g. adding `*`) that silently breaks the standalone-only
