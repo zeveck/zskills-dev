@@ -712,3 +712,47 @@ Open issues still 3, all skip-class: #67 (author-deferred), #217 (author-deferre
 
 **2nd of 3 consecutive empty runs.** Next empty fire will surface the "consider `/fix-issues stop`" hint per spec.
 
+
+## Sprint — 2026-05-17 04:26 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**Pipeline:** `fix-issues.sprint-20260517-080452-326`
+**Sprint-level worktree:** `/tmp/zskills-fix-issues-sprint-20260517-080452-326` (**first sprint to fully exercise the post-PR-#331 design**: cap check ran BEFORE the gate with the new predicate, SPRINT_REPORT.md write lands inside this worktree, sprint-level `/land-pr` ships it)
+**Cron:** `d8921920` (`*/45 * * * *`); user-typed `now` reissue.
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #326 | `test-create-worktree.sh` Case 22 fails: `CLAUDE_PROJECT_DIR` unbound (line 382 of `create-worktree.sh`) | /tmp/zskills-fix-issue-326 | `1151199` | full suite 3191/3191; Case 22 now PASS (was failing pre-fix, surfaced by #322's verifier and confirmed pre-existing) | PASS (verifier confirmed minimal `:-` fallback at line 382 matches adjacent line 372's idiom; branch is stub-lib-missing diagnostic only; behavior on the set path unchanged; hash `d4605f` recomputed and matches `metadata.version: 2026.05.17+d4605f`; source/mirror byte-identical) | N/A (script-internal robustness fix; no user-facing behavior change) |
+
+### Skipped — Author-deferred
+
+| # | Title | Why |
+|---|-------|-----|
+| #67 | GitLab (glab) support | "not ready" |
+| #217 | Relocate plan execution reports | "not immediately" |
+
+### Skipped — Design discussion (needs /draft-plan)
+
+| # | Title | Why |
+|---|-------|-----|
+| #310 | `/quickfix` argument-grammar inconsistency | Cross-skill design |
+
+### Spec verification — new cap-check + worktree gate
+
+This sprint exercised the design contract from PR #329 (worktree gate) + PR #331 (cap-check predicate + defer-path strand fix):
+
+- **Live worktree count check (new predicate):** LIVE_COUNT=0 (post-predicate). The 3 alive `fix-issue-{321,322,325}` worktrees were correctly EXCLUDED because each has `.landed status: landed`. Old predicate (pre-#331) would have reported LIVE_COUNT=3 and deferred. New predicate works.
+- **Cap-check ran BEFORE the sprint worktree gate:** confirmed by stderr ordering. Defer-path would have exited without creating a worktree (it didn't defer, but the structural property holds).
+- **Sprint worktree gate created the sprint-level worktree:** `/tmp/zskills-fix-issues-sprint-20260517-080452-326` exists on branch `fix-issues-sprint-20260517-080452-326`.
+- **Phase 5 SPRINT_REPORT.md write is happening INSIDE this worktree** (not on main). `git status` in main is clean.
+- **Phase 6 sprint-level `/land-pr` (next step)** will ship this SPRINT_REPORT.md commit via the new design's exit. After this PR merges, the deferral-strand failure mode from earlier in the session is fully closed.
+
+### Landing
+
+PR mode + auto. Per-issue `/land-pr --auto` for #326, then sprint-level `/land-pr --auto` for SPRINT_REPORT.md.
+
+- #326 → PR pending
+- SPRINT_REPORT.md commit → PR pending
+
