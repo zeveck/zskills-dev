@@ -1,19 +1,19 @@
 ---
 name: do
-argument-hint: "<description> [worktree] [push] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
+argument-hint: "<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query]"
 description: >-
   Lightweight task dispatcher for ad-hoc work: documentation, examples,
   refactoring, content updates. Worktree/direct/pr landing modes via flag
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.17+123e05"
+  version: "2026.05.17+0b6de4"
 ---
 
-# /do \<description> [worktree] [push] [pr] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
+# /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
 
 Execute small, ad-hoc tasks with structured research, verification, and
-optional isolation or auto-push. Can be scheduled for recurring maintenance
+optional isolation or autonomous landing. Can be scheduled for recurring maintenance
 tasks. For work that doesn't warrant the full ceremony of `/run-plan` (plan
 phases) or `/fix-issues` (batch bug fixing).
 
@@ -37,7 +37,7 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
 ## Arguments
 
 ```
-/do <description> [worktree|direct|pr] [push] [auto] [every SCHEDULE] [now]
+/do <description> [worktree|direct|pr] [auto] [every SCHEDULE] [now]
 /do stop | next
 ```
 
@@ -53,18 +53,13 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   - When no flag is given, read `execution.landing` from config.
     (`cherry-pick` → worktree, `pr` → pr, `direct` → direct, missing
     config → direct.)
-- **push** (optional) — auto-push to remote after verification passes.
-  Upgrades verification to use a **separate verification agent** running
-  `/verify-changes`. Push never happens without verification passing
-  first. Ignored in `pr` mode (PR mode handles push internally).
-- **auto** (optional, positional, case-insensitive) — opt into auto-merge
-  in PR mode. Mirrors the convention in `/quickfix`, `/run-plan`,
-  `/fix-issues`. Passes `--auto` to `/land-pr`, which requests GitHub
-  auto-merge once required checks pass. No effect in `direct` or
-  `worktree` mode (only `modes/pr.md` reads `AUTO_FLAG`). `auto` is the
-  broad-autonomy token across all 4 PR-landing skills; in `/do` it is
-  functionally auto-merge only because `/do` has no skill-internal
-  confirmation gate to bypass.
+- **auto** (optional, positional, case-insensitive) — land autonomously.
+  PR mode: opens PR + requests auto-merge via `--auto` to `/land-pr`,
+  which requests GitHub auto-merge once required checks pass. Worktree
+  mode: dispatches `/verify-changes`, cherry-picks to main, pushes.
+  Direct mode: dispatches `/verify-changes`, pushes main. Verification
+  always passes before any push or PR auto-merge. Mirrors the broad-
+  autonomy convention in `/quickfix`, `/run-plan`, `/fix-issues`.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -95,11 +90,10 @@ Meta-commands (`stop`, `next`, `now`) bypass Phase 0a triage and Phase 0b review
 
 If the first word is NOT a meta-command, it's a regular task. Parse
 trailing flags from the END backward:
-- `push` — recognized at the end
 - `worktree` — recognized at the end (landing flag)
 - `direct` — recognized at the end (landing flag)
 - `pr` — recognized at the end (landing flag; use extended pattern with `.!?` punctuation, since task descriptions are prose-like and "pr" may appear as "PR." at end of sentence)
-- `auto` — recognized anywhere (case-insensitive positional token; PR-mode auto-merge opt-in. Mirrors /quickfix, /run-plan, /fix-issues. No effect outside PR mode.)
+- `auto` — recognized anywhere (case-insensitive positional token; broad-autonomy opt-in across all 3 modes. Mirrors /quickfix, /run-plan, /fix-issues.)
 - `every <schedule>` — recognized at the end (e.g., `every 4h`, `every day at 9am`)
 - `now` — recognized at the end (only meaningful with `every`: run now AND schedule)
 
@@ -118,8 +112,8 @@ This means:
 - `/do now` — trigger (if one) or ask (if multiple)
 - `/do now Check docs` — trigger the "Check docs" cron
 - `/do Push the latest changes` — description only, no flags
-- `/do Update the presentation push` — description + push flag
-- `/do Fix the tooltip bug worktree push` — description + both flags
+- `/do Update the presentation auto` — description + auto (direct + push)
+- `/do Fix the tooltip bug worktree auto` — worktree + verify + cherry-pick + push
 - `/do Check docs every day at 9am` — schedule "Check docs" daily
 - `/do Add dark mode. pr` — description + pr flag (PR mode)
 - `/do Add dark mode pr auto` — PR mode + auto-merge opt-in
@@ -128,7 +122,7 @@ Examples:
 - `/do Add example models for Integrator and Derivative blocks`
 - `/do Sort the screenshots in session-sequence-snapshots`
 - `/do Refactor color constants in main.css worktree`
-- `/do Update the presentation with Phase 3 results push`
+- `/do Update the presentation with Phase 3 results auto`
 - `/do Make sure docs are up to date every day at 9am`
 - `/do Check for broken links in examples every 12h now`
 - `/do Add dark mode to editor pr`
@@ -299,7 +293,7 @@ needed).
 |--------------------|---------|-----|
 | `/do Fix README typo` | PROCEED | one concept, one likely file |
 | `/do Sort the screenshots in session-sequence-snapshots` | PROCEED | one concrete object |
-| `/do Update the presentation with Phase 3 results push` | PROCEED | concrete verb + object |
+| `/do Update the presentation with Phase 3 results auto` | PROCEED | concrete verb + object |
 | `/do add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/do improve` | REDIRECT → ask user | vague verb, no object |
 | `/do fix #142` | REDIRECT → /fix-issues | references issue number |
@@ -480,7 +474,7 @@ written** (no tracking for /do). No worktree, no commits, no cron.
 
 On REJECT and `$FORCE -eq 1`: print override message. Continue to Phase 0c.
 
-Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); the `push` flag with code changes (`worktree`/`direct` mode only — see Phase 3) triggers /verify-changes after execution. PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
+Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); the `auto` flag with code changes (`worktree`/`direct` mode only — see Phase 3) triggers /verify-changes after execution. PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
 
 ## Phase 0c — Schedule (if `every` is present)
 
@@ -499,7 +493,7 @@ If `$ARGUMENTS` contains `every <schedule>`:
 
 2. **Deduplicate** — `CronList` and check for existing `/do` crons.
    Extract the task description from each cron's prompt by stripping
-   `Run /do ` prefix and trailing flags (`every`, `now`, `worktree`, `push`).
+   `Run /do ` prefix and trailing flags (`every`, `now`, `worktree`, `auto`).
    - If an existing cron's extracted description **exactly matches** (case-
      insensitive) the new task's description, replace it (`CronDelete` +
      recreate). This is a re-registration of the same task.
@@ -510,9 +504,9 @@ If `$ARGUMENTS` contains `every <schedule>`:
      list existing crons and ask: "Replace this one, or keep both?"
 
 3. **Construct `TASK_DESCRIPTION_FOR_CRON`** — strip every/now/--force/--rounds
-   tokens from `$ARGUMENTS` but PRESERVE pr/worktree/direct/push tokens (these
+   tokens from `$ARGUMENTS` but PRESERVE pr/worktree/direct/auto tokens (these
    need to round-trip into the cron prompt so each cron fire reproduces the
-   user's landing-mode intent).
+   user's landing-mode and autonomy intent).
 
    Quoted-description carve-out: /do supports a leading quoted description
    (see "Detection" above). When `$ARGUMENTS` begins with `"..."`, peel the
@@ -566,7 +560,7 @@ If `$ARGUMENTS` contains `every <schedule>`:
 
    ```bash
    # Construct cron prompt incrementally so optional flags only appear when set.
-   CRON_PROMPT="Run /do ${TASK_DESCRIPTION_FOR_CRON}"  # description with landing/push tokens preserved
+   CRON_PROMPT="Run /do ${TASK_DESCRIPTION_FOR_CRON}"  # description with landing/auto tokens preserved
    if [ "$FORCE" -eq 1 ]; then
      CRON_PROMPT="$CRON_PROMPT --force"
    fi
@@ -671,7 +665,7 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
   | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
 if [ -z "$TASK_DESCRIPTION" ]; then
-  echo "ERROR: Task description required. Usage: /do <task description> [pr|direct|worktree] [push]"
+  echo "ERROR: Task description required. Usage: /do <task description> [pr|direct|worktree] [auto]"
   exit 1
 fi
 ```
@@ -687,22 +681,15 @@ pre-flight greedy-fallthrough rule (WI 2a.0): a non-numeric trailing
 token after `--rounds` is user prose, not a flag, and must NOT raise
 exit 2.
 
-**Step 3: Check for `push` flag** (trailing):
-```bash
-if [[ "$REMAINING" =~ (^|[[:space:]])push($|[[:space:]]) ]]; then
-  USE_PUSH=true
-fi
-```
-
-`pr` takes precedence: if `LANDING_MODE="pr"`, ignore `push` (PR mode handles push internally).
-
-**Step 4: Re-affirm `FORCE` and `ROUNDS`** (already set by the pre-flight
+**Step 3: Re-affirm `FORCE` and `ROUNDS`** (already set by the pre-flight
 pre-parse; idempotent re-validation in case Phase 1.5 is invoked outside
 the normal entry path — defensive). The regex MUST match the pre-flight
 exactly: numeric-only `[0-9]+` capture with greedy-fallthrough on
 non-numeric (no exit-2 branch — that would contradict the pre-flight's
 contract that `/do fix the bug --rounds in production` is a legitimate
-description).
+description). `AUTO_FLAG` is likewise already set by the pre-flight
+pre-parse (see Pre-flight); Phase 4 (Land) reads it directly without
+re-affirming here.
 
 ```bash
 # Re-affirm (already set by pre-flight pre-parse; idempotent).
@@ -740,12 +727,12 @@ Verification intensity matches the change type (from Phase 1):
 - **Spot-check:** formatting, links, file organization, image references
 - **Do NOT run tests** — running 4,000+ tests for a markdown edit is
   wasteful, and pre-existing failures would block the task unnecessarily
-- **If `push` is present:** dispatch a separate verification agent. Tell
+- **If `auto` is present (worktree/direct mode only):** dispatch a separate verification agent. Tell
   the agent explicitly: "These are content-only changes (no code). Review
   the diff for correctness and completeness — do NOT run `npm test` or
   `npm run test:all`. Your job is: do these changes make sense? Are the
   right files included? Anything accidentally staged? Formatting correct?"
-  Do NOT invoke `/verify-changes` for content-only pushes — it will run
+  Do NOT invoke `/verify-changes` for content-only auto-landings — it will run
   the full test suite regardless. Instead, dispatch a plain review agent.
 
   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is sufficient for content review (Read + Grep cover the main path); the prose preamble above keeps it from running tests. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
@@ -787,7 +774,7 @@ Verification intensity matches the change type (from Phase 1):
   If you touched code and tests fail, they're yours to fix. (See
   CLAUDE.md: "NEVER modify the working tree to check if a failure is
   pre-existing.")
-- **If `push` is present:** dispatch a **separate verification agent**
+- **If `auto` is present (worktree/direct mode only):** dispatch a **separate verification agent**
   running `/verify-changes`. This is the full 7-phase verification:
   diff review, test coverage audit, `npm run test:all`, manual
   verification if UI, fix problems, re-verify until clean. Push only
@@ -817,11 +804,11 @@ Verification intensity matches the change type (from Phase 1):
 
 - Run tests for the code portion
 - Spot-check the content portion
-- If `push`: full `/verify-changes` via separate agent
+- If `auto` (worktree/direct mode): full `/verify-changes` via separate agent
 
-## Phase 4 — Push (if `push` flag present, Path C/B only)
+## Phase 4 — Land (if auto flag present, Path C/B only)
 
-Only reached if Phase 3 verification passed. Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7).
+Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invocation) AND Phase 3 verification passed. Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7; AUTO_FLAG in PR mode is consumed by `modes/pr.md` to request auto-merge via `--auto` to `/land-pr`).
 
 1. **If on main (Path C):**
    ```bash
@@ -850,14 +837,14 @@ Only reached if Phase 3 verification passed. Not applicable to PR mode (Path A �
 
 Brief inline output. No persistent report file.
 
-**On main (no worktree, no push):**
+**On main (no worktree, no auto):**
 ```
 Done. [1-2 sentence summary of what was done]
 Changed: file1.js, file2.md (+N lines)
 Committed: abc1234 — "commit message"
 ```
 
-**On main with push:**
+**On main with auto:**
 <!-- allow-hardcoded: npm run test:all reason: report-template example string the agent prints in its completion message; not an executable command -->
 ```
 Done and pushed. [1-2 sentence summary]
@@ -867,7 +854,7 @@ Pushed to: origin/main
 Verification: clean (npm run test:all passed, /verify-changes clean)
 ```
 
-**In worktree (no push):**
+**In worktree (no auto):**
 ```
 Done. [1-2 sentence summary]
 Worktree: ../do-<slug>/
@@ -877,7 +864,7 @@ To land: git cherry-pick abc1234 def5678
 To discard: git worktree remove ../do-<slug>/
 ```
 
-**In worktree with push:**
+**In worktree with auto:**
 ```
 Done and pushed. [1-2 sentence summary]
 Cherry-picked to main: abc1234, def5678
@@ -901,7 +888,7 @@ Status: pr-ready | pr-ci-failing | landed
 - **Test failures (code changes):** stop, fix the code, re-test. Never
   weaken tests. Never check if failures are pre-existing.
 - **Content issues:** stop, fix formatting/links/references, re-check.
-- **Cherry-pick conflict (worktree + push):** stop, report the conflict.
+- **Cherry-pick conflict (worktree + auto):** stop, report the conflict.
   Do not resolve automatically — conflicts need human judgment.
 - **Push failure (auth, remote, etc.):** stop, report the error.
 - **Task is bigger than expected:** stop, suggest `/run-plan` instead.
@@ -918,7 +905,7 @@ Status: pr-ready | pr-ci-failing | landed
 ## Key Rules
 
 - **Match verification to change type** — content-only tasks skip tests.
-  Code tasks run tests. Push upgrades to full `/verify-changes`.
+  Code tasks run tests. `auto` upgrades to full `/verify-changes`.
 - **Never weaken tests** — fix the code, not the test.
 - **Never modify the working tree to check pre-existing failures** — if
   you touched code and tests fail, fix them. No stash-and-compare, no
@@ -937,8 +924,9 @@ Status: pr-ready | pr-ci-failing | landed
   NOT write any report file under `$ZSKILLS_AUDIT_DIR`
   (e.g., the canonical `SPRINT_REPORT.md` / `PLAN_REPORT.md` artifacts owned by other skills).
   The commit is the artifact.
-- **Push requires verification** — `push` always dispatches a separate
-  verification agent before pushing. No exceptions.
+- **Auto-land requires verification** — `auto` in worktree/direct mode
+  always dispatches a separate verification agent before pushing. No
+  exceptions.
 - **PR mode CI runs through `/land-pr`** — `/do pr` dispatches the
   shared `/land-pr` skill, which polls CI and (on failure) drives a
   fix-cycle agent loop with the task description as work context.
