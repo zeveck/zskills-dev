@@ -485,6 +485,17 @@ check_fixed quickfix    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
 check_fixed quickfix    "unattended case arm"   '[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) UNATTENDED_FLAG=1'
 check       quickfix    "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
 
+# QUICKFIX_GRAMMAR_REDESIGN Phase 4 (AC4.12, AC4.13) — positional
+# from-here/skip-tests/force replace --`-prefixed flags; --yes was
+# removed entirely; WI 1.10 `read -r` block was deleted.
+check_fixed quickfix    "positional from-here arm"   '[fF][rR][oO][mM]-[hH][eE][rR][eE]) FROM_HERE=1'
+check_fixed quickfix    "positional skip-tests arm"  '[sS][kK][iI][pP]-[tT][eE][sS][tT][sS]) SKIP_TESTS=1'
+check_fixed quickfix    "positional force arm"       '[fF][oO][rR][cC][eE]) FORCE=1'
+check_not   quickfix    "no YES_FLAG variable (AC4.13)"          'YES_FLAG'
+check_not   quickfix    "no `read -r answer` block (AC4.13)"     'read -r answer'
+check       quickfix    "argument-hint [from-here]"  'argument-hint:.*\[from-here\]'
+check_not   quickfix    "argument-hint NO [--yes]"   'argument-hint:.*\[--yes\]'
+
 check_fixed run-plan    "AUTO_FLAG init"        'AUTO_FLAG=0'
 check_fixed run-plan    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
 check       run-plan    "unattended regex arm"  'UNATTENDED_FLAG=1'
