@@ -448,13 +448,21 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 6 — Landing gate wiring (WI 1.3 check 3)
+# Case 6 — Landing gate wiring (WI 1.3 check 3, soft-redirect form per #293)
+#
+# Post-#293: the hard error was replaced with a two-line redirect using
+# the WI 1.5.4 printf template. Wiring assertion: LANDING is read AND
+# both worktree → /do worktree AND direct → /commit redirect branches
+# are present in the bash check, AND each branch exits 0.
 # ────────────────────────────────────────────────────────────────────
 if grep -q 'execution.landing' "$SKILL" \
-   && grep -q 'requires execution.landing == "pr"' "$SKILL"; then
-  pass "6  landing gate: execution.landing read, \"pr\"-required error present"
+   && grep -qE '\[ "\$LANDING" = "worktree" \]' "$SKILL" \
+   && grep -qE '\[ "\$LANDING" = "direct" \]' "$SKILL" \
+   && grep -q 'redirecting to /do worktree' "$SKILL" \
+   && grep -q 'redirecting to /commit' "$SKILL"; then
+  pass "6  landing gate: execution.landing read; worktree → /do, direct → /commit soft-redirects present"
 else
-  fail "6  landing gate: wiring not found"
+  fail "6  landing gate: soft-redirect wiring not found"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -612,21 +620,64 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 15 — landing != pr exits 1 with landing-keyword stderr.
+# Case 15 — landing=direct soft-redirects to /commit and exits 0.
 # End-to-end against the preflight slice: config has
-# execution.landing=direct, we expect rc=1 and
-# 'requires execution.landing == "pr"' in stderr.
+# execution.landing=direct. Per issue #293, the hard error was
+# replaced with a two-line redirect (line 1 names target + reason,
+# line 2 gives re-invocation hint). We expect rc=0 and the
+# 'redirecting to /commit' phrase on stdout.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c15 "true" "true" "direct" "quickfix/")
-ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" >/dev/null 2>"$ERR")
+OUT=$(mktemp)
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" >"$OUT" 2>&1)
 RC=$?
-if [ "$RC" -eq 1 ] && grep -q 'requires execution.landing == "pr"' "$ERR"; then
-  pass "15 landing != pr: rc=1 + 'requires execution.landing' stderr"
+if [ "$RC" -eq 0 ] \
+   && grep -q 'redirecting to /commit' "$OUT" \
+   && grep -q 'Run `/commit`' "$OUT"; then
+  pass "15 landing=direct: rc=0 + /commit redirect on stdout (two-line template)"
 else
-  fail "15 landing != pr: rc=$RC stderr='$(cat "$ERR")'"
+  fail "15 landing=direct: rc=$RC out='$(cat "$OUT")'"
 fi
-rm -f -- "$ERR"
+rm -f -- "$OUT"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 15b — landing=worktree soft-redirects to /do worktree and exits 0.
+# Sibling of case 15 covering the other non-PR mode.
+# ────────────────────────────────────────────────────────────────────
+FIX=$(make_fixture c15b "true" "true" "worktree" "quickfix/")
+OUT=$(mktemp)
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" >"$OUT" 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] \
+   && grep -q 'redirecting to /do worktree' "$OUT" \
+   && grep -q 'Run `/do worktree' "$OUT"; then
+  pass "15b landing=worktree: rc=0 + /do worktree redirect on stdout (two-line template)"
+else
+  fail "15b landing=worktree: rc=$RC out='$(cat "$OUT")'"
+fi
+rm -f -- "$OUT"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 15c — landing=pr does NOT short-circuit at the landing check.
+# The preflight slice must proceed past the landing check (it may
+# still exit later on other gates the fixture doesn't satisfy — gh
+# is mocked, but the slice has additional checks downstream).
+# Assertion is purely that the landing-check redirect was NOT taken:
+# no 'redirecting to /commit' AND no 'redirecting to /do worktree' on
+# combined output. This guards fall-through.
+# ────────────────────────────────────────────────────────────────────
+FIX=$(make_fixture c15c "true" "true" "pr" "quickfix/")
+OUT=$(mktemp)
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" >"$OUT" 2>&1)
+# We don't assert RC — the slice may exit non-zero on a later gate.
+# What matters: the landing redirect path was NOT taken.
+if ! grep -q 'redirecting to /commit' "$OUT" \
+   && ! grep -q 'redirecting to /do worktree' "$OUT"; then
+  pass "15c landing=pr: fall-through preserved (no landing redirect emitted)"
+else
+  fail "15c landing=pr: unexpected landing redirect — out='$(cat "$OUT")'"
+fi
+rm -f -- "$OUT"
 
 # ────────────────────────────────────────────────────────────────────
 # Case 16 — gh missing exits 1 with gh-keyword stderr.
