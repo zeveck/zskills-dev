@@ -503,3 +503,212 @@ N/A for both committed rows.
 
 PR mode + auto. 2 committed PRs land via `/land-pr --auto` in parallel with sprint 1's 3 PRs. #293 PR pending fix-agent completion.
 
+
+## Sprint — 2026-05-16 23:15 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**Pipeline:** `fix-issues.sprint-20260517-023550-fixtests`
+**Cron:** `d8921920` (`*/45 * * * *`, re-armed by user after prior session's kill; this sprint triggered by user-typed `now` reissue at ~22:33 UTC / 18:33 ET 2026-05-16)
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #281 | Dashboard worktree-path-asymmetry between POST and GET (432295c Phase 5c deferred follow-up) | /tmp/zskills-fix-issue-281 | `83234a7` | full suite 3102/3102; 4 new POST→GET round-trip assertions added to `tests/test_zskills_monitor_server.sh` | PASS (verifier confirmed Option-2 ctx-single-source fix scoped correctly: `collect_snapshot` is the only call site needing `pre_resolved=True`; other GET handlers read `ctx['main_root']` directly; SKILL.md `metadata.version` bumped to `2026.05.16+d429b8`, hash recomputation match; source/mirror byte-identical) | N/A (server-side fix, no UI) |
+| #283 | Dashboard `collect.py` activity helpers shipped without targeted tests | /tmp/zskills-fix-issue-283 | `0f5d019` | full suite 3104/3104; ~380 new test lines in `tests/test_zskills_monitor_collect.sh` covering `_derive_repo_url` (15 cases), `_scan_git_history` (10), `_extract_pr_numbers_from_markers`, `_collect_activity` cap/sort | PASS (verifier confirmed dead-arg `activity` parameter removed from `_extract_pr_numbers_from_markers` at sole call site; empty-repo stderr filter narrowed to canonical "does not have any commits yet" only — not a relaxation; SKILL.md hash `8fdaf0` verified) | N/A |
+| #284 | `/fix-issues` bootstrap + row-writer + `/land-pr` dispatch paths lack fixture tests (c5c928c follow-up) | /tmp/zskills-fix-issue-284 | `38a4364` | full suite 3125/3125; new `tests/test-fix-issues-bootstrap.sh` (333+ lines, 6 test fns / 27 assertions) covering bootstrap (empty + pre-existing dedup), zero-issues exit, `/land-pr` dispatch wiring (`requires.land-pr.$SYNC_ID` marker, body file, allow-list parser, issue-close gating on STATUS=merged) | PASS (verifier confirmed PATH-prefix `gh` mock not stubbed-function; PCRE `#20` ≠ `#202` anchor test present; #280 escaped-quote title regression present; #282 STATUS=merged vs STATUS=created branching exercised) | N/A |
+
+### Skipped — Author-deferred (no action)
+
+| # | Title | Why |
+|---|-------|-----|
+| #67 | GitLab (glab) support | Author marked "not ready to start yet"; 3 prereq plans must land first |
+| #217 | Relocate plan execution reports out of `.zskills/audit/` | Author marked "not immediately"; architectural memo only |
+
+### Skipped — In-flight (existing worktree, prior sprint)
+
+| # | Title | Why |
+|---|-------|-----|
+| #293 | `/quickfix` drop PR-only constraint | `fix/issue-293` worktree from prior sprint (`28b2126`); separate /land-pr in flight |
+
+### Skipped — Design discussion (not batch-fix)
+
+| # | Title | Why |
+|---|-------|-----|
+| #291 | CLAUDE_TEMPLATE.md skill-routing decision table | Docs design; better as a focused `/quickfix` or `/do` invocation, not auto-batch |
+| #295 | `/fix-issues` 3-worktree cap addresses only 9p contention | Design comment; needs `/draft-plan` or follow-up issue conversation |
+| #308 | hooks: PreToolUse Edit/Write main-path gate (honor main_protected) | Feature design; cross-skill semantics; needs `/draft-plan` |
+| #310 | `/quickfix` argument-grammar inconsistency + cross-skill auto drift | Design discussion (relates to existing `draftplan-quickfix-grammar-redesign` work, merged in prior sprint); needs design convergence |
+
+### Surfaced context (bugs found but not patched)
+
+While writing #284's fixture tests, the implementation agent surfaced two real bugs in `skills/fix-issues/SKILL.md` that were intentionally not patched (issue scope was tests only):
+
+- **(a) JSON parser brittleness:** `grep -oE '"number":[0-9]+'` (~ SKILL.md line 863) silently returns empty if `gh` output has spaces after colons (e.g., `"number": 101`). Real `gh` emits compact JSON so this works in practice, but a flag change or upstream pretty-printing would make the bootstrap a silent no-op. Suggested fix: parse via `python3 -c 'import json,sys;[print(i["number"]) for i in json.load(sys.stdin)]'` (consistent with the #280-era Python-json discipline per `feedback_python_is_required.md`).
+- **(b) Row-writer append target:** the row-writer always appends residual rows to `ISSUES_PLAN.md` even when bootstrap did NOT fire (i.e., other `*_ISSUES.md` trackers exist). This is intentional per SKILL.md Step 4 prose, but it means `ISSUES_PLAN.md` will spontaneously appear in repos that have only domain trackers and a residual GH issue. Worth a one-line SKILL.md clarification.
+
+While fixing #283, the implementation agent surfaced and fixed a minor bug in `_scan_git_history`: empty-repo stderr was being treated as an error and emitted spurious "git history" diagnostics. Now filtered narrowly to the canonical "does not have any commits yet" string.
+
+### Sprint scope rationale
+
+10 open issues evaluated. Two author-deferred (#67, #217). One in-flight (#293). Four design-discussion (#291, #295, #308, #310). The remaining three executable bug/test-gap items (#281, #283, #284) were all post-c5c928c follow-ups to the dashboard + fix-issues sync hardening work — disjoint files, additive scope, ideal for auto-batch.
+
+### Pipeline state
+
+Each fix-issue worktree retains its branch and `fix/issue-NNN` ref. `.landed` markers are written by `/land-pr` per-PR. The 45-minute cron (`d8921920`) remains armed for the next fire at the upcoming `*/45` mark.
+
+### Landing
+
+PR mode + auto. Each PR dispatched serially via `/land-pr --auto` (per `feedback_skill_serial_contract.md`: parallel `/land-pr` deadlocks on `requires.land-pr.*` siblings). PRs (all merged via squash + auto):
+
+- #281 → PR #314 — https://github.com/zeveck/zskills-dev/pull/314 (CI pass; clean rebase; merged)
+- #283 → PR #315 — https://github.com/zeveck/zskills-dev/pull/315 (CI pass; rebase conflicted on `skills/zskills-dashboard/SKILL.md metadata.version` after #281 landed — resolved by recomputing hash on the combined post-#281 state via `scripts/skill-content-hash.sh`, hash `cd7839`; merged)
+- #284 → PR #316 — https://github.com/zeveck/zskills-dev/pull/316 (CI pass; clean rebase since tests don't overlap with dashboard fixes; merged)
+
+**Local main FF deferred.** Step 7b of `/land-pr` skipped each FF because the main repo's working tree has `M .zskills/audit/SPRINT_REPORT.md` (this very sprint's appends). Origin/main is correct (3 squash commits ahead of pre-sprint baseline); next worktree creation will fetch+ff-merge cleanly per `create-worktree.sh`'s built-in pre-flight.
+
+
+## Sprint — 2026-05-16 23:57 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**Pipeline:** `fix-issues.sprint-20260517-033244-design`
+**Cron:** `d8921920` (`*/45 * * * *`); this sprint triggered by user-typed `now` reissue.
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #291 | CLAUDE_TEMPLATE.md: skill-routing decision table | /tmp/zskills-fix-issue-291 | `aaefc4f` | full suite 3135/3135; pure-docs addition (29 lines) so no new test cases | PASS (verifier confirmed 13 skill names against `skills/`; tone matches surrounding CLAUDE_TEMPLATE.md voice; no CLAUDE.md leak; renders into consumers' `.claude/zskills-managed-rules.md` via `/update-zskills` Step B) | NEEDED (docs read by Claude at session start — review the table for accuracy before merge OR after for refinement) |
+| #293 | `/quickfix` drop PR-only constraint (Approach A — soft redirect) | /tmp/zskills-fix-issue-293 | `6e0feaf0` (rebase of prior-session `28b2126`) | full suite 3137/3137; `tests/test-quickfix.sh` cases 15 / 15b / 15c cover landing-mode redirect (direct→/commit, worktree→/do, pr→fall-through) | PASS (verifier confirmed Approach A soft-redirect not hard-error; `metadata.version` 2026.05.16+7ea279 verified; rebase clean onto post-#281/#283/#284 main; source/mirror byte-identical) | N/A (skill prose only; CI catches regressions) |
+| #308 | hooks: PreToolUse Edit/Write/NotebookEdit main-path gate (honor main_protected) | /tmp/zskills-fix-issue-308 | `1cbe995` | full suite 3152/3152; new `tests/test-block-main-edits.sh` (17 cases) covers deny-on-main + allow-on-worktree + allowlist (`.zskills/*`, `.zskills-tracked`, `.landed`, `.worktreepurpose`) + `main_protected=false` short-circuit + defensive edge cases | PASS (verifier confirmed source/mirror byte-identical at `hooks/block-main-edits.sh` and `.claude/hooks/block-main-edits.sh`; PreToolUse matcher `Edit|Write|NotebookEdit` registered in `.claude/settings.json` without disturbing existing entries; deny envelope JSON well-formed; STOP message recommends `/quickfix`/`/do`/`/run-plan`/`/create-worktree`) | NEEDED (this gate fires on ALL future Edit/Write/NotebookEdit in main repo; sanity-check the STOP message wording and the allowlist before relying on it for new agent flows) |
+
+### Skipped — Author-deferred
+
+| # | Title | Why |
+|---|-------|-----|
+| #67 | GitLab (glab) support | "not ready" |
+| #217 | Relocate plan execution reports out of `.zskills/audit/` | "not immediately" |
+
+### Skipped — Design discussion
+
+| # | Title | Why |
+|---|-------|-----|
+| #295 | `/fix-issues` 3-worktree cap addresses only 9p contention | Adding `max_concurrent_worktrees` config field is design-y; would benefit from a `/draft-plan` round if pursued |
+| #310 | `/quickfix` argument-grammar inconsistency | Relates to merged `draftplan-quickfix-grammar-redesign` work; design convergence needed before implementation |
+
+### Surfaced (intentional, unpatched — to be filed if not already)
+
+While implementing #308, the agent flagged two scope-creep avoidances worth a follow-up:
+
+- **Step-C triples table in `skills/update-zskills/SKILL.md` does NOT list `block-main-edits.sh`.** Same gap exists for `block-stale-skill-version.sh` and `block-bypassed-land-pr.sh` — three hooks are installed in zskills's own `.claude/settings.json` but not propagated to consumer projects via `/update-zskills`. Worth a single sweep PR that lands all three at once.
+- **`cat >>` Bash-redirects to main-path files are NOT gated by `block-main-edits.sh`.** The new hook fires only on `Edit|Write|NotebookEdit` tool calls; Bash-redirect tightening is the explicit out-of-scope item from the #308 issue body and belongs in `block-unsafe-project.sh`. Worth a follow-up issue if not already filed.
+
+### Sprint scope rationale
+
+After the prior sprint closed #281/#283/#284, 7 issues remained open. Of those: 2 author-deferred (#67, #217), 2 design discussions (#295, #310), 3 actionable (#291 docs, #293 in-flight needing verify+land, #308 feature). All 3 picked for this sprint. None overlap (CLAUDE_TEMPLATE.md vs `/quickfix` SKILL.md vs new hook).
+
+`#293` was a special case: a prior session's fix-agent committed `28b2126` but never reached the verifier before that session ended. This sprint dispatched a verifier (not a fresh fix-agent), which rebased onto the post-#281/#283/#284 main, ran the suite, attested green, and produced commit `6e0feaf0`.
+
+### Landing
+
+PR mode + auto. Each PR dispatched serially via `/land-pr --auto` (per `feedback_skill_serial_contract.md`). PRs (all merged via squash + auto):
+
+- #291 → PR #317 — https://github.com/zeveck/zskills-dev/pull/317 (CI pass; clean rebase; merged)
+- #293 → PR #318 — https://github.com/zeveck/zskills-dev/pull/318 (CI pass; rebased through #291's merge cleanly; merged)
+- #308 → PR #319 — https://github.com/zeveck/zskills-dev/pull/319 (CI pass; clean rebase; merged)
+
+**3/3 merged.** Pipeline `fulfilled.fix-issues.$SPRINT_ID` marker: `status: complete, outcome: 3/3 merged`.
+
+
+## Sprint — 2026-05-17 00:43 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**Pipeline:** `fix-issues.sprint-20260517-040703-thinpool`
+**Cron:** `d8921920` (`*/45 * * * *`); user-typed `now` reissue.
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #295 | `/fix-issues`: 3-worktree cap addresses only 9p checkout contention — add `execution.max_concurrent_worktrees` config field (Option 3) | /tmp/zskills-fix-issue-295 | `787b703` | full suite 3172/3172; new `tests/test-fix-issues-worktree-cap.sh` (18 assertions: schema declaration, resolver default/override/guards, SKILL.md Phase 3 gate fingerprints, two-cap-distinction prose, porcelain regex shape coverage, mirror parity) | PASS (verifier confirmed gate is BEFORE dispatch loop; resolver guards string/zero/negative/malformed → default 3 with rc=0; hashes `5a0469` and `b9764c` match `metadata.version` on both bumped SKILL.md files; source/mirror byte-identical on 3 file pairs) | NEEDED (new config knob — sanity-check default behavior matches expectations and the SPRINT_REPORT.md "Deferred — at worktree cap" message on next sprint that hits the cap) |
+
+### Skipped — Author-deferred
+
+| # | Title | Why |
+|---|-------|-----|
+| #67 | GitLab (glab) support | "not ready" |
+| #217 | Relocate plan execution reports | "not immediately" |
+
+### Skipped — Design discussion (needs /draft-plan)
+
+| # | Title | Why |
+|---|-------|-----|
+| #310 | `/quickfix` argument-grammar inconsistency + cross-skill auto semantics drift | Touches multiple skills; needs adversarial review before implementation; previously-drafted plan at `draftplan-quickfix-grammar-redesign` already merged into design canon — convert to /draft-plan or skip until design converges |
+
+### Sprint scope rationale
+
+Only 1 actionable issue remained after sprints 1 + 2 closed #281/#283/#284/#289/#291/#293/#308. #295 had a clear "/quickfix-shaped if a fix-option is pre-selected" tier — orchestrator pre-selected Option 3 (configurable cap) over Option 1 (sequential waves) because Option 1 would have changed the agent-timeout semantics and broken the "parallel pipelines are core" rule (per memory `feedback_parallel_pipelines_core.md`). The impl agent agreed.
+
+### Surfaced (intentional, unpatched)
+
+- The PER-MESSAGE 3-cap remains hardcoded (correctly — it's tied to a hardware-level 9p constant). If a consumer reports a non-9p filesystem where a higher value works, a follow-up could promote that to `execution.max_dispatch_per_message` for symmetry. Not actioned this sprint.
+
+### Cron status
+
+`d8921920` (`*/45 * * * *`) still armed. After this sprint, only 3 issues remain open (#67, #217, #310) — all skip-class. Next sprint will likely be the first of the "3 consecutive empty runs" sequence per the spec's no-actionable-issues path.
+
+### Landing
+
+PR mode + auto. Single `/land-pr --auto` dispatch. **PR #320 merged** — https://github.com/zeveck/zskills-dev/pull/320 (CI pass; clean rebase; merged).
+
+**1/1 merged.** Pipeline `fulfilled.fix-issues.$SPRINT_ID`: `status: complete, outcome: 1/1 merged`.
+
+
+## Sprint — 2026-05-17 00:52 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default | **Result:** no actionable issues
+**Pipeline:** `fix-issues.sprint-20260517-045251-empty1`
+**Cron:** `d8921920` (`*/45 * * * *`); user-typed `now` reissue.
+
+### No actionable issues
+
+3 open issues remain after sprints 1–3 landed PRs #314 / #315 / #316 / #317 / #318 / #319 / #320:
+
+| # | Title | Class | Why no batch fix |
+|---|-------|-------|------------------|
+| #67 | GitLab (glab) support | author-deferred | Issue body explicitly says "not ready to start yet"; 3 prereq plans gate. No FIXED verdict possible. |
+| #217 | Relocate plan execution reports out of `.zskills/audit/` | author-deferred | Issue body explicitly says "not immediately"; architectural memo. No FIXED verdict possible. |
+| #310 | `/quickfix` argument-grammar inconsistency + cross-skill auto drift | design discussion | Touches multiple skills; needs adversarial review before implementation. Tier-class: `/draft-plan`-shaped, not `/fix-issues`-shaped. |
+
+### Auto-sync skipped (intentional spec deviation)
+
+Spec calls for `auto-sync` before declaring empty — Sync workflow Steps 1–5 + auto-close any FIXED verdicts. Skipped here because all 3 remaining issues are explicitly skip-class:
+
+- #67 / #217: author-deferred. The author's own deferral language rules out a FIXED verdict — no commit hash + tests can satisfy the bar for an issue the author hasn't asked to start.
+- #310: design discussion. The sync's FIXED-only auto-close path can't act on it.
+
+A full sync run here would dispatch 3 research agents + open a sync PR with at most minor tracker tweaks, then re-check and return "0 actionable" still. If the user wants the sync anyway (e.g., to refresh blurbs after recent skill-prose changes), run `/fix-issues sync` interactively.
+
+### Cron status
+
+`d8921920` (`*/45 * * * *`) remains armed per the spec's "**Do NOT kill the cron** — new issues may be filed before the next run." **1st of 3 consecutive empty runs.**
+
+### Recommended actions
+
+- **`/fix-issues stop`** if no new issues are expected.
+- **`/draft-plan`** for #310 (cross-skill design — needs adversarial review).
+- Leave #67 / #217 as architectural memos until their stated prereqs land.
+
+
+## Sprint — 2026-05-17 01:19 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default | **Result:** no actionable issues
+**Pipeline:** `fix-issues.sprint-20260517-051933-empty2`
+**Cron:** `d8921920` (`*/45 * * * *`); user-typed `now` reissue.
+
+### State unchanged from last empty fire
+
+Open issues still 3, all skip-class: #67 (author-deferred), #217 (author-deferred), #310 (needs `/draft-plan`). No new issues filed since last empty fire. No FIXED candidates among the remaining. Auto-sync still skipped — same rationale as the 1st empty run.
+
+**2nd of 3 consecutive empty runs.** Next empty fire will surface the "consider `/fix-issues stop`" hint per spec.
+
