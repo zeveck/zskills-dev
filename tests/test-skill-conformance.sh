@@ -187,17 +187,6 @@ check       run-plan "stop-precedence"              'Takes precedence'
 check_fixed run-plan "landing-default"              'LANDING_MODE="cherry-pick"'
 check_fixed run-plan "finish-mode resolution"       'FINISH_MODE="finish-auto"'
 check_fixed run-plan "finish-mode default empty"    'FINISH_MODE=""'
-# Phase 3 AC3.8: assert unattended-gating prose lands at the model-layer
-# sites previously gated on `auto`. The phrase "Without `unattended`"
-# appears at each rewritten site (phase summary, drift findings,
-# staleness check, finish/finish-auto pause). The composite-alias
-# annotation "(or the `finish auto` composite alias)" is also asserted.
-check       run-plan "unattended-gating prose"      'Without `unattended`'
-check_fixed run-plan "finish-auto composite-alias annotation" '(or the `finish auto` composite alias)'
-# Phase 3 WI 3.3: migration auto-promote NOTE block must be present and
-# bound to MIGRATION_END_DATE.
-check_fixed run-plan "WI 3.3 migration auto-promote" 'MIGRATION_END_DATE="2026-08-17"'
-check       run-plan "WI 3.3 promote NOTE"          "Promoting to 'auto unattended' for compatibility"
 check       run-plan "direct+main_protected guard"  'direct mode is incompatible with main_protected'
 check_fixed run-plan "cherry-pick create-worktree"  '--prefix cp'
 check_fixed run-plan "cp worktree slug (single-phase)" '"${PLAN_SLUG}-phase-${PHASE}"'
@@ -442,17 +431,8 @@ check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
 #     comment-text pattern is brittle; assertion now verifies that
 #     /fix-issues unconditionally dispatches /land-pr per-issue
 #     (regardless of AUTO).
-check       fix-issues "auto-gating prose (Phase 3+ — gates on auto for merge, unattended for approval)" 'Auto-flag gating depends on landing mode'
-check       fix-issues "approval-skip gated on unattended (Phase 3 D2/D9)" 'approval-skip.*unattended|governed by `unattended`|approval gates? (when|on).*unattended'
-# Phase 3 AC3.8: post-rewrite, the auto-flag block must explicitly clarify
-# it governs auto-merge pass-through, not approval-skip (which moved to
-# `unattended` per D2/D9). Also assert the new `unattended`-gating prose
-# lands for the issue-list approval gate.
+check       fix-issues "auto-gating prose"          'Auto-flag gating depends on landing mode'
 check_fixed fix-issues "auto-gating clarified to merge" '(auto-merge) pass-through to `/land-pr` per landing mode'
-check       fix-issues "unattended-gating prose"     'Without `unattended`:'
-# Phase 3 WI 3.7: /fix-issues migration auto-promote NOTE block.
-check_fixed fix-issues "WI 3.7 migration auto-promote" 'MIGRATION_END_DATE="2026-08-17"'
-check       fix-issues "WI 3.7 promote NOTE"        "Promoting to 'auto unattended' for compatibility"
 check_fixed fix-issues "pr ci+fix-cycle always run" 'CI polling, and the fix cycle ALL run regardless of'
 check_fixed fix-issues "only merge gated on auto"   'Only `gh pr merge --auto --squash` is gated on `auto`'
 check_fixed fix-issues "cherry-pick defers to fix-report" 'Cherry-picks land via `/fix-report`'
@@ -475,16 +455,9 @@ check_not   fix-issues "no inline gh pr checks --watch" 'gh pr checks.*--watch'
 check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTO_FLAG guard" 'if \[ "\$AUTO_FLAG" != "true" \]; then'
 
 echo ""
-echo "=== auto/unattended grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
-# AC2.1 — all 4 PR-landing callers must initialize UNATTENDED_FLAG and have
-# a positional token detection arm/regex. AC2.2 — same for AUTO_FLAG (already
-# present in /quickfix and /do; newly introduced for /run-plan and /fix-issues).
-# AC2.3 — argument-hint must list [unattended] in all 4. AC2.1b — bash case
-# matches standalone token only (suffix `unattended-mode` falls through to *).
+echo "=== auto grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
+# AC2.2 — AUTO_FLAG initializer present in all 4 PR-landing callers.
 check_fixed quickfix    "AUTO_FLAG init"        'AUTO_FLAG=0'
-check_fixed quickfix    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
-check_fixed quickfix    "unattended case arm"   '[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) UNATTENDED_FLAG=1'
-check       quickfix    "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
 
 # QUICKFIX_GRAMMAR_REDESIGN Phase 4 (AC4.12, AC4.13) — positional
 # from-here/skip-tests/force replace --`-prefixed flags; --yes was
@@ -498,64 +471,16 @@ check       quickfix    "argument-hint [from-here]"  'argument-hint:.*\[from-her
 check_not   quickfix    "argument-hint NO [--yes]"   'argument-hint:.*\[--yes\]'
 
 check_fixed run-plan    "AUTO_FLAG init"        'AUTO_FLAG=0'
-check_fixed run-plan    "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
-check       run-plan    "unattended regex arm"  'UNATTENDED_FLAG=1'
-check_fixed run-plan    "finish-auto hoists both flags" 'FINISH_MODE" = "finish-auto"'
-check       run-plan    "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
 
 check_fixed fix-issues  "AUTO_FLAG init"        'AUTO_FLAG=0'
-check_fixed fix-issues  "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
-check       fix-issues  "unattended regex arm"  'UNATTENDED_FLAG=1'
-check       fix-issues  "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
 
 check_fixed do          "AUTO_FLAG init"        'AUTO_FLAG=0'
-check_fixed do          "UNATTENDED_FLAG init"  'UNATTENDED_FLAG=0'
-check       do          "unattended regex arm"  'UNATTENDED_FLAG=1'
-check       do          "argument-hint [unattended]" 'argument-hint:.*\[unattended\]'
-# AC6.8 (Phase 6) — explicit /do parser-arm assertion. /do uses a bash
-# `=~` regex (not the `case` statement form the other 3 PR-landing
-# callers use), so the literal pattern differs. This makes the /do
-# UNATTENDED_FLAG parser-arm coverage explicit per the Phase 6 spec,
-# not just an implicit `UNATTENDED_FLAG=1` substring match.
-check_fixed do          "unattended regex full"  '=~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])'
-
-# QUICKFIX_GRAMMAR_REDESIGN Phase 7 WI 7.1 — explicit per-skill UNATTENDED_FLAG
-# initializers + composite-block lock for /run-plan's `finish auto` hoist
-# (multi-line; uses `grep -Pz` for multiline match — falls back to inline
-# `awk` if `grep -P` is unsupported in target environment, but we ship with
-# the -Pz form since GNU grep is the project baseline).
-echo ""
-echo "=== Phase 7 WI 7.1 — auto/unattended convention lock ==="
-# Composite-block multi-line assertion. The block lives in run-plan/SKILL.md
-# and looks like:
-#   if [ "$FINISH_MODE" = "finish-auto" ]; then
-#     AUTO_FLAG=1
-#     UNATTENDED_FLAG=1
-#   fi
-# This single-line pattern can't catch it, so use grep -Pz (multiline).
-if grep -Pzo 'FINISH_MODE.*finish-auto.*\n[[:space:]]+AUTO_FLAG=1.*\n[[:space:]]+UNATTENDED_FLAG=1' "$REPO_ROOT/skills/run-plan/SKILL.md" > /dev/null 2>&1; then
-  pass "[run-plan] finish-auto composite hoists both flags (multi-line)"
-else
-  fail "[run-plan] finish-auto composite hoists both flags (multi-line)" 'FINISH_MODE="finish-auto" → AUTO_FLAG=1 → UNATTENDED_FLAG=1 block'
-fi
 
 # Negative: no --yes arm anywhere in /quickfix beyond the migration-redirect
 # error message itself (that single mention is acceptable as a hard-error
 # legacy redirect; absence of YES_FLAG variable already covered above by
 # `no YES_FLAG variable (AC4.13)`).
 check_not   quickfix    "no --yes accept arm (Phase 4)" '--yes\)[[:space:]]*YES_FLAG'
-
-# AC2.1b — Bash-pattern guard. Run the smoke test directly so a future
-# regex tweak (e.g. adding `*`) that silently breaks the standalone-only
-# invariant gets caught here. Tested against bash 5.x in plan §92.
-PATTERN_MATCH=$(bash -c 'case "unattended" in [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) echo match;; *) echo nomatch;; esac')
-PATTERN_NOMATCH=$(bash -c 'case "unattended-mode" in [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) echo match;; *) echo nomatch;; esac')
-if [ "$PATTERN_MATCH" = "match" ] && [ "$PATTERN_NOMATCH" = "nomatch" ]; then
-  pass "[bash-pattern] unattended case matches standalone only (AC2.1b)"
-else
-  fail "[bash-pattern] unattended case matches standalone only (AC2.1b)" \
-       "match='$PATTERN_MATCH' (want 'match'), nomatch='$PATTERN_NOMATCH' (want 'nomatch')"
-fi
 
 echo ""
 echo "=== /fix-issues — structural landmarks ==="

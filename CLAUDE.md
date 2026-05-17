@@ -79,14 +79,6 @@ When you save a memory anchor for a process failure, ask: does this need to prop
 
 **Optimize for correctness, not speed.** Follow instructions exactly, including every intermediate verification step. Never skip verification to "save time" -- skipped steps mean the user has to re-verify, which saves nothing. Never stub methods, return bogus values, or simplify implementations to get something working faster. Never reframe the task to make it easier. Review agents will find shortcuts, so cutting corners gains nothing. When the user says "after each step, verify" -- verify after each step, not once at the end.
 
-## auto and unattended tokens
-
-**`auto` and `unattended` tokens.** All 4 PR-landing callers (`/quickfix`, `/run-plan`, `/fix-issues`, `/do`) accept two orthogonal positional tokens: `auto` (auto-merge the resulting PR) and `unattended` (skip skill-internal human-review gates). They are independent — typing one does not imply the other.
-
-**Anti-pattern: `unattended` alone is NOT full autonomy.** `/fix-issues 5 unattended` skips approval gates but does NOT auto-merge. PRs sit at `pr-ready` waiting for manual merge. For fully unattended sprints, use `/fix-issues 5 auto unattended`.
-
-`/run-plan` preserves the legacy `finish auto` composite alias (sets both flags). See `skills/run-plan/references/auto-unattended-semantics.md` (and the symmetric per-skill reference files) for the per-skill gate table.
-
 ## Subagent Dispatch
 
 **NEVER dispatch agents on Haiku.** Haiku produces over-literal pattern matches and misses framing -- it greps for an exact string, doesn't find it, and concludes "no bug" when the actual problem is the absence of a guardrail. It is consistently wrong on judgment-class tasks. We do not use Haiku anywhere, period.
