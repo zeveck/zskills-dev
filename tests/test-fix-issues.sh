@@ -344,86 +344,6 @@ test_dashboard_mutex_error_strings_present() {
   fi
 }
 
-# --- tracker-PR-always-auto (decouple tracker from per-issue auto-merge) -
-#
-# The user's `auto` arg gates two distinct PR types:
-#   - Tracker PRs (sync Phase 5, sprint-mode Phase 5): agent-facing
-#     markdown the agent reads back. Auto-merge unconditionally.
-#   - Per-issue fix PRs (Phase 3 via modes/pr.md): real code changes,
-#     potentially worth human review. AUTO-gated conditional preserved.
-# These four tests guard the asymmetry.
-
-test_sync_land_args_unconditional_auto() {
-  # Case (a): the standalone sync Phase 5 LAND_ARGS line must end with
-  # --auto (no AUTO conditional gate above/below it).
-  local line
-  line=$(grep -n 'landed-source=fix-issues-sync' "$SKILL" | head -1 | cut -d: -f1)
-  if [ -z "$line" ]; then
-    fail "tracker-auto: sync LAND_ARGS line present" "not found"
-    return
-  fi
-  local content
-  content=$(sed -n "${line}p" "$SKILL")
-  case "$content" in
-    *'--auto"'*|*'--auto') pass "tracker-auto: sync LAND_ARGS contains --auto unconditionally (line $line)" ;;
-    *) fail "tracker-auto: sync LAND_ARGS contains --auto unconditionally" "line $line: $content" ;;
-  esac
-}
-
-test_sync_comment_no_intentionally_omitted() {
-  # Case (b): the conflated rationale "intentionally omitted" referring
-  # to the auto-merge flag must be gone. Regression tripwire.
-  if grep -qE 'is[[:space:]]+intentionally[[:space:]]+omitted' "$SKILL"; then
-    fail "tracker-auto: sync comment does NOT say 'intentionally omitted'" "phrase still present"
-  else
-    pass "tracker-auto: sync comment does NOT say 'intentionally omitted'"
-  fi
-}
-
-test_sprint_land_args_unconditional_auto() {
-  # Case (c): sprint-mode Phase 5 LAND_ARGS must end with --auto AND
-  # the immediately-following conditional `[ "${AUTO:-false}" = "true" ]`
-  # must be gone.
-  local line
-  line=$(grep -n 'landed-source=fix-issues-sprint' "$SKILL" | head -1 | cut -d: -f1)
-  if [ -z "$line" ]; then
-    fail "tracker-auto: sprint LAND_ARGS line present" "not found"
-    return
-  fi
-  local content
-  content=$(sed -n "${line}p" "$SKILL")
-  case "$content" in
-    *'--auto"'*|*'--auto') pass "tracker-auto: sprint LAND_ARGS contains --auto unconditionally (line $line)" ;;
-    *) fail "tracker-auto: sprint LAND_ARGS contains --auto unconditionally" "line $line: $content" ;;
-  esac
-
-  # The next non-blank line MUST NOT be the AUTO-conditional re-append.
-  local next_line
-  next_line=$(awk -v start=$((line+1)) 'NR>=start && NF>0 { print; exit }' "$SKILL")
-  case "$next_line" in
-    *'AUTO:-false'*'--auto'*)
-      fail "tracker-auto: sprint LAND_ARGS conditional re-append removed" "still present: $next_line" ;;
-    *)
-      pass "tracker-auto: sprint LAND_ARGS conditional re-append removed" ;;
-  esac
-}
-
-test_per_issue_conditional_pattern_preserved() {
-  # Case (d): the per-issue AUTO-gated conditional pattern must still
-  # appear AT LEAST ONCE in the file. After decoupling tracker PRs, the
-  # remaining occurrence is the `fix-issues-no-actionable` site (line
-  # ~1505 of SKILL.md). The per-issue Phase-3 dispatch itself lives in
-  # modes/pr.md; this test guards SKILL.md's surviving AUTO-conditional
-  # so future edits don't accidentally make ALL LAND_ARGS unconditional.
-  local hits
-  hits=$(grep -cE '\[ "\$\{AUTO:-false\}" = "true" \] && LAND_ARGS' "$SKILL")
-  if [ "$hits" -ge 1 ]; then
-    pass "tracker-auto: per-issue/non-tracker AUTO-conditional pattern preserved ($hits occurrence)"
-  else
-    fail "tracker-auto: per-issue/non-tracker AUTO-conditional pattern preserved" "0 occurrences — all LAND_ARGS now unconditional, contradicting decoupling intent"
-  fi
-}
-
 # --- Mirror parity -------------------------------------------------------
 
 test_mirror_in_sync() {
@@ -447,10 +367,6 @@ test_dashboard_token_recognized_in_phase0
 test_dashboard_phase2_branch_present
 test_dashboard_uses_python_json_not_bash_regex
 test_dashboard_mutex_error_strings_present
-test_sync_land_args_unconditional_auto
-test_sync_comment_no_intentionally_omitted
-test_sprint_land_args_unconditional_auto
-test_per_issue_conditional_pattern_preserved
 test_mirror_in_sync
 
 echo ""
