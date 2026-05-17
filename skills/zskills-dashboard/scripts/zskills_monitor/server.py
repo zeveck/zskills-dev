@@ -908,7 +908,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             }
             target = main_root / ".zskills" / "monitor-state.json"
             _atomic_write_json(target, new_doc)
-        self._send_json(200, {"ok": True, "updated_at": new_doc["updated_at"]})
+        self._send_json(200, {"ok": True, "updated_at": new_doc["updated_at"], "state_updated_at": new_doc["updated_at"]})
 
     def _handle_trigger_post(self) -> None:
         if not self._origin_ok():

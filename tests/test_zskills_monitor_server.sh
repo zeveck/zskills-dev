@@ -397,11 +397,14 @@ if start_server "$MR5" "$PORT_D"; then
   fi
 
   # Valid POST: 200 + state file written
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  QPOST_BODY=$(curl -s -X POST \
     -H "Origin: http://127.0.0.1:$PORT_D" \
     -H 'Content-Type: application/json' \
     -d '{"plans":{"drafted":[{"slug":"sample-plan"}],"reviewed":[],"ready":[]},"issues":{"triage":[42],"ready":[]}}' \
+    -w '\n%{http_code}' \
     "http://127.0.0.1:$PORT_D/api/queue")
+  CODE=$(printf '%s\n' "$QPOST_BODY" | tail -n1)
+  BODY=$(printf '%s\n' "$QPOST_BODY" | sed '$d')
   if [ "$CODE" = "200" ]; then
     pass "POST /api/queue with valid body + Origin → 200"
   else
@@ -412,6 +415,27 @@ if start_server "$MR5" "$PORT_D"; then
     pass "monitor-state.json updated with new state"
   else
     fail "monitor-state.json not updated"
+  fi
+  # Response body shape: must include both `updated_at` (legacy) and
+  # `state_updated_at` (snap-back race fix — client uses this as the
+  # lastCommittedAt watermark for applySnapshot's stale-guard).
+  SHAPE_OK=$(printf '%s' "$BODY" | python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+except Exception as e:
+    print("PARSE_FAIL:" + str(e))
+    sys.exit()
+ok = d.get("ok") is True
+has_ua = isinstance(d.get("updated_at"), str) and d.get("updated_at")
+has_sua = isinstance(d.get("state_updated_at"), str) and d.get("state_updated_at")
+eq = d.get("updated_at") == d.get("state_updated_at")
+print(f"ok={ok} ua={bool(has_ua)} sua={bool(has_sua)} eq={eq}")
+')
+  if [ "$SHAPE_OK" = "ok=True ua=True sua=True eq=True" ]; then
+    pass "POST /api/queue response includes ok + updated_at + state_updated_at (equal)"
+  else
+    fail "POST /api/queue response shape wrong: '$SHAPE_OK'"
   fi
 
   # Invalid body → 400 + state unchanged
