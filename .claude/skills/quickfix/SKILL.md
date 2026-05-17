@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.17+1167bf"
+  version: "2026.05.17+7aa3f0"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -64,11 +64,7 @@ at parse time — mode detection (WI 1.5) decides whether it is fatal.
 - **force** (optional) — bypass a triage REDIRECT verdict (WI 1.5.4) and
   proceed with `/quickfix` anyway.
 
-The legacy `--yes` / `-y` flag was removed; WI 1.5.5's confirmation
-prompt is bypassed when `AUTO_FLAG=1`. The legacy `--`-prefixed forms of
-`from-here`, `skip-tests`, `force` were converted to positional tokens;
-invoking them in the `--` form now hard-stops with a corrective error
-(see migration redirects in the parser case statement below).
+WI 1.5.5's confirmation prompt is bypassed when `AUTO_FLAG=1`.
 
 ```bash
 # Entry-point unset guard for the model-layer test seam. Without the
@@ -92,27 +88,6 @@ i=0
 while [ $i -lt ${#ARGS[@]} ]; do
   arg="${ARGS[$i]}"
   case "$arg" in
-    # --- Migration redirects (MUST be first; per WI 4.2 ordering invariant) ---
-    # These arms catch legacy `--`-prefixed forms that were removed (--yes)
-    # or converted to positional tokens (--from-here / --skip-tests / --force)
-    # in Phase 4. They MUST stay at the TOP of the case statement so the
-    # legacy invocations cannot fall through to `*)` and become silent
-    # description prose. Each redirect names the EXACT corrected invocation
-    # and exits 1. No deprecation grace period (per CLAUDE.md
-    # feedback_no_premature_backcompat.md).
-    --yes|-y)
-      echo "ERROR: /quickfix '--yes' / '-y' was removed. Re-invoke without --yes (use the positional 'auto' token to skip the WI 1.5.5 confirmation prompt)." >&2
-      exit 1 ;;
-    --from-here)
-      echo "ERROR: /quickfix '--from-here' was replaced by positional 'from-here'. Re-invoke as: /quickfix <description> from-here" >&2
-      exit 1 ;;
-    --skip-tests)
-      echo "ERROR: /quickfix '--skip-tests' was replaced by positional 'skip-tests'. Re-invoke as: /quickfix <description> skip-tests" >&2
-      exit 1 ;;
-    --force)
-      echo "ERROR: /quickfix '--force' was replaced by positional 'force'. Re-invoke as: /quickfix <description> force" >&2
-      exit 1 ;;
-    # --- Existing/new arms below ---
     --branch)
       i=$((i+1))
       BRANCH_OVERRIDE="${ARGS[$i]:-}"
