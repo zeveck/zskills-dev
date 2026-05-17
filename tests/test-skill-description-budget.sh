@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# Asserts total `description:` chars across all source SKILL.md files
+# Asserts total `description:` bytes across all source SKILL.md files
 # (skills/*/SKILL.md and block-diagram/*/SKILL.md, excluding screenshots/).
 # Two-tier budget: hard-fail above 7500, soft-warn between 7000 and 7500.
 # Per-skill breakdown emitted for diagnosis.
 #
-# Background: ~7500 chars ≈ 1875 tokens ≈ <1% of 200k context. The
+# Units note: the script runs under LC_ALL=C and uses bash `${#var}`,
+# which counts BYTES (not characters) in the C locale. Multibyte UTF-8
+# code points (e.g. em-dash U+2014 = 3 bytes) therefore contribute more
+# than one to the total. We report and budget in bytes — both because
+# bytes are what bash measures cheaply without an awk/python detour and
+# because byte-count is the right proxy for token-context cost on the
+# wire. A future trimmer chasing a budget overage should think in bytes,
+# not characters. See issue #339.
+#
+# Background: ~7500 bytes ≈ 1875 tokens ≈ <1% of 200k context. The
 # project's design target chosen to honor the published Anthropic
 # skill-development guidance of ~100 words/skill, scaled to ~30 skills,
 # leaving headroom in the 200k context budget for descriptions. This is
@@ -79,20 +88,20 @@ for f in $(find skills block-diagram -mindepth 2 -maxdepth 2 -name SKILL.md | so
   TOTAL=$((TOTAL + n))
 done
 
-# Emit per-skill breakdown sorted by chars desc.
-echo "# skill-description-budget per-skill breakdown"
+# Emit per-skill breakdown sorted by bytes desc.
+echo "# skill-description-budget per-skill breakdown (bytes)"
 for name in "${!PER_SKILL[@]}"; do
   printf '%5d  %s\n' "${PER_SKILL[$name]}" "$name"
 done | sort -nr
 
 echo "----"
-echo "TOTAL: $TOTAL chars (warn_at: $WARN_AT, hard_cap: $CAP)"
+echo "TOTAL: $TOTAL bytes (warn_at: $WARN_AT, hard_cap: $CAP)"
 
 if (( TOTAL > CAP )); then
-  echo "FAIL: total description chars $TOTAL exceeds hard cap $CAP" >&2
+  echo "FAIL: total description bytes $TOTAL exceeds hard cap $CAP" >&2
   exit 1
 fi
 if (( TOTAL > WARN_AT )); then
-  echo "WARN: total description chars $TOTAL is between warn-at $WARN_AT and hard cap $CAP — trim before next addition" >&2
+  echo "WARN: total description bytes $TOTAL is between warn-at $WARN_AT and hard cap $CAP — trim before next addition" >&2
 fi
 echo "PASS"
