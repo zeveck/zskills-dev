@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+992d09"
+  version: "2026.05.17+29284f"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -43,13 +43,23 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   pattern: `/fix-issues 1 every 30m dashboard auto`.
 - **auto** (optional) — bypass confirmation gates for autonomous operation.
   Behavior depends on context:
-  - **Sprints:** skip Phase 2 issue list approval, auto-land to main via
-    cherry-pick. Does NOT close GH issues or remove worktrees — those are
+  - **Sprints:** skip Phase 2 issue list approval, auto-land per-issue
+    fix PRs, AND auto-merge the Phase 6 sprint-report PR (its content
+    describes the sprint's fix work, so it follows your `auto` choice).
+    Does NOT close GH issues or remove worktrees — those are
     `/fix-report` actions.
+  - **Sync-only tracker PRs always auto-merge regardless of `auto`.**
+    Three dispatch sites ship sync-driven tracker updates ONLY (no fix
+    work): the standalone `/fix-issues sync` PR, the sprint
+    no-actionable ship branch, and the dashboard-empty ship branch.
+    Those PRs contain agent-facing markdown that the agent reads back,
+    not user-facing artifacts warranting human review.
   - **plan auto:** draft plans for all found issues without selection
     (see Plan section).
-  - **Not applicable to sync.** `sync` is always interactive — closing
-    issues on GitHub requires human approval.
+  - **Sync `gh issue close` step is still interactive.** `auto` does NOT
+    bypass the human-approval gate on the irreversible `gh issue close`
+    sub-step in standalone sync (Step 5 sub-step 3); only the tracker-PR
+    auto-merge is unconditional.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -541,19 +551,23 @@ EOF
    {
      printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
        "$(TZ=America/New_York date +%F)"
-     printf '## Test plan\n- [x] Tracker diff reviewed by user before merge.\n'
+     printf '## Test plan\n- [x] Sync-only diff: agent-facing tracker markdown; auto-merge.\n'
    } > "$BODY_FILE"
 
    PR_TITLE="sync: $(TZ=America/New_York date +%F)"
    SYNC_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
 
-   # /land-pr arg vector. Mirrors run-plan PR mode (modes/pr.md:339-348)
-   # MINUS the auto-merge flag. Sync is always interactive — closing
-   # issues on GitHub requires human approval — so the auto-merge flag
-   # is intentionally omitted. The CI-monitor-suppression flag is also
+   # /land-pr arg vector. Always includes --auto: this dispatch ships
+   # sync-driven tracker updates ONLY (research blurbs, ISSUES_PLAN row
+   # adds, SPRINT_REPORT section append from sync). That content is
+   # agent-facing markdown the agent reads back, not user-facing artifacts
+   # warranting human review. The SUBSEQUENT "close approved issues on
+   # GitHub" sub-step (Step 5 sub-step 3 below) is what remains
+   # interactive — that requires human approval for the irreversible
+   # `gh issue close` calls. The CI-monitor-suppression flag remains
    # omitted (CI monitoring is desired; the orchestrator awaits resting
    # state).
-   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID"
+   LAND_ARGS="--branch=$SYNC_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sync --worktree-path=$TOPLEVEL --tracking-id=$SYNC_ID --auto"
 
    # Echo the pipeline id for transcript-propagation (matches /do pr's
    # tier-2 idiom at `skills/do/modes/pr.md:203`). Do NOT env-export
@@ -1217,8 +1231,100 @@ arrays — same discipline as Phase 1's row-writer).
 
 ```bash
 if [ "$DASHBOARD_MODE" = "1" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
   MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
+
+  # Helper: ship-or-cleanup. Called from each of the two dashboard-empty
+  # exits below. If $WT_PATH is set and the worktree has uncommitted
+  # changes from Phase 1a sync, stage + commit + dispatch /land-pr --auto
+  # (sync-only content, same rationale as the no-actionable ship branch
+  # at `### If no actionable issues found`). If clean, remove the empty
+  # worktree. Inlined rather than function-shared with the no-actionable
+  # site because those live in separate bash fences — bash functions do
+  # not span skill fences.
+  ship_sync_only_or_cleanup() {
+    [ -z "${WT_PATH:-}" ] && return 0
+    cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed (dashboard-empty)" >&2; return 1; }
+    local TOPLEVEL
+    TOPLEVEL=$(git rev-parse --show-toplevel)
+    if [ -n "$(git -C "$TOPLEVEL" status --porcelain)" ]; then
+      echo "fix-issues dashboard-empty: Phase 1a sync wrote updates; shipping sync-only PR" >&2
+      git -C "$TOPLEVEL" add -A
+      local STAGED
+      STAGED=$(git -C "$TOPLEVEL" diff --cached --name-only)
+      if [ -z "$STAGED" ]; then
+        echo "fix-issues dashboard-empty: status reported dirty but nothing staged — removing worktree" >&2
+        cd "$MAIN_ROOT" && git worktree remove --force "$WT_PATH"
+        return 0
+      fi
+      if [ -n "${COMMIT_CO_AUTHOR:-}" ]; then
+        git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" \
+          -m "docs(sync): tracker refresh from /fix-issues fire $SPRINT_ID"
+      else
+        git -C "$TOPLEVEL" commit -m "docs(sync): tracker refresh from /fix-issues fire $SPRINT_ID"
+      fi
+
+      local SPRINT_LAND_ID="fix-issues.dashboard-sync.${SPRINT_ID}"
+      mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+      printf 'skill: land-pr\nrequired-by: fix-issues-dashboard-empty\ndate: %s\n' \
+        "$(TZ=UTC date -Iseconds)" \
+        > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${SPRINT_LAND_ID}"
+
+      local RESULT_FILE BODY_FILE PR_TITLE SPRINT_BRANCH LAND_ARGS
+      RESULT_FILE=$(mktemp)
+      BODY_FILE=$(mktemp)
+      {
+        printf '## Summary\n`/fix-issues` dashboard fire %s: Ready queue empty; Phase 1a sync produced tracker updates that ship here.\n\n' "$SPRINT_ID"
+        printf '## Test plan\n- [x] Sync-only diff; no per-issue work executed this fire.\n'
+      } > "$BODY_FILE"
+
+      PR_TITLE="sync: tracker refresh from /fix-issues dashboard fire $SPRINT_ID"
+      SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+      # This dispatch fires when the dashboard Ready queue is empty but
+      # Phase 1a sync wrote tracker updates. The PR commits only sync-driven
+      # content (`git add -A` against the worktree after sync ran), so it
+      # ALWAYS auto-merges regardless of user's `auto` arg — same rationale
+      # as standalone sync's Phase 5 dispatch and the no-actionable ship
+      # branch later in this skill.
+      LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-dashboard-empty --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto"
+
+      echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+
+      # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+      if [ ! -f "$RESULT_FILE" ]; then
+        echo "ERROR: /land-pr (dashboard-empty sync-land) produced no result file at $RESULT_FILE" >&2
+      else
+        local -A LP_DASH
+        local KEY VALUE
+        while IFS='=' read -r KEY VALUE; do
+          case "$KEY" in
+            STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
+            MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
+            CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+              LP_DASH["$KEY"]="$VALUE" ;;
+            "") ;;
+            *) printf 'WARN: /land-pr (dashboard-empty sync-land) result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
+          esac
+        done < "$RESULT_FILE"
+        case "${LP_DASH[STATUS]:-}" in
+          merged)
+            printf 'skill: land-pr\nid: %s\npr: %s\nbranch: %s\ndate: %s\n' \
+              "$SPRINT_LAND_ID" "${LP_DASH[PR_URL]:-}" "$SPRINT_BRANCH" \
+              "$(TZ=UTC date -Iseconds)" \
+              > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$SPRINT_LAND_ID"
+            ;;
+          *)
+            echo "fix-issues dashboard-empty sync-land: /land-pr STATUS=${LP_DASH[STATUS]:-unknown} — sync PR left open" >&2
+            ;;
+        esac
+      fi
+    else
+      echo "fix-issues dashboard-empty: no sync updates; cleaning up empty worktree" >&2
+      cd "$MAIN_ROOT" && git worktree remove --force "$WT_PATH"
+    fi
+  }
 
   # Reuse the cached OPEN_NUMS array fetched in Phase 1's sync step (gh
   # issue list --state open ...). If for some reason it is not set in
@@ -1243,6 +1349,7 @@ for it in json.load(sys.stdin):
   # default rubric. Do NOT error.
   if [ ! -f "$MONITOR_STATE" ]; then
     echo "Dashboard Ready is empty — nothing to do"
+    ship_sync_only_or_cleanup
     exit 0
   fi
 
@@ -1291,6 +1398,7 @@ print(" ".join(str(p) for p in picks))
 
   if [ -z "$DASHBOARD_PICKS" ]; then
     echo "Dashboard Ready is empty — nothing to do"
+    ship_sync_only_or_cleanup
     exit 0
   fi
 
@@ -1501,8 +1609,13 @@ If ALL candidates are too vague, too complex, or already attempted:
 
          PR_TITLE="sync: tracker refresh from /fix-issues fire $SPRINT_ID"
          SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
-         LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
-         [ "${AUTO:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+         # This dispatch fires when Phase 2 found no actionable issues but
+         # Phase 1a sync wrote tracker updates. The PR commits only sync-driven
+         # content (`git add -A` against the worktree after sync ran, before any
+         # fix work), so it ALWAYS auto-merges regardless of user's `auto` arg —
+         # same rationale as standalone sync's Phase 5 dispatch at the top of
+         # this skill.
+         LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID --auto"
 
          echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
