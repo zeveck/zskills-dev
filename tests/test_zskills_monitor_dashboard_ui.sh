@@ -503,6 +503,31 @@ else
   fail "AC: renderIssues does not reference queues.issues — regression of optimistic-render bug"
 fi
 
+# AC: applySnapshot passes lastGoodQueues (not raw `queues`) to renderIssues
+# and fingerprintIssues, so new GH issues present in snap.issues but absent
+# from monitor-state.json's queue arrays (deepCloneQueues adds inferred
+# entries) still render. Regression guard for the new-issue auto-pickup bug
+# introduced when PR #353 made renderIssues honor its queues argument.
+# Scoped to applySnapshot's body (commitQueueChange uses same function names
+# but a different pattern, so a whole-file grep would false-positive).
+APPLY_BODY=$(awk '
+  /^function applySnapshot\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$APPLY_BODY" | grep -qF 'renderIssues(snap.issues || [], lastGoodQueues)' \
+   && ! echo "$APPLY_BODY" | grep -qF 'renderIssues(snap.issues || [], queues)'; then
+  pass "AC: applySnapshot calls renderIssues with lastGoodQueues (not raw queues)"
+else
+  fail "AC: applySnapshot must call renderIssues with lastGoodQueues, not raw queues — new-issue auto-pickup regression"
+fi
+if echo "$APPLY_BODY" | grep -qF 'fingerprintIssues(snap.issues || [], lastGoodQueues)' \
+   && ! echo "$APPLY_BODY" | grep -qF 'fingerprintIssues(snap.issues || [], queues)'; then
+  pass "AC: applySnapshot calls fingerprintIssues with lastGoodQueues (not raw queues)"
+else
+  fail "AC: applySnapshot must call fingerprintIssues with lastGoodQueues, not raw queues — fingerprint drift on new issues"
+fi
+
 # AC: Reconciliation suppress window present (1500ms).
 if grep -q 'POST_RECONCILE_SUPPRESS_MS' "$APP_JS" && grep -q '1500' "$APP_JS"; then
   pass "AC: reconciliation suppress window 1500ms present"
