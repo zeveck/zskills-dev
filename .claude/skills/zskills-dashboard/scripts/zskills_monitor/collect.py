@@ -872,11 +872,16 @@ def _scan_git_history(
         })
         return []
     if result.returncode != 0:
-        # Empty repo / no commits in window is not an error here.
-        if result.stderr.strip():
+        # Empty repo / no commits in window is not an error here. Recognise
+        # the canonical "fatal: your current branch ... does not have any
+        # commits yet" message so a brand-new repo doesn't show up as a
+        # collection error.
+        stderr = result.stderr.strip()
+        benign = (not stderr) or ("does not have any commits yet" in stderr)
+        if not benign:
             errors.append({
                 "source": "git history",
-                "message": f"git log rc={result.returncode}: {result.stderr.strip()[:200]}",
+                "message": f"git log rc={result.returncode}: {stderr[:200]}",
             })
         return []
 
@@ -919,10 +924,15 @@ def _scan_git_history(
 
 
 def _extract_pr_numbers_from_markers(
-    activity: List[Dict[str, Any]],
     main_root: pathlib.Path,
 ) -> set:
-    """Walk fulfilled.land-pr.* markers to collect PR numbers for dedup."""
+    """Walk fulfilled.land-pr.* markers to collect PR numbers for dedup.
+
+    Reads markers directly from disk (both flat `.zskills/tracking/` and
+    per-pipeline subdirs) rather than from the in-memory activity list,
+    because the activity list strips the raw `pr` field — it's flattened
+    into the `output` slot and may be elided.
+    """
     nums: set = set()
     base = main_root / ".zskills" / "tracking"
     if not base.is_dir():
@@ -1379,7 +1389,7 @@ def collect_snapshot(
     # dedup; commits whose trailing `(#N)` matches a fulfilled.land-pr.*
     # marker's PR number are dropped.
     marker_activity = _scan_tracking_markers(main_root, errors)
-    fulfilled_prs = _extract_pr_numbers_from_markers(marker_activity, main_root)
+    fulfilled_prs = _extract_pr_numbers_from_markers(main_root)
     git_activity = _scan_git_history(
         main_root, errors, fulfilled_pr_numbers=fulfilled_prs,
     )
