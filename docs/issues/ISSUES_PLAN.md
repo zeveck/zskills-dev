@@ -2,7 +2,7 @@
 title: Issues — General Tracker
 status: active
 created: 2026-05-15
-last_sync: 2026-05-15
+last_sync: 2026-05-17
 ---
 
 # Issues — General Tracker
@@ -159,3 +159,43 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 ---
 
+
+### #355 — /cleanup-merged: --review flag for per-branch merit-based recommendations + interactive picker
+
+**Labels:** (none) | **Verdict:** NOT FIXED — `/cleanup-merged` today supports only `--dry-run`; no classifier, no `--review`, no `cleanup.long_running_patterns` config field, no interactive picker.
+
+**Problem.** Current `/cleanup-merged` is conservative-by-design: it only removes branches whose PR is MERGED or whose upstream is `gone`. That leaves a long-tail of trailing state — sprint worktrees never pushed, draftplan worktrees that never shipped, empty stub branches from cron CLEANUP cycles, dirty interrupted worktrees, squash-merged-under-different-name branches. The 2026-05-17 session had 12 trailing worktrees the skill couldn't action; a human-assisted per-branch recommendation table did the triage. Issue asks to mechanize that into a `--review` flag.
+
+**Fix outline.** Edit `skills/cleanup-merged/SKILL.md` to: (1) extend the arg parser (line 55) to accept `--review`; (2) add a classifier loop after the fetch+prune preflight (~line 185) iterating `git for-each-ref refs/heads/` joined with `git worktree list --porcelain` (locked field), `gh pr view --json state`, `git status --porcelain` per worktree, and a `.landed` `status:` parse, applying ordered first-match rules from the issue; (3) emit an alphabetized KEEP/MAYBE/DECIDE/REMOVE table with rule citations; (4) interactive picker reading `<letter>:<verb>` overrides / `all-suggested` / blank / `none`. Add `cleanup.long_running_patterns` (array of branch-name globs, default empty) to `.claude/zskills-config.schema.json`. Mirror to `.claude/skills/cleanup-merged/SKILL.md`. Bump `metadata.version`.
+
+**Complexity:** M. **Action now:** /draft-plan — 10-rule classifier + picker DSL + new config field has enough surface area (rule ordering, locked-worktree edge cases) that adversarial review up-front beats reactive PRs.
+
+### #340 — /qe-audit: require orchestrator-side verification of agent findings before gh issue create + tracker mutation
+
+**Labels:** bug | **Verdict:** NOT FIXED — skill prose still flows agent dispatch → `gh issue create` → tracker mutation with no verification gate.
+
+**Problem.** `/qe-audit` dispatches parallel Explore agents and then takes durable-state actions (`gh issue create`, mutating `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`) on their reports without an orchestrator-side verification step. In the 2026-05-17 audit, 6 issues were filed in ~3 min and #338 had a factual error ("file deleted" — actually trimmed) that a 10-sec check would have caught. The `feedback_verify_agent_reports.md` memory anchor warns of this but is agent-local; the rule needs to live in skill prose to propagate.
+
+**Fix outline.** In `skills/qe-audit/SKILL.md`: insert a new step between Commit Audit Step 4 and Step 5 (line 190) requiring per-finding verification (Read/grep cited file:line, recursive grep for negative claims, read test files for test-shape claims, `git show` for "fixed by commit X" claims), with the verification command recorded in the issue/tracker body; unverifiable findings go to an "Unverified findings" subsection, not filed. Apply the same rule at Bash mode Step 3b parallel-sweep dispatch (line 246) and at both tracker-mutation steps (lines 194, 279). Renumber subsequent steps. Mirror to `.claude/skills/qe-audit/SKILL.md`. Bump `metadata.version`.
+
+**Complexity:** S. **Action now:** /quickfix S.
+
+### #338 — briefing: port-failure invariant lost when briefing.cjs dropped (1690c93)
+
+**Labels:** bug | **Verdict:** NOT FIXED — port-failure regression guard removed in 1690c93 was never re-added on the Python side; no test asserts the invariant today.
+
+**Problem.** PR #312 (commit 1690c93) retired `briefing.cjs` and trimmed `tests/test-briefing-parity.sh`, removing the "Port-failure parity" section that asserted: when `port.sh` is missing, `briefing` exits 0 AND emits no `localhost:` URL. This guarded against a pre-Phase-4 regression where a `port = '8080'` fallback would unconditionally emit `localhost:8080/...`. A future edit to `briefing.py` re-introducing that fallback would pass the entire test suite undetected.
+
+**Fix outline.** Restore a Python-only port-failure test case in `tests/test-briefing-parity.sh` (or a new `tests/test-briefing-port-failure.sh`). Port the fixture from `git show 1690c93^:tests/test-briefing-parity.sh` lines ~145-185: build a fake repo at `/tmp/zskills-briefing-fixture-noport` with `.git` marker but no `.claude/skills/update-zskills/scripts/port.sh`, copy `briefing.py` in, run `summary --since=24h`, assert exit 0 and `grep -c 'localhost:'` == 0. Drop all `briefing.cjs` / node branches from the ported fixture.
+
+**Complexity:** S. **Action now:** /quickfix — restore Python-only port-failure test.
+
+### #336 — Dashboard queue normalization: cold-start gh-list failure + client POST wipes user ordering
+
+**Labels:** bug | **Verdict:** NOT FIXED — pruning at `app.js:400-417` runs unconditionally; no `snap.errors` / `issues_fetch_ok` guard exists.
+
+**Problem.** Commit 430fad0 (PR #294) made the dashboard client self-prune its `monitor-state.json` issue queues against the live `gh issue list` result. Two failure modes follow: (1) **cold-start gh-list failure** — when the dashboard restarts with an empty 60s cache and the first `gh issue list` returns non-zero, `collect.py` returns `issues: []` and appends to `snap.errors[]`; (2) **client POST wipes ordering** — `deepCloneQueues` then treats every state entry as "dead" (not in live set), strips them all, and the next user drag POSTs the wiped state, destroying persistent ordering. The 60s cache only helps after one successful fetch lands.
+
+**Fix outline.** Gate the issue-prune loop on absence of a `gh issue list` failure. Cleanest split: server-side, set `snap.issues_fetch_ok = false` in `collect.py` (~line 1068-1162) on the gh-list error paths; client-side, in `static/app.js` `deepCloneQueues` (lines 400-417), skip the `if (!liveIssueNumbers.has(num)) continue` filter when `snap.issues_fetch_ok === false` (or as a fallback, when `snap.errors.some(e => /gh issue list/i.test(e.source))`). Preserve `lastGoodQueues...arr.length` for card-counter UI to keep the stale-good fallback. Add a test exercising mocked `gh` non-zero + fixture state + POST asserting N entries preserved.
+
+**Complexity:** S. **Action now:** /quickfix — small, localized two-file change with a clear test path.
