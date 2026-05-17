@@ -312,7 +312,6 @@ PARSER_SCRIPT="$TEST_TMPDIR/parser.sh"
   echo 'printf "SKIP_TESTS=%s\n" "$SKIP_TESTS"'
   echo 'printf "BRANCH_OVERRIDE=%s\n" "$BRANCH_OVERRIDE"'
   echo 'printf "AUTO_FLAG=%s\n" "$AUTO_FLAG"'
-  echo 'printf "UNATTENDED_FLAG=%s\n" "$UNATTENDED_FLAG"'
   # Also report whether the entry-point unset guard cleared the seam vars.
   echo 'printf "TRIAGE_VAR_STATE=%s\n" "${_ZSKILLS_TEST_TRIAGE_VERDICT-UNSET}"'
   echo 'printf "REVIEW_VAR_STATE=%s\n" "${_ZSKILLS_TEST_REVIEW_VERDICT-UNSET}"'
@@ -353,7 +352,7 @@ if grep -q '[-][-]branch)' "$SKILL" \
    && grep -qE '^[[:space:]]*\[sS\]\[kK\]\[iI\]\[pP\]-\[tT\]\[eE\]\[sS\]\[tT\]\[sS\]\) SKIP_TESTS=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[aA\]\[uU\]\[tT\]\[oO\]\)' "$SKILL"; then
-  pass "2  argument parser: migration arms (--yes / --from-here / --skip-tests / --force) + positional from-here/skip-tests/force/auto/unattended (Phase 4 grammar)"
+  pass "2  argument parser: migration arms (--yes / --from-here / --skip-tests / --force) + positional from-here/skip-tests/force/auto (Phase 4 grammar)"
 else
   fail "2  argument parser: one or more arms missing (migration redirects + positional bracket-class tokens, Phase 4 grammar)"
 fi
@@ -1885,14 +1884,29 @@ else
   fail "68 fromhere boundary: $(echo "$OUT68" | tr '\n' '|')"
 fi
 
-# Case 69 — argument-hint shape (AC4.9): exact new 99-char hint with
-# legacy --yes/--from-here/--skip-tests/--force brackets ABSENT.
+# Case 69 — argument-hint shape (AC4.9): exact new hint with legacy
+# --yes/--from-here/--skip-tests/--force brackets ABSENT.
 HINT=$(grep '^argument-hint' "$SKILL" | sed -E 's/^argument-hint: "(.*)"$/\1/')
-EXPECTED='[<description>] [auto] [unattended] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]'
+EXPECTED='[<description>] [auto] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]'
 if [ "$HINT" = "$EXPECTED" ]; then
   pass "69 argument-hint (AC4.9, AC4.12): new Phase 4 positional shape; legacy --yes/[--from-here]/[--skip-tests]/[--force] brackets removed (len=${#HINT})"
 else
   fail "69 argument-hint: got='$HINT' expected='$EXPECTED'"
+fi
+
+# Case 70 — WI 1.5.5 confirmation block contains the AUTO_FLAG=1
+# skip-and-proceed rule. When the user passes `auto`, the model bypasses
+# the WI 1.5.5 confirmation prompt and proceeds to WI 1.6, emitting a
+# stderr NOTE. This makes /quickfix's `auto` semantic match /run-plan
+# and /fix-issues, where `auto` = skip skill-internal gates + auto-merge.
+# The grep is whitespace-collapsed so the prose can wrap across lines.
+SKILL_FLAT=$(tr '\n' ' ' < "$SKILL" | tr -s '[:space:]' ' ')
+if echo "$SKILL_FLAT" | grep -qE 'AUTO_FLAG=1[^.]*skip this WI' \
+   && echo "$SKILL_FLAT" | grep -qE 'WI 1\.5\.5 confirmation skipped \(auto\)' \
+   && echo "$SKILL_FLAT" | grep -qE 'proceed to WI 1\.6'; then
+  pass "70 WI 1.5.5 prose contains AUTO_FLAG=1 skip-and-proceed rule (auto bypasses scope-confirmation prompt)"
+else
+  fail "70 WI 1.5.5 prose missing AUTO_FLAG=1 skip rule (need 'AUTO_FLAG=1 skip this WI', NOTE 'WI 1.5.5 confirmation skipped (auto)', and 'proceed to WI 1.6')"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1946,64 +1960,6 @@ if [ -n "$BEGIN_LINE" ] && [ -n "$CLOSE_LINE" ]; then
   fi
 else
   fail "59 end-of-Phase-7 explicit-finalize: BEGIN/CLOSE anchors not located (BEGIN_LINE=$BEGIN_LINE CLOSE_LINE=$CLOSE_LINE)"
-fi
-
-# ────────────────────────────────────────────────────────────────────
-# Cases 70–73 — Phase 5 (QUICKFIX_GRAMMAR_REDESIGN): WI 1.5.5a
-# scope-ambiguity detector + parser FLAGS stderr echo.
-#
-# Per Phase 5 testability caveat (H6): WI 1.5.5a is model-layer prose
-# and its branching decisions cannot be exercised by bash tests. Bash
-# coverage here is limited to (a) static-grep that the prose exists at
-# the expected position with the expected language, and (b) a smoke
-# assertion on the parser-side stderr echo that wires the model-layer
-# detector to the UNATTENDED_FLAG value. Behavioral verification of
-# the scope-ambiguity branches (Scenarios 1–6 of AC5.4) is the
-# verifier's manual responsibility.
-# ────────────────────────────────────────────────────────────────────
-
-# Case 70 — WI 1.5.5a section exists immediately before WI 1.5.5 and
-# names $UNATTENDED_FLAG as a referenced input.
-if grep -qE '^### WI 1\.5\.5a — Scope-ambiguity check' "$SKILL" \
-   && grep -q '\$UNATTENDED_FLAG' "$SKILL" \
-   && grep -q 'SCOPE_AMBIGUOUS' "$SKILL"; then
-  pass "70 WI 1.5.5a section present; references \$UNATTENDED_FLAG + SCOPE_AMBIGUOUS"
-else
-  fail "70 WI 1.5.5a section missing or doesn't reference \$UNATTENDED_FLAG / SCOPE_AMBIGUOUS"
-fi
-
-# Case 71 — WI 1.5.5a appears BEFORE WI 1.5.5 (the detector gates the
-# confirmation prompt; order matters for the rendered flow).
-LINE_5_5A=$(grep -nE '^### WI 1\.5\.5a' "$SKILL" | head -1 | cut -d: -f1)
-LINE_5_5=$(grep -nE '^### WI 1\.5\.5 — Dirty-tree confirmation' "$SKILL" | head -1 | cut -d: -f1)
-if [ -n "$LINE_5_5A" ] && [ -n "$LINE_5_5" ] && [ "$LINE_5_5A" -lt "$LINE_5_5" ]; then
-  pass "71 WI 1.5.5a (L$LINE_5_5A) precedes WI 1.5.5 (L$LINE_5_5)"
-else
-  fail "71 WI 1.5.5a ordering: 5.5a=L$LINE_5_5A 5.5=L$LINE_5_5 (5.5a must precede 5.5)"
-fi
-
-# Case 72 — Unattended-override NOTE phrasing present in prose so
-# session-transcript triage can grep for it when the scope ends up wrong.
-# The skipped-NOTE wording may wrap across lines in the source markdown,
-# so collapse to a single line before grep-ing for the multi-word phrase.
-SKILL_FLAT=$(tr '\n' ' ' < "$SKILL")
-if echo "$SKILL_FLAT" | grep -q "scope-confirmation skipped (unattended)" \
-   && grep -q "unattended override" "$SKILL"; then
-  pass "72 WI 1.5.5a NOTE phrasing present (unattended override + scope-confirmation skipped)"
-else
-  fail "72 WI 1.5.5a NOTE phrasing missing (need both 'unattended override' and 'scope-confirmation skipped (unattended)')"
-fi
-
-# Case 73 — Parser emits combined FLAGS line to stderr at exit. The
-# WI 5.1-backedit wires the model-layer detector to the runtime
-# UNATTENDED_FLAG value via this stderr echo; without it, the detector
-# can't condition on UNATTENDED_FLAG (the markdown `$UNATTENDED_FLAG`
-# would be aspirational because the model can't run bash to expand it).
-ERR_OUT=$(bash "$PARSER_SCRIPT" "fix typo" unattended 2>&1 >/dev/null)
-if echo "$ERR_OUT" | grep -qE '^FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1$'; then
-  pass "73 parser stderr echoes 'FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1' on 'fix typo unattended'"
-else
-  fail "73 parser stderr missing combined FLAGS line. Got: $ERR_OUT"
 fi
 
 echo ""

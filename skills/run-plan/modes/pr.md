@@ -303,18 +303,16 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 #   $LANDED_SOURCE = "run-plan"
 #   $WORKTREE_PATH = the plan-scoped PR-mode worktree (one per plan, reused across all phases in finish/finish-auto modes; see Issue #191)
 #   $AUTO          = "true" when $AUTO_FLAG=1 (i.e. /run-plan was invoked with `auto`,
-#                    or with the `finish auto` composite alias). Controls ONLY whether
-#                    `--auto` is appended to the /land-pr arg vector (narrow auto-merge
-#                    pass-through, per Phase 3 D2/D9). Between-phase autonomy is
-#                    governed by $UNATTENDED_FLAG, not $AUTO_FLAG.
+#                    or with the `finish auto` composite alias). Controls whether
+#                    `--auto` is appended to the /land-pr arg vector (auto-merge
+#                    the resulting PR).
 #   $BODY_FILE     = constructed above
 #   $BRANCH_NAME   = the plan-scoped feature branch (one per plan; phase number does NOT appear in branch name)
 #   $PR_TITLE      = constructed above
 LANDED_SOURCE="run-plan"
-# Bind $AUTO from the canonical $AUTO_FLAG bash variable (Phase 2). This is
-# the narrow auto-merge pass-through (D2/D9): if `auto` was on the invocation
-# (standalone or via the `finish auto` composite alias), pass `--auto` to
-# /land-pr. Between-phase autonomy is governed separately by $UNATTENDED_FLAG.
+# Bind $AUTO from the canonical $AUTO_FLAG bash variable: if `auto` was on
+# the invocation (standalone or via the `finish auto` composite alias), pass
+# `--auto` to /land-pr.
 if [ "${AUTO_FLAG:-0}" = "1" ]; then
   AUTO="true"
 else

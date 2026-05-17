@@ -533,39 +533,6 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 17 (AC6.9 / Phase 6) — Pre-flight pre-parse sets
-# UNATTENDED_FLAG=1 when positional `unattended` is in $ARGUMENTS
-# (Phase 2 WI 2.4 wired the parser; this smoke confirms it parses end
-# to end). Mirrors Case 15's AUTO_FLAG smoke shape.
-# Documented as a forward-placeholder (`/do` has no current gate); the
-# parser-arm exists for cross-skill consistency. Composes with `auto`.
-# ────────────────────────────────────────────────────────────────────
-UNATTENDEDFLAG_SCRIPT="$TEST_TMPDIR/unattendedflag.sh"
-{
-  echo '#!/bin/bash'
-  echo 'set -u'
-  echo 'ARGUMENTS="$1"'
-  echo "$PREFLIGHT_BLOCK"
-  echo 'printf "UNATTENDED_FLAG=%s\n" "$UNATTENDED_FLAG"'
-  echo 'printf "AUTO_FLAG=%s\n" "$AUTO_FLAG"'
-} > "$UNATTENDEDFLAG_SCRIPT"
-chmod +x "$UNATTENDEDFLAG_SCRIPT"
-
-OUT_C17a=$(bash "$UNATTENDEDFLAG_SCRIPT" "fix tooltip unattended pr" 2>/dev/null)
-OUT_C17b=$(bash "$UNATTENDEDFLAG_SCRIPT" "fix tooltip pr" 2>/dev/null)
-OUT_C17c=$(bash "$UNATTENDEDFLAG_SCRIPT" "fix tooltip UNATTENDED pr" 2>/dev/null)
-OUT_C17d=$(bash "$UNATTENDEDFLAG_SCRIPT" "fix tooltip auto unattended pr" 2>/dev/null)
-if echo "$OUT_C17a" | grep -q '^UNATTENDED_FLAG=1$' \
-   && echo "$OUT_C17b" | grep -q '^UNATTENDED_FLAG=0$' \
-   && echo "$OUT_C17c" | grep -q '^UNATTENDED_FLAG=1$' \
-   && echo "$OUT_C17d" | grep -q '^UNATTENDED_FLAG=1$' \
-   && echo "$OUT_C17d" | grep -q '^AUTO_FLAG=1$'; then
-  pass "17 Pre-flight pre-parse: UNATTENDED_FLAG=1 with 'unattended'/'UNATTENDED', =0 without; composes with 'auto' (AC6.9 / Phase 6)"
-else
-  fail "17 UNATTENDED_FLAG: with='$OUT_C17a' without='$OUT_C17b' upper='$OUT_C17c' combo='$OUT_C17d'"
-fi
-
-# ────────────────────────────────────────────────────────────────────
 # Suite summary
 # ────────────────────────────────────────────────────────────────────
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

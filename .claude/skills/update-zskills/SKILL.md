@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.17+3f35b9"
+  version: "2026.05.17+10b801"
 ---
 
 # Update Z Skills Infrastructure
@@ -866,40 +866,6 @@ Overall: Y/Y dependencies satisfied. Nothing to install.
 If there are gaps and the skill is running in default or install mode,
 proceed to fill them (see below). The audit report is always shown first
 so the user sees what was found before any modifications.
-
----
-
-### Step 7 — Cron auto/unattended migration (one-shot, auto-unattended split)
-
-If upgrading across the `auto`/`unattended` split (the
-`QUICKFIX_GRAMMAR_REDESIGN` plan landing), perform a one-shot cron audit.
-This step is MODEL-LAYER prose: `CronList`, `CronDelete`, and `CronCreate`
-are MCP tools (not bash CLIs), so the model invokes them directly. The
-runtime auto-promote (`MIGRATION_END_DATE` block in `/run-plan` and
-`/fix-issues`) covers users who never re-run `/update-zskills` during the
-3-month window; this step is the explicit rewrite for those who do.
-
-1. **Invoke `CronList`** to list all currently-registered cron jobs.
-2. **For each job** whose prompt matches `Run /(run-plan|fix-issues) ... auto ...`
-   AND does NOT already contain `unattended` AND is NOT the `finish auto`
-   composite alias (composite is preserved — it already hoists both flags),
-   construct the new prompt by appending `unattended` (placement: after
-   `auto`, before any `every` clause).
-3. **Present the proposed diff** to the user (old prompt → new prompt) for
-   confirmation, ONE cron at a time or batched into a single approval
-   prompt — caller's discretion based on number of affected jobs.
-4. **On user confirmation**, invoke `CronDelete <job-id>` followed by
-   `CronCreate` with the rewritten prompt and the same schedule. Repeat
-   per confirmed job.
-5. **Report a summary**: `N crons audited, M rewritten, K preserved
-   (composite-alias / already-unattended).`
-
-Post-migration crons have `unattended` explicitly; subsequent
-`/update-zskills` runs find no matching prompts and this step no-ops.
-After `MIGRATION_END_DATE` (the auto-promote sunset), the runtime safety
-net is removed and any un-migrated legacy crons will hang — the post-
-migration follow-up tracks both the promote removal and a final reminder
-to users who haven't run `/update-zskills` in the interim.
 
 ---
 

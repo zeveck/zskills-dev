@@ -1,14 +1,14 @@
 ---
 name: fix-issues
 disable-model-invocation: true
-argument-hint: "N [focus|dashboard] [auto] [unattended] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
+argument-hint: "N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
 description: >-
   Orchestrate a batch bug-fixing sprint: dispatch fixers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+f1cb8a"
+  version: "2026.05.17+ff232b"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -94,42 +94,18 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
 - `dashboard` (case-insensitive) — source candidates from
   `.zskills/monitor-state.json` `issues.ready` instead of the model rubric
 
-**Flag pre-parse — `AUTO_FLAG` / `UNATTENDED_FLAG`** (WI 2.3). Today
-all `auto` decisions live at the model layer; Phase 2 introduces the
-real bash variables so Phase 3 can bind the model-layer "Without `auto`
-/ With `auto`" gates to a single source of truth. Placement: BEFORE
-ANY inline `[[ "$ARGUMENTS" =~ ... [aA][uU][tT][oO] ... ]]` check (there
-are none today) and BEFORE the first user-facing prose that references
-the flags. Per D8 round-2: do NOT add an AUTO_FLAG gate to `gh issue
-close` — the existing `case "${LP[STATUS]:-}" in merged) ...` gate
-stays unchanged.
+**Flag pre-parse — `AUTO_FLAG`** (WI 2.3). The canonical bash variable
+so model-layer "Without `auto` / With `auto`" gates bind to a single
+source of truth. Placement: BEFORE the first user-facing prose that
+references the flag. Per D8 round-2: do NOT add an AUTO_FLAG gate to
+`gh issue close` — the existing `case "${LP[STATUS]:-}" in merged) ...`
+gate stays unchanged.
 
-<!-- allow-hardcoded: TZ=America/New_York reason: WI 3.7 migration auto-promote uses America/New_York to compare against the hardcoded MIGRATION_END_DATE (also in America/New_York per the design note); per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
 ```bash
 # Argument parsing — extract canonical flags from $ARGUMENTS.
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
-fi
-UNATTENDED_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]]) ]]; then
-  UNATTENDED_FLAG=1
-fi
-
-# Migration auto-promote (WI 3.7, D5 Layer 1 — 3-month migration window;
-# symmetric to /run-plan WI 3.3 but without the FINISH_MODE clause since
-# /fix-issues has no `finish` token). Until MIGRATION_END_DATE, treat
-# standalone `auto` (no `unattended`) as both flags — preserves the legacy
-# "autonomous selection-skip + advance" semantic while users (and crons
-# born pre-migration) update their invocations to explicit `auto unattended`.
-# After MIGRATION_END_DATE, this entire block is removed; legacy `auto`-only
-# invocations no longer skip the approval gate.
-MIGRATION_END_DATE="2026-08-17"
-if [ "$AUTO_FLAG" = "1" ] && [ "$UNATTENDED_FLAG" = "0" ]; then
-  if [ "$(TZ=America/New_York date +%Y-%m-%d)" \< "$MIGRATION_END_DATE" ]; then
-    UNATTENDED_FLAG=1
-    echo "NOTE: 'auto' in /fix-issues now means auto-merge ONLY. Promoting to 'auto unattended' for compatibility through $MIGRATION_END_DATE. Update invocation/cron to include 'unattended' explicitly. See references/auto-unattended-semantics.md." >&2
-  fi
 fi
 ```
 
@@ -188,16 +164,12 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:s
 fi
 
 # Strip dashboard from arguments before the leading-N integer parser
-# (same pattern as stripping pr/direct/auto/now). Per DA M4 round-2:
-# strip BOTH `auto` and `unattended` symmetrically so neither leaks into
-# the focus-extraction site (which extracts the "focus" string after
-# removing known tokens) or the cron-prompt construction.
+# (same pattern as stripping pr/direct/auto/now).
 ARGUMENTS=$(printf '%s' "$ARGUMENTS" \
   | sed -E 's/(^|[[:space:]])[pP][rR]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]])/ /' \
-  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
-  | sed -E 's/(^|[[:space:]])[uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]($|[[:space:]])/ /')
+  | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /')
 ```
 
 **Mutual exclusion for `dashboard`.** `dashboard` is a source-of-truth
@@ -680,13 +652,12 @@ EOF
 ## Plan (if `plan` is present)
 
 Draft plans for issues previously skipped as "too complex for batch fix."
-Selection gate is skipped when EITHER (a) `$UNATTENDED_FLAG=1` (the
-canonical Phase 2 bash variable, set by `unattended` in `$ARGUMENTS`),
-OR (b) the literal substring `plan auto` appears in `$ARGUMENTS` (legacy
-composite phrase, preserved as a user-facing token for backward
-compatibility). Resolution order: bash flag is checked first; literal
-phrase is a fallback. When either fires, all candidate issues are
-selected without prompting.
+Selection gate is skipped when EITHER (a) `$AUTO_FLAG=1` (the canonical
+Phase 2 bash variable, set by `auto` in `$ARGUMENTS`), OR (b) the literal
+substring `plan auto` appears in `$ARGUMENTS` (legacy composite phrase,
+preserved as a user-facing token for backward compatibility). Resolution
+order: bash flag is checked first; literal phrase is a fallback. When
+either fires, all candidate issues are selected without prompting.
 
 1. **Find skipped issues from `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.** Scan the entire
    sprint report for issue numbers under "Skipped" / "Too Complex" /
@@ -714,7 +685,7 @@ selected without prompting.
    a plan or are closed.
 
 3. **Present findings** (unless the selection-skip OR-rule above fires —
-   `$UNATTENDED_FLAG=1` OR the literal `plan auto` substring is in
+   `$AUTO_FLAG=1` OR the literal `plan auto` substring is in
    `$ARGUMENTS`):
    > Found N issues needing plans:
    > | # | Title | Source |
@@ -728,8 +699,8 @@ selected without prompting.
    > Which issues should I draft plans for? (all / comma-separated numbers / none)
 
    Wait for the user's selection before proceeding. If the selection-skip
-   OR-rule fires (`$UNATTENDED_FLAG=1` OR literal `plan auto` in
-   `$ARGUMENTS`), skip this step and plan all of them.
+   OR-rule fires (`$AUTO_FLAG=1` OR literal `plan auto` in `$ARGUMENTS`),
+   skip this step and plan all of them.
 
 4. **For each selected issue**, create a delegation requirement marker and
    then dispatch `/draft-plan`. The marker goes under fix-issues' own
@@ -789,25 +760,21 @@ If `$ARGUMENTS` contains `every <schedule>`:
    not the current invocation — the user controls whether THIS run executes
    immediately via their own `now` flag.
 
-   **Assemble the prompt from `$AUTO_FLAG` / `$UNATTENDED_FLAG` state, not
-   from literal `$ARGUMENTS` substrings** (WI 3.6 — symmetric to /run-plan
-   WI 3.2; prevents legacy-shape prompts from being born stale during/after
-   the D5 migration window). Cron-fired `every`-mode runs MUST advance
-   without human interaction, so include `unattended` unconditionally for
-   new `every` crons. Include `auto` if `$AUTO_FLAG=1` (preserves auto-merge
-   pass-through on the cron-fired land):
+   **Assemble the prompt from `$AUTO_FLAG` state, not from literal
+   `$ARGUMENTS` substrings.** Cron-fired `every`-mode runs MUST advance
+   without human interaction, so include `auto` unconditionally for new
+   `every` crons (auto = autonomous = skip approval gates + auto-merge):
    ```bash
    CRON_TOKENS=""
-   [ "${AUTO_FLAG:-0}" = "1" ] && CRON_TOKENS="$CRON_TOKENS auto"
-   # `unattended` is mandatory for `every`-mode crons (selection / approval
+   # `auto` is mandatory for `every`-mode crons (selection / approval
    # gates must be skipped non-interactively). Default-on regardless of
-   # $UNATTENDED_FLAG.
-   CRON_TOKENS="$CRON_TOKENS unattended"
+   # $AUTO_FLAG.
+   CRON_TOKENS="$CRON_TOKENS auto"
    CRON_PROMPT="Run /fix-issues $N${FOCUS:+ $FOCUS}$CRON_TOKENS every $SCHEDULE now"
    ```
    Default new-cron shape:
    ```
-   Run /fix-issues <N> [focus] auto unattended every <schedule> now
+   Run /fix-issues <N> [focus] auto every <schedule> now
    ```
 
 4. **Create the cron** — use `CronCreate`:
@@ -1446,13 +1413,12 @@ coupled neighbors instead of leaving them for the next sprint.
 
 ### Present the list
 
-- **Without `unattended`:** **Wait for user approval** of the list before
+- **Without `auto`:** **Wait for user approval** of the list before
   proceeding. Include the grouping rationale so the user can adjust.
-- **With `unattended`:** Present the ranked table for the record, then
-  proceed immediately using the ranking criteria above. This gate is
-  approval-skip, not auto-merge — independent of `auto`, which only
-  governs the `/land-pr --auto` pass-through (see "Auto-flag gating
-  depends on landing mode" below).
+- **With `auto`:** Present the ranked table for the record, then
+  proceed immediately using the ranking criteria above. `auto` skips
+  the approval gate AND triggers auto-merge via `/land-pr --auto` (see
+  "Auto-flag gating depends on landing mode" below).
 
 ### If no actionable issues found
 
@@ -2084,8 +2050,7 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   `execution.main_protected: false` (enforced at Phase 1 argument parse).
 
 **Auto-flag gating depends on landing mode.** This block governs the
-`--auto` (auto-merge) pass-through to `/land-pr` per landing mode — NOT
-approval-skip (which is now governed by `unattended`, per Phase 3 D2/D9).
+`--auto` (auto-merge) pass-through to `/land-pr` per landing mode.
 Without `auto`:
 
 - **`LANDING_MODE == pr`:** run [modes/pr.md](modes/pr.md) end-to-end
