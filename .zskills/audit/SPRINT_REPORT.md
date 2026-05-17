@@ -756,3 +756,42 @@ PR mode + auto. Per-issue `/land-pr --auto` for #326, then sprint-level `/land-p
 - #326 → PR pending
 - SPRINT_REPORT.md commit → PR pending
 
+
+## Sprint — 2026-05-17 11:13 [UNFINALIZED]
+
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**Pipeline:** `fix-issues.sprint-20260517-144327-trio`
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #334 | `/fix-issues` dashboard token: behavioral test coverage (sentinel-grep-only → fixture-based) | /tmp/zskills-fix-issue-334 | `089b50a` | 27 new cases in new `tests/test-fix-issues-dashboard.sh`; full suite 3308/3308 | PASS (verifier confirmed extraction-from-source pattern — awk pulls Python intersection + Phase 0 mutex bash blocks from SKILL.md at test time, fails if drift; 27/27 in isolation; no SKILL.md edits, no Tier-1 cascade) | N/A (tests-only) |
+| #335 | `/fix-issues` sync Step 5 `git add -A 2>/dev/null \|\| true` suppresses fallible op (CLAUDE.md violation) | /tmp/zskills-fix-issue-335 | `4c96a4d` | full suite 3283/3283 pre AND post-commit (local-vs-CI parity verified); schema test 22/22 (+2 assertions) | PASS (verifier confirmed line 485 replaced with explicit `if ! ...; then echo ERROR >&2; exit 1; fi`; mirror byte-identical; hash `f1cb8a` matches `metadata.version: 2026.05.17+f1cb8a`; out-of-scope items correctly flagged not patched) | N/A (skill prose; CI catches regressions) |
+| #339 | skill description budget test labels "chars" but counts bytes under `LC_ALL=C` | /tmp/zskills-fix-issue-339 | `ad28b85` | full suite 3281/3281; isolated test PASS with new "bytes" labels; same numeric value (6874) — only label change | PASS (verifier confirmed `references/skill-description-budget.md` is at repo root, NOT under any skill dir — no cascade, no version bump needed; counting unchanged) | N/A (test label correction) |
+
+### Skipped — Author-deferred
+
+| # | Title | Why |
+|---|-------|-----|
+| #67 | GitLab (glab) support | "not ready" |
+| #217 | Relocate plan execution reports | "not immediately" |
+
+### Skipped — Design discussion / dispatcher
+
+| # | Title | Why |
+|---|-------|-----|
+| #336 | Dashboard queue normalization | Multi-failure-mode design |
+| #337 | Sprint-level /land-pr behavioral tests | Sister to #334; bigger fixture scope; worth its own /do |
+| #338 | Briefing port-failure invariant lost | Needs design judgment on what the invariant should be post-briefing.cjs drop |
+| #340 | /qe-audit orchestrator verification gate | Process-discipline; needs design conversation |
+
+### Spec verification — post-#343 design
+
+This sprint exercises the post-PR-#343 design end-to-end:
+- Sprint identity → cap-check (LIVE_COUNT=0 via the new `.landed status:landed` filter from #331) → sprint worktree gate → Phase 1a sync → Phase 1b read bodies → Phase 2 prioritize → Phase 3 dispatch 3 parallel impl agents → Phase 4 dispatch 3 parallel verifiers (all commit) → Phase 5 sprint report in worktree → Phase 6 serial /land-pr.
+
+### Landing
+
+PR mode + auto. Per-issue /land-pr serially for #334, #335, #339. Then sprint-level /land-pr to ship this SPRINT_REPORT.md commit (per #325 Phase 6 dispatch).
+
