@@ -1948,6 +1948,64 @@ else
   fail "59 end-of-Phase-7 explicit-finalize: BEGIN/CLOSE anchors not located (BEGIN_LINE=$BEGIN_LINE CLOSE_LINE=$CLOSE_LINE)"
 fi
 
+# ────────────────────────────────────────────────────────────────────
+# Cases 70–73 — Phase 5 (QUICKFIX_GRAMMAR_REDESIGN): WI 1.5.5a
+# scope-ambiguity detector + parser FLAGS stderr echo.
+#
+# Per Phase 5 testability caveat (H6): WI 1.5.5a is model-layer prose
+# and its branching decisions cannot be exercised by bash tests. Bash
+# coverage here is limited to (a) static-grep that the prose exists at
+# the expected position with the expected language, and (b) a smoke
+# assertion on the parser-side stderr echo that wires the model-layer
+# detector to the UNATTENDED_FLAG value. Behavioral verification of
+# the scope-ambiguity branches (Scenarios 1–6 of AC5.4) is the
+# verifier's manual responsibility.
+# ────────────────────────────────────────────────────────────────────
+
+# Case 70 — WI 1.5.5a section exists immediately before WI 1.5.5 and
+# names $UNATTENDED_FLAG as a referenced input.
+if grep -qE '^### WI 1\.5\.5a — Scope-ambiguity check' "$SKILL" \
+   && grep -q '\$UNATTENDED_FLAG' "$SKILL" \
+   && grep -q 'SCOPE_AMBIGUOUS' "$SKILL"; then
+  pass "70 WI 1.5.5a section present; references \$UNATTENDED_FLAG + SCOPE_AMBIGUOUS"
+else
+  fail "70 WI 1.5.5a section missing or doesn't reference \$UNATTENDED_FLAG / SCOPE_AMBIGUOUS"
+fi
+
+# Case 71 — WI 1.5.5a appears BEFORE WI 1.5.5 (the detector gates the
+# confirmation prompt; order matters for the rendered flow).
+LINE_5_5A=$(grep -nE '^### WI 1\.5\.5a' "$SKILL" | head -1 | cut -d: -f1)
+LINE_5_5=$(grep -nE '^### WI 1\.5\.5 — Dirty-tree confirmation' "$SKILL" | head -1 | cut -d: -f1)
+if [ -n "$LINE_5_5A" ] && [ -n "$LINE_5_5" ] && [ "$LINE_5_5A" -lt "$LINE_5_5" ]; then
+  pass "71 WI 1.5.5a (L$LINE_5_5A) precedes WI 1.5.5 (L$LINE_5_5)"
+else
+  fail "71 WI 1.5.5a ordering: 5.5a=L$LINE_5_5A 5.5=L$LINE_5_5 (5.5a must precede 5.5)"
+fi
+
+# Case 72 — Unattended-override NOTE phrasing present in prose so
+# session-transcript triage can grep for it when the scope ends up wrong.
+# The skipped-NOTE wording may wrap across lines in the source markdown,
+# so collapse to a single line before grep-ing for the multi-word phrase.
+SKILL_FLAT=$(tr '\n' ' ' < "$SKILL")
+if echo "$SKILL_FLAT" | grep -q "scope-confirmation skipped (unattended)" \
+   && grep -q "unattended override" "$SKILL"; then
+  pass "72 WI 1.5.5a NOTE phrasing present (unattended override + scope-confirmation skipped)"
+else
+  fail "72 WI 1.5.5a NOTE phrasing missing (need both 'unattended override' and 'scope-confirmation skipped (unattended)')"
+fi
+
+# Case 73 — Parser emits combined FLAGS line to stderr at exit. The
+# WI 5.1-backedit wires the model-layer detector to the runtime
+# UNATTENDED_FLAG value via this stderr echo; without it, the detector
+# can't condition on UNATTENDED_FLAG (the markdown `$UNATTENDED_FLAG`
+# would be aspirational because the model can't run bash to expand it).
+ERR_OUT=$(bash "$PARSER_SCRIPT" "fix typo" unattended 2>&1 >/dev/null)
+if echo "$ERR_OUT" | grep -qE '^FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1$'; then
+  pass "73 parser stderr echoes 'FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1' on 'fix typo unattended'"
+else
+  fail "73 parser stderr missing combined FLAGS line. Got: $ERR_OUT"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$((PASS_COUNT + FAIL_COUNT))"

@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.17+e3357d"
+  version: "2026.05.17+3799b5"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -177,6 +177,14 @@ done
 # Trim
 DESCRIPTION="${DESCRIPTION#"${DESCRIPTION%%[![:space:]]*}"}"
 DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
+
+# Echo resolved flag values to stderr so the model sees them in turn
+# context (load-bearing for WI 1.5.5a's model-layer scope-ambiguity
+# detector, which conditions on UNATTENDED_FLAG's value). Combined-line
+# form preferred per Phase 5 WI 5.1-backedit: one log line, both flags
+# visible. Emitted at parser exit unconditionally so the line appears
+# regardless of which arms fired.
+echo "FLAGS: AUTO_FLAG=$AUTO_FLAG UNATTENDED_FLAG=$UNATTENDED_FLAG" >&2
 ```
 
 ## Phase 1 — Pre-flight
@@ -575,11 +583,57 @@ written** (WI 1.8 has not yet run).
 
 On REJECT and `$FORCE -eq 1`: print override message. Continue.
 
+### WI 1.5.5a — Scope-ambiguity check (model-layer)
+
+Compute `$SCOPE_AMBIGUOUS` from `$DIRTY_FILES`, `$DESCRIPTION`, and
+`$UNATTENDED_FLAG` (the model reads `UNATTENDED_FLAG`'s value from the
+parser-block's stderr echo line `FLAGS: AUTO_FLAG=N UNATTENDED_FLAG=N`
+emitted at parser exit — see WI 2.1's combined-line echo):
+
+- If `UNATTENDED_FLAG=1` → `SCOPE_AMBIGUOUS=0` UNCONDITIONALLY (explicit
+  user opt-in per D3-QF; skip confirmation, emit stderr NOTE: "NOTE: WI
+  1.5.5 scope-confirmation skipped (unattended).").
+- Else if `$DIRTY_FILES` contains 2 or more entries → `SCOPE_AMBIGUOUS=1`.
+- Else if `$DIRTY_FILES` contains exactly 1 entry:
+  - Compute `FNAME = basename of the single dirty file`.
+  - Compute `FNAME_NORMALIZED = FNAME with hyphens replaced by spaces`.
+  - Compute `FPATH = full path of the single dirty file`.
+  - WORD-BOUNDARY substring match (case-insensitive): token is preceded
+    and followed by whitespace, punctuation, or string boundary. If
+    `$DESCRIPTION` contains `FNAME` as a word-boundary substring OR
+    contains `FNAME_NORMALIZED` as a word-boundary substring OR contains
+    `FPATH` as a substring → `SCOPE_AMBIGUOUS=0`. (Word-boundary tightens
+    raw substring per Reviewer M7 / DA M8 to avoid `fix foobar` matching
+    file `foo`. Hyphen-space normalization handles `the build` ↔
+    `the-build.sh`.)
+  - Otherwise → `SCOPE_AMBIGUOUS=1`.
+- If `$DIRTY_FILES` is empty (agent-dispatched mode) → WI 1.5.5 does not
+  apply (this WI only runs in user-edited mode). **Mode variable per
+  DA L1 round-2:** /quickfix WI 1.5 resolves invocation mode via the
+  `$DIRTY_FILES` empty-vs-nonempty check, NOT a separate `MODE` variable.
+  Read by reference to `$DIRTY_FILES` directly. **Caveat per
+  Reviewer H7:** verify clean-tree-on-entry was confirmed during WI 1.5
+  mode resolution; if not, the agent-mode assumption is unsafe. Add a
+  one-line assertion at WI 1.5 mode-resolution that clean-tree-on-entry
+  is explicit before falling into agent-mode.
+
+When `SCOPE_AMBIGUOUS=0`, skip WI 1.5.5's user-confirmation prompt; emit
+a single-line stderr NOTE describing why (one of: "unattended override",
+"single dirty file '<FNAME>' named in description") and proceed to WI 1.6.
+
+When `SCOPE_AMBIGUOUS=1`, proceed with the existing WI 1.5.5 confirmation
+steps (1–4 below).
+
 ### WI 1.5.5 — Dirty-tree confirmation (model-layer)
+
+Note: this WI is bypassed by the `unattended` positional token (per
+D3-QF). The unattended token forces WI 1.5.5a `SCOPE_AMBIGUOUS=0`
+unconditionally.
 
 This is a **model-layer instruction**, not a bash block.
 
-When `MODE == "user-edited"` (i.e. `$DIRTY_FILES` is non-empty), the model
+When `MODE == "user-edited"` (i.e. `$DIRTY_FILES` is non-empty) AND
+`SCOPE_AMBIGUOUS=1` (per WI 1.5.5a), the model
 MUST, before proceeding to slug/branch creation:
 
 1. Show the user the full dirty-file list (one per line).
@@ -604,6 +658,23 @@ confirmation, the model could loosely match `$DESCRIPTION` to the dirty
 files and accidentally bundle unrelated in-flight work into the PR. Don't
 rely on description-to-filename pattern-matching — always surface the full
 diff and confirm before branching.
+
+**Why context-aware:** the failure mode WI 1.5.5 prevents — model
+loose-matching `$DESCRIPTION` to dirty files and bundling unrelated
+work — applies when scope is ambiguous (multi-file or description doesn't
+name the file). When the dirty tree has exactly one file AND the user
+named it in the description, scope is unambiguous. WI 1.5.5a's detector
+preserves the protection where it matters and removes it where it
+doesn't. The `unattended` token (D3-QF) provides an explicit user opt-out:
+typing `unattended` is an explicit risk acceptance that the model will
+scope correctly. **Known false-friction cases:** descriptions like "fix
+scripts" or "update docs" that name a directory but not a basename will
+fire WI 1.5.5 even when the single dirty file is unambiguously implied.
+We accept the friction in favor of conservative-when-uncertain
+protection; users facing this case can type `unattended`. **Known
+protection-loss case:** if the user types `unattended` and the model
+scopes incorrectly, work bundling can occur — explicit opt-in is the
+explicit acceptance.
 
 This confirmation is the SOLE scope-protection gate. WI 1.10's prior
 bash `read -r` confirmation was deleted in Phase 4 of
@@ -771,10 +842,15 @@ switch so `CHANGED_FILES` reflects what will be staged (untracked files
 carry across; new untracked on the new branch still count).
 
 The user has already affirmed the dirty-tree scope at the model-layer
-WI 1.5.5 prompt, so no further bash confirmation runs here. (Phase 4 of
-QUICKFIX_GRAMMAR_REDESIGN deleted the vestigial `read -r` block per
-DA H7; the production decline path is WI 1.5.5 which exits BEFORE
-WI 1.8 runs — no marker, no branch.)
+WI 1.5.5 prompt (or WI 1.5.5a's scope-ambiguity detector decided
+confirmation was unnecessary — single dirty file named in description,
+or `unattended` flag set), so no further bash confirmation runs here.
+(Phase 4 of QUICKFIX_GRAMMAR_REDESIGN deleted the vestigial `read -r`
+block per DA H7; the production decline path is WI 1.5.5 which exits
+BEFORE WI 1.8 runs — no marker, no branch. Phase 5 added WI 1.5.5a
+context-aware logic that may skip the prompt entirely when scope is
+unambiguous; the bash-extraction test path exercises the happy
+bash-fallback flow without any scope-prompt.)
 
 ```bash
 if [ "$MODE" = "user-edited" ]; then
