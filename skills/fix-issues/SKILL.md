@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+ff232b"
+  version: "2026.05.17+992d09"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1502,7 +1502,7 @@ If ALL candidates are too vague, too complex, or already attempted:
          PR_TITLE="sync: tracker refresh from /fix-issues fire $SPRINT_ID"
          SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
          LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-no-actionable --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
-         [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+         [ "${AUTO:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
 
          echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
@@ -2162,7 +2162,7 @@ if [ -n "${WT_PATH:-}" ]; then
     PR_TITLE="sprint-report: $SPRINT_ID"
     SPRINT_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
     LAND_ARGS="--branch=$SPRINT_BRANCH --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=fix-issues-sprint --worktree-path=$TOPLEVEL --tracking-id=$SPRINT_LAND_ID"
-    [ "$AUTO" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
+    [ "${AUTO:-false}" = "true" ] && LAND_ARGS="$LAND_ARGS --auto"
 
     echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
