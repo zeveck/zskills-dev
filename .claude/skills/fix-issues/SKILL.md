@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.16+6587c9"
+  version: "2026.05.17+5a0469"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1320,12 +1320,33 @@ with a lower-ordinal model than the configured minimum.
 
 **1 issue per agent, parallel dispatch.** Each issue gets its own agent
 in its own pre-created worktree (materialised via `create-worktree.sh`
-before dispatch for all modes — see "Worktree setup" below). **Dispatch at
-most 3 worktree agents per message.** If you have more than 3, dispatch the
-first 3, wait for them to return, then dispatch the next batch. Five
-concurrent `git checkout` operations cause I/O contention on 9p
-filesystems — checkouts stall at ~72% and the Agent framework times
-out, leaving orphaned worktree directories.
+before dispatch for all modes — see "Worktree setup" below).
+
+There are TWO distinct caps on parallelism — they look similar but solve
+different problems and live at different scopes:
+
+1. **Per-message dispatch I/O contention cap (hardcoded 3).** Within one
+   Agent-tool dispatch message, dispatch at most 3 worktree agents per message.
+   If you have more than 3, dispatch the first 3, wait for them to return,
+   then dispatch the next batch. Five concurrent `git checkout` operations
+   cause I/O contention on 9p filesystems — checkouts stall at ~72% and the
+   Agent framework times out, leaving orphaned worktree directories. This
+   is a property of dispatch-time filesystem contention; it does NOT bound
+   how many worktrees end up alive simultaneously across the sprint.
+
+2. **Sprint-wide aggregate live-worktree cap (`$ZSKILLS_MAX_CONCURRENT_WORKTREES`,
+   default 3, from `execution.max_concurrent_worktrees` in
+   `.claude/zskills-config.json`).** Bounds the total number of live
+   `fix/issue-*` worktrees the sprint keeps alive at any moment. By
+   mid-sprint, batches dispatched under cap (1) above would otherwise
+   be all alive concurrently (each running tests, a verifier, a CI run)
+   — which OOMs/stalls resource-constrained dev containers. This cap
+   makes the sprint defer new dispatches when live count is already at
+   the cap, and waits for prior worktrees to land via cron retry.
+
+   See "Live worktree count check" below — this gate runs BEFORE the
+   dispatch loop and either reduces the batch size or defers the whole
+   fire.
 
 - **Interrelated issues** (same root cause or same files from Phase 2
   grouping) share one agent and one worktree. Tell the agent which
@@ -1333,6 +1354,76 @@ out, leaving orphaned worktree directories.
 - **Unrelated issues get separate agents.** Never batch unrelated hard
   issues into one agent — this caused a 4.5h bottleneck when one agent
   got 4 diverse issues sequentially.
+
+### Live worktree count check
+
+Run this **before** the dispatch loop (cherry-pick / direct / PR mode all):
+
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
+# execution.max_concurrent_worktrees field is absent or malformed).
+
+# Count live fix/issue-* worktrees across the repo (resume detection is
+# directory-based, so this is the authoritative live-count). Both PR-mode
+# (branch fix/issue-NNN) and cherry-pick/direct mode (branch fix-issue-NNN)
+# branches are counted via two grep passes against `git worktree list
+# --porcelain`. Each worktree contributes exactly one `branch refs/heads/...`
+# line in the porcelain output.
+LIVE_COUNT=$(git worktree list --porcelain \
+  | grep -cE '^branch refs/heads/fix[/-]issue-')
+
+CAP="$ZSKILLS_MAX_CONCURRENT_WORKTREES"
+N_REQUESTED="${#TO_DISPATCH[@]}"  # how many fix agents this sprint wants to dispatch
+SLOTS=$(( CAP - LIVE_COUNT ))
+if [ "$SLOTS" -le 0 ]; then
+  # All slots already taken — defer the entire fire.
+  echo "Live worktree count ($LIVE_COUNT) >= cap ($CAP). Deferring this fire."
+  # Append a section to SPRINT_REPORT.md so the deferral is auditable.
+  cat >> "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" <<DEFER
+
+### Sprint deferred — at live-worktree cap
+
+Live count $LIVE_COUNT >= cap $CAP at $(TZ="${TIMEZONE:-UTC}" date -Iseconds).
+No fix agents dispatched this fire. \`execution.max_concurrent_worktrees\`
+in \`.claude/zskills-config.json\` controls the cap (default 3). Cron will
+retry on the next fire — by then prior worktrees should have landed (PR
+merged + worktree cleaned), opening slots.
+DEFER
+  exit 0
+elif [ "$SLOTS" -lt "$N_REQUESTED" ]; then
+  # Some slots, but not enough for the full batch. Dispatch the first SLOTS;
+  # queue the rest for the next fire. The queued issues stay open and the
+  # next cron tick (or `/fix-issues next`) will re-prioritise them.
+  echo "Live count $LIVE_COUNT, cap $CAP — $SLOTS slots available, dispatching $SLOTS of $N_REQUESTED."
+  QUEUED=( "${TO_DISPATCH[@]:$SLOTS}" )
+  TO_DISPATCH=( "${TO_DISPATCH[@]:0:$SLOTS}" )
+  # Note the deferred subset in the sprint report. The exact issue list
+  # comes from the orchestrator's batched-priority array.
+  cat >> "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" <<QUEUED_SEC
+
+### Sprint partially deferred — at live-worktree cap
+
+Live count $LIVE_COUNT, cap $CAP. Dispatched $SLOTS of $N_REQUESTED agents
+this fire; queued for next fire: ${QUEUED[*]}
+QUEUED_SEC
+fi
+# Otherwise SLOTS >= N_REQUESTED — proceed with the full dispatch loop below.
+# The per-message I/O contention cap (3) still applies inside the dispatch
+# loop, so a batch of 5 still pages out as 3+2 even when SLOTS=5.
+```
+
+Notes:
+- `TO_DISPATCH` is the array of issue numbers the orchestrator built in
+  Phase 2's prioritisation. The cap-check truncates it in place; the
+  dispatch loop below iterates `TO_DISPATCH` as usual.
+- The grep regex `^branch refs/heads/fix[/-]issue-` matches BOTH the PR-mode
+  pattern `fix/issue-NNN` and the cherry-pick/direct-mode pattern
+  `fix-issue-NNN`. Bracket alternation `[/-]` keeps it a single grep.
+- The cap can be raised by editing `execution.max_concurrent_worktrees` in
+  `.claude/zskills-config.json`. Raise above 3 only on hosts with ample
+  CPU/memory/disk headroom — past containers OOMed at 8 concurrent live.
 
 **Agent timeout: 1 hour.** Note the dispatch time for each agent. If an
 agent hasn't returned after 1 hour, declare it **failed**:
