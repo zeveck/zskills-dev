@@ -139,6 +139,153 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────
+# Assertion 6: cap-check defer-all gate runs BEFORE the sprint
+# worktree gate (issue #329 follow-up — co-located bugs from #320).
+# If the cap-check ran AFTER the worktree gate, the defer-path's
+# `cat >> SPRINT_REPORT.md` would strand in a worktree that never
+# ships (Phase 6's sprint-level /land-pr is past the `exit 0`).
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== fix-issues cap-check ordering + predicate (issue #329 follow-up) ==="
+
+CAP_DEFER_LINE=$(grep -n '^### Live worktree count check (defer-all gate)' "$FI_SKILL" | head -1 | cut -d: -f1)
+CAP_PARTIAL_LINE=$(grep -n '^### Live worktree count check (partial-dispatch trim)' "$FI_SKILL" | head -1 | cut -d: -f1)
+if [ -z "$CAP_DEFER_LINE" ]; then
+  fail "fix-issues: '### Live worktree count check (defer-all gate)' missing (cap-check must run before worktree gate)"
+elif [ -z "$SPRINT_GATE_LINE" ]; then
+  fail "fix-issues: '### Sprint worktree gate' missing (cannot verify ordering)"
+elif [ "$CAP_DEFER_LINE" -ge "$SPRINT_GATE_LINE" ]; then
+  fail "fix-issues: defer-all gate at line $CAP_DEFER_LINE must precede sprint worktree gate at line $SPRINT_GATE_LINE (defer-path would strand SPRINT_REPORT.md write otherwise)"
+else
+  pass "fix-issues: defer-all gate (line $CAP_DEFER_LINE) precedes sprint worktree gate (line $SPRINT_GATE_LINE)"
+fi
+
+if [ -z "$CAP_PARTIAL_LINE" ]; then
+  fail "fix-issues: '### Live worktree count check (partial-dispatch trim)' missing (partial-batch trim needs its own block in Phase 3)"
+elif [ -z "$SPRINT_GATE_LINE" ]; then
+  : # already failed above
+elif [ "$CAP_PARTIAL_LINE" -le "$SPRINT_GATE_LINE" ]; then
+  fail "fix-issues: partial-dispatch trim at line $CAP_PARTIAL_LINE must FOLLOW sprint worktree gate at line $SPRINT_GATE_LINE (it needs TO_DISPATCH from Phase 2)"
+else
+  pass "fix-issues: partial-dispatch trim (line $CAP_PARTIAL_LINE) follows sprint worktree gate (line $SPRINT_GATE_LINE)"
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# Assertion 7: behavioural — the cap-check predicate must SKIP
+# worktrees whose `.landed` marker reads `status: landed`. We
+# extract the predicate code block from the SKILL.md, build a
+# fake `git worktree list --porcelain` fixture with three entries
+# (one landed, one un-landed, one not-fix-issue), eval the
+# predicate against it, and assert LIVE_COUNT == 1.
+#
+# This locks the EXACT predicate behaviour, not just structural
+# presence — the reviewer-flagged gap from the bug report.
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== predicate behaviour: skip .landed status: landed ==="
+
+# Extract the awk/while predicate block from the SKILL.md (defer-all
+# gate). Pull the lines between `LIVE_COUNT=$(` and the matching `)`.
+PRED_START=$(awk '/^### Live worktree count check \(defer-all gate\)/{found=1} found && /^LIVE_COUNT=\$\($/{print NR; exit}' "$FI_SKILL")
+if [ -z "$PRED_START" ]; then
+  fail "could not locate LIVE_COUNT=( in defer-all gate (cannot run predicate behaviour test)"
+else
+  # Capture lines from PRED_START through the next standalone `)` line.
+  PRED_END=$(awk -v start="$PRED_START" 'NR>=start && /^\)$/{print NR; exit}' "$FI_SKILL")
+  if [ -z "$PRED_END" ]; then
+    fail "could not locate closing ) of LIVE_COUNT predicate"
+  else
+    PRED_BODY=$(sed -n "${PRED_START},${PRED_END}p" "$FI_SKILL")
+
+    # Build a temp dir with three fake worktrees:
+    #   wt-landed   — fix-issue-1, .landed says `status: landed` (SKIP)
+    #   wt-active   — fix-issue-2, no .landed                    (COUNT)
+    #   wt-other    — feature/foo, not a fix branch              (SKIP)
+    TMP_PRED=$(mktemp -d /tmp/cap-predicate-test.XXXXXX)
+    trap 'rm -rf "$TMP_PRED"' EXIT
+
+    mkdir -p "$TMP_PRED/wt-landed" "$TMP_PRED/wt-active" "$TMP_PRED/wt-other"
+    printf 'status: landed\ndate: 2026-05-17\n' > "$TMP_PRED/wt-landed/.landed"
+    # wt-active has no .landed file
+    # wt-other has no .landed file
+
+    # Stub `git worktree list --porcelain` to print our fixture.
+    cat > "$TMP_PRED/git" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "worktree" ] && [ "\$2" = "list" ] && [ "\$3" = "--porcelain" ]; then
+  cat <<PORC
+worktree $TMP_PRED/wt-landed
+branch refs/heads/fix/issue-1
+
+worktree $TMP_PRED/wt-active
+branch refs/heads/fix-issue-2
+
+worktree $TMP_PRED/wt-other
+branch refs/heads/feature/foo
+
+PORC
+  exit 0
+fi
+exec /usr/bin/git "\$@"
+EOF
+    chmod +x "$TMP_PRED/git"
+
+    # Run the predicate with our stub git on PATH.
+    ACTUAL=$(PATH="$TMP_PRED:$PATH" bash -c "$PRED_BODY"$'\necho "$LIVE_COUNT"' 2>&1 | tail -1)
+
+    if [ "$ACTUAL" = "1" ]; then
+      pass "predicate excludes .landed status: landed (LIVE_COUNT=1 from fixture: 1 landed + 1 active + 1 non-fix)"
+    else
+      fail "predicate behaviour wrong: expected LIVE_COUNT=1, got '$ACTUAL' (fixture: 1 landed fix-issue + 1 active fix-issue + 1 non-fix branch)"
+    fi
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# Assertion 8: defer-all gate does NOT `cat >> SPRINT_REPORT.md`.
+# The strand bug was: defer-all wrote audit content into the
+# sprint-level worktree's SPRINT_REPORT.md, then `exit 0` skipped
+# Phase 6's /land-pr. Even after moving the gate earlier (so no
+# worktree exists yet), keep the predicate negative — any future
+# refactor that re-introduces a `cat >>` here re-opens the strand
+# if someone moves the gate back.
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "=== defer-all gate does not append to SPRINT_REPORT.md ==="
+
+# Slice from "### Live worktree count check (defer-all gate)" up to
+# the next "### " heading.
+DEFER_BLOCK=$(awk '
+  /^### Live worktree count check \(defer-all gate\)/{capture=1; next}
+  capture && /^### /{exit}
+  capture {print}
+' "$FI_SKILL")
+
+# Match an actual shell heredoc: `cat >> "...SPRINT_REPORT.md" <<TAG`,
+# not prose commentary like `# No 'cat >> SPRINT_REPORT.md' here`. The
+# leading `# ` in a code-comment line is the disambiguator.
+if echo "$DEFER_BLOCK" | grep -E '^[[:space:]]*cat[[:space:]]+>>.*SPRINT_REPORT\.md.*<<' >/dev/null; then
+  fail "defer-all gate contains 'cat >> ...SPRINT_REPORT.md <<TAG' heredoc — re-opens the strand bug from #329"
+else
+  pass "defer-all gate has no 'cat >> SPRINT_REPORT.md <<' heredoc (strand bug from #329 stays closed)"
+fi
+
+# Same check for the partial-dispatch trim — kept symmetric per the
+# bug report's lean: defer events shouldn't go in SPRINT_REPORT.md.
+PARTIAL_BLOCK=$(awk '
+  /^### Live worktree count check \(partial-dispatch trim\)/{capture=1; next}
+  capture && /^### /{exit}
+  capture && /^## /{exit}
+  capture {print}
+' "$FI_SKILL")
+
+if echo "$PARTIAL_BLOCK" | grep -E '^[[:space:]]*cat[[:space:]]+>>.*SPRINT_REPORT\.md.*<<' >/dev/null; then
+  fail "partial-dispatch trim contains 'cat >> ...SPRINT_REPORT.md <<TAG' heredoc — should stay stderr-only for symmetry with defer-all"
+else
+  pass "partial-dispatch trim has no 'cat >> SPRINT_REPORT.md <<' heredoc (symmetric with defer-all)"
+fi
+
+# ─────────────────────────────────────────────────────────────────
 # Source/mirror parity (general invariant; pinned here so a broken
 # mirror surfaces in THIS test too, not only the conformance test).
 # ─────────────────────────────────────────────────────────────────

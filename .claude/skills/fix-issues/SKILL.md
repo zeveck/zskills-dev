@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+987e2e"
+  version: "2026.05.17+64b77a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -803,6 +803,61 @@ PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/s
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 ```
 
+### Live worktree count check (defer-all gate)
+
+**Run this BEFORE the sprint worktree gate below.** If the host is already
+at the live-worktree cap, defer the whole fire here — exit cleanly with no
+worktree created, no sentinel marker, no Phase 1 work. Co-located bugs from
+PR #320 (predicate over-counted because it didn't skip already-landed
+worktrees) and PR #329 (the cap-check used to run AFTER the sprint
+worktree gate, so a defer-all that appended to `SPRINT_REPORT.md` stranded
+the write in a worktree that never shipped — sprint-level `/land-pr` is in
+Phase 6, past the `exit 0`). Fix: move the gate up here and skip
+`.landed status: landed` worktrees from the count. The partial-dispatch
+arm (when 0 < SLOTS < N_REQUESTED) moves to its own spot in Phase 3 —
+it needs `TO_DISPATCH` which Phase 2 builds.
+
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside a comment explaining WHY the defer-all gate does NOT write to it (strand bug from #329); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 8 -->
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
+# execution.max_concurrent_worktrees field is absent or malformed).
+
+# Count live fix/issue-* worktrees across the repo, SKIPPING any whose
+# `.landed` marker says `status: landed`. Done-but-uncleaned worktrees
+# (every PR that ever merged through /fix-issues whose dir wasn't swept
+# by /cleanup-merged yet) used to trip the cap; the awk/while shape
+# below filters them out. Both PR-mode (`fix/issue-NNN`) and
+# cherry-pick/direct mode (`fix-issue-NNN`) branches count via the
+# bracket alternation `fix[/-]issue-`. Each worktree contributes exactly
+# one `branch refs/heads/...` line in the porcelain output, preceded by
+# a `worktree <path>` line — awk pairs them.
+LIVE_COUNT=$(
+  git worktree list --porcelain \
+    | awk '/^worktree /{wt=$2} /^branch refs\/heads\/fix[/-]issue-/{print wt}' \
+    | while read -r wt; do
+        if [ -f "$wt/.landed" ] && grep -q '^status: landed' "$wt/.landed"; then
+          continue
+        fi
+        echo X
+      done \
+    | wc -l \
+    | tr -d ' '
+)
+
+CAP="$ZSKILLS_MAX_CONCURRENT_WORKTREES"
+if [ "$LIVE_COUNT" -ge "$CAP" ]; then
+  # All slots already taken — defer the entire fire BEFORE creating a
+  # worktree. No `cat >> SPRINT_REPORT.md` here: the audit-write would
+  # land in a worktree that never ships (sprint-level /land-pr is in
+  # Phase 6, past this exit). One stderr line is the whole audit trail
+  # — defer events are transient; the audit value is in real-dispatch
+  # sprints.
+  echo "fix-issues: live worktree count ($LIVE_COUNT) >= cap ($CAP); deferring sprint $PIPELINE_ID. Cron will retry on the next fire." >&2
+  exit 0
+fi
+```
+
 ### Sprint worktree gate
 
 **All sprint-mode work happens in a pre-created worktree.** Before
@@ -1396,9 +1451,11 @@ different problems and live at different scopes:
    makes the sprint defer new dispatches when live count is already at
    the cap, and waits for prior worktrees to land via cron retry.
 
-   See "Live worktree count check" below — this gate runs BEFORE the
-   dispatch loop and either reduces the batch size or defers the whole
-   fire.
+   See "Live worktree count check (defer-all gate)" in Phase 1 — that
+   block exits the sprint cleanly (no worktree, no markers) if all slots
+   are taken at entry. See "Live worktree count check (partial-dispatch
+   trim)" below — that block trims `TO_DISPATCH` if the available slots
+   are fewer than the batch size built in Phase 2.
 
 - **Interrelated issues** (same root cause or same files from Phase 2
   grouping) share one agent and one worktree. Tell the agent which
@@ -1407,59 +1464,57 @@ different problems and live at different scopes:
   issues into one agent — this caused a 4.5h bottleneck when one agent
   got 4 diverse issues sequentially.
 
-### Live worktree count check
+### Live worktree count check (partial-dispatch trim)
 
-Run this **before** the dispatch loop (cherry-pick / direct / PR mode all):
+Run this **before** the dispatch loop (cherry-pick / direct / PR mode all).
+The defer-all arm of this gate already ran in Phase 1 ("Live worktree count
+check (defer-all gate)") — if we reached this point, at least one slot was
+free at sprint entry. Here we only handle the partial-dispatch case: if
+the available slot count is now less than the batch the orchestrator built
+in Phase 2, trim `TO_DISPATCH` in place and re-prioritise the remainder on
+the next fire. We re-compute `LIVE_COUNT` because slots may have changed
+between Phase 1 and here (other concurrent pipelines, etc.).
 
-<!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside comments explaining WHY this trim does NOT write to it (symmetry with the Phase 1 defer-all gate); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 8 -->
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 # $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
 # execution.max_concurrent_worktrees field is absent or malformed).
 
-# Count live fix/issue-* worktrees across the repo (resume detection is
-# directory-based, so this is the authoritative live-count). Both PR-mode
-# (branch fix/issue-NNN) and cherry-pick/direct mode (branch fix-issue-NNN)
-# branches are counted via two grep passes against `git worktree list
-# --porcelain`. Each worktree contributes exactly one `branch refs/heads/...`
-# line in the porcelain output.
-LIVE_COUNT=$(git worktree list --porcelain \
-  | grep -cE '^branch refs/heads/fix[/-]issue-')
+# Recount live fix/issue-* worktrees, skipping `.landed status: landed`
+# entries (same predicate as the Phase 1 defer-all gate — see that block
+# for the why; this is the symmetric per-batch trim).
+LIVE_COUNT=$(
+  git worktree list --porcelain \
+    | awk '/^worktree /{wt=$2} /^branch refs\/heads\/fix[/-]issue-/{print wt}' \
+    | while read -r wt; do
+        if [ -f "$wt/.landed" ] && grep -q '^status: landed' "$wt/.landed"; then
+          continue
+        fi
+        echo X
+      done \
+    | wc -l \
+    | tr -d ' '
+)
 
 CAP="$ZSKILLS_MAX_CONCURRENT_WORKTREES"
 N_REQUESTED="${#TO_DISPATCH[@]}"  # how many fix agents this sprint wants to dispatch
 SLOTS=$(( CAP - LIVE_COUNT ))
 if [ "$SLOTS" -le 0 ]; then
-  # All slots already taken — defer the entire fire.
-  echo "Live worktree count ($LIVE_COUNT) >= cap ($CAP). Deferring this fire."
-  # Append a section to SPRINT_REPORT.md so the deferral is auditable.
-  cat >> "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" <<DEFER
-
-### Sprint deferred — at live-worktree cap
-
-Live count $LIVE_COUNT >= cap $CAP at $(TZ="${TIMEZONE:-UTC}" date -Iseconds).
-No fix agents dispatched this fire. \`execution.max_concurrent_worktrees\`
-in \`.claude/zskills-config.json\` controls the cap (default 3). Cron will
-retry on the next fire — by then prior worktrees should have landed (PR
-merged + worktree cleaned), opening slots.
-DEFER
+  # Edge case: slots vanished between the Phase 1 defer-all gate and now
+  # (concurrent pipeline filled the cap). Defer the whole batch — no
+  # audit-write to SPRINT_REPORT.md here either (defer events are
+  # transient; see Phase 1 defer-all gate comment).
+  echo "fix-issues: live count ($LIVE_COUNT) re-saturated cap ($CAP) before dispatch; deferring sprint $PIPELINE_ID. Cron will retry." >&2
   exit 0
 elif [ "$SLOTS" -lt "$N_REQUESTED" ]; then
   # Some slots, but not enough for the full batch. Dispatch the first SLOTS;
   # queue the rest for the next fire. The queued issues stay open and the
-  # next cron tick (or `/fix-issues next`) will re-prioritise them.
-  echo "Live count $LIVE_COUNT, cap $CAP — $SLOTS slots available, dispatching $SLOTS of $N_REQUESTED."
-  QUEUED=( "${TO_DISPATCH[@]:$SLOTS}" )
+  # next cron tick (or `/fix-issues next`) will re-prioritise them. No
+  # `cat >> SPRINT_REPORT.md` audit-write — symmetry with the defer-all
+  # gate above; the queued-subset signal lives on stderr.
+  echo "fix-issues: live count $LIVE_COUNT, cap $CAP — $SLOTS slots available, dispatching $SLOTS of $N_REQUESTED. Queued for next fire: ${TO_DISPATCH[*]:$SLOTS}" >&2
   TO_DISPATCH=( "${TO_DISPATCH[@]:0:$SLOTS}" )
-  # Note the deferred subset in the sprint report. The exact issue list
-  # comes from the orchestrator's batched-priority array.
-  cat >> "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" <<QUEUED_SEC
-
-### Sprint partially deferred — at live-worktree cap
-
-Live count $LIVE_COUNT, cap $CAP. Dispatched $SLOTS of $N_REQUESTED agents
-this fire; queued for next fire: ${QUEUED[*]}
-QUEUED_SEC
 fi
 # Otherwise SLOTS >= N_REQUESTED — proceed with the full dispatch loop below.
 # The per-message I/O contention cap (3) still applies inside the dispatch
@@ -1470,9 +1525,11 @@ Notes:
 - `TO_DISPATCH` is the array of issue numbers the orchestrator built in
   Phase 2's prioritisation. The cap-check truncates it in place; the
   dispatch loop below iterates `TO_DISPATCH` as usual.
-- The grep regex `^branch refs/heads/fix[/-]issue-` matches BOTH the PR-mode
-  pattern `fix/issue-NNN` and the cherry-pick/direct-mode pattern
-  `fix-issue-NNN`. Bracket alternation `[/-]` keeps it a single grep.
+- The awk/while predicate matches BOTH the PR-mode pattern
+  `fix/issue-NNN` and the cherry-pick/direct-mode pattern
+  `fix-issue-NNN` (bracket alternation `fix[/-]issue-`), and skips
+  any worktree whose `.landed` marker reads `status: landed` — those
+  are done-but-uncleaned cleanup artifacts, not live work.
 - The cap can be raised by editing `execution.max_concurrent_worktrees` in
   `.claude/zskills-config.json`. Raise above 3 only on hosts with ample
   CPU/memory/disk headroom — past containers OOMed at 8 concurrent live.
