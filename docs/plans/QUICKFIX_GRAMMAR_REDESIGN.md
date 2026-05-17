@@ -2,7 +2,7 @@
 issue: 310
 title: /quickfix argument-grammar inconsistency + cross-skill auto semantics drift
 created: 2026-05-16
-status: active
+status: complete
 ---
 
 # Plan: /quickfix argument-grammar redesign + cross-skill `auto`/`unattended` alignment
@@ -52,13 +52,13 @@ Issue [#310](https://github.com/zeveck/zskills-dev/issues/310) reports two coupl
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Decisions reference doc + CLAUDE_TEMPLATE prose + PR #303 close | 🟡 | `d02b8a8` | Locks D1–D11 into `references/auto-unattended-semantics.md`; #303 was already MERGED at draft-time so close was substituted with redirect comment (AC1.3/1.4 reformulated; see drift tokens) |
-| 2 — Real `AUTO_FLAG` + `UNATTENDED_FLAG` parser arms in all 4 skills | 🟡 | `4cfe0ad` | 4 skills + 4 mirrors + 17 conformance assertions; tests 3194/3194; #303 cherry-pick was no-op (already in main); 2 drift tokens: do-arg-hint 141→146 (3.5%), hash-script-arg-shape bug in plan loop |
-| 3 — Model-layer prose rewrite for narrow `auto` + `unattended` gating | 🟡 | `c352fab` | 5 /run-plan + 3 /fix-issues prose sites rewritten; 2 migration auto-promotes (MIGRATION_END_DATE=2026-08-17); cron-prompt regen incl. `unattended`; $AUTO bound from $AUTO_FLAG in modes/pr.md (was orphaned); tests 3202/3202; line-number drift in plan tables (Phase 2 shift) → /refine-plan post-Phase-7 |
-| 4 — `/quickfix` grammar rework (drop `--yes`, positional booleans) | 🟡 | `e8bb801` | Parser: migration redirects FIRST (lines 108-117) → positional case-arms (130-146); YES_FLAG + `read -r` confirmation block deleted entirely; arg-hint=99 chars; Cases 49+57 deleted, 43 rewritten, 60-69 added for migration+positional+greedy-fallthrough coverage; tests 3217/3217 (+15) |
-| 5 — `/quickfix` WI 1.5.5 context-aware logic + `unattended` skip | 🟡 | `7e231e6` | WI 1.5.5a detector inserted (UNATTENDED_FLAG=1 → SKIP unconditionally; ≥2 dirty files OR no word-boundary match → AMBIGUOUS); parser-exit `FLAGS:` stderr echo so model reads flags from turn context; rationale paragraph appended; 4 new tests (70-73); tests 3221/3221 |
-| 6 — `/do` `unattended` parity (rebases on #303's `auto` work) | 🟡 | `5917200` | Forward-placeholder semantic documented in /do + reference doc (no current /do gate to bypass); regex-arm conformance assertion (matches /do's `[[ =~ ]]` form, not the `case` form other 3 callers use); Case 17 4-arm smoke (unattended/no/UPPER/auto+un); arg-hint 146 chars (< soft 150 cap, no formal cap); tests 3223/3223 |
-| 7 — Conformance + integration tests + cron migration + docs sweep | ⬚ | | Grep-recipe-based conformance assertions (not line refs); model-layer cron-migration runbook in /update-zskills (NOT a bash script per round-2 H2 — CronList is MCP) |
+| 1 — Decisions reference doc + CLAUDE_TEMPLATE prose + PR #303 close | ✅ | `d02b8a8` | Locks D1–D11 into `references/auto-unattended-semantics.md`; #303 was already MERGED at draft-time so close was substituted with redirect comment (AC1.3/1.4 reformulated; see drift tokens) |
+| 2 — Real `AUTO_FLAG` + `UNATTENDED_FLAG` parser arms in all 4 skills | ✅ | `4cfe0ad` | 4 skills + 4 mirrors + 17 conformance assertions; tests 3194/3194; #303 cherry-pick was no-op (already in main); 2 drift tokens: do-arg-hint 141→146 (3.5%), hash-script-arg-shape bug in plan loop |
+| 3 — Model-layer prose rewrite for narrow `auto` + `unattended` gating | ✅ | `c352fab` | 5 /run-plan + 3 /fix-issues prose sites rewritten; 2 migration auto-promotes (MIGRATION_END_DATE=2026-08-17); cron-prompt regen incl. `unattended`; $AUTO bound from $AUTO_FLAG in modes/pr.md (was orphaned); tests 3202/3202; line-number drift in plan tables (Phase 2 shift) → /refine-plan post-Phase-7 |
+| 4 — `/quickfix` grammar rework (drop `--yes`, positional booleans) | ✅ | `e8bb801` | Parser: migration redirects FIRST (lines 108-117) → positional case-arms (130-146); YES_FLAG + `read -r` confirmation block deleted entirely; arg-hint=99 chars; Cases 49+57 deleted, 43 rewritten, 60-69 added for migration+positional+greedy-fallthrough coverage; tests 3217/3217 (+15) |
+| 5 — `/quickfix` WI 1.5.5 context-aware logic + `unattended` skip | ✅ | `7e231e6` | WI 1.5.5a detector inserted (UNATTENDED_FLAG=1 → SKIP unconditionally; ≥2 dirty files OR no word-boundary match → AMBIGUOUS); parser-exit `FLAGS:` stderr echo so model reads flags from turn context; rationale paragraph appended; 4 new tests (70-73); tests 3221/3221 |
+| 6 — `/do` `unattended` parity (rebases on #303's `auto` work) | ✅ | `5917200` | Forward-placeholder semantic documented in /do + reference doc (no current /do gate to bypass); regex-arm conformance assertion (matches /do's `[[ =~ ]]` form, not the `case` form other 3 callers use); Case 17 4-arm smoke (unattended/no/UPPER/auto+un); arg-hint 146 chars (< soft 150 cap, no formal cap); tests 3223/3223 |
+| 7 — Conformance + integration tests + cron migration + docs sweep | ✅ | `f6e8339` | +3 conformance assertions; NEW test-auto-unattended-integration.sh (29 fixtures via static parser-block extraction); CLAUDE.md `## auto and unattended tokens`; /update-zskills Step 7 cron migration runbook (model-layer, not script); all 5 mirrors byte-identical; tests 3255/3255 (+32) |
 
 ## Phase 1 — Decisions reference doc + CLAUDE_TEMPLATE prose + PR #303 close
 
