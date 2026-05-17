@@ -1,6 +1,6 @@
 ---
 name: quickfix
-argument-hint: "[<description>] [auto] [--branch <name>] [--yes] [--from-here] [--skip-tests] [--force] [--rounds N]"
+argument-hint: "[<description>] [auto] [unattended] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
   one-commit PR without a worktree. Two auto-detected modes: user-edited
@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.16+7ea279"
+  version: "2026.05.17+3799b5"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -48,12 +48,31 @@ ceremony than the change is worth, but a PR is still required.
 ## Argument parser (WI 1.2)
 
 Bash-regex idiom matching `skills/do/SKILL.md:70-92`. Recognized flags:
-`--branch <name>`, `--yes` / `-y`, `--from-here`, `--skip-tests`. The
-positional `auto` token (case-insensitive, anywhere in the args) enables
+`--branch <name>`, `--rounds N`. Recognized positional tokens
+(case-insensitive, anywhere in the arg vector): `auto`, `unattended`,
+`from-here`, `skip-tests`, `force`. The positional `auto` token enables
 auto-merge via `/land-pr` and matches the convention in `/run-plan`,
 `/fix-issues`, and `/do`. Everything else becomes the DESCRIPTION
 (trimmed of leading/trailing whitespace). Empty DESCRIPTION is allowed
 at parse time — mode detection (WI 1.5) decides whether it is fatal.
+
+- **unattended** (optional) — skip the WI 1.5.5 scope-confirmation prompt.
+  Forces the WI 1.5.5a SKIP branch unconditionally; the model bypasses
+  scope confirmation (per D3-QF). See references/auto-unattended-semantics.md.
+- **from-here** (optional) — override the "must run on main/master"
+  preflight check (WI 1.4). Use when you intentionally want to base the
+  feature branch off a non-main checkout.
+- **skip-tests** (optional) — skip the WI 1.12 test gate. Warn-only;
+  use only for emergency hotfixes where the test suite is unrelated.
+- **force** (optional) — bypass a triage REDIRECT verdict (WI 1.5.4) and
+  proceed with `/quickfix` anyway.
+
+The legacy `--yes` / `-y` flag was removed; WI 1.5.5's context-aware
+logic + the `unattended` token cover both the unambiguous-scope and
+explicit-bypass cases. The legacy `--`-prefixed forms of `from-here`,
+`skip-tests`, `force` were converted to positional tokens; invoking them
+in the `--` form now hard-stops with a corrective error (see migration
+redirects in the parser case statement below).
 
 ```bash
 # Entry-point unset guard for the model-layer test seam. Without the
@@ -67,30 +86,64 @@ fi
 ARGS=( "$@" )
 DESCRIPTION=""
 BRANCH_OVERRIDE=""
-YES_FLAG=0
 FROM_HERE=0
 SKIP_TESTS=0
 FORCE=0
 ROUNDS=1
 AUTO_FLAG=0
+UNATTENDED_FLAG=0
 
 i=0
 while [ $i -lt ${#ARGS[@]} ]; do
   arg="${ARGS[$i]}"
   case "$arg" in
+    # --- Migration redirects (MUST be first; per WI 4.2 ordering invariant) ---
+    # These arms catch legacy `--`-prefixed forms that were removed (--yes)
+    # or converted to positional tokens (--from-here / --skip-tests / --force)
+    # in Phase 4. They MUST stay at the TOP of the case statement so the
+    # legacy invocations cannot fall through to `*)` and become silent
+    # description prose. Each redirect names the EXACT corrected invocation
+    # and exits 1. No deprecation grace period (per CLAUDE.md
+    # feedback_no_premature_backcompat.md).
+    --yes|-y)
+      echo "ERROR: /quickfix '--yes' / '-y' was removed. Scope confirmation is now handled by WI 1.5.5's context-aware logic (or the 'unattended' token to skip). Re-invoke without --yes." >&2
+      exit 1 ;;
+    --from-here)
+      echo "ERROR: /quickfix '--from-here' was replaced by positional 'from-here'. Re-invoke as: /quickfix <description> from-here" >&2
+      exit 1 ;;
+    --skip-tests)
+      echo "ERROR: /quickfix '--skip-tests' was replaced by positional 'skip-tests'. Re-invoke as: /quickfix <description> skip-tests" >&2
+      exit 1 ;;
+    --force)
+      echo "ERROR: /quickfix '--force' was replaced by positional 'force'. Re-invoke as: /quickfix <description> force" >&2
+      exit 1 ;;
+    # --- Existing/new arms below ---
     --branch)
       i=$((i+1))
       BRANCH_OVERRIDE="${ARGS[$i]:-}"
       ;;
-    --yes|-y)    YES_FLAG=1 ;;
-    --from-here) FROM_HERE=1 ;;
-    --skip-tests) SKIP_TESTS=1 ;;
-    --force) FORCE=1 ;;
+    # Positional `from-here` / `skip-tests` / `force` tokens (case-insensitive).
+    # Bracket-class form matches each letter case-insensitively; the hyphen
+    # between bracket classes is treated as a literal character (NOT inside
+    # a class). Verified: matches `from-here`, `From-Here`, `FROM-HERE`;
+    # does NOT match `FromHere`, `FROMHERE`, `from-here2`.
+    [fF][rR][oO][mM]-[hH][eE][rR][eE]) FROM_HERE=1 ;;
+    [sS][kK][iI][pP]-[tT][eE][sS][tT][sS]) SKIP_TESTS=1 ;;
+    [fF][oO][rR][cC][eE]) FORCE=1 ;;
     # Positional `auto` token (case-insensitive). Recognized anywhere in
     # the arg vector — `/quickfix <desc> auto` and `/quickfix auto <desc>`
     # both set AUTO_FLAG=1. Mirrors the convention in /run-plan,
     # /fix-issues, /do. The token never falls through to DESCRIPTION.
     [aA][uU][tT][oO]) AUTO_FLAG=1 ;;
+    # Positional `unattended` token (case-insensitive). Symmetric to `auto`
+    # — recognized anywhere in the arg vector and never falls through to
+    # DESCRIPTION. Bash case matches the token only when it stands alone
+    # as a word (`unattended-mode` falls to `*)`). If the user's
+    # description literally contains the standalone word `unattended`, the
+    # token is consumed (same known limitation as the `auto` token).
+    # Skips the WI 1.5.5 scope-confirmation prompt — forces the WI 1.5.5a
+    # SKIP branch unconditionally. See references/auto-unattended-semantics.md.
+    [uU][nN][aA][tT][tT][eE][nN][dD][eE][dD]) UNATTENDED_FLAG=1 ;;
     --rounds)
       # Greedy-fallthrough: if next arg is numeric, consume it as ROUNDS.
       # If next arg is non-numeric (e.g. "/quickfix fix --rounds in docs"),
@@ -124,6 +177,14 @@ done
 # Trim
 DESCRIPTION="${DESCRIPTION#"${DESCRIPTION%%[![:space:]]*}"}"
 DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
+
+# Echo resolved flag values to stderr so the model sees them in turn
+# context (load-bearing for WI 1.5.5a's model-layer scope-ambiguity
+# detector, which conditions on UNATTENDED_FLAG's value). Combined-line
+# form preferred per Phase 5 WI 5.1-backedit: one log line, both flags
+# visible. Emitted at parser exit unconditionally so the line appears
+# regardless of which arms fired.
+echo "FLAGS: AUTO_FLAG=$AUTO_FLAG UNATTENDED_FLAG=$UNATTENDED_FLAG" >&2
 ```
 
 ## Phase 1 — Pre-flight
@@ -210,7 +271,7 @@ block our commit mid-flow.
 
 ```bash
 if [ "$SKIP_TESTS" -eq 0 ] && [ -z "$UNIT_CMD" ]; then
-  echo "ERROR: /quickfix requires testing.unit_cmd (or pass --skip-tests)." >&2
+  echo "ERROR: /quickfix requires testing.unit_cmd (or pass skip-tests)." >&2
   exit 1
 fi
 if [ -n "$FULL_CMD" ] && [ "$FULL_CMD" != "$UNIT_CMD" ]; then
@@ -247,7 +308,7 @@ done
 
 ### WI 1.4 — Main-ref fetch
 
-Verify we are on main or master (unless `--from-here` is passed). Capture
+Verify we are on main or master (unless `from-here` is passed). Capture
 the current branch as `BASE_BRANCH` and fetch the remote ref. **Do NOT
 a fast-forward merge of origin into a dirty working tree — paths that
 overlap the incoming changes would abort the merge and leave us in a
@@ -260,7 +321,7 @@ if [ "$FROM_HERE" -eq 0 ]; then
   case "$CURRENT_BRANCH" in
     main|master) ;;
     *)
-      echo "ERROR: /quickfix must run on main or master (got '$CURRENT_BRANCH'). Pass --from-here to override." >&2
+      echo "ERROR: /quickfix must run on main or master (got '$CURRENT_BRANCH'). Pass from-here to override." >&2
       exit 1
       ;;
   esac
@@ -353,10 +414,10 @@ linebreak is a real newline, not the literal `\n` characters):
 
 | target | Line 1 | Line 2 |
 |--------|--------|--------|
-| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
-| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
-| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
-| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
+| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with force to bypass.` |
+| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with force to bypass.` |
+| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with force to bypass.` |
+| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). force will not help — vague descriptions cannot be planned.` |
 
 The model implements these as a `printf 'line1\nline2\n' "$REASON"` so
 both lines are emitted to stdout and both are independently greppable
@@ -367,13 +428,13 @@ lines), then `exit 0`. **No marker is written** (WI 1.8 has not yet
 run). No branch. No tracking dir.
 
 On REDIRECT and `$FORCE -eq 1`: print
-`Triage: REDIRECT(<target>) overridden by --force; proceeding.`
+`Triage: REDIRECT(<target>) overridden by force; proceeding.`
 Continue.
 
 ### WI 1.5.4a — Inline plan composition (model-layer)
 
 This is a **model-layer instruction**, not a bash block. After triage
-returns PROCEED (or after `--force` overrides a REDIRECT), the model
+returns PROCEED (or after `force` overrides a REDIRECT), the model
 composes a short inline plan held in `INLINE_PLAN`. `INLINE_PLAN` is a
 logical placeholder for text the model composes in its response. When
 WI 1.5.4b dispatches the reviewer Agent, the model copies the
@@ -522,38 +583,74 @@ written** (WI 1.8 has not yet run).
 
 On REJECT and `$FORCE -eq 1`: print override message. Continue.
 
+### WI 1.5.5a — Scope-ambiguity check (model-layer)
+
+Compute `$SCOPE_AMBIGUOUS` from `$DIRTY_FILES`, `$DESCRIPTION`, and
+`$UNATTENDED_FLAG` (the model reads `UNATTENDED_FLAG`'s value from the
+parser-block's stderr echo line `FLAGS: AUTO_FLAG=N UNATTENDED_FLAG=N`
+emitted at parser exit — see WI 2.1's combined-line echo):
+
+- If `UNATTENDED_FLAG=1` → `SCOPE_AMBIGUOUS=0` UNCONDITIONALLY (explicit
+  user opt-in per D3-QF; skip confirmation, emit stderr NOTE: "NOTE: WI
+  1.5.5 scope-confirmation skipped (unattended).").
+- Else if `$DIRTY_FILES` contains 2 or more entries → `SCOPE_AMBIGUOUS=1`.
+- Else if `$DIRTY_FILES` contains exactly 1 entry:
+  - Compute `FNAME = basename of the single dirty file`.
+  - Compute `FNAME_NORMALIZED = FNAME with hyphens replaced by spaces`.
+  - Compute `FPATH = full path of the single dirty file`.
+  - WORD-BOUNDARY substring match (case-insensitive): token is preceded
+    and followed by whitespace, punctuation, or string boundary. If
+    `$DESCRIPTION` contains `FNAME` as a word-boundary substring OR
+    contains `FNAME_NORMALIZED` as a word-boundary substring OR contains
+    `FPATH` as a substring → `SCOPE_AMBIGUOUS=0`. (Word-boundary tightens
+    raw substring per Reviewer M7 / DA M8 to avoid `fix foobar` matching
+    file `foo`. Hyphen-space normalization handles `the build` ↔
+    `the-build.sh`.)
+  - Otherwise → `SCOPE_AMBIGUOUS=1`.
+- If `$DIRTY_FILES` is empty (agent-dispatched mode) → WI 1.5.5 does not
+  apply (this WI only runs in user-edited mode). **Mode variable per
+  DA L1 round-2:** /quickfix WI 1.5 resolves invocation mode via the
+  `$DIRTY_FILES` empty-vs-nonempty check, NOT a separate `MODE` variable.
+  Read by reference to `$DIRTY_FILES` directly. **Caveat per
+  Reviewer H7:** verify clean-tree-on-entry was confirmed during WI 1.5
+  mode resolution; if not, the agent-mode assumption is unsafe. Add a
+  one-line assertion at WI 1.5 mode-resolution that clean-tree-on-entry
+  is explicit before falling into agent-mode.
+
+When `SCOPE_AMBIGUOUS=0`, skip WI 1.5.5's user-confirmation prompt; emit
+a single-line stderr NOTE describing why (one of: "unattended override",
+"single dirty file '<FNAME>' named in description") and proceed to WI 1.6.
+
+When `SCOPE_AMBIGUOUS=1`, proceed with the existing WI 1.5.5 confirmation
+steps (1–4 below).
+
 ### WI 1.5.5 — Dirty-tree confirmation (model-layer)
+
+Note: this WI is bypassed by the `unattended` positional token (per
+D3-QF). The unattended token forces WI 1.5.5a `SCOPE_AMBIGUOUS=0`
+unconditionally.
 
 This is a **model-layer instruction**, not a bash block.
 
-When `MODE == "user-edited"` (i.e. `$DIRTY_FILES` is non-empty), the model
+When `MODE == "user-edited"` (i.e. `$DIRTY_FILES` is non-empty) AND
+`SCOPE_AMBIGUOUS=1` (per WI 1.5.5a), the model
 MUST, before proceeding to slug/branch creation:
 
 1. Show the user the full dirty-file list (one per line).
 2. Show the output of `git diff HEAD`.
 3. Explicitly ask: **"Commit all of these files as part of '<DESCRIPTION>'? [y/N]"**
 4. Only proceed if the user affirms. If the user declines, exit cleanly
-   with `exit 0`. There are two decline paths with different marker
-   semantics:
+   with `exit 0`. The script exits BEFORE WI 1.8 has run — no marker
+   has been written, and no branch has been created. Identical
+   observable end state to triage-redirect and review-reject: empty
+   disk. No branch rollback needed (none was created).
 
-   1. **Production (model-layer) decline.** When the model itself
-      executes WI 1.5.5 and the user types `n`, the script exits BEFORE
-      WI 1.8 has run — no marker has been written, and no branch has
-      been created. Identical observable end state to triage-redirect
-      and review-reject: empty disk.
-   2. **Test-fixture (bash-fallback) decline.** When the bash extractor
-      in the test suite hits the `case "$answer" in *)` arm at WI 1.10
-      (with `--yes`-bypassed prompt), WI 1.8 has already run — the
-      marker exists at `status: started`. WI 1.10 sets
-      `CANCEL_REASON='user-declined'` and runs the inline explicit
-      cancel-finalize (issue #241) — `sed -i` rewrites `status: started`
-      → `status: cancelled` and appends `reason: user-declined` —
-      before exiting. No `trap … EXIT` is involved.
-
-   No branch is created at this confirmation point in either path, so
-   no branch rollback is needed. (Triage redirect and review reject
-   paths exit BEFORE WI 1.8 and write no marker at all — observably
-   identical to the production decline path above.)
+   (Phase 4 of QUICKFIX_GRAMMAR_REDESIGN deleted the prior
+   bash-fallback decline path at WI 1.10. Per DA H7's mitigation, the
+   vestigial `read -r` confirmation prompt is removed — model-layer
+   WI 1.5.5 + WI 1.5.5a is the sole production gate. Coverage for the
+   decline path now lives at model-layer per Phase 5's testability
+   caveat.)
 
 **Rationale:** user-edited mode accepts dirty-tree input so the user can
 ship a one-line fix without stashing. But without an explicit
@@ -562,9 +659,26 @@ files and accidentally bundle unrelated in-flight work into the PR. Don't
 rely on description-to-filename pattern-matching — always surface the full
 diff and confirm before branching.
 
-This confirmation supersedes WI 1.10's bash `read -r` prompt, which now
-exists only as a fallback for the literal-script execution path used by
-`tests/test-quickfix.sh` Case 43 (invoked with `--yes`).
+**Why context-aware:** the failure mode WI 1.5.5 prevents — model
+loose-matching `$DESCRIPTION` to dirty files and bundling unrelated
+work — applies when scope is ambiguous (multi-file or description doesn't
+name the file). When the dirty tree has exactly one file AND the user
+named it in the description, scope is unambiguous. WI 1.5.5a's detector
+preserves the protection where it matters and removes it where it
+doesn't. The `unattended` token (D3-QF) provides an explicit user opt-out:
+typing `unattended` is an explicit risk acceptance that the model will
+scope correctly. **Known false-friction cases:** descriptions like "fix
+scripts" or "update docs" that name a directory but not a basename will
+fire WI 1.5.5 even when the single dirty file is unambiguously implied.
+We accept the friction in favor of conservative-when-uncertain
+protection; users facing this case can type `unattended`. **Known
+protection-loss case:** if the user types `unattended` and the model
+scopes incorrectly, work bundling can occur — explicit opt-in is the
+explicit acceptance.
+
+This confirmation is the SOLE scope-protection gate. WI 1.10's prior
+bash `read -r` confirmation was deleted in Phase 4 of
+QUICKFIX_GRAMMAR_REDESIGN; there is no env-var test seam.
 
 When `$ROUNDS != 0`, the WI 1.5.4b reviewer's verdict prints ABOVE this
 confirmation prompt as added context. The `[y/N]` is unchanged. A
@@ -666,18 +780,20 @@ branch: $BRANCH
 date: $NOW_ISO
 MARK
 
-CANCELLED=0
-CANCEL_REASON=""
 # Explicit-finalize pattern (Plan LAND_PR_BYPASS_HARDENING Phase 2; issue
 # #241 — matches /commit pr / /do pr / /fix-issues pr). The marker
-# starts as `status: started`; each terminal path (cancel at WI 1.10,
-# test fail at Phase 4, commit/push fail at Phase 5/6, /land-pr fail or
-# success at Phase 7) explicitly rewrites the status via inline `sed -i`
-# before exiting OR at the end of the Phase 7 caller-loop fence. NO
-# `trap … EXIT` is used: a bash `trap EXIT` set inside a SKILL.md ```bash
-# code fence fires when THAT fence's `bash` invocation ends — not when
-# the skill flow ends — so the trap-based pattern stamped `complete`
-# almost immediately on skill entry, regardless of actual outcome.
+# starts as `status: started`; each terminal path (test fail at Phase 4,
+# commit/push fail at Phase 5/6, /land-pr fail or success at Phase 7)
+# explicitly rewrites the status via inline `sed -i` before exiting OR
+# at the end of the Phase 7 caller-loop fence. NO `trap … EXIT` is used:
+# a bash `trap EXIT` set inside a SKILL.md ```bash code fence fires when
+# THAT fence's `bash` invocation ends — not when the skill flow ends —
+# so the trap-based pattern stamped `complete` almost immediately on
+# skill entry, regardless of actual outcome. (The `status: cancelled`
+# terminal — formerly written by WI 1.10's bash-fallback decline — is
+# documented at Exit codes / marker semantics; the production decline
+# path now lives at model-layer WI 1.5.5 and writes no marker, since
+# the user declines BEFORE WI 1.8 runs.)
 ```
 
 ### WI 1.9 — Branch creation
@@ -721,17 +837,20 @@ fi
 
 ### WI 1.10 — User-edited mode
 
-Enumerate changed files, show the diff, optionally prompt. Re-compute
-the three sets after the branch switch so `CHANGED_FILES` reflects what
-will be staged (untracked files carry across; new untracked on the new
-branch still count).
+Enumerate changed files. Re-compute the three sets after the branch
+switch so `CHANGED_FILES` reflects what will be staged (untracked files
+carry across; new untracked on the new branch still count).
 
-**Note:** The bash confirmation block below is vestigial in real
-(model-driven) `/quickfix` invocation — WI 1.5.5 already obtained the
-user's explicit confirmation. It remains in place to support
-literal-script execution in `tests/test-quickfix.sh` Case 43, which
-passes `--yes` to bypass the `read -r`. Do not re-prompt the user if WI
-1.5.5 already did.
+The user has already affirmed the dirty-tree scope at the model-layer
+WI 1.5.5 prompt (or WI 1.5.5a's scope-ambiguity detector decided
+confirmation was unnecessary — single dirty file named in description,
+or `unattended` flag set), so no further bash confirmation runs here.
+(Phase 4 of QUICKFIX_GRAMMAR_REDESIGN deleted the vestigial `read -r`
+block per DA H7; the production decline path is WI 1.5.5 which exits
+BEFORE WI 1.8 runs — no marker, no branch. Phase 5 added WI 1.5.5a
+context-aware logic that may skip the prompt entirely when scope is
+unambiguous; the bash-extraction test path exercises the happy
+bash-fallback flow without any scope-prompt.)
 
 ```bash
 if [ "$MODE" = "user-edited" ]; then
@@ -752,39 +871,6 @@ if [ "$MODE" = "user-edited" ]; then
   fi
   echo ""
   git --no-pager diff HEAD
-
-  if [ "$YES_FLAG" -eq 0 ]; then
-    printf 'Proceed? [y/N] '
-    read -r answer
-    case "$answer" in
-      y|Y|yes|YES) ;;
-      *)
-        CANCEL_REASON="user-declined"
-        CANCELLED=1
-        echo "Cancelled by user. Cleaning up branch." >&2
-        if ! git checkout "$BASE_BRANCH"; then
-          echo "ERROR: cleanup: failed to checkout $BASE_BRANCH. Repo may be in an intermediate state; manual recovery needed." >&2
-          exit 6
-        fi
-        if ! git branch -D "$BRANCH"; then
-          echo "ERROR: cleanup: failed to delete branch $BRANCH. Manual recovery: 'git branch -D $BRANCH'." >&2
-          exit 6
-        fi
-        # Explicit cancel-finalize (issue #241 — replaces the broken
-        # `trap … EXIT` pattern). Rewrite `status: started` → `cancelled`
-        # and append `reason:` (user-decline is the only documented
-        # cancellation cause; the `! grep -q '^reason:'` guard makes the
-        # append idempotent).
-        if [ -f "$MARKER" ]; then
-          sed -i "s/^status: started$/status: cancelled/" "$MARKER"
-          if [ -n "${CANCEL_REASON:-}" ] && ! grep -q '^reason:' "$MARKER"; then
-            printf 'reason: %s\n' "$CANCEL_REASON" >> "$MARKER"
-          fi
-        fi
-        exit 0
-        ;;
-    esac
-  fi
 fi
 ```
 
@@ -835,7 +921,7 @@ When `MODE == "agent-dispatched"`:
 
 ## Phase 4 — Test gate (WI 1.12)
 
-When `--skip-tests` is passed, warn and skip. Otherwise run the project's
+When `skip-tests` is passed, warn and skip. Otherwise run the project's
 `unit_cmd` with output captured to a per-quickfix `/tmp/zskills-tests`
 directory (never piped — see CLAUDE.md's "capture test output to a file,
 never pipe" rule).
@@ -843,7 +929,7 @@ never pipe" rule).
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 if [ "$SKIP_TESTS" -eq 1 ]; then
-  echo "WARN: --skip-tests passed; skipping $UNIT_CMD" >&2
+  echo "WARN: skip-tests passed; skipping $UNIT_CMD" >&2
 else
   TEST_OUT="/tmp/zskills-tests/$(basename "$MAIN_ROOT")-quickfix-$SLUG"
   mkdir -p "$TEST_OUT"
@@ -1061,7 +1147,7 @@ cat > "$BODY_FILE" <<-EOF
 
 	## Test plan
 
-	- Ran project \`unit_cmd\` before commit (or --skip-tests).
+	- Ran project \`unit_cmd\` before commit (or skip-tests).
 	- Review diff.
 
 	🤖 Generated with /quickfix

@@ -308,9 +308,11 @@ PARSER_SCRIPT="$TEST_TMPDIR/parser.sh"
   echo 'printf "FORCE=%s\n" "$FORCE"'
   echo 'printf "ROUNDS=%s\n" "$ROUNDS"'
   echo 'printf "DESCRIPTION=%s\n" "$DESCRIPTION"'
-  echo 'printf "YES_FLAG=%s\n" "$YES_FLAG"'
+  echo 'printf "FROM_HERE=%s\n" "$FROM_HERE"'
+  echo 'printf "SKIP_TESTS=%s\n" "$SKIP_TESTS"'
   echo 'printf "BRANCH_OVERRIDE=%s\n" "$BRANCH_OVERRIDE"'
   echo 'printf "AUTO_FLAG=%s\n" "$AUTO_FLAG"'
+  echo 'printf "UNATTENDED_FLAG=%s\n" "$UNATTENDED_FLAG"'
   # Also report whether the entry-point unset guard cleared the seam vars.
   echo 'printf "TRIAGE_VAR_STATE=%s\n" "${_ZSKILLS_TEST_TRIAGE_VERDICT-UNSET}"'
   echo 'printf "REVIEW_VAR_STATE=%s\n" "${_ZSKILLS_TEST_REVIEW_VERDICT-UNSET}"'
@@ -336,15 +338,24 @@ fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 2 — Argument-parser flags (WI 1.2)
+# Post-Phase 4 (QUICKFIX_GRAMMAR_REDESIGN): --yes is REMOVED entirely;
+# --from-here / --skip-tests / --force are HARD-STOP migration redirects
+# (the bare `--`-form case arm exists, but it prints an error and exits
+# 1 rather than setting any flag); the working forms are the positional
+# bracket-class tokens.
 # ────────────────────────────────────────────────────────────────────
 if grep -q '[-][-]branch)' "$SKILL" \
    && grep -q '[-][-]yes|[-]y)' "$SKILL" \
    && grep -q '[-][-]from-here)' "$SKILL" \
    && grep -q '[-][-]skip-tests)' "$SKILL" \
+   && grep -q '[-][-]force)' "$SKILL" \
+   && grep -qE '^[[:space:]]*\[fF\]\[rR\]\[oO\]\[mM\]-\[hH\]\[eE\]\[rR\]\[eE\]\) FROM_HERE=1' "$SKILL" \
+   && grep -qE '^[[:space:]]*\[sS\]\[kK\]\[iI\]\[pP\]-\[tT\]\[eE\]\[sS\]\[tT\]\[sS\]\) SKIP_TESTS=1' "$SKILL" \
+   && grep -qE '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[aA\]\[uU\]\[tT\]\[oO\]\)' "$SKILL"; then
-  pass "2  argument parser: --branch / --yes|-y / --from-here / --skip-tests / positional auto (case-insensitive [aA][uU][tT][oO], issues #235/#267)"
+  pass "2  argument parser: migration arms (--yes / --from-here / --skip-tests / --force) + positional from-here/skip-tests/force/auto/unattended (Phase 4 grammar)"
 else
-  fail "2  argument parser: one or more flags missing (including positional case-insensitive 'auto' for issues #235/#267)"
+  fail "2  argument parser: one or more arms missing (migration redirects + positional bracket-class tokens, Phase 4 grammar)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -735,30 +746,34 @@ fi
 rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 20 — LOAD-BEARING --skip-tests bypasses the unit_cmd gate
-# (per plan line 47). unit_cmd is unset, but --skip-tests is passed,
-# so the preflight slice must proceed past the test-cmd gate. Since
-# we cannot yet exit 0 from the preflight slice (it stops at branch
-# creation), we assert that the preflight goes BEYOND the unit_cmd
-# gate — i.e., stderr does NOT contain 'requires testing.unit_cmd'.
+# Case 20 — LOAD-BEARING skip-tests bypasses the unit_cmd gate
+# (per plan line 47). unit_cmd is unset, but positional `skip-tests`
+# is passed, so the preflight slice must proceed past the test-cmd
+# gate. Since we cannot yet exit 0 from the preflight slice (it stops
+# at branch creation), we assert that the preflight goes BEYOND the
+# unit_cmd gate — i.e., stderr does NOT contain 'requires
+# testing.unit_cmd'.
+# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): the `--skip-tests` form
+# is a migration hard-stop; the positional `skip-tests` is the
+# working form.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c20 "" "")
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" --skip-tests "fix something" >/dev/null 2>"$ERR")
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" skip-tests >/dev/null 2>"$ERR")
 RC=$?
 # The preflight slice reaches WI 1.9 branch creation successfully (rc=0
 # on happy path since ls-remote against our bare remote reports the
 # branch doesn't exist and checkout -b succeeds). Assert rc != 1 AND
 # the unit_cmd discriminator is absent.
 if [ "$RC" -ne 1 ] && ! grep -q 'requires testing.unit_cmd' "$ERR"; then
-  pass "20 --skip-tests bypass (load-bearing): unit_cmd gate skipped"
+  pass "20 skip-tests bypass (load-bearing): unit_cmd gate skipped"
 else
-  fail "20 --skip-tests bypass: rc=$RC stderr='$(cat "$ERR")'"
+  fail "20 skip-tests bypass: rc=$RC stderr='$(cat "$ERR")'"
 fi
 rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 21 — Not on main/master (and no --from-here) exits 1 with
+# Case 21 — Not on main/master (and no from-here) exits 1 with
 # 'must run on main' discriminator.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c21)
@@ -774,19 +789,22 @@ fi
 rm -f -- "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 22 — --from-here overrides the main-required gate: feature
-# branch + --from-here proceeds past the branch check.
+# Case 22 — positional from-here overrides the main-required gate:
+# feature branch + from-here proceeds past the branch check.
+# Phase 4 grammar (QUICKFIX_GRAMMAR_REDESIGN): the legacy `--from-here`
+# form is a hard-stop migration redirect; the positional `from-here`
+# is the working form.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c22)
 git -C "$FIX" checkout --quiet -b feat/override
 ERR=$(mktemp)
-(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" --from-here "fix something" >/dev/null 2>"$ERR")
+(cd "$FIX" && PATH="$FIX/bin:$PATH" bash "$PREFLIGHT_SCRIPT" "fix something" from-here >/dev/null 2>"$ERR")
 RC=$?
 # Should NOT fail with 'must run on main'.
 if ! grep -q 'must run on main' "$ERR"; then
-  pass "22 --from-here: main-required gate bypassed"
+  pass "22 from-here: main-required gate bypassed"
 else
-  fail "22 --from-here: gate still blocked — rc=$RC stderr='$(cat "$ERR")'"
+  fail "22 from-here: gate still blocked — rc=$RC stderr='$(cat "$ERR")'"
 fi
 rm -f -- "$ERR"
 
@@ -1170,14 +1188,17 @@ rm -f -- "$ERR"
 # pre-migration Case 43 did, scoped to what each layer can actually
 # verify.
 #
-# Uses --yes so WI 1.10's interactive "Proceed? [y/N]" prompt is
-# bypassed deterministically.
+# Post-Phase 4 (QUICKFIX_GRAMMAR_REDESIGN): WI 1.10's interactive
+# "Proceed? [y/N]" `read -r` block was DELETED — the model-layer
+# WI 1.5.5 confirmation is the sole scope-protection gate. The
+# bash-extractable flow therefore proceeds without any prompt; --yes
+# was removed from this invocation along with the deleted block.
 # ────────────────────────────────────────────────────────────────────
 FIX=$(make_fixture c43)
 echo "edit for fix" >> "$FIX/README.md"
 ERR=$(mktemp)
 OUT=$(mktemp)
-(cd "$FIX" && SLUG=fix-readme-typo PATH="$FIX/bin:$PATH" bash "$FULL_FLOW_SCRIPT" --yes "fix readme typo" >"$OUT" 2>"$ERR")
+(cd "$FIX" && SLUG=fix-readme-typo PATH="$FIX/bin:$PATH" bash "$FULL_FLOW_SCRIPT" "fix readme typo" >"$OUT" 2>"$ERR")
 RC=$?
 
 # Assertions
@@ -1241,19 +1262,21 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 44 — `--force` parsed → FORCE=1.
+# Case 44 — positional `force` parsed → FORCE=1.
 #
 # Exercises WI 1.2's parser fence in isolation (no preflight side
-# effects). Asserts the new `--force) FORCE=1 ;;` arm sets FORCE=1 and
-# does not consume the next positional arg as a value.
+# effects). Asserts the new positional `[fF][oO][rR][cC][eE]) FORCE=1`
+# arm sets FORCE=1 and does not consume any positional arg as a value.
+# Phase 4 grammar: the legacy `--force` form is a hard-stop migration
+# redirect; this case uses the working positional form.
 # ────────────────────────────────────────────────────────────────────
-OUT=$(bash "$PARSER_SCRIPT" --force "fix typo")
+OUT=$(bash "$PARSER_SCRIPT" force "fix typo")
 if echo "$OUT" | grep -q '^FORCE=1$' \
    && echo "$OUT" | grep -q '^ROUNDS=1$' \
    && echo "$OUT" | grep -q '^DESCRIPTION=fix typo$'; then
-  pass "44 --force: FORCE=1, ROUNDS default 1, DESCRIPTION='fix typo' (no positional consumed)"
+  pass "44 positional force: FORCE=1, ROUNDS default 1, DESCRIPTION='fix typo' (no positional consumed)"
 else
-  fail "44 --force parse: $(echo "$OUT" | tr '\n' '|')"
+  fail "44 positional force parse: $(echo "$OUT" | tr '\n' '|')"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1341,19 +1364,19 @@ case "$VERDICT" in
   REDIRECT:/draft-plan:*)
     REASON="${VERDICT#REDIRECT:/draft-plan:}"
     printf 'Triage: redirecting to /draft-plan. Reason: %s\n' "$REASON"
-    printf 'This task spans more than one concept; /draft-plan will research and decompose it. Run `/draft-plan <description>` instead, or re-invoke with --force to bypass.\n'
+    printf 'This task spans more than one concept; /draft-plan will research and decompose it. Run `/draft-plan <description>` instead, or re-invoke with force to bypass.\n'
     exit 0
     ;;
   REDIRECT:/run-plan:*)
     REASON="${VERDICT#REDIRECT:/run-plan:}"
     printf 'Triage: redirecting to /run-plan. Reason: %s\n' "$REASON"
-    printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with --force to bypass.\n'
+    printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with force to bypass.\n'
     exit 0
     ;;
   REDIRECT:/fix-issues:*)
     REASON="${VERDICT#REDIRECT:/fix-issues:}"
     printf 'Triage: redirecting to /fix-issues. Reason: %s\n' "$REASON"
-    printf 'This task references a GitHub issue. Run `/fix-issues <issue-number>` instead, or re-invoke with --force to bypass.\n'
+    printf 'This task references a GitHub issue. Run `/fix-issues <issue-number>` instead, or re-invoke with force to bypass.\n'
     exit 0
     ;;
   PROCEED|*)
@@ -1434,7 +1457,7 @@ case "$VERDICT" in
     KIND="${VERDICT%%:*}"
     printf 'VERDICT: %s -- %s\n' "$KIND" "$REASON"
     if [ "$FORCE" -eq 1 ]; then
-      printf 'Review %s overridden by --force; proceeding.\n' "$KIND"
+      printf 'Review %s overridden by force; proceeding.\n' "$KIND"
       exit 0
     fi
     # Soft-reject (or REVISE-as-soft-reject after rounds): exit 0,
@@ -1470,42 +1493,17 @@ fi
 rm -f -- "$OUT" "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
-# Case 49 — User-decline regression: when the user declines the WI
-# 1.5.5 / WI 1.10 dirty-tree confirmation, the marker terminal status
-# transitions `started` → `cancelled` AND the marker carries
-# `reason: user-declined`. Exercises the bash-fallback (test-fixture)
-# decline path documented in WI 1.5.5 sub-bullet 2.
-#
-# Drive the full-flow extractor with NO --yes flag and answer 'n' at
-# the WI 1.10 prompt. The trap → finalize_marker writes the cancelled
-# status and the reason field.
+# Case 49 — DELETED in Phase 4 (QUICKFIX_GRAMMAR_REDESIGN, WI 4.6b).
+# The user-decline regression exercised the WI 1.10 bash-fallback
+# `read -r` confirmation block; per DA H7 / WI 4.5 that block was
+# deleted because production scope-protection lives at model-layer
+# (WI 1.5.5 + WI 1.5.5a). User-decline coverage moves to the
+# "model-layer testability gap" documented in QUICKFIX_GRAMMAR_REDESIGN
+# Phase 5's testability caveat — not testable from this bash harness.
+# Case numbering preserved for continuity; the assertion no longer
+# exists. (Case 57 — which mirrored the source-level cancel-finalize
+# assertion — is similarly DELETED for the same reason.)
 # ────────────────────────────────────────────────────────────────────
-FIX=$(make_fixture c49)
-echo "edit for case 49" >> "$FIX/README.md"
-OUT=$(mktemp)
-ERR=$(mktemp)
-# `read -r` reads from stdin; pipe 'n' to decline.
-(cd "$FIX" && SLUG=fix-cancel-test PATH="$FIX/bin:$PATH" \
-   bash "$FULL_FLOW_SCRIPT" "fix cancel test" <<<"n" >"$OUT" 2>"$ERR")
-RC=$?
-
-MARKER="$FIX/.zskills/tracking/quickfix.fix-cancel-test/fulfilled.quickfix.fix-cancel-test"
-HAS_CANCELLED=$( [ -f "$MARKER" ] && grep -q '^status: cancelled$' "$MARKER" && echo yes || echo no)
-HAS_REASON=$( [ -f "$MARKER" ] && grep -q '^reason: user-declined$' "$MARKER" && echo yes || echo no)
-# Branch should be cleaned up (back on main, branch deleted).
-CURRENT=$(git -C "$FIX" branch --show-current)
-
-if [ "$RC" -eq 0 ] \
-   && [ "$HAS_CANCELLED" = "yes" ] \
-   && [ "$HAS_REASON" = "yes" ] \
-   && [ "$CURRENT" = "main" ]; then
-  pass "49 user-decline regression: marker has 'status: cancelled' AND 'reason: user-declined', branch cleaned up"
-else
-  fail "49 user-decline: rc=$RC cancelled=$HAS_CANCELLED reason=$HAS_REASON current='$CURRENT'"
-  [ -f "$MARKER" ] && { echo "  --- marker ---"; sed 's/^/    /' "$MARKER"; }
-  echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
-fi
-rm -f -- "$OUT" "$ERR"
 
 # ────────────────────────────────────────────────────────────────────
 # Case 50 — Phase-1.5 block-position assertion (ORDERING + ADJACENCY).
@@ -1779,24 +1777,136 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 57 — Issue #241: `/quickfix` cancelled mid-flow at WI 1.10
-# leaves the marker `status: cancelled`. Same as Case 49 but explicitly
-# documents this as the #241 regression guard — under the broken trap
-# pattern the marker would have been stamped `complete` on skill entry
-# regardless of cancellation. Case 49 already exercises the full path;
-# this case asserts the SOURCE-LEVEL invariant that the cancel-fence
-# now contains an explicit `sed -i "s/^status: started$/status:
-# cancelled/"` line (NOT the prior trap-driven path).
+# Cases 60–69 — WI 4.7 smoke tests (Phase 4 grammar): migration
+# redirects exit 1 with the corrective error; new positional tokens
+# set the corresponding flag (case-insensitive); `--branch` still
+# consumes its next arg verbatim; `--rounds` greedy-fallthrough on
+# non-numeric arg leaves description/force token semantics intact.
+#
+# Each migration-redirect case re-uses $PARSER_SCRIPT (the extracted
+# parser fence wrapped to emit FLAG=VALUE lines). For the migration
+# redirects we capture stderr separately and assert rc=1 + the
+# expected error stem.
 # ────────────────────────────────────────────────────────────────────
-CANCEL_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: cancelled/"' "$SKILL" 2>/dev/null || echo 0)
-CANCEL_SED=${CANCEL_SED:-0}
-REASON_APPEND=$(grep -cE "printf 'reason: %s\\\\n' \"\\\$CANCEL_REASON\"" "$SKILL" 2>/dev/null || echo 0)
-REASON_APPEND=${REASON_APPEND:-0}
-if [ "$CANCEL_SED" -ge 1 ] && [ "$REASON_APPEND" -ge 1 ]; then
-  pass "57 explicit cancel-finalize (issue #241): inline sed cancel ($CANCEL_SED) + reason: append ($REASON_APPEND) present"
+
+# Case 60 — --yes migration: hard-stop with corrective error (AC4.1).
+ERR60=$(mktemp)
+bash "$PARSER_SCRIPT" --yes 2>"$ERR60" >/dev/null
+RC60=$?
+if [ "$RC60" -eq 1 ] && grep -q "'--yes' / '-y' was removed" "$ERR60"; then
+  pass "60 migration: --yes exits 1 with WI 4.2 corrective error"
 else
-  fail "57 explicit cancel-finalize: cancel-sed=$CANCEL_SED reason-append=$REASON_APPEND"
+  fail "60 migration: --yes rc=$RC60 stderr=$(tr '\n' '|' <"$ERR60")"
 fi
+rm -f -- "$ERR60"
+
+# Case 61 — --from-here migration: hard-stop (AC4.2).
+ERR61=$(mktemp)
+bash "$PARSER_SCRIPT" --from-here 2>"$ERR61" >/dev/null
+RC61=$?
+if [ "$RC61" -eq 1 ] && grep -q "'--from-here' was replaced by positional 'from-here'" "$ERR61"; then
+  pass "61 migration: --from-here exits 1 with corrective error pointing to positional"
+else
+  fail "61 migration: --from-here rc=$RC61 stderr=$(tr '\n' '|' <"$ERR61")"
+fi
+rm -f -- "$ERR61"
+
+# Case 62 — --skip-tests / --force migration (AC4.3).
+ERR62a=$(mktemp); ERR62b=$(mktemp)
+bash "$PARSER_SCRIPT" --skip-tests 2>"$ERR62a" >/dev/null; RC62a=$?
+bash "$PARSER_SCRIPT" --force 2>"$ERR62b" >/dev/null; RC62b=$?
+if [ "$RC62a" -eq 1 ] && grep -q "'--skip-tests' was replaced by positional 'skip-tests'" "$ERR62a" \
+   && [ "$RC62b" -eq 1 ] && grep -q "'--force' was replaced by positional 'force'" "$ERR62b"; then
+  pass "62 migration: --skip-tests & --force both exit 1 with corrective errors"
+else
+  fail "62 migration: skip-tests rc=$RC62a force rc=$RC62b"
+fi
+rm -f -- "$ERR62a" "$ERR62b"
+
+# Case 63 — positional from-here sets FROM_HERE=1, DESCRIPTION unchanged (AC4.4).
+OUT63=$(bash "$PARSER_SCRIPT" "fix broken docs link" from-here 2>&1)
+if echo "$OUT63" | grep -q '^FROM_HERE=1$' \
+   && echo "$OUT63" | grep -q '^DESCRIPTION=fix broken docs link$'; then
+  pass "63 positional from-here: FROM_HERE=1, DESCRIPTION clean"
+else
+  fail "63 positional from-here: $(echo "$OUT63" | tr '\n' '|')"
+fi
+
+# Case 64 — positional SKIP-TESTS (case-insensitive) sets SKIP_TESTS=1 (AC4.5).
+OUT64=$(bash "$PARSER_SCRIPT" "fix typo" SKIP-TESTS 2>&1)
+if echo "$OUT64" | grep -q '^SKIP_TESTS=1$' \
+   && echo "$OUT64" | grep -q '^DESCRIPTION=fix typo$'; then
+  pass "64 positional SKIP-TESTS (case-insensitive): SKIP_TESTS=1"
+else
+  fail "64 positional SKIP-TESTS: $(echo "$OUT64" | tr '\n' '|')"
+fi
+
+# Case 65 — positional FORCE (case-insensitive bracket form).
+OUT65=$(bash "$PARSER_SCRIPT" "fix typo" Force 2>&1)
+if echo "$OUT65" | grep -q '^FORCE=1$' \
+   && echo "$OUT65" | grep -q '^DESCRIPTION=fix typo$'; then
+  pass "65 positional Force (mixed-case): FORCE=1, DESCRIPTION clean"
+else
+  fail "65 positional Force: $(echo "$OUT65" | tr '\n' '|')"
+fi
+
+# Case 66 — `--branch force fix typo` → BRANCH_OVERRIDE="force",
+# DESCRIPTION="fix typo", FORCE=0 (--branch consumes next arg
+# unconditionally; positional `force` does NOT fire) (AC4.6).
+OUT66=$(bash "$PARSER_SCRIPT" --branch force fix typo 2>&1)
+if echo "$OUT66" | grep -q '^BRANCH_OVERRIDE=force$' \
+   && echo "$OUT66" | grep -q '^DESCRIPTION=fix typo$' \
+   && echo "$OUT66" | grep -q '^FORCE=0$'; then
+  pass "66 --branch consumes 'force' as branch value; positional force does NOT fire (AC4.6)"
+else
+  fail "66 --branch force fix typo: $(echo "$OUT66" | tr '\n' '|')"
+fi
+
+# Case 67 — `fix bug --rounds force` → greedy-fallthrough leaves
+# --rounds as prose, FORCE=1 from positional match, ROUNDS=1 default
+# (AC4.7).
+OUT67=$(bash "$PARSER_SCRIPT" fix bug --rounds force 2>&1)
+if echo "$OUT67" | grep -q '^DESCRIPTION=fix bug --rounds$' \
+   && echo "$OUT67" | grep -q '^FORCE=1$' \
+   && echo "$OUT67" | grep -q '^ROUNDS=1$'; then
+  pass "67 greedy-fallthrough: --rounds w/ non-numeric next → prose; trailing 'force' → FORCE=1 (AC4.7)"
+else
+  fail "67 fix bug --rounds force: $(echo "$OUT67" | tr '\n' '|')"
+fi
+
+# Case 68 — non-hyphenated `fromhere` MUST fall through to DESCRIPTION
+# (the bracket-class pattern requires the literal hyphen between
+# classes). Documents the exact-string boundary.
+OUT68=$(bash "$PARSER_SCRIPT" fromhere "fix typo" 2>&1)
+if echo "$OUT68" | grep -q '^FROM_HERE=0$' \
+   && echo "$OUT68" | grep -q '^DESCRIPTION=fromhere fix typo$'; then
+  pass "68 'fromhere' (no hyphen) does NOT match positional from-here; falls through to DESCRIPTION"
+else
+  fail "68 fromhere boundary: $(echo "$OUT68" | tr '\n' '|')"
+fi
+
+# Case 69 — argument-hint shape (AC4.9): exact new 99-char hint with
+# legacy --yes/--from-here/--skip-tests/--force brackets ABSENT.
+HINT=$(grep '^argument-hint' "$SKILL" | sed -E 's/^argument-hint: "(.*)"$/\1/')
+EXPECTED='[<description>] [auto] [unattended] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]'
+if [ "$HINT" = "$EXPECTED" ]; then
+  pass "69 argument-hint (AC4.9, AC4.12): new Phase 4 positional shape; legacy --yes/[--from-here]/[--skip-tests]/[--force] brackets removed (len=${#HINT})"
+else
+  fail "69 argument-hint: got='$HINT' expected='$EXPECTED'"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 57 — DELETED in Phase 4 (QUICKFIX_GRAMMAR_REDESIGN, WI 4.5/4.6b).
+# The source-level cancel-finalize invariant (`sed -i status: started →
+# cancelled` + `reason: user-declined` append) was the SOURCE-side
+# mirror of Case 49's runtime assertion. Both became dead code when
+# WI 4.5 deleted the WI 1.10 `read -r` block; production scope-
+# protection moved to model-layer (WI 1.5.5 + WI 1.5.5a). The
+# `status: cancelled` terminal is still documented in the Exit codes
+# section of SKILL.md (Case 36 above still asserts that documentation
+# survives) — only the bash-fallback cancel-finalize implementation
+# was removed.
+# ────────────────────────────────────────────────────────────────────
 
 # ────────────────────────────────────────────────────────────────────
 # Case 58 — Issue #241: every documented failure path (Phase 4 test
@@ -1836,6 +1946,64 @@ if [ -n "$BEGIN_LINE" ] && [ -n "$CLOSE_LINE" ]; then
   fi
 else
   fail "59 end-of-Phase-7 explicit-finalize: BEGIN/CLOSE anchors not located (BEGIN_LINE=$BEGIN_LINE CLOSE_LINE=$CLOSE_LINE)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Cases 70–73 — Phase 5 (QUICKFIX_GRAMMAR_REDESIGN): WI 1.5.5a
+# scope-ambiguity detector + parser FLAGS stderr echo.
+#
+# Per Phase 5 testability caveat (H6): WI 1.5.5a is model-layer prose
+# and its branching decisions cannot be exercised by bash tests. Bash
+# coverage here is limited to (a) static-grep that the prose exists at
+# the expected position with the expected language, and (b) a smoke
+# assertion on the parser-side stderr echo that wires the model-layer
+# detector to the UNATTENDED_FLAG value. Behavioral verification of
+# the scope-ambiguity branches (Scenarios 1–6 of AC5.4) is the
+# verifier's manual responsibility.
+# ────────────────────────────────────────────────────────────────────
+
+# Case 70 — WI 1.5.5a section exists immediately before WI 1.5.5 and
+# names $UNATTENDED_FLAG as a referenced input.
+if grep -qE '^### WI 1\.5\.5a — Scope-ambiguity check' "$SKILL" \
+   && grep -q '\$UNATTENDED_FLAG' "$SKILL" \
+   && grep -q 'SCOPE_AMBIGUOUS' "$SKILL"; then
+  pass "70 WI 1.5.5a section present; references \$UNATTENDED_FLAG + SCOPE_AMBIGUOUS"
+else
+  fail "70 WI 1.5.5a section missing or doesn't reference \$UNATTENDED_FLAG / SCOPE_AMBIGUOUS"
+fi
+
+# Case 71 — WI 1.5.5a appears BEFORE WI 1.5.5 (the detector gates the
+# confirmation prompt; order matters for the rendered flow).
+LINE_5_5A=$(grep -nE '^### WI 1\.5\.5a' "$SKILL" | head -1 | cut -d: -f1)
+LINE_5_5=$(grep -nE '^### WI 1\.5\.5 — Dirty-tree confirmation' "$SKILL" | head -1 | cut -d: -f1)
+if [ -n "$LINE_5_5A" ] && [ -n "$LINE_5_5" ] && [ "$LINE_5_5A" -lt "$LINE_5_5" ]; then
+  pass "71 WI 1.5.5a (L$LINE_5_5A) precedes WI 1.5.5 (L$LINE_5_5)"
+else
+  fail "71 WI 1.5.5a ordering: 5.5a=L$LINE_5_5A 5.5=L$LINE_5_5 (5.5a must precede 5.5)"
+fi
+
+# Case 72 — Unattended-override NOTE phrasing present in prose so
+# session-transcript triage can grep for it when the scope ends up wrong.
+# The skipped-NOTE wording may wrap across lines in the source markdown,
+# so collapse to a single line before grep-ing for the multi-word phrase.
+SKILL_FLAT=$(tr '\n' ' ' < "$SKILL")
+if echo "$SKILL_FLAT" | grep -q "scope-confirmation skipped (unattended)" \
+   && grep -q "unattended override" "$SKILL"; then
+  pass "72 WI 1.5.5a NOTE phrasing present (unattended override + scope-confirmation skipped)"
+else
+  fail "72 WI 1.5.5a NOTE phrasing missing (need both 'unattended override' and 'scope-confirmation skipped (unattended)')"
+fi
+
+# Case 73 — Parser emits combined FLAGS line to stderr at exit. The
+# WI 5.1-backedit wires the model-layer detector to the runtime
+# UNATTENDED_FLAG value via this stderr echo; without it, the detector
+# can't condition on UNATTENDED_FLAG (the markdown `$UNATTENDED_FLAG`
+# would be aspirational because the model can't run bash to expand it).
+ERR_OUT=$(bash "$PARSER_SCRIPT" "fix typo" unattended 2>&1 >/dev/null)
+if echo "$ERR_OUT" | grep -qE '^FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1$'; then
+  pass "73 parser stderr echoes 'FLAGS: AUTO_FLAG=0 UNATTENDED_FLAG=1' on 'fix typo unattended'"
+else
+  fail "73 parser stderr missing combined FLAGS line. Got: $ERR_OUT"
 fi
 
 echo ""

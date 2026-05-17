@@ -238,6 +238,14 @@ If the verifying read is too expensive to do now, say so and stop -- do
 not substitute a guess and let downstream failure do the verification.
 The only research you can skip is what you just verified in this turn.
 
+## auto and unattended tokens
+
+The four PR-landing caller skills (`/quickfix`, `/run-plan`, `/fix-issues`, `/do`) accept two **independent** positional tokens. `auto` means "pass `--auto` to `/land-pr`" (auto-merge the resulting PR); `unattended` means "skip human-review-gate checkpoints inside the skill" (scope confirmation, between-phase prompts, issue-list approval, etc.). Typing one does NOT imply the other; tokens are order-insensitive and case-insensitive.
+
+> **`unattended` alone is NOT full autonomy.** `/fix-issues 5 unattended` skips approval gates but does NOT auto-merge — PRs sit at `pr-ready` waiting for manual merge. For fully unattended sprints, use `/fix-issues 5 auto unattended`.
+
+See [`references/auto-unattended-semantics.md`](references/auto-unattended-semantics.md) for the full per-skill table, composition rules (including the `/run-plan finish auto` backward-compatible alias), explicit non-rules, and migration guidance.
+
 ## Which skill for which input
 
 Decision table for picking a skill when a user describes a generic action. Match on the LEFT, dispatch the RIGHT. When multiple rows could fit, prefer the shorter/lighter one — the heavier skills (`/draft-plan`, `/research-and-*`) cost more rounds and should only be used when the lighter ones cannot.

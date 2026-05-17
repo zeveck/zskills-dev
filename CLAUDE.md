@@ -79,6 +79,14 @@ When you save a memory anchor for a process failure, ask: does this need to prop
 
 **Optimize for correctness, not speed.** Follow instructions exactly, including every intermediate verification step. Never skip verification to "save time" -- skipped steps mean the user has to re-verify, which saves nothing. Never stub methods, return bogus values, or simplify implementations to get something working faster. Never reframe the task to make it easier. Review agents will find shortcuts, so cutting corners gains nothing. When the user says "after each step, verify" -- verify after each step, not once at the end.
 
+## auto and unattended tokens
+
+**`auto` and `unattended` tokens.** All 4 PR-landing callers (`/quickfix`, `/run-plan`, `/fix-issues`, `/do`) accept two orthogonal positional tokens: `auto` (auto-merge the resulting PR) and `unattended` (skip skill-internal human-review gates). They are independent — typing one does not imply the other.
+
+**Anti-pattern: `unattended` alone is NOT full autonomy.** `/fix-issues 5 unattended` skips approval gates but does NOT auto-merge. PRs sit at `pr-ready` waiting for manual merge. For fully unattended sprints, use `/fix-issues 5 auto unattended`.
+
+`/run-plan` preserves the legacy `finish auto` composite alias (sets both flags). See `skills/run-plan/references/auto-unattended-semantics.md` (and the symmetric per-skill reference files) for the per-skill gate table.
+
 ## Subagent Dispatch
 
 **NEVER dispatch agents on Haiku.** Haiku produces over-literal pattern matches and misses framing -- it greps for an exact string, doesn't find it, and concludes "no bug" when the actual problem is the absence of a guardrail. It is consistently wrong on judgment-class tasks. We do not use Haiku anywhere, period.
@@ -136,6 +144,8 @@ Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and revi
 **Never use `git checkout <commit> -- <file>` for investigation.** To view old file versions, use `git show <commit>:<file>` or `git diff <commit1> <commit2> -- <file>` -- these are read-only and don't modify the working tree. `git checkout <commit> -- <file>` silently overwrites working tree AND stages the change, which easily gets swept into the next commit.
 
 **Never use `--no-verify` to bypass pre-commit hooks.** Hooks exist for safety -- fix the hook failure, don't bypass it.
+
+**`--ours` and `--theirs` are inverted during rebase vs merge.** In a merge, `--ours` = the current branch; `--theirs` = the branch being merged in. In a **rebase**, the perspective flips because the rebase starts by checking out the upstream and replaying your commits on top: `--ours` = the branch being rebased ONTO (typically `main`); `--theirs` = the commits being replayed (your work). To preserve **your** changes in a rebase conflict, use `--theirs` (or `-X theirs` as a strategy option for the whole rebase). Past failure: PR #310 chunked-finish-auto landing rebase used `git checkout --ours` thinking "ours = our work," silently took main's version of `/fix-issues` and `/update-zskills` conflicts, dropping a full phase of work; caught only by post-rebase `grep AUTO_FLAG` showing 0 hits. Recovery via `git reset --keep <pre-rebase-SHA>` + `git rebase -X theirs origin/main` was clean (no remote was pushed yet).
 
 **Never call `gh pr create` or `gh pr merge --auto` directly when landing a PR.** When you have a feature branch ready to ship, dispatch `/land-pr` via the Skill tool (with `--body-file` and `--result-file`), or use one of its 5 callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, `/quickfix`) which dispatch `/land-pr` for you with proper rebase, PR creation, CI monitoring (`pr-monitor.sh`), fix-cycle on failure, and auto-merge handling. Direct `gh pr merge --auto` followed by an immediate `gh pr view --json mergeStateStatus` query reports a snapshot state (typically `BLOCKED`) that doesn't reflect resting state — agents who walk away after that snapshot rely on luck. The 5 caller skills are conformance-locked (PR #166 tripwires); follow the same discipline for one-off orchestrator-direct PR landings by dispatching `/land-pr` yourself. (`/land-pr` SKILL.md says "not designed for direct user invocation" — that's about interactive human slash-command typing, not orchestrator agents using the Skill tool. Don't conflate.)
 
