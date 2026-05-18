@@ -20,7 +20,8 @@
 #   7.  Update .gitignore (idempotent).
 #   8.  (reserved — was --rerender step before round-2 plan hoisted to 2.5).
 #   9.  Write .pre-paths-migration manifest (write-once).
-#   10. Write config keys output.plans_dir + output.issues_dir (BOTH or NEITHER).
+#   10. Write config keys output.plans_dir + output.issues_dir +
+#       output.reports_dir (BOTH-OR-ALL-OR-NEITHER 3-tuple atomic write).
 #   11. Print summary.
 #
 # Per CLAUDE.md "Never suppress errors on operations you need to verify":
@@ -365,8 +366,10 @@ done
 CFG=".claude/zskills-config.json"
 HAS_PLANS_KEY=0
 HAS_ISSUES_KEY=0
+HAS_REPORTS_KEY=0
 EXISTING_PLANS=""
 EXISTING_ISSUES=""
+EXISTING_REPORTS=""
 if [ -f "$CFG" ]; then
   CFG_BODY=$(cat "$CFG" 2>/dev/null || true)
   if [[ "$CFG_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"plans_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
@@ -377,12 +380,16 @@ if [ -f "$CFG" ]; then
     HAS_ISSUES_KEY=1
     EXISTING_ISSUES="${BASH_REMATCH[1]}"
   fi
+  if [[ "$CFG_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+    HAS_REPORTS_KEY=1
+    EXISTING_REPORTS="${BASH_REMATCH[1]}"
+  fi
   unset CFG_BODY
 fi
 
 # Nothing to migrate AND no config keys missing → no-op.
-if [ "$HAS_LEGACY" -eq 0 ] && [ "$HAS_PLANS_KEY" -eq 1 ] && [ "$HAS_ISSUES_KEY" -eq 1 ]; then
-  echo "no-op (no legacy artifacts and config already has output.plans_dir + output.issues_dir)"
+if [ "$HAS_LEGACY" -eq 0 ] && [ "$HAS_PLANS_KEY" -eq 1 ] && [ "$HAS_ISSUES_KEY" -eq 1 ] && [ "$HAS_REPORTS_KEY" -eq 1 ]; then
+  echo "no-op (no legacy artifacts and config already has output.plans_dir + output.issues_dir + output.reports_dir)"
   exit 0
 fi
 
@@ -401,6 +408,11 @@ if [ "$HAS_ISSUES_KEY" -eq 1 ] && [ -n "$EXISTING_ISSUES" ]; then
   TARGET_ISSUES="$EXISTING_ISSUES"
 else
   TARGET_ISSUES="docs/issues"
+fi
+if [ "$HAS_REPORTS_KEY" -eq 1 ] && [ -n "$EXISTING_REPORTS" ]; then
+  TARGET_REPORTS="$EXISTING_REPORTS"
+else
+  TARGET_REPORTS="docs/reports"
 fi
 
 # ─── Step 2.5 — Trigger --rerender BEFORE any file moves ───────────────────
@@ -765,21 +777,52 @@ fi
 CFG_BODY=$(cat "$CFG")
 
 write_output_block() {
-  # Writes BOTH plans_dir AND issues_dir under "output". If "output" object
-  # is absent, inserts a new one before the outer closing brace (apply-preset
-  # awk pattern). If "output" object is present, splices both keys atomically.
-  local plans="$1" issues="$2" tmp
+  # Writes BOTH plans_dir AND issues_dir AND reports_dir under "output".
+  # If "output" object is absent, inserts a new one before the outer closing
+  # brace (apply-preset awk pattern). If "output" object is present, splices
+  # all three keys atomically (3-tuple BOTH-OR-ALL-OR-NEITHER).
+  #
+  # Trailing-comma handling (d-bis): when preserved keys are streamed inline
+  # before missing-key injections at the `}`, the LAST preserved key may
+  # have been originally written WITHOUT a trailing comma (valid JSON when
+  # it was the last key in the object). If injections follow, that key now
+  # needs a comma. Solution: buffer the most-recent preserved-key line and
+  # only flush it when (a) a new preserved key arrives — comma-forcing flush,
+  # since something follows it; (b) the closing brace arrives — apply comma
+  # only if missing-key injections are about to be emitted.
+  local plans="$1" issues="$2" reports="$3" tmp
   tmp=$(mktemp)
   if grep -q '"output"[[:space:]]*:[[:space:]]*{' "$CFG"; then
-    # Existing output object — replace BOTH keys (or add missing ones).
-    plans="$plans" issues="$issues" awk '
+    # Existing output object — replace keys (or add missing ones).
+    plans="$plans" issues="$issues" reports="$reports" awk '
       BEGIN {
         plans = ENVIRON["plans"]
         issues = ENVIRON["issues"]
+        reports = ENVIRON["reports"]
         in_output = 0
         depth = 0
         wrote_plans = 0
         wrote_issues = 0
+        wrote_reports = 0
+        buffered = 0       # 1 iff buf_line holds a pending preserved-key line
+        buf_line = ""
+      }
+      function flush_buffered(force_comma,    line_out, has_comma) {
+        if (!buffered) return
+        if (force_comma) {
+          # Add a comma if not already present.
+          line_out = buf_line
+          if (match(line_out, /,[[:space:]]*$/)) {
+            print line_out
+          } else {
+            sub(/[[:space:]]*$/, "", line_out)
+            print line_out ","
+          }
+        } else {
+          print buf_line
+        }
+        buffered = 0
+        buf_line = ""
       }
       {
         line = $0
@@ -789,41 +832,81 @@ write_output_block() {
           # keys are paths, no braces).
           n_open = gsub(/\{/, "{", line); line = $0
           n_close = gsub(/\}/, "}", line); line = $0
-          # Update existing plans_dir or issues_dir.
+          # Preserved-key matchers: rewrite VALUE only, buffer line so the
+          # trailing-comma policy can be decided when the next line arrives.
           if (match(line, /"plans_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+            flush_buffered(1)   # something follows the previously buffered key
             indent = ""
             if (match(line, /^[[:space:]]*/)) indent = substr(line, 1, RLENGTH)
-            # Preserve trailing comma if present.
             tc = ""
             if (match(line, /,[[:space:]]*$/)) tc = ","
-            print indent "\"plans_dir\": \"" plans "\"" tc
+            buf_line = indent "\"plans_dir\": \"" plans "\"" tc
+            buffered = 1
             wrote_plans = 1
             depth = depth + n_open - n_close
-            if (depth < 0) in_output = 0
+            if (depth < 0) {
+              flush_buffered(0)
+              in_output = 0
+            }
             next
           }
           if (match(line, /"issues_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+            flush_buffered(1)
             indent = ""
             if (match(line, /^[[:space:]]*/)) indent = substr(line, 1, RLENGTH)
             tc = ""
             if (match(line, /,[[:space:]]*$/)) tc = ","
-            print indent "\"issues_dir\": \"" issues "\"" tc
+            buf_line = indent "\"issues_dir\": \"" issues "\"" tc
+            buffered = 1
             wrote_issues = 1
             depth = depth + n_open - n_close
-            if (depth < 0) in_output = 0
+            if (depth < 0) {
+              flush_buffered(0)
+              in_output = 0
+            }
             next
           }
-          # Detect closing brace of output object — inject any missing keys
-          # immediately before it.
+          if (match(line, /"reports_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+            flush_buffered(1)
+            indent = ""
+            if (match(line, /^[[:space:]]*/)) indent = substr(line, 1, RLENGTH)
+            tc = ""
+            if (match(line, /,[[:space:]]*$/)) tc = ","
+            buf_line = indent "\"reports_dir\": \"" reports "\"" tc
+            buffered = 1
+            wrote_reports = 1
+            depth = depth + n_open - n_close
+            if (depth < 0) {
+              flush_buffered(0)
+              in_output = 0
+            }
+            next
+          }
+          # Detect closing brace of output object — flush any buffered
+          # preserved key (with comma iff injections follow), then inject
+          # missing keys with comma-between-not-after-last semantics.
           if (match(line, /^[[:space:]]*\}[[:space:]]*,?[[:space:]]*$/) && depth + n_open - n_close <= 0) {
             indent = "    "
-            if (!wrote_plans)  print indent "\"plans_dir\": \"" plans "\","
-            if (!wrote_issues) print indent "\"issues_dir\": \"" issues "\","
+            # Build canonical-order list of missing keys.
+            n_missing = 0
+            if (!wrote_plans)   { n_missing++; missing[n_missing] = "\"plans_dir\": \"" plans "\"" }
+            if (!wrote_issues)  { n_missing++; missing[n_missing] = "\"issues_dir\": \"" issues "\"" }
+            if (!wrote_reports) { n_missing++; missing[n_missing] = "\"reports_dir\": \"" reports "\"" }
+            # Flush buffered preserved-key: needs trailing comma iff any
+            # missing-key injection will follow.
+            flush_buffered(n_missing > 0 ? 1 : 0)
+            for (i = 1; i <= n_missing; i++) {
+              suffix = (i < n_missing) ? "," : ""
+              print indent missing[i] suffix
+            }
             print line
             in_output = 0
             depth = 0
             next
           }
+          # Non-matching line inside output (e.g., other future keys —
+          # flush buffer first, then emit as-is).
+          flush_buffered(1)
           depth = depth + n_open - n_close
           print line
           next
@@ -834,18 +917,60 @@ write_output_block() {
           n_open = gsub(/\{/, "{", line); line = $0
           n_close = gsub(/\}/, "}", line); line = $0
           depth = n_open - n_close
-          # Single-line "output": {} edge case — handle by re-emitting expanded.
-          if (depth == 0 && match(line, /"output"[[:space:]]*:[[:space:]]*\{[[:space:]]*\}/)) {
+          # Single-line "output": {...} edge case (depth==0 means the whole
+          # object opens AND closes on this line) — expand and merge.
+          if (depth == 0 && match(line, /"output"[[:space:]]*:[[:space:]]*\{.*\}/)) {
             indent = "  "
             if (match(line, /^[[:space:]]*/)) indent = substr(line, 1, RLENGTH)
-            # Preserve trailing comma if any.
+            # Preserve trailing comma after the closing brace if any.
             tc = ""
-            if (match(line, /,[[:space:]]*$/)) tc = ","
+            if (match(line, /\}[[:space:]]*,[[:space:]]*$/)) tc = ","
+            # Extract inner body between the matched { and matching }.
+            body = line
+            sub(/^.*"output"[[:space:]]*:[[:space:]]*\{/, "", body)
+            sub(/\}[[:space:]]*,?[[:space:]]*$/, "", body)
+            # Re-parse the body for existing known keys (preserve values).
+            seen_plans = ""; seen_issues = ""; seen_reports = ""
+            have_plans = 0; have_issues = 0; have_reports = 0
+            if (match(body, /"plans_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+              s = substr(body, RSTART, RLENGTH)
+              if (match(s, /"[^"]*"[[:space:]]*$/)) {
+                v = substr(s, RSTART + 1, RLENGTH - 2); sub(/[[:space:]]*$/, "", v)
+                seen_plans = v; have_plans = 1
+              }
+            }
+            if (match(body, /"issues_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+              s = substr(body, RSTART, RLENGTH)
+              if (match(s, /"[^"]*"[[:space:]]*$/)) {
+                v = substr(s, RSTART + 1, RLENGTH - 2); sub(/[[:space:]]*$/, "", v)
+                seen_issues = v; have_issues = 1
+              }
+            }
+            if (match(body, /"reports_dir"[[:space:]]*:[[:space:]]*"[^"]*"/)) {
+              s = substr(body, RSTART, RLENGTH)
+              if (match(s, /"[^"]*"[[:space:]]*$/)) {
+                v = substr(s, RSTART + 1, RLENGTH - 2); sub(/[[:space:]]*$/, "", v)
+                seen_reports = v; have_reports = 1
+              }
+            }
             print indent "\"output\": {"
-            print indent "  \"plans_dir\": \"" plans "\","
-            print indent "  \"issues_dir\": \"" issues "\""
+            # Emit any preserved keys first (in encountered canonical order
+            # plans, issues, reports), then the missing keys after, with
+            # comma-between-not-after-last.
+            n_emit = 0
+            if (have_plans)   { emit[++n_emit] = "\"plans_dir\": \"" seen_plans "\"" }
+            if (have_issues)  { emit[++n_emit] = "\"issues_dir\": \"" seen_issues "\"" }
+            if (have_reports) { emit[++n_emit] = "\"reports_dir\": \"" seen_reports "\"" }
+            # Now emit missing ones (rewritten with target values).
+            if (!have_plans)   { emit[++n_emit] = "\"plans_dir\": \"" plans "\"" }
+            if (!have_issues)  { emit[++n_emit] = "\"issues_dir\": \"" issues "\"" }
+            if (!have_reports) { emit[++n_emit] = "\"reports_dir\": \"" reports "\"" }
+            for (i = 1; i <= n_emit; i++) {
+              suffix = (i < n_emit) ? "," : ""
+              print indent "  " emit[i] suffix
+            }
             print indent "}" tc
-            wrote_plans = 1; wrote_issues = 1
+            wrote_plans = 1; wrote_issues = 1; wrote_reports = 1
             in_output = 0
             next
           }
@@ -854,11 +979,21 @@ write_output_block() {
         }
         print line
       }
+      END {
+        # Defensive: if we somehow exit while still buffered (malformed
+        # input, no closing brace), flush without comma so nothing is
+        # silently dropped.
+        flush_buffered(0)
+      }
     ' "$CFG" > "$tmp"
   else
     # No output object — insert one before the outer closing brace.
-    plans="$plans" issues="$issues" awk '
-      BEGIN { plans = ENVIRON["plans"]; issues = ENVIRON["issues"] }
+    plans="$plans" issues="$issues" reports="$reports" awk '
+      BEGIN {
+        plans = ENVIRON["plans"]
+        issues = ENVIRON["issues"]
+        reports = ENVIRON["reports"]
+      }
       { buf[NR] = $0 }
       END {
         last_close = 0
@@ -887,7 +1022,8 @@ write_output_block() {
         }
         print "  \"output\": {"
         print "    \"plans_dir\": \"" plans "\","
-        print "    \"issues_dir\": \"" issues "\""
+        print "    \"issues_dir\": \"" issues "\","
+        print "    \"reports_dir\": \"" reports "\""
         print "  }"
         for (i = preceding + 1; i < last_close; i++) print buf[i]
         for (i = last_close; i <= NR; i++) print buf[i]
@@ -909,11 +1045,11 @@ write_output_block() {
   fi
 }
 
-# Decision: if EITHER key is missing, write BOTH. Per Locked Decision 4 +
-# spec acceptance criterion (atomic both-or-neither).
-if [ "$HAS_PLANS_KEY" -eq 0 ] || [ "$HAS_ISSUES_KEY" -eq 0 ]; then
-  if ! write_output_block "$TARGET_PLANS" "$TARGET_ISSUES"; then
-    echo "FAIL: cannot write output.plans_dir / output.issues_dir to $CFG" >&2
+# Decision: if ANY of the three keys is missing, write ALL THREE. Per
+# Locked Decision 4 + 3-tuple atomic both-or-all-or-neither extension.
+if [ "$HAS_PLANS_KEY" -eq 0 ] || [ "$HAS_ISSUES_KEY" -eq 0 ] || [ "$HAS_REPORTS_KEY" -eq 0 ]; then
+  if ! write_output_block "$TARGET_PLANS" "$TARGET_ISSUES" "$TARGET_REPORTS"; then
+    echo "FAIL: cannot write output.plans_dir / output.issues_dir / output.reports_dir to $CFG" >&2
     exit 1
   fi
   WROTE_KEYS=1
@@ -932,9 +1068,9 @@ done <<< "$MANIFEST"
 echo "Wrote .pre-paths-migration with $MANIFEST_LINES entries."
 echo "Re-rendered hooks (broadened recursive-delete fence — applied EARLY)."
 if [ "$WROTE_KEYS" -eq 1 ]; then
-  echo "Wrote output.plans_dir = \"$TARGET_PLANS\" and output.issues_dir = \"$TARGET_ISSUES\"."
+  echo "Wrote output.plans_dir = \"$TARGET_PLANS\", output.issues_dir = \"$TARGET_ISSUES\", and output.reports_dir = \"$TARGET_REPORTS\"."
 else
-  echo "Config keys output.plans_dir / output.issues_dir already present — preserved."
+  echo "Config keys output.plans_dir / output.issues_dir / output.reports_dir already present — preserved."
 fi
 echo "For start-dev.sh / stop-dev.sh customizations, see"
 echo ".claude/skills/update-zskills/references/path-config-upgrade.md."

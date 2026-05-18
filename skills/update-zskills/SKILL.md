@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.18+78ec6a"
+  version: "2026.05.18+bdf913"
 ---
 
 # Update Z Skills Infrastructure
@@ -41,7 +41,8 @@ was found and what was done about it.
   `.claude/skills/update-zskills` shipped, or `skills/update-zskills`
   in zskills source tree). Writes a `.pre-paths-migration` manifest
   (write-once), updates `.gitignore`, and writes `output.plans_dir`
-  + `output.issues_dir` LAST (atomic both-or-neither). The script
+  + `output.issues_dir` + `output.reports_dir` LAST (atomic
+  both-or-all-or-neither — 3-tuple). The script
   triggers `--rerender` AS THE FIRST FILE-SYSTEM CHANGE so the
   broadened recursive-delete hook regex protects the migration's own
   filesystem actions. Idempotent — refuses to re-run if
@@ -219,6 +220,12 @@ Issue trackers:
   plans/{ISSUES_PLAN,BUILD_ISSUES,DOC_ISSUES,QE_ISSUES}.md
     → docs/issues/  (or $output.issues_dir if user-set)
 
+Work-trail reports (Tier 1.5 — durable narrative artifacts):
+  /run-plan plan-{slug}.md, /verify-changes verify-{name}.md,
+  /fix-issues SPRINT_REPORT.md
+    → docs/reports/  (or $output.reports_dir if user-set;
+                      legacy fallback `.zskills/audit`)
+
 Runtime files:
   legacy var/dev.{pid,log}
     → .zskills/dev-server.pid, .zskills/dev-server.log
@@ -278,7 +285,7 @@ moved: plans/FOO_PLAN.md → docs/plans/FOO_PLAN.md
 ...
 Wrote .pre-paths-migration with N entries.
 Re-rendered hooks (broadened recursive-delete fence — applied EARLY).
-Wrote output.plans_dir = "docs/plans" and output.issues_dir = "docs/issues".
+Wrote output.plans_dir = "docs/plans", output.issues_dir = "docs/issues", and output.reports_dir = "docs/reports".
 For start-dev.sh / stop-dev.sh customizations, see
 .claude/skills/update-zskills/references/path-config-upgrade.md.
 ```
@@ -494,8 +501,8 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
    <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
    ```markdown
-   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`
-   > and `output.issues_dir` MUST NOT be inserted into
+   > **Path-config keys are EXEMPT from auto-backfill.** `output.plans_dir`,
+   > `output.issues_dir`, and `output.reports_dir` MUST NOT be inserted into
    > `.claude/zskills-config.json` during install or `--rerender`. Their
    > absence is meaningful — the helper falls back to legacy `plans/`,
    > preserving consumer-current behavior. Only `/update-zskills
@@ -1071,7 +1078,6 @@ The agent frontmatter references
 is fixed, so the hook-copy step (above) is a hard prerequisite.
 
 ```bash
-INSTALLED_AGENTS_LIST=""
 if [ -d "$PORTABLE/.claude/agents" ]; then
   mkdir -p .claude/agents
   for src in "$PORTABLE/.claude/agents"/*.md; do
@@ -1083,10 +1089,6 @@ if [ -d "$PORTABLE/.claude/agents" ]; then
     elif ! cmp -s "$src" "$dst"; then
       cp -a "$src" "$dst" && echo "Updated agent: $name"
     fi
-    # Accumulate one bullet per agent .md file present in source — the
-    # Step 7 summary emits these verbatim so the summary cannot drift
-    # from what the loop actually deployed. (See #377.)
-    INSTALLED_AGENTS_LIST="${INSTALLED_AGENTS_LIST}"$'\n'"   > - ${name%.md} (from .claude/agents/${name})"
   done
   echo "WARN: agent definitions auto-discover at session start. Restart Claude Code (or open a new session) before invoking verifier-using skills (/run-plan, /commit, /fix-issues, /do, /verify-changes). There is no in-session reload command."
 fi
@@ -1210,14 +1212,10 @@ from a template):
 7. **Report:** `"Step C: registered N hook entries, skipped M already
    present, renamed R, preserved F foreign entries."`
 
-   Then append the agent + non-settings-wired hook install summary.
-   The "Installed agents:" intro is static; the bullet list is the
-   `$INSTALLED_AGENTS_LIST` accumulated by the cp-loop above (one
-   bullet per `.claude/agents/*.md` file actually copied), so the
-   summary cannot drift from what was deployed (#377).
+   Then append the agent + non-settings-wired hook install summary:
 
    > Installed agents:
-   > ${INSTALLED_AGENTS_LIST}
+   > - verifier (from .claude/agents/verifier.md, Layer 0 timeout-injection hook)
    >
    > Installed hook scripts (D'' structural defense):
    > - .claude/hooks/inject-bash-timeout.sh (Layer 0 — auto-extends Bash timeout to 600000 ms for verifier subagent)

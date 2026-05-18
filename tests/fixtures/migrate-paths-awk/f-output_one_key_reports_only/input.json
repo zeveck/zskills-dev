@@ -1,0 +1,6 @@
+{
+  "project_name": "fixture",
+  "output": {
+    "reports_dir": "custom/reports"
+  }
+}

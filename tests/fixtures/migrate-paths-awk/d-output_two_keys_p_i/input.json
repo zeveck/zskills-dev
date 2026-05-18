@@ -1,0 +1,7 @@
+{
+  "project_name": "fixture",
+  "output": {
+    "plans_dir": "stash",
+    "issues_dir": ".zskills/issues"
+  }
+}

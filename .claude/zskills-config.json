@@ -39,6 +39,7 @@
   },
   "output": {
     "plans_dir": "docs/plans",
-    "issues_dir": "docs/issues"
+    "issues_dir": "docs/issues",
+    "reports_dir": "docs/reports"
   }
 }

@@ -60,17 +60,22 @@ init_repo() {
 }
 
 # Produce a minimal valid .claude/zskills-config.json with optional output
-# block.
+# block. If $4 (reports) is non-empty, includes reports_dir as a third key.
 write_config() {
-  local dir="$1" plans="${2:-}" issues="${3:-}"
+  local dir="$1" plans="${2:-}" issues="${3:-}" reports="${4:-}"
   mkdir -p "$dir/.claude"
-  if [ -n "$plans" ] || [ -n "$issues" ]; then
+  if [ -n "$plans" ] || [ -n "$issues" ] || [ -n "$reports" ]; then
     {
       printf '{\n'
       printf '  "project_name": "fixture",\n'
       printf '  "output": {\n'
       printf '    "plans_dir": "%s",\n' "${plans:-docs/plans}"
-      printf '    "issues_dir": "%s"\n' "${issues:-docs/issues}"
+      if [ -n "$reports" ]; then
+        printf '    "issues_dir": "%s",\n' "${issues:-docs/issues}"
+        printf '    "reports_dir": "%s"\n' "$reports"
+      else
+        printf '    "issues_dir": "%s"\n' "${issues:-docs/issues}"
+      fi
       printf '  }\n'
       printf '}\n'
     } > "$dir/.claude/zskills-config.json"
@@ -164,15 +169,23 @@ case_1_legacy_only() {
     fail "case 1: manifest entries don't match filesystem" "$bad_entries dangling entries"
   fi
 
-  # Sub-assertion: config gained BOTH output.plans_dir AND output.issues_dir
-  # (atomic both-or-neither — Locked Decision 4).
+  # Sub-assertion: config gained ALL THREE output keys
+  # (atomic both-or-all-or-neither — Locked Decision 4 + 3-tuple extension).
   local cfg_body
   cfg_body=$(cat "$D/.claude/zskills-config.json")
   if echo "$cfg_body" | grep -q '"plans_dir"[[:space:]]*:[[:space:]]*"docs/plans"' \
-     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"docs/issues"'; then
-    pass "case 1: config gained BOTH output.plans_dir AND output.issues_dir"
+     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"docs/issues"' \
+     && echo "$cfg_body" | grep -q '"reports_dir"[[:space:]]*:[[:space:]]*"docs/reports"'; then
+    pass "case 1: config gained ALL THREE output keys (plans_dir, issues_dir, reports_dir)"
   else
-    fail "case 1: config missing one or both output keys" "$cfg_body"
+    fail "case 1: config missing one or more output keys" "$cfg_body"
+  fi
+  # Sub-assertion: post-migration config is valid JSON (validates the
+  # 3-tuple awk's trailing-comma policy in WI 1.6 part d/d-bis).
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$D/.claude/zskills-config.json" 2>/dev/null; then
+    pass "case 1: post-migration config parses as valid JSON"
+  else
+    fail "case 1: config is not valid JSON" "$cfg_body"
   fi
 
   # Sub-assertion (CI guard for rerender ordering, per round-2 DA F4):
@@ -231,6 +244,18 @@ case_2_preconfigured() {
   else
     fail "case 2: config keys mutated" "$cfg_body"
   fi
+  # 3-tuple extension: reports_dir was absent in fixture; migrator must
+  # inject the default (docs/reports) without altering the preserved keys.
+  if echo "$cfg_body" | grep -q '"reports_dir"[[:space:]]*:[[:space:]]*"docs/reports"'; then
+    pass "case 2: reports_dir newly injected with default 'docs/reports'"
+  else
+    fail "case 2: reports_dir missing" "$cfg_body"
+  fi
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$D/.claude/zskills-config.json" 2>/dev/null; then
+    pass "case 2: post-migration config parses as valid JSON"
+  else
+    fail "case 2: config is not valid JSON" "$cfg_body"
+  fi
 }
 
 # ─── Case 3: idempotent re-run ────────────────────────────────────────────
@@ -272,6 +297,16 @@ case_3_idempotent() {
     pass "case 3: .pre-paths-migration mtime unchanged on second run"
   else
     fail "case 3: .pre-paths-migration was rewritten" "mtime1=$mtime1 mtime2=$mtime2"
+  fi
+  # 3-tuple extension: config after first run has all 3 keys; second run
+  # must produce zero config diff (idempotency at the config-write layer,
+  # not just at the manifest layer).
+  local cfg_body
+  cfg_body=$(cat "$D/.claude/zskills-config.json")
+  if echo "$cfg_body" | grep -q '"reports_dir"[[:space:]]*:[[:space:]]*"docs/reports"'; then
+    pass "case 3: reports_dir present in config after migration"
+  else
+    fail "case 3: reports_dir missing after migration" "$cfg_body"
   fi
 }
 
@@ -934,6 +969,47 @@ PLAN
   rm -rf -- "$D"
 }
 
+# ─── Case 14: partial — plans_dir + issues_dir set, reports_dir absent ─────
+# Net-new for REPORTS_DIR_MIGRATION.md (DA-5 + AC-P.8 + AC-P.12). Primary
+# regression for the d/d-bis trailing-comma awk extension: pre-migration
+# config has the LAST output-block key (issues_dir) with NO trailing comma;
+# injecting reports_dir after it must add a comma to the issues_dir line.
+case_14_partial_reports_missing() {
+  local D="$TEST_OUT/paths-migration-fixture-14"
+  init_repo "$D"
+  mkdir -p "$D/plans"
+  echo "BAZ plan body" > "$D/plans/BAZ_PLAN.md"
+  # Pre-set BOTH plans_dir + issues_dir with custom values; reports_dir
+  # is intentionally absent (the d-bis edge case).
+  write_config "$D" "stash" ".zskills/issues"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -ne 0 ]; then
+    fail "case 14: migrate-paths.sh exit code" "rc=$rc out=$out"
+    return
+  fi
+
+  local cfg_body
+  cfg_body=$(cat "$D/.claude/zskills-config.json")
+
+  # (1) All three keys present.
+  if echo "$cfg_body" | grep -q '"plans_dir"[[:space:]]*:[[:space:]]*"stash"' \
+     && echo "$cfg_body" | grep -q '"issues_dir"[[:space:]]*:[[:space:]]*"\.zskills/issues"' \
+     && echo "$cfg_body" | grep -q '"reports_dir"[[:space:]]*:[[:space:]]*"docs/reports"'; then
+    pass "case 14: all 3 keys present (preserved custom values + injected default reports_dir)"
+  else
+    fail "case 14: missing or mutated keys" "$cfg_body"
+  fi
+
+  # (2) Output is VALID JSON — the load-bearing trailing-comma check.
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$D/.claude/zskills-config.json" 2>/dev/null; then
+    pass "case 14: post-migration config parses as valid JSON (trailing-comma policy correct)"
+  else
+    fail "case 14: config is not valid JSON" "$cfg_body"
+  fi
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
@@ -949,6 +1025,7 @@ case_10_rewrite_only_recovery
 case_11_chmod_fallback
 case_12_plain_plans_catchall
 case_13_cross_ref_rewrite_migration_doc_guard
+case_14_partial_reports_missing
 
 echo
 echo "---"
