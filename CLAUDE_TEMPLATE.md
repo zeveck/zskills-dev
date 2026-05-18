@@ -17,6 +17,35 @@ When using the Agent tool:
 
 **Impl-agent dispatch.** When dispatching a sub-agent to write code, run tests, or commit changes (this includes any agent dispatch inside `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, `/run-plan`'s phase implementer, and `/quickfix`'s agent-dispatched mode), use `subagent_type: "implementer"`. The implementer agent (`.claude/agents/implementer.md`) clones the verifier's frontmatter `inject-bash-timeout.sh` hook so the agent's Bash calls auto-extend to a 600s timeout. Without this pin the impl agent runs as default `general-purpose`, hits the Bash tool's 120s default on long test runs, and reflexively reaches for `run_in_background: true` + `Monitor` — the exact stall pattern the verifier-cannot-run rule already guards against on the verifier side.
 
+## Bash tool timeouts and bg behavior
+
+The Bash tool has a 600s (10 min) hard ceiling. When a command may exceed it:
+
+1. **Default: run inline.** Most commands fit. Pass `timeout: 600000`
+   explicitly when a command might take 3-4+ min (full test suites, large
+   builds) so the Bash tool doesn't auto-background it at the 120s default.
+
+2. **Only background when forced** (command genuinely exceeds 10 min). When
+   you do bg via `run_in_background: true` OR when the harness
+   auto-backgrounds a long command:
+   - **Actively poll progress** every 2-3 min via `ps`, `tail`, or reading
+     the output file.
+   - **DO NOT** rely on the harness's "you'll be notified when it
+     completes" message. That notification path is unreliable in practice
+     — bg notifications regularly fail to fire, leaving the agent silent
+     for hours.
+   - **DO NOT** sit idle waiting.
+
+If you find yourself reaching for `run_in_background: true` to handle a
+"test suite might be slow", that's a red flag — pin `subagent_type:
+"implementer"` or `"verifier"` instead (both clone
+`inject-bash-timeout.sh`'s 600s extension, so their Bash calls stay
+foreground and complete reliably).
+
+Past failure: orchestrator silence of 2+ hours when a bg notification
+didn't fire on a hung test process. Active polling would have surfaced the
+hang in 5 minutes.
+
 ## Python is required
 
 zskills hooks and helper scripts depend on Python 3 for JSON round-tripping where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
