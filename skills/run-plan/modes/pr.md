@@ -488,6 +488,12 @@ while :; do
       # subagent — /land-pr was already invoked at orchestrator level
       # via the Skill tool; this dispatch is at the same level).
       #
+      # Dispatch shape: use the `Agent` tool with subagent_type: "fixer".
+      # This inherits the Layer 0 Bash-timeout extension
+      # (.claude/agents/fixer.md + CLAUDE.md "Verifier-cannot-run rule")
+      # so the fix-cycle agent's long test runs don't trigger the
+      # bg+Monitor stall pattern.
+      #
       # Prompt structure follows
       # skills/land-pr/references/fix-cycle-agent-prompt-template.md.
       # /run-plan fills <CALLER_WORK_CONTEXT> with plan title, current

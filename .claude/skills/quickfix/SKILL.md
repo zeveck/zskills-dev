@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.17+7aa3f0"
+  version: "2026.05.18+ac9441"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -777,8 +777,13 @@ When `MODE == "agent-dispatched"`:
 2. Check `agents.min_model` from `.claude/zskills-config.json`; if set
    to a specific model, include the hint in the dispatch prompt
    (default `auto` → omit, inherit parent model).
-3. **Dispatch one Agent tool call** with a prompt that instructs the
-   subagent to:
+3. **Dispatch one Agent tool call** with `subagent_type: "fixer"`. This
+   inherits the Layer 0 Bash-timeout extension (see
+   `.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+   CLAUDE.md) so the impl agent's Bash calls don't trigger the bg+Monitor
+   stall pattern (irrelevant here since the agent is told not to run
+   tests, but the shape is uniform across all impl-class dispatches).
+   The prompt instructs the subagent to:
    - `cd $MAIN_ROOT`
    - Implement `$DESCRIPTION`
    - **Do NOT** `git commit`, `git add`, or modify the index
@@ -1188,6 +1193,12 @@ while :; do
       # Dispatch a fix-cycle agent at orchestrator level (NOT a nested
       # subagent — /land-pr was already invoked at orchestrator level
       # via the Skill tool; this dispatch is at the same level).
+      #
+      # Dispatch shape: use the `Agent` tool with subagent_type: "fixer".
+      # This inherits the Layer 0 Bash-timeout extension
+      # (.claude/agents/fixer.md + CLAUDE.md "Verifier-cannot-run rule")
+      # so the fix-cycle agent's long test runs don't trigger the
+      # bg+Monitor stall pattern.
       #
       # Prompt structure follows
       # skills/land-pr/references/fix-cycle-agent-prompt-template.md.

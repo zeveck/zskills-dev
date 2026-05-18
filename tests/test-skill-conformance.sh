@@ -505,6 +505,43 @@ check_not   quickfix "no inline gh pr create"      'gh pr create'
 check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
 
 echo ""
+echo "=== fixer subagent — impl-dispatch site pins (Verifier-cannot-run symmetry) ==="
+# Each impl-class dispatch (orchestrator asks a sub-agent to write code,
+# run tests, and/or commit) MUST declare `subagent_type: "fixer"`. The
+# fixer agent at .claude/agents/fixer.md clones verifier's frontmatter
+# inject-bash-timeout.sh hook, so the impl agent's Bash calls auto-extend
+# to 600s and never trigger the bg+Monitor stall pattern that hangs the
+# dispatch at "Tests are running. Let me wait for the monitor."
+#
+# Scoped per-file (check_in_file) so adding the directive to an unrelated
+# file inside the skill tree doesn't satisfy the assertion — each
+# dispatch site is verified independently.
+check_in_file run-plan    "SKILL.md"                   "impl-dispatch pins fixer" 'subagent_type: "fixer"'
+check_in_file run-plan    "modes/pr.md"                "fix-cycle pins fixer"     'subagent_type: "fixer"'
+check_in_file fix-issues  "SKILL.md"                   "fix-agent pins fixer"     'subagent_type: "fixer"'
+check_in_file fix-issues  "modes/pr.md"                "fix-cycle pins fixer"     'subagent_type: "fixer"'
+check_in_file land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins fixer" 'subagent_type: "fixer"'
+check_in_file do          "modes/pr.md"                "impl+fix-cycle pins fixer" 'subagent_type: "fixer"'
+check_in_file quickfix    "SKILL.md"                   "agent-dispatched+fix-cycle pins fixer" 'subagent_type: "fixer"'
+
+# Agent definition file exists with the expected frontmatter shape.
+if [ -f "$REPO_ROOT/.claude/agents/fixer.md" ]; then
+  pass "[.claude/agents/fixer.md] exists"
+else
+  fail "[.claude/agents/fixer.md] exists" "missing"
+fi
+if grep -q '^name: fixer$' "$REPO_ROOT/.claude/agents/fixer.md" 2>/dev/null; then
+  pass "[.claude/agents/fixer.md] name: fixer"
+else
+  fail "[.claude/agents/fixer.md] name: fixer" "frontmatter mismatch"
+fi
+if grep -q 'inject-bash-timeout.sh' "$REPO_ROOT/.claude/agents/fixer.md" 2>/dev/null; then
+  pass "[.claude/agents/fixer.md] hooks inject-bash-timeout.sh"
+else
+  fail "[.claude/agents/fixer.md] hooks inject-bash-timeout.sh" "Layer 0 hook reference missing"
+fi
+
+echo ""
 echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
 # Drift-prevention assertions catching any future re-introduction of inline
 # PR-landing primitives outside /land-pr. Each historical drift bug below

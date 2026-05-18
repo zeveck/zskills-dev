@@ -15,6 +15,8 @@ When using the Agent tool:
 - Treat any subagent type as Haiku-by-default until you have read its agent definition and confirmed otherwise. When in doubt, pass `model: "opus"` explicitly, or use `general-purpose`.
 - **Sonnet** is acceptable only for rare simple+mechanical work (bulk renames, find-replace, format conversion). Never for analysis, review, verification, or judgment.
 
+**Impl-agent dispatch.** When dispatching a sub-agent to write code, run tests, or commit changes (this includes any agent dispatch inside `/fix-issues` PR mode, `/do` PR mode, `/land-pr`'s fix-cycle template, `/run-plan`'s phase implementer, and `/quickfix`'s agent-dispatched mode), use `subagent_type: "fixer"`. The fixer agent (`.claude/agents/fixer.md`) clones the verifier's frontmatter `inject-bash-timeout.sh` hook so the agent's Bash calls auto-extend to a 600s timeout. Without this pin the impl agent runs as default `general-purpose`, hits the Bash tool's 120s default on long test runs, and reflexively reaches for `run_in_background: true` + `Monitor` — the exact stall pattern the verifier-cannot-run rule already guards against on the verifier side.
+
 ## Python is required
 
 zskills hooks and helper scripts depend on Python 3 for JSON round-tripping where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
