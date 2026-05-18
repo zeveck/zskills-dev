@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+fb745e"
+  version: "2026.05.18+642c20"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -784,11 +784,22 @@ If `$ARGUMENTS` contains `every <schedule>`:
    # gates must be skipped non-interactively). Default-on regardless of
    # $AUTO_FLAG.
    CRON_TOKENS="$CRON_TOKENS auto"
+   # Propagate `dashboard` source-of-truth (issue #362) — without this, cron
+   # fire #2+ loses the dashboard-Ready source and falls back to the
+   # model-layer priority rubric.
+   [ "$DASHBOARD_MODE" = "1" ] && CRON_TOKENS="$CRON_TOKENS dashboard"
+   # Propagate explicit landing mode so subsequent cron fires reproduce the
+   # user's pr/direct choice (config default is re-resolved per-fire when
+   # the token is absent, matching current behavior).
+   case "$LANDING_MODE" in
+     pr) CRON_TOKENS="$CRON_TOKENS pr" ;;
+     direct) CRON_TOKENS="$CRON_TOKENS direct" ;;
+   esac
    CRON_PROMPT="Run /fix-issues $N${FOCUS:+ $FOCUS}$CRON_TOKENS every $SCHEDULE now"
    ```
    Default new-cron shape:
    ```
-   Run /fix-issues <N> [focus] auto every <schedule> now
+   Run /fix-issues <N> [focus] auto [dashboard] [pr|direct] every <schedule> now
    ```
 
 4. **Create the cron** — use `CronCreate`:
