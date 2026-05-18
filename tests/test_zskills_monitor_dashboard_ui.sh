@@ -528,6 +528,33 @@ else
   fail "AC: applySnapshot must call fingerprintIssues with lastGoodQueues, not raw queues — fingerprint drift on new issues"
 fi
 
+# AC (issue #336): deepCloneQueues gates the prune-against-live-issues
+# pass on the `issuesFetchOk` parameter, and applySnapshot passes
+# `snap.issues_fetch_ok !== false` (defaulting to true) when calling it.
+# Without this gate, a cold-start gh-list failure (issues=[]) triggers
+# the prune block to drop every queued number, and the next drag-POST
+# persists the wiped queues — corrupting user-set ordering.
+DEEPCLONE_BODY=$(awk '
+  /^function deepCloneQueues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$DEEPCLONE_BODY" | grep -qE 'function deepCloneQueues\(.*issuesFetchOk\)'; then
+  pass "AC: deepCloneQueues accepts issuesFetchOk parameter (#336)"
+else
+  fail "AC: deepCloneQueues signature missing issuesFetchOk param (#336)"
+fi
+if echo "$DEEPCLONE_BODY" | grep -qF 'issuesFetchOk && !liveIssueNumbers.has(num)'; then
+  pass "AC: deepCloneQueues prune-pass gated on issuesFetchOk (#336)"
+else
+  fail "AC: deepCloneQueues prune pass not gated on issuesFetchOk — cold-start corruption regression (#336)"
+fi
+if echo "$APPLY_BODY" | grep -qF 'snap.issues_fetch_ok !== false'; then
+  pass "AC: applySnapshot reads snap.issues_fetch_ok (#336)"
+else
+  fail "AC: applySnapshot does not consume snap.issues_fetch_ok — fix not wired (#336)"
+fi
+
 # AC: Reconciliation suppress window present (1500ms).
 if grep -q 'POST_RECONCILE_SUPPRESS_MS' "$APP_JS" && grep -q '1500' "$APP_JS"; then
   pass "AC: reconciliation suppress window 1500ms present"

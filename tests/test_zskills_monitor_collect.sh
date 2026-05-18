@@ -62,7 +62,7 @@ else
   fail "CLI --fixture minimal exits 0 (rc=$RC, output: $OUT)"
 fi
 
-EXPECTED_KEYS="activity branches errors issues plans queues repo_root repo_url state_file_path state_updated_at updated_at version worktrees"
+EXPECTED_KEYS="activity branches errors issues issues_fetch_ok plans queues repo_root repo_url state_file_path state_updated_at updated_at version worktrees"
 ACTUAL_KEYS=$(printf '%s' "$OUT" | python3 -c '
 import json,sys
 print(" ".join(sorted(json.load(sys.stdin).keys())))
@@ -498,13 +498,96 @@ c._reset_issue_cache_for_tests()
 def boom(*a, **kw):
     raise FileNotFoundError("gh: not found")
 errs = []
-issues = c.list_issues(errs, _now=1.0, _runner=boom)
-print(len(issues), len(errs), errs[0]["source"] if errs else "")
+issues, ok = c.list_issues(errs, _now=1.0, _runner=boom)
+print(len(issues), len(errs), errs[0]["source"] if errs else "", ok)
 ')
-if [ "$GH_MISSING" = "0 1 gh issue list" ]; then
-  pass "missing gh: issues=[] + 'gh issue list' error, no exception"
+if [ "$GH_MISSING" = "0 1 gh issue list False" ]; then
+  pass "missing gh: issues=[] + 'gh issue list' error + ok=False, no exception"
 else
   fail "missing gh: got '$GH_MISSING'"
+fi
+
+# ---------------------------------------------------------------------------
+# AC (issue #336): cold-start gh-list failure → snapshot.issues_fetch_ok=False
+# AND queues block remains populated from state file (no client-side prune).
+# Reproduces the cold-start window: empty issue cache + mocked gh failure
+# + monitor-state.json with N issue entries → snapshot must carry the flag
+# so the dashboard client preserves the user's ordering on the next POST.
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== Phase 4 AC: cold-start gh-list failure (#336) ==="
+
+COLD_START=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import json, sys, tempfile, pathlib
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._reset_issue_cache_for_tests()
+
+# Fixture: monitor-state.json with 3 queued issue numbers in "triage".
+tmp = pathlib.Path(tempfile.mkdtemp())
+(tmp / ".zskills").mkdir()
+state_doc = {
+    "version": "1.1",
+    "default_mode": "phase",
+    "plans": {},
+    "issues": {"triage": [101, 202, 303]},
+    "updated_at": "2026-05-18T00:00:00+00:00",
+}
+(tmp / ".zskills" / "monitor-state.json").write_text(json.dumps(state_doc))
+
+# Mock gh issue list as a non-zero exit (transient failure on cold start).
+class BoomResult:
+    returncode = 1
+    stdout = ""
+    stderr = "gh: rate limit exceeded"
+def runner(*a, **kw):
+    return BoomResult()
+
+snap = c.collect_snapshot(tmp, issue_runner=runner, pre_resolved=True)
+print("issues_fetch_ok=" + repr(snap.get("issues_fetch_ok")))
+print("issues_len=" + str(len(snap.get("issues", []))))
+print("queue_triage=" + json.dumps(snap.get("queues", {}).get("issues", {}).get("triage", [])))
+errs = [e for e in snap.get("errors", []) if e.get("source") == "gh issue list"]
+print("error_reported=" + ("yes" if errs else "no"))
+')
+if printf '%s\n' "$COLD_START" | grep -q "^issues_fetch_ok=False$" \
+    && printf '%s\n' "$COLD_START" | grep -q "^issues_len=0$" \
+    && printf '%s\n' "$COLD_START" | grep -q "^queue_triage=\[101, 202, 303\]$" \
+    && printf '%s\n' "$COLD_START" | grep -q "^error_reported=yes$"; then
+  pass "cold-start gh failure: issues_fetch_ok=False + queues preserved + error logged (#336)"
+else
+  fail "cold-start gh failure (#336): got '$COLD_START'"
+fi
+
+# Steady-state mirror: successful gh fetch → issues_fetch_ok=True.
+STEADY_OK=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import json, sys, tempfile, pathlib
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._reset_issue_cache_for_tests()
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+(tmp / ".zskills").mkdir()
+(tmp / ".zskills" / "monitor-state.json").write_text(json.dumps({
+    "version": "1.1", "default_mode": "phase",
+    "plans": {}, "issues": {},
+    "updated_at": "2026-05-18T00:00:00+00:00",
+}))
+
+class OkResult:
+    returncode = 0
+    stdout = "[]"
+    stderr = ""
+def runner(*a, **kw):
+    return OkResult()
+
+snap = c.collect_snapshot(tmp, issue_runner=runner, pre_resolved=True)
+print(snap.get("issues_fetch_ok"))
+')
+if [ "$STEADY_OK" = "True" ]; then
+  pass "steady-state gh success: issues_fetch_ok=True (#336)"
+else
+  fail "steady-state ok flag wrong: got '$STEADY_OK'"
 fi
 
 # ---------------------------------------------------------------------------
