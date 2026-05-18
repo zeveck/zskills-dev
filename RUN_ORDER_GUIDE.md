@@ -8,6 +8,26 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
+- **2026-05-18 (audit — 3-day sprint window; queue down 14 → 6; audit-reports-relocation plan parked)** — Fresh-agent verification pass against current `main` (HEAD `c1b653e`). Tests **3292/3292 PASS** (+208 since 2026-05-15's 3084 baseline; +200 of that from the /fix-issues hardening sprint's new behavioral coverage). Local main == origin/main.
+
+  **64 commits landed since the 2026-05-15 ROG entry**, dominated by a sustained `/fix-issues` redesign cycle. PR-shape histogram: 8 `fix(fix-issues)`, 5 `docs(sprint-report)`, 3 `test(fix-issues)`, 3 `fix(zskills-dashboard)`, 2 `fix(hook)`, 2 `chore(do)`, plus singletons across briefing/hooks/quickfix/research-and-go/budget. The /fix-issues semantics churn includes two short-lived revert pairs (#356→#357→#358 on tracker-PR auto-merge gating; #342→#349 on the auto/unattended split) — both rolled forward to cleaner shapes (content-stream auto-merge for tracker PRs; /quickfix grammar redesign without the split). The skill is settling; sprint #364 (2026-05-17 23:51) explicitly recorded as the latest finalized sprint section.
+
+  **Issue queue: 14 open → 6 open.** Closed in the interval (16 total): #278, #279, #280, #281, #282, #283, #284, #288, #289, #291, #293, #295, #297, #300, #301, plus a slew of in-sprint additions (#308, #310, #321, #322, #325, #326, #334, #335, #337, #338, #339). PR #312 closed #289 (briefing.cjs retirement — Python is the sole runtime; memory `feedback_python_is_required.md` is now the policy basis). PR #346 closed #335 (sync Step 5 `git add -A 2>/dev/null || true` → fails-loud). PR #342 closed #310 (/quickfix grammar redesign + cross-skill auto/unattended split, partially reverted via #349).
+
+  **6 remaining open** — 2 intentional defers + 4 actionable:
+  - **#67** (GitLab) — Phase G defer, unchanged.
+  - **#217** (relocate audit reports) — defer-by-trigger, BUT the drafted plan exists parked at `/tmp/zskills-draftplan-audit-reports-relocation/docs/plans/audit-reports-relocation.md` (branch `draftplan-audit-reports-relocation`, head `ff7c8e4`). 8 phases, 1244 lines, 2 rounds of adversarial review (44/44 findings resolved). Plan is **stale relative to current main** — needs `/refine-plan` to absorb: briefing.cjs retirement (Phase 4 collapses, no dual runtime), Python-is-required (Phase 5's awk→Python migration eliminates the DA2-1 trailing-comma class), and the new `issues_dir: docs/issues` precedent landed via #296 (parallel to the proposed `reports_dir: docs/reports/`).
+  - **#340** (/qe-audit verification gap) — actionable; design surface.
+  - **#336** (Dashboard queue normalization cold-start + ordering) — actionable; dashboard-domain.
+  - **#355** (/cleanup-merged --review flag) — actionable; enhancement.
+  - **#362** (/fix-issues Phase 0c cron prompt drops `dashboard` token) — actionable; small.
+
+  **Two stale-frontmatter `status: active` plans unchanged** — `docs/plans/TRACKING_FIX.md` and `docs/plans/RESTORE_CHUNKED_EXECUTION.md` still flagged in prior drift entries. Implementations landed long ago; frontmatter cleanup never ran. Same low-priority disposition.
+
+  **Worktree census:** 18 total, 14 on non-main non-ROG branches. Several are landed-but-not-swept (`/tmp/zskills-do-drop-briefing-cjs` has `.landed status: landed` from PR #312); others are in-flight on recent fix branches. `/fix-report` sweep would shed the landed set.
+
+  **Notable infrastructure shifts:** PR #296 introduced `output.issues_dir: docs/issues` as a tracked-by-default config field (collapsed `.zskills/*` gitignore). PR #302 landed `ZSKILLS_PYTHON` env override. PR #365 added the `fixer` subagent pinned at impl-dispatch sites. PR #338 closure via #363 restored a port-failure regression guard that was lost when briefing.cjs dropped (legitimate post-#289 follow-up).
+
 - **2026-05-15 (audit — verified prior session's claims; one pending plan resurfaced)** — Fresh-agent verification pass against current `main` (HEAD `338017f`, == `origin/main`). All 8 session-claimed issue closures (#254, #235, #236, #241, #256, #231, #266, #267) confirmed CLOSED on GitHub with squashes on `origin/main`. Spot-checked the 4 load-bearing diffs survived intact: `/land-pr` Step 6b at `skills/land-pr/SKILL.md:372` + Step 7b at `:581`; `/fix-issues` AC-P.3 close-gating at `skills/fix-issues/SKILL.md:399–467`; `/run-plan` tight `REMAINING_PHASES` regex `^\|[^|]*\|[[:space:]]*⬚[[:space:]]*\|` at `:2316`; `/quickfix` `[aA][uU][tT][oO])` at `skills/quickfix/SKILL.md:112`. Full suite **3074/3074 PASS** (+33 vs the post-#267 baseline of 3041 — increment from #271 AC-P.3 follow-up tests + dashboard polish PRs).
 
   **PR landed since the prior drift entry (not in this guide's tracked queue):** [#277](https://github.com/zeveck/zskills-dev/pull/277) `feat(dashboard): entry links + plan-text drifts in DASHBOARD_TABS_AND_RENAME` (squash `338017f`, MERGED 2026-05-15T09:14:31Z) — dashboard polish on the already-complete DASHBOARD_TABS_AND_RENAME plan. No queue impact.
@@ -353,20 +373,36 @@ Issues filed but not yet routed to a phase. Default to running clear-and-doable 
 
 - [ ] **Issue [#67](https://github.com/zeveck/zskills-dev/issues/67)** — GitLab support. **Route: stays in Phase G.** Hard prerequisites met (SCRIPTS_INTO_SKILLS, SKILL_FILE_DRIFT_FIX, CONSUMER_STUB_CALLOUTS all complete) but still needs a real GitLab project to test against; revisit when that's in hand.
 
-**Suggested next step (2026-05-15 audit update — open-issue queue is EMPTY; one drafted plan stalled mid-execution):**
+**Suggested next step (2026-05-18 audit update — settled queue + parked relocation plan):**
 
-The open GitHub-issue queue is empty of non-deferred items (only #217 and #67 remain, both intentional defers — see below). However, an audit pass surfaced one drafted-and-stalled plan that the prior session's queue scoping had missed:
+The `/fix-issues` redesign sprint that dominated 2026-05-16/17 is now settled. Tests 3292/3292, main green. 6 open issues remain: 2 intentional defers (#67, #217) + 4 actionable. Distance-to-land assessment broken out by track:
 
-- **`docs/plans/SKILL_DESC_TRIM_PLAN.md`** (`status: active`; plan drafted via PR #227 on 2026-05-11; worktree `/tmp/zskills-pr-skill-desc-trim` on branch `feat/skill-desc-trim`). Phases 0/1/2 are complete in the worktree (commits `65ddd92` / `bf99307` / `9681cdc`); Phases 3-6 (adversarial citation spot-check → conformance gate → apply edits + version bumps + mirror → verify + land) have not run. Resume with `/run-plan docs/plans/SKILL_DESC_TRIM_PLAN.md finish auto pr` — the plan's frontmatter declares PR landing mode and the worktree is in place.
+**Track A — quick wins (any order, ~1 PR each via /do pr or /quickfix):**
+- **#362** — /fix-issues Phase 0c cron prompt drops `dashboard` token. Small.
+- **#336** — Dashboard queue normalization cold-start + ordering wipe. Dashboard-domain, medium.
+- **#340** — /qe-audit verification gap before gh issue create. Process-discipline; design-surface enough to warrant /draft-plan if scoped broadly, or single-skill via /do if scoped to the verification-step insertion only.
+- **#355** — /cleanup-merged --review flag. Enhancement, design-surface medium.
 
-After that completes (or if the user wants to skip it), intentional defers below remain:
+**Track B — the relocation plan (audit-reports-relocation, #217):**
 
-- **#217** — relocate plan execution reports out of `.zskills/audit/`. Issue body's trigger criteria have not fired (consumer hits the audit-dir tracking inconsistency in practice, next minor zskills release scoped, or a user asks "where is plan X's report"). Until one of those fires, the architectural rationale stays captured in the issue body for whenever it gets prioritized.
-- **#67** — GitLab support. Phase G; needs a real GitLab project consumer to validate the integration end-to-end. Without that, building it would be guesswork against unverified assumptions. The draft-plan-prompts plan at `docs/plans/GITLAB_SUPPORT_DRAFT_PLAN_PROMPTS.md` (status: `deferred`) captures the design intent.
+This is the load-bearing pending work. The plan is **drafted-and-parked, not yet refined, not yet executed**.
 
-**Stale-frontmatter cleanup (low-priority, no behavior change):** `docs/plans/TRACKING_FIX.md` (2026-04-11) and `docs/plans/RESTORE_CHUNKED_EXECUTION.md` (2026-04-15) carry `status: active` but their work was implemented or superseded long ago (path-config migration + `f0e51b9` chunked-execution restore). Flip frontmatter to `complete` (or `superseded`) when convenient.
+State:
+- Worktree: `/tmp/zskills-draftplan-audit-reports-relocation/` on `draftplan-audit-reports-relocation` at `ff7c8e4` (single commit, not pushed).
+- Plan: 8 phases / 1244 lines / 2 rounds of adversarial review (44/44 findings resolved).
+- Stale relative to current main (3 days, 64 PRs landed in between).
 
-**No active work-blocked items.** New issues filed in the future will get queued per the standard `/fix-issues` vs `/draft-plan` routing rule (small fix → `/fix-issues`; design surface or multi-skill integration → `/draft-plan` first).
+Required before /run-plan:
+1. **`/refine-plan docs/plans/audit-reports-relocation.md`** — absorbs (a) briefing.cjs retirement (#289/#312) so Phase 4 collapses (no dual runtime, no naming-collision rename), (b) Python-is-required policy (memory `feedback_python_is_required.md`) so Phase 5's awk→Python migration eliminates the trailing-comma class DA2-1 identified, (c) the new `issues_dir: docs/issues` tracked-by-default pattern from #296 (strengthens the `reports_dir: docs/reports/` symmetry argument), (d) any skill-line drift from the 35+ PRs landed during the parked window. Expected outcome: plan shrinks from 1244 → ~700 lines, 8 phases → 5-6.
+2. **`/run-plan docs/plans/audit-reports-relocation.md finish auto pr`** — executes the refined plan end-to-end. The plan is set up for PR landing per `execution.landing: pr`. Each phase commits to a feature branch in the relocation worktree; eviction sweep of ~50 grandfathered `.zskills/audit/` files lands as the last code phase.
+
+Distance-to-land: **2 steps** (one `/refine-plan` pass + one `/run-plan finish auto pr`). The /refine-plan is the riskier of the two (judgment-heavy absorption of structural changes); the /run-plan is mechanical once the refined plan is right.
+
+**Stale-frontmatter cleanup (still low-priority, no behavior change):** `docs/plans/TRACKING_FIX.md` + `docs/plans/RESTORE_CHUNKED_EXECUTION.md` carry `status: active` but work was implemented/superseded long ago. Flip to `complete` when convenient — independent of everything above.
+
+**Intentional defers (unchanged):**
+- **#217** — relocate plan execution reports. **Status: drafted (Track B above); was deferred at issue level but the design pass IS the response to the trigger having fired.**
+- **#67** — GitLab support. Phase G; needs real GitLab consumer to validate.
 
 **Remaining backlog after that:** **#217** (relocate audit-dir reports — `/draft-plan` when triggered; none of its trigger criteria have fired yet), **#67** (GitLab — Phase G, needs real GitLab project to test against).
 
