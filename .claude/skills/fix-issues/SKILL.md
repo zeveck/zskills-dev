@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.17+29284f"
+  version: "2026.05.18+059a22"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1920,6 +1920,12 @@ WITHOUT `isolation: "worktree"` — the worktree already exists. The agent
 prompt must include `FIRST: cd $WORKTREE_PATH` as the mandatory first
 action. Without this instruction, the agent starts in the main repo.
 
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+This inherits the Layer 0 Bash-timeout extension (see
+`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+CLAUDE.md) so the fix agent's Bash calls to run long test suites don't
+trigger the bg+Monitor stall pattern.
+
 ### PR mode (Phase 3)
 
 When `LANDING_MODE == pr`, each issue gets its **own named branch and
@@ -1971,6 +1977,12 @@ fi
 `isolation: "worktree"` — the worktree already exists. The agent prompt
 must include `FIRST: cd $WORKTREE_PATH` as the mandatory first action.
 Without this instruction, the agent starts in the main repo.
+
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+This inherits the Layer 0 Bash-timeout extension (see
+`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+CLAUDE.md) so the fix agent's Bash calls to run long test suites don't
+trigger the bg+Monitor stall pattern.
 
 For grouped interrelated issues (same root cause or same files from
 Phase 2 grouping), pick the LOWEST issue number as the branch identifier

@@ -88,6 +88,12 @@ Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main se
 
 **Step A6 — Dispatch implementation agent (wait for completion):**
 
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+This inherits the Layer 0 Bash-timeout extension (see
+`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+CLAUDE.md) so the impl agent's Bash calls to run long test suites don't
+trigger the bg+Monitor stall pattern.
+
 **Before dispatching:** Check `agents.min_model` in `.claude/zskills-config.json`. If set,
 use that model or higher (ordinal: haiku=1 < sonnet=2 < opus=3). Never dispatch with a
 lower-ordinal model than the configured minimum.
@@ -326,6 +332,12 @@ while :; do
       # Dispatch a fix-cycle agent at orchestrator level (NOT a nested
       # subagent — /land-pr was already invoked at orchestrator level
       # via the Skill tool; this dispatch is at the same level).
+      #
+      # Dispatch shape: use the `Agent` tool with subagent_type: "fixer".
+      # This inherits the Layer 0 Bash-timeout extension
+      # (.claude/agents/fixer.md + CLAUDE.md "Verifier-cannot-run rule")
+      # so the fix-cycle agent's long test runs don't trigger the
+      # bg+Monitor stall pattern.
       #
       # Prompt structure follows
       # skills/land-pr/references/fix-cycle-agent-prompt-template.md.

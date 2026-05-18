@@ -20,6 +20,14 @@ itself has the full Agent toolset (Read, Edit, Write, Bash, Grep, etc.)
 but **MUST NOT dispatch further Agent calls** — Claude Code subagents
 cannot dispatch sub-subagents (Anthropic design).
 
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+This inherits the Layer 0 Bash-timeout extension (see
+`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+CLAUDE.md) so the fix-cycle agent's Bash calls to run long test suites
+don't trigger the bg+Monitor stall pattern. All 5 caller sites
+(`/fix-issues pr`, `/do pr`, `/run-plan` pr mode, `/quickfix`, and any
+orchestrator-direct fix-cycle invocation) MUST honor this shape.
+
 If the agent's fix attempt requires nested agent dispatch, it must
 stop and report. The caller's loop will retry up to `$CI_MAX_ATTEMPTS`
 times; persistent failure means the issue genuinely needs human
