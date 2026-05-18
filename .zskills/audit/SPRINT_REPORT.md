@@ -843,3 +843,19 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 
 ### Dashboard Ready state at fire time
 `[338, 355]` — #338 fixed and dropped from queue; #355 remains for future fire.
+
+## Sprint — 2026-05-18 03:09 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready (drag order, intersection with open)
+**Sprint ID:** sprint-20260518-064124-sprint
+**Pipeline ID:** fix-issues.sprint-20260518-064124-sprint
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #355 | /cleanup-merged: --review flag for per-branch merit-based recommendations + interactive picker | /tmp/zskills-fix-issue-355 | 9ca7bdb | 3327/3327 + 34 new | A+ (8 ACs met, mirror clean, version 2026.05.18+6491e2) | N/A (skill/test code, no UI) |
+
+### Notes
+- Dashboard Ready: [338, 355, 336, 340]. #338 was already merged earlier today (PRs #363/#364) but remained in Ready — flagged as a dashboard-stale-Ready bug for follow-up. Intersection-with-open dropped #338, first actionable pick was #355.
+- Cron registered */30 * * * * with new prompt 'Run /fix-issues 1 auto dashboard pr every 30m now' — both 'dashboard' and 'pr' tokens propagate per #362 fix landed in PR #367 earlier this session.
