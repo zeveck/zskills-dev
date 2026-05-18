@@ -13,7 +13,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 ```
 
-1. `ls $ZSKILLS_AUDIT_DIR/plan-{slug}.md` — report file exists (Phase 5 ran)
+1. `ls $ZSKILLS_REPORTS_DIR/plan-{slug}.md` — report file exists (Phase 5 ran)
 2. Report has a `## Phase` section for every completed phase
 3. In `finish` mode: cross-phase `/verify-changes worktree` returned clean
 4. If UI-touching phases: playwright-cli agent ran and produced screenshots
@@ -25,7 +25,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-   VERIFY_REPORT="$ZSKILLS_AUDIT_DIR/verify-worktree-$(basename "$WORKTREE_PATH").md"
+   VERIFY_REPORT="$ZSKILLS_REPORTS_DIR/verify-worktree-$(basename "$WORKTREE_PATH").md"
    if [ -f "$VERIFY_REPORT" ] && grep -q "⚠️ Flag" "$VERIFY_REPORT"; then
      echo "HALTED: /verify-changes flagged scope violations in $VERIFY_REPORT." >&2
      echo "Review the Scope Assessment section, fix the diff, re-verify, and re-run." >&2
@@ -42,7 +42,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
    dispatching and reuse that variable here for the halt check.
 
 - **Without `auto`:** Phase complete. Output:
-  > Phase complete. Report written to `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
+  > Phase complete. Report written to `$ZSKILLS_REPORTS_DIR/plan-{slug}.md`.
   > Review the worktree and cherry-pick when ready, or use `/commit land`.
 
   All interactive landing and cleanup is the user's decision.
@@ -52,7 +52,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
   wrote in Phase 5 — if it has a `### User Verification` section with
   unchecked `[ ]` items, UI changes need human sign-off before landing.
   Output:
-  > Phase complete. Report written to `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`.
+  > Phase complete. Report written to `$ZSKILLS_REPORTS_DIR/plan-{slug}.md`.
   > **User verification needed before landing** — review the report,
   > sign off on UI changes, then run `/commit land` from the worktree.
   >
@@ -162,7 +162,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      git add <plan-file>
      git commit -m "chore: mark phase <name> done (landed)"
      ```
-  10. **Update the plan report** (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`) —
+  10. **Update the plan report** (`$ZSKILLS_REPORTS_DIR/plan-{slug}.md`) —
       mark the phase section as landed. Regenerate
       `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md` index.
 

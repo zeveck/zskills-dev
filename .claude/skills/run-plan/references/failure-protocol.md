@@ -82,7 +82,7 @@ What happened:
   - Stash was [restored / not needed]
   - Cron job [ID] has been CANCELLED
 
-Working tree is clean. See $ZSKILLS_AUDIT_DIR/plan-{slug}.md for full details.
+Working tree is clean. See $ZSKILLS_REPORTS_DIR/plan-{slug}.md for full details.
 To restart: /run-plan <plan-file> auto every INTERVAL
 To cancel: /run-plan stop
 ```
