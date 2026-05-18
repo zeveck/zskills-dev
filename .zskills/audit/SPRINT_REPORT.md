@@ -908,3 +908,17 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 ### Notes
 - Ready now non-empty: [379, 378, 377, 376, 380]. First pick #379.
 - Single-file +29-line CLAUDE_TEMPLATE.md addition; no skill version bump (CLAUDE_TEMPLATE.md isn't a skill).
+
+## Sprint — 2026-05-18 13:27 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready
+**Sprint ID:** sprint-20260518-170913-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #378 | renderIssues regression guard is string-presence-only | /tmp/zskills-fix-issue-378 | db7133b | 3332/3332 | A+ (1-line grep tighten; rejects comment-only refs) | N/A (test infra only) |
+
+### Notes
+- Ready intersection: [378, 377, 376]. First pick #378. 2 more queued: #377, #376. #380 dropped (closed).
+- 1-file 1-line change to tests/test_zskills_monitor_dashboard_ui.sh.
