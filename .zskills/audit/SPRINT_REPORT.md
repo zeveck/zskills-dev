@@ -877,3 +877,20 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - Server-side fix: collect.py list_issues returns (issues, ok_bool); 5 failure paths return ok=False. collect_snapshot surfaces snapshot.issues_fetch_ok at the top level. Backward-compat: missing key defaults to true.
 - Client-side gate: app.js deepCloneQueues skips prune when issues_fetch_ok===false (state-file queues preserved).
 - Secondary card-counter concern from issue body verified obsolete (renderPlans/renderIssues already read lastGoodQueues.length).
+
+## Sprint — 2026-05-18 04:18 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready (drag order, intersection with open)
+**Sprint ID:** sprint-20260518-080117-sprint
+**Pipeline ID:** fix-issues.sprint-20260518-080117-sprint
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #340 | /qe-audit: require orchestrator-side verification of agent findings before gh issue create + tracker mutation | /tmp/zskills-fix-issue-340 | 55b0b20 | 3332/3332 | A+ (4-bullet criteria verbatim, Past failure footer, step renumber, Bash mode cross-refs) | N/A (skill prose; will affect future /qe-audit runs) |
+
+### Notes
+- Dashboard Ready: [338, 355, 336, 340]. Three closed (#338, #355, #336); intersection yielded #340 as sole actionable pick. Dashboard UI stale-Ready bug persists (noted prior sprints).
+- New Commit Audit Step 5 inserts the verification gate verbatim from issue body. Steps 6/7/8 renumbered; Bash mode Step 3b + Step 6 cross-reference the gate.
+- metadata.version bumped to 2026.05.18+7dfae6; mirror parity clean.
