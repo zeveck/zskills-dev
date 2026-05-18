@@ -2024,6 +2024,25 @@ for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
 done
 
 echo ""
+echo "=== Reports-dir writer placement (issue #217) ==="
+# Writer skills (run-plan, verify-changes, fix-issues) MUST emit work-trail
+# reports (plan-*, verify-*, SPRINT_REPORT) under $ZSKILLS_REPORTS_DIR — NOT
+# $ZSKILLS_AUDIT_DIR. PLAN_REPORT.md, FIX_REPORT.md, briefing-*, debug dumps
+# legitimately stay at AUDIT_DIR and are not matched by this pattern.
+for skill in run-plan verify-changes fix-issues; do
+  skill_dir="$REPO_ROOT/skills/$skill"
+  [ -d "$skill_dir" ] || continue
+  leak=$(grep -rE '\$ZSKILLS_AUDIT_DIR/(plan-|verify-|SPRINT_REPORT)' "$skill_dir") || \
+    [ "$?" -eq 1 ] || { echo "FAIL: grep error" >&2; exit 1; }
+  if [ -n "$leak" ]; then
+    fail "[reports-dir-placement] $skill" "Found legacy '\$ZSKILLS_AUDIT_DIR/(plan-|verify-|SPRINT_REPORT)' references — must use \$ZSKILLS_REPORTS_DIR (issue #217). Hits:
+$leak"
+  else
+    pass "[reports-dir-placement] $skill: no legacy AUDIT_DIR-for-reports references"
+  fi
+done
+
+echo ""
 echo "=== Per-skill version frontmatter ==="
 for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
   skill_md="${skill_dir}SKILL.md"
