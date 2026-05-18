@@ -859,3 +859,21 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 ### Notes
 - Dashboard Ready: [338, 355, 336, 340]. #338 was already merged earlier today (PRs #363/#364) but remained in Ready — flagged as a dashboard-stale-Ready bug for follow-up. Intersection-with-open dropped #338, first actionable pick was #355.
 - Cron registered */30 * * * * with new prompt 'Run /fix-issues 1 auto dashboard pr every 30m now' — both 'dashboard' and 'pr' tokens propagate per #362 fix landed in PR #367 earlier this session.
+
+## Sprint — 2026-05-18 03:51 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready (drag order, intersection with open)
+**Sprint ID:** sprint-20260518-072220-sprint
+**Pipeline ID:** fix-issues.sprint-20260518-072220-sprint
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #336 | Dashboard queue normalization: cold-start gh-list failure + client POST wipes user ordering | /tmp/zskills-fix-issue-336 | a40a53c | 3332/3332 (5 new + 1 updated for #336) | A+ (server-side issues_fetch_ok flag, client prune-gate, backward-compat, live cold-start sanity check) | NEEDED (dashboard UI change — verify on running dashboard that cold-start failure preserves queues) |
+
+### Notes
+- Dashboard Ready: [338, 355, 336, 340]. #338 and #355 both closed; intersection yielded #336 as first pick. (Dashboard UI stale-Ready bug noted in prior sprint — not yet filed.)
+- Server-side fix: collect.py list_issues returns (issues, ok_bool); 5 failure paths return ok=False. collect_snapshot surfaces snapshot.issues_fetch_ok at the top level. Backward-compat: missing key defaults to true.
+- Client-side gate: app.js deepCloneQueues skips prune when issues_fetch_ok===false (state-file queues preserved).
+- Secondary card-counter concern from issue body verified obsolete (renderPlans/renderIssues already read lastGoodQueues.length).
