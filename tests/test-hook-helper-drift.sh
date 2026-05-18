@@ -18,7 +18,7 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
   #   project hook              : is_git_subcommand,                  is_git_subcommand_in_chain
   #   generic hook              : is_git_subcommand, is_destruct_command,
   #                               is_git_subcommand_in_chain, is_destruct_command_in_chain
-  #   stale-skill-version hook  : is_git_subcommand
+  #   stale-skill-version hook  : is_git_subcommand, is_git_subcommand_in_chain
   #   block-bypassed-land-pr.sh : is_gh_pr_subcommand, is_gh_pr_subcommand_in_chain
   #     (Plan LAND_PR_BYPASS_HARDENING Phase 4 — 4th drift-gated hook)
   for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers; do
@@ -26,10 +26,9 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *bypassed-land-pr* ]] && continue
-    # Chain wrappers are only inlined in the two block-unsafe hooks.
-    # Skip stale-skill-version (no chain wrapper needed — that hook's
-    # callers operate on the redacted single-segment COMMAND already).
-    [[ "$FN" == "is_git_subcommand_in_chain" && "$HOOK" == *stale-skill-version* ]] && continue
+    # Chain wrappers: now also inlined in stale-skill-version (#393's fix —
+    # cd-chained `cd /tmp/wt && git commit` must match for worktree commits).
+    # bypassed-land-pr still skips (uses gh-pr chain walker, not git).
     [[ "$FN" == "is_git_subcommand_in_chain" && "$HOOK" == *bypassed-land-pr* ]] && continue
     # is_destruct_command_in_chain is only inlined in the generic hook.
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *project* ]] && continue

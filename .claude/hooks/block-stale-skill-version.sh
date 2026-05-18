@@ -28,11 +28,20 @@
 # §D5 and Phase 2 D&C):
 #   - `bash -c '<git commit ...>'` / `sh -c '...'` / `eval '...'` are NOT
 #     matched. The tokenize-then-walk requires the FIRST non-env-prefix
-#     token to be literal `git`; we deliberately do not recurse into the
-#     argument string of bash -c / sh -c / eval (re-introducing a
-#     regex-fragility class). This is a minor local-development hole;
-#     CI's conformance gate is the structural backstop. Test C10e in
-#     tests/test-block-stale-skill-version.sh locks this behavior.
+#     token of every shell segment to be literal `git`; we deliberately do
+#     not recurse into the argument string of bash -c / sh -c / eval
+#     (re-introducing a regex-fragility class). This is a minor local-
+#     development hole; CI's conformance gate is the structural backstop.
+#     Test C10e in tests/test-block-stale-skill-version.sh locks this
+#     behavior. Tracked separately as #399.
+#
+#   Note: cd-chained forms like `cd /tmp/wt && git commit` ARE matched as
+#   of #393's fix — `is_git_subcommand_in_chain` (inlined from
+#   hooks/_lib/git-tokenwalk.sh) walks every shell segment, and the
+#   stage-check script is invoked in a subshell `cd`'d to the resolved
+#   effective worktree root so its `git -C "$REPO_ROOT" diff --cached`
+#   inspects the worktree's index, not the hook's ambient (main-repo)
+#   CWD.
 #
 # Pure bash at runtime (D4 in the reference doc) — no external JSON
 # parsers, no scripting-language interpreters. The unit-test harness MAY
@@ -53,6 +62,33 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # hook remains defensive; no false-allows on the ALLOW path.
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
 
+# Extract the cd target from the command (e.g., "cd /tmp/worktree && git commit").
+# Hooks run in the main repo CWD, not the agent's cd target. This helper lets
+# us run the stage-check script in a subshell `cd`'d to the worktree so its
+# `git -C "$REPO_ROOT" diff --cached` reflects the worktree's index, not the
+# hook's ambient (main-repo) CWD. Reads $INPUT (the stdin JSON envelope) —
+# safe because INPUT is captured at line 43 above.
+#
+# TODO(#401): consolidate extract_cd_target into hooks/_lib/
+# (`resolve-effective-worktree-root.sh`) alongside the three identical
+# LOCAL_ROOT-resolution sites in block-unsafe-project.sh.template.
+extract_cd_target() {
+  local cmd
+  # JSON wire format escapes embedded newlines as the two-character
+  # sequence `\n`. Decode here so `cd /tmp/wt\ngit commit` captures
+  # `/tmp/wt`, not `/tmp/wt\ngit`.
+  cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
+  if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
+    local target="${BASH_REMATCH[1]}"
+    # Remove surrounding quotes if present
+    target="${target%\"}"
+    target="${target#\"}"
+    if [ -d "$target" ]; then
+      echo "$target"
+    fi
+  fi
+}
+
 # Match `git commit` via two-stage tokenize-then-walk. Rationale: a single
 # regex that allows arbitrary git top-level flags (--no-pager, --git-dir=/x,
 # -P, -C path, -c k=v, --work-tree=/y, …) becomes a combinatorial mess and
@@ -62,11 +98,13 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # walk past every `-…`/`--…` flag (consuming an extra token only for `-C`
 # and `-c`, which take a separate arg — all other top-level flags either
 # embed their value with `=` or take none) and check if the next token is
-# `commit`.
+# `commit`. `is_git_subcommand_in_chain` segment-walks the command so
+# cd-chained forms (`cd /tmp/wt && git commit`) match — required for
+# correct worktree behavior (#393).
 #
 # Carve-out: this matcher does NOT recurse into `bash -c '...'` /
 # `sh -c '...'` / `eval '...'` argument strings — see header docstring
-# and test C10e.
+# and test C10e (issue #399).
 # Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
 is_git_subcommand() {
   local cmd="$1"
@@ -115,7 +153,30 @@ is_git_subcommand() {
   GIT_SUB_REST="${rest# }"
   return 0
 }
-is_git_subcommand "$COMMAND" commit || exit 0
+
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
+is_git_subcommand_in_chain() {
+  local cmd="$1"
+  local want_sub="$2"
+  # Replace shell-segment boundaries with newlines, then iterate.
+  # Handles: && || ; | (real boundaries), literal newline (multi-line
+  # commands), AND the JSON-escaped literal two-char `\n` (which arrives
+  # this way because the hook does not JSON-decode — sed-extracted
+  # values preserve the backslash-n).
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+    if is_git_subcommand "$seg" "$want_sub"; then
+      return 0
+    fi
+  done <<< "$normalized"
+  return 1
+}
+is_git_subcommand_in_chain "$COMMAND" commit || exit 0
 
 # Guard against `set -u` + unset `$CLAUDE_PROJECT_DIR` (rare but documented
 # harness edge case). `${X:-$PWD}` falls back to cwd; if the script is
@@ -125,8 +186,22 @@ is_git_subcommand "$COMMAND" commit || exit 0
 SCRIPT="${CLAUDE_PROJECT_DIR:-$PWD}/scripts/skill-version-stage-check.sh"
 [ -x "$SCRIPT" ] || exit 0  # fail-open: script absent (consumer pre-/update-zskills)
 
-# Run script; capture stderr (the STOP message); discard stdout.
-STDERR=$(bash "$SCRIPT" 2>&1 >/dev/null) && exit 0  # rc=0 means clean
+# Resolve effective worktree root for the stage-check subshell.
+# Hooks run with the main repo as CWD (= $CLAUDE_PROJECT_DIR); when an
+# agent invokes `cd /tmp/wt && git commit` from a worktree, the script's
+# CWD must be the worktree, not main, so `git rev-parse --show-toplevel`
+# inside stage-check resolves to the worktree's index. Precedence:
+# extracted cd target → $CLAUDE_PROJECT_DIR → $PWD.
+CD_TARGET=$(extract_cd_target)
+if [ -n "$CD_TARGET" ] && [ -d "$CD_TARGET" ]; then
+  EFFECTIVE_REPO_ROOT="$CD_TARGET"
+else
+  EFFECTIVE_REPO_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+fi
+
+# Run script in a subshell `cd`'d to the effective root (subshell preserves
+# the hook's own CWD); capture stderr (the STOP message); discard stdout.
+STDERR=$(cd "$EFFECTIVE_REPO_ROOT" && bash "$SCRIPT" 2>&1 >/dev/null) && exit 0  # rc=0 means clean
 # Script exited non-zero — deny.
 
 json_escape() {
