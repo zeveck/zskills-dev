@@ -922,3 +922,17 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 ### Notes
 - Ready intersection: [378, 377, 376]. First pick #378. 2 more queued: #377, #376. #380 dropped (closed).
 - 1-file 1-line change to tests/test_zskills_monitor_dashboard_ui.sh.
+
+## Sprint — 2026-05-18 13:57 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready
+**Sprint ID:** sprint-20260518-173918-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #377 | /update-zskills install summary omits implementer + canary-readonly agents | /tmp/zskills-fix-issue-377 | bd679a4 | 3332/3332 | A+ (dynamic fix; per-file accumulator; future-proof for new agents) | N/A (install behavior, ships via /update-zskills) |
+
+### Notes
+- Ready intersection: [377, 376]. First pick #377. #376 still queued.
+- Dynamic fix at cp-loop accumulator + summary emit; .claude/agents/ currently contains all 3 (verifier, implementer, canary-readonly).
