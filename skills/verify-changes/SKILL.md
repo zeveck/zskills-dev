@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.15+e1d07b"
+  version: "2026.05.18+9491f5"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -548,7 +548,7 @@ CLAUDE.md: "NEVER thrash on a failing fix.")
 ## Phase 7 — Report
 
 **Always output the report inline.** Additionally, write the report FILE
-to `$ZSKILLS_AUDIT_DIR/verify-{scope-slug}.md` and regenerate the index — but ONLY
+to `$ZSKILLS_REPORTS_DIR/verify-{scope-slug}.md` and regenerate the index — but ONLY
 if there are `User Verify: NEEDED` items that require human sign-off. If
 all items are clean (no `[ ]` checkboxes), say so inline and skip the file:
 
@@ -565,18 +565,18 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
   source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 ```
-Then write to `$ZSKILLS_AUDIT_DIR/verify-{scope-slug}.md` and `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`.
+Then write to `$ZSKILLS_REPORTS_DIR/verify-{scope-slug}.md` and `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`.
 This prevents reports from being lost when the worktree is cleaned up.
 
 ### Scope slug derivation
 
 | Scope argument | Report file |
 |----------------|-------------|
-| (default/omit) | `$ZSKILLS_AUDIT_DIR/verify-working-tree.md` |
-| `worktree` | `$ZSKILLS_AUDIT_DIR/verify-worktree-{name}.md` (name = `basename` of worktree path) |
-| `branch` | `$ZSKILLS_AUDIT_DIR/verify-branch-{branch-name}.md` |
-| `last N` | `$ZSKILLS_AUDIT_DIR/verify-last-{N}.md` |
-| `last` | `$ZSKILLS_AUDIT_DIR/verify-last-1.md` |
+| (default/omit) | `$ZSKILLS_REPORTS_DIR/verify-working-tree.md` |
+| `worktree` | `$ZSKILLS_REPORTS_DIR/verify-worktree-{name}.md` (name = `basename` of worktree path) |
+| `branch` | `$ZSKILLS_REPORTS_DIR/verify-branch-{branch-name}.md` |
+| `last N` | `$ZSKILLS_REPORTS_DIR/verify-last-{N}.md` |
+| `last` | `$ZSKILLS_REPORTS_DIR/verify-last-1.md` |
 
 ### Report structure
 
@@ -653,7 +653,7 @@ to verify — not "3 blocks in explorer" but one per block.
 After writing the scope-specific report, regenerate `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`
 as an **index** of all verification reports:
 
-1. **Scan** `$ZSKILLS_AUDIT_DIR/verify-*.md` files
+1. **Scan** `$ZSKILLS_REPORTS_DIR/verify-*.md` files
 2. **For each file:** extract the H1 line (date, scope) and count `[ ]`
    checkboxes (action items remaining)
 3. **Write** `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md` with this structure:
@@ -668,8 +668,8 @@ Legend: ✅ all signed off, [ ] action items remain
 {Extract ALL `[ ]` items from all reports. For each, show the checkbox,
 the item title, and link to the source report file.}
 
-- [ ] Block Rotation sign-off — [verify-working-tree.md]($ZSKILLS_AUDIT_DIR/verify-working-tree.md)
-- [ ] Solver tolerance sign-off — [verify-last-3.md]($ZSKILLS_AUDIT_DIR/verify-last-3.md)
+- [ ] Block Rotation sign-off — [verify-working-tree.md]($ZSKILLS_REPORTS_DIR/verify-working-tree.md)
+- [ ] Solver tolerance sign-off — [verify-last-3.md]($ZSKILLS_REPORTS_DIR/verify-last-3.md)
 
 {If no `[ ]` items remain across any report, write: "All items signed off."}
 
@@ -684,11 +684,11 @@ re-verify or dismiss them.
 
 | Report | Date | Scope | Action Items |
 |--------|------|-------|:------------:|
-| [verify-working-tree.md]($ZSKILLS_AUDIT_DIR/verify-working-tree.md) | 2026-03-18 14:30 | working tree | 2 [ ] |
-| [verify-last-3.md]($ZSKILLS_AUDIT_DIR/verify-last-3.md) | 2026-03-17 09:15 | last 3 | ✅ |
+| [verify-working-tree.md]($ZSKILLS_REPORTS_DIR/verify-working-tree.md) | 2026-03-18 14:30 | working tree | 2 [ ] |
+| [verify-last-3.md]($ZSKILLS_REPORTS_DIR/verify-last-3.md) | 2026-03-17 09:15 | last 3 | ✅ |
 ```
 
-If there are no `$ZSKILLS_AUDIT_DIR/verify-*.md` files (e.g., all were cleaned up),
+If there are no `$ZSKILLS_REPORTS_DIR/verify-*.md` files (e.g., all were cleaned up),
 write just the header and "No verification reports found."
 
 ### Post-report tracking
