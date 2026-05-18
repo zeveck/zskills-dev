@@ -497,7 +497,7 @@ RENDER_ISSUES_BODY=$(awk '
   flag { print }
   flag && /^}$/ { exit }
 ' "$APP_JS")
-if echo "$RENDER_ISSUES_BODY" | grep -qE 'queues\.issues'; then
+if echo "$RENDER_ISSUES_BODY" | grep -qE 'queues\.issues\[c\]|queues && queues\.issues'; then
   pass "AC: renderIssues references queues.issues (optimistic-render contract)"
 else
   fail "AC: renderIssues does not reference queues.issues — regression of optimistic-render bug"
