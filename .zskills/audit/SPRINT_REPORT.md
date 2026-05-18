@@ -815,3 +815,31 @@ PR mode + auto. Per-issue /land-pr serially for #334, #335, #339. Then sprint-le
 
 Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for this section.
 
+
+## Sprint — 2026-05-18 00:02 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** dashboard | **Source:** `/fix-issues 1 dashboard auto every 30m now` (queue-worker)
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify | PR |
+|---|-------|----------|--------|-------|-------------|-------------|-----|
+| #338 | briefing: port-failure invariant lost when briefing.cjs dropped (1690c93) | /tmp/zskills-fix-issue-338 | 6d6aa2d | tests/test-briefing-parity.sh +56 (2 new asserts) | PASS (verifier; 3279/3279 suite + new port-failure pass) | N/A | [#363](https://github.com/zeveck/zskills-dev/pull/363) — merged |
+
+**Notes:**
+- Implementer dispatch (`general-purpose` agent type) hit the documented bg+Monitor anti-pattern (~696s, never returned test results). 56-line test addition was clean and committable; recovery via fresh `verifier` agent dispatch (which has Layer 0 `inject-bash-timeout.sh` hook) succeeded on the first attempt and committed as 6d6aa2d.
+- Underlying skill bug surfaced: /fix-issues PR-mode prose doesn't pin agent type for impl dispatch; defaulting to `general-purpose` leaves the implementer without Layer 0 protection. User will fix the skill before restarting cron.
+
+### Skipped — Too Vague
+(none this fire)
+
+### Skipped — Too Complex
+(none this fire)
+
+### Skipped — Cherry-Pick Conflict
+(N/A — PR mode)
+
+### Not Fixed
+(none — #338 landed successfully via recovery path)
+
+### Dashboard Ready state at fire time
+`[338, 355]` — #338 fixed and dropped from queue; #355 remains for future fire.
