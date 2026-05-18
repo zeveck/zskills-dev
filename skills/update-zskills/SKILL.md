@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.17+10b801"
+  version: "2026.05.18+78ec6a"
 ---
 
 # Update Z Skills Infrastructure
@@ -1071,6 +1071,7 @@ The agent frontmatter references
 is fixed, so the hook-copy step (above) is a hard prerequisite.
 
 ```bash
+INSTALLED_AGENTS_LIST=""
 if [ -d "$PORTABLE/.claude/agents" ]; then
   mkdir -p .claude/agents
   for src in "$PORTABLE/.claude/agents"/*.md; do
@@ -1082,6 +1083,10 @@ if [ -d "$PORTABLE/.claude/agents" ]; then
     elif ! cmp -s "$src" "$dst"; then
       cp -a "$src" "$dst" && echo "Updated agent: $name"
     fi
+    # Accumulate one bullet per agent .md file present in source — the
+    # Step 7 summary emits these verbatim so the summary cannot drift
+    # from what the loop actually deployed. (See #377.)
+    INSTALLED_AGENTS_LIST="${INSTALLED_AGENTS_LIST}"$'\n'"   > - ${name%.md} (from .claude/agents/${name})"
   done
   echo "WARN: agent definitions auto-discover at session start. Restart Claude Code (or open a new session) before invoking verifier-using skills (/run-plan, /commit, /fix-issues, /do, /verify-changes). There is no in-session reload command."
 fi
@@ -1205,10 +1210,14 @@ from a template):
 7. **Report:** `"Step C: registered N hook entries, skipped M already
    present, renamed R, preserved F foreign entries."`
 
-   Then append the agent + non-settings-wired hook install summary:
+   Then append the agent + non-settings-wired hook install summary.
+   The "Installed agents:" intro is static; the bullet list is the
+   `$INSTALLED_AGENTS_LIST` accumulated by the cp-loop above (one
+   bullet per `.claude/agents/*.md` file actually copied), so the
+   summary cannot drift from what was deployed (#377).
 
    > Installed agents:
-   > - verifier (from .claude/agents/verifier.md, Layer 0 timeout-injection hook)
+   > ${INSTALLED_AGENTS_LIST}
    >
    > Installed hook scripts (D'' structural defense):
    > - .claude/hooks/inject-bash-timeout.sh (Layer 0 — auto-extends Bash timeout to 600000 ms for verifier subagent)
