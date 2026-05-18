@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.18+793804"
+  version: "2026.05.18+4f95d2"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1116,9 +1116,9 @@ agent hasn't returned after 2 hours, declare it **failed**:
 2. **Dispatch implementation agent WITHOUT `isolation: "worktree"`.** The
    prompt tells the agent the worktree path and requires absolute paths:
 
-   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "implementer"`.
    This inherits the Layer 0 Bash-timeout extension (see
-   `.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+   `.claude/agents/implementer.md` + the "Verifier-cannot-run rule" section in
    CLAUDE.md) so the impl agent's Bash calls to run long test suites
    don't trigger the bg+Monitor stall pattern.
 

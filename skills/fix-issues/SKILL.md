@@ -3,12 +3,12 @@ name: fix-issues
 disable-model-invocation: true
 argument-hint: "N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next"
 description: >-
-  Orchestrate a batch bug-fixing sprint: dispatch fixers in per-issue
+  Orchestrate a batch bug-fixing sprint: dispatch implementers in per-issue
   worktrees, verify, optionally auto-land via /land-pr. Recurring via
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+059a22"
+  version: "2026.05.18+fb745e"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1920,9 +1920,9 @@ WITHOUT `isolation: "worktree"` — the worktree already exists. The agent
 prompt must include `FIRST: cd $WORKTREE_PATH` as the mandatory first
 action. Without this instruction, the agent starts in the main repo.
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "implementer"`.
 This inherits the Layer 0 Bash-timeout extension (see
-`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+`.claude/agents/implementer.md` + the "Verifier-cannot-run rule" section in
 CLAUDE.md) so the fix agent's Bash calls to run long test suites don't
 trigger the bg+Monitor stall pattern.
 
@@ -1978,9 +1978,9 @@ fi
 must include `FIRST: cd $WORKTREE_PATH` as the mandatory first action.
 Without this instruction, the agent starts in the main repo.
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "implementer"`.
 This inherits the Layer 0 Bash-timeout extension (see
-`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+`.claude/agents/implementer.md` + the "Verifier-cannot-run rule" section in
 CLAUDE.md) so the fix agent's Bash calls to run long test suites don't
 trigger the bg+Monitor stall pattern.
 

@@ -88,9 +88,9 @@ Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main se
 
 **Step A6 — Dispatch implementation agent (wait for completion):**
 
-**Dispatch shape.** Use the `Agent` tool with `subagent_type: "fixer"`.
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "implementer"`.
 This inherits the Layer 0 Bash-timeout extension (see
-`.claude/agents/fixer.md` + the "Verifier-cannot-run rule" section in
+`.claude/agents/implementer.md` + the "Verifier-cannot-run rule" section in
 CLAUDE.md) so the impl agent's Bash calls to run long test suites don't
 trigger the bg+Monitor stall pattern.
 
@@ -333,9 +333,9 @@ while :; do
       # subagent — /land-pr was already invoked at orchestrator level
       # via the Skill tool; this dispatch is at the same level).
       #
-      # Dispatch shape: use the `Agent` tool with subagent_type: "fixer".
+      # Dispatch shape: use the `Agent` tool with subagent_type: "implementer".
       # This inherits the Layer 0 Bash-timeout extension
-      # (.claude/agents/fixer.md + CLAUDE.md "Verifier-cannot-run rule")
+      # (.claude/agents/implementer.md + CLAUDE.md "Verifier-cannot-run rule")
       # so the fix-cycle agent's long test runs don't trigger the
       # bg+Monitor stall pattern.
       #
