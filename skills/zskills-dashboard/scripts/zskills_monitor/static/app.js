@@ -319,8 +319,17 @@ function applySnapshot(snap) {
   }
 
   // Capture last-known-good queues from snapshot.queues (server's view).
+  // `issues_fetch_ok` (issue #336): server signals whether the most recent
+  // `gh issue list` succeeded. When false, deepCloneQueues skips its
+  // prune-against-live-issues pass so a transient cold-start fetch failure
+  // doesn't wipe the user's persisted ordering on the next POST. Missing
+  // key (older snapshot shape) is treated as true to preserve current
+  // steady-state behavior.
   const queues = snap.queues || { plans: {}, issues: {}, default_mode: "phase" };
-  lastGoodQueues = deepCloneQueues(queues, snap.plans || [], snap.issues || []);
+  const issuesFetchOk = snap.issues_fetch_ok !== false;
+  lastGoodQueues = deepCloneQueues(
+    queues, snap.plans || [], snap.issues || [], issuesFetchOk,
+  );
   lastGoodDefaultMode = queues.default_mode || "phase";
 
   const dmFp = String(lastGoodDefaultMode);
@@ -372,7 +381,17 @@ function applyWorkState(ws) {
 // Build a queues dict that contains every plan/issue, populated from
 // state where present and inferred from snapshot column hints otherwise.
 // This is the local "source of truth" the UI POSTs back on every drag.
-function deepCloneQueues(queues, plans, issues) {
+//
+// `issuesFetchOk` (issue #336): when false, the server's `issues` array
+// is NOT a reliable picture of live GitHub state — the most recent
+// `gh issue list` failed. In that case the prune-against-live-issues
+// pass below would drop EVERY queued number on a cold-start failure
+// (empty `issues` + populated state-file queues), and a subsequent
+// drag-POST would persist the wiped queues. Skip the prune; preserve
+// the state-file's queues verbatim until a successful fetch lands.
+// Defaults to true so older snapshots (pre-#336 server) still prune.
+function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
+  if (issuesFetchOk === undefined) issuesFetchOk = true;
   const out = {
     default_mode: queues.default_mode || "phase",
     plans: {},
@@ -406,6 +425,9 @@ function deepCloneQueues(queues, plans, issues) {
   // GitHub owns issue existence; this file only owns ordering. Drop any
   // queue entry whose number isn't in the live `issues` array so closed
   // issues self-prune from monitor-state.json on the next POST.
+  // Issue #336: only enforce this when `issuesFetchOk` — otherwise the
+  // "live" array is unreliable (gh fetch failed) and pruning would wipe
+  // the user's ordering on the next drag-POST.
   const liveIssueNumbers = new Set();
   for (const it of issues) {
     if (typeof it.number === "number") liveIssueNumbers.add(it.number);
@@ -416,7 +438,7 @@ function deepCloneQueues(queues, plans, issues) {
     for (const n of arr) {
       const num = parseInt(n, 10);
       if (!Number.isFinite(num) || seenNums.has(num)) continue;
-      if (!liveIssueNumbers.has(num)) continue;
+      if (issuesFetchOk && !liveIssueNumbers.has(num)) continue;
       seenNums.add(num);
       out.issues[c].push(num);
     }

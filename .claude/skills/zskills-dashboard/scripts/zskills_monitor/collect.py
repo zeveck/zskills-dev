@@ -48,6 +48,7 @@ SNAPSHOT_TOP_LEVEL_KEYS = {
     "queues",
     "state_file_path",
     "errors",
+    "issues_fetch_ok",
 }
 
 # Landing-mode hint regex (canonical, per plan Shared Schemas).
@@ -1074,17 +1075,27 @@ def list_issues(
     *,
     _now: Optional[float] = None,
     _runner: Optional[Any] = None,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], bool]:
     """Fetch open issues via `gh issue list`. 60s module-level cache.
 
     On gh failure: returns last cache (or `[]`) and appends to `errors[]`.
     Never raises.
 
+    Returns `(issues, ok)`. `ok` is True when the current fetch succeeded
+    OR was served from the 60s TTL cache (the last fetch was successful);
+    False when the current fetch failed (regardless of whether a cached
+    fallback was returned). The flag drives the client-side prune-guard
+    for issue #336 — `collect_snapshot` surfaces it as
+    `snapshot["issues_fetch_ok"]`, and the dashboard client skips queue
+    pruning when this is False to prevent monitor-state.json corruption
+    on the cold-start failure path.
+
     `_now` and `_runner` are test-only injection seams.
     """
     now = _now if _now is not None else time.time()
     if _ISSUE_CACHE["had_value"] and (now - _ISSUE_CACHE["ts"]) < ISSUE_CACHE_TTL_SECONDS:
-        return list(_ISSUE_CACHE["issues"])
+        # Cache hit: the most recent fetch succeeded; ok=True.
+        return list(_ISSUE_CACHE["issues"]), True
 
     try:
         runner = _runner or subprocess.run
@@ -1109,7 +1120,8 @@ def list_issues(
                 "source": "gh issue list",
                 "message": (getattr(result, "stderr", "") or "non-zero exit").strip(),
             })
-            return list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            cached = list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            return cached, False
         try:
             data = json.loads(result.stdout)
         except Exception as exc:
@@ -1117,13 +1129,15 @@ def list_issues(
                 "source": "gh issue list",
                 "message": f"json parse error: {exc}",
             })
-            return list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            cached = list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            return cached, False
         if not isinstance(data, list):
             errors.append({
                 "source": "gh issue list",
                 "message": "unexpected response shape",
             })
-            return list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            cached = list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+            return cached, False
         issues: List[Dict[str, Any]] = []
         for entry in data:
             if not isinstance(entry, dict):
@@ -1147,19 +1161,21 @@ def list_issues(
         _ISSUE_CACHE["ts"] = now
         _ISSUE_CACHE["issues"] = issues
         _ISSUE_CACHE["had_value"] = True
-        return list(issues)
+        return list(issues), True
     except FileNotFoundError as exc:
         errors.append({
             "source": "gh issue list",
             "message": f"gh not found: {exc}",
         })
-        return list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+        cached = list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+        return cached, False
     except Exception as exc:
         errors.append({
             "source": "gh issue list",
             "message": str(exc),
         })
-        return list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+        cached = list(_ISSUE_CACHE["issues"]) if _ISSUE_CACHE["had_value"] else []
+        return cached, False
 
 
 # ---------------------------------------------------------------------------
@@ -1379,8 +1395,12 @@ def collect_snapshot(
     state_updated_at = state.get("updated_at", "")
     _annotate_plans_queue(plans, state)
 
-    # Issues
-    issues = list_issues(errors, _runner=issue_runner)
+    # Issues. `issues_fetch_ok` is surfaced to the client (issue #336):
+    # when False, the dashboard skips its prune-against-live-issues pass
+    # in deepCloneQueues to prevent the cold-start corruption window
+    # (process restart + first gh-list failure + user drag → wiped
+    # monitor-state.json). Cache-hit within 60s TTL is treated as ok=True.
+    issues, issues_fetch_ok = list_issues(errors, _runner=issue_runner)
     _annotate_issues_queue(issues, state)
 
     # Worktrees + branches
@@ -1432,6 +1452,7 @@ def collect_snapshot(
         "queues": queues_block,
         "state_file_path": ".zskills/monitor-state.json",
         "errors": _finalize_errors(errors),
+        "issues_fetch_ok": issues_fetch_ok,
     }
     return snapshot
 
@@ -1543,6 +1564,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             },
             "state_file_path": ".zskills/monitor-state.json",
             "errors": _finalize_errors(errors),
+            # Fixture mode skips the gh fetch entirely; report ok=True so
+            # the snapshot's top-level-key contract stays stable (#336).
+            "issues_fetch_ok": True,
         }
     else:
         repo_root = args.repo_root or os.getcwd()
