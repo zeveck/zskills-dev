@@ -533,6 +533,45 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
+# Case 17 — Phase 4 (Land) is gated on AUTO_FLAG=1 for direct + worktree
+# modes specifically (#376). Phase 4 was symmetric with the positional
+# `auto` consolidation in PR #354 (commit 42ef042), but had no positive
+# test — a refactor breaking the gate (wrong variable, wrong condition,
+# wrong scope) would slip past Cases 15 + 16.
+#
+# Three assertions against the Phase 4 block (heading line + body
+# between `## Phase 4` and `## Phase 5`):
+#   17a. Heading scopes the gate to "Path C/B only" (direct + worktree),
+#        NOT PR mode (Path A).
+#   17b. Body explicitly references AUTO_FLAG=1 as the gate condition.
+#   17c. Body acknowledges PR mode is out of scope ("Not applicable to
+#        PR mode") so a future refactor can't quietly extend Phase 4
+#        to Path A without flipping this assertion.
+# ────────────────────────────────────────────────────────────────────
+extract_phase4_block() {
+  awk '
+    /^## Phase 4/         { in_section = 1; print; next }
+    /^## Phase 5/         { in_section = 0 }
+    in_section            { print }
+  ' "$SKILL"
+}
+PHASE4_BLOCK=$(extract_phase4_block)
+PHASE4_HEADING=$(printf '%s\n' "$PHASE4_BLOCK" | head -1)
+
+C17a=0; C17b=0; C17c=0
+echo "$PHASE4_HEADING" | grep -qE 'Path C/B only|Path B/C only' && C17a=1
+printf '%s\n' "$PHASE4_BLOCK" | grep -qE 'AUTO_FLAG[[:space:]]*=[[:space:]]*"?1"?' && C17b=1
+printf '%s\n' "$PHASE4_BLOCK" | grep -qE 'Not applicable to PR mode' && C17c=1
+
+if [ "$C17a" = "1" ] && [ "$C17b" = "1" ] && [ "$C17c" = "1" ]; then
+  pass "17 Phase 4 gate: heading scopes to Path C/B (direct+worktree), body references AUTO_FLAG=1, PR mode explicitly excluded (#376)"
+else
+  fail "17 Phase 4 gate: heading-path-scope=$C17a auto_flag_ref=$C17b pr_mode_excluded=$C17c"
+  echo "    Phase 4 heading: $PHASE4_HEADING"
+  printf '%s\n' "$PHASE4_BLOCK" | grep -nE 'AUTO_FLAG|Path [ABC]|Not applicable' | sed 's/^/    /'
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Suite summary
 # ────────────────────────────────────────────────────────────────────
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
