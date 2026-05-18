@@ -894,3 +894,17 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - Dashboard Ready: [338, 355, 336, 340]. Three closed (#338, #355, #336); intersection yielded #340 as sole actionable pick. Dashboard UI stale-Ready bug persists (noted prior sprints).
 - New Commit Audit Step 5 inserts the verification gate verbatim from issue body. Steps 6/7/8 renumbered; Bash mode Step 3b + Step 6 cross-reference the gate.
 - metadata.version bumped to 2026.05.18+7dfae6; mirror parity clean.
+
+## Sprint — 2026-05-18 12:58 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready (drag order, intersection with open)
+**Sprint ID:** sprint-20260518-164019-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #379 | CLAUDE_TEMPLATE.md: add Bash tool bg-behavior rule | /tmp/zskills-fix-issue-379 | 63f3448 | 3332/3332 | A+ (3 structural points + past-failure footer + correct anchor) | N/A (prose-only, ships via /update-zskills to consumers) |
+
+### Notes
+- Ready now non-empty: [379, 378, 377, 376, 380]. First pick #379.
+- Single-file +29-line CLAUDE_TEMPLATE.md addition; no skill version bump (CLAUDE_TEMPLATE.md isn't a skill).
