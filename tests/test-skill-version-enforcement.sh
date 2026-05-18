@@ -538,6 +538,67 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# WORKTREE CASE — issue #393 closure.
+# ----------------------------------------------------------------------
+#
+# Proves the worktree-blind bug is closed: with a SKILL.md body edit
+# staged in a worktree (no version bump), the block-stale-skill-version
+# hook invoked with a `cd /tmp/wt && git commit` envelope must DENY.
+# Pre-fix, the hook ran stage-check with REPO_ROOT=$CLAUDE_PROJECT_DIR
+# (main repo), where nothing was staged → false-allow.
+
+echo ""
+echo "=== Worktree case (issue #393) ==="
+
+HOOK="$REPO_ROOT/hooks/block-stale-skill-version.sh"
+
+case_no=worktree-1
+sandbox=$(make_sandbox "$case_no")
+
+# Create a feature branch in the sandbox and a worktree on it. The sandbox
+# itself stays on main so the branch is free to be checked out in the
+# worktree (`git worktree add` rejects a branch already checked out elsewhere).
+worktree=$(mktemp -d)
+rm -rf "$worktree"
+(
+  cd "$sandbox"
+  # `make_sandbox` initialized the repo on its default branch. Create the
+  # feature branch as a ref pointing at HEAD without checking it out.
+  git branch -q feat/worktree-393
+  git worktree add -q "$worktree" feat/worktree-393
+)
+
+# Stage a SKILL.md body edit in the WORKTREE without bumping the version.
+echo "Worktree body edit." >> "$worktree/skills/foo/SKILL.md"
+(cd "$worktree" && git add skills/foo/SKILL.md)
+
+# Invoke the hook with a `cd /tmp/wt && git commit` envelope. The hook
+# must:
+#   1. match via is_git_subcommand_in_chain (cd-chained form)
+#   2. extract the cd target -> $worktree
+#   3. invoke stage-check in a subshell `cd`'d to $worktree
+#   4. stage-check resolves REPO_ROOT via `git rev-parse --show-toplevel`
+#      -> $worktree, finds the staged unbumped SKILL.md, emits STOP, exit 1
+#   5. hook wraps the STOP message into a deny envelope.
+ENVELOPE=$(printf '{"tool_name":"Bash","tool_input":{"command":"cd %s && git commit -m test"}}' "$worktree")
+HOOK_OUT=$(
+  CLAUDE_PROJECT_DIR="$sandbox" printf '%s' "$ENVELOPE" | bash "$HOOK"
+)
+HOOK_EXIT=$?
+
+if [ "$HOOK_EXIT" -eq 0 ] \
+   && [[ "$HOOK_OUT" == *'"permissionDecision":"deny"'* ]] \
+   && [[ "$HOOK_OUT" == *"STOP:"* ]]; then
+  pass "worktree-1: cd-chain commit in worktree with unbumped SKILL.md → DENY envelope"
+else
+  fail "worktree-1: expected deny envelope with STOP message, got exit=$HOOK_EXIT out=$HOOK_OUT"
+fi
+
+# Cleanup worktree.
+(cd "$sandbox" && git worktree remove --force "$worktree" 2>/dev/null) || true
+rm -rf "$worktree"
+
+# ----------------------------------------------------------------------
 # Summary.
 # ----------------------------------------------------------------------
 

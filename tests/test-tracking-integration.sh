@@ -300,6 +300,87 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
+# Test 3-cd-chain: Worktree enforcement via cd-chained command (#391)
+#
+# Pre-fix, the commit-block LOCAL_ROOT resolution was worktree-blind:
+# the hook ran with CWD=main_repo and used `git rev-parse --show-toplevel`,
+# so .zskills-tracked in the worktree was never read → tracking
+# enforcement silently no-op'd for worktree commits.
+#
+# After fix: the hook calls extract_cd_target on the JSON command. For
+# `cd /tmp/wt && git commit`, the cd target → LOCAL_ROOT → worktree's
+# .zskills-tracked is read → enforcement fires.
+# ═══════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "=== Test 3-cd-chain: Worktree enforcement via cd-chained command (#391) ==="
+
+setup_repo
+
+# Create a branch + worktree.
+(cd "$TEST_TMPDIR" && git checkout -q -b worktree-branch-cdchain && git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null)
+WORKTREE_DIR=$(mktemp -d)
+rmdir "$WORKTREE_DIR"
+(cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" worktree-branch-cdchain 2>/dev/null)
+
+if [ ! -d "$WORKTREE_DIR" ]; then
+  fail "Test 3-cd-chain: could not create worktree, skipping"
+else
+  # Install hook script (mirrors what /update-zskills would do).
+  mkdir -p "$WORKTREE_DIR/.claude/hooks"
+  cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
+
+  # Write .zskills-tracked in the WORKTREE (Tier 1 source for LOCAL_ROOT).
+  PID="run-plan.cd-chain-pipeline"
+  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
+
+  # Create an unfulfilled requires marker in the MAIN repo's per-pipeline subdir.
+  DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+  touch "$DIR_T/requires.verify-changes.cd-chain"
+
+  # Transcript: test command present so transcript gate passes.
+  printf 'npm run test:all\n' > "$WORKTREE_DIR/.transcript"
+
+  # Stage a code file in the worktree.
+  (cd "$WORKTREE_DIR" && echo "var x = 1;" > thermal.js && git add thermal.js)
+
+  # Build the JSON envelope simulating the agent's cd-chained command.
+  # Critically: the bash script (hook) runs with CWD=$TEST_TMPDIR (main repo),
+  # NOT the worktree. The hook must extract the cd target to find
+  # .zskills-tracked in the worktree.
+  JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"cd $WORKTREE_DIR && git commit -m test\"},\"transcript_path\":\"$WORKTREE_DIR/.transcript\"}"
+
+  # Run hook from main repo CWD. No LOCAL_ROOT env override — the hook
+  # MUST resolve via extract_cd_target.
+  HOOK_OUTPUT=$(
+    echo "$JSON" | TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+  )
+
+  if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]] \
+     && [[ "$HOOK_OUTPUT" == *"verify-changes.cd-chain"* ]]; then
+    pass "Test 3-cd-chain-a: cd-chained worktree commit blocked by worktree's .zskills-tracked + main's unfulfilled marker"
+  else
+    fail "Test 3-cd-chain-a: cd-chained worktree commit should be blocked; got: $HOOK_OUTPUT"
+  fi
+
+  # Fulfill, then re-test → should allow.
+  touch "$DIR_T/fulfilled.verify-changes.cd-chain"
+  HOOK_OUTPUT=$(
+    echo "$JSON" | TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+  )
+  if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]]; then
+    fail "Test 3-cd-chain-b: cd-chained worktree commit should be allowed after fulfilling marker; got: $HOOK_OUTPUT"
+  else
+    pass "Test 3-cd-chain-b: cd-chained worktree commit allowed after fulfilling marker"
+  fi
+
+  # Clean up worktree
+  (cd "$TEST_TMPDIR" && git worktree remove --force "$WORKTREE_DIR" 2>/dev/null)
+fi
+
+teardown_repo
+
+# ═══════════════════════════════════════════════════════════════════════
 # Test 4: Content-only exemption
 # ═══════════════════════════════════════════════════════════════════════
 

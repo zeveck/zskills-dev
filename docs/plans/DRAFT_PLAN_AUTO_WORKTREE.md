@@ -648,6 +648,26 @@ for those cases — see "Hook composition" below.
 
 #### Hook composition with `git -C` from foreign cwd (NEW — closes D-A / R-F12 / D-J)
 
+> **RESOLVED (issues #391 + #393).** The worktree-blindness described in
+> this section was closed by the PR that landed those two issues:
+>
+>   - `hooks/block-stale-skill-version.sh` now switches its matcher to
+>     `is_git_subcommand_in_chain` so `cd /tmp/wt && git commit` matches,
+>     inlines `extract_cd_target`, resolves an `EFFECTIVE_REPO_ROOT`, and
+>     invokes `scripts/skill-version-stage-check.sh` in a subshell `cd`'d
+>     to that root.
+>   - `scripts/skill-version-stage-check.sh` resolves `REPO_ROOT` via
+>     `git rev-parse --show-toplevel` (CWD-rooted), falling back to
+>     `$CLAUDE_PROJECT_DIR` then `$PWD` for backward compat.
+>   - `hooks/block-unsafe-project.sh.template` applies the same
+>     cd-target-precedence pattern to all three LOCAL_ROOT sites
+>     (commit / cherry-pick / push) so tracking-marker enforcement fires
+>     on worktree commits.
+>   - Worktree-fixture cases in `tests/test-skill-version-enforcement.sh`
+>     and `tests/test-tracking-integration.sh` lock the fix.
+>
+> The historical analysis below is preserved for context.
+
 `block-stale-skill-version.sh` (PreToolUse hook on every `git commit`)
 delegates to `scripts/skill-version-stage-check.sh`, which reads
 `REPO_ROOT="${CLAUDE_PROJECT_DIR:?...}"` and runs

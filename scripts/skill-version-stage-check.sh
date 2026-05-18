@@ -19,6 +19,17 @@
 #   0  no drift — caller proceeds.
 #   1  drift detected — caller halts with the printed STOP message.
 #
+# REPO_ROOT resolution: resolves from CWD via `git rev-parse --show-toplevel`.
+# Caller is responsible for `cd`-ing to the correct repo/worktree root before
+# invoking this script. Callers:
+#   - hooks/block-stale-skill-version.sh — runs the script in a subshell
+#     `cd`'d to the resolved effective worktree root (cd target extracted
+#     from the JSON command, falling back to $CLAUDE_PROJECT_DIR).
+#   - skills/commit/SKILL.md Phase 5 step 2.5 — invoked from the working
+#     directory (which is the worktree root in worktree mode and the main
+#     repo otherwise).
+# Falls back to $CLAUDE_PROJECT_DIR (backward compat) and finally $PWD.
+#
 # References:
 #   plans/SKILL_VERSIONING.md Phase 4.3
 #   references/skill-versioning.md §1.4 (point 2)
@@ -27,7 +38,11 @@
 
 set -u
 
-REPO_ROOT="${CLAUDE_PROJECT_DIR:?CLAUDE_PROJECT_DIR required}"
+# Resolve REPO_ROOT from CWD so the script works whether invoked from main
+# (via /commit) or from a worktree (via block-stale-skill-version.sh's
+# subshell cd). Fallback to CLAUDE_PROJECT_DIR for backward compat;
+# ultimate fallback to PWD.
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "${CLAUDE_PROJECT_DIR:-$PWD}")"
 GET="$REPO_ROOT/scripts/frontmatter-get.sh"
 HASH="$REPO_ROOT/scripts/skill-content-hash.sh"
 

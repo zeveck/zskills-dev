@@ -106,6 +106,7 @@ load_hook_funcs() {
   tmp=$(mktemp)
   awk '
     /^is_git_subcommand\(\) \{$/,/^\}$/ {print}
+    /^is_git_subcommand_in_chain\(\) \{$/,/^\}$/ {print}
     /^json_escape\(\) \{$/,/^\}$/ {print}
   ' "$HOOK" > "$tmp"
   # shellcheck disable=SC1090
@@ -245,6 +246,28 @@ assert_no_match() {
   fi
 }
 
+# Chain-walker assertions — used for cd-chained forms (#393). The hook now
+# calls is_git_subcommand_in_chain on $COMMAND so worktree commits like
+# `cd /tmp/wt && git commit` match. Single-segment is_git_subcommand would
+# still return 1 (the FIRST token is `cd`, not `git`).
+assert_match_chain() {
+  local label="$1" cmd="$2"
+  if is_git_subcommand_in_chain "$cmd" commit; then
+    pass "$label: is_git_subcommand_in_chain('$cmd' commit) → match"
+  else
+    fail "$label: chain should match" "is_git_subcommand_in_chain returned 1 for: $cmd"
+  fi
+}
+
+assert_no_match_chain() {
+  local label="$1" cmd="$2"
+  if ! is_git_subcommand_in_chain "$cmd" commit; then
+    pass "$label: is_git_subcommand_in_chain('$cmd' commit) → no match"
+  else
+    fail "$label: chain should NOT match" "is_git_subcommand_in_chain returned 0 for: $cmd"
+  fi
+}
+
 # ─────────────────── C6 .. C11 — match assertions ────────────
 assert_match    "C6"   "git commit -am 'wip'"
 assert_match    "C7"   "git commit --amend"
@@ -262,6 +285,14 @@ assert_match    "C8"   "FOO=bar git commit -m msg"
 assert_match    "C9"   "   git commit"
 assert_no_match "C10"  'echo "git commit"'
 assert_no_match "C10e" "bash -c 'git commit -m foo'"
+# C10f / C10g — cd-chain forms now MATCH via is_git_subcommand_in_chain
+# (the hook's call site after #393's fix). is_git_subcommand alone would
+# return 1 (first token is `cd`), so we use the chain assertion to mirror
+# the hook's actual behavior. The bash -c carve-out (C10e) STAYS — it is
+# tracked separately as issue #399.
+assert_match_chain    "C10f" "cd /tmp/wt && git commit -m foo"
+assert_match_chain    "C10g" "cd /tmp/wt && cd subdir && git commit -m foo"
+assert_no_match_chain "C10h" "bash -c 'git commit -m foo'"
 assert_match    "C11"  "git commit && git push"
 
 # ─────────────────── C12: Script missing → fail-open ─────────
