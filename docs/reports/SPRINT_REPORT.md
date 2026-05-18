@@ -936,3 +936,17 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 ### Notes
 - Ready intersection: [377, 376]. First pick #377. #376 still queued.
 - Dynamic fix at cp-loop accumulator + summary emit; .claude/agents/ currently contains all 3 (verifier, implementer, canary-readonly).
+
+## Sprint — 2026-05-18 14:26 [UNFINALIZED]
+
+**Mode:** auto | **Focus:** default | **Source:** dashboard Ready
+**Sprint ID:** sprint-20260518-180911-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #376 | /do auto in direct/worktree triggers Phase 4 landing but has no positive test | /tmp/zskills-fix-issue-376 | 4e5e5b6 | 3333/3333 (+1) | A+ (Case 17 with 3 independent assertions; failure-mode-clear) | N/A (test-only) |
+
+### Notes
+- Ready intersection: [376] (last actionable). Queue drained after this.
+- Case 17 mirrors Case 15/16 style: AWK-extract Phase 4 block + 3 static greps.
