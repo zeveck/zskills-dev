@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.15+d05bad"
+  version: "2026.05.18+7dfae6"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -187,16 +187,51 @@ Run when `bash` is NOT present in arguments.
      coverage gaps? Are there bugs?
    - Rate severity: Critical / High / Medium / Low / Very Low
 
-5. **Create GitHub issues** — For actionable findings (Medium+ severity, or
-   Low with clear fix), create issues via `gh issue create`. Include: summary,
-   root cause, suggested fix/test, severity, and which commit introduced it.
+5. **Verify each finding against ground truth before durable-state action.**
+   For every "FILE ISSUE" or "MOVE TO RESOLVED" finding from a dispatched
+   agent, perform the cited check yourself before calling `gh issue create`
+   or mutating the QE issues tracker:
 
-6. **Update tracker** — Edit `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`:
+   - If the finding cites a file:line, `Read` or `grep -n` that file:line and
+     confirm the cited text matches verbatim.
+   - If the finding cites "X is absent" / "Y is not tested" / "Z was removed,"
+     verify with a recursive grep — never trust an agent's negative claim
+     without your own check.
+   - If the finding cites a test pattern (sentinel-only, schema-only), read
+     the test file and confirm.
+   - If the finding cites "issue #N was fixed by commit X," `git show X` and
+     confirm the diff addresses the issue's defect — not just that the commit
+     message claims to close it.
+
+   Record the verification command and its result in the issue body or
+   tracker entry (e.g., `Verified: \`grep -n 'pattern' file\` → line 441`). A
+   finding that cannot be verified against ground truth is logged in the
+   tracker under an "Unverified findings" subsection with the reason, not
+   filed as an issue or moved between sections.
+
+   Past failure (2026-05-17 audit): 6 issues filed in ~3 minutes by accepting
+   agent reports wholesale; #338 had a factual error ("file deleted" when it
+   was trimmed) that a 10-second `ls` would have caught. Memory anchors are
+   agent-local — this discipline lives in the skill prose so it propagates.
+
+6. **Create GitHub issues** — For actionable findings (Medium+ severity, or
+   Low with clear fix) **that passed Step 5 verification**, create issues via
+   `gh issue create`. Include: summary, root cause, suggested fix/test,
+   severity, which commit introduced it, and the verification command/result
+   from Step 5.
+
+7. **Update tracker** — Edit `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`.
+   The Step 5 verification gate applies before any tracker mutation — do not
+   move issues to "Resolved" on agent-only claims; re-verify with `git show`
+   or grep first.
    - Add new issues to "Open Issues" section
-   - Move any resolved issues to "Resolved Issues"
+   - Move any resolved issues to "Resolved Issues" (only after Step 5
+     verification of the fixing commit)
+   - Log any unverifiable findings under an "Unverified findings" subsection
+     with the reason
    - Update the audit date and commit range at the bottom
 
-7. **Report** — Summarize findings: issues filed, notable positives, and
+8. **Report** — Summarize findings: issues filed, notable positives, and
    overall assessment. If a cron is active, include the next run time:
    > Audit complete. Filed N issues. Next audit in ~23h 55m (~9:03 AM ET
    > tomorrow, cron XXXX).
@@ -243,7 +278,13 @@ Run when `bash` IS present in arguments.
    - Deploy: generate Rust → `cargo build` → run binary
    - Compare Rust output against JS simulation (same model, same params)
    - Test with multiple example models, not just one
-   - For bulk sweeps, dispatch parallel agents (~10 models per agent)
+   - For bulk sweeps, dispatch parallel agents (~10 models per agent).
+     **Parallel-sweep findings must be re-verified against actual
+     `cargo`/Rust output before filing** — re-run the build/binary yourself
+     and confirm the cited failure mode. See Commit Audit Step 5 for the
+     full verification discipline (file:line grep, negative-claim recheck,
+     `git show` for "fixed by" claims). Findings that don't reproduce are
+     logged as "Unverified findings," not filed as issues.
 
    **c. Adversarial unit tests** (for all areas):
    - Edge cases (empty inputs, zero values, NaN, Infinity, negative numbers)
@@ -277,6 +318,10 @@ Run when `bash` IS present in arguments.
    - Tag with appropriate labels
 
 6. **Update `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`** with new findings.
+   The verification gate from Commit Audit Step 5 applies here too — do not
+   move issues to "Resolved" on agent-only claims (re-verify the fixing
+   commit with `git show`), and log any unverifiable findings under an
+   "Unverified findings" subsection rather than filing them.
 
 7. **Clean up test files:**
    - Keep passing adversarial tests (they're valuable regression tests)
