@@ -314,6 +314,40 @@ test_dashboard_uses_python_json_not_bash_regex() {
   fi
 }
 
+# --- dashboard + landing-mode tokens propagate to cron prompt (#362) ----
+#
+# Phase 0c step 3 builds CRON_TOKENS for the self-perpetuating cron prompt.
+# Issue #362: the original block only appended `auto`, silently dropping
+# `dashboard` and explicit landing-mode tokens (`pr`/`direct`). Cron fire
+# #2+ then lost the dashboard-Ready source-of-truth and fell back to the
+# model-layer priority rubric.
+#
+# This test guards two propagation lines in skills/fix-issues/SKILL.md:
+#   (1) A DASHBOARD_MODE conditional appending `dashboard` to CRON_TOKENS.
+#   (2) A LANDING_MODE case statement appending `pr` or `direct`.
+
+test_dashboard_token_propagates_to_cron_prompt() {
+  # (1) DASHBOARD_MODE → CRON_TOKENS dashboard propagation.
+  if grep -qE 'DASHBOARD_MODE.*=.*"?1"?.*CRON_TOKENS.*dashboard' "$SKILL"; then
+    pass "CRON_TOKENS propagates dashboard when DASHBOARD_MODE=1 (#362)"
+  else
+    fail "CRON_TOKENS propagates dashboard when DASHBOARD_MODE=1 (#362)" \
+      "no DASHBOARD_MODE-guarded 'CRON_TOKENS=...dashboard' line found in Phase 0c"
+  fi
+
+  # (2) LANDING_MODE case statement assigning pr/direct to CRON_TOKENS.
+  # We look for the `case "$LANDING_MODE"` header plus both arm tokens
+  # near a CRON_TOKENS append.
+  if grep -qE 'case[[:space:]]+"\$LANDING_MODE"' "$SKILL" \
+     && grep -qE 'pr\)[[:space:]]*CRON_TOKENS=.*pr' "$SKILL" \
+     && grep -qE 'direct\)[[:space:]]*CRON_TOKENS=.*direct' "$SKILL"; then
+    pass "CRON_TOKENS propagates pr/direct via LANDING_MODE case (#362)"
+  else
+    fail "CRON_TOKENS propagates pr/direct via LANDING_MODE case (#362)" \
+      "LANDING_MODE case statement assigning pr/direct to CRON_TOKENS not found"
+  fi
+}
+
 # --- dashboard mutex: 5 verbatim ERROR strings present ------------------
 #
 # PR #313 added mutual-exclusion guards between `dashboard` and each of
@@ -513,6 +547,7 @@ test_280_python_json_handles_escaped_quotes
 test_dashboard_token_recognized_in_phase0
 test_dashboard_phase2_branch_present
 test_dashboard_uses_python_json_not_bash_regex
+test_dashboard_token_propagates_to_cron_prompt
 test_dashboard_mutex_error_strings_present
 test_site2_sync_phase5_unconditional_auto
 test_site3_no_actionable_unconditional_auto
