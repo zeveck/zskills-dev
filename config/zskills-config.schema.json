@@ -67,6 +67,19 @@
         }
       }
     },
+    "cleanup": {
+      "type": "object",
+      "description": "Per-project cleanup configuration for /cleanup-merged.",
+      "properties": {
+        "long_running_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Branch-name glob patterns that /cleanup-merged --review treats as KEEP regardless of merge / push state. Use for explicitly long-lived branches (e.g., docs/run-order-guide, release/*). Empty by default. Matched via bash glob semantics (NOT regex).",
+          "examples": [["docs/run-order-guide", "release/*"]]
+        }
+      }
+    },
     "testing": {
       "type": "object",
       "description": "Test commands and patterns.",
