@@ -63,14 +63,19 @@ def read_zskills_paths(main_path):
     output = (cfg.get('output') if isinstance(cfg, dict) else None) or {}
     plans_rel = output.get('plans_dir') or 'plans'
     issues_rel = output.get('issues_dir') or 'plans'
+    reports_rel = output.get('reports_dir')  # absent → legacy fallback
 
     def _resolve(rel):
         return rel if os.path.isabs(rel) else os.path.join(main_path, rel)
 
+    audit_dir = os.path.join(main_path, '.zskills', 'audit')
+    reports_dir = _resolve(reports_rel) if reports_rel else audit_dir
+
     return {
         'plans_dir': _resolve(plans_rel),
         'issues_dir': _resolve(issues_rel),
-        'audit_dir': os.path.join(main_path, '.zskills', 'audit'),
+        'audit_dir': audit_dir,
+        'reports_dir': reports_dir,
     }
 
 # ---------------------------------------------------------------------------
@@ -507,17 +512,24 @@ def scan_checkboxes(repo_root=None):
 
     files = []
 
-    # Collect report files from the audit dir (resolved via zskills-config).
-    # The legacy `main_path/reports/` AND root-level `*REPORT*.md` scans are
-    # gone — those files now live under the audit dir per Phase 4 migration.
-    reports_dir = read_zskills_paths(main_path)['audit_dir']
-    if os.path.exists(reports_dir):
-        try:
-            for f in os.listdir(reports_dir):
-                if f.endswith('.md'):
-                    files.append(os.path.join(reports_dir, f))
-        except Exception:
-            pass
+    # Collect report files from the audit dir AND the reports dir
+    # (resolved via zskills-config). Post-#217: work-trail reports
+    # (plan-*, verify-*, SPRINT_REPORT) live under reports_dir; roll-up
+    # indexes and briefing-* / FIX_REPORT files stay under audit_dir.
+    # Scan both so checkbox tracking covers all report surfaces.
+    paths = read_zskills_paths(main_path)
+    seen = set()
+    for d in (paths['audit_dir'], paths['reports_dir']):
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        if os.path.exists(d):
+            try:
+                for f in os.listdir(d):
+                    if f.endswith('.md'):
+                        files.append(os.path.join(d, f))
+            except Exception:
+                pass
 
     return scan_checkboxes_in_files(files)
 
@@ -569,7 +581,8 @@ def scan_plans(repo_root=None):
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
     paths = read_zskills_paths(main_path)
     plans_dir = paths['plans_dir']
-    reports_dir = paths['audit_dir']
+    # plan-{slug}.md reports moved from audit_dir to reports_dir (issue #217).
+    reports_dir = paths['reports_dir']
 
     plan_files = sorted(glob.glob(os.path.join(plans_dir, '*.md')))
     results = []
@@ -964,8 +977,11 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
 # formatReport — write a markdown report file
 # ---------------------------------------------------------------------------
 
-def generate_report_path(reports_dir, date=None):
-    """Generate a report file path, handling duplicates with -N suffix."""
+def generate_report_path(audit_dir, date=None):
+    """Generate a briefing-{date}.md file path, handling duplicates with -N suffix.
+
+    Writes under audit_dir (briefing files stay in audit_dir per issue #217 triage).
+    """
     d = date or datetime.now()
     et_str = format_et(d)
     match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})', et_str)
@@ -976,11 +992,11 @@ def generate_report_path(reports_dir, date=None):
         date_str = d.strftime('%Y-%m-%d')
         time_str = d.strftime('%H%M')
     base = f'briefing-{date_str}-{time_str}'
-    candidate = os.path.join(reports_dir, f'{base}.md')
+    candidate = os.path.join(audit_dir, f'{base}.md')
     if not os.path.exists(candidate):
         return candidate
     for i in range(2, 100):
-        candidate = os.path.join(reports_dir, f'{base}-{i}.md')
+        candidate = os.path.join(audit_dir, f'{base}-{i}.md')
         if not os.path.exists(candidate):
             return candidate
     return candidate
@@ -1306,18 +1322,19 @@ def check_staleness(worktrees, opts=None):
     SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
     FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000
 
-    # Check for briefing reports
-    reports_dir = read_zskills_paths(main_path)['audit_dir']
+    # Check for briefing reports (briefing-*.md files stay in audit_dir
+    # per issue #217 triage — they're forensic, not work-trail).
+    audit_dir = read_zskills_paths(main_path)['audit_dir']
     latest_briefing = None
-    if os.path.exists(reports_dir):
+    if os.path.exists(audit_dir):
         try:
             files = sorted(
-                [f for f in os.listdir(reports_dir) if f.startswith('briefing-') and f.endswith('.md')],
+                [f for f in os.listdir(audit_dir) if f.startswith('briefing-') and f.endswith('.md')],
                 reverse=True
             )
             if files:
                 try:
-                    st = os.stat(os.path.join(reports_dir, files[0]))
+                    st = os.stat(os.path.join(audit_dir, files[0]))
                     latest_briefing = st.st_mtime * 1000
                 except Exception:
                     pass
@@ -1347,26 +1364,31 @@ def check_staleness(worktrees, opts=None):
 # Checkbox preservation
 # ---------------------------------------------------------------------------
 
-def preserve_checkboxes(report_content, reports_dir, date=None):
-    """Preserve checked checkboxes from a previous same-day report."""
+def preserve_checkboxes(report_content, audit_dir, date=None):
+    """Preserve checked checkboxes from a previous same-day briefing report.
+
+    Reads briefing-{date}*.md from audit_dir (briefing files stay in
+    audit_dir per issue #217 triage — only plan-*, verify-*, SPRINT_REPORT
+    moved to reports_dir).
+    """
     d = date or datetime.now()
     et_str = format_et(d)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', et_str)
     today_str = date_match.group(1) if date_match else d.strftime('%Y-%m-%d')
 
-    if not os.path.exists(reports_dir):
+    if not os.path.exists(audit_dir):
         return report_content
 
     # Find previous same-day briefing reports
     previous_content = None
     try:
         files = sorted(
-            [f for f in os.listdir(reports_dir) if f.startswith(f'briefing-{today_str}') and f.endswith('.md')],
+            [f for f in os.listdir(audit_dir) if f.startswith(f'briefing-{today_str}') and f.endswith('.md')],
             reverse=True
         )
         for f in files:
             try:
-                with open(os.path.join(reports_dir, f), 'r') as fh:
+                with open(os.path.join(audit_dir, f), 'r') as fh:
                     previous_content = fh.read()
                 break  # Use most recent
             except Exception:
@@ -1434,17 +1456,23 @@ def scan_checkboxes_recent(repo_root=None, max_age=None, max_briefings=None):
 
     files = []
 
-    # Collect report files with mtime from the audit dir.
-    # Legacy root-level `*REPORT*.md` scan is REMOVED — Phase 4 migration:
-    # those files live under the audit dir.
-    reports_dir = read_zskills_paths(main_path)['audit_dir']
-    if os.path.exists(reports_dir):
+    # Collect report files with mtime from BOTH the audit dir and the
+    # reports dir. Post-#217 triage: briefing-* stay in audit_dir;
+    # plan-*/verify-*/SPRINT_REPORT moved to reports_dir. Scan both.
+    paths = read_zskills_paths(main_path)
+    briefings = []
+    others = []
+    seen = set()
+    for d in (paths['audit_dir'], paths['reports_dir']):
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        if not os.path.exists(d):
+            continue
         try:
-            entries = [f for f in os.listdir(reports_dir) if f.endswith('.md')]
-            briefings = []
-            others = []
+            entries = [f for f in os.listdir(d) if f.endswith('.md')]
             for f in entries:
-                file_path = os.path.join(reports_dir, f)
+                file_path = os.path.join(d, f)
                 try:
                     st = os.stat(file_path)
                     mtime_ms = st.st_mtime * 1000
@@ -1454,13 +1482,13 @@ def scan_checkboxes_recent(repo_root=None, max_age=None, max_briefings=None):
                         others.append(file_path)
                 except Exception:
                     pass
-            # Sort briefings by mtime descending, take top N
-            briefings.sort(key=lambda b: b['mtime'], reverse=True)
-            for b in briefings[:max_briefings]:
-                files.append(b['path'])
-            files.extend(others)
         except Exception:
             pass
+    # Sort briefings by mtime descending, take top N
+    briefings.sort(key=lambda b: b['mtime'], reverse=True)
+    for b in briefings[:max_briefings]:
+        files.append(b['path'])
+    files.extend(others)
 
     return scan_checkboxes_in_files(files)
 
@@ -1674,18 +1702,19 @@ def main():
     elif subcommand == 'report':
         repo_root = find_repo_root()
         main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
-        reports_dir = read_zskills_paths(main_path)['audit_dir']
+        # briefing-*.md files stay in audit_dir per issue #217 triage.
+        audit_dir = read_zskills_paths(main_path)['audit_dir']
         wts = classify_worktrees()
         cbs = scan_checkboxes()
         commits = parse_commits(since=since_git)
         content = format_report(wts, cbs, commits, {'since': since_git})
-        content = preserve_checkboxes(content, reports_dir)
+        content = preserve_checkboxes(content, audit_dir)
         if output_path:
             file_path = output_path
             os.makedirs(os.path.dirname(file_path) or '.', exist_ok=True)
         else:
-            os.makedirs(reports_dir, exist_ok=True)
-            file_path = generate_report_path(reports_dir)
+            os.makedirs(audit_dir, exist_ok=True)
+            file_path = generate_report_path(audit_dir)
         with open(file_path, 'w') as f:
             f.write(content)
         print(f'Report written to: {file_path}')
