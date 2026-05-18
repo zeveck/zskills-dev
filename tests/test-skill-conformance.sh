@@ -2043,6 +2043,31 @@ $leak"
 done
 
 echo ""
+echo "=== .zskills/ umbrella cleanliness (issue #217) ==="
+# Allow-list: empty today, but exists so future legitimate force-adds (e.g., a
+# zskills-versions.lock file) can be added by editing the file rather than
+# editing this assertion. Format: one path per line, # for comments.
+ALLOWLIST="$REPO_ROOT/tests/zskills-tracked-allowlist.txt"
+if [ -f "$ALLOWLIST" ]; then
+  allowed=$(grep -vE '^[[:space:]]*(#|$)' "$ALLOWLIST" | sort -u)
+else
+  allowed=""
+fi
+tracked=$(git -C "$REPO_ROOT" ls-files -- ".zskills/" | sort -u)
+if [ -n "$allowed" ]; then
+  leaked=$(comm -23 <(echo "$tracked") <(echo "$allowed"))
+else
+  leaked="$tracked"
+fi
+leaked_count=$(echo "$leaked" | grep -c .) || [ "$?" -eq 1 ] || { echo "FAIL: grep error" >&2; exit 1; }
+if [ "$leaked_count" -eq 0 ]; then
+  pass "[.zskills-umbrella] no force-tracked files under .zskills/ outside allow-list (issue #217)"
+else
+  fail "[.zskills-umbrella] $leaked_count force-tracked files under .zskills/ outside allow-list (must be 0; issue #217). First 10:" \
+"$(echo "$leaked" | head -10)"
+fi
+
+echo ""
 echo "=== Per-skill version frontmatter ==="
 for skill_dir in "$REPO_ROOT/skills"/*/ "$REPO_ROOT/block-diagram"/*/; do
   skill_md="${skill_dir}SKILL.md"
