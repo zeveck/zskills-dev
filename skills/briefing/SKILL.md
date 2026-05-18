@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.16+5a7b1a"
+  version: "2026.05.18+6f8507"
 ---
 
 # /briefing — Project Status Briefing
@@ -137,8 +137,8 @@ $ZSKILLS_AUDIT_DIR/FIX_REPORT.md — 33 items
   Simulation Fixes:
     [ ] Solver tolerance — run sample case, verify output within 1e-6
 
-$ZSKILLS_AUDIT_DIR/plan-feature-expansion.md — 9 items
-  $ZSKILLS_AUDIT_DIR/plan-feature-expansion.md
+$ZSKILLS_REPORTS_DIR/plan-feature-expansion.md — 9 items
+  $ZSKILLS_REPORTS_DIR/plan-feature-expansion.md
 
   Phase 1:
     [ ] Feature X verification

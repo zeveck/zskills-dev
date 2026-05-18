@@ -242,15 +242,20 @@ def _resolve_paths(main_root: pathlib.Path) -> Dict[str, pathlib.Path]:
         output = {}
     plans_rel = output.get("plans_dir") or "plans"
     issues_rel = output.get("issues_dir") or "plans"
+    reports_rel = output.get("reports_dir")  # absent → legacy fallback
 
     def _resolve(rel: str) -> pathlib.Path:
         p = pathlib.Path(rel)
         return p if p.is_absolute() else main_root / rel
 
+    audit_dir = main_root / ".zskills" / "audit"
+    reports_dir = _resolve(reports_rel) if reports_rel else audit_dir
+
     return {
         "plans_dir": _resolve(plans_rel),
         "issues_dir": _resolve(issues_rel),
-        "audit_dir": main_root / ".zskills" / "audit",
+        "audit_dir": audit_dir,
+        "reports_dir": reports_dir,
     }
 
 
@@ -576,8 +581,11 @@ REPORT_PHASE_RE = re.compile(
 
 
 def parse_report(slug: str, main_root: pathlib.Path) -> Optional[Dict[str, Any]]:
-    """Parse `<audit_dir>/plan-<slug>.md`. Returns None if absent."""
-    report_path = _resolve_paths(main_root)["audit_dir"] / f"plan-{slug}.md"
+    """Parse `<reports_dir>/plan-<slug>.md`. Returns None if absent.
+
+    Per issue #217: plan-<slug>.md reports moved from audit_dir to reports_dir.
+    """
+    report_path = _resolve_paths(main_root)["reports_dir"] / f"plan-{slug}.md"
     content = _read_text(report_path)
     if content is None:
         return None

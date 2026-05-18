@@ -5,16 +5,16 @@ argument-hint: ""
 description: >-
   Review ALL unreported sprint results: walk through manual verifications,
   land fixes to main, close GitHub issues, update trackers, clean up
-  worktrees. Covers $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md and any
+  worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.17+9b6361"
+  version: "2026.05.18+5b806e"
 ---
 
 # /fix-report — Sprint Report Review & Landing
 
 Interactive companion to `/fix-issues`. Covers ALL unreported sprint results
-— not just the latest $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md. If sprints have been running on a
+— not just the latest $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md. If sprints have been running on a
 cron every 2 hours and the user hasn't checked in a day, `/fix-report`
 should present everything from those 12 sprints.
 
@@ -29,7 +29,7 @@ drives the pace — not you.
 
 **All `/fix-report` work happens in a pre-created worktree under
 `execution.main_protected: true`.** Steps 2, 5, 7, and 8 modify
-`$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`, `$ZSKILLS_AUDIT_DIR/FIX_REPORT.md`,
+`$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`, `$ZSKILLS_AUDIT_DIR/FIX_REPORT.md`,
 and tracker files under `$ZSKILLS_ISSUES_DIR/` — all of which are
 tracked in git. Without the gate, running `/fix-report` on
 `main_protected: true` repos dirties main exactly the way
@@ -70,7 +70,7 @@ fi
 
 ## Step 1 — Present Summary
 
-Read `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` from the repo root. If it doesn't exist, tell the
+Read `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` from the repo root. If it doesn't exist, tell the
 user to run `/fix-issues` first.
 
 The report contains multiple `## Sprint` sections — one per sprint run.
@@ -213,7 +213,7 @@ For each issue with `User Verify: NEEDED`:
 3. Run the verification via `/manual-testing` or guide the user through
    manual steps — show the result in the browser
 4. Ask the user: **Pass or Fail?**
-5. Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` — change `NEEDED` to `PASS (user verified)`
+5. Update `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` — change `NEEDED` to `PASS (user verified)`
    or `FAIL (reason)`
 
 If an issue fails user verification, move it to a "Failed Verification"
@@ -296,7 +296,7 @@ For each approved fix that has NOT been landed:
       ```bash
       git stash pop
       ```
-   e. Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` — mark the fix as landed
+   e. Update `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` — mark the fix as landed
 5. If declined: skip and move to the next fix
 
 Process fixes **one at a time** — sequential cherry-picks avoid conflicts.
@@ -333,7 +333,7 @@ Then for each approved issue:
 
    Only update files that actually reference the issue number.
 
-3. Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` — mark as finalized
+3. Update `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` — mark as finalized
 
 ## Step 6 — Worktree Cleanup
 
@@ -456,7 +456,7 @@ tangent shows unchecked `[ ]` items first.
 
 ## Step 8 — Final Status
 
-Mark all processed sprint sections as `[FINALIZED]` in `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`:
+Mark all processed sprint sections as `[FINALIZED]` in `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`:
 - Change `[UNFINALIZED]` → `[FINALIZED YYYY-MM-DD]` for each section
   that was reviewed and approved
 
@@ -493,5 +493,5 @@ Fix-report complete:
   files (`git status -s | grep '^??'`). Use `git stash -u`.
 - **Never remove worktrees with unapplied changes** — the user may want to
   review them later.
-- **Update the report as you go** — `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` should reflect the
+- **Update the report as you go** — `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` should reflect the
   current state at all times.

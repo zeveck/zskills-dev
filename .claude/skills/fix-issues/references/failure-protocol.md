@@ -42,7 +42,7 @@ conflicted state preserves all data — leave it as-is and report to the user:
 **Never destroy work to clean up.** It's always better to STOP with a messy
 state than to lose files trying to clean up.
 
-### 3. Write the failure to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+### 3. Write the failure to `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`
 
 Create the file if it doesn't exist (preflight failures happen before Phase 5
 creates it). If it already exists, add the failure section immediately after
@@ -82,7 +82,7 @@ What happened:
   - Stash was [restored / not needed]
   - Cron job [ID] has been CANCELLED — no more auto-runs until you restart
 
-Working tree is clean. See `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` for full details.
+Working tree is clean. See `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` for full details.
 To restart: /fix-issues N auto every SCHEDULE now
 To cancel: /fix-issues stop
 ```

@@ -5,11 +5,11 @@ argument-hint: "<plan-file> [phase|finish|status] [auto] [pr|direct] [every SCHE
 description: >-
   Execute the next phase of a plan: parse status, dispatch implementation
   in a worktree, verify via a separate agent, update progress, write the
-  plan report (`$ZSKILLS_AUDIT_DIR/plan-{slug}.md`), and optionally
+  plan report (`$ZSKILLS_REPORTS_DIR/plan-{slug}.md`), and optionally
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.18+4f95d2"
+  version: "2026.05.18+c67c0b"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1051,7 +1051,7 @@ it once before the first phase, pass the same path to every phase's agent:
 
 **Agent timeout: 2 hours.** Note the dispatch time. If the implementation
 agent hasn't returned after 2 hours, declare it **failed**:
-- Mark the phase as "Timed out" in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`
+- Mark the phase as "Timed out" in `$ZSKILLS_REPORTS_DIR/plan-{slug}.md`
 - The phase stays incomplete for the next run
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
@@ -1970,7 +1970,7 @@ commits on the feature branch.
 
 ## Phase 5 — Write Report
 
-**PREPEND** new phase sections after the H1 in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md`
+**PREPEND** new phase sections after the H1 in `$ZSKILLS_REPORTS_DIR/plan-{slug}.md`
 (`{slug}` from plan filename, e.g., `FEATURE_PLAN.md` → `plan-physics module`).
 Newest phase at the top — the reader's question is "what needs my
 attention?" and that's always the newest phase.
@@ -1996,7 +1996,7 @@ write/regen/commit on main (unchanged).
 
 After writing, regenerate `$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md` as an **index**
 of all plan reports:
-1. Scan `$ZSKILLS_AUDIT_DIR/plan-*.md` files
+1. Scan `$ZSKILLS_REPORTS_DIR/plan-*.md` files
 2. For each: extract plan name, phase count, overall status, unchecked `[ ]`
 3. Write index with Needs Sign-off section (linked items) + Plans table
 4. Staleness rule: items >7 days flagged STALE
@@ -2196,7 +2196,7 @@ Before declaring the plan complete, verify every phase has a clean status:
    > Phase 3 has no completion indicator — review before closing.
 
 2. **Scan for unresolved gaps** — check each phase's status line AND its
-   corresponding section in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md` for any of these
+   corresponding section in `$ZSKILLS_REPORTS_DIR/plan-{slug}.md` for any of these
    phrases (case-insensitive): "noted as gap", "deferred", "skipped",
    "future work". If found, WARN (do not hard-block):
    > Phase 3 has unresolved gaps — review before closing.
@@ -2225,7 +2225,7 @@ If the plan file has YAML frontmatter with an `issue:` field (e.g.,
    Key commits: <comma-separated list of commit hashes from all phases>
    Phases completed: <count>
 
-   All phases passed verification. See $ZSKILLS_AUDIT_DIR/plan-{slug}.md for details."
+   All phases passed verification. See $ZSKILLS_REPORTS_DIR/plan-{slug}.md for details."
    ```
 
 3. **If already closed:** no action needed — log "Issue #N already closed."
@@ -2252,7 +2252,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 ```
 
-Check if `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` exists. If it does:
+Check if `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` exists. If it does:
 
 1. Search for the closed issue number (from step 2) or the plan filename
    in a "Skipped" section (look for headers or list items containing
@@ -2474,7 +2474,7 @@ The script asserts 7 invariants:
 2. Worktree removed from git's worktree registry
 3. Local feature branch deleted (when `--landed-status landed`)
 4. Remote feature branch deleted (when `--landed-status landed`)
-5. Plan report exists at `$ZSKILLS_AUDIT_DIR/plan-<slug>.md`
+5. Plan report exists at `$ZSKILLS_REPORTS_DIR/plan-<slug>.md`
 6. No 🟡 In Progress rows linger in the tracker
 7. Local main reconcilable with origin/main (WARN-level; user may have
    legitimate unpushed local commits)
@@ -2535,7 +2535,7 @@ template is in the same file.
 - **Existing worktree for phase:** previous incomplete run — ask user
   (interactive) or try to resume from the existing worktree (auto)
 - **Implementation produces no commits:** the agent worked but committed
-  nothing. Report in `$ZSKILLS_AUDIT_DIR/plan-{slug}.md` as "No commits produced — investigate
+  nothing. Report in `$ZSKILLS_REPORTS_DIR/plan-{slug}.md` as "No commits produced — investigate
   worktree." Do not attempt to cherry-pick nothing. In auto mode, invoke
   the Failure Protocol (this is an unrecoverable state for cron)
 - **Plan file not found:** stop immediately, report the error

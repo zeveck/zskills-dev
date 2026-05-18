@@ -2,7 +2,7 @@
 issue: 217
 title: Reports Dir Migration — Drive .zskills/ to Zero Force-Tracked
 created: 2026-05-18
-status: active
+status: complete
 ---
 
 # Plan: Reports Dir Migration — Drive .zskills/ to Zero Force-Tracked
@@ -111,9 +111,9 @@ The end state: `.zskills/` is a uniform, fully-gitignored umbrella; the 44 work-
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Config field + helper + migrator extension | ⬚ | | Schema + zskills-paths.sh + migrate-paths.sh 3-tuple + path-tests cases 10-12 |
-| 2 — Writer + reader path swap across affected skills | ⬚ | | run-plan/verify-changes/fix-issues writers; briefing/fix-report/dashboard readers; per-skill version bumps + mirrors |
-| 3 — Migration commit + conformance + final version bumps | ⬚ | | 44 `git mv` + 13 `git rm --cached` + `tests/test-skill-conformance.sh` new assertion + any residual version-bumps |
+| 1 — Config field + helper + migrator extension | ✅ | `e86458b` | Schema + zskills-paths.sh + migrate-paths.sh 3-tuple + path-tests cases 10-12; +20 tests; latent single-line `{...}` bug surfaced + fixed (case h) |
+| 2 — Writer + reader path swap across affected skills | ✅ | `3b942cb..547a182` | 9 commits (7 planned + 2 Tier-1 cohabitation fix-ups caught in-flight per #380 lesson); 50 REPORTS_DIR writes, 30 legit AUDIT_DIR preserved; mirror byte-equal; 3316/3316 tests |
+| 3 — Migration commit + conformance + final version bumps | ✅ | `c7c26dc` | 44 R100 git mv + 13 git rm --cached + new `.zskills`-umbrella conformance gate at test-skill-conformance.sh:2045-2068 + zskills-tracked-allowlist.txt (empty escape hatch per DA-11) + `.pre-paths-migration` trailer. `git ls-files .zskills/ == 0`. 3317/3317 tests. |
 
 ## Design & Constraints (plan-wide)
 

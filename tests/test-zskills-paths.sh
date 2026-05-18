@@ -3,7 +3,8 @@
 # the canonical path-resolution helper introduced in
 # plans/ZSKILLS_PATH_CONFIG.md Phase 1.
 #
-# Cases (≥9 per Phase 1.8 table):
+# Cases (≥9 per Phase 1.8 table; cases 10a-13 added for reports_dir per
+# REPORTS_DIR_MIGRATION.md Phase 1, WI 1.8):
 #   1. Empty config → $ZSKILLS_PLANS_DIR == $ROOT/plans (legacy fallback).
 #   2. output.plans_dir = "docs/plans" → $ZSKILLS_PLANS_DIR == $ROOT/docs/plans.
 #   3. output.plans_dir = "/tmp/x" → $ZSKILLS_PLANS_DIR == /tmp/x (absolute).
@@ -15,6 +16,12 @@
 #   7. output.plans_dir = "" (empty string) → fallback to legacy plans/.
 #   8. $ZSKILLS_PATHS_ROOT set, $CLAUDE_PROJECT_DIR unset → uses $ZSKILLS_PATHS_ROOT.
 #   9. After source, env | grep '^ZSKILLS_PLANS_DIR=' is empty (vars not exported).
+#   10a. Config file absent → $ZSKILLS_REPORTS_DIR == $ROOT/.zskills/audit.
+#   10b. Config present, reports_dir key absent → $ROOT/.zskills/audit (back-compat).
+#   11. output.reports_dir = "build/audit" → $ROOT/build/audit (relative joined).
+#   12. output.reports_dir = "/abs/path/reports" → /abs/path/reports (absolute as-is).
+#   13. Malformed JSON (truncated reports_dir) → legacy .zskills/audit fallback.
+#   14. Source vs mirror byte-identical (parity check; was Case 10).
 #
 # Run from repo root: bash tests/test-zskills-paths.sh
 
@@ -312,18 +319,119 @@ else
 fi
 rm -rf "$T9"
 
-# --- Case 10: source mirror parity check ----------------------------------
+# --- Case 10a: config file absent → reports_dir legacy fallback ------------
 echo ""
-echo "=== Case 10: helper present at .claude/skills/ mirror, byte-identical to source ==="
-if [ -f "$MIRROR_HELPER" ]; then
-  pass "Case 10a: mirror helper exists at .claude/skills/update-zskills/scripts/zskills-paths.sh"
+echo "=== Case 10a: config file absent → \$ZSKILLS_REPORTS_DIR = <root>/.zskills/audit ==="
+T10A=$(mktemp -d /tmp/zskills-paths-t10a-XXXXXX)
+# No config file at all.
+C10A_REPORTS=$(
+  CLAUDE_PROJECT_DIR="$T10A" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
+)
+[ "$C10A_REPORTS" = "$T10A/.zskills/audit" ] \
+  && pass "Case 10a: no config file → reports legacy '<root>/.zskills/audit'" \
+  || fail "Case 10a: no config fallback" "got '$C10A_REPORTS', expected '$T10A/.zskills/audit'"
+rm -rf "$T10A"
+
+# --- Case 10b: config present but reports_dir key absent → silent back-compat
+echo ""
+echo "=== Case 10b: config has plans_dir + issues_dir but NO reports_dir → back-compat legacy ==="
+T10B=$(mktemp -d /tmp/zskills-paths-t10b-XXXXXX)
+mkdir -p "$T10B/.claude"
+cat > "$T10B/.claude/zskills-config.json" <<'CFG'
+{
+  "output": {
+    "plans_dir": "docs/plans",
+    "issues_dir": "docs/issues"
+  }
+}
+CFG
+C10B_REPORTS=$(
+  CLAUDE_PROJECT_DIR="$T10B" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
+)
+[ "$C10B_REPORTS" = "$T10B/.zskills/audit" ] \
+  && pass "Case 10b: reports_dir absent → silent back-compat to '<root>/.zskills/audit'" \
+  || fail "Case 10b: back-compat" "got '$C10B_REPORTS', expected '$T10B/.zskills/audit'"
+rm -rf "$T10B"
+
+# --- Case 11: reports_dir relative → joined with root ----------------------
+echo ""
+echo "=== Case 11: output.reports_dir = 'build/audit' → \$ZSKILLS_REPORTS_DIR = <root>/build/audit ==="
+T11=$(mktemp -d /tmp/zskills-paths-t11-XXXXXX)
+mkdir -p "$T11/.claude"
+cat > "$T11/.claude/zskills-config.json" <<'CFG'
+{
+  "output": {
+    "plans_dir": "docs/plans",
+    "issues_dir": "docs/issues",
+    "reports_dir": "build/audit"
+  }
+}
+CFG
+C11_REPORTS=$(
+  CLAUDE_PROJECT_DIR="$T11" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
+)
+[ "$C11_REPORTS" = "$T11/build/audit" ] \
+  && pass "Case 11: relative reports_dir joined with <root>" \
+  || fail "Case 11: relative reports_dir" "got '$C11_REPORTS', expected '$T11/build/audit'"
+rm -rf "$T11"
+
+# --- Case 12: reports_dir absolute → used as-is ----------------------------
+echo ""
+echo "=== Case 12: output.reports_dir = '/abs/path/reports' → used as-is (absolute) ==="
+T12=$(mktemp -d /tmp/zskills-paths-t12-XXXXXX)
+mkdir -p "$T12/.claude"
+cat > "$T12/.claude/zskills-config.json" <<'CFG'
+{
+  "output": {
+    "reports_dir": "/abs/path/reports"
+  }
+}
+CFG
+C12_REPORTS=$(
+  CLAUDE_PROJECT_DIR="$T12" \
+  bash -c '. "'"$HELPER"'" && printf "%s" "$ZSKILLS_REPORTS_DIR"'
+)
+[ "$C12_REPORTS" = "/abs/path/reports" ] \
+  && pass "Case 12: absolute reports_dir used as-is" \
+  || fail "Case 12: absolute reports_dir" "got '$C12_REPORTS', expected '/abs/path/reports'"
+rm -rf "$T12"
+
+# --- Case 13: malformed JSON (no closing brace) → silent fallback ----------
+echo ""
+echo "=== Case 13: malformed truncated reports_dir JSON → legacy .zskills/audit fallback ==="
+T13=$(mktemp -d /tmp/zskills-paths-t13-XXXXXX)
+mkdir -p "$T13/.claude"
+# Inner object never closes (no `}` after the value) — regex closing-brace
+# anchor refuses the match; fallback path used.
+printf '%s' '{"output":{"reports_dir":"DROP"' > "$T13/.claude/zskills-config.json"
+RESULT13=$(
+  CLAUDE_PROJECT_DIR="$T13" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$ZSKILLS_REPORTS_DIR"' 2>&1
+)
+RC13=$?
+C13_REPORTS=$(printf '%s\n' "$RESULT13" | sed -n '1p')
+if [ "$RC13" -eq 0 ] && [ "$C13_REPORTS" = "$T13/.zskills/audit" ]; then
+  pass "Case 13: malformed reports_dir JSON → rc=0 + legacy fallback"
 else
-  fail "Case 10a: mirror helper exists" "$MIRROR_HELPER missing"
+  fail "Case 13: malformed reports_dir" "rc=$RC13 reports='$C13_REPORTS' (expected '$T13/.zskills/audit')"
+fi
+rm -rf "$T13"
+
+# --- Case 14: source mirror parity check ----------------------------------
+echo ""
+echo "=== Case 14: helper present at .claude/skills/ mirror, byte-identical to source ==="
+if [ -f "$MIRROR_HELPER" ]; then
+  pass "Case 14a: mirror helper exists at .claude/skills/update-zskills/scripts/zskills-paths.sh"
+else
+  fail "Case 14a: mirror helper exists" "$MIRROR_HELPER missing"
 fi
 if diff -q "$HELPER" "$MIRROR_HELPER" >/dev/null 2>&1; then
-  pass "Case 10b: source and mirror byte-identical"
+  pass "Case 14b: source and mirror byte-identical"
 else
-  fail "Case 10b: source/mirror byte-identical" "diff returned non-zero"
+  fail "Case 14b: source/mirror byte-identical" "diff returned non-zero"
 fi
 
 # --- Summary ---------------------------------------------------------------

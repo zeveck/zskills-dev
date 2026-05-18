@@ -1,0 +1,7 @@
+{
+  "project_name": "fixture",
+  "output": {
+    "plans_dir": "docs/plans",
+    "issues_dir": "docs/issues",
+  }
+}

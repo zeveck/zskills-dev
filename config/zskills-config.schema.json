@@ -190,6 +190,10 @@
         "issues_dir": {
           "type": "string",
           "description": "Directory for issue trackers (ISSUES_PLAN.md, BUILD_ISSUES.md, DOC_ISSUES.md, QE_ISSUES.md). Documented default: docs/issues. Absent → legacy plans/. Same resolution rules as plans_dir. Distinct from testing.output_file."
+        },
+        "reports_dir": {
+          "type": "string",
+          "description": "Directory for agent-written work-trail reports: /run-plan plan-{slug}.md, /verify-changes verify-{name}.md, /fix-issues SPRINT_REPORT.md. Documented default: docs/reports. Absent → legacy .zskills/audit (silent back-compat for pre-migration consumers). Same resolution rules as plans_dir/issues_dir. Distinct from $ZSKILLS_AUDIT_DIR (briefing daily files, work-on-plans state, debug dumps — still hardcoded at .zskills/audit and gitignored)."
         }
       }
     }

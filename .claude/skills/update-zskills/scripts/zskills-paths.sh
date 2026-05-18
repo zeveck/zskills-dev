@@ -52,10 +52,12 @@ fi
 ZSKILLS_PLANS_DIR=""
 ZSKILLS_ISSUES_DIR=""
 ZSKILLS_AUDIT_DIR=""
+ZSKILLS_REPORTS_DIR=""
 
 _ZSK_PATHS_CFG="$_ZSK_PATHS_ROOT/.claude/zskills-config.json"
 _ZSK_PATHS_PLANS_RAW=""
 _ZSK_PATHS_ISSUES_RAW=""
+_ZSK_PATHS_REPORTS_RAW=""
 
 if [ -f "$_ZSK_PATHS_CFG" ]; then
   _ZSK_PATHS_BODY=$(cat "$_ZSK_PATHS_CFG" 2>/dev/null) || _ZSK_PATHS_BODY=""
@@ -71,12 +73,20 @@ if [ -f "$_ZSK_PATHS_CFG" ]; then
   if [[ "$_ZSK_PATHS_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"issues_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
     _ZSK_PATHS_ISSUES_RAW="${BASH_REMATCH[1]}"
   fi
+  if [[ "$_ZSK_PATHS_BODY" =~ \"output\"[[:space:]]*:[[:space:]]*\{[^}]*\"reports_dir\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"[^}]*\} ]]; then
+    _ZSK_PATHS_REPORTS_RAW="${BASH_REMATCH[1]}"
+  fi
   unset _ZSK_PATHS_BODY
 fi
 
-# Empty config (or empty-string value) → LEGACY plans/ for both.
-[ -z "$_ZSK_PATHS_PLANS_RAW" ]  && _ZSK_PATHS_PLANS_RAW="plans"
-[ -z "$_ZSK_PATHS_ISSUES_RAW" ] && _ZSK_PATHS_ISSUES_RAW="plans"
+# Empty config (or empty-string value) → LEGACY plans/ for plans_dir +
+# issues_dir; LEGACY .zskills/audit for reports_dir (silent back-compat —
+# pre-migration consumers wrote work-trail reports there, so their existing
+# .zskills/audit/plan-*.md writes continue working unchanged when the
+# config key is absent or empty).
+[ -z "$_ZSK_PATHS_PLANS_RAW" ]   && _ZSK_PATHS_PLANS_RAW="plans"
+[ -z "$_ZSK_PATHS_ISSUES_RAW" ]  && _ZSK_PATHS_ISSUES_RAW="plans"
+[ -z "$_ZSK_PATHS_REPORTS_RAW" ] && _ZSK_PATHS_REPORTS_RAW=".zskills/audit"
 
 # Resolve absolute. Only "/" prefix is treated as already-absolute. All
 # other forms (including "..", "../..", "../foo") are JOINED with <root>;
@@ -92,5 +102,9 @@ case "$_ZSK_PATHS_ISSUES_RAW" in
   *)  ZSKILLS_ISSUES_DIR="$_ZSK_PATHS_ROOT/$_ZSK_PATHS_ISSUES_RAW" ;;
 esac
 ZSKILLS_AUDIT_DIR="$_ZSK_PATHS_ROOT/.zskills/audit"
+case "$_ZSK_PATHS_REPORTS_RAW" in
+  /*) ZSKILLS_REPORTS_DIR="$_ZSK_PATHS_REPORTS_RAW" ;;
+  *)  ZSKILLS_REPORTS_DIR="$_ZSK_PATHS_ROOT/$_ZSK_PATHS_REPORTS_RAW" ;;
+esac
 
-unset _ZSK_PATHS_ROOT _ZSK_PATHS_CFG _ZSK_PATHS_PLANS_RAW _ZSK_PATHS_ISSUES_RAW
+unset _ZSK_PATHS_ROOT _ZSK_PATHS_CFG _ZSK_PATHS_PLANS_RAW _ZSK_PATHS_ISSUES_RAW _ZSK_PATHS_REPORTS_RAW

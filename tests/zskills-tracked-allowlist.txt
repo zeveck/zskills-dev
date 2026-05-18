@@ -1,0 +1,6 @@
+# tests/zskills-tracked-allowlist.txt — paths under .zskills/ that may
+# legitimately be force-tracked despite the umbrella .gitignore.
+# Format: one path per line. Lines starting with # are comments.
+# AT MIGRATION TIME (issue #217): this file is empty by design — no
+# exemptions. Future legitimate force-adds (e.g., a zskills-versions.lock
+# schema file) add entries here.

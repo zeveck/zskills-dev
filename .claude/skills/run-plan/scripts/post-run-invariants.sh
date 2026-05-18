@@ -124,7 +124,7 @@ fi
 
 # 5. Plan report exists
 if [ -n "$PLAN_SLUG" ]; then
-  REPORT_PATH="$ZSKILLS_AUDIT_DIR/plan-${PLAN_SLUG}.md"
+  REPORT_PATH="$ZSKILLS_REPORTS_DIR/plan-${PLAN_SLUG}.md"
   if [ ! -f "$REPORT_PATH" ]; then
     echo "INVARIANT-FAIL (#5): plan report missing at $REPORT_PATH — Phase 5 didn't run or wrote elsewhere" >&2
     INVARIANT_FAILED=1
