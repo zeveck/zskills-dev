@@ -210,7 +210,9 @@ mk_result_file() {
 # inline "fake-/land-pr" that writes our pre-staged result-file contents
 # into $RESULT_FILE (we stage them ahead of sourcing).
 #
-# The block reads ZSKILLS_AUDIT_DIR for $ABS_FILE — we set it via env.
+# The block reads ZSKILLS_REPORTS_DIR for $ABS_FILE (post-#217) — we set
+# it via env. ZSKILLS_AUDIT_DIR is also exported for any non-SPRINT_REPORT
+# audit-side reads the block may hit.
 # The block reads PIPELINE_ID, SPRINT_ID, COMMIT_CO_AUTHOR — env too.
 # The block sets RESULT_FILE=$(mktemp). We can't intercept that mktemp,
 # so we patch the literal `RESULT_FILE=$(mktemp)` to `RESULT_FILE="$PREPARED_RESULT_FILE"`.
@@ -273,6 +275,9 @@ setup_case_a() {
 
   export WT_PATH="$wt"
   export ZSKILLS_AUDIT_DIR="$audit"
+  # Post-#217: SPRINT_REPORT.md moved to $ZSKILLS_REPORTS_DIR (legacy default
+  # = audit dir until reports_dir is configured separately in Phase 3).
+  export ZSKILLS_REPORTS_DIR="$audit"
   export CLAUDE_PROJECT_DIR="$REPO_ROOT"
   export PIPELINE_ID="test-pipeline-A-$case_id"
   export SPRINT_ID="sprintA$case_id"
@@ -315,7 +320,7 @@ test_A1_merged_auto_gnu() {
   else
     fail "A1: STATUS=merged + AUTO=true + GNU realpath" "rc=$LAST_RC req=$([ -e "$req" ] && echo Y || echo N) ful=$([ -e "$ful" ] && echo Y || echo N) stderr=$(head -5 "$TMP_ROOT/$LAST_TAG.err" 2>/dev/null)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A2: STATUS=merged, fallback realpath (mask `realpath` to exit 1)
@@ -331,7 +336,7 @@ test_A2_merged_fallback_realpath() {
   else
     fail "A2: STATUS=merged + realpath fallback path" "rc=$LAST_RC req=$([ -e "$req" ] && echo Y || echo N) ful=$([ -e "$ful" ] && echo Y || echo N) stderr=$(head -5 "$TMP_ROOT/$LAST_TAG.err" 2>/dev/null)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A3: STATUS=created (not merged) → requires.* present, fulfilled.* ABSENT
@@ -345,7 +350,7 @@ test_A3_created_no_fulfilled() {
   else
     fail "A3: STATUS=created" "rc=$LAST_RC req=$([ -e "$req" ] && echo Y || echo N) ful=$([ -e "$ful" ] && echo Y || echo N)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A4: STATUS variants that are non-merged → fulfilled.* ABSENT for each.
@@ -363,7 +368,7 @@ test_A4_other_statuses_no_fulfilled() {
       ok=0
       echo "    sub-case STATUS=$st failed (rc=$LAST_RC fulfilled-exists=$([ -e "$ful" ] && echo Y || echo N))" >&2
     fi
-    unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+    unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
   done
   if [ "$ok" -eq 1 ]; then
     pass "A4: 6 non-merged STATUS variants → fulfilled.* never written"
@@ -407,7 +412,7 @@ test_A5_auto_true_emits_flag() {
   else
     fail "A5: AUTO=true → LAND_ARGS contains --auto" "rc=$LAST_RC captured=$(cat "$cap" 2>/dev/null || echo missing) stderr=$(head -5 "$TMP_ROOT/A-5cap.err" 2>/dev/null)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A6: AUTO=false — LAND_ARGS must NOT contain --auto.
@@ -427,7 +432,7 @@ test_A6_auto_false_no_flag() {
   else
     fail "A6: AUTO=false → LAND_ARGS does NOT contain --auto" "captured=$(cat "$cap" 2>/dev/null || echo missing)"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A7: AUTO unset + `set -u` — block must NOT crash, LAND_ARGS no --auto.
@@ -452,7 +457,7 @@ test_A7_auto_unset_no_crash() {
   else
     fail "A7: AUTO unset + set -u → no crash" "rc=$LAST_RC err=$err captured=$(cat "$cap" 2>/dev/null || echo missing)"
   fi
-  unset WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A8: LP_SPRINT parser — well-formed (all allow-list keys present)
@@ -476,7 +481,7 @@ test_A8_unknown_key_warns_but_proceeds() {
   else
     fail "A8: unknown key → WARN to stderr + proceed" "rc=$LAST_RC fulfilled=$([ -e "$ful" ] && echo Y || echo N) stderr=$err"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # Case A9: missing STATUS key → block reaches the *) arm of the case
@@ -492,7 +497,7 @@ test_A9_missing_status_logs_left_open() {
   else
     fail "A9: missing STATUS" "rc=$LAST_RC fulfilled-exists=$([ -e "$ful" ] && echo Y || echo N) stderr=$err"
   fi
-  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
+  unset AUTO WT_PATH ZSKILLS_AUDIT_DIR ZSKILLS_REPORTS_DIR PIPELINE_ID SPRINT_ID COMMIT_CO_AUTHOR PREPARED_RESULT_FILE PREPARED_BODY_FILE || true
 }
 
 # ─────────────────────────────────────────────────────────────────────

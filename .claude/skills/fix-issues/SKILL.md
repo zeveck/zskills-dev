@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+642c20"
+  version: "2026.05.18+c58f0c"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -77,7 +77,7 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   the codebase. Always interactive — presents findings and asks before
   closing. See Sync section for the full flow.
 - **plan** — draft plans for issues previously skipped as "too complex."
-  Scans `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` for skipped items, dispatches `/draft-plan`
+  Scans `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` for skipped items, dispatches `/draft-plan`
   for each. No fixing — just creates plans for `/run-plan` to execute later.
 - **stop** — cancel any existing `/fix-issues` cron and exit. **Takes
   precedence over all other arguments.**
@@ -361,7 +361,7 @@ produces a **verdict:**
 Also scan for additional close candidates from:
 - **Tracker files** — `[x]` items that are still open on GitHub
 - **Sprint reports** — entries in "Already Implemented" or "Already Fixed
-  on Main" sections of `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+  on Main" sections of `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`
 
 For these candidates, dispatch verification agents with the same checklist
 above (read issue body, check code, check tests, produce verdict).
@@ -397,7 +397,7 @@ For each approved issue:
 
 1. **Update tracker files** — mark the issue `[x]` in all relevant trackers.
 
-2. **Update `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — if the issue appears in an "Already
+2. **Update `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`** — if the issue appears in an "Already
    Implemented" section, add a note: `Closed by /fix-issues sync`.
 
 The `gh issue close` calls are deferred to Step 5 sub-step 3, AFTER
@@ -421,7 +421,7 @@ auto-merge completes will close them.
    `$TOPLEVEL/.zskills/audit/` and tracker writes landed in
    `$TOPLEVEL/$ZSKILLS_ISSUES_DIR/`.
 
-   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_REPORTS_DIR (resolved via zskills-paths.sh; issue #217); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
    # Defensive cwd restore; WT_PATH set by preamble at top of sync mode.
    [ -n "${WT_PATH:-}" ] && cd "$WT_PATH" 2>/dev/null || true
@@ -434,7 +434,7 @@ auto-merge completes will close them.
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 
-     ABS_FILE="$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md"
+     ABS_FILE="$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md"
      # Portable realpath (DA-R2-1; R3-6: adapted from warn-config-drift.sh:181-203).
      SPRINT_REL=""
      if SPRINT_REL=$(realpath --relative-to="$TOPLEVEL" "$ABS_FILE" 2>/dev/null) \
@@ -673,15 +673,15 @@ preserved as a user-facing token for backward compatibility). Resolution
 order: bash flag is checked first; literal phrase is a fallback. When
 either fires, all candidate issues are selected without prompting.
 
-1. **Find skipped issues from `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.** Scan the entire
+1. **Find skipped issues from `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`.** Scan the entire
    sprint report for issue numbers under "Skipped" / "Too Complex" /
    "Remaining Open" headings. Use grep to extract candidate numbers
    (handles bare `#NNN`, ranges like `#148-#168`, and `#NNN, #MMM` lists):
 
-   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
+   <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_REPORTS_DIR (resolved via zskills-paths.sh; issue #217); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-   grep -nE '#[0-9]+' "$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md" | grep -iE 'skip|complex|remain'
+   grep -nE '#[0-9]+' "$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md" | grep -iE 'skip|complex|remain'
    ```
 
    Then for each candidate `#N`:
@@ -1487,7 +1487,7 @@ bug (under-routing to in-batch fix-agent).
   just "it's broken." You don't know WHAT to fix.
   - Interactive: flag it and ask the user for clarification
   - Auto: skip it, report as "Skipped: insufficient context" in
-    $ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md
+    $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md
 
 **"Too vague" means you don't know WHAT to do — not that you don't know
 HOW.** If the issue clearly describes the problem but the fix is hard,
@@ -1558,7 +1558,7 @@ If ALL candidates are too vague, too complex, or already attempted:
    on disk. Two branches — ship sync's tracker discoveries if it
    wrote anything, otherwise remove the empty worktree. Either way,
    end with `exit 0` and no stranded `/tmp/zskills-fix-issues-sprint-*`
-   directory. **Do NOT** write to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+   directory. **Do NOT** write to `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`
    in either branch (mirrors the defer-all arm's stderr-only shape from
    #331). The user decides when to stop the cron from cron list +
    recent PR history signals; no nag counter, no marker, no read-back.
@@ -1808,7 +1808,7 @@ Notes:
 
 **Agent timeout: 1 hour.** Note the dispatch time for each agent. If an
 agent hasn't returned after 1 hour, declare it **failed**:
-- Mark its issues as "Timed out" in `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`
+- Mark its issues as "Timed out" in `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`
 - Issues stay open for the next sprint
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
@@ -2095,7 +2095,7 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
 
 ## Phase 5 — Write Sprint Report (BEFORE landing)
 
-**APPEND** a new sprint section to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` BEFORE Phase 6
+**APPEND** a new sprint section to `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` BEFORE Phase 6
 (landing). The report is a prerequisite for landing — if it's not written,
 Phase 6 does not execute.
 
@@ -2116,7 +2116,7 @@ processes all UNFINALIZED sections when the user reviews.
 If the file doesn't exist, create it with a `# Sprint Report` heading.
 
 Past failure: an agent skipped Phase 5 for 8 consecutive sprints to "keep
-the hourly cadence fast." `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md` was stale for 8 sprints,
+the hourly cadence fast." `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` was stale for 8 sprints,
 making `/fix-report` useless. Another failure: the file was overwritten
 each sprint, losing results from earlier sprints that were never reviewed.
 
@@ -2200,7 +2200,7 @@ Without `auto`:
   without it, the PR sits at status `pr-ready` (or `pr-ci-failing` if
   fix-cycle was exhausted) awaiting human review and merge on GitHub.
 - **`LANDING_MODE == cherry-pick`:** Sprint complete. Output:
-  > Sprint complete. Report written to `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`.
+  > Sprint complete. Report written to `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`.
   > Run `/fix-report` to review fixes, land to main, and close issues.
 
   Cherry-picks land via `/fix-report`'s interactive walk-through.
@@ -2251,7 +2251,7 @@ if [ -n "${WT_PATH:-}" ]; then
   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
   # Stage + commit SPRINT_REPORT.md if Phase 5 wrote anything.
-  ABS_FILE="$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md"
+  ABS_FILE="$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md"
   SPRINT_REL=""
   if SPRINT_REL=$(realpath --relative-to="$TOPLEVEL" "$ABS_FILE" 2>/dev/null) \
        && [ -n "$SPRINT_REL" ]; then
@@ -2371,7 +2371,7 @@ failure reporting.
   skip all commits from that worktree (grouped issues depend on each
   other), mark as "Skipped: conflict" in the report, and continue
   landing from other worktrees. The skipped issues self-heal next sprint.
-- **Always write `$ZSKILLS_AUDIT_DIR/SPRINT_REPORT.md`** — it's the handoff to `/fix-report`.
+- **Always write `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md`** — it's the handoff to `/fix-report`.
 - **Never close GH issues, update trackers, or remove worktrees** — that's
   `/fix-report`'s job.
 - **One issue per commit** — clean git history in worktrees.
