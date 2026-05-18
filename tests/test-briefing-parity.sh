@@ -76,6 +76,62 @@ for cmd in "${smoke_cmds[@]}"; do
   fi
 done
 
+# ---------------------------------------------------------------------
+# Port-failure regression guard (restored from pre-#312 test history;
+# see issue #338). Original section was trimmed in 1690c93 alongside the
+# cjs retirement, but the Python invariant remains worth asserting.
+#
+# Invariant: when port.sh is NOT installed at
+# .claude/skills/update-zskills/scripts/port.sh, briefing.py must
+# (a) exit 0 and (b) emit zero `localhost:` URLs. The pre-Phase-4
+# fallback (`port = '8080'`) would emit `localhost:8080/...`
+# unconditionally; this guards against that regression returning.
+# ---------------------------------------------------------------------
+echo ""
+echo "=== Port-failure regression guard (no port.sh installed) ==="
+
+FIXTURE_DIR="/tmp/zskills-briefing-fixture-noport-$$"
+rm -rf "$FIXTURE_DIR"
+mkdir -p "$FIXTURE_DIR/skills/briefing/scripts"
+# .git marker so find_repo_root anchors at FIXTURE_DIR (and therefore
+# the absent .claude/skills/update-zskills/scripts/port.sh is what gets
+# resolved — NOT the real one from the surrounding repo).
+mkdir -p "$FIXTURE_DIR/.git"
+# Copy briefing.py into the fixture so __file__ / _SCRIPT_DIR resolve
+# to fixture paths. (find_repo_root walks up from the script's
+# directory, not cwd.) NO port.sh is installed in the fixture's
+# .claude/skills/update-zskills/scripts/ tree — that absence is the
+# whole point of the test.
+cp "$REPO_ROOT/skills/briefing/scripts/briefing.py" \
+   "$FIXTURE_DIR/skills/briefing/scripts/briefing.py"
+
+# Ensure cleanup even on early exit / failures below.
+trap 'rm -rf "$TEST_TMPDIR" "$FIXTURE_DIR"' EXIT
+
+noport_py_out="$FIXTURE_DIR/.py-summary.txt"
+py_exit=0
+(cd "$FIXTURE_DIR" && python3 \
+  "$FIXTURE_DIR/skills/briefing/scripts/briefing.py" summary --since=24h) \
+  >"$noport_py_out" 2>"$FIXTURE_DIR/.py-err.txt" || py_exit=$?
+
+# AC 1: briefing.py exits 0 with missing port.sh.
+if [[ "$py_exit" -eq 0 ]]; then
+  pass "port-failure: briefing.py exits 0 on missing port.sh"
+else
+  fail "port-failure: briefing.py exit=$py_exit on missing port.sh"
+fi
+
+# AC 2: no localhost: URL in stdout.
+# `grep -c` returns exit 1 when there are zero matches; the count is
+# still printed (as "0"), but we tolerate the empty-output case too.
+py_localhost=$(grep -c 'localhost:' "$noport_py_out" 2>/dev/null)
+[[ -z "$py_localhost" ]] && py_localhost=0
+if [[ "$py_localhost" -eq 0 ]]; then
+  pass "port-failure: briefing.py emits no localhost: URL"
+else
+  fail "port-failure: briefing.py emitted $py_localhost localhost: URL(s)"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed, %d skipped (of %d)\n' \
