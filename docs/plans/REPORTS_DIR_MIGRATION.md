@@ -111,7 +111,7 @@ The end state: `.zskills/` is a uniform, fully-gitignored umbrella; the 44 work-
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Config field + helper + migrator extension | ⬚ | | Schema + zskills-paths.sh + migrate-paths.sh 3-tuple + path-tests cases 10-12 |
+| 1 — Config field + helper + migrator extension | ✅ | `e86458b` | Schema + zskills-paths.sh + migrate-paths.sh 3-tuple + path-tests cases 10-12; +20 tests; latent single-line `{...}` bug surfaced + fixed (case h) |
 | 2 — Writer + reader path swap across affected skills | ⬚ | | run-plan/verify-changes/fix-issues writers; briefing/fix-report/dashboard readers; per-skill version bumps + mirrors |
 | 3 — Migration commit + conformance + final version bumps | ⬚ | | 44 `git mv` + 13 `git rm --cached` + `tests/test-skill-conformance.sh` new assertion + any residual version-bumps |
 
