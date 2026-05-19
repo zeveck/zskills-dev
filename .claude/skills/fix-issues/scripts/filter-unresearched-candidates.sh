@@ -9,11 +9,11 @@
 # This script source-filters candidates rather than gating the sprint.
 # Candidates that have an "**Action now:**" line within their
 # `### #<N> ` section in any tracker file under $ZSKILLS_ISSUES_DIR are
-# RESEARCHED; the rest are MISSING. Output is two `key=val val val`
-# lines on stdout suitable for `eval` or direct read:
+# RESEARCHED; the rest are MISSING. Output is two `key="val val val"`
+# lines on stdout (RHS quoted so multi-token values survive `eval`):
 #
-#   RESEARCHED=11 12 13
-#   MISSING=14 15
+#   RESEARCHED="11 12 13"
+#   MISSING="14 15"
 #
 # Signal choice: `**Action now:**` (the Phase-2-consumed tier field), NOT
 # `**Verdict:**`. Reasons:
@@ -75,5 +75,5 @@ for N in "$@"; do
   fi
 done
 
-printf 'RESEARCHED=%s\n' "${RESEARCHED[*]}"
-printf 'MISSING=%s\n' "${MISSING[*]}"
+printf 'RESEARCHED="%s"\n' "${RESEARCHED[*]}"
+printf 'MISSING="%s"\n' "${MISSING[*]}"
