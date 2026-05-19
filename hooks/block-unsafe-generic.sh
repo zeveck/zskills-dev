@@ -425,8 +425,14 @@ if is_git_subcommand_in_chain "$COMMAND" push; then
     PUSH_TARGET=$(git branch --show-current 2>/dev/null)
   fi
 
-  # Strip remote-side of refspec if present (e.g., local:remote)
-  PUSH_TARGET="${PUSH_TARGET%%:*}"
+  # Strip local-side of refspec if present (e.g., local:remote). The
+  # destination/remote-side after the colon is what determines whether the
+  # push targets main/master. Past bug (#392): ${X%%:*} kept the LEFT side
+  # (local), so `git push origin feat:main` resolved PUSH_TARGET=feat and
+  # the rule below let the push through, force-shipping local feat to
+  # remote main. ${X##*:} keeps the RIGHT side (remote). For non-refspec
+  # values (no colon), both expansions return the input unchanged.
+  PUSH_TARGET="${PUSH_TARGET##*:}"
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"

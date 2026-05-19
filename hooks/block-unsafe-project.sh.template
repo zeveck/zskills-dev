@@ -828,8 +828,13 @@ if is_git_subcommand_in_chain "$COMMAND" push && is_main_protected; then
   if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(main|master)([[:space:]]|$|\") ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
-  # (b) HEAD:main or HEAD:master refspec:
-  if [[ "$PUSH_ARGS" =~ HEAD:(main|master)([[:space:]]|$|\") ]]; then
+  # (b) Any <localref>:main or <localref>:master refspec — covers HEAD:main,
+  # feat:main, abc123:main, HEAD~3:main, and the deletion form :main.
+  # Past bug (#392): the old regex required `HEAD:` literal prefix, so
+  # `git push origin feat:main` evaded this rule and rule (a) (which
+  # requires `main` immediately after `origin`). Match any token ending
+  # in `:main` or `:master` (including the empty-local deletion form).
+  if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:(main|master)([[:space:]]|$|\") ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (c) Naked push (no origin arg) while on main — based on PUSH_ARGS,
