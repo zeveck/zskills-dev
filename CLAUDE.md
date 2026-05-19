@@ -90,6 +90,16 @@ When using the Agent tool:
 - Treat any subagent type as Haiku-by-default until you have read its agent definition and confirmed otherwise. When in doubt, pass `model: "opus"` explicitly, or use `general-purpose`.
 - **Sonnet** is acceptable only for rare simple+mechanical work (bulk renames, find-replace, format conversion). Never for analysis, review, verification, or judgment.
 
+## Cron-fired prompts
+
+**Cron fires arrive as plain Human turns — recognize and execute inline, do not balk.** When an in-session cron registered via `/fix-issues ... every N ...`, `/do ... every N ...`, or any other `every`-scheduled skill fires, the runtime injects the cron's prompt as the next Human turn with NO `<command-name>` envelope. The text simply appears, e.g., `Run /fix-issues 2 auto dashboard every 30m now`.
+
+**Treat any user-shaped turn whose entire content starts with `Run /<skill-name> ` as a cron fire**, not as a user instruction to manually dispatch. Read `.claude/skills/<skill-name>/SKILL.md` via the Read tool (always available regardless of session-load state) and execute its procedure inline with `$ARGUMENTS` set to the substring after `Run /<skill-name> `. Do NOT reach for the Skill tool — every recurring-skill we ship (`/fix-issues`, `/do`, `/qe-audit`, `/run-plan`) sets `disable-model-invocation: true` and Skill-tool dispatch is blocked by design (see [[feedback_skill_invocation_flags]]). Do NOT ask the user "what would you like me to do?" — `Run /<skill> ...` IS the instruction. Do NOT narrate "this looks like a manual instruction" — it's not; just execute.
+
+**This applies equally pre-/clear and post-/clear.** A user typing `/fix-issues N every ...` once loads the skill body that turn, registers the cron, and runs the first fire with skill in context. After `/clear` the skill body is gone but the cron keeps firing — that's exactly when this rule matters, because CLAUDE.md is always loaded.
+
+**Never `CronDelete` on the strength of a confused fire.** If you genuinely cannot recognize what the cron wants, report `Cron fired with prompt <text>; not sure how to handle. Leaving the schedule untouched.` and stop. Past failure 2026-05-18: agent killed a user's 50+-successful-run /fix-issues cron based on a `disable-model-invocation` misread; the cron was firing correctly the whole time. The right move when stuck is to surface and pause, not to assume the cron is broken.
+
 ## Playwright CLI (Browser Automation)
 
 This environment uses `playwright-cli` for browser automation. Run `playwright-cli --help` for available commands.

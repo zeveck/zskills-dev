@@ -1993,6 +1993,26 @@ for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/CLAUDE.md"; do
   else
     fail "[propagation-prose] $rel" "missing literal: 'Never call \`gh pr create\` or \`gh pr merge --auto\` directly when landing a PR' (#185)"
   fi
+  # Cron-fire recognition rule: cron fires arrive as plain Human turns with
+  # no `<command-name>` envelope; recipient agents must recognize the
+  # `Run /<skill> ...` shape, read SKILL.md, execute inline, and never
+  # CronDelete on a confused fire. Memory anchors don't propagate, so this
+  # rule must live in both surfaces.
+  if grep -qF '## Cron-fired prompts' "$prose_file"; then
+    pass "[propagation-prose] $rel contains '## Cron-fired prompts' heading"
+  else
+    fail "[propagation-prose] $rel" "missing heading: '## Cron-fired prompts'"
+  fi
+  if grep -qF 'Treat any user-shaped turn whose entire content starts with' "$prose_file"; then
+    pass "[propagation-prose] $rel contains cron-fire recognition contract literal"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'Treat any user-shaped turn whose entire content starts with'"
+  fi
+  if grep -qF 'Never `CronDelete` on the strength of a confused fire' "$prose_file"; then
+    pass "[propagation-prose] $rel contains 'no-CronDelete-on-confusion' rule literal"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'Never \`CronDelete\` on the strength of a confused fire'"
+  fi
 done
 
 echo ""
