@@ -977,3 +977,31 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - Dashboard Ready queue [426, 427, 428, 429, 420] at sprint start. Filter (post-#431) returned all 5. Top 2 picked by drag order.
 - #428, #429, #420 remain in Ready for next sprint.
 - Both fixed issues had `**Action now:** /do pr` in tracker blurbs; in-batch implementer flow used here (functionally equivalent: worktree + implementer + verifier + /land-pr).
+
+## Sprint — 2026-05-19 15:48 UTC [UNFINALIZED]
+
+**Mode:** auto | dashboard | **Sprint ID:** sprint-20260519-154846-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #428 | SKILL.md Step 0.5 unscoped JSON extraction prose | wt-428 | 98e14b4 | +24 conformance | PASS (3542/3542) | N/A |
+| #429 | Mode files inline `git rebase` lacks HEAD precondition | wt-429 | f55ea88 (rebased from d830c3a) | +3 conformance | PASS (3545/3545 post-rebase) | N/A |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex (need /run-plan)
+(none)
+
+### Skipped — Cherry-Pick Conflict
+(none — PR mode)
+
+### Not Fixed
+(none)
+
+### Triage notes
+- Ready=[426, 427, 428, 429, 420] at sprint start; intersected with open issues → actionable=[428, 429, 420]. Top 2 picked.
+- #429 hit a rebase conflict at `tests/test-skill-conformance.sh` (line 2286) — both branches appended new sections at the same anchor. Resolved by keeping both sections separated by a blank line; trivial conflict (independent text appends). #429's commit hash changed from d830c3a → f55ea88 after rebase.
+- #420 remains in Ready for the next sprint.
+- Both fixed issues had `**Action now:** /do pr` in tracker blurbs.
