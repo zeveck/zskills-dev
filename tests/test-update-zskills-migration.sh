@@ -477,6 +477,38 @@ test_case_6c_commit_cohabitation() {
   fi
 
   local hash_path="skills/update-zskills/references/tier1-shipped-hashes.txt"
+
+  # Issue #380 fix: case 6c walks `git log -1 --pretty=format:%H` to find the
+  # commit that last touched each Tier-1 script and the hash file. Pre-commit,
+  # an agent may have modified a Tier-1 script or the hash file in the working
+  # tree, but `git log` still reflects the OLD commits — producing a silent
+  # false-PASS. Pre-flight: ERROR if the hash file or any Tier-1 script has
+  # uncommitted changes, forcing commit-then-test discipline.
+  local dirty_paths=()
+  if ! git -C "$REPO_ROOT" diff --quiet HEAD -- "$hash_path" 2>/dev/null; then
+    dirty_paths+=("$hash_path")
+  fi
+  while IFS=$'\t' read -r name owner; do
+    [ -z "$name" ] && continue
+    for candidate in "scripts/$name" "skills/$owner/scripts/$name" "block-diagram/$owner/scripts/$name"; do
+      if [ -f "$REPO_ROOT/$candidate" ]; then
+        if ! git -C "$REPO_ROOT" diff --quiet HEAD -- "$candidate" 2>/dev/null; then
+          dirty_paths+=("$candidate")
+        fi
+      fi
+    done
+  done < <(awk -F'|' '$3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+    gsub(/[[:space:]`]/, "", $2);
+    owner=$4;
+    sub(/^[[:space:]`]+/, "", owner);
+    sub(/[[:space:]`(].*$/, "", owner);
+    print $2 "\t" owner
+  }' "$REPO_ROOT/skills/update-zskills/references/script-ownership.md")
+  if [ "${#dirty_paths[@]}" -gt 0 ]; then
+    fail "case 6c: uncommitted changes" "Tier-1 script(s) or hash file have uncommitted changes (working tree differs from HEAD); this test only checks committed state. Commit first, then re-run. Dirty: ${dirty_paths[*]}"
+    return
+  fi
+
   local last_hash_commit
   last_hash_commit=$(git -C "$REPO_ROOT" log -1 --pretty=format:%H -- "$hash_path")
   if [ -z "$last_hash_commit" ]; then

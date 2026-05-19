@@ -146,6 +146,39 @@ fi
 # case 6c (the only existing check) silently skipped on shallow clones
 # in CI, and authors had no easy way to know they needed to update the
 # hash file. This invariant is unconditional.
+#
+# Issue #380 fix: This block reads `git ls-tree HEAD`, which reflects the
+# committed blob hash, NOT the working-tree content. Pre-commit, an agent
+# may have modified a Tier-1 script in the working tree but the HEAD blob
+# is still the OLD (registered) hash, producing a silent false-PASS. To
+# force loud failure, we first check each Tier-1 script for uncommitted
+# changes via `git diff --quiet HEAD -- <path>` and ERROR if any are dirty.
+TIER1_DIRTY_OUT=$(
+  awk -F'|' 'NR>1 && $3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+    gsub(/[[:space:]`]/, "", $2);
+    owner=$4;
+    sub(/^[[:space:]`]+/, "", owner);
+    sub(/[[:space:]`(].*$/, "", owner);
+    if (length($2) > 0) print $2 "\t" owner
+  }' skills/update-zskills/references/script-ownership.md \
+  | while IFS=$'\t' read -r name owner; do
+      src="skills/$owner/scripts/$name"
+      if [ ! -f "$src" ]; then
+        src="block-diagram/$owner/scripts/$name"
+        [ -f "$src" ] || continue
+      fi
+      if ! git diff --quiet HEAD -- "$src" 2>/dev/null; then
+        echo "DIRTY: $src has uncommitted changes (working tree differs from HEAD); this test only checks committed state. Commit first, then re-run."
+      fi
+    done
+)
+if [ -z "$TIER1_DIRTY_OUT" ]; then
+  check 'Tier-1 drift: pre-flight working-tree-vs-HEAD clean (committed-state check is meaningful)' 'true'
+else
+  echo "$TIER1_DIRTY_OUT" >&2
+  check 'Tier-1 drift: pre-flight working-tree-vs-HEAD clean (committed-state check is meaningful)' 'false'
+fi
+
 TIER1_DRIFT_OUT=$(
   awk -F'|' 'NR>1 && $3 ~ /^[[:space:]]*1[[:space:]]*$/ {
     gsub(/[[:space:]`]/, "", $2);
