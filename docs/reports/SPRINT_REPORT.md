@@ -1037,3 +1037,20 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - N=2 requested; partial-fill expected once #432 filtered. Sprint dispatched 1 (the researched candidate).
 - #420 was XS complexity (`/do pr` per blurb). Implementer added a more thorough test file (11 assertions covering the full RC mapping table, not just RC 14) — appropriate over-coverage; absorbed.
 - Pass count ratcheted: 3545 → 3556 (+11 from #441).
+
+## Sprint — 2026-05-19 17:26 UTC [UNFINALIZED]
+
+**Mode:** auto | dashboard | **Sprint ID:** sprint-20260519-172642-sprint
+
+### Fixed
+(none — research-only sprint)
+
+### Skipped — Author decision needed
+| # | Title | Why |
+|---|-------|-----|
+| #432 | zskills install shape — own repo doesn't follow consumer pattern | Tracker blurb added this sprint (commit `05f7a21`). Independent sizing call: **`Action now: none — author decision needed`**. The 3 options in the body (self-install / document / render-from-template) are mutually divergent designs, not refinements of one fix. Choice is durability-vs-effort and depends on whether zskills should self-install. Suggested follow-up regardless of option choice: a drift-detection conformance test asserting the 8 shared sections in CLAUDE.md vs CLAUDE_TEMPLATE.md match — that's the low-risk parallel track. |
+
+### Triage notes
+- Ready ∩ open = [432] (only); N=2 requested, partial-fill to 0 fix-dispatches.
+- Research agent invested ~95s reading the actual files (CLAUDE.md, CLAUDE_TEMPLATE.md, update-zskills Step B) and verifying claims (file existence, line counts, section overlap) before writing the blurb. Evidence-anchored independent sizing per `/qe-audit` discipline.
+- Sync ship: this sprint produces a single-file research blurb commit. The blurb's the artifact.
