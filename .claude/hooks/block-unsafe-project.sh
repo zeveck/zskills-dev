@@ -331,6 +331,83 @@ extract_cd_target() {
   # same spirit as the existing `\"` decoding. `\n` is the only escape
   # we currently see in practice from Claude Code's wire format.
   cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
+  # Wrapper unwrap (#427): if the command's first non-env-prefix token is
+  # a shell wrapper (bash/sh/dash/ash/ksh/zsh -c '<inner>') or `eval
+  # '<inner>'`, peel one layer and re-inspect the inner string. Mirrors
+  # is_git_subcommand_in_wrappers's recursion: PR #417 made the classify
+  # check wrapper-aware but left this resolver one-level, so wrapped
+  # commits like `bash -c 'cd /tmp/wt && git commit'` fired the hook on
+  # the OUTER command (starts with `bash`, not `cd`) → empty extraction
+  # → fallback to $CLAUDE_PROJECT_DIR (main repo) → stage-check and
+  # tracking-marker enforcement silently passed against MAIN's empty
+  # index. Bounded depth (3) matches the wrapper-helper convention.
+  local depth=3
+  while [ "$depth" -gt 0 ]; do
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$cmd"
+    local i=0 n=${#TOKENS[@]}
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    local first="${TOKENS[$i]:-}"
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+    local inner=""
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+        fi
+        ;;
+      eval)
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        ;;
+    esac
+    if [ -n "$inner" ]; then
+      cmd="$inner"
+      ((depth--))
+      continue
+    fi
+    break
+  done
   if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
     local target="${BASH_REMATCH[1]}"
     # Remove surrounding quotes if present
