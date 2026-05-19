@@ -120,8 +120,8 @@ test_mixed_split() {
   local out
   out=$(run_filter "$dir" 100 101 102)
   local researched missing
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
-  missing=$(echo "$out" | grep '^MISSING=' | sed 's/^MISSING=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
+  missing=$(echo "$out" | grep '^MISSING=' | sed -e 's/^MISSING=//' -e 's/^"//' -e 's/"$//')
   if [ "$researched" = "100 102" ] && [ "$missing" = "101" ]; then
     pass "mixed candidates split: 100,102 researched, 101 missing"
   else
@@ -135,7 +135,7 @@ test_stub_verdict_is_missing() {
   build_fixture "$dir"
   local out missing
   out=$(run_filter "$dir" 101)
-  missing=$(echo "$out" | grep '^MISSING=' | sed 's/^MISSING=//')
+  missing=$(echo "$out" | grep '^MISSING=' | sed -e 's/^MISSING=//' -e 's/^"//' -e 's/"$//')
   if [ "$missing" = "101" ]; then
     pass "row with NOT YET RESEARCHED verdict + no Action now is MISSING"
   else
@@ -149,7 +149,7 @@ test_likely_fixed_with_action_is_researched() {
   build_fixture "$dir"
   local out researched
   out=$(run_filter "$dir" 102)
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
   if [ "$researched" = "102" ]; then
     pass "LIKELY FIXED + Action now is RESEARCHED (Verdict is not the signal)"
   else
@@ -165,8 +165,8 @@ test_hash_disambiguation() {
   # is for issue #38. Naive `grep "^### #38"` would match.
   local out researched missing
   out=$(run_filter "$dir" 380)
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
-  missing=$(echo "$out" | grep '^MISSING=' | sed 's/^MISSING=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
+  missing=$(echo "$out" | grep '^MISSING=' | sed -e 's/^MISSING=//' -e 's/^"//' -e 's/"$//')
   if [ -z "$researched" ] && [ "$missing" = "380" ]; then
     pass "hash disambiguation: candidate 380 does not match '### #38 ' row"
   else
@@ -180,7 +180,7 @@ test_issue_38_itself_researched() {
   build_fixture "$dir"
   local out researched
   out=$(run_filter "$dir" 38)
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
   if [ "$researched" = "38" ]; then
     pass "issue 38 itself matches its own row (positive control)"
   else
@@ -194,8 +194,8 @@ test_empty_candidates() {
   build_fixture "$dir"
   local out researched missing
   out=$(run_filter "$dir")
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
-  missing=$(echo "$out" | grep '^MISSING=' | sed 's/^MISSING=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
+  missing=$(echo "$out" | grep '^MISSING=' | sed -e 's/^MISSING=//' -e 's/^"//' -e 's/"$//')
   if [ -z "$researched" ] && [ -z "$missing" ]; then
     pass "empty candidate list -> empty RESEARCHED + empty MISSING"
   else
@@ -221,12 +221,61 @@ test_empty_tracker_dir() {
   # No *.md files at all.
   local out researched missing
   out=$(run_filter "$dir" 100 200)
-  researched=$(echo "$out" | grep '^RESEARCHED=' | sed 's/^RESEARCHED=//')
-  missing=$(echo "$out" | grep '^MISSING=' | sed 's/^MISSING=//')
+  researched=$(echo "$out" | grep '^RESEARCHED=' | sed -e 's/^RESEARCHED=//' -e 's/^"//' -e 's/"$//')
+  missing=$(echo "$out" | grep '^MISSING=' | sed -e 's/^MISSING=//' -e 's/^"//' -e 's/"$//')
   if [ -z "$researched" ] && [ "$missing" = "100 200" ]; then
     pass "tracker dir with no *.md -> all candidates MISSING"
   else
     fail "empty tracker dir" "got RESEARCHED=[$researched] MISSING=[$missing]"
+  fi
+}
+
+# --- 4d. Multi-candidate eval round-trip (regression: PR #415 unquoted RHS)
+# The script's documented consumer pattern is:
+#   eval "$(... filter-unresearched-candidates.sh "${CANDIDATE_ISSUES[@]}")"
+# Before this fix the script emitted `RESEARCHED=A B C` unquoted; eval
+# parsed that as an env-prefixed simple command (RESEARCHED=A is the
+# assignment, `B C` is the command), printed `B: command not found`,
+# and left RESEARCHED/MISSING empty in the caller. The fix quotes the
+# printf RHS so eval sees one assignment. Single-candidate (N=1)
+# always worked because there was no embedded space — assert that
+# boundary stays correct, AND that the N>=2 case now round-trips.
+test_eval_roundtrip_multi_candidate() {
+  local dir="$TMP_ROOT/eval"
+  build_fixture "$dir"
+  local RESEARCHED="" MISSING=""
+  eval "$(ZSKILLS_ISSUES_DIR="$dir" bash "$FILTER" 100 102 38)"
+  local -a RESEARCHED_ARR=() MISSING_ARR=()
+  read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+  read -r -a MISSING_ARR    <<<"${MISSING:-}"
+  if [ "${#RESEARCHED_ARR[@]}" -eq 3 ] \
+     && [ "${RESEARCHED_ARR[0]}" = "100" ] \
+     && [ "${RESEARCHED_ARR[1]}" = "102" ] \
+     && [ "${RESEARCHED_ARR[2]}" = "38" ] \
+     && [ "${#MISSING_ARR[@]}" -eq 0 ]; then
+    pass "multi-candidate eval round-trip: 3 researched into array, 0 missing (PR #415 regression boundary)"
+  else
+    fail "multi-candidate eval round-trip" \
+         "RESEARCHED_ARR=(${RESEARCHED_ARR[*]}) count=${#RESEARCHED_ARR[@]}; MISSING_ARR=(${MISSING_ARR[*]}) count=${#MISSING_ARR[@]}"
+  fi
+}
+
+# --- 4e. Single-candidate eval round-trip (regression boundary: N=1) ----
+# N=1 has no embedded space and ALWAYS worked, even with the buggy
+# unquoted printf. Pin the boundary so a future "simplification" that
+# drops the quoting doesn't silently regress only multi-candidate.
+test_eval_roundtrip_single_candidate() {
+  local dir="$TMP_ROOT/eval1"
+  build_fixture "$dir"
+  local RESEARCHED="" MISSING=""
+  eval "$(ZSKILLS_ISSUES_DIR="$dir" bash "$FILTER" 100)"
+  local -a RESEARCHED_ARR=()
+  read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+  if [ "${#RESEARCHED_ARR[@]}" -eq 1 ] && [ "${RESEARCHED_ARR[0]}" = "100" ]; then
+    pass "single-candidate eval round-trip: 1 researched into array (N=1 boundary)"
+  else
+    fail "single-candidate eval round-trip" \
+         "RESEARCHED_ARR=(${RESEARCHED_ARR[*]}) count=${#RESEARCHED_ARR[@]}"
   fi
 }
 
@@ -317,6 +366,8 @@ test_issue_38_itself_researched
 test_empty_candidates
 test_usage_error_no_env
 test_empty_tracker_dir
+test_eval_roundtrip_multi_candidate
+test_eval_roundtrip_single_candidate
 test_skill_dashboard_invokes_filter
 test_skill_dashboard_rebuild_candidates
 test_skill_auto_dispatch_prose
