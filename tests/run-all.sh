@@ -121,6 +121,7 @@ run_suite "test_zskills_dashboard_disconnect_debounce.sh" "tests/test_zskills_da
 run_suite "test-pid-file-self-heal.sh" "tests/test-pid-file-self-heal.sh"
 run_suite "test-migrate-flat-tracking-markers.sh" "tests/test-migrate-flat-tracking-markers.sh"
 run_suite "test_plans_rebuild_uses_collect.sh" "tests/test_plans_rebuild_uses_collect.sh"
+run_suite "test-post-run-invariants-ls-remote.sh" "tests/test-post-run-invariants-ls-remote.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

@@ -115,11 +115,29 @@ if [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "main" ] && [ "$BRANCH_NAME" != 
 fi
 
 # 4. Remote feature branch gone (PR mode landed only)
+# Distinguish three ls-remote outcomes (prior version conflated them):
+#   exit 0   → branch exists on origin → INVARIANT FAIL (should have been deleted)
+#   exit 2   → branch absent on origin (with --exit-code) → invariant satisfied
+#   exit 128 → origin unreachable / auth / config error → FAIL LOUDLY
+# Prior behavior treated 2 and 128 identically as "pass," meaning a broken
+# remote silently satisfied invariant #4. Mirrors land-phase.sh's pattern.
 if [ -n "$BRANCH_NAME" ] && [ "$LANDED_STATUS" = "landed" ]; then
-  if git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
-    echo "INVARIANT-FAIL (#4): remote branch origin/$BRANCH_NAME still exists after landed" >&2
-    INVARIANT_FAILED=1
-  fi
+  LS_REMOTE_ERR=$(git -C "$MAIN_ROOT" ls-remote --exit-code --heads origin "$BRANCH_NAME" 2>&1 >/dev/null)
+  LS_RC=$?
+  case "$LS_RC" in
+    0)
+      echo "INVARIANT-FAIL (#4): remote branch origin/$BRANCH_NAME still exists after landed" >&2
+      INVARIANT_FAILED=1
+      ;;
+    2)
+      : # absent — invariant satisfied
+      ;;
+    *)
+      echo "INVARIANT-FAIL (#4): ls-remote for origin/$BRANCH_NAME failed with exit $LS_RC — cannot verify deletion (origin unreachable, misconfigured, or auth failure)" >&2
+      [ -n "$LS_REMOTE_ERR" ] && echo "  git stderr: $LS_REMOTE_ERR" >&2
+      INVARIANT_FAILED=1
+      ;;
+  esac
 fi
 
 # 5. Plan report exists
@@ -177,8 +195,15 @@ fi
 # Users may have legitimate unpushed work on local main; we don't reject,
 # but we surface it clearly so squash-merge divergence doesn't accumulate
 # invisibly.
-if ! git -C "$MAIN_ROOT" fetch origin main 2>/dev/null; then
-  echo "INVARIANT-WARN (#7): 'git fetch origin main' failed — cannot verify local main alignment" >&2
+# Capture stderr instead of swallowing it with 2>/dev/null — when fetch
+# fails (origin unreachable, auth, config), the agent reading the warn
+# needs the underlying git error to diagnose. Same antipattern as
+# Invariant #4 above: blind suppression loses diagnostic signal.
+FETCH_ERR=$(git -C "$MAIN_ROOT" fetch origin main 2>&1 >/dev/null)
+FETCH_RC=$?
+if [ "$FETCH_RC" -ne 0 ]; then
+  echo "INVARIANT-WARN (#7): 'git fetch origin main' failed with exit $FETCH_RC — cannot verify local main alignment" >&2
+  [ -n "$FETCH_ERR" ] && echo "  git stderr: $FETCH_ERR" >&2
 elif ! git -C "$MAIN_ROOT" merge-base --is-ancestor main origin/main 2>/dev/null; then
   TREE_DIFF=$(git -C "$MAIN_ROOT" diff origin/main main 2>/dev/null | wc -l)
   if [ "$TREE_DIFF" -eq 0 ]; then
