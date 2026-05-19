@@ -43,6 +43,16 @@ for issue in "${FIXED_ISSUES[@]}"; do
 
   # --- Rebase the worktree branch onto latest origin/main ---
   cd "$WORKTREE_PATH"
+  # HEAD precondition (symmetric to pr-rebase.sh:82-88; Issue #429).
+  # If CWD drifted (forgot a `cd`, wrong worktree active), `git rebase
+  # origin/main` would silently retarget the wrong branch and exit 0 —
+  # reporting success while $BRANCH_NAME is untouched. Same defense
+  # that #397 / pr-rebase.sh installs for the callable surface.
+  ACTUAL_HEAD=$(git rev-parse --abbrev-ref HEAD)
+  if [ "$ACTUAL_HEAD" != "$BRANCH_NAME" ]; then
+    echo "ERROR: fix-issues/direct: CWD is on '$ACTUAL_HEAD', expected '$BRANCH_NAME' — refusing to rebase the wrong branch" >&2
+    exit 14
+  fi
   git fetch origin main
   PRE_REBASE=$(git rev-parse HEAD)
   if ! git rebase origin/main; then
