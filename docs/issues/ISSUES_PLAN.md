@@ -2,7 +2,7 @@
 title: Issues — General Tracker
 status: active
 created: 2026-05-15
-last_sync: 2026-05-18
+last_sync: 2026-05-19
 ---
 
 # Issues — General Tracker
@@ -329,5 +329,17 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Fix outline.** Move enforcement to Phase 2 entry and filter at source. After `CANDIDATE_ISSUES` is built (dashboard branch ~line 1420; analogous block at end of "Default rubric"), check each candidate for a `**Action now:**` line within its `### #<N>` section in any `$ZSKILLS_ISSUES_DIR/*.md`. RESEARCHED ones continue; MISSING ones either trigger parallel `general-purpose` research-agent dispatches (auto mode, up to 3 concurrent, block until each commits a tracker row, re-filter) or abort the sprint with a diagnostic pointing at `/fix-issues sync` (interactive mode). Signal is `**Action now:**` (the Phase-2-consumed tier field), NOT `**Verdict:**` (legit `LIKELY FIXED` / `UNCLEAR` / `NOT YET RESEARCHED` values would no-op the gate). Extract filter as `skills/fix-issues/scripts/filter-unresearched-candidates.sh` so tests can call it directly.
 
 **Complexity:** S. **Action now:** /do pr — one filter script + two SKILL.md inserts + tests.
+
+---
+
+### #420 — /land-pr Step 3 parser doesn't map pr-rebase.sh exit 14 (wrong-current-branch) → STATUS empty
+
+**Labels:** (none) | **Verdict:** NOT FIXED — `skills/land-pr/SKILL.md` Step 3 parser block maps only RC 10 and 11; RC 14 (added by #397/#419) falls through to `STATUS=""` empty.
+
+**Problem.** PR #419 (closing #397) added `pr-rebase.sh` exit code 14 for `REASON=wrong-current-branch` (HEAD != $BRANCH assertion). The script-level guard correctly prevents the wrong-branch rebase. However `skills/land-pr/SKILL.md` Step 3 (after `bash pr-rebase.sh ...`) parses REBASE_RC with `if [ "$REBASE_RC" -eq 10 ]; then STATUS="rebase-conflict"; elif [ "$REBASE_RC" -eq 11 ]; then STATUS="rebase-failed"; fi` — RC 14 falls through. Downstream effect: `.landed` marker has no `status: rebase-failed` written for the wrong-branch case; orchestrator's result-file `STATUS` is empty leaving callers ambiguous. The push at Step 4 uses explicit `git push -u origin "$BRANCH"` so the WRONG BRANCH is still NOT pushed — this is a classification gap, not a safety gap.
+
+**Fix outline.** Extend the Step 3 parser in `skills/land-pr/SKILL.md` with `elif [ "$REBASE_RC" -eq 14 ]; then STATUS="rebase-failed"; fi`. REASON is already captured to `wrong-current-branch` via pr-rebase.sh stdout. Mirror to `.claude/skills/land-pr/SKILL.md`. Bump `metadata.version`. Add a unit test against the parser logic.
+
+**Complexity:** XS. **Action now:** /do pr — 3-line addition to one parser block plus mirror + version bump + 1 unit test. Sized down from the verifier's `/do pr` recommendation since the change is purely additive.
 
 ---
