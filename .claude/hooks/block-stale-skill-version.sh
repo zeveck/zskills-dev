@@ -24,16 +24,16 @@
 #      script (pre-/update-zskills install) must not have every git commit
 #      bricked. CI's test-skill-conformance.sh is the backstop.
 #
-# Known carve-outs (documented in references/skill-version-pretooluse-hook.md
-# §D5 and Phase 2 D&C):
-#   - `bash -c '<git commit ...>'` / `sh -c '...'` / `eval '...'` are NOT
-#     matched. The tokenize-then-walk requires the FIRST non-env-prefix
-#     token of every shell segment to be literal `git`; we deliberately do
-#     not recurse into the argument string of bash -c / sh -c / eval
-#     (re-introducing a regex-fragility class). This is a minor local-
-#     development hole; CI's conformance gate is the structural backstop.
-#     Test C10e in tests/test-block-stale-skill-version.sh locks this
-#     behavior. Tracked separately as #399.
+# Wrapper recursion (#399): `bash -c '<git commit ...>'` / `sh -c '...'` /
+# `eval '...'` are MATCHED via is_git_subcommand_in_wrappers, which
+# recursively unwraps the inline-string argument of bash/sh/dash/ksh/zsh
+# -c and eval (bounded depth=3). The base is_git_subcommand helper
+# remains first-token-anchored (does not recurse on its own); the
+# wrapper-recursion is layered on top via the inlined wrappers helper
+# below. Test cases C10i+ in tests/test-block-stale-skill-version.sh
+# lock the wrapper-positive behavior; C10e/C10h (first-token /
+# chain-walker) retain their negative assertions because those helpers
+# are intentionally first-token-anchored.
 #
 #   Note: cd-chained forms like `cd /tmp/wt && git commit` ARE matched as
 #   of #393's fix — `is_git_subcommand_in_chain` (inlined from
@@ -121,9 +121,9 @@ resolve_effective_worktree_root() {
 # cd-chained forms (`cd /tmp/wt && git commit`) match — required for
 # correct worktree behavior (#393).
 #
-# Carve-out: this matcher does NOT recurse into `bash -c '...'` /
-# `sh -c '...'` / `eval '...'` argument strings — see header docstring
-# and test C10e (issue #399).
+# Wrapper recursion (#399): the call site below uses
+# is_git_subcommand_in_wrappers (which layers on top of _in_chain) so
+# `bash -c 'git commit ...'` / `eval 'git commit ...'` are also matched.
 # Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh (Phase 5.4).
 is_git_subcommand() {
   local cmd="$1"
@@ -195,7 +195,127 @@ is_git_subcommand_in_chain() {
   done <<< "$normalized"
   return 1
 }
-is_git_subcommand_in_chain "$COMMAND" commit || exit 0
+
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
+# Closes the bash -c / eval / sh -c wrapper-bypass hole (#399).
+is_git_subcommand_in_wrappers() {
+  local cmd="$1"
+  local want_sub="$2"
+  local depth="${3:-3}"
+
+  # First, check the direct + chain case via existing helper.
+  if is_git_subcommand_in_chain "$cmd" "$want_sub"; then
+    return 0
+  fi
+
+  # Bounded recursion depth.
+  [ "$depth" -le 0 ] && return 1
+
+  # Split on chain operators (same as _in_chain) and inspect each
+  # segment for a wrapper pattern.
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+
+    # Look for an inline-string wrapper. Use bash regex to capture the
+    # inner string after a `-c` flag or after an `eval`. The captured
+    # group is the rest of the segment starting at the inner-arg
+    # boundary; we then strip outer quotes (single or double).
+    local wrapper_inner=""
+
+    # Tokenize the segment to find the wrapper command and its -c arg.
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$seg"
+    local i=0 n=${#TOKENS[@]}
+
+    # Skip env-var prefixes (KEY=val ... cmd ...).
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+
+    local first="${TOKENS[$i]:-}"
+    # Allow a possible absolute path: /bin/bash → match the basename.
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        # Walk shell-level flags to find -c (or -lc/-ic/-cx combined
+        # short-flag forms). All of these put the next token as the
+        # inline string to execute.
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          # Reconstruct the inner string from token j to end of segment.
+          # read -ra split on whitespace, so a quoted multi-word string
+          # like 'git commit -m foo' became three tokens: "'git" "commit"
+          # "-m" "foo'". Rejoin with spaces.
+          local inner=""
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          # Strip one layer of outer quotes (single or double).
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+          wrapper_inner="$inner"
+        fi
+        ;;
+      eval)
+        # All args to eval are the string to execute. Rejoin and strip
+        # outer quotes.
+        local inner=""
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        wrapper_inner="$inner"
+        ;;
+    esac
+
+    if [ -n "$wrapper_inner" ]; then
+      if is_git_subcommand_in_wrappers "$wrapper_inner" "$want_sub" $((depth - 1)); then
+        return 0
+      fi
+    fi
+  done <<< "$normalized"
+
+  return 1
+}
+is_git_subcommand_in_wrappers "$COMMAND" commit || exit 0
 
 # Guard against `set -u` + unset `$CLAUDE_PROJECT_DIR` (rare but documented
 # harness edge case). `${X:-$PWD}` falls back to cwd; if the script is

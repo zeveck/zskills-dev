@@ -259,6 +259,24 @@ expect_deny "git add --all" "git add --all"
 # 10. git commit --no-verify
 expect_deny "git commit --no-verify" "git commit --no-verify -m \"msg\""
 
+# 10a-10g. Wrapper-bypass closure (#399): bash -c / eval / sh -c forms of
+# blocked git invocations now also DENY. Cross-cutting positive tests over
+# the three generic-hook gates (commit --no-verify, add -A, push to main).
+expect_deny "WB1: bash -c 'git commit --no-verify'" \
+  "bash -c 'git commit --no-verify -m hi'"
+expect_deny "WB2: eval 'git commit --no-verify'" \
+  "eval 'git commit --no-verify -m hi'"
+expect_deny "WB3: bash -c 'cd /tmp/x && git commit --no-verify'" \
+  "bash -c 'cd /tmp/x && git commit --no-verify -m hi'"
+expect_deny "WB4: bash -c \"git add -A\"" \
+  "bash -c \\\"git add -A\\\""
+expect_deny "WB5: eval 'git add .'" \
+  "eval 'git add .'"
+expect_deny "WB6: sh -c 'git commit --no-verify'" \
+  "sh -c 'git commit --no-verify -m hi'"
+expect_deny "WB7: nested bash -c 'sh -c \"git commit --no-verify\"'" \
+  "bash -c 'sh -c \\\"git commit --no-verify -m hi\\\"'"
+
 echo ""
 echo "=== Hook allow patterns ==="
 
@@ -1237,6 +1255,52 @@ if [[ "$RESULT" == *"main branch is protected"* ]]; then
   pass "main_protected: cherry-pick on main blocked"
 else
   fail "main_protected: cherry-pick on main should be blocked, got: $RESULT"
+fi
+
+# ─── Wrapper-bypass closure (#399): bash -c / eval / sh -c forms ───
+# Without is_git_subcommand_in_wrappers, an agent could route around
+# main_protected via `bash -c 'git commit -m foo'`. These tests assert the
+# hook now catches the wrapper-bypass class for commit / cherry-pick / push.
+
+# WB-MP1: bash -c 'git commit' on protected main → blocked.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "bash -c 'git commit -m test'")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected #399: bash -c 'git commit' on main blocked"
+else
+  fail "main_protected #399: bash -c 'git commit' on main should be blocked, got: $RESULT"
+fi
+
+# WB-MP2: eval 'git commit' on protected main → blocked.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "eval 'git commit -m test'")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected #399: eval 'git commit' on main blocked"
+else
+  fail "main_protected #399: eval 'git commit' on main should be blocked, got: $RESULT"
+fi
+
+# WB-MP3: sh -c 'git cherry-pick' on protected main → blocked.
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "sh -c 'git cherry-pick abc123'")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected #399: sh -c 'git cherry-pick' on main blocked"
+else
+  fail "main_protected #399: sh -c 'git cherry-pick' on main should be blocked, got: $RESULT"
+fi
+
+# WB-MP4: bash -c 'git push origin main' on protected main → blocked.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "bash -c 'git push origin main'")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected #399: bash -c 'git push origin main' blocked"
+else
+  fail "main_protected #399: bash -c 'git push origin main' should be blocked, got: $RESULT"
+fi
+
+# WB-MP5: nested bash -c 'sh -c "git commit"' on protected main → blocked
+# (#399's bounded-depth recursion).
+RESULT=$(run_main_protected_test "main" '{"execution": {"main_protected": true}}' "bash -c 'sh -c \\\"git commit -m test\\\"'")
+if [[ "$RESULT" == *"main branch is protected"* ]]; then
+  pass "main_protected #399: nested bash -c 'sh -c \"git commit\"' blocked"
+else
+  fail "main_protected #399: nested wrapper should be blocked, got: $RESULT"
 fi
 
 # Test: main_protected blocks push to main
