@@ -2,7 +2,7 @@
 title: Issues — General Tracker
 status: active
 created: 2026-05-15
-last_sync: 2026-05-17
+last_sync: 2026-05-18
 ---
 
 # Issues — General Tracker
@@ -199,3 +199,123 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Fix outline.** Gate the issue-prune loop on absence of a `gh issue list` failure. Cleanest split: server-side, set `snap.issues_fetch_ok = false` in `collect.py` (~line 1068-1162) on the gh-list error paths; client-side, in `static/app.js` `deepCloneQueues` (lines 400-417), skip the `if (!liveIssueNumbers.has(num)) continue` filter when `snap.issues_fetch_ok === false` (or as a fallback, when `snap.errors.some(e => /gh issue list/i.test(e.source))`). Preserve `lastGoodQueues...arr.length` for card-counter UI to keep the stale-good fallback. Add a test exercising mocked `gh` non-zero + fixture state + POST asserting N entries preserved.
 
 **Complexity:** S. **Action now:** /quickfix — small, localized two-file change with a clear test path.
+
+### #390 — warn-config-drift.sh mirror is stale — skill-version Edit-time warn never fires in production
+
+**Labels:** bug | **Verdict:** NOT FIXED — `wc -l` confirms 259-line source vs 143-line mirror; `grep -c skill-content-hash` returns 3 in source, 0 in mirror; `.claude/settings.json:56,66` wire the mirror.
+
+**Problem.** `hooks/warn-config-drift.sh` (259 lines) contains Branch 3 (skill content-hash drift WARN, lines 146-256) and a widened Branch 2 regex `(skills|block-diagram)/[^/]+/.*\.md$` (line 62). The `.claude/hooks/warn-config-drift.sh` mirror (143 lines) is the pre-#175 form: Branch 2 regex is the old `skills/[^/]+/.*\.md$` (line 62, no `block-diagram`) and Branch 3 is absent entirely. `.claude/settings.json:56,66` wire the mirror, so Layer 1 of the CLAUDE.md "3-point enforcement" (Edit-time WARN) is silently inert in every Claude Code session. `tests/test-skill-version-enforcement.sh:17` pins `HOOK="$REPO_ROOT/hooks/warn-config-drift.sh"` (source), so CI stays green while production is broken — classic mirror-bypassed-tests pattern.
+
+**Fix outline.** Two coherent steps: (1) `cp hooks/warn-config-drift.sh .claude/hooks/warn-config-drift.sh` to bring the mirror current. (2) Add a conformance test (extend `tests/test-skill-conformance.sh` or new `tests/test-hooks-mirror-parity.sh`) asserting byte-equality between every `hooks/*.sh` source and its `.claude/hooks/*.sh` mirror via `cmp -s` over a globbed list. The conformance test closes the broader class — issue notes every `hooks/` source has a mirror and tests target source.
+
+**Complexity:** S. **Action now:** /quickfix — two-file behavioral change (mirror sync + new conformance test) with a clear spec; small enough to skip /draft-plan, but two surfaces (production hook + new test gate) justify pre-execution review over implementer.
+
+---
+
+### #392 — block-unsafe-generic.sh:429 strips wrong side of refspec — `git push origin <local>:main` bypasses main-push block
+
+**Labels:** bug | **Verdict:** NOT FIXED — line 429 still reads `PUSH_TARGET="${PUSH_TARGET%%:*}"`; no test in `tests/test-hooks.sh` exercises a `<localref>:main` refspec.
+
+**Problem.** `hooks/block-unsafe-generic.sh:429` does `PUSH_TARGET="${PUSH_TARGET%%:*}"` with the comment "Strip remote-side of refspec if present (e.g., local:remote)." The bash expansion `${X%%:*}` keeps the text **before** the colon (the local side), so for `git push origin feat:main` `PUSH_TARGET` resolves to `feat`, the equality check at line 431 (`main`/`master`) misses, and the push is allowed even when `BLOCK_MAIN_PUSH=1`. The same shape also evades `hooks/block-unsafe-project.sh.template` rules (a) at line 828 and (b) at line 832 — regex `origin[[:space:]]+[+:]?(main|master)` requires `main` immediately after `origin`, and `HEAD:(main|master)` only catches the literal `HEAD` source, so `feat:main`, `<sha>:main`, `HEAD~3:main` all sneak through main_protected too.
+
+**Fix outline.** Change `hooks/block-unsafe-generic.sh:429` to `PUSH_TARGET="${PUSH_TARGET##*:}"` (longest-match prefix removal — keeps the destination) and fix the inverted comment. In `hooks/block-unsafe-project.sh.template:828-833`, broaden rules (a)+(b) so any `<anything>:(main|master)` refspec under `origin` triggers — e.g. add a third regex `[^[:space:]]+:(main|master)([[:space:]]|$|\")` against `PUSH_ARGS`. Extend `tests/test-hooks.sh` (around line 318 for generic, line 1232 for project) with cases for `feat:main`, `abc123:main`, `HEAD~3:main`, and `+feat:main` — all must deny under both `BLOCK_MAIN_PUSH=1` and `main_protected: true`.
+
+**Complexity:** S. **Action now:** implementer — bounded two-file fix (generic hook line + project template regex) with co-located test additions in one file.
+
+---
+
+### #395 — zskills-resolve-config.sh unit_cmd/full_cmd regex unscoped — sibling block (`ui`) shadows `testing` values
+
+**Labels:** bug | **Verdict:** NOT FIXED — `skills/update-zskills/scripts/zskills-resolve-config.sh:77-82` still uses unscoped `\"unit_cmd\"`/`\"full_cmd\"` regex; reproduced live with `{"ui":{"full_cmd":"UI_WRONG",...},"testing":{...}}` yielding `FULL=[UI_WRONG]`.
+
+**Problem.** Lines 77-82 of `skills/update-zskills/scripts/zskills-resolve-config.sh` (mirrored at `.claude/skills/update-zskills/scripts/zskills-resolve-config.sh`) extract `UNIT_TEST_CMD`/`FULL_TEST_CMD` via `[[ "$_ZSK_CFG_BODY" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]` with no enclosing-object anchor, so the FIRST `"unit_cmd"`/`"full_cmd"` key in the JSON wins. Sibling extractions in the same file are properly scoped (`dev_server` line 88, `commit` line 96, `execution` line 108). `output_file` (line 91) shares the same unscoped bug; `detect-language.sh:107-112` repeats the pattern. Any consumer whose config places a `cmd`-named field in a block before `testing` silently runs the wrong test command — verifier subagents would attest "tests pass" against the wrong suite.
+
+**Fix outline.** Rewrite lines 77-82 to scope under `"testing"`, mirroring the `dev_server` pattern at line 88: `\"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"`. Apply the same scoping to `output_file` (line 91, scope under `output` or wherever it actually lives) and to `detect-language.sh:107-112` (scope under `testing`). Add a sibling-collision fixture to `tests/test-zskills-resolve-config.sh` (config with a `ui` block carrying `unit_cmd`/`full_cmd` before `testing`, assert `UNIT_TEST_CMD=TESTING_UNIT`). Mirror to `.claude/skills/update-zskills/scripts/zskills-resolve-config.sh`. Bump `skills/update-zskills/SKILL.md` `metadata.version`.
+
+**Complexity:** S. **Action now:** /quickfix — two scripts + one test + a mirror copy + version bump; bounded, single-purpose, no design surface to review.
+
+---
+
+### #396 — post-run-invariants.sh:119 Invariant #4 silently passes when ls-remote returns 128 (network/auth)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `.claude/skills/run-plan/scripts/post-run-invariants.sh:119` still uses `if git … ls-remote --exit-code … 2>&1; then`, conflating exit 2 (absent) with exit 128 (origin unreachable / auth fail). The three-way discrimination already shipped in `.claude/skills/commit/scripts/land-phase.sh:161-201` was never propagated here.
+
+**Problem.** Invariant #4 is supposed to fail loudly when a feature branch persists on origin after a landed PR. Because the `if` only fires on rc=0, any non-zero rc — including rc=128 — is treated as "branch absent, invariant satisfied." A broken remote, expired token, or typo'd `origin` URL therefore makes the gate silently pass forever, defeating its stated purpose at `post-run-invariants.sh:17-19` ("mechanical gate that catches silent failures"). The same `2>/dev/null` antipattern recurs at line 180 for Invariant #7 (fetch base branch) — same severity-class bug, separate finding flagged in the body.
+
+**Fix outline.** In both `skills/run-plan/scripts/post-run-invariants.sh:117-123` and its `.claude/` mirror, replace the `if` with the `LS_RC=$? ; case` block from `land-phase.sh:171-200`: rc=0 → INVARIANT-FAIL, rc=2 → pass, anything else → INVARIANT-FAIL with the actual rc surfaced. Drop `2>/dev/null` so stderr surfaces on rc=128. Apply the symmetric treatment to the Invariant #7 fetch at line 180. Bump `metadata.version` on `skills/run-plan/SKILL.md`. The "Larger-than-issue" sweep for a shared `safe-ls-remote-branch.sh` helper is a separate cleanup — out of scope for the direct fix.
+
+**Complexity:** XS. **Action now:** /quickfix.
+
+---
+
+### #397 — pr-rebase.sh doesn't verify HEAD == $BRANCH before rebase — silent wrong-branch rebase if CWD mismatches
+
+**Labels:** bug | **Verdict:** NOT FIXED — no `rev-parse --abbrev-ref`/`symbolic-ref`/`checkout`/`switch` anywhere in `.claude/skills/land-pr/scripts/pr-rebase.sh`; `--branch` is consumed only by the existence checks at lines 65-72 (`refs/heads/$BRANCH` + `ls-remote --heads`), and line 83's `git rebase "origin/$BASE"` operates on whatever HEAD points at in the caller's CWD.
+
+**Problem.** `pr-rebase.sh` accepts `--branch <name>` but never asserts `HEAD == $BRANCH` nor `checkout $BRANCH` before rebasing. Lines 65-72 only verify the named branch exists; line 83 then rebases the CWD's current branch onto `origin/$BASE`. A caller that forgets to `cd` into the feature worktree (or runs from main / a stale worktree) gets exit 0 with the named feature branch untouched and possibly a destructive rebase on the wrong branch. This is exactly the silent-no-op class that `pr-push-and-create.sh:104-107` documents as Issue #188 — the fix didn't propagate symmetrically. No `tests/test-land-pr-scripts.sh` fixture exercises HEAD != BRANCH, so there's no regression guard.
+
+**Fix outline.** In `.claude/skills/land-pr/scripts/pr-rebase.sh` (and the source mirror under `skills/land-pr/scripts/pr-rebase.sh`), insert between current step 3 (fetch, line 75-80) and step 4 (rebase, line 82-85) a HEAD check: `CUR=$(git rev-parse --abbrev-ref HEAD)`; if `"$CUR" != "$BRANCH"` emit `REASON=wrong-current-branch` and `exit 11`. Add a `tests/test-land-pr-scripts.sh` fixture using mock-git where `rev-parse --abbrev-ref HEAD` returns a different branch, asserting exit 11 + `REASON=wrong-current-branch` + no rebase invocation. Bump `metadata.version` on `skills/land-pr/SKILL.md`. (Alternative — explicit `git checkout "$BRANCH"` with rc-check — is more invasive given worktree semantics; assertion is safer.)
+
+**Complexity:** S. **Action now:** /quickfix — single-script guard + one mock-git test fixture + version bump, fully isolated to the land-pr skill.
+
+---
+
+### #398 — block-main-edits.sh deny message recommends /quickfix — but /quickfix is no-worktree, so same hook denies its edits
+
+**Labels:** (none specified) | **Verdict:** NOT FIXED — `block-main-edits.sh:150` still lists `/quickfix` first in the alternatives list with no agent-dispatched-mode caveat; `quickfix/SKILL.md:6,20` confirm "without a worktree" / "No worktree. No cherry-pick."
+
+**Problem.** When `main_protected: true`, `.claude/hooks/block-main-edits.sh` lines 142-160 emit a deny message whose first recommended alternative is `/quickfix` ("Light, one-commit fix in flight"). But `/quickfix` operates on the main checkout itself (`SKILL.md:6,20,35` — `git checkout -b` on main, dirty tree carried across), so an **agent-dispatched** `/quickfix` invocation (clean tree + description mode) will have its impl-agent's Edit/Write calls denied by the same hook. Result: a denial loop for any agent routed by the deny message. User-edited mode survives only because the human's edits predate the branch (and the hook gates Edit/Write, not `git add`).
+
+**Fix outline.** Edit `.claude/hooks/block-main-edits.sh:150-153` to either (a) drop `/quickfix` from the list and lead with `/do pr` + `/create-worktree`, or (b) qualify it as "user-edited mode only (dirty tree already in place); agent-dispatched mode requires `/do pr`". Option (b) preserves the user-edited path that legitimately works. Mirror the same text into `hooks/block-main-edits.sh` source (if not already symlinked) and confirm no test in `tests/` pins the current wording verbatim.
+
+**Complexity:** XS. **Action now:** /quickfix.
+
+---
+
+### #399 — No `is_git_subcommand_in_wrappers` — `bash -c 'git commit'` and `eval 'git commit'` bypass every git-side hook
+
+**Labels:** bug | **Verdict:** NOT FIXED — `hooks/_lib/git-tokenwalk.sh:407` defines only `is_gh_pr_subcommand_in_wrappers`; no git analogue. Carve-out is locked by `tests/test-block-stale-skill-version.sh:264` (C10e) and documented as `#399` in `hooks/block-stale-skill-version.sh:25-36`.
+
+**Problem.** Tokenizer asymmetry: PR #255 added `is_gh_pr_subcommand_in_wrappers` (`hooks/_lib/git-tokenwalk.sh:407-524`) which recursively unwraps `bash -c '<inner>'` / `sh -c` / `eval '<inner>'` for gh-pr gating, but `is_git_subcommand_in_chain` (`hooks/_lib/git-tokenwalk.sh:164`) was never given the parallel `_in_wrappers` form. Consequently `bash -c "git commit --no-verify -m hi"` and friends slip past `block-stale-skill-version.sh:179`, `block-unsafe-project.sh.template:476/483/621/627/706/810`, and `block-unsafe-generic.sh:384/389/400` (commit/cherry-pick/push/add -A/--no-verify). Six call sites unprotected; `bash -c` is a normal idiom orchestrators reach for when constructing dynamic git commands.
+
+**Fix outline.** Clone `is_gh_pr_subcommand_in_wrappers` (`hooks/_lib/git-tokenwalk.sh:407-524`) as `is_git_subcommand_in_wrappers` (drop `flag_regex` is optional — keep parity), thread it through the six call sites in `block-stale-skill-version.sh`, `block-unsafe-project.sh.template`, and `block-unsafe-generic.sh` (replace `is_git_subcommand_in_chain` where wrapper-recursion is wanted, or call wrappers as fall-through). Inline copy into each hook to match the existing inline-copy pattern. Flip `C10e` in `tests/test-block-stale-skill-version.sh:30,264` from `assert_no_match` to `assert_match`, delete the carve-out docstring in `block-stale-skill-version.sh:25-36`, add `is_git_subcommand_in_wrappers` to the helper list in `tests/test-hook-helper-drift.sh:24`, and add positive tests for `bash -c 'git commit'`, `bash -c 'cd /tmp/wt && git commit'`, `eval 'git commit'`, `bash -c "git commit --no-verify"`, plus parallel coverage in `tests/test-block-unsafe-generic.sh` and `tests/test-block-unsafe-project.sh`. Mirror updates into `.claude/hooks/`.
+
+**Complexity:** M. **Action now:** /quickfix.
+
+---
+
+### #400 — apply-preset.sh extracts CURRENT_LANDING / CURRENT_PROTECTED with unscoped regex (same class as #395)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `skills/update-zskills/scripts/apply-preset.sh:73-74` still uses unscoped `"landing"` / `"main_protected"` extraction; reproduced live with a multi-line `{"extra":{"landing":"WRONG"},"execution":{"landing":"pr",...}}` yielding `CURRENT_LANDING=WRONG`. Write path at lines 138, 142 is also unscoped and clobbers the sibling.
+
+**Problem.** `skills/update-zskills/scripts/apply-preset.sh:73-74` (mirror at `.claude/skills/update-zskills/scripts/apply-preset.sh:73-74`) extracts `CURRENT_LANDING`/`CURRENT_PROTECTED` via `sed -n -E 's/.*"landing"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -1` — no enclosing-object anchor, so on multi-line JSON the first matching line wins regardless of which block it's in. Lower likelihood than #395 today (no plausible parallel `landing`/`main_protected` schema field exists), but worse than the issue describes: the *write* path at lines 138 (`sed_inplace "s/(\"landing\"...)..."`) and 142 (same for `main_protected`) is equally unscoped and would overwrite BOTH siblings, silently corrupting the foreign field. This is install/repair code in `/update-zskills`, so the blast radius reaches every consumer.
+
+**Fix outline.** Apply #395's fix template: scope both reads and both writes to the `"execution"` object, mirroring `dev_server` scoping in `zskills-resolve-config.sh:88` (i.e. `"execution"[[:space:]]*:[[:space:]]*\{[^}]*"landing"...`). Read path: switch the `sed -n` extractions at lines 73-74 to scoped regex (or to a small awk pass over the existing `execution` block — the `EXEC_EXISTS` grep already exists). Write path: the existing `sed_inplace` calls at lines 138, 142 must also be scoped (awk-replace within the `execution` block is cleaner than multi-line sed). Add a sibling-collision fixture to `tests/test-apply-preset.sh` with `{"extra":{"landing":"WRONG"},"execution":{...}}`, assert `CURRENT_LANDING=pr` AND that `extra.landing` is unchanged after a write. Mirror to `.claude/skills/update-zskills/scripts/apply-preset.sh`. Bump `skills/update-zskills/SKILL.md` `metadata.version`. Issue body's "Larger-than-issue" suggestion (Python json-helper sibling to `zskills-resolve-config.sh`) is a separate refactor — out of scope for this fix.
+
+**Complexity:** S. **Action now:** /quickfix — two scripts + one test fixture + mirror + version bump; bounded, parallel to #395's fix shape.
+
+---
+
+### #401 — Extract `hooks/_lib/resolve-effective-worktree-root.sh` to consolidate cd-target + LOCAL_ROOT resolution across hooks
+
+**Labels:** (none) | **Verdict:** NOT FIXED — 4 TODO(#401) markers still present (3 in `hooks/block-unsafe-project.sh.template`, 1 in `hooks/block-stale-skill-version.sh`); no helper file in `hooks/_lib/` yet.
+
+**Problem.** The 4-tier precedence (env override → `extract_cd_target` from JSON command → `git rev-parse --show-toplevel` → `$PWD`) is duplicated verbatim at four sites: `hooks/block-unsafe-project.sh.template:546-551` (commit-block), `:646-651` (cherry-pick-block), `:714-719` (push-block), and `hooks/block-stale-skill-version.sh:75-81` (the `extract_cd_target` helper) + `:195-200` (the `EFFECTIVE_REPO_ROOT` resolver). Each site carries an identical TODO(#401) pointing here. Drift risk on the next worktree-blind bug fix.
+
+**Fix outline.** Create `hooks/_lib/resolve-effective-worktree-root.sh` defining `extract_cd_target()` and `resolve_effective_worktree_root()`. Inline both functions verbatim into all four consumer hooks (mirror the `is_git_subcommand` discipline). Extend `tests/test-hook-helper-drift.sh:17` consumer loop + inner `for FN` allowlist to cover the two new function names, then delete TODO comments. Touches 5 files (1 new helper, 2 hook edits, 1 drift test, plus skill-version bumps if hooks ship inside a skill).
+
+**Complexity:** S. **Action now:** /quickfix.
+
+---
+
+### #404 — /qe-audit: ban 'audit-not-done' caveats; require validating evidence for cross-cutting concerns
+
+**Labels:** bug | **Verdict:** NOT FIXED — `skills/qe-audit/SKILL.md` Step 5 (lines 212-215) and Step 6 (lines 217-221) contain no ban on "audit-not-done" caveats; "Larger-than-issue"/cross-cutting framing is not addressed; recent issues #380, #390 demonstrate the caveats are still emitted.
+
+**Problem.** `/qe-audit`-filed issue bodies publish deferred-research caveats ("Audit-not-done — a repo-wide sweep would help") and unvalidated structural framings ("Larger-than-issue: mirror discipline is a structural risk") instead of running the cheap audit themselves. Downstream `/fix-issues` triage cannot distinguish theoretical from real wider concerns, over-tiers to `/draft-plan`, and stalls the queue. Past failures: #380 (test-side false-PASS) and #390 (mirror-drift); both audits were a single grep/diff.
+
+**Fix outline.** In `skills/qe-audit/SKILL.md` Step 6 (lines 217-221) and parallel-sweep dispatch in Bash mode (around lines 281-287), insert prose banning "Audit-not-done" caveats in filed bodies, requiring the agent run cheap audits inline and record concrete results, and raising the bar for filing a separate structural issue to "verified concrete instances + high-value." Add a worked right-vs-wrong example citing #380/#390. Bump `metadata.version`, regenerate `.claude/skills/qe-audit/` mirror, and add a string-presence conformance assertion in `tests/test-skill-conformance.sh`.
+
+**Complexity:** S. **Action now:** /quickfix.
+
+---
