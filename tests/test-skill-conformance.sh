@@ -2334,6 +2334,50 @@ check_fixed update-zskills "Step 0.5 scoped pattern (canonical form, testing.uni
 check_fixed .claude/skills/update-zskills ".claude mirror: scoped pattern present" \
   '\"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"'
 
+echo '=== Mode-file `git rebase origin/main` HEAD precondition (issue #429) ==='
+# Issue #429: PR #419 added a `HEAD == \$BRANCH` precondition to
+# scripts/pr-rebase.sh:82-88 (exit 14, REASON=wrong-current-branch) so
+# the callable helper can't silently rebase the wrong branch on CWD
+# drift. But agent-prose mode files run their OWN inline `git rebase
+# origin/main` that bypasses that helper — same #397 symptom resurfaces
+# if the guard isn't ported inline. This check asserts: every literal
+# bash `git rebase origin/main` invocation in a `skills/**/modes/*.md`
+# file is preceded (within the prior 20 lines) by a HEAD check
+# (`rev-parse --abbrev-ref HEAD` or `symbolic-ref`).
+#
+# Excluded by design (these are NOT bash invocations the agent runs
+# inline — they are echoed recovery instructions or prose commentary):
+#   - lines starting with `echo` / `printf` (user-facing recovery hints)
+#   - lines beginning with `#` (comments / agent prompt prose)
+MODE_FILES=$(find "$REPO_ROOT/skills" -path '*/modes/*.md' -type f 2>/dev/null)
+GUARD_VIOLATIONS=0
+for mf in $MODE_FILES; do
+  # Find every line that contains `git rebase origin/main` as an actual
+  # bash invocation. Strip leading whitespace before deciding whether
+  # the line is a comment / echo / printf.
+  while IFS=: read -r MATCH_LN _; do
+    [ -z "$MATCH_LN" ] && continue
+    LINE=$(sed -n "${MATCH_LN}p" "$mf")
+    # Strip leading whitespace.
+    STRIPPED="${LINE#"${LINE%%[![:space:]]*}"}"
+    case "$STRIPPED" in
+      \#*|echo*|printf*|\"*|\'*) continue ;;  # comment, echo, printf, or string literal — not an invocation
+    esac
+    # Compute the start of the 20-line preceding window.
+    START=$((MATCH_LN - 20))
+    [ "$START" -lt 1 ] && START=1
+    END=$((MATCH_LN - 1))
+    [ "$END" -lt 1 ] && END=1
+    WINDOW=$(sed -n "${START},${END}p" "$mf")
+    if echo "$WINDOW" | grep -qE 'rev-parse --abbrev-ref HEAD|symbolic-ref'; then
+      pass "$(basename "$(dirname "$(dirname "$mf")")")/modes/$(basename "$mf"):${MATCH_LN} HEAD guard present"
+    else
+      fail "$(basename "$(dirname "$(dirname "$mf")")")/modes/$(basename "$mf"):${MATCH_LN} missing HEAD guard before \`git rebase origin/main\`" "rev-parse --abbrev-ref HEAD within preceding 20 lines"
+      GUARD_VIOLATIONS=$((GUARD_VIOLATIONS + 1))
+    fi
+  done < <(grep -n 'git rebase origin/main' "$mf" 2>/dev/null)
+done
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

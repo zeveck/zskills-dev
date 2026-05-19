@@ -15,6 +15,16 @@ impl agent:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
+# HEAD precondition (symmetric to pr-rebase.sh:82-88; Issue #429).
+# If CWD drifted (forgot a `cd`, wrong worktree active), `git rebase
+# origin/main` would silently retarget the wrong branch and exit 0 —
+# reporting success while $BRANCH_NAME is untouched. Same defense
+# that #397 / pr-rebase.sh installs for the callable surface.
+ACTUAL_HEAD=$(git rev-parse --abbrev-ref HEAD)
+if [ "$ACTUAL_HEAD" != "$BRANCH_NAME" ]; then
+  echo "ERROR: run-plan/pr: CWD is on '$ACTUAL_HEAD', expected '$BRANCH_NAME' — refusing to rebase the wrong branch" >&2
+  exit 14
+fi
 git fetch origin main
 PRE_REBASE=$(git rev-parse HEAD)
 git rebase origin/main
@@ -111,6 +121,16 @@ After the LAST phase's verification agent commits, before pushing:
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 cd "$WORKTREE_PATH"
+# HEAD precondition (symmetric to pr-rebase.sh:82-88; Issue #429).
+# If CWD drifted (forgot a `cd`, wrong worktree active), `git rebase
+# origin/main` would silently retarget the wrong branch and exit 0 —
+# reporting success while $BRANCH_NAME is untouched. Same defense
+# that #397 / pr-rebase.sh installs for the callable surface.
+ACTUAL_HEAD=$(git rev-parse --abbrev-ref HEAD)
+if [ "$ACTUAL_HEAD" != "$BRANCH_NAME" ]; then
+  echo "ERROR: run-plan/pr: CWD is on '$ACTUAL_HEAD', expected '$BRANCH_NAME' — refusing to rebase the wrong branch" >&2
+  exit 14
+fi
 git fetch origin main
 PRE_REBASE=$(git rev-parse HEAD)
 git rebase origin/main
