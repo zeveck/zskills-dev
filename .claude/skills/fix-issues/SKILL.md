@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+c58f0c"
+  version: "2026.05.18+5bed75"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1364,10 +1364,13 @@ for it in json.load(sys.stdin):
     exit 0
   fi
 
-  # Read issues.ready in drag order; intersect with live open issues;
-  # cap to N. Python json — never bash regex on a JSON array.
+  # Read issues.ready in drag order; intersect with live open issues.
+  # Do NOT cap to N here — return ALL intersected-open candidates in drag
+  # order. The orchestrator triage loop caps to N actionable picks AFTER
+  # triage (so a top-of-queue plan-scale/vague item doesn't block the
+  # whole queue). Python json — never bash regex on a JSON array.
   DASHBOARD_PICKS=$(OPEN_NUMS_JOINED="$(printf '%s,' "${OPEN_NUMS[@]}")" \
-    N="$N" python3 -c '
+    python3 -c '
 import json, os, sys
 state_path = sys.argv[1]
 try:
@@ -1385,7 +1388,6 @@ for tok in open_raw.split(","):
     tok = tok.strip()
     if tok.isdigit():
         open_set.add(int(tok))
-n_cap = int(os.environ.get("N") or "0") or len(ready)
 picks = []
 for entry in ready:
     # ready entries may be ints or dicts with .number — be permissive
@@ -1402,8 +1404,6 @@ for entry in ready:
         continue
     if num in open_set:
         picks.append(num)
-        if len(picks) >= n_cap:
-            break
 print(" ".join(str(p) for p in picks))
 ' "$MONITOR_STATE")
 
@@ -1418,7 +1418,7 @@ print(" ".join(str(p) for p in picks))
   # the same way they would consume the rubric's output. Skip the
   # rubric/focus/default-ranking text below — the picks ARE the order.
   read -r -a CANDIDATE_ISSUES <<<"$DASHBOARD_PICKS"
-  echo "Dashboard candidates (drag order, capped to N=$N): ${CANDIDATE_ISSUES[*]}"
+  echo "Dashboard candidates (drag order, uncapped — triage caps to N=$N actionable): ${CANDIDATE_ISSUES[*]}"
 fi
 ```
 
@@ -1427,6 +1427,18 @@ below and proceed directly to the **Triage** subsection with
 `CANDIDATE_ISSUES` as the input list. The triage routing (in-batch
 fix-agent vs `/quickfix` vs `/draft-plan` vs skip) still applies — the
 dashboard only overrides the *selection*, not the *routing*.
+
+**Cap to N happens AFTER triage, not before.** The triage loop iterates
+`CANDIDATE_ISSUES` in drag order, classifies each issue, and KEEPS the
+first N that route to **in-batch fix-agent** or **/quickfix**. Issues
+that triage to **"Bug with unclear cause"**, **"Plan-scale"**, or **"Too
+vague"** are recorded as skips and do NOT count toward N — keep
+iterating. Stop iterating once N actionable picks have been collected.
+If candidates exhaust before N actionable are found, dispatch what was
+found (partial-fill is normal); if zero actionable are found, the
+existing "no actionable issues" path fires unchanged. This prevents a
+single top-of-queue plan-scale/vague item from stalling the entire
+queue behind it.
 
 ### Default rubric (when `dashboard` is NOT present)
 
@@ -1488,6 +1500,28 @@ bug (under-routing to in-batch fix-agent).
   - Interactive: flag it and ask the user for clarification
   - Auto: skip it, report as "Skipped: insufficient context" in
     $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md
+
+**Independently size the smallest coherent fix that closes the reported
+defect.** Identify the specific file:line / code-change shape that would
+fix the bug as filed, then tier THAT fix — not whatever the body's
+"Recommended tier" / "Implementation tier" / "Larger-than-issue" /
+"Structural" sections claim. Body framings are HINTS; the agent is the
+sizer. Common anti-pattern: body pairs a ship-now fix with a
+structural-rewrite musing under one tier — separate them. Ship the
+immediate fix at its true tier; file the structural concern as a
+follow-up issue. Don't conflate the two.
+
+**Worked examples (2026-05-18 calibration):**
+- **#380** (tests false-PASS pre-commit). Body said "Both [Fix A
+  test-side + Fix B verifier-discipline] are /draft-plan tier."
+  Independent sizing: Fix A = 2 known test files + one-grep audit =
+  **implementer-tier**; Fix B = same prose at ~6 verifier-dispatch
+  sites = **/quickfix-tier**. Neither was /draft-plan.
+- **#390** (warn-config-drift mirror stale). Body's "Larger-than-issue"
+  framing suggested structural rewrite. Independent sizing: the body's
+  "preferred" `cp` + byte-equality conformance test IS the structural
+  fix; the mirror is load-bearing for prompt-avoidance.
+  **Implementer-tier as written.**
 
 **"Too vague" means you don't know WHAT to do — not that you don't know
 HOW.** If the issue clearly describes the problem but the fix is hard,

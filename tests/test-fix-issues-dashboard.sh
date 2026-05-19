@@ -19,8 +19,9 @@
 #   2. Open-issue intersection — picks ONLY entries that appear in both
 #      issues.ready AND the open-issue list (OPEN_NUMS).
 #
-#   3. N-cap — when intersection exceeds N, the cap is honored and
-#      drag-order is preserved.
+#   3. No-cap — Python block returns ALL intersected-open entries in
+#      drag order (cap-to-N happens in the orchestrator's triage loop
+#      AFTER triage, per #403). The script ignores any N env var.
 #
 #   4. Permissive entry shapes — issues.ready may contain ints, dicts
 #      with `.number`, or stringified ints; non-numeric entries are
@@ -52,13 +53,19 @@ TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT
 
 # --- Extract the Python intersection block from SKILL.md ----------------
-# The block lives between `N="$N" python3 -c '` and the matching
-# closing `' "$MONITOR_STATE")`. We extract the inner Python source so
-# we can invoke it directly with controlled env + fixture path.
+# The block opens with `DASHBOARD_PICKS=$(OPEN_NUMS_JOINED=...` and the
+# heredoc-style `python3 -c '` on the next continuation line, closing
+# with `' "$MONITOR_STATE")`. Per #403 the wrapper no longer threads N
+# (cap-to-N moved to the orchestrator's triage loop AFTER triage), so
+# we anchor on the unique DASHBOARD_PICKS= prefix rather than the
+# old `N="$N" python3 -c ` shape — and there are now 3 `python3 -c`
+# blocks in SKILL.md (ISSUE_META, OPEN_NUMS, dashboard picks), so the
+# DASHBOARD_PICKS anchor is required for uniqueness.
 
 PYSCRIPT="$TMP_ROOT/dashboard_picks.py"
 awk '
-  /N="\$N" python3 -c /{ in_block=1; next }
+  /DASHBOARD_PICKS=\$\(OPEN_NUMS_JOINED=/{ saw=1; next }
+  saw && /python3 -c '\''/{ in_block=1; saw=0; next }
   in_block && /^'\'' "\$MONITOR_STATE"\)$/ { in_block=0; exit }
   in_block { print }
 ' "$SKILL" > "$PYSCRIPT"
@@ -73,9 +80,11 @@ fi
 
 # Helper — run the extracted Python with controlled env + state-file path.
 # Echoes stdout (the picks line) and returns the script's exit code.
+# Per #403 the script no longer reads $N — third arg is kept for call-
+# site compatibility with the existing fixtures but ignored.
 run_picks() {
-  local state_path="$1" open_joined="$2" n="$3"
-  OPEN_NUMS_JOINED="$open_joined" N="$n" python3 "$PYSCRIPT" "$state_path"
+  local state_path="$1" open_joined="$2"
+  OPEN_NUMS_JOINED="$open_joined" python3 "$PYSCRIPT" "$state_path"
 }
 
 # --- 1a. monitor-state.json missing -------------------------------------
@@ -211,42 +220,79 @@ test_intersection_preserves_drag_order() {
   fi
 }
 
-# --- 3. N-cap -----------------------------------------------------------
+# --- 3. No-cap (per #403) -----------------------------------------------
+# Python no longer caps to N — it returns ALL intersected-open entries
+# in drag order. The orchestrator's triage loop caps to N actionable
+# picks AFTER triage (so a top-of-queue plan-scale/vague item doesn't
+# stall the queue). These tests assert the new uncapped contract.
 
-test_n_cap_honored() {
-  local sf="$TMP_ROOT/cap.json"
+test_no_cap_returns_all_intersected() {
+  local sf="$TMP_ROOT/no-cap-many.json"
   printf '%s' '{"issues":{"ready":[10,20,30,40,50,60,70]}}' > "$sf"
   local got rc
-  got=$(run_picks "$sf" "10,20,30,40,50,60,70" "3"); rc=$?
-  if [ "$rc" -eq 0 ] && [ "$got" = "10 20 30" ]; then
-    pass "N-cap: 3 of 7 ready+open -> first 3 in drag order"
+  got=$(run_picks "$sf" "10,20,30,40,50,60,70"); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$got" = "10 20 30 40 50 60 70" ]; then
+    pass "no-cap: 7 ready+open -> all 7 in drag order (cap moved to orchestrator triage)"
   else
-    fail "N-cap: 3 of 7 ready+open -> first 3 in drag order" "rc=$rc stdout=[$got] expected '10 20 30'"
+    fail "no-cap: 7 ready+open -> all 7 in drag order" "rc=$rc stdout=[$got] expected '10 20 30 40 50 60 70'"
   fi
 }
 
-test_n_cap_one() {
-  local sf="$TMP_ROOT/cap1.json"
+test_no_cap_ignores_legacy_n_env() {
+  local sf="$TMP_ROOT/no-cap-ignores-n.json"
   printf '%s' '{"issues":{"ready":[10,20,30]}}' > "$sf"
+  # Even if a caller leaks N=1 into the env, the Python script no longer
+  # reads it (cap moved to orchestrator). Assert the legacy N is ignored.
   local got rc
-  got=$(run_picks "$sf" "10,20,30" "1"); rc=$?
-  if [ "$rc" -eq 0 ] && [ "$got" = "10" ]; then
-    pass "N-cap: N=1 picks only first open entry in drag order"
+  got=$(N=1 OPEN_NUMS_JOINED="10,20,30" python3 "$PYSCRIPT" "$sf"); rc=$?
+  if [ "$rc" -eq 0 ] && [ "$got" = "10 20 30" ]; then
+    pass "no-cap: legacy N=1 env var ignored (cap moved to orchestrator)"
   else
-    fail "N-cap: N=1 picks only first open entry in drag order" "rc=$rc stdout=[$got] expected '10'"
+    fail "no-cap: legacy N=1 env var ignored" "rc=$rc stdout=[$got] expected '10 20 30'"
   fi
 }
 
-test_n_cap_unset_takes_all() {
-  local sf="$TMP_ROOT/cap-all.json"
+test_no_cap_drops_closed_only() {
+  local sf="$TMP_ROOT/no-cap-closed.json"
   printf '%s' '{"issues":{"ready":[10,20,30]}}' > "$sf"
-  # N="" -> Python's `int(N or "0") or len(ready)` falls back to len(ready)
+  # 40 is in ready order but not open — must be dropped; 10,20,30 are open.
   local got rc
-  got=$(run_picks "$sf" "10,20,30,40" ""); rc=$?
+  got=$(run_picks "$sf" "10,20,30,40"); rc=$?
   if [ "$rc" -eq 0 ] && [ "$got" = "10 20 30" ]; then
-    pass "N-cap: empty N falls back to len(ready)"
+    pass "no-cap: closed-only entries dropped from result"
   else
-    fail "N-cap: empty N falls back to len(ready)" "rc=$rc stdout=[$got] expected '10 20 30'"
+    fail "no-cap: closed-only entries dropped from result" "rc=$rc stdout=[$got] expected '10 20 30'"
+  fi
+}
+
+# --- 3b. Orchestrator-side prose anchors (#402 + #403) ------------------
+# Source-level grep tests — assert the prose guidance these two issues
+# require is actually in SKILL.md, not just in the Python block.
+
+test_triage_cap_prose_present() {
+  # #403: the "Cap to N happens AFTER triage" block must call out that
+  # in-batch + /quickfix tier routings count toward N, while unclear /
+  # plan-scale / vague routings are skipped without consuming a slot.
+  if grep -qF 'Cap to N happens AFTER triage' "$SKILL" \
+     && grep -qF 'do NOT count toward N' "$SKILL"; then
+    pass "prose: 'Cap to N happens AFTER triage' guidance present (#403)"
+  else
+    fail "prose: 'Cap to N happens AFTER triage' guidance present (#403)" \
+         "expected #403 cap-after-triage block in SKILL.md"
+  fi
+}
+
+test_independent_sizing_prose_present() {
+  # #402: the triage subsection must instruct the agent to independently
+  # size the smallest coherent fix and include worked examples
+  # (#380, #390) calibrating against the body's tier hint.
+  if grep -qF 'Independently size the smallest coherent fix' "$SKILL" \
+     && grep -qF '#380' "$SKILL" \
+     && grep -qF '#390' "$SKILL"; then
+    pass "prose: 'Independently size' guidance + #380/#390 worked examples present (#402)"
+  else
+    fail "prose: 'Independently size' guidance + worked examples present (#402)" \
+         "expected #402 independent-sizing prose + #380/#390 anchors in SKILL.md"
   fi
 }
 
@@ -458,9 +504,11 @@ test_empty_intersection_no_overlap
 test_unified_empty_message_at_both_sites
 test_intersection_mixed_with_closed
 test_intersection_preserves_drag_order
-test_n_cap_honored
-test_n_cap_one
-test_n_cap_unset_takes_all
+test_no_cap_returns_all_intersected
+test_no_cap_ignores_legacy_n_env
+test_no_cap_drops_closed_only
+test_triage_cap_prose_present
+test_independent_sizing_prose_present
 test_dict_entries_with_number
 test_mixed_int_and_dict_entries
 test_string_int_entries
