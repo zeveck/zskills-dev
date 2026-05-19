@@ -2252,6 +2252,21 @@ else
 fi
 
 echo ""
+echo "=== /qe-audit — ban audit-not-done caveats (issue #404) ==="
+# Issue #404: /qe-audit-filed issue bodies trend conservative with
+# "Audit-not-done" / "Larger-than-issue" framings instead of running
+# the cheap inline audit. The SKILL.md prose must explicitly ban those
+# caveats and require validating evidence before filing cross-cutting
+# concerns. These checks lock the prose anchor + the bar-for-filing
+# language so future edits can't silently drop the rule.
+check_fixed qe-audit "ban-caveats heading"                'Ban caveats: no "audit-not-done" hedges in filed bodies'
+check_fixed qe-audit "bar-for-filing structural rule"     'Bar for filing a structural / cross-cutting issue'
+check_fixed qe-audit "speculation never earns a filing"   'Speculation alone'
+check_fixed qe-audit "worked example: past failure #380"  'past failure #380'
+check_fixed qe-audit "worked example: past failure #390"  'past failure #390'
+check_fixed qe-audit "bash-mode sweep echoes the rule"    'Ban caveats: the Commit Audit Step 6'
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then
