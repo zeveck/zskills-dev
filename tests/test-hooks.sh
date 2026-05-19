@@ -318,6 +318,17 @@ bare_push_test "allow: git push (bare, on feature branch)" "feat/test" "allow"
 expect_deny "git push origin main" "git push origin main"
 expect_deny "git push -u origin main" "git push -u origin main"
 
+# Issue #392: <localref>:main refspec — generic hook's BLOCK_MAIN_PUSH path
+# must parse the REMOTE side of the colon. Pre-fix ${X%%:*} kept the local
+# side ("feat"), so the rule didn't match and the push went through. Post-fix
+# ${X##*:} keeps the destination ("main") and the rule fires.
+expect_deny "git push origin feat:main (refspec, local:remote — #392)" "git push origin feat:main"
+expect_deny "git push origin localbranch:main (refspec — #392)" "git push origin localbranch:main"
+expect_deny "git push origin HEAD:main (refspec — regression)" "git push origin HEAD:main"
+expect_deny "git push origin :main (deletion attempt — #392)" "git push origin :main"
+expect_deny "git push origin abc123:master (sha:master refspec — #392)" "git push origin abc123:master"
+expect_deny "git push -u origin feat:main (upstream + refspec — #392)" "git push -u origin feat:main"
+
 echo ""
 echo "=== Push: BLOCK_MAIN_PUSH preset toggle ==="
 
@@ -1307,6 +1318,48 @@ if [[ "$RESULT" == *"Cannot push to main"* ]]; then
   pass "main_protected: push origin HEAD:master (refspec) blocked"
 else
   fail "main_protected: push origin HEAD:master should be blocked, got: $RESULT"
+fi
+
+# Issue #392: <localref>:main refspec — main_protected must broaden rule (b)
+# beyond HEAD:main to catch arbitrary local-side names. Pre-fix the regex
+# required a literal "HEAD:" prefix; "feat:main" evaded both rule (a)
+# (which requires main immediately after origin) and rule (b).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin feat:main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin feat:main (#392) blocked"
+else
+  fail "main_protected: push origin feat:main should be blocked, got: $RESULT"
+fi
+
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin localbranch:main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin localbranch:main (#392) blocked"
+else
+  fail "main_protected: push origin localbranch:main should be blocked, got: $RESULT"
+fi
+
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin :main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin :main (deletion attempt — #392) blocked"
+else
+  fail "main_protected: push origin :main should be blocked, got: $RESULT"
+fi
+
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin abc123:master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin abc123:master (#392) blocked"
+else
+  fail "main_protected: push origin abc123:master should be blocked, got: $RESULT"
+fi
+
+# Regression guard: rule (b)'s broadened regex must NOT trip on a legitimate
+# feature-branch refspec (no `:main` / `:master` suffix). Pairs with the
+# existing literal feature-branch refspec test for rule (a).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin feat/test:feat/test")
+if [[ "$RESULT" != *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin feat/test:feat/test (refspec, non-main remote) allowed"
+else
+  fail "main_protected: push origin feat/test:feat/test should be allowed, got: $RESULT"
 fi
 
 # Test: main_protected blocks naked `git push` while on main (rule (c) — the
