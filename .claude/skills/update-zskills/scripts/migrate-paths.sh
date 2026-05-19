@@ -3,25 +3,32 @@
 # Usage: bash migrate-paths.sh <main-root>
 # Exit 0 = migration applied or no-op; non-zero = mid-migration failure.
 #
-# The deterministic step orders write-of-config-keys LAST so any mid-failure
-# leaves the consumer recovering via the helper's legacy-`plans/` fallback.
+# INVARIANT: idempotency lock (.pre-paths-migration) writes LAST. Any earlier
+# step that fails leaves the consumer in a re-runnable state — config write
+# is atomic-or-skipped, file moves are atomic-per-file with early exit, and
+# the manifest is the lock claim that says "all of the above succeeded."
+# See #394 for the bug fixed by this contract.
 #
-# Algorithm (Phase 5a, ZSKILLS_PATH_CONFIG.md):
+# Algorithm (Phase 5a, ZSKILLS_PATH_CONFIG.md; reordered for #394):
 #   1.  Detection — inventory existing artifacts; refuse if already migrated.
 #   2.  Resolve target dirs in memory only (no config write yet).
 #   2.5 Trigger --rerender BEFORE any moves so the broadened recursive-delete
 #       hook regex is in place protecting the migration's own filesystem
 #       actions.
-#   3.  Move forensic + narrative reports → .zskills/audit/.
-#   4.  Move plans → $TARGET_PLANS (default docs/plans).
-#   4b. Move plans/PLAN_INDEX.md → .zskills/audit/.
-#   5.  Move issue trackers → $TARGET_ISSUES (default .zskills/issues).
-#   6.  Move var/ runtime files → .zskills/dev-server.{pid,log}.
-#   7.  Update .gitignore (idempotent).
-#   8.  (reserved — was --rerender step before round-2 plan hoisted to 2.5).
-#   9.  Write .pre-paths-migration manifest (write-once).
-#   10. Write config keys output.plans_dir + output.issues_dir +
+#   3.  Write config keys output.plans_dir + output.issues_dir +
 #       output.reports_dir (BOTH-OR-ALL-OR-NEITHER 3-tuple atomic write).
+#       Runs BEFORE file moves so an awk failure aborts cleanly with NO
+#       files touched and NO manifest written (re-runnable state).
+#   4.  Move forensic + narrative reports → .zskills/audit/.
+#   5.  Move plans → $TARGET_PLANS (default docs/plans).
+#   5b. Move plans/PLAN_INDEX.md → .zskills/audit/.
+#   6.  Move issue trackers → $TARGET_ISSUES (default .zskills/issues).
+#   7.  Move var/ runtime files → .zskills/dev-server.{pid,log}.
+#   8.  Update .gitignore (idempotent).
+#   9.  Cross-reference rewrite (Phase 5b) inside the moved plan files.
+#   10. Write .pre-paths-migration manifest (LOCK CLAIM — written LAST so an
+#       earlier failure leaves the consumer re-runnable; on success this
+#       short-circuits future invocations at Step 1).
 #   11. Print summary.
 #
 # Per CLAUDE.md "Never suppress errors on operations you need to verify":
@@ -462,310 +469,16 @@ else
   exit 1
 fi
 
-# ─── Step 3 — Move forensic + narrative reports → .zskills/audit/ ─────────
-mkdir -p .zskills/audit
-
-for f in "${TOP_REPORTS[@]}"; do
-  [ -e "$f" ] || continue
-  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
-    git mv "$f" ".zskills/audit/$f"
-  else
-    mv "$f" ".zskills/audit/$f"
-  fi
-  if [ -e ".zskills/audit/$f" ] && [ ! -e "$f" ]; then
-    echo "moved: $f → .zskills/audit/$f"
-    manifest_add "$f" ".zskills/audit/$f"
-  else
-    echo "FAIL: move $f → .zskills/audit/$f did not complete" >&2
-    exit 1
-  fi
-done
-
-# Move every file under reports/ (if dir present).
-if [ -d reports ]; then
-  while IFS= read -r -d '' src; do
-    rel="${src#reports/}"
-    dst=".zskills/audit/$rel"
-    mkdir -p "$(dirname "$dst")"
-    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-      git mv "$src" "$dst"
-    else
-      mv "$src" "$dst"
-    fi
-    if [ -e "$dst" ] && [ ! -e "$src" ]; then
-      echo "moved: $src → $dst"
-      manifest_add "$src" "$dst"
-    else
-      echo "FAIL: move $src → $dst did not complete" >&2
-      exit 1
-    fi
-  done < <(find reports -type f -print0)
-  # Remove empty reports/ if possible.
-  if [ -d reports ] && [ -z "$(ls -A reports 2>/dev/null)" ]; then
-    if rmdir reports; then
-      echo "removed empty: reports/"
-    else
-      echo "FAIL: rmdir reports/ failed" >&2
-      exit 1
-    fi
-  fi
-fi
-
-# ─── Step 4 — Move plans → $TARGET_PLANS ──────────────────────────────────
-mkdir -p "$TARGET_PLANS"
-
-if [ -d plans ]; then
-  # Move *_PLAN.md files.
-  for src in plans/*_PLAN.md; do
-    [ -e "$src" ] || continue
-    base=$(basename "$src")
-    dst="$TARGET_PLANS/$base"
-    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-      git mv "$src" "$dst"
-    else
-      mv "$src" "$dst"
-    fi
-    if [ -e "$dst" ] && [ ! -e "$src" ]; then
-      echo "moved: $src → $dst"
-      manifest_add "$src" "$dst"
-    else
-      echo "FAIL: move $src → $dst did not complete" >&2
-      exit 1
-    fi
-  done
-
-  # Move CANARY*.md files.
-  for src in plans/CANARY*.md; do
-    [ -e "$src" ] || continue
-    base=$(basename "$src")
-    dst="$TARGET_PLANS/$base"
-    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-      git mv "$src" "$dst"
-    else
-      mv "$src" "$dst"
-    fi
-    if [ -e "$dst" ] && [ ! -e "$src" ]; then
-      echo "moved: $src → $dst"
-      manifest_add "$src" "$dst"
-    else
-      echo "FAIL: move $src → $dst did not complete" >&2
-      exit 1
-    fi
-  done
-
-  # Move any remaining plans/*.md not matched above (covers kebab-case
-  # plans like cross-platform-hooks.md and SCREAMING_SNAKE_CASE without
-  # _PLAN suffix like EXECUTION_MODES.md). Skip PLAN_INDEX.md — Step 4b
-  # routes it to .zskills/audit/ instead of $TARGET_PLANS.
-  for src in plans/*.md; do
-    [ -e "$src" ] || continue
-    base=$(basename "$src")
-    [ "$base" = "PLAN_INDEX.md" ] && continue
-    dst="$TARGET_PLANS/$base"
-    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-      git mv "$src" "$dst"
-    else
-      mv "$src" "$dst"
-    fi
-    if [ -e "$dst" ] && [ ! -e "$src" ]; then
-      echo "moved: $src → $dst"
-      manifest_add "$src" "$dst"
-    else
-      echo "FAIL: move $src → $dst did not complete" >&2
-      exit 1
-    fi
-  done
-
-  # Recursively move plans/blocks/ → $TARGET_PLANS/blocks/.
-  if [ -d plans/blocks ]; then
-    mkdir -p "$TARGET_PLANS/blocks"
-    while IFS= read -r -d '' src; do
-      rel="${src#plans/blocks/}"
-      dst="$TARGET_PLANS/blocks/$rel"
-      mkdir -p "$(dirname "$dst")"
-      if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-        git mv "$src" "$dst"
-      else
-        mv "$src" "$dst"
-      fi
-      if [ -e "$dst" ] && [ ! -e "$src" ]; then
-        echo "moved: $src → $dst"
-        manifest_add "$src" "$dst"
-      else
-        echo "FAIL: move $src → $dst did not complete" >&2
-        exit 1
-      fi
-    done < <(find plans/blocks -type f -print0)
-    # Remove empty plans/blocks/ if possible.
-    find plans/blocks -type d -empty -delete 2>/dev/null || true
-  fi
-fi
-
-# ─── Step 4b — Move PLAN_INDEX.md → .zskills/audit/ ────────────────────────
-if [ -e plans/PLAN_INDEX.md ]; then
-  if git ls-files --error-unmatch plans/PLAN_INDEX.md >/dev/null 2>&1; then
-    git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
-  else
-    mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
-  fi
-  if [ -e .zskills/audit/PLAN_INDEX.md ] && [ ! -e plans/PLAN_INDEX.md ]; then
-    echo "moved: plans/PLAN_INDEX.md → .zskills/audit/PLAN_INDEX.md"
-    manifest_add "plans/PLAN_INDEX.md" ".zskills/audit/PLAN_INDEX.md"
-  else
-    echo "FAIL: move plans/PLAN_INDEX.md → .zskills/audit/ did not complete" >&2
-    exit 1
-  fi
-else
-  echo "skipped: plans/PLAN_INDEX.md absent (will be regenerated via /plans rebuild)"
-fi
-
-# ─── Step 5 — Move issue trackers → $TARGET_ISSUES ────────────────────────
-mkdir -p "$TARGET_ISSUES"
-
-ISSUE_FILES=( ISSUES_PLAN.md BUILD_ISSUES.md DOC_ISSUES.md QE_ISSUES.md )
-for base in "${ISSUE_FILES[@]}"; do
-  src="plans/$base"
-  [ -e "$src" ] || continue
-  dst="$TARGET_ISSUES/$base"
-  if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-    git mv "$src" "$dst"
-  else
-    mv "$src" "$dst"
-  fi
-  if [ -e "$dst" ] && [ ! -e "$src" ]; then
-    echo "moved: $src → $dst"
-    manifest_add "$src" "$dst"
-  else
-    echo "FAIL: move $src → $dst did not complete" >&2
-    exit 1
-  fi
-done
-
-# Remove empty plans/ directory if possible.
-if [ -d plans ] && [ -z "$(ls -A plans 2>/dev/null)" ]; then
-  if rmdir plans; then
-    echo "removed empty: plans/"
-  else
-    echo "FAIL: rmdir plans/ failed" >&2
-    exit 1
-  fi
-fi
-
-# ─── Step 6 — Move var/ runtime files ─────────────────────────────────────
-declare -A VAR_MAP=(
-  [var/dev.pid]=".zskills/dev-server.pid"
-  [var/dev.log]=".zskills/dev-server.log"
-)
-
-DEFER_STUBS=0
-for src in var/dev.pid var/dev.log; do
-  [ -e "$src" ] || continue
-  dst="${VAR_MAP[$src]}"
-  mkdir -p "$(dirname "$dst")"
-  if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
-    git mv "$src" "$dst"
-  else
-    mv "$src" "$dst"
-  fi
-  if [ -e "$dst" ] && [ ! -e "$src" ]; then
-    echo "moved: $src → $dst"
-    manifest_add "$src" "$dst"
-    DEFER_STUBS=1
-  else
-    echo "FAIL: move $src → $dst did not complete" >&2
-    exit 1
-  fi
-done
-
-# Remove empty var/ if present.
-if [ -d var ] && [ -z "$(ls -A var 2>/dev/null)" ]; then
-  if rmdir var; then
-    echo "removed empty: var/"
-  else
-    echo "FAIL: rmdir var/ failed" >&2
-    exit 1
-  fi
-fi
-
-# Stub-script deferral notice (always print when var/ files moved; agent-
-# runnable upgrade prompt in Phase 5b handles auto-edit of start-dev.sh /
-# stop-dev.sh).
-if [ "$DEFER_STUBS" -eq 1 ]; then
-  echo "DEFER: scripts/start-dev.sh and scripts/stop-dev.sh may reference var/dev.pid / var/dev.log; agent-runnable upgrade prompt will rewrite them (see references/path-config-upgrade.md after Phase 5b)."
-fi
-
-# ─── Step 7 — Update .gitignore (idempotent) ──────────────────────────────
-GI=".gitignore"
-[ -f "$GI" ] || touch "$GI"
-
-# Add .zskills/audit/ if not already present.
-if ! grep -qE '^\.zskills/audit/$' "$GI"; then
-  echo ".zskills/audit/" >> "$GI"
-fi
-
-# Note: .zskills/issues/ is no longer auto-appended. The new default
-# (docs/issues/) is tracked, and the broader .zskills/ umbrella ignore
-# (if present in the consumer's .gitignore) already covers any opt-in
-# .zskills/issues/ override without needing a per-subdir entry here.
-
-# Remove obsolete var/ line if present (no-op if absent).
-if grep -qE '^var/$' "$GI"; then
-  if sed -i.bak '\|^var/$|d' "$GI"; then
-    rm -f "$GI.bak"
-  else
-    echo "FAIL: sed remove var/ line from .gitignore failed" >&2
-    exit 1
-  fi
-fi
-
-# Verify effective ignore via git check-ignore -v.
-mkdir -p .zskills/audit
-touch .zskills/audit/.tmp-ignore-check
-match=$(git check-ignore -v .zskills/audit/.tmp-ignore-check 2>/dev/null) || {
-  echo "FAIL: .zskills/audit/ not effectively ignored" >&2
-  rm -f .zskills/audit/.tmp-ignore-check
-  exit 1
-}
-case "$match" in
-  *!\.zskills/audit*|*!\.zskills/*)
-    echo "FAIL: positive include rule overrides .zskills ignore: $match" >&2
-    rm -f .zskills/audit/.tmp-ignore-check
-    exit 1 ;;
-esac
-rm -f .zskills/audit/.tmp-ignore-check
-
-# ─── Step 7.5 — Cross-reference rewrite (Phase 5b) ────────────────────────
-# Rewrites legacy `plans/` and `reports/` structural references inside the
-# moved plan files (active / proposal / no-frontmatter REWRITE; canary
-# self-invocations REWRITE; status:complete non-canary PRESERVE + warn).
-# Runs BEFORE manifest write so a mid-rewrite abort leaves the idempotent
-# guard inactive (re-run resumes cleanly).
-if [ -d "$TARGET_PLANS" ]; then
-  pass_out=$(run_cross_ref_pass "$TARGET_PLANS") || {
-    echo "FAIL: cross-ref rewrite pass failed (step 7.5)" >&2
-    exit 1
-  }
-  CR_REWROTE=$(echo "$pass_out" | awk '{print $1}')
-  CR_PRESERVED=$(echo "$pass_out" | awk '{print $2}')
-  CR_SEEN=$(echo "$pass_out" | awk '{print $3}')
-  echo "cross-ref rewrite: rewrote $CR_REWROTE files; preserved $CR_PRESERVED; scanned $CR_SEEN"
-else
-  CR_REWROTE=0; CR_PRESERVED=0; CR_SEEN=0
-fi
-
-# ─── Step 8 — (reserved; --rerender step hoisted to 2.5) ──────────────────
-
-# ─── Step 9 — Write .pre-paths-migration manifest (write-once) ────────────
-if [ -e .pre-paths-migration ]; then
-  echo "FAIL: .pre-paths-migration already exists; refusing to overwrite manifest" >&2
-  exit 1
-fi
-# Strip trailing newline by writing without -n (printf gives byte-control).
-# MANIFEST already ends with one trailing newline per entry; preserve as-is.
-printf '%s' "$MANIFEST" > .pre-paths-migration
-MANIFEST_LINES=$(grep -c '	' .pre-paths-migration 2>/dev/null || echo 0)
-
-# ─── Step 10 — Write the config keys (LAST; atomic both-or-neither) ───────
+# ─── Step 3 — Write the config keys FIRST (atomic-or-skipped) ─────────────
+# Per the #394 reorder: config write runs BEFORE any file moves so that an
+# awk failure here aborts cleanly — NO files have been touched, NO manifest
+# has been written, and the consumer's re-run hits the SAME detection state
+# (legacy artifacts still on disk, idempotency guard not yet armed).
+#
+# Atomicity: `write_output_block` writes to a `mktemp` tmp file and only
+# replaces `$CFG` via a final `cat "$tmp" > "$CFG"` (no rename/clobber if
+# the awk pipeline failed). awk failure → tmp is rm'd, `$CFG` untouched.
+#
 # If config is missing entirely, create an empty {} object.
 if [ ! -f "$CFG" ]; then
   mkdir -p .claude
@@ -1047,6 +760,9 @@ write_output_block() {
 
 # Decision: if ANY of the three keys is missing, write ALL THREE. Per
 # Locked Decision 4 + 3-tuple atomic both-or-all-or-neither extension.
+# Per #394: this runs BEFORE file moves so awk failure aborts cleanly with
+# no manifest, no moved files, and the consumer's re-run hits the same
+# detection state.
 if [ "$HAS_PLANS_KEY" -eq 0 ] || [ "$HAS_ISSUES_KEY" -eq 0 ] || [ "$HAS_REPORTS_KEY" -eq 0 ]; then
   if ! write_output_block "$TARGET_PLANS" "$TARGET_ISSUES" "$TARGET_REPORTS"; then
     echo "FAIL: cannot write output.plans_dir / output.issues_dir / output.reports_dir to $CFG" >&2
@@ -1056,6 +772,322 @@ if [ "$HAS_PLANS_KEY" -eq 0 ] || [ "$HAS_ISSUES_KEY" -eq 0 ] || [ "$HAS_REPORTS_
 else
   WROTE_KEYS=0
 fi
+
+# ─── Step 4 — Move forensic + narrative reports → .zskills/audit/ ─────────
+mkdir -p .zskills/audit
+
+for f in "${TOP_REPORTS[@]}"; do
+  [ -e "$f" ] || continue
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    git mv "$f" ".zskills/audit/$f"
+  else
+    mv "$f" ".zskills/audit/$f"
+  fi
+  if [ -e ".zskills/audit/$f" ] && [ ! -e "$f" ]; then
+    echo "moved: $f → .zskills/audit/$f"
+    manifest_add "$f" ".zskills/audit/$f"
+  else
+    echo "FAIL: move $f → .zskills/audit/$f did not complete" >&2
+    exit 1
+  fi
+done
+
+# Move every file under reports/ (if dir present).
+if [ -d reports ]; then
+  while IFS= read -r -d '' src; do
+    rel="${src#reports/}"
+    dst=".zskills/audit/$rel"
+    mkdir -p "$(dirname "$dst")"
+    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+      git mv "$src" "$dst"
+    else
+      mv "$src" "$dst"
+    fi
+    if [ -e "$dst" ] && [ ! -e "$src" ]; then
+      echo "moved: $src → $dst"
+      manifest_add "$src" "$dst"
+    else
+      echo "FAIL: move $src → $dst did not complete" >&2
+      exit 1
+    fi
+  done < <(find reports -type f -print0)
+  # Remove empty reports/ if possible.
+  if [ -d reports ] && [ -z "$(ls -A reports 2>/dev/null)" ]; then
+    if rmdir reports; then
+      echo "removed empty: reports/"
+    else
+      echo "FAIL: rmdir reports/ failed" >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ─── Step 5 — Move plans → $TARGET_PLANS ──────────────────────────────────
+mkdir -p "$TARGET_PLANS"
+
+if [ -d plans ]; then
+  # Move *_PLAN.md files.
+  for src in plans/*_PLAN.md; do
+    [ -e "$src" ] || continue
+    base=$(basename "$src")
+    dst="$TARGET_PLANS/$base"
+    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+      git mv "$src" "$dst"
+    else
+      mv "$src" "$dst"
+    fi
+    if [ -e "$dst" ] && [ ! -e "$src" ]; then
+      echo "moved: $src → $dst"
+      manifest_add "$src" "$dst"
+    else
+      echo "FAIL: move $src → $dst did not complete" >&2
+      exit 1
+    fi
+  done
+
+  # Move CANARY*.md files.
+  for src in plans/CANARY*.md; do
+    [ -e "$src" ] || continue
+    base=$(basename "$src")
+    dst="$TARGET_PLANS/$base"
+    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+      git mv "$src" "$dst"
+    else
+      mv "$src" "$dst"
+    fi
+    if [ -e "$dst" ] && [ ! -e "$src" ]; then
+      echo "moved: $src → $dst"
+      manifest_add "$src" "$dst"
+    else
+      echo "FAIL: move $src → $dst did not complete" >&2
+      exit 1
+    fi
+  done
+
+  # Move any remaining plans/*.md not matched above (covers kebab-case
+  # plans like cross-platform-hooks.md and SCREAMING_SNAKE_CASE without
+  # _PLAN suffix like EXECUTION_MODES.md). Skip PLAN_INDEX.md — Step 5b
+  # routes it to .zskills/audit/ instead of $TARGET_PLANS.
+  for src in plans/*.md; do
+    [ -e "$src" ] || continue
+    base=$(basename "$src")
+    [ "$base" = "PLAN_INDEX.md" ] && continue
+    dst="$TARGET_PLANS/$base"
+    if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+      git mv "$src" "$dst"
+    else
+      mv "$src" "$dst"
+    fi
+    if [ -e "$dst" ] && [ ! -e "$src" ]; then
+      echo "moved: $src → $dst"
+      manifest_add "$src" "$dst"
+    else
+      echo "FAIL: move $src → $dst did not complete" >&2
+      exit 1
+    fi
+  done
+
+  # Recursively move plans/blocks/ → $TARGET_PLANS/blocks/.
+  if [ -d plans/blocks ]; then
+    mkdir -p "$TARGET_PLANS/blocks"
+    while IFS= read -r -d '' src; do
+      rel="${src#plans/blocks/}"
+      dst="$TARGET_PLANS/blocks/$rel"
+      mkdir -p "$(dirname "$dst")"
+      if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+        git mv "$src" "$dst"
+      else
+        mv "$src" "$dst"
+      fi
+      if [ -e "$dst" ] && [ ! -e "$src" ]; then
+        echo "moved: $src → $dst"
+        manifest_add "$src" "$dst"
+      else
+        echo "FAIL: move $src → $dst did not complete" >&2
+        exit 1
+      fi
+    done < <(find plans/blocks -type f -print0)
+    # Remove empty plans/blocks/ if possible.
+    find plans/blocks -type d -empty -delete 2>/dev/null || true
+  fi
+fi
+
+# ─── Step 5b — Move PLAN_INDEX.md → .zskills/audit/ ────────────────────────
+if [ -e plans/PLAN_INDEX.md ]; then
+  if git ls-files --error-unmatch plans/PLAN_INDEX.md >/dev/null 2>&1; then
+    git mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
+  else
+    mv plans/PLAN_INDEX.md .zskills/audit/PLAN_INDEX.md
+  fi
+  if [ -e .zskills/audit/PLAN_INDEX.md ] && [ ! -e plans/PLAN_INDEX.md ]; then
+    echo "moved: plans/PLAN_INDEX.md → .zskills/audit/PLAN_INDEX.md"
+    manifest_add "plans/PLAN_INDEX.md" ".zskills/audit/PLAN_INDEX.md"
+  else
+    echo "FAIL: move plans/PLAN_INDEX.md → .zskills/audit/ did not complete" >&2
+    exit 1
+  fi
+else
+  echo "skipped: plans/PLAN_INDEX.md absent (will be regenerated via /plans rebuild)"
+fi
+
+# ─── Step 6 — Move issue trackers → $TARGET_ISSUES ────────────────────────
+mkdir -p "$TARGET_ISSUES"
+
+ISSUE_FILES=( ISSUES_PLAN.md BUILD_ISSUES.md DOC_ISSUES.md QE_ISSUES.md )
+for base in "${ISSUE_FILES[@]}"; do
+  src="plans/$base"
+  [ -e "$src" ] || continue
+  dst="$TARGET_ISSUES/$base"
+  if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+    git mv "$src" "$dst"
+  else
+    mv "$src" "$dst"
+  fi
+  if [ -e "$dst" ] && [ ! -e "$src" ]; then
+    echo "moved: $src → $dst"
+    manifest_add "$src" "$dst"
+  else
+    echo "FAIL: move $src → $dst did not complete" >&2
+    exit 1
+  fi
+done
+
+# Remove empty plans/ directory if possible.
+if [ -d plans ] && [ -z "$(ls -A plans 2>/dev/null)" ]; then
+  if rmdir plans; then
+    echo "removed empty: plans/"
+  else
+    echo "FAIL: rmdir plans/ failed" >&2
+    exit 1
+  fi
+fi
+
+# ─── Step 7 — Move var/ runtime files ─────────────────────────────────────
+declare -A VAR_MAP=(
+  [var/dev.pid]=".zskills/dev-server.pid"
+  [var/dev.log]=".zskills/dev-server.log"
+)
+
+DEFER_STUBS=0
+for src in var/dev.pid var/dev.log; do
+  [ -e "$src" ] || continue
+  dst="${VAR_MAP[$src]}"
+  mkdir -p "$(dirname "$dst")"
+  if git ls-files --error-unmatch "$src" >/dev/null 2>&1; then
+    git mv "$src" "$dst"
+  else
+    mv "$src" "$dst"
+  fi
+  if [ -e "$dst" ] && [ ! -e "$src" ]; then
+    echo "moved: $src → $dst"
+    manifest_add "$src" "$dst"
+    DEFER_STUBS=1
+  else
+    echo "FAIL: move $src → $dst did not complete" >&2
+    exit 1
+  fi
+done
+
+# Remove empty var/ if present.
+if [ -d var ] && [ -z "$(ls -A var 2>/dev/null)" ]; then
+  if rmdir var; then
+    echo "removed empty: var/"
+  else
+    echo "FAIL: rmdir var/ failed" >&2
+    exit 1
+  fi
+fi
+
+# Stub-script deferral notice (always print when var/ files moved; agent-
+# runnable upgrade prompt in Phase 5b handles auto-edit of start-dev.sh /
+# stop-dev.sh).
+if [ "$DEFER_STUBS" -eq 1 ]; then
+  echo "DEFER: scripts/start-dev.sh and scripts/stop-dev.sh may reference var/dev.pid / var/dev.log; agent-runnable upgrade prompt will rewrite them (see references/path-config-upgrade.md after Phase 5b)."
+fi
+
+# ─── Step 8 — Update .gitignore (idempotent) ──────────────────────────────
+GI=".gitignore"
+[ -f "$GI" ] || touch "$GI"
+
+# Add .zskills/audit/ if not already present.
+if ! grep -qE '^\.zskills/audit/$' "$GI"; then
+  echo ".zskills/audit/" >> "$GI"
+fi
+
+# Note: .zskills/issues/ is no longer auto-appended. The new default
+# (docs/issues/) is tracked, and the broader .zskills/ umbrella ignore
+# (if present in the consumer's .gitignore) already covers any opt-in
+# .zskills/issues/ override without needing a per-subdir entry here.
+
+# Remove obsolete var/ line if present (no-op if absent).
+if grep -qE '^var/$' "$GI"; then
+  if sed -i.bak '\|^var/$|d' "$GI"; then
+    rm -f "$GI.bak"
+  else
+    echo "FAIL: sed remove var/ line from .gitignore failed" >&2
+    exit 1
+  fi
+fi
+
+# Verify effective ignore via git check-ignore -v.
+mkdir -p .zskills/audit
+touch .zskills/audit/.tmp-ignore-check
+match=$(git check-ignore -v .zskills/audit/.tmp-ignore-check 2>/dev/null) || {
+  echo "FAIL: .zskills/audit/ not effectively ignored" >&2
+  rm -f .zskills/audit/.tmp-ignore-check
+  exit 1
+}
+case "$match" in
+  *!\.zskills/audit*|*!\.zskills/*)
+    echo "FAIL: positive include rule overrides .zskills ignore: $match" >&2
+    rm -f .zskills/audit/.tmp-ignore-check
+    exit 1 ;;
+esac
+rm -f .zskills/audit/.tmp-ignore-check
+
+# ─── Step 9 — Cross-reference rewrite (Phase 5b) ──────────────────────────
+# Rewrites legacy `plans/` and `reports/` structural references inside the
+# moved plan files (active / proposal / no-frontmatter REWRITE; canary
+# self-invocations REWRITE; status:complete non-canary PRESERVE + warn).
+# Runs BEFORE manifest write so a mid-rewrite abort leaves the idempotent
+# guard inactive (re-run resumes cleanly).
+if [ -d "$TARGET_PLANS" ]; then
+  pass_out=$(run_cross_ref_pass "$TARGET_PLANS") || {
+    echo "FAIL: cross-ref rewrite pass failed (step 9)" >&2
+    exit 1
+  }
+  CR_REWROTE=$(echo "$pass_out" | awk '{print $1}')
+  CR_PRESERVED=$(echo "$pass_out" | awk '{print $2}')
+  CR_SEEN=$(echo "$pass_out" | awk '{print $3}')
+  echo "cross-ref rewrite: rewrote $CR_REWROTE files; preserved $CR_PRESERVED; scanned $CR_SEEN"
+else
+  CR_REWROTE=0; CR_PRESERVED=0; CR_SEEN=0
+fi
+
+# ─── Step 10 — Write .pre-paths-migration manifest (LOCK CLAIM — LAST) ────
+# Per the #394 invariant: the idempotency lock writes LAST. Once on disk,
+# Step 1's guard short-circuits any future invocation. Any failure in
+# Steps 3-9 above must NOT reach this point — config write aborts cleanly
+# (atomic-or-skipped, awk failure → exit 1 with no $CFG change); file moves
+# use atomic per-file `git mv` / `mv` with `exit 1` on failure; the cross-
+# ref pass propagates non-zero via `|| { exit 1; }`. By construction, if
+# we reach Step 10 every prior step succeeded.
+if [ -e .pre-paths-migration ]; then
+  echo "FAIL: .pre-paths-migration already exists; refusing to overwrite manifest" >&2
+  exit 1
+fi
+# Strip trailing newline by writing without -n (printf gives byte-control).
+# MANIFEST already ends with one trailing newline per entry; preserve as-is.
+printf '%s' "$MANIFEST" > .pre-paths-migration
+MANIFEST_LINES=$(grep -c '	' .pre-paths-migration 2>/dev/null || echo 0)
+
+# ─── (Step 10 historical note) ────────────────────────────────────────────
+# `write_output_block` and its invocation previously lived AFTER the
+# manifest write here (old "Step 10"). Per #394 both were hoisted to
+# NEW Step 3 above — config write runs BEFORE file moves so an awk
+# failure aborts the migration before any state-mutating action,
+# preventing the strand-by-stranded-manifest bug from re-emerging.
+
 
 # ─── Step 11 — Print summary ──────────────────────────────────────────────
 echo

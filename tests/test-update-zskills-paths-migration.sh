@@ -1010,6 +1010,92 @@ case_14_partial_reports_missing() {
   fi
 }
 
+# ─── Case 15: partial-failure recovery — config-write failure aborts cleanly ─
+# Regression for #394: pre-fix, the manifest was written BEFORE the config
+# keys, so a Step 10 awk failure left the consumer permanently stranded
+# (manifest on disk → re-run hit idempotency guard at Step 1 and exited 0
+# while output.plans_dir was never written → helper fell back to legacy
+# `plans/`, now empty). Post-fix, config write runs FIRST: an awk failure
+# aborts with NO manifest, NO moved files. Re-run after fixing the config
+# completes fully. Third run is an idempotent no-op.
+case_15_partial_failure_recovery() {
+  local D="$TEST_OUT/paths-migration-fixture-15"
+  init_repo "$D"
+  # Malformed config — missing closing brace breaks awk's outer-brace
+  # locator in the no-output-object branch (write_output_block returns 2).
+  mkdir -p "$D/.claude"
+  printf '{\n  "project_name": "fixture"\n' > "$D/.claude/zskills-config.json"
+  mkdir -p "$D/plans"
+  echo "# test plan" > "$D/plans/SOME_PLAN.md"
+
+  # Attempt 1 — must fail without moving files or writing manifest.
+  local out1 rc1
+  out1=$(run_migrate "$D" 2>&1); rc1=$?
+  if [ "$rc1" -ne 0 ]; then
+    pass "case 15: malformed config aborts migration (rc=$rc1)"
+  else
+    fail "case 15: malformed config should abort" "rc=$rc1 out=$out1"
+    return
+  fi
+  if [ ! -f "$D/.pre-paths-migration" ]; then
+    pass "case 15: NO manifest written on abort (re-runnable state preserved)"
+  else
+    fail "case 15: manifest written despite abort — strands consumer" \
+      "$(cat "$D/.pre-paths-migration")"
+  fi
+  if [ -f "$D/plans/SOME_PLAN.md" ]; then
+    pass "case 15: plan still in plans/ on abort (files not moved)"
+  else
+    fail "case 15: plan moved despite config-write failure" \
+      "$(find "$D" -name SOME_PLAN.md 2>&1)"
+  fi
+  if [ ! -f "$D/docs/plans/SOME_PLAN.md" ]; then
+    pass "case 15: docs/plans/SOME_PLAN.md absent on abort"
+  else
+    fail "case 15: plan moved to docs/plans/ despite config-write failure" \
+      "$(ls "$D/docs/plans" 2>&1)"
+  fi
+
+  # Fix the config (multi-line so write_output_block's no-output-object
+  # branch can locate the outer closing brace).
+  printf '{\n  "project_name": "fixture"\n}\n' > "$D/.claude/zskills-config.json"
+
+  # Attempt 2 — succeeds, manifest written, files moved.
+  local out2 rc2
+  out2=$(run_migrate "$D" 2>&1); rc2=$?
+  if [ "$rc2" -eq 0 ]; then
+    pass "case 15: post-fix re-run completes successfully (rc=0)"
+  else
+    fail "case 15: post-fix re-run failed" "rc=$rc2 out=$out2"
+    return
+  fi
+  if [ -f "$D/.pre-paths-migration" ]; then
+    pass "case 15: manifest written after successful re-run"
+  else
+    fail "case 15: manifest missing after successful re-run" "no manifest"
+  fi
+  if [ -f "$D/docs/plans/SOME_PLAN.md" ]; then
+    pass "case 15: plan moved to docs/plans/ after successful re-run"
+  else
+    fail "case 15: plan did not move" "$(find "$D" -name SOME_PLAN.md 2>&1)"
+  fi
+  if grep -q '"output"' "$D/.claude/zskills-config.json"; then
+    pass "case 15: config gained output keys after successful re-run"
+  else
+    fail "case 15: config missing output keys" \
+      "$(cat "$D/.claude/zskills-config.json")"
+  fi
+
+  # Attempt 3 — idempotency guard fires, no-op.
+  local out3 rc3
+  out3=$(run_migrate "$D" 2>&1); rc3=$?
+  if [ "$rc3" -eq 0 ] && echo "$out3" | grep -q "already migrated"; then
+    pass "case 15: third run is idempotent no-op (\"already migrated\")"
+  else
+    fail "case 15: third run did not no-op" "rc=$rc3 out=$out3"
+  fi
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
@@ -1026,6 +1112,7 @@ case_11_chmod_fallback
 case_12_plain_plans_catchall
 case_13_cross_ref_rewrite_migration_doc_guard
 case_14_partial_reports_missing
+case_15_partial_failure_recovery
 
 echo
 echo "---"

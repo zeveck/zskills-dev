@@ -192,6 +192,17 @@ If the verifying read is too expensive to do now, say so and stop -- do
 not substitute a guess and let downstream failure do the verification.
 The only research you can skip is what you just verified in this turn.
 
+## Migration scripts
+
+**Multi-step state-mutating scripts must write the idempotency lock LAST.** If
+a script has steps A-N and an idempotency guard, the lock must be written ONLY
+after all of A-N succeed. Earlier failures must leave the consumer in a
+re-runnable state. Past failure: #394 — migrate-paths.sh wrote the manifest in
+the middle of the pipeline; an awk failure stranded consumers permanently
+because the idempotency guard fired on re-run while the actual migration was
+incomplete. The contract is now: config write FIRST (atomic-or-skipped), file
+moves SECOND (atomic per-file), manifest LAST (the lock claim).
+
 ## Tracking markers
 
 Tracking markers live in `.zskills/tracking/` and are scoped per pipeline
