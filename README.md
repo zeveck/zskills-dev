@@ -13,8 +13,10 @@
 <!-- prod-strip:end -->
 # Z Skills
 
-**20 skills that plan, build, test, fix, and ship** — so one developer
-can run a full engineering team.
+**26 core skills that plan, build, test, fix, and ship** — so one
+developer can run a full engineering team. (24 user-facing slash
+commands, 2 internal helpers, three block-diagram add-ons, and a
+battery of safety hooks.)
 
 Z Skills encodes hard-won lessons from real agent failures into reusable
 prompt files. Each skill is a `.claude/skills/<name>/SKILL.md` file that
@@ -383,16 +385,19 @@ RUN_E2E=1 bash tests/run-all.sh          # + e2e-parallel-pipelines
 
 ## Skill catalog
 
-### 20 Core Skills (`skills/`)
+### 24 User-Facing Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
-data pipeline.
+data pipeline. All are slash-invocable by the user. Two additional
+helper skills (`/land-pr`, `/create-worktree`) are dispatched internally
+by other skills — see Helpers below.
 
 #### Plan
 
 | Skill | Purpose |
 |-------|---------|
 | `/draft-plan` | Adversarial plan drafting: research, draft, devil's advocate review, refine until converged |
+| `/draft-tests` | Append a `### Tests` subsection to each pending phase of an existing plan via a senior-QE reviewer + devil's-advocate + refiner loop |
 | `/refine-plan` | Refine in-progress plans: review remaining phases against completed work, generate Drift Log |
 | `/research-and-plan` | Decompose broad goals into focused sub-plans with dependency ordering |
 | `/research-and-go` | Full autonomous pipeline: decompose, plan, execute — one command, walk away |
@@ -437,13 +442,20 @@ data pipeline.
 |-------|---------|
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
-| `/create-worktree` | Unified worktree creation (used by other skills and ad-hoc): prefix-derived path, safe branch-add with TOCTOU remap |
+| `/session-report` | Audit what THIS session said it would do vs. what's actually shipped — verifies session-mentioned items against git/PRs/plans, not conversation memory |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
 | `/zskills-dashboard` | Local web dashboard for plans/issues/worktrees/branches/tracking: `start` launches a detached Python server, `stop` SIGTERMs it, `status` reports uptime |
 
+#### Helpers (internal — dispatched by other skills, not designed for direct user invocation)
+
+| Skill | Purpose |
+|-------|---------|
+| `/land-pr` | PR landing helper — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by `/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, and `/quickfix`. `user-invocable: false` hides it from the `/` menu. |
+| `/create-worktree` | Unified worktree creation. Tier 1 caller (bash inside `/run-plan`, `/fix-issues`, `/do`) must pass `--pipeline-id` verbatim — the script rejects invocations without the flag (rc 5). Tier 2 user/Claude invocation works ad-hoc but is rarely needed in practice. |
+
 ### Block Diagram Add-on (`block-diagram/`)
 
-3 additional skills for block-diagram editors. Not part of the core 20 —
+3 additional skills for block-diagram editors. Not part of the core 26 —
 install if your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 

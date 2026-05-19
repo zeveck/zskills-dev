@@ -263,7 +263,7 @@
 
 <nav>
   <span class="logo">Z Skills</span>
-  <a href="#skills">20 Skills</a>
+  <a href="#skills">26 Skills</a>
   <a href="#quickstart">Typical Workflow</a>
   <a href="#workflows">Workflows</a>
   <a href="#schedulable">Schedulable</a>
@@ -277,11 +277,11 @@
 <!-- HERO -->
 <section class="hero" style="margin-bottom: 6px; padding-bottom: 20px;">
   <h1>Z Skills System</h1>
-  <p>Z Skills turns Claude Code into a disciplined engineering team. 20 core skills that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
-  <p>Currently: 20 core skills and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
+  <p>Z Skills turns Claude Code into a disciplined engineering team. 26 core skills (24 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
+  <p>Currently: 24 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
 </section>
 
-<!-- ALL 20 SKILLS -->
+<!-- ALL 26 SKILLS -->
 <section id="skills" class="fade-in" style="margin-top: 0; padding-top: 0;">
       <div class="skill-mini-grid" style="grid-template-columns: 1fr; max-width: 600px; margin: 0 auto 24px;">
         <div class="skill-mini" style="border-color: var(--accent); border-width: 2px;">
@@ -305,8 +305,16 @@
           <p>Refine an in-progress plan. Reviews remaining phases against completed work, finds stale references and specification gaps, refines in place. Generates a Drift Log documenting how completed phases diverged from the original draft.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--accent);">
+          <h5><code>/draft-tests</code></h5>
+          <p>Append a <code>### Tests</code> subsection to each pending phase of an existing plan, via a senior-QE reviewer + devil's-advocate + refiner loop. Sister skill to <code>/draft-plan</code>, scoped to test specs; completed phases are checksum-gated and never modified.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--accent);">
           <h5><code>/plans</code></h5>
           <p>Plan dashboard. View index, find next ready plan, batch-execute.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--accent);">
+          <h5><code>/work-on-plans</code></h5>
+          <p>Batch-execute the prioritized ready queue from the dashboard. Reads <code>.zskills/monitor-state.json</code> and dispatches <code>/run-plan</code> sequentially across ready plans.</p>
         </div>
       </div>
 
@@ -381,12 +389,28 @@
           <p>Documentation audit and gap-filling across modules, examples, and high-level docs. Three modes, including newsletter generation.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/create-worktree</code></h5>
-          <p>Unified worktree creation. Thin wrapper around <code>scripts/create-worktree.sh</code> &mdash; owns prefix-derived path, optional branch-name override, pre-flight prune/fetch, safe add with TOCTOU-race remap, and sanitised <code>.zskills-tracked</code> writes. Used by other skills and directly.</p>
+          <h5><code>/session-report</code></h5>
+          <p>Audit what THIS session said it would do vs. what's actually shipped. Verifies session-mentioned items against ground truth (git, PRs, plans, worktrees), not conversation memory &mdash; catches "I'll send a fix" turns that never happened.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
           <h5><code>/update-zskills</code></h5>
           <p>Bootstrap the Z Skills system into a new project: copies skill files, configures settings, adapts instructions to the target codebase.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--text-dim);">
+          <h5><code>/zskills-dashboard</code></h5>
+          <p>Local web dashboard for plans, issues, worktrees, branches, and tracking activity. Drag-and-drop priority queue. <code>start</code> launches a detached Python server, <code>stop</code> SIGTERMs it, <code>status</code> reports uptime.</p>
+        </div>
+      </div>
+
+      <h4 style="color: var(--text-dim); margin: 24px 0 12px;">Helpers <span style="font-weight: 400; font-size: 0.8em; color: var(--text-dim);">(internal, dispatched by other skills &mdash; not designed for direct user invocation)</span></h4>
+      <div class="skill-mini-grid">
+        <div class="skill-mini" style="border-color: var(--border);">
+          <h5><code>/land-pr</code> <span style="font-size: 0.7em; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-weight: 400; margin-left: 6px;">helper</span></h5>
+          <p>PR landing helper &mdash; rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched by <code>/run-plan</code>, <code>/commit pr</code>, <code>/do pr</code>, <code>/fix-issues</code>, and <code>/quickfix</code>. <code>user-invocable: false</code> hides it from the <code>/</code> menu.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--border);">
+          <h5><code>/create-worktree</code> <span style="font-size: 0.7em; background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: var(--text-dim); font-weight: 400; margin-left: 6px;">helper</span></h5>
+          <p>Unified worktree creation. Tier 1 caller (bash inside <code>/run-plan</code>, <code>/fix-issues</code>, <code>/do</code>) must pass <code>--pipeline-id</code> verbatim &mdash; the script rejects invocations without the flag (rc 5). Tier 2 user/Claude invocation works ad-hoc but is rarely needed in practice.</p>
         </div>
       </div>
 
@@ -693,9 +717,9 @@
 
 <!-- CLOSING -->
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>20 skills that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
-  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6) &mdash; Z Skills System.</p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 core skills (24 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
+  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a> &middot; <a href="TECHNICAL.html">Technical &amp; cost stats &rarr;</a></p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6 / 4.7) &mdash; Z Skills System.</p>
 </section>
 
 </div>
