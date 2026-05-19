@@ -102,11 +102,14 @@ counter() {
 # Standard prep for the rebase happy-path prefix:
 #   call 1: rev-parse --is-inside-work-tree → exit 0
 #   call 2: rev-parse --verify refs/heads/<branch> → exit 0
+#   call 3: rev-parse --abbrev-ref HEAD → stdout=<branch> (Issue #397 guard)
 #   call 1: fetch origin <base> → exit 0
 prep_rebase_preflight_ok() {
   local sd="$1"
+  local branch="${2:-feat/x}"
   prep_git "$sd" rev-parse 1 exit 0
   prep_git "$sd" rev-parse 2 exit 0
+  prep_git "$sd" rev-parse 3 stdout "$branch"
   prep_git "$sd" fetch     1 exit 0
 }
 
@@ -170,6 +173,7 @@ cleanup_fixture "$F"
 F=$(new_fixture mode3)
 prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" rev-parse 2 exit 0
+prep_git "$F/state-git" rev-parse 3 stdout 'feat/x'
 prep_git "$F/state-git" fetch     1 exit 1
 prep_git "$F/state-git" fetch     1 stderr 'fatal: could not resolve hostname'
 run_sut "$F" bash "$SCRIPTS_DIR/pr-rebase.sh" --branch feat/x --base main
@@ -470,7 +474,7 @@ cleanup_fixture "$F"
 # Any sidecar path emitted should have NO `/` after `land-pr-…-`.
 # ----------------------------------------------------------------------
 F=$(new_fixture slug)
-prep_rebase_preflight_ok "$F/state-git"
+prep_rebase_preflight_ok "$F/state-git" 'smoke/foo'
 prep_git "$F/state-git" rebase 1 exit 1
 prep_git "$F/state-git" diff_unmerged 1 stdout 'a.js'
 prep_git "$F/state-git" rebase_abort 1 exit 0
@@ -488,6 +492,38 @@ else
   fail "[slug] branch-slash sanitized" "rc=$SUT_RC out=$SUT_OUT"
 fi
 cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
+# Issue #397 regression: pr-rebase.sh asserts CWD's HEAD == $BRANCH.
+# Pre-fix code rebased whatever HEAD pointed to in the caller's CWD — if
+# the caller forgot to `cd` into the worktree (HEAD on `main` or another
+# branch), the rebase silently retargeted the wrong branch and exited 0.
+# Symmetric defense to pr-push-and-create's Issue #188 fix.
+# Assertion: when `git rev-parse --abbrev-ref HEAD` returns a branch
+# different from --branch, pr-rebase.sh exits 14 with REASON=wrong-current-branch.
+# ----------------------------------------------------------------------
+F=$(new_fixture issue397_wrong_branch)
+prep_git "$F/state-git" rev-parse 1 exit 0
+prep_git "$F/state-git" rev-parse 2 exit 0
+# HEAD reports a DIFFERENT branch — script must refuse.
+prep_git "$F/state-git" rev-parse 3 stdout 'main'
+run_sut "$F" bash "$SCRIPTS_DIR/pr-rebase.sh" --branch feat/x --base main
+if [ "$SUT_RC" -eq 14 ] \
+   && [[ "$SUT_OUT" == *"REASON=wrong-current-branch"* ]] \
+   && [[ "$SUT_ERR" == *"expected 'feat/x'"* ]] \
+   && [ "$(counter "$F/state-git" fetch)" = "0" ] \
+   && [ "$(counter "$F/state-git" rebase)" = "0" ]; then
+  pass "[issue397] pr-rebase refuses when CWD HEAD != \$BRANCH (exit 14, no fetch, no rebase)"
+else
+  fail "[issue397] pr-rebase wrong-branch guard" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR fetch=$(counter "$F/state-git" fetch) rebase=$(counter "$F/state-git" rebase)"
+fi
+cleanup_fixture "$F"
+
+# Companion: the HEAD-check happy-path uses `rev-parse --abbrev-ref HEAD`
+# returning $BRANCH; rebase proceeds. Asserted via prep_rebase_preflight_ok
+# in [mode1]/[mode2]/[idem1]/[slug] above — those tests would fail-loud
+# (mock-git exit 99 "no canned response") if the script bypassed the
+# HEAD call.
 
 # ----------------------------------------------------------------------
 # Issue #188 regression: pr-push-and-create.sh must push $BRANCH

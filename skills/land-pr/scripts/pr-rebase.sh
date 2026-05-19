@@ -23,6 +23,7 @@
 #   0  — clean rebase or already up to date
 #   10 — rebase conflicts (CONFLICT_FILES_LIST sidecar populated)
 #   11 — other failure (REASON populated)
+#   14 — wrong current branch (CWD's HEAD != $BRANCH; REASON=wrong-current-branch)
 #   2  — usage error
 
 set -u
@@ -69,6 +70,21 @@ if ! git rev-parse --verify "refs/heads/$BRANCH" >"$STDERR_LOG" 2>&1; then
     echo "REASON=branch-absent"
     exit 11
   fi
+fi
+
+# 2b. Verify CWD's current branch IS $BRANCH. `git rebase "origin/$BASE"`
+#     operates on whatever HEAD points to in the CWD; if a caller forgot
+#     to `cd` into the worktree (or the wrong worktree is active), the
+#     rebase silently retargets the wrong branch and exits 0 — reporting
+#     success while $BRANCH is untouched. This is the symmetric defense
+#     to pr-push-and-create.sh's Issue #188 post-push verification
+#     (which catches the dual case for `git push`). Issue #397.
+ACTUAL_HEAD=$(git rev-parse --abbrev-ref HEAD 2>"$STDERR_LOG")
+if [ "$ACTUAL_HEAD" != "$BRANCH" ]; then
+  echo "ERROR: pr-rebase.sh: CWD is on '$ACTUAL_HEAD', expected '$BRANCH' — refusing to rebase the wrong branch" >&2
+  cat "$STDERR_LOG" >&2
+  echo "REASON=wrong-current-branch"
+  exit 14
 fi
 
 # 3. Fetch the base.
