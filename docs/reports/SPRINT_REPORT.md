@@ -950,3 +950,30 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 ### Notes
 - Ready intersection: [376] (last actionable). Queue drained after this.
 - Case 17 mirrors Case 15/16 style: AWK-extract Phase 4 block + 3 static greps.
+
+## Sprint — 2026-05-19 15:09 UTC [UNFINALIZED]
+
+**Mode:** auto | dashboard | **Sprint ID:** sprint-20260519-150955-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #426 | `bash -c` bypasses 4 destructive-op gates | wt-426 | 117c9dc | +9 unit (WB8-WB16) | PASS (full suite 3509/3509) | N/A |
+| #427 | `extract_cd_target` not wrapper-recursive | wt-427 | 5f31ddd | +9 unit (3 skill-version + 6 tracking) | PASS (full suite 3509/3509; drift gate 18/18) | N/A |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex (need /run-plan)
+(none)
+
+### Skipped — Cherry-Pick Conflict
+(none — PR mode)
+
+### Not Fixed
+(none)
+
+### Triage notes
+- Dashboard Ready queue [426, 427, 428, 429, 420] at sprint start. Filter (post-#431) returned all 5. Top 2 picked by drag order.
+- #428, #429, #420 remain in Ready for next sprint.
+- Both fixed issues had `**Action now:** /do pr` in tracker blurbs; in-batch implementer flow used here (functionally equivalent: worktree + implementer + verifier + /land-pr).
