@@ -147,10 +147,16 @@ Target: $REL
 Edits to the main repo working tree bypass the worktree discipline. Move
 this change into a worktree:
 
-  - Light, one-commit fix in flight: \\\`/quickfix\\\` (dirty tree on main → PR)
-  - Standard task with review: \\\`/do\\\` (worktree → PR)
+  - Standard task with review: \\\`/do pr\\\` (worktree → PR)
   - Plan-driven work: \\\`/run-plan\\\` (worktree per phase)
   - Manual: \\\`/create-worktree\\\` then operate inside the returned path
+
+\\\`/quickfix\\\` is NOT a valid alternative here: it is no-worktree by
+design (operates on main via \\\`git checkout -b\\\`), so an agent-dispatched
+\\\`/quickfix\\\` invocation would hit this same hook on its first Edit/Write.
+Humans driving \\\`/quickfix\\\` interactively can still use it — their dirty
+edits exist on disk before \\\`/quickfix\\\` runs and are not subject to this
+gate — but agents must route through a worktree.
 
 Allowed on main (not blocked): paths under \\\`.zskills/\\\` (tracking,
 audit, issues, dev-server state), and the gitignored worktree-state markers
