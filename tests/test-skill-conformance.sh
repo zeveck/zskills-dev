@@ -2287,6 +2287,54 @@ check_fixed qe-audit "worked example: past failure #390"  'past failure #390'
 check_fixed qe-audit "bash-mode sweep echoes the rule"    'Ban caveats: the Commit Audit Step 6'
 
 echo ""
+echo "=== /update-zskills — Step 0.5 parent-scoped JSON extraction (issue #428) ==="
+# Issue #428: Step 0.5 "Read Config" in skills/update-zskills/SKILL.md
+# teaches a config-extraction recipe using bash regex on JSON. The
+# fields listed below all live INSIDE a parent object in
+# .claude/zskills-config.json — unscoped regex (the
+# `\"<field>\"[[:space:]]*:` form anchored at the start of the
+# pattern with no parent prefix) silently matches the first
+# occurrence regardless of which block declared it, exactly the
+# bug class fixed in scripts by PRs #422 (#400) and #423 (#395).
+# The prose recipe must use the parent-scoped form
+# (`\"<parent>\"[[:space:]]*:[[:space:]]*\{[^}]*\"<field>\"...`).
+# The negative check below greps for the unscoped pattern
+# (`=~ \"<field>\"` — i.e. `=~ ` directly followed by the field
+# key with no parent prefix). Scoped patterns will not match
+# because they begin with `=~ \"<parent>\"`.
+#
+# This tripwire fires on both the source and the .claude/ mirror so
+# any future regression on either side is caught.
+ZSKILLS_FIELDS_PARENTED=(
+  "unit_cmd"          # parent: testing  (#395)
+  "full_cmd"          # parent: testing  (#395)
+  "output_file"       # parent: testing  (#395)
+  "main_repo_path"    # parent: dev_server
+  "auth_bypass"       # parent: ui
+  "main_protected"    # parent: execution  (#400)
+  "landing"           # parent: execution  (#400)
+  "branch_prefix"     # parent: execution
+  "auto_fix"          # parent: ci
+  "max_fix_attempts"  # parent: ci
+  "co_author"         # parent: commit
+)
+for _zsk_field in "${ZSKILLS_FIELDS_PARENTED[@]}"; do
+  check_not_in_file update-zskills SKILL.md \
+    "Step 0.5 unscoped regex for parented field '$_zsk_field'" \
+    "=~ \\\\\"${_zsk_field}\\\\\""
+  check_not_in_file .claude/skills/update-zskills SKILL.md \
+    ".claude mirror: Step 0.5 unscoped regex for parented field '$_zsk_field'" \
+    "=~ \\\\\"${_zsk_field}\\\\\""
+done
+# Positive: at least one scoped extraction must be present so the
+# recipe still teaches the right pattern (catches accidental whole-
+# block deletion).
+check_fixed update-zskills "Step 0.5 scoped pattern (canonical form, testing.unit_cmd)" \
+  '\"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"'
+check_fixed .claude/skills/update-zskills ".claude mirror: scoped pattern present" \
+  '\"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"'
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then
