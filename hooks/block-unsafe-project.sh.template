@@ -197,6 +197,9 @@ extract_transcript() {
 # Extract the cd target from the command (e.g., "cd /tmp/worktree && git push")
 # Hooks run in the main repo CWD, not the agent's cd target. This helper
 # lets us find .zskills-tracked in the correct directory for worktree agents.
+#
+# Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).
+# Drift gate: tests/test-hook-helper-drift.sh.
 extract_cd_target() {
   local cmd
   # JSON wire format escapes embedded newlines as the two-character
@@ -216,6 +219,21 @@ extract_cd_target() {
     if [ -d "$target" ]; then
       echo "$target"
     fi
+  fi
+}
+
+# Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).
+# Drift gate: tests/test-hook-helper-drift.sh.
+resolve_effective_worktree_root() {
+  local env_override="$1"
+  local cd_target="$2"
+  local fallback="$3"
+  if [ -n "$env_override" ]; then
+    printf '%s\n' "$env_override"
+  elif [ -n "$cd_target" ]; then
+    printf '%s\n' "$cd_target"
+  else
+    printf '%s\n' "$fallback"
   fi
 }
 
@@ -539,16 +557,10 @@ if is_git_subcommand_in_chain "$COMMAND" commit; then
   #   so sequential /run-plan invocations in the same session work correctly.
   #
   # Neither → unrelated session → skip enforcement → parallel work unblocked.
-  # TODO(#401): extract resolve_effective_worktree_root into hooks/_lib/.
-  # Same precedence as the push-block below: prefer cd target so worktree
-  # agents invoking `cd /tmp/wt && git commit` resolve to the worktree
-  # root, not the hook's ambient (main-repo) CWD.
-  CD_TARGET=$(extract_cd_target)
-  if [ -n "$CD_TARGET" ]; then
-    LOCAL_ROOT="${LOCAL_ROOT:-$CD_TARGET}"
-  else
-    LOCAL_ROOT="${LOCAL_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-  fi
+  # Resolve LOCAL_ROOT via shared helper (#401): env-override (test hook) →
+  # cd target (worktree agents invoking `cd /tmp/wt && git commit`) →
+  # git-rev-parse fallback (hook's ambient main-repo CWD).
+  LOCAL_ROOT=$(resolve_effective_worktree_root "${LOCAL_ROOT:-}" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
@@ -638,17 +650,11 @@ if is_git_subcommand_in_chain "$COMMAND" cherry-pick; then
   TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
-  # Pipeline association guard (same two-tier logic as commit block)
-  # TODO(#401): extract resolve_effective_worktree_root into hooks/_lib/.
-  # Same precedence as the push-block below: prefer cd target so worktree
-  # agents invoking `cd /tmp/wt && git cherry-pick` resolve to the worktree
-  # root, not the hook's ambient (main-repo) CWD.
-  CD_TARGET=$(extract_cd_target)
-  if [ -n "$CD_TARGET" ]; then
-    LOCAL_ROOT="${LOCAL_ROOT:-$CD_TARGET}"
-  else
-    LOCAL_ROOT="${LOCAL_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-  fi
+  # Pipeline association guard (same two-tier logic as commit block).
+  # Resolve LOCAL_ROOT via shared helper (#401): env-override (test hook) →
+  # cd target (worktree agents invoking `cd /tmp/wt && git cherry-pick`) →
+  # git-rev-parse fallback (hook's ambient main-repo CWD).
+  LOCAL_ROOT=$(resolve_effective_worktree_root "${LOCAL_ROOT:-}" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 
@@ -707,16 +713,11 @@ if is_git_subcommand_in_chain "$COMMAND" push; then
   TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
-  # Pipeline association guard (same two-tier logic as commit/cherry-pick blocks)
-  # Resolve LOCAL_ROOT: prefer cd target (worktree agents use "cd /tmp/wt && git push")
-  # because the hook runs in the main repo CWD, not the agent's cd target.
-  # TODO(#401): extract resolve_effective_worktree_root into hooks/_lib/.
-  CD_TARGET=$(extract_cd_target)
-  if [ -n "$CD_TARGET" ]; then
-    LOCAL_ROOT="${LOCAL_ROOT:-$CD_TARGET}"
-  else
-    LOCAL_ROOT="${LOCAL_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-  fi
+  # Pipeline association guard (same two-tier logic as commit/cherry-pick blocks).
+  # Resolve LOCAL_ROOT via shared helper (#401): env-override (test hook) →
+  # cd target (worktree agents invoking `cd /tmp/wt && git push`) →
+  # git-rev-parse fallback (hook's ambient main-repo CWD).
+  LOCAL_ROOT=$(resolve_effective_worktree_root "${LOCAL_ROOT:-}" "$(extract_cd_target)" "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
   PIPELINE_ID=""
   TRACKING_SESSION_HAS_PIPELINE=false
 

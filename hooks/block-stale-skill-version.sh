@@ -69,14 +69,18 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 # hook's ambient (main-repo) CWD. Reads $INPUT (the stdin JSON envelope) —
 # safe because INPUT is captured at line 43 above.
 #
-# TODO(#401): consolidate extract_cd_target into hooks/_lib/
-# (`resolve-effective-worktree-root.sh`) alongside the three identical
-# LOCAL_ROOT-resolution sites in block-unsafe-project.sh.template.
+# Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).
+# Drift gate: tests/test-hook-helper-drift.sh.
 extract_cd_target() {
   local cmd
   # JSON wire format escapes embedded newlines as the two-character
-  # sequence `\n`. Decode here so `cd /tmp/wt\ngit commit` captures
-  # `/tmp/wt`, not `/tmp/wt\ngit`.
+  # sequence `\n`. The regex below uses [[:space:]] as a stop-class —
+  # without decoding `\n` to a real newline, multi-line bash commands
+  # like `cd /tmp/wt\ngit commit` would capture `/tmp/wt\ngit` (literal
+  # backslash-n) into the path and fail the [ -d ] check, causing
+  # is_on_main to fall back to the ambient cwd. Decode `\n` here in the
+  # same spirit as the existing `\"` decoding. `\n` is the only escape
+  # we currently see in practice from Claude Code's wire format.
   cmd=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | sed 's/\\"/"/g; s/\\n/\n/g')
   if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
     local target="${BASH_REMATCH[1]}"
@@ -86,6 +90,21 @@ extract_cd_target() {
     if [ -d "$target" ]; then
       echo "$target"
     fi
+  fi
+}
+
+# Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).
+# Drift gate: tests/test-hook-helper-drift.sh.
+resolve_effective_worktree_root() {
+  local env_override="$1"
+  local cd_target="$2"
+  local fallback="$3"
+  if [ -n "$env_override" ]; then
+    printf '%s\n' "$env_override"
+  elif [ -n "$cd_target" ]; then
+    printf '%s\n' "$cd_target"
+  else
+    printf '%s\n' "$fallback"
   fi
 }
 
@@ -191,13 +210,9 @@ SCRIPT="${CLAUDE_PROJECT_DIR:-$PWD}/scripts/skill-version-stage-check.sh"
 # agent invokes `cd /tmp/wt && git commit` from a worktree, the script's
 # CWD must be the worktree, not main, so `git rev-parse --show-toplevel`
 # inside stage-check resolves to the worktree's index. Precedence:
-# extracted cd target → $CLAUDE_PROJECT_DIR → $PWD.
-CD_TARGET=$(extract_cd_target)
-if [ -n "$CD_TARGET" ] && [ -d "$CD_TARGET" ]; then
-  EFFECTIVE_REPO_ROOT="$CD_TARGET"
-else
-  EFFECTIVE_REPO_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-fi
+# extracted cd target → $CLAUDE_PROJECT_DIR → $PWD. No env-override tier
+# (the stage-check subshell is not parameterized by test harnesses).
+EFFECTIVE_REPO_ROOT=$(resolve_effective_worktree_root "" "$(extract_cd_target)" "${CLAUDE_PROJECT_DIR:-$PWD}")
 
 # Run script in a subshell `cd`'d to the effective root (subshell preserves
 # the hook's own CWD); capture stderr (the STOP message); discard stdout.
