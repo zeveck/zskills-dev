@@ -343,3 +343,51 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Complexity:** XS. **Action now:** /do pr — 3-line addition to one parser block plus mirror + version bump + 1 unit test. Sized down from the verifier's `/do pr` recommendation since the change is purely additive.
 
 ---
+
+### #426 — #399 closure incomplete — `bash -c` bypasses 4 destructive-op gates (checkout --, restore, clean -f, reset --hard)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `hooks/block-unsafe-generic.sh:372,377,382,387` still call `is_git_subcommand_in_chain` (confirmed via `grep -n "is_git_subcommand_in_chain\b"`); the converted commit/cherry-pick/push gates at lines 509/516/527 use `is_git_subcommand_in_wrappers`. No `bash -c` test for any of the 4 destructive ops exists in `tests/test-hooks.sh`.
+
+**Problem.** PR #417 (closed #399) threaded `is_git_subcommand_in_wrappers` through 9 add/commit/push sites but left the 4 destructive-op gates in `hooks/block-unsafe-generic.sh` (lines 372 `checkout --`, 377 `restore`, 382 `clean -f`, 387 `reset --hard`) on the original `is_git_subcommand_in_chain` tokenizer. That tokenizer requires the first non-env token to be literal `git`, so `bash -c 'git reset --hard HEAD~5'` / `eval 'git clean -fd'` / `sh -c 'git checkout -- file'` slip past every one of these gates and silently destroy uncommitted state. STASH_BOUNDARY (line 358) is independently exposed: its regex anchors `git[[:space:]]+stash` to `^` or shell separators (`;&|`, `&&`, `||`, backtick, `$(`), none of which precede the inner `git` inside `bash -c 'git stash drop'` — confirmed by reading lines 358-365. Not flagged in the body, but same class.
+
+**Fix outline.** Swap `is_git_subcommand_in_chain` → `is_git_subcommand_in_wrappers` at `hooks/block-unsafe-generic.sh:372,377,382,387` (and any matching `.claude/hooks/` mirror). Convert the STASH_BOUNDARY regex check (lines 358-365) to a wrapper-aware form: either tokenize-then-regex-each-segment, or rewrite as an `is_git_subcommand_in_wrappers "$COMMAND" stash` gate with a flag-check on `$GIT_SUB_REST` for `drop|clear|push|save|-u` and allow `apply|list|show|pop|create|store|branch`. Add `bash -c`/`eval`/`sh -c` cases for each destructive op (5 total) to `tests/test-hooks.sh` near the existing #399 wrapper-bypass block. One-pass audit of remaining `_in_chain` use sites in `block-stale-skill-version.sh` (4 hits) and `block-unsafe-project.sh.template` (2 hits) per the issue's count, marking intentional vs missed. Mirror to `.claude/hooks/`. No skill `metadata.version` bump (hooks aren't skill-versioned).
+
+**Complexity:** S. **Action now:** /do pr — bounded multi-site mechanical port (4 line-swaps + STASH rewrite + tests + mirror + audit), single hook file as the design surface, identical pattern to #399's converted gates. Implementer-tier if STASH_BOUNDARY is split into a follow-up; sized S to keep it in one PR.
+
+---
+
+### #427 — extract_cd_target not wrapper-recursive — bash -c 'cd /tmp/wt && git commit' silently falls back to main-repo (re-opens #391/#393 shape)
+
+**Labels:** bug | **Verdict:** NOT FIXED — live reproduction in issue body: `bash -c 'cd <wt> && git commit'` and `eval 'cd <wt> && git commit'` both yield empty `extract_cd_target` output; classify (post-#417) fires, but `EFFECTIVE_REPO_ROOT` falls back to `$CLAUDE_PROJECT_DIR` (= main), so stage-check / tracking-marker enforcement run against MAIN's empty index and silently pass.
+
+**Problem.** `hooks/_lib/resolve-effective-worktree-root.sh:49-67` sed-extracts a leading `cd <target>` from the OUTER command string only — no wrapper-recursion. PR #417 made the classify check wrapper-aware via `is_git_subcommand_in_wrappers` (`hooks/_lib/git-tokenwalk.sh:223-322`), but left the resolver one-level. Result: hook fires on wrapped commits, but reads MAIN's index. Same shape as #391/#393 worktree-blindness, scoped to `bash -c` / `sh -c` / `eval` wrapper-cd envelopes. Affects all 4 inlined call sites: `hooks/block-unsafe-project.sh.template:686,783,847` (commit/cherry-pick/push tracking enforcement) and `hooks/block-stale-skill-version.sh:335` (stage-check subshell cd).
+
+**Fix outline.** Make `extract_cd_target` wrapper-recursive in place (Option 1 in issue) — mirror `is_git_subcommand_in_wrappers`'s recursion: if the segment's first token is `bash`/`sh`/`dash`/`eval` etc., strip flags, capture the `-c` inner string (or eval's args), strip one quote layer, recurse with bounded depth (3, matching the existing convention). Single helper edit in `hooks/_lib/resolve-effective-worktree-root.sh`; drift gate at `tests/test-hook-helper-drift.sh` then propagates the new body byte-for-byte into the 4 inlined call sites. Add wrapper-cd test cases to both `tests/test-tracking-integration.sh` and `tests/test-skill-version-enforcement.sh` (composed case `bash -c 'cd /tmp/wt && git commit'` — currently zero coverage per issue grep).
+
+**Complexity:** M. **Action now:** /do pr.
+
+---
+
+### #428 — skills/update-zskills/SKILL.md Step 0.5 prose teaches the unscoped extraction pattern that #422 + #423 just fixed in scripts
+
+**Labels:** bug | **Verdict:** NOT FIXED — prose recipe still teaches the pre-#395 pattern
+
+**Problem.** Step 0.5 "Read Config" at `skills/update-zskills/SKILL.md:412-472` documents 16 bash-regex JSON extractions (`project_name`, `unit_cmd`, `full_cmd`, `output_file`, `cmd`, `main_repo_path`, `file_patterns`, `auth_bypass`, `timezone`, `main_protected`, `landing`, `branch_prefix`, `auto_fix`, `max_fix_attempts`, `co_author`, …) all in the unscoped form, e.g. `\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"` (line 425) and `\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"` (line 454). PR #422 just scoped `landing`/`main_protected` under `"execution"` in `apply-preset.sh` and PR #423 just scoped `unit_cmd`/`full_cmd`/`output_file` under `"testing"` in `zskills-resolve-config.sh` — yet the canonical recipe any skill author copies from still teaches the broken pattern, making it a fourth reproductive site for the bug class.
+
+**Fix outline.** Two options in issue body: (1) minimal — rewrite the 5-7 ambiguous extractions to use parent-object-scoped regex (`\"<parent>\"[[:space:]]*:[[:space:]]*\{[^}]*\"<field>\"`) and annotate parent; (2) preferred — replace the bash-regex block with a Python json helper invocation (e.g. `bash "$ROOT/scripts/zskills-get-config-field.sh" testing.unit_cmd`) per the "Python is required" rule. Land a conformance assertion at `tests/test-skill-conformance.sh` that greps `skills/update-zskills/SKILL.md` for unscoped patterns on known-parented fields. Bump `metadata.version` and mirror to `.claude/skills/update-zskills/SKILL.md`.
+
+**Complexity:** S. **Action now:** /do pr — single-file SKILL.md rewrite + mirror + version bump + conformance tripwire; option (1) is in-scope here, option (2) (new Python helper) is Larger-than-issue and belongs in a follow-up.
+
+---
+
+### #429 — Mode files embed `git rebase origin/main` without HEAD precondition — symmetric to fixed #397
+
+**Labels:** (none) | **Verdict:** NOT FIXED — 3 embedded rebase sites have no HEAD guard; grep for `git rev-parse --abbrev-ref HEAD` / `git symbolic-ref` in either mode file returns zero hits.
+
+**Problem.** PR #419 (closes #397) added a `HEAD == $BRANCH` precondition to `scripts/pr-rebase.sh:82-88` (exit 14, `REASON=wrong-current-branch`). But agent-prose mode files run inline bash that bypasses that helper: `skills/fix-issues/modes/direct.md:48` (`if ! git rebase origin/main; then`), `skills/run-plan/modes/pr.md:20` and `skills/run-plan/modes/pr.md:116` (both bare `git rebase origin/main`). Agent CWD drift retargets the wrong branch silently — same #397 symptom.
+
+**Fix outline.** Port the pr-rebase.sh:82-88 guard inline at each site: capture `ACTUAL_HEAD=$(git rev-parse --abbrev-ref HEAD)`, compare to the surrounding branch variable (`$BRANCH_NAME` in run-plan/modes/pr.md, the issue-loop branch in fix-issues/modes/direct.md), exit with a clear error on mismatch. Bump `metadata.version` on both skills. Add a conformance assertion in `tests/test-skill-conformance.sh` that any `git rebase origin/main` literal in a `skills/**/modes/*.md` file is preceded by a HEAD check (prevent regression).
+
+**Complexity:** S. **Action now:** /do pr.
+
+---
