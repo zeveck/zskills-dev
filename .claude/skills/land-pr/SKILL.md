@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.19+a61d56"
+  version: "2026.05.19+a17fe2"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -275,6 +275,14 @@ if [ -z "$PR_RESUME" ]; then
     # Jump to step 9 (compose .landed + result file).
   elif [ "$REBASE_RC" -eq 11 ]; then
     STATUS="rebase-failed"
+    # Jump to step 9.
+  elif [ "$REBASE_RC" -eq 14 ]; then
+    STATUS="rebase-failed"
+    # Issue #420: pr-rebase.sh exits 14 when CWD's HEAD != $BRANCH
+    # (REASON=wrong-current-branch, the #397/#419 guard). Map to
+    # rebase-failed so the orchestrator surfaces the classification
+    # instead of falling through to STATUS="" and proceeding silently.
+    # REASON is already captured to wrong-current-branch above.
     # Jump to step 9.
   fi
 fi
