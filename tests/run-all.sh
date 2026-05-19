@@ -38,6 +38,7 @@ run_suite() {
 run_suite "test-hooks.sh" "tests/test-hooks.sh"
 run_suite "test-tokenize-then-walk.sh" "tests/test-tokenize-then-walk.sh"
 run_suite "test-hook-helper-drift.sh" "tests/test-hook-helper-drift.sh"
+run_suite "test-resolve-effective-worktree-root.sh" "tests/test-resolve-effective-worktree-root.sh"
 run_suite "test-hooks-mirror-parity.sh" "tests/test-hooks-mirror-parity.sh"
 run_suite "test-inject-bash-timeout.sh" "tests/test-inject-bash-timeout.sh"
 run_suite "test-verify-response-validate.sh" "tests/test-verify-response-validate.sh"
