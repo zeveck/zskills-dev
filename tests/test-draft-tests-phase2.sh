@@ -227,6 +227,43 @@ else
   fail "AC-2.5: recommendation_text non-empty in case=1 (got: '$CS_REC_TEXT')"
 fi
 
+# Sibling-block scope collision regression guard (issue #395).
+# A sibling block (e.g. "ui": { ... }) appearing BEFORE "testing" with
+# its own "unit_cmd"/"full_cmd" keys must NOT shadow the testing values.
+# Prior to #395 the detect-language.sh regex was unscoped and matched
+# the FIRST occurrence of "unit_cmd"/"full_cmd" anywhere in the config.
+CS_SIB_DIR="$TEST_OUT/config-set-sibling"
+mkdir -p "$CS_SIB_DIR/.claude"
+cat > "$CS_SIB_DIR/package.json" <<'PKG_JSON'
+{ "name": "p", "version": "0.0.0" }
+PKG_JSON
+cat > "$CS_SIB_DIR/.claude/zskills-config.json" <<'CFG_SIB'
+{
+  "ui": {
+    "unit_cmd": "UI_WRONG_UNIT",
+    "full_cmd": "UI_WRONG_FULL"
+  },
+  "testing": {
+    "unit_cmd": "TESTING_UNIT",
+    "full_cmd": "TESTING_FULL"
+  }
+}
+CFG_SIB
+CS_SIB_STATE="$TEST_OUT/config-set-sibling-state.md"
+bash "$DETECT_SCRIPT" "$CS_SIB_DIR" "$CS_SIB_STATE" 2>/dev/null
+CS_SIB_UNIT="$(read_state_scalar "$CS_SIB_STATE" config_unit_cmd)"
+CS_SIB_FULL="$(read_state_scalar "$CS_SIB_STATE" config_full_cmd)"
+if [ "$CS_SIB_UNIT" = "TESTING_UNIT" ]; then
+  pass "AC-2.5: config_unit_cmd = 'TESTING_UNIT' (sibling 'ui.unit_cmd' not shadowing — #395)"
+else
+  fail "AC-2.5: config_unit_cmd sibling-scope mismatch (got: '$CS_SIB_UNIT', expected 'TESTING_UNIT' — #395)"
+fi
+if [ "$CS_SIB_FULL" = "TESTING_FULL" ]; then
+  pass "AC-2.5: config_full_cmd = 'TESTING_FULL' (sibling 'ui.full_cmd' not shadowing — #395)"
+else
+  fail "AC-2.5: config_full_cmd sibling-scope mismatch (got: '$CS_SIB_FULL', expected 'TESTING_FULL' — #395)"
+fi
+
 # ==========================================================================
 # AC-2.6 -- JS describe/it tests -> calibration signal names that
 # convention; specs use compatible terminology.

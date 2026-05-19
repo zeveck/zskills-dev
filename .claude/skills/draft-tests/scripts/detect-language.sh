@@ -104,10 +104,14 @@ CASE_NUM=3
 CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
 if [ -f "$CONFIG_FILE" ]; then
   CONFIG_RAW="$(cat "$CONFIG_FILE")"
-  if [[ "$CONFIG_RAW" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  # Scope under the enclosing "testing" object so a sibling block with
+  # an identically-named "unit_cmd"/"full_cmd" key (e.g. "ui": {...})
+  # cannot poison the read. Mirrors dev_server.cmd scoping in
+  # zskills-resolve-config.sh:88. Issue #395 (same class as #400/#422).
+  if [[ "$CONFIG_RAW" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     CONFIG_FULL_CMD="${BASH_REMATCH[1]}"
   fi
-  if [[ "$CONFIG_RAW" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$CONFIG_RAW" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     CONFIG_UNIT_CMD="${BASH_REMATCH[1]}"
   fi
 fi

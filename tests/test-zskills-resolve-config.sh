@@ -439,6 +439,54 @@ else
     "expected 1 occurrence, got $T9C_WARN_COUNT; stderr: $T9C_STDERR"
 fi
 
+# --- Test 10: sibling-block scope collision (issue #395) -------------------
+#
+# Regression guard for the unscoped-regex class of bug. Prior to #395, the
+# UNIT_TEST_CMD/FULL_TEST_CMD/TEST_OUTPUT_FILE extractions matched the FIRST
+# occurrence of "unit_cmd"/"full_cmd"/"output_file" anywhere in the config,
+# so a sibling block (e.g. "ui": { ... }) appearing BEFORE "testing" could
+# shadow the testing values. Fix: scope each regex to the enclosing
+# "testing" object, mirroring the dev_server.cmd scoping.
+
+echo ""
+echo "=== Test 10: sibling-block scope collision — testing values win over earlier siblings (#395) ==="
+T10=$(mktemp -d /tmp/zskills-resolve-cfg-t10-XXXXXX)
+mkdir -p "$T10/.claude"
+cat > "$T10/.claude/zskills-config.json" <<'CFG_SIB'
+{
+  "ui": {
+    "unit_cmd": "UI_WRONG_UNIT",
+    "full_cmd": "UI_WRONG_FULL",
+    "output_file": "ui-wrong.txt"
+  },
+  "testing": {
+    "unit_cmd": "TESTING_UNIT",
+    "full_cmd": "TESTING_FULL",
+    "output_file": "testing-correct.txt"
+  }
+}
+CFG_SIB
+
+T10_OUT=$(
+  CLAUDE_PROJECT_DIR="$T10" \
+  bash -c '. "'"$HELPER"'" && printf "%s\n" "$UNIT_TEST_CMD" "$FULL_TEST_CMD" "$TEST_OUTPUT_FILE"'
+)
+T10_UNIT=$(printf '%s\n' "$T10_OUT" | sed -n '1p')
+T10_FULL=$(printf '%s\n' "$T10_OUT" | sed -n '2p')
+T10_OUTFILE=$(printf '%s\n' "$T10_OUT" | sed -n '3p')
+
+[ "$T10_UNIT" = "TESTING_UNIT" ] \
+  && pass "Test 10a: \$UNIT_TEST_CMD = 'TESTING_UNIT' (sibling 'ui.unit_cmd' not shadowing)" \
+  || fail "Test 10a: \$UNIT_TEST_CMD sibling-scope" "got '$T10_UNIT', expected 'TESTING_UNIT'"
+[ "$T10_FULL" = "TESTING_FULL" ] \
+  && pass "Test 10b: \$FULL_TEST_CMD = 'TESTING_FULL' (sibling 'ui.full_cmd' not shadowing)" \
+  || fail "Test 10b: \$FULL_TEST_CMD sibling-scope" "got '$T10_FULL', expected 'TESTING_FULL'"
+[ "$T10_OUTFILE" = "testing-correct.txt" ] \
+  && pass "Test 10c: \$TEST_OUTPUT_FILE = 'testing-correct.txt' (sibling 'ui.output_file' not shadowing)" \
+  || fail "Test 10c: \$TEST_OUTPUT_FILE sibling-scope" "got '$T10_OUTFILE', expected 'testing-correct.txt'"
+
+rm -rf "$T10"
+
 # --- Summary ---------------------------------------------------------------
 echo ""
 echo "---"
