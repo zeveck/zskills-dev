@@ -380,6 +380,23 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 ---
 
+### #432 — zskills install shape: own repo doesn't follow consumer pattern (CLAUDE.md monolithic vs `.claude/rules/zskills/managed.md`)
+
+**Labels:** (none) | **Verdict:** NOT FIXED — `.claude/rules/zskills/` does not exist in this repo (confirmed `ls`); root `./CLAUDE.md` is monolithic (266 lines, 11 `^## ` sections); `CLAUDE_TEMPLATE.md` is 362 lines / 15 sections; 8 sections are shared by name (`Architecture`, `Subagent Dispatch`, `Cron-fired prompts`, `Playwright CLI`, `Worktree Rules`, `Git Rules`, `Migration scripts`, `Python is required`) — and the recently-landed `## Cron-fired prompts` rule (commit `452e9c7`, PR #433) was dual-written verbatim into both files. `skills/update-zskills/SKILL.md:938-947` documents the consumer pattern (Step B renders template → `.claude/rules/zskills/managed.md`, auto-loaded recursively, never cross-writes root `./CLAUDE.md`) — a pattern this repo does not eat.
+
+**Problem.** zskills ships consumers an install where `CLAUDE_TEMPLATE.md` is the source-of-truth and consumers' root `./CLAUDE.md` stays user-owned. The zskills repo itself stores those same rules in its monolithic root `./CLAUDE.md` AND in `CLAUDE_TEMPLATE.md`. Every shared-rules edit is a manual dual-write with no tooling guard — PR #433 already had to verify byte-equal section bodies via `diff` post-hoc. Future shared edits (anything in the 8 overlapping sections) accumulate latent drift. CLAUDE.md also has 3 zskills-author-only sections (`Tracking markers`, `Skill versioning`, `Verifier-cannot-run rule`) that legitimately don't belong in the consumer template — so the fix can't be a naive "delete CLAUDE.md, render from template."
+
+**Three options in body (mutually divergent designs, not refinements).**
+1. **Self-install** — populate `.claude/rules/zskills/managed.md` from our own `CLAUDE_TEMPLATE.md`, gitignore the rendered file, add a contributor render step. Removes dual-write; requires `/update-zskills` to be re-runnable against zskills's own clone (Step 0 source-locator already supports the repo-clone branch at `skills/update-zskills/SKILL.md:99,142`); root `./CLAUDE.md` shrinks to the 3 author-only sections + a pointer to the rendered file.
+2. **Accept the difference, document it** — annotate the duplication in `CLAUDE.md` / contributor docs as upstream-self-hosting. XS effort; latent drift persists.
+3. **Strip shared content from `CLAUDE.md`, source-of-truth in `CLAUDE_TEMPLATE.md`, regenerate-on-demand** — small render script + gitignore + contributor discipline. Slightly cheaper than option 1 because no Step B execution against ourselves, but redundant if option 1 already works.
+
+**Fix outline.** None pre-decision — option choice is author-level (durability vs effort vs self-install discipline). If option 1: bounded plan covering gitignore entry, contributor render hook or `/update-zskills` self-run docs, root `./CLAUDE.md` split (keep author-only sections, point to rendered file), migration of pre-existing dual-writes, plus a drift-detection conformance test (`tests/test-claude-rules-mirror-parity.sh` asserting the 8 shared sections in `CLAUDE_TEMPLATE.md` render byte-equal into `.claude/rules/zskills/managed.md`). If option 2: a few-line note in `CLAUDE.md` plus optionally a drift test that asserts the 8 shared section bodies match between `CLAUDE.md` and `CLAUDE_TEMPLATE.md`. If option 3: a render script + the same drift test, scoped to the single direction. The drift-detection conformance test is common to all three actionable variants and is the smallest immediate win — could be filed as a follow-up issue regardless of option choice.
+
+**Complexity:** M-L for option 1 (multi-step: gitignore + split CLAUDE.md + contributor docs + migration + conformance test, with self-install correctness risk), XS for option 2, M for option 3. **Action now:** none — author decision needed on which option (or defer entirely). If author picks option 1 or 3, escalate to `/draft-plan`. If option 2, single `/do pr`. A standalone follow-up issue for the drift-detection conformance test (covering whichever shape lands) is a low-risk parallel track regardless.
+
+---
+
 ### #429 — Mode files embed `git rebase origin/main` without HEAD precondition — symmetric to fixed #397
 
 **Labels:** (none) | **Verdict:** NOT FIXED — 3 embedded rebase sites have no HEAD guard; grep for `git rev-parse --abbrev-ref HEAD` / `git symbolic-ref` in either mode file returns zero hits.
