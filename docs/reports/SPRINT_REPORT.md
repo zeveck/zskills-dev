@@ -1005,3 +1005,35 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - #429 hit a rebase conflict at `tests/test-skill-conformance.sh` (line 2286) — both branches appended new sections at the same anchor. Resolved by keeping both sections separated by a blank line; trivial conflict (independent text appends). #429's commit hash changed from d830c3a → f55ea88 after rebase.
 - #420 remains in Ready for the next sprint.
 - Both fixed issues had `**Action now:** /do pr` in tracker blurbs.
+
+## Sprint — 2026-05-19 16:41 UTC [UNFINALIZED]
+
+**Mode:** auto | dashboard | **Sprint ID:** sprint-20260519-164100-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #420 | `/land-pr` Step 3 parser doesn't map RC 14 → STATUS | wt-420 | b3e0f30 | +11 (new test file `test-land-pr-rebase-rc14-parser.sh` registered in `run-all.sh`) | PASS (3556/3556) | N/A |
+
+### Skipped — Needs research
+| # | Title | Why |
+|---|-------|-----|
+| #432 | zskills install shape: own repo doesn't follow consumer pattern | No tracker blurb yet (I filed it manually mid-session); not researched. Action: next sync run or manual `/qe-audit`-style research will produce a blurb; current triage signal would be plan-scale (structural refactor of how CLAUDE.md/CLAUDE_TEMPLATE.md propagate). |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex (need /run-plan)
+(none — #432 might land here once researched)
+
+### Skipped — Cherry-Pick Conflict
+(none — PR mode)
+
+### Not Fixed
+(none)
+
+### Triage notes
+- Ready=[420, 428, 429, 432]; intersected with open → actionable=[420, 432]. #428, #429 already closed in sprint-2.
+- N=2 requested; partial-fill expected once #432 filtered. Sprint dispatched 1 (the researched candidate).
+- #420 was XS complexity (`/do pr` per blurb). Implementer added a more thorough test file (11 assertions covering the full RC mapping table, not just RC 14) — appropriate over-coverage; absorbed.
+- Pass count ratcheted: 3545 → 3556 (+11 from #441).
