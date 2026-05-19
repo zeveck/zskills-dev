@@ -203,6 +203,126 @@ is_git_subcommand_in_chain() {
 }
 
 # Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
+# Closes the bash -c / eval / sh -c wrapper-bypass hole (#399).
+is_git_subcommand_in_wrappers() {
+  local cmd="$1"
+  local want_sub="$2"
+  local depth="${3:-3}"
+
+  # First, check the direct + chain case via existing helper.
+  if is_git_subcommand_in_chain "$cmd" "$want_sub"; then
+    return 0
+  fi
+
+  # Bounded recursion depth.
+  [ "$depth" -le 0 ] && return 1
+
+  # Split on chain operators (same as _in_chain) and inspect each
+  # segment for a wrapper pattern.
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+
+    # Look for an inline-string wrapper. Use bash regex to capture the
+    # inner string after a `-c` flag or after an `eval`. The captured
+    # group is the rest of the segment starting at the inner-arg
+    # boundary; we then strip outer quotes (single or double).
+    local wrapper_inner=""
+
+    # Tokenize the segment to find the wrapper command and its -c arg.
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$seg"
+    local i=0 n=${#TOKENS[@]}
+
+    # Skip env-var prefixes (KEY=val ... cmd ...).
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+
+    local first="${TOKENS[$i]:-}"
+    # Allow a possible absolute path: /bin/bash → match the basename.
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        # Walk shell-level flags to find -c (or -lc/-ic/-cx combined
+        # short-flag forms). All of these put the next token as the
+        # inline string to execute.
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          # Reconstruct the inner string from token j to end of segment.
+          # read -ra split on whitespace, so a quoted multi-word string
+          # like 'git commit -m foo' became three tokens: "'git" "commit"
+          # "-m" "foo'". Rejoin with spaces.
+          local inner=""
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          # Strip one layer of outer quotes (single or double).
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+          wrapper_inner="$inner"
+        fi
+        ;;
+      eval)
+        # All args to eval are the string to execute. Rejoin and strip
+        # outer quotes.
+        local inner=""
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        wrapper_inner="$inner"
+        ;;
+    esac
+
+    if [ -n "$wrapper_inner" ]; then
+      if is_git_subcommand_in_wrappers "$wrapper_inner" "$want_sub" $((depth - 1)); then
+        return 0
+      fi
+    fi
+  done <<< "$normalized"
+
+  return 1
+}
+
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
 is_destruct_command_in_chain() {
   local cmd="$1"
   local want_first="$2"
@@ -381,12 +501,19 @@ if [[ "$COMMAND" =~ xargs[[:space:]]+.*(rm|-delete) ]]; then
 fi
 
 # git add . / git add -A / git add --all (sweeps in unrelated changes)
-if is_git_subcommand_in_chain "$COMMAND" add && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(-A|--all|\.)([[:space:]]|$) ]]; then
+# Use is_git_subcommand_in_wrappers (#399) so `bash -c 'git add -A'` /
+# `eval 'git add .'` cannot bypass. The wrappers helper falls back to
+# _in_chain on the outer command, then sets GIT_SUB_REST on match
+# (whether via the chain or the recursive unwrap path) so the flag-regex
+# check below still functions.
+if is_git_subcommand_in_wrappers "$COMMAND" add && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(-A|--all|\.)([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git add . / git add -A sweeps in ALL changes, including other sessions' work. Stage files by name: git add file1 file2."
 fi
 
-# git commit --no-verify (skips pre-commit hooks)
-if is_git_subcommand_in_chain "$COMMAND" commit && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--no-verify([[:space:]]|$) ]]; then
+# git commit --no-verify (skips pre-commit hooks). Wrapper-recursion via
+# is_git_subcommand_in_wrappers (#399) catches `bash -c "git commit
+# --no-verify"` / `eval 'git commit --no-verify'`.
+if is_git_subcommand_in_wrappers "$COMMAND" commit && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--no-verify([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: --no-verify skips pre-commit hooks. Hooks exist for safety — fix the hook failure, don't bypass it."
 fi
 
@@ -397,10 +524,12 @@ fi
 # Detection: parse the push target from the command itself, not from
 # git branch --show-current (which returns the MAIN repo's branch even
 # when the agent is working in a worktree via cd).
-if is_git_subcommand_in_chain "$COMMAND" push; then
+if is_git_subcommand_in_wrappers "$COMMAND" push; then
   PUSH_TARGET=""
   # COMMAND is already the parsed shell command (with -m bodies redacted),
   # so no need to re-extract from the JSON.
+  # Wrapper-recursion via is_git_subcommand_in_wrappers (#399) catches
+  # `bash -c 'git push origin main'` / `eval 'git push'`.
   PUSH_CMD="$COMMAND"
 
   # Strip everything before "git push" (e.g., "cd /tmp/path &&")
@@ -433,6 +562,13 @@ if is_git_subcommand_in_chain "$COMMAND" push; then
   # remote main. ${X##*:} keeps the RIGHT side (remote). For non-refspec
   # values (no colon), both expansions return the input unchanged.
   PUSH_TARGET="${PUSH_TARGET##*:}"
+  # Strip trailing single/double quote that wrapper-unwrapped forms can
+  # leave behind. `bash -c 'git push origin main'` → PUSH_TARGET=main' →
+  # without strip, equality check against literal "main" fails and the
+  # bypass succeeds even though _in_wrappers caught it (#399). Strip one
+  # layer each side so quoted bash-c / eval inner strings still classify.
+  PUSH_TARGET="${PUSH_TARGET%\'}"; PUSH_TARGET="${PUSH_TARGET#\'}"
+  PUSH_TARGET="${PUSH_TARGET%\"}"; PUSH_TARGET="${PUSH_TARGET#\"}"
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"

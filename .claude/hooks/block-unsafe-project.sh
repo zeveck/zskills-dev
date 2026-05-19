@@ -135,6 +135,126 @@ is_git_subcommand_in_chain() {
   return 1
 }
 
+# Inlined from hooks/_lib/git-tokenwalk.sh (source-of-truth). Drift gate: tests/test-hook-helper-drift.sh.
+# Closes the bash -c / eval / sh -c wrapper-bypass hole (#399).
+is_git_subcommand_in_wrappers() {
+  local cmd="$1"
+  local want_sub="$2"
+  local depth="${3:-3}"
+
+  # First, check the direct + chain case via existing helper.
+  if is_git_subcommand_in_chain "$cmd" "$want_sub"; then
+    return 0
+  fi
+
+  # Bounded recursion depth.
+  [ "$depth" -le 0 ] && return 1
+
+  # Split on chain operators (same as _in_chain) and inspect each
+  # segment for a wrapper pattern.
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+
+    # Look for an inline-string wrapper. Use bash regex to capture the
+    # inner string after a `-c` flag or after an `eval`. The captured
+    # group is the rest of the segment starting at the inner-arg
+    # boundary; we then strip outer quotes (single or double).
+    local wrapper_inner=""
+
+    # Tokenize the segment to find the wrapper command and its -c arg.
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$seg"
+    local i=0 n=${#TOKENS[@]}
+
+    # Skip env-var prefixes (KEY=val ... cmd ...).
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+
+    local first="${TOKENS[$i]:-}"
+    # Allow a possible absolute path: /bin/bash → match the basename.
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        # Walk shell-level flags to find -c (or -lc/-ic/-cx combined
+        # short-flag forms). All of these put the next token as the
+        # inline string to execute.
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          # Reconstruct the inner string from token j to end of segment.
+          # read -ra split on whitespace, so a quoted multi-word string
+          # like 'git commit -m foo' became three tokens: "'git" "commit"
+          # "-m" "foo'". Rejoin with spaces.
+          local inner=""
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          # Strip one layer of outer quotes (single or double).
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+          wrapper_inner="$inner"
+        fi
+        ;;
+      eval)
+        # All args to eval are the string to execute. Rejoin and strip
+        # outer quotes.
+        local inner=""
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        wrapper_inner="$inner"
+        ;;
+    esac
+
+    if [ -n "$wrapper_inner" ]; then
+      if is_git_subcommand_in_wrappers "$wrapper_inner" "$want_sub" $((depth - 1)); then
+        return 0
+      fi
+    fi
+  done <<< "$normalized"
+
+  return 1
+}
+
 # ─── Tracking enforcement helpers ───
 # Shared between the commit / cherry-pick / push reader blocks. Each helper
 # takes a marker path + the action-verb context ("committing", "landing",
@@ -491,14 +611,17 @@ else
 fi
 
 # --- main_protected: block git commit on main ---
-if is_git_subcommand_in_chain "$COMMAND" commit && is_main_protected && is_on_main; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#399) closes
+# `bash -c 'git commit'` / `eval 'git commit'` bypass.
+if is_git_subcommand_in_wrappers "$COMMAND" commit && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Create a feature branch or use PR mode. To change: edit .claude/zskills-config.json"
 fi
 
 # ─── CONFIGURE: set your full test command ────────────────────────────
 # Safety net: transcript-based verification on git commit
-# Ensures tests were run before committing code files.
-if is_git_subcommand_in_chain "$COMMAND" commit; then
+# Ensures tests were run before committing code files. Wrapper-recursion
+# via is_git_subcommand_in_wrappers (#399) catches wrapper-bypass forms.
+if is_git_subcommand_in_wrappers "$COMMAND" commit; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -630,13 +753,16 @@ if is_git_subcommand_in_chain "$COMMAND" commit; then
 fi
 
 # --- main_protected: block git cherry-pick on main ---
-if is_git_subcommand_in_chain "$COMMAND" cherry-pick && is_main_protected && is_on_main; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#399) closes
+# `bash -c 'git cherry-pick'` / `eval 'git cherry-pick'` bypass.
+if is_git_subcommand_in_wrappers "$COMMAND" cherry-pick && is_main_protected && is_on_main; then
   block_with_reason "BLOCKED: main branch is protected (main_protected: true in .claude/zskills-config.json). Cherry-pick to a feature branch instead. To change: edit .claude/zskills-config.json"
 fi
 
 # Safety net: transcript-based verification on git cherry-pick
 # Cherry-picks replay existing commits and bypass the commit hook above.
-if is_git_subcommand_in_chain "$COMMAND" cherry-pick; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#399).
+if is_git_subcommand_in_wrappers "$COMMAND" cherry-pick; then
   TRANSCRIPT=$(extract_transcript)
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     FULL_TEST_CHECK="${FULL_TEST_CMD}"
@@ -709,7 +835,8 @@ fi
 
 # Safety net: tracking enforcement on git push
 # Push is the landing gate for PR mode — same tracking checks as commit/cherry-pick.
-if is_git_subcommand_in_chain "$COMMAND" push; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#399).
+if is_git_subcommand_in_wrappers "$COMMAND" push; then
   TRACKING_ROOT="${TRACKING_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/.." && pwd)}"
   TRACKING_DIR="$TRACKING_ROOT/.zskills/tracking"
 
@@ -808,7 +935,7 @@ fi
 # variable-bearing push-target forms) produces false-positives on
 # legitimate worktree-scoped pushes without closing a realistic attack
 # vector.
-if is_git_subcommand_in_chain "$COMMAND" push && is_main_protected; then
+if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   # Scope rules (a) and (b) to JUST the `git push` command segment, not the
   # whole $COMMAND buffer. Without this, multi-statement commands like
   # `git fetch origin main && git push -u origin feat/foo` false-positive
@@ -825,8 +952,10 @@ if is_git_subcommand_in_chain "$COMMAND" push && is_main_protected; then
     esac
   done
   # (a) Explicit origin main/master (optionally prefixed with + for
-  # force-push or : for delete-refspec):
-  if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(main|master)([[:space:]]|$|\") ]]; then
+  # force-push or : for delete-refspec). Trailing class includes `'` and
+  # `"` so wrapper-unwrapped forms like `bash -c 'git push origin main'`
+  # → PUSH_ARGS containing trailing `main'` still match (#399).
+  if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(main|master)([[:space:]]|$|\"|\') ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (b) Any <localref>:main or <localref>:master refspec — covers HEAD:main,
@@ -835,7 +964,8 @@ if is_git_subcommand_in_chain "$COMMAND" push && is_main_protected; then
   # `git push origin feat:main` evaded this rule and rule (a) (which
   # requires `main` immediately after `origin`). Match any token ending
   # in `:main` or `:master` (including the empty-local deletion form).
-  if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:(main|master)([[:space:]]|$|\") ]]; then
+  # Trailing class also includes `'` for wrapper-unwrapped forms (#399).
+  if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:(main|master)([[:space:]]|$|\"|\') ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (c) Naked push (no origin arg) while on main — based on PUSH_ARGS,

@@ -28,7 +28,7 @@ fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 # When a new helper joins hooks/_lib/, add it here.
 fn_source() {
   case "$1" in
-    is_git_subcommand|is_destruct_command|is_git_subcommand_in_chain|is_destruct_command_in_chain|is_gh_pr_subcommand|is_gh_pr_subcommand_in_chain|is_gh_pr_subcommand_in_wrappers)
+    is_git_subcommand|is_destruct_command|is_git_subcommand_in_chain|is_destruct_command_in_chain|is_git_subcommand_in_wrappers|is_gh_pr_subcommand|is_gh_pr_subcommand_in_chain|is_gh_pr_subcommand_in_wrappers)
       echo "hooks/_lib/git-tokenwalk.sh" ;;
     extract_cd_target|resolve_effective_worktree_root)
       echo "hooks/_lib/resolve-effective-worktree-root.sh" ;;
@@ -39,16 +39,23 @@ fn_source() {
 
 for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh hooks/block-stale-skill-version.sh hooks/block-bypassed-land-pr.sh; do
   # Helper coverage per hook (which inlined helpers are present in each):
-  #   project hook              : is_git_subcommand,                  is_git_subcommand_in_chain,
-  #                               extract_cd_target,                  resolve_effective_worktree_root
+  #   project hook              : is_git_subcommand, is_git_subcommand_in_chain,
+  #                               is_git_subcommand_in_wrappers,
+  #                               extract_cd_target, resolve_effective_worktree_root
   #   generic hook              : is_git_subcommand, is_destruct_command,
-  #                               is_git_subcommand_in_chain, is_destruct_command_in_chain
+  #                               is_git_subcommand_in_chain, is_destruct_command_in_chain,
+  #                               is_git_subcommand_in_wrappers
   #   stale-skill-version hook  : is_git_subcommand, is_git_subcommand_in_chain,
+  #                               is_git_subcommand_in_wrappers,
   #                               extract_cd_target, resolve_effective_worktree_root
   #   block-bypassed-land-pr.sh : is_gh_pr_subcommand, is_gh_pr_subcommand_in_chain,
   #                               is_gh_pr_subcommand_in_wrappers
   #     (Plan LAND_PR_BYPASS_HARDENING Phase 4 — 4th drift-gated hook)
-  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers extract_cd_target resolve_effective_worktree_root; do
+  # is_git_subcommand_in_wrappers added in #399 — git-side closure of the
+  # bash -c / eval / sh -c wrapper-bypass class.
+  # extract_cd_target + resolve_effective_worktree_root added in #401 —
+  # consolidated cd-target / worktree-root resolution helper.
+  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_git_subcommand_in_wrappers is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers extract_cd_target resolve_effective_worktree_root; do
     # is_destruct_command is only inlined in generic hook; skip for project + stale-skill-version + bypassed-land-pr.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
@@ -57,6 +64,9 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     # cd-chained `cd /tmp/wt && git commit` must match for worktree commits).
     # bypassed-land-pr still skips (uses gh-pr chain walker, not git).
     [[ "$FN" == "is_git_subcommand_in_chain" && "$HOOK" == *bypassed-land-pr* ]] && continue
+    # is_git_subcommand_in_wrappers (#399): inlined in the three git-side
+    # hooks; bypassed-land-pr uses the gh-pr equivalent so skip.
+    [[ "$FN" == "is_git_subcommand_in_wrappers" && "$HOOK" == *bypassed-land-pr* ]] && continue
     # is_destruct_command_in_chain is only inlined in the generic hook.
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *stale-skill-version* ]] && continue

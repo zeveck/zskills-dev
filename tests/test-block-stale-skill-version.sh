@@ -27,8 +27,21 @@
 #   C8  FOO=bar git commit -m msg         → matches (env-var prefix)
 #   C9  '   git commit' leading ws        → matches
 #   C10 echo "git commit"                 → does NOT match
-#   C10e bash -c 'git commit -m foo'      → does NOT match (carve-out;
-#                                            Round 2 DA2-L-2 lock)
+#   C10e bash -c 'git commit -m foo'      → does NOT match is_git_subcommand
+#                                            (first-token-anchored; the helper
+#                                            is intentionally not wrapper-
+#                                            recursing on its own — the
+#                                            wrapper recursion lives in
+#                                            is_git_subcommand_in_wrappers,
+#                                            which the hook now calls. See
+#                                            C10i+ for wrapper-positive cases.)
+#   C10i bash -c 'git commit -m foo'      → MATCHES is_git_subcommand_in_wrappers (#399)
+#   C10j eval 'git commit -m foo'         → MATCHES is_git_subcommand_in_wrappers (#399)
+#   C10k bash -c 'cd /tmp/wt && git commit' → MATCHES is_git_subcommand_in_wrappers (#399)
+#   C10l bash -c "git commit --no-verify" → MATCHES is_git_subcommand_in_wrappers (#399)
+#   C10m sh -c 'git commit'               → MATCHES is_git_subcommand_in_wrappers (#399)
+#   C10n bash -c 'sh -c "git commit"'     → MATCHES is_git_subcommand_in_wrappers (#399; nested)
+#   C10o eval 'echo no git here'          → does NOT match is_git_subcommand_in_wrappers
 #   C11 git commit && git push            → matches (chained)
 #   C12 Script missing (chmod -x)         → fail-open (allow)
 #   C12a unset CLAUDE_PROJECT_DIR         → fail-open (allow); guards
@@ -107,6 +120,7 @@ load_hook_funcs() {
   awk '
     /^is_git_subcommand\(\) \{$/,/^\}$/ {print}
     /^is_git_subcommand_in_chain\(\) \{$/,/^\}$/ {print}
+    /^is_git_subcommand_in_wrappers\(\) \{$/,/^\}$/ {print}
     /^json_escape\(\) \{$/,/^\}$/ {print}
   ' "$HOOK" > "$tmp"
   # shellcheck disable=SC1090
@@ -268,6 +282,28 @@ assert_no_match_chain() {
   fi
 }
 
+# Wrapper-walker assertions — used for bash -c / sh -c / eval forms (#399).
+# is_git_subcommand_in_wrappers layers on top of _in_chain and recursively
+# unwraps the inner string of bash/sh/dash/ksh/zsh -c and eval. The hook's
+# call site now uses _in_wrappers so these forms BLOCK at hook level.
+assert_match_wrappers() {
+  local label="$1" cmd="$2"
+  if is_git_subcommand_in_wrappers "$cmd" commit; then
+    pass "$label: is_git_subcommand_in_wrappers('$cmd' commit) → match"
+  else
+    fail "$label: wrappers should match" "is_git_subcommand_in_wrappers returned 1 for: $cmd"
+  fi
+}
+
+assert_no_match_wrappers() {
+  local label="$1" cmd="$2"
+  if ! is_git_subcommand_in_wrappers "$cmd" commit; then
+    pass "$label: is_git_subcommand_in_wrappers('$cmd' commit) → no match"
+  else
+    fail "$label: wrappers should NOT match" "is_git_subcommand_in_wrappers returned 0 for: $cmd"
+  fi
+}
+
 # ─────────────────── C6 .. C11 — match assertions ────────────
 assert_match    "C6"   "git commit -am 'wip'"
 assert_match    "C7"   "git commit --amend"
@@ -288,11 +324,27 @@ assert_no_match "C10e" "bash -c 'git commit -m foo'"
 # C10f / C10g — cd-chain forms now MATCH via is_git_subcommand_in_chain
 # (the hook's call site after #393's fix). is_git_subcommand alone would
 # return 1 (first token is `cd`), so we use the chain assertion to mirror
-# the hook's actual behavior. The bash -c carve-out (C10e) STAYS — it is
-# tracked separately as issue #399.
+# the hook's actual behavior.
+# C10h — bash -c '...' still does NOT match the chain helper directly
+# (chain is first-token-anchored per shell segment, doesn't recurse into
+# bash -c args). The wrapper recursion lives in
+# is_git_subcommand_in_wrappers (C10i+), which the hook now calls.
 assert_match_chain    "C10f" "cd /tmp/wt && git commit -m foo"
 assert_match_chain    "C10g" "cd /tmp/wt && cd subdir && git commit -m foo"
 assert_no_match_chain "C10h" "bash -c 'git commit -m foo'"
+# C10i .. C10o — wrapper-recursion cases (#399). These MATCH via
+# is_git_subcommand_in_wrappers, which the hook calls instead of
+# _in_chain. Closes the bash -c / eval / sh -c bypass class.
+assert_match_wrappers    "C10i" "bash -c 'git commit -m foo'"
+assert_match_wrappers    "C10j" "eval 'git commit -m foo'"
+assert_match_wrappers    "C10k" "bash -c 'cd /tmp/wt && git commit -m foo'"
+assert_match_wrappers    "C10l" "bash -c \"git commit --no-verify -m hi\""
+assert_match_wrappers    "C10m" "sh -c 'git commit -m foo'"
+assert_match_wrappers    "C10n" "bash -c 'sh -c \"git commit -m foo\"'"
+assert_no_match_wrappers "C10o" "eval 'echo no git here'"
+# C10p — chain-then-wrapper composition: a cd-chain whose tail segment is
+# a bash -c wrapper. _in_chain alone misses the inner; _in_wrappers catches.
+assert_match_wrappers    "C10p" "cd /tmp/wt && bash -c 'git commit'"
 assert_match    "C11"  "git commit && git push"
 
 # ─────────────────── C12: Script missing → fail-open ─────────

@@ -15,6 +15,10 @@
 #                                      (`some_cmd && kill -9 1234`)
 #     - is_gh_pr_subcommand_in_chain — segment-walk for cd-chained gh-pr verbs
 #                                      (`cd /tmp/wt && gh pr create -B main`)
+#     - is_git_subcommand_in_wrappers — segment-walk + recursive unwrap of
+#                                      `bash -c '<inner>'` / `sh -c '<inner>'` /
+#                                      `eval '<inner>'` for git verbs (#399)
+#     - is_gh_pr_subcommand_in_wrappers — same for gh-pr verbs (#279/PR #255)
 #
 # All helpers are inlined verbatim into hook source files; the drift gate at
 # tests/test-hook-helper-drift.sh enforces byte-equality at CI time:
@@ -24,9 +28,15 @@
 #   - is_destruct_command inlined into block-unsafe-generic.sh
 #   - is_git_subcommand_in_chain   inlined into block-unsafe-project.sh.template
 #                                              + block-unsafe-generic.sh
+#                                              + block-stale-skill-version.sh
+#   - is_git_subcommand_in_wrappers inlined into block-unsafe-project.sh.template
+#                                              + block-unsafe-generic.sh
+#                                              + block-stale-skill-version.sh
+#                                              (#399 — closes bash -c / eval bypass)
 #   - is_destruct_command_in_chain inlined into block-unsafe-generic.sh only
 #   - is_gh_pr_subcommand          inlined into block-bypassed-land-pr.sh
 #   - is_gh_pr_subcommand_in_chain inlined into block-bypassed-land-pr.sh
+#   - is_gh_pr_subcommand_in_wrappers inlined into block-bypassed-land-pr.sh
 #
 # Maintain HERE only.
 set -u
@@ -180,6 +190,142 @@ is_git_subcommand_in_chain() {
       return 0
     fi
   done <<< "$normalized"
+  return 1
+}
+
+# Returns 0 iff ANY shell segment of $cmd — including segments reachable by
+# recursively unwrapping `bash -c '<inner>'` / `sh -c '<inner>'` / `eval
+# '<inner>'` style wrappers — is a `git $want_sub` invocation. Closes the
+# git-side wrapper-bypass hole (#399); structural twin of
+# is_gh_pr_subcommand_in_wrappers (the gh-side closure from #279/PR #255).
+#
+# Without this helper, `bash -c "git commit --no-verify"`, `eval "git push
+# origin main"`, etc. would tokenize as a top-level `bash`/`eval` and slip
+# past every git-side hook (block-stale-skill-version, block-unsafe-project
+# main_protected + tracking-enforcement, block-unsafe-generic --no-verify /
+# add -A / push). All four hook-suite call sites that previously used
+# is_git_subcommand_in_chain swap up to is_git_subcommand_in_wrappers when
+# wrapper-recursion is wanted (i.e., when the gate is a structural
+# invariant that an agent must not be able to bypass with `bash -c`).
+#
+# Bounded recursion (default depth=3) so a pathological
+# `bash -c 'bash -c "bash -c \"...\"" '` chain terminates. Matches the
+# gh-pr helper's depth budget.
+is_git_subcommand_in_wrappers() {
+  local cmd="$1"
+  local want_sub="$2"
+  local depth="${3:-3}"
+
+  # First, check the direct + chain case via existing helper.
+  if is_git_subcommand_in_chain "$cmd" "$want_sub"; then
+    return 0
+  fi
+
+  # Bounded recursion depth.
+  [ "$depth" -le 0 ] && return 1
+
+  # Split on chain operators (same as _in_chain) and inspect each
+  # segment for a wrapper pattern.
+  local normalized
+  normalized=$(printf '%s' "$cmd" \
+    | sed -E 's/[[:space:]]*(\&\&|\|\||;|\|)[[:space:]]*/\n/g' \
+    | sed -E 's/\\n/\n/g')
+
+  local seg
+  while IFS= read -r seg; do
+    [ -z "$seg" ] && continue
+
+    # Look for an inline-string wrapper. Use bash regex to capture the
+    # inner string after a `-c` flag or after an `eval`. The captured
+    # group is the rest of the segment starting at the inner-arg
+    # boundary; we then strip outer quotes (single or double).
+    local wrapper_inner=""
+
+    # Tokenize the segment to find the wrapper command and its -c arg.
+    local -a TOKENS
+    # shellcheck disable=SC2206
+    read -ra TOKENS <<< "$seg"
+    local i=0 n=${#TOKENS[@]}
+
+    # Skip env-var prefixes (KEY=val ... cmd ...).
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+    [[ $i -lt $n && "${TOKENS[$i]}" == "env" ]] && ((i++))
+    while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((i++))
+    done
+
+    local first="${TOKENS[$i]:-}"
+    # Allow a possible absolute path: /bin/bash → match the basename.
+    case "$first" in
+      */*) first="${first##*/}" ;;
+    esac
+
+    case "$first" in
+      bash|sh|dash|ash|ksh|zsh)
+        # Walk shell-level flags to find -c (or -lc/-ic/-cx combined
+        # short-flag forms). All of these put the next token as the
+        # inline string to execute.
+        local j=$((i+1))
+        local found_c=0
+        while [[ $j -lt $n ]]; do
+          local t="${TOKENS[$j]}"
+          case "$t" in
+            -c) found_c=1; ((j++)); break ;;
+            -[lir]c|-c[lir]|-[lir][lir]c|-c[lir][lir]) found_c=1; ((j++)); break ;;
+            --) ((j++)); break ;;
+            -*) ((j++)) ;;
+            *) break ;;
+          esac
+        done
+        if [[ $found_c -eq 1 && $j -lt $n ]]; then
+          # Reconstruct the inner string from token j to end of segment.
+          # read -ra split on whitespace, so a quoted multi-word string
+          # like 'git commit -m foo' became three tokens: "'git" "commit"
+          # "-m" "foo'". Rejoin with spaces.
+          local inner=""
+          local k=$j
+          while [[ $k -lt $n ]]; do
+            if [ -z "$inner" ]; then
+              inner="${TOKENS[$k]}"
+            else
+              inner="$inner ${TOKENS[$k]}"
+            fi
+            ((k++))
+          done
+          # Strip one layer of outer quotes (single or double).
+          inner="${inner#\'}"; inner="${inner%\'}"
+          inner="${inner#\"}"; inner="${inner%\"}"
+          wrapper_inner="$inner"
+        fi
+        ;;
+      eval)
+        # All args to eval are the string to execute. Rejoin and strip
+        # outer quotes.
+        local inner=""
+        local k=$((i+1))
+        while [[ $k -lt $n ]]; do
+          if [ -z "$inner" ]; then
+            inner="${TOKENS[$k]}"
+          else
+            inner="$inner ${TOKENS[$k]}"
+          fi
+          ((k++))
+        done
+        inner="${inner#\'}"; inner="${inner%\'}"
+        inner="${inner#\"}"; inner="${inner%\"}"
+        wrapper_inner="$inner"
+        ;;
+    esac
+
+    if [ -n "$wrapper_inner" ]; then
+      if is_git_subcommand_in_wrappers "$wrapper_inner" "$want_sub" $((depth - 1)); then
+        return 0
+      fi
+    fi
+  done <<< "$normalized"
+
   return 1
 }
 
