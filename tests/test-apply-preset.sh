@@ -312,8 +312,118 @@ else
 fi
 
 echo ""
+echo "=== Sibling-collision: extra.landing must not poison read or write (#400) ==="
+
+# Multi-line canonical JSON with a sibling object that has the SAME key
+# names ("landing", "main_protected") at a different scope. The unscoped
+# regex from the pre-#400 implementation would (a) read "WRONG" from
+# extra.landing and "true" from extra.main_protected on the FIRST hit,
+# and (b) overwrite extra.landing instead of (or in addition to)
+# execution.landing on the write path.
+SIBLING_CONFIG='{
+  "$schema": "./zskills-config.schema.json",
+  "project_name": "sibling",
+  "extra": {
+    "landing": "WRONG",
+    "main_protected": true
+  },
+  "execution": {
+    "landing": "cherry-pick",
+    "main_protected": false,
+    "branch_prefix": "feat/"
+  },
+  "testing": { "unit_cmd": "npm test" }
+}'
+
+# Read-path test: probe via direct sourcing of the script logic by
+# checking the CHANGED report. After applying cherry-pick to a config
+# whose execution.landing is already cherry-pick AND main_protected is
+# already false, the only state change should be BLOCK_MAIN_PUSH 1→0.
+# If the read regex were unscoped it would see extra.landing="WRONG"
+# and extra.main_protected=true and report execution field changes.
+rm -rf /tmp/zskills-apply-test-15
+make_project /tmp/zskills-apply-test-15 "$SIBLING_CONFIG" "$CURRENT_HOOK"
+out=$(PROJECT_ROOT=/tmp/zskills-apply-test-15 bash "$SCRIPT" cherry-pick 2>&1)
+rc=$?
+# Expectation: rc=0 (BLOCK_MAIN_PUSH flip), and no execution.* changes
+# (because execution already matches the cherry-pick preset).
+if [ "$rc" = "0" ] && \
+   echo "$out" | grep -q "BLOCK_MAIN_PUSH" && \
+   ! echo "$out" | grep -q "execution.landing=" && \
+   ! echo "$out" | grep -q "execution.main_protected="; then
+  pass "sibling-collision read: CURRENT_LANDING / CURRENT_PROTECTED scoped to execution (no spurious flip reports)"
+else
+  fail "sibling-collision read: rc=$rc, out=$out"
+fi
+
+# Write-path test: flip cherry-pick → locked-main-pr. execution.landing
+# should change to "pr"; execution.main_protected should change to
+# "true"; extra.landing MUST remain "WRONG"; extra.main_protected MUST
+# remain "true" (was already true — but key insight is that the unscoped
+# write would clobber it to whatever the new value was, including in
+# this case leaving the right value via coincidence; the landing test is
+# the clean disambiguator).
+rm -rf /tmp/zskills-apply-test-16
+make_project /tmp/zskills-apply-test-16 "$SIBLING_CONFIG" "$CURRENT_HOOK"
+PROJECT_ROOT=/tmp/zskills-apply-test-16 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+after=/tmp/zskills-apply-test-16/.claude/zskills-config.json
+# Use python to read both scopes unambiguously (zskills allows Python).
+PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
+read_exec_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['landing'])" "$after")
+read_extra_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['extra']['landing'])" "$after")
+read_exec_protected=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['main_protected'])" "$after")
+read_extra_protected=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['extra']['main_protected'])" "$after")
+if [ "$read_exec_landing" = "pr" ] && \
+   [ "$read_extra_landing" = "WRONG" ] && \
+   [ "$read_exec_protected" = "True" ] && \
+   [ "$read_extra_protected" = "True" ]; then
+  pass "sibling-collision write: only execution.* updated; extra.landing/extra.main_protected preserved verbatim"
+else
+  fail "sibling-collision write: execution.landing=$read_exec_landing (want pr), extra.landing=$read_extra_landing (want WRONG), execution.main_protected=$read_exec_protected (want True), extra.main_protected=$read_extra_protected (want True)
+config after:
+$(cat "$after")"
+fi
+
+# Sharper write-path probe: pre-state where extra.landing differs from
+# execution.landing AND extra.main_protected is the OPPOSITE of the
+# target. The pre-#400 unscoped sed would clobber extra.* alongside
+# execution.* (or instead of, depending on which match wins). With the
+# scope-aware exec_field_replace, extra.* must remain identical to the
+# input.
+SIBLING_OPPOSITE_CONFIG='{
+  "project_name": "sibling-opp",
+  "extra": {
+    "landing": "BOGUS",
+    "main_protected": false
+  },
+  "execution": {
+    "landing": "cherry-pick",
+    "main_protected": false,
+    "branch_prefix": "feat/"
+  }
+}'
+rm -rf /tmp/zskills-apply-test-17
+make_project /tmp/zskills-apply-test-17 "$SIBLING_OPPOSITE_CONFIG" "$CURRENT_HOOK"
+PROJECT_ROOT=/tmp/zskills-apply-test-17 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+after=/tmp/zskills-apply-test-17/.claude/zskills-config.json
+read_exec_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['landing'])" "$after")
+read_extra_landing=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['extra']['landing'])" "$after")
+read_exec_protected=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['execution']['main_protected'])" "$after")
+read_extra_protected=$("$PYTHON" -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['extra']['main_protected'])" "$after")
+if [ "$read_exec_landing" = "pr" ] && \
+   [ "$read_extra_landing" = "BOGUS" ] && \
+   [ "$read_exec_protected" = "True" ] && \
+   [ "$read_extra_protected" = "False" ]; then
+  pass "sibling-collision write (opposite values): execution.* flipped, extra.* preserved (landing=BOGUS, main_protected=False)"
+else
+  fail "sibling-collision write (opposite): execution.landing=$read_exec_landing (want pr), extra.landing=$read_extra_landing (want BOGUS), execution.main_protected=$read_exec_protected (want True), extra.main_protected=$read_extra_protected (want False)
+config after:
+$(cat "$after")"
+fi
+
+echo ""
 echo "=== Cleanup ==="
-for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
+for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
   rm -rf "/tmp/zskills-apply-test-$n"
 done
 pass "temp dirs cleaned"

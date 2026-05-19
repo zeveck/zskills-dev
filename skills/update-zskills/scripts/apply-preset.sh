@@ -67,11 +67,111 @@ sed_inplace() {
   rm -f "$tmp"
 }
 
+# Scope-aware in-place replacement of a JSON field's value within the
+# enclosing "execution" object. Substitutes ONLY inside the execution
+# block, leaving same-named sibling fields elsewhere in the config
+# untouched. Handles both compact single-line and canonical multi-line
+# JSON. `field` is the JSON key (e.g. landing). `value_pattern` is the
+# extended-regex matching the old value; `new_value` is the replacement
+# (substituted verbatim into the output).
+#
+# Algorithm: read whole file into awk, track brace depth, and substitute
+# only the FIRST match of "<field>"<ws>:<ws><value_pattern> that occurs
+# while we are inside the execution object (depth >= the depth at which
+# we entered execution).
+exec_field_replace() {
+  local file="$1" field="$2" value_pattern="$3" new_value="$4"
+  local tmp
+  tmp=$(mktemp)
+  awk -v field="$field" -v vpat="$value_pattern" -v newval="$new_value" '
+    BEGIN { RS = "\x00" }   # slurp whole file as one record
+    {
+      out = ""
+      buf = $0
+      n = length(buf)
+      i = 1
+      in_exec = 0
+      exec_depth = 0
+      depth = 0
+      done = 0
+      while (i <= n) {
+        ch = substr(buf, i, 1)
+        if (!in_exec) {
+          # Find next "execution" key. Use simple substring search; then
+          # confirm it is followed by <ws>:<ws>{ to be a real object.
+          rest = substr(buf, i)
+          pos = index(rest, "\"execution\"")
+          if (pos == 0) {
+            out = out rest
+            break
+          }
+          # Emit everything up to and including the "execution" token.
+          tok_end = i + pos - 1 + length("\"execution\"") - 1
+          out = out substr(buf, i, tok_end - i + 1)
+          i = tok_end + 1
+          # Check that next is <ws>*:<ws>*{
+          rest2 = substr(buf, i)
+          if (match(rest2, /^[[:space:]]*:[[:space:]]*\{/)) {
+            out = out substr(buf, i, RLENGTH)
+            i = i + RLENGTH
+            in_exec = 1
+            exec_depth = 1
+            depth = 1
+          }
+          continue
+        }
+        # in_exec: track depth and look for the field substitution.
+        if (ch == "{") { depth++; out = out ch; i++; continue }
+        if (ch == "}") {
+          depth--
+          out = out ch
+          i++
+          if (depth < exec_depth) { in_exec = 0 }
+          continue
+        }
+        if (!done && ch == "\"") {
+          rest = substr(buf, i)
+          pat = "^\"" field "\"[[:space:]]*:[[:space:]]*"
+          if (match(rest, pat)) {
+            head_len = RLENGTH
+            # Now check the value matches the supplied pattern.
+            tail = substr(rest, head_len + 1)
+            vpat_anchored = "^(" vpat ")"
+            if (match(tail, vpat_anchored)) {
+              val_len = RLENGTH
+              # Emit head (key + colon + ws), then new_value; skip val_len.
+              out = out substr(buf, i, head_len) newval
+              i = i + head_len + val_len
+              done = 1
+              continue
+            }
+          }
+        }
+        out = out ch
+        i++
+      }
+      printf "%s", out
+    }
+  ' "$file" > "$tmp" && cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
 # ─── Config: execution.landing + execution.main_protected ───────────
-# Existing-value probes. These regexes are permissive across formatting
-# (compact, canonical, mixed whitespace, tabs).
-CURRENT_LANDING=$(sed -n -E 's/.*"landing"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' "$CONFIG" | head -1)
-CURRENT_PROTECTED=$(sed -n -E 's/.*"main_protected"[[:space:]]*:[[:space:]]*(true|false).*/\1/p' "$CONFIG" | head -1)
+# Existing-value probes. Scope under the enclosing "execution" object so
+# a future sibling field (e.g. an unrelated "landing" elsewhere in the
+# config) cannot poison the read. Mirrors dev_server.cmd scoping in
+# zskills-resolve-config.sh:88. The bash =~ engine is single-line but
+# [^}] matches newlines, so this works on both compact and canonical
+# multi-line JSON.
+CONFIG_BODY=$(cat "$CONFIG")
+CURRENT_LANDING=""
+CURRENT_PROTECTED=""
+if [[ "$CONFIG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  CURRENT_LANDING="${BASH_REMATCH[1]}"
+fi
+if [[ "$CONFIG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+  CURRENT_PROTECTED="${BASH_REMATCH[1]}"
+fi
 
 # Is there an execution block at all?
 EXEC_EXISTS=0
@@ -135,11 +235,11 @@ if [ "$EXEC_EXISTS" = "0" ]; then
   CHANGED+=("execution (inserted)")
 else
   if [ "$CURRENT_LANDING" != "$LANDING" ]; then
-    sed_inplace "s/(\"landing\"[[:space:]]*:[[:space:]]*)\"[^\"]*\"/\\1\"$LANDING\"/" "$CONFIG"
+    exec_field_replace "$CONFIG" "landing" '"[^"]*"' "\"$LANDING\""
     CHANGED+=("execution.landing=$LANDING")
   fi
   if [ "$CURRENT_PROTECTED" != "$MAIN_PROTECTED" ]; then
-    sed_inplace "s/(\"main_protected\"[[:space:]]*:[[:space:]]*)(true|false)/\\1$MAIN_PROTECTED/" "$CONFIG"
+    exec_field_replace "$CONFIG" "main_protected" "(true|false)" "$MAIN_PROTECTED"
     CHANGED+=("execution.main_protected=$MAIN_PROTECTED")
   fi
 fi
