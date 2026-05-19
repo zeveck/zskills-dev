@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.19+549aa0"
+  version: "2026.05.19+e6be98"
 ---
 
 # Update Z Skills Infrastructure
@@ -415,61 +415,98 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
 
 **If it exists:**
 1. Read the file content.
-2. Extract values using bash regex (pure bash, no external JSON tool):
+2. Extract values using bash regex (pure bash, no external JSON tool).
+
+   **IMPORTANT — parent-object scoping is mandatory for any field
+   that lives inside a parent block.** An unscoped regex like
+   `\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"` matches the
+   FIRST occurrence of the field anywhere in the JSON, so a future
+   sibling block declaring its own same-named field will silently
+   shadow the intended one. The fix class addressed by issues #395
+   (`zskills-resolve-config.sh`) and #400 (`apply-preset.sh`) and
+   reproductively-broad issue #428 (this prose recipe) is the SAME
+   bug class: every field that lives inside `"<parent>": { ... }`
+   must scope its extraction under the parent. The canonical form
+   for a scoped string-value extraction is:
+
+   ```text
+   \"<parent>\"[[:space:]]*:[[:space:]]*\{[^}]*\"<field>\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"
+   ```
+
+   Top-level fields (`project_name`, `timezone`) have no parent
+   block and may be extracted directly. The mapping below annotates
+   every parent-scoped field with `# parent: <name>` next to its
+   regex.
+
    ```bash
    CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
-   # Extract a string value (note: ([^\"]*) allows empty strings):
+   # Top-level string (no parent — direct extraction is safe):
    if [[ "$CONFIG_CONTENT" =~ \"project_name\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      PROJECT_NAME="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: testing  (sibling-shadow risk if unscoped — see #395)
+   if [[ "$CONFIG_CONTENT" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      UNIT_CMD="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: testing
+   if [[ "$CONFIG_CONTENT" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      FULL_CMD="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: testing
+   if [[ "$CONFIG_CONTENT" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      OUTPUT_FILE="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: dev_server
+   if [[ "$CONFIG_CONTENT" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      DEV_SERVER_CMD="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"main_repo_path\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: dev_server
+   if [[ "$CONFIG_CONTENT" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_repo_path\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      MAIN_REPO_PATH="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"file_patterns\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: ui  (note: `file_patterns` also exists under `testing` as
+   # an array — scoping under `ui` disambiguates)
+   if [[ "$CONFIG_CONTENT" =~ \"ui\"[[:space:]]*:[[:space:]]*\{[^}]*\"file_patterns\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      UI_FILE_PATTERNS="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"auth_bypass\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: ui
+   if [[ "$CONFIG_CONTENT" =~ \"ui\"[[:space:]]*:[[:space:]]*\{[^}]*\"auth_bypass\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      AUTH_BYPASS="${BASH_REMATCH[1]}"
    fi
+   # Top-level string (no parent):
    if [[ "$CONFIG_CONTENT" =~ \"timezone\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      TIMEZONE="${BASH_REMATCH[1]}"
    fi
-   # Extract a boolean value:
-   if [[ "$CONFIG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+   # parent: execution  (boolean — sibling-shadow risk if unscoped, see #400)
+   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"main_protected\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      MAIN_PROTECTED="${BASH_REMATCH[1]}"
    fi
-   # Extract landing mode:
-   if [[ "$CONFIG_CONTENT" =~ \"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: execution  (landing mode)
+   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"landing\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      LANDING_MODE="${BASH_REMATCH[1]}"
    fi
-   # Extract branch prefix:
-   if [[ "$CONFIG_CONTENT" =~ \"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: execution  (branch prefix)
+   if [[ "$CONFIG_CONTENT" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"branch_prefix\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      BRANCH_PREFIX="${BASH_REMATCH[1]}"
    fi
-   # Extract CI config:
-   if [[ "$CONFIG_CONTENT" =~ \"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
+   # parent: ci  (boolean)
+   if [[ "$CONFIG_CONTENT" =~ \"ci\"[[:space:]]*:[[:space:]]*\{[^}]*\"auto_fix\"[[:space:]]*:[[:space:]]*(true|false) ]]; then
      CI_AUTO_FIX="${BASH_REMATCH[1]}"
    fi
-   if [[ "$CONFIG_CONTENT" =~ \"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+   # parent: ci  (integer)
+   if [[ "$CONFIG_CONTENT" =~ \"ci\"[[:space:]]*:[[:space:]]*\{[^}]*\"max_fix_attempts\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
      CI_MAX_ATTEMPTS="${BASH_REMATCH[1]}"
    fi
-   # Extract commit.co_author (optional — backfilled below if missing):
-   if [[ "$CONFIG_CONTENT" =~ \"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+   # parent: commit  (optional — backfilled below if missing)
+   if [[ "$CONFIG_CONTENT" =~ \"commit\"[[:space:]]*:[[:space:]]*\{[^}]*\"co_author\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
      CO_AUTHOR="${BASH_REMATCH[1]}"
    fi
    ```
+
+   The `[^}]*` between the parent key and the field key is what
+   constrains the match to inside that block. Do NOT replace it with
+   `.*` (which would match across blocks) and do NOT drop the parent
+   prefix to "simplify" the regex — that re-introduces the bug class.
 3. For each template placeholder, use the config value if non-empty.
 3.5. **Backfill `commit.co_author` if absent.** If the existing config
    does not contain a `"commit"` block with a `"co_author"` field (e.g.
