@@ -599,6 +599,84 @@ fi
 rm -rf "$worktree"
 
 # ----------------------------------------------------------------------
+# WRAPPER-CD CASE — issue #427 closure.
+# ----------------------------------------------------------------------
+#
+# Proves the wrapper-cd worktree-blind bug is closed: PR #417 made the
+# classify check wrapper-aware via is_git_subcommand_in_wrappers, so the
+# hook *triggers* on `bash -c 'cd /tmp/wt && git commit'` and `eval 'cd
+# /tmp/wt && git commit'`. But before #427, extract_cd_target only
+# looked at the OUTER command (first token = bash/eval, not cd) →
+# returned empty → EFFECTIVE_REPO_ROOT fell back to $CLAUDE_PROJECT_DIR
+# (main repo), where nothing was staged → stage-check exit 0 → silent
+# false-allow. Each wrapper case below stages an unbumped SKILL.md edit
+# in a worktree and asserts the hook DENIES.
+#
+# Three wrapper shapes:
+#   wrapper-cd-1: bash -c 'cd <wt> && git commit'   (single-quoted)
+#   wrapper-cd-2: sh   -c "cd <wt> && git commit"   (double-quoted, sh)
+#   wrapper-cd-3: eval 'cd <wt> && git commit'      (eval)
+
+echo ""
+echo "=== Wrapper-cd cases (issue #427) ==="
+
+for wrapper_case in bash-c sh-c eval; do
+  case_no="wrapper-cd-$wrapper_case"
+  sandbox=$(make_sandbox "$case_no")
+
+  worktree=$(mktemp -d)
+  rm -rf "$worktree"
+  (
+    cd "$sandbox"
+    git branch -q "feat/wrapper-$wrapper_case"
+    git worktree add -q "$worktree" "feat/wrapper-$wrapper_case"
+  )
+
+  # Stage a SKILL.md body edit in the worktree without bumping the version.
+  echo "Worktree wrapper-cd body edit." >> "$worktree/skills/foo/SKILL.md"
+  (cd "$worktree" && git add skills/foo/SKILL.md)
+
+  # Build a wrapper-cd envelope that wraps `cd <wt> && git commit` in an
+  # outer shell (bash -c / sh -c / eval). The hook's classify check
+  # (is_git_subcommand_in_wrappers, #399/#417) detects the wrapped git
+  # commit and fires; extract_cd_target (post-#427) must recursively
+  # unwrap one layer and resolve the cd target to $worktree so
+  # stage-check runs against the worktree's index (where the unbumped
+  # SKILL.md edit lives) and emits STOP.
+  case "$wrapper_case" in
+    bash-c)
+      inner="cd $worktree && git commit -m test"
+      outer="bash -c '$inner'"
+      ;;
+    sh-c)
+      inner="cd $worktree && git commit -m test"
+      outer="sh -c \\\"$inner\\\""
+      ;;
+    eval)
+      inner="cd $worktree && git commit -m test"
+      outer="eval '$inner'"
+      ;;
+  esac
+
+  ENVELOPE=$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$outer")
+  HOOK_OUT=$(
+    CLAUDE_PROJECT_DIR="$sandbox" printf '%s' "$ENVELOPE" | bash "$HOOK"
+  )
+  HOOK_EXIT=$?
+
+  if [ "$HOOK_EXIT" -eq 0 ] \
+     && [[ "$HOOK_OUT" == *'"permissionDecision":"deny"'* ]] \
+     && [[ "$HOOK_OUT" == *"STOP:"* ]]; then
+    pass "$case_no: wrapper-cd commit in worktree with unbumped SKILL.md → DENY envelope"
+  else
+    fail "$case_no: expected deny envelope with STOP, got exit=$HOOK_EXIT out=$HOOK_OUT"
+  fi
+
+  (cd "$sandbox" && git worktree remove --force "$worktree" 2>/dev/null) || true
+  rm -rf "$worktree"
+done
+
+# ----------------------------------------------------------------------
 # Summary.
 # ----------------------------------------------------------------------
 

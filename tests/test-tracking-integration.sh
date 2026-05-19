@@ -381,6 +381,94 @@ fi
 teardown_repo
 
 # ═══════════════════════════════════════════════════════════════════════
+# Test 3-wrapper-cd: Worktree enforcement via wrapper-cd envelope (#427)
+#
+# Pre-#427, PR #417 made classify wrapper-aware (the hook fires on
+# `bash -c 'cd /tmp/wt && git commit'`) but extract_cd_target still
+# only inspected the OUTER command (first token = bash/eval, not cd).
+# So LOCAL_ROOT fell back to the hook's ambient main-repo CWD; the
+# worktree's .zskills-tracked was never read; tracking-marker
+# enforcement silently no-op'd for wrapped worktree commits.
+#
+# After #427: extract_cd_target recursively unwraps one wrapper layer
+# (bounded depth 3) and resolves the inner `cd <wt>` target. LOCAL_ROOT
+# → worktree → .zskills-tracked read → enforcement fires.
+#
+# Three wrapper shapes covered: bash -c '<inner>', sh -c "<inner>",
+# eval '<inner>'.
+# ═══════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "=== Test 3-wrapper-cd: Worktree enforcement via wrapper-cd envelope (#427) ==="
+
+for wrapper_case in bash-c sh-c eval; do
+  setup_repo
+
+  (cd "$TEST_TMPDIR" && git checkout -q -b "wrapper-branch-$wrapper_case" && git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null)
+  WORKTREE_DIR=$(mktemp -d)
+  rmdir "$WORKTREE_DIR"
+  (cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" "wrapper-branch-$wrapper_case" 2>/dev/null)
+
+  if [ ! -d "$WORKTREE_DIR" ]; then
+    fail "Test 3-wrapper-cd-$wrapper_case: could not create worktree, skipping"
+    teardown_repo
+    continue
+  fi
+
+  mkdir -p "$WORKTREE_DIR/.claude/hooks"
+  cp "$TEST_TMPDIR/.claude/hooks/block-unsafe-project.sh" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"
+
+  PID="run-plan.wrapper-$wrapper_case-pipeline"
+  printf '%s\n' "$PID" > "$WORKTREE_DIR/.zskills-tracked"
+
+  DIR_T=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+  touch "$DIR_T/requires.verify-changes.wrapper-$wrapper_case"
+
+  printf 'npm run test:all\n' > "$WORKTREE_DIR/.transcript"
+
+  (cd "$WORKTREE_DIR" && echo "var x = 1;" > thermal.js && git add thermal.js)
+
+  # Build the wrapper-cd envelope. The hook (running with CWD=main_repo)
+  # must (1) classify the wrapped git commit via
+  # is_git_subcommand_in_wrappers, then (2) extract the cd target from
+  # the inner `cd <wt> && git commit` via the wrapper-recursive
+  # extract_cd_target (#427), then (3) read .zskills-tracked from the
+  # worktree, then (4) find the unfulfilled marker → DENY.
+  case "$wrapper_case" in
+    bash-c) INNER="cd $WORKTREE_DIR && git commit -m test"; OUTER="bash -c '$INNER'" ;;
+    sh-c)   INNER="cd $WORKTREE_DIR && git commit -m test"; OUTER="sh -c \\\"$INNER\\\"" ;;
+    eval)   INNER="cd $WORKTREE_DIR && git commit -m test"; OUTER="eval '$INNER'" ;;
+  esac
+
+  JSON="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$OUTER\"},\"transcript_path\":\"$WORKTREE_DIR/.transcript\"}"
+
+  HOOK_OUTPUT=$(
+    echo "$JSON" | TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+  )
+
+  if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]] \
+     && [[ "$HOOK_OUTPUT" == *"verify-changes.wrapper-$wrapper_case"* ]]; then
+    pass "Test 3-wrapper-cd-$wrapper_case-a: wrapper-cd worktree commit blocked by worktree's .zskills-tracked + main's unfulfilled marker"
+  else
+    fail "Test 3-wrapper-cd-$wrapper_case-a: wrapper-cd worktree commit should be blocked; got: $HOOK_OUTPUT"
+  fi
+
+  # Fulfill, then re-test → should allow.
+  touch "$DIR_T/fulfilled.verify-changes.wrapper-$wrapper_case"
+  HOOK_OUTPUT=$(
+    echo "$JSON" | TRACKING_ROOT="$TEST_TMPDIR" bash -c "cd '$TEST_TMPDIR' && bash '$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null
+  )
+  if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]]; then
+    fail "Test 3-wrapper-cd-$wrapper_case-b: wrapper-cd commit should be allowed after fulfilling marker; got: $HOOK_OUTPUT"
+  else
+    pass "Test 3-wrapper-cd-$wrapper_case-b: wrapper-cd commit allowed after fulfilling marker"
+  fi
+
+  (cd "$TEST_TMPDIR" && git worktree remove --force "$WORKTREE_DIR" 2>/dev/null)
+  teardown_repo
+done
+
+# ═══════════════════════════════════════════════════════════════════════
 # Test 4: Content-only exemption
 # ═══════════════════════════════════════════════════════════════════════
 
