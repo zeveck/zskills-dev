@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+5bed75"
+  version: "2026.05.18+3f76bb"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1425,12 +1425,12 @@ fi
 When the dashboard branch returns picks, skip the ranking/focus rubric
 below and proceed directly to the **Triage** subsection with
 `CANDIDATE_ISSUES` as the input list. The triage routing (in-batch
-fix-agent vs `/quickfix` vs `/draft-plan` vs skip) still applies — the
+fix-agent vs `/do pr` vs `/draft-plan` vs skip) still applies — the
 dashboard only overrides the *selection*, not the *routing*.
 
 **Cap to N happens AFTER triage, not before.** The triage loop iterates
 `CANDIDATE_ISSUES` in drag order, classifies each issue, and KEEPS the
-first N that route to **in-batch fix-agent** or **/quickfix**. Issues
+first N that route to **in-batch fix-agent** or **/do pr**. Issues
 that triage to **"Bug with unclear cause"**, **"Plan-scale"**, or **"Too
 vague"** are recorded as skips and do NOT count toward N — keep
 iterating. Stop iterating once N actionable picks have been collected.
@@ -1474,10 +1474,10 @@ bug (under-routing to in-batch fix-agent).
 - **Clear and doable as one PR, but needs review** — clear spec, single
   PR scope, but the fix has multiple coordinate-with-discipline steps
   (e.g., touches multiple files, requires version bumps, has subtle
-  scope-creep risk). Dispatch `/quickfix` for the issue, which adds
+  scope-creep risk). Dispatch `/do pr` for the issue, which adds
   pre-execution plan-review (catches scope drift before commit) plus CI
   poll + fix-cycle without you hand-orchestrating each step. Per-issue
-  /quickfix dispatch replaces the in-batch fix-agent for this category.
+  /do pr dispatch replaces the in-batch fix-agent for this category.
 
 - **Bug with unclear cause** — symptom is reported but no root-cause
   hypothesis emerges from the issue body or research blurb. Don't guess.
@@ -1516,7 +1516,7 @@ follow-up issue. Don't conflate the two.
   test-side + Fix B verifier-discipline] are /draft-plan tier."
   Independent sizing: Fix A = 2 known test files + one-grep audit =
   **implementer-tier**; Fix B = same prose at ~6 verifier-dispatch
-  sites = **/quickfix-tier**. Neither was /draft-plan.
+  sites = **/do pr-tier**. Neither was /draft-plan.
 - **#390** (warn-config-drift mirror stale). Body's "Larger-than-issue"
   framing suggested structural rewrite. Independent sizing: the body's
   "preferred" `cp` + byte-equality conformance test IS the structural
@@ -1528,15 +1528,15 @@ HOW.** If the issue clearly describes the problem but the fix is hard,
 that's not vague — that's work. Never use "vague" as an excuse to skip
 hard issues.
 
-**Picking between in-batch fix-agent and `/quickfix`.** The in-batch
+**Picking between in-batch fix-agent and `/do pr`.** The in-batch
 fix-agent is appropriate when the fix is mechanical enough that
 post-execution diff review (which `/fix-issues` Phase 4 already
-dispatches) is sufficient. `/quickfix` is appropriate when *before* the
+dispatches) is sufficient. `/do pr` is appropriate when *before* the
 fix, you want a second pair of eyes on the plan — typically when the
 issue has multiple discipline surfaces (version bumps + mirror, test
 updates + source change, doc update + behavior change). The
-`/quickfix` plan-reviewer's auto-REVISE on >4 Acceptance bullets is
-the mechanical signal that says "this is bigger than `/quickfix` —
+`/do pr` plan-reviewer's auto-REVISE on >4 Acceptance bullets is
+the mechanical signal that says "this is bigger than `/do pr` —
 escalate to `/draft-plan`."
 
 ### Group by dependency and file overlap

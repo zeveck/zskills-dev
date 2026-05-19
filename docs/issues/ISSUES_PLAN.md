@@ -178,7 +178,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** In `skills/qe-audit/SKILL.md`: insert a new step between Commit Audit Step 4 and Step 5 (line 190) requiring per-finding verification (Read/grep cited file:line, recursive grep for negative claims, read test files for test-shape claims, `git show` for "fixed by commit X" claims), with the verification command recorded in the issue/tracker body; unverifiable findings go to an "Unverified findings" subsection, not filed. Apply the same rule at Bash mode Step 3b parallel-sweep dispatch (line 246) and at both tracker-mutation steps (lines 194, 279). Renumber subsequent steps. Mirror to `.claude/skills/qe-audit/SKILL.md`. Bump `metadata.version`.
 
-**Complexity:** S. **Action now:** /quickfix S.
+**Complexity:** S. **Action now:** /do pr S.
 
 ### #338 — briefing: port-failure invariant lost when briefing.cjs dropped (1690c93)
 
@@ -188,7 +188,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Restore a Python-only port-failure test case in `tests/test-briefing-parity.sh` (or a new `tests/test-briefing-port-failure.sh`). Port the fixture from `git show 1690c93^:tests/test-briefing-parity.sh` lines ~145-185: build a fake repo at `/tmp/zskills-briefing-fixture-noport` with `.git` marker but no `.claude/skills/update-zskills/scripts/port.sh`, copy `briefing.py` in, run `summary --since=24h`, assert exit 0 and `grep -c 'localhost:'` == 0. Drop all `briefing.cjs` / node branches from the ported fixture.
 
-**Complexity:** S. **Action now:** /quickfix — restore Python-only port-failure test.
+**Complexity:** S. **Action now:** /do pr — restore Python-only port-failure test.
 
 ### #336 — Dashboard queue normalization: cold-start gh-list failure + client POST wipes user ordering
 
@@ -198,7 +198,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Gate the issue-prune loop on absence of a `gh issue list` failure. Cleanest split: server-side, set `snap.issues_fetch_ok = false` in `collect.py` (~line 1068-1162) on the gh-list error paths; client-side, in `static/app.js` `deepCloneQueues` (lines 400-417), skip the `if (!liveIssueNumbers.has(num)) continue` filter when `snap.issues_fetch_ok === false` (or as a fallback, when `snap.errors.some(e => /gh issue list/i.test(e.source))`). Preserve `lastGoodQueues...arr.length` for card-counter UI to keep the stale-good fallback. Add a test exercising mocked `gh` non-zero + fixture state + POST asserting N entries preserved.
 
-**Complexity:** S. **Action now:** /quickfix — small, localized two-file change with a clear test path.
+**Complexity:** S. **Action now:** /do pr — small, localized two-file change with a clear test path.
 
 ### #390 — warn-config-drift.sh mirror is stale — skill-version Edit-time warn never fires in production
 
@@ -208,7 +208,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Two coherent steps: (1) `cp hooks/warn-config-drift.sh .claude/hooks/warn-config-drift.sh` to bring the mirror current. (2) Add a conformance test (extend `tests/test-skill-conformance.sh` or new `tests/test-hooks-mirror-parity.sh`) asserting byte-equality between every `hooks/*.sh` source and its `.claude/hooks/*.sh` mirror via `cmp -s` over a globbed list. The conformance test closes the broader class — issue notes every `hooks/` source has a mirror and tests target source.
 
-**Complexity:** S. **Action now:** /quickfix — two-file behavioral change (mirror sync + new conformance test) with a clear spec; small enough to skip /draft-plan, but two surfaces (production hook + new test gate) justify pre-execution review over implementer.
+**Complexity:** S. **Action now:** /do pr — two-file behavioral change (mirror sync + new conformance test) with a clear spec; small enough to skip /draft-plan, but two surfaces (production hook + new test gate) justify pre-execution review over implementer.
 
 ---
 
@@ -232,7 +232,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Rewrite lines 77-82 to scope under `"testing"`, mirroring the `dev_server` pattern at line 88: `\"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"`. Apply the same scoping to `output_file` (line 91, scope under `output` or wherever it actually lives) and to `detect-language.sh:107-112` (scope under `testing`). Add a sibling-collision fixture to `tests/test-zskills-resolve-config.sh` (config with a `ui` block carrying `unit_cmd`/`full_cmd` before `testing`, assert `UNIT_TEST_CMD=TESTING_UNIT`). Mirror to `.claude/skills/update-zskills/scripts/zskills-resolve-config.sh`. Bump `skills/update-zskills/SKILL.md` `metadata.version`.
 
-**Complexity:** S. **Action now:** /quickfix — two scripts + one test + a mirror copy + version bump; bounded, single-purpose, no design surface to review.
+**Complexity:** S. **Action now:** /do pr — two scripts + one test + a mirror copy + version bump; bounded, single-purpose, no design surface to review.
 
 ---
 
@@ -244,7 +244,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** In both `skills/run-plan/scripts/post-run-invariants.sh:117-123` and its `.claude/` mirror, replace the `if` with the `LS_RC=$? ; case` block from `land-phase.sh:171-200`: rc=0 → INVARIANT-FAIL, rc=2 → pass, anything else → INVARIANT-FAIL with the actual rc surfaced. Drop `2>/dev/null` so stderr surfaces on rc=128. Apply the symmetric treatment to the Invariant #7 fetch at line 180. Bump `metadata.version` on `skills/run-plan/SKILL.md`. The "Larger-than-issue" sweep for a shared `safe-ls-remote-branch.sh` helper is a separate cleanup — out of scope for the direct fix.
 
-**Complexity:** XS. **Action now:** /quickfix.
+**Complexity:** XS. **Action now:** /do pr.
 
 ---
 
@@ -256,7 +256,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** In `.claude/skills/land-pr/scripts/pr-rebase.sh` (and the source mirror under `skills/land-pr/scripts/pr-rebase.sh`), insert between current step 3 (fetch, line 75-80) and step 4 (rebase, line 82-85) a HEAD check: `CUR=$(git rev-parse --abbrev-ref HEAD)`; if `"$CUR" != "$BRANCH"` emit `REASON=wrong-current-branch` and `exit 11`. Add a `tests/test-land-pr-scripts.sh` fixture using mock-git where `rev-parse --abbrev-ref HEAD` returns a different branch, asserting exit 11 + `REASON=wrong-current-branch` + no rebase invocation. Bump `metadata.version` on `skills/land-pr/SKILL.md`. (Alternative — explicit `git checkout "$BRANCH"` with rc-check — is more invasive given worktree semantics; assertion is safer.)
 
-**Complexity:** S. **Action now:** /quickfix — single-script guard + one mock-git test fixture + version bump, fully isolated to the land-pr skill.
+**Complexity:** S. **Action now:** /do pr — single-script guard + one mock-git test fixture + version bump, fully isolated to the land-pr skill.
 
 ---
 
@@ -268,7 +268,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Edit `.claude/hooks/block-main-edits.sh:150-153` to either (a) drop `/quickfix` from the list and lead with `/do pr` + `/create-worktree`, or (b) qualify it as "user-edited mode only (dirty tree already in place); agent-dispatched mode requires `/do pr`". Option (b) preserves the user-edited path that legitimately works. Mirror the same text into `hooks/block-main-edits.sh` source (if not already symlinked) and confirm no test in `tests/` pins the current wording verbatim.
 
-**Complexity:** XS. **Action now:** /quickfix.
+**Complexity:** XS. **Action now:** /do pr.
 
 ---
 
@@ -280,7 +280,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Clone `is_gh_pr_subcommand_in_wrappers` (`hooks/_lib/git-tokenwalk.sh:407-524`) as `is_git_subcommand_in_wrappers` (drop `flag_regex` is optional — keep parity), thread it through the six call sites in `block-stale-skill-version.sh`, `block-unsafe-project.sh.template`, and `block-unsafe-generic.sh` (replace `is_git_subcommand_in_chain` where wrapper-recursion is wanted, or call wrappers as fall-through). Inline copy into each hook to match the existing inline-copy pattern. Flip `C10e` in `tests/test-block-stale-skill-version.sh:30,264` from `assert_no_match` to `assert_match`, delete the carve-out docstring in `block-stale-skill-version.sh:25-36`, add `is_git_subcommand_in_wrappers` to the helper list in `tests/test-hook-helper-drift.sh:24`, and add positive tests for `bash -c 'git commit'`, `bash -c 'cd /tmp/wt && git commit'`, `eval 'git commit'`, `bash -c "git commit --no-verify"`, plus parallel coverage in `tests/test-block-unsafe-generic.sh` and `tests/test-block-unsafe-project.sh`. Mirror updates into `.claude/hooks/`.
 
-**Complexity:** M. **Action now:** /quickfix.
+**Complexity:** M. **Action now:** /do pr.
 
 ---
 
@@ -292,7 +292,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Apply #395's fix template: scope both reads and both writes to the `"execution"` object, mirroring `dev_server` scoping in `zskills-resolve-config.sh:88` (i.e. `"execution"[[:space:]]*:[[:space:]]*\{[^}]*"landing"...`). Read path: switch the `sed -n` extractions at lines 73-74 to scoped regex (or to a small awk pass over the existing `execution` block — the `EXEC_EXISTS` grep already exists). Write path: the existing `sed_inplace` calls at lines 138, 142 must also be scoped (awk-replace within the `execution` block is cleaner than multi-line sed). Add a sibling-collision fixture to `tests/test-apply-preset.sh` with `{"extra":{"landing":"WRONG"},"execution":{...}}`, assert `CURRENT_LANDING=pr` AND that `extra.landing` is unchanged after a write. Mirror to `.claude/skills/update-zskills/scripts/apply-preset.sh`. Bump `skills/update-zskills/SKILL.md` `metadata.version`. Issue body's "Larger-than-issue" suggestion (Python json-helper sibling to `zskills-resolve-config.sh`) is a separate refactor — out of scope for this fix.
 
-**Complexity:** S. **Action now:** /quickfix — two scripts + one test fixture + mirror + version bump; bounded, parallel to #395's fix shape.
+**Complexity:** S. **Action now:** /do pr — two scripts + one test fixture + mirror + version bump; bounded, parallel to #395's fix shape.
 
 ---
 
@@ -304,7 +304,7 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** Create `hooks/_lib/resolve-effective-worktree-root.sh` defining `extract_cd_target()` and `resolve_effective_worktree_root()`. Inline both functions verbatim into all four consumer hooks (mirror the `is_git_subcommand` discipline). Extend `tests/test-hook-helper-drift.sh:17` consumer loop + inner `for FN` allowlist to cover the two new function names, then delete TODO comments. Touches 5 files (1 new helper, 2 hook edits, 1 drift test, plus skill-version bumps if hooks ship inside a skill).
 
-**Complexity:** S. **Action now:** /quickfix.
+**Complexity:** S. **Action now:** /do pr.
 
 ---
 
@@ -316,6 +316,6 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 **Fix outline.** In `skills/qe-audit/SKILL.md` Step 6 (lines 217-221) and parallel-sweep dispatch in Bash mode (around lines 281-287), insert prose banning "Audit-not-done" caveats in filed bodies, requiring the agent run cheap audits inline and record concrete results, and raising the bar for filing a separate structural issue to "verified concrete instances + high-value." Add a worked right-vs-wrong example citing #380/#390. Bump `metadata.version`, regenerate `.claude/skills/qe-audit/` mirror, and add a string-presence conformance assertion in `tests/test-skill-conformance.sh`.
 
-**Complexity:** S. **Action now:** /quickfix.
+**Complexity:** S. **Action now:** /do pr.
 
 ---
