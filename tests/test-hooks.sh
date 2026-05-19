@@ -277,6 +277,33 @@ expect_deny "WB6: sh -c 'git commit --no-verify'" \
 expect_deny "WB7: nested bash -c 'sh -c \"git commit --no-verify\"'" \
   "bash -c 'sh -c \\\"git commit --no-verify -m hi\\\"'"
 
+# WB8-WB16. Wrapper-bypass closure for the 4 destructive-op gates + stash
+# (#426, completes #399). PR #417 threaded is_git_subcommand_in_wrappers
+# through commit/cherry-pick/push/add but left the 4 destructive-op gates
+# (checkout --, restore, clean -f, reset --hard) and STASH_BOUNDARY on the
+# original _in_chain tokenizer / first-token regex. Wrapper forms like
+# `bash -c 'git reset --hard HEAD~5'` slipped past and silently destroyed
+# uncommitted state.
+expect_deny "WB8: bash -c 'git reset --hard'" \
+  "bash -c 'git reset --hard HEAD~5'"
+expect_deny "WB9: eval 'git clean -fd'" \
+  "eval 'git clean -fd'"
+expect_deny "WB10: sh -c 'git checkout -- file'" \
+  "sh -c 'git checkout -- file.js'"
+expect_deny "WB11: bash -c 'git restore file'" \
+  "bash -c 'git restore file.js'"
+expect_deny "WB12: bash -c 'git stash drop'" \
+  "bash -c 'git stash drop'"
+expect_deny "WB13: eval 'git stash clear'" \
+  "eval 'git stash clear'"
+expect_deny "WB14: sh -c 'git stash push -u'" \
+  "sh -c 'git stash push -u'"
+expect_deny "WB15: bash -c 'git stash' (bare create-stash)" \
+  "bash -c 'git stash'"
+# Wrapper-aware stash gate must still ALLOW the read/recovery subcommands.
+expect_allow "WB16: bash -c 'git stash list' (allowed read)" \
+  "bash -c 'git stash list'"
+
 echo ""
 echo "=== Hook allow patterns ==="
 

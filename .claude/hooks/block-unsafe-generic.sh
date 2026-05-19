@@ -341,27 +341,53 @@ is_destruct_command_in_chain() {
   return 1
 }
 
-# git stash — command-boundary matching only. A bare `git[[:space:]]+stash`
-# match (anywhere in the command) overmatches on quoted strings (commit
-# messages, echo/printf/grep args that mention stash) and on the hook's own
-# error messages when they're ever echo'd. Gating on command-start or shell
-# separator (;, &, &&, ||, |, newline, backtick, $()) keeps the match scoped
-# to ACTUAL stash invocations.
+# git stash — wrapper-aware gate via is_git_subcommand_in_wrappers (#426,
+# completes #399). The prior regex-based STASH_BOUNDARY anchored
+# `git[[:space:]]+stash` to `^`, `;`, `&`, `&&`, `||`, `|`, backtick, or
+# `$(` — none of which precede the inner `git` inside wrapper forms like
+# `bash -c 'git stash drop'` / `eval 'git stash drop'` / `sh -c 'git
+# stash drop'`. Tokenize-then-walk via is_git_subcommand_in_wrappers
+# matches all those forms (and the existing chain/multi-segment cases)
+# and sets GIT_SUB_REST to the rest of the matching segment for flag
+# inspection — same idiom as the converted `add` / `commit` / `push`
+# gates further down.
 #
 # Allowed subcommands: apply, list, show, pop, create, store, branch (read
 # and recovery — never modify the working tree).
-# Destructive: drop, clear — block (prior behavior).
+# Destructive: drop, clear — block.
 # Create-stash: push, save, -u, bare — block (CLAUDE.md rule).
+#
+# Quoted-prose protection (overmatching on `echo "git stash drop"` etc.)
+# is preserved by the data-region redaction passes at the top of the
+# file (heredoc + -m/--message/--body/--title quoted-arg redaction). The
+# wrapper-aware gate runs AFTER redaction, so prose in commit messages
+# and gh body text no longer reaches the tokenizer.
 #
 # Past failure: a /commit pre-commit reviewer ran `stash -u && test && stash
 # pop`; the pop silently unstaged the caller's staged files.
-STASH_BOUNDARY='(^|[;&|`(]|&&|\|\||\$\()[[:space:]]*git[[:space:]]+stash'
-STASH_ALLOW_SUB="${STASH_BOUNDARY}[[:space:]]+(apply|list|show|pop|create|store|branch)([[:space:]]|\\\"|'|\\\\|\||;|\$)"
-STASH_DESTRUCTIVE="${STASH_BOUNDARY}[[:space:]]+(drop|clear)"
-if [[ "$COMMAND" =~ $STASH_DESTRUCTIVE ]]; then
-  block_with_reason "BLOCKED: git stash drop/clear destroys stashed work permanently (including untracked files saved with -u). If you need to drop a stash, ask the user to do it manually."
-elif [[ "$COMMAND" =~ $STASH_BOUNDARY ]] && [[ ! "$COMMAND" =~ $STASH_ALLOW_SUB ]]; then
-  block_with_reason "BLOCKED: git-stash write subcommand forbidden (modifies working tree). Allowed read/recovery: apply, list, show, pop. For cherry-pick protection, let git refuse on overlap."
+if is_git_subcommand_in_wrappers "$COMMAND" stash; then
+  # First token of GIT_SUB_REST is the stash subcommand (apply, drop, etc.)
+  # or absent (bare `git stash` = create-stash). Strip surrounding quotes
+  # that wrapper-unwrapped forms may leave (e.g. `bash -c 'git stash drop'`
+  # → GIT_SUB_REST="drop'" without the strip).
+  _stash_sub="${GIT_SUB_REST%% *}"
+  _stash_sub="${_stash_sub%\'}"; _stash_sub="${_stash_sub#\'}"
+  _stash_sub="${_stash_sub%\"}"; _stash_sub="${_stash_sub#\"}"
+  case "$_stash_sub" in
+    drop|clear)
+      block_with_reason "BLOCKED: git stash drop/clear destroys stashed work permanently (including untracked files saved with -u). If you need to drop a stash, ask the user to do it manually."
+      ;;
+    apply|list|show|pop|create|store|branch)
+      : # allowed read/recovery subcommands — no action
+      ;;
+    *)
+      # Includes: bare `git stash`, `git stash push`, `git stash save`,
+      # `git stash -u`, and any unknown form. All are create-stash or
+      # unrecognized — block.
+      block_with_reason "BLOCKED: git-stash write subcommand forbidden (modifies working tree). Allowed read/recovery: apply, list, show, pop. For cherry-pick protection, let git refuse on overlap."
+      ;;
+  esac
+  unset _stash_sub
 fi
 
 # git checkout -- (any file or blanket) — discards uncommitted changes permanently.
@@ -369,22 +395,31 @@ fi
 # whitespace or end-of-command. Otherwise benign long flags like --quiet,
 # --force, --orphan, --theirs, --ours would false-positive because their
 # leading `--` matched the bare regex.
-if is_git_subcommand_in_chain "$COMMAND" checkout && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(.*[[:space:]])?--([[:space:]]|$) ]]; then
+# Use is_git_subcommand_in_wrappers (#426, completes #399) so wrapper forms
+# like `bash -c 'git checkout -- file'` / `eval 'git checkout -- file'` /
+# `sh -c 'git checkout -- file'` cannot bypass. The wrappers helper falls
+# back to _in_chain on the outer command, then sets GIT_SUB_REST on match
+# (whether via the chain or the recursive unwrap path) so the flag-regex
+# check below still functions.
+if is_git_subcommand_in_wrappers "$COMMAND" checkout && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(.*[[:space:]])?--([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git checkout -- discards uncommitted changes permanently. This may destroy other sessions' work. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git restore (any file or blanket) — modern equivalent of checkout --
-if is_git_subcommand_in_chain "$COMMAND" restore; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
+if is_git_subcommand_in_wrappers "$COMMAND" restore; then
   block_with_reason "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
 # git clean -f (permanent file deletion)
-if is_git_subcommand_in_chain "$COMMAND" clean && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$) ]]; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
+if is_git_subcommand_in_wrappers "$COMMAND" clean && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git clean -f permanently deletes untracked files. These cannot be recovered from git."
 fi
 
 # git reset --hard (discards everything)
-if is_git_subcommand_in_chain "$COMMAND" reset && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--hard([[:space:]]|$) ]]; then
+# Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
+if is_git_subcommand_in_wrappers "$COMMAND" reset && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])--hard([[:space:]]|$) ]]; then
   block_with_reason "BLOCKED: git reset --hard discards all uncommitted changes and staged work. Use git reset (soft) or ask the user."
 fi
 
