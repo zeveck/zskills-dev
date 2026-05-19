@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.18+7dfae6"
+  version: "2026.05.19+f11c5f"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -220,6 +220,60 @@ Run when `bash` is NOT present in arguments.
    severity, which commit introduced it, and the verification command/result
    from Step 5.
 
+   **Ban caveats: no "audit-not-done" hedges in filed bodies.** If a finding
+   identifies a wider concern beyond the immediate defect — a pattern that
+   "might exist elsewhere," a structural framing like "Larger-than-issue,"
+   a suggestion that "a repo-wide sweep would help" — the agent MUST verify
+   before filing, not publish the deferred research as a caveat:
+
+   - **Run the audit yourself.** Audits identified by a finding are usually
+     cheap — one `grep`, one `diff`, one `git show`. Do them. If the finding
+     body says "run `grep -rn 'pattern' tests/` to enumerate similar cases,"
+     run that grep before filing. The caveat-as-published is banned; the
+     concrete result is required.
+   - **Record concrete results in the body.** "Verified: `grep -n 'pattern'
+     file` → matches at lines X, Y, Z" or "Verified: 3 other instances at
+     files A, B, C" or "Verified: no other instances (`grep -rn ... tests/`
+     returned zero matches outside the cited file)."
+   - **If verification confirms a wider concern AND the wider fix is
+     genuinely high-value** (touches multiple files in production code,
+     blocks releases, structural risk with concrete instances), file a
+     SEPARATE issue with the validating evidence inline. The separate
+     issue carries the concrete instances; it is NOT a speculative "this
+     might be a bigger problem."
+   - **If verification disconfirms** (no other instances, framing was
+     theoretical), drop the concern entirely. Do not include it in the
+     immediate-fix issue's body. Do not file a separate speculative issue.
+
+   **Bar for filing a structural / cross-cutting issue:** verified concrete
+   instances + judgment that the wider fix is genuinely high-value.
+   Speculation alone ("this might exist elsewhere") never earns a filed
+   issue. Cross-cutting concerns folded into a single-defect issue body
+   are banned; they belong in a separate issue with evidence, or nowhere.
+
+   **Worked examples (right vs wrong shape):**
+
+   - **Wrong (past failure #380):** "Audit-not-done: only these two tests
+     have been audited as committed-state-dependent. A repo-wide sweep
+     would help — run something like `grep -rn 'git ls-tree HEAD' tests/`
+     to enumerate similar tests before deciding the fix's scope." The
+     audit is literally the cited grep. The caveat publishes deferred
+     research; `/fix-issues` triage over-tiered the issue to `/draft-plan`
+     and stalled the queue.
+   - **Right (the same finding, audited):** "Verified scope: ran
+     `grep -rn 'git ls-tree HEAD\|git log.*--pretty=format:%H' tests/`,
+     found 2 committed-state-dependent tests — both cited above. No
+     other instances. Fix is sized to the 2 known tests."
+   - **Wrong (past failure #390):** "Larger-than-issue: mirror discipline
+     is a structural risk." No audit of whether other `hooks/` ↔
+     `.claude/hooks/` pairs are drifted; the framing is speculation.
+   - **Right (the same finding, audited):** "Verified: `diff -rq hooks/
+     .claude/hooks/` shows 0 drifted pairs other than the one cited. No
+     wider structural risk. Fix is the single pair." OR — if drift is
+     actually found — "Verified: `diff -rq` shows 3 additional drifted
+     pairs (hook-A.sh, hook-B.sh, hook-C.sh). Filed separate issue #NNN
+     for the structural fix with full pair list inline."
+
 7. **Update tracker** — Edit `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`.
    The Step 5 verification gate applies before any tracker mutation — do not
    move issues to "Resolved" on agent-only claims; re-verify with `git show`
@@ -285,6 +339,12 @@ Run when `bash` IS present in arguments.
      full verification discipline (file:line grep, negative-claim recheck,
      `git show` for "fixed by" claims). Findings that don't reproduce are
      logged as "Unverified findings," not filed as issues.
+     **Ban caveats: the Commit Audit Step 6 "no audit-not-done hedges"
+     rule applies here too.** A parallel-sweep finding that says "this
+     might generalize across other models" must be verified (run the
+     sweep) before being filed as a wider concern. Cross-cutting framings
+     without concrete instances stay out of filed bodies; file a separate
+     issue only with verified evidence.
 
    **c. Adversarial unit tests** (for all areas):
    - Edge cases (empty inputs, zero values, NaN, Infinity, negative numbers)
@@ -316,6 +376,13 @@ Run when `bash` IS present in arguments.
    - Include: what was tested, expected vs actual behavior, test code,
      severity rating, suggested fix
    - Tag with appropriate labels
+   - **Ban caveats: no "audit-not-done" hedges.** See Commit Audit Step 6
+     for the full rule. If a bash finding identifies a wider concern
+     ("this edge case might affect other features," "Larger-than-issue:
+     structural"), verify it inline before filing — run the additional
+     test, sweep the additional area, cite concrete results. Drop
+     unvalidated cross-cutting framings; file a separate issue only with
+     verified evidence.
 
 6. **Update `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`** with new findings.
    The verification gate from Commit Audit Step 5 applies here too — do not
