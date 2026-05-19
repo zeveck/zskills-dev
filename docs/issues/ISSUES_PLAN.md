@@ -319,3 +319,15 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Complexity:** S. **Action now:** /do pr.
 
 ---
+
+### #408 — /fix-issues Phase 2: source-filter un-researched candidates + auto-research in auto mode (recurring Phase 1 skip)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `skills/fix-issues/SKILL.md` Phase 1 step 5/6 (lines ~1167-1185) are prose-only "should run"; no Phase-2-entry filter exists; cron-fired sprints with un-researched Ready entries proceed to triage on bare titles.
+
+**Problem.** Phase 1 step-5 (gap insertion) and step-6 (research dispatch) are prose-only and have been skipped routinely across ~50 sprints. With no tracker blurb, Phase 2 triages from bare titles + first-200-char body previews — the just-landed #402 independent-sizing discipline (which requires a tracker blurb to read against) does not bite. Symptom 2026-05-18: 21:00 ET dashboard sprint, 11 Ready candidates (#380, #390, #392, #395-#401, #404), none in `docs/issues/*ISSUES*.md`; tracker tops out at #355.
+
+**Fix outline.** Move enforcement to Phase 2 entry and filter at source. After `CANDIDATE_ISSUES` is built (dashboard branch ~line 1420; analogous block at end of "Default rubric"), check each candidate for a `**Action now:**` line within its `### #<N>` section in any `$ZSKILLS_ISSUES_DIR/*.md`. RESEARCHED ones continue; MISSING ones either trigger parallel `general-purpose` research-agent dispatches (auto mode, up to 3 concurrent, block until each commits a tracker row, re-filter) or abort the sprint with a diagnostic pointing at `/fix-issues sync` (interactive mode). Signal is `**Action now:**` (the Phase-2-consumed tier field), NOT `**Verdict:**` (legit `LIKELY FIXED` / `UNCLEAR` / `NOT YET RESEARCHED` values would no-op the gate). Extract filter as `skills/fix-issues/scripts/filter-unresearched-candidates.sh` so tests can call it directly.
+
+**Complexity:** S. **Action now:** /do pr — one filter script + two SKILL.md inserts + tests.
+
+---
