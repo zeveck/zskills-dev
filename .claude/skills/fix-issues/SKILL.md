@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.18+3f76bb"
+  version: "2026.05.19+006d3e"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1422,6 +1422,98 @@ print(" ".join(str(p) for p in picks))
 fi
 ```
 
+#### Source-filter un-researched candidates (issue #408)
+
+Phase 1's research dispatch (step 5 + step 6) is prose-only "should run"
+and skipped repeatedly across ~50 sprints. When it skips, candidates
+arrive at Phase 2 with no tracker blurb, the orchestrator triages from
+bare titles + body previews, and the just-landed #402 independent-sizing
+discipline does not bite (it requires a tracker blurb to read against).
+The fix is structural: at Phase 2 entry, source-filter candidates by
+whether they have a tracker blurb with an `**Action now:**` line.
+`Action now:` is the Phase-2-consumed tier field — *not* `**Verdict:**`,
+which legitimately reads `LIKELY FIXED` / `UNCLEAR` for fully-researched
+candidates and `NOT YET RESEARCHED` for stub rows (presence-checking
+Verdict would no-op the gate).
+
+In `auto` mode, dispatch research agents in parallel for the missing
+ones (reusing Phase 1 step-6's parallel-up-to-3 pattern) and re-filter
+once they commit blurbs. In interactive mode, abort with a diagnostic
+pointing at `/fix-issues sync`.
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+  "${CANDIDATE_ISSUES[@]}")"
+# eval populated two bash vars: RESEARCHED (space-sep nums) and MISSING.
+read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+read -r -a MISSING_ARR <<<"${MISSING:-}"
+
+if [ ${#MISSING_ARR[@]} -gt 0 ]; then
+  if [ "$AUTO_FLAG" = "1" ]; then
+    # AUTO MODE — dispatch research agents in parallel for MISSING_ARR,
+    # reusing Phase 1 step-6's pattern (up to 3 at a time). Each agent
+    # reads `gh issue view <N>`, greps the codebase for affected files,
+    # writes a tracker row under the appropriate `$ZSKILLS_ISSUES_DIR/
+    # *ISSUES*.md`, and commits the row before returning. The
+    # orchestrator dispatches via the Agent tool with
+    # `subagent_type: "general-purpose"` (same shape as Phase 1 step 6;
+    # `implementer` is reserved for fix-impl dispatch). Block until
+    # every MISSING_ARR issue has a committed `**Action now:**` row,
+    # then re-run the filter — the second pass MUST yield empty MISSING.
+    #
+    # Orchestrator action: for each N in MISSING_ARR, dispatch a
+    # general-purpose research agent (max 3 concurrent). After all
+    # return, re-run filter-unresearched-candidates.sh; if MISSING is
+    # still non-empty (research agent failed to commit a row), abort
+    # with diagnostic so the next cron fire retries cleanly.
+    echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs in auto mode: ${MISSING_ARR[*]}" >&2
+    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until tracker rows commit." >&2
+    # (Agent dispatches happen at the orchestrator level; this fence
+    # marks the intent and re-filters after.)
+    eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      "${CANDIDATE_ISSUES[@]}")"
+    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    read -r -a MISSING_ARR <<<"${MISSING:-}"
+    if [ ${#MISSING_ARR[@]} -gt 0 ]; then
+      echo "fix-issues Phase 2: research agents did not commit rows for: ${MISSING_ARR[*]} — proceeding with researched subset only" >&2
+    fi
+  else
+    echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs: ${MISSING_ARR[*]}" >&2
+    echo "Run \`/fix-issues sync\` first to populate tracker rows, then re-run the sprint." >&2
+    exit 1
+  fi
+fi
+
+# Replace CANDIDATE_ISSUES with the researched subset. Triage proceeds
+# against blurbs that actually exist. If RESEARCHED_ARR is empty after
+# auto-research, the existing "no actionable issues" path fires.
+CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")
+echo "Researched candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+```
+
+**Auto-mode research dispatch — orchestrator pattern.** When the auto
+branch fires, the orchestrator dispatches one `general-purpose` Agent per
+MISSING entry (max 3 concurrent), each with this prompt shape:
+
+> Research GitHub issue #N for `/fix-issues` Phase 1 backfill. Read
+> `gh issue view N` for the full body. Grep the codebase for affected
+> files. Append a tracker row to the appropriate
+> `$ZSKILLS_ISSUES_DIR/*ISSUES*.md` (match domain — `ISSUES_PLAN.md` for
+> orchestration/skill prose; `QE_ISSUES.md` for test-quality; or the
+> existing per-domain file). Row format mirrors existing entries (see
+> `### #338` / `### #336` / `### #390` blurbs in `ISSUES_PLAN.md` for
+> shape): `### #N — <title>` H3, `**Labels:** ... | **Verdict:** ...`
+> line, `**Problem.**` paragraph, `**Fix outline.**` paragraph,
+> `**Complexity:** S/M/L. **Action now:** /do pr — <one-liner>` line.
+> Commit the row in the active worktree before returning.
+
+The orchestrator MUST block until each dispatched agent commits a row,
+THEN re-run the filter (the second `eval` above). Walking away without
+the second filter call leaves stale `MISSING_ARR` shadowing fresh rows.
+
 When the dashboard branch returns picks, skip the ranking/focus rubric
 below and proceed directly to the **Triage** subsection with
 `CANDIDATE_ISSUES` as the input list. The triage routing (in-batch
@@ -1457,6 +1549,53 @@ top, then the remaining slots filled by default priority.
 4. Quick wins (15 min – 1 hour)
 5. Issues with clear repro steps
 6. Test gaps (from issue trackers tagged as test quality)
+
+#### Source-filter un-researched candidates (issue #408)
+
+After ranking, build `CANDIDATE_ISSUES` from the ranked list (top N
+candidates in priority order) and apply the same Phase 2 source-filter
+the dashboard branch uses. Without this filter, Phase 1's prose-only
+research dispatch can skip silently and Phase 2 triages from bare
+titles — bypassing #402's independent-sizing prose (which requires a
+tracker blurb to read against).
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+# CANDIDATE_ISSUES is populated from the ranking table above (top N in
+# priority order). Apply the same filter the dashboard branch uses.
+eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+  "${CANDIDATE_ISSUES[@]}")"
+read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+read -r -a MISSING_ARR <<<"${MISSING:-}"
+
+if [ ${#MISSING_ARR[@]} -gt 0 ]; then
+  if [ "$AUTO_FLAG" = "1" ]; then
+    # AUTO MODE — dispatch general-purpose research agents in parallel
+    # for MISSING_ARR (up to 3 at a time), mirroring Phase 1 step 6.
+    # Block until each commits a tracker row (with `**Action now:**`),
+    # then re-filter. See the dashboard branch's expanded prose for
+    # the agent prompt shape.
+    echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs in auto mode: ${MISSING_ARR[*]}" >&2
+    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until tracker rows commit." >&2
+    eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      "${CANDIDATE_ISSUES[@]}")"
+    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    read -r -a MISSING_ARR <<<"${MISSING:-}"
+    if [ ${#MISSING_ARR[@]} -gt 0 ]; then
+      echo "fix-issues Phase 2: research agents did not commit rows for: ${MISSING_ARR[*]} — proceeding with researched subset only" >&2
+    fi
+  else
+    echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs: ${MISSING_ARR[*]}" >&2
+    echo "Run \`/fix-issues sync\` first to populate tracker rows, then re-run the sprint." >&2
+    exit 1
+  fi
+fi
+
+CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")
+echo "Researched candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+```
 
 ### Triage: vague, complex, or interrelated issues
 
