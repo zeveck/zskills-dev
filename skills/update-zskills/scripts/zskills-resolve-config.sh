@@ -74,10 +74,17 @@ ZSKILLS_MAX_CONCURRENT_WORKTREES=3
 
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
-  if [[ "$_ZSK_CFG_BODY" =~ \"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  # testing.unit_cmd / testing.full_cmd / testing.output_file: scope via
+  # enclosing "testing" object to disambiguate from any other block that
+  # happens to carry an identically-named key (e.g. a sibling "ui" or
+  # "execution" block declaring its own "unit_cmd"). Mirrors the
+  # dev_server.cmd scoping below. The bash =~ engine is single-line but
+  # [^}] matches newlines, so this works on both compact and canonical
+  # multi-line JSON. Issue #395 (same class as #400 fixed in #422).
+  if [[ "$_ZSK_CFG_BODY" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"unit_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     UNIT_TEST_CMD="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_ZSK_CFG_BODY" =~ \"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_ZSK_CFG_BODY" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"full_cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     FULL_TEST_CMD="${BASH_REMATCH[1]}"
   fi
   if [[ "$_ZSK_CFG_BODY" =~ \"timezone\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
@@ -88,7 +95,7 @@ if [ -f "$_ZSK_CFG" ]; then
   if [[ "$_ZSK_CFG_BODY" =~ \"dev_server\"[[:space:]]*:[[:space:]]*\{[^}]*\"cmd\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     DEV_SERVER_CMD="${BASH_REMATCH[1]}"
   fi
-  if [[ "$_ZSK_CFG_BODY" =~ \"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+  if [[ "$_ZSK_CFG_BODY" =~ \"testing\"[[:space:]]*:[[:space:]]*\{[^}]*\"output_file\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
     TEST_OUTPUT_FILE="${BASH_REMATCH[1]}"
   fi
   # commit.co_author: scope via enclosing "commit" object to disambiguate
