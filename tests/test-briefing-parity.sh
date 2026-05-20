@@ -132,6 +132,79 @@ else
   fail "port-failure: briefing.py emitted $py_localhost localhost: URL(s)"
 fi
 
+# ---------------------------------------------------------------------
+# PR-squash-merge subject-match regression guard (issue #474).
+#
+# GitHub squash-merge appends ` (#NNN)` to the subject on main. The
+# worktree's pre-merge subject has no such suffix. partition_commits_by_
+# landing previously did literal string equality, so every PR-mode landed
+# worktree was misclassified as unlanded ("NOT SAFE"). The fix strips the
+# trailing `\s*\(#\d+\)\s*$` from the main-side subjects before
+# comparison. This guard exercises BOTH directions:
+#   (a) main subject with `(#123)` suffix → matches plain worktree subject
+#   (b) main subject without suffix (legacy direct-commit) → still matches
+#   (c) middle-of-subject `(#NNN)` parenthetical → NOT stripped (anchor $)
+# ---------------------------------------------------------------------
+echo ""
+echo "=== PR-squash-merge subject-match (issue #474) ==="
+
+pr_suffix_out="$TEST_TMPDIR/pr-suffix.txt"
+pr_suffix_exit=0
+python3 - "$REPO_ROOT" >"$pr_suffix_out" 2>&1 <<'PYEOF' || pr_suffix_exit=$?
+import sys, os
+repo_root = sys.argv[1]
+sys.path.insert(0, os.path.join(repo_root, 'skills', 'briefing', 'scripts'))
+import briefing  # noqa: E402
+
+# Case (a): squash-merged subject on main matches plain worktree subject.
+wt = [
+    {'subject': 'feat: foo', 'hash': 'abc1', 'date': ''},
+    {'subject': 'feat: bar', 'hash': 'abc2', 'date': ''},
+]
+main = {'feat: foo (#123)', 'feat: bar (#124)'}
+res = briefing.partition_commits_by_landing(wt, main)
+assert len(res['landed']) == 2, f"(a) expected 2 landed, got {res}"
+assert len(res['unlanded']) == 0, f"(a) expected 0 unlanded, got {res}"
+
+# Case (b): legacy direct-commit (no suffix on main) still matches.
+wt = [{'subject': 'docs: tweak', 'hash': 'def1', 'date': ''}]
+main = {'docs: tweak'}
+res = briefing.partition_commits_by_landing(wt, main)
+assert len(res['landed']) == 1, f"(b) expected 1 landed, got {res}"
+
+# Case (c): genuinely unlanded commit stays unlanded.
+wt = [{'subject': 'feat: not yet shipped', 'hash': 'ghi1', 'date': ''}]
+main = {'feat: something else (#99)'}
+res = briefing.partition_commits_by_landing(wt, main)
+assert len(res['unlanded']) == 1, f"(c) expected 1 unlanded, got {res}"
+assert len(res['landed']) == 0, f"(c) expected 0 landed, got {res}"
+
+# Case (d): middle-of-subject `(#NNN)` parenthetical reference is NOT
+# stripped — anchor `$` only matches end-of-subject. Worktree subject
+# carrying mid-string `(#42)` should still match its main-side twin.
+wt = [{'subject': 'fix: address (#42) regression', 'hash': 'jkl1', 'date': ''}]
+main = {'fix: address (#42) regression (#777)'}
+res = briefing.partition_commits_by_landing(wt, main)
+assert len(res['landed']) == 1, f"(d) expected 1 landed, got {res}"
+
+# Case (e): if a worktree subject differs from main's stripped form, it's unlanded.
+wt = [{'subject': 'feat: unrelated', 'hash': 'mno1', 'date': ''}]
+main = {'feat: something (#1)'}
+res = briefing.partition_commits_by_landing(wt, main)
+assert len(res['unlanded']) == 1, f"(e) expected 1 unlanded, got {res}"
+
+print("OK")
+PYEOF
+
+if [[ "$pr_suffix_exit" -eq 0 ]] && grep -q '^OK$' "$pr_suffix_out"; then
+  pass "issue #474: partition_commits_by_landing strips PR-squash-merge (#NNN) suffix"
+else
+  fail "issue #474: partition_commits_by_landing regression"
+  echo "--- output ---"
+  cat "$pr_suffix_out"
+  echo "--------------"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed, %d skipped (of %d)\n' \
