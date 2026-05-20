@@ -72,6 +72,7 @@ run_suite "test-run-plan-sync-pr-body-progress.sh" "tests/test-run-plan-sync-pr-
 run_suite "test-runplan-defer-backoff.sh" "tests/test-runplan-defer-backoff.sh"
 run_suite "test-scope-halt.sh" "tests/test-scope-halt.sh"
 run_suite "test-canary-failures.sh" "tests/test-canary-failures.sh"
+run_suite "test-block-bad-cron.sh" "tests/test-block-bad-cron.sh"
 run_suite "test-block-stale-skill-version.sh" "tests/test-block-stale-skill-version.sh"
 run_suite "test-block-stale-skill-version-sandbox.sh" "tests/test-block-stale-skill-version-sandbox.sh"
 run_suite "test-block-bypassed-land-pr.sh" "tests/test-block-bypassed-land-pr.sh"
