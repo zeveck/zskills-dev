@@ -139,8 +139,20 @@ if [ -z "$DISPATCH_MODEL" ]; then
 fi
 
 # Step 3: Apply ordinal check
-# If DISPATCH_MODEL is empty, ordinal=0 (unknown) → always pass
+# If DISPATCH_MODEL is empty, ordinal=0 (unknown) → ALMOST always pass.
+# Defensive layered fix (issue #479): if the unresolved subagent_type is on
+# the known-Haiku-pinned list (built-in subagent types that the Claude Code
+# environment ships pinned to Haiku), deny instead of allowing. This fails
+# closed against future built-in pinned types being added before this repo
+# ships a corresponding `.claude/agents/<type>.md` override. The primary
+# defense is the override file itself (Step 2 lookup); this is a backstop.
+KNOWN_HAIKU_PINNED_SUBAGENTS=" Explore "
 if [ -z "$DISPATCH_MODEL" ]; then
+  if [ -n "$SUBAGENT_TYPE" ] && [[ "$KNOWN_HAIKU_PINNED_SUBAGENTS" == *" $SUBAGENT_TYPE "* ]]; then
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"subagent_type %s is pinned to Haiku in the host environment but has no .claude/agents/%s.md override resolving it to a higher model. Either pass an explicit model: argument (e.g., model: \"opus\") or add an agent definition file. See CLAUDE.md `## Subagent Dispatch`."}}\n' \
+      "$SUBAGENT_TYPE" "$SUBAGENT_TYPE"
+    exit 0
+  fi
   exit 0
 fi
 
