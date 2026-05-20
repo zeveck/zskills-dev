@@ -557,6 +557,23 @@ else
   fail "[.claude/agents/implementer.md] hooks inject-bash-timeout.sh" "Layer 0 hook reference missing"
 fi
 
+# Verifier agent scope-creep AC check guidance (Issue #448).
+# Bare `git diff origin/main..HEAD --stat` shows symmetric file-set diff;
+# when origin/main advances past the branch merge-base mid-verification
+# (active-landing cadence), files added on origin appear as "deletions"
+# in HEAD's diff and the verifier REJECTs with a destructive recovery
+# path. The agent prose recommends commit-only or merge-base forms.
+if grep -qF 'git show HEAD --stat' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; then
+  pass "[.claude/agents/verifier.md] scope-creep: git show HEAD --stat"
+else
+  fail "[.claude/agents/verifier.md] scope-creep: git show HEAD --stat" "commit-only diff form missing"
+fi
+if grep -qF 'merge-base origin/main HEAD' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; then
+  pass "[.claude/agents/verifier.md] scope-creep: merge-base form"
+else
+  fail "[.claude/agents/verifier.md] scope-creep: merge-base form" "merge-base diff form missing"
+fi
+
 echo ""
 echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
 # Drift-prevention assertions catching any future re-introduction of inline
