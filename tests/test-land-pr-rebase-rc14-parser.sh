@@ -43,7 +43,9 @@ for anchor in \
   'if [ "$REBASE_RC" -eq 10 ]; then' \
   'elif [ "$REBASE_RC" -eq 11 ]; then' \
   'elif [ "$REBASE_RC" -eq 14 ]; then' \
-  'Issue #420: pr-rebase.sh exits 14 when CWD'"'"'s HEAD != $BRANCH'
+  'elif [ "$REBASE_RC" -eq 16 ]; then' \
+  'Issue #420: pr-rebase.sh exits 14 when CWD'"'"'s HEAD != $BRANCH' \
+  'Issue #481: pr-rebase.sh exits 16 when the working tree has'
 do
   if ! grep -qF "$anchor" "$SKILL_FILE"; then
     fail "[anchor] SKILL.md missing Step 3 RC parser anchor: $anchor" "(Issue #420 regression)"
@@ -101,6 +103,8 @@ run_step3_parser() {
     STATUS="rebase-failed"
   elif [ "$REBASE_RC" -eq 14 ]; then
     STATUS="rebase-failed"
+  elif [ "$REBASE_RC" -eq 16 ]; then
+    STATUS="rebase-failed"
   fi
 
   echo "STATUS=$STATUS"
@@ -154,15 +158,30 @@ else
   fail "[case4] RC 14 (Issue #420)" "STATUS='$S' REASON='$R' (expected STATUS=rebase-failed REASON=wrong-current-branch)"
 fi
 
-# ===== Case 5: unknown RC (e.g., 99) → STATUS empty (explicit fall-through).
-# Documents that the parser is closed on {10, 11, 14}; any new pr-rebase.sh
-# exit code added in the future needs its own mapping (same pattern as #420).
+# ===== Case 5: RC 16 dirty-working-tree → STATUS=rebase-failed, REASON=dirty-working-tree
+# This is the Issue #481 case. Pre-fix the dirty-tree case fell through to
+# the generic exit-11 terminus, surfacing as REASON=rebase-failed and
+# indistinguishable from real conflicts, network failures, abort failures.
+REBASE_STDOUT=$'REASON=dirty-working-tree'
+REBASE_RC=16
+OUT=$(run_step3_parser)
+S=$(echo "$OUT" | grep '^STATUS=' | cut -d= -f2-)
+R=$(echo "$OUT" | grep '^REASON=' | cut -d= -f2-)
+if [ "$S" = "rebase-failed" ] && [ "$R" = "dirty-working-tree" ]; then
+  pass "[case5] RC 16 (dirty-working-tree) → STATUS=rebase-failed + REASON=dirty-working-tree (Issue #481)"
+else
+  fail "[case5] RC 16 (Issue #481)" "STATUS='$S' REASON='$R' (expected STATUS=rebase-failed REASON=dirty-working-tree)"
+fi
+
+# ===== Case 6: unknown RC (e.g., 99) → STATUS empty (explicit fall-through).
+# Documents that the parser is closed on {10, 11, 14, 16}; any new pr-rebase.sh
+# exit code added in the future needs its own mapping (same pattern as #420/#481).
 REBASE_STDOUT="" REBASE_RC=99 OUT=$(run_step3_parser)
 S=$(echo "$OUT" | grep '^STATUS=' | cut -d= -f2-)
 if [ -z "$S" ]; then
-  pass "[case5] unknown RC 99 → STATUS empty (documents closed mapping set; add new RC explicitly)"
+  pass "[case6] unknown RC 99 → STATUS empty (documents closed mapping set; add new RC explicitly)"
 else
-  fail "[case5] unknown RC fall-through" "STATUS='$S' (expected empty)"
+  fail "[case6] unknown RC fall-through" "STATUS='$S' (expected empty)"
 fi
 
 echo ""
