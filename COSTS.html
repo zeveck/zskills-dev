@@ -167,13 +167,13 @@
 <section id="topline" class="fade-in">
   <h2>Topline</h2>
 
-  <div class="caveat"><strong>Read this before the headline.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed around the Opus 4.7 release on 2026-04-16); the first ~23 days of development (2026-03-26 &rarr; 2026-04-17) had no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (data residency assumed default-global at 1.0&times; multiplier, no Fast mode, no batch discount). "Per-PR" figures use total spend &divide; merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
+  <div class="caveat"><strong>Read this before the headline. All figures below are LOGGED spend only.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed around the Opus 4.7 release on 2026-04-16). The first ~23 days of development (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> and were never logged &mdash; we have <em>zero</em> token data for that era, so it contributes $0 to the totals here. True end-to-end spend is therefore higher than $19,353 by an unknown amount (the 4.6 era's burn rate is unmeasurable from this data; if it averaged anywhere near the post-4.7 rate of ~$870/day, true spend is plausibly ~$20k higher). Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (data residency assumed default-global at 1.0&times; multiplier, no Fast mode, no batch discount). "Per-PR" figures use total LOGGED spend &divide; merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
 
   <div class="stat-grid">
-    <div class="stat orange"><div class="val">$19,353</div><div class="label">Total Opus-rate spend</div><div class="sub">From 105,250 logged assistant turns. Partial coverage &mdash; see caveat above.</div></div>
-    <div class="stat"><div class="val">99,439</div><div class="label">Opus 4.7 turns</div><div class="sub">Subtotal cost: $19,298</div></div>
-    <div class="stat purple"><div class="val">5,811</div><div class="label">Haiku 4.5 subagent turns</div><div class="sub">Subtotal cost: $55</div></div>
-    <div class="stat green"><div class="val">$60.67</div><div class="label">Avg. spend per merged PR</div><div class="sub">$19,353 &divide; 319 merged PRs; includes exploration &amp; dead-ends</div></div>
+    <div class="stat orange"><div class="val">$19,353</div><div class="label">Logged Opus-rate spend</div><div class="sub">From 105,250 logged turns (2026-04-18 onward). Pre-2026-04-18 Opus 4.6 era unlogged &mdash; see caveat.</div></div>
+    <div class="stat"><div class="val">99,439</div><div class="label">Logged Opus 4.7 turns</div><div class="sub">Cost: $19,298. Earlier Opus 4.6 turns (2026-03-26 &rarr; 2026-04-17) not in log.</div></div>
+    <div class="stat purple"><div class="val">5,811</div><div class="label">Haiku 4.5 subagent turns</div><div class="sub">Cost: $55. Haiku didn't exist before 2026-04 so coverage is complete from its launch.</div></div>
+    <div class="stat green"><div class="val">$60.67</div><div class="label">Avg. spend per merged PR (logged)</div><div class="sub">$19,353 &divide; 319 merged PRs; includes exploration &amp; dead-ends; excludes 4.6-era work</div></div>
   </div>
 
   <p style="color: var(--text-dim); font-size: 0.92em;">Sessions in scope: 80 top-level Claude Code REPL sessions plus 1,434 isolated subagent dispatches (verifiers, implementers, reviewers), across 8 project working directories (main repo + 7 ephemeral worktree-spawned project dirs).</p>
@@ -193,7 +193,8 @@
     </tbody>
   </table>
 
-  <h3>Opus 4.7 &mdash; $19,298</h3>
+  <h3>Opus 4.7 (logged) &mdash; $19,298</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">All 99,439 logged Opus turns are <code>claude-opus-4-7</code> (verified by grep across all JSONL <code>model</code> fields). Pre-2026-04-18 Opus 4.6 turns are not in the log and are <strong>not</strong> reflected in this subtotal.</p>
   <table>
     <thead>
       <tr><th>Category</th><th class="num">Tokens</th><th class="num">Rate / MTok</th><th class="num">Cost</th></tr>
@@ -339,7 +340,7 @@ Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR 
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$19,353 of Claude Opus 4.7 + Haiku 4.5 &rarr; 26 skills, 624 commits / 319 merged PRs, 97 test scripts, and an audited body of evidence about what disciplined-agent engineering actually costs.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$19,353 of <em>logged</em> Claude Opus 4.7 + Haiku 4.5 spend &rarr; 26 skills, 624 commits / 319 merged PRs, 97 test scripts. Plus an unmeasured Opus 4.6 era (~23 days, 2026-03-26 &rarr; 2026-04-17) that pre-dates session logging.</strong></p>
   <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
