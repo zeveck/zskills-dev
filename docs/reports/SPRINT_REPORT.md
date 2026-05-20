@@ -1054,3 +1054,29 @@ Per-issue `/land-pr --auto` for #337, then sprint-level `/land-pr --auto` for th
 - Ready ∩ open = [432] (only); N=2 requested, partial-fill to 0 fix-dispatches.
 - Research agent invested ~95s reading the actual files (CLAUDE.md, CLAUDE_TEMPLATE.md, update-zskills Step B) and verifying claims (file existence, line counts, section overlap) before writing the blurb. Evidence-anchored independent sizing per `/qe-audit` discipline.
 - Sync ship: this sprint produces a single-file research blurb commit. The blurb's the artifact.
+
+## Sprint — 2026-05-20 04:11 UTC [UNFINALIZED]
+
+**Mode:** auto | dashboard | **Sprint ID:** sprint-20260520-041127-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #448 | verifier scope-creep --stat phantom-deletions | wt-/do-verifier-scope-creep-448 | b48a093 (rebased from 0ffcb82) | +2 conformance | PASS (3578/3578) | N/A |
+
+### Skipped
+(none)
+
+### Triage notes
+- Ready=[448]; intersection with open=[448]; one actionable candidate.
+- #448 had no tracker blurb at sprint start — Phase 2 source-filter dispatched a research agent (commit `9e1d42a`); blurb tier'd it `/do pr` Complexity S with "pure addition" surprise note (verifier.md had ZERO prior scope-creep guidance).
+- Per triage's "/do pr"-tier rule, dispatched `/do auto` per-issue rather than in-batch implementer. /do's Phase 0b reviewer APPROVE'd; implementer added 11 lines to `.claude/agents/verifier.md` + 17 lines (2 tripwires) to `tests/test-skill-conformance.sh`.
+- Encountered the **exact failure mode #448 fixes**: PR #453 went BEHIND when PR #452 (TECHNICAL.html update) landed mid-CI; required manual rebase + force-push. Confirms this fix's value.
+
+### Per-fire user-facing summary
+
+```
+Picked: #448 (Clear and doable as one PR, but needs review) — verifier scope-creep --stat phantom deletions during active landing
+Skipped: (none)
+Pool: 1 open candidate considered (Ready ∩ open)
+```
