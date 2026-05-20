@@ -338,6 +338,26 @@ if start_server "$MR5" "$PORT_D"; then
     fail "/api/plan body missing slug"
   fi
 
+  # #473: activity[] filter must match the canonical `pipeline` key
+  # (not the old `pipeline_id`). Seed a tracking marker under a pipeline
+  # subdir whose name contains the plan slug, then verify activity[]
+  # picks it up.
+  mkdir -p "$MR5/.zskills/tracking/run-sample-plan-001"
+  cat >"$MR5/.zskills/tracking/run-sample-plan-001/fulfilled.test" <<'MARKER'
+date: 2026-05-20T10:00:00-04:00
+skill: test
+status: ok
+output: /dev/null
+MARKER
+  PLAN_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT_D/api/plan/sample-plan")
+  # activity[] must be non-empty AND contain the seeded pipeline name.
+  if printf '%s' "$PLAN_BODY" | grep -q '"activity":[[:space:]]*\[[[:space:]]*{' \
+     && printf '%s' "$PLAN_BODY" | grep -q '"pipeline":[[:space:]]*"run-sample-plan-001"'; then
+    pass "/api/plan activity[] filters on canonical 'pipeline' key (#473)"
+  else
+    fail "/api/plan activity[] empty or missing seeded marker (#473); body: $PLAN_BODY"
+  fi
+
   # 404 for unknown slug
   CODE=$(curl -s -o /dev/null -w '%{http_code}' \
     "http://127.0.0.1:$PORT_D/api/plan/does-not-exist")

@@ -837,7 +837,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
         # Activity scoped to this plan (best-effort filter on slug field).
         all_activity = _collect._scan_tracking_markers(main_root, errors=[])
         parsed["activity"] = [
-            a for a in all_activity if slug in str(a.get("pipeline_id", ""))
+            a for a in all_activity if slug in str(a.get("pipeline", ""))
         ]
         self._send_json(200, parsed)
 
