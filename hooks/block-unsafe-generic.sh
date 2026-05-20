@@ -611,6 +611,13 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   # like `+HEAD:main` (already reduced to "main") and `+main` (reduced to
   # "+main") both classify correctly.
   PUSH_TARGET="${PUSH_TARGET#+}"
+  # Strip leading 'refs/heads/' prefix. `git push origin refs/heads/main` is
+  # the fully-qualified branch ref spelling that Git accepts as equivalent
+  # to `main`; without this strip, PUSH_TARGET="refs/heads/main" falls
+  # through the equality check against literal "main" and the rule doesn't
+  # fire (#470). Strip after the '+' strip so `+refs/heads/main` also
+  # normalizes to "main".
+  PUSH_TARGET="${PUSH_TARGET#refs/heads/}"
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"

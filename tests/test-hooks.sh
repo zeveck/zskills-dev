@@ -381,6 +381,17 @@ expect_deny "git push origin +main (force-prefix — #457)" "git push origin +ma
 expect_deny "git push origin +master (force-prefix master — #457)" "git push origin +master"
 expect_deny "git push origin +HEAD:main (force-prefix with refspec — #457)" "git push origin +HEAD:main"
 
+# Issue #470: fully-qualified refs/heads/main — Git accepts this as
+# equivalent to `main` but pre-fix neither hook stripped the `refs/heads/`
+# prefix, so PUSH_TARGET stayed "refs/heads/main" and the equality check
+# against literal "main" missed. Strip after the '+' strip so combined
+# forms (+refs/heads/main, refs/heads/+main, feat:refs/heads/main) all
+# normalize.
+expect_deny "git push origin refs/heads/main (fully-qualified — #470)" "git push origin refs/heads/main"
+expect_deny "git push origin refs/heads/master (fully-qualified master — #470)" "git push origin refs/heads/master"
+expect_deny "git push origin +refs/heads/main (force + fully-qualified — #470)" "git push origin +refs/heads/main"
+expect_deny "git push origin feat:refs/heads/main (refspec + fully-qualified — #470)" "git push origin feat:refs/heads/main"
+
 echo ""
 echo "=== Push: BLOCK_MAIN_PUSH preset toggle ==="
 
@@ -1448,6 +1459,51 @@ if [[ "$RESULT" == *"Cannot push to main"* ]]; then
   pass "main_protected: push origin abc123:master (#392) blocked"
 else
   fail "main_protected: push origin abc123:master should be blocked, got: $RESULT"
+fi
+
+# Issue #470: project-hook rule (b) — `feat:+main` slipped because the regex
+# didn't allow an optional `+` between `:` and `main`. Generic hook caught
+# this via the `${X##*:}` + `${X#+}` layered normalization, but the project
+# hook (active under main_protected: true) didn't.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin feat:+main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin feat:+main (#470 — force after refspec colon) blocked"
+else
+  fail "main_protected: push origin feat:+main should be blocked, got: $RESULT"
+fi
+
+# Issue #470: project-hook rule (a) — `refs/heads/main` slipped because
+# neither rule allowed the fully-qualified `refs/heads/` prefix. Git accepts
+# this as equivalent to `main`.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin refs/heads/main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin refs/heads/main (#470 — fully-qualified ref) blocked"
+else
+  fail "main_protected: push origin refs/heads/main should be blocked, got: $RESULT"
+fi
+
+# Issue #470: project-hook rule (a) — `refs/heads/master` equivalent.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin refs/heads/master")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin refs/heads/master (#470) blocked"
+else
+  fail "main_protected: push origin refs/heads/master should be blocked, got: $RESULT"
+fi
+
+# Issue #470: combined force + fully-qualified.
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin +refs/heads/main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin +refs/heads/main (#470 — force + fully-qualified) blocked"
+else
+  fail "main_protected: push origin +refs/heads/main should be blocked, got: $RESULT"
+fi
+
+# Issue #470: combined refspec + fully-qualified — rule (b).
+RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "git push origin feat:refs/heads/main")
+if [[ "$RESULT" == *"Cannot push to main"* ]]; then
+  pass "main_protected: push origin feat:refs/heads/main (#470 — refspec + fully-qualified) blocked"
+else
+  fail "main_protected: push origin feat:refs/heads/main should be blocked, got: $RESULT"
 fi
 
 # Regression guard: rule (b)'s broadened regex must NOT trip on a legitimate
