@@ -2837,6 +2837,105 @@ else
   fail "min_model=auto, only <synthetic> → expected fallback deny, got: $result"
 fi
 
+# ─── issue #479: subagent_type Explore Haiku-prevention bypass ───
+# The prior hook resolved DISPATCH_MODEL via (a) tool_input.model then
+# (b) .claude/agents/<subagent_type>.md frontmatter. Built-in subagent
+# types like "Explore" (Haiku-pinned per CLAUDE.md `## Subagent Dispatch`)
+# had no .md file in the repo → DISPATCH_MODEL stayed empty → empty-allow
+# bypass let a Haiku-pinned dispatch through. Fix has two layers:
+#   1. Primary: .claude/agents/Explore.md with `model: opus` → Step 2
+#      lookup now resolves Explore to opus.
+#   2. Defensive: known-Haiku-pinned-list deny in Step 3 → if the lookup
+#      file is missing AND subagent_type is on the list, fail closed.
+# Tests below exercise both layers via run_agent_hook_with_subagent (which
+# accepts an agent_def_content argument so we can simulate missing-file
+# vs override-present cases independently).
+
+# Helper: run agent hook with subagent_type field + optional agent definition file.
+run_agent_hook_with_subagent() {
+  local model_field="$1"       # e.g. '"model":"haiku"' or ""
+  local subagent_type="$2"     # e.g. "Explore" or "general-purpose"
+  local config_json="$3"       # content of .claude/zskills-config.json or ""
+  local agent_def_content="$4" # if non-empty, write to .claude/agents/<subagent_type>.md
+  local tmp_repo
+  tmp_repo=$(mktemp -d)
+  mkdir -p "$tmp_repo/.claude/agents"
+  (cd "$tmp_repo" && git init -q 2>/dev/null)
+
+  if [ -n "$config_json" ]; then
+    printf '%s\n' "$config_json" > "$tmp_repo/.claude/zskills-config.json"
+  fi
+  if [ -n "$agent_def_content" ]; then
+    printf '%s\n' "$agent_def_content" > "$tmp_repo/.claude/agents/${subagent_type}.md"
+  fi
+
+  local tool_input_fields
+  tool_input_fields="\"subagent_type\":\"$subagent_type\",\"prompt\":\"Do something\""
+  if [ -n "$model_field" ]; then
+    tool_input_fields="${model_field},$tool_input_fields"
+  fi
+  local tool_input="{\"tool_name\":\"Agent\",\"tool_input\":{${tool_input_fields}}}"
+
+  local result
+  result=$(echo "$tool_input" | REPO_ROOT="$tmp_repo" bash "$AGENTS_HOOK" 2>/dev/null)
+  rm -rf "$tmp_repo"
+  echo "$result"
+}
+
+# 17. Issue #479 primary: subagent_type=Explore, no model, no agent file →
+# known-Haiku-pinned-list deny fires (defensive layer 2). This is the bypass
+# being closed: without the fix, DISPATCH_MODEL would be empty → exit 0.
+result=$(run_agent_hook_with_subagent "" "Explore" "$CONFIG_SONNET" "")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "#479: subagent_type=Explore, no model, no override file → deny (known-Haiku-pinned-list)"
+else
+  fail "#479: subagent_type=Explore unresolved → expected deny, got: $result"
+fi
+
+# 18. Issue #479: subagent_type=Explore with explicit model=haiku → deny via
+# normal min_model gate (Step 1 catches it before Step 3).
+result=$(run_agent_hook_with_subagent '"model":"claude-haiku-4-5"' "Explore" "$CONFIG_SONNET" "")
+if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+  pass "#479: subagent_type=Explore, model=haiku → deny (min_model gate)"
+else
+  fail "#479: Explore+haiku → expected deny, got: $result"
+fi
+
+# 19. Issue #479: subagent_type=Explore with explicit model=opus → allow
+# (explicit override beats the Haiku-pinned default).
+result=$(run_agent_hook_with_subagent '"model":"claude-opus-4-6"' "Explore" "$CONFIG_SONNET" "")
+if [[ -z "$result" ]]; then
+  pass "#479: subagent_type=Explore, model=opus → allow"
+else
+  fail "#479: Explore+opus → expected allow, got: $result"
+fi
+
+# 20. Issue #479 baseline: subagent_type=general-purpose, no model, no agent
+# file → ALLOW (general-purpose inherits parent; empty-allow is correct
+# here; it is NOT on the known-Haiku-pinned list).
+result=$(run_agent_hook_with_subagent "" "general-purpose" "$CONFIG_SONNET" "")
+if [[ -z "$result" ]]; then
+  pass "#479: subagent_type=general-purpose, no model → allow (inherit-parent, not on Haiku-pinned list)"
+else
+  fail "#479: general-purpose no-model → expected allow, got: $result"
+fi
+
+# 21. Issue #479 primary-layer validation: subagent_type=Explore, no
+# tool_input.model, .claude/agents/Explore.md present with `model: opus` →
+# Step 2 lookup resolves DISPATCH_MODEL=opus → allow. Confirms the override
+# file shipped in this PR satisfies the hook's existing lookup path.
+EXPLORE_OVERRIDE_MD='---
+name: Explore
+model: opus
+---
+body'
+result=$(run_agent_hook_with_subagent "" "Explore" "$CONFIG_SONNET" "$EXPLORE_OVERRIDE_MD")
+if [[ -z "$result" ]]; then
+  pass "#479: subagent_type=Explore, override .md resolves model: opus → allow"
+else
+  fail "#479: Explore+override-file → expected allow, got: $result"
+fi
+
 echo ""
 echo "=== post-run-invariants.sh ==="
 
