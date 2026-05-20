@@ -326,6 +326,85 @@ fi
 cleanup_fixture "$F"
 
 # ----------------------------------------------------------------------
+# Issue #482 — post-force-push grace: first-poll rc=1 + second rc=0 →
+# CI_STATUS=pass (NOT fail). After Step 6b's force-push, GitHub takes
+# ~5s to register the new check run; pr-monitor.sh Step 5 retries once
+# on rc=1 so the stale prior failed run doesn't surface as a false fail.
+# PR_MONITOR_RECHECK_SLEEP=0 skips the wall-clock wait for testing.
+#
+# Sequence:
+#   auth_status   → 0
+#   pr_checks   1 → stdout=[{...}] (CHECK_COUNT=1, success)
+#   pr_checks   2 → exit 0 (timeout-watch returns 0, not 124)
+#   pr_checks   3 → exit 1 (first re-check: stale prior-run still fail)
+#   pr_checks   4 → exit 0 (second re-check after grace: new run passes)
+# ----------------------------------------------------------------------
+F=$(new_fixture issue482_grace)
+mkdir -p "$F/work"
+prep_gh "$F/state-gh" auth_status 1 exit 0
+prep_gh "$F/state-gh" pr_checks   1 stdout '[{"name":"build"}]'
+prep_gh "$F/state-gh" pr_checks   2 exit 0
+prep_gh "$F/state-gh" pr_checks   3 exit 1
+prep_gh "$F/state-gh" pr_checks   4 exit 0
+SUT_OUT_FILE="$F/sut.stdout"
+SUT_ERR_FILE="$F/sut.stderr"
+set +e
+PATH="$F/bin:$PATH" \
+  MOCK_GH_STATE_DIR="$F/state-gh" \
+  MOCK_GIT_STATE_DIR="$F/state-git" \
+  PR_MONITOR_RECHECK_SLEEP=0 \
+  bash "$SCRIPTS_DIR/pr-monitor.sh" --pr 42 --timeout 1 --log-out "$F/work/ci.log" \
+  >"$SUT_OUT_FILE" 2>"$SUT_ERR_FILE"
+SUT_RC=$?
+set -e
+SUT_OUT=$(cat "$SUT_OUT_FILE")
+SUT_ERR=$(cat "$SUT_ERR_FILE")
+# Expect: CI_STATUS=pass (second poll wins), AND pr_checks was called 4
+# times total (the retry happened).
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$SUT_OUT" == *"CI_STATUS=pass"* ]] \
+   && [ "$(counter "$F/state-gh" pr_checks)" = "4" ]; then
+  pass "[issue482] monitor-post-force-push-grace: fail-then-pass → CI_STATUS=pass (4 pr_checks calls)"
+else
+  fail "[issue482] monitor-post-force-push-grace" "rc=$SUT_RC out=$SUT_OUT pr_checks_count=$(counter "$F/state-gh" pr_checks)"
+fi
+cleanup_fixture "$F"
+
+# Companion: both polls return rc=1 → still CI_STATUS=fail (real failure,
+# retry doesn't mask). Ensures the retry isn't a license to ignore
+# persistent failures.
+F=$(new_fixture issue482_persistent_fail)
+mkdir -p "$F/work"
+prep_gh "$F/state-gh" auth_status 1 exit 0
+prep_gh "$F/state-gh" pr_checks   1 stdout '[{"name":"build"}]'
+prep_gh "$F/state-gh" pr_checks   2 exit 0
+prep_gh "$F/state-gh" pr_checks   3 exit 1
+prep_gh "$F/state-gh" pr_checks   4 exit 1
+# After CI_STATUS=fail, the script attempts to fetch run id for log capture
+# (Step 6). It calls `gh pr checks --json link` once and `gh run view` once.
+prep_gh "$F/state-gh" pr_checks   5 stdout '[]'
+SUT_OUT_FILE="$F/sut.stdout"
+SUT_ERR_FILE="$F/sut.stderr"
+set +e
+PATH="$F/bin:$PATH" \
+  MOCK_GH_STATE_DIR="$F/state-gh" \
+  MOCK_GIT_STATE_DIR="$F/state-git" \
+  PR_MONITOR_RECHECK_SLEEP=0 \
+  bash "$SCRIPTS_DIR/pr-monitor.sh" --pr 42 --timeout 1 --log-out "$F/work/ci.log" \
+  >"$SUT_OUT_FILE" 2>"$SUT_ERR_FILE"
+SUT_RC=$?
+set -e
+SUT_OUT=$(cat "$SUT_OUT_FILE")
+if [ "$SUT_RC" -eq 0 ] \
+   && [[ "$SUT_OUT" == *"CI_STATUS=fail"* ]] \
+   && [ "$(counter "$F/state-gh" pr_checks)" = "5" ]; then
+  pass "[issue482] monitor-persistent-fail: fail-then-fail → CI_STATUS=fail (retry attempted, both failed)"
+else
+  fail "[issue482] monitor-persistent-fail" "rc=$SUT_RC out=$SUT_OUT pr_checks_count=$(counter "$F/state-gh" pr_checks)"
+fi
+cleanup_fixture "$F"
+
+# ----------------------------------------------------------------------
 # Failure mode #9 — auto-merge-disabled-on-repo (benign, exit 0)
 # ----------------------------------------------------------------------
 F=$(new_fixture mode9)

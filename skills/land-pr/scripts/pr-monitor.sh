@@ -112,9 +112,27 @@ fi
 
 # Step 5 — Re-check (per fix 87af82a). `gh pr checks` (no --watch) DOES
 # signal pass/fail/pending via exit code: 0=pass, 1=fail, 8=pending.
+#
+# Post-force-push grace (Closes #482). Step 6b's auto-rebase loop force-
+# pushes then immediately invokes pr-monitor.sh; GitHub takes ~5s to
+# register the new check run, so a first-poll rc=1 often reflects the
+# stale prior run (which failed) rather than the new run. Memory anchor
+# `feedback_pr_monitor_false_fail.md` documents 3+ false-fail observations
+# in a single 2026-05-17 session. Mitigation: on first-poll rc=1, sleep
+# 5s and re-run ONCE — the second result wins. Adds at most 5s to a real
+# CI failure (negligible vs. the 600s --watch budget) and eliminates the
+# documented race. Single re-poll (not a generic retry loop) — bounded
+# and cheap.
 set +e
 gh pr checks "$PR_NUMBER" >/dev/null 2>"$STDERR_LOG"
 RECHECK_RC=$?
+if [ "$RECHECK_RC" -eq 1 ]; then
+  # ${PR_MONITOR_RECHECK_SLEEP:-5} — test seam: tests can set 0 to skip
+  # the wall-clock wait while still exercising the retry path.
+  sleep "${PR_MONITOR_RECHECK_SLEEP:-5}"
+  gh pr checks "$PR_NUMBER" >/dev/null 2>"$STDERR_LOG"
+  RECHECK_RC=$?
+fi
 set -e
 
 CI_STATUS="unknown"
