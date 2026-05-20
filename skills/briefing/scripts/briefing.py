@@ -172,6 +172,16 @@ def parse_landed(content):
             result['commits'] = commits_match.group(1).strip().split()
             current_list = None
             continue
+        pr_match = re.match(r'^pr:\s*(.+)', line)
+        if pr_match:
+            result['pr'] = pr_match.group(1).strip()
+            current_list = None
+            continue
+        branch_match = re.match(r'^branch:\s*(.+)', line)
+        if branch_match:
+            result['branch'] = branch_match.group(1).strip()
+            current_list = None
+            continue
         if re.match(r'^landed:\s*$', line):
             current_list = 'landed'
             if 'landed' not in result:
@@ -194,6 +204,86 @@ def parse_landed(content):
             current_list = None
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Live PR state (issue #476)
+# ---------------------------------------------------------------------------
+
+# In-process cache (per-briefing-run). Maps PR number (str) -> dict with
+# keys 'state' (str) and 'mergeStateStatus' (str). A miss / gh-failure
+# entry is stored as None so we don't retry within the same run.
+_PR_STATE_CACHE = {}
+
+
+def _pr_number_from(pr_url_or_num, branch=None):
+    """Extract a PR number (str) from a URL like
+    https://github.com/owner/repo/pull/123, a bare "#123" / "123", or a
+    branch name (fallback: gh resolves the branch). Returns None if no
+    deterministic number can be derived without an extra API round-trip.
+    """
+    if pr_url_or_num:
+        m = re.search(r'/pull/(\d+)\b', str(pr_url_or_num))
+        if m:
+            return m.group(1)
+        m = re.match(r'^#?(\d+)$', str(pr_url_or_num).strip())
+        if m:
+            return m.group(1)
+    if branch:
+        # Fall back to the branch name; gh accepts a branch as PR selector
+        # in `gh pr view <branch>`. Cache key uses the branch so a re-query
+        # for the same branch is deduped.
+        return f'branch:{branch}'
+    return None
+
+
+def query_pr_state(pr_url_or_num, branch=None):
+    """Query live PR state via `gh pr view`. Returns dict
+    {'state': 'OPEN'|'CLOSED'|'MERGED', 'mergeStateStatus': '...'} or
+    None if gh failed (offline, rate-limited, no such PR). Cached per
+    PR number for the lifetime of the process.
+
+    Non-fatal: any exception → None → caller falls back to .landed
+    category. Briefing must keep working without network.
+    """
+    key = _pr_number_from(pr_url_or_num, branch=branch)
+    if key is None:
+        return None
+    if key in _PR_STATE_CACHE:
+        return _PR_STATE_CACHE[key]
+
+    # Selector for gh pr view: prefer the numeric PR, fall back to branch.
+    if key.startswith('branch:'):
+        selector = key[len('branch:'):]
+    else:
+        selector = key
+
+    try:
+        proc = subprocess.run(
+            ['gh', 'pr', 'view', selector, '--json', 'state,mergeStateStatus,number'],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            _PR_STATE_CACHE[key] = None
+            return None
+        data = json.loads(proc.stdout)
+        state = data.get('state')
+        mss = data.get('mergeStateStatus')
+        if not state:
+            _PR_STATE_CACHE[key] = None
+            return None
+        result = {'state': state, 'mergeStateStatus': mss}
+        _PR_STATE_CACHE[key] = result
+        # Also memoize under the resolved number so a later branch->same-PR
+        # lookup hits the cache.
+        num = data.get('number')
+        if num is not None:
+            _PR_STATE_CACHE[str(num)] = result
+        return result
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError,
+            FileNotFoundError, json.JSONDecodeError, OSError):
+        _PR_STATE_CACHE[key] = None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -332,31 +422,41 @@ def classify_worktrees(repo_root=None):
             })
             continue
 
-        if landed_data and landed_data.get('status') == 'pr-ready':
-            results.append({
-                'path': wt['path'],
-                'name': name,
-                'branch': branch,
-                'category': 'landed-pr-ready',
-                'isNamed': False,
-                'ahead': counts['ahead'],
-                'behind': counts['behind'],
-                'landed': landed_data,
-                'purpose': purpose,
-            })
-            continue
+        # PR-mode landed markers: derive a base category from the marker
+        # status, then validate against live GitHub state (issue #476).
+        # The marker is written once at landing time and never updated;
+        # MERGED / CLOSED-unmerged PRs would otherwise show stale.
+        marker_pr_status = landed_data.get('status') if landed_data else None
+        if marker_pr_status in ('pr-ready', 'pr-ci-failing', 'pr-failed',
+                                'conflict', 'pr-state-unknown'):
+            if marker_pr_status == 'pr-ready':
+                base_category = 'landed-pr-ready'
+            else:
+                base_category = 'landed-pr-needs-attention'
 
-        if landed_data and landed_data.get('status') in ('pr-ci-failing', 'pr-failed', 'conflict'):
+            # Live-state validation. Falls back to marker-derived category
+            # on any gh failure (offline, rate-limited, no PR record).
+            live = query_pr_state(landed_data.get('pr'), branch=branch)
+            category = base_category
+            if live is not None:
+                gh_state = live.get('state')
+                if gh_state == 'MERGED':
+                    category = 'landed-pr-merged'
+                elif gh_state == 'CLOSED':
+                    category = 'landed-pr-abandoned'
+                # OPEN → keep base_category (marker-derived).
+
             results.append({
                 'path': wt['path'],
                 'name': name,
                 'branch': branch,
-                'category': 'landed-pr-needs-attention',
+                'category': category,
                 'isNamed': False,
                 'ahead': counts['ahead'],
                 'behind': counts['behind'],
                 'landed': landed_data,
                 'purpose': purpose,
+                'liveState': live,
             })
             continue
 
@@ -875,6 +975,13 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
         pr_note = f' — PR: {pr_url}' if pr_url else ''
         needs_attention.append(f'  ! worktree {wt["name"]} — status: {status}{pr_note}')
 
+    # PR closed without merge — recover work before removing (issue #476)
+    pr_abandoned = [wt for wt in worktrees if wt['category'] == 'landed-pr-abandoned']
+    for wt in pr_abandoned:
+        pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+        pr_note = f' — PR: {pr_url}' if pr_url else ''
+        needs_attention.append(f'  ! worktree {wt["name"]} — PR closed unmerged{pr_note}')
+
     # Uncommitted changes on main
     uncommitted = opts.get('uncommitted')
     if uncommitted is None:
@@ -967,6 +1074,10 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
             parts.append(f'{wt_counts["landed-pr-ready"]} pr-ready')
         if wt_counts.get('landed-pr-needs-attention'):
             parts.append(f'{wt_counts["landed-pr-needs-attention"]} pr-needs-attention')
+        if wt_counts.get('landed-pr-merged'):
+            parts.append(f'{wt_counts["landed-pr-merged"]} pr-merged')
+        if wt_counts.get('landed-pr-abandoned'):
+            parts.append(f'{wt_counts["landed-pr-abandoned"]} pr-abandoned')
         if wt_counts.get('empty'):
             parts.append(f'{wt_counts["empty"]} empty')
         if wt_counts.get('named'):
@@ -1023,7 +1134,7 @@ def format_report(worktrees, checkboxes, commits, opts=None):
     # Summary counts
     need_review = len([wt for wt in worktrees if wt['category'] == 'done-needs-review'])
     in_flight_count = len([wt for wt in worktrees if wt['category'] == 'possibly-active'])
-    landed_count = len([wt for wt in worktrees if wt['category'] in ('landed-full', 'landed-partial', 'landed-pr-ready')])
+    landed_count = len([wt for wt in worktrees if wt['category'] in ('landed-full', 'landed-partial', 'landed-pr-ready', 'landed-pr-merged')])
     unchecked_count = len(checkboxes)
     cb_files = set(cb['file'] for cb in checkboxes)
 
@@ -1203,6 +1314,17 @@ def format_verify(worktrees, checkboxes, opts=None):
             lines.append(f'  {wt["name"]} (status: {status}{pr_note})')
         lines.append('')
 
+    # PR closed without merge — recover work before removing (issue #476)
+    pr_abandoned = [wt for wt in worktrees if wt['category'] == 'landed-pr-abandoned']
+    if pr_abandoned:
+        has_content = True
+        lines.append(f'PR CLOSED UNMERGED ({len(pr_abandoned)} — recover work before removing)')
+        for wt in pr_abandoned:
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f' — {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]}{pr_note}')
+        lines.append('')
+
     if not has_content:
         return 'ALL CLEAR — no pending items.'
 
@@ -1263,6 +1385,26 @@ def format_current(worktrees, opts=None):
             pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
             pr_note = f'  PR: {pr_url}' if pr_url else ''
             lines.append(f'  {wt["name"]}  status: {status}{pr_note}')
+        lines.append('')
+
+    # PR merged (live state confirmed) — safe to remove (issue #476)
+    pr_merged = [wt for wt in worktrees if wt['category'] == 'landed-pr-merged']
+    if pr_merged:
+        lines.append(f'PR MERGED — WORKTREE SAFE TO REMOVE ({len(pr_merged)})')
+        for wt in pr_merged:
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f'  PR: {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]}{pr_note}')
+        lines.append('')
+
+    # PR abandoned (closed without merge) — recover work before removing (issue #476)
+    pr_abandoned = [wt for wt in worktrees if wt['category'] == 'landed-pr-abandoned']
+    if pr_abandoned:
+        lines.append(f'PR CLOSED UNMERGED — RECOVER WORK BEFORE REMOVING ({len(pr_abandoned)})')
+        for wt in pr_abandoned:
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f'  PR: {pr_url}' if pr_url else ''
+            lines.append(f'  {wt["name"]}{pr_note}')
         lines.append('')
 
     # Empty worktrees
@@ -1601,6 +1743,15 @@ def format_worktrees_status(worktrees, opts=None):
                 needs_log_extraction.append({**wt, 'logs': unextracted_logs, 'reason': '.landed: full, but logs not extracted'})
             else:
                 safe_to_remove.append({**wt, 'reason': '.landed: full'})
+            continue
+
+        # Live PR state confirmed MERGED (issue #476) — same shape as
+        # landed-full (PR is on main, worktree can go away).
+        if wt['category'] == 'landed-pr-merged':
+            if unextracted_logs:
+                needs_log_extraction.append({**wt, 'logs': unextracted_logs, 'reason': 'PR merged, but logs not extracted'})
+            else:
+                safe_to_remove.append({**wt, 'reason': 'PR merged (live gh check)'})
             continue
 
         # For other categories, check if commits are actually on main
