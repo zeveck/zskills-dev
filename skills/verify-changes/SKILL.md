@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.18+9491f5"
+  version: "2026.05.20+b479a1"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -235,6 +235,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -411,6 +412,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.tests-run"
 ```
@@ -497,6 +499,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'ui_changes: true\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
@@ -707,6 +710,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.complete"
 
