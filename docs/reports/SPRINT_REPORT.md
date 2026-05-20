@@ -1138,3 +1138,23 @@ Empty.
 ### Open Ready queue after this sprint
 14 entries dragged in mid-sprint: [470, 478, 479, 473, 481, 482, 472, 474, 480, 475, 476, 477] (12 unique, plus #469/#468 still in Ready but now closed = stale). Next fire will pick top 2 (likely #470 + #478) — #470 already researched (tier /quickfix S, same class as #457/#465), others need Phase 1a backfill.
 
+
+## Sprint — 2026-05-20 10:16 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Cron:** Run /fix-issues 2 auto dashboard every 30m | **Sprint ID:** sprint-20260520-134239-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|----|----|-------|-------------|-------------|
+| #470 | +main bypasses surviving #465: project-hook regex + refs/heads strip | wt-fix-issue-470 | #486 | /quickfix S | 3617/3617 | PASS (full suite) | N/A (hook + test) |
+| #478 | block destructive `git switch` flags (`--discard-changes`, `-f`) | wt-fix-issue-478 | #487 | /quickfix S | 3614/3614 | PASS (full suite) | N/A (hook + test) |
+
+### Notable
+1. **Mixed dispatch path: parallel research + impl** — #478 was unresearched at fire start; dispatched research agent in parallel with #470's impl. Total wall-clock ~25 min (research ~75s, longest impl 23min). Pattern worked clean: source-filter would have caught #478, but I pre-empted by dispatching research alongside, saving a pass.
+2. **#478 research correctly scoped out `git rebase`** — the issue body listed 3 commands (rebase, switch --discard-changes, switch -f), but the agent independently judged `git rebase` as recoverable (HEAD@{1}/reflog + --abort) AND noted that blocking it would false-positive on `-X theirs` rescue patterns from CLAUDE.md. Implementer respected the scope: only the 2 destructive `switch` flags got deny blocks.
+3. **#470 impl extended project-hook rule (a) too** — the issue body cited only rule (b), but the impl agent noticed rule (a) (the  form) was equally vulnerable to `refs/heads/` and added the same `(refs/heads/)?` optional prefix there. Defensible scope extension.
+4. **`ZSKILLS_PATHS_ROOT=$(pwd)` finally set correctly** — fourth sprint report attempt today; this one wrote to the worktree's SPRINT_REPORT.md directly without a recovery dance. The pattern from the prior failures has stabilized.
+
+### Open Ready queue after this sprint
+[479, 473, 481, 482, 472, 474, 480, 475, 476, 477] — 10 entries still unresearched.
+
