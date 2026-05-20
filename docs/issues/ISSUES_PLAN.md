@@ -420,3 +420,15 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Complexity:** S. **Action now:** /do pr — single-file prose append to `.claude/agents/verifier.md` (no version bump, no mirror — `.claude/agents/` isn't a skill); optional conformance tripwire adds ~10 lines. Sized S for the bounded prose edit on one design surface.
 
 ---
+
+### #457 — block-unsafe-generic.sh: BLOCK_MAIN_PUSH bypassed by bare `git push origin +main` (force-prefix without refspec)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `hooks/block-unsafe-generic.sh:599-606` strips refspec LHS (#392) and surrounding quotes (#399) but never strips a leading `+`; the exact-string equality at line 608 (`[ "$PUSH_TARGET" = "main" ]`) lets `+main`/`+master` fall through to `exit 0`. `tests/test-hooks.sh:378-414` BLOCK_MAIN_PUSH toggle block covers bare `main`/`master` and explicit refspecs but never `origin +main`.
+
+**Problem.** When `BLOCK_MAIN_PUSH=1` (the universal-layer guard that fires regardless of `main_protected`), `git push origin +main`, `git push origin +master`, and `git push -u origin +main` all bypass the deny gate. The refspec-LHS strip at line 599 (`${PUSH_TARGET##*:}`) doesn't help because `+main` has no colon. The project-layer hook (`block-unsafe-project.sh.template`, which only runs under `main_protected: true`) handles `+main` correctly (tested at `tests/test-hooks.sh:1391, 1626`), but the generic hook — the only line of defense when `main_protected` is off — does not. Same bypass class as #392 (refspec direction) and #413 (localref:main).
+
+**Fix outline.** After the existing strips at line 599-606, add a single line: `PUSH_TARGET="${PUSH_TARGET#+}"`. Mirror to `.claude/hooks/block-unsafe-generic.sh`. Extend the `BLOCK_MAIN_PUSH=1` toggle test block at `tests/test-hooks.sh:408-414` with deny cases for `git push origin +main` and `git push origin +master` (and ideally `git push -u origin +main` for the upstream-flag form), mirroring the existing `toggle_test` shape. No skill `metadata.version` bump needed (`hooks/` is not under `skills/<name>/**`).
+
+**Complexity:** S. **Action now:** /quickfix — one-line hook edit + mirror + 2-3 test additions in one fixture block, single-purpose, bounded.
+
+---
