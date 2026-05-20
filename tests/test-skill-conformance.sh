@@ -449,6 +449,22 @@ check_fixed fix-issues "modes/pr.md dispatches /land-pr per-issue" 'land-pr'
 # above; the executable invocation now lives in /land-pr's pr-merge.sh.
 check_not   fix-issues "no inline gh pr create"       'gh pr create'
 check_not   fix-issues "no inline gh pr checks --watch" 'gh pr checks.*--watch'
+# #444 — Phase 2 triage gains a 6th "Author decision needed" bucket for
+# blurbs whose **Action now:** value is `none` or `/draft-plan` (the
+# blurb defers tier choice to the human). And the orchestrator MUST
+# print a structured per-fire user-facing summary on EVERY fire —
+# productive AND no-actionable — so stable skips surface instead of
+# silent cron no-ops. Mirror coverage is enforced by the hash-parity
+# check later in this script ("Per-skill version mirror parity"); these
+# tripwires assert the SOURCE carries the prose. Drift in either
+# direction (rename, deletion, mirror divergence) trips a tripwire.
+check_fixed fix-issues "6th triage bucket (Author decision needed)" 'Author decision needed'
+check_fixed fix-issues "Per-fire user-facing summary section"       'Per-fire user-facing summary'
+check       fix-issues "summary references both branches"           'productive branch.*no-actionable|no-actionable.*productive'
+check_in_file fix-issues SKILL.md "summary referenced from no-actionable exit" \
+  'per-fire user-facing summary'
+check_in_file .claude/skills/fix-issues SKILL.md "mirror has 6th bucket"               'Author decision needed'
+check_in_file .claude/skills/fix-issues SKILL.md "mirror has summary section heading"  'Per-fire user-facing summary'
 # WI 4.6 RELOCATE: the `if [ "$AUTO_FLAG" != "true" ]` literal guard
 # now lives in /land-pr's pr-merge.sh (Phase 1B WI 1.6). Verify it
 # stays there.

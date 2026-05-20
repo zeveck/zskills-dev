@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.19+cd305b"
+  version: "2026.05.19+d5c7ac"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1640,6 +1640,26 @@ bug (under-routing to in-batch fix-agent).
   - Auto: skip it, report as "Skipped: insufficient context" in
     $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md
 
+- **Author decision needed** — the tracker blurb's `**Action now:**`
+  line value is literally `none` (e.g., `Action now: none — author
+  decision needed`) OR starts with `/draft-plan` or `/run-plan`. The
+  research blurb has explicitly deferred tier-choice to a human;
+  `/fix-issues` is NOT the right surface to second-guess that. Without
+  this bucket, such blurbs get silently shoehorned into "Plan-scale" or
+  "Too vague" and the verbatim `Action now:` recommendation never
+  reaches the user.
+  - Interactive: surface the blurb's verbatim `Action now:` value
+    alongside the issue number and a one-line note ("author decision
+    needed before fix can dispatch"). Do NOT dispatch a fix; wait for
+    the user to choose (e.g., re-file, /draft-plan, manual triage).
+  - Auto: skip it with note `Skipped: author decision needed — Action
+    now: <verbatim value>`. **Does NOT count toward N** — keep
+    iterating (same as the other skip buckets per the "Cap to N happens
+    AFTER triage" rule above). The skip MUST appear in the per-fire
+    user-facing summary (see "Per-fire user-facing summary" below) so
+    repeated cron fires do not silently no-op while a single stable
+    `Action now: none` blurb sits at the top of the queue.
+
 **Independently size the smallest coherent fix that closes the reported
 defect.** Identify the specific file:line / code-change shape that would
 fix the bug as filed, then tier THAT fix — not whatever the body's
@@ -1711,6 +1731,65 @@ coupled neighbors instead of leaving them for the next sprint.
   proceed immediately using the ranking criteria above. `auto` skips
   the approval gate AND triggers auto-merge via `/land-pr --auto` (see
   "Auto-flag gating depends on landing mode" below).
+
+### Per-fire user-facing summary
+
+The orchestrator MUST print a structured per-fire summary as part of
+its **user-facing response** on EVERY sprint fire (both the productive branch and the no-actionable branch — the `exit 0` arm in the next subsection — emit it; after triage selects work for Phase 3 dispatch on productive fires, before exit on no-op fires).
+Without this, stable skips (`Action now: none`, "author decision
+needed") are invisible and a recurring cron silently no-ops fire after
+fire while the user has no signal as to why. Past failure: 2026-05-19,
+12+ consecutive `every 30m` cron fires no-op'd because #432's blurb
+read `Action now: none — author decision needed` and the only
+user-facing output was a single stderr line saying "no actionable
+issues this fire (open=$OPEN_COUNT)" — the user had to ask directly
+why nothing was happening.
+
+Construct the summary from in-scope state (the list of issues
+dispatched in Phase 3, the skip-record collected during triage, and
+`$OPEN_COUNT` from Phase 1b). This is a **model-layer instruction**:
+the orchestrator emits the summary as prose in its final response, in
+addition to (not replacing) the stderr line at the no-actionable exit
+and any sprint-report writes Phase 5 does on productive fires.
+
+Required shape (markdown-friendly, one block):
+
+```
+Picked: #N (bucket) — <one-line>           (one per dispatched issue; or "(none)")
+Skipped: #N (bucket: <name>) — Action now: <verbatim value> — <one-sentence rationale>   (one per skipped issue)
+Pool: <count> open candidates considered
+```
+
+Rules:
+
+- **`Picked:`** — one line per Phase-3-dispatched issue, with the
+  triage bucket in parens and a one-line summary. If zero issues were
+  dispatched (no-actionable branch), emit `Picked: (none)`.
+- **`Skipped:`** — one line per skipped issue, with the bucket name,
+  the blurb's `**Action now:**` value verbatim (the exact string after
+  `Action now:`, including any trailing rationale or command), and a
+  one-sentence rationale. Quote the Action-now value EXACTLY — don't
+  paraphrase, don't truncate; it is the load-bearing signal the user
+  needs to decide whether to act.
+- **`Pool:`** — the count of open candidates considered this fire
+  (equal to `$OPEN_COUNT` or the dashboard-Ready intersection size,
+  whichever sourced this fire's candidate list).
+- The summary goes to **stdout** as part of the user-facing response.
+  The existing stderr one-liner at the no-actionable exit is PRESERVED
+  (it remains useful as a terse log signal); this section ADDS the
+  structured stdout report on top.
+
+Worked example (the #432 fire that motivated this section):
+
+```
+Picked: (none)
+Skipped: #432 (bucket: Author decision needed) — Action now: none — author decision needed — research blurb defers tier choice to user; no fix can dispatch until /draft-plan or re-triage.
+Pool: 1 open candidate considered
+```
+
+This makes the cron's stable no-op state immediately legible — the
+user can see #432 is stuck on author input, and decide whether to
+re-file, run `/draft-plan #432`, or stop the cron.
 
 ### If no actionable issues found
 
@@ -1843,6 +1922,17 @@ If ALL candidates are too vague, too complex, or already attempted:
    echo "fix-issues: no actionable issues this fire (open=$OPEN_COUNT); cron will retry on next fire." >&2
    exit 0
    ```
+
+   **Before `exit 0`: emit the per-fire user-facing summary.** Per the
+   "Per-fire user-facing summary" subsection above, the orchestrator's
+   final response on this no-actionable branch MUST include the
+   structured `Picked: (none)` / `Skipped: ...` / `Pool: ...` block —
+   listing every candidate considered this fire with its bucket and
+   verbatim `**Action now:**` value. The stderr line above is preserved
+   as a terse log signal; the structured stdout summary is the
+   user-facing report. This is the only way a recurring cron can
+   surface stable skips (e.g., `Action now: none — author decision
+   needed`) instead of silently no-op'ing fire after fire.
 
 ### Post-prioritize tracking
 
