@@ -168,11 +168,11 @@
 <section id="topline" class="fade-in">
   <h2>Topline</h2>
 
-  <div class="caveat"><strong>Read this before the headline. All figures below are LOGGED spend only.</strong> The earliest assistant turn in any <code>~/.claude/projects/</code> JSONL is <strong>2026-04-18T17:10</strong>, two days after the Opus 4.7 release on 2026-04-16. The first ~23 days of development (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> but the JSONL for that era is missing &mdash; the project dir existed from 2026-03-25, but pre-2026-04-18 JSONL files are not present (most likely lost in a devcontainer/storage reset; we can't recover the actual numbers). We have <em>zero</em> token data for that era, so it contributes $0 to the totals here. <strong>Cost numbers below therefore underestimate true spend.</strong> See <a href="#projection">Projected Total</a> for an estimate of the unlogged 4.6 era. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (data residency assumed default-global at 1.0&times; multiplier, no Fast mode, no batch discount). "Per-PR" figures use total LOGGED spend &divide; merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
+  <div class="caveat"><strong>Read this before the headline. All figures below are LOGGED spend only.</strong> The earliest assistant turn in any <code>~/.claude/projects/</code> JSONL is <strong>2026-04-18T17:10</strong>, two days after the Opus 4.7 release on 2026-04-16. The first ~23 days of development (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> but the JSONL for that era is missing &mdash; the project dir existed from 2026-03-25, but pre-2026-04-18 JSONL files are not present (most likely lost in a devcontainer/storage reset; we can't recover the actual numbers). We have <em>zero</em> token data for that period, so it contributes $0 to the totals here. <strong>Cost numbers below therefore underestimate true spend.</strong> See <a href="#projection">Projected Total</a> for an estimate of the unlogged Opus 4.6 period. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (data residency assumed default-global at 1.0&times; multiplier, no Fast mode, no batch discount). "Per-PR" figures use total LOGGED spend &divide; merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
 
   <div class="stat-grid">
-    <div class="stat orange"><div class="val">$19,353</div><div class="label">Logged Opus-rate spend</div><div class="sub">From 105,250 logged turns (2026-04-18 onward). Pre-2026-04-18 Opus 4.6 era unlogged &mdash; see caveat.</div></div>
-    <div class="stat"><div class="val">99,439</div><div class="label">Logged Opus 4.7 turns</div><div class="sub">Cost: $19,298. Earlier Opus 4.6 turns (2026-03-26 &rarr; 2026-04-17) not in log.</div></div>
+    <div class="stat orange"><div class="val">$19,353</div><div class="label">Logged Opus-rate spend</div><div class="sub">From 105,250 logged turns (2026-04-18 onward). Pre-2026-04-18 Opus 4.6 period unlogged &mdash; see caveat.</div></div>
+    <div class="stat"><div class="val">99,439</div><div class="label">Logged Opus 4.7 turns</div><div class="sub">Cost: $19,298. Earlier Opus 4.6 turns (2026-03-26 &rarr; 2026-04-17) not in log; see Projection.</div></div>
     <div class="stat purple"><div class="val">5,811</div><div class="label">Haiku 4.5 subagent turns</div><div class="sub">Cost: $55. Haiku didn't exist before 2026-04 so coverage is complete from its launch.</div></div>
     <div class="stat green"><div class="val">$60.67</div><div class="label">Avg. spend per merged PR (logged)</div><div class="sub">$19,353 &divide; 319 merged PRs; includes exploration &amp; dead-ends; excludes 4.6-era work</div></div>
   </div>
@@ -181,24 +181,24 @@
 </section>
 
 <section id="projection" class="fade-in">
-  <h2>Projected Total (including unlogged 4.6 era)</h2>
-  <p>The 23 days of Opus 4.6 development (2026-03-26 &rarr; 2026-04-17) have no JSONL data. The honest move is to estimate their cost from the logged daily rate and show a range of scenarios, since we have no way to measure the 4.6 era directly.</p>
+  <h2>Projected Total (including the unlogged Opus 4.6 period)</h2>
+  <p>The 23 days of pre-logging Opus 4.6 development (2026-03-26 &rarr; 2026-04-17) have no JSONL data. The honest move is to estimate their cost from the logged daily rate and show a range of scenarios, since we have no way to measure the unlogged period directly.</p>
 
-  <p><strong>Logged daily rate:</strong> $19,352.50 &divide; 32 days = <strong>$604.77 / day</strong>. (Opus 4.6 and 4.7 are billed at the same 4.5+ tier rates, so the model switch on 2026-04-16 doesn't change the per-token math — only the JSONL availability differs.)</p>
+  <p><strong>Logged daily rate:</strong> $19,352.50 &divide; 32 days = <strong>$604.77 / day</strong>. (Opus 4.6 and 4.7 are billed at the same 4.5+ tier rates, so the model switch on 2026-04-16 doesn't change the per-token math &mdash; only the JSONL availability differs.)</p>
 
   <table>
     <thead>
-      <tr><th>Assumption about 4.6-era intensity vs. post-4.7 logged rate</th><th class="num">4.6-era projected cost (23 days)</th><th class="num">Projected total spend</th></tr>
+      <tr><th>Assumption about pre-logging intensity vs. post-2026-04-18 logged rate</th><th class="num">Projected cost of unlogged 23 days</th><th class="num">Projected total spend</th></tr>
     </thead>
     <tbody>
-      <tr><td>Same intensity (1.0&times;)</td><td class="num">$13,910</td><td class="num"><strong>~$33,262</strong></td></tr>
-      <tr><td>75% of post-4.7 intensity</td><td class="num">$10,432</td><td class="num">~$29,785</td></tr>
-      <tr><td>50% of post-4.7 intensity (lighter early-repo work)</td><td class="num">$6,955</td><td class="num">~$26,307</td></tr>
-      <tr><td>25% of post-4.7 intensity (mostly architecture, less fan-out)</td><td class="num">$3,477</td><td class="num">~$22,830</td></tr>
+      <tr><td>Same intensity as the logged period (1.0&times;)</td><td class="num">$13,910</td><td class="num"><strong>~$33,262</strong></td></tr>
+      <tr><td>75% intensity</td><td class="num">$10,432</td><td class="num">~$29,785</td></tr>
+      <tr><td>50% intensity (lighter early-repo work, fewer parallel pipelines)</td><td class="num">$6,955</td><td class="num">~$26,307</td></tr>
+      <tr><td>25% intensity (mostly architecture, minimal subagent fan-out)</td><td class="num">$3,477</td><td class="num">~$22,830</td></tr>
     </tbody>
   </table>
 
-  <p style="color: var(--text-dim); font-size: 0.92em;">Early-repo days were almost certainly lighter than mid-stream &mdash; less subagent fan-out, fewer parallel pipelines, smaller cache contexts. So the realistic range is <strong>~$23k&ndash;$33k total spend</strong>, with the central estimate likely in the <strong>~$26k&ndash;$30k</strong> band. Treat the "same intensity" row as an upper bound, not a tight estimate. None of these scenarios can be tightened without the actual JSONL data, which is gone.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Early-repo days were almost certainly lighter than mid-stream &mdash; less subagent fan-out, fewer parallel pipelines, smaller cache contexts. So the realistic range is <strong>~$23k&ndash;$33k total spend</strong>, with the central estimate likely in the <strong>~$26k&ndash;$30k</strong> band. Treat the "same intensity" row as an upper bound, not a tight estimate. None of these scenarios can be tightened without the actual JSONL data, which is no longer on disk.</p>
 </section>
 
 <section id="by-model" class="fade-in">
@@ -362,7 +362,7 @@ Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR 
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$19,353 of <em>logged</em> Claude Opus 4.7 + Haiku 4.5 spend &rarr; 26 skills, 624 commits / 319 merged PRs, 97 test scripts. Plus an unmeasured Opus 4.6 era (~23 days, 2026-03-26 &rarr; 2026-04-17) that pre-dates session logging.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$19,353 of <em>logged</em> Claude Opus 4.7 + Haiku 4.5 spend &rarr; 26 skills, 624 commits / 319 merged PRs, 97 test scripts. Plus an unmeasured Opus 4.6 period (~23 days, 2026-03-26 &rarr; 2026-04-17) before session logging began; projected total roughly $23k&ndash;$33k.</strong></p>
   <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
