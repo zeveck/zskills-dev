@@ -1312,8 +1312,16 @@ def _annotate_plans_queue(
 def _annotate_issues_queue(
     issues: List[Dict[str, Any]],
     state: Dict[str, Any],
+    main_root: Optional[pathlib.Path] = None,
 ) -> None:
-    """Add `queue: {column, index}` to each issue in-place."""
+    """Add `queue: {column, index}` to each issue in-place.
+
+    When `main_root` is provided, also annotates each Ready-column issue
+    with a `skip_reason` derived from `docs/issues/ISSUES_PLAN.md`
+    (issue #445). Missing tracker file or unparseable section → no
+    annotation (or `unresearched` per the rule). Triage-column and
+    actionable issues get no `skip_reason` field.
+    """
     state_issues: Dict[str, List[Any]] = state.get("issues", {})
     pos: Dict[int, Tuple[str, int]] = {}
     for col, entries in state_issues.items():
@@ -1322,13 +1330,240 @@ def _annotate_issues_queue(
                 pos[int(num)] = (col, i)
             except Exception:
                 continue
+
+    # Build skip-reason index once per snapshot (avoids re-parsing the
+    # tracker per Ready issue). Only populated when main_root is given.
+    skip_index: Dict[int, Dict[str, str]] = {}
+    issues_plan_path: Optional[pathlib.Path] = None
+    if main_root is not None:
+        issues_plan_path = (
+            _resolve_paths(main_root)["issues_dir"] / "ISSUES_PLAN.md"
+        )
+        ready_nums: List[int] = []
+        for num in state_issues.get("ready", []) or []:
+            try:
+                ready_nums.append(int(num))
+            except Exception:
+                continue
+        if ready_nums:
+            skip_index = _build_skip_reason_index(issues_plan_path, ready_nums)
+
     for issue in issues:
         num = issue.get("number")
         if isinstance(num, int) and num in pos:
             col, i = pos[num]
             issue["queue"] = {"column": col, "index": i}
+            if col == "ready" and num in skip_index:
+                reason = skip_index[num]
+                if reason is not None:
+                    issue["skip_reason"] = reason
         else:
             issue["queue"] = {"column": "triage", "index": -1}
+
+
+# ---------------------------------------------------------------------------
+# Issue tracker skip-reason derivation (issue #445)
+# ---------------------------------------------------------------------------
+
+
+# Action-now capture: matches `**Action now:**` (with or without
+# surrounding bold). Real tracker entries often place this mid-line after
+# a `**Complexity:** ...` clause, so we do NOT anchor to line-start;
+# instead we capture everything from the colon up to the next sentence
+# break (`. **` next-bold-token, or end-of-line).
+_ACTION_NOW_RE = re.compile(
+    r"\*{0,2}Action now:\*{0,2}\s*(.+?)(?:\n|$|\s+\*{2})",
+    re.IGNORECASE,
+)
+
+# Verdict capture (same line-position-agnostic shape).
+_VERDICT_RE = re.compile(
+    r"\*{0,2}Verdict:\*{0,2}\s*(.+?)(?:\n|$|\s+\*{2})",
+    re.IGNORECASE,
+)
+
+# Section heading: `### #<N>` at start of line.
+_SECTION_RE = re.compile(r"^###\s+#(\d+)\b", re.MULTILINE)
+
+
+def _parse_action_now(
+    issue_number: int,
+    tracker_text: str,
+) -> Optional[Dict[str, str]]:
+    """Derive a `skip_reason` dict for `issue_number` from tracker text.
+
+    Returns `None` when the issue is actionable (no skip needed) — i.e.
+    when the `**Action now:**` line names a runnable action like
+    `/do pr`, `/quickfix`, `/run-plan`, `fix-agent`, or
+    `include in next sprint`.
+
+    Returns `{code, label, source}` when the issue should be skipped:
+
+      - `needs-decision` (amber) — `Action now: none` (author-decision blurb)
+      - `plan-scale` (blue) — `Action now: /draft-plan`
+      - `bug-unclear-cause` (purple) — `Action now: /investigate` OR
+        `Verdict: UNCLEAR`
+      - `unresearched` (gray) — `Verdict: NOT YET RESEARCHED` OR
+        the issue section is absent entirely (no blurb)
+
+    The mention of both `vague` and `unresearched` in issue #445 was a
+    reviewer-noted spec ambiguity; we collapse to `unresearched` since the
+    derivation rule treats missing-blurb and not-yet-researched
+    identically (issue #445 review note).
+    """
+    section = _extract_section(issue_number, tracker_text)
+    if section is None:
+        return {
+            "code": "unresearched",
+            "label": "not yet researched",
+            "source": "(no blurb)",
+        }
+
+    # Pull the Action now: line (last one in section wins — defensive
+    # against authoring quirks; in practice each section has exactly one).
+    action_match = None
+    for m in _ACTION_NOW_RE.finditer(section):
+        action_match = m
+    verdict_match = None
+    for m in _VERDICT_RE.finditer(section):
+        verdict_match = m
+
+    action_raw = action_match.group(1).strip() if action_match else ""
+    verdict_raw = verdict_match.group(1).strip() if verdict_match else ""
+
+    # Reconstruct a verbatim source string (prefer the action-now line as
+    # the principal hint; fall back to verdict line; final fallback to
+    # "(no blurb)").
+    if action_match:
+        source = "**Action now:** " + action_raw
+    elif verdict_match:
+        source = "**Verdict:** " + verdict_raw
+    else:
+        source = "(no blurb)"
+
+    action_lc = action_raw.lower()
+    verdict_lc = verdict_raw.lower()
+
+    # Verdict-level signals first (they describe the issue's research
+    # state irrespective of any action-now sentence).
+    if "not yet researched" in verdict_lc:
+        return {
+            "code": "unresearched",
+            "label": "not yet researched",
+            "source": source,
+        }
+
+    # Action-now-level signals: match PREFIX of the action-now value
+    # (per the rule "Action now: <kind>"). Mid-sentence mentions of
+    # `/draft-plan` etc. in qualified-actionable blurbs (e.g.
+    # "Fix #1 + #4 prose roll-in (combined /quickfix S). Fix #2 + #3
+    # deferred to /draft-plan when prioritized") must NOT match.
+    if action_raw:
+        # `none` (typically `none — author decision needed ...`) signals
+        # author-decision tier. Match the bare leading word.
+        if re.match(r"^none\b", action_lc):
+            label = _short_label(action_raw, default="author decision needed")
+            return {
+                "code": "needs-decision",
+                "label": label,
+                "source": source,
+            }
+        if re.match(r"^/draft-plan\b", action_lc) or re.match(
+            r"^/run-plan\b", action_lc
+        ):
+            return {
+                "code": "plan-scale",
+                "label": "plan-scale",
+                "source": source,
+            }
+        if re.match(r"^/investigate\b", action_lc):
+            return {
+                "code": "bug-unclear-cause",
+                "label": "unclear cause",
+                "source": source,
+            }
+
+    # Verdict-level fallback for UNCLEAR (after action-now had its turn).
+    if "unclear" in verdict_lc:
+        return {
+            "code": "bug-unclear-cause",
+            "label": "unclear cause",
+            "source": source,
+        }
+
+    # Everything else is actionable (`/do pr`, `/quickfix`, `fix-agent`,
+    # `include in next sprint`, etc.) — no chip.
+    return None
+
+
+def _short_label(action_raw: str, *, default: str) -> str:
+    """Distill a chip-suitable label (≤60 char) from a verbose Action-now.
+
+    Tracker blurbs frequently append decision branches after the leading
+    summary ("none — author decision needed on which option. If author
+    picks option 1 or 3, escalate to /draft-plan..."). The chip should
+    surface the leading rationale only.
+    """
+    # Strip the leading bare word (e.g. `none — `) so the label is
+    # whatever follows the em-dash.
+    em_dash_match = re.search(r"[—-]\s*(.+)$", action_raw)
+    raw = em_dash_match.group(1).strip() if em_dash_match else default
+    # Truncate at first sentence break.
+    cut = re.split(r"(?<=[.])\s|[;:]", raw, maxsplit=1)[0].strip().rstrip(".")
+    if not cut:
+        return default
+    if len(cut) > 60:
+        return cut[:57].rstrip() + "..."
+    return cut
+
+
+def _extract_section(issue_number: int, tracker_text: str) -> Optional[str]:
+    """Return the text of the `### #<N>` section, or None if absent.
+
+    Section runs from its heading up to the next `### #` heading or EOF.
+    """
+    target = f"#{issue_number}"
+    start: Optional[int] = None
+    end: Optional[int] = None
+    for m in _SECTION_RE.finditer(tracker_text):
+        n = int(m.group(1))
+        if n == issue_number and start is None:
+            start = m.start()
+        elif start is not None and end is None:
+            end = m.start()
+            break
+    if start is None:
+        return None
+    if end is None:
+        end = len(tracker_text)
+    return tracker_text[start:end]
+
+
+def _build_skip_reason_index(
+    tracker_path: pathlib.Path,
+    issue_numbers: List[int],
+) -> Dict[int, Optional[Dict[str, str]]]:
+    """Parse the tracker once and return {issue_num: skip_reason_or_None}.
+
+    Issues whose section is missing get the synthetic `unresearched`
+    entry (matches `_parse_action_now`'s missing-section behavior).
+    Issues that are actionable get `None` (so callers can distinguish
+    "parsed and found actionable" from "not in this index").
+    """
+    out: Dict[int, Optional[Dict[str, str]]] = {}
+    text = _read_text(tracker_path)
+    if text is None:
+        # Tracker missing → every Ready issue is effectively unresearched.
+        for num in issue_numbers:
+            out[num] = {
+                "code": "unresearched",
+                "label": "not yet researched",
+                "source": "(no blurb)",
+            }
+        return out
+    for num in issue_numbers:
+        out[num] = _parse_action_now(num, text)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1409,7 +1644,7 @@ def collect_snapshot(
     # (process restart + first gh-list failure + user drag → wiped
     # monitor-state.json). Cache-hit within 60s TTL is treated as ok=True.
     issues, issues_fetch_ok = list_issues(errors, _runner=issue_runner)
-    _annotate_issues_queue(issues, state)
+    _annotate_issues_queue(issues, state, main_root)
 
     # Worktrees + branches
     worktrees = _list_worktrees(main_root, errors)

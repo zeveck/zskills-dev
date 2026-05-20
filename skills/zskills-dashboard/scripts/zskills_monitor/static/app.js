@@ -864,6 +864,24 @@ function buildIssueCard(issue, num, col) {
     head.appendChild(el("span", { cls: "card-sub", text: relativeTime(issue.created_at) }));
   }
   card.appendChild(head);
+  // Skip-reason chip (issue #445) — only renders for Ready-column issues
+  // whose tracker blurb resolves to a skip-class (needs-decision,
+  // plan-scale, bug-unclear-cause, unresearched). Tooltip carries the
+  // verbatim Action-now / Verdict source line. Non-interactive — card
+  // remains drag-and-droppable.
+  if (issue && issue.skip_reason && issue.skip_reason.code) {
+    const sr = issue.skip_reason;
+    const code = String(sr.code || "");
+    const label = String(sr.label || code || "");
+    const source = String(sr.source || "");
+    const row = el("div", { cls: "card-sub" });
+    row.appendChild(el("span", {
+      cls: "skip-chip skip-chip--" + code,
+      attrs: { title: source },
+      text: "skip: " + code + " — " + label,
+    }));
+    card.appendChild(row);
+  }
   if (issue && (issue.labels || []).length) {
     const labels = el("div", { cls: "card-sub" });
     for (const lab of issue.labels) {

@@ -379,6 +379,33 @@ code, pre, .mono {
   color: var(--text-dim);
 }
 
+/* Skip-reason chip (issue #445) — surfaces tracker-derived skip class
+   for Ready-column issues. Visually distinct from label-chip:
+   stronger left-border accent + colored text, pill-shape with a
+   bottom margin so it sits on its own visual row above labels. */
+.skip-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 4px 4px 4px 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.skip-chip--needs-decision    { border-left-color: var(--orange);  color: var(--orange);  }
+.skip-chip--plan-scale        { border-left-color: var(--accent);  color: var(--accent);  }
+.skip-chip--bug-unclear-cause { border-left-color: var(--accent2); color: var(--accent2); }
+.skip-chip--unresearched      { border-left-color: var(--text-dim); color: var(--text-dim); }
+
 .progress {
   height: 4px;
   background: var(--surface);
