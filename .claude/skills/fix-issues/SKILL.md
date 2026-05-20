@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.20+e2f3fe"
+  version: "2026.05.20+cc469a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -2500,6 +2500,50 @@ ship the SPRINT_REPORT.md commit via a dedicated sprint-level
 one tracking pair on `$MAIN_ROOT`. Skipped under `main_protected:
 false` (gate no-op'd; SPRINT_REPORT.md is already on main and Phase
 6's per-issue cherry-picks include it transitively via `/fix-report`).
+
+**cwd discipline for sprint-land scripts (orchestrator-side, lived #472).**
+Two recurring failure modes have surfaced when the orchestrator
+constructs ad-hoc sprint-land reconstruction scripts (e.g. when the
+fence below is paraphrased into a one-off bash invocation):
+
+1. **Double-`sprint-` prefix.** `$SPRINT_ID` is constructed as
+   `sprint-YYYYMMDD-HHMMSS-<slug>` at the top of this skill (see line
+   `SPRINT_ID="sprint-$(date ...)-$ISSUE_TITLE_SLUG"`) — it ALREADY
+   carries the literal `sprint-` prefix. Do NOT add another `sprint-`
+   when reconstructing the worktree path: the worktree directory is
+   `/tmp/<basename>-fix-issues-${SPRINT_ID}`, NOT
+   `/tmp/<basename>-fix-issues-sprint-${SPRINT_ID}` (would yield
+   `/tmp/<basename>-fix-issues-sprint-sprint-YYYYMMDD-...`, a path that
+   doesn't exist). The canonical recovery is `WT_PATH=$(git worktree
+   list --porcelain | awk -v id="$SPRINT_ID" '...')` — query, don't
+   reconstruct. Any `cd "$RECONSTRUCTED_PATH"` MUST be followed by
+   `|| { echo "cd failed" >&2; exit 1; }` so silent-cd-to-main is
+   impossible.
+
+2. **Leading `cd /workspaces/<project>` collides with
+   `extract_cd_target`.** The `block-unsafe-project.sh` hook's
+   `extract_cd_target` helper picks the FIRST `cd` target in a shell
+   chain to determine the operating worktree (used to decide whether
+   the call is gated as "on main"). A pipeline that leads with
+   `cd /workspaces/zskills && ... && cd $WT_PATH && git commit ...`
+   resolves to MAIN, and the hook blocks the commit. Two acceptable
+   patterns to avoid the collision:
+
+   - **Use `git -C <wt> ...` for all main-AND-worktree mixed
+     operations.** The fence below uses `git -C "$TOPLEVEL"` for every
+     git op after the one `cd "$WT_PATH"` re-anchor. No subsequent
+     `cd` to main is needed.
+   - **If you must reference main, use a subshell:**
+     `( cd /workspaces/zskills && git ... )` so the outer chain's
+     `cd` target remains the worktree.
+
+   NEVER lead a sprint-land bash invocation with `cd /workspaces/<project>`
+   before a later `cd $WT_PATH && git push|commit`. The hook will see
+   main as the operating root and block the call.
+
+The fence below already follows both rules — it `cd`s into `$WT_PATH`
+once (with `|| exit`), then uses `git -C "$TOPLEVEL"` for the rest.
+Mirror this shape in any orchestrator-side recovery scripts.
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail; mirrors the sync-mode Step 5 fence at the top of the same skill -->
 ```bash
