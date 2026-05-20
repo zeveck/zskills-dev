@@ -1234,3 +1234,23 @@ Empty.
 ### Open Ready queue after this sprint
 2 entries: #476, #477 -- both unresearched.
 
+
+## Sprint -- 2026-05-20 14:37 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260520-174301-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #476 | briefing: query live PR state to upgrade stale .landed category | wt-fix-issue-476 | #501 | /quickfix S | 3653/3653 |
+| #477 | fix-report: replace literal npm run test:all in SKILL.md:451 | wt-fix-issue-477 | #502 | /quickfix S | 3652/3652 |
+
+### Notable
+1. **Queue drained.** This was the last sprint of the dashboard Ready queue — #476 + #477 were the final 2 actionable entries from the 14 dragged in earlier today. After this sprint, Ready ∩ open is empty.
+2. **#476 added two new briefing categories** (`landed-pr-merged` and `landed-pr-abandoned`) plus rendering across `format_current`, `format_verify`, `format_summary`, and `worktrees_status`. Non-fatal degradation when gh is offline (returns None, caches, falls back to .landed-derived category).
+3. **#477 required a substitution-discipline annotation** because the deny-list scanner's PROSE-IMPERATIVE coverage check (tests/test-skill-conformance.sh:2455) requires every prose mention of $FULL_TEST_CMD / $DEV_SERVER_CMD to carry a nearby "(resolve via . ".../zskills-resolve-config.sh")" annotation. Matched the canonical form from skills/do/modes/direct.md:18 and skills/run-plan/SKILL.md:1479.
+4. **Tier-1 hash registration patterns established.** Both #475 and #476 bundled the tier1 hash registration directly in their impl prompts based on lessons from #468/#474's first-attempt CI failures. No follow-up commits needed this sprint.
+
+### Open Ready queue after this sprint
+**Empty** (no actionable open issues in Ready). Cron will no-op until new issues are dragged in.
+
