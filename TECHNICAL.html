@@ -156,7 +156,7 @@
 <section class="hero">
   <h1>Z Skills — Technical &amp; Cost Stats</h1>
   <p>How much code, how many tests, how many commits, and how much it costs to run a one-developer engineering team on Claude Opus. All numbers reproducible from the repo and from Claude Code session JSONL.</p>
-  <p style="font-size: 0.9em;">As of <strong>2026-05-19</strong>. The companion <a href="PRESENTATION.html">main presentation</a> covers what the skills <em>do</em>; this page covers what they <em>cost</em>.</p>
+  <p style="font-size: 0.9em;">As of <strong>2026-05-20</strong>. The companion <a href="PRESENTATION.html">main presentation</a> covers what the skills <em>do</em>; this page covers what they <em>cost</em>.</p>
 </section>
 
 <section id="numbers" class="fade-in">
@@ -165,24 +165,22 @@
   <h4>Codebase</h4>
   <div class="stat-grid">
     <div class="stat"><div class="val">24 + 2</div><div class="label">Skills</div><div class="sub">24 user-facing + 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>)</div></div>
-    <div class="stat purple"><div class="val">3</div><div class="label">Block-diagram add-ons</div><div class="sub"><code>/add-block</code>, <code>/add-example</code>, <code>/model-design</code></div></div>
-    <div class="stat green"><div class="val">40,765</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
-    <div class="stat"><div class="val">22,655</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 skill bodies, before scripts/refs</div></div>
+    <div class="stat green"><div class="val">41,128</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
+    <div class="stat"><div class="val">22,753</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 skill bodies, before scripts/refs</div></div>
   </div>
 
   <h4>Tests &amp; Hooks</h4>
   <div class="stat-grid">
-    <div class="stat orange"><div class="val">94</div><div class="label">Test scripts</div><div class="sub">42,385 LOC under <code>tests/</code></div></div>
+    <div class="stat orange"><div class="val">97</div><div class="label">Test scripts</div><div class="sub">42,999 LOC under <code>tests/</code></div></div>
     <div class="stat"><div class="val">10 + 2</div><div class="label">PreToolUse hooks</div><div class="sub">10 hook entry points + 2 lib helpers; 4,171 LOC under <code>hooks/</code></div></div>
     <div class="stat"><div class="val">12</div><div class="label">Scripts</div><div class="sub">1,654 LOC of shared infra under <code>scripts/</code></div></div>
   </div>
 
   <h4>Git activity (since 2026-03-26)</h4>
   <div class="stat-grid">
-    <div class="stat green"><div class="val">613</div><div class="label">Commits on main</div><div class="sub">~7.5 weeks, ~82/week</div></div>
-    <div class="stat green"><div class="val">308</div><div class="label">Merged PRs</div><div class="sub">squash-merge commits</div></div>
-    <div class="stat orange"><div class="val">119</div><div class="label">GitHub issues filed</div><div class="sub">open + closed</div></div>
-    <div class="stat"><div class="val">2</div><div class="label">Human contributors</div><div class="sub">+ Claude as agent of record</div></div>
+    <div class="stat green"><div class="val">624</div><div class="label">Commits on main</div><div class="sub">~8 weeks, ~78/week</div></div>
+    <div class="stat green"><div class="val">319</div><div class="label">Merged PRs</div><div class="sub">squash-merge commits; the other 305 main commits are direct (pre-PR-workflow + canary executions)</div></div>
+    <div class="stat orange"><div class="val">122</div><div class="label">GitHub issues filed</div><div class="sub">open + closed</div></div>
   </div>
 </section>
 
@@ -192,11 +190,12 @@
 
   <table>
     <tr><th>Surface</th><th>LOC</th><th>Files</th><th>What it is</th></tr>
-    <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>40,765</td><td>106</td><td>Skill bodies, modes/, references/, owned scripts</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>22,655</td><td>29</td><td>Top-level skill bodies (26 source + 3 add-on)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: shell scripts under skills</td><td>~14,000</td><td>44</td><td>Per-skill helpers (port.sh, plan-drift-correct, etc.)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: Python</td><td>~500</td><td>5</td><td>JSON round-trip + parsing where bash regex would be brittle</td></tr>
-    <tr><td><code>tests/</code></td><td>42,385</td><td>94</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
+    <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>41,128</td><td>100</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>22,753</td><td>29</td><td>Top-level skill bodies (26 source + 3 add-on)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: Other .md (modes/, references/, READMEs)</td><td>3,983</td><td>22</td><td>Sub-skill documentation, design references, and internal READMEs</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: shell scripts under skills</td><td>9,024</td><td>44</td><td>Per-skill helpers (port.sh, plan-drift-correct, sanitize-pipeline-id, etc.)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: Python</td><td>5,368</td><td>5</td><td>briefing.py + dashboard collect.py/server.py + plans/render-index.py &mdash; real machinery, not just JSON helpers</td></tr>
+    <tr><td><code>tests/</code></td><td>42,999</td><td>97</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
     <tr><td><code>hooks/</code></td><td>4,171</td><td>10 + 2 lib</td><td>PreToolUse blockers, Bash timeout extension, response validation</td></tr>
     <tr><td><code>scripts/</code></td><td>1,654</td><td>12</td><td>Release tooling, frontmatter mutators, version stage-checks</td></tr>
   </table>
@@ -205,7 +204,7 @@
   <p style="color: var(--text-dim); font-size: 0.9em;">Top-10 source skills by SKILL.md size — a rough proxy for workflow complexity. The biggest ones orchestrate multi-phase pipelines; the smallest are thin wrappers.</p>
   <table>
     <tr><th>Skill</th><th>SKILL.md lines</th><th style="width: 40%;">Relative</th></tr>
-    <tr><td><code>/fix-issues</code></td><td>2,576</td><td><span class="bar" style="width: 95%;"></span></td></tr>
+    <tr><td><code>/fix-issues</code></td><td>2,666</td><td><span class="bar" style="width: 95%;"></span></td></tr>
     <tr><td><code>/run-plan</code></td><td>2,542</td><td><span class="bar" style="width: 94%;"></span></td></tr>
     <tr><td><code>/draft-tests</code></td><td>1,902</td><td><span class="bar" style="width: 70%;"></span></td></tr>
     <tr><td><code>/update-zskills</code></td><td>1,878</td><td><span class="bar" style="width: 69%;"></span></td></tr>
@@ -222,32 +221,32 @@
   <h2>Cost &amp; Tokens</h2>
   <p>Z Skills is itself built using Z Skills. We have Claude Code session JSONL transcripts for most of the development, with token counts per assistant turn. Here is the spend.</p>
 
-  <div class="caveat"><strong>Honest caveats &mdash; read these before the headline numbers.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed mid-stream); the first ~23 days of dev (2026-03-26 → 2026-04-17) has no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Prices use Anthropic's published Claude Opus rates ($15/$75/$18.75/$1.50 per MTok for input/output/cache-write/cache-read); actual billing depends on contract and any volume discounts. "Per-PR" figures use total spend ÷ merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work. Concretely: the logged window (2026-04-18 → 2026-05-20, ~32 days) burned ~$1,553/day. If pre-2026-04-18 ran anywhere near that rate, true Opus spend is plausibly closer to $85k than the $49.5k headline — early-repo days were probably less intense than mid-stream, so treat $85k as a soft upper bound, not a tight estimate.</div>
+  <div class="caveat"><strong>Honest caveats &mdash; read these before the headline numbers.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed mid-stream); the first ~23 days of dev (2026-03-26 → 2026-04-17) has no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Prices use Anthropic's published per-model rates: <strong>Opus 4.7</strong> ($15/$75/$18.75/$1.50 per MTok for input/output/cache-write/cache-read) for the 95,056 Opus turns, <strong>Haiku 4.5</strong> ($1/$5/$1.25/$0.10 per MTok) for the 5,811 Haiku subagent turns. Zero Opus 4.6 turns in the log &mdash; JSONL coverage began after 4.7 became default. Actual billing depends on contract and any volume discounts. "Per-PR" figures use total spend ÷ merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work. Concretely: the logged window (2026-04-18 → 2026-05-20, ~32 days) burned ~$1,553/day. If pre-2026-04-18 ran anywhere near that rate, true Opus spend is plausibly closer to $85k than the $49.8k headline — early-repo days were probably less intense than mid-stream, so treat $85k as a soft upper bound, not a tight estimate.</div>
 
   <div class="stat-grid">
-    <div class="stat orange"><div class="val">$49.5k*</div><div class="label">Est. Opus-rate spend</div><div class="sub">From ~99k logged assistant turns. *Partial coverage &mdash; see caveat above.</div></div>
+    <div class="stat orange"><div class="val">$49.8k*</div><div class="label">Est. spend (per-model)</div><div class="sub">From ~100,900 logged turns (95k Opus + 5.8k Haiku subagents). *Partial coverage &mdash; see caveat above.</div></div>
     <div class="stat"><div class="val">79</div><div class="label">Top-level sessions</div><div class="sub">Across 8 project working dirs</div></div>
-    <div class="stat purple"><div class="val">1,314</div><div class="label">Subagent dispatches</div><div class="sub">Verifiers, implementers, reviewers</div></div>
-    <div class="stat green"><div class="val">~$161</div><div class="label">Avg. spend per merged PR (incl. exploration)</div><div class="sub">$49.5k ÷ 308 squash-merges; numerator includes dead-ends and unmerged work</div></div>
+    <div class="stat purple"><div class="val">1,346</div><div class="label">Subagent dispatches</div><div class="sub">Verifiers, implementers, reviewers</div></div>
+    <div class="stat green"><div class="val">~$156</div><div class="label">Avg. spend per merged PR (incl. exploration)</div><div class="sub">$49.8k ÷ 319 squash-merges; numerator includes dead-ends and unmerged work</div></div>
   </div>
 
   <h3>Tokens by category (cumulative)</h3>
   <table>
-    <tr><th>Token kind</th><th>Total</th><th>Rate ($/MTok)</th><th>Cost</th></tr>
-    <tr><td>Input (uncached)</td><td>1,972,061</td><td>$15</td><td>$30</td></tr>
-    <tr><td>Output</td><td>77,823,910</td><td>$75</td><td>$5,837</td></tr>
-    <tr><td>Cache write (creation)</td><td>899,640,163</td><td>$18.75</td><td>$16,868</td></tr>
-    <tr><td>Cache read (hit)</td><td>17,819,762,790</td><td>$1.50</td><td>$26,730</td></tr>
-    <tr><td><strong>Total</strong></td><td><strong>18.8 B input-side</strong> (uncached + cache-write + cache-read) <strong>+ 78 M output</strong></td><td>&mdash;</td><td><strong>$49,464</strong></td></tr>
+    <tr><th>Token kind</th><th>Total</th><th>Rate ($/MTok)<br><span style="font-weight:400;color:var(--text-dim);font-size:0.85em;">Opus 4.7 / Haiku 4.5</span></th><th>Cost</th></tr>
+    <tr><td>Input (uncached)</td><td>2,005,161</td><td>$15 / $1</td><td>$23</td></tr>
+    <tr><td>Output</td><td>79,384,089</td><td>$75 / $5</td><td>$5,888</td></tr>
+    <tr><td>Cache write (creation)</td><td>921,397,814</td><td>$18.75 / $1.25</td><td>$16,877</td></tr>
+    <tr><td>Cache read (hit)</td><td>18,190,491,157</td><td>$1.50 / $0.10</td><td>$26,993</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>19.1 B input-side</strong> (uncached + cache-write + cache-read) <strong>+ 79 M output</strong></td><td>&mdash;</td><td><strong>$49,782</strong></td></tr>
   </table>
 
   <h3>Monthly breakdown</h3>
   <table>
     <tr><th>Month</th><th>Output tokens</th><th>Cache writes</th><th>Cache reads</th><th>Est. cost</th></tr>
-    <tr><td>2026-04 (partial logging)</td><td>33.4 M</td><td>372 M</td><td>6.9 B</td><td>$19,843</td></tr>
-    <tr><td>2026-05 (through 5/19)</td><td>44.4 M</td><td>527 M</td><td>10.9 B</td><td>$29,622</td></tr>
+    <tr><td>2026-04 (partial logging)</td><td>33.4 M</td><td>372 M</td><td>6.9 B</td><td>$19,089</td></tr>
+    <tr><td>2026-05 (through 5/20)</td><td>46.0 M</td><td>549 M</td><td>11.3 B</td><td>$30,704</td></tr>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.9em; margin-top: 4px;">May rose ~50% over April even though May is only 19 days; both reflect heavier worktree fan-out (more subagent dispatches → more cache reads).</p>
+  <p style="color: var(--text-dim); font-size: 0.9em; margin-top: 4px;">May rose ~60% over April even though May is only 20 days; both reflect heavier worktree fan-out (more subagent dispatches → more cache reads).</p>
 </section>
 
 <section id="cache" class="fade-in">
@@ -256,8 +255,8 @@
 
   <div class="stat-grid">
     <div class="stat green"><div class="val">95.2%</div><div class="label">Cache-read share</div><div class="sub">of all input tokens (cached read + cache write + uncached)</div></div>
-    <div class="stat"><div class="val">~9,034 ×</div><div class="label">Cache leverage</div><div class="sub">cache-reads ÷ uncached input</div></div>
-    <div class="stat purple"><div class="val">~$240k</div><div class="label">Cache savings vs. uncached</div><div class="sub">17.8B cache-reads @ $1.50 cost $26.7k; @ $15 (uncached) would have cost ~$267k. Net savings ≈ $240k <em>against the uncached counterfactual</em></div></div>
+    <div class="stat"><div class="val">~9,071 ×</div><div class="label">Cache leverage</div><div class="sub">cache-reads ÷ uncached input</div></div>
+    <div class="stat purple"><div class="val">~$243k</div><div class="label">Cache savings vs. uncached</div><div class="sub">18.2B cache-reads (mostly Opus) @ avg $1.50/M cost $27.0k; same volume at uncached rates would have cost ~$269k. Net savings ≈ $243k <em>against the uncached counterfactual</em></div></div>
   </div>
 
   <p style="color: var(--text-dim); font-size: 0.9em;">The cache-savings number compares against a synthetic "what if no caching" world. Real billing only ever pays the cached rate, so this is an upper bound on what caching is worth, not a refund.</p>
@@ -267,7 +266,7 @@
   <h2>Methodology</h2>
 
   <h3>Code/test/commit counts</h3>
-  <p>All reproducible from a clean checkout of <code>main</code> at <code>183c6f9</code> (the merge-base this branch was cut from):</p>
+  <p>All reproducible from a clean checkout of <code>main</code> at <code>283db23</code> (the merge-base this branch was cut from):</p>
 <pre><code>find skills block-diagram -type f \( -name "*.md" -o -name "*.sh" -o -name "*.py" \) -exec cat {} + | wc -l
 find tests -type f -name "*.sh" -exec cat {} + | wc -l
 find hooks -type f -name "*.sh*" -exec cat {} + | wc -l
@@ -279,10 +278,11 @@ gh issue list --state all --limit 1000 --json number | python3 -c 'import json,s
   <p>Scanned every JSONL file under <code>~/.claude/projects/*zskills*/</code> (1,393 files across 8 project working dirs — main repo + 7 ephemeral worktree-spawned project dirs), extracted the <code>usage</code> field from each assistant turn, summed by category, applied Opus rates.</p>
 
   <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
-    <li><strong>Rate basis:</strong> Anthropic's published Claude Opus pricing — $15/MTok input, $75/MTok output, $18.75/MTok cache-creation, $1.50/MTok cache-read. Real billing may differ (volume discounts, contract terms).</li>
-    <li><strong>Coverage gap:</strong> First commit on main is 2026-03-26; earliest logged JSONL turn is 2026-04-18. Roughly 23 days of dev is unlogged — expect actual spend to be moderately higher than the $49.5k figure.</li>
+    <li><strong>Rate basis:</strong> Anthropic's published per-model pricing applied per turn: Opus 4.7 ($15/$75/$18.75/$1.50 per MTok input/output/cache-write/cache-read) for the 95,056 orchestrator turns, Haiku 4.5 ($1/$5/$1.25/$0.10 per MTok) for the 5,811 Haiku subagent turns. Real billing may differ (volume discounts, contract terms).</li>
+    <li><strong>Coverage gap:</strong> First commit on main is 2026-03-26; earliest logged JSONL turn is 2026-04-18. Roughly 23 days of dev is unlogged — expect actual spend to be moderately higher than the $49.8k figure.</li>
+    <li><strong>Commits vs. PRs:</strong> 624 total commits on main, of which 319 are PR squash-merges and 305 are direct (117 pre-PR-workflow before 2026-04-13 plus 188 canary plan-executions and <code>/commit</code> direct-mode commits). The ratio commits-per-PR is ~2× because each PR squashes its branch's commits into one on main.</li>
     <li><strong>Sessions vs. subagents:</strong> "Top-level sessions" are interactive Claude Code REPL sessions; "subagent dispatches" are isolated agents the orchestrator spawned for impl/verify/review work.</li>
-    <li><strong>Cost per merged PR:</strong> $49,464 ÷ 308 merged PRs ≈ $161 / PR. This includes exploration, planning, reviews, failed attempts, and the not-yet-merged work — not just successful PRs — so the real "cost of a successful merged PR" is somewhat lower. Take as a rough order-of-magnitude.</li>
+    <li><strong>Cost per merged PR:</strong> $49,782 ÷ 319 merged PRs ≈ <strong>$156</strong> / PR. This includes exploration, planning, reviews, failed attempts, and the not-yet-merged work — not just successful PRs — so the real "cost of a successful merged PR" is somewhat lower. Take as a rough order-of-magnitude.</li>
   </ul>
 
   <h3>What this <em>doesn't</em> measure</h3>
@@ -291,9 +291,9 @@ gh issue list --state all --limit 1000 --json number | python3 -c 'import json,s
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$49.5k of Claude Opus → 26 skills (24 user-facing + 2 helpers), 308 merged PRs, 94 test scripts, and a body of evidence about what disciplined-agent engineering actually costs.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$49.8k of Claude Opus → 26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts, and a body of evidence about what disciplined-agent engineering actually costs.</strong></p>
   <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Back to main presentation</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-19. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
 
 </div>
