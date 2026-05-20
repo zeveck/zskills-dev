@@ -937,6 +937,58 @@ rm -f -- "$ERR_23"
 # (non-existent but defensive) expected WT path.
 rm -rf "$FIX_23" "$FAKE_ORIGIN_23" "$EXPECTED_WT_23"
 
+# ────────────────────────────────────────────────────────────────────
+# Cases 24-26 (#468) — sanitize-pipeline-id.sh empty-input guard.
+# Empty input must exit non-zero with a stderr message so callers fail
+# loud; valid input must still round-trip; invalid characters must still
+# be normalized to underscores. The empty case prevents downstream
+# `mkdir -p ".zskills/tracking/$PIPELINE_ID"` + marker writes from
+# silently producing flat markers under `.zskills/tracking/`.
+# ────────────────────────────────────────────────────────────────────
+SANITIZE_SCRIPT="$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+
+# Case 24 — empty input → non-zero exit + stderr error message.
+# Capture rc explicitly: the test harness runs with `set -u` (not `set
+# -e`) so we don't need to relax errexit here, but we still want the
+# non-zero exit to flow through without aborting the script.
+ERR_24=$(mktemp)
+OUT_24=$(bash "$SANITIZE_SCRIPT" "" 2>"$ERR_24") || RC_24=$?
+RC_24="${RC_24:-0}"
+ERR_BODY_24="$(cat "$ERR_24" 2>/dev/null || true)"
+if [ "$RC_24" -ne 0 ] && [ -z "$OUT_24" ] \
+   && echo "$ERR_BODY_24" | grep -q 'empty input'; then
+  pass "24 (#468) sanitize-pipeline-id empty input: rc=$RC_24 (non-zero), empty stdout, stderr names 'empty input'"
+else
+  fail "24 (#468) sanitize-pipeline-id empty input: rc=$RC_24 stdout='$OUT_24' stderr='$ERR_BODY_24'"
+fi
+rm -f -- "$ERR_24"
+
+# Case 25 — non-empty valid input: existing behavior preserved (rc=0,
+# valid stdout, no stderr).
+ERR_25=$(mktemp)
+OUT_25=$(bash "$SANITIZE_SCRIPT" "run-plan.my-plan" 2>"$ERR_25")
+RC_25=$?
+ERR_BODY_25="$(cat "$ERR_25" 2>/dev/null || true)"
+if [ "$RC_25" -eq 0 ] && [ "$OUT_25" = "run-plan.my-plan" ] && [ -z "$ERR_BODY_25" ]; then
+  pass "25 (#468) sanitize-pipeline-id valid input: rc=0, stdout='run-plan.my-plan', no stderr"
+else
+  fail "25 (#468) sanitize-pipeline-id valid input: rc=$RC_25 stdout='$OUT_25' stderr='$ERR_BODY_25'"
+fi
+rm -f -- "$ERR_25"
+
+# Case 26 — non-empty invalid input (all special chars): existing
+# behavior preserved (rc=0, characters normalized to underscores).
+ERR_26=$(mktemp)
+OUT_26=$(bash "$SANITIZE_SCRIPT" "abc/def@xyz" 2>"$ERR_26")
+RC_26=$?
+ERR_BODY_26="$(cat "$ERR_26" 2>/dev/null || true)"
+if [ "$RC_26" -eq 0 ] && [ "$OUT_26" = "abc_def_xyz" ] && [ -z "$ERR_BODY_26" ]; then
+  pass "26 (#468) sanitize-pipeline-id invalid chars: rc=0, '/' and '@' normalized to '_'"
+else
+  fail "26 (#468) sanitize-pipeline-id invalid chars: rc=$RC_26 stdout='$OUT_26' stderr='$ERR_BODY_26'"
+fi
+rm -f -- "$ERR_26"
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
