@@ -1215,3 +1215,22 @@ Empty.
 ### Open Ready queue after this sprint
 4 entries: #480, #475, #476, #477 -- all unresearched.
 
+
+## Sprint -- 2026-05-20 13:38 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260520-165729-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #480 | verify-response-validate.sh: broaden PATTERNS_STALLED for paraphrase class | wt-fix-issue-480 | #498 | /quickfix S | 3650/3650 |
+| #475 | briefing.py: drop -n 500 cap on main_subjects | wt-fix-issue-475 | #499 | /quickfix S | 3638/3638 |
+
+### Notable
+1. #480 added 16 new patterns to PATTERNS_STALLED whitelist, plus 14 new test cases (11 negative paraphrase + 3 positive "looks similar but legitimate"). Avoided single-word patterns (waiting/background/still) that would false-positive on legitimate verifier responses.
+2. #475 prompted with **explicit tier1 hash registration step** built into the impl spec (learned from #468 and #474's first-attempt CI failures). Result: clean CI on first try, no follow-up commit needed.
+3. Both impls clean-scope. Cron stays active; 2 issues left in Ready (#476, #477).
+
+### Open Ready queue after this sprint
+2 entries: #476, #477 -- both unresearched.
+
