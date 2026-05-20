@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.19+d5c7ac"
+  version: "2026.05.20+e2f3fe"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -521,10 +521,10 @@ EOF
    successful merge — mirrors `/run-plan` PR mode's pattern
    (`skills/run-plan/modes/pr.md:339-348`, `skills/run-plan/SKILL.md:888`).
 
-   <!-- allow-hardcoded: TZ=America/New_York reason: SYNC_TS is a user-facing wall-clock stamp on the PR title/body and SYNC_ID; matches the established sync-mode idiom for human-readable dates. Per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
    ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    # SYNC_TS: stable per sync invocation. SYNC_ID propagates to /land-pr.
-   SYNC_TS="${SYNC_TS:-$(TZ=America/New_York date +%Y%m%d-%H%M%S)}"
+   SYNC_TS="${SYNC_TS:-$(TZ="${TIMEZONE:-UTC}" date +%Y%m%d-%H%M%S)}"
    SYNC_ID="fix-issues.sync.${SYNC_TS}"
 
    # Resolve main_root and pipeline scope; derive PIPELINE_ID if not already
@@ -550,11 +550,11 @@ EOF
    BODY_FILE=$(mktemp)
    {
      printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
-       "$(TZ=America/New_York date +%F)"
+       "$(TZ="${TIMEZONE:-UTC}" date +%F)"
      printf '## Test plan\n- [x] Sync-only diff: agent-facing tracker markdown; auto-merge.\n'
    } > "$BODY_FILE"
 
-   PR_TITLE="sync: $(TZ=America/New_York date +%F)"
+   PR_TITLE="sync: $(TZ="${TIMEZONE:-UTC}" date +%F)"
    SYNC_BRANCH=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
 
    # /land-pr arg vector. Always includes --auto: this dispatch ships
@@ -808,9 +808,9 @@ If `$ARGUMENTS` contains `every <schedule>`:
    - `prompt`: the reconstructed command from step 3
 
 5. **Confirm** — tell the user, including the estimated wall-clock time of
-   the next run. Compute from the cron expression. **Always show times in
-   America/New_York (ET)** — use `TZ=America/New_York date` for conversion,
-   not the system timezone (which may be UTC). Example:
+   the next run. Compute from the cron expression. **Always show times in the
+   configured timezone** — use `TZ="${TIMEZONE:-UTC}" date` for conversion,
+   not the system timezone (which may differ). Example:
 
    If `now` is present:
    > Fix-issues sprint scheduled every 4h. Running now.
@@ -1048,8 +1048,8 @@ alert user, write failure to report).
    prevented.
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
-   <!-- allow-hardcoded: TZ=America/New_York reason: bootstrap stamps the "created" date and the in-body "Created by /fix-issues sync on $TODAY" line in America/New_York to match the established tracker idiom across skills; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 mkdir -p "$ZSKILLS_ISSUES_DIR"
 EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)
 if [ -z "$EXISTING_TRACKERS" ]; then
@@ -1057,7 +1057,7 @@ if [ -z "$EXISTING_TRACKERS" ]; then
     echo "Sync complete. 0 open issues, no trackers needed."
     exit 0
   fi
-  TODAY=$(TZ=America/New_York date +%Y-%m-%d)
+  TODAY=$(TZ="${TIMEZONE:-UTC}" date +%Y-%m-%d)
   cat > "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" <<TRACKER
 ---
 title: Issues — Auto-Bootstrapped Tracker

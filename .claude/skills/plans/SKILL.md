@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.10+c474f6"
+  version: "2026.05.20+9660ae"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -110,7 +110,6 @@ NOT appear as separate top-level entries.
    guarantees the index reflects current source on every Mode: Show
    invocation. Drop-in script:
 
-   <!-- allow-hardcoded: TZ=America/New_York reason: the "Last rebuilt" timestamp embedded in PLAN_INDEX.md is documented as ET in the user-visible header line; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
    ```bash
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    MAIN_ROOT=$(git rev-parse --show-toplevel)
@@ -136,7 +135,7 @@ NOT appear as separate top-level entries.
 
    if needs_rebuild; then
      # Invoke Mode: Rebuild (see below).
-     REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+     REBUILT_AT=$(TZ="${TIMEZONE:-UTC}" date '+%Y-%m-%d %H:%M %Z')
      mkdir -p "$ZSKILLS_AUDIT_DIR"
      PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
        python3 -m zskills_monitor.collect \
@@ -253,14 +252,13 @@ bucketing, ordering, meta-plan sub-plan indentation, and markdown
 emission live in `skills/plans/scripts/render-index.py`. The
 implementing agent runs a single pipeline and exits.
 
-<!-- allow-hardcoded: TZ=America/New_York reason: the "Last rebuilt" timestamp embedded in PLAN_INDEX.md is documented as ET in the user-visible header line; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this issue -->
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(git rev-parse --show-toplevel)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
   source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 
-REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+REBUILT_AT=$(TZ="${TIMEZONE:-UTC}" date '+%Y-%m-%d %H:%M %Z')
 mkdir -p "$ZSKILLS_AUDIT_DIR"
 
 set -o pipefail
@@ -359,8 +357,8 @@ prose if desired.
 - **Skip `PLAN_INDEX.md` itself** — don't index the index.
 - **Relative links** — since the index lives in `$ZSKILLS_PLANS_DIR`, links are
   just filenames (e.g., `[FOO.md](FOO.md)`), not the full path.
-- **Timezone** — always use America/New_York (ET) for the "Last
-  rebuilt" timestamp.
+- **Timezone** — use the configured timezone (`TZ="${TIMEZONE:-UTC}" date`)
+  for the "Last rebuilt" timestamp.
 - **No bash fallback.** If `python3 -m zskills_monitor.collect` fails,
   every mode reports the failure and exits non-zero. Per
   `feedback_no_premature_backcompat`, this is intentional: maintaining

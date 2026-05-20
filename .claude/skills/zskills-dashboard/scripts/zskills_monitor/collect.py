@@ -1317,8 +1317,9 @@ def _annotate_issues_queue(
     """Add `queue: {column, index}` to each issue in-place.
 
     When `main_root` is provided, also annotates each Ready-column issue
-    with a `skip_reason` derived from `docs/issues/ISSUES_PLAN.md`
-    (issue #445). Missing tracker file or unparseable section → no
+    with a `skip_reason` derived from the issues tracker
+    (`$ZSKILLS_ISSUES_DIR` joined with the tracker basename — composed
+    below; issue #445). Missing tracker file or unparseable section → no
     annotation (or `unresearched` per the rule). Triage-column and
     actionable issues get no `skip_reason` field.
     """
@@ -1337,6 +1338,7 @@ def _annotate_issues_queue(
     issues_plan_path: Optional[pathlib.Path] = None
     if main_root is not None:
         issues_plan_path = (
+            # allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto resolved issues_dir (parallels the fix-issues/SKILL.md exemption at line 1050); the literal tail is the canonical tracker filename
             _resolve_paths(main_root)["issues_dir"] / "ISSUES_PLAN.md"
         )
         ready_nums: List[int] = []

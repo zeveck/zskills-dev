@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.19+64d81c"
+  version: "2026.05.20+9dc780"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -409,9 +409,9 @@ If `$ARGUMENTS` contains `every <schedule>`:
    - `recurring`: true
    - `prompt`: the constructed command from step 3
 
-5. **Confirm** with wall-clock time. **Always show times in America/New_York
-   (ET)** — use `TZ=America/New_York date` for conversion, not the system
-   timezone (which may be UTC):
+5. **Confirm** with wall-clock time. **Always show times in the configured
+   timezone** — use `TZ="${TIMEZONE:-UTC}" date` for conversion, not the
+   system timezone (which may differ):
 
    If `now` is present:
    > Run-plan scheduled every 4h. Running now.

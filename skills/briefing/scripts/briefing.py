@@ -724,15 +724,19 @@ def parse_commits(since=None, repo_root=None):
 # Helpers — time formatting
 # ---------------------------------------------------------------------------
 
-def format_et(date=None):
+def format_local(date=None):
     """
-    Format a timestamp as ET timezone string.
-    Returns e.g. "2026-03-21 10:15 ET"
+    Format a timestamp in the configured timezone (env TIMEZONE, default UTC).
+    Returns e.g. "2026-03-21 10:15 EDT" or "2026-03-21 14:15 UTC".
+
+    The tz-name suffix is derived from tzinfo.tzname(d) rather than a
+    hardcoded label, so it stays truthful when TIMEZONE is reconfigured.
     """
+    tz_name = os.environ.get('TIMEZONE', 'UTC')
     d = date or datetime.now()
     try:
         if ZoneInfo is not None:
-            tz = ZoneInfo('America/New_York')
+            tz = ZoneInfo(tz_name)
             if date is None:
                 d = datetime.now(tz)
             else:
@@ -742,9 +746,10 @@ def format_et(date=None):
                     d = d.replace(tzinfo=timezone.utc).astimezone(tz)
                 else:
                     d = d.astimezone(tz)
-            return d.strftime('%Y-%m-%d %H:%M') + ' ET'
+            suffix = tz.tzname(d) or tz_name
+            return d.strftime('%Y-%m-%d %H:%M') + ' ' + suffix
         else:
-            # Fallback: try using dateutil
+            # Fallback: zoneinfo unavailable
             raise ImportError("no zoneinfo")
     except Exception:
         # Fallback if timezone not available
@@ -842,7 +847,7 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
     repo_root = opts.get('repoRoot') or find_repo_root()
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
 
-    lines.append(f'BRIEFING — {format_et()}')
+    lines.append(f'BRIEFING — {format_local()}')
     lines.append('')
 
     # === NEEDS ATTENTION bucket (non-verification items) ===
@@ -983,7 +988,7 @@ def generate_report_path(audit_dir, date=None):
     Writes under audit_dir (briefing files stay in audit_dir per issue #217 triage).
     """
     d = date or datetime.now()
-    et_str = format_et(d)
+    et_str = format_local(d)
     match = re.search(r'(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})', et_str)
     if match:
         date_str = match.group(1)
@@ -1006,7 +1011,7 @@ def format_report(worktrees, checkboxes, commits, opts=None):
     """Format the full markdown report."""
     opts = opts or {}
     lines = []
-    et_now = format_et()
+    et_now = format_local()
     since = opts.get('since') or '24 hours ago'
     repo_root = opts.get('repoRoot') or find_repo_root()
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
@@ -1216,7 +1221,7 @@ def format_current(worktrees, opts=None):
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
     lines = []
 
-    lines.append(f'CURRENTLY IN FLIGHT — {format_et()}')
+    lines.append(f'CURRENTLY IN FLIGHT — {format_local()}')
     lines.append('')
 
     # Possibly active (modified < 2h ago)
@@ -1372,7 +1377,7 @@ def preserve_checkboxes(report_content, audit_dir, date=None):
     moved to reports_dir).
     """
     d = date or datetime.now()
-    et_str = format_et(d)
+    et_str = format_local(d)
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', et_str)
     today_str = date_match.group(1) if date_match else d.strftime('%Y-%m-%d')
 
@@ -1524,7 +1529,7 @@ def format_worktrees_status(worktrees, opts=None):
     main_path = re.sub(r'/\.claude/worktrees/[^/]+$', '', repo_root)
     lines = []
 
-    lines.append(f'WORKTREE STATUS — {format_et()}')
+    lines.append(f'WORKTREE STATUS — {format_local()}')
     lines.append('')
 
     # Get main commit subjects for landing detection

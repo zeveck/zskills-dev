@@ -6,7 +6,7 @@ description: >-
   verification.
 argument-hint: "<block-type(s)> [concept hint]"
 metadata:
-  version: "2026.05.15+cb93b5"
+  version: "2026.05.20+7e9e3c"
 ---
 
 # Add Example Model
@@ -67,6 +67,7 @@ fires (the parent's worktree wrote it), so the synthesized fallback never
 triggers and markers correctly land in the parent's subdir.
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
 # (parent's PIPELINE_ID, written by add-block's ensure-worktree.sh
@@ -84,7 +85,7 @@ PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/s
 NAME_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$NAME")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
-  "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+  "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 ```
 
@@ -212,7 +213,8 @@ mkdir -p examples/<name>/screenshots
 
 After Phase 2 (build) is complete:
 ```bash
-printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.build"
 ```
 
@@ -251,7 +253,8 @@ In `tests/codegen-compile.test.js`, add the model to the appropriate tier:
 
 After Phase 3 (register) is complete:
 ```bash
-printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.register"
 ```
 
@@ -283,7 +286,8 @@ mv .playwright/output/screenshot-*.png examples/<name>/screenshots/01-model-with
 
 After Phase 4b (screenshot) is complete:
 ```bash
-printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.screenshot"
 ```
 
@@ -315,7 +319,8 @@ All 3 suites must pass (unit, e2e, codegen). Report each suite's result.
 
 After Phase 4c/4d (tests pass):
 ```bash
-printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.tests"
 ```
 
@@ -338,14 +343,16 @@ Send a verification agent (or do it yourself) to check:
 
 After Phase 5a (verification) is complete:
 ```bash
-printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-example.${NAME_SLUG}.verify"
 ```
 
 Update the fulfillment marker to reflect completion:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'skill: add-example\nname: %s\nstatus: completed\ndate: %s\n' \
-  "$NAME" "$(TZ=America/New_York date -Iseconds)" \
+  "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.add-example.${NAME_SLUG}"
 ```
 

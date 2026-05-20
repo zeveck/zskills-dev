@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.19+4db1db"
+  version: "2026.05.20+0e54e6"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -167,8 +167,8 @@ the env-var-supplied value) through the canonical sanitiser before
 writing to disk. The bare-relative `scripts/sanitize-pipeline-id.sh`
 form is FORBIDDEN — that path no longer exists post-PR-#97.
 
-<!-- allow-hardcoded: TZ=America/New_York reason: illustrative tracking-marker idiom; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this Phase 1 skeleton -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 if [ -n "${ZSKILLS_PIPELINE_ID:-}" ]; then
   PIPELINE_ID="$ZSKILLS_PIPELINE_ID"
@@ -178,7 +178,7 @@ else
 fi
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: draft-tests\nid: %s\nplan: %s\nstatus: started\ndate: %s\n' \
-  "$TRACKING_ID" "$PLAN_FILE" "$(TZ=America/New_York date -Iseconds)" \
+  "$TRACKING_ID" "$PLAN_FILE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.draft-tests.$TRACKING_ID"
 ```
 
@@ -354,9 +354,9 @@ coverage floor on ac-less phases (the scope is empty by construction).
 
 After the parser returns, write the research step marker:
 
-<!-- allow-hardcoded: TZ=America/New_York reason: illustrative tracking-marker idiom; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this Phase 1 skeleton -->
 ```bash
-printf 'completed: %s\n' "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-tests.$TRACKING_ID.research"
 ```
 
