@@ -2528,6 +2528,33 @@ for mf in $MODE_FILES; do
   done < <(grep -n 'git rebase origin/main' "$mf" 2>/dev/null)
 done
 
+echo "=== sanitize-pipeline-id.sh wraps at every PIPELINE_ID= construct-site (issue #459) ==="
+# CLAUDE.md `## Tracking markers` mandates: every constructed PIPELINE_ID
+# MUST be passed through sanitize-pipeline-id.sh before being written to
+# disk. Four skills (run-plan, commit/modes/pr.md, draft-plan, refine-plan)
+# previously skipped this; PR #459 added the canonical wrap line after each
+# construct-site assignment. This tripwire locks the wrap count by file —
+# adding a 15th construct-site to run-plan without also adding the wrap
+# (or vice-versa) fails the assertion, in either direction.
+#
+# Counts here are LITERAL EQUALITY (not >=) so drift is visible from
+# either side. If a future PR genuinely adds another construct-site,
+# update the literal here in the same commit that adds the wrap.
+check_sanitize_count() {
+  local skill_path="$1" expected="$2" label="$3"
+  local actual
+  actual=$(grep -c 'sanitize-pipeline-id' "$REPO_ROOT/$skill_path" 2>/dev/null || echo 0)
+  if [ "$actual" = "$expected" ]; then
+    pass "$label: $actual sanitize wraps (== $expected)"
+  else
+    fail "$label: found $actual sanitize wraps, expected exactly $expected" "$expected sanitize-pipeline-id.sh wraps in $skill_path"
+  fi
+}
+check_sanitize_count "skills/run-plan/SKILL.md"      14 "skills/run-plan/SKILL.md"
+check_sanitize_count "skills/commit/modes/pr.md"      1 "skills/commit/modes/pr.md"
+check_sanitize_count "skills/draft-plan/SKILL.md"     4 "skills/draft-plan/SKILL.md"
+check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKILL.md"
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
