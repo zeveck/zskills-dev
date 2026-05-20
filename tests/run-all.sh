@@ -93,6 +93,7 @@ run_suite "test-update-zskills-agent-install" "tests/test-update-zskills-agent-i
 run_suite "test-update-zskills-paths-migration.sh" "tests/test-update-zskills-paths-migration.sh"
 run_suite "test-migrate-paths-awk.sh" "tests/test-migrate-paths-awk.sh"
 run_suite "test-update-zskills-rerender.sh" "tests/test-update-zskills-rerender.sh"
+run_suite "test-managed-md-up-to-date.sh" "tests/test-managed-md-up-to-date.sh"
 run_suite "test-mirror-skill.sh" "tests/test-mirror-skill.sh"
 run_suite "test-cleanup-merged-review.sh" "tests/test-cleanup-merged-review.sh"
 run_suite "test-land-pr-scripts.sh" "tests/test-land-pr-scripts.sh"
