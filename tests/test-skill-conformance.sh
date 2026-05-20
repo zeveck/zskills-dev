@@ -1992,12 +1992,18 @@ fi
 # (e.g., `.env`, `.DS_Store`, `.swp`) remain rejected.
 
 # Issue #185 + #186 — propagate-via-prose discipline rules. Both
-# CLAUDE_TEMPLATE.md (rendered into consumers' .claude/zskills-managed-rules.md
-# via /update-zskills Step B) and zskills' own root CLAUDE.md must contain
-# the load-bearing literals from each rule. Drift here means the rule
-# silently disappears from one surface or the other; lock both.
+# CLAUDE_TEMPLATE.md (the source) and .claude/rules/zskills/managed.md
+# (rendered from the template via /update-zskills Step B; auto-loaded
+# from .claude/rules/ at session start) must contain the load-bearing
+# literals from each rule. Drift here means the rule silently
+# disappears from one surface or the other; lock both. Prior to #432
+# this also scanned root CLAUDE.md, but post-#432 these shared rules
+# live exclusively in CLAUDE_TEMPLATE.md → managed.md; root CLAUDE.md
+# now holds only project-specific Architecture + zskills-author-only
+# rules. The render-equivalence between template and managed.md is
+# locked by tests/test-managed-md-up-to-date.sh.
 echo "=== Propagation-discipline prose rules (issues #185, #186) ==="
-for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/CLAUDE.md"; do
+for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/.claude/rules/zskills/managed.md"; do
   rel="${prose_file#$REPO_ROOT/}"
   if grep -qF 'Memory anchors are agent-local notes' "$prose_file"; then
     pass "[propagation-prose] $rel contains memory-anchor rule literal (#186)"

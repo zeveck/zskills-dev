@@ -1,5 +1,7 @@
 # zskills -- Agent Reference
 
+> Shared agent rules (Subagent Dispatch, Worktree Rules, Git Rules, Playwright, etc.) auto-load from `.claude/rules/zskills/managed.md`, rendered from `CLAUDE_TEMPLATE.md` via `/update-zskills --rerender`. This file holds project-specific Architecture plus zskills-author-only rules (Tracking markers, Skill versioning, Verifier-cannot-run rule). When editing shared rules, edit `CLAUDE_TEMPLATE.md` and re-run `/update-zskills --rerender` to refresh `managed.md`; the `tests/test-managed-md-up-to-date.sh` conformance gate keeps the two in sync.
+
 ## Architecture
 
 Skill distribution repo and presentation site for Z Skills.
@@ -79,142 +81,6 @@ When you save a memory anchor for a process failure, ask: does this need to prop
 
 **Optimize for correctness, not speed.** Follow instructions exactly, including every intermediate verification step. Never skip verification to "save time" -- skipped steps mean the user has to re-verify, which saves nothing. Never stub methods, return bogus values, or simplify implementations to get something working faster. Never reframe the task to make it easier. Review agents will find shortcuts, so cutting corners gains nothing. When the user says "after each step, verify" -- verify after each step, not once at the end.
 
-## Subagent Dispatch
-
-**NEVER dispatch agents on Haiku.** Haiku produces over-literal pattern matches and misses framing -- it greps for an exact string, doesn't find it, and concludes "no bug" when the actual problem is the absence of a guardrail. It is consistently wrong on judgment-class tasks. We do not use Haiku anywhere, period.
-
-When using the Agent tool:
-
-- **Default: omit the `model` parameter** so the subagent inherits the parent's model (typically Opus). This is the safe default.
-- **`subagent_type: "Explore"` pins its own model frontmatter to Haiku 4.5 in this environment.** Do NOT use `Explore` without explicitly passing `model: "opus"` (or whichever model the parent is currently using). Prefer `subagent_type: "general-purpose"` -- it inherits the parent model with no override needed.
-- Treat any subagent type as Haiku-by-default until you have read its agent definition and confirmed otherwise. When in doubt, pass `model: "opus"` explicitly, or use `general-purpose`.
-- **Sonnet** is acceptable only for rare simple+mechanical work (bulk renames, find-replace, format conversion). Never for analysis, review, verification, or judgment.
-
-## Cron-fired prompts
-
-**Cron fires arrive as plain Human turns between your turns — recognize and execute inline, do not balk.** Per Claude Code's [scheduled-tasks docs](https://code.claude.com/docs/en/scheduled-tasks), a `CronCreate`-registered prompt "fires between your turns" into the active session — no fresh-session spawn, no slash-runtime auto-dispatch on leading `/`, no `<command-name>` envelope. The text appears as a synthetic user turn, e.g., `Run /fix-issues 2 auto dashboard every 30m now`.
-
-**Treat any user-shaped turn whose entire content starts with `Run /<skill-name> ` as a cron fire**, not as a user instruction to manually dispatch. Read `.claude/skills/<skill-name>/SKILL.md` via the Read tool (always available regardless of session-load state) and execute its procedure inline with `$ARGUMENTS` set to the substring after `Run /<skill-name> `. Do NOT reach for the Skill tool — every recurring-skill we ship (`/fix-issues`, `/do`, `/qe-audit`, `/run-plan`) sets `disable-model-invocation: true` and Skill-tool dispatch is blocked by design (see [[feedback_skill_invocation_flags]]). Do NOT ask the user "what would you like me to do?" — `Run /<skill> ...` IS the instruction. Do NOT narrate "this looks like a manual instruction" — it's not; just execute.
-
-**This applies equally pre-/clear and post-/clear.** A user typing `/fix-issues N every ...` once loads the skill body that turn, registers the cron, and runs the first fire with skill in context. After `/clear` the skill body is gone but the cron keeps firing — that's exactly when this rule matters, because CLAUDE.md is always loaded.
-
-**Never `CronDelete` on the strength of a confused fire.** If you genuinely cannot recognize what the cron wants, report `Cron fired with prompt <text>; not sure how to handle. Leaving the schedule untouched.` and stop. Past failure 2026-05-18: agent killed a user's 50+-successful-run /fix-issues cron based on a `disable-model-invocation` misread; the cron was firing correctly the whole time. The right move when stuck is to surface and pause, not to assume the cron is broken.
-
-Empirical anchor for the Skill-tool-refusal fallback: Anthropic [issue #26251](https://github.com/anthropics/claude-code/issues/26251) documents Claude organically reading SKILL.md and executing inline when a `disable-model-invocation: true` skill is invoked via a typed slash command. This rule codifies that natural fallback so every recipient agent — including post-`/clear` ones with the originating skill body out of context — handles cron-fired `Run /<skill>` turns the same way.
-
-## Playwright CLI (Browser Automation)
-
-This environment uses `playwright-cli` for browser automation. Run `playwright-cli --help` for available commands.
-
-### Screenshots
-
-Use `playwright-cli screenshot` without `--filename` so files save to the configured output directory (`.playwright/output/`). Then rename the file to something descriptive. Using `--filename` bypasses the output directory and saves to the working directory instead.
-
-### Manual Testing Philosophy
-
-When told to "test manually", "test in the browser", or "verify with playwright-cli", use **real mouse/keyboard events** (`click`, `mousemove`, `mousedown`, `mouseup`, `type`, `press`, `drag`) -- never `page.evaluate()` or `eval` to call JS APIs that simulate user actions.
-
-- **Real events only:** Use real mouse/keyboard interactions for all user-facing operations.
-- **`eval`/JS is only for setup and assertions:** Auth bypass, reading state for verification, querying DOM attributes. Never for simulating clicks, drags, or keypresses.
-
-## Worktree Rules
-
-Worktrees (`isolation: "worktree"`) exist to keep agent work **isolated and reviewable**. Respect that isolation:
-
-- **NEVER apply worktree changes to main without explicit user approval.** Do not `git apply`, `git merge`, copy files, or otherwise move worktree changes into the main working directory unless the user says to. This is the whole point of using worktrees.
-- **NEVER remove worktrees that contain changes.** The user may want to review, cherry-pick, or discard them individually. Only clean up worktrees the user has approved or explicitly told you to remove.
-- **Verify EACH worktree before removing.** Never batch-remove worktrees without checking each one. The fastest check: does `<worktree>/.landed` exist with `status: full`? If yes, it's safe -- all commits are on main and logs were extracted. If no `.landed` marker: verify manually with (1) `git log main..<branch>`, (2) `git status` in the worktree, (3) is it a long-running branch? Named/long-running worktrees are NOT sprint artifacts -- do not remove them. Present results and let the user approve.
-- **ALWAYS write a `.landed` marker when worktree work is cherry-picked to main.** Without this marker, worktrees pile up because cleanup tools can't tell which are safe to remove. Write it immediately after successful cherry-pick:
-  ```bash
-  cat > "<worktree-path>/.landed" <<LANDED
-  status: full
-  date: $(TZ=America/New_York date -Iseconds)
-  source: <skill-name>
-  commits: <list of cherry-picked hashes>
-  LANDED
-  ```
-  If only some commits were cherry-picked (others skipped due to conflicts), use `status: partial`. If you used a worktree and finished without landing, still write a marker with `status: not-landed` so cleanup knows the agent is done.
-- **After agents finish:** present a summary of what each worktree changed, then **ask** which ones the user wants merged. Let the user drive.
-- **Keep worktree changes separate from main.** The main working directory may have its own uncommitted changes. Mixing agent patches in without asking makes clean commits harder and defeats the isolation benefit.
-
-## Git Rules
-
-**Do NOT commit or push unless explicitly told to.** Permission to commit or push applies to the scope in which it was given -- a single task, a skill invocation, or a specific set of changes. It does not carry over to future tasks. "Commit this" means commit that thing. "Commit freely" during a `/run-plan` invocation means within that run. Only an explicit, unprompted, standalone statement like "from now on, commit without asking" grants ongoing permission -- and even that only lasts for the session. Never `git push` without the user explicitly saying "push", "push it", or similar.
-
-**NEVER revert, discard, or "clean up" changes you didn't make.** If you see uncommitted changes from other agents or sessions, leave them alone. Do not run `git checkout -- <file>`, `git restore`, or any other command that discards working tree changes unless the user explicitly asks you to. Unrelated changes in the working tree are not yours to touch -- ask the user what they want to do with them.
-
-**Protect untracked files before git operations.** Before `git stash`, `git cherry-pick`, `git merge`, or any operation that modifies the working tree: (1) run `git status -s | grep '^??'` to inventory untracked files, (2) if any exist, use `git stash -u` (not `git stash`) or save them to a temp location first. Untracked files are not in git and cannot be recovered if lost.
-
-**Never use `git checkout <commit> -- <file>` for investigation.** To view old file versions, use `git show <commit>:<file>` or `git diff <commit1> <commit2> -- <file>` -- these are read-only and don't modify the working tree. `git checkout <commit> -- <file>` silently overwrites working tree AND stages the change, which easily gets swept into the next commit.
-
-**Never use `--no-verify` to bypass pre-commit hooks.** Hooks exist for safety -- fix the hook failure, don't bypass it.
-
-**`--ours` and `--theirs` are inverted during rebase vs merge.** In a merge, `--ours` = the current branch; `--theirs` = the branch being merged in. In a **rebase**, the perspective flips because the rebase starts by checking out the upstream and replaying your commits on top: `--ours` = the branch being rebased ONTO (typically `main`); `--theirs` = the commits being replayed (your work). To preserve **your** changes in a rebase conflict, use `--theirs` (or `-X theirs` as a strategy option for the whole rebase). Past failure: PR #310 chunked-finish-auto landing rebase used `git checkout --ours` thinking "ours = our work," silently took main's version of `/fix-issues` and `/update-zskills` conflicts, dropping a full phase of work; caught only by post-rebase `grep AUTO_FLAG` showing 0 hits. Recovery via `git reset --keep <pre-rebase-SHA>` + `git rebase -X theirs origin/main` was clean (no remote was pushed yet).
-
-**Never call `gh pr create` or `gh pr merge --auto` directly when landing a PR.** When you have a feature branch ready to ship, dispatch `/land-pr` via the Skill tool (with `--body-file` and `--result-file`), or use one of its 5 callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, `/quickfix`) which dispatch `/land-pr` for you with proper rebase, PR creation, CI monitoring (`pr-monitor.sh`), fix-cycle on failure, and auto-merge handling. Direct `gh pr merge --auto` followed by an immediate `gh pr view --json mergeStateStatus` query reports a snapshot state (typically `BLOCKED`) that doesn't reflect resting state — agents who walk away after that snapshot rely on luck. The 5 caller skills are conformance-locked (PR #166 tripwires); follow the same discipline for one-off orchestrator-direct PR landings by dispatching `/land-pr` yourself. (`/land-pr` SKILL.md says "not designed for direct user invocation" — that's about interactive human slash-command typing, not orchestrator agents using the Skill tool. Don't conflate.)
-
-**Skill loops with per-iteration `requires.X.<id>` write + `rm` cleanup are serial-by-design — don't parallelize.** Parallel dispatch leaves N sibling markers co-present in the pipeline subdir, and the hook blocks any subsequent push or commit that runs into them. Before parallelizing N downstream dispatches, grep the calling skill's body for `requires\.\S+\.\$` and `rm.*requires` — if both exist, respect the serial loop. Past failure: parallel-dispatched 5 `/land-pr`s from one `/fix-issues` sprint left 2 PRs stuck mid-flight needing manual recovery.
-
-### Constructing commits -- feature-complete, not session-based
-
-A commit must include **all files the feature needs** and **no unrelated files**. Do NOT rely on memory of "what I changed this session" -- context compaction creates artificial session boundaries that split work on a single feature across multiple contexts.
-
-**Mandatory process before staging:**
-
-1. `git status -s` -- see ALL uncommitted changes
-2. For every changed/untracked file, decide: related to this commit or not?
-3. **Trace dependencies**: for every file being committed, check its imports. If it imports an uncommitted file, that file must be included. Recurse.
-4. **Search broadly**: `git status -s | grep -i <keyword>` for the feature name. Check tests, plans, styles, examples -- not just `src/`.
-5. Verify: `git diff --cached --stat` before committing. Review the list.
-
-**Common mistakes to avoid:**
-- Committing `A.js` which imports `B.js` without committing `B.js`
-- Committing a module but not its tests, styles, or config changes
-- Missing files that were added in a prior compacted session (they show as untracked `??`, easy to overlook)
-- Including unrelated changes that happened to be in the working tree
-- Staging/unstaging shuffles (`git reset`, `git stash`) to separate changes -- these risk losing work. **If a file has a mix of related and unrelated changes, warn the user and ask what to do** -- do not attempt to split it yourself
-
-**Enumerate before guessing.** Before building test models, constructing
-URLs, or creating files from scratch, check what already exists: `ls` the
-directory, `grep` for the term, read the relevant file. Agents consistently
-skip this step and guess instead of looking.
-
-**Read before claiming.** Do not describe, comment on, or plan around a
-file, function, test, skill, env var, or harness behavior you have not
-just read. "Let CI tell us" and "I'll find out when it breaks" are not
-paths forward -- they are guesses with a deadline. Specifically:
-
-- Before commenting on what a test asserts or a function does -- open
-  the file and quote the relevant lines.
-- Before recommending a workflow that chains skills (`/X then /Y`) --
-  read each skill's `SKILL.md`; do not infer behavior from the name.
-- Before changing a script, config, or invariant -- grep for tests that
-  lock it (`tests/test-*.sh`, fixtures, conformance lists) and read
-  the assertions you'd be invalidating.
-- Before relying on an env var, config field, or harness affordance --
-  confirm it's documented for *your* call context (Bash tool vs. hook
-  subprocess vs. subagent), not an adjacent one. Past failure: assumed
-  `CLAUDE_PROJECT_DIR` was set in Bash tool subshells; Anthropic only
-  documents it for hook subprocesses.
-- Before asserting falsifiable state ("pre-existing on main," "X is
-  unused," "passes elsewhere") -- run the check that would falsify it
-  and cite the command.
-
-If the verifying read is too expensive to do now, say so and stop -- do
-not substitute a guess and let downstream failure do the verification.
-The only research you can skip is what you just verified in this turn.
-
-## Migration scripts
-
-**Multi-step state-mutating scripts must write the idempotency lock LAST.** If
-a script has steps A-N and an idempotency guard, the lock must be written ONLY
-after all of A-N succeed. Earlier failures must leave the consumer in a
-re-runnable state. Past failure: #394 — migrate-paths.sh wrote the manifest in
-the middle of the pipeline; an awk failure stranded consumers permanently
-because the idempotency guard fired on re-run while the actual migration was
-incomplete. The contract is now: config write FIRST (atomic-or-skipped), file
-moves SECOND (atomic per-file), manifest LAST (the lock claim).
-
 ## Tracking markers
 
 Tracking markers live in `.zskills/tracking/` and are scoped per pipeline
@@ -233,23 +99,6 @@ been broadened to protect every `.zskills/<subtree>/` (tracking, audit,
 issues, dev-server.{pid,log}) — not just `.zskills/tracking/` — so the
 ZSKILLS_PATH_CONFIG migration's audit + issues subtrees are equally
 guarded against accidental recursive deletion.
-
-## Python is required
-
-zskills depends on Python 3 for JSON round-tripping in hooks and helper scripts where bash regex would be brittle (notably `hooks/inject-bash-timeout.sh` — Layer 0 of the verifier-cannot-run defense). Per project convention there is **no jq** — Python's stdlib `json` is the supported parser.
-
-The interpreter is resolved via this precedence (in `hooks/inject-bash-timeout.sh` and any script that adopts the same idiom):
-
-```
-PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
-[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
-```
-
-- Default is `python3` (POSIX-standard zskills target).
-- Falls back to `python` for Windows / distros where only `python` exists (pointing at Python 3).
-- `ZSKILLS_PYTHON` overrides both — set it explicitly when both `python3` and `python` exist but you want a specific interpreter (e.g. a venv).
-
-Python 2 is unsupported. Scripts may assume Python 3 stdlib without a version check.
 
 ## Skill versioning
 
