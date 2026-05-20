@@ -103,6 +103,18 @@ expect_allow "git checkout -b feat/foo"         "git checkout -b feat/foo"
 # 3. git restore file
 expect_deny "git restore file" "git restore file.js"
 
+# 3a. git switch with destructive flags (modern analog of `git checkout --`).
+# #478: discard-changes / -f / --force destroy unstaged work; plain switch
+# and `-c` (create-new-branch) remain allowed because git refuses on dirty
+# tree without the opt-in flag.
+expect_deny  "git switch --discard-changes"       "git switch --discard-changes my-branch"
+expect_deny  "git switch -f"                      "git switch -f main"
+expect_deny  "git switch --force"                 "git switch --force feat/x"
+expect_allow "git switch <branch> (plain)"        "git switch main"
+expect_allow "git switch -c new-branch"           "git switch -c new-branch"
+# Defense-in-depth: wrapper-aware match via is_git_subcommand_in_wrappers
+expect_deny  "WB-switch: bash -c 'git switch -f'" "bash -c 'git switch -f main'"
+
 # 4. git clean -fd
 expect_deny "git clean -fd" "git clean -fd"
 

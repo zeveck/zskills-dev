@@ -411,6 +411,19 @@ if is_git_subcommand_in_wrappers "$COMMAND" restore; then
   block_with_reason "BLOCKED: git restore discards uncommitted changes permanently. If you need to undo your own change, use git diff to see what changed and edit it back manually."
 fi
 
+# git switch with destructive flags — modern analog of `git checkout --`.
+# `git switch --discard-changes` and `git switch -f` / `git switch --force`
+# all destroy unstaged working-tree changes (per `git help switch`). Plain
+# `git switch <branch>` and `git switch -c new-branch` are allowed; git
+# itself refuses on dirty trees without the destructive opt-in flag.
+# `git rebase` is intentionally NOT blocked here — reflog + `--abort` make
+# rebases recoverable, and a blanket block would false-positive on the
+# `-X theirs` rescue patterns CLAUDE.md teaches. Wrapper-recursion via
+# is_git_subcommand_in_wrappers (#478, completes #426).
+if is_git_subcommand_in_wrappers "$COMMAND" switch && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])(--discard-changes|--force|-f)([[:space:]]|$) ]]; then
+  block_with_reason "BLOCKED: git switch --discard-changes / -f / --force discards uncommitted changes permanently (modern analog of git checkout --). If you need to switch branches with dirty state, commit or stash first; if you genuinely want to discard, ask the user."
+fi
+
 # git clean -f (permanent file deletion)
 # Wrapper-recursion via is_git_subcommand_in_wrappers (#426).
 if is_git_subcommand_in_wrappers "$COMMAND" clean && [[ "$GIT_SUB_REST" =~ (^|[[:space:]])-[a-zA-Z]*f[a-zA-Z]*([[:space:]]|$) ]]; then
