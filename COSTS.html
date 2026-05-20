@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z Skills — Cost Report</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #bc8cff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --pink: #f778ba;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    scroll-behavior: smooth;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9em;
+  }
+  code {
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  pre code { background: none; padding: 0; }
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(13,17,23,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 24px;
+    display: flex; gap: 20px; align-items: center;
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  nav a { color: var(--text-dim); white-space: nowrap; }
+  nav a:hover { color: var(--accent); text-decoration: none; }
+  nav .logo { color: var(--accent); font-weight: 700; font-size: 1.1em; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 80px 24px 60px; }
+  section { margin-bottom: 64px; }
+  h2 {
+    font-size: 1.8em;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.25em; margin: 24px 0 8px; color: var(--accent); }
+  h4 { font-size: 1em; margin: 16px 0 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  p { margin: 12px 0; }
+  .hero { text-align: center; padding: 80px 0 40px; }
+  .hero h1 {
+    font-size: 2.6em;
+    line-height: 1.15;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 24px;
+  }
+  .hero p {
+    font-size: 1.05em;
+    color: var(--text-dim);
+    max-width: 780px;
+    margin: 0 auto 16px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin: 24px 0;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+  }
+  .stat .val { font-size: 1.9em; font-weight: 700; color: var(--accent); line-height: 1.05; }
+  .stat .label { font-size: 0.82em; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .sub { font-size: 0.78em; color: var(--text-dim); margin-top: 6px; }
+  .stat.green .val { color: var(--green); }
+  .stat.purple .val { color: var(--accent2); }
+  .stat.orange .val { color: var(--orange); }
+  .stat.pink .val { color: var(--pink); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9em;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--text);
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+  tfoot td { font-weight: 600; border-top: 2px solid var(--border); }
+  .caveat {
+    background: rgba(210, 153, 34, 0.08);
+    border-left: 3px solid var(--orange);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    color: var(--text-dim);
+    font-size: 0.92em;
+  }
+  .caveat strong { color: var(--orange); }
+  .fade-in { opacity: 0; transform: translateY(8px); transition: opacity 0.5s, transform 0.5s; }
+  .fade-in.visible { opacity: 1; transform: translateY(0); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">Z Skills</span>
+  <a href="PRESENTATION.html">&larr; Main</a>
+  <a href="TECHNICAL.html">Technical</a>
+  <a href="#topline">Topline</a>
+  <a href="#by-model">By model</a>
+  <a href="#by-category">By category</a>
+  <a href="#cache">Cache</a>
+  <a href="#perpr">Per merged PR</a>
+  <a href="#method">Methodology</a>
+  <a href="https://github.com/zeveck/zskills" style="margin-left:auto;">GitHub &rarr;</a>
+</nav>
+
+<div class="container">
+
+<section class="hero">
+  <h1>Z Skills &mdash; Cost Report</h1>
+  <p>What it actually cost to build Z Skills, computed from Claude Code session JSONL transcripts at published Anthropic rates. Every figure traceable to a token total and a rate.</p>
+  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-05-20</strong>. Codebase: <a href="TECHNICAL.html">see Technical report</a>.</p>
+</section>
+
+<section id="topline" class="fade-in">
+  <h2>Topline</h2>
+
+  <div class="caveat"><strong>Read this before the headline.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed around the Opus 4.7 release on 2026-04-16); the first ~23 days of development (2026-03-26 &rarr; 2026-04-17) had no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (data residency assumed default-global at 1.0&times; multiplier, no Fast mode, no batch discount). "Per-PR" figures use total spend &divide; merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
+
+  <div class="stat-grid">
+    <div class="stat orange"><div class="val">$19,353</div><div class="label">Total Opus-rate spend</div><div class="sub">From ~105,250 logged assistant turns. Partial coverage &mdash; see caveat above.</div></div>
+    <div class="stat"><div class="val">99,439</div><div class="label">Opus 4.7 turns</div><div class="sub">Subtotal cost: $19,298</div></div>
+    <div class="stat purple"><div class="val">5,811</div><div class="label">Haiku 4.5 subagent turns</div><div class="sub">Subtotal cost: $55</div></div>
+    <div class="stat green"><div class="val">~$60.67</div><div class="label">Avg. spend per merged PR</div><div class="sub">$19,353 &divide; 319 merged PRs; includes exploration &amp; dead-ends</div></div>
+  </div>
+
+  <p style="color: var(--text-dim); font-size: 0.92em;">Sessions in scope: 80 top-level Claude Code REPL sessions plus 1,434 isolated subagent dispatches (verifiers, implementers, reviewers), across 8 project working directories (main repo + 7 ephemeral worktree-spawned project dirs).</p>
+</section>
+
+<section id="by-model" class="fade-in">
+  <h2>By Model</h2>
+  <p>The Opus / Haiku 4.5+ rates published at <a href="https://platform.claude.com/docs/en/docs/about-claude/pricing">platform.claude.com/docs/en/docs/about-claude/pricing</a> (fetched 2026-05-20):</p>
+
+  <table>
+    <thead>
+      <tr><th>Model</th><th class="num">Base input</th><th class="num">5m cache write</th><th class="num">1h cache write</th><th class="num">Cache read</th><th class="num">Output</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>claude-opus-4-7</code></td><td class="num">$5 / MTok</td><td class="num">$6.25 / MTok</td><td class="num">$10 / MTok</td><td class="num">$0.50 / MTok</td><td class="num">$25 / MTok</td></tr>
+      <tr><td><code>claude-haiku-4-5</code></td><td class="num">$1 / MTok</td><td class="num">$1.25 / MTok</td><td class="num">$2 / MTok</td><td class="num">$0.10 / MTok</td><td class="num">$5 / MTok</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Opus 4.7 &mdash; $19,298</h3>
+  <table>
+    <thead>
+      <tr><th>Category</th><th class="num">Tokens</th><th class="num">Rate / MTok</th><th class="num">Cost</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Input (uncached)</td><td class="num">1,583,567</td><td class="num">$5.00</td><td class="num">$7.92</td></tr>
+      <tr><td>Output</td><td class="num">80,846,543</td><td class="num">$25.00</td><td class="num">$2,021.16</td></tr>
+      <tr><td>5-min cache write</td><td class="num">358,459,560</td><td class="num">$6.25</td><td class="num">$2,240.37</td></tr>
+      <tr><td>1-hour cache write</td><td class="num">569,473,020</td><td class="num">$10.00</td><td class="num">$5,694.73</td></tr>
+      <tr><td>Cache read</td><td class="num">18,667,531,990</td><td class="num">$0.50</td><td class="num">$9,333.77</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Opus subtotal</strong></td><td class="num">19.6 B input-side + 80.8 M output</td><td class="num">&mdash;</td><td class="num"><strong>$19,297.95</strong></td></tr>
+    </tfoot>
+  </table>
+
+  <h3>Haiku 4.5 &mdash; $55</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Haiku 4.5 turns are subagent dispatches the Z Skills orchestrators send out for cheaper read-only investigation (e.g., the <code>Explore</code> agent type ships pinned to Haiku 4.5). 5.8k turns across the same project dirs.</p>
+  <table>
+    <thead>
+      <tr><th>Category</th><th class="num">Tokens</th><th class="num">Rate / MTok</th><th class="num">Cost</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Input (uncached)</td><td class="num">483,039</td><td class="num">$1.00</td><td class="num">$0.48</td></tr>
+      <tr><td>Output</td><td class="num">932,946</td><td class="num">$5.00</td><td class="num">$4.66</td></tr>
+      <tr><td>5-min cache write</td><td class="num">22,827,115</td><td class="num">$1.25</td><td class="num">$28.53</td></tr>
+      <tr><td>1-hour cache write</td><td class="num">0</td><td class="num">$2.00</td><td class="num">$0.00</td></tr>
+      <tr><td>Cache read</td><td class="num">208,668,510</td><td class="num">$0.10</td><td class="num">$20.87</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Haiku subtotal</strong></td><td class="num">232 M input-side + 0.9 M output</td><td class="num">&mdash;</td><td class="num"><strong>$54.55</strong></td></tr>
+    </tfoot>
+  </table>
+
+  <p style="text-align: right; font-size: 1.05em; margin-top: 8px;"><strong>Grand total: $19,352.50</strong> ($19,353 rounded)</p>
+</section>
+
+<section id="by-category" class="fade-in">
+  <h2>By Category (Both Models Combined)</h2>
+  <table>
+    <thead>
+      <tr><th>Category</th><th class="num">Total tokens</th><th class="num">Total cost</th><th class="num">Share of cost</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Input (uncached)</td><td class="num">2,066,606</td><td class="num">$8.40</td><td class="num">0.04%</td></tr>
+      <tr><td>Output</td><td class="num">81,779,489</td><td class="num">$2,025.82</td><td class="num">10.5%</td></tr>
+      <tr><td>5-min cache write</td><td class="num">381,286,675</td><td class="num">$2,268.90</td><td class="num">11.7%</td></tr>
+      <tr><td>1-hour cache write</td><td class="num">569,473,020</td><td class="num">$5,694.73</td><td class="num">29.4%</td></tr>
+      <tr><td>Cache read</td><td class="num">18,876,200,500</td><td class="num">$9,354.64</td><td class="num">48.3%</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Total</strong></td><td class="num">19.9 B input-side + 81.8 M output</td><td class="num"><strong>$19,352.49</strong></td><td class="num">100%</td></tr>
+    </tfoot>
+  </table>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Cache reads alone are 48% of total spend &mdash; reflecting Z Skills' heavy use of pre-cached CLAUDE.md, SKILL.md bodies, and session context. Each subagent dispatch reads the cache rather than re-paying full input rates.</p>
+</section>
+
+<section id="cache" class="fade-in">
+  <h2>Cache Effectiveness</h2>
+  <div class="stat-grid">
+    <div class="stat green"><div class="val">95.2%</div><div class="label">Cache-read share of input</div><div class="sub">18.88 B cache reads / 19.83 B input-side tokens</div></div>
+    <div class="stat"><div class="val">~9,134&times;</div><div class="label">Cache leverage</div><div class="sub">cache_reads &divide; uncached_input</div></div>
+    <div class="stat purple"><div class="val">~$84,191</div><div class="label">Cache savings (counterfactual)</div><div class="sub">vs. paying full input rates on every read</div></div>
+  </div>
+
+  <h3>Counterfactual math</h3>
+  <table>
+    <thead>
+      <tr><th>Component</th><th class="num">If billed at uncached input rate</th><th class="num">Actually billed at cache-read rate</th><th class="num">Savings</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Opus cache reads (18.67 B @ $5 vs $0.50)</td>
+        <td class="num">$93,337.66</td>
+        <td class="num">$9,333.77</td>
+        <td class="num">$84,003.89</td>
+      </tr>
+      <tr>
+        <td>Haiku cache reads (208.7 M @ $1 vs $0.10)</td>
+        <td class="num">$208.67</td>
+        <td class="num">$20.87</td>
+        <td class="num">$187.80</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Total</strong></td><td class="num">$93,546</td><td class="num">$9,355</td><td class="num">$84,192</td></tr>
+    </tfoot>
+  </table>
+  <p style="color: var(--text-dim); font-size: 0.92em;">The "$84k savings" figure is the gap between what cache reads actually cost ($9,355) and what they would have cost if every cache read had been billed as fresh uncached input ($93,546). Real billing only ever paid the cached rate &mdash; this is an upper bound on what caching is worth, not a refund.</p>
+
+  <h3>Cache-write tier split</h3>
+  <table>
+    <thead>
+      <tr><th>Tier</th><th class="num">Tokens</th><th class="num">Share of cache writes</th><th class="num">Cost</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>5-minute cache writes</td><td class="num">381,286,675</td><td class="num">40.1%</td><td class="num">$2,268.90</td></tr>
+      <tr><td>1-hour cache writes</td><td class="num">569,473,020</td><td class="num">59.9%</td><td class="num">$5,694.73</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Total writes</strong></td><td class="num">950,759,695</td><td class="num">100%</td><td class="num">$7,963.63</td></tr>
+    </tfoot>
+  </table>
+  <p style="color: var(--text-dim); font-size: 0.92em;">1-hour cache writes dominate 5-minute by ~1.5&times;, reflecting Z Skills' long-running pipelines (multi-hour plan executions, fix-issues sprints) where extending cache TTL beyond 5 minutes pays back.</p>
+</section>
+
+<section id="perpr" class="fade-in">
+  <h2>Per Merged PR</h2>
+  <div class="stat-grid">
+    <div class="stat"><div class="val">624</div><div class="label">Commits on main</div><div class="sub">since 2026-03-26 (~8 weeks)</div></div>
+    <div class="stat green"><div class="val">319</div><div class="label">Merged PRs</div><div class="sub">100% squash-merged (sampled and verified)</div></div>
+    <div class="stat orange"><div class="val">~$60.67</div><div class="label">$ per merged PR</div><div class="sub">$19,353 &divide; 319; includes exploration, dead-ends, unmerged work</div></div>
+  </div>
+
+  <p style="color: var(--text-dim); font-size: 0.92em;">The 305 non-PR commits on main split as 117 pre-PR-workflow (before PR #5 on 2026-04-13, when main was unprotected) plus 188 post-PR-workflow direct commits. The 188 break down as <strong>95 direct-commit-style</strong> (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or <code>/quickfix</code> non-PR paths, 50.5%), <strong>54 plan-phase</strong> commits from <code>/run-plan</code> cherry-pick mode (one commit per phase, not squashed, 28.7%), <strong>36 canary plan-execution chores</strong> (19.1%), and 3 infra/build commits (1.6%).</p>
+</section>
+
+<section id="method" class="fade-in">
+  <h2>Methodology</h2>
+
+  <h3>Rate source</h3>
+  <p>All rates fetched <strong>2026-05-20</strong> from Anthropic's published API pricing page (<a href="https://platform.claude.com/docs/en/docs/about-claude/pricing">platform.claude.com/docs/en/docs/about-claude/pricing</a>):</p>
+<pre><code>Claude Opus 4.7  → $5 input / $25 output / $6.25 5m-CW / $10 1h-CW / $0.50 CR per MTok
+Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR per MTok</code></pre>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Earlier model tiers (Opus 4.0 / 4.1, now deprecated) are priced at 3&times; these rates. Z Skills development used Opus 4.6 in the unlogged pre-2026-04-16 era and Opus 4.7 thereafter; both bill at the Opus 4.5+ tier above.</p>
+
+  <h3>Token totals</h3>
+  <p>Scanned 1,518 JSONL files across 8 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 7 <code>~/.claude/projects/-tmp-zskills-*/</code> ephemeral worktree-spawned dirs). For each assistant turn, extracted the <code>usage</code> object's per-model and per-cache-tier fields. <code>usage.cache_creation.ephemeral_5m_input_tokens</code> and <code>usage.cache_creation.ephemeral_1h_input_tokens</code> give the structured tier split; the flat <code>cache_creation_input_tokens</code> field sums to within ~12k tokens of the decomposed total (~0.001% drift, immaterial).</p>
+
+  <h3>Multipliers applied</h3>
+  <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
+    <li><strong>Data residency:</strong> 1.0&times; (default global routing assumed; not US-only).</li>
+    <li><strong>Fast mode:</strong> 1.0&times; (never used in this development).</li>
+    <li><strong>Batch API:</strong> 1.0&times; (interactive sessions, no batch discount).</li>
+    <li><strong>Extended thinking:</strong> not separately metered; <code>output_tokens</code> already captures any thinking-mode generation (no separate <code>thinking_tokens</code> field exists in <code>usage</code> across all 105,250 logged turns).</li>
+  </ul>
+
+  <h3>What this <em>doesn't</em> measure</h3>
+  <p style="color: var(--text-dim);">Pre-2026-04-18 development (~23 days, ~1/3 of project elapsed time) is unlogged. Wall-clock time, human review effort, Claude.ai chat sessions for architecture discussion outside Claude Code, and the pre-repo prototyping that fed the initial commit are all excluded. Real billing depends on contract, any volume discounts, and other terms; the numbers above are at published list prices.</p>
+
+  <h3>Verification</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">All figures here were independently audited by two automated agents reviewing the JSONL data, the rate source, and the arithmetic. Reproducibility scripts left at <code>/tmp/q1q2.py</code>, <code>/tmp/q2_totals.py</code>, <code>/tmp/q3.py</code> during the audit. Discrepancy vs. the original deck's $49,782 figure traced to deprecated-tier rates (Opus 4.0/4.1 at 3&times; current rates) being used in error.</p>
+</section>
+
+<section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>$19,353 of Claude Opus 4.7 + Haiku 4.5 &rarr; 26 skills, 624 commits / 319 merged PRs, 97 test scripts, and an audited body of evidence about what disciplined-agent engineering actually costs.</strong></p>
+  <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
+</section>
+
+</div>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
