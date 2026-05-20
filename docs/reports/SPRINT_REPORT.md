@@ -1100,3 +1100,22 @@ Pool: 1 open candidate considered (Ready ∩ open)
 - **#457** (`/quickfix` S, force-prefix bypass in `block-unsafe-generic.sh`)
 - **#460** (`/quickfix` S, session-init-only hook-load documentation gap)
 
+
+## Sprint — 2026-05-20 05:11 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Cron:** Run /fix-issues 2 auto dashboard every 30m | **Sprint ID:** sprint-20260520-084253-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|----|----|-------|-------------|-------------|
+| #457 | block-unsafe-generic.sh: `+main` force-prefix bypass | wt-fix-issue-457 | #465 | /quickfix S | 3604/3604 pass | PASS (full suite) | N/A (hook + test) |
+| #460 | block-bad-cron session-init-only doc gap | wt-fix-issue-460 | #466 | /quickfix S | 3601/3601 pass | PASS (full suite) | N/A (prose-only) |
+
+### Notable
+1. **Both /quickfix-tier — in-batch fix-agent dispatch** (vs prior productive sprint's /do pr per-issue path for M/S tier work). Lighter overall: 2 impl + 2 land-pr instead of 2 /do + 2 reviewer + 2 impl + 2 land-pr.
+2. **#460 surprise** — Phase 2 source-filter (#408) AND #459's PIPELINE_ID-sanitize work both touched the same surface (update-zskills SKILL.md). The #460 impl agent's version bump cleanly absorbed the recent #459-driven changes; no conflict.
+3. **Orchestrator script bug** — sprint /land-pr finalization initially blocked twice. First attempt: a bash var was `/tmp/zskills-fix-issues-sprint-${SPRINT_ID}` where SPRINT_ID already contains `sprint-` prefix → double-prefix path, `cd` silently failed without `|| exit`, downstream ran on main. Second attempt: had a leading `cd /workspaces/zskills` before the sprint-worktree cd; the block-unsafe-project.sh hook's `extract_cd_target` picks the FIRST `cd` to determine the operating worktree, so it saw main and blocked. Recovery: enter the bash invocation directly in the sprint worktree (no leading cd to main). Worth filing as a follow-up: skill prose currently sources sprint-Phase-5/6 with patterns that need explicit cwd discipline.
+
+### Open Ready queue after this sprint
+Empty.
+
