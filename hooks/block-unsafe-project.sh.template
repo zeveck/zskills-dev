@@ -1029,10 +1029,12 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
     esac
   done
   # (a) Explicit origin main/master (optionally prefixed with + for
-  # force-push or : for delete-refspec). Trailing class includes `'` and
-  # `"` so wrapper-unwrapped forms like `bash -c 'git push origin main'`
-  # → PUSH_ARGS containing trailing `main'` still match (#399).
-  if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(main|master)([[:space:]]|$|\"|\') ]]; then
+  # force-push or : for delete-refspec, and optionally fully-qualified as
+  # refs/heads/main). Trailing class includes `'` and `"` so
+  # wrapper-unwrapped forms like `bash -c 'git push origin main'` →
+  # PUSH_ARGS containing trailing `main'` still match (#399). The optional
+  # `refs/heads/` prefix closes the fully-qualified-ref bypass (#470).
+  if [[ "$PUSH_ARGS" =~ origin[[:space:]]+[+:]?(refs/heads/)?(main|master)([[:space:]]|$|\"|\') ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (b) Any <localref>:main or <localref>:master refspec — covers HEAD:main,
@@ -1042,7 +1044,11 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   # requires `main` immediately after `origin`). Match any token ending
   # in `:main` or `:master` (including the empty-local deletion form).
   # Trailing class also includes `'` for wrapper-unwrapped forms (#399).
-  if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:(main|master)([[:space:]]|$|\"|\') ]]; then
+  # `[+]?` allows the force-prefix `:+main` form (#470 — pre-fix
+  # `feat:+main` slipped this rule because `+` was not optional after `:`).
+  # `(refs/heads/)?` allows the fully-qualified form `feat:refs/heads/main`
+  # (#470).
+  if [[ "$PUSH_ARGS" =~ (^|[[:space:]])[^[:space:]]*:[+]?(refs/heads/)?(main|master)([[:space:]]|$|\"|\') ]]; then
     block_with_reason "BLOCKED: Cannot push to main (main_protected: true in .claude/zskills-config.json). Push a feature branch instead. To change: edit .claude/zskills-config.json"
   fi
   # (c) Naked push (no origin arg) while on main — based on PUSH_ARGS,
