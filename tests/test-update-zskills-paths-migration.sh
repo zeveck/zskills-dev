@@ -1096,6 +1096,134 @@ case_15_partial_failure_recovery() {
   fi
 }
 
+# ─── Case 16: compact-JSON config (#506) ──────────────────────────────────
+# A consumer wrote their .claude/zskills-config.json compact (one line),
+# e.g., `{"project_name":"test"}`. The no-output-block branch of
+# write_output_block previously hit "FAIL: cannot locate outer closing
+# brace" because its awk regex (`^[[:space:]]*\}[[:space:]]*$`) requires
+# `}` on its own line. Worse, the pre-#506 Step 2.5 (hook rerender) had
+# already copied .claude/hooks/block-unsafe-project.sh before Step 3
+# crashed — leaving the consumer in a partial state (hook updated, config
+# unchanged) that violated #394's no-partial-state invariant.
+#
+# Post-fix behavior:
+#   (a) compact JSON is transparently pretty-printed BEFORE Step 3
+#       so the awk regex matches `}` on its own line;
+#   (b) the migration proceeds normally and the consumer ends up with a
+#       valid 3-tuple output block.
+#
+# Defense-in-depth assertion (also covered by case 15 for malformed input):
+# truly-invalid JSON fails BEFORE any filesystem mutation — no hook copy,
+# no file moves, no manifest. Tested below by feeding `{"project_name":}`.
+case_16_compact_json() {
+  # ── 16a — compact JSON succeeds end-to-end ──
+  local D="$TEST_OUT/paths-migration-fixture-16a"
+  init_repo "$D"
+  mkdir -p "$D/.claude" "$D/plans" "$D/reports" "$D/var"
+  # Compact one-line JSON — the bug repro from issue #506.
+  printf '{"project_name":"test"}' > "$D/.claude/zskills-config.json"
+  echo "# test plan" > "$D/plans/COMPACT_PLAN.md"
+  echo "report body"  > "$D/reports/plan-compact.md"
+  echo "12345"        > "$D/var/dev.pid"
+
+  local out rc
+  out=$(run_migrate "$D" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass "case 16a: compact-JSON config migration completes (rc=0)"
+  else
+    fail "case 16a: compact-JSON config crashed migration" "rc=$rc out=$out"
+    return
+  fi
+
+  # Sub-assertion: config is now valid JSON with all 3 output keys.
+  if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$D/.claude/zskills-config.json" 2>/dev/null; then
+    pass "case 16a: post-migration config is valid JSON"
+  else
+    fail "case 16a: post-migration config invalid" \
+      "$(cat "$D/.claude/zskills-config.json")"
+  fi
+  local cfg_body
+  cfg_body=$(cat "$D/.claude/zskills-config.json")
+  if echo "$cfg_body" | grep -q '"plans_dir"' \
+     && echo "$cfg_body" | grep -q '"issues_dir"' \
+     && echo "$cfg_body" | grep -q '"reports_dir"' \
+     && echo "$cfg_body" | grep -q '"project_name"[[:space:]]*:[[:space:]]*"test"'; then
+    pass "case 16a: all output keys present + original project_name preserved"
+  else
+    fail "case 16a: config missing keys after compact-JSON migration" "$cfg_body"
+  fi
+
+  # Sub-assertion: files were moved (full migration ran post-normalize).
+  if [ -f "$D/docs/plans/COMPACT_PLAN.md" ] && [ -f "$D/.zskills/audit/plan-compact.md" ]; then
+    pass "case 16a: file moves completed after compact-JSON normalize"
+  else
+    fail "case 16a: file moves missing" \
+      "docs/plans/COMPACT_PLAN.md=$([ -f "$D/docs/plans/COMPACT_PLAN.md" ] && echo yes || echo no) .zskills/audit/plan-compact.md=$([ -f "$D/.zskills/audit/plan-compact.md" ] && echo yes || echo no)"
+  fi
+
+  # Sub-assertion: hook was rerendered (Step 3.5 ran post-config-write).
+  if [ -f "$D/.claude/hooks/block-unsafe-project.sh" ]; then
+    pass "case 16a: hook rerendered (Step 3.5 ran after successful Step 3)"
+  else
+    fail "case 16a: hook missing — Step 3.5 did not run" "$(ls "$D/.claude/hooks/" 2>&1)"
+  fi
+
+  # ── 16b — truly-invalid JSON fails BEFORE any mutation (#506 invariant) ──
+  local E="$TEST_OUT/paths-migration-fixture-16b"
+  init_repo "$E"
+  mkdir -p "$E/.claude/hooks" "$E/plans"
+  printf '{"project_name":}' > "$E/.claude/zskills-config.json"  # invalid JSON
+  echo "# test" > "$E/plans/BROKEN_PLAN.md"
+  local pre_cfg pre_hook_exists
+  pre_cfg=$(cat "$E/.claude/zskills-config.json")
+  pre_hook_exists=$([ -f "$E/.claude/hooks/block-unsafe-project.sh" ] && echo yes || echo no)
+
+  local out2 rc2
+  out2=$(run_migrate "$E" 2>&1); rc2=$?
+  if [ "$rc2" -ne 0 ]; then
+    pass "case 16b: invalid JSON aborts (rc=$rc2)"
+  else
+    fail "case 16b: invalid JSON should have aborted" "rc=$rc2 out=$out2"
+    return
+  fi
+
+  # Sub-assertion: config unchanged (no mutation).
+  local post_cfg
+  post_cfg=$(cat "$E/.claude/zskills-config.json")
+  if [ "$pre_cfg" = "$post_cfg" ]; then
+    pass "case 16b: config unchanged on invalid-JSON abort"
+  else
+    fail "case 16b: config mutated despite abort" \
+      "$(diff <(echo "$pre_cfg") <(echo "$post_cfg"))"
+  fi
+
+  # Sub-assertion: hook NOT created (Step 3.5 never ran — the critical
+  # #506 invariant: no orphaned partial state).
+  local post_hook_exists
+  post_hook_exists=$([ -f "$E/.claude/hooks/block-unsafe-project.sh" ] && echo yes || echo no)
+  if [ "$pre_hook_exists" = "$post_hook_exists" ]; then
+    pass "case 16b: hook state unchanged on abort (no partial-state violation)"
+  else
+    fail "case 16b: hook copy leaked despite Step 3 abort — #506 regression" \
+      "pre=$pre_hook_exists post=$post_hook_exists"
+  fi
+
+  # Sub-assertion: plan still in plans/ (no file moves on abort).
+  if [ -f "$E/plans/BROKEN_PLAN.md" ] && [ ! -f "$E/docs/plans/BROKEN_PLAN.md" ]; then
+    pass "case 16b: plan still in plans/ on abort (files not moved)"
+  else
+    fail "case 16b: plan moved despite abort" \
+      "plans/BROKEN_PLAN.md=$([ -f "$E/plans/BROKEN_PLAN.md" ] && echo yes || echo no) docs/plans/BROKEN_PLAN.md=$([ -f "$E/docs/plans/BROKEN_PLAN.md" ] && echo yes || echo no)"
+  fi
+
+  # Sub-assertion: no manifest written.
+  if [ ! -f "$E/.pre-paths-migration" ]; then
+    pass "case 16b: no manifest written on abort"
+  else
+    fail "case 16b: manifest written despite abort" "$(cat "$E/.pre-paths-migration")"
+  fi
+}
+
 # ─── Run ──────────────────────────────────────────────────────────────────
 echo "Running tests/test-update-zskills-paths-migration.sh"
 case_1_legacy_only
@@ -1113,6 +1241,7 @@ case_12_plain_plans_catchall
 case_13_cross_ref_rewrite_migration_doc_guard
 case_14_partial_reports_missing
 case_15_partial_failure_recovery
+case_16_compact_json
 
 echo
 echo "---"

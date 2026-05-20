@@ -12,13 +12,19 @@
 # Algorithm (Phase 5a, ZSKILLS_PATH_CONFIG.md; reordered for #394):
 #   1.  Detection — inventory existing artifacts; refuse if already migrated.
 #   2.  Resolve target dirs in memory only (no config write yet).
-#   2.5 Trigger --rerender BEFORE any moves so the broadened recursive-delete
-#       hook regex is in place protecting the migration's own filesystem
-#       actions.
 #   3.  Write config keys output.plans_dir + output.issues_dir +
 #       output.reports_dir (BOTH-OR-ALL-OR-NEITHER 3-tuple atomic write).
 #       Runs BEFORE file moves so an awk failure aborts cleanly with NO
 #       files touched and NO manifest written (re-runnable state).
+#       Compact-JSON input (e.g., `{"project_name":"test"}` on one line) is
+#       transparently pretty-printed before the awk pass so the no-output-
+#       block branch can locate `}` on its own line (#506).
+#   3.5 Trigger --rerender AFTER config write succeeds so a mid-migration
+#       agent invoking `rm -rf .zskills/audit` for cleanup is BLOCKED by
+#       the broadened recursive-delete hook regex. Moved here (was 2.5
+#       per #506) so a Step-3 awk failure leaves no partial state — the
+#       hook copy is a filesystem mutation and per the #394 invariant must
+#       run AFTER the config write (atomic-or-skipped).
 #   4.  Move forensic + narrative reports → .zskills/audit/.
 #   5.  Move plans → $TARGET_PLANS (default docs/plans).
 #   5b. Move plans/PLAN_INDEX.md → .zskills/audit/.
@@ -422,58 +428,15 @@ else
   TARGET_REPORTS="docs/reports"
 fi
 
-# ─── Step 2.5 — Trigger --rerender BEFORE any file moves ───────────────────
-# Hook strengthens BEFORE filesystem changes, so a mid-migration agent
-# invoking `rm -rf .zskills/audit` for cleanup is BLOCKED by the broadened
-# hook. Re-render only mutates .claude/rules/zskills/managed.md AND
-# .claude/hooks/block-unsafe-project.sh; it does NOT depend on
-# output.plans_dir / output.issues_dir keys (CI guard in Phase 5a.4 Case 1
-# enforces this invariant).
-#
-# Locate $PORTABLE: prefer $PORTABLE env var, else fall back to common
-# tiers (mirror Step 0 of update-zskills/SKILL.md, but a minimal subset
-# sufficient for hook re-copy). Source-of-truth for the broadened hook
-# regex is hooks/block-unsafe-project.sh.template.
-PORTABLE="${PORTABLE:-}"
-if [ -z "$PORTABLE" ]; then
-  for cand in zskills-portable zskills /tmp/zskills "$PWD/../zskills" "$PWD/../../zskills" \
-              "$HOME/src/zskills" "$HOME/code/zskills" "$HOME/projects/zskills" "$HOME/zskills"; do
-    if [ -d "$cand" ] && [ -f "$cand/CLAUDE_TEMPLATE.md" ] && [ -d "$cand/hooks" ] \
-       && [ -d "$cand/scripts" ] && [ -d "$cand/skills" ]; then
-      PORTABLE="$cand"
-      break
-    fi
-  done
-fi
-if [ -z "$PORTABLE" ]; then
-  echo "FAIL: cannot locate zskills source for --rerender step 2.5 (set \$PORTABLE)" >&2
-  exit 1
-fi
-
-# Re-copy block-unsafe-project.sh from the portable source. The template
-# carries the broadened recursive-delete fence (matching `rm -r ... .zskills`)
-# that protects subsequent .zskills/audit + .zskills/issues filesystem moves.
-mkdir -p .claude/hooks
-HOOK_SRC="$PORTABLE/hooks/block-unsafe-project.sh.template"
-HOOK_DST=".claude/hooks/block-unsafe-project.sh"
-if [ -f "$HOOK_SRC" ]; then
-  if cp "$HOOK_SRC" "$HOOK_DST"; then
-    chmod +x "$HOOK_DST"
-    echo "rerender: copied block-unsafe-project.sh (broadened recursive-delete fence — applied EARLY)"
-  else
-    echo "FAIL: cannot copy $HOOK_SRC → $HOOK_DST during step 2.5 rerender" >&2
-    exit 1
-  fi
-else
-  echo "FAIL: $HOOK_SRC missing — cannot rerender hook before moves" >&2
-  exit 1
-fi
-
 # ─── Step 3 — Write the config keys FIRST (atomic-or-skipped) ─────────────
-# Per the #394 reorder: config write runs BEFORE any file moves so that an
-# awk failure here aborts cleanly — NO files have been touched, NO manifest
-# has been written, and the consumer's re-run hits the SAME detection state
-# (legacy artifacts still on disk, idempotency guard not yet armed).
+# Per the #394 reorder: config write runs BEFORE any file moves (including
+# the Step 3.5 hook rerender) so that an awk failure here aborts cleanly —
+# NO files have been touched, NO manifest has been written, and the
+# consumer's re-run hits the SAME detection state (legacy artifacts still
+# on disk, idempotency guard not yet armed). Per #506: this was previously
+# Step 3 with Step 2.5 (hook rerender) running BEFORE it; that ordering
+# allowed an awk failure here to leave the hook copy as orphaned partial
+# state. Now Step 3 runs first; Step 3.5 (renamed) runs after success.
 #
 # Atomicity: `write_output_block` writes to a `mktemp` tmp file and only
 # replaces `$CFG` via a final `cat "$tmp" > "$CFG"` (no rename/clobber if
@@ -483,6 +446,44 @@ fi
 if [ ! -f "$CFG" ]; then
   mkdir -p .claude
   printf '{\n}\n' > "$CFG"
+fi
+
+# Pre-flight compact-JSON normalization (#506). The no-output-block branch
+# of write_output_block uses an awk regex anchored on `^[[:space:]]*\}
+# [[:space:]]*$` — a line that is JUST the closing brace. A consumer who
+# wrote their config compact (e.g., `{"project_name":"test"}` on one line)
+# would crash mid-pipeline with "cannot locate outer closing brace" and
+# leave Step 3.5 (hook rerender) as orphaned partial state. Fix: detect
+# compact JSON via Python and pretty-print to canonical 2-space-indent
+# form BEFORE any mutation. Python is already a hard requirement per
+# CLAUDE.md (## Python is required); failures here exit BEFORE Step 3.5.
+PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+if [ -z "$PYTHON" ]; then
+  echo "FAIL: install Python 3 (or set ZSKILLS_PYTHON) — required to normalize $CFG" >&2
+  exit 1
+fi
+# Sniff whether the file already has `}` on its own line (the form the
+# no-output-block awk expects). If yes, skip the rewrite. If no, pretty-
+# print via Python — this also validates that the file is valid JSON,
+# fail-louding BEFORE any filesystem mutation per the #394 invariant.
+if ! grep -qE '^[[:space:]]*\}[[:space:]]*$' "$CFG"; then
+  CFG_TMP=$(mktemp)
+  if ! "$PYTHON" -c '
+import json, sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    data = json.load(f)
+with open(dst, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+' "$CFG" "$CFG_TMP"; then
+    rm -f "$CFG_TMP"
+    echo "FAIL: $CFG is not valid JSON — cannot proceed with migration (no files mutated)" >&2
+    exit 1
+  fi
+  cat "$CFG_TMP" > "$CFG"
+  rm -f "$CFG_TMP"
+  echo "normalize: pretty-printed compact JSON in $CFG (#506)"
 fi
 
 # Re-read current state (something may have changed via rerender? — no: rerender
@@ -771,6 +772,59 @@ if [ "$HAS_PLANS_KEY" -eq 0 ] || [ "$HAS_ISSUES_KEY" -eq 0 ] || [ "$HAS_REPORTS_
   WROTE_KEYS=1
 else
   WROTE_KEYS=0
+fi
+
+# ─── Step 3.5 — Trigger --rerender AFTER config write succeeds ─────────────
+# Per #506 reorder: this was previously Step 2.5, running BEFORE Step 3's
+# config write. That ordering meant an awk failure in Step 3 left the
+# hook copy as orphaned partial state — violating #394's no-partial-state
+# invariant. Moved here so the hook rerender (a filesystem mutation) runs
+# AFTER the atomic-or-skipped config write. The hook still strengthens
+# BEFORE the migration's file moves in Steps 4-7 (which create .zskills/
+# audit + .zskills/issues), so a mid-migration agent invoking `rm -rf
+# .zskills/audit` for cleanup is still BLOCKED by the broadened
+# recursive-delete fence. Re-render only mutates .claude/rules/zskills/
+# managed.md AND .claude/hooks/block-unsafe-project.sh; it does NOT depend
+# on output.plans_dir / output.issues_dir keys (CI guard in Phase 5a.4
+# Case 1 enforces this invariant).
+#
+# Locate $PORTABLE: prefer $PORTABLE env var, else fall back to common
+# tiers (mirror Step 0 of update-zskills/SKILL.md, but a minimal subset
+# sufficient for hook re-copy). Source-of-truth for the broadened hook
+# regex is hooks/block-unsafe-project.sh.template.
+PORTABLE="${PORTABLE:-}"
+if [ -z "$PORTABLE" ]; then
+  for cand in zskills-portable zskills /tmp/zskills "$PWD/../zskills" "$PWD/../../zskills" \
+              "$HOME/src/zskills" "$HOME/code/zskills" "$HOME/projects/zskills" "$HOME/zskills"; do
+    if [ -d "$cand" ] && [ -f "$cand/CLAUDE_TEMPLATE.md" ] && [ -d "$cand/hooks" ] \
+       && [ -d "$cand/scripts" ] && [ -d "$cand/skills" ]; then
+      PORTABLE="$cand"
+      break
+    fi
+  done
+fi
+if [ -z "$PORTABLE" ]; then
+  echo "FAIL: cannot locate zskills source for --rerender step 3.5 (set \$PORTABLE)" >&2
+  exit 1
+fi
+
+# Re-copy block-unsafe-project.sh from the portable source. The template
+# carries the broadened recursive-delete fence (matching `rm -r ... .zskills`)
+# that protects subsequent .zskills/audit + .zskills/issues filesystem moves.
+mkdir -p .claude/hooks
+HOOK_SRC="$PORTABLE/hooks/block-unsafe-project.sh.template"
+HOOK_DST=".claude/hooks/block-unsafe-project.sh"
+if [ -f "$HOOK_SRC" ]; then
+  if cp "$HOOK_SRC" "$HOOK_DST"; then
+    chmod +x "$HOOK_DST"
+    echo "rerender: copied block-unsafe-project.sh (broadened recursive-delete fence — applied after config write)"
+  else
+    echo "FAIL: cannot copy $HOOK_SRC → $HOOK_DST during step 3.5 rerender" >&2
+    exit 1
+  fi
+else
+  echo "FAIL: $HOOK_SRC missing — cannot rerender hook before moves" >&2
+  exit 1
 fi
 
 # ─── Step 4 — Move forensic + narrative reports → .zskills/audit/ ─────────
