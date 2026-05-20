@@ -205,6 +205,61 @@ else
   echo "--------------"
 fi
 
+# ---------------------------------------------------------------------
+# Main-subjects cap removal (issue #475).
+#
+# `worktrees_status` used to call `git log main --format="%s" -n 500`,
+# which silently truncated `main_subjects` on any repo whose main had
+# grown past 500 commits — misclassifying older landed worktrees as
+# "NOT SAFE — unlanded commits". The fix drops the `-n 500` flag.
+#
+# Two checks:
+#   (a) the `-n 500` substring no longer appears in that call site
+#       (source-level regression guard).
+#   (b) partition_commits_by_landing matches a worktree subject whose
+#       main-side twin sits at position 600 in a >500-entry set — the
+#       case the cap previously broke.
+# ---------------------------------------------------------------------
+echo ""
+echo "=== Main-subjects cap removal (issue #475) ==="
+
+# (a) Source-level: the cap is gone from the call site.
+if grep -q 'git log main --format="%s" -n 500' "$REPO_ROOT/skills/briefing/scripts/briefing.py"; then
+  fail "issue #475: -n 500 cap still present in briefing.py git log main call"
+else
+  pass "issue #475: -n 500 cap removed from briefing.py git log main call"
+fi
+
+# (b) Behavioral: 600-subject main set still matches older subjects.
+cap_out="$TEST_TMPDIR/cap-removal.txt"
+cap_exit=0
+python3 - "$REPO_ROOT" >"$cap_out" 2>&1 <<'PYEOF' || cap_exit=$?
+import sys, os
+repo_root = sys.argv[1]
+sys.path.insert(0, os.path.join(repo_root, 'skills', 'briefing', 'scripts'))
+import briefing  # noqa: E402
+
+# Simulate a 600-commit main where the worktree's subject is older than
+# position 500 — the case the -n 500 cap previously truncated away.
+main_subjects = {f'feat: commit {i:04d} (#{i})' for i in range(600)}
+# Older landed subject — would have been outside the most-recent 500.
+wt = [{'subject': 'feat: commit 0050', 'hash': 'old1', 'date': ''}]
+res = briefing.partition_commits_by_landing(wt, main_subjects)
+assert len(res['landed']) == 1, f"expected 1 landed, got {res}"
+assert len(res['unlanded']) == 0, f"expected 0 unlanded, got {res}"
+
+print("OK")
+PYEOF
+
+if [[ "$cap_exit" -eq 0 ]] && grep -q '^OK$' "$cap_out"; then
+  pass "issue #475: partition matches older subjects in >500-entry main set"
+else
+  fail "issue #475: cap-removal behavioral check"
+  echo "--- output ---"
+  cat "$cap_out"
+  echo "--------------"
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed, %d skipped (of %d)\n' \

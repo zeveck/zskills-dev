@@ -1561,7 +1561,7 @@ def format_worktrees_status(worktrees, opts=None):
     # (issue #474).
     main_subjects = opts.get('mainSubjects')
     if main_subjects is None and not opts.get('skipGit'):
-        main_log = run('git log main --format="%s" -n 500', cwd=main_path)
+        main_log = run('git log main --format="%s"', cwd=main_path)
         main_subjects = (
             {_normalize_main_subject(s) for s in main_log.split('\n')}
             if main_log else set()
