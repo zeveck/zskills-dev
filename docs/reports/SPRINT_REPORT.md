@@ -1196,3 +1196,22 @@ Empty.
 ### Open Ready queue after this sprint
 6 entries unresearched: #472, #474, #480, #475, #476, #477.
 
+
+## Sprint -- 2026-05-20 12:52 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260520-161217-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #472 | sprint /land-pr finalization: double-prefix path + leading-cd discipline | wt-fix-issue-472 | #495 | /quickfix S | 3635/3635 |
+| #474 | briefing worktrees-status: PR-squash `(#NNN)` suffix normalization | wt-fix-issue-474 | #496 | /quickfix S | 3636/3636 (after tier1 hash registration) |
+
+### Notable
+1. #472 fix is prose-only -- a 47-line discipline callout in skills/fix-issues/SKILL.md immediately above the sprint-land fence. Documents the double-prefix path bug + the leading-cd extract_cd_target collision. Existing fence already follows the correct discipline; the callout is the spec so orchestrators paraphrase correctly.
+2. #474 CI failed on first attempt (2 tests in test-update-zskills-migration.sh case 6c). Root cause: briefing.py is Tier-1 (registered in tier1-shipped-hashes.txt); modifying it required a follow-up commit registering the new blob hash. Same pattern as #484's first attempt with sanitize-pipeline-id.sh. Fixed by adding `0487437 chore(tier1): register new briefing.py blob hash post-#474` on top, which let CI go green and auto-merge fire.
+3. Both fixes target meta-machinery (sprint-land discipline + briefing's worktrees-status). They prevent the exact failure modes that have been recurring during today's sprints -- the prose callout immediately above the fence I keep paraphrasing should bite the next time an orchestrator constructs sprint-land scripts.
+
+### Open Ready queue after this sprint
+4 entries: #480, #475, #476, #477 -- all unresearched.
+
