@@ -1502,12 +1502,35 @@ def scan_checkboxes_recent(repo_root=None, max_age=None, max_briefings=None):
 # formatWorktreesStatus — detailed cleanup readiness report
 # ---------------------------------------------------------------------------
 
+# GitHub squash-merge appends ` (#NNN)` to the subject on main when the PR
+# lands. The worktree's pre-merge subject has no such suffix, so literal
+# string equality misses every PR-mode landed commit. Strip the suffix on
+# the main side before comparison. Worktree side is left literal — its
+# subjects don't carry the suffix. Anchor `$` ensures only end-of-subject
+# parentheticals are stripped (a middle-of-subject `(#NNN)` reference is
+# preserved). See issue #474.
+_PR_SUFFIX_RE = re.compile(r'\s*\(#\d+\)\s*$')
+
+
+def _normalize_main_subject(subject):
+    """Strip trailing PR-squash-merge ` (#NNN)` suffix from a main subject."""
+    return _PR_SUFFIX_RE.sub('', subject).rstrip()
+
+
 def partition_commits_by_landing(wt_commits, main_subjects):
-    """Check which worktree commits exist on main by subject match."""
+    """Check which worktree commits exist on main by subject match.
+
+    `main_subjects` is the set of subjects already harvested from main.
+    Callers should pass a set already normalized via
+    `_normalize_main_subject` (or build the set via the canonical path in
+    `format_worktrees_status`, which normalizes). We also normalize
+    defensively here so direct test callers don't need to remember.
+    """
+    normalized = {_normalize_main_subject(s) for s in main_subjects}
     landed = []
     unlanded = []
     for c in wt_commits:
-        if c['subject'] in main_subjects:
+        if c['subject'] in normalized:
             landed.append(c)
         else:
             unlanded.append(c)
@@ -1532,13 +1555,21 @@ def format_worktrees_status(worktrees, opts=None):
     lines.append(f'WORKTREE STATUS — {format_local()}')
     lines.append('')
 
-    # Get main commit subjects for landing detection
+    # Get main commit subjects for landing detection. Normalize away the
+    # GitHub squash-merge ` (#NNN)` suffix at set-construction time so the
+    # downstream literal `in` check works for PR-mode landed commits
+    # (issue #474).
     main_subjects = opts.get('mainSubjects')
     if main_subjects is None and not opts.get('skipGit'):
         main_log = run('git log main --format="%s" -n 500', cwd=main_path)
-        main_subjects = set(main_log.split('\n')) if main_log else set()
+        main_subjects = (
+            {_normalize_main_subject(s) for s in main_log.split('\n')}
+            if main_log else set()
+        )
     if main_subjects is None:
         main_subjects = set()
+    else:
+        main_subjects = {_normalize_main_subject(s) for s in main_subjects}
 
     # Classify worktrees into cleanup buckets
     safe_to_remove = []
