@@ -1158,3 +1158,22 @@ Empty.
 ### Open Ready queue after this sprint
 [479, 473, 481, 482, 472, 474, 480, 475, 476, 477] — 10 entries still unresearched.
 
+
+## Sprint — 2026-05-20 10:49 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Cron:** Run /fix-issues 2 auto dashboard every 30m | **Sprint ID:** sprint-20260520-142119-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|----|----|-------|-------------|-------------|
+| #479 | block-agents Explore Haiku-prevention bypass | wt-fix-issue-479 | #489 | /quickfix S | 3628/3628 | PASS (full suite) | N/A (hook + agent + test) |
+| #473 | Dashboard plan-activity filter: pipeline_id->pipeline | wt-fix-issue-473 | #490 | /quickfix S | 3624/3624 | PASS (regression test seeded marker) | N/A (script + test) |
+
+### Notable
+1. Phase 1a research caught both #479 and #473 missing tracker rows; parallel research agents committed blurbs first, then parallel impl agents per-issue. Same mixed-parallel pattern as the prior sprint, runs reliably.
+2. #479 impl added two layers of defense: primary (Explore.md with model:opus, mirrors implementer.md/verifier.md shape) plus defensive (known-Haiku-pinned-list deny in Step 3 of block-agents). Both layers independently tested via 5 new cases.
+3. #473 was a single-line fix (pipeline_id -> pipeline in server.py:840). Research agent correctly identified the data side as canonical (3 emit sites in collect.py all use pipeline, plus matches .zskills/tracking/PIPELINE_ID/ directory convention). Impl agent verified all 3 emit sites before committing.
+
+### Open Ready queue after this sprint
+8 entries: #481, #482, #472, #474, #480, #475, #476, #477 -- all unresearched.
+
