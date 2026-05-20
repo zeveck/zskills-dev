@@ -150,7 +150,7 @@ between phase completion and the next cron fire is typically 0-60s with
 
 **TZ note:** CronCreate reads system-local TZ. `*/1 * * * *` has no TZ
 dependency (matches every minute regardless). For human-readable
-messages, use `TZ=America/New_York date` — but the cron expression
+messages, use `TZ="${TIMEZONE:-UTC}" date` — but the cron expression
 itself is TZ-agnostic.
 
 **Special case: Phase 5b final-verify gate.** Phase 5b Case 1 (marker

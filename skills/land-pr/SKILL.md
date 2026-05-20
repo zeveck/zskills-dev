@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.19+a17fe2"
+  version: "2026.05.20+5abdda"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -179,10 +179,9 @@ When `--worktree-path` is supplied, `/land-pr` writes a `.landed` marker
 at `<worktree>/.landed` via `bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"`.
 The schema is canonical across all callers:
 
-<!-- allow-hardcoded: TZ=America/New_York reason: schema-doc fence showing the .landed `date:` field's canonical form; the runtime call lives in the bash fence further down (also marked); per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this plan -->
-```
+```text
 status: <required>      # landed | pr-ready | pr-ci-failing | pr-failed | conflict | pr-state-unknown
-date: <required>        # ISO-8601, NY tz: $(TZ=America/New_York date -Iseconds)
+date: <required>        # ISO-8601 in configured tz: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: <required>      # caller skill name (run-plan, commit, do, fix-issues, quickfix, land-pr)
 method: <required>      # always "pr" in this plan's scope
 branch: <required>      # feature branch name
@@ -662,8 +661,8 @@ closes the Issue #205 gap where orchestrator-direct `/land-pr` dispatch
 from inside a worktree but without `--worktree-path` silently skipped
 the `.landed` write. `--worktree-path` remains an explicit override.
 
-<!-- allow-hardcoded: TZ=America/New_York reason: matches the schema doc above and the established idiom across skills; per-skill $TIMEZONE migration is scoped to plans/SKILL_FILE_DRIFT_FIX.md, not this plan -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 # Auto-detect WORKTREE_PATH from cwd when caller didn't pass --worktree-path.
 # Detection uses `git rev-parse` (worktree root + git-dir vs git-common-dir
 # divergence indicates a LINKED worktree, not the main worktree) plus
@@ -726,7 +725,7 @@ if [ -n "$WORKTREE_PATH" ]; then
   # by the time we reach Step 8.
   GIT_LOG_STDERR="/tmp/land-pr-commits-list-stderr-$BRANCH_SLUG-$$.log"
   COMMITS_LIST=$(cd "$WORKTREE_PATH" && git log --format=%H "origin/$BASE_BRANCH..HEAD" 2>"$GIT_LOG_STDERR" | tr '\n' ' ' | sed 's/ $//')
-  LANDED_DATE=$(TZ=America/New_York date -Iseconds)
+  LANDED_DATE=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 
   {
     printf 'status: %s\n' "$LANDED_STATUS"

@@ -238,7 +238,7 @@ if [[ "$FILE_PATH" =~ (^|/)(skills|block-diagram)/([^/]+)/[^/]+ ]] \
             # Asymmetric warn: hash drifted but version line unchanged.
             if [ -n "$on_disk_ver" ] && [ "$on_disk_ver" = "$head_ver" ] \
                && [ "$cur_hash" != "$stored_hash" ]; then
-              today=$(TZ="${TIMEZONE:-America/New_York}" date +%Y.%m.%d)
+              today=$(TZ="${TIMEZONE:-UTC}" date +%Y.%m.%d)
               printf 'WARN: %s — skill content changed (hash %s → %s) but metadata.version unchanged. Bump to %s+%s before commit.\n' \
                 "$skill_md" "$stored_hash" "$cur_hash" "$today" "$cur_hash" >&2
             fi

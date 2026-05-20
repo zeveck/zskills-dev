@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.18+69a379"
+  version: "2026.05.20+921677"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -165,7 +165,7 @@ cron by comparing the description against all `/do` cron prompts:
 
 1. `CronList` → find `/do` crons (all, or matching if description given)
 2. For each, parse the cron expression and compute the next fire time.
-   Use `TZ=America/New_York date` for the timezone. Show both relative
+   Use `TZ="${TIMEZONE:-UTC}" date` for the timezone. Show both relative
    and absolute:
    > Active /do crons:
    > 1. ~14h 47m (~9:03 AM ET tomorrow, cron XXXX)

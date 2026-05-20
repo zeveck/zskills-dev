@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.19+f11c5f"
+  version: "2026.05.20+51a254"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -144,8 +144,8 @@ If `$ARGUMENTS` contains `every <schedule>`:
    - `recurring`: true
    - `prompt`: the constructed command from step 3
 
-5. **Confirm** with wall-clock time. **Always show times in America/New_York
-   (ET)** — use `TZ=America/New_York date` for conversion:
+5. **Confirm** with wall-clock time. **Always show times in the configured
+   timezone** — use `TZ="${TIMEZONE:-UTC}" date` for conversion:
 
    If `now` is present:
    > QE audit scheduled every day at 9am. Running now.

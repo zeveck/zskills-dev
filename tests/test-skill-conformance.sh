@@ -1772,6 +1772,117 @@ else
 fi
 
 echo ""
+echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py) ==="
+# Sibling deny-list scan over non-markdown sources that the existing
+# skills/**/*.md scanner above doesn't see:
+#
+#   - hooks/*.sh, hooks/*.sh.template       (hook source)
+#   - scripts/*.sh                          (release tooling + skill-version stage check)
+#   - skills/**/scripts/*.py                (Python helpers under skills)
+#   - block-diagram/**/scripts/*.py         (Python helpers under block-diagram add-on skills)
+#
+# Same forbidden-literals fixture as the .md scanner. Allowlist marker
+# uses a bash/Python `#` comment instead of HTML:
+#
+#   # allow-hardcoded: <literal> reason: <why>
+#
+# The marker may appear on the same line as the hit (suffix comment) OR
+# on the immediately-preceding line. Markers stack (consecutive marker
+# lines exempt multiple literals for the line directly below).
+#
+# Regex entries (`re:` prefix in the fixture) are matched on the line as
+# extended regex; the corresponding allow-hardcoded marker names the
+# pattern WITHOUT the `re:` prefix (same rule as the .md scanner).
+
+if [ -r "$FORBIDDEN_FIXTURE" ]; then
+  EXT_DRIFT_FAIL=0
+  EXT_DRIFT_HITS=()
+
+  # Build the file list. Use find with -path -prune to avoid scanning
+  # vendored or generated paths. The .claude/ mirror is intentionally
+  # skipped: bytes are guaranteed identical to the source by mirror-parity
+  # tests, and double-scanning would just produce paired DRIFT messages.
+  EXT_FILES=()
+  while IFS= read -r f; do
+    EXT_FILES+=("$f")
+  done < <(
+    {
+      find "$REPO_ROOT/hooks" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.sh.template' \) 2>/dev/null
+      find "$REPO_ROOT/scripts" -maxdepth 1 -type f -name '*.sh' 2>/dev/null
+      find "$REPO_ROOT/skills" -type f -path '*/scripts/*.py' 2>/dev/null
+      find "$REPO_ROOT/block-diagram" -type f -path '*/scripts/*.py' 2>/dev/null
+    } | sort
+  )
+
+  for src_file in "${EXT_FILES[@]}"; do
+    # Two-line lookback for the allow-hardcoded marker (preceding-line OR
+    # same-line). Implement via a sliding prev_line buffer.
+    prev_line=""
+    line_no=0
+    while IFS= read -r line; do
+      line_no=$((line_no + 1))
+
+      # Collect allowed-literal names for this line: parse any
+      # `# allow-hardcoded: <literal> reason: ...` marker on PREV line
+      # OR appearing as a same-line suffix comment.
+      declare -A allowed_here=()
+      # PREV-line marker
+      if [[ "$prev_line" =~ ^[[:space:]]*\#[[:space:]]+allow-hardcoded:[[:space:]]+(.+)[[:space:]]+reason:.*$ ]]; then
+        cap="${BASH_REMATCH[1]}"
+        cap="${cap%"${cap##*[![:space:]]}"}"
+        allowed_here["$cap"]=1
+      fi
+      # SAME-line suffix marker (substring search — no need to anchor).
+      if [[ "$line" == *"# allow-hardcoded:"* ]]; then
+        # Extract everything after `# allow-hardcoded: ` up to ` reason:`
+        tail_part="${line#*# allow-hardcoded: }"
+        if [[ "$tail_part" == *" reason:"* ]]; then
+          cap="${tail_part%% reason:*}"
+          cap="${cap%"${cap##*[![:space:]]}"}"
+          allowed_here["$cap"]=1
+        fi
+      fi
+
+      # Skip pure-marker lines (a `# allow-hardcoded: ...` line is
+      # documentation, not a hit even if its body contains the literal it
+      # names). Detect: line matches the marker regex with no leading
+      # code before the `#`.
+      is_pure_marker=0
+      if [[ "$line" =~ ^[[:space:]]*\#[[:space:]]+allow-hardcoded:[[:space:]]+ ]]; then
+        is_pure_marker=1
+      fi
+
+      if [ "$is_pure_marker" -eq 0 ]; then
+        for literal in "${FIXED_LITERALS[@]}"; do
+          if [[ "$line" == *"$literal"* ]] && [ -z "${allowed_here[$literal]:-}" ]; then
+            EXT_DRIFT_HITS+=("DRIFT (extended-scope): $src_file:$line_no contains '$literal'. Replace with \$VAR (preferred) — source zskills-resolve-config.sh if needed — OR add on the line ABOVE: # allow-hardcoded: $literal reason: <why>")
+            EXT_DRIFT_FAIL=1
+          fi
+        done
+        for pattern in "${REGEX_PATTERNS[@]}"; do
+          if [[ "$line" =~ $pattern ]] && [ -z "${allowed_here[$pattern]:-}" ]; then
+            EXT_DRIFT_HITS+=("DRIFT (extended-scope): $src_file:$line_no matches forbidden regex '$pattern'. Replace with \$VAR (preferred), OR add on the line ABOVE: # allow-hardcoded: $pattern reason: <why>")
+            EXT_DRIFT_FAIL=1
+          fi
+        done
+      fi
+
+      prev_line="$line"
+      unset allowed_here
+    done < "$src_file"
+  done
+
+  if [ "$EXT_DRIFT_FAIL" -eq 0 ]; then
+    pass "no skill-file drift hardcodes in extended scope (hooks/, scripts/, *.py)"
+  else
+    fail "extended-scope drift hardcodes detected" "${#EXT_DRIFT_HITS[@]} hit(s)"
+    for h in "${EXT_DRIFT_HITS[@]}"; do
+      printf '    %s\n' "$h" >&2
+    done
+  fi
+fi
+
+echo ""
 echo "=== Worktree-test blockquote structural AC ==="
 # WI 4.6 — Phase 2 WI 2.2 migrated the worktree-test recipe blockquote at
 # skills/run-plan/SKILL.md:898-930 from raw `npm start` / `npm run test:all` /

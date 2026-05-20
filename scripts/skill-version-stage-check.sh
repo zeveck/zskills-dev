@@ -54,7 +54,7 @@ if [ -r "$RESOLVER" ]; then
   # shellcheck source=/dev/null
   . "$RESOLVER"
 fi
-: "${TIMEZONE:=America/New_York}"
+: "${TIMEZONE:=UTC}"
 
 declare -A SKILLS_TO_CHECK
 while IFS= read -r f; do

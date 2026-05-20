@@ -7,7 +7,7 @@ Stdout: markdown for `$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md`.
 Args:
     --rebuilt-at <STRING>  Timestamp string to embed in the "Last rebuilt"
                            line. The caller computes this (typically via
-                           `TZ=America/New_York date '+%Y-%m-%d %H:%M ET'`).
+                           `TZ="${TIMEZONE:-UTC}" date '+%Y-%m-%d %H:%M %Z'`).
 
 Section precedence (fixed; never relax):
     1. category=="canary"                 → Canaries        (NEVER promote)
@@ -583,7 +583,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         required=True,
         help=(
             "Timestamp string for the 'Last rebuilt' line "
-            "(typically: TZ=America/New_York date '+%%Y-%%m-%%d %%H:%%M ET')."
+            "(typically: TZ=\"${TIMEZONE:-UTC}\" date '+%%Y-%%m-%%d %%H:%%M %%Z')."
         ),
     )
     args = parser.parse_args(argv)

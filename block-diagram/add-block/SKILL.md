@@ -4,7 +4,7 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks to
   "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.15+43ef2f"
+  version: "2026.05.20+21a0f9"
 ---
 
 # Adding Block Types
@@ -423,7 +423,8 @@ All existing tests must continue to pass (unit, E2E, and codegen suites).
 
 After Step 6 tests pass:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.tests"
 ```
 
@@ -442,8 +443,9 @@ This single `requires` marker pairs with the single `/add-example`
 invocation that follows; do NOT loop per-block.
 
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'skill: add-example\nparent: add-block\nblock: %s\ndate: %s\n' \
-  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+  "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.add-example.${BLOCK_SLUG}"
 ```
 
@@ -482,15 +484,17 @@ unit tests with value assertions, browser verification, and screenshots.
 
 After `/add-example` completes:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example"
 ```
 
 If the example was deferred (batch mode, will be done later), create the
 deferred marker instead with the reason:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'block: %s\ndeferred: true\nreason: batch mode — example deferred until all blocks implemented\ndate: %s\n' \
-  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+  "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example-deferred"
 ```
 
@@ -525,6 +529,7 @@ Add a Rust emitter for the block in `src/codegen/block-emitter.js`.
    ```javascript
    Name: { paramName: defaultValue },
    ```
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 
 4. Add any codegen-only params to `CODEGEN_ONLY_PARAMS` if they shouldn't appear in the Rust `Params` struct.
 
@@ -566,7 +571,7 @@ handled by `/add-example` (Step 7), not here.
 
 After codegen is implemented:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen"
 ```
 
@@ -586,11 +591,12 @@ Create a GitHub issue and add an entry to `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` 
 
 **Description:** {Why this block can't be emitted yet and what's needed.}
 ```
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 
 After deferring codegen, create the deferred marker with the GitHub issue number:
 ```bash
 printf 'block: %s\ndeferred: true\nissue: #%s\ndate: %s\n' \
-  "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ=America/New_York date -Iseconds)" \
+  "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen-deferred"
 ```
 
@@ -620,7 +626,8 @@ Use the `/manual-testing` skill with `playwright-cli` to verify the block works 
 
 After Step 9 manual testing completes:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.manual-test"
 ```
 
@@ -737,7 +744,8 @@ noted" instead of failing. These checks prevent that.
 
 After the self-audit checklist passes:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.self-audit"
 ```
 
@@ -749,8 +757,9 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -I
 
 Before dispatching the verification agent, create a delegation requirement:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'skill: verify-changes\nparent: add-block\nblock: %s\ndate: %s\n' \
-  "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+  "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.${BLOCK_SLUG}"
 ```
 
@@ -800,7 +809,8 @@ If verification fails: dispatch a fix agent (max 2 fix+verify rounds).
 
 After verification completes:
 ```bash
-printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ=America/New_York date -Iseconds)" \
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.verify"
 ```
 
