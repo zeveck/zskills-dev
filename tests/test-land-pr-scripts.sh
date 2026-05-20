@@ -103,6 +103,8 @@ counter() {
 #   call 1: rev-parse --is-inside-work-tree → exit 0
 #   call 2: rev-parse --verify refs/heads/<branch> → exit 0
 #   call 3: rev-parse --abbrev-ref HEAD → stdout=<branch> (Issue #397 guard)
+#   call 1: status --porcelain → stdout="" (Issue #481 dirty-tree guard;
+#          empty = clean tree, proceed)
 #   call 1: fetch origin <base> → exit 0
 prep_rebase_preflight_ok() {
   local sd="$1"
@@ -110,6 +112,7 @@ prep_rebase_preflight_ok() {
   prep_git "$sd" rev-parse 1 exit 0
   prep_git "$sd" rev-parse 2 exit 0
   prep_git "$sd" rev-parse 3 stdout "$branch"
+  prep_git "$sd" status    1 stdout ""
   prep_git "$sd" fetch     1 exit 0
 }
 
@@ -174,6 +177,7 @@ F=$(new_fixture mode3)
 prep_git "$F/state-git" rev-parse 1 exit 0
 prep_git "$F/state-git" rev-parse 2 exit 0
 prep_git "$F/state-git" rev-parse 3 stdout 'feat/x'
+prep_git "$F/state-git" status    1 stdout ""
 prep_git "$F/state-git" fetch     1 exit 1
 prep_git "$F/state-git" fetch     1 stderr 'fatal: could not resolve hostname'
 run_sut "$F" bash "$SCRIPTS_DIR/pr-rebase.sh" --branch feat/x --base main
@@ -524,6 +528,40 @@ cleanup_fixture "$F"
 # in [mode1]/[mode2]/[idem1]/[slug] above — those tests would fail-loud
 # (mock-git exit 99 "no canned response") if the script bypassed the
 # HEAD call.
+
+# ----------------------------------------------------------------------
+# Issue #481 regression: pr-rebase.sh asserts a clean working tree
+# BEFORE calling git rebase. Pre-fix code fell through to the generic
+# line-130 failure terminus emitting REASON=rebase-failed exit 11 for
+# ALL of: dirty working tree, network failure, abort failure, real
+# rebase conflict — overloaded across 4 distinct failure modes.
+# /land-pr Step 3 couldn't distinguish.
+# Assertion: when `git status --porcelain` returns non-empty, pr-rebase.sh
+# exits 16 with REASON=dirty-working-tree, no fetch, no rebase.
+# ----------------------------------------------------------------------
+F=$(new_fixture issue481_dirty_tree)
+prep_git "$F/state-git" rev-parse 1 exit 0
+prep_git "$F/state-git" rev-parse 2 exit 0
+prep_git "$F/state-git" rev-parse 3 stdout 'feat/x'
+# git status --porcelain returns non-empty → dirty tree.
+prep_git "$F/state-git" status 1 stdout $' M src/foo.js\n?? new-untracked.txt'
+run_sut "$F" bash "$SCRIPTS_DIR/pr-rebase.sh" --branch feat/x --base main
+if [ "$SUT_RC" -eq 16 ] \
+   && [[ "$SUT_OUT" == *"REASON=dirty-working-tree"* ]] \
+   && [[ "$SUT_ERR" == *"uncommitted changes"* ]] \
+   && [ "$(counter "$F/state-git" fetch)" = "0" ] \
+   && [ "$(counter "$F/state-git" rebase)" = "0" ]; then
+  pass "[issue481] pr-rebase refuses dirty working tree (exit 16, no fetch, no rebase)"
+else
+  fail "[issue481] pr-rebase dirty-tree guard" "rc=$SUT_RC out=$SUT_OUT err=$SUT_ERR fetch=$(counter "$F/state-git" fetch) rebase=$(counter "$F/state-git" rebase)"
+fi
+cleanup_fixture "$F"
+
+# Companion: the dirty-tree-check happy-path uses `git status --porcelain`
+# returning empty; rebase proceeds. The prep_rebase_preflight_ok helper
+# below MUST be updated to prep the status call as exit 0 (empty stdout),
+# else [mode1]/[mode2]/[idem1]/[slug]/[mode3..] would fail-loud (mock-git
+# exit 99 "no canned response").
 
 # ----------------------------------------------------------------------
 # Issue #188 regression: pr-push-and-create.sh must push $BRANCH

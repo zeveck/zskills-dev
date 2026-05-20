@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.20+5abdda"
+  version: "2026.05.20+2dee67"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -282,6 +282,17 @@ if [ -z "$PR_RESUME" ]; then
     # rebase-failed so the orchestrator surfaces the classification
     # instead of falling through to STATUS="" and proceeding silently.
     # REASON is already captured to wrong-current-branch above.
+    # Jump to step 9.
+  elif [ "$REBASE_RC" -eq 16 ]; then
+    STATUS="rebase-failed"
+    # Issue #481: pr-rebase.sh exits 16 when the working tree has
+    # uncommitted changes (REASON=dirty-working-tree). Pre-#481 the
+    # dirty-tree case fell through to the generic exit-11 terminus,
+    # surfacing as REASON=rebase-failed and indistinguishable from real
+    # conflicts, network failures, or abort failures. Map to
+    # rebase-failed (same terminus class) but preserve REASON=
+    # dirty-working-tree so the orchestrator can tell users "commit or
+    # stash first" instead of misdiagnosing as a real rebase failure.
     # Jump to step 9.
   fi
 fi

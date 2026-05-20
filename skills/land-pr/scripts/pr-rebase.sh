@@ -24,6 +24,7 @@
 #   10 — rebase conflicts (CONFLICT_FILES_LIST sidecar populated)
 #   11 — other failure (REASON populated)
 #   14 — wrong current branch (CWD's HEAD != $BRANCH; REASON=wrong-current-branch)
+#   16 — dirty working tree (uncommitted changes; REASON=dirty-working-tree)
 #   2  — usage error
 
 set -u
@@ -85,6 +86,21 @@ if [ "$ACTUAL_HEAD" != "$BRANCH" ]; then
   cat "$STDERR_LOG" >&2
   echo "REASON=wrong-current-branch"
   exit 14
+fi
+
+# 2c. Verify the working tree is clean. `git rebase` itself would refuse on
+#     dirty state, but the surfaced failure mode is indistinguishable from
+#     a real conflict / network error / abort failure when funnelled
+#     through the generic exit-11 terminus below. Categorize the
+#     dirty-tree case explicitly so /land-pr Step 3 can map it to a
+#     dedicated REASON (Issue #481, sibling of #420). Symmetric to the
+#     #420 wrong-current-branch guard above. CLAUDE.md "Protect untracked
+#     files before git operations" applies to rebase here.
+DIRTY=$(git status --porcelain)
+if [ -n "$DIRTY" ]; then
+  echo "ERROR: pr-rebase.sh: working tree has uncommitted changes — refusing to rebase. Commit or stash first." >&2
+  echo "REASON=dirty-working-tree"
+  exit 16
 fi
 
 # 3. Fetch the base.
