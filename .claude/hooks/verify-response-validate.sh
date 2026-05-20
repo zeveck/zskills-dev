@@ -34,6 +34,28 @@ PATTERNS_STALLED=(
   "still searching. let me wait"
   "waiting on bashoutput"
   "polling bashoutput"
+  # Paraphrase class added per #480 — structurally identical to the literal
+  # Monitor/BashOutput whitelist but worded in plain English. Each pattern
+  # is multi-word and anchored to "I'll wait / running in bg / check back
+  # later" framings — NOT generic words like "waiting" or "background" on
+  # their own (those false-positive on legitimate completions like
+  # "tests passed, waiting for CI"). Substring match on lowercased tail.
+  "i'll wait for the test"
+  "i will wait for the test"
+  "let me wait for the test"
+  "i'll wait for the suite"
+  "i will wait for the suite"
+  "let me wait for the suite"
+  "running in the background"
+  "running in background"
+  "will check back"
+  "come back to check"
+  "still running in"
+  "is still running"
+  "i'll poll"
+  "let me poll"
+  "will poll later"
+  "still in progress"
 )
 
 # Future extension example (kept commented as documentation):
