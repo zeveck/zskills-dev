@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.20+d70ecf"
+  version: "2026.05.20+14a12a"
 ---
 
 # Update Z Skills Infrastructure
@@ -1202,6 +1202,26 @@ All 7 rows carry `"type": "command"` and `"timeout": 5`. The
 `warn-config-drift.sh` hook lands in Phase 3 of
 `plans/DRIFT_ARCH_FIX.md`; the two PostToolUse rows become live once
 that hook is installed.
+
+**Session-init-only `settings.json` load (#460).** `.claude/settings.json`
+is loaded ONCE at session start. The in-memory hook table is fixed at
+session-init time; mid-session edits to `settings.json` — including
+this install/update step landing a new hook registration — are NOT
+re-read by the running session. Consequence: any newly registered hook
+will not fire in the current session, even though the registration is
+correctly on disk. Past failure: PR #456 landed `block-bad-cron.sh` at
+06:18 UTC 2026-05-20; the orchestrator session whose lifetime predated
+the merge made a bad `CronCreate` call at 07:16 UTC and the hook did
+not fire (issue #460). Issue author confirmed via post-restart
+live-fire that the hook DOES fire on built-in `CronCreate` calls once
+the session sees the registration. After this Step C completes,
+**always report the session-restart instruction to the user**:
+
+> WARN: settings.json is loaded at session start. Hook registrations
+> added by this step will not take effect until you `/clear` (or
+> restart Claude Code). To verify a newly registered PreToolUse hook,
+> restart your session and re-trigger the gated tool call; the deny
+> envelope (if any) confirms the hook is wired.
 
 **Step C algorithm** (never overwrite; never reorder top-level keys;
 never strip whitespace from untouched regions; never re-emit the file
