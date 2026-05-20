@@ -1080,3 +1080,23 @@ Picked: #448 (Clear and doable as one PR, but needs review) — verifier scope-c
 Skipped: (none)
 Pool: 1 open candidate considered (Ready ∩ open)
 ```
+
+## Sprint — 2026-05-20 04:34 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Cron:** Run /fix-issues 2 auto dashboard every 30m | **Sprint ID:** sprint-20260520-074415-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|----|----|-------|-------------|-------------|
+| #459 | PIPELINE_ID sanitize sweep across 4 skills | wt-do-sanitize-pipeline-id-459 | #462 | /do pr M | 3600/3600 pass | PASS (full suite) | N/A (skill prose) |
+| #458 | test-skill-conformance.sh deny-list block-diagram scope-fix | wt-do-deny-list-block-diagram-458 | #463 | /do pr S | 3597/3597 pass | PASS (full suite) | N/A (skill prose + test) |
+
+### Notable
+1. **#459 site count was 22, not 23** — the research blurb claimed 15 sites in run-plan, impl agent found 14 (the 2 extras were `echo "ZSKILLS_PIPELINE_ID=..."` transcript-propagation lines, not assignments). Conformance literal uses 14 — the actual count, failing closed at reality. Independent-sizing discipline (per #404) held: impl agent didn't rubber-stamp the blurb's count.
+2. **#458 scope was larger than the issue body claimed** — extended scope surfaced 5 pre-existing hits (not 3): `npm run test:all` × 2, `npm start` × 1, `TIMEZONE` × 2 across `block-diagram/add-block/` and `block-diagram/add-example/`. Cleanup is necessary for CI on the extended scanner, so the broader scope is in-scope, not creep.
+3. **Tracker-row backfill happened in a prior cron fire** — Phase 1a sync at 07:25 UTC created research blurbs for #457/#458/#459/#460 in `docs/issues/ISSUES_PLAN.md` (PR #461) BEFORE this productive fire, so triage had verbatim Action-now lines to read against. This validates the new Phase 2 source-filter (#408): without those tracker rows, the productive sprint would have aborted with "no actionable issues."
+
+### Skipped (still in Ready, awaiting next fire)
+- **#457** (`/quickfix` S, force-prefix bypass in `block-unsafe-generic.sh`)
+- **#460** (`/quickfix` S, session-init-only hook-load documentation gap)
+
