@@ -408,3 +408,15 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 **Complexity:** S. **Action now:** /do pr.
 
 ---
+
+### #448 — verifier scope-creep check uses 'origin/main..HEAD --stat' — phantom deletions when origin advances during verification
+
+**Labels:** bug | **Verdict:** NOT FIXED — `.claude/agents/verifier.md` contains no `origin/main..HEAD` literal nor any `--stat`/scope-creep guidance (confirmed `grep -n` for both patterns returns zero hits). The bare comparison is the implicit pattern verifiers reach for absent explicit guidance, and the file has nothing steering them off it.
+
+**Problem.** Verifier agents performing AC-style "no scope creep" checks run `git diff origin/main..HEAD --stat`. `A..B --stat` shows the SYMMETRIC file-set diff, so files added on `origin/main` after the branch's merge-base appear as "deletions in HEAD". Full-suite verification runs 3-4 min, often overlapping with active landings, so origin/main routinely advances mid-verification. Twice today (2026-05-19/20): once during the PR #447 landing window (PR #446 landed mid-verify, 3 of its files surfaced as phantom "scope creep" in `feat/do-track-managed-md`'s HEAD); once for a sibling agent the same evening. Both REJECTs emitted high-confidence, syntactically-correct "Recovery path" code blocks (`git show origin/main:<f> > <f>`) that, if followed, would have undone the freshly-landed PR inside the worktree and re-verified into APPROVE on a corrupted commit. The failure mode is "verifier confidently misleads agents into destructive recovery actions," not "verifier sometimes false-positives."
+
+**Fix outline.** Option A per issue body — append a paragraph to `.claude/agents/verifier.md`'s scope-creep AC guidance that prefers `git show HEAD --stat` (the commit's own file scope, no comparison) or `git diff $(git merge-base origin/main HEAD)..HEAD --stat` (merge-base diff) over bare `git diff origin/main..HEAD --stat`. Inline-cite the two 2026-05-19/20 occurrences and the destructive-recovery shape so future verifier sessions read the rationale, not just the rule. No skill `metadata.version` bump (`.claude/agents/` is not `skills/<name>/**`). Optional follow-up: a conformance assertion in `tests/test-skill-conformance.sh` that `.claude/agents/verifier.md` contains the new merge-base guidance — locks the prose against silent reversion. Option B (verifier pre-flight rebase) is structural and can wait if the prose fix doesn't bite.
+
+**Complexity:** S. **Action now:** /do pr — single-file prose append to `.claude/agents/verifier.md` (no version bump, no mirror — `.claude/agents/` isn't a skill); optional conformance tripwire adds ~10 lines. Sized S for the bounded prose edit on one design surface.
+
+---
