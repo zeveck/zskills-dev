@@ -34,6 +34,23 @@
 #   5. UTC
 # NO hardcoded "America/New_York" anywhere — the deny-list scan in
 # tests/test-skill-conformance.sh enforces this.
+#
+# ── Session-reload caveat (#460) ───────────────────────────────────
+# .claude/settings.json is loaded ONCE at session start. The in-memory
+# hook table is fixed at session-init time; mid-session edits to
+# settings.json — including newly landing this hook in a PR — are NOT
+# re-read by the running session. Consequence: the session whose
+# lifetime predates the merge that adds this hook will keep accepting
+# bad crons silently, even though the registration is correctly on
+# disk. Past failure: PR #456 landed at 06:18 UTC 2026-05-20; the
+# orchestrator session running since before then made a bad CronCreate
+# call at 07:16 UTC and the hook did not fire. Issue #460 author
+# confirmed via post-restart live-fire that the hook DOES fire on
+# built-in CronCreate calls once the session sees the registration.
+# Verification path after landing this hook (or after editing it): run
+# `/clear` (or restart Claude Code) and re-test with an intentionally
+# bad cron, e.g., a one-shot whose next fire is more than 7 days out.
+# The deny envelope's STOP message confirms the hook is wired.
 
 set -u
 
