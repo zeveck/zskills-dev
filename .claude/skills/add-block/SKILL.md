@@ -4,7 +4,7 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks to
   "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.20+21a0f9"
+  version: "2026.05.20+0d78b5"
 ---
 
 # Adding Block Types
@@ -414,7 +414,12 @@ describe('NameBlock', () => {
 ### Run tests
 
 ```bash
-npm run test:all
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$FULL_TEST_CMD" ]; then
+  echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
+$FULL_TEST_CMD
 ```
 
 All existing tests must continue to pass (unit, E2E, and codegen suites).
@@ -571,6 +576,7 @@ handled by `/add-example` (Step 7), not here.
 
 After codegen is implemented:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen"
 ```
@@ -595,6 +601,7 @@ Create a GitHub issue and add an entry to `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` 
 
 After deferring codegen, create the deferred marker with the GitHub issue number:
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 printf 'block: %s\ndeferred: true\nissue: #%s\ndate: %s\n' \
   "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen-deferred"
@@ -705,7 +712,14 @@ variants) exist.
 
 ### Self-audit checklist
 
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])BUILD_ISSUES\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /BUILD_ISSUES.md tail (mirrors skills/fix-issues/SKILL.md:1050 exemption for ISSUES_PLAN.md) -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$FULL_TEST_CMD" ]; then
+  echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
+
 # 1. Block registered?
 grep "type: 'BlockType'" src/library/block-registry.js
 
@@ -732,7 +746,7 @@ grep '"BlockType"' runtime/src/blocks/mod.rs || \
 grep "BlockType" $ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md
 
 # 9. Tests pass?
-npm run test:all
+$FULL_TEST_CMD
 ```
 
 If ANY check returns nothing (except #4 which is conditional and #8 which

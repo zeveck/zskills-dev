@@ -6,7 +6,7 @@ description: >-
   verification.
 argument-hint: "<block-type(s)> [concept hint]"
 metadata:
-  version: "2026.05.20+7e9e3c"
+  version: "2026.05.20+a1f9b7"
 ---
 
 # Add Example Model
@@ -266,7 +266,12 @@ printf 'name: %s\ncompleted: %s\n' "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Isecon
 
 Start dev server if not running:
 ```bash
-npm start &
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$DEV_SERVER_CMD" ]; then
+  echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
+$DEV_SERVER_CMD &
 ```
 
 Use `playwright-cli` to:
@@ -310,7 +315,12 @@ wrong param name produced wrong output. The test passed but the model was broken
 ### 4d. Run all test suites
 
 ```bash
-npm run test:all
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -z "$FULL_TEST_CMD" ]; then
+  echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+  exit 1
+fi
+$FULL_TEST_CMD
 ```
 
 All 3 suites must pass (unit, e2e, codegen). Report each suite's result.

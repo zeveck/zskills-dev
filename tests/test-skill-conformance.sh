@@ -1759,7 +1759,7 @@ else
         fi
       done
     done < "$skill_file"
-  done < <(find "$REPO_ROOT/skills" -name '*.md' | sort)
+  done < <(find "$REPO_ROOT/skills" "$REPO_ROOT/block-diagram" -name '*.md' | sort)
 
   if [ "$DRIFT_FAIL" -eq 0 ]; then
     pass "no skill-file drift hardcodes (deny-list clean against tests/fixtures/forbidden-literals.txt)"
@@ -1768,6 +1768,29 @@ else
     for h in "${DRIFT_HITS[@]}"; do
       printf '    %s\n' "$h" >&2
     done
+  fi
+
+  # Regression fixture (#458): the three deny-list/positive-side/coverage
+  # scanner roots MUST cover both skills/ AND block-diagram/. Without this,
+  # the #454 sweep's regression mode (re-injecting TZ=America/New_York or
+  # `npm run test:all` into a block-diagram SKILL.md) silently passes
+  # conformance. Inspect the live scanner source for the dual-root find
+  # invocation. Fails closed if a future edit drops `block-diagram` from
+  # any of the three sites.
+  SELF="$REPO_ROOT/tests/test-skill-conformance.sh"
+  bd_root_hits=$(grep -cE 'find "\$REPO_ROOT/skills" "\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
+  # Also count the positive-side scanner's `extra_root` plumbing (a 4th-arg
+  # variant that passes the second root through the helper function).
+  bd_extra_root_hits=$(grep -cE 'scan_positive_side "\$REPO_ROOT/skills".*"\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
+  # Expected: 2 dual-root find invocations (deny-list at ~line 1762, prose-
+  # imperative coverage at ~line 2408) + 1 scan_positive_side with extra_root
+  # (real-tree case). Total >= 3 references to block-diagram across the
+  # three scanner-root sites.
+  bd_total=$((bd_root_hits + bd_extra_root_hits))
+  if [ "$bd_total" -ge 3 ]; then
+    pass "deny-list/positive-side/coverage scanners all scope block-diagram/ (#458 regression fixture: found $bd_total of 3 expected block-diagram scan-root references)"
+  else
+    fail "deny-list scanner scope regression" "expected 3 block-diagram scan-root references in $SELF (2 dual-root find + 1 scan_positive_side extra_root), got $bd_total — at least one of the three scanner roots has regressed to skills/-only (#458)"
   fi
 fi
 
@@ -1943,9 +1966,13 @@ POS_DRIFT_HITS=()
 POS_VAR_RE='\$\{?(UNIT_TEST_CMD|FULL_TEST_CMD|TIMEZONE|DEV_SERVER_CMD|TEST_OUTPUT_FILE|COMMIT_CO_AUTHOR)\}?'
 
 scan_positive_side() {
+  # First positional arg is a single root (kept for callers that pass one
+  # root); additional roots may be passed as a comma-separated list via
+  # the 4th positional (root2) — caller convenience for two-root scans.
   local target_root="$1"
   local fail_var_name="$2"
   local hits_var_name="$3"
+  local extra_root="${4:-}"
   local local_fail=0
   local -a local_hits=()
   while IFS= read -r skill_file; do
@@ -2037,7 +2064,13 @@ scan_positive_side() {
         fi
       fi
     done < "$skill_file"
-  done < <(find "$target_root" -name '*.md' | sort)
+  done < <(
+    if [ -n "$extra_root" ]; then
+      find "$target_root" "$extra_root" -name '*.md' | sort
+    else
+      find "$target_root" -name '*.md' | sort
+    fi
+  )
   # Export results via name-refs.
   printf -v "$fail_var_name" '%s' "$local_fail"
   if [ "$local_fail" -eq 1 ]; then
@@ -2092,10 +2125,14 @@ fi
 
 rm -rf "$POS_FIXTURE_DIR"
 
-# Real-tree case: scan current skills/ — expect 0 drift after Phase 2 migration.
+# Real-tree case: scan current skills/ AND block-diagram/ — expect 0 drift
+# after Phase 2 migration. block-diagram/ added under #458 closure (the
+# companion deny-list scanner above already extends to block-diagram/; the
+# positive-side scanner extends here for symmetry — same surface PR #454
+# swept).
 REAL_POS_FAIL=0
 REAL_POS_HITS=()
-scan_positive_side "$REPO_ROOT/skills" REAL_POS_FAIL REAL_POS_HITS
+scan_positive_side "$REPO_ROOT/skills" REAL_POS_FAIL REAL_POS_HITS "$REPO_ROOT/block-diagram"
 if [ "$REAL_POS_FAIL" -eq 0 ]; then
   pass "positive-side real-tree: every fence using a config-var also sources zskills-resolve-config.sh"
 else
@@ -2405,7 +2442,7 @@ while IFS= read -r skill_file; do
       fi
     fi
   done
-done < <(find "$REPO_ROOT/skills" -name '*.md' | sort)
+done < <(find "$REPO_ROOT/skills" "$REPO_ROOT/block-diagram" -name '*.md' | sort)
 
 # Guard against vacuous pass: if zero sites were detected, the regex broke.
 # Plan enumerates 9 PROSE-IMPERATIVE sites (8 test-cmd + 1 dev-server).
