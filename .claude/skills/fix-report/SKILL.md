@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.18+5b806e"
+  version: "2026.05.20+c8b30f"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -448,7 +448,9 @@ not "3 fixes in category" but one per fix.
   synthetic event limitations)
 - **Pre-existing Bugs Discovered** — bugs found during verification,
   not related to sprint fixes (Bug, Found During, Location, Severity)
-- **Test Suite Status** — `Command: npm run test:all` + per-suite counts
+- **Test Suite Status** — `Command: $FULL_TEST_CMD` (resolve via
+  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
+  if not already in environment) + per-suite counts
 
 **Append, don't overwrite** — new items go at the top of each domain
 section. Already-verified items stay as `✅`. Returning from a fix
