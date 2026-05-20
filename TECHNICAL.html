@@ -222,7 +222,7 @@
   <h2>Cost &amp; Tokens</h2>
   <p>Z Skills is itself built using Z Skills. We have Claude Code session JSONL transcripts for most of the development, with token counts per assistant turn. Here is the spend.</p>
 
-  <div class="caveat"><strong>Honest caveats &mdash; read these before the headline numbers.</strong> JSONL coverage begins <strong>2026-04-01</strong> (cc-session-logger was installed mid-stream); the first ~1 week of dev (2026-03-26 → 2026-03-31) has no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Prices use Anthropic's published Claude Opus rates ($15/$75/$18.75/$1.50 per MTok for input/output/cache-write/cache-read); actual billing depends on contract and any volume discounts. "Per-PR" figures use total spend ÷ merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work.</div>
+  <div class="caveat"><strong>Honest caveats &mdash; read these before the headline numbers.</strong> JSONL coverage begins <strong>2026-04-18</strong> (cc-session-logger was installed mid-stream); the first ~23 days of dev (2026-03-26 → 2026-04-17) has no logged tokens. Cost numbers below therefore <em>underestimate</em> true spend. Prices use Anthropic's published Claude Opus rates ($15/$75/$18.75/$1.50 per MTok for input/output/cache-write/cache-read); actual billing depends on contract and any volume discounts. "Per-PR" figures use total spend ÷ merged PRs as a coarse divisor; the numerator includes exploration, failed attempts, and unmerged work. Concretely: the logged window (2026-04-18 → 2026-05-20, ~32 days) burned ~$1,553/day. If pre-2026-04-18 ran anywhere near that rate, true Opus spend is plausibly closer to $85k than the $49.5k headline — early-repo days were probably less intense than mid-stream, so treat $85k as a soft upper bound, not a tight estimate.</div>
 
   <div class="stat-grid">
     <div class="stat orange"><div class="val">$49.5k*</div><div class="label">Est. Opus-rate spend</div><div class="sub">From ~99k logged assistant turns. *Partial coverage &mdash; see caveat above.</div></div>
@@ -280,7 +280,7 @@ gh issue list --state all --limit 1000 --json number | python3 -c 'import json,s
 
   <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
     <li><strong>Rate basis:</strong> Anthropic's published Claude Opus pricing — $15/MTok input, $75/MTok output, $18.75/MTok cache-creation, $1.50/MTok cache-read. Real billing may differ (volume discounts, contract terms).</li>
-    <li><strong>Coverage gap:</strong> First commit on main is 2026-03-26; earliest logged JSONL turn is 2026-04-01. Roughly 1 week of dev is unlogged — expect actual spend to be moderately higher than the $49.5k figure.</li>
+    <li><strong>Coverage gap:</strong> First commit on main is 2026-03-26; earliest logged JSONL turn is 2026-04-18. Roughly 23 days of dev is unlogged — expect actual spend to be moderately higher than the $49.5k figure.</li>
     <li><strong>Sessions vs. subagents:</strong> "Top-level sessions" are interactive Claude Code REPL sessions; "subagent dispatches" are isolated agents the orchestrator spawned for impl/verify/review work.</li>
     <li><strong>Cost per merged PR:</strong> $49,464 ÷ 308 merged PRs ≈ $161 / PR. This includes exploration, planning, reviews, failed attempts, and the not-yet-merged work — not just successful PRs — so the real "cost of a successful merged PR" is somewhat lower. Take as a rough order-of-magnitude.</li>
   </ul>
