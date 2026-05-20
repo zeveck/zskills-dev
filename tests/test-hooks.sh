@@ -374,6 +374,13 @@ expect_deny "git push origin :main (deletion attempt — #392)" "git push origin
 expect_deny "git push origin abc123:master (sha:master refspec — #392)" "git push origin abc123:master"
 expect_deny "git push -u origin feat:main (upstream + refspec — #392)" "git push -u origin feat:main"
 
+# Issue #457: force-prefix refspec (+main) — no colon, leading '+'. Pre-fix
+# normalization stripped colon-LHS and quotes but not '+', so PUSH_TARGET
+# stayed "+main" and the equality check against literal "main" missed.
+expect_deny "git push origin +main (force-prefix — #457)" "git push origin +main"
+expect_deny "git push origin +master (force-prefix master — #457)" "git push origin +master"
+expect_deny "git push origin +HEAD:main (force-prefix with refspec — #457)" "git push origin +HEAD:main"
+
 echo ""
 echo "=== Push: BLOCK_MAIN_PUSH preset toggle ==="
 

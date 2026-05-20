@@ -604,6 +604,13 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   # layer each side so quoted bash-c / eval inner strings still classify.
   PUSH_TARGET="${PUSH_TARGET%\'}"; PUSH_TARGET="${PUSH_TARGET#\'}"
   PUSH_TARGET="${PUSH_TARGET%\"}"; PUSH_TARGET="${PUSH_TARGET#\"}"
+  # Strip leading '+' from force-prefix refspec form. `git push origin +main`
+  # is the no-colon force-push spelling; without this strip, PUSH_TARGET=+main
+  # falls through the equality check against literal "main" and the rule
+  # doesn't fire (#457). Strip after the colon-RHS normalization so forms
+  # like `+HEAD:main` (already reduced to "main") and `+main` (reduced to
+  # "+main") both classify correctly.
+  PUSH_TARGET="${PUSH_TARGET#+}"
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
