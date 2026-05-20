@@ -421,6 +421,18 @@ Created by `/fix-issues sync` on 2026-05-15 for issues not covered by domain-spe
 
 ---
 
+### #459 — PIPELINE_ID construction sites in /run-plan, /commit pr, /draft-plan, /refine-plan skip sanitize-pipeline-id.sh (CLAUDE.md tracking-markers rule)
+
+**Labels:** bug | **Verdict:** NOT FIXED — `grep -c sanitize-pipeline-id` returns 0 for all four skills (`skills/run-plan/SKILL.md`, `skills/commit/modes/pr.md`, `skills/draft-plan/SKILL.md`, `skills/refine-plan/SKILL.md`), while 10 peer skills already wrap their constructions with the sanitize helper.
+
+**Problem.** CLAUDE.md `## Tracking markers` mandates the sanitize-pipeline-id helper before any constructed `PIPELINE_ID` is written to disk, but four skills construct + persist PIPELINE_IDs without it. 23 total non-conforming construction sites: 15 in `skills/run-plan/SKILL.md` (lines 353, 508, 557, 632, 895, 1411, 1762, 1828, 2064, 2131, 2179, 2406, 2428, 2440 — and the bare `echo` form at 495/1203), 1 in `skills/commit/modes/pr.md:88` (`PIPELINE_ID="commit.$BRANCH_SLUG"` with only slash→dash translation), 4 in `skills/draft-plan/SKILL.md` (lines 151, 245, 497, 684), 3 in `skills/refine-plan/SKILL.md` (lines 141, 383, 626). The `tr '[:upper:]_' '[:lower:]-'` step in run-plan's TRACKING_ID derivation does not restrict to `[a-zA-Z0-9._-]+`, so any plan file or branch name with a shell-special char (`;`, `$`, space, backtick, …) propagates that char into `.zskills/tracking/$PIPELINE_ID/...` marker paths and into the sibling-check regexes used by `block-unsafe-generic.sh`.
+
+**Fix outline.** Mechanical sweep: after every raw `PIPELINE_ID=...` assignment in the four skills, append the canonical wrap `PIPELINE_ID="$(bash \"$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh\" \"$PIPELINE_ID\")"` (mirror `skills/fix-issues/SKILL.md:869`). Bump `metadata.version` on all four skills (per skill-versioning enforcement). Add a conformance tripwire in `tests/test-skill-conformance.sh` asserting that every skill which writes `.zskills/tracking/$PIPELINE_ID/...` also contains a `sanitize-pipeline-id.sh` invocation between its first `PIPELINE_ID=` line and its first tracking-marker write — locks the invariant against future regressions in any skill. Leave the run-plan transitional flat-write at lines 2095-2097 untouched (called out as out-of-scope in the issue body).
+
+**Complexity:** M. **Action now:** /do pr — mechanical multi-file sweep across 4 skills (23 sites) + 4 version bumps + 1 conformance tripwire. Sized M (not S) because the conformance assertion needs to scan tracking-marker write-sites to know which skills to gate, and the wrap pattern shows up in multiple bash fences per skill (each fence needs its own wrap, not a single shared helper sourcing). Not L — no design surface, no new commands, single canonical fix shape borrowed verbatim from peer skills.
+
+---
+
 ### #457 — block-unsafe-generic.sh: BLOCK_MAIN_PUSH bypassed by bare `git push origin +main` (force-prefix without refspec)
 
 **Labels:** bug | **Verdict:** NOT FIXED — `hooks/block-unsafe-generic.sh:599-606` strips refspec LHS (#392) and surrounding quotes (#399) but never strips a leading `+`; the exact-string equality at line 608 (`[ "$PUSH_TARGET" = "main" ]`) lets `+main`/`+master` fall through to `exit 0`. `tests/test-hooks.sh:378-414` BLOCK_MAIN_PUSH toggle block covers bare `main`/`master` and explicit refspecs but never `origin +main`.
