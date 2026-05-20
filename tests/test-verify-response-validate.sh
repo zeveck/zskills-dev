@@ -11,6 +11,11 @@
 #   3. Sub-200-byte response → exit 1, stderr names the threshold
 #   4. Empty response → exit 1
 #   5. Stalled-string in EARLIER lines (not last 10) → exit 0 (recovered)
+#   6-15. Paraphrase class (issue #480) — broadened PATTERNS_STALLED entries
+#         each fire on a plausible paraphrase the original 7-entry whitelist
+#         missed.
+#   16-18. Positive paraphrase cases that LOOK similar but should pass
+#          (verifier has positive evidence of test completion).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -127,6 +132,102 @@ if [ "$EXIT" -eq 0 ] && [ -z "$STDERR" ]; then
 else
   fail "case 5: agent that recovered should pass" "exit=$EXIT stderr=$STDERR"
 fi
+
+# --- Paraphrase class (issue #480) ---
+# Each case is the verifier ending its turn with a paraphrase of "I'm not
+# actually verifying, I'm waiting." All should EXIT 1.
+
+# Helper for paraphrase cases: a long body of legitimate-looking prose,
+# then the trailer phrase under test. The body satisfies the 200-byte
+# minimum so only the trailer drives the fail/pass outcome.
+PARAPHRASE_BODY='Verification report for the dispatched change. I reviewed the diff for skills/run-plan/SKILL.md and the supporting test fixture additions. The change touches the Failure Protocol section and adds a stalled-string check downstream of the dispatch. I attempted to run the full suite to confirm no regression.
+
+Body line A. Body line B. Body line C. Body line D. Body line E.
+'
+
+run_paraphrase_fail() {
+  local label="$1"
+  local trailer="$2"
+  local response="$PARAPHRASE_BODY
+$trailer"
+  local stderr_file
+  stderr_file=$(mktemp)
+  printf '%s' "$response" | bash "$HOOK" 2>"$stderr_file"
+  local exit_code=$?
+  local stderr_text
+  stderr_text=$(cat "$stderr_file")
+  rm -f "$stderr_file"
+  if [ "$exit_code" -eq 1 ] && [[ "$stderr_text" == *"stalled-string pattern"* ]]; then
+    pass "$label"
+  else
+    fail "$label" "exit=$exit_code stderr=$stderr_text"
+  fi
+}
+
+run_paraphrase_pass() {
+  local label="$1"
+  local trailer="$2"
+  local response="$PARAPHRASE_BODY
+$trailer"
+  local stderr_file
+  stderr_file=$(mktemp)
+  printf '%s' "$response" | bash "$HOOK" 2>"$stderr_file"
+  local exit_code=$?
+  local stderr_text
+  stderr_text=$(cat "$stderr_file")
+  rm -f "$stderr_file"
+  if [ "$exit_code" -eq 0 ] && [ -z "$stderr_text" ]; then
+    pass "$label"
+  else
+    fail "$label" "exit=$exit_code stderr=$stderr_text"
+  fi
+}
+
+# Negative (should-fail) paraphrase cases — each was a clean PASS before #480.
+run_paraphrase_fail "case 6: 'I'll wait for the test suite to finish'" \
+  "I'll wait for the test suite to finish before reporting."
+
+run_paraphrase_fail "case 7: 'I will wait for the test run'" \
+  "I will wait for the test run to complete."
+
+run_paraphrase_fail "case 8: 'let me wait for the test command'" \
+  "Let me wait for the test command output."
+
+run_paraphrase_fail "case 9: 'running in background, will check back'" \
+  "The suite is running in background, will check back shortly."
+
+run_paraphrase_fail "case 10: 'running in the background'" \
+  "Tests started; they are running in the background now."
+
+run_paraphrase_fail "case 11: 'is still running'" \
+  "The implementation agent is still running and I will report once done."
+
+run_paraphrase_fail "case 12: 'still running in'" \
+  "The build is still running in CI; I cannot confirm yet."
+
+run_paraphrase_fail "case 13: 'come back to check'" \
+  "I'll come back to check once the long-running task finishes."
+
+run_paraphrase_fail "case 14: 'I'll poll'" \
+  "I'll poll the background process every few minutes."
+
+run_paraphrase_fail "case 15: 'still in progress'" \
+  "The verification step is still in progress."
+
+run_paraphrase_fail "case 16: 'will poll later'" \
+  "I will poll later once the suite produces output."
+
+# Positive (should-pass) cases — verifier has POSITIVE evidence of test
+# completion in the tail. These would not have triggered the old 7-entry
+# whitelist, and must NOT trigger the broadened one either.
+run_paraphrase_pass "case 17: 'tests passed, waiting for CI to merge'" \
+  "Tests: 3636/3636 passed locally. AC checks complete. Waiting for CI to merge the PR, then sprint done."
+
+run_paraphrase_pass "case 18: 'tests passed locally; auto-merge enabled'" \
+  "Local suite: 3636/3636 passed. Diff matches plan. Auto-merge enabled on the PR; this report concludes."
+
+run_paraphrase_pass "case 19: 'all tests passed, ready to commit'" \
+  "All tests passed (3636/3636). AC-1 PASS, AC-2 PASS. Ready to commit."
 
 echo ""
 echo "---"
