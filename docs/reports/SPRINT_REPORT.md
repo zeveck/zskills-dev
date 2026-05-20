@@ -1119,3 +1119,22 @@ Pool: 1 open candidate considered (Ready ∩ open)
 ### Open Ready queue after this sprint
 Empty.
 
+
+## Sprint — 2026-05-20 09:21 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Cron:** Run /fix-issues 2 auto dashboard every 30m | **Sprint ID:** sprint-20260520-124237-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|----|----|-------|-------------|-------------|
+| #469 | /verify-changes 4 PIPELINE_ID sites (same class as #459) | wt-fix-issue-469 | #483 | /quickfix S | 3605/3605 pass | PASS (full suite) | N/A (skill prose) |
+| #468 | sanitize-pipeline-id.sh empty-input guard | wt-fix-issue-468 | #484 | /quickfix S | 3603/3603 pass | PASS (full suite) | N/A (script + test) |
+
+### Notable
+1. **Both /quickfix-tier in-batch dispatch worked clean again** — pattern's stable now: parallel impl agents in per-issue worktrees, serial /land-pr for the merge gate.
+2. **#468 got a follow-up commit** — registering the new sanitize-pipeline-id.sh blob hash in `update-zskills/references/tier1-shipped-hashes.txt` was added to the PR post-impl. Tier-1 drift invariant required it; the impl agent's spec didn't include the hash-registry update, but the user pushed the follow-up before merge. Clean recovery; no scope creep.
+3. **Cron fired mid-sprint** — at 09:14 UTC, a cron fire arrived while #468 impl was still running. Did NOT spawn a fresh sprint (correctly deferred per the in-flight-detection pattern from this session). The fresh fire's intended picks (#469/#468 — same as in-flight) would have collided with the per-issue worktrees.
+
+### Open Ready queue after this sprint
+14 entries dragged in mid-sprint: [470, 478, 479, 473, 481, 482, 472, 474, 480, 475, 476, 477] (12 unique, plus #469/#468 still in Ready but now closed = stale). Next fire will pick top 2 (likely #470 + #478) — #470 already researched (tier /quickfix S, same class as #457/#465), others need Phase 1a backfill.
+
