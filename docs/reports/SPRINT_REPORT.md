@@ -1177,3 +1177,22 @@ Empty.
 ### Open Ready queue after this sprint
 8 entries: #481, #482, #472, #474, #480, #475, #476, #477 -- all unresearched.
 
+
+## Sprint -- 2026-05-20 11:54 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260520-151215-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #481 | pr-rebase.sh dirty-tree precondition + exit 16 | wt-fix-issue-481 | #492 | /quickfix S | 3633/3633 |
+| #482 | pr-monitor.sh post-force-push grace (sleep+re-poll) | wt-fix-issue-482 | #493 | /quickfix S | 3631/3631 |
+
+### Notable
+1. Prior fire (sprint-20260520-145406) had to abandon due to back-to-back 529 Overloaded API errors on the research dispatch. This fire retried after ~30 min and the API recovered.
+2. Both impls touched skills/land-pr/SKILL.md (metadata.version bump on each). #482 rebased on #481's land and hit a frontmatter conflict; resolved by accepting HEAD's version then re-running frontmatter-set.sh on the merged content. The pre-commit hook caught the stale version on first amend attempt; recovery was: bump after rebase, then `git rebase --continue` re-committed cleanly.
+3. #481 chose exit code 16 (not reusing 11 which is overloaded across 4 modes); #482 added env-overrideable sleep via PR_MONITOR_RECHECK_SLEEP for test seam (default 5s preserved in production).
+
+### Open Ready queue after this sprint
+6 entries unresearched: #472, #474, #480, #475, #476, #477.
+
