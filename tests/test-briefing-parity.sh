@@ -67,9 +67,14 @@ trap 'rm -rf "$TEST_TMPDIR"' EXIT
 #   verify      — emits one of "VERIFICATION NEEDED" / "NO VERIFICATION
 #                 NEEDED" depending on plan-report state. Match either.
 #   current     — top header is "CURRENTLY IN FLIGHT —"
-#   worktrees   — emits a JSON array; the first object always has
-#                 `"path":` (every worktree has a path). Match `"path":`.
-#   commits     — emits a JSON array; every commit object has `"hash":`.
+#   worktrees   — emits a JSON array (possibly empty in fresh CI clones
+#                 with no live worktrees). Custom-matched below: output must
+#                 begin with `[` AND, when non-empty, contain `"path":`.
+#                 The `return 0` mutation produces empty stdout — neither
+#                 condition holds, so the assertion still fails it.
+#   commits     — emits a JSON array (possibly empty when no commits land
+#                 in the --since window). Same shape as worktrees: output
+#                 begins with `[`, and non-empty arrays contain `"hash":`.
 #   checkboxes  — emits a JSON array; objects have `"file":` keys. Empty
 #                 array `[]` is also valid (no plan reports = no checkboxes),
 #                 so accept either `"file":` OR a literal `[]` whole-output.
@@ -78,8 +83,8 @@ smoke_cmds=(
   "report --since=24h --output=$TEST_TMPDIR/briefing-test.md|Report written to:"
   "verify|VERIFICATION"
   "current|CURRENTLY IN FLIGHT"
-  "worktrees|\"path\":"
-  "commits --since=24h|\"hash\":"
+  "worktrees|"  # custom-matched below (stateful-env-agnostic JSON-array)
+  "commits --since=24h|"  # custom-matched below (stateful-env-agnostic JSON-array)
   "checkboxes|"  # custom-matched below (allow empty-array)
 )
 
@@ -102,6 +107,35 @@ for entry in "${smoke_cmds[@]}"; do
       pass "python3 briefing.py $cmd (JSON array)"
     else
       fail "python3 briefing.py $cmd (expected '\"file\":' key or '[]'; got: $output)"
+    fi
+    continue
+  fi
+
+  if [[ "$cmd" == "worktrees" || "$cmd" == "commits"* ]]; then
+    # worktrees / commits: emit a JSON array via json.dumps(list, indent=2).
+    # In fresh CI clones with no live worktrees / no in-window commits the
+    # array is empty (`[]`); locally it has entries. Stateful-env-agnostic
+    # check: output (trimmed of leading whitespace) MUST start with `[`.
+    # The regression this guards (`def cmd(): return 0` / removed print)
+    # produces empty stdout — fails this check. When the array IS non-empty
+    # we additionally assert the expected key (`"path":` / `"hash":`)
+    # appears — preserves the tighter check on populated envs.
+    if [[ "$cmd" == "worktrees" ]]; then
+      key='"path":'
+    else
+      key='"hash":'
+    fi
+    trimmed_lead=$(printf '%s' "$output" | sed -e 's/^[[:space:]]*//')
+    trimmed_all=$(printf '%s' "$output" | tr -d '[:space:]')
+    if [[ "$trimmed_lead" != \[* ]]; then
+      fail "python3 briefing.py $cmd (expected JSON array — output to begin with '['; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
+    elif [[ "$trimmed_all" == "[]" ]]; then
+      # Empty array — legitimate in CI / clean envs.
+      pass "python3 briefing.py $cmd (empty JSON array — no data in this env)"
+    elif printf '%s' "$output" | grep -qF "$key"; then
+      pass "python3 briefing.py $cmd (JSON array with $key entries)"
+    else
+      fail "python3 briefing.py $cmd (non-empty JSON array missing expected '$key' key; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
     fi
     continue
   fi
