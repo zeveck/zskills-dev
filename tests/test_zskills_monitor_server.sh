@@ -983,4 +983,45 @@ else
   fail "couldn't start server for parallel-write test"
 fi
 
+###############################################################################
+# Phase 12 — index.html cache-bust: ?v=<mtime_ns> substituted on /
+###############################################################################
+echo ""
+echo "=== Phase 12: index.html cache-bust (?v= on app.css / app.js refs) ==="
+
+MR9="$TMP_ROOT/mr9"
+mkdir -p "$MR9/.claude" "$MR9/plans"
+PORT_H=$(( BASE_PORT + 7 ))
+cat >"$MR9/.claude/zskills-config.json" <<EOF
+{ "dev_server": { "default_port": $PORT_H } }
+EOF
+if start_server "$MR9" "$PORT_H"; then
+  INDEX_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT_H/")
+  if printf '%s' "$INDEX_BODY" | grep -qE 'href="/app\.css\?v=[0-9]+"'; then
+    pass "served / contains href=\"/app.css?v=<digits>\""
+  else
+    fail "served / missing cache-bust on app.css: $(printf '%s' "$INDEX_BODY" | grep -oE 'href="/app\.css[^"]*"' | head -1)"
+  fi
+  if printf '%s' "$INDEX_BODY" | grep -qE 'src="/app\.js\?v=[0-9]+"'; then
+    pass "served / contains src=\"/app.js?v=<digits>\""
+  else
+    fail "served / missing cache-bust on app.js: $(printf '%s' "$INDEX_BODY" | grep -oE 'src="/app\.js[^"]*"' | head -1)"
+  fi
+  # Two requests should return the same ?v= value when the asset is
+  # unchanged (mtime stable). Tolerate the FS quirk where mtime_ns may
+  # tick by one if the assets were just written by mirror-skill.sh, by
+  # extracting the value and comparing.
+  V1=$(printf '%s' "$INDEX_BODY" | grep -oE '/app\.css\?v=[0-9]+' | head -1)
+  INDEX_BODY2=$(curl -sf -m 3 "http://127.0.0.1:$PORT_H/")
+  V2=$(printf '%s' "$INDEX_BODY2" | grep -oE '/app\.css\?v=[0-9]+' | head -1)
+  if [ -n "$V1" ] && [ "$V1" = "$V2" ]; then
+    pass "cache-bust value stable across two consecutive requests"
+  else
+    fail "cache-bust value not stable: V1=$V1 V2=$V2"
+  fi
+  stop_server "$MR9/.zskills/dashboard-server.pid" "$PORT_H" >/dev/null
+else
+  fail "couldn't start server for cache-bust test"
+fi
+
 print_summary_and_exit
