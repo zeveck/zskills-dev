@@ -45,6 +45,53 @@ expect_allow() {
   fi
 }
 
+# --- Helpers: run hook from inside a temp repo on a specific branch ---
+# Needed for `git push origin HEAD` testing — the generic hook resolves HEAD
+# via `git branch --show-current` against the cwd's repo, so the branch
+# context must be controlled per-case. Issue #556 / closes the property-test
+# matrix gap left by #515's runtime fix.
+#
+# Caller pattern: set up a temp repo on the target branch ONCE per branch,
+# then call expect_deny_from_repo / expect_allow_from_repo with the repo
+# path repeatedly. Cleaner than mktemp-per-case (which would balloon to
+# hundreds of mkdir/git-init syscalls).
+make_branch_repo() {
+  local branch="$1"
+  local dir
+  dir=$(mktemp -d)
+  (cd "$dir" && \
+   git init -q && \
+   git checkout -q -b "$branch" 2>/dev/null && \
+   git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init 2>/dev/null)
+  echo "$dir"
+}
+
+expect_deny_from_repo() {
+  local repo="$1"
+  local label="$2"
+  local cmd="$3"
+  local result
+  result=$(echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | (cd "$repo" && bash "$HOOK"))
+  if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+    pass "deny: $label"
+  else
+    fail "deny: $label — expected deny, got: $result"
+  fi
+}
+
+expect_allow_from_repo() {
+  local repo="$1"
+  local label="$2"
+  local cmd="$3"
+  local result
+  result=$(echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | (cd "$repo" && bash "$HOOK"))
+  if [[ -z "$result" ]]; then
+    pass "allow: $label"
+  else
+    fail "allow: $label — got unexpected output: $result"
+  fi
+}
+
 echo "=== Hook deny patterns ==="
 
 # 1. git stash drop / clear — destroys stashed work
@@ -1343,11 +1390,18 @@ EOF
   # invoked from (typically a zskills-tracked worktree with accumulated commits),
   # firing the tracking guard before the main_protected check this test asserts.
   local result
+  # cd into the fixture repo before invoking the hook. The project hook's
+  # HEAD-rewrite block (block-unsafe-project.sh.template:1057) calls
+  # `git branch --show-current` against the cwd to resolve `git push origin
+  # HEAD` to the local branch. Without cd, the hook sees the test runner's
+  # outer cwd (the worktree where tests/test-hooks.sh lives) instead of the
+  # fixture repo on $branch, breaking #556's branch-context assertions.
+  # Existing assertions (using REPO_ROOT for is_on_main) are unaffected.
   result=$(echo "$json" | \
     REPO_ROOT="$test_tmpdir" \
     LOCAL_ROOT="$test_tmpdir" \
     TRACKING_ROOT="$test_tmpdir" \
-    bash "$test_tmpdir/.claude/hooks/block-unsafe-project.sh" 2>/dev/null)
+    bash -c "cd '$test_tmpdir' && bash '$test_tmpdir/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
 
   # Cleanup
   rm -rf "$test_tmpdir"
@@ -2279,15 +2333,24 @@ echo "=== Hook-bypass property enumeration (#513) ==="
 #   quote-style  ∈ {none, single, double}  (only meaningful for wrappers)
 #   target       ∈ {main, master}  → expect_deny
 #                  {feat/test}     → expect_allow
+#                  {HEAD}          → branch-context dependent (see below)
+#   branch       ∈ {main, feat/test}  (only meaningful for target=HEAD;
+#                  non-HEAD targets are branch-independent because the
+#                  parser never consults the current branch for them).
+#                  For target=HEAD the hook resolves via
+#                  `git branch --show-current` against the cwd repo, so
+#                  branch=main → expect_deny, branch=feat/test → expect_allow.
+#                  Issue #556 / closes the property-test matrix gap left
+#                  by #515's runtime HEAD-resolution fix.
 #
 # Proves the cumulative normalization chain in
 # hooks/block-unsafe-generic.sh:612-633 (colon-RHS → quote strip → '+' strip
-# → 'refs/heads/' strip) and the equivalent regex in
-# hooks/block-unsafe-project.sh.template:1037-1051 ([+:]?(refs/heads/)?
-# (main|master)) both handle every combination in this space. Any future
-# regression in those normalization sites — or any new bypass form a future
-# agent invents — fails here at CI time, breaking the patch-react-ship-
-# patch-again cycle.
+# → 'refs/heads/' strip → HEAD-to-current-branch) and the equivalent regex
+# in hooks/block-unsafe-project.sh.template:1037-1051 ([+:]?(refs/heads/)?
+# (main|master)) plus the HEAD-token rewrite at :1057-1071 both handle every
+# combination in this space. Any future regression in those normalization
+# sites — or any new bypass form a future agent invents — fails here at CI
+# time, breaking the patch-react-ship-patch-again cycle.
 #
 # Generic hook only (top-level expect_deny / expect_allow harness). Project
 # hook is exercised below in a separate section because it requires
@@ -2357,6 +2420,76 @@ for target in main master feat/test; do
 done
 
 echo "  (#513 generic-hook enumeration: $GEN_PROP_CASES cases — $GEN_PROP_DENY deny, $GEN_PROP_ALLOW allow)"
+
+# --- #556 extension: target=HEAD × branch axis ---
+# `git push origin HEAD` resolves to the local checkout's current branch.
+# From a main/master checkout this targets remote main/master and bypasses
+# the literal-string compare in pre-#515 hook logic. The #515 runtime fix
+# adds `if [ "$PUSH_TARGET" = "HEAD" ]; then PUSH_TARGET=$(git branch
+# --show-current); fi` at block-unsafe-generic.sh:648-650. This block
+# enumerates the same cartesian product as the main loop above with
+# target=HEAD and a branch-context axis (main, feat/test), proving the
+# fix handles every wrapper/force/refp/spec_kind/quote combination — not
+# just the 4 hand-written cases shipped with PR #553.
+#
+# Branch is set by cd-ing into a temp repo created on that branch and
+# letting the hook run `git branch --show-current` there. One repo per
+# branch keeps setup cost flat.
+for branch in main feat/test; do
+  HEAD_REPO=$(make_branch_repo "$branch")
+  if [ "$branch" = "main" ]; then
+    expected="deny"
+  else
+    expected="allow"
+  fi
+  for force in "" "+"; do
+    for refp in "" "refs/heads/"; do
+      dest="${force}${refp}HEAD"
+      for spec_kind in bare feat HEAD del localref; do
+        case "$spec_kind" in
+          bare)     refspec="$dest" ;;
+          feat)     refspec="feat:${dest}" ;;
+          HEAD)     refspec="HEAD:${dest}" ;;
+          del)      refspec=":${dest}" ;;
+          localref) refspec="localref:${dest}" ;;
+        esac
+        for wrapper_kind in bare bash-c sh-c eval; do
+          if [ "$wrapper_kind" = "bare" ]; then
+            quote_styles="none"
+          else
+            quote_styles="single double"
+          fi
+          for q in $quote_styles; do
+            case "$q" in
+              none)   inner_q="" ;;
+              single) inner_q="'" ;;
+              double) inner_q="\"" ;;
+            esac
+            inner="git push origin $refspec"
+            case "$wrapper_kind" in
+              bare)   cmd="$inner" ;;
+              bash-c) cmd="bash -c ${inner_q}${inner}${inner_q}" ;;
+              sh-c)   cmd="sh -c ${inner_q}${inner}${inner_q}" ;;
+              eval)   cmd="eval ${inner_q}${inner}${inner_q}" ;;
+            esac
+            label="prop/$wrapper_kind/$q/${spec_kind}/${force:-noforce}${refp:+/refsheads}/HEAD/branch=${branch}"
+            GEN_PROP_CASES=$((GEN_PROP_CASES + 1))
+            if [ "$expected" = "deny" ]; then
+              expect_deny_from_repo "$HEAD_REPO" "$label" "$cmd"
+              GEN_PROP_DENY=$((GEN_PROP_DENY + 1))
+            else
+              expect_allow_from_repo "$HEAD_REPO" "$label" "$cmd"
+              GEN_PROP_ALLOW=$((GEN_PROP_ALLOW + 1))
+            fi
+          done
+        done
+      done
+    done
+  done
+  rm -rf "$HEAD_REPO"
+done
+
+echo "  (#556 generic-hook HEAD-extension: total now $GEN_PROP_CASES cases — $GEN_PROP_DENY deny, $GEN_PROP_ALLOW allow)"
 
 echo ""
 echo "=== Hook-bypass property enumeration: project hook (#513) ==="
@@ -2449,6 +2582,77 @@ for target in main master feat/test; do
 done
 
 echo "  (#513 project-hook enumeration: $PROJ_PROP_CASES cases — $PROJ_PROP_DENY deny, $PROJ_PROP_ALLOW allow)"
+
+# --- #556 extension: target=HEAD × branch axis (project hook) ---
+# Same matrix as the generic-hook HEAD extension above, but exercised
+# against the rendered project hook with main_protected:true. The project
+# hook resolves HEAD via the token rewrite at block-unsafe-project.sh.
+# template:1057-1071 — `git branch --show-current` against the test repo,
+# then PUSH_ARGS substitution before rules (a)/(b) match. Branch is set
+# via run_main_protected_test's first arg (which `git checkout -b`s the
+# fixture repo onto that branch).
+for branch in main feat/test; do
+  if [ "$branch" = "main" ]; then
+    expected="deny"
+  else
+    expected="allow"
+  fi
+  for force in "" "+"; do
+    for refp in "" "refs/heads/"; do
+      dest="${force}${refp}HEAD"
+      for spec_kind in bare feat HEAD del localref; do
+        case "$spec_kind" in
+          bare)     refspec="$dest" ;;
+          feat)     refspec="feat:${dest}" ;;
+          HEAD)     refspec="HEAD:${dest}" ;;
+          del)      refspec=":${dest}" ;;
+          localref) refspec="localref:${dest}" ;;
+        esac
+        for wrapper_kind in bare bash-c sh-c eval; do
+          if [ "$wrapper_kind" = "bare" ]; then
+            quote_styles="none"
+          else
+            quote_styles="single double"
+          fi
+          for q in $quote_styles; do
+            case "$q" in
+              none)   inner_q="" ;;
+              single) inner_q="'" ;;
+              double) inner_q="\"" ;;
+            esac
+            inner="git push origin $refspec"
+            case "$wrapper_kind" in
+              bare)   cmd="$inner" ;;
+              bash-c) cmd="bash -c ${inner_q}${inner}${inner_q}" ;;
+              sh-c)   cmd="sh -c ${inner_q}${inner}${inner_q}" ;;
+              eval)   cmd="eval ${inner_q}${inner}${inner_q}" ;;
+            esac
+            label="proj-prop/$wrapper_kind/$q/${spec_kind}/${force:-noforce}${refp:+/refsheads}/HEAD/branch=${branch}"
+            PROJ_PROP_CASES=$((PROJ_PROP_CASES + 1))
+            RESULT=$(run_main_protected_test "$branch" '{"execution": {"main_protected": true}}' "$cmd")
+            if [ "$expected" = "deny" ]; then
+              if [[ "$RESULT" == *"permissionDecision"*"deny"* ]]; then
+                pass "deny: $label"
+                PROJ_PROP_DENY=$((PROJ_PROP_DENY + 1))
+              else
+                fail "deny: $label — expected deny, got: $RESULT"
+              fi
+            else
+              if [[ "$RESULT" != *"permissionDecision"*"deny"* ]]; then
+                pass "allow: $label"
+                PROJ_PROP_ALLOW=$((PROJ_PROP_ALLOW + 1))
+              else
+                fail "allow: $label — expected allow, got: $RESULT"
+              fi
+            fi
+          done
+        done
+      done
+    done
+  done
+done
+
+echo "  (#556 project-hook HEAD-extension: total now $PROJ_PROP_CASES cases — $PROJ_PROP_DENY deny, $PROJ_PROP_ALLOW allow)"
 
 
 echo "=== Landing mode argument detection ==="
