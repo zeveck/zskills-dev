@@ -4552,7 +4552,19 @@ if grep -q '__TEST_LITERAL__' "$EXT_DENY_OUT"; then
   pass "fixture-extension: deny-list test picks up appended literal — DRIFT line emitted"
 else
   fail "fixture-extension: deny-list test missed appended literal" "no __TEST_LITERAL__ in output (rc=$EXT_DENY_RC)"
-  head -50 "$EXT_DENY_OUT" >&2
+  # Surface ONLY the deny-list / forbidden-literals section of the
+  # conformance output — that's where __TEST_LITERAL__ should appear.
+  # Avoid dumping unrelated [run-plan]/[verify-changes] FAILs that fire
+  # because the synthetic fixture lacks real skills (expected) — those
+  # FAILs are noise (#587 root cause), and any inner "N passed, N failed"
+  # tally line leaked here would be miscounted by run_suite's parser.
+  echo "  -- relevant conformance output (deny-list / forbidden section) --" >&2
+  if ! grep -E 'deny-list|forbidden|__TEST_LITERAL__' "$EXT_DENY_OUT" \
+       | grep -v -E '^[[:space:]]*Results:[[:space:]]+[0-9]+ passed' \
+       | head -30 >&2; then
+    echo "  -- (no deny-list/forbidden lines in output; conformance may have crashed before reaching that section) --" >&2
+  fi
+  echo "  -- end relevant output --" >&2
 fi
 rm -f "$EXT_DENY_OUT"
 rm -rf /tmp/zskills-fixture-extension-test
