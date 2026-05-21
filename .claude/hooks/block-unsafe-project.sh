@@ -808,7 +808,17 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
 
       # Delegation check: requires.* must have matching fulfilled.*
       # Subdir-only reader (Phase 6: dual-read fallback removed; all writers migrated).
-      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
+      #
+      # Fire ONLY when committing on main (issue #547). The gate's purpose is
+      # to protect the actual landing event — commits hitting `main`. Commits
+      # on feature branches (`feat/*`, `fix/*`, `cp-*`, worktree branches) are
+      # legitimate intermediate work that will be PR-merged or cherry-picked
+      # later, and must not be blocked by a `requires.land-pr.<id>` marker
+      # whose fulfillment can only happen AFTER those very commits land.
+      # PR #211's protection is preserved: a `finish-auto` exit before
+      # /land-pr leaves `requires.land-pr` unfulfilled, and any subsequent
+      # commit-to-main in that pipeline is still blocked.
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ] && is_on_main; then
         for req in "$PIPELINE_SUBDIR"/requires.*; do
           [ -e "$req" ] || continue
           enforce_requires_marker "$req" "committing"
