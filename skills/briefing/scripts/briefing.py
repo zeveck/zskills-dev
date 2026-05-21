@@ -428,7 +428,9 @@ def classify_worktrees(repo_root=None):
         # MERGED / CLOSED-unmerged PRs would otherwise show stale.
         marker_pr_status = landed_data.get('status') if landed_data else None
         if marker_pr_status in ('pr-ready', 'pr-ci-failing', 'pr-failed',
-                                'conflict', 'pr-state-unknown'):
+                                'conflict', 'pr-state-unknown',
+                                'failed', 'direct-push-failed',
+                                'direct-verify-failed'):
             if marker_pr_status == 'pr-ready':
                 base_category = 'landed-pr-ready'
             else:

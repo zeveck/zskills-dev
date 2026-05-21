@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.20+b9ff48"
+  version: "2026.05.20+31d0ad"
 ---
 
 # /briefing — Project Status Briefing
@@ -231,7 +231,7 @@ Each worktree is classified into exactly one category:
 - **`landed-full`** — `.landed` file with `status: full` (fix-issues cherry-pick, all commits on main) or `status: landed` (run-plan cherry-pick or merged PR)
 - **`landed-partial`** — `.landed` file with `status: partial` (some commits skipped, needs review)
 - **`landed-pr-ready`** — `.landed` file with `status: pr-ready` (PR is open; worktree is safe to remove, remote branch must NOT be deleted — it supports the open PR)
-- **`landed-pr-needs-attention`** — `.landed` file with `status: pr-ci-failing`, `status: pr-failed`, or `status: conflict` (PR-mode errors that need manual action)
+- **`landed-pr-needs-attention`** — `.landed` file with `status: pr-ci-failing`, `status: pr-failed`, `status: conflict`, `status: pr-state-unknown`, `status: failed`, `status: direct-push-failed`, or `status: direct-verify-failed` (PR-mode or failure-class markers that need manual action)
 - **`done-needs-review`** — No `.landed`, has commits, inactive > 2 hours
 - **`possibly-active`** — No `.landed`, modified within last 2 hours
 - **`empty`** — No `.landed`, zero commits ahead of main

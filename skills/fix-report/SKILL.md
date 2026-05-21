@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.20+c8b30f"
+  version: "2026.05.20+246baf"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -158,7 +158,7 @@ Scan every worktree's `.landed` marker for `method: pr`. These come from
 
 - `issue: NNN` — the GitHub issue the PR resolves
 - `pr: <URL>` — the PR URL
-- `status: landed | pr-ready | pr-ci-failing | pr-failed | conflict`
+- `status: landed | pr-ready | pr-ci-failing | pr-failed | conflict | pr-state-unknown | failed | direct-push-failed | direct-verify-failed`
 - `ci: pass | fail | pending | none | skipped`
 - `pr_state: OPEN | MERGED`
 
@@ -269,6 +269,11 @@ Skip this step if all fixes were already auto-landed by `/fix-issues auto`.
 - `status: pr-ci-failing` / `pr-failed` / `conflict` — show the user
   the PR URL (if any) and the worktree path; let them decide how to
   resume. Do NOT auto-cherry-pick.
+- `status: failed` / `direct-push-failed` / `direct-verify-failed` —
+  failure-class markers written by the orchestrator (per
+  `failure-protocol.md`) and `/fix-issues` direct mode. Surface these
+  in the report as failed sprints; show the worktree path and
+  reason field. Do NOT auto-cherry-pick.
 
 For cherry-pick mode fixes that haven't been landed yet, continue with
 the steps below.
@@ -391,7 +396,9 @@ to remove since the branch is already pushed). For `pr-ready`, remove the worktr
 only — do NOT delete the remote branch (it supports the open PR).
 
 **Never remove** worktrees with `status: pr-ci-failing`, `status: pr-failed`,
-`status: conflict`, `status: partial`, or ACTIVE worktrees (no `.landed`).
+`status: conflict`, `status: partial`, `status: failed`,
+`status: direct-push-failed`, `status: direct-verify-failed`, or ACTIVE
+worktrees (no `.landed`).
 
 After removing SAFE worktrees:
 ```bash
