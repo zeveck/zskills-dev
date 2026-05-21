@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.21+5bda3b"
+  version: "2026.05.21+470ffa"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -2085,6 +2085,52 @@ agent hasn't returned after 1 hour, declare it **failed**:
    These contain root cause analysis, affected files, suggested fixes, and
    effort estimates written when the issue was filed. Grep the tracker files
    for the issue number and include any matching section verbatim.
+3. **Tier-1 hash-registration directive** (verbatim — copy this paragraph
+   into every fix-impl prompt; do not paraphrase or omit, even if the
+   issue body looks unrelated to Tier-1 files):
+
+   > **Tier-1 file discipline.** If your fix modifies a Tier-1 script
+   > (any file whose name appears as a row with column-3 == `1` in
+   > `skills/update-zskills/references/script-ownership.md` — the
+   > `tier1-shipped-hashes.txt` registry tracks their blob SHAs), the
+   > SAME commit MUST also register the new blob hash in
+   > `skills/update-zskills/references/tier1-shipped-hashes.txt`.
+   > Detection + registration recipe (run AFTER staging your fix, BEFORE
+   > `git commit`):
+   > ```bash
+   > # 1. Enumerate Tier-1 source paths from script-ownership.md.
+   > TIER1_PATHS=$(awk -F'|' 'NR>1 && $3 ~ /^[[:space:]]*1[[:space:]]*$/ {
+   >   gsub(/[[:space:]`]/, "", $2);
+   >   owner=$4; sub(/^[[:space:]`]+/, "", owner);
+   >   sub(/[[:space:]`(].*$/, "", owner);
+   >   if (length($2) > 0) {
+   >     src="skills/" owner "/scripts/" $2;
+   >     if (system("test -f " src) == 0) print src;
+   >     else { src="block-diagram/" owner "/scripts/" $2;
+   >       if (system("test -f " src) == 0) print src }
+   >   }
+   > }' skills/update-zskills/references/script-ownership.md)
+   > # 2. Intersect with your staged changes.
+   > STAGED=$(git diff --cached --name-only)
+   > for f in $STAGED; do
+   >   if grep -qxF "$f" <<<"$TIER1_PATHS"; then
+   >     NEW_HASH=$(git hash-object "$f")
+   >     if ! grep -qxF "$NEW_HASH" skills/update-zskills/references/tier1-shipped-hashes.txt; then
+   >       echo "$NEW_HASH" >> skills/update-zskills/references/tier1-shipped-hashes.txt
+   >       sort -o skills/update-zskills/references/tier1-shipped-hashes.txt skills/update-zskills/references/tier1-shipped-hashes.txt
+   >       git add skills/update-zskills/references/tier1-shipped-hashes.txt
+   >       echo "Registered Tier-1 hash for $f -> $NEW_HASH" >&2
+   >     fi
+   >   fi
+   > done
+   > ```
+   > Without this step the Tier-1 drift invariant in
+   > `tests/test-skill-invariants.sh` fails on CI, requiring a follow-up
+   > commit to recover. Past failures: sprint-20260520 issues #468, #474
+   > each lost a full CI cycle to this gap (see SPRINT_REPORT.md). This
+   > directive is canonical — orchestrators must NOT hand-inject it
+   > per-invocation; it ships with every fix-impl prompt as part of
+   > `/fix-issues` source.
 
 The agent should have everything it needs to understand the problem without
 re-researching from scratch. Missing context = wrong fix.

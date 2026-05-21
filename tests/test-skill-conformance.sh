@@ -463,6 +463,13 @@ check       fix-issues "3 agent dispatch cap"       'most 3 worktree agents per 
 check       fix-issues "agent 1-hour timeout"       'Agent timeout: 1 hour|1.hour.*timeout'
 check       fix-issues "skip-conflicts protocol"    'cherry-pick CONFLICTS|skip-and-continue'
 check       fix-issues "verbatim issue body"        'verbatim issue body|gh issue view'
+# Issue #510: Tier-1 hash-registration directive must ship in the
+# impl-prompt template. Without this prose, orchestrators improvise
+# per-invocation injections (sprint-20260520 #468, #474 each lost a CI
+# cycle when the injection was missing). The two anchors below assert
+# both the registry path AND the discipline label are present in source.
+check_fixed fix-issues "tier1 registry path"        'tier1-shipped-hashes.txt'
+check       fix-issues "tier1 discipline label"     'Tier-1 file discipline'
 check       fix-issues "kill cron first on fail"    'Kill the cron FIRST|kill.*cron.*first'
 check_fixed fix-issues "pr body Fixes #"            'Fixes #${ISSUE_NUM}'
 # PR_LANDING_UNIFICATION Phase 4 WI 4.6 — /fix-issues pr no longer owns the
