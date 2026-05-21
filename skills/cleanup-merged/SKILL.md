@@ -10,7 +10,7 @@ description: >-
   every local branch + worktree per merit rules and presents an
   interactive picker for cleanup actions.
 metadata:
-  version: "2026.05.20+fdc081"
+  version: "2026.05.21+c788ef"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -335,6 +335,21 @@ while IFS= read -r branch; do
   fi
 done < <(git for-each-ref --format='%(refname:short)' refs/heads/)
 fi  # /REVIEW guard
+```
+
+After the worktree-pruning loop, sweep any stale `/fix-issues` claim
+directories. When a PR merges via the GitHub web UI or a manual
+`gh pr merge` (bypassing `/land-pr`'s `STATUS=merged` release path), the
+per-issue claim under `.zskills/claims/issue-NNN/` leaks until its TTL
+expires. `claim-issue.sh sweep` is the documented admin sweep — it walks
+all claims, releases any whose age exceeds the TTL (default 7200s) or
+whose dir mtime is older than 30s without a `claim.json` (crash window),
+and is idempotent + always exits 0. `|| true` because sweep is best-
+effort housekeeping; the surrounding cleanup-merged success criteria
+should not regress on a stale-claim sweep failure.
+
+```bash
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" sweep || true
 ```
 
 ## Phase 6 — Summary

@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.21+6c7e83"
+  version: "2026.05.21+6ae52a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -166,6 +166,22 @@ Phase 0 arg-detection block as `auto`/`pr`/`direct`/`now`. When
 dashboard's Ready queue (`.zskills/monitor-state.json` `issues.ready`)
 rather than the model-layer priority rubric. The strip line below
 ensures `dashboard` never leaks into the leading-N integer parser.
+
+**Concurrent `dashboard` runs and the claim mechanism.** Two
+`/fix-issues N dashboard auto` sessions launched concurrently from two
+terminals (or two cron fires that overlap) read the same Ready queue
+and would otherwise pick the same head-of-queue issue twice. The
+`claim-issue.sh` helper at `scripts/claim-issue.sh` provides a
+filesystem-anchored atomic claim per issue: each per-issue dispatch
+fence calls `bash "$CLAIM_HELPER" acquire "$ISSUE_NUM"` (D2 — inline
+acquire) which `mkdir`s `${MAIN_ROOT}/.zskills/claims/issue-NNN/`
+atomically; exit 0 wins the claim, exit 10 means another pipeline holds
+it and this fence skips to the next issue (D1 — filesystem markers).
+The dashboard surfaces live claims as in-flight chips on the affected
+issues so concurrent runs are visible to the operator (D6 — dashboard
+chip). The PreToolUse hook `hooks/block-fix-issue-unclaimed.sh` denies
+any `create-worktree.sh --prefix fix-issue NNN` invocation that lacks a
+matching claim, so omitting the acquire fence fails closed at runtime.
 
 ```bash
 DASHBOARD_MODE=0
