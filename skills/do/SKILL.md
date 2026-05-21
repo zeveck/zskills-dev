@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.20+921677"
+  version: "2026.05.21+da7c08"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -818,20 +818,35 @@ Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invoca
    git push
    ```
 
-2. **If in worktree (Path B):** cherry-pick to main first, then push:
-   - Protect uncommitted work on main (`git stash -u` if needed)
-   - Cherry-pick worktree commits to main sequentially
-   - If any cherry-pick conflicts: **abort and clean up:**
-     ```bash
-     git cherry-pick --abort
-     ```
-     Restore stash if one was created (`git stash pop`). If `/do` has an
-     active cron, kill it (`CronList` + `CronDelete` any whose prompt
-     starts with `Run /do`). Report the conflict to the user. Do NOT
-     force-push or resolve automatically.
-   - Restore stash if one was created
-   - Push main
-   - Report what was pushed (commit hashes, branch)
+2. **If in worktree (Path B):** dispatch `/commit land` to cherry-pick worktree commits onto main, then push.
+
+   Dispatch via the Skill tool:
+
+   ```
+   Skill: { skill: "commit", args: "land" }
+   ```
+
+   `/commit land` (encoded in [`skills/commit/modes/land.md`](../commit/modes/land.md))
+   handles the full landing flow:
+   - Try-without-stash: does NOT run `git stash -u` (the
+     `hooks/block-unsafe-generic.sh` gate denies bare/push/save/-u stash
+     writes; `git cherry-pick` itself refuses on overlap, which preserves
+     evidence of conflicting work in other sessions).
+   - Cherry-picks worktree commits onto main sequentially. On any
+     refusal or conflict: STOPs and reports — does NOT `--abort`, stash,
+     or force-resolve.
+   - Runs the full test suite after the cherry-picks land.
+   - Writes the `.landed` marker on the worktree (`status: full`, source
+     `commit-land`, with the list of cherry-picked hashes).
+
+   On a clean return from `/commit land`:
+   - Push main (`git push`).
+   - Report what was pushed (commit hashes, branch).
+
+   On a STOP report from `/commit land` (conflict, test failure, or
+   refused cherry-pick): surface to the user verbatim. If `/do` has an
+   active cron, kill it (`CronList` + `CronDelete` any whose prompt
+   starts with `Run /do`). Do NOT force-push or resolve automatically.
 
 3. **If verification failed:** do NOT push. Report the verification
    findings and stop.
