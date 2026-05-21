@@ -667,6 +667,18 @@ if grep -qF 'baseline_N' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; th
 else
   fail "[.claude/agents/verifier.md] tally check: baseline comparison" "baseline-comparison guidance missing"
 fi
+# Issue #575: the same canonical summary-line prose is mirrored into
+# skills/run-plan/SKILL.md Phase 4 verifier-dispatch prompt. The .claude/
+# agents/verifier.md check above is the agent-file pin; this assertion
+# pins the run-plan SKILL.md copy so a "prose simplification" revert
+# of the Phase 4 prompt cannot silently drop the tally directive from
+# the run-plan workflow path (the prompt actually dispatched to the
+# verifier subagent in PR mode).
+if grep -qF 'Overall: N/M passed' "$REPO_ROOT/skills/run-plan/SKILL.md" 2>/dev/null; then
+  pass "[skills/run-plan/SKILL.md] tally check: Overall: N/M passed prose"
+else
+  fail "[skills/run-plan/SKILL.md] tally check: Overall: N/M passed prose" "summary-line assertion guidance missing from Phase 4 verifier-dispatch prompt"
+fi
 
 echo ""
 echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
@@ -1245,7 +1257,20 @@ check_fixed land-pr "BRANCH_SLUG derivation"  'BRANCH_SLUG'
 check land-pr "PR #131 past-failure preamble" 'Past failure.*PR #131|skipped Step 6 on PR #131'
 
 # --- Caller loop: allow-list parser pattern ---
-check land-pr "allow-list parser key set" 'STATUS\|PR_URL\|PR_NUMBER'
+# Issue #576: per-key assertions over the FULL canonical key set so a
+# silent drop of any sidecar key (REBASE_STDERR_FILE per #535,
+# CONFLICT_FILES_LIST, CALL_ERROR_FILE) trips conformance. The legacy
+# 3-key alternation pattern only required STATUS|PR_URL|PR_NUMBER to
+# appear anywhere — sidecar key regressions were invisible. Canonical
+# list is defined by skills/land-pr/references/caller-loop-pattern.md
+# `case "$KEY" in ...` arms.
+for _LP_KEY in STATUS PR_URL PR_NUMBER PR_EXISTING CI_STATUS CI_LOG_FILE \
+               MERGE_REQUESTED MERGE_REASON PR_STATE REASON \
+               CONFLICT_FILES_LIST CALL_ERROR_FILE REBASE_STDERR_FILE; do
+  # Word-anchor (\b) so a rename like REBASE_STDERR_FILE_RENAMED can't
+  # spuriously satisfy the assertion via substring match.
+  check land-pr "allow-list parser key: $_LP_KEY" "\\b${_LP_KEY}\\b"
+done
 
 # --- Failure modes catalog exists (WI 1B.1) ---
 check_fixed land-pr "failure-modes catalog exists" 'The 10 failure modes'
@@ -1289,8 +1314,17 @@ check_not_in_file land-pr scripts/pr-monitor.sh         "no 2>/dev/null on falli
 check_not_in_file land-pr scripts/pr-merge.sh           "no 2>/dev/null on fallible ops" '^[^#]*2>/dev/null'
 
 # --- Caller loop pattern lives in references ---
-check_in_file land-pr references/caller-loop-pattern.md "caller loop allow-list keys" \
-  'STATUS\|PR_URL\|PR_NUMBER'
+# Issue #576: per-key assertion over the FULL canonical key set against
+# the canonical reference itself. If anyone edits caller-loop-pattern.md
+# and drops a sidecar key from the case-arm, the reference would drift
+# from the 6 caller copies — this fails-closed at the source-of-truth.
+for _LP_KEY in STATUS PR_URL PR_NUMBER PR_EXISTING CI_STATUS CI_LOG_FILE \
+               MERGE_REQUESTED MERGE_REASON PR_STATE REASON \
+               CONFLICT_FILES_LIST CALL_ERROR_FILE REBASE_STDERR_FILE; do
+  # Word-anchor (\b) so a rename can't spuriously satisfy via substring.
+  check_in_file land-pr references/caller-loop-pattern.md \
+    "caller loop allow-list key: $_LP_KEY" "\\b${_LP_KEY}\\b"
+done
 # Defense-in-depth: caller pattern must explicitly forbid `source` of the
 # result file. Two literal landmarks (defense + parser-rationale section).
 check_fixed land-pr 'never source: contract bullet'   'Never `source`'
