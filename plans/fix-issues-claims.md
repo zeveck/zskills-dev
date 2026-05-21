@@ -59,7 +59,7 @@ A7. Single-pipeline `dashboard` mode behaviour is byte-for-byte identical to tod
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Claim primitive script + config + unit tests | ⬚ | | |
+| 1 — Claim primitive script + config + unit tests | ✅ Done | `6c9c6db` | 14 new tests; 4558/4558 pass |
 | 2 — fix-issues inline acquire (cherry-pick/direct/PR) + PreToolUse backstop hook + per-mode release wiring | ⬚ | | |
 | 3 — Dashboard collector + renderer chip (drag-disabled) + fingerprint fix | ⬚ | | |
 | 4 — E2E concurrency test + baseline race test + /cleanup-merged sweep + conformance | ⬚ | | |

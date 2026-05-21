@@ -53,6 +53,12 @@
           "default": 3,
           "minimum": 1,
           "description": "Sprint-wide cap on the number of live `fix/issue-*` worktrees `/fix-issues` keeps active concurrently. Distinct from the hardcoded per-message dispatch I/O contention cap (also 3, which prevents simultaneous 9p git-checkout stalls). This cap bounds AGGREGATE live worktrees throughout a sprint — by mid-sprint a /fix-issues N with N>cap would otherwise have all N worktrees alive concurrently (each running tests, a verifier, and a CI workflow), which can OOM/stall resource-constrained dev containers. When the live count is at or above this cap, the sprint defers new dispatches and waits for cron to retry after prior worktrees have landed. Raise above 3 only on hosts with ample CPU/memory/disk."
+        },
+        "claim_ttl_seconds": {
+          "type": "integer",
+          "default": 7200,
+          "minimum": 60,
+          "description": "Stale-claim TTL (seconds) used by `/fix-issues` per-issue claims (.zskills/claims/issue-<N>/claim.json). Claims older than this are eligible for the preflight sweep — they represent crashed or abandoned per-issue dispatches whose pipeline never returned to release the claim. Default 7200s (2h) accommodates the longest realistic per-issue dispatch (research + impl + verify + CI). Raise on slow CI; lower only if you can guarantee shorter per-issue runs."
         }
       }
     },

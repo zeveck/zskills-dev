@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.21+d2d610"
+  version: "2026.05.21+c2886a"
 ---
 
 # Update Z Skills Infrastructure
@@ -534,6 +534,19 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    only that field. Idempotent: re-running on an already-backfilled
    config is a no-op. Detection regex (bash): test against
    `\"dashboard\"[[:space:]]*:[[:space:]]*\{[^}]*\"work_on_plans_trigger\"`
+   — if it does NOT match, the backfill applies.
+3.7. **Backfill `execution.claim_ttl_seconds` if absent.** If the
+   existing config's `"execution"` block lacks `"claim_ttl_seconds"`
+   (e.g. configs written before `/fix-issues` per-issue claims were
+   introduced), splice in the default `7200` so `zskills-resolve-config.sh`
+   resolves `ZSKILLS_CLAIM_TTL_SECONDS` from config rather than the
+   in-script fallback. Default value: `7200` (2h). Targeted `Edit` or
+   small `sed`-based rewrite that preserves every other field unchanged.
+   The `execution` block is present in every consumer config (written at
+   greenfield install), so this backfill only adds the field — it does
+   not create the block. Idempotent: re-running on an already-backfilled
+   config is a no-op. Detection regex (bash): test against
+   `\"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"claim_ttl_seconds\"`
    — if it does NOT match, the backfill applies.
 
    <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
