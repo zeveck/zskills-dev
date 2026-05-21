@@ -50,6 +50,9 @@
   }
   nav a { color: var(--text-dim); white-space: nowrap; }
   nav a:hover { color: var(--accent); text-decoration: none; }
+  nav .nav-sep { color: var(--border); margin-left: auto; padding: 0 4px; user-select: none; }
+  nav a.cross { color: var(--text); }
+  nav a.cross:hover { color: var(--accent); }
   nav .logo { color: var(--accent); font-weight: 700; font-size: 1.1em; }
   .container { max-width: 1000px; margin: 0 auto; padding: 80px 24px 60px; }
   section { margin-bottom: 64px; }
@@ -142,21 +145,24 @@
 
 <nav>
   <span class="logo">Z Skills</span>
-  <a href="PRESENTATION.html">&larr; Overview</a>
   <a href="#numbers">By the Numbers</a>
   <a href="#code">Code Composition</a>
   <a href="#method">Methodology</a>
-  <a href="COSTS.html">Cost Estimate</a>
-  <a href="https://github.com/zeveck/zskills" style="margin-left:auto;">GitHub &rarr;</a>
+  <span class="nav-sep">&#9474;</span>
+  <a href="../PRESENTATION.html" class="cross">Overview</a>
+  <a href="COSTS.html" class="cross">Cost</a>
+  <a href="PERMISSIONS.html" class="cross">Permissions</a>
+  <a href="https://github.com/zeveck/zskills" class="cross">GitHub &rarr;</a>
 </nav>
 
 <div class="container">
 
 <section class="hero">
   <h1>Z Skills — Technical Stats</h1>
-  <p>How much code, how many tests, how many commits. Numbers reproducible from the repo.</p>
-  <p style="font-size: 0.95em;"><strong>For cost figures see the <a href="COSTS.html">Cost Estimate &rarr;</a></strong></p>
-  <p style="font-size: 0.9em;">As of <strong>2026-05-20</strong>. The <a href="PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>composition</em>.</p>
+  <p>How much code, how many tests, how many commits.</p>
+  <p style="font-size: 0.95em;"><strong>All counts come straight from the repo:</strong> <code>find</code>/<code>wc</code> for LOC, <code>git log</code> for commits, <code>gh</code> for issues. Reproducible from a clean checkout of <code>main</code>; commands listed in the methodology section.</p>
+  <p style="font-size: 0.95em;"><strong>Companion reports: <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a></strong></p>
+  <p style="font-size: 0.9em;">As of <strong>2026-05-21</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>composition</em>.</p>
 </section>
 
 <section id="numbers" class="fade-in">
@@ -165,22 +171,22 @@
   <h4>Codebase</h4>
   <div class="stat-grid">
     <div class="stat"><div class="val">24 + 2</div><div class="label">Skills</div><div class="sub">24 user-facing + 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>)</div></div>
-    <div class="stat green"><div class="val">41,128</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
-    <div class="stat"><div class="val">22,753</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 skill bodies, before scripts/refs</div></div>
+    <div class="stat green"><div class="val">42,759</div><div class="label">LOC in skills</div><div class="sub">md + sh + py across <code>skills/</code> &amp; <code>block-diagram/</code></div></div>
+    <div class="stat"><div class="val">23,239</div><div class="label">Lines of SKILL.md prose</div><div class="sub">26 skill bodies + 3 block-diagram add-ons</div></div>
   </div>
 
   <h4>Tests &amp; Hooks</h4>
   <div class="stat-grid">
-    <div class="stat orange"><div class="val">97</div><div class="label">Test scripts</div><div class="sub">42,999 LOC under <code>tests/</code></div></div>
-    <div class="stat"><div class="val">10 + 2</div><div class="label">PreToolUse hooks</div><div class="sub">10 hook entry points + 2 lib helpers; 4,171 LOC under <code>hooks/</code></div></div>
-    <div class="stat"><div class="val">12</div><div class="label">Scripts</div><div class="sub">1,654 LOC of shared infra under <code>scripts/</code></div></div>
+    <div class="stat orange"><div class="val">114</div><div class="label">Test scripts</div><div class="sub">49,341 LOC under <code>tests/</code></div></div>
+    <div class="stat"><div class="val">10 + 2</div><div class="label">PreToolUse hooks</div><div class="sub">10 hook entry points + 2 lib helpers; 5,403 LOC under <code>hooks/</code></div></div>
+    <div class="stat"><div class="val">13</div><div class="label">Scripts</div><div class="sub">1,999 LOC of shared infra under <code>scripts/</code></div></div>
   </div>
 
   <h4>Git activity (since 2026-03-26)</h4>
   <div class="stat-grid">
-    <div class="stat green"><div class="val">624</div><div class="label">Commits on main</div><div class="sub">~8 weeks, ~78/week</div></div>
-    <div class="stat green"><div class="val">319</div><div class="label">Merged PRs</div><div class="sub">squash-merge commits; the other 305 main commits are direct (pre-PR-workflow + canary executions)</div></div>
-    <div class="stat orange"><div class="val">122</div><div class="label">GitHub issues filed</div><div class="sub">open + closed</div></div>
+    <div class="stat green"><div class="val">709</div><div class="label">Commits on main</div><div class="sub">~8 weeks, ~88/week</div></div>
+    <div class="stat green"><div class="val">404</div><div class="label">Merged PRs</div><div class="sub">squash-merge commits; the other 305 main commits are direct (pre-PR-workflow + canary executions)</div></div>
+    <div class="stat orange"><div class="val">191</div><div class="label">GitHub issues filed</div><div class="sub">open + closed</div></div>
   </div>
 </section>
 
@@ -190,30 +196,27 @@
 
   <table>
     <tr><th>Surface</th><th>LOC</th><th>Files</th><th>What it is</th></tr>
-    <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>41,128</td><td>100</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>22,753</td><td>29</td><td>Top-level skill bodies (26 source + 3 add-on)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: Other .md (modes/, references/, READMEs)</td><td>3,983</td><td>22</td><td>Sub-skill documentation, design references, and internal READMEs</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: shell scripts under skills</td><td>9,024</td><td>44</td><td>Per-skill helpers (port.sh, plan-drift-correct, sanitize-pipeline-id, etc.)</td></tr>
-    <tr><td>&nbsp;&nbsp;&nbsp;of which: Python</td><td>5,368</td><td>5</td><td>briefing.py + dashboard collect.py/server.py + plans/render-index.py &mdash; real machinery, not just JSON helpers</td></tr>
-    <tr><td><code>tests/</code></td><td>42,999</td><td>97</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
-    <tr><td><code>hooks/</code></td><td>4,171</td><td>10 + 2 lib</td><td>PreToolUse blockers, Bash timeout extension, response validation</td></tr>
-    <tr><td><code>scripts/</code></td><td>1,654</td><td>12</td><td>Release tooling, frontmatter mutators, version stage-checks</td></tr>
+    <tr><td><code>skills/</code> + <code>block-diagram/</code></td><td>42,759</td><td>100</td><td>Skill bodies, modes/, references/, owned scripts (md + sh + py)</td></tr>
+    <tr><td>&nbsp;&nbsp;&nbsp;of which: SKILL.md prose</td><td>23,239</td><td>29</td><td>Top-level skill bodies (26 source + 3 add-on)</td></tr>
+    <tr><td><code>tests/</code></td><td>49,341</td><td>114</td><td>Conformance suite, integration, canary-failure fixtures</td></tr>
+    <tr><td><code>hooks/</code></td><td>5,403</td><td>10 + 2 lib</td><td>PreToolUse blockers, Bash timeout extension, response validation</td></tr>
+    <tr><td><code>scripts/</code></td><td>1,999</td><td>13</td><td>Release tooling, frontmatter mutators, version stage-checks</td></tr>
   </table>
 
   <h3>Largest skills by SKILL.md line count</h3>
   <p style="color: var(--text-dim); font-size: 0.9em;">Top-10 source skills by SKILL.md size — a rough proxy for workflow complexity. The biggest ones orchestrate multi-phase pipelines; the smallest are thin wrappers.</p>
   <table>
     <tr><th>Skill</th><th>SKILL.md lines</th><th style="width: 40%;">Relative</th></tr>
-    <tr><td><code>/fix-issues</code></td><td>2,666</td><td><span class="bar" style="width: 95%;"></span></td></tr>
-    <tr><td><code>/run-plan</code></td><td>2,542</td><td><span class="bar" style="width: 94%;"></span></td></tr>
-    <tr><td><code>/draft-tests</code></td><td>1,902</td><td><span class="bar" style="width: 70%;"></span></td></tr>
-    <tr><td><code>/update-zskills</code></td><td>1,878</td><td><span class="bar" style="width: 69%;"></span></td></tr>
-    <tr><td><code>/quickfix</code></td><td>1,369</td><td><span class="bar" style="width: 50%;"></span></td></tr>
-    <tr><td><code>/work-on-plans</code></td><td>1,292</td><td><span class="bar" style="width: 48%;"></span></td></tr>
-    <tr><td><code>/do</code></td><td>942</td><td><span class="bar" style="width: 35%;"></span></td></tr>
-    <tr><td><code>/land-pr</code></td><td>856</td><td><span class="bar" style="width: 32%; background: var(--text-dim);"></span></td></tr>
-    <tr><td><code>/cleanup-merged</code></td><td>839</td><td><span class="bar" style="width: 31%;"></span></td></tr>
-    <tr><td><code>/verify-changes</code></td><td>743</td><td><span class="bar" style="width: 27%;"></span></td></tr>
+    <tr><td><code>/fix-issues</code></td><td>2,862</td><td><span class="bar" style="width: 95%;"></span></td></tr>
+    <tr><td><code>/run-plan</code></td><td>2,568</td><td><span class="bar" style="width: 85%;"></span></td></tr>
+    <tr><td><code>/update-zskills</code></td><td>1,934</td><td><span class="bar" style="width: 64%;"></span></td></tr>
+    <tr><td><code>/draft-tests</code></td><td>1,922</td><td><span class="bar" style="width: 64%;"></span></td></tr>
+    <tr><td><code>/quickfix</code></td><td>1,369</td><td><span class="bar" style="width: 45%;"></span></td></tr>
+    <tr><td><code>/work-on-plans</code></td><td>1,295</td><td><span class="bar" style="width: 43%;"></span></td></tr>
+    <tr><td><code>/do</code></td><td>957</td><td><span class="bar" style="width: 32%;"></span></td></tr>
+    <tr><td><code>/cleanup-merged</code></td><td>883</td><td><span class="bar" style="width: 29%;"></span></td></tr>
+    <tr><td><code>/land-pr</code></td><td>874</td><td><span class="bar" style="width: 29%; background: var(--text-dim);"></span></td></tr>
+    <tr><td><code>/verify-changes</code></td><td>747</td><td><span class="bar" style="width: 25%;"></span></td></tr>
   </table>
 </section>
 
@@ -230,7 +233,7 @@ git log --oneline main | grep -cE '\(#[0-9]+\)'
 gh issue list --state all --limit 1000 --json number | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'</code></pre>
 
   <h3>Commits vs. PRs</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">624 total commits on main, of which 319 are PR squash-merges and 305 are direct. The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The 188 break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or non-PR <code>/quickfix</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">709 total commits on main, of which 404 are PR squash-merges and 305 are direct. The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The 188 break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or non-PR <code>/quickfix</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</p>
 
   <h3>What this <em>doesn't</em> measure</h3>
   <p style="color: var(--text-dim);">Wall-clock time, human review effort, the Claude.ai chat sessions used for architecture discussions outside Claude Code, the pre-2026-03-26 prototyping that fed into the initial commit, or cost &mdash; see the <a href="COSTS.html">Cost Estimate</a>.</p>
@@ -238,9 +241,9 @@ gh issue list --state all --limit 1000 --json number | python3 -c 'import json,s
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
-  <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 709 commits / 404 merged PRs, 114 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
+  <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-21. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
 
 </div>
