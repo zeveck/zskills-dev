@@ -97,6 +97,19 @@ ERRORS_CAP = 100
 # gh issue cache TTL (seconds).
 ISSUE_CACHE_TTL_SECONDS = 60
 
+# Per-subsystem collect_snapshot fan-out TTLs (seconds). Tuned to each
+# subsystem's natural change frequency vs the 2Hz client poll cadence.
+# See issue #514 for the latency analysis that motivated this.
+#
+# `time.monotonic()` is the TTL clock — NOT `time.time()` — because wall
+# clock can jump on NTP sync. Monotonic guarantees a non-decreasing tick
+# regardless of wall-time corrections.
+SNAPSHOT_CACHE_TTL_WORKTREES = 5.0       # git worktree list
+SNAPSHOT_CACHE_TTL_BRANCHES = 5.0        # git for-each-ref
+SNAPSHOT_CACHE_TTL_GIT_HISTORY = 10.0    # git log
+SNAPSHOT_CACHE_TTL_PLANS = 3.0           # parse_plan + parse_report + landing-mode
+SNAPSHOT_CACHE_TTL_TRACKING = 3.0        # .zskills/tracking/ walk + PR-number scan
+
 
 # ---------------------------------------------------------------------------
 # Module-level cache (per-Python-process; documented limitation per DA-14)
@@ -108,12 +121,56 @@ _ISSUE_CACHE: Dict[str, Any] = {
     "had_value": False,
 }
 
+# Per-subsystem snapshot cache: maps (kind, main_root_str) →
+# (monotonic_ts, value, errors_from_that_call). On cache hit, the
+# captured errors are re-extended onto the new caller's errors list so
+# the per-snapshot errors block stays accurate.
+_SNAPSHOT_CACHE: Dict[Tuple[str, str], Tuple[float, Any, List[Dict[str, str]]]] = {}
+
 
 def _reset_issue_cache_for_tests() -> None:
     """Reset the module-level cache (test-only helper)."""
     _ISSUE_CACHE["ts"] = 0.0
     _ISSUE_CACHE["issues"] = []
     _ISSUE_CACHE["had_value"] = False
+
+
+def _reset_snapshot_cache_for_tests() -> None:
+    """Reset the per-subsystem snapshot cache (test-only helper)."""
+    _SNAPSHOT_CACHE.clear()
+
+
+def _cached_subsystem(
+    kind: str,
+    main_root: pathlib.Path,
+    ttl: float,
+    fn: Any,
+    errors: List[Dict[str, str]],
+    *,
+    _now: Optional[float] = None,
+) -> Any:
+    """Cache the result of `fn(local_errors)` keyed by (kind, main_root).
+
+    `fn` is called with a fresh `local_errors` list so cached error
+    records can be replayed without double-counting on cache hits. If
+    `fn` raises, the cache is NOT updated — fail-loud, no stale value
+    poisoning. The monotonic clock is used (NTP-safe). TTL of 0 disables
+    caching entirely (always re-fetch).
+    """
+    now = _now if _now is not None else time.monotonic()
+    key = (kind, str(main_root))
+    cached = _SNAPSHOT_CACHE.get(key)
+    if cached is not None and ttl > 0 and (now - cached[0]) < ttl:
+        _ts, value, cached_errors = cached
+        if cached_errors:
+            errors.extend(cached_errors)
+        return value
+    local_errors: List[Dict[str, str]] = []
+    value = fn(local_errors)
+    _SNAPSHOT_CACHE[key] = (now, value, list(local_errors))
+    if local_errors:
+        errors.extend(local_errors)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -1605,14 +1662,19 @@ def collect_snapshot(
         main_root = _resolve_main_root(repo_root)
     errors: List[Dict[str, str]] = []
 
-    plans_dir = _resolve_paths(main_root)["plans_dir"]
-    plans: List[Dict[str, Any]] = []
-    if plans_dir.is_dir():
+    # Plans + reports — TTL-cached per subsystem (#514). The plan files
+    # change on /run-plan phase ticks (minutes, not seconds); a 3s TTL
+    # absorbs ~7 of every 10 polls without showing stale phase state.
+    def _build_plans(local_errors: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+        plans_dir = _resolve_paths(main_root)["plans_dir"]
+        out: List[Dict[str, Any]] = []
+        if not plans_dir.is_dir():
+            return out
         try:
             plan_files = sorted(plans_dir.glob("*.md"))
         except Exception as exc:
             plan_files = []
-            errors.append({
+            local_errors.append({
                 "source": "plans scan",
                 "message": str(exc),
             })
@@ -1621,7 +1683,9 @@ def collect_snapshot(
             if parsed is None:
                 continue
             content = parsed.pop("_content", "")
-            parsed["landing_mode"] = _resolve_landing_mode(content, main_root, errors)
+            parsed["landing_mode"] = _resolve_landing_mode(
+                content, main_root, local_errors,
+            )
             # Report enrichment
             report = parse_report(parsed["slug"], main_root)
             parsed["has_report"] = report is not None
@@ -1633,9 +1697,23 @@ def collect_snapshot(
                 parsed["file"] = str(rel)
             except Exception:
                 pass
-            plans.append(parsed)
+            out.append(parsed)
+        return out
 
-    # State file merge (drives queue annotations + queues block)
+    plans = _cached_subsystem(
+        "plans", main_root, SNAPSHOT_CACHE_TTL_PLANS, _build_plans, errors,
+    )
+    # Defensive shallow copy: caller _annotate_plans_queue mutates each
+    # plan dict in place, but those mutations are state-file-derived
+    # (queue position, column) and the same state file is read fresh
+    # every poll — so re-annotation produces a deterministic result. We
+    # copy the OUTER list so re-orderings don't leak, but trust the
+    # per-plan dicts to be re-annotated to a consistent state.
+    plans = list(plans)
+
+    # State file merge (drives queue annotations + queues block).
+    # Uncached — sub-ms read; staleness here would break the live-source
+    # invariant for queue annotations.
     state = _read_state_file(main_root, errors)
     state_updated_at = state.get("updated_at", "")
     _annotate_plans_queue(plans, state)
@@ -1648,18 +1726,41 @@ def collect_snapshot(
     issues, issues_fetch_ok = list_issues(errors, _runner=issue_runner)
     _annotate_issues_queue(issues, state, main_root)
 
-    # Worktrees + branches
-    worktrees = _list_worktrees(main_root, errors)
-    branches = _list_branches(main_root, errors)
+    # Worktrees + branches — TTL-cached subsystems (#514). Both run git
+    # subprocesses; both change at human-action cadence (worktree create
+    # / branch checkout), not 2Hz polls.
+    worktrees = _cached_subsystem(
+        "worktrees", main_root, SNAPSHOT_CACHE_TTL_WORKTREES,
+        lambda e: _list_worktrees(main_root, e), errors,
+    )
+    branches = _cached_subsystem(
+        "branches", main_root, SNAPSHOT_CACHE_TTL_BRANCHES,
+        lambda e: _list_branches(main_root, e), errors,
+    )
 
     # Tracking activity + git-history events (commits with no marker).
     # Tracking markers are richer (skill, id, pipeline) so they win on
     # dedup; commits whose trailing `(#N)` matches a fulfilled.land-pr.*
-    # marker's PR number are dropped.
-    marker_activity = _scan_tracking_markers(main_root, errors)
-    fulfilled_prs = _extract_pr_numbers_from_markers(main_root)
-    git_activity = _scan_git_history(
-        main_root, errors, fulfilled_pr_numbers=fulfilled_prs,
+    # marker's PR number are dropped. Tracking markers + their PR-number
+    # extraction are grouped under one "tracking" subsystem (#514) —
+    # they walk the same `.zskills/tracking/` tree.
+    def _build_tracking(
+        local_errors: List[Dict[str, str]],
+    ) -> Tuple[List[Dict[str, Any]], set]:
+        marker_activity = _scan_tracking_markers(main_root, local_errors)
+        fulfilled_prs = _extract_pr_numbers_from_markers(main_root)
+        return marker_activity, fulfilled_prs
+
+    marker_activity, fulfilled_prs = _cached_subsystem(
+        "tracking", main_root, SNAPSHOT_CACHE_TTL_TRACKING,
+        _build_tracking, errors,
+    )
+    git_activity = _cached_subsystem(
+        "git_history", main_root, SNAPSHOT_CACHE_TTL_GIT_HISTORY,
+        lambda e: _scan_git_history(
+            main_root, e, fulfilled_pr_numbers=fulfilled_prs,
+        ),
+        errors,
     )
     activity = marker_activity + git_activity
 
