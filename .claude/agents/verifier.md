@@ -25,6 +25,42 @@ $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
 
 Read the file when the call returns.
 
+## Test-output tally check (mandatory)
+
+Reading the test-results file is not enough — agents have shipped regressions
+by scanning visible `PASS` lines and missing the final tally (hang-and-exit,
+truncation, soft-fail). After reading
+`"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"`, assert ALL of:
+
+1. **Summary line present.** The output contains a canonical summary line —
+   for zskills this is literally `Overall: N/M passed, F failed` (emitted by
+   `tests/run-all.sh`). If the line is **absent**, the suite did not complete
+   (truncation / hang / OOM). FAIL the verification — do not interpret
+   visible inline PASS lines as success.
+2. **N == M and F == 0.** Parse the integers from the summary line and
+   confirm every suite passed. If `F > 0` or `N < M`, FAIL.
+3. **N >= baseline_N when a baseline exists.** If
+   `"$TEST_OUT/.test-baseline.txt"` was captured before implementation,
+   extract its `Overall: ...` count and require the post-impl N to be
+   greater than or equal to it (preferably `baseline_N + new_test_count`
+   if you know the count of tests this phase/issue added). A drop in N
+   between baseline and post-impl is a regression even when `F == 0` is
+   reported by both runs — the suite may have skipped or truncated tests
+   that previously ran.
+
+Past failure (2026-05-18, anchor `feedback_verify_by_count_not_any_fail`):
+verifier reported "3313/3313 passed" by counting inline PASS lines; the
+final tally was 3311/3313 (two regressions in Tier-1 drift + commit
+cohabitation). Both slipped because no one checked the `Overall:` line.
+A two-line grep would have caught it.
+
+If the project's test harness emits a different canonical summary line
+(`Tests: N passed, F failed` for `node --test`, `N passed in Xs` for
+pytest, `ok` + final TAP plan for prove), substitute the same logic
+against THAT harness's summary — what matters is asserting the suite
+ran to completion AND the final aggregated tally matches expectations,
+not just absence of visible FAILs.
+
 ## Scope-creep AC checks
 
 When checking AC-style "no scope creep" criteria, prefer one of:
