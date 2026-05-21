@@ -1,7 +1,7 @@
 ---
 title: Concurrency-safe issue claims for /fix-issues dashboard mode
 created: 2026-05-21
-status: active
+status: complete
 ---
 
 # Plan: Concurrency-safe issue claims for /fix-issues dashboard mode
