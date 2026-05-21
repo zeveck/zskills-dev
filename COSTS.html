@@ -167,7 +167,7 @@
 <section id="topline" class="fade-in">
   <h2>Topline</h2>
 
-  <div class="caveat"><strong>Read this before the headline.</strong> JSONL coverage begins <strong>2026-04-18</strong>; the first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> and aren't directly measurable. <strong>Logged-only figures below therefore underestimate true spend</strong> &mdash; the Projected total card includes a workload-based estimate for the unlogged period. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (default-global residency, no Fast mode, no batch discount).</div>
+  <div class="caveat"><strong>Read this before the headline.</strong> JSONL coverage begins <strong>2026-04-18</strong>; the first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> and aren't directly measurable. <strong>Logged-only figures below therefore underestimate the list-price equivalent</strong> &mdash; the Projected total card includes a workload-based estimate for the unlogged period. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (default-global residency, no Fast mode, no batch discount).</div>
 
   <div class="stat-grid">
     <div class="stat"><div class="val">99,439</div><div class="label">Logged Opus 4.7 turns</div><div class="sub">Cost: $19,298. Earlier Opus 4.6 turns (2026-03-26 &rarr; 2026-04-17) not in log.</div></div>
@@ -325,7 +325,7 @@ Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR 
   <p style="color: var(--text-dim);">Pre-2026-04-18 development (~23 days, ~1/3 of project elapsed time) is unlogged. Wall-clock time, human review effort, Claude.ai chat sessions for architecture discussion outside Claude Code, and the pre-repo prototyping that fed the initial commit are all excluded. Real billing depends on contract, any volume discounts, and other terms; the numbers above are at published list prices.</p>
 
   <h3>Verification</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">All figures here were independently audited by two automated agents reviewing the JSONL data, the rate source, and the arithmetic. Reproducibility scripts left at <code>/tmp/q1q2.py</code>, <code>/tmp/q2_totals.py</code>, <code>/tmp/q3.py</code> during the audit. Discrepancy vs. the original deck's $49,782 figure traced to deprecated-tier rates (Opus 4.0/4.1 at 3&times; current rates) being used in error.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Logged-period figures (token totals, rates, per-model subtotals, derived stats) were independently audited by two automated agents reviewing the JSONL data, the rate source, and the arithmetic. The ~$28,200 projected total is a workload-ratio estimate built on top of those audited inputs &mdash; not itself audited, since the unlogged 4.6 period has no JSONL to verify against. Reproducibility scripts left at <code>/tmp/q1q2.py</code>, <code>/tmp/q2_totals.py</code>, <code>/tmp/q3.py</code> during the audit. Discrepancy vs. an earlier deck's $49,782 figure traced to deprecated-tier rates (Opus 4.0/4.1 at 3&times; current rates) being used in error.</p>
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">

@@ -253,7 +253,7 @@
   <div class="stat-grid">
     <div class="stat green"><div class="val">95.2%</div><div class="label">Cache-read share</div><div class="sub">of all input-side tokens (uncached + cache write + cache read)</div></div>
     <div class="stat"><div class="val">~9,134 ×</div><div class="label">Cache leverage</div><div class="sub">cache-reads ÷ uncached input</div></div>
-    <div class="stat purple"><div class="val">~$84,192</div><div class="label">Cache savings vs. uncached</div><div class="sub">18.88B cache-reads @ $0.50/M cost $9,355; same volume at full input rates ($5 Opus / $1 Haiku) would have cost ~$93,546. Net savings ≈ $84,192 <em>against the uncached counterfactual</em>.</div></div>
+    <div class="stat purple"><div class="val">~$84,192</div><div class="label">Cache savings (counterfactual)</div><div class="sub">18.88B cache-reads @ $0.50/M cost $9,355; same volume at full input rates ($5 Opus / $1 Haiku) would have cost ~$93,546. Net savings ≈ $84,192 <em>against the uncached counterfactual</em>.</div></div>
   </div>
 
   <p style="color: var(--text-dim); font-size: 0.9em;">The cache-savings number compares against a synthetic "what if no caching" world. Real billing only ever pays the cached rate, so this is an upper bound on what caching is worth, not a refund.</p>
@@ -287,7 +287,7 @@ gh issue list --state all --limit 1000 --json number | python3 -c 'import json,s
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts, and ~$19,353 in logged Claude Opus 4.7 + Haiku 4.5 list-price equivalent &mdash; a body of evidence about what disciplined-agent engineering actually looks like.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts, and ~$19,353 in <em>logged</em> Claude Opus 4.7 + Haiku 4.5 list-price equivalent (projected ~$28,200 including unlogged 4.6 days; actual paid was a Max x20 plan, not list rates).</strong></p>
   <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
