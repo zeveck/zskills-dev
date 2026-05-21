@@ -465,6 +465,24 @@ toggle_test "BLOCK_MAIN_PUSH=0 allows git push on master" 0 "master" "allow"
 toggle_test "BLOCK_MAIN_PUSH=0 allows 'git push origin main' (explicit refspec)" 0 "feat/test" "allow" "git push origin main"
 toggle_test "BLOCK_MAIN_PUSH=0 allows 'git push -u origin main' (upstream + refspec)" 0 "feat/test" "allow" "git push -u origin main"
 
+# Issue #515: `git push origin HEAD` from a `main` checkout resolves
+# server-side to remote `main` — defeats the main-protection regime via a
+# one-keystroke substitution. Same family as #470 (the ref-spelling
+# enumerations) but `HEAD` is special because resolution happens
+# SERVER-SIDE, not in the local parser. Pre-fix, PUSH_TARGET="HEAD"
+# survived all normalizations (colon-RHS, +, refs/heads/) and the equality
+# check against "main"/"master" missed. Post-fix, an explicit
+# `if [ "$PUSH_TARGET" = "HEAD" ]` block resolves to the current local
+# branch before the equality check.
+toggle_test "BLOCK_MAIN_PUSH=1 denies 'git push origin HEAD' from main (#515)" 1 "main" "deny" "git push origin HEAD"
+toggle_test "BLOCK_MAIN_PUSH=1 allows 'git push origin HEAD' from feat branch (#515)" 1 "feat/test" "allow" "git push origin HEAD"
+toggle_test "BLOCK_MAIN_PUSH=1 denies 'git push origin HEAD' from master (#515)" 1 "master" "deny" "git push origin HEAD"
+# Combines with #528's path-strip fix: `/usr/bin/git push origin HEAD`
+# from main must also deny — the wrapper-recursion's path-strip recognizes
+# the absolute-path git invocation, and the new HEAD resolution then maps
+# PUSH_TARGET to "main".
+toggle_test "BLOCK_MAIN_PUSH=1 denies '/usr/bin/git push origin HEAD' from main (#515 + #528)" 1 "main" "deny" "/usr/bin/git push origin HEAD"
+
 echo ""
 echo "=== Non-Bash tool_name ==="
 

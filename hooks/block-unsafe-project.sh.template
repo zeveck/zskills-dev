@@ -1035,6 +1035,31 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
       *) PUSH_ARGS="$PUSH_ARGS $word" ;;
     esac
   done
+  # Resolve a bare `HEAD` refspec to the current local branch before
+  # running rule (a)/(b)/(c). Git resolves `origin HEAD` server-side to the
+  # current branch — from a `main` checkout this targets remote `main` and
+  # defeats the main-protection regime (#515). Same family as #470 (the ref
+  # spelling enumerations) but `HEAD` is special because resolution happens
+  # SERVER-SIDE, not in the local parser. Substitute standalone `HEAD` /
+  # `+HEAD` / `refs/heads/HEAD` tokens (and their refspec-RHS forms like
+  # `feat:HEAD`) with the resolved branch so rule (a) and rule (b) match
+  # against the actual target.
+  _ZSK_CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
+  if [ -n "$_ZSK_CURRENT_BRANCH" ]; then
+    _ZSK_NEW_ARGS=""
+    for word in $PUSH_ARGS; do
+      case "$word" in
+        HEAD|+HEAD|refs/heads/HEAD|+refs/heads/HEAD)
+          word="$_ZSK_CURRENT_BRANCH" ;;
+        *:HEAD|*:+HEAD|*:refs/heads/HEAD|*:+refs/heads/HEAD)
+          word="${word%:*}:$_ZSK_CURRENT_BRANCH" ;;
+      esac
+      _ZSK_NEW_ARGS="$_ZSK_NEW_ARGS $word"
+    done
+    PUSH_ARGS="$_ZSK_NEW_ARGS"
+    unset _ZSK_NEW_ARGS
+  fi
+  unset _ZSK_CURRENT_BRANCH
   # (a) Explicit origin main/master (optionally prefixed with + for
   # force-push or : for delete-refspec, and optionally fully-qualified as
   # refs/heads/main). Trailing class includes `'` and `"` so
