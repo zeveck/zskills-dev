@@ -43,11 +43,15 @@ This is for landing worktree work onto main via cherry-pick.
      echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
      exit 1
    fi
-   $FULL_TEST_CMD
+   TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
+   mkdir -p "$TEST_OUT"
+   $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
    ```
-   If tests fail, report to the user. Do NOT attempt to fix — the
-   cherry-picked code was already tested in the worktree. A failure here
-   means a main-specific conflict that needs human judgment.
+   Read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to check
+   results. If tests fail, read the captured output file and report to the
+   user. Do NOT attempt to fix — the cherry-picked code was already tested
+   in the worktree. A failure here means a main-specific conflict that
+   needs human judgment.
 
 6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):

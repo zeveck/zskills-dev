@@ -9,7 +9,7 @@ description: >-
   only).
 argument-hint: "[pr] [scope] [push|land] [auto]"
 metadata:
-  version: "2026.05.20+8d882c"
+  version: "2026.05.21+6c6976"
 ---
 
 # /commit [pr] [scope] [push|land] [auto] — Safe Commit Workflow
@@ -270,10 +270,23 @@ For every file classified as "related":
      just parrot it — write a proper commit message)
 
 2. **Run tests if code was staged** — if any staged files are code (`.js`,
-   `.css`, `.html`, `.rs`), run `$FULL_TEST_CMD` (resolve via
-   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-   if you don't already have it in your environment) before committing. All
-   suites must pass. If tests fail after two fix attempts on the same error,
+   `.css`, `.html`, `.rs`), run the full test suite before committing using
+   the canonical capture idiom:
+
+   ```bash
+   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -z "$FULL_TEST_CMD" ]; then
+     echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
+     exit 1
+   fi
+   TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
+   mkdir -p "$TEST_OUT"
+   $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
+   ```
+
+   Read `"$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}"` to check
+   results. All suites must pass. If tests fail, read the captured output
+   file to diagnose. If tests fail after two fix attempts on the same error,
    STOP and report to the user (CLAUDE.md: "NEVER thrash on a failing fix").
    Skip this step for content-only commits (`.md`, `.jpg`, `.png`, logs).
 
