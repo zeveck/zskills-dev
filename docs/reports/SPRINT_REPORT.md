@@ -1423,3 +1423,35 @@ Empty.
 - Next fire: top of next 30-min mark.
 - Live fix/issue worktrees at sprint entry: 0 (all prior `.landed status: landed`).
 
+
+## Sprint — 2026-05-21 05:13 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-073919-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 3 | **N verified:** 3
+
+### Fixed (all merged)
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #547 | requires.* enforcement only fires when committing on main | [#552](https://github.com/zeveck/zskills-dev/pull/552) | d256e36 | 4628/4628; #544 marker-delete workaround now obsolete |
+| #546 | schedule_under_1h minute-form numeric guard | [#554](https://github.com/zeveck/zskills-dev/pull/554) | 3543009 | 4631/4631 + 5 new regression cases |
+| #515 | HIGH: HEAD push bypass — resolve HEAD → current branch | [#553](https://github.com/zeveck/zskills-dev/pull/553) | 5351809 | 4630/4630 + 4 new mutation-verified cases |
+
+### Notable
+1. **Enumeration-closure family completed.** #515 closes the HEAD-spelling gap in the BLOCK_MAIN_PUSH family (#470/#392/#457/#399/#426/#427/#528 prior). Same shape as #528 — silent normalization the parser didn't perform. The 4th new test case (`/usr/bin/git push origin HEAD` from main → DENY) locks the composition with #528's path-strip fix.
+2. **#547 closes a process patch-around.** PR #544 had used the marker-delete-and-recreate workaround to bypass the requires-on-commit gate; this sprint's verifier confirmed no test depends on that workaround pattern, so #544's improvisation is now obsolete and the gate has correct semantics. Test 3 family in test-tracking-integration.sh was correctly re-targeted (worktree moved to main) to actually exercise the new gate — not a weakening.
+3. **#546 is a sister to #528**: consistency fix with already-present sibling pattern (cron-form had the n<60 guard; minute-form was missing it). Trivial one-line, S/M tier.
+4. **Two sibling-rebase loops fired** (#547 + #546) but no conflicts — only metadata.version line on #546's SKILL.md edit needed re-rebase. #515 didn't conflict with #547 even though both touched `block-unsafe-project.sh.template` (different parser regions).
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+| #511 | Verifier tally check missing | Pool-not-picked | Out of top-N |
+| #510 | fix-issues research-blurb + impl-prompt missing tier1-hash-registration | Pool-not-picked | Out of top-N |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T05:13:40-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+
