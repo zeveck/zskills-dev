@@ -908,3 +908,21 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S-M (matrix axis extension; ~10-20 LOC additions; pure test). **Action now:** /do pr — add `HEAD` to target loop at `tests/test-hooks.sh:2300` + `:2382`; add `branch` axis so HEAD-from-main DENIES and HEAD-from-feat ALLOWS; full combinatorial expansion with existing wrapper / force-prefix / ref-prefix / refspec-form / quote-style axes.
 
+
+---
+
+### #561 + #556 (bundled) — project-hook HEAD wrapper-quote bypass + property-matrix extension
+
+**Labels:** bug | **Verdict:** NOT FIXED — bundled fix
+
+**Problem.** Two coupled defects from PR #553's closure-incompleteness:
+- **#561**: `block-unsafe-project.sh.template:1057-1071` HEAD-rewrite block matches case patterns against PUSH_ARGS words but does NOT strip trailing single/double quotes that wrapper-unwrapped forms leave behind. After `${PUSH_CMD##*git push}`, `bash -c 'git push origin HEAD'` yields word `HEAD'` (with trailing apostrophe) → no rewrite → rule (a) sees no `main` → ALLOW. Universal main-protection bypass for wrapper-quoted git push.
+- **#556**: `tests/test-hooks.sh:2300` + `:2382` property-test matrix never enumerated `target=HEAD`. The matrix exists precisely to terminate the patch-react-ship cycle of the BLOCK_MAIN_PUSH family (#73 / #87 / #195 / #197 / #306 / #413 / #417 / #434 / #435 / #465 / #486 / #470 / #515). Adding `HEAD` to the target axis with a branch-context axis surfaces 120 of 280 wrapper-quoted variants as the #561 bypass.
+
+**Fix outline.** Bundled PR closes both:
+1. **Project-hook quote-strip** (`block-unsafe-project.sh.template:1057-1071`): add per-word `case ... \'*\' \"*\"` quote-strip BEFORE the HEAD case-match (mirrors the generic hook's pattern at `block-unsafe-generic.sh:625-626`). Apply to `.claude/hooks/block-unsafe-project.sh` mirror.
+2. **Property-test matrix extension** (`tests/test-hooks.sh:2300` + `:2382`): apply the prepared diff at `/tmp/issue-556-matrix-extension.patch` (264 lines; adds `HEAD` to target axis + `branch ∈ {main, feat/test}` axis; expected ~1400 total cases). Verify all 280 project-hook HEAD variants now PASS (vs the 120 FAIL with the bypass).
+3. **No skill SKILL.md edits** → no version bumps. Hooks + tests only.
+
+**Complexity:** S-M (~5 LOC quote-strip + apply 264-line matrix patch + verify). **Action now:** /do pr — apply matrix patch from `/tmp/issue-556-matrix-extension.patch`; add quote-strip to project-hook HEAD-rewrite (mirror generic's pattern); mirror to .claude/hooks/; verify all 280 project-hook HEAD-axis cases PASS.
+
