@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.20+246baf"
+  version: "2026.05.21+434b2f"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -365,8 +365,17 @@ for wt in $(git worktree list | awk '{print $1}' | tail -n +2); do
       conflict)
         echo "NEEDS ATTENTION: $wt — rebase conflict, needs manual resolution ⚠"
         ;;
+      failed|direct-push-failed|direct-verify-failed)
+        echo "FAILED: $wt — status: $STATUS (failure-class, see reason field) ✗"
+        ;;
+      pr-state-unknown)
+        echo "NEEDS ATTENTION: $wt — PR state unverified (see PR ${PR_URL:-unknown}) ⚠"
+        ;;
+      partial)
+        echo "PARTIAL: $wt — partial landing, see worktree for unlanded commits ⚠"
+        ;;
       *)
-        echo "PARTIAL: $wt — status: $STATUS (has unlanded or unresolved work) ⚠"
+        echo "UNKNOWN: $wt — unrecognized status: $STATUS"
         ;;
     esac
   else

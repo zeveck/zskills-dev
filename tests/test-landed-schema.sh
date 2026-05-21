@@ -174,6 +174,37 @@ test_fix_report_canonical_parser() {
   fi
 }
 
+# /fix-report Step 6 case statement must have a distinct arm for every
+# status the writers produce — otherwise failure-class statuses
+# (failed, direct-push-failed, direct-verify-failed, pr-state-unknown,
+# partial) silently collapse into the wildcard arm, contradicting the
+# skill's own prose at Step 4 that says they must be surfaced as failed
+# sprints. See #602.
+test_fix_report_case_arm_per_status() {
+  local target="$REPO_ROOT/skills/fix-report/SKILL.md"
+  if [ ! -f "$target" ]; then
+    pass "/fix-report case-arm coverage: skill not present (skipped)"
+    return
+  fi
+  local status missing=""
+  for status in full landed pr-ready pr-ci-failing pr-failed conflict \
+                failed direct-push-failed direct-verify-failed \
+                pr-state-unknown partial; do
+    # Match the status at the start of a case-arm pattern OR as one of
+    # the alternatives in a piped pattern (e.g., `full|landed)` or
+    # `failed|direct-push-failed|direct-verify-failed)`).
+    if ! grep -qE "(^[[:space:]]*|\|)${status}(\)|\|)" "$target"; then
+      missing="$missing $status"
+    fi
+  done
+  if [ -z "$missing" ]; then
+    pass "/fix-report Step 6 case statement has arm for every status"
+  else
+    fail "/fix-report Step 6 case statement has arm for every status" \
+      "missing arms for:$missing"
+  fi
+}
+
 echo "=== .landed canonical schema parser tests ==="
 test_landphase_grep_canonical_landed
 test_landphase_grep_canonical_pr_ready
@@ -181,6 +212,7 @@ test_landphase_grep_rejects_conflict
 test_landphase_source_pattern
 test_landphase_e2e_canonical
 test_fix_report_canonical_parser
+test_fix_report_case_arm_per_status
 
 echo ""
 echo "---"
