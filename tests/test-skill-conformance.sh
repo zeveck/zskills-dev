@@ -625,6 +625,24 @@ else
   fail "[.claude/agents/verifier.md] scope-creep: merge-base form" "merge-base diff form missing"
 fi
 
+# Verifier test-output tally check (Issue #511).
+# Scanning visible inline PASS lines is insufficient — the verifier must
+# assert the canonical summary line (`Overall: N/M passed, F failed` from
+# tests/run-all.sh) is PRESENT, that N == M and F == 0, and that N is not
+# below the captured pre-impl baseline. Past failure 2026-05-18: verifier
+# reported "3313/3313 passed" by counting inline PASS lines; final tally
+# was 3311/3313 — two regressions slipped.
+if grep -qF 'Overall: N/M passed' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; then
+  pass "[.claude/agents/verifier.md] tally check: Overall: N/M passed prose"
+else
+  fail "[.claude/agents/verifier.md] tally check: Overall: N/M passed prose" "summary-line assertion guidance missing"
+fi
+if grep -qF 'baseline_N' "$REPO_ROOT/.claude/agents/verifier.md" 2>/dev/null; then
+  pass "[.claude/agents/verifier.md] tally check: baseline comparison"
+else
+  fail "[.claude/agents/verifier.md] tally check: baseline comparison" "baseline-comparison guidance missing"
+fi
+
 echo ""
 echo "=== Cross-skill PR-landing tripwires (PR_LANDING_UNIFICATION Phase 6 WI 6.1) ==="
 # Drift-prevention assertions catching any future re-introduction of inline

@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.21+6e2240"
+  version: "2026.05.21+3eba8d"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1609,6 +1609,15 @@ Include this VERBATIM in the verifier dispatch prompt:
        as improvements
      - If `"$TEST_OUT/.test-baseline.txt"` is absent (`FULL_TEST_CMD` not configured),
        treat all failures as potentially new — report all of them
+     - **Tally check (mandatory).** Assert the results file contains a
+       canonical summary line — for zskills literally
+       `Overall: N/M passed, F failed`. If the line is **absent**, the suite
+       did not complete (truncation / hang / OOM) — FAIL verification, do not
+       count inline PASS lines as success. Then require `F == 0` AND `N == M`
+       AND (when baseline is present) `N >= baseline_N`. Past firing
+       2026-05-18: verifier reported "3313/3313 passed" by counting inline
+       PASS lines; final tally was 3311/3313 — two regressions slipped
+       (anchor `feedback_verify_by_count_not_any_fail`).
 
 2. **Additional plan-specific checks** (the verifier checks these against the
    verbatim plan text — not against a summary):
