@@ -952,3 +952,40 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S-M (helper extraction OR inline mirror at 2 sites + 3 inlined consumers + mirrors + property-axis extension). **Action now:** /do pr — mirror `is_gh_pr_subcommand`'s `skip_transparent_prefixes` into `is_git_subcommand` + `is_destruct_command` (or extract shared helper); propagate to 3 inlined consumers + .claude mirrors; extend property matrix to enumerate transparent-prefix × command axis.
 
+
+---
+
+### #572 — is_destruct_command missing path-strip — `/usr/bin/kill -9`, `nohup /usr/bin/killall` bypass
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** Sister bug to #528 (closed by PR #550). `is_destruct_command` in `hooks/_lib/git-tokenwalk.sh` got the transparent-prefix skip from #567 but NEVER received the path-strip from #528. Result: `/usr/bin/kill -9 1234`, `nohup /usr/bin/killall node`, `/usr/local/bin/pkill foo` bypass the destruct gate. Same enumeration-closure family as #528/#515/#567.
+
+**Fix outline.** Add `case "$first" in */*) first="${first##*/}" ;; esac` to `is_destruct_command` (mirror of the existing pattern in `is_git_subcommand`). Apply to source + 3 inlined consumers + .claude mirrors. Extend property-test matrix to include `/usr/bin/kill`, `nohup /usr/bin/killall`, `/usr/local/bin/pkill` × destruct verbs.
+
+**Complexity:** S (1-line addition × 4 files + mirrors + ~6 test cases). **Action now:** /do pr — mirror #528's path-strip pattern into `is_destruct_command` source + 3 inlined consumers + .claude mirrors; add property-test cases.
+
+---
+
+### #573 — #516 regression tests not wired into tests/run-all.sh
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** PR #532 (#516 silent commit-loss fix) added `tests/test-cleanup-merged-ahead-gate.sh` + `tests/test-briefing-worktrees-merged-diverged.sh`. Both files exist; neither is invoked by `tests/run-all.sh`. The data-loss-class fix has no canonical-runner regression net — a future revert would not trip CI.
+
+**Fix outline.** Add 2 `run_suite` lines to `tests/run-all.sh` registering both test files. Trivial wire-up; no other surface touched.
+
+**Complexity:** S (2-line wire-up). **Action now:** /do pr — add 2 `run_suite` entries to `tests/run-all.sh` for the #516 regression tests in the appropriate section.
+
+---
+
+### #580 — /session-report points at flat tracking-marker path; canonical is nested
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/session-report/SKILL.md:63` directs the agent to verify "Plan executed" claims via `.zskills/tracking/fulfilled.run-plan.<slug>` (flat layout). Canonical scheme per `docs/tracking/TRACKING_NAMING.md:44` and `/run-plan` write sites is **nested**: `.zskills/tracking/$PIPELINE_ID/{fulfilled,requires,step}.*`. The ground-truth-auditor skill itself has stale ground-truth paths — agent follows the table literally, finds zero matches, concludes "no run-plan evidence" — ironic failure mode where the auditor misses ground truth because its own command is wrong.
+
+**Fix outline.** Replace flat path with nested `$PIPELINE_ID/fulfilled.run-plan.*` (or equivalent — read the file for context). Bump session-report SKILL.md `metadata.version` per skill-versioning discipline. Mirror.
+
+**Complexity:** S (1-line prose fix + version bump + mirror). **Action now:** /do pr — replace flat tracking path at `skills/session-report/SKILL.md:63` with nested `$PIPELINE_ID/fulfilled.run-plan.*` form; bump version + mirror.
+
