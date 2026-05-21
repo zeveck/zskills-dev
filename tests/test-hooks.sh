@@ -206,6 +206,25 @@ expect_deny "nice kill -9 1234 (prefix #567)"           "nice kill -9 1234"
 # not over-match.
 expect_allow "nohup echo killing (non-destruct prefix-only — #567)" "nohup echo killing"
 
+# 7-pathstrip. Path-prefixed destruct verbs — issue #572. Sister of #528
+# (which added the path-strip to is_git_subcommand). is_destruct_command
+# gained the same `case "$first" in */*) first="${first##*/}" ;; esac`
+# block after the prefix-skip loop. Without it, an agent reaching for
+# `command -v kill` (which prints /usr/bin/kill) followed by execution of
+# the absolute path silently bypasses the destruct gate that CLAUDE.md
+# treats as load-bearing. Matrix: each destruct verb × bare-path,
+# prefix+path (combines #567 SKIP + path-strip), and wrapper-recursion.
+expect_deny "/usr/bin/kill -9 1234 (path-strip #572)"               "/usr/bin/kill -9 1234"
+expect_deny "/usr/bin/killall node (path-strip #572)"               "/usr/bin/killall node"
+expect_deny "/usr/bin/pkill node (path-strip #572)"                 "/usr/bin/pkill node"
+expect_deny "/usr/local/bin/pkill foo (path-strip #572)"            "/usr/local/bin/pkill foo"
+expect_deny "nohup /usr/bin/kill -9 1234 (#567 + #572)"             "nohup /usr/bin/kill -9 1234"
+expect_deny "timeout 30 /usr/bin/killall node (#567 + #572)"        "timeout 30 /usr/bin/killall node"
+expect_deny "cd /tmp && /usr/bin/killall node (chain + #572)"       "cd /tmp && /usr/bin/killall node"
+expect_deny "echo a && /usr/bin/pkill node (chain + #572)"          "echo a && /usr/bin/pkill node"
+# Allow control: a non-destructive path-prefixed binary must not over-match.
+expect_allow "/bin/echo killing (path-strip negative — #572)"       "/bin/echo killing"
+
 # 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
 # The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
 # All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.
