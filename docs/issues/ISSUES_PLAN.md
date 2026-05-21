@@ -1029,3 +1029,50 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S (2-line prose fix + version bump + mirror). **Action now:** /do pr — replace `/draft-plan` with `/refine-plan` at `skills/run-plan/SKILL.md:800-805` to match the symmetric arithmetic-staleness path; bump version + mirror.
 
+
+---
+
+### #596 + #592 + #582 + #579 (bundled) — skill bash fences read unassigned variables
+
+**Labels:** bug | **Verdict:** NOT FIXED — bundled family fix
+
+**Problem.** Four skills have bash fences that READ variables without first assigning them, causing fail-closed or silent-skip on direct invocation:
+- **#596**: `/refine-plan` worktree preamble reads `${TRACKING_ID}` (lines 76, 79) + `$PLAN_FILE` — never assigned
+- **#592**: `/draft-tests` worktree preamble reads `${TRACKING_ID}` (lines 79, 82) before assignment at line 160; `$PLAN_FILE` never assigned
+- **#582**: `/research-and-go` Step 2 reads `$GOAL` for landing-mode detection — never assigned
+- **#579**: `/research-and-plan` standalone Tracking fence reads `$META_PLAN_PATH` — never assigned; `sanitize-pipeline-id` fail-closes the fence
+
+Same structural shape across all four. Each skill works fine when DISPATCHED by a parent (which sets the var beforehand) but FAILS on direct standalone invocation.
+
+**Fix outline.** For each skill: locate the worktree preamble / Step 2 / Tracking fence; add an explicit ARGUMENTS-parsing block at the top that assigns the missing variable(s) from `$ARGUMENTS` or with a sensible default. Bump each skill's `metadata.version` per discipline + mirror. ~3-5 LOC per skill.
+
+**Complexity:** S-M (4 SKILL.md edits + 4 version bumps + 4 mirrors). **Action now:** /do pr — assign the missing variables at the head of each affected fence/section; bump versions + mirror.
+
+---
+
+### #575 + #576 (bundled) — conformance tripwire follow-ups (verifier tally + REBASE_STDERR_FILE allow-list)
+
+**Labels:** bug | **Verdict:** NOT FIXED — bundled conformance extension
+
+**Problem.** Two closure-incomplete follow-ups; both extend `tests/test-skill-conformance.sh`:
+- **#575**: #511's tally-check conformance tripwire pins `.claude/agents/verifier.md` only; the `skills/run-plan/SKILL.md` mirror (with the same tally prose) is unguarded. Reverting the mirror would regress #511 silently.
+- **#576**: #535's allow-list conformance assertion still pins only the legacy 3-key pattern (`STATUS|PR_URL|PR_NUMBER`). `REBASE_STDERR_FILE` (and other sidecar keys) added by #535 are not asserted. Dropping `REBASE_STDERR_FILE` from any of the 6 caller allow-lists would regress silently.
+
+Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires. Same pattern, single file, bundled into one PR to avoid conflicts.
+
+**Fix outline.** For #575: add `grep -c 'Overall: N/M passed' skills/run-plan/SKILL.md >= 1` (or equivalent grep against the canonical tally prose) to test-skill-conformance.sh. For #576: extend the existing allow-list assertion at lines 1248 + 1292-1293 to include `REBASE_STDERR_FILE` (and the full canonical key set: `CONFLICT_FILES_LIST`, `CALL_ERROR_FILE`, etc.). No skill SKILL.md edits.
+
+**Complexity:** S (2-3 grep assertions added to tests/test-skill-conformance.sh, no version bumps). **Action now:** /do pr — extend test-skill-conformance.sh with #575's tally tripwire on run-plan/SKILL.md + #576's full-key-set allow-list pin.
+
+---
+
+### #574 — claim primitive test coverage gap
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** PR #544 (c3509dc) shipped the Phase 1 claim primitive with 13 unit tests on `claim-issue.sh` itself. Two adjacent surfaces have no test coverage: (1) `sweep_stale_claims` helper wrapper in `claim-fence-helpers.sh`; (2) `zskills-resolve-config.sh` parsing of the `claim_ttl_seconds` config field. Existing tests only `export ZSKILLS_CLAIM_TTL_SECONDS=7200` directly, bypassing the resolver.
+
+**Fix outline.** Add test cases to existing `tests/test-fix-issues-claim-script.sh` (or extract into a focused new file) for: (1) `sweep_stale_claims` wrapper — invoke via the SKILL fence shape, assert it sweeps + reports correctly; (2) `claim_ttl_seconds` resolver — set the config field, invoke `zskills-resolve-config.sh`, assert `ZSKILLS_CLAIM_TTL_SECONDS` is set from config. ~10-20 LOC of new test cases.
+
+**Complexity:** S (test additions in existing file; no source edits). **Action now:** /do pr — add `sweep_stale_claims` test cases + `claim_ttl_seconds` config-resolver test cases to `tests/test-fix-issues-claim-script.sh`.
+
