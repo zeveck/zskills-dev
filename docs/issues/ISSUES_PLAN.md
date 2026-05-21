@@ -989,3 +989,43 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S (1-line prose fix + version bump + mirror). **Action now:** /do pr — replace flat tracking path at `skills/session-report/SKILL.md:63` with nested `$PIPELINE_ID/fulfilled.run-plan.*` form; bump version + mirror.
 
+
+---
+
+### #587 — Test-isolation flake mystery — actually 1 intermittent assertion + diagnostic noise
+
+**Labels:** bug | **Verdict:** NOT FIXED — root cause diagnosed
+
+**Problem.** Diagnosis (orchestrator + bisection): the "3 failures non-deterministic under `bash tests/run-all.sh`" is NOT a multi-test isolation flake. Root cause is at `tests/test-hooks.sh:4500-4558` — the "Fixture-extension coverage" section invokes `bash tests/test-skill-conformance.sh` against a synthetic fixture dir at `/tmp/zskills-fixture-extension-test/`. The synthetic fixture has only `skills/synthetic/SKILL.md` — all OTHER conformance assertions (against skills/run-plan, skills/verify-changes, etc.) EXPECTEDLY FAIL because the synthetic dir lacks real skills. The single OUTER test assertion is `grep -q '__TEST_LITERAL__' "$EXT_DENY_OUT"`. When that ONE assertion fails, `head -50 "$EXT_DENY_OUT" >&2` dumps 50 lines of expectedly-failing conformance output as diagnostic — producing the false impression of 15-20 separate `[run-plan] FAIL` lines.
+
+**Fix outline (2 parts):**
+
+- **Part A (this PR)**: replace `head -50 "$EXT_DENY_OUT" >&2` at `tests/test-hooks.sh:4555` with a tighter diagnostic that prints ONLY the deny-list section (or just confirms `__TEST_LITERAL__` absence with a sentinel-only diagnostic). Eliminates ~17 phantom FAIL lines from sprint reports.
+- **Part B (follow-up issue)**: investigate why the outer assertion intermittently fails. Likely the synthetic fixture missing some path the conformance test's deny-list depends on. Out of scope for this PR.
+
+**Complexity:** S (single-file edit, ~5-10 LOC). **Action now:** /do pr — replace the `head -50 ... >&2` diagnostic with a tighter grep (`grep -A 2 -B 2 'deny-list\|forbidden-literals\|__TEST_LITERAL__' "$EXT_DENY_OUT" >&2` or `tail -10 ...`); file Part B as a follow-up issue.
+
+---
+
+### #586 — Destruct gate has no _in_wrappers variant — bash -c '/usr/bin/kill -9' bypasses
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** Sister gap to #572 (closed by PR #588). `is_destruct_command_in_chain` exists; `is_destruct_command_in_wrappers` does NOT. Wrapper-quoted forms like `bash -c '/usr/bin/kill -9 1234'`, `eval 'killall node'` bypass the destruct gate even after #572 added path-strip. Universal silent bypass.
+
+**Fix outline.** Add `is_destruct_command_in_wrappers` helper to `hooks/_lib/git-tokenwalk.sh` modeled on `is_git_subcommand_in_wrappers`. Iterates wrapper bodies (`bash -c`, `sh -c`, `eval`, etc.) and applies `is_destruct_command_in_chain` to the extracted command string. Update the destruct-gate consumer (`hooks/block-unsafe-generic.sh`) to call the new wrappers helper first, falling back to `_in_chain`. Mirror to `.claude/hooks/`. Extend property matrix in `tests/test-hooks.sh` enumerating wrapper × destruct-verb × path-prefix combinations.
+
+**Complexity:** S-M (1 new helper + 1 consumer update + mirrors + ~8 property cases). **Action now:** /do pr — add `is_destruct_command_in_wrappers` to `hooks/_lib/git-tokenwalk.sh` mirroring the gh-variant pattern; wire into `block-unsafe-generic.sh`; mirror; extend test-hooks.sh property matrix.
+
+---
+
+### #578 — /run-plan textual-staleness should dispatch /refine-plan, not /draft-plan
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/run-plan/SKILL.md:800-805` Phase 1 step 6a textual-staleness path dispatches `/draft-plan` to refresh stale plans; the symmetric arithmetic-staleness path at line 846 dispatches `/refine-plan`. Both should use `/refine-plan` (correct skill — refines existing plans rather than re-drafting).
+
+**Fix outline.** 2-line prose edit at `skills/run-plan/SKILL.md:800-805`: replace `/draft-plan` with `/refine-plan` in both prose mentions (interactive prompt + auto dispatch instruction). Bump `/run-plan` SKILL.md `metadata.version` per skill-versioning discipline. Mirror.
+
+**Complexity:** S (2-line prose fix + version bump + mirror). **Action now:** /do pr — replace `/draft-plan` with `/refine-plan` at `skills/run-plan/SKILL.md:800-805` to match the symmetric arithmetic-staleness path; bump version + mirror.
+

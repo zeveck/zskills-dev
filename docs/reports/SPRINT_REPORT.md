@@ -1658,3 +1658,34 @@ Empty.
 - Sprint started: 2026-05-21T12:25:57-04:00
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 
+
+## Sprint — 2026-05-21 14:12 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-164726-sprint`
+**Mode:** auto | **Landing:** pr (SERIAL) | **Focus:** default
+**N requested:** 3 | **N dispatched:** 3 | **N verified:** 3 | **N merged:** 3
+
+### Fixed
+| # | Title | PR | Merge SHA |
+|---|-------|----|-----------|
+| #587 | Test-isolation flake — actually 1 fixture-extension assertion + diagnostic noise + run_suite parser bug | [#595](https://github.com/zeveck/zskills-dev/pull/595) | 56db507 |
+| #586 | Destruct gate _in_wrappers — bash -c '/usr/bin/kill -9' now gated | [#597](https://github.com/zeveck/zskills-dev/pull/597) | 5a8ac50 |
+| #578 | /run-plan textual-staleness dispatches /refine-plan (was /draft-plan) | [#598](https://github.com/zeveck/zskills-dev/pull/598) | bbc88e8 |
+
+### Surfaced (filed for next sprint)
+| # | Title | Trigger |
+|---|-------|---------|
+| #594 | Part B follow-up to #587: intermittent fixture-extension deny-list assertion | #587 fix scope split |
+
+### Notable
+
+1. **#587 diagnosis was more interesting than expected.** What looked like a test-isolation flake (~17 phantom `[run-plan] FAIL` lines under `bash tests/run-all.sh`) was actually TWO coupled bugs: (a) `tests/test-hooks.sh:4555` dumped `head -50` of an expectedly-failing inner conformance run as diagnostic, and (b) `tests/run-all.sh:27-28` parser picked the inner-test's `Results: ... failed` count via `tail -1` instead of the outer suite's. Combined, they produced a stable "3 failed" Overall tally even when the outer suite had ≤1 real failure. The "different specific FAILs each run" was just different chunks of the 50-line dump. **Root cause: 1 intermittent assertion + 2 amplifier bugs.** Part B (#594) tracks the underlying intermittent assertion.
+
+2. **SERIAL /land-pr dispatch followed correctly.** Per the strengthened `feedback_skill_serial_contract` memory anchor: dispatched #587 alone → waited for merge → dispatched #586 alone → waited for merge → dispatched #578 alone. Each /land-pr only needed ONE Step 6b auto-rebase (normal recovery path when main moves during CI). **No concurrency churn this sprint.** Compare to previous parallel-dispatch sprints which routinely needed 2+ rebase iterations per PR.
+
+3. **#586 completes the wrapper-bypass closure family.** #572 added path-strip for `is_destruct_command`; #586 adds `_in_wrappers` so `bash -c '/usr/bin/kill -9'` etc. are now gated. Sister-symmetry to the gh path (#528 → #515 → #567 → #572 → #586).
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T14:12:37-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+
