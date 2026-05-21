@@ -747,3 +747,40 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** M (2-file fix + new tests; data-loss-class so paired regression tests are mandatory). **Action now:** /do pr — add `git rev-list --count $MAIN_BRANCH..$branch` gate in `briefing.py:441` and `cleanup-merged/SKILL.md` Rule 3 + Phase 5 (270-310); add regression tests (`tests/test-briefing-worktrees-merged-diverged.sh`, `tests/test-cleanup-merged-ahead-gate.sh`) that seed post-merge commits and assert NOT_SAFE_TO_REMOVE.
 
+
+---
+
+### #538 — Missing tests/test-skills-mirror-parity.sh — skills/ ↔ .claude/skills/ divergence ships silently
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `tests/test-hooks-mirror-parity.sh` enforces byte-equality between `hooks/` and `.claude/hooks/` (model from #390 closure); no equivalent test exists for `skills/` ↔ `.claude/skills/`. A developer editing source skills and forgetting to mirror leaves CI green while Claude Code reads the stale `.claude/skills/<name>/SKILL.md` at runtime. The conformance gate (`test-skill-conformance.sh` `check_in_file ".claude/skills/..."`) is itself the bypass surface — it asserts against the stale text and passes.
+
+**Fix outline.** Add `tests/test-skills-mirror-parity.sh` modeled on the hooks variant. Multi-source-root: compare `skills/X` → `.claude/skills/X` for every X under `skills/`, AND `block-diagram/X` → `.claude/skills/X` for every X under `block-diagram/`. Excess names in `.claude/skills/` not appearing in either source root → allow-listed (e.g., `playwright-cli`, `social-seo`) or fail-loud. Exclude `__pycache__` and `*.pyc`. Register in `tests/run-all.sh`.
+
+**Complexity:** S (30-50 LOC test + 1 line in run-all.sh; no skill SKILL.md edits → no version bumps). **Action now:** /do pr — add `tests/test-skills-mirror-parity.sh` with multi-source-root byte-equality + documented whitelist; register in `tests/run-all.sh`.
+
+---
+
+### #537 — /do Phase 4 step 2 prose instructs `git stash -u` which hooks/block-unsafe-generic.sh denies
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/do/SKILL.md:822-832` (Phase 4 step 2, Path B worktree cherry-pick landing) instructs `git stash -u` + `git stash pop`. `hooks/block-unsafe-generic.sh:387-388` denies bare stash + every stash write subcommand (`stash -u`, `stash push`, `stash save`). The agent following documented prose hits hook deny and gets stuck. The correct pattern is already encoded in `skills/commit/modes/land.md:26-27`: try-without-stash + let `git cherry-pick` refuse on overlap.
+
+**Fix outline.** Replace `/do` SKILL.md Phase 4 step 2 prose with EITHER (Option 1) a dispatch to `/commit land` via the Skill tool — single source of truth, future fixes propagate — OR (Option 2) inline-mirror the `land.md` try-without-stash pattern verbatim. Option 1 is structurally cleaner. Bump `/do` SKILL.md `metadata.version` per skill-versioning discipline and mirror source → `.claude/skills/do/SKILL.md`.
+
+**Complexity:** S (one prose block edit on `/do` SKILL.md + version bump + mirror; ~10-20 LOC). **Action now:** /do pr — replace `skills/do/SKILL.md:820-835` Phase 4 step 2 stash-based prose with a `/commit land` Skill-tool dispatch (preferred) or inline-mirror of `land.md:26-32` try-without-stash pattern; bump version + mirror.
+
+---
+
+### #536 — /commit test runs bypass canonical $TEST_OUT capture pattern
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** CLAUDE.md `## Tests` mandates the canonical `TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"; mkdir -p "$TEST_OUT"; $FULL_TEST_CMD > "$TEST_OUT/.test-results.txt" 2>&1` capture pattern. Every test-running skill (`/quickfix`, `/investigate`, `/run-plan`, `/fix-issues`) implements it. `/commit` SKILL.md:272-278 (Phase 5 step 2) and `/commit modes/land.md:40-50` (Phase 7 step 5 post-cherry-pick gate) invoke `$FULL_TEST_CMD` raw — output dumps to terminal, scrolls past on long suites, agent re-runs to inspect (CLAUDE.md explicitly warns against). `land.md` is worse because test failures land mid-cherry-pick with no captured artifact for diagnosis.
+
+**Fix outline.** Replace the raw `$FULL_TEST_CMD` invocations at the two sites with the canonical capture idiom. Add a "if tests fail, read `$TEST_OUT/.test-results.txt`" instruction. Pattern is already in CLAUDE.md and 4 peer skills. Bump `/commit` SKILL.md `metadata.version` (SKILL.md is edited; `modes/land.md` is a referenced file inside the skill dir so it's part of the content-hash projection). Mirror to `.claude/skills/commit/`.
+
+**Complexity:** S (~5-line idiom per site + 1-2 fallback lines + version bump + mirror). **Action now:** /do pr — replace raw `$FULL_TEST_CMD` at `skills/commit/SKILL.md:272-278` and `skills/commit/modes/land.md:40-50` with the canonical `$TEST_OUT` capture idiom + read-on-failure instruction; bump version + mirror.
+
