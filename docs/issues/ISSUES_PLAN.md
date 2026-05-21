@@ -883,3 +883,28 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S (1-2 prose block additions to `/fix-issues` SKILL.md + version bump + mirror; possibly a test asserting the prose appears). **Action now:** /do pr — add tier1-hash-registration prose to the impl-prompt construction section of `skills/fix-issues/SKILL.md`; bump version + mirror; consider a small conformance assertion that ensures the prose is present.
 
+
+---
+
+### #557 — /run-plan Phase 4 verifier dispatch prompt instructs `git diff main...<branch>` symmetric anti-pattern
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** PR #453 (closing #448) fixed `.claude/agents/verifier.md` to use merge-base form (`git diff $(git merge-base origin/main HEAD)..HEAD`) and forbid symmetric `main...<branch>` + bare `origin/main..HEAD --stat`. But the orchestrator-supplied Phase 4 dispatch prompt at `skills/run-plan/SKILL.md:1592-1593` STILL instructs the verifier to use `git diff main...<branch>` — three-dot symmetric AND bare `main` (no `origin/`). The orchestrator's prompt overrides the agent file's defense. Same documented two-failure incident (PR #447 landing window 2026-05-19/20) is one cron-fire away from re-firing.
+
+**Fix outline.** Two-line edit at `skills/run-plan/SKILL.md:1592-1593` to replace the symmetric-diff instruction with the merge-base form + explicit "Do NOT use `main...<branch>` or bare `origin/main..HEAD --stat`" prohibition. Add conformance tripwire at `tests/test-skill-conformance.sh` asserting `main\.\.\.` does NOT appear in `skills/**/*.md` (one-sided defense today: existing tripwire asserts GOOD form IS in verifier.md). Bump `/run-plan` SKILL.md version + mirror.
+
+**Complexity:** S (5-line prose edit + 1 conformance tripwire + version bump + mirror). **Action now:** /do pr — replace symmetric-diff instruction in `skills/run-plan/SKILL.md:1592-1593` with the merge-base form (mirror verifier.md's prose); add conformance tripwire forbidding `main\.\.\.` in `skills/**/*.md`; bump SKILL.md version + mirror.
+
+---
+
+### #556 — PR #553 closure-incomplete: property-test matrix not extended to enumerate `target=HEAD`
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** PR #553 (#515 HEAD fix) added runtime resolution + 4 hand-written `toggle_test` cases. But the property-test matrix at `tests/test-hooks.sh:2300` (generic) + `:2382` (project) still iterates `for target in main master feat/test` — `HEAD` is NOT in the target set. The 4 hand-written cases cover ~4 of the ~280 combinatorial variants. Wrappers + force-prefixes + refspec-RHS forms × HEAD aren't locked. Same pattern as #470 (follow-up to #457's incomplete closure) — the patch-react-ship cycle of the #513/#522 matrix-buildout exists specifically to terminate.
+
+**Fix outline.** Extend the `for target in` loops at `tests/test-hooks.sh:2300` (generic) and `:2382` (project) to include `HEAD`. Add a branch-context axis (`for branch in main feat/test`) so HEAD target asserts DENY from main checkouts + ALLOW from feature-branch checkouts. Combinatorial expansion roughly doubles the matrix to ~560 cases — cheap to run. No skill SKILL.md edits → no version bumps.
+
+**Complexity:** S-M (matrix axis extension; ~10-20 LOC additions; pure test). **Action now:** /do pr — add `HEAD` to target loop at `tests/test-hooks.sh:2300` + `:2382`; add `branch` axis so HEAD-from-main DENIES and HEAD-from-feat ALLOWS; full combinatorial expansion with existing wrapper / force-prefix / ref-prefix / refspec-form / quote-style axes.
+
