@@ -102,21 +102,95 @@ cleanup() {
   done
   git -C "$MAIN_ROOT" worktree prune 2>/dev/null || true
 
-  # Fixture teardown.
-  rm -rf -- "$TEST_TMPDIR" 2>/dev/null || true
-
   # Final leak-check. Prints a warning (not a test failure) but makes leaks
   # visible in the results stream for debugging.
+  # Runs BEFORE $TEST_TMPDIR removal because the hermetic gitconfig (issue
+  # #540) lives under that dir — removing it first leaves git pointing at
+  # a deleted GIT_CONFIG_GLOBAL and surfaces a noisy `fatal: dubious
+  # ownership` line in the test output.
   local leaks
   leaks=$(git -C "$MAIN_ROOT" worktree list | grep -c -- "$TEST_PREFIX" || true)
   if [ "${leaks:-0}" -ne 0 ]; then
     printf '\033[33m  WARN\033[0m worktree-leak-check: %d residual entries containing "%s"\n' \
       "$leaks" "$TEST_PREFIX" >&2
   fi
+
+  # Fixture teardown (includes the hermetic HOME — must run AFTER any
+  # subprocess git calls so they still see a valid GIT_CONFIG_GLOBAL).
+  rm -rf -- "$TEST_TMPDIR" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 mkdir -p "$TEST_TMPDIR"
+
+# ────────────────────────────────────────────────────────────────────
+# Hermetic env (issue #540): insulate every case in this suite from
+# inherited GIT_CONFIG_GLOBAL / HOME / XDG_CONFIG_HOME from the
+# run-all.sh parent shell, which previously caused intermittent
+# `fatal: unknown error occurred while reading the configuration
+# files` failures (case 7) when an earlier suite's env pointed at a
+# torn-down tmp dir. Set once at top so all subprocess `git` calls
+# (including the create-worktree.sh script under test) see a known
+# minimal config.
+#
+# GIT_CONFIG_SYSTEM=/dev/null neutralises /etc/gitconfig (some
+# devcontainer images set odd defaults there). GIT_CONFIG_NOSYSTEM=1
+# is the belt-and-braces.
+# ────────────────────────────────────────────────────────────────────
+HERMETIC_HOME="$TEST_TMPDIR/hermetic-home"
+mkdir -p "$HERMETIC_HOME/.config"
+# Build the hermetic gitconfig. user/init are static; the safe.directory
+# entries are forwarded from the inherited gitconfig so devcontainer
+# `dubious ownership` errors don't trip the suite. The inherited global
+# config path is captured BEFORE we override GIT_CONFIG_GLOBAL so we read
+# from the real file (typically ~/.gitconfig).
+{
+  cat <<'GITCFG'
+[user]
+        email = test-create-worktree@test.invalid
+        name = test-create-worktree
+[init]
+        defaultBranch = main
+GITCFG
+  # Forward any safe.directory entries from the inherited config so
+  # cross-uid/cross-mount checkouts (devcontainer, codespaces) still work.
+  # `git config --get-all --global` reads the user's real global config
+  # because GIT_CONFIG_GLOBAL has not been exported yet.
+  git config --get-all --global safe.directory 2>/dev/null | while IFS= read -r dir; do
+    [ -n "$dir" ] && printf '[safe]\n\tdirectory = %s\n' "$dir"
+  done
+} > "$HERMETIC_HOME/.gitconfig"
+# Belt-and-braces: explicit star entry covers any path the inherited
+# config didn't enumerate (e.g. fixture repos created later under /tmp).
+# Only added if the inherited config does not already prohibit it.
+printf '[safe]\n\tdirectory = *\n' >> "$HERMETIC_HOME/.gitconfig"
+export HOME="$HERMETIC_HOME"
+export XDG_CONFIG_HOME="$HERMETIC_HOME/.config"
+export GIT_CONFIG_GLOBAL="$HERMETIC_HOME/.gitconfig"
+export GIT_CONFIG_SYSTEM="/dev/null"
+export GIT_CONFIG_NOSYSTEM=1
+
+# ────────────────────────────────────────────────────────────────────
+# Ref-store pre-clean (issue #540): remove any EMPTY ref subdirectory
+# under .git/refs/heads/ in MAIN_ROOT. Empty subdirs are left behind
+# when a branch like `plans/foo` is deleted but `git pack-refs` has
+# not yet collapsed `refs/heads/plans/`; the next attempt to create a
+# branch under that namespace (or any operation that scans the ref
+# store, e.g. via `git worktree add`) can then fail with
+# `fatal: Reference directory conflict: refs/heads/plans/`. The
+# offending dirs are LEGITIMATE git state (just stale); we only
+# prune EMPTY ones — never anything with refs still in it.
+# Scope: refs/heads/* one level deep. Safe to run repeatedly.
+# ────────────────────────────────────────────────────────────────────
+prune_empty_ref_dirs() {
+  local refs_dir
+  refs_dir="$(git -C "$MAIN_ROOT" rev-parse --git-common-dir 2>/dev/null)/refs/heads"
+  [ -d "$refs_dir" ] || return 0
+  # -depth ensures we prune leaves first; -empty matches only empty
+  # dirs; -mindepth 1 keeps refs/heads itself.
+  find "$refs_dir" -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true
+}
+prune_empty_ref_dirs
 
 echo "=== Phase 1b — skills/create-worktree/scripts/create-worktree.sh (20 cases) ==="
 
