@@ -44,6 +44,16 @@ check "research-and-go pre-decides meta-plan path" \
 check "research-and-go drops every 4h" \
   '! grep -q "every 4h now" skills/research-and-go/SKILL.md'
 
+# Issue #601: /fix-issues PR-mode pr.md heredoc reads ${CHANGE_SUMMARY};
+# the variable must be assigned in the same file before the heredoc.
+# Sibling of #579 (META_PLAN_PATH), #582 ($GOAL), #592/#596
+# (TRACKING_ID + PLAN_FILE). Read-before-assignment shipped empty
+# "## Changes" sections in every PR-mode PR body.
+check "fix-issues pr.md assigns CHANGE_SUMMARY before heredoc read" \
+  'grep -qE "^[[:space:]]*CHANGE_SUMMARY=" skills/fix-issues/modes/pr.md'
+check "fix-issues pr.md mirror assigns CHANGE_SUMMARY before heredoc read" \
+  'grep -qE "^[[:space:]]*CHANGE_SUMMARY=" .claude/skills/fix-issues/modes/pr.md'
+
 # Phase C: tool-list-aware dispatch (4 skills)
 for f in skills/run-plan/SKILL.md skills/fix-issues/SKILL.md \
          skills/verify-changes/SKILL.md \
