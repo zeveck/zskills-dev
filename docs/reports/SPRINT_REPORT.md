@@ -1291,3 +1291,22 @@ Empty.
 ### Open Ready queue after this sprint
 4 entries: #514, #513, #511, #510 — all unresearched.
 
+
+## Sprint -- 2026-05-20 21:53 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260521-011227-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #514 | dashboard /api/state TTL caching (collect.py) | wt-fix-issue-514 | #521 | /do pr M | 3669/3669 |
+| #513 | hook-bypass property test (840 enumerated cases) | wt-fix-issue-513 | #522 | /do pr M | 4507/4507 |
+
+### Notable
+1. **#513 enumerated 840 cases, surfaced 0 hook gaps.** Confirms post-#470 normalization (colon-split → quote-strip → +strip → refs/heads-strip) is structurally sound. The closure cycle of reactive bypass patching is now CI-gated against future regression.
+2. **#514 cache infrastructure shipped per spec; TTL retune deferred.** On THIS worktree (82 active git worktrees + 68 plans) the helpers exceed their 5s TTL → cache misses every poll. Production-typical repos with fewer worktrees should see the structural improvement. Impl agent correctly stuck to blurb-prescribed TTLs per scope discipline; noted retune as a separate follow-up if dogfooding surfaces a real need.
+3. **Pre-push scope checks held.** Both impls returned with `git show HEAD --stat` output in their reports per `feedback_check_scope_before_push`. Both were clean; no force-push recovery needed.
+
+### Open Ready queue after this sprint
+6 entries: #511, #510, #515, #516, #517, #518 — all unresearched.
+
