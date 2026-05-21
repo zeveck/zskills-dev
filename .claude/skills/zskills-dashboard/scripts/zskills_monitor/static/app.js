@@ -872,11 +872,17 @@ function buildIssueCard(issue, num, col) {
   }
   card.appendChild(head);
   // Skip-reason chip (issue #445) — only renders for Ready-column issues
-  // whose tracker blurb resolves to a skip-class (needs-decision,
-  // plan-scale, bug-unclear-cause, unresearched). Tooltip carries the
-  // verbatim Action-now / Verdict source line. Non-interactive — card
-  // remains drag-and-droppable.
-  if (issue && issue.skip_reason && issue.skip_reason.code) {
+  // whose tracker blurb resolves to a *genuine* skip-class (needs-decision,
+  // plan-scale, bug-unclear-cause). `unresearched` is excluded: it signals
+  // "tracker has no blurb yet for this issue" rather than a true skip —
+  // /fix-issues N dashboard auto-syncs (Phase 1a) and researches these on
+  // next invocation, so the per-card chip carries no actionable signal
+  // for a human reader. The underlying `skip_reason` data stays in
+  // /api/state so a future aggregate signal (e.g. column-header
+  // "N untracked" badge) can consume it. Tooltip carries the verbatim
+  // Action-now / Verdict source line. Non-interactive — card remains
+  // drag-and-droppable.
+  if (issue && issue.skip_reason && issue.skip_reason.code && issue.skip_reason.code !== "unresearched") {
     const sr = issue.skip_reason;
     const code = String(sr.code || "");
     const label = String(sr.label || code || "");
