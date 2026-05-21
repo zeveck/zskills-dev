@@ -225,6 +225,38 @@ expect_deny "echo a && /usr/bin/pkill node (chain + #572)"          "echo a && /
 # Allow control: a non-destructive path-prefixed binary must not over-match.
 expect_allow "/bin/echo killing (path-strip negative — #572)"       "/bin/echo killing"
 
+# 7c. Wrapper-bypass closure for the destruct gate (#586) — sister of #399's
+# git-side closure. Pre-fix, `bash -c '/usr/bin/kill -9 …'`, `eval 'killall
+# …'`, `sh -c 'pkill …'` and friends tokenized as `bash`/`sh`/`eval` at the
+# top level and slipped past is_destruct_command_in_chain even after #572
+# added path-strip. is_destruct_command_in_wrappers iterates wrapper bodies
+# and re-applies the chain helper. Property matrix:
+#   {bash -c, sh -c, eval, command, exec} × {kill -9, killall, pkill, rm -rf}
+#   × {bare, /usr/bin/-prefixed}. (`rm -rf` is gated by RM_RECURSIVE regex,
+#   not the destruct helper, so wrapper-quoted `rm -rf` is covered by that
+#   regex's substring match — included here for cross-coverage attestation.)
+#   `command` / `exec` are command-prefix wrappers handled by the
+#   transparent-prefix skip in is_destruct_command (#567), not the
+#   wrappers helper — included to attest both paths still gate.
+expect_deny "WD1: bash -c 'kill -9 1234'"                    "bash -c 'kill -9 1234'"
+expect_deny "WD2: bash -c '/usr/bin/kill -9 1234'"           "bash -c '/usr/bin/kill -9 1234'"
+expect_deny "WD3: eval 'killall node'"                       "eval 'killall node'"
+expect_deny "WD4: eval '/usr/bin/killall node'"              "eval '/usr/bin/killall node'"
+expect_deny "WD5: sh -c 'pkill foo'"                         "sh -c 'pkill foo'"
+expect_deny "WD6: sh -c '/usr/bin/pkill foo'"                "sh -c '/usr/bin/pkill foo'"
+expect_deny "WD7: bash -c \"killall node\" (double-quoted)"  "bash -c \\\"killall node\\\""
+expect_deny "WD8: bash -c 'kill -s 9 1234'"                  "bash -c 'kill -s 9 1234'"
+# Command-prefix wrappers (transparent skip path #567, not the wrappers
+# helper). Both gates must still fire.
+expect_deny "WD9: command kill -9 1234 (prefix path)"        "command kill -9 1234"
+expect_deny "WD10: exec /usr/bin/killall node (prefix path)" "exec /usr/bin/killall node"
+# Nested wrapper (depth=2 — recursion budget is 3 by default).
+expect_deny "WD11: bash -c \"sh -c 'kill -9 1234'\" (nested)" \
+  "bash -c \\\"sh -c 'kill -9 1234'\\\""
+# Allow control: wrapper around a non-destructive command must not over-match.
+expect_allow "WD12: bash -c 'echo killall' (wrapper allow ctrl)" \
+  "bash -c 'echo killall'"
+
 # 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
 # The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
 # All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.

@@ -28,7 +28,7 @@ fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 # When a new helper joins hooks/_lib/, add it here.
 fn_source() {
   case "$1" in
-    is_git_subcommand|is_destruct_command|is_git_subcommand_in_chain|is_destruct_command_in_chain|is_git_subcommand_in_wrappers|is_gh_pr_subcommand|is_gh_pr_subcommand_in_chain|is_gh_pr_subcommand_in_wrappers)
+    is_git_subcommand|is_destruct_command|is_git_subcommand_in_chain|is_destruct_command_in_chain|is_destruct_command_in_wrappers|is_git_subcommand_in_wrappers|is_gh_pr_subcommand|is_gh_pr_subcommand_in_chain|is_gh_pr_subcommand_in_wrappers)
       echo "hooks/_lib/git-tokenwalk.sh" ;;
     extract_cd_target|resolve_effective_worktree_root)
       echo "hooks/_lib/resolve-effective-worktree-root.sh" ;;
@@ -55,7 +55,7 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
   # bash -c / eval / sh -c wrapper-bypass class.
   # extract_cd_target + resolve_effective_worktree_root added in #401 —
   # consolidated cd-target / worktree-root resolution helper.
-  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_git_subcommand_in_wrappers is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers extract_cd_target resolve_effective_worktree_root; do
+  for FN in is_git_subcommand is_destruct_command is_git_subcommand_in_chain is_destruct_command_in_chain is_destruct_command_in_wrappers is_git_subcommand_in_wrappers is_gh_pr_subcommand is_gh_pr_subcommand_in_chain is_gh_pr_subcommand_in_wrappers extract_cd_target resolve_effective_worktree_root; do
     # is_destruct_command is only inlined in generic hook; skip for project + stale-skill-version + bypassed-land-pr.
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command" && "$HOOK" == *stale-skill-version* ]] && continue
@@ -71,6 +71,11 @@ for HOOK in hooks/block-unsafe-project.sh.template hooks/block-unsafe-generic.sh
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *project* ]] && continue
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *stale-skill-version* ]] && continue
     [[ "$FN" == "is_destruct_command_in_chain" && "$HOOK" == *bypassed-land-pr* ]] && continue
+    # is_destruct_command_in_wrappers (#586) is only inlined in the generic
+    # hook (same scope as the destruct-base + destruct-chain helpers).
+    [[ "$FN" == "is_destruct_command_in_wrappers" && "$HOOK" == *project* ]] && continue
+    [[ "$FN" == "is_destruct_command_in_wrappers" && "$HOOK" == *stale-skill-version* ]] && continue
+    [[ "$FN" == "is_destruct_command_in_wrappers" && "$HOOK" == *bypassed-land-pr* ]] && continue
     # is_git_subcommand is NOT inlined in bypassed-land-pr (that hook only
     # walks gh pr tokens, not git tokens).
     [[ "$FN" == "is_git_subcommand" && "$HOOK" == *bypassed-land-pr* ]] && continue
