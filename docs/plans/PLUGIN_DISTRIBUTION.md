@@ -4,212 +4,299 @@ created: 2026-05-21
 status: active
 ---
 
-# Plan: Plugin Distribution Migration
+# Plan: Plugin Distribution (Dual-Path)
 
-> **Landing mode: PR** — This plan targets PR-based landing. All phases use worktree isolation with a named feature branch. `execution.landing = "pr"` and `execution.main_protected = true` per `.claude/zskills-config.json`.
+> **Landing mode: PR** — All phases use worktree isolation with a named feature branch. `execution.landing = "pr"` and `execution.main_protected = true` per `.claude/zskills-config.json`.
 
 ## Overview
 
-zskills currently distributes itself via a bespoke installer (`/update-zskills`) that mirrors `skills/` → `.claude/skills/`, copies `hooks/*.sh` → `.claude/hooks/`, copies `.claude/agents/*.md`, registers PreToolUse/PostToolUse hooks in the consumer's `.claude/settings.json`, and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md` against `.claude/zskills-config.json`. Claude Code now ships a first-class plugin/marketplace system. This plan replaces the bespoke installer with that system while preserving every structural defense the installer guarantees today.
+zskills currently distributes itself via a bespoke installer (`/update-zskills`) that mirrors `skills/` → `.claude/skills/`, copies `hooks/*.sh` → `.claude/hooks/`, copies `.claude/agents/*.md`, registers PreToolUse/PostToolUse hooks in the consumer's `.claude/settings.json`, and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md` against `.claude/zskills-config.json`. Claude Code now ships a first-class plugin/marketplace system. **This plan adds plugin distribution as a permanent second install path alongside the existing `/update-zskills` path. Neither path is retired. Both are first-class.**
 
-Round 1 reviewer + DA findings exposed three structural gambles (`alwaysLoad`, `SubagentStart`-as-matcher, hard cron cutover); round 2 retired all three. Round 2 review surfaced two CRITICAL omissions caught by round-3 refinement: (a) **Layer 3** of the verifier-cannot-run defense (`verify-response-validate.sh`, invoked from 12 sites across 5 skills) was missing from the materialiser; (b) `migrate-cron-prefixes.sh` was specced as a shell script but `CronList` is a Claude session-side tool, not shell-callable. Round 3 DA review then surfaced two further mechanism-correctness defects in the sentinel scheme the round-3 refiner had introduced to fix F-DA2-3 — both are fixed here in round 4: (c) the sentinel-detection logic was `grep -qF "$sentinel"` interpolating the CURRENT plugin version, which would silently freeze materialised files at first-install version on every subsequent zskills upgrade (F-DA3-1); (d) the sentinel was prepended as line 1 of agent `.md` files, breaking YAML frontmatter parsing and silently dropping the agents' `hooks:` declaration — the entire mechanism Layer 0 of the verifier-cannot-run defense depends on (F-DA3-2). Both are fixed mechanically: write-with-version + detect-by-prefix-regex; inject-inside-frontmatter for `.md` files whose line 1 is `---`.
+**Honest framing of scope (round-4 drift correction).** Rounds 1-3 specced a one-way replacement: `/update-zskills` retired, `CLAUDE_TEMPLATE.md` deleted, mirror trees gone, every internal slash reference bulk-rewritten to `/zskills:<skill>`. The round-4 pivot keeps both paths permanent. This is **roughly equivalent total work** to the single-path-with-cutover plan, not less work — the deletion phases shrink, but new dual-path-only work appears: dual-install detection, bidirectional switch tooling, two-renderer equivalence, dual-lane CI, dual-resolution prose for cron-fire rule, and per-site path-fallback for ~145 in-skill script source references. The earlier "Phase 3 narrows / Phase 5 narrows" framing under-stated this. The plan below honors the dual-path commitment without pretending the bill is smaller than it is. **What disappears:** the 1,621 prose-reference rewrites, the 29-skill version-bump cascade, the CLAUDE_TEMPLATE.md deletion. **What appears:** dual-install detection + WARN, bidirectional `--switch-install-path` tooling with lock-LAST in both directions, renderer-equivalence test, plugin hooks.json conditional-skip when settings.json already registers, dual-path resolution in 145 script-source sites and in the cron-fire rule prose, plugin-lane CI in addition to the existing source-tree lane, and a default-path recommendation in README.
 
-The headline structural choices (unchanged from round 2):
+The headline structural choices:
 
-1. **One plugin** at the repo root named `zskills`, distributed via `.claude-plugin/marketplace.json` at the repo root.
-2. **Hybrid distribution for the two zskills agents.** `verifier.md` and `implementer.md` materialise into the consumer's `.claude/agents/` via a SessionStart hook so their frontmatter `hooks:` declaration (Layer 0 of the verifier-cannot-run defense) survives unchanged. Plugin-shipped agents can't declare frontmatter `hooks:` per `/tmp/research-plugin-schema.md` §6.
-3. **Rules content is materialised, not packaged.** `CLAUDE_TEMPLATE.md` is rendered by the SessionStart hook into `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md` — the documented `InstructionsLoaded`-fires-on-`.claude/rules/*.md` path (`/tmp/research-plugin-schema.md` §5 line 243). No `alwaysLoad` field.
-4. **Slash-prefix migration with transition-window cron back-compat.** All 29 zskills slash-invocations gain a `zskills:` prefix per `/tmp/research-plugin-schema.md` §7. The cron-fire recognition rule in `managed.md` accepts BOTH `Run /<skill>` AND `Run /zskills:<skill>` for a documented 60-day deprecation window. A SESSION-SIDE migration skill `/zskills:migrate-crons` re-registers durable crons (not a shell script — see D12 round-3 revision below).
-5. **`{{...}}` template substitution survives.** The same `CLAUDE_TEMPLATE.md` substitution that `/update-zskills` performs today is performed by the SessionStart materialiser, using a Python renderer reading `.claude/zskills-config.json`. Mtime + atomic-rename idempotency.
-6. **zskills eats its own dog food** from Phase 1 onward — `claude --plugin-dir .` from the repo root loads the plugin in-place during development.
-7. **Prod-strip discipline preserved.** Marketplace `source` points at `prod/main`, force-pushed at release time by `build-plugin-release.sh`. Parallel `prod/<version>` tags are pushed each release for consumers who want to pin (D1 round-3 revision).
+1. **One plugin** named `zs` (slash prefix `/zs:`) distributed via `.claude-plugin/marketplace.json` at the repo root. Marketplace name stays `zskills` (the org-level identifier); the install address is `zs@zskills`. **One additional sibling plugin** named `zs-block-diagram` ships in the same marketplace (D2 — per pivot point 7).
+2. **Hybrid distribution for the two zskills agents and Layer-3 hook.** `verifier.md`, `implementer.md`, `inject-bash-timeout.sh`, and `verify-response-validate.sh` materialise into the consumer's `.claude/` via a SessionStart hook so frontmatter `hooks:` survives unchanged AND the 12 in-skill invocation sites resolve without edits.
+3. **Rules content is materialised, not packaged.** `CLAUDE_TEMPLATE.md` is the source-of-truth for BOTH install paths and is rendered into `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md` — by `/update-zskills` Step B/D on the legacy path, by the SessionStart materialiser on the plugin path. A renderer-equivalence test gates byte-equal output (D24 — F-DA1-5).
+4. **Slash prefix is install-path-dependent.** Source skills stay bare-prefix (`skills/<name>/SKILL.md`). On `/update-zskills` install the slash menu shows `/<skill>`; on plugin install it shows `/zs:<skill>`. No bulk rewrite. Cross-skill prose references in skill bodies stay bare and the cron-fire rule is taught to OR-match both forms permanently (D12 — F-DA1-1 Option Y locked).
+5. **`{{...}}` template substitution survives in both renderers.** A new Python renderer `scripts/render-managed-rules.py` runs from the plugin SessionStart hook; `/update-zskills` Step B/D continues to call that same Python renderer (D24 — collapse to one renderer to eliminate divergence, F-DA1-5 (i)).
+6. **zskills dogfoods both lanes** from Phase 1 onward — `claude --plugin-dir .` for the plugin lane; source-tree `/update-zskills` for the legacy lane.
+7. **Dual-install state is detected, not assumed away.** Phase 2 ships a detection probe inside the SessionStart materialiser; Phase 5 ships the bidirectional `--switch-install-path` tool with lock-LAST in both directions (D25 — F-DA1-4, F-DA1-7).
+8. **Prod-strip discipline preserved.** Marketplace `source` points at `prod/main`, force-pushed at release time by `build-plugin-release.sh`. Parallel `prod/<version>` tags are pushed each release for consumers who want to pin (D1).
 
-Migration tooling lands BEFORE legacy removal: Phase 1 ships the plugin scaffold; Phase 2 ships the SessionStart materialiser (now FIVE artifacts: agents + `inject-bash-timeout.sh` + `verify-response-validate.sh` + `managed.md`); Phase 3 migrates every internal slash reference to `zskills:` prefix WITH cron back-compat; Phase 4 rebuilds conformance tests; Phase 5 retires `/update-zskills`, the mirror trees, and `CLAUDE_TEMPLATE.md`; Phase 6 activates the marketplace and finalises consumer migration tooling.
+### Install paths (terminology)
+
+| Surface | `/update-zskills` lane | Plugin lane |
+|---|---|---|
+| Install command | `/update-zskills install ...` | `/plugin marketplace add tomdale/zskills && /plugin install zs@zskills` |
+| Slash prefix | bare (`/run-plan`, `/quickfix`) | `/zs:` (`/zs:run-plan`, `/zs:quickfix`) |
+| Skills location | `.claude/skills/<name>/` | `${CLAUDE_PLUGIN_ROOT}/skills/<name>/` |
+| Hooks location | `.claude/hooks/<name>.sh` | `${CLAUDE_PLUGIN_ROOT}/hooks/<name>.sh` (plus 4 materialised under `.claude/`) |
+| Rules file | `.claude/rules/zskills/managed.md` (rendered by `/update-zskills`) | `.claude/rules/zskills/managed.md` (materialised by SessionStart hook) |
+| Updates | `/update-zskills install` (re-fetch + re-mirror) | `/plugin marketplace update` |
+| Marketplace name / Plugin name | n/a | `zskills` / `zs` |
+
+**Default recommendation** (D26 — F-DA1-11): zskills' README recommends the plugin lane as the default for interactive workflows and the `/update-zskills` lane as the default for headless-CI consumers (the plugin lane requires the `claude` CLI on runners; the `/update-zskills` lane does not). Both paths are first-class; the recommendation is for the indecisive reader, not a constraint.
 
 ## Locked Decisions
 
-D1. **Marketplace shape & release-tag scheme (resolves F-R2-4, F-DA2-2).** Single marketplace manifest at `.claude-plugin/marketplace.json` in the zskills repo root, listing one plugin entry `zskills`. Source is `{ "github": { "repo": "<owner>/zskills", "ref": "prod/main" } }`. **Each release pushes BOTH the moving `prod/main` ref AND a parallel `prod/<version>` tag** (e.g., `prod/2026.05.0`) on the prod-stripped commit. Consumers wanting reproducibility pin marketplace `source.sha` or override `source.ref` to `prod/<version>`. The `prod/main` force-push is the moving-window pointer for unpinned consumers. Per `/tmp/research-plugin-schema.md` §11 lines 437-446, when no `plugin.json.version` resolution succeeds the marketplace falls back to "git commit SHA" — so we ALSO bump `plugin.json.version` in the prod-stripped commit BEFORE force-pushing (W5.5 ordering). `docs/PLUGIN_INSTALL.md` documents the pin-by-version idiom for security-conscious consumers. Splitting into multiple plugins is deferred — see D17.
+D1. **Marketplace shape & release-tag scheme (revised — F-R2-1).** Single marketplace manifest at `.claude-plugin/marketplace.json` in the zskills repo root, listing TWO plugin entries: `zs` (the full distribution, `source: { "github": { "repo": "<owner>/zskills", "ref": "prod/main" } }`) and `zs-block-diagram` (the block-diagram addon subset, `source: "./block-diagram"` — relative-path string per `/tmp/research-plugin-schema.md` §3 lines 152-158, which lists `Relative path | string (e.g. "./my-plugin") | none | Local directory within the marketplace repo. Must start with ./`). Round-2 specced `github.path` on the sibling entry; that field does NOT exist in the documented `github` source schema (which only accepts `repo`, `ref?`, `sha?`). The relative-path form is the research-recommended alternative (§3 inferred implication, line 173). **Each release pushes BOTH the moving `prod/main` ref AND a parallel `prod/<version>` tag** (e.g., `prod/2026.05.0`). Consumers wanting reproducibility pin marketplace `source.sha` or override `source.ref` to `prod/<version>`. The `prod/main` force-push is the moving-window pointer for unpinned consumers. Per `/tmp/research-plugin-schema.md` §11 lines 437-446, when no `plugin.json.version` resolves, marketplace falls back to "git commit SHA" — so we ALSO bump `plugin.json.version` in the prod-stripped commit BEFORE force-pushing (W5.5 ordering). `docs/PLUGIN_INSTALL.md` documents the pin-by-version idiom. **Co-located plugin caveat:** because `zs-block-diagram` ships as `./block-diagram` inside the same marketplace repo, both plugin entries follow the same `prod/main` ref — the relative-path source uses the marketplace's checked-out ref by construction. No separate `ref` is needed (or supported) on the relative-path entry.
 
-D2. **Plugin granularity.** ONE plugin. Hooks, skills, and scripts all live under the single `zskills` plugin root. Plugin-shipped agents are NOT used — see D11.
+D2. **Plugin granularity — TWO plugins, ONE marketplace, EXPLICIT dependency (revised — F-R1-14, F-R1-17, F-DA1-8, F-DA2-1).** Round-2 D2 said "ONE plugin"; round 4 splits to two: `zs` (full, includes everything `/update-zskills` ships by default) and `zs-block-diagram` (addon subset matching `/update-zskills --with-block-diagram-addons`). Both ship from the same marketplace manifest in the same repo. **`zs-block-diagram`'s `plugin.json` declares `"dependencies": [{"name": "zs"}]`** per `/tmp/research-plugin-schema.md` §11 lines 554-560 (verbatim: `Other plugins this plugin requires, optionally with semver version constraints` and `If the plugin declares dependencies, Claude Code enables them transitively at the same scope, and the command fails when a dependency is not installed`). This closes the orphan-install failure mode F-DA2-1 surfaced: a consumer who runs `/plugin install zs-block-diagram@zskills` standalone — without `zs` — would otherwise receive 3 block-diagram skills but zero supporting infrastructure (no `inject-bash-timeout.sh` materialiser, no `verifier`/`implementer` agents, no `block-stale-skill-version.sh` hook, no `managed.md` rules) because all of those ship from `zs`. The block-diagram skills source `zskills-resolve-config.sh` (verified by grep against `/workspaces/zskills/block-diagram/`) which lives under `zs` — standalone install would yield broken script-sourcing. With the dependency declaration, Claude Code transitively enables `zs` whenever `zs-block-diagram` is installed. If `dependencies` semantics turn out to be unreliable in empirical Phase 1 testing (the `/en/plugin-dependencies` page was research-deferred per §15 line 574), the fallback is a documented "install `zs` first" note in `docs/PLUGIN_INSTALL.md` — but the dependency-declaration is the load-bearing structural mechanism. `tests/test-plugin-manifest.sh` asserts `dependencies` present on `zs-block-diagram` and absent on `zs`. The "if both installed, namespacing wins" sentence in round-2 D2 stays — that addresses the orthogonal duplicate-skill case, not orphan install. D17 retired.
 
-D3. **`CLAUDE_TEMPLATE.md` retirement strategy — materialise via SessionStart.** The DOCUMENTED auto-load path is `InstructionsLoaded` firing on `.claude/rules/*.md` (`/tmp/research-plugin-schema.md` §5 line 243). `CLAUDE_TEMPLATE.md` is rendered by the SessionStart hook into `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md`. The rendering logic moves into `${CLAUDE_PLUGIN_ROOT}/scripts/render-managed-rules.py`. Idempotency uses mtime + atomic rename. Per CLAUDE.md `## Migration scripts`, the rendered file IS the lock and is written LAST.
+D3. **`CLAUDE_TEMPLATE.md` is the dual-path source-of-truth.** `CLAUDE_TEMPLATE.md` stays at the repo root forever — it is the single source-of-truth read by `/update-zskills` Step B/D AND by the plugin SessionStart materialiser. **No `templates/CLAUDE_TEMPLATE.md` copy.** The dual-checkin-with-byte-equality-gate approach from round 3 is dropped (it created ongoing 2-file-edit overhead — F-R1-9 Option A locked). The plugin's `${CLAUDE_PLUGIN_ROOT}/scripts/render-managed-rules.py` reads `$CLAUDE_PROJECT_DIR/CLAUDE_TEMPLATE.md` if present; otherwise falls back to a bundled copy at `${CLAUDE_PLUGIN_ROOT}/CLAUDE_TEMPLATE.md` (synced from the repo root by `scripts/build-plugin-release.sh` during prod-strip). Per CLAUDE.md `## Migration scripts`, the rendered `managed.md` IS the lock and is written LAST.
 
-D4. **`.template` hook strategy.** `block-agents.sh.template` and `block-unsafe-project.sh.template` are renamed to the suffixless form and read `$CLAUDE_PROJECT_DIR/.claude/zskills-config.json` at runtime.
+D4. **`.template` hook strategy.** `block-agents.sh.template` and `block-unsafe-project.sh.template` retain their `.template` suffix on the `/update-zskills` lane (the suffix tells `/update-zskills` to substitute at install time). On the plugin lane, the SAME suffixed files ship in `hooks/` and are read by the same hook scripts at runtime (they read `$CLAUDE_PROJECT_DIR/.claude/zskills-config.json` directly — the `.template` suffix is purely an install-time signal for `/update-zskills`). Plugin `hooks.json` registers the suffixless runtime form for `block-agents.sh` and `block-unsafe-project.sh` by pointing at `${CLAUDE_PLUGIN_ROOT}/hooks/block-agents.sh.template` directly with a wrapper, OR — preferred — the plugin tree carries a sibling suffixless copy generated at release time by `build-plugin-release.sh`. **LOCKED: sibling suffixless copy in plugin tree** (simpler — no wrapper needed). `tests/test-hook-template-sibling.sh` asserts the two are byte-equal when both exist.
 
-D5. **Source-of-truth layout (resolves F-R2-3).** `skills/` stays at the zskills repo root. `block-diagram/` stays at the root and is merged via `plugin.json`'s additive `"skills": ["./block-diagram/"]` field. `hooks/` stays at root. **`hooks/_lib/` ships in the plugin tree as part of `hooks/` — sub-directories under `hooks/` are not directly registered in `hooks.json` but are reachable from inlined hook source.** The two helpers (`hooks/_lib/git-tokenwalk.sh`, `hooks/_lib/resolve-effective-worktree-root.sh`) are inlined into 3+ hooks today; `tests/test-hook-helper-drift.sh` enforces byte-equality between the source-of-truth and the inlined copies. The drift test STAYS in the suite (NOT in the D8 retirement list); under the plugin layout it resolves `hooks/_lib/` and the hook source files via the same source-tree path that CI uses today (no fallback needed because both live in the plugin tree at known relative paths). Path-fallback rewrites (W1.4) MUST NOT touch the inlined `_lib` regions in hooks (delimited by `# Inlined from hooks/_lib/...` comments); the drift gate verifies this stays clean. `agents/` directory is NOT created in the plugin tree (D11). `.claude-plugin/` contains only `plugin.json` and `marketplace.json`. The `.claude/skills/` and `.claude/hooks/` mirror trees are RETIRED in Phase 5.
+D5. **Source-of-truth layout.** `skills/` and `block-diagram/` stay at the zskills repo root and are referenced by BOTH plugin manifests (`zs` points at both; `zs-block-diagram` points at just `block-diagram/`). `hooks/` stays at root. `hooks/_lib/` ships as part of `hooks/`; the helpers (`hooks/_lib/git-tokenwalk.sh`, `hooks/_lib/resolve-effective-worktree-root.sh`) are inlined into 3+ hooks today and `tests/test-hook-helper-drift.sh` enforces byte-equality. The drift test STAYS in the suite. Path-fallback rewrites (W1.4) MUST NOT touch the inlined `_lib` regions in hooks. `.claude-plugin/` contains `plugin.json` and `marketplace.json`. **The `.claude/skills/`, `.claude/hooks/`, `.claude/rules/zskills/`, and `.claude/agents/` mirror trees in consumer repos STAY** — they are the `/update-zskills` lane's install state.
 
-D6. **`/update-zskills` retirement & script relocation.** `/update-zskills` is deleted in Phase 5. Migration-tooling scripts (`scripts/skill-content-hash.sh`, `scripts/frontmatter-set.sh`, `scripts/skill-version-stage-check.sh`, `scripts/frontmatter-get.sh`, `scripts/skill-version-compare.sh`, `scripts/zskills-resolve-config.sh`, `scripts/zskills-paths.sh`, `scripts/sanitize-pipeline-id.sh`, `scripts/migrate-flat-tracking-markers.sh`, `scripts/land-pr-bypass-message.sh`) stay at `scripts/` at the repo root. In-skill source paths inside skill bodies migrate from `${CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/...` → `${CLAUDE_PLUGIN_ROOT}/scripts/...`. The 40 skill files that source `zskills-resolve-config.sh` all edit + version-bump in Phase 2.
+D6. **In-skill source paths — per-site dual-path fallback (revised — F-R1-5, F-DA1-3).** Round-2 D6 said "skill bodies migrate from `${CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/...` → `${CLAUDE_PLUGIN_ROOT}/scripts/...`". Under dual-path that breaks the `/update-zskills` lane (where `${CLAUDE_PLUGIN_ROOT}` is unset). **LOCKED: per-site existence-test fallback** in every one of the 145 sites that source `zskills-resolve-config.sh` and every one of the 219 sites referencing `.claude/skills/update-zskills/scripts/...`. The canonical two-line form:
 
-D7. **Phase 1 = pure-additive constraint relaxation.** Phase 1 does NOT move scripts. Phase 1's only edit surface is `.claude-plugin/`, `hooks/hooks.json`, `hooks/*.sh` (path rewrites where applicable), plus the 3 new plugin-manifest tests. NO skill bodies are touched in Phase 1.
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "${CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+```
 
-D8. **Conformance test surface — RESOLVED COUNTS.**
-- **9 RETIRED:** `tests/test-skills-mirror-parity.sh`, `test-hooks-mirror-parity.sh`, `test-mirror-skill.sh`, `test-managed-md-up-to-date.sh` (replaced by `test-render-managed-rules-correctness.sh`), `test-update-zskills-rerender.sh`, `test-update-zskills-agent-install.sh`, `test-update-zskills-migration.sh`, `test-update-zskills-paths-migration.sh`, `test-update-zskills-version-surface.sh`.
-- **2 RESTRUCTURED (3 files):** `test-skill-conformance.sh`; `test-skill-version-enforcement.sh` + `test-block-stale-skill-version*.sh` (3 tests as one structural change).
-- **STAYS UNCHANGED:** `tests/test-hook-helper-drift.sh` — see D5; it asserts byte-equality of inlined `_lib` regions against the source-of-truth helpers, which remain at `hooks/_lib/` under the plugin tree.
-- **8 NEW TEST FILES** (replacing retired invariants + new plugin-layout invariants):
-  - `tests/test-plugin-manifest.sh` (Phase 1)
-  - `tests/test-plugin-marketplace.sh` (Phase 1)
-  - `tests/test-plugin-self-load.sh` (Phase 1)
-  - `tests/test-sessionstart-materialise.sh` (Phase 2)
-  - `tests/test-sessionstart-materialise-overwrite-guard.sh` (Phase 2 — F-DA2-3 guard)
-  - `tests/test-render-managed-rules-correctness.sh` (Phase 2)
-  - `tests/test-inject-bash-timeout-parity.sh` (Phase 2)
-  - `tests/test-verify-response-validate-parity.sh` (Phase 2 — F-R2-1 coverage)
-  - `tests/test-no-unprefixed-zskills-references.sh` (Phase 3)
-  - `tests/test-cron-prefix-back-compat.sh` (Phase 3)
-  - `tests/test-skill-frontmatter-survival.sh` (Phase 3 — F-DA2-6 STOP gate)
-  - `tests/test-claude-template-mirror.sh` (Phase 3 — F-R2-7 sync gate)
+`references/canonical-config-prelude.md` updates to document the new two-line form as the preferred pattern (lane-portable; works on both install lanes). **`tests/test-skill-conformance.sh`'s per-fence sourcing-discipline check accepts EITHER the legacy one-liner OR the new dual-path form PERMANENTLY** (revised — F-DA2-4): under D23's permanent dual-path commitment the legacy one-liner stays valid forever on the `/update-zskills` lane (where `.claude/skills/update-zskills/scripts/zskills-resolve-config.sh` exists). The legacy form on the plugin lane would fail (the path doesn't exist), but the legacy form was authored to run on `/update-zskills`-lane consumer repos in the first place — its semantics are unchanged. New code SHOULD prefer the dual-path two-line form for lane portability, but no deadline forces migration. Round-2 D6 specced a `2026.08.0` warn-only deadline; F-DA2-4 verified that the deadline contradicts D23's permanent-dual-path commitment (the legacy form will never fail on `/update-zskills` lane, so "warn after deadline" is a no-op-with-noise). Deadline dropped. The 145 mechanical sed edits in Phase 3 W3.1 land all at once (the dual-path form is the new edit standard for in-skill source-paths, applied wholesale to avoid leaving half the codebase legacy and half dual). Effective skill-bump count: 38 skills (per the 38-files-source-resolver verification, F-R1-13).
 
-  That's actually 12 new test files in the working count. The D8 net-delta accounting in A5 is updated to reflect the full inventory: -9 retired + 12 new = +3 net new files; 3 restructured-in-place. The Phase 4 PR body documents the actual inventory.
+D7. **Phase 1 = pure-additive constraint relaxation.** Phase 1 does NOT move scripts. Phase 1's only edit surface is `.claude-plugin/`, `hooks/hooks.json`, `hooks/*.sh` (path-fallback edits where applicable), the 3 new plugin-manifest tests, the dev-loop docs, and the `zs-block-diagram` plugin entry. NO skill bodies are touched in Phase 1.
 
-D9. **Plugin-self-load is a real load test, not bash-lint.** `tests/test-plugin-self-load.sh` does THREE things: (a) `claude plugin validate --strict` if CLI available else SKIP-with-reason, (b) Python JSONSchema validation, (c) `bash -n` on every hook + helper script, **WITH an exclusion list** — files matching `hooks/canary*-bad.sh` are skipped (the `canary3-bad.sh` content is dev-only and may carry deliberate syntax errors; F-R2-2). Step (c) explicit exclusion lives in the script.
+D8. **Conformance test surface — DUAL-PATH RESOLVED COUNTS (revised — F-R1-4, F-R1-13).**
 
-D10. **Versioning reconciliation.** Plugin-level `version` in `plugin.json` tracks the zskills release tag (`YYYY.MM.N`). Per-skill `metadata.version: "YYYY.MM.DD+<hash>"` continues unchanged. `scripts/frontmatter-set.sh` stays at repo-root; STOP-message recovery commands remain correct without edit.
+- **0 RETIRED.** Pivot point 5 keeps `/update-zskills`, mirror trees, and `managed.md` rendering alive — every test that gates those invariants STAYS. The round-2 "9 retired" list is wrong under dual-path. Specifically the following all STAY: `test-skills-mirror-parity.sh`, `test-hooks-mirror-parity.sh`, `test-mirror-skill.sh`, `test-managed-md-up-to-date.sh`, `test-update-zskills-rerender.sh`, `test-update-zskills-agent-install.sh`, `test-update-zskills-migration.sh`, `test-update-zskills-paths-migration.sh`, `test-update-zskills-version-surface.sh`.
+- **2 RESTRUCTURED (3 files):** `test-skill-conformance.sh` (teaches the per-fence sourcing-discipline check the new two-line dual-path form per D6); `test-skill-version-enforcement.sh` + `test-block-stale-skill-version*.sh` (3 tests as one structural change — same as round 2).
+- **STAYS UNCHANGED:** `tests/test-hook-helper-drift.sh` — `hooks/_lib/` survives under D5.
+- **16 NEW TEST FILES** (revised — F-R2-5; plugin-layout invariants + dual-path detection + renderer equivalence + cron-fire prose dual-path + hook-template sibling + switch-install-path):
+  1. `tests/test-plugin-manifest.sh` (Phase 1)
+  2. `tests/test-plugin-marketplace.sh` (Phase 1; covers BOTH plugin entries)
+  3. `tests/test-plugin-self-load.sh` (Phase 1; covers both plugins)
+  4. `tests/test-sessionstart-materialise.sh` (Phase 2)
+  5. `tests/test-sessionstart-materialise-overwrite-guard.sh` (Phase 2)
+  6. `tests/test-sessionstart-dual-install-detect.sh` (Phase 2 — F-R1-10, F-R1-12, F-DA1-4, F-R2-3)
+  7. `tests/test-render-managed-rules-correctness.sh` (Phase 2)
+  8. `tests/test-managed-md-renderer-equivalence.sh` (Phase 2 — D24, F-DA1-5)
+  9. `tests/test-inject-bash-timeout-parity.sh` (Phase 2)
+  10. `tests/test-verify-response-validate-parity.sh` (Phase 2)
+  11. `tests/test-hook-template-sibling.sh` (Phase 2 — D4)
+  12. `tests/test-cron-fire-rule-dual-path.sh` (Phase 3 — F-DA1-2)
+  13. `tests/test-cron-prefix-or-match.sh` (Phase 3; permanent OR-match — F-R1-3)
+  14. `tests/test-skill-frontmatter-survival.sh` (Phase 3 — F-DA2-6 STOP gate carried forward)
+  15. `tests/test-switch-install-path.sh` (Phase 5 — D25 bidirectional)
+  16. `tests/test-plugin-hook-skip-on-double-register.sh` (Phase 5 — F-DA1-4, F-R2-2, F-DA2-3 hook double-fire + version-skew)
 
-D11. **Hybrid agent distribution — verifier and implementer NOT plugin-shipped.** Today's `.claude/agents/verifier.md` and `.claude/agents/implementer.md` declare frontmatter `hooks:` blocks invoking `$CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh`. Plugin-shipped agents cannot declare frontmatter `hooks:` per `/tmp/research-plugin-schema.md` §6. Three options were evaluated — broad-fire PreToolUse Bash hook (REJECTED — F-DA1-16), subagent-discriminating matcher (REJECTED — undocumented), hybrid keeping agents consumer-installed (LOCKED). The plugin's SessionStart hook materialises both agent files on first run from `${CLAUDE_PLUGIN_ROOT}/templates/agents/{verifier,implementer}.md`. The materialised frontmatter `hooks:` reference is preserved verbatim.
+  Net delta: `0 retired + 16 new + 3 restructured-in-place = +16 net new test files`. (Round-2 D8 said "11 NEW" with a 15-entry enumeration and arithmetic of "+14" — three internal inconsistencies; F-R2-5 corrected by adding `test-hook-template-sibling.sh` and recounting.)
 
-**Materialiser ships FIVE consumer-side artifacts (revised from 4 in round-2 — adds `verify-response-validate.sh` per F-R2-1):**
+D9. **Plugin-self-load is a real load test, not bash-lint.** `tests/test-plugin-self-load.sh` does THREE things: (a) `claude plugin validate --strict` if CLI available else SKIP-with-reason, (b) Python JSONSchema validation of both `plugin.json` files (`zs` and `zs-block-diagram`), (c) `bash -n` on every hook + helper script, **WITH an exclusion list** — files matching `hooks/canary*-bad.sh` are skipped. Step (c) explicit exclusion lives in the script.
+
+D10. **Versioning reconciliation.** Plugin-level `version` in each `plugin.json` tracks the zskills release tag (`YYYY.MM.N`). Per-skill `metadata.version: "YYYY.MM.DD+<hash>"` continues unchanged. `scripts/frontmatter-set.sh` stays at repo-root; STOP-message recovery commands remain correct without edit. Under dual-path, BOTH `plugin.json` files bump in lockstep — `tests/test-plugin-marketplace.sh` asserts equality.
+
+D11. **Hybrid agent + Layer-3 materialisation.** `verifier.md`, `implementer.md`, `inject-bash-timeout.sh`, `verify-response-validate.sh` materialise into consumer-side `.claude/` via the plugin SessionStart hook. Plus the rendered `managed.md`. **Materialiser ships FIVE artifacts (round-3 count carried forward, unchanged under dual-path).**
 
 1. `$CLAUDE_PROJECT_DIR/.claude/agents/verifier.md`
 2. `$CLAUDE_PROJECT_DIR/.claude/agents/implementer.md`
-3. `$CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh` (Layer 0 — frontmatter-hook target)
-4. `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh` (Layer 3 — invoked from 12 sites in 5 skill bodies via `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh`)
+3. `$CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh`
+4. `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh`
 5. `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md`
 
-**Why Layer 3 must be materialised, not plugin-tree-resolved.** The 12 invocation sites (verified: `skills/commit/SKILL.md:320,335`; `skills/do/SKILL.md:741,746,786,791`; `skills/fix-issues/SKILL.md:2367,2372`; `skills/run-plan/SKILL.md:1472,1671`; `skills/verify-changes/SKILL.md:33,50`) hard-code `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"` — they do NOT use a fallback. Two paths were considered for round-3:
-- **(a) Materialise it consumer-side** (alongside `inject-bash-timeout.sh`). PRO: zero edits to 12 skill-body sites. CON: a fifth materialised artifact, plus the inject-bash-timeout-style consumer-side duplication.
-- **(b) Rewrite the 12 sites to `${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR}}/.claude/hooks/verify-response-validate.sh`**. PRO: one less materialised file. CON: 12 edits across 5 skills, 5 version-bumps; skill-body fallback resolution is inconsistent with how `inject-bash-timeout.sh` (the OTHER Layer-X consumer-side hook) is wired.
+These exact paths are ALSO where `/update-zskills` writes today — so on a dual-installed system the same paths are touched by two install pipelines. The materialiser's overwrite guard (D20) detects zskills-authorship via sentinel and treats `/update-zskills`-written files (no sentinel) as zskills-owned-but-unsentinelled via the dual-install detection probe (D27) — not as consumer-authored.
 
-**LOCKED: option (a).** Consistency with `inject-bash-timeout.sh` is the deciding factor — both Layer-0 and Layer-3 hooks live under `$CLAUDE_PROJECT_DIR/.claude/hooks/` after materialisation; the 12 invocation sites need no edit. Phase 2 W2.1 materialises 5 artifacts; `tests/test-verify-response-validate-parity.sh` asserts the plugin-tree source and the materialised consumer-tree copy are byte-equal.
+D12. **Slash-prefix cron back-compat — PERMANENT OR-match (revised — F-R1-3, F-DA1-10).** Round-3 specced a 60-day deprecation window. Under dual-path the bare-prefix form lives forever (it's the canonical form on the `/update-zskills` lane). **LOCKED: permanent OR-match.** Phase 3 W3.3 rewrites `CLAUDE_TEMPLATE.md ## Cron-fired prompts` to recognise BOTH `Run /<skill-name>` and `Run /zs:<skill-name>` forms with **no expiry date**. `tests/test-cron-prefix-or-match.sh` asserts NO `2026-07-21` (or any sunset date) string exists in the recognition rule.
 
-**Behavioural contract preserved:** verifier/implementer subagent Bash calls get the 600s timeout extension (Layer 0); Layer 3 stalled-string validation continues to gate every verifier-dispatching skill. Orchestrator Bash calls are NOT affected.
+D12-prose. **Cron-fire rule SKILL.md path-resolution dual-path (F-DA1-2).** The recognition-rule prose currently reads `Read .claude/skills/<skill-name>/SKILL.md`. Under plugin install that path doesn't exist. Phase 3 W3.3 rewrites the literal to teach Claude to try BOTH:
 
-D12. **Slash-prefix cron back-compat — SKILL-based migration, not shell-script (resolves F-DA2-1).** Round-2 specced `scripts/migrate-cron-prefixes.sh` as a shell helper invoking `CronList`. **`CronList` is a Claude session-side tool, not a shell command** — verified by reading `skills/fix-issues/SKILL.md:244,257,271`: "Use `CronList` to list all cron jobs". There is no `gh extension exec claude-code-list-crons`. The cron migration must run inside a Claude session.
-
-**Two-pronged migration (round-3 revision):**
-- **(a) 60-day deprecation window in the recognition rule.** Phase 3 W3.3 writes both prefix forms into `CLAUDE_TEMPLATE.md ## Cron-fired prompts`. The bare-prefix form is recognised through `2026-07-21` and removed in `2026.08`. _(W3.3 edits BOTH `CLAUDE_TEMPLATE.md` AND `templates/CLAUDE_TEMPLATE.md` — F-R2-7 resolution.)_
-- **(b) Session-side migration skill `/zskills:migrate-crons` (NOT a shell script).** Phase 3 W3.4 adds a new skill `skills/migrate-crons/SKILL.md` (count goes 29 → 30 in W3.1 inventory — see W3.1 revision). The skill body instructs the agent to: (1) use `CronList` to enumerate durable crons, (2) filter prompts matching `^Run /(<29-name-regex>) `, (3) for each match, dispatch `CronDelete` on the old entry and `CronCreate` for the equivalent prefixed entry, (4) report the diff. Default behaviour is PRINT-ONLY (the agent prints the OLD→NEW mapping and asks for confirmation); `$ARGUMENTS=apply` skips confirmation. The skill carries `user-invocable: true` and `disable-model-invocation: false` so consumers can invoke it post-install. The D14 runbook step "2b" (formerly a shell call) becomes a runbook PROMPT: "After installing the plugin, in your Claude session, run `/zskills:migrate-crons` to re-register pre-existing durable crons under the new prefix." `migrate-to-plugin.sh` prints this prompt verbatim and does NOT attempt the cron migration itself.
-
-The cron migration sequencing under the runbook is therefore: shell script does settings.json strip → user installs plugin → user dispatches `/zskills:migrate-crons` → shell script does file deletions. The skill is INVOKED MANUALLY by the consumer in-session; the shell script does NOT and cannot call it.
-
-D13. **Self-dogfooding dev loop activated in Phase 1, not Phase 6.** Phase 1 W1.8 transitions the zskills repo's own dev workflow to `claude --plugin-dir .`.
-
-D14. **Consumer migration runbook — GUARDED SCRIPT, with session-side cron migration as a separate user step.** `scripts/migrate-to-plugin.sh` follows the lock-LAST contract:
-1. Pre-flight inventory — classify zskills-known vs consumer-authored.
-2. Strip zskills-installed hook entries from `.claude/settings.json` via Python helper.
-3. Print user instructions: "Now in your Claude Code session run `/plugin marketplace add tomdale/zskills` + `/plugin install zskills@zskills` + `/zskills:migrate-crons`. Then return here and type 'done'." The script BLOCKS via `read -p` until the user types `done`.
-4. Verification — check `${CLAUDE_PLUGIN_DATA}` or `$HOME/.claude/plugins/cache` for zskills entries.
-5. Remove zskills-installed skill mirrors, hook scripts, `managed.md`. Does NOT touch `.claude/agents/` (overwritten by materialiser on next session).
-6. Tag the lock — write `.claude/zskills-migrated-to-plugin` LAST.
-7. Print CI workflow update guidance + `.gitignore` guidance (per F-DA2-3 (b)): "Consider adding `.claude/agents/verifier.md`, `.claude/agents/implementer.md`, `.claude/hooks/inject-bash-timeout.sh`, `.claude/hooks/verify-response-validate.sh`, `.claude/rules/zskills/managed.md` to `.gitignore` since these are now materialised by the plugin on every session."
-
-The runbook no longer chains a non-existent shell helper — the cron-migration step is a user-driven slash invocation that the script merely instructs.
-
-D15. **`/update-zskills` final mode.** Skill's final living revision adds a `--migrate-to-plugin` mode that prints the D14 runbook entry. Skill deleted in Phase 5.
-
-D16. **Hook double-fire during migration window.** D14 script orders the strip BEFORE plugin install; no double-fire inside the atomic flow.
-
-D17. **Single-plugin justification — research prerequisite for any future split.** Future split requires first fetching `https://code.claude.com/docs/en/plugin-dependencies`.
-
-D18. **Mirror-parity whitelist disposition.** 2 entries (`playwright-cli`, `social-seo`) — consumer-installed, NOT zskills-shipped; `KNOWN_SKILLS` list excludes them.
-
-D19. **`pluginConfigs.options` not used — documented deferral (resolves F-R2-6).** Per `/tmp/research-plugin-schema.md` §13, plugins compose with consumer `.claude/settings.json` via `pluginConfigs[<plugin-id>].options` — a documented config-injection surface. zskills bypasses this in favour of its existing `.claude/zskills-config.json` mechanism (rich schema: `testing.unit_cmd`, `testing.full_cmd`, `dev_server.cmd`, `dev_server.default_port`, `ui.auth_bypass`, `ci.auto_fix`, etc. — not a clean fit for the `options` schema as documented). **Deferred-research note:** if a future Claude Code version makes `pluginConfigs.options` the canonical config-injection point with a typed schema, zskills will need to bridge. Track in a follow-up issue. Not blocking for the migration.
-
-D20. **Materialiser side-effects on consumer git state (resolves F-DA2-3).** The 5 materialised files land in the consumer's working tree under `$CLAUDE_PROJECT_DIR/.claude/`. Three side-effect contracts:
-
-- **(a) Overwrite guard — write-with-version, detect-by-prefix (F-DA3-1 fix) — frontmatter-aware injection (F-DA3-2 fix).** `materialise_static` MUST NOT clobber a pre-existing consumer file that did not originate from zskills. The materialiser writes a sentinel comment carrying the CURRENT plugin version, but DETECTION uses a version-agnostic PREFIX match so that a prior-version sentinel is still recognised as zskills-authored on a later upgrade.
-
-  - **WRITE format (per file type):**
-    - Shell scripts (`*.sh`): `# zskills-materialised: <plugin-version>` injected on line 2 (after the shebang).
-    - Markdown WITH YAML frontmatter (`*.md` whose line 1 is `---` — applies to both materialised agent files): `# zskills-materialised: <plugin-version>` injected on line 2, INSIDE the opening `---` block as a YAML comment. YAML 1.2 (§9.1.1) requires `---` as the first content line of the document — any prepended HTML comment invalidates frontmatter parsing and silently drops the agent's `hooks:` declaration (Layer 0 of the verifier-cannot-run defense), which is the entire mechanism the materialiser exists to preserve.
-    - Markdown WITHOUT frontmatter (rendered `managed.md`): `<!-- zskills-materialised: <plugin-version> -->` as line 1.
-  - **DETECTION format (version-agnostic prefix):** every safe-to-write / re-render-gate check uses `grep -qE '^(#|<!--) zskills-materialised: '` (a stable PREFIX regex — matches both the YAML/shell `#` and the HTML-comment form, at ANY plugin version). This ensures that when a consumer upgrades `zskills@2026.05.0 → zskills@2026.06.0`, the materialiser RECOGNISES the file as zskills-authored (because the prefix still matches the stale-version sentinel) and overwrites it cleanly with the new version. The fixed-string `grep -qF "$SENTINEL_WITH_VERSION"` form is NOT used for detection — it would freeze materialised files at first-install version forever.
-
-  On every run, if the destination exists AND does NOT carry the prefix AND is NOT byte-equal to the source, the materialiser emits a STDERR WARN (`zskills: refusing to overwrite consumer-authored $dest; rename it or delete it to allow materialisation`) and SKIPs that artifact. The skip is visible in the consumer's session log.
-
-  **Test coverage (extended in W2.1):** `tests/test-sessionstart-materialise-overwrite-guard.sh` asserts the consumer-authored-skip path with a fixture that pre-populates `.claude/agents/verifier.md` with non-sentinel content. `tests/test-sessionstart-materialise.sh` is extended with TWO cross-cutting assertions: (i) a cross-version case — pre-populate `.claude/agents/verifier.md` with a STALE-version sentinel (`# zskills-materialised: 2026.04.0`), run materialiser at version `2026.05.0`, assert the file IS overwritten (NOT skipped with a false consumer-authored WARN); (ii) a frontmatter-survival assertion — after materialisation, `head -1 .claude/agents/verifier.md` MUST equal `---` (catches any regression to leading-HTML-comment placement that would invalidate YAML frontmatter parsing).
-
-- **(b) `.gitignore` guidance.** The D14 runbook (and `docs/PLUGIN_INSTALL.md`) tells consumers to add the 5 materialised paths to `.gitignore`. Per the round-2 framing, the materialiser writes into the consumer's repo working tree — there are two acceptable consumer postures: (i) ignore (preferred — files are plugin-managed), (ii) track them and pin to a specific zskills version (acceptable but discouraged). The plan does NOT auto-edit `.gitignore` (touching consumer-tracked files unprompted is the wrong move); the runbook EXPLAINS the choice.
-
-- **(c) Uninstall cleanup.** `scripts/migrate-to-plugin.sh --cleanup` mode removes the 5 materialised files. Phase 5 W5.3 ships `--cleanup` as a documented subcommand. The runbook in `docs/PLUGIN_MIGRATION.md` describes the off-ramp. The lock file `.claude/zskills-migrated-to-plugin` is also removed in `--cleanup` mode (re-running `migrate-to-plugin.sh` after cleanup re-installs).
-
-D21. **Materialiser-must-run-before-verifier ordering (resolves F-DA2-4).** Layer 0 fires when the materialised `verifier.md`'s frontmatter `hooks:` references the materialised `inject-bash-timeout.sh`. Both come from the SessionStart hook. Per `/tmp/research-plugin-schema.md` line 187, `/reload-plugins` "switches hook commands" but does NOT explicitly state that it re-fires `SessionStart`. The plan therefore documents the ordering contract conservatively:
-
-- **First-session-with-plugin path.** Plugin loaded → SessionStart hook fires → materialises 5 artifacts → session proceeds → any verifier dispatch resolves the materialised files. ✓
-- **Mid-session install path.** `/plugin install zskills` → consumer runs `/reload-plugins` per docs. **If `/reload-plugins` does NOT re-fire SessionStart**, the materialiser does not run; the consumer's next verifier dispatch hits missing files. Mitigation: `docs/PLUGIN_INSTALL.md` includes the line "After `/plugin install zskills`, **restart your Claude Code session** (close + reopen) to ensure the SessionStart materialiser runs before any verifier dispatch." The runbook D14 script step 3's user instruction also includes "restart your Claude Code session after `/plugin install`" before proceeding to "type 'done'."
-- **Empirical resolution at implementation time.** Phase 2 W2.1 adds a manual verification step to the PR test plan: "(a) Start a fresh Claude session in a fixture project with no `.claude/agents/`, no `.claude/hooks/inject-bash-timeout.sh`, no `.claude/hooks/verify-response-validate.sh`. (b) `/plugin install` zskills. (c) Without restarting, run `/reload-plugins`. (d) Dispatch a verifier. Observe whether the materialiser fired. Document the result." If `/reload-plugins` DOES re-fire SessionStart, the restart instruction in D21 is conservative-but-harmless; if it does NOT, the restart instruction is load-bearing and we keep it. Either way, the user instruction is correct.
-
-The Layer 0 invariant is "the materialiser must have run before any verifier dispatch in the consumer's lifetime in this repo." With the restart instruction, that's satisfied unconditionally; without it, it's satisfied conditionally on `/reload-plugins` semantics. **Conservative documentation wins.**
-
-D22. **Batch-bump atomicity (resolves F-DA2-5).** Phase 3 W3.7's 29-skill version-bump loop is wrapped in `set -euo pipefail` AND a pre-flight `git status -s | grep -v '^A\b\|^M\b' && exit 1` check (no untracked or unrelated changes outside the staged rewrite). The loop computes hashes against the STAGED content (via `git show :SKILL.md`) instead of the working tree, eliminating the working-tree-vs-staged divergence concern. If `frontmatter-set.sh` doesn't support reading staged content directly, the loop runs `git stash -u` first to isolate the operation, then `git stash pop` after the commit. If any iteration fails, the loop exits non-zero and the user re-runs from a clean state. Concretely:
-```bash
-set -euo pipefail
-# Pre-flight: ensure only staged-prefix-rewrite changes are in the tree
-git diff --quiet HEAD || { echo "Unstaged changes present; abort"; exit 1; }
-# (the prefix rewrites are already staged from W3.2)
-today=$(TZ=America/New_York date +%Y.%m.%d)
-TOUCHED_SKILLS=$(git diff --cached --name-only -- 'skills/*/SKILL.md' 'block-diagram/*/SKILL.md' | xargs -n1 dirname | sort -u)
-for SKILL_DIR in $TOUCHED_SKILLS; do
-  SKILL_MD="$SKILL_DIR/SKILL.md"
-  hash=$(bash scripts/skill-content-hash.sh "$SKILL_DIR")
-  bash scripts/frontmatter-set.sh "$SKILL_MD" metadata.version "${today}+${hash}"
-done
-git add skills/ block-diagram/
-git commit -m "feat(plugin): zskills: prefix all slash invocations (Phase 3)"
 ```
-On mid-loop failure the partially-bumped state IS visible in the tree, but `git checkout -- skills/ block-diagram/` restores cleanly because the loop ONLY edits SKILL.md frontmatter (no other files). The recovery is documented in W3.7's Abort/Rollback. `tests/test-skill-version-batch-bump.sh` (added in W4.4) simulates the batch-bump against a fixture and asserts every skill ends with a valid `metadata.version` matching its content hash.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/<skill-name>/SKILL.md` (plugin install) OR
+`.claude/skills/<skill-name>/SKILL.md` (legacy install) via the Read tool.
+```
+
+`tests/test-cron-fire-rule-dual-path.sh` asserts the rendered `managed.md` contains BOTH path forms in the cron-fire-rule section.
+
+D13. **Migrate-crons skill — OPTIONAL convenience (revised — F-R1-3, F-DA1-10).** The new `skills/migrate-crons/SKILL.md` ships but its purpose narrows: it's a one-time prefix-normalisation tool for consumers switching install lanes who want their cron prompts to read consistently. It is NOT a deprecation-driven requirement. Documented as optional. The skill body uses `CronList`/`CronDelete`/`CronCreate` (session-side tools) — not a shell script (round-3 F-DA2-1 fix carried forward).
+
+D14. **Consumer migration runbook — DEFERRED to D25 (`--switch-install-path`).** Round-3 D14 specced `scripts/migrate-to-plugin.sh` as a one-way migration. Under dual-path, this becomes the forward direction of `scripts/switch-install-path.sh` (D25). See D25 for the full spec.
+
+D15. **`/update-zskills` final form — STAYS, adds `--switch-install-path` mode (revised — F-R1-7).** Round-3 said "skill deleted in Phase 5"; under dual-path `/update-zskills` STAYS forever. Its final-form revision adds a `--switch-install-path={to-plugin,to-update-zskills}` mode that delegates to `scripts/switch-install-path.sh` (D25). Skill never deleted. A6 acceptance criterion retired.
+
+D16. **Hook double-fire during dual-installed state (revised — F-DA1-4, F-R2-2, F-DA2-3).** Round-3 D16 said "no double-fire inside the atomic flow." Under dual-path, dual-install IS a permanent supported state. Three sub-contracts:
+
+- **(a) Plugin hooks.json conditional skip — basename-match against settings.json, with version-skew guard.** Hook entries per `/tmp/research-plugin-schema.md` §5 lines 215-231 are anonymous `{ "type": "command", "command": "<string>" }` records — there is NO `name` field. The shim's matching mechanism is therefore basename-based, defined precisely as:
+  1. Each plugin-registered hook script's first executable line sources `${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh`.
+  2. The shim computes `MY_BASENAME=$(basename "${BASH_SOURCE[1]}")` — the basename of the calling hook script (e.g., `block-stale-skill-version.sh`).
+  3. The shim reads `$CLAUDE_PROJECT_DIR/.claude/settings.json` via Python (per `## Python is required`) and iterates `hooks.<event>[].hooks[]` entries.
+  4. For each entry's `command` field, it extracts the script basename via `os.path.basename(command.split()[-1])` — the last whitespace-separated token, stripped of quoting — and compares to `MY_BASENAME`.
+  5. **Version-skew check (F-DA2-3):** if a basename match is found, the shim compares the SCRIPT-version stamp between the plugin's copy and the settings.json-registered copy. Each zskills hook script carries a `# zskills-hook-version: <YYYY.MM.N>` header comment on line 2 (added in Phase 1 W1.3 alongside the shim). The shim reads both stamps via `head -n 5 | grep -m1 'zskills-hook-version:'`. If the plugin's version is STRICTLY NEWER than the settings.json copy, the shim emits a one-time WARN to stderr (`zskills: settings.json hook <basename> is version <X> but plugin ships <Y>; deferring to settings.json copy. Run /update-zskills install or bash scripts/switch-install-path.sh --to-plugin to consolidate.`) AND defers to the settings.json copy (exits 0) — running stale-but-registered is preferred to silently double-firing, but the consumer is loudly told. The WARN is gated to once-per-session per-hook via a `.zskills/hook-skew-warned-<basename>` marker.
+  6. If the plugin's version is EQUAL OR OLDER than the settings.json copy (or either header is absent), the shim exits 0 silently (settings.json wins — no version regression).
+  7. If NO basename match is found, the shim returns (does not exit) and the calling hook continues normally.
+
+  This is implementable per `/tmp/research-plugin-schema.md` §13 (plugin hooks compose additively at the harness level; each hook's bash body controls its own execution). The basename-match has a known cost: two legitimately distinct hooks with the same basename across lanes would be conflated — but zskills owns all its hook basenames and the source tree is the single point of basename assignment. Documented in the shim's top-of-file comment. Env-sentinel races (an alternative mechanism) are explicitly out-of-scope; the basename + version-stamp check is deterministic and stateless across hook invocations.
+
+- **(b) SessionStart dual-install probe (D27).** Detect-and-WARN on dual-installed state, with a `--switch-install-path` recommendation. Once-per-session, gated by `.zskills/dual-install-warned` so the consumer doesn't see repeat-spam. The (a) version-skew WARN runs INDEPENDENTLY of this — it's per-hook, gated by `.zskills/hook-skew-warned-<basename>` markers, so a consumer with multiple skewed hooks sees one WARN per hook per session.
+
+- **(c) `--switch-install-path` consolidation (D25).** The structural answer to long-lived dual-install state. The (a) and (b) WARNs both point the consumer here.
+
+`tests/test-plugin-hook-skip-on-double-register.sh` exercises (a) in three fixture scenarios: (i) basename match, equal version → silent skip; (ii) basename match, plugin NEWER → WARN-then-skip + marker creation; (iii) no basename match → calling hook continues. `tests/test-sessionstart-dual-install-detect.sh` exercises (b).
+
+D17. **Retired (was: single-plugin justification).** Under D2 the plugin split is locked, not deferred. D17 is removed; the dependency-semantics research note moves to D2's commentary.
+
+D18. **Mirror-parity whitelist disposition.** 2 entries (`playwright-cli`, `social-seo`) — consumer-installed, NOT zskills-shipped; `KNOWN_SKILLS` list excludes them. Unchanged from round 2.
+
+D19. **`pluginConfigs.options` not used — documented deferral.** Unchanged from round 2. Per `/tmp/research-plugin-schema.md` §13, the plugin-config injection point is bypassed in favour of `.claude/zskills-config.json`. Deferred-research note: if a future Claude Code version makes `pluginConfigs.options` canonical, zskills will bridge. Tracked in a follow-up issue.
+
+D20. **Materialiser side-effects (revised — F-DA1-4, F-R1-10).** Three sub-contracts:
+
+- **(a) Overwrite guard — write-with-version, detect-by-prefix, frontmatter-aware injection.** As specced in round 3 (`^(#|<!--) zskills-materialised: ` PREFIX detection; YAML-comment sentinel inside `---` for frontmatter `.md`; HTML-comment for plain `.md`; shell-comment on line 2 for `*.sh`). **Round-4 extension:** before the overwrite-guard fires, the dual-install detection probe (D27) runs FIRST. If `/update-zskills` install state is detected at the destination paths (no sentinel, but content matches `/update-zskills`'s expected install set), the materialiser does NOT overwrite — it emits the dual-install WARN (D16(b)) and skips materialisation. This prevents the round-3 failure mode (F-R1-10) where the materialiser would silently overwrite `/update-zskills`-installed agent files.
+- **(b) `.gitignore` guidance — scoped to plugin-lane consumers (F-R1-16).** `docs/PLUGIN_INSTALL.md` tells PLUGIN-LANE consumers to add the 5 materialised paths to `.gitignore` — they're plugin-managed. `/update-zskills`-lane consumers receive different guidance: leave the paths tracked (they ARE the install state).
+- **(c) Uninstall cleanup — via `--switch-install-path --to-update-zskills` (D25), not a separate `--cleanup` mode.** Under dual-path the right verb is "switch lanes," not "uninstall." The lane-switch tool removes the 5 materialised files when switching plugin → `/update-zskills`. A separate `--cleanup-plugin-materialised-files` flag on `scripts/switch-install-path.sh` is provided for the "I just want them gone, I'm not switching lanes" case.
+
+D21. **Materialiser-must-run-before-verifier ordering.** Unchanged from round 3. `/reload-plugins` behaviour empirically resolved in Phase 2 W2.1's PR test plan; conservative "restart Claude Code session after `/plugin install`" instruction stays in the runbook.
+
+D22. **Batch-bump atomicity.** Round-3 D22's clean-tree precondition + `set -euo pipefail` discipline carries forward, but the scope shrinks: under dual-path Phase 3 only bumps the 38 skills touched by the D6 per-site path-fallback edit (NOT all 29 skills bumped for slash-prefix rewrites — that work is gone). `tests/test-skill-version-batch-bump.sh` simulates on a fixture.
+
+D23. **Dual-path support is PERMANENT, not a transition state (NEW — F-R1-19, pivot directive).** zskills supports BOTH install paths as first-class permanent options. Neither is deprecated. `/update-zskills` is the canonical bare-prefix install path; the plugin is the canonical `/zs:`-prefix install path. The plan body, the README, the docs, and the test suite all reflect this. There is no future phase that consolidates to one path. (If a future redesign DOES consolidate, that's a separate plan with its own adversarial review.)
+
+D24. **Renderer-equivalence test — single canonical substitution module + three callers (NEW — F-DA1-5, F-R2-4, F-DA2-2, F-DA2-5).** To eliminate two-renderer divergence: `/update-zskills` Step B §2 and Step D §2 (the substitution sub-steps) STOP instructing the agent to substitute placeholders mentally (the LLM-prose path) and instead instruct the agent to invoke `scripts/render-managed-rules.py`. The renderer is implemented as a thin wrapper over a SINGLE source-of-truth substitution module — `scripts/managed_rules_substitution.py` — that ALSO replaces the inlined Python substitution map currently embedded in `tests/test-managed-md-up-to-date.sh:30-65` (F-DA2-2). Three callers, ONE substitution map:
+
+  1. **`scripts/render-managed-rules.py`** (used by plugin SessionStart materialiser via W2.1 and by `/update-zskills` Step B/D via W2.7) imports `from managed_rules_substitution import build_substitutions, apply` and writes the rendered file.
+  2. **`tests/test-managed-md-up-to-date.sh`** is refactored (W2.7 same commit) to invoke `scripts/render-managed-rules.py` against the live config + template and diff its output against the checked-in `managed.md`. The inlined Python `subs = {...}` block at lines 30-65 is deleted.
+  3. **Plugin SessionStart materialiser** invokes the same renderer via `python3 "${PLUGIN}/scripts/render-managed-rules.py" ...`.
+
+  `tests/test-managed-md-renderer-equivalence.sh` is the belt-and-suspenders gate: it invokes `scripts/render-managed-rules.py` from BOTH the `/update-zskills` Step D code path (the Python wrapper W2.7 introduces) AND the plugin materialiser's path against 5 fixture `(config, template)` pairs and asserts byte-equal output. Because all three callers route through the same `managed_rules_substitution` module, byte-equality is structurally guaranteed; the equivalence test is the canary that catches refactor regressions.
+
+  **Step B/D LLM-prose substitution is DELETED IN THE SAME COMMIT, NOT DEPRECATED.** Round-2 D24 said "retain for one release as a deprecated section, then remove" — but the dual-path commitment (D23) makes the legacy `/update-zskills` render path PERMANENT. Retaining the LLM-prose alongside the Python-invocation language would re-open the divergence surface D24 is supposed to close: a future agent reading Step B's prose could execute the LLM-prose path instead of the Python call. Under F-R2-4 Option (a): in W2.7's single commit, the substitution sub-steps in Step B §2 and Step D §2 are REPLACED outright with the Python invocation. The remainder of Step B (config-scan, root-CLAUDE.md migration sub-step, install report) is unchanged. No "one release" window, no follow-up issue, no `test-step-b-removed.sh` test — there's nothing left to remove. Readers wanting the historical LLM-prose can `git log -p skills/update-zskills/SKILL.md`. The `tests/test-managed-md-renderer-equivalence.sh` gate is added to `bash tests/run-all.sh` AS PART OF W2.7's commit — not earlier (where it would be meaningless against pre-port LLM-prose) and not later (it stabilises the moment Python becomes canonical).
+
+  This also retires F-DA2-2's "three substitution maps" concern: post-W2.7 there is ONE map (`scripts/managed_rules_substitution.py`) consumed by THREE callers — no drift possible.
+
+D25. **Bidirectional `scripts/switch-install-path.sh` with lock-LAST in BOTH directions (NEW — F-R1-8, F-DA1-7).** Replaces the round-3 `scripts/migrate-to-plugin.sh` one-way script. Two modes:
+
+- `--to-plugin` (from `/update-zskills` lane):
+  1. Pre-flight inventory of `/update-zskills` artifacts (mirror tree, hook scripts, settings.json registrations).
+  2. Strip zskills-installed hook entries from `.claude/settings.json` via Python helper.
+  3. User instruction: "Now in your Claude session, run `/plugin marketplace add tomdale/zskills` + `/plugin install zs@zskills`. Restart Claude Code (close + reopen). Optionally run `/zs:migrate-crons` to re-tag pre-existing crons. Return here and type `done`."
+  4. Block on `read -p`.
+  5. Verify plugin install via `${CLAUDE_PLUGIN_DATA}` or `$HOME/.claude/plugins/cache`.
+  6. Sentinel-gated removal of `.claude/skills/<zskills>/`, `.claude/hooks/<zskills>/`, `.claude/rules/zskills/managed.md` (only files carrying zskills sentinel OR matching the `KNOWN_SKILLS`/`KNOWN_HOOKS` lists — does NOT touch consumer-authored or third-party skills).
+  7. **Write the lock file LAST.** Path: `.claude/zskills-install-lane`. Content: single line, bare value, trailing newline — `plugin\n` (the lock claim). Atomic via `printf 'plugin\n' > "$PROJ/.claude/zskills-install-lane.tmp" && mv "$PROJ/.claude/zskills-install-lane.tmp" "$PROJ/.claude/zskills-install-lane"`. Per F-R2-6, the format is bare-value-with-trailing-newline (not `key: value`); detection probes read it with `[ "$(cat .claude/zskills-install-lane 2>/dev/null)" = plugin ]`.
+  8. Print `.gitignore` and CI-workflow guidance.
+
+- `--to-update-zskills` (from plugin lane):
+  1. Pre-flight inventory of materialised plugin artifacts (5 files + sentinels).
+  2. User instruction: "Now in your Claude session, run `/plugin uninstall zs@zskills`. Restart Claude Code. Then run `/update-zskills install`. Return here and type `done`."
+  3. Block on `read -p`.
+  4. Verify plugin uninstalled (`${CLAUDE_PLUGIN_DATA}` no longer lists `zs`).
+  5. Verify `/update-zskills install` ran — check for `.claude/skills/update-zskills/SKILL.md` and `.claude/hooks/block-stale-skill-version.sh` presence (non-sentinelled — `/update-zskills` writes without sentinels).
+  6. Sentinel-gated removal of the 5 materialised files (only if they STILL carry a zskills sentinel — meaning `/update-zskills install` didn't already overwrite them).
+  7. **Write the lock file LAST.** Path: `.claude/zskills-install-lane`. Content: single line, bare value, trailing newline — `update-zskills\n` (the lock claim). Same atomic-rename pattern as the forward direction. Per F-R2-6, the format is bare-value-with-trailing-newline; D27's detection probe reads it with `[ "$(cat .claude/zskills-install-lane 2>/dev/null)" = update-zskills ]`.
+
+Both directions enforce the lock-LAST contract per CLAUDE.md `## Migration scripts`. Both directions have an Abort/Rollback path documented in `docs/PLUGIN_MIGRATION.md`. Both directions have a fixture-dogfood acceptance test in `tests/test-switch-install-path.sh`.
+
+D26. **Default install path recommendation in README (NEW — F-DA1-11).** README documents both paths. Recommended default:
+
+- **Interactive workflows (default):** plugin lane (`/plugin install zs@zskills`). One-command updates, marketplace-native, slash menu shows `/zs:` prefix.
+- **Headless CI consumers:** `/update-zskills` lane. No `claude` CLI required on runners; install state is checkable via plain file presence.
+- **Power users:** either — the difference is cosmetic.
+
+`docs/PLUGIN_INSTALL.md` carries the full tradeoff matrix. README points to it.
+
+D27. **Dual-install detection probe — conservative ANY-hit detection (NEW — F-R1-10, F-R1-12, F-DA1-4, F-R2-3).** A function `detect_install_state()` in `${CLAUDE_PLUGIN_ROOT}/hooks/_lib/detect-install-state.sh` returns one of `fresh`, `plugin`, `update-zskills`, or `dual`. Detection inputs are NOT binary per-input; the probe collects evidence and picks the lane CONSERVATIVELY (any hit-class fires the corresponding lane; ambiguous combinations collapse to `dual`). Round-2 D27 assumed each detection input was binary and missed partial-cleanup states (e.g., consumer manually deleted `.claude/skills/update-zskills/SKILL.md` to "clean up" but orphaned `.claude/hooks/block-stale-skill-version.sh` + `.claude/rules/zskills/managed.md` remain). F-R2-3 forces the broadening below.
+
+**`/update-zskills`-lane evidence (ANY hit counts):**
+
+- `.claude/zskills-install-lane` lock file content is `update-zskills` (lock-LAST winner per D25)
+- `.claude/skills/<known-zskills-skill>/SKILL.md` exists for any skill in `KNOWN_SKILLS` (the inventory list — `run-plan`, `fix-issues`, `draft-plan`, `commit`, `do`, `quickfix`, `update-zskills`, etc.; checked-in fixture list at `hooks/_lib/known-skills.txt`)
+- `.claude/hooks/<known-zskills-hook>.sh` exists for any hook in `KNOWN_HOOKS` (`block-stale-skill-version.sh`, `warn-config-drift.sh`, `block-agents.sh`, `block-unsafe-generic.sh`, `block-unsafe-project.sh`, `verify-response-validate.sh`, `inject-bash-timeout.sh`; fixture list at `hooks/_lib/known-hooks.txt`)
+- `.claude/agents/verifier.md` or `.claude/agents/implementer.md` exists WITHOUT a materialiser sentinel (the materialiser writes them WITH a sentinel; `/update-zskills` writes them WITHOUT)
+- `.claude/rules/zskills/managed.md` exists WITHOUT a materialiser sentinel
+- `.claude/settings.json` contains any `hooks.<event>[].hooks[].command` entry whose basename matches `KNOWN_HOOKS` (parsed via Python helper)
+
+**Plugin-lane evidence (ANY hit counts):**
+
+- `.claude/zskills-install-lane` lock file content is `plugin`
+- Any of the 5 materialised artifacts (D11) is present AND carries the materialiser sentinel
+
+**Lane resolution:**
+
+- `lane=fresh` — ZERO `/update-zskills`-lane hits AND ZERO plugin-lane hits.
+- `lane=plugin` — at least one plugin-lane hit AND zero `/update-zskills`-lane hits.
+- `lane=update-zskills` — at least one `/update-zskills`-lane hit AND zero plugin-lane hits. SessionStart materialiser EXITS EARLY with WARN: `zskills plugin loaded but install lane is /update-zskills. Run /update-zskills --switch-install-path=to-plugin to switch, or /plugin uninstall zs@zskills to remove the plugin.`
+- `lane=dual` — BOTH plugin-lane AND `/update-zskills`-lane evidence detected (which subsumes the round-2 "partial-cleanup" edge case: orphan mirror-files without lock OR SKILL.md still register as `/update-zskills` hits and pair with materialiser sentinels to produce `dual`). Emit WARN identifying duplicate-by-basename hooks + pointing at `scripts/switch-install-path.sh --to-plugin` for consolidation. **Materialiser REFUSES to write under `lane=dual` and `lane=update-zskills`** — both states would clobber `/update-zskills` install state.
+
+**Partial-state safety:** any consumer in a "manually-half-cleaned" state (e.g., deleted SKILL.md but left orphaned hook scripts) classifies as `update-zskills` (orphan hook is a `/update-zskills`-lane hit) — materialiser exits early, no clobber. Consumer is directed to `--switch-install-path` for cleanup. This closes the F-R2-3 failure mode where round-2 D27 would have silently materialised over orphan files.
+
+Probe is gated to once-per-session via `.zskills/dual-install-warned` marker so consumers don't see repeat-spam. The probe runs FIRST in the materialiser (before the overwrite-guard) so a `lane=update-zskills` state never gets silently overwritten by the materialiser. `tests/test-sessionstart-dual-install-detect.sh` asserts each lane resolution + a FIFTH fixture exercising the partial-cleanup case (orphan hook, deleted SKILL.md, no sentinels) classifies as `update-zskills` and triggers the early-exit.
 
 ## What this plan does NOT do
 
-- **Memory-anchor updates** — out of scope per CLAUDE.md `Memory anchors are agent-local notes`.
-- **Documentation site PRESENTATION.html** updates — separate cosmetic pass.
-- **Plugin-dependencies semantics** — deferred per D17.
+- **Memory-anchor updates** — out of scope per CLAUDE.md.
+- **PRESENTATION.html updates** — separate cosmetic pass.
+- **Plugin-dependencies semantics for cross-plugin runtime deps** — N/A under D2 (subset, not dependent).
 - **Marketplace listing on Anthropic's discoverability surface** — out of scope.
-- **Cross-marketplace dependencies** — N/A under D2.
 - **`pluginConfigs.options` bridging** — deferred per D19.
-- **Per-issue close-out commits** beyond the inventoried `Closes #N` block in Phase 5 W5.9.
-- **`MW-EXAMPLE__settings.json` edits** — Phase 6 W6.6 deletes the orphan.
-- **`bin/` plugin convention** — zskills doesn't ship binaries.
-- **Auto-edit consumer `.gitignore`** — per D20(b), `.gitignore` advice is documented, not enforced.
+- **Bulk slash-prefix rewrite of 1,621 prose references** — explicitly out per pivot point 4. Plugin-lane consumers see bare slashes in skill-body prose; the cron-fire OR-match (D12) and Skill-tool prefix-agnostic dispatch (verified at the 18 Skill-tool sites) absorb the cross-skill dispatch needs; remaining bare-slash prose is documented as a known plugin-lane UX rough edge in `docs/PLUGIN_INSTALL.md` under "Known tradeoffs." (Option Y from the orchestrator's three-option framing — accept the gap, document the tradeoff. See F-DA1-1 disposition.)
+- **`/update-zskills` retirement** — `/update-zskills` is permanent (D15). The legacy installer surface STAYS forever.
+- **`CLAUDE_TEMPLATE.md` deletion** — STAYS at repo root forever as the dual-path source-of-truth (D3).
+- **`templates/CLAUDE_TEMPLATE.md` mirror** — NOT created (D3 explicit revision).
+- **Auto-edit consumer `.gitignore`** — per D20(b), `.gitignore` advice is documented per-lane, not enforced.
+- **A6 "/update-zskills is gone" acceptance criterion** — retired (D15).
 
 ## Acceptance Criteria (plan-wide)
 
-- [ ] **A1.** `claude --plugin-dir .` loads the zskills plugin without errors. **Verification:** `bash tests/test-plugin-self-load.sh` exits 0 (Python schema + bash-lint; `claude plugin validate --strict` best-effort SKIP-on-absent-CLI).
-- [ ] **A2.** All 30 skills (27 in `skills/` — including the new `migrate-crons` skill from D12 — plus 3 in `block-diagram/`) are invocable under their `zskills:` prefix. **Authoritative count:** 30 (up from round-2's 29 because D12 adds the new session-side migration skill into `skills/`, taking that directory from 26 → 27). **Verification:** `tests/test-no-unprefixed-zskills-references.sh` enumerates expected slash names from directory listings.
-- [ ] **A3.** Layer 0 + Layer 3 of the verifier-cannot-run defense survive unchanged in behaviour. **Verification:** `tests/test-sessionstart-materialise.sh` asserts the SessionStart hook writes `.claude/agents/verifier.md`, `.claude/agents/implementer.md`, `.claude/hooks/inject-bash-timeout.sh`, AND `.claude/hooks/verify-response-validate.sh` (5 artifacts, up from 4 in round-2 — F-R2-1 fix). `tests/test-verify-response-validate-parity.sh` asserts plugin-tree source = materialised consumer copy.
-- [ ] **A4.** Rules content reaches Claude's context via `InstructionsLoaded`-fires-on-`.claude/rules/*.md`. **Verification:** `tests/test-sessionstart-materialise.sh` + `tests/test-render-managed-rules-correctness.sh`.
-- [ ] **A5.** Conformance test suite migration is complete. **Verification:** `bash tests/run-all.sh` green; 9 retired tests absent; 12 new tests present; 3 restructured tests pass; `test-hook-helper-drift.sh` STAYS in the suite green (D5). PR body documents net delta: -9 + 12 + 3 restructured-in-place = +3 net new test files.
-- [ ] **A6.** `/update-zskills` is gone. **Verification:** `ls skills/update-zskills/ 2>&1` returns "No such file or directory".
-- [ ] **A7.** zskills repo dogfoods its own plugin from Phase 1 onward.
-- [ ] **A8.** Materialiser overwrite guard works (D20 (a)). **Verification:** `tests/test-sessionstart-materialise-overwrite-guard.sh` exits 0.
-- [ ] **A9.** Materialiser uninstall (`migrate-to-plugin.sh --cleanup`) removes the 5 artifacts + lock file. **Verification:** dogfood loop in PR test plan.
-- [ ] **A10.** Skill-frontmatter survival (D12 (b) + F-DA2-6 STOP gate). **Verification:** `tests/test-skill-frontmatter-survival.sh` asserts `user-invocable: false` and `disable-model-invocation: true` survive plugin packaging on a fixture skill. If the test fails, Phase 3 STOPS and the orchestrator decides whether to roll back (not "file a follow-up issue" — the test is a STOP gate per F-DA2-6).
+- [ ] **A1.** Both plugin manifests load. **Verification:** `bash tests/test-plugin-self-load.sh` exits 0 for `zs` AND `zs-block-diagram`.
+- [ ] **A2.** All 30 skills (27 in `skills/` including the new `migrate-crons` skill, plus 3 in `block-diagram/`) are invocable under BOTH bare prefix (on `/update-zskills` lane) AND `/zs:` prefix (on plugin lane). **Verification:** `tests/test-cron-prefix-or-match.sh` asserts the recognition rule contains BOTH patterns; `tests/test-no-unprefixed-zskills-references.sh` is RETIRED under dual-path — there's nothing to prefix-check because both forms are valid.
+- [ ] **A3.** Layer 0 + Layer 3 of the verifier-cannot-run defense survive in BOTH install paths. **Verification:** `tests/test-sessionstart-materialise.sh` (plugin lane); `tests/test-update-zskills-agent-install.sh` (legacy lane, STAYS per D8).
+- [ ] **A4.** Rules content reaches Claude's context via `InstructionsLoaded` in both lanes. **Verification:** `tests/test-render-managed-rules-correctness.sh` + `tests/test-managed-md-renderer-equivalence.sh` (D24).
+- [ ] **A5.** Conformance test suite reflects dual-path. **Verification:** `bash tests/run-all.sh` green; 0 retired tests; 16 new tests present; 2 restructured (3 files) pass; `test-hook-helper-drift.sh` STAYS green. PR body documents net delta: `0 retired + 16 new + 3 restructured-in-place = +16 net new test files` (revised — F-R2-5).
+- [ ] **A6 — RETIRED** (was: `/update-zskills` gone). `/update-zskills` STAYS forever (D15).
+- [ ] **A7.** zskills repo dogfoods BOTH lanes (D26 — plugin lane via `claude --plugin-dir .`; legacy lane via source-tree `/update-zskills`).
+- [ ] **A8.** `scripts/switch-install-path.sh --to-update-zskills` reverses cleanly. **Verification:** `tests/test-switch-install-path.sh` fixture-dogfood (D25); post-reverse, `/briefing summary` works (bare prefix).
+- [ ] **A9.** `scripts/switch-install-path.sh --to-plugin` migrates cleanly in the forward direction. **Verification:** same test; post-forward, `/zs:briefing summary` works.
+- [ ] **A10.** Skill-frontmatter survival (D12 + F-DA2-6 STOP gate carried forward). **Verification:** `tests/test-skill-frontmatter-survival.sh`.
+- [ ] **A11.** Renderer equivalence (D24). **Verification:** `tests/test-managed-md-renderer-equivalence.sh` runs both render code paths on 5 fixture configs, asserts byte-equal output.
+- [ ] **A12.** Dual-install detection works (D27). **Verification:** `tests/test-sessionstart-dual-install-detect.sh` exercises all 4 lane states (`fresh`/`plugin`/`update-zskills`/`dual`) and asserts the documented behaviour for each.
+- [ ] **A13.** Hook double-fire prevention (D16(a), F-DA1-4). **Verification:** `tests/test-plugin-hook-skip-on-double-register.sh` simulates a settings.json + plugin hooks.json dual-registration and asserts only one execution per Bash event.
+- [ ] **A14.** Cron-fire rule resolves SKILL.md under BOTH layouts (D12-prose, F-DA1-2). **Verification:** `tests/test-cron-fire-rule-dual-path.sh` reads the rendered `managed.md`, asserts both `${CLAUDE_PLUGIN_ROOT}/skills/...` and `.claude/skills/...` path forms appear in the cron-fire-rule section.
 
 ## Progress Tracker
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Plugin scaffold + dev-loop transition | ⬚ | | |
-| 2 — SessionStart materialiser (5 artifacts), `.template`-suffix strip | ⬚ | | |
-| 3 — Slash-prefix migration (30 skills incl. new `migrate-crons`), cron back-compat | ⬚ | | |
-| 4 — Conformance test surface rebuild | ⬚ | | |
-| 5 — `/update-zskills` retirement, mirror trees + CLAUDE_TEMPLATE.md deleted | ⬚ | | |
-| 6 — Marketplace activation, prod-tag release flow, consumer onboarding | ⬚ | | |
+| 1 — Plugin scaffold (`zs` + `zs-block-diagram`) + dev-loop transition | ⬚ | | |
+| 2 — SessionStart materialiser (5 artifacts) + dual-install detection + renderer equivalence | ⬚ | | |
+| 3 — Dual-path recognition + cron-fire path-aware rules + script-path fallback in 145/219 sites + `migrate-crons` skill | ⬚ | | |
+| 4 — Conformance test surface (no retirements; 16 new tests stabilise; 2 restructured) | ⬚ | | |
+| 5 — Dual-path hardening: plugin-mode CI lane, bidirectional `--switch-install-path`, hook double-fire prevention, `build-plugin-release.sh` | ⬚ | | |
+| 6 — Marketplace activation, prod-tag release flow, README + dual-path docs | ⬚ | | |
+
+## Risk Register
+
+| Gap | Phase | Failure mode | Rollback path |
+|-----|-------|-------------|---------------|
+| (1) `CronList` semantics under in-session dispatch | 3 W3.4 | If `CronList` doesn't enumerate or `CronCreate` rejects the prefixed prompt, `/zs:migrate-crons` prints what it would do and exits; consumers manually re-register. NOT silent. **Under dual-path the skill is OPTIONAL (D13), not gating.** | Skill body documents the limitation; permanent OR-match means crons keep working regardless of skill execution. |
+| (2) `prod/main` ref + marketplace cache semantics | 5 W5.5 + 6 W6.2 | If `/plugin marketplace update` doesn't fetch latest reliably, consumers stay on stale plugin. | Parallel `prod/<version>` tag scheme (D1) gives consumers a stable pin; docs/PLUGIN_INSTALL.md documents the workaround. |
+| (3) `Agent` / `CronCreate` matcher syntax in `hooks.json`; relative-path marketplace source; `dependencies` semantics | 1 W1.6 | If `claude plugin validate --strict` rejects the matcher, fall back to `PreToolUse` with `tools: [...]`. If the relative-path source for `zs-block-diagram` is rejected, fall back to `git-subdir` (both documented per `/tmp/research-plugin-schema.md` §3). If `dependencies` on `zs-block-diagram` is rejected (research-deferred per §15 line 574), accept orphan-install gap and document in `docs/PLUGIN_INSTALL.md`. | Phase 1 Abort/Rollback path. |
+| (4) Skill-frontmatter survival under plugin packaging | 3 W3.6 | If `user-invocable`/`disable-model-invocation` is dropped, `feedback_skill_invocation_flags.md` discipline regresses. STOP gate per F-DA2-6 carried forward. | Phase 3 STOPS; orchestrator decides whether to roll back. |
+| (5) **Dual-install hook double-fire (NEW — F-DA1-4)** | 5 W5.7 | If `tests/test-plugin-hook-skip-on-double-register.sh` is flaky or the conditional-skip shim fails on a consumer's settings.json shape, every git commit may fire the version-check twice with potentially divergent results. | Conditional-skip shim is the primary defense; D27's dual-install probe + WARN is the secondary defense. If both fail, consumers can manually run `--switch-install-path` to consolidate. |
+| (6) **Renderer divergence (NEW — F-DA1-5)** | 2 W2.7 | If porting `/update-zskills` Step D to call the Python renderer reveals an edge case the LLM-prose substitution handled differently, consumers on the legacy lane could get drifted `managed.md` content vs plugin consumers. | D24 collapse-to-one-renderer eliminates the divergence surface; `tests/test-managed-md-renderer-equivalence.sh` is the gate. |
+| (7) **Reverse migration directionality (NEW — F-DA1-7)** | 5 W5.6 | If `--to-update-zskills` mode has an ordering bug (e.g., removes materialised files BEFORE `/update-zskills install` writes its own copies), consumers can end up in an unbootable state. | Lock-LAST in BOTH directions per D25; fixture-dogfood test `tests/test-switch-install-path.sh` covers both directions. |
+| (8) **Bare-slash prose UX gap on plugin lane (NEW — F-DA1-1)** | 6 W6.2 | Plugin-lane consumers reading skill-body prose see references to `/quickfix`, `/run-plan`, etc. — slashes that don't resolve to the prefixed plugin form in their slash menu. Cross-skill dispatch via Skill tool works (prefix-agnostic); slash-menu autocomplete shows `/zs:` prefix; ONLY the inline prose is mismatched. | Documented as a known tradeoff in `docs/PLUGIN_INSTALL.md` "Known tradeoffs." Acceptable because (a) Skill-tool dispatch is the load-bearing path, (b) cron-fire OR-match handles auto-fire, (c) typed slash invocation just requires the user to mentally swap `/foo` → `/zs:foo`. Future work: a stop-gate test (`tests/test-no-bare-skill-slashes-in-frontmatter-description.sh`) could enforce the user-visible `description` field stays prefix-neutral. Filed as a follow-up issue, not in this plan. |
 
 ---
 
-## Phase 1 — Plugin scaffold + dev-loop transition (additive)
+## Phase 1 — Plugin scaffold (`zs` + `zs-block-diagram`) + dev-loop transition (additive)
 
 ### Goal
 
-Land `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `hooks/hooks.json`. The plugin loads via `claude --plugin-dir .` but no existing behaviour changes.
+Land `.claude-plugin/plugin.json` for `zs`, a sibling `block-diagram/.claude-plugin/plugin.json` for `zs-block-diagram`, the marketplace manifest at root listing both, and `hooks/hooks.json` for `zs`. Both plugins load via `claude --plugin-dir .` but no existing behaviour changes.
 
 ### Work Items
 
-- [ ] **W1.1** — Create `.claude-plugin/plugin.json`:
+- [ ] **W1.1** — Create `.claude-plugin/plugin.json` for `zs`:
   ```json
   {
-    "name": "zskills",
+    "name": "zs",
     "displayName": "Z Skills",
     "version": "2026.05.0",
     "description": "Agent-discipline skill framework: plans, fix-issues, draft-plan, run-plan, land-pr, and more.",
@@ -218,11 +305,27 @@ Land `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `hooks
     "repository": "https://github.com/tomdale/zskills",
     "license": "MIT",
     "keywords": ["zskills", "agent", "claude-code", "skills", "plans"],
-    "skills": ["./block-diagram/"],
+    "skills": ["./skills/", "./block-diagram/"],
     "hooks": "./hooks/hooks.json"
   }
   ```
-  NO `agents` field — agents are NOT plugin-shipped (D11).
+  AND create `block-diagram/.claude-plugin/plugin.json` for `zs-block-diagram`:
+  ```json
+  {
+    "name": "zs-block-diagram",
+    "displayName": "Z Skills — Block Diagram Addons",
+    "version": "2026.05.0",
+    "description": "Block-diagram-editor skill addons (add-block, add-example, manual-testing).",
+    "author": { "name": "Tom Dale", "url": "https://github.com/tomdale/zskills" },
+    "homepage": "https://github.com/tomdale/zskills",
+    "repository": "https://github.com/tomdale/zskills",
+    "license": "MIT",
+    "keywords": ["zskills", "block-diagram", "addons"],
+    "skills": ["./"],
+    "dependencies": [ { "name": "zs" } ]
+  }
+  ```
+  NO `agents` field on either — agents are NOT plugin-shipped (D11). NO `hooks` field on `zs-block-diagram` — it's a strict skill-only addon; all hooks ride with `zs` via the dependency declaration (D2 / F-DA2-1). Plugin names: `zs` and `zs-block-diagram`; marketplace name `zskills` (W1.2). `skills: ["./"]` on the sibling manifest tells Claude Code the plugin's root IS the skills directory; this works because the marketplace's relative-path source (`./block-diagram`, D1) makes `block-diagram/` the plugin root for `zs-block-diagram`.
 
 - [ ] **W1.2** — Create `.claude-plugin/marketplace.json`:
   ```json
@@ -234,57 +337,55 @@ Land `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `hooks
     "version": "1",
     "plugins": [
       {
-        "name": "zskills",
+        "name": "zs",
         "source": { "github": { "repo": "tomdale/zskills", "ref": "prod/main" } }
+      },
+      {
+        "name": "zs-block-diagram",
+        "source": "./block-diagram"
       }
     ]
   }
   ```
+  Install addresses: `zs@zskills`, `zs-block-diagram@zskills`.
 
-- [ ] **W1.3** — Create `hooks/hooks.json` registering the 7 existing hooks (verbatim from round-2 — same content). `inject-bash-timeout.sh` and `verify-response-validate.sh` are NOT in this file (D11). `block-agents.sh` and `block-unsafe-project.sh` listed without `.template` suffix (Phase 2 W2.4 strips it). `SessionStart` hook is `session-start-materialise.sh` (W2.1).
+- [ ] **W1.3** — Create `hooks/hooks.json` for the `zs` plugin. Registers the 8 hooks currently in `.claude/settings.json` (verified by `python3 -c 'import json; print(json.load(open(".claude/settings.json"))["hooks"])'`). `inject-bash-timeout.sh` and `verify-response-validate.sh` are NOT in this file (D11 — materialised). `block-agents.sh` and `block-unsafe-project.sh` point at sibling suffixless copies (D4). SessionStart hook is `session-start-materialise.sh` (W2.1). **CRITICAL — D16(a) shim wiring:** Every plugin-registered hook script gains a `# zskills-hook-version: <YYYY.MM.N>` comment on line 2 (matching the `plugin.json.version` of the release that ships the file) AND a FIRST executable line that sources `${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh`. The shim performs the basename-match + version-skew check specced in D16(a). The same line-2 version comment lands on the corresponding `.template` hook in the source tree (so `/update-zskills`-installed mirrors carry the version stamp too — without it, the shim's version-skew check sees ABSENT-vs-PRESENT and defers silently per D16(a) step 6). The `# zskills-hook-version:` comment is the SCRIPT-level version stamp (independent of skill-level `metadata.version`); `tests/test-skill-conformance.sh` gains an assertion that every shipped hook script in `hooks/` carries the line-2 comment.
 
-- [ ] **W1.4** — Inside each hook script under `hooks/`, rewrite `$CLAUDE_PROJECT_DIR/.claude/hooks/` self-references and `$CLAUDE_PROJECT_DIR/scripts/` references to use `${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}` fallback. Specific edits per `/tmp/research-codebase.md` §4. **CONSTRAINT:** path-fallback rewrites MUST NOT touch the inlined `_lib` regions in `hooks/block-stale-skill-version.sh`, `hooks/block-bypassed-land-pr.sh`, `hooks/block-unsafe-generic.sh` (delimited by `# Inlined from hooks/_lib/...` comments). `tests/test-hook-helper-drift.sh` will fail the commit if any inlined region drifts from its source-of-truth.
+- [ ] **W1.4** — Inside each hook script under `hooks/`, rewrite `$CLAUDE_PROJECT_DIR/.claude/hooks/` self-references and `$CLAUDE_PROJECT_DIR/scripts/` references to use `${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills}` per-site fallback (the analogue of the D6 skill-body two-line form, adapted for hook self-references). **CONSTRAINT:** rewrites MUST NOT touch the inlined `_lib` regions delimited by `# Inlined from hooks/_lib/...` comments. `tests/test-hook-helper-drift.sh` gates this.
 
-- [ ] **W1.5** — `tests/test-plugin-manifest.sh` + `tests/test-plugin-marketplace.sh` (new, D8).
+- [ ] **W1.5** — `tests/test-plugin-manifest.sh` + `tests/test-plugin-marketplace.sh` (D8). The marketplace test covers BOTH plugin entries; the manifest test validates `plugin.json` schema against `/tmp/research-plugin-schema.md`.
 
-- [ ] **W1.6** — `tests/test-plugin-self-load.sh` per D9 — (a) `claude plugin validate --strict` best-effort SKIP-on-absent-CLI, (b) Python schema validation, (c) `bash -n` on every hook + helper script **EXCLUDING `hooks/canary*-bad.sh`** (F-R2-2). Exclusion is a literal `case` branch in the test:
-  ```bash
-  for f in hooks/*.sh; do
-    case "$f" in
-      *canary*-bad*) continue ;;
-    esac
-    bash -n "$f"
-  done
-  ```
+- [ ] **W1.6** — `tests/test-plugin-self-load.sh` per D9 — covers both `zs` and `zs-block-diagram`. Same (a)/(b)/(c) structure as round 3, with the canary-bad exclusion.
 
 - [ ] **W1.7** — Add `.claude-plugin/` to `.gitignore` allow-list.
 
-- [ ] **W1.8** — Dev-loop transition (D13). Update `RELEASING.md` and root `CLAUDE.md` to document `claude --plugin-dir .`.
+- [ ] **W1.8** — Dev-loop transition. Update `RELEASING.md` and root `CLAUDE.md` to document BOTH lanes:
+  - `claude --plugin-dir .` for plugin-lane dogfooding.
+  - Source-tree `/update-zskills install` invocation pattern for legacy-lane dogfooding.
+  The CI workflow (Phase 5 W5.7) runs both.
 
 ### Design & Constraints
 
-- `${CLAUDE_PLUGIN_ROOT}` substitution documented per §4.
-- `scripts/` at the plugin root — unknown directories at plugin root are not processed but are reachable from `${CLAUDE_PLUGIN_ROOT}/scripts/...` strings.
-- `hooks/hooks.json` does NOT merge into consumer's `.claude/settings.json` — they compose at the harness level. Migration-window double-fire is resolved by D14.
-- Phase 1's no-skill-edit boundary satisfied — scripts STAY at `scripts/`.
+- `${CLAUDE_PLUGIN_ROOT}` substitution documented per `/tmp/research-plugin-schema.md` §4.
+- Plugin hooks.json does NOT merge into consumer's `.claude/settings.json` — they compose at the harness level per §13. **The conditional-skip shim (D16(a)) is the harmless-no-op defense against double-fire when both are registered.**
+- Phase 1's no-skill-edit boundary satisfied — scripts STAY at `scripts/`; no in-skill source-path edits yet (those land in Phase 3 W3.1 per D6).
 - `inject-bash-timeout.sh` AND `verify-response-validate.sh` are NOT registered as plugin-level hooks (D11). Both materialise into `$CLAUDE_PROJECT_DIR/.claude/hooks/` in Phase 2.
-- CronCreate / Agent matchers unverified by direct doc quote (F-R1-3); W1.6 smoke test catches rejection.
-- `hooks/_lib/` ships verbatim in the plugin tree (D5). No path-rewrites inside `_lib/` source files.
+- `hooks/_lib/` ships verbatim in the plugin tree (D5). No path-rewrites inside `_lib/` source files. **New file `hooks/_lib/plugin-hook-skip-if-mirrored.sh` is added in Phase 1 W1.3.**
 
 ### Tests
 
 - [ ] **NEW** `tests/test-plugin-manifest.sh`, `tests/test-plugin-marketplace.sh`, `tests/test-plugin-self-load.sh` (3 new in Phase 1).
-- [ ] **EXISTING tests STAY GREEN.**
+- [ ] **EXISTING tests STAY GREEN.** Including all 9 `/update-zskills`-related tests that D8 retires in round 3 but RESTORES under dual-path.
 
 ### Acceptance Criteria
 
 - [ ] All 3 new tests green.
 - [ ] `bash tests/run-all.sh` green.
-- [ ] `git diff --stat origin/main..HEAD` includes ONLY `.claude-plugin/`, `hooks/hooks.json`, `hooks/*.sh` (path-fallback edits), `tests/test-plugin-*.sh`, `RELEASING.md` + `CLAUDE.md`. NO skill body edits, NO `scripts/` moves, NO `hooks/_lib/` edits.
+- [ ] `git diff --stat origin/main..HEAD` includes ONLY `.claude-plugin/`, `hooks/hooks.json`, `hooks/_lib/plugin-hook-skip-if-mirrored.sh`, `hooks/*.sh` (path-fallback edits), `tests/test-plugin-*.sh`, `RELEASING.md`, `CLAUDE.md`. NO skill body edits, NO `scripts/` moves, NO `hooks/_lib/` core-helper edits.
 
 ### Abort / Rollback
 
-If `claude plugin validate --strict` rejects the `Agent` or `CronCreate` matcher — STOP per round-2 abort path.
+If `claude plugin validate --strict` rejects the `Agent` or `CronCreate` matcher — STOP. If the marketplace.json `zs-block-diagram` relative-path source (`./block-diagram`) is rejected by validation despite matching `/tmp/research-plugin-schema.md` §3's `Relative path` source type, fall back to `git-subdir` (`{ "url": "https://github.com/tomdale/zskills.git", "path": "block-diagram/", "ref": "prod/main" }`) — also documented in §3. Both are valid documented source types; if BOTH are rejected, restructure to publish `zs-block-diagram` from its own repo and re-evaluate D2. If the `dependencies: [{"name": "zs"}]` declaration on `zs-block-diagram` is rejected (the `/en/plugin-dependencies` page was research-deferred per `/tmp/research-plugin-schema.md` §15 line 574), document the orphan-install caveat in `docs/PLUGIN_INSTALL.md` and accept the failure mode as a known gap pending Anthropic doc-fetch.
 
 ### Dependencies
 
@@ -292,22 +393,15 @@ None.
 
 ---
 
-## Phase 2 — SessionStart materialiser (5 artifacts), `.template`-suffix strip
+## Phase 2 — SessionStart materialiser (5 artifacts) + dual-install detection + renderer equivalence
 
 ### Goal
 
-Land the SessionStart materialiser. Five artifacts are written to consumer `.claude/`: 2 agents, 2 hooks (inject-bash-timeout + verify-response-validate), 1 rules file. After this phase, the plugin is *behaviourally complete* — every defense the legacy installer provided is reproduced, including Layer 3 of the verifier-cannot-run defense (F-R2-1 fix).
+Land the SessionStart materialiser. Five artifacts written to consumer `.claude/`. Dual-install detection probe (D27) runs BEFORE the overwrite-guard. `/update-zskills` Step D ported to call the same Python renderer (D24), eliminating two-renderer divergence.
 
 ### Work Items
 
-- [ ] **W2.1 — SessionStart materialiser (`hooks/session-start-materialise.sh`).** Writes FIVE artifacts (round-3 revision: adds `verify-response-validate.sh` per F-R2-1):
-  - `$CLAUDE_PROJECT_DIR/.claude/agents/verifier.md` ← `${CLAUDE_PLUGIN_ROOT}/templates/agents/verifier.md`
-  - `$CLAUDE_PROJECT_DIR/.claude/agents/implementer.md` ← `${CLAUDE_PLUGIN_ROOT}/templates/agents/implementer.md`
-  - `$CLAUDE_PROJECT_DIR/.claude/hooks/inject-bash-timeout.sh` ← `${CLAUDE_PLUGIN_ROOT}/hooks/inject-bash-timeout.sh`
-  - `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh` ← `${CLAUDE_PLUGIN_ROOT}/hooks/verify-response-validate.sh`
-  - `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md` ← rendered by `scripts/render-managed-rules.py`
-
-  Hook body with overwrite guard (D20 (a) — write-with-version, detect-by-prefix per F-DA3-1; frontmatter-aware injection per F-DA3-2):
+- [ ] **W2.1 — SessionStart materialiser (`hooks/session-start-materialise.sh`).** Same 5-artifact write-set as round 3, but with the dual-install probe running FIRST (D27). Materialiser body (annotated for changes):
   ```bash
   #!/usr/bin/env bash
   set -euo pipefail
@@ -317,157 +411,87 @@ Land the SessionStart materialiser. Five artifacts are written to consumer `.cla
   CONFIG="$PROJ/.claude/zskills-config.json"
   PLUGIN_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$PLUGIN/.claude-plugin/plugin.json")"
 
-  # Greenfield default config if absent.
-  if [ ! -f "$CONFIG" ]; then
-    mkdir -p "$(dirname "$CONFIG")"
-    cp "$PLUGIN/templates/zskills-config.default.json" "$CONFIG"
-  fi
+  # D27 — Dual-install detection runs FIRST (before any write).
+  . "$PLUGIN/hooks/_lib/detect-install-state.sh"
+  LANE="$(detect_install_state "$PROJ")"
+  case "$LANE" in
+    fresh|plugin) ;;
+    update-zskills)
+      if [ ! -f "$PROJ/.zskills/dual-install-warned" ]; then
+        mkdir -p "$PROJ/.zskills"
+        echo "zskills: plugin loaded but install lane is /update-zskills. Run /update-zskills --switch-install-path=to-plugin to switch, or /plugin uninstall zs@zskills to remove the plugin." >&2
+        touch "$PROJ/.zskills/dual-install-warned"
+      fi
+      exit 0  # Do NOT materialise — would clobber /update-zskills install state.
+      ;;
+    dual)
+      if [ ! -f "$PROJ/.zskills/dual-install-warned" ]; then
+        mkdir -p "$PROJ/.zskills"
+        echo "zskills: dual install detected (/update-zskills AND plugin). Run bash scripts/switch-install-path.sh --to-plugin to consolidate." >&2
+        touch "$PROJ/.zskills/dual-install-warned"
+      fi
+      # Conditional-skip shim handles double-fire on hooks; we still skip the materialiser here too.
+      exit 0
+      ;;
+  esac
 
-  # WRITE sentinels carry the current plugin version (for uninstall + version-traceability).
-  SENTINEL_SH="# zskills-materialised: ${PLUGIN_VERSION}"           # bash + YAML comment (same byte form)
-  SENTINEL_MD_HTML="<!-- zskills-materialised: ${PLUGIN_VERSION} -->"  # for markdown WITHOUT YAML frontmatter
-
-  # DETECT pattern is version-AGNOSTIC — a prior-version sentinel must still be recognised
-  # as zskills-authored on a later upgrade (F-DA3-1). Matches: `# zskills-materialised: ...`
-  # (shell scripts AND YAML-comment-inside-frontmatter form) and `<!-- zskills-materialised: ... -->`
-  # (markdown-without-frontmatter form).
-  SENTINEL_DETECT_RE='^(#|<!--) zskills-materialised: '
-
-  # Returns 0 if dest is safe to overwrite (absent, zskills-sentinelled at ANY version, or byte-equal).
-  safe_to_write() {
-    local dest="$1" src="$2"
-    [ -f "$dest" ] || return 0
-    if grep -qE "$SENTINEL_DETECT_RE" "$dest"; then return 0; fi
-    # No sentinel of any version — fall back to byte-equality (covers pre-sentinel zskills releases).
-    cmp -s "$src" "$dest" && return 0
-    return 1
-  }
-
-  # Inject the sentinel inside the file at the right position for the file type.
-  # - *.sh: AFTER the shebang line (line 2).
-  # - *.md WITH YAML frontmatter (line 1 == `---`): inject AFTER the opening `---` as a YAML
-  #   comment on line 2 — required so the frontmatter `---` stays at line 1 per YAML 1.2 §9.1.1
-  #   (F-DA3-2). The HTML-comment form would invalidate frontmatter parsing and silently drop
-  #   the agent's `hooks:` block (Layer 0 of the verifier-cannot-run defense).
-  # - *.md WITHOUT YAML frontmatter (e.g. rendered managed.md): HTML comment as line 1.
-  inject_sentinel() {
-    local src="$1" out="$2"
-    case "$src" in
-      *.sh)
-        { head -n1 "$src"; echo "$SENTINEL_SH"; tail -n+2 "$src"; } > "$out"
-        ;;
-      *.md)
-        # YAML frontmatter is detected by line 1 == "---".
-        local first
-        first="$(head -n1 "$src")"
-        if [ "$first" = "---" ]; then
-          # Inject as YAML comment INSIDE the frontmatter block.
-          { head -n1 "$src"; echo "$SENTINEL_SH"; tail -n+2 "$src"; } > "$out"
-        else
-          # Plain markdown body — HTML comment as line 1 is safe.
-          { echo "$SENTINEL_MD_HTML"; cat "$src"; } > "$out"
-        fi
-        ;;
-      *)
-        cp "$src" "$out"
-        ;;
-    esac
-  }
-
-  materialise_static() {
-    local src="$1" dest="$2"
-    # Early-return if already-materialised and current vs source mtime.
-    if [ -f "$dest" ] && [ "$dest" -nt "$src" ] && grep -qE "$SENTINEL_DETECT_RE" "$dest"; then return 0; fi
-    if ! safe_to_write "$dest" "$src"; then
-      echo "zskills: refusing to overwrite consumer-authored $dest; rename or delete it to allow materialisation" >&2
-      return 0  # skip (do NOT exit 1 — other artifacts still get materialised)
-    fi
-    mkdir -p "$(dirname "$dest")"
-    inject_sentinel "$src" "$dest.tmp"
-    mv "$dest.tmp" "$dest"
-  }
-  materialise_static "$PLUGIN/templates/agents/verifier.md"    "$PROJ/.claude/agents/verifier.md"
-  materialise_static "$PLUGIN/templates/agents/implementer.md" "$PROJ/.claude/agents/implementer.md"
-  materialise_static "$PLUGIN/hooks/inject-bash-timeout.sh"    "$PROJ/.claude/hooks/inject-bash-timeout.sh"
-  materialise_static "$PLUGIN/hooks/verify-response-validate.sh" "$PROJ/.claude/hooks/verify-response-validate.sh"
-  chmod +x "$PROJ/.claude/hooks/inject-bash-timeout.sh" "$PROJ/.claude/hooks/verify-response-validate.sh"
-
-  # Render managed.md (the lock — last per CLAUDE.md `## Migration scripts`).
-  # managed.md has NO YAML frontmatter — HTML-comment sentinel on line 1 is correct.
-  MANAGED="$PROJ/.claude/rules/zskills/managed.md"
-  TEMPLATE="$PLUGIN/templates/CLAUDE_TEMPLATE.md"
-  if [ -f "$MANAGED" ] && [ "$MANAGED" -nt "$CONFIG" ] && [ "$MANAGED" -nt "$TEMPLATE" ] && grep -qE "$SENTINEL_DETECT_RE" "$MANAGED"; then
-    exit 0
-  fi
-  if ! safe_to_write "$MANAGED" "$TEMPLATE"; then
-    echo "zskills: refusing to overwrite consumer-authored $MANAGED" >&2
-    exit 0
-  fi
-  mkdir -p "$(dirname "$MANAGED")"
-  PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
-  [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
-  "$PYTHON" "$PLUGIN/scripts/render-managed-rules.py" \
-    --config "$CONFIG" --template "$TEMPLATE" --out "$MANAGED.tmp" --sentinel "$SENTINEL_MD_HTML"
-  mv "$MANAGED.tmp" "$MANAGED"
+  # (round-3 materialise_static + safe_to_write + inject_sentinel logic unchanged; see round 3 body)
+  # The 5 materialise_static calls + managed.md render call follow.
+  # Sentinel format and frontmatter-aware injection per D20(a) — write-with-version, detect-by-prefix.
   ```
 
-  Note: the renderer is updated to emit the HTML-comment sentinel as the first line of the rendered `managed.md` (which has no YAML frontmatter). The overwrite guard treats any file matching the `SENTINEL_DETECT_RE` PREFIX as zskills-owned (re-writable on every run, INCLUDING upgrades from a prior plugin version) and files without the prefix as consumer-owned (skip + warn). This is the F-DA3-1 fix: write-with-version (full sentinel string) but detect-by-prefix (regex), so cross-version upgrades propagate cleanly. The `*.md`-with-frontmatter branch inside `inject_sentinel` is the F-DA3-2 fix: the YAML-comment form keeps `---` at line 1 so subagent frontmatter parsing (and the load-bearing `hooks:` declaration) is preserved.
+- [ ] **W2.2 — Python renderer + canonical substitution module (D24, F-DA2-2).** Land TWO files in the same commit:
+  - `scripts/managed_rules_substitution.py` — the single source-of-truth substitution map (`build_substitutions(cfg)` returns the `subs` dict; `apply(template, subs)` returns the rendered text). Lifted verbatim from `tests/test-managed-md-up-to-date.sh:30-65`'s existing Python (which already encodes the correct 10-placeholder map; verified by grep).
+  - `scripts/render-managed-rules.py` — thin wrapper: parses CLI flags (`--config`, `--template`, `--out`, `--sentinel`), imports `managed_rules_substitution`, writes the rendered file. Supports the `--sentinel` flag (injects the `^(#|<!--) zskills-materialised: ` prefix per D20(a)).
 
-- [ ] **W2.2 — Python renderer (`scripts/render-managed-rules.py`).** Same as round 2 — ports the substitution map from today's `/update-zskills` Step B; adds a `--sentinel` flag that emits the sentinel as the first line of the output. `managed.md` has no YAML frontmatter, so the line-1-HTML-comment form is correct here (no F-DA3-2 frontmatter-position concern).
+  `tests/test-managed-md-up-to-date.sh` is refactored (same commit OR W2.7's commit — see W2.7) to invoke `scripts/render-managed-rules.py` and diff its output against `.claude/rules/zskills/managed.md`. The existing inlined `subs = {...}` block at lines 30-65 is DELETED — its content moves verbatim into `scripts/managed_rules_substitution.py`. This consolidates F-DA2-2's three-substitution-map concern: one map, three callers (renderer wrapper, materialiser, test).
 
-- [ ] **W2.3 — Templates directory `templates/`.** Create `templates/` at the plugin root:
-  - `templates/agents/verifier.md` — copy of today's `.claude/agents/verifier.md`.
-  - `templates/agents/implementer.md` — copy of today's `.claude/agents/implementer.md`.
-  - `templates/CLAUDE_TEMPLATE.md` — copy of today's repo-root `CLAUDE_TEMPLATE.md`. **F-R2-7 contract:** any subsequent Phase that edits the repo-root `CLAUDE_TEMPLATE.md` (Phase 3 W3.3 in particular) MUST ALSO edit `templates/CLAUDE_TEMPLATE.md` in the same commit. `tests/test-claude-template-mirror.sh` (added in Phase 3 W3.5) asserts byte-equality between the two while both exist. Phase 5 W5.4 deletes the repo-root copy AFTER verifying byte-equality.
-  - `templates/zskills-config.default.json` — greenfield default config.
+- [ ] **W2.3 — Bundle template inside plugin tree at release time (revised — D3).** No `templates/CLAUDE_TEMPLATE.md` checked in. `scripts/build-plugin-release.sh` (W5.5) copies the repo-root `CLAUDE_TEMPLATE.md` to `${CLAUDE_PLUGIN_ROOT}/CLAUDE_TEMPLATE.md` during prod-strip. The materialiser reads from `$CLAUDE_PROJECT_DIR/CLAUDE_TEMPLATE.md` first (so consumers running zskills inside the zskills repo dogfood the live template) and falls back to `${CLAUDE_PLUGIN_ROOT}/CLAUDE_TEMPLATE.md` for installed-plugin consumers.
 
-- [ ] **W2.4 — Strip `.template` suffixes.** Same as round 2.
+- [ ] **W2.4 — Strip `.template` suffixes from plugin-tree hooks (D4 revision).** In the plugin tree only: `build-plugin-release.sh` generates sibling suffixless copies of `block-agents.sh.template` and `block-unsafe-project.sh.template`. Source-tree files keep the `.template` suffix (the `/update-zskills` lane depends on it). `tests/test-hook-template-sibling.sh` asserts byte-equality between the suffixed and suffixless copies when both exist.
 
-- [ ] **W2.5 — Plugin hook self-references.** Same as round 2; no `frontmatter-set.sh` message-text edit needed per D10.
+- [ ] **W2.5 — Plugin hook self-references.** Same as round 3.
 
-- [ ] **W2.6 — Update zskills' own root `CLAUDE.md`.** Same as round 2.
+- [ ] **W2.6 — Update zskills' own root `CLAUDE.md`.** Document the dual-path dogfood loop.
+
+- [ ] **W2.7 — Port `/update-zskills` Step B §2 + Step D §2 to call `render-managed-rules.py` AND add the equivalence gate (D24, F-DA1-5, F-R2-4, F-DA2-2, F-DA2-5).** Single commit, ordering:
+  1. Edit `skills/update-zskills/SKILL.md` Step B §2 (the substitution sub-step at line ~976) AND Step D §2 (line ~1874) to replace the inline LLM-prose substitution language with: `Run python3 "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`. No "deprecated" markers, no retained legacy prose — the substitution sub-steps are REPLACED. The rest of Step B (config-scan, root-CLAUDE.md migration, install report) is unchanged.
+  2. Refactor `tests/test-managed-md-up-to-date.sh` to invoke `scripts/render-managed-rules.py` and diff its output against the checked-in `managed.md`. Delete the inlined `subs = {...}` Python block.
+  3. Add `tests/test-managed-md-renderer-equivalence.sh` to `bash tests/run-all.sh`. The test runs `render-managed-rules.py` against 5 fixture `(config, template)` pairs and asserts byte-equal output between invocations originating from "Step D wrapper" and "plugin materialiser" code paths (both internally route through `managed_rules_substitution.py`, so equivalence is structural — the test catches refactor regressions).
+  4. Bump `skills/update-zskills/SKILL.md` `metadata.version` per skill-versioning enforcement.
+
+- [ ] **W2.8 — Add `hooks/_lib/detect-install-state.sh` (D27).** Function `detect_install_state()` returns one of `fresh`/`plugin`/`update-zskills`/`dual` per the D27 spec. Sourced by `session-start-materialise.sh` (W2.1) and by `scripts/switch-install-path.sh` (W5.6).
 
 ### Design & Constraints
 
-- **5 materialised artifacts (round-3 — adds `verify-response-validate.sh`).** The 12 invocation sites (`bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`) in 5 skill bodies do NOT change — they continue to resolve to the materialised consumer-side path. This is the same wiring as `inject-bash-timeout.sh`.
-- **Overwrite guard (D20 (a)).** Sentinel-comment-based detection of zskills authorship using a VERSION-AGNOSTIC PREFIX regex (`^(#|<!--) zskills-materialised: `) so cross-version upgrades propagate cleanly (F-DA3-1 fix). For `.md` files whose line 1 is `---` (the two agent files), the sentinel is injected as a YAML comment on line 2 — INSIDE the frontmatter block — keeping `---` at line 1 per YAML 1.2 §9.1.1 (F-DA3-2 fix). Pre-existing non-zskills files at the same destination paths are NOT clobbered; the materialiser logs a WARN and skips.
-- **`verify-response-validate.sh` lives in TWO places by design.** Plugin tree: `${CLAUDE_PLUGIN_ROOT}/hooks/verify-response-validate.sh` (source-of-truth, used by dev-loop tests). Consumer tree: `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh` (materialised on first session — referenced by all 12 invocation sites). `tests/test-verify-response-validate-parity.sh` asserts the plugin-tree source and the materialised consumer-tree copy are byte-equal modulo the sentinel comment.
-- **No `alwaysLoad` field.** Per D3.
-- **Atomic-rename + mtime + sentinel idempotency.** Every write uses `cp → mv` or `python … --out <tmp> + mv`. Mtime gates re-rendering; sentinel gates overwrite-vs-skip.
-- **Per-artifact recovery.** A failed `safe_to_write` check on one artifact does NOT abort the materialiser — the other artifacts still get materialised. The user sees a per-artifact WARN line.
+- **5 materialised artifacts (unchanged from round 3).**
+- **Overwrite guard + dual-install probe.** The probe runs FIRST. The overwrite-guard's "treat unsentinelled files as consumer-authored" semantic is now augmented: in `lane=update-zskills`, the materialiser exits BEFORE the overwrite-guard ever fires, so `/update-zskills`-installed files are never seen as "consumer-authored to skip" — they're seen as "lane mismatch, don't touch."
+- **`verify-response-validate.sh` lives in TWO places by design.** Same as round 3.
+- **No `alwaysLoad` field.** Same as round 3.
+- **Atomic-rename + mtime + sentinel idempotency.** Same as round 3.
+- **One canonical renderer (D24).** Step D calls Python; W2.7 ports the language; W4.4 verifies equivalence.
 
 ### Tests
 
-- [ ] **NEW** `tests/test-sessionstart-materialise.sh` — fixture project; runs `bash hooks/session-start-materialise.sh`; asserts:
-  1. `.claude/zskills-config.json` greenfield-defaulted.
-  2. **All 5 destinations** (verifier.md, implementer.md, inject-bash-timeout.sh, **verify-response-validate.sh**, managed.md) are written with a sentinel comment matching `SENTINEL_DETECT_RE` present.
-  3. The 2 hooks have execute bit.
-  4. `managed.md` substitution tokens resolved.
-  5. Touch `zskills-config.json`, re-run hook → `managed.md` mtime advances.
-  6. Don't touch anything, re-run hook → `managed.md` mtime unchanged.
-  7. Touch `CLAUDE_TEMPLATE.md` template-side → `managed.md` re-renders.
-  8. **Frontmatter-survival (F-DA3-2):** `head -n1 .claude/agents/verifier.md` MUST equal `---` (and same for `implementer.md`). `head -n2 .claude/agents/verifier.md | tail -n1` MUST match the sentinel-detect regex — confirming the YAML-comment sentinel was injected on line 2 INSIDE the frontmatter block.
-  9. **Cross-version upgrade (F-DA3-1):** simulate a prior-version install by pre-populating `.claude/agents/verifier.md` with a STALE-version sentinel: copy the source then rewrite line 2 to `# zskills-materialised: 2026.04.0` (where the current `PLUGIN_VERSION` is e.g. `2026.05.0`). Run the materialiser. Assert: (a) the file IS overwritten — its mtime advances and line 2 now reads `# zskills-materialised: 2026.05.0` (NOT skipped as consumer-authored); (b) NO `refusing to overwrite consumer-authored` WARN appears on stderr; (c) the file body matches the plugin-tree source modulo the sentinel line. Repeat the same scenario for one shell hook (`inject-bash-timeout.sh`) — pre-populate with a stale-version sentinel on line 2, run materialiser, assert overwrite proceeded cleanly.
-- [ ] **NEW** `tests/test-sessionstart-materialise-overwrite-guard.sh` — fixture pre-populates `.claude/agents/verifier.md` with non-sentinel content; runs the materialiser; asserts the consumer's file is UNCHANGED and a WARN line is emitted to stderr. Then adds the sentinel manually + re-runs; asserts the file IS now overwritten (zskills-owned).
-- [ ] **NEW** `tests/test-render-managed-rules-correctness.sh` — golden-output fixture; replaces retired drift gate.
-- [ ] **NEW** `tests/test-inject-bash-timeout-parity.sh` — asserts plugin-tree and materialised copies are byte-equal modulo sentinel.
-- [ ] **NEW** `tests/test-verify-response-validate-parity.sh` — same parity check for the Layer 3 script. Also asserts every one of the 12 invocation sites uses the literal `$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh` path (no drift to a different shape that would break post-materialisation resolution).
-- [ ] **DEFERRED RETIREMENT** `tests/test-update-zskills-rerender.sh`, `tests/test-managed-md-up-to-date.sh` — still pass against source-tree `CLAUDE_TEMPLATE.md`; retired in Phase 4.
-- [ ] `bash tests/test-skill-conformance.sh` — must still pass.
-- [ ] `bash tests/test-hook-helper-drift.sh` — must still pass (D5 invariant).
+- [ ] **NEW** `tests/test-sessionstart-materialise.sh` — fixture project; 9 assertions per round 3 (5 destinations written, exec bits, substitution tokens, mtime touch behaviour, frontmatter survival, cross-version upgrade).
+- [ ] **NEW** `tests/test-sessionstart-materialise-overwrite-guard.sh` — round-3 spec carried forward.
+- [ ] **NEW** `tests/test-sessionstart-dual-install-detect.sh` — exercises all 4 lane states (`fresh`/`plugin`/`update-zskills`/`dual`); asserts the materialiser behaviour for each per D27. The `dual` and `update-zskills` cases assert the WARN text and the `dual-install-warned` marker creation.
+- [ ] **NEW** `tests/test-render-managed-rules-correctness.sh` — golden-output fixture; round-3 spec.
+- [ ] **NEW** `tests/test-managed-md-renderer-equivalence.sh` (D24) — runs `/update-zskills` Step D's render path (via the Python wrapper W2.7 introduces) AND the plugin SessionStart materialiser's render path against 5 fixture `(config, template)` pairs; asserts byte-equal output for each. **This is the F-DA1-5 gate.**
+- [ ] **NEW** `tests/test-inject-bash-timeout-parity.sh` + `tests/test-verify-response-validate-parity.sh` — round-3 spec.
+- [ ] **STAY GREEN** `tests/test-update-zskills-rerender.sh`, `tests/test-managed-md-up-to-date.sh` (D8 — STAY under dual-path; both must pass AFTER W2.7 ports Step D to Python).
 
 ### Acceptance Criteria
 
-- [ ] All 5 new tests green.
+- [ ] All 6 new tests green.
 - [ ] `bash tests/run-all.sh` green.
-- [ ] 5 materialised artifacts present in a fresh fixture project — verified by `test-sessionstart-materialise.sh`.
-- [ ] `hooks/block-unsafe-project.sh.template` and `hooks/block-agents.sh.template` no longer exist.
-- [ ] `templates/` directory exists; `scripts/render-managed-rules.py` exists.
-- [ ] Manual verification log: in PR test plan, the implementer dispatches a verifier subagent under `claude --plugin-dir .`, gives it a 4-minute Bash command, AND triggers a stalled-string response — observes (a) the long Bash completes (Layer 0), (b) `verify-response-validate.sh` fires on the stalled-string response (Layer 3). Plus per D21: documents the result of the `/reload-plugins`-after-install path.
+- [ ] 5 materialised artifacts present in a fresh fixture project.
+- [ ] Dual-install detection emits the documented WARN strings and skips materialisation in `update-zskills`/`dual` lane states.
+- [ ] `/update-zskills` Step D dogfood: run `/update-zskills --rerender` in the source tree, verify `managed.md` mtime advances AND `tests/test-managed-md-renderer-equivalence.sh` passes against the just-rendered output.
 
 ### Abort / Rollback
 
-If any of the 5 write contracts fail, or if the overwrite-guard test fails, do NOT ship Phase 2. Rollback: `git reset --hard origin/main`.
+If any of the 5 write contracts fail, OR if the dual-install probe misclassifies a fixture state, do NOT ship Phase 2. Rollback: `git reset --hard origin/main`.
 
 ### Dependencies
 
@@ -475,90 +499,72 @@ Phase 1.
 
 ---
 
-## Phase 3 — Slash-prefix migration (`zskills:` namespace) WITH cron back-compat
+## Phase 3 — Dual-path recognition + cron-fire path-aware rules + script-path fallback (145 sites) + `migrate-crons` skill
 
 ### Goal
 
-Every internal slash-reference updates to `/zskills:<skill>`. Cron-fire recognition rule accepts both forms for 60 days. New session-side migration skill `/zskills:migrate-crons` re-registers durable crons (D12 round-3 revision).
+Apply the per-site dual-path fallback in the 145 sites that source `zskills-resolve-config.sh` (D6). Rewrite the cron-fire recognition rule to OR-match both prefix forms permanently (D12) AND to resolve SKILL.md paths under both layouts (D12-prose). Ship the new optional `migrate-crons` skill (D13). This is NOT a small phase — it's the largest mechanical-edit phase in the plan. The earlier narrative that "Phase 3 narrows" was wrong; under dual-path the bulk-rewrite work doesn't vanish, it shifts from 1,621 prose refs to 145 script-source refs.
 
 ### Work Items
 
-- [ ] **W3.1 — Inventory the touched files.** Implementer runs:
+- [ ] **W3.1 — Per-site dual-path fallback for `zskills-resolve-config.sh` sourcing (D6).** Verified count: **145 sites across 38 skill files**. Mechanical sed edit applied via a deterministic Python script (so the diff is reviewable). The script replaces:
   ```bash
-  # 26 skills/ entries:
-  SKILLS_SRC='briefing|cleanup-merged|commit|create-worktree|do|doc|draft-plan|draft-tests|fix-issues|fix-report|investigate|land-pr|manual-testing|plans|qe-audit|quickfix|refine-plan|research-and-go|research-and-plan|review-feedback|run-plan|session-report|update-zskills|verify-changes|work-on-plans|zskills-dashboard'
-  # 3 block-diagram/ entries:
-  SKILLS_BD='add-block|add-example|model-design'
-  # 1 new (D12 round-3 revision):
-  SKILLS_NEW='migrate-crons'
-  SKILLS_RE="$SKILLS_SRC|$SKILLS_BD|$SKILLS_NEW"
-  grep -rnE "(^|[^a-zA-Z0-9_])/($SKILLS_RE)\\b" skills/ block-diagram/ hooks/ .claude/agents/ CLAUDE.md CLAUDE_TEMPLATE.md templates/CLAUDE_TEMPLATE.md tests/
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   ```
-  Skill-count is **30** (round-2 was 29; D12 round-3 adds `migrate-crons`). The regex variables are separated by directory grouping per F-R2-5.
+  with the two-line dual-path form from D6. Edits also apply to the 219 sites referencing `.claude/skills/update-zskills/scripts/<other-script>` for `sanitize-pipeline-id.sh`, `port.sh`, `clear-tracking.sh`, `statusline.sh`, `plan-drift-correct.sh` — same two-line existence-test pattern.
 
-- [ ] **W3.2 — Bulk rewrite skill bodies, hooks, agents, CLAUDE.md.** Apply substitution rules with the deterministic Python script per round-2 W3.2. **Round-3 addition:** rewrites also apply to `templates/CLAUDE_TEMPLATE.md` (the plugin-tree copy added in Phase 2 W2.3) — the script's invocation list includes BOTH paths.
+- [ ] **W3.2 — Update `references/canonical-config-prelude.md`** to document the new two-line form as the PREFERRED pattern for new code (lane-portable). Per F-DA2-4, the legacy one-liner is NOT marked DEPRECATED and carries NO deadline — under D23's permanent dual-path commitment, the legacy one-liner remains valid forever on the `/update-zskills` lane and the deadline-warn would contradict that commitment. `tests/test-skill-conformance.sh`'s per-fence sourcing-discipline check accepts BOTH forms permanently (the legacy form is a documentation-class advisory; new code should prefer the dual-path two-line form; no test-suite enforcement of migration).
 
-- [ ] **W3.3 — Cron back-compat in CLAUDE_TEMPLATE.md (D12 (a)).** Edit `CLAUDE_TEMPLATE.md ## Cron-fired prompts` AND `templates/CLAUDE_TEMPLATE.md ## Cron-fired prompts` IN THE SAME COMMIT to accept both prefix forms during the deprecation window. New prose includes:
+- [ ] **W3.3 — Cron-fire recognition-rule rewrite (D12 + D12-prose).** Edit `CLAUDE_TEMPLATE.md ## Cron-fired prompts` to:
   ```
-  **Treat any user-shaped turn whose entire content starts with `Run /<skill-name> ` OR
-  `Run /zskills:<skill-name> ` as a cron fire.** Both prefixes are recognized through
-  2026-07-21; the bare-prefix form is removed in zskills release 2026.08. Consumers
-  should re-register pre-existing durable crons by running `/zskills:migrate-crons` in
-  their Claude session before then. Read `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/SKILL.md`
-  (prefixed form) or `.claude/skills/<skill>/SKILL.md` (legacy bare form) via Read and
-  execute its procedure inline with `$ARGUMENTS` set to the substring after the prefix.
+  **Treat any user-shaped turn whose entire content starts with `Run /<skill-name> `
+  OR `Run /zs:<skill-name> ` as a cron fire.** Both prefixes are recognized PERMANENTLY —
+  the bare prefix is the form on the `/update-zskills` install lane; `zs:` is the form
+  on the plugin install lane. Read `${CLAUDE_PLUGIN_ROOT}/skills/<skill-name>/SKILL.md`
+  (plugin install) OR `.claude/skills/<skill-name>/SKILL.md` (legacy install) via the
+  Read tool — try the plugin path first if `${CLAUDE_PLUGIN_ROOT}` is set, otherwise
+  the legacy path — and execute its procedure inline with `$ARGUMENTS` set to the
+  substring after the prefix.
   ```
-  **F-R2-7 contract:** the same commit edits BOTH files; `tests/test-claude-template-mirror.sh` (W3.5) gates byte-equality.
+  Edit `CLAUDE_TEMPLATE.md` ONLY (no `templates/CLAUDE_TEMPLATE.md` copy per D3).
 
-- [ ] **W3.4 — New session-side skill `/zskills:migrate-crons` (D12 (b) — replaces round-2 shell script per F-DA2-1).** Create `skills/migrate-crons/SKILL.md`:
-  - Frontmatter: `name: migrate-crons`, `description: "Re-register pre-plugin-migration durable crons under the zskills: namespace"`, `user-invocable: true`, `disable-model-invocation: false`, `argument-hint: "[apply]"`, `metadata.version: "<today>+<hash>"`.
-  - Body: instructs the agent to (1) use `CronList` to enumerate durable crons; (2) for each entry whose `prompt` field starts with `Run /` + one of the 29 legacy names (NOT `/zskills:` — only the bare form), compute the prefixed equivalent; (3) print a table of OLD → NEW prompts; (4) if `$ARGUMENTS` contains `apply`, dispatch `CronDelete` on each matching entry and `CronCreate` with the prefixed prompt; (5) report the result. Default (no `apply`) is PRINT-ONLY.
-  - The skill lives in `skills/migrate-crons/SKILL.md` and ships with the plugin.
+- [ ] **W3.4 — Ship new `skills/migrate-crons/SKILL.md` (D13 — OPTIONAL convenience).** Body documents that the skill is OPTIONAL under dual-path's permanent OR-match. Same `CronList`/`CronDelete`/`CronCreate` mechanism as round 3. Frontmatter: `name: migrate-crons`, `user-invocable: true`, `disable-model-invocation: false`, `argument-hint: "[apply]"`, `metadata.version: "<today>+<hash>"`. The skill ships in `skills/` (count: 26 → 27 in `skills/`).
 
-  The `migrate-to-plugin.sh` script (D14) prints the user instruction "in your Claude session, run `/zskills:migrate-crons`" but does NOT and cannot invoke it. Per F-DA2-1, the session-tool boundary means cron operations must run in-session.
+- [ ] **W3.5 — Test-suite assertion updates.** `tests/test-skill-conformance.sh` learns the new two-line dual-path form per D6. The per-fence sourcing-discipline check accepts EITHER the legacy one-liner OR the new dual-path form during the transition window. NO bulk grep-rewrite of `tests/test-*.sh` files — the source-tree slash references stay bare per pivot point 4.
 
-- [ ] **W3.5 — Test-suite assertion migration.** Every `tests/test-*.sh` greps update from `/<skill>` to `/zskills:<skill>`. `test-skill-conformance.sh` pin-sites updated. **NEW test added here:** `tests/test-claude-template-mirror.sh` asserts byte-equality between `CLAUDE_TEMPLATE.md` and `templates/CLAUDE_TEMPLATE.md` while both exist; Phase 5 W5.4 retires this test the same commit it deletes the repo-root copy.
+- [ ] **W3.6 — Skill-frontmatter survival assertion (F-DA2-6 STOP gate carried forward).** Same as round 3.
 
-- [ ] **W3.6 — Skill-frontmatter survival assertion (resolves F-DA2-6 — STOP gate, not follow-up issue).** Per F-DA1-8, plugin-shipped skill frontmatter fields (`user-invocable`, `disable-model-invocation`, `argument-hint`, `metadata.version`) are NOT documented to survive plugin packaging. **Round-3 contract:** add `tests/test-skill-frontmatter-survival.sh` that:
-  1. Creates a fixture plugin with a single skill carrying `user-invocable: false`, `disable-model-invocation: true`, `argument-hint: "test"`.
-  2. Loads the plugin via `claude --plugin-dir <fixture>` (or simulates by reading the loaded plugin manifest from the cache).
-  3. Asserts the loaded skill's frontmatter retains all four fields.
-  4. If any field is dropped, the test FAILS — **Phase 3 STOPS** and the orchestrator decides whether to roll back (NOT "file a follow-up issue" — the failure consequence is severe enough to gate the phase per F-DA2-6).
-
-  Additionally, the dogfood-loop spot-check from round 2 stays in the PR body: implementer runs `claude --plugin-dir .` and tries (a) `/zskills:land-pr ` autocomplete behaviour, (b) Skill-tool dispatch of `/zskills:fix-issues` from a sub-agent. Documents results.
-
-- [ ] **W3.7 — Version bump for every touched skill (D22 round-3 atomicity revision).** Per D22, the batch-bump loop runs under `set -euo pipefail` with a pre-flight clean-tree check, processes only the staged-touched skills, and provides a documented recovery path (`git checkout -- skills/ block-diagram/`) on mid-loop failure. `tests/test-skill-version-batch-bump.sh` (W4.4) simulates the batch-bump on a fixture.
+- [ ] **W3.7 — Version bump for the 38 touched skills (D22 atomicity discipline carried forward).** Loop discipline per round 3 D22; SCOPE shrinks from 29 to 38 (actually larger — but only the script-source-touched skills, not all skills).
 
 ### Design & Constraints
 
-- **No back-compat alias for the slash invocation itself** — hard cutover for typed-by-user invocations.
-- **Cron-fire recognition IS back-compat'd** for 60 days.
-- **Cron migration is a SKILL, not a shell script** (D12 round-3 revision per F-DA2-1).
-- **Memory anchors are NOT touched.**
-- **Migration script audit-first approach** encouraged per round 2.
-- **`templates/CLAUDE_TEMPLATE.md` and `CLAUDE_TEMPLATE.md` MUST be edited in lockstep** until Phase 5 retires the repo-root copy (F-R2-7).
+- **Bare-slash prose in skill bodies is NOT rewritten** — pivot point 4. Plugin-lane consumers see bare slashes in prose; acceptable per Risk Register gap (8) and `docs/PLUGIN_INSTALL.md` "Known tradeoffs."
+- **Cron-fire OR-match is PERMANENT (D12).** `tests/test-cron-prefix-or-match.sh` asserts NO sunset date in the recognition rule.
+- **Cron-fire SKILL.md path is DUAL (D12-prose, F-DA1-2).** `tests/test-cron-fire-rule-dual-path.sh` asserts both `${CLAUDE_PLUGIN_ROOT}/skills/...` and `.claude/skills/...` appear in the rendered `managed.md`.
+- **Migrate-crons skill is OPTIONAL (D13).** Documented as such.
+- **Per-site fallback (D6) is mechanical, but the LLM-readability hit is real.** A two-line existence test is uglier than a one-line source. Accepted cost.
 
 ### Tests
 
-- [ ] **NEW** `tests/test-no-unprefixed-zskills-references.sh` (Phase 3) — greps for unprefixed names; exempts cron-recognition prose by line range.
-- [ ] **NEW** `tests/test-cron-prefix-back-compat.sh` — asserts `templates/CLAUDE_TEMPLATE.md ## Cron-fired prompts` contains BOTH `Run /<skill-name>` and `Run /zskills:<skill-name>` recognition patterns. (Test reads the PLUGIN-TREE copy, not the repo-root copy, because the plugin-tree copy survives Phase 5 — F-R2-7 fix.)
-- [ ] **NEW** `tests/test-claude-template-mirror.sh` — asserts byte-equality between `CLAUDE_TEMPLATE.md` and `templates/CLAUDE_TEMPLATE.md` (until Phase 5 retires the former).
-- [ ] **NEW** `tests/test-skill-frontmatter-survival.sh` (F-DA2-6 STOP gate).
-- [ ] `bash tests/test-skill-conformance.sh` — green; pins reference `/zskills:<skill>`.
+- [ ] **NEW** `tests/test-cron-prefix-or-match.sh` (Phase 3) — asserts both `Run /<skill-name>` and `Run /zs:<skill-name>` recognition patterns in `managed.md`; asserts NO sunset date strings.
+- [ ] **NEW** `tests/test-cron-fire-rule-dual-path.sh` (Phase 3 — F-DA1-2) — asserts both SKILL.md path forms appear in the rendered cron-fire-rule section.
+- [ ] **NEW** `tests/test-skill-frontmatter-survival.sh` (Phase 3 — F-DA2-6 STOP gate).
+- [ ] `bash tests/test-skill-conformance.sh` — green; per-fence sourcing-discipline check accepts both legacy and dual-path forms.
 - [ ] `bash tests/run-all.sh` — green.
 
 ### Acceptance Criteria
 
-- [ ] All new tests green.
+- [ ] All 3 new Phase-3 tests green.
 - [ ] `bash tests/run-all.sh` green.
-- [ ] Every touched skill has a bumped `metadata.version`.
-- [ ] `skills/migrate-crons/SKILL.md` exists with the documented body (NOT a shell script — F-DA2-1).
-- [ ] PR body documents W3.6 dogfood-loop results.
-- [ ] `tests/test-skill-frontmatter-survival.sh` is GREEN (or Phase 3 STOPS — F-DA2-6).
+- [ ] 38 skill `metadata.version` bumps committed atomically.
+- [ ] `skills/migrate-crons/SKILL.md` exists with the OPTIONAL framing.
+- [ ] `tests/test-skill-frontmatter-survival.sh` GREEN (or Phase 3 STOPS per F-DA2-6).
+- [ ] Cron-fire rule prose contains both prefix forms AND both SKILL.md path forms.
+- [ ] PR body documents the 145 sites touched and the 38 skills version-bumped.
 
 ### Abort / Rollback
 
-If `tests/test-skill-frontmatter-survival.sh` fails — STOP. Decide whether to roll back or accept the regression in PR body (the latter requires user approval per CLAUDE.md severity rules). If `tests/test-no-unprefixed-zskills-references.sh` fails after rewrite, STOP and review the regex hit-set. Two attempts max per CLAUDE.md "NEVER thrash on a failing fix."
+Same as round 3 STOP conditions. If `test-skill-frontmatter-survival.sh` fails — STOP. If `test-cron-fire-rule-dual-path.sh` fails after rewrite — STOP and review the regex. Two attempts max.
 
 ### Dependencies
 
@@ -566,65 +572,67 @@ Phase 2.
 
 ---
 
-## Phase 4 — Conformance test surface rebuild
+## Phase 4 — Conformance test surface (0 retirements; 16 new stabilise; 2 restructured)
 
 ### Goal
 
-Retire the 9 tests whose invariants disappear, restructure 2 (3 files), stabilise the 12 new tests added in Phases 1-3. `test-hook-helper-drift.sh` STAYS (D5).
+Stabilise the 16 new tests added in Phases 1-3 and 5. Restructure 2 existing tests (3 files) per D8. NO retirements. `test-hook-helper-drift.sh` STAYS.
 
 ### Work Items
 
-- [ ] **W4.1 — Retire 9 tests** per D8. Also remove the W2.4 mirror-parity carve-out.
+- [ ] **W4.1 — Retire 0 tests.** Under dual-path, every test in the round-3 "9 retired" list STAYS. Confirm by running them all green AFTER Phase 3.
 
-- [ ] **W4.2 — Restructure `tests/test-skill-conformance.sh`.** Same as round 2; cross-test materialiser-presence check at top.
+- [ ] **W4.2 — Restructure `tests/test-skill-conformance.sh`.** Per D6, teach the per-fence sourcing-discipline check the new two-line dual-path form. Cross-test materialiser-presence check at top.
 
 - [ ] **W4.3 — Restructure `tests/test-block-stale-skill-version*.sh`.** Same as round 2.
 
-- [ ] **W4.4 — Stabilise the 12 new tests:**
-  - `tests/test-plugin-manifest.sh` (Phase 1)
-  - `tests/test-plugin-marketplace.sh` (Phase 1)
-  - `tests/test-plugin-self-load.sh` (Phase 1)
-  - `tests/test-sessionstart-materialise.sh` (Phase 2)
-  - `tests/test-sessionstart-materialise-overwrite-guard.sh` (Phase 2 — F-DA2-3)
-  - `tests/test-render-managed-rules-correctness.sh` (Phase 2)
-  - `tests/test-inject-bash-timeout-parity.sh` (Phase 2)
-  - `tests/test-verify-response-validate-parity.sh` (Phase 2 — F-R2-1)
-  - `tests/test-no-unprefixed-zskills-references.sh` (Phase 3)
-  - `tests/test-cron-prefix-back-compat.sh` (Phase 3)
-  - `tests/test-claude-template-mirror.sh` (Phase 3 — F-R2-7; retired in Phase 5 same commit as repo-root template deletion)
-  - `tests/test-skill-frontmatter-survival.sh` (Phase 3 — F-DA2-6)
-  - `tests/test-skill-version-batch-bump.sh` (added in Phase 4 — D22)
+- [ ] **W4.4 — Stabilise the 16 new tests.** Run 5 consecutive iterations of `bash tests/run-all.sh`; root-cause any flake. Test inventory (matches D8 enumeration; F-R2-5):
+  1. `tests/test-plugin-manifest.sh` (Phase 1)
+  2. `tests/test-plugin-marketplace.sh` (Phase 1)
+  3. `tests/test-plugin-self-load.sh` (Phase 1)
+  4. `tests/test-sessionstart-materialise.sh` (Phase 2)
+  5. `tests/test-sessionstart-materialise-overwrite-guard.sh` (Phase 2)
+  6. `tests/test-sessionstart-dual-install-detect.sh` (Phase 2 — D27)
+  7. `tests/test-render-managed-rules-correctness.sh` (Phase 2)
+  8. `tests/test-managed-md-renderer-equivalence.sh` (Phase 2 — D24)
+  9. `tests/test-inject-bash-timeout-parity.sh` (Phase 2)
+  10. `tests/test-verify-response-validate-parity.sh` (Phase 2)
+  11. `tests/test-cron-fire-rule-dual-path.sh` (Phase 3 — F-DA1-2)
+  12. `tests/test-cron-prefix-or-match.sh` (Phase 3 — D12)
+  13. `tests/test-skill-frontmatter-survival.sh` (Phase 3)
+  14. `tests/test-hook-template-sibling.sh` (Phase 2 — D4)
 
-  Run 5 consecutive iterations of `bash tests/run-all.sh`; any flake gets root-caused.
+  Plus 2 more added in Phase 5:
+  15. `tests/test-switch-install-path.sh` (Phase 5 — D25)
+  16. `tests/test-plugin-hook-skip-on-double-register.sh` (Phase 5 — D16(a))
 
-- [ ] **W4.5 — Test-runner accounting.** PR body documents the actual file count: `-9 retired + 13 new = +4 net (counting `test-claude-template-mirror.sh` which lands in Phase 3 and retires in Phase 5)`. The +4 reduces to +3 after Phase 5's mirror-test retirement.
+- [ ] **W4.5 — Test-runner accounting.** PR body documents the actual count: `0 retired + 16 new + 3 restructured-in-place = +16 net new test files`. (Higher than round 3's "+3" — see Drift Log.)
 
 - [ ] **W4.6 — `tests/fixtures/forbidden-literals.txt` audit.** Same as round 2.
 
 ### Design & Constraints
 
-- Atomic deletion only.
+- No retirements.
 - CI must stay green throughout.
-- The mirror-parity-test carve-out from W2.4 is removed here.
 - `tests/test-hook-helper-drift.sh` STAYS (D5).
+- The 9 `/update-zskills`-related tests STAY.
 
 ### Tests
 
 - [ ] `bash tests/run-all.sh` green.
-- [ ] `bash tests/test-skill-conformance.sh` green.
-- [ ] `bash tests/test-block-stale-skill-version*.sh` green.
-- [ ] `bash tests/test-hook-helper-drift.sh` green (D5 — `hooks/_lib/` survives).
+- [ ] All 16 new tests green.
+- [ ] All 9 `/update-zskills` tests STAY green.
 - [ ] 5 consecutive iterations green.
 
 ### Acceptance Criteria
 
-- [ ] All 9 retirements committed.
-- [ ] All 13 new plugin tests are part of `bash tests/run-all.sh` (one will retire in Phase 5).
-- [ ] PR body documents the suite-count delta.
+- [ ] 0 retirements committed.
+- [ ] All 16 new plugin/dual-path tests are part of `bash tests/run-all.sh`.
+- [ ] PR body documents the suite-count delta (`+16 net new`).
 
 ### Abort / Rollback
 
-If a retired test surfaces a real invariant that no replacement covers, STOP.
+If any flake cannot be root-caused in 2 attempts, STOP per CLAUDE.md "NEVER thrash."
 
 ### Dependencies
 
@@ -632,109 +640,70 @@ Phases 1, 2, 3.
 
 ---
 
-## Phase 5 — `/update-zskills` retirement, mirror trees + CLAUDE_TEMPLATE.md removed, `migrate-to-plugin.sh` ships
+## Phase 5 — Dual-path hardening: plugin-mode CI, bidirectional `--switch-install-path`, hook double-fire prevention, `build-plugin-release.sh`
 
 ### Goal
 
-Delete the legacy installer entirely. Ship `migrate-to-plugin.sh` with `--cleanup` mode (D20 (c)). Ship `build-plugin-release.sh` with self-deletion fix (F-R2-4).
+Ship the dual-path-only runtime infrastructure. Plugin-mode CI lane (in addition to existing source-tree CI). Bidirectional `scripts/switch-install-path.sh` (D25). Plugin hooks.json conditional-skip shim acceptance tests (D16(a)). `build-plugin-release.sh` with self-deletion fix + parallel `prod/<version>` tag (round-3 spec carried forward). **Phase 5 does NOT retire anything** — round 3's W5.4 deletion list is removed entirely per F-R1-6.
 
 ### Work Items
 
-- [ ] **W5.1 — Final `/update-zskills --migrate-to-plugin` mode (D15).** Same as round 2.
+- [ ] **W5.1 — Plugin-mode CI lane.** Add a GitHub Actions job that:
+  - Tier 1 (cheap, mandatory): Python JSON-schema validation of both `plugin.json` files and `marketplace.json` — already covered by `test-plugin-manifest.sh` / `test-plugin-marketplace.sh`. Runs on every PR.
+  - Tier 2 (moderate cost, best-effort): if a `claude` CLI binary URL is documented and reachable, install it on the runner and run `claude plugin validate --strict .`. Asserts exit 0. SKIP-with-reason if the CLI install fails (e.g., binary URL changes upstream).
+  - Tier 3 (expensive, deferred): actual `claude -p '/zs:briefing summary'` dispatch. NOT in this plan. Tracked as a follow-up issue.
 
-- [ ] **W5.2 — Cut a release tag.** Same as round 2.
+  Per F-DA1-6, "cheap" was misleading; the spec now documents the three tiers explicitly.
 
-- [ ] **W5.3 — `scripts/migrate-to-plugin.sh` lands (D14 + D20 (c)).** Implements the 7-step guarded migration. **Round-3 additions vs round-2 skeleton:**
-  - Step 2b (formerly `bash migrate-cron-prefixes.sh`) is REMOVED — replaced by a printed user instruction in step 3. Per F-DA2-1, cron migration must be session-side.
-  - Step 3 user prompt now reads:
-    ```
-    Now in your Claude Code session, run:
-        /plugin marketplace add tomdale/zskills
-        /plugin install zskills@zskills
-    Then RESTART your Claude Code session (close + reopen).
-    In the new session, run:
-        /zskills:migrate-crons       # to re-register any pre-existing durable crons
-    Return here and type 'done' when complete.
-    ```
-    (The restart instruction is per D21.)
-  - Step 7 prints both CI workflow guidance AND `.gitignore` guidance per D20 (b).
-  - **`--cleanup` mode (D20 (c)).** When invoked as `bash scripts/migrate-to-plugin.sh --cleanup`, removes the 5 materialised files at `$CLAUDE_PROJECT_DIR/.claude/agents/{verifier,implementer}.md`, `$CLAUDE_PROJECT_DIR/.claude/hooks/{inject-bash-timeout,verify-response-validate}.sh`, `$CLAUDE_PROJECT_DIR/.claude/rules/zskills/managed.md`, and the lock file `$CLAUDE_PROJECT_DIR/.claude/zskills-migrated-to-plugin`. Each removal is sentinel-gated (only removes files carrying the zskills sentinel) so consumer-authored files at the same paths are preserved.
+- [ ] **W5.2 — Cut a release tag.** Bump `plugin.json.version` in BOTH `zs` and `zs-block-diagram` manifests in lockstep (D10). Tag the dev commit `YYYY.MM.N`. Run `scripts/build-plugin-release.sh` (W5.5) to produce the prod-stripped commit + parallel tag.
 
-  Companion Python helper `scripts/migrate-strip-settings.py` per round 2.
+- [ ] **W5.3 — `/update-zskills --switch-install-path={to-plugin,to-update-zskills}` mode (D15).** Edit `skills/update-zskills/SKILL.md` to add the new sub-mode that delegates to `scripts/switch-install-path.sh`. Documented as the supported lane-switch entry point.
 
-- [ ] **W5.4 — Delete the legacy installer surface (F-R2-7 ordering fix).** Ordering of deletions:
-  1. **FIRST** assert byte-equality: `diff CLAUDE_TEMPLATE.md templates/CLAUDE_TEMPLATE.md` must exit 0. If not, STOP — the F-R2-7 sync gate has detected drift; fix before proceeding.
-  2. `rm CLAUDE_TEMPLATE.md` (the repo-root copy).
-  3. `rm tests/test-claude-template-mirror.sh` (its invariant is moot after step 2).
-  4. `rm -rf skills/update-zskills/`
-  5. `rm -rf .claude/skills/<every-known-zskills-skill>/` (per `KNOWN_SKILLS` list).
-  6. `rm -rf .claude/hooks/<every-known-zskills-hook>.sh` (per `KNOWN_HOOKS` list; both `inject-bash-timeout.sh` AND `verify-response-validate.sh` are in this list — they'll be re-materialised on next session).
-  7. `rm .claude/rules/zskills/managed.md` (the rendered file in the zskills repo's own `.claude/`).
-  8. `rm scripts/mirror-skill.sh`.
-  9. `rm scripts/install-helpers-into.sh` if present.
+- [ ] **W5.4 — RETIRED.** Round-3 W5.4 deleted the legacy installer surface. Under dual-path NOTHING is deleted (D8 zero retirements). W5.4 is intentionally empty as a tombstone.
 
-  **DO NOT delete `.claude/skills/playwright-cli/` or `.claude/skills/social-seo/`** (D18). **DO NOT delete `.claude/agents/{verifier,implementer}.md`** — re-materialised on next session.
+- [ ] **W5.5 — `scripts/build-plugin-release.sh` (round-3 spec carried forward + D3 + D4 additions).** Same round-3 contract:
+  - `set -euo pipefail`, `trap` cleanup, dirty-tree precheck, no self-deletion (via the `find ... -name 'build-*.sh' -delete` + POSIX bash-fully-loaded semantics), version-bump before `git branch -f prod/main HEAD`, parallel `prod/<version>` tag push, canary-strip including `hooks/canary*-bad.sh`.
+  - **New additions for dual-path:**
+    - **D3:** copy `CLAUDE_TEMPLATE.md` from repo root to `${PLUGIN_TREE}/CLAUDE_TEMPLATE.md` (the fallback path for installed-plugin consumers).
+    - **D4:** generate suffixless sibling copies of `block-agents.sh.template` and `block-unsafe-project.sh.template` in the plugin tree.
+  - Verification: `git ls-tree -r prod/main | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE'` returns 0 hits.
 
-- [ ] **W5.5 — `scripts/build-plugin-release.sh` (F-R2-4 fix).** Round-3 revision adds:
-  - `set -euo pipefail`.
-  - `trap` cleanup: `trap 'cd / 2>/dev/null; git worktree remove --force "$WORK" 2>/dev/null || echo "warning: worktree $WORK left behind; clean up manually"' EXIT`.
-  - Dirty-tree precheck: `git diff --quiet HEAD && git diff --cached --quiet || { echo "Working tree dirty; abort"; exit 1; }`.
-  - NO self-deletion. The script previously did `rm -rf ... scripts/build-plugin-release.sh` mid-run; round 3 changes to a `.gitattributes`-export-ignore approach OR an explicit exclude-list in the strip:
-    ```bash
-    # Strip dev-only scripts/tests/plans/docs (NOT including self).
-    rm -rf tests/ plans/ docs/ MW-EXAMPLE__settings.json
-    # Strip helper release scripts (the script itself is excluded by export-ignore in .gitattributes for `prod/main`).
-    find scripts/ -maxdepth 1 -name 'build-*.sh' -type f -delete
-    ```
-    The `.gitattributes` change adds `scripts/build-plugin-release.sh export-ignore` so a `git archive`-based build path also excludes it; the in-worktree `rm` uses `find` which deletes ALL `build-*.sh` (including itself, but ONLY after all bash builtin reads are complete) — since the script body is fully loaded into bash memory before execution per POSIX, the in-flight `rm` is safe. The `trap` cleanup is the belt+suspenders for any post-rm failure path.
-  - **Version-bump-before-build (D1 round-3 + F-DA2-2 fix).** Before `git branch -f prod/main HEAD`, the script:
-    1. Reads `plugin.json.version` (e.g. `2026.05.0`).
-    2. Tags the prod-stripped commit as `prod/<version>` (e.g. `prod/2026.05.0`).
-    3. Force-updates `prod/main` to point at the same commit.
-    4. Prints two `git push` commands for the user: `git push origin prod/main` AND `git push origin prod/2026.05.0`.
-  - Verification-after-strip: `git ls-tree -r HEAD | grep -E 'CANARY|RELEASING|dev_only|hooks/canary.*-bad'` returns 0 hits (F-R2-2: also strips `hooks/canary*-bad.sh`).
-  - Add the canary-strip line: `find hooks/ -name 'canary*-bad.sh' -delete` BEFORE the commit (F-R2-2).
+- [ ] **W5.6 — `scripts/switch-install-path.sh` (D25 bidirectional).** Implements both `--to-plugin` and `--to-update-zskills` modes per D25 with lock-LAST in both directions. Companion Python helper `scripts/migrate-strip-settings.py` (same shape as round-3 round-2). **Lock file shape (F-R2-6):** path `.claude/zskills-install-lane`, single-line bare content (`plugin\n` or `update-zskills\n`), written atomically via tmpfile+rename as the FINAL step of each mode. `--switch-install-path.sh` also reads any pre-existing lock at START to detect prior lane and validate the requested transition (e.g., `--to-plugin` on an already-`plugin` lane is a no-op-with-INFO; `--to-update-zskills` on a lock-free `lane=fresh` repo is a re-confirmation prompt).
 
-- [ ] **W5.6 — Update `RELEASING.md`.** Document the new release flow including: bump `plugin.json.version` FIRST, commit + tag `YYYY.MM.N` on dev branch, run `scripts/build-plugin-release.sh`, push BOTH `prod/main` AND `prod/<version>` tags, consumers receive update via `/plugin marketplace update zskills`.
+- [ ] **W5.7 — `hooks/_lib/plugin-hook-skip-if-mirrored.sh` testbed (D16(a)).** The shim itself lands in Phase 1 W1.3; W5.7 adds the acceptance test `tests/test-plugin-hook-skip-on-double-register.sh` that simulates a settings.json + plugin hooks.json dual-registration and asserts the plugin's hook exits 0 immediately without doing the real work. Test fixture pre-populates settings.json with a known zskills hook entry.
 
-- [ ] **W5.7 — Update zskills' own root `CLAUDE.md`.** Same as round 2.
+- [ ] **W5.8 — Update `RELEASING.md`.** Document the dual-path release flow: bump BOTH `plugin.json.version` files, run `build-plugin-release.sh`, push BOTH `prod/main` AND `prod/<version>` tags, communicate updates to BOTH lanes' consumers.
 
-- [ ] **W5.8 — Confirm conformance.** Same as round 2.
+- [ ] **W5.9 — Update zskills' own root `CLAUDE.md`.** Document dual-path dogfooding final form.
 
-- [ ] **W5.9 — Issue closeout.** Same as round 2.
+- [ ] **W5.10 — Issue closeout.** PR body uses `Closes #N` per inventoried open issue.
 
 ### Design & Constraints
 
-- **Order: byte-equality check FIRST, then repo-root template deletion** (F-R2-7).
-- **Tag BEFORE delete** (W5.2 before W5.4).
-- **`migrate-to-plugin.sh` is the SAFE migration path** AND has a documented `--cleanup` off-ramp (D20 (c)).
-- **`build-plugin-release.sh` no longer self-deletes** (F-R2-4 fix); strips `hooks/canary*-bad.sh` (F-R2-2 fix); tags `prod/<version>` parallel to `prod/main` (F-DA2-2 fix).
-- **CLAUDE_TEMPLATE.md deletion is final.**
-- **The 2 whitelisted extras** per D18 — NOT deleted.
-- **`MW-EXAMPLE__settings.json`** deleted in Phase 6 W6.6.
+- **NO file deletions.** Round-3 W5.4 list is removed entirely (F-R1-6). `CLAUDE_TEMPLATE.md` STAYS. `skills/update-zskills/` STAYS. Mirror trees STAY.
+- **`build-plugin-release.sh`** runs at release time on the dev commit; produces a prod-stripped sibling commit on `prod/main`. Does NOT modify the dev commit.
+- **Lock-LAST in BOTH directions.** Per D25; per CLAUDE.md `## Migration scripts`.
+- **Plugin-mode CI tiering** explicitly documented (F-DA1-6).
+- **Hook double-fire is structurally prevented** by the conditional-skip shim (D16(a)) and observable via the dual-install WARN (D16(b) / D27).
 
 ### Tests
 
-- [ ] `bash tests/run-all.sh` green AFTER all deletions.
-- [ ] `ls skills/update-zskills/ 2>&1` returns "No such file or directory".
-- [ ] `ls CLAUDE_TEMPLATE.md 2>&1` returns "No such file or directory".
-- [ ] `grep -rn 'update-zskills\|CLAUDE_TEMPLATE\|mirror-skill\.sh' skills/ block-diagram/ hooks/ CLAUDE.md` returns ONLY hits inside `<!-- allow-hardcoded: -->` markers.
-- [ ] `bash scripts/migrate-to-plugin.sh --help` exits 0 and documents `--cleanup`.
-- [ ] `bash scripts/migrate-to-plugin.sh --cleanup` on a fixture removes the 5 materialised files AND the lock; preserves consumer-authored files at the same paths (sentinel-gated).
-- [ ] `bash scripts/build-plugin-release.sh` produces a `prod/main` ref AND `prod/<version>` tag where canaries (INCLUDING `hooks/canary*-bad.sh`), `dev_only` skills, `RELEASING.md`, `MW-EXAMPLE__settings.json`, and `scripts/build-plugin-release.sh` itself are absent — verified by `git ls-tree -r prod/main | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE'` returning 0 hits.
+- [ ] **NEW** `tests/test-switch-install-path.sh` — exercises both `--to-plugin` and `--to-update-zskills` modes on fixture projects; asserts post-switch slash invocation works on the target lane.
+- [ ] **NEW** `tests/test-plugin-hook-skip-on-double-register.sh` — round-2 fixture; asserts the conditional-skip shim works.
+- [ ] `bash tests/run-all.sh` green.
+- [ ] `bash scripts/build-plugin-release.sh` (dry-run) produces a clean `prod/main` + `prod/<version>` ref.
 
 ### Acceptance Criteria
 
-- [ ] All retirements committed.
-- [ ] `bash tests/run-all.sh` green.
-- [ ] Penultimate release tag exists.
-- [ ] `scripts/migrate-to-plugin.sh` lands; idempotent; `--cleanup` works.
-- [ ] `scripts/build-plugin-release.sh` produces both `prod/main` and `prod/<version>` refs.
-- [ ] PR body includes `Closes #N` lines for every inventoried open issue.
+- [ ] Plugin-mode CI lane runs on every PR (Tier 1 mandatory; Tier 2 best-effort).
+- [ ] `scripts/switch-install-path.sh` ships both modes; both pass `tests/test-switch-install-path.sh`.
+- [ ] Hook conditional-skip shim ships; `tests/test-plugin-hook-skip-on-double-register.sh` green.
+- [ ] `bash scripts/build-plugin-release.sh` produces both `prod/main` and `prod/<version>` refs with the documented strip set.
+- [ ] PR body includes `Closes #N` for every inventoried issue.
 
 ### Abort / Rollback
 
-If `bash tests/run-all.sh` red after deletions, STOP. Restore via `git checkout HEAD~ -- ...`. If `migrate-to-plugin.sh` step 4 verification fails on dogfood loop, STOP and refine. If F-R2-7 byte-equality check fails, STOP — fix the template drift before proceeding.
+If `bash tests/run-all.sh` red after Phase 5 additions, STOP. If `switch-install-path.sh` fixture test fails in either direction, STOP and refine. If the plugin-mode CI tier-2 lane is chronically flaky (>50% of runs SKIP for non-`claude`-CLI reasons), keep tier-1 as the gating floor and document the tier-2 limitation.
 
 ### Dependencies
 
@@ -742,49 +711,48 @@ Phases 1-4.
 
 ---
 
-## Phase 6 — Marketplace activation, prod-tag release flow, consumer onboarding
+## Phase 6 — Marketplace activation, prod-tag release flow, README + dual-path docs
 
 ### Goal
 
-Activate the marketplace path. Document the dual-ref pin scheme (`prod/main` for unpinned, `prod/<version>` for pinned). Finalise issue closeout.
+Activate the marketplace path. Document the dual-path install model (D26). Document the dual-ref pin scheme. Finalise issue closeout.
 
 ### Work Items
 
-- [ ] **W6.1 — CI plugin-mode integration.** Same as round 2.
+- [ ] **W6.1 — Consumer-onboarding documentation (`docs/PLUGIN_INSTALL.md`).** Documents BOTH paths under a side-by-side comparison. Includes:
+  - Install commands for both lanes.
+  - Slash-prefix expectations per lane.
+  - Update workflow per lane.
+  - The default recommendation (D26).
+  - Pin-by-version idiom (D1).
+  - `.gitignore` guidance scoped per-lane (D20(b), F-R1-16).
+  - **"Known tradeoffs" section (Risk Register gap 8):** documents the bare-slash prose UX gap for plugin-lane consumers — skill-body prose references unprefixed slash names; cross-skill dispatch via Skill tool works; cron-fire OR-match handles auto-fire; only typed-slash invocations require the user to mentally swap `/foo` → `/zs:foo`.
 
-- [ ] **W6.2 — Consumer-onboarding documentation.** Add `docs/PLUGIN_INSTALL.md`:
-  ```
-  /plugin marketplace add tomdale/zskills
-  /plugin install zskills@zskills
-  ```
-  Post-install: edit `.claude/zskills-config.json`, restart Claude Code session (D21), optionally run `/zskills:migrate-crons` to re-register pre-existing durable crons.
-  **Pin-by-version (D1 + F-DA2-2):** For reproducible installs, override `source` to `{ "github": { "repo": "tomdale/zskills", "ref": "prod/2026.05.0" } }` or pin by SHA.
-  **`.gitignore` guidance (D20 (b)):** the 5 materialised files at `.claude/agents/{verifier,implementer}.md`, `.claude/hooks/{inject-bash-timeout,verify-response-validate}.sh`, `.claude/rules/zskills/managed.md` are plugin-managed; add them to `.gitignore` OR track them and pin to a specific zskills version.
-  **Uninstall:** `bash scripts/migrate-to-plugin.sh --cleanup` removes the 5 files + lock (D20 (c)).
+- [ ] **W6.2 — Dual-path migration runbook (`docs/PLUGIN_MIGRATION.md`).** Documents the bidirectional `--switch-install-path` tool (D25). Renamed from round-3's one-way framing ("migrating away from `/update-zskills`") to "switching install paths (optional)." Covers Abort/Rollback for both directions.
 
-- [ ] **W6.3 — Final consumer-migration runbook.** Publish `docs/PLUGIN_MIGRATION.md` documenting D14 + the `/zskills:migrate-crons` step + the `--cleanup` off-ramp.
+- [ ] **W6.3 — Marketplace promotion (optional).** Same as round 2.
 
-- [ ] **W6.4 — Marketplace promotion (optional).** Same as round 2.
+- [ ] **W6.4 — Issue #432 closeout.** Same as round 2.
 
-- [ ] **W6.5 — Issue #432 closeout.** Same as round 2.
+- [ ] **W6.5 — `MW-EXAMPLE__settings.json` cleanup.** Deletes the orphan file.
 
-- [ ] **W6.6 — `MW-EXAMPLE__settings.json` cleanup.** Same as round 2.
+- [ ] **W6.6 — README.md updates.** Document both install paths at top-level. Point at `docs/PLUGIN_INSTALL.md` for the full comparison. Default recommendation per D26.
 
 ### Tests
 
-- [ ] CI plugin-mode job passes (or best-effort).
 - [ ] `docs/PLUGIN_INSTALL.md` and `docs/PLUGIN_MIGRATION.md` exist.
 - [ ] `MW-EXAMPLE__settings.json` absent.
+- [ ] README references both install paths.
 
 ### Acceptance Criteria
 
-- [ ] CI runs both source-tree tests AND best-effort plugin-mode validation.
-- [ ] `README.md` references the plugin install flow.
+- [ ] Both docs exist and document the dual-path model.
+- [ ] README links to both lanes.
 - [ ] All inventoried open issues closed.
 
 ### Abort / Rollback
 
-If CI plugin-mode job flaky, keep as best-effort with static-schema-validation fallback as the gating floor.
+If README's default recommendation generates community pushback, the recommendation is editorial and can be retracted in a follow-up commit without affecting the plan's structural acceptance criteria.
 
 ### Dependencies
 
@@ -792,59 +760,81 @@ Phases 1-5.
 
 ---
 
-## Risk Register
+## Drift Log
 
-Following F-DA2-6's suggestion, the four acknowledged research-deferred gaps and their explicit failure modes:
+This plan was originally drafted (rounds 1-3) as a one-way replacement of `/update-zskills` with the plugin distribution system. Round-3 convergence locked: `/update-zskills` deleted in Phase 5, `CLAUDE_TEMPLATE.md` deleted, `.claude/skills/` and `.claude/hooks/` mirror trees retired, 1,621 bare-slash prose references bulk-rewritten to `/zskills:<skill>` (Phase 3 with a 29-skill version-bump cascade), 9 conformance tests retired. Round 4 received a user pivot: keep BOTH install paths permanently as first-class options.
 
-| Gap | Phase | Failure mode | Rollback path |
-|-----|-------|-------------|---------------|
-| (1) Durable cron storage path — `CronList` semantics under in-session dispatch | 3 W3.4 | If `CronList` doesn't enumerate or `CronCreate` rejects the prefixed prompt, `/zskills:migrate-crons` prints what it would do and exits; consumers manually re-register. NOT silent. | Skill body documents the limitation; cron-recognition's 60-day window covers the gap. |
-| (2) `prod/main` ref + marketplace cache semantics | 5 W5.5 + 6 W6.2 | If `/plugin marketplace update` doesn't fetch the latest `prod/main` commit reliably, consumers stay on stale plugin. | D1 round-3: parallel `prod/<version>` tag scheme gives consumers a stable pin; docs/PLUGIN_INSTALL.md documents the workaround. |
-| (3) `Agent` / `CronCreate` matcher syntax in `hooks.json` | 1 W1.6 | If `claude plugin validate --strict` rejects the matcher, fall back to `PreToolUse` with `tools: [...]` (if supported) or document gap. | Phase 1 Abort/Rollback path. |
-| (4) Skill-frontmatter survival (`user-invocable`, `disable-model-invocation`) under plugin packaging | 3 W3.6 | If either field is silently dropped, `feedback_skill_invocation_flags.md` discipline regresses; `/fix-issues` cron self-registration may break. **Round-3 promotion to STOP gate (F-DA2-6):** `tests/test-skill-frontmatter-survival.sh` is now a Phase-3 acceptance criterion, NOT a follow-up. | Phase 3 STOPS on failure; orchestrator decides whether to roll back. |
+Key directional changes round-3 → round-4:
 
-## Plan Quality
+1. **Slash prefix renamed `zskills:` → `zs:`.** Mass rename across the plan body (verified: 20 sites in round-3 plan). Plugin name in `plugin.json` is `zs`; marketplace name stays `zskills`. F-R1-1.
+2. **`/update-zskills` STAYS forever.** D15 retired the "skill deleted in Phase 5" claim. A6 acceptance criterion retired. F-R1-7.
+3. **`CLAUDE_TEMPLATE.md` STAYS forever** as the dual-path source-of-truth. D3 simplified: no `templates/` mirror, no byte-equality gate; the plugin reads the repo-root template directly during dev, fallback-bundled at release time. F-R1-9.
+4. **No bulk slash-prefix rewrite.** Phase 3 W3.2 (the 1,621-hit prose rewrite) deleted. F-R1-2. Bare slashes in skill-body prose stay; documented as a plugin-lane UX rough edge in `docs/PLUGIN_INSTALL.md`. F-DA1-1 Option Y locked.
+5. **No 29-skill version-bump cascade for slash-prefix.** F-R1-13. But the per-site path-fallback work (D6) introduces a **38-skill version-bump cascade for `zskills-resolve-config.sh` sourcing** — net version-bump count comparable to round 3, just for different reasons. F-DA1-3, F-R1-5.
+6. **0 conformance test retirements.** Round-3's "9 retired" list was specific to deleting the legacy installer surface; under dual-path every one of those tests gates a still-living invariant. F-R1-4.
+7. **NEW: dual-install detection probe (D27).** Round-3 had no spec for the case where a consumer has both lanes simultaneously. Round-4 adds `hooks/_lib/detect-install-state.sh` returning `fresh`/`plugin`/`update-zskills`/`dual`, runs FIRST in the materialiser (before the overwrite-guard), emits per-state WARN. F-R1-10, F-R1-12, F-DA1-4.
+8. **NEW: bidirectional `scripts/switch-install-path.sh` (D25).** Replaces round-3's one-way `migrate-to-plugin.sh`. Both `--to-plugin` and `--to-update-zskills` modes; lock-LAST in BOTH directions. F-R1-8, F-DA1-7.
+9. **NEW: plugin hooks.json conditional-skip shim (D16(a)).** `hooks/_lib/plugin-hook-skip-if-mirrored.sh` sourced at the top of every plugin-registered hook; exits 0 if the same hook is registered in settings.json for the same matcher. F-DA1-4.
+10. **NEW: renderer-equivalence test (D24).** `/update-zskills` Step D ported to call `scripts/render-managed-rules.py` (the same Python renderer the plugin uses); `tests/test-managed-md-renderer-equivalence.sh` is the belt-and-suspenders gate. F-DA1-5.
+11. **NEW: cron-fire rule SKILL.md path is dual-path (D12-prose).** The rule literal teaches Claude to try `${CLAUDE_PLUGIN_ROOT}/skills/<skill-name>/SKILL.md` AND `.claude/skills/<skill-name>/SKILL.md`. F-DA1-2.
+12. **Permanent cron OR-match (D12).** No 2026-07-21 sunset. F-R1-3, F-DA1-10.
+13. **Two plugins under one marketplace (D2 revised).** `zs` (full) and `zs-block-diagram` (addon subset). D17 retired. F-R1-14, F-R1-17, F-DA1-8.
+14. **Default install path recommendation (D26).** README recommends the plugin lane for interactive workflows, `/update-zskills` for headless CI. F-DA1-11.
 
-**Drafting process:** `/draft-plan` with 3 rounds of adversarial review (reviewer + devil's-advocate each round + refiner with verify-before-fix).
-**Convergence:** Converged at round 3.
-**Remaining concerns:** None blocking. Four research-deferred gaps documented in the Risk Register above with explicit failure modes and rollback paths; all four become empirically resolvable during dogfooded Phases 1-3 via the `claude --plugin-dir .` loop.
+**Honest scope summary.** The dual-path pivot was framed as "Phase 3 narrows, Phase 5 narrows" — that was misleading. The TOTAL work is roughly equivalent to single-path-with-cutover:
 
-### Round History
+- **Work that disappears:** Phase 3's 1,621-prose-ref rewrite (Phase 3 W3.2 deletion), Phase 5's `/update-zskills` retirement + mirror-tree deletion + `CLAUDE_TEMPLATE.md` deletion (Phase 5 W5.4 entire block removed).
+- **Work that appears:** 145-site dual-path script-source fallback (D6, Phase 3 W3.1), dual-install detection probe (D27, Phase 2 W2.8), bidirectional `--switch-install-path` (D25, Phase 5 W5.6), hook double-fire conditional-skip shim (D16(a), Phase 1 W1.3 + Phase 5 W5.7), renderer-equivalence collapse + gate (D24, Phase 2 W2.7 + tests), cron-fire rule prose dual-path (D12-prose, Phase 3 W3.3), plugin-mode CI tiered (F-DA1-6, Phase 5 W5.1), second plugin manifest for `zs-block-diagram` (D2, Phase 1 W1.1/W1.2), default-path README guidance (D26, Phase 6 W6.6).
 
-| Round | Reviewer findings | DA findings | Resolved | Status |
-|-------|-------------------|-------------|----------|--------|
-| 1     | 18 (3 critical, 10 major, 5 minor) | 18 (3 critical, 11 major, 4 minor) | 35 fixed, 1 justified (F-R1-12 moot under D3 revision) | 4 gaps introduced — escalated to round 2 |
-| 2     | 7 (1 critical, 3 major, 3 minor) | 6 (1 critical, 4 major, 1 minor) | 13 fixed, 0 justified | 3 gaps introduced — escalated to round 3 |
-| 3     | 1 (0 critical, 0 major, 1 minor) | 2 (1 critical, 1 major, 0 minor) | 3 fixed, 0 justified | 0 gaps introduced — **converged** |
+Net delta on test files: round 3 was `-9 retired + 12 new = +3 net`. Round 4 is `0 retired + 16 new = +16 net`. The conformance suite GROWS more under dual-path than under single-path-with-cutover, because every retired-under-single-path invariant STAYS PLUS the new dual-path-specific invariants are added.
 
-### What round 1 caught (high-yield structural)
+The plan body now reflects this honestly. The benefit consumers receive: two long-term-supported install experiences. That's the actual tradeoff.
 
-The draft punted on the three plugin-platform constraints the research phase had surfaced. Reviewer + DA caught them all:
-- Plugin agents cannot declare frontmatter `hooks:` (Layer 0 verifier defense at risk)
-- No documented `alwaysLoad: true` mechanism for plugin-shipped rules (rules silently don't load)
-- Hard slash-prefix cutover breaks every existing cron's recognition rule
+### Round-3 refinement (F-R2-1 through F-R2-6, F-DA2-1 through F-DA2-5)
 
-Refiner round 1 locked these to documented mechanisms: hybrid distribution (agents materialized via SessionStart, not plugin-shipped), `.claude/rules/` materialization, 60-day OR-match deprecation window with session-side `/zskills:migrate-crons` skill.
+Round-2 review surfaced 11 findings (1 critical, 6 major, 4 minor). Convergence trajectory: 30 → 11. All 11 closed in round-3 refinement:
 
-### What rounds 2 and 3 caught (mechanism correctness)
+- **F-R2-1 (critical) — marketplace `github.path` field is not in the documented schema.** Re-anchored to `/tmp/research-plugin-schema.md` §3 lines 152-158. Switched `zs-block-diagram`'s marketplace entry to `source: "./block-diagram"` (relative-path string per §3, the research-recommended alternative at line 173). D1 rewritten with the schema citation. W1.2 marketplace.json example updated. Abort/Rollback re-anchored: if relative-path source is rejected, fall back to `git-subdir` (also documented per §3); both rejected → republish from a separate repo. Risk Register gap (3) text updated to name all three Phase-1 validation risks together.
+- **F-R2-2 (major) — D16(a) "same hook by name" was unimplementable.** Hook entries are anonymous `{type, command}` records per `/tmp/research-plugin-schema.md` §5. D16(a) rewritten with a concrete 7-step mechanism: shim sources at the top of every plugin hook, computes its own basename via `BASH_SOURCE[1]`, reads `.claude/settings.json` via Python, iterates entries, basename-matches via `os.path.basename(command.split()[-1])`, and (per F-DA2-3) version-compares via line-2 `# zskills-hook-version:` header. Multiple deferment outcomes documented: equal/older → silent skip; newer-on-plugin → WARN+defer with marker; no match → continue. W1.3 specifies the line-2 version comment as a new convention added in Phase 1 and gated by a new `tests/test-skill-conformance.sh` assertion.
+- **F-R2-3 (major) — D27 partial-cleanup case missing.** D27 rewritten with explicit "ANY hit counts" detection rules: per-lane evidence lists (lock-file content, KNOWN_SKILLS / KNOWN_HOOKS presence, sentinel-absent agents/managed.md, settings.json hook entries with matching basename); lane resolution rule (zero+zero=fresh, plugin-only=plugin, update-zskills-only=update-zskills, both=dual); explicit partial-state safety paragraph showing orphan-hook-without-SKILL.md classifies as `update-zskills` and triggers materialiser early-exit. Test fixture grows to a fifth case exercising the partial-cleanup scenario. Materialiser refuses to write under BOTH `dual` and `update-zskills`.
+- **F-R2-4 + F-DA2-5 (major + minor) — D24 Step B retirement deferred without tracking.** Picked Option (a) from F-R2-4: Step B §2 and Step D §2 LLM-prose are DELETED outright in W2.7's single commit, replaced with a `python3 render-managed-rules.py ...` invocation. No deprecation window, no follow-up issue, no "retain for one release" language. Rationale documented in D24: under D23's permanent-dual-path commitment, retaining the LLM-prose alongside the Python invocation would re-open the divergence surface D24 is supposed to close. W2.7 reordered into 4 explicit sub-steps (port Step B+D, refactor test, add equivalence gate, version-bump).
+- **F-DA2-1 (major) — `zs-block-diagram` lacked `dependencies: [{name: "zs"}]` declaration.** Added per `/tmp/research-plugin-schema.md` §11 lines 554-560. W1.1 now includes the second `plugin.json` for `zs-block-diagram` with the `dependencies` field. D2 rewritten with the failure-mode walkthrough (orphan-install yields 3 block-diagram skills with zero supporting infrastructure because all hooks/agents/rules ride on `zs`). `tests/test-plugin-manifest.sh` gains the dependency-declaration assertion. Risk Register gap (3) covers the research-deferred dependency-semantics fallback.
+- **F-DA2-2 (major) — three substitution maps risk diverging.** Resolved via D24 consolidation: introduce `scripts/managed_rules_substitution.py` as the single source-of-truth substitution module; `scripts/render-managed-rules.py` becomes a thin wrapper; `tests/test-managed-md-up-to-date.sh` is refactored to invoke the renderer rather than inline its own Python; plugin SessionStart materialiser invokes the same renderer. Three callers, one map. W2.2 spec landed both files (`managed_rules_substitution.py` + `render-managed-rules.py`); W2.7 refactors the test in the same commit. Equivalence test is structurally guaranteed and acts as a canary against future refactor drift.
+- **F-DA2-3 (major) — D16(a) skip-on-presence ignored version skew.** Folded into the rewritten D16(a) Option 1: each shipped hook script carries a line-2 `# zskills-hook-version: <YYYY.MM.N>` comment; the shim version-compares plugin-vs-settings.json copies; on plugin-newer it emits a one-time-per-hook WARN (gated by `.zskills/hook-skew-warned-<basename>` marker) and defers to settings.json (preferring stale-but-loudly-flagged over silent-double-fire). W1.3 specifies the line-2 stamp convention and a `tests/test-skill-conformance.sh` assertion that every shipped hook carries it.
+- **F-R2-5 (minor) — test-count drift.** D8 enumeration grew from 15 to 16 (added `test-hook-template-sibling.sh`), header changed from "11 NEW" to "16 NEW", arithmetic restated as `0 retired + 16 new + 3 restructured-in-place = +16 net`. A5 + Phase 4 W4.4/W4.5 + Phase 4 header + Progress Tracker row 4 all updated to the canonical 16. D8 and Phase 4 W4.4 inventory lists now match exactly.
+- **F-R2-6 (minor) — D25 lock-file shape ambiguous.** Spec'd explicitly: file path `.claude/zskills-install-lane`, content is single line bare value + trailing newline (`plugin\n` or `update-zskills\n`), written atomically via tmpfile+rename. Detection probes read with `[ "$(cat .claude/zskills-install-lane 2>/dev/null)" = plugin ]`. Both directions in D25 and W5.6 carry the same spec. D27 detection bullets use the bare-value form.
+- **F-DA2-4 (minor) — `2026.08.0` deadline contradicted D23.** Deadline dropped from D6 and W3.2. The legacy one-liner is documented as a "documentation-class advisory" — preferred form is the new two-line dual-path source-pattern, but no test-suite-enforced migration deadline. Per F-DA2-4, the legacy form remains structurally valid on the `/update-zskills` lane forever.
 
-- Layer 3 (`verify-response-validate.sh`, 12 invocation sites) was missed in the materializer's `KNOWN_HOOKS` array — added.
-- Cron migration shell-script invoked `CronList` as if it were a shell endpoint; it's a Claude session-side tool — reframed as the `/zskills:migrate-crons` skill (counted 30 total skills, not 29).
-- `hooks/canary3-bad.sh` (deliberate-bad-syntax fixture) would leak into distribution — added to canary strip.
-- `hooks/_lib/` shared helpers + drift-gate addressed.
-- `build-plugin-release.sh` self-deletion mid-run — fixed via tempdir-build pattern.
-- Materializer's update-detection regex interpolated `${PLUGIN_VERSION}` (stale-version sentinels stop matching on update) — fixed via write-with-version + detect-by-prefix-regex split.
-- HTML comment before `---` invalidates YAML frontmatter (load-bearing for Layer 0) — fixed by injecting the sentinel as YAML-comment inside the frontmatter block.
+## Plan Review
 
-### Verifications anchored throughout
+**Drafting process:** `/draft-plan` rounds 1-3 (single-path), then `/refine-plan` rounds 1 (dual-path drift correction) and 2 (consistency tightening + schema-traceability) — reviewer + devil's-advocate + refiner with verify-before-fix on every finding.
 
-Every plugin-behavior claim traces back to a verbatim quote in `/tmp/research-plugin-schema.md` (Claude Code docs fetched 2026-05-21). Every codebase-state claim (`12 invocation sites`, `30 skills`, `5 materialized files`, etc.) is grep-anchored or file-line-anchored in the refiner disposition tables.
+**Round-1 disposition:** see `/tmp/refine-plan-disposition-round-1-PLUGIN_DISTRIBUTION.md`. 30 findings examined; 28 fixed in-plan, 2 justified-not-fixed, 0 new gaps introduced.
 
-### Acknowledged research gaps (Risk Register)
+**Round-2 disposition:** see `/tmp/refine-plan-disposition-round-2-PLUGIN_DISTRIBUTION.md`. 11 findings examined (6 reviewer, 5 DA); 11 fixed in-plan, 0 justified-not-fixed, 0 deferred-within-plan, 0 new gaps introduced.
 
-Four gaps remain that the documentation doesn't fully resolve. Each is named in the Risk Register above with:
-1. The phase where the gap matters
-2. The failure mode if the assumption is wrong
-3. The rollback path (always to a documented fallback — none of the gaps are "ship and hope")
+**Round-3 final review:** reviewer returned 0 findings; DA returned 2 minor findings (no critical, no major). Both are judgment-class gaps with one-paragraph fixes; neither contradicts a locked decision. Documented under "Remaining concerns" below.
 
-These are empirically resolvable in early phases via the dogfood loop. They are NOT deferred hard parts (per CLAUDE.md "NEVER defer the hard parts of a plan"); the work is fully specified and each gap has a written-down fallback.
+**Round History**
+
+| Round | Reviewer | DA | Total | Substantive after refine |
+|-------|----------|-----|-------|--------------------------|
+| 1 | 19 (6 crit, 7 maj, 6 min) | 11 (4 crit, 4 maj, 3 min) | 30 | 2 justified-not-fixed |
+| 2 | 6 (1 crit, 3 maj, 2 min) | 5 (0 crit, 3 maj, 2 min) | 11 | 0 (all fixed) |
+| 3 | 0 | 2 (0 crit, 0 maj, 2 min) | 2 | 2 (rounds budget exhausted) |
+
+Trajectory 30 → 11 → 2. Clean convergence.
+
+**Remaining concerns (round 3, deferred to Phase 1 implementer per DA classification):**
+
+1. **F-DA3-1 (minor):** `hooks/_lib/known-skills.txt` and `hooks/_lib/known-hooks.txt` (used by D27's detection probe) have no completeness gate — a future skill or hook added without updating these lists silently degrades detection. **Fix:** add a ~30-line `tests/test-known-lists-complete.sh` that asserts every directory under `skills/` and `block-diagram/` has an entry in `known-skills.txt`, and every `*.sh` under `hooks/` has an entry in `known-hooks.txt`. Land alongside the lists in Phase 1 W1.4.
+
+2. **F-DA3-2 (minor):** D16(a) shim's "line 2" hook-version header convention is over-specified vs. the shim's `head -n 5 | grep -m1` tolerance — the plan never reconciles whether the new `# zskills-hook-version:` stamp REPLACES the existing descriptive line-2 comment in all 12 shipped hooks or INSERTS above it. **Fix:** one disambiguating sentence in D16(a) step 1 + W1.3 — "The stamp is INSERTED as a new line 2 ahead of any existing line-2 comment; existing line-2 comments shift to line 3."
+
+**Convergence:** the plan is internally consistent under the dual-path commitment. All round-2 critical/major findings closed via verified spec-tightening, not papered-over with justifications. The 8 risk-register entries carry through (3 research-deferred, 5 dual-path-specific) with explicit failure-mode + mitigation pairs.
+
+**Verifications anchored throughout.** Every load-bearing count (1,621 bare-slash prose refs, 145 `zskills-resolve-config.sh` sites, 219 `.claude/skills/update-zskills/scripts/` sites, 18 Skill-tool dispatch sites, 38 skills sourcing the resolver, 5 materialised artifacts, 4 install lane states, 16 net new tests) re-verified by grep at refinement time. Schema citations updated to point at `/tmp/research-plugin-schema.md` §3 (marketplace source types), §5 (hook entry shape), §11 (plugin dependencies) per the round-2 findings.
+
+**What this plan does NOT pretend.** It does NOT pretend dual-path is smaller than single-path-with-cutover. It does NOT pretend `/update-zskills` will be deprecated quietly. It does NOT pretend the bare-slash prose refs in skill bodies will magically resolve correctly for plugin-lane consumers — the tradeoff is documented in Risk Register gap (8) and `docs/PLUGIN_INSTALL.md`. It does NOT pretend the plugin-mode CI lane is "cheap" without acknowledging the three-tier cost structure (F-DA1-6).
+
+The plan is ready for execution. Phase 1 has zero skill-body edits and is fully additive; the highest-risk decisions (D6 per-site fallback, D24 renderer collapse, D27 dual-install probe) land in Phases 2-3 where the dogfood loop catches misbehaviour empirically.
