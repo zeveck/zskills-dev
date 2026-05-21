@@ -821,3 +821,40 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S-M (1 line fix in helper source + cascading drift updates across inlined consumers + 3-4 test cases). **Action now:** /do pr — add path-strip to `is_git_subcommand` in `hooks/_lib/git-tokenwalk.sh`; propagate inlined copies across all 3 hook consumers (`block-unsafe-generic.sh`, `block-unsafe-project.sh.template`, `block-stale-skill-version.sh`); mirror to `.claude/hooks/`; add path-prefixed test cases to `tests/test-hooks.sh`.
 
+
+---
+
+### #547 — /run-plan PR mode: requires.land-pr blocks intermediate feature-branch commits
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `block-unsafe-project.sh:805-810` enforces ALL `requires.*` markers on every `git commit` in a pipeline. But `requires.land-pr` (written by `/run-plan` PR mode at SKILL.md:926-931) is fulfilled AFTER the very feature-branch commits the gate blocks. Verifier subagent's per-phase commit on `feat/<plan-slug>` is blocked. Workaround pattern (delete marker → commit → rewrite) was used in PR #544 but acknowledged as patch-not-fix. Two markers (`requires.verify-changes` vs `requires.land-pr`) have different fulfillment timing but identical enforcement.
+
+**Fix outline.** Option 1 (recommended in body): gate `requires.*` enforcement to fire only when current branch is main/master. Reuse existing `is_on_main()` helper. Push-to-main (the actual landing event) remains gated. Feature-branch commits (`feat/*`, `fix/*`, `cp-*`) bypass the requires check. ~3 line change in `block-unsafe-project.sh.template` (+ mirror to `.claude/`); add regression test case for "commit on feature branch in pipeline with unfulfilled requires" → should ALLOW.
+
+**Complexity:** S (3 LOC change + 1-2 test cases; .template + .claude mirror; no SKILL.md edits → no version bumps unless skill SKILL.md prose changes too). **Action now:** /do pr — wrap the `for req in $PIPELINE_SUBDIR/requires.*` loop at `block-unsafe-project.sh.template:805-810` with `if ... && is_on_main; then`; mirror to `.claude/hooks/block-unsafe-project.sh`; add a test case to `tests/test-hooks.sh` (or `tests/test-hook-requires-fulfilled.sh` if it exists) asserting commit-on-feature-branch in a pipeline with unfulfilled `requires.*` ALLOWS.
+
+---
+
+### #546 — /work-on-plans schedule_under_1h minute-form check missing N<60 comparison
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/work-on-plans/SKILL.md:1068-1082` defines `schedule_under_1h`. The cron-form regex correctly compares `n` to 60; the **minute-form regex** matches any `<N>m` and returns 0 (true = sub-hour) without comparing N to 60. So `60m`, `120m`, `1440m` are misclassified as sub-hour and get the "must be ≥1h" rejection.
+
+**Fix outline.** One-line fix: replace the minute-form's bare `&& return 0` with a numeric guard mirroring the cron-form pattern at the very next line. Source SKILL.md edit → version bump per skill-versioning discipline → mirror.
+
+**Complexity:** S (1 line of new conditional + `metadata.version` bump + mirror). **Action now:** /do pr — change `skills/work-on-plans/SKILL.md:1073` minute-form consequent to compare `n` against 60 (mirrors the cron-form pattern at line 1077); bump `work-on-plans` SKILL.md version + mirror.
+
+---
+
+### #515 — block-unsafe-generic.sh: git push origin HEAD bypasses BLOCK_MAIN_PUSH from main
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `hooks/block-unsafe-generic.sh:597-635` has been hardened multiple times for `main` spelling variants but missed `HEAD`. Parser normalizes `HEAD` through colon-strip / `+`-strip / `refs/heads/`-strip but never resolves `HEAD` → current local branch. Result: from `main` branch, `git push origin HEAD` resolves server-side to `origin/main` but the parser sees literal `HEAD ≠ main` → ALLOWED. Same family as #470/#392/#457/#399/#426/#427 enumeration closures; this gap completes the family. The project hook (`block-unsafe-project.sh.template`) has the same gap.
+
+**Fix outline.** After existing normalizations + before equality check, resolve `PUSH_TARGET = "HEAD"` via `git branch --show-current` to the current local branch name. Apply same in `hooks/block-unsafe-project.sh.template`. Mirror both to `.claude/hooks/`. Add tests at `tests/test-hooks.sh`: `git push origin HEAD` from main → DENY; from `feat/*` → ALLOW. Same enumeration discipline as #528 (which just shipped path-strip for a sister bug).
+
+**Complexity:** S-M (~3 line resolver in 2 files + 2 mirrors + 2 test cases). **Action now:** /do pr — add `HEAD` resolution after existing normalizations in `block-unsafe-generic.sh` push gate + `block-unsafe-project.sh.template` rule (a); mirror both to `.claude/hooks/`; add path-and-branch toggle test cases at `tests/test-hooks.sh:408+`.
+
