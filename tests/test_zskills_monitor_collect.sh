@@ -1091,6 +1091,121 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# AC (#514): per-subsystem snapshot cache — _cached_subsystem hit/miss/expire
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== Issue #514: per-subsystem snapshot cache TTL ==="
+
+SCACHE_RES=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys, pathlib
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+
+# Hit/miss invariants on a deterministic _now clock.
+c._reset_snapshot_cache_for_tests()
+calls = []
+def fn(errs):
+    calls.append("X")
+    errs.append({"source": "test", "message": "boom"})
+    return ["value"]
+
+root = pathlib.Path("/fake/main")
+errs1 = []
+v1 = c._cached_subsystem("kind1", root, 5.0, fn, errs1, _now=100.0)
+v2 = c._cached_subsystem("kind1", root, 5.0, fn, errs1, _now=102.0)  # within TTL — hit
+v3 = c._cached_subsystem("kind1", root, 5.0, fn, errs1, _now=104.99)  # still hit
+v4 = c._cached_subsystem("kind1", root, 5.0, fn, errs1, _now=105.5)  # past TTL — miss
+print("calls_after_4=" + str(len(calls)))  # expect 2
+print("value_stable=" + str(v1 == v2 == v3 == v4))
+print("errors_replayed=" + str(len(errs1)))  # 4
+
+# Different kind doesn t collide.
+errs2 = []
+c._cached_subsystem("kind2", root, 5.0, fn, errs2, _now=100.0)
+print("calls_after_kind2=" + str(len(calls)))  # 3
+
+# Different main_root doesn t collide.
+c._cached_subsystem("kind1", pathlib.Path("/other/main"), 5.0, fn, errs2, _now=100.0)
+print("calls_after_otherroot=" + str(len(calls)))  # 4
+
+# Fail-loud: if fn raises, cache is NOT updated.
+c._reset_snapshot_cache_for_tests()
+def boom_fn(errs):
+    raise RuntimeError("intentional")
+try:
+    c._cached_subsystem("k", root, 5.0, boom_fn, [], _now=100.0)
+except RuntimeError:
+    pass
+print("cache_size_after_raise=" + str(len(c._SNAPSHOT_CACHE)))  # 0
+')
+if printf '%s\n' "$SCACHE_RES" | grep -q "calls_after_4=2" \
+    && printf '%s\n' "$SCACHE_RES" | grep -q "value_stable=True" \
+    && printf '%s\n' "$SCACHE_RES" | grep -q "errors_replayed=4" \
+    && printf '%s\n' "$SCACHE_RES" | grep -q "calls_after_kind2=3" \
+    && printf '%s\n' "$SCACHE_RES" | grep -q "calls_after_otherroot=4" \
+    && printf '%s\n' "$SCACHE_RES" | grep -q "cache_size_after_raise=0"; then
+  pass "snapshot cache: hit within TTL, miss past TTL, kind+root keying, fail-loud on raise"
+else
+  fail "snapshot cache TTL: got '$SCACHE_RES'"
+fi
+
+# Integration: collect_snapshot does NOT re-invoke fan-out helpers within TTL.
+SCACHE_INT=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys, pathlib, tempfile
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+
+c._reset_snapshot_cache_for_tests()
+c._reset_issue_cache_for_tests()
+
+counts = {"wt": 0, "br": 0, "hist": 0, "mk": 0, "extract_pr": 0}
+def wt(root, errs):
+    counts["wt"] += 1
+    return []
+def br(root, errs):
+    counts["br"] += 1
+    return []
+def hist(root, errs, **kw):
+    counts["hist"] += 1
+    return []
+def mk(root, errs):
+    counts["mk"] += 1
+    return []
+def extract_pr(root):
+    counts["extract_pr"] += 1
+    return set()
+c._list_worktrees = wt
+c._list_branches = br
+c._scan_git_history = hist
+c._scan_tracking_markers = mk
+c._extract_pr_numbers_from_markers = extract_pr
+
+class FakeResult:
+    returncode = 0
+    stdout = "[]"
+    stderr = ""
+def runner(*a, **kw):
+    return FakeResult()
+
+with tempfile.TemporaryDirectory() as td:
+    root = pathlib.Path(td)
+    c.collect_snapshot(root, pre_resolved=True, issue_runner=runner)
+    print("after_first wt=" + str(counts["wt"]) + " br=" + str(counts["br"]) + " hist=" + str(counts["hist"]) + " mk=" + str(counts["mk"]) + " extract_pr=" + str(counts["extract_pr"]))
+    c.collect_snapshot(root, pre_resolved=True, issue_runner=runner)
+    print("after_second wt=" + str(counts["wt"]) + " br=" + str(counts["br"]) + " hist=" + str(counts["hist"]) + " mk=" + str(counts["mk"]) + " extract_pr=" + str(counts["extract_pr"]))
+    c._reset_snapshot_cache_for_tests()
+    c.collect_snapshot(root, pre_resolved=True, issue_runner=runner)
+    print("after_reset wt=" + str(counts["wt"]) + " br=" + str(counts["br"]) + " hist=" + str(counts["hist"]) + " mk=" + str(counts["mk"]) + " extract_pr=" + str(counts["extract_pr"]))
+')
+if printf '%s\n' "$SCACHE_INT" | grep -q "after_first wt=1 br=1 hist=1 mk=1 extract_pr=1" \
+    && printf '%s\n' "$SCACHE_INT" | grep -q "after_second wt=1 br=1 hist=1 mk=1 extract_pr=1" \
+    && printf '%s\n' "$SCACHE_INT" | grep -q "after_reset wt=2 br=2 hist=2 mk=2 extract_pr=2"; then
+  pass "collect_snapshot: fan-out helpers cached within TTL, re-invoked on cache reset"
+else
+  fail "collect_snapshot cache integration: got '$SCACHE_INT'"
+fi
+
+# ---------------------------------------------------------------------------
 # AC: Test registered in tests/run-all.sh (verified by the test runner if
 # we're invoked via run-all.sh; here we just sanity-check this file is
 # referenced).
