@@ -157,6 +157,7 @@ run_suite "test-fix-issues-claim-race-e2e.sh" "tests/test-fix-issues-claim-race-
 run_suite "test-fix-issues-claim-race-baseline.sh" "tests/test-fix-issues-claim-race-baseline.sh"
 run_suite "test-fix-issues-claim-conformance.sh" "tests/test-fix-issues-claim-conformance.sh"
 run_suite "test-fix-issues-claim-regression-single.sh" "tests/test-fix-issues-claim-regression-single.sh"
+run_suite "test-claim-ttl-config-resolver.sh" "tests/test-claim-ttl-config-resolver.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

@@ -634,6 +634,128 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# Test 14: sweep_stale_claims helper — wrapper invocation removes stale,
+# leaves fresh. Exercises the SKILL.md-fence-facing surface (issue #574).
+# ───────────────────────────────────────────────────────────────────────
+HELPERS_SH="$REPO_ROOT/skills/fix-issues/scripts/claim-fence-helpers.sh"
+if [ ! -f "$HELPERS_SH" ]; then
+  fail "sweep_stale_claims wrapper" "claim-fence-helpers.sh missing at $HELPERS_SH"
+else
+t14_root="$SCRATCH_ROOT/t14"
+make_repo "$t14_root"
+(
+  cd "$t14_root" || exit 1
+  export ZSKILLS_CLAIM_TTL_SECONDS=7200
+  # Stale claim (issue-300): NOW-3h, will be swept.
+  bash "$CLAIM_SH" acquire 300 --pipeline-id pipe-stale --sprint-id sprint-stale >/dev/null
+  python3 -c "
+import json, datetime
+p = '$t14_root/.zskills/claims/issue-300/claim.json'
+with open(p) as f: b = json.load(f)
+b['started_at'] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).isoformat(timespec='seconds')
+with open(p, 'w') as f: json.dump(b, f, sort_keys=True)
+"
+  # Fresh claim (issue-301): NOW, should remain.
+  bash "$CLAIM_SH" acquire 301 --pipeline-id pipe-fresh --sprint-id sprint-fresh >/dev/null
+
+  # Source helper and invoke wrapper. Capture stderr.
+  # shellcheck source=/dev/null
+  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
+  if ! declare -F sweep_stale_claims >/dev/null; then
+    echo "FAIL_REASON sweep_stale_claims function not defined after sourcing"
+    exit 1
+  fi
+  wrapper_stderr=$(sweep_stale_claims 2>&1 >/dev/null)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "FAIL_REASON sweep_stale_claims returned $rc, expected 0; stderr: $wrapper_stderr"
+    exit 1
+  fi
+  if [ -d "$t14_root/.zskills/claims/issue-300" ]; then
+    echo "FAIL_REASON stale claim issue-300 not swept by wrapper"
+    exit 1
+  fi
+  if [ ! -d "$t14_root/.zskills/claims/issue-301" ]; then
+    echo "FAIL_REASON fresh claim issue-301 wrongly swept by wrapper"
+    exit 1
+  fi
+  if ! echo "$wrapper_stderr" | grep -q "swept stale claim issue-300"; then
+    echo "FAIL_REASON wrapper stderr missing swept line; got: $wrapper_stderr"
+    exit 1
+  fi
+  exit 0
+)
+if [ "$?" -eq 0 ]; then
+  pass "sweep_stale_claims wrapper: sourced, function defined, removes stale claim, leaves fresh, forwards stderr"
+else
+  fail "sweep_stale_claims wrapper happy path" "see FAIL_REASON above"
+fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# Test 15: sweep_stale_claims helper — empty claims dir (no claims at
+# all) is a no-op, exits 0. Mirrors the SKILL.md-fence preflight call
+# pattern (`sweep_stale_claims || true`).
+# ───────────────────────────────────────────────────────────────────────
+if [ -f "$HELPERS_SH" ]; then
+t15_root="$SCRATCH_ROOT/t15"
+make_repo "$t15_root"
+(
+  cd "$t15_root" || exit 1
+  # No claims acquired — claims dir doesn't exist yet.
+  # shellcheck source=/dev/null
+  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
+  out=$(sweep_stale_claims 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "FAIL_REASON sweep_stale_claims on empty dir returned $rc, expected 0; out: $out"
+    exit 1
+  fi
+  exit 0
+)
+if [ "$?" -eq 0 ]; then
+  pass "sweep_stale_claims wrapper: empty/missing claims dir is no-op, exits 0"
+else
+  fail "sweep_stale_claims wrapper empty dir" "see FAIL_REASON above"
+fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# Test 16: sweep_stale_claims helper — claim-issue.sh path-resolution
+# failure surfaces non-zero exit + error stderr. Simulated by sourcing
+# the helper, then overriding the internal _CLAIM_ISSUE_SH pointer to a
+# non-existent path before calling the wrapper. Verifies the
+# `[ ! -x ] && [ ! -f ]` guard in claim-fence-helpers.sh actually fires.
+# ───────────────────────────────────────────────────────────────────────
+if [ -f "$HELPERS_SH" ]; then
+t16_root="$SCRATCH_ROOT/t16"
+make_repo "$t16_root"
+(
+  cd "$t16_root" || exit 1
+  # shellcheck source=/dev/null
+  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
+  # Override the internal pointer to a missing path.
+  _CLAIM_ISSUE_SH="/tmp/test-fix-issues-claim-script-nonexistent-$$/claim-issue.sh"
+  out=$(sweep_stale_claims 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "FAIL_REASON sweep_stale_claims with missing claim-issue.sh returned 0, expected non-zero; out: $out"
+    exit 1
+  fi
+  if ! echo "$out" | grep -q "cannot locate claim-issue.sh"; then
+    echo "FAIL_REASON missing 'cannot locate claim-issue.sh' stderr; got: $out"
+    exit 1
+  fi
+  exit 0
+)
+if [ "$?" -eq 0 ]; then
+  pass "sweep_stale_claims wrapper: missing claim-issue.sh path -> non-zero + 'cannot locate' stderr"
+else
+  fail "sweep_stale_claims wrapper missing-target guard" "see FAIL_REASON above"
+fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""
