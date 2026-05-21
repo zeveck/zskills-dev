@@ -29,7 +29,7 @@ The headline structural choices:
 
 | Surface | `/update-zskills` lane | Plugin lane |
 |---|---|---|
-| Install command | `/update-zskills install ...` | `/plugin marketplace add tomdale/zskills && /plugin install zs@zskills` |
+| Install command | `/update-zskills install ...` | `/plugin marketplace add zeveck/zskills && /plugin install zs@zskills` |
 | Slash prefix | bare (`/run-plan`, `/quickfix`) | `/zs:` (`/zs:run-plan`, `/zs:quickfix`) |
 | Skills location | `.claude/skills/<name>/` | `${CLAUDE_PLUGIN_ROOT}/skills/<name>/` |
 | Hooks location | `.claude/hooks/<name>.sh` | `${CLAUDE_PLUGIN_ROOT}/hooks/<name>.sh` (plus 4 materialised under `.claude/`) |
@@ -175,7 +175,7 @@ D25. **Bidirectional `scripts/switch-install-path.sh` with lock-LAST in BOTH dir
 - `--to-plugin` (from `/update-zskills` lane):
   1. Pre-flight inventory of `/update-zskills` artifacts (mirror tree, hook scripts, settings.json registrations).
   2. Strip zskills-installed hook entries from `.claude/settings.json` via Python helper.
-  3. User instruction: "Now in your Claude session, run `/plugin marketplace add tomdale/zskills` + `/plugin install zs@zskills`. Restart Claude Code (close + reopen). Optionally run `/zs:migrate-crons` to re-tag pre-existing crons. Return here and type `done`."
+  3. User instruction: "Now in your Claude session, run `/plugin marketplace add zeveck/zskills` + `/plugin install zs@zskills`. Restart Claude Code (close + reopen). Optionally run `/zs:migrate-crons` to re-tag pre-existing crons. Return here and type `done`."
   4. Block on `read -p`.
   5. Verify plugin install via `${CLAUDE_PLUGIN_DATA}` or `$HOME/.claude/plugins/cache`.
   6. Sentinel-gated removal of `.claude/skills/<zskills>/`, `.claude/hooks/<zskills>/`, `.claude/rules/zskills/managed.md` (only files carrying zskills sentinel OR matching the `KNOWN_SKILLS`/`KNOWN_HOOKS` lists — does NOT touch consumer-authored or third-party skills).
@@ -300,9 +300,9 @@ Land `.claude-plugin/plugin.json` for `zs`, a sibling `block-diagram/.claude-plu
     "displayName": "Z Skills",
     "version": "2026.05.0",
     "description": "Agent-discipline skill framework: plans, fix-issues, draft-plan, run-plan, land-pr, and more.",
-    "author": { "name": "Tom Dale", "url": "https://github.com/tomdale/zskills" },
-    "homepage": "https://github.com/tomdale/zskills",
-    "repository": "https://github.com/tomdale/zskills",
+    "author": { "name": "Rich Conlan", "url": "https://github.com/zeveck/zskills" },
+    "homepage": "https://github.com/zeveck/zskills",
+    "repository": "https://github.com/zeveck/zskills",
     "license": "MIT",
     "keywords": ["zskills", "agent", "claude-code", "skills", "plans"],
     "skills": ["./skills/", "./block-diagram/"],
@@ -316,9 +316,9 @@ Land `.claude-plugin/plugin.json` for `zs`, a sibling `block-diagram/.claude-plu
     "displayName": "Z Skills — Block Diagram Addons",
     "version": "2026.05.0",
     "description": "Block-diagram-editor skill addons (add-block, add-example, manual-testing).",
-    "author": { "name": "Tom Dale", "url": "https://github.com/tomdale/zskills" },
-    "homepage": "https://github.com/tomdale/zskills",
-    "repository": "https://github.com/tomdale/zskills",
+    "author": { "name": "Rich Conlan", "url": "https://github.com/zeveck/zskills" },
+    "homepage": "https://github.com/zeveck/zskills",
+    "repository": "https://github.com/zeveck/zskills",
     "license": "MIT",
     "keywords": ["zskills", "block-diagram", "addons"],
     "skills": ["./"],
@@ -332,13 +332,13 @@ Land `.claude-plugin/plugin.json` for `zs`, a sibling `block-diagram/.claude-plu
   {
     "$schema": "https://anthropic.com/schemas/claude-plugin-marketplace.json",
     "name": "zskills",
-    "owner": { "name": "Tom Dale", "url": "https://github.com/tomdale" },
+    "owner": { "name": "Rich Conlan", "url": "https://github.com/zeveck" },
     "description": "Z Skills — agent-discipline skill framework",
     "version": "1",
     "plugins": [
       {
         "name": "zs",
-        "source": { "github": { "repo": "tomdale/zskills", "ref": "prod/main" } }
+        "source": { "github": { "repo": "zeveck/zskills", "ref": "prod/main" } }
       },
       {
         "name": "zs-block-diagram",
@@ -385,7 +385,7 @@ Land `.claude-plugin/plugin.json` for `zs`, a sibling `block-diagram/.claude-plu
 
 ### Abort / Rollback
 
-If `claude plugin validate --strict` rejects the `Agent` or `CronCreate` matcher — STOP. If the marketplace.json `zs-block-diagram` relative-path source (`./block-diagram`) is rejected by validation despite matching `/tmp/research-plugin-schema.md` §3's `Relative path` source type, fall back to `git-subdir` (`{ "url": "https://github.com/tomdale/zskills.git", "path": "block-diagram/", "ref": "prod/main" }`) — also documented in §3. Both are valid documented source types; if BOTH are rejected, restructure to publish `zs-block-diagram` from its own repo and re-evaluate D2. If the `dependencies: [{"name": "zs"}]` declaration on `zs-block-diagram` is rejected (the `/en/plugin-dependencies` page was research-deferred per `/tmp/research-plugin-schema.md` §15 line 574), document the orphan-install caveat in `docs/PLUGIN_INSTALL.md` and accept the failure mode as a known gap pending Anthropic doc-fetch.
+If `claude plugin validate --strict` rejects the `Agent` or `CronCreate` matcher — STOP. If the marketplace.json `zs-block-diagram` relative-path source (`./block-diagram`) is rejected by validation despite matching `/tmp/research-plugin-schema.md` §3's `Relative path` source type, fall back to `git-subdir` (`{ "url": "https://github.com/zeveck/zskills.git", "path": "block-diagram/", "ref": "prod/main" }`) — also documented in §3. Both are valid documented source types; if BOTH are rejected, restructure to publish `zs-block-diagram` from its own repo and re-evaluate D2. If the `dependencies: [{"name": "zs"}]` declaration on `zs-block-diagram` is rejected (the `/en/plugin-dependencies` page was research-deferred per `/tmp/research-plugin-schema.md` §15 line 574), document the orphan-install caveat in `docs/PLUGIN_INSTALL.md` and accept the failure mode as a known gap pending Anthropic doc-fetch.
 
 ### Dependencies
 
