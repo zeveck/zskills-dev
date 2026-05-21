@@ -1078,6 +1078,18 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 
 ---
 
+### #602 — /fix-report Step 6 case statement masks failure-class statuses (failed, direct-push-failed, direct-verify-failed) as generic 'PARTIAL' — contradicts the skill's own prose
+
+**Labels:** (none) | **Verdict:** NOT FIXED
+
+**Problem.** `skills/fix-report/SKILL.md` Step 6 (lines 352-371) classifies worktrees by `.landed` `status:` value with 5 explicit case arms (`full|landed`, `pr-ready`, `pr-ci-failing`, `pr-failed`, `conflict`); the `*)` wildcard collapses everything else — including failure-class statuses `failed`, `direct-push-failed`, `direct-verify-failed`, `pr-state-unknown`, and `partial` — to generic "PARTIAL — has unlanded or unresolved work." Same SKILL.md prose (lines 272-276) explicitly says these failure-class markers must be "surface[d] in the report as failed sprints" — case statement contradicts the prose; case statement wins at runtime. Reader-side of the same vocabulary expansion #518 / #530 handled writer-side; `tests/test-landed-schema.sh:158-175` checks `status:` substring but cannot detect case-arm drift.
+
+**Fix outline.** Extend the case statement with 3 new arms: `failed|direct-push-failed|direct-verify-failed)` → FAILED label (failure-class, see reason field); `pr-state-unknown)` → NEEDS ATTENTION (PR state unverified); `partial)` → explicit PARTIAL label (vs. silent collapse). Replace generic `*)` arm with `UNKNOWN: unrecognized status` so future status drift fails loudly. Tighten `tests/test-landed-schema.sh` to assert each documented status (`full`, `landed`, `pr-ready`, `pr-ci-failing`, `pr-failed`, `conflict`, `failed`, `direct-push-failed`, `direct-verify-failed`, `pr-state-unknown`, `partial`) appears as a case-arm pattern in `/fix-report` SKILL.md — mirror-of-existing-pattern from #586 / #587 closure-tightening tests. Bump `/fix-report` `metadata.version` per skill-versioning discipline; mirror to `.claude/skills/`.
+
+**Complexity:** S (one case-statement extension + one test extension + version bump + mirror). **Action now:** /do pr — add 3 failure-class case arms (FAILED + pr-state-unknown + partial) to `skills/fix-report/SKILL.md:352-371`; replace `*)` arm with loud-fail UNKNOWN; extend `tests/test-landed-schema.sh` with per-status case-arm grep loop; bump version + mirror.
+
+---
+
 ### #601 — /fix-issues PR-mode body uses `${CHANGE_SUMMARY}` (modes/pr.md:110) but variable is never assigned — every PR ships with empty "## Changes" section
 
 **Labels:** (none) | **Verdict:** NOT FIXED — confirmed defect, 5th sibling in variable-read-never-assigned family
