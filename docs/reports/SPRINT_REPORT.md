@@ -1254,3 +1254,22 @@ Empty.
 ### Open Ready queue after this sprint
 **Empty** (no actionable open issues in Ready). Cron will no-op until new issues are dragged in.
 
+
+## Sprint -- 2026-05-20 20:17 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260520-232116-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #505 | update-zskills install list missing block-bad-cron + block-main-edits | wt-fix-issue-505 | #508 | /quickfix S | 3657/3657 |
+| #506 | migrate-paths.sh partial-state on compact-JSON | wt-fix-issue-506 | #509 | /quickfix S | clean after scope recovery |
+
+### Notable
+1. **#506 caught scope creep at land time.** First push attempted included a 1101-line deletion of skills/update-zskills/SKILL.md (the entire Step C section) — the impl agent had silently removed prose unrelated to migrate-paths.sh. Post-push CI failure on the just-landed #505 conformance assertions surfaced it. Recovery: restored SKILL.md from origin/main, re-bumped version on merged content, amended, force-pushed. Clean scope on second attempt (7 files, all expected). Worth a memory anchor: ALWAYS run `git show HEAD --stat` against the impl agent's last commit BEFORE pushing — pre-#448's verifier scope-creep fix exists exactly for this class.
+2. **#505 and #506 both touched update-zskills SKILL.md** — same rebase + version-bump dance as the prior multi-skill collisions (#481/#482, #475/#476). Resolution pattern is stable: accept HEAD's version → re-bump on merged content → continue rebase.
+3. **#506 impl agent bundled the tier1 hash registration** correctly in a second commit, per the pattern established in #475/#476's impl prompts. No CI follow-up needed (after scope-creep recovery).
+
+### Open Ready queue after this sprint
+1 entry: #504 (briefing cron-param fix, /quickfix S). Next fire will pick it.
+
