@@ -218,6 +218,42 @@ is_git_subcommand() {
   while [[ $i -lt $n && "${TOKENS[$i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
     ((i++))
   done
+  # Skip transparent command-prefix wrappers. These execute the next
+  # argv as a separate process (or in-place for `exec`), so
+  # `nohup git push origin main`, `timeout 30 git push origin main`,
+  # `command git commit --no-verify`, etc. are operationally equivalent
+  # to the bare form. Without this skip an agent reaching for
+  # `timeout 30 git push` (e.g., after a previous push hung) would
+  # bypass every git-side gate. Mirrors the gh variant's prefix-skip
+  # (issue #279/PR #255), extended for `git` per issue #567.
+  while [[ $i -lt $n ]]; do
+    local _pref="${TOKENS[$i]}"
+    case "$_pref" in
+      */*) _pref="${_pref##*/}" ;;
+    esac
+    local _need_duration=0
+    case "$_pref" in
+      command|exec|nohup|nice|time)
+        ((i++)) ;;
+      timeout)
+        ((i++)); _need_duration=1 ;;
+      *)
+        break ;;
+    esac
+    # Consume zero-or-more leading flag tokens. `--` is a one-shot
+    # end-of-options marker (consume it, stop the flag run).
+    while [[ $i -lt $n ]]; do
+      if [[ "${TOKENS[$i]}" == "--" ]]; then
+        ((i++)); break
+      fi
+      [[ "${TOKENS[$i]:0:1}" != "-" ]] && break
+      ((i++))
+    done
+    # `timeout` requires a DURATION positional after any leading flags.
+    if [[ $_need_duration -eq 1 && $i -lt $n ]]; then
+      ((i++))
+    fi
+  done
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
   g="${g%\'}"; g="${g#\'}"
