@@ -1058,6 +1058,18 @@ if is_git_subcommand_in_wrappers "$COMMAND" push && is_main_protected; then
   if [ -n "$_ZSK_CURRENT_BRANCH" ]; then
     _ZSK_NEW_ARGS=""
     for word in $PUSH_ARGS; do
+      # Strip a trailing single/double quote that wrapper-unwrapped forms can
+      # leave behind. `bash -c 'git push origin HEAD'` → word=HEAD' — without
+      # this strip, the case-match below sees `HEAD'` (not `HEAD`), the
+      # rewrite is skipped, and rules (a)/(b) downstream don't see the
+      # resolved branch (#561). Strip one layer each side so quoted bash-c /
+      # eval inner strings classify. Mirrors the per-word quote-strip done
+      # post-extraction in block-unsafe-generic.sh:625-626.
+      case "$word" in
+        \'*\') word="${word#\'}"; word="${word%\'}" ;;
+        \"*\") word="${word#\"}"; word="${word%\"}" ;;
+      esac
+      word="${word%\'}"; word="${word%\"}"
       case "$word" in
         HEAD|+HEAD|refs/heads/HEAD|+refs/heads/HEAD)
           word="$_ZSK_CURRENT_BRANCH" ;;
