@@ -8,6 +8,42 @@ Order matters because several items churn the same files (`skills/update-zskills
 
 ## Drift log
 
+- **2026-05-21 (audit — 3-day sprint window; queue 6 → 10; massive hook-hardening + qe-audit cycle; #448 closed by TWO PRs)** — Fresh-agent verification pass against current `main` (HEAD `3ed8e8f`). Tests **5315/5315 PASS** (+2023 since 2026-05-18's 3292 baseline — driven by hook property-matrix tests, claim-primitive test suite, mirror-parity conformance, and the broad behavioral coverage from ~30 issue closures). Local main == origin/main.
+
+  **264 commits landed since the 2026-05-18 ROG entry**, dominated by:
+  1. A multi-day autonomous `/fix-issues` sprint cycle — at least 12 sprint-report entries from `sprint-20260520-232116` through `sprint-20260521-164726`. Tight closure cadence (~2-hour cron rhythm).
+  2. **Structural hook-hardening continuation.** `is_destruct_command` + `is_git_subcommand` + push-gate now handle `bash -c`, `eval`, `sh -c`, absolute paths, transparent prefixes (`nohup`, `timeout`, `command`, `exec`, `nice`, `time`), and HEAD-rewrite forms. Closures: #515, #528, #547, #553, #556, #561, #567, #570, #572, #586, #588, #597. Lineage extends #399 → #426/#427 from the 2026-05-19 sweep. Property-matrix conformance test (#522, #564) now protects against shrinkage of this net.
+  3. **`/fix-issues` concurrency-safe claims primitive** (PR #544 Phase 1) — `claim_ttl_seconds` config + `sweep_stale_claims` helper + claim file format + hook integration. Closes #574 (registration tests). Phase 2+ remain; dashboard-mode multi-pipeline coordination now has the baseline primitive.
+  4. **`/qe-audit` "variable-read-before-assignment" family** — 5 closures (#579, #592, #596, #582, #580) in single PR #603 (`fix(skills): assign missing variables in standalone-invocation fences across 4 drafting skills`). Family partially closed; 2 siblings + structural fix remain open (#601 in `/fix-issues` PR-mode body, #606 closure plan).
+  5. Plan **PLUGIN_DISTRIBUTION** drafted (#585) and currently in refine (#593 "dual-path + zs prefix pivot"). Refinement worktree active at `/tmp/zskills-refineplan-refine-plugin-distribution-1779380181`.
+  6. Smaller structural shifts worth tagging: `/run-plan` textual-staleness dispatches `/refine-plan` not `/draft-plan` (#578); `/do` Phase 4 stash-based prose replaced with `/commit land` dispatch (#537); `mirror parity` byte-equality conformance test (#538); `/briefing`+`/fix-report` recognize `.landed` failure-class statuses (#518); `/briefing`+`/cleanup-merged` ahead-count gate for safe PR=MERGED removal (#516); `/commit` migrated to canonical `$TEST_OUT` capture idiom (#536); `/dashboard` TTL-cache fan-out (#514).
+
+  **This session's deliverables landed:**
+  - PR [#447](https://github.com/zeveck/zskills-dev/pull/447) (squash `35232aa`, MERGED 2026-05-20T00:51:58Z) — `feat: track managed.md + conformance gate vs CLAUDE_TEMPLATE.md`. Tracks `.claude/rules/zskills/managed.md` (~33KB rendered output) and adds `tests/test-managed-md-up-to-date.sh` (1 case, asserts byte-equality vs live render). Source-repo shape now matches consumer shape; drift between `CLAUDE_TEMPLATE.md` and the rendered file is CI-gated. Companion of `/update-zskills --rerender` Step D.
+  - Issue [#448](https://github.com/zeveck/zskills-dev/issues/448) filed AND closed within ~4 hours — surfaced the verifier scope-creep false-positive: `git diff origin/main..HEAD --stat` showing phantom deletions when origin/main advances past branch base mid-verification. Closed by **TWO PRs**: PR [#453](https://github.com/zeveck/zskills-dev/pull/453) (`fix(verifier): scope-creep AC must use commit-only/merge-base diff`) fixed `.claude/agents/verifier.md` (Option A); PR [#562](https://github.com/zeveck/zskills-dev/pull/562) (`fix(run-plan,research-and-go,verify-changes): Phase 4/verify dispatch uses merge-base diff, not symmetric`) fixed orchestrator dispatch prompts that were overriding the agent's defense (the structural Option B variant). Both surfaces needed updating — the agent file's defense was being overridden by hardcoded `git diff main...<branch>` in three caller-skill prompts.
+
+  **Issue queue: 6 open → 10 open.** Closure intensity very high (~30 closures in the window) but /qe-audit kept surfacing new ones — most in the variable-read-before-assignment family or skill-prose precision class.
+
+  **10 remaining open** — 1 defer + 9 actionable, distributed across skill prose, structural, and follow-up classes:
+  - **#67** (GitLab) — Phase G defer, unchanged.
+  - **#601** + **#606** — variable-read-before-assignment family closure plan (#606 wants structural lint + close remaining 4-5 siblings; #601 is one such sibling in `/fix-issues` PR-mode body).
+  - **#577** — `/research-and-plan` self-contradicts on `/draft-plan` dispatch mechanism (Skill-tool vs subagent).
+  - **#581** — Add `auto` flag + `/land-pr` dispatch to `/draft-plan`, `/refine-plan`, `/draft-tests` (3 drafting skills).
+  - **#583** + **#584** — `/review-feedback` skill: missing "independently size severity" rule + lives under `skills/` root despite being block-diagram-specific (consumer-target ambiguity).
+  - **#594** — Part B follow-up to #587: intermittent "deny-list test missed appended literal..." flake investigation.
+  - **#602** — `/fix-report` Step 6 case-statement masks failure-class statuses.
+  - **#604** — `/run-plan` PR mode: per-phase `step.*.{implement,verify,report}` markers don't propagate to main.
+
+  **Three stale-frontmatter `status: active` plans unchanged** — `TRACKING_FIX.md`, `RESTORE_CHUNKED_EXECUTION.md`, `REBASE_CONFLICT_CANARY.md`. Same low-priority disposition; implementations long landed elsewhere. The 10 `CANARY*.md` plans showing `status: active` are test plan documents, not actionable work-pending.
+
+  **Worktree census:** 45 total — heavy population of `/tmp/zskills-fix-issue-{510..587}` worktrees from the active sprint cycle, almost all carrying `.landed status: landed` markers. `/fix-report` sweep would significantly shed this. Two long-running plan worktrees active: `/tmp/zskills-draftplan-plugin-distribution-1779372805` (initial draft) and `/tmp/zskills-refineplan-refine-plugin-distribution-1779380181` (current refinement).
+
+  **Notable infrastructure shifts (the "matters going forward" set):**
+  - `hooks/_lib/git-tokenwalk.sh` now handles transparent prefixes uniformly — closes a multi-PR bypass class via property-matrix conformance.
+  - `fix-issues-claims` Phase 1 primitive establishes multi-pipeline `/fix-issues` coordination baseline.
+  - Mirror parity conformance test (#541) — `skills/` + `block-diagram/` → `.claude/skills/` byte-equality structural drift class is now gated.
+  - Verifier scope-creep gate (#448 closure via #453 + #562) — both verifier agent file AND three orchestrator dispatch prompts now use merge-base or commit-only diff. The same-class regression that bit PR #447's verification on 2026-05-19/20 is structurally closed.
+
 - **2026-05-18 (audit — 3-day sprint window; queue down 14 → 6; audit-reports-relocation plan parked)** — Fresh-agent verification pass against current `main` (HEAD `c1b653e`). Tests **3292/3292 PASS** (+208 since 2026-05-15's 3084 baseline; +200 of that from the /fix-issues hardening sprint's new behavioral coverage). Local main == origin/main.
 
   **64 commits landed since the 2026-05-15 ROG entry**, dominated by a sustained `/fix-issues` redesign cycle. PR-shape histogram: 8 `fix(fix-issues)`, 5 `docs(sprint-report)`, 3 `test(fix-issues)`, 3 `fix(zskills-dashboard)`, 2 `fix(hook)`, 2 `chore(do)`, plus singletons across briefing/hooks/quickfix/research-and-go/budget. The /fix-issues semantics churn includes two short-lived revert pairs (#356→#357→#358 on tracker-PR auto-merge gating; #342→#349 on the auto/unattended split) — both rolled forward to cleaner shapes (content-stream auto-merge for tracker PRs; /quickfix grammar redesign without the split). The skill is settling; sprint #364 (2026-05-17 23:51) explicitly recorded as the latest finalized sprint section.
