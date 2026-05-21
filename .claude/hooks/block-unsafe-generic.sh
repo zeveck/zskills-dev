@@ -638,6 +638,16 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   # fire (#470). Strip after the '+' strip so `+refs/heads/main` also
   # normalizes to "main".
   PUSH_TARGET="${PUSH_TARGET#refs/heads/}"
+  # If PUSH_TARGET is "HEAD", resolve to current local branch — Git pushes
+  # `origin HEAD` as the current-branch's remote-tracking ref (server-side
+  # resolution), defeating literal main/master string compare. Without this,
+  # `git push origin HEAD` from a `main` checkout silently bypassed the
+  # main-protection regime (#515). Apply AFTER colon-RHS / + / refs/heads/
+  # normalizations so all `HEAD`-bearing spellings (`+HEAD`, `refs/heads/HEAD`)
+  # also resolve.
+  if [ "$PUSH_TARGET" = "HEAD" ]; then
+    PUSH_TARGET=$(git branch --show-current 2>/dev/null)
+  fi
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then
     block_with_reason "BLOCKED: Agents must not push to main/master. Push feature branches instead, or the user can run: ! git push"
