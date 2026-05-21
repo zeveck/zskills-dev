@@ -1592,3 +1592,34 @@ Empty.
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 - **Next fire prediction**: queue has ONLY #67 (deferred, Author-decision-needed bucket). Next sprint will hit the "no actionable issues found" branch — auto-sync once, then either ship a sync-only tracker refresh (if research blurbs accrued) OR clean up the empty sprint worktree and exit. The user can `/fix-issues stop` at any time.
 
+
+## Sprint — 2026-05-21 09:50 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-125416-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 1 | **N verified:** 1 | **N merged:** 1
+
+### Fixed
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #567 | hooks/_lib transparent-prefix bypass (nohup/timeout/command/exec/nice/time) | [#570](https://github.com/zeveck/zskills-dev/pull/570) | 786b86d | 5225/5225, drift 18/18, mirror 21/21 |
+
+### Notable
+1. **Enumeration-closure family is structurally complete.** Three sister-symmetry fixes have now mirrored `is_gh_pr_subcommand`'s discipline into `is_git_subcommand` (and the destruct helper):
+   - **#528 / PR #550** — path-strip parity (`/usr/bin/git push`)
+   - **#515 / PR #553** — HEAD-resolve parity (`git push origin HEAD`)
+   - **#567 / PR #570** — transparent-prefix parity (`nohup git push`, `timeout 30 git push`)
+   Each was structurally identical: gh sister already handled the case; git/destruct siblings didn't. Three closure-incomplete cycles, three sister-symmetry fixes. The general lesson — when a helper has a sister at a different abstraction level, parity drift IS the bug class — is now landed across all three families.
+2. **Property matrix locks the closure.** Combined with #556's matrix extension (PR #565) and #564's matrix-shrinkage tripwires (PR #568), the BLOCK_MAIN_PUSH property matrix now enumerates: target × wrapper × force-prefix × ref-prefix × refspec-form × quote-style × branch axis × **transparent-prefix axis**. The next bypass family variant within these axes cannot slip silently.
+3. **Sprint cadence has now landed 23 issues this session** across 9 cron fires. Queue at start: 7 open bugs + 1 deferred. Queue now: 0 open bugs + 1 deferred (#67).
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T09:50:34-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- **Next fire**: queue truly depleted (only #67 deferred). Next sprint will hit "no actionable issues" branch — auto-sync once, then either ship a sync-only tracker refresh OR clean up the empty worktree and exit cleanly.
+

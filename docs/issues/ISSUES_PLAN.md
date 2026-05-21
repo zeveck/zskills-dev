@@ -939,3 +939,16 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S (~10 LOC test assertions + 1 line in run-all.sh if new file). **Action now:** /do pr — add 2-3 structural assertions to `tests/test-skill-conformance.sh` (or a new tests/test-hooks-matrix-invariants.sh) asserting the matrix's axis invariants are present.
 
+
+---
+
+### #567 — transparent-prefix bypass: `nohup`/`timeout`/`command`/`exec`/`nice`/`time` before git
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `is_git_subcommand` (`hooks/_lib/git-tokenwalk.sh:60-110`) and `is_destruct_command` don't skip transparent command-prefix wrappers. Sister `is_gh_pr_subcommand:400-447` (PR #255 closing #279) handles `command|exec|nohup|nice|time|timeout`. `timeout 30 git push origin main` from main → NOMATCH (bypass). Universal bypass on every git-side gate (BLOCK_MAIN_PUSH, stash gate, commit --no-verify, etc.) AND every destruct gate (rm/kill family). Same structural-asymmetry shape as #528 (closed by PR #550 — path-strip parity) — one prefix family deeper.
+
+**Fix outline.** Extract the prefix-skip block from `is_gh_pr_subcommand:420-447` into a shared helper `skip_transparent_prefixes` (or inline-mirror the block into `is_git_subcommand` + `is_destruct_command`). Propagate to 3 inlined consumers (`block-unsafe-generic.sh`, `block-unsafe-project.sh.template`, `block-stale-skill-version.sh`). Mirror to `.claude/hooks/`. Add property-test axis enumerating `{nohup, timeout 30, timeout --foreground 30, command -p, exec, nice, time}` × `{git push, git commit --no-verify, rm -rf}` × `{branch=main, branch=feat}` so the closure is locked.
+
+**Complexity:** S-M (helper extraction OR inline mirror at 2 sites + 3 inlined consumers + mirrors + property-axis extension). **Action now:** /do pr — mirror `is_gh_pr_subcommand`'s `skip_transparent_prefixes` into `is_git_subcommand` + `is_destruct_command` (or extract shared helper); propagate to 3 inlined consumers + .claude mirrors; extend property matrix to enumerate transparent-prefix × command axis.
+
