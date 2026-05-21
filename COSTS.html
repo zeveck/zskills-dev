@@ -151,7 +151,6 @@
   <a href="#by-model">By model</a>
   <a href="#by-category">By category</a>
   <a href="#cache">Cache</a>
-  <a href="#perpr">Per merged PR</a>
   <a href="#method">Methodology</a>
   <a href="https://github.com/zeveck/zskills" style="margin-left:auto;">GitHub &rarr;</a>
 </nav>
@@ -167,7 +166,7 @@
 <section id="topline" class="fade-in">
   <h2>Topline</h2>
 
-  <div class="caveat"><strong>Read this before the headline. All figures below are LOGGED spend only.</strong> JSONL coverage begins <strong>2026-04-18</strong> (around the Opus 4.7 release on 2026-04-16). The first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong>, unlogged &mdash; <em>zero</em> token data, $0 contribution here. <strong>Cost numbers below therefore underestimate true spend.</strong> See the Projected total card. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (default-global residency, no Fast mode, no batch discount). "Per-PR" figures use LOGGED spend &divide; merged PRs; numerator includes exploration, failed attempts, and unmerged work.</div>
+  <div class="caveat"><strong>Read this before the headline. All figures below are LOGGED spend only.</strong> JSONL coverage begins <strong>2026-04-18</strong> (around the Opus 4.7 release on 2026-04-16). The first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong>, unlogged &mdash; <em>zero</em> token data, $0 contribution here. <strong>Cost numbers below therefore underestimate true spend.</strong> See the Projected total card. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5 (default-global residency, no Fast mode, no batch discount).</div>
 
   <div class="stat-grid">
     <div class="stat orange"><div class="val">$19,353</div><div class="label">Logged Opus-rate spend</div><div class="sub">From 105,250 logged turns (2026-04-18 onward). Pre-2026-04-18 Opus 4.6 era unlogged &mdash; see caveat.</div></div>
@@ -300,17 +299,6 @@
     </tfoot>
   </table>
   <p style="color: var(--text-dim); font-size: 0.92em;">1-hour cache writes dominate 5-minute by ~1.5&times;, reflecting Z Skills' long-running pipelines (multi-hour plan executions, fix-issues sprints) where extending cache TTL beyond 5 minutes pays back.</p>
-</section>
-
-<section id="perpr" class="fade-in">
-  <h2>Per Merged PR</h2>
-  <div class="stat-grid">
-    <div class="stat"><div class="val">624</div><div class="label">Commits on main</div><div class="sub">since 2026-03-26 (~8 weeks)</div></div>
-    <div class="stat green"><div class="val">319</div><div class="label">Merged PRs</div><div class="sub">100% squash-merged (sampled and verified)</div></div>
-    <div class="stat orange"><div class="val">$60.67</div><div class="label">$ per merged PR</div><div class="sub">$19,353 &divide; 319; includes exploration, dead-ends, unmerged work</div></div>
-  </div>
-
-  <p style="color: var(--text-dim); font-size: 0.92em;">The 305 non-PR commits on main split as 117 pre-PR-workflow (before PR #5 on 2026-04-13, when main was unprotected) plus 188 post-PR-workflow direct commits. The 188 break down as <strong>95 direct-commit-style</strong> (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or <code>/quickfix</code> non-PR paths, 50.5%), <strong>54 plan-phase</strong> commits from <code>/run-plan</code> cherry-pick mode (one commit per phase, not squashed, 28.7%), <strong>36 canary plan-execution chores</strong> (19.1%), and 3 infra/build commits (1.6%).</p>
 </section>
 
 <section id="method" class="fade-in">
