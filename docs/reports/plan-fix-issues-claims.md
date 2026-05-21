@@ -1,5 +1,51 @@
 # Plan Report — fix-issues-claims
 
+## Phase — 3 Dashboard collector + renderer chip (drag-disabled) + fingerprint fix
+
+**Plan:** plans/fix-issues-claims.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-fix-issues-claims
+**Branch:** feat/fix-issues-claims
+**Commits:** 4baae7e
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| W3.1 | `collect.py`: `_read_claims(main_root)` (REQUIRED arg) + gated `_annotate_issues_queue` integration | Done | adjacent to `_build_skip_reason_index`; explicit allow-list (`pipeline_id`, `sprint_id`, `age_seconds`, `started_at`, `pipeline_short`); NO `host_pid` (DA2.1/DA2.2), NO `worktree_path` (DA8); DA4 `pipeline_short` derivation locked |
+| W3.2 | `app.js`: claim chip + action-dispatch guard + fingerprint extension | Done | reuses `relativeTime` (R8); coalesces empty → `"?"` (R2.7); `aria-disabled="true"` + `removeAttribute("draggable")` (DA11); guard above 5 issue-* handlers (DA2.3); `fingerprintIssues` extended (DA5) |
+| W3.2 | `app.css`: `.claim-chip--in-flight` + `.card[aria-disabled]` cursor | Done | soft amber bg `#fff3d6` text `#7a5a00`; visually distinct from `.skip-chip`; `cursor: not-allowed; opacity: 0.85` on disabled cards |
+| W3.3 | `skills/zskills-dashboard/SKILL.md` `metadata.version` bump + mirror | Done | `2026.05.21+ea8b34`; `diff -rq skills/zskills-dashboard .claude/skills/zskills-dashboard` empty |
+| W3.4 | `server.py` unchanged (D7 confirmed) | Done | `git diff origin/main..HEAD -- server.py` empty; validator at lines 475-491 only fires on POST bodies |
+| T3.1 | `tests/test-fix-issues-claim-collector.{py,sh}` — 10 cases | Done | unittest + bash wrapper; null-metadata branch, malformed-JSON skip, DA4 explicit lock (`"010731-foo"`), allow-list discipline, R2.6 fixture-branch gate (mocked, call_count==0), positive control |
+| T3.2 | `tests/test-fix-issues-claim-render-dom.sh` — 51 cases | Done | chip rendering, aria-disabled toggle, action-dispatch guard across 5 actions × claimed + unclaimed control, R2.7 `"?"` fallback (unparseable + all-null), DA5 fingerprintIssues regression + stability |
+| T3.3 | latency benchmark in T3.1 file — 100 iterations × 50 claims, p99 < 10ms | Done | issue #514 budget lock; gating (not skip-not-fail) |
+| run-all.sh registration | 2 new `.sh` suites added to explicit `run_suite` list | Done | |
+
+### Verification
+
+- Baseline (orchestrator-captured pre-Phase-3): 5263/5263 passed
+- Post-implementation (verifier-independent re-run): 5324/5324 passed, 0 failed
+- Delta: +61 cases (T3.1 10 + T3.2 51 + T3.3 1 wrapped in T3.1); matches expected count exactly
+- Skill conformance (`tests/test-skill-conformance.sh`): 498/498 pass
+- Mirror diff (`diff -rq` × 8 paths): empty
+- Layer 3 verifier-response validation: PASS (no stalled-string triggers; full attestation; structured findings + commit hash)
+- Scope diff vs origin/main merge-base: only documented Phase 3 files; server.py unchanged (D7); no collateral
+
+### User Sign-off
+
+The plan's Phase 3 Acceptance Criterion 4 ("Visual smoke test: with `/zskills-dashboard start`, a fixture claim makes a card render with the in-flight chip; releasing the claim and waiting one poll interval makes the chip disappear. Screenshot attached to PR body.") is intentionally deferred to the PR body / Phase 4 manual repro (matches AC tiering: the verifier ran static-grep + node-driven DOM tests covering the contract, but the visual screenshot belongs in the PR body alongside the Phase 4 two-terminal repro screenshots per the plan's design). Tracked as a Phase 4 / PR-body deliverable.
+
+### Plan-text drift tokens
+
+- `PLAN-TEXT-DRIFT: phase=3 bullet=W3.1 field=annotate_issues_queue_line plan=1312 actual=1369`
+- `PLAN-TEXT-DRIFT: phase=3 bullet=W3.1 field=build_skip_reason_index_line plan=1544 actual=1601`
+- `PLAN-TEXT-DRIFT: phase=3 bullet=W3.1 field=fixture_branch_line plan=1770 actual=1871`
+
+(Other plan-line refs matched current SKILL.md exactly: `_read_claims` call site at 1727, `buildIssueCard` at 845, `fingerprintIssues` at 484, action dispatch at 1806.)
+
+---
+
 ## Phase — 2 Inline acquire + PreToolUse backstop hook + per-mode release wiring
 
 **Plan:** plans/fix-issues-claims.md
