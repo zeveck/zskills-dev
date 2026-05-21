@@ -1551,3 +1551,44 @@ Empty.
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 - Next fire: top of next 30-min mark.
 
+
+## Sprint — 2026-05-21 08:45 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-120458-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 1 | **N verified:** 1 | **N merged:** 1
+
+### Fixed
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #564 | property-matrix conformance net protection against shrinkage | [#568](https://github.com/zeveck/zskills-dev/pull/568) | 069ca67 | 5205/5206 (1 unrelated monitor-server isolation flake) |
+
+### Notable
+1. **Sprint cadence has fully depleted the actionable queue.** This session's 8 cron fires landed:
+   - Sprint 1 (#518, #517, #516) — initial qe-audit closure burst
+   - Sprint 2 (#538, #537, #536) — surfaced during sprint 1
+   - Sprint 3 (#540, #535, #528) — surfaced during sprint 2 (#540 from verifier falsification)
+   - Sprint 4 (#547, #546, #515) — older queue items now newest
+   - Sprint 5 (#511, #510) — partial-fill, queue thinning
+   - Sprint 6 (#557 + #561 surfaced from #556 matrix)
+   - Sprint 7 (#561 + #556 bundled, surfaces #564)
+   - Sprint 8 (#564) — terminal future-hardening
+   - 19 issues fixed (+ #67 deferred). 19 → 0 actionable.
+2. **Verifier discipline + falsification consistently caught implementer hallucinations.** Sprint 5 #511 implementer reported 3 fabricated failures including a non-existent test file; orchestrator pre-verify falsification + verifier subagent both caught it. Sprint 8 #564 implementer correctly identified the monitor-server flake as unrelated by running on origin/main.
+3. **The structural defenses now compound.** This session shipped:
+   - **#511** verifier tally-check discipline (every verifier now asserts Overall: N/M)
+   - **#510** tier1-hash-registration prose (every impl-prompt now self-orients)
+   - **#557** merge-base diff prose (no symmetric diff in any skill)
+   - **#564** matrix-shrinkage conformance assertions (no silent matrix collapse)
+   Each closure-incomplete cycle gets shorter.
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T08:45:59-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- **Next fire prediction**: queue has ONLY #67 (deferred, Author-decision-needed bucket). Next sprint will hit the "no actionable issues found" branch — auto-sync once, then either ship a sync-only tracker refresh (if research blurbs accrued) OR clean up the empty sprint worktree and exit. The user can `/fix-issues stop` at any time.
+
