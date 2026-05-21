@@ -926,3 +926,16 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S-M (~5 LOC quote-strip + apply 264-line matrix patch + verify). **Action now:** /do pr — apply matrix patch from `/tmp/issue-556-matrix-extension.patch`; add quote-strip to project-hook HEAD-rewrite (mirror generic's pattern); mirror to .claude/hooks/; verify all 280 project-hook HEAD-axis cases PASS.
 
+
+---
+
+### #564 — Property-matrix conformance net itself unprotected against shrinkage
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** Property matrix at `tests/test-hooks.sh:2300`+`:2382` (added by #556/PR #565 — 1400 HEAD-axis cases) is not gated against silent shrinkage. If a future agent reverts the `for branch in main feat/test` or removes `HEAD` from `for target in ...`, all cases vanish; suite still reports 0 failures. The conformance defense relies on the matrix to catch BLOCK_MAIN_PUSH bypass family variants — a load-bearing test net must itself be protected.
+
+**Fix outline.** Add static structural conformance assertions to `tests/test-skill-conformance.sh` (or a new `tests/test-hooks-matrix-invariants.sh`) gating against shrinkage: (1) assert `for branch in main feat/test` appears ≥2× (one per matrix section); (2) assert `for target in ... HEAD ...` (or `target=HEAD` injection) appears ≥2×. Static greps; cheap, fail-closed. No skill SKILL.md edits → no version bumps.
+
+**Complexity:** S (~10 LOC test assertions + 1 line in run-all.sh if new file). **Action now:** /do pr — add 2-3 structural assertions to `tests/test-skill-conformance.sh` (or a new tests/test-hooks-matrix-invariants.sh) asserting the matrix's axis invariants are present.
+
