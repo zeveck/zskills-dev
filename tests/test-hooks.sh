@@ -80,6 +80,22 @@ expect_allow "printf w/ stash text" "printf %s git-stash-push"
 expect_deny "&& git stash" "cd foo && git stash"
 expect_deny "; git stash" "echo ok; git stash"
 
+# 1e. Path-prefixed git invocations — issue #528. `command -v git` returns
+# `/usr/bin/git` on most systems, and scripts capturing `$(command -v git)`
+# produce path-prefixed forms. Pre-fix, `is_git_subcommand` compared the
+# first token literally to "git" without stripping a path prefix, silently
+# bypassing every git-side hook gate. The fix in hooks/_lib/git-tokenwalk.sh
+# mirrors the gh variant's path-strip (`case "$g" in */*) g="${g##*/}" ;; esac`).
+# Each case below targets a DIFFERENT gate to confirm coverage across the
+# whole helper-consuming surface.
+expect_deny "/usr/bin/git stash drop (path-prefix #528)"             "/usr/bin/git stash drop"
+expect_deny "/usr/local/bin/git checkout -- file (path-prefix #528)" "/usr/local/bin/git checkout -- file.js"
+expect_deny "./git reset --hard (relative-path-prefix #528)"         "./git reset --hard HEAD~1"
+expect_deny "/usr/bin/git commit --no-verify (path-prefix #528)"     "/usr/bin/git commit --no-verify -m msg"
+expect_deny "/usr/bin/git add -A (path-prefix #528)"                 "/usr/bin/git add -A"
+# Wrapper + path-prefix: bash -c 'absolute-path git ...' must also gate.
+expect_deny "bash -c with /usr/bin/git stash (wrapper + path-prefix #528)" "bash -c '/usr/bin/git stash'"
+
 # 2. git checkout -- file  (file-separator form — discards working tree changes)
 # The `--` must be scoped to the file-list separator: `--` followed by
 # whitespace (then paths) or end-of-command. Without that anchor, the
@@ -374,6 +390,12 @@ bare_push_test "allow: git push (bare, on feature branch)" "feat/test" "allow"
 # Explicit target tests — don't depend on current branch (parser extracts target)
 expect_deny "git push origin main" "git push origin main"
 expect_deny "git push -u origin main" "git push -u origin main"
+
+# Path-prefixed push to main — issue #528. Same family as #515 (HEAD bypass);
+# pre-fix the first-token literal "git" check let path-prefixed forms slip
+# through every git-side gate including BLOCK_MAIN_PUSH.
+expect_deny "/usr/bin/git push origin main (path-prefix #528)" "/usr/bin/git push origin main"
+expect_deny "/usr/local/bin/git push -u origin main (path-prefix #528)" "/usr/local/bin/git push -u origin main"
 
 # Issue #392: <localref>:main refspec — generic hook's BLOCK_MAIN_PUSH path
 # must parse the REMOTE side of the colon. Pre-fix ${X%%:*} kept the local

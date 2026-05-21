@@ -221,6 +221,13 @@ is_git_subcommand() {
   local g="${TOKENS[$i]:-}"
   g="${g%\"}"; g="${g#\"}"
   g="${g%\'}"; g="${g#\'}"
+  # Strip absolute/relative path prefix so `/usr/bin/git push origin main`
+  # and `./git commit` are recognized as git invocations. Mirrors the gh
+  # variant's path-strip (issue #528). Without this, path-prefixed forms
+  # silently bypassed every git-side hook gate.
+  case "$g" in
+    */*) g="${g##*/}" ;;
+  esac
   [[ "$g" != "git" ]] && return 1
   ((i++))
   while [[ $i -lt $n && "${TOKENS[$i]:0:1}" == "-" ]]; do
