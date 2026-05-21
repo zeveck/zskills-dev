@@ -399,7 +399,7 @@ while :; do
     case "$KEY" in
       STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\
       MERGE_REQUESTED|MERGE_REASON|PR_STATE|REASON|\
-      CONFLICT_FILES_LIST|CALL_ERROR_FILE)
+      CONFLICT_FILES_LIST|CALL_ERROR_FILE|REBASE_STDERR_FILE)
         LP["$KEY"]="$VALUE" ;;
       "") ;;  # blank line — ignore
       *) printf 'WARN: /land-pr result has unknown key %q — ignoring\n' "$KEY" >&2 ;;
@@ -413,7 +413,7 @@ while :; do
 
   # Sidecar cleanup paths (per DA1-12, DA2-11). CI_LOG_FILE is intentionally
   # NOT in the array — the fix-cycle agent below reads it.
-  _CLEANUP_PATHS=("${LP[CALL_ERROR_FILE]:-}" "${LP[CONFLICT_FILES_LIST]:-}")
+  _CLEANUP_PATHS=("${LP[CALL_ERROR_FILE]:-}" "${LP[CONFLICT_FILES_LIST]:-}" "${LP[REBASE_STDERR_FILE]:-}")
   rm -f "$RESULT_FILE"
 
   case "$STATUS" in
