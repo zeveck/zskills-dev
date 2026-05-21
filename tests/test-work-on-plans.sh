@@ -156,7 +156,10 @@ PY
 # Sub-hour detector mirroring SKILL.md schedule_under_1h() exactly.
 schedule_under_1h() {
   local s="$1"
-  [[ "$s" =~ (^|[[:space:]])([0-9]+)m([[:space:]]|$) ]] && return 0
+  [[ "$s" =~ (^|[[:space:]])([0-9]+)m([[:space:]]|$) ]] && {
+    local n="${BASH_REMATCH[2]}"
+    [ "$n" -lt 60 ] && return 0
+  }
   [[ "$s" =~ ^\*/([0-9]+)[[:space:]] ]] && {
     local n="${BASH_REMATCH[1]}"
     [ "$n" -lt 60 ] && return 0
@@ -367,6 +370,35 @@ if schedule_under_1h "*/2 * * * *"; then
   pass "AC-4 schedule_under_1h detects cron '*/2'"
 else
   fail "AC-4 schedule_under_1h '*/2' should be sub-hour"
+fi
+
+# --- #546 regression: minute-form must compare N<60 ----------------------
+# Pre-fix bug: any <N>m was classified sub-hour without comparing N to 60.
+if schedule_under_1h "60m"; then
+  fail "#546 schedule_under_1h '60m' must NOT be sub-hour (=1h boundary)"
+else
+  pass "#546 schedule_under_1h '60m' is NOT sub-hour"
+fi
+if schedule_under_1h "120m"; then
+  fail "#546 schedule_under_1h '120m' must NOT be sub-hour (=2h)"
+else
+  pass "#546 schedule_under_1h '120m' is NOT sub-hour"
+fi
+if schedule_under_1h "every 60m"; then
+  fail "#546 schedule_under_1h 'every 60m' must NOT be sub-hour"
+else
+  pass "#546 schedule_under_1h 'every 60m' is NOT sub-hour"
+fi
+if schedule_under_1h "1440m"; then
+  fail "#546 schedule_under_1h '1440m' must NOT be sub-hour (24h)"
+else
+  pass "#546 schedule_under_1h '1440m' is NOT sub-hour"
+fi
+# Confirm sub-60 minute forms still detected after the N<60 guard.
+if schedule_under_1h "59m"; then
+  pass "#546 schedule_under_1h '59m' is still sub-hour"
+else
+  fail "#546 schedule_under_1h '59m' should be sub-hour"
 fi
 
 # --- Test 13: SKILL.md cites the AC-4 ≥1h diagnostic --------------------
