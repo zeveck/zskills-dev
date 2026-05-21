@@ -406,6 +406,33 @@ code, pre, .mono {
 .skip-chip--bug-unclear-cause { border-left-color: var(--accent2); color: var(--accent2); }
 .skip-chip--unresearched      { border-left-color: var(--text-dim); color: var(--text-dim); }
 
+/* Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
+   Soft-amber background with a darker amber text, visually distinct
+   from skip-chip's bordered-pill aesthetic — solid-fill so a "this is
+   actively being worked on" signal reads at a glance. Non-interactive. */
+.claim-chip--in-flight {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 4px 4px 4px 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  background: #fff3d6;
+  color: #7a5a00;
+  border: 1px solid #e6c478;
+  border-radius: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Visual signal that a card is drag-disabled (claim chip sets this). */
+.card[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 .progress {
   height: 4px;
   background: var(--surface);

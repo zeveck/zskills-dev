@@ -292,6 +292,27 @@ BODY
   # of LAND_OUTCOME. Update sprint-level $SPRINT_OUTCOME based on this
   # issue's outcome (any non-success → sprint failed).
   rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$ISSUE_NUM"
+
+  # Release the claim based on per-issue LAND_OUTCOME (plan W2.6a — round 2
+  # re-anchor R2.3 — keyed on $LAND_OUTCOME, not $STATUS).
+  # Hold on `created` because the PR is in flight on the remote;
+  # releasing would let a concurrent pipeline open a duplicate PR. TTL will
+  # sweep if CI stalls (claim_ttl_seconds default 7200).
+  # `monitored` is NOT a reachable LAND_OUTCOME value (it is a STATUS that
+  # falls through to the CI_STATUS case where LAND_OUTCOME resolves to one
+  # of {merged, pr-ready, created, pr-ci-failing}); it would be dead code
+  # if listed in the case, so it is intentionally absent. (DA3.1.)
+  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  case "$LAND_OUTCOME" in
+    merged|pr-ready|pr-ci-failing|rebase-conflict|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed)
+      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
+        || echo "fix-issues: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
+    created)
+      echo "fix-issues: holding claim for #$ISSUE_NUM (LAND_OUTCOME=created — PR is in flight); TTL=${ZSKILLS_CLAIM_TTL_SECONDS:-7200}s will sweep if PR stalls" >&2 ;;
+    *)
+      echo "fix-issues: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD (TTL will sweep)" >&2 ;;
+  esac
+
   case "$LAND_OUTCOME" in
     merged|created|pr-ready) ;;  # success-equivalent; sprint outcome unchanged
     *) SPRINT_OUTCOME=failed ;;

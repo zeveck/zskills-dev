@@ -35,6 +35,10 @@ linear and FF-mergeable):
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# Claim-helper path is scoped to this loop body; each terminal arm below
+# (plan W2.6c — direct-mode releases) releases the per-issue claim via
+# $HELPER. Defined once at the top of the loop body for grep-locality.
+HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
 for issue in "${FIXED_ISSUES[@]}"; do
   ISSUE_NUM="$issue"
   BRANCH_NAME="fix-issue-${ISSUE_NUM}"
@@ -70,6 +74,8 @@ branch: $BRANCH_NAME
 issue: $ISSUE_NUM
 reason: rebase-conflict
 LANDED
+    # plan W2.6c — release on rebase-conflict terminal arm.
+    bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
     continue  # Move to next issue
   fi
   if [ "$(git rev-parse HEAD)" != "$PRE_REBASE" ]; then
@@ -78,6 +84,12 @@ LANDED
     # Agent prompt includes "FIRST: cd $WORKTREE_PATH".
     # Re-verification has its own fix cycle (max 2 attempts). If it fails
     # after max attempts, write status: direct-verify-failed and continue.
+    # <!-- aspirational: implement when direct-verify-failed terminal lands -->
+    # When the direct-verify-failed terminal is implemented as real code
+    # (cat <<LANDED ... status: direct-verify-failed ... LANDED followed
+    # by continue), add a sibling release call alongside it (plan W2.6c
+    # DA3.3): `bash "$HELPER" release "$ISSUE_NUM" --require-pipeline
+    # "$PIPELINE_ID" || true`. T2.2c will gain a 5th case at the same time.
   fi
 
   # --- FF-merge into main ---
@@ -98,6 +110,8 @@ branch: $BRANCH_NAME
 issue: $ISSUE_NUM
 reason: ff-refused
 LANDED
+    # plan W2.6c — release on FF-refused terminal arm.
+    bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
     continue
   fi
 
@@ -117,6 +131,8 @@ branch: $BRANCH_NAME
 issue: $ISSUE_NUM
 commits: $LANDED_COMMITS
 LANDED
+    # plan W2.6c — release on direct-push-failed terminal arm.
+    bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
     continue
   fi
 
@@ -137,6 +153,8 @@ branch: $BRANCH_NAME
 issue: $ISSUE_NUM
 commits: $LANDED_COMMITS
 LANDED
+  # plan W2.6c — release on FF-merge-success terminal arm (status: full).
+  bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
 
   echo "Issue #$ISSUE_NUM → direct FF-merge onto main (status: full)"
 

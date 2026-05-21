@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.21+c2886a"
+  version: "2026.05.21+a385e5"
 ---
 
 # Update Z Skills Infrastructure
@@ -1113,6 +1113,14 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   denies edits to files inside the main repo working tree when
   `main_protected: true`, with narrow allowlists for `.zskills/` and
   gitignored worktree-state markers (issue #308).
+- For `block-fix-issue-unclaimed.sh`: copy as-is from `$PORTABLE/hooks/`
+  to `.claude/hooks/`. Wired into `settings.json` as PreToolUse on the
+  `Bash` matcher (see canonical-triples table below). Backstops the
+  `/fix-issues` inline-acquire prose — denies any Bash invocation of
+  `create-worktree.sh` / `ensure-worktree.sh` whose resolved branch
+  matches `fix-issue-NNN` or `fix/issue-NNN` and lacks a matching
+  `.zskills/claims/issue-NNN/` claim directory
+  (plans/fix-issues-claims.md Phase 2, W2.2c).
 - For `scripts/test-all.sh`: copy as-is from
   `$PORTABLE/scripts/`. Reads `testing.unit_cmd` from
   `.claude/zskills-config.json` at runtime — no
@@ -1219,13 +1227,14 @@ not in this table is foreign and preserved untouched):
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh"`           |
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh"`      |
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-bypassed-land-pr.sh"`         |
+| PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-fix-issue-unclaimed.sh"`      |
 | PreToolUse   | Agent   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh"`                   |
 | PreToolUse   | CronCreate | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-bad-cron.sh"`              |
 | PreToolUse   | Edit\|Write\|NotebookEdit | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"` |
 | PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 | PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 
-All 9 rows carry `"type": "command"` and `"timeout": 5`. The
+All 10 rows carry `"type": "command"` and `"timeout": 5`. The
 `warn-config-drift.sh` hook lands in Phase 3 of
 `plans/DRIFT_ARCH_FIX.md`; the two PostToolUse rows become live once
 that hook is installed.

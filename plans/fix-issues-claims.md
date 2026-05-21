@@ -1,7 +1,7 @@
 ---
 title: Concurrency-safe issue claims for /fix-issues dashboard mode
 created: 2026-05-21
-status: active
+status: complete
 ---
 
 # Plan: Concurrency-safe issue claims for /fix-issues dashboard mode
@@ -60,9 +60,9 @@ A7. Single-pipeline `dashboard` mode behaviour is byte-for-byte identical to tod
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Claim primitive script + config + unit tests | ✅ Done | `6c9c6db` | 14 new tests; 4558/4558 pass |
-| 2 — fix-issues inline acquire (cherry-pick/direct/PR) + PreToolUse backstop hook + per-mode release wiring | ⬚ | | |
-| 3 — Dashboard collector + renderer chip (drag-disabled) + fingerprint fix | ⬚ | | |
-| 4 — E2E concurrency test + baseline race test + /cleanup-merged sweep + conformance | ⬚ | | |
+| 2 — fix-issues inline acquire (cherry-pick/direct/PR) + PreToolUse backstop hook + per-mode release wiring | ✅ Done | `7d24a65` | new hook 229 LOC; +38 tests; 5263/5263 pass |
+| 3 — Dashboard collector + renderer chip (drag-disabled) + fingerprint fix | ✅ Done | `4baae7e` | +61 tests; 5324/5324 pass; D7 confirmed (server.py untouched) |
+| 4 — E2E concurrency test + baseline race test + /cleanup-merged sweep + conformance | ✅ Done | `9cf3594` | +24 tests (race-e2e 1, baseline 2, conformance 18, regression 3); 5348/5348 pass |
 
 ---
 
