@@ -1239,6 +1239,18 @@ check_fixed update-zskills "Step C triples: PostToolUse Edit warn-config-drift" 
   'PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`'
 check_fixed update-zskills "Step C triples: PostToolUse Write warn-config-drift" \
   'PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`'
+# Issue #505 — block-bad-cron.sh (#456) and block-main-edits.sh (#308) were
+# wired into .claude/settings.json but missing from SKILL.md install bullets
+# AND canonical-triples table; fresh installs silently lacked both hooks.
+check_fixed update-zskills "Step C triples: PreToolUse CronCreate block-bad-cron (#505)" \
+  'PreToolUse   | CronCreate | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-bad-cron.sh"`'
+check_fixed update-zskills "Step C triples: PreToolUse Edit|Write|NotebookEdit block-main-edits (#505)" \
+  'PreToolUse   | Edit\|Write\|NotebookEdit | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"`'
+# Install-bullet copies must also enumerate both hooks (Step C copy loop).
+check_fixed update-zskills "Step C install bullet: block-bad-cron.sh (#505)" \
+  'For `block-bad-cron.sh`: copy as-is from `$PORTABLE/hooks/` to'
+check_fixed update-zskills "Step C install bullet: block-main-edits.sh (#505)" \
+  'For `block-main-edits.sh`: copy as-is from `$PORTABLE/hooks/` to'
 
 # WI 2.7.3 — Preserve rule: never overwrite, never reorder top-level keys.
 check_fixed update-zskills "Step C preserve: never overwrite"         'never overwrite'
