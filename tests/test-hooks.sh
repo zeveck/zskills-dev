@@ -192,6 +192,20 @@ expect_deny "pkill node" "pkill node"
 # 7. fuser -k
 expect_deny "fuser -k 8080" "fuser -k 8080"
 
+# 7-prefix. Transparent command-prefix wrappers on destruct verbs — issue
+# #567. Mirrors the git-side prefix-skip extension; `is_destruct_command`
+# gained the same skip block. Without it, an agent reaching for
+# `nohup killall node` (e.g., to detach the kill) or `timeout 30 killall …`
+# (after a previous kill hung) bypasses the destruct gate. The 4+ cases
+# below cover each destruct verb gated through is_destruct_command{,_in_chain}.
+expect_deny "nohup kill -9 1234 (prefix #567)"          "nohup kill -9 1234"
+expect_deny "timeout 30 killall node (prefix #567)"     "timeout 30 killall node"
+expect_deny "command pkill node (prefix #567)"          "command pkill node"
+expect_deny "nice kill -9 1234 (prefix #567)"           "nice kill -9 1234"
+# Allow control: a non-destructive command under the same prefix must
+# not over-match.
+expect_allow "nohup echo killing (non-destruct prefix-only — #567)" "nohup echo killing"
+
 # 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
 # The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
 # All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.
@@ -443,6 +457,34 @@ expect_deny "git push -u origin main" "git push -u origin main"
 # through every git-side gate including BLOCK_MAIN_PUSH.
 expect_deny "/usr/bin/git push origin main (path-prefix #528)" "/usr/bin/git push origin main"
 expect_deny "/usr/local/bin/git push -u origin main (path-prefix #528)" "/usr/local/bin/git push -u origin main"
+
+# Transparent command-prefix wrappers — issue #567. `nohup`, `timeout`,
+# `command`, `exec`, `nice`, `time` execute the next argv as a separate
+# process; they are operationally equivalent to the bare verb. Pre-fix,
+# `is_git_subcommand` matched only the first token literally and silently
+# bypassed every git-side gate (BLOCK_MAIN_PUSH, --no-verify, add -A,
+# cherry-pick, checkout --, restore, reset --hard, clean -f, stash). The
+# fix in hooks/_lib/git-tokenwalk.sh mirrors the gh variant's prefix-skip
+# at lines 402-447 (issue #279/PR #255). 12 cases cover the prefix axis
+# × verb axis; matches the form of the #528 path-prefix matrix above.
+expect_deny "nohup git push origin main (prefix #567)"           "nohup git push origin main"
+expect_deny "timeout 30 git push origin main (prefix #567)"      "timeout 30 git push origin main"
+expect_deny "timeout --foreground 30 git push origin main (prefix-flag #567)" "timeout --foreground 30 git push origin main"
+expect_deny "command git push origin main (prefix #567)"         "command git push origin main"
+expect_deny "command -p git push origin main (prefix-flag #567)" "command -p git push origin main"
+expect_deny "exec git push origin main (prefix #567)"            "exec git push origin main"
+expect_deny "nice git push origin main (prefix #567)"            "nice git push origin main"
+expect_deny "time git push origin main (prefix #567)"            "time git push origin main"
+expect_deny "time -v git push origin main (prefix-flag #567)"    "time -v git push origin main"
+expect_deny "nohup -- git push origin main (prefix-EOO #567)"    "nohup -- git push origin main"
+# Different gates: --no-verify and add -A under nohup / timeout.
+expect_deny "nohup git commit --no-verify (prefix #567)"         "nohup git commit --no-verify -m msg"
+expect_deny "timeout 30 git add -A (prefix #567)"                "timeout 30 git add -A"
+
+# Allow control: a non-git command that happens to start with `nohup` or
+# `timeout` must NOT trigger any git-side gate (prevent overmatch).
+expect_allow "nohup sleep 5 (non-git prefix-only — #567)"        "nohup sleep 5"
+expect_allow "timeout 30 echo done (non-git prefix-only — #567)" "timeout 30 echo done"
 
 # Issue #392: <localref>:main refspec — generic hook's BLOCK_MAIN_PUSH path
 # must parse the REMOTE side of the colon. Pre-fix ${X%%:*} kept the local
