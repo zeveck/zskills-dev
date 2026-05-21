@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Z Skills — Technical &amp; Cost Stats</title>
+<title>Z Skills — Technical Stats</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -144,9 +144,7 @@
   <span class="logo">Z Skills</span>
   <a href="PRESENTATION.html">&larr; Overview</a>
   <a href="#numbers">By the Numbers</a>
-  <a href="#code">Code</a>
-  <a href="#cost">Cost &amp; Tokens</a>
-  <a href="#cache">Cache</a>
+  <a href="#code">Code Composition</a>
   <a href="#method">Methodology</a>
   <a href="COSTS.html">Cost Estimate</a>
   <a href="https://github.com/zeveck/zskills" style="margin-left:auto;">GitHub &rarr;</a>
@@ -155,9 +153,10 @@
 <div class="container">
 
 <section class="hero">
-  <h1>Z Skills — Technical &amp; Cost Stats</h1>
-  <p>How much code, tests, commits, and cost to run a one-developer engineering team on Claude Opus. Numbers reproducible from the repo and Claude Code session JSONL.</p>
-  <p style="font-size: 0.9em;">As of <strong>2026-05-20</strong>. The companion <a href="PRESENTATION.html">main presentation</a> covers what the skills <em>do</em>; this page covers what they <em>cost</em>.</p>
+  <h1>Z Skills — Technical Stats</h1>
+  <p>How much code, how many tests, how many commits. Numbers reproducible from the repo.</p>
+  <p style="font-size: 0.95em;"><strong>For cost figures see the <a href="COSTS.html">Cost Estimate &rarr;</a></strong></p>
+  <p style="font-size: 0.9em;">As of <strong>2026-05-20</strong>. The companion <a href="PRESENTATION.html">main presentation</a> covers what the skills <em>do</em>; this page covers their <em>code &amp; commit composition</em>.</p>
 </section>
 
 <section id="numbers" class="fade-in">
@@ -218,48 +217,6 @@
   </table>
 </section>
 
-<section id="cost" class="fade-in">
-  <h2>Cost &amp; Tokens</h2>
-  <p style="font-size: 1.05em;"><strong>For the full breakdown, methodology, caveats, and the projected total including the unlogged Opus 4.6 period, see the <a href="COSTS.html">Cost Estimate &rarr;</a></strong></p>
-  <p>Z Skills is itself built using Z Skills, so we have Claude Code session JSONL transcripts for most of the development. Headline numbers below.</p>
-
-  <div class="caveat"><strong>These are list-price API equivalents.</strong> Actual out-of-pocket cost was much lower (Claude Max x20 plan + overflow usage spend, not API list rates). JSONL coverage begins <strong>2026-04-18</strong>; the first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on Opus 4.6 and aren't directly measurable. <strong>Logged-only figures below therefore underestimate the list-price equivalent</strong>; the Projected total compensates with a workload-based estimate. See <a href="COSTS.html#topline">COSTS.html</a> for the full caveats.</div>
-
-  <div class="stat-grid">
-    <div class="stat"><div class="val">99,439</div><div class="label">Logged Opus 4.7 turns</div><div class="sub">Cost: $19,298 at Opus 4.5+ rates ($5/$25/$6.25/$10/$0.50 per MTok)</div></div>
-    <div class="stat purple"><div class="val">5,811</div><div class="label">Haiku 4.5 subagent turns</div><div class="sub">Cost: $55. Explore-class subagents.</div></div>
-    <div class="stat orange"><div class="val">$19,353</div><div class="label">Logged Opus-rate spend</div><div class="sub">From 105,250 logged turns (2026-04-18 onward). Pre-2026-04-18 Opus 4.6 period unlogged.</div></div>
-    <div class="stat pink"><div class="val">~$28,200</div><div class="label">Projected total (logged + estimated 4.6)</div><div class="sub">$19,353 logged + ~$8,900 estimate for 23 unlogged days at the observed commit pace (9.00/day vs 14.12/day logged &asymp; 64% intensity).</div></div>
-  </div>
-
-  <p style="color: var(--text-dim); font-size: 0.92em;">Sessions in scope: 80 top-level Claude Code REPL sessions plus 1,434 isolated subagent dispatches (verifiers, implementers, reviewers), across 8 project working directories (main repo + 7 ephemeral worktree-spawned project dirs).</p>
-
-  <h3>Tokens by category (both models combined)</h3>
-  <table>
-    <tr><th>Token kind</th><th>Total tokens</th><th>Cost</th></tr>
-    <tr><td>Input (uncached)</td><td>2,066,606</td><td>$8.40</td></tr>
-    <tr><td>Output</td><td>81,779,489</td><td>$2,025.82</td></tr>
-    <tr><td>5-min cache write</td><td>381,286,675</td><td>$2,268.90</td></tr>
-    <tr><td>1-hour cache write</td><td>569,473,020</td><td>$5,694.73</td></tr>
-    <tr><td>Cache read (hit)</td><td>18,876,200,500</td><td>$9,354.64</td></tr>
-    <tr><td><strong>Total</strong></td><td><strong>19.9 B input-side + 82 M output</strong></td><td><strong>$19,352.49</strong></td></tr>
-  </table>
-  <p style="color: var(--text-dim); font-size: 0.9em; margin-top: 4px;">Cache reads alone are ~48% of total spend &mdash; reflecting Z Skills' heavy use of pre-cached CLAUDE.md, SKILL.md bodies, and session context. 5m/1h cache-write split read from <code>usage.cache_creation.ephemeral_*_input_tokens</code> per turn.</p>
-</section>
-
-<section id="cache" class="fade-in">
-  <h2>Cache Effectiveness</h2>
-  <p>Z Skills relies heavily on Anthropic's prompt-cache. CLAUDE.md, SKILL.md bodies, and recent session context all live in cache windows; each subagent dispatch hits the cache instead of re-paying full input rates.</p>
-
-  <div class="stat-grid">
-    <div class="stat green"><div class="val">95.2%</div><div class="label">Cache-read share</div><div class="sub">of all input-side tokens (uncached + cache write + cache read)</div></div>
-    <div class="stat"><div class="val">~9,134 ×</div><div class="label">Cache leverage</div><div class="sub">cache-reads ÷ uncached input</div></div>
-    <div class="stat purple"><div class="val">~$84,192</div><div class="label">Cache savings (counterfactual)</div><div class="sub">18.88B cache-reads @ $0.50/M cost $9,355; same volume at full input rates ($5 Opus / $1 Haiku) would have cost ~$93,546. Net savings ≈ $84,192 <em>against the uncached counterfactual</em>.</div></div>
-  </div>
-
-  <p style="color: var(--text-dim); font-size: 0.9em;">The cache-savings number compares against a synthetic "what if no caching" world. Real billing only ever pays the cached rate, so this is an upper bound on what caching is worth, not a refund.</p>
-</section>
-
 <section id="method" class="fade-in">
   <h2>Methodology</h2>
 
@@ -272,23 +229,16 @@ git rev-list --count main
 git log --oneline main | grep -cE '\(#[0-9]+\)'
 gh issue list --state all --limit 1000 --json number | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'</code></pre>
 
-  <h3>Tokens &amp; cost</h3>
-  <p>Scanned 1,518 JSONL files under <code>~/.claude/projects/*zskills*/</code> (8 project working dirs — main repo + 7 ephemeral worktree-spawned project dirs), extracted the <code>usage</code> object from each assistant turn (including the nested <code>cache_creation.ephemeral_5m_input_tokens</code> / <code>ephemeral_1h_input_tokens</code> for the structured cache-tier split), summed per model, applied published Anthropic rates per turn. Full methodology lives in <a href="COSTS.html#method">COSTS.html</a>.</p>
-
-  <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
-    <li><strong>Rate basis:</strong> Opus 4.5+ tier rates ($5/$25/$6.25/$10/$0.50 per MTok for input/output/5m-cache-write/1h-cache-write/cache-read) for all 99,439 Opus turns, Haiku 4.5 rates ($1/$5/$1.25/$2/$0.10) for the 5,811 Haiku subagent turns. Earlier model tiers (Opus 4.0/4.1, deprecated) are 3&times; these rates &mdash; the cut took effect with Opus 4.5 on 2025-11-24. Real billing may differ (volume discounts, contract terms); actual out-of-pocket was a Claude Max x20 plan plus overflow usage spend, not API list rates.</li>
-    <li><strong>Coverage gap:</strong> First commit on main is 2026-03-26; earliest logged JSONL turn is 2026-04-18 (two days after the Opus 4.7 release on 2026-04-16). The ~23 unlogged days ran on Opus 4.6 (same billing tier as 4.7) and contribute $0 to the logged total. See COSTS.html for the workload-ratio projection.</li>
-    <li><strong>Commits vs. PRs:</strong> 624 total commits on main, of which 319 are PR squash-merges and 305 are direct. The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The latter break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or non-PR <code>/quickfix</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</li>
-    <li><strong>Sessions vs. subagents:</strong> "Top-level sessions" are interactive Claude Code REPL sessions; "subagent dispatches" are isolated agents the orchestrator spawned for impl/verify/review work.</li>
-  </ul>
+  <h3>Commits vs. PRs</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">624 total commits on main, of which 319 are PR squash-merges and 305 are direct. The 305 split as <strong>117 pre-PR-workflow</strong> commits (before the first PR landed on 2026-04-13, when main was unprotected) plus <strong>188 post-PR-workflow direct commits</strong>. The 188 break down (mutually exclusive) as ~95 direct-commit-style (fix/docs/test/feat/refactor/chore via <code>/commit direct</code> or non-PR <code>/quickfix</code>, ~50%), ~54 <code>/run-plan</code> cherry-pick-mode phase commits (~29%), 36 canary plan-execution chores (~19%), and 3 infra/build commits.</p>
 
   <h3>What this <em>doesn't</em> measure</h3>
-  <p style="color: var(--text-dim);">Wall-clock time, human review effort, the Claude.ai chat sessions used for architecture discussions outside Claude Code, or the pre-2026-03-26 prototyping that fed into the initial commit. The numbers above are bounded to: this repo, Claude Code's JSONL transcripts, and Anthropic's published per-model list prices &mdash; not actual billed amount.</p>
+  <p style="color: var(--text-dim);">Wall-clock time, human review effort, the Claude.ai chat sessions used for architecture discussions outside Claude Code, the pre-2026-03-26 prototyping that fed into the initial commit, or cost &mdash; see the <a href="COSTS.html">Cost Estimate</a>.</p>
 
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts, and ~$19,353 in <em>logged</em> Claude Opus 4.7 + Haiku 4.5 list-price equivalent (projected ~$28,200 including unlogged 4.6 days; actual paid was a Max x20 plan, not list rates).</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 skills (24 user-facing + 2 helpers), 624 commits / 319 merged PRs, 97 test scripts &mdash; a body of evidence about what disciplined-agent engineering looks like.</strong></p>
   <p style="margin-top: 16px;"><a href="PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Stats as of 2026-05-20. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
 </section>
