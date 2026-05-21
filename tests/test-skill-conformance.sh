@@ -2700,6 +2700,62 @@ check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKIL
 check_sanitize_count "skills/verify-changes/SKILL.md" 4 "skills/verify-changes/SKILL.md"
 
 echo ""
+echo "=== test-hooks.sh property-matrix axes preserved (issues #564 / #556 / #565) ==="
+# The push-to-main bypass property-enumeration matrix in tests/test-hooks.sh
+# (generic + project sections) is itself unprotected against silent
+# shrinkage. If a future agent reverts the `for branch in main feat/test`
+# HEAD-axis loop added by #556 or drops the `dest="${force}${refp}HEAD"`
+# extension landed by #565, all 1400 HEAD-axis cases vanish — but the
+# test still passes with 0 failures because the matrix just enumerates
+# fewer cases. Issue #564 surfaced this hole: a load-bearing test net
+# must itself be protected.
+#
+# These assertions are pure substring counts on tests/test-hooks.sh and
+# fail-closed by construction: drop a loop header → count drops → FAIL.
+# Counts are minimums (>=) rather than literal equality so a future PR
+# can legitimately ADD a third matrix section without churning this gate.
+HOOKS_TEST="$REPO_ROOT/tests/test-hooks.sh"
+
+check_min_count() {
+  local pattern="$1" expected_min="$2" label="$3" use_extended="$4"
+  local actual
+  if [ "$use_extended" = "E" ]; then
+    actual=$(grep -cE "$pattern" "$HOOKS_TEST" 2>/dev/null || echo 0)
+  else
+    actual=$(grep -cF "$pattern" "$HOOKS_TEST" 2>/dev/null || echo 0)
+  fi
+  if [ "$actual" -ge "$expected_min" ]; then
+    pass "$label: $actual matches (>= $expected_min)"
+  else
+    fail "$label: found $actual matches, expected >= $expected_min" "$pattern in tests/test-hooks.sh"
+  fi
+}
+
+# Assertion A — branch-context axis: `for branch in main feat/test` must
+# appear at least twice (once per matrix section: generic + project).
+# Locks the #556 / #565 HEAD-axis branch-context loop in both sections.
+check_min_count "for branch in main feat/test" 2 "branch-context axis preserved" F
+
+# Assertion B — HEAD destination token: `dest="${force}${refp}HEAD"` must
+# appear at least twice. This is the structural marker for the #565
+# HEAD-axis extension (one per section). The non-HEAD matrix uses
+# `dest="${force}${refp}${target}"` so this literal is unique to the
+# HEAD-axis loops; counting it directly catches axis collapse.
+check_min_count 'dest="\$\{force\}\$\{refp\}HEAD"' 2 "HEAD destination axis preserved" E
+
+# Assertion C — primary target axis: `for target in main master feat/test`
+# must appear at least twice (once per section). Locks the deny/allow
+# matrix's non-HEAD target enumeration so a future revert can't shrink
+# the base matrix either.
+check_min_count "for target in main master feat/test" 2 "primary target axis preserved" F
+
+# Assertion D — make_branch_repo helper function is defined. The #565
+# HEAD-axis generic-hook loop depends on this helper to create a temp
+# repo on each branch context. If the helper is deleted, the HEAD-axis
+# loop silently errors out before any expect_*_from_repo runs.
+check_min_count "^make_branch_repo\(\)" 1 "make_branch_repo helper defined" E
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then
