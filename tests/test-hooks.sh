@@ -2183,6 +2183,194 @@ for VERB_PAYLOAD in "git restore ." "git clean -f" "kill -9 1234"; do
 done
 
 
+echo "=== Hook-bypass property enumeration (#513) ==="
+
+# Property-style enumeration of the push-to-main bypass cartesian product.
+# Closes the closure cycle from issue #513 — 11 reactive PRs over 24 days
+# (#73, #87, #195, #197, #306, #413, #417, #434, #435, #465, #486) each
+# patching one new bypass form into block-unsafe-{generic,project}.sh and
+# adding a single hand-written positive assertion. This loop instead
+# enumerates the full cartesian product of:
+#
+#   wrapper      ∈ {bare, bash -c, sh -c, eval}
+#   refspec_form ∈ {DEST, feat:DEST, HEAD:DEST, :DEST, localref:DEST}
+#   force-prefix ∈ {"", "+"}
+#   ref-prefix   ∈ {"", "refs/heads/"}
+#   quote-style  ∈ {none, single, double}  (only meaningful for wrappers)
+#   target       ∈ {main, master}  → expect_deny
+#                  {feat/test}     → expect_allow
+#
+# Proves the cumulative normalization chain in
+# hooks/block-unsafe-generic.sh:612-633 (colon-RHS → quote strip → '+' strip
+# → 'refs/heads/' strip) and the equivalent regex in
+# hooks/block-unsafe-project.sh.template:1037-1051 ([+:]?(refs/heads/)?
+# (main|master)) both handle every combination in this space. Any future
+# regression in those normalization sites — or any new bypass form a future
+# agent invents — fails here at CI time, breaking the patch-react-ship-
+# patch-again cycle.
+#
+# Generic hook only (top-level expect_deny / expect_allow harness). Project
+# hook is exercised below in a separate section because it requires
+# setup_project_test_on_main per case.
+
+GEN_PROP_DENY=0
+GEN_PROP_ALLOW=0
+GEN_PROP_CASES=0
+
+for target in main master feat/test; do
+  if [ "$target" = "feat/test" ]; then
+    expected="allow"
+  else
+    expected="deny"
+  fi
+  for force in "" "+"; do
+    for refp in "" "refs/heads/"; do
+      # Build the post-colon destination part (what the hook normalizes).
+      dest="${force}${refp}${target}"
+      for spec_kind in bare feat HEAD del localref; do
+        case "$spec_kind" in
+          bare)     refspec="$dest" ;;
+          feat)     refspec="feat:${dest}" ;;
+          HEAD)     refspec="HEAD:${dest}" ;;
+          del)      refspec=":${dest}" ;;
+          localref) refspec="localref:${dest}" ;;
+        esac
+        for wrapper_kind in bare bash-c sh-c eval; do
+          # Quote axis: bare wrapper → only no-quote variant (shell-level
+          # quoting around a single arg is uninteresting for normalization
+          # since the hook sees the raw text and the quote-strip handles
+          # PUSH_TARGET="main'" residue already; that path is locked by
+          # the #399 cases). For wrappers, both single and double quotes
+          # are meaningful — they wrap the inner shell command.
+          if [ "$wrapper_kind" = "bare" ]; then
+            quote_styles="none"
+          else
+            quote_styles="single double"
+          fi
+          for q in $quote_styles; do
+            case "$q" in
+              none)   inner_q="" ;;
+              single) inner_q="'" ;;
+              double) inner_q="\"" ;;
+            esac
+            inner="git push origin $refspec"
+            case "$wrapper_kind" in
+              bare)   cmd="$inner" ;;
+              bash-c) cmd="bash -c ${inner_q}${inner}${inner_q}" ;;
+              sh-c)   cmd="sh -c ${inner_q}${inner}${inner_q}" ;;
+              eval)   cmd="eval ${inner_q}${inner}${inner_q}" ;;
+            esac
+            label="prop/$wrapper_kind/$q/${spec_kind}/${force:-noforce}${refp:+/refsheads}/${target}"
+            GEN_PROP_CASES=$((GEN_PROP_CASES + 1))
+            if [ "$expected" = "deny" ]; then
+              expect_deny "$label" "$cmd"
+              GEN_PROP_DENY=$((GEN_PROP_DENY + 1))
+            else
+              expect_allow "$label" "$cmd"
+              GEN_PROP_ALLOW=$((GEN_PROP_ALLOW + 1))
+            fi
+          done
+        done
+      done
+    done
+  done
+done
+
+echo "  (#513 generic-hook enumeration: $GEN_PROP_CASES cases — $GEN_PROP_DENY deny, $GEN_PROP_ALLOW allow)"
+
+echo ""
+echo "=== Hook-bypass property enumeration: project hook (#513) ==="
+
+# Same matrix replayed against the rendered project hook with
+# main_protected: true. Uses setup_project_test_on_main per case (matches
+# the existing "Class-pinned negative matrix: project hook" pattern at
+# tests/test-hooks.sh:2070). Proves the project-hook regex form
+# `[+:]?(refs/heads/)?(main|master)` plus the post-colon rule handle the
+# same combinatorial space. Adds the project hook to the closure cycle
+# this test prevents.
+#
+# Note: this section uses an inline assertion (run_main_protected_test
+# returns the hook output; we check for "deny" substring) rather than the
+# expect_project_* helpers because those source from $TEST_TMPDIR which
+# requires explicit setup. Inline matches the existing PR1-PR11 pattern
+# at line 1933+ that also calls run_main_protected_test directly.
+
+PROJ_PROP_DENY=0
+PROJ_PROP_ALLOW=0
+PROJ_PROP_CASES=0
+
+for target in main master feat/test; do
+  if [ "$target" = "feat/test" ]; then
+    expected="allow"
+  else
+    expected="deny"
+  fi
+  for force in "" "+"; do
+    for refp in "" "refs/heads/"; do
+      dest="${force}${refp}${target}"
+      for spec_kind in bare feat HEAD del localref; do
+        case "$spec_kind" in
+          bare)     refspec="$dest" ;;
+          feat)     refspec="feat:${dest}" ;;
+          HEAD)     refspec="HEAD:${dest}" ;;
+          del)      refspec=":${dest}" ;;
+          localref) refspec="localref:${dest}" ;;
+        esac
+        for wrapper_kind in bare bash-c sh-c eval; do
+          if [ "$wrapper_kind" = "bare" ]; then
+            quote_styles="none"
+          else
+            quote_styles="single double"
+          fi
+          for q in $quote_styles; do
+            case "$q" in
+              none)   inner_q="" ;;
+              single) inner_q="'" ;;
+              double) inner_q="\"" ;;
+            esac
+            inner="git push origin $refspec"
+            case "$wrapper_kind" in
+              bare)   cmd="$inner" ;;
+              bash-c) cmd="bash -c ${inner_q}${inner}${inner_q}" ;;
+              sh-c)   cmd="sh -c ${inner_q}${inner}${inner_q}" ;;
+              eval)   cmd="eval ${inner_q}${inner}${inner_q}" ;;
+            esac
+            label="proj-prop/$wrapper_kind/$q/${spec_kind}/${force:-noforce}${refp:+/refsheads}/${target}"
+            PROJ_PROP_CASES=$((PROJ_PROP_CASES + 1))
+            # run_main_protected_test on a feat/test branch with main_protected:true.
+            # The branch parameter to run_main_protected_test sets the
+            # CURRENT branch of the test repo (used by rule (c) — naked
+            # push on main); for refspec-bearing pushes (rules a + b) the
+            # current branch is irrelevant because the destination is
+            # parsed from the args. Using feat/test as the current branch
+            # isolates the bypass-matrix to rules a + b — exactly the
+            # surface this test exercises.
+            RESULT=$(run_main_protected_test "feat/test" '{"execution": {"main_protected": true}}' "$cmd")
+            if [ "$expected" = "deny" ]; then
+              if [[ "$RESULT" == *"permissionDecision"*"deny"* ]]; then
+                pass "deny: $label"
+                PROJ_PROP_DENY=$((PROJ_PROP_DENY + 1))
+              else
+                fail "deny: $label — expected deny, got: $RESULT"
+              fi
+            else
+              if [[ "$RESULT" != *"permissionDecision"*"deny"* ]]; then
+                pass "allow: $label"
+                PROJ_PROP_ALLOW=$((PROJ_PROP_ALLOW + 1))
+              else
+                fail "allow: $label — expected allow, got: $RESULT"
+              fi
+            fi
+          done
+        done
+      done
+    done
+  done
+done
+
+echo "  (#513 project-hook enumeration: $PROJ_PROP_CASES cases — $PROJ_PROP_DENY deny, $PROJ_PROP_ALLOW allow)"
+
+
 echo "=== Landing mode argument detection ==="
 
 # Test: detect "pr" argument (case-insensitive)
