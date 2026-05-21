@@ -1484,3 +1484,36 @@ Empty.
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 - Next fire: top of next 30-min mark.
 
+
+## Sprint — 2026-05-21 07:02 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-103002-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 2 | **N verified:** 1 | **N merged:** 1 + surfaced #561
+
+### Fixed
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #557 | run-plan + research-and-go + verify-changes: merge-base diff instead of symmetric | [#562](https://github.com/zeveck/zskills-dev/pull/562) | 608b3ef | 4642/4642 |
+
+### Surfaced (NOT landed this sprint)
+| # | Title | Status |
+|---|-------|--------|
+| #561 (NEW) | block-unsafe-project.sh.template HEAD-rewrite missing quote-strip — wrapper-quoted git push origin HEAD from main bypasses main_protected | Filed during this sprint; matrix-extension diff saved at `/tmp/issue-556-matrix-extension.patch` (264 lines, ready to ship alongside the fix) |
+
+### Notable
+1. **Implementer STOPPED correctly per "if matrix surfaces new bypass, STOP and report".** #556's implementer extended the property-test matrix to enumerate `target=HEAD` with branch-context axis (560 new cases). The generic-hook 280 cases all PASS. **The project-hook 280 cases: 160 PASS, 120 FAIL** — every wrapped form (`bash -c`, `sh -c`, `eval` × single/double quote × spec_kinds × force/refp) from main checkout bypasses. Root cause: `block-unsafe-project.sh.template:1057-1071` HEAD-rewrite block doesn't quote-strip per-word before the case-match (generic hook does at line 625-626). Surfaced as **#561**.
+2. **Implementer scope-expanded #557 correctly per "surface bugs, don't patch".** The new conformance tripwire (forbidding `main\.\.\.` in `skills/**/*.md`) flagged the same anti-pattern in `/research-and-go` SKILL.md:325 and `/verify-changes` SKILL.md:256. Implementer fixed all 3 occurrences rather than narrowing the tripwire — exactly the skill-framework discipline.
+3. **Closure-incomplete pattern is structurally interesting.** PR #553 (closed #515 HEAD bypass) was tagged as closure-incomplete by qe-audit-style filings (#556 — matrix not extended; #557 — sister-skill prompt not updated). Both were correct closure-incomplete diagnoses. The pattern is "fix the runtime, miss the regression net OR sister-site". /qe-audit is doing its job; #511's new verifier discipline + #510's new tier1 prose + this sprint's conformance tripwire collectively harden the system against the next closure-incomplete cycle.
+
+### Skipped (this sprint)
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #556 | property-test matrix not extended to enumerate target=HEAD | Surfaced new defect — bundled with #561 in next sprint | Matrix work captured at /tmp/issue-556-matrix-extension.patch; not committed |
+| #67 | GitLab support | Author decision needed | Action now: none |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T07:02:36-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+
