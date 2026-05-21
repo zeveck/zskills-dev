@@ -1,5 +1,56 @@
 # Plan Report — fix-issues-claims
 
+## Phase — 4 E2E concurrency test + baseline race test + /cleanup-merged sweep + conformance
+
+**Plan:** plans/fix-issues-claims.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-fix-issues-claims
+**Branch:** feat/fix-issues-claims
+**Commits:** 9cf3594
+
+### Work Items
+
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| W4.1 | `tests/test-fix-issues-claim-race-e2e.sh` — real-process concurrent acquire race | Done | 1 case, 5 iterations; exactly-one-winner per iteration; winner's `pipeline_id` persists in claim.json |
+| W4.1b | `tests/test-fix-issues-claim-race-baseline.sh` — negative-control with stubbed helper | Done | 2 cases; both subshells succeed, no claim dir written — proves race exists without mechanism (CLAUDE.md "surface bugs don't patch") |
+| W4.2 | `tests/test-fix-issues-claim-conformance.sh` — full conformance battery | Done | 18 cases; SKILL.md acquire-fence anchor uses TWO-PASS grep (CLAIM_HELPER assignment + invocation) instead of plan's single-line regex per PLAN-TEXT-DRIFT (Phase 2 used `$CLAIM_HELPER` indirection); all hook payload tests pass including locked deny-envelope text (`STOP:`, `claim-issue.sh acquire 42`, `exit 10`), MAIN_ROOT resolution from sprint worktree, argv tokenization disambiguation |
+| W4.3 | `tests/test-fix-issues-claim-regression-single.sh` — mechanism-layer | Done | 3 cases: sequential acquires + sweep no-op + hook allow |
+| W4.4 | `tests/run-all.sh` — 4 new test registrations | Done | Cumulative 11 `test-fix-issues-claim-*` suites across Phases 1+2+3+4 |
+| W4.5 | `/cleanup-merged` sweep integration | Done | `bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" sweep \|\| true` at `skills/cleanup-merged/SKILL.md:352` after worktree-prune loop. metadata.version → `2026.05.21+c788ef`. Mirror byte-equal. |
+| W4.6 | dashboard-mode docs paragraph | Done | ~7 sentences (slightly over the 3-6 ceiling — non-blocking) at `skills/fix-issues/SKILL.md:170-184` pointing readers at `claim-issue.sh` + D1/D2/D6. metadata.version → `2026.05.21+6ae52a`. Mirror byte-equal. |
+
+### Verification
+
+- Baseline (orchestrator-captured pre-Phase-4): 5324/5324 passed
+- Post-implementation (verifier-independent re-run): 5348/5348 passed, 0 failed
+- Delta: +24 cases (W4.1: 1 + W4.1b: 2 + W4.2: 18 + W4.3: 3 = 24)
+- Skill conformance (`test-skill-conformance.sh`): green (498/498)
+- Mirror diffs (cleanup-merged + fix-issues, source + .claude/): all empty
+- Layer 3 verifier-response validation: PASS (no stalled-string triggers; full attestation; structured findings; commit hash on attempt 1)
+- Scope diff: 5 modified + 4 new tests; no collateral
+
+### Manual repros — deferred to PR body
+
+Per the plan's AC tiering (DA3.4), two manual repros are PR-body deliverables and were NOT executed automatically in Phase 4:
+
+1. **Two-terminal repro** — two concurrent `/fix-issues 1 dashboard auto` runs, screenshot of dashboard showing two in-flight chips with distinct `pipeline_short` values.
+2. **Single-pipeline regression repro** — `/fix-issues 3 dashboard auto` once in stub fixture, record selection order, attach selection log to PR body for A7 integration-layer check.
+
+These will be assembled into the PR body during the final landing step.
+
+### Plan-text drift tokens
+
+- `PLAN-TEXT-DRIFT: phase=4 bullet=W4.2 field=anchor_regex plan=claim-issue.sh"?[[:space:]]+acquire actual=two-pass-grep` — Phase 2's `$CLAIM_HELPER` indirection means the single-line regex doesn't match; conformance test uses a 2-pass grep (CLAIM_HELPER assignment + `bash "$CLAIM_HELPER" acquire` invocation, both >= 2). Invariant preserved.
+- `PLAN-TEXT-DRIFT: phase=4 bullet=W4.2 field=rm-r-scope plan=SKILL.md+modes+tests actual=SKILL.md+modes-only` — test fixtures legitimately `rm -rf` PID-scoped tmp dirs; narrowed scope.
+
+### Anomalies (non-blocking, verifier-surfaced)
+
+- W4.2 plan listed two `block-unsafe-project.sh.template` ALLOW/BLOCK payload tests; implementer gated the same invariant via the no-inline-rm grep over SKILL.md + modes/*.md. The underlying safety contract is preserved (any `rm -r .zskills/claims` is hook-blocked because it matches the existing global destructive-pattern set; the SKILL grep ensures no such command lands in skill prose). Plan-AC level passes.
+- W4.6 paragraph is ~7 sentences vs plan's 3-6 ceiling — covers required substance accurately; non-blocking.
+
+---
+
 ## Phase — 3 Dashboard collector + renderer chip (drag-disabled) + fingerprint fix
 
 **Plan:** plans/fix-issues-claims.md
