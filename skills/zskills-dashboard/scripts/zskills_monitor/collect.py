@@ -1393,6 +1393,9 @@ def _annotate_issues_queue(
     # tracker per Ready issue). Only populated when main_root is given.
     skip_index: Dict[int, Dict[str, str]] = {}
     issues_plan_path: Optional[pathlib.Path] = None
+    # Claim index — parallel to skip_index; gated on main_root for the
+    # same reason (R2.6: fixture branch passes 2-arg, no real filesystem).
+    claim_index: Dict[int, Dict[str, Any]] = {}
     if main_root is not None:
         issues_plan_path = (
             # allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto resolved issues_dir (parallels the fix-issues/SKILL.md exemption at line 1050); the literal tail is the canonical tracker filename
@@ -1406,6 +1409,7 @@ def _annotate_issues_queue(
                 continue
         if ready_nums:
             skip_index = _build_skip_reason_index(issues_plan_path, ready_nums)
+        claim_index = _read_claims(main_root)
 
     for issue in issues:
         num = issue.get("number")
@@ -1418,6 +1422,19 @@ def _annotate_issues_queue(
                     issue["skip_reason"] = reason
         else:
             issue["queue"] = {"column": "triage", "index": -1}
+        # Claim chip — explicit field allow-list (NOT **claim_dict) so
+        # future-added claim fields never leak into the HTTP response
+        # without a deliberate edit here. NO `host_pid` (removed per
+        # DA2.1/DA2.2), NO `worktree_path` (never in claim per DA8).
+        if isinstance(num, int) and num in claim_index:
+            c = claim_index[num]
+            issue["claim"] = {
+                "pipeline_id": c.get("pipeline_id"),
+                "sprint_id": c.get("sprint_id"),
+                "age_seconds": c.get("age_seconds"),
+                "started_at": c.get("started_at"),
+                "pipeline_short": c.get("pipeline_short"),
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -1622,6 +1639,130 @@ def _build_skip_reason_index(
         return out
     for num in issue_numbers:
         out[num] = _parse_action_now(num, text)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Claim-file reader (fix-issues claim chip — plans/fix-issues-claims.md
+# Phase 3). Enumerates `${main_root}/.zskills/claims/issue-*/claim.json`
+# per snapshot and returns a per-issue claim dict keyed by issue number.
+# Read-only; never mutates the claim directory. Tolerant of malformed
+# JSON (single stderr line, skip) and of claim dirs missing their
+# `claim.json` (surfaces a null-metadata claim so the chip can render a
+# generic in-flight indicator — avoids the sweep-while-flush race).
+#
+# Latency budget: <10ms wall-clock p99 for 50 simulated claims
+# (issue #514; T3.3 gating benchmark).
+# ---------------------------------------------------------------------------
+
+
+_CLAIM_DIR_RE = re.compile(r"^issue-(\d+)$")
+
+
+def _derive_pipeline_short(pipeline_id: str) -> str:
+    """Derive a short, sprint-distinguishing label from a pipeline id.
+
+    DA4 lock — `"fix-issues.sprint-20260521-010731-foo"` yields
+    `"010731-foo"` (the time+slug tail), NOT the useless `"sprint-2"`
+    that a naive 8-char prefix slice would produce for every concurrent
+    sprint.
+    """
+    sprint_id_tail = pipeline_id.rsplit(".", 1)[-1]
+    parts = sprint_id_tail.split("-")
+    if len(parts) >= 4:
+        return "-".join(parts[2:4])
+    return sprint_id_tail[-8:]
+
+
+def _read_claims(main_root: pathlib.Path) -> Dict[int, Dict[str, Any]]:
+    """Read fix-issues claim files under `${main_root}/.zskills/claims/`.
+
+    Returns `{issue_number: claim_dict}` where each dict carries:
+        pipeline_id, sprint_id, age_seconds, started_at, pipeline_short
+
+    Tolerant: malformed JSON emits a single stderr line and skips that
+    claim. A claim directory present without `claim.json` surfaces a
+    null-metadata entry (all values `None`) so the renderer can show a
+    generic in-flight indicator (sweep-while-flush race tolerance).
+
+    `main_root` is REQUIRED, not Optional — the fixture branch in
+    `collect_snapshot` skips the call entirely via the gating rule in
+    `_annotate_issues_queue` (R2.6). A `None` here would either crash or
+    no-op pointlessly, neither of which is the intended contract.
+    """
+    out: Dict[int, Dict[str, Any]] = {}
+    claims_dir = main_root / ".zskills" / "claims"
+    if not claims_dir.is_dir():
+        return out
+    now = datetime.now(timezone.utc)
+    try:
+        entries = list(claims_dir.iterdir())
+    except OSError as e:
+        sys.stderr.write(
+            "zskills_monitor.collect: _read_claims iterdir failed: %s\n" % e
+        )
+        return out
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        m = _CLAIM_DIR_RE.match(entry.name)
+        if m is None:
+            continue
+        try:
+            issue_number = int(m.group(1))
+        except (TypeError, ValueError):
+            continue
+        claim_path = entry / "claim.json"
+        if not claim_path.is_file():
+            # Sweep-while-flush race tolerance — directory exists but
+            # the writer hasn't dropped claim.json yet (or sweep raced
+            # us mid-release). Surface a null-metadata claim so the
+            # renderer shows the chip but with `?` for time / id.
+            out[issue_number] = {
+                "pipeline_id": None,
+                "sprint_id": None,
+                "age_seconds": None,
+                "started_at": None,
+                "pipeline_short": None,
+            }
+            continue
+        try:
+            with open(claim_path, "r", encoding="utf-8") as fh:
+                body = json.load(fh)
+        except (OSError, ValueError) as e:
+            sys.stderr.write(
+                "zskills_monitor.collect: _read_claims skip %s: %s\n"
+                % (claim_path, e)
+            )
+            continue
+        if not isinstance(body, dict):
+            sys.stderr.write(
+                "zskills_monitor.collect: _read_claims skip %s: not a JSON object\n"
+                % claim_path
+            )
+            continue
+        pipeline_id = body.get("pipeline_id")
+        sprint_id = body.get("sprint_id")
+        started_at = body.get("started_at")
+        age_seconds: Optional[float] = None
+        if isinstance(started_at, str) and started_at:
+            try:
+                parsed = datetime.fromisoformat(started_at)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age_seconds = (now - parsed).total_seconds()
+            except ValueError:
+                age_seconds = None
+        pipeline_short: Optional[str] = None
+        if isinstance(pipeline_id, str) and pipeline_id:
+            pipeline_short = _derive_pipeline_short(pipeline_id)
+        out[issue_number] = {
+            "pipeline_id": pipeline_id if isinstance(pipeline_id, str) else None,
+            "sprint_id": sprint_id if isinstance(sprint_id, str) else None,
+            "age_seconds": age_seconds,
+            "started_at": started_at if isinstance(started_at, str) else None,
+            "pipeline_short": pipeline_short,
+        }
     return out
 
 

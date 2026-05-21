@@ -493,6 +493,13 @@ function fingerprintIssues(issues, queues) {
   return JSON.stringify(issues.map(i => [
     i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
     pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
+    // Claim state — DA5: without this, the fingerprint is byte-identical
+    // between "no claim" and "claim present" snapshots, so applySnapshot
+    // skips renderIssues and the chip never appears/disappears between
+    // polls. The 2-tuple is enough — pipeline_id changes when a new
+    // pipeline claims, started_at changes per-claim, and both are null
+    // when no claim is held.
+    i.claim ? [i.claim.pipeline_id || null, i.claim.started_at || null] : null,
   ]));
 }
 
@@ -881,6 +888,32 @@ function buildIssueCard(issue, num, col) {
       text: "skip: " + code + " — " + label,
     }));
     card.appendChild(row);
+  }
+  // Claim chip (fix-issues claim — plans/fix-issues-claims.md Phase 3).
+  // Non-interactive, in-flight indicator. Reuses `relativeTime` (R8) and
+  // coalesces empty output to `"?"` (R2.7) so a parsable-but-unhelpful
+  // started_at never produces a trailing-dot-space-empty chip. Also
+  // marks the card aria-disabled and removes draggable so drag-reorder
+  // can't fight an in-flight pipeline (DA11). The keyboard
+  // move/remove buttons live in the action dispatcher below — see the
+  // matching aria-disabled guard there (DA2.3).
+  if (issue && issue.claim) {
+    const c = issue.claim;
+    const rt = c.started_at ? relativeTime(c.started_at) : "";
+    const ageStr = rt || "?";
+    const pidShort = c.pipeline_short || "?";
+    const tip = c.pipeline_id
+      ? "claim pipeline=" + c.pipeline_id + " started=" + c.started_at
+      : "claim metadata pending";
+    const row = el("div", { cls: "card-sub" });
+    row.appendChild(el("span", {
+      cls: "claim-chip claim-chip--in-flight",
+      attrs: { title: tip },
+      text: "in-flight · " + pidShort + " · " + ageStr,
+    }));
+    card.appendChild(row);
+    card.setAttribute("aria-disabled", "true");
+    card.removeAttribute("draggable");
   }
   if (issue && (issue.labels || []).length) {
     const labels = el("div", { cls: "card-sub" });
@@ -1803,6 +1836,19 @@ async function handleAction(action, target) {
   if (action === "plan-remove") return removePlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
 
+  // Guard: claimed issues are in-flight on another pipeline. Block move
+  // and remove actions to prevent ghost-claim footgun (DA2.3 / DA11).
+  // Drag-disable alone is cosmetic — the keyboard move/remove buttons
+  // bypass the drag handler entirely.
+  if (action === "issue-up" || action === "issue-down" ||
+      action === "issue-left" || action === "issue-right" ||
+      action === "issue-remove") {
+    const claimedCard = target.closest('li.card[aria-disabled="true"][data-kind="issue"]');
+    if (claimedCard) {
+      showToast("Issue is in-flight; release the claim or wait for completion.", "info");
+      return;
+    }
+  }
   if (action === "issue-up") return moveIssue(num, "up");
   if (action === "issue-down") return moveIssue(num, "down");
   if (action === "issue-left") return moveIssue(num, "left");

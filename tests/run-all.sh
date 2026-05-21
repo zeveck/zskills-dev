@@ -151,6 +151,8 @@ run_suite "test-fix-issues-claim-acquire-inline.sh" "tests/test-fix-issues-claim
 run_suite "test-fix-issues-claim-release-pr.sh" "tests/test-fix-issues-claim-release-pr.sh"
 run_suite "test-fix-issues-claim-release-cherry-pick.sh" "tests/test-fix-issues-claim-release-cherry-pick.sh"
 run_suite "test-fix-issues-claim-release-direct.sh" "tests/test-fix-issues-claim-release-direct.sh"
+run_suite "test-fix-issues-claim-collector.sh" "tests/test-fix-issues-claim-collector.sh"
+run_suite "test-fix-issues-claim-render-dom.sh" "tests/test-fix-issues-claim-render-dom.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.
