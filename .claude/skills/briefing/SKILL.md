@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.20+364df1"
+  version: "2026.05.20+b9ff48"
 ---
 
 # /briefing — Project Status Briefing
@@ -248,8 +248,9 @@ If `$ARGUMENTS` contains `every <SCHEDULE>`:
 
 1. Strip the schedule portion from arguments to get the base mode
 2. Create a cron using CronCreate:
-   - `install_command`: `/briefing <base-mode-args>`
-   - `schedule`: parsed from `<SCHEDULE>` (e.g., "day at 9am" → `0 9 * * *`)
+   - `cron`: parsed from `<SCHEDULE>` (e.g., "day at 9am" → `3 9 * * *`; apply :03/:09 offset per avoid-:00/:30 rule)
+   - `prompt`: `Run /briefing <base-mode-args>` (the `Run /` prefix triggers the cron-fire recognition rule in CLAUDE.md `## Cron-fired prompts`, so post-`/clear` sessions execute the briefing inline by reading `SKILL.md`)
+   - `recurring`: `true`
 3. Present confirmation with session-scope warning:
 
 ```
@@ -261,25 +262,27 @@ WARNING: This schedule is tied to this session. If the session ends, the schedul
 ### `stop` — Cancel Scheduled Briefings
 
 1. List crons with CronList
-2. Filter for briefing-related crons (install_command starts with `/briefing`)
+2. Filter for briefing-related crons (prompt starts with `Run /briefing`)
 3. Delete each with CronDelete
 4. Confirm: "Cancelled N briefing schedule(s)."
 
 ### `next` — Show Next Fire Times
 
 1. List crons with CronList
-2. Filter for briefing-related crons
+2. Filter for briefing-related crons (prompt starts with `Run /briefing`)
 3. Show each with its next fire time
 4. If none: "No briefing schedules active."
 
 ### Common Schedules
 
+Apply `:03`/`:09` minute offsets (avoid `:00`/`:30` per peer pattern):
+
 | Input | Cron | Description |
 |-------|------|-------------|
-| `every hour` | `0 * * * *` | Top of every hour |
-| `every 2h` | `0 */2 * * *` | Every 2 hours |
-| `every day at 9am` | `0 9 * * *` | Daily at 9 AM |
-| `every weekday at 9am` | `0 9 * * 1-5` | Weekdays at 9 AM |
+| `every hour` | `3 * * * *` | Every hour at :03 |
+| `every 2h` | `3 */2 * * *` | Every 2 hours at :03 |
+| `every day at 9am` | `3 9 * * *` | Daily at 9:03 AM |
+| `every weekday at 9am` | `3 9 * * 1-5` | Weekdays at 9:03 AM |
 
 ## Report Template Reference
 
