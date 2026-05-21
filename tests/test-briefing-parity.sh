@@ -50,29 +50,113 @@ fi
 TEST_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
-# Smoke test all subcommands with python3
-# Note: "report" writes files, so redirect its output to the temp dir
+# Smoke test all subcommands with python3. Each subcommand asserts a
+# stable expected substring in its actual output — NOT "exit 0 + any
+# output" (issue #517: that latter form is tautological because every
+# non-zero-exit and every empty-stdout-but-stderr-warning case passes,
+# masking real "subcommand handler returned empty string" regressions).
+# Note: "report" writes files, so its stdout includes the "Report
+# written to: <path>" confirmation line + the file body.
+#
+# Per-subcommand expected substring (rationale):
+#   summary     — top-of-output banner is always "BRIEFING — <date>"
+#   report      — emits "Report written to:" then markdown header begins
+#                 with "# Briefing Report —"; check for the file header
+#                 in the OUTPUT FILE rather than stdout (stdout is the
+#                 single confirmation line).
+#   verify      — emits one of "VERIFICATION NEEDED" / "NO VERIFICATION
+#                 NEEDED" depending on plan-report state. Match either.
+#   current     — top header is "CURRENTLY IN FLIGHT —"
+#   worktrees   — emits a JSON array (possibly empty in fresh CI clones
+#                 with no live worktrees). Custom-matched below: output must
+#                 begin with `[` AND, when non-empty, contain `"path":`.
+#                 The `return 0` mutation produces empty stdout — neither
+#                 condition holds, so the assertion still fails it.
+#   commits     — emits a JSON array (possibly empty when no commits land
+#                 in the --since window). Same shape as worktrees: output
+#                 begins with `[`, and non-empty arrays contain `"hash":`.
+#   checkboxes  — emits a JSON array; objects have `"file":` keys. Empty
+#                 array `[]` is also valid (no plan reports = no checkboxes),
+#                 so accept either `"file":` OR a literal `[]` whole-output.
 smoke_cmds=(
-  "summary"
-  "report --since=24h --output=$TEST_TMPDIR/briefing-test.md"
-  "verify"
-  "current"
-  "worktrees"
-  "commits --since=24h"
-  "checkboxes"
+  "summary|BRIEFING —"
+  "report --since=24h --output=$TEST_TMPDIR/briefing-test.md|Report written to:"
+  "verify|VERIFICATION"
+  "current|CURRENTLY IN FLIGHT"
+  "worktrees|"  # custom-matched below (stateful-env-agnostic JSON-array)
+  "commits --since=24h|"  # custom-matched below (stateful-env-agnostic JSON-array)
+  "checkboxes|"  # custom-matched below (allow empty-array)
 )
 
-for cmd in "${smoke_cmds[@]}"; do
+for entry in "${smoke_cmds[@]}"; do
+  cmd="${entry%%|*}"
+  expected="${entry#*|}"
   # shellcheck disable=SC2086
   output=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" $cmd 2>&1)
   exit_code=$?
-  if [[ $exit_code -eq 0 && -n "$output" ]]; then
-    pass "python3 briefing.py $cmd"
-  elif [[ $exit_code -eq 0 && -z "$output" ]]; then
-    # Some subcommands may produce empty output legitimately (e.g. no checkboxes)
-    pass "python3 briefing.py $cmd (empty but exit 0)"
-  else
+  if [[ $exit_code -ne 0 ]]; then
     fail "python3 briefing.py $cmd (exit=$exit_code)"
+    continue
+  fi
+
+  if [[ "$cmd" == "checkboxes" ]]; then
+    # checkboxes: accept either non-empty JSON-array-with-"file": OR a
+    # literal empty array "[]" (legitimate when no plan reports exist).
+    trimmed=$(printf '%s' "$output" | tr -d '[:space:]')
+    if [[ "$trimmed" == "[]" ]] || printf '%s' "$output" | grep -q '"file":'; then
+      pass "python3 briefing.py $cmd (JSON array)"
+    else
+      fail "python3 briefing.py $cmd (expected '\"file\":' key or '[]'; got: $output)"
+    fi
+    continue
+  fi
+
+  if [[ "$cmd" == "worktrees" || "$cmd" == "commits"* ]]; then
+    # worktrees / commits: emit a JSON array via json.dumps(list, indent=2).
+    # In fresh CI clones with no live worktrees / no in-window commits the
+    # array is empty (`[]`); locally it has entries. Stateful-env-agnostic
+    # check: output (trimmed of leading whitespace) MUST start with `[`.
+    # The regression this guards (`def cmd(): return 0` / removed print)
+    # produces empty stdout — fails this check. When the array IS non-empty
+    # we additionally assert the expected key (`"path":` / `"hash":`)
+    # appears — preserves the tighter check on populated envs.
+    if [[ "$cmd" == "worktrees" ]]; then
+      key='"path":'
+    else
+      key='"hash":'
+    fi
+    trimmed_lead=$(printf '%s' "$output" | sed -e 's/^[[:space:]]*//')
+    trimmed_all=$(printf '%s' "$output" | tr -d '[:space:]')
+    if [[ "$trimmed_lead" != \[* ]]; then
+      fail "python3 briefing.py $cmd (expected JSON array — output to begin with '['; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
+    elif [[ "$trimmed_all" == "[]" ]]; then
+      # Empty array — legitimate in CI / clean envs.
+      pass "python3 briefing.py $cmd (empty JSON array — no data in this env)"
+    elif printf '%s' "$output" | grep -qF "$key"; then
+      pass "python3 briefing.py $cmd (JSON array with $key entries)"
+    else
+      fail "python3 briefing.py $cmd (non-empty JSON array missing expected '$key' key; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
+    fi
+    continue
+  fi
+
+  if [[ "$cmd" == report* ]]; then
+    # report: stdout has "Report written to:"; ALSO verify the written
+    # file contains the "# Briefing Report —" header (catches a regression
+    # where the handler prints the confirmation but emits an empty file).
+    if printf '%s' "$output" | grep -qF "$expected" \
+       && grep -qF '# Briefing Report —' "$TEST_TMPDIR/briefing-test.md"; then
+      pass "python3 briefing.py $cmd"
+    else
+      fail "python3 briefing.py $cmd (stdout missing '$expected' or output file missing '# Briefing Report —' header)"
+    fi
+    continue
+  fi
+
+  if printf '%s' "$output" | grep -qF "$expected"; then
+    pass "python3 briefing.py $cmd"
+  else
+    fail "python3 briefing.py $cmd (expected '$expected' in output; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
   fi
 done
 

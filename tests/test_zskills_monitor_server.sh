@@ -339,9 +339,13 @@ if start_server "$MR5" "$PORT_D"; then
   fi
 
   # #473: activity[] filter must match the canonical `pipeline` key
-  # (not the old `pipeline_id`). Seed a tracking marker under a pipeline
-  # subdir whose name contains the plan slug, then verify activity[]
-  # picks it up.
+  # (not the old `pipeline_id`). Seed TWO tracking pipelines:
+  #   (a) run-sample-plan-001 — matches the plan slug; MUST appear in activity[].
+  #   (b) run-other-002       — unrelated; MUST NOT appear in activity[].
+  # Issue #517 negative-case: without (b) the test passes even if the
+  # slug filter is removed entirely (activity[] just returns all
+  # pipelines). The EXCLUSION assertion is what makes this load-bearing
+  # for the #473 fix.
   mkdir -p "$MR5/.zskills/tracking/run-sample-plan-001"
   cat >"$MR5/.zskills/tracking/run-sample-plan-001/fulfilled.test" <<'MARKER'
 date: 2026-05-20T10:00:00-04:00
@@ -349,13 +353,28 @@ skill: test
 status: ok
 output: /dev/null
 MARKER
+  mkdir -p "$MR5/.zskills/tracking/run-other-002"
+  cat >"$MR5/.zskills/tracking/run-other-002/fulfilled.test" <<'MARKER'
+date: 2026-05-20T11:00:00-04:00
+skill: test
+status: ok
+output: /dev/null
+MARKER
   PLAN_BODY=$(curl -sf -m 3 "http://127.0.0.1:$PORT_D/api/plan/sample-plan")
-  # activity[] must be non-empty AND contain the seeded pipeline name.
+  # Positive: activity[] non-empty AND contains the matching pipeline.
   if printf '%s' "$PLAN_BODY" | grep -q '"activity":[[:space:]]*\[[[:space:]]*{' \
      && printf '%s' "$PLAN_BODY" | grep -q '"pipeline":[[:space:]]*"run-sample-plan-001"'; then
     pass "/api/plan activity[] filters on canonical 'pipeline' key (#473)"
   else
     fail "/api/plan activity[] empty or missing seeded marker (#473); body: $PLAN_BODY"
+  fi
+  # Negative (issue #517): the unrelated pipeline MUST NOT appear in
+  # activity[]. If the slug filter regresses (returns all pipelines),
+  # this assertion fails.
+  if printf '%s' "$PLAN_BODY" | grep -q '"pipeline":[[:space:]]*"run-other-002"'; then
+    fail "/api/plan activity[] leaked unrelated pipeline 'run-other-002' (slug filter regressed; #517); body: $PLAN_BODY"
+  else
+    pass "/api/plan activity[] excludes unrelated pipeline 'run-other-002' (#517 negative case)"
   fi
 
   # 404 for unknown slug
