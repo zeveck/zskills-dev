@@ -723,9 +723,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
 
     def _serve_static_index(self) -> None:
         ctx = self._ctx()
-        index = ctx["static_dir"] / "index.html"
+        static_dir = ctx["static_dir"]
+        index = static_dir / "index.html"
         if index.is_file():
-            self._send_static(200, index, "text/html; charset=utf-8")
+            self._serve_index_with_cache_bust(index, static_dir)
             return
         # Phase 6 hasn't shipped UI yet — return a friendly placeholder
         # rather than 404 so /api/health and curl smoke land cleanly.
@@ -747,6 +748,31 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": f"{name} not present (Phase 6)"})
             return
         self._send_static(200, path, content_type)
+
+    def _serve_index_with_cache_bust(
+        self, index: pathlib.Path, static_dir: pathlib.Path
+    ) -> None:
+        # Substitute ?v=<mtime_ns> into the <link href> and <script src>
+        # references so a browser cache picks up CSS/JS edits on the next
+        # normal page reload (no hard-refresh required). mtime_ns auto-
+        # updates on any file edit — independent of skill-versioning.
+        try:
+            html = index.read_bytes()
+        except OSError as exc:
+            self._send_json(500, {"error": f"index.html unreadable: {exc}"})
+            return
+        for asset, ref in (("app.css", b'href="/app.css"'), ("app.js", b'src="/app.js"')):
+            try:
+                mtime_ns = (static_dir / asset).stat().st_mtime_ns
+            except OSError:
+                continue  # asset missing → leave reference untouched
+            replacement = ref[:-1] + f'?v={mtime_ns}"'.encode("ascii")
+            html = html.replace(ref, replacement, 1)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        self.wfile.write(html)
 
     def _handle_health(self) -> None:
         ctx = self._ctx()
