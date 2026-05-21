@@ -784,3 +784,40 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S (~5-line idiom per site + 1-2 fallback lines + version bump + mirror). **Action now:** /do pr — replace raw `$FULL_TEST_CMD` at `skills/commit/SKILL.md:272-278` and `skills/commit/modes/land.md:40-50` with the canonical `$TEST_OUT` capture idiom + read-on-failure instruction; bump version + mirror.
 
+
+---
+
+### #540 — test-create-worktree.sh case 7 + case 16 fail intermittently under bash tests/run-all.sh
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `tests/test-create-worktree.sh` cases trip intermittently under `bash tests/run-all.sh` (different cases under different orderings) but pass 26/26 in isolation. Reproduced in sprint `sprint-20260521-045250-sprint`: case 7 in #538's worktree (`fatal: unknown error occurred while reading the configuration files`), case 16 in #537's worktree (`fatal: Reference directory conflict: refs/heads/plans/`). Origin/main suite passes cleanly on fresh-clone CI. Bug is shared env-state leak from earlier suite tests (`GIT_CONFIG_GLOBAL`, `refs/heads/<prefix>` lingering refs, possibly /tmp state).
+
+**Fix outline.** Path 1 (per-case env hermeticity): wrap each test case in a subshell with hermetic env (`GIT_CONFIG_GLOBAL`/`XDG_CONFIG_HOME`/`HOME` set to a per-case tmp dir; cleanup `refs/heads/<prefix>` under the test repo before/after). Path 2 (suite pre-cleanup): explicit cleanup step in `tests/run-all.sh` before `test-create-worktree.sh`. Path 1 is durable; pick it. ~20-40 LOC subshell wrap pattern in the test file.
+
+**Complexity:** S-M (1 file edit, ~40 LOC wrapper pattern; no skill SKILL.md edits → no version bumps). **Action now:** /do pr — wrap each `test-create-worktree.sh` case in a hermetic subshell (per-case `GIT_CONFIG_GLOBAL` + `HOME` + `refs/heads/<prefix>` cleanup); verify all 26 cases still pass + suite stable across reorderings.
+
+---
+
+### #535 — /land-pr REBASE_STDERR_FILE key in result schema but no caller parses it
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/land-pr/SKILL.md:170` declares `REBASE_STDERR_FILE` in the result-file schema and writes it on Step-6b failures (`SKILL.md:564` + step-9 line 829), but the canonical allow-list parser (`skills/land-pr/references/caller-loop-pattern.md:87-89`) and **all 5 caller copies** (`run-plan/modes/pr.md:402`, `fix-issues/modes/pr.md:158`, `do/modes/pr.md:277`, `commit/modes/pr.md:166`, `quickfix/SKILL.md:1127`) omit it from their case statements. Every Step-6b failure produces a `WARN: /land-pr result has unknown key REBASE_STDERR_FILE — ignoring` log + a `/tmp/land-pr-auto-rebase-stderr-*-*.log` sidecar leak.
+
+**Fix outline.** Add `REBASE_STDERR_FILE` to the case-arm allow-list in 6 sites (canonical pattern + 5 caller copies). Add the sidecar path to `_CLEANUP_PATHS` so it's tidied up alongside the other land-pr sidecars. Mechanical: mirror the existing allow-list pattern. All 6 skill SKILL.md files get version bumps + mirrors.
+
+**Complexity:** S (6-file allow-list addition + _CLEANUP_PATHS update; 6 SKILL.md version bumps via skill-versioning discipline). **Action now:** /do pr — add `REBASE_STDERR_FILE` to allow-list in all 6 sites + extend `_CLEANUP_PATHS`; bump each affected skill's `metadata.version` and mirror.
+
+---
+
+### #528 — hooks/_lib/git-tokenwalk.sh `is_git_subcommand` missing path-strip → /usr/bin/git invocations bypass all git-side gates
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `hooks/_lib/git-tokenwalk.sh:60` `is_git_subcommand` checks first token against literal `"git"` after quote-stripping; does NOT path-strip. So `/usr/bin/git push origin main` → token `/usr/bin/git` → no match → hook returns "not a git command" → ALL git-side gates silently allow (BLOCK_MAIN_PUSH, stash gate, commit --no-verify gate, etc.). The sister helper `is_gh_pr_subcommand:444-450` correctly path-strips via `case "$g" in */*) g="${g##*/}" ;; esac`. The git variant is missing the same one-line guard.
+
+**Fix outline.** Add the one-line path-strip to `is_git_subcommand` between the quote-strip at line 77 and equality check at line 79. Mirror the addition into every hook that inlines this helper via the drift gate (helper is inlined, not sourced from .claude/hooks/_lib/). Add regression test cases to `tests/test-hooks.sh`: `/usr/bin/git push origin main` (expect deny on main), `./git commit --no-verify` (expect deny), `/usr/local/bin/git checkout -- file` (expect deny). Update `tests/test-hook-helper-drift.sh` if it asserts the helper surface. Same family as #515.
+
+**Complexity:** S-M (1 line fix in helper source + cascading drift updates across inlined consumers + 3-4 test cases). **Action now:** /do pr — add path-strip to `is_git_subcommand` in `hooks/_lib/git-tokenwalk.sh`; propagate inlined copies across all 3 hook consumers (`block-unsafe-generic.sh`, `block-unsafe-project.sh.template`, `block-stale-skill-version.sh`); mirror to `.claude/hooks/`; add path-prefixed test cases to `tests/test-hooks.sh`.
+
