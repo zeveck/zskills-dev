@@ -1076,3 +1076,15 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 
 **Complexity:** S (test additions in existing file; no source edits). **Action now:** /do pr — add `sweep_stale_claims` test cases + `claim_ttl_seconds` config-resolver test cases to `tests/test-fix-issues-claim-script.sh`.
 
+---
+
+### #601 — /fix-issues PR-mode body uses `${CHANGE_SUMMARY}` (modes/pr.md:110) but variable is never assigned — every PR ships with empty "## Changes" section
+
+**Labels:** (none) | **Verdict:** NOT FIXED — confirmed defect, 5th sibling in variable-read-never-assigned family
+
+**Problem.** `skills/fix-issues/modes/pr.md` composes a per-PR body via an unquoted heredoc (lines 102-115) that expands `${CHANGE_SUMMARY}`, but no assignment exists anywhere in the executable path (`grep -rnE '^[[:space:]]*CHANGE_SUMMARY=' skills/fix-issues/` returns empty). Result: every /fix-issues PR-mode PR — the dominant PR producer in this repo via the hourly cron — ships with a blank `## Changes` section, stripping context from human reviewers and from downstream consumers (sprint reports, /fix-report, briefings) that scan PR bodies. Fifth confirmed sibling of the variable-read-before-assignment family alongside #579 (META_PLAN_PATH), #582 ($GOAL), #592 (TRACKING_ID + PLAN_FILE in /draft-tests), and #596 (TRACKING_ID + PLAN_FILE in /refine-plan).
+
+**Fix outline.** Assign `CHANGE_SUMMARY` immediately before the heredoc at line 102 by deriving it from `git log origin/main..HEAD --format='- %s'` inside `$WORKTREE_PATH`, with a fallback string when no commits exist yet (e.g. `_(no commits yet — body will be updated on first push)_`). ~5-line addition to `skills/fix-issues/modes/pr.md`. Add a conformance test pin asserting every `${VAR}` referenced inside heredoc fences in `modes/pr.md` has a same-file assignment (mirrors the #592/#596 pattern; ideally a framework-level invariant closing the whole 5-sibling family at once). Bump `metadata.version` per skill-versioning rule.
+
+**Complexity:** S (single-file ~5-line bash assignment + conformance test pin + metadata version bump). **Action now:** /do pr — add `CHANGE_SUMMARY=$(git log origin/main..HEAD --format='- %s')` assignment before the heredoc in `skills/fix-issues/modes/pr.md`, add conformance assertion against unset-heredoc-vars in `modes/pr.md`, and bump the skill's `metadata.version`.
+
