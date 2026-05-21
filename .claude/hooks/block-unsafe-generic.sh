@@ -239,6 +239,14 @@ is_destruct_command() {
   local first="${TOKENS[$i]:-}"
   first="${first%\"}"; first="${first#\"}"
   first="${first%\'}"; first="${first#\'}"
+  # Strip absolute/relative path prefix so `/usr/bin/kill -9 1234`,
+  # `/usr/bin/killall node`, `./pkill foo` are recognized as their
+  # destructive bases. Mirrors is_git_subcommand's path-strip (issue
+  # #528). Without this, path-prefixed destructive forms silently
+  # bypassed every destruct-side hook gate (issue #572).
+  case "$first" in
+    */*) first="${first##*/}" ;;
+  esac
   [[ "$first" != "$want_first" ]] && return 1
   [[ -z "$flag_match" ]] && return 0
   ((i++))
