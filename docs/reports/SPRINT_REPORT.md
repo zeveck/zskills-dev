@@ -1273,3 +1273,21 @@ Empty.
 ### Open Ready queue after this sprint
 1 entry: #504 (briefing cron-param fix, /quickfix S). Next fire will pick it.
 
+
+## Sprint -- 2026-05-20 20:48 [UNFINALIZED]
+
+**Mode:** auto dashboard | **N:** 2 | **Sprint ID:** sprint-20260521-002157-sprint
+
+### Fixed
+| # | Title | Worktree | PR | Tier | Tests |
+|---|-------|----------|----|----|-------|
+| #504 | briefing: invented CronCreate params + missing Run / prefix | wt-fix-issue-504 | #519 | /quickfix S | 3667/3667 |
+
+### Notable
+1. **Single-issue sprint** — only one actionable in Ready when fire started; impl + land clean on first attempt.
+2. **Pre-push diff check worked.** Impl agent included its own `git show HEAD --stat` output in the report (per the `feedback_check_scope_before_push` memory anchor saved after the #506 incident). Scope was clean (2 files: source + mirror), so push proceeded directly. No #506-style recovery needed.
+3. **4 new issues opened mid-sprint** (#510/#511/#513/#514) — all dragged into Ready. Next fire picks top 2 (#514 + #513 per drag order); they'll need Phase 1a research first since unresearched.
+
+### Open Ready queue after this sprint
+4 entries: #514, #513, #511, #510 — all unresearched.
+
