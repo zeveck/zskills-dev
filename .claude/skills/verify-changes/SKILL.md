@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.20+b479a1"
+  version: "2026.05.21+aaf42e"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -253,7 +253,7 @@ When `$SCOPE = "branch"` this writes to
 1. **Determine the diff scope** based on the argument:
    - Default: `git diff` + `git diff --cached` + `git status -s`
    - `worktree`: `git diff $(git merge-base HEAD main)..HEAD` + `git diff` + `git diff --cached`
-   - `branch`: `git log main..HEAD --oneline` + `git diff main...HEAD`
+   - `branch`: `git log $(git merge-base origin/main HEAD)..HEAD --oneline` + `git diff $(git merge-base origin/main HEAD)..HEAD`
    - `last`: `git diff HEAD~1..HEAD`
    - `last N`: `git diff HEAD~N..HEAD`
 

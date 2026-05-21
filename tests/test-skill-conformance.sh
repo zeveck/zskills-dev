@@ -632,6 +632,24 @@ else
   fail "[.claude/agents/verifier.md] scope-creep: merge-base form" "merge-base diff form missing"
 fi
 
+# Symmetric-diff anti-pattern absence in skills/ (Issue #557).
+# The three-dot symmetric `main...<branch>` form has the same false-positive
+# failure mode as the two-dot bare `origin/main..HEAD --stat` (issue #448):
+# when origin/main advances past the branch merge-base mid-verification,
+# files added on origin appear as "deletions" in HEAD's diff and the
+# verifier REJECTs with a destructive recovery path. PR #453 fixed the
+# agent file; this tripwire prevents any skill SKILL.md from re-introducing
+# the orchestrator-side instruction that previously overrode the agent-file
+# defense at `skills/run-plan/SKILL.md:1592-1593`. Scope: skills/**/*.md
+# ONLY (not docs/ or issues/, where the literal appears in this issue's
+# own blurb and sprint-report prose).
+symmetric_hits=$(grep -rlE 'git (diff|log) (origin/)?main\.\.\.' "$REPO_ROOT/skills" --include='*.md' 2>/dev/null || true)
+if [ -z "$symmetric_hits" ]; then
+  pass "[skills/**/*.md] no symmetric-diff anti-pattern (git diff main...)"
+else
+  fail "[skills/**/*.md] no symmetric-diff anti-pattern (git diff main...)" "actionable symmetric-diff command appears in: $symmetric_hits"
+fi
+
 # Verifier test-output tally check (Issue #511).
 # Scanning visible inline PASS lines is insufficient — the verifier must
 # assert the canonical summary line (`Overall: N/M passed, F failed` from
