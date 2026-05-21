@@ -1310,3 +1310,43 @@ Empty.
 ### Open Ready queue after this sprint
 6 entries: #511, #510, #515, #516, #517, #518 — all unresearched.
 
+
+## Sprint — 2026-05-20 23:53 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-025059-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 3 | **N verified:** 3
+
+### Fixed
+| # | Title | Worktree | Branch | Commit | Tier | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|--------|------|-------|--------------|-------------|
+| #518 | .landed failure-class statuses miscategorized by readers | wt-fix-issue-518 | fix/issue-518 | b36e61f + 0401a60 (tier1 bookkeeping) | /do pr S | 4542/4542 | PASS (verifier mutation-checked) | N/A |
+| #517 | Test assertion fidelity — 3 tests pass for the wrong reason | wt-fix-issue-517 | fix/issue-517 | 8bed017 → 07a7c7f (fix-cycle 1/2) | /do pr S | 4510/4510 local; CI green after fix-cycle | PASS (verifier walked 3 mutations) | N/A |
+| #516 | Silent commit loss: PR=MERGED treated as on-main without ahead-count | wt-fix-issue-516 | fix/issue-516 | 8835373 → 34be19e (fix-cycle 1/2 rebase+conflict res.) | /do pr M | 4511/4511 → 4544/4544 post-rebase | PASS (verifier checked Rule 11 ordering) | N/A |
+
+### Landing outcomes (all merged)
+| # | PR | Merge SHA | Notes |
+|---|----|-----------|-------|
+| #518 | [#530](https://github.com/zeveck/zskills-dev/pull/530) | 9ecdd79 | Clean ship — first to merge; cascaded conflicts onto #516. |
+| #517 | [#531](https://github.com/zeveck/zskills-dev/pull/531) | 299eb41 | CI failed initially because tightened assertions assumed stateful env (live worktrees / commits in 24h). Fix-cycle 1/2 rewrote two assertions as stateful-env-agnostic (`output begins with '['` JSON array opener, OR contains data key). Re-arm of auto-merge needed once after force-push cleared the queue. |
+| #516 | [#532](https://github.com/zeveck/zskills-dev/pull/532) | 2bcf0853 | Auto-rebase conflict on 4 SKILL.md files after #518 merged. Fix-cycle 1/2 resolved version-line conflicts, recomputed content hashes (`briefing 2026.05.21+6a46c3`, `update-zskills 2026.05.21+d2d610`), unified `tier1-shipped-hashes.txt` with the new combined briefing.py blob (`792833d5`), and re-rebased once more after #533 landed mid-CI. Two-iteration auto-rebase loop worked correctly. |
+
+### Notable
+1. **#518 cascade:** the briefing.py edit forced a Tier-1 hash registration in `tier1-shipped-hashes.txt`, which forced an `update-zskills` SKILL.md version bump (registry file is inside the skill's content-hash projection). Implementer absorbed this cleanly as a second commit; verifier confirmed scope.
+2. **#516 anti-test discovered:** `test-cleanup-merged-review.sh` had a case asserting `PR=MERGED + ahead=3 → REMOVE/3` — i.e., the test codified the silent-loss bug. Implementer split it into two cases (`ahead=0 → REMOVE/3` + `ahead=3 → DECIDE/11`) per the "test was genuinely wrong" exception. Verifier confirmed defensibility from before/after diff.
+2. **#517 went tighter than the body sketched:** body suggested "location-aware (within context block)" for the impl-dispatch pin; implementer chose window=0 (same-line) — strictly tighter, catches the demoted-with-stray-comment mutation cleanly.
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — leave open as architectural memo (per tracker blurb) |
+| #510 | research-blurb + impl-prompt missing tier1-hash-registration | Pool-not-picked | Out of top-N; pre-existing tracker shows it's likely already addressed by the cascade pattern from this sprint |
+| #511 | Verifier tally check missing | Pool-not-picked | Out of top-N for this fire; reconsider next fire |
+| #515 | block-unsafe-generic.sh: git push origin HEAD bypasses BLOCK_MAIN_PUSH | Pool-not-picked | Out of top-N for this fire |
+
+### Cron lifecycle
+- Sprint started: 2026-05-20T23:53:31-04:00
+- Cron: `*/30 * * * *` job 8cc665fb (`Run /fix-issues 3 auto pr every 30m now`)
+- Next fire: top of next 30-min mark
+- Worktree count at sprint entry: 0 fix/issue-* live (cap 3)
+

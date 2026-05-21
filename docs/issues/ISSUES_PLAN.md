@@ -710,3 +710,40 @@ done
 Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project.sh.template` (rendered via `update-zskills`'s template render path with project-config defaults). Mirror to `.claude/hooks/` parity check (`tests/test-hooks-mirror-parity.sh` currently has 0 push assertions — confirmed via `grep`). ~240 cases × 2 hooks × 2 destinations (main vs feat) = ~960 expect calls; at the existing `expect_deny` per-case ~10ms cost that's ~10s total — cheap. Critical decision: this is **test-only, not a deny refactor.** The current hook normalization already covers the matrix in principle (per the #470 fix landing the `refs/heads/` strip); the missing thing is the test that proves it and catches future drift. Adding the property test is purely additive — no hook changes, no `metadata.version` bumps (no skill subtree touched). The expected first run may discover 1-2 currently-uncovered points (e.g., `sh -c` wrapper combined with `+refs/heads/main` — never explicitly tested) which would land alongside the enumeration in the same PR via a small hook-side fix. The wrapper-recursion axis touches the `extract_cd_target` recursion from #427 (already landed in #435) so `bash -c 'bash -c "git push origin +main"'` is already covered structurally; the test just needs to enumerate one wrapper-depth=1 layer to assert closure. Allow-list discipline: the matrix asserts BOTH deny (for main/master destinations) AND allow (for feature-branch destinations) — the latter is critical because over-broad regex changes during the cycle have caused symmetric false-positives (e.g., legitimate `feat:main-branch-rename` style names — escape with anchors). Defer: a separate "negative-allow matrix" expanding the feat-branch allow side to 100+ feature-branch-name variants is out of scope; the deny matrix is the primary fix.
 
 **Complexity:** M. **Action now:** /do pr — test-only addition with non-trivial design surface. Sized M not S because: (1) the matrix dimensions (5 axes, 240 cases) need careful enumeration to avoid both over-coverage (impossible combinations) and under-coverage (forgotten axes — e.g., `--force-with-lease` flag was missed in the original enumeration); (2) the project-hook rendered-template test path requires invoking `update-zskills`'s template render machinery, not just sourcing the template; (3) the parity-check tier (mirror to `.claude/hooks/` per `tests/test-hooks-mirror-parity.sh`) needs careful selection of which subset of the 240 cases runs at parity-time vs at primary-test-time to keep parity-test runtime bounded; (4) any test failures during the initial run surface real hook gaps that need to land in the same PR (additive fix-class). Not /draft-plan scale because the design surface is bounded (one test file, one or two new helper functions, no hook surgery beyond closing any gaps the matrix surfaces); not /quickfix scale because the enumeration + dimension-choice decisions are genuinely judgment-class, not mechanical. **Fix shape: test-only enumeration (NOT structural deny refactor).** The hook normalization is structurally sound per the cumulative landings; the gap is the absence of the property-test that proves it.
+
+---
+
+### #518 — Silent miscategorization: .landed `status: failed` / `direct-push-failed` / `direct-verify-failed` not recognized by briefing.py + /fix-report readers
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `.landed` writers emit failure-class statuses (`failed`, `direct-push-failed`, `direct-verify-failed`) per failure-protocol.md:118 and direct.md:80/112, but readers (`briefing.py:397-461`, `fix-report/SKILL.md:161`) whitelist only success-class statuses (`full`, `landed`, `partial`, `pr-ready`, `pr-ci-failing`, `pr-failed`, `conflict`, `pr-state-unknown`). Failure-class markers fall through to mtime-bucket "old worktree" — defeating the whole point of the failure statuses (per failure-protocol.md:125).
+
+**Fix outline.** Extend the two reader whitelists to recognize the three failure statuses and route them to a "needs attention" bucket: (a) `briefing.py:430` add `failed`/`direct-push-failed`/`direct-verify-failed` to the set and surface in the `landed-pr-needs-attention` summary; (b) `fix-report/SKILL.md:161` extend the documented closed status set + status table. Add a small conformance test (`tests/test-landed-status-vocabulary.sh`) listing every writer-emitted status and asserting each appears in the reader whitelists. Companion dormant `server.py:_resolve_paths` reports_dir omission noted in body but out of scope here.
+
+**Complexity:** S (2-file edit + 1 small test). **Action now:** /do pr — extend the reader whitelists in `briefing.py:430` and `fix-report/SKILL.md:161` to include the three failure-class statuses; add `tests/test-landed-status-vocabulary.sh` asserting every writer status appears in every reader whitelist.
+
+---
+
+### #517 — Test assertion fidelity: 3 tests pass for the wrong reason
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** Three tests assert proxies, not the behavior they claim to test. Each can be silently bypassed by a real regression: (1) `tests/test-briefing-parity.sh:65-77` asserts `exit_code -eq 0 AND (non-empty stdout OR empty stdout)` — the second clause is a tautology; (2) `tests/test_zskills_monitor_server.sh:341-359` validates `/api/plan/<slug>` activity[] filtering by checking presence-only, no second pipeline seeded to assert EXCLUSION (the #473 fix would silently regress); (3) `tests/test-skill-conformance.sh:535-541` uses whole-file `grep -E` for the `subagent_type: "implementer"` pin so a comment mentioning it satisfies the assertion even if the actual dispatch site has been demoted.
+
+**Fix outline.** Per body's fix sketches: (1) assert specific expected content per subcommand and drop the OR-empty branch; (2) seed a second pipeline `run-other-002` and assert EXCLUSION from `/api/plan/sample-plan` activity[]; (3) make `check_in_file` location-aware or add structured dispatch-site detection so the literal must appear in an Agent/dispatch context block, not anywhere in the file.
+
+**Complexity:** S (3 test files; each fix is mechanical and ~15 lines). **Action now:** /do pr — rewrite the three assertions per the body's fix sketches; add a fixture for #2 (`run-other-002`) and a structured-dispatch-site check or near-Agent locality grep for #3.
+
+---
+
+### #516 — Silent commit loss: `/briefing worktrees-status` + `/cleanup-merged` treat PR=MERGED as proof of branch-on-main without ahead-count
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** Two classifiers — `briefing.py:441-461` `format_worktrees_status` and `cleanup-merged/SKILL.md` Rule 3 (line 358) plus Phase 5 default-mode path (270-310) — short-circuit on `gh pr view state=MERGED` and classify as SAFE_TO_REMOVE / REMOVE without checking `git rev-list --count $MAIN_BRANCH..$branch`. `gh pr view` is sticky after merge, so a worktree with post-merge commits on its feature branch is silently misclassified; the subsequent `git worktree remove` + `git branch -D` reaps the post-merge commits.
+
+**Fix outline.** Add an ahead-count gate in BOTH surfaces BEFORE classifying as SAFE_TO_REMOVE/REMOVE. If `ahead > 0`, downgrade the category to `landed-pr-merged-but-diverged` (or similar) with reason `PR merged but branch has N commits not on main — investigate`. Same fix shape in both files. Add tests that simulate post-merge commits and assert NOT_SAFE_TO_REMOVE.
+
+**Complexity:** M (2-file fix + new tests; data-loss-class so paired regression tests are mandatory). **Action now:** /do pr — add `git rev-list --count $MAIN_BRANCH..$branch` gate in `briefing.py:441` and `cleanup-merged/SKILL.md` Rule 3 + Phase 5 (270-310); add regression tests (`tests/test-briefing-worktrees-merged-diverged.sh`, `tests/test-cleanup-merged-ahead-gate.sh`) that seed post-merge commits and assert NOT_SAFE_TO_REMOVE.
+
