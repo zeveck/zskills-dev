@@ -73,8 +73,8 @@ else
   fail "Phase 7 heading missing"
 fi
 
-# 5. All 10 rules present in rule table
-for n in 1 2 3 4 5 6 7 8 9 10; do
+# 5. All rules present in rule table (1–10 plus rule 11 added for issue #516)
+for n in 1 2 3 4 5 6 7 8 9 10 11; do
   if grep -qE "^\| $n \|" "$SKILL"; then
     pass "rule table row $n present"
   else
@@ -211,16 +211,22 @@ else
   fail "rule 2 glob: expected KEEP/2, got: $out"
 fi
 
-# Rule 3: PR=MERGED + clean
-run_classify "PR=MERGED + clean" "REMOVE" "3" \
-  env BR="feat/x" WT="/tmp/x" LK="0" AH="3" UG="0" PR="MERGED" DT="" LS=""
-# Rule 3 via upstream-gone
+# Rule 3: PR=MERGED + clean + ahead=0 (issue #516 — ahead>0 is gated by rule 11)
+run_classify "PR=MERGED + clean + ahead=0" "REMOVE" "3" \
+  env BR="feat/x" WT="/tmp/x" LK="0" AH="0" UG="0" PR="MERGED" DT="" LS=""
+# Rule 3 via upstream-gone (squash-merge is fine; unpushed guard handles
+# the un-squashed leak path in Phase 5)
 run_classify "upstream-gone + clean" "REMOVE" "3" \
   env BR="feat/x" WT="/tmp/x" LK="0" AH="3" UG="1" PR="" DT="" LS=""
 
-# Rule 4: merged + dirty
-run_classify "PR=MERGED + dirty" "DECIDE" "4" \
-  env BR="feat/x" WT="/tmp/x" LK="0" AH="3" UG="0" PR="MERGED" DT="M f.txt" LS=""
+# Rule 11 (issue #516): PR=MERGED + ahead>0 → DECIDE (was previously
+# silently classified REMOVE — the silent-commit-loss bug)
+run_classify "PR=MERGED + ahead>0 (diverged)" "DECIDE" "11" \
+  env BR="feat/x" WT="/tmp/x" LK="0" AH="3" UG="0" PR="MERGED" DT="" LS=""
+
+# Rule 4: merged + dirty (Rule 11 short-circuits if ahead>0, so use ahead=0)
+run_classify "PR=MERGED + dirty + ahead=0" "DECIDE" "4" \
+  env BR="feat/x" WT="/tmp/x" LK="0" AH="0" UG="0" PR="MERGED" DT="M f.txt" LS=""
 
 # Rule 5: commits ahead + PR=OPEN
 run_classify "commits ahead + PR=OPEN" "KEEP" "5" \
