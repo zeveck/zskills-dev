@@ -443,7 +443,15 @@ def classify_worktrees(repo_root=None):
             if live is not None:
                 gh_state = live.get('state')
                 if gh_state == 'MERGED':
-                    category = 'landed-pr-merged'
+                    # Issue #516: `gh pr view` state=MERGED is sticky after
+                    # merge — it never reverts to OPEN even if the local
+                    # branch gains post-merge commits. Gate on local
+                    # ahead-count so the user is surfaced (not silently
+                    # told SAFE TO REMOVE) when the branch has diverged.
+                    if counts['ahead'] > 0:
+                        category = 'landed-pr-merged-but-diverged'
+                    else:
+                        category = 'landed-pr-merged'
                 elif gh_state == 'CLOSED':
                     category = 'landed-pr-abandoned'
                 # OPEN → keep base_category (marker-derived).
@@ -1756,6 +1764,19 @@ def format_worktrees_status(worktrees, opts=None):
                 safe_to_remove.append({**wt, 'reason': 'PR merged (live gh check)'})
             continue
 
+        # Issue #516: PR=MERGED but local branch has commits not on main.
+        # `gh pr view` is sticky after merge, so the live MERGED state
+        # is not proof the commits are on main. Surface as NOT SAFE.
+        if wt['category'] == 'landed-pr-merged-but-diverged':
+            ahead = wt.get('ahead', 0)
+            not_safe.append({
+                **wt,
+                'unlanded': [],
+                'landedCount': 0,
+                'reason': f'PR merged but branch has {ahead} commits not on main — investigate (issue #516)',
+            })
+            continue
+
         # For other categories, check if commits are actually on main
         wt_commits = [] if opts.get('skipGit') else get_worktree_commits(wt['branch'], main_path)
         partition = partition_commits_by_landing(wt_commits, main_subjects)
@@ -1802,11 +1823,17 @@ def format_worktrees_status(worktrees, opts=None):
         for wt in not_safe:
             landed_note = f', {wt["landedCount"]} landed' if wt.get('landedCount', 0) > 0 else ''
             p = f'  [{wt["purpose"]}]' if wt.get('purpose') else ''
-            lines.append(f'  {wt["name"]}  {len(wt["unlanded"])} unlanded{landed_note}{p}')
-            for c in wt['unlanded'][:5]:
+            unlanded_count = len(wt.get('unlanded', []))
+            if unlanded_count == 0 and wt.get('reason'):
+                # Issue #516: diverged-after-merge has no enumerated
+                # unlanded commits but a meaningful reason — surface it.
+                lines.append(f'  {wt["name"]}  ({wt["reason"]}){p}')
+            else:
+                lines.append(f'  {wt["name"]}  {unlanded_count} unlanded{landed_note}{p}')
+            for c in wt.get('unlanded', [])[:5]:
                 lines.append(f'    {c["hash"]} {c["subject"]}')
-            if len(wt['unlanded']) > 5:
-                lines.append(f'    ... and {len(wt["unlanded"]) - 5} more')
+            if unlanded_count > 5:
+                lines.append(f'    ... and {unlanded_count - 5} more')
         lines.append('')
 
     if named:

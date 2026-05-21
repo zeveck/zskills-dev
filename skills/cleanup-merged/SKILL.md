@@ -10,7 +10,7 @@ description: >-
   every local branch + worktree per merit rules and presents an
   interactive picker for cleanup actions.
 metadata:
-  version: "2026.05.18+6491e2"
+  version: "2026.05.20+fdc081"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -257,6 +257,22 @@ while IFS= read -r branch; do
     continue
   fi
 
+  # Issue #516: ahead-count gate. `gh pr view` is sticky after merge, so
+  # PR=MERGED + ahead>0 means the local branch may carry post-merge
+  # commits that would be silently reaped by `git branch -D`. Only gate
+  # the PR=MERGED path (upstream-gone implies squash-merge, where ahead>0
+  # is expected and the unpushed-commit guard above already handles the
+  # un-squashed case).
+  if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ]; then
+    AHEAD=$(git rev-list --count "$MAIN_BRANCH..$branch" 2>/dev/null || echo 0)
+    [ -z "$AHEAD" ] && AHEAD=0
+    if [ "$AHEAD" -gt 0 ]; then
+      echo "  SKIP   $branch (PR merged but branch has $AHEAD commits not on main — investigate; do not auto-remove)"
+      SKIPPED=$((SKIPPED+1))
+      continue
+    fi
+  fi
+
   # Worktree detection: does any registered worktree hold $branch?
   # `git worktree list --porcelain` emits blocks like:
   #     worktree /abs/path
@@ -355,6 +371,7 @@ alphabetized table with letter IDs and verdicts, then prompt for action.
 |---|---|---|---|
 | 1 | Worktree is `locked` | **KEEP** | Live process; never touch |
 | 2 | Branch name matches `cleanup.long_running_patterns` config glob | **KEEP** | Explicitly preserved |
+| 11 | PR=MERGED AND commits ahead of main | **DECIDE** | `gh pr view` is sticky after merge; ahead>0 means possible post-merge commits (issue #516) — surface, don't auto-remove |
 | 3 | (upstream-gone OR PR=MERGED) AND worktree clean | **REMOVE** | Current `/cleanup-merged` default action |
 | 4 | (upstream-gone OR PR=MERGED) AND worktree dirty | **DECIDE** | Merged but uncommitted changes — inspect first |
 | 5 | Commits ahead AND PR=OPEN | **KEEP** | Active in-flight PR |
@@ -491,6 +508,18 @@ if [ "$REVIEW" -eq 1 ]; then
     local has_dirty=0
     [ -n "$dirty" ] && has_dirty=1
 
+    # Rule 3a (issue #516) — PR=MERGED + ahead>0 means the local branch
+    # has commits not on main. `gh pr view` is sticky after merge, so a
+    # diverged branch still reports MERGED. Surface for manual review
+    # instead of silently reaping post-merge commits. Squash-merge alone
+    # ALSO shows ahead>0 (different SHA), but distinguishing post-merge
+    # divergence from squash-merge requires content comparison the
+    # classifier doesn't do; the safe action in either case is DECIDE.
+    if [ "$pr_state" = "MERGED" ] && [ "$ahead" -gt 0 ]; then
+      VERDICT="DECIDE"; RULE_NUM=11
+      RULE_DESC="PR merged but branch has $ahead commits not on main — investigate"
+      return
+    fi
     # Rule 3
     if [ "$merged" = "1" ] && [ "$has_dirty" = "0" ]; then
       VERDICT="REMOVE"; RULE_NUM=3
