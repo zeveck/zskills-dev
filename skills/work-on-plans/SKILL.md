@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.15+2d47a4"
+  version: "2026.05.21+bd5465"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -1071,8 +1071,11 @@ below that detects sub-hour intervals (`m`-suffixed numbers,
 schedule_under_1h() {
   # Returns 0 (true) iff $1 looks like a sub-hour interval.
   local s="$1"
-  # forms: "30m", "5m", "every 30m"
-  [[ "$s" =~ (^|[[:space:]])([0-9]+)m([[:space:]]|$) ]] && return 0
+  # forms: "30m", "5m", "every 30m" (N<60 only — "60m"/"120m" are ≥1h)
+  [[ "$s" =~ (^|[[:space:]])([0-9]+)m([[:space:]]|$) ]] && {
+    local n="${BASH_REMATCH[2]}"
+    [ "$n" -lt 60 ] && return 0
+  }
   # forms: "*/30 * * * *", "*/5 * * * *"
   [[ "$s" =~ ^\*/([0-9]+)[[:space:]] ]] && {
     local n="${BASH_REMATCH[1]}"
