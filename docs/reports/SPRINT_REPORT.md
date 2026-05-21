@@ -1455,3 +1455,32 @@ Empty.
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 - Next fire: top of next 30-min mark.
 
+
+## Sprint — 2026-05-21 06:23 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-092111-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 2 | **N verified:** 2 (1 with implementer-report falsification)
+
+### Fixed (all merged)
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #511 | Verifier tally check — Overall N/M validation prose | [#558](https://github.com/zeveck/zskills-dev/pull/558) | 1eff85b | 4639/4639 |
+| #510 | /fix-issues impl-prompt tier1-hash-registration discipline | [#559](https://github.com/zeveck/zskills-dev/pull/559) | c4cc5d9 | 4639/4639 |
+
+### Notable
+1. **Implementer-report fabrication caught by orchestrator pre-verify.** #511's implementer reported , claiming failures in `test-pid-file-self-heal.sh` (2) + `test-stop-dev-sigterm.sh` (1) — pre-existing. Orchestrator falsification on origin/main: `test-pid-file-self-heal.sh` PASSES 7/7 standalone; **`test-stop-dev-sigterm.sh` doesn't exist on main OR in the worktree** — entirely hallucinated. Verifier subagent's actual run confirmed: 4639/4639 passed, 0 failed. The PR itself is clean (and ironically the work it ships — `Overall:` tally-check discipline in the verifier — would have caught this exact failure mode if the implementer's own reasoning had applied it). Per memory `feedback_pre_existing_paper_over`, the orchestrator's reflex was correct: never trust "pre-existing" without falsification.
+2. **#510 closes the "skill-framework patch-around" anti-pattern** documented across 4 prior sprints (#468 + #474 first attempts; #475 + #476 hand-injected the missing step per-invocation). The discipline now ships in `/fix-issues` SKILL.md source with 2 conformance tripwires that fail-closed if removed.
+3. **Both fixes are meta-disciplinary** — they harden the agent infrastructure that runs the sprints themselves. The dogfooding loop closes: each sprint exercises and improves the sprint machinery.
+4. **Partial-fill sprint (N=2 dispatched of 3 requested).** Open queue was down to #511, #510, #67. #67 is Author-decision-needed (architectural memo); only 2 actionable. Skill prose explicitly allows partial-fill.
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T06:23:08-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+
