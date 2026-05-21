@@ -1350,3 +1350,42 @@ Empty.
 - Next fire: top of next 30-min mark
 - Worktree count at sprint entry: 0 fix/issue-* live (cap 3)
 
+
+## Sprint — 2026-05-21 01:52 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-045250-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 3 | **N verified:** 3 (with 1 verifier-surfaced env issue → filed as #540)
+
+### Fixed
+| # | Title | Worktree | Branch | Commit | Tier | Tests | Merged PR | Merge SHA |
+|---|-------|----------|--------|--------|------|-------|-----------|-----------|
+| #538 | Missing test-skills-mirror-parity.sh | wt-fix-issue-538 | fix/issue-538 | 833449e | impl S | new test 59/59; mutation-verified | [#541](https://github.com/zeveck/zskills-dev/pull/541) | 3609df6 |
+| #537 | /do Phase 4 step 2 stash prose hits hook deny | wt-fix-issue-537 | fix/issue-537 | 1f4ef41 | impl S | 4544/4545 (1 unrelated #540 flake) | [#542](https://github.com/zeveck/zskills-dev/pull/542) | 4c7d52c |
+| #536 | /commit raw $FULL_TEST_CMD bypasses $TEST_OUT capture | wt-fix-issue-536 | fix/issue-536 | bbedfc6 | impl S | 4545/4545 | [#543](https://github.com/zeveck/zskills-dev/pull/543) | e5129ea |
+
+### Notable
+1. **Cron-driven cadence working as designed.** Sprint 1 (`sprint-20260521-025059-sprint`) finished at 04:50 UTC; cron fired immediately at the next :30 mark; this sprint launched 3 fresh fix-cycles for issues filed since (which themselves were partly /qe-audit-driven follow-ups). Recurrent loop is self-sustaining.
+2. **Verifier discipline caught a false "pre-existing" claim.** #538's implementer reported case 7 of `test-create-worktree.sh` as "pre-existing on origin/main `0b2d4bd`"; verifier ran the test in isolation on origin/main and **falsified** the claim (PASSES 26/26 in isolation). Investigation surfaced that the failure is a real test-isolation flake exposed only under full-suite ordering in worktrees with leaked env state. Filed as **#540** (test-create-worktree.sh isolation bug). Per memory `feedback_pre_existing_paper_over.md`, this is exactly the failure mode the rule warns against.
+3. **#537 chose Option 1 (dispatch /commit land) over Option 2 (inline-mirror).** Single source of truth — future `/commit land` improvements propagate to `/do` automatically. Verifier confirmed no remaining stash-write instructions in Phase 4 step 2.
+4. **Sibling rebase loop worked twice this sprint.** PR #541 and #542 each needed Step 6b auto-rebase iterations because PRs landed concurrently during their CI runs. The auto-rebase mechanism handled this cleanly without orchestrator intervention.
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — leave open as architectural memo |
+| #515 | block-unsafe-generic git push origin HEAD bypass | Pool-not-picked | Out of top-N (older issue; deferred to next cron fire) |
+| #511 | Verifier tally check missing | Pool-not-picked | Same |
+| #510 | fix-issues research-blurb + impl-prompt missing tier1-hash-registration | Pool-not-picked | Same — relevant after this sprint's cascade pattern in #538-#516 |
+| #528 | git-tokenwalk `is_git_subcommand` path-strip | Pool-not-picked | Out of top-N |
+| #535 | /land-pr REBASE_STDERR_FILE key written but no caller parses | Pool-not-picked | Out of top-N |
+
+### Surfaced this sprint
+- **#540 (filed)** — `test-create-worktree.sh` cases 7 + 16 fail intermittently under `bash tests/run-all.sh` but pass in isolation; test-isolation env state leak.
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T01:52:03-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+- Worktree count at sprint entry: 0 fix/issue-* live (cap 3; prior sprint's 3 worktrees all `.landed status: landed` per filter).
+
