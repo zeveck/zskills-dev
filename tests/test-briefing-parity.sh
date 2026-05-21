@@ -50,29 +50,79 @@ fi
 TEST_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
-# Smoke test all subcommands with python3
-# Note: "report" writes files, so redirect its output to the temp dir
+# Smoke test all subcommands with python3. Each subcommand asserts a
+# stable expected substring in its actual output — NOT "exit 0 + any
+# output" (issue #517: that latter form is tautological because every
+# non-zero-exit and every empty-stdout-but-stderr-warning case passes,
+# masking real "subcommand handler returned empty string" regressions).
+# Note: "report" writes files, so its stdout includes the "Report
+# written to: <path>" confirmation line + the file body.
+#
+# Per-subcommand expected substring (rationale):
+#   summary     — top-of-output banner is always "BRIEFING — <date>"
+#   report      — emits "Report written to:" then markdown header begins
+#                 with "# Briefing Report —"; check for the file header
+#                 in the OUTPUT FILE rather than stdout (stdout is the
+#                 single confirmation line).
+#   verify      — emits one of "VERIFICATION NEEDED" / "NO VERIFICATION
+#                 NEEDED" depending on plan-report state. Match either.
+#   current     — top header is "CURRENTLY IN FLIGHT —"
+#   worktrees   — emits a JSON array; the first object always has
+#                 `"path":` (every worktree has a path). Match `"path":`.
+#   commits     — emits a JSON array; every commit object has `"hash":`.
+#   checkboxes  — emits a JSON array; objects have `"file":` keys. Empty
+#                 array `[]` is also valid (no plan reports = no checkboxes),
+#                 so accept either `"file":` OR a literal `[]` whole-output.
 smoke_cmds=(
-  "summary"
-  "report --since=24h --output=$TEST_TMPDIR/briefing-test.md"
-  "verify"
-  "current"
-  "worktrees"
-  "commits --since=24h"
-  "checkboxes"
+  "summary|BRIEFING —"
+  "report --since=24h --output=$TEST_TMPDIR/briefing-test.md|Report written to:"
+  "verify|VERIFICATION"
+  "current|CURRENTLY IN FLIGHT"
+  "worktrees|\"path\":"
+  "commits --since=24h|\"hash\":"
+  "checkboxes|"  # custom-matched below (allow empty-array)
 )
 
-for cmd in "${smoke_cmds[@]}"; do
+for entry in "${smoke_cmds[@]}"; do
+  cmd="${entry%%|*}"
+  expected="${entry#*|}"
   # shellcheck disable=SC2086
   output=$(cd "$REPO_ROOT" && python3 "$REPO_ROOT/skills/briefing/scripts/briefing.py" $cmd 2>&1)
   exit_code=$?
-  if [[ $exit_code -eq 0 && -n "$output" ]]; then
-    pass "python3 briefing.py $cmd"
-  elif [[ $exit_code -eq 0 && -z "$output" ]]; then
-    # Some subcommands may produce empty output legitimately (e.g. no checkboxes)
-    pass "python3 briefing.py $cmd (empty but exit 0)"
-  else
+  if [[ $exit_code -ne 0 ]]; then
     fail "python3 briefing.py $cmd (exit=$exit_code)"
+    continue
+  fi
+
+  if [[ "$cmd" == "checkboxes" ]]; then
+    # checkboxes: accept either non-empty JSON-array-with-"file": OR a
+    # literal empty array "[]" (legitimate when no plan reports exist).
+    trimmed=$(printf '%s' "$output" | tr -d '[:space:]')
+    if [[ "$trimmed" == "[]" ]] || printf '%s' "$output" | grep -q '"file":'; then
+      pass "python3 briefing.py $cmd (JSON array)"
+    else
+      fail "python3 briefing.py $cmd (expected '\"file\":' key or '[]'; got: $output)"
+    fi
+    continue
+  fi
+
+  if [[ "$cmd" == report* ]]; then
+    # report: stdout has "Report written to:"; ALSO verify the written
+    # file contains the "# Briefing Report —" header (catches a regression
+    # where the handler prints the confirmation but emits an empty file).
+    if printf '%s' "$output" | grep -qF "$expected" \
+       && grep -qF '# Briefing Report —' "$TEST_TMPDIR/briefing-test.md"; then
+      pass "python3 briefing.py $cmd"
+    else
+      fail "python3 briefing.py $cmd (stdout missing '$expected' or output file missing '# Briefing Report —' header)"
+    fi
+    continue
+  fi
+
+  if printf '%s' "$output" | grep -qF "$expected"; then
+    pass "python3 briefing.py $cmd"
+  else
+    fail "python3 briefing.py $cmd (expected '$expected' in output; got first 200 chars: $(printf '%s' "$output" | head -c 200))"
   fi
 done
 

@@ -110,6 +110,53 @@ check_in_file() {
   fi
 }
 
+# check_in_file_near <skill> <relative-path> <label> <pattern> <context-pattern> [window-lines]
+# Like check_in_file, but requires <pattern> AND <context-pattern> to
+# appear within <window-lines> of each other (default 10; pass 0 for
+# "same line"). Used for impl-dispatch pin checks (issue #517): the
+# literal `subagent_type: "implementer"` must appear ON THE SAME LINE
+# as the `Agent` keyword (i.e. on the actual dispatch directive line),
+# not in an unrelated comment or footnote. Whole-file `grep -E` would
+# let a demoted dispatch site (e.g. subagent_type: "general-purpose")
+# pass as long as ANY mention of the pin literal survives elsewhere —
+# a comment like `<!-- TODO: re-pin subagent_type: "implementer" -->`
+# would satisfy the assertion.
+check_in_file_near() {
+  local skill="$1" relpath="$2" label="$3" pattern="$4" ctx="$5" window="${6:-10}"
+  local target
+  if [[ "$skill" == */* ]]; then
+    target="$REPO_ROOT/$skill/$relpath"
+  else
+    target="$REPO_ROOT/skills/$skill/$relpath"
+  fi
+  if [ ! -f "$target" ]; then
+    fail "[$skill/$relpath] $label" "file does not exist"
+    return
+  fi
+  # awk: track the last line numbers at which $pattern and $ctx each
+  # matched; pass if they are ever within $window lines of each other.
+  if awk -v pat="$pattern" -v ctx="$ctx" -v win="$window" '
+    {
+      if (index($0, pat))  pat_lines[++pn] = NR
+      if (index($0, ctx))  ctx_lines[++cn] = NR
+    }
+    END {
+      for (i = 1; i <= pn; i++) {
+        for (j = 1; j <= cn; j++) {
+          d = pat_lines[i] - ctx_lines[j]
+          if (d < 0) d = -d
+          if (d <= win) exit 0
+        }
+      }
+      exit 1
+    }
+  ' "$target"; then
+    pass "[$skill/$relpath] $label"
+  else
+    fail "[$skill/$relpath] $label" "no '$pattern' within $window lines of '$ctx'"
+  fi
+}
+
 # check_not_in_file <skill> <relative-path> <label> <pattern>
 # Inverted check_in_file.
 check_not_in_file() {
@@ -529,16 +576,20 @@ echo "=== implementer subagent — impl-dispatch site pins (Verifier-cannot-run 
 # auto-extend to 600s and never trigger the bg+Monitor stall pattern that
 # hangs the dispatch at "Tests are running. Let me wait for the monitor."
 #
-# Scoped per-file (check_in_file) so adding the directive to an unrelated
-# file inside the skill tree doesn't satisfy the assertion — each
-# dispatch site is verified independently.
-check_in_file run-plan    "SKILL.md"                   "impl-dispatch pins implementer" 'subagent_type: "implementer"'
-check_in_file run-plan    "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"'
-check_in_file fix-issues  "SKILL.md"                   "fix-agent pins implementer"     'subagent_type: "implementer"'
-check_in_file fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"'
-check_in_file land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins implementer" 'subagent_type: "implementer"'
-check_in_file do          "modes/pr.md"                "impl+fix-cycle pins implementer" 'subagent_type: "implementer"'
-check_in_file quickfix    "SKILL.md"                   "agent-dispatched+fix-cycle pins implementer" 'subagent_type: "implementer"'
+# Scoped per-file (check_in_file_near) so adding the directive to an
+# unrelated file inside the skill tree doesn't satisfy the assertion —
+# each dispatch site is verified independently. Issue #517: the
+# `_near` form requires the pin literal to appear within 10 lines of
+# the `Agent` keyword (i.e., near a real dispatch directive); a
+# whole-file `grep -E` would let a demoted dispatch site (general-purpose)
+# pass as long as ANY footnote/comment elsewhere mentioned the pin.
+check_in_file_near run-plan    "SKILL.md"                   "impl-dispatch pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near run-plan    "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near fix-issues  "SKILL.md"                   "fix-agent pins implementer"     'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near do          "modes/pr.md"                "impl+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near quickfix    "SKILL.md"                   "agent-dispatched+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 
 # Agent definition file exists with the expected frontmatter shape.
 if [ -f "$REPO_ROOT/.claude/agents/implementer.md" ]; then
