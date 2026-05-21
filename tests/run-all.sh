@@ -22,10 +22,25 @@ run_suite() {
 
   echo "$output"
 
-  # Extract counts from the "Results: X passed, Y failed" line
-  local passed failed
-  passed=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1)
-  failed=$(echo "$output" | grep -oP '\d+(?= failed)' | tail -1)
+  # Extract counts from the canonical "Results: <N> passed, <N> failed"
+  # line. Anchor to that exact line shape so any inner-test diagnostics
+  # (e.g., test-hooks.sh's fixture-extension synthetic-fixture run that
+  # nests a `tests/test-skill-conformance.sh` invocation — see #587) can't
+  # leak a count into the outer parser. Strip ANSI color codes first
+  # (some suites colorize Results in red/green). If no canonical line is
+  # found in the output, fall through with 0/0 — the suite's own exit
+  # code still flips OVERALL_EXIT below, so an unparseable suite is not
+  # silently dropped.
+  local passed failed results_line stripped
+  stripped=$(echo "$output" | sed -E $'s/\x1b\\[[0-9;]*m//g')
+  results_line=$(echo "$stripped" | grep -E '^Results: [0-9]+ passed,( [0-9]+ failed|.* [0-9]+ failed)' | tail -1)
+  if [[ -n "$results_line" ]]; then
+    passed=$(echo "$results_line" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+')
+    failed=$(echo "$results_line" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+')
+  else
+    passed=0
+    failed=0
+  fi
 
   TOTAL_PASS=$((TOTAL_PASS + ${passed:-0}))
   TOTAL_FAIL=$((TOTAL_FAIL + ${failed:-0}))
