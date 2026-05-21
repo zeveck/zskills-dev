@@ -858,3 +858,28 @@ Run against BOTH `hooks/block-unsafe-generic.sh` AND `hooks/block-unsafe-project
 
 **Complexity:** S-M (~3 line resolver in 2 files + 2 mirrors + 2 test cases). **Action now:** /do pr — add `HEAD` resolution after existing normalizations in `block-unsafe-generic.sh` push gate + `block-unsafe-project.sh.template` rule (a); mirror both to `.claude/hooks/`; add path-and-branch toggle test cases at `tests/test-hooks.sh:408+`.
 
+
+---
+
+### #511 — Verifier tally check missing — counts intermediate PASS lines, misses regressions
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `.claude/agents/verifier.md` test-validation prose counts inline PASS lines but does NOT validate the final `Overall: N/M passed` tally OR compare against a captured baseline. Observed 2026-05-18 with 2 regressions slipped through (Tier-1 drift + commit-cohabitation) — verifier reported 3313/3313 but the real tally was 3311/3313. Same defect mirrors into skill SKILL.md prompts that drive orchestrator-side test runs (e.g., `/run-plan` Phase 4 verification).
+
+**Fix outline.** Add to `.claude/agents/verifier.md` test-validation section (and mirror into skill prompts that perform inline test validation): require the verifier to (1) assert the test output contains `Overall: N/M passed`; (2) assert N == M; (3) if a pre-impl baseline pass-count was captured, require N >= baseline_N; (4) if the summary line is absent → FAIL (truncation / hang signal). No test needed — this is agent-prompt prose; effectiveness is validated by the next sprint that exercises it.
+
+**Complexity:** S (1 file edit on `.claude/agents/verifier.md`; possibly 1-2 skill SKILL.md prompts to mirror; no version bumps for `.claude/agents/` files). **Action now:** /do pr — add Overall-line tally check to `.claude/agents/verifier.md` test-validation prose; grep skill SKILL.md prompts for "test-validation" or "run tests" patterns and mirror the discipline where it's needed.
+
+---
+
+### #510 — /fix-issues research-blurb + impl-prompt missing tier1-hash-registration step
+
+**Labels:** bug | **Verdict:** NOT FIXED
+
+**Problem.** `skills/update-zskills/references/tier1-shipped-hashes.txt` is the Tier-1 file-hash registry. When a fix-PR modifies a Tier-1 file (e.g., `briefing.py`, `sanitize-pipeline-id.sh`), the SAME PR must register the new blob's SHA-1 in the registry or CI fails. This requirement is NOT encoded in `skills/fix-issues/` SKILL.md — neither research-blurb template nor impl-prompt template. Four observed CI failures (sprints from 2026-05-20). Orchestrators began per-invocation hand-injection of the step — exactly the "skill-framework repo — surface bugs, don't patch" anti-pattern CLAUDE.md forbids.
+
+**Fix outline.** Add prose to `skills/fix-issues/SKILL.md` impl-prompt template: "If your fix modifies a Tier-1 file (per `skills/update-zskills/references/tier1-shipped-hashes.txt`), the SAME commit must update that file's blob hash entry in the registry." Optionally add a detection helper that pre-computes the Tier-1 intersection for the orchestrator (issue body sketches the bash). Bump `/fix-issues` SKILL.md `metadata.version` per the discipline; mirror.
+
+**Complexity:** S (1-2 prose block additions to `/fix-issues` SKILL.md + version bump + mirror; possibly a test asserting the prose appears). **Action now:** /do pr — add tier1-hash-registration prose to the impl-prompt construction section of `skills/fix-issues/SKILL.md`; bump version + mirror; consider a small conformance assertion that ensures the prose is present.
+
