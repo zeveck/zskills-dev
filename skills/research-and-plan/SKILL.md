@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.15+3617bb"
+  version: "2026.05.21+c35245"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -358,6 +358,23 @@ meta-plan filename gives a stable, per-run scope):
 # $META_PLAN_PATH is the output path where the meta-plan is (or will be)
 # written — same value used as the `output FILE` argument / default
 # (`$ZSKILLS_PLANS_DIR/<SLUG>_META.md`). Derive a stable slug from it.
+# Resolve $META_PLAN_PATH from $ARGUMENTS if not already set by the
+# parent skill (`/research-and-go` exports it; standalone invocations
+# parse it from the `output FILE` positional argument or fall back to
+# the canonical default).
+if [ -z "${META_PLAN_PATH:-}" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  # First `.md` token in $ARGUMENTS is the output path. If absent, fall
+  # back to a timestamped default so the slug computation below produces
+  # a stable, non-empty value rather than fail-closing the sanitiser.
+  META_PLAN_PATH=""
+  for tok in $ARGUMENTS; do
+    case "$tok" in
+      *.md) META_PLAN_PATH="$tok"; break ;;
+    esac
+  done
+  : "${META_PLAN_PATH:=$ZSKILLS_PLANS_DIR/$(date +%Y%m%d-%H%M%S)_META.md}"
+fi
 META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
 PIPELINE_ID="research-and-plan.$META_PLAN_SLUG"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")

@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.20+0e54e6"
+  version: "2026.05.21+6fc43c"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -74,6 +74,26 @@ if [ ! -x "$HELPER" ]; then
   echo "draft-tests: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
 fi
+# Resolve $PLAN_FILE and derive $TRACKING_ID before the worktree preamble
+# so the helper's --pipeline-id / positional slug are non-empty. Mirrors
+# the Arguments-section detection rule: first $ARGUMENTS token ending in
+# `.md` or containing `/` is the plan file; resolve bare names via
+# $ZSKILLS_PLANS_DIR. Phase 1's Tracking-fulfillment fence re-derives
+# $TRACKING_ID idempotently from the same $PLAN_FILE.
+if [ -z "${PLAN_FILE:-}" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  for tok in $ARGUMENTS; do
+    case "$tok" in
+      */*) PLAN_FILE="$tok"; break ;;
+      *.md) PLAN_FILE="$ZSKILLS_PLANS_DIR/$tok"; break ;;
+    esac
+  done
+fi
+if [ -z "${PLAN_FILE:-}" ]; then
+  echo "draft-tests: PLAN_FILE not resolved from \$ARGUMENTS (need a *.md token)" >&2
+  exit 2
+fi
+TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 WT_PATH=$(bash "$HELPER" \
   --prefix drafttests \
   --pipeline-id "draft-tests.${TRACKING_ID}" \

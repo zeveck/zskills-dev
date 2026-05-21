@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.21+ab9adf"
+  version: "2026.05.21+28baac"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -267,6 +267,11 @@ Phase 3a in `/run-plan` and `/fix-issues`, extended to recognize sentence
 punctuation `.!?` since this is prose-like goal text):
 
 ```bash
+# Resolve $GOAL from the original description. /research-and-go's input
+# is the broad goal text — orchestrators typically pass it as $ARGUMENTS
+# or as $DESCRIPTION. Prefer existing $GOAL, then $DESCRIPTION, then
+# $ARGUMENTS, so the regex below operates on a populated value.
+GOAL="${GOAL:-${DESCRIPTION:-$ARGUMENTS}}"
 LANDING_ARG=""
 if [[ "$GOAL" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
   LANDING_ARG="pr"

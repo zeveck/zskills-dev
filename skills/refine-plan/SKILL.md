@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.05.20+2f426f"
+  version: "2026.05.21+289f05"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
@@ -71,6 +71,25 @@ if [ ! -x "$HELPER" ]; then
   echo "refine-plan: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
 fi
+# Resolve $PLAN_FILE and derive $TRACKING_ID before the worktree preamble
+# so the helper's --pipeline-id / positional slug are non-empty. Mirrors
+# the Arguments-section detection rule: first $ARGUMENTS token ending in
+# `.md` is the plan file; resolve bare names via $ZSKILLS_PLANS_DIR.
+# Phase 1's Tracking-fulfillment fence re-uses $TRACKING_ID idempotently.
+if [ -z "${PLAN_FILE:-}" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  for tok in $ARGUMENTS; do
+    case "$tok" in
+      */*) PLAN_FILE="$tok"; break ;;
+      *.md) PLAN_FILE="$ZSKILLS_PLANS_DIR/$tok"; break ;;
+    esac
+  done
+fi
+if [ -z "${PLAN_FILE:-}" ]; then
+  echo "refine-plan: PLAN_FILE not resolved from \$ARGUMENTS (need a *.md token)" >&2
+  exit 2
+fi
+TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 WT_PATH=$(bash "$HELPER" \
   --prefix refineplan \
   --pipeline-id "refine-plan.${TRACKING_ID}" \
