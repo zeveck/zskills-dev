@@ -243,13 +243,19 @@ echo "=== Test 3: Worktree enforcement ==="
 
 setup_repo
 
-# Create a branch for the worktree
-(cd "$TEST_TMPDIR" && git checkout -q -b worktree-branch && git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null)
+# Per issue #547: requires.* enforcement fires only when committing on
+# main/master. To preserve the original mechanism-coverage intent of this
+# block (the hook reads tracking markers from MAIN repo's tracking dir
+# via git-common-dir from inside a worktree), we put the worktree ON the
+# MAIN branch — switching the main repo away to a feature branch first
+# so the main branch is free for the worktree.
+MAIN_BRANCH=$(cd "$TEST_TMPDIR" && git rev-parse --abbrev-ref HEAD)
+(cd "$TEST_TMPDIR" && git checkout -q -b feat-main-host-3 2>/dev/null)
 
-# Create a worktree
+# Create a worktree on the main branch (where is_on_main → true).
 WORKTREE_DIR=$(mktemp -d)
 rmdir "$WORKTREE_DIR"  # git worktree add needs non-existing dir
-(cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" worktree-branch 2>/dev/null)
+(cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" "$MAIN_BRANCH" 2>/dev/null)
 
 if [ ! -d "$WORKTREE_DIR" ]; then
   fail "Test 3: could not create worktree, skipping"
@@ -274,13 +280,15 @@ else
   # Stage a code file in the worktree
   (cd "$WORKTREE_DIR" && echo "var x = 1;" > thermal.js && git add thermal.js)
 
-  # Attempt commit in the worktree -- should be BLOCKED
-  # The hook reads .zskills-tracked from WORKTREE (REPO_ROOT), but tracking
-  # markers from MAIN repo (TRACKING_ROOT).
+  # Attempt commit in the worktree (on the main branch).
+  # is_on_main → true → requires.* enforcement fires.
+  # This exercises the original purpose of Test 3: the hook reads tracking
+  # markers from MAIN repo's tracking dir via git-common-dir even when
+  # invoked from the worktree.
   if try_commit_worktree "$WORKTREE_DIR" "$TEST_TMPDIR" "$WORKTREE_DIR/.claude/hooks/block-unsafe-project.sh"; then
-    fail "Test 3a: worktree commit should be blocked by unfulfilled requires marker"
+    fail "Test 3a: worktree commit on main should be blocked by unfulfilled requires marker"
   else
-    pass "Test 3a: worktree commit blocked by main repo's unfulfilled requires marker"
+    pass "Test 3a: main-branch worktree commit blocked by main repo's unfulfilled requires marker"
   fi
 
   # Create fulfilled marker in the SAME subdir in the main repo
@@ -317,11 +325,15 @@ echo "=== Test 3-cd-chain: Worktree enforcement via cd-chained command (#391) ==
 
 setup_repo
 
-# Create a branch + worktree.
-(cd "$TEST_TMPDIR" && git checkout -q -b worktree-branch-cdchain && git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null)
+# Per issue #547: requires.* enforcement fires only when committing on
+# main/master. Put the worktree ON the main branch so the deny-expectation
+# below exercises the cd-chain LOCAL_ROOT extraction (the original #391
+# regression coverage) without colliding with the new is_on_main gate.
+MAIN_BRANCH=$(cd "$TEST_TMPDIR" && git rev-parse --abbrev-ref HEAD)
+(cd "$TEST_TMPDIR" && git checkout -q -b feat-main-host-cdchain 2>/dev/null)
 WORKTREE_DIR=$(mktemp -d)
 rmdir "$WORKTREE_DIR"
-(cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" worktree-branch-cdchain 2>/dev/null)
+(cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" "$MAIN_BRANCH" 2>/dev/null)
 
 if [ ! -d "$WORKTREE_DIR" ]; then
   fail "Test 3-cd-chain: could not create worktree, skipping"
@@ -404,10 +416,15 @@ echo "=== Test 3-wrapper-cd: Worktree enforcement via wrapper-cd envelope (#427)
 for wrapper_case in bash-c sh-c eval; do
   setup_repo
 
-  (cd "$TEST_TMPDIR" && git checkout -q -b "wrapper-branch-$wrapper_case" && git checkout -q master 2>/dev/null || git checkout -q main 2>/dev/null)
+  # Per issue #547: requires.* enforcement fires only when committing on
+  # main/master. Put the worktree ON the main branch so the deny-expectation
+  # below exercises the wrapper-cd LOCAL_ROOT extraction (the original #427
+  # regression coverage) without colliding with the new is_on_main gate.
+  MAIN_BRANCH=$(cd "$TEST_TMPDIR" && git rev-parse --abbrev-ref HEAD)
+  (cd "$TEST_TMPDIR" && git checkout -q -b "feat-main-host-$wrapper_case" 2>/dev/null)
   WORKTREE_DIR=$(mktemp -d)
   rmdir "$WORKTREE_DIR"
-  (cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" "wrapper-branch-$wrapper_case" 2>/dev/null)
+  (cd "$TEST_TMPDIR" && git worktree add -q "$WORKTREE_DIR" "$MAIN_BRANCH" 2>/dev/null)
 
   if [ ! -d "$WORKTREE_DIR" ]; then
     fail "Test 3-wrapper-cd-$wrapper_case: could not create worktree, skipping"

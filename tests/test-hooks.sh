@@ -912,6 +912,46 @@ touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
 expect_project_deny "git cherry-pick abc123"
 teardown_project_test
 
+# Issue #547: requires.* enforcement on commit fires ONLY when on main.
+# Commits on feature branches (where PR-mode /run-plan implementer/verifier
+# subagents actually commit) must NOT be gated by `requires.land-pr.<id>` —
+# that marker's fulfillment can only happen AFTER those commits land via
+# /land-pr. Past failure: PR #544 verifier commit blocked on feature branch.
+
+# Positive case: commit on feature branch with UNFULFILLED requires.land-pr
+# is allowed. (Asserts the gate now only fires on main — the marker is
+# present and there is no fulfilled.land-pr companion. If we tightened the
+# check by mistake — e.g., always denying — this test would catch it.)
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
+# Confirm the marker is unfulfilled: no fulfilled.land-pr.* in the subdir.
+if compgen -G "$TEST_TMPDIR/$DEFAULT_SUBDIR/fulfilled.land-pr.*" >/dev/null; then
+  fail "issue-547 positive setup: fulfilled.land-pr.* should not exist"
+fi
+# Switch to a feature branch so is_on_main returns false.
+(cd "$TEST_TMPDIR" && git checkout -q -b fix/issue-547-test 2>/dev/null)
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_allow "issue-547: commit on feature branch with unfulfilled requires.land-pr" "git commit -m test"
+teardown_project_test
+
+# Negative case: same pipeline, same unfulfilled marker — but on main —
+# is STILL denied. (Preserves PR #211's protection: a finish-auto exit
+# before /land-pr leaves the marker unfulfilled, and any commit-to-main
+# in that pipeline is blocked.)
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.land-pr.test-plan"
+# setup_project_test leaves us on the init default branch (master) which
+# is_on_main accepts. Explicit assertion for clarity:
+_branch=$(cd "$TEST_TMPDIR" && git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [[ "$_branch" != "main" && "$_branch" != "master" ]]; then
+  fail "issue-547 negative setup: expected main/master, got $_branch"
+fi
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_deny "issue-547: commit on main with unfulfilled requires.land-pr (still blocked)" "git commit -m test"
+teardown_project_test
+
 echo ""
 echo "=== Project hook: step enforcement ==="
 
