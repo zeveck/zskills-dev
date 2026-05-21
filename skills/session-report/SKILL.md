@@ -7,7 +7,7 @@ description: >-
   worktrees), not conversation memory — items may have been completed in
   another session.
 metadata:
-  version: "2026.05.15+593f05"
+  version: "2026.05.21+a6f97e"
 ---
 
 # /session-report — Session Intent vs. Actual State
@@ -60,7 +60,7 @@ that resolves the item:
 |---|---|
 | File written/edited (skill, script, hook, plan, doc) | `git status -s <path>`; if path has a mirror (e.g. `skills/X/` ↔ `.claude/skills/X/`), `diff -q` both. Untracked = uncommitted; modified = uncommitted edit. |
 | Plan drafted | `git status -s "$ZSKILLS_PLANS_DIR/<name>.md"` + `Read` the file (count `[ ]` vs `[x]`, note Phase status lines). |
-| Plan executed (some/all phases) | `Read` the plan's Phase status; `git log --oneline main` for matching commits; if `/run-plan` was used, check `.zskills/tracking/fulfilled.run-plan.<slug>` and `requires.*`. |
+| Plan executed (some/all phases) | `Read` the plan's Phase status; `git log --oneline main` for matching commits; if `/run-plan` was used, check `.zskills/tracking/$PIPELINE_ID/fulfilled.run-plan.<id>` and `requires.*` (per `docs/tracking/TRACKING_NAMING.md` — markers are nested under per-pipeline subdirs). Find existing markers with `find .zskills/tracking -name 'fulfilled.run-plan.*'` (absence = no run-plan completion marker). |
 | PR opened | `gh pr view <N> --json state,mergeable,reviewDecision,statusCheckRollup` + `gh pr checks <N>`. |
 | PR merged | `gh pr view <N> --json state,mergeCommit` — confirm `MERGED` and the merge commit is on main. |
 | Bug fixed | `git log --oneline -10 -- <file>` for the fix commit; if a regression test was promised, grep for it. |
