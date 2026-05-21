@@ -147,6 +147,10 @@ run_suite "test-migrate-flat-tracking-markers.sh" "tests/test-migrate-flat-track
 run_suite "test_plans_rebuild_uses_collect.sh" "tests/test_plans_rebuild_uses_collect.sh"
 run_suite "test-post-run-invariants-ls-remote.sh" "tests/test-post-run-invariants-ls-remote.sh"
 run_suite "test-fix-issues-claim-script.sh" "tests/test-fix-issues-claim-script.sh"
+run_suite "test-fix-issues-claim-acquire-inline.sh" "tests/test-fix-issues-claim-acquire-inline.sh"
+run_suite "test-fix-issues-claim-release-pr.sh" "tests/test-fix-issues-claim-release-pr.sh"
+run_suite "test-fix-issues-claim-release-cherry-pick.sh" "tests/test-fix-issues-claim-release-cherry-pick.sh"
+run_suite "test-fix-issues-claim-release-direct.sh" "tests/test-fix-issues-claim-release-direct.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

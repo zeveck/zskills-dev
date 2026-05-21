@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.21+470ffa"
+  version: "2026.05.21+6c7e83"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -869,6 +869,24 @@ PIPELINE_ID="fix-issues.$SPRINT_ID"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SPRINT_ID after sanitization (strip the "fix-issues." prefix).
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
+```
+
+### Preflight: sweep stale claims
+
+Sweep stale `.zskills/claims/issue-*/` directories BEFORE the live-worktree
+defer-all gate below. A sweep that frees an issue can affect the defer-all
+decision (a previously-claimed issue whose pipeline crashed long ago should
+not gate this fire). `claim-issue.sh sweep` is idempotent.
+
+```bash
+# Sweep stale claims so a sweep that frees an issue can affect the
+# defer-all gate decision below. claim-issue.sh sweep is idempotent.
+# `|| true` is permitted here because sweep is best-effort hygiene and
+# does not gate sprint correctness — a failed sweep means stale claims
+# persist until next fire, never duplicate dispatch.
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+. "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-fence-helpers.sh"
+sweep_stale_claims || true
 ```
 
 ### Live worktree count check (defer-all gate)
@@ -2075,6 +2093,18 @@ agent hasn't returned after 1 hour, declare it **failed**:
 - Issues stay open for the next sprint
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
+- **Release the per-issue claim** so a later sprint (or a concurrent
+  pipeline once TTL would otherwise hold the issue) can pick the issue
+  up again. For each timed-out issue, call:
+
+  ```bash
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+       release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+  ```
+
+  `|| true` because release is idempotent and best-effort at this terminal
+  arm; the timeout itself is the load-bearing signal — release failure
+  surfaces only as a stderr line and is swept by TTL as a backstop.
 
 **Agent dispatch prompts MUST include for each issue:**
 
@@ -2210,6 +2240,29 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # Resume detection stays directory-based: an existing fix worktree means
 # we're resuming the same issue across cron turns.
 WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
+
+# Acquire a single-host atomic claim on this issue BEFORE the worktree is
+# materialised. The per-issue dispatch is PROSE-iterated (no enclosing
+# fenced for-loop — verified by grep). On race-lost (exit 10), this fence
+# exits 0 to terminate cleanly; the orchestrator narratively proceeds to
+# the next issue's per-issue fence block. On filesystem error (exit 11),
+# the fence exits 11 to abort the sprint. The PreToolUse backstop hook
+# (block-fix-issue-unclaimed.sh) denies the create-worktree.sh call below
+# if no matching claim exists, so omitting this acquire fails closed at
+# runtime. (D2; round 4 option C; round 4b R4.3/DA4.5 — no `continue`.)
+CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
+     --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
+ACQ_RC=$?
+if [ "$ACQ_RC" = 10 ]; then
+  echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); skipping — orchestrator proceeds to next issue." >&2
+  exit 0   # terminate this per-issue fence; orchestrator narratively continues to next issue
+fi
+if [ "$ACQ_RC" != 0 ]; then
+  echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
+  exit "$ACQ_RC"
+fi
+
 if [ -d "$WORKTREE_PATH" ]; then
   echo "Resuming existing fix worktree at $WORKTREE_PATH"
 else
@@ -2220,7 +2273,14 @@ else
     "${ISSUE_NUM}")
   RC=$?
   if [ "$RC" -ne 0 ]; then
-    echo "create-worktree failed (rc=$RC) for /fix-issues cherry-pick/direct mode" >&2
+    # W2.5.5 — release the just-acquired claim before sprint-abort so it
+    # doesn't leak until TTL. Only THIS issue's claim is in-flight at this
+    # moment (option C: inline acquire — earlier issues' agents are running
+    # with their own claims correctly held; later iterations haven't been
+    # acquired yet). `|| true` because release-after-failure is best-effort
+    # cleanup; the abort `exit "$RC"` below carries the real signal.
+    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+    echo "create-worktree failed (rc=$RC) for /fix-issues cherry-pick/direct mode (issue $ISSUE_NUM); released claim before abort" >&2
     exit "$RC"
   fi
 fi
@@ -2269,6 +2329,29 @@ PROJECT_NAME=$(basename "$PROJECT_ROOT")
 WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
 
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+# Acquire a single-host atomic claim on this issue BEFORE the worktree is
+# materialised. The per-issue dispatch is PROSE-iterated (no enclosing
+# fenced for-loop — verified by grep). On race-lost (exit 10), this fence
+# exits 0 to terminate cleanly; the orchestrator narratively proceeds to
+# the next issue's per-issue fence block. On filesystem error (exit 11),
+# the fence exits 11 to abort the sprint. The PreToolUse backstop hook
+# (block-fix-issue-unclaimed.sh) denies the create-worktree.sh call below
+# if no matching claim exists, so omitting this acquire fails closed at
+# runtime. (D2; round 4 option C; round 4b R4.3/DA4.5 — no `continue`.)
+CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
+     --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
+ACQ_RC=$?
+if [ "$ACQ_RC" = 10 ]; then
+  echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); skipping — orchestrator proceeds to next issue." >&2
+  exit 0   # terminate this per-issue fence; orchestrator narratively continues to next issue
+fi
+if [ "$ACQ_RC" != 0 ]; then
+  echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
+  exit "$ACQ_RC"
+fi
+
 # Resume detection stays directory-based (R2-M1): an existing fix worktree
 # means we're resuming the same issue across cron turns.
 if [ -d "$WORKTREE_PATH" ]; then
@@ -2283,7 +2366,14 @@ else
     "${ISSUE_NUM}")
   RC=$?
   if [ "$RC" -ne 0 ]; then
-    echo "create-worktree failed (rc=$RC) for /fix-issues PR mode" >&2
+    # W2.5.5 — release the just-acquired claim before sprint-abort so it
+    # doesn't leak until TTL. Only THIS issue's claim is in-flight at this
+    # moment (option C: inline acquire — earlier issues' agents are running
+    # with their own claims correctly held; later iterations haven't been
+    # acquired yet). `|| true` because release-after-failure is best-effort
+    # cleanup; the abort `exit "$RC"` below carries the real signal.
+    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+    echo "create-worktree failed (rc=$RC) for /fix-issues PR mode (issue $ISSUE_NUM); released claim before abort" >&2
     exit "$RC"
   fi
 fi

@@ -77,6 +77,13 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         commits:
           <list of cherry-picked commit hashes and messages>
         LANDED
+        # Release the per-issue claim (plan W2.6b — successful cherry-pick
+        # terminal). $HELPER and $ISSUE_NUM are defined in the per-worktree
+        # iteration body upstream:
+        #   HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+        #   ISSUE_NUM=<issue number extracted from the worktree's branch name>
+        # `|| true` because release is idempotent / best-effort at terminal arms.
+        bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
@@ -89,6 +96,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         skipped: <hashes that conflicted>
         reason: cherry-pick conflict
         LANDED
+        # Release the per-issue claim (plan W2.6b — cherry-pick conflict
+        # terminal; the worktree is left for review but the claim should
+        # not block a later sprint from picking the same issue up). Same
+        # $HELPER / $ISSUE_NUM scope as the status:full path above.
+        bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
         ```
   6. **Commit extracted logs:**
      ```bash
