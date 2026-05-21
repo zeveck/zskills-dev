@@ -1517,3 +1517,37 @@ Empty.
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 - Next fire: top of next 30-min mark.
 
+
+## Sprint — 2026-05-21 07:56 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-111017-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 1 (bundled) | **N verified:** 1 | **N merged:** 1 closes 2 issues
+
+### Fixed (1 bundled PR closing 2 issues)
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #561 + #556 | project-hook HEAD wrapper-quote bypass + property-matrix extension | [#565](https://github.com/zeveck/zskills-dev/pull/565) | fec3aab | 5202/5202 |
+
+### Surfaced (filed for next sprint)
+| # | Title | Status |
+|---|-------|--------|
+| #564 (NEW) | Property-matrix conformance net itself unprotected against shrinkage | Filed during this sprint by verifier surfacing |
+
+### Notable
+1. **Bundled-fix pattern works cleanly.** #561 (the bypass) + #556 (the matrix that exposes the bypass) shipped as ONE PR — the matrix is the regression net for the fix. This is the canonical shape for coupled fix+test PRs: the test must catch the regression the fix repairs. Cleanly closes the #553 closure-incompleteness chain.
+2. **Implementer pushed back correctly on a false orchestrator claim.** My dispatch prompt asserted that `hooks/block-unsafe-project.sh.template` was Tier-1 and required `tier1-shipped-hashes.txt` registration. Implementer read `script-ownership.md`, found Tier-1 scope is `skills/<owner>/scripts/*` + `block-diagram/<owner>/scripts/*` only (hooks are governed by drift gate, not Tier-1 registry), and correctly did NOT edit the registry — exactly the "look, don't guess" discipline. Surfacing > complying with a wrong prompt.
+3. **Verifier surfaced future-hardening issue (#564) inline.** Property-matrix conformance net is itself unprotected against silent shrinkage. Filed for next sprint to address.
+4. **Tests-only PR (no skill SKILL.md edits) — no version bumps.** Tight scope: 3 files (hook + mirror + tests). Quote-strip is 12 LOC; matrix extension is +211/-7 LOC.
+5. **The closure cycle is termitating.** PR #553 → #515 fix → #556 + #557 (qe-audit closure-incomplete findings) → #561 (real bypass surfaced via #556 matrix extension) → #565 bundled fix → #564 future-hardening filed. Each step closer to "the next variant cannot slip silently."
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T07:56:56-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+
