@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.16+087b59"
+  version: "2026.05.21+ab9adf"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -322,7 +322,7 @@ marker. It schedules:
 2. A re-entry cron firing `Run /run-plan $META_PLAN_PATH finish auto`
 
 The verify cron runs at top level (full Agent tool), performs cross-branch
-verification (`git diff main...HEAD`), and on success writes
+verification (`git diff $(git merge-base origin/main HEAD)..HEAD`), and on success writes
 `fulfilled.verify-changes.final.$META_PLAN_SLUG`. The re-entry cron then
 completes Phase 5b (mark plan complete) cleanly. The user sees the verify
 report as the final turn before the pipeline is truly complete.

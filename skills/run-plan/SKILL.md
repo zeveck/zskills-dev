@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.21+3eba8d"
+  version: "2026.05.21+44771f"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1589,8 +1589,12 @@ Include this VERBATIM in the verifier dispatch prompt:
      `basename` of the SAME path literal, so the baseline and the results land
      in the same `/tmp/zskills-tests/<name>/` bucket.
 
-   - The **worktree branch name** (so it can diff against main:
-     `git diff main...<branch>`)
+   - The **worktree branch name** (so it can diff against main using the
+     merge-base form: `git diff $(git merge-base origin/main HEAD)..HEAD`,
+     or commit-only: `git show HEAD`. Do NOT use `main...<branch>` or
+     bare `origin/main..HEAD --stat` — those are symmetric and produce
+     false-positive scope-creep on sibling-sprint cadence. See
+     `.claude/agents/verifier.md`.)
    - The **verbatim phase text** from the plan (same text the implementer got)
    - Instruction to run `/verify-changes worktree` — the verification agent
      runs this, NOT you. Do NOT run verification yourself — you are the
