@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.21+44771f"
+  version: "2026.05.21+25b138"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -799,10 +799,9 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    and data structures referenced here are based on [another plan's]
    design, not actual code," the plan may be stale:
    - Without `auto`: tell the user "this plan was drafted before its
-     dependency was implemented. Want me to refresh it with `/draft-plan`?"
-   - With `auto`: dispatch `/draft-plan` on the plan file to update it.
-     `/draft-plan` handles existing files as modernizations. After the
-     refresh, re-read the plan and continue.
+     dependency was implemented. Want me to refresh it with `/refine-plan`?"
+   - With `auto`: dispatch `/refine-plan` on the plan file to update it.
+     After the refresh, re-read the plan and continue.
    - Skip this check if the plan file was modified more recently than
      the dependency's completion (it may already be up to date).
 
