@@ -396,13 +396,13 @@ by other skills — see Helpers below.
 
 | Skill | Purpose |
 |-------|---------|
-| `/draft-plan` | Adversarial plan drafting: research, draft, devil's advocate review, refine until converged |
-| `/draft-tests` | Append a `### Tests` subsection to each pending phase of an existing plan via a senior-QE reviewer + devil's-advocate + refiner loop |
-| `/refine-plan` | Refine in-progress plans: review remaining phases against completed work, generate Drift Log |
 | `/research-and-plan` | Decompose broad goals into focused sub-plans with dependency ordering |
-| `/research-and-go` | Full autonomous pipeline: decompose, plan, execute — one command, walk away |
+| `/draft-plan` | Adversarial plan drafting: research, draft, devil's advocate review, refine until converged |
+| `/refine-plan` | Refine in-progress plans: review remaining phases against completed work, generate Drift Log |
+| `/draft-tests` | Append a `### Tests` subsection to each pending phase of an existing plan via a senior-QE reviewer + devil's-advocate + refiner loop |
 | `/plans` | Plan dashboard: index, status tracking, priority ranking |
 | `/work-on-plans` | Batch-execute prioritized ready queue from the dashboard |
+| `/research-and-go` | Full autonomous pipeline: decompose, plan, execute — one command, walk away |
 
 #### Build
 
@@ -410,14 +410,15 @@ by other skills — see Helpers below.
 |-------|---------|
 | `/run-plan` | Phase-by-phase plan execution with worktree isolation, verification gates, and auto-landing |
 | `/do` | Lightweight task dispatcher for ad-hoc work with optional worktree/push/scheduling |
+| `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
 
-#### Verify
+#### Quality
 
 | Skill | Purpose |
 |-------|---------|
 | `/verify-changes` | 7-phase verification: diff review, test coverage audit, test run, manual UI check, fix, re-verify |
 | `/qe-audit` | Quality audit of recent commits — find test gaps, edge cases, file issues |
-| `/investigate` | Root-cause debugging: reproduce, trace, prove the cause with evidence, regression test, fix |
+| `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
 
 #### Fix
 
@@ -425,26 +426,20 @@ by other skills — see Helpers below.
 |-------|---------|
 | `/fix-issues` | Batch bug-fixing sprints: prioritize N issues, dispatch parallel agents, verify, land |
 | `/fix-report` | Interactive sprint review — walk through results, gate landing on user approval |
-| `/review-feedback` | Triage user feedback into GitHub issues: deduplicate, evaluate, file |
+| `/investigate` | Root-cause debugging: reproduce, trace, prove the cause with evidence, regression test, fix |
 
-#### Ship
-
-| Skill | Purpose |
-|-------|---------|
-| `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
-| `/quickfix` | Low-ceremony PR from main: picks up in-flight edits (or agent-dispatches), no worktree, fire-and-forget CI |
-| `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
-| `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
-
-#### Support
+#### Utility & Reference
 
 | Skill | Purpose |
 |-------|---------|
-| `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
-| `/manual-testing` | Playwright-cli recipes: real mouse/keyboard events, not eval — test as a user would |
-| `/session-report` | Audit what THIS session said it would do vs. what's actually shipped — verifies session-mentioned items against git/PRs/plans, not conversation memory |
-| `/update-zskills` | Install or update Z Skills infrastructure in any project |
 | `/zskills-dashboard` | Local web dashboard for plans/issues/worktrees/branches/tracking: `start` launches a detached Python server, `stop` SIGTERMs it, `status` reports uptime |
+| `/session-report` | Audit what THIS session said it would do vs. what's actually shipped — verifies session-mentioned items against git/PRs/plans, not conversation memory |
+| `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
+| `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
+| `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
+| `/review-feedback` | Triage user feedback into GitHub issues: deduplicate, evaluate, file |
+| `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
+| `/update-zskills` | Install or update Z Skills infrastructure in any project |
 
 #### Helpers (internal — dispatched by other skills, not designed for direct user invocation)
 

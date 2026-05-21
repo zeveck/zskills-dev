@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Z Skills — Permission Prompts</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #bc8cff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --pink: #f778ba;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    scroll-behavior: smooth;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.9em;
+  }
+  code {
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 16px 0;
+  }
+  pre code { background: none; padding: 0; }
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(13,17,23,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 24px;
+    display: flex; gap: 20px; align-items: center;
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  nav a { color: var(--text-dim); white-space: nowrap; }
+  nav a:hover { color: var(--accent); text-decoration: none; }
+  nav .nav-sep { color: var(--border); margin-left: auto; padding: 0 4px; user-select: none; }
+  nav a.cross { color: var(--text); }
+  nav a.cross:hover { color: var(--accent); }
+  nav .logo { color: var(--accent); font-weight: 700; font-size: 1.1em; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 80px 24px 80px; }
+  .hero {
+    text-align: center;
+    padding: 40px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .hero h1 {
+    font-size: 2.5em;
+    font-weight: 700;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p { color: var(--text-dim); max-width: 760px; margin: 0 auto 16px; font-size: 1.05em; text-wrap: pretty; }
+  section { margin: 40px 0; }
+  section h2 {
+    font-size: 1.7em;
+    margin-bottom: 16px;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  section h3 {
+    font-size: 1.25em;
+    margin: 24px 0 12px;
+    color: var(--accent);
+  }
+  section p { margin-bottom: 12px; }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .stat .val {
+    font-size: 2em;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .label {
+    font-size: 0.85em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 4px;
+  }
+  .stat .sub { color: var(--text-dim); font-size: 0.85em; margin-top: 8px; }
+  .stat.green { border-left-color: var(--green); }
+  .stat.orange { border-left-color: var(--orange); }
+  .stat.purple { border-left-color: var(--accent2); }
+  .stat.pink { border-left-color: var(--pink); }
+  .stat.red { border-left-color: var(--red); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th {
+    background: var(--surface2);
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--text-dim);
+    font-size: 0.88em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+  tfoot td { font-weight: 600; border-top: 2px solid var(--border); }
+  .caveat {
+    background: rgba(210, 153, 34, 0.08);
+    border-left: 3px solid var(--orange);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    color: var(--text-dim);
+    font-size: 0.92em;
+  }
+  .caveat strong { color: var(--orange); }
+  .fade-in { opacity: 0; transform: translateY(8px); transition: opacity 0.5s, transform 0.5s; }
+  .fade-in.visible { opacity: 1; transform: translateY(0); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="logo">Z Skills</span>
+  <a href="#topline">Topline</a>
+  <a href="#breakdown">Breakdown</a>
+  <a href="#patterns">Top prompts</a>
+  <a href="#profile">Daily profile</a>
+  <a href="#method">Methodology</a>
+  <span class="nav-sep">&#9474;</span>
+  <a href="../PRESENTATION.html" class="cross">Overview</a>
+  <a href="COSTS.html" class="cross">Cost</a>
+  <a href="TECHNICAL.html" class="cross">Technical</a>
+  <a href="https://github.com/zeveck/zskills" class="cross">GitHub &rarr;</a>
+</nav>
+
+<div class="container">
+
+<section class="hero">
+  <h1>Z Skills &mdash; Permission Prompts</h1>
+  <p>An estimate of how many Claude Code permission prompts the user would have faced building Z Skills, if approvals had been live instead of bypassed via <code>--dangerously-skip-permissions</code>.</p>
+  <p style="font-size: 0.95em;"><strong>The headline depends almost entirely on the <code>permissions</code> config.</strong> A permissive config gives a few hundred prompts. A conservative one (like the example used here, with <code>gh *</code> and web tools in <code>ask</code>) gives thousands. This page uses <a href="EXAMPLE_settings.json">EXAMPLE_settings.json</a> &mdash; a representative enterprise-leaning Claude Code config &mdash; as the reference, applied to the actual JSONL tool-call history.</p>
+  <p style="font-size: 0.95em;"><strong>Companion reports: <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="TECHNICAL.html">Technical Stats &rarr;</a></strong></p>
+  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-05-21</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>permission burden</em>.</p>
+</section>
+
+<section id="topline" class="fade-in">
+  <h2>Topline</h2>
+
+  <div class="caveat"><strong>Read this before the headline.</strong> Counts apply Anthropic's documented permission rules to recorded tool calls. The estimate combines <em>front-loaded</em> approvals (one-time per Bash command prefix, permanent after) with <em>recurring</em> ones (every Edit/Write session, every <code>ask</code>-matched call). It excludes the actual development period before 2026-04-18 (Opus 4.6 era, no JSONL transcripts) and assumes the user always selects the most-permissive option offered.</div>
+
+  <div class="stat-grid">
+    <div class="stat"><div class="val">~2,695</div><div class="label">Total estimated prompts</div><div class="sub">Over 34 days of logged activity (2026-04-18 &rarr; 2026-05-21). ~79/day average; distribution is heavily mixed (see <a href="#profile">Daily profile</a>).</div></div>
+    <div class="stat orange"><div class="val">1,228</div><div class="label">Every-time prompts (recurring)</div><div class="sub">From <code>ask</code> rules (1,049 Bash + 124 WebFetch + 55 WebSearch). Each invocation prompts; no "always-allow" escape. <code>gh *</code> alone drives 948 of these.</div></div>
+    <div class="stat purple"><div class="val">1,020</div><div class="label">Session-scoped resets</div><div class="sub">511 Edit + 509 Write prompts. Each new session re-prompts on first Edit/Write; "always-allow" expires at session end per Anthropic docs.</div></div>
+    <div class="stat green"><div class="val">440</div><div class="label">First-time Bash prefixes</div><div class="sub">Each prompts ONCE then auto-allows permanently per project. Front-loaded in the first ~1-2 weeks.</div></div>
+  </div>
+
+  <p style="color: var(--text-dim); font-size: 0.92em;">Plus 7 Agent type prompts (uncertain persistence; could be one-per-type permanent or one-per-type-per-session) and 92 hard-denied calls (mostly <code>rm -rf /...</code> attempts blocked by deny rules &mdash; no "always" option, intentionally).</p>
+</section>
+
+<section id="breakdown" class="fade-in">
+  <h2>Breakdown by Tool</h2>
+
+  <table>
+    <thead>
+      <tr><th>Tool / Pattern</th><th class="num">Calls</th><th class="num">Prompts</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Bash (built-in read-only: <code>ls</code>, <code>cat</code>, <code>grep</code>, <code>find</code>, read-only <code>git</code>, etc.)</td><td class="num">33,608</td><td class="num">0</td><td>Never prompt per Anthropic docs</td></tr>
+      <tr><td>Bash (matches <code>allow</code> list, excl. built-in-readonly overlap)</td><td class="num">449</td><td class="num">0</td><td>Auto-allowed by config (e.g., <code>git fetch *</code>, <code>git checkout *</code>, <code>mkdir *</code>) &mdash; counts ABOVE-and-BEYOND what's already covered by built-in read-only</td></tr>
+      <tr><td>Bash (matches <code>ask</code> list: <code>gh *</code>, <code>curl *</code>, etc.)</td><td class="num">1,049</td><td class="num">1,049</td><td><code>ask</code> prompts every call, no escape</td></tr>
+      <tr><td>Bash (first-time prefix prompts, 440 unique)</td><td class="num">3,225</td><td class="num">440</td><td>Default-mode prompts; "always" persists per project per prefix</td></tr>
+      <tr><td>Bash (denied by <code>deny</code> rules)</td><td class="num">92</td><td class="num">0 (blocked)</td><td>Hard-fail; no "always" option</td></tr>
+      <tr><td>Read</td><td class="num">12,301</td><td class="num">0</td><td>Built-in read tool; no approval per Anthropic docs</td></tr>
+      <tr><td>Grep / Glob</td><td class="num">608</td><td class="num">0</td><td>Built-in read tools; no approval</td></tr>
+      <tr><td>Edit (session-scoped)</td><td class="num">6,465</td><td class="num">511</td><td>One prompt per session that uses Edit; resets at session end</td></tr>
+      <tr><td>Write (session-scoped)</td><td class="num">1,190</td><td class="num">509</td><td>Same as Edit, per session</td></tr>
+      <tr><td>WebFetch (in <code>ask</code> under MATLAB)</td><td class="num">124</td><td class="num">124</td><td>Every call prompts</td></tr>
+      <tr><td>WebSearch (in <code>ask</code> under MATLAB)</td><td class="num">55</td><td class="num">55</td><td>Every call prompts</td></tr>
+      <tr><td>Agent (subagent dispatch, 7 unique types)</td><td class="num">1,655</td><td class="num">7</td><td>Probably permanent per type; persistence not explicit in docs</td></tr>
+      <tr><td>Skill / ToolSearch / Task* / Cron* / Monitor / ScheduleWakeup / AskUserQuestion / ExitPlanMode</td><td class="num">~3,000</td><td class="num">0</td><td>Built-in Claude Code mechanics, not subject to permission prompts</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Total</strong></td><td class="num">~63,800</td><td class="num"><strong>~2,695</strong></td><td>Plus 92 hard-denied calls</td></tr>
+    </tfoot>
+  </table>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Source: 41,415 Bash + 6,465 Edit + 1,190 Write + 1,655 Agent + 124 WebFetch + 55 WebSearch + ~14,000 other tool calls across 1,648 JSONL sessions (top-level + isolated subagent dispatches) in 8 project working directories.</p>
+</section>
+
+<section id="patterns" class="fade-in">
+  <h2>Top Prompt Triggers</h2>
+
+  <h3>Every-time prompts (recurring &mdash; <code>ask</code>-matched)</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Each invocation prompts. There is no "Yes, always" escape because <code>ask</code> rules take precedence over <code>allow</code> rules per <a href="https://code.claude.com/docs/en/permissions">Anthropic's permission docs</a> (precedence: deny &rarr; ask &rarr; allow).</p>
+  <table>
+    <thead>
+      <tr><th>Pattern</th><th class="num">Prompts</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>gh *</code></td><td class="num">948</td><td>Every PR, issue, and CI interaction</td></tr>
+      <tr><td><code>WebFetch</code></td><td class="num">124</td><td>Tool-level ask in MATLAB config</td></tr>
+      <tr><td><code>curl *</code></td><td class="num">101</td><td>Most often health-checks and downloads</td></tr>
+      <tr><td><code>WebSearch</code></td><td class="num">55</td><td>Tool-level ask in MATLAB config</td></tr>
+    </tbody>
+    <tfoot>
+      <tr><td><strong>Total recurring prompts</strong></td><td class="num"><strong>1,228</strong></td><td>~36/day sustained</td></tr>
+    </tfoot>
+  </table>
+
+  <h3>First-time Bash prefix prompts (one per project, then permanent)</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Each unique prefix prompts once. After the user selects "Yes, don't ask again," the prefix is auto-allowed permanently per project (per Anthropic docs). 440 unique prefixes total &mdash; long-tail mostly single-digit hits; the top 10 cover ~40% of the volume.</p>
+  <table>
+    <thead>
+      <tr><th>Top 10 prefixes</th><th class="num">Hits (after first prompt)</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>sed *</code></td><td class="num">938</td></tr>
+      <tr><td><code>playwright-cli *</code></td><td class="num">186</td></tr>
+      <tr><td><code>git *</code> (non-allow-listed subcommands)</td><td class="num">167</td></tr>
+      <tr><td><code>cp *</code></td><td class="num">130</td></tr>
+      <tr><td><code>sleep *</code></td><td class="num">123</td></tr>
+      <tr><td><code>printf *</code></td><td class="num">95</td></tr>
+      <tr><td><code>ps *</code></td><td class="num">95</td></tr>
+      <tr><td><code>git add *</code></td><td class="num">84</td></tr>
+      <tr><td><code>date *</code></td><td class="num">77</td></tr>
+      <tr><td><code>python3 *</code></td><td class="num">61</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="profile" class="fade-in">
+  <h2>Daily Profile</h2>
+
+  <p>~2,695 prompts over 34 days averages <strong>~79 prompts per day</strong>, but the distribution mixes three patterns:</p>
+
+  <table>
+    <thead>
+      <tr><th>Component</th><th class="num">Daily rate</th><th>Distribution</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>gh *</code> ask prompts</td><td class="num">~28/day</td><td>Sustained throughout. Spikes during /fix-issues sprints and PR landings.</td></tr>
+      <tr><td>Edit + Write session resets</td><td class="num">~30/day</td><td>Sustained. ~15 sessions/day touch Edit, ~15 touch Write; each first-touch prompts.</td></tr>
+      <tr><td>First-time Bash prefixes</td><td class="num">~13/day average</td><td>Heavily front-loaded. Days 1-7 likely 40-60/day; later days near zero unless new commands appear.</td></tr>
+      <tr><td>WebFetch ask prompts</td><td class="num">~4/day</td><td>Sustained. Documentation lookups and API research.</td></tr>
+      <tr><td>WebSearch + curl + others in ask</td><td class="num">~5/day</td><td>Sustained.</td></tr>
+    </tbody>
+  </table>
+
+  <p style="color: var(--text-dim); font-size: 0.92em;">Most of the long-tail (~60 prompts/day, sustained) comes from <code>ask</code>-matched recurring prompts plus session-scoped Edit/Write resets &mdash; not from new Bash prefixes. After the first ~1-2 weeks, new-prefix prompts drop to near zero, but the recurring components stay at the same rate. The EXAMPLE config's choice to put <code>gh *</code> in <code>ask</code> is the single biggest driver: relaxing it to <code>allow</code> would cut the total to ~1,750 prompts (~51/day).</p>
+</section>
+
+<section id="method" class="fade-in">
+  <h2>Methodology</h2>
+
+  <h3>Settings source</h3>
+  <p>Permission rules taken from <a href="EXAMPLE_settings.json"><code>EXAMPLE_settings.json</code></a> alongside this report. This represents a conservative enterprise-leaning Claude Code config &mdash; the kind that puts <code>gh *</code>, <code>curl *</code>, <code>WebFetch</code>, and <code>WebSearch</code> in <code>ask</code> for visibility-on-network-and-PR-actions. A more permissive config (e.g., moving <code>gh *</code> to <code>allow</code>) would dramatically reduce the count.</p>
+
+  <h3>Permission model</h3>
+  <p>From <a href="https://code.claude.com/docs/en/permissions">Anthropic's permission docs</a>:</p>
+  <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
+    <li><strong>Rule precedence:</strong> deny &rarr; ask &rarr; allow. First match wins, so an <code>ask</code> rule beats any <code>allow</code> rule and any subsequent "always-allow" click.</li>
+    <li><strong>Bash:</strong> "Yes, don't ask again" persists permanently per project per command prefix. First-time prompt; subsequent matching calls auto-allow.</li>
+    <li><strong>Edit/Write:</strong> "Yes, don't ask again" persists only until session end. Every new session re-prompts on the first Edit or Write.</li>
+    <li><strong>Built-in read-only Bash:</strong> <code>ls</code>, <code>cat</code>, <code>echo</code>, <code>pwd</code>, <code>head</code>, <code>tail</code>, <code>grep</code>, <code>find</code>, <code>wc</code>, <code>which</code>, <code>diff</code>, <code>stat</code>, <code>du</code>, <code>cd</code>, and read-only <code>git</code> subcommands &mdash; never prompt regardless of config.</li>
+    <li><strong>Process wrappers:</strong> <code>timeout</code>, <code>time</code>, <code>nice</code>, <code>nohup</code>, <code>stdbuf</code>, bare <code>xargs</code> &mdash; stripped before pattern matching.</li>
+    <li><strong>Read / Grep / Glob tools:</strong> No approval required.</li>
+    <li><strong>Compound commands:</strong> Each subcommand checked independently (separators: <code>&&</code>, <code>||</code>, <code>;</code>, <code>|</code>, <code>|&</code>, <code>&</code>, newline).</li>
+  </ul>
+
+  <h3>Tool-call extraction</h3>
+  <p>Scanned 1,648 JSONL files across 8 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 7 <code>-tmp-zskills-*/</code> worktree-spawned dirs). For each assistant turn, extracted every <code>tool_use</code> content block; recorded tool name and input parameters. Bash commands were classified by deriving the primary command intent (first non-noise word after stripping wrappers and env-var assignments) and matching against the settings' allow / ask / deny lists.</p>
+
+  <h3>Counting model</h3>
+  <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
+    <li><strong>Bash first-time prefixes:</strong> Each unique prefix that would have triggered a default-mode prompt is counted once. The prefix is the dialog's most-permissive suggestion (typically first word, or first+second word for multi-subcommand tools like <code>git</code>, <code>npm</code>, <code>gh</code>).</li>
+    <li><strong>Bash every-time:</strong> Each call matching an <code>ask</code> rule is counted as one prompt &mdash; per Anthropic docs, <code>ask</code> rules prompt on every invocation regardless of prior "always" clicks.</li>
+    <li><strong>Edit/Write:</strong> One prompt per session that contained at least one Edit (or Write) call. This assumes the dialog offers a session-wide "allow until end of session" option, which is the most permissive option per the docs.</li>
+    <li><strong>Agent:</strong> One prompt per unique <code>subagent_type</code>. Persistence is not documented explicitly; estimate could rise to one-per-type-per-session.</li>
+    <li><strong>WebFetch / WebSearch:</strong> Counted as every-call (both are tool-level <code>ask</code> in EXAMPLE).</li>
+  </ul>
+
+  <h3>What this <em>doesn't</em> count</h3>
+  <p style="color: var(--text-dim);">Pre-2026-04-18 development (~23 days, ~1/3 of project elapsed time) has no JSONL transcripts. Prompts during that period are excluded. Additionally, this analysis assumes Claude Code's permission dialog always offers a "most permissive" option (always-allow scope or session-scope); if the dialog only offers single-shot approval for some tools, prompt counts would be substantially higher.</p>
+
+  <h3>Verification</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">The methodology was verified through several independent checks before settling on the figures above.</p>
+  <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
+    <li><strong>Permission docs cross-referenced.</strong> Anthropic's permission documentation directly confirms the per-Bash-prefix-permanent / per-session Edit/Write / never-prompt-read-only model used here.</li>
+    <li><strong>Tool-use census matches raw JSONL.</strong> Independently re-counted Bash, Edit, Write, Agent, and WebSearch tool_use blocks; all within ~3% of the figures used (live JSONL writes during the audit account for the drift).</li>
+    <li><strong>Bash classification audited.</strong> A second pass through the same JSONL with different prefix-granularity heuristics produced 499 unique prompt prefixes vs the 440 reported here (12% drift; same order of magnitude). The biggest source of variance is how aggressively to collapse <code>gh issue view</code> / <code>gh issue list</code> / <code>gh issue create</code> into a single <code>gh issue</code> prefix.</li>
+    <li><strong>Session counts verified.</strong> 1,648 total JSONL sessions broken down: 511 with Edit, 509 with Write, the rest read-only or subagent-only.</li>
+    <li><strong>Settings rules cross-referenced with current file.</strong> Allow/ask/deny lists read directly from <code>EXAMPLE_settings.json</code> at the time of analysis.</li>
+  </ul>
+</section>
+
+<section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>~2,695 estimated permission prompts under a conservative settings config &rarr; the headline number scales heavily with what's in <code>ask</code>. <code>gh *</code> alone accounts for ~35% of all prompts.</strong></p>
+  <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="COSTS.html">Cost report</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-05-21. Settings source: EXAMPLE_settings.json.</p>
+</section>
+
+</div>
+
+<script>
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>

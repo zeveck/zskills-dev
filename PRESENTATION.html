@@ -61,6 +61,9 @@
   }
   nav a { color: var(--text-dim); white-space: nowrap; }
   nav a:hover { color: var(--accent); text-decoration: none; }
+  nav .nav-sep { color: var(--border); margin-left: auto; padding: 0 4px; user-select: none; }
+  nav a.cross { color: var(--text); }
+  nav a.cross:hover { color: var(--accent); }
   nav .logo { color: var(--accent); font-weight: 700; font-size: 1.1em; }
 
   /* Container */
@@ -269,7 +272,8 @@
   <a href="#schedulable">Schedulable</a>
   <a href="#patterns">Patterns</a>
   <a href="#safety">Safety</a>
-  <a href="https://github.com/zeveck/zskills">GitHub</a>
+  <span class="nav-sep">&#9474;</span>
+  <a href="https://github.com/zeveck/zskills" class="cross">GitHub &rarr;</a>
 </nav>
 
 <div class="container">
@@ -329,16 +333,8 @@
           <p>Lightweight dispatcher for ad-hoc tasks. Worktree isolation, auto-push, cron scheduling. For work too small for <code>/run-plan</code>.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--green);">
-          <h5><code>/commit</code></h5>
-          <p>Inventories changes, classifies by scope, traces imports recursively, protects other agents' work. Pre-staging index check. Supports push and land modes.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--green);">
           <h5><code>/quickfix</code></h5>
           <p>Low-ceremony PR from main. Picks up in-flight edits (or dispatches an agent to write them), commits on a feature branch, pushes, opens the PR, exits. No worktree. PR-only. For changes small enough that leaving main is more ceremony than the edit is worth.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--green);">
-          <h5><code>/cleanup-merged</code></h5>
-          <p>Post-PR-merge local normalization. Fetches origin with &minus;&minus;prune, switches off a feature branch whose PR merged, pulls main, deletes local feature branches whose upstreams are gone. Safe to run anytime; bails on a dirty tree.</p>
         </div>
       </div>
 
@@ -369,10 +365,6 @@
           <p>Interactive companion to <code>/fix-issues</code>. Presents sprint results with diffs and test results. Every step ends with STOP AND WAIT for user judgment.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--orange);">
-          <h5><code>/review-feedback</code></h5>
-          <p>Triages exported user feedback JSON, deduplicates against existing issues, files via <code>gh</code>.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--orange);">
           <h5><code>/investigate</code></h5>
           <p>Root-cause debugging: reproduce, trace, prove the cause with evidence, write regression test, then fix. No guessing.</p>
         </div>
@@ -381,24 +373,36 @@
       <h4 style="color: var(--accent); margin: 24px 0 12px;">Utility &amp; Reference</h4>
       <div class="skill-mini-grid">
         <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/briefing</code></h5>
-          <p>Project status briefing: summary (triage), report (markdown), verify (sign-off items), current (in-flight), worktrees (cleanup readiness).</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/doc</code></h5>
-          <p>Documentation audit and gap-filling across modules, examples, and high-level docs. Three modes, including newsletter generation.</p>
+          <h5><code>/zskills-dashboard</code></h5>
+          <p>Local web dashboard for plans, issues, worktrees, branches, and tracking activity. Drag-and-drop priority queue. <code>start</code> launches a detached Python server, <code>stop</code> SIGTERMs it, <code>status</code> reports uptime.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
           <h5><code>/session-report</code></h5>
           <p>Audit what THIS session said it would do vs. what's actually shipped. Verifies session-mentioned items against ground truth (git, PRs, plans, worktrees), not conversation memory &mdash; catches "I'll send a fix" turns that never happened.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/update-zskills</code></h5>
-          <p>Bootstrap the Z Skills system into a new project: copies skill files, configures settings, adapts instructions to the target codebase.</p>
+          <h5><code>/briefing</code></h5>
+          <p>Project status briefing: summary (triage), report (markdown), verify (sign-off items), current (in-flight), worktrees (cleanup readiness).</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/zskills-dashboard</code></h5>
-          <p>Local web dashboard for plans, issues, worktrees, branches, and tracking activity. Drag-and-drop priority queue. <code>start</code> launches a detached Python server, <code>stop</code> SIGTERMs it, <code>status</code> reports uptime.</p>
+          <h5><code>/commit</code></h5>
+          <p>Inventories changes, classifies by scope, traces imports recursively, protects other agents' work. Pre-staging index check. Supports push and land modes.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--text-dim);">
+          <h5><code>/cleanup-merged</code></h5>
+          <p>Post-PR-merge local normalization. Fetches origin with &minus;&minus;prune, switches off a feature branch whose PR merged, pulls main, deletes local feature branches whose upstreams are gone. Safe to run anytime; bails on a dirty tree.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--text-dim);">
+          <h5><code>/review-feedback</code></h5>
+          <p>Triages exported user feedback JSON, deduplicates against existing issues, files via <code>gh</code>.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--text-dim);">
+          <h5><code>/doc</code></h5>
+          <p>Documentation audit and gap-filling across modules, examples, and high-level docs. Three modes, including newsletter generation.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--text-dim);">
+          <h5><code>/update-zskills</code></h5>
+          <p>Bootstrap the Z Skills system into a new project: copies skill files, configures settings, adapts instructions to the target codebase.</p>
         </div>
       </div>
 
@@ -470,41 +474,38 @@
 <section id="workflows" class="fade-in">
   <h2>How They Work Together</h2>
 
-  <h3>1. Build Features</h3>
+  <h3>1. Build Autonomously</h3>
+  <p><code>/research-and-go "Build me a recipe tracker."</code></p>
   <div class="flow">
-    <div class="flow-step"><h5>/research-and-plan</h5><p>Decompose broad goals into sub-plans with dependency analysis.</p></div>
+    <div class="flow-step"><h5>/research-and-go</h5><p>Decomposes a broad goal into sub-plans, drafts each with adversarial review, then executes all of them autonomously. One command, walk away.</p></div>
+  </div>
+  <p style="color: var(--text-dim); font-size: 0.9em; font-style: italic;">This workflow requires a bit of optimism.</p>
+
+  <h3>2. Build Features</h3>
+  <p>The standard flow for a focused feature: draft a spec, execute phase by phase, verify. For broad goals, run <code>/research-and-plan</code> first to get sub-plans, then run them individually or as a metaplan via <code>/run-plan</code>.</p>
+  <div class="flow">
     <div class="flow-step"><h5>/draft-plan</h5><p>Research, draft, review, devil's advocate. Up to 3 rounds.</p></div>
-    <div class="flow-step"><h5>/run-plan</h5><p>Worktree agent implements each phase. Delegate mode for meta-plans.</p></div>
+    <div class="flow-step"><h5>/run-plan</h5><p>Worktree agent implements each phase, verifies, lands.</p></div>
     <div class="flow-step"><h5>/verify-changes</h5><p>Diff review, test coverage, manual test. Recursive until clean.</p></div>
-    <div class="flow-step"><h5>/commit land</h5><p>Trace dependencies, cherry-pick to main, protect other agents' work.</p></div>
   </div>
-  <p style="color: var(--text-dim); font-size: 0.9em;">For broad goals, start with <code>/research-and-plan</code> which decomposes into sub-plans. For focused features, start directly with <code>/draft-plan</code>. Meta-plan phases use delegate mode &mdash; <code>/run-plan</code> invokes the delegated skill on main instead of a worktree.</p>
+  <p style="color: var(--text-dim); font-size: 0.9em; font-style: italic;">Or, to run a plan end-to-end in one shot: <code>/run-plan PLAN.md finish auto</code>.</p>
 
-  <h3>2. Add Components and Examples</h3>
-  <p><code>/add-block UserAuth</code></p>
+  <h3>3. Plan, Refine, Execute</h3>
+  <p><code>/draft-tests</code> pins down what "done" means per phase; <code>/refine-plan</code> catches stale references and invalidated assumptions before the next phase runs. Completed phases are checksum-gated and never re-touched.</p>
   <div class="flow">
-    <div class="flow-step"><h5>Research</h5><p>Check for plan, spawn research agent if needed.</p></div>
-    <div class="flow-step"><h5>Implement</h5><p>Worktree: component class, registration, UI, docs, tests.</p></div>
-    <div class="flow-step"><h5>Test</h5><p>Unit tests, <code>/add-example</code>, manual testing, screenshots.</p></div>
-    <div class="flow-step"><h5>Verify &amp; Land</h5><p>Fresh agent verifies. Report with sign-off. Cherry-pick to main.</p></div>
-  </div>
-
-  <h3>3. Quality Assurance</h3>
-  <p><code>/qe-audit every day at 9am</code> &bull; <code>/verify-changes</code> &bull; <code>/manual-testing</code></p>
-  <div class="flow">
-    <div class="flow-step"><h5>/qe-audit</h5><p>Scheduled commit audit. Files GitHub issues for gaps.</p></div>
-    <div class="flow-step"><h5>/verify-changes</h5><p>Recursive: audit diffs, run tests, manual-test, fix, re-verify.</p></div>
-    <div class="flow-step"><h5>/manual-testing</h5><p>Exact selectors, real events. No page.evaluate().</p></div>
-    <div class="flow-step"><h5>/fix-issues</h5><p>QA issues feed into batch bug-fix sprints.</p></div>
+    <div class="flow-step"><h5>/draft-plan</h5><p>Research, draft, adversarial review, devil's advocate. Iterates until convergence; outputs a plan file.</p></div>
+    <div class="flow-step"><h5>/draft-tests</h5><p>Append test specifications per pending phase. Senior-QE reviewer + devil's-advocate refinement loop.</p></div>
+    <div class="flow-step" style="background: var(--surface2); border-style: dashed;"><h5 style="color: var(--text-dim); font-style: italic;">time passes&hellip;</h5><p>Code lands. Dependencies move. Assumptions decay. Things change.</p></div>
+    <div class="flow-step"><h5>/refine-plan</h5><p>Reviews remaining phases against current code. Flags stale references and invalidated assumptions. Completed phases never modified.</p></div>
+    <div class="flow-step"><h5>/run-plan</h5><p>Worktree agent implements next phase, verifies with separate agent, lands the work.</p></div>
   </div>
 
-  <h3>4. Fix Bugs at Scale</h3>
-  <p><code>/fix-issues sync</code> &rarr; <code>/fix-issues 30 correctness auto every 4h</code> &rarr; <code>/fix-issues plan</code></p>
+  <h3>4. Find and Fix Issues at Scale</h3>
+  <p>A self-running loop: a scheduled audit fills the queue with issues, scheduled fix-issues sprints drain it. Run the two on schedules in <em>separate</em> Claude Code sessions &mdash; one fills, one drains. Prioritize and watch progress in the dashboard.</p>
   <div class="flow">
-    <div class="flow-step"><h5>Sync</h5><p>Update trackers from GitHub. Research new issues.</p></div>
-    <div class="flow-step"><h5>Fix</h5><p>Parallel worktree agents, 1 per issue. Reproduce, fix, test.</p></div>
-    <div class="flow-step"><h5>Report</h5><p>SPRINT_REPORT.md. <code>/fix-report</code> for user sign-off.</p></div>
-    <div class="flow-step"><h5>Plan</h5><p>"Too complex" skips &rarr; <code>/draft-plan</code> &rarr; <code>/run-plan</code>.</p></div>
+    <div class="flow-step"><h5>/qe-audit</h5><p>Scheduled commit audit. Reviews recent commits for test gaps, edge cases, untested branches; files GitHub issues with reproduction recipes.</p></div>
+    <div class="flow-step"><h5>/fix-issues</h5><p>Scheduled sprint. Picks top-priority items from the dashboard queue. Parallel worktree agents, one per issue. Reproduce, fix, test, auto-land passing fixes.</p></div>
+    <div class="flow-step"><h5>/zskills-dashboard</h5><p>Live local view of the loop: pending issues, running worktrees, recent landings. Drag-and-drop priority reorder.</p></div>
   </div>
 </section>
 
@@ -563,13 +564,13 @@
 <!-- SHARED PATTERNS -->
 <section id="patterns" class="fade-in">
   <h2>Shared Patterns</h2>
-  <p>Seven patterns recur across the system.</p>
+  <p>Six patterns recur across the system.</p>
 
   <table>
     <tr><th>Pattern</th><th>What It Does</th></tr>
     <tr>
       <td><strong>Worktree isolation</strong></td>
-      <td>Each agent works in a separate git worktree. <code>scripts/port.sh</code> gives each a deterministic dev server port.</td>
+      <td>Built for parallel agent work: most skills can run the agent in its own git worktree (configurable).</td>
     </tr>
     <tr>
       <td><strong>Cron scheduling</strong></td>
@@ -591,17 +592,13 @@
       <td><strong>Report generation</strong></td>
       <td>Persistent Markdown reports with sign-off checklists, screenshots, and verification instructions.</td>
     </tr>
-    <tr>
-      <td><strong>Dependency tracing</strong></td>
-      <td>Before staging, recursively trace imports. If <code>A.js</code> imports <code>B.js</code>, both get committed.</td>
-    </tr>
   </table>
 </section>
 
 <!-- SAFETY AND RELIABILITY -->
 <section id="safety" class="fade-in">
   <h2>Safety and Reliability</h2>
-  <p>Agents work in worktrees, but they still need guardrails. The system uses a PreToolUse hook (<code>block-unsafe.sh</code>) that reads the session transcript to enforce key invariants:</p>
+  <p>Even with solid skills to guide them, agents need guardrails. The system uses a PreToolUse hook (<code>block-unsafe.sh</code>) that reads the session transcript to enforce key invariants:</p>
 
   <table>
     <tr><th>What's Enforced</th><th>How</th></tr>
@@ -628,10 +625,6 @@
     <tr>
       <td>No piping test output</td>
       <td>Blocks test commands with <code>|</code> -- must capture to file</td>
-    </tr>
-    <tr>
-      <td>No directory-level log staging</td>
-      <td>Blocks <code>git add .claude/logs/</code></td>
     </tr>
   </table>
 
@@ -718,7 +711,7 @@
 <!-- CLOSING -->
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
   <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 core skills (24 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
-  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a> &middot; <a href="COSTS.html">Cost Estimate &rarr;</a> &middot; <a href="TECHNICAL.html">Technical Stats &rarr;</a></p>
+  <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6 / 4.7) &mdash; Z Skills System.</p>
 </section>
 
