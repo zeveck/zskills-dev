@@ -1389,3 +1389,37 @@ Empty.
 - Next fire: top of next 30-min mark.
 - Worktree count at sprint entry: 0 fix/issue-* live (cap 3; prior sprint's 3 worktrees all `.landed status: landed` per filter).
 
+
+## Sprint — 2026-05-21 03:32 EDT [UNFINALIZED]
+
+**Sprint ID:** `sprint-20260521-055840-sprint`
+**Mode:** auto | **Landing:** pr | **Focus:** default
+**N requested:** 3 | **N dispatched:** 3 | **N verified:** 3
+
+### Fixed (all merged)
+| # | Title | PR | Merge SHA | Tests |
+|---|-------|----|-----------|-------|
+| #540 | test-create-worktree.sh hermetic env | [#548](https://github.com/zeveck/zskills-dev/pull/548) | d3eea34 | 4618/4618 ×2 verifier runs (flake squashed) |
+| #535 | /land-pr REBASE_STDERR_FILE allow-list + cleanup | [#549](https://github.com/zeveck/zskills-dev/pull/549) | 4306818 | 4618/4618 |
+| #528 | hooks/_lib path-strip — silent universal hook bypass | [#550](https://github.com/zeveck/zskills-dev/pull/550) | dc62c33 | 4626/4626 |
+
+### Notable
+1. **Sibling-PR cadence sprint.** PR #544 (`feat(fix-issues): Phase 1 claim primitive`) landed on main DURING this sprint's setup. All 3 fix branches required a one-time rebase onto current main (`c3509dc`); #540 + #528 rebased clean, #535 hit a metadata.version conflict on `skills/fix-issues/SKILL.md` which the orchestrator resolved inline (recomputed hash to `5bda3b`). Without the pre-dispatch rebase the verifiers would have seen ~1700-line phantom deletions and STOPped — exactly the failure mode `feedback_check_scope_before_push` warns against. Caught in 5 seconds via `git diff --stat` before verifier dispatch.
+2. **#540 closes the #538-surfaced isolation flake.** Verifier ran the full suite 2× and got identical 4618/4618 results — the prior intermittent case 7 + case 16 failures are squashed. Hermetic HOME / XDG_CONFIG_HOME / GIT_CONFIG_GLOBAL + per-suite `prune_empty_ref_dirs` of empty `refs/heads/<prefix>/` subdirs eliminates the env-state leak from earlier suite tests.
+3. **#528 is genuinely high-severity** — fixes a UNIVERSAL silent hook bypass for any consumer invoking git via absolute path. Same family as #515. Mutation-verified by 8 new path-prefixed test cases.
+4. **Step 6b auto-rebase fired 3 times across sprint** (PR #549 + PR #550 each looped once or twice as siblings landed). Auto-rebase mechanism continues to work reliably.
+
+### Skipped
+| # | Title | Bucket | Reason |
+|---|-------|--------|--------|
+| #67 | GitLab support | Author decision needed | Action now: none — architectural memo |
+| #515 | block-unsafe-generic git push HEAD bypass | Pool-not-picked | Same family as #528 (which landed); reconsider next fire |
+| #511 | Verifier tally check missing | Pool-not-picked | Out of top-N |
+| #510 | fix-issues research-blurb + impl-prompt missing tier1-hash-registration | Pool-not-picked | Out of top-N |
+
+### Cron lifecycle
+- Sprint started: 2026-05-21T03:32:10-04:00
+- Cron `8cc665fb` (`*/30 * * * *`) — active.
+- Next fire: top of next 30-min mark.
+- Live fix/issue worktrees at sprint entry: 0 (all prior `.landed status: landed`).
+
