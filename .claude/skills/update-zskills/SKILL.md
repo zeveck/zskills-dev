@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.22+9449a0"
+  version: "2026.05.22+3cf4af"
 ---
 
 # Update Z Skills Infrastructure
@@ -1126,7 +1126,7 @@ Copy missing hooks from `$PORTABLE/hooks/` to `.claude/hooks/`.
   (closes a TZ-confusion class of "the cron never fired" bugs; PR #456).
 - For `block-main-edits.sh`: copy as-is from `$PORTABLE/hooks/` to
   `.claude/hooks/`. Wired into `settings.json` as PreToolUse on the
-  `Edit|Write|NotebookEdit` matcher (see canonical-triples table below).
+  `Edit|Write` matcher (see canonical-triples table below).
   Honors `execution.main_protected` from `.claude/zskills-config.json` —
   denies edits to files inside the main repo working tree when
   `main_protected: true`, with narrow allowlists for `.zskills/` and
@@ -1248,7 +1248,7 @@ not in this table is foreign and preserved untouched):
 | PreToolUse   | Bash    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-fix-issue-unclaimed.sh"`      |
 | PreToolUse   | Agent   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh"`                   |
 | PreToolUse   | CronCreate | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-bad-cron.sh"`              |
-| PreToolUse   | Edit\|Write\|NotebookEdit | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"` |
+| PreToolUse   | Edit\|Write | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"` |
 | PostToolUse  | Edit    | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 | PostToolUse  | Write   | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/warn-config-drift.sh"`              |
 
