@@ -39,7 +39,7 @@
 <div class="frame">
   <div class="eyebrow">Cost Methodology</div>
   <h1>How the cost figure was computed</h1>
-  <p class="deck">From <strong>raw session transcripts</strong> to a defensible cost estimate. The methodology dedup&shy;licates against <code>message.id</code> because Claude Code splits each API response into multiple JSONL records (one per content block).</p>
+  <p class="deck">From <strong>raw session transcripts</strong> to a defensible cost estimate. See the <a href="COSTS.html#method">full methodology section</a> of the cost report for the dedup logic, API-response semantics, and verification details.</p>
 
   <div class="flow">
     <div class="step"><span class="num">1</span><h3>Collect</h3><p>Scan 1,617 JSONL files across 8 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 7 worktree-spawned dirs). Extract every assistant <code>usage</code> record.</p></div>
