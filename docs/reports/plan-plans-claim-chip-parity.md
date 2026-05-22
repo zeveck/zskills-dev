@@ -1,5 +1,37 @@
 # Plan Report — plans-claim-chip-parity
 
+## Phase — 4 Conformance tests + SKILL.md prose + follow-up issue
+
+**Plan:** plans/plans-claim-chip-parity.md
+**Status:** Completed (verified)
+**Commit:** `d9c19af`
+
+### Changes
+
+- `tests/test-plan-claim-conformance.sh` (250 lines, 15 assertions): acquire-before-Execution (A11), 6 section-scoped refresh windows (DA2.6 + DA3.1), 3 section-scoped release windows + 1 refresh-during-defer, NEGATIVE no Phase 5b §1-5 release, NEGATIVE no `LAND_OUTCOME`, sweep-before-filter ordering in /work-on-plans Step 4, hook registration, Issue #604 adjacency.
+- `skills/run-plan/SKILL.md`: new "Plan-claim mechanism" prose (~60 lines): storage / lifecycle / acquire-or-decline / heartbeat cadence / cron-fire state machine / release sites / PreToolUse backstop. `metadata.version` → `2026.05.22+c98e49`.
+- `skills/work-on-plans/SKILL.md`: new "Selection-aware plan-claim filter (D4)" prose (~38 lines) with honest scope (DA2.7: steady-state closure only; fresh-start race acquire-bounded). `metadata.version` → `2026.05.22+bac087`.
+- `.claude/` mirrors of both SKILL.md edits.
+- `tests/run-all.sh` +1 line registering the conformance test.
+
+### GitHub issue (W4.4)
+
+**[#641](https://github.com/zeveck/zskills-dev/issues/641)** — "/fix-issues Phase 2 picker also needs selection-aware filter (per /work-on-plans + /run-plan claim chip parity)". Body cites `skills/fix-issues/SKILL.md ~lines 686-720` (the /fix-issues picker), explicitly notes independence from /work-on-plans, and includes the user-steering quote reference.
+
+### Verification
+
+- **Full test suite**: `Overall: 5602/5602 passed, 0 failed` (baseline 5595; +7 net).
+- **All 3 phase ACs PASS** with file:line evidence.
+- **Adjacency check**: `grep "/tracking/" skills/run-plan/scripts/claim-plan.sh` → zero hits. Claim writes isolated to `.zskills/claims/`.
+- **D6 conformance**: zero CSS files modified.
+
+### Implementer deviations (both legitimate)
+
+1. Conformance grep joins backslash-continuation lines via `sed ':a;N;$!ba;s/\\\n[[:space:]]*/ /g'` before counting (SKILL.md call sites are multi-line). Post-join uses literal `claim-plan.sh" + whitespace + verb`. Verb match remains exact.
+2. `^### Execution` anchor instead of `^### Execution: ` (actual heading is `### Execution mode detection`, no colon — plan text was stale).
+
+---
+
 ## Phase — 3 Dashboard collect.py + render-side wiring
 
 **Plan:** plans/plans-claim-chip-parity.md
