@@ -1345,8 +1345,17 @@ def _read_state_file(
 def _annotate_plans_queue(
     plans: List[Dict[str, Any]],
     state: Dict[str, Any],
+    main_root: Optional[pathlib.Path] = None,
 ) -> None:
-    """Add `queue: {column, index, mode}` to each plan in-place."""
+    """Add `queue: {column, index, mode}` to each plan in-place.
+
+    When `main_root` is provided, also annotates each plan with a
+    `claim` field derived from
+    `${main_root}/.zskills/claims/plan-<slug>/claim.json` (run-plan
+    in-flight chip). Gated on `main_root is not None` per the symmetric
+    contract with `_annotate_issues_queue` (R2.6 fixture branch passes
+    no main_root and must skip the filesystem read).
+    """
     state_plans: Dict[str, List[Dict[str, Any]]] = state.get("plans", {})
     # Build slug → (column, index, mode) lookup.
     pos: Dict[str, Tuple[str, int, Optional[str]]] = {}
@@ -1356,6 +1365,13 @@ def _annotate_plans_queue(
             mode = e.get("mode") if col == "ready" else None
             if slug and slug not in pos:
                 pos[slug] = (col, i, mode)
+
+    # Plan-claim index — parallel to the issue-side `claim_index`. Gated
+    # on main_root for the same reason (R2.6 fixture branch).
+    plan_claim_index: Dict[str, Dict[str, Any]] = {}
+    if main_root is not None:
+        plan_claim_index = _read_plan_claims(main_root)
+
     for plan in plans:
         slug = plan["slug"]
         if slug in pos:
@@ -1364,6 +1380,19 @@ def _annotate_plans_queue(
         else:
             inferred = _infer_default_column(plan)
             plan["queue"] = {"column": inferred, "index": -1, "mode": None}
+        # Claim chip — explicit field allow-list (NOT **claim_dict).
+        # NO `worktree_path`, NO `host_pid` — same scope discipline as
+        # the issue side (DA8 / DA2.1).
+        if isinstance(slug, str) and slug in plan_claim_index:
+            c = plan_claim_index[slug]
+            plan["claim"] = {
+                "pipeline_id":       c.get("pipeline_id"),
+                "started_at":        c.get("started_at"),
+                "last_heartbeat_at": c.get("last_heartbeat_at"),
+                "current_phase":     c.get("current_phase"),
+                "age_seconds":       c.get("age_seconds"),
+                "pipeline_short":    c.get("pipeline_short"),
+            }
 
 
 def _annotate_issues_queue(
@@ -1657,6 +1686,7 @@ def _build_skip_reason_index(
 
 
 _CLAIM_DIR_RE = re.compile(r"^issue-(\d+)$")
+_PLAN_CLAIM_DIR_RE = re.compile(r"^plan-(.+)$")
 
 
 def _derive_pipeline_short(pipeline_id: str) -> str:
@@ -1766,6 +1796,106 @@ def _read_claims(main_root: pathlib.Path) -> Dict[int, Dict[str, Any]]:
     return out
 
 
+def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
+    """Read run-plan claim files under `${main_root}/.zskills/claims/plan-*/`.
+
+    Returns `{slug: claim_dict}` keyed by string slug. Each dict carries:
+        pipeline_id, started_at, last_heartbeat_at, current_phase,
+        age_seconds, pipeline_short
+
+    Tolerant: malformed JSON emits a single stderr line and skips that
+    claim. A claim directory present without `claim.json` surfaces a
+    null-metadata entry (all values `None`) so the renderer can show a
+    generic in-flight indicator (sweep-while-flush race tolerance —
+    mirrors `_read_claims` D2.6 behaviour).
+
+    `age_seconds` is computed from `last_heartbeat_at` (NOT `started_at`)
+    so the chip's "age" reflects the freshness of the heartbeat — when
+    the pipeline silently hangs, the chip ages even though started_at is
+    stale.
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    claims_dir = main_root / ".zskills" / "claims"
+    if not claims_dir.is_dir():
+        return out
+    now = datetime.now(timezone.utc)
+    try:
+        entries = list(claims_dir.iterdir())
+    except OSError as e:
+        sys.stderr.write(
+            "zskills_monitor.collect: _read_plan_claims iterdir failed: %s\n" % e
+        )
+        return out
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        m = _PLAN_CLAIM_DIR_RE.match(entry.name)
+        if m is None:
+            continue
+        slug = m.group(1)
+        if not slug:
+            continue
+        claim_path = entry / "claim.json"
+        if not claim_path.is_file():
+            # Sweep-while-flush race tolerance — directory exists but
+            # the writer hasn't dropped claim.json yet (or sweep raced
+            # us mid-release). Surface a null-metadata claim so the
+            # renderer shows the chip but with `?` for time / id.
+            out[slug] = {
+                "pipeline_id": None,
+                "started_at": None,
+                "last_heartbeat_at": None,
+                "current_phase": None,
+                "age_seconds": None,
+                "pipeline_short": None,
+            }
+            continue
+        try:
+            with open(claim_path, "r", encoding="utf-8") as fh:
+                body = json.load(fh)
+        except (OSError, ValueError) as e:
+            sys.stderr.write(
+                "zskills_monitor.collect: _read_plan_claims skip %s: %s\n"
+                % (claim_path, e)
+            )
+            continue
+        if not isinstance(body, dict):
+            sys.stderr.write(
+                "zskills_monitor.collect: _read_plan_claims skip %s: not a JSON object\n"
+                % claim_path
+            )
+            continue
+        pipeline_id = body.get("pipeline_id")
+        started_at = body.get("started_at")
+        last_heartbeat_at = body.get("last_heartbeat_at")
+        current_phase = body.get("current_phase")
+        # Compute age from last_heartbeat_at (not started_at) per W3.3
+        # fingerprint rationale — chip text contains an age string
+        # derived from heartbeat freshness.
+        age_seconds: Optional[float] = None
+        hb_for_age = last_heartbeat_at if isinstance(last_heartbeat_at, str) and last_heartbeat_at else None
+        if hb_for_age:
+            try:
+                parsed = datetime.fromisoformat(hb_for_age)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age_seconds = (now - parsed).total_seconds()
+            except ValueError:
+                age_seconds = None
+        pipeline_short: Optional[str] = None
+        if isinstance(pipeline_id, str) and pipeline_id:
+            pipeline_short = _derive_pipeline_short(pipeline_id)
+        out[slug] = {
+            "pipeline_id": pipeline_id if isinstance(pipeline_id, str) else None,
+            "started_at": started_at if isinstance(started_at, str) else None,
+            "last_heartbeat_at": last_heartbeat_at if isinstance(last_heartbeat_at, str) else None,
+            "current_phase": current_phase if isinstance(current_phase, str) else None,
+            "age_seconds": age_seconds,
+            "pipeline_short": pipeline_short,
+        }
+    return out
+
+
 # ---------------------------------------------------------------------------
 # collect_snapshot — entry point
 # ---------------------------------------------------------------------------
@@ -1857,7 +1987,7 @@ def collect_snapshot(
     # invariant for queue annotations.
     state = _read_state_file(main_root, errors)
     state_updated_at = state.get("updated_at", "")
-    _annotate_plans_queue(plans, state)
+    _annotate_plans_queue(plans, state, main_root)
 
     # Issues. `issues_fetch_ok` is surfaced to the client (issue #336):
     # when False, the dashboard skips its prune-against-live-issues pass
