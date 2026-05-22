@@ -165,6 +165,14 @@ run_suite "test-plan-claim-race-baseline.sh" "tests/test-plan-claim-race-baselin
 run_suite "test-plan-claim-ttl-config-resolver.sh" "tests/test-plan-claim-ttl-config-resolver.sh"
 run_suite "test-plan-claim-hook-deny.sh" "tests/test-plan-claim-hook-deny.sh"
 run_suite "test-plan-claim-main-root-anchor.sh" "tests/test-plan-claim-main-root-anchor.sh"
+run_suite "test-plan-claim-race-e2e.sh" "tests/test-plan-claim-race-e2e.sh"
+run_suite "test-plan-claim-heartbeat.sh" "tests/test-plan-claim-heartbeat.sh"
+run_suite "test-plan-claim-cron-fire-state-machine.sh" "tests/test-plan-claim-cron-fire-state-machine.sh"
+run_suite "test-plan-claim-release-phase6.sh" "tests/test-plan-claim-release-phase6.sh"
+run_suite "test-plan-claim-release-stop.sh" "tests/test-plan-claim-release-stop.sh"
+run_suite "test-plan-claim-release-window.sh" "tests/test-plan-claim-release-window.sh"
+run_suite "test-plan-claim-release-already-complete.sh" "tests/test-plan-claim-release-already-complete.sh"
+run_suite "test-plan-claim-heartbeat-verify-defer.sh" "tests/test-plan-claim-heartbeat-verify-defer.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

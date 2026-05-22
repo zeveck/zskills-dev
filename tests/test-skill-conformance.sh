@@ -2789,7 +2789,7 @@ check_sanitize_count() {
     fail "$label: found $actual sanitize wraps, expected exactly $expected" "$expected sanitize-pipeline-id.sh wraps in $skill_path"
   fi
 }
-check_sanitize_count "skills/run-plan/SKILL.md"      14 "skills/run-plan/SKILL.md"
+check_sanitize_count "skills/run-plan/SKILL.md"      16 "skills/run-plan/SKILL.md"
 check_sanitize_count "skills/commit/modes/pr.md"      1 "skills/commit/modes/pr.md"
 check_sanitize_count "skills/draft-plan/SKILL.md"     4 "skills/draft-plan/SKILL.md"
 check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKILL.md"
