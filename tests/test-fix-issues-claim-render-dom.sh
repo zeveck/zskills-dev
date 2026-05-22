@@ -351,6 +351,36 @@ function findByClass(root, cls) {
 }
 
 // ------------------------------------------------------------------
+// W4.10 — completed_column_no_claim_chip: even with a populated claim
+// payload, an issue rendered at col="completed" must NOT emit a
+// .claim-chip element. Locks PR #600's aria-disabled invariant on the
+// completed column (a completed item is released by definition).
+// ------------------------------------------------------------------
+{
+  const issue = {
+    number: 8675309,
+    title: "Completed-but-with-claim payload",
+    labels: [],
+    claim: {
+      pipeline_id: "fix-issues.sprint-foo",
+      sprint_id: "sprint-foo",
+      age_seconds: 120,
+      started_at: new Date(Date.now() - 120000).toISOString(),
+      pipeline_short: "010731-foo",
+    },
+  };
+  const card = buildIssueCard(issue, 8675309, "completed");
+  expect(findByClass(card, "claim-chip"), null,
+    "completed_column_no_claim_chip — [data-column='completed'] .claim-chip count is 0");
+  expect(card.getAttribute("aria-disabled"), null,
+    "completed_column_no_claim_chip — completed card has no aria-disabled (claim-chip path suppressed)");
+  expect(card.getAttribute("draggable"), null,
+    "completed_column_no_claim_chip — completed card has no draggable attribute");
+  expect(card.getAttribute("data-column"), "completed",
+    "completed_column_no_claim_chip — data-column='completed' preserved");
+}
+
+// ------------------------------------------------------------------
 // T3.2.d — chip-text fallback (R2.7): unparseable started_at yields "?"
 // ------------------------------------------------------------------
 {

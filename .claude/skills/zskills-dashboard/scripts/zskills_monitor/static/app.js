@@ -610,20 +610,32 @@ function planBySlug(plans, slug) {
 }
 
 function buildPlanCard(plan, slug, col, defaultMode) {
-  const card = el("li", {
-    cls: "card",
-    attrs: {
-      role: "listitem",
-      tabindex: "0",
-      draggable: "true",
-      "data-kind": "plan",
-      "data-slug": slug,
-      "data-column": col,
-      "aria-label": "Plan " + (plan ? (plan.title || slug) : slug),
-    },
-  });
+  // Phase 4 / D5 / D7 — Completed cards are READ-ONLY. Omit draggable
+  // attribute, omit per-card action controls, omit the move-all chevron
+  // (handled in renderPlans), omit the plan-title click-through link
+  // (DA10: plain title text for completed plans). Issues retain the
+  // GH click-through anchor (handled in buildIssueCard).
+  const isCompleted = col === "completed";
+  const cardAttrs = {
+    role: "listitem",
+    tabindex: "0",
+    "data-kind": "plan",
+    "data-slug": slug,
+    "data-column": col,
+    "aria-label": "Plan " + (plan ? (plan.title || slug) : slug),
+  };
+  if (!isCompleted) cardAttrs.draggable = "true";
+  const card = el("li", { cls: "card", attrs: cardAttrs });
   const head = el("div", { cls: "card-row" });
-  head.appendChild(titleNode((plan && plan.title) || slug, planUrl(plan)));
+  if (isCompleted) {
+    // DA10 — plain title text (no anchor) for completed plans.
+    head.appendChild(el("span", {
+      cls: "card-title",
+      text: (plan && plan.title) || slug,
+    }));
+  } else {
+    head.appendChild(titleNode((plan && plan.title) || slug, planUrl(plan)));
+  }
   if (plan && plan.status) {
     const statusPill = el("span", {
       cls: "pill " + statusPillClass(plan.status),
@@ -728,26 +740,29 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     card.appendChild(chip);
   }
 
-  // Card controls: ↑ ↓ ← → and remove
-  const controls = el("div", {
-    cls: "card-controls",
-    attrs: { role: "group", "aria-label": "Move this plan" },
-  });
-  controls.appendChild(makeMoveBtn("plan-up", slug, "↑", "Move up"));
-  controls.appendChild(makeMoveBtn("plan-down", slug, "↓", "Move down"));
-  controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
-  controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
-  controls.appendChild(el("button", {
-    cls: "remove-btn",
-    attrs: {
-      type: "button",
-      "data-action": "plan-remove",
-      "data-slug": slug,
-      "aria-label": "Remove from queue",
-    },
-    text: "✕",
-  }));
-  card.appendChild(controls);
+  // Card controls: ↑ ↓ ← → and remove. Omitted for completed plans
+  // (Phase 4 / D5 — Completed is read-only; no per-card action buttons).
+  if (!isCompleted) {
+    const controls = el("div", {
+      cls: "card-controls",
+      attrs: { role: "group", "aria-label": "Move this plan" },
+    });
+    controls.appendChild(makeMoveBtn("plan-up", slug, "↑", "Move up"));
+    controls.appendChild(makeMoveBtn("plan-down", slug, "↓", "Move down"));
+    controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
+    controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
+    controls.appendChild(el("button", {
+      cls: "remove-btn",
+      attrs: {
+        type: "button",
+        "data-action": "plan-remove",
+        "data-slug": slug,
+        "aria-label": "Remove from queue",
+      },
+      text: "✕",
+    }));
+    card.appendChild(controls);
+  }
 
   return card;
 }
@@ -1010,18 +1025,21 @@ function renderBranches(branches, worktrees) {
 // ---------------------------------------------------------------- issues
 
 function buildIssueCard(issue, num, col) {
-  const card = el("li", {
-    cls: "card",
-    attrs: {
-      role: "listitem",
-      tabindex: "0",
-      draggable: "true",
-      "data-kind": "issue",
-      "data-number": String(num),
-      "data-column": col,
-      "aria-label": "Issue #" + num,
-    },
-  });
+  // Phase 4 / D5 / D7 — Completed cards are READ-ONLY. Omit draggable
+  // attribute, omit the claim-chip + aria-disabled wiring (a completed
+  // item is released by definition), omit per-card action controls.
+  // The GH click-through anchor REMAINS (issueUrl honored below).
+  const isCompleted = col === "completed";
+  const cardAttrs = {
+    role: "listitem",
+    tabindex: "0",
+    "data-kind": "issue",
+    "data-number": String(num),
+    "data-column": col,
+    "aria-label": "Issue #" + num,
+  };
+  if (!isCompleted) cardAttrs.draggable = "true";
+  const card = el("li", { cls: "card", attrs: cardAttrs });
   const head = el("div", { cls: "card-row" });
   head.appendChild(titleNode(
     issue ? ("#" + num + " " + (issue.title || "")) : ("#" + num),
@@ -1063,7 +1081,9 @@ function buildIssueCard(issue, num, col) {
   // can't fight an in-flight pipeline (DA11). The keyboard
   // move/remove buttons live in the action dispatcher below — see the
   // matching aria-disabled guard there (DA2.3).
-  if (issue && issue.claim) {
+  // Phase 4 — Completed cards skip the claim chip entirely (a completed
+  // item is released by definition; PR #600 / D7 invariant).
+  if (issue && issue.claim && !isCompleted) {
     const c = issue.claim;
     const rt = c.started_at ? relativeTime(c.started_at) : "";
     const ageStr = rt || "?";
@@ -1088,25 +1108,28 @@ function buildIssueCard(issue, num, col) {
     }
     card.appendChild(labels);
   }
-  const controls = el("div", {
-    cls: "card-controls",
-    attrs: { role: "group", "aria-label": "Move this issue" },
-  });
-  controls.appendChild(makeIssueMoveBtn("issue-up", num, "↑", "Move up"));
-  controls.appendChild(makeIssueMoveBtn("issue-down", num, "↓", "Move down"));
-  controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
-  controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
-  controls.appendChild(el("button", {
-    cls: "remove-btn",
-    attrs: {
-      type: "button",
-      "data-action": "issue-remove",
-      "data-number": String(num),
-      "aria-label": "Remove issue from queue",
-    },
-    text: "✕",
-  }));
-  card.appendChild(controls);
+  // Phase 4 / D5 — Completed cards skip per-card action controls.
+  if (!isCompleted) {
+    const controls = el("div", {
+      cls: "card-controls",
+      attrs: { role: "group", "aria-label": "Move this issue" },
+    });
+    controls.appendChild(makeIssueMoveBtn("issue-up", num, "↑", "Move up"));
+    controls.appendChild(makeIssueMoveBtn("issue-down", num, "↓", "Move down"));
+    controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
+    controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
+    controls.appendChild(el("button", {
+      cls: "remove-btn",
+      attrs: {
+        type: "button",
+        "data-action": "issue-remove",
+        "data-number": String(num),
+        "aria-label": "Remove issue from queue",
+      },
+      text: "✕",
+    }));
+    card.appendChild(controls);
+  }
   return card;
 }
 
@@ -1241,6 +1264,30 @@ function renderBelowPanelBand(opts) {
     head.appendChild(el("span", { text: labels[c] }));
     const arr = queueDict[c] || [];
     head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    // Phase 4 / W4.3 / D7 — Move-all chevron: VALID for backlog (drag-back
+    // to adjacent active column), SUPPRESSED for completed (terminal /
+    // read-only state). Backlog only gets « (move-all back to active);
+    // the right-chevron from backlog would target completed which is
+    // read-only.
+    if (c === "backlog") {
+      const moveAllGroup = el("span", {
+        cls: "move-all-group",
+        attrs: { role: "group", "aria-label": "Move all in " + labels[c] },
+      });
+      const cols = (kind === "plan") ? PLAN_COLUMNS : ISSUE_COLUMNS;
+      const ci = cols.indexOf(c);
+      if (ci > 0) {
+        const prevLabel = labels[cols[ci - 1]];
+        moveAllGroup.appendChild(makeColumnMoveAllBtn(
+          (kind === "plan") ? "plan-move-all-left" : "issue-move-all-left",
+          kind,
+          c,
+          "«",
+          "Move all unclaimed " + labels[c] + " " + (kind === "plan" ? "plans" : "issues") + " to " + prevLabel,
+        ));
+      }
+      head.appendChild(moveAllGroup);
+    }
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -1556,8 +1603,15 @@ async function postQueue(queues, opts) {
     issues: stripCompleted(queues.issues),
   };
   let res;
+  // Phase 4 / W4.5 / AC4.8 — Single-fetch invariant: this is the SOLE
+  // call to POST /api/queue in app.js. The conformance grep
+  // (`grep -cE 'fetch \([^)]*api/queue' app.js`) is anchored on the
+  // call-syntax with the literal `api/queue` argument so that every
+  // drag-induced POST flows through `postQueue`, which holds the
+  // `pendingPosts++/--` race-guard at commitQueueChange. Do not
+  // introduce a sibling site for this URL — extend this helper instead.
   try {
-    res = await fetch(QUEUE_URL, {
+    res = await fetch("/api/queue", {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
@@ -1864,7 +1918,10 @@ function onDragStart(ev) {
   const kind = card.getAttribute("data-kind");
   const slug = card.getAttribute("data-slug");
   const num = card.getAttribute("data-number");
-  dragState = { kind, slug, num };
+  // Phase 4 / W4.4 — capture the source column so onDrop can apply the
+  // D5 leftmost-active rewrite rule when dragging out of Backlog.
+  const sourceColumn = card.getAttribute("data-column");
+  dragState = { kind, slug, num, sourceColumn };
   if (ev.dataTransfer) {
     try {
       ev.dataTransfer.setData("text/plain", JSON.stringify(dragState));
@@ -1959,9 +2016,32 @@ async function onDrop(ev) {
   dz.classList.remove("drop-target");
   // Compute the index BEFORE removing the indicator (so insertion math
   // uses the same DOM state the user saw on the indicator).
-  const targetCol = dz.getAttribute("data-column");
-  const targetIdx = computeInsertIndex(dz, ev.clientY);
+  let targetCol = dz.getAttribute("data-column");
+  let targetIdx = computeInsertIndex(dz, ev.clientY);
   removeInsertIndicator();
+  // Phase 4 / W4.2 — Reject drops onto Completed. Completed is read-only
+  // (terminal state derived from GH closedAt / plan frontmatter — D1).
+  // Per D5 the column still renders as a <ul> for visual consistency,
+  // but the handler hard-rejects with a no-op + warn (no POST).
+  if (targetCol === "completed") {
+    console.warn(
+      "Drop rejected: completed column is read-only (kind=" + dragState.kind +
+      ", id=" + (dragState.slug || dragState.num) + ")"
+    );
+    dragState = null;
+    return;
+  }
+  // Phase 4 / W4.4 / D5 — When the drag SOURCE is Backlog, rewrite the
+  // destination to the leftmost active column ("triage" for issues,
+  // "drafted" for plans) regardless of which active column the user
+  // actually dropped onto. This is symmetric with how Backlog is
+  // conceptually "off the active flow" — promoting out of Backlog just
+  // means "make it active again," so we avoid forcing the user to
+  // remember the column order.
+  if (dragState.sourceColumn === "backlog" && targetCol !== "backlog") {
+    targetCol = (dragState.kind === "plan") ? "drafted" : "triage";
+    targetIdx = 0;
+  }
   if (dragState.kind === "plan" && dragState.slug) {
     await movePlan(dragState.slug, { col: targetCol, idx: targetIdx });
   } else if (dragState.kind === "issue" && dragState.num) {

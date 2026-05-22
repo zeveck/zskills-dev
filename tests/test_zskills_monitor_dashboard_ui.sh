@@ -1049,6 +1049,85 @@ else
 fi
 
 ###############################################################################
+# Phase 4 named tests (W4.11 — move-all chevron absence on completed;
+# W4.12 — single fetch helper post). Static-grep contract pins.
+###############################################################################
+
+echo ""
+echo "=== Phase 4 AC: drag-target wiring + Completed read-only (W4.11–W4.12) ==="
+
+# W4.11 — move_all_chevron_absent_on_completed
+# The active row already iterates ACTIVE_PLAN_COLUMNS / ACTIVE_ISSUE_COLUMNS
+# (excludes completed). The below-panel band MUST NOT emit a move-all-group
+# inside its completed sub-column, but MUST emit one inside its backlog
+# sub-column. Static-grep against renderBelowPanelBand body — guard is
+# `if (c === "backlog")` BEFORE the move-all-group construction.
+BAND_BODY=$(awk '
+  /^function renderBelowPanelBand\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+
+if echo "$BAND_BODY" | grep -qE 'if \(c === "backlog"\)'; then
+  pass "W4.11 move_all_chevron_absent_on_completed — band gates move-all on backlog (not completed)"
+else
+  fail "W4.11 move_all_chevron_absent_on_completed — band missing 'if (c === \"backlog\")' chevron guard"
+fi
+
+if echo "$BAND_BODY" | grep -qE 'makeColumnMoveAllBtn\('; then
+  pass "W4.11 move_all_chevron_absent_on_completed — backlog emits makeColumnMoveAllBtn"
+else
+  fail "W4.11 move_all_chevron_absent_on_completed — backlog sub-column missing chevron emit"
+fi
+
+# Verify the move-all-group construction inside the band is INSIDE the
+# `if (c === "backlog")` block — extract a 12-line window after the guard
+# and confirm it contains the class string.
+GUARD_WINDOW=$(echo "$BAND_BODY" | awk '/if \(c === "backlog"\)/{f=12} f{print; f--}')
+if echo "$GUARD_WINDOW" | grep -q 'cls: "move-all-group"'; then
+  pass "W4.11 move_all_chevron_absent_on_completed — move-all-group inside backlog guard"
+else
+  fail "W4.11 move_all_chevron_absent_on_completed — move-all-group not inside backlog guard"
+fi
+
+# W4.12 — single_fetch_helper_post
+# AC4.8: `grep -cE 'fetch\([^)]*api/queue' app.js == 1` — the postQueue
+# helper is the sole POST site for /api/queue. Anchored on `fetch(`
+# call-syntax so comments / JSDoc / error strings mentioning the path
+# don't false-match. (Race-guard `pendingPosts++/--` is composed by
+# routing every drag through commitQueueChange → postQueue.)
+FETCH_COUNT=$(grep -cE 'fetch\([^)]*api/queue' "$APP_JS" || true)
+if [ "${FETCH_COUNT:-0}" -eq 1 ]; then
+  pass "W4.12 single_fetch_helper_post — exactly 1 fetch(...api/queue...) site (AC4.8)"
+else
+  fail "W4.12 single_fetch_helper_post — found $FETCH_COUNT fetch(...api/queue...) sites; expected 1"
+fi
+
+# W4.12b — onDrop hard-rejects data-column="completed" drops (AC4.6 pin).
+ONDROP_BODY=$(awk '
+  /^async function onDrop\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$ONDROP_BODY" | grep -qE 'targetCol === "completed"'; then
+  pass "W4.12b onDrop hard-rejects targetCol === 'completed' (AC4.6)"
+else
+  fail "W4.12b onDrop missing completed-target reject (AC4.6)"
+fi
+
+# W4.12c — D5 leftmost-active rewrite on backlog-source drag.
+if echo "$ONDROP_BODY" | grep -qE 'sourceColumn === "backlog"'; then
+  pass "W4.12c onDrop applies D5 backlog leftmost-rewrite (AC4.5)"
+else
+  fail "W4.12c onDrop missing D5 backlog rewrite branch"
+fi
+if echo "$ONDROP_BODY" | grep -qE 'D5'; then
+  pass "W4.12c onDrop carries explicit D5 code-comment citation (W4.4)"
+else
+  fail "W4.12c onDrop missing explicit D5 citation comment"
+fi
+
+###############################################################################
 # Block 4 — Phase 7: live write-back smoke (server already running)
 ###############################################################################
 

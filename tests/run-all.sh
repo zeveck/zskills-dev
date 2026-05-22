@@ -155,6 +155,8 @@ run_suite "test-fix-issues-claim-release-cherry-pick.sh" "tests/test-fix-issues-
 run_suite "test-fix-issues-claim-release-direct.sh" "tests/test-fix-issues-claim-release-direct.sh"
 run_suite "test-fix-issues-claim-collector.sh" "tests/test-fix-issues-claim-collector.sh"
 run_suite "test-fix-issues-claim-render-dom.sh" "tests/test-fix-issues-claim-render-dom.sh"
+run_suite "test-dashboard-completed-readonly.sh" "tests/test-dashboard-completed-readonly.sh"
+run_suite "test-dashboard-backlog-bidir.sh" "tests/test-dashboard-backlog-bidir.sh"
 run_suite "test-fix-issues-claim-race-e2e.sh" "tests/test-fix-issues-claim-race-e2e.sh"
 run_suite "test-fix-issues-claim-race-baseline.sh" "tests/test-fix-issues-claim-race-baseline.sh"
 run_suite "test-fix-issues-claim-conformance.sh" "tests/test-fix-issues-claim-conformance.sh"
