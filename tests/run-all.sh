@@ -105,7 +105,14 @@ run_suite "test-fix-issues-sprint-land-pr.sh" "tests/test-fix-issues-sprint-land
 run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase2-source-filter.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-commit.sh" "tests/test-commit.sh"
-run_suite "test-fixture-race-isolation.sh" "tests/test-fixture-race-isolation.sh"
+# Opt-in race-isolation test for the #594 fix pattern. Adds ~2-3 min
+# to run-all.sh (20+5 conformance invocations), and the value is
+# documentation-of-bug-class rather than direct regression coverage —
+# the actual fix-regression guard lives in tests/test-skill-conformance.sh
+# (PID-scope structural pin). Opt in with RUN_RACE_TESTS=1.
+if [ -n "${RUN_RACE_TESTS:-}" ]; then
+  run_suite "test-fixture-race-isolation.sh" "tests/test-fixture-race-isolation.sh"
+fi
 run_suite "test-frontmatter-helpers.sh" "tests/test-frontmatter-helpers.sh"
 run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migration.sh"
 run_suite "test-update-zskills-agent-install" "tests/test-update-zskills-agent-install.sh"
