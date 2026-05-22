@@ -593,6 +593,39 @@ for skill in draft-plan refine-plan draft-tests; do
 done
 
 echo ""
+echo "=== parent→child auto propagation — closure for #581 / PR #642 (#648) ==="
+# Issue #648: #581's child-side fix made /draft-plan, /refine-plan,
+# /draft-tests recognize positional `auto` and dispatch /land-pr.
+# But three parent dispatch sites didn't propagate `auto` to the
+# children, so under /research-and-go (or /run-plan auto pr with a stale
+# plan), the child skill commits in its worktree and never lands on
+# main. Each parent skill MUST:
+#   (a) resolve $AUTO_ARG from its own auto-detect block, and
+#   (b) thread $AUTO_ARG (or literal `auto`) into every dispatch string
+#       targeting a /draft-* or /refine-* child.
+for parent in research-and-plan run-plan; do
+  check_fixed "$parent" "AUTO_ARG resolver present"      'AUTO_ARG'
+done
+# /research-and-plan dispatches /draft-plan; site MUST carry $AUTO_ARG.
+check       research-and-plan "/draft-plan dispatch threads \$AUTO_ARG" \
+  '/draft-plan .*\$AUTO_ARG'
+# /run-plan dispatches /refine-plan; sites MUST carry $AUTO_ARG.
+check       run-plan "/refine-plan dispatch threads \$AUTO_ARG" \
+  '/refine-plan <plan-file>\$AUTO_ARG'
+# Both dispatch arms (textual staleness L912ish, arithmetic drift L961ish)
+# share the `/refine-plan <plan-file>$AUTO_ARG` literal. Assert exactly 2.
+# (The non-dispatch recommendation prose at "Recommend running
+# `/refine-plan <plan-file>` after close-out" uses no `$` after, so the
+# fixed-string `<plan-file>$AUTO_ARG` distinguishes dispatches reliably.)
+SITE_COUNT=$(grep -cF '/refine-plan <plan-file>$AUTO_ARG' "$REPO_ROOT/skills/run-plan/SKILL.md")
+if [ "$SITE_COUNT" -ge 2 ]; then
+  pass "[run-plan] both /refine-plan dispatch arms thread \$AUTO_ARG (count=$SITE_COUNT)"
+else
+  fail "[run-plan] both /refine-plan dispatch arms thread \$AUTO_ARG" \
+    "expected ≥2 occurrences, found $SITE_COUNT"
+fi
+
+echo ""
 echo "=== implementer subagent — impl-dispatch site pins (Verifier-cannot-run symmetry) ==="
 # Each impl-class dispatch (orchestrator asks a sub-agent to write code,
 # run tests, and/or commit) MUST declare `subagent_type: "implementer"`.

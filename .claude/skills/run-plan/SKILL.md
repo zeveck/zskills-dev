@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.22+eaaa77"
+  version: "2026.05.22+0f12a4"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -143,6 +143,15 @@ fi
 # `/run-plan plan.md finish auto every 4h`.
 if [ "$FINISH_MODE" = "finish-auto" ]; then
   AUTO_FLAG=1
+fi
+
+# AUTO_ARG: the suffix string to thread into every child-skill dispatch
+# that recognizes positional `auto` (e.g. /refine-plan, /draft-plan,
+# /draft-tests per #581 / PR #642). Empty when AUTO_FLAG=0 so children
+# stay in non-auto behavior. Closure-incomplete #648 sites used this.
+AUTO_ARG=""
+if [ "$AUTO_FLAG" = "1" ]; then
+  AUTO_ARG=" auto"
 fi
 ```
 
@@ -901,8 +910,10 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    design, not actual code," the plan may be stale:
    - Without `auto`: tell the user "this plan was drafted before its
      dependency was implemented. Want me to refresh it with `/refine-plan`?"
-   - With `auto`: dispatch `/refine-plan` on the plan file to update it.
-     After the refresh, re-read the plan and continue.
+   - With `auto`: dispatch `/refine-plan <plan-file>$AUTO_ARG` on the plan
+     file to update it (the trailing `$AUTO_ARG` propagates auto so
+     /refine-plan's own AUTO_FLAG fires and it dispatches /land-pr per
+     #648). After the refresh, re-read the plan and continue.
    - Skip this check if the plan file was modified more recently than
      the dependency's completion (it may already be up to date).
 
@@ -947,10 +958,11 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
      this check for this phase)?"
    - **With `auto`:** if
      any bullet has drift >20%, dispatch
-     `/refine-plan <plan-file>` (plan-level issue, not per-band);
-     after refresh, re-read and continue. If all drifts are
-     ≤20%, log findings to the phase report and proceed — Phase
-     3.5 will auto-correct post-hoc within the ≤20% band.
+     `/refine-plan <plan-file>$AUTO_ARG` (plan-level issue, not per-band;
+     the trailing `$AUTO_ARG` propagates auto so /refine-plan dispatches
+     /land-pr per #648); after refresh, re-read and continue. If all
+     drifts are ≤20%, log findings to the phase report and proceed —
+     Phase 3.5 will auto-correct post-hoc within the ≤20% band.
 
 7. **Save the VERBATIM phase text** — copy the entire section from the plan
    file exactly as written. Every sentence, every bullet, every formula, every
@@ -1143,7 +1155,7 @@ skill manages its own worktree, verification, and landing.
 Use cases:
 - `### Execution: delegate /add-block DiscreteFilter` — block expansion
 - `### Execution: delegate /run-plan plans/SUB_PLAN.md finish auto` — meta-plans
-- `### Execution: delegate /draft-plan plans/FOO.md <description>` — plan generation
+- `### Execution: delegate /draft-plan plans/FOO.md <description> auto` — plan generation (omit `auto` if /run-plan was invoked without auto; thread `$AUTO_ARG` per #648)
 
 ### Plan-text drift signals
 
