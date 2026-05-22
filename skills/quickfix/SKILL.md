@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.21+7ce006"
+  version: "2026.05.22+ec24bd"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -1112,7 +1112,12 @@ while :; do
     # explicit-finalize block). $MARKER survives from WI 1.8 in the
     # persistent shell.
     [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
-    rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr.$SLUG" 2>/dev/null
+    # Issue #629: standalone /quickfix doesn't set ZSKILLS_PIPELINE_ID;
+    # only callers like /fix-issues do. Guard the rm so the cleanup
+    # silently no-ops on standalone (no parent pipeline marker to remove)
+    # and runs correctly when called by a parent pipeline. Mirrors the
+    # `[ -n "${ZSKILLS_PIPELINE_ID:-}" ]` guard at line 1310 below.
+    [ -n "${ZSKILLS_PIPELINE_ID:-}" ] && rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr.$SLUG" 2>/dev/null
     exit 5
   fi
 

@@ -76,13 +76,22 @@ has_assign() {
   return 1
 }
 
-# (file, var) pairs covering #606's 4 siblings.
+# (file, var) pairs covering #606's 4 siblings, plus #629's 2 additional
+# siblings (/quickfix $ZSKILLS_PIPELINE_ID, /draft-tests $ROUND_N and
+# $PREV_INPUT) that were added via comments on #606 but missed by PR #626.
+# Issue #629 chose targeted pairs over extending FAMILY_VARS_RE so that
+# legitimate env-inherited reads of these var names in OTHER skills
+# (e.g., a skill called by /fix-issues that reads ZSKILLS_PIPELINE_ID
+# from the env) aren't surfaced as defects.
 ISSUE_606_PAIRS=(
   "skills/draft-plan/SKILL.md|TRACKING_ID"
   "skills/draft-plan/SKILL.md|OUTPUT_FILE"
   "skills/draft-plan/SKILL.md|ROUND"
   "skills/fix-issues/SKILL.md|TRACKING_ID"
   "skills/run-plan/SKILL.md|PLAN_FILE"
+  "skills/quickfix/SKILL.md|ZSKILLS_PIPELINE_ID"
+  "skills/draft-tests/SKILL.md|ROUND_N"
+  "skills/draft-tests/SKILL.md|PREV_INPUT"
 )
 for pair in "${ISSUE_606_PAIRS[@]}"; do
   f="${pair%%|*}"; v="${pair##*|}"
