@@ -1220,3 +1220,23 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Distinguish "child file staged, SKILL.md genuinely unchanged" from "SKILL.md bumped on disk but not staged". Check if `git diff SKILL.md` (working-tree-vs-HEAD) shows changes when SKILL.md isn't staged — if yes, that's the bump-not-staged case and should FAIL CLOSED with the canonical bump command. Add a test case to `tests/test-skill-version-stage-check.sh` (or wherever the script's tests live) for the bump-not-staged scenario.
 
 **Complexity:** S (one script edit + one test case + update-zskills version bump + mirror). **Action now:** /do pr — fix the fallback to distinguish bump-not-staged from genuinely-unchanged-skill-md; add test case.
+
+### #649 — CLAUDE.md Architecture skill counts stale (18+3 → actual 25+4)
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `CLAUDE.md` lines 9-10 claim `skills/` has 18 core skills and `block-diagram/` has 3 add-ons. Ground truth: 25 core + 4 add-ons (per `ls -d skills/*/ | wc -l` and `ls -d block-diagram/*/ | grep -v screenshots | wc -l`). 8-skill drift; the +1 add-on came from #584's git mv of /review-feedback.
+
+**Fix outline.** Update CLAUDE.md lines 9-10 to read "25 core" and "4 add-ons". Single-file doc edit, no code touched. Optional: add a conformance pin asserting the counts match `ls -d` output (mirror-of-existing-pattern from prior count pins).
+
+**Complexity:** S (one CLAUDE.md edit + optional conformance pin). **Action now:** /do pr — fix the two count strings; consider adding a pin so drift is caught structurally next time.
+
+### #648 — Parent-side `auto` propagation family: 3 dispatch sites lose `auto` (closure-incomplete on #581)
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** PR #642 (#581 closure) made the 3 drafting skills (/draft-plan, /refine-plan, /draft-tests) recognize `auto` + dispatch /land-pr. But 3 parent dispatch sites still don't propagate `auto` to the children: `skills/research-and-plan/SKILL.md:158` (→/draft-plan, also #646), `skills/run-plan/SKILL.md:904` and `L949` (→/refine-plan), `skills/run-plan/SKILL.md:1146` (→/draft-plan delegate-mode example). Falsifying trace: /research-and-go → /run-plan auto pr → /run-plan detects staleness → /refine-plan invoked WITHOUT auto → refined plan stranded on `refine-plan/<slug>` worktree branch → /run-plan's "re-read the plan and continue" reads the STALE plan on main.
+
+**Fix outline.** Append `auto` to each of the 3 dispatch sites in /research-and-plan + /run-plan SKILL.md. 2 skill source + 2 mirror updates + 2 version bumps. Conformance pin asserting each documented parent-→child dispatch line in research-and-plan + run-plan contains `auto` (loop over the canonical phrases, source + mirror).
+
+**Complexity:** M (2 skill source edits + 2 mirrors + conformance pin + 2 version bumps). **Action now:** /do pr — propagate `auto` at all 3 dispatch sites and add the pin.
