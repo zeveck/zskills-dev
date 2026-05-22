@@ -1,4 +1,11 @@
 #!/bin/bash
+# Opt-in race-isolation test (set RUN_RACE_TESTS=1 in tests/run-all.sh).
+# Demonstrates the #594 parallel-process race class: a background `rm -rf`
+# racer against a shared `/tmp/` fixture path defeats the deny-list
+# assertion (Phase 1), while a $$-scoped fixture path is immune (Phase 2).
+# Not a direct regression guard for the test-hooks.sh fix — that lives in
+# tests/test-skill-conformance.sh as a `grep -qF` structural pin.
+#
 # Regression test for issue #594: parallel-process race on hardcoded
 # /tmp/ synthetic-fixture paths in tests/test-hooks.sh.
 #
