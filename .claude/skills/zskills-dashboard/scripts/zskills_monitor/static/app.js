@@ -25,6 +25,9 @@ const POST_RECONCILE_SUPPRESS_MS = 1500;
 
 const PLAN_COLUMNS = ["drafted", "reviewed", "ready"];
 const ISSUE_COLUMNS = ["triage", "ready"];
+// Threshold above which the column-header move-all chevron prompts the
+// user via confirm() before iterating. <= this count moves silently.
+const MOVE_ALL_CONFIRM_THRESHOLD = 10;
 const PLAN_COLUMN_LABELS = {
   drafted: "Drafted",
   reviewed: "Reviewed",
@@ -679,6 +682,28 @@ function makeIssueMoveBtn(action, num, label, ariaLabel) {
   });
 }
 
+// Column-header chevron button: triggers "move all non-claimed cards in
+// this column to the adjacent column" (kind ∈ {plan, issue}; column is the
+// source column slug; direction is "left" or "right"). Per-card iteration
+// runs in moveAllInColumn(); claimed cards are skipped (with shake) — both
+// at snapshot time AND on re-query inside the per-card loop, to close the
+// race window where a poll-driven claim lands between the click and the
+// per-card dispatch.
+function makeColumnMoveAllBtn(action, kind, column, label, ariaLabel) {
+  return el("button", {
+    cls: "move-all-btn",
+    attrs: {
+      type: "button",
+      tabindex: "0",
+      "data-action": action,
+      "data-kind": kind,
+      "data-column": column,
+      "aria-label": ariaLabel,
+    },
+    text: label,
+  });
+}
+
 function currentEntryMode(slug) {
   if (!lastGoodQueues) return null;
   const arr = lastGoodQueues.plans.ready || [];
@@ -709,6 +734,34 @@ function renderPlans(plans, queues, defaultMode) {
     head.appendChild(el("span", { text: PLAN_COLUMN_LABELS[c] }));
     const arr = (lastGoodQueues && lastGoodQueues.plans[c]) || [];
     head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    // Column-header chevron buttons (move-all). Adjacent-only; the
+    // first column gets only », the last only «, and Reviewed both.
+    const moveAllGroup = el("span", {
+      cls: "move-all-group",
+      attrs: { role: "group", "aria-label": "Move all in " + PLAN_COLUMN_LABELS[c] },
+    });
+    const ci = PLAN_COLUMNS.indexOf(c);
+    if (ci > 0) {
+      const prevLabel = PLAN_COLUMN_LABELS[PLAN_COLUMNS[ci - 1]];
+      moveAllGroup.appendChild(makeColumnMoveAllBtn(
+        "plan-move-all-left",
+        "plan",
+        c,
+        "«",
+        "Move all unclaimed " + PLAN_COLUMN_LABELS[c] + " plans to " + prevLabel,
+      ));
+    }
+    if (ci < PLAN_COLUMNS.length - 1) {
+      const nextLabel = PLAN_COLUMN_LABELS[PLAN_COLUMNS[ci + 1]];
+      moveAllGroup.appendChild(makeColumnMoveAllBtn(
+        "plan-move-all-right",
+        "plan",
+        c,
+        "»",
+        "Move all unclaimed " + PLAN_COLUMN_LABELS[c] + " plans to " + nextLabel,
+      ));
+    }
+    head.appendChild(moveAllGroup);
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -976,6 +1029,34 @@ function renderIssues(issues, queues) {
     head.appendChild(el("span", { text: ISSUE_COLUMN_LABELS[c] }));
     const arr = (queues && queues.issues && queues.issues[c]) || [];
     head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    // Column-header chevron buttons (move-all). Triage gets only »,
+    // Ready gets only «.
+    const moveAllGroup = el("span", {
+      cls: "move-all-group",
+      attrs: { role: "group", "aria-label": "Move all in " + ISSUE_COLUMN_LABELS[c] },
+    });
+    const ci = ISSUE_COLUMNS.indexOf(c);
+    if (ci > 0) {
+      const prevLabel = ISSUE_COLUMN_LABELS[ISSUE_COLUMNS[ci - 1]];
+      moveAllGroup.appendChild(makeColumnMoveAllBtn(
+        "issue-move-all-left",
+        "issue",
+        c,
+        "«",
+        "Move all unclaimed " + ISSUE_COLUMN_LABELS[c] + " issues to " + prevLabel,
+      ));
+    }
+    if (ci < ISSUE_COLUMNS.length - 1) {
+      const nextLabel = ISSUE_COLUMN_LABELS[ISSUE_COLUMNS[ci + 1]];
+      moveAllGroup.appendChild(makeColumnMoveAllBtn(
+        "issue-move-all-right",
+        "issue",
+        c,
+        "»",
+        "Move all unclaimed " + ISSUE_COLUMN_LABELS[c] + " issues to " + nextLabel,
+      ));
+    }
+    head.appendChild(moveAllGroup);
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -1828,6 +1909,90 @@ function renderIssueModal(issue) {
   modal.body.appendChild(pre);
 }
 
+// ---------------------------------------------------- column move-all loop
+
+// Briefly attach a `.shake` class to the card and remove it after the
+// animation. Used when a card is skipped during a move-all loop because
+// it's claimed (snapshot-time OR claim landed via poll mid-loop).
+function shakeCard(card) {
+  if (!card) return;
+  card.classList.remove("shake");
+  // Force reflow so re-adding the class restarts the animation when the
+  // same card is shaken in quick succession.
+  void card.offsetWidth;
+  card.classList.add("shake");
+  setTimeout(() => {
+    card.classList.remove("shake");
+  }, 400);
+}
+
+// Move all NON-claimed cards in `column` (of kind `plan` or `issue`) to
+// the adjacent column in `direction` ("left" or "right"). Per-card
+// sequential dispatch — there is no bulk endpoint; each iteration calls
+// the same movePlan / moveIssue used by the single-card chevron buttons.
+//
+// Claim-respect: source of truth is `aria-disabled="true"` on the card.
+// We snapshot non-claimed cards at click-time, then INSIDE each iteration
+// re-query the live card's aria-disabled. A claim landing via the 2s poll
+// between click and iteration N still gets respected (card is skipped and
+// shaken instead of moved).
+async function moveAllInColumn(kind, column, direction) {
+  const kindLabels = (kind === "plan") ? PLAN_COLUMN_LABELS : ISSUE_COLUMN_LABELS;
+  const cols = (kind === "plan") ? PLAN_COLUMNS : ISSUE_COLUMNS;
+  const ci = cols.indexOf(column);
+  if (ci < 0) return;
+  const adjIdx = (direction === "left") ? ci - 1 : ci + 1;
+  if (adjIdx < 0 || adjIdx >= cols.length) return;
+  const srcLabel = kindLabels[column];
+  const dstLabel = kindLabels[cols[adjIdx]];
+
+  // Snapshot the non-claimed cards in this column (live DOM query).
+  const selector = 'ul.dropzone[data-kind="' + kind + '"][data-column="' + column + '"] > li.card';
+  const allCards = Array.from(document.querySelectorAll(selector));
+  const targets = [];
+  for (const card of allCards) {
+    if (card.getAttribute("aria-disabled") === "true") {
+      // Snapshot-time claimed — shake so user sees what was skipped.
+      shakeCard(card);
+      continue;
+    }
+    const idAttr = (kind === "plan") ? "data-slug" : "data-number";
+    const id = card.getAttribute(idAttr);
+    if (!id) continue;
+    targets.push({ id: id, card: card });
+  }
+  if (targets.length === 0) return;
+
+  const noun = (kind === "plan") ? "plans" : "issues";
+  if (targets.length > MOVE_ALL_CONFIRM_THRESHOLD) {
+    const msg = "Move " + targets.length + " unclaimed " + srcLabel + " " + noun + " to " + dstLabel + "?";
+    if (!window.confirm(msg)) return;
+  }
+
+  // Per-card sequential dispatch with in-loop re-check on aria-disabled.
+  for (const t of targets) {
+    // Re-query the live element each iteration — a render between the
+    // last commit and now may have replaced the cached `t.card` node.
+    const liveSelector = (
+      'ul.dropzone[data-kind="' + kind + '"] > li.card[data-' +
+      (kind === "plan" ? "slug" : "number") + '="' + t.id + '"]'
+    );
+    const live = document.querySelector(liveSelector);
+    if (live && live.getAttribute("aria-disabled") === "true") {
+      // Claim landed via poll between click and this iteration. Skip
+      // + shake (matches snapshot-time skip behaviour).
+      shakeCard(live);
+      continue;
+    }
+    if (kind === "plan") {
+      await movePlan(t.id, direction);
+    } else {
+      const num = parseInt(t.id, 10);
+      if (Number.isFinite(num)) await moveIssue(num, direction);
+    }
+  }
+}
+
 // --------------------------------------------------------- click dispatch
 
 async function handleAction(action, target) {
@@ -1841,6 +2006,16 @@ async function handleAction(action, target) {
   if (action === "plan-right") return movePlan(slug, "right");
   if (action === "plan-remove") return removePlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
+
+  // Column-header chevron: move-all in column, adjacent column only.
+  if (action === "plan-move-all-left" || action === "plan-move-all-right" ||
+      action === "issue-move-all-left" || action === "issue-move-all-right") {
+    const col = target.getAttribute("data-column");
+    const kind = target.getAttribute("data-kind");
+    const dir = action.endsWith("-left") ? "left" : "right";
+    if (col && kind) return moveAllInColumn(kind, col, dir);
+    return;
+  }
 
   // Guard: claimed issues are in-flight on another pipeline. Block move
   // and remove actions to prevent ghost-claim footgun (DA2.3 / DA11).

@@ -195,6 +195,131 @@ else
 fi
 
 ###############################################################################
+# AC: column-header move-all chevrons (Issues + Plans panels)
+###############################################################################
+
+echo ""
+echo "=== Column move-all chevrons (Issues + Plans) ==="
+
+# Each of the 4 actions registers in handleAction's dispatch table.
+for act in plan-move-all-left plan-move-all-right issue-move-all-left issue-move-all-right; do
+  if grep -qE "\"$act\"" "$APP_JS"; then
+    pass "move-all action declared: $act"
+  else
+    fail "move-all action missing: $act"
+  fi
+done
+
+# makeColumnMoveAllBtn helper exists and emits aria-label + tabindex.
+if grep -qE 'function makeColumnMoveAllBtn' "$APP_JS"; then
+  pass "makeColumnMoveAllBtn helper defined"
+else
+  fail "makeColumnMoveAllBtn helper missing"
+fi
+if grep -qE 'tabindex.*"0"' "$APP_JS" && grep -qE 'move-all-btn' "$APP_JS"; then
+  pass "move-all buttons get tabindex=0 (keyboard parity)"
+else
+  fail "move-all buttons missing tabindex=0"
+fi
+
+# aria-label parity — template composes "<src col> <noun> to <dst col>" at
+# render time using {PLAN,ISSUE}_COLUMN_LABELS lookups, so verify the
+# template + composition rather than the materialised strings.
+ISSUES_TPL_HITS=$(grep -cE '"Move all unclaimed " \+ ISSUE_COLUMN_LABELS\[c\] \+ " issues to " \+ (prev|next)Label' "$APP_JS" || true)
+if [ "${ISSUES_TPL_HITS:-0}" -ge 2 ]; then
+  pass "Issues aria-label template emits both directions (Triage→Ready, Ready→Triage)"
+else
+  fail "Issues aria-label template hits: $ISSUES_TPL_HITS (expected ≥2)"
+fi
+PLANS_TPL_HITS=$(grep -cE '"Move all unclaimed " \+ PLAN_COLUMN_LABELS\[c\] \+ " plans to " \+ (prev|next)Label' "$APP_JS" || true)
+if [ "${PLANS_TPL_HITS:-0}" -ge 2 ]; then
+  pass "Plans aria-label template emits both directions (4 effective labels across 3 columns)"
+else
+  fail "Plans aria-label template hits: $PLANS_TPL_HITS (expected ≥2)"
+fi
+# Sanity: PLAN_COLUMN_LABELS / ISSUE_COLUMN_LABELS are the substitution
+# source. If those constants drift, the rendered labels drift with them.
+if grep -qE 'PLAN_COLUMN_LABELS = \{' "$APP_JS" && grep -qE 'ISSUE_COLUMN_LABELS = \{' "$APP_JS"; then
+  pass "{PLAN,ISSUE}_COLUMN_LABELS maps define substitution targets"
+else
+  fail "{PLAN,ISSUE}_COLUMN_LABELS missing — aria-labels would render undefined"
+fi
+
+# Claim-respect: source of truth is aria-disabled (NOT chip presence).
+# moveAllInColumn must filter on aria-disabled AND re-check it in-loop.
+if grep -qE 'function moveAllInColumn' "$APP_JS"; then
+  pass "moveAllInColumn function defined"
+else
+  fail "moveAllInColumn function missing"
+fi
+# Count occurrences of aria-disabled checks inside moveAllInColumn — must
+# appear at least twice (snapshot filter + in-loop re-check).
+ARIA_HITS=$(awk '/function moveAllInColumn/{flag=1} flag{print} /^}/&&flag{flag=0}' "$APP_JS" \
+  | grep -c 'aria-disabled' || true)
+if [ "${ARIA_HITS:-0}" -ge 2 ]; then
+  pass "moveAllInColumn checks aria-disabled twice (snapshot + in-loop re-check) — found $ARIA_HITS"
+else
+  fail "moveAllInColumn aria-disabled checks insufficient ($ARIA_HITS < 2)"
+fi
+
+# Confirm threshold > 10 unclaimed cards.
+if grep -qE 'MOVE_ALL_CONFIRM_THRESHOLD\s*=\s*10' "$APP_JS"; then
+  pass "MOVE_ALL_CONFIRM_THRESHOLD = 10"
+else
+  fail "MOVE_ALL_CONFIRM_THRESHOLD missing or != 10"
+fi
+if grep -qE 'window\.confirm\(' "$APP_JS"; then
+  pass "window.confirm() gate present for >threshold move-all"
+else
+  fail "window.confirm() gate missing"
+fi
+# The confirm message must name the count, source column, and dest column.
+if grep -qE '"Move " \+ .*" unclaimed " \+ srcLabel \+ " " \+ noun \+ " to " \+ dstLabel' "$APP_JS"; then
+  pass "confirm() message includes count + source col + dest col"
+else
+  fail "confirm() message format unexpected — must include count/source/dest"
+fi
+
+# Shake animation: keyframe definition + class binding + JS toggle.
+if grep -qE '@keyframes shake-skip' "$APP_CSS"; then
+  pass "@keyframes shake-skip defined in app.css"
+else
+  fail "@keyframes shake-skip missing in app.css"
+fi
+if grep -qE '\.card\.shake' "$APP_CSS"; then
+  pass ".card.shake rule binds the animation"
+else
+  fail ".card.shake rule missing"
+fi
+# Shake must be VISUALLY OBVIOUS — at least one keyframe step ≥6px.
+SHAKE_BLOCK=$(awk '/@keyframes shake-skip/{flag=1} flag{print} /^}/&&flag{flag=0}' "$APP_CSS")
+if printf '%s' "$SHAKE_BLOCK" | grep -qE 'translateX\(-?([6-9]|[1-9][0-9])(\.[0-9]+)?px\)'; then
+  pass "shake animation has ≥6px horizontal jitter (visible, not subtle)"
+else
+  fail "shake animation jitter < 6px (too subtle)"
+fi
+if grep -qE 'function shakeCard' "$APP_JS"; then
+  pass "shakeCard() helper in app.js"
+else
+  fail "shakeCard() helper missing"
+fi
+if grep -qE "classList\.add\(['\"]shake['\"]" "$APP_JS"; then
+  pass "shake class is added in JS"
+else
+  fail "shake class never added in JS"
+fi
+
+# Adjacent-only: Triage has no « (no plan-move-all-left targeting triage),
+# Ready (issues) has no », Drafted has no «, Ready (plans) has no ».
+# We verify the asymmetry indirectly via the column-head injection logic:
+# the chevron is emitted only when ci > 0 (for «) or ci < length-1 (for »).
+if grep -qE 'ci > 0' "$APP_JS" && grep -qE 'ci < (PLAN|ISSUE)_COLUMNS\.length - 1' "$APP_JS"; then
+  pass "adjacent-only guards present (no skip-column chevrons)"
+else
+  fail "adjacent-only guards missing — possible skip-column move-all bug"
+fi
+
+###############################################################################
 # Block 2 — live-server smoke (start server, fetch /, /app.js, /app.css)
 ###############################################################################
 
