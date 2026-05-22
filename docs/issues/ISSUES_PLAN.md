@@ -1150,3 +1150,33 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Add to Step 2: "Independently re-rate severity. The reporter's self-rated severity is a hint, not authoritative. Re-evaluate against impact (data loss > crash > broken feature > polish > nit) and frequency before filling the table." Rename Step 3's summary-table column header from "Severity" to "Re-rated Severity" to make independent rating visible. Conformance pin asserting `skills/review-feedback/SKILL.md` contains the literal "Independently re-rate severity".
 
 **Complexity:** S (Step 2 prose addition + Step 3 column rename + conformance pin + version bump + mirror). **Action now:** /do pr — apply the Step 2 + Step 3 edits and add the conformance pin.
+
+### #594 — Part B follow-up to #587: intermittent fixture-extension assertion fail
+
+**Labels:** (none) | **Verdict:** RESEARCHED (persistent skip)
+
+**Problem.** Part A (PR #587) fixed noise + parser miscount. Underlying intermittent assertion (`fixture-extension: deny-list test missed appended literal`) still fails occasionally. Likely cross-suite env-state leak; 100% pass in isolation. Multiple plausible fix shapes, no root cause pinned.
+
+**Fix outline.** Investigation-first. Bisect leaky suite, examine env vars, choose surgical teardown vs broader `run_suite()` hermeticity.
+
+**Complexity:** Unknown. **Action now:** /investigate #594 — bug-with-unclear-cause triage bucket. Persistent skip across cron fires until root cause is established.
+
+### #624 — All 5 /land-pr callers miss the same 3 STATUS values in case statement (5-skill family)
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `/land-pr` documents 12 STATUS values (`skills/land-pr/SKILL.md:158`). All 5 caller skills (`commit/modes/pr.md`, `do/modes/pr.md`, `fix-issues/modes/pr.md`, `quickfix/SKILL.md`, `run-plan/modes/pr.md`) explicitly enumerate 9 in their case statements but silently fall through on `behind-thrash`, `auto-rebase-conflict`, `auto-rebase-blocked` (no `*)` default arm). `references/caller-loop-pattern.md` (the canonical pattern documented by /land-pr) covers only the same 9. The auto-rebase-blocked path is hit in real life (per memory anchor [[feedback_automerge_blocked_means_act]]). Most concerning: `/commit pr` then writes `fulfilled.commit.<id> status: complete` — a SUCCESS marker for a failure-class outcome.
+
+**Fix outline.** (a) Update `references/caller-loop-pattern.md` to add the 3 missing STATUS arms + a `*)` default that maps to `pr-ready` or surfaces unknown loudly. (b) Mirror the fix to all 5 caller skills' case statements. (c) Conformance pin in `tests/test-skill-conformance.sh` (or similar) asserting each of the 5 callers' case statements name all 12 STATUS values (mirror-of-existing-pattern from #602's case-arm pin). (d) Bump `metadata.version` on each affected skill + mirrors.
+
+**Complexity:** M (5 caller-skill edits + reference doc + conformance pin + 5 version bumps + 5 mirrors). **Action now:** /do pr — apply the case-statement extension to all 5 callers per the canonical pattern.
+
+### #621 — /briefing #516 closure-incomplete: landed-pr-merged-but-diverged invisible in summary / Needs Attention / worktrees-mode
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** PR #532 (#516 fix) added the `landed-pr-merged-but-diverged` category at the worktree-removal gate but never wired it through the 3 briefing renderer paths: summary-mode pill list (briefing.py:1080-1100) enumerates 7 categories, missing `landed-pr-merged-but-diverged` and `landed-partial`; report-mode "Needs Attention" section (briefing.py:1155-1210) lists 3 needs-attention categories, missing `landed-pr-merged-but-diverged`; worktrees-mode bucketing similarly silent. Producer writes the marker; renderers don't consume it. Same vocab-drift family as #602 (closed) and #618 (open) on different surfaces (BASH, JS, PYTHON respectively).
+
+**Fix outline.** Update briefing.py to add the missing categories to (a) summary-mode pill enumeration, (b) report-mode Needs Attention category list, (c) worktrees-mode bucketing. Conformance pin asserting every CANONICAL_STATUSES value appears in each renderer enumeration (mirror-of-existing-pattern from #602's case-arm pin, adapted to Python).
+
+**Complexity:** S (briefing.py renderer updates + conformance pin + version bump + mirror). **Action now:** /do pr — wire the missing categories through the 3 renderer paths and add the structural enumeration pin.

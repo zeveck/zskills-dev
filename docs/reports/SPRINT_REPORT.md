@@ -1866,3 +1866,30 @@ Dashboard Ready queue head at sprint start: `[601, 602]`. Source: `.zskills/moni
 - **Verifier dispatch was partial this sprint** (departure from full-coverage discipline): dispatched fresh-context verifier on #606 (larger/higher-risk, new conformance test), inline-verified #583 (small prose edit + 2-check pin trivially confirmed by diff inspection). Documented per the "explicit-departure" rule. The CI re-run on rebased branches is the ultimate cross-check.
 
 - **#594 routed to /investigate, not skip-and-forget.** Tracker row in `docs/issues/ISSUES_PLAN.md` carries `**Action now:** /investigate #594` so the next sprint cron fire's triage will skip-route consistently. Dashboard Ready queue head post-merges will likely surface #594 next; the routing will hold.
+
+## Sprint — 2026-05-22 01:20 EDT [UNFINALIZED] (partial)
+
+**Mode:** auto (dashboard-sourced, cron-fired) | **Focus:** default | **Sprint ID:** sprint-20260522-032609-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|--------------|-------------|
+| #624 | All 5 /land-pr callers miss the same 3 STATUS values + reference + conformance pin | /tmp/zskills-fix-issue-624 | 686f854 | 5449/5449 (78 conformance assertions: 12 STATUS × 6 files + 1 default-arm × 6) | PASS (implementer self-test + inline-verified scope) | N/A (skill prose + bash fences) |
+
+### Skipped — Bug with unclear cause (needs /investigate)
+| # | Title | Why |
+|---|-------|-----|
+| #594 | Part B follow-up to #587: intermittent fixture-extension assertion fail | Persistent /investigate skip-route (no root cause pinned). Tracker row carries `Action now: /investigate #594`. |
+
+### Not Fixed (incomplete due to upstream outage)
+| # | Title | Worktree | Reason |
+|---|-------|----------|--------|
+| #621 | /briefing #516 closure-incomplete: landed-pr-merged-but-diverged invisible in summary/Needs Attention/worktrees-mode | /tmp/zskills-fix-issue-621 (.landed status: not-landed) | Implementer agent dispatch failed with API 529 (Anthropic overload) before any commit; worktree branched but empty. Multiple cron fires stacked during the outage. Issue stays OPEN; next cron fire re-picks. Tracker row carries `Action now: /do pr — wire missing categories through 3 renderer paths`. |
+
+### Notes
+
+- **Sprint #4 was partial due to API 529 outage** mid-dispatch. #624 (the larger of the two) completed first; #621's implementer Agent dispatch failed with `API Error: 529 Overloaded` after ~47 minutes of work but produced no commit. Multiple cron fires stacked during the outage. Recovery: landed #624 (clean scope, 23 files, 5449/5449 suite green), marked #621 with `.landed status: not-landed reason: implementer-api-529-outage`, released both claims. The next cron fire (already armed) will re-pick #621 from the dashboard Ready queue with a fresh implementer dispatch.
+
+- **#624 verification was inline-only** (no fresh-context verifier subagent this sprint). The implementer's report showed clean scope (23 files: 5 caller + 5 mirrors + 1 reference + 1 mirror + 6 SKILL.md + 6 mirrors + 1 test), green suite, 78-assertion conformance pin negative-testable structurally. Documented as procedural departure. CI re-run on rebased branch is the cross-check.
+
+- **#594 remains in persistent skip-route** (3rd cron fire since the routing landed). The `Action now: /investigate #594` directive holds; future cron fires will continue skip-routing until the issue is investigated.
