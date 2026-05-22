@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.22+dfbb90"
+  version: "2026.05.22+305fa7"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -2828,6 +2828,64 @@ mode — that's how invariant #3 silently skips in cherry-pick mode.
 for crash handling, cron cleanup, working-tree restoration, failure-report
 template, and user-facing failure messaging. The failed-run report
 template is in the same file.
+
+## Plan-claim mechanism
+
+A single-host claim system prevents two `/run-plan` pipelines from
+double-executing the same plan. See `plans/plans-claim-chip-parity.md`
+for the full design (D1-D7); this section summarizes the runtime
+contract that this SKILL.md file orchestrates.
+
+**Storage.** Claims live at `.zskills/claims/plan-<slug>/claim.json`
+under the MAIN_ROOT (resolved via `git rev-parse --git-common-dir`
+parent — worktree-CWD callers still write to main). Claim files are
+gitignored alongside the rest of `.zskills/`. Path separation from
+`.zskills/tracking/` is strict (Issue #604 adjacency): the claim
+release path never writes to tracking, only to claims.
+
+**Lifecycle.** Acquire at Phase 1 entry, refresh at each phase
+boundary, release at terminal points. Three terminal release sites:
+
+1. `/run-plan stop` walks every `plan-*/` directory and releases each
+   claim whose pipeline matches.
+2. Phase 5b §0a (idempotent early-exit when the plan is already
+   complete) releases the single-slug claim before the no-op exit.
+3. Post-landing tracking (Phase 6, after the `fulfilled.run-plan.
+   $TRACKING_ID` marker write) is the terminal release for the
+   normal happy-path lifecycle.
+
+A fourth refresh site lives inside Phase 5b §0b's final-verify
+cron-defer loop — refresh (NOT release) so the next cron-fire can
+re-enter and finish the verify wait.
+
+**Heartbeat cadence.** Six section-anchored refresh sites:
+`### Parse plan`, `### Post-implementation tracking`,
+`### Post-verification tracking`, `### 5. Marker ordering and failure
+handling`, `### Post-report tracking`, `### 0b. Final-verify gate`.
+Phase 5b §1-5 (audit/close-issue/frontmatter/sprint-report/
+stale-markers) is deliberately release-free — releasing there
+re-opens the unclaimed-during-CI-poll window.
+
+**Acquire-or-decline (D3).** `claim-plan.sh acquire` returns exit
+`10` when the claim is already held by another pipeline; this skill
+treats `10` as a graceful decline (exit 0 with a "declined" message),
+NOT as Failure-Protocol. Exit `0` proceeds, exit `2` is usage error,
+exit `11` is infrastructure failure (Failure Protocol).
+
+**Cron-fire dormant-window state machine (W2a.3).** Each refresh site
+handles three exit cases: `0` continue, `12` claim was taken over by
+another pipeline (abort), `2` claim TTL-expired during the dormant
+window between cron fires (re-acquire via `claim-plan.sh acquire`;
+exit `10` on the re-acquire = lost the re-acquire race, abort).
+This makes the long-lived `every` schedules safe against TTL-expiry
+without leaking claims to crashed sessions.
+
+**PreToolUse backstop.** `hooks/block-run-plan-unclaimed.sh` runs on
+every Bash invocation and denies `claim-plan.sh release` calls that
+don't carry a valid `--require-pipeline` match. Registered in
+`.claude/settings.json` under PreToolUse / Bash. This is the structural
+defense against orchestrator-side accidents (e.g., a /run-plan
+session releasing another pipeline's claim during a manual cleanup).
 
 ## Key Rules
 
