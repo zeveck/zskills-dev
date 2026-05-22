@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.21+b00e01"
+  version: "2026.05.22+a7dd8e"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -155,11 +155,27 @@ For each sub-problem:
    user specify).
 2. If research from Step 1 was written to a file, pass that path to the
    `/draft-plan` agent so it has the decomposition context.
-3. Dispatch: `/draft-plan output <path> <sub-problem description>`
+3. Dispatch: `/draft-plan output <path> <sub-problem description>$AUTO_ARG`
+   - **`$AUTO_ARG` propagation.** If `/research-and-plan` itself was
+     invoked with `auto` (i.e. you are running under `/research-and-go`
+     or the user passed `auto` to /research-and-plan), thread that token
+     into every `/draft-plan` dispatch so the child skill's `AUTO_FLAG`
+     detection fires. Resolve once near the argument-detection block:
+     ```bash
+     AUTO_ARG=""
+     if [[ "$ARGUMENTS" =~ (^|[[:space:]])auto($|[[:space:]]) ]]; then
+       AUTO_ARG=" auto"
+     fi
+     ```
+     Then append `$AUTO_ARG` to every `/draft-plan` dispatch string.
+     Without this, `/draft-plan`'s `AUTO_FLAG` stays 0, the child commits
+     in its worktree and never dispatches `/land-pr`, and the sub-plan
+     is stranded on a `draft-plan/<slug>` branch instead of landing on
+     main. (Closure for #648; child-side fix was #581 / PR #642.)
    - **If `LANDING_ARG` is non-empty**, append `. Landing mode: <LANDING_ARG>`
      to the description so `/draft-plan` can embed the matching hint in
      the generated plan. Example:
-     `/draft-plan output $ZSKILLS_PLANS_DIR/X.md rounds 2 <description>. Landing mode: pr`
+     `/draft-plan output $ZSKILLS_PLANS_DIR/X.md rounds 2 <description>. Landing mode: pr$AUTO_ARG`
    - If `LANDING_ARG` is empty, omit the suffix entirely — do NOT pass
      an empty `Landing mode:` token.
 4. After each `/draft-plan` invocation returns, report progress, then
