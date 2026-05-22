@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cost Methodology — Z Skills</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #1c2129; --border: #30363d;
+    --text: #e6edf3; --text-dim: #8b949e;
+    --accent: #58a6ff; --accent2: #bc8cff;
+    --green: #3fb950; --orange: #d29922; --pink: #f778ba;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; padding: 56px 64px; }
+  .frame { max-width: 1240px; margin: 0 auto; }
+  .eyebrow { color: var(--text-dim); font-size: 0.9em; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+  h1 { font-size: 2.4em; font-weight: 700; line-height: 1.15; margin-bottom: 12px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .deck { color: var(--text-dim); font-size: 1.1em; max-width: 900px; margin-bottom: 32px; }
+  .deck strong { color: var(--text); }
+  code { background: var(--surface2); padding: 1px 6px; border-radius: 4px; font-size: 0.95em; }
+  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 32px; }
+  .step { background: var(--surface); border: 1px solid var(--border); padding: 22px 18px; position: relative; }
+  .step:first-child { border-radius: 8px 0 0 8px; }
+  .step:last-child { border-radius: 0 8px 8px 0; }
+  .step + .step { border-left: none; }
+  .step + .step::before { content: ''; position: absolute; left: -10px; top: 50%; transform: translateY(-50%); width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 10px solid var(--accent); z-index: 1; }
+  .step .num { display: inline-block; background: var(--accent); color: var(--bg); font-weight: 700; font-size: 0.85em; padding: 1px 9px; border-radius: 999px; margin-bottom: 10px; }
+  .step h3 { font-size: 1.05em; color: var(--text); margin-bottom: 8px; }
+  .step p { color: var(--text-dim); font-size: 0.9em; margin: 0; }
+  .verif { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--green); border-radius: 8px; padding: 20px 22px; margin-bottom: 16px; }
+  .verif h3 { color: var(--text); font-size: 1em; margin-bottom: 10px; letter-spacing: 0.03em; }
+  .verif ul { color: var(--text-dim); font-size: 0.92em; list-style: none; padding-left: 0; }
+  .verif li { padding: 3px 0; padding-left: 22px; position: relative; }
+  .verif li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+  .footnote { color: var(--text-dim); font-size: 0.85em; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="eyebrow">Cost Methodology</div>
+  <h1>How the cost figure was computed</h1>
+  <p class="deck">From <strong>raw session transcripts</strong> to a defensible cost estimate. See the <a href="COSTS.html#method">full methodology section</a> of the cost report for the dedup logic, API-response semantics, and verification details.</p>
+
+  <div class="flow">
+    <div class="step"><span class="num">1</span><h3>Collect</h3><p>Scan 1,617 JSONL files across 8 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 7 worktree-spawned dirs). Extract every assistant <code>usage</code> record.</p></div>
+    <div class="step"><span class="num">2</span><h3>Dedup</h3><p>Group records by <code>message.id</code> — one ID = one API response. For <code>output_tokens</code> (cumulative across streaming records) take the max; other fields are constant per response.</p></div>
+    <div class="step"><span class="num">3</span><h3>Price</h3><p>Apply Anthropic's published per-MTok rates: Opus 4.7 at $5/$25/$6.25/$10/$0.50; Haiku 4.5 at $1/$5/$1.25/$2/$0.10. No Fast mode, no batch, default global residency.</p></div>
+    <div class="step"><span class="num">4</span><h3>Project</h3><p>For the 23-day Opus 4.6 era (pre-logging), scale the logged daily rate by commits/day workload ratio (0.633). Range bounded for tokenizer-density uncertainty.</p></div>
+  </div>
+
+  <div class="verif">
+    <h3>Verification</h3>
+    <ul>
+      <li><strong>API semantics</strong> — Anthropic streaming docs confirm <code>usage</code> is per-response, with cumulative <code>output_tokens</code> across <code>message_delta</code> events.</li>
+      <li><strong>Field consistency</strong> — 100% of multi-record <code>message.id</code>s show identical <code>input_tokens</code> / <code>cache_*</code> values (verified across 35k+ multi-record IDs).</li>
+      <li><strong>Cross-file uniqueness</strong> — no <code>message.id</code> appears in more than one JSONL.</li>
+      <li><strong>Manual trace</strong> — 20 random message.ids inspected by hand; matches dedup logic.</li>
+      <li><strong>End-to-end session walk</strong> — a short session counted by eye (5 API responses) matches dedup-by-id (5).</li>
+      <li><strong>Three arithmetic methods</strong> — aggregate, per-record, per-day — reproduce the grand total to the cent.</li>
+    </ul>
+  </div>
+
+  <div class="footnote">
+    Limits: pre-2026-04-18 era has no JSONL transcripts — its cost is a workload-ratio projection, not a measurement. No external billing oracle (Claude Max subscription has no per-token invoice).
+  </div>
+</div>
+</body>
+</html>
