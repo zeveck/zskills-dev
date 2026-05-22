@@ -467,6 +467,23 @@ check "review-feedback re-rate severity rule (source)" \
 check "review-feedback re-rate severity rule (mirror)" \
   'grep -q "Independently re-rate severity" .claude/skills/review-feedback/SKILL.md'
 
+# Issue #621: /briefing renderer paths must enumerate every canonical
+# worktree category. PR #532 (#516 fix) added
+# `landed-pr-merged-but-diverged` at the producer; readers
+# (summary pill list, report "Needs Attention", worktrees-mode) silently
+# dropped it. Sibling of #602 (BASH surface) and #618 (JS surface). The
+# loose `grep -qF "'$status'"` check mirrors #602's pattern: assert each
+# canonical category is at least referenced somewhere in the reader file,
+# so a future category addition can't ship with a vocabulary-drift hole.
+for _briefing_status in landed-full landed-pr-ready landed-pr-needs-attention \
+                       landed-pr-merged landed-pr-abandoned landed-partial \
+                       landed-pr-merged-but-diverged empty named orphaned; do
+  check "briefing.py references canonical category '$_briefing_status' (source)" \
+    "grep -qF \"'$_briefing_status'\" skills/briefing/scripts/briefing.py"
+  check "briefing.py references canonical category '$_briefing_status' (mirror)" \
+    "grep -qF \"'$_briefing_status'\" .claude/skills/briefing/scripts/briefing.py"
+done
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
