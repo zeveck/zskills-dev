@@ -1777,3 +1777,28 @@ Deleted branch wt-nopre-cw-smoke-9468-c20 (was 3ed8e8f).
 - Sprint started: 2026-05-21T16:37:16-04:00
 - Cron `8cc665fb` (`*/30 * * * *`) — active.
 
+
+## Sprint — 2026-05-21 20:16 EDT [UNFINALIZED]
+
+**Mode:** auto (dashboard-sourced) | **Focus:** default | **Sprint ID:** sprint-20260521-232542-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|--------------|-------------|
+| #601 | /fix-issues PR-mode body uses `${CHANGE_SUMMARY}` but variable never assigned | /tmp/zskills-fix-issue-601 | 7831e7f | 5315/5315 + 2 new pins (test-skill-invariants.sh) | PASS (verifier APPROVED FOR LANDING) | N/A (skill prose only) |
+| #602 | /fix-report Step 6 case statement masks failure-class statuses as 'PARTIAL' | /tmp/zskills-fix-issue-602 | 3dc74e9 | 5314/5314 + 1 new test (test-landed-schema.sh) | PASS (verifier APPROVED FOR LANDING) | N/A (skill prose only) |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex (need /run-plan)
+(none)
+
+### Skipped — Cherry-Pick Conflict
+(none)
+
+### Not Fixed
+(none)
+
+### Notes
+Dashboard Ready queue head at sprint start: `[601, 602]`. Source: `.zskills/monitor-state.json`. Both issues belong to the variable-read-before-assignment family (#601) and the reader-side vocabulary-drift family (#602). Both received /fix-issues source-filter backfill (research-blurb commit on sprint worktree: a30a525, d547124) and proceeded via in-batch fix-agent + fresh verifier — independent sizing returned **S, /do pr-tier** for both, but the work was small enough that post-execution verifier dispatch was sufficient (no plan-review needed before fix).
