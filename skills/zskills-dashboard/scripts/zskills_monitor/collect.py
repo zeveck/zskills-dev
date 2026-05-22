@@ -1598,6 +1598,7 @@ def _annotate_plans_queue(
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
     state_plans: Dict[str, List[Dict[str, Any]]] = state.get("plans", {})
+    # state-file column iteration — picks up new columns from PLAN_COLUMNS / ISSUE_COLUMNS dynamically; conformance: tests/test-skill-conformance.sh
     # Build slug → (column, index, mode) lookup.
     pos: Dict[str, Tuple[str, int, Optional[str]]] = {}
     for col, entries in state_plans.items():
