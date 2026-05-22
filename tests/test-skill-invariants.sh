@@ -449,6 +449,15 @@ else
   check 'meta: framework-wide checks cover block-diagram/' 'false'
 fi
 
+# Issue #583: /review-feedback Step 2 must independently re-rate severity
+# (sibling triage-discipline rule to QE_ISSUES.md #404/#444). Pass-through
+# of reporter's self-rated severity propagates miscategorization through
+# every downstream /fix-issues sprint.
+check "review-feedback re-rate severity rule (source)" \
+  'grep -q "Independently re-rate severity" skills/review-feedback/SKILL.md'
+check "review-feedback re-rate severity rule (mirror)" \
+  'grep -q "Independently re-rate severity" .claude/skills/review-feedback/SKILL.md'
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

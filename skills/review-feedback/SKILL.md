@@ -7,7 +7,7 @@ description: >-
   user says "review feedback", "triage feedback", or "file feedback
   issues".
 metadata:
-  version: "2026.05.15+903532"
+  version: "2026.05.21+b962c3"
 ---
 
 # /review-feedback — Review and triage user feedback
@@ -33,6 +33,7 @@ will specify the path). This file is exported from the app via
 
 2. **For each pending entry**, evaluate:
    - Is it a real, actionable bug or feature request?
+   - **Independently re-rate severity.** The reporter's self-rated severity is a hint, not authoritative. Re-evaluate against impact (data loss > crash > broken feature > polish > nit) and frequency before filling the table.
    - Is it a duplicate of an existing GitHub issue? Check with:
      ```bash
      gh issue list --search "keyword" --state open
@@ -40,8 +41,8 @@ will specify the path). This file is exported from the app via
    - What label(s) should it get? (`bug`, `enhancement`, `ui`, `question`)
 
 3. **Present a summary table** to the user showing your recommendations:
-   | # | Title | Type | Severity | Recommendation | Reason |
-   |---|-------|------|----------|----------------|--------|
+   | # | Title | Type | Re-rated Severity | Recommendation | Reason |
+   |---|-------|------|-------------------|----------------|--------|
    | 1 | ... | bug | high | File | Clear repro |
    | 2 | ... | feature | low | Dismiss | Too vague |
 
