@@ -4418,8 +4418,8 @@ echo "=== PostToolUse: skill-file drift warn ==="
 
 # Fresh fixture directory laid out like a zskills repo so the hook's
 # CLAUDE_PROJECT_DIR-based fixture lookup works.
-SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test
-rm -rf /tmp/zskills-warn-skill-drift-test
+SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-$$
+rm -rf "$SKILL_DRIFT_FIXTURE"
 mkdir -p "$SKILL_DRIFT_FIXTURE/tests/fixtures"
 mkdir -p "$SKILL_DRIFT_FIXTURE/skills/foo"
 mkdir -p "$SKILL_DRIFT_FIXTURE/.claude/skills/foo"
@@ -4528,7 +4528,7 @@ else
 fi
 
 # Cleanup the synthetic fixture tree.
-rm -rf /tmp/zskills-warn-skill-drift-test
+rm -rf "$SKILL_DRIFT_FIXTURE"
 
 echo ""
 echo "=== Fixture-extension coverage (single source of truth) ==="
@@ -4539,8 +4539,8 @@ echo "=== Fixture-extension coverage (single source of truth) ==="
 # `__TEST_LITERAL__` to a temp copy of the fixture; create a synthetic
 # skill file containing the literal inside a bash fence; run both
 # surfaces against it; assert both surface the expected DRIFT/WARN.
-FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test
-rm -rf /tmp/zskills-fixture-extension-test
+FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-$$
+rm -rf "$FIXTURE_EXT_DIR"
 mkdir -p "$FIXTURE_EXT_DIR/tests/fixtures"
 mkdir -p "$FIXTURE_EXT_DIR/skills/synthetic"
 cp "$REPO_ROOT/tests/fixtures/forbidden-literals.txt" \
@@ -4599,7 +4599,7 @@ else
   echo "  -- end relevant output --" >&2
 fi
 rm -f "$EXT_DENY_OUT"
-rm -rf /tmp/zskills-fixture-extension-test
+rm -rf "$FIXTURE_EXT_DIR"
 
 echo ""
 echo "---"

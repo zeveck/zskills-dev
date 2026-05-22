@@ -105,6 +105,7 @@ run_suite "test-fix-issues-sprint-land-pr.sh" "tests/test-fix-issues-sprint-land
 run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase2-source-filter.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-commit.sh" "tests/test-commit.sh"
+run_suite "test-fixture-race-isolation.sh" "tests/test-fixture-race-isolation.sh"
 run_suite "test-frontmatter-helpers.sh" "tests/test-frontmatter-helpers.sh"
 run_suite "test-update-zskills-migration.sh" "tests/test-update-zskills-migration.sh"
 run_suite "test-update-zskills-agent-install" "tests/test-update-zskills-agent-install.sh"

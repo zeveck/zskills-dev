@@ -2829,6 +2829,23 @@ check_min_count "for target in main master feat/test" 2 "primary target axis pre
 # loop silently errors out before any expect_*_from_repo runs.
 check_min_count "^make_branch_repo\(\)" 1 "make_branch_repo helper defined" E
 
+# Assertion E (issue #594) — synthetic-fixture paths in tests/test-hooks.sh
+# MUST be PID-scoped so parallel worktrees running tests/run-all.sh
+# concurrently don't `rm -rf` each other's mid-test fixtures (the race
+# that produced 10/10 misses of `__TEST_LITERAL__` in the
+# fixture-extension assertion). The literal source tokens carry `$$`
+# verbatim; `grep -F` keeps `$$` as text (no shell expansion).
+if grep -qF 'FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-$$' "$HOOKS_TEST"; then
+  pass "fixture-extension-test path is PID-scoped (issue #594)"
+else
+  fail "fixture-extension-test path missing PID suffix (issue #594)" "expected FIXTURE_EXT_DIR=/tmp/zskills-fixture-extension-test-\$\$ in tests/test-hooks.sh"
+fi
+if grep -qF 'SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-$$' "$HOOKS_TEST"; then
+  pass "warn-skill-drift-test path is PID-scoped (issue #594)"
+else
+  fail "warn-skill-drift-test path missing PID suffix (issue #594)" "expected SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-\$\$ in tests/test-hooks.sh"
+fi
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
