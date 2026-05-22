@@ -1290,6 +1290,75 @@ else
   fail "W1.9: got '$W19'"
 fi
 
+# W1.9a — parse_plan_extracts_completed_field: write a plan markdown with
+# `completed:` frontmatter, call parse_plan, assert the returned dict has
+# the `completed` key populated. Closes Bug A of PR #650 fields-plumbing:
+# parse_plan previously stripped the field so `_infer_default_column`
+# never saw it, and every status=complete plan was hidden regardless of
+# `completed:` value. End-to-end (W1.9b) compounds this with the
+# inference call to prove the full pipeline now works.
+W19A=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys, tempfile
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+fp = tmp / "test-plan.md"
+fp.write_text("""---
+title: "Test Plan"
+status: complete
+created: "2026-05-01T00:00:00Z"
+completed: "2026-05-15T12:30:00Z"
+---
+
+# Test Plan
+""")
+plan = c.parse_plan(fp)
+print("has_completed=" + str("completed" in plan))
+print("completed=" + repr(plan.get("completed")))
+print("status=" + repr(plan.get("status")))
+' 2>&1)
+if printf '%s\n' "$W19A" | grep -q "^has_completed=True$" \
+    && printf '%s\n' "$W19A" | grep -q "^completed='2026-05-15T12:30:00Z'$" \
+    && printf '%s\n' "$W19A" | grep -q "^status='complete'$"; then
+  pass "W1.9a: parse_plan_extracts_completed_field"
+else
+  fail "W1.9a: got '$W19A'"
+fi
+
+# W1.9b — infer_default_column_through_parse_plan: end-to-end. Calls
+# parse_plan() on the SAME fixture (not a hand-stubbed dict) and passes
+# the result into _infer_default_column. The W1.9 stub-dict test passed
+# even while Bug A made the parse_plan pipeline strip `completed`; this
+# end-to-end variant is the regression bar.
+W19B=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys, tempfile
+from datetime import datetime, timezone
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+fp = tmp / "test-plan.md"
+fp.write_text("""---
+title: "Test Plan"
+status: complete
+created: "2026-05-01T00:00:00Z"
+completed: "2026-05-15T12:30:00Z"
+---
+
+# Test Plan
+""")
+plan = c.parse_plan(fp)
+now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
+col = c._infer_default_column(plan, now_utc=now, window_days=14)
+print("col=" + repr(col))
+' 2>&1)
+if printf '%s\n' "$W19B" | grep -q "^col='completed'$"; then
+  pass "W1.9b: infer_default_column_through_parse_plan (end-to-end)"
+else
+  fail "W1.9b: got '$W19B'"
+fi
+
 # W1.10 — read_state_file_v11_migration: v1.1 fixture parses cleanly,
 # `backlog` defaults to [] for both plans and issues.
 W110=$(PYTHONPATH="$PKG_PARENT" python3 -c '

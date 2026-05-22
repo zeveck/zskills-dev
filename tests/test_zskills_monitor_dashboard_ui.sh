@@ -806,6 +806,61 @@ if echo "$FPI_BODY" | grep -qE 'for \(const c of ISSUE_COLUMNS\)'; then
 else
   fail "W3.3: fingerprintIssues does not loop ISSUE_COLUMNS — drag-into-backlog will not re-render"
 fi
+
+# W3.3b — deepCloneQueues_skips_null_column_plans: Bug B from PR #650
+# fields-plumbing. The inferred-entry loop previously coerced
+# `(p.queue && p.queue.column) || "drafted"` — so any plan whose Python-
+# side _infer_default_column returned None (historical complete, outside
+# window, unbackfilled) got silently re-routed into Drafted, inflating
+# that column. Fix asserts: (1) the literal `|| "drafted"` fallback is
+# gone from the plan-inference branch, and (2) the new guard
+# `if (!col || PLAN_COLUMNS.indexOf(col) < 0) continue;` is present.
+# Issue `|| "triage"` fallbacks at the issue-inference branch + the
+# fingerprintIssues line are intentionally untouched — _infer_issue_default_column
+# always returns "completed" or "triage", never None.
+DEEPCLONE_BODY_FRESH=$(awk '
+  /^function deepCloneQueues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+# Negative assertion: the plan-inference branch must NOT carry `|| "drafted"`.
+# Use a precise pattern — `p.queue.column` followed by `|| "drafted"` — so the
+# issue branch's `it.queue.column || "triage"` is unaffected. The plan-branch
+# selector is the only one referencing p.queue (vs it.queue).
+if echo "$DEEPCLONE_BODY_FRESH" | grep -qE 'p\.queue && p\.queue\.column\) \|\| "drafted"'; then
+  fail "W3.3b: deepCloneQueues still has p.queue.column || \"drafted\" — Bug B alive"
+else
+  pass "W3.3b: deepCloneQueues no longer coerces null plan column to drafted (Bug B fix)"
+fi
+# Positive assertion: the new guard MUST be present in the plan-inference branch.
+if echo "$DEEPCLONE_BODY_FRESH" | grep -qE 'const col = p\.queue && p\.queue\.column' \
+   && echo "$DEEPCLONE_BODY_FRESH" | grep -qE 'if \(!col \|\| PLAN_COLUMNS\.indexOf\(col\) < 0\) continue'; then
+  pass "W3.3b: deepCloneQueues guards null plan column with skip (Bug B fix)"
+else
+  fail "W3.3b: deepCloneQueues plan-inference guard missing — null-column plans will re-leak"
+fi
+# fingerprintPlans must also drop the `|| "drafted"` coercion so the
+# fingerprint stays truthful about hidden plans (drag-into-or-out-of
+# "hidden" still re-renders, but no fake "drafted" tuple).
+FPP_BODY_FRESH=$(awk '
+  /^function fingerprintPlans\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$FPP_BODY_FRESH" | grep -qE '\|\| "drafted"'; then
+  fail "W3.3b: fingerprintPlans still has || \"drafted\" — fingerprint lies about hidden plans"
+else
+  pass "W3.3b: fingerprintPlans drops || \"drafted\" coercion (Bug B fix)"
+fi
+# Issue-side fallbacks must remain untouched — _infer_issue_default_column
+# returns "triage" as its non-completed default, so the defensive `|| "triage"`
+# is correct and not part of Bug B. Pin this so a future cleanup doesn't
+# accidentally strip both.
+if grep -qE 'it\.queue && it\.queue\.column\) \|\| "triage"' "$APP_JS"; then
+  pass "W3.3b: issue || \"triage\" fallback preserved (correct for issues; not Bug B)"
+else
+  fail "W3.3b: issue || \"triage\" fallback was stripped — issues will now leak as null-column"
+fi
 # W3.3 — truncation flag participates in fingerprintIssues so the banner
 # rerenders on flag toggle.
 if echo "$FPI_BODY" | grep -qE 'closed_issues_truncated'; then

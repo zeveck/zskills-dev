@@ -443,10 +443,14 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
     }
   }
   // Add inferred entries for plans not present in state.
+  // Plans with no column (queue.column === null) are intentionally hidden
+  // by _infer_default_column — historical completes, out-of-window, or
+  // unbackfilled. Do NOT default these to "drafted" (Bug B from PR #650):
+  // that override inflates Drafted with plans the inference said to hide.
   for (const p of plans) {
     if (seenSlugs.has(p.slug)) continue;
-    const col = (p.queue && p.queue.column) || "drafted";
-    if (PLAN_COLUMNS.indexOf(col) < 0) continue;
+    const col = p.queue && p.queue.column;
+    if (!col || PLAN_COLUMNS.indexOf(col) < 0) continue;
     seenSlugs.add(p.slug);
     out.plans[col].push({ slug: p.slug });
   }
@@ -498,7 +502,11 @@ function fingerprintPlans(plans, queues, defaultMode) {
     rows: plans.map(p => [
       p.slug, p.title, p.status, p.landing_mode,
       p.phase_count, p.phases_done, p.blurb,
-      pos[p.slug] || [(p.queue && p.queue.column) || "drafted", -1, null],
+      pos[p.slug] || [
+        (p.queue && p.queue.column) || null,
+        -1,
+        null,
+      ],
       // Claim state — symmetric to fingerprintIssues' claim tuple.
       // We track `last_heartbeat_at` (NOT `started_at`) so the chip
       // re-renders when the pipeline emits a phase heartbeat —

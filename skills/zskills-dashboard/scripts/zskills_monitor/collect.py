@@ -613,6 +613,7 @@ def parse_plan(path: Any) -> Optional[Dict[str, Any]]:
         "title": title,
         "status": fm.get("status", "").strip() or "active",
         "created": fm.get("created", "").strip(),
+        "completed": fm.get("completed", "").strip(),
         "issue": fm.get("issue") or None,
         "blurb": blurb,
         "phase_count": max(len(phases), len(tracker)),
