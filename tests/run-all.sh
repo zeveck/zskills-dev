@@ -120,6 +120,7 @@ run_suite "test-land-pr-worktree-detect.sh" "tests/test-land-pr-worktree-detect.
 run_suite "test-land-pr-post-merge-ff.sh" "tests/test-land-pr-post-merge-ff.sh"
 run_suite "test-land-pr-auto-rebase-behind.sh" "tests/test-land-pr-auto-rebase-behind.sh"
 run_suite "test-land-pr-rebase-rc14-parser.sh" "tests/test-land-pr-rebase-rc14-parser.sh"
+run_suite "test-land-pr-tracking-copy.sh" "tests/test-land-pr-tracking-copy.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-landed-status-vocabulary.sh" "tests/test-landed-status-vocabulary.sh"
 run_suite "test-zskills-paths.sh" "tests/test-zskills-paths.sh"
