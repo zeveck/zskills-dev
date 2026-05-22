@@ -102,6 +102,12 @@ MARK
   # PR body: explicit, with Fixes #N linking. Composed once before the
   # caller loop; /land-pr writes the body only on initial PR creation,
   # so a per-issue static body is the right choice here.
+  #
+  # Per-issue change summary: bullet list of commit subjects added to the
+  # feature branch beyond origin/main. Tolerant of empty (no commits yet)
+  # and of detached HEAD (worktree at branch tip).
+  CHANGE_SUMMARY=$(cd "$WORKTREE_PATH" && git log origin/main..HEAD --format='- %s' 2>/dev/null)
+  CHANGE_SUMMARY="${CHANGE_SUMMARY:-_(no commits yet — body will be updated on first push)_}"
   BODY_FILE="/tmp/pr-body-fix-issues-$BRANCH_SLUG.md"
   cat > "$BODY_FILE" <<BODY
 Fixes #${ISSUE_NUM}
