@@ -298,14 +298,26 @@ test_skill_dashboard_invokes_filter() {
   fi
 }
 
-# --- 5b. Dashboard branch site sequences eval -> CANDIDATE_ISSUES rebuild
+# --- 5b. B-proper: Phase 2 PRESERVES CANDIDATE_ISSUES + exports
+# RESEARCHED_SET as a parallel index. Inversion of the old assertion
+# (which pinned `CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")` — the very
+# overwrite that B-proper removes so Phase 3's loop can reach the
+# unresearched tail via synchronous research-on-demand).
 test_skill_dashboard_rebuild_candidates() {
-  # After the filter eval, the dashboard branch must reassign
-  # CANDIDATE_ISSUES from RESEARCHED_ARR.
+  # After the filter eval, the dashboard + default-rubric branches must
+  # NOT discard CANDIDATE_ISSUES, and MUST build a `RESEARCHED_SET`
+  # associative-array index keyed by issue number.
   if grep -qF 'CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")' "$SKILL"; then
-    pass "SKILL.md rebuilds CANDIDATE_ISSUES from RESEARCHED_ARR after filter"
+    fail "SKILL.md preserves CANDIDATE_ISSUES (B-proper)" \
+         "found legacy overwrite \`CANDIDATE_ISSUES=(\"\${RESEARCHED_ARR[@]}\")\` — Phase 3 loop needs full uncapped Ready∩Open list to reach unresearched tail"
+    return
+  fi
+  if grep -qF 'declare -A RESEARCHED_SET' "$SKILL" \
+     && grep -qE 'RESEARCHED_SET\[(\"\$?__r\"|\$ISSUE_NUM)' "$SKILL"; then
+    pass "SKILL.md preserves CANDIDATE_ISSUES + exports RESEARCHED_SET parallel index (B-proper)"
   else
-    fail "SKILL.md rebuild" "CANDIDATE_ISSUES rebuild line not found"
+    fail "SKILL.md RESEARCHED_SET index" \
+         "expected \`declare -A RESEARCHED_SET\` + per-element population — B-proper structural change missing"
   fi
 }
 
