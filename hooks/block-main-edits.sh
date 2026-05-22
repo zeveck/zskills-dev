@@ -1,8 +1,8 @@
 #!/bin/bash
-# block-main-edits.sh — PreToolUse hook on Edit / Write / NotebookEdit.
+# block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
-# main_protected is true, denies Edit/Write/NotebookEdit calls whose target
+# main_protected is true, denies Edit/Write calls whose target
 # file_path lives inside the main repo working tree (NOT a linked worktree),
 # unless the path falls under a narrow allowlist of agent-managed surfaces
 # (everything under .zskills/, and gitignored worktree-state markers).
@@ -32,7 +32,7 @@ INPUT=$(cat 2>/dev/null) || exit 0
 [ -z "$INPUT" ] && exit 0
 
 # ── Tool-name gate ────────────────────────────────────────────────────────
-# Only fire on Edit / Write / NotebookEdit. The matcher in settings.json
+# Only fire on Edit / Write. The matcher in settings.json
 # scopes the registration; this guard is defense-in-depth in case the hook
 # is invoked from a broader matcher.
 TOOL_NAME=""
@@ -40,16 +40,14 @@ if [[ "$INPUT" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
   TOOL_NAME="${BASH_REMATCH[1]}"
 fi
 case "$TOOL_NAME" in
-  Edit|Write|NotebookEdit) ;;
+  Edit|Write) ;;
   *) exit 0 ;;
 esac
 
 # ── Extract target path ───────────────────────────────────────────────────
-# Edit / Write use tool_input.file_path. NotebookEdit uses notebook_path.
+# Edit and Write both use tool_input.file_path.
 FILE_PATH=""
 if [[ "$INPUT" =~ \"file_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
-  FILE_PATH="${BASH_REMATCH[1]}"
-elif [[ "$INPUT" =~ \"notebook_path\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
   FILE_PATH="${BASH_REMATCH[1]}"
 fi
 # No path extracted → can't decide → allow (defensive; never false-deny).

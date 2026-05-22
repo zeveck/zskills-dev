@@ -6,7 +6,6 @@
 #
 #   C1   Edit on main, non-allowlisted path     → DENY
 #   C2   Write on main, non-allowlisted path    → DENY
-#   C3   NotebookEdit on main, non-allowlisted  → DENY
 #   C4   Edit in linked worktree (same file)    → ALLOW
 #   C5   Edit on main, .zskills/audit/*         → ALLOW (allowlist)
 #   C6   Edit on main, .zskills/tracking/<id>/* → ALLOW (allowlist)
@@ -131,11 +130,10 @@ run_hook() {
   rm -f "$errf"
 }
 
-# Build an Edit/Write/NotebookEdit envelope. The tool name and the key
-# under tool_input vary by tool.
+# Build an Edit/Write envelope. The tool name varies by tool; both use
+# file_path under tool_input.
 mkenv_edit()   { printf '{"tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1"; }
 mkenv_write()  { printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$1"; }
-mkenv_nbedit() { printf '{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"%s"}}' "$1"; }
 mkenv_bash()   { printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1"; }
 mkenv_edit_no_path() { printf '{"tool_name":"Edit","tool_input":{}}'; }
 
@@ -170,10 +168,6 @@ assert_deny "C1: Edit on main (CLAUDE.md) → DENY" "$HOOK_OUT"
 # ── C2: Write on main, non-allowlisted ───────────────────────────────────
 run_hook "$SANDBOX" "$(mkenv_write "$SANDBOX/CLAUDE.md")"
 assert_deny "C2: Write on main (CLAUDE.md) → DENY" "$HOOK_OUT"
-
-# ── C3: NotebookEdit on main, non-allowlisted ────────────────────────────
-run_hook "$SANDBOX" "$(mkenv_nbedit "$SANDBOX/skills/foo/notebook.ipynb")"
-assert_deny "C3: NotebookEdit on main → DENY" "$HOOK_OUT"
 
 # ── C4: Edit in linked worktree (same relative file, different abs path) ─
 # CLAUDE_PROJECT_DIR points at the WORKTREE. The hook self-checks:

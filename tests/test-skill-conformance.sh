@@ -1467,8 +1467,8 @@ check_fixed update-zskills "Step C triples: PostToolUse Write warn-config-drift"
 # AND canonical-triples table; fresh installs silently lacked both hooks.
 check_fixed update-zskills "Step C triples: PreToolUse CronCreate block-bad-cron (#505)" \
   'PreToolUse   | CronCreate | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-bad-cron.sh"`'
-check_fixed update-zskills "Step C triples: PreToolUse Edit|Write|NotebookEdit block-main-edits (#505)" \
-  'PreToolUse   | Edit\|Write\|NotebookEdit | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"`'
+check_fixed update-zskills "Step C triples: PreToolUse Edit|Write block-main-edits (#505)" \
+  'PreToolUse   | Edit\|Write | `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-main-edits.sh"`'
 # Install-bullet copies must also enumerate both hooks (Step C copy loop).
 check_fixed update-zskills "Step C install bullet: block-bad-cron.sh (#505)" \
   'For `block-bad-cron.sh`: copy as-is from `$PORTABLE/hooks/` to'
