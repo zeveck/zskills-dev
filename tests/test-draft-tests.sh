@@ -102,8 +102,8 @@ fi
 
 expect_skill_matches "AC-1.1: frontmatter name"               '^name:[[:space:]]+draft-tests'
 expect_skill_matches "AC-1.1: frontmatter disable-model-invocation" '^disable-model-invocation:[[:space:]]+false'
-expect_skill_matches "AC-1.1: frontmatter argument-hint with [guidance...]" \
-  '^argument-hint:[[:space:]]+"<plan-file>[[:space:]]+\[rounds N\][[:space:]]+\[guidance\.\.\.\]"'
+expect_skill_matches "AC-1.1: frontmatter argument-hint with [auto] [guidance...]" \
+  '^argument-hint:[[:space:]]+"<plan-file>[[:space:]]+\[rounds N\][[:space:]]+\[auto\][[:space:]]+\[guidance\.\.\.\]"'
 expect_skill_matches "AC-1.1: frontmatter description"        '^description:'
 
 # ----------------------------------------------------------------------
@@ -116,7 +116,7 @@ echo ""
 echo "=== AC-1.2 — Usage / error string ==="
 
 expect_skill_contains "AC-1.2: usage string verbatim" \
-  'Usage: /draft-tests <plan-file> [rounds N] [guidance...]'
+  'Usage: /draft-tests <plan-file> [rounds N] [auto] [guidance...]'
 
 # ----------------------------------------------------------------------
 # AC-1.2b — Reviewer + DA prompt prepend semantics for guidance.

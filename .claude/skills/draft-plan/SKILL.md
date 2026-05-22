@@ -1,13 +1,13 @@
 ---
 name: draft-plan
 disable-model-invocation: false
-argument-hint: "[output FILE] [rounds N] <description...>"
+argument-hint: "[output FILE] [rounds N] [auto] <description...>"
 description: >-
   Draft a high-quality plan through iterative adversarial review:
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.05.21+fd4fda"
+  version: "2026.05.22+1e68ee"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -109,13 +109,18 @@ fi
 ## Arguments
 
 ```
-/draft-plan [output FILE] [rounds N] <description...>
+/draft-plan [output FILE] [rounds N] [auto] <description...>
 ```
 
 - **output FILE** (optional) — where to write the plan. Default:
   `$ZSKILLS_PLANS_DIR/<slug-from-description>.md`
 - **rounds N** (optional) — max review/refine cycles. Default: 3. The
   process exits early if a round converges (no substantive new issues).
+- **auto** (optional positional token) — after the worktree auto-commit
+  succeeds in Phase 6, dispatch `/land-pr` to push the branch, open a PR,
+  monitor CI, and auto-merge. Without `auto`, the plan is committed in the
+  worktree but no PR is opened — caller must land manually. Mirrors the
+  `auto` token in `/run-plan`, `/do`, `/fix-issues`, `/quickfix`.
 - **description** (required) — everything after the recognized keywords.
   Can be brief ("add dark mode") or detailed ("implement thermal domain
   with conduction, convection, radiation, and multi-domain coupling to
@@ -131,8 +136,17 @@ fi
   `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the
   orchestrator's bash fence; falls back to `plans/` when config silent).
 - `rounds` followed by a number — max review cycles
+- `auto` (whitespace-anchored, case-insensitive) — sets `AUTO_FLAG=1`
+  for Phase 6's `/land-pr` dispatch
 - Everything else (from the first unrecognized non-flag token onward) is
   the description
+
+```bash
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
+```
 
 Examples:
 - `/draft-plan Add dark mode to the editor`
@@ -685,12 +699,69 @@ After each round of review + refinement:
    fi
    ```
 
-4. **Plan index — do not touch.** The plan index is regenerated from
+4. **Auto-land via `/land-pr` (when `auto` was passed).** Issue #581: in
+   projects with `execution.landing: pr` + `main_protected: true`, the
+   plan file is committed in the worktree (above) but never reaches main
+   without a `/land-pr` dispatch. When the user passed the `auto`
+   positional token, dispatch `/land-pr` so the branch pushes, a PR
+   opens, CI runs, and auto-merge lands the plan on main — making
+   `/draft-plan plans/X.md auto && /run-plan plans/X.md auto` work end
+   to end. Without `auto`, the worktree commit stands and the caller
+   lands manually.
+
+   ```bash
+   if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     BRANCH_NAME=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+     SLUG="$TRACKING_ID"
+     PR_TITLE="docs(plans): draft $(basename "$OUTPUT_FILE" .md) via /draft-plan"
+     BODY_FILE="/tmp/pr-body-draft-plan-${SLUG}-$$.md"
+     RESULT_FILE="/tmp/land-pr-result-draft-plan-${SLUG}-$$.txt"
+     cat > "$BODY_FILE" <<BODY
+## Summary
+
+\`/draft-plan\` produced a plan file at \`$OUTPUT_FILE\` via $ROUND round(s)
+of adversarial review (reviewer + devil's-advocate + refiner).
+
+See the plan's \`## Plan Quality\` section for round history and remaining
+concerns.
+
+## Test plan
+
+- [x] Plan file committed on the draftplan branch (worktree-isolated)
+- [ ] No functional tests — this PR ships a plan document only; CI will
+      run skill-conformance / hook / fixture suites
+BODY
+     LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=draft-plan --worktree-path=$TOPLEVEL --tracking-id=draft-plan.$SLUG --auto"
+
+     # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+     # Allow-list parse the /land-pr result (canonical caller-loop pattern —
+     # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
+     if [ -f "$RESULT_FILE" ]; then
+       declare -A LP
+       while IFS='=' read -r KEY VALUE; do
+         case "$KEY" in
+           STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
+             LP["$KEY"]="$VALUE" ;;
+           "") ;;
+           *) ;;  # unknown keys ignored (forward-compat)
+         esac
+       done < "$RESULT_FILE"
+       echo "/land-pr: STATUS=${LP[STATUS]:-?} CI_STATUS=${LP[CI_STATUS]:-?} PR=${LP[PR_URL]:-none}" >&2
+       rm -f "$RESULT_FILE"
+     else
+       echo "WARN: /draft-plan: /land-pr produced no result file at $RESULT_FILE" >&2
+     fi
+   fi
+   ```
+
+5. **Plan index — do not touch.** The plan index is regenerated from
    source-of-truth by `/plans rebuild` and auto-refreshed by `/plans`
    Mode: Show when the source has changed. No manual update needed
    here.
 
-5. **Present the result:**
+6. **Present the result:**
    > Plan drafted in N rounds (converged / max rounds reached).
    > [Remaining concerns if any]
    >

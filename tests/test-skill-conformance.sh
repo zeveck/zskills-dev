@@ -575,6 +575,24 @@ check_not   quickfix "no inline gh pr create"      'gh pr create'
 check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
 
 echo ""
+echo "=== /draft-plan, /refine-plan, /draft-tests — auto flag + /land-pr dispatch (#581) ==="
+# Issue #581: the three drafting skills create worktrees but had no
+# auto-landing path. Under `execution.landing: pr` + `main_protected: true`,
+# /draft-plan → /run-plan silently failed because the plan file was
+# committed in the worktree, not on main. Each skill now recognizes the
+# positional `auto` token and dispatches /land-pr after the Phase-N
+# worktree auto-commit.
+for skill in draft-plan refine-plan draft-tests; do
+  check_fixed "$skill" "AUTO_FLAG init"          'AUTO_FLAG=0'
+  check       "$skill" "auto token detection"    '\[aA\]\[uU\]\[tT\]\[oO\]'
+  check_fixed "$skill" "dispatches /land-pr"     'land-pr'
+  check_fixed "$skill" "AUTO_FLAG gates dispatch" '${AUTO_FLAG:-0}" = "1"'
+  check_fixed "$skill" "Skill tool dispatch line" 'Skill: { skill: "land-pr"'
+  check_fixed "$skill" "--auto flag passed to land-pr" '--auto'
+  check       "$skill" "argument-hint contains auto" 'argument-hint:.*\[auto\]'
+done
+
+echo ""
 echo "=== implementer subagent — impl-dispatch site pins (Verifier-cannot-run symmetry) ==="
 # Each impl-class dispatch (orchestrator asks a sub-agent to write code,
 # run tests, and/or commit) MUST declare `subagent_type: "implementer"`.
@@ -760,19 +778,23 @@ cross_check_no_invocation "no inline gh pr merge (.claude/skills/)" \
   '^[[:space:]]*(if[[:space:]]+!?[[:space:]]*)?[A-Z_]*=?(\$\()?gh pr merge\b' \
   "$REPO_ROOT/.claude/skills"
 
-# --- WI 6.1 (d) — All 5 callers dispatch /land-pr ---
+# --- WI 6.1 (d) — All 8 callers dispatch /land-pr (5 impl + 3 drafting per #581) ---
 # Substring match suffices because `land-pr` only appears in dispatch
-# contexts inside the caller files (verified during Phase 2-5 migrations).
+# contexts inside the caller files (verified during Phase 2-5 migrations
+# and #581's drafting-skill adoption).
 # These checks duplicate the per-skill assertions above (run-plan,
-# commit, do, fix-issues, quickfix already each have their own
-# `dispatches /land-pr` check) but consolidate them as a single
-# cross-skill drift-prevention claim.
+# commit, do, fix-issues, quickfix, draft-plan, refine-plan, draft-tests
+# already each have their own `dispatches /land-pr` check) but consolidate
+# them as a single cross-skill drift-prevention claim.
 LAND_PR_CALLERS=(
   "skills/run-plan/modes/pr.md"
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
   "skills/quickfix/SKILL.md"
+  "skills/draft-plan/SKILL.md"
+  "skills/refine-plan/SKILL.md"
+  "skills/draft-tests/SKILL.md"
 )
 ALL_CALLERS_OK=1
 for caller in "${LAND_PR_CALLERS[@]}"; do
@@ -785,7 +807,7 @@ for caller in "${LAND_PR_CALLERS[@]}"; do
   fi
 done
 if [ "$ALL_CALLERS_OK" -eq 1 ]; then
-  pass "[cross-skill] all 5 callers reference /land-pr (dispatch present)"
+  pass "[cross-skill] all 8 callers reference /land-pr (dispatch present)"
 fi
 
 # --- WI 6.1 (e) — Orchestrator-level dispatch verification ---
@@ -823,7 +845,7 @@ for caller in "${LAND_PR_CALLERS[@]}"; do
   fi
 done
 if [ "$ORCH_DISPATCH_FAIL" -eq 0 ]; then
-  pass "[cross-skill] /land-pr dispatched at orchestrator level in all 5 callers (no nested-Agent markers within ±15 lines)"
+  pass "[cross-skill] /land-pr dispatched at orchestrator level in all 8 callers (no nested-Agent markers within ±15 lines)"
 fi
 
 echo ""
@@ -1550,8 +1572,8 @@ echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
 # count. WI 6.3 is the authoritative enumeration source.
 #
 # 1. Frontmatter shape (incl. `[guidance...]` positional tail in argument-hint)
-check       draft-tests "frontmatter argument-hint with [guidance...]" \
-  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[guidance\.\.\.\]"'
+check       draft-tests "frontmatter argument-hint with [auto] [guidance...]" \
+  '^argument-hint:[[:space:]]+"<plan-file> \[rounds N\] \[auto\] \[guidance\.\.\.\]"'
 # 2. Tracking marker basename matches canonical scheme `fulfilled.draft-tests.<id>`
 check_fixed draft-tests "fulfilled marker basename" \
   'fulfilled.draft-tests.$TRACKING_ID'
