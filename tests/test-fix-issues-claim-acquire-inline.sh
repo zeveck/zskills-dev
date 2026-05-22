@@ -186,29 +186,40 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# Test 4: SKILL.md shape lock — race-lost arm contains `exit 0` and NO
-# bare `continue` within 10 lines of the acquire call.
+# Test 4: SKILL.md shape lock (B-proper) — race-lost arm contains
+# `continue` (not `exit 0`) because the per-issue dispatch is now an
+# explicit fenced for-loop over CANDIDATE_ISSUES. Filesystem-error arm
+# still uses `exit "$ACQ_RC"`. (Pre-B-proper: race-lost was `exit 0` so
+# the orchestrator narratively proceeded to the next per-issue fence.
+# After B-proper, the loop advances visibly via `continue`.)
 # ───────────────────────────────────────────────────────────────────────
-acquire_lines=$(grep -n 'claim-issue.sh.*acquire\|"\$CLAIM_HELPER" acquire' "$SKILL_MD" | grep -v 'rev-parse' | cut -d: -f1)
+# Match only actual bash invocations of the acquire helper at the start
+# of a code line — i.e. `  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM"` —
+# NOT prose mentions in surrounding documentation (e.g. the "Concurrent
+# dashboard runs" prose at SKILL.md:~176 that names the acquire call as
+# part of an explanation).
+acquire_lines=$(grep -n '^\s*bash "\$CLAIM_HELPER" acquire' "$SKILL_MD" | cut -d: -f1)
 shape_ok=1
 shape_reason=""
 for line in $acquire_lines; do
-  end=$((line + 12))
+  end=$((line + 14))
   window=$(sed -n "${line},${end}p" "$SKILL_MD")
-  if ! grep -q 'exit 0' <<< "$window"; then
+  # Race-lost arm: must contain a bare `continue` (post-B-proper shape).
+  if ! grep -E '^\s*continue\b' <<< "$window" >/dev/null; then
     shape_ok=0
-    shape_reason="line $line: no exit 0 within 10 lines"
+    shape_reason="line $line: no bare \`continue\` within 14 lines (B-proper requires race-lost continue, not exit 0)"
     break
   fi
-  # Bare `continue` is forbidden in this window (no enclosing fenced loop).
-  if grep -E '^\s*continue\b' <<< "$window" >/dev/null; then
+  # Filesystem-error arm: must propagate via `exit "$ACQ_RC"` (sprint-abort
+  # for non-race rc).
+  if ! grep -q 'exit "\$ACQ_RC"' <<< "$window"; then
     shape_ok=0
-    shape_reason="line $line: bare \`continue\` found within 10 lines (forbidden — must be \`exit 0\`)"
+    shape_reason="line $line: no \`exit \"\$ACQ_RC\"\` within 14 lines (filesystem-error arm must still abort the sprint)"
     break
   fi
 done
 if [ -n "$acquire_lines" ] && [ "$shape_ok" -eq 1 ]; then
-  pass "T2.1 shape-lock: SKILL.md acquire fences use exit 0, no bare continue (R4.3/DA4.5)"
+  pass "T2.1 shape-lock: SKILL.md acquire fences use \`continue\` for race-lost + \`exit \$ACQ_RC\` for filesystem-error (B-proper)"
 else
   fail "T2.1 shape-lock" "${shape_reason:-no acquire lines found in SKILL.md}"
 fi

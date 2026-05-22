@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.21+7dac3a"
+  version: "2026.05.22+137d78"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1527,11 +1527,24 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
   fi
 fi
 
-# Replace CANDIDATE_ISSUES with the researched subset. Triage proceeds
-# against blurbs that actually exist. If RESEARCHED_ARR is empty after
-# auto-research, the existing "no actionable issues" path fires.
-CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")
-echo "Researched candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+# Preserve `CANDIDATE_ISSUES` as the full uncapped Ready∩Open list (drag
+# order). Expose `RESEARCHED` as a parallel associative-array index so the
+# Phase 3 dispatch loop can ask "is this candidate researched yet?" per
+# iteration. Without this preservation, Phase 3 cannot reach the
+# unresearched tail when it advances past race-lost or skipped candidates
+# (B-proper structural change; see "Per-issue dispatch loop" in Phase 3).
+# If RESEARCHED_ARR ends up empty after auto-research, Phase 3's loop
+# still iterates CANDIDATE_ISSUES — each candidate triggers synchronous
+# research-on-demand on cache miss, and the existing "no actionable
+# issues" path fires only if zero candidates pass triage.
+declare -A RESEARCHED_SET=()
+for __r in "${RESEARCHED_ARR[@]}"; do
+  RESEARCHED_SET["$__r"]=1
+done
+unset __r
+echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
+echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
 ```
 
 **Auto-mode research dispatch — orchestrator pattern.** When the auto
@@ -1560,16 +1573,24 @@ below and proceed directly to the **Triage** subsection with
 fix-agent vs `/do pr` vs `/draft-plan` vs skip) still applies — the
 dashboard only overrides the *selection*, not the *routing*.
 
-**Cap to N happens AFTER triage, not before.** The triage loop iterates
-`CANDIDATE_ISSUES` in drag order, classifies each issue, and KEEPS the
-first N that route to **in-batch fix-agent** or **/do pr**. Issues
-that triage to **"Bug with unclear cause"**, **"Plan-scale"**, or **"Too
-vague"** are recorded as skips and do NOT count toward N — keep
-iterating. Stop iterating once N actionable picks have been collected.
-If candidates exhaust before N actionable are found, dispatch what was
-found (partial-fill is normal); if zero actionable are found, the
-existing "no actionable issues" path fires unchanged. This prevents a
-single top-of-queue plan-scale/vague item from stalling the entire
+**Cap to N happens AFTER triage, not before.** Phase 2 triage produces a
+full classified list across the researched subset of `CANDIDATE_ISSUES`
+in drag order — it does NOT cap at N. Phase 3 then iterates the full
+`CANDIDATE_ISSUES` array (including unresearched tail; see B-proper
+"Per-issue dispatch loop" below), dispatching synchronous
+research-on-demand on cache miss, classifying each issue narratively
+per the 6-bucket rubric, attempting a claim-acquire per actionable
+pick, and KEEPING the first N that route to **in-batch fix-agent** or
+**/do pr** AND that successfully acquire the per-issue claim. Issues
+that triage to **"Bug with unclear cause"**, **"Plan-scale"**, **"Too
+vague"**, **"Author decision needed"**, or that race-lose / fail
+research are recorded as skips and do NOT count toward N — Phase 3
+keeps iterating. Stop iterating once N successfully-dispatched picks
+have been collected (or `CANDIDATE_ISSUES` exhausts). If candidates
+exhaust before N actionable are found, dispatch what was found
+(partial-fill is normal); if zero are dispatched, the existing "no
+actionable issues" path fires unchanged. This prevents a single
+top-of-queue plan-scale/vague/race-lost item from stalling the entire
 queue behind it.
 
 ### Default rubric (when `dashboard` is NOT present)
@@ -1633,8 +1654,19 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
   fi
 fi
 
-CANDIDATE_ISSUES=("${RESEARCHED_ARR[@]}")
-echo "Researched candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+# Preserve `CANDIDATE_ISSUES` as the full uncapped ranked list and expose
+# `RESEARCHED_SET` as a parallel index. See the dashboard branch's
+# expanded prose above for the rationale; Phase 3's per-issue dispatch
+# loop iterates `CANDIDATE_ISSUES` and dispatches synchronous
+# research-on-demand on cache miss.
+declare -A RESEARCHED_SET=()
+for __r in "${RESEARCHED_ARR[@]}"; do
+  RESEARCHED_SET["$__r"]=1
+done
+unset __r
+echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
+echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
+echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
 ```
 
 ### Triage: vague, complex, or interrelated issues
@@ -1810,7 +1842,18 @@ Rules:
   `Action now:`, including any trailing rationale or command), and a
   one-sentence rationale. Quote the Action-now value EXACTLY — don't
   paraphrase, don't truncate; it is the load-bearing signal the user
-  needs to decide whether to act.
+  needs to decide whether to act. Bucket names enumerated by the
+  6-tier triage rubric plus Phase 3's two run-time skip classes:
+  `plan-scale`, `bug-unclear-cause`, `needs-decision`, `too-vague`,
+  `author-decision`, **`race-lost`** (claim-acquire returned exit 10 —
+  concurrent pipeline holds the issue; B-proper loop advanced to the
+  next candidate), and **`research-failed`** (Phase 3
+  research-on-demand agent did not commit a tracker row for an
+  un-researched candidate; loop advanced past it). For `race-lost` and
+  `research-failed`, the verbatim `Action now:` value may be empty
+  (the latter never got a row written); render as
+  `Action now: (n/a — research did not complete)` or
+  `Action now: <verbatim>` per what is available.
 - **`Pool:`** — the count of open candidates considered this fire
   (equal to `$OPEN_COUNT` or the dashboard-Ready intersection size,
   whichever sourced this fire's candidate list).
@@ -2256,61 +2299,151 @@ the fix agent. The default branch name is `fix-issue-NNN` (derived from
 the branch name to `fix/issue-NNN` via `--branch-name` — see that
 subsection below.
 
+**Per-issue dispatch loop (B-proper).** The dispatch is an explicit
+fenced `for` loop over `CANDIDATE_ISSUES` (the full uncapped Ready∩Open
+list Phase 2 preserved) bounded by `DISPATCHED < N`. On each iteration:
+(1) if the candidate is NOT in `RESEARCHED_SET`, dispatch a synchronous
+research agent (same prompt shape Phase 1 step 6 / Phase 2 source-filter
+auto-mode uses) and refresh the index — if research still does not commit
+a row, record `research-failed` and continue; (2) narratively classify
+the candidate per the 6-bucket triage rubric in
+"### Triage: vague, complex, or interrelated issues" above — if
+non-actionable (plan-scale / bug-unclear-cause / needs-decision /
+too-vague / author-decision), record the skip and continue; (3) attempt
+the per-issue claim acquire — on race-loss (exit 10), record
+`race-lost` and continue to the next candidate; on filesystem error
+(exit 11+), abort the sprint; on success, materialise the worktree and
+dispatch the impl agent. The `record_skip "$ISSUE_NUM" "$BUCKET"` step
+appends to the skip-record consumed by Phase 5 SPRINT_REPORT.md AND the
+per-fire user-facing summary block (see "Per-fire user-facing summary"
+above) — both destinations now enumerate `race-lost` and
+`research-failed` alongside the existing 5 triage buckets.
+
+Replaces the older PROSE-iterated fence shape where each acquire's
+race-loss arm did `exit 0` to terminate the per-issue fence and the
+orchestrator narratively "proceeded to the next issue." That shape was
+observably broken: in the 2026-05-22 incident the orchestrator
+race-lost two top picks, fell through to the no-actionable arm, and
+30 minutes of cron time produced no work. The explicit loop forces the
+loser to do real fix work on the next available candidates.
+
 ```bash
-ISSUE_NUM=42
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-# Resume detection stays directory-based: an existing fix worktree means
-# we're resuming the same issue across cron turns.
-WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
-
-# Acquire a single-host atomic claim on this issue BEFORE the worktree is
-# materialised. The per-issue dispatch is PROSE-iterated (no enclosing
-# fenced for-loop — verified by grep). On race-lost (exit 10), this fence
-# exits 0 to terminate cleanly; the orchestrator narratively proceeds to
-# the next issue's per-issue fence block. On filesystem error (exit 11),
-# the fence exits 11 to abort the sprint. The PreToolUse backstop hook
-# (block-fix-issue-unclaimed.sh) denies the create-worktree.sh call below
-# if no matching claim exists, so omitting this acquire fails closed at
-# runtime. (D2; round 4 option C; round 4b R4.3/DA4.5 — no `continue`.)
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
-bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
-     --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
-ACQ_RC=$?
-if [ "$ACQ_RC" = 10 ]; then
-  echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); skipping — orchestrator proceeds to next issue." >&2
-  exit 0   # terminate this per-issue fence; orchestrator narratively continues to next issue
-fi
-if [ "$ACQ_RC" != 0 ]; then
-  echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
-  exit "$ACQ_RC"
-fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
-if [ -d "$WORKTREE_PATH" ]; then
-  echo "Resuming existing fix worktree at $WORKTREE_PATH"
-else
-  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
-    --prefix fix-issue \
-    --purpose "fix-issues; issue=${ISSUE_NUM}" \
-    --pipeline-id "$PIPELINE_ID" \
-    "${ISSUE_NUM}")
-  RC=$?
-  if [ "$RC" -ne 0 ]; then
-    # W2.5.5 — release the just-acquired claim before sprint-abort so it
-    # doesn't leak until TTL. Only THIS issue's claim is in-flight at this
-    # moment (option C: inline acquire — earlier issues' agents are running
-    # with their own claims correctly held; later iterations haven't been
-    # acquired yet). `|| true` because release-after-failure is best-effort
-    # cleanup; the abort `exit "$RC"` below carries the real signal.
-    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
-    echo "create-worktree failed (rc=$RC) for /fix-issues cherry-pick/direct mode (issue $ISSUE_NUM); released claim before abort" >&2
-    exit "$RC"
+DISPATCHED=0
+declare -a SKIP_RECORD=()   # appended as "<bucket>:<issue_num>" tokens
+                            # — consumed by Phase 5 sprint report + the
+                            # per-fire user-facing summary.
+
+for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
+  [ "$DISPATCHED" -ge "$N" ] && break
+
+  # 1. Research-on-demand. If this candidate has no committed tracker row,
+  # dispatch a synchronous general-purpose research agent (same prompt
+  # shape Phase 2 source-filter auto-mode uses; block until it commits a
+  # row) and refresh the index. If still unresearched after the call,
+  # record `research-failed` and advance.
+  if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
+    # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
+    # `subagent_type: "general-purpose"`, same prompt shape as Phase 2
+    # source-filter auto-mode (read `gh issue view`, grep codebase, write
+    # tracker row with `**Action now:**` line, commit row before
+    # returning). After the dispatch returns, re-source RESEARCHED_SET:
+    eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      "${CANDIDATE_ISSUES[@]}")"
+    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    RESEARCHED_SET=()
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    unset __r
+    if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
+      echo "fix-issues Phase 3: research-on-demand did not commit a tracker row for #$ISSUE_NUM — skipping." >&2
+      SKIP_RECORD+=("research-failed:$ISSUE_NUM")
+      continue
+    fi
   fi
-fi
-# create-worktree.sh owns pre-flight prune+fetch+ff-merge, the underlying
-# safe add, .zskills-tracked (from --pipeline-id), and .worktreepurpose
-# writes. The orchestrator does NOT separately write the tracking marker
-# — the worktree directory does not exist until create-worktree.sh
-# materialises it, so any pre-dispatch write would fail.
+
+  # 2. Narratively classify per the 6-bucket rubric (see "Triage" section
+  # above). Orchestrator reads the issue body + tracker blurb and selects
+  # ONE of: actionable-in-batch, actionable-do-pr, plan-scale,
+  # bug-unclear-cause, needs-decision (== "Bug with unclear cause"),
+  # too-vague, author-decision. Skip buckets do NOT count toward N.
+  # CLASS is computed inline-narratively (no helper script):
+  #   CLASS="actionable-in-batch" | "actionable-do-pr"
+  #       | "plan-scale" | "bug-unclear-cause" | "needs-decision"
+  #       | "too-vague" | "author-decision"
+  case "$CLASS" in
+    actionable-in-batch|actionable-do-pr) ;;
+    plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+      SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
+      continue
+      ;;
+    *)
+      echo "fix-issues Phase 3: unrecognised triage class '$CLASS' for #$ISSUE_NUM — aborting sprint." >&2
+      exit 1
+      ;;
+  esac
+
+  # 3. Acquire a single-host atomic claim BEFORE materialising the
+  # worktree. On race-loss (exit 10), record skip and advance to next
+  # candidate (B-proper: the loop visibly continues; no `exit 0` arm).
+  # On filesystem error (exit 11+), abort the sprint. The PreToolUse
+  # backstop hook (block-fix-issue-unclaimed.sh) denies the
+  # create-worktree.sh call below if no matching claim exists, so
+  # omitting this acquire fails closed at runtime.
+  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
+       --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
+  ACQ_RC=$?
+  if [ "$ACQ_RC" = 10 ]; then
+    echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); advancing to next candidate." >&2
+    SKIP_RECORD+=("race-lost:$ISSUE_NUM")
+    continue
+  fi
+  if [ "$ACQ_RC" != 0 ]; then
+    echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
+    exit "$ACQ_RC"
+  fi
+
+  # 4. Materialise worktree + dispatch impl agent.
+  WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
+  if [ -d "$WORKTREE_PATH" ]; then
+    # Resume detection stays directory-based: an existing fix worktree
+    # means we're resuming the same issue across cron turns.
+    echo "Resuming existing fix worktree at $WORKTREE_PATH"
+  else
+    WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+      --prefix fix-issue \
+      --purpose "fix-issues; issue=${ISSUE_NUM}" \
+      --pipeline-id "$PIPELINE_ID" \
+      "${ISSUE_NUM}")
+    RC=$?
+    if [ "$RC" -ne 0 ]; then
+      # W2.5.5 — release the just-acquired claim before sprint-abort so
+      # it doesn't leak until TTL. Only THIS issue's claim is in-flight
+      # at this moment (earlier iterations' agents are running with
+      # their own claims correctly held; later iterations haven't been
+      # acquired yet). `|| true` because release-after-failure is
+      # best-effort cleanup.
+      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+      echo "create-worktree failed (rc=$RC) for /fix-issues cherry-pick/direct mode (issue $ISSUE_NUM); released claim before abort" >&2
+      exit "$RC"
+    fi
+  fi
+  # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
+  # underlying safe add, .zskills-tracked (from --pipeline-id), and
+  # .worktreepurpose writes. The orchestrator does NOT separately write
+  # the tracking marker — the worktree directory does not exist until
+  # create-worktree.sh materialises it, so any pre-dispatch write would
+  # fail.
+
+  # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
+  # `subagent_type: "implementer"`, prompt prefixed with
+  # `FIRST: cd $WORKTREE_PATH`, body per the "Agent dispatch prompts
+  # MUST include" rules above (verbatim issue body, tracker blurb,
+  # Tier-1 hash-registration directive).
+  DISPATCHED=$((DISPATCHED + 1))
+done
 ```
 
 For grouped interrelated issues (same root cause or same files from
@@ -2344,65 +2477,111 @@ share one branch).
 
 **Worktree path:** `/tmp/<project-name>-fix-issue-NNN`
 
+**Per-issue dispatch loop (B-proper, PR mode).** Same shape as the
+cherry-pick/direct loop above — iterate `CANDIDATE_ISSUES`, advance on
+research-failed / triage-skip / race-lost, bound by `DISPATCHED < N`.
+The only PR-mode-specific divergence is the `create-worktree.sh`
+invocation (passes `--branch-name fix/issue-NNN --allow-resume`) so
+each issue gets its own named branch + worktree (one PR per issue,
+unlike `/run-plan` PR mode where all phases share one branch). See the
+cherry-pick/direct subsection above for the rationale (B-proper
+structural change replacing the older PROSE-iterated `exit 0`
+race-loss arm).
+
 ```bash
-ISSUE_NUM=42
-BRANCH_NAME="fix/issue-${ISSUE_NUM}"
-PROJECT_NAME=$(basename "$PROJECT_ROOT")
-WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
-
-MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-
-# Acquire a single-host atomic claim on this issue BEFORE the worktree is
-# materialised. The per-issue dispatch is PROSE-iterated (no enclosing
-# fenced for-loop — verified by grep). On race-lost (exit 10), this fence
-# exits 0 to terminate cleanly; the orchestrator narratively proceeds to
-# the next issue's per-issue fence block. On filesystem error (exit 11),
-# the fence exits 11 to abort the sprint. The PreToolUse backstop hook
-# (block-fix-issue-unclaimed.sh) denies the create-worktree.sh call below
-# if no matching claim exists, so omitting this acquire fails closed at
-# runtime. (D2; round 4 option C; round 4b R4.3/DA4.5 — no `continue`.)
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
-bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
-     --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
-ACQ_RC=$?
-if [ "$ACQ_RC" = 10 ]; then
-  echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); skipping — orchestrator proceeds to next issue." >&2
-  exit 0   # terminate this per-issue fence; orchestrator narratively continues to next issue
-fi
-if [ "$ACQ_RC" != 0 ]; then
-  echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
-  exit "$ACQ_RC"
-fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+PROJECT_NAME=$(basename "$PROJECT_ROOT")
 
-# Resume detection stays directory-based (R2-M1): an existing fix worktree
-# means we're resuming the same issue across cron turns.
-if [ -d "$WORKTREE_PATH" ]; then
-  echo "Resuming existing fix worktree at $WORKTREE_PATH"
-else
-  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
-    --prefix fix-issue \
-    --branch-name "fix/issue-${ISSUE_NUM}" \
-    --allow-resume \
-    --purpose "fix-issues; issue=${ISSUE_NUM}" \
-    --pipeline-id "$PIPELINE_ID" \
-    "${ISSUE_NUM}")
-  RC=$?
-  if [ "$RC" -ne 0 ]; then
-    # W2.5.5 — release the just-acquired claim before sprint-abort so it
-    # doesn't leak until TTL. Only THIS issue's claim is in-flight at this
-    # moment (option C: inline acquire — earlier issues' agents are running
-    # with their own claims correctly held; later iterations haven't been
-    # acquired yet). `|| true` because release-after-failure is best-effort
-    # cleanup; the abort `exit "$RC"` below carries the real signal.
-    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
-    echo "create-worktree failed (rc=$RC) for /fix-issues PR mode (issue $ISSUE_NUM); released claim before abort" >&2
-    exit "$RC"
+DISPATCHED=0
+declare -a SKIP_RECORD=()   # appended as "<bucket>:<issue_num>" tokens.
+
+for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
+  [ "$DISPATCHED" -ge "$N" ] && break
+
+  # 1. Research-on-demand (same shape as cherry-pick/direct loop above).
+  if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
+    # Orchestrator dispatches `subagent_type: "general-purpose"`
+    # research agent for $ISSUE_NUM. Blocks until the agent commits a
+    # tracker row. Then refresh:
+    eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      "${CANDIDATE_ISSUES[@]}")"
+    read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
+    RESEARCHED_SET=()
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    unset __r
+    if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
+      echo "fix-issues Phase 3 (PR mode): research-on-demand did not commit a tracker row for #$ISSUE_NUM — skipping." >&2
+      SKIP_RECORD+=("research-failed:$ISSUE_NUM")
+      continue
+    fi
   fi
-fi
-# create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
-# underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
-# --allow-resume), .zskills-tracked (from --pipeline-id), and
-# .worktreepurpose writes.
+
+  # 2. Narrative triage classification — see "Triage" section above.
+  # CLASS computed inline by the orchestrator.
+  case "$CLASS" in
+    actionable-in-batch|actionable-do-pr) ;;
+    plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+      SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
+      continue
+      ;;
+    *)
+      echo "fix-issues Phase 3 (PR mode): unrecognised triage class '$CLASS' for #$ISSUE_NUM — aborting sprint." >&2
+      exit 1
+      ;;
+  esac
+
+  # 3. Acquire single-host atomic claim. On race-loss (exit 10), advance
+  # to next candidate (B-proper: visible `continue`, no `exit 0`). On
+  # filesystem error (exit 11+), abort sprint.
+  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" \
+       --pipeline-id "$PIPELINE_ID" --sprint-id "$SPRINT_ID"
+  ACQ_RC=$?
+  if [ "$ACQ_RC" = 10 ]; then
+    echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); advancing to next candidate." >&2
+    SKIP_RECORD+=("race-lost:$ISSUE_NUM")
+    continue
+  fi
+  if [ "$ACQ_RC" != 0 ]; then
+    echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
+    exit "$ACQ_RC"
+  fi
+
+  # 4. Materialise per-issue PR-mode worktree.
+  BRANCH_NAME="fix/issue-${ISSUE_NUM}"
+  WORKTREE_PATH="/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}"
+  # Resume detection stays directory-based (R2-M1): an existing fix
+  # worktree means we're resuming the same issue across cron turns.
+  if [ -d "$WORKTREE_PATH" ]; then
+    echo "Resuming existing fix worktree at $WORKTREE_PATH"
+  else
+    WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+      --prefix fix-issue \
+      --branch-name "$BRANCH_NAME" \
+      --allow-resume \
+      --purpose "fix-issues; issue=${ISSUE_NUM}" \
+      --pipeline-id "$PIPELINE_ID" \
+      "${ISSUE_NUM}")
+    RC=$?
+    if [ "$RC" -ne 0 ]; then
+      # W2.5.5 — release just-acquired claim before sprint-abort.
+      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+      echo "create-worktree failed (rc=$RC) for /fix-issues PR mode (issue $ISSUE_NUM); released claim before abort" >&2
+      exit "$RC"
+    fi
+  fi
+  # create-worktree.sh owns pre-flight prune+fetch+ff-merge, the
+  # underlying safe add (with ZSKILLS_ALLOW_BRANCH_RESUME=1 set via
+  # --allow-resume), .zskills-tracked (from --pipeline-id), and
+  # .worktreepurpose writes.
+
+  # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
+  # `subagent_type: "implementer"`, prompt prefixed with
+  # `FIRST: cd $WORKTREE_PATH`. PR mode: each branch's PR is opened in
+  # Phase 6 via `/land-pr` (per-issue).
+  DISPATCHED=$((DISPATCHED + 1))
+done
 ```
 
 **Dispatching fix agents in PR mode:** Dispatch agents WITHOUT
