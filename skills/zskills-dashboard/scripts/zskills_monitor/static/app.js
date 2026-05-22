@@ -1082,9 +1082,23 @@ function renderIssues(issues, queues) {
 // ------------------------------------------------------------- worktrees
 
 function landedPillClass(status) {
+  // Canonical `.landed` status vocabulary (tests/test-landed-status-vocabulary.sh):
+  //   full, landed                                            -> green  (landed-full)
+  //   partial                                                 -> orange (landed-partial)
+  //   pr-ready                                                -> blue   (landed-pr-ready)
+  //   pr-ci-failing, pr-failed, conflict, pr-state-unknown    -> orange (landed-pr-needs-attention)
+  //   failed, direct-push-failed, direct-verify-failed        -> red    (landed-failed)
+  // Issue #618 (mirror of #602 prose-side / #621 briefing.py).
   const s = (status || "").toLowerCase();
-  if (s === "full") return "pill-landed-full";
+  if (s === "full" || s === "landed") return "pill-landed-full";
   if (s === "partial") return "pill-landed-partial";
+  if (s === "pr-ready") return "pill-landed-pr-ready";
+  if (s === "pr-ci-failing" || s === "pr-failed" || s === "conflict" || s === "pr-state-unknown") {
+    return "pill-landed-pr-needs-attention";
+  }
+  if (s === "failed" || s === "direct-push-failed" || s === "direct-verify-failed") {
+    return "pill-landed-failed";
+  }
   return "pill-landed-not";
 }
 
