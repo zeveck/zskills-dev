@@ -521,6 +521,135 @@ print(f"ok={ok} ua={bool(has_ua)} sua={bool(has_sua)} eq={eq}")
   fi
 
   ###############################################################################
+  # Phase 2 (completed-backlog-sections) — backlog accepted, completed rejected,
+  # state-file version bumped to 1.2.
+  #
+  # NOTE: every PHASE-2 POST below preserves the existing `sample-plan`
+  # drafted entry and `42` triage entry so the downstream Issue #281
+  # regression block still finds them (the POST handler rewrites the
+  # entire state-file body each time; omitting them here would delete them).
+  ###############################################################################
+  echo ""
+  echo "=== Phase 2: backlog accepted / completed rejected / version 1.2 ==="
+
+  # W2.6 — validate_queue_body_accepts_backlog: POST with issues.backlog
+  # and plans.backlog returns 200 (validator returns None → handler writes).
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[{"slug":"sample-plan"}],"reviewed":[],"ready":[],"backlog":[{"slug":"backlog-plan"}]},"issues":{"triage":[42],"ready":[],"backlog":[123]}}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  if [ "$CODE" = "200" ]; then
+    pass "validate_queue_body_accepts_backlog: POST with plans.backlog + issues.backlog → 200"
+  else
+    fail "validate_queue_body_accepts_backlog: → $CODE (expected 200)"
+  fi
+
+  # W2.7 — validate_queue_body_rejects_completed_in_post (plans.completed)
+  RESP=$(curl -s -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[],"completed":[{"slug":"x"}]},"issues":{"triage":[],"ready":[]}}' \
+    -w '\n%{http_code}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  CODE=$(printf '%s\n' "$RESP" | tail -n1)
+  BODY=$(printf '%s\n' "$RESP" | sed '$d')
+  if [ "$CODE" = "400" ]; then
+    pass "validate_queue_body_rejects_completed_in_post: plans.completed → 400"
+  else
+    fail "validate_queue_body_rejects_completed_in_post: plans.completed → $CODE"
+  fi
+  if printf '%s' "$BODY" | grep -q "completed column is read-only"; then
+    pass "validate_queue_body_rejects_completed_in_post: plans error contains read-only message"
+  else
+    fail "validate_queue_body_rejects_completed_in_post: plans error missing read-only message: $BODY"
+  fi
+
+  # W2.7 — analogous case for issues.completed
+  RESP=$(curl -s -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[],"completed":[123]}}' \
+    -w '\n%{http_code}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  CODE=$(printf '%s\n' "$RESP" | tail -n1)
+  BODY=$(printf '%s\n' "$RESP" | sed '$d')
+  if [ "$CODE" = "400" ]; then
+    pass "validate_queue_body_rejects_completed_in_post: issues.completed → 400"
+  else
+    fail "validate_queue_body_rejects_completed_in_post: issues.completed → $CODE"
+  fi
+  if printf '%s' "$BODY" | grep -q "completed column is read-only"; then
+    pass "validate_queue_body_rejects_completed_in_post: issues error contains read-only message"
+  else
+    fail "validate_queue_body_rejects_completed_in_post: issues error missing read-only message: $BODY"
+  fi
+
+  # Clarifying assertion: the read-only message must NOT collide with the
+  # generic "unexpected ... column" path (W2.2 specificity contract).
+  if printf '%s' "$BODY" | grep -q "unexpected issues column"; then
+    fail "validate_queue_body_rejects_completed_in_post: completed error collides with generic unknown-column path"
+  else
+    pass "validate_queue_body_rejects_completed_in_post: completed error is distinct from generic unknown-column"
+  fi
+
+  # W2.8 — queue_post_roundtrip_backlog: POST a backlog entry, GET
+  # /api/state, assert entry is present AND persisted state file's
+  # "version" is "1.2". (sample-plan + 42 preserved so #281 regression
+  # block finds them downstream.)
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[{"slug":"sample-plan"}],"reviewed":[],"ready":[],"backlog":[{"slug":"backlog-roundtrip"}]},"issues":{"triage":[42],"ready":[],"backlog":[424242]}}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  if [ "$CODE" = "200" ]; then
+    pass "queue_post_roundtrip_backlog: POST → 200"
+  else
+    fail "queue_post_roundtrip_backlog: POST → $CODE"
+  fi
+  # State file must report version 1.2 and contain the new backlog entries.
+  if grep -q '"version": "1.2"' "$MR5/.zskills/monitor-state.json"; then
+    pass "queue_post_roundtrip_backlog: persisted state file version == 1.2"
+  else
+    fail "queue_post_roundtrip_backlog: persisted state file version != 1.2 ($(grep version "$MR5/.zskills/monitor-state.json" | head -1))"
+  fi
+  if grep -q '"backlog-roundtrip"' "$MR5/.zskills/monitor-state.json"; then
+    pass "queue_post_roundtrip_backlog: plans.backlog entry persisted"
+  else
+    fail "queue_post_roundtrip_backlog: plans.backlog entry missing in state file"
+  fi
+  if grep -q '424242' "$MR5/.zskills/monitor-state.json"; then
+    pass "queue_post_roundtrip_backlog: issues.backlog entry persisted"
+  else
+    fail "queue_post_roundtrip_backlog: issues.backlog entry missing in state file"
+  fi
+  # GET /api/state must also surface the new backlog entry.
+  GOT_BACKLOG=$(curl -sf -m 5 "http://127.0.0.1:$PORT_D/api/state" \
+    | PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    plans = (d.get("queues") or {}).get("plans") or {}
+    backlog = plans.get("backlog") or []
+    found = False
+    for ent in backlog:
+        if isinstance(ent, dict) and ent.get("slug") == "backlog-roundtrip":
+            found = True
+            break
+        if isinstance(ent, str) and ent == "backlog-roundtrip":
+            found = True
+            break
+    print("FOUND" if found else "MISSING")
+except Exception as e:
+    print(f"PARSE_ERROR: {e}")
+')
+  if [ "$GOT_BACKLOG" = "FOUND" ]; then
+    pass "queue_post_roundtrip_backlog: GET /api/state surfaces plans.backlog entry"
+  else
+    fail "queue_post_roundtrip_backlog: GET state missing backlog entry: $GOT_BACKLOG"
+  fi
+
+  ###############################################################################
   # Issue #281 regression — POST→GET main_root symmetry
   # POST handlers anchor on ctx['main_root']; GET /api/state must
   # surface that SAME root in snapshot.repo_root, even when the server
@@ -1022,6 +1151,27 @@ if start_server "$MR9" "$PORT_H"; then
   stop_server "$MR9/.zskills/dashboard-server.pid" "$PORT_H" >/dev/null
 else
   fail "couldn't start server for cache-bust test"
+fi
+
+###############################################################################
+# Phase 2 (completed-backlog-sections) W2.9 — static-source assertion:
+# every "version": "1.1" literal in server.py is gone, and the v1.2
+# replacement is present at every write site (>= 4).
+###############################################################################
+echo ""
+echo "=== Phase 2: state_file_version_bumped_all_sites ==="
+
+V11_COUNT=$(grep -c '"version": "1.1"' "$SERVER_PY" || true)
+V12_COUNT=$(grep -c '"version": "1.2"' "$SERVER_PY" || true)
+if [ "$V11_COUNT" = "0" ]; then
+  pass "state_file_version_bumped_all_sites: zero \"version\": \"1.1\" literals in server.py"
+else
+  fail "state_file_version_bumped_all_sites: $V11_COUNT \"version\": \"1.1\" literals still present"
+fi
+if [ "$V12_COUNT" -ge 4 ]; then
+  pass "state_file_version_bumped_all_sites: $V12_COUNT \"version\": \"1.2\" literals present (>= 4)"
+else
+  fail "state_file_version_bumped_all_sites: only $V12_COUNT \"version\": \"1.2\" literals (expected >= 4)"
 fi
 
 print_summary_and_exit

@@ -828,6 +828,52 @@ code, pre, .mono {
   flex: 1;
 }
 
+/* Phase 3 — Below-panel band (Backlog | Completed). Standalone 2-column
+   grid sibling of `.columns` (D3 — NOT composed with .columns-2). The
+   dashed border-top creates a visual separator from the active row so
+   the band reads as "off the active flow". `.below-panel-band[hidden]`
+   collapses the entire block when BOTH sub-columns are empty (W3.7);
+   Backlog ALONE renders even when empty, with a placeholder drop-target. */
+.below-panel-band {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
+@media (min-width: 700px) {
+  .below-panel-band { grid-template-columns: 1fr 1fr; }
+}
+
+.below-panel-band[hidden] { display: none; }
+
+/* Empty-Backlog placeholder — visible affordance for the drop-target. */
+.dropzone-placeholder {
+  list-style: none;
+  padding: 8px 6px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-style: italic;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+
+/* Phase 3 — Truncation banner (W3.7b). Non-dismissable, appears above
+   the Issues panel below-band when snap.flags.closed_issues_truncated
+   is true. Disappears automatically on the next snapshot where the
+   flag is absent / false. */
+.truncation-banner {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: 4px;
+  background: var(--surface2);
+}
+
 .dropzone.drop-target {
   background: rgba(88, 166, 255, 0.1);
   border-radius: 4px;

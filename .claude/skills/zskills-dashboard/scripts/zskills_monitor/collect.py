@@ -38,6 +38,7 @@ VERSION = "1.0"
 SNAPSHOT_TOP_LEVEL_KEYS = {
     "version",
     "updated_at",
+    "state_updated_at",
     "repo_root",
     "repo_url",
     "plans",
@@ -49,6 +50,7 @@ SNAPSHOT_TOP_LEVEL_KEYS = {
     "state_file_path",
     "errors",
     "issues_fetch_ok",
+    "flags",
 }
 
 # Landing-mode hint regex (canonical, per plan Shared Schemas).
@@ -121,6 +123,11 @@ _ISSUE_CACHE: Dict[str, Any] = {
     "had_value": False,
 }
 
+# Separate cache for the closed-issue fetch (D6 — independent cache key,
+# 60s TTL). Keyed by (days, limit) so a config change invalidates the
+# cache naturally instead of returning a stale narrower window.
+_CLOSED_ISSUE_CACHE: Dict[Tuple[int, int], Dict[str, Any]] = {}
+
 # Per-subsystem snapshot cache: maps (kind, main_root_str) →
 # (monotonic_ts, value, errors_from_that_call). On cache hit, the
 # captured errors are re-extended onto the new caller's errors list so
@@ -133,6 +140,7 @@ def _reset_issue_cache_for_tests() -> None:
     _ISSUE_CACHE["ts"] = 0.0
     _ISSUE_CACHE["issues"] = []
     _ISSUE_CACHE["had_value"] = False
+    _CLOSED_ISSUE_CACHE.clear()
 
 
 def _reset_snapshot_cache_for_tests() -> None:
@@ -1244,19 +1252,196 @@ def list_issues(
 
 
 # ---------------------------------------------------------------------------
+# Bounded closed-issue fetch (D6 — separate fetch, separate 60s cache)
+# ---------------------------------------------------------------------------
+
+
+def list_closed_issues_in_window(
+    errors: List[Dict[str, str]],
+    *,
+    days: int,
+    limit: int,
+    _now: Optional[float] = None,
+    _runner: Optional[Any] = None,
+) -> Tuple[List[Dict[str, Any]], bool]:
+    """Fetch recently-closed issues via `gh issue list --state closed`.
+
+    Per D6, runs a SEPARATE bounded call independent of the open-fetch
+    in `list_issues`. Cache is keyed by (days, limit) so a config bump
+    invalidates the prior narrower window naturally.
+
+    Returns `(issues, ok)`, mirroring the open-fetch contract. Each issue
+    dict carries `closed_at` (UTC ISO-8601 string from `entry.get("closedAt", "")`).
+
+    On gh failure: returns last cached entry for this (days, limit) key
+    if any, else `[]`; sets `ok=False`. Never raises.
+
+    `_now` and `_runner` are test-only injection seams.
+    """
+    now = _now if _now is not None else time.time()
+    key = (int(days), int(limit))
+    bucket = _CLOSED_ISSUE_CACHE.get(key)
+    if bucket and bucket.get("had_value") and (now - bucket["ts"]) < ISSUE_CACHE_TTL_SECONDS:
+        # Cache hit: most recent fetch succeeded; ok=True.
+        return list(bucket["issues"]), True
+
+    # Date filter: `now_utc - days` as `YYYY-MM-DD`.
+    cutoff_dt = datetime.fromtimestamp(now, tz=timezone.utc) - _delta_days(int(days))
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%d")
+
+    def _cached_or_empty() -> List[Dict[str, Any]]:
+        return list(bucket["issues"]) if (bucket and bucket.get("had_value")) else []
+
+    try:
+        runner = _runner or subprocess.run
+        result = runner(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--state",
+                "closed",
+                "--search",
+                f"closed:>={cutoff_str}",
+                "--limit",
+                str(int(limit)),
+                "--json",
+                "number,title,labels,createdAt,closedAt,body",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if getattr(result, "returncode", 1) != 0:
+            errors.append({
+                "source": "gh issue list (closed)",
+                "message": (getattr(result, "stderr", "") or "non-zero exit").strip(),
+            })
+            return _cached_or_empty(), False
+        try:
+            data = json.loads(result.stdout)
+        except Exception as exc:
+            errors.append({
+                "source": "gh issue list (closed)",
+                "message": f"json parse error: {exc}",
+            })
+            return _cached_or_empty(), False
+        if not isinstance(data, list):
+            errors.append({
+                "source": "gh issue list (closed)",
+                "message": "unexpected response shape",
+            })
+            return _cached_or_empty(), False
+        issues: List[Dict[str, Any]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            labels_raw = entry.get("labels") or []
+            labels: List[str] = []
+            for lab in labels_raw:
+                if isinstance(lab, dict):
+                    name = lab.get("name")
+                    if name:
+                        labels.append(str(name))
+                elif isinstance(lab, str):
+                    labels.append(lab)
+            issues.append({
+                "number": entry.get("number"),
+                "title": entry.get("title", ""),
+                "labels": labels,
+                "created_at": entry.get("createdAt", ""),
+                "closed_at": entry.get("closedAt", ""),
+                "body": entry.get("body", ""),
+            })
+        _CLOSED_ISSUE_CACHE[key] = {
+            "ts": now,
+            "issues": issues,
+            "had_value": True,
+        }
+        return list(issues), True
+    except FileNotFoundError as exc:
+        errors.append({
+            "source": "gh issue list (closed)",
+            "message": f"gh not found: {exc}",
+        })
+        return _cached_or_empty(), False
+    except Exception as exc:
+        errors.append({
+            "source": "gh issue list (closed)",
+            "message": str(exc),
+        })
+        return _cached_or_empty(), False
+
+
+def _delta_days(days: int):
+    """Return a timedelta(days=days). Helper to keep import surface local."""
+    from datetime import timedelta
+    return timedelta(days=days)
+
+
+# ---------------------------------------------------------------------------
 # Default-column inference (per plan Shared Schemas table)
 # ---------------------------------------------------------------------------
 
 
-def _infer_default_column(plan: Dict[str, Any]) -> Optional[str]:
+def _parse_iso_utc(value: str) -> Optional[datetime]:
+    """Parse an ISO-8601 string into a UTC-aware datetime.
+
+    Tolerates:
+      - Trailing `Z` (mapped to `+00:00`).
+      - Date-only strings (`YYYY-MM-DD`) — appended `T00:00:00+00:00`.
+      - Naive datetimes — treated as UTC.
+
+    Returns None on parse failure or empty input.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    # Date-only: pad with midnight UTC. `datetime.fromisoformat` accepts
+    # the date-only form but yields a naive datetime — pad explicitly so
+    # tz-aware comparisons stay safe (DA2.4 legacy-defensive normalization).
+    if len(raw) == 10 and raw.count("-") == 2:
+        raw = raw + "T00:00:00+00:00"
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _infer_default_column(
+    plan: Dict[str, Any],
+    *,
+    now_utc: datetime,
+    window_days: int,
+) -> Optional[str]:
     """Per the Shared Schemas inference table.
 
     Returns column name, or None if hidden.
+
+    For `status in ("complete","landed")`: returns `"completed"` when the
+    plan's `completed:` frontmatter field is within `window_days` of
+    `now_utc`. Returns None (hidden) when the field is absent or the date
+    falls outside the window — historical completes age out naturally.
     """
     status = (plan.get("status") or "").strip().lower()
     phases_done = int(plan.get("phases_done") or 0)
     if status in ("complete", "landed"):
-        return None  # hidden
+        completed_raw = plan.get("completed") or ""
+        completed_dt = _parse_iso_utc(completed_raw) if isinstance(completed_raw, str) else None
+        if completed_dt is None:
+            return None  # hidden (historical or unbackfilled)
+        from datetime import timedelta
+        cutoff = now_utc - timedelta(days=window_days)
+        if completed_dt >= cutoff:
+            return "completed"
+        return None  # outside window — hidden
     if status == "conflict":
         return "reviewed"
     if status == "active":
@@ -1268,6 +1453,28 @@ def _infer_default_column(plan: Dict[str, Any]) -> Optional[str]:
     return "drafted"
 
 
+def _infer_issue_default_column(
+    issue: Dict[str, Any],
+    *,
+    now_utc: datetime,
+    window_days: int,
+) -> str:
+    """Default-column inference for issues.
+
+    Returns `"completed"` when `closedAt` is set AND within `window_days`
+    of `now_utc`; otherwise `"triage"`. Mirrors `_infer_default_column`
+    but for issues, where the fallback default is `triage` (not `None`).
+    """
+    closed_raw = issue.get("closed_at") or ""
+    closed_dt = _parse_iso_utc(closed_raw) if isinstance(closed_raw, str) else None
+    if closed_dt is not None:
+        from datetime import timedelta
+        cutoff = now_utc - timedelta(days=window_days)
+        if closed_dt >= cutoff:
+            return "completed"
+    return "triage"
+
+
 # ---------------------------------------------------------------------------
 # State-file merge
 # ---------------------------------------------------------------------------
@@ -1277,17 +1484,30 @@ def _read_state_file(
     main_root: pathlib.Path,
     errors: List[Dict[str, str]],
 ) -> Dict[str, Any]:
-    """Read .zskills/monitor-state.json. Tolerate v1.0 and v1.1.
+    """Read .zskills/monitor-state.json. Tolerate v1.0 / v1.1 / v1.2.
 
-    Returns a dict with keys `default_mode`, `plans`, `issues`. On
-    parse failure, returns empty queues + appends an error.
+    Returns a dict with keys `version`, `default_mode`, `plans`, `issues`,
+    `updated_at`. The plans/issues dicts always include a `backlog` key
+    (W1.4); on v1.1 files without `backlog`, an empty list is supplied so
+    downstream `_annotate_*_queue` consumers can index uniformly.
+
+    Schema versions:
+      - v1.0: flat-string arrays for plan slugs.
+      - v1.1: per-plan `{slug, mode}` entry dicts; no `backlog`.
+      - v1.2: adds persistent `backlog` arrays. v1.1 fixtures still parse
+        cleanly (the generic iteration accepts any column name) — the
+        explicit `backlog` default just guarantees the key is always
+        present for downstream consumers.
+
+    On parse failure, returns empty queues (with `backlog: []` defaults)
+    and appends an error.
     """
     state_path = main_root / ".zskills" / "monitor-state.json"
     text = _read_text(state_path)
     empty: Dict[str, Any] = {
         "default_mode": "phase",
-        "plans": {},
-        "issues": {},
+        "plans": {"backlog": []},
+        "issues": {"backlog": []},
         "updated_at": "",
     }
     if text is None:
@@ -1333,6 +1553,13 @@ def _read_state_file(
         if isinstance(entries, list):
             issues_out[col] = list(entries)
 
+    # W1.4: guarantee `backlog` keys are present for downstream consumers
+    # (v1.1 files do not write them; v1.2 does).
+    if "backlog" not in plans_out:
+        plans_out["backlog"] = []
+    if "backlog" not in issues_out:
+        issues_out["backlog"] = []
+
     return {
         "version": version,
         "default_mode": default_mode,
@@ -1346,6 +1573,9 @@ def _annotate_plans_queue(
     plans: List[Dict[str, Any]],
     state: Dict[str, Any],
     main_root: Optional[pathlib.Path] = None,
+    *,
+    now_utc: Optional[datetime] = None,
+    window_days: int = 14,
 ) -> None:
     """Add `queue: {column, index, mode}` to each plan in-place.
 
@@ -1355,8 +1585,20 @@ def _annotate_plans_queue(
     in-flight chip). Gated on `main_root is not None` per the symmetric
     contract with `_annotate_issues_queue` (R2.6 fixture branch passes
     no main_root and must skip the filesystem read).
+
+    Precedence (W1.3 / D2 rule (i)): state-file explicit-position WINS
+    over inference — a plan present in the state file's `backlog` (or
+    `drafted`, etc.) stays there even if `status: complete` would
+    otherwise infer `completed`. Tested by W1.20.
+
+    `now_utc` defaults to current wall-clock UTC. `window_days` controls
+    the `completed:` recency window (D1, configurable via
+    `execution.dashboard_completed_days`).
     """
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
     state_plans: Dict[str, List[Dict[str, Any]]] = state.get("plans", {})
+    # state-file column iteration — picks up new columns from PLAN_COLUMNS / ISSUE_COLUMNS dynamically; conformance: tests/test-skill-conformance.sh
     # Build slug → (column, index, mode) lookup.
     pos: Dict[str, Tuple[str, int, Optional[str]]] = {}
     for col, entries in state_plans.items():
@@ -1378,7 +1620,9 @@ def _annotate_plans_queue(
             col, i, mode = pos[slug]
             plan["queue"] = {"column": col, "index": i, "mode": mode}
         else:
-            inferred = _infer_default_column(plan)
+            inferred = _infer_default_column(
+                plan, now_utc=now_utc, window_days=window_days,
+            )
             plan["queue"] = {"column": inferred, "index": -1, "mode": None}
         # Claim chip — explicit field allow-list (NOT **claim_dict).
         # NO `worktree_path`, NO `host_pid` — same scope discipline as
@@ -1399,6 +1643,9 @@ def _annotate_issues_queue(
     issues: List[Dict[str, Any]],
     state: Dict[str, Any],
     main_root: Optional[pathlib.Path] = None,
+    *,
+    now_utc: Optional[datetime] = None,
+    window_days: int = 14,
 ) -> None:
     """Add `queue: {column, index}` to each issue in-place.
 
@@ -1440,6 +1687,32 @@ def _annotate_issues_queue(
             skip_index = _build_skip_reason_index(issues_plan_path, ready_nums)
         claim_index = _read_claims(main_root)
 
+    if now_utc is None:
+        now_utc = datetime.now(timezone.utc)
+
+    # W1.3 dedupe-prefer-closed (DA3.7). The caller passes the merged
+    # list with open-fetch entries FIRST and closed-fetch entries SECOND.
+    # When the same issue # appears in both (cross-cache race per D6), we
+    # keep the LAST occurrence (closed-side) so the snapshot renders the
+    # issue once in the `completed` column rather than double-rendering
+    # in both `triage` and `completed`. Mutating the caller's list
+    # in-place keeps the post-call `issues` consistent with what the
+    # snapshot will surface (the merged + annotated view).
+    seen: Dict[int, int] = {}
+    dedup_indices: List[int] = []
+    for idx, issue in enumerate(issues):
+        num = issue.get("number")
+        if isinstance(num, int):
+            if num in seen:
+                # Later occurrence wins; mark the prior index for drop.
+                dedup_indices.append(seen[num])
+            seen[num] = idx
+    if dedup_indices:
+        drop_set = set(dedup_indices)
+        kept = [it for i, it in enumerate(issues) if i not in drop_set]
+        issues.clear()
+        issues.extend(kept)
+
     for issue in issues:
         num = issue.get("number")
         if isinstance(num, int) and num in pos:
@@ -1450,7 +1723,13 @@ def _annotate_issues_queue(
                 if reason is not None:
                     issue["skip_reason"] = reason
         else:
-            issue["queue"] = {"column": "triage", "index": -1}
+            # W1.2b — issue default-column inference. Closed-within-window
+            # issues land in `completed`; everything else falls through
+            # to `triage` (the prior unconditional default).
+            inferred_col = _infer_issue_default_column(
+                issue, now_utc=now_utc, window_days=window_days,
+            )
+            issue["queue"] = {"column": inferred_col, "index": -1}
         # Claim chip — explicit field allow-list (NOT **claim_dict) so
         # future-added claim fields never leak into the HTTP response
         # without a deliberate edit here. NO `host_pid` (removed per
@@ -1905,6 +2184,41 @@ def _now_iso() -> str:
     return datetime.now().astimezone().replace(microsecond=0).isoformat()
 
 
+# Defaults (W1.6 / D1 / DA2.1).
+DEFAULT_DASHBOARD_COMPLETED_DAYS = 14
+DEFAULT_DASHBOARD_COMPLETED_LIMIT = 500
+
+
+def _read_dashboard_completed_config(main_root: pathlib.Path) -> Tuple[int, int]:
+    """Resolve `execution.dashboard_completed_days` and
+    `execution.dashboard_completed_limit` from `.claude/zskills-config.json`.
+
+    Returns (days, limit). Missing / malformed / out-of-range values fall
+    back to the documented defaults (14 / 500). No third-party JSON
+    parser — Python stdlib `json` only.
+    """
+    days = DEFAULT_DASHBOARD_COMPLETED_DAYS
+    limit = DEFAULT_DASHBOARD_COMPLETED_LIMIT
+    cfg_path = main_root / ".claude" / "zskills-config.json"
+    text = _read_text(cfg_path)
+    if text is None:
+        return days, limit
+    try:
+        cfg = json.loads(text)
+    except Exception:
+        return days, limit
+    if not isinstance(cfg, dict):
+        return days, limit
+    execution = cfg.get("execution") if isinstance(cfg.get("execution"), dict) else {}
+    raw_days = execution.get("dashboard_completed_days")
+    raw_limit = execution.get("dashboard_completed_limit")
+    if isinstance(raw_days, int) and raw_days > 0:
+        days = raw_days
+    if isinstance(raw_limit, int) and raw_limit > 0:
+        limit = raw_limit
+    return days, limit
+
+
 def collect_snapshot(
     repo_root: Any,
     *,
@@ -1982,20 +2296,49 @@ def collect_snapshot(
     # per-plan dicts to be re-annotated to a consistent state.
     plans = list(plans)
 
+    # Dashboard Completed-window config (W1.6 / D1).
+    window_days, closed_limit = _read_dashboard_completed_config(main_root)
+    now_utc = datetime.now(timezone.utc)
+
     # State file merge (drives queue annotations + queues block).
     # Uncached — sub-ms read; staleness here would break the live-source
     # invariant for queue annotations.
     state = _read_state_file(main_root, errors)
     state_updated_at = state.get("updated_at", "")
-    _annotate_plans_queue(plans, state, main_root)
+    _annotate_plans_queue(
+        plans, state, main_root, now_utc=now_utc, window_days=window_days,
+    )
 
     # Issues. `issues_fetch_ok` is surfaced to the client (issue #336):
     # when False, the dashboard skips its prune-against-live-issues pass
     # in deepCloneQueues to prevent the cold-start corruption window
     # (process restart + first gh-list failure + user drag → wiped
     # monitor-state.json). Cache-hit within 60s TTL is treated as ok=True.
-    issues, issues_fetch_ok = list_issues(errors, _runner=issue_runner)
-    _annotate_issues_queue(issues, state, main_root)
+    open_issues, issues_fetch_ok = list_issues(errors, _runner=issue_runner)
+    # W1.1 / D6 — separate bounded fetch for closed issues. Fails
+    # independently of the open fetch (cold-start retention semantics).
+    closed_issues, closed_fetch_ok = list_closed_issues_in_window(
+        errors,
+        days=window_days,
+        limit=closed_limit,
+        _runner=issue_runner,
+    )
+    # Merge: open first, closed second. W1.3 dedupe-prefer-closed
+    # (DA3.7) is implemented inside `_annotate_issues_queue` by
+    # iterating in this order so the closed-side annotation overwrites
+    # the open-side annotation for any shared keys.
+    issues = list(open_issues) + list(closed_issues)
+    _annotate_issues_queue(
+        issues, state, main_root,
+        now_utc=now_utc, window_days=window_days,
+    )
+
+    # Truncation signal (W1.6 / DA3.4). When the closed fetch saturated
+    # the limit, the banner-side renderer needs the live integer to
+    # interpolate the message ("Showing 500 most-recent…").
+    closed_truncated = (
+        closed_fetch_ok and len(closed_issues) >= closed_limit
+    )
 
     # Worktrees + branches — TTL-cached subsystems (#514). Both run git
     # subprocesses; both change at human-action cadence (worktree create
@@ -2070,6 +2413,10 @@ def collect_snapshot(
         "state_file_path": ".zskills/monitor-state.json",
         "errors": _finalize_errors(errors),
         "issues_fetch_ok": issues_fetch_ok,
+        "flags": {
+            "closed_issues_truncated": bool(closed_truncated),
+            "closed_issues_limit": int(closed_limit),
+        },
     }
     return snapshot
 
@@ -2184,6 +2531,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Fixture mode skips the gh fetch entirely; report ok=True so
             # the snapshot's top-level-key contract stays stable (#336).
             "issues_fetch_ok": True,
+            "flags": {
+                "closed_issues_truncated": False,
+                "closed_issues_limit": DEFAULT_DASHBOARD_COMPLETED_LIMIT,
+            },
         }
     else:
         repo_root = args.repo_root or os.getcwd()

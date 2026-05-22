@@ -2897,6 +2897,86 @@ else
   fail "warn-skill-drift-test path missing PID suffix (issue #594)" "expected SKILL_DRIFT_FIXTURE=/tmp/zskills-warn-skill-drift-test-\$\$ in tests/test-hooks.sh"
 fi
 
+# ----------------------------------------------------------------------
+# zskills-dashboard PLAN_COLUMNS / ISSUE_COLUMNS four-site synchronization
+# ----------------------------------------------------------------------
+# Locks the FULL-TUPLE-ORDERING (not substring presence — per plan DA9) of
+# the column-list declarations across the four sites that must stay in
+# sync for the Completed + Backlog sub-column feature (plan
+# `plans/completed-backlog-sections.md`, Phase 5 W5.1).
+#
+# IMPORTANT asymmetry (Locked Decision D4 + W2.2 explicit reject):
+# `server.py`'s `PLAN_COLUMNS` / `ISSUE_COLUMNS` tuples DELIBERATELY OMIT
+# `"completed"` because `completed` is read-only on the API surface — the
+# `_validate_queue_body` validator hard-rejects POSTs to it with literal
+# error `"completed column is read-only"`. The frontend's `app.js`
+# `PLAN_COLUMNS` / `ISSUE_COLUMNS` arrays DO include `"completed"` because
+# the frontend RENDERS the completed band. The conformance patterns below
+# encode that asymmetry — if a future refactor "fixes" the inconsistency
+# by adding `completed` to the server tuples, this test will fail closed
+# and force the change to be done deliberately.
+#
+# `collect.py` is iterative (it iterates `state.get("plans", {}).items()`
+# / `state.get("issues", {}).items()` dynamically), so it doesn't have a
+# literal tuple — instead a comment marker anchored to this test file is
+# checked.
+DASHBOARD_ROOT="$REPO_ROOT/skills/zskills-dashboard/scripts/zskills_monitor"
+DASHBOARD_SERVER="$DASHBOARD_ROOT/server.py"
+DASHBOARD_APPJS="$DASHBOARD_ROOT/static/app.js"
+DASHBOARD_COLLECT="$DASHBOARD_ROOT/collect.py"
+
+# Site 1: server.py PLAN_COLUMNS — 4 elements, NO completed (D4).
+if grep -qE 'PLAN_COLUMNS *= *\("drafted", *"reviewed", *"ready", *"backlog"\)' "$DASHBOARD_SERVER"; then
+  pass "dashboard server.py PLAN_COLUMNS full-tuple-ordering (4 cols, no completed — D4)"
+else
+  fail "dashboard server.py PLAN_COLUMNS full-tuple-ordering (4 cols, no completed — D4)" 'expected PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog") in server.py'
+fi
+
+# Site 2: server.py ISSUE_COLUMNS — 3 elements, NO completed (D4).
+if grep -qE 'ISSUE_COLUMNS *= *\("triage", *"ready", *"backlog"\)' "$DASHBOARD_SERVER"; then
+  pass "dashboard server.py ISSUE_COLUMNS full-tuple-ordering (3 cols, no completed — D4)"
+else
+  fail "dashboard server.py ISSUE_COLUMNS full-tuple-ordering (3 cols, no completed — D4)" 'expected ISSUE_COLUMNS = ("triage", "ready", "backlog") in server.py'
+fi
+
+# Site 3: app.js PLAN_COLUMNS — 5 elements WITH completed.
+if grep -qE 'const PLAN_COLUMNS *= *\["drafted", *"reviewed", *"ready", *"backlog", *"completed"\]' "$DASHBOARD_APPJS"; then
+  pass "dashboard app.js PLAN_COLUMNS full-tuple-ordering (5 cols, with completed)"
+else
+  fail "dashboard app.js PLAN_COLUMNS full-tuple-ordering (5 cols, with completed)" 'expected const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "completed"] in app.js'
+fi
+
+# Site 4: app.js ISSUE_COLUMNS — 4 elements WITH completed.
+if grep -qE 'const ISSUE_COLUMNS *= *\["triage", *"ready", *"backlog", *"completed"\]' "$DASHBOARD_APPJS"; then
+  pass "dashboard app.js ISSUE_COLUMNS full-tuple-ordering (4 cols, with completed)"
+else
+  fail "dashboard app.js ISSUE_COLUMNS full-tuple-ordering (4 cols, with completed)" 'expected const ISSUE_COLUMNS = ["triage", "ready", "backlog", "completed"] in app.js'
+fi
+
+# Site 5: app.js deepCloneQueues — anchored on `for (const c of PLAN_COLUMNS)`
+# and `for (const c of ISSUE_COLUMNS)` symbol patterns. By reference these
+# cover the full tuple — deepCloneQueues is the allocator that initializes
+# every column key from the constant, so any column added to the constant
+# is automatically allocated.
+if grep -qE 'for \(const c of PLAN_COLUMNS\)' "$DASHBOARD_APPJS"; then
+  pass "dashboard app.js deepCloneQueues iterates PLAN_COLUMNS by reference"
+else
+  fail "dashboard app.js deepCloneQueues iterates PLAN_COLUMNS by reference" 'expected for (const c of PLAN_COLUMNS) in app.js'
+fi
+if grep -qE 'for \(const c of ISSUE_COLUMNS\)' "$DASHBOARD_APPJS"; then
+  pass "dashboard app.js deepCloneQueues iterates ISSUE_COLUMNS by reference"
+else
+  fail "dashboard app.js deepCloneQueues iterates ISSUE_COLUMNS by reference" 'expected for (const c of ISSUE_COLUMNS) in app.js'
+fi
+
+# Site 6: collect.py comment marker — documents the dynamic state-file
+# column iteration as the synchronization point.
+if grep -qF 'state-file column iteration — picks up new columns from PLAN_COLUMNS / ISSUE_COLUMNS dynamically; conformance: tests/test-skill-conformance.sh' "$DASHBOARD_COLLECT"; then
+  pass "dashboard collect.py state-file column iteration marker present"
+else
+  fail "dashboard collect.py state-file column iteration marker present" 'expected comment "state-file column iteration ... conformance: tests/test-skill-conformance.sh" in collect.py'
+fi
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

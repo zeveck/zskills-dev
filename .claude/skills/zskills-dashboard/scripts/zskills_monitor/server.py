@@ -71,8 +71,15 @@ ISSUE_RE = re.compile(r"^[0-9]+$")
 TRIGGER_CMD_RE = re.compile(r"^/work-on-plans(\s|$)")
 
 # State-file column shapes.
-PLAN_COLUMNS = ("drafted", "reviewed", "ready")
-ISSUE_COLUMNS = ("triage", "ready")
+# NOTE: `completed` is intentionally NOT in either tuple — Completed is
+# read-only on the API surface, derived per-snapshot from plan frontmatter
+# `completed:` field (plans) / GitHub issue state (issues). The POST
+# validator explicitly rejects `plans.completed` / `issues.completed`
+# bodies with a specific error containing "completed column is read-only"
+# (see _validate_queue_body); the generic unknown-column path is a
+# secondary backstop.
+PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog")
+ISSUE_COLUMNS = ("triage", "ready", "backlog")
 DEFAULT_MODE_VALUES = ("phase", "finish")
 
 # Sub-second alignment with the plan's date format
@@ -311,7 +318,7 @@ def _read_monitor_state(main_root: pathlib.Path) -> Dict[str, Any]:
     path = main_root / ".zskills" / "monitor-state.json"
     if not path.is_file():
         return {
-            "version": "1.1",
+            "version": "1.2",
             "default_mode": "phase",
             "plans": {c: [] for c in PLAN_COLUMNS},
             "issues": {c: [] for c in ISSUE_COLUMNS},
@@ -322,14 +329,14 @@ def _read_monitor_state(main_root: pathlib.Path) -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError, ValueError):
         # Treat as transient corruption — bootstrap.
         return {
-            "version": "1.1",
+            "version": "1.2",
             "default_mode": "phase",
             "plans": {c: [] for c in PLAN_COLUMNS},
             "issues": {c: [] for c in ISSUE_COLUMNS},
         }
     if not isinstance(loaded, dict):
         return {
-            "version": "1.1",
+            "version": "1.2",
             "default_mode": "phase",
             "plans": {c: [] for c in PLAN_COLUMNS},
             "issues": {c: [] for c in ISSUE_COLUMNS},
@@ -449,6 +456,15 @@ def _validate_queue_body(body: Any) -> Optional[str]:
     plans = body.get("plans")
     if not isinstance(plans, dict):
         return "plans must be an object"
+    # Explicit reject for `completed` — read-only API surface (derived
+    # per-snapshot from plan frontmatter `completed:`). Placed BEFORE the
+    # generic unknown-column loop so the error message is specific and
+    # diagnosable without server logs (DA6: hard-cut migration boundary).
+    if "completed" in plans:
+        return (
+            "completed column is read-only on the API; cannot accept POSTs "
+            "(derived per-snapshot from plan frontmatter completed: field)"
+        )
     for col in plans.keys():
         if col not in PLAN_COLUMNS:
             return f"unexpected plans column: {col}"
@@ -475,6 +491,15 @@ def _validate_queue_body(body: Any) -> Optional[str]:
     issues = body.get("issues")
     if not isinstance(issues, dict):
         return "issues must be an object"
+    # Explicit reject for `completed` — read-only API surface (derived
+    # per-snapshot from GitHub issue state). Placed BEFORE the generic
+    # unknown-column loop so the error message is specific and diagnosable
+    # without server logs (DA6: hard-cut migration boundary).
+    if "completed" in issues:
+        return (
+            "completed column is read-only on the API; cannot accept POSTs "
+            "(derived per-snapshot from GitHub issue state)"
+        )
     for col in issues.keys():
         if col not in ISSUE_COLUMNS:
             return f"unexpected issues column: {col}"
@@ -926,7 +951,7 @@ class MonitorHandler(BaseHTTPRequestHandler):
             existing = _read_monitor_state(main_root)
             existing_dm = existing.get("default_mode", "phase")
             new_doc = {
-                "version": "1.1",
+                "version": "1.2",
                 "default_mode": payload.get("default_mode", existing_dm),
                 "plans": {c: payload["plans"].get(c, []) for c in PLAN_COLUMNS},
                 "issues": {c: payload["issues"].get(c, []) for c in ISSUE_COLUMNS},
@@ -1207,6 +1232,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     sys.stderr.write(
         f"zskills dashboard listening on http://{BIND_HOST}:{port} "
         f"(main_root={main_root}, pid={os.getpid()})\n"
+    )
+    # Boot-time inspectability for the v1.1→v1.2 hard-cut migration
+    # boundary (DA6). Operators diagnosing "v1.2 client + v1.1 server"
+    # mismatch grep this line to confirm the server's column tuples and
+    # state-file schema version at boot.
+    sys.stderr.write(
+        f"PLAN_COLUMNS={PLAN_COLUMNS} ISSUE_COLUMNS={ISSUE_COLUMNS} "
+        f"state_version=1.2\n"
     )
     sys.stderr.flush()
     try:
