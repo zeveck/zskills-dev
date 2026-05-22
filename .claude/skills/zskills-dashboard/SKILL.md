@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.05.22+e174c4"
+  version: "2026.05.22+3c7b32"
 ---
 
 # /zskills-dashboard — Local Dashboard

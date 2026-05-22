@@ -473,6 +473,15 @@ function fingerprintPlans(plans, queues, defaultMode) {
       p.slug, p.title, p.status, p.landing_mode,
       p.phase_count, p.phases_done, p.blurb,
       pos[p.slug] || [(p.queue && p.queue.column) || "drafted", -1, null],
+      // Claim state — symmetric to fingerprintIssues' claim tuple.
+      // We track `last_heartbeat_at` (NOT `started_at`) so the chip
+      // re-renders when the pipeline emits a phase heartbeat —
+      // `ageStr` in the chip text is derived from heartbeat freshness,
+      // so a started_at-only fingerprint would let the chip's age go
+      // stale between phases. The 2-tuple is enough — pipeline_id
+      // changes when a new pipeline claims; last_heartbeat_at changes
+      // every phase refresh; both null when no claim.
+      p.claim ? [p.claim.pipeline_id || null, p.claim.last_heartbeat_at || null] : null,
     ]),
   });
 }
@@ -607,6 +616,51 @@ function buildPlanCard(plan, slug, col, defaultMode) {
       bar.appendChild(fill);
       card.appendChild(bar);
     }
+  }
+
+  // Claim chip (run-plan claim — plans/plans-claim-chip-parity.md Phase 3).
+  // Mirrors buildIssueCard's chip with three plan-context differences:
+  //   1. Chip text adds a phase fragment: "phase N/M" parsed from
+  //      claim.current_phase ("Phase 3" → N=3); falls back to "phase ?/M"
+  //      for unparseable section-name headers (e.g. "Parse plan").
+  //   2. Age string is derived from last_heartbeat_at (not started_at)
+  //      so the chip reflects heartbeat freshness — matches the
+  //      fingerprint discipline above.
+  //   3. data-kind="plan" is already encoded; the aria-disabled +
+  //      removeAttribute("draggable") block is identical to the issue
+  //      side and is honored by moveAllInColumn (kind-generic) and the
+  //      plan-up/down/left/right/plan-remove guard in handleAction.
+  if (plan && plan.claim) {
+    const c = plan.claim;
+    const hb = c.last_heartbeat_at || c.started_at || null;
+    const rt = hb ? relativeTime(hb) : "";
+    const ageStr = rt || "?";
+    const pidShort = c.pipeline_short || "?";
+    // Parse "Phase N" from current_phase. Section-name headers like
+    // "Parse plan" or "Post-landing tracking" yield NaN → fallback "?".
+    let curN = "?";
+    const cp = c.current_phase;
+    if (typeof cp === "string" && cp) {
+      const m = cp.match(/Phase\s+(\d+)/i);
+      if (m) curN = m[1];
+    }
+    const totalPhases = (plan.phase_count != null) ? plan.phase_count : "?";
+    const phaseStr = "phase " + curN + "/" + totalPhases;
+    const tip = c.pipeline_id
+      ? "claim pipeline=" + c.pipeline_id +
+        " started=" + (c.started_at || "?") +
+        " heartbeat=" + (c.last_heartbeat_at || "?") +
+        " current_phase=" + (c.current_phase || "?")
+      : "claim metadata pending";
+    const row = el("div", { cls: "card-sub" });
+    row.appendChild(el("span", {
+      cls: "claim-chip claim-chip--in-flight",
+      attrs: { title: tip },
+      text: "in-flight · " + pidShort + " · " + phaseStr + " · " + ageStr,
+    }));
+    card.appendChild(row);
+    card.setAttribute("aria-disabled", "true");
+    card.removeAttribute("draggable");
   }
 
   // Per-row mode chip on Ready cards (Phase 7).
@@ -2013,6 +2067,23 @@ async function handleAction(action, target) {
   const slug = target.getAttribute("data-slug");
   const numStr = target.getAttribute("data-number");
   const num = numStr ? parseInt(numStr, 10) : NaN;
+
+  // Guard: claimed plans are in-flight on another /run-plan pipeline.
+  // Block move and remove actions to prevent ghost-claim footgun
+  // (symmetric to the issue-side guard below — DA2.3 / DA11 of
+  // plans/plans-claim-chip-parity.md). Drag-disable alone is cosmetic;
+  // the keyboard move/remove buttons bypass the drag handler entirely.
+  // toggle-mode is allowed — the user can still re-pick landing mode
+  // on a claimed plan; only column/queue mutations are blocked.
+  if (action === "plan-up" || action === "plan-down" ||
+      action === "plan-left" || action === "plan-right" ||
+      action === "plan-remove") {
+    const claimedCard = target.closest('li.card[aria-disabled="true"][data-kind="plan"]');
+    if (claimedCard) {
+      showToast("Plan is in-flight; release the claim or wait for completion.", "info");
+      return;
+    }
+  }
 
   if (action === "plan-up") return movePlan(slug, "up");
   if (action === "plan-down") return movePlan(slug, "down");

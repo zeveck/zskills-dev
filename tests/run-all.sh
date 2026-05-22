@@ -177,6 +177,11 @@ run_suite "test-plan-claim-selection-filter.sh" "tests/test-plan-claim-selection
 run_suite "test-work-on-plans-parallel-selection.sh" "tests/test-work-on-plans-parallel-selection.sh"
 run_suite "test-plan-claim-filter-edge-cases.sh" "tests/test-plan-claim-filter-edge-cases.sh"
 run_suite "test-work-on-plans-pre-filter-sweep.sh" "tests/test-work-on-plans-pre-filter-sweep.sh"
+run_suite "test-plan-claim-collector.sh" "tests/test-plan-claim-collector.sh"
+run_suite "test-plan-claim-render-dom.sh" "tests/test-plan-claim-render-dom.sh"
+run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handleaction-guard.sh"
+run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.sh"
+run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

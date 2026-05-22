@@ -89,19 +89,31 @@ fi
 # the gate, since the gate and call can be separated by the existing
 # skip-index machinery.
 if grep -q '_read_claims(main_root)' "$COLLECT_PY"; then
-  GATE_LINE=$(grep -n 'if main_root is not None' "$COLLECT_PY" | head -1 | cut -d: -f1)
-  CALL_LINE=$(grep -n '_read_claims(main_root)' "$COLLECT_PY" | grep -v 'def _read_claims' | head -1 | cut -d: -f1)
-  if [ -n "$GATE_LINE" ] && [ -n "$CALL_LINE" ] && [ "$CALL_LINE" -gt "$GATE_LINE" ]; then
-    # Confirm no `else:` or dedented statement appears between gate and
-    # call — defensive against future refactors moving the call out.
-    BETWEEN=$(sed -n "$((GATE_LINE+1)),$((CALL_LINE-1))p" "$COLLECT_PY" | grep -E '^[^ ]|^    [^ ]' | grep -vE '^(    )+[^ ]' || true)
-    if [ -z "$BETWEEN" ]; then
-      pass "_annotate_issues_queue gates _read_claims call on main_root is not None"
-    else
-      fail "_annotate_issues_queue: _read_claims appears outside the main_root gate"
-    fi
+  # Anchor the gate search inside _annotate_issues_queue specifically.
+  # After Phase 3 (plans-claim-chip-parity), _annotate_plans_queue also
+  # contains its own `if main_root is not None:` gate for the parallel
+  # _read_plan_claims call; picking `head -1` across the whole file
+  # would target the plans-queue gate instead of the issues-queue gate
+  # that this assertion is about.
+  ANNOT_LINE=$(grep -n '^def _annotate_issues_queue' "$COLLECT_PY" | head -1 | cut -d: -f1)
+  if [ -z "$ANNOT_LINE" ]; then
+    fail "_annotate_issues_queue function definition not found"
   else
-    fail "_annotate_issues_queue does not gate _read_claims on main_root"
+    # First `if main_root is not None` line AT OR AFTER the function start.
+    GATE_LINE=$(awk -v start="$ANNOT_LINE" 'NR >= start && /if main_root is not None/ { print NR; exit }' "$COLLECT_PY")
+    CALL_LINE=$(awk -v start="$ANNOT_LINE" 'NR >= start && /_read_claims\(main_root\)/ && !/def _read_claims/ { print NR; exit }' "$COLLECT_PY")
+    if [ -n "$GATE_LINE" ] && [ -n "$CALL_LINE" ] && [ "$CALL_LINE" -gt "$GATE_LINE" ]; then
+      # Confirm no `else:` or dedented statement appears between gate and
+      # call — defensive against future refactors moving the call out.
+      BETWEEN=$(sed -n "$((GATE_LINE+1)),$((CALL_LINE-1))p" "$COLLECT_PY" | grep -E '^[^ ]|^    [^ ]' | grep -vE '^(    )+[^ ]' || true)
+      if [ -z "$BETWEEN" ]; then
+        pass "_annotate_issues_queue gates _read_claims call on main_root is not None"
+      else
+        fail "_annotate_issues_queue: _read_claims appears outside the main_root gate"
+      fi
+    else
+      fail "_annotate_issues_queue does not gate _read_claims on main_root"
+    fi
   fi
 else
   fail "_annotate_issues_queue does not call _read_claims(main_root)"
