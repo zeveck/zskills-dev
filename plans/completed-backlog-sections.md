@@ -1,7 +1,8 @@
 ---
 title: Completed + Backlog dashboard sections
 created: 2026-05-22
-status: active
+status: "complete"
+completed: "2026-05-22T11:51:59Z"
 ---
 
 # Plan: Completed + Backlog dashboard sections
@@ -68,11 +69,11 @@ The dominant constraint is **"surface bugs don't patch"**: the existing `_infer_
 
 | Phase | Status | Name |
 |---|---|---|
-| 1 | ✅ | Backend — `collect.py` + `monitor-state.json` schema v1.2 (`75fa6e2`) |
-| 2 | ✅ | Server — `PLAN_COLUMNS` / `ISSUE_COLUMNS` extension + version writers + validator (`d90d285`) |
-| 3 | ✅ | Frontend — rendering + below-panel band layout (`894926c`) |
-| 4 | ✅ | Drag-target wiring + Completed read-only semantics (`852dcb9`) |
-| 5 | ⬚ | Integration, conformance, end-to-end verification |
+| 1 | ✅ | Backend — `collect.py` + `monitor-state.json` schema v1.2 (`b7366ab`) |
+| 2 | ✅ | Server — `PLAN_COLUMNS` / `ISSUE_COLUMNS` extension + version writers + validator (`7a91948`) |
+| 3 | ✅ | Frontend — rendering + below-panel band layout (`5007e32`) |
+| 4 | ✅ | Drag-target wiring + Completed read-only semantics (`92dad7a`) |
+| 5 | ✅ | Integration, conformance, end-to-end verification (`999045b`) |
 
 ---
 

@@ -1,6 +1,47 @@
 # Plan Report — Completed + Backlog dashboard sections
 
-## Phase — 4 Drag-target wiring + Completed read-only semantics [UNFINALIZED]
+**Plan completed:** 2026-05-22 (status: complete + completed: ISO-UTC-Z written to frontmatter via Phase 5b).
+**Total commits on `feat/completed-backlog-sections`:** 17 (5 phase impl + 5 bookkeeping + 7 post-rebase repairs / signature merges).
+**Final test tally:** `Overall: 5898/5898 passed, 0 failed`.
+**Phase status:** all 5 ✅.
+
+## Phase — 5 Integration, conformance, end-to-end verification
+
+**Plan:** plans/completed-backlog-sections.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-completed-backlog-sections (branch `feat/completed-backlog-sections`)
+**Commits:** `999045b`
+
+### Work Items
+
+| #     | Item                                                                | Status   | Notes                                                                                                                                       |
+| ----- | ------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| W5.1  | Four-site `PLAN_COLUMNS` / `ISSUE_COLUMNS` conformance grep         | Done     | 7 assertions in `tests/test-skill-conformance.sh:2900-2976`. Encodes server/frontend tuple asymmetry per D4 with prose comment.            |
+| W5.2  | Full suite + pass-count gating                                      | Done     | `Overall: 5898/5898 passed, 0 failed`. Pre-Phase-5 baseline 5891; delta +7 matches new conformance assertions exactly.                       |
+| W5.3  | Playwright-cli end-to-end                                           | Deferred | Empty `dev_server.cmd` in project config; JSDOM harnesses from Phases 3-4 cover DOM-level invariants. Recipe documented in PR body.        |
+| W5.4  | #618 follow-up                                                      | Moot     | PR #636 landed independently 2026-05-22T07:57:38Z. All 11 canonical statuses verified present in `landedPillClass()` at `app.js:1358-1377`. |
+| W5.5  | Final `skills/zskills-dashboard/SKILL.md metadata.version` bump     | Done     | `2026.05.22+42ffc1` after Phase 5's comment-marker edit shifted content hash. Mirror parity verified.                                       |
+| W5.6  | PR test plan checkboxes + body                                      | Done     | `/tmp/pr-body-completed-backlog-sections.md` composed. 6 checked items + 1 unchecked-annotated playwright deferral.                         |
+| W5.7  | Conformance test extension                                          | Done     | Same artifact as W5.1.                                                                                                                       |
+
+### Verification
+
+- **Test suite:** `Overall: 5898/5898 passed, 0 failed`.
+- **Acceptance criteria:** AC5.1, AC5.2, AC5.4, AC5.5 all met. AC5.3 N/A-by-deferral.
+- **No PLAN-TEXT-DRIFT tokens.**
+- **Scope-creep check:** clean — 6 files in expected paths + one mode-only mirror sync (`claim-fence-helpers.sh`: PR #645-era source/mirror inconsistency, now consistent at 644).
+
+### Plan-wide outcome
+
+The feature ships a fully-bidirectional Triage↔Backlog and Drafted↔Backlog drag affordance with a read-only Completed band derived per-snapshot from GitHub `closedAt` (issues) and plan-frontmatter `completed:` (plans). Backend state schema bumped to v1.2 with a documented v1.1↔v1.2 hard-cut migration. Server validator rejects POSTs to `completed` with literal `"completed column is read-only"`. Frontend renders below-panel Backlog + Completed bands with truncation banner and count-derived collapse. Phase 5's conformance test locks the deliberate server-omits-`completed` asymmetry (D4) across four literal sites so any future refactor "fixing the inconsistency" must do so deliberately.
+
+### User Sign-off
+
+(Manual playwright-cli walkthrough deferred per the project's empty `dev_server.cmd`. JSDOM harnesses cover DOM-level invariants; consumer projects with configured dev servers can layer real-event tests on top.)
+
+---
+
+## Phase — 4 Drag-target wiring + Completed read-only semantics
 
 **Plan:** plans/completed-backlog-sections.md
 **Status:** Completed (verified)
