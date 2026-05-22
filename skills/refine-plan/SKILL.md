@@ -1,7 +1,7 @@
 ---
 name: refine-plan
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [guidance...]"
+argument-hint: "<plan-file> [rounds N] [auto] [guidance...]"
 description: >-
   Refine an in-progress plan by reviewing remaining phases against
   completed work. Dispatches reviewer + devil's-advocate agents to surface
@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.05.21+289f05"
+  version: "2026.05.22+cdf69d"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
@@ -120,7 +120,7 @@ fi
 ## Arguments
 
 ```
-/refine-plan <plan-file> [rounds N] [guidance...]
+/refine-plan <plan-file> [rounds N] [auto] [guidance...]
 ```
 
 - **plan-file** (required) — path to the plan `.md` file to refine.
@@ -128,13 +128,26 @@ fi
   process exits early if a round converges (no substantive new issues).
   Default is 2 (not 3 like `/draft-plan`) because this is a refinement
   pass on an existing plan, not blank-slate creation.
+- **auto** (optional positional token) — after the worktree auto-commit
+  in Phase 5 succeeds, dispatch `/land-pr` to push the branch, open a
+  PR, monitor CI, and auto-merge. Without `auto`, the refined plan is
+  committed in the worktree but no PR is opened. Mirrors `auto` in
+  `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, `/draft-plan`.
 
 **Detection:** scan `$ARGUMENTS` from the start:
 - The **first token** ending in `.md` is the plan file. If the token contains `/`, use as-is; otherwise resolve via `$ZSKILLS_PLANS_DIR/<token>` (sourcing `.claude/skills/update-zskills/scripts/zskills-paths.sh` from the orchestrator's bash fence; falls back to `plans/` when config silent).
 - `rounds` followed by a numeric argument sets max cycles. (`rounds` not followed by a number is treated as guidance text, not the keyword.)
-- Any tokens not matched as the plan file or `rounds N` keyword are joined with spaces into **guidance text** — prepended to the reviewer + devil's advocate agent prompts in Phase 2 as a "User-driven scope/focus directive" section.
+- `auto` (whitespace-anchored, case-insensitive) sets `AUTO_FLAG=1` for the Phase 5 `/land-pr` dispatch. The token is consumed by the flag parse and does NOT enter guidance text.
+- Any tokens not matched as the plan file or `rounds N` keyword OR the `auto` token are joined with spaces into **guidance text** — prepended to the reviewer + devil's advocate agent prompts in Phase 2 as a "User-driven scope/focus directive" section.
 - Empty guidance preserves today's reviewer/DA prompt output (no behavior change for invocations without trailing guidance tokens).
-- If no plan file is detected, **error:** "No plan file specified. Usage: `/refine-plan <plan-file> [rounds N] [guidance...]`"
+- If no plan file is detected, **error:** "No plan file specified. Usage: `/refine-plan <plan-file> [rounds N] [auto] [guidance...]`"
+
+```bash
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
+```
 
 Examples:
 - `/refine-plan plans/EXECUTION_MODES.md`
@@ -633,6 +646,63 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
     git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "$COMMIT_MSG_SUBJECT"
   else
     git -C "$TOPLEVEL" commit -m "$COMMIT_MSG_SUBJECT"
+  fi
+fi
+```
+
+### Auto-land via /land-pr (when `auto` was passed)
+
+Issue #581: in projects with `execution.landing: pr` +
+`main_protected: true`, the refined plan file is committed in the
+worktree (above) but never reaches main without a `/land-pr` dispatch.
+When the user passed the `auto` positional token, dispatch `/land-pr` so
+the branch pushes, a PR opens, CI runs, and auto-merge lands the refined
+plan on main. Without `auto`, the worktree commit stands and the caller
+lands manually.
+
+```bash
+if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  BRANCH_NAME=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+  SLUG="$TRACKING_ID"
+  PR_TITLE="docs(plans): refine $(basename "$PLAN_FILE" .md) via /refine-plan"
+  BODY_FILE="/tmp/pr-body-refine-plan-${SLUG}-$$.md"
+  RESULT_FILE="/tmp/land-pr-result-refine-plan-${SLUG}-$$.txt"
+  cat > "$BODY_FILE" <<BODY
+## Summary
+
+\`/refine-plan\` updated \`$PLAN_FILE\` via $ROUND round(s) of adversarial
+review (reviewer + devil's-advocate + refiner). Completed phases were
+NOT modified (checksum-gated). Pending phases were refined; \`## Drift
+Log\` and \`## Plan Review\` sections appended.
+
+## Test plan
+
+- [x] Refined plan committed on the refine-plan branch (worktree-isolated)
+- [x] Completed-phase byte-identity verified via Phase-1 checksums
+- [ ] No functional tests — this PR ships a plan document only; CI will
+      run skill-conformance / hook / fixture suites
+BODY
+  LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=refine-plan --worktree-path=$TOPLEVEL --tracking-id=refine-plan.$SLUG --auto"
+
+  # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+  # Allow-list parse the /land-pr result (canonical caller-loop pattern —
+  # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
+  if [ -f "$RESULT_FILE" ]; then
+    declare -A LP
+    while IFS='=' read -r KEY VALUE; do
+      case "$KEY" in
+        STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
+          LP["$KEY"]="$VALUE" ;;
+        "") ;;
+        *) ;;  # unknown keys ignored (forward-compat)
+      esac
+    done < "$RESULT_FILE"
+    echo "/land-pr: STATUS=${LP[STATUS]:-?} CI_STATUS=${LP[CI_STATUS]:-?} PR=${LP[PR_URL]:-none}" >&2
+    rm -f "$RESULT_FILE"
+  else
+    echo "WARN: /refine-plan: /land-pr produced no result file at $RESULT_FILE" >&2
   fi
 fi
 ```

@@ -1,22 +1,26 @@
 ---
 name: land-pr
 user-invocable: false
-description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
+description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.21+d0346f"
+  version: "2026.05.22+1186c0"
 ---
 
 # /land-pr — land a feature branch as a PR
 
 `/land-pr` owns the rebase → push → create-or-detect → monitor → merge
 sequence for a feature branch that is already in a presentable state.
-Five callers (`/run-plan`, `/commit pr`, `/do pr`, `/fix-issues pr`,
-`/quickfix`) dispatch into this skill via the Skill tool. `/land-pr` is
-a helper, not a user-facing command: the API requires `--body-file` and
-`--result-file`, both of which only make sense when a caller has set
-them up. Users wanting to ship an existing branch should use `/commit pr`,
-which dispatches `/land-pr` internally with the right arguments.
+Eight callers dispatch into this skill via the Skill tool: the five
+implementation callers (`/run-plan`, `/commit pr`, `/do pr`,
+`/fix-issues pr`, `/quickfix`) and the three drafting callers
+(`/draft-plan`, `/refine-plan`, `/draft-tests` — added per issue #581 so
+their worktree-committed plan/spec files reach main under
+`landing: pr` + `main_protected: true`). `/land-pr` is a helper, not a
+user-facing command: the API requires `--body-file` and `--result-file`,
+both of which only make sense when a caller has set them up. Users
+wanting to ship an existing branch should use `/commit pr`, which
+dispatches `/land-pr` internally with the right arguments.
 
 The skill is a **prose-driven procedure**: when invoked, you (Claude) read
 this SKILL.md and execute the procedure step-by-step, calling the four

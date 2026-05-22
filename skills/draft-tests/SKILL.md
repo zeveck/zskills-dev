@@ -1,7 +1,7 @@
 ---
 name: draft-tests
 disable-model-invocation: false
-argument-hint: "<plan-file> [rounds N] [guidance...]"
+argument-hint: "<plan-file> [rounds N] [auto] [guidance...]"
 description: >-
   Draft test specifications into an existing plan through iterative
   adversarial review. Appends a `### Tests` subsection per pending phase
@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.22+73cefd"
+  version: "2026.05.22+f25079"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -124,7 +124,7 @@ fi
 ## Arguments
 
 ```
-/draft-tests <plan-file> [rounds N] [guidance...]
+/draft-tests <plan-file> [rounds N] [auto] [guidance...]
 ```
 
 - **plan-file** (required) — path to the plan `.md` file. If the token
@@ -136,10 +136,16 @@ fi
   `/draft-plan`; `/refine-plan`'s default is 2 because it operates on an
   already-refined plan, while `/draft-tests` is typically blank-slate
   spec drafting).
-- **guidance...** (optional) — any tokens not matched as plan file or
-  `rounds N` are joined with spaces into **guidance text** — prepended
-  to BOTH the reviewer and devil's-advocate prompts in Phase 4 as a
-  "User-driven scope/focus directive" section, mirroring
+- **auto** (optional positional token) — after the worktree auto-commit
+  in Phase 6 succeeds, dispatch `/land-pr` to push the branch, open a
+  PR, monitor CI, and auto-merge. Without `auto`, the spec-augmented
+  plan is committed in the worktree but no PR is opened. Mirrors `auto`
+  in `/run-plan`, `/do`, `/fix-issues`, `/quickfix`, `/draft-plan`,
+  `/refine-plan`.
+- **guidance...** (optional) — any tokens not matched as plan file,
+  `rounds N`, or `auto` are joined with spaces into **guidance text** —
+  prepended to BOTH the reviewer and devil's-advocate prompts in Phase 4
+  as a "User-driven scope/focus directive" section, mirroring
   `/refine-plan`'s positional-tail semantics. Empty guidance preserves
   byte-identical reviewer/DA prompt output (regression-safe). Guidance
   is **priming context** that shapes WHAT the agents pressure-test —
@@ -153,10 +159,20 @@ fi
 - `rounds` followed by a numeric argument sets max cycles. (`rounds`
   not followed by a number is treated as guidance text, not the
   keyword.)
-- Any tokens not matched as the plan file or `rounds N` keyword are
-  joined with spaces into guidance text.
+- `auto` (whitespace-anchored, case-insensitive) sets `AUTO_FLAG=1` for
+  the Phase 6 `/land-pr` dispatch. The token is consumed by the flag
+  parse and does NOT enter guidance text.
+- Any tokens not matched as the plan file, `rounds N` keyword, or the
+  `auto` token are joined with spaces into guidance text.
 - If no plan file is detected, **error:**
-  `Usage: /draft-tests <plan-file> [rounds N] [guidance...]`
+  `Usage: /draft-tests <plan-file> [rounds N] [auto] [guidance...]`
+
+```bash
+AUTO_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
+  AUTO_FLAG=1
+fi
+```
 
 Examples:
 - `/draft-tests plans/FEATURE.md`
@@ -1846,6 +1862,64 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
     git -C "$TOPLEVEL" commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" -m "$COMMIT_MSG_SUBJECT"
   else
     git -C "$TOPLEVEL" commit -m "$COMMIT_MSG_SUBJECT"
+  fi
+fi
+```
+
+### Auto-land via /land-pr (when `auto` was passed)
+
+Issue #581: in projects with `execution.landing: pr` +
+`main_protected: true`, the plan with appended test specs is committed
+in the worktree (above) but never reaches main without a `/land-pr`
+dispatch. When the user passed the `auto` positional token, dispatch
+`/land-pr` so the branch pushes, a PR opens, CI runs, and auto-merge
+lands the test-spec-augmented plan on main. Without `auto`, the
+worktree commit stands and the caller lands manually.
+
+```bash
+if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  BRANCH_NAME=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
+  SLUG="$TRACKING_ID"
+  PR_TITLE="docs(tests): draft test specs for $(basename "$PLAN_FILE" .md) via /draft-tests"
+  BODY_FILE="/tmp/pr-body-draft-tests-${SLUG}-$$.md"
+  RESULT_FILE="/tmp/land-pr-result-draft-tests-${SLUG}-$$.txt"
+  cat > "$BODY_FILE" <<BODY
+## Summary
+
+\`/draft-tests\` appended \`### Tests\` subsections to Pending phases of
+\`$PLAN_FILE\` via adversarial review (senior-QE reviewer +
+devil's-advocate + refiner). Completed phases were NOT modified
+(checksum-gated).
+
+## Test plan
+
+- [x] Test-spec-augmented plan committed on the draft-tests branch
+      (worktree-isolated)
+- [x] Completed-phase byte-identity verified via Phase-1 checksums
+- [ ] No functional tests — this PR ships test SPECS in a plan document;
+      CI will run skill-conformance / hook / fixture suites
+BODY
+  LAND_ARGS="--branch=$BRANCH_NAME --title=\"$PR_TITLE\" --body-file=$BODY_FILE --result-file=$RESULT_FILE --landed-source=draft-tests --worktree-path=$TOPLEVEL --tracking-id=draft-tests.$SLUG --auto"
+
+  # Skill: { skill: "land-pr", args: "$LAND_ARGS" }
+
+  # Allow-list parse the /land-pr result (canonical caller-loop pattern —
+  # never `source`). See skills/land-pr/references/caller-loop-pattern.md.
+  if [ -f "$RESULT_FILE" ]; then
+    declare -A LP
+    while IFS='=' read -r KEY VALUE; do
+      case "$KEY" in
+        STATUS|PR_URL|PR_NUMBER|CI_STATUS|PR_STATE|REASON)
+          LP["$KEY"]="$VALUE" ;;
+        "") ;;
+        *) ;;  # unknown keys ignored (forward-compat)
+      esac
+    done < "$RESULT_FILE"
+    echo "/land-pr: STATUS=${LP[STATUS]:-?} CI_STATUS=${LP[CI_STATUS]:-?} PR=${LP[PR_URL]:-none}" >&2
+    rm -f "$RESULT_FILE"
+  else
+    echo "WARN: /draft-tests: /land-pr produced no result file at $RESULT_FILE" >&2
   fi
 fi
 ```
