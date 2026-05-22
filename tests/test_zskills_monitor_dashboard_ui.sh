@@ -894,17 +894,28 @@ else
   fail "W3.5 / D3: .below-panel-band composed with .columns-2 (D3 violation)"
 fi
 
-# W3.7 — Count-derived collapse. Band sets `hidden` only when BOTH
-# sub-columns are empty; Backlog renders a placeholder when empty.
+# W3.7 (post-#650 reversal) — Below-panel band ALWAYS visible. The prior
+# count-derived collapse (`if (totalCount === 0) band.setAttribute("hidden", "")`)
+# was removed because the collapsing band created a moving-target UX:
+# Backlog should always present as a stable drop affordance, and Completed
+# should always show its header (even at 0) so the user has a stable
+# spatial anchor. Backlog still renders a placeholder when empty.
 BAND_BODY=$(awk '
   /^function renderBelowPanelBand\(/ { flag=1 }
   flag { print }
   flag && /^}$/ { exit }
 ' "$APP_JS")
-if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden", ""\)'; then
-  pass "W3.7: band sets hidden when totalCount (Backlog + Completed) is 0"
+# Negative assertion: the collapse predicate must NOT exist anymore.
+if echo "$BAND_BODY" | grep -qE 'setAttribute\("hidden"'; then
+  fail "W3.7: band must NOT call setAttribute('hidden',...) — collapse logic removed in post-#650 reversal"
 else
-  fail "W3.7: collapse logic missing or wrong predicate"
+  pass "W3.7: band has no setAttribute('hidden',...) call — always-visible reversal landed"
+fi
+# Negative assertion: the dead totalCount accumulator must also be gone.
+if echo "$BAND_BODY" | grep -qE 'totalCount \+= arr\.length'; then
+  fail "W3.7: dead totalCount accumulator still present — should be removed"
+else
+  pass "W3.7: dead totalCount accumulator removed alongside collapse predicate"
 fi
 if echo "$BAND_BODY" | grep -qE 'if \(c === "backlog" && arr\.length === 0\)'; then
   pass "W3.7: Backlog renders placeholder drop-target when empty"
@@ -996,29 +1007,32 @@ else
   fail "renders_backlog_band_below_plans_panel — buildPlanCard not invoked in band"
 fi
 
-# W3.11 — below_panel_band_visible_when_backlog_empty_but_no_completed
-# Backlog is always a visible drop-target; band stays visible whenever
-# Backlog has items (totalCount > 0). Test the predicate: collapse fires
-# ONLY when totalCount === 0 (both empty), NOT when one is empty.
-if echo "$BAND_BODY" | grep -qE 'totalCount \+= arr\.length'; then
-  pass "below_panel_band_visible_when_backlog_empty_but_no_completed — totalCount sums BOTH sub-columns"
+# W3.11 (post-#650 reversal; was below_panel_band_visible_when_backlog_empty_but_no_completed)
+# Reframed: the band is ALWAYS visible, no matter which sub-column is
+# empty. The Backlog dropzone must be present (it's the user's defer
+# affordance) and Completed must render its header even at zero.
+if echo "$BAND_BODY" | grep -qE 'data-column": c'; then
+  pass "below_panel_band_always_visible — Backlog dropzone <ul> wired (data-column=c, accepts drops)"
 else
-  fail "below_panel_band_visible_when_backlog_empty_but_no_completed — totalCount accumulator missing"
+  fail "below_panel_band_always_visible — Backlog dropzone <ul> missing data-column wiring"
 fi
-# Predicate must be `=== 0`, not `<= 0` or `!== ...` — exact-zero gate.
-if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden"'; then
-  pass "below_panel_band_visible_when_backlog_empty_but_no_completed — collapse predicate is exact-zero (both-empty)"
+# Completed column-head must be appended unconditionally; the loop over
+# BELOW_BAND_COLUMNS already does this, but pin the absence of any
+# completed-specific skip-when-empty guard.
+if echo "$BAND_BODY" | grep -qE 'completed.*continue|completed.*return'; then
+  fail "below_panel_band_always_visible — Completed has an early-skip when empty (should always render)"
 else
-  fail "below_panel_band_visible_when_backlog_empty_but_no_completed — collapse predicate wrong"
+  pass "below_panel_band_always_visible — Completed renders unconditionally (no skip-when-empty)"
 fi
 
-# W3.12 — below_panel_band_collapse_when_both_empty
-# Already exercised by W3.7 predicate test above; pin under the named
-# acceptance label for explicit phase coverage.
-if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden"'; then
-  pass "below_panel_band_collapse_when_both_empty — hidden attribute set on zero-count band"
+# W3.12 (post-#650 reversal; was below_panel_band_collapse_when_both_empty)
+# Old behavior: band sets `hidden=""` when totalCount===0. New behavior:
+# band always renders so the spatial layout is stable. Assert the
+# inversion: no `hidden` attribute is ever set on the band element.
+if echo "$BAND_BODY" | grep -qE 'band\.setAttribute\("hidden"'; then
+  fail "below_panel_band_always_visible_with_backlog_droptarget — band must NOT set hidden attribute"
 else
-  fail "below_panel_band_collapse_when_both_empty — hidden attr never set"
+  pass "below_panel_band_always_visible_with_backlog_droptarget — band does not call setAttribute('hidden') (always visible)"
 fi
 
 # W3.12b — truncation_banner_renders_with_actual_limit_value
@@ -1115,16 +1129,19 @@ else
   fail "W4.12b onDrop missing completed-target reject (AC4.6)"
 fi
 
-# W4.12c — D5 leftmost-active rewrite on backlog-source drag.
+# W4.12c (post-#650 reversal) — D5 leftmost-active rewrite REMOVED.
+# Drops from Backlog now land where dropped (the user's chosen active
+# column is honored). Assert the inversion: no sourceColumn==='backlog'
+# branch survives, and a comment notes the reversal.
 if echo "$ONDROP_BODY" | grep -qE 'sourceColumn === "backlog"'; then
-  pass "W4.12c onDrop applies D5 backlog leftmost-rewrite (AC4.5)"
+  fail "W4.12c onDrop still rewrites backlog drops — D5 rewrite should be removed (post-#650 reversal, AC4.5 inverted)"
 else
-  fail "W4.12c onDrop missing D5 backlog rewrite branch"
+  pass "W4.12c onDrop no longer rewrites backlog→active drops (lands where dropped; post-#650 reversal)"
 fi
-if echo "$ONDROP_BODY" | grep -qE 'D5'; then
-  pass "W4.12c onDrop carries explicit D5 code-comment citation (W4.4)"
+if echo "$ONDROP_BODY" | grep -qE 'overrides plan D5|post-#650|land where dropped'; then
+  pass "W4.12c onDrop has a comment noting the D5 design reversal"
 else
-  fail "W4.12c onDrop missing explicit D5 citation comment"
+  fail "W4.12c onDrop missing D5-reversal comment — future readers won't know the inversion is intentional"
 fi
 
 ###############################################################################

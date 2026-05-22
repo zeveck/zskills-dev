@@ -809,14 +809,21 @@ code, pre, .mono {
 
 .column-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4em;
   padding: 2px 4px;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
 }
+
+/* Push the move-all chevron group to the trailing edge of the column-head
+   while keeping the label/count pair tight (gap: 0.4em) at the leading
+   edge. Replaces the previous `justify-content: space-between` which
+   spread three children evenly and produced "Drafted66" — count touching
+   label — when the column was narrow. */
+.column-head .move-all-group { margin-left: auto; }
 
 .dropzone {
   list-style: none;
