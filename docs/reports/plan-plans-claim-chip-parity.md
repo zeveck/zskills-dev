@@ -1,5 +1,49 @@
 # Plan Report — plans-claim-chip-parity
 
+## Plan complete ✅
+
+All 6 phases done. Frontmatter `status: complete`. Branch `feat/plans-claim-chip-parity` landed via /land-pr.
+
+## Phase — 5 Optional cleanup + verification
+
+**Status:** Completed (verification-only phase, no commits)
+
+### W5.1 — Four-layer skill-version enforcement
+
+| Layer | Status |
+|---|---|
+| (a) warn-config-drift Edit-time | Fires only on Edit hook; not testable inline. Confirmed by clean Edit-time experience across phases. |
+| (b) /commit step 2.5 (commit-time) | Exercised at every phase commit; all phases committed cleanly (no version-mismatch denies). |
+| (c) test-skill-conformance.sh (CI) | **523/523 passed** standalone. |
+| (d) block-stale-skill-version.sh (PreToolUse) | All commits passed through (clean hashes: 9c8fd56, a64469c, 41b9a99, ce48b11, d9c19af). |
+
+### W5.2 — Manual two-shell e2e
+
+DEFERRED for post-merge user verification. Requires user-attended browser interaction (dashboard live-state observation, concurrent shell invocations); the autonomous /run-plan flow cannot drive a human-observed test.
+
+### W5.3 — Theme spot-check (light/dark dashboard)
+
+DEFERRED for post-merge user verification. Same reason.
+
+### W5.4 — Final `bash tests/run-all.sh`
+
+**Final tally**: see commit-time test-results file.
+
+### W5.5 — Drift Log
+
+No divergence from locked D1-D7 during implementation. All verifier-flagged deviations (e.g., conformance grep joining backslash-continuations, `^### Execution` anchor matching actual heading, brittleness fix on issue-side test) were legitimate adaptations to file shape, not departures from intent. No Drift Log entries needed.
+
+### metadata.version final state
+
+| Skill | Version |
+|---|---|
+| skills/run-plan | 2026.05.22+c98e49 |
+| skills/work-on-plans | 2026.05.22+bac087 |
+| skills/zskills-dashboard | 2026.05.22+4c4eaa |
+| skills/update-zskills | 2026.05.22+1d0faf |
+
+---
+
 ## Phase — 4 Conformance tests + SKILL.md prose + follow-up issue
 
 **Plan:** plans/plans-claim-chip-parity.md

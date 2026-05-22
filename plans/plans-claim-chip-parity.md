@@ -1,7 +1,7 @@
 ---
 title: Plan-claim chip + selection-aware /work-on-plans
 created: 2026-05-22
-status: active
+status: complete
 ---
 
 # Plan: Plan-claim chip + selection-aware /work-on-plans
@@ -128,7 +128,7 @@ The mechanism is a SIBLING-CLONE of `claim-issue.sh` (not a generalisation) beca
 | Phase 2b — /work-on-plans selection-aware filter | ✅ | `41b9a99` | filter-in-flight-plan-claims.sh (200 lines) + Step 4 sweep+filter fences + 4 new tests (28 pass). 5503/5503 pass. |
 | Phase 3 — Dashboard collect.py + render-side wiring | ✅ | `ce48b11` | _read_plan_claims + 6-field claim attach + buildPlanCard chip + handleAction guard + 6 new tests (86 pass). 5595/5595 pass. |
 | Phase 4 — Conformance tests + integration + SKILL.md prose | ✅ | `d9c19af` | 15-assertion conformance test + ~100 lines prose (run-plan + work-on-plans) + GH issue #641 filed. 5602/5602 pass. |
-| Phase 5 — Optional cleanup + verification | 🟡 | — | — |
+| Phase 5 — Optional cleanup + verification | ✅ | inline | All 4 skill-version layers pass + 523/523 conformance + full suite re-run. Manual e2e (W5.2) + theme spot-check (W5.3) deferred for post-merge user verification. |
 
 ---
 
