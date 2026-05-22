@@ -882,6 +882,55 @@ code, pre, .mono {
   cursor: not-allowed;
 }
 
+/* Column-header chevron buttons (move-all). Visually similar to .move-btn
+   but slightly larger/bolder so they read as a column-level action rather
+   than a per-card control. Sits in the column-head flex row. */
+.move-all-group {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.move-all-btn {
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 1rem;
+  line-height: 1.2;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.move-all-btn:hover,
+.move-all-btn:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+  outline: none;
+}
+
+/* Skipped-card shake — fires for cards left behind by a column move-all
+   because they're claimed (aria-disabled="true"). Visible jitter (~8px
+   each side) over ~400ms; the JS toggles `.shake` for that duration. */
+@keyframes shake-skip {
+  0%   { transform: translateX(0); }
+  12%  { transform: translateX(-8px); }
+  24%  { transform: translateX(7px); }
+  36%  { transform: translateX(-6px); }
+  48%  { transform: translateX(6px); }
+  60%  { transform: translateX(-5px); }
+  72%  { transform: translateX(4px); }
+  84%  { transform: translateX(-3px); }
+  100% { transform: translateX(0); }
+}
+
+.card.shake {
+  animation: shake-skip 400ms ease-in-out;
+}
+
 .mode-chip {
   background: transparent;
   border: 1px solid var(--accent2);
