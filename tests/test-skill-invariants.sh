@@ -54,6 +54,130 @@ check "fix-issues pr.md assigns CHANGE_SUMMARY before heredoc read" \
 check "fix-issues pr.md mirror assigns CHANGE_SUMMARY before heredoc read" \
   'grep -qE "^[[:space:]]*CHANGE_SUMMARY=" .claude/skills/fix-issues/modes/pr.md'
 
+# Issue #606: variable-read-before-assignment family — close remaining
+# 4 siblings (post-#603 closure-verification sweep). Each entry below
+# names a (file, var) where the file's fenced bash blocks read $VAR but
+# previously had zero assignment sites — causing failed-closed
+# standalone invocations. Each pair is regression-pinned: an assignment
+# (bare `VAR=`, case-branch `) VAR=`, `${VAR:=...}`, `${VAR:-...}`,
+# `read VAR`, or `for VAR in`) must exist in the same file.
+#
+# Sibling of #601 above, but covers 4 vars across 3 source skills.
+# Source + mirror both checked so drift catches early.
+#
+# Helper: emit 0 iff $1 file has an assignment-like construct for $2 var.
+has_assign() {
+  local f="$1" v="$2"
+  grep -qE "(^|[^A-Za-z0-9_])${v}=" "$f" && return 0
+  grep -qE "(^|[[:space:]])read[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*${v}([[:space:]]|$)" "$f" && return 0
+  grep -qE "(^|[[:space:]])for[[:space:]]+${v}[[:space:]]+in[[:space:]]" "$f" && return 0
+  grep -qE "\\\$\{${v}:=" "$f" && return 0
+  grep -qE "\\\$\{${v}:-" "$f" && return 0
+  return 1
+}
+
+# (file, var) pairs covering #606's 4 siblings.
+ISSUE_606_PAIRS=(
+  "skills/draft-plan/SKILL.md|TRACKING_ID"
+  "skills/draft-plan/SKILL.md|OUTPUT_FILE"
+  "skills/draft-plan/SKILL.md|ROUND"
+  "skills/fix-issues/SKILL.md|TRACKING_ID"
+  "skills/run-plan/SKILL.md|PLAN_FILE"
+)
+for pair in "${ISSUE_606_PAIRS[@]}"; do
+  f="${pair%%|*}"; v="${pair##*|}"
+  if has_assign "$f" "$v"; then
+    check "issue #606: $f assigns \$$v before any read" 'true'
+  else
+    check "issue #606: $f assigns \$$v before any read" 'false'
+  fi
+  # Mirror under .claude/ must match (drift catch).
+  mf=".claude/$f"
+  if [ -f "$mf" ]; then
+    if has_assign "$mf" "$v"; then
+      check "issue #606: mirror $mf assigns \$$v before any read" 'true'
+    else
+      check "issue #606: mirror $mf assigns \$$v before any read" 'false'
+    fi
+  fi
+done
+
+# Structural family scan — broad sweep across skills/**/*.md and
+# block-diagram/**/*.md for the family-pattern variables (TRACKING_ID,
+# PLAN_FILE, OUTPUT_FILE, META_PLAN_PATH, GOAL, CHANGE_SUMMARY, SPRINT_ID,
+# ROUND). Each occurrence inside a ```bash...``` fence MUST be backed by
+# an assignment in the same file. This catches the next person editing
+# a skill body who copies the failed-closed read pattern without copying
+# the resolver.
+#
+# Allow-list: files where the family-pattern variable is known to be
+# inherited from a parent skill via ZSKILLS_PIPELINE_ID and is read in
+# a mode/reference file that DOCUMENTS but does not own the resolver.
+# Each entry SHOULD be replaced over time by an in-file resolver — the
+# allow-list is the "known acceptable tail" of the closure, NOT a
+# license to add more. Format: file<TAB>VAR. Add with a comment naming
+# the upstream owner.
+ISSUE_606_ALLOWLIST=(
+  # /refine-plan's $ROUND is the per-round orchestrator counter mirrored
+  # from /draft-plan; both files use the same shape. Same allow as
+  # /draft-plan's ROUND (which the targeted pair above now resolves via
+  # ${ROUND:-1} default). Filed: separate issue (post-#606 follow-up).
+  "skills/refine-plan/SKILL.md	ROUND"
+  # /research-and-plan's $GOAL is set by /research-and-go upstream; the
+  # in-file resolver was added by #603 for /research-and-go's own GOAL
+  # read but /research-and-plan reads it from env. Filed: separate
+  # issue (post-#606 follow-up).
+  "skills/research-and-plan/SKILL.md	GOAL"
+  # PR-mode reference files inherit $PLAN_FILE and $TRACKING_ID from the
+  # main SKILL.md's worktree preamble; these files are not entrypoints
+  # so they don't need their own resolver. Filed: separate issue
+  # (post-#606 follow-up) if the family-pattern test fails on them.
+  "skills/run-plan/references/failure-protocol.md	PLAN_FILE"
+  "skills/run-plan/modes/pr.md	PLAN_FILE"
+  "skills/run-plan/modes/pr.md	TRACKING_ID"
+  "skills/commit/modes/pr.md	TRACKING_ID"
+  "skills/fix-issues/modes/pr.md	SPRINT_ID"
+)
+FAMILY_VARS_RE='^(TRACKING_ID|PLAN_FILE|OUTPUT_FILE|META_PLAN_PATH|GOAL|CHANGE_SUMMARY|SPRINT_ID|ROUND)$'
+FAMILY_FAIL=""
+while IFS= read -r f; do
+  # Inline awk: emit one var-name per bash-fence read of $VAR / ${VAR}.
+  fence_vars=$(awk '
+    /^```bash/ { in_b=1; next }
+    /^```[^`]*$/ { in_b=0; next }
+    !in_b { next }
+    {
+      s=$0
+      while (match(s, /\$\{[A-Za-z_][A-Za-z0-9_]*|\$[A-Za-z_][A-Za-z0-9_]*/)) {
+        tok=substr(s, RSTART, RLENGTH)
+        s=substr(s, RSTART+RLENGTH)
+        sub(/^\$\{?/, "", tok)
+        print tok
+      }
+    }
+  ' "$f" | sort -u)
+  while IFS= read -r v; do
+    [ -z "$v" ] && continue
+    printf '%s\n' "$v" | grep -qE "$FAMILY_VARS_RE" || continue
+    has_assign "$f" "$v" && continue
+    # Check allow-list.
+    allowed=0
+    for entry in "${ISSUE_606_ALLOWLIST[@]}"; do
+      if [ "$entry" = "$(printf '%s\t%s' "$f" "$v")" ]; then
+        allowed=1; break
+      fi
+    done
+    [ "$allowed" -eq 1 ] && continue
+    FAMILY_FAIL+="$(printf '%s\t%s\n' "$f" "$v")"$'\n'
+  done <<< "$fence_vars"
+done < <(find skills block-diagram -name '*.md' -type f 2>/dev/null)
+if [ -z "$FAMILY_FAIL" ]; then
+  check 'issue #606: family-pattern vars (TRACKING_ID/PLAN_FILE/OUTPUT_FILE/META_PLAN_PATH/GOAL/CHANGE_SUMMARY/SPRINT_ID/ROUND) all have same-file assignments' 'true'
+else
+  printf '%s\n' "$FAMILY_FAIL" >&2
+  check 'issue #606: family-pattern vars (TRACKING_ID/PLAN_FILE/OUTPUT_FILE/META_PLAN_PATH/GOAL/CHANGE_SUMMARY/SPRINT_ID/ROUND) all have same-file assignments' 'false'
+fi
+
 # Phase C: tool-list-aware dispatch (4 skills)
 for f in skills/run-plan/SKILL.md skills/fix-issues/SKILL.md \
          skills/verify-changes/SKILL.md \

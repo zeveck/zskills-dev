@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.21+f6f635"
+  version: "2026.05.21+b3cb70"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -316,6 +316,12 @@ if [ ! -x "$HELPER" ]; then
   echo "fix-issues: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
 fi
+# Sync mode TRACKING_ID — synthesized from timestamp since /fix-issues sync
+# doesn't take a plan-file arg. Mirrors sprint mode's SPRINT_ID shape (later
+# in this skill) with a `sync-` prefix so the namespace is unambiguous and
+# downstream pipeline IDs (`fix-issues.${TRACKING_ID}`) are non-empty.
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+TRACKING_ID="${TRACKING_ID:-sync-$(TZ="${TIMEZONE:-UTC}" date +%Y%m%d-%H%M%S)}"
 WT_PATH=$(bash "$HELPER" \
   --prefix fix-issues \
   --pipeline-id "fix-issues.${TRACKING_ID}" \

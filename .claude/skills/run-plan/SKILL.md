@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.21+25b138"
+  version: "2026.05.21+7d824a"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -268,6 +268,19 @@ If `$ARGUMENTS` contains `status` (case-insensitive):
    "Read authority" section, duplicated here because `status` exits
    before Phase 1 preflight:
    ```bash
+   # Status-mode PLAN_FILE resolution — mirrors #603's $ARGUMENTS-token
+   # recipe (first `.md` token in $ARGUMENTS is the plan-file path).
+   # Status-mode exits before Phase 1 preflight, so PLAN_FILE must be
+   # resolved here rather than inheriting from Phase 1's later resolver.
+   if [ -z "${PLAN_FILE:-}" ]; then
+     for tok in $ARGUMENTS; do
+       case "$tok" in *.md) PLAN_FILE="$tok"; break ;; esac
+     done
+   fi
+   if [ -z "${PLAN_FILE:-}" ]; then
+     echo "ERROR: /run-plan status requires a plan-file path in \$ARGUMENTS" >&2
+     exit 2
+   fi
    PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
    # Pre-worktree bootstrap: anchor on $CLAUDE_PROJECT_DIR (orchestrator's
    # project root, set by the harness) — WORKTREE_PATH is not yet in scope.
