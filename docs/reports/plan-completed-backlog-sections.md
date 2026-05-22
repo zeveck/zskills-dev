@@ -1,11 +1,53 @@
 # Plan Report — Completed + Backlog dashboard sections
 
+## Phase — 2 Server validator + version writers (`server.py`) [UNFINALIZED]
+
+**Plan:** plans/completed-backlog-sections.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-completed-backlog-sections (branch `feat/completed-backlog-sections`)
+**Commits:** `ba8cfac`
+
+### Work Items
+
+| #     | Item                                                                    | Status | Notes                                                                                                                  |
+| ----- | ----------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| W2.1  | Extend `PLAN_COLUMNS` / `ISSUE_COLUMNS` with `backlog`                  | Done   | `server.py:81-82`. `completed` is NOT in either tuple (W2.2 enforces explicit reject).                                 |
+| W2.2  | Explicit pre-loop `completed` rejection in `_validate_queue_body`       | Done   | `server.py:460-466` (plans), `495-501` (issues). Error message contains literal `"completed column is read-only"`.     |
+| W2.3  | Bump four `"version": "1.1"` sites + startup log line                   | Done   | Sites at 321, 332, 339, 954 all → `"1.2"`. Startup log at 1240-1243 (sys.stderr.write, matches house style).           |
+| W2.4  | No-code-change confirmation of `_handle_queue_post`                     | Done   | Column-tuple-driven write path at 954-958 inherits `backlog` automatically. W2.8 exercises end-to-end.                  |
+| W2.5  | Bump `skills/zskills-dashboard/SKILL.md metadata.version`               | Done   | `2026.05.22+26ef28`; hash + mirror verified.                                                                            |
+| W2.6  | test: `validate_queue_body_accepts_backlog`                             | Done   | POST `issues.backlog: [N]` returns no error.                                                                            |
+| W2.7  | test: `validate_queue_body_rejects_completed_in_post`                   | Done   | Asserts 400 + literal `"completed column is read-only"` for both plans + issues + distinctness vs generic unknown-col. |
+| W2.8  | test: `queue_post_roundtrip_backlog`                                    | Done   | POST → state-file `"version": "1.2"` + persisted backlog + GET roundtrip.                                               |
+| W2.9  | test: `state_file_version_bumped_all_sites`                             | Done   | Asserts `grep -c '"version": "1.1"' == 0` AND `grep -c '"version": "1.2"' >= 4`.                                       |
+
+### Verification
+
+- **Test suite:** `Overall: 5476/5476 passed, 0 failed`.
+- **Acceptance criteria:** AC2.1-AC2.5 all met.
+- **No PLAN-TEXT-DRIFT tokens.**
+- **Design adaptation noted:** W2.3 startup log uses `sys.stderr.write` (matching the existing `Listening on …` line at `server.py:1228-1230`) rather than `log.info(...)` (which would require introducing `logging` setup not currently present). Format remains operator-greppable: `PLAN_COLUMNS=… ISSUE_COLUMNS=… state_version=1.2`.
+- **Test-fixture preservation pattern:** the implementer documented a NOTE block in the test file explaining the constraint that downstream `sample-plan` + `42` fixtures used by the #281 regression check must be echoed in mid-suite POSTs. Phase 3 frontend tests that exercise POST flows should follow the same convention.
+- **Scope-creep check:** clean — 5 files in expected paths (server.py + mirror, zskills-dashboard SKILL.md + mirror, test file).
+
+### Cross-phase notes
+
+- The `backlog` column is now WRITABLE on `/api/queue`; the `completed` column is HARD-REJECTED. Phase 3 must NOT render a UI drop target on the Completed sub-column (per Locked Decisions D3, D5). The validator's read-only-on-API contract is the structural backstop, but the UI affordance must also be suppressed.
+- Phase 3 must extend `app.js` `PLAN_COLUMNS` / `ISSUE_COLUMNS` arrays to mirror the server's tuple order (drafted, reviewed, ready, backlog, completed for plans; triage, ready, backlog, completed for issues). W5.1 (Phase 5) will conformance-check the four sites with full-tuple-ordering grep.
+- Branch state at end-of-Phase-2: 4 commits on top of origin/main (`7bf3652`): `845e974` (P1 impl), `d181163` (P1 tracker), `76b8ebc` (P1 version repair), `ba8cfac` (P2). No rebase needed yet; Phase 3 rebase point fires before Phase 3 impl.
+
+### User Sign-off
+
+(No UI files changed in Phase 2. Sign-off accumulates for the final phase.)
+
+---
+
 ## Phase — 1 Backend (`collect.py` + state schema v1.2) [UNFINALIZED]
 
 **Plan:** plans/completed-backlog-sections.md
 **Status:** Completed (verified)
 **Worktree:** /tmp/zskills-pr-completed-backlog-sections (branch `feat/completed-backlog-sections`)
-**Commits:** `3b6a5cb`
+**Commits:** `845e974` (impl, formerly `3b6a5cb` pre-rebase), `76b8ebc` (post-rebase version repair)
 
 ### Work Items
 
