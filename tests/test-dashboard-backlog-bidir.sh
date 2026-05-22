@@ -61,8 +61,9 @@ if [ ! -f "$APP_JS" ]; then
   print_summary_and_exit
 fi
 
-# Static-grep contract: onDrop must reject completed drops and rewrite
-# from-backlog drops to leftmost active.
+# W4.9 (post-#650 reversal; was rewrite-to-leftmost) — Static-grep
+# contract: onDrop must still reject completed drops, but the D5
+# leftmost-active rewrite branch is REMOVED. Drops land where dropped.
 ONDROP_BODY=$(awk '/^async function onDrop\(/{f=1} f{print} f && /^}$/{exit}' "$APP_JS")
 if printf '%s' "$ONDROP_BODY" | grep -qE 'targetCol === "completed"'; then
   pass "onDrop guards on targetCol === 'completed'"
@@ -74,15 +75,18 @@ if printf '%s' "$ONDROP_BODY" | grep -q 'console.warn'; then
 else
   fail "onDrop completed reject missing console.warn"
 fi
+# Inverted: the sourceColumn==='backlog' rewrite branch must NOT exist.
 if printf '%s' "$ONDROP_BODY" | grep -qE 'sourceColumn === "backlog"'; then
-  pass "onDrop applies D5 backlog leftmost-active rewrite"
+  fail "onDrop still has D5 backlog leftmost-active rewrite (should be removed in post-#650 reversal)"
 else
-  fail "onDrop missing D5 backlog rewrite branch"
+  pass "onDrop no longer rewrites backlog drops — drops land where dropped (post-#650 reversal)"
 fi
-if printf '%s' "$ONDROP_BODY" | grep -qE 'D5'; then
-  pass "onDrop has explicit D5 code comment (W4.4)"
+# A one-line comment about the design reversal should be present so
+# future readers know D5 was inverted intentionally.
+if printf '%s' "$ONDROP_BODY" | grep -qE 'overrides plan D5|post-#650|land where dropped'; then
+  pass "onDrop has a comment noting the D5 design reversal"
 else
-  fail "onDrop missing explicit D5 citation"
+  fail "onDrop missing the D5-reversal comment — future readers won't know the inversion is intentional"
 fi
 
 # onDragStart must capture sourceColumn so onDrop knows to rewrite.
@@ -257,9 +261,10 @@ async function run() {
   expect(globalThis.__getDragState(), null, "T4.9.a dragState cleared after drop");
 
   // ------------------------------------------------------------------
-  // T4.9.b(i) — Drag issue from Backlog → Ready. D5 rewrite:
-  // target column is REWRITTEN to "triage" (leftmost active for issues),
-  // not "ready" (the dropzone the user actually targeted).
+  // T4.9.b(i) (post-#650 reversal; was rewrite-to-leftmost) — Drag issue
+  // from Backlog → Ready. Drops land where dropped: target stays "ready",
+  // not "triage". Idx is whatever computeInsertIndex returned (0 here
+  // because the test dropzone is empty).
   // ------------------------------------------------------------------
   globalThis.__resetCalls();
   const card2 = makeCard({ kind: "issue", num: 99, col: "backlog" });
@@ -268,14 +273,12 @@ async function run() {
   await onDrop(makeDropEvent(dz2));
   const calls2 = globalThis.__getMoveCalls();
   expect(calls2.issue.length, 1, "T4.9.b(i) moveIssue called once on Backlog→Ready");
-  expect(calls2.issue[0][1].col, "triage",
-    "T4.9.b(i) D5 rewrite: Backlog→Ready becomes triage (leftmost active for issues)");
-  expect(calls2.issue[0][1].idx, 0,
-    "T4.9.b(i) D5 rewrite places card at idx=0 of leftmost active");
+  expect(calls2.issue[0][1].col, "ready",
+    "T4.9.b(i) Backlog→Ready lands in Ready (drops land where dropped; D5 rewrite removed)");
 
   // ------------------------------------------------------------------
-  // T4.9.b(ii) — Drag plan from Backlog → Ready. D5 rewrite:
-  // target column is REWRITTEN to "drafted" (leftmost active for plans).
+  // T4.9.b(ii) (post-#650 reversal) — Drag plan from Backlog → Ready.
+  // Target stays "ready", not "drafted".
   // ------------------------------------------------------------------
   globalThis.__resetCalls();
   const card3 = makeCard({ kind: "plan", slug: "p1", col: "backlog" });
@@ -284,25 +287,26 @@ async function run() {
   await onDrop(makeDropEvent(dz3));
   const calls3 = globalThis.__getMoveCalls();
   expect(calls3.plan.length, 1, "T4.9.b(ii) movePlan called once on Backlog→Ready (plan)");
-  expect(calls3.plan[0][1].col, "drafted",
-    "T4.9.b(ii) D5 rewrite: Backlog→Ready becomes drafted (leftmost active for plans)");
+  expect(calls3.plan[0][1].col, "ready",
+    "T4.9.b(ii) Backlog→Ready (plan) lands in Ready (drops land where dropped; D5 rewrite removed)");
 
   // ------------------------------------------------------------------
-  // T4.9.b(iii) — Drag plan from Backlog → Drafted. Already leftmost;
-  // post body has drafted (no rewrite visible but result is identical).
+  // T4.9.b(iii) (post-#650 reversal) — Drag plan from Backlog → Reviewed.
+  // Target stays "reviewed", proving the user's chosen column is honored
+  // even when it's NOT the leftmost active column.
   // ------------------------------------------------------------------
   globalThis.__resetCalls();
   const card3b = makeCard({ kind: "plan", slug: "p2", col: "backlog" });
   onDragStart(makeDragEvent(card3b));
-  const dz3b = makeDropzone("plan", "drafted");
+  const dz3b = makeDropzone("plan", "reviewed");
   await onDrop(makeDropEvent(dz3b));
   const calls3b = globalThis.__getMoveCalls();
-  expect(calls3b.plan[0][1].col, "drafted",
-    "T4.9.b(iii) Backlog→Drafted (already leftmost) lands on drafted");
+  expect(calls3b.plan[0][1].col, "reviewed",
+    "T4.9.b(iii) Backlog→Reviewed (non-leftmost target) lands in Reviewed — honors user's chosen column");
 
   // ------------------------------------------------------------------
-  // T4.9.b(iv) — Drag from Ready (NOT backlog) → Backlog. Source is
-  // active, target is backlog — D5 rewrite must NOT fire.
+  // T4.9.b(iv) — Drag from Ready (NOT backlog) → Backlog. Always landed
+  // in backlog (defer). Unchanged by the reversal.
   // ------------------------------------------------------------------
   globalThis.__resetCalls();
   const card4 = makeCard({ kind: "issue", num: 50, col: "ready" });
@@ -311,7 +315,7 @@ async function run() {
   await onDrop(makeDropEvent(dz4));
   const calls4 = globalThis.__getMoveCalls();
   expect(calls4.issue[0][1].col, "backlog",
-    "T4.9.b(iv) Ready→Backlog (active source) does NOT trigger D5 rewrite");
+    "T4.9.b(iv) Ready→Backlog (active source) lands in backlog as defer");
 
   // ------------------------------------------------------------------
   // T4.9.c — Drop onto data-column="completed" is rejected + warns.

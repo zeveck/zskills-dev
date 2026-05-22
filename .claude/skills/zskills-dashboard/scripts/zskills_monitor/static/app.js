@@ -1242,20 +1242,15 @@ function renderBelowPanelBand(opts) {
     ? (queues && queues.plans) || {}
     : (queues && queues.issues) || {};
 
-  // Count membership per BELOW_BAND column to decide band-level collapse.
-  // BACKLOG always renders as a drop-target even when empty (D5: drag-in
-  // affordance); the collapse rule fires only when BOTH columns are empty.
-  let totalCount = 0;
-  for (const c of BELOW_BAND_COLUMNS) {
-    const arr = queueDict[c] || [];
-    totalCount += arr.length;
-  }
-
+  // Below-panel band ALWAYS renders (post-#650 reversal). Backlog stays a
+  // visible drop-target even when empty (D5 affordance + "Drag here to
+  // defer" placeholder); Completed renders even when empty so the user
+  // sees a stable two-column band rather than the band appearing /
+  // disappearing as state changes.
   const band = el("div", {
     cls: "below-panel-band",
     attrs: { "data-kind": kind, role: "group", "aria-label": "Backlog and Completed" },
   });
-  if (totalCount === 0) band.setAttribute("hidden", "");
 
   for (const c of BELOW_BAND_COLUMNS) {
     const colDiv = el("div", { cls: "column" });
@@ -1918,8 +1913,8 @@ function onDragStart(ev) {
   const kind = card.getAttribute("data-kind");
   const slug = card.getAttribute("data-slug");
   const num = card.getAttribute("data-number");
-  // Phase 4 / W4.4 — capture the source column so onDrop can apply the
-  // D5 leftmost-active rewrite rule when dragging out of Backlog.
+  // Capture the source column for postQueue (used elsewhere to strip
+  // `completed` defensively, and for column-aware drag affordances).
   const sourceColumn = card.getAttribute("data-column");
   dragState = { kind, slug, num, sourceColumn };
   if (ev.dataTransfer) {
@@ -2031,17 +2026,7 @@ async function onDrop(ev) {
     dragState = null;
     return;
   }
-  // Phase 4 / W4.4 / D5 — When the drag SOURCE is Backlog, rewrite the
-  // destination to the leftmost active column ("triage" for issues,
-  // "drafted" for plans) regardless of which active column the user
-  // actually dropped onto. This is symmetric with how Backlog is
-  // conceptually "off the active flow" — promoting out of Backlog just
-  // means "make it active again," so we avoid forcing the user to
-  // remember the column order.
-  if (dragState.sourceColumn === "backlog" && targetCol !== "backlog") {
-    targetCol = (dragState.kind === "plan") ? "drafted" : "triage";
-    targetIdx = 0;
-  }
+  // Backlog→active: land where dropped (overrides plan D5; see PR description).
   if (dragState.kind === "plan" && dragState.slug) {
     await movePlan(dragState.slug, { col: targetCol, idx: targetIdx });
   } else if (dragState.kind === "issue" && dragState.num) {
