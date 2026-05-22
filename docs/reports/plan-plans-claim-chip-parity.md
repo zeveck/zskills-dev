@@ -1,5 +1,41 @@
 # Plan Report — plans-claim-chip-parity
 
+## Phase — 2b /work-on-plans selection-aware filter
+
+**Plan:** plans/plans-claim-chip-parity.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-plans-claim-chip-parity
+**Commit:** `41b9a99`
+
+### Changes
+
+| Item | Detail |
+|---|---|
+| `skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh` | 200 lines. TSV stdin → filtered TSV stdout. Reads `.zskills/claims/plan-*/claim.json` via Python json. Graceful on malformed/missing/unreadable inputs. Exit 0 always. |
+| `skills/work-on-plans/SKILL.md` Step 4 | Pre-filter sweep fence at line 501 + Selection filter fence at line 516. Sweep < filter (R2.6 ordering). Defensive `[ -x ]` check on script path. `metadata.version` → `2026.05.22+398b99`. |
+| `.claude/` mirrors | byte-identical copies. |
+
+### Tests (4 new — 28 tests)
+
+| File | Pass/Fail | Notes |
+|---|---|---|
+| `tests/test-plan-claim-selection-filter.sh` | 8/0 | AC2b.1 — filter drops `foo`, picks `bar`, stderr `Skipped 1 plan(s)…` |
+| `tests/test-work-on-plans-parallel-selection.sh` | 6/0 | AC2b.2 — STEADY-STATE only per DA2.7 (test name + comments document scope) |
+| `tests/test-plan-claim-filter-edge-cases.sh` | 8/0 | AC2b.3 — malformed/missing/empty/unreadable + invalid slug shapes |
+| `tests/test-work-on-plans-pre-filter-sweep.sh` | 6/0 | AC2b.5 — source-level line-order check + behavioural sweep-before-filter |
+
+### Verification
+
+- **Full test suite**: `Overall: 5503/5503 passed, 0 failed` (baseline 5481; +22 net after 28 new tests landed — accounted by conformance pickups).
+- **All 5 phase ACs PASS** with file:line evidence.
+- **D4 + D5 locked decisions** conform. Mirrors verified identical via `diff -q`.
+
+### Honest scope (DA2.7)
+
+The filter closes the STEADY-STATE race only. Fresh-start race (both invocations observe empty claims-dir before either acquires) is bounded by Phase 1's atomic-mkdir acquire — see plan Overview / DA2.7. Test #2 explicitly documents this scope in its name + leading comment.
+
+---
+
 ## Phase — 2a /run-plan acquire / heartbeat / release wiring
 
 **Plan:** plans/plans-claim-chip-parity.md
