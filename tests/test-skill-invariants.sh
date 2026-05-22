@@ -484,6 +484,21 @@ for _briefing_status in landed-full landed-pr-ready landed-pr-needs-attention \
     "grep -qF \"'$_briefing_status'\" .claude/skills/briefing/scripts/briefing.py"
 done
 
+# Issue #618: zskills-dashboard app.js landedPillClass() must enumerate every
+# canonical .landed status value. PR #532's analog on briefing.py (#621) and
+# fix-report/SKILL.md (#602) closed the prose/Python reader-side; this closes
+# the JS reader-side. Canonical 11-value vocabulary is locked by
+# tests/test-landed-status-vocabulary.sh; this pin asserts each value appears
+# as a quoted literal in landedPillClass.
+for _landed_status in full landed partial pr-ready pr-ci-failing pr-failed \
+                      conflict pr-state-unknown failed direct-push-failed \
+                      direct-verify-failed; do
+  check "app.js landedPillClass references canonical status '$_landed_status' (source)" \
+    "grep -qF '\"$_landed_status\"' skills/zskills-dashboard/scripts/zskills_monitor/static/app.js"
+  check "app.js landedPillClass references canonical status '$_landed_status' (mirror)" \
+    "grep -qF '\"$_landed_status\"' .claude/skills/zskills-dashboard/scripts/zskills_monitor/static/app.js"
+done
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

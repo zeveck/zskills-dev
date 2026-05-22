@@ -364,9 +364,12 @@ code, pre, .mono {
 .pill-mode-direct  { color: var(--green); border-color: var(--green); }
 .pill-mode-unknown { color: var(--orange); border-color: var(--orange); background: rgba(210, 153, 34, 0.08); }
 
-.pill-landed-full     { color: var(--green); border-color: var(--green); }
-.pill-landed-partial  { color: var(--orange); border-color: var(--orange); }
-.pill-landed-not      { color: var(--text-dim); border-color: var(--border); }
+.pill-landed-full                { color: var(--green); border-color: var(--green); }
+.pill-landed-partial             { color: var(--orange); border-color: var(--orange); }
+.pill-landed-pr-ready            { color: var(--accent); border-color: var(--accent); }
+.pill-landed-pr-needs-attention  { color: var(--orange); border-color: var(--orange); }
+.pill-landed-failed              { color: var(--red); border-color: var(--red); }
+.pill-landed-not                 { color: var(--text-dim); border-color: var(--border); }
 
 .label-chip {
   display: inline-block;
