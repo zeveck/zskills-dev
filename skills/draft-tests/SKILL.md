@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.21+6fc43c"
+  version: "2026.05.22+73cefd"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -1119,6 +1119,14 @@ invocation mode).
 Invocation:
 
 ```bash
+# Issue #629: this fence is a per-iteration recipe meant to run inside
+# the orchestrator's round loop where $ROUND_N is the counter and
+# $PREV_INPUT is the previous round's refiner input. Default-resolve
+# both so a standalone read of this fence (or first-round invocation
+# before $PREV_INPUT exists) doesn't fail-closed. Mirrors
+# /draft-plan's `ROUND="${ROUND:-1}"` pattern at SKILL.md L523.
+ROUND_N="${ROUND_N:-1}"
+PREV_INPUT="${PREV_INPUT:-}"
 PRECHECK="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/coverage-floor-precheck.sh"
 bash "$PRECHECK" \
   "$PLAN_FILE" "$PARSED_STATE" "$PREV_INPUT" \
