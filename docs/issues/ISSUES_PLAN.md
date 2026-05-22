@@ -1200,3 +1200,23 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Move `skills/review-feedback/` → `block-diagram/review-feedback/` (and mirror `.claude/skills/review-feedback/` → `.claude/skills/review-feedback/` if the mirror tree shares structure). Update CLAUDE.md / SKILL_AUDIT_COVERAGE.md / any release scripts that enumerate skill paths. Bump metadata.version. Verify all tests + mirrors still pass.
 
 **Complexity:** M (directory move + several path reference updates + version bump + mirror + verify nothing in build/release scripts hardcodes the old path). **Action now:** /do pr — `git mv` the skill, update path references, verify tests.
+
+### #581 — Add auto flag + /land-pr dispatch to /draft-plan, /refine-plan, /draft-tests
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** 3 drafting skills create worktrees but provide no auto-landing path. Under `execution.landing: pr` + `main_protected: true`, the canonical `/draft-plan → /run-plan` flow silently fails because `/run-plan` reads `$MAIN_ROOT/$PLAN_FILE` but the plan was only committed in the draftplan worktree. User must manually file a small PR before invoking `/run-plan`.
+
+**Fix outline.** For each of `/draft-plan`, `/refine-plan`, `/draft-tests`: (a) recognize positional `auto` token in Arguments parse (mirror existing /do, /run-plan, /fix-issues convention); (b) at Phase 6 (or equivalent auto-commit phase), when AUTO_FLAG=1, dispatch `/land-pr` via Skill tool with `--auto`. Canonical pattern reference: `skills/quickfix/SKILL.md:1084-1107`. Conformance pin asserting each of the 3 skills has the auto-arg detection + /land-pr dispatch line.
+
+**Complexity:** M (3 skill source + 3 mirrors + 3 version bumps + 1 conformance pin). **Action now:** /do pr — apply the auto + /land-pr dispatch to all 3 drafting skills + conformance pin.
+
+### #638 — scripts/skill-version-stage-check.sh fallback masks 'bump-on-disk-not-staged' case
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `scripts/skill-version-stage-check.sh` lines 105-107 substitutes on-disk version into `$staged_ver` when SKILL.md isn't staged. When SKILL.md HAS been bumped on disk but NOT staged, the fallback masks the bug — asymmetric check sees `staged_ver != head_ver` and is skipped; the hint code becomes unreachable. Result: a commit lands with stale RECORDED `metadata.version` + new content (bump-on-disk-not-staged silent pass).
+
+**Fix outline.** Distinguish "child file staged, SKILL.md genuinely unchanged" from "SKILL.md bumped on disk but not staged". Check if `git diff SKILL.md` (working-tree-vs-HEAD) shows changes when SKILL.md isn't staged — if yes, that's the bump-not-staged case and should FAIL CLOSED with the canonical bump command. Add a test case to `tests/test-skill-version-stage-check.sh` (or wherever the script's tests live) for the bump-not-staged scenario.
+
+**Complexity:** S (one script edit + one test case + update-zskills version bump + mirror). **Action now:** /do pr — fix the fallback to distinguish bump-not-staged from genuinely-unchanged-skill-md; add test case.
