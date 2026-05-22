@@ -2676,6 +2676,35 @@ check_fixed qe-audit "worked example: past failure #390"  'past failure #390'
 check_fixed qe-audit "bash-mode sweep echoes the rule"    'Ban caveats: the Commit Audit Step 6'
 
 echo ""
+echo "=== /qe-audit — TIGHT-BAR + filter taxonomy + cadence/recovery (issue #637) ==="
+# Issue #637: SKILL.md body had drifted from operational calibration —
+# TIGHT-BAR 3-question self-triage, do/DON'T filter taxonomy, family-pattern
+# consolidation, cadence-stretch rule, and orchestrator-recovery rule lived
+# only in the cron-fired prompt. Fresh-session loads (post-/clear) dispatched
+# /qe-audit with none of these → regression to passes 1-11 yield patterns.
+# These pins lock the calibration into the body so cron-prompt drift cannot
+# erase it again. 12 checks: 6 fingerprints × 2 files (source + mirror).
+for QE_FILE in "$REPO_ROOT/skills/qe-audit/SKILL.md" "$REPO_ROOT/.claude/skills/qe-audit/SKILL.md"; do
+  QE_REL="${QE_FILE#$REPO_ROOT/}"
+  for QE_FP_LABEL in \
+    "TIGHT-BAR triage section heading|TIGHT-BAR triage and filter rules" \
+    "falsifying-trace question|Verified falsifying trace" \
+    "do NOT file filter bucket|Filter — do NOT file" \
+    "family-pattern consolidation rule|Family-pattern consolidation" \
+    "cadence-stretch rule|Cadence-stretch rule" \
+    "recovery rule (orchestrator drift)|Recovery rule"
+  do
+    QE_LABEL="${QE_FP_LABEL%%|*}"
+    QE_PAT="${QE_FP_LABEL#*|}"
+    if grep -qF -- "$QE_PAT" "$QE_FILE" 2>/dev/null; then
+      pass "[$QE_REL] $QE_LABEL"
+    else
+      fail "[$QE_REL] $QE_LABEL" "missing fingerprint: $QE_PAT"
+    fi
+  done
+done
+
+echo ""
 echo "=== /update-zskills — Step 0.5 parent-scoped JSON extraction (issue #428) ==="
 # Issue #428: Step 0.5 "Read Config" in skills/update-zskills/SKILL.md
 # teaches a config-extraction recipe using bash regex on JSON. The
