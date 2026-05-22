@@ -1,5 +1,45 @@
 # Plan Report — plans-claim-chip-parity
 
+## Phase — 3 Dashboard collect.py + render-side wiring
+
+**Plan:** plans/plans-claim-chip-parity.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-plans-claim-chip-parity
+**Commit:** `ce48b11`
+
+### Changes
+
+| Layer | Detail |
+|---|---|
+| `collect.py` | `_read_plan_claims()` mirrors `_read_claims()` (slug-keyed). `_annotate_plans_queue` attaches `plan["claim"]` with explicit 6-field allow-list: `pipeline_id`, `started_at`, `last_heartbeat_at`, `current_phase`, `age_seconds`, `pipeline_short`. NO `worktree_path` / `host_pid`. |
+| `app.js fingerprintPlans` | Extended to include `[p.claim?.pipeline_id, p.claim?.last_heartbeat_at]` per plan row (heartbeat, NOT started_at — chip ageStr must re-render between phases). |
+| `app.js buildPlanCard` | Chip text `"in-flight · <pidShort> · phase N/M · <ageStr>"`. `phaseStr` from regex `/Phase\s+(\d+)/i` against `claim.current_phase`; fallback `"phase ?/M"` for section-name headers. `aria-disabled="true"` + `removeAttribute("draggable")` on claim presence. Reuses `.claim-chip--in-flight` CSS class (D6 — no new CSS). |
+| `app.js handleAction` | Guard arm before `plan-up/down/left/right/plan-remove` dispatches; matches `closest('li.card[aria-disabled="true"][data-kind="plan"]')`; toast `"Plan is in-flight; release the claim or wait for completion."` |
+| `app.js moveAllInColumn` | Already kind-generic + respects `aria-disabled` per-card (no change). Locked by new test. |
+| `tests/test-fix-issues-claim-render-dom.sh` | Brittleness fix: anchors gate-search to `_annotate_issues_queue` function body (needed because `_annotate_plans_queue` now has the same gate pattern). Intent preserved; 51/51 still pass. |
+| `SKILL.md` mirrors + `metadata.version` | bumped to `2026.05.22+4c4eaa`. |
+
+### Tests (6 new — 86 tests)
+
+| File | Pass/Fail | Lines |
+|---|---|---|
+| `tests/test-plan-claim-collector.sh` | 10/0 | 113 |
+| `tests/test-plan-claim-collector.py` | 10/0 | 300 |
+| `tests/test-plan-claim-render-dom.sh` | 25/0 | 400 (node DOM stub) |
+| `tests/test-plan-claim-handleaction-guard.sh` | 35/0 | 350 (node DOM stub) |
+| `tests/test-plan-claim-moveall-skip.sh` | 7/0 | 309 |
+| `tests/test-plan-claim-fingerprint.sh` | 9/0 | 215 |
+
+Render-DOM tests use node DOM stub (faster + matches symmetric issue-side pattern at `test-fix-issues-claim-render-dom.sh`). Phase 5 W5.2 schedules a separate manual two-shell e2e for live-dashboard validation.
+
+### Verification
+
+- **Full test suite**: `Overall: 5595/5595 passed, 0 failed` (baseline 5503; +92 net after 96 new tests landed).
+- **All 6 phase ACs PASS** with file:line evidence.
+- **D6 conformance** confirmed: zero `.css` files modified.
+
+---
+
 ## Phase — 2b /work-on-plans selection-aware filter
 
 **Plan:** plans/plans-claim-chip-parity.md
