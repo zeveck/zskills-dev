@@ -59,6 +59,18 @@
           "default": 7200,
           "minimum": 60,
           "description": "Stale-claim TTL (seconds) used by `/fix-issues` per-issue claims (.zskills/claims/issue-<N>/claim.json). Claims older than this are eligible for the preflight sweep — they represent crashed or abandoned per-issue dispatches whose pipeline never returned to release the claim. Default 7200s (2h) accommodates the longest realistic per-issue dispatch (research + impl + verify + CI). Raise on slow CI; lower only if you can guarantee shorter per-issue runs."
+        },
+        "dashboard_completed_days": {
+          "type": "integer",
+          "default": 14,
+          "minimum": 1,
+          "description": "Dashboard Completed-window size in days. Plans with `completed:` frontmatter within this window AND issues with `closedAt` within this window render in the new Completed sub-column beneath the Plans / Issues panels. Default 14. Widen for low-velocity repos to surface a longer history; narrow for high-velocity repos to keep the sub-column scannable."
+        },
+        "dashboard_completed_limit": {
+          "type": "integer",
+          "default": 500,
+          "minimum": 1,
+          "description": "Maximum number of closed issues fetched per snapshot for the dashboard Completed sub-column. The bounded `gh issue list --state closed --search 'closed:>=YYYY-MM-DD' --limit $LIMIT` call caps wire-transfer + render cost regardless of window size. Default 500 (empirically anchored: this repo had 150 closed issues in a 14-day window 2026-05-22; original 100-limit silently truncated 50). Raise on high-velocity repos to avoid truncation; the dashboard surfaces a banner via `snapshot.flags.closed_issues_truncated` when the fetch saturates the limit."
         }
       }
     },

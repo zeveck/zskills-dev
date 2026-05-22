@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.22+305fa7"
+  version: "2026.05.22+cd8504"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -2540,12 +2540,32 @@ If the plan file has YAML frontmatter with an `issue:` field (e.g.,
 
 Change `status: active` (or `status: in-progress`) to `status: complete`
 in the plan file's YAML frontmatter. If the plan has no `status:` field,
-add one: `status: complete`. Commit (mode-conditional per PR-mode rule):
+add one: `status: complete`. **Also write a `completed:` ISO-8601 UTC
+datetime field** so the dashboard's Completed-window inference and the
+backfill-script idempotency guard both have a canonical source of truth
+(D1 of the completed-backlog-sections plan). The path-config helper
+resolves `$ZSKILLS_PLANS_DIR` — NEVER hardcode `plans/<slug>.md`:
+
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+ZSKILLS_PATHS_ROOT="${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}" \
+  source "${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 # PR mode only: cd "$WORKTREE_PATH" first (cherry-pick/direct: stay on main)
-git add <plan-file>
+# Plan file path resolved via $ZSKILLS_PLANS_DIR — NEVER hardcoded plans/.
+PLAN_FILE="$ZSKILLS_PLANS_DIR/<slug>.md"
+bash scripts/frontmatter-set.sh "$PLAN_FILE" status complete
+completed_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+bash scripts/frontmatter-set.sh "$PLAN_FILE" completed "$completed_ts"
+git add "$PLAN_FILE"
 git commit -m "chore: mark plan complete — <plan-name>"
 ```
+
+The `completed:` field is **full ISO-8601 UTC datetime**
+(`YYYY-MM-DDTHH:MM:SSZ`), NOT a date-only string — matches GH's
+`closedAt` format so cross-source date comparison in the dashboard is
+uniform. Do not use `date -I` or `cut -c1-10`; both produce date-only
+strings that mix poorly with the full-datetime form the historical
+backfill emits.
 
 ### 4. Update sprint report
 

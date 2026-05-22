@@ -81,6 +81,10 @@ ZSKILLS_MAX_CONCURRENT_WORKTREES=3
 # Default the claim TTL to 7200s (2h) — same default as the schema. Used
 # by /fix-issues' .zskills/claims/issue-<N>/ preflight sweep.
 ZSKILLS_CLAIM_TTL_SECONDS=7200
+# Dashboard Completed-window config (W1.6 of completed-backlog-sections).
+# Days = recency window; Limit = max closed-issue payload size.
+ZSKILLS_DASHBOARD_COMPLETED_DAYS=14
+ZSKILLS_DASHBOARD_COMPLETED_LIMIT=500
 
 if [ -f "$_ZSK_CFG" ]; then
   _ZSK_CFG_BODY=$(cat "$_ZSK_CFG" 2>/dev/null) || _ZSK_CFG_BODY=""
@@ -128,6 +132,26 @@ if [ -f "$_ZSK_CFG" ]; then
       ZSKILLS_MAX_CONCURRENT_WORKTREES="$_ZSK_MCW"
     fi
     unset _ZSK_MCW
+  fi
+  # execution.dashboard_completed_days: integer, default 14, min 1. Used
+  # by collect.py / Python via stdlib json (this resolver mirrors for
+  # shell consumers). Same BASH_REMATCH scoping idiom as
+  # max_concurrent_worktrees.
+  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"dashboard_completed_days\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    _ZSK_DCD="${BASH_REMATCH[1]}"
+    if [ "$_ZSK_DCD" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_DASHBOARD_COMPLETED_DAYS="$_ZSK_DCD"
+    fi
+    unset _ZSK_DCD
+  fi
+  # execution.dashboard_completed_limit: integer, default 500, min 1.
+  # Caps the bounded closed-issue fetch (D6 of completed-backlog-sections).
+  if [[ "$_ZSK_CFG_BODY" =~ \"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"dashboard_completed_limit\"[[:space:]]*:[[:space:]]*([0-9]+) ]]; then
+    _ZSK_DCL="${BASH_REMATCH[1]}"
+    if [ "$_ZSK_DCL" -ge 1 ] 2>/dev/null; then
+      ZSKILLS_DASHBOARD_COMPLETED_LIMIT="$_ZSK_DCL"
+    fi
+    unset _ZSK_DCL
   fi
   # execution.claim_ttl_seconds: integer (default 7200, min 60). Parsed
   # via Python stdlib rather than BASH_REMATCH — the BASH_REMATCH
