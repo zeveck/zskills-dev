@@ -106,6 +106,32 @@ for sk in "${!SKILLS_TO_CHECK[@]}"; do
     staged_hash="${staged_ver##*+}"
   fi
 
+  # Bump-on-disk-not-staged trap (issue #638). When SKILL.md has been
+  # bumped (or otherwise edited) on disk but the bump itself is NOT
+  # staged, `git show :path` returns the INDEX blob (= HEAD's content if
+  # SKILL.md isn't staged), so staged_ver above carries the OLD version
+  # while on_disk_ver carries the NEW one. The asymmetric check below
+  # would then compare new on_disk_ver-substituted staged_ver against
+  # old head_ver, see they match (when SKILL.md wasn't restaged), or
+  # miss the case entirely (when staged_blob was populated from index).
+  # Fail closed BEFORE the asymmetric branch so the unstaged-bump can
+  # never reach the silent-pass path.
+  if [ -n "$on_disk_ver" ] && [ -n "$head_ver" ] \
+     && [ "$on_disk_ver" != "$head_ver" ] \
+     && ! git -C "$REPO_ROOT" diff --cached --quiet -- "$sk/SKILL.md"; then
+    : # SKILL.md is in the staged diff — bump (if present) is recorded.
+  elif [ -n "$on_disk_ver" ] && [ -n "$head_ver" ] \
+       && [ "$on_disk_ver" != "$head_ver" ] \
+       && ! git -C "$REPO_ROOT" diff --quiet HEAD -- "$sk/SKILL.md"; then
+    # SKILL.md modified on disk vs HEAD (on_disk_ver != head_ver
+    # confirms the on-disk file carries a non-HEAD metadata.version),
+    # AND SKILL.md is NOT in the staged diff (working-tree-vs-HEAD
+    # differs but the difference isn't reaching the commit). The bump
+    # won't be recorded in the commit.
+    FAIL_LIST+=("$sk: SKILL.md modified on disk (on-disk version $on_disk_ver, HEAD $head_ver) but not staged — run \`git add $sk/SKILL.md\` so the bump is recorded")
+    continue
+  fi
+
   # Asymmetric: content changed, version unchanged.
   if [ "$cur_hash" != "$head_hash" ] && [ "$staged_ver" = "$head_ver" ]; then
     # Hint: did the user bump on disk but forget to `git add`? If

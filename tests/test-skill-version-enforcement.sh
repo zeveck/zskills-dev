@@ -537,6 +537,34 @@ else
   fail "case 22: expected STOP with 'not staged' hint, got exit=$ec err=$err"
 fi
 
+# Case 23 (s11): child file staged AND SKILL.md bumped on disk but
+# NOT staged (issue #638) → STOP with "modified on disk … not staged"
+# message. Pre-fix: the L105-107 fallback substituted on_disk_ver into
+# staged_ver, masking the asymmetric check (which then saw staged_ver !=
+# head_ver and skipped the FAIL). Post-fix: the fallback distinguishes
+# "SKILL.md matches HEAD" (case a, child-only) from "SKILL.md modified
+# but not staged" (case b, this test) and fails closed for case b.
+case_no=23
+sandbox=$(make_sandbox "$case_no")
+# Step 1: modify a child file (genuine work).
+echo "child mode edit" >> "$sandbox/skills/foo/modes/extra.md"
+# Step 2: bump SKILL.md's metadata.version on disk (forgot to also edit
+# the body, but that's OK — what matters is on-disk bumped, head not).
+bash "$sandbox/scripts/frontmatter-set.sh" \
+  "$sandbox/skills/foo/SKILL.md" metadata.version "2026.05.02+newbmp"
+# Step 3: stage ONLY the child file — NOT SKILL.md.
+(cd "$sandbox" && git add skills/foo/modes/extra.md)
+err=$(run_stage_check "$sandbox" 2>&1)
+ec=$?
+if [ "$ec" -ne 0 ] && [[ "$err" == *"STOP:"* ]] \
+   && [[ "$err" == *"modified on disk"* ]] \
+   && [[ "$err" == *"not staged"* ]] \
+   && [[ "$err" == *"skills/foo/SKILL.md"* ]]; then
+  pass "case 23: bump on disk + child staged + SKILL.md unstaged → exit 1 + STOP naming SKILL.md"
+else
+  fail "case 23: expected STOP naming SKILL.md as unstaged, got exit=$ec err=$err"
+fi
+
 # ----------------------------------------------------------------------
 # WORKTREE CASE — issue #393 closure.
 # ----------------------------------------------------------------------
