@@ -718,6 +718,337 @@ else
 fi
 
 ###############################################################################
+# Block 3b — Phase 3: Completed + Backlog below-panel band (static-grep)
+#
+# Strategy: the test file is static-grep based (no JSDOM); each Phase-3
+# acceptance test reads from the source code's structural contract.
+# Manual playwright-cli verification (W3.13) covers the visual layer.
+###############################################################################
+
+echo ""
+echo "=== Phase 3 AC: below-panel band + truncation banner (W3.9–W3.12b) ==="
+
+# W3.1 sanity — extended column tuples include `backlog` and `completed`.
+# Match in source order so the deny-test for "render-only inclusion" still
+# holds (Phase 5's conformance check pins exact tuple ordering).
+if grep -qE 'PLAN_COLUMNS = \["drafted", *"reviewed", *"ready", *"backlog", *"completed"\]' "$APP_JS"; then
+  pass "W3.1: PLAN_COLUMNS extended with backlog + completed"
+else
+  fail "W3.1: PLAN_COLUMNS tuple did not extend correctly"
+fi
+if grep -qE 'ISSUE_COLUMNS = \["triage", *"ready", *"backlog", *"completed"\]' "$APP_JS"; then
+  pass "W3.1: ISSUE_COLUMNS extended with backlog + completed"
+else
+  fail "W3.1: ISSUE_COLUMNS tuple did not extend correctly"
+fi
+if grep -q 'backlog: "Backlog"' "$APP_JS" && grep -q 'completed: "Completed"' "$APP_JS"; then
+  pass "W3.1: PLAN_COLUMN_LABELS / ISSUE_COLUMN_LABELS include Backlog + Completed"
+else
+  fail "W3.1: column labels missing Backlog/Completed entries"
+fi
+
+# W3.2 — deepCloneQueues writes a `completed` bucket for plans + issues
+# via the same PLAN_COLUMNS / ISSUE_COLUMNS loop. The existing iteration
+# at lines 403-404 (now ranging over the extended tuple) is the regression
+# pin from #355 / PR #361 — this assertion fails if a future edit
+# de-couples the allocator from the constant.
+DEEPCLONE_BODY=$(awk '
+  /^function deepCloneQueues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$DEEPCLONE_BODY" | grep -qE 'for \(const c of PLAN_COLUMNS\) out\.plans\[c\] = \[\]'; then
+  pass "W3.2: deepCloneQueues allocates plan buckets from PLAN_COLUMNS"
+else
+  fail "W3.2: deepCloneQueues plan allocator lost its PLAN_COLUMNS loop"
+fi
+if echo "$DEEPCLONE_BODY" | grep -qE 'for \(const c of ISSUE_COLUMNS\) out\.issues\[c\] = \[\]'; then
+  pass "W3.2: deepCloneQueues allocates issue buckets from ISSUE_COLUMNS"
+else
+  fail "W3.2: deepCloneQueues issue allocator lost its ISSUE_COLUMNS loop"
+fi
+
+# W3.2b — postQueue strips `completed` before sending so the server
+# validator does not 400 on otherwise-valid drag commits.
+POSTQUEUE_BODY=$(awk '
+  /^async function postQueue\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$POSTQUEUE_BODY" | grep -qE 'stripCompleted|completed' \
+   && echo "$POSTQUEUE_BODY" | grep -qE 'if \(k === "completed"\) continue'; then
+  pass "W3.2b: postQueue strips plans.completed / issues.completed before POST"
+else
+  fail "W3.2b: postQueue does not strip completed — server will 400 on drag commits"
+fi
+
+# W3.3 — fingerprintPlans / fingerprintIssues iterate the extended tuple,
+# so drag-into-backlog and column-membership churn invalidate the
+# fingerprint and trigger a re-render. (Mechanically satisfied by the
+# `for (const c of PLAN_COLUMNS)` loop in each function.)
+FPP_BODY=$(awk '
+  /^function fingerprintPlans\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+FPI_BODY=$(awk '
+  /^function fingerprintIssues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$FPP_BODY" | grep -qE 'for \(const c of PLAN_COLUMNS\)'; then
+  pass "W3.3: fingerprintPlans enumerates PLAN_COLUMNS (picks up new columns)"
+else
+  fail "W3.3: fingerprintPlans does not loop PLAN_COLUMNS — drag-into-backlog will not re-render"
+fi
+if echo "$FPI_BODY" | grep -qE 'for \(const c of ISSUE_COLUMNS\)'; then
+  pass "W3.3: fingerprintIssues enumerates ISSUE_COLUMNS"
+else
+  fail "W3.3: fingerprintIssues does not loop ISSUE_COLUMNS — drag-into-backlog will not re-render"
+fi
+# W3.3 — truncation flag participates in fingerprintIssues so the banner
+# rerenders on flag toggle.
+if echo "$FPI_BODY" | grep -qE 'closed_issues_truncated'; then
+  pass "W3.3: fingerprintIssues includes closed_issues_truncated flag"
+else
+  fail "W3.3: fingerprintIssues missing truncation flag — banner won't toggle on flag change"
+fi
+
+# W3.4 — renderBelowPanelBand helper exists and is invoked from both
+# renderPlans (kind: "plan") and renderIssues (kind: "issue").
+if grep -qE 'function renderBelowPanelBand\(' "$APP_JS"; then
+  pass "W3.4: renderBelowPanelBand helper defined"
+else
+  fail "W3.4: renderBelowPanelBand helper missing"
+fi
+# Markup contract: class="below-panel-band" with data-column children
+# data-column="completed" and data-column="backlog" — emitted by the
+# helper via BELOW_BAND_COLUMNS iteration.
+if grep -qE 'cls: "below-panel-band"' "$APP_JS"; then
+  pass "W3.4: below-panel-band element class emitted"
+else
+  fail "W3.4: .below-panel-band element class missing from source"
+fi
+if grep -qE 'BELOW_BAND_COLUMNS = \["backlog", *"completed"\]' "$APP_JS"; then
+  pass "W3.4: BELOW_BAND_COLUMNS = [backlog, completed] (sub-column order)"
+else
+  fail "W3.4: BELOW_BAND_COLUMNS tuple missing or out of order"
+fi
+# Invocation sites — once from renderPlans, once from renderIssues.
+BAND_CALL_COUNT=$(grep -cE 'renderBelowPanelBand\(\{' "$APP_JS" || true)
+if [ "${BAND_CALL_COUNT:-0}" -ge 2 ]; then
+  pass "W3.4: renderBelowPanelBand invoked from at least 2 sites (renderPlans + renderIssues)"
+else
+  fail "W3.4: renderBelowPanelBand invocation count = $BAND_CALL_COUNT (expected ≥ 2)"
+fi
+# Active row of renderPlans iterates ACTIVE_PLAN_COLUMNS — band's columns
+# are not duplicated into the active row.
+RENDER_PLANS_BODY=$(awk '
+  /^function renderPlans\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$RENDER_PLANS_BODY" | grep -qE 'for \(const c of ACTIVE_PLAN_COLUMNS\)'; then
+  pass "W3.4: renderPlans active row iterates ACTIVE_PLAN_COLUMNS"
+else
+  fail "W3.4: renderPlans does not use ACTIVE_PLAN_COLUMNS — backlog/completed would render in active grid"
+fi
+RENDER_ISSUES_BODY=$(awk '
+  /^function renderIssues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$RENDER_ISSUES_BODY" | grep -qE 'for \(const c of ACTIVE_ISSUE_COLUMNS\)'; then
+  pass "W3.4: renderIssues active row iterates ACTIVE_ISSUE_COLUMNS"
+else
+  fail "W3.4: renderIssues does not use ACTIVE_ISSUE_COLUMNS — backlog/completed would render in active grid"
+fi
+
+# W3.5 — CSS layout primitive .below-panel-band with grid + 2-column
+# template, visual separator, and hidden display:none for empty collapse.
+if grep -qE '^\.below-panel-band' "$APP_CSS"; then
+  pass "W3.5: .below-panel-band CSS rule defined"
+else
+  fail "W3.5: .below-panel-band CSS rule missing"
+fi
+if grep -qE 'grid-template-columns: 1fr 1fr' "$APP_CSS"; then
+  pass "W3.5: 2-column grid template (1fr 1fr) declared"
+else
+  fail "W3.5: 2-column grid template missing"
+fi
+if grep -qE 'border-top:[^;]*dashed' "$APP_CSS"; then
+  pass "W3.5: dashed border-top visual separator from active row"
+else
+  fail "W3.5: dashed border-top separator missing"
+fi
+if grep -qE '\.below-panel-band\[hidden\][^{]*\{[[:space:]]*display:[[:space:]]*none' "$APP_CSS"; then
+  pass "W3.5: .below-panel-band[hidden] collapses via display:none"
+else
+  fail "W3.5: [hidden] display:none rule missing"
+fi
+# D3 — band layout is STANDALONE, not composed with .columns-2. The CSS
+# rule must not chain `.below-panel-band.columns-2` or vice versa.
+if ! grep -qE '\.below-panel-band\.columns-2|\.columns-2\.below-panel-band' "$APP_CSS"; then
+  pass "W3.5 / D3: .below-panel-band is standalone (not composed with .columns-2)"
+else
+  fail "W3.5 / D3: .below-panel-band composed with .columns-2 (D3 violation)"
+fi
+
+# W3.7 — Count-derived collapse. Band sets `hidden` only when BOTH
+# sub-columns are empty; Backlog renders a placeholder when empty.
+BAND_BODY=$(awk '
+  /^function renderBelowPanelBand\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden", ""\)'; then
+  pass "W3.7: band sets hidden when totalCount (Backlog + Completed) is 0"
+else
+  fail "W3.7: collapse logic missing or wrong predicate"
+fi
+if echo "$BAND_BODY" | grep -qE 'if \(c === "backlog" && arr\.length === 0\)'; then
+  pass "W3.7: Backlog renders placeholder drop-target when empty"
+else
+  fail "W3.7: Backlog empty-state placeholder missing"
+fi
+if echo "$BAND_BODY" | grep -qE 'Drag here to defer'; then
+  pass "W3.7: Backlog placeholder text 'Drag here to defer' present"
+else
+  fail "W3.7: Backlog placeholder text missing"
+fi
+
+# W3.7b — Truncation banner. The template literal interpolates
+# closed_issues_limit TWICE so the operator sees the literal current
+# value, not a placeholder. Both interpolations pull from the same
+# variable (W3.12b regression — protects against accidental
+# field-name-as-literal text).
+BANNER_BODY=$(awk '
+  /^function renderTruncationBanner\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if [ -n "$BANNER_BODY" ]; then
+  pass "W3.7b: renderTruncationBanner helper defined"
+else
+  fail "W3.7b: renderTruncationBanner helper missing"
+fi
+if echo "$BANNER_BODY" | grep -qE 'truncation-banner'; then
+  pass "W3.7b: banner emits .truncation-banner class"
+else
+  fail "W3.7b: .truncation-banner class missing from helper"
+fi
+if echo "$BANNER_BODY" | grep -qE 'flags\.closed_issues_truncated'; then
+  pass "W3.7b: banner gates on flags.closed_issues_truncated"
+else
+  fail "W3.7b: banner gate flag missing"
+fi
+# Count of `${closed_issues_limit}` template-interpolations — MUST be 2
+# (DA3.4 / R7b: two-interpolation contract so the operator sees the
+# actual value twice, including the "currently N" parenthetical).
+INTERP_COUNT=$(echo "$BANNER_BODY" | grep -oE '\$\{closed_issues_limit\}' | wc -l)
+if [ "${INTERP_COUNT:-0}" -eq 2 ]; then
+  pass "W3.7b: banner interpolates \${closed_issues_limit} twice (DA3.4)"
+else
+  fail "W3.7b: banner interpolation count = $INTERP_COUNT (expected 2)"
+fi
+if echo "$BANNER_BODY" | grep -q 'execution.dashboard_completed_limit'; then
+  pass "W3.7b: banner names the config field execution.dashboard_completed_limit"
+else
+  fail "W3.7b: banner missing config-field name"
+fi
+
+###############################################################################
+# Phase 3 named tests per spec (W3.9, W3.10, W3.11, W3.12, W3.12b)
+###############################################################################
+
+# W3.9 — renders_completed_band_below_issues_panel
+# Static-grep variant: renderIssues invokes renderBelowPanelBand with
+# kind:"issue" + the queues argument; the helper emits data-column attrs
+# for "completed" and "backlog". A fixture issue at queue.column=
+# completed reaches the helper via deepCloneQueues' inferred-entry pass
+# (line 449-455) which already iterates the extended ISSUE_COLUMNS.
+ISSUES_BAND_CALL=$(echo "$RENDER_ISSUES_BODY" | grep -cE 'renderBelowPanelBand\(\{' || true)
+if [ "${ISSUES_BAND_CALL:-0}" -ge 1 ] \
+   && echo "$RENDER_ISSUES_BODY" | grep -qE 'kind: "issue"'; then
+  pass "renders_completed_band_below_issues_panel — renderIssues calls renderBelowPanelBand(kind:issue)"
+else
+  fail "renders_completed_band_below_issues_panel — wiring missing"
+fi
+# Card rendering hook — buildIssueCard called from within the helper for
+# the issue path.
+if echo "$BAND_BODY" | grep -qE 'buildIssueCard\(issue, num, c\)'; then
+  pass "renders_completed_band_below_issues_panel — band renders buildIssueCard for issue path"
+else
+  fail "renders_completed_band_below_issues_panel — buildIssueCard not invoked in band"
+fi
+
+# W3.10 — renders_backlog_band_below_plans_panel
+PLANS_BAND_CALL=$(echo "$RENDER_PLANS_BODY" | grep -cE 'renderBelowPanelBand\(\{' || true)
+if [ "${PLANS_BAND_CALL:-0}" -ge 1 ] \
+   && echo "$RENDER_PLANS_BODY" | grep -qE 'kind: "plan"'; then
+  pass "renders_backlog_band_below_plans_panel — renderPlans calls renderBelowPanelBand(kind:plan)"
+else
+  fail "renders_backlog_band_below_plans_panel — wiring missing"
+fi
+if echo "$BAND_BODY" | grep -qE 'buildPlanCard\('; then
+  pass "renders_backlog_band_below_plans_panel — band renders buildPlanCard for plan path"
+else
+  fail "renders_backlog_band_below_plans_panel — buildPlanCard not invoked in band"
+fi
+
+# W3.11 — below_panel_band_visible_when_backlog_empty_but_no_completed
+# Backlog is always a visible drop-target; band stays visible whenever
+# Backlog has items (totalCount > 0). Test the predicate: collapse fires
+# ONLY when totalCount === 0 (both empty), NOT when one is empty.
+if echo "$BAND_BODY" | grep -qE 'totalCount \+= arr\.length'; then
+  pass "below_panel_band_visible_when_backlog_empty_but_no_completed — totalCount sums BOTH sub-columns"
+else
+  fail "below_panel_band_visible_when_backlog_empty_but_no_completed — totalCount accumulator missing"
+fi
+# Predicate must be `=== 0`, not `<= 0` or `!== ...` — exact-zero gate.
+if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden"'; then
+  pass "below_panel_band_visible_when_backlog_empty_but_no_completed — collapse predicate is exact-zero (both-empty)"
+else
+  fail "below_panel_band_visible_when_backlog_empty_but_no_completed — collapse predicate wrong"
+fi
+
+# W3.12 — below_panel_band_collapse_when_both_empty
+# Already exercised by W3.7 predicate test above; pin under the named
+# acceptance label for explicit phase coverage.
+if echo "$BAND_BODY" | grep -qE 'if \(totalCount === 0\) band\.setAttribute\("hidden"'; then
+  pass "below_panel_band_collapse_when_both_empty — hidden attribute set on zero-count band"
+else
+  fail "below_panel_band_collapse_when_both_empty — hidden attr never set"
+fi
+
+# W3.12b — truncation_banner_renders_with_actual_limit_value
+# Two-interpolation contract + no field-name-without-value text leak.
+# (1) Source contains ${closed_issues_limit} exactly twice in the helper.
+# (2) Source does NOT contain a literal "${closed_issues_limit}" inside
+#     single-quotes / double-quotes (which would render as the
+#     placeholder string instead of interpolating).
+if [ "${INTERP_COUNT:-0}" -eq 2 ]; then
+  pass "truncation_banner_renders_with_actual_limit_value — template interpolates limit twice"
+else
+  fail "truncation_banner_renders_with_actual_limit_value — interpolation count != 2 ($INTERP_COUNT)"
+fi
+# Negative regression: a "${closed_issues_limit}" literal inside
+# double-quoted or single-quoted strings would render as text. Backticks
+# are the only valid wrapper.
+if ! grep -nE "[\"']\\\$\\{closed_issues_limit\\}[\"']" "$APP_JS" >/dev/null; then
+  pass "truncation_banner_renders_with_actual_limit_value — no quoted-string \${closed_issues_limit} (no placeholder leak)"
+else
+  fail "truncation_banner_renders_with_actual_limit_value — quoted-string \${closed_issues_limit} found (would render as literal)"
+fi
+# Banner gates on flag — absence/false implies no banner render. The
+# helper returns early when the flag is falsy.
+if echo "$BANNER_BODY" | grep -qE 'if \(!flags\.closed_issues_truncated\) return'; then
+  pass "truncation_banner_renders_with_actual_limit_value — no banner when flag absent/false"
+else
+  fail "truncation_banner_renders_with_actual_limit_value — early-return guard missing"
+fi
+
+###############################################################################
 # Block 4 — Phase 7: live write-back smoke (server already running)
 ###############################################################################
 

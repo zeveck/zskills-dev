@@ -23,8 +23,30 @@ const WORK_STATE_RESET_URL = "/api/work-state/reset";
 // flicker from a stale GET that started before the POST landed.
 const POST_RECONCILE_SUPPRESS_MS = 1500;
 
-const PLAN_COLUMNS = ["drafted", "reviewed", "ready"];
-const ISSUE_COLUMNS = ["triage", "ready"];
+// Full tuples used for rendering (active row + below-panel band),
+// deepCloneQueues allocation, fingerprintPlans/Issues membership, and
+// findPlan/findIssue / movePlan / moveIssue navigation. Includes the
+// Phase-3-added `backlog` (writable) and `completed` (read-only) columns.
+//
+// Server contract: `completed` is read-only on /api/queue — collect.py
+// derives it per-snapshot from plan frontmatter `completed:` (plans) and
+// GH issue state (issues). postQueue() MUST strip `completed` before
+// sending so the server's validator does not 400 on an otherwise-valid
+// drag commit. See server.py:459-467 / 494-502 for the explicit reject.
+const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "completed"];
+const ISSUE_COLUMNS = ["triage", "ready", "backlog", "completed"];
+// Sub-tuples used by renderPlans/renderIssues to draw the active
+// horizontal column row (above the below-panel-band). Keeps the active
+// row's grid at 3 / 2 columns regardless of how many "after the active
+// flow" columns join PLAN_COLUMNS / ISSUE_COLUMNS (D3 — band is a
+// standalone sibling layout, NOT a composition with .columns-2/.columns-3).
+const ACTIVE_PLAN_COLUMNS = ["drafted", "reviewed", "ready"];
+const ACTIVE_ISSUE_COLUMNS = ["triage", "ready"];
+// Sub-tuple used by renderBelowPanelBand to draw the Backlog | Completed
+// sub-columns. Backlog is always a drop-target; Completed is read-only
+// (no draggable cards, no claim chip, no move-all chevron — Phase 4
+// suppresses chevron + chip per-card via the column-membership check).
+const BELOW_BAND_COLUMNS = ["backlog", "completed"];
 // Threshold above which the column-header move-all chevron prompts the
 // user via confirm() before iterating. <= this count moves silently.
 const MOVE_ALL_CONFIRM_THRESHOLD = 10;
@@ -32,10 +54,14 @@ const PLAN_COLUMN_LABELS = {
   drafted: "Drafted",
   reviewed: "Reviewed",
   ready: "Ready",
+  backlog: "Backlog",
+  completed: "Completed",
 };
 const ISSUE_COLUMN_LABELS = {
   triage: "Triage",
   ready: "Ready",
+  backlog: "Backlog",
+  completed: "Completed",
 };
 
 // ---------------------------------------------------------------- helpers
@@ -502,17 +528,33 @@ function fingerprintIssues(issues, queues) {
       if (Number.isFinite(n)) pos[n] = [c, i];
     }
   }
-  return JSON.stringify(issues.map(i => [
-    i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
-    pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
-    // Claim state — DA5: without this, the fingerprint is byte-identical
-    // between "no claim" and "claim present" snapshots, so applySnapshot
-    // skips renderIssues and the chip never appears/disappears between
-    // polls. The 2-tuple is enough — pipeline_id changes when a new
-    // pipeline claims, started_at changes per-claim, and both are null
-    // when no claim is held.
-    i.claim ? [i.claim.pipeline_id || null, i.claim.started_at || null] : null,
-  ]));
+  // W3.7b — Truncation flag participates in the fingerprint so the
+  // banner appears/disappears on the next poll where the flag toggles.
+  // Without this, the banner can become stale if the only change
+  // between snapshots is the flag itself. Use `typeof` so the harness in
+  // tests/test-fix-issues-claim-render-dom.sh (which extracts this
+  // function standalone without the module-level `lastSnapshot`
+  // declaration) doesn't ReferenceError.
+  const _ls = (typeof lastSnapshot !== "undefined") ? lastSnapshot : null;
+  const flags = (_ls && _ls.flags) || {};
+  const trunc = [
+    !!flags.closed_issues_truncated,
+    Number.isFinite(flags.closed_issues_limit) ? flags.closed_issues_limit : null,
+  ];
+  return JSON.stringify({
+    trunc: trunc,
+    rows: issues.map(i => [
+      i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
+      pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
+      // Claim state — DA5: without this, the fingerprint is byte-identical
+      // between "no claim" and "claim present" snapshots, so applySnapshot
+      // skips renderIssues and the chip never appears/disappears between
+      // polls. The 2-tuple is enough — pipeline_id changes when a new
+      // pipeline claims, started_at changes per-claim, and both are null
+      // when no claim is held.
+      i.claim ? [i.claim.pipeline_id || null, i.claim.started_at || null] : null,
+    ]),
+  });
 }
 
 function fingerprintActivity(act) {
@@ -781,7 +823,7 @@ function renderPlans(plans, queues, defaultMode) {
   for (const p of plans) slugToPlan[p.slug] = p;
 
   const cols = el("div", { cls: "columns columns-3" });
-  for (const c of PLAN_COLUMNS) {
+  for (const c of ACTIVE_PLAN_COLUMNS) {
     const colDiv = el("div", { cls: "column" });
     const headId = "plans-col-" + c;
     const head = el("div", { cls: "column-head", attrs: { id: headId } });
@@ -837,6 +879,17 @@ function renderPlans(plans, queues, defaultMode) {
     cols.appendChild(colDiv);
   }
   body.appendChild(cols);
+
+  // Below-panel band — Backlog | Completed sub-columns (W3.4 / W3.7).
+  // Backlog is always a drop-target; Completed is read-only. Whole band
+  // collapses (hidden=true) only when BOTH sub-columns are empty.
+  const band = renderBelowPanelBand({
+    kind: "plan",
+    queues: lastGoodQueues,
+    slugToPlan: slugToPlan,
+    defaultMode: defaultMode,
+  });
+  body.appendChild(band);
 }
 
 function allColumnsEmpty(colsObj, columnNames) {
@@ -1076,7 +1129,7 @@ function renderIssues(issues, queues) {
   // optimistic lastGoodQueues update render the dragged card in its
   // new column immediately, before the next poll arrives.
   const cols = el("div", { cls: "columns columns-2" });
-  for (const c of ISSUE_COLUMNS) {
+  for (const c of ACTIVE_ISSUE_COLUMNS) {
     const colDiv = el("div", { cls: "column" });
     const headId = "issues-col-" + c;
     const head = el("div", { cls: "column-head", attrs: { id: headId } });
@@ -1131,6 +1184,126 @@ function renderIssues(issues, queues) {
     cols.appendChild(colDiv);
   }
   body.appendChild(cols);
+
+  // W3.7b — Truncation banner. Server signals via snap.flags.closed_issues_truncated
+  // when the bounded closed-issues fetch saturated the configured limit;
+  // captured at the module level by applySnapshot. Render BETWEEN the
+  // active column row and the below-panel band (D6: banner sits above
+  // the band per Phase 3 spec).
+  renderTruncationBanner(body);
+
+  // Below-panel band — Backlog | Completed (W3.4 / W3.7).
+  const band = renderBelowPanelBand({
+    kind: "issue",
+    queues: queues,
+    numToIssue: numToIssue,
+  });
+  body.appendChild(band);
+}
+
+// ----------------------------------------------- below-panel band (Phase 3)
+
+// Build a sibling block-level container with two sub-columns
+// (Backlog | Completed). Returns the band element with `hidden=true`
+// set when BOTH sub-columns are empty. Backlog ALWAYS renders as a
+// drop-target (empty UL with placeholder text); Completed renders
+// per-card buildPlanCard / buildIssueCard for read-only display.
+//
+// `opts.kind` is "plan" or "issue". For plans, opts.slugToPlan +
+// opts.defaultMode are required. For issues, opts.numToIssue is required.
+function renderBelowPanelBand(opts) {
+  const kind = opts.kind;
+  const queues = opts.queues;
+  const labels = (kind === "plan") ? PLAN_COLUMN_LABELS : ISSUE_COLUMN_LABELS;
+  const queueDict = (kind === "plan")
+    ? (queues && queues.plans) || {}
+    : (queues && queues.issues) || {};
+
+  // Count membership per BELOW_BAND column to decide band-level collapse.
+  // BACKLOG always renders as a drop-target even when empty (D5: drag-in
+  // affordance); the collapse rule fires only when BOTH columns are empty.
+  let totalCount = 0;
+  for (const c of BELOW_BAND_COLUMNS) {
+    const arr = queueDict[c] || [];
+    totalCount += arr.length;
+  }
+
+  const band = el("div", {
+    cls: "below-panel-band",
+    attrs: { "data-kind": kind, role: "group", "aria-label": "Backlog and Completed" },
+  });
+  if (totalCount === 0) band.setAttribute("hidden", "");
+
+  for (const c of BELOW_BAND_COLUMNS) {
+    const colDiv = el("div", { cls: "column" });
+    const headId = (kind === "plan" ? "plans" : "issues") + "-col-" + c;
+    const head = el("div", { cls: "column-head", attrs: { id: headId } });
+    head.appendChild(el("span", { text: labels[c] }));
+    const arr = queueDict[c] || [];
+    head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    colDiv.appendChild(head);
+
+    const ul = el("ul", {
+      cls: "dropzone",
+      attrs: {
+        role: "list",
+        "data-column": c,
+        "data-kind": kind,
+        "aria-labelledby": headId,
+      },
+    });
+
+    if (kind === "plan") {
+      for (const entry of arr) {
+        const slug = (typeof entry === "string") ? entry : (entry && entry.slug);
+        if (!slug) continue;
+        const card = buildPlanCard(
+          opts.slugToPlan[slug] || null, slug, c, opts.defaultMode,
+        );
+        ul.appendChild(card);
+      }
+    } else {
+      for (const num of arr) {
+        const issue = opts.numToIssue[num];
+        if (!issue) continue;
+        ul.appendChild(buildIssueCard(issue, num, c));
+      }
+    }
+
+    // Backlog placeholder when empty — keeps the drop-target visually
+    // discoverable per D5 ("Drag here to defer"). Completed empty stays
+    // bare (read-only column, no drop affordance).
+    if (c === "backlog" && arr.length === 0) {
+      ul.appendChild(el("li", {
+        cls: "dropzone-placeholder muted",
+        attrs: { "aria-hidden": "true" },
+        text: "Drag here to defer",
+      }));
+    }
+    colDiv.appendChild(ul);
+    band.appendChild(colDiv);
+  }
+  return band;
+}
+
+// W3.7b — Truncation banner. Read snap.flags.closed_issues_truncated +
+// closed_issues_limit from the module-level lastSnapshot. Banner classes
+// `.truncation-banner` + `.muted`; appended above the Issues panel's
+// active row (and thus above the below-band by extension). Non-dismissable:
+// disappears automatically on the next snapshot where the flag is absent
+// / false (renderIssues runs from scratch each fingerprint diff, so no
+// stale banner persists).
+function renderTruncationBanner(body) {
+  const _ls = (typeof lastSnapshot !== "undefined") ? lastSnapshot : null;
+  const flags = (_ls && _ls.flags) || {};
+  if (!flags.closed_issues_truncated) return;
+  const closed_issues_limit = flags.closed_issues_limit;
+  const banner = el("div", {
+    cls: "truncation-banner muted",
+    attrs: { role: "status", "aria-live": "polite" },
+    text: `Showing ${closed_issues_limit} most-recent closed issues — there are probably more. To see all, raise execution.dashboard_completed_limit (currently ${closed_issues_limit}) in .claude/zskills-config.json.`,
+  });
+  body.appendChild(banner);
 }
 
 // ------------------------------------------------------------- worktrees
@@ -1361,10 +1534,26 @@ function announce(regionId, msg) {
 
 async function postQueue(queues, opts) {
   // Returns true on success; on failure shows toast and returns false.
+  //
+  // Server contract: `completed` is read-only on /api/queue (server.py
+  // 459-467 / 494-502 reject any body containing it). Strip both
+  // plans.completed and issues.completed before sending — Completed
+  // cards are derived per-snapshot from plan frontmatter / GH issue
+  // state, never from monitor-state.json's queue arrays. Sending an
+  // EMPTY `completed: []` would still trip the validator's explicit
+  // reject, so we remove the key entirely (Phase 3 / D5).
+  const stripCompleted = (obj) => {
+    const out = {};
+    for (const k of Object.keys(obj || {})) {
+      if (k === "completed") continue;
+      out[k] = obj[k];
+    }
+    return out;
+  };
   const payload = {
     default_mode: queues.default_mode || "phase",
-    plans: queues.plans,
-    issues: queues.issues,
+    plans: stripCompleted(queues.plans),
+    issues: stripCompleted(queues.issues),
   };
   let res;
   try {
@@ -1466,8 +1655,8 @@ function clonedQueues() {
     ? JSON.parse(JSON.stringify(lastGoodQueues))
     : {
         default_mode: "phase",
-        plans: { drafted: [], reviewed: [], ready: [] },
-        issues: { triage: [], ready: [] },
+        plans: { drafted: [], reviewed: [], ready: [], backlog: [], completed: [] },
+        issues: { triage: [], ready: [], backlog: [], completed: [] },
       };
 }
 
