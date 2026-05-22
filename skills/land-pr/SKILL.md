@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.21+699f2c"
+  version: "2026.05.21+d6ead1"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -634,6 +634,47 @@ if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ]; then
       else
         echo "WARN: /land-pr Step 7b: fetch+ff-merge failed (see $FF_STDERR); local $BASE_BRANCH not updated" >&2
       fi
+    fi
+  fi
+fi
+```
+
+### Step 7c — Copy worktree tracking markers to main (Issue #604)
+
+`/run-plan` PR mode writes its per-phase `step.run-plan.<id>.{implement,verify,report}`
+markers to the **worktree's** `.zskills/tracking/$PIPELINE_ID/` subdir, which
+is gitignored and disappears when the worktree is removed post-merge. That
+leaves main's tracking subdir with at most `step.*.implement` (somehow) and
+`step.*.land` — the `.verify` companion that the `enforce_step_verify_marker`
+hook gate consults is missing its `.report` peer, and subsequent phases'
+commits get blocked (Issue #604). Fix: after a successful squash-merge, copy
+the worktree's entire pipeline subdir (`step.*`, `requires.*`, `fulfilled.*`)
+into main. Discipline mirrors Step 7b — loud failure (`WARN: …`), never
+silent, never destructive. `cp -af` is last-run-wins per issue body's
+edge-case guidance.
+
+```bash
+if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ] && [ -n "$WORKTREE_PATH" ]; then
+  COPY_PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-${TRACKING_ID:+run-plan.$TRACKING_ID}}"
+  COPY_MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." && pwd)
+  if [ -z "$COPY_PIPELINE_ID" ]; then
+    echo "INFO: /land-pr Step 7c: no PIPELINE_ID resolvable (no --tracking-id and no ZSKILLS_PIPELINE_ID); skipping tracking copy"
+  elif [ -z "$COPY_MAIN_ROOT" ] || { [ ! -d "$COPY_MAIN_ROOT/.git" ] && [ ! -f "$COPY_MAIN_ROOT/.git" ]; }; then
+    echo "WARN: /land-pr Step 7c: could not resolve MAIN_ROOT; skipping tracking copy" >&2
+  else
+    WT_TRACK="$WORKTREE_PATH/.zskills/tracking/$COPY_PIPELINE_ID"
+    MAIN_TRACK="$COPY_MAIN_ROOT/.zskills/tracking/$COPY_PIPELINE_ID"
+    if [ -d "$WT_TRACK" ]; then
+      mkdir -p "$MAIN_TRACK"
+      CP_STDERR="/tmp/land-pr-tracking-copy-stderr-$BRANCH_SLUG-$$.log"
+      if cp -af "$WT_TRACK/." "$MAIN_TRACK/" 2>"$CP_STDERR"; then
+        echo "INFO: /land-pr Step 7c: copied $WT_TRACK/. → $MAIN_TRACK/ (last-run-wins)"
+        rm -f "$CP_STDERR"
+      else
+        echo "WARN: /land-pr Step 7c: cp -af failed (see $CP_STDERR); tracking markers not fully copied" >&2
+      fi
+    else
+      echo "INFO: /land-pr Step 7c: no worktree tracking subdir at $WT_TRACK; skipping copy"
     fi
   fi
 fi
