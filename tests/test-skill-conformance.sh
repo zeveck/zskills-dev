@@ -1334,6 +1334,46 @@ check_fixed land-pr 'never source: parser rationale'  'allow-list parser, not `s
 check_not land-pr "no source-based result parsing in caller pattern" \
   'source[[:space:]]+.*RESULT_FILE|^\.[[:space:]]+.*RESULT_FILE'
 
+# --- Caller STATUS case-arm coverage (Issue #624) ---
+# /land-pr documents 12 STATUS values in its return envelope
+# (skills/land-pr/SKILL.md:158). The 5 caller skills + the canonical
+# reference pattern must enumerate every documented value as an explicit
+# case-arm — silent fall-through (e.g. `auto-rebase-blocked` reaching the
+# CI-status check below and being coerced to `pr-ready`) is a real-life
+# hazard (see issue body's "auto-rebase-blocked path is hit in real life"
+# section). Pin shape mirrors #602's case-arm-per-status closure but on
+# /land-pr's STATUS vocabulary instead of `.landed`. The `*)` default arm
+# is also required so unknown future STATUS values fail LOUD.
+_LP_STATUS_VALUES="created monitored merged push-failed rebase-conflict create-failed monitor-failed merge-failed rebase-failed behind-thrash auto-rebase-conflict auto-rebase-blocked"
+# Per-caller assertion: each STATUS appears at line-leading (after
+# whitespace) OR after `|` followed by `)` or `|`. This anchors on the
+# case-arm syntax so a mere mention in a comment does NOT satisfy.
+# Each entry is "skill_name relpath".
+for _LP_PAIR in \
+    "commit modes/pr.md" \
+    "do modes/pr.md" \
+    "fix-issues modes/pr.md" \
+    "quickfix SKILL.md" \
+    "run-plan modes/pr.md" \
+    "land-pr references/caller-loop-pattern.md"; do
+  _LP_SKILL="${_LP_PAIR%% *}"
+  _LP_REL="${_LP_PAIR#* }"
+  for _LP_STATUS in $_LP_STATUS_VALUES; do
+    # Match the STATUS as a case-arm token: preceded by line-start
+    # whitespace OR `|`, followed by `)` or `|`. The `[[:space:]]*\|` form
+    # also covers the alternation form `STATUS_A|STATUS_B)`.
+    check_in_file "$_LP_SKILL" "$_LP_REL" \
+      "STATUS case-arm: $_LP_STATUS (Issue #624)" \
+      "(^[[:space:]]+|\\|)${_LP_STATUS}(\\)|\\|)"
+  done
+  # The `*)` default arm is mandatory — surfaces unknown future STATUS
+  # values via `LAND_OUTCOME="unknown-status-..."` + stderr WARN (or
+  # bare stderr WARN in /run-plan which doesn't carry LAND_OUTCOME).
+  check_in_file "$_LP_SKILL" "$_LP_REL" \
+    "STATUS case-arm: default arm \`*)\` (Issue #624)" \
+    'unrecognized /land-pr STATUS'
+done
+
 # --- Step 7b post-merge fast-forward (Issue #254) ---
 # Guard the literal sentinel so a future refactor can't silently drop the
 # step that fast-forwards local main after a successful squash-merge.

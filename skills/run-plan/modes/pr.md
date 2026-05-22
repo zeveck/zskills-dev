@@ -487,7 +487,24 @@ while :; do
     push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
       echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
       break ;;
+    behind-thrash)
+      # Step 6b exhausted auto-rebase budget (issue #624). pr-ready
+      # surface; surface to the user via stderr so cron-fired runs leave
+      # an inspectable trace.
+      echo "/land-pr STATUS=behind-thrash — auto-rebase budget exhausted, manual rebase needed" >&2
+      break ;;
+    auto-rebase-conflict|auto-rebase-blocked)
+      # Step 6b auto-rebase merge-conflicted, or mergeStateStatus settled
+      # at BLOCKED for non-CI reasons. Issue #624 — must NOT be silently
+      # coerced to pr-ready by the CI-status check below.
+      echo "/land-pr STATUS=$STATUS REASON=${LP[REASON]:-} — manual intervention needed" >&2
+      break ;;
     created|monitored|merged) ;;  # fall through to CI-status check
+    *)
+      # Unknown STATUS — fail loud rather than coerce via CI-status
+      # (issue #624 — closes the silent fall-through gap).
+      echo "WARN: unrecognized /land-pr STATUS=$STATUS — settling at unknown-status" >&2
+      break ;;
   esac
 
   case "$CI_STATUS" in
