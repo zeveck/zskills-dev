@@ -1,5 +1,54 @@
 # Plan Report — plans-claim-chip-parity
 
+## Phase — 2a /run-plan acquire / heartbeat / release wiring
+
+**Plan:** plans/plans-claim-chip-parity.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-plans-claim-chip-parity
+**Commit:** `a64469c`
+
+### Fence sites added to `skills/run-plan/SKILL.md` (+ `.claude/` mirror)
+
+| Site | Section header | Action | Lines |
+|---|---|---|---|
+| Stop §3.5 | `^## Stop` step 3.5 | release walk (Option A, all plan-* claims) | ~371-419 |
+| Preflight sweep | `### Preflight checks` | source claim-fence-helpers + `sweep_stale_plan_claims` | ~709-720 |
+| Acquire | preflight (before mode-detection) | `acquire $PLAN_SLUG` w/ exit-10 decline, exit-0 | ~723-744 |
+| Heartbeat 1 | `### Parse plan` | refresh + state machine | ~1034-1060 |
+| Heartbeat 2 | `### Post-implementation tracking` | refresh + state machine | ~1550-1576 |
+| Heartbeat 3 | `### Post-verification tracking` | refresh + state machine | ~1943-1969 |
+| Heartbeat 4 | `### 5. Marker ordering and failure handling` | refresh + state machine | ~2038-2064 |
+| Heartbeat 5 | `### Post-report tracking` | refresh + state machine | ~2302-2328 |
+| Release §0a | `### 0a. Idempotent early-exit` | release w/ `\|\| true` | ~2338-2349 |
+| Refresh §0b | `### 0b. Final-verify gate` (cron-defer site) | refresh w/ attempt+backoff in `--current-phase` | ~2448-2474 |
+| Release Phase 6 | `### Post-landing tracking` | release at terminal merge | ~2720-2740 |
+
+### Tests (8 new + supporting edits)
+
+| File | Lines | Result |
+|---|---|---|
+| `tests/test-plan-claim-race-e2e.sh` | 158 | 1/1 |
+| `tests/test-plan-claim-heartbeat.sh` | 138 | 18/18 |
+| `tests/test-plan-claim-cron-fire-state-machine.sh` | 200 | 8/8 |
+| `tests/test-plan-claim-release-phase6.sh` | 162 | 9/9 |
+| `tests/test-plan-claim-release-stop.sh` | 192 | 9/9 |
+| `tests/test-plan-claim-release-window.sh` | 129 | 8/8 |
+| `tests/test-plan-claim-release-already-complete.sh` | 138 | 6/6 |
+| `tests/test-plan-claim-heartbeat-verify-defer.sh` | 175 | 7/7 |
+
+`tests/run-all.sh` +8 `run_suite` lines. `tests/test-skill-conformance.sh` sanitize-wrap literal 14→16 (2 new construct sites: W2a.1 acquire fence, W2a.4 Stop site 1).
+
+### Verification
+
+- **Full test suite**: `Overall: 5481/5481 passed, 0 failed` (baseline 5371; +110).
+- **All 7 phase ACs PASS** (verifier-confirmed with line citations + standalone test runs):
+  - AC2a.1 race e2e / AC2a.2 heartbeats at all 6 sections / AC2a.3 cron-fire state machine (4 branches) / AC2a.4 3 releases + 1 refresh / AC2a.5 no §1-5 release (regression locked) / AC2a.6 preflight sweep / AC2a.7 acquire (line 734) precedes mode-detection (line 1109)
+- **Locked decisions**: D2 (HYBRID heartbeat) and D3 (acquire-or-report exit 0) both confirmed.
+
+`metadata.version` → `2026.05.22+21f33b`.
+
+---
+
 ## Phase — 1 Claim primitive + on-disk schema + PreToolUse hook
 
 **Plan:** plans/plans-claim-chip-parity.md
