@@ -1100,3 +1100,33 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 
 **Complexity:** S (single-file ~5-line bash assignment + conformance test pin + metadata version bump). **Action now:** /do pr — add `CHANGE_SUMMARY=$(git log origin/main..HEAD --format='- %s')` assignment before the heredoc in `skills/fix-issues/modes/pr.md`, add conformance assertion against unset-heredoc-vars in `modes/pr.md`, and bump the skill's `metadata.version`.
 
+
+### #606 — Variable-read-before-assignment family: close remaining 4 siblings + add structural conformance pin in one PR
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** Pass-18 closure-verification on PR #603 (which closed #579/#582/#592/#596) surfaced 4 more uncovered siblings of the variable-read-before-assignment defect family: #601 (now closed by PR #614), `skills/draft-plan/SKILL.md:65` (`${TRACKING_ID}` zero assignments), `skills/fix-issues/SKILL.md:321-323` (`${TRACKING_ID}` zero assignments — trickier because /fix-issues doesn't take a plan file), and `skills/run-plan/SKILL.md:271` (`$PLAN_FILE` in status-mode fence; first assignment is line 1323, status-mode exits before Phase 1 preflight). PR #603 was hand-crafted to 4 specific skills with no conformance pin to prevent the next sibling from accreting.
+
+**Fix outline.** One PR adds the structural conformance pin to `tests/test-skill-invariants.sh` (~30-50 lines bash extracting every `${VAR}` read inside fenced bash blocks per skill and asserting either same-file assignment, env-var allow-list, or inspectable allow-comment marker), plus mirrors the #603 `$ARGUMENTS`-resolution pattern to the 3 remaining siblings (draft-plan TRACKING_ID/OUTPUT_FILE/ROUND, fix-issues SKILL.md TRACKING_ID with synthesized `sprint-$(TZ=… date)` form, run-plan status-mode PLAN_FILE), plus 3 version bumps + 3 mirrors. Closes #606.
+
+**Complexity:** L (4 skill source edits + 1 framework-level conformance test + 3 version bumps + 3 mirrors; non-mechanical canonical-derivation choice in /fix-issues and /run-plan). **Action now:** /draft-plan #606 — needs adversarial review of the conformance-test design and the /fix-issues / /run-plan derivation choices before execution.
+
+### #604 — /run-plan PR mode: per-phase step.*.{implement,verify,report} markers never propagate to main
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** In `/run-plan` PR mode, `step.run-plan.<id>.{implement,verify,report}` markers are written to the worktree (gitignored, ephemeral) and never copied to main. Only `step.run-plan.<id>.land` lands in main (Phase 6 uses `MAIN_ROOT="$CLAUDE_PROJECT_DIR"`). When the PR merges (squash) and the worktree is removed, the worktree's `.zskills/tracking/` subtree vanishes — main is left with `.implement` + `.land` and no `.verify` or `.report` companions. Observed during `plans/fix-issues-claims.md` chunked-finish-auto run (PR #600): the post-`/clear` Phase 2 commit hit `hooks/block-unsafe-project.sh enforce_step_verify_marker` ("BLOCKED: ... verified but no report written") because main's tracking subdir had `.verify` (7h old) but no `.report` companion.
+
+**Fix outline.** Option A from the issue body: add a copy-to-main step in `/land-pr` Step 7b adjacency (after FF local main succeeds for a squash-merged PR with `MERGE_REQUESTED=true` and `PR_STATE=MERGED`): `cp -af "$WT_TRACK/." "$MAIN_TRACK/"` for the entire `$PIPELINE_ID` subdir. Last-run-wins on collision. Includes `requires.*` and `fulfilled.*` markers so main has a complete view post-merge. Edge cases (worktree removed before copy = no-op; pipeline subdir already exists = clobber) handled. Plus an integration test simulating the chunked-finish-auto Phase N→N+1 transition WITHOUT the manual catch-up the orchestrator did for #600.
+
+**Complexity:** S (one block in `skills/land-pr/SKILL.md` Step 7b adjacency + one integration test + version bump + mirror). **Action now:** /do pr — add Option A copy-to-main step in `/land-pr` Step 7b adjacency after the FF-merge, plus a test simulating the Phase N→N+1 transition.
+
+### #577 — /research-and-plan Step 2 self-contradicts on /draft-plan dispatch mechanism (Skill-tool MUST clause vs parallel-3-agent prose)
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `skills/research-and-plan/SKILL.md` Step 2 prescribes two incompatible dispatch shapes for `/draft-plan`. Lines ~90-128 state a Skill-tool MUST clause ("The Skill tool is the recursion mechanism … You — still at top-level … execute /draft-plan's research, review, and refine workflow as if its instructions were your own") which is intrinsically serial (only one Skill-tool body active at a time). Lines ~167-172 prescribe parallel-3 concurrent-agents semantics ("Dispatch at most 3 /draft-plan agents concurrently. Wait for each batch to complete before the next…") which are realizable only via the Agent tool, contradicting the MUST. The past-failure quote ("11 parallel agents caused load 67") is direct evidence agents were Agent-dispatching /draft-plan here — exactly the path the MUST forbids.
+
+**Fix outline.** Pick the Skill-tool shape (already justified by load-67 incident + Anthropic's sub-sub-agent design) and rewrite the parallelism prose as serial batches: "Invoke `/draft-plan` once per sub-problem via the Skill tool. Each invocation runs the full multi-round review loop in your context before returning; this is intrinsically serial. Report progress between sub-plans. Do not Agent-dispatch (subagents lack the Agent tool, breaking /draft-plan's internal reviewer + devil's-advocate dispatch)." Remove the "at most 3 concurrent" clause and the load-67 past-failure quote (now structurally impossible). Add a conformance pin asserting `research-and-plan/SKILL.md` does not contain both "Skill tool" and "concurrently" within the Step 2 region (or pin the canonical serial-batches prose with literal-substring assertion).
+
+**Complexity:** S (one prose rewrite in SKILL.md + one conformance pin + version bump + mirror). **Action now:** /do pr — rewrite Step 2 parallelism prose as serial-batches form; remove the contradictory "at most 3 concurrent" clause; add conformance pin.
