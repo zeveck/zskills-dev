@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.21+bd5465"
+  version: "2026.05.22+398b99"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -496,6 +496,50 @@ sprint sentinel.
 # Dispatch list: take the first N ready entries (or all when "all").
 mapfile -t READY_LINES < <(printf '%s' "$READY_TSV" \
   | awk -F'\t' '$1!="__DEFAULT__" && $1!="" {print}')
+```
+
+### Pre-filter sweep (R2.6) — reap stale plan claims
+
+Before the selection-aware filter runs, sweep stale plan claims so a
+crashed pipeline doesn't permanently block a slug from re-dispatch.
+The sweep is its own step (NOT bundled into the filter script), matching
+`/fix-issues`' Phase 1 sweep pattern.
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+SWEEP="$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh"
+if [ -x "$SWEEP" ]; then
+  bash "$SWEEP" sweep || true
+fi
+```
+
+### Selection filter (D4) — drop in-flight plan claims
+
+Pipe the just-built `READY_LINES` through `filter-in-flight-plan-claims.sh`
+to drop slugs whose claim files indicate an in-flight pipeline. This is
+the user-steering anchor — catching the in-flight pipeline at SELECTION
+time (not at /run-plan acquire-time) keeps the user's typed
+`/work-on-plans` from spinning up redundant dispatches. See
+`plans/plans-claim-chip-parity.md` D4 + W2b.1.
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh"
+if [ -x "$FILTER" ]; then
+  FILTERED=$(printf '%s\n' "${READY_LINES[@]}" | bash "$FILTER")
+  if [ -n "$FILTERED" ]; then
+    mapfile -t READY_LINES <<< "$FILTERED"
+  else
+    READY_LINES=()
+  fi
+fi
+```
+
+(Defensive `[ -x ]` check so older installations without the script
+don't break. Empty filter output rebuilds `READY_LINES` as an empty
+array rather than a one-element array with an empty string.)
+
+```bash
 TOTAL_READY="${#READY_LINES[@]}"
 if [ "$ALL_MODE" = "1" ]; then
   N="$TOTAL_READY"
