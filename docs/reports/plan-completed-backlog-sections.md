@@ -1,5 +1,50 @@
 # Plan Report — Completed + Backlog dashboard sections
 
+## Phase — 4 Drag-target wiring + Completed read-only semantics [UNFINALIZED]
+
+**Plan:** plans/completed-backlog-sections.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-completed-backlog-sections (branch `feat/completed-backlog-sections`)
+**Commits:** `852dcb9`
+
+### Work Items
+
+| #     | Item                                                                          | Status   | Notes                                                                                                                                          |
+| ----- | ----------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| W4.1  | `buildIssueCard` / `buildPlanCard` completed-card guard                       | Done     | `isCompleted` gate suppresses draggable, claim-chip, per-card buttons, move-all chevron. Plan completed → plain `<span>` title (DA10).         |
+| W4.2  | `onDrop` completed reject + backlog dispatch                                  | Done     | `console.warn` + no-op on completed-target drop; backlog targets route through normal `postQueue` path.                                        |
+| W4.3  | Chevron-renderer skip on completed                                            | Done     | `renderBelowPanelBand` emits chevrons under `if (c === "backlog")` only. Active-row uses `ACTIVE_*_COLUMNS` (excludes completed).             |
+| W4.4  | Drag from Backlog → leftmost-active rewrite per D5                            | Done     | When `sourceColumn === "backlog"`, target rewrites to `"triage"` (issues) / `"drafted"` (plans). Explicit D5 cite in code comment.            |
+| W4.5  | Single `postQueue` helper                                                     | Done     | `grep -cE "fetch\\([^)]*api/queue" app.js == 1`.                                                                                                |
+| W4.6  | Composition checks (claim chip, move-all, lastGoodQueues deepClone)           | Done     | All three covered. Claim chip suppressed on completed cards (W4.10 enforces). Move-all skips completed (W4.11). DeepClone iterates 5/4-tuples. |
+| W4.7  | Skill version bump                                                            | Done     | `skills/zskills-dashboard/SKILL.md metadata.version: 2026.05.22+fd083a`.                                                                       |
+| W4.8  | NEW `tests/test-dashboard-completed-readonly.sh`                              | Done     | 18 PASSes via JSDOM render. Registered in `tests/run-all.sh`.                                                                                  |
+| W4.9  | NEW `tests/test-dashboard-backlog-bidir.sh`                                   | Done     | 23 PASSes via JSDOM harness driving `onDragStart`/`onDrop` directly. Playwright path deferred (dev_server.cmd empty) — documented in header.   |
+| W4.10 | extended `test-fix-issues-claim-render-dom.sh` with `completed_column_no_claim_chip` | Done | DOM assertion: no `.claim-chip` even with populated claim payload.                                                                              |
+| W4.11 | extended `test_zskills_monitor_dashboard_ui.sh` with `move_all_chevron_absent_on_completed` | Done | Static-grep assertion for guard pattern.                                                                                                       |
+| W4.12 | extended `test_zskills_monitor_dashboard_ui.sh` with `single_fetch_helper_post` | Done | Grep count == 1 asserted.                                                                                                                       |
+
+### Verification
+
+- **Test suite:** `Overall: 5640/5640 passed, 0 failed`.
+- **Acceptance criteria:** AC4.1–AC4.8 all met.
+- **No PLAN-TEXT-DRIFT tokens.**
+- **Scope-creep check:** clean — 7 files in expected paths + 2 new test files (× source/mirror parity where applicable).
+- **Mirror invariant:** source and `.claude/skills/` byte-identical for both `SKILL.md` and `app.js`.
+
+### Cross-phase notes
+
+- **Phase 5 will need to encode an asymmetry in W5.1's four-site conformance grep.** The frontend (`app.js`) has 5/4-element tuples including `completed`; the server (`server.py`) deliberately has 4/3-element tuples EXCLUDING `completed` (the validator's writeable-target whitelist). This is intentional per Locked Decision D4 — `completed` is read-only on the API surface and W2.2 hard-rejects writes. W5.1's conformance grep cannot assume identical tuple ordering across all four sites; it must encode the rule "server omits `completed`; frontend includes it."
+- **W4.4 chevron-vs-drag D5 ambiguity** (verifier-flagged). Backlog's `«` column-head chevron uses `moveAllInColumn`'s adjacent-step semantics. For plans, that points to `ready` (NOT `drafted` as D5 would prescribe). For issues, `triage` happens to be both leftmost-active AND adjacent-prev so the issue is moot there. The W4.4 spec is literally scoped to "the `onDrop` handler" — drag-only — so the implementation is spec-compliant. Phase 5 may want to consider whether the chevron should also obey D5; if yes, an explicit override for plans-backlog `«` → `drafted` is required.
+- **W5.4 #618 follow-up is MOOT.** PR #636 (`fix(zskills-dashboard): map all 11 canonical .landed statuses in landedPillClass`) landed on main at 2026-05-22T07:57:38Z, absorbed by the chore commit `9b07013` ahead of this phase. Phase 5 should either skip W5.4 entirely or note that the follow-up was filed and landed independently.
+- **W3.13 manual playwright still deferred** (dev_server.cmd empty); same deferral applies to W4.9's playwright path.
+
+### User Sign-off
+
+(No interactive UI sign-off in Phase 4 — JSDOM tests cover DOM-level assertions; playwright-cli manual deferred per the project's empty dev_server.cmd config. Accumulated sign-off for the final phase: zero items needing human review until consumer projects with configured dev servers exercise the band UI.)
+
+---
+
 ## Phase — 3 Frontend rendering + below-panel band layout [UNFINALIZED]
 
 **Plan:** plans/completed-backlog-sections.md

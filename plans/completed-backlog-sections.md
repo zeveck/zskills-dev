@@ -68,10 +68,10 @@ The dominant constraint is **"surface bugs don't patch"**: the existing `_infer_
 
 | Phase | Status | Name |
 |---|---|---|
-| 1 | ✅ | Backend — `collect.py` + `monitor-state.json` schema v1.2 (`66c2c5c`) |
-| 2 | ✅ | Server — `PLAN_COLUMNS` / `ISSUE_COLUMNS` extension + version writers + validator (`03ec40b`) |
-| 3 | ✅ | Frontend — rendering + below-panel band layout (`c6f0b73`) |
-| 4 | ⬚ | Drag-target wiring + Completed read-only semantics |
+| 1 | ✅ | Backend — `collect.py` + `monitor-state.json` schema v1.2 (`75fa6e2`) |
+| 2 | ✅ | Server — `PLAN_COLUMNS` / `ISSUE_COLUMNS` extension + version writers + validator (`d90d285`) |
+| 3 | ✅ | Frontend — rendering + below-panel band layout (`894926c`) |
+| 4 | ✅ | Drag-target wiring + Completed read-only semantics (`852dcb9`) |
 | 5 | ⬚ | Integration, conformance, end-to-end verification |
 
 ---
