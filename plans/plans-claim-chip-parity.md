@@ -126,7 +126,7 @@ The mechanism is a SIBLING-CLONE of `claim-issue.sh` (not a generalisation) beca
 | Phase 1 — Claim primitive + on-disk schema + PreToolUse hook | ✅ | `9c8fd56` | 6 new artifacts (claim-plan.sh, claim-fence-helpers.sh, block-run-plan-unclaimed.sh + .claude mirrors) + Step 3.7.1 + 5 test files (42 new tests). 5415/5415 pass. |
 | Phase 2a — /run-plan acquire/heartbeat/release wiring | ✅ | `a64469c` | 11 fence sites wired in /run-plan SKILL.md + 8 new tests (66 new + 2 conformance picks). 5481/5481 pass. |
 | Phase 2b — /work-on-plans selection-aware filter | ✅ | `41b9a99` | filter-in-flight-plan-claims.sh (200 lines) + Step 4 sweep+filter fences + 4 new tests (28 pass). 5503/5503 pass. |
-| Phase 3 — Dashboard collect.py + render-side wiring | ⬚ | — | — |
+| Phase 3 — Dashboard collect.py + render-side wiring | 🟡 | — | — |
 | Phase 4 — Conformance tests + integration + SKILL.md prose | ⬚ | — | — |
 | Phase 5 — Optional cleanup + verification | ⬚ | — | — |
 
