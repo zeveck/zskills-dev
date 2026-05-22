@@ -70,6 +70,20 @@ check "prohibition: skill tool recursion mechanism" \
 check "prohibition: docs URL" \
   'grep -q "code.claude.com/docs/en/sub-agents" skills/research-and-plan/SKILL.md'
 
+# Issue #577: Step 2 must not contradict the Skill-tool MUST clause with
+# parallel-Agent-dispatch prose. The MUST clause makes /draft-plan
+# dispatch intrinsically serial; any "concurrent" / "at most N"
+# parallelism wording is unrealizable and is the documented past-failure
+# trigger. Source AND mirror must both be clean.
+for f in skills/research-and-plan/SKILL.md .claude/skills/research-and-plan/SKILL.md; do
+  check "issue #577: no parallel-draft-plan contradiction in $f (no 'at most 3')" \
+    "! grep -q 'at most 3' '$f'"
+  check "issue #577: no parallel-draft-plan contradiction in $f (no 'concurrently')" \
+    "! grep -q 'concurrently' '$f'"
+  check "issue #577: canonical serial-dispatch prose present in $f" \
+    "grep -q 'intrinsically serial' '$f'"
+done
+
 # Phase E: early requires-lockdown
 # The marker creation must appear in Phase 1 (before Phase 2).
 # Heuristic: the first occurrence of `requires.verify-changes.$TRACKING_ID`

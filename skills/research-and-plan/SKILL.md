@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.21+c35245"
+  version: "2026.05.21+b00e01"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -162,18 +162,20 @@ For each sub-problem:
      `/draft-plan output $ZSKILLS_PLANS_DIR/X.md rounds 2 <description>. Landing mode: pr`
    - If `LANDING_ARG` is empty, omit the suffix entirely — do NOT pass
      an empty `Landing mode:` token.
-4. Wait for each `/draft-plan` batch to complete before dispatching the
-   next batch (see parallelism rules below).
+4. After each `/draft-plan` invocation returns, report progress, then
+   move to the next sub-plan (see serial-dispatch rule below).
 
-**Parallelism and resource limits:** Dispatch at most 3 `/draft-plan`
-agents concurrently. Wait for each batch to complete before the next.
-**While waiting, do NOT draft plans yourself — wait.** The idle time is
-the cost of not melting the container. Past failure: 11 parallel agents
-caused load average 67, 54 test timeouts, and forced a full restart.
+**Serial dispatch — no parallelism.** Invoke `/draft-plan` once per
+sub-problem via the Skill tool. Each invocation runs the full
+multi-round review loop in your context before returning; this is
+intrinsically serial. Report progress between sub-plans. Do not
+Agent-dispatch (subagents lack the Agent tool, breaking `/draft-plan`'s
+internal reviewer + devil's-advocate dispatch — see the Skill-tool MUST
+above).
 
 Draft in dependency order:
-1. Foundation plan first (alone — everything depends on it)
-2. Independent plans in batches of 3
+1. Foundation plan first (everything depends on it)
+2. Independent plans next, one at a time
 3. Dependent plans after their prerequisites complete
 
 Dependent sub-plans must be drafted after their prerequisites so later
