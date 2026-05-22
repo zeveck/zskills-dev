@@ -499,6 +499,21 @@ for _landed_status in full landed partial pr-ready pr-ci-failing pr-failed \
     "grep -qF '\"$_landed_status\"' .claude/skills/zskills-dashboard/scripts/zskills_monitor/static/app.js"
 done
 
+# Issue #649: CLAUDE.md Architecture section's skill counts must match
+# `ls -d skills/*/` and `ls -d block-diagram/*/` (minus screenshots).
+# Stale counts ship outdated framing to every consumer reading CLAUDE.md.
+# These are two intentionally single-domain checks — one probes skills/,
+# the sibling check probes block-diagram/ — so the framework-wide
+# meta-lint's "must also reference block-diagram/" rule doesn't apply.
+# The opt-out below must sit IMMEDIATELY before the first `check` line
+# (no intervening non-marker lines) because the meta-lint resets the
+# skip flag on any non-marker line.
+# block-diagram-exempt: CLAUDE.md count check; sibling assertion below covers block-diagram/
+check "CLAUDE.md skills/ count matches ls -d skills/*/" \
+  "test \"\$(grep -oE '\\([0-9]+ core\\)' CLAUDE.md | head -1 | grep -oE '[0-9]+')\" = \"\$(ls -d skills/*/ | wc -l)\""
+check "CLAUDE.md block-diagram/ count matches ls -d block-diagram/*/ (minus screenshots)" \
+  "test \"\$(grep -oE 'add-on skills \\([0-9]+\\)' CLAUDE.md | head -1 | grep -oE '[0-9]+')\" = \"\$(ls -d block-diagram/*/ | grep -v screenshots | wc -l)\""
+
 # Emit format expected by tests/run-all.sh
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
