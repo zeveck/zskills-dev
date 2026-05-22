@@ -1832,3 +1832,37 @@ Dashboard Ready queue head at sprint start: `[601, 602]`. Source: `.zskills/moni
 - **#604 verifier flagged a runner-registration gap on first pass.** Implementer added `tests/test-land-pr-tracking-copy.sh` (243 lines, 13 ref-impl cases) but didn't register it in `tests/run-all.sh`. The new test passed standalone but didn't run during the suite (regression-gate gap). Fixed in follow-on commit 89ecc7f (1-line append to run-all.sh near line 122 alongside the other test-land-pr-* registrations). Suite re-ran green (5332/5332). This is the design-intended verifier value-add: catching a real-but-low-visibility gap that diff-review alone would have missed.
 
 - **Concurrent cron fire** at ~01:13 UTC (the next /30m mark) was deferred at orchestrator-discretion: Sprint #2 was mid-flight with 2 alive fix branches + active suite re-run + 3 pending /land-pr dispatches. Starting Sprint #3 in the same context would force concurrent state juggling that the parallel-pipelines design isolates at the SUBAGENT layer, not the orchestrator. The 30m cron remains armed; next fire after Sprint #2 lands.
+
+## Sprint — 2026-05-21 22:40 EDT [UNFINALIZED]
+
+**Mode:** auto (dashboard-sourced, cron-fired) | **Focus:** default | **Sprint ID:** sprint-20260522-021124-sprint
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|--------------|-------------|
+| #606 | Variable-read-before-assignment family closure (draft-plan TRACKING_ID/OUTPUT_FILE/ROUND, fix-issues sync TRACKING_ID, run-plan status PLAN_FILE) + structural conformance pin | /tmp/zskills-fix-issue-606 | 6f6a9b4 | 5369/5369 (3 skill resolutions + new conformance test with targeted pairs + family scan; negative-test confirmed pin fires on reverted ROUND) | PASS (verifier APPROVED FOR LANDING; allow-list sanity confirmed all 7 follow-up entries are legitimate inheritance) | N/A (skill prose + bash fences) |
+| #583 | /review-feedback prose lacks 'independently size severity' rule | /tmp/zskills-fix-issue-583 | a15124b | 5360/5360 (Step 2 prose addition + Step 3 column rename + 2-check conformance pin) | PASS (inline-verified — diff is exact canonical phrase + column rename; 2 grep checks added) | N/A (skill prose only) |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Bug with unclear cause (needs /investigate)
+| # | Title | Why |
+|---|-------|-----|
+| #594 | Part B follow-up to #587: intermittent fixture-extension assertion fail | Body suggests multiple investigation paths (bisect, env-var leak audit, hermeticity refactor, surgical teardown) but no root cause is pinned. Picking a fix shape without root cause is guesswork. Routed to `/investigate #594`. |
+
+### Skipped — Cherry-Pick Conflict
+(none)
+
+### Not Fixed
+(none)
+
+### Notes
+
+- **#606 was re-sized in Sprint #2.** Original triage labeled it `/draft-plan`-tier (rubber-stamping the body's "consolidated work item / Larger-than-issue" framing). User pushback prompted independent re-assessment by greping each cited file; corrected to **M / /do pr-tier mechanical multi-file work**. This sprint executed the corrected sizing — implementer landed the 3 mechanical mirrors (draft-plan, fix-issues sync, run-plan status) + new conformance test + 3 version bumps + 3 mirrors in one commit (7 files, 214 insertions). Verifier APPROVED.
+
+- **Conformance pin's allow-list surfaces 7 follow-up read-before-assign defects** in non-listed skills (refine-plan ROUND, research-and-plan GOAL, run-plan/references/failure-protocol.md PLAN_FILE, run-plan/modes/pr.md PLAN_FILE/TRACKING_ID, commit/modes/pr.md TRACKING_ID, fix-issues/modes/pr.md SPRINT_ID). Implementer correctly scoped them out (issue #606's "Closes" list is the 4 cited siblings, not the wider family). Verifier confirmed each allow-list entry is legitimate inheritance (mode-files dispatched after parent resolves, doc-comment example only, etc.) and no defects are hidden. Future work item: tighten allow-list by deriving each entry from the parent's resolver flow rather than allowing the read site naked.
+
+- **Verifier dispatch was partial this sprint** (departure from full-coverage discipline): dispatched fresh-context verifier on #606 (larger/higher-risk, new conformance test), inline-verified #583 (small prose edit + 2-check pin trivially confirmed by diff inspection). Documented per the "explicit-departure" rule. The CI re-run on rebased branches is the ultimate cross-check.
+
+- **#594 routed to /investigate, not skip-and-forget.** Tracker row in `docs/issues/ISSUES_PLAN.md` carries `**Action now:** /investigate #594` so the next sprint cron fire's triage will skip-route consistently. Dashboard Ready queue head post-merges will likely surface #594 next; the routing will hold.
