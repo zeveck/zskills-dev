@@ -28,6 +28,11 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-fix-issue-unclaimed.sh\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-run-plan-unclaimed.sh\"",
+            "timeout": 5
           }
         ]
       },
