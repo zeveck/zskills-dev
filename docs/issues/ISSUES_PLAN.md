@@ -1180,3 +1180,23 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Update briefing.py to add the missing categories to (a) summary-mode pill enumeration, (b) report-mode Needs Attention category list, (c) worktrees-mode bucketing. Conformance pin asserting every CANONICAL_STATUSES value appears in each renderer enumeration (mirror-of-existing-pattern from #602's case-arm pin, adapted to Python).
 
 **Complexity:** S (briefing.py renderer updates + conformance pin + version bump + mirror). **Action now:** /do pr — wire the missing categories through the 3 renderer paths and add the structural enumeration pin.
+
+### #618 — /zskills-dashboard landedPillClass only maps 2 of 9 documented .landed statuses (Mirror of #602 in JS surface)
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `skills/zskills-dashboard/scripts/zskills_monitor/static/app.js:1003-1008` `landedPillClass()` maps only `full` and `partial` to colored pills; the other 7 documented .landed statuses (`landed`, `pr-ready`, `pr-ci-failing`, `pr-failed`, `conflict`, `pr-state-unknown`, plus the failure-class trio `failed`/`direct-push-failed`/`direct-verify-failed`) silently fall through to the grey "not-landed" pill — visually identical to a worktree with NO `.landed` marker at all. Same vocab-drift family as #602 (closed, BASH surface), #621 (closed, PY renderers).
+
+**Fix outline.** Extend `landedPillClass(status)` to cover all 9 canonical statuses, mapping each to the appropriate visual class (green for `full|landed`, orange for `partial|pr-ready`, red/attention for failure-class). Add CSS classes if needed. Conformance pin asserting each of the 9 canonical statuses has a mapping (mirror #602's per-status loop pattern adapted to JS source).
+
+**Complexity:** S (one JS function + maybe CSS additions + conformance pin + version bump + mirror). **Action now:** /do pr — extend landedPillClass + add per-status conformance pin.
+
+### #584 — /review-feedback skill is block-diagram-specific but lives under skills/ root
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `skills/review-feedback/SKILL.md` is block-diagram-editor-specific (references "Feedback Panel > History > Export JSON", `src/io/FeedbackStore.js` import path, body template `### Context` section with `Blocks`/`Solver`/`ode45` domain vocabulary) but lives under `skills/` (the project-agnostic framework tree). The block-diagram tree (`block-diagram/`) already houses 3 add-ons (add-block, add-example, model-design). CLAUDE.md's Architecture section explicitly separates the two.
+
+**Fix outline.** Move `skills/review-feedback/` → `block-diagram/review-feedback/` (and mirror `.claude/skills/review-feedback/` → `.claude/skills/review-feedback/` if the mirror tree shares structure). Update CLAUDE.md / SKILL_AUDIT_COVERAGE.md / any release scripts that enumerate skill paths. Bump metadata.version. Verify all tests + mirrors still pass.
+
+**Complexity:** M (directory move + several path reference updates + version bump + mirror + verify nothing in build/release scripts hardcodes the old path). **Action now:** /do pr — `git mv` the skill, update path references, verify tests.
