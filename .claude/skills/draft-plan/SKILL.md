@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.05.20+7d525c"
+  version: "2026.05.21+fd4fda"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -60,6 +60,25 @@ if [ ! -x "$HELPER" ]; then
   echo "draft-plan: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
 fi
+# Resolve $OUTPUT_FILE and derive $TRACKING_ID before the worktree preamble
+# so the helper's --pipeline-id / positional slug are non-empty. Mirrors
+# the Arguments-section detection rule (#603 pattern): first $ARGUMENTS
+# token ending in `.md` is the output path; resolve bare names via
+# $ZSKILLS_PLANS_DIR. Phase 1's Tracking-fulfillment fence re-derives
+# $TRACKING_ID idempotently from the same $OUTPUT_FILE.
+if [ -z "${OUTPUT_FILE:-}" ]; then
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  for tok in $ARGUMENTS; do
+    case "$tok" in
+      */*.md) OUTPUT_FILE="$tok"; break ;;
+      *.md)   OUTPUT_FILE="$ZSKILLS_PLANS_DIR/$tok"; break ;;
+    esac
+  done
+  # Fall back to a timestamped default so downstream slug computation
+  # produces a stable, non-empty value rather than fail-closing.
+  : "${OUTPUT_FILE:=$ZSKILLS_PLANS_DIR/$(date +%Y%m%d-%H%M%S)_PLAN.md}"
+fi
+TRACKING_ID=$(basename "$OUTPUT_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 WT_PATH=$(bash "$HELPER" \
   --prefix draftplan \
   --pipeline-id "draft-plan.${TRACKING_ID}" \
@@ -498,6 +517,10 @@ create the review step marker:
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+# $ROUND is the orchestrator-maintained loop counter (Phase 3 review/refine
+# iteration). Default to 1 if unset so the marker is informative even on the
+# first round before any explicit counter was exported.
+ROUND="${ROUND:-1}"
 printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.review"
 ```
