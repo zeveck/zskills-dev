@@ -1145,6 +1145,62 @@ else
 fi
 
 ###############################################################################
+# Block 3b — Favicon + Completed-dropzone read-only cursor (post-#654 cleanup)
+###############################################################################
+
+echo ""
+echo "=== Post-#654 cleanup: favicon + completed-dropzone cursor ==="
+
+# index.html must link the SVG favicon. Browsers without the link tag
+# fall back to /favicon.ico; the server routes BOTH paths to favicon.svg
+# (see below) but having the explicit <link> is what gives well-behaved
+# UAs the right MIME type without a redirect.
+if grep -qE '<link[[:space:]]+rel="icon"[[:space:]]+type="image/svg\+xml"[[:space:]]+href="/favicon.svg"' "$INDEX_HTML"; then
+  pass "index_html_links_favicon_svg — <link rel=\"icon\" type=\"image/svg+xml\" href=\"/favicon.svg\">"
+else
+  fail "index_html_links_favicon_svg — head missing the favicon <link>"
+fi
+
+# server.py must route BOTH /favicon.svg AND /favicon.ico to the SVG
+# asset (Firefox/Chrome accept image/svg+xml for either path; serving
+# from a single asset avoids a separate .ico build step).
+if grep -qE 'decoded_path == "/favicon\.svg"' "$SERVER_PY" \
+   && grep -qE '_serve_static_file\("favicon\.svg",[[:space:]]*"image/svg\+xml"\)' "$SERVER_PY"; then
+  pass "server_routes_favicon_svg — server.py routes /favicon.svg and /favicon.ico"
+else
+  fail "server_routes_favicon_svg — server.py missing /favicon.svg or /favicon.ico route to favicon.svg"
+fi
+# Sibling: /favicon.ico exists as its own decoded_path arm.
+if grep -qE 'decoded_path == "/favicon\.ico"' "$SERVER_PY"; then
+  pass "server_routes_favicon_ico — server.py routes /favicon.ico"
+else
+  fail "server_routes_favicon_ico — server.py missing /favicon.ico arm (browsers default to this path)"
+fi
+
+# Favicon asset must be present in static/.
+if [ -f "$STATIC_DIR/favicon.svg" ] && [ -s "$STATIC_DIR/favicon.svg" ]; then
+  pass "favicon_svg_asset_present — static/favicon.svg exists and is non-empty"
+else
+  fail "favicon_svg_asset_present — static/favicon.svg missing or empty"
+fi
+
+# CSS must read-only-mark the Completed dropzone via cursor: not-allowed.
+# Verify the rule is keyed on [data-column="completed"] AND that the
+# declaration block contains `cursor: not-allowed`. Implementation:
+# extract the rule block for the selector and assert the declaration is
+# inside it (a bare `cursor: not-allowed` elsewhere wouldn't count).
+COMPLETED_BLOCK=$(awk '
+  /\.dropzone\[data-column="completed"\][[:space:]]*\{/ {p=1}
+  p {print}
+  p && /\}/ {p=0; print "----"}
+' "$APP_CSS")
+if echo "$COMPLETED_BLOCK" | grep -qE 'cursor:[[:space:]]*not-allowed'; then
+  pass "dropzone_completed_cursor_not_allowed — .dropzone[data-column=\"completed\"] has cursor: not-allowed"
+else
+  fail "dropzone_completed_cursor_not_allowed — .dropzone[data-column=\"completed\"] missing cursor: not-allowed"
+fi
+
+###############################################################################
 # Block 4 — Phase 7: live write-back smoke (server already running)
 ###############################################################################
 

@@ -886,6 +886,22 @@ code, pre, .mono {
   border-radius: 4px;
 }
 
+/* Phase 4 / W4.2 — Completed is read-only. The onDrop handler rejects
+   drops onto Completed (defense-in-depth), but the user shouldn't see
+   any "this is a drop target" affordance — neither at rest nor while
+   dragging over. The CSS layer makes the rejection visible BEFORE the
+   user releases: cursor reads as not-allowed; no hover highlight. */
+.dropzone[data-column="completed"] {
+  cursor: not-allowed;
+}
+
+.dropzone[data-column="completed"].drop-target {
+  /* Override the blue tint .dropzone.drop-target paints on every
+     dropzone during dragenter. Completed should never read as a
+     viable target. */
+  background: transparent;
+}
+
 .dropzone .card {
   cursor: grab;
 }

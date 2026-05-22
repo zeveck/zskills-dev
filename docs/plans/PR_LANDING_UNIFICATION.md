@@ -2,6 +2,7 @@
 title: PR Landing Unification — extract /land-pr from 5 duplicating skills
 created: 2026-04-27
 status: complete
+completed: "2026-05-01T21:40:43Z"
 ---
 
 # Plan: PR Landing Unification

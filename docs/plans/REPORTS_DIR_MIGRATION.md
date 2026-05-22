@@ -3,6 +3,7 @@ issue: 217
 title: Reports Dir Migration — Drive .zskills/ to Zero Force-Tracked
 created: 2026-05-18
 status: complete
+completed: "2026-05-18T18:23:27Z"
 ---
 
 # Plan: Reports Dir Migration — Drive .zskills/ to Zero Force-Tracked

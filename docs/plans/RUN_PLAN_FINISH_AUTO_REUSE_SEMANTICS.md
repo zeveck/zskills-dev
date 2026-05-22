@@ -3,6 +3,7 @@ issue: 191
 title: /run-plan finish — cherry-pick mode reuses plan-scoped worktree
 created: 2026-05-11
 status: complete
+completed: "2026-05-12T01:55:27Z"
 ---
 
 # Plan: /run-plan finish — cherry-pick mode reuses plan-scoped worktree

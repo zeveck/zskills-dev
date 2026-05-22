@@ -3,6 +3,7 @@ issue: 226
 title: Shared preamble worktree gate for file-writing skills
 created: 2026-05-12
 status: complete
+completed: "2026-05-13T19:21:59Z"
 ---
 
 # Plan: Shared preamble worktree gate for file-writing skills
