@@ -463,7 +463,7 @@ fi
 # of reporter's self-rated severity propagates miscategorization through
 # every downstream /fix-issues sprint.
 check "review-feedback re-rate severity rule (source)" \
-  'grep -q "Independently re-rate severity" skills/review-feedback/SKILL.md'
+  'grep -q "Independently re-rate severity" block-diagram/review-feedback/SKILL.md'
 check "review-feedback re-rate severity rule (mirror)" \
   'grep -q "Independently re-rate severity" .claude/skills/review-feedback/SKILL.md'
 
