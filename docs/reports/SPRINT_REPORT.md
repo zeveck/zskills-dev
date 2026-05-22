@@ -1802,3 +1802,33 @@ Deleted branch wt-nopre-cw-smoke-9468-c20 (was 3ed8e8f).
 
 ### Notes
 Dashboard Ready queue head at sprint start: `[601, 602]`. Source: `.zskills/monitor-state.json`. Both issues belong to the variable-read-before-assignment family (#601) and the reader-side vocabulary-drift family (#602). Both received /fix-issues source-filter backfill (research-blurb commit on sprint worktree: a30a525, d547124) and proceeded via in-batch fix-agent + fresh verifier — independent sizing returned **S, /do pr-tier** for both, but the work was small enough that post-execution verifier dispatch was sufficient (no plan-review needed before fix).
+
+## Sprint — 2026-05-21 21:42 EDT [UNFINALIZED]
+
+**Mode:** auto (dashboard-sourced, cron-fired) | **Focus:** default | **Sprint ID:** sprint-20260522-004246-sprint
+
+### Fixed
+| # | Title | Worktree | Commits | Tests | Agent Verify | User Verify |
+|---|-------|----------|---------|-------|--------------|-------------|
+| #604 | /run-plan PR mode: per-phase step.*.{implement,verify,report} markers never propagate to main | /tmp/zskills-fix-issue-604 | d6655d3, 89ecc7f | 5332/5332 (Step 7c block + ref-impl test + runner registration) | PASS (verifier flagged runner-registration gap on first pass → fixed in 89ecc7f → suite re-ran green) | N/A (skill prose only) |
+| #577 | /research-and-plan Step 2 self-contradicts on /draft-plan dispatch mechanism | /tmp/zskills-fix-issue-577 | cd53a47 | 5325/5325 (Step 2 rewrite + 6-check conformance pin) | PASS (verifier APPROVED FOR LANDING) | N/A (skill prose only) |
+
+### Skipped — Too Vague
+(none)
+
+### Skipped — Too Complex / Plan-scale
+(none — see note below about #606)
+
+### Skipped — Cherry-Pick Conflict
+(none)
+
+### Not Fixed
+(none)
+
+### Notes
+
+- **#606 (queue head) was skipped this fire but re-sized in-flight.** Initial triage labeled it `/draft-plan`-tier ("plan-scale, 4 skill source edits + framework conformance test + non-mechanical canonical derivation"). User pushback prompted independent re-assessment by greping each cited file: `draft-plan/SKILL.md` (0 TRACKING_ID assignments, 10+ reads — direct mirror of #603's `$ARGUMENTS` resolution pattern, mechanical), `fix-issues/SKILL.md` sync-mode (0 assignments at L321-323; sprint-mode at L440 area already uses `sprint-$(date)` so sync-mode just synthesizes the same shape with a `sync-` prefix — mechanical pattern-mirror), `run-plan/SKILL.md:271` status-mode `$PLAN_FILE` (first assignment at L1323, status-mode exits before Phase 1 preflight — direct mirror of #603's pattern). Conformance test ~30-50 lines bash mirroring existing test-skill-invariants.sh shape. Re-sized to **M complexity / /do pr-tier**. Tracker row updated to reflect (commit 4c42166). Body's "consolidated work item / Larger-than-issue" framing was a hint; independent sizing showed it's 4× implementer-floor work bundled, well within /do pr's plan-reviewer's >4-bullet auto-REVISE-to-/draft-plan threshold.
+
+- **#604 verifier flagged a runner-registration gap on first pass.** Implementer added `tests/test-land-pr-tracking-copy.sh` (243 lines, 13 ref-impl cases) but didn't register it in `tests/run-all.sh`. The new test passed standalone but didn't run during the suite (regression-gate gap). Fixed in follow-on commit 89ecc7f (1-line append to run-all.sh near line 122 alongside the other test-land-pr-* registrations). Suite re-ran green (5332/5332). This is the design-intended verifier value-add: catching a real-but-low-visibility gap that diff-review alone would have missed.
+
+- **Concurrent cron fire** at ~01:13 UTC (the next /30m mark) was deferred at orchestrator-discretion: Sprint #2 was mid-flight with 2 alive fix branches + active suite re-run + 3 pending /land-pr dispatches. Starting Sprint #3 in the same context would force concurrent state juggling that the parallel-pipelines design isolates at the SUBAGENT layer, not the orchestrator. The 30m cron remains armed; next fire after Sprint #2 lands.
