@@ -7,7 +7,7 @@ description: >-
   user says "review feedback", "triage feedback", or "file feedback
   issues".
 metadata:
-  version: "2026.05.21+b962c3"
+  version: "2026.05.22+b962c3"
 ---
 
 # /review-feedback — Review and triage user feedback
