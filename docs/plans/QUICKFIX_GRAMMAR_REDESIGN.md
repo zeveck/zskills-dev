@@ -3,6 +3,7 @@ issue: 310
 title: /quickfix argument-grammar inconsistency + cross-skill auto semantics drift
 created: 2026-05-16
 status: complete
+completed: "2026-05-17T14:14:40Z"
 ---
 
 > **⚠ SUPERSEDED.** This plan was executed via /run-plan (landed PR #342), then largely reverted in PR #349 because the `auto`/`unattended` split was over-engineering per `feedback_no_premature_backcompat.md`. Subsequent cleanup in PRs #352 + #354 finalized the simpler design. Retained as historical record. Anyone grepping `unattended` lands here — that's expected; the token does not exist anywhere else in the codebase.

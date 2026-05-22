@@ -2,6 +2,7 @@
 title: /refine-plan Skill
 created: 2026-04-13
 status: complete
+completed: "2026-04-13T17:46:30Z"
 ---
 
 # Plan: /refine-plan Skill

@@ -2,6 +2,7 @@
 title: /create-worktree Skill — Unify Worktree Creation Across Skills
 created: 2026-04-18
 status: complete
+completed: "2026-04-21T06:40:34Z"
 ---
 
 # Plan: /create-worktree Skill — Unify Worktree Creation Across Skills

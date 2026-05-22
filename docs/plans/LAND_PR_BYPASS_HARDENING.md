@@ -2,6 +2,7 @@
 title: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook
 created: 2026-05-12
 status: complete
+completed: "2026-05-13T11:26:49Z"
 ---
 
 # Plan: Close /land-pr Bypass Hole — Caller Tracker Parity + PreToolUse Hook

@@ -2,6 +2,7 @@
 title: /draft-tests Skill
 created: 2026-04-24
 status: complete
+completed: "2026-04-30T14:38:34Z"
 ---
 
 # Plan: /draft-tests Skill

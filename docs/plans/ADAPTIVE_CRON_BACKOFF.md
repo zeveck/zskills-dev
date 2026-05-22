@@ -3,6 +3,7 @@ issue: 110
 title: Adaptive Backoff for /run-plan finish auto Chunking Cron
 created: 2026-04-29
 status: complete
+completed: "2026-04-30T22:06:34Z"
 ---
 
 # Plan: Adaptive Backoff for /run-plan finish auto Chunking Cron

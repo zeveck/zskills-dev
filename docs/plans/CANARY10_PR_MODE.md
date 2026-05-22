@@ -2,6 +2,7 @@
 title: Canary 10 — PR Mode End-to-End
 created: 2026-04-16
 status: complete
+completed: "2026-04-20T18:10:25Z"
 ---
 
 # Plan: Canary 10 — PR Mode End-to-End

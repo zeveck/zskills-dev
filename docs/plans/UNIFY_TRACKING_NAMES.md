@@ -2,6 +2,7 @@
 title: Unify Tracking-Marker File-Naming Convention
 created: 2026-04-17
 status: complete
+completed: "2026-04-18T02:40:16Z"
 ---
 
 # Plan: Unify Tracking-Marker File-Naming Convention

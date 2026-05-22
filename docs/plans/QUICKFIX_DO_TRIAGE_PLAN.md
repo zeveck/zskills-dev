@@ -2,6 +2,7 @@
 title: /quickfix and /do — Triage Gate, Inline Plan, and Fresh-Agent Plan Review
 created: 2026-04-25
 status: complete
+completed: "2026-05-01T10:23:41Z"
 ---
 
 # Plan: /quickfix and /do — Triage Gate, Inline Plan, and Fresh-Agent Plan Review

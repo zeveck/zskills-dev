@@ -2,6 +2,7 @@
 title: Improve /run-plan Staleness Detection (Arithmetic Drift)
 created: 2026-04-19
 status: complete
+completed: "2026-04-28T06:27:00Z"
 ---
 
 # Plan: Improve /run-plan Staleness Detection (Arithmetic Drift)

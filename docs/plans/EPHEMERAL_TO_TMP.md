@@ -2,6 +2,7 @@
 title: Route ephemeral test outputs to /tmp
 created: 2026-04-16
 status: complete
+completed: "2026-04-16T23:37:27Z"
 ---
 
 # Plan: Route ephemeral test outputs to /tmp
