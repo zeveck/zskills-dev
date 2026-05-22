@@ -1130,3 +1130,23 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Pick the Skill-tool shape (already justified by load-67 incident + Anthropic's sub-sub-agent design) and rewrite the parallelism prose as serial batches: "Invoke `/draft-plan` once per sub-problem via the Skill tool. Each invocation runs the full multi-round review loop in your context before returning; this is intrinsically serial. Report progress between sub-plans. Do not Agent-dispatch (subagents lack the Agent tool, breaking /draft-plan's internal reviewer + devil's-advocate dispatch)." Remove the "at most 3 concurrent" clause and the load-67 past-failure quote (now structurally impossible). Add a conformance pin asserting `research-and-plan/SKILL.md` does not contain both "Skill tool" and "concurrently" within the Step 2 region (or pin the canonical serial-batches prose with literal-substring assertion).
 
 **Complexity:** S (one prose rewrite in SKILL.md + one conformance pin + version bump + mirror). **Action now:** /do pr — rewrite Step 2 parallelism prose as serial-batches form; remove the contradictory "at most 3 concurrent" clause; add conformance pin.
+
+### #594 — Part B follow-up to #587: investigate intermittent 'deny-list test missed appended literal' assertion fail in test-hooks.sh fixture-extension section
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** Part A (PR #587) eliminated diagnostic noise + fixed run_suite() parser miscount. The underlying intermittent assertion (`fixture-extension: deny-list test missed appended literal`) still fails occasionally. Likely cross-suite env-state leak (`REPO_ROOT`, `CLAUDE_PROJECT_DIR`, `GIT_*`); 100% pass in isolation (`bash tests/test-hooks.sh`). Body suggests several investigation paths (bisect, env-var examination, per-suite hermeticity, surgical teardown) but no root cause is pinned.
+
+**Fix outline.** Investigation-first. Bisect which prior suite in `tests/run-all.sh` leaks state; examine env vars set by non-zero-exit suites; choose between (a) surgical teardown in the leaky test, or (b) broader `run_suite()` subshell+env-reset hermeticity. Picking a fix shape without root cause is guesswork.
+
+**Complexity:** Unknown (depends on which suite leaks and which fix shape applies). **Action now:** /investigate #594 — root cause must be proven before fix shape can be chosen; "bug with unclear cause" triage bucket per /fix-issues skill rubric.
+
+### #583 — /review-feedback prose lacks 'independently size severity' rule
+
+**Labels:** (none) | **Verdict:** RESEARCHED
+
+**Problem.** `skills/review-feedback/SKILL.md` Step 2 lacks a re-rate-severity instruction; the Step 5 body template hardcodes `**Severity:** high` echoing the reporter's self-rated field. Same rubber-stamping anti-pattern that QE_ISSUES.md memory anchors #404 and #444 are trying to terminate elsewhere. /review-feedback's outputs feed /fix-issues; pass-through severity propagates through every downstream sprint.
+
+**Fix outline.** Add to Step 2: "Independently re-rate severity. The reporter's self-rated severity is a hint, not authoritative. Re-evaluate against impact (data loss > crash > broken feature > polish > nit) and frequency before filling the table." Rename Step 3's summary-table column header from "Severity" to "Re-rated Severity" to make independent rating visible. Conformance pin asserting `skills/review-feedback/SKILL.md` contains the literal "Independently re-rate severity".
+
+**Complexity:** S (Step 2 prose addition + Step 3 column rename + conformance pin + version bump + mirror). **Action now:** /do pr — apply the Step 2 + Step 3 edits and add the conformance pin.
