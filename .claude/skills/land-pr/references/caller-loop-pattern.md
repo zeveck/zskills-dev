@@ -124,7 +124,29 @@ while :; do
     push-failed|create-failed|monitor-failed|merge-failed|rebase-failed)
       echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
       break ;;
+    behind-thrash)
+      # Step 6b iterated to the auto-rebase budget without converging
+      # (/land-pr SKILL.md status-table row 2b — pr-ready surface but the
+      # discriminator is preserved for the caller's report/tracking).
+      echo "/land-pr STATUS=behind-thrash — auto-rebase budget exhausted, manual rebase needed" >&2
+      LAND_OUTCOME=$STATUS
+      break ;;
+    auto-rebase-conflict|auto-rebase-blocked)
+      # Step 6b auto-rebase hit a merge conflict, or mergeStateStatus
+      # settled at BLOCKED for non-CI reasons. /land-pr SKILL.md
+      # status-table rows 1b/2c — failure-class outcomes that must NOT
+      # be silently coerced into pr-ready by the CI-status check below.
+      echo "/land-pr STATUS=$STATUS REASON=${LP[REASON]:-} — manual intervention needed" >&2
+      LAND_OUTCOME=$STATUS
+      break ;;
     created|monitored|merged) ;;  # fall through to CI-status check
+    *)
+      # Unknown STATUS — /land-pr emitted a value the caller's vocabulary
+      # does not enumerate. Surface loudly so future drift fails LOUD
+      # rather than coercing through the CI-status check below.
+      echo "WARN: unrecognized /land-pr STATUS=$STATUS — settling at unknown-status" >&2
+      LAND_OUTCOME="unknown-status-$STATUS"
+      break ;;
   esac
 
   case "$CI_STATUS" in

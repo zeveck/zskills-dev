@@ -193,7 +193,28 @@ while :; do
       echo "ERROR: /land-pr STATUS=$STATUS REASON=${LP[REASON]:-} (see ${LP[CALL_ERROR_FILE]:-no-error-file})" >&2
       LAND_OUTCOME=$STATUS
       break ;;
+    behind-thrash)
+      # Step 6b exhausted auto-rebase budget. pr-ready surface, but the
+      # discriminator is preserved in $LAND_OUTCOME for the explicit-
+      # finalize block + tracking marker (failure-class — `*)` arm below
+      # in the finalize maps to FINAL=failed).
+      echo "/land-pr STATUS=behind-thrash — auto-rebase budget exhausted, manual rebase needed" >&2
+      LAND_OUTCOME=$STATUS
+      break ;;
+    auto-rebase-conflict|auto-rebase-blocked)
+      # Step 6b auto-rebase merge-conflicted, or mergeStateStatus settled
+      # at BLOCKED for non-CI reasons. Issue #624 — must NOT be silently
+      # coerced to pr-ready by the CI-status check below.
+      echo "/land-pr STATUS=$STATUS REASON=${LP[REASON]:-} — manual intervention needed" >&2
+      LAND_OUTCOME=$STATUS
+      break ;;
     created|monitored|merged) ;;  # fall through to CI-status check
+    *)
+      # Unknown STATUS — fail loud rather than coerce via the CI-status
+      # check below (issue #624 — closes the silent fall-through gap).
+      echo "WARN: unrecognized /land-pr STATUS=$STATUS — settling at unknown-status" >&2
+      LAND_OUTCOME="unknown-status-$STATUS"
+      break ;;
   esac
 
   case "$CI_STATUS" in
