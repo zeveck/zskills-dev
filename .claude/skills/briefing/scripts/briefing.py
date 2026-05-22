@@ -992,6 +992,15 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
         pr_note = f' — PR: {pr_url}' if pr_url else ''
         needs_attention.append(f'  ! worktree {wt["name"]} — PR closed unmerged{pr_note}')
 
+    # PR merged but branch has commits not on main — silent-commit-loss hazard (issue #516)
+    pr_merged_but_diverged = [wt for wt in worktrees if wt['category'] == 'landed-pr-merged-but-diverged']
+    for wt in pr_merged_but_diverged:
+        ahead = wt.get('ahead', 0)
+        commit_word = 'commit' if ahead == 1 else 'commits'
+        pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+        pr_note = f' — PR: {pr_url}' if pr_url else ''
+        needs_attention.append(f'  ! worktree {wt["name"]} — PR merged but {ahead} {commit_word} ahead of main{pr_note}')
+
     # Uncommitted changes on main
     uncommitted = opts.get('uncommitted')
     if uncommitted is None:
@@ -1086,8 +1095,12 @@ def format_summary(worktrees, checkboxes, commits, opts=None):
             parts.append(f'{wt_counts["landed-pr-needs-attention"]} pr-needs-attention')
         if wt_counts.get('landed-pr-merged'):
             parts.append(f'{wt_counts["landed-pr-merged"]} pr-merged')
+        if wt_counts.get('landed-pr-merged-but-diverged'):
+            parts.append(f'{wt_counts["landed-pr-merged-but-diverged"]} pr-merged-but-diverged')
         if wt_counts.get('landed-pr-abandoned'):
             parts.append(f'{wt_counts["landed-pr-abandoned"]} pr-abandoned')
+        if wt_counts.get('landed-partial'):
+            parts.append(f'{wt_counts["landed-partial"]} landed-partial')
         if wt_counts.get('empty'):
             parts.append(f'{wt_counts["empty"]} empty')
         if wt_counts.get('named'):
@@ -1158,7 +1171,10 @@ def format_report(worktrees, checkboxes, commits, opts=None):
     done_review = [wt for wt in worktrees if wt['category'] == 'done-needs-review']
     landed_partial = [wt for wt in worktrees if wt['category'] == 'landed-partial']
     pr_needs_attention = [wt for wt in worktrees if wt['category'] == 'landed-pr-needs-attention']
-    if done_review or landed_partial or pr_needs_attention or checkboxes:
+    # Issue #516: PR=MERGED but branch ahead of main — silent-commit-loss
+    # hazard that the section is specifically meant to flag.
+    landed_diverged = [wt for wt in worktrees if wt['category'] == 'landed-pr-merged-but-diverged']
+    if done_review or landed_partial or pr_needs_attention or landed_diverged or checkboxes:
         lines.append('## Needs Attention')
         lines.append('')
 
@@ -1201,6 +1217,16 @@ def format_report(worktrees, checkboxes, commits, opts=None):
             pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
             pr_note = f' — PR: {pr_url}' if pr_url else ''
             lines.append(f'### [ ] PR attention: {wt["name"]} (status: {status}{pr_note})')
+            lines.append('')
+
+        # PR merged but local branch ahead of main — investigate before
+        # removing the worktree (issue #516).
+        for wt in landed_diverged:
+            ahead = wt.get('ahead', 0)
+            commit_word = 'commit' if ahead == 1 else 'commits'
+            pr_url = wt.get('landed', {}).get('pr', '') if wt.get('landed') else ''
+            pr_note = f' — PR: {pr_url}' if pr_url else ''
+            lines.append(f'### [ ] Investigate: {wt["name"]} (PR merged but {ahead} {commit_word} ahead of main{pr_note})')
             lines.append('')
 
     # Landed on Main
