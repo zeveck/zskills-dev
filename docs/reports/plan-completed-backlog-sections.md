@@ -1,5 +1,57 @@
 # Plan Report — Completed + Backlog dashboard sections
 
+## Phase — 3 Frontend rendering + below-panel band layout [UNFINALIZED]
+
+**Plan:** plans/completed-backlog-sections.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-completed-backlog-sections (branch `feat/completed-backlog-sections`)
+**Commits:** `c6f0b73`
+
+### Work Items
+
+| #     | Item                                                                     | Status   | Notes                                                                                                                                  |
+| ----- | ------------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| W3.1  | Extend `PLAN_COLUMNS` / `ISSUE_COLUMNS` + labels                         | Done     | Full 5-col plans / 4-col issues; labels for both new columns.                                                                          |
+| W3.2  | `deepCloneQueues` allocator + `liveIssueNumbers`                         | Done     | Tuple-driven loops pick up `backlog` and `completed` mechanically; bonus `postQueue` strip of `completed` (defense-in-depth).          |
+| W3.3  | `fingerprintPlans` / `fingerprintIssues` include new columns + flags     | Done     | Issues fingerprint also includes `(closed_issues_truncated, closed_issues_limit)` so banner re-renders on flag toggle.                |
+| W3.4  | Below-panel-band markup in renderPlans / renderIssues                    | Done     | Sibling block after the active `.columns`; each band has 2 `<ul class="dropzone">` children with `data-kind` + `data-column` attrs.    |
+| W3.5  | `.below-panel-band` CSS layout primitive                                 | Done     | Standalone 2-col grid, dashed separator, `[hidden]` collapse. NOT composed with `.columns-2` (per D3).                                  |
+| W3.6  | (removed in spec)                                                         | n/a      | #618 follow-up filed separately.                                                                                                       |
+| W3.7  | Count-derived collapse logic                                              | Done     | Band hides only when BOTH sub-columns empty; Backlog always renders with "Drag here to defer" placeholder.                              |
+| W3.7b | Truncation banner with double-interpolated limit                          | Done     | Non-dismissable; template literal interpolates `${closed_issues_limit}` exactly twice; no localStorage; disappears when flag absent.    |
+| W3.8  | `skills/zskills-dashboard/SKILL.md metadata.version`                      | Done     | `2026.05.22+83f4bb`, hash recheck-confirmed.                                                                                            |
+| W3.9  | test: `renders_completed_band_below_issues_panel`                         | Done     | Static-grep falsifiable equivalent of the spec's DOM assertion.                                                                         |
+| W3.10 | test: `renders_backlog_band_below_plans_panel`                            | Done     | Same convention.                                                                                                                       |
+| W3.11 | test: `below_panel_band_visible_when_backlog_empty_but_no_completed`      | Done     | Asserts Backlog drop-target visible when Completed has items but Backlog is empty.                                                       |
+| W3.12 | test: `below_panel_band_collapse_when_both_empty`                         | Done     | Asserts `hidden` attribute set when both columns empty.                                                                                  |
+| W3.12b | test: `truncation_banner_renders_with_actual_limit_value`                | Done     | Asserts interpolation count == 2, no placeholder leak, early-return on falsy flag.                                                       |
+| W3.13 | Manual playwright-cli verification                                        | Deferred | `dev_server.cmd` is empty in `.claude/zskills-config.json` for this project. To be exercised in consumer projects with the cmd set.    |
+
+### Verification
+
+- **Test suite:** `Overall: 5544/5544 passed, 0 failed`.
+- **Acceptance criteria:** AC3.1, AC3.2, AC3.3, AC3.5, AC3.6 all met. AC3.4 removed in spec.
+- **No PLAN-TEXT-DRIFT tokens.**
+- **Scope-creep check:** clean — 7 files in expected paths (source + mirror for app.js/app.css/SKILL.md, plus the test file).
+- **Inline verifier action:** none required; impl was clean.
+
+### Cross-phase notes
+
+- The implementer's `postQueue` `completed`-strip is a client-side defense-in-depth addition (not in spec) that prevents accidental POST to the read-only column from any UI path. The server's W2.2 hard-reject remains the authoritative defense.
+- Active row (3-col plans / 2-col issues) is unchanged; the below-band is a sibling block, NOT a new column inside the existing grid.
+- Phase 4 territory (flagged by verifier):
+  1. **Completed cards need `draggable=false`** per D5 — Phase 4 must add per-card guard on `data-column === "completed"` in `buildPlanCard` / `buildIssueCard`. Same guard suppresses claim-chip (D7b) and per-card move buttons (D5).
+  2. **Move-all chevron in Backlog column-head** would currently target `PLAN_COLUMNS[ci+1] = completed`. Phase 4 must add a guard that suppresses the right-chevron when the next-target column is `completed` (terminal read-only).
+  3. **Backlog `«`-chevron back to active** not yet emitted by `renderBelowPanelBand`; Phase 4 decision whether to add it (D5: rewrite to leftmost active on promote).
+  4. **Active-row right-chevron from Ready → Backlog** is now possible; Phase 4 verifies this works end-to-end (`moveAllInColumn`).
+  5. **`fingerprintIssues` references module-level `lastSnapshot`** behind `typeof` guard (app.js:529). Defensible for standalone-extraction harnesses but flag for Phase 5 conformance.
+
+### User Sign-off
+
+(No interactive UI sign-off in Phase 3 — visual playwright-cli check deferred per W3.13. Sign-off accumulates for the final phase.)
+
+---
+
 ## Phase — 2 Server validator + version writers (`server.py`) [UNFINALIZED]
 
 **Plan:** plans/completed-backlog-sections.md
