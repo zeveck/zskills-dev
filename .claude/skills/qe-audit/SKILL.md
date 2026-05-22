@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.20+51a254"
+  version: "2026.05.22+3b81a7"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -159,6 +159,10 @@ If `$ARGUMENTS` contains `every <schedule>`:
 6. **If `now` is present:** proceed to the audit/bash.
    **If `now` is NOT present:** **Exit.** The cron fires later.
 
+**Cadence-stretch rule:** if 3 consecutive passes yield 0 findings on Tier 1+2 surfaces, suggest stretching cadence (2h, daily).
+
+**Recovery rule:** if any orchestrator-side post-triage closes >40% of agent-surfaced findings, the calibration drifted at the agent level — tighten the prompt for next pass (apply TIGHT-BAR more aggressively).
+
 If `every` is NOT present, skip this phase and proceed to the audit/bash
 (bare invocation always runs immediately).
 
@@ -186,6 +190,32 @@ Run when `bash` is NOT present in arguments.
    - Assess: Are tests good (testing real behavior, not no-ops)? Are there
      coverage gaps? Are there bugs?
    - Rate severity: Critical / High / Medium / Low / Very Low
+
+### TIGHT-BAR triage and filter rules
+
+**Each agent self-triages with 3 questions BEFORE surfacing a finding:**
+
+1. Verified falsifying trace? (concrete input → traced wrong output)
+2. Real user/agent plausibly hits this within ~1 month? (NOT "technically possible," NOT "constructible adversarially")
+3. Fix-cost + fix-risk genuinely worth the impact?
+
+If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a CONVERGENCE SIGNAL, not failure.
+
+**Filter — do NOT file:**
+- Documentation/code mismatches with no observable user impact
+- Defense-in-depth gaps with no observed exploit
+- "Could trigger via contrived input"
+- "Test could be stronger" without a current masked defect
+- Latent bugs requiring infrastructure failure or rare race conditions
+- Defense-on-defense (closure-incomplete on test-matrix gap unless runtime exposed)
+
+**Filter — DO file:**
+- Real-impact bug observable in current sessions / sprint reports / memory anchors
+- Trivial-fix + low-risk consistency gaps (mirror-existing-pattern fixes are ALWAYS net-positive)
+- Skill prose contradicts security hooks / discipline rules
+- Closure-incomplete on a recent fix WHEN the runtime is still exposed
+
+**Family-pattern consolidation:** when 3+ findings across passes share the same defect class, file a single consolidating meta-issue (scope + structural fix) instead of additional individual issues. Update the meta-issue's BODY (via `gh issue edit --body-file`) when new siblings are surfaced — comments are a discoverability backstop, not the contract.
 
 5. **Verify each finding against ground truth before durable-state action.**
    For every "FILE ISSUE" or "MOVE TO RESOLVED" finding from a dispatched
