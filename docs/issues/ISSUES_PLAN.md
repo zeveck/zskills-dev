@@ -1240,3 +1240,27 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Append `auto` to each of the 3 dispatch sites in /research-and-plan + /run-plan SKILL.md. 2 skill source + 2 mirror updates + 2 version bumps. Conformance pin asserting each documented parent-→child dispatch line in research-and-plan + run-plan contains `auto` (loop over the canonical phrases, source + mirror).
 
 **Complexity:** M (2 skill source edits + 2 mirrors + conformance pin + 2 version bumps). **Action now:** /do pr — propagate `auto` at all 3 dispatch sites and add the pin.
+
+### #660 — Skill-layer gap: `/work-on-plans` and `/fix-issues` need column-targeted `add/rank/remove` (only `plans.ready` is programmatically mutable; issues queue has no skill affordance at all)
+
+**Labels:** (none)
+
+**Verdict:** NOT YET RESEARCHED
+
+### #659 — /fix-report Step 1 PR-status presentation enumeration (L175-180) covers 5 of 9 PR-mode statuses — Step 6 case statement (post-#602) has all 11; Step 1 prose drifted
+
+**Labels:** (none)
+
+**Verdict:** NOT YET RESEARCHED
+
+### #655 — /update-zskills install scope missing `hooks/block-run-plan-unclaimed.sh` — consumers running update-zskills since PR #544 don't get /run-plan plan-claim PreToolUse enforcement (same class as #505)
+
+**Labels:** (none)
+
+**Verdict:** NOT YET RESEARCHED
+
+### #641 — /fix-issues Phase 2 picker also needs selection-aware filter (per /work-on-plans + /run-plan claim chip parity)
+
+**Labels:** (none)
+
+**Verdict:** NOT YET RESEARCHED
