@@ -1893,3 +1893,24 @@ Dashboard Ready queue head at sprint start: `[601, 602]`. Source: `.zskills/moni
 - **#624 verification was inline-only** (no fresh-context verifier subagent this sprint). The implementer's report showed clean scope (23 files: 5 caller + 5 mirrors + 1 reference + 1 mirror + 6 SKILL.md + 6 mirrors + 1 test), green suite, 78-assertion conformance pin negative-testable structurally. Documented as procedural departure. CI re-run on rebased branch is the cross-check.
 
 - **#594 remains in persistent skip-route** (3rd cron fire since the routing landed). The `Action now: /investigate #594` directive holds; future cron fires will continue skip-routing until the issue is investigated.
+
+## Sprint — 2026-05-26 16:23 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **N requested:** 2 | **Sprint ID:** sprint-20260526-193216-sprint
+
+### Fixed
+
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|--------------|-------------|
+| #655 | /update-zskills install scope missing block-run-plan-unclaimed.sh | /tmp/zskills-fix-issue-655 | 0c55663 | +16 lines (conformance pin, 7 PASS lines) | PASS (5920/5920; falsifies-if-removed verified) | N/A |
+
+### Skipped — Empty Queue Tail
+
+Dashboard Ready queue had 1 candidate (#655); N=2 requested. Partial fill is normal in dashboard mode — only 1 issue dispatched.
+
+### Per-fire summary
+
+```
+Picked: #655 (Clear and doable as one PR, but needs review) — install-list-omission family (instance 2 of #505); adds block-run-plan-unclaimed.sh to /update-zskills both surfaces + structural conformance pin closing the family at CI time.
+Pool: 1 open candidate considered (dashboard Ready)
+```
