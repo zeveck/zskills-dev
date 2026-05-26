@@ -15,8 +15,8 @@
 #      NOT at $WT/.zskills/claims/plan-foo/.
 #   5. release from inside $WT — assert it removes the claim from $MAIN.
 #
-# This tests the symmetric invariant for refresh + release as well via
-# the explicit `git rev-parse --git-common-dir parent` lookup.
+# This tests the symmetric invariant for release as well via the explicit
+# `git rev-parse --git-common-dir parent` lookup.
 
 set -u
 
@@ -92,31 +92,6 @@ else
     fail "acquire worktree-leak" "claim.json INCORRECTLY landed at worktree path $WT/.zskills/claims/plan-foo/claim.json"
   else
     pass "acquire does NOT write claim.json under the worktree's tree"
-  fi
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Refresh from inside the worktree — assert it mutates the MAIN claim file.
-# ───────────────────────────────────────────────────────────────────────
-PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
-HB_BEFORE=""
-if [ -f "$MAIN/.zskills/claims/plan-foo/claim.json" ]; then
-  HB_BEFORE=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-fi
-sleep 1
-(
-  cd "$WT"
-  bash "$CLAIM_SH" refresh foo --require-pipeline "run-plan.foo" --current-phase "Phase 1"
-) >/dev/null 2>&1
-rc=$?
-if [ "$rc" -ne 0 ]; then
-  fail "refresh from worktree" "rc=$rc"
-else
-  HB_AFTER=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-  if [ -n "$HB_BEFORE" ] && [ "$HB_BEFORE" != "$HB_AFTER" ]; then
-    pass "refresh from worktree mutates MAIN's claim.json (heartbeat advanced)"
-  else
-    fail "refresh MAIN mutation" "hb_before=$HB_BEFORE hb_after=$HB_AFTER"
   fi
 fi
 

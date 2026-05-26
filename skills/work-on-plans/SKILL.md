@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.22+bac087"
+  version: "2026.05.26+961662"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -496,21 +496,6 @@ sprint sentinel.
 # Dispatch list: take the first N ready entries (or all when "all").
 mapfile -t READY_LINES < <(printf '%s' "$READY_TSV" \
   | awk -F'\t' '$1!="__DEFAULT__" && $1!="" {print}')
-```
-
-### Pre-filter sweep (R2.6) — reap stale plan claims
-
-Before the selection-aware filter runs, sweep stale plan claims so a
-crashed pipeline doesn't permanently block a slug from re-dispatch.
-The sweep is its own step (NOT bundled into the filter script), matching
-`/fix-issues`' Phase 1 sweep pattern.
-
-```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-SWEEP="$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh"
-if [ -x "$SWEEP" ]; then
-  bash "$SWEEP" sweep || true
-fi
 ```
 
 ### Selection filter (D4) — drop in-flight plan claims
@@ -1292,19 +1277,12 @@ acquire and releases at Phase 6 land-complete (or earlier via
 `/run-plan stop` / Phase 5b §0a no-op). `/work-on-plans` reads those
 claim files at Step 4 to skip slugs that are already in-flight.
 
-**Sweep + filter at Step 4.** Before building the dispatch list,
-Step 4 runs two stages in order:
-
-1. **Pre-filter sweep** — `claim-plan.sh sweep` reaps stale
-   claims (pipelines whose TTL has expired or whose process is dead).
-   Idempotent; failures are best-effort and do not block dispatch.
-2. **Selection filter** — `filter-in-flight-plan-claims.sh` reads
-   every live `.zskills/claims/plan-*/claim.json` and drops any
-   `READY_LINES` entry whose slug appears in the in-flight set.
-
-The order matters: the sweep frees TTL-expired claims so they don't
-falsely block dispatch, and the filter then drops only the genuinely
-in-flight slugs.
+**Selection filter at Step 4.** Before building the dispatch list,
+`filter-in-flight-plan-claims.sh` reads every live
+`.zskills/claims/plan-*/claim.json` and drops any `READY_LINES` entry
+whose slug appears in the in-flight set. If a claim is known-orphaned
+(crashed pipeline), the operator runs
+`claim-plan.sh release <slug>` explicitly to clear it.
 
 **Honest scope (DA2.7).** The selection filter closes the
 *steady-state* parallel-selection race — when an existing

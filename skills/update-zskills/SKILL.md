@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.26+0d4d7e"
+  version: "2026.05.26+9480ac"
 ---
 
 # Update Z Skills Infrastructure
@@ -548,24 +548,6 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    config is a no-op. Detection regex (bash): test against
    `\"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"claim_ttl_seconds\"`
    — if it does NOT match, the backfill applies.
-
-3.7.1. **Backfill `execution.plan_claim_ttl_seconds` if absent.** Identical
-   shape to 3.7 but for the `/run-plan` per-plan claim TTL. If the
-   existing config's `"execution"` block lacks `"plan_claim_ttl_seconds"`
-   (configs written before `/run-plan` per-plan claims were introduced),
-   splice in the default `7200` so `claim-plan.sh resolve_ttl()`
-   resolves the plan-specific TTL from config rather than falling
-   through to the shared `claim_ttl_seconds` key or the in-script 7200.
-   Default value: `7200` (2h). Targeted `Edit` or small `sed`-based
-   rewrite that preserves every other field unchanged. Idempotent:
-   re-running on an already-backfilled config is a no-op. Detection
-   regex (bash): test against
-   `\"execution\"[[:space:]]*:[[:space:]]*\{[^}]*\"plan_claim_ttl_seconds\"`
-   — if it does NOT match, the backfill applies. Note: the precedence
-   chain in `claim-plan.sh` falls through to `claim_ttl_seconds` (3.7)
-   if the plan-specific key is absent, so this backfill is a UX nicety
-   (makes the plan-specific key discoverable in the config) rather than
-   a correctness requirement.
 
    <!-- allow-hardcoded: re:^plans/ reason: forward-protection comment quoting pre-migration plan path -->
    ```markdown

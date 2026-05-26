@@ -4,14 +4,10 @@
 # Conformance battery for plans/plans-claim-chip-parity.md. Section-
 # header-anchored grep asserts on skills/run-plan/SKILL.md +
 # skills/work-on-plans/SKILL.md that lock the plan-claim mechanism's
-# location-pinned invariants (DA2.6, DA2.10, DA3.1).
+# location-pinned invariants (DA2.10, DA3.1).
 #
 # Assertions:
 #   A. Acquire call precedes the first `### Execution` mode header (A11).
-#   B. Each of 6 section-scoped windows contains exactly one
-#      `claim-plan.sh refresh` call (Parse plan, Post-implementation
-#      tracking, Post-verification tracking, 5. Marker ordering and
-#      failure handling, Post-report tracking, 0b. Final-verify gate).
 #   C. Each of 3 section-scoped windows contains exactly one
 #      `claim-plan.sh release` call (Stop, 0a. Idempotent early-exit,
 #      Post-landing tracking).
@@ -20,8 +16,6 @@
 #      `### Post-report tracking` / `## Phase 5c`).
 #   E. NEGATIVE: zero hits for the literal `LAND_OUTCOME` anywhere
 #      (DA2.4 — that variable is /land-pr-internal).
-#   F. work-on-plans Step 4 has `claim-plan.sh sweep` BEFORE
-#      `filter-in-flight-plan-claims.sh` (line-number ordering).
 #   G. `.claude/settings.json` registers `block-run-plan-unclaimed.sh`
 #      as a PreToolUse / Bash hook.
 #   H. Adjacency to Issue #604: `claim-plan.sh` writes only to
@@ -95,38 +89,6 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# B. Six section-scoped refresh windows — each must contain exactly 1
-#    claim-plan.sh refresh call.
-# ───────────────────────────────────────────────────────────────────────
-declare -A REFRESH_SECTIONS=(
-  ["Parse plan"]='/^### Parse plan$/{p=1; next} p && /^(###|## )/{p=0} p'
-  ["Post-implementation tracking"]='/^### Post-implementation tracking$/{p=1; next} p && /^(###|## )/{p=0} p'
-  ["Post-verification tracking"]='/^### Post-verification tracking$/{p=1; next} p && /^(###|## )/{p=0} p'
-  ["5. Marker ordering and failure handling"]='/^### 5\. Marker ordering and failure handling$/{p=1; next} p && /^(###|## )/{p=0} p'
-  ["Post-report tracking"]='/^### Post-report tracking$/{p=1; next} p && /^(###|## )/{p=0} p'
-  ["0b. Final-verify gate"]='/^### 0b\. Final-verify gate$/{p=1; next} p && /^(###|## )/{p=0} p'
-)
-
-# Iterate in stable order for legible output.
-REFRESH_ORDER=(
-  "Parse plan"
-  "Post-implementation tracking"
-  "Post-verification tracking"
-  "5. Marker ordering and failure handling"
-  "Post-report tracking"
-  "0b. Final-verify gate"
-)
-for sec in "${REFRESH_ORDER[@]}"; do
-  prog="${REFRESH_SECTIONS[$sec]}"
-  n=$(count_in_section "$prog" "$RP_SKILL" "refresh")
-  if [ "$n" = "1" ]; then
-    pass "refresh window '$sec' — exactly 1 claim-plan.sh refresh call (DA2.6 / DA3.1)"
-  else
-    fail "refresh window '$sec'" "expected 1, got $n"
-  fi
-done
-
-# ───────────────────────────────────────────────────────────────────────
 # C. Three release windows — each must contain exactly 1 release call.
 # ───────────────────────────────────────────────────────────────────────
 declare -A RELEASE_SECTIONS=(
@@ -171,17 +133,6 @@ if [ "$lo_n" = "0" ]; then
   pass "NEGATIVE: zero hits for LAND_OUTCOME in run-plan/SKILL.md (DA2.4)"
 else
   fail "NEGATIVE LAND_OUTCOME absent" "expected 0 hits, got $lo_n — Phase 6 release must anchor on /run-plan's own marker, not /land-pr-internal LAND_OUTCOME"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# F. work-on-plans Step 4: sweep precedes filter (line-number ordering).
-# ───────────────────────────────────────────────────────────────────────
-sweep_line=$(grep -nE 'claim-plan\.sh.*sweep|"\$SWEEP"[[:space:]]+sweep' "$WOP_SKILL" | head -1 | cut -d: -f1)
-filter_line=$(grep -nE 'filter-in-flight-plan-claims\.sh' "$WOP_SKILL" | head -1 | cut -d: -f1)
-if [ -n "$sweep_line" ] && [ -n "$filter_line" ] && [ "$sweep_line" -lt "$filter_line" ]; then
-  pass "work-on-plans Step 4: sweep at line $sweep_line precedes filter at line $filter_line (R2.6)"
-else
-  fail "work-on-plans sweep-before-filter (R2.6)" "sweep_line=$sweep_line filter_line=$filter_line — sweep must precede filter in Step 4"
 fi
 
 # ───────────────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.22+0f12a4"
+  version: "2026.05.26+42ce55"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -715,20 +715,6 @@ Before parsing, check for stale state from a previous failed run:
    check. Re-entry routes to Phase 5b which owns verify-pending state
    and self-rescheduling.
 
-**Plan-claim sweep (W2a.5).** Reap stale `.zskills/claims/plan-*/` claim
-dirs before evaluating the acquire fence below. A sweep that frees a
-crashed-pipeline claim allows this invocation to acquire cleanly rather
-than declining indefinitely until TTL. Mirror of `/fix-issues` D5
-preflight sweep. `claim-plan.sh sweep` is idempotent.
-
-```bash
-# Sweep stale plan claims. `|| true` because sweep is best-effort
-# hygiene; a failed sweep means stale claims persist until next fire,
-# never duplicate dispatch.
-. "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-fence-helpers.sh"
-sweep_stale_plan_claims || true
-```
-
 **Plan-claim acquire (W2a.1, A11 / AC2a.7).** Acquire a single-host
 atomic claim on this plan BEFORE any mode-detection branch (so the claim
 is reachable from worktree / PR / cherry-pick / direct / delegate paths).
@@ -1041,34 +1027,6 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
        "$TRACKING_ID" "$BRANCH_NAME_FOR_MARKER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
        > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
    fi
-   ```
-
-   **Plan-claim heartbeat refresh (W2a.2 — Parse plan; W2a.3 state machine).**
-   Confirm the claim still belongs to this pipeline; cron-fire dormant
-   window may have expired the claim, in which case re-acquire.
-   ```bash
-   set +e
-   bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-     refresh "$PLAN_SLUG" \
-     --require-pipeline "$PIPELINE_ID" \
-     --current-phase "Parse plan"
-   rc=$?
-   set -e
-   case "$rc" in
-     0) : ;;
-     12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-     2)  # cron-fire dormant: re-acquire
-         bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-           acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-         rc2=$?
-         if [ "$rc2" -eq 10 ]; then
-           echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-           exit 1
-         fi
-         [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-         ;;
-     *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-   esac
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description
@@ -1559,34 +1517,6 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Isec
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
 ```
 
-**Plan-claim heartbeat refresh (W2a.2 — Post-implementation tracking;
-W2a.3 state machine).** Phase 2 exit anchor — refresh the heartbeat so
-TTL sweep does not reap the claim during the verifier dispatch.
-```bash
-set +e
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-  refresh "$PLAN_SLUG" \
-  --require-pipeline "$PIPELINE_ID" \
-  --current-phase "Post-implementation tracking"
-rc=$?
-set -e
-case "$rc" in
-  0) : ;;
-  12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-  2)  # cron-fire dormant: re-acquire
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-        acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-      rc2=$?
-      if [ "$rc2" -eq 10 ]; then
-        echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-        exit 1
-      fi
-      [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-      ;;
-  *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-esac
-```
-
 ### Pre-verification tracking
 
 The `requires.verify-changes.$TRACKING_ID` marker was created at skill
@@ -1952,33 +1882,6 @@ printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UT
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
 ```
 
-**Plan-claim heartbeat refresh (W2a.2 — Post-verification tracking;
-W2a.3 state machine).** Phase 3 exit anchor.
-```bash
-set +e
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-  refresh "$PLAN_SLUG" \
-  --require-pipeline "$PIPELINE_ID" \
-  --current-phase "Post-verification tracking"
-rc=$?
-set -e
-case "$rc" in
-  0) : ;;
-  12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-  2)  # cron-fire dormant: re-acquire
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-        acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-      rc2=$?
-      if [ "$rc2" -eq 10 ]; then
-        echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-        exit 1
-      fi
-      [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-      ;;
-  *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-esac
-```
-
 ## Phase 3.5 — Detect and auto-correct plan-text drift
 
 Runs AFTER Phase 3's `### Post-verification tracking` writes
@@ -2045,33 +1948,6 @@ PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/s
 printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\ncompleted: %s\n' \
   "$PHASE" "$FOUND" "$CORRECTED" "$ESCALATED" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/phasestep.run-plan.$TRACKING_ID.$PHASE.drift-detect"
-```
-
-**Plan-claim heartbeat refresh (W2a.2 — 5. Marker ordering and failure
-handling; W2a.3 state machine).** Phase 3.5 anchor.
-```bash
-set +e
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-  refresh "$PLAN_SLUG" \
-  --require-pipeline "$PIPELINE_ID" \
-  --current-phase "5. Marker ordering and failure handling"
-rc=$?
-set -e
-case "$rc" in
-  0) : ;;
-  12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-  2)  # cron-fire dormant: re-acquire
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-        acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-      rc2=$?
-      if [ "$rc2" -eq 10 ]; then
-        echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-        exit 1
-      fi
-      [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-      ;;
-  *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-esac
 ```
 
 Uses the `phasestep.*` prefix (informational; hook ignores). The
@@ -2311,33 +2187,6 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Isec
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
 ```
 
-**Plan-claim heartbeat refresh (W2a.2 — Post-report tracking;
-W2a.3 state machine).** Phase 5 exit anchor.
-```bash
-set +e
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-  refresh "$PLAN_SLUG" \
-  --require-pipeline "$PIPELINE_ID" \
-  --current-phase "Post-report tracking"
-rc=$?
-set -e
-case "$rc" in
-  0) : ;;
-  12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-  2)  # cron-fire dormant: re-acquire
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-        acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-      rc2=$?
-      if [ "$rc2" -eq 10 ]; then
-        echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-        exit 1
-      fi
-      [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-      ;;
-  *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-esac
-```
-
 ## Phase 5b — Plan Completion
 
 Triggers when ALL phases are done: either the last phase just finished
@@ -2349,7 +2198,8 @@ mode after all phases complete. Run this BEFORE Phase 6 (Land).
 If frontmatter is already `status: complete`: this is a no-op re-entry.
 **Release the plan claim before the no-op exit (W2a.4 site 2)** —
 Phase 1 acquired the claim for this pipeline; without an explicit
-release here the claim leaks until /run-plan stop or TTL sweep fires.
+release here the claim leaks until /run-plan stop or an operator
+manually runs `claim-plan.sh release <slug>`.
 Exit 12 (pipeline mismatch) is tolerated — it means another pipeline
 owns the claim and our session must not touch it.
 
@@ -2456,35 +2306,6 @@ Three branches:
    - `cron`: `"$REENTRY_CRON"`
    - `recurring`: false
    - `prompt`: `"Run /run-plan <plan-file> finish auto"`
-
-   **Plan-claim heartbeat refresh (W2a.4 refresh site R — Final-verify
-   defer; W2a.3 state machine).** The plan is still in-flight, just
-   deferred — refresh (not release) so sweep does not reap the claim
-   during the cron-defer window.
-   ```bash
-   set +e
-   bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-     refresh "$PLAN_SLUG" \
-     --require-pipeline "$PIPELINE_ID" \
-     --current-phase "Final-verify defer (attempt $ATTEMPT, backoff ${BACKOFF_MIN}m)"
-   rc=$?
-   set -e
-   case "$rc" in
-     0) : ;;
-     12) echo "Claim was taken over by another pipeline; aborting." >&2; exit 1 ;;
-     2)  # cron-fire dormant: re-acquire
-         bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
-           acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
-         rc2=$?
-         if [ "$rc2" -eq 10 ]; then
-           echo "Claim was acquired by another pipeline during the cron-fire dormant window; aborting." >&2
-           exit 1
-         fi
-         [ "$rc2" -eq 0 ] || { echo "Re-acquire failed (rc=$rc2)" >&2; exit 1; }
-         ;;
-     *)  echo "Refresh failed (rc=$rc)" >&2; exit 1 ;;
-   esac
-   ```
 
    Then exit this turn.
 
@@ -2860,64 +2681,6 @@ mode — that's how invariant #3 silently skips in cherry-pick mode.
 for crash handling, cron cleanup, working-tree restoration, failure-report
 template, and user-facing failure messaging. The failed-run report
 template is in the same file.
-
-## Plan-claim mechanism
-
-A single-host claim system prevents two `/run-plan` pipelines from
-double-executing the same plan. See `plans/plans-claim-chip-parity.md`
-for the full design (D1-D7); this section summarizes the runtime
-contract that this SKILL.md file orchestrates.
-
-**Storage.** Claims live at `.zskills/claims/plan-<slug>/claim.json`
-under the MAIN_ROOT (resolved via `git rev-parse --git-common-dir`
-parent — worktree-CWD callers still write to main). Claim files are
-gitignored alongside the rest of `.zskills/`. Path separation from
-`.zskills/tracking/` is strict (Issue #604 adjacency): the claim
-release path never writes to tracking, only to claims.
-
-**Lifecycle.** Acquire at Phase 1 entry, refresh at each phase
-boundary, release at terminal points. Three terminal release sites:
-
-1. `/run-plan stop` walks every `plan-*/` directory and releases each
-   claim whose pipeline matches.
-2. Phase 5b §0a (idempotent early-exit when the plan is already
-   complete) releases the single-slug claim before the no-op exit.
-3. Post-landing tracking (Phase 6, after the `fulfilled.run-plan.
-   $TRACKING_ID` marker write) is the terminal release for the
-   normal happy-path lifecycle.
-
-A fourth refresh site lives inside Phase 5b §0b's final-verify
-cron-defer loop — refresh (NOT release) so the next cron-fire can
-re-enter and finish the verify wait.
-
-**Heartbeat cadence.** Six section-anchored refresh sites:
-`### Parse plan`, `### Post-implementation tracking`,
-`### Post-verification tracking`, `### 5. Marker ordering and failure
-handling`, `### Post-report tracking`, `### 0b. Final-verify gate`.
-Phase 5b §1-5 (audit/close-issue/frontmatter/sprint-report/
-stale-markers) is deliberately release-free — releasing there
-re-opens the unclaimed-during-CI-poll window.
-
-**Acquire-or-decline (D3).** `claim-plan.sh acquire` returns exit
-`10` when the claim is already held by another pipeline; this skill
-treats `10` as a graceful decline (exit 0 with a "declined" message),
-NOT as Failure-Protocol. Exit `0` proceeds, exit `2` is usage error,
-exit `11` is infrastructure failure (Failure Protocol).
-
-**Cron-fire dormant-window state machine (W2a.3).** Each refresh site
-handles three exit cases: `0` continue, `12` claim was taken over by
-another pipeline (abort), `2` claim TTL-expired during the dormant
-window between cron fires (re-acquire via `claim-plan.sh acquire`;
-exit `10` on the re-acquire = lost the re-acquire race, abort).
-This makes the long-lived `every` schedules safe against TTL-expiry
-without leaking claims to crashed sessions.
-
-**PreToolUse backstop.** `hooks/block-run-plan-unclaimed.sh` runs on
-every Bash invocation and denies `claim-plan.sh release` calls that
-don't carry a valid `--require-pipeline` match. Registered in
-`.claude/settings.json` under PreToolUse / Bash. This is the structural
-defense against orchestrator-side accidents (e.g., a /run-plan
-session releasing another pipeline's claim during a manual cleanup).
 
 ## Key Rules
 
