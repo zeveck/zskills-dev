@@ -1576,6 +1576,22 @@ fi
 check_fixed update-zskills "WI2.2: runtime-read note" \
   'Runtime-read fields (read by hooks and helper scripts at every invocation, NOT install-filled)'
 
+# Issue #655 — every hooks/block-*.sh must be referenced in /update-zskills's
+# install list (Step C copy-list prose AND/OR the canonical-triples table).
+# Closes the install-list-omission family (instance 1: #505 missed
+# block-bad-cron.sh + block-main-edits.sh; instance 2: #655 missed
+# block-run-plan-unclaimed.sh). Any new hook landing in hooks/block-*.sh
+# without a corresponding /update-zskills install-list reference fails CI.
+for hook_path in "$REPO_ROOT"/hooks/block-*.sh; do
+  hook_basename=$(basename "$hook_path")
+  if grep -qF -- "$hook_basename" "$REPO_ROOT/skills/update-zskills/SKILL.md"; then
+    pass "[update-zskills] #655: install-list references $hook_basename"
+  else
+    fail "[update-zskills] #655: hook $hook_basename not in /update-zskills install list" \
+      "missing from skills/update-zskills/SKILL.md (Step C copy list and/or canonical-triples table)"
+  fi
+done
+
 echo ""
 echo "=== Multi-agent adversarial-loop skills — Agent-tool-required preflight (issue #143) ==="
 # These five skills internally dispatch reviewer + devil's-advocate + refiner
