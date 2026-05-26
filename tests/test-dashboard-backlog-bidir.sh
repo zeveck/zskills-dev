@@ -139,6 +139,15 @@ const __warns = [];
 const console = { warn: (...a) => __warns.push(a.join(" ")), log: () => {} };
 async function movePlan(slug, dest) { __movePlan_calls.push([slug, dest]); }
 async function moveIssue(num, dest) { __moveIssue_calls.push([num, dest]); }
+// Stubs for the per-column collapse helpers — extracted onDrop calls
+// isCollapsed() / setCollapsed() / applyCollapseStateToColumn() to expand
+// a collapsed-target column on drop. We're testing backlog-bidir + the
+// completed-reject branch here, not collapse behavior, so a no-op
+// always-expanded stub is the correct double — collapse semantics are
+// asserted in test_zskills_monitor_dashboard_ui.sh.
+function isCollapsed(_kind, _col) { return false; }
+function setCollapsed(_kind, _col, _v) {}
+function applyCollapseStateToColumn(_d, _k, _c) {}
 
 ${computeIdxBlock}
 ${removeIndicatorBlock}

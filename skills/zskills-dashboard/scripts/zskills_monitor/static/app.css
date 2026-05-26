@@ -825,6 +825,45 @@ code, pre, .mono {
    label — when the column was narrow. */
 .column-head .move-all-group { margin-left: auto; }
 
+/* Per-column collapse toggle (chevron at the trailing edge of column-head).
+   When no .move-all-group is present (Completed in the below-band, the
+   right-edge of Triage/Ready when neither side renders a move-all), the
+   toggle itself takes the margin-left:auto to stay right-aligned. */
+.column-collapse-toggle {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.9em;
+  padding: 0 0.2em;
+  color: var(--text-dim);
+  margin-left: 0.4em;
+  line-height: 1;
+}
+.column-head > .column-collapse-toggle:last-child {
+  margin-left: auto;
+}
+.column-head .move-all-group + .column-collapse-toggle {
+  margin-left: 0.4em;
+}
+.column-collapse-toggle:hover,
+.column-collapse-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+/* Collapsed: hide the dropzone list; keep the header visible with count +
+   toggle. The column itself stays in the flex/grid flow so its width is
+   preserved — a collapsed column reads as a thin header strip. */
+.column.collapsed > .dropzone {
+  display: none;
+}
+.column.collapsed {
+  min-height: 0;
+}
+.column.collapsed > .column-head {
+  opacity: 0.85;
+}
+
 .dropzone {
   list-style: none;
   display: flex;

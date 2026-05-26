@@ -64,6 +64,67 @@ const ISSUE_COLUMN_LABELS = {
   completed: "Completed",
 };
 
+// Per-user, per-column collapse state. localStorage-backed so the choice
+// survives reloads. Key shape: zskills:dashboard:collapsed:<kind>:<col>.
+// Value "1" means collapsed; absence means expanded (default). The toggle
+// button in column-head dispatches via data-action="column-collapse-toggle"
+// (handleAction case below).
+const COLLAPSE_KEY_PREFIX = "zskills:dashboard:collapsed:";
+
+function isCollapsed(kind, col) {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY_PREFIX + kind + ":" + col) === "1";
+  } catch (_e) { return false; }
+}
+
+function setCollapsed(kind, col, collapsed) {
+  try {
+    if (collapsed) {
+      localStorage.setItem(COLLAPSE_KEY_PREFIX + kind + ":" + col, "1");
+    } else {
+      localStorage.removeItem(COLLAPSE_KEY_PREFIX + kind + ":" + col);
+    }
+  } catch (_e) { /* localStorage disabled — runtime-only collapse */ }
+}
+
+function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
+  const collapsed = isCollapsed(kind, col);
+  if (collapsed) {
+    colDiv.classList.add("collapsed");
+  } else {
+    colDiv.classList.remove("collapsed");
+  }
+  const toggle = colDiv.querySelector(".column-collapse-toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const lbl = labelText || toggle.dataset.column || "";
+    toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + lbl);
+    toggle.textContent = collapsed ? "▸" : "▾";
+  }
+}
+
+// Append the per-column collapse toggle to a column-head. Caller passes
+// the kind ("plan" / "issue"), column key, and the human label (used for
+// the initial aria-label). The button carries data-action so the shared
+// delegated click handler (handleAction) flips state and re-applies.
+function appendCollapseToggle(head, kind, col, labelText) {
+  const toggle = el("button", {
+    cls: "column-collapse-toggle",
+    attrs: {
+      type: "button",
+      "data-action": "column-collapse-toggle",
+      "data-kind": kind,
+      "data-column": col,
+      "aria-expanded": "true",
+      "aria-label": "Collapse " + labelText,
+      title: "Collapse / expand",
+    },
+    text: "▾",
+  });
+  head.appendChild(toggle);
+  return toggle;
+}
+
 // ---------------------------------------------------------------- helpers
 
 function $(id) {
@@ -881,6 +942,7 @@ function renderPlans(plans, queues, defaultMode) {
       ));
     }
     head.appendChild(moveAllGroup);
+    appendCollapseToggle(head, "plan", c, PLAN_COLUMN_LABELS[c]);
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -899,6 +961,7 @@ function renderPlans(plans, queues, defaultMode) {
       ul.appendChild(card);
     }
     colDiv.appendChild(ul);
+    applyCollapseStateToColumn(colDiv, "plan", c, PLAN_COLUMN_LABELS[c]);
     cols.appendChild(colDiv);
   }
   body.appendChild(cols);
@@ -1195,6 +1258,7 @@ function renderIssues(issues, queues) {
       ));
     }
     head.appendChild(moveAllGroup);
+    appendCollapseToggle(head, "issue", c, ISSUE_COLUMN_LABELS[c]);
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -1212,6 +1276,7 @@ function renderIssues(issues, queues) {
       ul.appendChild(buildIssueCard(issue, num, c));
     }
     colDiv.appendChild(ul);
+    applyCollapseStateToColumn(colDiv, "issue", c, ISSUE_COLUMN_LABELS[c]);
     cols.appendChild(colDiv);
   }
   body.appendChild(cols);
@@ -1291,6 +1356,7 @@ function renderBelowPanelBand(opts) {
       }
       head.appendChild(moveAllGroup);
     }
+    appendCollapseToggle(head, kind, c, labels[c]);
     colDiv.appendChild(head);
 
     const ul = el("ul", {
@@ -1331,6 +1397,7 @@ function renderBelowPanelBand(opts) {
       }));
     }
     colDiv.appendChild(ul);
+    applyCollapseStateToColumn(colDiv, kind, c, labels[c]);
     band.appendChild(colDiv);
   }
   return band;
@@ -2034,6 +2101,15 @@ async function onDrop(ev) {
     dragState = null;
     return;
   }
+  // If the target column is currently collapsed, drop expands it AND
+  // deposits the card — the user sees the column unfold with their card
+  // inside. (Auto-expand on prolonged dragover is intentionally deferred
+  // — see Step 4 of the collapsible-columns plan.)
+  if (isCollapsed(dragState.kind, targetCol)) {
+    setCollapsed(dragState.kind, targetCol, false);
+    const colDiv = dz.closest && dz.closest(".column");
+    if (colDiv) applyCollapseStateToColumn(colDiv, dragState.kind, targetCol);
+  }
   // Backlog→active: land where dropped (overrides plan D5; see PR description).
   if (dragState.kind === "plan" && dragState.slug) {
     await movePlan(dragState.slug, { col: targetCol, idx: targetIdx });
@@ -2361,6 +2437,26 @@ async function handleAction(action, target) {
     const kind = target.getAttribute("data-kind");
     const dir = action.endsWith("-left") ? "left" : "right";
     if (col && kind) return moveAllInColumn(kind, col, dir);
+    return;
+  }
+
+  // Per-column collapse toggle (chevron at trailing edge of column-head).
+  // Flips localStorage state and re-applies the .collapsed class + button
+  // glyph/aria in-place — no re-render needed (the dropzone is preserved
+  // beneath the head; CSS hides it via .column.collapsed > .dropzone).
+  if (action === "column-collapse-toggle") {
+    const col = target.getAttribute("data-column");
+    const kind = target.getAttribute("data-kind");
+    if (!col || !kind) return;
+    const colDiv = target.closest(".column");
+    if (!colDiv) return;
+    const next = !isCollapsed(kind, col);
+    setCollapsed(kind, col, next);
+    // The button's aria-label was originally rendered with the human
+    // label (e.g. "Drafted"); recover from data-column key — equivalent
+    // for the columns we ship (drafted / reviewed / ready / triage /
+    // backlog / completed). Cosmetic only.
+    applyCollapseStateToColumn(colDiv, kind, col, target.dataset.column);
     return;
   }
 

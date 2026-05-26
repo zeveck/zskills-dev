@@ -320,6 +320,62 @@ else
 fi
 
 ###############################################################################
+# AC: per-column collapse toggle (chevron in every column-head)
+###############################################################################
+
+echo ""
+echo "=== Per-column collapse toggle ==="
+
+# 1. column_head_has_collapse_toggle — every column-head renderer (active
+#    plans row, active issues row, below-panel band) appends a
+#    .column-collapse-toggle button. We verify via the appendCollapseToggle
+#    helper (single call site per renderer) — three hits total.
+TOGGLE_HITS=$(grep -cE 'appendCollapseToggle\(head,' "$APP_JS" || true)
+if [ "${TOGGLE_HITS:-0}" -ge 3 ]; then
+  pass "column_head_has_collapse_toggle: appendCollapseToggle wired in ≥3 renderers (got $TOGGLE_HITS)"
+else
+  fail "column_head_has_collapse_toggle: expected ≥3 appendCollapseToggle calls, got $TOGGLE_HITS"
+fi
+# Helper itself must construct a button with the class + data-action.
+if grep -qE 'function appendCollapseToggle' "$APP_JS" \
+   && grep -qE 'cls:\s*"column-collapse-toggle"' "$APP_JS" \
+   && grep -qE '"data-action":\s*"column-collapse-toggle"' "$APP_JS"; then
+  pass "appendCollapseToggle helper emits .column-collapse-toggle button with data-action"
+else
+  fail "appendCollapseToggle helper missing or malformed (class / data-action)"
+fi
+
+# 2. collapse_toggle_persists_to_localstorage — source uses localStorage
+#    .setItem / .getItem / .removeItem against COLLAPSE_KEY_PREFIX.
+if grep -qE 'COLLAPSE_KEY_PREFIX\s*=\s*"zskills:dashboard:collapsed:"' "$APP_JS"; then
+  pass "collapse_toggle_persists_to_localstorage: COLLAPSE_KEY_PREFIX constant present"
+else
+  fail "collapse_toggle_persists_to_localstorage: COLLAPSE_KEY_PREFIX missing"
+fi
+if grep -qE 'localStorage\.getItem\(\s*COLLAPSE_KEY_PREFIX' "$APP_JS" \
+   && grep -qE 'localStorage\.setItem\(\s*COLLAPSE_KEY_PREFIX' "$APP_JS" \
+   && grep -qE 'localStorage\.removeItem\(\s*COLLAPSE_KEY_PREFIX' "$APP_JS"; then
+  pass "collapse_toggle_persists_to_localstorage: get/set/remove on prefixed key"
+else
+  fail "collapse_toggle_persists_to_localstorage: missing one of get/set/remove on COLLAPSE_KEY_PREFIX"
+fi
+# Click delegation: handleAction has a column-collapse-toggle case.
+if grep -qE 'action === "column-collapse-toggle"' "$APP_JS"; then
+  pass "handleAction handles column-collapse-toggle"
+else
+  fail "handleAction missing column-collapse-toggle branch"
+fi
+
+# 3. collapsed_column_hides_dropzone — CSS hides .dropzone under
+#    .column.collapsed. Match the precise selector with display:none.
+if grep -nE '\.column\.collapsed\s*>\s*\.dropzone' "$APP_CSS" >/dev/null \
+   && awk '/\.column\.collapsed[[:space:]]*>[[:space:]]*\.dropzone/{flag=1} flag && /display:[[:space:]]*none/{print; exit}' "$APP_CSS" | grep -q 'display:[[:space:]]*none'; then
+  pass "collapsed_column_hides_dropzone: .column.collapsed > .dropzone { display: none }"
+else
+  fail "collapsed_column_hides_dropzone: missing CSS rule hiding dropzone under .column.collapsed"
+fi
+
+###############################################################################
 # Block 2 — live-server smoke (start server, fetch /, /app.js, /app.css)
 ###############################################################################
 
