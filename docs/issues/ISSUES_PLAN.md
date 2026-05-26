@@ -1240,3 +1240,18 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 **Fix outline.** Append `auto` to each of the 3 dispatch sites in /research-and-plan + /run-plan SKILL.md. 2 skill source + 2 mirror updates + 2 version bumps. Conformance pin asserting each documented parent-→child dispatch line in research-and-plan + run-plan contains `auto` (loop over the canonical phrases, source + mirror).
 
 **Complexity:** M (2 skill source edits + 2 mirrors + conformance pin + 2 version bumps). **Action now:** /do pr — propagate `auto` at all 3 dispatch sites and add the pin.
+
+### #655 — `/update-zskills` install scope missing `hooks/block-run-plan-unclaimed.sh`
+
+**Labels:** (none) | **Verdict:** NOT FIXED
+
+**Problem.** `hooks/block-run-plan-unclaimed.sh` landed in PR #544 (commit 1fc16c5) as the PreToolUse hook enforcing /run-plan plan-claim invocations. It exists at `hooks/block-run-plan-unclaimed.sh` (9481 bytes, executable) and is wired into this repo's `.claude/settings.json:34`. But `/update-zskills` SKILL.md has zero references to it (verified: `grep -n 'block-run-plan-unclaimed' skills/update-zskills/SKILL.md` → empty). Consumers running `/update-zskills` since 2026-05-21 don't get the hook installed, making the plan-claim contract advisory on their machines. Same install-list-omission class as #505 (closed 2026-05-21).
+
+**Fix outline.** Two-surface edit to `skills/update-zskills/SKILL.md` (mirroring existing `block-fix-issue-unclaimed.sh`):
+
+1. Step C copy list (after line 1134): add a copy-block entry for `block-run-plan-unclaimed.sh` with descriptive prose explaining what it gates (plan-claim PreToolUse on Bash).
+2. Canonical-triples table (after line 1248): add a `PreToolUse | Bash | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/block-run-plan-unclaimed.sh"` row.
+
+Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new test): assert every `hooks/block-*.sh` is referenced in `/update-zskills` SKILL.md install list — terminates the family at CI time, preventing instance #3.
+
+**Complexity:** S. **Action now:** /fix-issues — 2-surface SKILL.md edit + ~10-line conformance test; body is verification-anchored and all line refs verified against current main.
