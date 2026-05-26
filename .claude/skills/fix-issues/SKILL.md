@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.22+137d78"
+  version: "2026.05.26+a2eeb6"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1495,30 +1495,44 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
     # AUTO MODE — dispatch research agents in parallel for MISSING_ARR,
     # reusing Phase 1 step-6's pattern (up to 3 at a time). Each agent
     # reads `gh issue view <N>`, greps the codebase for affected files,
-    # writes a tracker row under the appropriate `$ZSKILLS_ISSUES_DIR/
-    # *ISSUES*.md`, and commits the row before returning. The
-    # orchestrator dispatches via the Agent tool with
-    # `subagent_type: "general-purpose"` (same shape as Phase 1 step 6;
-    # `implementer` is reserved for fix-impl dispatch). Block until
-    # every MISSING_ARR issue has a committed `**Action now:**` row,
-    # then re-run the filter — the second pass MUST yield empty MISSING.
+    # writes the row content to `.zskills/research-staging/$PIPELINE_ID/issue-${N}.md` (scratchpad)
+    # and returns without touching $ZSKILLS_ISSUES_DIR/*ISSUES*.md or committing. The orchestrator
+    # promotes scratchpads to committed tracker rows in Phase 3 per the acquire-outcome decision
+    # tree (see "Per-issue dispatch loop (B-proper)" below).
     #
     # Orchestrator action: for each N in MISSING_ARR, dispatch a
     # general-purpose research agent (max 3 concurrent). After all
-    # return, re-run filter-unresearched-candidates.sh; if MISSING is
-    # still non-empty (research agent failed to commit a row), abort
-    # with diagnostic so the next cron fire retries cleanly.
+    # return, rebuild RESEARCHED_SET as the union of filter-RESEARCHED
+    # (prior-fire committed rows) and scratchpads-just-created (this fire).
     echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs in auto mode: ${MISSING_ARR[*]}" >&2
-    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until tracker rows commit." >&2
+    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until research scratchpads ready." >&2
     # (Agent dispatches happen at the orchestrator level; this fence
-    # marks the intent and re-filters after.)
+    # marks the intent and re-derives state after.)
+    # After research dispatches return, RESEARCHED_SET is the union of:
+    #   (a) candidates with committed tracker rows from prior fires (filter-RESEARCHED)
+    #   (b) candidates whose scratchpads this pipeline just created
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     read -r -a MISSING_ARR <<<"${MISSING:-}"
-    if [ ${#MISSING_ARR[@]} -gt 0 ]; then
-      echo "fix-issues Phase 2: research agents did not commit rows for: ${MISSING_ARR[*]} — proceeding with researched subset only" >&2
+    declare -A RESEARCHED_SET=()
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for N in "${MISSING_ARR[@]}"; do
+      if [ -f ".zskills/research-staging/$PIPELINE_ID/issue-${N}.md" ]; then
+        RESEARCHED_SET["$N"]=1
+      fi
+    done
+    unset __r N
+    # MISSING_ARR retains only candidates that have NEITHER committed row NOR scratchpad.
+    # In auto-mode, this should be empty after a successful dispatch; if non-empty,
+    # the message warns and Phase 3 will retry research-on-demand for them.
+    declare -a STILL_MISSING=()
+    for N in "${MISSING_ARR[@]}"; do
+      if [ -z "${RESEARCHED_SET[$N]:-}" ]; then STILL_MISSING+=("$N"); fi
+    done
+    if [ "${#STILL_MISSING[@]}" -gt 0 ]; then
+      echo "fix-issues Phase 2: research agents did not produce scratchpads for: ${STILL_MISSING[*]} — Phase 3 will retry research-on-demand" >&2
     fi
   else
     echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs: ${MISSING_ARR[*]}" >&2
@@ -1537,11 +1551,15 @@ fi
 # still iterates CANDIDATE_ISSUES — each candidate triggers synchronous
 # research-on-demand on cache miss, and the existing "no actionable
 # issues" path fires only if zero candidates pass triage.
-declare -A RESEARCHED_SET=()
-for __r in "${RESEARCHED_ARR[@]}"; do
-  RESEARCHED_SET["$__r"]=1
-done
-unset __r
+# (When the auto-mode branch above fires, RESEARCHED_SET is already
+# populated from the union rebuild; this fence is the no-MISSING fallthrough.)
+if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
+  declare -A RESEARCHED_SET=()
+  for __r in "${RESEARCHED_ARR[@]}"; do
+    RESEARCHED_SET["$__r"]=1
+  done
+  unset __r
+fi
 echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
 echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
 echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
@@ -1561,11 +1579,21 @@ MISSING entry (max 3 concurrent), each with this prompt shape:
 > shape): `### #N — <title>` H3, `**Labels:** ... | **Verdict:** ...`
 > line, `**Problem.**` paragraph, `**Fix outline.**` paragraph,
 > `**Complexity:** S/M/L. **Action now:** /do pr — <one-liner>` line.
-> Commit the row in the active worktree before returning.
+> Write the row content to `.zskills/research-staging/$PIPELINE_ID/issue-${N}.md`
+> in the MAIN REPO root (use `mkdir -p .zskills/research-staging/$PIPELINE_ID && cat > .zskills/research-staging/$PIPELINE_ID/issue-${N}.md <<'ROW' ... ROW`).
+> Do NOT touch `$ZSKILLS_ISSUES_DIR/*ISSUES*.md`. Do NOT `git add` or
+> `git commit`. The orchestrator promotes the scratchpad to a committed
+> tracker row after seeing the per-issue claim-acquire outcome.
 
-The orchestrator MUST block until each dispatched agent commits a row,
-THEN re-run the filter (the second `eval` above). Walking away without
-the second filter call leaves stale `MISSING_ARR` shadowing fresh rows.
+(The `<<'ROW' ... ROW` heredoc keeps the row content literal; do NOT use
+a double-quoted heredoc — variables in the row body would expand
+unexpectedly.)
+
+The orchestrator MUST block until each dispatched agent writes its
+scratchpad, THEN rebuild `RESEARCHED_SET` as the union of
+filter-RESEARCHED (committed rows from prior fires) and
+scratchpads-just-created (this fire). See Phase 2's
+"After research dispatches return" block.
 
 When the dashboard branch returns picks, skip the ranking/focus rubric
 below and proceed directly to the **Triage** subsection with
@@ -1634,18 +1662,38 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
   if [ "$AUTO_FLAG" = "1" ]; then
     # AUTO MODE — dispatch general-purpose research agents in parallel
     # for MISSING_ARR (up to 3 at a time), mirroring Phase 1 step 6.
-    # Block until each commits a tracker row (with `**Action now:**`),
-    # then re-filter. See the dashboard branch's expanded prose for
-    # the agent prompt shape.
+    # Each agent writes the row content to `.zskills/research-staging/$PIPELINE_ID/issue-${N}.md` (scratchpad)
+    # and returns without touching $ZSKILLS_ISSUES_DIR/*ISSUES*.md or committing. The orchestrator
+    # promotes scratchpads to committed tracker rows in Phase 3 per the acquire-outcome decision
+    # tree (see "Per-issue dispatch loop (B-proper)" below).
+    # See the dashboard branch's expanded prose for the agent prompt shape.
     echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs in auto mode: ${MISSING_ARR[*]}" >&2
-    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until tracker rows commit." >&2
+    echo "Dispatching research agents in parallel (up to 3 at a time). Blocking until research scratchpads ready." >&2
+    # After research dispatches return, RESEARCHED_SET is the union of:
+    #   (a) candidates with committed tracker rows from prior fires (filter-RESEARCHED)
+    #   (b) candidates whose scratchpads this pipeline just created
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     read -r -a MISSING_ARR <<<"${MISSING:-}"
-    if [ ${#MISSING_ARR[@]} -gt 0 ]; then
-      echo "fix-issues Phase 2: research agents did not commit rows for: ${MISSING_ARR[*]} — proceeding with researched subset only" >&2
+    declare -A RESEARCHED_SET=()
+    for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
+    for N in "${MISSING_ARR[@]}"; do
+      if [ -f ".zskills/research-staging/$PIPELINE_ID/issue-${N}.md" ]; then
+        RESEARCHED_SET["$N"]=1
+      fi
+    done
+    unset __r N
+    # MISSING_ARR retains only candidates that have NEITHER committed row NOR scratchpad.
+    # In auto-mode, this should be empty after a successful dispatch; if non-empty,
+    # the message warns and Phase 3 will retry research-on-demand for them.
+    declare -a STILL_MISSING=()
+    for N in "${MISSING_ARR[@]}"; do
+      if [ -z "${RESEARCHED_SET[$N]:-}" ]; then STILL_MISSING+=("$N"); fi
+    done
+    if [ "${#STILL_MISSING[@]}" -gt 0 ]; then
+      echo "fix-issues Phase 2: research agents did not produce scratchpads for: ${STILL_MISSING[*]} — Phase 3 will retry research-on-demand" >&2
     fi
   else
     echo "fix-issues Phase 2: ${#MISSING_ARR[@]} candidate(s) lack research blurbs: ${MISSING_ARR[*]}" >&2
@@ -1659,11 +1707,15 @@ fi
 # expanded prose above for the rationale; Phase 3's per-issue dispatch
 # loop iterates `CANDIDATE_ISSUES` and dispatches synchronous
 # research-on-demand on cache miss.
-declare -A RESEARCHED_SET=()
-for __r in "${RESEARCHED_ARR[@]}"; do
-  RESEARCHED_SET["$__r"]=1
-done
-unset __r
+# (When the auto-mode branch above fires, RESEARCHED_SET is already
+# populated from the union rebuild; this fence is the no-MISSING fallthrough.)
+if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
+  declare -A RESEARCHED_SET=()
+  for __r in "${RESEARCHED_ARR[@]}"; do
+    RESEARCHED_SET["$__r"]=1
+  done
+  unset __r
+fi
 echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
 echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
 echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
@@ -2327,6 +2379,7 @@ race-lost two top picks, fell through to the no-actionable arm, and
 30 minutes of cron time produced no work. The explicit loop forces the
 loser to do real fix work on the next available candidates.
 
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -2348,8 +2401,9 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
     # `subagent_type: "general-purpose"`, same prompt shape as Phase 2
     # source-filter auto-mode (read `gh issue view`, grep codebase, write
-    # tracker row with `**Action now:**` line, commit row before
-    # returning). After the dispatch returns, re-source RESEARCHED_SET:
+    # row content to `.zskills/research-staging/$PIPELINE_ID/issue-${N}.md`,
+    # no commit). After the dispatch returns, refresh RESEARCHED_SET by
+    # unioning filter-RESEARCHED with the scratchpad-existence check.
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
@@ -2357,8 +2411,15 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     RESEARCHED_SET=()
     for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
     unset __r
+    # Also count scratchpads from THIS pipeline as researched:
+    for f in .zskills/research-staging/"$PIPELINE_ID"/issue-*.md; do
+      [ -f "$f" ] || continue
+      N=$(basename "$f" .md | sed 's/^issue-//')
+      RESEARCHED_SET["$N"]=1
+    done
+    unset f N
     if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
-      echo "fix-issues Phase 3: research-on-demand did not commit a tracker row for #$ISSUE_NUM — skipping." >&2
+      echo "fix-issues Phase 3: research-on-demand did not produce a scratchpad for #$ISSUE_NUM — skipping." >&2
       SKIP_RECORD+=("research-failed:$ISSUE_NUM")
       continue
     fi
@@ -2376,6 +2437,21 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
     plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+      # PR-2 / A+F write-back HOOK: PR 2 will rewrite the `**Action now:**` line
+      # in the scratchpad here to `Action now: <canonical-skip-value> — <rationale>`
+      # before promotion. PR 1 promotes the scratchpad as-is (research agent's
+      # original Action-now line) — the row still lands so future Phase 2 filters
+      # see it; the tag refinement is PR 2's scope.
+      SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
+      if [ -f "$SCRATCH" ]; then
+        {
+          echo ""
+          cat "$SCRATCH"
+        } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+        git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+        git commit -m "fix-issues: research blurb + skip-class triage for #${ISSUE_NUM}"
+        rm -f "$SCRATCH"
+      fi
       SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
       continue
       ;;
@@ -2397,6 +2473,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   ACQ_RC=$?
   if [ "$ACQ_RC" = 10 ]; then
     echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); advancing to next candidate." >&2
+    rm -f ".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
     SKIP_RECORD+=("race-lost:$ISSUE_NUM")
     continue
   fi
@@ -2437,6 +2514,23 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # create-worktree.sh materialises it, so any pre-dispatch write would
   # fail.
 
+  # Promote scratchpad row into the per-issue worktree's tracker file. This
+  # commit is orchestrator-owned (not the impl agent's) so the row lands even
+  # if the impl agent returns without a commit (e.g., no-op verifier failure).
+  SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
+  if [ -f "$SCRATCH" ]; then
+    (
+      cd "$WORKTREE_PATH"
+      {
+        echo ""
+        cat "$MAIN_ROOT/$SCRATCH"
+      } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      git commit -m "fix-issues: backfill research blurb for #${ISSUE_NUM}"
+    )
+    rm -f "$SCRATCH"
+  fi
+
   # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
   # `subagent_type: "implementer"`, prompt prefixed with
   # `FIRST: cd $WORKTREE_PATH`, body per the "Agent dispatch prompts
@@ -2444,6 +2538,28 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # Tier-1 hash-registration directive).
   DISPATCHED=$((DISPATCHED + 1))
 done
+
+# Post-loop: promote leftover scratchpads for ranked-but-not-iterated
+# candidates (CANDIDATE_ISSUES that sat past N — research investment is
+# preserved so the next cron fire's filter sees committed rows for them).
+# Only runs in cherry-pick/direct mode; PR-mode leftovers are deferred to
+# PR 2 (see PR-mode loop carve-out below).
+declare -a LEFTOVER_ROWS=()
+for N in "${CANDIDATE_ISSUES[@]}"; do
+  SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${N}.md"
+  [ -f "$SCRATCH" ] || continue
+  {
+    echo ""
+    cat "$SCRATCH"
+  } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+  LEFTOVER_ROWS+=("$N")
+  rm -f "$SCRATCH"
+done
+if [ "${#LEFTOVER_ROWS[@]}" -gt 0 ]; then
+  git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+  git commit -m "fix-issues: backfill research blurbs for ranked-but-not-iterated candidates (sprint ${SPRINT_ID}) — issues ${LEFTOVER_ROWS[*]}"
+fi
+unset N SCRATCH LEFTOVER_ROWS
 ```
 
 For grouped interrelated issues (same root cause or same files from
@@ -2488,6 +2604,7 @@ cherry-pick/direct subsection above for the rationale (B-proper
 structural change replacing the older PROSE-iterated `exit 0`
 race-loss arm).
 
+<!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -2502,8 +2619,10 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # 1. Research-on-demand (same shape as cherry-pick/direct loop above).
   if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
     # Orchestrator dispatches `subagent_type: "general-purpose"`
-    # research agent for $ISSUE_NUM. Blocks until the agent commits a
-    # tracker row. Then refresh:
+    # research agent for $ISSUE_NUM. Blocks until the agent writes the
+    # row content to `.zskills/research-staging/$PIPELINE_ID/issue-${N}.md`
+    # (no commit). Then refresh RESEARCHED_SET by unioning filter-RESEARCHED
+    # with the scratchpad-existence check.
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
@@ -2511,8 +2630,15 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     RESEARCHED_SET=()
     for __r in "${RESEARCHED_ARR[@]}"; do RESEARCHED_SET["$__r"]=1; done
     unset __r
+    # Also count scratchpads from THIS pipeline as researched:
+    for f in .zskills/research-staging/"$PIPELINE_ID"/issue-*.md; do
+      [ -f "$f" ] || continue
+      N=$(basename "$f" .md | sed 's/^issue-//')
+      RESEARCHED_SET["$N"]=1
+    done
+    unset f N
     if [ -z "${RESEARCHED_SET[$ISSUE_NUM]:-}" ]; then
-      echo "fix-issues Phase 3 (PR mode): research-on-demand did not commit a tracker row for #$ISSUE_NUM — skipping." >&2
+      echo "fix-issues Phase 3 (PR mode): research-on-demand did not produce a scratchpad for #$ISSUE_NUM — skipping." >&2
       SKIP_RECORD+=("research-failed:$ISSUE_NUM")
       continue
     fi
@@ -2523,6 +2649,14 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
     plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+      # PR-mode carve-out: in PR mode with main_protected, skip-class promotion
+      # requires a tracker-only sync PR (mirrors the existing "dashboard-empty
+      # sync PR" pattern at SKILL.md ~1303). This is deferred to PR 2 — its
+      # write-back design naturally covers PR-mode promotion. PR 1 holds the
+      # scratchpad in place; PR 2 will collect held scratchpads and ship them
+      # via the sync-PR pattern.
+      # PR-2 hook: collect this scratchpad at end of Phase 3 and ship as
+      # tracker-only PR with the canonical skip-tag rewrite.
       SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
       continue
       ;;
@@ -2540,6 +2674,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   ACQ_RC=$?
   if [ "$ACQ_RC" = 10 ]; then
     echo "fix-issues: claim race lost for issue $ISSUE_NUM (concurrent pipeline holds it); advancing to next candidate." >&2
+    rm -f ".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
     SKIP_RECORD+=("race-lost:$ISSUE_NUM")
     continue
   fi
@@ -2576,12 +2711,36 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # --allow-resume), .zskills-tracked (from --pipeline-id), and
   # .worktreepurpose writes.
 
+  # Promote scratchpad row into the per-issue worktree's tracker file. This
+  # commit is orchestrator-owned (not the impl agent's) so the row lands even
+  # if the impl agent returns without a commit (e.g., no-op verifier failure).
+  # PR-mode `$WORKTREE_PATH` is `/tmp/${PROJECT_NAME}-fix-issue-${ISSUE_NUM}`
+  # on a `fix/issue-${ISSUE_NUM}` branch — the standalone worktree commit
+  # lands there and ships with the fix PR.
+  SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
+  if [ -f "$SCRATCH" ]; then
+    (
+      cd "$WORKTREE_PATH"
+      {
+        echo ""
+        cat "$MAIN_ROOT/$SCRATCH"
+      } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      git commit -m "fix-issues: backfill research blurb for #${ISSUE_NUM}"
+    )
+    rm -f "$SCRATCH"
+  fi
+
   # Orchestrator action: Agent dispatch for issue $ISSUE_NUM with
   # `subagent_type: "implementer"`, prompt prefixed with
   # `FIRST: cd $WORKTREE_PATH`. PR mode: each branch's PR is opened in
   # Phase 6 via `/land-pr` (per-issue).
   DISPATCHED=$((DISPATCHED + 1))
 done
+# PR-mode leftover scratchpads (ranked-but-not-iterated + skip-class
+# held earlier) remain in `.zskills/research-staging/$PIPELINE_ID/` for
+# PR 2 to collect and ship via the sync-PR pattern. PR 1 does NOT
+# promote these — they are held by design.
 ```
 
 **Dispatching fix agents in PR mode:** Dispatch agents WITHOUT

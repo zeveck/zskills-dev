@@ -225,6 +225,34 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# Test 4b: PR 1 stage-and-decide shape-lock — the race-loss arm must
+# `rm -f` the per-pipeline scratchpad before `continue`, so a race-loser
+# pipeline does not strand its scratchpad. Both the cherry-pick/direct
+# loop and PR-mode loop must have this.
+# ───────────────────────────────────────────────────────────────────────
+rmf_shape_ok=1
+rmf_reason=""
+rmf_hits=0
+for line in $acquire_lines; do
+  end=$((line + 14))
+  window=$(sed -n "${line},${end}p" "$SKILL_MD")
+  # Look for rm -f referencing research-staging within the same 14-line window
+  # (i.e., near the race-loss arm).
+  if grep -F 'rm -f' <<< "$window" | grep -qF 'research-staging/'; then
+    rmf_hits=$((rmf_hits + 1))
+  else
+    rmf_shape_ok=0
+    rmf_reason="line $line: no \`rm -f\` referencing research-staging/ within 14 lines (PR 1 stage-and-decide requires race-loss scratchpad cleanup)"
+    break
+  fi
+done
+if [ -n "$acquire_lines" ] && [ "$rmf_shape_ok" -eq 1 ] && [ "$rmf_hits" -ge 2 ]; then
+  pass "T2.1 PR-1 shape-lock: race-loss arm rm-f's research-staging/ scratchpad in both loops ($rmf_hits hits)"
+else
+  fail "T2.1 PR-1 shape-lock (race-loss rm-f scratchpad)" "${rmf_reason:-expected >=2 hits (cherry-pick + PR mode); got $rmf_hits}"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Test 5: Hook backstop — no claim, deny envelope emitted.
 # ───────────────────────────────────────────────────────────────────────
 t5_root="$SCRATCH_ROOT/t5"

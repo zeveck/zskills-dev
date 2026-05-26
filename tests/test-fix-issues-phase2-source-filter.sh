@@ -332,6 +332,40 @@ test_skill_auto_dispatch_prose() {
   fi
 }
 
+# --- 6b. Scratchpad path appears in 3+ locations (PR 1 stage-and-decide)
+# Research-agent prompt + Phase 2 union (dashboard+rubric branches) +
+# Phase 3 unions (cherry-pick+PR loops) + race-loss rm-f + acquire-success
+# promote in both modes. At minimum, expect >=3 references to the
+# `research-staging/$PIPELINE_ID/issue-` substring.
+test_skill_scratchpad_path_prose() {
+  local count
+  count=$(grep -cF 'research-staging/$PIPELINE_ID/issue-' "$SKILL")
+  if [ "$count" -ge 3 ]; then
+    pass "SKILL.md references scratchpad path \`research-staging/\$PIPELINE_ID/issue-\` $count times (>=3)"
+  else
+    fail "SKILL.md scratchpad path count" "expected >=3, got $count"
+  fi
+}
+
+# --- 6c. Research-agent prompt instructs NO commit (PR 1 stage-and-decide)
+# The new shape: research agents write a scratchpad and return WITHOUT
+# committing. Lock the prompt change so a regression to "Commit the row
+# in the active worktree before returning." is caught.
+test_skill_research_agent_no_commit() {
+  if grep -qF 'Commit the row in the active worktree before returning' "$SKILL"; then
+    fail "SKILL.md research-agent prompt no-commit" \
+         "found legacy substring 'Commit the row in the active worktree before returning' — stage-and-decide forbids agent commits"
+    return
+  fi
+  if grep -qF 'Do NOT `git add` or' "$SKILL" \
+     || grep -qE 'Do NOT .{0,20}git commit' "$SKILL"; then
+    pass "SKILL.md research-agent prompt: explicit Do-NOT-commit + no legacy 'Commit the row' string"
+  else
+    fail "SKILL.md research-agent no-commit instruction" \
+         "expected 'Do NOT git commit' (or equivalent) in research-agent prompt block"
+  fi
+}
+
 # --- 7. Interactive-mode prose emits /fix-issues sync diagnostic --------
 test_skill_interactive_abort_prose() {
   # The interactive branch must (a) emit a diagnostic pointing at
@@ -383,6 +417,8 @@ test_eval_roundtrip_single_candidate
 test_skill_dashboard_invokes_filter
 test_skill_dashboard_rebuild_candidates
 test_skill_auto_dispatch_prose
+test_skill_scratchpad_path_prose
+test_skill_research_agent_no_commit
 test_skill_interactive_abort_prose
 test_skill_interactive_exit_1
 
