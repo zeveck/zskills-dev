@@ -1510,6 +1510,124 @@ else
   fail "W1.20: got '$W120'"
 fi
 
+# W1.21 — annotate_issues_queue_drops_closed_from_explicit_positions:
+# state-file has issue #N in `triage` with `closed_at` set within window.
+# The explicit-position bypass must NOT keep it in `triage`; instead
+# `_infer_issue_default_column` routes it to `completed` (in-window).
+# Closes #670 — auto-prune closed issues from explicit-active columns.
+W121=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+from datetime import datetime, timezone, timedelta
+
+now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
+state = {
+    "issues": {"triage": [42], "backlog": []},
+    "plans": {"backlog": []},
+}
+# Issue #42 is in state.issues.triage AND closed in-window.
+# The auto-prune must filter it out of `pos`, letting inference win.
+issues = [
+    {"number": 42, "closed_at": (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+]
+c._annotate_issues_queue(issues, state, None, now_utc=now, window_days=14)
+print("col=" + issues[0]["queue"]["column"])
+' 2>&1)
+if printf '%s\n' "$W121" | grep -q "^col=completed$"; then
+  pass "W1.21: annotate_issues_queue_drops_closed_from_explicit_positions (#670)"
+else
+  fail "W1.21: got '$W121'"
+fi
+
+# W1.22 — annotate_issues_queue_hides_closed_out_of_window_with_explicit_position:
+# state-file has issue #N in `triage` with `closed_at` OUTSIDE the 14-day
+# window. Auto-prune still drops it from `pos`; inference fallback routes
+# to `triage` (the `_infer_issue_default_column` default). The "hide"
+# part is enforced upstream by the caller's open+closed-window fetch
+# contract — at this boundary we only assert the explicit-position bypass
+# fires (state-file says triage, but inference owns the column).
+# Closes #670.
+W122=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+from datetime import datetime, timezone, timedelta
+
+now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
+state = {
+    "issues": {"triage": [99], "backlog": []},
+    "plans": {"backlog": []},
+}
+# Closed 30 days ago — outside the 14-day window.
+issues = [
+    {"number": 99, "closed_at": (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+]
+c._annotate_issues_queue(issues, state, None, now_utc=now, window_days=14)
+print("col=" + issues[0]["queue"]["column"])
+print("index=" + str(issues[0]["queue"]["index"]))
+' 2>&1)
+if printf '%s\n' "$W122" | grep -q "^col=triage$" \
+    && printf '%s\n' "$W122" | grep -q "^index=-1$"; then
+  pass "W1.22: annotate_issues_queue_hides_closed_out_of_window_with_explicit_position (#670)"
+else
+  fail "W1.22: got '$W122'"
+fi
+
+# W1.23 — annotate_plans_queue_drops_orphan_state_file_entries:
+# state-file has slug `nonexistent-plan` in `drafted`, but the `plans`
+# list passed in does NOT contain a dict with that slug. The orphan must
+# be auto-pruned from `pos` so it never affects rendering, and unrelated
+# plans (e.g. `real-plan` in `backlog`) must NOT pick up the orphan's
+# index-0 position from the state file's `drafted` array.
+#
+# Without the auto-prune, `pos` would have
+# `{"nonexistent-plan": ("drafted", 0, None)}`. `real-plan` would not be
+# in `pos` and would fall through to inference. The auto-prune ensures
+# the orphan never enters `pos`, AND a same-column-different-slug
+# scenario does not get its index shifted by the orphan's presence.
+#
+# Concrete assertion: real-plan-in-backlog must end up with
+# `column=backlog, index=0` (the explicit state-file position), and the
+# orphan slug must never appear anywhere in the output.
+# Closes #671 — auto-prune orphan plan slugs.
+W123=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+from datetime import datetime, timezone
+
+now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
+state = {
+    "plans": {
+        "drafted": [{"slug": "nonexistent-plan"}],
+        "backlog": [{"slug": "real-plan"}],
+    },
+    "issues": {"backlog": []},
+}
+# `real-plan` is the only parsed plan; `nonexistent-plan` is an orphan.
+plans = [
+    {"slug": "real-plan", "status": "active", "phases_done": 0},
+]
+c._annotate_plans_queue(plans, state, now_utc=now, window_days=14)
+# real-plan picks up backlog from its OWN state-file position, NOT
+# from the orphan-slug entry in drafted.
+print("real_col=" + plans[0]["queue"]["column"])
+print("real_index=" + str(plans[0]["queue"]["index"]))
+# Confirm no plan in the result list has slug == nonexistent-plan.
+orphan_present = any(p.get("slug") == "nonexistent-plan" for p in plans)
+print("orphan_present=" + str(orphan_present))
+print("plan_count=" + str(len(plans)))
+' 2>&1)
+if printf '%s\n' "$W123" | grep -q "^real_col=backlog$" \
+    && printf '%s\n' "$W123" | grep -q "^real_index=0$" \
+    && printf '%s\n' "$W123" | grep -q "^orphan_present=False$" \
+    && printf '%s\n' "$W123" | grep -q "^plan_count=1$"; then
+  pass "W1.23: annotate_plans_queue_drops_orphan_state_file_entries (#671)"
+else
+  fail "W1.23: got '$W123'"
+fi
+
 # ---------------------------------------------------------------------------
 # Phase 1: backfill-plan-completed.sh tests (W1.13–W1.18)
 # ---------------------------------------------------------------------------
