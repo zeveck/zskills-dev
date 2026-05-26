@@ -366,6 +366,161 @@ test_skill_research_agent_no_commit() {
   fi
 }
 
+# --- PR-2 / A+F: filter emits SKIP_TAGGED line -------------------------
+# Mixed fixture with /draft-plan, /do pr rows. SKIP_TAGGED must contain
+# the /draft-plan issue tagged `:plan-scale` and must NOT contain the
+# /do pr issue.
+build_skip_tagged_fixture() {
+  local dir="$1"
+  mkdir -p "$dir"
+  cat > "$dir/ISSUES.md" <<'EOF'
+### #700 — plan-scale issue
+
+**Labels:** bug | **Verdict:** NOT FIXED.
+
+**Complexity:** L. **Action now:** /draft-plan — needs design review.
+
+### #701 — actionable
+
+**Labels:** bug | **Verdict:** NOT FIXED.
+
+**Complexity:** S. **Action now:** /do pr — bounded.
+
+### #702 — investigate
+
+**Labels:** bug | **Verdict:** UNCLEAR.
+
+**Complexity:** M. **Action now:** /investigate — root cause unclear.
+
+### #703 — needs decision
+
+**Labels:** bug | **Verdict:** NOT FIXED.
+
+**Complexity:** S. **Action now:** none — author decision needed.
+
+### #704 — false-positive boundary (must NOT match `none`)
+
+**Complexity:** S. **Action now:** none-of-the-above — placeholder.
+
+### #705 — /run-plan should map to plan-scale
+
+**Complexity:** S. **Action now:** /run-plan — execute existing plan.
+EOF
+}
+
+test_filter_emits_skip_tagged() {
+  local dir="$TMP_ROOT/skip-tagged"
+  build_skip_tagged_fixture "$dir"
+  local out skip_tagged
+  out=$(run_filter "$dir" 700 701)
+  skip_tagged=$(echo "$out" | grep '^SKIP_TAGGED=' | sed -e 's/^SKIP_TAGGED=//' -e 's/^"//' -e 's/"$//')
+  if [ "$skip_tagged" = "700:plan-scale" ]; then
+    pass "SKIP_TAGGED emitted for /draft-plan row; /do pr row excluded"
+  else
+    fail "SKIP_TAGGED emission" "expected '700:plan-scale', got [$skip_tagged]"
+  fi
+}
+
+test_filter_skip_tagged_codes() {
+  local dir="$TMP_ROOT/codes"
+  build_skip_tagged_fixture "$dir"
+  local out skip_tagged
+  out=$(run_filter "$dir" 700 701 702 703 704 705)
+  skip_tagged=$(echo "$out" | grep '^SKIP_TAGGED=' | sed -e 's/^SKIP_TAGGED=//' -e 's/^"//' -e 's/"$//')
+  # Expected: 700:plan-scale (draft-plan), 702:bug-unclear-cause (investigate),
+  # 703:needs-decision (none), 705:plan-scale (run-plan).
+  # 701 (/do pr) and 704 (none-of-the-above boundary) must NOT appear.
+  local expected="700:plan-scale 702:bug-unclear-cause 703:needs-decision 705:plan-scale"
+  if [ "$skip_tagged" = "$expected" ]; then
+    pass "SKIP_TAGGED per-code coverage: /draft-plan→plan-scale, /investigate→bug-unclear-cause, none→needs-decision, /run-plan→plan-scale; boundaries excluded"
+  else
+    fail "SKIP_TAGGED per-code coverage" "expected '$expected', got [$skip_tagged]"
+  fi
+}
+
+test_filter_skip_tagged_empty_when_no_skip_rows() {
+  local dir="$TMP_ROOT/no-skip"
+  mkdir -p "$dir"
+  cat > "$dir/ISSUES.md" <<'EOF'
+### #800 — actionable only
+
+**Complexity:** S. **Action now:** /do pr — bounded.
+EOF
+  local out skip_tagged
+  out=$(run_filter "$dir" 800)
+  # The SKIP_TAGGED line MUST still be emitted (backward-compat) but empty.
+  if ! echo "$out" | grep -q '^SKIP_TAGGED='; then
+    fail "SKIP_TAGGED always emitted" "no SKIP_TAGGED line found in output: $out"
+    return
+  fi
+  skip_tagged=$(echo "$out" | grep '^SKIP_TAGGED=' | sed -e 's/^SKIP_TAGGED=//' -e 's/^"//' -e 's/"$//')
+  if [ -z "$skip_tagged" ]; then
+    pass "SKIP_TAGGED line present but empty when no skip-class rows"
+  else
+    fail "SKIP_TAGGED empty when no skip rows" "got [$skip_tagged]"
+  fi
+}
+
+# --- PR-2 / A+F: SKILL.md Phase 2 drop logic in both branches ----------
+test_skill_phase2_drops_skip_tagged() {
+  # Expect the SKIP_TAGGED_SET array population AND the _FILTERED
+  # reduction loop AND the `dropping skip-tagged` log line to appear
+  # in BOTH dashboard branch and default-rubric branch (2 hits each).
+  local set_count filtered_count drop_log_count
+  set_count=$(grep -c 'declare -A SKIP_TAGGED_SET' "$SKILL")
+  filtered_count=$(grep -c 'declare -a _FILTERED=()' "$SKILL")
+  drop_log_count=$(grep -c 'dropping skip-tagged' "$SKILL")
+  if [ "$set_count" -eq 2 ] && [ "$filtered_count" -eq 2 ] && [ "$drop_log_count" -eq 2 ]; then
+    pass "SKILL.md Phase 2 drop block present in BOTH branches (SKIP_TAGGED_SET=2, _FILTERED=2, drop-log=2)"
+  else
+    fail "SKILL.md Phase 2 drop block coverage" \
+         "expected 2 each — got SKIP_TAGGED_SET=$set_count _FILTERED=$filtered_count drop-log=$drop_log_count"
+  fi
+}
+
+# --- PR-2 / A+F: write-back rewrites scratchpad in BOTH mode arms ------
+test_skill_writeback_rewrites_scratchpad() {
+  # Each mode (cherry-pick/direct + PR-mode) must contain a case branch
+  # mapping plan-scale / bug-unclear-cause / needs-decision /
+  # author-decision to canonical NEW_ACTION_NOW values. Expect >=8
+  # NEW_ACTION_NOW= assignments total (4 cases × 2 modes).
+  local nan_count
+  nan_count=$(grep -c '^[[:space:]]*NEW_ACTION_NOW=' "$SKILL")
+  if [ "$nan_count" -lt 8 ]; then
+    fail "SKILL.md NEW_ACTION_NOW count" "expected >=8 (4 cases × 2 modes), got $nan_count"
+    return
+  fi
+  # Load-bearing: the actual `sed -i` rewrite MUST appear EXACTLY 2 times
+  # (once per mode). Without this assertion the impl could declare the
+  # mapping vars but skip the sed call.
+  local sed_count
+  sed_count=$(grep -c 'sed -i.*Action now' "$SKILL")
+  if [ "$sed_count" -eq 2 ]; then
+    pass "SKILL.md write-back: NEW_ACTION_NOW assigned $nan_count times (>=8) AND sed -i rewrite present exactly 2 times (cherry-pick + PR-mode)"
+  else
+    fail "SKILL.md write-back sed -i count" "expected exactly 2 sed-i Action-now rewrites, got $sed_count"
+  fi
+}
+
+# --- PR-2 / A+F: PR-mode end-of-loop tracker rollup --------------------
+test_skill_pr_mode_tracker_rollup() {
+  # Assertions:
+  #   - branch name `fix-issues-tracker/$SPRINT_ID` referenced.
+  #   - create-worktree.sh invoked with --prefix tracker.
+  #   - Skill: { skill: "land-pr" comment line for the tracker dispatch.
+  #   - --landed-source=fix-issues-pr-mode-tracker-rollup tag used.
+  local missing=""
+  grep -qF 'fix-issues-tracker/$SPRINT_ID' "$SKILL" || missing="$missing fix-issues-tracker/\$SPRINT_ID"
+  grep -qF -- '--prefix tracker' "$SKILL" || missing="$missing --prefix-tracker"
+  grep -qF 'Skill: { skill: "land-pr"' "$SKILL" || missing="$missing land-pr-skill-comment"
+  grep -qF -- '--landed-source=fix-issues-pr-mode-tracker-rollup' "$SKILL" || missing="$missing landed-source-tag"
+  if [ -z "$missing" ]; then
+    pass "SKILL.md PR-mode tracker rollup: branch + create-worktree --prefix tracker + land-pr skill comment + landed-source tag"
+  else
+    fail "SKILL.md PR-mode tracker rollup" "missing:$missing"
+  fi
+}
+
 # --- 7. Interactive-mode prose emits /fix-issues sync diagnostic --------
 test_skill_interactive_abort_prose() {
   # The interactive branch must (a) emit a diagnostic pointing at
@@ -421,6 +576,12 @@ test_skill_scratchpad_path_prose
 test_skill_research_agent_no_commit
 test_skill_interactive_abort_prose
 test_skill_interactive_exit_1
+test_filter_emits_skip_tagged
+test_filter_skip_tagged_codes
+test_filter_skip_tagged_empty_when_no_skip_rows
+test_skill_phase2_drops_skip_tagged
+test_skill_writeback_rewrites_scratchpad
+test_skill_pr_mode_tracker_rollup
 
 echo ""
 echo "---"
