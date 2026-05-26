@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.26+a2eeb6"
+  version: "2026.05.26+4913e0"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -1560,6 +1560,35 @@ if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
   done
   unset __r
 fi
+
+# PR-2 / A+F: drop SKIP_TAGGED candidates from CANDIDATE_ISSUES. The
+# filter-script SKIP_TAGGED line lists `<num>:<skip-code>` for rows
+# whose `Action now:` value resolves to a canonical dashboard skip-code
+# (plan-scale / bug-unclear-cause / needs-decision). These were
+# classified as non-actionable in prior fires; skip re-research and
+# re-triage now (#606 tax fix).
+read -r -a SKIP_TAGGED_ARR <<<"${SKIP_TAGGED:-}"
+declare -A SKIP_TAGGED_SET=()
+for tok in "${SKIP_TAGGED_ARR[@]+"${SKIP_TAGGED_ARR[@]}"}"; do
+  case "$tok" in
+    *:*) SKIP_TAGGED_SET["${tok%%:*}"]="${tok#*:}" ;;
+  esac
+done
+unset tok
+if [ "${#SKIP_TAGGED_SET[@]}" -gt 0 ]; then
+  declare -a _FILTERED=()
+  for N in "${CANDIDATE_ISSUES[@]}"; do
+    if [ -z "${SKIP_TAGGED_SET[$N]:-}" ]; then
+      _FILTERED+=("$N")
+    else
+      echo "fix-issues Phase 2: dropping skip-tagged #$N (${SKIP_TAGGED_SET[$N]}) — already classified" >&2
+    fi
+  done
+  # `+` suffix guards `set -u` when _FILTERED is empty (all candidates dropped).
+  CANDIDATE_ISSUES=("${_FILTERED[@]+"${_FILTERED[@]}"}")
+  unset _FILTERED N
+fi
+
 echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
 echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
 echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
@@ -1716,6 +1745,31 @@ if ! declare -p RESEARCHED_SET >/dev/null 2>&1; then
   done
   unset __r
 fi
+
+# PR-2 / A+F: drop SKIP_TAGGED candidates from CANDIDATE_ISSUES. Mirrors
+# the dashboard branch's block — see expanded prose there. Functions
+# don't span skill fences so the block is duplicated literally.
+read -r -a SKIP_TAGGED_ARR <<<"${SKIP_TAGGED:-}"
+declare -A SKIP_TAGGED_SET=()
+for tok in "${SKIP_TAGGED_ARR[@]+"${SKIP_TAGGED_ARR[@]}"}"; do
+  case "$tok" in
+    *:*) SKIP_TAGGED_SET["${tok%%:*}"]="${tok#*:}" ;;
+  esac
+done
+unset tok
+if [ "${#SKIP_TAGGED_SET[@]}" -gt 0 ]; then
+  declare -a _FILTERED=()
+  for N in "${CANDIDATE_ISSUES[@]}"; do
+    if [ -z "${SKIP_TAGGED_SET[$N]:-}" ]; then
+      _FILTERED+=("$N")
+    else
+      echo "fix-issues Phase 2: dropping skip-tagged #$N (${SKIP_TAGGED_SET[$N]}) — already classified" >&2
+    fi
+  done
+  CANDIDATE_ISSUES=("${_FILTERED[@]+"${_FILTERED[@]}"}")
+  unset _FILTERED N
+fi
+
 echo "Candidates after Phase 2 source-filter: ${CANDIDATE_ISSUES[*]:-(none)}"
 echo "  researched (will dispatch directly): ${RESEARCHED_ARR[*]:-(none)}"
 echo "  un-researched (Phase 3 will research-on-demand): ${MISSING_ARR[*]:-(none)}"
@@ -2437,19 +2491,45 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
     plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
-      # PR-2 / A+F write-back HOOK: PR 2 will rewrite the `**Action now:**` line
-      # in the scratchpad here to `Action now: <canonical-skip-value> — <rationale>`
-      # before promotion. PR 1 promotes the scratchpad as-is (research agent's
-      # original Action-now line) — the row still lands so future Phase 2 filters
-      # see it; the tag refinement is PR 2's scope.
+      # PR-2 / A+F write-back: rewrite the scratchpad's `**Action now:**`
+      # line to the canonical skip-value BEFORE promotion + commit, so the
+      # next fire's filter-script SKIP_TAGGED output picks up this
+      # classification and Phase 2 A drops the candidate without re-research
+      # (#606 tax fix). `too-vague` is intentionally left untouched (no
+      # canonical dashboard skip-code; vague rows need user clarification,
+      # not auto-tagging — re-classified next fire by design).
       SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
       if [ -f "$SCRATCH" ]; then
+        NEW_ACTION_NOW=""
+        case "$CLASS" in
+          plan-scale)
+            NEW_ACTION_NOW="**Action now:** /draft-plan — plan-scale design surface; needs adversarial plan review before any fix."
+            ;;
+          bug-unclear-cause)
+            NEW_ACTION_NOW="**Action now:** /investigate — root cause unclear; needs structured investigation before patching."
+            ;;
+          needs-decision|author-decision)
+            NEW_ACTION_NOW="**Action now:** none — author decision needed on direction; not auto-fixable."
+            ;;
+          too-vague)
+            : ;;  # leave scratchpad untouched
+        esac
+        if [ -n "$NEW_ACTION_NOW" ]; then
+          # Replace the entire `**Action now:** ...` line content. Line-anchored
+          # sed regex (period `.` is fine here because `sed` is line-mode by
+          # default; we use `[^\n]*` semantics via the explicit charclass to be
+          # clear about intent). Replacing the whole line drops any trailing
+          # research-agent rationale that would otherwise be semantically
+          # attached to the new canonical directive.
+          sed -i "s|\*\*Action now:\*\*[^\n]*|$NEW_ACTION_NOW|" "$SCRATCH" \
+            || echo "WARN: fix-issues write-back: sed rewrite failed for $SCRATCH (proceeding with original scratchpad content)" >&2
+        fi
         {
           echo ""
           cat "$SCRATCH"
         } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
         git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
-        git commit -m "fix-issues: research blurb + skip-class triage for #${ISSUE_NUM}"
+        git commit -m "fix-issues: research blurb + skip-class triage (${CLASS}) for #${ISSUE_NUM}"
         rm -f "$SCRATCH"
       fi
       SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
@@ -2606,6 +2686,7 @@ race-loss arm).
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
@@ -2649,14 +2730,33 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
     plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
-      # PR-mode carve-out: in PR mode with main_protected, skip-class promotion
-      # requires a tracker-only sync PR (mirrors the existing "dashboard-empty
-      # sync PR" pattern at SKILL.md ~1303). This is deferred to PR 2 — its
-      # write-back design naturally covers PR-mode promotion. PR 1 holds the
-      # scratchpad in place; PR 2 will collect held scratchpads and ship them
-      # via the sync-PR pattern.
-      # PR-2 hook: collect this scratchpad at end of Phase 3 and ship as
-      # tracker-only PR with the canonical skip-tag rewrite.
+      # PR-2 / A+F write-back: rewrite the scratchpad's `**Action now:**`
+      # line NOW so when the end-of-Phase-3 sync-PR ships these rows they
+      # carry the canonical skip-tag. main_protected blocks direct commit
+      # here — the scratchpad is held in `.zskills/research-staging/` for
+      # the end-of-loop batch sync-PR that mirrors the dashboard-empty
+      # pattern at SKILL.md ~1303-1378.
+      SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
+      if [ -f "$SCRATCH" ]; then
+        NEW_ACTION_NOW=""
+        case "$CLASS" in
+          plan-scale)
+            NEW_ACTION_NOW="**Action now:** /draft-plan — plan-scale design surface; needs adversarial plan review before any fix."
+            ;;
+          bug-unclear-cause)
+            NEW_ACTION_NOW="**Action now:** /investigate — root cause unclear; needs structured investigation before patching."
+            ;;
+          needs-decision|author-decision)
+            NEW_ACTION_NOW="**Action now:** none — author decision needed on direction; not auto-fixable."
+            ;;
+          too-vague)
+            : ;;  # leave scratchpad untouched
+        esac
+        if [ -n "$NEW_ACTION_NOW" ]; then
+          sed -i "s|\*\*Action now:\*\*[^\n]*|$NEW_ACTION_NOW|" "$SCRATCH" \
+            || echo "WARN: fix-issues PR-mode write-back: sed rewrite failed for $SCRATCH" >&2
+        fi
+      fi
       SKIP_RECORD+=("$CLASS:$ISSUE_NUM")
       continue
       ;;
@@ -2737,10 +2837,86 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # Phase 6 via `/land-pr` (per-issue).
   DISPATCHED=$((DISPATCHED + 1))
 done
-# PR-mode leftover scratchpads (ranked-but-not-iterated + skip-class
-# held earlier) remain in `.zskills/research-staging/$PIPELINE_ID/` for
-# PR 2 to collect and ship via the sync-PR pattern. PR 1 does NOT
-# promote these — they are held by design.
+
+# PR-2 / A+F: end-of-PR-mode-Phase-3 sprint-tracker rollup. Collect any
+# remaining scratchpads in `.zskills/research-staging/$PIPELINE_ID/`
+# (skip-class write-back from triage above, plus any
+# ranked-but-not-iterated leftovers — PR mode held both intentionally so
+# the canonical skip-tag rewrite ships in ISSUES_PLAN.md). If non-empty,
+# ship as a tracker-only sync PR via the dashboard-empty pattern at
+# SKILL.md ~1283-1378. The sync-PR ALWAYS auto-merges regardless of the
+# user's `auto` arg — tracker-only content has no code-review surface;
+# review gates apply to code PRs only (same rationale as the
+# dashboard-empty sync at lines 1338-1341).
+declare -a TRACKER_SCRATCHPADS=()
+for N in "${CANDIDATE_ISSUES[@]+"${CANDIDATE_ISSUES[@]}"}"; do
+  S=".zskills/research-staging/$PIPELINE_ID/issue-${N}.md"
+  [ -f "$S" ] && TRACKER_SCRATCHPADS+=("$S")
+done
+unset N S
+
+if [ "${#TRACKER_SCRATCHPADS[@]}" -gt 0 ]; then
+  echo "fix-issues PR-mode: shipping ${#TRACKER_SCRATCHPADS[@]} skip-tag / leftover row(s) as sprint-tracker PR" >&2
+  TRACKER_WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+    --prefix tracker \
+    --branch-name "fix-issues-tracker/$SPRINT_ID" \
+    --purpose "fix-issues sprint-tracker skip-tag rollup" \
+    --pipeline-id "$PIPELINE_ID" \
+    "$SPRINT_ID")
+  TRACKER_RC=$?
+  if [ "$TRACKER_RC" -ne 0 ]; then
+    echo "fix-issues PR-mode: tracker worktree creation failed (rc=$TRACKER_RC); scratchpads retained for next fire" >&2
+  else
+    (
+      cd "$TRACKER_WT" || exit 1
+      for S in "${TRACKER_SCRATCHPADS[@]}"; do
+        {
+          echo ""
+          cat "$MAIN_ROOT/$S"
+        } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      done
+      git add "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
+      if [ -n "${COMMIT_CO_AUTHOR:-}" ]; then
+        git commit --trailer "Co-Authored-By: $COMMIT_CO_AUTHOR" \
+          -m "docs(sync): /fix-issues skip-tag rollup sprint $SPRINT_ID"
+      else
+        git commit -m "docs(sync): /fix-issues skip-tag rollup sprint $SPRINT_ID"
+      fi
+    )
+    # Dispatch /land-pr --auto for the tracker PR. Mirrors the
+    # dashboard-empty pattern's LAND_ARGS shape (always --auto because
+    # this is sync-only content with no code-review surface).
+    TRACKER_LAND_ID="fix-issues.tracker-rollup.${SPRINT_ID}"
+    TRACKER_RESULT=$(mktemp)
+    TRACKER_BODY=$(mktemp)
+    {
+      printf '## Summary\n`/fix-issues` PR-mode sprint %s: %d skip-tag / leftover row(s) shipped as tracker-only sync.\n\n' \
+        "$SPRINT_ID" "${#TRACKER_SCRATCHPADS[@]}"
+      printf '## Test plan\n- [x] Tracker-only diff; no per-issue work in this PR.\n'
+    } > "$TRACKER_BODY"
+    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
+    printf 'skill: land-pr\nrequired-by: fix-issues-pr-mode-tracker-rollup\ndate: %s\n' \
+      "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.${TRACKER_LAND_ID}"
+    TRACKER_LAND_ARGS="--branch=fix-issues-tracker/$SPRINT_ID --title=\"sync: /fix-issues skip-tag rollup sprint $SPRINT_ID\" --body-file=$TRACKER_BODY --result-file=$TRACKER_RESULT --landed-source=fix-issues-pr-mode-tracker-rollup --worktree-path=$TRACKER_WT --tracking-id=$TRACKER_LAND_ID --auto"
+    echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+    # Skill: { skill: "land-pr", args: "$TRACKER_LAND_ARGS" }
+    # (Allow-list parser handles result file; mirrors dashboard-empty pattern.)
+    # On success, remove the scratchpads. On failure, retain for next fire.
+    if [ -f "$TRACKER_RESULT" ]; then
+      while IFS='=' read -r K V; do
+        if [ "$K" = "STATUS" ] && [ "$V" = "merged" ]; then
+          for S in "${TRACKER_SCRATCHPADS[@]}"; do rm -f "$S"; done
+          printf 'skill: land-pr\nid: %s\npr: -\nbranch: fix-issues-tracker/%s\ndate: %s\n' \
+            "$TRACKER_LAND_ID" "$SPRINT_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+            > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.land-pr.$TRACKER_LAND_ID"
+        fi
+      done < "$TRACKER_RESULT"
+    fi
+    rm -f "$TRACKER_RESULT" "$TRACKER_BODY"
+  fi
+fi
+unset TRACKER_SCRATCHPADS TRACKER_WT TRACKER_RC S
 ```
 
 **Dispatching fix agents in PR mode:** Dispatch agents WITHOUT
