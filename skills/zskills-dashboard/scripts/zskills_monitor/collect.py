@@ -1601,12 +1601,23 @@ def _annotate_plans_queue(
     state_plans: Dict[str, List[Dict[str, Any]]] = state.get("plans", {})
     # state-file column iteration — picks up new columns from PLAN_COLUMNS / ISSUE_COLUMNS dynamically; conformance: tests/test-skill-conformance.sh
     # Build slug → (column, index, mode) lookup.
+    # Auto-prune orphan slugs (#671): derive the set of known slugs from
+    # the `plans` list parameter (parsed plan files). State-file entries
+    # whose slug has no corresponding parsed plan are orphans — silently
+    # drop them from `pos` so they never render and don't accumulate
+    # forever in the snapshot.
+    known_slugs: set = {
+        p["slug"] for p in plans
+        if isinstance(p.get("slug"), str) and p["slug"]
+    }
     pos: Dict[str, Tuple[str, int, Optional[str]]] = {}
     for col, entries in state_plans.items():
         for i, e in enumerate(entries):
             slug = e.get("slug", "")
+            if not slug or slug not in known_slugs:
+                continue  # orphan — plan file does not exist
             mode = e.get("mode") if col == "ready" else None
-            if slug and slug not in pos:
+            if slug not in pos:
                 pos[slug] = (col, i, mode)
 
     # Plan-claim index — parallel to the issue-side `claim_index`. Gated
@@ -1658,13 +1669,29 @@ def _annotate_issues_queue(
     actionable issues get no `skip_reason` field.
     """
     state_issues: Dict[str, List[Any]] = state.get("issues", {})
+    # Auto-prune closed issues (#670): derive the set of closed issue
+    # numbers from the `issues` list parameter, then skip them when
+    # building the explicit-position `pos` lookup. Closed issues are
+    # then routed via `_infer_issue_default_column` to `completed`
+    # (in-window) or `triage` (out-of-window, where the caller's
+    # open-fetch + closed-window-fetch contract typically also drops
+    # them from the list entirely).
+    closed_set: set = set()
+    for issue in issues:
+        num = issue.get("number")
+        if isinstance(num, int) and issue.get("closed_at"):
+            closed_set.add(num)
+
     pos: Dict[int, Tuple[str, int]] = {}
     for col, entries in state_issues.items():
         for i, num in enumerate(entries):
             try:
-                pos[int(num)] = (col, i)
+                n = int(num)
             except Exception:
                 continue
+            if n in closed_set:
+                continue  # closed — route via inference to completed/triage
+            pos[n] = (col, i)
 
     # Build skip-reason index once per snapshot (avoids re-parsing the
     # tracker per Ready issue). Only populated when main_root is given.
