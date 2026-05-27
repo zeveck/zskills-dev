@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.21+434b2f"
+  version: "2026.05.26+c2429c"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -178,6 +178,10 @@ PR-landed fixes (sprint YYYY-MM-DD HH:MM):
 - `pr-ci-failing` — PR open but CI failed after max fix attempts
 - `pr-failed` — push succeeded but PR creation failed; show branch name
 - `conflict` — rebase conflict; worktree left clean for the user to resume
+- `pr-state-unknown` — `/land-pr` returned but PR state could not be verified; show PR URL (if any) and direct the user to inspect on GitHub
+- `failed` — generic terminal failure from `/land-pr` (failure-class marker per `failure-protocol.md`); surface the worktree path and `reason` field
+- `direct-push-failed` — direct-landing-mode push to main failed; commit landed on the worktree branch only; surface the worktree path and `reason` field
+- `direct-verify-failed` — direct-landing-mode verification failed before push; nothing landed on main; surface the worktree path and `reason` field
 
 Include PR URLs in the final `$ZSKILLS_AUDIT_DIR/FIX_REPORT.md` domain sections so the user
 can click through to review each fix.
