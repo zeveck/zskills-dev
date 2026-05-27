@@ -15,6 +15,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/work-on-plans/SKILL.md"
+SKILL_DIR="$REPO_ROOT/skills/work-on-plans"
 SKILL_MIRROR="$REPO_ROOT/.claude/skills/work-on-plans/SKILL.md"
 
 PASS_COUNT=0
@@ -214,15 +215,16 @@ print(v if not isinstance(v,(list,dict)) else json.dumps(v))
 
 echo "=== work-on-plans Phase 3 tests ==="
 
-# --- Test 1: SKILL.md has Phase 3 sections (structural) -----------------
-if grep -q '^## Step 7 — Mutating subcommands' "$SKILL" \
-   && grep -q '^### `add <slug> \[pos\]`' "$SKILL" \
-   && grep -q '^### `rank <slug> <pos>`' "$SKILL" \
-   && grep -q '^### `remove <slug>`' "$SKILL" \
-   && grep -q '^### `default <phase|finish>`' "$SKILL" \
-   && grep -q '^### `every SCHEDULE \[phase|finish\] \[--force\]`' "$SKILL" \
-   && grep -q '^### `stop`' "$SKILL"; then
-  pass "SKILL.md has all Phase 3 subcommand sections"
+# --- Test 1: Skill dir has Phase 3 sections (structural) ----------------
+# Content may live in SKILL.md or in subcommands/add-rank-remove.md.
+if grep -rq '^## Step 7 — Mutating subcommands' "$SKILL_DIR" \
+   && grep -rq '^### `add <slug> \[pos\]`' "$SKILL_DIR" \
+   && grep -rq '^### `rank <slug> <pos>`' "$SKILL_DIR" \
+   && grep -rq '^### `remove <slug>`' "$SKILL_DIR" \
+   && grep -rq '^### `default <phase|finish>`' "$SKILL_DIR" \
+   && grep -rq '^### `every SCHEDULE \[phase|finish\] \[--force\]`' "$SKILL_DIR" \
+   && grep -rq '^### `stop`' "$SKILL_DIR"; then
+  pass "Skill dir has all Phase 3 subcommand sections"
 else
   fail "SKILL.md missing one or more Phase 3 sections"
 fi
@@ -236,11 +238,12 @@ else
   fail "SKILL.md missing flock helper"
 fi
 
-# --- Test 3: SKILL.md still has Phase 1 surface -----------------------
+# --- Test 3: Skill dir still has Phase 1 surface -----------------------
+# Steps 1-2 remain in SKILL.md; Step 5 may be in modes/execute.md.
 if grep -q '^## Step 1 — sync (read monitor-state.json)' "$SKILL" \
    && grep -q '^## Step 2 — Read work-on-plans-state.json' "$SKILL" \
-   && grep -q '^## Step 5 — Dispatch loop' "$SKILL"; then
-  pass "SKILL.md preserves Phase 1 sections (sync/dispatch)"
+   && grep -rq '^## Step 5 — Dispatch loop' "$SKILL_DIR"; then
+  pass "Skill dir preserves Phase 1 sections (sync/dispatch)"
 else
   fail "SKILL.md regressed Phase 1 sections"
 fi
@@ -404,40 +407,44 @@ else
   fail "#546 schedule_under_1h '59m' should be sub-hour"
 fi
 
-# --- Test 13: SKILL.md cites the AC-4 ≥1h diagnostic --------------------
-if grep -q "SCHEDULE must be ≥1h" "$SKILL" \
-   && grep -q "Use phase mode for shorter intervals" "$SKILL"; then
-  pass "AC-4 SKILL.md cites the ≥1h finish-mode rejection diagnostic"
+# --- Test 13: Skill dir cites the AC-4 ≥1h diagnostic -------------------
+# Diagnostic may live in SKILL.md or subcommands/add-rank-remove.md.
+if grep -rq "SCHEDULE must be ≥1h" "$SKILL_DIR" \
+   && grep -rq "Use phase mode for shorter intervals" "$SKILL_DIR"; then
+  pass "AC-4 skill dir cites the ≥1h finish-mode rejection diagnostic"
 else
   fail "AC-4 SKILL.md missing finish-mode SCHEDULE diagnostic"
 fi
 
-# --- Test 14: AC-5 (mode-capture invariant) — the SKILL.md text --------
+# --- Test 14: AC-5 (mode-capture invariant) — the skill text -----------
 # AC-5 verifies dispatch uses captured schedule_mode, not live default_mode.
-# The SKILL text must explicitly state the invariant + the capture
+# The skill text must explicitly state the invariant + the capture
 # precedence + that the cron prompt encodes the captured mode.
-if grep -q "Each fire uses the captured" "$SKILL" \
-   && grep -q "NOT live" "$SKILL" \
-   && grep -q "stop. and re-register" "$SKILL"; then
-  pass "AC-5 SKILL.md states the mode-capture invariant"
+# Content may live in SKILL.md or subcommands/add-rank-remove.md.
+if grep -rq "Each fire uses the captured" "$SKILL_DIR" \
+   && grep -rq "NOT live" "$SKILL_DIR" \
+   && grep -rq "stop. and re-register" "$SKILL_DIR"; then
+  pass "AC-5 skill dir states the mode-capture invariant"
 else
   fail "AC-5 SKILL.md missing the mode-capture invariant statement"
 fi
 
-# --- Test 15: AC-7 CronCreate failure semantics in SKILL.md -----------
-if grep -q "Failed to register schedule" "$SKILL" \
-   && grep -q "Do NOT write" "$SKILL"; then
-  pass "AC-7 SKILL.md documents CronCreate-failure exit/no-write contract"
+# --- Test 15: AC-7 CronCreate failure semantics in skill dir -----------
+# Content may live in SKILL.md or subcommands/add-rank-remove.md.
+if grep -rq "Failed to register schedule" "$SKILL_DIR" \
+   && grep -rq "Do NOT write" "$SKILL_DIR"; then
+  pass "AC-7 skill dir documents CronCreate-failure exit/no-write contract"
 else
   fail "AC-7 SKILL.md missing CronCreate-failure contract"
 fi
 
-# --- Test 16: AC-3 schedule ownership rules in SKILL.md ----------------
-if grep -q "already scheduled by session" "$SKILL" \
-   && grep -q "pass .--force. to take over" "$SKILL" \
-   && grep -q "silently overwritten" "$SKILL" \
-   && grep -q "idempotent take-over" "$SKILL"; then
-  pass "AC-3 SKILL.md documents schedule-ownership + staleness + same-session take-over"
+# --- Test 16: AC-3 schedule ownership rules in skill dir ----------------
+# Content may live in SKILL.md or subcommands/add-rank-remove.md.
+if grep -rq "already scheduled by session" "$SKILL_DIR" \
+   && grep -rq "pass .--force. to take over" "$SKILL_DIR" \
+   && grep -rq "silently overwritten" "$SKILL_DIR" \
+   && grep -rq "idempotent take-over" "$SKILL_DIR"; then
+  pass "AC-3 skill dir documents schedule-ownership + staleness + same-session take-over"
 else
   fail "AC-3 SKILL.md missing schedule-ownership rules"
 fi
