@@ -3,10 +3,13 @@
 # plans/plans-claim-chip-parity.md, W3.12).
 #
 # When a plan card is in-flight (aria-disabled=true), the keyboard
-# move/remove buttons (plan-up / plan-down / plan-left / plan-right /
-# plan-remove) MUST be blocked with a toast — preserving the symmetric
+# move/discard buttons (plan-up / plan-down / plan-left / plan-right /
+# plan-discard) MUST be blocked with a toast — preserving the symmetric
 # discipline from the issue side (DA11). toggle-mode is NOT blocked
 # (user can re-pick landing mode without disturbing the in-flight run).
+# (Issue #677 renamed plan-remove → plan-discard; the discard action
+# moves the plan to the Discarded column instead of silently no-op'ing
+# via the inference fallback.)
 #
 # Run from repo root: bash tests/test-plan-claim-handleaction-guard.sh
 
@@ -165,9 +168,9 @@ ${makeMoveBtnBlk}
 ${buildPlanBlock}
 
 // Injected fakes the guard delegates to.
-let __calls = { movePlan: [], removePlan: [], togglePlanMode: [], showToast: [] };
+let __calls = { movePlan: [], discardPlan: [], togglePlanMode: [], showToast: [] };
 function movePlan(slug, dir) { __calls.movePlan.push([slug, dir]); }
-function removePlan(slug) { __calls.removePlan.push([slug]); }
+function discardPlan(slug) { __calls.discardPlan.push([slug]); }
 function togglePlanMode(slug) { __calls.togglePlanMode.push([slug]); }
 function showToast(msg, kind) { __calls.showToast.push([msg, kind]); }
 
@@ -180,7 +183,7 @@ globalThis.__buildPlanCard = buildPlanCard;
 globalThis.__dispatchPlanAction = dispatchPlanAction;
 globalThis.__getCalls = function() { return __calls; };
 globalThis.__resetCalls = function() {
-  __calls.movePlan = []; __calls.removePlan = [];
+  __calls.movePlan = []; __calls.discardPlan = [];
   __calls.togglePlanMode = []; __calls.showToast = [];
 };
 `;
@@ -235,15 +238,15 @@ function findAllByAttr(root, k, v) {
   };
   const card = buildPlanCard(plan, "blocked", "in-progress", "phase");
 
-  const actions = ["plan-up", "plan-down", "plan-left", "plan-right", "plan-remove"];
+  const actions = ["plan-up", "plan-down", "plan-left", "plan-right", "plan-discard"];
   for (const action of actions) {
     const btns = findAllByAttr(card, "data-action", action);
     expectTrue(btns.length >= 1, "control button for " + action + " present");
     globalThis.__resetCalls();
     dispatchPlanAction(action, btns[0]);
     const calls = globalThis.__getCalls();
-    expect(calls.movePlan.length + calls.removePlan.length, 0,
-      "guard blocks move/remove for action=" + action + " on claimed plan");
+    expect(calls.movePlan.length + calls.discardPlan.length, 0,
+      "guard blocks move/discard for action=" + action + " on claimed plan");
     expectTrue(calls.showToast.length === 1,
       "showToast fired exactly once for action=" + action);
     if (calls.showToast.length === 1) {
@@ -286,13 +289,13 @@ function findAllByAttr(root, k, v) {
     const btn = findAllByAttr(card, "data-action", action)[0];
     dispatchPlanAction(action, btn);
   }
-  const rmBtn = findAllByAttr(card, "data-action", "plan-remove")[0];
-  dispatchPlanAction("plan-remove", rmBtn);
+  const rmBtn = findAllByAttr(card, "data-action", "plan-discard")[0];
+  dispatchPlanAction("plan-discard", rmBtn);
   const calls = globalThis.__getCalls();
   expect(calls.movePlan.length, 4,
     "movePlan called 4x for unclaimed plan (up/down/left/right)");
-  expect(calls.removePlan.length, 1,
-    "removePlan called 1x for unclaimed plan");
+  expect(calls.discardPlan.length, 1,
+    "discardPlan called 1x for unclaimed plan");
   expect(calls.showToast.length, 0,
     "no toast fired for unclaimed plan actions");
 }

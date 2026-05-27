@@ -33,7 +33,7 @@ const POST_RECONCILE_SUPPRESS_MS = 1500;
 // GH issue state (issues). postQueue() MUST strip `completed` before
 // sending so the server's validator does not 400 on an otherwise-valid
 // drag commit. See server.py:459-467 / 494-502 for the explicit reject.
-const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "completed"];
+const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "discarded", "completed"];
 const ISSUE_COLUMNS = ["triage", "ready", "backlog", "completed"];
 // Sub-tuples used by renderPlans/renderIssues to draw the active
 // horizontal column row (above the below-panel-band). Keeps the active
@@ -46,7 +46,7 @@ const ACTIVE_ISSUE_COLUMNS = ["triage", "ready"];
 // sub-columns. Backlog is always a drop-target; Completed is read-only
 // (no draggable cards, no claim chip, no move-all chevron — Phase 4
 // suppresses chevron + chip per-card via the column-membership check).
-const BELOW_BAND_COLUMNS = ["backlog", "completed"];
+const BELOW_BAND_COLUMNS = ["backlog", "discarded", "completed"];
 // Threshold above which the column-header move-all chevron prompts the
 // user via confirm() before iterating. <= this count moves silently.
 const MOVE_ALL_CONFIRM_THRESHOLD = 10;
@@ -55,6 +55,7 @@ const PLAN_COLUMN_LABELS = {
   reviewed: "Reviewed",
   ready: "Ready",
   backlog: "Backlog",
+  discarded: "Discarded",
   completed: "Completed",
 };
 const ISSUE_COLUMN_LABELS = {
@@ -71,16 +72,36 @@ const ISSUE_COLUMN_LABELS = {
 // (handleAction case below).
 const COLLAPSE_KEY_PREFIX = "zskills:dashboard:collapsed:";
 
+// Issue #677 — columns that start COLLAPSED when no per-user localStorage
+// preference is recorded. Discarded plans are dismissed-but-not-deleted;
+// the column exists for discoverability + restore, not active workflow,
+// so hiding it by default keeps the board uncluttered until the user
+// explicitly expands it. Per-user expand state still persists via
+// localStorage (setCollapsed removes the key on expand, so the default
+// applies only on first paint or after localStorage.clear()).
+const COLLAPSED_BY_DEFAULT = new Set(["discarded"]);
+
 function isCollapsed(kind, col) {
   try {
-    return localStorage.getItem(COLLAPSE_KEY_PREFIX + kind + ":" + col) === "1";
-  } catch (_e) { return false; }
+    const raw = localStorage.getItem(COLLAPSE_KEY_PREFIX + kind + ":" + col);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+    // No preference recorded — fall back to the default for this column.
+    // setCollapsed writes "0" on explicit expand of a collapsed-by-default
+    // column so the user's choice survives reloads.
+    return COLLAPSED_BY_DEFAULT.has(col);
+  } catch (_e) { return COLLAPSED_BY_DEFAULT.has(col); }
 }
 
 function setCollapsed(kind, col, collapsed) {
   try {
     if (collapsed) {
       localStorage.setItem(COLLAPSE_KEY_PREFIX + kind + ":" + col, "1");
+    } else if (COLLAPSED_BY_DEFAULT.has(col)) {
+      // Explicit-expand of a collapsed-by-default column: write "0" so the
+      // user's choice survives reloads (a bare removeItem would fall back
+      // to the default = collapsed on next paint).
+      localStorage.setItem(COLLAPSE_KEY_PREFIX + kind + ":" + col, "0");
     } else {
       localStorage.removeItem(COLLAPSE_KEY_PREFIX + kind + ":" + col);
     }
@@ -750,7 +771,7 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   //   3. data-kind="plan" is already encoded; the aria-disabled +
   //      removeAttribute("draggable") block is identical to the issue
   //      side and is honored by moveAllInColumn (kind-generic) and the
-  //      plan-up/down/left/right/plan-remove guard in handleAction.
+  //      plan-up/down/left/right/plan-discard guard in handleAction.
   if (plan && plan.claim) {
     const c = plan.claim;
     const startedAt = c.started_at || null;
@@ -821,9 +842,9 @@ function buildPlanCard(plan, slug, col, defaultMode) {
       cls: "remove-btn",
       attrs: {
         type: "button",
-        "data-action": "plan-remove",
+        "data-action": "plan-discard",
         "data-slug": slug,
-        "aria-label": "Remove from queue",
+        "aria-label": "Discard plan (move to Discarded)",
       },
       text: "✕",
     }));
@@ -1323,6 +1344,11 @@ function renderBelowPanelBand(opts) {
   });
 
   for (const c of BELOW_BAND_COLUMNS) {
+    // Issue #677 — `discarded` is plans-only in v1; issues-side support
+    // deferred to a follow-up (needs a live-set filter in
+    // _annotate_issues_queue, separate from this PR). Skip the column
+    // for the issues band so it doesn't render an empty placeholder.
+    if (c === "discarded" && kind !== "plan") continue;
     const colDiv = el("div", { cls: "column" });
     const headId = (kind === "plan" ? "plans" : "issues") + "-col-" + c;
     const head = el("div", { cls: "column-head", attrs: { id: headId } });
@@ -1776,7 +1802,7 @@ function clonedQueues() {
     ? JSON.parse(JSON.stringify(lastGoodQueues))
     : {
         default_mode: "phase",
-        plans: { drafted: [], reviewed: [], ready: [], backlog: [], completed: [] },
+        plans: { drafted: [], reviewed: [], ready: [], backlog: [], discarded: [], completed: [] },
         issues: { triage: [], ready: [], backlog: [], completed: [] },
       };
 }
@@ -1820,13 +1846,23 @@ async function movePlan(slug, dCol, dIdxAdjust) {
   }
 }
 
-async function removePlan(slug) {
+async function discardPlan(slug) {
+  // Issue #677 — ✕ on a plan card moves it to the Discarded column
+  // (state.plans.discarded) instead of just splicing from the explicit
+  // state, which previously was a no-op (the post-snapshot inference
+  // fallback re-routed status:active plans back to Drafted). "Discarded"
+  // means dismissed-but-not-deleted: the plan file stays on disk; only
+  // the dashboard board hides it (in a collapsed-by-default column).
+  // No-op when already in the discarded column.
   const next = clonedQueues();
   const loc = findPlan(next, slug);
   if (!loc) return;
-  next.plans[loc.col].splice(loc.idx, 1);
-  const ok = await commitQueueChange(next, { action: "Remove plan" });
-  if (ok) announce("plans-live", "Removed plan " + slug);
+  if (loc.col === "discarded") return;
+  const entry = next.plans[loc.col].splice(loc.idx, 1)[0];
+  if (!next.plans.discarded) next.plans.discarded = [];
+  next.plans.discarded.push(entry);
+  const ok = await commitQueueChange(next, { action: "Discard plan" });
+  if (ok) announce("plans-live", "Discarded plan " + slug);
 }
 
 async function moveIssue(num, dCol) {
@@ -2412,7 +2448,7 @@ async function handleAction(action, target) {
   // on a claimed plan; only column/queue mutations are blocked.
   if (action === "plan-up" || action === "plan-down" ||
       action === "plan-left" || action === "plan-right" ||
-      action === "plan-remove") {
+      action === "plan-discard") {
     const claimedCard = target.closest('li.card[aria-disabled="true"][data-kind="plan"]');
     if (claimedCard) {
       showToast("Plan is in-flight; release the claim or wait for completion.", "info");
@@ -2424,7 +2460,7 @@ async function handleAction(action, target) {
   if (action === "plan-down") return movePlan(slug, "down");
   if (action === "plan-left") return movePlan(slug, "left");
   if (action === "plan-right") return movePlan(slug, "right");
-  if (action === "plan-remove") return removePlan(slug);
+  if (action === "plan-discard") return discardPlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
 
   // Column-header chevron: move-all in column, adjacent column only.

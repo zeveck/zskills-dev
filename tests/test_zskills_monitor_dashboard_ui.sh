@@ -787,10 +787,10 @@ echo "=== Phase 3 AC: below-panel band + truncation banner (W3.9–W3.12b) ==="
 # W3.1 sanity — extended column tuples include `backlog` and `completed`.
 # Match in source order so the deny-test for "render-only inclusion" still
 # holds (Phase 5's conformance check pins exact tuple ordering).
-if grep -qE 'PLAN_COLUMNS = \["drafted", *"reviewed", *"ready", *"backlog", *"completed"\]' "$APP_JS"; then
-  pass "W3.1: PLAN_COLUMNS extended with backlog + completed"
+if grep -qE 'PLAN_COLUMNS = \["drafted", *"reviewed", *"ready", *"backlog", *"discarded", *"completed"\]' "$APP_JS"; then
+  pass "W3.1: PLAN_COLUMNS extended with backlog + discarded + completed (#677)"
 else
-  fail "W3.1: PLAN_COLUMNS tuple did not extend correctly"
+  fail "W3.1: PLAN_COLUMNS tuple did not extend correctly (expected [drafted, reviewed, ready, backlog, discarded, completed])"
 fi
 if grep -qE 'ISSUE_COLUMNS = \["triage", *"ready", *"backlog", *"completed"\]' "$APP_JS"; then
   pass "W3.1: ISSUE_COLUMNS extended with backlog + completed"
@@ -940,10 +940,10 @@ if grep -qE 'cls: "below-panel-band"' "$APP_JS"; then
 else
   fail "W3.4: .below-panel-band element class missing from source"
 fi
-if grep -qE 'BELOW_BAND_COLUMNS = \["backlog", *"completed"\]' "$APP_JS"; then
-  pass "W3.4: BELOW_BAND_COLUMNS = [backlog, completed] (sub-column order)"
+if grep -qE 'BELOW_BAND_COLUMNS = \["backlog", *"discarded", *"completed"\]' "$APP_JS"; then
+  pass "W3.4: BELOW_BAND_COLUMNS = [backlog, discarded, completed] (sub-column order, #677)"
 else
-  fail "W3.4: BELOW_BAND_COLUMNS tuple missing or out of order"
+  fail "W3.4: BELOW_BAND_COLUMNS tuple missing or out of order (expected [backlog, discarded, completed])"
 fi
 # Invocation sites — once from renderPlans, once from renderIssues.
 BAND_CALL_COUNT=$(grep -cE 'renderBelowPanelBand\(\{' "$APP_JS" || true)
@@ -1309,6 +1309,109 @@ if echo "$COMPLETED_BLOCK" | grep -qE 'cursor:[[:space:]]*not-allowed'; then
   pass "dropzone_completed_cursor_not_allowed — .dropzone[data-column=\"completed\"] has cursor: not-allowed"
 else
   fail "dropzone_completed_cursor_not_allowed — .dropzone[data-column=\"completed\"] missing cursor: not-allowed"
+fi
+
+###############################################################################
+# Issue #677 — Discarded column for plans (v1, plans-only)
+###############################################################################
+
+echo ""
+echo "=== Issue #677: Discarded column for plans ==="
+
+# plan_card_x_routes_to_discarded — the ✕ button on a plan card now
+# dispatches the `plan-discard` action, which routes to discardPlan(slug).
+# discardPlan splices the entry from its current column and pushes it onto
+# state.plans.discarded. This is the root-cause fix for the no-op ✕
+# button (state-file said nothing, inference fallback re-routed status:
+# active plans back to Drafted).
+if grep -qE '"data-action": *"plan-discard"' "$APP_JS"; then
+  pass "#677 plan_card_x_routes_to_discarded: ✕ button data-action=\"plan-discard\""
+else
+  fail "#677 plan_card_x_routes_to_discarded: ✕ button missing data-action=\"plan-discard\""
+fi
+# handleAction has a plan-discard branch dispatching to discardPlan(slug).
+if grep -qE 'action === "plan-discard".*discardPlan|if \(action === "plan-discard"\) return discardPlan' "$APP_JS"; then
+  pass "#677 plan_card_x_routes_to_discarded: handleAction → discardPlan(slug)"
+else
+  fail "#677 plan_card_x_routes_to_discarded: handleAction missing plan-discard → discardPlan wiring"
+fi
+# discardPlan body pushes the entry onto next.plans.discarded.
+DISCARD_BODY=$(awk '
+  /^async function discardPlan\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$DISCARD_BODY" | grep -qE 'next\.plans\.discarded\.push'; then
+  pass "#677 plan_card_x_routes_to_discarded: discardPlan pushes onto next.plans.discarded"
+else
+  fail "#677 plan_card_x_routes_to_discarded: discardPlan does not push onto next.plans.discarded"
+fi
+# Old `plan-remove` action must be gone (renamed per design table).
+if grep -qE '"data-action": *"plan-remove"|action === "plan-remove"' "$APP_JS"; then
+  fail "#677 legacy plan-remove action still present (should be renamed to plan-discard)"
+else
+  pass "#677 legacy plan-remove action removed (renamed to plan-discard)"
+fi
+# Aria-live announcement must say "Discarded plan" (not "Removed plan").
+if echo "$DISCARD_BODY" | grep -qE 'announce\("plans-live", *"Discarded plan "'; then
+  pass "#677: discardPlan announces \"Discarded plan <slug>\" (aria-live)"
+else
+  fail "#677: discardPlan aria-live announcement does not say \"Discarded plan\""
+fi
+
+# discarded_column_renders_collapsed_by_default — the COLLAPSED_BY_DEFAULT
+# Set contains "discarded", and isCollapsed consults it when no
+# localStorage entry exists. Tests the structural contract from app.js
+# directly (JSDOM-style integration deferred to the playwright-cli
+# verification recipe in the issue body).
+if grep -qE 'COLLAPSED_BY_DEFAULT *= *new Set\(\["discarded"\]\)' "$APP_JS"; then
+  pass "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT = new Set([\"discarded\"])"
+else
+  fail "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT constant missing or wrong shape"
+fi
+# isCollapsed must consult COLLAPSED_BY_DEFAULT when no localStorage entry.
+ISCOLLAPSED_BODY=$(awk '
+  /^function isCollapsed\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$ISCOLLAPSED_BODY" | grep -qE 'COLLAPSED_BY_DEFAULT\.has\(col\)'; then
+  pass "#677: isCollapsed consults COLLAPSED_BY_DEFAULT for absent-key fallback"
+else
+  fail "#677: isCollapsed does not consult COLLAPSED_BY_DEFAULT for fallback"
+fi
+# setCollapsed must write "0" (not removeItem) when expanding a
+# default-collapsed column, so the user's expand choice survives reloads.
+SETCOLLAPSED_BODY=$(awk '
+  /^function setCollapsed\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$SETCOLLAPSED_BODY" | grep -qE 'COLLAPSED_BY_DEFAULT\.has\(col\)' \
+   && echo "$SETCOLLAPSED_BODY" | grep -qE 'setItem\(.*, *"0"\)'; then
+  pass "#677: setCollapsed persists explicit-expand of default-collapsed columns (writes \"0\")"
+else
+  fail "#677: setCollapsed does not persist explicit-expand of default-collapsed columns"
+fi
+
+# PLAN_COLUMN_LABELS must include Discarded.
+if grep -q 'discarded: "Discarded"' "$APP_JS"; then
+  pass "#677: PLAN_COLUMN_LABELS includes Discarded"
+else
+  fail "#677: PLAN_COLUMN_LABELS missing Discarded label"
+fi
+
+# Below-band renderBelowPanelBand must skip discarded for the issues kind
+# (issues-side support deferred). Inspect the band body for the guard.
+BAND_BODY=$(awk '
+  /^function renderBelowPanelBand\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$BAND_BODY" | grep -qE 'c === "discarded" *&& *kind *!== *"plan"'; then
+  pass "#677: renderBelowPanelBand skips discarded for issues (plans-only v1)"
+else
+  fail "#677: renderBelowPanelBand does not skip discarded for issues — would render empty placeholder"
 fi
 
 ###############################################################################

@@ -2974,11 +2974,13 @@ DASHBOARD_SERVER="$DASHBOARD_ROOT/server.py"
 DASHBOARD_APPJS="$DASHBOARD_ROOT/static/app.js"
 DASHBOARD_COLLECT="$DASHBOARD_ROOT/collect.py"
 
-# Site 1: server.py PLAN_COLUMNS — 4 elements, NO completed (D4).
-if grep -qE 'PLAN_COLUMNS *= *\("drafted", *"reviewed", *"ready", *"backlog"\)' "$DASHBOARD_SERVER"; then
-  pass "dashboard server.py PLAN_COLUMNS full-tuple-ordering (4 cols, no completed — D4)"
+# Site 1: server.py PLAN_COLUMNS — 5 elements (#677 added discarded between
+# backlog and completed — but server-side completed is OMITTED per D4, so
+# server has 5 writable columns total).
+if grep -qE 'PLAN_COLUMNS *= *\("drafted", *"reviewed", *"ready", *"backlog", *"discarded"\)' "$DASHBOARD_SERVER"; then
+  pass "dashboard server.py PLAN_COLUMNS full-tuple-ordering (5 cols incl discarded, no completed — D4 + #677)"
 else
-  fail "dashboard server.py PLAN_COLUMNS full-tuple-ordering (4 cols, no completed — D4)" 'expected PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog") in server.py'
+  fail "dashboard server.py PLAN_COLUMNS full-tuple-ordering (5 cols incl discarded, no completed — D4 + #677)" 'expected PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog", "discarded") in server.py'
 fi
 
 # Site 2: server.py ISSUE_COLUMNS — 3 elements, NO completed (D4).
@@ -2988,11 +2990,13 @@ else
   fail "dashboard server.py ISSUE_COLUMNS full-tuple-ordering (3 cols, no completed — D4)" 'expected ISSUE_COLUMNS = ("triage", "ready", "backlog") in server.py'
 fi
 
-# Site 3: app.js PLAN_COLUMNS — 5 elements WITH completed.
-if grep -qE 'const PLAN_COLUMNS *= *\["drafted", *"reviewed", *"ready", *"backlog", *"completed"\]' "$DASHBOARD_APPJS"; then
-  pass "dashboard app.js PLAN_COLUMNS full-tuple-ordering (5 cols, with completed)"
+# Site 3: app.js PLAN_COLUMNS — 6 elements (#677 added discarded between
+# backlog and completed). Ordering matters: → traversal from Backlog
+# lands in Discarded.
+if grep -qE 'const PLAN_COLUMNS *= *\["drafted", *"reviewed", *"ready", *"backlog", *"discarded", *"completed"\]' "$DASHBOARD_APPJS"; then
+  pass "dashboard app.js PLAN_COLUMNS full-tuple-ordering (6 cols, with discarded + completed — #677)"
 else
-  fail "dashboard app.js PLAN_COLUMNS full-tuple-ordering (5 cols, with completed)" 'expected const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "completed"] in app.js'
+  fail "dashboard app.js PLAN_COLUMNS full-tuple-ordering (6 cols, with discarded + completed — #677)" 'expected const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "discarded", "completed"] in app.js'
 fi
 
 # Site 4: app.js ISSUE_COLUMNS — 4 elements WITH completed.

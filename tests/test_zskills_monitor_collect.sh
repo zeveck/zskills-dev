@@ -1629,6 +1629,50 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Issue #677 — discarded_plan_does_not_reappear_in_drafted (regression canary)
+# ---------------------------------------------------------------------------
+# Locks the explicit-state-wins semantic for the new `discarded` column:
+# a status:active plan slug present in state.plans.discarded MUST be
+# annotated with queue.column == "discarded" (NOT "drafted" via the
+# _infer_default_column fallback). Pre-#677 the ✕ button was a no-op
+# precisely because the bare "splice from explicit state" pattern
+# bounced active plans back to Drafted on the next snapshot — this test
+# encodes the fix.
+W677=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+from datetime import datetime, timezone
+
+now = datetime(2026, 5, 26, 12, 0, 0, tzinfo=timezone.utc)
+# state-file says "discarded-plan" is in the discarded column. Plan has
+# status:active + phases_done==0 — exactly the case where the pre-fix
+# inference fallback would route it to "drafted".
+state = {
+    "plans": {
+        "drafted": [],
+        "reviewed": [],
+        "ready": [],
+        "backlog": [],
+        "discarded": [{"slug": "discarded-plan"}],
+    },
+    "issues": {"backlog": []},
+}
+plans = [
+    {"slug": "discarded-plan", "status": "active", "phases_done": 0},
+]
+c._annotate_plans_queue(plans, state, now_utc=now, window_days=14)
+print("col=" + plans[0]["queue"]["column"])
+print("index=" + str(plans[0]["queue"]["index"]))
+' 2>&1)
+if printf '%s\n' "$W677" | grep -q "^col=discarded$" \
+    && printf '%s\n' "$W677" | grep -q "^index=0$"; then
+  pass "#677: discarded_plan_does_not_reappear_in_drafted (explicit-state-wins for discarded)"
+else
+  fail "#677: discarded_plan_does_not_reappear_in_drafted — got '$W677' (expected col=discarded, index=0)"
+fi
+
+# ---------------------------------------------------------------------------
 # Phase 1: backfill-plan-completed.sh tests (W1.13–W1.18)
 # ---------------------------------------------------------------------------
 echo ""
