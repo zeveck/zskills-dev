@@ -148,6 +148,64 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
     toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + lbl);
     toggle.textContent = collapsed ? "▸" : "▾";
   }
+  // Issue #700 — collapsed-column preview strip. When collapsed, inject a
+  // compact summary showing "Label (N)" plus the first 1-2 card titles so
+  // the user sees content without expanding. When expanded, remove it.
+  const existingSummary = colDiv.querySelector(".collapsed-summary");
+  if (!collapsed) {
+    if (existingSummary) existingSummary.parentNode.removeChild(existingSummary);
+    return;
+  }
+  // Build the summary from the dropzone's cards (hidden by CSS but still
+  // in the DOM). This avoids a second data lookup.
+  const dz = colDiv.querySelector(".dropzone");
+  const cards = dz ? dz.querySelectorAll("li.card") : [];
+  const count = cards.length;
+  const labels = (kind === "plan") ? PLAN_COLUMN_LABELS : ISSUE_COLUMN_LABELS;
+  const colLabel = labels[col] || col;
+  const summary = el("div", {
+    cls: "collapsed-summary",
+    attrs: {
+      "data-action": "column-collapse-toggle",
+      "data-kind": kind,
+      "data-column": col,
+      role: "button",
+      "aria-label": "Expand " + colLabel + " (" + count + " items)",
+    },
+  });
+  const countSpan = el("span", {
+    cls: "collapsed-summary-count",
+    text: colLabel + " (" + count + ")",
+  });
+  summary.appendChild(countSpan);
+  // Append first 1-2 card titles as a teaser.
+  const titles = [];
+  for (let i = 0; i < Math.min(2, cards.length); i++) {
+    const card = cards[i];
+    const titleEl = card.querySelector(".card-title, .card-title-link");
+    if (titleEl) {
+      let t = titleEl.textContent || "";
+      if (t.length > 40) t = t.slice(0, 37) + "...";
+      titles.push(t);
+    }
+  }
+  if (titles.length > 0) {
+    const sep = (count > titles.length) ? " +" + (count - titles.length) + " more" : "";
+    summary.appendChild(el("span", {
+      cls: "collapsed-summary-titles",
+      text: "— " + titles.join(", ") + sep,
+    }));
+  }
+  // Remove stale summary if present, then append the new one after
+  // the column-head. This keeps the summary inside .column.collapsed
+  // but outside .dropzone.
+  if (existingSummary) existingSummary.parentNode.removeChild(existingSummary);
+  const head = colDiv.querySelector(".column-head");
+  if (head && head.nextSibling) {
+    colDiv.insertBefore(summary, head.nextSibling);
+  } else {
+    colDiv.appendChild(summary);
+  }
 }
 
 // Append the per-column collapse toggle to a column-head. Caller passes

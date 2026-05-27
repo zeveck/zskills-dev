@@ -1833,6 +1833,134 @@ else
   fail "#676: collect.py missing dashboard_completed_days in snapshot"
 fi
 
+###############################################################################
+# Issue #700 — Dashboard UI polish: collapse toggle, collapsed preview,
+# move-all button styling
+###############################################################################
+
+echo ""
+echo "=== Issue #700: collapse toggle, collapsed preview strip, move-all styling ==="
+
+# 700-1: Collapse toggle font-size increased to 1.1em (from 0.9em).
+if grep -qE '\.column-collapse-toggle\b' "$APP_CSS" \
+   && awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /font-size:[[:space:]]*1\.1em/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle font-size is 1.1em"
+else
+  fail "#700: collapse toggle font-size is NOT 1.1em"
+fi
+
+# 700-2: Collapse toggle padding increased to 2px 6px (from 0 0.2em).
+if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /padding:[[:space:]]*2px 6px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle padding is 2px 6px"
+else
+  fail "#700: collapse toggle padding is NOT 2px 6px"
+fi
+
+# 700-3: Collapse toggle has border-radius: 4px.
+if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /border-radius:[[:space:]]*4px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle border-radius is 4px"
+else
+  fail "#700: collapse toggle border-radius missing"
+fi
+
+# 700-4: Collapse toggle hover has background color.
+if awk '/\.column-collapse-toggle:hover/{flag=1} flag && /background:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle hover has background"
+else
+  fail "#700: collapse toggle hover missing background"
+fi
+
+# 700-5: Collapse toggle has transition property.
+if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /transition:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle has CSS transition"
+else
+  fail "#700: collapse toggle missing CSS transition"
+fi
+
+# 700-6: Collapsed-summary CSS rule defined.
+if grep -qE '\.collapsed-summary\b' "$APP_CSS"; then
+  pass "#700: .collapsed-summary CSS rule defined"
+else
+  fail "#700: .collapsed-summary CSS rule missing"
+fi
+
+# 700-7: Collapsed-summary-count CSS sub-rule defined.
+if grep -qE '\.collapsed-summary-count' "$APP_CSS"; then
+  pass "#700: .collapsed-summary-count CSS rule defined"
+else
+  fail "#700: .collapsed-summary-count CSS rule missing"
+fi
+
+# 700-8: Collapsed-summary-titles CSS sub-rule defined.
+if grep -qE '\.collapsed-summary-titles' "$APP_CSS"; then
+  pass "#700: .collapsed-summary-titles CSS rule defined"
+else
+  fail "#700: .collapsed-summary-titles CSS rule missing"
+fi
+
+# 700-9: applyCollapseStateToColumn builds a collapsed-summary element when
+# the column is collapsed. Verify by grepping for the class in the JS body.
+COLLAPSE_BODY=$(awk '
+  /^function applyCollapseStateToColumn\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$COLLAPSE_BODY" | grep -qE 'collapsed-summary'; then
+  pass "#700: applyCollapseStateToColumn renders collapsed-summary element"
+else
+  fail "#700: applyCollapseStateToColumn does not render collapsed-summary"
+fi
+
+# 700-10: The collapsed-summary uses card titles from the hidden dropzone.
+if echo "$COLLAPSE_BODY" | grep -qE 'card-title.*card-title-link|\.card-title-link'; then
+  pass "#700: collapsed-summary extracts card titles from dropzone"
+else
+  fail "#700: collapsed-summary does not extract card titles"
+fi
+
+# 700-11: The collapsed-summary is removed when expanded.
+if echo "$COLLAPSE_BODY" | grep -qE 'removeChild.*existingSummary|existingSummary.*removeChild'; then
+  pass "#700: collapsed-summary removed on expand"
+else
+  fail "#700: collapsed-summary not removed on expand"
+fi
+
+# 700-12: Collapsed-summary carries data-action="column-collapse-toggle" so
+# clicking it expands the column (reuses the existing delegated handler).
+if echo "$COLLAPSE_BODY" | grep -qE '"data-action".*"column-collapse-toggle"'; then
+  pass "#700: collapsed-summary is clickable (data-action=column-collapse-toggle)"
+else
+  fail "#700: collapsed-summary missing data-action for click-to-expand"
+fi
+
+# 700-13: Move-all button border-radius increased to 6px (from 4px).
+if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /border-radius:[[:space:]]*6px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: move-all-btn border-radius is 6px"
+else
+  fail "#700: move-all-btn border-radius is NOT 6px"
+fi
+
+# 700-14: Move-all button padding increased to 2px 8px (from 0 6px).
+if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /padding:[[:space:]]*2px 8px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: move-all-btn padding is 2px 8px"
+else
+  fail "#700: move-all-btn padding is NOT 2px 8px"
+fi
+
+# 700-15: Move-all button has transition matching section-nav-pill pattern.
+if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /transition:.*border-color.*color.*background/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: move-all-btn has pill-style transition"
+else
+  fail "#700: move-all-btn missing pill-style transition"
+fi
+
+# 700-16: Move-all button background uses surface2 (consistent with pill pattern).
+if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /background:.*--surface2/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: move-all-btn background is var(--surface2)"
+else
+  fail "#700: move-all-btn background is NOT var(--surface2)"
+fi
+
 # Stop server cleanly via SIGTERM and verify port is released.
 kill -TERM "$SERVER_PID" 2>/dev/null || true
 for _ in 1 2 3 4 5 6 7 8 9 10; do
