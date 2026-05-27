@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.27+fb77e9"
+  version: "2026.05.27+75433a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -466,16 +466,7 @@ If `$ARGUMENTS` contains `next` (case-insensitive):
      > Next fix-issues sprint in ~2h 15m (~8:30 PM ET, cron XXXX).
      > Prompt: Run /fix-issues 5 auto every 4h
    - If none found: `No active /fix-issues cron in this session.`
-4. Peek at the Ready queue in `.zskills/monitor-state.json`:
-   - If `issues.ready` is non-empty: report the count
-     (`N issues in Ready queue.`).
-   - If `issues.ready` is empty (or the file does not exist): read the
-     `updated_at` field (ISO 8601 timestamp written by every sync/snapshot
-     cycle), compute minutes since that timestamp, and report:
-     > Ready queue empty (last synced: N minutes ago). Run `/fix-issues sync` to refresh, or the next cron fire will sync automatically.
-     If the file is missing or has no `updated_at`, say:
-     > Ready queue empty (never synced). Run `/fix-issues sync` to populate.
-5. **Exit.** Do not proceed to any phase.
+4. **Exit.** Do not proceed to any phase.
 
 ## Stop (if `stop` is present)
 
@@ -2008,6 +1999,15 @@ bug (under-routing to in-batch fix-agent).
     number (e.g., `#NNN`). If a plan already covers this issue, note
     which plan in the skip reason. If no plan covers it, add to the
     skip note: "Consider `/draft-plan` for #NNN."
+  - **Counter-signal — detailed spec means EASIER, not harder.** A long
+    issue body with locked design decisions (proposed interface, specific
+    file locations, explicit scope section, worked examples) is evidence
+    the design work is already done. Do NOT classify as plan-scale solely
+    because the body is long or has multiple sections. Heuristic: classify
+    as actionable (one of the first two tiers) unless the implementation
+    genuinely touches 3+ skills/subsystems or requires new infrastructure
+    that doesn't exist yet. A pre-planned issue is the opposite of
+    plan-scale — it's a well-specified fix waiting to be dispatched.
 
 - **Too vague** — no repro steps, no expected behavior, body is empty or
   just "it's broken." You don't know WHAT to fix.
