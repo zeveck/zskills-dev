@@ -161,11 +161,13 @@ else
   fail "AC: errors-banner missing"
 fi
 
-# AC: dim class is wired for backed-branch dedup.
-if grep -qE 'card[[:space:]]+dim|"card dim"' "$APP_JS" && grep -qE '\.card\.dim' "$APP_CSS"; then
-  pass "AC: dim CSS class wired in JS + CSS"
+# AC: dim class — CSS rule exists (available for future use); JS no longer
+# applies it to backed-branch cards (branches render at full opacity per
+# UI-polish round 2).
+if grep -qE '\.card\.dim' "$APP_CSS"; then
+  pass "AC: dim CSS class defined in stylesheet"
 else
-  fail "AC: dim class missing from JS or CSS"
+  fail "AC: dim CSS class missing from CSS"
 fi
 
 # AC: "Landed in <ref>" + "Pending" tokens for plan modal phase rows.
@@ -337,10 +339,12 @@ else
   fail "column_head_has_collapse_toggle: expected ≥3 appendCollapseToggle calls, got $TOGGLE_HITS"
 fi
 # Helper itself must construct a button with the class + data-action.
+# Since UI-polish round 2 the toggle carries both the shared base class
+# (.column-head-btn) and the toggle-specific class (.column-collapse-toggle).
 if grep -qE 'function appendCollapseToggle' "$APP_JS" \
-   && grep -qE 'cls:\s*"column-collapse-toggle"' "$APP_JS" \
+   && grep -qE 'cls:\s*"column-head-btn column-collapse-toggle"' "$APP_JS" \
    && grep -qE '"data-action":\s*"column-collapse-toggle"' "$APP_JS"; then
-  pass "appendCollapseToggle helper emits .column-collapse-toggle button with data-action"
+  pass "appendCollapseToggle helper emits .column-head-btn.column-collapse-toggle button with data-action"
 else
   fail "appendCollapseToggle helper missing or malformed (class / data-action)"
 fi
@@ -1841,40 +1845,41 @@ fi
 echo ""
 echo "=== Issue #700: collapse toggle, collapsed preview strip, move-all styling ==="
 
-# 700-1: Collapse toggle font-size increased to 1.1em (from 0.9em).
+# 700-1..5: Collapse toggle styling — shared base class .column-head-btn
+# carries padding, border-radius, transition, and hover background (UI-polish
+# round 2 unified column-header buttons into a single base).  The toggle also
+# has its own selector for margin-left + width.
+if grep -qE '\.column-head-btn\b' "$APP_CSS" \
+   && awk '/\.column-head-btn[[:space:]]*\{/{flag=1} flag && /padding:[[:space:]]*3px 7px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: column-head-btn base has padding 3px 7px"
+else
+  fail "#700: column-head-btn base padding missing"
+fi
+
+if awk '/\.column-head-btn[[:space:]]*\{/{flag=1} flag && /border-radius:[[:space:]]*6px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: column-head-btn border-radius is 6px"
+else
+  fail "#700: column-head-btn border-radius missing"
+fi
+
+if awk '/\.column-head-btn:hover/{flag=1} flag && /background:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: column-head-btn hover has background"
+else
+  fail "#700: column-head-btn hover missing background"
+fi
+
+if awk '/\.column-head-btn[[:space:]]*\{/{flag=1} flag && /transition:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: column-head-btn has CSS transition"
+else
+  fail "#700: column-head-btn missing CSS transition"
+fi
+
+# Collapse toggle retains its own selector for margin-left + width override.
 if grep -qE '\.column-collapse-toggle\b' "$APP_CSS" \
-   && awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /font-size:[[:space:]]*1\.1em/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: collapse toggle font-size is 1.1em"
+   && awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /width:[[:space:]]*28px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: collapse toggle retains width: 28px"
 else
-  fail "#700: collapse toggle font-size is NOT 1.1em"
-fi
-
-# 700-2: Collapse toggle padding increased to 2px 6px (from 0 0.2em).
-if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /padding:[[:space:]]*2px 6px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: collapse toggle padding is 2px 6px"
-else
-  fail "#700: collapse toggle padding is NOT 2px 6px"
-fi
-
-# 700-3: Collapse toggle has border-radius: 4px.
-if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /border-radius:[[:space:]]*4px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: collapse toggle border-radius is 4px"
-else
-  fail "#700: collapse toggle border-radius missing"
-fi
-
-# 700-4: Collapse toggle hover has background color.
-if awk '/\.column-collapse-toggle:hover/{flag=1} flag && /background:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: collapse toggle hover has background"
-else
-  fail "#700: collapse toggle hover missing background"
-fi
-
-# 700-5: Collapse toggle has transition property.
-if awk '/\.column-collapse-toggle[[:space:]]*\{/{flag=1} flag && /transition:/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: collapse toggle has CSS transition"
-else
-  fail "#700: collapse toggle missing CSS transition"
+  fail "#700: collapse toggle width override missing"
 fi
 
 # 700-6: Collapsed-summary CSS rule defined.
@@ -1933,32 +1938,20 @@ else
   fail "#700: collapsed-summary missing data-action for click-to-expand"
 fi
 
-# 700-13: Move-all button border-radius increased to 6px (from 4px).
-if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /border-radius:[[:space:]]*6px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: move-all-btn border-radius is 6px"
+# 700-13..16: Move-all button inherits from .column-head-btn base (UI-polish
+# round 2).  The JS assigns cls: "column-head-btn move-all-btn".  All styling
+# comes from the base; no dedicated .move-all-btn {} block needed.
+if grep -qE 'cls:\s*"column-head-btn move-all-btn"' "$APP_JS"; then
+  pass "#700: move-all-btn carries column-head-btn base class in JS"
 else
-  fail "#700: move-all-btn border-radius is NOT 6px"
+  fail "#700: move-all-btn missing column-head-btn base class in JS"
 fi
 
-# 700-14: Move-all button padding increased to 2px 8px (from 0 6px).
-if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /padding:[[:space:]]*2px 8px/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: move-all-btn padding is 2px 8px"
+# Base provides border-radius, padding, transition, background.
+if awk '/\.column-head-btn[[:space:]]*\{/{flag=1} flag && /background:.*--surface2/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
+  pass "#700: column-head-btn background is var(--surface2)"
 else
-  fail "#700: move-all-btn padding is NOT 2px 8px"
-fi
-
-# 700-15: Move-all button has transition matching section-nav-pill pattern.
-if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /transition:.*border-color.*color.*background/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: move-all-btn has pill-style transition"
-else
-  fail "#700: move-all-btn missing pill-style transition"
-fi
-
-# 700-16: Move-all button background uses surface2 (consistent with pill pattern).
-if awk '/\.move-all-btn[[:space:]]*\{/{flag=1} flag && /background:.*--surface2/{found=1; exit} flag && /\}/{flag=0} END{exit !found}' "$APP_CSS"; then
-  pass "#700: move-all-btn background is var(--surface2)"
-else
-  fail "#700: move-all-btn background is NOT var(--surface2)"
+  fail "#700: column-head-btn background is NOT var(--surface2)"
 fi
 
 # Stop server cleanly via SIGTERM and verify port is released.

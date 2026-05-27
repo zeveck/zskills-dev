@@ -232,6 +232,8 @@ const harness = `
 let repoUrl = "https://example.invalid/repo";
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
+var SVG_ICONS = {chevronLeft:"",chevronsLeft:"",chevronRight:"",chevronsRight:"",arrowUp:"",arrowDown:"",arrowLeft:"",arrowRight:"",x:"",copy:"",minus:"",plus:""};
+var MOVE_ICON_MAP = {};
 ${issueColumnsBlock}
 
 ${elBlock}
@@ -460,7 +462,7 @@ function findByClass(root, cls) {
     }
     return out;
   }
-  const actions = ["issue-up", "issue-down", "issue-left", "issue-right", "issue-remove"];
+  const actions = ["issue-up", "issue-down", "issue-left", "issue-right"];
   for (const action of actions) {
     const btns = findAllByAttr(card, "data-action", action);
     expectTrue(btns.length >= 1, "control button for " + action + " present");
@@ -500,13 +502,9 @@ function findByClass(root, cls) {
     const btn = findAllByAttr(card, "data-action", action)[0];
     dispatchIssueAction(action, btn);
   }
-  const rmBtn = findAllByAttr(card, "data-action", "issue-remove")[0];
-  dispatchIssueAction("issue-remove", rmBtn);
   const calls = globalThis.__getCalls();
   expect(calls.moveIssue.length, 4,
     "moveIssue called 4x for unclaimed card (up/down/left/right)");
-  expect(calls.removeIssue.length, 1,
-    "removeIssue called 1x for unclaimed card");
   expect(calls.showToast.length, 0,
     "no toast fired for unclaimed card actions");
 }

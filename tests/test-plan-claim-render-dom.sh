@@ -163,6 +163,8 @@ const harness = `
 let repoUrl = "https://example.invalid/repo";
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
+var SVG_ICONS = {chevronLeft:"",chevronsLeft:"",chevronRight:"",chevronsRight:"",arrowUp:"",arrowDown:"",arrowLeft:"",arrowRight:"",x:"",copy:"",minus:"",plus:""};
+var MOVE_ICON_MAP = {};
 function currentEntryMode(_slug) { return null; }
 
 ${elBlock}

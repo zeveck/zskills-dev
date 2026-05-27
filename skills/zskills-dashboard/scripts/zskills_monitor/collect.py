@@ -1227,14 +1227,14 @@ def list_issues(
             if not isinstance(entry, dict):
                 continue
             labels_raw = entry.get("labels") or []
-            labels: List[str] = []
+            labels: list = []
             for lab in labels_raw:
                 if isinstance(lab, dict):
                     name = lab.get("name")
                     if name:
-                        labels.append(str(name))
+                        labels.append({"name": str(name), "color": lab.get("color", "")})
                 elif isinstance(lab, str):
-                    labels.append(lab)
+                    labels.append({"name": lab, "color": ""})
             issues.append({
                 "number": entry.get("number"),
                 "title": entry.get("title", ""),
@@ -1348,14 +1348,14 @@ def list_closed_issues_in_window(
             if not isinstance(entry, dict):
                 continue
             labels_raw = entry.get("labels") or []
-            labels: List[str] = []
+            labels: list = []
             for lab in labels_raw:
                 if isinstance(lab, dict):
                     name = lab.get("name")
                     if name:
-                        labels.append(str(name))
+                        labels.append({"name": str(name), "color": lab.get("color", "")})
                 elif isinstance(lab, str):
-                    labels.append(lab)
+                    labels.append({"name": lab, "color": ""})
             issues.append({
                 "number": entry.get("number"),
                 "title": entry.get("title", ""),
@@ -1717,14 +1717,15 @@ def _annotate_issues_queue(
             # allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto resolved issues_dir (parallels the fix-issues/SKILL.md exemption at line 1050); the literal tail is the canonical tracker filename
             _resolve_paths(main_root)["issues_dir"] / "ISSUES_PLAN.md"
         )
-        ready_nums: List[int] = []
-        for num in state_issues.get("ready", []) or []:
-            try:
-                ready_nums.append(int(num))
-            except Exception:
-                continue
-        if ready_nums:
-            skip_index = _build_skip_reason_index(issues_plan_path, ready_nums)
+        all_nums: List[int] = []
+        for col_entries in state_issues.values():
+            for num in (col_entries or []):
+                try:
+                    all_nums.append(int(num))
+                except Exception:
+                    continue
+        if all_nums:
+            skip_index = _build_skip_reason_index(issues_plan_path, all_nums)
         claim_index = _read_claims(main_root)
 
     if now_utc is None:
@@ -1758,7 +1759,7 @@ def _annotate_issues_queue(
         if isinstance(num, int) and num in pos:
             col, i = pos[num]
             issue["queue"] = {"column": col, "index": i}
-            if col == "ready" and num in skip_index:
+            if num in skip_index:
                 reason = skip_index[num]
                 if reason is not None:
                     issue["skip_reason"] = reason

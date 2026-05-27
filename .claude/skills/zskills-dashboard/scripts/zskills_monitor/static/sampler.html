@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>UI Sampler</title>
+  <link rel="stylesheet" href="/app.css"/>
+  <style>
+    body { padding: 24px; }
+    .sample-section { margin: 24px 0; padding: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+    .sample-section h2 { margin: 0 0 12px; font-size: 1rem; color: var(--accent); }
+    .sample-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+    .sample-label { color: var(--text-dim); font-size: 0.8rem; min-width: 120px; }
+  </style>
+</head>
+<body>
+  <h1 style="color:var(--accent)">UI Component Sampler</h1>
+
+  <div class="sample-section">
+    <h2>Pills — Status</h2>
+    <div class="sample-row">
+      <span class="pill pill-status-active">ACTIVE</span>
+      <span class="pill pill-status-done">DONE</span>
+      <span class="pill pill-status-blocked">BLOCKED</span>
+      <span class="pill pill-status-paused">PAUSED</span>
+      <span class="pill">UNKNOWN</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — Plan mode</h2>
+    <div class="sample-row">
+      <span class="pill pill-mode-pr">PR</span>
+      <span class="pill pill-mode-direct">DIRECT</span>
+      <span class="pill pill-mode-unknown">UNKNOWN</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — Landed (branches tab)</h2>
+    <div class="sample-row">
+      <span class="pill pill-landed-full">LANDED</span>
+      <span class="pill pill-landed-partial">PARTIAL</span>
+      <span class="pill pill-landed-pr-ready">PR-READY</span>
+      <span class="pill pill-landed-pr-needs-attention">NEEDS ATTENTION</span>
+      <span class="pill pill-landed-failed">FAILED</span>
+      <span class="pill pill-landed-not">NOT LANDED</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — Activity status (recent activity)</h2>
+    <div class="sample-row activity-row">
+      <span class="pill a-status-pass">COMPLETE</span>
+      <span class="pill a-status-fail">FAILED</span>
+      <span class="pill a-status-running">RUNNING</span>
+      <span class="pill">UNKNOWN</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — Closure reason</h2>
+    <div class="sample-row">
+      <span class="closure-chip">NOT PLANNED</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — GitHub labels (real colors)</h2>
+    <div class="sample-row">
+      <span class="label-chip" style="color:#d73a4a;border-color:#d73a4a;background:#d73a4a18">BUG</span>
+      <span class="label-chip" style="color:#a2eeef;border-color:#a2eeef;background:#a2eeef18">ENHANCEMENT</span>
+      <span class="label-chip" style="color:#0075ca;border-color:#0075ca;background:#0075ca18">DOCUMENTATION</span>
+      <span class="label-chip" style="color:#7057ff;border-color:#7057ff;background:#7057ff18">GOOD FIRST ISSUE</span>
+      <span class="label-chip" style="color:#008672;border-color:#008672;background:#00867218">HELP WANTED</span>
+      <span class="label-chip" style="color:#d876e3;border-color:#d876e3;background:#d876e318">QUESTION</span>
+      <span class="label-chip" style="color:#cfd3d7;border-color:#cfd3d7;background:#cfd3d718">DUPLICATE</span>
+      <span class="label-chip" style="color:#e4e669;border-color:#e4e669;background:#e4e66918">INVALID</span>
+      <span class="label-chip" style="color:#ffffff;border-color:#ffffff;background:#ffffff18">WONTFIX</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Pills — Plan card mode</h2>
+    <div class="sample-row">
+      <span class="mode-chip">PHASE</span>
+      <span class="mode-chip">FINISH</span>
+      <span class="mode-chip" data-source="inherit">PHASE (inherited)</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Chips — Skip reason (long-form annotations)</h2>
+    <div class="sample-row">
+      <span class="skip-chip">needs-decision — leave open as architectural memo</span>
+      <span class="skip-chip skip-chip--plan-scale">plan-scale — full skill interface redesign</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Chips — Claim (long-form annotations)</h2>
+    <div class="sample-row">
+      <span class="claim-chip claim-chip--in-flight">in-flight &middot; abc123 &middot; 5m ago</span>
+    </div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Column-header buttons</h2>
+    <div class="sample-row" id="col-btns"></div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Card action buttons</h2>
+    <div class="sample-row" id="card-btns"></div>
+  </div>
+
+  <div class="sample-section">
+    <h2>Nav pills (section strip)</h2>
+    <div class="sample-row">
+      <button class="section-nav-pill">Triage 5</button>
+      <button class="section-nav-pill">Ready 12</button>
+      <button class="section-nav-pill">Backlog 3</button>
+      <button class="section-nav-pill">Discarded 0</button>
+      <button class="section-nav-pill">Completed 7</button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    var colRow = document.getElementById("col-btns");
+    ["chevronsLeft", "chevronsRight", "minus", "plus"].forEach(function(k) {
+      var b = document.createElement("button");
+      b.className = "column-head-btn " + (k === "minus" || k === "plus" ? "column-collapse-toggle" : "move-all-btn");
+      b.innerHTML = SVG_ICONS[k];
+      colRow.appendChild(b);
+    });
+
+    var cardRow = document.getElementById("card-btns");
+    ["arrowUp","arrowDown","arrowLeft","arrowRight"].forEach(function(k) {
+      var b = document.createElement("button");
+      b.className = "move-btn";
+      b.innerHTML = SVG_ICONS[k];
+      cardRow.appendChild(b);
+    });
+    var xBtn = document.createElement("button");
+    xBtn.className = "move-btn";
+    xBtn.innerHTML = SVG_ICONS.x;
+    cardRow.appendChild(xBtn);
+    var cpBtn = document.createElement("button");
+    cpBtn.className = "move-btn copy-btn";
+    cpBtn.innerHTML = SVG_ICONS.copy;
+    cardRow.appendChild(cpBtn);
+  </script>
+</body>
+</html>
