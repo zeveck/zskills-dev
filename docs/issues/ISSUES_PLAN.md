@@ -1335,3 +1335,9 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Fix outline.** Redesign skill interface: preview-default mode, positional apply/remote/all tokens, gh-pr-view-gated remote deletion, protected_branches config field. Touches SKILL.md prose + possibly helper scripts.
 
 **Complexity:** L. **Action now:** /draft-plan — plan-scale: full skill interface redesign with 4 distinct behavioral changes + new config field.
+
+### #720 — /fix-issues research agent over-classifies detailed issue bodies as plan-scale
+**Labels:** (none) | **Verdict:** actionable-do-pr
+**Problem.** The Phase 2 triage rubric's `plan-scale` bucket is triggered by long/detailed issue bodies (multiple sections, design tables, proposed interfaces) even when the design is already locked and implementation is straightforward. A detailed spec is the opposite of plan-scale — the design work is already done. Observed: #716 (one SKILL.md rewrite) and #717 (app.js/css following existing pattern) both skipped as plan-scale despite being /do-scale.
+**Fix outline.** Add a counter-signal paragraph to the `plan-scale` bullet in `### Triage: vague, complex, or interrelated issues` (line ~1993 of `skills/fix-issues/SKILL.md`). The counter-signal: if the issue body contains a locked design (proposed interface, specific file locations, explicit scope section, worked examples), weight this AGAINST plan-scale classification — a detailed spec means design work is done, so classify as actionable unless it touches 3+ skills or requires new infrastructure. Mirror change to `.claude/skills/fix-issues/SKILL.md` + skill-version bump via `scripts/skill-content-hash.sh`.
+**Complexity:** S. **Action now:** /do pr — add counter-signal prose to plan-scale bucket in fix-issues triage rubric (~5 lines), mirror + version bump
