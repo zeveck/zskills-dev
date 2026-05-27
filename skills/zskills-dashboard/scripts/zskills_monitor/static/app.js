@@ -72,6 +72,32 @@ const ISSUE_COLUMN_LABELS = {
 // (handleAction case below).
 const COLLAPSE_KEY_PREFIX = "zskills:dashboard:collapsed:";
 
+// Issue #676 — Per-user completed-window preference. localStorage-backed so
+// the choice survives reloads. Key shape:
+// zskills:dashboard:completed-window:<kind> where kind is "plan" or "issue".
+// Value is a string number of days ("7", "14", "30", "90") or "all".
+// Default comes from snapshot.config.dashboard_completed_days (server-side
+// config, typically 14). The dropdown is injected into the Completed column
+// header by renderBelowPanelBand.
+const COMPLETED_WINDOW_KEY_PREFIX = "zskills:dashboard:completed-window:";
+let configCompletedDays = 14; // overwritten by applySnapshot from snap.config
+
+function getCompletedWindow(kind) {
+  try {
+    const raw = localStorage.getItem(COMPLETED_WINDOW_KEY_PREFIX + kind);
+    if (raw === "all") return "all";
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch (_e) { /* localStorage disabled */ }
+  return configCompletedDays;
+}
+
+function setCompletedWindow(kind, value) {
+  try {
+    localStorage.setItem(COMPLETED_WINDOW_KEY_PREFIX + kind, String(value));
+  } catch (_e) { /* localStorage disabled */ }
+}
+
 // Issue #677 — columns that start COLLAPSED when no per-user localStorage
 // preference is recorded. Discarded plans are dismissed-but-not-deleted;
 // the column exists for discoverability + restore, not active workflow,
@@ -419,6 +445,11 @@ function applySnapshot(snap) {
   if (snap && typeof snap.repo_url === "string") {
     repoUrl = snap.repo_url;
   }
+  // Issue #676 — Capture config.dashboard_completed_days for the
+  // completed-window dropdown's default value.
+  if (snap && snap.config && typeof snap.config.dashboard_completed_days === "number") {
+    configCompletedDays = snap.config.dashboard_completed_days;
+  }
   const updated = $("updated-at");
   if (updated) updated.textContent = "Updated " + relativeTime(snap.updated_at);
 
@@ -526,15 +557,51 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
   }
   // Add inferred entries for plans not present in state.
   // Plans with no column (queue.column === null) are intentionally hidden
-  // by _infer_default_column — historical completes, out-of-window, or
-  // unbackfilled. Do NOT default these to "drafted" (Bug B from PR #650):
-  // that override inflates Drafted with plans the inference said to hide.
+  // by _infer_default_column — historical completes without a backfilled
+  // date. Do NOT default these to "drafted" (Bug B from PR #650): that
+  // override inflates Drafted with plans the inference said to hide.
+  //
+  // Issue #676 — Client-side completed-window filter. The server now
+  // returns ALL completed plans (no window cutoff). We filter here based
+  // on the user's completed-window preference from localStorage.
+  const planWindow = getCompletedWindow("plan");
+  const planCutoff = (planWindow === "all") ? null : Date.now() - planWindow * 86400000;
+  // Build slug→plan lookup for timestamp access during filtering.
+  const slugToPlanClone = {};
+  for (const p of plans) slugToPlanClone[p.slug] = p;
+
   for (const p of plans) {
     if (seenSlugs.has(p.slug)) continue;
     const col = p.queue && p.queue.column;
     if (!col || PLAN_COLUMNS.indexOf(col) < 0) continue;
+    // Client-side window filter for completed plans.
+    if (col === "completed" && planCutoff !== null) {
+      const completedRaw = p.completed || "";
+      const completedMs = completedRaw ? Date.parse(completedRaw) : NaN;
+      if (Number.isNaN(completedMs) || completedMs < planCutoff) continue;
+    }
     seenSlugs.add(p.slug);
     out.plans[col].push({ slug: p.slug });
+  }
+
+  // Also filter already-queued completed plans against the window.
+  if (planCutoff !== null) {
+    const filtered = [];
+    for (const entry of out.plans.completed) {
+      const slug = (typeof entry === "string") ? entry : (entry && entry.slug);
+      const plan = slug ? slugToPlanClone[slug] : null;
+      const completedRaw = (plan && plan.completed) || "";
+      const completedMs = completedRaw ? Date.parse(completedRaw) : NaN;
+      if (!Number.isNaN(completedMs) && completedMs >= planCutoff) {
+        filtered.push(entry);
+      }
+      // Plans without a parseable completed timestamp but already in the
+      // completed queue are kept (defensive — shouldn't normally happen).
+      else if (Number.isNaN(completedMs) && !completedRaw) {
+        filtered.push(entry);
+      }
+    }
+    out.plans.completed = filtered;
   }
 
   // GitHub owns issue existence; this file only owns ordering. Drop any
@@ -558,13 +625,46 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
       out.issues[c].push(num);
     }
   }
+  // Issue #676 — Client-side completed-window filter for issues. The server
+  // now returns ALL closed issues; filter here per user preference.
+  const issueWindow = getCompletedWindow("issue");
+  const issueCutoff = (issueWindow === "all") ? null : Date.now() - issueWindow * 86400000;
+  // Build num→issue lookup for timestamp access during filtering.
+  const numToIssueClone = {};
+  for (const it of issues) {
+    if (typeof it.number === "number") numToIssueClone[it.number] = it;
+  }
+
   for (const it of issues) {
     if (typeof it.number !== "number" || seenNums.has(it.number)) continue;
     const col = (it.queue && it.queue.column) || "triage";
     if (ISSUE_COLUMNS.indexOf(col) < 0) continue;
+    // Client-side window filter for completed issues.
+    if (col === "completed" && issueCutoff !== null) {
+      const closedRaw = it.closed_at || "";
+      const closedMs = closedRaw ? Date.parse(closedRaw) : NaN;
+      if (Number.isNaN(closedMs) || closedMs < issueCutoff) continue;
+    }
     seenNums.add(it.number);
     out.issues[col].push(it.number);
   }
+
+  // Also filter already-queued completed issues against the window.
+  if (issueCutoff !== null) {
+    const filtered = [];
+    for (const num of out.issues.completed) {
+      const issue = numToIssueClone[num];
+      const closedRaw = (issue && issue.closed_at) || "";
+      const closedMs = closedRaw ? Date.parse(closedRaw) : NaN;
+      if (!Number.isNaN(closedMs) && closedMs >= issueCutoff) {
+        filtered.push(num);
+      } else if (Number.isNaN(closedMs) && !closedRaw) {
+        filtered.push(num);
+      }
+    }
+    out.issues.completed = filtered;
+  }
+
   return out;
 }
 
@@ -579,8 +679,12 @@ function fingerprintPlans(plans, queues, defaultMode) {
       if (slug) pos[slug] = [c, i, (e && e.mode) || null];
     }
   }
+  // Issue #676 — completed-window in fingerprint. `typeof` guard for
+  // standalone test harnesses that extract this function in isolation.
+  const _gcw = (typeof getCompletedWindow !== "undefined") ? getCompletedWindow : null;
   return JSON.stringify({
     dm: defaultMode,
+    cw: _gcw ? _gcw("plan") : null,
     rows: plans.map(p => [
       p.slug, p.title, p.status, p.landing_mode,
       p.phase_count, p.phases_done, p.blurb,
@@ -630,8 +734,12 @@ function fingerprintIssues(issues, queues) {
     !!flags.closed_issues_truncated,
     Number.isFinite(flags.closed_issues_limit) ? flags.closed_issues_limit : null,
   ];
+  // Issue #676 — completed-window in fingerprint (see symmetric plan-side
+  // comment in fingerprintPlans). Guard for standalone test extraction.
+  const _gcwI = (typeof getCompletedWindow !== "undefined") ? getCompletedWindow : null;
   return JSON.stringify({
     trunc: trunc,
+    cw: _gcwI ? _gcwI("issue") : null,
     rows: issues.map(i => [
       i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
       pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
@@ -923,6 +1031,10 @@ function renderPlans(plans, queues, defaultMode) {
 
   const slugToPlan = {};
   for (const p of plans) slugToPlan[p.slug] = p;
+
+  // Issue #675 — Section-nav pill strip for below-band discoverability.
+  const navStrip = buildSectionNavStrip("plan", lastGoodQueues);
+  body.appendChild(navStrip);
 
   const cols = el("div", { cls: "columns columns-3" });
   for (const c of ACTIVE_PLAN_COLUMNS) {
@@ -1235,6 +1347,10 @@ function renderIssues(issues, queues) {
   const numToIssue = {};
   for (const it of issues) numToIssue[it.number] = it;
 
+  // Issue #675 — Section-nav pill strip for below-band discoverability.
+  const navStrip = buildSectionNavStrip("issue", queues);
+  body.appendChild(navStrip);
+
   // Mirror renderPlans: column membership and order come from the
   // `queues` argument (typically lastGoodQueues.issues), NOT from the
   // per-issue server annotation. This lets commitQueueChange's
@@ -1315,6 +1431,64 @@ function renderIssues(issues, queues) {
   body.appendChild(band);
 }
 
+// ----------------------------------------- section-nav pill strip (Issue #675)
+
+// Build a horizontal pill strip for a panel (kind="plan" or "issue") that
+// shows section labels + live counts. Clicking a pill scrolls the target
+// section into view. If the target column is collapsed (PR #668 machinery),
+// it is expanded first. The strip uses `data-action="section-nav-pill"` so
+// the shared delegated click handler in handleAction dispatches it.
+//
+// Sections:
+//   Plans:  Active (drafted+reviewed+ready), Backlog, Discarded, Completed
+//   Issues: Active (triage+ready), Backlog, Completed
+function buildSectionNavStrip(kind, queues) {
+  const strip = el("nav", {
+    cls: "section-nav-strip",
+    attrs: { "aria-label": "Jump to section", "data-kind": kind },
+  });
+  const queueDict = (kind === "plan")
+    ? (queues && queues.plans) || {}
+    : (queues && queues.issues) || {};
+  const activeCols = (kind === "plan") ? ACTIVE_PLAN_COLUMNS : ACTIVE_ISSUE_COLUMNS;
+  const labels = (kind === "plan") ? PLAN_COLUMN_LABELS : ISSUE_COLUMN_LABELS;
+
+  // Active section — aggregate count across the active columns.
+  let activeCount = 0;
+  for (const c of activeCols) {
+    activeCount += (queueDict[c] || []).length;
+  }
+  // The first active column's head id is the scroll target for the active
+  // section pill (top of the column grid).
+  const activeTarget = (kind === "plan" ? "plans" : "issues") + "-col-" + activeCols[0];
+  strip.appendChild(buildNavPill("Active", activeCount, activeTarget, kind, null));
+
+  // Below-band sections — one pill per BELOW_BAND_COLUMNS entry,
+  // skipping discarded for the issues panel (mirrors renderBelowPanelBand).
+  for (const c of BELOW_BAND_COLUMNS) {
+    if (c === "discarded" && kind !== "plan") continue;
+    const count = (queueDict[c] || []).length;
+    const headId = (kind === "plan" ? "plans" : "issues") + "-col-" + c;
+    strip.appendChild(buildNavPill(labels[c], count, headId, kind, c));
+  }
+  return strip;
+}
+
+function buildNavPill(label, count, targetId, kind, col) {
+  return el("button", {
+    cls: "section-nav-pill",
+    attrs: {
+      type: "button",
+      "data-action": "section-nav-pill",
+      "data-target": targetId,
+      "data-kind": kind,
+      "data-column": col || "",
+      "aria-label": label + " " + count + " items — click to scroll",
+    },
+    text: label + " " + count,
+  });
+}
+
 // ----------------------------------------------- below-panel band (Phase 3)
 
 // Build a sibling block-level container with two sub-columns
@@ -1355,6 +1529,32 @@ function renderBelowPanelBand(opts) {
     head.appendChild(el("span", { text: labels[c] }));
     const arr = queueDict[c] || [];
     head.appendChild(el("span", { cls: "muted", text: String(arr.length) }));
+    // Issue #676 — Completed-window dropdown in the Completed column header.
+    if (c === "completed") {
+      const currentWindow = getCompletedWindow(kind);
+      const select = el("select", {
+        cls: "completed-window-select",
+        attrs: {
+          "data-action": "completed-window-change",
+          "data-kind": kind,
+          "aria-label": "Completed time window",
+        },
+      });
+      const options = [
+        { value: "7", text: "7d" },
+        { value: "14", text: "14d" },
+        { value: "30", text: "30d" },
+        { value: "90", text: "90d" },
+        { value: "all", text: "All" },
+      ];
+      for (const opt of options) {
+        const optEl = el("option", { text: opt.text, attrs: { value: opt.value } });
+        if (String(currentWindow) === opt.value) optEl.selected = true;
+        select.appendChild(optEl);
+      }
+      head.appendChild(select);
+    }
+
     // Phase 4 / W4.3 / D7 — Move-all chevron: VALID for backlog (drag-back
     // to adjacent active column), SUPPRESSED for completed (terminal /
     // read-only state). Backlog only gets « (move-all back to active);
@@ -2542,6 +2742,24 @@ async function handleAction(action, target) {
   if (action === "clear-stale-sprint") {
     return postWorkStateReset();
   }
+
+  // Issue #675 — Section-nav pill: scroll to the target section. If the
+  // target column is collapsed, expand it first via applyCollapseStateToColumn.
+  if (action === "section-nav-pill") {
+    const targetId = target.getAttribute("data-target");
+    const kind = target.getAttribute("data-kind");
+    const col = target.getAttribute("data-column");
+    const targetEl = $(targetId);
+    if (!targetEl) return;
+    // Expand collapsed column before scrolling.
+    if (col && isCollapsed(kind, col)) {
+      setCollapsed(kind, col, false);
+      const colDiv = targetEl.closest(".column");
+      if (colDiv) applyCollapseStateToColumn(colDiv, kind, col);
+    }
+    targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
 }
 
 function bindActionEvents() {
@@ -2552,6 +2770,23 @@ function bindActionEvents() {
     if (!action) return;
     ev.preventDefault();
     handleAction(action, target);
+  });
+
+  // Issue #676 — Completed-window dropdown change handler. `<select>`
+  // elements fire `change`, not `click`, so the delegated click handler
+  // above cannot catch them. Bind once at the document level.
+  document.body.addEventListener("change", (ev) => {
+    const select = ev.target.closest && ev.target.closest(".completed-window-select");
+    if (!select) return;
+    const kind = select.getAttribute("data-kind");
+    const value = select.value;
+    setCompletedWindow(kind, value);
+    // Force re-render — clear the panel fingerprint so the next
+    // applySnapshot re-renders with the new filter applied.
+    if (kind === "plan") lastFingerprint.plans = null;
+    if (kind === "issue") lastFingerprint.issues = null;
+    // Trigger an immediate poll so the UI updates now.
+    schedulePoll(0);
   });
 
   // Default-mode segmented buttons.

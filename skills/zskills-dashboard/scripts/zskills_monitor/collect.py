@@ -1437,9 +1437,14 @@ def _infer_default_column(
     Returns column name, or None if hidden.
 
     For `status in ("complete","landed")`: returns `"completed"` when the
-    plan's `completed:` frontmatter field is within `window_days` of
-    `now_utc`. Returns None (hidden) when the field is absent or the date
-    falls outside the window — historical completes age out naturally.
+    plan has a parseable `completed:` frontmatter field (any date).
+    Returns None (hidden) when the field is absent or unparseable —
+    historical completes without a backfilled date stay hidden.
+
+    Issue #676: the server-side window cutoff has been removed. ALL
+    completed plans with a valid `completed:` timestamp are included in
+    the snapshot; the client-side completed-window dropdown filters them
+    per user preference (7d/14d/30d/90d/All).
     """
     status = (plan.get("status") or "").strip().lower()
     phases_done = int(plan.get("phases_done") or 0)
@@ -1447,12 +1452,8 @@ def _infer_default_column(
         completed_raw = plan.get("completed") or ""
         completed_dt = _parse_iso_utc(completed_raw) if isinstance(completed_raw, str) else None
         if completed_dt is None:
-            return None  # hidden (historical or unbackfilled)
-        from datetime import timedelta
-        cutoff = now_utc - timedelta(days=window_days)
-        if completed_dt >= cutoff:
-            return "completed"
-        return None  # outside window — hidden
+            return None  # hidden (historical or unbackfilled — no date)
+        return "completed"
     if status == "conflict":
         return "reviewed"
     if status == "active":
@@ -1472,17 +1473,18 @@ def _infer_issue_default_column(
 ) -> str:
     """Default-column inference for issues.
 
-    Returns `"completed"` when `closedAt` is set AND within `window_days`
-    of `now_utc`; otherwise `"triage"`. Mirrors `_infer_default_column`
-    but for issues, where the fallback default is `triage` (not `None`).
+    Returns `"completed"` when `closedAt` is set; otherwise `"triage"`.
+    Mirrors `_infer_default_column` but for issues, where the fallback
+    default is `triage` (not `None`).
+
+    Issue #676: the server-side window cutoff has been removed. ALL
+    closed issues are routed to `"completed"` regardless of age; the
+    client-side completed-window dropdown filters them per user preference.
     """
     closed_raw = issue.get("closed_at") or ""
     closed_dt = _parse_iso_utc(closed_raw) if isinstance(closed_raw, str) else None
     if closed_dt is not None:
-        from datetime import timedelta
-        cutoff = now_utc - timedelta(days=window_days)
-        if closed_dt >= cutoff:
-            return "completed"
+        return "completed"
     return "triage"
 
 
@@ -2471,6 +2473,9 @@ def collect_snapshot(
         "flags": {
             "closed_issues_truncated": bool(closed_truncated),
             "closed_issues_limit": int(closed_limit),
+        },
+        "config": {
+            "dashboard_completed_days": int(window_days),
         },
     }
     return snapshot

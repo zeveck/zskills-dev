@@ -1258,7 +1258,12 @@ else
   fail "W1.8: got '$W18'"
 fi
 
-# W1.9 — _infer_default_column within/outside window AND _infer_issue_default_column within window.
+# W1.9 — _infer_default_column + _infer_issue_default_column inference.
+# Issue #676: server-side window cutoff removed. Plans with a valid
+# `completed:` timestamp ALWAYS return "completed" regardless of age.
+# Issues with `closed_at` ALWAYS return "completed". Only plans without
+# a parseable completed date return None (hidden). Client-side filtering
+# now handles the window.
 W19=$(PYTHONPATH="$PKG_PARENT" python3 -c '
 import sys
 sys.path.insert(0, "'"$PKG_PARENT"'")
@@ -1280,12 +1285,12 @@ print("issue_outside=" + c._infer_issue_default_column(issue_outside, now_utc=no
 print("issue_no_closed=" + c._infer_issue_default_column(issue_no_closed, now_utc=now, window_days=14))
 ' 2>&1)
 if printf '%s\n' "$W19" | grep -q "^within='completed'$" \
-    && printf '%s\n' "$W19" | grep -q "^outside=None$" \
+    && printf '%s\n' "$W19" | grep -q "^outside='completed'$" \
     && printf '%s\n' "$W19" | grep -q "^no_completed=None$" \
     && printf '%s\n' "$W19" | grep -q "^issue_within=completed$" \
-    && printf '%s\n' "$W19" | grep -q "^issue_outside=triage$" \
+    && printf '%s\n' "$W19" | grep -q "^issue_outside=completed$" \
     && printf '%s\n' "$W19" | grep -q "^issue_no_closed=triage$"; then
-  pass "W1.9: infer_default_column within/outside + infer_issue_default_column within window"
+  pass "W1.9: infer_default_column within/outside + infer_issue_default_column (post-#676 no server-side window)"
 else
   fail "W1.9: got '$W19'"
 fi
@@ -1540,14 +1545,13 @@ else
   fail "W1.21: got '$W121'"
 fi
 
-# W1.22 — annotate_issues_queue_hides_closed_out_of_window_with_explicit_position:
+# W1.22 — annotate_issues_queue_routes_closed_to_completed_regardless_of_window:
 # state-file has issue #N in `triage` with `closed_at` OUTSIDE the 14-day
 # window. Auto-prune still drops it from `pos`; inference fallback routes
-# to `triage` (the `_infer_issue_default_column` default). The "hide"
-# part is enforced upstream by the caller's open+closed-window fetch
-# contract — at this boundary we only assert the explicit-position bypass
+# to `completed` (post-#676: server returns all closed as completed;
+# client-side filtering handles the window). The explicit-position bypass
 # fires (state-file says triage, but inference owns the column).
-# Closes #670.
+# Updated for #676 (was #670).
 W122=$(PYTHONPATH="$PKG_PARENT" python3 -c '
 import sys
 sys.path.insert(0, "'"$PKG_PARENT"'")
@@ -1567,9 +1571,9 @@ c._annotate_issues_queue(issues, state, None, now_utc=now, window_days=14)
 print("col=" + issues[0]["queue"]["column"])
 print("index=" + str(issues[0]["queue"]["index"]))
 ' 2>&1)
-if printf '%s\n' "$W122" | grep -q "^col=triage$" \
+if printf '%s\n' "$W122" | grep -q "^col=completed$" \
     && printf '%s\n' "$W122" | grep -q "^index=-1$"; then
-  pass "W1.22: annotate_issues_queue_hides_closed_out_of_window_with_explicit_position (#670)"
+  pass "W1.22: annotate_issues_queue_routes_closed_to_completed_regardless_of_window (#676)"
 else
   fail "W1.22: got '$W122'"
 fi

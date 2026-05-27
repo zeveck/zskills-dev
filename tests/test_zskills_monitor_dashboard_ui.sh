@@ -1630,6 +1630,209 @@ else
   fail "AC: reset no-origin → $CODE (expected 200 per Phase 5b)"
 fi
 
+###############################################################################
+# Block — Issue #675: Section-nav pill strip (static-grep)
+###############################################################################
+
+echo ""
+echo "=== Issue #675 AC: section-nav pill strip ==="
+
+# 675-1: buildSectionNavStrip helper defined in app.js.
+if grep -qE 'function buildSectionNavStrip\(' "$APP_JS"; then
+  pass "#675: buildSectionNavStrip helper defined"
+else
+  fail "#675: buildSectionNavStrip helper missing"
+fi
+
+# 675-2: buildNavPill helper defined (constructs each pill button).
+if grep -qE 'function buildNavPill\(' "$APP_JS"; then
+  pass "#675: buildNavPill helper defined"
+else
+  fail "#675: buildNavPill helper missing"
+fi
+
+# 675-3: section-nav-strip class emitted with data-kind attribute.
+if grep -qE 'cls: "section-nav-strip"' "$APP_JS"; then
+  pass "#675: .section-nav-strip element class emitted"
+else
+  fail "#675: .section-nav-strip element class missing"
+fi
+
+# 675-4: renderPlans invokes buildSectionNavStrip("plan", ...).
+RENDER_PLANS_BODY=$(awk '
+  /^function renderPlans\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$RENDER_PLANS_BODY" | grep -qE 'buildSectionNavStrip\("plan"'; then
+  pass "#675: renderPlans calls buildSectionNavStrip for plans"
+else
+  fail "#675: renderPlans does not invoke buildSectionNavStrip"
+fi
+
+# 675-5: renderIssues invokes buildSectionNavStrip("issue", ...).
+RENDER_ISSUES_BODY=$(awk '
+  /^function renderIssues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$RENDER_ISSUES_BODY" | grep -qE 'buildSectionNavStrip\("issue"'; then
+  pass "#675: renderIssues calls buildSectionNavStrip for issues"
+else
+  fail "#675: renderIssues does not invoke buildSectionNavStrip"
+fi
+
+# 675-6: Pills use scrollIntoView for smooth scrolling.
+if grep -qE 'scrollIntoView.*behavior.*smooth' "$APP_JS"; then
+  pass "#675: scrollIntoView({ behavior: 'smooth' }) wired"
+else
+  fail "#675: scrollIntoView smooth behavior missing"
+fi
+
+# 675-7: Click handler expands collapsed column before scrolling.
+if grep -qE 'section-nav-pill' "$APP_JS" \
+   && grep -qE 'isCollapsed.*kind.*col' "$APP_JS" \
+   && grep -qE 'setCollapsed.*kind.*col.*false' "$APP_JS"; then
+  pass "#675: section-nav-pill handler expands collapsed sections before scrolling"
+else
+  fail "#675: section-nav-pill expand-before-scroll coordination missing"
+fi
+
+# 675-8: CSS for .section-nav-strip defined.
+if grep -qE '\.section-nav-strip' "$APP_CSS"; then
+  pass "#675: .section-nav-strip CSS rule defined"
+else
+  fail "#675: .section-nav-strip CSS rule missing"
+fi
+
+# 675-9: CSS for .section-nav-pill defined.
+if grep -qE '\.section-nav-pill' "$APP_CSS"; then
+  pass "#675: .section-nav-pill CSS rule defined"
+else
+  fail "#675: .section-nav-pill CSS rule missing"
+fi
+
+# 675-10: Sticky positioning for the strip.
+if grep -A5 '\.section-nav-strip' "$APP_CSS" | grep -q 'sticky'; then
+  pass "#675: .section-nav-strip uses position: sticky"
+else
+  fail "#675: .section-nav-strip missing sticky positioning"
+fi
+
+###############################################################################
+# Block — Issue #676: Completed-window dropdown (static-grep)
+###############################################################################
+
+echo ""
+echo "=== Issue #676 AC: completed-window dropdown ==="
+
+# 676-1: COMPLETED_WINDOW_KEY_PREFIX localStorage key defined.
+if grep -qE 'COMPLETED_WINDOW_KEY_PREFIX\s*=\s*"zskills:dashboard:completed-window:"' "$APP_JS"; then
+  pass "#676: COMPLETED_WINDOW_KEY_PREFIX constant defined"
+else
+  fail "#676: COMPLETED_WINDOW_KEY_PREFIX constant missing"
+fi
+
+# 676-2: getCompletedWindow + setCompletedWindow helpers defined.
+if grep -qE 'function getCompletedWindow\(' "$APP_JS" \
+   && grep -qE 'function setCompletedWindow\(' "$APP_JS"; then
+  pass "#676: getCompletedWindow + setCompletedWindow helpers defined"
+else
+  fail "#676: completed-window localStorage helpers missing"
+fi
+
+# 676-3: completed-window-select dropdown emitted in renderBelowPanelBand.
+BAND_BODY=$(awk '
+  /^function renderBelowPanelBand\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$BAND_BODY" | grep -qE 'completed-window-select'; then
+  pass "#676: completed-window dropdown injected in renderBelowPanelBand"
+else
+  fail "#676: completed-window dropdown missing from renderBelowPanelBand"
+fi
+
+# 676-4: Dropdown options include 7d, 14d, 30d, 90d, All.
+if grep -qE '"7d"' "$APP_JS" \
+   && grep -qE '"14d"' "$APP_JS" \
+   && grep -qE '"30d"' "$APP_JS" \
+   && grep -qE '"90d"' "$APP_JS" \
+   && grep -qE '"All"' "$APP_JS"; then
+  pass "#676: dropdown options 7d/14d/30d/90d/All present"
+else
+  fail "#676: dropdown options incomplete"
+fi
+
+# 676-5: Change handler wired for completed-window-select.
+if grep -qE 'addEventListener.*"change"' "$APP_JS" \
+   && grep -qE '\.completed-window-select' "$APP_JS"; then
+  pass "#676: change event handler wired for completed-window dropdown"
+else
+  fail "#676: change handler for dropdown missing"
+fi
+
+# 676-6: configCompletedDays updated from snap.config.
+if grep -qE 'snap\.config\.dashboard_completed_days' "$APP_JS"; then
+  pass "#676: configCompletedDays updated from snapshot config"
+else
+  fail "#676: configCompletedDays not wired to snapshot config"
+fi
+
+# 676-7: deepCloneQueues applies client-side window filter for plans.
+DEEPCLONE_BODY=$(awk '
+  /^function deepCloneQueues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$DEEPCLONE_BODY" | grep -qE 'getCompletedWindow.*plan' \
+   && echo "$DEEPCLONE_BODY" | grep -qE 'planCutoff'; then
+  pass "#676: deepCloneQueues applies client-side window filter for plans"
+else
+  fail "#676: client-side plan window filter missing from deepCloneQueues"
+fi
+
+# 676-8: deepCloneQueues applies client-side window filter for issues.
+if echo "$DEEPCLONE_BODY" | grep -qE 'getCompletedWindow.*issue' \
+   && echo "$DEEPCLONE_BODY" | grep -qE 'issueCutoff'; then
+  pass "#676: deepCloneQueues applies client-side window filter for issues"
+else
+  fail "#676: client-side issue window filter missing from deepCloneQueues"
+fi
+
+# 676-9: completed-window preference participates in fingerprint.
+FPP_BODY=$(awk '
+  /^function fingerprintPlans\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+FPI_BODY=$(awk '
+  /^function fingerprintIssues\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$FPP_BODY" | grep -qE 'getCompletedWindow|_gcw' \
+   && echo "$FPI_BODY" | grep -qE 'getCompletedWindow|_gcwI'; then
+  pass "#676: completed-window preference participates in fingerprints"
+else
+  fail "#676: fingerprint does not include completed-window preference"
+fi
+
+# 676-10: CSS for .completed-window-select defined.
+if grep -qE '\.completed-window-select' "$APP_CSS"; then
+  pass "#676: .completed-window-select CSS rule defined"
+else
+  fail "#676: .completed-window-select CSS rule missing"
+fi
+
+# 676-11: Server-side collect.py exposes config.dashboard_completed_days in snapshot.
+if grep -qE 'dashboard_completed_days.*window_days|"dashboard_completed_days"' \
+   "$REPO_ROOT/skills/zskills-dashboard/scripts/zskills_monitor/collect.py"; then
+  pass "#676: collect.py exposes dashboard_completed_days in snapshot config"
+else
+  fail "#676: collect.py missing dashboard_completed_days in snapshot"
+fi
+
 # Stop server cleanly via SIGTERM and verify port is released.
 kill -TERM "$SERVER_PID" 2>/dev/null || true
 for _ in 1 2 3 4 5 6 7 8 9 10; do
