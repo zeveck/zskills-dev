@@ -443,6 +443,27 @@ code, pre, .mono {
   vertical-align: middle;
 }
 
+/* Closure-reason chip (#687) — muted pill for "not planned" / "closed"
+   on Completed-column issue cards. Matches claim-chip--in-flight's pill
+   aesthetic but uses neutral grey to read as informational, not active. */
+.closure-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  margin: 4px 4px 4px 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: rgba(139, 148, 158, 0.18);
+  border: 1px solid var(--text-dim);
+  border-left-width: 4px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* Visual signal that a card is drag-disabled (claim chip sets this). */
 .card[aria-disabled="true"] {
   cursor: not-allowed;

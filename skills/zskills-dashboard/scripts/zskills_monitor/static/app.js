@@ -1250,6 +1250,19 @@ function buildIssueCard(issue, num, col) {
     head.appendChild(el("span", { cls: "card-sub", text: relativeTime(issue.created_at) }));
   }
   card.appendChild(head);
+  // Closure-reason chip (issue #687) — only renders for Completed-column
+  // cards whose stateReason is NOT "COMPLETED". Distinguishes "not planned"
+  // closures from genuine completions. Reuses .claim-chip styling.
+  if (isCompleted && issue && issue.state_reason !== "COMPLETED") {
+    const reason = issue.state_reason === "NOT_PLANNED" ? "not planned" : "closed";
+    const row = el("div", { cls: "card-sub" });
+    row.appendChild(el("span", {
+      cls: "closure-chip",
+      attrs: { title: "stateReason: " + (issue.state_reason || "null") },
+      text: reason,
+    }));
+    card.appendChild(row);
+  }
   // Skip-reason chip (issue #445) — only renders for Ready-column issues
   // whose tracker blurb resolves to a *genuine* skip-class (needs-decision,
   // plan-scale, bug-unclear-cause). `unresearched` is excluded: it signals
