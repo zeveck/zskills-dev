@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.21+d3f84c"
+  version: "2026.05.27+24ca7e"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -56,10 +56,11 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
 - **auto** (optional, positional, case-insensitive) — land autonomously.
   PR mode: opens PR + requests auto-merge via `--auto` to `/land-pr`,
   which requests GitHub auto-merge once required checks pass. Worktree
-  mode: dispatches `/verify-changes`, cherry-picks to main, pushes.
-  Direct mode: dispatches `/verify-changes`, pushes main. Verification
-  always passes before any push or PR auto-merge. Mirrors the broad-
-  autonomy convention in `/quickfix`, `/run-plan`, `/fix-issues`.
+  mode: cherry-picks to main, pushes. Direct mode: pushes main.
+  Verification (`/verify-changes`) runs on ALL code changes regardless
+  of the `auto` flag — `auto` controls autonomous landing (push/merge),
+  not whether to verify. Mirrors the broad-autonomy convention in
+  `/quickfix`, `/run-plan`, `/fix-issues`.
 - **every SCHEDULE** (optional) — self-schedule recurring runs via cron:
   - Accepts intervals: `4h`, `2h`, `30m`, `12h`
   - Accepts time-of-day: `day at 9am`, `day at 14:00`, `weekday at 9am`
@@ -112,7 +113,8 @@ This means:
 - `/do now` — trigger (if one) or ask (if multiple)
 - `/do now Check docs` — trigger the "Check docs" cron
 - `/do Push the latest changes` — description only, no flags
-- `/do Update the presentation auto` — description + auto (direct + push)
+- `/do Update the presentation auto` — description + auto (direct + verify + push)
+- `/do Fix the tooltip bug worktree` — worktree + verify (no auto-land)
 - `/do Fix the tooltip bug worktree auto` — worktree + verify + cherry-pick + push
 - `/do Check docs every day at 9am` — schedule "Check docs" daily
 - `/do Add dark mode. pr` — description + pr flag (PR mode)
@@ -219,8 +221,9 @@ fi
 # Phase 2 mode dispatch both see AUTO_FLAG.
 # AUTO_FLAG is consumed by:
 #   - modes/pr.md to inject --auto into LAND_ARGS for /land-pr (PR mode)
-#   - Phase 3 to dispatch /verify-changes (direct/worktree modes)
 #   - Phase 4 (Land) as the gate to push/cherry-pick+push (direct/worktree modes)
+# Note: Phase 3 dispatches /verify-changes unconditionally for code
+# changes (issue #713) — AUTO_FLAG no longer gates verification.
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
@@ -477,7 +480,7 @@ written** (no tracking for /do). No worktree, no commits, no cron.
 
 On REJECT and `$FORCE -eq 1`: print override message. Continue to Phase 0c.
 
-Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); the `auto` flag with code changes (`worktree`/`direct` mode only — see Phase 3) triggers /verify-changes after execution. PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
+Orthogonality with `/verify-changes` (Phase 3): pre-review judges PLAN; `/verify-changes` judges DIFF. Both run when both apply: `--rounds > 0` triggers this pre-review (any landing mode); code changes in `worktree`/`direct` mode trigger /verify-changes unconditionally after execution (issue #713 — `auto` controls landing, not verification). PR mode (Path A) handles its own push internally and does **not** invoke /verify-changes (per `skills/do/SKILL.md` Phase 4 'Not applicable to PR mode' note).
 
 ## Phase 0c — Schedule (if `every` is present)
 
@@ -730,12 +733,12 @@ Verification intensity matches the change type (from Phase 1):
 - **Spot-check:** formatting, links, file organization, image references
 - **Do NOT run tests** — running 4,000+ tests for a markdown edit is
   wasteful, and pre-existing failures would block the task unnecessarily
-- **If `auto` is present (worktree/direct mode only):** dispatch a separate verification agent. Tell
+- **Dispatch a separate verification agent (worktree/direct mode).** Tell
   the agent explicitly: "These are content-only changes (no code). Review
   the diff for correctness and completeness — do NOT run `npm test` or
   `npm run test:all`. Your job is: do these changes make sense? Are the
   right files included? Anything accidentally staged? Formatting correct?"
-  Do NOT invoke `/verify-changes` for content-only auto-landings — it will run
+  Do NOT invoke `/verify-changes` for content-only changes — it will run
   the full test suite regardless. Instead, dispatch a plain review agent.
 
   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. The verifier's tool allowlist (`Read, Grep, Glob, Bash, Edit, Write`) is sufficient for content review (Read + Grep cover the main path); the prose preamble above keeps it from running tests. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
@@ -777,11 +780,13 @@ Verification intensity matches the change type (from Phase 1):
   If you touched code and tests fail, they're yours to fix. (See
   CLAUDE.md: "NEVER modify the working tree to check if a failure is
   pre-existing.")
-- **If `auto` is present (worktree/direct mode only):** dispatch a **separate verification agent**
-  running `/verify-changes`. This is the full 7-phase verification:
-  diff review, test coverage audit, `npm run test:all`, manual
-  verification if UI, fix problems, re-verify until clean. Push only
-  happens if this agent reports clean.
+- **Dispatch a separate verification agent (worktree/direct mode)** running
+  `/verify-changes`. This is the full 7-phase verification: diff review,
+  test coverage audit, `npm run test:all`, manual verification if UI, fix
+  problems, re-verify until clean. Landing (push/cherry-pick) only happens
+  if this agent reports clean. Runs for ALL code changes regardless of the
+  `auto` flag (issue #713) — `auto` controls autonomous landing, not
+  whether to verify.
 
   **Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`. After the dispatch returns, pipe `$VERIFIER_RESPONSE` through `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`; on exit 1 STOP — do NOT push.
 
@@ -807,11 +812,11 @@ Verification intensity matches the change type (from Phase 1):
 
 - Run tests for the code portion
 - Spot-check the content portion
-- If `auto` (worktree/direct mode): full `/verify-changes` via separate agent
+- Full `/verify-changes` via separate agent (worktree/direct mode)
 
 ## Phase 4 — Land (if auto flag present, Path C/B only)
 
-Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invocation) AND Phase 3 verification passed. Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7; AUTO_FLAG in PR mode is consumed by `modes/pr.md` to request auto-merge via `--auto` to `/land-pr`).
+Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invocation) AND Phase 3 verification passed (Phase 3 verification runs unconditionally for code changes — see issue #713). Not applicable to PR mode (Path A — PR mode has its own push in Phase 2 Step A7; AUTO_FLAG in PR mode is consumed by `modes/pr.md` to request auto-merge via `--auto` to `/land-pr`).
 
 1. **If on main (Path C):**
    ```bash
@@ -922,8 +927,9 @@ Status: pr-ready | pr-ci-failing | landed
 
 ## Key Rules
 
-- **Match verification to change type** — content-only tasks skip tests.
-  Code tasks run tests. `auto` upgrades to full `/verify-changes`.
+- **Match verification to change type** — content-only tasks skip tests
+  (but still get a content-review agent). Code tasks run tests AND get
+  full `/verify-changes`. `auto` controls landing, not verification.
 - **Never weaken tests** — fix the code, not the test.
 - **Never modify the working tree to check pre-existing failures** — if
   you touched code and tests fail, fix them. No stash-and-compare, no
@@ -942,9 +948,10 @@ Status: pr-ready | pr-ci-failing | landed
   NOT write any report file under `$ZSKILLS_AUDIT_DIR`
   (e.g., the canonical `SPRINT_REPORT.md` / `PLAN_REPORT.md` artifacts owned by other skills).
   The commit is the artifact.
-- **Auto-land requires verification** — `auto` in worktree/direct mode
-  always dispatches a separate verification agent before pushing. No
-  exceptions.
+- **All code changes require verification** — worktree/direct mode always
+  dispatches a separate verification agent (full `/verify-changes` for code,
+  content-review agent for content-only) before any push. `auto` controls
+  autonomous landing, not whether verification runs (issue #713).
 - **PR mode CI runs through `/land-pr`** — `/do pr` dispatches the
   shared `/land-pr` skill, which polls CI and (on failure) drives a
   fix-cycle agent loop with the task description as work context.

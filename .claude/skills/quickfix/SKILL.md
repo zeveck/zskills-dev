@@ -5,20 +5,20 @@ description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
   one-commit PR without a worktree. Two auto-detected modes: user-edited
   (dirty tree + description) and agent-dispatched (clean tree +
-  description). Lifecycle: triage → review → commit → push → PR → CI poll
-  → fix cycle (dispatched via 'land-pr'). PR-lifecycle: when
+  description). Lifecycle: triage → review → commit → verify → push → PR
+  → CI poll → fix cycle (dispatched via 'land-pr'). PR-lifecycle: when
   execution.landing is 'worktree' or 'direct', soft-redirects to
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.22+ec24bd"
+  version: "2026.05.27+ebc1e5"
 ---
 
 # /quickfix — In-Flight Fix → PR
 
 `/quickfix` turns the current main checkout (with or without dirty edits)
 into a one-commit PR without leaving main. No worktree. No cherry-pick.
-Lifecycle: triage → review → commit → push → PR → CI poll → fix cycle.
+Lifecycle: triage → review → commit → verify → push → PR → CI poll → fix cycle.
 
 **Ultrathink throughout.**
 
@@ -973,6 +973,49 @@ if ! git commit -m "$COMMIT_BODY"; then
 fi
 ```
 
+## Phase 5.5 — Verify (WI 1.13.5)
+
+Independent verification of the committed diff before push. Mirrors
+`/do` Phase 3 (issue #713 — verification runs on all code changes,
+not just `auto`). Skipped when `$FORCE -eq 1` (which already bypasses
+triage + review) or when `$SKIP_TESTS -eq 1`.
+
+**Dispatch a separate verification agent** running `/verify-changes`.
+This is the full 7-phase verification: diff review, test coverage audit,
+full test suite, manual verification if UI, fix problems, re-verify until
+clean. Push (Phase 6) only happens if this agent reports clean.
+
+**Dispatch shape.** Use the `Agent` tool with `subagent_type: "verifier"`.
+The prompt should include the branch name (`$BRANCH`), the commit
+subject (`$COMMIT_SUBJECT`), and the task description (`$DESCRIPTION`)
+so the verifier has full context. After the dispatch returns, pipe
+`$VERIFIER_RESPONSE` through
+`bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"`;
+on exit 1 STOP — do NOT push.
+
+**Layer 3 — verifier response validation:**
+
+```bash
+printf '%s' "$VERIFIER_RESPONSE" | bash "$CLAUDE_PROJECT_DIR/.claude/hooks/verify-response-validate.sh"
+VALIDATE_EXIT=$?
+```
+
+On `VALIDATE_EXIT=1` — STOP. Do NOT push. Emit:
+
+```
+STOP: verifier returned without meaningful results.
+
+$(cat /tmp/last-validate-stderr)
+
+This is a verification FAIL, not a license to push. Surface to the
+user. If the verifier agent file is missing, run /update-zskills.
+```
+
+**Skip conditions:** When `$FORCE -eq 1` or `$SKIP_TESTS -eq 1`, print
+a WARN and skip this phase — `--force` is the explicit "trust-prompt"
+opt-out for both triage/review and verification, and `skip-tests` signals
+the user knows the change doesn't need a full verification pass.
+
 ## Phase 6 — Push (WI 1.14)
 
 **Bare-branch form ONLY.** Never use a `src:dst` refspec when pushing
@@ -1044,6 +1087,7 @@ cat > "$BODY_FILE" <<-EOF
 	## Test plan
 
 	- Ran project \`unit_cmd\` before commit (or skip-tests).
+	- Independent \`/verify-changes\` before push (or skipped via force/skip-tests).
 	- Review diff.
 
 	🤖 Generated with /quickfix
@@ -1345,7 +1389,8 @@ The end-of-fence explicit-finalize block (issue #241) rewrites the
 marker's `status` based on `$LAND_OUTCOME` — `merged`/`created`/`pr-ready`
 → `status: complete`; anything else → `status: failed`. Early-exit
 cleanup paths (Phase 1.10 user-decline, Phase 4 test failure, Phase 5
-commit failure, Phase 6 push failure, and the no-result-file exit-5 path
+commit failure, Phase 5.5 verification failure, Phase 6 push failure,
+and the no-result-file exit-5 path
 inside the caller-loop) write `status: cancelled` or `status: failed`
 inline before exiting. The CI poll and fix-cycle are owned by
 `/land-pr`; `/quickfix`'s pre-PR triage (WI 1.5.4) and plan-review (WI
