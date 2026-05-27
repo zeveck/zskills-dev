@@ -181,6 +181,7 @@ run_suite "test-plan-claim-release-already-complete.sh" "tests/test-plan-claim-r
 run_suite "test-plan-claim-selection-filter.sh" "tests/test-plan-claim-selection-filter.sh"
 run_suite "test-work-on-plans-parallel-selection.sh" "tests/test-work-on-plans-parallel-selection.sh"
 run_suite "test-plan-claim-filter-edge-cases.sh" "tests/test-plan-claim-filter-edge-cases.sh"
+run_suite "test-fix-issues-selection-filter.sh" "tests/test-fix-issues-selection-filter.sh"
 run_suite "test-plan-claim-collector.sh" "tests/test-plan-claim-collector.sh"
 run_suite "test-plan-claim-render-dom.sh" "tests/test-plan-claim-render-dom.sh"
 run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handleaction-guard.sh"

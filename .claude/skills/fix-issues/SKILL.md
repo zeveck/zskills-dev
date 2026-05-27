@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.26+4913e0"
+  version: "2026.05.26+9b72f3"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -2404,6 +2404,61 @@ the fix agent. The default branch name is `fix-issue-NNN` (derived from
 `${WORKTREE_ROOT:-/tmp}/<project-name>-fix-issue-NNN`. PR mode overrides
 the branch name to `fix/issue-NNN` via `--branch-name` — see that
 subsection below.
+
+#### Selection filter (#641) — drop in-flight issue claims
+
+Pipe the just-finalized `CANDIDATE_ISSUES` through
+`filter-in-flight-issue-claims.sh` to drop issue numbers whose
+`.zskills/claims/issue-<N>/claim.json` indicates an in-flight pipeline.
+This is the unified downstream point — both Phase 2 paths (dashboard-mode
+at ~line 1460, rubric-mode at the ranked-table block) have populated and
+finalized `CANDIDATE_ISSUES` by here, and Phase 3's `for ISSUE_NUM in
+"${CANDIDATE_ISSUES[@]}"` loop below is the first dispatch read. Mirrors
+`/work-on-plans` Step 4's D4 filter (PR #645), adapted for integer issue
+numbers instead of kebab-case plan slugs. See
+`plans/plans-claim-chip-parity.md` for the parity rationale.
+
+**Honest scope (DA2.7 mirror).** This filter closes the **steady-state**
+race only — the claim is already on disk when both `/fix-issues`
+invocations run filter. It does NOT close the **fresh-start** race
+(both pipelines observe an empty claims-dir before either acquires);
+that residual window is bounded by `claim-issue.sh`'s acquire-EEXIST
+atomic mkdir → exit 10 contract, which Phase 3's per-iteration acquire
+already handles via the `race-lost` skip-record arm. Same architecture
+as `/work-on-plans` + `/run-plan`.
+
+The pre-filter sweep is R2.6 symmetric — reap any stale claim metadata
+right before the filter reads it, so a long-dead pipeline whose claim
+TTL has expired doesn't shadow a candidate that is actually free. The
+earlier preflight sweep at "### Preflight: sweep stale claims" runs near
+the top of Phase 2 BEFORE the picker runs; this second sweep is cheap
+(idempotent) and closes the window where a stale claim crossed the TTL
+boundary between preflight and selection.
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" sweep || true
+```
+
+```bash
+. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-in-flight-issue-claims.sh"
+if [ -x "$FILTER" ] && [ "${#CANDIDATE_ISSUES[@]}" -gt 0 ]; then
+  FILTERED=$(printf '%s\n' "${CANDIDATE_ISSUES[@]}" | bash "$FILTER")
+  if [ -n "$FILTERED" ]; then
+    mapfile -t CANDIDATE_ISSUES <<< "$FILTERED"
+  else
+    CANDIDATE_ISSUES=()
+  fi
+fi
+```
+
+(Defensive `[ -x ]` check so older installations without the script
+don't break. Empty filter output rebuilds `CANDIDATE_ISSUES` as an empty
+array rather than a one-element array with an empty string. The
+`${#CANDIDATE_ISSUES[@]} -gt 0` guard is symmetric with the existing
+SKIP_TAGGED fence guards above — both arms are no-ops when the array
+is already empty.)
 
 **Per-issue dispatch loop (B-proper).** The dispatch is an explicit
 fenced `for` loop over `CANDIDATE_ISSUES` (the full uncapped Ready∩Open
