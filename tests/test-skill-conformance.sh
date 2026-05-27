@@ -2451,6 +2451,28 @@ for prose_file in "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$REPO_ROOT/.claude/rules/zski
   else
     fail "[propagation-prose] $rel" "missing literal: 'Never \`CronDelete\` on the strength of a confused fire'"
   fi
+  # Issue #682 — /quickfix vs /do decision-table reframe: peers-not-tiers.
+  # The decision table previously framed /quickfix as the lighter / smaller
+  # task option ("FLOOR of with-review", "larger than /quickfix"), training
+  # agents to pattern-match on size. The real distinction is worktree-vs-
+  # main, gated by main_protected. Pin the new peer wording on both prose
+  # surfaces and negative-pin the old size-hierarchy phrases so they cannot
+  # silently regress.
+  if grep -qF 'They are PEERS, not TIERS' "$prose_file"; then
+    pass "[propagation-prose] $rel contains 'PEERS, not TIERS' decision-table reframe (#682)"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'They are PEERS, not TIERS' (#682)"
+  fi
+  if grep -qF 'Pick by **project policy, not task size**' "$prose_file"; then
+    pass "[propagation-prose] $rel contains 'pick by project policy, not task size' literal (#682)"
+  else
+    fail "[propagation-prose] $rel" "missing literal: 'Pick by **project policy, not task size**' (#682)"
+  fi
+  if grep -qF 'larger than `/quickfix`' "$prose_file"; then
+    fail "[propagation-prose] $rel" "obsolete size-hierarchy phrase 'larger than \`/quickfix\`' must be removed (#682)"
+  else
+    pass "[propagation-prose] $rel does not contain obsolete 'larger than /quickfix' phrase (#682)"
+  fi
 done
 
 echo ""
