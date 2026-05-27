@@ -874,6 +874,69 @@ code, pre, .mono {
   flex: 1;
 }
 
+/* Issue #675 — Section-nav pill strip. Pinned row of pills at the top of
+   each panel showing section labels + counts. Each pill is a button that
+   scrolls to the target section. Sticky positioning keeps the strip
+   visible during vertical scroll. */
+.section-nav-strip {
+  display: flex;
+  gap: 6px;
+  padding: 6px 4px;
+  margin-bottom: 8px;
+  position: sticky;
+  top: 52px; /* below .topbar (≈52px tall with padding+border) */
+  z-index: 3;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.section-nav-pill {
+  background: var(--surface2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.section-nav-pill:hover,
+.section-nav-pill:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  outline: none;
+}
+
+/* Issue #676 — Completed-window dropdown in the Completed column header.
+   Matches the column-head's compact typographic scale. Sits inline after
+   the count badge, before the collapse toggle. */
+.completed-window-select {
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 0.72rem;
+  font-family: inherit;
+  cursor: pointer;
+  margin-left: 0.3em;
+  line-height: 1.4;
+}
+
+.completed-window-select:hover,
+.completed-window-select:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+  outline: none;
+}
+
 /* Phase 3 — Below-panel band (Backlog | Discarded | Completed). Standalone
    grid sibling of `.columns` (D3 — NOT composed with .columns-2). The
    dashed border-top creates a visual separator from the active row so
