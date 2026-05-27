@@ -84,8 +84,12 @@ for N in "$@"; do
     out=$(awk -v n="$N" '
       $0 ~ "^### #" n " " { in_sec=1; next }
       in_sec && /^### / { exit }
+      # If **Reconsidered:** appears in this section, suppress skip-code
+      # emission — the user has flagged this issue for re-evaluation.
+      in_sec && index($0, "**Reconsidered:**") > 0 { reconsidered=1 }
       in_sec && index($0, "**Action now:**") > 0 {
         print "HIT"
+        if (reconsidered) { exit }
         if (match($0, /\*\*Action now:\*\*[[:space:]]*/)) {
           val = substr($0, RSTART + RLENGTH)
           # Lowercase for case-insensitive prefix matching.
