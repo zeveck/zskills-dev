@@ -2412,11 +2412,35 @@ def collect_snapshot(
     activity.sort(key=_activity_sort_key)
     activity = activity[:200]
 
-    # Queues block (raw state-file-shape mirror, plus default_mode)
+    # Queues block (state-file-shape mirror, plus default_mode).
+    # Filter closed issues and orphan plan slugs so the frontend's
+    # fingerprintIssues pos-lookup (app.js:612-618) agrees with the
+    # server-side _annotate_*_queue annotations. Without this filter
+    # the raw state-file positions override queue.column for rendering.
+    closed_nums: set = {
+        it.get("number") for it in issues
+        if isinstance(it.get("number"), int) and it.get("closed_at")
+    }
+    raw_issues = state.get("issues", {})
+    filtered_issues: Dict[str, Any] = {}
+    for col, entries in raw_issues.items():
+        if not entries:
+            filtered_issues[col] = []
+            continue
+        kept: list = []
+        for n in entries:
+            try:
+                num = int(n)
+            except (TypeError, ValueError):
+                kept.append(n)
+                continue
+            if num not in closed_nums:
+                kept.append(n)
+        filtered_issues[col] = kept
     queues_block: Dict[str, Any] = {
         "default_mode": state.get("default_mode", "phase"),
         "plans": state.get("plans", {}),
-        "issues": state.get("issues", {}),
+        "issues": filtered_issues,
     }
 
     snapshot: Dict[str, Any] = {

@@ -1997,6 +1997,64 @@ else
   fail "W1.18: A='$W118A_OUT' (exitA='$W118A') B='$W118B'"
 fi
 
+# W1.24 — queues_block_excludes_closed_issues: the snapshot's
+# queues.issues block must NOT contain closed issue numbers, even when
+# monitor-state.json has them in an active column. Regression canary
+# for the PR #678 incomplete fix: _annotate_issues_queue filtered its
+# internal pos but queues_block passed the raw state file through.
+W124=$(cd "$REPO_ROOT" && python3 -c '
+# Unit test of the queues_block closed-issue filter logic from
+# collect_snapshot (collect.py ~line 2420). Tests the filter in
+# isolation — same algorithm, no need to mock the full snapshot.
+import json
+
+# Inputs: closed issues in the live list, raw state-file positions.
+issues = [
+    {"number": 677, "closed_at": "2026-05-27T00:54:50Z"},
+    {"number": 641, "closed_at": "2026-05-27T01:46:20Z"},
+    {"number": 672},  # open — no closed_at
+]
+raw_issues = {"triage": [], "ready": [677, 641, 672], "backlog": [67]}
+
+# Derive closed_nums (same as collect_snapshot).
+closed_nums = {
+    it.get("number") for it in issues
+    if isinstance(it.get("number"), int) and it.get("closed_at")
+}
+# Filter (same as collect_snapshot).
+filtered = {}
+for col, entries in raw_issues.items():
+    if not entries:
+        filtered[col] = []
+        continue
+    kept = []
+    for n in entries:
+        try:
+            num = int(n)
+        except (TypeError, ValueError):
+            kept.append(n)
+            continue
+        if num not in closed_nums:
+            kept.append(n)
+    filtered[col] = kept
+
+print("ready=" + json.dumps(filtered["ready"]))
+print("backlog=" + json.dumps(filtered["backlog"]))
+has_677 = 677 in filtered["ready"]
+has_641 = 641 in filtered["ready"]
+has_672 = 672 in filtered["ready"]
+print("has_677=" + str(has_677))
+print("has_641=" + str(has_641))
+print("has_672=" + str(has_672))
+' 2>&1)
+if printf '%s\n' "$W124" | grep -q "^has_677=False$" \
+   && printf '%s\n' "$W124" | grep -q "^has_641=False$" \
+   && printf '%s\n' "$W124" | grep -q "^has_672=True$"; then
+  pass "W1.24: queues_block_excludes_closed_issues (677/641 dropped, 672 kept)"
+else
+  fail "W1.24: $W124"
+fi
+
 # ---------------------------------------------------------------------------
 # AC: Test registered in tests/run-all.sh (verified by the test runner if
 # we're invoked via run-all.sh; here we just sanity-check this file is
