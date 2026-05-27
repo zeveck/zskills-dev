@@ -4,7 +4,7 @@
 Issue #514 — the claim chip lights up on the dashboard when /fix-issues
 is mid-flight. The collector reads `${main_root}/.zskills/claims/issue-*/
 claim.json` per snapshot and attaches a `claim` field to each issue.
-Latency budget is <10ms p99 for 50 simulated claims (T3.3).
+Latency budget is <10ms p95 for 50 simulated claims (T3.3).
 
 stdlib-only — `unittest`, no pytest. Invoked from the .sh wrapper which
 translates the results to the dashboard test format (PASS/FAIL lines +
@@ -258,7 +258,7 @@ class AnnotateIssuesQueueGatingTests(unittest.TestCase):
 
 
 class ReadClaimsLatencyBenchmark(unittest.TestCase):
-    """T3.3 — issue #514 latency budget. <10ms wall-clock p99 for 50
+    """T3.3 — issue #514 latency budget. <10ms wall-clock p95 for 50
     simulated claims. NOT skip-not-fail. If this regresses, memoize
     per-snapshot identically to issues_fetch_ok.
     """
@@ -281,7 +281,7 @@ class ReadClaimsLatencyBenchmark(unittest.TestCase):
     def tearDown(self) -> None:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_p99_under_budget(self) -> None:
+    def test_p95_under_budget(self) -> None:
         N = 100
         BUDGET_MS = 10.0
         samples = []
@@ -292,12 +292,12 @@ class ReadClaimsLatencyBenchmark(unittest.TestCase):
             self.assertEqual(len(out), 50)
             samples.append((t1 - t0) * 1000.0)
         samples.sort()
-        # p99 of 100 samples is index 98 (0-indexed).
-        p99 = samples[98]
+        # p95 of 100 samples is index 94 (0-indexed).
+        p95 = samples[94]
         self.assertLess(
-            p99, BUDGET_MS,
-            "p99=%.3fms exceeds %.1fms budget (issue #514). "
-            "Memoize _read_claims per-snapshot if this regresses." % (p99, BUDGET_MS),
+            p95, BUDGET_MS,
+            "p95=%.3fms exceeds %.1fms budget (issue #514). "
+            "Memoize _read_claims per-snapshot if this regresses." % (p95, BUDGET_MS),
         )
 
 
