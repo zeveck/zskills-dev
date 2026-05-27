@@ -1914,3 +1914,21 @@ Dashboard Ready queue had 1 candidate (#655); N=2 requested. Partial fill is nor
 Picked: #655 (Clear and doable as one PR, but needs review) — install-list-omission family (instance 2 of #505); adds block-run-plan-unclaimed.sh to /update-zskills both surfaces + structural conformance pin closing the family at CI time.
 Pool: 1 open candidate considered (dashboard Ready)
 ```
+
+## Sprint — 2026-05-27 05:28 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #659 | fix-report Step 1 PR-status enumeration drift | fix-issue-659 | 9464f14 | 5898/5898 | PASS (diff review + tests) | N/A |
+| #685 | /qe-audit Step 7 broken in main_protected | fix-issue-685 | 119b566 | 5902/5902 | PASS (diff review + tests) | N/A |
+
+### Skipped
+| # | Title | Bucket | Action now |
+|---|-------|--------|------------|
+| #660 | Skill-layer gap: column-targeted add/rank/remove | plan-scale | /draft-plan — cross-skill design surface (issues + plans queue mutation) |
+
+### Not Fixed
+(none)
