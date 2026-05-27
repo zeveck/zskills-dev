@@ -230,17 +230,17 @@ fi
 
 # Case 6: verify the gate logic in the actual skill matches the
 # reference implementation's backoff table. Grep for each case arm.
-if grep -q '1) BACKOFF_MIN=10' "$REPO_ROOT/skills/run-plan/SKILL.md" \
-   && grep -q '2) BACKOFF_MIN=20' "$REPO_ROOT/skills/run-plan/SKILL.md" \
-   && grep -q '3) BACKOFF_MIN=40' "$REPO_ROOT/skills/run-plan/SKILL.md" \
-   && grep -q '\*) BACKOFF_MIN=60' "$REPO_ROOT/skills/run-plan/SKILL.md"; then
+if grep -q '1) BACKOFF_MIN=10' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md" \
+   && grep -q '2) BACKOFF_MIN=20' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md" \
+   && grep -q '3) BACKOFF_MIN=40' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md" \
+   && grep -q '\*) BACKOFF_MIN=60' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md"; then
   pass "backoff table in skill matches (10, 20, 40, 60)"
 else
   fail "backoff table in skill does not match reference 10/20/40/60"
 fi
 
 # Case 7: verify "On attempt 1 only" guidance for verify-cron scheduling.
-if grep -q 'On attempt 1 only' "$REPO_ROOT/skills/run-plan/SKILL.md"; then
+if grep -q 'On attempt 1 only' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md"; then
   pass "skill documents 'On attempt 1 only' for verify-cron scheduling"
 else
   fail "skill missing 'On attempt 1 only' guidance"
@@ -281,7 +281,7 @@ else
 fi
 
 # Case 8b: verify the skill source ships the TIGHT pattern, not the loose one.
-if grep -qF "'^\\|[^|]*\\|[[:space:]]*⬚[[:space:]]*\\|'" "$REPO_ROOT/skills/run-plan/SKILL.md"; then
+if grep -qF "'^\\|[^|]*\\|[[:space:]]*⬚[[:space:]]*\\|'" "$REPO_ROOT/skills/run-plan/modes/execute-phase.md"; then
   pass "case 8b: skill source uses tight REMAINING_PHASES regex (#256)"
 else
   fail "case 8b: skill source missing tight REMAINING_PHASES regex"

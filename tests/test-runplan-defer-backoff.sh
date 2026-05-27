@@ -407,12 +407,12 @@ fi
 
 # ---- Anchor-grep cases (lock the source-of-truth in place) -----------
 
-# Anchor A: Phase 1's per-phase counter refs in SKILL.md (>= 5).
-A_COUNT=$(grep -c -F 'in-progress-defers' "$REPO_ROOT/skills/run-plan/SKILL.md")
+# Anchor A: per-phase counter refs across run-plan skill tree (>= 5).
+A_COUNT=$(grep -r -c -F 'in-progress-defers' "$REPO_ROOT/skills/run-plan/" --include='*.md' | awk -F: '{s+=$NF}END{print s}')
 if [ "$A_COUNT" -ge 5 ]; then
-  pass "anchor A: SKILL.md references 'in-progress-defers' ($A_COUNT >= 5)"
+  pass "anchor A: run-plan skill tree references 'in-progress-defers' ($A_COUNT >= 5)"
 else
-  fail "anchor A: SKILL.md 'in-progress-defers' count = $A_COUNT (< 5)"
+  fail "anchor A: run-plan skill tree 'in-progress-defers' count = $A_COUNT (< 5)"
 fi
 
 # Anchor B: Phase 2's backoff cadences in finish-mode.md (DA8: 3x grep -F,

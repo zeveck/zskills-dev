@@ -612,12 +612,13 @@ check       research-and-plan "/draft-plan dispatch threads \$AUTO_ARG" \
 # /run-plan dispatches /refine-plan; sites MUST carry $AUTO_ARG.
 check       run-plan "/refine-plan dispatch threads \$AUTO_ARG" \
   '/refine-plan <plan-file>\$AUTO_ARG'
-# Both dispatch arms (textual staleness L912ish, arithmetic drift L961ish)
-# share the `/refine-plan <plan-file>$AUTO_ARG` literal. Assert exactly 2.
+# Both dispatch arms (Phase 1 textual-staleness and arithmetic-drift checks)
+# share the `/refine-plan <plan-file>$AUTO_ARG` literal. Assert >= 2 across
+# the skill tree (SKILL.md + modes/execute-phase.md after the #725 split).
 # (The non-dispatch recommendation prose at "Recommend running
 # `/refine-plan <plan-file>` after close-out" uses no `$` after, so the
 # fixed-string `<plan-file>$AUTO_ARG` distinguishes dispatches reliably.)
-SITE_COUNT=$(grep -cF '/refine-plan <plan-file>$AUTO_ARG' "$REPO_ROOT/skills/run-plan/SKILL.md")
+SITE_COUNT=$(grep -rF '/refine-plan <plan-file>$AUTO_ARG' "$REPO_ROOT/skills/run-plan/" --include='*.md' | wc -l)
 if [ "$SITE_COUNT" -ge 2 ]; then
   pass "[run-plan] both /refine-plan dispatch arms thread \$AUTO_ARG (count=$SITE_COUNT)"
 else
@@ -641,7 +642,7 @@ echo "=== implementer subagent — impl-dispatch site pins (Verifier-cannot-run 
 # the `Agent` keyword (i.e., near a real dispatch directive); a
 # whole-file `grep -E` would let a demoted dispatch site (general-purpose)
 # pass as long as ANY footnote/comment elsewhere mentioned the pin.
-check_in_file_near run-plan    "SKILL.md"                   "impl-dispatch pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near run-plan    "modes/execute-phase.md"     "impl-dispatch pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near run-plan    "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near fix-issues  "SKILL.md"                   "fix-agent pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
@@ -691,7 +692,7 @@ fi
 # verifier REJECTs with a destructive recovery path. PR #453 fixed the
 # agent file; this tripwire prevents any skill SKILL.md from re-introducing
 # the orchestrator-side instruction that previously overrode the agent-file
-# defense at `skills/run-plan/SKILL.md:1592-1593`. Scope: skills/**/*.md
+# defense at `skills/run-plan/modes/execute-phase.md`. Scope: skills/**/*.md
 # ONLY (not docs/ or issues/, where the literal appears in this issue's
 # own blurb and sprint-report prose).
 symmetric_hits=$(grep -rlE 'git (diff|log) (origin/)?main\.\.\.' "$REPO_ROOT/skills" --include='*.md' 2>/dev/null || true)
@@ -719,16 +720,16 @@ else
   fail "[.claude/agents/verifier.md] tally check: baseline comparison" "baseline-comparison guidance missing"
 fi
 # Issue #575: the same canonical summary-line prose is mirrored into
-# skills/run-plan/SKILL.md Phase 4 verifier-dispatch prompt. The .claude/
-# agents/verifier.md check above is the agent-file pin; this assertion
-# pins the run-plan SKILL.md copy so a "prose simplification" revert
-# of the Phase 4 prompt cannot silently drop the tally directive from
-# the run-plan workflow path (the prompt actually dispatched to the
-# verifier subagent in PR mode).
-if grep -qF 'Overall: N/M passed' "$REPO_ROOT/skills/run-plan/SKILL.md" 2>/dev/null; then
-  pass "[skills/run-plan/SKILL.md] tally check: Overall: N/M passed prose"
+# skills/run-plan/modes/execute-phase.md Phase 3 verifier-dispatch prompt.
+# The .claude/agents/verifier.md check above is the agent-file pin; this
+# assertion pins the run-plan execute-phase copy so a "prose
+# simplification" revert of the verifier prompt cannot silently drop the
+# tally directive from the run-plan workflow path (the prompt actually
+# dispatched to the verifier subagent in PR mode).
+if grep -qF 'Overall: N/M passed' "$REPO_ROOT/skills/run-plan/modes/execute-phase.md" 2>/dev/null; then
+  pass "[skills/run-plan/modes/execute-phase.md] tally check: Overall: N/M passed prose"
 else
-  fail "[skills/run-plan/SKILL.md] tally check: Overall: N/M passed prose" "summary-line assertion guidance missing from Phase 4 verifier-dispatch prompt"
+  fail "[skills/run-plan/modes/execute-phase.md] tally check: Overall: N/M passed prose" "summary-line assertion guidance missing from Phase 3 verifier-dispatch prompt"
 fi
 
 echo ""
@@ -1873,7 +1874,7 @@ echo "=== No skill-file drift hardcodes ==="
 #
 # Both modes strip a leading `>` blockquote-prefix before applying their
 # regexes — load-bearing for the run-plan worktree-test recipe at
-# skills/run-plan/SKILL.md:898-930, where bash fences live inside a
+# skills/run-plan/modes/execute-phase.md, where bash fences live inside a
 # blockquote.
 #
 # Fixture format:
@@ -2159,19 +2160,19 @@ fi
 echo ""
 echo "=== Worktree-test blockquote structural AC ==="
 # WI 4.6 — Phase 2 WI 2.2 migrated the worktree-test recipe blockquote at
-# skills/run-plan/SKILL.md:898-930 from raw `npm start` / `npm run test:all` /
+# skills/run-plan/modes/execute-phase.md from raw `npm start` / `npm run test:all` /
 # `.test-results.txt` literals to `$DEV_SERVER_CMD` / `$FULL_TEST_CMD` /
 # `$TEST_OUTPUT_FILE`. This AC mechanizes the structural invariant so a
 # future agent can't silently revert one of the substitutions and have
 # only the deny-list catch it (or worse, slip past as a non-fence literal).
 BQ_TMP=$(mktemp)
 awk '/^[[:space:]]*> \*\*Worktree test recipe:\*\*/,/^[[:space:]]*8\. \*\*No steps skipped/' \
-    "$REPO_ROOT/skills/run-plan/SKILL.md" > "$BQ_TMP"
+    "$REPO_ROOT/skills/run-plan/modes/execute-phase.md" > "$BQ_TMP"
 
 if [ ! -s "$BQ_TMP" ]; then
   fail "worktree-test blockquote: extracted bounds non-empty" "awk produced 0 lines — anchors drifted?"
 elif grep -qE 'npm start|npm run test:all|\.test-results\.txt' "$BQ_TMP"; then
-  fail "worktree-test blockquote: no raw literal" "raw literal in $BQ_TMP — see $REPO_ROOT/skills/run-plan/SKILL.md:898-930"
+  fail "worktree-test blockquote: no raw literal" "raw literal in $BQ_TMP — see $REPO_ROOT/skills/run-plan/modes/execute-phase.md"
   grep -nE 'npm start|npm run test:all|\.test-results\.txt' "$BQ_TMP" >&2
 elif ! grep -qE '\$DEV_SERVER_CMD' "$BQ_TMP"; then
   fail "worktree-test blockquote: \$DEV_SERVER_CMD present" "missing in $BQ_TMP"
@@ -2889,7 +2890,9 @@ check_sanitize_count() {
     fail "$label: found $actual sanitize wraps, expected exactly $expected" "$expected sanitize-pipeline-id.sh wraps in $skill_path"
   fi
 }
-check_sanitize_count "skills/run-plan/SKILL.md"      16 "skills/run-plan/SKILL.md"
+check_sanitize_count "skills/run-plan/SKILL.md"                       5 "skills/run-plan/SKILL.md"
+check_sanitize_count "skills/run-plan/modes/execute-phase.md"        10 "skills/run-plan/modes/execute-phase.md"
+check_sanitize_count "skills/run-plan/subcommands/stop-next-status.md" 1 "skills/run-plan/subcommands/stop-next-status.md"
 check_sanitize_count "skills/commit/modes/pr.md"      1 "skills/commit/modes/pr.md"
 check_sanitize_count "skills/draft-plan/SKILL.md"     4 "skills/draft-plan/SKILL.md"
 check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKILL.md"
