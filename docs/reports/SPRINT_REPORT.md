@@ -1999,3 +1999,21 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 16:41 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #719 | /fix-issues next: surface staleness | fix-issue-719 | d6d05f4 | 5958/5958 | PASS (diff + mirror + full suite) | N/A |
+
+### Skipped
+| # | Title | Bucket | Action now |
+|---|-------|--------|------------|
+| #717 | Dashboard Branches tab redesign | plan-scale | /draft-plan (skip-tagged) |
+| #716 | /cleanup-merged redesign | plan-scale | /draft-plan (skip-tagged) |
+
+### Not Fixed
+(none)
