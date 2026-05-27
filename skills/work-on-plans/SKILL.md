@@ -1,7 +1,7 @@
 ---
 name: work-on-plans
 disable-model-invocation: true
-argument-hint: "(no args = list ready queue) | [N|all] [phase|finish] [continue] | add <slug> [pos] | rank <slug> <pos> | remove <slug> | default <phase|finish> | every SCHEDULE [phase|finish] [--force] | stop | next"
+argument-hint: "(no args = list ready queue) | [N|all] [phase|finish] [continue] | default <phase|finish> | every SCHEDULE [phase|finish] | stop | next"
 description: >-
   Batch-execute the prioritized ready queue from the dashboard: reads
   .zskills/monitor-state.json (plans.ready) and dispatches /run-plan auto
@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.26+961662"
+  version: "2026.05.27+11f2e4"
 ---
 
 # /work-on-plans — Batch Plan Executor
