@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.05.27+d26dbc"
+  version: "2026.05.27+a52b7c"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -45,43 +45,14 @@ or empty is a usage error:
 
 Exit 2.
 
-## Worktree override — `ZSKILLS_DASHBOARD_ROOT`
-
-By default the dashboard anchors to the main checkout so all sessions
-share one canonical view.  When an agent in a worktree needs to verify
-**its own** frontend changes visually, set the `ZSKILLS_DASHBOARD_ROOT`
-environment variable to the worktree path before invoking
-`/zskills-dashboard start`:
-
-```
-ZSKILLS_DASHBOARD_ROOT=/tmp/zskills-do-foo /zskills-dashboard start
-```
-
-This overrides `MAIN_ROOT` in the SKILL.md setup block and passes
-`--main-root` to the Python server so that both the collector
-(`collect.py:_resolve_main_root`) and the static-file serving use the
-worktree's filesystem instead of main's.
-
-When the variable is unset or empty, behavior is unchanged — the
-dashboard serves from the main checkout as before.
-
-The Python server also accepts `--main-root DIR` directly on the CLI
-(used by tests); the env var is the agent-facing surface.
-
 ## Step 0 — Common setup (every mode)
 
-Anchor `MAIN_ROOT` to the main checkout by default.  If
-`ZSKILLS_DASHBOARD_ROOT` is set to an existing directory, use that
-instead — this is the worktree-override path documented above.
-The PID file, log file, and tracking markers all live under
-`$MAIN_ROOT/.zskills/`.
+Anchor `MAIN_ROOT` to the main checkout regardless of which worktree
+the skill was invoked from. The PID file, log file, and tracking
+markers all live under `$MAIN_ROOT/.zskills/`.
 
 ```bash
-if [ -n "${ZSKILLS_DASHBOARD_ROOT:-}" ] && [ -d "$ZSKILLS_DASHBOARD_ROOT" ]; then
-  MAIN_ROOT=$(cd "$ZSKILLS_DASHBOARD_ROOT" && pwd)
-else
-  MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
 LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
 PKG_PARENT="$MAIN_ROOT/skills/zskills-dashboard/scripts"
@@ -291,16 +262,9 @@ if [ "$SUB" = "start" ]; then
   # without an install. nohup + disown survives parent-shell exit.
   # Note: PYTHONPATH="$PKG_PARENT:..." resolves at runtime to
   # PYTHONPATH=$MAIN_ROOT/skills/zskills-dashboard/scripts:... (per DA-5).
-  # When ZSKILLS_DASHBOARD_ROOT is set, pass --main-root so the server's
-  # collector reads state from the override path (worktree verification).
-  MAIN_ROOT_FLAG=""
-  if [ -n "${ZSKILLS_DASHBOARD_ROOT:-}" ]; then
-    MAIN_ROOT_FLAG="--main-root $MAIN_ROOT"
-  fi
   ( cd "$MAIN_ROOT" && \
     PYTHONPATH="$PKG_PARENT:${PYTHONPATH:-}" \
-    ZSKILLS_DASHBOARD_ROOT="${ZSKILLS_DASHBOARD_ROOT:-}" \
-    nohup python3 -m zskills_monitor.server $MAIN_ROOT_FLAG \
+    nohup python3 -m zskills_monitor.server \
       > "$LOG_FILE" 2>&1 < /dev/null & disown )
 
   # Health-check loop — up to ~10s for bind + first response. Python

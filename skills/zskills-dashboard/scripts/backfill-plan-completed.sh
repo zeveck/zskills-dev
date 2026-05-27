@@ -81,7 +81,7 @@ fi
 
 # Resolve $ZSKILLS_PLANS_DIR via the canonical shim. Hardcoding `plans/`
 # is FORBIDDEN — this repo sets output.plans_dir: docs/plans.
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh" 2>/dev/null || {
+. "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/skills/update-zskills/scripts/zskills-paths.sh" 2>/dev/null || {
   # Fallback: CLAUDE_PROJECT_DIR may not be set in this shell. The shim
   # itself falls back to git-common-dir; mirror that here.
   ZSKILLS_PATHS_ROOT="$(pwd)" \
