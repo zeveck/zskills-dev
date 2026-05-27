@@ -1315,3 +1315,23 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Problem.** Three below-band UX polish items: (1) collapse toggle (`▸`/`▾`) is too small at `font-size: 0.9em` + `padding: 0 0.2em` — reads as a dot, not a button; (2) collapsed columns hide the dropzone (`display: none`) but show nothing in its place — looks broken rather than intentionally collapsed; (3) move-all chevrons (`«`/`»`) have minimal styling (`padding: 0 6px`, `border-radius: 4px`) inconsistent with the section-nav pills and other action buttons that use `border-radius: 999px`, hover transitions, etc.
 **Fix outline.** All changes in two source files: `skills/zskills-dashboard/scripts/zskills_monitor/static/app.css` and `app.js` (mirror copies to `.claude/skills/` after). (1) Increase `.column-collapse-toggle` to `font-size: 1.1em`, `padding: 2px 6px`, add `border-radius: 4px` and a subtle background on hover. (2) In `applyCollapseStateToColumn` (JS ~L137), when collapsed, inject a compact summary strip into `colDiv` showing "Label (N)" with first 1-2 card titles truncated; in CSS add a `.collapsed-summary` rule for the strip. (3) Style `.move-all-btn` with `border-radius: 6px`, `padding: 2px 8px`, and a `transition: border-color 0.12s, color 0.12s, background 0.12s` matching `.section-nav-pill`.
 **Complexity:** S. **Action now:** /do pr — polish collapse toggle size, collapsed-column preview strip, and move-all chevron styling in dashboard CSS+JS
+
+### #717 — Dashboard Branches tab: state pills, status grouping, collapsed sections, bulk copy
+
+**Labels:** (none)
+
+**Problem.** Branches tab is a flat unsorted 147-entry list with no state visibility, grouping, or bulk operations. Four distinct sub-features requested: state pills, status grouping with collapsed sections, bulk copy, and nav strip.
+
+**Fix outline.** JS + CSS changes to app.js and app.css across 4 sub-features: (1) state pill rendering per branch card, (2) three-section grouping with collapse toggle, (3) select-all + copy button per section, (4) nav strip with counts. Each sub-feature is independently testable but they share DOM structure.
+
+**Complexity:** L. **Action now:** /draft-plan — plan-scale: 4 distinct UI sub-features with shared DOM structure; needs design review before implementation.
+
+### #716 — /cleanup-merged redesign: preview-default, positional tokens, remote cleanup, protected branches
+
+**Labels:** (none)
+
+**Problem.** /cleanup-merged is destructive-by-default, uses --flags instead of positional tokens (breaking repo convention), has no remote branch cleanup, and no branch exclusion mechanism.
+
+**Fix outline.** Redesign skill interface: preview-default mode, positional apply/remote/all tokens, gh-pr-view-gated remote deletion, protected_branches config field. Touches SKILL.md prose + possibly helper scripts.
+
+**Complexity:** L. **Action now:** /draft-plan — plan-scale: full skill interface redesign with 4 distinct behavioral changes + new config field.
