@@ -1211,6 +1211,13 @@ code, pre, .mono {
   outline: none;
 }
 
+/* Copy-to-clipboard button — sits at the trailing edge of .card-controls.
+   Inherits .move-btn base styling; margin-left: auto pushes it right so
+   it visually separates from the move/remove cluster. */
+.copy-btn {
+  margin-left: auto;
+}
+
 .toast-region {
   position: fixed;
   top: 16px;

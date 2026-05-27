@@ -70,7 +70,6 @@ function makeNode(tag) {
     textContent: "",
     attrs: {},
     children: [],
-    parent: null,
     hidden: false,
     style: {},
     setAttribute(k, v) { this.attrs[k] = String(v); },
@@ -78,7 +77,9 @@ function makeNode(tag) {
     removeAttribute(k) { delete this.attrs[k]; },
     appendChild(c) { c.parent = this; this.children.push(c); return c; },
     closest() { return null; },
+    addEventListener() {},
   };
+  Object.defineProperty(node, "parent", { value: null, writable: true, enumerable: false });
   return node;
 }
 
@@ -102,6 +103,7 @@ const issueUrlBlock = extractBlock(src, /\nfunction issueUrl\(/, "\n}\n");
 const planUrlBlock = extractBlock(src, /\nfunction planUrl\(/, "\n}\n");
 const makeIssueBtnBlock = extractBlock(src, /\nfunction makeIssueMoveBtn\(/, "\n}\n");
 const makeMoveBtnBlock = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
+const makeCopyBtnBlock = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const statusPillBlock = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
 const modePillBlock = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const currentEntryModeBlock = extractBlock(src, /\nfunction currentEntryMode\(/, "\n}\n");
@@ -112,6 +114,8 @@ const buildPlanBlock = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  retu
 const harness = `
 let repoUrl = "https://example.invalid/repo";
 let lastGoodQueues = null;
+if (typeof navigator === "undefined") globalThis.navigator = {};
+if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 
 ${elBlock}
 ${titleNodeBlock}
@@ -120,6 +124,7 @@ ${issueUrlBlock}
 ${planUrlBlock}
 ${makeIssueBtnBlock}
 ${makeMoveBtnBlock}
+${makeCopyBtnBlock}
 ${statusPillBlock}
 ${modePillBlock}
 ${currentEntryModeBlock}
@@ -187,10 +192,12 @@ function findByClass(root, cls) {
     "T4.8.a completed issue has no aria-disabled (no claim chip path)");
   expect(findByClass(card, "claim-chip"), null,
     "T4.8.a completed issue has no .claim-chip");
-  expect(findByClass(card, "card-controls"), null,
-    "T4.8.a completed issue has no .card-controls block");
+  expectTrue(findByClass(card, "card-controls"),
+    "T4.8.a completed issue has .card-controls (copy-only)");
   expect(findByClass(card, "remove-btn"), null,
     "T4.8.a completed issue has no .remove-btn (no per-card ✕)");
+  expectTrue(findByClass(card, "copy-btn"),
+    "T4.8.a completed issue has copy button");
   expect(card.getAttribute("data-column"), "completed",
     "T4.8.a completed issue retains data-column='completed'");
 }
@@ -211,8 +218,8 @@ function findByClass(root, cls) {
   const card = buildPlanCard(plan, "demo-plan", "completed", "phase");
   expect(card.getAttribute("draggable"), null,
     "T4.8.b completed plan has no draggable attribute");
-  expect(findByClass(card, "card-controls"), null,
-    "T4.8.b completed plan has no .card-controls block");
+  expectTrue(findByClass(card, "card-controls"),
+    "T4.8.b completed plan has .card-controls (copy-only)");
   expect(findByClass(card, "remove-btn"), null,
     "T4.8.b completed plan has no .remove-btn");
   // DA10 — completed plans render plain title text, no card-title-link.
