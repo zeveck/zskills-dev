@@ -382,12 +382,13 @@ code, pre, .mono {
   color: var(--text-dim);
 }
 
-/* Skip-reason chip (issue #445) — surfaces tracker-derived skip class
+/* Skip-reason chip (issue #445, #721) — surfaces tracker-derived skip class
    for Ready-column issues. Severity-binned palette: magenta for reasons
    that need a human (needs-decision, bug-unclear-cause), blue for
-   "queued for /draft-plan" (plan-scale), gray-with-fill for "parked"
-   (unresearched). Tinted background + heavier border + bolder text
-   gives chips real visual weight against the dark dashboard surface. */
+   "queued for /draft-plan" (plan-scale), dim grey for agent-parked
+   (deferred), gray-with-fill for "parked" (unresearched). Tinted
+   background + heavier border + bolder text gives chips real visual
+   weight against the dark dashboard surface. */
 .skip-chip {
   display: inline-block;
   padding: 3px 10px;
@@ -408,6 +409,14 @@ code, pre, .mono {
 
 /* needs-decision and bug-unclear-cause inherit the default magenta —
    both are "needs human now" reasons. No override needed. */
+
+/* deferred — agent parked the issue (no human action required).
+   Dim grey/neutral styling distinct from pink needs-decision. */
+.skip-chip--deferred {
+  background: rgba(139, 148, 158, 0.12);
+  border-color: var(--text-dim);
+  color: var(--text-dim);
+}
 
 .skip-chip--plan-scale {
   background: rgba(88, 166, 255, 0.14);

@@ -405,6 +405,14 @@ build_skip_tagged_fixture() {
 ### #705 — /run-plan should map to plan-scale
 
 **Complexity:** S. **Action now:** /run-plan — execute existing plan.
+
+### #706 — deferred (none + leave open)
+
+**Complexity:** L. **Action now:** none — leave open as architectural memo.
+
+### #707 — deferred (none + waiting)
+
+**Action now:** none — waiting on prerequisite plans.
 EOF
 }
 
@@ -425,14 +433,15 @@ test_filter_skip_tagged_codes() {
   local dir="$TMP_ROOT/codes"
   build_skip_tagged_fixture "$dir"
   local out skip_tagged
-  out=$(run_filter "$dir" 700 701 702 703 704 705)
+  out=$(run_filter "$dir" 700 701 702 703 704 705 706 707)
   skip_tagged=$(echo "$out" | grep '^SKIP_TAGGED=' | sed -e 's/^SKIP_TAGGED=//' -e 's/^"//' -e 's/"$//')
   # Expected: 700:plan-scale (draft-plan), 702:bug-unclear-cause (investigate),
-  # 703:needs-decision (none), 705:plan-scale (run-plan).
+  # 703:needs-decision (none + "author decision"), 705:plan-scale (run-plan),
+  # 706:deferred (none + "leave open"), 707:deferred (none + "waiting").
   # 701 (/do pr) and 704 (none-of-the-above boundary) must NOT appear.
-  local expected="700:plan-scale 702:bug-unclear-cause 703:needs-decision 705:plan-scale"
+  local expected="700:plan-scale 702:bug-unclear-cause 703:needs-decision 705:plan-scale 706:deferred 707:deferred"
   if [ "$skip_tagged" = "$expected" ]; then
-    pass "SKIP_TAGGED per-code coverage: /draft-plan→plan-scale, /investigate→bug-unclear-cause, none→needs-decision, /run-plan→plan-scale; boundaries excluded"
+    pass "SKIP_TAGGED per-code coverage: /draft-plan→plan-scale, /investigate→bug-unclear-cause, none+author-decision→needs-decision, none+leave-open→deferred, /run-plan→plan-scale; boundaries excluded"
   else
     fail "SKIP_TAGGED per-code coverage" "expected '$expected', got [$skip_tagged]"
   fi
@@ -482,12 +491,12 @@ test_skill_phase2_drops_skip_tagged() {
 test_skill_writeback_rewrites_scratchpad() {
   # Each mode (cherry-pick/direct + PR-mode) must contain a case branch
   # mapping plan-scale / bug-unclear-cause / needs-decision /
-  # author-decision to canonical NEW_ACTION_NOW values. Expect >=8
-  # NEW_ACTION_NOW= assignments total (4 cases × 2 modes).
+  # deferred / author-decision to canonical NEW_ACTION_NOW values.
+  # Expect >=10 NEW_ACTION_NOW= assignments total (5 cases × 2 modes).
   local nan_count
   nan_count=$(grep -c '^[[:space:]]*NEW_ACTION_NOW=' "$SKILL")
-  if [ "$nan_count" -lt 8 ]; then
-    fail "SKILL.md NEW_ACTION_NOW count" "expected >=8 (4 cases × 2 modes), got $nan_count"
+  if [ "$nan_count" -lt 10 ]; then
+    fail "SKILL.md NEW_ACTION_NOW count" "expected >=10 (5 cases × 2 modes), got $nan_count"
     return
   fi
   # Load-bearing: the actual `sed -i` rewrite MUST appear EXACTLY 2 times

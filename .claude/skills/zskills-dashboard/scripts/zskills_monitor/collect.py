@@ -1823,7 +1823,10 @@ def _parse_action_now(
 
     Returns `{code, label, source}` when the issue should be skipped:
 
-      - `needs-decision` (amber) — `Action now: none` (author-decision blurb)
+      - `needs-decision` (pink) — `Action now: none` with "author decision"
+        or "decide" in the trailing reason (genuinely needs human input)
+      - `deferred` (grey) — `Action now: none` with any OTHER trailing
+        reason (agent parked the issue; no human input needed)
       - `plan-scale` (blue) — `Action now: /draft-plan`
       - `bug-unclear-cause` (purple) — `Action now: /investigate` OR
         `Verdict: UNCLEAR`
@@ -1883,15 +1886,31 @@ def _parse_action_now(
     # "Fix #1 + #4 prose roll-in (combined /quickfix S). Fix #2 + #3
     # deferred to /draft-plan when prioritized") must NOT match.
     if action_raw:
-        # `none` (typically `none — author decision needed ...`) signals
-        # author-decision tier. Match the bare leading word.
+        # `none` — split into `needs-decision` (genuinely needs human
+        # input: "author decision", "decide between") vs `deferred`
+        # (agent parked the issue: "leave open", "waiting", "deferred",
+        # or any other reason that isn't asking a human to choose).
         if re.match(r"^none\b", action_lc):
-            label = _short_label(action_raw, default="author decision needed")
-            return {
-                "code": "needs-decision",
-                "label": label,
-                "source": source,
-            }
+            # Extract the part after `none` (typically after an em-dash).
+            after_none = re.sub(r"^none\s*[—-]\s*", "", action_lc).strip()
+            is_decision = bool(
+                re.search(r"author decision", after_none)
+                or re.search(r"\bdecide\b", after_none)
+            )
+            if is_decision:
+                label = _short_label(action_raw, default="author decision needed")
+                return {
+                    "code": "needs-decision",
+                    "label": label,
+                    "source": source,
+                }
+            else:
+                label = _short_label(action_raw, default="deferred")
+                return {
+                    "code": "deferred",
+                    "label": label,
+                    "source": source,
+                }
         if re.match(r"^/draft-plan\b", action_lc) or re.match(
             r"^/run-plan\b", action_lc
         ):

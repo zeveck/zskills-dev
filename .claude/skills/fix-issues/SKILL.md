@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.27+75433a"
+  version: "2026.05.27+485965"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -1824,7 +1824,7 @@ in drag order — it does NOT cap at N. Phase 3 then iterates the full
 `CANDIDATE_ISSUES` array (including unresearched tail; see B-proper
 "Per-issue dispatch loop" below), dispatching synchronous
 research-on-demand on cache miss, classifying each issue narratively
-per the 6-bucket rubric, attempting a claim-acquire per actionable
+per the 7-bucket rubric, attempting a claim-acquire per actionable
 pick, and KEEPING the first N that route to **in-batch fix-agent** or
 **/do pr** AND that successfully acquire the per-issue claim. Issues
 that triage to **"Bug with unclear cause"**, **"Plan-scale"**, **"Too
@@ -2015,25 +2015,37 @@ bug (under-routing to in-batch fix-agent).
   - Auto: skip it, report as "Skipped: insufficient context" in
     $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md
 
-- **Author decision needed** — the tracker blurb's `**Action now:**`
-  line value is literally `none` (e.g., `Action now: none — author
-  decision needed`) OR starts with `/draft-plan` or `/run-plan`. The
-  research blurb has explicitly deferred tier-choice to a human;
-  `/fix-issues` is NOT the right surface to second-guess that. Without
-  this bucket, such blurbs get silently shoehorned into "Plan-scale" or
-  "Too vague" and the verbatim `Action now:` recommendation never
-  reaches the user.
+- **Author decision needed** (`needs-decision`) — the tracker blurb's
+  `**Action now:**` line value is literally `none` AND the trailing
+  reason contains "author decision" or "decide" (e.g., `Action now:
+  none — author decision needed on which option`). The research blurb
+  has explicitly deferred tier-choice to a human; `/fix-issues` is NOT
+  the right surface to second-guess that.
   - Interactive: surface the blurb's verbatim `Action now:` value
     alongside the issue number and a one-line note ("author decision
     needed before fix can dispatch"). Do NOT dispatch a fix; wait for
     the user to choose (e.g., re-file, /draft-plan, manual triage).
-  - Auto: skip it with note `Skipped: author decision needed — Action
+  - Auto: skip it with note `Skipped: needs-decision — Action
     now: <verbatim value>`. **Does NOT count toward N** — keep
     iterating (same as the other skip buckets per the "Cap to N happens
     AFTER triage" rule above). The skip MUST appear in the per-fire
     user-facing summary (see "Per-fire user-facing summary" below) so
     repeated cron fires do not silently no-op while a single stable
     `Action now: none` blurb sits at the top of the queue.
+
+- **Deferred** (`deferred`) — the tracker blurb's `**Action now:**`
+  line value is literally `none` BUT the trailing reason does NOT
+  contain "author decision" or "decide" (e.g., `Action now: none —
+  leave open as architectural memo`, `none — waiting on prerequisite
+  plans`). The agent decided no action is needed now; this is NOT
+  awaiting human input. Without this bucket, such blurbs get
+  conflated with `needs-decision` and the dashboard misleadingly
+  implies action is required.
+  - Interactive: surface the blurb's verbatim `Action now:` value
+    alongside the issue number and a one-line note ("deferred — no
+    action now"). Do NOT dispatch a fix.
+  - Auto: skip it with note `Skipped: deferred — Action now:
+    <verbatim value>`. **Does NOT count toward N**.
 
 **Independently size the smallest coherent fix that closes the reported
 defect.** Identify the specific file:line / code-change shape that would
@@ -2146,9 +2158,9 @@ Rules:
   one-sentence rationale. Quote the Action-now value EXACTLY — don't
   paraphrase, don't truncate; it is the load-bearing signal the user
   needs to decide whether to act. Bucket names enumerated by the
-  6-tier triage rubric plus Phase 3's two run-time skip classes:
-  `plan-scale`, `bug-unclear-cause`, `needs-decision`, `too-vague`,
-  `author-decision`, **`race-lost`** (claim-acquire returned exit 10 —
+  7-tier triage rubric plus Phase 3's two run-time skip classes:
+  `plan-scale`, `bug-unclear-cause`, `needs-decision`, `deferred`,
+  `too-vague`, `author-decision`, **`race-lost`** (claim-acquire returned exit 10 —
   concurrent pipeline holds the issue; B-proper loop advanced to the
   next candidate), and **`research-failed`** (Phase 3
   research-on-demand agent did not commit a tracker row for an
@@ -2678,10 +2690,10 @@ list Phase 2 preserved) bounded by `DISPATCHED < N`. On each iteration:
 research agent (same prompt shape Phase 1 step 6 / Phase 2 source-filter
 auto-mode uses) and refresh the index — if research still does not commit
 a row, record `research-failed` and continue; (2) narratively classify
-the candidate per the 6-bucket triage rubric in
+the candidate per the 7-bucket triage rubric in
 "### Triage: vague, complex, or interrelated issues" above — if
 non-actionable (plan-scale / bug-unclear-cause / needs-decision /
-too-vague / author-decision), record the skip and continue; (3) attempt
+deferred / too-vague / author-decision), record the skip and continue; (3) attempt
 the per-issue claim acquire — on race-loss (exit 10), record
 `race-lost` and continue to the next candidate; on filesystem error
 (exit 11+), abort the sprint; on success, materialise the worktree and
@@ -2745,18 +2757,18 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     fi
   fi
 
-  # 2. Narratively classify per the 6-bucket rubric (see "Triage" section
+  # 2. Narratively classify per the 7-bucket rubric (see "Triage" section
   # above). Orchestrator reads the issue body + tracker blurb and selects
   # ONE of: actionable-in-batch, actionable-do-pr, plan-scale,
-  # bug-unclear-cause, needs-decision (== "Bug with unclear cause"),
+  # bug-unclear-cause, needs-decision, deferred,
   # too-vague, author-decision. Skip buckets do NOT count toward N.
   # CLASS is computed inline-narratively (no helper script):
   #   CLASS="actionable-in-batch" | "actionable-do-pr"
   #       | "plan-scale" | "bug-unclear-cause" | "needs-decision"
-  #       | "too-vague" | "author-decision"
+  #       | "deferred" | "too-vague" | "author-decision"
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
-    plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+    plan-scale|bug-unclear-cause|needs-decision|deferred|too-vague|author-decision)
       # PR-2 / A+F write-back: rewrite the scratchpad's `**Action now:**`
       # line to the canonical skip-value BEFORE promotion + commit, so the
       # next fire's filter-script SKIP_TAGGED output picks up this
@@ -2776,6 +2788,9 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
             ;;
           needs-decision|author-decision)
             NEW_ACTION_NOW="**Action now:** none — author decision needed on direction; not auto-fixable."
+            ;;
+          deferred)
+            NEW_ACTION_NOW="**Action now:** none — deferred; no action needed now."
             ;;
           too-vague)
             : ;;  # leave scratchpad untouched
@@ -3007,7 +3022,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   # CLASS computed inline by the orchestrator.
   case "$CLASS" in
     actionable-in-batch|actionable-do-pr) ;;
-    plan-scale|bug-unclear-cause|needs-decision|too-vague|author-decision)
+    plan-scale|bug-unclear-cause|needs-decision|deferred|too-vague|author-decision)
       # PR-2 / A+F write-back: rewrite the scratchpad's `**Action now:**`
       # line NOW so when the end-of-Phase-3 sync-PR ships these rows they
       # carry the canonical skip-tag. main_protected blocks direct commit
@@ -3026,6 +3041,9 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
             ;;
           needs-decision|author-decision)
             NEW_ACTION_NOW="**Action now:** none — author decision needed on direction; not auto-fixable."
+            ;;
+          deferred)
+            NEW_ACTION_NOW="**Action now:** none — deferred; no action needed now."
             ;;
           too-vague)
             : ;;  # leave scratchpad untouched

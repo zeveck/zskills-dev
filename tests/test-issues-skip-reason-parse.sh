@@ -1,9 +1,10 @@
 #!/bin/bash
-# Tests for zskills_monitor.collect._parse_action_now (issue #445).
+# Tests for zskills_monitor.collect._parse_action_now (issue #445, #721).
 #
 # Drives the parser against synthetic + real tracker fixtures to assert
-# the 5 derivation outcomes (4 skip codes + actionable null):
-#   - needs-decision  (Action now: none)
+# the 6 derivation outcomes (5 skip codes + actionable null):
+#   - needs-decision  (Action now: none + "author decision" or "decide")
+#   - deferred        (Action now: none + anything else)
 #   - plan-scale      (Action now: /draft-plan or /run-plan)
 #   - bug-unclear-cause (Action now: /investigate OR Verdict: UNCLEAR)
 #   - unresearched    (Verdict: NOT YET RESEARCHED OR missing blurb)
@@ -117,6 +118,24 @@ SYNTHETIC = """
 
 **Complexity:** M. **Action now:** none — author decision needed on which option (or defer entirely). If author picks option 1 or 3, escalate to `/draft-plan`. If option 2, single `/do pr`.
 
+---
+
+### #111 — deferred: none + leave open as architectural memo
+
+**Complexity:** L. **Action now:** none — leave open as architectural memo.
+
+---
+
+### #112 — deferred: none + waiting on prerequisite plans
+
+**Action now:** none — waiting on prerequisite plans to land first.
+
+---
+
+### #113 — needs-decision: none + decide between options
+
+**Action now:** none — decide between option A and option B before proceeding.
+
 """
 
 expected = {
@@ -131,6 +150,9 @@ expected = {
     108: None,
     109: None,  # mid-text mention must not match
     110: ("needs-decision", None),  # label content varies, but <=60 chars
+    111: ("deferred", "leave open as architectural memo"),
+    112: ("deferred", "waiting on prerequisite plans to land first"),
+    113: ("needs-decision", None),  # "decide between" triggers needs-decision
     999: ("unresearched", "not yet researched"),  # missing section
 }
 
@@ -166,8 +188,8 @@ if tracker_path.is_file():
         if n not in idx:
             failures.append(f"_build_skip_reason_index: missing entry for #{n}")
     # Real-tracker spot-check (regression guards):
-    if idx.get(67) is None or idx[67].get("code") != "needs-decision":
-        failures.append(f"real-tracker #67 expected needs-decision, got {idx.get(67)!r}")
+    if idx.get(67) is None or idx[67].get("code") != "deferred":
+        failures.append(f"real-tracker #67 expected deferred, got {idx.get(67)!r}")
     if idx.get(432) is None or idx[432].get("code") != "needs-decision":
         failures.append(f"real-tracker #432 expected needs-decision, got {idx.get(432)!r}")
     if idx.get(429) is not None:
@@ -216,7 +238,7 @@ for line in data['failures']:
   if [ -z "$FAIL_LINES" ]; then
     # Each expected case = 1 pass for granular counting.
     for desc in \
-      "synthetic #100 needs-decision (none + em-dash label)" \
+      "synthetic #100 needs-decision (none + author decision)" \
       "synthetic #101 plan-scale (/draft-plan prefix)" \
       "synthetic #102 plan-scale (/run-plan prefix)" \
       "synthetic #103 bug-unclear-cause (/investigate prefix)" \
@@ -225,6 +247,9 @@ for line in data['failures']:
       "synthetic #106-108 actionable null (/do pr, /quickfix, sprint)" \
       "synthetic #109 mid-text /draft-plan in qualified action -> null" \
       "synthetic #110 long-label truncates to <=60 chars" \
+      "synthetic #111 deferred (none + leave open)" \
+      "synthetic #112 deferred (none + waiting)" \
+      "synthetic #113 needs-decision (none + decide between)" \
       "synthetic #999 missing section -> unresearched" \
       "real-tracker spot-check (67/432/429/999999)" \
       "_build_skip_reason_index missing-file fallback" \
