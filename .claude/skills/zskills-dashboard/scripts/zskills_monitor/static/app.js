@@ -146,7 +146,7 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
     toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
     const lbl = labelText || toggle.dataset.column || "";
     toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + lbl);
-    toggle.textContent = collapsed ? "▸" : "▾";
+    toggle.innerHTML = collapsed ? SVG_ICONS.plus : SVG_ICONS.minus; // chrome-only
   }
   // Issue #700 — collapsed-column preview strip. When collapsed, inject a
   // compact summary showing "Label (N)" plus the first 1-2 card titles so
@@ -178,14 +178,14 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
     text: colLabel + " (" + count + ")",
   });
   summary.appendChild(countSpan);
-  // Append first 1-2 card titles as a teaser.
+  // Append first 3 card titles as a teaser.
   const titles = [];
-  for (let i = 0; i < Math.min(2, cards.length); i++) {
+  for (let i = 0; i < Math.min(3, cards.length); i++) {
     const card = cards[i];
     const titleEl = card.querySelector(".card-title, .card-title-link");
     if (titleEl) {
       let t = titleEl.textContent || "";
-      if (t.length > 40) t = t.slice(0, 37) + "...";
+      if (t.length > 35) t = t.slice(0, 32) + "...";
       titles.push(t);
     }
   }
@@ -214,7 +214,7 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
 // delegated click handler (handleAction) flips state and re-applies.
 function appendCollapseToggle(head, kind, col, labelText) {
   const toggle = el("button", {
-    cls: "column-collapse-toggle",
+    cls: "column-head-btn column-collapse-toggle",
     attrs: {
       type: "button",
       "data-action": "column-collapse-toggle",
@@ -224,7 +224,7 @@ function appendCollapseToggle(head, kind, col, labelText) {
       "aria-label": "Collapse " + labelText,
       title: "Collapse / expand",
     },
-    text: "▾",
+    html: SVG_ICONS.minus,
   });
   head.appendChild(toggle);
   return toggle;
@@ -244,7 +244,8 @@ function el(tag, opts) {
   const node = document.createElement(tag);
   if (!opts) return node;
   if (opts.cls) node.className = opts.cls;
-  if (opts.text != null) node.textContent = String(opts.text);
+  if (opts.html != null) node.innerHTML = opts.html; // chrome-only
+  else if (opts.text != null) node.textContent = String(opts.text);
   if (opts.attrs) {
     for (const k of Object.keys(opts.attrs)) {
       const v = opts.attrs[k];
@@ -253,6 +254,21 @@ function el(tag, opts) {
   }
   return node;
 }
+
+var SVG_ICONS = {
+  chevronLeft: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5"/></svg>',
+  chevronRight: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>',
+  chevronsLeft: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3L3 8l5 5"/><path d="M13 3L8 8l5 5"/></svg>',
+  chevronsRight: '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l5 5-5 5"/><path d="M8 3l5 5-5 5"/></svg>',
+  arrowUp: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3"/><path d="M3 7l5-5 5 5"/></svg>',
+  arrowDown: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10"/><path d="M3 9l5 5 5-5"/></svg>',
+  arrowLeft: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8H3"/><path d="M7 3L2 8l5 5"/></svg>',
+  arrowRight: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10"/><path d="M9 3l5 5-5 5"/></svg>',
+  x: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 4l8 8"/><path d="M12 4l-8 8"/></svg>',
+  copy: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M2 11V3a1.5 1.5 0 011.5-1.5H11"/></svg>',
+  minus: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 8h8"/></svg>',
+  plus: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 8h8"/><path d="M8 4v8"/></svg>',
+};
 
 // titleNode(text, href) — returns a span containing either plain text
 // (when href is empty) or an <a> with target=_blank. Anchors carry
@@ -799,7 +815,7 @@ function fingerprintIssues(issues, queues) {
     trunc: trunc,
     cw: _gcwI ? _gcwI("issue") : null,
     rows: issues.map(i => [
-      i.number, i.title, (i.labels || []).slice().sort(), i.created_at,
+      i.number, i.title, (i.labels || []).map(function(l) { return (l && l.name) || l; }).sort(), i.created_at,
       pos[i.number] || [(i.queue && i.queue.column) || "triage", -1],
       // Claim state — DA5: without this, the fingerprint is byte-identical
       // between "no claim" and "claim present" snapshots, so applySnapshot
@@ -1003,20 +1019,28 @@ function buildPlanCard(plan, slug, col, defaultMode) {
       attrs: { role: "group", "aria-label": isCompleted ? "Plan actions" : "Move this plan" },
     });
     if (!isCompleted) {
+      var writablePlanCols = ["drafted", "reviewed", "ready", "backlog", "discarded"];
+      var planColIdx = writablePlanCols.indexOf(col);
       controls.appendChild(makeMoveBtn("plan-up", slug, "↑", "Move up"));
       controls.appendChild(makeMoveBtn("plan-down", slug, "↓", "Move down"));
-      controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
-      controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
-      controls.appendChild(el("button", {
-        cls: "remove-btn",
-        attrs: {
-          type: "button",
-          "data-action": "plan-discard",
-          "data-slug": slug,
-          "aria-label": "Discard plan (move to Discarded)",
-        },
-        text: "✕",
-      }));
+      if (planColIdx > 0) {
+        controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
+      }
+      if (planColIdx >= 0 && planColIdx < writablePlanCols.length - 1) {
+        controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
+      }
+      if (col !== "discarded") {
+        controls.appendChild(el("button", {
+          cls: "remove-btn",
+          attrs: {
+            type: "button",
+            "data-action": "plan-discard",
+            "data-slug": slug,
+            "aria-label": "Discard plan (move to Discarded)",
+          },
+          html: SVG_ICONS.x,
+        }));
+      }
     }
     controls.appendChild(makeCopyBtn((plan && plan.title) || slug));
     card.appendChild(controls);
@@ -1025,7 +1049,10 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   return card;
 }
 
+var MOVE_ICON_MAP = {"↑": "arrowUp", "↓": "arrowDown", "←": "arrowLeft", "→": "arrowRight"};
+
 function makeMoveBtn(action, slug, label, ariaLabel) {
+  var icon = MOVE_ICON_MAP[label] ? SVG_ICONS[MOVE_ICON_MAP[label]] : label;
   return el("button", {
     cls: "move-btn",
     attrs: {
@@ -1034,11 +1061,12 @@ function makeMoveBtn(action, slug, label, ariaLabel) {
       "data-slug": slug,
       "aria-label": ariaLabel,
     },
-    text: label,
+    html: icon,
   });
 }
 
 function makeIssueMoveBtn(action, num, label, ariaLabel) {
+  var icon = MOVE_ICON_MAP[label] ? SVG_ICONS[MOVE_ICON_MAP[label]] : label;
   return el("button", {
     cls: "move-btn",
     attrs: {
@@ -1047,7 +1075,7 @@ function makeIssueMoveBtn(action, num, label, ariaLabel) {
       "data-number": String(num),
       "aria-label": ariaLabel,
     },
-    text: label,
+    html: icon,
   });
 }
 
@@ -1062,14 +1090,14 @@ function makeCopyBtn(titleText) {
       "data-action": "copy-title",
       "aria-label": "Copy title to clipboard",
     },
-    text: "📋",
+    html: SVG_ICONS.copy,
   });
   btn.addEventListener("click", function(e) {
     e.stopPropagation();
     e.preventDefault();
     navigator.clipboard.writeText(titleText).then(function() {
       btn.textContent = "✓";
-      setTimeout(function() { btn.textContent = "📋"; }, 1500);
+      setTimeout(function() { btn.innerHTML = SVG_ICONS.copy; }, 1500); // chrome-only
     });
   });
   return btn;
@@ -1083,8 +1111,9 @@ function makeCopyBtn(titleText) {
 // race window where a poll-driven claim lands between the click and the
 // per-card dispatch.
 function makeColumnMoveAllBtn(action, kind, column, label, ariaLabel) {
+  var icon = label === "«" ? SVG_ICONS.chevronsLeft : SVG_ICONS.chevronsRight;
   return el("button", {
-    cls: "move-all-btn",
+    cls: "column-head-btn move-all-btn",
     attrs: {
       type: "button",
       tabindex: "0",
@@ -1093,7 +1122,7 @@ function makeColumnMoveAllBtn(action, kind, column, label, ariaLabel) {
       "data-column": column,
       "aria-label": ariaLabel,
     },
-    text: label,
+    html: icon,
   });
 }
 
@@ -1250,9 +1279,8 @@ function renderBranches(branches, worktrees) {
   const backed = backedBranchSet(worktrees);
   const byBranch = worktreesByBranch(worktrees);
   for (const b of branches) {
-    const dim = backed.has(b.name);
     const card = el("article", {
-      cls: dim ? "card dim" : "card",
+      cls: "card",
       attrs: {
         tabindex: "0",
         role: "button",
@@ -1405,7 +1433,15 @@ function buildIssueCard(issue, num, col) {
   if (issue && (issue.labels || []).length) {
     const labels = el("div", { cls: "card-sub" });
     for (const lab of issue.labels) {
-      labels.appendChild(el("span", { cls: "label-chip", text: lab }));
+      const name = (lab && lab.name) || lab || "";
+      const color = (lab && lab.color) || "";
+      const chip = el("span", { cls: "label-chip", text: name });
+      if (color) {
+        chip.style.color = "#" + color;
+        chip.style.borderColor = "#" + color;
+        chip.style.background = "#" + color + "18";
+      }
+      labels.appendChild(chip);
     }
     card.appendChild(labels);
   }
@@ -1420,18 +1456,14 @@ function buildIssueCard(issue, num, col) {
     if (!isCompleted) {
       controls.appendChild(makeIssueMoveBtn("issue-up", num, "↑", "Move up"));
       controls.appendChild(makeIssueMoveBtn("issue-down", num, "↓", "Move down"));
-      controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
-      controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
-      controls.appendChild(el("button", {
-        cls: "remove-btn",
-        attrs: {
-          type: "button",
-          "data-action": "issue-remove",
-          "data-number": String(num),
-          "aria-label": "Remove issue from queue",
-        },
-        text: "✕",
-      }));
+      var writableIssueCols = ["triage", "ready", "backlog"];
+      var colIdx = writableIssueCols.indexOf(col);
+      if (colIdx > 0) {
+        controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
+      }
+      if (colIdx >= 0 && colIdx < writableIssueCols.length - 1) {
+        controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
+      }
     }
     const issueTitle = issue ? ("#" + num + " " + (issue.title || "")) : ("#" + num);
     controls.appendChild(makeCopyBtn(issueTitle));
@@ -1545,9 +1577,8 @@ function renderIssues(issues, queues) {
 // it is expanded first. The strip uses `data-action="section-nav-pill"` so
 // the shared delegated click handler in handleAction dispatches it.
 //
-// Sections:
-//   Plans:  Active (drafted+reviewed+ready), Backlog, Discarded, Completed
-//   Issues: Active (triage+ready), Backlog, Completed
+// Sections: one pill per column (Drafted, Reviewed, Ready, ... for plans;
+// Triage, Ready, Backlog, Completed for issues). Discarded skipped for issues.
 function buildSectionNavStrip(kind, queues) {
   const strip = el("nav", {
     cls: "section-nav-strip",
@@ -1559,22 +1590,14 @@ function buildSectionNavStrip(kind, queues) {
   const activeCols = (kind === "plan") ? ACTIVE_PLAN_COLUMNS : ACTIVE_ISSUE_COLUMNS;
   const labels = (kind === "plan") ? PLAN_COLUMN_LABELS : ISSUE_COLUMN_LABELS;
 
-  // Active section — aggregate count across the active columns.
-  let activeCount = 0;
-  for (const c of activeCols) {
-    activeCount += (queueDict[c] || []).length;
-  }
-  // The first active column's head id is the scroll target for the active
-  // section pill (top of the column grid).
-  const activeTarget = (kind === "plan" ? "plans" : "issues") + "-col-" + activeCols[0];
-  strip.appendChild(buildNavPill("Active", activeCount, activeTarget, kind, null));
-
-  // Below-band sections — one pill per BELOW_BAND_COLUMNS entry,
-  // skipping discarded for the issues panel (mirrors renderBelowPanelBand).
-  for (const c of BELOW_BAND_COLUMNS) {
+  // One pill per column — active columns first, then below-band.
+  var allCols = (kind === "plan") ? PLAN_COLUMNS : ISSUE_COLUMNS;
+  var prefix = (kind === "plan") ? "plans" : "issues";
+  for (var ci = 0; ci < allCols.length; ci++) {
+    var c = allCols[ci];
     if (c === "discarded" && kind !== "plan") continue;
-    const count = (queueDict[c] || []).length;
-    const headId = (kind === "plan" ? "plans" : "issues") + "-col-" + c;
+    var count = (queueDict[c] || []).length;
+    var headId = prefix + "-col-" + c;
     strip.appendChild(buildNavPill(labels[c], count, headId, kind, c));
   }
   return strip;
@@ -1936,8 +1959,8 @@ function renderRunStatus(ws) {
     root.appendChild(el("code", { cls: "run-cmd-snippet", text: cmd }));
     const copyBtn = el("button", {
       cls: "copy-btn",
-      attrs: { type: "button", "data-action": "copy-cmd", "data-cmd": cmd },
-      text: "Copy",
+      attrs: { type: "button", "data-action": "copy-cmd", "data-cmd": cmd, "aria-label": "Copy command" },
+      html: SVG_ICONS.copy,
     });
     root.appendChild(copyBtn);
   }
@@ -2125,21 +2148,22 @@ async function movePlan(slug, dCol, dIdxAdjust) {
   } else if (dCol === "down") {
     targetIdx = Math.min(next.plans[loc.col].length, loc.idx + 1);
   } else if (dCol === "left") {
-    const ci = PLAN_COLUMNS.indexOf(loc.col);
+    var writablePlanCols = ["drafted", "reviewed", "ready", "backlog", "discarded"];
+    const ci = writablePlanCols.indexOf(loc.col);
     if (ci <= 0) {
-      // Restore — no-op.
       next.plans[loc.col].splice(loc.idx, 0, entry);
       return;
     }
-    targetCol = PLAN_COLUMNS[ci - 1];
+    targetCol = writablePlanCols[ci - 1];
     targetIdx = next.plans[targetCol].length;
   } else if (dCol === "right") {
-    const ci = PLAN_COLUMNS.indexOf(loc.col);
-    if (ci >= PLAN_COLUMNS.length - 1) {
+    var writablePlanCols2 = ["drafted", "reviewed", "ready", "backlog", "discarded"];
+    const ci = writablePlanCols2.indexOf(loc.col);
+    if (ci < 0 || ci >= writablePlanCols2.length - 1) {
       next.plans[loc.col].splice(loc.idx, 0, entry);
       return;
     }
-    targetCol = PLAN_COLUMNS[ci + 1];
+    targetCol = writablePlanCols2[ci + 1];
     targetIdx = next.plans[targetCol].length;
   } else if (typeof dCol === "object" && dCol && dCol.col) {
     targetCol = dCol.col;
@@ -2183,20 +2207,22 @@ async function moveIssue(num, dCol) {
   } else if (dCol === "down") {
     targetIdx = Math.min(next.issues[loc.col].length, loc.idx + 1);
   } else if (dCol === "left") {
-    const ci = ISSUE_COLUMNS.indexOf(loc.col);
+    var writableIssueCols = ["triage", "ready", "backlog"];
+    const ci = writableIssueCols.indexOf(loc.col);
     if (ci <= 0) {
       next.issues[loc.col].splice(loc.idx, 0, entry);
       return;
     }
-    targetCol = ISSUE_COLUMNS[ci - 1];
+    targetCol = writableIssueCols[ci - 1];
     targetIdx = next.issues[targetCol].length;
   } else if (dCol === "right") {
-    const ci = ISSUE_COLUMNS.indexOf(loc.col);
-    if (ci >= ISSUE_COLUMNS.length - 1) {
+    var writableIssueCols2 = ["triage", "ready", "backlog"];
+    const ci = writableIssueCols2.indexOf(loc.col);
+    if (ci < 0 || ci >= writableIssueCols2.length - 1) {
       next.issues[loc.col].splice(loc.idx, 0, entry);
       return;
     }
-    targetCol = ISSUE_COLUMNS[ci + 1];
+    targetCol = writableIssueCols2[ci + 1];
     targetIdx = next.issues[targetCol].length;
   } else if (typeof dCol === "object" && dCol && dCol.col) {
     targetCol = dCol.col;
@@ -2643,8 +2669,17 @@ function renderIssueModal(issue) {
   if ((issue.labels || []).length) {
     const labels = el("div");
     for (const lab of issue.labels) {
-      const name = (lab && lab.name) || lab;
-      if (name) labels.appendChild(el("span", { cls: "label-chip", text: name }));
+      const name = (lab && lab.name) || lab || "";
+      const color = (lab && lab.color) || "";
+      if (name) {
+        const chip = el("span", { cls: "label-chip", text: name });
+        if (color) {
+          chip.style.color = "#" + color;
+          chip.style.borderColor = "#" + color;
+          chip.style.background = "#" + color + "18";
+        }
+        labels.appendChild(chip);
+      }
     }
     modal.body.appendChild(labels);
   }
@@ -3009,6 +3044,18 @@ function boot() {
   setActiveTab(readTabFromHash(), { pushHash: false });  // NEW
   schedulePoll(0);
   scheduleWorkPoll(0);
+
+  // Persist activity-strip resize height across reloads.
+  var actStrip = document.getElementById("activity-strip");
+  if (actStrip) {
+    var savedH = localStorage.getItem("zskills:dashboard:activity-height");
+    if (savedH) actStrip.style.height = savedH;
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(function() {
+        localStorage.setItem("zskills:dashboard:activity-height", actStrip.style.height || (actStrip.offsetHeight + "px"));
+      }).observe(actStrip);
+    }
+  }
 }
 
 if (document.readyState === "loading") {

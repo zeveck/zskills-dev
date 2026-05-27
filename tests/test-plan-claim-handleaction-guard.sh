@@ -153,6 +153,8 @@ const harness = `
 let repoUrl = "https://example.invalid/repo";
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
+var SVG_ICONS = {chevronLeft:"",chevronsLeft:"",chevronRight:"",chevronsRight:"",arrowUp:"",arrowDown:"",arrowLeft:"",arrowRight:"",x:"",copy:"",minus:"",plus:""};
+var MOVE_ICON_MAP = {};
 function currentEntryMode(_slug) { return null; }
 
 ${elBlock}
@@ -242,7 +244,7 @@ function findAllByAttr(root, k, v) {
       pipeline_short: "blk-abc",
     },
   };
-  const card = buildPlanCard(plan, "blocked", "in-progress", "phase");
+  const card = buildPlanCard(plan, "blocked", "ready", "phase");
 
   const actions = ["plan-up", "plan-down", "plan-left", "plan-right", "plan-discard"];
   for (const action of actions) {
@@ -289,7 +291,7 @@ function findAllByAttr(root, k, v) {
     slug: "free", title: "P", status: "active", landing_mode: "pr",
     phase_count: 3, phases_done: 0,
   };
-  const card = buildPlanCard(plan, "free", "drafted", "phase");
+  const card = buildPlanCard(plan, "free", "ready", "phase");
   globalThis.__resetCalls();
   for (const action of ["plan-up", "plan-down", "plan-left", "plan-right"]) {
     const btn = findAllByAttr(card, "data-action", action)[0];

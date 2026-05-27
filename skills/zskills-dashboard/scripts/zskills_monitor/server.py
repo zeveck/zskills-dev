@@ -714,6 +714,9 @@ class MonitorHandler(BaseHTTPRequestHandler):
         if decoded_path == "/favicon.svg":
             self._serve_static_file("favicon.svg", "image/svg+xml")
             return
+        if decoded_path == "/sampler.html":
+            self._serve_static_file("sampler.html", "text/html")
+            return
         if decoded_path == "/favicon.ico":
             # Many browsers request /favicon.ico by default. We serve the
             # SVG with the SVG MIME type — modern browsers (Firefox,

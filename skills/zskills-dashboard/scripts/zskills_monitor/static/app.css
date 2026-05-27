@@ -64,19 +64,7 @@ code, pre, .mono {
   font-weight: 600;
 }
 
-.under-construction {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 12px;
-  margin-right: auto;
-  padding: 4px 10px;
-  font-size: 0.8rem;
-  color: var(--accent2);
-  border: 1px solid var(--accent2);
-  border-radius: 999px;
-  white-space: nowrap;
-  cursor: help;
-}
+/* Under Construction marker removed — dashboard is production-ready. */
 
 .topbar-meta {
   font-size: 0.85rem;
@@ -345,6 +333,7 @@ code, pre, .mono {
 .pill {
   display: inline-block;
   padding: 1px 8px;
+  margin-left: 6px;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -373,13 +362,16 @@ code, pre, .mono {
 
 .label-chip {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 2px 8px;
   margin-right: 4px;
-  font-size: 0.7rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(88, 166, 255, 0.1);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 999px;
+  color: var(--accent);
 }
 
 /* Skip-reason chip (issue #445, #721) — surfaces tracker-derived skip class
@@ -457,14 +449,15 @@ code, pre, .mono {
    aesthetic but uses neutral grey to read as informational, not active. */
 .closure-chip {
   display: inline-block;
-  padding: 3px 10px;
+  padding: 1px 8px;
   margin: 4px 4px 4px 0;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  background: rgba(139, 148, 158, 0.18);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface);
   border: 1px solid var(--text-dim);
-  border-left-width: 4px;
-  border-radius: 4px;
+  border-radius: 999px;
   color: var(--text-dim);
   max-width: 100%;
   overflow: hidden;
@@ -506,9 +499,9 @@ code, pre, .mono {
 
 .activity-row .a-pipe { color: var(--accent2); }
 .activity-row .a-skill { color: var(--accent); }
-.activity-row .a-status-pass    { color: var(--green); }
-.activity-row .a-status-fail    { color: var(--red); }
-.activity-row .a-status-running { color: var(--orange); }
+.activity-row .a-status-pass    { color: var(--green); border-color: var(--green); }
+.activity-row .a-status-fail    { color: var(--red); border-color: var(--red); }
+.activity-row .a-status-running { color: var(--orange); border-color: var(--orange); }
 .activity-row .a-parent { color: var(--text-dim); font-style: italic; margin-left: 6px; }
 .activity-row .a-subject { color: var(--text); }
 .activity-row .a-time { color: var(--text-dim); }
@@ -765,7 +758,7 @@ code, pre, .mono {
 .clear-stale-btn,
 .add-mini-btn {
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-dim);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 3px 9px;
@@ -773,6 +766,7 @@ code, pre, .mono {
   cursor: pointer;
   font-family: inherit;
 }
+.copy-btn { margin-left: auto; }
 
 .run-btn:hover,
 .run-btn:focus-visible,
@@ -834,6 +828,7 @@ code, pre, .mono {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   min-height: 60px;
 }
 
@@ -862,17 +857,37 @@ code, pre, .mono {
    #700 — enlarged from 0.9em/0 0.2em to 1.1em/2px 6px for a bigger hit
    target + visual weight; subtle background on hover so the toggle reads
    as interactive. */
-.column-collapse-toggle {
-  background: none;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-size: 1.1em;
-  padding: 2px 6px;
+/* SVG icons inside buttons: vertical centering. */
+button svg { display: inline-block; vertical-align: middle; }
+
+/* Shared base for column-header action buttons (move-all + collapse toggle).
+   Ensures consistent height, padding, and border treatment. */
+.column-head-btn {
+  background: var(--surface2);
   color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 28px;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.column-head-btn:hover,
+.column-head-btn:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+  outline: none;
+}
+
+.column-collapse-toggle {
   margin-left: 0.4em;
-  line-height: 1;
-  border-radius: 4px;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  width: 28px;
 }
 .column-head > .column-collapse-toggle:last-child {
   margin-left: auto;
@@ -880,13 +895,7 @@ code, pre, .mono {
 .column-head .move-all-group + .column-collapse-toggle {
   margin-left: 0.4em;
 }
-.column-collapse-toggle:hover,
-.column-collapse-toggle:focus-visible {
-  color: var(--text);
-  background: rgba(88, 166, 255, 0.1);
-  border-color: var(--border);
-  outline: none;
-}
+/* collapse-toggle hover/focus handled by .column-head-btn base */
 
 /* Collapsed: hide the dropzone list; keep the header visible with count +
    toggle. The column itself stays in the flex/grid flow so its width is
@@ -908,25 +917,30 @@ code, pre, .mono {
    removes it). Shows a compact "Label (N) — title1, title2" line so
    collapsed columns convey content at a glance. */
 .collapsed-summary {
-  padding: 4px 8px;
-  font-size: 0.78rem;
+  padding: 6px 10px;
+  margin-top: 2px;
+  font-size: 0.82rem;
   color: var(--text-dim);
   border-top: 1px solid var(--border);
+  background: rgba(88, 166, 255, 0.03);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+  border-radius: 0 0 4px 4px;
 }
 .collapsed-summary:hover {
   color: var(--text);
+  background: rgba(88, 166, 255, 0.06);
 }
 .collapsed-summary .collapsed-summary-count {
   font-weight: 600;
   color: var(--text);
 }
 .collapsed-summary .collapsed-summary-titles {
-  margin-left: 0.4em;
+  margin-left: 0.5em;
   font-style: italic;
+  color: var(--text-dim);
 }
 
 .dropzone {
@@ -1105,12 +1119,18 @@ code, pre, .mono {
   background: var(--surface);
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 0.85rem;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
   cursor: pointer;
   font-family: inherit;
   line-height: 1;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .move-btn:hover,
@@ -1135,27 +1155,7 @@ code, pre, .mono {
   margin-left: auto;
 }
 
-.move-all-btn {
-  background: var(--surface2);
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
-}
-
-.move-all-btn:hover,
-.move-all-btn:focus-visible {
-  color: var(--text);
-  border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.12);
-  outline: none;
-}
+/* move-all-btn inherits from .column-head-btn; no overrides needed. */
 
 /* Skipped-card shake — fires for cards left behind by a column move-all
    because they're claimed (aria-disabled="true"). Visible jitter (~8px

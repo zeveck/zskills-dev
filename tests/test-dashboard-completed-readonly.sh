@@ -116,6 +116,8 @@ let repoUrl = "https://example.invalid/repo";
 let lastGoodQueues = null;
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
+var SVG_ICONS = {chevronLeft:"",chevronsLeft:"",chevronRight:"",chevronsRight:"",arrowUp:"",arrowDown:"",arrowLeft:"",arrowRight:"",x:"",copy:"",minus:"",plus:""};
+var MOVE_ICON_MAP = {};
 
 ${elBlock}
 ${titleNodeBlock}
@@ -240,8 +242,8 @@ function findByClass(root, cls) {
     "T4.8.c ready issue retains draggable='true'");
   expectTrue(findByClass(card, "card-controls"),
     "T4.8.c ready issue emits .card-controls block");
-  expectTrue(findByClass(card, "remove-btn"),
-    "T4.8.c ready issue emits .remove-btn");
+  expect(findByClass(card, "remove-btn"), null,
+    "T4.8.c ready issue has no .remove-btn (issue X removed pending issues-side Discarded)");
 }
 {
   // file:"plans/live.md" supplies the planUrl, so titleNode emits the
