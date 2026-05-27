@@ -11,7 +11,7 @@
 # `### #<N> ` section in any tracker file under $ZSKILLS_ISSUES_DIR are
 # RESEARCHED; the rest are MISSING. Additionally, candidates whose
 # Action-now value resolves to a canonical dashboard skip-code
-# (`plan-scale`, `bug-unclear-cause`, `needs-decision`) are also emitted
+# (`plan-scale`, `bug-unclear-cause`, `needs-decision`, `deferred`) are also emitted
 # in a third SKIP_TAGGED line so Phase 2 A can drop them from
 # CANDIDATE_ISSUES before triage (PR 2 / #606 tax fix).
 #
@@ -92,8 +92,14 @@ for N in "$@"; do
           val_lc = tolower(val)
           # Priority: none → /draft-plan|/run-plan → /investigate.
           # POSIX-portable boundary: NOT [:alnum:]_- or end-of-string.
+          # `none` splits into needs-decision (human input required:
+          # "author decision" or "decide") vs deferred (agent-parked).
           if (val_lc ~ /^none([^[:alnum:]_-]|$)/) {
-            print "SKIP=needs-decision"
+            if (val_lc ~ /author decision/ || val_lc ~ /[^[:alnum:]_-]decide([^[:alnum:]_-]|$)/) {
+              print "SKIP=needs-decision"
+            } else {
+              print "SKIP=deferred"
+            }
           } else if (val_lc ~ /^\/draft-plan([^[:alnum:]_-]|$)/ || val_lc ~ /^\/run-plan([^[:alnum:]_-]|$)/) {
             print "SKIP=plan-scale"
           } else if (val_lc ~ /^\/investigate([^[:alnum:]_-]|$)/) {
