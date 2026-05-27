@@ -1972,3 +1972,18 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint —  [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #704 | Restore ZSKILLS_DASHBOARD_ROOT SKILL.md wiring | fix-issue-704 | e3aa820 | 5957/5957 | PASS (diff + mirror + ref count + full suite) | N/A |
+
+### Skipped
+(none — single-candidate fire)
+
+### Not Fixed
+(none)
