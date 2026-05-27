@@ -7,7 +7,7 @@
 #   T3.11.a  buildPlanCard renders claim chip + aria-disabled
 #   T3.11.b  Chip text format: "in-flight · <pidShort> · phase N/M · <ageStr>"
 #   T3.11.c  Unparseable current_phase falls back to "phase ?/M"
-#   T3.11.d  Null pipeline_short / heartbeat fall back to "?"
+#   T3.11.d  Null pipeline_short / started_at fall back to "?"
 #   T3.11.e  Unclaimed plan retains draggable + no chip
 #
 # Plus static-grep contracts (CSS class reuse + collector field shape).
@@ -226,7 +226,6 @@ function findByClass(root, cls) {
     claim: {
       pipeline_id: "run-plan.foo",
       started_at: new Date(Date.now() - 60000).toISOString(),
-      last_heartbeat_at: new Date(Date.now() - 30000).toISOString(),
       current_phase: "Phase 3",
       age_seconds: 30,
       pipeline_short: "foo-abc",
@@ -255,7 +254,6 @@ function findByClass(root, cls) {
     claim: {
       pipeline_id: "run-plan.bar",
       started_at: new Date(Date.now() - 60000).toISOString(),
-      last_heartbeat_at: new Date(Date.now() - 30000).toISOString(),
       current_phase: "Phase 3",
       age_seconds: 30,
       pipeline_short: "bar-xyz",
@@ -290,7 +288,6 @@ function findByClass(root, cls) {
     claim: {
       pipeline_id: "run-plan.section-name",
       started_at: new Date(Date.now() - 60000).toISOString(),
-      last_heartbeat_at: new Date(Date.now() - 30000).toISOString(),
       current_phase: "Parse plan",  // section-name header, no "Phase N"
       age_seconds: 30,
       pipeline_short: "section-abc",
@@ -315,7 +312,6 @@ function findByClass(root, cls) {
     claim: {
       pipeline_id: "run-plan.null-phase",
       started_at: new Date().toISOString(),
-      last_heartbeat_at: new Date().toISOString(),
       current_phase: null,
       age_seconds: 1,
       pipeline_short: "np",
@@ -331,7 +327,7 @@ function findByClass(root, cls) {
 }
 
 // ------------------------------------------------------------------
-// T3.11.d — null pipeline_short / heartbeat fall back to "?"
+// T3.11.d — null pipeline_short / started_at fall back to "?"
 // ------------------------------------------------------------------
 {
   const plan = {
@@ -340,7 +336,6 @@ function findByClass(root, cls) {
     claim: {
       pipeline_id: null,
       started_at: null,
-      last_heartbeat_at: null,
       current_phase: null,
       age_seconds: null,
       pipeline_short: null,

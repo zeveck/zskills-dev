@@ -1642,12 +1642,11 @@ def _annotate_plans_queue(
         if isinstance(slug, str) and slug in plan_claim_index:
             c = plan_claim_index[slug]
             plan["claim"] = {
-                "pipeline_id":       c.get("pipeline_id"),
-                "started_at":        c.get("started_at"),
-                "last_heartbeat_at": c.get("last_heartbeat_at"),
-                "current_phase":     c.get("current_phase"),
-                "age_seconds":       c.get("age_seconds"),
-                "pipeline_short":    c.get("pipeline_short"),
+                "pipeline_id":    c.get("pipeline_id"),
+                "started_at":     c.get("started_at"),
+                "current_phase":  c.get("current_phase"),
+                "age_seconds":    c.get("age_seconds"),
+                "pipeline_short": c.get("pipeline_short"),
             }
 
 
@@ -2107,8 +2106,7 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
     """Read run-plan claim files under `${main_root}/.zskills/claims/plan-*/`.
 
     Returns `{slug: claim_dict}` keyed by string slug. Each dict carries:
-        pipeline_id, started_at, last_heartbeat_at, current_phase,
-        age_seconds, pipeline_short
+        pipeline_id, started_at, current_phase, age_seconds, pipeline_short
 
     Tolerant: malformed JSON emits a single stderr line and skips that
     claim. A claim directory present without `claim.json` surfaces a
@@ -2116,10 +2114,9 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
     generic in-flight indicator (sweep-while-flush race tolerance —
     mirrors `_read_claims` D2.6 behaviour).
 
-    `age_seconds` is computed from `last_heartbeat_at` (NOT `started_at`)
-    so the chip's "age" reflects the freshness of the heartbeat — when
-    the pipeline silently hangs, the chip ages even though started_at is
-    stale.
+    `age_seconds` is computed from `started_at` (post-#684 cleanup
+    removed `last_heartbeat_at` as a duplicate of `started_at`; phase
+    progression is now signalled by `current_phase`, not chip age).
     """
     out: Dict[str, Dict[str, Any]] = {}
     claims_dir = main_root / ".zskills" / "claims"
@@ -2151,7 +2148,6 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
             out[slug] = {
                 "pipeline_id": None,
                 "started_at": None,
-                "last_heartbeat_at": None,
                 "current_phase": None,
                 "age_seconds": None,
                 "pipeline_short": None,
@@ -2174,16 +2170,14 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
             continue
         pipeline_id = body.get("pipeline_id")
         started_at = body.get("started_at")
-        last_heartbeat_at = body.get("last_heartbeat_at")
         current_phase = body.get("current_phase")
-        # Compute age from last_heartbeat_at (not started_at) per W3.3
-        # fingerprint rationale — chip text contains an age string
-        # derived from heartbeat freshness.
+        # Compute age from started_at (post-#684 cleanup: last_heartbeat_at
+        # was a duplicate of started_at and has been removed).
         age_seconds: Optional[float] = None
-        hb_for_age = last_heartbeat_at if isinstance(last_heartbeat_at, str) and last_heartbeat_at else None
-        if hb_for_age:
+        started_for_age = started_at if isinstance(started_at, str) and started_at else None
+        if started_for_age:
             try:
-                parsed = datetime.fromisoformat(hb_for_age)
+                parsed = datetime.fromisoformat(started_for_age)
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
                 age_seconds = (now - parsed).total_seconds()
@@ -2195,7 +2189,6 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
         out[slug] = {
             "pipeline_id": pipeline_id if isinstance(pipeline_id, str) else None,
             "started_at": started_at if isinstance(started_at, str) else None,
-            "last_heartbeat_at": last_heartbeat_at if isinstance(last_heartbeat_at, str) else None,
             "current_phase": current_phase if isinstance(current_phase, str) else None,
             "age_seconds": age_seconds,
             "pipeline_short": pipeline_short,

@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.26+42ce55"
+  version: "2026.05.26+dd5d7a"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -1027,6 +1027,10 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
        "$TRACKING_ID" "$BRANCH_NAME_FOR_MARKER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
        > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.land-pr.$TRACKING_ID"
    fi
+   # Phase tracking (UX): update dashboard chip's current_phase. `|| true` —
+   # phase-tracking is UX-not-correctness; failure must not abort the pipeline.
+   bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+     set-phase "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" --current-phase "Phase $PHASE" || true
    ```
 
 9. **Classify UI impact from the plan text.** Scan the phase description
@@ -1513,8 +1517,11 @@ ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
   source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.implement"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+  set-phase "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" --current-phase "Phase $PHASE — implemented" || true
 ```
 
 ### Pre-verification tracking
@@ -1878,8 +1885,11 @@ ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
   source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 printf 'phase: %s\nresult: pass\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.verify"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+  set-phase "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" --current-phase "Phase $PHASE — verified" || true
 ```
 
 ## Phase 3.5 — Detect and auto-correct plan-text drift
@@ -2183,8 +2193,11 @@ ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
   source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/step.run-plan.$TRACKING_ID.report"
+bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+  set-phase "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" --current-phase "Phase $PHASE — reported" || true
 ```
 
 ## Phase 5b — Plan Completion

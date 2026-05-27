@@ -20,17 +20,20 @@
 #   release <slug> --require-pipeline <id>
 #     Exit 0  — released (or already absent — idempotent).
 #     Exit 12 — pipeline-id mismatch (refused; claim left intact).
+#   set-phase <slug> --require-pipeline <id> --current-phase "<str>"
+#     Exit 0  — current_phase updated (atomic write).
+#     Exit 2  — claim.json missing for slug.
+#     Exit 12 — pipeline-id mismatch (refused; no mutation).
 #   list
 #     One TSV line per live claim:
 #       <slug>\t<pipeline_id>\t<age_seconds>
 #
 # Schema (claim.json, D5):
-#   {schema_version, kind, slug, pipeline_id, started_at,
-#    last_heartbeat_at, current_phase}
+#   {schema_version, kind, slug, pipeline_id, started_at, current_phase}
 #   sorted-keys, schema_version=1.
-#   last_heartbeat_at and current_phase are present for dashboard
-#   schema-stability; they are written once at acquire (last_heartbeat_at
-#   = started_at; current_phase = "") and never updated.
+#   current_phase is initialised to "Phase 0 — acquired" at acquire and
+#   updated by the `set-phase` subcommand. age_seconds is derived from
+#   started_at.
 #
 # Atomicity:
 #   acquire: `mkdir <dir>` is the POSIX atomic primitive; then write
@@ -195,9 +198,10 @@ cmd_acquire() {
     esac
   fi
 
-  # Atomic write of claim.json. last_heartbeat_at and current_phase are
-  # written once here for dashboard schema-stability and never updated:
-  # last_heartbeat_at = started_at; current_phase = "".
+  # Atomic write of claim.json. current_phase is initialised to
+  # "Phase 0 — acquired" so the dashboard chip renders `phase 0/M`
+  # immediately on acquire (not `phase ?/M`); subsequent updates flow
+  # through the `set-phase` subcommand.
   if ! "$_CLAIM_PYTHON" - "$claim_tmp" "$claim_file" "$pipeline_id" "$SLUG" <<'PY'
 import json, os, sys, datetime
 tmp_path, final_path, pipeline_id, slug = sys.argv[1:5]
@@ -208,8 +212,7 @@ body = {
     "slug":               slug,
     "pipeline_id":        pipeline_id,
     "started_at":         now,
-    "last_heartbeat_at":  now,
-    "current_phase":      "",
+    "current_phase":      "Phase 0 — acquired",
 }
 with open(tmp_path, "w") as f:
     json.dump(body, f, sort_keys=True)
@@ -279,7 +282,72 @@ except Exception:
   return 0
 }
 
-# Internal helper: age in seconds, or -1 on error.
+# ---------------------------------------------------------------------------
+# set-phase <slug> --require-pipeline <id> --current-phase "<str>"
+# Thin UX-only mutator: read claim.json, gate on pipeline_id match,
+# rewrite current_phase, atomic write. No TTL/state-machine/auto-acquire.
+# ---------------------------------------------------------------------------
+cmd_set_phase() {
+  local raw_slug="" require_pipeline="" current_phase="" current_phase_set=0
+  if [ "$#" -lt 1 ]; then
+    echo "Usage: claim-plan.sh set-phase <slug> --require-pipeline <id> --current-phase \"<str>\"" >&2
+    return 2
+  fi
+  raw_slug="$1"; shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --require-pipeline) require_pipeline="${2:-}"; shift 2 ;;
+      --current-phase)    current_phase="${2:-}"; current_phase_set=1; shift 2 ;;
+      *) echo "run-plan claim-plan.sh set-phase: unknown arg '$1'" >&2; return 2 ;;
+    esac
+  done
+  sanitize_and_validate_slug "$raw_slug" || return 2
+  if [ -z "$require_pipeline" ]; then
+    echo "run-plan claim-plan.sh set-phase: --require-pipeline is required" >&2
+    return 2
+  fi
+  if [ "$current_phase_set" -eq 0 ]; then
+    echo "run-plan claim-plan.sh set-phase: --current-phase is required" >&2
+    return 2
+  fi
+  resolve_main_root || return 2
+
+  local claim_dir="${MAIN_ROOT}/.zskills/claims/plan-${SLUG}"
+  local claim_file="${claim_dir}/claim.json"
+  local claim_tmp="${claim_dir}/claim.json.tmp"
+
+  if [ ! -f "$claim_file" ]; then
+    echo "run-plan claim-plan.sh set-phase: claim.json missing for slug ${SLUG}" >&2
+    return 2
+  fi
+
+  "$_CLAIM_PYTHON" - "$claim_file" "$claim_tmp" "$require_pipeline" "$current_phase" <<'PY'
+import json, os, sys
+claim_file, tmp_path, required, new_phase = sys.argv[1:5]
+with open(claim_file) as f:
+    body = json.load(f)
+stored = body.get("pipeline_id", "")
+if stored != required:
+    sys.stderr.write(
+        "pipeline-mismatch: stored={} required={}; refusing set-phase\n".format(stored, required)
+    )
+    sys.exit(12)
+body["current_phase"] = new_phase
+with open(tmp_path, "w") as f:
+    json.dump(body, f, sort_keys=True)
+    f.write("\n")
+os.replace(tmp_path, claim_file)
+PY
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -f "$claim_tmp"
+    return "$rc"
+  fi
+  return 0
+}
+
+# Internal helper: age in seconds, or -1 on error. Derived from
+# started_at (no last_heartbeat_at fallback — clean cut post-#684).
 _age_for_claim() {
   local claim_file="$1"
   "$_CLAIM_PYTHON" -c "
@@ -287,8 +355,7 @@ import json, sys, datetime
 try:
     with open(sys.argv[1]) as f:
         body = json.load(f)
-    hb = body.get('last_heartbeat_at') or body.get('started_at')
-    started = datetime.datetime.fromisoformat(hb)
+    started = datetime.datetime.fromisoformat(body['started_at'])
     if started.tzinfo is None:
         started = started.replace(tzinfo=datetime.timezone.utc)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -349,17 +416,18 @@ cmd_list() {
 main() {
   local sub="${1:-}"
   if [ -z "$sub" ]; then
-    echo "Usage: claim-plan.sh {acquire|release|list} [args...]" >&2
+    echo "Usage: claim-plan.sh {acquire|release|set-phase|list} [args...]" >&2
     return 2
   fi
   shift
   case "$sub" in
-    acquire)  cmd_acquire "$@" ;;
-    release)  cmd_release "$@" ;;
-    list)     cmd_list "$@" ;;
+    acquire)    cmd_acquire "$@" ;;
+    release)    cmd_release "$@" ;;
+    set-phase)  cmd_set_phase "$@" ;;
+    list)       cmd_list "$@" ;;
     *)
       echo "run-plan claim-plan.sh: unknown subcommand '$sub'" >&2
-      echo "Usage: claim-plan.sh {acquire|release|list} [args...]" >&2
+      echo "Usage: claim-plan.sh {acquire|release|set-phase|list} [args...]" >&2
       return 2
       ;;
   esac

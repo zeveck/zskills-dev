@@ -2,14 +2,14 @@
 # Tests for fingerprintPlans claim-state regression (Phase 3 of
 # plans/plans-claim-chip-parity.md, W3.14).
 #
-# W3.3 contract: fingerprintPlans includes `[claim.pipeline_id,
-# claim.last_heartbeat_at]` per plan row. The rationale is that the
-# chip text contains an age string derived from heartbeat freshness;
-# without this in the fingerprint, applySnapshot would skip renderPlans
-# between phase heartbeats and the chip's "30s ago" text would freeze.
+# W3.3 contract (post-#684 cleanup): fingerprintPlans includes
+# `[claim.pipeline_id, claim.current_phase]` per plan row. Phase
+# advances drive re-renders so the chip's `phase N/M` segment updates
+# as the pipeline progresses. (Prior to #684, the second tuple element
+# was last_heartbeat_at — now removed as a duplicate of started_at.)
 #
 # This test verifies fingerprint output differs for (no claim, pending
-# claim with null fields, full claim, full claim with updated heartbeat).
+# claim with null fields, full claim, full claim with phase advance).
 #
 # Run from repo root: bash tests/test-plan-claim-fingerprint.sh
 
@@ -47,12 +47,12 @@ if [ ! -f "$APP_JS" ]; then
   print_summary_and_exit
 fi
 
-# Static grep: fingerprintPlans references last_heartbeat_at, NOT just
-# started_at (W3.3 rationale lock).
-if grep -A 30 "function fingerprintPlans" "$APP_JS" | grep -q 'last_heartbeat_at'; then
-  pass "fingerprintPlans includes claim.last_heartbeat_at (chip ages with heartbeat)"
+# Static grep: fingerprintPlans references current_phase (post-#684
+# cleanup — phase advances drive re-renders).
+if grep -A 30 "function fingerprintPlans" "$APP_JS" | grep -q 'current_phase'; then
+  pass "fingerprintPlans includes claim.current_phase (chip re-renders on phase advance)"
 else
-  fail "fingerprintPlans does NOT include claim.last_heartbeat_at — chip age will go stale between phase heartbeats (W3.3 regression)"
+  fail "fingerprintPlans does NOT include claim.current_phase — chip won't re-render on phase advance"
 fi
 
 if grep -A 30 "function fingerprintPlans" "$APP_JS" | grep -q 'pipeline_id'; then
@@ -115,7 +115,7 @@ function expectTrue(actual, label) {
 
 // ------------------------------------------------------------------
 // 4 snapshots of plan slug=foo: no-claim, pending-claim, full-claim,
-// full-claim-heartbeat-updated. All four must produce distinct
+// full-claim-phase-advanced. All four must produce distinct
 // fingerprints.
 // ------------------------------------------------------------------
 const queues = {
@@ -134,7 +134,7 @@ const noClaim = { ...base };
 const pendingClaim = {
   ...base,
   claim: {
-    pipeline_id: null, started_at: null, last_heartbeat_at: null,
+    pipeline_id: null, started_at: null,
     current_phase: null, age_seconds: null, pipeline_short: null,
   },
 };
@@ -143,30 +143,28 @@ const fullClaim = {
   claim: {
     pipeline_id: "run-plan.foo",
     started_at: "2026-05-22T01:00:00+00:00",
-    last_heartbeat_at: "2026-05-22T01:01:00+00:00",
     current_phase: "Phase 2",
     age_seconds: 60,
     pipeline_short: "foo-abc",
   },
 };
-const fullClaimHbAdvanced = {
+const fullClaimPhaseAdvanced = {
   ...base,
   claim: {
     pipeline_id: "run-plan.foo",
     started_at: "2026-05-22T01:00:00+00:00",
-    // heartbeat moved forward by 1 minute — simulates a phase-refresh
+    // current_phase moved forward — simulates a phase boundary
     // emission between dashboard polls.
-    last_heartbeat_at: "2026-05-22T01:02:00+00:00",
     current_phase: "Phase 3",
-    age_seconds: 30,
+    age_seconds: 60,
     pipeline_short: "foo-abc",
   },
 };
 
-const fpNo      = fingerprintPlans([noClaim],            queues, "phase");
-const fpPending = fingerprintPlans([pendingClaim],       queues, "phase");
-const fpFull    = fingerprintPlans([fullClaim],          queues, "phase");
-const fpFullAdv = fingerprintPlans([fullClaimHbAdvanced], queues, "phase");
+const fpNo      = fingerprintPlans([noClaim],                 queues, "phase");
+const fpPending = fingerprintPlans([pendingClaim],            queues, "phase");
+const fpFull    = fingerprintPlans([fullClaim],               queues, "phase");
+const fpFullAdv = fingerprintPlans([fullClaimPhaseAdvanced],  queues, "phase");
 
 expectTrue(fpNo !== fpPending,
   "fingerprint differs between no-claim and pending-claim");
@@ -175,17 +173,13 @@ expectTrue(fpPending !== fpFull,
 expectTrue(fpNo !== fpFull,
   "fingerprint differs between no-claim and full-claim");
 expectTrue(fpFull !== fpFullAdv,
-  "fingerprint differs after heartbeat advance (W3.3 rationale — chip re-renders so ageStr updates)");
+  "fingerprint differs after phase advance (chip re-renders so phase N/M updates)");
 
 // Stability: same input shape → same fingerprint.
 const fpFull2 = fingerprintPlans([fullClaim], queues, "phase");
 expect(fpFull, fpFull2, "fingerprintPlans stable across repeated calls");
 
-// Started_at change WITHOUT heartbeat change MUST also re-render if
-// the chip text would change. Heartbeat-only fingerprint discipline
-// is correct here — started_at NEVER changes within one claim
-// lifecycle, so this is moot. But verify two snapshots with identical
-// claim metadata yield identical fingerprints (no spurious churn).
+// Deterministic on identical input — no spurious churn.
 const fpFull3 = fingerprintPlans([fullClaim], queues, "phase");
 const fpFull4 = fingerprintPlans([fullClaim], queues, "phase");
 expect(fpFull3, fpFull4, "fingerprintPlans deterministic on identical input");

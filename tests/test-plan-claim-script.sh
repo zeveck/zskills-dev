@@ -80,11 +80,11 @@ import json
 d=json.load(open('$CLAIM_FILE'))
 print(','.join(sorted(d.keys())))
 ")
-    EXPECTED="current_phase,kind,last_heartbeat_at,pipeline_id,schema_version,slug,started_at"
+    EXPECTED="current_phase,kind,pipeline_id,schema_version,slug,started_at"
     if [ "$KEYS" = "$EXPECTED" ]; then
-      pass "acquire writes 7-field D5 schema (sorted keys)"
+      pass "acquire writes 6-field D5 schema (sorted keys)"
     else
-      fail "acquire 7-field schema" "expected=$EXPECTED got=$KEYS"
+      fail "acquire 6-field schema" "expected=$EXPECTED got=$KEYS"
     fi
     # Spot-check fields.
     KIND=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['kind'])")
@@ -92,8 +92,9 @@ print(','.join(sorted(d.keys())))
     PIPE=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['pipeline_id'])")
     SCHEMA=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['schema_version'])")
     PHASE=$("$PYTHON" -c "import json; print(repr(json.load(open('$CLAIM_FILE'))['current_phase']))")
-    if [ "$KIND" = "plan" ] && [ "$SLUG" = "foo" ] && [ "$PIPE" = "run-plan.foo" ] && [ "$SCHEMA" = "1" ] && [ "$PHASE" = "''" ]; then
-      pass "acquire field values (kind=plan, slug=foo, schema_version=1, current_phase='')"
+    EXPECTED_PHASE="'Phase 0 — acquired'"
+    if [ "$KIND" = "plan" ] && [ "$SLUG" = "foo" ] && [ "$PIPE" = "run-plan.foo" ] && [ "$SCHEMA" = "1" ] && [ "$PHASE" = "$EXPECTED_PHASE" ]; then
+      pass "acquire field values (kind=plan, slug=foo, schema_version=1, current_phase='Phase 0 — acquired')"
     else
       fail "acquire field values" "kind=$KIND slug=$SLUG pipe=$PIPE schema=$SCHEMA phase=$PHASE"
     fi
@@ -206,6 +207,54 @@ if [ "$rc_upper" -eq 2 ] && [ "$rc_under" -eq 2 ] && [ "$rc_dash" -eq 2 ]; then
   pass "slug sanitisation rejects uppercase / underscore / leading-dash with exit 2"
 else
   fail "slug sanitisation" "upper=$rc_upper under=$rc_under dash=$rc_dash"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 18. set-phase: happy path mutates current_phase atomically.
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire setphase --pipeline-id "run-plan.setphase"
+) 2>/dev/null
+SETPHASE_FILE="$REPO1/.zskills/claims/plan-setphase/claim.json"
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase setphase --require-pipeline "run-plan.setphase" --current-phase "Phase 3 — verified") 2>/dev/null
+rc_sp_ok=$?
+NEW_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['current_phase'])")
+if [ "$rc_sp_ok" -eq 0 ] && [ "$NEW_PHASE" = "Phase 3 — verified" ]; then
+  pass "set-phase happy path: rc=0, current_phase updated"
+else
+  fail "set-phase happy path" "rc=$rc_sp_ok new_phase=<$NEW_PHASE>"
+fi
+# Verify pipeline_id and other fields were preserved.
+PRESERVED_PIPE=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['pipeline_id'])")
+PRESERVED_KIND=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['kind'])")
+if [ "$PRESERVED_PIPE" = "run-plan.setphase" ] && [ "$PRESERVED_KIND" = "plan" ]; then
+  pass "set-phase preserves pipeline_id and other fields"
+else
+  fail "set-phase preservation" "pipe=$PRESERVED_PIPE kind=$PRESERVED_KIND"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 19. set-phase: pipeline mismatch returns exit 12, no mutation.
+# ───────────────────────────────────────────────────────────────────────
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase setphase --require-pipeline "run-plan.WRONG" --current-phase "Phase 9 — bogus") 2>/dev/null
+rc_sp_mismatch=$?
+AFTER_MISMATCH=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['current_phase'])")
+if [ "$rc_sp_mismatch" -eq 12 ] && [ "$AFTER_MISMATCH" = "Phase 3 — verified" ]; then
+  pass "set-phase pipeline mismatch: rc=12, no mutation"
+else
+  fail "set-phase pipeline mismatch" "rc=$rc_sp_mismatch after=<$AFTER_MISMATCH>"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 20. set-phase: missing claim returns exit 2.
+# ───────────────────────────────────────────────────────────────────────
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase nonexistent --require-pipeline "run-plan.anything" --current-phase "Phase 1") 2>/dev/null
+rc_sp_missing=$?
+if [ "$rc_sp_missing" -eq 2 ]; then
+  pass "set-phase missing claim: rc=2"
+else
+  fail "set-phase missing claim" "rc=$rc_sp_missing"
 fi
 
 # ───────────────────────────────────────────────────────────────────────

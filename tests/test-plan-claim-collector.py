@@ -7,8 +7,9 @@ claim.json` per snapshot and `_annotate_plans_queue` attaches a `claim`
 field to each plan. The schema mirrors the issue-side claim (DA2.6 +
 field allow-list) but is keyed on string slug instead of issue number,
 includes `current_phase`, and computes `age_seconds` from
-`last_heartbeat_at` (NOT `started_at`) so the chip ages with each
-heartbeat refresh.
+`started_at` (post-#684 cleanup removed `last_heartbeat_at` as a
+duplicate of `started_at`; phase progression is now signalled by the
+`current_phase` field rather than by chip age).
 
 stdlib-only — `unittest`, no pytest. Invoked from the .sh wrapper which
 translates the results to the dashboard test format (PASS/FAIL lines +
@@ -66,16 +67,14 @@ class ReadPlanClaimsTests(unittest.TestCase):
 
     def test_three_plan_claims_populated(self) -> None:
         now = datetime.now(timezone.utc)
-        fresh_started = now - timedelta(seconds=600)
-        fresh_hb = now - timedelta(seconds=20)
-        mid_hb = now - timedelta(seconds=420)
+        fresh_started = now - timedelta(seconds=20)
+        mid_started = now - timedelta(seconds=420)
         _write_plan_claim(self.claims, "foo", {
             "schema_version": 1,
             "kind": "run-plan",
             "slug": "foo",
             "pipeline_id": "run-plan.foo",
             "started_at": fresh_started.isoformat(timespec="seconds"),
-            "last_heartbeat_at": fresh_hb.isoformat(timespec="seconds"),
             "current_phase": "Phase 3",
         })
         _write_plan_claim(self.claims, "bar-baz", {
@@ -83,8 +82,7 @@ class ReadPlanClaimsTests(unittest.TestCase):
             "kind": "run-plan",
             "slug": "bar-baz",
             "pipeline_id": "run-plan.bar-baz",
-            "started_at": fresh_started.isoformat(timespec="seconds"),
-            "last_heartbeat_at": mid_hb.isoformat(timespec="seconds"),
+            "started_at": mid_started.isoformat(timespec="seconds"),
             "current_phase": "Phase 1",
         })
         # Sweep-while-flush race: directory exists, claim.json absent.
@@ -96,20 +94,16 @@ class ReadPlanClaimsTests(unittest.TestCase):
         self.assertIn("bar-baz", out)
         self.assertIn("pending-slug", out)
 
-        # Slug 'foo': full metadata, age from heartbeat (~20s).
+        # Slug 'foo': full metadata, age from started_at (~20s).
         c1 = out["foo"]
         self.assertEqual(c1["pipeline_id"], "run-plan.foo")
         self.assertEqual(c1["current_phase"], "Phase 3")
-        self.assertIsNotNone(c1["last_heartbeat_at"])
+        self.assertIsNotNone(c1["started_at"])
         self.assertIsNotNone(c1["age_seconds"])
         self.assertGreaterEqual(c1["age_seconds"], 0)
-        # Age <300s because age is computed from heartbeat, NOT started_at.
-        # If this assertion fails, the implementation likely regressed to
-        # using started_at — which would make ageStr go stale between
-        # phase heartbeats (W3.3 fingerprint rationale).
         self.assertLess(c1["age_seconds"], 300)
 
-        # Slug 'bar-baz': mid-aged heartbeat (~420s).
+        # Slug 'bar-baz': mid-aged started_at (~420s).
         c2 = out["bar-baz"]
         self.assertGreater(c2["age_seconds"], 300)
 
@@ -117,7 +111,6 @@ class ReadPlanClaimsTests(unittest.TestCase):
         c3 = out["pending-slug"]
         self.assertIsNone(c3["pipeline_id"])
         self.assertIsNone(c3["started_at"])
-        self.assertIsNone(c3["last_heartbeat_at"])
         self.assertIsNone(c3["current_phase"])
         self.assertIsNone(c3["age_seconds"])
         self.assertIsNone(c3["pipeline_short"])
@@ -126,14 +119,14 @@ class ReadPlanClaimsTests(unittest.TestCase):
         # Even if a future writer (or rogue test fixture) embeds extra
         # fields, the collector MUST NOT propagate them. NO worktree_path,
         # NO host_pid, NO schema_version, NO kind in the rendered claim
-        # dict — only the 6-field allow-list.
+        # dict — only the 5-field allow-list (post-#684 cleanup dropped
+        # last_heartbeat_at).
         _write_plan_claim(self.claims, "leakcheck", {
             "schema_version": 1,
             "kind": "run-plan",
             "slug": "leakcheck",
             "pipeline_id": "run-plan.leakcheck",
             "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "last_heartbeat_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "current_phase": "Phase 1",
             "host_pid": 99999,
             "worktree_path": "/tmp/should-not-leak",
@@ -145,11 +138,12 @@ class ReadPlanClaimsTests(unittest.TestCase):
         self.assertNotIn("worktree_path", c)
         self.assertNotIn("schema_version", c)
         self.assertNotIn("kind", c)
+        self.assertNotIn("last_heartbeat_at", c)
         self.assertNotIn("some_future_field", c)
         self.assertEqual(
             set(c.keys()),
-            {"pipeline_id", "started_at", "last_heartbeat_at",
-             "current_phase", "age_seconds", "pipeline_short"},
+            {"pipeline_id", "started_at", "current_phase",
+             "age_seconds", "pipeline_short"},
         )
 
     def test_pipeline_short_derived(self) -> None:
@@ -159,7 +153,6 @@ class ReadPlanClaimsTests(unittest.TestCase):
             "slug": "pidcheck",
             "pipeline_id": "run-plan.sprint-20260521-010731-foo",
             "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "last_heartbeat_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "current_phase": "Phase 1",
         })
         out = collect._read_plan_claims(self.tmp)
@@ -191,49 +184,25 @@ class ReadPlanClaimsTests(unittest.TestCase):
             "slug": "foo",
             "pipeline_id": "run-plan.foo",
             "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "last_heartbeat_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "current_phase": "Phase 1",
         })
         out = collect._read_plan_claims(self.tmp)
         self.assertIn("foo", out)
         self.assertEqual(set(out.keys()), {"foo"})
 
-    def test_age_seconds_uses_heartbeat_not_started(self) -> None:
-        # W3.3 rationale lock — the collector MUST compute age_seconds
-        # from last_heartbeat_at, not started_at. If this regresses, the
-        # chip's age text goes stale between phase heartbeats.
-        now = datetime.now(timezone.utc)
-        old_started = now - timedelta(seconds=3600)
-        fresh_hb = now - timedelta(seconds=15)
-        _write_plan_claim(self.claims, "agecheck", {
+    def test_unparseable_started_at_yields_null_age(self) -> None:
+        _write_plan_claim(self.claims, "bad-started", {
             "schema_version": 1,
             "kind": "run-plan",
-            "slug": "agecheck",
-            "pipeline_id": "run-plan.agecheck",
-            "started_at": old_started.isoformat(timespec="seconds"),
-            "last_heartbeat_at": fresh_hb.isoformat(timespec="seconds"),
-            "current_phase": "Phase 2",
-        })
-        out = collect._read_plan_claims(self.tmp)
-        c = out["agecheck"]
-        # If age were started-based, it'd be ~3600s. We require <300s,
-        # which only happens if heartbeat (~15s) drives the calc.
-        self.assertLess(c["age_seconds"], 300)
-
-    def test_unparseable_heartbeat_yields_null_age(self) -> None:
-        _write_plan_claim(self.claims, "bad-hb", {
-            "schema_version": 1,
-            "kind": "run-plan",
-            "slug": "bad-hb",
-            "pipeline_id": "run-plan.bad-hb",
-            "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "last_heartbeat_at": "garbage-not-iso",
+            "slug": "bad-started",
+            "pipeline_id": "run-plan.bad-started",
+            "started_at": "garbage-not-iso",
             "current_phase": "Phase 1",
         })
         out = collect._read_plan_claims(self.tmp)
-        # Implementation tolerates unparseable last_heartbeat_at by
-        # surfacing age_seconds=None (renderer falls back to '?').
-        self.assertIsNone(out["bad-hb"]["age_seconds"])
+        # Implementation tolerates unparseable started_at by surfacing
+        # age_seconds=None (renderer falls back to '?').
+        self.assertIsNone(out["bad-started"]["age_seconds"])
 
 
 class AnnotatePlansQueueGatingTests(unittest.TestCase):
@@ -268,7 +237,6 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         fake_claim = {
             "pipeline_id": "run-plan.alpha",
             "started_at": "2026-05-21T01:07:31+00:00",
-            "last_heartbeat_at": "2026-05-21T01:08:00+00:00",
             "current_phase": "Phase 2",
             "age_seconds": 30.0,
             "pipeline_short": "alpha",
@@ -281,16 +249,17 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertIsNotNone(c)
         self.assertEqual(c["pipeline_id"], "run-plan.alpha")
         self.assertEqual(c["current_phase"], "Phase 2")
-        self.assertEqual(c["last_heartbeat_at"], "2026-05-21T01:08:00+00:00")
+        self.assertEqual(c["started_at"], "2026-05-21T01:07:31+00:00")
         # Allow-list discipline.
         self.assertNotIn("host_pid", c)
         self.assertNotIn("worktree_path", c)
         self.assertNotIn("kind", c)
         self.assertNotIn("schema_version", c)
+        self.assertNotIn("last_heartbeat_at", c)
         self.assertEqual(
             set(c.keys()),
-            {"pipeline_id", "started_at", "last_heartbeat_at",
-             "current_phase", "age_seconds", "pipeline_short"},
+            {"pipeline_id", "started_at", "current_phase",
+             "age_seconds", "pipeline_short"},
         )
         # Plan beta has no claim attached.
         self.assertNotIn("claim", plans[1])

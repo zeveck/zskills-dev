@@ -228,7 +228,6 @@ function findAllByAttr(root, k, v) {
     claim: {
       pipeline_id: "run-plan.blocked",
       started_at: new Date().toISOString(),
-      last_heartbeat_at: new Date().toISOString(),
       current_phase: "Phase 2",
       age_seconds: 30,
       pipeline_short: "blk-abc",

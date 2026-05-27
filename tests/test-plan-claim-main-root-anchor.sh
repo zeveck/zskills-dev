@@ -96,6 +96,33 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# set-phase from inside the worktree — assert it mutates MAIN's claim.json
+# (DA7 invariant: the new subcommand must anchor on MAIN_ROOT just like
+# acquire/release).
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$WT"
+  bash "$CLAIM_SH" set-phase foo --require-pipeline "run-plan.foo" --current-phase "Phase 4 — verified"
+)
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  fail "set-phase from worktree" "rc=$rc"
+else
+  PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  MAIN_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['current_phase'])")
+  if [ "$MAIN_PHASE" = "Phase 4 — verified" ]; then
+    pass "set-phase from worktree mutates MAIN's claim.json current_phase (DA7 invariant)"
+  else
+    fail "set-phase MAIN anchor" "current_phase at MAIN=<$MAIN_PHASE>, expected 'Phase 4 — verified'"
+  fi
+  if [ -f "$WT/.zskills/claims/plan-foo/claim.json" ]; then
+    fail "set-phase worktree-leak" "claim.json INCORRECTLY landed at worktree path"
+  else
+    pass "set-phase does NOT write claim.json under the worktree's tree"
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Release from inside the worktree — assert it removes the MAIN claim dir.
 # ───────────────────────────────────────────────────────────────────────
 (
