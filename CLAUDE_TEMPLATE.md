@@ -296,14 +296,14 @@ moves SECOND (atomic per-file), manifest LAST (the lock claim).
 
 ## Which skill for which input
 
-Decision table for picking a skill when a user describes a generic action. Match on the LEFT, dispatch the RIGHT. When multiple rows could fit, prefer the shorter/lighter one — the heavier skills (`/draft-plan`, `/research-and-*`) cost more rounds and should only be used when the lighter ones cannot.
+Decision table for picking a skill when a user describes a generic action. Match on the LEFT, dispatch the RIGHT. When multiple rows could fit, prefer the lower-overhead one — the multi-round skills (`/draft-plan`, `/research-and-*`) cost more rounds and should only be used when the single-round ones cannot.
 
 | You have | Run |
 |---|---|
-| Clear small bug or doc tweak, ready to ship as one PR | `/quickfix` |
+| One-commit PR — edit in-place on main, no worktree (only valid when `main_protected: false`) | `/quickfix` |
 | Several small bugs / issues in a backlog | `/fix-issues N` |
 | Bug, but root cause is unclear | `/investigate` |
-| Ad-hoc task (docs, refactor, content) larger than `/quickfix` | `/do` |
+| One-commit PR — needs worktree isolation (required when `main_protected: true`) | `/do` |
 | Plan file already drafted, ready to execute | `/run-plan <path>` |
 | Plan-scale design surface — needs adversarial review before execution | `/draft-plan` |
 | Broad goal that decomposes into multiple sub-plans | `/research-and-plan` |
@@ -316,7 +316,7 @@ Decision table for picking a skill when a user describes a generic action. Match
 
 **Common confusions:**
 
-- `/quickfix` vs `/do`: `/quickfix` is the FLOOR of "with review" — no worktree, picks up an in-flight edit in main, one-commit PR. `/do` runs in a worktree and is for ad-hoc tasks too big for one commit but too small to draft a plan for. If the user is mid-edit in main, `/quickfix`. If they're describing the task fresh and it's >1 commit, `/do`.
+- `/quickfix` vs `/do`: **They are PEERS, not TIERS.** Same lifecycle (triage → review → commit → PR → land); same `/land-pr` dispatch; same one-commit-PR shape. The structural difference is where the work tree lives — `/quickfix` does `git checkout -b` on main; `/do` uses a worktree. Pick by **project policy, not task size**: in `main_protected: true` projects, use `/do` (always); in non-main-protected projects, either works (pick by preference). Per-task size is NOT a useful axis between them.
 - `/draft-plan` vs `/run-plan`: `/draft-plan` produces a plan file; `/run-plan` executes one. They are sequential, not alternatives. If the user has a plan file path, `/run-plan`. If they have a goal but no plan, `/draft-plan` first.
 - `/research-and-plan` vs `/research-and-go`: same drafting machinery; `-and-plan` stops after the meta-plan is ready for review, `-and-go` continues into execution. Use `-and-plan` when the user wants a checkpoint before commit-volume work begins; `-and-go` when they've said "walk away."
 - `/draft-plan` vs `/quickfix` / `/do`: `/draft-plan` is reserved for skills/workflows with non-trivial design surface (integration points, multiple commands, hook interactions). Thin prompt-wrapper changes and prose edits don't need adversarial review — go straight to `/quickfix` or `/do`.
