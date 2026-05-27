@@ -849,16 +849,21 @@ code, pre, .mono {
 /* Per-column collapse toggle (chevron at the trailing edge of column-head).
    When no .move-all-group is present (Completed in the below-band, the
    right-edge of Triage/Ready when neither side renders a move-all), the
-   toggle itself takes the margin-left:auto to stay right-aligned. */
+   toggle itself takes the margin-left:auto to stay right-aligned. Issue
+   #700 — enlarged from 0.9em/0 0.2em to 1.1em/2px 6px for a bigger hit
+   target + visual weight; subtle background on hover so the toggle reads
+   as interactive. */
 .column-collapse-toggle {
   background: none;
-  border: 0;
+  border: 1px solid transparent;
   cursor: pointer;
-  font-size: 0.9em;
-  padding: 0 0.2em;
+  font-size: 1.1em;
+  padding: 2px 6px;
   color: var(--text-dim);
   margin-left: 0.4em;
   line-height: 1;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .column-head > .column-collapse-toggle:last-child {
   margin-left: auto;
@@ -869,12 +874,16 @@ code, pre, .mono {
 .column-collapse-toggle:hover,
 .column-collapse-toggle:focus-visible {
   color: var(--text);
+  background: rgba(88, 166, 255, 0.1);
+  border-color: var(--border);
   outline: none;
 }
 
 /* Collapsed: hide the dropzone list; keep the header visible with count +
    toggle. The column itself stays in the flex/grid flow so its width is
-   preserved — a collapsed column reads as a thin header strip. */
+   preserved — a collapsed column reads as a thin header strip. Issue #700
+   adds a `.collapsed-summary` preview strip showing "Label (N)" plus the
+   first 1-2 card titles so the user gets context without expanding. */
 .column.collapsed > .dropzone {
   display: none;
 }
@@ -883,6 +892,32 @@ code, pre, .mono {
 }
 .column.collapsed > .column-head {
   opacity: 0.85;
+}
+
+/* Collapsed-column preview strip (Issue #700). Rendered by JS when a
+   column is collapsed; hidden when expanded (applyCollapseStateToColumn
+   removes it). Shows a compact "Label (N) — title1, title2" line so
+   collapsed columns convey content at a glance. */
+.collapsed-summary {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.collapsed-summary:hover {
+  color: var(--text);
+}
+.collapsed-summary .collapsed-summary-count {
+  font-weight: 600;
+  color: var(--text);
+}
+.collapsed-summary .collapsed-summary-titles {
+  margin-left: 0.4em;
+  font-style: italic;
 }
 
 .dropzone {
@@ -1081,26 +1116,28 @@ code, pre, .mono {
   cursor: not-allowed;
 }
 
-/* Column-header chevron buttons (move-all). Visually similar to .move-btn
-   but slightly larger/bolder so they read as a column-level action rather
-   than a per-card control. Sits in the column-head flex row. */
+/* Column-header chevron buttons (move-all). Issue #700 — restyled to match
+   the pill-pattern (section-nav-pill) for visual consistency: rounded
+   border-radius, slightly more padding, and smooth transitions. Sits in the
+   column-head flex row. */
 .move-all-group {
   display: inline-flex;
-  gap: 2px;
+  gap: 3px;
   margin-left: auto;
 }
 
 .move-all-btn {
-  background: var(--surface);
+  background: var(--surface2);
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 6px;
-  font-size: 1rem;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 0.95rem;
   line-height: 1.2;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
 
 .move-all-btn:hover,
