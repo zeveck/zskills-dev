@@ -15,8 +15,8 @@
 #      NOT at $WT/.zskills/claims/plan-foo/.
 #   5. release from inside $WT — assert it removes the claim from $MAIN.
 #
-# This tests the symmetric invariant for refresh + release as well via
-# the explicit `git rev-parse --git-common-dir parent` lookup.
+# This tests the symmetric invariant for release as well via the explicit
+# `git rev-parse --git-common-dir parent` lookup.
 
 set -u
 
@@ -96,27 +96,29 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# Refresh from inside the worktree — assert it mutates the MAIN claim file.
+# set-phase from inside the worktree — assert it mutates MAIN's claim.json
+# (DA7 invariant: the new subcommand must anchor on MAIN_ROOT just like
+# acquire/release).
 # ───────────────────────────────────────────────────────────────────────
-PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
-HB_BEFORE=""
-if [ -f "$MAIN/.zskills/claims/plan-foo/claim.json" ]; then
-  HB_BEFORE=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-fi
-sleep 1
 (
   cd "$WT"
-  bash "$CLAIM_SH" refresh foo --require-pipeline "run-plan.foo" --current-phase "Phase 1"
-) >/dev/null 2>&1
+  bash "$CLAIM_SH" set-phase foo --require-pipeline "run-plan.foo" --current-phase "Phase 4 — verified"
+)
 rc=$?
 if [ "$rc" -ne 0 ]; then
-  fail "refresh from worktree" "rc=$rc"
+  fail "set-phase from worktree" "rc=$rc"
 else
-  HB_AFTER=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-  if [ -n "$HB_BEFORE" ] && [ "$HB_BEFORE" != "$HB_AFTER" ]; then
-    pass "refresh from worktree mutates MAIN's claim.json (heartbeat advanced)"
+  PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  MAIN_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$MAIN/.zskills/claims/plan-foo/claim.json'))['current_phase'])")
+  if [ "$MAIN_PHASE" = "Phase 4 — verified" ]; then
+    pass "set-phase from worktree mutates MAIN's claim.json current_phase (DA7 invariant)"
   else
-    fail "refresh MAIN mutation" "hb_before=$HB_BEFORE hb_after=$HB_AFTER"
+    fail "set-phase MAIN anchor" "current_phase at MAIN=<$MAIN_PHASE>, expected 'Phase 4 — verified'"
+  fi
+  if [ -f "$WT/.zskills/claims/plan-foo/claim.json" ]; then
+    fail "set-phase worktree-leak" "claim.json INCORRECTLY landed at worktree path"
+  else
+    pass "set-phase does NOT write claim.json under the worktree's tree"
   fi
 fi
 

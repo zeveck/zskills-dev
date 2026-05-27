@@ -3,16 +3,11 @@
 #
 # Unit tests for skills/run-plan/scripts/claim-plan.sh:
 #   - acquire writes the 7-field D5 schema with sorted keys.
-#   - refresh advances last_heartbeat_at + sets current_phase.
-#   - refresh refuses on pipeline mismatch (exit 12, no mutation).
-#   - refresh refuses on missing claim.json (exit 2).
+#   - acquire EEXIST on duplicate slug returns exit 10.
 #   - release removes the claim dir; idempotent on absent.
 #   - release refuses on pipeline mismatch (exit 12).
-#   - is-stale returns 0/1/2 per spec.
-#   - is-stale crash-window 30s protection (claim dir without claim.json).
-#   - sweep removes stale entries.
 #   - list emits TSV.
-#   - Concurrent refresh produces no partial JSON (parseable always).
+#   - Usage / slug-sanitisation errors return exit 2.
 
 set -u
 
@@ -85,11 +80,11 @@ import json
 d=json.load(open('$CLAIM_FILE'))
 print(','.join(sorted(d.keys())))
 ")
-    EXPECTED="current_phase,kind,last_heartbeat_at,pipeline_id,schema_version,slug,started_at"
+    EXPECTED="current_phase,kind,pipeline_id,schema_version,slug,started_at"
     if [ "$KEYS" = "$EXPECTED" ]; then
-      pass "acquire writes 7-field D5 schema (sorted keys)"
+      pass "acquire writes 6-field D5 schema (sorted keys)"
     else
-      fail "acquire 7-field schema" "expected=$EXPECTED got=$KEYS"
+      fail "acquire 6-field schema" "expected=$EXPECTED got=$KEYS"
     fi
     # Spot-check fields.
     KIND=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['kind'])")
@@ -97,8 +92,9 @@ print(','.join(sorted(d.keys())))
     PIPE=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['pipeline_id'])")
     SCHEMA=$("$PYTHON" -c "import json; print(json.load(open('$CLAIM_FILE'))['schema_version'])")
     PHASE=$("$PYTHON" -c "import json; print(repr(json.load(open('$CLAIM_FILE'))['current_phase']))")
-    if [ "$KIND" = "plan" ] && [ "$SLUG" = "foo" ] && [ "$PIPE" = "run-plan.foo" ] && [ "$SCHEMA" = "1" ] && [ "$PHASE" = "''" ]; then
-      pass "acquire field values (kind=plan, slug=foo, schema_version=1, current_phase='')"
+    EXPECTED_PHASE="'Phase 0 — acquired'"
+    if [ "$KIND" = "plan" ] && [ "$SLUG" = "foo" ] && [ "$PIPE" = "run-plan.foo" ] && [ "$SCHEMA" = "1" ] && [ "$PHASE" = "$EXPECTED_PHASE" ]; then
+      pass "acquire field values (kind=plan, slug=foo, schema_version=1, current_phase='Phase 0 — acquired')"
     else
       fail "acquire field values" "kind=$KIND slug=$SLUG pipe=$PIPE schema=$SCHEMA phase=$PHASE"
     fi
@@ -117,69 +113,6 @@ if [ "$rc" -eq 10 ]; then
   pass "duplicate acquire returns exit 10 (EEXIST)"
 else
   fail "duplicate acquire exit 10" "got rc=$rc"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 3. refresh advances last_heartbeat_at and sets current_phase.
-# ───────────────────────────────────────────────────────────────────────
-HB_BEFORE=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-sleep 1
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" refresh foo --require-pipeline "run-plan.foo" --current-phase "Phase 3"
-)
-rc=$?
-if [ "$rc" -ne 0 ]; then
-  fail "refresh happy-path exit 0" "rc=$rc"
-else
-  HB_AFTER=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-  CUR_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['current_phase'])")
-  if [ "$HB_BEFORE" != "$HB_AFTER" ] && [ "$CUR_PHASE" = "Phase 3" ]; then
-    pass "refresh advances last_heartbeat_at and sets current_phase"
-  else
-    fail "refresh mutation" "hb_before=$HB_BEFORE hb_after=$HB_AFTER cur_phase=$CUR_PHASE"
-  fi
-  # started_at must be UNCHANGED.
-  START_AFTER=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['started_at'])")
-  START_BEFORE=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json.bak.notexist'))['started_at'])" 2>/dev/null || echo "")
-  # We don't have a pre-image of started_at; instead assert it equals HB_BEFORE (which was the original heartbeat = started_at).
-  if [ "$START_AFTER" = "$HB_BEFORE" ]; then
-    pass "refresh does NOT mutate started_at"
-  else
-    fail "refresh started_at preserved" "after=$START_AFTER expected=$HB_BEFORE"
-  fi
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 4. refresh refuses on pipeline mismatch (exit 12), no mutation.
-# ───────────────────────────────────────────────────────────────────────
-HB_BEFORE_MM=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-PHASE_BEFORE_MM=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['current_phase'])")
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" refresh foo --require-pipeline "run-plan.wrong" --current-phase "Phase 99"
-) 2>/dev/null
-rc=$?
-HB_AFTER_MM=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['last_heartbeat_at'])")
-PHASE_AFTER_MM=$("$PYTHON" -c "import json; print(json.load(open('$REPO1/.zskills/claims/plan-foo/claim.json'))['current_phase'])")
-if [ "$rc" -eq 12 ] && [ "$HB_BEFORE_MM" = "$HB_AFTER_MM" ] && [ "$PHASE_BEFORE_MM" = "$PHASE_AFTER_MM" ]; then
-  pass "refresh pipeline-mismatch returns 12 with no mutation"
-else
-  fail "refresh mismatch refusal" "rc=$rc hb_changed=$([ "$HB_BEFORE_MM" != "$HB_AFTER_MM" ] && echo yes || echo no) phase_changed=$([ "$PHASE_BEFORE_MM" != "$PHASE_AFTER_MM" ] && echo yes || echo no)"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 5. refresh on missing claim returns exit 2.
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" refresh nonexistent --require-pipeline "run-plan.nonexistent" --current-phase "Phase 1"
-) 2>/dev/null
-rc=$?
-if [ "$rc" -eq 2 ]; then
-  pass "refresh on missing claim returns exit 2"
-else
-  fail "refresh missing exit 2" "got rc=$rc"
 fi
 
 # ───────────────────────────────────────────────────────────────────────
@@ -225,98 +158,6 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# 9. is-stale: no-claim => exit 2.
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" is-stale gone
-) 2>/dev/null
-rc=$?
-if [ "$rc" -eq 2 ]; then
-  pass "is-stale on no-claim returns exit 2"
-else
-  fail "is-stale no-claim exit 2" "got rc=$rc"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 10. is-stale: fresh claim => exit 1.
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" acquire bar --pipeline-id "run-plan.bar"
-  bash "$CLAIM_SH" is-stale bar
-) 2>/dev/null
-rc=$?
-if [ "$rc" -eq 1 ]; then
-  pass "is-stale on fresh claim returns exit 1"
-else
-  fail "is-stale fresh exit 1" "got rc=$rc"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 11. is-stale: crash window — dir exists but no claim.json AND mtime > 30s
-# ───────────────────────────────────────────────────────────────────────
-CRASH_DIR="$REPO1/.zskills/claims/plan-crash"
-mkdir -p "$CRASH_DIR"
-# Backdate mtime by 60s.
-"$PYTHON" -c "import os, time; os.utime('$CRASH_DIR', (time.time()-60, time.time()-60))"
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" is-stale crash
-) 2>/dev/null
-rc=$?
-if [ "$rc" -eq 0 ]; then
-  pass "is-stale crash-window (mtime > 30s, no claim.json) returns exit 0 (stale)"
-else
-  fail "is-stale crash-window" "got rc=$rc"
-fi
-rmdir "$CRASH_DIR" 2>/dev/null || true
-
-# ───────────────────────────────────────────────────────────────────────
-# 12. is-stale: TTL elapsed => exit 0.
-# ───────────────────────────────────────────────────────────────────────
-# Use a very low TTL via env override.
-(
-  cd "$REPO1"
-  ZSKILLS_PLAN_CLAIM_TTL_SECONDS=60 bash "$CLAIM_SH" is-stale bar
-) 2>/dev/null
-rc_fresh=$?
-# Now back-date the claim's last_heartbeat_at to 2h ago.
-"$PYTHON" -c "
-import json, datetime
-fp='$REPO1/.zskills/claims/plan-bar/claim.json'
-with open(fp) as f:
-    d = json.load(f)
-old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=7300)).isoformat(timespec='seconds')
-d['last_heartbeat_at'] = old
-with open(fp, 'w') as f:
-    json.dump(d, f, sort_keys=True)
-"
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" is-stale bar
-) 2>/dev/null
-rc=$?
-if [ "$rc" -eq 0 ] && [ "$rc_fresh" -eq 1 ]; then
-  pass "is-stale TTL elapsed (>=7200s by default) returns exit 0 (stale)"
-else
-  fail "is-stale TTL elapsed" "fresh rc=$rc_fresh stale rc=$rc"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 13. sweep removes stale entries.
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$REPO1"
-  bash "$CLAIM_SH" sweep
-) 2>/dev/null
-if [ ! -d "$REPO1/.zskills/claims/plan-bar" ]; then
-  pass "sweep removes stale claim plan-bar"
-else
-  fail "sweep removes stale" "plan-bar still present"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
 # 14. list emits TSV for live claims.
 # ───────────────────────────────────────────────────────────────────────
 (
@@ -333,34 +174,6 @@ if [ "$LINE_COUNT" -eq 2 ] && [ "$TSV_FIELDS" = "3" ]; then
   pass "list emits 2 TSV lines with 3 tab-separated fields"
 else
   fail "list TSV shape" "lines=$LINE_COUNT first_line_fields=$TSV_FIELDS out=<$LIST_OUT>"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# 15. concurrent refresh produces no partial JSON.
-# Background 5 refreshes on a single claim; after wait, claim.json must
-# always parse (os.replace is atomic, so this should hold).
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$REPO1"
-  for i in 1 2 3 4 5; do
-    bash "$CLAIM_SH" refresh baz --require-pipeline "run-plan.baz" --current-phase "Phase $i" &
-  done
-  wait
-) 2>/dev/null
-PARSE_OK=$("$PYTHON" -c "
-import json
-try:
-    with open('$REPO1/.zskills/claims/plan-baz/claim.json') as f:
-        d = json.load(f)
-    assert d.get('kind') == 'plan'
-    print('OK')
-except Exception as e:
-    print('ERR ' + str(e))
-")
-if [ "$PARSE_OK" = "OK" ]; then
-  pass "concurrent refresh — claim.json parses cleanly (os.replace atomicity)"
-else
-  fail "concurrent refresh atomicity" "parse error: $PARSE_OK"
 fi
 
 # ───────────────────────────────────────────────────────────────────────
@@ -394,6 +207,54 @@ if [ "$rc_upper" -eq 2 ] && [ "$rc_under" -eq 2 ] && [ "$rc_dash" -eq 2 ]; then
   pass "slug sanitisation rejects uppercase / underscore / leading-dash with exit 2"
 else
   fail "slug sanitisation" "upper=$rc_upper under=$rc_under dash=$rc_dash"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 18. set-phase: happy path mutates current_phase atomically.
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire setphase --pipeline-id "run-plan.setphase"
+) 2>/dev/null
+SETPHASE_FILE="$REPO1/.zskills/claims/plan-setphase/claim.json"
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase setphase --require-pipeline "run-plan.setphase" --current-phase "Phase 3 — verified") 2>/dev/null
+rc_sp_ok=$?
+NEW_PHASE=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['current_phase'])")
+if [ "$rc_sp_ok" -eq 0 ] && [ "$NEW_PHASE" = "Phase 3 — verified" ]; then
+  pass "set-phase happy path: rc=0, current_phase updated"
+else
+  fail "set-phase happy path" "rc=$rc_sp_ok new_phase=<$NEW_PHASE>"
+fi
+# Verify pipeline_id and other fields were preserved.
+PRESERVED_PIPE=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['pipeline_id'])")
+PRESERVED_KIND=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['kind'])")
+if [ "$PRESERVED_PIPE" = "run-plan.setphase" ] && [ "$PRESERVED_KIND" = "plan" ]; then
+  pass "set-phase preserves pipeline_id and other fields"
+else
+  fail "set-phase preservation" "pipe=$PRESERVED_PIPE kind=$PRESERVED_KIND"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 19. set-phase: pipeline mismatch returns exit 12, no mutation.
+# ───────────────────────────────────────────────────────────────────────
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase setphase --require-pipeline "run-plan.WRONG" --current-phase "Phase 9 — bogus") 2>/dev/null
+rc_sp_mismatch=$?
+AFTER_MISMATCH=$("$PYTHON" -c "import json; print(json.load(open('$SETPHASE_FILE'))['current_phase'])")
+if [ "$rc_sp_mismatch" -eq 12 ] && [ "$AFTER_MISMATCH" = "Phase 3 — verified" ]; then
+  pass "set-phase pipeline mismatch: rc=12, no mutation"
+else
+  fail "set-phase pipeline mismatch" "rc=$rc_sp_mismatch after=<$AFTER_MISMATCH>"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 20. set-phase: missing claim returns exit 2.
+# ───────────────────────────────────────────────────────────────────────
+(cd "$REPO1" && bash "$CLAIM_SH" set-phase nonexistent --require-pipeline "run-plan.anything" --current-phase "Phase 1") 2>/dev/null
+rc_sp_missing=$?
+if [ "$rc_sp_missing" -eq 2 ]; then
+  pass "set-phase missing claim: rc=2"
+else
+  fail "set-phase missing claim" "rc=$rc_sp_missing"
 fi
 
 # ───────────────────────────────────────────────────────────────────────

@@ -569,14 +569,13 @@ function fingerprintPlans(plans, queues, defaultMode) {
         null,
       ],
       // Claim state — symmetric to fingerprintIssues' claim tuple.
-      // We track `last_heartbeat_at` (NOT `started_at`) so the chip
-      // re-renders when the pipeline emits a phase heartbeat —
-      // `ageStr` in the chip text is derived from heartbeat freshness,
-      // so a started_at-only fingerprint would let the chip's age go
-      // stale between phases. The 2-tuple is enough — pipeline_id
-      // changes when a new pipeline claims; last_heartbeat_at changes
-      // every phase refresh; both null when no claim.
-      p.claim ? [p.claim.pipeline_id || null, p.claim.last_heartbeat_at || null] : null,
+      // We track `current_phase` (post-#684 cleanup removed
+      // `last_heartbeat_at` as a duplicate of `started_at`). Phase
+      // changes drive re-renders so the chip's `phase N/M` segment
+      // updates as the pipeline progresses. The 2-tuple is enough —
+      // pipeline_id changes when a new pipeline claims; current_phase
+      // changes at each phase boundary; both null when no claim.
+      p.claim ? [p.claim.pipeline_id || null, p.claim.current_phase || null] : null,
     ]),
   });
 }
@@ -746,17 +745,16 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   //   1. Chip text adds a phase fragment: "phase N/M" parsed from
   //      claim.current_phase ("Phase 3" → N=3); falls back to "phase ?/M"
   //      for unparseable section-name headers (e.g. "Parse plan").
-  //   2. Age string is derived from last_heartbeat_at (not started_at)
-  //      so the chip reflects heartbeat freshness — matches the
-  //      fingerprint discipline above.
+  //   2. Age string is derived from started_at (post-#684 cleanup
+  //      removed last_heartbeat_at as a duplicate of started_at).
   //   3. data-kind="plan" is already encoded; the aria-disabled +
   //      removeAttribute("draggable") block is identical to the issue
   //      side and is honored by moveAllInColumn (kind-generic) and the
   //      plan-up/down/left/right/plan-remove guard in handleAction.
   if (plan && plan.claim) {
     const c = plan.claim;
-    const hb = c.last_heartbeat_at || c.started_at || null;
-    const rt = hb ? relativeTime(hb) : "";
+    const startedAt = c.started_at || null;
+    const rt = startedAt ? relativeTime(startedAt) : "";
     const ageStr = rt || "?";
     const pidShort = c.pipeline_short || "?";
     // Parse "Phase N" from current_phase. Section-name headers like
@@ -772,7 +770,6 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     const tip = c.pipeline_id
       ? "claim pipeline=" + c.pipeline_id +
         " started=" + (c.started_at || "?") +
-        " heartbeat=" + (c.last_heartbeat_at || "?") +
         " current_phase=" + (c.current_phase || "?")
       : "claim metadata pending";
     const row = el("div", { cls: "card-sub" });
