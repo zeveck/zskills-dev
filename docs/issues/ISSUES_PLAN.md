@@ -1311,11 +1311,7 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Complexity:** S. **Action now:** /do pr — fix default-substitution on line 84 in source + mirror, add unbound-variable test, bump skill version
 
 ### #700 — Dashboard: polish collapse/expand toggle, collapsed-column preview, and column-move chevrons
-
-**Labels:** (none)
-
-**Problem.** Three related UX polish items on the dashboard below-band columns: (1) collapse/expand toggle too small, (2) collapsed columns show nothing, (3) column-move chevrons look rough. All CSS/JS frontend work needing visual verification.
-
-**Fix outline.** Replace chevron character with larger icon, add compact summary strip for collapsed columns, style chevrons with consistent padding/hover. Touches app.js and app.css across 3 sub-items.
-
-**Complexity:** M. **Action now:** /do pr — multi-item UI polish with visual-verification requirement; too broad for in-batch fix-agent.
+**Labels:** none | **Verdict:** actionable — CSS+JS cosmetic polish, scope well-defined
+**Problem.** Three below-band UX polish items: (1) collapse toggle (`▸`/`▾`) is too small at `font-size: 0.9em` + `padding: 0 0.2em` — reads as a dot, not a button; (2) collapsed columns hide the dropzone (`display: none`) but show nothing in its place — looks broken rather than intentionally collapsed; (3) move-all chevrons (`«`/`»`) have minimal styling (`padding: 0 6px`, `border-radius: 4px`) inconsistent with the section-nav pills and other action buttons that use `border-radius: 999px`, hover transitions, etc.
+**Fix outline.** All changes in two source files: `skills/zskills-dashboard/scripts/zskills_monitor/static/app.css` and `app.js` (mirror copies to `.claude/skills/` after). (1) Increase `.column-collapse-toggle` to `font-size: 1.1em`, `padding: 2px 6px`, add `border-radius: 4px` and a subtle background on hover. (2) In `applyCollapseStateToColumn` (JS ~L137), when collapsed, inject a compact summary strip into `colDiv` showing "Label (N)" with first 1-2 card titles truncated; in CSS add a `.collapsed-summary` rule for the strip. (3) Style `.move-all-btn` with `border-radius: 6px`, `padding: 2px 8px`, and a `transition: border-color 0.12s, color 0.12s, background 0.12s` matching `.section-nav-pill`.
+**Complexity:** S. **Action now:** /do pr — polish collapse toggle size, collapsed-column preview strip, and move-all chevron styling in dashboard CSS+JS
