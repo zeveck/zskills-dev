@@ -2421,10 +2421,6 @@ def collect_snapshot(
         it.get("number") for it in issues
         if isinstance(it.get("number"), int) and it.get("closed_at")
     }
-    known_plan_slugs: set = {
-        p["slug"] for p in plans
-        if isinstance(p.get("slug"), str) and p["slug"]
-    }
     raw_issues = state.get("issues", {})
     filtered_issues: Dict[str, Any] = {}
     for col, entries in raw_issues.items():
@@ -2441,16 +2437,9 @@ def collect_snapshot(
             if num not in closed_nums:
                 kept.append(n)
         filtered_issues[col] = kept
-    raw_plans = state.get("plans", {})
-    filtered_plans: Dict[str, Any] = {}
-    for col, entries in raw_plans.items():
-        filtered_plans[col] = [
-            e for e in entries
-            if isinstance(e, dict) and e.get("slug") in known_plan_slugs
-        ] if entries else []
     queues_block: Dict[str, Any] = {
         "default_mode": state.get("default_mode", "phase"),
-        "plans": filtered_plans,
+        "plans": state.get("plans", {}),
         "issues": filtered_issues,
     }
 

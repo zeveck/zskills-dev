@@ -2002,7 +2002,7 @@ fi
 # monitor-state.json has them in an active column. Regression canary
 # for the PR #678 incomplete fix: _annotate_issues_queue filtered its
 # internal pos but queues_block passed the raw state file through.
-W124=$(cd "$REPO_ROOT" && "$PYTHON" -c '
+W124=$(cd "$REPO_ROOT" && python3 -c '
 # Unit test of the queues_block closed-issue filter logic from
 # collect_snapshot (collect.py ~line 2420). Tests the filter in
 # isolation — same algorithm, no need to mock the full snapshot.
