@@ -1987,3 +1987,15 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 13:39 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #713 | Decouple verification from auto-landing in /do + /quickfix | fix-issue-713 | 1723b58 | 5958/5958 | PASS (diff + semantic + mirror + full suite) | N/A |
+
+### Not Fixed
+(none)
