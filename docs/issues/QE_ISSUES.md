@@ -1,5 +1,11 @@
 # QE Issues Tracker
 
+> **DEPRECATED (2026-05-27, #685).** This markdown tracker is no longer
+> maintained. GitHub issues filed by `/qe-audit` are the live durable
+> record — query via `gh issue list --label qe-audit --state all` (or
+> without the label filter if QE issues are unlabeled). This file is
+> preserved as a historical reference for the 2026-05-15 seed audit only.
+
 Issues filed by `/qe-audit` from commit audits and bash sessions. Open issues
 list current findings; resolved issues archived below as a record of what
 QE caught.
