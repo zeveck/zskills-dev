@@ -1953,3 +1953,22 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 08:35 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #687 | Dashboard: closure-reason chip on Completed-column issue cards | fix-issue-687 | a55348f | 5941/5941 | PASS (diff + mirror + full suite) | NEEDED (UI change) |
+
+### Skipped
+| # | Title | Bucket | Action now |
+|---|-------|--------|------------|
+| #660 | Skill-layer gap: column-targeted add/rank/remove | plan-scale | /draft-plan — cross-skill design surface |
+| #672 | backfill-plan-completed.sh set -u | race-lost | claimed by concurrent pipeline |
+| #700 | Dashboard: polish collapse/expand toggle + preview | /do pr | multi-item UI polish; skip-tagged |
+
+### Not Fixed
+(none)
