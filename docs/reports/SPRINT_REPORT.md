@@ -1932,3 +1932,24 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 06:04 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #673 | test_p99_under_budget flakes — switch to p95 | fix-issue-673 | 57f0b9e | 5916/5916 | PASS (diff + 3x targeted + full suite) | N/A |
+| #674 | Dashboard: ZSKILLS_DASHBOARD_ROOT override | fix-issue-674 | 30d6f07 | 5919/5919 | PASS (diff + mirror + full suite) | N/A |
+
+### Skipped
+| # | Title | Bucket | Action now |
+|---|-------|--------|------------|
+| #660 | Skill-layer gap: column-targeted add/rank/remove | plan-scale | /draft-plan — cross-skill design surface |
+| #681 | Prescribe Files-to-change in issue bodies | /do pr tier | /do pr — 2-skill prose change needs plan review |
+| #676 | Dashboard: completed-window UI control | UI feature | needs visual testing + design decision |
+| #675 | Dashboard: scroll affordance for below-band | UI feature | author decision on design option |
+
+### Not Fixed
+(none)
