@@ -1354,3 +1354,9 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 6. Tests: update `tests/test-issues-skip-reason-parse.sh` (synthetic #100, real-tracker #67/#432 expectations) and `tests/test-fix-issues-phase2-source-filter.sh` (#703 expected output) to cover both codes.
 7. Mirror `.claude/skills/` copies + skill-version bumps for `fix-issues` and `zskills-dashboard`.
 **Complexity:** M. **Action now:** /do pr — split needs-decision skip-code into needs-decision vs deferred across fix-issues rubric, filter script, dashboard collect.py, CSS chip, and tests
+
+### #729 — 6c78aca accidentally reverted /fix-issues `next` staleness step from 3d8e120 — #719 closure-incomplete
+**Labels:** (none) | **Verdict:** actionable — mechanical restoration of accidentally-reverted prose
+**Problem.** Commit 6c78aca (#728, closing #720) overwrote the `next` subcommand's staleness step (lines 466-475) that 3d8e120 (#723, closing #719) had just added. On HEAD, line 469 is a bare `4. **Exit.** Do not proceed to any phase.` — the "Peek at the Ready queue" block that reports staleness from `.zskills/monitor-state.json` is gone. An agent running `/fix-issues next` with an empty Ready queue silently exits without surfacing staleness info. Second instance of the same accidental-revert pattern (#704 was the first).
+**Fix outline.** Restore the staleness step from 3d8e120 before the `**Exit.**` line at SKILL.md:469 in the `next` section. The block adds steps 4 (peek at Ready queue, report count or staleness) and renumbers Exit to step 5. Bump `metadata.version`. Mirror source to `.claude/skills/fix-issues/SKILL.md`. Two files changed, zero logic — pure prose restoration.
+**Complexity:** S. **Action now:** /do pr — restore accidentally-reverted staleness step in /fix-issues `next` section from 3d8e120 + version bump + mirror

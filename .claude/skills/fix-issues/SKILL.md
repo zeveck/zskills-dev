@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.27+485965"
+  version: "2026.05.27+86e99a"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -466,7 +466,16 @@ If `$ARGUMENTS` contains `next` (case-insensitive):
      > Next fix-issues sprint in ~2h 15m (~8:30 PM ET, cron XXXX).
      > Prompt: Run /fix-issues 5 auto every 4h
    - If none found: `No active /fix-issues cron in this session.`
-4. **Exit.** Do not proceed to any phase.
+4. Peek at the Ready queue in `.zskills/monitor-state.json`:
+   - If `issues.ready` is non-empty: report the count
+     (`N issues in Ready queue.`).
+   - If `issues.ready` is empty (or the file does not exist): read the
+     `updated_at` field (ISO 8601 timestamp written by every sync/snapshot
+     cycle), compute minutes since that timestamp, and report:
+     > Ready queue empty (last synced: N minutes ago). Run `/fix-issues sync` to refresh, or the next cron fire will sync automatically.
+     If the file is missing or has no `updated_at`, say:
+     > Ready queue empty (never synced). Run `/fix-issues sync` to populate.
+5. **Exit.** Do not proceed to any phase.
 
 ## Stop (if `stop` is present)
 
