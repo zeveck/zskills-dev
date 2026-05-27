@@ -1255,3 +1255,13 @@ Both fixes extend `tests/test-skill-conformance.sh` with grep-counting tripwires
 Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new test): assert every `hooks/block-*.sh` is referenced in `/update-zskills` SKILL.md install list — terminates the family at CI time, preventing instance #3.
 
 **Complexity:** S. **Action now:** /fix-issues — 2-surface SKILL.md edit + ~10-line conformance test; body is verification-anchored and all line refs verified against current main.
+
+### #682 — Decision-table prose trains agents to see /quickfix vs /do as size hierarchy — reframe as worktree-vs-main (the real distinction)
+
+**Labels:** (none) | **Verdict:** NEEDS FIX
+
+**Problem.** The "Which skill for which input" decision table in `CLAUDE_TEMPLATE.md` (and the rendered `.claude/rules/zskills/managed.md`) describes `/do` as "Ad-hoc task ... larger than `/quickfix`," and the "Common confusions" subsection reinforces a size-based framing ("/quickfix is the FLOOR ..."). The real structural distinction between the two skills is worktree-vs-main, not size — and in this repo (`main_protected: true`), `/quickfix`'s in-place-on-main checkout is structurally inappropriate. Agents repeatedly propose `/quickfix` here as "the lighter option," which the user catches every time at proposal time.
+
+**Fix outline.** In `CLAUDE_TEMPLATE.md`, reframe the two table rows (lines 303 and 306) to key on worktree-vs-main (and project policy) rather than task size, and rewrite the "Common confusions" `/quickfix` vs `/do` bullet (line 319) to state explicitly that they are PEERS, not TIERS — same lifecycle, same /land-pr dispatch, same one-commit-PR shape; pick by `main_protected` policy, not size. Run `/update-zskills --rerender` to refresh `.claude/rules/zskills/managed.md` (the duplicated copies at managed.md lines 303/306/319 follow automatically). Add 2-3 conformance pins to `tests/test-skill-conformance.sh` (positive: "PEERS, not TIERS"; positive: "pick by ... project policy ... not task size"; negative: no "larger than `/quickfix`" phrasing) using the existing `check_in_file` / inverted helpers around line 94/161.
+
+**Complexity:** S. **Action now:** /quickfix — reframe CLAUDE_TEMPLATE.md decision-table rows + Common-confusions bullet to peers-not-tiers, rerender managed.md, add 3 conformance pins (peers-not-tiers, pick-by-policy, negative-pin on old phrasing).
