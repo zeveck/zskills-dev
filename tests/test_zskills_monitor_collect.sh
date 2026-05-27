@@ -2067,6 +2067,61 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# AC: ZSKILLS_DASHBOARD_ROOT env override (#674)
+# ---------------------------------------------------------------------------
+echo "=== _resolve_main_root ZSKILLS_DASHBOARD_ROOT override ==="
+
+_RMR_TMPDIR=$(mktemp -d)
+_RMR_OVERRIDE_DIR=$(mktemp -d)
+
+# Test 1: env var set to existing dir — function returns that dir
+_RMR_OUT=$(ZSKILLS_DASHBOARD_ROOT="$_RMR_OVERRIDE_DIR" PYTHONPATH="$PKG_PARENT" \
+  python3 -c "
+from zskills_monitor.collect import _resolve_main_root
+import pathlib
+print(_resolve_main_root('$_RMR_TMPDIR'))
+" 2>&1)
+_RMR_EXPECT=$(cd "$_RMR_OVERRIDE_DIR" && pwd -P)
+if [ "$_RMR_OUT" = "$_RMR_EXPECT" ]; then
+  pass "ZSKILLS_DASHBOARD_ROOT override returns env dir"
+else
+  fail "ZSKILLS_DASHBOARD_ROOT override returns env dir (got '$_RMR_OUT', expected '$_RMR_EXPECT')"
+fi
+
+# Test 2: env var set to non-existent dir — falls through to default
+_RMR_OUT2=$(ZSKILLS_DASHBOARD_ROOT="/tmp/nonexistent-zskills-test-$$" PYTHONPATH="$PKG_PARENT" \
+  python3 -c "
+from zskills_monitor.collect import _resolve_main_root
+print(_resolve_main_root('$REPO_ROOT'))
+" 2>&1)
+_RMR_EXPECT2=$(cd "$REPO_ROOT" && git rev-parse --git-common-dir 2>/dev/null)
+if [ -n "$_RMR_EXPECT2" ]; then
+  # We just verify the override was NOT used (result should NOT be the nonexistent path)
+  if [ "$_RMR_OUT2" != "/tmp/nonexistent-zskills-test-$$" ]; then
+    pass "ZSKILLS_DASHBOARD_ROOT non-existent dir falls through to default"
+  else
+    fail "ZSKILLS_DASHBOARD_ROOT non-existent dir falls through to default (got override path)"
+  fi
+else
+  skip "ZSKILLS_DASHBOARD_ROOT fallback (git rev-parse unavailable)"
+fi
+
+# Test 3: env var unset — default behavior preserved
+_RMR_OUT3=$(unset ZSKILLS_DASHBOARD_ROOT; PYTHONPATH="$PKG_PARENT" \
+  python3 -c "
+from zskills_monitor.collect import _resolve_main_root
+print(_resolve_main_root('$REPO_ROOT'))
+" 2>&1)
+# Should resolve to repo root (or its main checkout) — NOT the override dir
+if [ "$_RMR_OUT3" != "$_RMR_OVERRIDE_DIR" ] && [ -n "$_RMR_OUT3" ]; then
+  pass "ZSKILLS_DASHBOARD_ROOT unset preserves default behavior"
+else
+  fail "ZSKILLS_DASHBOARD_ROOT unset preserves default behavior (got '$_RMR_OUT3')"
+fi
+
+rm -rf "$_RMR_TMPDIR" "$_RMR_OVERRIDE_DIR"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

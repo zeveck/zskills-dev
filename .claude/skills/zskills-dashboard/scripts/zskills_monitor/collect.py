@@ -249,7 +249,17 @@ def _resolve_main_root(repo_root: Any) -> pathlib.Path:
     A worktree is identified by `.git` being a *file* (gitlink) rather
     than a *directory*. Use briefing.find_repo_root + .git inspection
     to always return the main worktree root.
+
+    Opt-in override: set ``ZSKILLS_DASHBOARD_ROOT`` to an existing
+    directory and this function returns that path immediately, bypassing
+    the git-common-dir hop.  This lets agents in worktrees point the
+    dashboard at their worktree's filesystem for visual verification.
     """
+    override = os.environ.get("ZSKILLS_DASHBOARD_ROOT")
+    if override:
+        op = pathlib.Path(override)
+        if op.is_dir():
+            return op.resolve()
     p = pathlib.Path(str(repo_root)).resolve()
     # If invoked from a worktree, hop to the main checkout. The
     # canonical idiom is `git rev-parse --git-common-dir` + parent.
