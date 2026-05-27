@@ -128,6 +128,7 @@ function makeNode(tag) {
     removeAttribute(k) { delete this.attrs[k]; },
     appendChild(c) { c.parent = this; this.children.push(c); return c; },
     closest(_sel) { return null; },  // unused in buildPlanCard render
+    addEventListener() {},
   };
   return node;
 }
@@ -153,12 +154,15 @@ const planUrlBlock    = extractBlock(src, /\nfunction planUrl\(/, "\n}\n");
 const statusPillCls   = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
 const modePillCls     = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const makeMoveBtnBlk  = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
+const makeCopyBtnBlk  = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildPlanBlock  = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
 
 // currentEntryMode is used inside buildPlanCard for the ready-column
 // mode chip — stub it.
 const harness = `
 let repoUrl = "https://example.invalid/repo";
+if (typeof navigator === "undefined") globalThis.navigator = {};
+if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 function currentEntryMode(_slug) { return null; }
 
 ${elBlock}
@@ -174,6 +178,8 @@ ${statusPillCls}
 ${modePillCls}
 
 ${makeMoveBtnBlk}
+
+${makeCopyBtnBlk}
 
 ${buildPlanBlock}
 

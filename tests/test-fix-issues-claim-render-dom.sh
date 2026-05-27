@@ -160,6 +160,7 @@ function makeNode(tag) {
       }
       return null;
     },
+    addEventListener() {},
   };
   return node;
 }
@@ -206,6 +207,7 @@ const titleNodeBlock = extractBlock(src, /\nfunction titleNode\(/, "\n}\n");
 const relativeTimeBlock = extractBlock(src, /\nfunction relativeTime\(/, "\n}\n");
 const issueUrlBlock = extractBlock(src, /\nfunction issueUrl\(/, "\n}\n");
 const makeBtnBlock = extractBlock(src, /\nfunction makeIssueMoveBtn\(/, "\n}\n");
+const makeCopyBtnBlock = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildCardBlock = extractBlock(src, /\nfunction buildIssueCard\(/, "\n  return card;\n}\n");
 const fingerprintBlock = extractBlock(src, /\nfunction fingerprintIssues\(/, "\n}\n");
 
@@ -228,6 +230,8 @@ const guardSrc = extractBlock(
 // Build the full harness source.
 const harness = `
 let repoUrl = "https://example.invalid/repo";
+if (typeof navigator === "undefined") globalThis.navigator = {};
+if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 ${issueColumnsBlock}
 
 ${elBlock}
@@ -239,6 +243,8 @@ ${relativeTimeBlock}
 ${issueUrlBlock}
 
 ${makeBtnBlock}
+
+${makeCopyBtnBlock}
 
 ${buildCardBlock}
 

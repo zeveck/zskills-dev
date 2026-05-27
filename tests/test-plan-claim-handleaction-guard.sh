@@ -91,6 +91,7 @@ function makeNode(tag) {
       }
       return null;
     },
+    addEventListener() {},
   };
   return node;
 }
@@ -137,6 +138,7 @@ const planUrlBlock   = extractBlock(src, /\nfunction planUrl\(/, "\n}\n");
 const statusPillCls  = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
 const modePillCls    = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const makeMoveBtnBlk = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
+const makeCopyBtnBlk = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildPlanBlock = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
 
 // Extract the plan-action guard block — the literal slice from the
@@ -149,6 +151,8 @@ const guardSrc = extractBlock(
 
 const harness = `
 let repoUrl = "https://example.invalid/repo";
+if (typeof navigator === "undefined") globalThis.navigator = {};
+if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 function currentEntryMode(_slug) { return null; }
 
 ${elBlock}
@@ -164,6 +168,8 @@ ${statusPillCls}
 ${modePillCls}
 
 ${makeMoveBtnBlk}
+
+${makeCopyBtnBlk}
 
 ${buildPlanBlock}
 
