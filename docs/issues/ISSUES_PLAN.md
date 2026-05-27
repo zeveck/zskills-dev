@@ -1309,3 +1309,13 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Problem.** `skills/zskills-dashboard/scripts/backfill-plan-completed.sh` line 84 dereferences `$CLAUDE_PROJECT_DIR` under `set -euo pipefail` (line 47). When the variable is unset (standalone shell invocation outside Claude Code), bash exits with "unbound variable" before the `||` fallback block on lines 84-89 can execute. The `.claude/skills/` mirror has the identical bug.
 **Fix outline.** Replace line 84's bare `$CLAUDE_PROJECT_DIR` with a default-substitution form: `. "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/skills/update-zskills/scripts/zskills-paths.sh" 2>/dev/null || {`. Both source and mirror need the fix. Bump `zskills-dashboard` skill version. Add a test case that invokes the script with `CLAUDE_PROJECT_DIR` unset and asserts no "unbound variable" error (no existing test file found — may need a new `tests/test-backfill-plan-completed.sh`).
 **Complexity:** S. **Action now:** /do pr — fix default-substitution on line 84 in source + mirror, add unbound-variable test, bump skill version
+
+### #700 — Dashboard: polish collapse/expand toggle, collapsed-column preview, and column-move chevrons
+
+**Labels:** (none)
+
+**Problem.** Three related UX polish items on the dashboard below-band columns: (1) collapse/expand toggle too small, (2) collapsed columns show nothing, (3) column-move chevrons look rough. All CSS/JS frontend work needing visual verification.
+
+**Fix outline.** Replace chevron character with larger icon, add compact summary strip for collapsed columns, style chevrons with consistent padding/hover. Touches app.js and app.css across 3 sub-items.
+
+**Complexity:** M. **Action now:** /do pr — multi-item UI polish with visual-verification requirement; too broad for in-batch fix-agent.
