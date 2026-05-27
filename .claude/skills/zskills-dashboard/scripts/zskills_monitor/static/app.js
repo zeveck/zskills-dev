@@ -995,25 +995,30 @@ function buildPlanCard(plan, slug, col, defaultMode) {
 
   // Card controls: ↑ ↓ ← → and remove. Omitted for completed plans
   // (Phase 4 / D5 — Completed is read-only; no per-card action buttons).
-  if (!isCompleted) {
+  // The copy button is always present (copying is safe regardless of
+  // claim or completed state).
+  {
     const controls = el("div", {
       cls: "card-controls",
-      attrs: { role: "group", "aria-label": "Move this plan" },
+      attrs: { role: "group", "aria-label": isCompleted ? "Plan actions" : "Move this plan" },
     });
-    controls.appendChild(makeMoveBtn("plan-up", slug, "↑", "Move up"));
-    controls.appendChild(makeMoveBtn("plan-down", slug, "↓", "Move down"));
-    controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
-    controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
-    controls.appendChild(el("button", {
-      cls: "remove-btn",
-      attrs: {
-        type: "button",
-        "data-action": "plan-discard",
-        "data-slug": slug,
-        "aria-label": "Discard plan (move to Discarded)",
-      },
-      text: "✕",
-    }));
+    if (!isCompleted) {
+      controls.appendChild(makeMoveBtn("plan-up", slug, "↑", "Move up"));
+      controls.appendChild(makeMoveBtn("plan-down", slug, "↓", "Move down"));
+      controls.appendChild(makeMoveBtn("plan-left", slug, "←", "Move to previous column"));
+      controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
+      controls.appendChild(el("button", {
+        cls: "remove-btn",
+        attrs: {
+          type: "button",
+          "data-action": "plan-discard",
+          "data-slug": slug,
+          "aria-label": "Discard plan (move to Discarded)",
+        },
+        text: "✕",
+      }));
+    }
+    controls.appendChild(makeCopyBtn((plan && plan.title) || slug));
     card.appendChild(controls);
   }
 
@@ -1044,6 +1049,30 @@ function makeIssueMoveBtn(action, num, label, ariaLabel) {
     },
     text: label,
   });
+}
+
+// Copy-to-clipboard button. Uses a direct event listener (not the
+// delegated data-action dispatch) so it bypasses the claim guard — copying
+// title text is always safe. Shows a brief checkmark on success.
+function makeCopyBtn(titleText) {
+  var btn = el("button", {
+    cls: "move-btn copy-btn",
+    attrs: {
+      type: "button",
+      "data-action": "copy-title",
+      "aria-label": "Copy title to clipboard",
+    },
+    text: "📋",
+  });
+  btn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    navigator.clipboard.writeText(titleText).then(function() {
+      btn.textContent = "✓";
+      setTimeout(function() { btn.textContent = "📋"; }, 1500);
+    });
+  });
+  return btn;
 }
 
 // Column-header chevron button: triggers "move all non-claimed cards in
@@ -1380,26 +1409,32 @@ function buildIssueCard(issue, num, col) {
     }
     card.appendChild(labels);
   }
-  // Phase 4 / D5 — Completed cards skip per-card action controls.
-  if (!isCompleted) {
+  // Phase 4 / D5 — Completed cards skip per-card move/remove controls.
+  // The copy button is always present (copying is safe regardless of
+  // claim or completed state).
+  {
     const controls = el("div", {
       cls: "card-controls",
-      attrs: { role: "group", "aria-label": "Move this issue" },
+      attrs: { role: "group", "aria-label": isCompleted ? "Issue actions" : "Move this issue" },
     });
-    controls.appendChild(makeIssueMoveBtn("issue-up", num, "↑", "Move up"));
-    controls.appendChild(makeIssueMoveBtn("issue-down", num, "↓", "Move down"));
-    controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
-    controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
-    controls.appendChild(el("button", {
-      cls: "remove-btn",
-      attrs: {
-        type: "button",
-        "data-action": "issue-remove",
-        "data-number": String(num),
-        "aria-label": "Remove issue from queue",
-      },
-      text: "✕",
-    }));
+    if (!isCompleted) {
+      controls.appendChild(makeIssueMoveBtn("issue-up", num, "↑", "Move up"));
+      controls.appendChild(makeIssueMoveBtn("issue-down", num, "↓", "Move down"));
+      controls.appendChild(makeIssueMoveBtn("issue-left", num, "←", "Move to previous column"));
+      controls.appendChild(makeIssueMoveBtn("issue-right", num, "→", "Move to next column"));
+      controls.appendChild(el("button", {
+        cls: "remove-btn",
+        attrs: {
+          type: "button",
+          "data-action": "issue-remove",
+          "data-number": String(num),
+          "aria-label": "Remove issue from queue",
+        },
+        text: "✕",
+      }));
+    }
+    const issueTitle = issue ? ("#" + num + " " + (issue.title || "")) : ("#" + num);
+    controls.appendChild(makeCopyBtn(issueTitle));
     card.appendChild(controls);
   }
   return card;
