@@ -874,12 +874,15 @@ code, pre, .mono {
   flex: 1;
 }
 
-/* Phase 3 — Below-panel band (Backlog | Completed). Standalone 2-column
+/* Phase 3 — Below-panel band (Backlog | Discarded | Completed). Standalone
    grid sibling of `.columns` (D3 — NOT composed with .columns-2). The
    dashed border-top creates a visual separator from the active row so
    the band reads as "off the active flow". `.below-panel-band[hidden]`
-   collapses the entire block when BOTH sub-columns are empty (W3.7);
-   Backlog ALONE renders even when empty, with a placeholder drop-target. */
+   collapses the entire block when ALL sub-columns are empty (W3.7);
+   Backlog ALONE renders even when empty, with a placeholder drop-target.
+   Issues-side band keeps 2 sub-columns (discarded is plans-only in v1
+   per #677); the plans-side band uses 3 sub-columns when discarded is
+   present (`[data-kind="plan"]` selector). */
 .below-panel-band {
   display: grid;
   grid-template-columns: 1fr;
@@ -891,6 +894,7 @@ code, pre, .mono {
 
 @media (min-width: 700px) {
   .below-panel-band { grid-template-columns: 1fr 1fr; }
+  .below-panel-band[data-kind="plan"] { grid-template-columns: 1fr 1fr 1fr; }
 }
 
 .below-panel-band[hidden] { display: none; }

@@ -78,7 +78,7 @@ TRIGGER_CMD_RE = re.compile(r"^/work-on-plans(\s|$)")
 # bodies with a specific error containing "completed column is read-only"
 # (see _validate_queue_body); the generic unknown-column path is a
 # secondary backstop.
-PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog")
+PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog", "discarded")
 ISSUE_COLUMNS = ("triage", "ready", "backlog")
 DEFAULT_MODE_VALUES = ("phase", "finish")
 

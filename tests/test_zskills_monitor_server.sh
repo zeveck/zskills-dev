@@ -545,6 +545,41 @@ print(f"ok={ok} ua={bool(has_ua)} sua={bool(has_sua)} eq={eq}")
     fail "validate_queue_body_accepts_backlog: → $CODE (expected 200)"
   fi
 
+  # Issue #677 — validate_queue_body_accepts_discarded: POST with
+  # plans.discarded returns 200 (server-side PLAN_COLUMNS now includes
+  # discarded as a writable column, parallel to backlog). Plans-only in
+  # v1 — issues-side support deferred (ISSUE_COLUMNS unchanged).
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[{"slug":"sample-plan"}],"reviewed":[],"ready":[],"backlog":[],"discarded":[{"slug":"discarded-plan"}]},"issues":{"triage":[42],"ready":[],"backlog":[123]}}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  if [ "$CODE" = "200" ]; then
+    pass "validate_queue_body_accepts_discarded: POST with plans.discarded → 200 (#677)"
+  else
+    fail "validate_queue_body_accepts_discarded: → $CODE (expected 200)"
+  fi
+  # Persisted: the discarded slug must be present in monitor-state.json.
+  if grep -q '"discarded-plan"' "$MR5/.zskills/monitor-state.json"; then
+    pass "validate_queue_body_accepts_discarded: plans.discarded entry persisted (#677)"
+  else
+    fail "validate_queue_body_accepts_discarded: plans.discarded entry missing in state file (#677)"
+  fi
+  # Issues-side discarded is NOT accepted in v1 (#677 plans-only) — the
+  # generic unknown-column path rejects it.
+  RESP_DI=$(curl -s -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[]},"issues":{"triage":[],"ready":[],"discarded":[123]}}' \
+    -w '\n%{http_code}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  CODE_DI=$(printf '%s\n' "$RESP_DI" | tail -n1)
+  if [ "$CODE_DI" = "400" ]; then
+    pass "validate_queue_body_rejects_issues_discarded_in_post: issues.discarded → 400 (#677 plans-only v1)"
+  else
+    fail "validate_queue_body_rejects_issues_discarded_in_post: issues.discarded → $CODE_DI (expected 400)"
+  fi
+
   # W2.7 — validate_queue_body_rejects_completed_in_post (plans.completed)
   RESP=$(curl -s -X POST \
     -H "Origin: http://127.0.0.1:$PORT_D" \
