@@ -2017,3 +2017,20 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 18:57 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #722 | /fix-issues reconsider subcommand | fix-issue-722 | 4854e5e | 5961/5961 | PASS | N/A |
+
+### Skipped
+| # | Title | Bucket |
+|---|-------|--------|
+| #720 | Research over-classifies | race-lost |
+
+### Not Fixed
+(none)
