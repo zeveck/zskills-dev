@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.27+fdef5c"
+  version: "2026.05.27+e16c55"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -2631,6 +2631,18 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     exit "$ACQ_RC"
   fi
 
+  # 3b. Final GitHub-state guard (race-condition defense). The issue may
+  # have been auto-closed by a sibling PR merge between the Ready-queue
+  # read and this dispatch. Check live state; if CLOSED, release the
+  # claim and skip — don't waste a worktree + agent cycle.
+  LIVE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+  if [ "$LIVE_STATE" = "CLOSED" ]; then
+    echo "fix-issues: issue #$ISSUE_NUM is CLOSED on GitHub (race — closed after Ready-queue read); releasing claim and skipping." >&2
+    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+    SKIP_RECORD+=("closed-on-github:$ISSUE_NUM")
+    continue
+  fi
+
   # 4. Materialise worktree + dispatch impl agent.
   WORKTREE_PATH="/tmp/$(basename "$MAIN_ROOT")-fix-issue-${ISSUE_NUM}"
   if [ -d "$WORKTREE_PATH" ]; then
@@ -2850,6 +2862,18 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   if [ "$ACQ_RC" != 0 ]; then
     echo "fix-issues: claim acquire failed for issue $ISSUE_NUM (rc=$ACQ_RC); aborting sprint." >&2
     exit "$ACQ_RC"
+  fi
+
+  # 3b. Final GitHub-state guard (race-condition defense). The issue may
+  # have been auto-closed by a sibling PR merge between the Ready-queue
+  # read and this dispatch. Check live state; if CLOSED, release the
+  # claim and skip — don't waste a worktree + agent cycle.
+  LIVE_STATE=$(gh issue view "$ISSUE_NUM" --json state -q .state 2>/dev/null || echo "UNKNOWN")
+  if [ "$LIVE_STATE" = "CLOSED" ]; then
+    echo "fix-issues: issue #$ISSUE_NUM is CLOSED on GitHub (race — closed after Ready-queue read); releasing claim and skipping." >&2
+    bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
+    SKIP_RECORD+=("closed-on-github:$ISSUE_NUM")
+    continue
   fi
 
   # 4. Materialise per-issue PR-mode worktree.
