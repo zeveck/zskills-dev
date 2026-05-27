@@ -1317,7 +1317,7 @@ def list_closed_issues_in_window(
                 "--limit",
                 str(int(limit)),
                 "--json",
-                "number,title,labels,createdAt,closedAt,body",
+                "number,title,labels,createdAt,closedAt,body,stateReason",
             ],
             capture_output=True,
             text=True,
@@ -1363,6 +1363,7 @@ def list_closed_issues_in_window(
                 "created_at": entry.get("createdAt", ""),
                 "closed_at": entry.get("closedAt", ""),
                 "body": entry.get("body", ""),
+                "state_reason": entry.get("stateReason", ""),
             })
         _CLOSED_ISSUE_CACHE[key] = {
             "ts": now,
