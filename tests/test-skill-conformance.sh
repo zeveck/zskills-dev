@@ -3053,6 +3053,16 @@ else
 fi
 
 echo ""
+echo "=== /qe-audit + /fix-issues — Files-to-change + scope-grep (#681) ==="
+# Issue #681: /qe-audit must prescribe a `## Files to change` section in
+# every filed issue body so implementers can grep for authoritative scope.
+# /fix-issues must enforce a scope-grep verification step that cross-checks
+# the agent's diff against all files named in the issue body.
+check       qe-audit    "issue body format prescribes Files-to-change"   '## Files to change'
+check       fix-issues  "impl-prompt scope-grep enforcement"             '[Ss]cope-grep verification'
+check       fix-issues  "impl-prompt verifies each file in diff"         'git diff origin/main\.\.HEAD --name-only'
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

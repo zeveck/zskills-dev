@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.27+c5684b"
+  version: "2026.05.27+430c2d"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -20,7 +20,7 @@ Two modes of quality assurance:
   or let the agent choose under-tested areas. Try to break things with edge
   cases, unusual inputs, and unexpected workflows.
 
-Both modes file GitHub issues — that's the durable record. Both are
+Both modes file GitHub issues and update `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`. Both are
 schedulable. Together they form the quality feedback loop: audit finds gaps →
 `/fix-issues` fixes them → audit validates the fixes.
 
@@ -170,12 +170,10 @@ If `every` is NOT present, skip this phase and proceed to the audit/bash
 
 Run when `bash` is NOT present in arguments.
 
-1. **Find the last audit checkpoint** — list recent QE-filed GitHub issues
-   via `gh issue list --label qe-audit --state all --limit 20 --json
-   number,createdAt,title` (or without the label filter if QE issues are
-   unlabeled) and look at the most recent issue's `createdAt`. Use
-   `git log --since="<that date>" --oneline` to derive the commit range
-   to audit. If no prior QE issues exist, fall back to `git log --oneline -20`.
+1. **Find the last audit checkpoint** — read the bottom of `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`
+   for the last audited commit range and date (format: `*Last audited:
+   YYYY-MM-DD — commits <hash> through <hash>*`). If the file doesn't exist
+   or has no checkpoint, fall back to `git log --oneline -20`.
 
 2. **List new commits** — `git log --oneline <last_commit>..HEAD`. Skip
    QE-generated commits (messages matching `fix: N QE issues`, `fix: QE batch`,
@@ -222,7 +220,7 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
 5. **Verify each finding against ground truth before durable-state action.**
    For every "FILE ISSUE" or "MOVE TO RESOLVED" finding from a dispatched
    agent, perform the cited check yourself before calling `gh issue create`
-   before calling `gh issue create`:
+   or mutating the QE issues tracker:
 
    - If the finding cites a file:line, `Read` or `grep -n` that file:line and
      confirm the cited text matches verbatim.
@@ -236,12 +234,10 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
      message claims to close it.
 
    Record the verification command and its result in the issue body or
-   issue body (e.g., `Verified: \`grep -n 'pattern' file\` → line 441`). A
-   finding that cannot be verified against ground truth is dropped — do not
-   file it as an issue. (Past behavior recorded "unverified findings" in a
-   tracker; that tracker is retired in favor of GH issues as the durable
-   record. If a finding genuinely needs follow-up but cannot be verified,
-   note it inline in the report at Step 8 — do not file it.)
+   tracker entry (e.g., `Verified: \`grep -n 'pattern' file\` → line 441`). A
+   finding that cannot be verified against ground truth is logged in the
+   tracker under an "Unverified findings" subsection with the reason, not
+   filed as an issue or moved between sections.
 
    Past failure (2026-05-17 audit): 6 issues filed in ~3 minutes by accepting
    agent reports wholesale; #338 had a factual error ("file deleted" when it
@@ -253,6 +249,23 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
    `gh issue create`. Include: summary, root cause, suggested fix/test,
    severity, which commit introduced it, and the verification command/result
    from Step 5.
+
+   **Issue body format — every filed issue MUST include near the top:**
+
+   ```markdown
+   ## Files to change
+
+   - `path/to/file/A` — <one-line scope>
+   - `path/to/file/B` — <one-line scope>
+   ```
+
+   Even when the title names a single file, the body's "Files to change" list
+   is the authoritative scope. Implementers grep this section to verify all
+   files-in-scope were touched before declaring the fix complete.
+
+   If the fix is truly single-file, the section still appears with one bullet —
+   the explicit form prevents the "title says one file but body adds context
+   for two more" miss pattern (#629, #649).
 
    **Ban caveats: no "audit-not-done" hedges in filed bodies.** If a finding
    identifies a wider concern beyond the immediate defect — a pattern that
@@ -308,12 +321,16 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
      pairs (hook-A.sh, hook-B.sh, hook-C.sh). Filed separate issue #NNN
      for the structural fix with full pair list inline."
 
-7. **Durable record.** The durable record of QE findings is GitHub issues
-   filed by Step 6 (`gh issue create`). No separate markdown tracker is
-   maintained — GH issues are the source of truth. Resolved issues are
-   closed via `gh issue close` (typically by `/fix-issues`), and the
-   `gh issue list --label qe-audit --state all` query at Step 1 recovers
-   the audit history for the next pass.
+7. **Update tracker** — Edit `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`.
+   The Step 5 verification gate applies before any tracker mutation — do not
+   move issues to "Resolved" on agent-only claims; re-verify with `git show`
+   or grep first.
+   - Add new issues to "Open Issues" section
+   - Move any resolved issues to "Resolved Issues" (only after Step 5
+     verification of the fixing commit)
+   - Log any unverifiable findings under an "Unverified findings" subsection
+     with the reason
+   - Update the audit date and commit range at the bottom
 
 8. **Report** — Summarize findings: issues filed, notable positives, and
    overall assessment. If a cron is active, include the next run time:
@@ -405,6 +422,9 @@ Run when `bash` IS present in arguments.
 5. **File GitHub issues** for each failure (from any testing method):
    - Include: what was tested, expected vs actual behavior, test code,
      severity rating, suggested fix
+   - **Include a `## Files to change` section** near the top of the body
+     (same format as Commit Audit Step 6). Even single-file fixes get a
+     one-bullet list — the explicit form prevents scope-miss.
    - Tag with appropriate labels
    - **Ban caveats: no "audit-not-done" hedges.** See Commit Audit Step 6
      for the full rule. If a bash finding identifies a wider concern
@@ -414,10 +434,11 @@ Run when `bash` IS present in arguments.
      unvalidated cross-cutting framings; file a separate issue only with
      verified evidence.
 
-6. **Durable record.** GitHub issues filed by Step 5 are the durable
-   record. No separate markdown tracker is maintained — see Commit Audit
-   Step 7 for the equivalent statement. Resolved issues are closed via
-   `gh issue close` (typically by `/fix-issues`).
+6. **Update `the QE issues tracker (e.g., `$ZSKILLS_ISSUES_DIR/QE_ISSUES.md`)`** with new findings.
+   The verification gate from Commit Audit Step 5 applies here too — do not
+   move issues to "Resolved" on agent-only claims (re-verify the fixing
+   commit with `git show`), and log any unverifiable findings under an
+   "Unverified findings" subsection rather than filing them.
 
 7. **Clean up test files:**
    - Keep passing adversarial tests (they're valuable regression tests)

@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.26+9b72f3"
+  version: "2026.05.27+fdef5c"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next — Batch Bug-Fixing Sprint
@@ -2381,8 +2381,22 @@ Each agent follows this fix workflow:
    (check your project's UI directories), mark `User Verify: NEEDED`
    in the sprint report. The user must see UI changes before the issue
    can be closed. This is in ADDITION to your agent verification.
-8. Commit in the worktree (one issue per commit, clean history)
-9. **Rebase onto current main before final commit:**
+8. **Scope-grep verification — before declaring done, verify all files
+   in scope were touched.** Grep the issue body for a `## Files to change`
+   section. For each file path listed, verify the implementer's diff
+   touched it:
+   ```bash
+   git diff origin/main..HEAD --name-only | grep -qF "<path>"
+   ```
+   If any listed file was NOT modified in the diff, the fix is incomplete.
+   Either fix the remaining file(s) or explicitly note in the commit message
+   why a listed file was not changed (e.g., "not changed because the root
+   cause was entirely in file X"). Do not declare done until every file in
+   the `## Files to change` section is accounted for. This closes the
+   #629/#649 closure-incomplete pattern where agents fixed the titled file
+   but missed companion files named deeper in the body.
+9. Commit in the worktree (one issue per commit, clean history)
+10. **Rebase onto current main before final commit:**
    ```bash
    git fetch origin main && git rebase origin/main
    ```
