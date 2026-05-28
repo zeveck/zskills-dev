@@ -1,16 +1,18 @@
 ---
 name: cleanup-merged
 disable-model-invocation: true
-argument-hint: "[apply] [remote | all]"
+argument-hint: "[apply] [local | remote | all] [force] [<branch>...]"
 description: >-
   Post-PR-merge local normalization: fetch-and-prune origin, switch off
   merged feature branches, pull main, and delete local branches whose
   upstream is gone or whose PR has merged. Preview by default — run
-  `/cleanup-merged apply` to execute. `remote` adds remote branch cleanup;
-  `all` does both local + remote. Protected branches from config are
-  skipped automatically.
+  `/cleanup-merged apply` to execute. `local` (default) / `remote` / `all`
+  pick the scope; pass explicit branch names to narrow the candidate set.
+  `force` overrides the merged-check + unpushed guard for branches you
+  explicitly name. Protected branches from config are NEVER deleted (even
+  with `force`) — they are always skipped.
 metadata:
-  version: "2026.05.28+07cbb9"
+  version: "2026.05.28+8fec91"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -31,28 +33,52 @@ never deletes a branch with unpushed commits.
 ## Interface
 
 ```
-/cleanup-merged              — preview local (show what would be deleted)
-/cleanup-merged apply        — execute local deletions (skip protected)
-/cleanup-merged remote       — preview remote branch deletions
-/cleanup-merged remote apply — execute remote deletions (skip protected)
-/cleanup-merged all          — preview both local + remote
-/cleanup-merged all apply    — execute both (skip protected)
+/cleanup-merged                       — preview local (show what would be deleted)
+/cleanup-merged apply                 — execute local deletions (skip protected)
+/cleanup-merged local                 — preview local (explicit local token)
+/cleanup-merged local apply           — execute local deletions (skip protected)
+/cleanup-merged remote                — preview remote branch deletions
+/cleanup-merged remote apply          — execute remote deletions (skip protected)
+/cleanup-merged all                   — preview both local + remote
+/cleanup-merged all apply             — execute both (skip protected)
+/cleanup-merged apply <br> <br>...    — narrow to NAMED local branches, then apply
+/cleanup-merged remote apply <br>...  — narrow to NAMED remote branches, then apply
+/cleanup-merged apply force <br>...   — override merged-check + unpushed guard for NAMED branches
 ```
 
 - **Preview is default** — safe to run, self-documenting. Output shows
   the plan and ends with "run `/cleanup-merged apply` to execute."
 - **`apply`** — positional token meaning "I saw the preview, do it."
   Terraform precedent.
+- **`local`** — explicit scope token for local-branch cleanup. This is
+  also the default when no scope token (`remote`/`all`) is given, so
+  bare `/cleanup-merged` and `/cleanup-merged local` are equivalent
+  (the token exists for symmetry with `remote`/`all`).
 - **`remote`** — adds `git push origin --delete` for branches whose PRs
   are confirmed MERGED via `gh pr view`. Never deletes branches with
   open PRs.
 - **`all`** — both local + remote.
+- **Branch names** — any positional token that is not a recognized
+  keyword is treated as an explicit branch NAME. Names **narrow** the
+  candidate set: only the named branches are considered (the full-scan
+  is skipped). Names do **not** bypass safety — every named branch is
+  still subject to the merged-confirmation, the unpushed-commits guard,
+  and the protected-skip. Names without `apply` → preview only.
+- **`force`** — overrides ONLY the merged-check and the unpushed-commits
+  guard, and ONLY for branches you EXPLICITLY named. It lets you delete
+  a named branch that is not yet confirmed merged (local: `git branch
+  -D`). `force` has no effect on un-named branches (the full-scan path
+  ignores it) and **NEVER** overrides the protected-skip — see below.
 - **Protected branches** — config field in `.claude/zskills-config.json`:
   ```json
   { "cleanup": { "protected_branches": ["docs/run-order-guide"] } }
   ```
   Preview marks these as `PROTECTED (config)` and `apply` skips them
-  automatically.
+  automatically. **This is sacrosanct: a protected branch is NEVER
+  deleted, even when named explicitly WITH `force`.** Naming a protected
+  branch (with or without `force`) emits a loud `PROTECTED (config) — refusing
+  to delete even with force` notice and skips it. There is no flag, token,
+  or naming combination that can delete a config-protected branch.
 
 ### Migration aliases
 
@@ -79,19 +105,25 @@ fi
 
 ### WI 1.2 — Argument parse
 
-Positional tokens: `apply`, `remote`, `all`. Order-independent.
+Positional tokens: `apply`, `local`, `remote`, `all`, `force`.
+Order-independent. Any positional that is NOT a recognized keyword (and
+not a migration alias) is collected as an explicit **branch name**.
 Legacy flags `--dry-run`, `-n`, `--review` are accepted as migration
 aliases.
 
 ```bash
 APPLY=0
+FORCE=0
 SCOPE="local"  # "local", "remote", or "all"
+NAMED_BRANCHES=()  # explicit branch names — narrow the candidate set
 
 for arg in "$@"; do
   case "$arg" in
     apply)  APPLY=1 ;;
+    local)  SCOPE="local" ;;
     remote) SCOPE="remote" ;;
     all)    SCOPE="all" ;;
+    force)  FORCE=1 ;;
     --dry-run|-n)
       echo "DEPRECATED: --dry-run/-n is now the default. Just run /cleanup-merged (no args) for preview."
       ;;
@@ -99,9 +131,13 @@ for arg in "$@"; do
       echo "DEPRECATED: --review is replaced by /cleanup-merged all. Treating as 'all'."
       SCOPE="all"
       ;;
-    *)
-      echo "ERROR: unknown argument '$arg'. Usage: /cleanup-merged [apply] [remote | all]" >&2
+    --*|-*)
+      echo "ERROR: unknown flag '$arg'. Usage: /cleanup-merged [apply] [local | remote | all] [force] [<branch>...]" >&2
       exit 2
+      ;;
+    *)
+      # Any non-keyword positional is an explicit branch name.
+      NAMED_BRANCHES+=("$arg")
       ;;
   esac
 done
@@ -113,7 +149,34 @@ case "$SCOPE" in
   remote) DO_REMOTE=1 ;;
   all)    DO_LOCAL=1; DO_REMOTE=1 ;;
 esac
+
+# When explicit branch names are given, they NARROW the candidate set:
+# only the named branches are considered (the full ref-scan is skipped).
+# `force` only takes effect for explicitly-named branches.
+HAVE_NAMES=0
+[ "${#NAMED_BRANCHES[@]}" -gt 0 ] && HAVE_NAMES=1
+
+is_named() {
+  local branch="$1"
+  [ "$HAVE_NAMES" -eq 0 ] && return 1
+  local nb
+  for nb in "${NAMED_BRANCHES[@]}"; do
+    [ "$branch" = "$nb" ] && return 0
+  done
+  return 1
+}
+
+if [ "$FORCE" -eq 1 ] && [ "$HAVE_NAMES" -eq 0 ]; then
+  echo "NOTE: 'force' has no effect without explicit branch names; it only overrides the merged-check / unpushed guard for branches you name. Ignoring." >&2
+  FORCE=0
+fi
 ```
+
+**`force` can never reach a protected branch.** The protected-skip
+(`is_protected`) is evaluated FIRST in every deletion path, before any
+`force`-gated logic, and emits a loud refusal notice. There is no code
+path where `FORCE=1` bypasses `is_protected`. This is the load-bearing
+safety invariant of this skill.
 
 ### WI 1.3 — Locate main-repo root and detect main branch
 
@@ -296,11 +359,33 @@ if [ "$DO_LOCAL" -eq 1 ]; then
     [ "$branch" = "$MAIN_BRANCH" ] && continue
     [ "$branch" = "$CURRENT" ] && continue
 
-    # Protected branch check
+    # When explicit names were given, narrow to only those branches.
+    if [ "$HAVE_NAMES" -eq 1 ] && ! is_named "$branch"; then
+      continue
+    fi
+
+    # ── Protected branch check — ALWAYS FIRST, NEVER OVERRIDABLE ──────
+    # This is the load-bearing safety invariant: a config-protected
+    # branch is never deleted, no matter what. `force` is evaluated only
+    # AFTER this guard and cannot reach it. If the user explicitly named
+    # a protected branch (with or without force), emit a loud refusal.
     if is_protected "$branch"; then
-      echo "  PROTECTED (config) $branch"
+      if is_named "$branch"; then
+        if [ "$FORCE" -eq 1 ]; then
+          echo "  PROTECTED (config) $branch — refusing to delete even with force"
+        else
+          echo "  PROTECTED (config) $branch — refusing to delete (named explicitly)"
+        fi
+      else
+        echo "  PROTECTED (config) $branch"
+      fi
       LOCAL_PROTECTED=$((LOCAL_PROTECTED+1))
       continue
+    fi
+
+    NAMED_FORCE=0
+    if [ "$FORCE" -eq 1 ] && is_named "$branch"; then
+      NAMED_FORCE=1
     fi
 
     UPSTREAM_GONE=0
@@ -318,19 +403,29 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       MERGED=1
     fi
 
-    [ "$MERGED" -eq 0 ] && continue
+    # Merged-check: a named branch under `force` skips the merged
+    # requirement (the user vouched for it explicitly). Un-named branches
+    # (full-scan path) always require merged confirmation.
+    if [ "$MERGED" -eq 0 ]; then
+      if [ "$NAMED_FORCE" -eq 1 ]; then
+        echo "  FORCE  $branch (not confirmed merged; deleting because explicitly named with force)"
+      else
+        continue
+      fi
+    fi
 
     # Unpushed-commit guard (squash-merge still counts commits as unpushed
     # because the squash SHA is different). Only honor the guard when the
     # upstream is NOT gone — a gone upstream plus PR=MERGED means the
-    # commits reached main via squash.
+    # commits reached main via squash. A named branch under `force`
+    # overrides this guard too.
     UNPUSHED=""
-    if [ "$UPSTREAM_GONE" -eq 0 ]; then
+    if [ "$UPSTREAM_GONE" -eq 0 ] && [ "$NAMED_FORCE" -eq 0 ]; then
       UNPUSHED=$(git log "$branch" --not --remotes --oneline 2>/dev/null | head -1)
     fi
 
     if [ -n "$UNPUSHED" ]; then
-      echo "  SKIP   $branch (has unpushed commits; delete manually with 'git branch -D $branch' if intentional)"
+      echo "  SKIP   $branch (has unpushed commits; delete manually with 'git branch -D $branch' if intentional, or re-run with 'force' and the branch name)"
       LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
       continue
     fi
@@ -350,7 +445,7 @@ if [ "$DO_LOCAL" -eq 1 ]; then
     #   - PR head unavailable (gh hiccup) -> fall back conservatively to
     #     the old ahead-count behavior so a gh failure never causes an
     #     unsafe delete.
-    if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ]; then
+    if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ] && [ "$NAMED_FORCE" -eq 0 ]; then
       PR_HEAD=$(gh pr view "$branch" --json headRefOid -q .headRefOid 2>/dev/null || echo "")
       LOCAL_TIP=$(git rev-parse "$branch" 2>/dev/null || echo "")
       if [ -n "$PR_HEAD" ]; then
@@ -383,7 +478,11 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       fi
     done < <(git worktree list --porcelain | awk '/^worktree /{wt=$0} /^branch /{print wt; print $0}')
 
-    REASON=$([ "$PR_STATE" = "MERGED" ] && echo "PR merged" || echo "upstream gone")
+    if [ "$NAMED_FORCE" -eq 1 ] && [ "$MERGED" -eq 0 ]; then
+      REASON="forced (named, not confirmed merged)"
+    else
+      REASON=$([ "$PR_STATE" = "MERGED" ] && echo "PR merged" || echo "upstream gone")
+    fi
 
     if [ -n "$WORKTREE_FOR_BRANCH" ]; then
       if [ "$WORKTREE_FOR_BRANCH" = "$MAIN_ROOT" ]; then
@@ -420,11 +519,27 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       LOCAL_DELETED=$((LOCAL_DELETED+1))
       LOCAL_CANDIDATES+=("$branch")
     else
-      if git branch -D "$branch" >/dev/null; then
+      # Delete-flag selection. The default path only reaches here for
+      # branches already CONFIRMED merged (PR=MERGED or upstream-gone) —
+      # but squash-merge means the branch tip is NOT a fast-forward
+      # ancestor of main, so `git branch -d` would wrongly refuse it.
+      # Use `-d` when the branch IS a merged ancestor of main (clean),
+      # and `-D` for the confirmed-merged-but-not-ancestor (squash) case
+      # and for the explicit `force` path. `-D` is NEVER reached for an
+      # un-confirmed, un-named branch (the merged-check above guarantees
+      # MERGED=1 unless NAMED_FORCE=1).
+      if [ "$NAMED_FORCE" -eq 1 ]; then
+        DEL_FLAG="-D"   # user vouched for this named branch explicitly
+      elif git merge-base --is-ancestor "$branch" "$MAIN_BRANCH" 2>/dev/null; then
+        DEL_FLAG="-d"   # truly merged into main — safe non-force delete
+      else
+        DEL_FLAG="-D"   # confirmed merged via PR/upstream-gone (squash)
+      fi
+      if git branch "$DEL_FLAG" "$branch" >/dev/null; then
         echo "  DELETED $branch ($REASON)"
         LOCAL_DELETED=$((LOCAL_DELETED+1))
       else
-        echo "  FAILED  $branch (git branch -D exited non-zero)" >&2
+        echo "  FAILED  $branch (git branch $DEL_FLAG exited non-zero)" >&2
         LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
       fi
     fi
@@ -477,29 +592,53 @@ if [ "$DO_REMOTE" -eq 1 ]; then
       [ "$branch" = "$MAIN_BRANCH" ] && continue
       [ "$branch" = "HEAD" ] && continue
 
-      # Protected branch check
+      # When explicit names were given, narrow to only those branches.
+      if [ "$HAVE_NAMES" -eq 1 ] && ! is_named "$branch"; then
+        continue
+      fi
+
+      # ── Protected branch check — ALWAYS FIRST, NEVER OVERRIDABLE ────
+      # Same sacrosanct invariant as the local path: `force` can never
+      # reach a protected branch.
       if is_protected "$branch"; then
-        echo "  PROTECTED (config) origin/$branch"
+        if is_named "$branch" && [ "$FORCE" -eq 1 ]; then
+          echo "  PROTECTED (config) origin/$branch — refusing to delete even with force"
+        elif is_named "$branch"; then
+          echo "  PROTECTED (config) origin/$branch — refusing to delete (named explicitly)"
+        else
+          echo "  PROTECTED (config) origin/$branch"
+        fi
         REMOTE_PROTECTED=$((REMOTE_PROTECTED+1))
         continue
       fi
 
-      PR_STATE=$(gh pr view "$branch" --json state -q .state 2>/dev/null || echo "")
-
-      if [ "$PR_STATE" = "OPEN" ]; then
-        continue  # Active PR — never delete
+      NAMED_FORCE=0
+      if [ "$FORCE" -eq 1 ] && is_named "$branch"; then
+        NAMED_FORCE=1
       fi
 
-      if [ "$PR_STATE" != "MERGED" ]; then
+      PR_STATE=$(gh pr view "$branch" --json state -q .state 2>/dev/null || echo "")
+
+      if [ "$PR_STATE" = "OPEN" ] && [ "$NAMED_FORCE" -eq 0 ]; then
+        continue  # Active PR — never delete (unless explicitly named + force)
+      fi
+
+      if [ "$PR_STATE" != "MERGED" ] && [ "$NAMED_FORCE" -eq 0 ]; then
         continue  # Only delete branches with confirmed MERGED PRs
       fi
 
+      if [ "$NAMED_FORCE" -eq 1 ] && [ "$PR_STATE" != "MERGED" ]; then
+        RREASON="forced (named, PR state: ${PR_STATE:-unknown})"
+      else
+        RREASON="PR merged"
+      fi
+
       if [ "$APPLY" -eq 0 ]; then
-        echo "  WOULD-DELETE-REMOTE origin/$branch (PR merged)"
+        echo "  WOULD-DELETE-REMOTE origin/$branch ($RREASON)"
         REMOTE_DELETED=$((REMOTE_DELETED+1))
       else
         if git push origin --delete "$branch" 2>/dev/null; then
-          echo "  DELETED-REMOTE origin/$branch (PR merged)"
+          echo "  DELETED-REMOTE origin/$branch ($RREASON)"
           REMOTE_DELETED=$((REMOTE_DELETED+1))
         else
           echo "  FAILED  origin/$branch (git push origin --delete exited non-zero)" >&2
