@@ -58,13 +58,13 @@ DEFAULT_CONCURRENCY = 3
 WORK_DURATION_BASE = 32        # seconds (lands ~20-45s with the variance)
 WORK_DURATION_VARIANCE = 13
 
-# Arrival cadence. There are 40 items total (20 plans + 20 issues). Two of
+# Arrival cadence. There are 20 items total (10 plans + 10 issues). Two of
 # them (one plan + one issue) are SEEDED at the anchored t=0 so the board is
-# never empty. The remaining 38 arrive across ~10 minutes (600s). With an
-# average gap of ARRIVAL_GAP_BASE seconds that lands the last item at
-# ~38 * 15s ≈ 570s, comfortably inside the ~10-minute window. Keep some
-# randomness via the variance so arrivals don't look metronomic.
-ARRIVAL_WINDOW_SECONDS = 600   # all 40 arrive within ~10 minutes
+# never empty. The remaining 18 arrive across ~5 minutes. With an average
+# gap of ARRIVAL_GAP_BASE seconds that lands the last item at
+# ~18 * 15s ≈ 270s, comfortably inside the window. Keep some randomness via
+# the variance so arrivals don't look metronomic.
+ARRIVAL_WINDOW_SECONDS = 300   # all 20 arrive within ~5 minutes
 ARRIVAL_GAP_BASE = 15          # ~every 6-24s with the variance below
 ARRIVAL_GAP_VARIANCE = 9
 FIRST_ARRIVAL_DELAY = 0        # the seeded pair is present at t=0
@@ -84,16 +84,15 @@ COMPLETED_COLUMN = "completed"
 # caps in memory at 200; the UI renders the first 20).
 ACTIVITY_CAP = 200
 WORKTREE_BASE = "/starship/.worktrees"
-LANDED_STATUS = "full"  # classifyBranch -> "landed" bucket when worktree.landed set
+LANDED_STATUS = "landed"  # canonical pill (Sampler set); classifyBranch -> "landed" bucket
 
-# Realistic mix of plan landing_modes (#5). 20 plans: a spread of "phase",
-# "finish", and a few genuine None (renders "unknown"). Index-aligned to the
-# 20 PLAN_DEFS below.
+# Realistic mix of plan landing_modes (#5). Most plans DON'T pin a mode —
+# it's inherited from the session — so the realistic shape is mostly None
+# (the absence of an override) with only a couple of explicit overrides.
+# Index-aligned to the 10 PLAN_DEFS below.
 PLAN_LANDING_MODES = [
-    "phase", "finish", "phase", None, "finish",
-    "phase", "phase", "finish", None, "phase",
-    "finish", "phase", "finish", "phase", None,
-    "finish", "phase", "phase", "finish", "phase",
+    None, "phase", None, None, "finish",
+    None, None, None, None, None,
 ]
 
 # Easter-egg plans (#3/#4). These are NOT part of the timed-arrival schedule:
@@ -182,52 +181,6 @@ PLAN_DEFS = [
         "Build real-time WebGL star renderer",
         "Add interactive sector overlays",
     ]),
-    ("xenolinguistics-translator", "Xenolinguistics Universal Translator Patch", [
-        "Integrate Vorta dialect corpus",
-        "Fix pronoun-case ambiguity in Klingon module",
-        "Regression test against 47 known languages",
-    ]),
-    ("warp-core-efficiency-tuning", "Warp Core Efficiency Tuning", [
-        "Measure dilithium crystal decay rates",
-        "Optimize matter/antimatter injection ratios",
-        "Validate at sustained Warp 8",
-    ]),
-    ("cargo-bay-inventory-system", "Cargo Bay Inventory System", [
-        "RFID-tag all cargo containers",
-        "Build real-time manifest dashboard",
-        "Integrate with replicator supply chain",
-    ]),
-    ("emergency-protocol-omega", "Emergency Protocol Omega Drill", [
-        "Review and update evacuation routes",
-        "Simulate hull breach on 3 decks simultaneously",
-        "Score crew response times",
-        "Debrief and publish after-action report",
-    ]),
-    ("bio-neural-gel-pack-refresh", "Bio-Neural Gel Pack Refresh", [
-        "Synthesize replacement gel cultures",
-        "Swap packs on decks 4-9",
-        "Run diagnostic handshake across all nodes",
-    ]),
-    ("deflector-dish-realignment", "Deflector Dish Realignment", [
-        "Recalibrate primary emitter frequency",
-        "Test tachyon burst dispersal pattern",
-        "Verify long-range sensor integration",
-    ]),
-    ("transporter-pattern-buffer", "Transporter Pattern Buffer Expansion", [
-        "Install additional pattern storage modules",
-        "Migrate legacy patterns to new format",
-        "Validate transport fidelity at 99.997%",
-    ]),
-    ("shuttle-bay-automation", "Shuttle Bay Launch Automation", [
-        "Install magnetic rail catapult",
-        "Program automated docking sequence",
-        "Test with unmanned shuttle sorties",
-    ]),
-    ("gravity-plating-recalibration", "Gravity Plating Recalibration", [
-        "Survey plating variance per deck",
-        "Flash-update firmware on all grav-generators",
-        "Spot-check with portable accelerometers",
-    ]),
 ]
 
 ISSUE_DEFS = [
@@ -241,16 +194,6 @@ ISSUE_DEFS = [
     (108, "Universal translator garbles Andorian sibilants"),
     (109, "Shuttle bay doors report closed when open"),
     (110, "Crew quarters lighting stuck on red alert spectrum"),
-    (111, "Sensor ghost on long-range scanners bearing 047 mark 3"),
-    (112, "Warp field geometry asymmetric at speeds above Warp 6"),
-    (113, "Jefferies tube hatch 14-C jammed shut"),
-    (114, "Medical tricorder firmware crashes on Bolian physiology"),
-    (115, "Cargo transporter materializes items 2cm left of target"),
-    (116, "Bridge viewscreen flickers during FTL transitions"),
-    (117, "Environmental controls set deck 12 to 45C"),
-    (118, "Tactical console touch calibration drifted"),
-    (119, "Escape pod 7 reports launch-ready when fuel is empty"),
-    (120, "Astrometrics lab star catalog 3 months out of date"),
 ]
 
 
@@ -418,7 +361,7 @@ class Simulation:
         # Interleave plan and issue arrivals on a single staggered timeline so
         # both kinds show up. Exactly one plan + one issue are SEEDED at the
         # anchored t=0 (arrive_at == 0) so the board is never empty. The
-        # remaining 38 arrive across ~ARRIVAL_WINDOW_SECONDS with an average
+        # remaining 18 arrive across ~ARRIVAL_WINDOW_SECONDS with an average
         # gap of ARRIVAL_GAP_BASE +/- variance.
         plan_defs = list(PLAN_DEFS)
         issue_defs = list(ISSUE_DEFS)
@@ -989,23 +932,18 @@ DEMO_OVERLAY_JS = r"""
   document.body.prepend(banner);
   document.body.style.paddingTop = '40px';
 
-  // --- DEMO badge (#2): a small fixed pill in the lower-right corner.
-  // Non-interactive (pointer-events:none), gently pulsing, survives re-render
-  // because it lives outside the dashboard's render root.
+  // --- DEMO label (#2): plain unobtrusive text in the lower-LEFT corner.
+  // Not a button — just a quiet marker. Non-interactive
+  // (pointer-events:none), survives re-render (outside the render root).
   var badgeStyle = document.createElement('style');
   badgeStyle.textContent =
-    '@keyframes demoBadgePulse{0%,100%{box-shadow:0 0 0 0 rgba(233,69,96,0.55)}'
-    + '50%{box-shadow:0 0 0 8px rgba(233,69,96,0)}}'
-    + '#demo-badge{position:fixed;right:16px;bottom:16px;z-index:9997;'
-    + 'pointer-events:none;font-family:monospace;font-size:12px;font-weight:bold;'
-    + 'letter-spacing:1.5px;color:#fff;padding:6px 14px;border-radius:999px;'
-    + 'background:linear-gradient(135deg,#e94560,#7b2ff7);'
-    + 'border:1px solid rgba(255,255,255,0.25);'
-    + 'animation:demoBadgePulse 2.6s ease-in-out infinite;}';
+    '#demo-badge{position:fixed;left:16px;bottom:12px;z-index:9997;'
+    + 'pointer-events:none;font-family:monospace;font-size:12px;'
+    + 'letter-spacing:1px;color:rgba(255,255,255,0.4);}';
   document.head.appendChild(badgeStyle);
   var badge = document.createElement('div');
   badge.id = 'demo-badge';
-  badge.innerHTML = '<span style="color:#ffd166">&#9733;</span> DEMO';
+  badge.textContent = 'Demo';
   document.body.appendChild(badge);
 
   // --- Standard victory overlay (core board cleared).

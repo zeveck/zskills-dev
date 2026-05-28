@@ -507,7 +507,7 @@ def main():
     # ------------------------------------------------------------------
     sim = mod.Simulation(seed=15, concurrency=3)
     sim.build_snapshot()
-    fast_forward(sim, 10000)  # ensure all 20 plans arrived
+    fast_forward(sim, 10000)  # ensure all 10 plans arrived
     snap = sim.build_snapshot()
     modes = [p["landing_mode"] for p in snap["plans"]]
     distinct = set(modes)
