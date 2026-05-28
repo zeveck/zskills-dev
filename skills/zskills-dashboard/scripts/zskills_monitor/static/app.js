@@ -105,7 +105,7 @@ function setCompletedWindow(kind, value) {
 // explicitly expands it. Per-user expand state still persists via
 // localStorage (setCollapsed removes the key on expand, so the default
 // applies only on first paint or after localStorage.clear()).
-const COLLAPSED_BY_DEFAULT = new Set(["discarded"]);
+const COLLAPSED_BY_DEFAULT = new Set(["discarded", "branch-landed", "branch-remote-only"]);
 
 function isCollapsed(kind, col) {
   try {
@@ -781,9 +781,12 @@ function fingerprintPlans(plans, queues, defaultMode) {
 
 function fingerprintBranches(branches, worktrees) {
   const wtSet = backedBranchSet(worktrees);
-  return JSON.stringify(branches.map(b => [
-    b.name, b.last_commit_at, b.last_commit_subject, b.upstream, wtSet.has(b.name),
-  ]));
+  const byBranch = worktreesByBranch(worktrees);
+  return JSON.stringify(branches.map(b => {
+    const w = byBranch.get(b.name);
+    const landedStatus = (w && w.landed) ? w.landed.status : null;
+    return [b.name, b.last_commit_at, b.last_commit_subject, b.upstream, wtSet.has(b.name), landedStatus];
+  }));
 }
 
 function fingerprintIssues(issues, queues) {
@@ -1267,74 +1270,263 @@ function worktreesByBranch(worktrees) {
   return m;
 }
 
+// Issue #717 — Branch grouping constants.
+var BRANCH_SECTIONS = ["active", "landed", "remote-only"];
+var BRANCH_SECTION_LABELS = {
+  "active": "Active",
+  "landed": "Landed",
+  "remote-only": "Remote only",
+};
+
+function classifyBranch(b, byBranch) {
+  var w = byBranch.get(b.name);
+  if (w && w.landed) return "landed";
+  if (w) return "active";
+  return "remote-only";
+}
+
+function branchStatePill(b, byBranch) {
+  var w = byBranch.get(b.name);
+  var hasWorktree = !!w;
+  var hasRemote = !!b.upstream;
+  if (hasWorktree && hasRemote) {
+    return el("span", {
+      cls: "branch-state-pill branch-state-pill--local-remote",
+      text: "LOCAL · REMOTE",
+      attrs: { title: "Has worktree and remote tracking branch" },
+    });
+  }
+  if (hasWorktree) {
+    return el("span", {
+      cls: "branch-state-pill branch-state-pill--local",
+      text: "LOCAL",
+      attrs: { title: "Has worktree, not pushed to remote" },
+    });
+  }
+  return el("span", {
+    cls: "branch-state-pill branch-state-pill--remote",
+    text: "REMOTE",
+    attrs: { title: "No worktree" },
+  });
+}
+
+function buildBranchCard(b, byBranch) {
+  var card = el("article", {
+    cls: "card",
+    attrs: {
+      tabindex: "0",
+      role: "button",
+      "data-kind": "branch",
+      "data-name": b.name,
+      "aria-label": "Branch " + b.name,
+    },
+  });
+  var head = el("div", { cls: "card-row" });
+  // Checkbox for bulk selection
+  var cb = el("input", {
+    cls: "branch-select-cb",
+    attrs: { type: "checkbox", "data-branch-name": b.name, "aria-label": "Select " + b.name },
+  });
+  head.appendChild(cb);
+  var url = branchUrl(b.name);
+  if (url) {
+    head.appendChild(el("a", {
+      cls: "card-title-link mono",
+      text: b.name,
+      attrs: {
+        href: url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        draggable: "false",
+      },
+    }));
+  } else {
+    head.appendChild(el("span", { cls: "card-title mono", text: b.name }));
+  }
+  // State pill
+  head.appendChild(branchStatePill(b, byBranch));
+  if (b.last_commit_at) {
+    head.appendChild(el("span", { cls: "card-sub", text: relativeTime(b.last_commit_at) }));
+  }
+  card.appendChild(head);
+  if (b.last_commit_subject) {
+    card.appendChild(el("div", { cls: "card-blurb", text: b.last_commit_subject }));
+  }
+  if (b.upstream) {
+    card.appendChild(el("div", { cls: "card-sub", text: "upstream: " + b.upstream }));
+  }
+  var w = byBranch.get(b.name);
+  if (w) {
+    var status = w.landed ? w.landed.status : "not-landed";
+    var wtRow = el("div", { cls: "card-row card-worktree-row" });
+    wtRow.appendChild(el("span", {
+      cls: "pill " + landedPillClass(status),
+      text: status,
+    }));
+    if (w.path) {
+      wtRow.appendChild(el("span", { cls: "mono card-sub", text: basename(w.path) }));
+    }
+    if (typeof w.age_seconds === "number") {
+      wtRow.appendChild(el("span", {
+        cls: "card-sub",
+        text: ageSecondsToText(w.age_seconds),
+      }));
+    }
+    card.appendChild(wtRow);
+  }
+  return card;
+}
+
+function buildBranchBulkBar(sectionKey, branchNames) {
+  var bar = el("div", { cls: "branch-bulk-bar" });
+  var label = el("label");
+  var selectAll = el("input", {
+    attrs: {
+      type: "checkbox",
+      "data-action": "branch-select-all",
+      "data-section": sectionKey,
+      "aria-label": "Select all in " + BRANCH_SECTION_LABELS[sectionKey],
+    },
+  });
+  label.appendChild(selectAll);
+  label.appendChild(document.createTextNode("Select all"));
+  bar.appendChild(label);
+  var copyBtn = el("button", {
+    cls: "branch-bulk-copy-btn",
+    attrs: {
+      type: "button",
+      "data-action": "branch-bulk-copy",
+      "data-section": sectionKey,
+      "aria-label": "Copy selected branch names",
+    },
+    text: "Copy 0 branch names",
+  });
+  bar.appendChild(copyBtn);
+  return bar;
+}
+
+function buildBranchSection(sectionKey, branchesInSection, byBranch) {
+  var sec = el("div", {
+    cls: "branch-section",
+    attrs: {
+      "data-branch-section": sectionKey,
+      id: "branch-section-" + sectionKey,
+    },
+  });
+  // Section header
+  var head = el("div", {
+    cls: "branch-section-head",
+    attrs: {
+      "data-action": "branch-section-toggle",
+      "data-section": sectionKey,
+      role: "button",
+      tabindex: "0",
+      "aria-expanded": "true",
+      "aria-label": BRANCH_SECTION_LABELS[sectionKey] + " " + branchesInSection.length + " branches",
+    },
+  });
+  head.appendChild(el("span", {
+    cls: "branch-section-label",
+    text: BRANCH_SECTION_LABELS[sectionKey],
+  }));
+  head.appendChild(el("span", {
+    cls: "branch-section-count",
+    text: "(" + branchesInSection.length + ")",
+  }));
+  var toggle = el("button", {
+    cls: "branch-section-toggle",
+    attrs: {
+      type: "button",
+      "data-action": "branch-section-toggle",
+      "data-section": sectionKey,
+      "aria-label": "Collapse " + BRANCH_SECTION_LABELS[sectionKey],
+      title: "Collapse / expand",
+    },
+    html: SVG_ICONS.minus,
+  });
+  head.appendChild(toggle);
+  sec.appendChild(head);
+  // Bulk copy bar
+  var names = branchesInSection.map(function(b) { return b.name; });
+  sec.appendChild(buildBranchBulkBar(sectionKey, names));
+  // Cards body
+  var body = el("div", { cls: "branch-section-body" });
+  for (var i = 0; i < branchesInSection.length; i++) {
+    body.appendChild(buildBranchCard(branchesInSection[i], byBranch));
+  }
+  sec.appendChild(body);
+  // Apply saved collapse state
+  applyBranchSectionCollapse(sec, sectionKey);
+  return sec;
+}
+
+function applyBranchSectionCollapse(secEl, sectionKey) {
+  var collapsed = isCollapsed("branch", sectionKey);
+  if (collapsed) {
+    secEl.classList.add("collapsed");
+  } else {
+    secEl.classList.remove("collapsed");
+  }
+  var toggle = secEl.querySelector(".branch-section-toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggle.innerHTML = collapsed ? SVG_ICONS.plus : SVG_ICONS.minus; // chrome-only
+    toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + BRANCH_SECTION_LABELS[sectionKey]);
+  }
+  var head = secEl.querySelector(".branch-section-head");
+  if (head) {
+    head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function buildBranchNavStrip(groups) {
+  var strip = el("nav", {
+    cls: "section-nav-strip",
+    attrs: { "aria-label": "Branch sections", "data-kind": "branch" },
+  });
+  for (var i = 0; i < BRANCH_SECTIONS.length; i++) {
+    var key = BRANCH_SECTIONS[i];
+    var count = (groups[key] || []).length;
+    var pill = el("button", {
+      cls: "section-nav-pill",
+      attrs: {
+        type: "button",
+        "data-action": "branch-nav-pill",
+        "data-target": "branch-section-" + key,
+        "data-section": key,
+        "aria-label": BRANCH_SECTION_LABELS[key] + " " + count + " branches — click to scroll",
+      },
+      text: BRANCH_SECTION_LABELS[key] + " " + count,
+    });
+    strip.appendChild(pill);
+  }
+  return strip;
+}
+
 function renderBranches(branches, worktrees) {
-  const body = $("branches-body");
-  const empty = $("branches-empty");
+  var body = $("branches-body");
+  var empty = $("branches-empty");
   clear(body);
   if (!branches.length) {
     empty.hidden = false;
     return;
   }
   empty.hidden = true;
-  const backed = backedBranchSet(worktrees);
-  const byBranch = worktreesByBranch(worktrees);
-  for (const b of branches) {
-    const card = el("article", {
-      cls: "card",
-      attrs: {
-        tabindex: "0",
-        role: "button",
-        "data-kind": "branch",
-        "data-name": b.name,
-        "aria-label": "Branch " + b.name,
-      },
-    });
-    const head = el("div", { cls: "card-row" });
-    const url = branchUrl(b.name);
-    if (url) {
-      head.appendChild(el("a", {
-        cls: "card-title-link mono",
-        text: b.name,
-        attrs: {
-          href: url,
-          target: "_blank",
-          rel: "noopener noreferrer",
-          draggable: "false",
-        },
-      }));
-    } else {
-      head.appendChild(el("span", { cls: "card-title mono", text: b.name }));
-    }
-    if (b.last_commit_at) {
-      head.appendChild(el("span", { cls: "card-sub", text: relativeTime(b.last_commit_at) }));
-    }
-    card.appendChild(head);
-    if (b.last_commit_subject) {
-      card.appendChild(el("div", { cls: "card-blurb", text: b.last_commit_subject }));
-    }
-    if (b.upstream) {
-      card.appendChild(el("div", { cls: "card-sub", text: "upstream: " + b.upstream }));
-    }
-    const w = byBranch.get(b.name);
-    if (w) {
-      const status = w.landed ? w.landed.status : "not-landed";
-      const wtRow = el("div", { cls: "card-row card-worktree-row" });
-      wtRow.appendChild(el("span", {
-        cls: "pill " + landedPillClass(status),
-        text: status,
-      }));
-      if (w.path) {
-        wtRow.appendChild(el("span", { cls: "mono card-sub", text: basename(w.path) }));
-      }
-      if (typeof w.age_seconds === "number") {
-        wtRow.appendChild(el("span", {
-          cls: "card-sub",
-          text: ageSecondsToText(w.age_seconds),
-        }));
-      }
-      card.appendChild(wtRow);
-    }
-    body.appendChild(card);
+  var byBranch = worktreesByBranch(worktrees);
+  // Group branches into sections
+  var groups = { "active": [], "landed": [], "remote-only": [] };
+  for (var i = 0; i < branches.length; i++) {
+    var section = classifyBranch(branches[i], byBranch);
+    groups[section].push(branches[i]);
+  }
+  // Nav strip at top
+  body.appendChild(buildBranchNavStrip(groups));
+  // Render each section
+  for (var si = 0; si < BRANCH_SECTIONS.length; si++) {
+    var key = BRANCH_SECTIONS[si];
+    var arr = groups[key];
+    if (!arr.length) continue;
+    body.appendChild(buildBranchSection(key, arr, byBranch));
   }
 }
 
@@ -2901,6 +3093,84 @@ async function handleAction(action, target) {
     targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
+
+  // Issue #717 — Branch section toggle (collapse/expand).
+  if (action === "branch-section-toggle") {
+    const sectionKey = target.getAttribute("data-section");
+    if (!sectionKey) return;
+    const secEl = target.closest(".branch-section") || document.querySelector('[data-branch-section="' + sectionKey + '"]');
+    if (!secEl) return;
+    const next = !isCollapsed("branch", sectionKey);
+    setCollapsed("branch", sectionKey, next);
+    applyBranchSectionCollapse(secEl, sectionKey);
+    return;
+  }
+
+  // Issue #717 — Branch nav pill: scroll to section, expand if collapsed.
+  if (action === "branch-nav-pill") {
+    const targetId = target.getAttribute("data-target");
+    const sectionKey = target.getAttribute("data-section");
+    const targetEl = $(targetId);
+    if (!targetEl) return;
+    if (sectionKey && isCollapsed("branch", sectionKey)) {
+      setCollapsed("branch", sectionKey, false);
+      applyBranchSectionCollapse(targetEl, sectionKey);
+    }
+    targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  // Issue #717 — Branch select-all checkbox.
+  if (action === "branch-select-all") {
+    const sectionKey = target.getAttribute("data-section");
+    if (!sectionKey) return;
+    const secEl = document.querySelector('[data-branch-section="' + sectionKey + '"]');
+    if (!secEl) return;
+    const checked = target.checked;
+    const cbs = secEl.querySelectorAll(".branch-select-cb");
+    for (let i = 0; i < cbs.length; i++) cbs[i].checked = checked;
+    _updateBranchCopyCount(secEl, sectionKey);
+    return;
+  }
+
+  // Issue #717 — Branch bulk copy.
+  if (action === "branch-bulk-copy") {
+    const sectionKey = target.getAttribute("data-section");
+    if (!sectionKey) return;
+    const secEl = document.querySelector('[data-branch-section="' + sectionKey + '"]');
+    if (!secEl) return;
+    const cbs = secEl.querySelectorAll(".branch-select-cb:checked");
+    const names = [];
+    for (let i = 0; i < cbs.length; i++) {
+      const n = cbs[i].getAttribute("data-branch-name");
+      if (n) names.push(n);
+    }
+    if (!names.length) {
+      showToast("No branches selected.", "info");
+      return;
+    }
+    const text = names.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        navigator.clipboard.writeText(text);
+        showToast("Copied " + names.length + " branch name" + (names.length === 1 ? "" : "s") + ".", "info");
+      } catch (_err) {
+        showToast("Copy failed — select text manually.", "err");
+      }
+    } else {
+      showToast("Clipboard API unavailable.", "err");
+    }
+    return;
+  }
+}
+
+// Issue #717 — Update the copy button label with the count of selected branches.
+function _updateBranchCopyCount(secEl, sectionKey) {
+  const cbs = secEl.querySelectorAll(".branch-select-cb:checked");
+  const btn = secEl.querySelector('.branch-bulk-copy-btn[data-section="' + sectionKey + '"]');
+  if (btn) {
+    btn.textContent = "Copy " + cbs.length + " branch name" + (cbs.length === 1 ? "" : "s");
+  }
 }
 
 function bindActionEvents() {
@@ -2928,6 +3198,17 @@ function bindActionEvents() {
     if (kind === "issue") lastFingerprint.issues = null;
     // Trigger an immediate poll so the UI updates now.
     schedulePoll(0);
+  });
+
+  // Issue #717 — Branch checkbox change handler. Updates per-section copy
+  // count when individual branch checkboxes are toggled.
+  document.body.addEventListener("change", (ev) => {
+    const cb = ev.target.closest && ev.target.closest(".branch-select-cb");
+    if (!cb) return;
+    const secEl = cb.closest(".branch-section");
+    if (!secEl) return;
+    const sectionKey = secEl.getAttribute("data-branch-section");
+    if (sectionKey) _updateBranchCopyCount(secEl, sectionKey);
   });
 
   // Default-mode segmented buttons.
