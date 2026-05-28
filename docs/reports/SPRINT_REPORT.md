@@ -1,5 +1,29 @@
 # Sprint Report
 
+## Sprint — 2026-05-28 (dashboard, manual `now` trigger) — #777 + #776
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge, serial) | **Trigger:** manual `/fix-issues now`
+
+### Fixed
+| # | Title | Branch | PR | Tests | Agent Verify | User Verify |
+|---|-------|--------|----|----|-------------|-------------|
+| #777 | Remove vestigial plan-body `Landing mode:` annotation (write-only-to-display) | `fix-issue-777` | #779 (merged) | 6088/6088 | PASS — orchestrator verified the one flagged scope-expansion (`research-and-plan` SKILL.md): confirmed it's the annotation WRITER chain (removed text self-documents "does NOT enforce landing behavior"), not execution-path; `research-and-go` correctly untouched; grep confirms zero stray refs | N/A |
+| #776 | Display landed status `full` as "LANDED" in Branches pill (display-only) | `fix-issue-776` | #780 (merged) | 6095/6095; post-rebase 232/232 + 36/36 | PASS — orchestrator read the display-only diff (`status === "full" ? "landed" : status`); stored marker + matching logic + `partial` all preserved; fix-report left as raw diagnostic | N/A |
+
+### Notable decisions
+
+- **#777 justified scope expansion.** The issue's verified file list omitted `research-and-plan/SKILL.md`, which appends `. Landing mode: <ARG>` to the description /draft-plan consumed to emit the annotation. Removing /draft-plan's emission without this would leak the literal suffix into plan bodies — so the writer-chain removal had to include it. The implementer flagged it; verified sound. (`demo_server.py` in the issue's list didn't exist — stale reference, no-op.)
+- **#776 kept the comparison honest.** Display-only label swap; `partial` stays distinct ("PARTIAL"), stored `.landed status: full` unchanged, `landedPillClass` color mapping untouched. fix-report deliberately left showing the raw marker (it's a diagnostic).
+- **Serial landing with a version-conflict rebase.** Both bumped `zskills-dashboard`. #777 landed first; #776 was rebased onto post-#777 main, the version-frontmatter conflict resolved by recomputing the content hash to a stable `c2690a` (initial recompute hit a transient mid-rebase value `a89cbe` — caught by a committed-vs-fresh check before push). The auto-merged `test_zskills_monitor_dashboard_ui.sh` was re-run locally post-rebase (232/232) to confirm the merge was logically sound, not just textually clean.
+
+### Concurrent / context
+
+- A sibling pipeline (`...213728-dashb`) held #778 throughout — left untouched (parallel-pipeline yield). New issue #781 (cleanup-merged 0-ahead deletion) surfaced open but unqueued; not auto-pulled.
+
+### Landing
+
+PR mode, serial. Each: rebase → push → CI monitor → auto-merge → FF local main → `.landed` → claim release.
+
 ## Sprint — 2026-05-28 (dashboard, manual `now` trigger) — #771
 
 **Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge) | **Trigger:** manual `/fix-issues now` (user queued #771 after the #769 incident)
