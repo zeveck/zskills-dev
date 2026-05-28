@@ -7,7 +7,7 @@
 // rendered via textContent / appendChild — no innerHTML except for
 // hardcoded chrome marked `// chrome-only`.
 //
-// Phase 7 adds drag-and-drop columns for Plans (Drafted/Reviewed/Ready)
+// Phase 7 adds drag-and-drop columns for Plans (Drafted/Proposed/Accepted)
 // and Issues (Triage/Ready), POSTs the full queue back to /api/queue
 // on every reorder, polls /api/work-state for the Run/Status widget,
 // and POSTs to /api/trigger and /api/work-state/reset.
@@ -52,8 +52,8 @@ const BELOW_BAND_COLUMNS = ["backlog", "discarded", "completed"];
 const MOVE_ALL_CONFIRM_THRESHOLD = 10;
 const PLAN_COLUMN_LABELS = {
   drafted: "Drafted",
-  reviewed: "Reviewed",
-  ready: "Ready",
+  reviewed: "Proposed",
+  ready: "Accepted",
   backlog: "Backlog",
   discarded: "Discarded",
   completed: "Completed",
@@ -134,6 +134,25 @@ function setCollapsed(kind, col, collapsed) {
   } catch (_e) { /* localStorage disabled — runtime-only collapse */ }
 }
 
+var CHIP_TYPE_LABELS = {
+  "in-flight": "in-flight",
+  "plan-scale": "plan-scale",
+  "needs-decision": "needs-decision",
+  "deferred": "deferred",
+  "bug-unclear-cause": "unclear-cause",
+};
+
+function cardChipType(card) {
+  var claim = card.querySelector(".claim-chip--in-flight");
+  if (claim) return "in-flight";
+  var skip = card.querySelector("[class*='skip-chip--']");
+  if (skip) {
+    var m = skip.className.match(/skip-chip--(\S+)/);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
   const collapsed = isCollapsed(kind, col);
   if (collapsed) {
@@ -148,16 +167,13 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
     toggle.setAttribute("aria-label", (collapsed ? "Expand " : "Collapse ") + lbl);
     toggle.innerHTML = collapsed ? SVG_ICONS.plus : SVG_ICONS.minus; // chrome-only
   }
-  // Issue #700 — collapsed-column preview strip. When collapsed, inject a
-  // compact summary showing "Label (N)" plus the first 1-2 card titles so
-  // the user sees content without expanding. When expanded, remove it.
+  // Collapsed-column preview: mini-card rows showing issue/plan IDs + titles
+  // so the user gets real content visibility without expanding.
   const existingSummary = colDiv.querySelector(".collapsed-summary");
   if (!collapsed) {
     if (existingSummary) existingSummary.parentNode.removeChild(existingSummary);
     return;
   }
-  // Build the summary from the dropzone's cards (hidden by CSS but still
-  // in the DOM). This avoids a second data lookup.
   const dz = colDiv.querySelector(".dropzone");
   const cards = dz ? dz.querySelectorAll("li.card") : [];
   const count = cards.length;
@@ -173,34 +189,54 @@ function applyCollapseStateToColumn(colDiv, kind, col, labelText) {
       "aria-label": "Expand " + colLabel + " (" + count + " items)",
     },
   });
-  const countSpan = el("span", {
-    cls: "collapsed-summary-count",
-    text: colLabel + " (" + count + ")",
-  });
-  summary.appendChild(countSpan);
-  // Append first 3 card titles as a teaser.
-  const titles = [];
-  for (let i = 0; i < Math.min(3, cards.length); i++) {
-    const card = cards[i];
-    const titleEl = card.querySelector(".card-title, .card-title-link");
-    if (titleEl) {
-      let t = titleEl.textContent || "";
-      if (t.length > 35) t = t.slice(0, 32) + "...";
-      titles.push(t);
+  var maxPreview = 5;
+  var chipTally = {};
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var chipType = cardChipType(card);
+    if (chipType) chipTally[chipType] = (chipTally[chipType] || 0) + 1;
+    if (i >= maxPreview) continue;
+    var titleEl = card.querySelector(".card-title, .card-title-link");
+    if (!titleEl) continue;
+    var fullText = titleEl.textContent || "";
+    var idMatch = fullText.match(/^(#\d+)\s+/);
+    var row = el("div", { cls: "collapsed-summary-row" });
+    if (chipType) {
+      row.appendChild(el("span", { cls: "collapsed-dot collapsed-dot--" + chipType }));
     }
+    if (idMatch) {
+      row.appendChild(el("span", { cls: "collapsed-summary-id", text: idMatch[1] }));
+      var rest = fullText.slice(idMatch[0].length);
+      if (rest.length > 50) rest = rest.slice(0, 47) + "...";
+      row.appendChild(el("span", { cls: "collapsed-summary-title", text: rest }));
+    } else {
+      var t = fullText;
+      if (t.length > 55) t = t.slice(0, 52) + "...";
+      row.appendChild(el("span", { cls: "collapsed-summary-title", text: t }));
+    }
+    summary.appendChild(row);
   }
-  if (titles.length > 0) {
-    const sep = (count > titles.length) ? " +" + (count - titles.length) + " more" : "";
-    summary.appendChild(el("span", {
-      cls: "collapsed-summary-titles",
-      text: "— " + titles.join(", ") + sep,
+  if (count > maxPreview) {
+    summary.appendChild(el("div", {
+      cls: "collapsed-summary-more",
+      text: "+" + (count - maxPreview) + " more",
     }));
   }
-  // Remove stale summary if present, then append the new one after
-  // the column-head. This keeps the summary inside .column.collapsed
-  // but outside .dropzone.
+  var tallyKeys = Object.keys(chipTally);
+  if (tallyKeys.length > 0) {
+    var footer = el("div", { cls: "collapsed-summary-footer" });
+    for (var k = 0; k < tallyKeys.length; k++) {
+      var key = tallyKeys[k];
+      var badge = el("span", {
+        cls: "collapsed-footer-badge collapsed-footer-badge--" + key,
+        text: chipTally[key] + " " + CHIP_TYPE_LABELS[key],
+      });
+      footer.appendChild(badge);
+    }
+    summary.appendChild(footer);
+  }
   if (existingSummary) existingSummary.parentNode.removeChild(existingSummary);
-  const head = colDiv.querySelector(".column-head");
+  var head = colDiv.querySelector(".column-head");
   if (head && head.nextSibling) {
     colDiv.insertBefore(summary, head.nextSibling);
   } else {

@@ -899,48 +899,126 @@ button svg { display: inline-block; vertical-align: middle; }
 
 /* Collapsed: hide the dropzone list; keep the header visible with count +
    toggle. The column itself stays in the flex/grid flow so its width is
-   preserved — a collapsed column reads as a thin header strip. Issue #700
-   adds a `.collapsed-summary` preview strip showing "Label (N)" plus the
-   first 1-2 card titles so the user gets context without expanding. */
+   preserved — a collapsed column reads as a thin header strip with mini-card
+   previews so the user gets content without expanding. */
 .column.collapsed > .dropzone {
   display: none;
 }
 .column.collapsed {
-  min-height: 0;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
 }
 .column.collapsed > .column-head {
-  opacity: 0.85;
+  opacity: 0.7;
+  font-size: 0.7rem;
 }
 
-/* Collapsed-column preview strip (Issue #700). Rendered by JS when a
-   column is collapsed; hidden when expanded (applyCollapseStateToColumn
-   removes it). Shows a compact "Label (N) — title1, title2" line so
-   collapsed columns convey content at a glance. */
+/* Collapsed-column preview list. Rendered by JS when a column is collapsed;
+   removed when expanded (applyCollapseStateToColumn removes it). Shows
+   compact mini-card rows so collapsed columns convey content at a glance. */
 .collapsed-summary {
-  padding: 6px 10px;
+  padding: 4px 6px;
   margin-top: 2px;
-  font-size: 0.82rem;
+  cursor: pointer;
+  border-radius: 0 0 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex-grow: 1;
+}
+.collapsed-summary-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  border-radius: 3px;
+  background: rgba(88, 166, 255, 0.04);
+  transition: background 0.12s;
+  min-width: 0;
+}
+.collapsed-summary-row:hover {
+  background: rgba(88, 166, 255, 0.1);
+}
+.collapsed-summary-id {
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+.collapsed-summary-title {
   color: var(--text-dim);
-  border-top: 1px solid var(--border);
-  background: rgba(88, 166, 255, 0.03);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
-  border-radius: 0 0 4px 4px;
+  min-width: 0;
 }
-.collapsed-summary:hover {
-  color: var(--text);
-  background: rgba(88, 166, 255, 0.06);
-}
-.collapsed-summary .collapsed-summary-count {
-  font-weight: 600;
-  color: var(--text);
-}
-.collapsed-summary .collapsed-summary-titles {
-  margin-left: 0.5em;
-  font-style: italic;
+.collapsed-summary-more {
+  padding: 2px 6px;
+  font-size: 0.72rem;
   color: var(--text-dim);
+  font-style: italic;
+}
+
+/* Per-row dot indicators — colored circles showing chip type at a glance. */
+.collapsed-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 1px;
+  background: var(--text-dim);
+}
+.collapsed-dot--in-flight       { background: var(--green); box-shadow: 0 0 4px rgba(63, 185, 80, 0.5); }
+.collapsed-dot--plan-scale      { background: var(--accent); }
+.collapsed-dot--needs-decision  { background: var(--pink); }
+.collapsed-dot--deferred        { background: var(--text-dim); }
+.collapsed-dot--bug-unclear-cause { background: var(--pink); }
+
+/* Aggregate footer — summarizes chip counts across the whole column. */
+.collapsed-summary-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 6px 1px;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  align-items: center;
+  justify-content: center;
+}
+.collapsed-footer-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+.collapsed-footer-badge--in-flight {
+  color: var(--green);
+  border-color: var(--green);
+  background: rgba(63, 185, 80, 0.1);
+}
+.collapsed-footer-badge--plan-scale {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+}
+.collapsed-footer-badge--needs-decision {
+  color: var(--pink);
+  border-color: var(--pink);
+  background: rgba(247, 120, 186, 0.1);
+}
+.collapsed-footer-badge--deferred {
+  color: var(--text-dim);
+  border-color: var(--text-dim);
+  background: rgba(139, 148, 158, 0.1);
+}
+.collapsed-footer-badge--bug-unclear-cause {
+  color: var(--pink);
+  border-color: var(--pink);
+  background: rgba(247, 120, 186, 0.1);
 }
 
 .dropzone {
