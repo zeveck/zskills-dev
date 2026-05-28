@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLAIM_SH="$REPO_ROOT/skills/fix-issues/scripts/claim-issue.sh"
 HOOK_SH="$REPO_ROOT/hooks/block-fix-issue-unclaimed.sh"
-SKILL_MD="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL_MD="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0

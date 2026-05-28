@@ -24,7 +24,14 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL_DIR="$REPO_ROOT/skills/fix-issues"
+SKILL="$SKILL_DIR/SKILL.md"
+SKILL_SPRINT="$SKILL_DIR/modes/sprint.md"
+SKILL_SYNC="$SKILL_DIR/modes/sync.md"
+
+# skill_grep: recursive grep across all .md files in the skill directory.
+# Replaces single-file $SKILL grep for content that may live in any mode file.
+skill_grep() { grep "$@" "$SKILL_DIR"/*.md "$SKILL_DIR"/modes/*.md "$SKILL_DIR"/subcommands/*.md 2>/dev/null; }
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -83,7 +90,7 @@ test_301_source_uses_qP_lookarounds() {
   # membership check AND the gap-listing while loop. Both must use
   # grep -qP with `(?<![0-9])#...(?![0-9])`. Source-grep:
   local hits
-  hits=$(grep -cF 'grep -qP "(?<![0-9])#' "$SKILL")
+  hits=$(grep -cF 'grep -qP "(?<![0-9])#' "$SKILL_SPRINT")
   if [ "$hits" -ge 2 ]; then
     pass "#301 SKILL.md uses grep -qP lookarounds at >=2 sites ($hits)"
   else
@@ -95,7 +102,7 @@ test_301_source_uses_qP_lookarounds() {
   # comment cites the old pattern once for context. Two or more
   # occurrences means at least one site still has the executable form.
   local old_hits
-  old_hits=$(grep -cF '(^|[^0-9A-Za-z_])#' "$SKILL")
+  old_hits=$(grep -cF '(^|[^0-9A-Za-z_])#' "$SKILL_SPRINT")
   if [ "$old_hits" -le 1 ]; then
     pass "#301 OLD ERE alternation only present in explanatory prose ($old_hits occurrence)"
   else
@@ -109,14 +116,14 @@ test_282_success_set_is_merged_only() {
   # Extract the close-on-success case block from sub-step 3 and assert
   # only `merged)` is the success arm. `created|monitored|merged)`
   # reappearing — even partially — would re-introduce the bug.
-  if grep -qE '^\s*merged\)' "$SKILL"; then
+  if grep -qE '^\s*merged\)' "$SKILL_SYNC"; then
     pass "#282 close-on-success case has 'merged)' arm"
   else
     fail "#282 close-on-success case has 'merged)' arm" "not found"
   fi
 
   # The composite arm MUST NOT exist.
-  if grep -qE 'created\|monitored\|merged\)' "$SKILL"; then
+  if grep -qE 'created\|monitored\|merged\)' "$SKILL_SYNC"; then
     fail "#282 'created|monitored|merged)' arm removed" "still present"
   else
     pass "#282 'created|monitored|merged)' arm removed"
@@ -124,12 +131,12 @@ test_282_success_set_is_merged_only() {
 
   # Defense in depth: no `created)` or `monitored)` arm before `merged)`
   # that would re-enable closing on unmerged PRs.
-  if grep -qE '^\s*created\)' "$SKILL"; then
+  if grep -qE '^\s*created\)' "$SKILL_SYNC"; then
     fail "#282 no 'created)' arm in success path" "found"
   else
     pass "#282 no 'created)' arm in success path"
   fi
-  if grep -qE '^\s*monitored\)' "$SKILL"; then
+  if grep -qE '^\s*monitored\)' "$SKILL_SYNC"; then
     fail "#282 no 'monitored)' arm in success path" "found"
   else
     pass "#282 no 'monitored)' arm in success path"
@@ -141,8 +148,8 @@ test_282_success_set_is_merged_only() {
 test_300_echo_precedes_land_pr_and_marker_on_merge() {
   # The transcript echo must precede the Skill dispatch line.
   local echo_line skill_line
-  echo_line=$(grep -nF 'echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"' "$SKILL" | head -1 | cut -d: -f1)
-  skill_line=$(grep -nF 'Skill: { skill: "land-pr"' "$SKILL" | head -1 | cut -d: -f1)
+  echo_line=$(grep -nF 'echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"' "$SKILL_SYNC" | head -1 | cut -d: -f1)
+  skill_line=$(grep -nF 'Skill: { skill: "land-pr"' "$SKILL_SYNC" | head -1 | cut -d: -f1)
   if [ -z "$echo_line" ]; then
     fail "#300 transcript echo ZSKILLS_PIPELINE_ID=... present" "not found"
     return
@@ -159,7 +166,7 @@ test_300_echo_precedes_land_pr_and_marker_on_merge() {
 
   # Sync must NOT use the prohibited `export ZSKILLS_PIPELINE_ID` form
   # (mirrors the conformance-test discipline).
-  if grep -qE 'export[[:space:]]+ZSKILLS_PIPELINE_ID' "$SKILL"; then
+  if skill_grep -qE 'export[[:space:]]+ZSKILLS_PIPELINE_ID'; then
     fail "#300 SKILL.md does NOT 'export ZSKILLS_PIPELINE_ID'" "side-channel re-introduced"
   else
     pass "#300 SKILL.md does NOT 'export ZSKILLS_PIPELINE_ID' (conformance preserved)"
@@ -169,7 +176,7 @@ test_300_echo_precedes_land_pr_and_marker_on_merge() {
   # so sync closes the issue #300 hole itself when /land-pr returns
   # merged. We look for the marker filename literal and its `$SYNC_ID`
   # interpolation.
-  if grep -qF 'fulfilled.land-pr.$SYNC_ID' "$SKILL"; then
+  if grep -qF 'fulfilled.land-pr.$SYNC_ID' "$SKILL_SYNC"; then
     pass "#300 sync writes fulfilled.land-pr.\$SYNC_ID marker on merge"
   else
     fail "#300 sync writes fulfilled.land-pr.\$SYNC_ID marker on merge" "marker write not found"
@@ -181,7 +188,7 @@ test_300_echo_precedes_land_pr_and_marker_on_merge() {
 test_280_no_n_plus_one_loop_uses_python_json() {
   # The old code did `gh issue view "$N" --json title,labels` inside the
   # row-writer loop. That call must be gone from SKILL.md.
-  if grep -qE 'gh issue view "\$N" --json title,labels' "$SKILL"; then
+  if grep -qE 'gh issue view "\$N" --json title,labels' "$SKILL_SPRINT"; then
     fail "#280 N+1 'gh issue view \$N --json title,labels' removed" "still present"
   else
     pass "#280 N+1 'gh issue view \$N --json title,labels' removed"
@@ -189,7 +196,7 @@ test_280_no_n_plus_one_loop_uses_python_json() {
 
   # And the cached batched fetch must request title+labels so the lookup
   # has data to find. (Bootstrap call used to be `--json number` only.)
-  if grep -qF 'gh issue list --state open --limit 500 --json number,title,labels' "$SKILL"; then
+  if grep -qF 'gh issue list --state open --limit 500 --json number,title,labels' "$SKILL_SPRINT"; then
     pass "#280 cached batched fetch requests number,title,labels"
   else
     fail "#280 cached batched fetch requests number,title,labels" "not found"
@@ -198,7 +205,7 @@ test_280_no_n_plus_one_loop_uses_python_json() {
   # And the row-writer parses via Python json. The literal token
   # `python3 -c` must appear inside the residual-row block. We look for
   # the import line as a high-signal marker.
-  if grep -qF 'import json, sys' "$SKILL"; then
+  if grep -qF 'import json, sys' "$SKILL_SPRINT"; then
     pass "#280 row-writer parses via Python json"
   else
     fail "#280 row-writer parses via Python json" "no python3 json import found"
@@ -208,7 +215,7 @@ test_280_no_n_plus_one_loop_uses_python_json() {
   # The post-fix prose cites the broken pattern once for context, so a
   # count <=1 is acceptable; >=2 means an executable site still has it.
   local old_hits
-  old_hits=$(grep -cF "'\"title\":\"[^\"]*\"'" "$SKILL")
+  old_hits=$(grep -cF "'\"title\":\"[^\"]*\"'" "$SKILL_SPRINT")
   if [ "$old_hits" -le 1 ]; then
     pass "#280 old grep -oE '\"title\":\"[^\"]*\"' parser only present in prose ($old_hits)"
   else
@@ -271,13 +278,13 @@ test_dashboard_phase2_branch_present() {
   # source branch gates the model-layer rubric. We assert >=1 such
   # reference appears AFTER the "## Phase 2" header line.
   local phase2_line dashboard_hits
-  phase2_line=$(grep -nE '^## Phase 2' "$SKILL" | head -1 | cut -d: -f1)
+  phase2_line=$(grep -nE '^## Phase 2' "$SKILL_SPRINT" | head -1 | cut -d: -f1)
   if [ -z "$phase2_line" ]; then
     fail "dashboard Phase 2 branch present" "no '## Phase 2' header found"
     return
   fi
   # Count $DASHBOARD_MODE references at or after the Phase 2 header.
-  dashboard_hits=$(awk -v start="$phase2_line" 'NR>=start && /DASHBOARD_MODE/ { c++ } END { print c+0 }' "$SKILL")
+  dashboard_hits=$(awk -v start="$phase2_line" 'NR>=start && /DASHBOARD_MODE/ { c++ } END { print c+0 }' "$SKILL_SPRINT")
   if [ "$dashboard_hits" -ge 1 ]; then
     pass "dashboard Phase 2 has DASHBOARD_MODE branch ($dashboard_hits references)"
   else
@@ -291,12 +298,12 @@ test_dashboard_uses_python_json_not_bash_regex() {
   # on a JSON-array shape like `\[[0-9,[:space:]]+\]`.
   #
   # We look for the python3 invocation referencing the state file.
-  if grep -qF 'monitor-state.json' "$SKILL"; then
+  if skill_grep -qF 'monitor-state.json'; then
     pass "dashboard reads monitor-state.json"
   else
     fail "dashboard reads monitor-state.json" "no reference to monitor-state.json"
   fi
-  if grep -qE 'python3 -c' "$SKILL"; then
+  if grep -qE 'python3 -c' "$SKILL_SPRINT"; then
     pass "dashboard uses python3 -c to parse JSON"
   else
     fail "dashboard uses python3 -c to parse JSON" "no python3 -c invocation"
@@ -307,7 +314,7 @@ test_dashboard_uses_python_json_not_bash_regex() {
   # what someone would write if they tried to bash-regex an integer JSON
   # array — banned per /fix-issues' Python-json discipline (issue #280
   # established this rule).
-  if grep -qE '\[\[0-9,\[\:space\:\]\]\+\]' "$SKILL"; then
+  if skill_grep -qE '\[\[0-9,\[\:space\:\]\]\+\]'; then
     fail "dashboard does NOT bash-regex issues.ready array" "found prohibited bash-regex JSON-array pattern"
   else
     pass "dashboard does NOT bash-regex issues.ready array"
@@ -328,7 +335,7 @@ test_dashboard_uses_python_json_not_bash_regex() {
 
 test_dashboard_token_propagates_to_cron_prompt() {
   # (1) DASHBOARD_MODE → CRON_TOKENS dashboard propagation.
-  if grep -qE 'DASHBOARD_MODE.*=.*"?1"?.*CRON_TOKENS.*dashboard' "$SKILL"; then
+  if grep -qE 'DASHBOARD_MODE.*=.*"?1"?.*CRON_TOKENS.*dashboard' "$SKILL_SPRINT"; then
     pass "CRON_TOKENS propagates dashboard when DASHBOARD_MODE=1 (#362)"
   else
     fail "CRON_TOKENS propagates dashboard when DASHBOARD_MODE=1 (#362)" \
@@ -338,9 +345,9 @@ test_dashboard_token_propagates_to_cron_prompt() {
   # (2) LANDING_MODE case statement assigning pr/direct to CRON_TOKENS.
   # We look for the `case "$LANDING_MODE"` header plus both arm tokens
   # near a CRON_TOKENS append.
-  if grep -qE 'case[[:space:]]+"\$LANDING_MODE"' "$SKILL" \
-     && grep -qE 'pr\)[[:space:]]*CRON_TOKENS=.*pr' "$SKILL" \
-     && grep -qE 'direct\)[[:space:]]*CRON_TOKENS=.*direct' "$SKILL"; then
+  if grep -qE 'case[[:space:]]+"\$LANDING_MODE"' "$SKILL_SPRINT" \
+     && grep -qE 'pr\)[[:space:]]*CRON_TOKENS=.*pr' "$SKILL_SPRINT" \
+     && grep -qE 'direct\)[[:space:]]*CRON_TOKENS=.*direct' "$SKILL_SPRINT"; then
     pass "CRON_TOKENS propagates pr/direct via LANDING_MODE case (#362)"
   else
     fail "CRON_TOKENS propagates pr/direct via LANDING_MODE case (#362)" \
@@ -397,14 +404,14 @@ test_site2_sync_phase5_unconditional_auto() {
   # The standalone sync Phase 5 LAND_ARGS line must end with `--auto`.
   # Identified by --landed-source=fix-issues-sync (site 2 only).
   local line
-  line=$(grep -nF 'landed-source=fix-issues-sync ' "$SKILL" \
+  line=$(grep -nF 'landed-source=fix-issues-sync ' "$SKILL_SYNC" \
          | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
   if [ -z "$line" ]; then
     fail "site 2: standalone sync LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-sync"
     return
   fi
   local content
-  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL_SYNC")
   if echo "$content" | grep -qE -- '--auto"?$'; then
     pass "site 2: standalone sync LAND_ARGS ends with --auto (unconditional)"
   else
@@ -416,14 +423,14 @@ test_site3_no_actionable_unconditional_auto() {
   # The sprint no-actionable LAND_ARGS line must end with `--auto`.
   # Identified by --landed-source=fix-issues-no-actionable (site 3 only).
   local line
-  line=$(grep -nF 'landed-source=fix-issues-no-actionable ' "$SKILL" \
+  line=$(grep -nF 'landed-source=fix-issues-no-actionable ' "$SKILL_SPRINT" \
          | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
   if [ -z "$line" ]; then
     fail "site 3: no-actionable LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-no-actionable"
     return
   fi
   local content
-  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL_SPRINT")
   if echo "$content" | grep -qE -- '--auto"?$'; then
     pass "site 3: no-actionable LAND_ARGS ends with --auto (unconditional)"
   else
@@ -434,7 +441,7 @@ test_site3_no_actionable_unconditional_auto() {
   # no-actionable LAND_ARGS line (would re-introduce content-stream
   # confusion).
   local next
-  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL")
+  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL_SPRINT")
   if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
     fail "site 3: no AUTO-conditional after no-actionable LAND_ARGS" "found on line $((line+1)): [$next]"
   else
@@ -448,14 +455,14 @@ test_site1_sprint_land_honors_auto() {
   # MUST be present immediately after it. Identified by
   # --landed-source=fix-issues-sprint (site 1 only).
   local line
-  line=$(grep -nF 'landed-source=fix-issues-sprint ' "$SKILL" \
+  line=$(grep -nF 'landed-source=fix-issues-sprint ' "$SKILL_SPRINT" \
          | grep -F 'LAND_ARGS=' | head -1 | cut -d: -f1)
   if [ -z "$line" ]; then
     fail "site 1: Phase 6 sprint-land LAND_ARGS line found" "no LAND_ARGS line with landed-source=fix-issues-sprint"
     return
   fi
   local content
-  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL")
+  content=$(awk -v n="$line" 'NR==n { print }' "$SKILL_SPRINT")
   if echo "$content" | grep -qE -- '--auto"?$'; then
     fail "site 1: Phase 6 sprint-land LAND_ARGS must NOT end --auto" "PR #356 regression: line $line ends --auto unconditionally: [$content]"
   else
@@ -464,7 +471,7 @@ test_site1_sprint_land_honors_auto() {
 
   # The AUTO-conditional MUST be on the very next line.
   local next
-  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL")
+  next=$(awk -v n="$line" 'NR==n+1 { print }' "$SKILL_SPRINT")
   if echo "$next" | grep -qE '\[\s*"\$\{AUTO:-false\}"\s*=\s*"true"\s*\]\s*&&\s*LAND_ARGS='; then
     pass "site 1: AUTO-conditional present immediately after sprint-land LAND_ARGS"
   else
@@ -482,7 +489,7 @@ test_site4_dashboard_empty_exits_route_through_ship_or_cleanup() {
   # Locate both echo lines and assert the line BEFORE `exit 0` is the
   # ship_sync_only_or_cleanup call (Option A) — not a bare echo + exit.
   local echo_lines
-  echo_lines=$(grep -nF 'Dashboard Ready is empty — nothing to do' "$SKILL" | cut -d: -f1)
+  echo_lines=$(grep -nF 'Dashboard Ready is empty — nothing to do' "$SKILL_SPRINT" | cut -d: -f1)
   local n_lines
   n_lines=$(printf '%s\n' "$echo_lines" | wc -l)
   if [ "$n_lines" -lt 2 ]; then
@@ -495,7 +502,7 @@ test_site4_dashboard_empty_exits_route_through_ship_or_cleanup() {
     # The line immediately after the echo should be the ship_sync_only_or_cleanup
     # call (not exit 0 directly).
     local next_line
-    next_line=$(awk -v n="$el" 'NR==n+1 { print }' "$SKILL")
+    next_line=$(awk -v n="$el" 'NR==n+1 { print }' "$SKILL_SPRINT")
     if ! echo "$next_line" | grep -qE 'ship_sync_only_or_cleanup'; then
       fail "site 4: dashboard-empty echo at line $el routes through ship-or-cleanup" \
            "next line is not ship_sync_only_or_cleanup: [$next_line]"
@@ -507,7 +514,7 @@ test_site4_dashboard_empty_exits_route_through_ship_or_cleanup() {
   fi
 
   # And ship_sync_only_or_cleanup must be defined somewhere in the file.
-  if grep -qE '^\s*ship_sync_only_or_cleanup\s*\(\s*\)\s*\{' "$SKILL"; then
+  if grep -qE '^\s*ship_sync_only_or_cleanup\s*\(\s*\)\s*\{' "$SKILL_SPRINT"; then
     pass "site 4: ship_sync_only_or_cleanup() helper defined"
   else
     fail "site 4: ship_sync_only_or_cleanup() helper defined" "function definition not found"
@@ -518,7 +525,7 @@ test_no_intentionally_omitted_rationale() {
   # The deprecated "intentionally omitted" rationale was tied to the old
   # claim that sync is always interactive at the PR level. With unconditional
   # --auto on site 2, that prose is wrong and must be removed.
-  if grep -qF 'intentionally omitted' "$SKILL"; then
+  if skill_grep -qF 'intentionally omitted'; then
     fail "deprecated 'intentionally omitted' rationale removed" "still present"
   else
     pass "deprecated 'intentionally omitted' rationale removed"

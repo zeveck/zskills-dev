@@ -40,7 +40,8 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
+SKILL_ROUTER="$REPO_ROOT/skills/fix-issues/SKILL.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -397,7 +398,7 @@ awk '
     next
   }
   in_fence { buf = buf $0 "\n" }
-' "$SKILL" > "$MUTEX_BLOCK"
+' "$SKILL_ROUTER" > "$MUTEX_BLOCK"
 
 if [ ! -s "$MUTEX_BLOCK" ]; then
   fail "extract mutex bash block from SKILL.md" "extraction produced empty file"

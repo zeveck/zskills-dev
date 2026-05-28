@@ -31,7 +31,7 @@ CLAIM_HELPERS_MIRROR="$REPO_ROOT/.claude/skills/fix-issues/scripts/claim-fence-h
 HOOK="$REPO_ROOT/hooks/block-fix-issue-unclaimed.sh"
 HOOK_MIRROR="$REPO_ROOT/.claude/hooks/block-fix-issue-unclaimed.sh"
 SETTINGS="$REPO_ROOT/.claude/settings.json"
-SKILL_MD="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL_MD="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
 GITIGNORE="$REPO_ROOT/.gitignore"
 CREATE_WT="$REPO_ROOT/skills/create-worktree/scripts/create-worktree.sh"
 

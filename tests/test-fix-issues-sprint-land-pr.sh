@@ -26,7 +26,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
 
 PASS=0
 FAIL=0
