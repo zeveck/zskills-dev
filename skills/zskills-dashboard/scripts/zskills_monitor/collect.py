@@ -53,12 +53,6 @@ SNAPSHOT_TOP_LEVEL_KEYS = {
     "flags",
 }
 
-# Landing-mode hint regex (canonical, per plan Shared Schemas).
-LANDING_MODE_RE = re.compile(
-    r"^\s*>\s*\*{0,2}Landing\s+mode:\s*([A-Za-z_-]+)\s*\*{0,2}",
-    re.IGNORECASE | re.MULTILINE,
-)
-
 # Phase heading: `## Phase N <sep> Name` where <sep> is em-dash, en-dash,
 # colon, or hyphen. All four are accepted because hand-authored plans use
 # them interchangeably; the canonical form documented in /draft-plan and
@@ -442,44 +436,6 @@ def _extract_overview_blurb(content: str) -> str:
     return blurb
 
 
-def _resolve_landing_mode(
-    plan_body: str,
-    main_root: pathlib.Path,
-    errors: List[Dict[str, str]],
-) -> str:
-    """Resolution order: (1) plan-body Landing-mode regex; else
-    (2) `.claude/zskills-config.json` `execution.landing`;
-    else (3) sentinel `"unknown"`.
-    """
-    m = LANDING_MODE_RE.search(plan_body)
-    if m:
-        return m.group(1).lower()
-    cfg_path = main_root / ".claude" / "zskills-config.json"
-    text = _read_text(cfg_path)
-    if text is None:
-        errors.append({
-            "source": ".claude/zskills-config.json",
-            "message": "config file unreadable or missing",
-        })
-        return "unknown"
-    try:
-        cfg = json.loads(text)
-    except Exception as exc:
-        errors.append({
-            "source": ".claude/zskills-config.json",
-            "message": f"json parse error: {exc}",
-        })
-        return "unknown"
-    landing = (cfg.get("execution") or {}).get("landing")
-    if isinstance(landing, str) and landing.strip():
-        return landing.strip().lower()
-    errors.append({
-        "source": ".claude/zskills-config.json",
-        "message": "execution.landing not set",
-    })
-    return "unknown"
-
-
 def _parse_phase_headings(content: str) -> List[Dict[str, Any]]:
     """Return [{n, name}] from `## Phase <N> <sep> Name`.
 
@@ -658,7 +614,6 @@ def parse_plan(path: Any) -> Optional[Dict[str, Any]]:
         "category": category,
         "meta_plan": meta_plan,
         "sub_plans": sub_plans,
-        "_content": content,  # consumed by caller for landing-mode + dropped after
     }
 
 
@@ -2496,10 +2451,6 @@ def collect_snapshot(
             parsed = parse_plan(plan_file)
             if parsed is None:
                 continue
-            content = parsed.pop("_content", "")
-            parsed["landing_mode"] = _resolve_landing_mode(
-                content, main_root, local_errors,
-            )
             # Report enrichment
             report = parse_report(parsed["slug"], main_root)
             parsed["has_report"] = report is not None
@@ -2721,10 +2672,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 parsed = parse_plan(plan_file)
                 if parsed is None:
                     continue
-                content = parsed.pop("_content", "")
-                parsed["landing_mode"] = _resolve_landing_mode(
-                    content, main_root, errors
-                )
                 report = parse_report(parsed["slug"], main_root)
                 parsed["has_report"] = report is not None
                 parsed["report_path"] = report["path"] if report else None

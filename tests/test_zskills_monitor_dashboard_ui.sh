@@ -433,8 +433,6 @@ title: UI Fixture Plan
 status: active
 ---
 
-> Landing mode: pr
-
 ## Overview
 A plan used by Phase 6 UI tests.
 

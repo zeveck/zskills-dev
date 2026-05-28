@@ -5,8 +5,6 @@ status: active
 
 # Meta Plan
 
-> **Landing mode: pr**
-
 ## Overview
 
 Meta plan whose body invokes the `run-plan` skill, exercising

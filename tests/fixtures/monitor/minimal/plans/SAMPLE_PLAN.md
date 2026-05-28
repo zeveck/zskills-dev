@@ -6,8 +6,6 @@ created: 2026-04-18
 
 # Sample Plan
 
-> **Landing mode: PR**
-
 ## Overview
 
 A minimal plan fixture used by the zskills-monitor collect tests. Single phase,

@@ -5,8 +5,6 @@ status: active
 
 # Placeholder
 
-> **Landing mode: pr**
-
 ## Overview
 
 Placeholder plan; the fixture's `__synthesized_errors__` is the load-bearing

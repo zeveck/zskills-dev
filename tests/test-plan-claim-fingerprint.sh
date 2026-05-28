@@ -126,7 +126,7 @@ const queues = {
   },
 };
 const base = {
-  slug: "foo", title: "Same", status: "active", landing_mode: "pr",
+  slug: "foo", title: "Same", status: "active",
   phase_count: 5, phases_done: 0, blurb: "",
   queue: { column: "ready", index: 0, mode: "phase" },
 };

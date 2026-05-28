@@ -433,29 +433,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# AC: Landing-mode resolution (PR vs unknown sentinel)
-# ---------------------------------------------------------------------------
-echo ""
-echo "=== Phase 4 AC: landing-mode resolution ==="
-
-LAND_PR=$(run_collect landing-pr | python3 -c '
-import json,sys; d=json.load(sys.stdin); print(d["plans"][0]["landing_mode"])')
-[ "$LAND_PR" = "pr" ] && pass "landing-pr fixture → landing_mode=pr" \
-  || fail "landing-pr got '$LAND_PR'"
-
-LAND_UNK=$(run_collect landing-unknown | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-p=d["plans"][0]
-hits=[e for e in d["errors"] if e["source"]==".claude/zskills-config.json"]
-print(p["landing_mode"], len(hits))')
-if [ "$LAND_UNK" = "unknown 1" ]; then
-  pass "landing-unknown fixture → landing_mode=unknown + config-source error"
-else
-  fail "landing-unknown got '$LAND_UNK'"
-fi
-
-# ---------------------------------------------------------------------------
 # AC: Tracking dedup (subdir wins, conflict logged)
 # ---------------------------------------------------------------------------
 echo ""

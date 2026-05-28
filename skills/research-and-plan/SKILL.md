@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.22+a7dd8e"
+  version: "2026.05.28+6b4c87"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -127,28 +127,6 @@ using Agent" or who rationalized "I'll go faster by writing the plan
 directly." Both interpretations are wrong. The result was unreviewed
 plans with 10+ CRITICAL issues each, requiring full restarts.
 
-### Landing mode detection
-
-Before dispatching `/draft-plan` agents, detect whether the original
-goal/description text contains `pr` or `direct` as a distinct word. Use
-the same pattern as Phase 3a, extended with sentence punctuation `.!?`
-since this is prose-like goal text:
-
-```bash
-LANDING_ARG=""
-if [[ "$GOAL" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]|[.!?]) ]]; then
-  LANDING_ARG="pr"
-elif [[ "$GOAL" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]|[.!?]) ]]; then
-  LANDING_ARG="direct"
-fi
-```
-
-Where `$GOAL` is the full description passed to `/research-and-plan`.
-If `LANDING_ARG` is empty, no landing-mode suffix is added to the
-`/draft-plan` invocation. This is a hint for generated plans — it does
-NOT enforce landing behavior. The `/run-plan` argument always takes
-precedence at execution time.
-
 For each sub-problem:
 
 1. Determine the sub-plan output path: `$ZSKILLS_PLANS_DIR/<SLUG>_<N>.md` (or let the
@@ -172,12 +150,6 @@ For each sub-problem:
      in its worktree and never dispatches `/land-pr`, and the sub-plan
      is stranded on a `draft-plan/<slug>` branch instead of landing on
      main. (Closure for #648; child-side fix was #581 / PR #642.)
-   - **If `LANDING_ARG` is non-empty**, append `. Landing mode: <LANDING_ARG>`
-     to the description so `/draft-plan` can embed the matching hint in
-     the generated plan. Example:
-     `/draft-plan output $ZSKILLS_PLANS_DIR/X.md rounds 2 <description>. Landing mode: pr$AUTO_ARG`
-   - If `LANDING_ARG` is empty, omit the suffix entirely — do NOT pass
-     an empty `Landing mode:` token.
 4. After each `/draft-plan` invocation returns, report progress, then
    move to the next sub-plan (see serial-dispatch rule below).
 
