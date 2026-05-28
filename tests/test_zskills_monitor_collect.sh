@@ -2126,6 +2126,154 @@ fi
 rm -rf "$_RMR_TMPDIR" "$_RMR_OVERRIDE_DIR"
 
 # ---------------------------------------------------------------------------
+# Branches panel: local+remote merge, dedup, protected flag, non-fatal fetch
+# (Branches-panel remote-state honesty fix)
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== Branches panel: local+remote merge / dedup / protected / non-fatal fetch ==="
+
+# Build a throwaway git repo with: a local-only branch, a branch present
+# both locally and on a (file://) origin, and a branch present only on
+# origin. Then drive _list_branches and assert the merge/dedup/locality and
+# protected-flag behavior. The fetch is real here (file:// remote), so it is
+# also an end-to-end check that `git fetch --prune` is non-destructive.
+BR_TMP=$(mktemp -d)
+(
+  set -e
+  cd "$BR_TMP"
+  # Bare origin.
+  git init -q --bare origin.git
+  # Working clone.
+  git clone -q ./origin.git work
+  cd work
+  git config user.email t@t && git config user.name t
+  git commit -q --allow-empty -m "root"
+  git branch -m main
+  git push -q origin main
+  # both-local-and-remote branch
+  git checkout -q -b feat/both
+  git commit -q --allow-empty -m "both work"
+  git push -q origin feat/both
+  # remote-only branch: push then delete the local ref
+  git checkout -q -b feat/remote-only
+  git commit -q --allow-empty -m "remote-only work"
+  git push -q origin feat/remote-only
+  git checkout -q main
+  git branch -q -D feat/remote-only
+  # local-only branch (never pushed)
+  git checkout -q -b feat/local-only
+  git commit -q --allow-empty -m "local-only work"
+  git checkout -q main
+  # config with a protected branch (same key /cleanup-merged reads)
+  mkdir -p .claude
+  cat > .claude/zskills-config.json <<'JSON'
+{ "cleanup": { "protected_branches": ["feat/both"] } }
+JSON
+) >/dev/null 2>&1
+BR_WORK="$BR_TMP/work"
+
+BR_RES=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import json, pathlib, sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._reset_snapshot_cache_for_tests()
+errs = []
+brs = c._list_branches(pathlib.Path("'"$BR_WORK"'"), errs)
+by = {b["name"]: b for b in brs}
+def loc(n): return by.get(n, {}).get("locality")
+def prot(n): return by.get(n, {}).get("protected")
+# dedup: feat/both appears exactly once
+both_count = sum(1 for b in brs if b["name"] == "feat/both")
+print("both_count=" + str(both_count))
+print("both_locality=" + str(loc("feat/both")))
+print("local_only_locality=" + str(loc("feat/local-only")))
+print("remote_only_locality=" + str(loc("feat/remote-only")))
+print("main_locality=" + str(loc("main")))
+print("both_protected=" + str(prot("feat/both")))
+print("local_only_protected=" + str(prot("feat/local-only")))
+print("remote_only_present=" + str("feat/remote-only" in by))
+print("errors=" + str(len(errs)))
+' 2>&1)
+
+if printf '%s\n' "$BR_RES" | grep -q "both_count=1" \
+    && printf '%s\n' "$BR_RES" | grep -q "both_locality=both" \
+    && printf '%s\n' "$BR_RES" | grep -q "local_only_locality=local" \
+    && printf '%s\n' "$BR_RES" | grep -q "remote_only_locality=remote-only" \
+    && printf '%s\n' "$BR_RES" | grep -q "remote_only_present=True"; then
+  pass "branches: local+remote merge, dedup (local wins), locality classification"
+else
+  fail "branches merge/dedup/locality: got '$BR_RES'"
+fi
+
+if printf '%s\n' "$BR_RES" | grep -q "both_protected=True" \
+    && printf '%s\n' "$BR_RES" | grep -q "local_only_protected=False"; then
+  pass "branches: protected flag derived from cleanup.protected_branches config"
+else
+  fail "branches protected flag: got '$BR_RES'"
+fi
+
+# Non-fatal fetch: inject a fetch runner that ALWAYS fails. The snapshot
+# must still return branches (from the existing refs) AND record a git-fetch
+# error — never crash, never empty.
+BR_FAIL=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._reset_snapshot_cache_for_tests()
+
+class FailResult:
+    returncode = 1
+    stdout = ""
+    stderr = "fatal: could not read from remote repository"
+def fail_runner(*a, **kw):
+    return FailResult()
+
+errs = []
+brs = c._list_branches(pathlib.Path("'"$BR_WORK"'"), errs, _fetch_runner=fail_runner)
+print("branch_count=" + str(len(brs)))
+print("fetch_error=" + str(any(e.get("source") == "git fetch" for e in errs)))
+# main must still be present despite the failed fetch
+print("main_present=" + str(any(b["name"] == "main" for b in brs)))
+' 2>&1)
+
+if printf '%s\n' "$BR_FAIL" | grep -q "fetch_error=True" \
+    && printf '%s\n' "$BR_FAIL" | grep -q "main_present=True" \
+    && printf '%s\n' "$BR_FAIL" | grep -qE "branch_count=[1-9]"; then
+  pass "branches: failed git fetch is non-fatal (branches still returned + error recorded)"
+else
+  fail "branches non-fatal fetch: got '$BR_FAIL'"
+fi
+
+# Fetch throttle: a second call within TTL must NOT re-invoke the runner.
+BR_THROTTLE=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import pathlib, sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+c._reset_snapshot_cache_for_tests()
+calls = {"n": 0}
+class OK:
+    returncode = 0
+    stdout = ""
+    stderr = ""
+def runner(*a, **kw):
+    calls["n"] += 1
+    return OK()
+root = pathlib.Path("'"$BR_WORK"'")
+errs = []
+c._maybe_fetch_remote(root, errs, _now=1000.0, _runner=runner)
+c._maybe_fetch_remote(root, errs, _now=1001.0, _runner=runner)  # within 120s TTL
+c._maybe_fetch_remote(root, errs, _now=2000.0, _runner=runner)  # past TTL
+print("calls=" + str(calls["n"]))
+' 2>&1)
+if printf '%s\n' "$BR_THROTTLE" | grep -q "calls=2"; then
+  pass "branches: git fetch throttled by BRANCH_FETCH_TTL (2 calls across 3 attempts)"
+else
+  fail "branches fetch throttle: got '$BR_THROTTLE'"
+fi
+
+rm -rf "$BR_TMP"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

@@ -112,6 +112,16 @@ SNAPSHOT_CACHE_TTL_GIT_HISTORY = 10.0    # git log
 SNAPSHOT_CACHE_TTL_PLANS = 3.0           # parse_plan + parse_report + landing-mode
 SNAPSHOT_CACHE_TTL_TRACKING = 3.0        # .zskills/tracking/ walk + PR-number scan
 
+# Remote-tracking-ref freshness TTL (seconds). SEPARATE from (and far
+# longer than) SNAPSHOT_CACHE_TTL_BRANCHES: the 5s branch cache governs how
+# often we re-READ refs, while this governs how often we `git fetch --prune`
+# to REFRESH the remote-tracking refs from origin. A network round-trip is
+# expensive and origin moves slowly relative to the 2Hz client poll, so the
+# default is 120s. Override via `dashboard.branch_fetch_ttl_seconds` in
+# `.claude/zskills-config.json`. The fetch is non-fatal — a failure records
+# an `errors[]` entry and the last-known remote refs are rendered.
+BRANCH_FETCH_TTL = 120.0
+
 
 # ---------------------------------------------------------------------------
 # Module-level cache (per-Python-process; documented limitation per DA-14)
@@ -127,6 +137,12 @@ _ISSUE_CACHE: Dict[str, Any] = {
 # 60s TTL). Keyed by (days, limit) so a config change invalidates the
 # cache naturally instead of returning a stale narrower window.
 _CLOSED_ISSUE_CACHE: Dict[Tuple[int, int], Dict[str, Any]] = {}
+
+# Throttle clock for `git fetch --prune` (issue: Branches-panel remote
+# state). Keyed by main_root_str → last monotonic fetch timestamp. The fetch
+# only ever updates remote-tracking refs; it never touches the working tree,
+# index, or local branches.
+_BRANCH_FETCH_TS: Dict[str, float] = {}
 
 # Per-subsystem snapshot cache: maps (kind, main_root_str) →
 # (monotonic_ts, value, errors_from_that_call). On cache hit, the
@@ -146,6 +162,7 @@ def _reset_issue_cache_for_tests() -> None:
 def _reset_snapshot_cache_for_tests() -> None:
     """Reset the per-subsystem snapshot cache (test-only helper)."""
     _SNAPSHOT_CACHE.clear()
+    _BRANCH_FETCH_TS.clear()
 
 
 def _cached_subsystem(
@@ -1103,50 +1120,208 @@ def _list_worktrees(
     return out
 
 
-def _list_branches(
+def _read_protected_branches(main_root: pathlib.Path) -> set:
+    """Read `cleanup.protected_branches` from .claude/zskills-config.json.
+
+    This is the SAME set `/cleanup-merged` honors (exact-name match). Absent
+    config / block / non-list → empty set. Never raises.
+    """
+    cfg_path = main_root / ".claude" / "zskills-config.json"
+    text = _read_text(cfg_path)
+    if text is None:
+        return set()
+    try:
+        cfg = json.loads(text)
+    except Exception:
+        return set()
+    if not isinstance(cfg, dict):
+        return set()
+    cleanup = cfg.get("cleanup", {})
+    if not isinstance(cleanup, dict):
+        return set()
+    pats = cleanup.get("protected_branches", []) or []
+    if not isinstance(pats, list):
+        return set()
+    return {str(p) for p in pats if isinstance(p, (str,)) and p}
+
+
+def _branch_fetch_ttl(main_root: pathlib.Path) -> float:
+    """Resolve the git-fetch throttle TTL (seconds).
+
+    Default `BRANCH_FETCH_TTL`; overridable via
+    `dashboard.branch_fetch_ttl_seconds` in zskills-config.json. Malformed →
+    default.
+    """
+    cfg_path = main_root / ".claude" / "zskills-config.json"
+    text = _read_text(cfg_path)
+    if text is None:
+        return BRANCH_FETCH_TTL
+    try:
+        cfg = json.loads(text)
+    except Exception:
+        return BRANCH_FETCH_TTL
+    if not isinstance(cfg, dict):
+        return BRANCH_FETCH_TTL
+    dash = cfg.get("dashboard", {})
+    if not isinstance(dash, dict):
+        return BRANCH_FETCH_TTL
+    raw = dash.get("branch_fetch_ttl_seconds")
+    if isinstance(raw, (int, float)) and raw >= 0:
+        return float(raw)
+    return BRANCH_FETCH_TTL
+
+
+def _maybe_fetch_remote(
     main_root: pathlib.Path,
     errors: List[Dict[str, str]],
-) -> List[Dict[str, Any]]:
-    """Per plan: rich branch list with last commit + upstream."""
+    *,
+    _now: Optional[float] = None,
+    _runner: Optional[Any] = None,
+) -> None:
+    """Throttled, NON-FATAL `git fetch --prune`.
+
+    Refreshes remote-tracking refs at most once per `_branch_fetch_ttl`
+    seconds (monotonic clock). A plain `git fetch --prune` only updates
+    `refs/remotes/origin/*`; it never touches the working tree, index, or
+    local branches. On failure (network down, no remote, etc.) append a
+    descriptive `errors[]` entry and CONTINUE so the last-known
+    remote-tracking refs are still rendered. Never raises.
+
+    `_now` / `_runner` are test-only injection seams.
+    """
+    now = _now if _now is not None else time.monotonic()
+    key = str(main_root)
+    ttl = _branch_fetch_ttl(main_root)
+    last = _BRANCH_FETCH_TS.get(key)
+    if last is not None and ttl > 0 and (now - last) < ttl:
+        return
+    runner = _runner or subprocess.run
     try:
-        result = subprocess.run(
-            [
-                "git",
-                "for-each-ref",
-                "--format=%(refname:short)|%(committerdate:iso8601-strict)|%(upstream:short)|%(contents:subject)",
-                "refs/heads/",
-            ],
+        result = runner(
+            ["git", "fetch", "--prune"],
             cwd=str(main_root),
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
         )
-        if result.returncode != 0:
+        # Record the attempt regardless of outcome so a hard-down remote
+        # doesn't get retried on every 2Hz poll.
+        _BRANCH_FETCH_TS[key] = now
+        if getattr(result, "returncode", 1) != 0:
             errors.append({
-                "source": "git for-each-ref",
-                "message": result.stderr.strip() or "non-zero exit",
+                "source": "git fetch",
+                "message": (getattr(result, "stderr", "") or "non-zero exit").strip()
+                or "git fetch --prune failed; rendering last-known remote refs",
             })
-            return []
     except Exception as exc:
+        _BRANCH_FETCH_TS[key] = now
         errors.append({
-            "source": "git for-each-ref",
-            "message": str(exc),
+            "source": "git fetch",
+            "message": f"{exc}; rendering last-known remote refs",
         })
+
+
+def _list_branches(
+    main_root: pathlib.Path,
+    errors: List[Dict[str, str]],
+    *,
+    _now: Optional[float] = None,
+    _fetch_runner: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    """Rich branch list: local + remote-only, with last commit + upstream.
+
+    Reads BOTH `refs/heads/` (local) and `refs/remotes/origin/`
+    (remote-tracking), refreshing the latter via a throttled non-fatal
+    `git fetch --prune` first. Local and remote entries are merged and
+    deduped by branch name — the LOCAL entry wins (keeps its
+    worktree/landed-classification data). Each entry carries:
+      - `locality`: "local" | "remote-only" | "both"
+      - `protected`: bool (from cleanup.protected_branches config)
+    """
+    protected = _read_protected_branches(main_root)
+
+    def _for_each_ref(ref_glob: str, source: str) -> Optional[List[List[str]]]:
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "for-each-ref",
+                    "--format=%(refname:short)|%(committerdate:iso8601-strict)|%(upstream:short)|%(contents:subject)",
+                    ref_glob,
+                ],
+                cwd=str(main_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                errors.append({
+                    "source": source,
+                    "message": result.stderr.strip() or "non-zero exit",
+                })
+                return None
+        except Exception as exc:
+            errors.append({"source": source, "message": str(exc)})
+            return None
+        rows: List[List[str]] = []
+        for line in result.stdout.split("\n"):
+            if not line.strip():
+                continue
+            parts = line.split("|")
+            if len(parts) < 4:
+                continue
+            rows.append(parts)
+        return rows
+
+    # Local branches (refs/heads/). A None return means git itself failed.
+    local_rows = _for_each_ref("refs/heads/", "git for-each-ref")
+    if local_rows is None:
         return []
-    out: List[Dict[str, Any]] = []
-    for line in result.stdout.split("\n"):
-        if not line.strip():
-            continue
-        parts = line.split("|")
-        if len(parts) < 4:
-            continue
-        out.append({
-            "name": parts[0],
+
+    # Refresh + read remote-tracking refs (refs/remotes/origin/). The fetch
+    # is throttled + non-fatal; the read is non-fatal too.
+    _maybe_fetch_remote(
+        main_root, errors, _now=_now, _runner=_fetch_runner
+    )
+    remote_rows = _for_each_ref("refs/remotes/origin/", "git for-each-ref (remote)")
+    if remote_rows is None:
+        remote_rows = []
+
+    # Build the merged map, LOCAL first so it wins on collision.
+    by_name: Dict[str, Dict[str, Any]] = {}
+    for parts in local_rows:
+        name = parts[0]
+        by_name[name] = {
+            "name": name,
             "last_commit_at": parts[1],
             "upstream": parts[2] or None,
             "last_commit_subject": "|".join(parts[3:]),
-        })
-    return out
+            "locality": "local",
+            "protected": name in protected,
+        }
+    for parts in remote_rows:
+        raw = parts[0]
+        # `%(refname:short)` yields e.g. "origin/feat/x" or "origin/HEAD".
+        if raw == "origin/HEAD" or not raw.startswith("origin/"):
+            continue
+        name = raw[len("origin/"):]
+        if not name or name == "HEAD":
+            continue
+        existing = by_name.get(name)
+        if existing is not None:
+            # Local entry wins; merging just flips locality to "both".
+            existing["locality"] = "both"
+            continue
+        by_name[name] = {
+            "name": name,
+            "last_commit_at": parts[1],
+            "upstream": parts[2] or None,
+            "last_commit_subject": "|".join(parts[3:]),
+            "locality": "remote-only",
+            "protected": name in protected,
+        }
+
+    return list(by_name.values())
 
 
 # ---------------------------------------------------------------------------

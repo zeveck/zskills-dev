@@ -105,7 +105,7 @@ function setCompletedWindow(kind, value) {
 // explicitly expands it. Per-user expand state still persists via
 // localStorage (setCollapsed removes the key on expand, so the default
 // applies only on first paint or after localStorage.clear()).
-const COLLAPSED_BY_DEFAULT = new Set(["discarded", "branch-landed", "branch-remote-only"]);
+const COLLAPSED_BY_DEFAULT = new Set(["discarded", "branch-landed", "branch-local", "branch-remote-only"]);
 
 function isCollapsed(kind, col) {
   try {
@@ -1271,18 +1271,28 @@ function worktreesByBranch(worktrees) {
 }
 
 // Issue #717 — Branch grouping constants.
-var BRANCH_SECTIONS = ["active", "landed", "remote-only"];
+var BRANCH_SECTIONS = ["active", "landed", "local", "remote-only"];
 var BRANCH_SECTION_LABELS = {
   "active": "Active",
   "landed": "Landed",
+  "local": "Local (no worktree)",
   "remote-only": "Remote only",
 };
 
+// Four accurate buckets:
+//   active      — local branch WITH a live worktree, no .landed marker
+//   landed      — local branch WITH a worktree carrying a .landed marker
+//   local       — local branch with NO worktree (was mislabeled "remote-only")
+//   remote-only — branch on origin but NOT checked out locally (was invisible)
+// The collector tags each branch with `locality` ("local"|"remote-only"|
+// "both"); a worktree match implies the branch is local, so we only need
+// `locality === "remote-only"` to separate the genuinely-remote bucket.
 function classifyBranch(b, byBranch) {
   var w = byBranch.get(b.name);
   if (w && w.landed) return "landed";
   if (w) return "active";
-  return "remote-only";
+  if (b.locality === "remote-only") return "remote-only";
+  return "local";
 }
 
 function branchStatePill(b, byBranch) {
@@ -1342,6 +1352,18 @@ function buildBranchCard(b, byBranch) {
     }));
   } else {
     head.appendChild(el("span", { cls: "card-title mono", text: b.name }));
+  }
+  // Config-protected shield (zskills cleanup.protected_branches — NOT
+  // GitHub branch protection). Signals "/cleanup-merged skips this branch".
+  if (b.protected) {
+    head.appendChild(el("span", {
+      cls: "branch-protected-shield",
+      text: "🛡",
+      attrs: {
+        title: "Config-protected (cleanup.protected_branches) — /cleanup-merged skips this branch",
+        "aria-label": "Config-protected branch",
+      },
+    }));
   }
   // State pill
   head.appendChild(branchStatePill(b, byBranch));
@@ -1514,7 +1536,7 @@ function renderBranches(branches, worktrees) {
   empty.hidden = true;
   var byBranch = worktreesByBranch(worktrees);
   // Group branches into sections
-  var groups = { "active": [], "landed": [], "remote-only": [] };
+  var groups = { "active": [], "landed": [], "local": [], "remote-only": [] };
   for (var i = 0; i < branches.length; i++) {
     var section = classifyBranch(branches[i], byBranch);
     groups[section].push(branches[i]);
