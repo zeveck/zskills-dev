@@ -1956,6 +1956,71 @@ else
   fail "#700: column-head-btn background is NOT var(--surface2)"
 fi
 
+echo ""
+echo "=== Branches panel: 4 accurate buckets + protected shield ==="
+
+# BRANCH_SECTIONS must enumerate the 4 buckets in order.
+if grep -qE 'var BRANCH_SECTIONS = \["active", "landed", "local", "remote-only"\]' "$APP_JS"; then
+  pass "branches: BRANCH_SECTIONS = active/landed/local/remote-only"
+else
+  fail "branches: BRANCH_SECTIONS does not enumerate the 4 buckets"
+fi
+
+# Label map must carry all 4 labels, including the honest renames.
+if grep -qE '"local": "Local \(no worktree\)"' "$APP_JS" \
+   && grep -qE '"remote-only": "Remote only"' "$APP_JS" \
+   && grep -qE '"active": "Active"' "$APP_JS" \
+   && grep -qE '"landed": "Landed"' "$APP_JS"; then
+  pass "branches: BRANCH_SECTION_LABELS carries all 4 bucket labels"
+else
+  fail "branches: BRANCH_SECTION_LABELS missing one of the 4 bucket labels"
+fi
+
+# classifyBranch must resolve all 4 buckets: worktree+landed→landed,
+# worktree→active, locality==remote-only→remote-only, else→local.
+CLASSIFY_BODY=$(awk '
+  /^function classifyBranch\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$CLASSIFY_BODY" | grep -qE 'w && w\.landed.*return "landed"' \
+   && echo "$CLASSIFY_BODY" | grep -qE 'if \(w\) return "active"' \
+   && echo "$CLASSIFY_BODY" | grep -qE 'b\.locality === "remote-only".*return "remote-only"' \
+   && echo "$CLASSIFY_BODY" | grep -qE 'return "local"'; then
+  pass "branches: classifyBranch resolves active/landed/local/remote-only"
+else
+  fail "branches: classifyBranch missing one of the 4 bucket resolutions: got '$CLASSIFY_BODY'"
+fi
+
+# Both large/low-action buckets (local + remote-only) collapse by default.
+if grep -qE 'COLLAPSED_BY_DEFAULT *= *new Set\(\[.*"branch-local".*"branch-remote-only"' "$APP_JS"; then
+  pass "branches: local + remote-only buckets collapsed by default"
+else
+  fail "branches: COLLAPSED_BY_DEFAULT missing branch-local / branch-remote-only"
+fi
+
+# renderBranches groups object must seed all 4 buckets.
+if grep -qE 'var groups = \{ "active": \[\], "landed": \[\], "local": \[\], "remote-only": \[\] \}' "$APP_JS"; then
+  pass "branches: renderBranches groups object seeds all 4 buckets"
+else
+  fail "branches: renderBranches groups object does not seed all 4 buckets"
+fi
+
+# Protected shield: a branch card whose `protected` field is true renders a
+# shield indicator with a descriptive title (config protection, not GitHub).
+BRANCHCARD_BODY=$(awk '
+  /^function buildBranchCard\(/ { flag=1 }
+  flag { print }
+  flag && /^}$/ { exit }
+' "$APP_JS")
+if echo "$BRANCHCARD_BODY" | grep -qE 'b\.protected' \
+   && echo "$BRANCHCARD_BODY" | grep -q 'branch-protected-shield' \
+   && echo "$BRANCHCARD_BODY" | grep -qi 'cleanup.protected_branches'; then
+  pass "branches: protected shield rendered on protected cards (config-protection labeled)"
+else
+  fail "branches: buildBranchCard missing protected-shield rendering: got '$BRANCHCARD_BODY'"
+fi
+
 # Stop server cleanly via SIGTERM and verify port is released.
 kill -TERM "$SERVER_PID" 2>/dev/null || true
 for _ in 1 2 3 4 5 6 7 8 9 10; do

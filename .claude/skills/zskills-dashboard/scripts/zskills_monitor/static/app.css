@@ -1290,6 +1290,16 @@ button svg { display: inline-block; vertical-align: middle; }
 .branch-state-pill--local        { color: var(--orange); border-color: var(--orange); }
 .branch-state-pill--remote       { color: var(--text-dim); border-color: var(--border); }
 
+/* Config-protected shield (cleanup.protected_branches). Signals that
+   /cleanup-merged skips this branch — NOT GitHub branch protection. */
+.branch-protected-shield {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: help;
+}
+
 /* Issue #717 — Branch section container. Each of Active/Landed/Remote-only
    is a collapsible section within the branches panel. */
 .branch-section {
