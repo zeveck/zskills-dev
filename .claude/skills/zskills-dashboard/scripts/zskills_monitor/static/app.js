@@ -1,8 +1,9 @@
 // Z Skills Dashboard — interactive dashboard renderer (Phase 7).
 //
 // Loaded as a single ES module from /app.js. Polls /api/state every 2s
-// via setTimeout recursion (NOT setInterval), pauses while document is
-// hidden, and force-loads on visibilitychange. Per-panel diff detection
+// via setTimeout recursion (NOT setInterval), slows to a ~60s heartbeat
+// while document is hidden (HIDDEN_POLL_INTERVAL_MS) rather than stopping,
+// and force-loads on visibilitychange. Per-panel diff detection
 // so unchanged panels are not re-rendered. All user-authored content
 // rendered via textContent / appendChild — no innerHTML except for
 // hardcoded chrome marked `// chrome-only`.
@@ -13,6 +14,18 @@
 // and POSTs to /api/trigger and /api/work-state/reset.
 
 const POLL_INTERVAL_MS = 2000;
+// While the tab is hidden we keep polling, just much more slowly. The
+// collector maintains a ~60s server-side snapshot cache, so a 60s hidden
+// poll mostly hits warm cache instead of re-shelling git/gh. This keeps the
+// open tab reasonably fresh (returning is near-instant) without paying the
+// 2s-cadence collection cost while nobody is watching. Tunable.
+const HIDDEN_POLL_INTERVAL_MS = 60000;
+// Reschedule delay for the recursive poll loops: fast when visible, slow
+// heartbeat when hidden. The loop is NEVER torn down — see pollOnce /
+// pollWorkOnce, which reschedule via this on every tick.
+function nextPollDelay() {
+  return document.hidden ? HIDDEN_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+}
 const STATE_URL = "/api/state";
 const WORK_STATE_URL = "/api/work-state";
 const QUEUE_URL = "/api/queue";
@@ -499,15 +512,12 @@ function scheduleWorkPoll(delay) {
 }
 
 async function pollOnce() {
-  if (document.hidden) {
-    pollTimer = null;
-    return;
-  }
   // Reconciliation: skip a single state poll right after a successful
   // POST, so a GET in flight before the POST lands cannot flash stale
-  // data over the user's just-applied reorder.
+  // data over the user's just-applied reorder. Still reschedule (at the
+  // current cadence) — never tear the loop down.
   if (Date.now() < suppressNextStatePollUntil) {
-    schedulePoll(POLL_INTERVAL_MS);
+    schedulePoll(nextPollDelay());
     return;
   }
   const snap = await fetchState();
@@ -515,20 +525,20 @@ async function pollOnce() {
     lastSnapshot = snap;
     applySnapshot(snap);
   }
-  schedulePoll(POLL_INTERVAL_MS);
+  // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
+  // visible (POLL_INTERVAL_MS). The loop is never stopped.
+  schedulePoll(nextPollDelay());
 }
 
 async function pollWorkOnce() {
-  if (document.hidden) {
-    workPollTimer = null;
-    return;
-  }
   const ws = await fetchWorkState();
   if (ws) {
     lastWorkState = ws;
     applyWorkState(ws);
   }
-  scheduleWorkPoll(POLL_INTERVAL_MS);
+  // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
+  // visible (POLL_INTERVAL_MS). The loop is never stopped.
+  scheduleWorkPoll(nextPollDelay());
 }
 
 function applySnapshot(snap) {
