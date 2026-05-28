@@ -93,8 +93,15 @@
           "type": "array",
           "items": { "type": "string" },
           "default": [],
-          "description": "Branch-name glob patterns that /cleanup-merged --review treats as KEEP regardless of merge / push state. Use for explicitly long-lived branches (e.g., docs/run-order-guide, release/*). Empty by default. Matched via bash glob semantics (NOT regex).",
+          "description": "DEPRECATED: Replaced by protected_branches. Branch-name glob patterns that /cleanup-merged treats as KEEP regardless of merge / push state. Empty by default. Matched via bash glob semantics (NOT regex).",
           "examples": [["docs/run-order-guide", "release/*"]]
+        },
+        "protected_branches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Branch names that /cleanup-merged should never delete. Preview marks these as PROTECTED (config) and apply skips them automatically. Exact match (not glob).",
+          "examples": [["docs/run-order-guide"]]
         }
       }
     },
