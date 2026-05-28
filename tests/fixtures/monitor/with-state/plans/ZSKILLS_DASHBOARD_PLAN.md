@@ -5,8 +5,6 @@ status: active
 
 # ZSkills Dashboard
 
-> **Landing mode: pr**
-
 ## Overview
 
 Dashboard plan used to verify queue annotation against state file v1.1.

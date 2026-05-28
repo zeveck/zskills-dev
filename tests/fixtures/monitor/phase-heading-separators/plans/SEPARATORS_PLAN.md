@@ -6,8 +6,6 @@ created: 2026-05-07
 
 # Phase Heading Separators
 
-> **Landing mode: PR**
-
 ## Overview
 
 Regression fixture for issue #183 — `/plans` previously demoted plans with

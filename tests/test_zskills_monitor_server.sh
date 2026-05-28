@@ -314,8 +314,6 @@ title: Sample Plan
 status: active
 ---
 
-> Landing mode: pr
-
 ## Overview
 This is a sample plan body for /api/plan tests.
 

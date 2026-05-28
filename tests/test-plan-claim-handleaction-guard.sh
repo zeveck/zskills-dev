@@ -136,7 +136,6 @@ const titleNodeBlock = extractBlock(src, /\nfunction titleNode\(/, "\n}\n");
 const relativeTimeBlock = extractBlock(src, /\nfunction relativeTime\(/, "\n}\n");
 const planUrlBlock   = extractBlock(src, /\nfunction planUrl\(/, "\n}\n");
 const statusPillCls  = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
-const modePillCls    = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const makeMoveBtnBlk = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
 const makeCopyBtnBlk = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildPlanBlock = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
@@ -166,8 +165,6 @@ ${relativeTimeBlock}
 ${planUrlBlock}
 
 ${statusPillCls}
-
-${modePillCls}
 
 ${makeMoveBtnBlk}
 
@@ -234,7 +231,7 @@ function findAllByAttr(root, k, v) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "blocked", title: "P", status: "active", landing_mode: "pr",
+    slug: "blocked", title: "P", status: "active",
     phase_count: 5, phases_done: 1,
     claim: {
       pipeline_id: "run-plan.blocked",
@@ -288,7 +285,7 @@ function findAllByAttr(root, k, v) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "free", title: "P", status: "active", landing_mode: "pr",
+    slug: "free", title: "P", status: "active",
     phase_count: 3, phases_done: 0,
   };
   const card = buildPlanCard(plan, "free", "ready", "phase");

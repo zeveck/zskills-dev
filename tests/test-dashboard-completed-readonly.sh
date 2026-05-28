@@ -105,7 +105,6 @@ const makeIssueBtnBlock = extractBlock(src, /\nfunction makeIssueMoveBtn\(/, "\n
 const makeMoveBtnBlock = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
 const makeCopyBtnBlock = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const statusPillBlock = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
-const modePillBlock = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const currentEntryModeBlock = extractBlock(src, /\nfunction currentEntryMode\(/, "\n}\n");
 const buildIssueBlock = extractBlock(src, /\nfunction buildIssueCard\(/, "\n  return card;\n}\n");
 const buildPlanBlock = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
@@ -128,7 +127,6 @@ ${makeIssueBtnBlock}
 ${makeMoveBtnBlock}
 ${makeCopyBtnBlock}
 ${statusPillBlock}
-${modePillBlock}
 ${currentEntryModeBlock}
 ${buildIssueBlock}
 ${buildPlanBlock}
@@ -212,7 +210,6 @@ function findByClass(root, cls) {
     slug: "demo-plan",
     title: "Demo plan",
     status: "complete",
-    landing_mode: "phase",
     phase_count: 3,
     phases_done: 3,
     blurb: "Done.",
@@ -251,7 +248,7 @@ function findByClass(root, cls) {
   // form differs from the .card-title-only completed branch.
   const plan = {
     slug: "live", title: "Live plan", status: "active",
-    landing_mode: "phase", phase_count: 2, phases_done: 1, blurb: "",
+    phase_count: 2, phases_done: 1, blurb: "",
     file: "plans/live.md",
   };
   const card = buildPlanCard(plan, "live", "ready", "phase");

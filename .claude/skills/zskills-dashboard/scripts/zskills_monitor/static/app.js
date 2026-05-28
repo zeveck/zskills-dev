@@ -796,7 +796,7 @@ function fingerprintPlans(plans, queues, defaultMode) {
     dm: defaultMode,
     cw: _gcw ? _gcw("plan") : null,
     rows: plans.map(p => [
-      p.slug, p.title, p.status, p.landing_mode,
+      p.slug, p.title, p.status,
       p.phase_count, p.phases_done, p.blurb,
       pos[p.slug] || [
         (p.queue && p.queue.column) || null,
@@ -905,13 +905,6 @@ function statusPillClass(status) {
   return "pill-status-active";
 }
 
-function modePillClass(mode) {
-  const m = (mode || "").toLowerCase();
-  if (m === "pr") return "pill-mode-pr";
-  if (m === "direct") return "pill-mode-direct";
-  return "pill-mode-unknown";
-}
-
 function planBySlug(plans, slug) {
   for (const p of plans) {
     if (p.slug === slug) return p;
@@ -963,11 +956,6 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     const meta = el("div", { cls: "card-row card-sub" });
     const ratio = (plan.phases_done || 0) + " / " + (plan.phase_count || 0) + " phases";
     meta.appendChild(el("span", { text: ratio }));
-    const modePill = el("span", {
-      cls: "pill " + modePillClass(plan.landing_mode),
-      text: "mode: " + (plan.landing_mode || "unknown"),
-    });
-    meta.appendChild(modePill);
     card.appendChild(meta);
 
     const total = plan.phase_count || 0;

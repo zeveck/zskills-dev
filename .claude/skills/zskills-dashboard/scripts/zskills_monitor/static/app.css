@@ -349,10 +349,6 @@ code, pre, .mono {
 .pill-status-blocked  { color: var(--red); border-color: var(--red); }
 .pill-status-paused   { color: var(--orange); border-color: var(--orange); }
 
-.pill-mode-pr      { color: var(--accent2); border-color: var(--accent2); }
-.pill-mode-direct  { color: var(--green); border-color: var(--green); }
-.pill-mode-unknown { color: var(--orange); border-color: var(--orange); background: rgba(210, 153, 34, 0.08); }
-
 .pill-landed-full                { color: var(--green); border-color: var(--green); }
 .pill-landed-partial             { color: var(--orange); border-color: var(--orange); }
 .pill-landed-pr-ready            { color: var(--accent); border-color: var(--accent); }

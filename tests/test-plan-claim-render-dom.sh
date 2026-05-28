@@ -152,7 +152,6 @@ const titleNodeBlock  = extractBlock(src, /\nfunction titleNode\(/, "\n}\n");
 const relativeTimeBlock = extractBlock(src, /\nfunction relativeTime\(/, "\n}\n");
 const planUrlBlock    = extractBlock(src, /\nfunction planUrl\(/, "\n}\n");
 const statusPillCls   = extractBlock(src, /\nfunction statusPillClass\(/, "\n}\n");
-const modePillCls     = extractBlock(src, /\nfunction modePillClass\(/, "\n}\n");
 const makeMoveBtnBlk  = extractBlock(src, /\nfunction makeMoveBtn\(/, "\n}\n");
 const makeCopyBtnBlk  = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildPlanBlock  = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
@@ -176,8 +175,6 @@ ${relativeTimeBlock}
 ${planUrlBlock}
 
 ${statusPillCls}
-
-${modePillCls}
 
 ${makeMoveBtnBlk}
 
@@ -227,7 +224,6 @@ function findByClass(root, cls) {
     slug: "foo",
     title: "Test plan",
     status: "active",
-    landing_mode: "pr",
     phase_count: 5,
     phases_done: 2,
     blurb: "",
@@ -257,7 +253,7 @@ function findByClass(root, cls) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "bar", title: "P", status: "active", landing_mode: "pr",
+    slug: "bar", title: "P", status: "active",
     phase_count: 5, phases_done: 0,
     claim: {
       pipeline_id: "run-plan.bar",
@@ -291,7 +287,7 @@ function findByClass(root, cls) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "section-name", title: "P", status: "active", landing_mode: "pr",
+    slug: "section-name", title: "P", status: "active",
     phase_count: 6, phases_done: 0,
     claim: {
       pipeline_id: "run-plan.section-name",
@@ -315,7 +311,7 @@ function findByClass(root, cls) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "null-phase", title: "P", status: "active", landing_mode: "pr",
+    slug: "null-phase", title: "P", status: "active",
     phase_count: 4, phases_done: 0,
     claim: {
       pipeline_id: "run-plan.null-phase",
@@ -339,7 +335,7 @@ function findByClass(root, cls) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "pending", title: "P", status: "active", landing_mode: "pr",
+    slug: "pending", title: "P", status: "active",
     phase_count: 3, phases_done: 0,
     claim: {
       pipeline_id: null,
@@ -363,7 +359,7 @@ function findByClass(root, cls) {
 // ------------------------------------------------------------------
 {
   const plan = {
-    slug: "fresh", title: "Unclaimed", status: "active", landing_mode: "pr",
+    slug: "fresh", title: "Unclaimed", status: "active",
     phase_count: 3, phases_done: 0,
   };
   const card = buildPlanCard(plan, "fresh", "drafted", "phase");

@@ -5,8 +5,6 @@ status: active
 
 # Stub
 
-> **Landing mode: pr**
-
 ## Overview
 
 Tracking-dedup fixture: same marker basename appears both flat and inside

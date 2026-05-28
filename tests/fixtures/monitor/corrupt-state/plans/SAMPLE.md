@@ -5,8 +5,6 @@ status: active
 
 # Sample
 
-> **Landing mode: pr**
-
 ## Overview
 
 Corrupt-state fixture.

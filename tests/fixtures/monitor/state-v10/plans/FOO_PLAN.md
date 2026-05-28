@@ -5,8 +5,6 @@ status: active
 
 # Foo Plan
 
-> **Landing mode: pr**
-
 ## Overview
 
 State v1.0 (flat-string array) compat fixture. Mode must be null after
