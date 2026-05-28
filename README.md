@@ -368,7 +368,6 @@ Manually-run canary plans (markdown plans under `docs/plans/`):
 | `CANARY1_HAPPY` | Happy-path single-phase runs |
 | `CANARY8_PARALLEL` | Concurrent pipelines on one repo (multi-pipeline invariant) |
 | `CANARY11_SCOPE_VIOLATION` (+ `CANARY11_TEST_PLAN`) | Verifier catches scope-flag violations |
-| `CANARY_BYPASS_DETECT` | Behavioral gate for LAND_PR_BYPASS_HARDENING |
 | `CANARY_LAND_PR` | Unified `/land-pr` dispatch end-to-end |
 | `REBASE_CONFLICT_CANARY` | Two-session rebase conflict resolution |
 
