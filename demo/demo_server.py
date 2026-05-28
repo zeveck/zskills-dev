@@ -1,22 +1,37 @@
 #!/usr/bin/env python3
-"""Z Skills Dashboard — Demo Server.
+"""Z Skills Dashboard — Interactive Demo Server.
 
-A standalone demo that serves the real dashboard frontend with simulated
-data. 20 sci-fi themed plans and 20 issues arrive staggered over ~10
-minutes, progress through columns, and trigger a victory overlay when
-all items reach completed.
+A standalone demo that serves the real dashboard frontend backed by a
+*stateful, user-driven* simulation. Unlike the old auto-player, this demo
+does NO autonomous column movement except:
 
-    python3 demo/demo_server.py [--port PORT]
+  1. Arrivals: new sci-fi-themed work appears over time (issues land in
+     Triage, plans land in Drafted) — the only "new card appears" motion.
+  2. Worked Ready items: an item the user drags into Ready becomes
+     eligible to be worked. At most --concurrency items are in-flight at
+     once (default 3); each in-flight item shows a claim chip, ticks its
+     phases, and after a timely period (~20-45s) auto-advances to
+     Completed — the ONLY column transition the sim performs.
+
+Everything else (Triage / Drafted / Reviewed / Backlog / Discarded) is
+driven entirely by the user dragging cards. Drags PERSIST: the server
+holds mutable board state and applies /api/queue POSTs to it, so the next
+/api/state poll reflects the user's placement (no snap-back).
+
+When the board is cleared (all arrived items reached Completed), the
+victory overlay fires.
+
+    python3 demo/demo_server.py [--port PORT] [--seed N] [--concurrency N]
 
 No external dependencies — Python 3 stdlib only.
 """
 
 import argparse
 import json
-import os
 import pathlib
 import random
 import sys
+import threading
 import time
 from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -29,6 +44,34 @@ from urllib.parse import urlparse
 DEMO_DIR = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = DEMO_DIR.parent
 STATIC_DIR = REPO_ROOT / "skills" / "zskills-dashboard" / "scripts" / "zskills_monitor" / "static"
+
+# ---------------------------------------------------------------------------
+# Tunables
+# ---------------------------------------------------------------------------
+
+# At most this many Ready items are "worked" (in-flight) at once. Extra
+# Ready items wait — no claim chip — until a slot frees up.
+DEFAULT_CONCURRENCY = 3
+
+# Each in-flight item takes a timely period to complete so the lifecycle
+# is visible: roughly WORK_DURATION_BASE +/- WORK_DURATION_VARIANCE seconds.
+WORK_DURATION_BASE = 32        # seconds (lands ~20-45s with the variance)
+WORK_DURATION_VARIANCE = 13
+
+# Arrival cadence: a new item appears every ARRIVAL_GAP_BASE +/- variance
+# seconds. The first couple arrive quickly so the board isn't empty.
+ARRIVAL_GAP_BASE = 28          # ~every 20-40s with the variance below
+ARRIVAL_GAP_VARIANCE = 10
+FIRST_ARRIVAL_DELAY = 2        # first card lands almost immediately
+
+# Real-frontend column shapes (mirror server.py's PLAN_COLUMNS /
+# ISSUE_COLUMNS — `completed` is read-only, NOT in the POST body).
+PLAN_DRAG_COLUMNS = ("drafted", "reviewed", "ready", "backlog", "discarded")
+ISSUE_DRAG_COLUMNS = ("triage", "ready", "backlog")
+PLAN_ARRIVAL_COLUMN = "drafted"
+ISSUE_ARRIVAL_COLUMN = "triage"
+READY_COLUMN = "ready"
+COMPLETED_COLUMN = "completed"
 
 # ---------------------------------------------------------------------------
 # Sci-fi content
@@ -158,7 +201,7 @@ ISSUE_DEFS = [
     (114, "Medical tricorder firmware crashes on Bolian physiology"),
     (115, "Cargo transporter materializes items 2cm left of target"),
     (116, "Bridge viewscreen flickers during FTL transitions"),
-    (117, "Environmental controls set deck 12 to 45°C"),
+    (117, "Environmental controls set deck 12 to 45C"),
     (118, "Tactical console touch calibration drifted"),
     (119, "Escape pod 7 reports launch-ready when fuel is empty"),
     (120, "Astrometrics lab star catalog 3 months out of date"),
@@ -169,180 +212,318 @@ ISSUE_DEFS = [
 # Simulation engine
 # ---------------------------------------------------------------------------
 
-TOTAL_ARRIVAL_WINDOW = 540  # ~9 minutes for all items to arrive (last min is drain)
-ITEM_DWELL_BASE = 55       # base seconds per column transition
-ITEM_DWELL_VARIANCE = 35   # +/- random variance per transition
 
-PLAN_COLUMNS = ["drafted", "reviewed", "ready", "completed"]
-ISSUE_COLUMNS = ["triage", "ready", "completed"]
+def _iso(dt):
+    return dt.isoformat()
 
 
-class SimItem:
-    """Tracks an item's lifecycle through columns."""
+def _ago_iso(seconds):
+    """ISO timestamp `seconds` in the past (clamped to >= 0)."""
+    return _iso(datetime.now(timezone.utc) - timedelta(seconds=max(0.0, seconds)))
 
-    __slots__ = ("kind", "id_key", "arrive_at", "columns", "transitions",
-                 "col_idx", "last_transition", "claim_pipeline")
 
-    def __init__(self, kind, id_key, arrive_at, columns, rng):
-        self.kind = kind
-        self.id_key = id_key
+class PlanItem:
+    """A simulated plan. Lifecycle is entirely user-driven except work."""
+
+    __slots__ = ("slug", "title", "phase_defs", "arrive_at",
+                 "column", "arrived", "completed", "completed_at_elapsed",
+                 "started_at_elapsed", "work_duration", "pipeline_id")
+
+    def __init__(self, slug, title, phase_defs, arrive_at, rng):
+        self.slug = slug
+        self.title = title
+        self.phase_defs = phase_defs
         self.arrive_at = arrive_at
-        self.columns = columns
-        self.transitions = []
-        for i in range(len(columns) - 1):
-            dwell = ITEM_DWELL_BASE + rng.randint(-ITEM_DWELL_VARIANCE, ITEM_DWELL_VARIANCE)
-            dwell = max(10, dwell)
-            self.transitions.append(dwell)
-        self.col_idx = -1  # not yet arrived
-        self.last_transition = 0.0
-        self.claim_pipeline = "demo-pipeline-%04d" % rng.randint(1000, 9999)
-
-    def update(self, elapsed):
-        if self.col_idx == len(self.columns) - 1:
-            return  # already completed
-        if elapsed < self.arrive_at:
-            return  # not yet arrived
-        if self.col_idx == -1:
-            self.col_idx = 0
-            self.last_transition = self.arrive_at
-        while (self.col_idx < len(self.columns) - 1
-               and elapsed - self.last_transition >= self.transitions[self.col_idx]):
-            self.last_transition += self.transitions[self.col_idx]
-            self.col_idx += 1
+        # column is None until the item arrives; then it sits in `drafted`
+        # until the user moves it. The sim never moves it except to
+        # `completed` when work finishes.
+        self.column = None
+        self.arrived = False
+        self.completed = False
+        self.completed_at_elapsed = None
+        # In-flight bookkeeping (None unless currently being worked).
+        self.started_at_elapsed = None
+        self.work_duration = (WORK_DURATION_BASE
+                              + rng.randint(-WORK_DURATION_VARIANCE,
+                                            WORK_DURATION_VARIANCE))
+        self.pipeline_id = "run-plan.demo-%04d" % rng.randint(1000, 9999)
 
     @property
-    def column(self):
-        if self.col_idx < 0:
-            return None
-        return self.columns[self.col_idx]
+    def kind(self):
+        return "plan"
 
     @property
-    def is_completed(self):
-        return self.col_idx == len(self.columns) - 1
+    def id_key(self):
+        return self.slug
 
     @property
-    def is_in_flight(self):
-        col = self.column
-        if self.kind == "plan":
-            return col == "ready"
-        return col == "ready"
+    def in_flight(self):
+        return self.started_at_elapsed is not None and not self.completed
+
+
+class IssueItem:
+    """A simulated GitHub issue. Same lifecycle model as PlanItem."""
+
+    __slots__ = ("number", "title", "arrive_at",
+                 "column", "arrived", "completed", "completed_at_elapsed",
+                 "started_at_elapsed", "work_duration", "pipeline_id")
+
+    def __init__(self, number, title, arrive_at, rng):
+        self.number = number
+        self.title = title
+        self.arrive_at = arrive_at
+        self.column = None
+        self.arrived = False
+        self.completed = False
+        self.completed_at_elapsed = None
+        self.started_at_elapsed = None
+        self.work_duration = (WORK_DURATION_BASE
+                              + rng.randint(-WORK_DURATION_VARIANCE,
+                                            WORK_DURATION_VARIANCE))
+        self.pipeline_id = "fix-issues.demo-%04d" % rng.randint(1000, 9999)
+
+    @property
+    def kind(self):
+        return "issue"
+
+    @property
+    def id_key(self):
+        return self.number
+
+    @property
+    def in_flight(self):
+        return self.started_at_elapsed is not None and not self.completed
 
 
 class Simulation:
-    """Manages the full simulation state."""
+    """Stateful, user-driven board simulation.
 
-    def __init__(self, seed=None):
+    State the server owns:
+      * per-item placement (`item.column`) — mutated by /api/queue POSTs
+      * arrival schedule — drives the only "new card appears" motion
+      * in-flight set + completion — the only sim-driven column transition
+    """
+
+    def __init__(self, seed=None, concurrency=DEFAULT_CONCURRENCY):
         self.start_time = time.monotonic()
         self.rng = random.Random(seed if seed is not None else int(time.time()))
+        self.concurrency = concurrency
+        self.lock = threading.Lock()
         self.plans = []
         self.issues = []
+        self._by_slug = {}
+        self._by_number = {}
         self._init_items()
 
     def _init_items(self):
-        # Interleave plan and issue arrivals so both kinds show up early.
-        # First few arrive in the first 30s so the dashboard isn't empty.
-        n_plans = len(PLAN_DEFS)
-        n_issues = len(ISSUE_DEFS)
-        plan_arrivals = [5 + i * (TOTAL_ARRIVAL_WINDOW - 5) / n_plans
-                         + self.rng.uniform(-10, 10) for i in range(n_plans)]
-        plan_arrivals = sorted(max(2, t) for t in plan_arrivals)
+        # Interleave plan and issue arrivals on a single staggered timeline
+        # so both kinds show up early. Each arrival is ARRIVAL_GAP_BASE +/-
+        # variance seconds after the previous one.
+        defs = []
+        for slug, title, phases in PLAN_DEFS:
+            defs.append(("plan", slug, title, phases))
+        for num, title in ISSUE_DEFS:
+            defs.append(("issue", num, title, None))
+        self.rng.shuffle(defs)
 
-        issue_arrivals = [8 + i * (TOTAL_ARRIVAL_WINDOW - 8) / n_issues
-                          + self.rng.uniform(-10, 10) for i in range(n_issues)]
-        issue_arrivals = sorted(max(3, t) for t in issue_arrivals)
-
-        for i, (slug, title, phases) in enumerate(PLAN_DEFS):
-            item = SimItem("plan", slug, plan_arrivals[i], PLAN_COLUMNS, self.rng)
-            self.plans.append((item, title, phases))
-
-        for i, (num, title) in enumerate(ISSUE_DEFS):
-            item = SimItem("issue", num, issue_arrivals[i], ISSUE_COLUMNS, self.rng)
-            self.issues.append((item, title))
+        t = FIRST_ARRIVAL_DELAY
+        for kind, a, b, c in defs:
+            gap = ARRIVAL_GAP_BASE + self.rng.randint(-ARRIVAL_GAP_VARIANCE,
+                                                       ARRIVAL_GAP_VARIANCE)
+            gap = max(5, gap)
+            if kind == "plan":
+                item = PlanItem(a, b, c, t, self.rng)
+                self.plans.append(item)
+                self._by_slug[a] = item
+            else:
+                item = IssueItem(a, b, t, self.rng)
+                self.issues.append(item)
+                self._by_number[a] = item
+            t += gap
 
     def elapsed(self):
         return time.monotonic() - self.start_time
 
+    # -- core tick -----------------------------------------------------
+
     def tick(self):
-        elapsed = self.elapsed()
-        for item, _, _ in self.plans:
-            item.update(elapsed)
-        for item, _ in self.issues:
-            item.update(elapsed)
+        """Advance arrivals and worked-item completion. Caller must NOT
+        hold self.lock (this acquires it)."""
+        with self.lock:
+            self._tick_locked(self.elapsed())
+
+    def _tick_locked(self, elapsed):
+        # 1. Arrivals — new cards appear in their arrival column.
+        for item in self._all_items():
+            if not item.arrived and elapsed >= item.arrive_at:
+                item.arrived = True
+                if item.kind == "plan":
+                    item.column = PLAN_ARRIVAL_COLUMN
+                else:
+                    item.column = ISSUE_ARRIVAL_COLUMN
+
+        # 2. Complete any in-flight item whose work duration has elapsed.
+        for item in self._all_items():
+            if item.in_flight:
+                age = elapsed - item.started_at_elapsed
+                if age >= item.work_duration:
+                    item.completed = True
+                    item.completed_at_elapsed = elapsed
+                    item.started_at_elapsed = None
+                    item.column = COMPLETED_COLUMN
+
+        # 3. Fill free concurrency slots from waiting Ready items.
+        #    "Waiting" = arrived, in Ready, not completed, not yet started.
+        in_flight = [it for it in self._all_items() if it.in_flight]
+        free = self.concurrency - len(in_flight)
+        if free > 0:
+            waiting = [it for it in self._all_items()
+                       if it.arrived and not it.completed
+                       and not it.in_flight
+                       and it.column == READY_COLUMN]
+            # Deterministic, fair-ish: oldest arrival first.
+            waiting.sort(key=lambda it: it.arrive_at)
+            for it in waiting[:free]:
+                it.started_at_elapsed = elapsed
+
+    def _all_items(self):
+        for it in self.plans:
+            yield it
+        for it in self.issues:
+            yield it
+
+    # -- queue POST application ----------------------------------------
+
+    def apply_queue(self, payload):
+        """Adopt a /api/queue payload as the new board placement.
+
+        Mirrors the real server's contract: the body carries `plans`
+        (drafted/reviewed/ready/backlog/discarded) and `issues`
+        (triage/ready/backlog). `completed` is read-only and NOT in the
+        body — the sim owns it, so we never touch a completed item here.
+        Items the user dragged INTO `completed` cannot exist (frontend
+        strips it); items the user tries to drag OUT of completed simply
+        won't appear in the payload, and we leave them completed.
+
+        An in-flight item that the user moves OUT of Ready stops being
+        worked (its claim is released on the next tick because the
+        column check fails) — but per the spec the frontend disables
+        dragging claimed cards, so in practice this only fires if a stale
+        payload races. We defensively release the claim in that case.
+        """
+        with self.lock:
+            self._apply_queue_locked(payload)
+
+    def _apply_queue_locked(self, payload):
+        plans = payload.get("plans", {}) or {}
+        issues = payload.get("issues", {}) or {}
+
+        # Plans: adopt the user's column for every slug present in the
+        # body. Never override a completed item (sim-owned).
+        for col in PLAN_DRAG_COLUMNS:
+            entries = plans.get(col, []) or []
+            for entry in entries:
+                slug = entry.get("slug") if isinstance(entry, dict) else entry
+                item = self._by_slug.get(slug)
+                if item is None or item.completed:
+                    continue
+                self._place(item, col)
+
+        # Issues: same, but entries are bare ints.
+        for col in ISSUE_DRAG_COLUMNS:
+            entries = issues.get(col, []) or []
+            for num in entries:
+                item = self._by_number.get(num)
+                if item is None or item.completed:
+                    continue
+                self._place(item, col)
+
+    def _place(self, item, col):
+        if item.column == col:
+            return
+        # Moving out of Ready releases an in-flight claim (slot frees up).
+        if item.in_flight and col != READY_COLUMN:
+            item.started_at_elapsed = None
+        item.column = col
+
+    # -- progress / victory --------------------------------------------
 
     def all_completed(self):
-        return (all(it.is_completed for it, _, _ in self.plans)
-                and all(it.is_completed for it, _ in self.issues))
+        arrived = [it for it in self._all_items() if it.arrived]
+        if not arrived:
+            return False
+        return all(it.completed for it in arrived)
 
     def progress(self):
-        total = len(self.plans) + len(self.issues)
-        done = (sum(1 for it, _, _ in self.plans if it.is_completed)
-                + sum(1 for it, _ in self.issues if it.is_completed))
-        return done, total
+        arrived = [it for it in self._all_items() if it.arrived]
+        done = sum(1 for it in arrived if it.completed)
+        return done, len(arrived)
+
+    # -- snapshot ------------------------------------------------------
 
     def build_snapshot(self):
         self.tick()
-        now_iso = datetime.now(timezone.utc).isoformat()
-        elapsed = self.elapsed()
+        with self.lock:
+            return self._build_snapshot_locked(self.elapsed())
+
+    def _build_snapshot_locked(self, elapsed):
+        now_iso = _iso(datetime.now(timezone.utc))
 
         plans_list = []
-        plan_queues = {c: [] for c in PLAN_COLUMNS}
+        plan_queues = {c: [] for c in PLAN_DRAG_COLUMNS}
+        plan_queues[COMPLETED_COLUMN] = []
 
-        for item, title, phase_defs in self.plans:
-            if item.column is None:
+        for item in self.plans:
+            if not item.arrived:
                 continue
+            col = item.column
+            phase_defs = item.phase_defs
 
-            # Build phase detail
-            phases_done = 0
-            phases = []
-            if item.is_completed:
+            # Phase ticking: only in-flight (worked) plans show progress.
+            if item.completed:
                 phases_done = len(phase_defs)
-            elif item.column == "ready":
-                # In-flight: show partial progress
-                progress_frac = min(1.0, (elapsed - item.last_transition) /
-                                    max(1, item.transitions[item.col_idx])
-                                    if item.col_idx < len(item.transitions) else 1.0)
-                phases_done = max(1, int(progress_frac * len(phase_defs)))
-            elif item.column == "reviewed":
-                phases_done = 0
-            elif item.column == "drafted":
-                phases_done = 0
+            elif item.in_flight:
+                age = elapsed - item.started_at_elapsed
+                frac = min(1.0, age / max(1.0, item.work_duration))
+                # At least 1 phase visibly done once work starts.
+                phases_done = max(1, int(frac * len(phase_defs)))
+                phases_done = min(phases_done, len(phase_defs) - 1) \
+                    if len(phase_defs) > 1 else phases_done
             else:
-                phases_done = len(phase_defs)
+                phases_done = 0
 
+            phases = []
             for pi, pname in enumerate(phase_defs):
+                done = pi < phases_done
                 phases.append({
                     "n": str(pi + 1),
-                    "name": "%d — %s" % (pi + 1, pname),
-                    "status": "done" if pi < phases_done else "pending",
-                    "commit": "%07x" % self.rng.randint(0, 0xFFFFFFF) if pi < phases_done else None,
-                    "notes": "" if pi >= phases_done else "Completed successfully",
+                    "name": "%d -- %s" % (pi + 1, pname),
+                    "status": "done" if done else "pending",
+                    "commit": "%07x" % self.rng.randint(0, 0xFFFFFFF) if done else None,
+                    "notes": "Completed successfully" if done else "",
                 })
 
-            status = "active"
+            status = "complete" if item.completed else "active"
             completed_dt = None
-            if item.is_completed:
-                status = "complete"
-                completed_dt = (datetime.now(timezone.utc)
-                                - timedelta(seconds=max(0, elapsed - item.last_transition))
-                                ).isoformat()
+            created_dt = _ago_iso(elapsed - item.arrive_at)[:10]
+            if item.completed:
+                completed_dt = _ago_iso(elapsed - item.completed_at_elapsed)
 
-            created_dt = (datetime.now(timezone.utc)
-                          - timedelta(seconds=max(0, elapsed - item.arrive_at))
-                          ).strftime("%Y-%m-%d")
-
-            col = item.column
             idx = len(plan_queues[col])
-            plan_queues[col].append({"slug": item.id_key, "mode": None})
+            if col == COMPLETED_COLUMN:
+                plan_queues[col].append(item.slug)
+            else:
+                plan_queues[col].append({"slug": item.slug, "mode": None})
 
             plan_obj = {
-                "slug": item.id_key,
-                "file": "docs/plans/%s.md" % item.id_key.upper().replace("-", "_"),
-                "title": title,
+                "slug": item.slug,
+                "file": "docs/plans/%s.md" % item.slug.upper().replace("-", "_"),
+                "title": item.title,
                 "status": status,
                 "created": created_dt,
                 "completed": completed_dt,
                 "issue": None,
-                "blurb": "Starship maintenance task: %s" % title.lower(),
+                "blurb": "Starship maintenance task: %s" % item.title.lower(),
                 "phase_count": len(phase_defs),
                 "phases_done": phases_done,
                 "phases": phases,
@@ -356,64 +537,58 @@ class Simulation:
                 "queue": {"column": col, "index": idx, "mode": None},
             }
 
-            if item.is_in_flight and not item.is_completed:
+            # Claim chip ONLY on in-flight Ready plans.
+            if item.in_flight:
+                age = elapsed - item.started_at_elapsed
                 plan_obj["claim"] = {
-                    "pipeline_id": item.claim_pipeline,
+                    "pipeline_id": item.pipeline_id,
                     "sprint_id": None,
-                    "age_seconds": elapsed - item.last_transition,
-                    "started_at": (datetime.now(timezone.utc)
-                                   - timedelta(seconds=elapsed - item.last_transition)
-                                   ).isoformat(),
-                    "pipeline_short": item.claim_pipeline[-8:],
+                    "current_phase": "Phase %d" % (phases_done + 1),
+                    "age_seconds": round(age, 1),
+                    "started_at": _ago_iso(age),
+                    "pipeline_short": item.pipeline_id[-8:],
                 }
 
             plans_list.append(plan_obj)
 
-        # Issues
         issues_list = []
-        issue_queues = {c: [] for c in ISSUE_COLUMNS}
+        issue_queues = {c: [] for c in ISSUE_DRAG_COLUMNS}
+        issue_queues[COMPLETED_COLUMN] = []
 
-        for item, title in self.issues:
-            if item.column is None:
+        for item in self.issues:
+            if not item.arrived:
                 continue
-
             col = item.column
             idx = len(issue_queues[col])
-            issue_queues[col].append(item.id_key)
+            issue_queues[col].append(item.number)
 
-            created_dt = (datetime.now(timezone.utc)
-                          - timedelta(seconds=max(0, elapsed - item.arrive_at))
-                          ).isoformat()
-
+            created_dt = _ago_iso(elapsed - item.arrive_at)
             issue_obj = {
-                "number": item.id_key,
-                "title": title,
+                "number": item.number,
+                "title": item.title,
                 "labels": [],
                 "created_at": created_dt,
-                "body": "Reported by Engineering: %s" % title,
+                "body": "Reported by Engineering: %s" % item.title,
                 "queue": {"column": col, "index": idx},
             }
 
-            if item.column == "completed":
-                issue_obj["closed_at"] = (
-                    datetime.now(timezone.utc)
-                    - timedelta(seconds=max(0, elapsed - item.last_transition))
-                ).isoformat()
+            if item.completed:
+                issue_obj["closed_at"] = _ago_iso(elapsed - item.completed_at_elapsed)
 
-            if item.is_in_flight and not item.is_completed:
+            if item.in_flight:
+                age = elapsed - item.started_at_elapsed
                 issue_obj["claim"] = {
-                    "pipeline_id": item.claim_pipeline,
+                    "pipeline_id": item.pipeline_id,
                     "sprint_id": "demo-sprint",
-                    "age_seconds": elapsed - item.last_transition,
-                    "started_at": (datetime.now(timezone.utc)
-                                   - timedelta(seconds=elapsed - item.last_transition)
-                                   ).isoformat(),
-                    "pipeline_short": item.claim_pipeline[-8:],
+                    "age_seconds": round(age, 1),
+                    "started_at": _ago_iso(age),
+                    "pipeline_short": item.pipeline_id[-8:],
                 }
 
             issues_list.append(issue_obj)
 
         done, total = self.progress()
+        in_flight_count = sum(1 for it in self._all_items() if it.in_flight)
 
         return {
             "version": "1.0",
@@ -432,13 +607,15 @@ class Simulation:
                     "drafted": plan_queues["drafted"],
                     "reviewed": plan_queues["reviewed"],
                     "ready": plan_queues["ready"],
-                    "backlog": [],
-                    "discarded": [],
+                    "backlog": plan_queues["backlog"],
+                    "discarded": plan_queues["discarded"],
+                    "completed": plan_queues[COMPLETED_COLUMN],
                 },
                 "issues": {
                     "triage": issue_queues["triage"],
                     "ready": issue_queues["ready"],
-                    "backlog": [],
+                    "backlog": issue_queues["backlog"],
+                    "completed": issue_queues[COMPLETED_COLUMN],
                 },
             },
             "state_file_path": "(demo mode)",
@@ -453,8 +630,11 @@ class Simulation:
             },
             "demo": {
                 "active": True,
+                "interactive": True,
                 "progress_done": done,
                 "progress_total": total,
+                "in_flight": in_flight_count,
+                "concurrency": self.concurrency,
                 "all_completed": self.all_completed(),
                 "elapsed_seconds": round(elapsed, 1),
             },
@@ -489,12 +669,13 @@ DEMO_OVERLAY_JS = r"""
     + 'flex-direction:column;font-family:monospace;color:#e0e0ff;';
   overlay.innerHTML = '<div style="text-align:center;max-width:600px;padding:40px;">'
     + '<div style="font-size:72px;margin-bottom:20px;">&#x1F680;</div>'
-    + '<h1 style="font-size:36px;color:#e94560;margin:0 0 16px;">Mission Complete</h1>'
-    + '<p style="font-size:18px;line-height:1.6;color:#a0a0d0;">All 40 tasks have been '
-    + 'processed through the pipeline. The starship is fully operational.</p>'
+    + '<h1 style="font-size:36px;color:#e94560;margin:0 0 16px;">Board Cleared</h1>'
+    + '<p style="font-size:18px;line-height:1.6;color:#a0a0d0;">You drove every '
+    + 'plan and issue through the board to Completed. The starship is fully '
+    + 'operational.</p>'
     + '<p style="font-size:14px;color:#606080;margin-top:24px;">This was a demo of the '
-    + 'Z&nbsp;Skills Dashboard &mdash; an agent workflow monitor that tracks plans and '
-    + 'issues as they move through triage, review, execution, and completion.</p>'
+    + 'Z&nbsp;Skills Dashboard &mdash; an agent workflow monitor. Drag cards between '
+    + 'columns; drop one in Ready to watch it get worked (up to a few at a time).</p>'
     + '<button onclick="document.getElementById(\'demo-victory\').style.display=\'none\'"'
     + ' style="margin-top:24px;padding:10px 32px;font-size:16px;cursor:pointer;'
     + 'background:#e94560;color:white;border:none;border-radius:6px;font-family:monospace;"'
@@ -512,10 +693,19 @@ DEMO_OVERLAY_JS = r"""
           if (data.demo) {
             var p = document.getElementById('demo-progress');
             if (p) {
-              var mins = Math.floor(data.demo.elapsed_seconds / 60);
-              var secs = Math.floor(data.demo.elapsed_seconds % 60);
-              p.textContent = data.demo.progress_done + '/' + data.demo.progress_total
-                + ' completed — ' + mins + 'm ' + secs + 's elapsed';
+              var d = data.demo;
+              var inflight = (typeof d.in_flight === 'number')
+                ? (' — ' + d.in_flight + '/' + d.concurrency + ' working') : '';
+              if (d.progress_total === 0) {
+                p.textContent = 'Awaiting first arrivals…';
+              } else if (d.all_completed) {
+                p.textContent = 'Board cleared — ' + d.progress_done + '/'
+                  + d.progress_total + ' done';
+              } else {
+                p.textContent = 'Drop cards in Ready to work them — '
+                  + d.progress_done + '/' + d.progress_total + ' completed'
+                  + inflight;
+              }
             }
             if (data.demo.all_completed && !victoryShown) {
               victoryShown = true;
@@ -538,7 +728,7 @@ DEMO_OVERLAY_JS = r"""
 # ---------------------------------------------------------------------------
 
 class DemoHandler(BaseHTTPRequestHandler):
-    server_version = "zskills-demo/1.0"
+    server_version = "zskills-demo/2.0"
     sim = None  # set by main()
 
     def log_message(self, fmt, *args):
@@ -625,14 +815,14 @@ class DemoHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/plan/"):
             slug = path[len("/api/plan/"):]
-            for item, title, phases in self.sim.plans:
-                if item.id_key == slug:
-                    self._json({
-                        "slug": slug,
-                        "title": title,
-                        "body": "# %s\n\nStarship maintenance plan." % title,
-                    })
-                    return
+            item = self.sim._by_slug.get(slug)
+            if item is not None:
+                self._json({
+                    "slug": slug,
+                    "title": item.title,
+                    "body": "# %s\n\nStarship maintenance plan." % item.title,
+                })
+                return
             self.send_error(404)
             return
 
@@ -642,30 +832,45 @@ class DemoHandler(BaseHTTPRequestHandler):
             except ValueError:
                 self.send_error(400)
                 return
-            for item, title in self.sim.issues:
-                if item.id_key == num:
-                    self._json({
-                        "number": num,
-                        "title": title,
-                        "body": "Reported by Engineering: %s" % title,
-                        "state": "CLOSED" if item.is_completed else "OPEN",
-                    })
-                    return
+            item = self.sim._by_number.get(num)
+            if item is not None:
+                self._json({
+                    "number": num,
+                    "title": item.title,
+                    "body": "Reported by Engineering: %s" % item.title,
+                    "state": "CLOSED" if item.completed else "OPEN",
+                })
+                return
             self.send_error(404)
             return
 
         self._json({"error": "not found"}, 404)
 
     def do_POST(self):
-        # Accept POSTs to queue/trigger/reset gracefully (no-op in demo)
         content_len = int(self.headers.get("Content-Length", 0))
-        if content_len:
-            self.rfile.read(content_len)
+        raw = self.rfile.read(content_len) if content_len else b""
 
         path = urlparse(self.path).path
 
         if path == "/api/queue":
-            self._json({"ok": True, "demo": "queue changes are not persisted in demo mode"})
+            try:
+                payload = json.loads(raw.decode("utf-8") or "null")
+            except (ValueError, UnicodeDecodeError) as exc:
+                self._json({"error": "json parse: %s" % exc}, 400)
+                return
+            if not isinstance(payload, dict):
+                self._json({"error": "body is not an object"}, 400)
+                return
+            # Reject `completed` like the real server — it's read-only.
+            for grp in ("plans", "issues"):
+                sub = payload.get(grp)
+                if isinstance(sub, dict) and "completed" in sub:
+                    self._json({"error": "completed column is read-only on "
+                                "the API; cannot accept POSTs"}, 400)
+                    return
+            self.sim.apply_queue(payload)
+            now = _iso(datetime.now(timezone.utc))
+            self._json({"ok": True, "updated_at": now, "state_updated_at": now})
             return
 
         if path == "/api/trigger":
@@ -680,10 +885,13 @@ class DemoHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Z Skills Dashboard Demo")
+    parser = argparse.ArgumentParser(description="Z Skills Dashboard Interactive Demo")
     parser.add_argument("--port", type=int, default=9090, help="Port (default 9090)")
     parser.add_argument("--seed", type=int, default=None,
                         help="RNG seed for reproducible simulations")
+    parser.add_argument("--concurrency", type=int, default=DEFAULT_CONCURRENCY,
+                        help="Max items worked at once from Ready (default %d)"
+                             % DEFAULT_CONCURRENCY)
     args = parser.parse_args()
 
     if not STATIC_DIR.is_dir():
@@ -691,15 +899,22 @@ def main():
         print("Run from the repo root: python3 demo/demo_server.py", file=sys.stderr)
         sys.exit(1)
 
-    sim = Simulation(seed=args.seed)
+    if args.concurrency < 1:
+        print("ERROR: --concurrency must be >= 1", file=sys.stderr)
+        sys.exit(1)
+
+    sim = Simulation(seed=args.seed, concurrency=args.concurrency)
     DemoHandler.sim = sim
 
     HTTPServer.allow_reuse_address = True
     server = HTTPServer(("127.0.0.1", args.port), DemoHandler)
-    print("Z Skills Dashboard Demo")
-    print("  URL:  http://127.0.0.1:%d/" % args.port)
-    print("  Seed: %s" % (args.seed if args.seed is not None else "(random)"))
-    print("  Sim:  20 plans + 20 issues arriving over ~10 minutes")
+    print("Z Skills Dashboard — Interactive Demo")
+    print("  URL:         http://127.0.0.1:%d/" % args.port)
+    print("  Seed:        %s" % (args.seed if args.seed is not None else "(random)"))
+    print("  Concurrency: %d items worked at once" % args.concurrency)
+    print()
+    print("  Drag cards between columns (they persist). Drop one in Ready")
+    print("  to watch it get worked; clear the board to win.")
     print()
     print("Press Ctrl+C to stop.")
 
