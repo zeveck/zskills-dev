@@ -4,7 +4,7 @@
 # Conformance battery for plans/fix-issues-claims.md. Locks the source-
 # code invariants that the runtime mechanism and the docs both depend on:
 #
-#   - Script + helper presence (source + mirror).
+#   - Script presence (source + mirror).
 #   - Hook presence + executable + mirrored.
 #   - .claude/settings.json registers the hook on PreToolUse/Bash.
 #   - SKILL.md acquire-fence shape (TWO-PASS grep — implemented Phase 2
@@ -25,9 +25,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLAIM_SH="$REPO_ROOT/skills/fix-issues/scripts/claim-issue.sh"
-CLAIM_HELPERS="$REPO_ROOT/skills/fix-issues/scripts/claim-fence-helpers.sh"
 CLAIM_SH_MIRROR="$REPO_ROOT/.claude/skills/fix-issues/scripts/claim-issue.sh"
-CLAIM_HELPERS_MIRROR="$REPO_ROOT/.claude/skills/fix-issues/scripts/claim-fence-helpers.sh"
 HOOK="$REPO_ROOT/hooks/block-fix-issue-unclaimed.sh"
 HOOK_MIRROR="$REPO_ROOT/.claude/hooks/block-fix-issue-unclaimed.sh"
 SETTINGS="$REPO_ROOT/.claude/settings.json"
@@ -58,14 +56,14 @@ mkdir -p "$SCRATCH_ROOT"
 echo "=== fix-issues claim mechanism conformance ==="
 
 # ───────────────────────────────────────────────────────────────────────
-# Test 1: script + helpers exist in BOTH source and mirror.
+# Test 1: claim-issue.sh exists in BOTH source and mirror.
 # ───────────────────────────────────────────────────────────────────────
 missing=""
-for p in "$CLAIM_SH" "$CLAIM_HELPERS" "$CLAIM_SH_MIRROR" "$CLAIM_HELPERS_MIRROR"; do
+for p in "$CLAIM_SH" "$CLAIM_SH_MIRROR"; do
   [ -f "$p" ] || missing="$missing $p"
 done
 if [ -z "$missing" ]; then
-  pass "claim-issue.sh + claim-fence-helpers.sh exist in source + mirror"
+  pass "claim-issue.sh exists in source + mirror"
 else
   fail "claim scripts present" "missing:$missing"
 fi

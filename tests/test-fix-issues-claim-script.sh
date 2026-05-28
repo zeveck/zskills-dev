@@ -9,10 +9,9 @@
 #   - release on matching pipeline_id exits 0
 #   - release on mismatched pipeline_id exits 12, leaves claim intact
 #   - release on absent claim exits 0 (idempotent)
-#   - is-stale: NOW-3h with TTL=7200 -> 0; NOW-1h -> 1; absent -> 2
+#   - is-stale: absent -> 2; live claim -> 1 (never stale by age; the
+#     TTL-aging branch was removed in #739)
 #   - is-stale: dir w/o claim.json mtime > 30s -> 0; mtime < 5s -> 1
-#   - sweep removes stale, leaves fresh, emits stderr line per swept
-#     claim with reason=ttl|metadata
 #   - list output is parseable TSV (N, pipeline_id, age_seconds)
 #   - concurrency: two parallel acquires for same N -> exactly one wins
 #   - non-EEXIST -> exit 11 (EACCES via chmod 0500 on parent)
@@ -208,14 +207,16 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# Test 6: is-stale with NOW-3h, TTL=7200 -> 0; NOW-1h -> 1; absent -> 2.
-# Need to override started_at directly in claim.json.
+# Test 6: is-stale — absent -> 2; a LIVE claim (claim.json present) is
+# NEVER stale -> 1, regardless of age. The TTL-age branch was removed
+# (#739, same precedent as #684 for plan claims); claims are released at
+# land-or-abandon, not aged out. The crash-window (dir-without-json)
+# branch is exercised by Test 7.
 # ───────────────────────────────────────────────────────────────────────
 t6_root="$SCRATCH_ROOT/t6"
 make_repo "$t6_root"
 (
   cd "$t6_root" || exit 1
-  export ZSKILLS_CLAIM_TTL_SECONDS=7200
   # Absent -> 2
   bash "$CLAIM_SH" is-stale 100
   rc=$?
@@ -223,22 +224,15 @@ make_repo "$t6_root"
     echo "FAIL_REASON absent is-stale returned $rc, expected 2"
     exit 1
   fi
-  # Fresh (NOW-1h, TTL=7200) -> 1
+  # Live claim, just acquired -> 1 (fresh)
   bash "$CLAIM_SH" acquire 100 --pipeline-id pipe-A --sprint-id sprint-A >/dev/null
-  python3 -c "
-import json, datetime
-p = '$t6_root/.zskills/claims/issue-100/claim.json'
-with open(p) as f: b = json.load(f)
-b['started_at'] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat(timespec='seconds')
-with open(p, 'w') as f: json.dump(b, f, sort_keys=True)
-"
   bash "$CLAIM_SH" is-stale 100
   rc=$?
   if [ "$rc" -ne 1 ]; then
-    echo "FAIL_REASON fresh (NOW-1h) is-stale returned $rc, expected 1"
+    echo "FAIL_REASON fresh live claim is-stale returned $rc, expected 1"
     exit 1
   fi
-  # Stale (NOW-3h, TTL=7200) -> 0
+  # Live claim aged 3h -> STILL 1 (no TTL aging — a live claim is never stale)
   python3 -c "
 import json, datetime
 p = '$t6_root/.zskills/claims/issue-100/claim.json'
@@ -248,16 +242,16 @@ with open(p, 'w') as f: json.dump(b, f, sort_keys=True)
 "
   bash "$CLAIM_SH" is-stale 100
   rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "FAIL_REASON stale (NOW-3h) is-stale returned $rc, expected 0"
+  if [ "$rc" -ne 1 ]; then
+    echo "FAIL_REASON aged-3h live claim is-stale returned $rc, expected 1 (TTL aging removed)"
     exit 1
   fi
   exit 0
 )
 if [ "$?" -eq 0 ]; then
-  pass "is-stale returns 0/1/2 correctly for NOW-3h / NOW-1h / absent (TTL=7200)"
+  pass "is-stale: absent -> 2, live claim -> 1 (never stale by age; TTL branch removed #739)"
 else
-  fail "is-stale TTL semantics" "see FAIL_REASON above"
+  fail "is-stale semantics (no TTL)" "see FAIL_REASON above"
 fi
 
 # ───────────────────────────────────────────────────────────────────────
@@ -290,80 +284,6 @@ if [ "$?" -eq 0 ]; then
   pass "is-stale crash-window: <5s old stub dir = fresh; >30s old stub dir = stale"
 else
   fail "is-stale crash-window" "see FAIL_REASON above"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Test 8: sweep removes stale, leaves fresh, emits stderr lines.
-# ───────────────────────────────────────────────────────────────────────
-t8_root="$SCRATCH_ROOT/t8"
-make_repo "$t8_root"
-(
-  cd "$t8_root" || exit 1
-  export ZSKILLS_CLAIM_TTL_SECONDS=7200
-  # Stale claim (issue-200): NOW-3h.
-  bash "$CLAIM_SH" acquire 200 --pipeline-id pipe-stale --sprint-id sprint-stale >/dev/null
-  python3 -c "
-import json, datetime
-p = '$t8_root/.zskills/claims/issue-200/claim.json'
-with open(p) as f: b = json.load(f)
-b['started_at'] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).isoformat(timespec='seconds')
-with open(p, 'w') as f: json.dump(b, f, sort_keys=True)
-"
-  # Fresh claim (issue-201): NOW.
-  bash "$CLAIM_SH" acquire 201 --pipeline-id pipe-fresh --sprint-id sprint-fresh >/dev/null
-  # Crash-window claim (issue-202): mkdir-only, mtime old.
-  mkdir -p "$t8_root/.zskills/claims/issue-202"
-  touch -d "60 seconds ago" "$t8_root/.zskills/claims/issue-202"
-
-  sweep_stderr=$(bash "$CLAIM_SH" sweep 2>&1 >/dev/null)
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "FAIL_REASON sweep returned $rc, expected 0; stderr: $sweep_stderr"
-    exit 1
-  fi
-  # Stale issue-200 should be gone.
-  if [ -d "$t8_root/.zskills/claims/issue-200" ]; then
-    echo "FAIL_REASON stale claim issue-200 not swept"
-    exit 1
-  fi
-  # Fresh issue-201 should remain.
-  if [ ! -d "$t8_root/.zskills/claims/issue-201" ]; then
-    echo "FAIL_REASON fresh claim issue-201 wrongly swept"
-    exit 1
-  fi
-  # Crash-window issue-202 should be gone.
-  if [ -d "$t8_root/.zskills/claims/issue-202" ]; then
-    echo "FAIL_REASON crash-window stub issue-202 not swept"
-    exit 1
-  fi
-  # stderr should contain a "swept" line per swept claim.
-  if ! echo "$sweep_stderr" | grep -q "swept stale claim issue-200"; then
-    echo "FAIL_REASON stderr missing issue-200 swept line: $sweep_stderr"
-    exit 1
-  fi
-  if ! echo "$sweep_stderr" | grep -q "swept stale claim issue-202"; then
-    echo "FAIL_REASON stderr missing issue-202 swept line: $sweep_stderr"
-    exit 1
-  fi
-  if ! echo "$sweep_stderr" | grep -q "reason=ttl"; then
-    echo "FAIL_REASON stderr missing reason=ttl tag: $sweep_stderr"
-    exit 1
-  fi
-  if ! echo "$sweep_stderr" | grep -q "reason=metadata"; then
-    echo "FAIL_REASON stderr missing reason=metadata tag: $sweep_stderr"
-    exit 1
-  fi
-  # No reason=pid (PID-liveness path dropped per DA2.1/DA2.2).
-  if echo "$sweep_stderr" | grep -q "reason=pid"; then
-    echo "FAIL_REASON stderr should NOT mention reason=pid: $sweep_stderr"
-    exit 1
-  fi
-  exit 0
-)
-if [ "$?" -eq 0 ]; then
-  pass "sweep removes stale (ttl) + crash-window (metadata), leaves fresh, emits documented stderr"
-else
-  fail "sweep semantics" "see FAIL_REASON above"
 fi
 
 # ───────────────────────────────────────────────────────────────────────
@@ -631,128 +551,6 @@ if [ "$?" -eq 0 ]; then
   pass "MAIN_ROOT resolution: non-git cwd -> error stderr, no silent \$PWD/.zskills/ fallback"
 else
   fail "MAIN_ROOT resolution from non-git dir" "see FAIL_REASON above"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Test 14: sweep_stale_claims helper — wrapper invocation removes stale,
-# leaves fresh. Exercises the SKILL.md-fence-facing surface (issue #574).
-# ───────────────────────────────────────────────────────────────────────
-HELPERS_SH="$REPO_ROOT/skills/fix-issues/scripts/claim-fence-helpers.sh"
-if [ ! -f "$HELPERS_SH" ]; then
-  fail "sweep_stale_claims wrapper" "claim-fence-helpers.sh missing at $HELPERS_SH"
-else
-t14_root="$SCRATCH_ROOT/t14"
-make_repo "$t14_root"
-(
-  cd "$t14_root" || exit 1
-  export ZSKILLS_CLAIM_TTL_SECONDS=7200
-  # Stale claim (issue-300): NOW-3h, will be swept.
-  bash "$CLAIM_SH" acquire 300 --pipeline-id pipe-stale --sprint-id sprint-stale >/dev/null
-  python3 -c "
-import json, datetime
-p = '$t14_root/.zskills/claims/issue-300/claim.json'
-with open(p) as f: b = json.load(f)
-b['started_at'] = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).isoformat(timespec='seconds')
-with open(p, 'w') as f: json.dump(b, f, sort_keys=True)
-"
-  # Fresh claim (issue-301): NOW, should remain.
-  bash "$CLAIM_SH" acquire 301 --pipeline-id pipe-fresh --sprint-id sprint-fresh >/dev/null
-
-  # Source helper and invoke wrapper. Capture stderr.
-  # shellcheck source=/dev/null
-  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
-  if ! declare -F sweep_stale_claims >/dev/null; then
-    echo "FAIL_REASON sweep_stale_claims function not defined after sourcing"
-    exit 1
-  fi
-  wrapper_stderr=$(sweep_stale_claims 2>&1 >/dev/null)
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "FAIL_REASON sweep_stale_claims returned $rc, expected 0; stderr: $wrapper_stderr"
-    exit 1
-  fi
-  if [ -d "$t14_root/.zskills/claims/issue-300" ]; then
-    echo "FAIL_REASON stale claim issue-300 not swept by wrapper"
-    exit 1
-  fi
-  if [ ! -d "$t14_root/.zskills/claims/issue-301" ]; then
-    echo "FAIL_REASON fresh claim issue-301 wrongly swept by wrapper"
-    exit 1
-  fi
-  if ! echo "$wrapper_stderr" | grep -q "swept stale claim issue-300"; then
-    echo "FAIL_REASON wrapper stderr missing swept line; got: $wrapper_stderr"
-    exit 1
-  fi
-  exit 0
-)
-if [ "$?" -eq 0 ]; then
-  pass "sweep_stale_claims wrapper: sourced, function defined, removes stale claim, leaves fresh, forwards stderr"
-else
-  fail "sweep_stale_claims wrapper happy path" "see FAIL_REASON above"
-fi
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Test 15: sweep_stale_claims helper — empty claims dir (no claims at
-# all) is a no-op, exits 0. Mirrors the SKILL.md-fence preflight call
-# pattern (`sweep_stale_claims || true`).
-# ───────────────────────────────────────────────────────────────────────
-if [ -f "$HELPERS_SH" ]; then
-t15_root="$SCRATCH_ROOT/t15"
-make_repo "$t15_root"
-(
-  cd "$t15_root" || exit 1
-  # No claims acquired — claims dir doesn't exist yet.
-  # shellcheck source=/dev/null
-  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
-  out=$(sweep_stale_claims 2>&1)
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "FAIL_REASON sweep_stale_claims on empty dir returned $rc, expected 0; out: $out"
-    exit 1
-  fi
-  exit 0
-)
-if [ "$?" -eq 0 ]; then
-  pass "sweep_stale_claims wrapper: empty/missing claims dir is no-op, exits 0"
-else
-  fail "sweep_stale_claims wrapper empty dir" "see FAIL_REASON above"
-fi
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Test 16: sweep_stale_claims helper — claim-issue.sh path-resolution
-# failure surfaces non-zero exit + error stderr. Simulated by sourcing
-# the helper, then overriding the internal _CLAIM_ISSUE_SH pointer to a
-# non-existent path before calling the wrapper. Verifies the
-# `[ ! -x ] && [ ! -f ]` guard in claim-fence-helpers.sh actually fires.
-# ───────────────────────────────────────────────────────────────────────
-if [ -f "$HELPERS_SH" ]; then
-t16_root="$SCRATCH_ROOT/t16"
-make_repo "$t16_root"
-(
-  cd "$t16_root" || exit 1
-  # shellcheck source=/dev/null
-  . "$HELPERS_SH" || { echo "FAIL_REASON failed to source claim-fence-helpers.sh"; exit 1; }
-  # Override the internal pointer to a missing path.
-  _CLAIM_ISSUE_SH="/tmp/test-fix-issues-claim-script-nonexistent-$$/claim-issue.sh"
-  out=$(sweep_stale_claims 2>&1)
-  rc=$?
-  if [ "$rc" -eq 0 ]; then
-    echo "FAIL_REASON sweep_stale_claims with missing claim-issue.sh returned 0, expected non-zero; out: $out"
-    exit 1
-  fi
-  if ! echo "$out" | grep -q "cannot locate claim-issue.sh"; then
-    echo "FAIL_REASON missing 'cannot locate claim-issue.sh' stderr; got: $out"
-    exit 1
-  fi
-  exit 0
-)
-if [ "$?" -eq 0 ]; then
-  pass "sweep_stale_claims wrapper: missing claim-issue.sh path -> non-zero + 'cannot locate' stderr"
-else
-  fail "sweep_stale_claims wrapper missing-target guard" "see FAIL_REASON above"
-fi
 fi
 
 # ───────────────────────────────────────────────────────────────────────

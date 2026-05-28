@@ -169,7 +169,6 @@ run_suite "test-fix-issues-claim-race-e2e.sh" "tests/test-fix-issues-claim-race-
 run_suite "test-fix-issues-claim-race-baseline.sh" "tests/test-fix-issues-claim-race-baseline.sh"
 run_suite "test-fix-issues-claim-conformance.sh" "tests/test-fix-issues-claim-conformance.sh"
 run_suite "test-fix-issues-claim-regression-single.sh" "tests/test-fix-issues-claim-regression-single.sh"
-run_suite "test-claim-ttl-config-resolver.sh" "tests/test-claim-ttl-config-resolver.sh"
 run_suite "test-plan-claim-script.sh" "tests/test-plan-claim-script.sh"
 run_suite "test-plan-claim-race-baseline.sh" "tests/test-plan-claim-race-baseline.sh"
 run_suite "test-plan-claim-hook-deny.sh" "tests/test-plan-claim-hook-deny.sh"

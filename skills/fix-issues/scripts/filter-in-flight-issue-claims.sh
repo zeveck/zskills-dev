@@ -114,7 +114,8 @@ for name in entries:
     if not os.path.isfile(claim_file):
         # Missing claim.json — mid-acquire window or orphan dir; skip.
         # Conservative: do NOT treat as in-flight here, because we
-        # cannot confirm a live pipeline (sweep reaps truly stale).
+        # cannot confirm a live pipeline. A truly-stale dir-without-json
+        # is detectable via `claim-issue.sh is-stale` (>30s race window).
         continue
     try:
         with open(claim_file) as fh:
