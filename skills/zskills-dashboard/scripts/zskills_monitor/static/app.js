@@ -1412,7 +1412,10 @@ function buildBranchCard(b, byBranch) {
     var wtRow = el("div", { cls: "card-row card-worktree-row" });
     wtRow.appendChild(el("span", {
       cls: "pill " + landedPillClass(status),
-      text: status,
+      // Display-only: `full` (cherry-pick landing) and `landed` (PR landing)
+      // both mean "everything is on main"; show "LANDED" for both. Stored
+      // marker status and landedPillClass color mapping are unchanged. (#776)
+      text: status === "full" ? "landed" : status,
     }));
     if (w.path) {
       wtRow.appendChild(el("span", { cls: "mono card-sub", text: basename(w.path) }));

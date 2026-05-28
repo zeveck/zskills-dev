@@ -2021,6 +2021,25 @@ else
   fail "branches: buildBranchCard missing protected-shield rendering: got '$BRANCHCARD_BODY'"
 fi
 
+# Issue #776 — display normalization: the worktree-row landed pill renders
+# stored `full` (cherry-pick landing) as "LANDED" text, so it reads the same
+# as the PR-flow `landed`. This is DISPLAY-ONLY — landedPillClass color
+# mapping and the stored marker status are unchanged. `partial` keeps its own
+# label and must NOT be collapsed.
+if echo "$BRANCHCARD_BODY" | grep -qE 'status === "full" \? "landed" : status'; then
+  pass "branches: landed pill displays stored 'full' as 'landed' text (#776)"
+else
+  fail "branches: buildBranchCard does not normalize 'full' -> 'landed' display text (#776): got '$BRANCHCARD_BODY'"
+fi
+# Guard: the display normalization must NOT collapse `partial` into landed —
+# `partial` is a distinct state that keeps its own label (rendered uppercase
+# as PARTIAL via the .pill text-transform).
+if echo "$BRANCHCARD_BODY" | grep -qE '=== "partial"'; then
+  fail "branches: display logic must not special-case 'partial' (it keeps its own label) (#776): got '$BRANCHCARD_BODY'"
+else
+  pass "branches: 'partial' is not collapsed by the display normalization — keeps PARTIAL label (#776)"
+fi
+
 # Stop server cleanly via SIGTERM and verify port is released.
 kill -TERM "$SERVER_PID" 2>/dev/null || true
 for _ in 1 2 3 4 5 6 7 8 9 10; do

@@ -130,6 +130,51 @@ for status in "${WRITER_STATUSES[@]}"; do
   fi
 done
 
+# ---------------------------------------------------------------------
+# Part D: display normalization (issue #776).
+# `full` (cherry-pick landing) and `landed` (PR landing) both mean
+# "everything is on main"; the dashboard Branches pill must DISPLAY `full`
+# as "LANDED" so it reads the same. This is purely the human-readable label
+# — the STORED `.landed` status stays `full`, and the matching/color logic
+# (landedPillClass mapping `full` and `landed` to the same class) is
+# unchanged. `partial` is a distinct state and must NOT be collapsed.
+# ---------------------------------------------------------------------
+echo ""
+echo "--- Part D: display normalization (issue #776) ---"
+
+APP_JS="$REPO_ROOT/skills/zskills-dashboard/scripts/zskills_monitor/static/app.js"
+
+if [[ ! -f "$APP_JS" ]]; then
+  fail "missing dashboard file: $APP_JS"
+else
+  APP_JS_BODY=$(cat "$APP_JS")
+
+  # D1: the worktree-row pill renders stored `full` as `landed` text.
+  if echo "$APP_JS_BODY" | grep -qE 'status === "full" \? "landed" : status'; then
+    pass "app.js displays stored 'full' as 'landed' text (#776)"
+  else
+    fail "app.js display gap: 'full' not normalized to 'landed' display text (#776)"
+  fi
+
+  # D2: STORED vocabulary preserved — landedPillClass still recognizes BOTH
+  # `full` and `landed` (same green class). The color/matching logic is
+  # explicitly out of scope for the display-only change.
+  if echo "$APP_JS_BODY" | grep -qE 's === "full" \|\| s === "landed"'; then
+    pass "app.js landedPillClass still maps 'full' AND 'landed' to the same class (matching logic unchanged)"
+  else
+    fail "app.js regression: landedPillClass no longer maps both 'full' and 'landed' (matching logic must be unchanged) (#776)"
+  fi
+
+  # D3: `partial` is NOT collapsed by the display normalization — it keeps
+  # its own label and its own class.
+  if echo "$APP_JS_BODY" | grep -qE 'text: status === "full" \? "landed" : status' \
+     && ! echo "$APP_JS_BODY" | grep -qE 'text: status === "partial"'; then
+    pass "app.js does not collapse 'partial' — it keeps its own PARTIAL label (#776)"
+  else
+    fail "app.js regression: 'partial' display label appears collapsed (#776)"
+  fi
+fi
+
 echo ""
 echo "---"
 printf 'Results: %d passed, %d failed (of %d)\n' \
