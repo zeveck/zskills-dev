@@ -263,44 +263,47 @@ print(f"{section}|queue_col={queue_col}")
 
   # ---------------------------------------------------------------------------
   # AC-7: smoke — invoke aggregator against the live repo and verify
-  # the plan-set matches what PLAN_INDEX.md references. Path-config-aware:
-  # tries .zskills/audit/PLAN_INDEX.md (post-migration default per Phase 5a
-  # step 4b — Tier-2 regenerated index) first, falls back to legacy
-  # plans/PLAN_INDEX.md for pre-migration consumers. NEVER silent-skip:
-  # PLAN_INDEX.md absent everywhere is a LOUD fail (signal that
-  # /plans rebuild needs to run, OR the migration broke).
+  # the plan-set matches what PLAN_INDEX.md references.
+  #
+  # PLAN_INDEX.md is a REGENERABLE, GITIGNORED cache (untracked in PR #218,
+  # commit ef3e36f — ".zskills/audit/" is gitignored). It is NOT a committed
+  # source of truth. A cache on a developer's checkout can be arbitrarily
+  # stale relative to the on-disk plan set: e.g. PR #783 deleted six CANARY
+  # plan files from docs/plans/, but a cache generated before #783 still
+  # listed them, making AC-7 fail with "aggregator missing plans found in
+  # PLAN_INDEX.md" (issue #787). That is cache staleness, not generator drift.
+  #
+  # AC-7's real purpose is GENERATOR DRIFT detection: does the index the
+  # render-index.py helper produces agree with what the collect.py aggregator
+  # reports? Both must be derived from the SAME live on-disk plan set for the
+  # comparison to be meaningful. So we ALWAYS regenerate the index fresh from
+  # the live aggregator immediately before comparing — never reuse a possibly
+  # stale on-disk cache. This keeps the test live-vs-fresh (genuine drift
+  # between render-index.py and collect.py still fails) while eliminating the
+  # false positive from a stale cache predating a plan-set change.
+  #
+  # NEVER silent-skip: a missing render-index.py helper, or regeneration that
+  # produces empty/missing output (helper or aggregator broken), is a LOUD
+  # fail.
   # ---------------------------------------------------------------------------
   echo ""
   echo "=== Phase 9 AC-7: live smoke — plan-set parity with PLAN_INDEX.md ==="
 
   PLAN_INDEX_PATH=""
-  if [ -f "$REPO_ROOT/.zskills/audit/PLAN_INDEX.md" ]; then
+  RENDER_HELPER="$REPO_ROOT/skills/plans/scripts/render-index.py"
+  if [ ! -f "$RENDER_HELPER" ]; then
+    fail "AC-7: render-index.py helper absent at $RENDER_HELPER — cannot regenerate PLAN_INDEX.md for parity check"
+  else
     PLAN_INDEX_PATH="$REPO_ROOT/.zskills/audit/PLAN_INDEX.md"
-  elif [ -f "$REPO_ROOT/plans/PLAN_INDEX.md" ]; then
-    PLAN_INDEX_PATH="$REPO_ROOT/plans/PLAN_INDEX.md"
-  fi
-
-  # Regenerable-cache model (post-PR #218 untrack of PLAN_INDEX.md): on
-  # fresh checkouts (CI runners), the file is absent by design — it's
-  # regenerated on demand by `/plans rebuild` via the render-index.py
-  # helper shipped in this PR (#215+#216). Regenerate before the parity
-  # check rather than fail-loud on absence. The loud-fail signal is now
-  # "regeneration produced empty/missing output" (helper or aggregator
-  # broken), not "file doesn't exist."
-  if [ -z "$PLAN_INDEX_PATH" ]; then
-    RENDER_HELPER="$REPO_ROOT/skills/plans/scripts/render-index.py"
-    if [ -f "$RENDER_HELPER" ]; then
-      PLAN_INDEX_PATH="$REPO_ROOT/.zskills/audit/PLAN_INDEX.md"
-      mkdir -p "$(dirname "$PLAN_INDEX_PATH")"
-      REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
-      PYTHONPATH="$PKG_PARENT" python3 -m zskills_monitor.collect \
-        --repo-root "$REPO_ROOT" \
-        | python3 "$RENDER_HELPER" --rebuilt-at "$REBUILT_AT" \
-        > "$PLAN_INDEX_PATH"
-      if [ ! -s "$PLAN_INDEX_PATH" ]; then
-        fail "AC-7: regeneration via render-index.py produced empty/missing PLAN_INDEX.md — helper or aggregator broken"
-        PLAN_INDEX_PATH=""
-      fi
+    mkdir -p "$(dirname "$PLAN_INDEX_PATH")"
+    REBUILT_AT=$(TZ=America/New_York date '+%Y-%m-%d %H:%M ET')
+    PYTHONPATH="$PKG_PARENT" python3 -m zskills_monitor.collect \
+      --repo-root "$REPO_ROOT" \
+      | python3 "$RENDER_HELPER" --rebuilt-at "$REBUILT_AT" \
+      > "$PLAN_INDEX_PATH"
+    if [ ! -s "$PLAN_INDEX_PATH" ]; then
+      fail "AC-7: regeneration via render-index.py produced empty/missing PLAN_INDEX.md — helper or aggregator broken"
+      PLAN_INDEX_PATH=""
     fi
   fi
 
@@ -386,9 +389,10 @@ print("|".join(bad))
         fail "AC-7: _ISSUES.md / issue_tracker mismatch: $ISSUES_MISMATCH"
       fi
     fi
-  else
-    fail "AC-7: PLAN_INDEX.md absent at both .zskills/audit/PLAN_INDEX.md (post-migration) and plans/PLAN_INDEX.md (legacy) — run /plans rebuild to regenerate, or investigate whether --migrate-paths broke the move"
   fi
+  # NOTE: when PLAN_INDEX_PATH is empty (render-index.py helper missing OR
+  # regeneration produced empty output) the loud fail was already emitted at
+  # regeneration time above; the parity block is simply skipped here.
 
   # ---------------------------------------------------------------------------
   # AC-9: python-missing failure mode — invoking the SKILL.md prose's CLI
