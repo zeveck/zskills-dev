@@ -273,7 +273,7 @@ Probe is gated to once-per-session via `.zskills/dual-install-warned` marker so 
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Plugin scaffold (`zs` + `zsbd`) + dev-loop transition | ⬚ | | |
+| 1 — Plugin scaffold (`zs` + `zsbd`) + dev-loop transition | ✅ | 2d73aeb | PR #763; plugin manifests + marketplace + hooks.json + D16(a) shim + path-fallback; CI green |
 | 2 — SessionStart materialiser (5 artifacts) + dual-install detection + renderer equivalence | ⬚ | | |
 | 3 — Dual-path recognition + cron-fire path-aware rules + script-path fallback in all resolver-sourcing + legacy-script-path sites (re-derive; was 151/228) + `migrate-crons` skill | ⬚ | | |
 | 4 — Conformance test surface (no retirements; 16 new tests stabilise; 2 restructured) | ⬚ | | |
