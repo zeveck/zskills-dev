@@ -15,7 +15,7 @@
 | `description` | Yes | What the plan should accomplish, in natural language |
 | `output FILE` | No | Output path for the plan file (default: auto-derived from description) |
 | `rounds N` | No | Maximum adversarial review rounds (default: 3) |
-| `auto` | No | Skip the decomposition confirmation checkpoint |
+| `auto` | No | After the Phase 6 worktree commit, dispatch `/land-pr` to push the branch, open a PR, monitor CI, and auto-merge. Without `auto`, the plan is committed in the worktree and the caller lands manually. |
 
 ## Examples
 
@@ -25,6 +25,10 @@
 /draft-plan rounds 5 Redesign the solver architecture
 /draft-plan auto Implement undo/redo for the block editor
 ```
+
+> `auto` mirrors the same token in `/run-plan`, `/do`, `/fix-issues`, and
+> `/quickfix`: it triggers the post-commit `/land-pr` auto-merge dispatch. It
+> does **not** skip the planning review rounds.
 
 ## Common Patterns
 

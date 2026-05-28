@@ -266,7 +266,7 @@
 
 <nav>
   <span class="logo">Z Skills</span>
-  <a href="#skills">26 Skills</a>
+  <a href="#skills">25 Skills</a>
   <a href="#quickstart">Typical Workflow</a>
   <a href="#workflows">Workflows</a>
   <a href="#schedulable">Schedulable</a>
@@ -281,11 +281,11 @@
 <!-- HERO -->
 <section class="hero" style="margin-bottom: 6px; padding-bottom: 20px;">
   <h1>Z Skills System</h1>
-  <p>Z Skills turns Claude Code into a disciplined engineering team. 26 core skills (24 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
-  <p>Currently: 24 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 3 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
+  <p>Z Skills turns Claude Code into a disciplined engineering team. 25 core skills (23 user-facing slash commands + 2 internal helpers) that plan, build, test, fix, and ship &mdash; with verification at every step. Each skill encodes a workflow that used to need hands-on guidance, so it runs with a single command.</p>
+  <p>Currently: 23 user-facing skills, 2 internal helpers (<code>/land-pr</code>, <code>/create-worktree</code>), and 4 block-diagram extensions covering plan drafting, feature implementation, bug fixing, verification, testing, documentation, and safe code landing. Six support cron scheduling for unattended execution.</p>
 </section>
 
-<!-- ALL 26 SKILLS -->
+<!-- ALL 25 SKILLS -->
 <section id="skills" class="fade-in" style="margin-top: 0; padding-top: 0;">
       <div class="skill-mini-grid" style="grid-template-columns: 1fr; max-width: 600px; margin: 0 auto 24px;">
         <div class="skill-mini" style="border-color: var(--accent); border-width: 2px;">
@@ -393,10 +393,6 @@
           <p>Post-PR-merge local normalization. Fetches origin with &minus;&minus;prune, switches off a feature branch whose PR merged, pulls main, deletes local feature branches whose upstreams are gone. Safe to run anytime; bails on a dirty tree.</p>
         </div>
         <div class="skill-mini" style="border-color: var(--text-dim);">
-          <h5><code>/review-feedback</code></h5>
-          <p>Triages exported user feedback JSON, deduplicates against existing issues, files via <code>gh</code>.</p>
-        </div>
-        <div class="skill-mini" style="border-color: var(--text-dim);">
           <h5><code>/doc</code></h5>
           <p>Documentation audit and gap-filling across modules, examples, and high-level docs. Three modes, including newsletter generation.</p>
         </div>
@@ -431,6 +427,10 @@
         <div class="skill-mini" style="border-color: var(--pink);">
           <h5><code>/model-design</code></h5>
           <p>Layout guidelines for block diagrams and state charts, based on MAAB/NASA standards.</p>
+        </div>
+        <div class="skill-mini" style="border-color: var(--pink);">
+          <h5><code>/review-feedback</code></h5>
+          <p>Triages exported user feedback JSON, deduplicates against existing issues, files via <code>gh</code>.</p>
         </div>
       </div>
 
@@ -710,7 +710,7 @@
 
 <!-- CLOSING -->
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>26 core skills (24 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>25 core skills (23 user-facing + 2 helpers) that plan, build, test, fix, and ship &mdash; so one developer can run a full engineering team.</strong></p>
   <p style="margin-top: 16px;"><a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
   <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">Built with Claude Code (Claude Opus 4.6 / 4.7) &mdash; Z Skills System.</p>
 </section>

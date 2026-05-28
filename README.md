@@ -13,9 +13,9 @@
 <!-- prod-strip:end -->
 # Z Skills
 
-**26 core skills that plan, build, test, fix, and ship** — so one
-developer can run a full engineering team. (24 user-facing slash
-commands, 2 internal helpers, three block-diagram add-ons, and a
+**25 core skills that plan, build, test, fix, and ship** — so one
+developer can run a full engineering team. (23 user-facing slash
+commands, 2 internal helpers, four block-diagram add-ons, and a
 battery of safety hooks.)
 
 Z Skills encodes hard-won lessons from real agent failures into reusable
@@ -42,6 +42,10 @@ stories.
 ![Quality and Fix skills](screenshots/skills-quality-fix.png)
 
 ![Utility and Reference skills](screenshots/skills-utility.png)
+
+For a per-skill reference see [`docs/skills/`](docs/skills/README.md), and for
+recipes that combine skills into end-to-end workflows see
+[`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 
 ## Quick Install
 
@@ -111,7 +115,7 @@ safety hook). Every other config field is preserved. See
 
 ### Add-ons
 
-To include the block-diagram add-on (3 extra skills):
+To include the block-diagram add-on (4 extra skills):
 
 ```bash
 /update-zskills install --with-block-diagram-addons
@@ -381,7 +385,7 @@ RUN_E2E=1 bash tests/run-all.sh          # + e2e-parallel-pipelines
 
 ## Skill catalog
 
-### 24 User-Facing Skills (`skills/`)
+### 23 User-Facing Skills (`skills/`)
 
 These work on any software project — web app, CLI tool, API service, game,
 data pipeline. All are slash-invocable by the user. Two additional
@@ -433,7 +437,6 @@ by other skills — see Helpers below.
 | `/briefing` | Project status dashboard: recent commits, worktree status, pending sign-offs |
 | `/commit` | Safe commit: scope classification, import tracing, fresh review agent, dependency verification |
 | `/cleanup-merged` | Post-PR-merge normalization: fetch+prune, checkout main, pull, delete local feature branches whose PRs have merged |
-| `/review-feedback` | Triage user feedback into GitHub issues: deduplicate, evaluate, file |
 | `/doc` | Documentation audit, gap-filling, and changelog/newsletter entries |
 | `/update-zskills` | Install or update Z Skills infrastructure in any project |
 
@@ -446,8 +449,9 @@ by other skills — see Helpers below.
 
 ### Block Diagram Add-on (`block-diagram/`)
 
-3 additional skills for block-diagram editors. Not part of the core 26 —
-install if your project involves visual block diagrams.
+4 additional skills for block-diagram editors (`/add-block`, `/add-example`,
+`/model-design`, `/review-feedback`). Not part of the core 25 — install if
+your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 
 ![Block Diagram Add-on skills](block-diagram/screenshots/domain-skills.png)
