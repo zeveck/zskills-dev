@@ -676,7 +676,7 @@ trap cleanup_tmp_wt EXIT
 
 if git -C "$REPO_ROOT" worktree add --detach --quiet "$TMP_WT" HEAD 2>/dev/null; then
   PORTABLE=$(PYTHONPATH="$PKG_PARENT" python3 -c '
-import sys, json
+import sys, json, copy
 sys.path.insert(0, "'"$PKG_PARENT"'")
 from zskills_monitor.collect import collect_snapshot
 
@@ -685,9 +685,24 @@ from zskills_monitor.collect import collect_snapshot
 # subset that worktree-portability protects: repo_root, plans, queues,
 # state_file_path.
 def stable(snap):
+    # #759: a held plan claim adds a per-plan claim.age_seconds field that is
+    # a live "now - started_at" value, so it ticks between the two sequential
+    # collect_snapshot() reads and breaks the byte-identity check. Strip ONLY
+    # age_seconds (deep-copied so we never mutate the source snapshot); the
+    # rest of the claim (pipeline_id, started_at, current_phase,
+    # pipeline_short) is fixed between back-to-back reads and stays in the
+    # comparison. Worktree-portability is about MAIN_ROOT resolution, not
+    # claim age.
+    plans = copy.deepcopy(snap["plans"])
+    if isinstance(plans, list):
+        for plan in plans:
+            if isinstance(plan, dict):
+                claim = plan.get("claim")
+                if isinstance(claim, dict) and "age_seconds" in claim:
+                    del claim["age_seconds"]
     return {
         "repo_root": snap["repo_root"],
-        "plans": snap["plans"],
+        "plans": plans,
         "queues": snap["queues"],
         "state_file_path": snap["state_file_path"],
     }
