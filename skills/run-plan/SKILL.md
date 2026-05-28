@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.27+beade3"
+  version: "2026.05.28+b06b7e"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -820,9 +820,10 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    ```bash
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    # Re-derive BRANCH_PREFIX and PLAN_SLUG at fence-top (R-5-1):
-   # both were set in earlier disjoint fences (BRANCH_PREFIX@149-157,
-   # PLAN_SLUG@425-441) and do NOT survive cross-fence per
-   # SKILL.md:1326-1328 ("Resolve config-derived vars at fence-top").
+   # both were set in earlier disjoint fences (BRANCH_PREFIX@178-185,
+   # PLAN_SLUG@382) and do NOT survive cross-fence per the
+   # "Resolve config-derived vars at fence-top" convention
+   # (modes/execute-phase.md:425).
    # Needed below for the requires.land-pr.<id> marker's branch: field.
    BRANCH_PREFIX="feat/"
    if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then

@@ -287,7 +287,8 @@ Those move to `/land-pr` (see `skills/land-pr/SKILL.md`). `/run-plan`'s
 remaining responsibilities here are:
 
 1. Per-iteration body splice on existing PRs (caller-owned per WI 2.1; the
-   bash-regex `BASH_REMATCH` splice at `skills/run-plan/SKILL.md:1715-1745`
+   bash-regex `BASH_REMATCH` splice in
+   `skills/run-plan/scripts/sync-pr-body-progress.sh`
    stays as the source of truth and is invoked from
    `<CALLER_PRE_INVOKE_BODY_PREP>`).
 2. Agent-assisted rebase-conflict resolution when `STATUS=rebase-conflict`
@@ -306,7 +307,7 @@ hit `/run-plan`'s Step 0 pre-flight, increment the per-phase
 `in-progress-defers.<phase>` counter, and step the cadence down at boundary
 fires `C+1 ∈ {1, 10, 16, 26}`. The phase still finishes correctly — Step 0
 defers, the original turn writes `.landed` via `/land-pr`. No code change
-needed here; the adaptive machinery (`SKILL.md:439-573`) is correct by design.
+needed here; the adaptive machinery (`SKILL.md:421-566`) is correct by design.
 
 ```bash
 # === BEGIN CANONICAL /land-pr CALLER LOOP ===
@@ -348,8 +349,9 @@ while :; do
   # so this is the caller's only chance to refresh the progress checklist.
   #
   # The splice implementation is the bash-regex (`BASH_REMATCH`) splice
-  # owned by Phase 4 (Update Progress Tracking) at
-  # skills/run-plan/SKILL.md:1715-1745. It is the source of truth and is
+  # owned by Phase 4 (Update Progress Tracking), extracted to
+  # skills/run-plan/scripts/sync-pr-body-progress.sh (invoked from Phase 4
+  # at execute-phase.md:1018). It is the source of truth and is
   # NOT duplicated here — Phase 4 already runs before Phase 6's caller
   # loop on every phase iteration where a PR already exists.
   #
@@ -362,7 +364,8 @@ while :; do
   # the source of truth and the PR body is a convenience surface):
   #   - gh-pr-view-failed: NOTICE, retry once, NOTICE-and-skip on second fail.
   #   - body-markers-missing: NOTICE-and-skip ("expected for PRs not opened
-  #     by /run-plan PR mode"); design property at SKILL.md:1758-1761.
+  #     by /run-plan PR mode"); design property in
+  #     skills/run-plan/scripts/sync-pr-body-progress.sh:146-155.
   #   - gh-pr-edit-failed: WARN-and-continue.
 
   # Build /land-pr arg vector. --body-file is required; --auto and
