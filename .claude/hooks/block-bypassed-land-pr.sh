@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # block-bypassed-land-pr.sh — PreToolUse Bash hook.
 #
 # Unconditionally denies direct `gh pr create` and `gh pr merge --auto`
@@ -48,6 +49,13 @@
 # `bash scripts/pr-push-and-create.sh ...` invocation, not the inner
 # `gh pr create` inside that script — so the hook NEVER fires on
 # /land-pr's own gh invocation. No allowlist needed.
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 set -u
 
@@ -353,10 +361,14 @@ is_gh_pr_subcommand_in_wrappers "$COMMAND" "create" && deny=1
 is_gh_pr_subcommand_in_wrappers "$COMMAND" "merge" '^--auto$' && deny=1
 [ "${deny:-0}" -eq 0 ] && exit 0
 
-# Resolve message-enrichment script. Same `${X:-$PWD}` fallback pattern as
-# block-stale-skill-version.sh (guards against `set -u` + unset
-# CLAUDE_PROJECT_DIR).
-SCRIPT="${CLAUDE_PROJECT_DIR:-$PWD}/scripts/land-pr-bypass-message.sh"
+# Resolve message-enrichment script. Lane-portable (W1.4 pattern 1): the
+# plugin lane resolves it under ${CLAUDE_PLUGIN_ROOT}/scripts/; the
+# /update-zskills lane resolves it under ${CLAUDE_PROJECT_DIR}/scripts/
+# (repo-root scripts/ — this is a consumer-customizable utility that stays
+# at scripts/, NOT under .claude/skills/update-zskills). The `${X:-$PWD}`
+# fallback (guards against `set -u` + unset CLAUDE_PROJECT_DIR) is preserved
+# on the legacy arm.
+SCRIPT="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}/scripts/land-pr-bypass-message.sh"
 
 # Static fallback STOP message — ASCII-only, 3 lines. Used when the
 # message-enrichment script is missing/broken (see sentinel check

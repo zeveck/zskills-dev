@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # Block Agent (subagent) dispatches that use a model below agents.min_model.
 # Registered under the Agent PreToolUse matcher in .claude/settings.json.
 #
@@ -13,6 +14,13 @@
 # dispatch site in run-plan, fix-issues, do) cover the residual case where
 # neither tool input nor agent definition specifies a model (subagent inherits
 # from parent session, which is typically Opus or Sonnet).
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 INPUT=$(cat)
 

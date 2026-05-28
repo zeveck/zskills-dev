@@ -3074,6 +3074,37 @@ check       fix-issues  "impl-prompt scope-grep enforcement"             '[Ss]co
 check       fix-issues  "impl-prompt verifies each file in diff"         'git diff origin/main\.\.HEAD --name-only'
 
 echo ""
+echo "=== plugin hooks — line-2 # zskills-hook-version: stamp (W1.3 / D16(a)) ==="
+# Every shipped non-canary hook script under hooks/ (all *.sh except
+# canary*) PLUS the two *.template hooks must carry a line-2
+# `# zskills-hook-version:` stamp. The shim's version-skew check
+# (hooks/_lib/plugin-hook-skip-if-mirrored.sh) reads this stamp from both
+# the plugin copy and the settings.json-registered copy; an absent stamp on
+# either side forces a silent defer (D16(a) step 6), so a missing stamp is a
+# correctness regression for dual-install hook double-fire prevention.
+HOOK_STAMP_TARGETS=()
+shopt -s nullglob
+for _h in "$REPO_ROOT"/hooks/*.sh; do
+  case "$(basename "$_h")" in
+    canary*) continue ;;
+  esac
+  HOOK_STAMP_TARGETS+=("$_h")
+done
+for _h in "$REPO_ROOT"/hooks/*.sh.template; do
+  HOOK_STAMP_TARGETS+=("$_h")
+done
+shopt -u nullglob
+for _h in "${HOOK_STAMP_TARGETS[@]}"; do
+  _bn="$(basename "$_h")"
+  _line2="$(sed -n '2p' "$_h")"
+  if printf '%s' "$_line2" | grep -q '^# zskills-hook-version:[[:space:]]*[0-9]'; then
+    pass "hook $_bn carries line-2 # zskills-hook-version: stamp"
+  else
+    fail "hook $_bn carries line-2 # zskills-hook-version: stamp" "expected '# zskills-hook-version: <ver>' on line 2, got: $_line2"
+  fi
+done
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

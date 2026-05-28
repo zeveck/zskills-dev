@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# zskills-hook-version: 2026.05.0
 # verify-response-validate.sh — validates a verifier subagent's response
 # for signs of skipped work, hung-and-recovered, or other failure patterns.
 #

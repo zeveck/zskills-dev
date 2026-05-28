@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # block-fix-issue-unclaimed.sh — PreToolUse hook on Bash.
 #
 # Backstops the /fix-issues inline-acquire prose discipline (plans/fix-issues-claims.md
@@ -36,6 +37,13 @@
 # No `2>/dev/null` on fallible ops — failures should be visible. The hook
 # is fail-open on its own infrastructure errors (defensive: never false-
 # deny on git-not-installed, Python-missing, etc.) but emits stderr.
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 INPUT=$(cat) || exit 0
 [ -z "$INPUT" ] && exit 0
@@ -207,12 +215,21 @@ if [ -d "$CLAIM_DIR" ]; then
 fi
 
 # ── Deny envelope (plan DA4.4 — locked text) ─────────────────────────────
+# Lane-portable recovery-command path (W1.4 pattern 2 / F-DA1-7): on the
+# plugin lane cite ${CLAUDE_PLUGIN_ROOT}/skills/fix-issues/scripts/...; on
+# the /update-zskills lane cite ${MAIN_ROOT}/.claude/skills/fix-issues/...
+# (the mirror). Resolve to whichever exists.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/fix-issues/scripts/claim-issue.sh" ]; then
+  CLAIM_ISSUE_PATH="${CLAUDE_PLUGIN_ROOT}/skills/fix-issues/scripts/claim-issue.sh"
+else
+  CLAIM_ISSUE_PATH="${MAIN_ROOT}/.claude/skills/fix-issues/scripts/claim-issue.sh"
+fi
 STOP_MSG=$(cat <<EOF
 STOP: create-worktree.sh for fix-issue-${NNN} denied — no claim found at ${MAIN_ROOT}/.zskills/claims/issue-${NNN}/.
 
-The per-issue dispatch fence at SKILL.md:2161-2186 (cherry-pick/direct) or SKILL.md:2219-2243 (PR mode) MUST call:
+The per-issue dispatch fence in fix-issues modes/sprint.md (the "Worktree setup (cherry-pick and direct modes)" section, and the "PR mode (Phase 3)" section) MUST call:
 
-  bash ${MAIN_ROOT}/.claude/skills/fix-issues/scripts/claim-issue.sh acquire ${NNN} --pipeline-id "\$ZSKILLS_PIPELINE_ID" --sprint-id "\$SPRINT_ID"
+  bash ${CLAIM_ISSUE_PATH} acquire ${NNN} --pipeline-id "\$ZSKILLS_PIPELINE_ID" --sprint-id "\$SPRINT_ID"
 
 immediately above the create-worktree.sh invocation. If this hook fired during a sprint, the SKILL.md prose has drifted — STOP, do not retry, file an issue.
 

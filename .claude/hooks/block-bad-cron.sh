@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# zskills-hook-version: 2026.05.0
 # block-bad-cron.sh — PreToolUse hook for the CronCreate tool.
 #
 # Closes a class of "the cron never fired" bugs caused by structurally-wrong
@@ -51,6 +52,13 @@
 # `/clear` (or restart Claude Code) and re-test with an intentionally
 # bad cron, e.g., a one-shot whose next fire is more than 7 days out.
 # The deny envelope's STOP message confirms the hook is wired.
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 set -u
 

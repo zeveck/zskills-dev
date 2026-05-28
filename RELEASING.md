@@ -11,6 +11,37 @@ See CHANGELOG entry for `feat(paths)` and
 `.claude/skills/update-zskills/references/path-config-upgrade.md` for
 the long-tail customization upgrade prompt.
 
+## Dogfooding lanes (plugin + legacy)
+
+zskills is distributed via TWO permanent, first-class install lanes, and we
+dogfood BOTH from this repo:
+
+- **Plugin lane** — load the in-repo plugin in-place with
+  `claude --plugin-dir .`. Claude Code reads `.claude-plugin/plugin.json`
+  (the `zs` plugin) and `block-diagram/.claude-plugin/plugin.json` (the
+  `zsbd` addon), registers the hooks in `hooks/hooks.json`, and resolves
+  skill paths under `${CLAUDE_PLUGIN_ROOT}`. Iterate with
+  `edit → /reload-plugins → test`. No rendering/mirroring step is needed —
+  the plugin runs from source. Validate manifests with
+  `claude plugin validate . --strict` (marketplace) and
+  `claude plugin validate ./block-diagram --strict` (zsbd plugin).
+- **Legacy `/update-zskills` lane** — the bespoke installer that mirrors
+  `skills/` → `.claude/skills/`, copies `hooks/*.sh` → `.claude/hooks/`,
+  registers hooks in `.claude/settings.json`, and renders
+  `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md`. Dogfood it by
+  running `/update-zskills install` against the source tree; iterate with
+  `edit → /update-zskills --rerender → test`.
+
+Both lanes are exercised by CI (the plugin-lane CI job lands in Phase 5).
+Neither lane is retired; both are supported indefinitely. See
+`docs/plans/PLUGIN_DISTRIBUTION.md` for the full dual-path design.
+
+The D16(a) conditional-skip shim
+(`hooks/_lib/plugin-hook-skip-if-mirrored.sh`) makes it safe to have BOTH
+lanes installed at once in a consumer repo: each plugin-registered hook
+defers to a settings.json-registered copy of the same hook (basename match,
+with a `# zskills-hook-version:` skew guard) so hooks never double-fire.
+
 ## TL;DR
 
 1. Click **🚀 Ship to Prod** in the README (or go to Actions → "🚀 Ship to Prod" → Run workflow).
