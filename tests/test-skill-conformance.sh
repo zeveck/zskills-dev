@@ -515,10 +515,10 @@ check_not   fix-issues "no inline gh pr checks --watch" 'gh pr checks.*--watch'
 check_fixed fix-issues "6th triage bucket (Author decision needed)" 'Author decision needed'
 check_fixed fix-issues "Per-fire user-facing summary section"       'Per-fire user-facing summary'
 check       fix-issues "summary references both branches"           'productive branch.*no-actionable|no-actionable.*productive'
-check_in_file fix-issues SKILL.md "summary referenced from no-actionable exit" \
+check_in_file fix-issues modes/sprint.md "summary referenced from no-actionable exit" \
   'per-fire user-facing summary'
-check_in_file .claude/skills/fix-issues SKILL.md "mirror has 6th bucket"               'Author decision needed'
-check_in_file .claude/skills/fix-issues SKILL.md "mirror has summary section heading"  'Per-fire user-facing summary'
+check_in_file .claude/skills/fix-issues modes/sprint.md "mirror has 6th bucket"               'Author decision needed'
+check_in_file .claude/skills/fix-issues modes/sprint.md "mirror has summary section heading"  'Per-fire user-facing summary'
 # WI 4.6 RELOCATE: the `if [ "$AUTO_FLAG" != "true" ]` literal guard
 # now lives in /land-pr's pr-merge.sh (Phase 1B WI 1.6). Verify it
 # stays there.
@@ -644,7 +644,7 @@ echo "=== implementer subagent — impl-dispatch site pins (Verifier-cannot-run 
 # pass as long as ANY footnote/comment elsewhere mentioned the pin.
 check_in_file_near run-plan    "modes/execute-phase.md"     "impl-dispatch pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near run-plan    "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
-check_in_file_near fix-issues  "SKILL.md"                   "fix-agent pins implementer"     'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near fix-issues  "modes/sprint.md"             "fix-agent pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near do          "modes/pr.md"                "impl+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0

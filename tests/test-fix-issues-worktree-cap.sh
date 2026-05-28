@@ -36,8 +36,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCHEMA="$REPO_ROOT/config/zskills-config.schema.json"
 HELPER="$REPO_ROOT/skills/update-zskills/scripts/zskills-resolve-config.sh"
 MIRROR_HELPER="$REPO_ROOT/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
-MIRROR_SKILL="$REPO_ROOT/.claude/skills/fix-issues/SKILL.md"
+SKILL="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
+MIRROR_SKILL="$REPO_ROOT/.claude/skills/fix-issues/modes/sprint.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0

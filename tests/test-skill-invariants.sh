@@ -87,7 +87,7 @@ ISSUE_606_PAIRS=(
   "skills/draft-plan/SKILL.md|TRACKING_ID"
   "skills/draft-plan/SKILL.md|OUTPUT_FILE"
   "skills/draft-plan/SKILL.md|ROUND"
-  "skills/fix-issues/SKILL.md|TRACKING_ID"
+  "skills/fix-issues/modes/sync.md|TRACKING_ID"
   "skills/run-plan/subcommands/stop-next-status.md|PLAN_FILE"
   "skills/quickfix/SKILL.md|ZSKILLS_PIPELINE_ID"
   "skills/draft-tests/SKILL.md|ROUND_N"
@@ -194,7 +194,7 @@ else
 fi
 
 # Phase C: tool-list-aware dispatch (4 skills)
-for f in skills/run-plan/modes/execute-phase.md skills/fix-issues/SKILL.md \
+for f in skills/run-plan/modes/execute-phase.md skills/fix-issues/modes/sprint.md \
          skills/verify-changes/SKILL.md \
          block-diagram/add-block/SKILL.md; do
   check "tool-list-aware dispatch in $f" \

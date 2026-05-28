@@ -34,7 +34,9 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-FI_SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+FI_SKILL_DIR="$REPO_ROOT/skills/fix-issues"
+FI_SKILL="$FI_SKILL_DIR/modes/sprint.md"
+FI_SYNC="$FI_SKILL_DIR/modes/sync.md"
 FR_SKILL="$REPO_ROOT/skills/fix-report/SKILL.md"
 
 # ─────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ FR_SKILL="$REPO_ROOT/skills/fix-report/SKILL.md"
 # ─────────────────────────────────────────────────────────────────
 echo "=== fix-issues sprint preamble (issue #325) ==="
 
-HELPER_COUNT=$(grep -c 'bash "\$HELPER"' "$FI_SKILL" 2>/dev/null || echo 0)
+HELPER_COUNT=$(grep -c 'bash "\$HELPER"' "$FI_SKILL" "$FI_SYNC" 2>/dev/null | awk -F: '{s+=$NF} END{print s+0}')
 if [ "$HELPER_COUNT" -ge 2 ]; then
   pass "fix-issues has $HELPER_COUNT ensure-worktree.sh dispatches (>=2: sync + sprint)"
 else
@@ -382,13 +384,13 @@ fi
 echo ""
 echo "=== sync Step 5 git add -A fails loud (issue #335) ==="
 
-if grep -E 'git -C "\$TOPLEVEL" add -A "\$ISSUES_REL" 2>/dev/null \|\| true' "$FI_SKILL" >/dev/null; then
+if grep -E 'git -C "\$TOPLEVEL" add -A "\$ISSUES_REL" 2>/dev/null \|\| true' "$FI_SYNC" >/dev/null; then
   fail "sync Step 5 still uses suppressed 'git add -A ... 2>/dev/null || true' pattern (#335 regression)"
 else
   pass "sync Step 5 no longer suppresses 'git add -A \$ISSUES_REL' errors"
 fi
 
-if grep -E 'if ! git -C "\$TOPLEVEL" add -A "\$ISSUES_REL"; then' "$FI_SKILL" >/dev/null; then
+if grep -E 'if ! git -C "\$TOPLEVEL" add -A "\$ISSUES_REL"; then' "$FI_SYNC" >/dev/null; then
   pass "sync Step 5 guards 'git add -A \$ISSUES_REL' with 'if ! ...; then exit 1; fi'"
 else
   fail "sync Step 5 missing 'if ! git ... add -A \$ISSUES_REL; then ... fi' fail-loud guard"

@@ -32,7 +32,8 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILL="$REPO_ROOT/skills/fix-issues/SKILL.md"
+SKILL="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
+SKILL_SYNC="$REPO_ROOT/skills/fix-issues/modes/sync.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -596,11 +597,11 @@ test_skill_md_parity() {
 # test still appear in SKILL.md verbatim.
 test_land_pr_dispatch_parity() {
   local hits=0
-  grep -qF 'requires.land-pr.${SYNC_ID}' "$SKILL" && hits=$((hits+1))
-  grep -qF 'fulfilled.land-pr.$SYNC_ID' "$SKILL" && hits=$((hits+1))
-  grep -qF 'STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\' "$SKILL" && hits=$((hits+1))
-  grep -qF 'Skill: { skill: "land-pr"' "$SKILL" && hits=$((hits+1))
-  grep -qF 'case "${LP[STATUS]:-}" in' "$SKILL" && hits=$((hits+1))
+  grep -qF 'requires.land-pr.${SYNC_ID}' "$SKILL_SYNC" && hits=$((hits+1))
+  grep -qF 'fulfilled.land-pr.$SYNC_ID' "$SKILL_SYNC" && hits=$((hits+1))
+  grep -qF 'STATUS|PR_URL|PR_NUMBER|PR_EXISTING|CI_STATUS|CI_LOG_FILE|\' "$SKILL_SYNC" && hits=$((hits+1))
+  grep -qF 'Skill: { skill: "land-pr"' "$SKILL_SYNC" && hits=$((hits+1))
+  grep -qF 'case "${LP[STATUS]:-}" in' "$SKILL_SYNC" && hits=$((hits+1))
   if [ "$hits" -eq 5 ]; then
     pass "parity: /land-pr dispatch wiring (5 fingerprints) present in SKILL.md"
   else
