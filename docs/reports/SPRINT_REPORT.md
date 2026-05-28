@@ -1,5 +1,24 @@
 # Sprint Report
 
+## Sprint — 2026-05-28 (dashboard queue-worker, */30 cron) — #755
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge)
+
+### Fixed
+| # | Title | Branch | PR | Tests | Agent Verify | User Verify |
+|---|-------|--------|----|----|-------------|-------------|
+| #755 | cleanup-merged: #516 ahead-count gate skips ~all merged branches under squash-merge | `fix-issue-755` | #756 (merged) | 5940/5940 | PASS — independent verifier confirmed all 6 criteria incl. the behavioral test faithfully builds the squash scenario (main at a different SHA than branch tip), `merge-base --is-ancestor` direction correct, gh-failure fallback never deletes | N/A (no UI) |
+
+### Notable decisions
+
+- **Root cause was a false equivalence.** The #516 gate treated `git rev-list --count main..<branch> > 0` as "has unmerged work," but squash-merge guarantees ahead>0 (main's squash commit has a different SHA than the branch's un-squashed commits). Fix compares the local tip to the merged PR's `headRefOid` instead: equal → safe delete; descendant → real post-merge work → keep skip; gh-unavailable → conservative fallback to the old ahead-count skip.
+- **Verifier scrutiny focused on test faithfulness.** A behavioral test that didn't construct the squash scenario (main == branch tip) would pass vacuously and let a regression slip. Verifier confirmed the test puts main at a separate SHA and exercises the real extracted gate block, not a grep.
+- **Several empty-queue fires preceded this.** After the prior batch (#739/#735/#742) drained the Ready queue, multiple consecutive */30 fires no-op'd (Ready ∩ open empty; #67 deferred). #755 was the first new actionable issue to land in Ready. Confirmed the dashboard auto-prune (#670) operates on the rendered snapshot, not the persisted state file — so raw `issues.ready` retaining closed numbers is by-design, and selection's intersect-with-open handles it.
+
+### Landing
+
+PR mode. rebase → push → CI monitor → auto-merge → FF local main → `.landed` → claim release.
+
 ## Sprint — 2026-05-28 (dashboard queue-worker, */30 cron)
 
 **Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge)
