@@ -10,7 +10,7 @@ description: >-
   `all` does both local + remote. Protected branches from config are
   skipped automatically.
 metadata:
-  version: "2026.05.28+9ebdcf"
+  version: "2026.05.28+07cbb9"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -335,19 +335,42 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       continue
     fi
 
-    # Issue #516: ahead-count gate. `gh pr view` is sticky after merge, so
-    # PR=MERGED + ahead>0 means the local branch may carry post-merge
-    # commits that would be silently reaped by `git branch -D`. Only gate
-    # the PR=MERGED path (upstream-gone implies squash-merge, where ahead>0
-    # is expected and the unpushed-commit guard above already handles the
-    # un-squashed case).
+    # Issue #516 / #755: post-merge-work gate. `gh pr view` is sticky
+    # after merge, so PR=MERGED on a branch with a tip != main is normal
+    # under squash-merge (the squash commit on main has a different SHA,
+    # so `git rev-list --count main..branch` is ALWAYS > 0). The raw
+    # ahead-count gate therefore skipped essentially every squash-merged
+    # branch (#755). Instead, compare the local branch tip to the merged
+    # PR's recorded head SHA:
+    #   - tip == PR head  -> no post-merge work -> safe to delete (fall
+    #     through; this is the normal squash-merged case).
+    #   - tip is a DESCENDANT of PR head -> the branch carries commits
+    #     made after the PR head -> genuine post-merge work -> SKIP
+    #     (preserves the #516 protection precisely).
+    #   - PR head unavailable (gh hiccup) -> fall back conservatively to
+    #     the old ahead-count behavior so a gh failure never causes an
+    #     unsafe delete.
     if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ]; then
-      AHEAD=$(git rev-list --count "$MAIN_BRANCH..$branch" 2>/dev/null || echo 0)
-      [ -z "$AHEAD" ] && AHEAD=0
-      if [ "$AHEAD" -gt 0 ]; then
-        echo "  SKIP   $branch (PR merged but branch has $AHEAD commits not on main — investigate; do not auto-remove)"
-        LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
-        continue
+      PR_HEAD=$(gh pr view "$branch" --json headRefOid -q .headRefOid 2>/dev/null || echo "")
+      LOCAL_TIP=$(git rev-parse "$branch" 2>/dev/null || echo "")
+      if [ -n "$PR_HEAD" ]; then
+        if [ "$LOCAL_TIP" != "$PR_HEAD" ] && git merge-base --is-ancestor "$PR_HEAD" "$LOCAL_TIP" 2>/dev/null; then
+          echo "  SKIP   $branch (PR merged but local tip is ahead of the merged PR head — post-merge work; investigate, do not auto-remove)"
+          LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
+          continue
+        fi
+        # tip == PR head (or diverged-but-not-descendant): no post-merge
+        # commits beyond the PR head — safe to delete, fall through.
+      else
+        # gh could not report the PR head: fall back to the conservative
+        # ahead-count gate so a gh hiccup never triggers an unsafe delete.
+        AHEAD=$(git rev-list --count "$MAIN_BRANCH..$branch" 2>/dev/null || echo 0)
+        [ -z "$AHEAD" ] && AHEAD=0
+        if [ "$AHEAD" -gt 0 ]; then
+          echo "  SKIP   $branch (PR merged but PR head unavailable from gh and branch has $AHEAD commits not on main — investigate; do not auto-remove)"
+          LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
+          continue
+        fi
       fi
     fi
 
