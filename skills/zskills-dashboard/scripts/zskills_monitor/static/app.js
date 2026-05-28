@@ -1332,10 +1332,15 @@ function buildBranchCard(b, byBranch) {
     },
   });
   var head = el("div", { cls: "card-row" });
-  // Checkbox for bulk selection
+  // Checkbox for bulk selection. Protected branches carry data-protected
+  // so the bulk-copy command handler can defensively exclude them from the
+  // emitted /cleanup-merged command (their checkboxes are also disabled by
+  // the Half-A display change; this is belt-and-suspenders).
+  var cbAttrs = { type: "checkbox", "data-branch-name": b.name, "aria-label": "Select " + b.name };
+  if (b.protected) cbAttrs["data-protected"] = "true";
   var cb = el("input", {
     cls: "branch-select-cb",
-    attrs: { type: "checkbox", "data-branch-name": b.name, "aria-label": "Select " + b.name },
+    attrs: cbAttrs,
   });
   head.appendChild(cb);
   var url = branchUrl(b.name);
@@ -1419,9 +1424,9 @@ function buildBranchBulkBar(sectionKey, branchNames) {
       type: "button",
       "data-action": "branch-bulk-copy",
       "data-section": sectionKey,
-      "aria-label": "Copy selected branch names",
+      "aria-label": "Copy /cleanup-merged command for selected branches",
     },
-    text: "Copy 0 branch names",
+    text: "Copy /cleanup-merged for 0 branches",
   });
   bar.appendChild(copyBtn);
   return bar;
@@ -3155,7 +3160,9 @@ async function handleAction(action, target) {
     return;
   }
 
-  // Issue #717 — Branch bulk copy.
+  // Issue #717 — Branch bulk copy. Emits a RUNNABLE /cleanup-merged
+  // command (matching the Plans panel's "Copy and run:" pattern) rather
+  // than bare branch names. The mode is driven by the section bucket.
   if (action === "branch-bulk-copy") {
     const sectionKey = target.getAttribute("data-section");
     if (!sectionKey) return;
@@ -3164,6 +3171,10 @@ async function handleAction(action, target) {
     const cbs = secEl.querySelectorAll(".branch-select-cb:checked");
     const names = [];
     for (let i = 0; i < cbs.length; i++) {
+      // Defensive: never include a config-protected branch in the command,
+      // even if its checkbox somehow got selected. /cleanup-merged would
+      // skip it anyway, but emitting it would be misleading.
+      if (cbs[i].getAttribute("data-protected") === "true") continue;
       const n = cbs[i].getAttribute("data-branch-name");
       if (n) names.push(n);
     }
@@ -3171,11 +3182,11 @@ async function handleAction(action, target) {
       showToast("No branches selected.", "info");
       return;
     }
-    const text = names.join("\n");
+    const cmd = buildCleanupMergedCommand(sectionKey, names);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       try {
-        navigator.clipboard.writeText(text);
-        showToast("Copied " + names.length + " branch name" + (names.length === 1 ? "" : "s") + ".", "info");
+        navigator.clipboard.writeText(cmd);
+        showToast("Copied command for " + names.length + " branch" + (names.length === 1 ? "" : "es") + ".", "info");
       } catch (_err) {
         showToast("Copy failed — select text manually.", "err");
       }
@@ -3186,12 +3197,22 @@ async function handleAction(action, target) {
   }
 }
 
+// Issue #717 follow-up — Build the runnable /cleanup-merged command for a
+// branch-section bulk copy. The mode is driven by the section bucket: the
+// `remote-only` bucket targets remote branches; the local buckets
+// (active / landed / local) target local branches. The bulk bar is
+// per-section, so each invocation only ever produces one mode.
+function buildCleanupMergedCommand(sectionKey, names) {
+  const mode = sectionKey === "remote-only" ? "remote" : "local";
+  return "/cleanup-merged " + mode + " apply " + names.join(" ");
+}
+
 // Issue #717 — Update the copy button label with the count of selected branches.
 function _updateBranchCopyCount(secEl, sectionKey) {
   const cbs = secEl.querySelectorAll(".branch-select-cb:checked");
   const btn = secEl.querySelector('.branch-bulk-copy-btn[data-section="' + sectionKey + '"]');
   if (btn) {
-    btn.textContent = "Copy " + cbs.length + " branch name" + (cbs.length === 1 ? "" : "s");
+    btn.textContent = "Copy /cleanup-merged for " + cbs.length + " branch" + (cbs.length === 1 ? "" : "es");
   }
 }
 

@@ -97,10 +97,13 @@ fi
 # ── Behavioral: extract the gate logic and run it against stubs ──────
 # Extract just the PR_STATE==MERGED gate `if` block from the skill so
 # we exercise the REAL decision logic (not a paraphrase). The block
-# starts at `if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ];`
-# and ends at the matching `fi` (the line before the worktree comment).
+# starts at `if [ "$PR_STATE" = "MERGED" ] && [ "$UPSTREAM_GONE" = "0" ]`
+# (the namelist feature added a trailing `&& [ "$NAMED_FORCE" -eq 0 ]`
+# guard so `force` on a named branch bypasses the post-merge gate; the
+# behavioral harness below sets NAMED_FORCE=0 to exercise the non-force
+# path) and ends at the matching `fi` (before the worktree comment).
 GATE_BLOCK=$(echo "$PHASE5_SLICE" | awk '
-  /if \[ "\$PR_STATE" = "MERGED" \] && \[ "\$UPSTREAM_GONE" = "0" \]; then/{capture=1}
+  /if \[ "\$PR_STATE" = "MERGED" \] && \[ "\$UPSTREAM_GONE" = "0" \].*; then/{capture=1}
   capture {print}
   capture && /^    fi$/{exit}
 ')
@@ -156,6 +159,7 @@ STUB
     MAIN_BRANCH=main
     PR_STATE=MERGED
     UPSTREAM_GONE=0
+    NAMED_FORCE=0   # exercise the non-force post-merge gate path
 
     run_gate() {
       branch="$1"
