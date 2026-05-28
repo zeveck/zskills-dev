@@ -524,6 +524,14 @@ check_in_file .claude/skills/fix-issues modes/sprint.md "mirror has summary sect
 # stays there.
 check_in_file land-pr scripts/pr-merge.sh "auto-merge AUTO_FLAG guard" 'if \[ "\$AUTO_FLAG" != "true" \]; then'
 
+# Guard recently-reverted content (see #704, #729, #735).
+# These blocks have been lost-then-restored across rapid PR landings; pin
+# them so any future accidental deletion fails CI. The `check` helper greps
+# the whole skill tree recursively, so each pin survives RESTRUCTURE moves
+# (e.g. the staleness step now lives in subcommands/stop-next.md after #740).
+check fix-issues        "next-section staleness step (#729/#735)"  'Peek at the Ready queue'
+check zskills-dashboard "ZSKILLS_DASHBOARD_ROOT contract (#704/#735)" 'ZSKILLS_DASHBOARD_ROOT'
+
 echo ""
 echo "=== auto grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
 # AC2.2 — AUTO_FLAG initializer present in all 4 PR-landing callers.
