@@ -2158,19 +2158,36 @@ _CLAIM_DIR_RE = re.compile(r"^issue-(\d+)$")
 _PLAN_CLAIM_DIR_RE = re.compile(r"^plan-(.+)$")
 
 
-def _derive_pipeline_short(pipeline_id: str) -> str:
-    """Derive a short, sprint-distinguishing label from a pipeline id.
+def _derive_pipeline_short(pipeline_id: str, maxlen: int = 28) -> str:
+    """Derive a short, human-meaningful label from a pipeline id.
 
-    DA4 lock — `"fix-issues.sprint-20260521-010731-foo"` yields
-    `"010731-foo"` (the time+slug tail), NOT the useless `"sprint-2"`
-    that a naive 8-char prefix slice would produce for every concurrent
-    sprint.
+    The leading pipeline-type prefix (`run-plan.`, `fix-issues.`, `do.`)
+    is dropped first via rsplit on `.`.
+
+    Sprint ids — `"fix-issues.sprint-20260521-010731-foo"` — yield
+    `"010731-foo"` (the time+slug tail), NOT the useless `"sprint-2"` an
+    8-char prefix slice would give, NOR the garbage an 8-char SUFFIX slice
+    gives. The sprint branch is gated on the real sprint shape
+    (`sprint-<digits>-<digits>-...`) — NOT a bare `len(parts) >= 4` count,
+    which mis-fired on multi-hyphen plan slugs (e.g.
+    `dashboard-tabs-and-rename-5a-diagnosis` -> "and-rename").
+
+    Everything else (plan slugs like `plugin-distribution`) shows the WHOLE
+    slug, front-truncated with an ellipsis only when it exceeds `maxlen`.
+    The old `[-8:]` suffix slice butchered `plugin-distribution` -> "ribution".
     """
-    sprint_id_tail = pipeline_id.rsplit(".", 1)[-1]
-    parts = sprint_id_tail.split("-")
-    if len(parts) >= 4:
-        return "-".join(parts[2:4])
-    return sprint_id_tail[-8:]
+    tail = pipeline_id.rsplit(".", 1)[-1]
+    parts = tail.split("-")
+    is_sprint = (
+        len(parts) >= 4
+        and parts[0] == "sprint"
+        and parts[1].isdigit()
+        and parts[2].isdigit()
+    )
+    short = "-".join(parts[2:4]) if is_sprint else tail
+    if len(short) > maxlen:
+        short = short[: maxlen - 1] + "…"
+    return short
 
 
 def _read_claims(main_root: pathlib.Path) -> Dict[int, Dict[str, Any]]:

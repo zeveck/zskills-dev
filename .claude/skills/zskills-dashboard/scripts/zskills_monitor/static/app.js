@@ -963,13 +963,24 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   }
 
   if (plan) {
+    // Phase progress. Prefer the live claim's current_phase when the plan
+    // is claimed (in-flight). For main_protected PR-mode /run-plan the plan
+    // tracker on main shows ~0-1 done for the ENTIRE run (all phases land in
+    // one PR at the end), so phases_done is structurally stale the whole
+    // time work is in flight. The claim's current_phase is the live truth.
+    // Fall back to phases_done for unclaimed plans (direct mode, or work
+    // already landed to main).
+    const total = plan.phase_count || 0;
+    let done = plan.phases_done || 0;
+    if (plan.claim && typeof plan.claim.current_phase === "string") {
+      const cm = plan.claim.current_phase.match(/Phase\s+(\d+)/i);
+      if (cm) done = parseInt(cm[1], 10);
+    }
     const meta = el("div", { cls: "card-row card-sub" });
-    const ratio = (plan.phases_done || 0) + " / " + (plan.phase_count || 0) + " phases";
+    const ratio = done + " / " + total + " phases";
     meta.appendChild(el("span", { text: ratio }));
     card.appendChild(meta);
 
-    const total = plan.phase_count || 0;
-    const done = plan.phases_done || 0;
     if (total > 0) {
       const bar = el("div", { cls: "progress" });
       const fill = el("div", { cls: "progress-fill" });
@@ -981,13 +992,18 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   }
 
   // Claim chip (run-plan claim — plans/plans-claim-chip-parity.md Phase 3).
-  // Mirrors buildIssueCard's chip with three plan-context differences:
-  //   1. Chip text adds a phase fragment: "phase N/M" parsed from
-  //      claim.current_phase ("Phase 3" → N=3); falls back to "phase ?/M"
-  //      for unparseable section-name headers (e.g. "Parse plan").
+  // The chip is the liveness/activity indicator: "working on phase N ·
+  // <slug> · <age>". The N/M progress framing lives on the bar above (which
+  // is driven from this same claim.current_phase when claimed), so the chip
+  // drops the redundant "/M" denominator. Notes:
+  //   1. Phase fragment: "working on phase N" parsed from current_phase
+  //      ("Phase 3" → N=3). Non-numeric section headers (e.g. "Parse plan")
+  //      show "working on <header>" verbatim; absent → bare "in-flight".
   //   2. Age string is derived from started_at (post-#684 cleanup
   //      removed last_heartbeat_at as a duplicate of started_at).
-  //   3. data-kind="plan" is already encoded; the aria-disabled +
+  //   3. The .claim-chip--in-flight class is retained — the collapsed-column
+  //      footer badges aggregate by that class, not the visible text.
+  //   4. data-kind="plan" is already encoded; the aria-disabled +
   //      removeAttribute("draggable") block is identical to the issue
   //      side and is honored by moveAllInColumn (kind-generic) and the
   //      plan-up/down/left/right/plan-discard guard in handleAction.
@@ -997,16 +1013,12 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     const rt = startedAt ? relativeTime(startedAt) : "";
     const ageStr = rt || "?";
     const pidShort = c.pipeline_short || "?";
-    // Parse "Phase N" from current_phase. Section-name headers like
-    // "Parse plan" or "Post-landing tracking" yield NaN → fallback "?".
-    let curN = "?";
     const cp = c.current_phase;
+    let phaseFragment = "in-flight";
     if (typeof cp === "string" && cp) {
       const m = cp.match(/Phase\s+(\d+)/i);
-      if (m) curN = m[1];
+      phaseFragment = m ? "working on phase " + m[1] : "working on " + cp;
     }
-    const totalPhases = (plan.phase_count != null) ? plan.phase_count : "?";
-    const phaseStr = "phase " + curN + "/" + totalPhases;
     const tip = c.pipeline_id
       ? "claim pipeline=" + c.pipeline_id +
         " started=" + (c.started_at || "?") +
@@ -1016,7 +1028,7 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     row.appendChild(el("span", {
       cls: "claim-chip claim-chip--in-flight",
       attrs: { title: tip },
-      text: "in-flight · " + pidShort + " · " + phaseStr + " · " + ageStr,
+      text: phaseFragment + " · " + pidShort + " · " + ageStr,
     }));
     card.appendChild(row);
     card.setAttribute("aria-disabled", "true");

@@ -5,8 +5,9 @@
 # Node-stubbed JS harness — mirrors tests/test-fix-issues-claim-render-dom.sh
 # for the issue-side chip. Concerns:
 #   T3.11.a  buildPlanCard renders claim chip + aria-disabled
-#   T3.11.b  Chip text format: "in-flight · <pidShort> · phase N/M · <ageStr>"
-#   T3.11.c  Unparseable current_phase falls back to "phase ?/M"
+#   T3.11.b  Chip text: "working on phase N · <pidShort> · <ageStr>" (no /M,
+#            no "in-flight" prefix); progress bar reads N/M from the claim.
+#   T3.11.c  Non-numeric current_phase → "working on <header>" verbatim
 #   T3.11.d  Null pipeline_short / started_at fall back to "?"
 #   T3.11.e  Unclaimed plan retains draggable + no chip
 #
@@ -216,6 +217,14 @@ function findByClass(root, cls) {
   return null;
 }
 
+// The stub's textContent is per-node (not aggregated over descendants),
+// so collect all descendant text to assert on labels held by child spans.
+function collectText(node) {
+  let s = node.textContent || "";
+  for (const c of (node.children || [])) s += collectText(c);
+  return s;
+}
+
 // ------------------------------------------------------------------
 // T3.11.a — claim chip renders + aria-disabled + draggable removed
 // ------------------------------------------------------------------
@@ -249,7 +258,10 @@ function findByClass(root, cls) {
 }
 
 // ------------------------------------------------------------------
-// T3.11.b — chip text format "in-flight · <pid> · phase N/M · <age>"
+// T3.11.b — chip text format "working on phase N · <pid> · <age>"
+// The N/M progress framing now lives on the bar (driven from the same
+// claim.current_phase); the chip is the liveness/activity indicator and
+// drops the redundant "/M" denominator and the "in-flight" prefix.
 // ------------------------------------------------------------------
 {
   const plan = {
@@ -267,19 +279,28 @@ function findByClass(root, cls) {
   const chip = findByClass(card, "claim-chip");
   expectTrue(chip, "chip exists for format-spec check");
   if (chip) {
-    expectTrue(chip.textContent.indexOf("in-flight") >= 0,
-      "chip text starts with 'in-flight'");
+    expectTrue(chip.textContent.indexOf("working on phase 3") >= 0,
+      "chip text contains 'working on phase 3'");
     expectTrue(chip.textContent.indexOf("bar-xyz") >= 0,
       "chip text contains pipeline_short 'bar-xyz'");
-    expectTrue(chip.textContent.indexOf("phase 3/5") >= 0,
-      "chip text contains 'phase 3/5'");
+    expectTrue(chip.textContent.indexOf("/5") < 0 &&
+               chip.textContent.indexOf("in-flight") < 0,
+      "chip drops the redundant '/M' denominator and 'in-flight' prefix");
     expectTrue(/(s|m|h|d) ago/.test(chip.textContent) ||
                chip.textContent.indexOf("just now") >= 0,
       "chip text contains a non-empty age suffix");
-    // Strict format spec: "in-flight · <pidShort> · phase N/M · <ageStr>"
-    expectTrue(/^in-flight · bar-xyz · phase 3\/5 · /.test(chip.textContent),
-      "chip text matches format spec prefix 'in-flight · <pid> · phase N/M · '");
+    // Strict format spec: "working on phase N · <pidShort> · <ageStr>"
+    expectTrue(/^working on phase 3 · bar-xyz · /.test(chip.textContent),
+      "chip text matches format spec prefix 'working on phase N · <pid> · '");
   }
+  // Bar is driven from the claim's current_phase when claimed (NOT the
+  // stale main-tracker phases_done): phases_done=0 but current_phase=Phase 3
+  // → ratio "3 / 5 phases".
+  const cardText = collectText(card);
+  expectTrue(cardText.indexOf("3 / 5 phases") >= 0,
+    "progress bar reads '3 / 5 phases' from claim.current_phase, not '0 / 5'");
+  expectTrue(cardText.indexOf("0 / 5 phases") < 0,
+    "progress bar does NOT show stale phases_done '0 / 5'");
 }
 
 // ------------------------------------------------------------------
@@ -301,8 +322,11 @@ function findByClass(root, cls) {
   const chip = findByClass(card, "claim-chip");
   expectTrue(chip, "chip exists with section-name current_phase");
   if (chip) {
-    expectTrue(chip.textContent.indexOf("phase ?/6") >= 0,
-      "section-name current_phase falls back to 'phase ?/6'");
+    // Non-numeric current_phase: show the raw header verbatim, not "phase ?".
+    expectTrue(chip.textContent.indexOf("working on Parse plan") >= 0,
+      "section-name current_phase shows 'working on Parse plan' verbatim");
+    expectTrue(chip.textContent.indexOf("phase ?") < 0,
+      "no 'phase ?' fragment for non-numeric current_phase");
   }
 }
 
@@ -325,8 +349,11 @@ function findByClass(root, cls) {
   const chip = findByClass(card, "claim-chip");
   expectTrue(chip, "chip exists with null current_phase");
   if (chip) {
-    expectTrue(chip.textContent.indexOf("phase ?/4") >= 0,
-      "null current_phase falls back to 'phase ?/4'");
+    // Null/absent current_phase: bare "in-flight" fallback, no phase fragment.
+    expectTrue(/^in-flight · /.test(chip.textContent),
+      "null current_phase falls back to bare 'in-flight · ...'");
+    expectTrue(chip.textContent.indexOf("phase") < 0,
+      "no 'phase' fragment when current_phase is null");
   }
 }
 
@@ -349,8 +376,9 @@ function findByClass(root, cls) {
   const chip = findByClass(card, "claim-chip");
   expectTrue(chip, "chip rendered for null-metadata claim");
   if (chip) {
-    expect(chip.textContent, "in-flight · ? · phase ?/3 · ?",
-      "all-null claim chip text is 'in-flight · ? · phase ?/3 · ?'");
+    // Null current_phase → bare "in-flight"; null pid/age → "?".
+    expect(chip.textContent, "in-flight · ? · ?",
+      "all-null claim chip text is 'in-flight · ? · ?'");
   }
 }
 
