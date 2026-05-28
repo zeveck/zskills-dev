@@ -134,5 +134,67 @@ while IFS=$'\t' read -r tag label detail; do
 done <<< "$RESULT"
 
 echo ""
+echo "=== hooks.json registered-script existence (#765) ==="
+
+# #765: assert every script registered in hooks/hooks.json is backed by a real
+# source-tree file. The dangling SessionStart -> session-start-materialise.sh
+# forward-reference (a Phase-2 artifact) shipped green because the only check
+# that would have caught it (`claude plugin validate --strict`) is SKIPPED when
+# the `claude` CLI is off PATH. This assertion runs unconditionally (Python
+# stdlib only) so the gap is closed regardless of CLI availability.
+#
+# Backing-file rule: a registered `hooks/X.sh` is satisfied by EITHER
+# `hooks/X.sh` directly OR its `hooks/X.sh.template` sibling. The latter covers
+# the D4 `.template` hooks (`block-agents.sh`, `block-unsafe-project.sh`): the
+# suffixless plugin-tree copy is generated at release time by
+# build-plugin-release.sh, so in the source tree only the `.template` form
+# exists. `session-start-materialise.sh` has NEITHER form, so it is still
+# caught.
+HOOKS_RESULT=$("$PYTHON" - <<'PY'
+import json, os, re
+
+def out(ok, label, detail=""):
+    print(f"{'PASS' if ok else 'FAIL'}\t{label}\t{detail}")
+
+HOOKS = "hooks/hooks.json"
+try:
+    with open(HOOKS) as f:
+        doc = json.load(f)
+    out(True, f"{HOOKS} parses as JSON")
+except Exception as e:
+    out(False, f"{HOOKS} parses as JSON", str(e))
+    raise SystemExit(0)
+
+# Walk every command string and extract the ${CLAUDE_PLUGIN_ROOT}-relative
+# script path: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/foo.sh"` -> `hooks/foo.sh`.
+pat = re.compile(r'\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?\.sh)')
+paths = []
+for event, entries in doc.get("hooks", {}).items():
+    for entry in entries:
+        for h in entry.get("hooks", []):
+            cmd = h.get("command", "")
+            for m in pat.finditer(cmd):
+                paths.append((event, m.group(1)))
+
+out(len(paths) > 0, "hooks.json registers at least one script command",
+    f"{len(paths)} command(s)")
+
+for event, rel in paths:
+    backed = os.path.isfile(rel) or os.path.isfile(rel + ".template")
+    out(backed, f"registered script is backed by source-tree file: {rel} ({event})",
+        "" if backed else "no .sh and no .sh.template sibling")
+PY
+)
+
+while IFS=$'\t' read -r tag label detail; do
+  [ -z "$tag" ] && continue
+  if [ "$tag" = "PASS" ]; then
+    pass "$label"
+  else
+    fail "$label ${detail:+— $detail}"
+  fi
+done <<< "$HOOKS_RESULT"
+
+echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed (of $((PASS_COUNT + FAIL_COUNT)))"
 exit "$FAIL_COUNT"
