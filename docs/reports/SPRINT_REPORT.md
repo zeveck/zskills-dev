@@ -2034,3 +2034,18 @@ Pool: 1 open candidate considered (dashboard Ready)
 
 ### Not Fixed
 (none)
+
+## Sprint — 2026-05-27 23:43 [UNFINALIZED]
+
+**Mode:** auto | **Source:** dashboard | **Landing:** pr
+
+### Fixed
+| # | Title | Worktree | Commit | Tests | Agent Verify | User Verify |
+|---|-------|----------|--------|-------|-------------|-------------|
+| #716 | /cleanup-merged redesign (preview-default, positional tokens, remote, protected) | fix-issue-716 | 8974032 | 5933/5933 | PASS (diff + mirror + full suite) | N/A |
+| #717 | Dashboard Branches tab: state pills, grouping, bulk copy, nav | fix-issue-717 | b4ab678 | 5957/5957 | PASS (diff + mirror + visual + full suite) | NEEDED (UI) |
+
+**Note:** Both reconsidered from plan-scale via /fix-issues reconsider + #720 counter-signal; re-triaged as actionable (locked designs, existing patterns).
+
+### Not Fixed
+(none)
