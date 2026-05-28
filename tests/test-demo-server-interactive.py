@@ -48,7 +48,13 @@ def load_module():
 
 
 def fast_forward(sim, seconds):
-    """Pretend `seconds` have elapsed by rewinding the monotonic origin."""
+    """Pretend `seconds` have elapsed by rewinding the monotonic origin.
+
+    The sim clock is LAZILY anchored (start_time is None until the first
+    /api/state request), so anchor it here first if a test fast-forwards
+    before its first build_snapshot — exactly what a "page opened" would do.
+    """
+    sim._anchor()
     sim.start_time -= seconds
 
 
@@ -311,6 +317,199 @@ def main():
         ok("structural: victory is False before any arrivals complete")
     else:
         bad("structural: victory true at t=0")
+
+    # ==================================================================
+    # NEW LIFECYCLE CASES (first-load clock anchor, seed, branches +
+    # activity from the work lifecycle, realistic landing_modes).
+    # ==================================================================
+
+    # ------------------------------------------------------------------
+    # (lifecycle a) Clock does NOT advance until the first /api/state.
+    # ------------------------------------------------------------------
+    sim = mod.Simulation(seed=11, concurrency=3)
+    # No build_snapshot yet — clock is unanchored.
+    if sim.start_time is None and sim.elapsed() == 0.0:
+        ok("(a) fresh sim: clock unanchored (start_time None, elapsed 0)")
+    else:
+        bad("(a) clock anchored before first /api/state",
+            "start_time=%s elapsed=%s" % (sim.start_time, sim.elapsed()))
+
+    # Tick directly (as a poll-without-state would NOT, but to prove no
+    # arrivals happen at t=0 beyond the seeded pair) — nothing should arrive
+    # because elapsed() is pinned to 0 until anchored.
+    sim.tick()
+    arrived_pre = [it for it in sim._all_items() if it.arrived]
+    # At elapsed==0 the seeded pair (arrive_at==0) DOES arrive on tick; that
+    # is the seed, covered below. The key assertion: no NON-seed item arrived.
+    non_seed_arrived = [it for it in arrived_pre if it.arrive_at > 0.0]
+    if not non_seed_arrived:
+        ok("(a) no non-seed item arrives while clock is pinned at t=0")
+    else:
+        bad("(a) a future-arrival item arrived before the clock advanced",
+            "count=%d" % len(non_seed_arrived))
+
+    # Simulate the first /api/state call: build_snapshot anchors the clock.
+    snap = sim.build_snapshot()
+    if sim.start_time is not None and snap["demo"]["elapsed_seconds"] >= 0.0:
+        ok("(a) first /api/state anchors the clock (timeline begins at t=0)")
+    else:
+        bad("(a) build_snapshot did not anchor the clock")
+
+    # A second poll does NOT reset the anchor.
+    anchor_after_first = sim.start_time
+    sim.build_snapshot()
+    if sim.start_time == anchor_after_first:
+        ok("(a) subsequent polls do NOT reset the anchored clock")
+    else:
+        bad("(a) anchor moved on a later poll")
+
+    # ------------------------------------------------------------------
+    # (lifecycle b) Exactly one plan + one issue seeded at the anchor.
+    # ------------------------------------------------------------------
+    sim = mod.Simulation(seed=12, concurrency=3)
+    snap = sim.build_snapshot()  # first /api/state at t=0
+    seeded_plans = [p for p in snap["plans"]]
+    seeded_issues = [i for i in snap["issues"]]
+    if len(seeded_plans) == 1 and len(seeded_issues) == 1:
+        ok("(b) exactly one plan + one issue present at the anchored t=0")
+    else:
+        bad("(b) wrong seed count at t=0",
+            "plans=%d issues=%d" % (len(seeded_plans), len(seeded_issues)))
+    if (seeded_plans and seeded_plans[0]["queue"]["column"] == mod.PLAN_ARRIVAL_COLUMN
+            and seeded_issues and seeded_issues[0]["queue"]["column"] == mod.ISSUE_ARRIVAL_COLUMN):
+        ok("(b) seeded plan is in Drafted, seeded issue is in Triage")
+    else:
+        bad("(b) seeded items not in their arrival columns")
+
+    # ------------------------------------------------------------------
+    # (lifecycle c) A claimed Ready item produces a branch (Active bucket via
+    # worktrees) + activity entries.
+    # ------------------------------------------------------------------
+    sim = mod.Simulation(seed=13, concurrency=3)
+    sim.build_snapshot()      # anchor
+    fast_forward(sim, 10000)  # all arrived
+    snap = sim.build_snapshot()
+    target = sim.plans[0].slug
+    payload = {
+        "plans": {c: [] for c in mod.PLAN_DRAG_COLUMNS},
+        "issues": {c: [] for c in mod.ISSUE_DRAG_COLUMNS},
+    }
+    for p in snap["plans"]:
+        if p["queue"]["column"] == mod.COMPLETED_COLUMN:
+            continue
+        col = "ready" if p["slug"] == target else "backlog"
+        payload["plans"][col].append({"slug": p["slug"], "mode": None})
+    for i in snap["issues"]:
+        if i["queue"]["column"] == mod.COMPLETED_COLUMN:
+            continue
+        payload["issues"]["backlog"].append(i["number"])
+    sim.apply_queue(payload)
+    snap = sim.build_snapshot()
+
+    branch_name = "feat/%s" % target
+    br = [b for b in snap["branches"] if b["name"] == branch_name]
+    wt = [w for w in snap["worktrees"] if w["branch"] == branch_name]
+    if br and wt:
+        ok("(c) claimed Ready plan produces a branch + worktree entry")
+    else:
+        bad("(c) no branch/worktree for claimed plan",
+            "branches=%d worktrees=%d" % (len(br), len(wt)))
+    # classifyBranch: worktree present + landed None -> Active bucket.
+    if wt and wt[0]["landed"] is None and wt[0]["category"] == "active":
+        ok("(c) claimed-but-incomplete worktree -> Active bucket (landed None)")
+    else:
+        bad("(c) claimed worktree not in Active bucket",
+            "landed=%s" % (wt and wt[0]["landed"]))
+    # Activity entries for the claim lifecycle.
+    acts = [a for a in snap["activity"] if a["id"] == target]
+    act_kinds = {a["kind"] for a in acts}
+    if {"claimed", "implement"}.issubset(act_kinds):
+        ok("(c) claimed plan emits claimed + implement activity entries")
+    else:
+        bad("(c) missing claim/implement activity", "kinds=%s" % act_kinds)
+    if acts and all(a["skill"] == "run-plan" for a in acts):
+        ok("(c) plan activity carries skill=run-plan")
+    else:
+        bad("(c) plan activity skill not run-plan",
+            "skills=%s" % {a["skill"] for a in acts})
+
+    # ------------------------------------------------------------------
+    # (lifecycle d) On completion the branch flips to Landed + a land entry.
+    # ------------------------------------------------------------------
+    fast_forward(sim, sim._by_slug[target].work_duration + 5)
+    snap = sim.build_snapshot()
+    wt = [w for w in snap["worktrees"] if w["branch"] == branch_name]
+    if wt and wt[0]["landed"] and wt[0]["category"] == "landed":
+        ok("(d) completed item's worktree flips to Landed (landed.status set)")
+    else:
+        bad("(d) completed worktree did not flip to Landed",
+            "landed=%s" % (wt and wt[0]["landed"]))
+    acts = [a for a in snap["activity"] if a["id"] == target]
+    if any(a["kind"] == "land-pr" for a in acts):
+        ok("(d) completion emits a land-pr activity entry")
+    else:
+        bad("(d) no land-pr activity on completion",
+            "kinds=%s" % {a["kind"] for a in acts})
+    # Activity is newest-first: the land-pr entry should precede claimed.
+    kinds_order = [a["kind"] for a in acts]
+    if ("land-pr" in kinds_order and "claimed" in kinds_order
+            and kinds_order.index("land-pr") < kinds_order.index("claimed")):
+        ok("(d) activity feed is newest-first (land-pr before claimed)")
+    else:
+        bad("(d) activity not newest-first", "order=%s" % kinds_order)
+
+    # ------------------------------------------------------------------
+    # (lifecycle e) Non-worked items produce NO branch and NO activity.
+    # ------------------------------------------------------------------
+    sim = mod.Simulation(seed=14, concurrency=3)
+    sim.build_snapshot()      # anchor
+    fast_forward(sim, 10000)  # all arrived
+    snap = sim.build_snapshot()
+    # Place EVERYTHING in non-Ready columns (no work ever starts).
+    payload = {
+        "plans": {c: [] for c in mod.PLAN_DRAG_COLUMNS},
+        "issues": {c: [] for c in mod.ISSUE_DRAG_COLUMNS},
+    }
+    for p in snap["plans"]:
+        if p["queue"]["column"] == mod.COMPLETED_COLUMN:
+            continue
+        payload["plans"]["backlog"].append({"slug": p["slug"], "mode": None})
+    for i in snap["issues"]:
+        if i["queue"]["column"] == mod.COMPLETED_COLUMN:
+            continue
+        payload["issues"]["backlog"].append(i["number"])
+    sim.apply_queue(payload)
+    fast_forward(sim, 500)
+    snap = sim.build_snapshot()
+    if not snap["branches"] and not snap["worktrees"]:
+        ok("(e) non-worked items produce NO branch and NO worktree")
+    else:
+        bad("(e) phantom branches/worktrees for unworked items",
+            "branches=%d worktrees=%d" % (len(snap["branches"]), len(snap["worktrees"])))
+    if not snap["activity"]:
+        ok("(e) non-worked items produce NO activity entries")
+    else:
+        bad("(e) phantom activity for unworked items",
+            "count=%d" % len(snap["activity"]))
+
+    # ------------------------------------------------------------------
+    # (lifecycle f) landing_modes include a mix (not all null).
+    # ------------------------------------------------------------------
+    sim = mod.Simulation(seed=15, concurrency=3)
+    sim.build_snapshot()
+    fast_forward(sim, 10000)  # ensure all 20 plans arrived
+    snap = sim.build_snapshot()
+    modes = [p["landing_mode"] for p in snap["plans"]]
+    distinct = set(modes)
+    has_phase = "phase" in distinct
+    has_finish = "finish" in distinct
+    has_null = None in distinct
+    all_null = all(m is None for m in modes)
+    if has_phase and has_finish and has_null and not all_null:
+        ok("(f) landing_modes are a realistic mix (phase + finish + some null)")
+    else:
+        bad("(f) landing_modes not a proper mix",
+            "distinct=%s n=%d" % (distinct, len(modes)))
 
     print("")
     print("Results: %d passed, %d failed (of %d)" % (PASS, FAIL, PASS + FAIL))

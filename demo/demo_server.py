@@ -58,11 +58,16 @@ DEFAULT_CONCURRENCY = 3
 WORK_DURATION_BASE = 32        # seconds (lands ~20-45s with the variance)
 WORK_DURATION_VARIANCE = 13
 
-# Arrival cadence: a new item appears every ARRIVAL_GAP_BASE +/- variance
-# seconds. The first couple arrive quickly so the board isn't empty.
-ARRIVAL_GAP_BASE = 28          # ~every 20-40s with the variance below
-ARRIVAL_GAP_VARIANCE = 10
-FIRST_ARRIVAL_DELAY = 2        # first card lands almost immediately
+# Arrival cadence. There are 40 items total (20 plans + 20 issues). Two of
+# them (one plan + one issue) are SEEDED at the anchored t=0 so the board is
+# never empty. The remaining 38 arrive across ~10 minutes (600s). With an
+# average gap of ARRIVAL_GAP_BASE seconds that lands the last item at
+# ~38 * 15s ≈ 570s, comfortably inside the ~10-minute window. Keep some
+# randomness via the variance so arrivals don't look metronomic.
+ARRIVAL_WINDOW_SECONDS = 600   # all 40 arrive within ~10 minutes
+ARRIVAL_GAP_BASE = 15          # ~every 6-24s with the variance below
+ARRIVAL_GAP_VARIANCE = 9
+FIRST_ARRIVAL_DELAY = 0        # the seeded pair is present at t=0
 
 # Real-frontend column shapes (mirror server.py's PLAN_COLUMNS /
 # ISSUE_COLUMNS — `completed` is read-only, NOT in the POST body).
@@ -72,6 +77,24 @@ PLAN_ARRIVAL_COLUMN = "drafted"
 ISSUE_ARRIVAL_COLUMN = "triage"
 READY_COLUMN = "ready"
 COMPLETED_COLUMN = "completed"
+
+# Branch + Recent-Activity lifecycle. Branches/worktrees/activity track ONLY
+# actual in-flight + completed work (items the user dragged to Ready that got
+# claimed). The activity feed is newest-first and bounded (the real collector
+# caps in memory at 200; the UI renders the first 20).
+ACTIVITY_CAP = 200
+WORKTREE_BASE = "/starship/.worktrees"
+LANDED_STATUS = "full"  # classifyBranch -> "landed" bucket when worktree.landed set
+
+# Realistic mix of plan landing_modes (#5). 20 plans: a spread of "phase",
+# "finish", and a few genuine None (renders "unknown"). Index-aligned to the
+# 20 PLAN_DEFS below.
+PLAN_LANDING_MODES = [
+    "phase", "finish", "phase", None, "finish",
+    "phase", "phase", "finish", None, "phase",
+    "finish", "phase", "finish", "phase", None,
+    "finish", "phase", "phase", "finish", "phase",
+]
 
 # ---------------------------------------------------------------------------
 # Sci-fi content
@@ -227,9 +250,11 @@ class PlanItem:
 
     __slots__ = ("slug", "title", "phase_defs", "arrive_at",
                  "column", "arrived", "completed", "completed_at_elapsed",
-                 "started_at_elapsed", "work_duration", "pipeline_id")
+                 "started_at_elapsed", "work_duration", "pipeline_id",
+                 "landing_mode", "emitted")
 
-    def __init__(self, slug, title, phase_defs, arrive_at, rng):
+    def __init__(self, slug, title, phase_defs, arrive_at, rng,
+                 landing_mode=None):
         self.slug = slug
         self.title = title
         self.phase_defs = phase_defs
@@ -247,6 +272,24 @@ class PlanItem:
                               + rng.randint(-WORK_DURATION_VARIANCE,
                                             WORK_DURATION_VARIANCE))
         self.pipeline_id = "run-plan.demo-%04d" % rng.randint(1000, 9999)
+        self.landing_mode = landing_mode
+        # Set of lifecycle phase keys already emitted to the activity feed
+        # (so each transition emits exactly once): "claimed","implement",
+        # "verify","landed".
+        self.emitted = set()
+
+    # -- branch / worktree identity (only meaningful once worked) --------
+    @property
+    def branch_name(self):
+        return "feat/%s" % self.slug
+
+    @property
+    def worktree_path(self):
+        return "%s/feat-%s" % (WORKTREE_BASE, self.slug)
+
+    @property
+    def activity_skill(self):
+        return "run-plan"
 
     @property
     def kind(self):
@@ -266,7 +309,8 @@ class IssueItem:
 
     __slots__ = ("number", "title", "arrive_at",
                  "column", "arrived", "completed", "completed_at_elapsed",
-                 "started_at_elapsed", "work_duration", "pipeline_id")
+                 "started_at_elapsed", "work_duration", "pipeline_id",
+                 "emitted")
 
     def __init__(self, number, title, arrive_at, rng):
         self.number = number
@@ -281,6 +325,20 @@ class IssueItem:
                               + rng.randint(-WORK_DURATION_VARIANCE,
                                             WORK_DURATION_VARIANCE))
         self.pipeline_id = "fix-issues.demo-%04d" % rng.randint(1000, 9999)
+        self.emitted = set()
+
+    # -- branch / worktree identity (only meaningful once worked) --------
+    @property
+    def branch_name(self):
+        return "fix/issue-%d" % self.number
+
+    @property
+    def worktree_path(self):
+        return "%s/fix-issue-%d" % (WORKTREE_BASE, self.number)
+
+    @property
+    def activity_skill(self):
+        return "fix-issues"
 
     @property
     def kind(self):
@@ -305,7 +363,12 @@ class Simulation:
     """
 
     def __init__(self, seed=None, concurrency=DEFAULT_CONCURRENCY):
-        self.start_time = time.monotonic()
+        # The simulation clock is LAZILY anchored: it does NOT start at
+        # construction. `start_time` stays None until the FIRST /api/state
+        # request (build_snapshot) anchors it via _anchor(). This lets the
+        # server sit idle indefinitely — opening the dashboard begins the
+        # timeline from t=0. /api/health does NOT anchor.
+        self.start_time = None
         self.rng = random.Random(seed if seed is not None else int(time.time()))
         self.concurrency = concurrency
         self.lock = threading.Lock()
@@ -313,35 +376,81 @@ class Simulation:
         self.issues = []
         self._by_slug = {}
         self._by_number = {}
+        # Recent Activity feed: list of records (newest-first when emitted in
+        # increasing-elapsed order then reversed at snapshot time). We append
+        # in chronological order and store the elapsed-at so timestamps are
+        # relative to the anchored clock.
+        self._activity = []  # list of (elapsed_at, record-without-timestamp)
         self._init_items()
 
     def _init_items(self):
-        # Interleave plan and issue arrivals on a single staggered timeline
-        # so both kinds show up early. Each arrival is ARRIVAL_GAP_BASE +/-
-        # variance seconds after the previous one.
-        defs = []
-        for slug, title, phases in PLAN_DEFS:
-            defs.append(("plan", slug, title, phases))
-        for num, title in ISSUE_DEFS:
-            defs.append(("issue", num, title, None))
-        self.rng.shuffle(defs)
+        # Interleave plan and issue arrivals on a single staggered timeline so
+        # both kinds show up. Exactly one plan + one issue are SEEDED at the
+        # anchored t=0 (arrive_at == 0) so the board is never empty. The
+        # remaining 38 arrive across ~ARRIVAL_WINDOW_SECONDS with an average
+        # gap of ARRIVAL_GAP_BASE +/- variance.
+        plan_defs = list(PLAN_DEFS)
+        issue_defs = list(ISSUE_DEFS)
 
-        t = FIRST_ARRIVAL_DELAY
-        for kind, a, b, c in defs:
+        # Pick the seed pair (deterministic under --seed): first of each after
+        # a shuffle, so it isn't always the same content.
+        self.rng.shuffle(plan_defs)
+        self.rng.shuffle(issue_defs)
+
+        seed_plan = plan_defs[0]
+        seed_issue = issue_defs[0]
+
+        defs = []
+        # Seeded pair: arrive_at == 0 (present at the anchored t=0).
+        defs.append(("plan", seed_plan[0], seed_plan[1], seed_plan[2], 0.0))
+        defs.append(("issue", seed_issue[0], seed_issue[1], None, 0.0))
+
+        # The rest arrive on a staggered timeline starting just after t=0.
+        rest = ([("plan", s, t, ph) for s, t, ph in plan_defs[1:]]
+                + [("issue", n, t, None) for n, t in issue_defs[1:]])
+        self.rng.shuffle(rest)
+
+        t = float(FIRST_ARRIVAL_DELAY)
+        for kind, a, b, c in rest:
             gap = ARRIVAL_GAP_BASE + self.rng.randint(-ARRIVAL_GAP_VARIANCE,
                                                        ARRIVAL_GAP_VARIANCE)
-            gap = max(5, gap)
+            gap = max(1, gap)
+            t += gap
+            defs.append((kind, a, b, c, t))
+
+        # Map each plan slug to its landing_mode via the original PLAN_DEFS
+        # order so the mix is stable per slug regardless of arrival shuffle.
+        mode_by_slug = {
+            slug: PLAN_LANDING_MODES[i % len(PLAN_LANDING_MODES)]
+            for i, (slug, _t, _ph) in enumerate(PLAN_DEFS)
+        }
+
+        for kind, a, b, c, arrive_at in defs:
             if kind == "plan":
-                item = PlanItem(a, b, c, t, self.rng)
+                item = PlanItem(a, b, c, arrive_at, self.rng,
+                                landing_mode=mode_by_slug.get(a))
                 self.plans.append(item)
                 self._by_slug[a] = item
             else:
-                item = IssueItem(a, b, t, self.rng)
+                item = IssueItem(a, b, arrive_at, self.rng)
                 self.issues.append(item)
                 self._by_number[a] = item
-            t += gap
+
+    def _anchor(self):
+        """Start the simulation clock on the first /api/state request.
+
+        Idempotent: subsequent calls do NOT reset the clock, so ongoing polls
+        never rewind the timeline. Caller must hold self.lock OR call before
+        any concurrent access (build_snapshot holds the lock around tick/build,
+        but anchoring itself is a cheap monotonic read)."""
+        if self.start_time is None:
+            self.start_time = time.monotonic()
 
     def elapsed(self):
+        # Before the clock is anchored, no time has passed (t=0 / nothing
+        # arrived). After anchoring, elapsed is measured from the anchor.
+        if self.start_time is None:
+            return 0.0
         return time.monotonic() - self.start_time
 
     # -- core tick -----------------------------------------------------
@@ -371,6 +480,9 @@ class Simulation:
                     item.completed_at_elapsed = elapsed
                     item.started_at_elapsed = None
                     item.column = COMPLETED_COLUMN
+                    # Lifecycle: verify pass + land/merge entries.
+                    self._emit(item, "verify", elapsed)
+                    self._emit(item, "landed", elapsed)
 
         # 3. Fill free concurrency slots from waiting Ready items.
         #    "Waiting" = arrived, in Ready, not completed, not yet started.
@@ -385,6 +497,56 @@ class Simulation:
             waiting.sort(key=lambda it: it.arrive_at)
             for it in waiting[:free]:
                 it.started_at_elapsed = elapsed
+                # Lifecycle: a claim was just acquired — emit branch creation
+                # + the implement phase start.
+                self._emit(it, "claimed", elapsed)
+                self._emit(it, "implement", elapsed)
+
+    # -- activity feed --------------------------------------------------
+
+    # Lifecycle phase -> (kind, status) shaping. `kind` mirrors the real
+    # tracking-marker `kind` vocabulary; status drives activityStatusClass().
+    _PHASE_SHAPE = {
+        "claimed":   ("claimed", "running"),
+        "implement": ("implement", "running"),
+        "verify":    ("verify", "pass"),
+        "landed":    ("land-pr", "complete"),
+    }
+
+    def _emit(self, item, phase, elapsed):
+        """Append a Recent-Activity record for a work-lifecycle transition.
+
+        Emits each phase at most once per item (guarded by item.emitted), so
+        only ACTUAL in-flight/completed work produces activity. Records are
+        shaped like the real collector's tracking-marker rows (timestamp,
+        pipeline, kind, id, skill, status, output, location, parent)."""
+        if phase in item.emitted:
+            return
+        item.emitted.add(phase)
+        kind, status = self._PHASE_SHAPE[phase]
+        ident = item.slug if item.kind == "plan" else str(item.number)
+        if phase == "landed":
+            output = "merged %s to main" % item.branch_name
+        elif phase == "claimed":
+            output = "claimed; created %s" % item.branch_name
+        elif phase == "implement":
+            output = "implementing on %s" % item.branch_name
+        else:
+            output = "verification %s on %s" % (status, item.branch_name)
+        self._activity.append((elapsed, {
+            "pipeline": item.pipeline_id,
+            "kind": kind,
+            "id": ident,
+            "skill": item.activity_skill,
+            "status": status,
+            "output": output,
+            "location": "pipeline",
+            "parent": None,
+        }))
+        # Bound the log (newest kept). Activity is appended chronologically;
+        # cap from the tail so the most-recent ACTIVITY_CAP survive.
+        if len(self._activity) > ACTIVITY_CAP:
+            self._activity = self._activity[-ACTIVITY_CAP:]
 
     def _all_items(self):
         for it in self.plans:
@@ -462,6 +624,8 @@ class Simulation:
     # -- snapshot ------------------------------------------------------
 
     def build_snapshot(self):
+        # /api/state is the ONLY caller — anchor the clock here on first call.
+        self._anchor()
         self.tick()
         with self.lock:
             return self._build_snapshot_locked(self.elapsed())
@@ -530,7 +694,7 @@ class Simulation:
                 "category": None,
                 "meta_plan": None,
                 "sub_plans": None,
-                "landing_mode": None,
+                "landing_mode": item.landing_mode,
                 "has_report": False,
                 "report_path": None,
                 "report": None,
@@ -590,6 +754,9 @@ class Simulation:
         done, total = self.progress()
         in_flight_count = sum(1 for it in self._all_items() if it.in_flight)
 
+        worktrees, branches = self._build_branches_locked(elapsed)
+        activity = self._build_activity_locked(elapsed)
+
         return {
             "version": "1.0",
             "updated_at": now_iso,
@@ -598,9 +765,9 @@ class Simulation:
             "repo_url": "",
             "plans": plans_list,
             "issues": issues_list,
-            "worktrees": [],
-            "branches": [],
-            "activity": [],
+            "worktrees": worktrees,
+            "branches": branches,
+            "activity": activity,
             "queues": {
                 "default_mode": "phase",
                 "plans": {
@@ -639,6 +806,90 @@ class Simulation:
                 "elapsed_seconds": round(elapsed, 1),
             },
         }
+
+    # -- branches / worktrees / activity from the work lifecycle --------
+
+    def _worked_items(self):
+        """Items that have entered the work lifecycle (claimed at least once).
+
+        These are exactly the items that produced a branch + worktree +
+        activity. Items still in Triage/Drafted/Backlog/Discarded, or waiting
+        in Ready beyond the concurrency cap, never get `claimed` emitted and
+        so produce NO branch and NO activity."""
+        for it in self._all_items():
+            if "claimed" in it.emitted:
+                yield it
+
+    def _build_branches_locked(self, elapsed):
+        """Build worktrees[] + branches[] for in-flight/completed work only.
+
+        Shapes mirror the real collector (collect.py _list_worktrees /
+        _list_branches). classifyBranch keys on the worktree association:
+          * worked + not completed -> worktree.landed = None -> "active"
+          * completed              -> worktree.landed = {status} -> "landed"
+        """
+        worktrees = []
+        branches = []
+        for it in self._worked_items():
+            name = it.branch_name
+            # When did this branch's last commit happen? Completion time if
+            # completed, else when work started (claim time). Express relative
+            # to the anchored clock.
+            if it.completed:
+                last_at = elapsed - (it.completed_at_elapsed or elapsed)
+                subject = ("land-pr: merged %s" % name if it.kind == "plan"
+                           else "fix: %s" % it.title)
+            else:
+                started = it.started_at_elapsed if it.started_at_elapsed is not None else elapsed
+                last_at = elapsed - started
+                subject = ("wip: %s" % it.title)
+            landed = None
+            category = "active"
+            if it.completed:
+                landed = {
+                    "status": LANDED_STATUS,
+                    "date": _ago_iso(last_at),
+                    "source": it.activity_skill,
+                }
+                category = "landed"
+            # age_seconds: how long the worktree has existed (since claim).
+            started_for_age = it.started_at_elapsed
+            if started_for_age is None and not it.completed:
+                started_for_age = elapsed
+            if it.completed:
+                # No live in-flight start; age from completion baseline.
+                age_seconds = int(max(0.0, last_at))
+            else:
+                age_seconds = int(max(0.0, elapsed - (started_for_age or elapsed)))
+            worktrees.append({
+                "path": it.worktree_path,
+                "branch": name,
+                "category": category,
+                "landed": landed,
+                "ahead": 1 if not it.completed else 0,
+                "behind": 0,
+                "age_seconds": age_seconds,
+            })
+            branches.append({
+                "name": name,
+                "last_commit_at": _ago_iso(last_at),
+                "upstream": None,
+                "last_commit_subject": subject,
+                "locality": "local",
+            })
+        return worktrees, branches
+
+    def _build_activity_locked(self, elapsed):
+        """Recent Activity feed — newest-first, capped, timestamps relative to
+        the anchored clock. Built from the chronological _activity log."""
+        out = []
+        for at, rec in self._activity:
+            row = dict(rec)
+            row["timestamp"] = _ago_iso(elapsed - at)
+            out.append(row)
+        # Newest-first (the log is appended chronologically).
+        out.reverse()
+        return out[:ACTIVITY_CAP]
 
 
 # ---------------------------------------------------------------------------
