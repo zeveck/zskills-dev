@@ -1,5 +1,24 @@
 # Sprint Report
 
+## Sprint — 2026-05-28 (dashboard, manual `now` trigger) — #759
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge) | **Trigger:** manual `/fix-issues now auto` (user dragged #759 into Ready)
+
+### Fixed
+| # | Title | Branch | PR | Tests | Agent Verify | User Verify |
+|---|-------|--------|----|----|-------------|-------------|
+| #759 | test_zskills_monitor_collect.sh worktree-portable assertion races on live claim.age_seconds | `fix-issue-759` | #766 (merged) | 6055/6055 | PASS — implementer reproduced the race under a held plan claim (old projection byte_id=False, new byte_id=True), proved an over-strip guard (tampering claim.pipeline_id still caught), and confirmed no source mutation; orchestrator read the full 17-line diff | N/A (test-only) |
+
+### Notable decisions
+
+- **Precise strip, not a blanket drop.** The worktree-portability byte-identity check compares two back-to-back `collect_snapshot()` reads. It already drops `updated_at` but not the per-plan `claim.age_seconds` (a live `now − started_at` value). Fix deep-copies the plans and strips ONLY `age_seconds`, keeping the rest of the claim (`pipeline_id`, `started_at`, `current_phase`, `pipeline_short`) in the comparison — the invariant is MAIN_ROOT resolution, and a blanket `claim`-drop would weaken the check unnecessarily.
+- **Transient gh-auth blip during landing.** `pr-monitor.sh` exited 20 on a momentary `gh auth status` failure mid-run; `gh auth status` was valid on immediate re-check and the re-monitor passed. No token actually expired — matches the known transient-poll-failure pattern; re-poll resolved it.
+- **Concurrent pipeline observed.** During this fire a sibling pipeline (`fix-issues.sprint-20260528-130159-dashb`) held a claim on #765 — the supported parallel-pipeline case. This fire respected that claim and did not touch #765. (Caveat: with #739 having removed claim TTL/sweep, a dead sibling's claim no longer auto-expires; release manually if orphaned.)
+
+### Landing
+
+PR mode. rebase → push → CI monitor (one transient re-poll) → auto-merge → FF local main → `.landed` → claim release.
+
 ## Sprint — 2026-05-28 (dashboard queue-worker, */30 cron) — #755
 
 **Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge)
