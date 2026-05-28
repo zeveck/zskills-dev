@@ -265,5 +265,64 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertNotIn("claim", plans[1])
 
 
+class DerivePipelineShortTests(unittest.TestCase):
+    """_derive_pipeline_short: human-meaningful short label from a pipeline id.
+
+    Regression coverage for the bug where `run-plan.plugin-distribution`
+    rendered as "ribution" (blind [-8:] suffix slice) and multi-hyphen plan
+    slugs were mangled by a bare `len(parts) >= 4` sprint heuristic.
+    """
+
+    def test_run_plan_slug_shown_whole(self):
+        # Was the bug: "ribution". Now the whole slug.
+        self.assertEqual(
+            collect._derive_pipeline_short("run-plan.plugin-distribution"),
+            "plugin-distribution",
+        )
+
+    def test_sprint_id_keeps_time_slug_tail(self):
+        # Real sprint shape (sprint-<digits>-<digits>-...) still distinguishes
+        # concurrent sprints by the time+slug tail.
+        self.assertEqual(
+            collect._derive_pipeline_short(
+                "fix-issues.sprint-20260521-010731-foo"),
+            "010731-foo",
+        )
+
+    def test_multi_hyphen_plan_slug_not_mangled(self):
+        # Pre-fix this hit the `len(parts) >= 4` branch and returned
+        # "and-rename". Now the whole slug (capped — see length test).
+        self.assertEqual(
+            collect._derive_pipeline_short(
+                "run-plan.dashboard-tabs-and-rename-5a"),
+            "dashboard-tabs-and-rename-5a",
+        )
+
+    def test_short_three_part_slug_whole(self):
+        # Pre-fix the `[-8:]` fallback gave "xecution".
+        self.assertEqual(
+            collect._derive_pipeline_short("run-plan.restore-chunked-execution"),
+            "restore-chunked-execution",
+        )
+
+    def test_long_slug_front_truncated_with_ellipsis(self):
+        out = collect._derive_pipeline_short(
+            "run-plan.a-really-long-plan-slug-that-exceeds-the-cap", maxlen=28)
+        self.assertEqual(len(out), 28)
+        self.assertTrue(out.endswith("…"))
+        self.assertTrue(out.startswith("a-really-long-plan-slug-"))
+
+    def test_prefix_dropped(self):
+        # The pipeline-type prefix before the last '.' is not part of the label.
+        self.assertEqual(collect._derive_pipeline_short("do.x"), "x")
+
+    def test_non_sprint_four_part_not_treated_as_sprint(self):
+        # 4 parts but parts[0] != "sprint" and parts[1] not digits → whole slug.
+        self.assertEqual(
+            collect._derive_pipeline_short("run-plan.alpha-beta-gamma-delta"),
+            "alpha-beta-gamma-delta",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
