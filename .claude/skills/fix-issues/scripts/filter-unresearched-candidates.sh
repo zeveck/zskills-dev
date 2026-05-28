@@ -54,9 +54,30 @@ if [ -z "${ZSKILLS_ISSUES_DIR:-}" ]; then
   exit 1
 fi
 
+# Read the reconsider list from monitor-state.json (one-shot signal).
+# Issues in this list have their skip-code suppressed so Phase 2
+# re-evaluates them. After emitting them as candidates, we remove them
+# from the list so the signal doesn't persist across sprints.
+MAIN_ROOT="${ZSKILLS_MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)}"
+STATE_FILE="${MAIN_ROOT:+$MAIN_ROOT/.zskills/monitor-state.json}"
+RECONSIDER_NUMS=""
+if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
+  RECONSIDER_NUMS=$(python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    nums = data.get('issues', {}).get('reconsider', [])
+    print(' '.join(str(n) for n in nums))
+except Exception:
+    pass
+" "$STATE_FILE" 2>/dev/null) || RECONSIDER_NUMS=""
+fi
+
 RESEARCHED=()
 MISSING=()
 SKIP_TAGGED=()
+RECONSIDERED_PROCESSED=()
 
 for N in "$@"; do
   # Skip non-numeric tokens defensively.
@@ -77,19 +98,22 @@ for N in "$@"; do
   # Awk also extracts the Action-now value (substring after the bold
   # marker) and prints `SKIP=<code>` if it resolves to one of the three
   # canonical dashboard skip-codes via POSIX-portable boundary matching.
+  # Check if this issue is in the reconsider list (monitor-state.json).
+  is_reconsidered=0
+  case " $RECONSIDER_NUMS " in
+    *" $N "*) is_reconsidered=1 ;;
+  esac
+
   found=0
   skip_code=""
   for f in "$ZSKILLS_ISSUES_DIR"/*.md; do
     [ -f "$f" ] || continue
-    out=$(awk -v n="$N" '
+    out=$(awk -v n="$N" -v recon="$is_reconsidered" '
       $0 ~ "^### #" n " " { in_sec=1; next }
       in_sec && /^### / { exit }
-      # If **Reconsidered:** appears in this section, suppress skip-code
-      # emission — the user has flagged this issue for re-evaluation.
-      in_sec && index($0, "**Reconsidered:**") > 0 { reconsidered=1 }
       in_sec && index($0, "**Action now:**") > 0 {
         print "HIT"
-        if (reconsidered) { exit }
+        if (recon) { exit }
         if (match($0, /\*\*Action now:\*\*[[:space:]]*/)) {
           val = substr($0, RSTART + RLENGTH)
           # Lowercase for case-insensitive prefix matching.
@@ -128,6 +152,9 @@ for N in "$@"; do
     if [ -n "$skip_code" ]; then
       SKIP_TAGGED+=("$N:$skip_code")
     fi
+    if [ "$is_reconsidered" -eq 1 ]; then
+      RECONSIDERED_PROCESSED+=("$N")
+    fi
   else
     MISSING+=("$N")
   fi
@@ -136,3 +163,36 @@ done
 printf 'RESEARCHED="%s"\n' "${RESEARCHED[*]}"
 printf 'MISSING="%s"\n' "${MISSING[*]}"
 printf 'SKIP_TAGGED="%s"\n' "${SKIP_TAGGED[*]}"
+
+# One-shot cleanup: remove processed reconsider entries from
+# monitor-state.json so the signal doesn't persist across sprints.
+if [ "${#RECONSIDERED_PROCESSED[@]}" -gt 0 ] && [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
+  REMOVE_LIST=$(printf '%s\n' "${RECONSIDERED_PROCESSED[@]}" | tr '\n' ' ' | sed 's/ $//')
+  python3 -c "
+import json, sys, os, tempfile
+
+path = sys.argv[1]
+remove = set(int(x) for x in sys.argv[2:])
+
+with open(path) as f:
+    data = json.load(f)
+
+cur = data.get('issues', {}).get('reconsider', [])
+after = [n for n in cur if n not in remove]
+
+if len(after) == len(cur):
+    sys.exit(0)
+
+if after:
+    data['issues']['reconsider'] = after
+else:
+    data.get('issues', {}).pop('reconsider', None)
+
+tmp = tempfile.NamedTemporaryFile('w', delete=False,
+    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
+json.dump(data, tmp, indent=2)
+tmp.write('\n')
+tmp.close()
+os.replace(tmp.name, path)
+" "$STATE_FILE" ${RECONSIDERED_PROCESSED[*]} 2>/dev/null || true
+fi
