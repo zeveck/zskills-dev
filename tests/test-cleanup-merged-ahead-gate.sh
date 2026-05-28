@@ -205,6 +205,187 @@ STUB
   fi
 fi
 
+# ── Issue #781: contained-in-main (0-ahead) branches are deletable ──
+# A local branch whose tip is fully contained in main (0 commits ahead,
+# `git merge-base --is-ancestor branch main`) carries zero unique commits
+# and must be flagged WOULD-DELETE in preview / removed via `git branch -d`
+# on apply — even with NO PR and NO upstream-gone signal. The negative
+# case (a branch with commits NOT on main) must still be preserved, and a
+# protected branch that happens to be 0-ahead must still be SKIPPED.
+
+echo ""
+echo "=== Issue #781: contained-in-main (0-ahead) candidate gate ==="
+
+# Static: the candidate gate must add the contained-in-main signal and
+# route it through a LOCAL ancestor check (no gh) — the candidate gate is
+# the only place MERGED can flip to 1 without PR=MERGED / upstream-gone.
+if echo "$PHASE5_SLICE" | grep -qE 'CONTAINED=1' \
+   && echo "$PHASE5_SLICE" | grep -qE 'merge-base --is-ancestor "\$branch" "\$MAIN_BRANCH"'; then
+  pass "Phase 5: contained-in-main detected via local merge-base --is-ancestor (issue #781)"
+else
+  fail "Phase 5: contained-in-main (CONTAINED) local detection missing (issue #781)"
+fi
+
+# The contained class must feed the MERGED candidate gate.
+if echo "$PHASE5_SLICE" | grep -qE 'MERGED=1' \
+   && echo "$PHASE5_SLICE" | grep -qE '\[ "\$CONTAINED" -eq 1 \]'; then
+  pass "Phase 5: CONTAINED flips MERGED candidate gate (issue #781)"
+else
+  fail "Phase 5: CONTAINED does not feed the MERGED candidate gate (issue #781)"
+fi
+
+# The contained class must NOT require a gh call (the ancestor check is
+# local). The PR-state lookup is gated on CONTAINED -eq 0.
+if echo "$PHASE5_SLICE" | grep -qE 'HAVE_GH" -eq 1 \] && \[ "\$CONTAINED" -eq 0 \]'; then
+  pass "Phase 5: PR-state gh lookup skipped for contained branches (issue #781, no gh call)"
+else
+  fail "Phase 5: contained branch still gated behind a gh PR-state lookup (issue #781)"
+fi
+
+# Behavioral: drive the REAL candidate-gate + delete-flag logic extracted
+# from the skill against real git branches. We splice together the actual
+# snippets the skill uses (CONTAINED detection, MERGED gate, DEL_FLAG
+# selection) so we exercise real code, not a paraphrase.
+CONTAINED_BLOCK=$(echo "$PHASE5_SLICE" | awk '
+  /CONTAINED=0/{capture=1}
+  capture {print}
+  capture && /^    fi$/ && seen_merged{exit}
+  /MERGED=1/{seen_merged=1}
+')
+# Anchor the delete-flag extraction on the unique "Delete-flag selection."
+# comment so we do not collide with the merged-check `if NAMED_FORCE` block.
+DELFLAG_BLOCK=$(echo "$PHASE5_SLICE" | awk '
+  /# Delete-flag selection\./{capture=1}
+  capture {print}
+  capture && /git branch "\$DEL_FLAG" "\$branch"/{print_more=1}
+  capture && print_more && /^      fi$/{exit}
+')
+
+if [ -z "$CONTAINED_BLOCK" ] || [ -z "$DELFLAG_BLOCK" ]; then
+  fail "Issue #781: could not extract candidate/delete-flag blocks for behavioral test"
+else
+  pass "Issue #781: candidate + delete-flag blocks extracted for behavioral test"
+
+  TMP781=$(mktemp -d)
+  (
+    cd "$TMP781" || exit 1
+    git init -q -b main .
+    git config user.email t@t.t; git config user.name t
+    git commit -q --allow-empty -m base
+
+    # contained: 0 ahead of main — tip IS an ancestor of main. Create the
+    # branch, then advance main past it so the branch tip is contained.
+    git checkout -q -b contained
+    git checkout -q main
+    git commit -q --allow-empty -m "main advances; contained tip now in main"
+
+    # ahead: carries a commit NOT on main (must be preserved).
+    git checkout -q -b ahead
+    git commit -q --allow-empty -m "unique work not on main"
+
+    # protected-contained: 0 ahead AND in the protected list (must SKIP).
+    git checkout -q main
+    git checkout -q -b protected-contained
+    git checkout -q main
+    git commit -q --allow-empty -m "main advances; protected-contained tip now in main"
+
+    git checkout -q main
+
+    # Harness for the candidate gate: returns MERGED + REASON + CONTAINED.
+    MAIN_BRANCH=main
+    UPSTREAM_GONE=0
+    NAMED_FORCE=0
+    HAVE_GH=0   # no gh — proves the contained class needs no gh call
+
+    decide() {
+      branch="$1"
+      eval "$CONTAINED_BLOCK"
+      echo "MERGED=$MERGED CONTAINED=$CONTAINED"
+    }
+
+    # Scenario A: contained branch -> MERGED candidate gate flips to 1.
+    A=$(decide contained)
+    if echo "$A" | grep -q 'MERGED=1' && echo "$A" | grep -q 'CONTAINED=1'; then
+      echo "A_PASS"
+    else
+      echo "A_FAIL: $A"
+    fi
+
+    # Scenario B: ahead branch -> NOT a candidate (MERGED stays 0).
+    B=$(decide ahead)
+    if echo "$B" | grep -q 'MERGED=0' && echo "$B" | grep -q 'CONTAINED=0'; then
+      echo "B_PASS"
+    else
+      echo "B_FAIL: $B"
+    fi
+
+    # Scenario C: apply path deletes a contained branch via `git branch -d`
+    # (NOT -D). Drive the real DEL_FLAG selection block, then the delete.
+    branch=contained
+    PR_STATE=""
+    REASON="contained in main"
+    DEL_FLAG=""
+    LOCAL_DELETED=0
+    LOCAL_SKIPPED=0
+    eval "$DELFLAG_BLOCK" >/dev/null 2>&1
+    if [ "$DEL_FLAG" = "-d" ] && ! git show-ref --verify --quiet refs/heads/contained; then
+      echo "C_PASS"
+    else
+      echo "C_FAIL: DEL_FLAG=$DEL_FLAG still_exists=$(git show-ref --verify --quiet refs/heads/contained && echo yes || echo no)"
+    fi
+
+    # Scenario D: the ahead branch is NOT deletable with -d (safety: -d
+    # refuses a not-fully-merged branch). Confirms the negative case can
+    # never be lost via the safe-delete path.
+    if ! git branch -d ahead >/dev/null 2>&1 && git show-ref --verify --quiet refs/heads/ahead; then
+      echo "D_PASS"
+    else
+      echo "D_FAIL: ahead branch was deletable via -d (would lose unique commits)"
+    fi
+  ) > "$TMP781/out" 2>&1
+
+  if grep -q 'A_PASS' "$TMP781/out"; then
+    pass "Behavioral #781: contained-in-main branch (no PR, no upstream-gone) is a delete candidate"
+  else
+    fail "Behavioral #781: contained-in-main branch not flagged as candidate"
+    sed 's/^/    /' "$TMP781/out"
+  fi
+
+  if grep -q 'B_PASS' "$TMP781/out"; then
+    pass "Behavioral #781 (negative): branch with commits NOT on main is preserved (not a candidate)"
+  else
+    fail "Behavioral #781 (negative): a branch ahead of main was wrongly flagged"
+    sed 's/^/    /' "$TMP781/out"
+  fi
+
+  if grep -q 'C_PASS' "$TMP781/out"; then
+    pass "Behavioral #781: apply path deletes contained branch via git branch -d (not -D)"
+  else
+    fail "Behavioral #781: contained branch not removed via -d"
+    sed 's/^/    /' "$TMP781/out"
+  fi
+
+  if grep -q 'D_PASS' "$TMP781/out"; then
+    pass "Behavioral #781: -d refuses the ahead branch (negative case can never be lost)"
+  else
+    fail "Behavioral #781: -d wrongly deleted an ahead branch"
+    sed 's/^/    /' "$TMP781/out"
+  fi
+
+  rm -rf "$TMP781"
+fi
+
+# Protected + contained: a config-protected branch that is 0-ahead must
+# STILL be skipped (the protected check runs FIRST, before CONTAINED is
+# ever computed). Verify the protected-skip precedes the candidate gate.
+PROT_LINE=$(echo "$PHASE5_SLICE" | grep -n 'is_protected "\$branch"' | head -1 | cut -d: -f1)
+CONT_LINE=$(echo "$PHASE5_SLICE" | grep -n 'CONTAINED=0' | head -1 | cut -d: -f1)
+if [ -n "$PROT_LINE" ] && [ -n "$CONT_LINE" ] && [ "$PROT_LINE" -lt "$CONT_LINE" ]; then
+  pass "Issue #781: protected-skip precedes the contained-in-main candidate gate (protected 0-ahead branch still SKIPPED)"
+else
+  fail "Issue #781: protected-skip ordering wrong (protected line=$PROT_LINE, contained line=$CONT_LINE)"
+fi
+
 # ── Mirror sync ────────────────────────────────────────────────────
 MIRROR="$REPO_ROOT/.claude/skills/cleanup-merged/SKILL.md"
 if [ -f "$MIRROR" ]; then

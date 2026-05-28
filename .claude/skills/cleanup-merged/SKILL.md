@@ -5,14 +5,15 @@ argument-hint: "[apply] [local | remote | all] [force] [<branch>...]"
 description: >-
   Post-PR-merge local normalization: fetch-and-prune origin, switch off
   merged feature branches, pull main, and delete local branches whose
-  upstream is gone or whose PR has merged. Preview by default — run
+  upstream is gone, whose PR has merged, or whose tip is fully contained
+  in main (0 commits ahead). Preview by default — run
   `/cleanup-merged apply` to execute. `local` (default) / `remote` / `all`
   pick the scope; pass explicit branch names to narrow the candidate set.
   `force` overrides the merged-check + unpushed guard for branches you
   explicitly name. Protected branches from config are NEVER deleted (even
   with `force`) — they are always skipped.
 metadata:
-  version: "2026.05.28+8fec91"
+  version: "2026.05.28+88b007"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -326,11 +327,17 @@ fi
 ## Phase 5 — Local branch scan
 
 For every local branch other than the main branch and the currently
-checked-out branch, check the same two signals (upstream gone, PR
-merged). Skip branches with unpushed commits unless the upstream is
-gone — if the remote is gone, the commits were either squash-merged or
-the branch was abandoned; either way, the local commits match no live
-ref.
+checked-out branch, check three signals: upstream gone, PR merged, or
+the tip is fully contained in main (0 commits ahead —
+`git merge-base --is-ancestor <branch> main`, issue #781). The
+contained-in-main check is purely local and needs no `gh` call, so it
+is evaluated first and the PR-state lookup is skipped when it holds.
+Skip branches with unpushed commits unless the upstream is gone or the
+branch is contained in main — if the remote is gone, the commits were
+either squash-merged or the branch was abandoned; if the branch is
+contained in main it carries zero unique commits; either way the local
+commits match a ref already on main (the `git branch -d` below is the
+losslessness backstop).
 
 This phase is worktree-aware: if a merged branch is held by a worktree,
 `git branch -D` will refuse. Before attempting the delete, the loop
@@ -393,13 +400,23 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       UPSTREAM_GONE=1
     fi
 
+    # Issue #781: a branch whose tip is fully contained in main (0 commits
+    # ahead — `git merge-base --is-ancestor branch main` true) carries zero
+    # unique commits, so deleting it loses nothing (reflog-recoverable
+    # regardless). This is a LOCAL check needing NO `gh` call, so detect it
+    # before the PR-state lookup and skip the gh round-trip when it holds.
+    CONTAINED=0
+    if git merge-base --is-ancestor "$branch" "$MAIN_BRANCH" 2>/dev/null; then
+      CONTAINED=1
+    fi
+
     PR_STATE=""
-    if [ "$HAVE_GH" -eq 1 ]; then
+    if [ "$HAVE_GH" -eq 1 ] && [ "$CONTAINED" -eq 0 ]; then
       PR_STATE=$(gh pr view "$branch" --json state -q .state 2>/dev/null || echo "")
     fi
 
     MERGED=0
-    if [ "$UPSTREAM_GONE" -eq 1 ] || [ "$PR_STATE" = "MERGED" ]; then
+    if [ "$UPSTREAM_GONE" -eq 1 ] || [ "$PR_STATE" = "MERGED" ] || [ "$CONTAINED" -eq 1 ]; then
       MERGED=1
     fi
 
@@ -419,8 +436,11 @@ if [ "$DO_LOCAL" -eq 1 ]; then
     # upstream is NOT gone — a gone upstream plus PR=MERGED means the
     # commits reached main via squash. A named branch under `force`
     # overrides this guard too.
+    # A contained-in-main branch (issue #781) carries no commits not already
+    # on main, so the unpushed guard cannot apply — the `git branch -d` below
+    # is the losslessness backstop. Skip the guard for the contained class.
     UNPUSHED=""
-    if [ "$UPSTREAM_GONE" -eq 0 ] && [ "$NAMED_FORCE" -eq 0 ]; then
+    if [ "$UPSTREAM_GONE" -eq 0 ] && [ "$NAMED_FORCE" -eq 0 ] && [ "$CONTAINED" -eq 0 ]; then
       UNPUSHED=$(git log "$branch" --not --remotes --oneline 2>/dev/null | head -1)
     fi
 
@@ -480,8 +500,14 @@ if [ "$DO_LOCAL" -eq 1 ]; then
 
     if [ "$NAMED_FORCE" -eq 1 ] && [ "$MERGED" -eq 0 ]; then
       REASON="forced (named, not confirmed merged)"
+    elif [ "$PR_STATE" = "MERGED" ]; then
+      REASON="PR merged"
+    elif [ "$UPSTREAM_GONE" -eq 1 ]; then
+      REASON="upstream gone"
     else
-      REASON=$([ "$PR_STATE" = "MERGED" ] && echo "PR merged" || echo "upstream gone")
+      # Issue #781: contained-in-main (0 ahead) — the only remaining way
+      # MERGED=1 with no PR-merged / upstream-gone signal.
+      REASON="contained in main"
     fi
 
     if [ -n "$WORKTREE_FOR_BRANCH" ]; then
@@ -520,14 +546,15 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       LOCAL_CANDIDATES+=("$branch")
     else
       # Delete-flag selection. The default path only reaches here for
-      # branches already CONFIRMED merged (PR=MERGED or upstream-gone) —
-      # but squash-merge means the branch tip is NOT a fast-forward
-      # ancestor of main, so `git branch -d` would wrongly refuse it.
-      # Use `-d` when the branch IS a merged ancestor of main (clean),
-      # and `-D` for the confirmed-merged-but-not-ancestor (squash) case
-      # and for the explicit `force` path. `-D` is NEVER reached for an
-      # un-confirmed, un-named branch (the merged-check above guarantees
-      # MERGED=1 unless NAMED_FORCE=1).
+      # branches already CONFIRMED safe: PR=MERGED, upstream-gone, or
+      # contained-in-main (issue #781, 0 ahead). Squash-merge means the
+      # branch tip is NOT a fast-forward ancestor of main, so `git branch
+      # -d` would wrongly refuse it. Use `-d` when the branch IS an
+      # ancestor of main (clean — this is exactly the contained-in-main
+      # class, deleted losslessly), and `-D` for the confirmed-merged-but-
+      # not-ancestor (squash) case and for the explicit `force` path. `-D`
+      # is NEVER reached for an un-confirmed, un-named branch (the
+      # merged-check above guarantees MERGED=1 unless NAMED_FORCE=1).
       if [ "$NAMED_FORCE" -eq 1 ]; then
         DEL_FLAG="-D"   # user vouched for this named branch explicitly
       elif git merge-base --is-ancestor "$branch" "$MAIN_BRANCH" 2>/dev/null; then
