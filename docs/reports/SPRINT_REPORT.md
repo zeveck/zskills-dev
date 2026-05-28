@@ -1,5 +1,32 @@
 # Sprint Report
 
+## Sprint — 2026-05-28 (dashboard queue-worker, */30 cron)
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge)
+
+### Fixed
+| # | Title | Branch | PR | Tests | Agent Verify | User Verify |
+|---|-------|--------|----|----|-------------|-------------|
+| #739 | Drop claim TTL/sweep — same over-engineering #684 removed from plan claims | `fix-issue-739` | #748 (merged) | 5924/5924 | PASS — independent verifier caught a live `claim-issue.sh sweep` consumer in `cleanup-merged/SKILL.md` (masked by `\|\| true`) the implementer missed, fixed it, re-ran full suite | N/A (no UI) |
+| #735 | Add conformance pins for recently-reverted SKILL.md content (staleness step + ZSKILLS_DASHBOARD_ROOT) | `fix-issue-735` | #749 (merged) | 5935/5935 | PASS — implementer corrected a stale premise: #740 had *relocated* the staleness step to `subcommands/stop-next.md`, not lost it; made the pin tree-recursive (via `check` helper) instead of born-failing | N/A (no UI) |
+| #742 | Stale SKILL.md:NNN line-number cross-references after extraction refactors | `fix-issue-742` | #750 (merged) | 5926/5926 | PASS — orchestrator spot-checked 2 of 9 corrected refs against current files (execute-phase.md:372-375, sprint.md:122-126) | N/A (docs-only) |
+
+### Closed without code change
+| # | Title | Disposition |
+|---|-------|-------------|
+| #747 | reconsider: filter awk checks reconsidered flag before seeing the annotation | **Closed as already-fixed.** Filed earlier this session against the `cab349b` (#733) annotation mechanism; verification showed **PR #743** already moved the reconsider signal from an ISSUES_PLAN.md `**Reconsidered:**` annotation to `issues.reconsider` in `monitor-state.json` — which `filter-unresearched-candidates.sh` reads order-independently. The awk line-ordering path no longer exists. No fix needed. |
+
+### Notable decisions
+
+- **#739 scope expansion validated.** The implementer removed the dead `ZSKILLS_CLAIM_TTL_SECONDS` resolver from `update-zskills` (last consumer of the schema field) and deleted `claim-fence-helpers.sh` (only wrapped `sweep`) — mirroring #684's plan-side treatment. Verifier confirmed zero live references repo-wide.
+- **Verifier earned its dispatch on #739.** The 23-file change had a real gap (`cleanup-merged` Phase 5 still called `claim-issue.sh sweep`). Independent verification caught it; inline self-verification would not have (implementer bias). #735/#742 were docs/test-only and self-evident enough for orchestrator read-verification.
+- **#747 is a "read-before-claiming" save.** The bug was filed without first checking that #743 had already landed the fix. The 2-minute falsification (git log -S + reading `reconsider.md` + the filter script) showed the described mechanism no longer exists. Closed rather than dispatching a fix for non-existent code.
+- **Premise-correction by implementers twice.** Both #735 and #742 had reported line numbers / assumptions that had drifted since filing (#740 extraction churn). In both cases the agent traced against *current* files rather than trusting the issue body — the right behavior for a fast-moving skill tree.
+
+### Landing
+
+PR mode, serial (one PR at a time per the `requires.land-pr.*` sibling contract). Each PR: rebase → push → CI monitor → auto-merge → FF local main → `.landed` marker → claim release. All four issues processed across two overlapping */30 cron fires (the second fired while the first was still landing; handled by completing in-flight work before re-selecting).
+
 ## Sprint — 2026-05-02 19:35 [FINALIZED 2026-05-07]
 
 **Mode:** auto | **Focus:** process-discipline (issues #185, #186 — agent dispatch + memory-anchor meta-rule)
