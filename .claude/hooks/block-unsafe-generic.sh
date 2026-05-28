@@ -48,6 +48,95 @@ COMMAND=$(echo "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)"
 [ -z "$COMMAND" ] && COMMAND="$INPUT"
 
 # ──────────────────────────────────────────────────────────────
+# Interpreter-stdin re-injection (#772) — sibling of #399/#597
+# ──────────────────────────────────────────────────────────────
+# Pass-1 redaction below strips heredoc / here-string BODIES as inert
+# text — correct when the body is DATA (`cat <<EOF`, `gh pr create
+# --body-file=- <<EOF`, echo content, a commit message that mentions
+# `git clean -f`). But when the heredoc / here-string is the STDIN of an
+# INTERPRETER (`bash <<<"git clean -fdx"`, `sh <<EOF … EOF`,
+# `zsh -s <<<"…"`), the body is EXECUTED as a script — so a destructive
+# command smuggled that way must reach the deny scan. This is the
+# here-string/heredoc analogue of the `bash -c` / `eval` / `sh -c`
+# wrapper-bypass closed by #399 / #597.
+#
+# Discriminator (the make-or-break false-positive guard): we re-inject
+# the body as code ONLY when the command HEAD of the segment is an
+# interpreter (bash|sh|zsh|dash|ash|ksh) reading its stdin as a script —
+# i.e. the only tokens between the interpreter and the `<<<` / `<<DELIM`
+# operator are interpreter FLAGS (`-s`, `-`, `-x`, …), with NO script-file
+# positional. `cat <<EOF`, `echo`, `tee f <<EOF`, `gh pr create
+# --body-file=- <<EOF`, and `bash script.sh <<<data` (here-string is DATA
+# for script.sh, not code) all FAIL this test and are left for Pass-1 to
+# strip as inert — preserving the existing no-false-positive guarantee.
+#
+# Mechanism: when an interpreter-stdin body is detected, we APPEND it to
+# $COMMAND as a new `;`-separated shell segment. The existing
+# is_*_in_wrappers / is_*_in_chain scanners split on `;` (and the
+# JSON-escaped `\n`), so the re-injected body is scanned as a first-class
+# command. We append rather than replace so the original (now-redacted)
+# text is untouched and any chained ops after the heredoc stay visible.
+extract_interp_stdin_body() {
+  # Echoes the executed body (one per line) for every interpreter-stdin
+  # heredoc / here-string in $1. Empty output ⇒ nothing to re-inject.
+  local cmd="$1"
+  # The interpreter head must be a WHOLE-WORD token at a segment boundary:
+  # preceded by start-of-string or one of space / ; / & / | / backtick /
+  # `(` (the chars that delimit a fresh command position), and followed by
+  # zero or more interpreter FLAG tokens (`-s`, `-`, `-x`, …) and then the
+  # redirection operator with NO intervening non-flag positional.
+  #
+  # The left boundary is the make-or-break false-positive guard: it stops
+  #   * `script.sh <<<data`  — the `sh` here is preceded by `.`, not a
+  #     boundary, so the here-string is correctly treated as DATA, and
+  #   * a stray `bash`/`sh` earlier in the buffer from matching a
+  #     `cat <<EOF` heredoc that appears later.
+  # The "flags only, no positional" rule stops `bash script.sh <<<data`
+  # and `bash run.sh <<EOF` — there the body is stdin DATA for the script
+  # file, not code, so Pass-1 should strip it as inert.
+  local bnd='(^|[[:space:];&|`(])'
+  local head_re="${bnd}(bash|sh|zsh|dash|ash|ksh)([[:space:]]+-[A-Za-z]+)*[[:space:]]*"
+
+  # --- Here-strings: <interp> [flags] <<< "body" | '"'"'body'"'"' | body ---
+  # Quoted forms first so the body capture stops at the closing quote;
+  # bareword form last (body = run of non-space, non-redirect chars).
+  printf '%s' "$cmd" | grep -oE "${head_re}<<<[[:space:]]*\"[^\"]*\"" \
+    | sed -E "s/.*<<<[[:space:]]*\"([^\"]*)\".*/\1/"
+  printf '%s' "$cmd" | grep -oE "${head_re}<<<[[:space:]]*'[^']*'" \
+    | sed -E "s/.*<<<[[:space:]]*'([^']*)'.*/\1/"
+  printf '%s' "$cmd" | grep -oE "${head_re}<<<[[:space:]]*[^[:space:]\"';&|]+" \
+    | sed -E "s/.*<<<[[:space:]]*([^[:space:]\"';&|]+).*/\1/"
+
+  # --- Heredocs: <interp> [flags] <<[-]?['\"]?DELIM['\"]? \n body \n DELIM ---
+  # Body arrives with literal two-char `\n` separators (the extractor does
+  # not JSON-decode). We rewrite the body's `\n` back to real newlines so
+  # each re-injected line becomes its own scannable segment. The DELIM is
+  # backref-pinned to the opener; quoted-delim alts tried first. Capture
+  # groups: \1 boundary, \2 interp, \3 flags, \4 delim, \5 body.
+  printf '%s' "$cmd" | sed -nE \
+    "s/.*${head_re}<<-?[[:space:]]*\"([A-Za-z_][A-Za-z0-9_]*)\"\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    | sed -E 's/\\n/\n/g'
+  printf '%s' "$cmd" | sed -nE \
+    "s/.*${head_re}<<-?[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    | sed -E 's/\\n/\n/g'
+  printf '%s' "$cmd" | sed -nE \
+    "s/.*${head_re}<<-?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    | sed -E 's/\\n/\n/g'
+}
+
+_INTERP_BODY=$(extract_interp_stdin_body "$COMMAND")
+if [ -n "$_INTERP_BODY" ]; then
+  # Append each extracted body line as its own `;`-delimited segment so
+  # the chain/wrapper scanners see it as a standalone command.
+  while IFS= read -r _line; do
+    [ -z "$_line" ] && continue
+    COMMAND="$COMMAND ; $_line"
+  done <<< "$_INTERP_BODY"
+  unset _line
+fi
+unset _INTERP_BODY
+
+# ──────────────────────────────────────────────────────────────
 # Data-region redaction
 # ──────────────────────────────────────────────────────────────
 # Destructive-op regex checks below scan $COMMAND as a single string.

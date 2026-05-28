@@ -257,6 +257,65 @@ expect_deny "WD11: bash -c \"sh -c 'kill -9 1234'\" (nested)" \
 expect_allow "WD12: bash -c 'echo killall' (wrapper allow ctrl)" \
   "bash -c 'echo killall'"
 
+# WHS1-WHS12. Here-string / heredoc-to-INTERPRETER bypass closure (#772) —
+# sibling of the #399/#597 `bash -c` / `eval` / `sh -c` wrapper closure.
+# When the heredoc / here-string is the STDIN of an interpreter
+# (bash|sh|zsh|dash|ash|ksh, optionally `-s`), the body is EXECUTED, so a
+# destructive command smuggled that way must reach the deny scan. The
+# pre-scan re-injection step in block-unsafe-generic.sh extracts the body
+# and appends it as a `;`-segment for the existing wrapper/chain scanners.
+#
+# CRITICAL discriminator (no-false-positive guard): re-inject ONLY when
+# the segment head is an interpreter reading stdin as a script (flags-only
+# between interpreter and `<<<`/`<<`, no script-file positional). DATA
+# heredocs (cat/echo/tee/--body-file, and `bash script.sh <<<data` where
+# the here-string is stdin for the script) must STILL be stripped inert.
+# Sanity: each WHS DENY case ALLOWs against pre-#772 hook (proving the
+# assertion exercises the new logic), verified manually during the fix.
+
+# --- DENY: interpreter-stdin here-strings (the reported bug) ---
+expect_deny "WHS1: bash <<<\"git clean -fdx\"" \
+  "bash <<<\\\"git clean -fdx\\\""
+expect_deny "WHS2: bash <<<'git clean -fdx' (single-quoted body)" \
+  "bash <<<'git clean -fdx'"
+expect_deny "WHS3: sh <<<\"git reset --hard HEAD~5\"" \
+  "sh <<<\\\"git reset --hard HEAD~5\\\""
+expect_deny "WHS4: zsh <<<\"git checkout -- .\"" \
+  "zsh <<<\\\"git checkout -- .\\\""
+expect_deny "WHS5: bash -s <<<\"git clean -fdx\" (-s flag)" \
+  "bash -s <<<\\\"git clean -fdx\\\""
+expect_deny "WHS6: bash <<<\"kill -9 1234\" (destruct verb)" \
+  "bash <<<\\\"kill -9 1234\\\""
+expect_deny "WHS7: cd /tmp && bash <<<\"git clean -fdx\" (cd-chain)" \
+  "cd /tmp && bash <<<\\\"git clean -fdx\\\""
+
+# --- DENY: interpreter-stdin heredocs ---
+expect_deny "WHS8: bash <<EOF git clean -fdx EOF (heredoc to bash)" \
+  "bash <<EOF\\ngit clean -fdx\\nEOF"
+expect_deny "WHS9: sh <<EOF rm -rf /etc EOF (heredoc to sh)" \
+  "sh <<EOF\\nrm -rf /etc\\nEOF"
+expect_deny "WHS10: bash <<'EOF' git reset --hard EOF (quoted-delim)" \
+  "bash <<'EOF'\\ngit reset --hard HEAD~5\\nEOF"
+
+# --- ALLOW: DATA heredocs / here-strings (no false-positives) ---
+# The discriminator must keep these inert: head is NOT an interpreter
+# reading stdin as code (cat/echo/tee/gh body), OR there is a script-file
+# positional so the body is stdin DATA for that script.
+expect_allow "WHS-A1: cat <<EOF data heredoc mentioning git clean -f" \
+  "cat <<EOF\\ngit clean -fdx is dangerous\\nEOF"
+expect_allow "WHS-A2: echo <<<\"git clean -fdx\" (echo, not interpreter)" \
+  "echo <<<\\\"git clean -fdx\\\""
+expect_allow "WHS-A3: tee f.txt <<EOF rm -rf /etc EOF (data to tee)" \
+  "tee f.txt <<EOF\\nrm -rf /etc\\nEOF"
+expect_allow "WHS-A4: gh pr create --body-file=- <<EOF mentions git clean -f" \
+  "gh pr create --body-file=- <<EOF\\nnote: git clean -f purges untracked\\nEOF"
+expect_allow "WHS-A5: bash script.sh <<<data (here-string is DATA for script)" \
+  "bash script.sh <<<\\\"git clean -fdx\\\""
+expect_allow "WHS-A6: bash run.sh <<EOF (heredoc is DATA for script)" \
+  "bash run.sh <<EOF\\nrm -rf /etc\\nEOF"
+expect_allow "WHS-A7: bash <<<\"echo git clean -fdx\" (interpreter runs benign echo)" \
+  "bash <<<\\\"echo git clean -fdx\\\""
+
 # 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
 # The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
 # All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.

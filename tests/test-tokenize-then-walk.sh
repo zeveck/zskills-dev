@@ -352,6 +352,64 @@ assert_destruct_match "XRS1" "rsync -av src/ dst/ --delete (baseline)" "rsync -a
 # XRS2 — `grep "rsync --delete" notes.md` → no match
 assert_destruct_nomatch "XRS2" "grep \"rsync --delete\" notes.md" "grep \"rsync --delete\" notes.md" "rsync" '^--delete$'
 
+# ─── Interpreter-stdin re-injection (#772) ───
+# The here-string / heredoc-to-INTERPRETER bypass closure is hook-body
+# logic (extract_interp_stdin_body in block-unsafe-generic.sh), not a
+# git-tokenwalk.sh classifier helper — so it is exercised end-to-end by
+# piping a real PreToolUse envelope through the hook and asserting the
+# deny/allow decision. This proves the interpreter-stdin body actually
+# reaches the tokenize-walk scanners above (it is appended as a
+# `;`-segment) while DATA heredocs stay inert. `<<<` was previously
+# untested in this file (issue #772).
+HOOK_BIN="$SCRIPT_DIR/../hooks/block-unsafe-generic.sh"
+
+# Wrap a raw command string as a JSON value. We escape only `"` — the
+# heredoc cases embed a literal two-char `\n` (backslash + n) which is
+# exactly the wire form a real envelope carries (Claude Code JSON-encodes
+# a real newline as `\n`, and this hook does NOT JSON-decode, so $COMMAND
+# keeps the backslash-n). Escaping the backslash here would corrupt that
+# to `\\n` and the heredoc body regex would not match.
+_json_quote() { printf '%s' "$1" | sed 's/"/\\"/g; s/^/"/; s/$/"/'; }
+
+assert_hook_deny() {
+  local id="$1" desc="$2" cmd="$3" out
+  out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(_json_quote "$cmd")" | bash "$HOOK_BIN")
+  if [[ "$out" == *'"permissionDecision":"deny"'* ]]; then
+    echo "PASS $id — $desc"; PASS=$((PASS + 1))
+  else
+    echo "FAIL $id — $desc (expected deny, got: $out) cmd=[$cmd]"; FAIL=$((FAIL + 1))
+  fi
+}
+
+assert_hook_allow() {
+  local id="$1" desc="$2" cmd="$3" out
+  out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(_json_quote "$cmd")" | bash "$HOOK_BIN")
+  if [[ -z "$out" ]]; then
+    echo "PASS $id — $desc"; PASS=$((PASS + 1))
+  else
+    echo "FAIL $id — $desc (expected allow, got: $out) cmd=[$cmd]"; FAIL=$((FAIL + 1))
+  fi
+}
+
+# DENY: interpreter reads stdin as a script → body is executed code.
+assert_hook_deny "HS1" 'bash <<<"git clean -fdx" (here-string to bash)' 'bash <<<"git clean -fdx"'
+assert_hook_deny "HS2" "bash <<<'git clean -fdx' (single-quoted body)"  "bash <<<'git clean -fdx'"
+assert_hook_deny "HS3" 'sh <<<"git reset --hard HEAD~5"'                'sh <<<"git reset --hard HEAD~5"'
+assert_hook_deny "HS4" 'zsh <<<"git checkout -- ." (zsh here-string)'   'zsh <<<"git checkout -- ."'
+assert_hook_deny "HS5" 'bash -s <<<"git clean -fdx" (-s flag)'          'bash -s <<<"git clean -fdx"'
+assert_hook_deny "HS6" 'bash <<<"kill -9 1234" (destruct verb)'         'bash <<<"kill -9 1234"'
+# heredoc-to-interpreter (printf supplies literal two-char \n separators).
+assert_hook_deny "HD1" 'bash heredoc -> git clean -fdx' 'bash <<EOF\ngit clean -fdx\nEOF'
+assert_hook_deny "HD2" 'sh heredoc -> rm -rf /etc'      'sh <<EOF\nrm -rf /etc\nEOF'
+
+# ALLOW: body is DATA, not code → must stay inert (no false-positive).
+assert_hook_allow "HSA1" 'cat <<EOF data heredoc w/ git clean -f prose'        'cat <<EOF\ngit clean -fdx danger\nEOF'
+assert_hook_allow "HSA2" 'echo <<<"git clean -fdx" (echo is not interpreter)'  'echo <<<"git clean -fdx"'
+assert_hook_allow "HSA3" 'gh pr create --body-file=- heredoc w/ banned prose'  'gh pr create --body-file=- <<EOF\nnote: git clean -f purges\nEOF'
+assert_hook_allow "HSA4" 'bash script.sh <<<data (here-string is DATA for script)' 'bash script.sh <<<"git clean -fdx"'
+assert_hook_allow "HSA5" 'bash run.sh <<EOF (heredoc is DATA for script)'      'bash run.sh <<EOF\nrm -rf /etc\nEOF'
+assert_hook_allow "HSA6" 'bash <<<"echo git clean -fdx" (interpreter runs benign echo)' 'bash <<<"echo git clean -fdx"'
+
 # ─── Summary ───
 echo ""
 echo "Total: PASS=$PASS FAIL=$FAIL"
