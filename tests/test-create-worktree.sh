@@ -891,7 +891,7 @@ rm -f -- "$ERR_21"
 # ────────────────────────────────────────────────────────────────────
 # Case 22 — --no-preflight defaults BASE to the main-repo's current
 # branch when --from is not passed. Regression guard for Gate A in
-# plans/CANARY_DO_WORKTREE_BASE.md: /do worktree-mode invoked from a
+# plans/archive/canaries/CANARY_DO_WORKTREE_BASE.md: /do worktree-mode invoked from a
 # feature branch must produce a worktree whose HEAD equals the feature
 # branch's HEAD, not hardcoded 'main'.
 # Isolation: runs inside a fresh fixture git repo in /tmp so the test
