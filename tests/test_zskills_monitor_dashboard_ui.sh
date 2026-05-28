@@ -1368,10 +1368,12 @@ fi
 # localStorage entry exists. Tests the structural contract from app.js
 # directly (JSDOM-style integration deferred to the playwright-cli
 # verification recipe in the issue body).
-if grep -qE 'COLLAPSED_BY_DEFAULT *= *new Set\(\["discarded"\]\)' "$APP_JS"; then
-  pass "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT = new Set([\"discarded\"])"
+# Issue #717 expanded the set with branch-section keys; the contract is
+# that "discarded" MUST be present (not necessarily the only member).
+if grep -qE 'COLLAPSED_BY_DEFAULT *= *new Set\(\[.*"discarded"' "$APP_JS"; then
+  pass "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT contains \"discarded\""
 else
-  fail "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT constant missing or wrong shape"
+  fail "#677 discarded_column_renders_collapsed_by_default: COLLAPSED_BY_DEFAULT constant missing or does not contain \"discarded\""
 fi
 # isCollapsed must consult COLLAPSED_BY_DEFAULT when no localStorage entry.
 ISCOLLAPSED_BODY=$(awk '

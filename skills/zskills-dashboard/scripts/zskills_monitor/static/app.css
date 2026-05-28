@@ -1271,3 +1271,133 @@ button svg { display: inline-block; vertical-align: middle; }
   outline: none;
 }
 
+/* Issue #717 — Branch state pills. Inline pill showing LOCAL/REMOTE state. */
+.branch-state-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-left: 6px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.branch-state-pill--local-remote { color: var(--green); border-color: var(--green); }
+.branch-state-pill--local        { color: var(--orange); border-color: var(--orange); }
+.branch-state-pill--remote       { color: var(--text-dim); border-color: var(--border); }
+
+/* Issue #717 — Branch section container. Each of Active/Landed/Remote-only
+   is a collapsible section within the branches panel. */
+.branch-section {
+  margin-bottom: 12px;
+}
+.branch-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  user-select: none;
+}
+.branch-section-head:hover {
+  background: rgba(88, 166, 255, 0.06);
+}
+.branch-section-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.branch-section-count {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.branch-section-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.12s, color 0.12s;
+  margin-left: auto;
+}
+.branch-section-toggle:hover,
+.branch-section-toggle:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+  outline: none;
+}
+.branch-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+.branch-section.collapsed .branch-section-body {
+  display: none;
+}
+.branch-section.collapsed .branch-section-head {
+  border-radius: 6px;
+  opacity: 0.85;
+}
+
+/* Issue #717 — Bulk copy toolbar per branch section. */
+.branch-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.branch-bulk-bar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.branch-bulk-bar label:hover {
+  color: var(--text);
+}
+.branch-bulk-copy-btn {
+  background: var(--surface);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  white-space: nowrap;
+}
+.branch-bulk-copy-btn:hover,
+.branch-bulk-copy-btn:focus-visible {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--text);
+  outline: none;
+}
+
+/* Issue #717 — Per-card checkbox for branch selection. */
+.branch-select-cb {
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
