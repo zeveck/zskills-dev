@@ -361,20 +361,16 @@ Manually-run canary plans (markdown plans under `docs/plans/`):
 
 | Canary | What it validates |
 |---|---|
-| `CANARY1_HAPPY` / `CANARY5_AUTONOMOUS` | Happy-path single-phase runs |
-| `CANARY2_NOAUTO` | `pr-ready` fallback when auto-merge is unavailable |
-| `CANARY3_FIXCYCLE` | CI failure → fix-agent → re-push → CI passes → auto-merge |
-| `CANARY4_EXHAUST` | Fix-attempts exhaustion: `status: pr-ci-failing` reported cleanly |
-| `CANARY6_MULTI_PR` | Sequential multi-PR landing in PR mode |
-| `CANARY7_CHUNKED_FINISH` | `finish auto` chunking with cron-fired phases |
-| `CANARY8_PARALLEL` + `PARALLEL_CANARYA/B` | Concurrent pipelines on one repo |
-| `CANARY9_FINAL_VERIFY` | Cross-branch final-verify gate |
-| `CANARY10_PR_MODE` | PR-mode landing, tracker bookkeeping in worktree |
+| `CANARY1_HAPPY` | Happy-path single-phase runs |
+| `CANARY8_PARALLEL` | Concurrent pipelines on one repo (multi-pipeline invariant) |
 | `CANARY11_SCOPE_VIOLATION` (+ `CANARY11_TEST_PLAN`) | Verifier catches scope-flag violations |
-| `CANARY_FAILURE_INJECTION` | Built `tests/test-canary-failures.sh` — external-user shareability gate |
-| `CHUNKED_CRON_CANARY` | Cron-fired chunked execution |
-| `CI_FIX_CYCLE_CANARY` | PR CI fails → fix agent → re-push → auto-merge |
+| `CANARY_BYPASS_DETECT` | Behavioral gate for LAND_PR_BYPASS_HARDENING |
+| `CANARY_LAND_PR` | Unified `/land-pr` dispatch end-to-end |
 | `REBASE_CONFLICT_CANARY` | Two-session rebase conflict resolution |
+
+Historical canaries from `/run-plan` validation (April 2026) have been
+archived to [`docs/plans/archive/canaries/`](docs/plans/archive/canaries/);
+their behavior is now covered by the shell tests above.
 
 ### Run the full test suite
 

@@ -1,7 +1,8 @@
 ---
 title: Canary 6 — Multi-PR Sequential PR-Mode Regression
 created: 2026-04-14
-status: active
+status: complete
+completed: "2026-04-14T00:00:00Z"
 ---
 
 # Plan: Canary 6 — Multi-PR Sequential PR-Mode Regression
