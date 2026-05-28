@@ -116,6 +116,59 @@ else
   fail "AC: missing visibilitychange handler"
 fi
 
+# AC (#778): visibilitychange still force-refreshes both loops on focus.
+if grep -A4 'addEventListener("visibilitychange"' "$APP_JS" | grep -q 'schedulePoll(0)' \
+  && grep -A4 'addEventListener("visibilitychange"' "$APP_JS" | grep -q 'scheduleWorkPoll(0)'; then
+  pass "AC #778: focus triggers immediate schedulePoll(0)+scheduleWorkPoll(0)"
+else
+  fail "AC #778: visibilitychange must force-refresh both loops on focus"
+fi
+
+# AC (#778): slow background poll while hidden — named hidden interval ≈ 60s.
+if grep -qE 'HIDDEN_POLL_INTERVAL_MS\s*=\s*60000' "$APP_JS"; then
+  pass "AC #778: HIDDEN_POLL_INTERVAL_MS = 60000 (slow hidden heartbeat)"
+else
+  fail "AC #778: missing HIDDEN_POLL_INTERVAL_MS = 60000"
+fi
+
+# AC (#778): reschedule delay is driven by document.hidden — visible→2s,
+# hidden→60s. The shared helper returns HIDDEN_POLL_INTERVAL_MS when hidden
+# and POLL_INTERVAL_MS otherwise.
+if grep -qE 'document\.hidden\s*\?\s*HIDDEN_POLL_INTERVAL_MS\s*:\s*POLL_INTERVAL_MS' "$APP_JS"; then
+  pass "AC #778: poll delay driven by document.hidden (hidden→60s, visible→2s)"
+else
+  fail "AC #778: poll delay must branch on document.hidden (hidden→HIDDEN_POLL_INTERVAL_MS, visible→POLL_INTERVAL_MS)"
+fi
+
+# AC (#778) REGRESSION GUARD: the old hard-stop teardown is GONE. Pre-fix
+# both pollOnce and pollWorkOnce did `if (document.hidden) { pollTimer =
+# null; return; }` / `workPollTimer = null; return;` which killed the loop
+# while hidden. Assert neither nulling-then-returning teardown remains.
+if grep -Pzoq 'pollTimer\s*=\s*null;\s*\n\s*return;' "$APP_JS"; then
+  fail "AC #778: pollOnce still tears down the loop (pollTimer = null; return;) when hidden"
+else
+  pass "AC #778: pollOnce hidden-teardown removed (loop not killed when hidden)"
+fi
+if grep -Pzoq 'workPollTimer\s*=\s*null;\s*\n\s*return;' "$APP_JS"; then
+  fail "AC #778: pollWorkOnce still tears down the loop (workPollTimer = null; return;) when hidden"
+else
+  pass "AC #778: pollWorkOnce hidden-teardown removed (loop not killed when hidden)"
+fi
+
+# AC (#778): BOTH loops reschedule via the hidden-aware delay. pollOnce must
+# call schedulePoll(nextPollDelay()) and pollWorkOnce scheduleWorkPoll(
+# nextPollDelay()) so each keeps ticking (slowly) while hidden.
+if grep -qE 'schedulePoll\(\s*nextPollDelay\(\)\s*\)' "$APP_JS"; then
+  pass "AC #778: pollOnce reschedules via schedulePoll(nextPollDelay())"
+else
+  fail "AC #778: pollOnce must reschedule via schedulePoll(nextPollDelay())"
+fi
+if grep -qE 'scheduleWorkPoll\(\s*nextPollDelay\(\)\s*\)' "$APP_JS"; then
+  pass "AC #778: pollWorkOnce reschedules via scheduleWorkPoll(nextPollDelay())"
+else
+  fail "AC #778: pollWorkOnce must reschedule via scheduleWorkPoll(nextPollDelay())"
+fi
+
 # AC: Esc handler present.
 if grep -qE '"Escape"' "$APP_JS"; then
   pass "AC: Escape key handler present"
