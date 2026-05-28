@@ -28,6 +28,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FILTER="$REPO_ROOT/skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh"
 CLAIM_SH="$REPO_ROOT/skills/run-plan/scripts/claim-plan.sh"
 SKILL_MD="$REPO_ROOT/skills/work-on-plans/SKILL.md"
+SKILL_DIR="$REPO_ROOT/skills/work-on-plans"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -101,11 +102,12 @@ else
   fail "Invocation B stderr Skipped-N" "stderr was: $(cat "$STDERR_FILE")"
 fi
 
-# SKILL.md wiring: Step 4 invokes the filter script.
-if grep -qF 'filter-in-flight-plan-claims.sh' "$SKILL_MD"; then
-  pass "SKILL.md Step 4 references filter-in-flight-plan-claims.sh"
+# Skill dir wiring: Step 4 invokes the filter script.
+# The reference may be in SKILL.md or modes/execute.md.
+if grep -rqF 'filter-in-flight-plan-claims.sh' "$SKILL_DIR"; then
+  pass "Skill dir Step 4 references filter-in-flight-plan-claims.sh"
 else
-  fail "SKILL.md wiring" "filter script not referenced in $SKILL_MD"
+  fail "SKILL.md wiring" "filter script not referenced in $SKILL_DIR"
 fi
 
 # Honest-framing self-check: this test's NAME + its leading comment must
