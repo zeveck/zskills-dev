@@ -6,6 +6,7 @@
     "landing": "pr",
     "main_protected": true,
     "branch_prefix": "feat/",
+    "max_concurrent_worktrees": 4,
     "dashboard_completed_days": 14,
     "dashboard_completed_limit": 500
   },
