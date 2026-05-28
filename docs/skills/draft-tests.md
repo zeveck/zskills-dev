@@ -14,7 +14,7 @@
 |----------|----------|-------------|
 | `plan-file` | Yes | Path to the existing plan file |
 | `rounds N` | No | Maximum adversarial review rounds |
-| `auto` | No | Skip confirmation checkpoints |
+| `auto` | No | After the Phase 6 worktree commit, dispatch `/land-pr` to push the branch, open a PR, monitor CI, and auto-merge. Without `auto`, the spec-augmented plan is committed in the worktree and the caller lands manually. |
 | `guidance` | No | Additional guidance for the test spec drafting |
 
 ## Examples
@@ -40,3 +40,4 @@
 - Test gaps in completed phases are surfaced as a new backfill phase, not by modifying existing phases
 - The test specs ride along inside the plan phases that `/run-plan` executes -- no companion document needed
 - Trailing non-phase sections are preserved byte-identical (stricter than `/refine-plan`)
+- `auto` triggers the post-commit `/land-pr` auto-merge dispatch (same token as `/draft-plan`, `/run-plan`, `/do`, `/fix-issues`, `/quickfix`) -- it does not skip the adversarial review rounds

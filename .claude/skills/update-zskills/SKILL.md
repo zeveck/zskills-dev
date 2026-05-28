@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.28+6a2328"
+  version: "2026.05.28+200124"
 ---
 
 # Update Z Skills Infrastructure
@@ -78,9 +78,10 @@ Behavior by invocation:
 **Add-on flags:**
 - `--with-addons` — install/update core skills + ALL available add-on packs
 - `--with-block-diagram-addons` — install/update core skills + block-diagram
-  add-on (3 skills: `/add-block`, `/add-example`, `/model-design`)
+  add-on (4 skills: `/add-block`, `/add-example`, `/model-design`,
+  `/review-feedback`)
 
-Without an add-on flag, only the 20 core skills are installed/updated.
+Without an add-on flag, only the 25 core skills are installed/updated.
 If core is already installed, adding an add-on flag just copies the
 add-on skills (the audit detects core is satisfied and skips it).
 
@@ -1642,7 +1643,7 @@ Skip this step if no add-on flag was provided.
      future add-on directories)
    - `--with-block-diagram-addons` -> only `$PORTABLE/../block-diagram/`
 
-2. **For each add-on skill** (e.g., `add-block`, `add-example`, `model-design`):
+2. **For each add-on skill** (e.g., `add-block`, `add-example`, `model-design`, `review-feedback`):
    - If `.claude/skills/<name>/SKILL.md` already exists, skip (never overwrite)
    - Otherwise, copy from the add-on source directory to `.claude/skills/<name>/`
 
