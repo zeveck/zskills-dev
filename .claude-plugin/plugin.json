@@ -1,0 +1,13 @@
+{
+  "name": "zs",
+  "displayName": "Z Skills",
+  "version": "2026.05.0",
+  "description": "Agent-discipline skill framework: plans, fix-issues, draft-plan, run-plan, land-pr, and more.",
+  "author": { "name": "Rich Conlan", "url": "https://github.com/zeveck/zskills" },
+  "homepage": "https://github.com/zeveck/zskills",
+  "repository": "https://github.com/zeveck/zskills",
+  "license": "MIT",
+  "keywords": ["zskills", "agent", "claude-code", "skills", "plans"],
+  "skills": ["./skills/", "./block-diagram/"],
+  "hooks": "./hooks/hooks.json"
+}

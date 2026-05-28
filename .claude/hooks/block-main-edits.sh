@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # block-main-edits.sh — PreToolUse hook on Edit / Write.
 #
 # Honors execution.main_protected from .claude/zskills-config.json. When
@@ -27,6 +28,13 @@
 #                          "permissionDecisionReason":"<STOP message>"}}
 #
 # Test surface: tests/test-block-main-edits.sh
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 INPUT=$(cat 2>/dev/null) || exit 0
 [ -z "$INPUT" ] && exit 0

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# zskills-hook-version: 2026.05.0
 # inject-bash-timeout.sh — PreToolUse hook for Bash (verifier subagent).
 #
 # Layer 0 of the VERIFIER_AGENT_FIX D'' architecture. Ensures `timeout` is at

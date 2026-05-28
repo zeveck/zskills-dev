@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # Block unsafe commands that agents should never use.
 # GENERIC safety layer — works in any project with zero configuration.
 # No external dependencies — bash only.
@@ -20,6 +21,13 @@
 #   direct                 -> BLOCK_MAIN_PUSH=0
 # Default here is 1 so zskills-shipped configs fail closed (safer).
 # Installer flips this single line via Edit; do not inline-expand further below.
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
+
 BLOCK_MAIN_PUSH=1
 
 INPUT=$(cat)

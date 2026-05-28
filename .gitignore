@@ -19,3 +19,13 @@ DOC_PARTY_COMPARISON.md
 # Track only the cli.config.json that .devcontainer/setup.sh writes.
 .playwright/*
 !.playwright/cli.config.json
+
+# Plugin-distribution manifests (W1.7). The `.claude-plugin/` tree
+# (plugin.json + marketplace.json) and block-diagram/.claude-plugin/ MUST
+# be committable — they are the plugin lane's source-of-truth. They are NOT
+# ignored by any rule above; this allow-list entry makes that intent
+# explicit and guards against a future `.claude-plugin/` ignore rule.
+!.claude-plugin/
+!.claude-plugin/**
+!block-diagram/.claude-plugin/
+!block-diagram/.claude-plugin/**

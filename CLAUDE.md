@@ -12,8 +12,12 @@ Skill distribution repo and presentation site for Z Skills.
 - `hooks/` — source hook scripts
 - `scripts/` — consumer-customizable stubs (stop-dev.sh, test-all.sh) and release-only repo tooling (build-prod.sh, mirror-skill.sh); skill machinery moved to `.claude/skills/<owner>/scripts/` (port.sh, clear-tracking.sh, statusline.sh in `update-zskills`; plan-drift-correct.sh in `run-plan`; full mapping in `skills/update-zskills/references/script-ownership.md`)
 - `CLAUDE_TEMPLATE.md` — template for CLAUDE.md generation in target projects
+- `.claude-plugin/` — plugin lane manifests: `plugin.json` (the `zs` plugin) + `marketplace.json` (lists `zs` and `zsbd`); `block-diagram/.claude-plugin/plugin.json` is the `zsbd` addon manifest
+- `hooks/hooks.json` — plugin-lane hook registrations (mirrors `.claude/settings.json` but points at `${CLAUDE_PLUGIN_ROOT}`); `hooks/_lib/plugin-hook-skip-if-mirrored.sh` is the D16(a) conditional-skip shim that prevents double-fire when both lanes are installed
 - `PRESENTATION.html` — main site (index.html redirects here)
 - `README.md`, `CHANGELOG.md` — documentation
+
+**Two install lanes — both first-class, neither retired.** zskills is distributed via (1) the **plugin lane** (`claude --plugin-dir .` loads `.claude-plugin/plugin.json` + `hooks/hooks.json`, resolving paths under `${CLAUDE_PLUGIN_ROOT}`) and (2) the legacy **`/update-zskills` lane** (mirrors `skills/`→`.claude/skills/`, `hooks/*.sh`→`.claude/hooks/`, registers hooks in `.claude/settings.json`, renders `CLAUDE_TEMPLATE.md`→`.claude/rules/zskills/managed.md`). We dogfood BOTH from this repo: plugin-lane via `claude --plugin-dir .` (iterate `edit → /reload-plugins → test`), legacy-lane via `/update-zskills install` (iterate `edit → /update-zskills --rerender → test`). See `RELEASING.md` "Dogfooding lanes" and `docs/plans/PLUGIN_DISTRIBUTION.md`. Shipped hook scripts carry a line-2 `# zskills-hook-version:` stamp the shim uses for version-skew defer; bump it when a hook's distribution version changes (Phase 1 introduced the convention; `tests/test-skill-conformance.sh` gates its presence).
 
 <!-- ## Dev Server -->
 <!-- No dev server — this is a static site / skill distribution repo. -->

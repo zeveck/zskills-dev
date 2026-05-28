@@ -1,0 +1,11 @@
+{
+  "$schema": "https://anthropic.com/schemas/claude-plugin-marketplace.json",
+  "name": "zskills",
+  "owner": { "name": "Rich Conlan", "url": "https://github.com/zeveck" },
+  "description": "Z Skills — agent-discipline skill framework",
+  "version": "1",
+  "plugins": [
+    { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "prod/main" } },
+    { "name": "zsbd", "source": "./block-diagram" }
+  ]
+}

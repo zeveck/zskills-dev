@@ -191,6 +191,9 @@ run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.
 run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
 run_suite "test-plan-claim-conformance.sh" "tests/test-plan-claim-conformance.sh"
 run_suite "test-demo-server-interactive.sh" "tests/test-demo-server-interactive.sh"
+run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
+run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
+run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

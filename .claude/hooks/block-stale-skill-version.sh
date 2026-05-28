@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # block-stale-skill-version.sh — PreToolUse Bash hook.
 #
 # Denies `git commit` when a staged skill's content hash no longer matches
@@ -46,6 +47,13 @@
 # Pure bash at runtime (D4 in the reference doc) — no external JSON
 # parsers, no scripting-language interpreters. The unit-test harness MAY
 # use a separate JSON validator for assertions; the hook itself does not.
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 set -u
 
@@ -437,12 +445,17 @@ is_git_subcommand_in_wrappers() {
 }
 is_git_subcommand_in_wrappers "$COMMAND" commit || exit 0
 
-# Guard against `set -u` + unset `$CLAUDE_PROJECT_DIR` (rare but documented
-# harness edge case). `${X:-$PWD}` falls back to cwd; if the script is
-# absent under the fallback path, `[ -x ]` trips the fail-open below. Per
-# Round 2 N5: without the guard, `set -u` would crash the hook → nonzero
-# exit + empty stdout → silent failure mode worse than fail-open.
-SCRIPT="${CLAUDE_PROJECT_DIR:-$PWD}/scripts/skill-version-stage-check.sh"
+# Lane-portable resolution (W1.4 pattern 1): the plugin lane resolves the
+# stage-check script under ${CLAUDE_PLUGIN_ROOT}/scripts/; the
+# /update-zskills lane resolves it under ${CLAUDE_PROJECT_DIR}/scripts/
+# (repo-root scripts/ — consumer-customizable utility that stays at
+# scripts/, NOT under .claude/skills/update-zskills). Guard against `set -u`
+# + unset `$CLAUDE_PROJECT_DIR` (rare but documented harness edge case):
+# `${X:-$PWD}` falls back to cwd on the legacy arm; if the script is absent
+# under the resolved path, `[ -x ]` trips the fail-open below. Per Round 2
+# N5: without the guard, `set -u` would crash the hook → nonzero exit +
+# empty stdout → silent failure mode worse than fail-open.
+SCRIPT="${CLAUDE_PLUGIN_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}/scripts/skill-version-stage-check.sh"
 [ -x "$SCRIPT" ] || exit 0  # fail-open: script absent (consumer pre-/update-zskills)
 
 # Resolve effective worktree root for the stage-check subshell.

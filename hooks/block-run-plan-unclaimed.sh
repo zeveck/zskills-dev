@@ -1,4 +1,5 @@
 #!/bin/bash
+# zskills-hook-version: 2026.05.0
 # block-run-plan-unclaimed.sh — PreToolUse hook on Bash.
 #
 # Backstops the /run-plan claim-acquire prose discipline (Phase 2 of
@@ -43,6 +44,13 @@
 # NOTE: Per plan R2.5, the [0-9]+ validator pattern from the issue-side
 # hook is NOT applicable — plan slugs are kebab-case, not integers. The
 # slug validation here is a kebab-case regex match, not numeric.
+
+# D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
+# lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
+# plugin lane it defers to a settings.json-registered copy of this hook to
+# prevent double-fire when both install lanes are active. Must be the first
+# executable line; the shim controls its own exit/return.
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
 
 INPUT=$(cat) || exit 0
 [ -z "$INPUT" ] && exit 0
@@ -209,7 +217,18 @@ fi
 # Source zskills-paths.sh to honour custom ZSKILLS_PLANS_DIR. Sourcing in
 # a subshell so the hook's environment stays clean.
 PLANS_DIR_RESOLVED=$(
-  ZSK_PATHS="${MAIN_ROOT}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  # Lane-portable resolution (W1.4 pattern 2): plugin lane resolves
+  # zskills-paths.sh under ${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/...;
+  # /update-zskills lane resolves it under the mirror
+  # (.claude/skills/update-zskills/...), then the zskills source-tree
+  # (skills/update-zskills/...).
+  ZSK_PATHS=""
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    ZSK_PATHS="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
+  if [ -z "$ZSK_PATHS" ]; then
+    ZSK_PATHS="${MAIN_ROOT}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
   if [ ! -f "$ZSK_PATHS" ]; then
     ZSK_PATHS="${MAIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   fi
@@ -236,12 +255,23 @@ if [ -d "$CLAIM_DIR" ]; then
 fi
 
 # ── Deny envelope ────────────────────────────────────────────────────────
+# Lane-portable recovery-command path (W1.4 pattern 2 / F-DA1-7): on the
+# plugin lane the recovery command must cite
+# ${CLAUDE_PLUGIN_ROOT}/skills/run-plan/scripts/claim-plan.sh; on the
+# /update-zskills lane it cites ${MAIN_ROOT}/.claude/skills/run-plan/...
+# (the mirror). Resolve to whichever exists so the agent is told a command
+# that actually resolves on its install lane.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/run-plan/scripts/claim-plan.sh" ]; then
+  CLAIM_PLAN_PATH="${CLAUDE_PLUGIN_ROOT}/skills/run-plan/scripts/claim-plan.sh"
+else
+  CLAIM_PLAN_PATH="${MAIN_ROOT}/.claude/skills/run-plan/scripts/claim-plan.sh"
+fi
 STOP_MSG=$(cat <<EOF
 STOP: create-worktree.sh for /run-plan branch '${BRANCH}' (plan slug '${SLUG}') denied — no claim found at ${MAIN_ROOT}/.zskills/claims/plan-${SLUG}/.
 
 The /run-plan dispatch fence MUST call:
 
-  bash ${MAIN_ROOT}/.claude/skills/run-plan/scripts/claim-plan.sh acquire ${SLUG} --pipeline-id "run-plan.${SLUG}"
+  bash ${CLAIM_PLAN_PATH} acquire ${SLUG} --pipeline-id "run-plan.${SLUG}"
 
 immediately above the create-worktree.sh invocation. If this hook fired during a /run-plan invocation, the SKILL.md prose has drifted — STOP, do not retry, file an issue.
 
