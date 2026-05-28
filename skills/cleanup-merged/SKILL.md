@@ -10,7 +10,7 @@ description: >-
   `all` does both local + remote. Protected branches from config are
   skipped automatically.
 metadata:
-  version: "2026.05.28+e42a2b"
+  version: "2026.05.28+9ebdcf"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -409,22 +409,15 @@ if [ "$DO_LOCAL" -eq 1 ]; then
 fi
 ```
 
-After the local branch loop, sweep any stale `/fix-issues` claim
-directories. When a PR merges via the GitHub web UI or a manual
-`gh pr merge` (bypassing `/land-pr`'s `STATUS=merged` release path), the
-per-issue claim under `.zskills/claims/issue-NNN/` leaks until its TTL
-expires. `claim-issue.sh sweep` is the documented admin sweep — it walks
-all claims, releases any whose age exceeds the TTL (default 7200s) or
-whose dir mtime is older than 30s without a `claim.json` (crash window),
-and is idempotent + always exits 0. `|| true` because sweep is best-
-effort housekeeping; the surrounding cleanup-merged success criteria
-should not regress on a stale-claim sweep failure.
-
-```bash
-if [ "$DO_LOCAL" -eq 1 ] && [ "$APPLY" -eq 1 ]; then
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" sweep || true
-fi
-```
+When a PR merges via the GitHub web UI or a manual `gh pr merge`
+(bypassing `/land-pr`'s `STATUS=merged` release path), the per-issue
+claim under `.zskills/claims/issue-NNN/` is left held. This is harmless:
+`/fix-issues` claims are released at land-or-abandon, not aged out (the
+TTL/sweep auto-reaper was removed in #739, same precedent as #684 for
+plan claims). A later `/fix-issues` fire detects the leaked claim via
+`acquire`'s EEXIST contract and skips that issue cleanly; if a claim is
+genuinely stuck (the issue's PR will never land), clear it manually with
+`claim-issue.sh release <N> --require-pipeline <id>`.
 
 ## Phase 6 — Remote branch scan
 
