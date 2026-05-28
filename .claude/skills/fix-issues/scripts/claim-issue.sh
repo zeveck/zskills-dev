@@ -16,12 +16,11 @@
 #     Exit 0  — released (or already absent — idempotent).
 #     Exit 12 — pipeline-id mismatch (refused; claim left intact).
 #   is-stale <N>
-#     Exit 0  — stale (older than TTL, or dir w/o claim.json > 30s old).
+#     Race-tolerance check ONLY: stale iff the claim dir exists without
+#     claim.json and is older than 30s (mkdir-succeeded-then-crashed).
+#     Exit 0  — stale (dir w/o claim.json > 30s old).
 #     Exit 1  — fresh.
 #     Exit 2  — no claim.
-#   sweep
-#     Iterates all claims; releases stale ones. Emits stderr line per
-#     swept claim. Idempotent. Always exits 0.
 #   list
 #     Pure read. Emits one TSV line per live claim:
 #       <N>\t<pipeline_id>\t<age_seconds>
@@ -94,21 +93,6 @@ validate_issue_number() {
     return 1
   fi
   return 0
-}
-
-# ---------------------------------------------------------------------------
-# TTL resolution. Reads ZSKILLS_CLAIM_TTL_SECONDS from the environment if
-# set (callers source zskills-resolve-config.sh); else default 7200.
-# ---------------------------------------------------------------------------
-resolve_ttl() {
-  local ttl="${ZSKILLS_CLAIM_TTL_SECONDS:-7200}"
-  case "$ttl" in
-    ''|*[!0-9]*) ttl=7200 ;;
-  esac
-  if [ "$ttl" -lt 60 ] 2>/dev/null; then
-    ttl=7200
-  fi
-  echo "$ttl"
 }
 
 # ---------------------------------------------------------------------------
@@ -252,6 +236,10 @@ except Exception:
 
 # ---------------------------------------------------------------------------
 # is-stale <N>
+#   Race-tolerance check ONLY. A claim is "stale" iff the claim dir exists
+#   without claim.json and is older than 30s — the
+#   mkdir-succeeded-then-crashed window. A live claim (claim.json present)
+#   is NEVER stale; claims are released at land-or-abandon, not aged out.
 #   exit 0 = stale, 1 = fresh, 2 = no claim
 # ---------------------------------------------------------------------------
 cmd_is_stale() {
@@ -261,8 +249,6 @@ cmd_is_stale() {
 
   local claim_dir="${MAIN_ROOT}/.zskills/claims/issue-${n}"
   local claim_file="${claim_dir}/claim.json"
-  local ttl
-  ttl=$(resolve_ttl)
 
   if [ ! -d "$claim_dir" ]; then
     return 2
@@ -286,34 +272,12 @@ except Exception:
     return 1
   fi
 
-  # claim.json present — parse started_at and compare to NOW - TTL.
-  local age
-  age=$("$_CLAIM_PYTHON" -c "
-import json, sys, datetime
-try:
-    with open(sys.argv[1]) as f:
-        body = json.load(f)
-    started = datetime.datetime.fromisoformat(body['started_at'])
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=datetime.timezone.utc)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    print(int((now - started).total_seconds()))
-except Exception:
-    print(-1)
-" "$claim_file")
-
-  if [ "$age" -lt 0 ] 2>/dev/null; then
-    # Unparseable started_at — treat as stale-by-metadata so sweep can
-    # clean it up.
-    return 0
-  fi
-  if [ "$age" -ge "$ttl" ] 2>/dev/null; then
-    return 0
-  fi
+  # claim.json present — a live claim is never stale. Lifecycle is
+  # acquire-at-pick, release-at-land-or-abandon (no TTL aging).
   return 1
 }
 
-# Internal helper: returns age in seconds, or -1 on error. Used by sweep.
+# Internal helper: returns age in seconds, or -1 on error. Used by list.
 _age_for_claim() {
   local claim_file="$1"
   "$_CLAIM_PYTHON" -c "
@@ -341,72 +305,6 @@ try:
 except Exception:
     pass
 " "$claim_file"
-}
-
-# ---------------------------------------------------------------------------
-# sweep — iterate claims, release stale ones. Internal release path
-# (no shell-out per iter).
-# ---------------------------------------------------------------------------
-cmd_sweep() {
-  resolve_main_root || return 2
-
-  local claims_root="${MAIN_ROOT}/.zskills/claims"
-  if [ ! -d "$claims_root" ]; then
-    return 0
-  fi
-
-  local ttl
-  ttl=$(resolve_ttl)
-
-  local d
-  for d in "$claims_root"/issue-*; do
-    [ -d "$d" ] || continue
-    local n
-    n=$(basename "$d" | sed 's/^issue-//')
-    case "$n" in
-      ''|*[!0-9]*) continue ;;
-    esac
-
-    local claim_file="${d}/claim.json"
-    local reason="" age=""
-    local pipeline_id=""
-
-    if [ ! -f "$claim_file" ]; then
-      # Crash-window check: dir mtime > 30s ago means stale (metadata).
-      age=$("$_CLAIM_PYTHON" -c "
-import os, sys, time
-try:
-    print(int(time.time() - os.stat(sys.argv[1]).st_mtime))
-except Exception:
-    print(-1)
-" "$d")
-      if [ "$age" -ge 30 ] 2>/dev/null; then
-        reason="metadata"
-        pipeline_id=""
-      else
-        continue
-      fi
-    else
-      age=$(_age_for_claim "$claim_file")
-      pipeline_id=$(_pipeline_for_claim "$claim_file")
-      if [ "$age" -lt 0 ] 2>/dev/null; then
-        reason="metadata"
-      elif [ "$age" -ge "$ttl" ] 2>/dev/null; then
-        reason="ttl"
-      else
-        continue
-      fi
-    fi
-
-    # Internal release: per-file rm, no recursion. We bypass
-    # --require-pipeline because this is an admin sweep.
-    rm -f "$claim_file"
-    rm -f "${d}/claim.json.tmp"
-    rmdir "$d" 2>&1 || true
-
-    echo "fix-issues claims: swept stale claim issue-${n} pipeline=${pipeline_id} age=${age}s reason=${reason}" >&2
-  done
-  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -445,7 +343,7 @@ cmd_list() {
 main() {
   local sub="${1:-}"
   if [ -z "$sub" ]; then
-    echo "Usage: claim-issue.sh {acquire|release|is-stale|sweep|list} [args...]" >&2
+    echo "Usage: claim-issue.sh {acquire|release|is-stale|list} [args...]" >&2
     return 2
   fi
   shift
@@ -453,11 +351,10 @@ main() {
     acquire)  cmd_acquire "$@" ;;
     release)  cmd_release "$@" ;;
     is-stale) cmd_is_stale "$@" ;;
-    sweep)    cmd_sweep "$@" ;;
     list)     cmd_list "$@" ;;
     *)
       echo "fix-issues claim-issue.sh: unknown subcommand '$sub'" >&2
-      echo "Usage: claim-issue.sh {acquire|release|is-stale|sweep|list} [args...]" >&2
+      echo "Usage: claim-issue.sh {acquire|release|is-stale|list} [args...]" >&2
       return 2
       ;;
   esac

@@ -54,9 +54,9 @@ case "$LAND_OUTCOME" in
     bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
       || echo "fix-issues: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
   created)
-    echo "fix-issues: holding claim for #$ISSUE_NUM (LAND_OUTCOME=created — PR is in flight); TTL will sweep" >&2 ;;
+    echo "fix-issues: holding claim for #$ISSUE_NUM (LAND_OUTCOME=created — PR is in flight); claim is released when the PR resolves on a later fire" >&2 ;;
   *)
-    echo "fix-issues: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD (TTL will sweep)" >&2 ;;
+    echo "fix-issues: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD" >&2 ;;
 esac
 FRAGMENT
 }

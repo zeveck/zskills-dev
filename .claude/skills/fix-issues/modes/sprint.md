@@ -126,24 +126,6 @@ PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/s
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 ```
 
-### Preflight: sweep stale claims
-
-Sweep stale `.zskills/claims/issue-*/` directories BEFORE the live-worktree
-defer-all gate below. A sweep that frees an issue can affect the defer-all
-decision (a previously-claimed issue whose pipeline crashed long ago should
-not gate this fire). `claim-issue.sh sweep` is idempotent.
-
-```bash
-# Sweep stale claims so a sweep that frees an issue can affect the
-# defer-all gate decision below. claim-issue.sh sweep is idempotent.
-# `|| true` is permitted here because sweep is best-effort hygiene and
-# does not gate sprint correctness — a failed sweep means stale claims
-# persist until next fire, never duplicate dispatch.
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-. "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-fence-helpers.sh"
-sweep_stale_claims || true
-```
-
 ### Live worktree count check (defer-all gate)
 
 **Run this BEFORE the sprint worktree gate below.** If the host is already
@@ -1519,8 +1501,7 @@ agent hasn't returned after 1 hour, declare it **failed**:
 - The worktree is a cleanup artifact — do NOT auto-land late results
 - If the agent eventually returns, ignore it. Timed out = failed, period.
 - **Release the per-issue claim** so a later sprint (or a concurrent
-  pipeline once TTL would otherwise hold the issue) can pick the issue
-  up again. For each timed-out issue, call:
+  pipeline) can pick the issue up again. For each timed-out issue, call:
 
   ```bash
   bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
@@ -1529,7 +1510,8 @@ agent hasn't returned after 1 hour, declare it **failed**:
 
   `|| true` because release is idempotent and best-effort at this terminal
   arm; the timeout itself is the load-bearing signal — release failure
-  surfaces only as a stderr line and is swept by TTL as a backstop.
+  surfaces only as a stderr line and the claim is harmless until the next
+  pipeline re-acquires (acquire-EEXIST detects the live claim).
 
 **Agent dispatch prompts MUST include for each issue:**
 
@@ -1696,19 +1678,6 @@ that residual window is bounded by `claim-issue.sh`'s acquire-EEXIST
 atomic mkdir → exit 10 contract, which Phase 3's per-iteration acquire
 already handles via the `race-lost` skip-record arm. Same architecture
 as `/work-on-plans` + `/run-plan`.
-
-The pre-filter sweep is R2.6 symmetric — reap any stale claim metadata
-right before the filter reads it, so a long-dead pipeline whose claim
-TTL has expired doesn't shadow a candidate that is actually free. The
-earlier preflight sweep at "### Preflight: sweep stale claims" runs near
-the top of Phase 2 BEFORE the picker runs; this second sweep is cheap
-(idempotent) and closes the window where a stale claim crossed the TTL
-boundary between preflight and selection.
-
-```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" sweep || true
-```
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
@@ -1917,7 +1886,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     RC=$?
     if [ "$RC" -ne 0 ]; then
       # W2.5.5 — release the just-acquired claim before sprint-abort so
-      # it doesn't leak until TTL. Only THIS issue's claim is in-flight
+      # it doesn't leak. Only THIS issue's claim is in-flight
       # at this moment (earlier iterations' agents are running with
       # their own claims correctly held; later iterations haven't been
       # acquired yet). `|| true` because release-after-failure is

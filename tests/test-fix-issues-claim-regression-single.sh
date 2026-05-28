@@ -9,9 +9,7 @@
 #
 # Cases:
 #   1. Sequential acquire 1, 2, 3 — all exit 0; three claim dirs exist.
-#   2. sweep_stale_claims on a no-stale-claims directory — no-op, exit 0,
-#      all live claims survive.
-#   3. block-fix-issue-unclaimed.sh hook against a `fix-issue-1` payload
+#   2. block-fix-issue-unclaimed.sh hook against a `fix-issue-1` payload
 #      with claim present — exit 0 (no spurious deny in single-pipeline
 #      path).
 
@@ -83,38 +81,7 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
-# Test 2: sweep on a no-stale-claims dir is a no-op; all three survive.
-# ───────────────────────────────────────────────────────────────────────
-(
-  cd "$FIXTURE" || exit 1
-  # All three claims are fresh (just-acquired) — sweep must leave them.
-  out=$(bash "$CLAIM_SH" sweep 2>&1)
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo "FAIL_REASON sweep returned $rc, expected 0; out: $out"
-    exit 1
-  fi
-  # Any "swept" stderr line means we wrongly removed a live claim.
-  if echo "$out" | grep -q "swept stale claim"; then
-    echo "FAIL_REASON sweep removed fresh claim(s): $out"
-    exit 1
-  fi
-  for n in 1 2 3; do
-    if [ ! -d "$FIXTURE/.zskills/claims/issue-$n" ]; then
-      echo "FAIL_REASON issue-$n removed by sweep (should be fresh)"
-      exit 1
-    fi
-  done
-  exit 0
-)
-if [ "$?" -eq 0 ]; then
-  pass "sweep on no-stale-claims dir is a no-op (exit 0, no swept lines, all three claims survive)"
-else
-  fail "sweep no-op" "see FAIL_REASON above"
-fi
-
-# ───────────────────────────────────────────────────────────────────────
-# Test 3: hook against fix-issue-1 payload with claim present — exit 0
+# Test 2: hook against fix-issue-1 payload with claim present — exit 0
 # (no spurious deny in single-pipeline path).
 # ───────────────────────────────────────────────────────────────────────
 (

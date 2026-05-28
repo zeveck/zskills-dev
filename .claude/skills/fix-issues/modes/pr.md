@@ -321,8 +321,10 @@ BODY
   # Release the claim based on per-issue LAND_OUTCOME (plan W2.6a — round 2
   # re-anchor R2.3 — keyed on $LAND_OUTCOME, not $STATUS).
   # Hold on `created` because the PR is in flight on the remote;
-  # releasing would let a concurrent pipeline open a duplicate PR. TTL will
-  # sweep if CI stalls (claim_ttl_seconds default 7200).
+  # releasing would let a concurrent pipeline open a duplicate PR. The
+  # claim is released when the PR resolves (merged/pr-ready/failed) on a
+  # later fire; a stalled-PR claim is cleared manually via `claim-issue.sh
+  # release` (no TTL auto-reap — same precedent as #684 for plan claims).
   # `monitored` is NOT a reachable LAND_OUTCOME value (it is a STATUS that
   # falls through to the CI_STATUS case where LAND_OUTCOME resolves to one
   # of {merged, pr-ready, created, pr-ci-failing}); it would be dead code
@@ -333,9 +335,9 @@ BODY
       bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
         || echo "fix-issues: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
     created)
-      echo "fix-issues: holding claim for #$ISSUE_NUM (LAND_OUTCOME=created — PR is in flight); TTL=${ZSKILLS_CLAIM_TTL_SECONDS:-7200}s will sweep if PR stalls" >&2 ;;
+      echo "fix-issues: holding claim for #$ISSUE_NUM (LAND_OUTCOME=created — PR is in flight); claim is released when the PR resolves on a later fire" >&2 ;;
     *)
-      echo "fix-issues: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD (TTL will sweep)" >&2 ;;
+      echo "fix-issues: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD" >&2 ;;
   esac
 
   case "$LAND_OUTCOME" in

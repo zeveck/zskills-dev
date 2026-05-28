@@ -60,13 +60,6 @@ fi
 
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 
-# Python interpreter resolution. Honours the public-facing ZSKILLS_PYTHON
-# override (CLAUDE.md "Python is required" section) and parks the
-# resolved binary in a _ZSK_-prefixed internal so the caller's env stays
-# clean. Used below for the execution.claim_ttl_seconds parse (Python
-# stdlib json is more robust than BASH_REMATCH for non-trivial JSON).
-_ZSK_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
-
 # Initialize string vars to empty FIRST (empty-pattern-guard).
 UNIT_TEST_CMD=""
 FULL_TEST_CMD=""
@@ -78,9 +71,6 @@ ZSKILLS_VERSION=""
 # Default the live-worktree-cap to 3 (preserves status quo behavior pre-#295
 # for consumers who never set this field). Re-evaluated below if config sets it.
 ZSKILLS_MAX_CONCURRENT_WORKTREES=3
-# Default the claim TTL to 7200s (2h) — same default as the schema. Used
-# by /fix-issues' .zskills/claims/issue-<N>/ preflight sweep.
-ZSKILLS_CLAIM_TTL_SECONDS=7200
 # Dashboard Completed-window config (W1.6 of completed-backlog-sections).
 # Days = recency window; Limit = max closed-issue payload size.
 ZSKILLS_DASHBOARD_COMPLETED_DAYS=14
@@ -153,26 +143,7 @@ if [ -f "$_ZSK_CFG" ]; then
     fi
     unset _ZSK_DCL
   fi
-  # execution.claim_ttl_seconds: integer (default 7200, min 60). Parsed
-  # via Python stdlib rather than BASH_REMATCH — the BASH_REMATCH
-  # `\{[^}]*` shape fails on pretty-printed nested execution blocks
-  # because [^}] excludes }, and the integer-key here lives inside an
-  # object that itself contains other objects in some configs. Python
-  # json handles this robustly.
-  if [ -n "$_ZSK_PYTHON" ]; then
-    _ZSK_TTL=$("$_ZSK_PYTHON" -c "import json,sys
-try:
-  d=json.load(open('$_ZSK_CFG')).get('execution',{})
-  print(d.get('claim_ttl_seconds',7200))
-except Exception:
-  print(7200)" 2>/dev/null || echo 7200)
-    if [ "$_ZSK_TTL" -ge 60 ] 2>/dev/null; then
-      ZSKILLS_CLAIM_TTL_SECONDS="$_ZSK_TTL"
-    fi
-    unset _ZSK_TTL
-  fi
   unset _ZSK_CFG_BODY
 fi
 
 unset _ZSK_CFG
-unset _ZSK_PYTHON
