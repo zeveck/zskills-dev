@@ -1409,7 +1409,7 @@ function buildBranchCard(b, byBranch) {
   // State pill
   head.appendChild(branchStatePill(b, byBranch));
   if (b.last_commit_at) {
-    head.appendChild(el("span", { cls: "card-sub", text: relativeTime(b.last_commit_at) }));
+    head.appendChild(el("span", { cls: "card-sub branch-time", text: relativeTime(b.last_commit_at) }));
   }
   card.appendChild(head);
   if (b.last_commit_subject) {
@@ -1431,7 +1431,7 @@ function buildBranchCard(b, byBranch) {
     }
     if (typeof w.age_seconds === "number") {
       wtRow.appendChild(el("span", {
-        cls: "card-sub",
+        cls: "card-sub branch-age",
         text: ageSecondsToText(w.age_seconds),
       }));
     }
@@ -3258,6 +3258,11 @@ function bindActionEvents() {
     if (!target) return;
     const action = target.getAttribute("data-action");
     if (!action) return;
+    // Checkbox actions (e.g. branch-select-all) are driven via the `change`
+    // listener below. Calling preventDefault() here would cancel the
+    // checkbox's own toggle, so it would drive children but never show its
+    // own check. Let the native toggle happen and skip the click path.
+    if (target.tagName === "INPUT" && target.type === "checkbox") return;
     ev.preventDefault();
     handleAction(action, target);
   });
@@ -3288,6 +3293,29 @@ function bindActionEvents() {
     if (!secEl) return;
     const sectionKey = secEl.getAttribute("data-branch-section");
     if (sectionKey) _updateBranchCopyCount(secEl, sectionKey);
+  });
+
+  // Select-all checkbox change handler. Routed through `change` (not the
+  // delegated click path) so the checkbox's own checked state toggles
+  // natively before we fan the state out to the per-row checkboxes.
+  document.body.addEventListener("change", (ev) => {
+    const sa = ev.target.closest && ev.target.closest('[data-action="branch-select-all"]');
+    if (!sa) return;
+    handleAction("branch-select-all", sa);
+  });
+
+  // Branch card body click → toggle its selection checkbox. The whole card
+  // reads as clickable (pointer cursor) but only had a working name-link
+  // before, so clicking anywhere else now selects the branch. The checkbox
+  // itself and the name-link opt out so they keep their native behavior.
+  document.body.addEventListener("click", (ev) => {
+    const card = ev.target.closest && ev.target.closest('.card[data-kind="branch"]');
+    if (!card) return;
+    if (ev.target.closest("input, a, button")) return;
+    const cb = card.querySelector(".branch-select-cb");
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
   // Default-mode segmented buttons.

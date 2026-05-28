@@ -1368,6 +1368,7 @@ button svg { display: inline-block; vertical-align: middle; }
 .branch-state-pill--local        { color: var(--orange); border-color: var(--orange); }
 .branch-state-pill--remote       { color: var(--text-dim); border-color: var(--border); }
 
+<<<<<<< HEAD
 /* Config-protected shield (cleanup.protected_branches). Signals that
    /cleanup-merged skips this branch — NOT GitHub branch protection. */
 .branch-protected-shield {
@@ -1376,6 +1377,19 @@ button svg { display: inline-block; vertical-align: middle; }
   font-size: 0.82rem;
   line-height: 1;
   cursor: help;
+=======
+/* Branch card layout — keep name + state pill flush-left next to the
+   checkbox; push the timestamp / worktree age to the trailing edge so the
+   row reads as "[✓ name PILL] ............ time" instead of space-between
+   scattering the name into the middle of the card. */
+.card[data-kind="branch"] .branch-time,
+.card[data-kind="branch"] .branch-age {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.card[data-kind="branch"] .card-worktree-row {
+  justify-content: flex-start;
+>>>>>>> bcb67d9 (feat(dashboard): polish Branches tab — card layout, select-all, click-to-toggle)
 }
 
 /* Issue #717 — Branch section container. Each of Active/Landed/Remote-only
