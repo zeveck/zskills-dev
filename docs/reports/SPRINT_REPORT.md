@@ -1,5 +1,29 @@
 # Sprint Report
 
+## Sprint — 2026-05-28 (dashboard, manual `now` trigger) — #771
+
+**Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge) | **Trigger:** manual `/fix-issues now` (user queued #771 after the #769 incident)
+
+### Fixed
+| # | Title | Branch | PR | Tests | Agent Verify | User Verify |
+|---|-------|--------|----|----|-------------|-------------|
+| #771 | CI guard: fail on leftover git conflict markers in committed files | `fix-issue-771` | #773 (merged) | 6059/6059 (new suite 4/4) | PASS — orchestrator read the full 199-line guard test: strict label-bearing pattern `^(<<<<<<<\|>>>>>>>) ` (avoids the `=======`/setext-header collision), guard+proof share one CONFLICT_RE so they can't drift, positive case via runtime temp-repo (no committed marker fixture), false-positive guards for setext/HR/mid-line + the canary fixture | N/A (test-only) |
+
+### Notable decisions
+
+- **Closes the #769 incident class.** #769/PR #770 shipped `app.css` with literal conflict markers (invalid CSS, broke the Branches tab) because the UI test grep-matched rule *presence* even through markers, and nothing scanned for markers. This guard (`tests/test-no-conflict-markers.sh`, wired into `run-all.sh`) is the regression fence.
+- **Pattern discipline avoided the obvious false-positive.** Matching bare `^=======$` would have flagged every Markdown setext header / horizontal rule. The guard matches only the label-bearing opener/closer (`<<<<<<< ` / `>>>>>>> `), which is sufficient to prove a real conflict and skips docs + the canary fixture (whose markers are mid-line inside bash `[[ ]]` comparisons).
+- **Self-poisoning avoided.** The positive-case test builds a throwaway git repo at runtime rather than committing a marker fixture (which the live scan would then flag). Guard and proof use the identical regex.
+
+### Context this fire
+
+- #769 (the incident) was already fixed (PR #770) before this fire — this issue is purely the prevention follow-up.
+- A new issue #772 (safety-hook bypass: `block-unsafe-generic` evadable via `bash <<<"…"` here-strings, #399 sibling) surfaced open but is NOT in the Ready queue — left unqueued per the dashboard-mode contract (user controls Ready).
+
+### Landing
+
+PR mode. rebase → push → CI monitor → auto-merge → FF local main → `.landed` → claim release.
+
 ## Sprint — 2026-05-28 (dashboard, manual `now` trigger) — #759
 
 **Mode:** auto | **Source:** dashboard Ready queue | **Landing:** pr (auto-merge) | **Trigger:** manual `/fix-issues now auto` (user dragged #759 into Ready)
