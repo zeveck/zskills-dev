@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Z Skills Dashboard — Interactive Demo</title>
+  <!--
+    STATIC, browser-only demo of the Z Skills Dashboard.
+
+    THE BINDING RULE: this page loads the REAL dashboard frontend
+    (index.html body skeleton, app.css, app.js) BY REFERENCE from
+    skills/zskills-dashboard/scripts/zskills_monitor/static/. It never
+    forks or copies those three files. The ONLY thing the demo provides
+    locally is the BACKEND SIMULATION (demo-sim.js) served behind a
+    window.fetch shim, so the real app.js's /api/* calls resolve to the
+    in-browser sim instead of a server.
+
+    Serve it as plain static files from the repo ROOT, e.g.:
+        python3 -m http.server 8765
+        # then open  http://localhost:8765/demo/
+    No backend process is required. Works under a GitHub Pages project
+    subpath too (paths below are resolved relative to this page's URL).
+  -->
+  <style>
+    /* Minimal pre-boot styling so the page isn't a flash of unstyled text
+       while the real app.css + skeleton load. The real app.css governs
+       everything once injected. */
+    html, body { margin: 0; background: #0b0b16; color: #e0e0ff;
+      font-family: monospace; }
+    #demo-boot-status { position: fixed; inset: 0; display: flex;
+      align-items: center; justify-content: center; font-size: 16px;
+      color: #8888bb; z-index: 5; }
+  </style>
+</head>
+<body>
+  <div id="demo-boot-status">Loading Z Skills Dashboard demo…</div>
+
+  <script type="module">
+    // -------------------------------------------------------------------
+    // By-reference loader. Order matters:
+    //   (a) fetch the REAL index.html, inject its <body> skeleton;
+    //   (b) load the real app.css by repo-relative path;
+    //   (c) install the fetch shim + start the JS sim + inject overlay;
+    //   (d) dynamically import() the real app.js (AFTER the shim, so its
+    //       first /api/state poll hits the shim, not the network).
+    // -------------------------------------------------------------------
+
+    import { Simulation } from "./demo-sim.js";
+
+    // Resolve the real dashboard's static dir relative to THIS page so the
+    // demo works both when served from the repo root locally and under a
+    // GitHub Pages project subpath. This page lives at <base>/demo/, the
+    // static assets at <base>/skills/.../static/. "../skills/..." climbs out
+    // of /demo/ to <base>/ and back down — correct in both deployments.
+    const STATIC_BASE =
+      new URL("../skills/zskills-dashboard/scripts/zskills_monitor/static/",
+              document.baseURI).href;
+
+    const REAL_INDEX = STATIC_BASE + "index.html";
+    const REAL_APP_CSS = STATIC_BASE + "app.css";
+    const REAL_APP_JS = STATIC_BASE + "app.js";
+
+    function bootStatus(msg) {
+      const el = document.getElementById("demo-boot-status");
+      if (el) el.textContent = msg;
+    }
+
+    async function loadRealSkeleton() {
+      // (a) Fetch the real index.html and inject its <body> children so any
+      //     structural change to the real page flows in automatically. We
+      //     parse it, strip the module <script src="/app.js"> (we load app.js
+      //     ourselves AFTER the shim) and the <link rel=stylesheet> (we load
+      //     app.css ourselves by the correct repo-relative path).
+      const html = await fetch(REAL_INDEX, { cache: "no-store" }).then((r) => {
+        if (!r.ok) throw new Error("fetch real index.html failed: " + r.status);
+        return r.text();
+      });
+      const doc = new DOMParser().parseFromString(html, "text/html");
+
+      // (b) Load the real app.css by its correct repo-relative path. The real
+      //     index.html uses a root-absolute /app.css that would 404 under the
+      //     demo subpath, so we inject our own resolved <link> and drop the
+      //     original.
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = REAL_APP_CSS;
+      document.head.appendChild(link);
+
+      // Carry over the favicon (resolved) for fidelity.
+      const fav = document.createElement("link");
+      fav.rel = "icon";
+      fav.type = "image/svg+xml";
+      fav.href = STATIC_BASE + "favicon.svg";
+      document.head.appendChild(fav);
+
+      // Move every real <body> child into our document body, skipping the
+      // module <script src=".../app.js"> (loaded later via import()) and any
+      // <link>/<style> that belong in head. This keeps the skeleton faithful
+      // without hardcoding it.
+      const incoming = Array.from(doc.body.childNodes);
+      // Remove the pre-boot placeholder before injecting the real skeleton.
+      const placeholder = document.getElementById("demo-boot-status");
+      for (const node of incoming) {
+        if (node.nodeType === 1 && node.tagName === "SCRIPT") {
+          const src = node.getAttribute("src") || "";
+          if (src.indexOf("app.js") !== -1) continue; // we import() it ourselves
+        }
+        document.body.appendChild(document.importNode(node, true));
+      }
+      // Re-attach the placeholder on top so it stays visible until app.js boots.
+      if (placeholder) document.body.appendChild(placeholder);
+    }
+
+    // -------------------------------------------------------------------
+    // (c) The fetch shim + JS sim + demo overlay.
+    // -------------------------------------------------------------------
+
+    // The live sim. Re-creatable by the reset button (fresh clock + seed).
+    let sim = new Simulation();
+
+    function jsonResponse(data, status) {
+      return new Response(JSON.stringify(data), {
+        status: status || 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    function installFetchShim() {
+      const realFetch = window.fetch ? window.fetch.bind(window) : null;
+
+      window.fetch = function (input, init) {
+        const url = (typeof input === "string") ? input
+          : (input && input.url) || "";
+        const method = ((init && init.method)
+          || (input && input.method) || "GET").toUpperCase();
+
+        // Normalize to a pathname (handles absolute + relative URLs).
+        let path = url;
+        try {
+          path = new URL(url, document.baseURI).pathname;
+        } catch (e) { /* leave as-is */ }
+
+        // --- GET endpoints -----------------------------------------
+        if (method === "GET") {
+          if (path === "/api/health" || path.endsWith("/api/health")) {
+            return Promise.resolve(jsonResponse({ status: "ok" }));
+          }
+          if (path === "/api/state" || path.endsWith("/api/state")) {
+            const snap = sim.buildSnapshot();
+            updateOverlay(snap);
+            return Promise.resolve(jsonResponse(snap));
+          }
+          if (path === "/api/work-state" || path.endsWith("/api/work-state")) {
+            return Promise.resolve(jsonResponse({
+              status: "idle", current: null, history: [],
+            }));
+          }
+          const planM = path.match(/\/api\/plan\/(.+)$/);
+          if (planM) {
+            const slug = decodeURIComponent(planM[1]);
+            const item = sim._bySlug[slug];
+            if (item) {
+              return Promise.resolve(jsonResponse({
+                slug: slug,
+                title: item.title,
+                body: "# " + item.title + "\n\nStarship maintenance plan.",
+              }));
+            }
+            return Promise.resolve(jsonResponse({ error: "not found" }, 404));
+          }
+          const issueM = path.match(/\/api\/issue\/(.+)$/);
+          if (issueM) {
+            const num = parseInt(issueM[1], 10);
+            if (isNaN(num)) {
+              return Promise.resolve(jsonResponse({ error: "bad number" }, 400));
+            }
+            const item = sim._byNumber[num];
+            if (item) {
+              return Promise.resolve(jsonResponse({
+                number: num,
+                title: item.title,
+                body: "Reported by Engineering: " + item.title,
+                state: item.completed ? "CLOSED" : "OPEN",
+              }));
+            }
+            return Promise.resolve(jsonResponse({ error: "not found" }, 404));
+          }
+        }
+
+        // --- POST endpoints ----------------------------------------
+        if (method === "POST") {
+          if (path === "/api/queue" || path.endsWith("/api/queue")) {
+            let payload = null;
+            try {
+              payload = JSON.parse((init && init.body) || "null");
+            } catch (e) {
+              return Promise.resolve(jsonResponse(
+                { error: "json parse: " + e }, 400));
+            }
+            if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+              return Promise.resolve(jsonResponse(
+                { error: "body is not an object" }, 400));
+            }
+            // Reject `completed` like the real server — it's read-only.
+            for (const grp of ["plans", "issues"]) {
+              const sub = payload[grp];
+              if (sub && typeof sub === "object" && "completed" in sub) {
+                return Promise.resolve(jsonResponse({
+                  error: "completed column is read-only on the API; "
+                    + "cannot accept POSTs",
+                }, 400));
+              }
+            }
+            sim.applyQueue(payload);
+            const now = new Date().toISOString();
+            return Promise.resolve(jsonResponse({
+              ok: true, updated_at: now, state_updated_at: now,
+            }));
+          }
+          if (path === "/api/trigger" || path.endsWith("/api/trigger")) {
+            return Promise.resolve(jsonResponse(
+              { error: "trigger not available in demo mode" }, 501));
+          }
+          if (path === "/api/work-state/reset"
+              || path.endsWith("/api/work-state/reset")) {
+            return Promise.resolve(jsonResponse({ ok: true }));
+          }
+        }
+
+        // Anything else (real static assets etc.) falls through to network.
+        if (realFetch) return realFetch(input, init);
+        return Promise.reject(new Error("no network fetch available: " + url));
+      };
+    }
+
+    // -------------------------------------------------------------------
+    // Demo overlay (banner + lower-left "Demo" watermark + victory +
+    // overachiever overlays + RESET button). Ported from demo_server.py's
+    // injected DEMO_OVERLAY_JS, extended with a reset control.
+    // -------------------------------------------------------------------
+
+    let victoryShown = false;
+    let overachieverShown = false;
+
+    function injectOverlay() {
+      const banner = document.createElement("div");
+      banner.id = "demo-banner";
+      banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9998;"
+        + "background:linear-gradient(135deg,#1a1a2e,#16213e);color:#e0e0ff;"
+        + "text-align:center;padding:8px 16px;font-size:14px;"
+        + "font-family:monospace;border-bottom:2px solid #0f3460;";
+      banner.innerHTML = '<span style="color:#e94560">&#9733;</span> '
+        + "<strong>Z Skills Dashboard Demo</strong> &mdash; "
+        + '<span id="demo-progress">Loading...</span> '
+        + '<span style="color:#e94560">&#9733;</span>'
+        + '<button id="demo-reset" title="Reset the demo to a fresh board">'
+        + "&#x21bb; Reset</button>";
+      document.body.prepend(banner);
+      document.body.style.paddingTop = "40px";
+
+      const resetBtn = document.getElementById("demo-reset");
+      resetBtn.style.cssText = "margin-left:18px;padding:3px 14px;font-size:13px;"
+        + "cursor:pointer;background:#e94560;color:#fff;border:none;"
+        + "border-radius:5px;font-family:monospace;vertical-align:middle;";
+      resetBtn.addEventListener("click", resetDemo);
+
+      // --- "Demo" watermark: plain unobtrusive text, lower-LEFT, 48px.
+      const badgeStyle = document.createElement("style");
+      badgeStyle.textContent =
+        "#demo-badge{position:fixed;left:20px;bottom:16px;z-index:9997;"
+        + "pointer-events:none;font-family:monospace;font-size:48px;"
+        + "font-weight:700;letter-spacing:4px;color:rgba(255,255,255,0.4);}";
+      document.head.appendChild(badgeStyle);
+      const badge = document.createElement("div");
+      badge.id = "demo-badge";
+      badge.textContent = "Demo";
+      document.body.appendChild(badge);
+
+      // --- Standard victory overlay (core board cleared).
+      const overlay = document.createElement("div");
+      overlay.id = "demo-victory";
+      overlay.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;"
+        + "background:rgba(10,10,30,0.92);justify-content:center;"
+        + "align-items:center;flex-direction:column;font-family:monospace;"
+        + "color:#e0e0ff;";
+      overlay.innerHTML = '<div style="text-align:center;max-width:600px;padding:40px;">'
+        + '<div style="font-size:72px;margin-bottom:20px;">&#x1F680;</div>'
+        + '<h1 style="font-size:36px;color:#e94560;margin:0 0 16px;">Board Cleared</h1>'
+        + '<p style="font-size:18px;line-height:1.6;color:#a0a0d0;">You drove every '
+        + "plan and issue through the board to Completed. The starship is fully "
+        + "operational.</p>"
+        + '<p style="font-size:14px;color:#606080;margin-top:24px;">This was a demo of the '
+        + "Z&nbsp;Skills Dashboard &mdash; an agent workflow monitor. Drag cards between "
+        + "columns; drop one in Ready to watch it get worked (up to a few at a time). "
+        + "Psst &mdash; there are two extra plans hiding in Backlog and Discarded&hellip;</p>"
+        + "<button onclick=\"document.getElementById('demo-victory').style.display='none'\""
+        + ' style="margin-top:24px;padding:10px 32px;font-size:16px;cursor:pointer;'
+        + "background:#e94560;color:white;border:none;border-radius:6px;font-family:monospace;\""
+        + ">Dismiss</button></div>";
+      document.body.appendChild(overlay);
+
+      // --- Overachiever overlay (#5): core cleared AND both easter eggs done.
+      const oa = document.createElement("div");
+      oa.id = "demo-overachiever";
+      oa.style.cssText = "display:none;position:fixed;inset:0;z-index:10000;"
+        + "background:radial-gradient(circle at 50% 40%,#2a1659,#08010f 80%);"
+        + "justify-content:center;align-items:center;flex-direction:column;"
+        + "font-family:monospace;color:#f0e9ff;";
+      oa.innerHTML = '<div style="text-align:center;max-width:640px;padding:40px;">'
+        + '<div style="font-size:80px;margin-bottom:16px;">&#x1F30C;</div>'
+        + '<h1 style="font-size:40px;margin:0 0 16px;'
+        + "background:linear-gradient(90deg,#ffd166,#e94560,#7b2ff7);"
+        + "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
+        + 'background-clip:text;">OVERACHIEVER</h1>'
+        + '<p style="font-size:20px;line-height:1.6;color:#d8c8ff;">You bent the speed '
+        + "of light and took over the universe. &#x1F30C;</p>"
+        + '<p style="font-size:14px;color:#9a86c8;margin-top:24px;">Core board cleared '
+        + "<em>and</em> both secret plans &mdash; &ldquo;Take Over the Universe&rdquo; "
+        + "and &ldquo;Adjust the Speed of Light&rdquo; &mdash; driven to Completed. "
+        + "Nothing left to fix in this corner of the galaxy.</p>"
+        + "<button onclick=\"document.getElementById('demo-overachiever').style.display='none'\""
+        + ' style="margin-top:24px;padding:10px 32px;font-size:16px;cursor:pointer;'
+        + "background:#7b2ff7;color:white;border:none;border-radius:6px;font-family:monospace;\""
+        + ">&#x1F32D; Bask in glory</button></div>";
+      document.body.appendChild(oa);
+    }
+
+    function updateOverlay(data) {
+      if (!data || !data.demo) return;
+      const d = data.demo;
+      const p = document.getElementById("demo-progress");
+      if (p) {
+        const inflight = (typeof d.in_flight === "number")
+          ? (" — " + d.in_flight + "/" + d.concurrency + " working") : "";
+        if (d.progress_total === 0) {
+          p.textContent = "Awaiting first arrivals…";
+        } else if (d.overachiever) {
+          p.textContent = "Overachiever — speed of light bent, universe taken over";
+        } else if (d.all_completed) {
+          p.textContent = "Board cleared — " + d.progress_done + "/"
+            + d.progress_total + " done";
+        } else {
+          // name BOTH Ready-key columns by their real labels.
+          p.textContent = "Drop plans in Accepted, issues in Ready — "
+            + "then watch them get worked — "
+            + d.progress_done + "/" + d.progress_total + " completed" + inflight;
+        }
+      }
+      // Overachiever supersedes the standard victory.
+      if (d.overachiever && !overachieverShown) {
+        overachieverShown = true;
+        victoryShown = true;
+        const vo = document.getElementById("demo-victory");
+        if (vo) vo.style.display = "none";
+        const oae = document.getElementById("demo-overachiever");
+        if (oae) oae.style.display = "flex";
+      } else if (d.all_completed && !victoryShown) {
+        victoryShown = true;
+        const v = document.getElementById("demo-victory");
+        if (v) v.style.display = "flex";
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // Reset: re-initialize the JS sim in-browser (fresh clock anchor +
+    // fresh seed). No page reload, no server round-trip. The next poll
+    // re-renders from the fresh sim; we also nudge the overlay state.
+    // -------------------------------------------------------------------
+    function resetDemo() {
+      sim = new Simulation();
+      victoryShown = false;
+      overachieverShown = false;
+      const vo = document.getElementById("demo-victory");
+      if (vo) vo.style.display = "none";
+      const oae = document.getElementById("demo-overachiever");
+      if (oae) oae.style.display = "none";
+      // Refresh the overlay immediately from a fresh snapshot; app.js's own
+      // 2s poll picks up the new board on its next tick.
+      try {
+        updateOverlay(sim.buildSnapshot());
+      } catch (e) { /* non-fatal */ }
+      // Best-effort: if app.js exposes a manual refresh we don't depend on it;
+      // its polling loop will re-render within ~2s. Dispatch a visibility nudge
+      // so app.js's visibilitychange-driven immediate poll fires if present.
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+
+    // -------------------------------------------------------------------
+    // Boot sequence.
+    // -------------------------------------------------------------------
+    (async function boot() {
+      try {
+        await loadRealSkeleton();          // (a) + (b)
+        installFetchShim();                // (c) shim
+        injectOverlay();                   // (c) overlay
+        updateOverlay(sim.buildSnapshot()); // prime the banner pre-app.js
+        // (d) Import the real app.js AFTER the shim is installed so its first
+        //     /api/state poll resolves against the sim. The module self-boots
+        //     (document.readyState is already complete here).
+        await import(REAL_APP_JS);
+        // app.js boots itself on import; remove the loading placeholder.
+        const ph = document.getElementById("demo-boot-status");
+        if (ph) ph.remove();
+      } catch (err) {
+        bootStatus("Demo failed to load: " + (err && err.message ? err.message : err));
+        // Surface in console for debugging.
+        console.error("[demo] boot failed", err);
+      }
+    })();
+  </script>
+</body>
+</html>
