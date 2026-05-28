@@ -59,7 +59,7 @@ After Phase 6 (land) succeeds for the current phase AND
    exit this turn.
 
 2. **This plan is a sub-plan delegate** (detected via `tracking-index=N`
-   arg from research-and-go Step 1b — see `skills/research-and-go/SKILL.md:135`):
+   arg from research-and-go Step 1b — see `skills/research-and-go/SKILL.md:255-258`):
    after the last phase of this sub-plan lands, recover the meta-plan path
    from `requires.run-plan.N` marker content (or
    `pipeline.research-and-go.*` sentinel — see Step 1b). Schedule a

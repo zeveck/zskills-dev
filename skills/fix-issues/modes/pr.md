@@ -54,8 +54,8 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # LAND_PR_BYPASS_HARDENING Phase 2). Written ONCE at sprint start
 # (i.e., at the top of the per-issue loop flow); finalized at sprint
 # end via explicit-finalize based on $SPRINT_OUTCOME below. Variables
-# $PIPELINE_ID and $SPRINT_ID are presumed set by the sprint-tracking
-# sentinel at skills/fix-issues/SKILL.md:445-470.
+# $PIPELINE_ID and $SPRINT_ID are presumed set by the "Sprint identity"
+# section at skills/fix-issues/modes/sprint.md:122-126.
 NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 cat > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.fix-issues.$SPRINT_ID" <<MARK

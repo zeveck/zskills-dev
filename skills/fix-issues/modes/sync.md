@@ -247,7 +247,7 @@ EOF
    monitors CI. The tracking marker is written on main_root so
    `/land-pr` can satisfy it with a `fulfilled.land-pr.<id>` marker on
    successful merge — mirrors `/run-plan` PR mode's pattern
-   (`skills/run-plan/modes/pr.md:339-348`, `skills/run-plan/SKILL.md:888`).
+   (`skills/run-plan/modes/pr.md:373-379`, `skills/run-plan/SKILL.md:874-878`).
 
    ```bash
    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

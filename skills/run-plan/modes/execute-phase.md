@@ -111,8 +111,8 @@ agent hasn't returned after 2 hours, declare it **failed**:
    fi
 
    # Resume detection: directory-based, symmetric to PR mode's check at
-   # SKILL.md:1206-1209. An existing plan-scoped cherry-pick worktree
-   # means we're resuming the same plan across cron turns.
+   # execute-phase.md:372-375 (below). An existing plan-scoped cherry-pick
+   # worktree means we're resuming the same plan across cron turns.
    if [ -d "$CP_WORKTREE_PATH" ]; then
      echo "Resuming existing cherry-pick worktree at $CP_WORKTREE_PATH"
      WORKTREE_PATH="$CP_WORKTREE_PATH"
