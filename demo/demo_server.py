@@ -96,6 +96,29 @@ PLAN_LANDING_MODES = [
     "finish", "phase", "phase", "finish", "phase",
 ]
 
+# Easter-egg plans (#3/#4). These are NOT part of the timed-arrival schedule:
+# they are SEEDED at the anchored t=0 in fixed columns (one in Backlog, one in
+# Discarded). They are otherwise normal, workable plans — drag them to the
+# Ready-key column ("Accepted" for plans) and they get worked like any plan.
+# Completing BOTH (on top of the core board being cleared) trips the
+# "overachiever" overlay (#5).
+EASTER_EGG_DEFS = [
+    # (slug, title, blurb, seed_column, phase_defs, landing_mode)
+    ("take-over-the-universe", "Take Over the Universe",
+     "Blocked — the speed of light got in the way.", "backlog", [
+         "Assemble shadow council",
+         "Acquire controlling stake in every shipyard",
+         "Issue the galaxy-wide memo",
+     ], "finish"),
+    ("adjust-the-speed-of-light", "Adjust the Speed of Light",
+     "Unblocks: Take Over the Universe.", "discarded", [
+         "Petition the laws of physics",
+         "Retune the fine-structure constant",
+         "Re-baseline every clock in the fleet",
+     ], "phase"),
+]
+EASTER_EGG_SLUGS = tuple(d[0] for d in EASTER_EGG_DEFS)
+
 # ---------------------------------------------------------------------------
 # Sci-fi content
 # ---------------------------------------------------------------------------
@@ -251,14 +274,22 @@ class PlanItem:
     __slots__ = ("slug", "title", "phase_defs", "arrive_at",
                  "column", "arrived", "completed", "completed_at_elapsed",
                  "started_at_elapsed", "work_duration", "pipeline_id",
-                 "landing_mode", "emitted")
+                 "landing_mode", "emitted", "is_easter_egg", "blurb",
+                 "seed_column")
 
     def __init__(self, slug, title, phase_defs, arrive_at, rng,
-                 landing_mode=None):
+                 landing_mode=None, is_easter_egg=False, blurb=None,
+                 seed_column=None):
         self.slug = slug
         self.title = title
         self.phase_defs = phase_defs
         self.arrive_at = arrive_at
+        # Easter-egg bookkeeping (#3/#4/#5). is_easter_egg flags the two
+        # seeded-but-off-schedule plans; seed_column is the fixed column they
+        # appear in at t=0; blurb overrides the generic plan blurb.
+        self.is_easter_egg = is_easter_egg
+        self.blurb = blurb
+        self.seed_column = seed_column
         # column is None until the item arrives; then it sits in `drafted`
         # until the user moves it. The sim never moves it except to
         # `completed` when work finishes.
@@ -436,6 +467,16 @@ class Simulation:
                 self.issues.append(item)
                 self._by_number[a] = item
 
+        # Easter-egg plans (#3/#4): seeded at the anchored t=0 in fixed
+        # columns, OFF the timed-arrival schedule (arrive_at == 0). They are
+        # normal workable plans otherwise.
+        for slug, title, blurb, seed_column, phase_defs, mode in EASTER_EGG_DEFS:
+            egg = PlanItem(slug, title, phase_defs, 0.0, self.rng,
+                           landing_mode=mode, is_easter_egg=True,
+                           blurb=blurb, seed_column=seed_column)
+            self.plans.append(egg)
+            self._by_slug[slug] = egg
+
     def _anchor(self):
         """Start the simulation clock on the first /api/state request.
 
@@ -466,7 +507,11 @@ class Simulation:
         for item in self._all_items():
             if not item.arrived and elapsed >= item.arrive_at:
                 item.arrived = True
-                if item.kind == "plan":
+                if getattr(item, "is_easter_egg", False) and item.seed_column:
+                    # Easter eggs land in their fixed seed column (Backlog /
+                    # Discarded), not the default arrival column.
+                    item.column = item.seed_column
+                elif item.kind == "plan":
                     item.column = PLAN_ARRIVAL_COLUMN
                 else:
                     item.column = ISSUE_ARRIVAL_COLUMN
@@ -610,14 +655,36 @@ class Simulation:
 
     # -- progress / victory --------------------------------------------
 
+    def _is_egg(self, it):
+        return getattr(it, "is_easter_egg", False)
+
     def all_completed(self):
-        arrived = [it for it in self._all_items() if it.arrived]
+        """Core board cleared: every ARRIVED non-easter-egg item is completed.
+
+        Easter eggs are excluded so the standard victory overlay fires on the
+        core board regardless of whether the eggs were worked. The overachiever
+        path (which requires the eggs too) layers on top via overachiever()."""
+        arrived = [it for it in self._all_items()
+                   if it.arrived and not self._is_egg(it)]
         if not arrived:
             return False
         return all(it.completed for it in arrived)
 
+    def easter_eggs_completed(self):
+        """Both easter-egg plans dragged through to Completed."""
+        eggs = [it for it in self.plans if self._is_egg(it)]
+        if len(eggs) < len(EASTER_EGG_DEFS):
+            return False
+        return all(it.completed for it in eggs)
+
+    def overachiever(self):
+        """Core board cleared AND both easter eggs completed."""
+        return self.all_completed() and self.easter_eggs_completed()
+
     def progress(self):
-        arrived = [it for it in self._all_items() if it.arrived]
+        """Core progress (done, total) over arrived non-easter-egg items."""
+        arrived = [it for it in self._all_items()
+                   if it.arrived and not self._is_egg(it)]
         done = sum(1 for it in arrived if it.completed)
         return done, len(arrived)
 
@@ -687,7 +754,8 @@ class Simulation:
                 "created": created_dt,
                 "completed": completed_dt,
                 "issue": None,
-                "blurb": "Starship maintenance task: %s" % item.title.lower(),
+                "blurb": (item.blurb if item.blurb is not None
+                          else "Starship maintenance task: %s" % item.title.lower()),
                 "phase_count": len(phase_defs),
                 "phases_done": phases_done,
                 "phases": phases,
@@ -803,6 +871,13 @@ class Simulation:
                 "in_flight": in_flight_count,
                 "concurrency": self.concurrency,
                 "all_completed": self.all_completed(),
+                # Easter-egg / overachiever flags (#5). core_cleared mirrors
+                # all_completed (core board, eggs excluded); the injected JS
+                # uses these to choose the standard vs. overachiever overlay.
+                "core_cleared": self.all_completed(),
+                "easter_eggs_completed": self.easter_eggs_completed(),
+                "overachiever": self.overachiever(),
+                "easter_egg_slugs": list(EASTER_EGG_SLUGS),
                 "elapsed_seconds": round(elapsed, 1),
             },
         }
@@ -900,6 +975,7 @@ DEMO_OVERLAY_JS = r"""
 <script>
 (function() {
   var victoryShown = false;
+  var overachieverShown = false;
   var banner = document.createElement('div');
   banner.id = 'demo-banner';
   banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;'
@@ -913,6 +989,26 @@ DEMO_OVERLAY_JS = r"""
   document.body.prepend(banner);
   document.body.style.paddingTop = '40px';
 
+  // --- DEMO badge (#2): a small fixed pill in the lower-right corner.
+  // Non-interactive (pointer-events:none), gently pulsing, survives re-render
+  // because it lives outside the dashboard's render root.
+  var badgeStyle = document.createElement('style');
+  badgeStyle.textContent =
+    '@keyframes demoBadgePulse{0%,100%{box-shadow:0 0 0 0 rgba(233,69,96,0.55)}'
+    + '50%{box-shadow:0 0 0 8px rgba(233,69,96,0)}}'
+    + '#demo-badge{position:fixed;right:16px;bottom:16px;z-index:9997;'
+    + 'pointer-events:none;font-family:monospace;font-size:12px;font-weight:bold;'
+    + 'letter-spacing:1.5px;color:#fff;padding:6px 14px;border-radius:999px;'
+    + 'background:linear-gradient(135deg,#e94560,#7b2ff7);'
+    + 'border:1px solid rgba(255,255,255,0.25);'
+    + 'animation:demoBadgePulse 2.6s ease-in-out infinite;}';
+  document.head.appendChild(badgeStyle);
+  var badge = document.createElement('div');
+  badge.id = 'demo-badge';
+  badge.innerHTML = '<span style="color:#ffd166">&#9733;</span> DEMO';
+  document.body.appendChild(badge);
+
+  // --- Standard victory overlay (core board cleared).
   var overlay = document.createElement('div');
   overlay.id = 'demo-victory';
   overlay.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;'
@@ -926,12 +1022,38 @@ DEMO_OVERLAY_JS = r"""
     + 'operational.</p>'
     + '<p style="font-size:14px;color:#606080;margin-top:24px;">This was a demo of the '
     + 'Z&nbsp;Skills Dashboard &mdash; an agent workflow monitor. Drag cards between '
-    + 'columns; drop one in Ready to watch it get worked (up to a few at a time).</p>'
+    + 'columns; drop one in Ready to watch it get worked (up to a few at a time). '
+    + 'Psst &mdash; there are two extra plans hiding in Backlog and Discarded&hellip;</p>'
     + '<button onclick="document.getElementById(\'demo-victory\').style.display=\'none\'"'
     + ' style="margin-top:24px;padding:10px 32px;font-size:16px;cursor:pointer;'
     + 'background:#e94560;color:white;border:none;border-radius:6px;font-family:monospace;"'
     + '>Dismiss</button></div>';
   document.body.appendChild(overlay);
+
+  // --- Overachiever overlay (#5): core cleared AND both easter eggs done.
+  var oa = document.createElement('div');
+  oa.id = 'demo-overachiever';
+  oa.style.cssText = 'display:none;position:fixed;inset:0;z-index:10000;'
+    + 'background:radial-gradient(circle at 50% 40%,#2a1659,#08010f 80%);'
+    + 'justify-content:center;align-items:center;'
+    + 'flex-direction:column;font-family:monospace;color:#f0e9ff;';
+  oa.innerHTML = '<div style="text-align:center;max-width:640px;padding:40px;">'
+    + '<div style="font-size:80px;margin-bottom:16px;">&#x1F30C;</div>'
+    + '<h1 style="font-size:40px;margin:0 0 16px;'
+    + 'background:linear-gradient(90deg,#ffd166,#e94560,#7b2ff7);'
+    + '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+    + 'background-clip:text;">OVERACHIEVER</h1>'
+    + '<p style="font-size:20px;line-height:1.6;color:#d8c8ff;">You bent the speed '
+    + 'of light and took over the universe. &#x1F30C;</p>'
+    + '<p style="font-size:14px;color:#9a86c8;margin-top:24px;">Core board cleared '
+    + '<em>and</em> both secret plans &mdash; &ldquo;Take Over the Universe&rdquo; '
+    + 'and &ldquo;Adjust the Speed of Light&rdquo; &mdash; driven to Completed. '
+    + 'Nothing left to fix in this corner of the galaxy.</p>'
+    + '<button onclick="document.getElementById(\'demo-overachiever\').style.display=\'none\'"'
+    + ' style="margin-top:24px;padding:10px 32px;font-size:16px;cursor:pointer;'
+    + 'background:#7b2ff7;color:white;border:none;border-radius:6px;font-family:monospace;"'
+    + '>&#x1F32D; Bask in glory</button></div>';
+  document.body.appendChild(oa);
 
   var origFetch = window.fetch;
   window.fetch = function(input) {
@@ -942,23 +1064,36 @@ DEMO_OVERLAY_JS = r"""
         var clone = resp.clone();
         clone.json().then(function(data) {
           if (data.demo) {
+            var d = data.demo;
             var p = document.getElementById('demo-progress');
             if (p) {
-              var d = data.demo;
               var inflight = (typeof d.in_flight === 'number')
                 ? (' — ' + d.in_flight + '/' + d.concurrency + ' working') : '';
               if (d.progress_total === 0) {
                 p.textContent = 'Awaiting first arrivals…';
+              } else if (d.overachiever) {
+                p.textContent = 'Overachiever — speed of light bent, universe taken over';
               } else if (d.all_completed) {
                 p.textContent = 'Board cleared — ' + d.progress_done + '/'
                   + d.progress_total + ' done';
               } else {
-                p.textContent = 'Drop cards in Ready to work them — '
+                // #1: name BOTH Ready-key columns by their real labels.
+                p.textContent = 'Drop plans in Accepted, issues in Ready — '
+                  + 'then watch them get worked — '
                   + d.progress_done + '/' + d.progress_total + ' completed'
                   + inflight;
               }
             }
-            if (data.demo.all_completed && !victoryShown) {
+            // Overachiever supersedes the standard victory: if both the core
+            // board AND the eggs are done, show (only) the overachiever screen.
+            if (d.overachiever && !overachieverShown) {
+              overachieverShown = true;
+              victoryShown = true;  // suppress a later standard-victory pop
+              var vo = document.getElementById('demo-victory');
+              if (vo) vo.style.display = 'none';
+              var oae = document.getElementById('demo-overachiever');
+              if (oae) oae.style.display = 'flex';
+            } else if (d.all_completed && !victoryShown) {
               victoryShown = true;
               var v = document.getElementById('demo-victory');
               if (v) v.style.display = 'flex';

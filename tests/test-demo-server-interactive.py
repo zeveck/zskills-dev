@@ -370,14 +370,24 @@ def main():
     snap = sim.build_snapshot()  # first /api/state at t=0
     seeded_plans = [p for p in snap["plans"]]
     seeded_issues = [i for i in snap["issues"]]
-    if len(seeded_plans) == 1 and len(seeded_issues) == 1:
-        ok("(b) exactly one plan + one issue present at the anchored t=0")
+    egg_slugs = set(mod.EASTER_EGG_SLUGS)
+    # At t=0: one core plan (Drafted) + two easter-egg plans (Backlog /
+    # Discarded) + one core issue (Triage). Separate the core plan out.
+    core_seed_plans = [p for p in seeded_plans if p["slug"] not in egg_slugs]
+    egg_seed_plans = [p for p in seeded_plans if p["slug"] in egg_slugs]
+    if len(core_seed_plans) == 1 and len(seeded_issues) == 1:
+        ok("(b) exactly one core plan + one core issue present at the anchored t=0")
     else:
-        bad("(b) wrong seed count at t=0",
-            "plans=%d issues=%d" % (len(seeded_plans), len(seeded_issues)))
-    if (seeded_plans and seeded_plans[0]["queue"]["column"] == mod.PLAN_ARRIVAL_COLUMN
+        bad("(b) wrong core seed count at t=0",
+            "core_plans=%d issues=%d" % (len(core_seed_plans), len(seeded_issues)))
+    if len(egg_seed_plans) == len(mod.EASTER_EGG_DEFS):
+        ok("(b) both easter-egg plans present at the anchored t=0")
+    else:
+        bad("(b) wrong easter-egg seed count at t=0",
+            "eggs=%d" % len(egg_seed_plans))
+    if (core_seed_plans and core_seed_plans[0]["queue"]["column"] == mod.PLAN_ARRIVAL_COLUMN
             and seeded_issues and seeded_issues[0]["queue"]["column"] == mod.ISSUE_ARRIVAL_COLUMN):
-        ok("(b) seeded plan is in Drafted, seeded issue is in Triage")
+        ok("(b) seeded core plan is in Drafted, seeded issue is in Triage")
     else:
         bad("(b) seeded items not in their arrival columns")
 
@@ -510,6 +520,177 @@ def main():
     else:
         bad("(f) landing_modes not a proper mix",
             "distinct=%s n=%d" % (distinct, len(modes)))
+
+    # ==================================================================
+    # EASTER-EGG + OVERACHIEVER CASES (#3/#4/#5).
+    # ==================================================================
+
+    def drag_all_to(snap, columns):
+        """Build a full-board /api/queue payload placing each non-completed
+        plan into columns[slug] (default 'backlog') and every issue into
+        'backlog'. Returns the payload dict."""
+        pl = {c: [] for c in mod.PLAN_DRAG_COLUMNS}
+        iss = {c: [] for c in mod.ISSUE_DRAG_COLUMNS}
+        for p in snap["plans"]:
+            if p["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            pl[columns.get(p["slug"], "backlog")].append(
+                {"slug": p["slug"], "mode": None})
+        for i in snap["issues"]:
+            if i["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            iss["backlog"].append(i["number"])
+        return {"plans": pl, "issues": iss}
+
+    def work_to_completion(sim, slugs):
+        """Drag the given plan slugs to Ready and fast-forward until all of
+        them are completed (everything else parked in backlog). Concurrency is
+        the sim's cap; we loop fast-forwarding past each batch's work."""
+        for _ in range(40):  # generous bound
+            snap = sim.build_snapshot()
+            remaining = [s for s in slugs if not sim._by_slug[s].completed]
+            if not remaining:
+                return snap
+            cols = {s: "ready" for s in remaining}
+            sim.apply_queue(drag_all_to(snap, cols))
+            sim.build_snapshot()  # let claims attach
+            # Fast-forward past the longest possible work duration.
+            maxd = max(it.work_duration for it in sim._all_items())
+            fast_forward(sim, maxd + 5)
+        return sim.build_snapshot()
+
+    # (eg1) The two easter-egg plans are seeded in Backlog/Discarded at the
+    # anchored t=0 with the right titles + blurbs, and are NOT in the timed
+    # arrival set (arrive_at == 0).
+    sim = mod.Simulation(seed=21, concurrency=3)
+    snap = sim.build_snapshot()  # anchor at t=0
+    egg_by_slug = {p["slug"]: p for p in snap["plans"]
+                   if p["slug"] in set(mod.EASTER_EGG_SLUGS)}
+    tou = egg_by_slug.get("take-over-the-universe")
+    asol = egg_by_slug.get("adjust-the-speed-of-light")
+    if (tou and tou["title"] == "Take Over the Universe"
+            and tou["queue"]["column"] == "backlog"
+            and "speed of light got in the way" in tou["blurb"]):
+        ok("(eg1) 'Take Over the Universe' seeded in Backlog with right title/blurb")
+    else:
+        bad("(eg1) Take Over the Universe seed wrong",
+            "obj=%s" % tou)
+    if (asol and asol["title"] == "Adjust the Speed of Light"
+            and asol["queue"]["column"] == "discarded"
+            and "Unblocks: Take Over the Universe" in asol["blurb"]):
+        ok("(eg1) 'Adjust the Speed of Light' seeded in Discarded with right title/blurb")
+    else:
+        bad("(eg1) Adjust the Speed of Light seed wrong",
+            "obj=%s" % asol)
+    # NOT in the timed-arrival set: arrive_at must be exactly 0.0.
+    eggs = [it for it in sim.plans if it.is_easter_egg]
+    if eggs and all(it.arrive_at == 0.0 for it in eggs):
+        ok("(eg1) easter eggs are seeded (arrive_at==0), not timed arrivals")
+    else:
+        bad("(eg1) easter eggs have non-zero arrive_at",
+            "arrive_ats=%s" % [it.arrive_at for it in eggs])
+    # And they must be present at t=0 (snapshot at elapsed 0) — already shown
+    # above since they appeared in the t=0 snapshot.
+
+    # (eg2) The demo object exposes the overachiever flags.
+    d0 = snap["demo"]
+    if ("core_cleared" in d0 and "easter_eggs_completed" in d0
+            and "overachiever" in d0):
+        ok("(eg2) demo object exposes core_cleared/easter_eggs_completed/overachiever")
+    else:
+        bad("(eg2) demo object missing overachiever flags",
+            "keys=%s" % sorted(d0.keys()))
+    if (d0["core_cleared"] is False and d0["easter_eggs_completed"] is False
+            and d0["overachiever"] is False):
+        ok("(eg2) at t=0 all overachiever flags are False")
+    else:
+        bad("(eg2) overachiever flags not all False at t=0",
+            "core=%s eggs=%s oa=%s" % (d0["core_cleared"],
+                                       d0["easter_eggs_completed"],
+                                       d0["overachiever"]))
+
+    # (eg3) Completing core-only sets core_cleared but NOT overachiever.
+    sim = mod.Simulation(seed=22, concurrency=4)
+    sim.build_snapshot()       # anchor
+    fast_forward(sim, 10000)   # all (incl. eggs) arrived
+    sim.build_snapshot()
+    core_slugs = [it.slug for it in sim.plans if not it.is_easter_egg]
+    work_to_completion(sim, core_slugs)
+    # Also work all core issues to completion.
+    for _ in range(40):
+        snap = sim.build_snapshot()
+        rem_iss = [it.number for it in sim.issues if not it.completed]
+        if not rem_iss:
+            break
+        pl = {c: [] for c in mod.PLAN_DRAG_COLUMNS}
+        iss = {c: [] for c in mod.ISSUE_DRAG_COLUMNS}
+        for p in snap["plans"]:
+            if p["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            # keep eggs parked in backlog (do NOT complete them here)
+            pl["backlog"].append({"slug": p["slug"], "mode": None})
+        for i in snap["issues"]:
+            if i["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            iss["ready"].append(i["number"])
+        sim.apply_queue({"plans": pl, "issues": iss})
+        sim.build_snapshot()
+        maxd = max(it.work_duration for it in sim._all_items())
+        fast_forward(sim, maxd + 5)
+    snap = sim.build_snapshot()
+    d = snap["demo"]
+    eggs_done = all(it.completed for it in sim.plans if it.is_easter_egg)
+    if d["core_cleared"] is True and eggs_done is False:
+        ok("(eg3) core completed (eggs untouched): core_cleared True")
+    else:
+        bad("(eg3) core not cleared with eggs untouched",
+            "core_cleared=%s eggs_done=%s" % (d["core_cleared"], eggs_done))
+    if d["easter_eggs_completed"] is False and d["overachiever"] is False:
+        ok("(eg3) eggs untouched => easter_eggs_completed False, overachiever False")
+    else:
+        bad("(eg3) overachiever tripped without eggs",
+            "eggs=%s oa=%s" % (d["easter_eggs_completed"], d["overachiever"]))
+
+    # (eg4) Completing core + BOTH eggs sets overachiever True.
+    sim = mod.Simulation(seed=23, concurrency=4)
+    sim.build_snapshot()
+    fast_forward(sim, 10000)
+    sim.build_snapshot()
+    all_plan_slugs = [it.slug for it in sim.plans]  # includes both eggs
+    work_to_completion(sim, all_plan_slugs)
+    # Work all issues too.
+    for _ in range(40):
+        snap = sim.build_snapshot()
+        rem_iss = [it.number for it in sim.issues if not it.completed]
+        rem_plan = [it.slug for it in sim.plans if not it.completed]
+        if not rem_iss and not rem_plan:
+            break
+        pl = {c: [] for c in mod.PLAN_DRAG_COLUMNS}
+        iss = {c: [] for c in mod.ISSUE_DRAG_COLUMNS}
+        for p in snap["plans"]:
+            if p["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            pl["ready"].append({"slug": p["slug"], "mode": None})
+        for i in snap["issues"]:
+            if i["queue"]["column"] == mod.COMPLETED_COLUMN:
+                continue
+            iss["ready"].append(i["number"])
+        sim.apply_queue({"plans": pl, "issues": iss})
+        sim.build_snapshot()
+        maxd = max(it.work_duration for it in sim._all_items())
+        fast_forward(sim, maxd + 5)
+    snap = sim.build_snapshot()
+    d = snap["demo"]
+    if d["core_cleared"] is True and d["easter_eggs_completed"] is True:
+        ok("(eg4) core + both eggs completed (core_cleared + easter_eggs_completed)")
+    else:
+        bad("(eg4) core/eggs not all completed",
+            "core=%s eggs=%s" % (d["core_cleared"], d["easter_eggs_completed"]))
+    if d["overachiever"] is True:
+        ok("(eg4) overachiever True when core cleared AND both eggs completed")
+    else:
+        bad("(eg4) overachiever not set with everything completed",
+            "oa=%s" % d["overachiever"])
 
     print("")
     print("Results: %d passed, %d failed (of %d)" % (PASS, FAIL, PASS + FAIL))
