@@ -1891,18 +1891,20 @@ else
   fail "#700: .collapsed-summary CSS rule missing"
 fi
 
-# 700-7: Collapsed-summary-count CSS sub-rule defined.
-if grep -qE '\.collapsed-summary-count' "$APP_CSS"; then
-  pass "#700: .collapsed-summary-count CSS rule defined"
+# 700-7: Collapsed-summary preview row CSS sub-rule defined. The summary
+# renders one mini-card row (id + title) per previewed item.
+if grep -qE '\.collapsed-summary-row' "$APP_CSS"; then
+  pass "#700: .collapsed-summary-row CSS rule defined"
 else
-  fail "#700: .collapsed-summary-count CSS rule missing"
+  fail "#700: .collapsed-summary-row CSS rule missing"
 fi
 
-# 700-8: Collapsed-summary-titles CSS sub-rule defined.
-if grep -qE '\.collapsed-summary-titles' "$APP_CSS"; then
-  pass "#700: .collapsed-summary-titles CSS rule defined"
+# 700-8: Collapsed-summary per-row title CSS sub-rule defined, plus the
+# bottom-pinned aggregate footer that summarizes chip counts.
+if grep -qE '\.collapsed-summary-title\b' "$APP_CSS" && grep -qE '\.collapsed-summary-footer' "$APP_CSS"; then
+  pass "#700: .collapsed-summary-title + .collapsed-summary-footer CSS rules defined"
 else
-  fail "#700: .collapsed-summary-titles CSS rule missing"
+  fail "#700: .collapsed-summary-title / .collapsed-summary-footer CSS rule missing"
 fi
 
 # 700-9: applyCollapseStateToColumn builds a collapsed-summary element when
