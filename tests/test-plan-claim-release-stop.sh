@@ -21,7 +21,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SKILL_MD="$REPO_ROOT/skills/run-plan/SKILL.md"
+SKILL_MD="$REPO_ROOT/skills/run-plan/subcommands/stop-next-status.md"
 CLAIM_SH="$REPO_ROOT/skills/run-plan/scripts/claim-plan.sh"
 
 PASS_COUNT=0

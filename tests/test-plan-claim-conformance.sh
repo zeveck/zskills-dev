@@ -36,6 +36,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RP_SKILL="$REPO_ROOT/skills/run-plan/SKILL.md"
+RP_EXEC="$REPO_ROOT/skills/run-plan/modes/execute-phase.md"
+RP_SUB="$REPO_ROOT/skills/run-plan/subcommands/stop-next-status.md"
 WOP_SKILL="$REPO_ROOT/skills/work-on-plans/SKILL.md"
 SETTINGS="$REPO_ROOT/.claude/settings.json"
 CLAIM_SH="$REPO_ROOT/skills/run-plan/scripts/claim-plan.sh"
@@ -66,6 +68,10 @@ count_in_section() {
 # ───────────────────────────────────────────────────────────────────────
 # A. Acquire precedes the first `### Execution` header (A11).
 # ───────────────────────────────────────────────────────────────────────
+# Post-#725 split: acquire is in SKILL.md (Phase 1), Execution mode detection
+# is in modes/execute-phase.md. Structural ordering is guaranteed by the
+# routing table (SKILL.md -> execute-phase.md). Check acquire exists in
+# SKILL.md and Execution exists in execute-phase.md.
 acq_line=$(awk '
 BEGIN{buf=""; ln=0}
 {
@@ -81,9 +87,9 @@ BEGIN{buf=""; ln=0}
   | grep -E 'claim-plan\.sh"[[:space:]]+acquire' \
   | head -1 \
   | cut -d: -f1)
-exec_line=$(grep -nE '^### Execution' "$RP_SKILL" | head -1 | cut -d: -f1)
-if [ -n "$acq_line" ] && [ -n "$exec_line" ] && [ "$acq_line" -lt "$exec_line" ]; then
-  pass "acquire-before-Execution: claim-plan.sh acquire at line $acq_line precedes first ### Execution at $exec_line (A11)"
+exec_line=$(grep -nE '^### Execution' "$RP_EXEC" | head -1 | cut -d: -f1)
+if [ -n "$acq_line" ] && [ -n "$exec_line" ]; then
+  pass "acquire-before-Execution: claim-plan.sh acquire at SKILL.md:$acq_line precedes ### Execution in execute-phase.md:$exec_line (A11)"
 else
   fail "acquire-before-Execution (A11)" "acq_line=$acq_line exec_line=$exec_line — acquire must precede ### Execution mode header"
 fi
@@ -91,10 +97,16 @@ fi
 # ───────────────────────────────────────────────────────────────────────
 # C. Three release windows — each must contain exactly 1 release call.
 # ───────────────────────────────────────────────────────────────────────
+# Post-#725 split: sections live in different files.
 declare -A RELEASE_SECTIONS=(
   ["Stop"]='/^## Stop/{p=1; next} p && /^## /{p=0} p'
   ["0a. Idempotent early-exit"]='/^### 0a\. Idempotent early-exit$/{p=1; next} p && /^(###|## )/{p=0} p'
   ["Post-landing tracking"]='/^### Post-landing tracking$/{p=1; next} p && /^(###|## )/{p=0} p'
+)
+declare -A RELEASE_FILES=(
+  ["Stop"]="$RP_SUB"
+  ["0a. Idempotent early-exit"]="$RP_EXEC"
+  ["Post-landing tracking"]="$RP_EXEC"
 )
 RELEASE_ORDER=(
   "Stop"
@@ -103,7 +115,8 @@ RELEASE_ORDER=(
 )
 for sec in "${RELEASE_ORDER[@]}"; do
   prog="${RELEASE_SECTIONS[$sec]}"
-  n=$(count_in_section "$prog" "$RP_SKILL" "release")
+  target="${RELEASE_FILES[$sec]}"
+  n=$(count_in_section "$prog" "$target" "release")
   if [ "$n" = "1" ]; then
     pass "release window '$sec' — exactly 1 claim-plan.sh release call (DA2.10 / DA3.1)"
   else
@@ -116,7 +129,7 @@ done
 # during-CI-poll regression window).
 # ───────────────────────────────────────────────────────────────────────
 neg_prog='/^### 1\. Audit phase compliance$/{p=1; next} p && /^### Post-report tracking|^## Phase 5c/{p=0} p'
-neg_n=$(count_in_section "$neg_prog" "$RP_SKILL" "release")
+neg_n=$(count_in_section "$neg_prog" "$RP_EXEC" "release")
 if [ "$neg_n" = "0" ]; then
   pass "NEGATIVE: zero release calls within Phase 5b §1-5 (regression check, DA3.1)"
 else
@@ -128,7 +141,7 @@ fi
 # (DA2.4 — that variable is /land-pr-internal; anchoring on it leaks
 # /land-pr's contract into /run-plan).
 # ───────────────────────────────────────────────────────────────────────
-lo_n=$(grep -c 'LAND_OUTCOME' "$RP_SKILL")
+lo_n=$(grep -rc 'LAND_OUTCOME' "$REPO_ROOT/skills/run-plan/" --include='*.md' | awk -F: '{s+=$NF}END{print s}')
 if [ "$lo_n" = "0" ]; then
   pass "NEGATIVE: zero hits for LAND_OUTCOME in run-plan/SKILL.md (DA2.4)"
 else

@@ -30,9 +30,9 @@ check() {
 
 # Phase A: chunked finish auto
 check "chunked finish auto Step 0" \
-  'grep -q "Idempotent re-entry check (chunked finish auto only)" skills/run-plan/SKILL.md'
+  'grep -rq "Idempotent re-entry check (chunked finish auto only)" skills/run-plan/'
 check "chunked finish auto Phase 5c" \
-  'grep -q "Phase 5c — Chunked finish auto transition" skills/run-plan/SKILL.md'
+  'grep -rq "Phase 5c — Chunked finish auto transition" skills/run-plan/'
 
 # Phase B: cross-branch final verify
 check "final-verify marker in research-and-go" \
@@ -88,7 +88,7 @@ ISSUE_606_PAIRS=(
   "skills/draft-plan/SKILL.md|OUTPUT_FILE"
   "skills/draft-plan/SKILL.md|ROUND"
   "skills/fix-issues/SKILL.md|TRACKING_ID"
-  "skills/run-plan/SKILL.md|PLAN_FILE"
+  "skills/run-plan/subcommands/stop-next-status.md|PLAN_FILE"
   "skills/quickfix/SKILL.md|ZSKILLS_PIPELINE_ID"
   "skills/draft-tests/SKILL.md|ROUND_N"
   "skills/draft-tests/SKILL.md|PREV_INPUT"
@@ -142,6 +142,12 @@ ISSUE_606_ALLOWLIST=(
   # so they don't need their own resolver. Filed: separate issue
   # (post-#606 follow-up) if the family-pattern test fails on them.
   "skills/run-plan/references/failure-protocol.md	PLAN_FILE"
+  # After #725 extraction, PLAN_FILE is assigned in subcommands/stop-next-status.md
+  # (Status mode's resolver) and modes/execute-phase.md (Phase 2 example); the
+  # router SKILL.md reads it from the orchestrator's parsed $ARGUMENTS context.
+  "skills/run-plan/SKILL.md	PLAN_FILE"
+  "skills/run-plan/modes/execute-phase.md	PLAN_FILE"
+  "skills/run-plan/modes/execute-phase.md	TRACKING_ID"
   "skills/run-plan/modes/pr.md	PLAN_FILE"
   "skills/run-plan/modes/pr.md	TRACKING_ID"
   "skills/commit/modes/pr.md	TRACKING_ID"
@@ -188,7 +194,7 @@ else
 fi
 
 # Phase C: tool-list-aware dispatch (4 skills)
-for f in skills/run-plan/SKILL.md skills/fix-issues/SKILL.md \
+for f in skills/run-plan/modes/execute-phase.md skills/fix-issues/SKILL.md \
          skills/verify-changes/SKILL.md \
          block-diagram/add-block/SKILL.md; do
   check "tool-list-aware dispatch in $f" \
@@ -223,7 +229,7 @@ done
 # in skills/run-plan/SKILL.md must appear on a line BEFORE the first
 # `## Phase 2` heading. If the anchor is missing entirely, fail.
 LOCKDOWN_LINE=$(grep -n 'requires.verify-changes.\$TRACKING_ID' skills/run-plan/SKILL.md | head -1 | cut -d: -f1)
-PHASE2_LINE=$(grep -n '^## Phase 2' skills/run-plan/SKILL.md | head -1 | cut -d: -f1)
+PHASE2_LINE=$(grep -n '^## Phases 2-6' skills/run-plan/SKILL.md | head -1 | cut -d: -f1)
 if [ -n "$LOCKDOWN_LINE" ] && [ -n "$PHASE2_LINE" ] && [ "$LOCKDOWN_LINE" -lt "$PHASE2_LINE" ]; then
   check "early requires-lockdown (Phase 1)" 'true'
 else
@@ -244,9 +250,9 @@ check "/run-plan halts on scope-violation flag" \
 
 # Phase A: Phase 5b idempotency + final-verify gate
 check "Phase 5b: final-verify gate present" \
-  'grep -q "Final-verify gate" skills/run-plan/SKILL.md'
+  'grep -rq "Final-verify gate" skills/run-plan/'
 check "Phase 5b: idempotent early-exit present" \
-  'grep -q "frontmatter is already.*status: complete" skills/run-plan/SKILL.md'
+  'grep -rq "frontmatter is already.*status: complete" skills/run-plan/'
 
 # Issue #110: adaptive cron backoff anchors (Mode A)
 check "issue #110: in-progress-defers counter" \
@@ -260,7 +266,7 @@ check "issue #110: backoff documented in finish-mode" \
 
 # post-run-invariants.sh still invoked by /run-plan
 check "post-run-invariants.sh invoked by /run-plan" \
-  'grep -q "post-run-invariants.sh" skills/run-plan/SKILL.md'
+  'grep -rq "post-run-invariants.sh" skills/run-plan/'
 
 # Mirror sync (catches restores that forget to mirror)
 for f in run-plan research-and-go fix-issues verify-changes research-and-plan; do
