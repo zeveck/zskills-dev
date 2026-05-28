@@ -245,11 +245,14 @@ else
   fail "SKILL.md regressed Phase 1 sections"
 fi
 
-# --- Test 4: argument-hint frontmatter advertises full surface ---------
-if grep -q 'argument-hint:.*add <slug>.*every SCHEDULE.*stop' "$SKILL"; then
-  pass "argument-hint advertises full Phase 3 surface"
+# --- Test 4: argument-hint frontmatter advertises core surface ----------
+# Queue-mutation subcommands (add/rank/remove) were moved to the detail
+# docs page to shorten the hint under 120 chars. The hint still covers
+# the execution, default, schedule, and control subcommands.
+if grep -q 'argument-hint:.*default.*every SCHEDULE.*stop' "$SKILL"; then
+  pass "argument-hint advertises core surface (default/every/stop)"
 else
-  fail "argument-hint missing one or more Phase 3 subcommands"
+  fail "argument-hint missing one or more core subcommands"
 fi
 
 # --- Test 5: AC-1 (add bootstraps + appends) ---------------------------
