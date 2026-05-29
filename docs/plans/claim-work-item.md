@@ -1,800 +1,890 @@
 ---
 issue: 803
-title: Shared work-item claim primitive (claim-work-item.sh)
+title: Ownership-aware work-item claims (self-re-entry in the two twin scripts)
 created: 2026-05-29
 status: active
 ---
 
-# Plan: Shared work-item claim primitive (claim-work-item.sh)
+# Plan: Ownership-aware work-item claims — self-re-entry in the twin claim scripts
 
 > **Landing mode: PR** — `.claude/zskills-config.json` has `main_protected: true`,
 > so every phase works in a named worktree on a feature branch and lands via
-> `/land-pr`. No commit/cherry-pick to main.
+> `/land-pr` (one PR per phase). No commit/cherry-pick to main.
 
 ## Overview
 
 Today only `/fix-issues` claims a GitHub issue before working it
 (`skills/fix-issues/scripts/claim-issue.sh` → `.zskills/claims/issue-<N>/`), and
 only `/run-plan` claims a plan (`skills/run-plan/scripts/claim-plan.sh` →
-`.zskills/claims/plan-<slug>/`). When `/do`, `/quickfix`, or `/investigate` work
-a GitHub issue (`/do` and `/quickfix` only via their `--force` triage override;
-`/investigate` natively), they make **no claim** — so a concurrent `/fix-issues`
-cron can grab the same issue and double-work it. Observed live on #802, which
-required a manual `claim-issue.sh acquire` before dispatch.
+`.zskills/claims/plan-<slug>/`). `/do`, `/quickfix`, and `/investigate` claim
+nothing — so a concurrent `/fix-issues` cron can grab the same issue one of them
+is actively working, producing duplicate PRs / wasted compute. #803 asks for ONE
+way for any skill to claim a work-item (issue **or** plan) before working it,
+release on resolve, and the cross-cutting discipline propagated.
 
-This plan introduces ONE shared entry point — a `claim-work-item.sh` **script**
-(not a new model-facing skill) — that the three unwired consumers call to claim
-an issue or a plan. It dispatches by kind to the two existing,
-individually-tested scripts and adds the one genuinely-new behavior nobody
-implements today: **ownership-aware self-re-entry** (re-acquiring your own claim
-returns success instead of a foreign-held error). The cross-cutting "claim
-before you work a tracked work-item; release on resolve" discipline lands in
-**CLAUDE_TEMPLATE.md** (the propagating surface), with per-skill specifics in
-each consumer's SKILL.md and a conformance sentinel per consumer (the #729
-accidental-revert defense).
+**The settled design ("B") does NOT build a `/claim-work-item` skill or a
+dispatch wrapper.** The two claim scripts are already ~91% identical siblings
+(`claim-plan.sh` header self-describes as "Sibling … mirrors the ~91% generic
+structure"). The ONE genuinely-new behavior #803 needs is **ownership-aware
+self-re-entry**: a pipeline re-acquiring its OWN claim must succeed (exit 0)
+rather than collide. Today neither script reads the stored `pipeline_id` on
+acquire, so the only existence check is the bare `mkdir … *"File exists"* →
+return 10` — a pipeline re-acquiring its own claim gets exit 10, identical to a
+foreign claim. That conflation is the bug behind `run-plan` SKILL.md:597.
 
-The smallest correct design is **dispatch, not merge**: a thin wrapper that
-routes `acquire | release | is-stale | set-phase` to claim-issue.sh /
-claim-plan.sh by kind, preserving each script's tested contract and on-disk
-schema, while presenting callers a single interface.
+The smallest correct change is therefore: **factor self-re-entry into a small
+shared sourced helper and wire it into the EEXIST branch of BOTH twins.** No
+rename, no new entry-point script, no schema change, no caller-interface change.
+Because the script names and call shapes are untouched, the existing conformance
+batteries stay green with little/no edit. Three downstream payoffs fall out:
 
-**Scope honesty — what "ONE way to claim" means here (acceptance interpretation).**
-This plan does NOT achieve full convergence of all five claim sites onto one
-call path. It closes the *actual* gap (the three unwired ad-hoc consumers) and
-deliberately leaves the two batch callers on their direct scripts:
+1. `/fix-issues` and `/run-plan` keep calling the exact same scripts — they just
+   gain self-re-entry for free.
+2. `run-plan` SKILL.md:597's bespoke "rc=10 → decline" prose becomes correct by
+   construction (claim-plan.sh now returns 0 on a genuine self-re-entry; rc=10
+   then means *only* foreign, which is exactly what the decline arm should do).
+3. The new consumers (`/do`, `/quickfix`, `/investigate`) can call
+   `claim-issue.sh` **directly** with a synthesized `--sprint-id`, gaining
+   acquire-on-pickup / release-on-resolve with no new machinery.
 
-- **In scope:** `/do`, `/quickfix`, `/investigate` acquire/release through the
-  shared wrapper. These are the consumers that make NO claim today (the bug).
-- **Out of scope (D7):** `/fix-issues` keeps calling `claim-issue.sh` directly
-  and `/run-plan` keeps calling `claim-plan.sh` directly. Migrating them is a
-  named follow-up, not part of this plan — see Out of Scope. Because the wrapper
-  *delegates to the very same two scripts*, there is no on-disk or behavioral
-  *divergence* between the wrapper path and the direct path (identical dirs,
-  schemas, exit codes). "One way" is therefore met as *one shared on-disk claim
-  protocol every caller participates in*, not as *one identical function call in
-  every skill*. The plan does not claim the stronger form.
-- **`/run-plan` already satisfies #803's acceptance natively.** #803's
-  acceptance line names `/run-plan` among the skills that must "claim a
-  work-item before working it and release on resolve." `/run-plan` *already
-  does both today*: it acquires the plan claim at `run-plan/SKILL.md:587-602`
-  (`claim-plan.sh acquire`) and releases at its terminals
-  (`modes/execute-phase.md:1199-1203` no-op re-entry, `:1599-1601` terminal
-  merge, `subcommands/stop-next-status.md:154` operator stop). So deferring
-  `/run-plan` migration is NOT "failing to deliver a named requirement" — the
-  requirement is pre-met. (The issue's *Problem* paragraph erroneously lists
-  `/run-plan` among skills that "do NOT claim"; that is an author error —
-  `/run-plan` demonstrably claims and releases.) The separate
-  `/run-plan:597` same-pipeline re-acquire conflation (D7) is a latent bug,
-  not the acceptance bar, and is a named follow-up.
+Then `run-plan` extends its existing acquire fence to also claim the plan's
+`issue: N` (the #803 execution-window protection), and `CLAUDE_TEMPLATE.md`
+carries the cross-cutting "claim before you work a tracked work-item" rule so it
+auto-loads for every consumer (memory anchors don't propagate; CLAUDE_TEMPLATE
+does).
 
-- **Enforcement is advisory for the three new consumers (D6).** Unlike
-  `/fix-issues` (whose `block-fix-issue-unclaimed.sh` PreToolUse hook
-  mechanically blocks an unclaimed `fix-issue-NNN` push), the new consumers'
-  claim discipline is enforced ONLY by prose + CLAUDE_TEMPLATE + a
-  text-presence conformance sentinel. There is NO runtime guarantee the agent
-  actually runs `acquire`; the sentinel defends the *wiring text* against
-  accidental revert (#729 class), not the *runtime behavior*. A broadened hook
-  is an explicit deferred follow-up. This is stated plainly so the plan does not
-  oversell mechanical enforcement.
+### Verified current-state facts (cited against the worktree, post-#739/#742/#771/#776/#777)
+
+- `claim-issue.sh` (368 lines): `acquire <N> --pipeline-id <id> --sprint-id <id>`
+  at `:101-180`; the EEXIST branch is `mkdir_err=$(mkdir "$claim_dir" 2>&1)` →
+  `case … *"File exists"*) return 10` at `:137-150`. `resolve_main_root()` via
+  `git rev-parse --git-common-dir` parent, never `$PWD`, at `:62-74`. Schema
+  `{schema_version, pipeline_id, sprint_id, issue, started_at}` written at
+  `:155-169`. `is-stale` is the 30s crash-window check only (`:245-278`, no TTL).
+  `validate_issue_number` REJECTS non-numeric input (`#`/quotes → `return 1`,
+  usage-error) at `:80-95`.
+- `claim-plan.sh` (439 lines): `acquire <slug> --pipeline-id <id>` at `:154-229`;
+  identical EEXIST branch at `:186-199`. `resolve_main_root()` at `:103-114`.
+  `_locate_sanitizer()` precedence (sibling create-worktree → `.claude/skills/`
+  mirror → repo source) at `:75-94`. Schema adds `kind:"plan"`, `slug`,
+  `current_phase`; `release` REQUIRES `--require-pipeline` (`:249-252`); `set-phase`
+  mutator at `:290-347`; NO `is-stale`. **claim.json read patterns differ across
+  the file:** `release` uses a `try/except → empty string` reader (claim-issue.sh:212-219;
+  claim-plan.sh:265-272) that is SAFE on malformed/truncated JSON, but `set-phase`
+  uses BARE `json.load()` with no try/except (claim-plan.sh:325-328) that RAISES
+  on truncation. The new helper MUST copy the `release`-style reader, NOT set-phase's.
+- **`run-plan` PIPELINE_ID is STABLE across chunked `finish auto` fires.**
+  `TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')`
+  (SKILL.md:429); `PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"`
+  (SKILL.md:443/493/569/588/868) — deterministic per plan. ⇒ a chunked re-fire
+  re-acquires its OWN claim, hitting the rc=10 conflation today.
+- **`/fix-issues` PIPELINE_ID is FRESH per sprint fire.**
+  `SPRINT_ID="sprint-$(date -u +%Y%m%d-%H%M%S)-$ISSUE_TITLE_SLUG"`;
+  `PIPELINE_ID="fix-issues.$SPRINT_ID"` (sprint.md:126-127) — timestamped ⇒
+  self-re-entry never triggers for fix-issues; the new branch is inert+harmless
+  for it.
+- **`/do` and `/investigate` have NO `PIPELINE_ID` in their parent SKILL.md.**
+  `grep -n PIPELINE_ID skills/do/SKILL.md` → 0 hits; `grep -n PIPELINE_ID
+  skills/investigate/SKILL.md` → 0 hits. `/do`'s PIPELINE_ID is constructed
+  ONLY inside the mode files — `worktree.md:30` and `pr.md:62`
+  (`PIPELINE_ID="do.${TASK_SLUG}"`, AFTER `TASK_SLUG` is composed/sanitized);
+  `direct.md` (25 lines) sets neither `TASK_SLUG` nor `PIPELINE_ID`. `/do`
+  ALSO never parses an issue number into a variable (`grep -n "ISSUE=" 
+  skills/do/SKILL.md` → 0 assignment; the only `ISSUE`/`TASK_SLUG` hits at
+  SKILL.md:946/961 are prose). `/quickfix` DOES set `PIPELINE_ID="quickfix.$SLUG"`
+  (SKILL.md, Tracking-setup block). ⇒ Phase 2 must SYNTHESIZE a PIPELINE_ID and
+  PARSE the issue number for `/do` and `/investigate` (see W2.1/W2.2/W2.3 below);
+  `/quickfix` reuses its existing PIPELINE_ID. THIS is the C1/M1 fix.
+- **The twin scripts are NOT registered** in `script-ownership.md` (`grep -n claim
+  …script-ownership.md` → 0 hits), nor in any STALE_LIST / tier1-shipped-hashes
+  file (the only `claim-*` hits under `tests/` are test files). The new helper
+  gets the SAME treatment: directly-authored skill script, NOT registered.
+- `run-plan` acquire fence at SKILL.md:587-602 (rc=10 → "declined" `exit 0` at
+  `:597`). Plan-claim release terminals: execute-phase.md:1199-1204 (already-
+  complete no-op) and :1600-1608 (terminal merge, release call at :1600-1601),
+  plus subcommands/stop-next-status.md (operator-stop release loop at `:124-165`,
+  release call at `:154`). The operator-stop loop iterates `"$CLAIMS_ROOT"/plan-*`
+  ONLY and gates on `pipeline_id` starting `run-plan.` — its inline comment at
+  `:145-147` explicitly assumes fix-issues uses `issue-*/`, so it STRUCTURALLY
+  never sweeps `issue-*/` dirs. THIS is the M2/M3 gap Phase 3 must close.
+- `gh issue close <N>` is emitted in execute-phase.md `### 2. Close linked issue`
+  at `:1352` (a model-substituted `<N>` placeholder, NOT a bash-extracted var);
+  the terminal-merge plan-claim RELEASE is far away at `:1600-1601`. Ordering is
+  correct (close precedes release) but the two sites are NOT adjacent — D9/W3.3
+  must say "the release sites listed above," not "around `gh issue close`."
 
 ## Locked Decisions
 
-### D1 — Shared **script**, not a new skill. `claim-work-item.sh`, owner `create-worktree`. NOT registered in script-ownership.md / STALE_LIST / hash file.
+### D1 — One shared sourced helper; wire into BOTH twins' EEXIST branch. NO wrapper, NO new skill.
 
-The primitive is `skills/create-worktree/scripts/claim-work-item.sh` (a script
-owned by the `create-worktree` skill), NOT a `/claim-work-item` SKILL.
+**Decision.** Create one small POSIX-bash helper that, given a claim dir + the
+caller's pipeline_id, decides self (0) vs foreign (10) when the claim already
+exists. Both `claim-issue.sh` and `claim-plan.sh` SOURCE the locator but invoke
+the helper as a `bash` SUBPROCESS from the EEXIST arm of `cmd_acquire` (the
+exit-10/exit-0 contract requires a subprocess — sourcing-and-`exit` would kill
+the caller). No `claim-work-item.sh`, no `/claim-work-item` skill, no
+dispatch-by-kind layer.
 
-**Rationale.** A claim primitive is called *by other skills*, never typed by a
-human or invoked by the model as a slash command — so a SKILL would add
-slash-command surface nobody needs and incur full new-skill ceremony (docs page,
-per-skill conformance pins, invocation-flag decisions). The correct precedent is
-**`claim-issue.sh` / `claim-plan.sh` themselves**: both are skill-owned scripts
-authored directly inside their owner skill's `scripts/` dir, invoked across skill
-boundaries, and **NOT registered** in `script-ownership.md`, `STALE_LIST`, or
-`tier1-shipped-hashes.txt`. `claim-work-item.sh` is in exactly that category — a
-script authored directly inside an owner skill, never originating at top-level
-`scripts/`. We co-locate it under `create-worktree` because `claim-plan.sh`
-already reaches across a skill boundary to call `create-worktree`'s
-`sanitize-pipeline-id.sh`; co-locating the new wrapper there keeps the sanitizer
-dependency in-skill and matches the cross-skill-script pattern. The issue's "a
-NEW `/claim-work-item` skill warrants `/draft-plan`" note is satisfied two ways:
-(a) this very plan IS that adversarial review, and (b) a script is even lighter
-than a skill and triggers no new-skill review requirement at all.
+**Rationale.** The scripts are already ~91% identical; the only new behavior is
+self-recognition, which is a few lines. A wrapper or merged script would churn
+both tested contracts (acquire flags differ: issue needs `--sprint-id`, plan
+doesn't; release-flag requiredness differs; `set-phase` is plan-only) for zero
+behavioral gain. "Surface bugs, don't patch" cuts the other way here: the fix
+belongs IN the scripts' acquire path, factored to avoid divergence. `plans-claim-
+chip-parity` D1 rejected `claim-resource.sh <kind> <key>` for exactly this
+payload-divergence reason; that rejection still holds — we share only the
+self-re-entry decision, not the whole script.
 
-**CRITICAL — do NOT touch the migration registry (corrects round-1 error).** The
-earlier draft instructed adding a `claim-work-item.sh` row to
-`script-ownership.md`, bumping `Total: 31 → 32`, and adding it to `STALE_LIST` /
-`tier1-shipped-hashes.txt`. That was **factually wrong about what the registry
-tracks and would FAIL CI**. `script-ownership.md` (header lines 1-7) is the
-authoritative table for scripts that **originate at top-level `scripts/` and
-migrate INTO a skill** (parsed by `/run-plan` Phase 4 migration logic + the
-`test-update-zskills-migration.sh` drift tests). `sanitize-pipeline-id.sh` is in
-the registry *because it migrated from top-level into create-worktree* — it is
-NOT a precedent for a directly-authored skill script. A brand-new script
-authored directly at `skills/create-worktree/scripts/claim-work-item.sh` never
-lived at top-level, so:
-- Adding a doc row WITHOUT adding to `STALE_LIST` → `test-update-zskills-migration.sh`
-  **case 6a FAILS** (Tier-1 names parsed from `script-ownership.md` are diffed
-  against the `STALE_LIST` array in `update-zskills/SKILL.md:1531`).
-- Adding to `STALE_LIST` → tells `/update-zskills` to *migrate a consumer's
-  top-level `scripts/claim-work-item.sh`* that never exists, and the hash
-  generator (which hashes `scripts/$name` at top-level) has nothing coherent to
-  hash for **cases 6b/6c**.
+**Verification.** `grep -n claim skills/update-zskills/references/script-
+ownership.md` → 0 hits (twins unregistered → helper unregistered, no table/total
+churn). EEXIST arms confirmed at claim-issue.sh:137-150 and claim-plan.sh:186-199.
 
-Therefore: **claim-work-item.sh is NOT added to `script-ownership.md`,
-`STALE_LIST`, or `tier1-shipped-hashes.txt`.** No count bump. No registry edit.
-This is the same treatment claim-issue.sh / claim-plan.sh already receive.
+### D2 — Helper location: `skills/create-worktree/scripts/` (next to `sanitize-pipeline-id.sh`).
 
-**Rejected alternatives.**
-- *New `/claim-work-item` SKILL* — adds a `/` command, docs/skills page,
-  invocation-flag surface, and per-skill conformance pins for zero caller
-  benefit. Cost > benefit.
-- *Single merged `claim-resource.sh <kind> <key>` replacing both scripts* —
-  `plans-claim-chip-parity.md` D1 rejected exactly this; merging would force
-  re-validating both scripts' tested contracts and rewriting `/fix-issues` +
-  `/run-plan` + their full conformance batteries in lockstep. Dispatch
-  preserves the tested contracts untouched.
+**Decision.** Co-locate the helper with `sanitize-pipeline-id.sh` under
+`create-worktree`'s bundle. `claim-plan.sh` already crosses into that bundle via
+`_locate_sanitizer()`, so the precedent and the lookup precedence already exist.
+`claim-issue.sh` (no sanitizer dep today) gains a `_locate_*` sibling that mirrors
+`claim-plan.sh:75-94` verbatim (sibling create-worktree → `.claude/skills/`
+mirror → repo source-tree).
 
-**Verification (reproduced this round):** `grep -n claim script-ownership.md` →
-ZERO claim rows (claim-issue.sh / claim-plan.sh absent); `grep claim
-tier1-shipped-hashes.txt` → rc=1 (none); `STALE_LIST` (`update-zskills/SKILL.md:1531-1564`)
-has no claim entries; `script-ownership.md:1-7` header scope ("scripts under
-`scripts/` … machinery that moves into a skill"); `test-update-zskills-migration.sh:422-510`
-cases 6a/6b/6c. `grep -n 'sanitize-pipeline-id.sh' skills/run-plan/scripts/claim-plan.sh`
-shows the existing cross-skill call that justifies the create-worktree owner.
+**Rationale.** Lane-portable (plugin vs `/update-zskills` mirror vs source tree)
+exactly as the existing sanitizer locator already proves. Putting it in
+`create-worktree` (a foundational, widely-sourced bundle) avoids creating a new
+owner. Editing `create-worktree`'s bundle → bump `create-worktree`'s
+`metadata.version` + re-mirror.
 
-### D2 — Wrapper = dispatch by kind. "Unification" is at the CALLER interface, not storage.
+**Verification.** `claim-plan.sh:75-94` `_locate_sanitizer()` is the template;
+`skills/create-worktree/scripts/sanitize-pipeline-id.sh` exists and is sourced
+cross-skill today; the mirror dir `.claude/skills/create-worktree/scripts/`
+exists for re-mirror.
 
-`claim-work-item.sh <subcommand> <kind> <id> [flags]` where `kind ∈ {issue, plan}`.
-It **delegates** to claim-issue.sh / claim-plan.sh; it writes NO new
-`claim.json`. Storage stays exactly `.zskills/claims/issue-<N>/claim.json`
-(schema `{schema_version, pipeline_id, sprint_id, issue, started_at}`) and
-`.zskills/claims/plan-<slug>/claim.json` (schema `{schema_version, kind:"plan",
-slug, pipeline_id, started_at, current_phase}`).
+### D3 — Self-re-entry semantics + the verbatim exit-code contract.
 
-**Rationale.** The dashboard's `collect.py` scans `.zskills/claims/` and matches
-dir names against exactly two regexes (`^issue-(\d+)$`, `^plan-(.+)$`) and pulls
-kind-specific fields (issue chip needs `sprint_id`; plan chip needs
-`current_phase`). The two schemas are NOT identical supersets in practice — a
-single unified `claim.json` would have to be kind-aware anyway. Delegation keeps
-each existing reader, dir name, and schema byte-for-byte unchanged → zero
-dashboard *schema* risk, zero collector edits. Callers get the unification
-benefit (one entry point, one self-re-entry contract); storage divergence is
-invisible to them.
+**Decision (helper logic).** Given `<claim_dir>` and `<caller_pipeline_id>`,
+invoked only on the already-exists branch:
+- If `claim.json` is ABSENT → return **foreign (10)**. (Never steal: an in-flight
+  acquire window or a crashed-mkdir stub is not ours to claim. This is the
+  conservative choice and matches the "never steal" rule below.)
+- Else read the stored `pipeline_id` via Python stdlib json (NO jq) **using a
+  `try/except → empty-string` reader captured into a shell variable** (mirror
+  claim-issue.sh:212-219 / claim-plan.sh:265-272, NOT set-phase's bare
+  `json.load()` at claim-plan.sh:325-328). A truncated/half-written/malformed
+  `claim.json` MUST therefore yield an empty captured string → `"" != caller`
+  → **foreign (10)**, deterministically, NEVER an exit-code-driven branch or a
+  whole-acquire abort. Return **self (0)** iff the captured pipeline_id equals
+  the caller's, **foreign (10)** otherwise.
 
-**Caveat — sprint_id field *content* for non-sprint callers (see D8).** D2's
-"byte-for-byte unchanged → zero dashboard risk" is about the *schema shape*, not
-the field *values*. Because `/do`/`/quickfix`/`/investigate` have no sprint, the
-`sprint_id` field for their issue claims carries a synthesized value (D8). The
-schema shape is unchanged; the stored value will read like `do.<slug>` etc.
-This is an accepted cosmetic (D8) — called out so D2 is not over-read as "the
-dashboard is wholly unaffected." (Note: `collect.py` emits `sprint_id` into the
-issues JSON, but `static/app.js` has no `claim.sprint_id` consumer today, so
-there is no current visible chip label for it — see D8.)
+**Decision (acquire wiring, both scripts).** In `cmd_acquire`, the EEXIST arm
+(`case … *"File exists"*)`) calls the helper instead of unconditionally
+`return 10`: self → `return 0`, foreign → `return 10`. The fresh-acquire path
+(mkdir succeeded → write claim.json) is unchanged.
 
-**Verification:** `collect.py` `_CLAIM_DIR_RE`/`_PLAN_CLAIM_DIR_RE` (mechanism
-research §4) and the explicit chip field allow-lists at `collect.py:1908-1916`
-(issue) / `:1785-1793` (plan).
+**Decision (exit-code contract — document verbatim in BOTH script headers):**
 
-### D3 — Self-re-entry is the new behavior. Exact exit-code contract below.
+```
+acquire <id> …
+  0  — acquired-fresh OR self-re-entry (caller already owns this claim)
+  2  — usage error
+  10 — foreign-held by another pipeline (OR claim already exists but claim.json
+       absent/malformed — never steal)
+  11 — non-EEXIST mkdir failure / fs error / atomic-write failure
+release <id> [--require-pipeline <id>]
+  0  — released (or idempotently absent)
+  2  — usage error
+  12 — release pipeline-id mismatch (claim left intact)
+```
 
-On `acquire`, the wrapper first delegates to the underlying script. If that
-returns **10 (EEXIST)**, the wrapper READS the stored `pipeline_id` from the
-existing `claim.json` and compares it to the caller's `--pipeline-id`:
-- **match → exit 0** (idempotent self-claim; the caller already owns it).
-- **mismatch → exit 10** (genuinely foreign-held; caller declines/race-lost).
-- **claim.json absent → exit 10** (never steal — see race note below).
+**Rationale.** Self-re-entry is the single new behavior #803 names ("Self-re-entry
+must be tolerated; cf. claim-plan.sh rc=10 on a pipeline re-entering against its
+own claim"). Returning foreign when `claim.json` is absent OR malformed preserves
+the atomic-mkdir adjudication of the fresh-start race and never races a
+half-written claim.
 
-This is the load-bearing new logic — neither underlying script reads the stored
-`pipeline_id` at acquire time today, so a pipeline re-running `acquire` against
-its OWN claim currently gets 10 identical to a foreign claim. `/run-plan`
-SKILL.md:597 is the canonical example: its acquire fence has no same-pipeline
-skip guard, so a chunked re-fire that re-reaches the fence self-declines (the
-separate latent bug discussed in D7 — out of scope for this plan but the exact
-class the wrapper's self-re-entry closes for the three new consumers).
+**Verification.** Today acquire returns 10 on EEXIST regardless of owner
+(claim-issue.sh:142-144, claim-plan.sh:190-192) — the stored pipeline_id is never
+read at acquire time. The try/except reader at claim-issue.sh:212-219 /
+claim-plan.sh:265-272 (release) is the SAFE template; the bare `json.load()` at
+claim-plan.sh:325-328 (set-phase) is the one to AVOID. `release
+--require-pipeline` and `set-phase` are the existing ownership-comparison
+precedent the helper mirrors.
 
-**Race / TOCTOU notes (the absent-claim.json verdict is exit 10 for BOTH causes
-— do NOT "fix" this to steal).** The delegate returns 10 purely from `mkdir
-"$claim_dir"` hitting EEXIST, whether or not `claim.json` is present yet
-(`claim-issue.sh:136` mkdir vs `:155-169` non-atomic later write). So
-"dir-exists, claim.json-absent" arises from TWO causes, and exit 10 is the
-correct, conservative verdict for **both**:
-1. **Live mid-write peer** — a concurrent pipeline just won the `mkdir` but
-   hasn't written `claim.json` yet. It owns the claim; decline.
-2. **Dead-peer crash stub** — a pipeline crashed between `mkdir` and write.
-   Declining is still correct: D4 forbids TTL/staleness-stealing, so a crash
-   stub is cleared only by explicit `release`, never auto-reaped.
-   Additionally, a **TOCTOU** exists between the delegate returning 10 and the
-   wrapper opening claim.json: the holder could `release` (rm + rmdir) in that
-   window, leaving claim.json absent for a now-FREE item → the wrapper declines
-   a now-available item (spurious decline). This is **conservative (decline, not
-   double-work)** and accepted. A future maintainer MUST NOT "fix"
-   absent-claim.json → steal: that reintroduces the #739 mid-work-expiry bug.
+### D4 — MAIN_ROOT inside the helper resolves via `git rev-parse --git-common-dir` parent — NEVER `$PWD`.
 
-**Wrapper exit-code contract (authoritative):**
+**Decision.** The helper is handed an ABSOLUTE `<claim_dir>` by the caller (both
+twins already compute `"${MAIN_ROOT}/.zskills/claims/<dir>"` after
+`resolve_main_root`), so the helper does not re-resolve MAIN_ROOT — it operates
+on the path it's given. The plan's re-acquire-from-a-worktree-cwd test (Phase 1)
+proves the END-TO-END resolution still lands on the shared common-dir, not the
+worktree `$PWD`, because the CALLER resolves it. If a future refactor has the
+helper resolve MAIN_ROOT itself, it MUST copy the twins' resolver verbatim
+(git-common-dir parent, hard-fail on git error, never `$PWD`).
 
-| Exit | Meaning |
-|------|---------|
-| 0  | acquired (fresh) OR self-re-entry confirmed (already held by caller's pipeline_id) |
-| 2  | usage error (bad/missing kind, missing required flags, bad id, kind×subcommand mismatch) — raised by the wrapper BEFORE dispatch, or propagated from the underlying script |
-| 10 | foreign-held (claim exists, stored pipeline_id ≠ caller's, OR claim.json absent — never steal) |
-| 11 | filesystem error (propagated from the underlying script's non-EEXIST mkdir/write failure) |
-| 12 | release pipeline-id mismatch (propagated from the underlying script's `release --require-pipeline`) |
+**Rationale.** DA4.1: callers run from worktrees; a `$PWD` fallback would land
+claims inside a worktree, false-deny create-worktree, and hide the dashboard
+chip. Keeping resolution in the caller (where it already lives) is zero-
+divergence by construction.
 
-`release`, `is-stale` (issue only), `set-phase` (plan only) propagate the
-underlying script's exit code and stdout/stderr unchanged (the wrapper adds
-ownership logic ONLY to `acquire`; it adds kind×subcommand validation to all).
+**Verification.** claim-issue.sh:62-74 and claim-plan.sh:103-114 both resolve via
+git-common-dir parent and hard-fail (`return 1`) on git error — never `$PWD`.
 
-**Verification:** `claim-issue.sh:136-179` (acquire: 10 on bare EEXIST never
-reading pipeline_id, 11 on non-EEXIST, 2 on missing flags `:115-119`);
-`claim-issue.sh:210-224` / `claim-plan.sh:263-277` (the existing
-`--require-pipeline` comparison → 12 the wrapper mirrors for the read-compare
-step).
+### D5 — NO TTL / heartbeat / sweep / refresh. `is-stale` stays the 30s crash-window check only.
 
-### D4 — NO TTL / heartbeat / sweep / refresh. Hard constraint from #684/#739.
+**Decision.** The helper adds zero aging logic. Lifecycle stays acquire-at-pickup
+/ release-at-resolve-or-abandon, stale claims cleared only by explicit `release`.
+`claim-issue.sh is-stale` keeps its current sole behavior (dir without claim.json
+> 30s → stale).
 
-The wrapper introduces no wall-clock expiry of any kind. Lifecycle is
-acquire-at-pickup / release-at-resolve-or-abandon. Stale claims are cleared ONLY
-by explicit `release` (caller on resolve/abandon) or manual operator `release`.
-The wrapper exposes `is-stale` for the issue kind solely as the existing
-crash-window race check (dir without claim.json > 30s); it adds no new staleness
-concept. A persistent stale claim is an accepted, cheaper-than-mid-work-expiry
-tradeoff (#739 risk-asymmetry analysis).
+**Rationale.** #684 (plan side) and #739 (issue side) deliberately removed the
+TTL/heartbeat/sweep stack; mid-work expiry can kill a 50-100min impl agent's claim
+and cause double-dispatch. A persistent stale claim is the accepted cheaper cost.
 
-**Verification:** `claim-issue.sh:274-277` ("a live claim is never stale");
-#684/#739 prior-art research §1.
+**Verification.** claim-issue.sh:245-278 is the crash-window check only; #739
+header note confirms; claim-plan.sh has no `is-stale` at all.
 
-### D5 — Walk-away release policy: release-on-resolve at a UNIVERSALLY-REACHED terminal point. PR-mode releases on resolution regardless of created/merged.
+### D6 — `/do`, `/quickfix`, `/investigate` call `claim-issue.sh` DIRECTLY with a synthesized `--sprint-id`. Each must FIRST establish a PIPELINE_ID and PARSE the issue number.
 
-The wrapper provides acquire/release as separate calls against
-filesystem-persistent claims. The hard constraint corrected this round: **the
-release MUST sit at a code point reached on EVERY terminal exit of the
-consumer's mode**, not behind an `AUTO_FLAG` gate. Per consumer:
+**Decision.** Each of the three calls `bash <claim-issue.sh> acquire "$N"
+--pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"` (sprint-id synthesized
+from their own pipeline_id — single rule, all three) on issue pickup, and
+`release "$N" --require-pipeline "$PIPELINE_ID"` on resolve/abandon. No wrapper.
+**But the acquire MUST be placed where a PIPELINE_ID and an issue-number variable
+already exist** (see the per-consumer spec in Phase 2). Specifically:
 
-- **`/investigate`** — single-shot, no PR lifecycle, commits in place: ONE
-  release at the terminal point (Phase 5 success report AND the
-  couldn't-reproduce / root-cause-unclear / fix-failed-twice abandon paths). No
-  HOLD.
-- **`/do` worktree/direct (Paths B/C)** — release in **Phase 5 Report**
-  (`do/SKILL.md:859`), the universal terminal point reached on BOTH the
-  `auto` (Phase 4 ran) and **non-`auto` (Phase 4 skipped)** exits, PLUS the
-  verification-fail / task-too-big / push-fail error-handling exits
-  (`do/SKILL.md:909`). Release is **NOT** placed in Phase 4 Land — Phase 4
-  is gated `Only reached if AUTO_FLAG=1` (`do/SKILL.md:819`), so a
-  Phase-4-only release would leak the claim forever on the dominant interactive
-  (non-`auto`) path. (Corrects round-1 W2.2.)
-- **`/do` PR mode (Path A) + `/quickfix`** — release in the post-`/land-pr`
-  finalize, **release-on-resolution regardless of `created` vs `merged`** and on
-  every abandon path. Do NOT copy `/fix-issues`'s `HOLD-on-created` arm.
+- `/investigate`: synthesizes `PIPELINE_ID="investigate.issue-<N>"` (sanitized via
+  the shared `sanitize-pipeline-id.sh`) at the point it parses `#N`, since it has
+  none today.
+- `/do`: the acquire moves INTO each mode file AFTER that file constructs
+  `PIPELINE_ID="do.${TASK_SLUG}"` (worktree.md:30, pr.md:62), AND `/do` first
+  parses the issue number into a variable (it has none today). `direct.md` does
+  not construct a PIPELINE_ID/TASK_SLUG at all — Phase 2 either (a) synthesizes a
+  minimal `PIPELINE_ID="do.<issue-or-slug>"` in direct.md before the acquire, or
+  (b) skips the claim in direct mode if no issue number is in scope (the common
+  case). The acquire is NOT placed in `do/SKILL.md` before mode dispatch —
+  PIPELINE_ID is empty there and the call would fail usage-error exit 2.
+- `/quickfix`: reuses its existing `PIPELINE_ID="quickfix.$SLUG"`.
 
-**`/do every` / `auto` re-fire reconciliation (corrects round-1 D5/W2
-contradiction).** `/do every` self-schedules, but each fire is a FRESH `/do
-<description>` invocation that **re-runs the work** — it is NOT `/fix-issues`'s
-HOLD-and-re-poll-a-specific-PR model. So for `/do`/`/quickfix` we deliberately do
-NOT HOLD-on-created. The role of self-re-entry (D3 → exit 0) for these is
-narrow and correct: in the *rare* window where a re-fire lands AFTER acquire but
-BEFORE the release ran (e.g. mid-flight on the same item under the same
-PIPELINE_ID), the re-acquire returns exit 0 (proceed) instead of a spurious
-self-decline. It is NOT a HOLD mechanism. The duplicate-PR risk for a
-one-shot-per-fire `/do`/`/quickfix` is bounded: a concurrent *foreign* fire must
-re-pick the item in the narrow window between PR-resolution and release —
-acceptable vs the guaranteed leak that HOLD-without-a-re-poll-loop would cause.
+Exit 10 (foreign) → STOP this one-shot invocation with a clear "issue #N is being
+worked by another pipeline; declining" message (NOT "next candidate" — these are
+one-shot, not sprint loops). Exit 11 → fs-error + stop. Exit 2 (usage) → an
+internal bug (empty PIPELINE_ID / non-numeric N) → STOP + surface (it means the
+acquire was wired before its inputs existed — the C1/M1 failure class).
 
-**Rationale.** This keeps the hard `/fix-issues` PR-mode HOLD constraint
-untouched (out of scope) while giving the new consumers a release path that is
-reached on every terminal exit and does not strand claims on the dominant path.
+**Rationale.** `claim-issue.sh` requires `--sprint-id`; these skills have no
+sprint. Reusing pipeline_id as sprint-id keeps a single acquire shape and lets the
+EXISTING conformance grep match without a rename. Dashboard's issue chip shows
+`sprint_id == pipeline_id` (cosmetically odd but harmless — `_read_claims` and the
+chip tolerate it). The PIPELINE_ID/issue-var prerequisite is the C1/M1 root cause:
+the acquire shape is right, but the variables it consumes did not exist at the
+originally-specced placement.
 
-**Verification:** `do/SKILL.md:819` (Phase 4 gated on AUTO_FLAG=1),
-`:860` (Phase 5 Report — universal terminal), `:910-925` (error-handling exits);
-`skills/fix-issues/modes/pr.md:336-345` (HOLD-on-`created` we deliberately do
-NOT copy); `/do` `every` self-scheduling (`do/SKILL.md:64-99`).
+**Verification.** acquire requires both flags (claim-issue.sh:116-119) and a
+NUMERIC issue (validate_issue_number:80-95 — so `$N` must be a bare integer);
+release `--require-pipeline` optional but used here for ownership-safe release
+(claim-issue.sh:210-224). `grep -n PIPELINE_ID skills/do/SKILL.md` → 0;
+`skills/investigate/SKILL.md` → 0; `quickfix.$SLUG` present in
+`skills/quickfix/SKILL.md`. mode-file PIPELINE_ID: worktree.md:30, pr.md:62;
+direct.md (25 lines) sets neither.
 
-### D6 — Enforcement is PROSE + CLAUDE_TEMPLATE + conformance sentinel. NO new PreToolUse hook. Advisory-only for the three new consumers (stated, not papered over).
+### D7 — `/fix-issues` is NOT changed; `/run-plan` plan-claim wiring is NOT changed (only the script gains self-re-entry).
 
-The existing `block-fix-issue-unclaimed.sh` only gates branches matching
-`^fix-issue-NNN$`/`^fix/issue-NNN$` (`block-fix-issue-unclaimed.sh:174-183`;
-all other branches `exit 0`); `/do` (`do/<slug>`), `/quickfix` (no worktree at
-all — `git checkout -b` on main, `quickfix/SKILL.md:709,730`), and `/investigate`
-(no worktree) all bypass it. We do NOT add a new hook. Instead the rule lands in
-**CLAUDE_TEMPLATE.md** (auto-rendered into every consumer's
-`.claude/rules/zskills/managed.md`), the per-skill acquire/release fences land in
-each SKILL.md, and a **conformance sentinel** in `tests/test-skill-conformance.sh`
-asserts each of the three consumers retains its `claim-work-item.sh ... acquire`
-+ release wiring text.
+**Decision.** No `/fix-issues` migration: it already calls `claim-issue.sh`, so it
+gains self-re-entry for free (inert because its pipeline_id is fresh per fire).
+`/run-plan` keeps calling `claim-plan.sh acquire` exactly as today; Phase 1 only
+changes the script's internals.
 
-**Explicit acceptance gap (do not oversell).** The sentinel asserts only the
-*presence of the wiring text* — it is the #729 accidental-revert defense, not a
-runtime guarantee. There is **no mechanical runtime enforcement** that the agent
-actually runs `acquire` for the three new consumers; enforcement is **advisory**
-(prose + CLAUDE_TEMPLATE + text-presence sentinel). This is weaker than
-`/fix-issues`, whose hook mechanically blocks an unclaimed push. A broadened hook
-(at minimum for `/do`, which DOES create a `do/<slug>` worktree) is an explicit
-**deferred follow-up**, not part of this plan. We accept advisory-only here
-because the dominant double-work source is the *cron* `/fix-issues` racing an
-*interactive* ad-hoc run; the ad-hoc agent reading the CLAUDE_TEMPLATE rule +
-running the prose acquire closes that, and a hook can only check claim
-*existence*, not *ownership*, anyway.
+**Rationale.** Minimizes blast radius and keeps every existing conformance
+battery green. The plan-claim conformance asserts only that `claim-plan.sh
+acquire` precedes `### Execution` (test-plan-claim-conformance.sh:71-94) — caller
+shape unchanged ⇒ green.
 
-**Verification:** `block-fix-issue-unclaimed.sh:174-183` (non-fix-issue branches
-`exit 0`); `quickfix/SKILL.md:709,730` (`git checkout -b`, no create-worktree);
-CLAUDE_TEMPLATE rule-home precedent prior-art §2a; #729 sentinel precedent §1.
+**Verification.** test-plan-claim-conformance.sh:71-94 checks acquire placement,
+not the rc-arm semantics. fix-issues acquire-fence two-pass grep
+(test-fix-issues-claim-conformance.sh Test 4 :112-123) greps the `$CLAIM_HELPER`
+INDIRECTION (`CLAIM_HELPER="…claim-issue.sh"` + `bash "$CLAIM_HELPER" acquire`),
+NOT a literal `claim-issue.sh acquire` — untouched by this plan.
 
-### D7 — `/fix-issues` and `/run-plan` are NOT migrated. Wrapper is additive (new consumers only). `/run-plan` already meets the acceptance natively; its `:597` same-pipeline re-acquire conflation is a SEPARATE latent bug, left as a named follow-up.
+### D8 — `run-plan` `:597` is correct by construction after Phase 1; optional prose cleanup only.
 
-`/fix-issues` keeps calling `claim-issue.sh` directly; `/run-plan` keeps calling
-`claim-plan.sh` directly.
+**Decision.** After Phase 1, claim-plan.sh returns 0 on a genuine self-re-entry,
+so the rc=10 arm at run-plan SKILL.md:597 fires ONLY on truly-foreign claims —
+which is exactly when "declined" is the right verdict. Phase 3 OPTIONALLY sheds
+the now-redundant bespoke "same-pipeline re-acquire" hand-waving in the
+surrounding prose (SKILL.md:580-602), but the rc=10 → decline arm STAYS (it is
+now correct, not dead).
 
-**Why deferring `/run-plan` is NOT a deferred hard part — it already satisfies
-the acceptance (corrects round-1 + round-2 DA).** #803 names `/run-plan` among
-the skills that must "claim a work-item before working it and release on
-resolve." `/run-plan` *already does both today*, independent of this plan: it
-acquires the plan claim at `run-plan/SKILL.md:587-602`
-(`claim-plan.sh acquire`) and releases at its terminals — no-op re-entry
-(`modes/execute-phase.md:1199-1203`), terminal merge (`:1599-1601`), and
-operator stop (`subcommands/stop-next-status.md:154`). The acceptance bar for
-`/run-plan` is therefore *pre-met*; not migrating it onto the wrapper does not
-leave a named requirement undelivered.
+**Rationale.** The conflation that the `feedback_run_plan_claim_self_reentry`
+anchor documented (rc=10 against the pipeline's OWN claim) disappears at the
+source. No need to special-case holder-id in the fence.
 
-**The `/run-plan:597` conflation is a SEPARATE latent bug, NOT something this
-plan must fix.** The Overview/D3 cite `/run-plan SKILL.md:597` (rc=10 →
-"in-flight by another pipeline; declined" + `exit 0`, no self-check) as a
-real example of the self-vs-foreign conflation the wrapper's self-re-entry
-fixes for the new consumers. Verified this round, including the DA's
-falsifying trace: that conflation **IS reachable** within a single pipeline.
-`finish auto` chunks one phase per cron fire under a stable
-`pipeline_id` (`run-plan/SKILL.md:588`); the claim is acquired in fire 1 and
-released only at the two terminals above — there is **no per-phase release**.
-On the fire for phase N+1, Step 0's in-progress gate is a *tracker-counter*
-defer (phase N+1 is not yet In Progress when its fire arrives), so Step 0 takes
-its case-4 "Otherwise: proceed with normal preflight" path, which routes
-straight back to the acquire fence at `:587-602`. That fence has **no
-already-acquired-by-my-pipeline skip guard** and re-runs `claim-plan.sh
-acquire`, which has zero self-recognition (`claim-plan.sh:184-199`) → rc=10
-against its OWN held claim → `:597` declines and `exit 0`. So the earlier
-"Step-0 makes `:597` unreachable / benign" reasoning was **FALSE**. This is a
-genuine same-pipeline re-acquire bug in `/run-plan`, but it is **separate from
-#803's acceptance** (which `/run-plan` already meets via its existing
-claim+release wiring). Fixing it — by migrating `/run-plan` onto the wrapper's
-self-re-entry, or by adding a same-pipeline skip guard at the `:587-602` fence —
-is a **named follow-up** (migration would also break the plan-claim conformance
-battery), NOT part of this plan and NOT a silent abandonment.
+**Verification.** SKILL.md:583-585 prose currently asserts "a second pipeline
+already owns the plan" for ALL rc=10 — true only AFTER Phase 1 makes self-re-entry
+return 0.
 
-**Rationale (migration cost).** `tests/test-fix-issues-claim-conformance.sh`
-test 4 (`:118-124`) greps for ≥2 `CLAIM_HELPER="...claim-issue.sh"` assignments
-AND ≥2 `bash "$CLAIM_HELPER" acquire` invocations in `modes/sprint.md`; the
-plan-claim battery has the parallel pins. Migrating either skill would break
-both batteries and force lockstep rewrites of two complex, heavily-tested
-skills for no #803-acceptance gain — they already claim correctly.
+### D9 — Issue claim held for the plan's FULL lifetime; released ONLY at the plan's terminal release points. Issue-foreign at start is WARN-and-PROCEED, not abort.
 
-**Self-re-entry asymmetry is intentional.** `/do`-created and
-`/fix-issues`-created claims are byte-identical and mutually readable/releasable
-(shared dirs/schemas). A `/fix-issues` cron seeing a `/do`-held issue gets rc 10
-and declines (correct: foreign). The asymmetry — `/fix-issues`/`/run-plan`
-re-entering their OWN claim still get the conflate-as-foreign behavior — is the
-named `:597` follow-up for `/run-plan` and is filtered upstream for
-`/fix-issues` (its sprint loop skips already-claimed candidates before
-acquiring). Self-re-entry is wrapper-only by design in this plan.
+**Decision.** When a plan's frontmatter carries `issue: N`, `/run-plan` acquires
+`issue-<N>` at PLAN START (alongside the existing plan claim), using run-plan's
+pipeline_id and `--sprint-id "$PIPELINE_ID"`. The issue number is **stripped to a
+bare integer** (drop `#` and surrounding quotes) before being passed to
+`claim-issue.sh` (which rejects non-numeric). The issue claim is acquired ONCE,
+**NEVER released per-phase**, persists across idle gaps between chunked fires
+(filesystem + no-TTL + self-re-entry make this automatic), and is released ONLY at
+the SAME terminal sites where the plan claim is released (completion/merge
+release at execute-phase.md:1600-1601, already-complete no-op at :1203,
+operator-stop at subcommands/stop-next-status.md:154). Multi-issue plans →
+multiple issue claims. Phases do NOT individually claim.
 
-**Verification:** `run-plan/SKILL.md:587-602` (acquire fence, no self-skip
-guard; `:597` rc=10 → exit 0; `:588` stable per-plan pipeline_id);
-`modes/execute-phase.md:1199-1203,1599-1601` + `subcommands/stop-next-status.md:154`
-(the only release terminals — no per-phase release); `claim-plan.sh:184-199`
-(acquire has no self-recognition); `test-fix-issues-claim-conformance.sh:118-124`
-(the two-pass grep — migrating breaks it).
+**Issue-foreign-at-start policy (the M2 design call — DECIDED):** when the issue
+acquire returns **rc=10** (a `/fix-issues` cron or other pipeline already holds
+`issue-<N>`), `/run-plan` MUST:
+1. log a LOUD warning to stderr: `"issue #N is claimed by another pipeline;
+   proceeding with plan execution, issue claim NOT held"`;
+2. **PROCEED with the plan anyway — do NOT abort**, and crucially
+3. **NOT release or leak the just-acquired PLAN claim** (the plan claim was won
+   legitimately; it stays held).
 
-### D8 — Synthesized sprint-id for non-sprint callers: `--sprint-id "$PIPELINE_ID"` (single rule). Dashboard cosmetic accepted.
+Rationale: #739 removed auto-expiry, so a possibly-stale issue claim must not
+block a deliberately-run plan. The plan owns the plan; the issue contention is a
+softer signal surfaced to the operator, not a fatal collision. This is DELIBERATELY
+DIFFERENT from the plan-claim rc=10 arm (which DOES `exit 0`-decline, because two
+pipelines must never both drive the SAME plan). Do NOT mirror the plan-claim
+decline arm for the issue acquire — that would let a stale issue claim abort a
+legitimate plan AND, without an explicit plan-release-before-decline, leak the
+plan claim (the C2-analogue on the run-plan side).
 
-`claim-issue.sh acquire` **REQUIRES** `--sprint-id` (`claim-issue.sh:115-119` →
-exit 2 if absent). `/do`, `/quickfix`, `/investigate` have no sprint concept, so
-they MUST synthesize one. **Single mandated rule (no implementer choice): pass
-`--sprint-id "$PIPELINE_ID"`** for all three consumers — reuse the
-already-sanitized PIPELINE_ID verbatim, so `sprint_id == pipeline_id` is a
-recognizable "no real sprint" sentinel and the conformance sentinel can grep a
-stable shape. (`claim-plan.sh acquire` does NOT require `--sprint-id` — the
-wrapper rejects `--sprint-id` for `kind=plan`, exit 2.)
+rc=11 on the issue acquire → Failure Protocol (genuine fs error). rc=2 (usage,
+e.g. an un-stripped `#N`) → internal bug → STOP + surface.
 
-**Accepted dashboard cosmetic.** The synthesized value lands in `claim.json`'s
-`sprint_id` and is emitted into the issues JSON / HTTP response by the dashboard
-collector (`collect.py:1912`, `issue["claim"]["sprint_id"]`) as e.g.
-`do.add-dark-mode`. There is **no current `app.js` chip consumer** of
-`claim.sprint_id` (the only `sprint` references in `app.js` are unrelated
-workspace-state machine states, `app.js:1366,2231`), so the synthesized value
-is stored/emitted but not demonstrably rendered as a visible chip label today.
-Either way it is an accepted cosmetic (a non-sprint value in a sprint-labeled
-field), taken as the cost of reusing claim-issue.sh's required flag rather than
-relaxing its tested contract. A dashboard "synthetic sprint" display tweak is
-out of scope.
+**Rationale.** This is the #803 execution-window protection: a long plan should
+hold its issue against a concurrent `/fix-issues` cron for its whole life, not
+just one phase — but NOT at the cost of refusing to run a plan whose issue is
+held by a stale claim. Self-re-entry (Phase 1) makes the re-acquire on each
+chunked fire return 0, so a run-plan that DID win the issue never self-collides.
 
-**Verification:** `claim-issue.sh:115-119` (sprint-id required);
-`collect.py:1912` (emits `sprint_id` into the issue claim JSON);
-`grep sprint static/app.js` → only workspace-state `"sprint"`, no
-`claim.sprint_id` consumer; `run-plan/SKILL.md:592` (claim-plan acquire passes
-only `--pipeline-id`).
+**Verification.** Plan-claim release terminals confirmed at
+execute-phase.md:1199-1204 (no-op) + :1600-1608 (terminal merge, release at
+:1600-1601) + subcommands/stop-next-status.md:124-165 (operator-stop, release at
+:154). The plan rc=10 arm is `exit 0` at SKILL.md:597 — the issue arm is
+INTENTIONALLY not that. `gh issue close` is at execute-phase.md:1352, NOT
+adjacent to the :1600 release — D9/W3.3 reference the release SITES listed above,
+not "around `gh issue close`."
 
 ## Progress Tracker
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| Phase 1 — Build `claim-work-item.sh` + self-re-entry + tests | ⬚ | | |
-| Phase 2 — Wire `/do`, `/quickfix`, `/investigate` onto the wrapper | ⬚ | | |
-| Phase 3 — CLAUDE_TEMPLATE rule + conformance sentinels + docs | ⬚ | | |
+| Phase 1 — Shared self-re-entry helper + wire into both twins + tests | ⬚ | | |
+| Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh | ⬚ | | |
+| Phase 3 — run-plan issue-claim (execution-window protection) + operator-stop sweep + optional :597 cleanup | ⬚ | | |
+| Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs | ⬚ | | |
 
-## Phase 1 — Build `claim-work-item.sh` + self-re-entry + tests
+---
 
-### Goal
-Create the shared dispatch wrapper with ownership-aware self-re-entry, mirror it,
-and ship a dedicated conformance + behavior test suite. No consumer is wired yet
-— Phase 1 is independently verifiable in isolation. **No script-ownership.md /
-STALE_LIST / hash-file edits** (D1).
-
-### Work Items
-- [ ] W1.1 — Create `skills/create-worktree/scripts/claim-work-item.sh`
-  (executable, `#!/bin/bash`, `set -euo pipefail`). Header documents the
-  delegation model, the D3 exit-code contract verbatim, the
-  absent-claim.json-→-10 never-steal note (D3 race notes), and the no-jq /
-  Python-precedence / MAIN_ROOT-via-`git rev-parse --git-common-dir`
-  (never-`$PWD`) invariants.
-- [ ] W1.2 — Implement subcommand dispatch: `acquire | release | is-stale |
-  set-phase`, first positional after subcommand is `<kind>` ∈ `{issue, plan}`,
-  second is `<id>`. Validate kind×subcommand compatibility **in the wrapper,
-  BEFORE dispatch**, emitting the wrapper's own message (so exit 2 is
-  deterministic, not a delegate fall-through artifact — reviewer #5):
-  `is-stale` ⇒ `issue` only; `set-phase` ⇒ `plan` only; unknown
-  subcommand/kind ⇒ exit 2. `list` is NOT exposed (reviewer #6 — no consumer
-  needs it; callers can hit the delegates' `list` directly).
-- [ ] W1.3 — Locate the delegate scripts portably (plugin lane vs source-tree
-  mirror), mirroring `claim-plan.sh`'s `_locate_sanitizer` precedence pattern:
-  try `$CLAUDE_PROJECT_DIR/.claude/skills/{fix-issues,run-plan}/scripts/...`,
-  then `$REPO_ROOT/skills/...` (source-tree tests). Hard-error → exit 2 if
-  neither resolves.
-- [ ] W1.4 — Implement `acquire` self-re-entry (D3) with a **step-by-step
-  MAIN_ROOT/path spec** (reviewer #3, DA D8):
-  1. Pass through to the delegate (issue: forward `--pipeline-id` +
-     `--sprint-id`; plan: forward `--pipeline-id`, reject `--sprint-id` → exit 2).
-  2. If delegate rc ≠ 10, return rc unchanged (0/2/11 propagate).
-  3. On rc == 10: resolve MAIN_ROOT with the **IDENTICAL algorithm the delegates
-     use** — `git rev-parse --git-common-dir` then take its parent; **hard-error
-     → exit 2, NEVER fall back to `$PWD`** (copy `resolve_main_root`'s body from
-     the delegate verbatim so there is zero divergence — DA D8).
-  4. Construct the claim dir: `issue` → `${MAIN_ROOT}/.zskills/claims/issue-<N>`;
-     `plan` → first run `<slug>` through create-worktree's
-     `sanitize-pipeline-id.sh` (the delegate sanitizes before path construction;
-     an unsanitized slug would read the wrong path and misclassify — reviewer #3),
-     then `${MAIN_ROOT}/.zskills/claims/plan-<sanitized-slug>`.
-  5. If `claim.json` absent → exit 10 (never steal — D3). Else read stored
-     `pipeline_id` via Python stdlib json; equal to caller's `--pipeline-id` →
-     exit 0, else exit 10.
-- [ ] W1.5 — Implement `release`, `is-stale`, `set-phase` as pure pass-through to
-  the delegate (exit code + stdout/stderr preserved), AFTER the W1.2 wrapper-side
-  kind×subcommand validation.
-- [ ] W1.6 — Mirror via `bash scripts/mirror-skill.sh create-worktree`; bump
-  `skills/create-worktree/SKILL.md` `metadata.version` (today's ET date + fresh
-  content hash via `scripts/skill-content-hash.sh`).
-- [ ] W1.7 — **(REMOVED — corrects round-1 BLOCKER#1 + DA D1.)** Do NOT add a
-  row to `script-ownership.md`, do NOT bump `Total: 31 Tier 1`, do NOT touch
-  `STALE_LIST` or `tier1-shipped-hashes.txt`. `claim-work-item.sh` follows the
-  same un-registered treatment as `claim-issue.sh` / `claim-plan.sh` (D1). The
-  test that confirms this absence is W1.9.
-- [ ] W1.8 — New test `tests/test-claim-work-item-script.sh`: behavior matrix
-  (see Acceptance) in a temp git repo with the delegates **staged** (see Design
-  → "Test harness delegate-staging", DA D12). MUST include a self-re-entry case
-  run **from a worktree cwd** (not just the main repo), since that is the only
-  place a MAIN_ROOT-resolution divergence would manifest (DA D8).
-- [ ] W1.9 — New test `tests/test-claim-work-item-conformance.sh`: source +
-  mirror present/executable/byte-equal; header documents the exit contract; no
-  TTL/heartbeat/sweep/refresh tokens; no jq; Python-precedence line present;
-  MAIN_ROOT resolved via `git rev-parse --git-common-dir` (no `$PWD` acquire-time
-  fallback); **and assert `claim-work-item.sh` is absent from
-  `script-ownership.md`, `STALE_LIST`, and `tier1-shipped-hashes.txt`** (locks
-  the D1 decision against a future erroneous registration). **Note (round-2 DA
-  NIT-1):** the repo-wide hardcode deny-list scan in
-  `test-skill-conformance.sh:2118` enumerates only `skills/**/scripts/*.py` —
-  NOT `*.sh` — so a `.sh` wrapper is NOT subject to that gate. The
-  Python-precedence / no-hardcode assertions here are therefore this test's own
-  belt-and-suspenders hygiene, NOT a mirror of an external repo gate; keep them,
-  but do not imply they satisfy an external conformance requirement.
-- [ ] W1.10 — Run `bash tests/run-all.sh`; capture to
-  `$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}`; all suites green.
-
-### Design & Constraints
-- **CLI:** `claim-work-item.sh acquire <kind> <id> --pipeline-id <id> [--sprint-id <id>]`
-  (`--sprint-id` REQUIRED iff kind=issue; REJECTED → exit 2 if kind=plan);
-  `release <kind> <id> [--require-pipeline <id>]` (delegate to claim-issue.sh
-  where `--require-pipeline` is optional, claim-plan.sh where it is required —
-  the wrapper passes the flag through verbatim and does NOT relax claim-plan's
-  requirement);
-  `is-stale issue <N>`; `set-phase plan <slug> --require-pipeline <id> --current-phase "<str>"`.
-  **No `list`** (reviewer #6).
-- **Exit contract:** exactly D3's table. `acquire` is the ONLY subcommand the
-  wrapper adds ownership logic to; kind×subcommand validation applies to all and
-  is wrapper-side, pre-dispatch (reviewer #5).
-- **Storage (D2):** wrapper writes NO claim.json; the delegate owns all writes.
-- **MAIN_ROOT (reviewer #3, DA D8):** the wrapper's self-re-entry read MUST
-  resolve MAIN_ROOT with the IDENTICAL function body as the delegates
-  (`git rev-parse --git-common-dir` parent, hard-error → exit 2, NEVER `$PWD`).
-  For plan kind, sanitize the slug via create-worktree's sanitizer BEFORE
-  constructing `plan-<slug>`.
-- **Test harness delegate-staging (DA D12):** the behavior-matrix test in W1.8
-  runs in a temp repo, but the wrapper locates delegates via
-  `$CLAUDE_PROJECT_DIR/.claude/skills/{fix-issues,run-plan}/scripts/...` then
-  `$REPO_ROOT/skills/...`. A pristine temp repo has neither → every acquire would
-  return exit 2. The test MUST stage the real `claim-issue.sh` / `claim-plan.sh`
-  **and** `sanitize-pipeline-id.sh` into the temp repo's `skills/.../scripts/`
-  layout AND export `REPO_ROOT`/`CLAUDE_PROJECT_DIR` pointing at it. **Precedent
-  caveat (round-2 reviewer NIT-3):** `test-plan-claim-script.sh:15-16,51-57` is
-  a *partial* template only — it runs `claim-plan.sh` **in place** against the
-  real `$REPO_ROOT` (`CLAIM_SH=$REPO_ROOT/skills/run-plan/scripts/claim-plan.sh`)
-  and stages only the cross-skill *sanitizer* into the scratch dir, NOT the
-  delegates themselves. This plan's requirement is STRONGER (stage both delegates
-  + the sanitizer into an isolated temp repo so the wrapper's own
-  delegate-location precedence is exercised) — do NOT assume the cited test is a
-  copy-paste template for full delegate-staging; borrow its sanitizer-staging +
-  `CLAUDE_PROJECT_DIR` export idiom and extend it. "Fresh repo" in the ACs means
-  "temp repo with delegates staged," NOT pristine.
-- **Python:** `PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"`;
-  no jq. **No `2>/dev/null`** on the fallible delegate calls whose rc matters.
-- **No TTL/heartbeat/sweep/refresh** (D4) — tokens absent (asserted by W1.9).
-
-### Acceptance Criteria
-(Each runs in the staged temp repo per Design → delegate-staging; "fresh"
-means a clean `.zskills/claims/` within that staged repo.)
-- `acquire issue 5 --pipeline-id P --sprint-id S` → exit 0, creates
-  `.zskills/claims/issue-5/claim.json` with `{pipeline_id:"P", sprint_id:"S",
-  issue:5, ...}`.
-- Re-run identical `acquire issue 5 --pipeline-id P --sprint-id S` → **exit 0**
-  (self-re-entry), claim.json unchanged.
-- `acquire issue 5 --pipeline-id Q --sprint-id S` (different pipeline) → **exit 10**.
-- **Crash-window:** create `.zskills/claims/issue-5/` then remove its claim.json;
-  `acquire issue 5 --pipeline-id P --sprint-id S` (**flags PRESENT** — reviewer
-  #4: omitting them returns exit 2 before mkdir, not 10) → **exit 10**.
-- **Worktree-cwd self-re-entry (DA D8):** from a `git worktree` of the staged
-  repo, after `acquire issue 5 --pipeline-id P --sprint-id S` from main, re-run
-  the same acquire FROM the worktree cwd → **exit 0** (proves MAIN_ROOT resolves
-  to the shared common-dir parent, not the worktree's `$PWD`).
-- `acquire plan my-slug --pipeline-id P` → exit 0, creates
-  `.zskills/claims/plan-my-slug/claim.json`; re-run same → exit 0; different
-  pipeline → exit 10.
-- `acquire plan x --pipeline-id P --sprint-id S` → **exit 2** (sprint-id illegal
-  for plan); `acquire issue 5 --pipeline-id P` (no sprint-id) → **exit 2**.
-- `release issue 5 --require-pipeline Q` (wrong pipeline) → **exit 12**, claim
-  intact; `release issue 5 --require-pipeline P` → exit 0, dir gone.
-- `is-stale plan x` → **exit 2** (wrapper-side wrong-kind reject, own message);
-  `set-phase issue 5 ...` → **exit 2** (wrapper-side wrong-kind reject).
-- `set-phase plan my-slug --require-pipeline P --current-phase "Phase 2"` updates
-  `current_phase`.
-- `acquire issue 0` / `acquire issue abc` → exit 2 (propagated validation).
-- `claim-work-item.sh` absent from `script-ownership.md` / `STALE_LIST` /
-  `tier1-shipped-hashes.txt` (W1.9 assertion).
-- `bash tests/run-all.sh` green; both new test files pass; mirror byte-equal.
-
-### Dependencies
-None (foundation phase). Depends on the existing claim-issue.sh / claim-plan.sh /
-sanitize-pipeline-id.sh remaining in place.
-
-## Phase 2 — Wire `/do`, `/quickfix`, `/investigate` onto the wrapper
+## Phase 1 — Shared self-re-entry helper + wire into both twins + tests
 
 ### Goal
-Add acquire-on-pickup / release-on-resolve fences to the three unwired
-consumers, calling `claim-work-item.sh`, honoring the D5 universally-reached
-release policy per consumer. Each consumer is independently verifiable. Re-anchor
-all cited line ranges against the current files before editing (DA D11 — several
-round-1 anchors are approximate).
+
+Add ownership-aware self-re-entry to BOTH `claim-issue.sh` and `claim-plan.sh`
+via a small shared sourced helper, so a pipeline re-acquiring its OWN claim gets
+exit 0 (success) instead of exit 10 (foreign). No rename, no schema change, no
+caller-interface change. At the end of this phase, `run-plan` SKILL.md:597 is
+fixed for free, and `/fix-issues` is unaffected (its fresh-per-fire pipeline_id
+never self-collides).
 
 ### Work Items
-- [ ] W2.1 — `/investigate` (`skills/investigate/SKILL.md`): in Phase 1 step 1,
-  immediately after parsing `#N` (Phase 1 step 1, `SKILL.md:54`) and before reproduction,
-  acquire `issue <N>`. On exit 10 (foreign): report "issue #N is being worked by
-  another pipeline; declining" and stop. On exit 11: report fs-error and stop.
-  Add the **single terminal release** (resolved OR abandoned) covering BOTH the
-  Phase 5 success report AND the abandon paths (two-attempt-limit
-  `SKILL.md:186-191`, couldn't-reproduce / abandoned report `SKILL.md:261`).
-  Use `release issue <N> --require-pipeline "$PIPELINE_ID"`. Resolve `PIPELINE_ID`
-  via the sanitizer (mirror `/run-plan`'s
-  `${ZSKILLS_PIPELINE_ID:-investigate.$TRACKING_ID}` pattern, sanitized).
-- [ ] W2.2 — `/do` (`skills/do/SKILL.md`): add an acquire step between Phase 1.5
-  arg-parse (issue number + LANDING_MODE resolved) and Phase 2 dispatch
-  (`SKILL.md:715-725`) — guarded on "an issue number is in scope" (the
-  `--force`-override-on-`#N` path). Acquire `issue <N>`; exit 10 → decline+stop;
-  exit 11 → fs-error+stop. **Release placement (corrects round-1):**
-  - **Worktree/direct (Paths B/C):** release in **Phase 5 Report**
-    (`SKILL.md:859`) — the universal terminal reached on BOTH `auto` and
-    **non-`auto`** exits — AND on the error-handling exits (verification-fail,
-    task-too-big, push-fail; `SKILL.md:909`). Do **NOT** place the release in
-    Phase 4 Land (`SKILL.md:819`, gated `Only reached if AUTO_FLAG=1`) — that
-    would leak on the dominant non-`auto` path (DA D2).
-  - **PR mode (Path A):** release in `skills/do/modes/pr.md` post-`/land-pr`
-    finalize, **release-on-resolution regardless of `created` vs `merged`** and
-    on every abandon path (D5 walk-away). Do NOT copy `/fix-issues`'s
-    `HOLD-on-created` arm (reviewer #7).
-- [ ] W2.3 — `/quickfix` (`skills/quickfix/SKILL.md`): add acquire at WI 1.8
-  (Tracking setup, `SKILL.md:640-653`, where PIPELINE_ID is established) BEFORE
-  WI 1.9 branch creation (`git checkout -b`, `:730`) — guarded on the
-  `#N`-via-force path. Acquire `issue <N>`; exit 10 → decline+stop; exit 11 →
-  fs-error. Release in Phase 7 post-`/land-pr` finalize
-  (**release-on-resolution**, D5) AND on the abandon paths (test-fail, commit-fail,
-  push-fail — re-anchor; cited ranges are approximate per DA D11).
-- [ ] W2.4 — Each consumer fence resolves the wrapper path:
-  `"$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/claim-work-item.sh"`
-  (single mirror-lane path, matching `/fix-issues` pr.md's `CLAIM_HELPER`
-  precedent at `pr.md:336`; reviewer #8). Phase 2 behavioral ACs are therefore
-  exercised against the installed mirror, not the source tree — the
-  source-tree-testable layer is Phase 1's script behavior matrix.
-- [ ] W2.5 — Bump `metadata.version` for `skills/do/SKILL.md`,
-  `skills/quickfix/SKILL.md`, `skills/investigate/SKILL.md`; mirror each via
+
+- [ ] **W1.1 — Create the helper.** New file
+  `skills/create-worktree/scripts/claim-self-reentry.sh`. Contract: given args
+  `<claim_dir> <caller_pipeline_id>`, exit 0 = self (proceed), exit 10 = foreign
+  (decline). **Invocation mode: bash SUBPROCESS, never sourced for the decision**
+  (the `exit 10`/`exit 0` contract would terminate a sourcing caller). Logic per
+  D3: if `<claim_dir>/claim.json` ABSENT → exit 10; else read stored `pipeline_id`
+  via the `_CLAIM_PYTHON` precedence
+  (`${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}`, Python stdlib
+  json, NO jq) **using a `try/except → print('')` reader captured into a shell
+  variable** (mirror claim-issue.sh:212-219 / claim-plan.sh:265-272 — NOT the bare
+  `json.load()` at claim-plan.sh:325-328). A truncated/malformed claim.json MUST
+  yield empty → exit 10 (foreign, never steal), deterministically. Exit 0 iff the
+  captured pipeline_id equals `<caller_pipeline_id>`, else exit 10. `set -u`;
+  header documents the contract verbatim.
+- [ ] **W1.2 — Add a `_locate_self_reentry()` to `claim-issue.sh`** mirroring
+  `claim-plan.sh:75-94` `_locate_sanitizer()` precedence verbatim: sibling
+  `create-worktree/scripts/claim-self-reentry.sh` → repo-source
+  `../../../skills/create-worktree/scripts/…` → `${CLAUDE_PROJECT_DIR}/.claude/
+  skills/create-worktree/scripts/…` → `${CLAUDE_PROJECT_DIR}/skills/…`. Add the
+  same locator to `claim-plan.sh` (it can reuse the `_CLAIM_SCRIPT_DIR` anchor it
+  already computes at :71). The locator is SOURCED at script load; the resolved
+  helper PATH is then invoked as a bash subprocess from the EEXIST arm.
+- [ ] **W1.3 — Wire `claim-issue.sh` EEXIST arm.** At `:141-150`, replace the
+  unconditional `*"File exists"*) return 10` with: locate + invoke the helper as
+  `bash "$helper" "$claim_dir" "$pipeline_id"` (both in scope at this branch — C1
+  confirms); on helper exit 0 → `return 0`; on helper exit 10 → `return 10`; if
+  the helper cannot be located → `return 10` (conservative: never silently steal;
+  emit a one-line WARN to stderr). (Note: the existing EEXIST arm is SILENT on the
+  10 path today; no conformance test asserts silence or counts python invocations,
+  so adding the locate+invoke is safe.)
+- [ ] **W1.4 — Wire `claim-plan.sh` EEXIST arm** identically at `:189-198`,
+  passing `"$claim_dir"` and `"$pipeline_id"`.
+- [ ] **W1.5 — Update BOTH script headers** with the verbatim exit-code contract
+  from D3 (acquire 0 now covers self-re-entry; 10 now covers "foreign OR
+  claim.json absent/malformed — never steal").
+- [ ] **W1.6 — Tests for the helper + self-re-entry on both kinds.** New
+  `tests/test-claim-self-reentry.sh`: (a) helper unit — claim.json absent → 10;
+  matching pipeline_id → 0; mismatching → 10; **truncated/malformed claim.json
+  → 10** (write `{"pipeline_id": "x"` with no closing brace; assert exit 10, NOT
+  a python traceback / non-10 exit). (b) `claim-issue.sh` integration — acquire
+  fresh → 0; re-acquire SAME pipeline_id → 0; DIFFERENT pipeline_id → 10;
+  dir-without-claim.json → 10. (c) `claim-plan.sh` integration — same four cases
+  with a slug. (d) **re-acquire-from-a-worktree-cwd case**: create a real worktree
+  (or simulate via a nested checkout sharing the common dir), `cd` into it,
+  re-acquire the same id — assert exit 0 AND that the claim dir is under the
+  shared common-dir's `.zskills/claims/`, NOT the worktree's `$PWD`. This proves
+  MAIN_ROOT still resolves to the shared common-dir.
+- [ ] **W1.7 — Version bump + mirror.** Bump `create-worktree` `metadata.version`
+  (date `America/New_York` + recomputed content hash via
+  `scripts/skill-content-hash.sh`), AND `fix-issues` + `run-plan`
+  `metadata.version` (their bundles changed). Re-mirror each via
   `scripts/mirror-skill.sh <name>`.
-- [ ] W2.6 — `bash tests/run-all.sh` green.
+- [ ] **W1.8 — Confirm no script-ownership / STALE_LIST / hash-file edits.** The
+  helper is directly-authored skill machinery, same as the twins; verify
+  `grep -n claim skills/update-zskills/references/script-ownership.md` is still 0
+  and that no tier1-shipped-hashes / STALE_LIST entry is needed.
 
 ### Design & Constraints
-- **Acquire call shape (D8 — single rule):**
-  `bash "$WRAPPER" acquire issue "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"`.
-  All three consumers pass `--sprint-id "$PIPELINE_ID"` (sprint_id == pipeline_id
-  sentinel; dashboard cosmetic accepted per D8). No implementer choice.
-- **Decline-on-foreign (exit 10):** one-shot user/cron invocations, not sprint
-  loops — no "next candidate." exit 10 ⇒ STOP this invocation with a clear
-  message, NOT `continue`.
-- **Self-re-entry (exit 0 on re-acquire):** narrow role per D5 — covers the rare
-  re-fire-before-release window; NOT a HOLD mechanism.
-- **Release ownership gate + exit-12 disposition (DA D9 — distinguish):** every
-  release passes `--require-pipeline "$PIPELINE_ID"`. On the **resolve/success**
-  release, exit 12 is a WARN-worthy ANOMALY (someone replaced your claim
-  mid-work) — log it loudly, do not silently swallow. On the **abandon /
-  idempotent** path, exit 12 (or idempotent dir-absent → exit 0) is benign —
-  log-and-continue. Do NOT blanket-`|| true` all release exit-12s.
-- **D5 walk-away:** `/do` worktree/direct release in Phase 5 (universal
-  terminal), `/do` PR-mode + `/quickfix` release on PR resolution regardless of
-  `created`/`merged`. Do NOT copy `/fix-issues`'s HOLD-on-`created`.
-- **Skill-file hardcode discipline:** any new fence referencing config-derived
-  values sources `zskills-resolve-config.sh` per the canonical prelude.
+
+- **Helper logic (verbatim).** On already-exists: claim.json absent OR malformed
+  → foreign (10, never steal); else self (0) iff stored `pipeline_id == caller`,
+  foreign (10) otherwise. Python stdlib json with `try/except → print('')`
+  captured into a shell var (mirror release readers, NOT set-phase's bare
+  `json.load()`), NO jq, `ZSKILLS_PYTHON` precedence.
+- **Helper invocation mode: bash SUBPROCESS** (not sourced for the decision) — the
+  exit-code contract requires a subprocess; matches the twins' `bash "$sanitizer"`
+  pattern (claim-plan.sh:136).
+- **Exit-code contract (verbatim, both scripts):** acquire — 0 acquired-fresh OR
+  self-re-entry; 2 usage; 10 foreign-held (or claim.json absent/malformed); 11 fs
+  error. release — 0 released/idempotent; 2 usage; 12 release pipeline-id mismatch.
+- **HARD CONSTRAINT: NO TTL / heartbeat / sweep / refresh** (preserve #684/#739).
+  `is-stale` stays the 30s crash-window check only.
+- **MAIN_ROOT never `$PWD`** — resolved by the CALLER via `git rev-parse
+  --git-common-dir` parent (claim-issue.sh:62-74, claim-plan.sh:103-114); the
+  helper operates on the absolute claim_dir it's handed. The worktree-cwd test
+  (W1.6d) proves end-to-end resolution.
 
 ### Acceptance Criteria
-- `grep -c 'claim-work-item.sh' skills/{do,quickfix,investigate}/SKILL.md` each
-  ≥ 2 (acquire + release); `grep 'claim-work-item.sh.*release'` present in each.
-- With a foreign `issue-<N>` claim present, dispatching `/investigate #N` (or
-  `/do --force #N`, `/quickfix #N force`) declines with the documented message
-  and creates no worktree/branch.
-- With a self-owned claim (same PIPELINE_ID), re-running proceeds (no spurious
-  decline).
-- **Non-`auto` `/do --force #N` (worktree/direct) reaches Phase 5 Report and
-  releases the claim** (`.zskills/claims/issue-<N>/` gone) — the DA-D2 leak case.
-- After a `/investigate` run resolves OR abandons, `.zskills/claims/issue-<N>/`
-  is gone.
-- After `/do`/`/quickfix` PR mode lands OR opens a PR (created), the claim is
-  released.
-- All three SKILL.md mirrors byte-equal; `metadata.version` bumped on each;
-  `bash tests/run-all.sh` green.
+
+- `tests/test-claim-self-reentry.sh` passes all cases (helper unit incl.
+  truncated-JSON → 10 + both-kind integration + worktree-cwd).
+- `claim-issue.sh acquire N --pipeline-id P --sprint-id S` twice with the SAME P
+  exits 0 both times; with a DIFFERENT P the second exits 10.
+- `claim-plan.sh acquire SLUG --pipeline-id P` twice with the SAME P exits 0 both
+  times; DIFFERENT P → 10.
+- A claim dir created with `mkdir` but no claim.json → acquire returns 10 (never
+  steals); a truncated claim.json → 10 (never crashes the acquire).
+- All EXISTING claim batteries (`tests/test-fix-issues-claim-*.sh`,
+  `tests/test-plan-claim-*.sh`) still pass unchanged (their double-acquire tests
+  use DISTINCT pids → still expect foreign 10).
+- `bash tests/run-all.sh` is green; skill version bumps present; mirrors byte-equal.
 
 ### Dependencies
-Phase 1 (the wrapper must exist + be mirrored before consumers can call it).
 
-## Phase 3 — CLAUDE_TEMPLATE rule + conformance sentinels + docs
+None. This phase is self-contained and lands its own PR.
+
+---
+
+## Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh
 
 ### Goal
-Land the cross-cutting discipline where it propagates (CLAUDE_TEMPLATE.md),
-defend the per-skill wiring against the #729 accidental-revert class via
-conformance sentinels, and document the primitive. **No script-ownership.md
-edits** (D1).
+
+Give the three issue-capable consumers acquire-on-pickup / release-on-resolve via
+direct `claim-issue.sh` calls (synthesized `--sprint-id "$PIPELINE_ID"`), so a
+concurrent `/fix-issues` cron can't double-work an issue one of them is on. No
+wrapper; the new per-consumer conformance sentinels grep the EXISTING script name
+with zero rename churn. **Every acquire is placed where a PIPELINE_ID and an
+issue-number variable already exist** (the C1/M1 fix).
 
 ### Work Items
-- [ ] W3.1 — Add a section to `CLAUDE_TEMPLATE.md`: "**Claim a work-item before
-  working it.** Any agent about to work a tracked GitHub issue or plan MUST
-  acquire its claim first and release on resolve/abandon. `/fix-issues` and
-  `/run-plan` do this natively; `/do`, `/quickfix`, `/investigate` claim via the
-  shared `claim-work-item.sh` wrapper. NO TTL/sweep — release is explicit.
-  Foreign-held (exit 10) → decline; self-re-entry (exit 0) → proceed. Enforcement
-  for the three ad-hoc consumers is advisory (prose + this rule), not a runtime
-  hook." Reference the exit contract. **Use plain prose / resolved-variable
-  discipline only — introduce NO `{{...}}` token lacking a substitution-map entry
-  (the renderer EXITS 2 on unsubstituted placeholders; reviewer #14).**
-- [ ] W3.2 — Re-render the managed rules so `.claude/rules/zskills/managed.md`
-  picks up the new section: run the documented re-render path
-  (`scripts/render-managed-rules.py --config .claude/zskills-config.json --out`,
-  per `update-zskills/SKILL.md:997,1921`) and confirm
-  `tests/test-managed-md-up-to-date.sh` passes (CLAUDE_TEMPLATE ↔ managed.md gate).
-- [ ] W3.3 — Add conformance sentinels to `tests/test-skill-conformance.sh`: one
-  per consumer asserting `skills/{do,quickfix,investigate}/SKILL.md` each contain
-  a `claim-work-item.sh ... acquire` invocation AND a `claim-work-item.sh ...
-  release` invocation (the #729 accidental-revert defense — text-presence only,
-  per D6's explicit advisory-not-mechanical scope). **Precedent (round-2
-  reviewer NIT-2):** the two-pass-grep pattern this borrows lives in the
-  *dedicated* claim-conformance files — `test-fix-issues-claim-conformance.sh:118-124`
-  (≥2 CLAIM_HELPER + ≥2 acquire) and `test-plan-claim-conformance.sh` — NOT in
-  `test-skill-conformance.sh` (which has 0 claim refs today). The pattern
-  transfers cleanly (`test-skill-conformance.sh` already has a `check_fixed()`
-  helper at `:56` for grep-presence assertions); placing the new sentinels in
-  `test-skill-conformance.sh` is fine, but name the precedent location
-  accurately.
-- [ ] W3.4 — Document the wrapper's CLI + exit contract. **Resolved target
-  (corrects round-1 hedge, reviewer #10):** there is no `/claim-work-item` skill
-  (D1), so NO `docs/skills/` page. Add a concise "claim-work-item.sh — CLI + exit
-  contract" reference section to **`skills/create-worktree/SKILL.md`** (the owner
-  skill body) under a "Scripts" / "Owned scripts" heading; if create-worktree has
-  a `references/` dir, place a `references/claim-work-item.md` and link it from
-  SKILL.md instead. Do NOT edit `docs/skills/README.md` (verified this round: it
-  indexes skills, not scripts — confirm before skipping). The SKILL.md edit
-  requires a `metadata.version` bump (already done in W1.6 for the script; if this
-  is a separate later edit, bump again and re-mirror).
-- [ ] W3.5 — **(REMOVED — corrects round-1.)** No `script-ownership.md` row/count
-  to re-verify (D1). Instead re-verify W1.9's absence assertions still hold after
-  all edits.
-- [ ] W3.6 — `bash tests/run-all.sh` green (must include the managed-md gate, the
-  new conformance sentinels, and W1.9's registry-absence assertions).
+
+- [ ] **W2.1 — `/investigate` (synthesize PIPELINE_ID + parse `#N`).** `/investigate`
+  has NO PIPELINE_ID today (`grep -n PIPELINE_ID skills/investigate/SKILL.md` → 0).
+  At the `#N` parse (SKILL.md:54, Phase 1 step 1, "If `#N`, fetch the issue"),
+  Phase 2 must: (1) extract the bare integer issue number into `$N` (strip `#`),
+  (2) synthesize `PIPELINE_ID="investigate.issue-$N"` routed through
+  `sanitize-pipeline-id.sh`, (3) acquire BEFORE reproduction work. Because
+  `/investigate` is a prose-driven interactive skill (abandon points are model
+  "STOP/Report" instructions, NOT bash `exit`s — two-attempt-limit at :186-191,
+  reproduction-skip at :74-88, couldn't-find-root at :261, plus the one hard bash
+  `exit` at :215 config-missing), W2.1 must (a) place a concrete `release` bash
+  block on the SUCCESS path at the terminal Report (SKILL.md:233+), AND (b) add a
+  prose instruction at EACH abandon STOP: "before stopping, run `bash
+  <claim-issue.sh> release \"$N\" --require-pipeline \"$PIPELINE_ID\"`." There is
+  no single bash terminal that runs on every path, so the release must be wired
+  both as a success-path bash block and as an explicit per-STOP prose step. Skip
+  acquire entirely when the arg is a bare description (no issue number).
+  - acquire: `bash <claim-issue.sh> acquire "$N" --pipeline-id "$PIPELINE_ID"
+    --sprint-id "$PIPELINE_ID"`; exit 10 → print "issue #N is being worked by
+    another pipeline; declining" + stop; exit 11 → fs-error + stop; exit 2 →
+    internal bug (empty PIPELINE_ID / non-numeric N) → stop + surface.
+- [ ] **W2.2 — `/do` worktree + direct modes — move acquire INTO the mode files;
+  add issue-number parsing.** `/do` SKILL.md has NO PIPELINE_ID and NO issue
+  variable (`grep -n PIPELINE_ID skills/do/SKILL.md` → 0; no `ISSUE=` assignment).
+  PIPELINE_ID is constructed only in `worktree.md:30` / `pr.md:62`
+  (`do.${TASK_SLUG}`); `direct.md` (25 lines) sets neither. Therefore:
+  - **(a) Parse the issue number in `/do`.** Add issue-number extraction (the
+    number is only reachable via `--force` triage override of the `/fix-issues`
+    redirect at SKILL.md:320). Store the bare integer in a variable propagated
+    into the mode files; if no issue number is in scope, the consumer claims
+    nothing (the common /do case).
+  - **(b) worktree mode** (`skills/do/modes/worktree.md`): acquire AFTER
+    `PIPELINE_ID="do.${TASK_SLUG}"` is set (worktree.md:30) and after worktree
+    creation, BEFORE impl dispatch. Release in **`/do` Phase 5 Report**
+    (SKILL.md:859 — the universal terminal reached on BOTH auto and non-auto
+    exits) AND the error-handling exits — **NOT Phase 4 Land** (SKILL.md:817-819
+    is `AUTO_FLAG=1`-gated; a Phase-4-only release leaks on the dominant non-auto
+    path).
+  - **(c) direct mode** (`skills/do/modes/direct.md`): direct.md constructs no
+    PIPELINE_ID/TASK_SLUG. EITHER synthesize a minimal
+    `PIPELINE_ID="do.<bare-issue>"` (sanitized) before the acquire, OR skip the
+    claim in direct mode when no issue number is in scope. Spell out which in the
+    implementation (the latter is acceptable — direct mode is rarely issue-driven).
+  - Do NOT place the acquire in `do/SKILL.md` before mode dispatch (SKILL.md:715-725):
+    PIPELINE_ID is empty there → `--pipeline-id ""` → usage-error exit 2.
+- [ ] **W2.3 — `/do` PR mode** (`skills/do/modes/pr.md`) — acquire after
+  PIPELINE_ID + worktree creation; release in the finalize block; INLINE-release
+  before the post-acquire early exits. PIPELINE_ID is set at pr.md:62 and the
+  worktree is created at A5 (~pr.md:82). Acquire AFTER A5 (so A1 slug guards at
+  pr.md:21/25 and A5's `exit "$RC"` at pr.md:82 are PRE-acquire). Release in the
+  explicit-finalize `case "$LAND_OUTCOME"` block at pr.md:433-438
+  (`merged|created|pr-ready` → release; `*` → release-on-failed too — release
+  regardless of created vs merged). **C2 FIX — the post-acquire-pre-finalize early
+  exits MUST inline-release before exiting**, exactly as the existing no-result-file
+  exit at pr.md:270-274 inline-cleans its tracking markers. The exit sites that
+  are AFTER the (post-A5) acquire and BEFORE the :433 finalize are: A7 body-compose
+  guards `exit 5`/`exit 2` (pr.md:153/157) and the no-result-file `exit 1`
+  (pr.md:274). At each, add a `bash <claim-issue.sh> release "$N"
+  --require-pipeline "$PIPELINE_ID"` immediately before the `exit` (guarded by
+  "only if an issue claim was acquired"). Do NOT copy `/fix-issues`'s
+  HOLD-on-`created` arm (fix-issues pr.md HOLDs because a later sprint fire re-runs
+  /land-pr to release; /do is one-shot with no later fire — HOLD would leak forever).
+- [ ] **W2.4 — `/quickfix`.** `/quickfix` already sets `PIPELINE_ID="quickfix.$SLUG"`
+  (Tracking-setup block). Parse the issue number (bare integer) if one is in scope.
+  Acquire around the Tracking-setup block (where `PIPELINE_ID` is established and
+  the `started` marker is written), BEFORE branch creation. Release in the Phase 7
+  post-`/land-pr` explicit-finalize (the caller-loop block keyed on
+  `$LAND_OUTCOME`), release-on-resolution regardless of created vs merged, AND the
+  fail-finalize abandon sites (test fail, commit fail, push fail — the inline
+  cleanup sites quickfix already has). Skip acquire when no issue number is in
+  scope (the common case — /quickfix usually works an in-flight edit, not an issue).
+- [ ] **W2.5 — Per-consumer `metadata.version` bump + mirror** for
+  `do`, `quickfix`, `investigate` via `scripts/mirror-skill.sh`.
+- [ ] **W2.6 — Conformance sentinels** in `tests/test-skill-conformance.sh`: for
+  EACH of `do` (incl. `do/modes/worktree.md`, `do/modes/pr.md`,
+  `do/modes/direct.md` per where the acquire actually lands), `quickfix`,
+  `investigate`, assert the relevant file contains a `claim-issue.sh … acquire`
+  AND a `claim-issue.sh … release` (or `release …--require-pipeline`). **Match the
+  ACTUAL wiring shape** — if a consumer uses a `$CLAIM_HELPER`-style indirection
+  like fix-issues (test-fix-issues-claim-conformance.sh greps
+  `CLAIM_HELPER="…claim-issue.sh"` + `bash "$CLAIM_HELPER" acquire`), the sentinel
+  must grep that indirection; if it uses a literal `bash <path>/claim-issue.sh
+  acquire`, grep the literal. The plan's default is the literal `claim-issue.sh`
+  form (these consumers have no need for the fix-issues indirection). Either way
+  the sentinel greps the EXISTING script name → no rename → zero existing-conformance
+  churn. Defends the #729 accidental-revert class.
 
 ### Design & Constraints
-- **Rule home (D6):** CLAUDE_TEMPLATE.md is the propagating surface
-  (auto-rendered into consumers' `.claude/rules/zskills/managed.md`). NOT a memory
-  anchor. The rule is cross-cutting → CLAUDE_TEMPLATE's charter.
-- **Renderer placeholder gate (reviewer #14):** the renderer exits 2 if rendered
-  output contains unsubstituted `{{...}}`. New prose must not introduce such a
-  token.
-- **Conformance sentinel scope (#729 + D6):** text-presence only — the assertion
-  defends the wiring text against silent revert (e.g. stale-copy merge
-  overwrite); it does NOT and cannot assert runtime acquire. Grep the literal
-  `claim-work-item.sh` + `acquire`/`release` per consumer SKILL.md.
-- **No new skill / no docs/skills page / no script-ownership row** (D1).
-- **Skill-file hardcode discipline:** CLAUDE_TEMPLATE prose / managed.md is
-  governed by the same hardcode deny-list where it contains fenced bash — use
-  resolved variables for any config-derived literal.
+
+- **PIPELINE_ID prerequisite (C1/M1).** No consumer may acquire before a non-empty
+  PIPELINE_ID and a bare-integer issue number exist in scope. /do: acquire INSIDE
+  the mode files after `do.${TASK_SLUG}`; /investigate: synthesize
+  `investigate.issue-$N`; /quickfix: reuse `quickfix.$SLUG`.
+- **Single sprint-id rule (all three):** `--sprint-id "$PIPELINE_ID"` (they have
+  no sprint). Acquire shape identical across the three.
+- **Issue-number normalization:** strip `#`/quotes to a bare positive integer
+  before passing to `claim-issue.sh` (it rejects non-numeric at
+  validate_issue_number:80-95, exit 2).
+- **Foreign (exit 10) → STOP this invocation** with "issue #N is being worked by
+  another pipeline; declining" — NOT "next candidate" (one-shot, not a sprint
+  loop). Exit 11 → fs-error + stop. Exit 2 → internal bug → stop + surface.
+- **Release placement (verified current sites):** investigate — success-path bash
+  release block at Report + an explicit per-STOP prose release at every abandon
+  point (no single bash terminal). /do worktree/direct — Phase 5 Report + error
+  exits (NOT Phase 4 Land). /do PR — finalize block at pr.md:433-438 (regardless of
+  created/merged) + INLINE release before the post-acquire-pre-finalize early exits
+  (pr.md:153/157/274). /quickfix — post-/land-pr finalize + abandon sites; NO
+  HOLD-on-created.
 
 ### Acceptance Criteria
-- `CLAUDE_TEMPLATE.md` contains the claim-before-work rule;
-  `.claude/rules/zskills/managed.md` contains the rendered equivalent;
+
+- Each consumer establishes a non-empty PIPELINE_ID and a bare-integer issue
+  number BEFORE its acquire; the acquire never runs with `--pipeline-id ""`.
+- Each consumer's relevant file (per W2.6 placement) has a `claim-issue.sh acquire`
+  before the work and a `claim-issue.sh release` at the terminal/abandon sites,
+  including /do PR's inline releases before pr.md:153/157/274.
+- New conformance sentinels in `tests/test-skill-conformance.sh` pass and would
+  FAIL if a future edit drops the wiring.
+- A second concurrent invocation of `/do --force #N` / `/investigate #N` against
+  an already-claimed N stops with the "being worked by another pipeline" message.
+- `/do` non-auto worktree/direct run releases the claim at Phase 5 Report (proven
+  by claim dir gone afterward); a /do PR early-exit at pr.md:153/157/274 leaves NO
+  leaked claim (proven by claim dir gone after the simulated early exit).
+- `bash tests/run-all.sh` green; version bumps + mirrors present.
+
+### Dependencies
+
+Phase 1 (the scripts must already tolerate self-re-entry so a consumer's own
+defensive re-acquire — e.g. /quickfix re-running after a transient — returns 0).
+Lands its own PR.
+
+---
+
+## Phase 3 — run-plan issue-claim (execution-window protection) + operator-stop sweep + optional :597 cleanup
+
+### Goal
+
+When a plan's frontmatter has `issue: N`, `/run-plan` acquires `issue-<N>` at plan
+start (alongside its plan claim) and holds it for the plan's FULL lifetime,
+releasing only at the plan's terminal release points. Issue-foreign at start is
+WARN-and-PROCEED (never abort, never leak the plan claim). Add an `issue-*` arm to
+the operator-stop sweep so the issue claim is released on `/run-plan stop`.
+Optionally shed the now-redundant `:597` self-decline prose. This is the #803
+execution-window protection.
+
+### Work Items
+
+- [ ] **W3.1 — Parse `issue: N` from plan frontmatter, normalized to a bare
+  integer.** Where `/run-plan` reads the plan (it derives `PLAN_SLUG`/`TRACKING_ID`
+  from the plan file at SKILL.md:429), extract `issue:` line(s) from frontmatter.
+  **Read from `$PLAN_FILE_FOR_READ`** (the PR-mode-worktree-aware read-authority
+  var mandated at SKILL.md:391-413, "every subsequent plan read MUST use
+  $PLAN_FILE_FOR_READ"), NOT bare `$PLAN_FILE`. **Strip `#` and surrounding
+  quotes to a bare integer** — the existing Close-linked-issue parser tolerates
+  `issue: 42` AND `issue: "#42"` (execute-phase.md:1341-1342); reuse/align with
+  that same normalization rather than introducing a second divergent parser, since
+  `claim-issue.sh validate_issue_number` (claim-issue.sh:80-95) rejects
+  non-numeric input with exit 2. Support multiple `issue:` values → multiple
+  issue claims.
+- [ ] **W3.2 — Acquire `issue-<N>` in the existing acquire fence** (SKILL.md:587-
+  602), right after the plan-claim acquire, using `bash <claim-issue.sh> acquire
+  "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"` (with `$N` the
+  bare integer from W3.1). Because Phase 1 gave claim-issue.sh self-re-entry, a
+  chunked re-fire re-acquiring the same issue returns 0 (the stable
+  `run-plan.<slug>` pipeline_id matches). **rc handling (M2 DESIGN CALL — DECIDED,
+  DIFFERENT from the plan-claim arm):**
+  - rc=0 → proceed (held or self-re-entry).
+  - **rc=10 → WARN-and-PROCEED.** Log loudly: "issue #N is claimed by another
+    pipeline; proceeding with plan execution, issue claim NOT held." Then CONTINUE
+    the plan. Do NOT `exit 0`-decline (that is the plan-claim arm's behavior;
+    mirroring it would let a stale issue claim abort a legitimately-run plan). Do
+    NOT release the just-won PLAN claim (it stays held — no plan-claim leak).
+  - rc=11 → Failure Protocol (fs error). rc=2 → internal bug (un-stripped `#N`) →
+    STOP + surface.
+  Rationale recorded: #739 removed auto-expiry; a possibly-stale issue claim must
+  not block a deliberately-run plan. The plan owns the plan.
+- [ ] **W3.3 — Release `issue-<N>` ONLY at the plan's terminal release points**
+  (the SAME sites as the plan-claim release, NOT "around `gh issue close`" — the
+  close at execute-phase.md:1352 is NOT adjacent to the release at :1600):
+  execute-phase.md:1600-1601 (terminal merge), the already-complete no-op at
+  :1203, AND subcommands/stop-next-status.md (operator-stop). NEVER release
+  per-phase. Per-phase `set-phase` on the PLAN claim is unaffected; there is NO
+  per-phase issue-claim touch. **Each issue release uses
+  `claim-issue.sh release "$N" --require-pipeline "$PIPELINE_ID"`.**
+- [ ] **W3.4 — Add an `issue-*` arm to the operator-stop release loop (M2/M3
+  FIX).** `subcommands/stop-next-status.md`'s release loop (`:124-165`) iterates
+  `"$CLAIMS_ROOT"/plan-*` ONLY and gates on `pipeline_id` starting `run-plan.`;
+  its comment at :145-147 explicitly assumes fix-issues uses `issue-*/`, so it
+  STRUCTURALLY never sweeps the `issue-*/` dirs that run-plan now owns. Add a
+  PARALLEL loop (or widen the glob) over `"$CLAIMS_ROOT"/issue-*` that releases
+  each `issue-<N>` whose `pipeline_id` starts `run-plan.` via
+  `claim-issue.sh release <N> --require-pipeline <pid>` — mirroring the existing
+  `plan-*` loop's pipeline-id guard, mismatch-skip (exit 12), and tally. Without
+  this, run-plan's issue claim leaks on `/run-plan stop`. Update the loop's tally
+  message to count released/skipped issue claims too.
+- [ ] **W3.5 — Multi-issue handling:** loop acquire over all parsed `issue:`
+  values at start (each with its own WARN-and-PROCEED on rc=10); loop release over
+  them at the terminal sites and in the operator-stop sweep.
+- [ ] **W3.6 — Optional `:597` prose cleanup (D8).** The PLAN-claim rc=10 → decline
+  arm STAYS (now correct: foreign-only). Optionally simplify the surrounding prose
+  at SKILL.md:580-602 that hand-waves about same-pipeline re-acquire, since Phase 1
+  makes self-re-entry return 0. Do NOT remove the plan-claim decline arm. (The new
+  ISSUE-claim arm is the WARN-and-PROCEED arm from W3.2 — distinct from the plan
+  arm.)
+- [ ] **W3.7 — Version bump + mirror** `run-plan`.
+- [ ] **W3.8 — Add a NEW positive conformance assertion (do NOT weaken the
+  existing one).** `test-plan-claim-conformance.sh:71-94` asserts `claim-plan.sh
+  acquire` precedes `### Execution` — leave it UNTOUCHED (still true: the new
+  issue-claim acquire sits in the same fence and doesn't move the plan-claim
+  acquire). ADD a separate positive assertion that, when run-plan's acquire fence
+  is present, an `issue-<…>`/`claim-issue.sh acquire` appears in the fence and an
+  `issue-*` arm appears in the operator-stop loop — if a clean static check
+  exists; otherwise cover via a behavioral test fixture (acquire-window +
+  operator-stop-release of an issue claim).
+
+### Design & Constraints
+
+- **LIFETIME RULE (verbatim):** the issue claim is acquired ONCE at plan start,
+  **NEVER released per-phase**, persists across idle gaps between chunked fires
+  (filesystem + no-TTL + self-re-entry make this automatic), released ONLY at the
+  plan's terminal release points (terminal merge :1600-1601, no-op :1203,
+  operator-stop) — NOT "around `gh issue close`" (:1352 is not adjacent). Multi-issue
+  plans → multiple issue claims. Phases do NOT individually claim.
+- **ISSUE-FOREIGN-AT-START = WARN-and-PROCEED (NOT abort, NOT plan-claim leak).**
+  The issue arm is DELIBERATELY different from the plan-claim rc=10 `exit 0`
+  decline arm. A stale issue claim must never block a deliberately-run plan, and
+  the plan claim (legitimately won) is never released on the issue-foreign path.
+- **Same pipeline_id** as the plan claim (`run-plan.<slug>`), `--sprint-id
+  "$PIPELINE_ID"`. Issue number normalized to a bare integer (strip `#`/quotes).
+- **Operator-stop must sweep `issue-*` too** (the plan-* loop is structurally
+  blind to issue-* dirs).
+- **No conformance weakening** (NEVER loosen an assertion to pass; ADD positive
+  assertions).
+
+### Acceptance Criteria
+
+- A plan with `issue: N` (incl. `issue: "#N"`) frontmatter acquires `issue-<N>`
+  (bare integer) at plan start and the claim dir persists across a simulated
+  chunked-fire gap (release happens only at terminal merge).
+- When `issue-<N>` is already foreign-held at plan start, run-plan logs the WARN
+  and PROCEEDS; the plan claim is NOT released (still present) and the plan runs.
+- A concurrent `/fix-issues` sees the issue's in-flight claim (filtered out by
+  its existing `filter-in-flight-issue-claims.sh`).
+- The issue claim is released at the terminal merge site (claim dir gone after
+  plan completion), alongside the plan claim.
+- `/run-plan stop` releases run-plan-held `issue-<N>` claims (claim dir gone after
+  stop), via the new `issue-*` arm in the stop loop.
+- `test-plan-claim-conformance.sh` passes UNCHANGED; the new positive assertion
+  (W3.8) passes; `bash tests/run-all.sh` green.
+
+### Dependencies
+
+Phase 1 (self-re-entry must exist so the chunked re-fire's issue re-acquire
+returns 0). Independent of Phase 2. Lands its own PR.
+
+---
+
+## Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs
+
+### Goal
+
+Land the cross-cutting "claim before working a tracked work-item" rule in
+`CLAUDE_TEMPLATE.md` (auto-loaded into every consumer's
+`.claude/rules/zskills/managed.md`), re-render, and document the self-re-entry
+contract in the twins' owner-skill docs.
+
+### Work Items
+
+- [ ] **W4.1 — Add a rule section to `CLAUDE_TEMPLATE.md`** (plain prose, resolved-
+  variable discipline; introduce NO unsubstituted `{{...}}` token — the managed-
+  rules renderer raises on leftover `{{[A-Z_]+}}` tokens). Text to capture:
+  > Claim any tracked work-item (issue or plan) before working it; the claim is
+  > held for the work's full lifetime INCLUDING idle gaps, and released only on
+  > resolve/abandon, NEVER per-step. The discipline applies recursively: a
+  > pipeline holding a plan claim that works the plan's issue ALSO holds the issue
+  > claim. Foreign-held (acquire exit 10) → decline (one-shot consumers) or
+  > WARN-and-proceed (a plan whose linked issue is foreign-held still runs — the
+  > plan owns the plan); self-re-entry (exit 0) → proceed; there is NO TTL —
+  > release is always explicit. Issues are claimed via `claim-issue.sh`, plans via
+  > `claim-plan.sh`; both are ownership-aware (they recognize the caller's own
+  > claim and return success on re-acquire).
+- [ ] **W4.2 — Re-render `.claude/rules/zskills/managed.md`** via the documented
+  path (`/update-zskills --rerender`, which runs `scripts/render-managed-rules.py`
+  — confirmed in update-zskills SKILL.md:31-35 / Step D). Do NOT hand-edit
+  `managed.md`.
+- [ ] **W4.3 — Confirm `tests/test-managed-md-up-to-date.sh` passes** (the
+  conformance gate keeping TEMPLATE and managed.md in sync).
+- [ ] **W4.4 — Document the self-re-entry contract** in the twins' owner-skill
+  docs or a reference file — e.g. a short `### Self-re-entry` note in each twin's
+  header (already done in Phase 1 W1.5) PLUS a sentence in the relevant skill
+  reference (`skills/fix-issues` / `skills/run-plan` reference docs, or
+  `docs/skills/*`). Note the helper at
+  `skills/create-worktree/scripts/claim-self-reentry.sh` and the exit-code
+  contract.
+- [ ] **W4.5 — Version bump + mirror** any skill whose bundle docs changed
+  (create-worktree / fix-issues / run-plan as applicable). CLAUDE_TEMPLATE.md is
+  not a skill (no version bump); the render + sync test is its gate.
+
+### Design & Constraints
+
+- **Plain prose / resolved-variable discipline.** NO unsubstituted `{{...}}`
+  token (renderer raises). No hardcoded consumer literals (`npm run test:all`,
+  etc.) — obey the skill-file hardcode discipline if any fence is added.
+- **Recursive claim rule** stated verbatim per W4.1, including the
+  decline-vs-WARN-and-proceed distinction between one-shot consumers and a plan
+  whose linked issue is foreign-held.
+- Re-render via the documented path; never hand-edit `managed.md`.
+
+### Acceptance Criteria
+
+- `CLAUDE_TEMPLATE.md` contains the recursive claim-discipline rule.
+- `.claude/rules/zskills/managed.md` re-rendered and
   `tests/test-managed-md-up-to-date.sh` passes.
-- `tests/test-skill-conformance.sh` has new per-consumer sentinels; removing a
-  consumer's acquire/release wiring text makes the suite fail (spot-verify by
-  reasoning, NOT by actually breaking main).
-- `skills/create-worktree/SKILL.md` (or its referenced `references/` file)
-  documents the wrapper CLI + exit contract; `metadata.version` bumped + mirrored.
-- `claim-work-item.sh` remains absent from `script-ownership.md` / `STALE_LIST` /
-  `tier1-shipped-hashes.txt`.
+- `render-managed-rules.py` does not raise (no stray `{{...}}`).
+- Self-re-entry contract documented in the twins' docs/reference.
 - `bash tests/run-all.sh` green.
 
 ### Dependencies
-Phase 2 (the consumer wiring must exist for the sentinels to assert against and
-for the CLAUDE_TEMPLATE rule to describe accurately).
 
-## Out of scope (explicit)
+Phases 1-3 (the rule describes behavior those phases implement; documenting it
+before the behavior exists would be a phantom contract). Lands its own PR.
 
-- **Migrating `/fix-issues` or `/run-plan` onto the wrapper** (D7). They keep
-  calling claim-issue.sh / claim-plan.sh directly; their conformance tripwires
-  (`test-fix-issues-claim-conformance.sh:118-124`, plan-claim battery) stay green
-  untouched. `/run-plan` already satisfies #803's acceptance natively (it
-  claims at `SKILL.md:587-602` and releases at its terminals), so this is not a
-  deferred requirement.
-- **A new / broadened PreToolUse hook** gating `/do`/`/quickfix`/`/investigate`
-  (D6). Enforcement for the three new consumers is prose + CLAUDE_TEMPLATE +
-  text-presence conformance sentinel — **advisory, not mechanical**. A broadened
-  hook (at least for `/do`'s `do/<slug>` worktree) is a named follow-up.
-- **`/run-plan:597` same-pipeline re-acquire conflation fix** (D7) — a SEPARATE
-  latent bug from #803's acceptance (which `/run-plan` already meets). On a
-  chunked `finish auto` run, the phase-N+1 fire re-reaches the acquire fence
-  (`SKILL.md:587-602`) and self-declines at `:597` because the fence has no
-  same-pipeline skip guard. Fixing it (a skip guard at the fence, or migrating
-  `/run-plan` onto the wrapper's self-re-entry) is a named follow-up, NOT
-  "benign/unreachable."
-- **A unified single claim.json schema or merged claim-resource.sh** (D2). The
-  wrapper dispatches; storage stays kind-specific.
-- **Any TTL / heartbeat / sweep / refresh** (D4).
-- **TOCTOU spurious-decline elimination** (D3) — the absent-claim.json → exit 10
-  race is accepted (conservative decline; never steal).
-- **Dashboard "synthetic sprint" display tweak for the synthesized `sprint_id`**
-  (D8) — the synthesized value is emitted into the issues JSON but has no current
-  `app.js` chip consumer; any future display handling is out of scope.
-- **Dashboard collector changes** — dirs/regexes/schemas unchanged (D2), so
-  `collect.py` needs no edit.
-- **A `list` subcommand on the wrapper** (reviewer #6) — no consumer needs it;
-  callers use the delegates' `list` directly.
+---
+
+## Explicitly Out of Scope
+
+- **`/fix-issues`: NO changes.** It already calls `claim-issue.sh`, so it gains
+  self-re-entry free via Phase 1 (inert for it — fresh per-fire pipeline_id never
+  self-collides — harmless). There is no fix-issues migration.
+- **No `/claim-work-item` skill, no dispatch wrapper.** A future operator
+  `/claims` management skill is unneeded: the dashboard already shows claim chips
+  and ad-hoc release is a `claim-*.sh release <id> --require-pipeline <id>`
+  one-liner.
+- **#808** (plan-scale skip decisions not persisted) — separate filed issue, not
+  this plan.
+- **Drafting-window race** (a `/fix-issues` cron grabbing an issue before the
+  `/run-plan` for it exists) — covered by #808's queue hygiene, not here.
+
+## Constraints (zskills)
+
+- NO jq — Python stdlib json (or bash `BASH_REMATCH`); `ZSKILLS_PYTHON`
+  precedence. The helper's claim.json read uses the `try/except → empty` reader
+  (release-style), NOT bare `json.load()` (set-phase-style).
+- MAIN_ROOT via `git rev-parse --git-common-dir` parent — NEVER `$PWD` (resolved
+  by the caller; the helper operates on the absolute claim_dir it's handed).
+- Issue numbers passed to `claim-issue.sh` MUST be bare positive integers (it
+  rejects `#`/quotes at validate_issue_number:80-95).
+- No consumer acquires before a non-empty PIPELINE_ID and a bare-integer issue
+  number exist in scope (the C1/M1 placement rule).
+- Every edited skill bumps `metadata.version` (date `America/New_York` + content
+  hash via `scripts/skill-content-hash.sh`) + re-mirror via
+  `scripts/mirror-skill.sh`.
+- New script behavior needs conformance coverage (`tests/test-claim-self-
+  reentry.sh` + the per-consumer sentinels + the new run-plan positive assertion).
+- The helper is a directly-authored skill script → NOT added to
+  `script-ownership.md` / STALE_LIST / tier1-shipped-hashes.txt — same treatment
+  as `claim-issue.sh`/`claim-plan.sh` (verified unregistered:
+  `grep -n claim script-ownership.md` → 0 hits).
+- NEVER weaken a conformance assertion to pass; add positive assertions instead.
 
 ## Plan Quality
 
-**Drafting process:** /draft-plan with 2 rounds of adversarial review (reviewer + devil's-advocate + refiner)
-**Convergence:** Converged at round 2 (round-1: 26 findings all addressed; round-2: structural fixes held, only editorial corrections remained)
-**Remaining concerns:** All genuinely-open items are explicitly out-of-scope with rationale and named as follow-ups:
-- Full migration of `/fix-issues` + `/run-plan` onto the wrapper (D7) — both already claim+release correctly; migration would break their conformance batteries for no #803 gain.
-- The `/run-plan:597` same-pipeline re-acquire latent bug (D7) — a chunked `finish auto` phase-N+1 fire re-reaches the acquire fence (`SKILL.md:587-602`) and self-declines because the fence has no same-pipeline skip guard. SEPARATE from #803's acceptance (which `/run-plan` already meets); fix via a fence skip-guard or wrapper migration is a named follow-up.
-- A runtime PreToolUse hook for the three non-`/fix-issues` consumers (D6) — enforcement is advisory (prose + CLAUDE_TEMPLATE + text-presence sentinel); a broadened hook (at least for `/do`'s worktree) is a named follow-up.
+**Process.** Authored via /draft-plan-equivalent (single-author design "B" with
+the no-wrapper / self-re-entry-helper / 4-phase structure pre-settled), then
+subjected to one adversarial review round: a reviewer pass (impl-correctness only)
+and a devil's-advocate pass (impl-time concreteness attack). All findings were
+verify-before-fix re-anchored against the worktree files (line cites drifted
+slightly from the reviews and were re-confirmed) and applied. **Converged** — 0
+substantive issues and 0 new gaps remain after the round.
 
-### Round History
-| Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
-|-------|-------------------|---------------------------|----------|
-| 1     | 14 (1 BLOCKER/3 MAJOR/6 MINOR/4 NIT) | 12 (2 CRITICAL/4 HIGH/4 MEDIUM/2 LOW) | 26/26 (24 fixed, 2 justified NITs) |
-| 2     | 4 (NIT only) | 5 (1 MEDIUM/2 LOW/2 NIT) | editorial corrections applied; converged |
+**Round history.**
+
+| Round | Reviewer findings | DA findings | Disposition |
+|-------|-------------------|-------------|-------------|
+| 1 | 3 MEDIUM, 5 LOW, 7 confirmations | 2 CRITICAL, 3 MAJOR, 2 MINOR, 2 sound | All 8 reviewer + 7 DA findings Verified & Fixed; settled design untouched |
+
+Key fixes landed: PIPELINE_ID/issue-number availability for /do + /investigate
+(acquire moved into mode files / synthesized pid — C1=M1); /do PR-mode
+inline-release before post-acquire early exits (C2); operator-stop `issue-*` sweep
+arm added (M2/M3 reviewer); issue-foreign-at-start = WARN-and-PROCEED, never abort,
+never leak the plan claim (DA M2 design call); `issue:` `#`/quote stripping to a
+bare integer reusing the existing parser (reviewer M3); helper try/except-or-empty
+claim.json reader for malformed JSON (DA m1); path/citation, read-authority var,
+sentinel-shape, and adjacent-vs-distant-release-site corrections (LOW/MINOR).
