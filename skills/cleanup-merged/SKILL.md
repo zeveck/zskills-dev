@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `force`) — they are always skipped.
 metadata:
-  version: "2026.05.28+88b007"
+  version: "2026.05.29+462827"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
@@ -555,6 +555,11 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       # not-ancestor (squash) case and for the explicit `force` path. `-D`
       # is NEVER reached for an un-confirmed, un-named branch (the
       # merged-check above guarantees MERGED=1 unless NAMED_FORCE=1).
+      # Issue #816: `-d` ALSO requires the branch be fully merged into its
+      # configured upstream; when the remote-tracking ref still holds the
+      # un-squashed PR head, `-d` refuses. In that case, if the branch is
+      # an ancestor of main (the local content IS on main), escalate to
+      # `-D` — lossless by construction.
       if [ "$NAMED_FORCE" -eq 1 ]; then
         DEL_FLAG="-D"   # user vouched for this named branch explicitly
       elif git merge-base --is-ancestor "$branch" "$MAIN_BRANCH" 2>/dev/null; then
@@ -565,6 +570,19 @@ if [ "$DO_LOCAL" -eq 1 ]; then
       if git branch "$DEL_FLAG" "$branch" >/dev/null; then
         echo "  DELETED $branch ($REASON)"
         LOCAL_DELETED=$((LOCAL_DELETED+1))
+      elif [ "$DEL_FLAG" = "-d" ] && git merge-base --is-ancestor "$branch" "$MAIN_BRANCH" 2>/dev/null; then
+        # Issue #816: -d refused — typically because the branch has a configured
+        # upstream whose remote-tracking ref still holds the un-squashed PR head
+        # (different SHA from the squash on main). But ancestor-of-main is the
+        # strongest safety signal git has — the local content IS on main, so -D
+        # loses nothing. Escalate.
+        if git branch -D "$branch" >/dev/null; then
+          echo "  DELETED $branch ($REASON; escalated -d → -D after upstream-divergence refusal)"
+          LOCAL_DELETED=$((LOCAL_DELETED+1))
+        else
+          echo "  FAILED  $branch (escalation to -D also failed)" >&2
+          LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))
+        fi
       else
         echo "  FAILED  $branch (git branch $DEL_FLAG exited non-zero)" >&2
         LOCAL_SKIPPED=$((LOCAL_SKIPPED+1))

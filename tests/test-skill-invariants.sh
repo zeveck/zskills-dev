@@ -292,6 +292,8 @@ check "cleanup-merged: dirty-skip warning phrase" \
   "grep -q 'uncommitted changes — inspect and remove manually' '$CM_SRC'"
 check "cleanup-merged: MAIN_ROOT comparison guard" \
   "grep -q 'MAIN_ROOT' '$CM_SRC'"
+check "cleanup-merged: #816 -d → -D escalation block" \
+  "grep -q 'escalated -d → -D after upstream-divergence refusal' '$CM_SRC'"
 # Mirror the source too, so drift is caught immediately.
 if [ -d ".claude/skills/cleanup-merged" ]; then
   check "mirror sync: cleanup-merged" \
