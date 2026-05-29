@@ -94,13 +94,17 @@ if [ ! -s "$OUT_JSON" ]; then
   exit 1
 fi
 
-jq_get() { # $1=python-expr returning a value from the loaded JSON 'd'
-  "$PY" - "$OUT_JSON" "$1" <<'PYEOF'
+jq_get_f() { # $1=json-file  $2=python-expr returning a value from loaded 'd'
+  "$PY" - "$1" "$2" <<'PYEOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
 expr = sys.argv[2]
 print(eval(expr))
 PYEOF
+}
+
+jq_get() { # $1=python-expr returning a value from the loaded JSON 'd'
+  jq_get_f "$OUT_JSON" "$1"
 }
 
 # --- canonicalization assertions ---
@@ -152,6 +156,77 @@ TOTAL=$(jq_get "sum(s['landed_count'] for s in d['skills'].values())")
 [ "$TOTAL" = "5" ] \
   && pass "no-source marker dropped (total named landed_count = 5)" \
   || fail "no-source handling" "expected total 5 got $TOTAL"
+
+# =====================================================================
+# DEFAULT-PATH (production) case — issue #809.
+#
+# The assertions above all inject `search_roots=`, which bypasses
+# `_scan_landed_markers`' git-worktree enumeration entirely. That blind
+# spot is exactly why the landed=0 bug shipped green: in production the
+# default path delegated to `classify_worktrees`, which only surfaces a
+# `landed` key for agent-* worktrees in landed-* categories — NAMED
+# worktrees and the main worktree (filtered out) carried valid `.landed`
+# markers that never reached the aggregation, so every skill counted 0.
+#
+# This case builds a real sandbox git repo, `git worktree add`s a NAMED
+# worktree (non-agent name) carrying a crafted `.landed`, then runs
+# gather_dogfooding via the DEFAULT path (NO search_roots) and asserts
+# landed_count > 0. It FAILS against the pre-#809 code (classify_worktrees
+# early-continues named worktrees without a `landed` key) and PASSES with
+# the direct-enumeration fix.
+# =====================================================================
+if ! command -v git >/dev/null 2>&1; then
+  skip "git not available — default-path (#809) case"
+else
+  SBX="$TMP/sandbox-809"
+  mkdir -p "$SBX"
+  (
+    cd "$SBX" || exit 1
+    git init -q
+    git config user.email t@t && git config user.name t
+    git commit -q --allow-empty -m "init"
+    # A NAMED worktree (no agent- prefix) carrying a successful .landed.
+    git worktree add -q -b namedwt-809 "$SBX/named-feature" >/dev/null 2>&1
+  ) >/dev/null 2>&1
+  printf '%s\n' \
+    "status: landed" \
+    "source: draft-plan" \
+    "pr_state: MERGED" \
+    "date: 2026-05-28T10:00:00+00:00" > "$SBX/named-feature/.landed"
+  # Also drop a .landed on the MAIN worktree (classify_worktrees filters
+  # this one out entirely) to prove the default path picks it up too.
+  printf '%s\n' \
+    "status: full" \
+    "source: commit" \
+    "date: 2026-05-28T11:00:00+00:00" > "$SBX/.landed"
+
+  DEF_JSON="$TMP/result-default.json"
+  "$PY" - "$BRIEFING" "$SBX" > "$DEF_JSON" <<'PYEOF'
+import importlib.util, json, sys
+mod_path, repo_root = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("briefing", mod_path)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+# DEFAULT path: no search_roots — exercises git worktree enumeration.
+data = m.gather_dogfooding(since='30d', repo_root=repo_root,
+                           enable_gh_backfill=False)
+print(json.dumps(data))
+PYEOF
+
+  if [ ! -s "$DEF_JSON" ]; then
+    fail "default-path (#809) aggregation produced no output" "empty $DEF_JSON"
+  else
+    DP_NAMED=$(jq_get_f "$DEF_JSON" "d['skills'].get('draft-plan',{}).get('landed_count',0)")
+    [ "$DP_NAMED" = "1" ] \
+      && pass "#809 default-path: NAMED worktree .landed counted (draft-plan = 1)" \
+      || fail "#809 default-path: named worktree" "expected 1 got $DP_NAMED"
+
+    DP_MAIN=$(jq_get_f "$DEF_JSON" "d['skills'].get('commit',{}).get('landed_count',0)")
+    [ "$DP_MAIN" = "1" ] \
+      && pass "#809 default-path: MAIN worktree .landed counted (commit = 1)" \
+      || fail "#809 default-path: main worktree" "expected 1 got $DP_MAIN"
+  fi
+fi
 
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed, $SKIP_COUNT skipped"

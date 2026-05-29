@@ -2004,28 +2004,38 @@ def _landed_is_successful(landed):
 
 
 def _scan_landed_markers(repo_root=None, search_roots=None):
-    """Yield parsed `.landed` dicts. Scans the registered worktrees (via
-    classify_worktrees, which reads each worktree's `.landed`) by default;
+    """Yield parsed `.landed` dicts. By default, enumerates every registered
+    git worktree (`git worktree list --porcelain`, including the main
+    worktree and named worktrees) and parses each `<wt>/.landed` directly;
     `search_roots` overrides with an explicit list of directories to scan
     for a `.landed` file (used by the test harness — no git/network).
+
+    Issue #809: the prior default path delegated to `classify_worktrees`,
+    which only populates a `landed` key for *agent-* worktrees that land in
+    the landed-* categories — named worktrees and the main worktree (which
+    classify_worktrees filters out entirely) carry valid `.landed` markers
+    that never surfaced, so the strong per-skill `source:` signal counted 0
+    in production. Enumerating worktrees and parsing `.landed` directly here
+    removes that category-gated bridge. We deliberately do NOT change
+    `classify_worktrees` (broad blast radius — other reporting consumes it).
     """
     results = []
     if search_roots is not None:
-        for root in search_roots:
-            landed_path = os.path.join(root, '.landed')
-            if os.path.isfile(landed_path):
-                try:
-                    with open(landed_path, 'r', encoding='utf-8') as f:
-                        results.append(parse_landed(f.read()))
-                except OSError:
-                    pass
-        return results
-    # Default path: reuse the worktree classifier's per-worktree .landed
-    # parse (already populated in the 'landed' key for landed categories).
-    for wt in classify_worktrees(repo_root=repo_root):
-        landed = wt.get('landed')
-        if landed:
-            results.append(landed)
+        roots = search_roots
+    else:
+        repo_root = repo_root or find_repo_root()
+        porcelain = run('git worktree list --porcelain',
+                        cwd=repo_root, timeout=60)
+        roots = [wt['path'] for wt in parse_worktree_list(porcelain)
+                 if wt.get('path') and not wt.get('bare')]
+    for root in roots:
+        landed_path = os.path.join(root, '.landed')
+        if os.path.isfile(landed_path):
+            try:
+                with open(landed_path, 'r', encoding='utf-8') as f:
+                    results.append(parse_landed(f.read()))
+            except OSError:
+                pass
     return results
 
 
