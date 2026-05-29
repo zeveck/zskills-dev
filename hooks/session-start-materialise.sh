@@ -221,6 +221,68 @@ for hook in inject-bash-timeout verify-response-validate; do
   fi
 done
 
+# ── Seed a default zskills-config.json when ABSENT (plugin lane) ──────────
+# Plugins cannot write at install time, and the managed.md render below is
+# gated on [ -f "$CONFIG" ]. A fresh plugin install therefore used to leave
+# the consumer with NO config and NO managed.md — silently. Seed a default
+# headless config here so the render gate passes and all 5 artifacts
+# materialise. The preset is locked-main-pr (landing=pr, main_protected=true)
+# — the safe default for a fresh consumer.
+#
+# Idempotent: ONLY create when the config is absent. An existing config (any
+# values) is NEVER clobbered. We track whether we seeded this run so the
+# one-time review notice below fires only on a real seed.
+CONFIG_SEEDED=0
+if [ ! -f "$CONFIG" ]; then
+  mkdir -p "$PROJ/.claude"
+  CONFIG_PROJECT_NAME="$(basename "$PROJ")"
+  config_tmp="$(mktemp)"
+  PROJECT_NAME="$CONFIG_PROJECT_NAME" "$PYTHON" - "$config_tmp" <<'PY'
+import json, os, sys
+cfg = {
+    "$schema": "./zskills-config.schema.json",
+    "project_name": os.environ["PROJECT_NAME"],
+    "timezone": "UTC",
+    "execution": {
+        "landing": "pr",
+        "main_protected": True,
+        "branch_prefix": "feat/",
+    },
+    "commit": {
+        "co_author": "Claude Opus 4.7 (1M context) <noreply@anthropic.com>",
+    },
+    "testing": {
+        "unit_cmd": "",
+        "full_cmd": "",
+        "output_file": ".test-results.txt",
+        "file_patterns": [],
+    },
+    "dev_server": {
+        "cmd": "",
+        "default_port": 8080,
+    },
+    "ui": {
+        "file_patterns": "",
+        "auth_bypass": "",
+    },
+    "ci": {
+        "auto_fix": True,
+        "max_fix_attempts": 2,
+    },
+}
+with open(sys.argv[1], "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PY
+  if [ -s "$config_tmp" ]; then
+    mv "$config_tmp" "$CONFIG"
+    CONFIG_SEEDED=1
+  else
+    rm -f "$config_tmp"
+    echo "zskills: failed to seed default zskills-config.json — managed.md will NOT be rendered" >&2
+  fi
+fi
+
 # ── Materialise the rendered managed.md (5th artifact, D24 renderer) ──────
 # W2.3 — read CLAUDE_TEMPLATE.md from the consumer repo first (dogfood the
 # live template inside the zskills repo), else the bundled plugin copy.
@@ -236,7 +298,17 @@ if [ -f "$PLUGIN/scripts/render-managed-rules.py" ]; then
   RENDERER="$PLUGIN/scripts/render-managed-rules.py"
 fi
 
-if [ -n "$TEMPLATE" ] && [ -n "$RENDERER" ] && [ -f "$CONFIG" ]; then
+# Surface-not-silent: if any precondition for rendering managed.md is
+# missing, say so on stderr instead of slipping past to exit 0. (Before this
+# the render simply didn't happen and the consumer got no managed.md and no
+# explanation.)
+if [ -z "$TEMPLATE" ]; then
+  echo "zskills: managed.md NOT rendered — CLAUDE_TEMPLATE.md not found (looked in \$PROJ and \$PLUGIN)" >&2
+elif [ -z "$RENDERER" ]; then
+  echo "zskills: managed.md NOT rendered — renderer scripts/render-managed-rules.py not found under \$PLUGIN" >&2
+elif [ ! -f "$CONFIG" ]; then
+  echo "zskills: managed.md NOT rendered — zskills-config.json absent (seed failed?)" >&2
+else
   managed_dest="$PROJ/.claude/rules/zskills/managed.md"
   if safe_to_write "$managed_dest"; then
     # Render into a temp file with the sentinel, then run it through the
@@ -249,9 +321,20 @@ if [ -n "$TEMPLATE" ] && [ -n "$RENDERER" ] && [ -f "$CONFIG" ]; then
         --out "$render_tmp" \
         --sentinel "$PLUGIN_VERSION"; then
       materialise_static plain-md "$managed_dest" < "$render_tmp"
+    else
+      echo "zskills: managed.md NOT rendered — render-managed-rules.py failed (config=$CONFIG template=$TEMPLATE)" >&2
     fi
     rm -f "$render_tmp"
   fi
+fi
+
+# ── One-time seed notice (gated by a marker, same pattern as D27 probe) ───
+# Emit ONLY when we actually seeded a default config this run. Tells the
+# consumer to review the generated config (test commands + landing mode).
+if [ "$CONFIG_SEEDED" -eq 1 ] && [ ! -f "$PROJ/.zskills/config-seeded-notice" ]; then
+  mkdir -p "$PROJ/.zskills"
+  echo "zskills: created a default .claude/zskills-config.json (locked-main-pr: landing=pr, main_protected=true). Review it — especially testing.unit_cmd/full_cmd and execution.landing — and adjust for this project." >&2
+  touch "$PROJ/.zskills/config-seeded-notice"
 fi
 
 exit 0

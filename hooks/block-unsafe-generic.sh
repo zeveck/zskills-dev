@@ -13,22 +13,28 @@
 #              git commit --no-verify (fix the hook, don't bypass)
 # Optional:    git push (agents should not push; the user pushes when ready)
 
-# ─── Preset toggle: main-push block ────────────────────────────────
+# ─── Main-push block: sourced from config at runtime ───────────────
 # Controls the "git push main/master" deny rule further down in this
-# file. Flipped by /update-zskills when a preset is applied:
-#   cherry-pick (default)  -> BLOCK_MAIN_PUSH=0
-#   locked-main-pr         -> BLOCK_MAIN_PUSH=1
-#   direct                 -> BLOCK_MAIN_PUSH=0
-# Default here is 1 so zskills-shipped configs fail closed (safer).
-# Installer flips this single line via Edit; do not inline-expand further below.
+# file. The decision is read at runtime from execution.main_protected in
+# .claude/zskills-config.json (resolved below, just before the push rule),
+# mirroring the COMMIT gate (block-unsafe-project.sh is_main_protected())
+# and the EDIT gate (block-main-edits.sh main_protected check). This
+# replaces the former static BLOCK_MAIN_PUSH=1 line that /update-zskills
+# spliced per-preset: on the plugin lane the hook ships read-only and was
+# never materialised, so the static value froze and a config edit only
+# changed 2 of 3 gates. Reading config keeps all three coherent.
+#   cherry-pick (default)  -> main_protected:false -> allow push
+#   locked-main-pr         -> main_protected:true  -> block push
+#   direct                 -> main_protected:false -> allow push
+# FAIL CLOSED: when the config file is absent, unreadable, or unparseable
+# we DEFAULT TO BLOCKING (BLOCK_MAIN_PUSH=1) — preserving the prior
+# "zskills-shipped configs fail closed (safer)" posture.
 # D16(a) plugin-lane conditional-skip shim. No-op on the /update-zskills
 # lane (CLAUDE_PLUGIN_ROOT unset → guard below skips the source). On the
 # plugin lane it defers to a settings.json-registered copy of this hook to
 # prevent double-fire when both install lanes are active. Must be the first
 # executable line; the shim controls its own exit/return.
 [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
-
-BLOCK_MAIN_PUSH=1
 
 INPUT=$(cat)
 
@@ -997,6 +1003,30 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
   # also resolve.
   if [ "$PUSH_TARGET" = "HEAD" ]; then
     PUSH_TARGET=$(git branch --show-current 2>/dev/null)
+  fi
+
+  # ── Resolve main-push block from config (runtime, fail-closed) ──────
+  # Mirror block-main-edits.sh's pattern: resolve the config root the same
+  # way (REPO_ROOT override → CLAUDE_PROJECT_DIR → git toplevel → pwd), then
+  # read execution.main_protected from .claude/zskills-config.json.
+  #
+  # FAIL CLOSED: BLOCK_MAIN_PUSH defaults to 1. We only flip it to 0 (allow)
+  # when the config file EXISTS, is readable, AND explicitly carries
+  # `"main_protected": false`. An absent / unreadable / unparseable config
+  # leaves it at 1 (block) — the safer posture for zskills-shipped configs.
+  PUSH_CONFIG_ROOT="${REPO_ROOT:-${CLAUDE_PROJECT_DIR:-}}"
+  if [ -z "$PUSH_CONFIG_ROOT" ]; then
+    PUSH_CONFIG_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+  fi
+  PUSH_CONFIG_FILE="$PUSH_CONFIG_ROOT/.claude/zskills-config.json"
+  BLOCK_MAIN_PUSH=1
+  if [ -f "$PUSH_CONFIG_FILE" ]; then
+    PUSH_CFG_CONTENT=$(cat "$PUSH_CONFIG_FILE" 2>/dev/null) || PUSH_CFG_CONTENT=""
+    # Explicit `false` → allow. Anything else (including missing key, true,
+    # or unparseable garbage) → stay blocked (fail closed).
+    if [[ "$PUSH_CFG_CONTENT" =~ \"main_protected\"[[:space:]]*:[[:space:]]*false ]]; then
+      BLOCK_MAIN_PUSH=0
+    fi
   fi
 
   if [ "$BLOCK_MAIN_PUSH" = "1" ] && { [ "$PUSH_TARGET" = "main" ] || [ "$PUSH_TARGET" = "master" ]; }; then

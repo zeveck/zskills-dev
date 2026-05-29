@@ -143,6 +143,116 @@ else
   fail "11. verifier.md frontmatter broken"
 fi
 
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Config seeding: fresh project with NO config ==="
+
+# A truly fresh plugin install has NO .claude/zskills-config.json. The
+# materialiser must seed a default (locked-main-pr) config, then the render
+# gate passes and all 5 artifacts materialise. Previously this case left the
+# consumer with no config and no managed.md, silently.
+SEED="$TMP/seedproj"
+mkdir -p "$SEED"
+# Provide the template at the project root so the renderer has something to
+# render (mirrors dogfooding inside the zskills repo).
+cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$SEED/"
+
+SEED_ERR="$TMP/seed.stderr"
+env CLAUDE_PROJECT_DIR="$SEED" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
+  bash "$REPO_ROOT/$MAT" 2>"$SEED_ERR"
+
+SEED_CFG="$SEED/.claude/zskills-config.json"
+
+# 12. Config seeded at all.
+if [ -f "$SEED_CFG" ]; then
+  pass "12. fresh project: default zskills-config.json seeded"
+else
+  fail "12. fresh project: config NOT seeded"
+fi
+
+# 13. Seeded preset is locked-main-pr (landing=pr, main_protected=true).
+if [ -f "$SEED_CFG" ]; then
+  seed_landing=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["execution"]["landing"])' "$SEED_CFG" 2>/dev/null)
+  seed_prot=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["execution"]["main_protected"])' "$SEED_CFG" 2>/dev/null)
+  seed_name=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["project_name"])' "$SEED_CFG" 2>/dev/null)
+  if [ "$seed_landing" = "pr" ] && [ "$seed_prot" = "True" ] && [ "$seed_name" = "seedproj" ]; then
+    pass "13. seeded config is locked-main-pr (landing=pr, main_protected=true, project_name=seedproj)"
+  else
+    fail "13. seeded config wrong: landing=$seed_landing main_protected=$seed_prot project_name=$seed_name"
+  fi
+else
+  fail "13. seeded config wrong: no config file"
+fi
+
+# 14. All 5 artifacts materialised now that the render gate passes.
+if [ -f "$SEED/.claude/agents/verifier.md" ] \
+   && [ -f "$SEED/.claude/agents/implementer.md" ] \
+   && [ -f "$SEED/.claude/hooks/inject-bash-timeout.sh" ] \
+   && [ -f "$SEED/.claude/hooks/verify-response-validate.sh" ] \
+   && [ -f "$SEED/.claude/rules/zskills/managed.md" ]; then
+  pass "14. all 5 artifacts materialised after config seed"
+else
+  fail "14. not all artifacts materialised after seed"
+fi
+
+# 15. One-time review notice emitted to stderr + marker written.
+if grep -q "created a default .claude/zskills-config.json" "$SEED_ERR" \
+   && [ -f "$SEED/.zskills/config-seeded-notice" ]; then
+  pass "15. one-time config-seeded review notice emitted (+ marker written)"
+else
+  fail "15. config-seeded notice missing (stderr: $(cat "$SEED_ERR"))"
+fi
+
+# 16. Notice is ONE-TIME: a re-run does not re-emit it (marker gate).
+SEED_ERR2="$TMP/seed.stderr2"
+env CLAUDE_PROJECT_DIR="$SEED" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
+  bash "$REPO_ROOT/$MAT" 2>"$SEED_ERR2"
+if ! grep -q "created a default .claude/zskills-config.json" "$SEED_ERR2"; then
+  pass "16. config-seeded notice is one-time (not re-emitted on re-run)"
+else
+  fail "16. config-seeded notice re-emitted on re-run"
+fi
+
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+echo "=== Config seeding: existing config is NEVER clobbered ==="
+
+# A project that already has a config (any values) must keep it verbatim —
+# the materialiser only seeds when ABSENT.
+KEEP="$TMP/keepproj"
+mkdir -p "$KEEP/.claude"
+cp "$REPO_ROOT/CLAUDE_TEMPLATE.md" "$KEEP/"
+# A deliberately differently-valued config (cherry-pick / main_protected
+# false) — opposite of the locked-main-pr default the seeder would write.
+cat > "$KEEP/.claude/zskills-config.json" <<'KEEPCFG'
+{
+  "$schema": "./zskills-config.schema.json",
+  "project_name": "my-existing-project",
+  "execution": {
+    "landing": "cherry-pick",
+    "main_protected": false,
+    "branch_prefix": "feat/"
+  }
+}
+KEEPCFG
+KEEP_BEFORE=$(cat "$KEEP/.claude/zskills-config.json")
+
+env CLAUDE_PROJECT_DIR="$KEEP" CLAUDE_PLUGIN_ROOT="$REPO_ROOT" \
+  bash "$REPO_ROOT/$MAT" 2>/dev/null
+
+KEEP_AFTER=$(cat "$KEEP/.claude/zskills-config.json")
+if [ "$KEEP_BEFORE" = "$KEEP_AFTER" ]; then
+  pass "17. existing config left byte-identical (never clobbered)"
+else
+  fail "17. existing config was modified by the materialiser"
+fi
+# 18. And no spurious seed notice for the existing-config case.
+if [ ! -f "$KEEP/.zskills/config-seeded-notice" ]; then
+  pass "18. no config-seeded notice when config already present"
+else
+  fail "18. config-seeded notice emitted despite existing config"
+fi
+
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"

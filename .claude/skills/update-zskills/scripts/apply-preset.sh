@@ -1,19 +1,25 @@
 #!/bin/bash
-# Apply a zskills preset to .claude/zskills-config.json and
-# .claude/hooks/block-unsafe-generic.sh.
+# Apply a zskills preset to .claude/zskills-config.json (config-only).
 #
 # Usage: bash $(basename "$0") <cherry-pick|locked-main-pr|direct>
 # Env:   PROJECT_ROOT — override root (default: $(pwd))
 # Exits: 0 = applied (at least one field changed)
 #        1 = no changes (preset already applied)
 #        2 = usage error (unknown/missing preset)
-#        3 = missing file (config or hook not found)
+#        3 = missing config (.claude/zskills-config.json not found)
 #        4 = cannot edit config (e.g. no outer-object closing brace)
 #
 # Preset → field mapping:
-#   cherry-pick    landing=cherry-pick  main_protected=false  BLOCK_MAIN_PUSH=0
-#   locked-main-pr landing=pr           main_protected=true   BLOCK_MAIN_PUSH=1
-#   direct         landing=direct       main_protected=false  BLOCK_MAIN_PUSH=0
+#   cherry-pick    landing=cherry-pick  main_protected=false
+#   locked-main-pr landing=pr           main_protected=true
+#   direct         landing=direct       main_protected=false
+#
+# CONFIG-ONLY. This script no longer edits or requires
+# .claude/hooks/block-unsafe-generic.sh. The three main-protection gates
+# (COMMIT block-unsafe-project.sh, EDIT block-main-edits.sh, PUSH
+# block-unsafe-generic.sh) all read execution.main_protected from this
+# config at runtime, so the former BLOCK_MAIN_PUSH= hook splice is
+# vestigial — flipping the config field is sufficient for all three.
 #
 # Idempotent: repeat invocations with the same preset exit rc=1 with no
 # writes. Preserves every config field not owned by the preset
@@ -22,50 +28,27 @@
 #
 # Bash-only (no python/jq). Uses sed for in-place field updates and awk
 # to splice a missing `execution` block.
-#
-# Hook behavior:
-#   - If the BLOCK_MAIN_PUSH= line is missing (legacy hook), splice
-#     BLOCK_MAIN_PUSH=<target> before the first non-comment, non-blank
-#     line of code. Non-destructive fill — other hook content preserved
-#     byte-for-byte.
-#   - If the line exists with a different value, rewrite it.
-#   - Otherwise no-op.
 
 set -e
 
 PRESET="${1:-}"
 case "$PRESET" in
-  cherry-pick)    LANDING=cherry-pick; MAIN_PROTECTED=false; BLOCK_MAIN_PUSH=0 ;;
-  locked-main-pr) LANDING=pr;          MAIN_PROTECTED=true;  BLOCK_MAIN_PUSH=1 ;;
-  direct)         LANDING=direct;      MAIN_PROTECTED=false; BLOCK_MAIN_PUSH=0 ;;
+  cherry-pick)    LANDING=cherry-pick; MAIN_PROTECTED=false ;;
+  locked-main-pr) LANDING=pr;          MAIN_PROTECTED=true  ;;
+  direct)         LANDING=direct;      MAIN_PROTECTED=false ;;
   "")  echo "usage: apply-preset.sh <cherry-pick|locked-main-pr|direct>" >&2; exit 2 ;;
   *)   echo "apply-preset: unknown preset '$PRESET' (valid: cherry-pick, locked-main-pr, direct)" >&2; exit 2 ;;
 esac
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
 CONFIG="$PROJECT_ROOT/.claude/zskills-config.json"
-HOOK="$PROJECT_ROOT/.claude/hooks/block-unsafe-generic.sh"
 
 if [ ! -f "$CONFIG" ]; then
   echo "apply-preset: $CONFIG not found. Run /update-zskills first to create the config." >&2
   exit 3
 fi
-if [ ! -f "$HOOK" ]; then
-  echo "apply-preset: $HOOK not found. Install hooks via /update-zskills install first." >&2
-  exit 3
-fi
 
 CHANGED=()
-
-# Portable sed-in-place (BSD sed lacks GNU's `sed -i` syntax; stage to
-# tempfile then overwrite).
-sed_inplace() {
-  local expr="$1" file="$2"
-  local tmp
-  tmp=$(mktemp)
-  sed -E "$expr" "$file" > "$tmp" && cat "$tmp" > "$file"
-  rm -f "$tmp"
-}
 
 # Scope-aware in-place replacement of a JSON field's value within the
 # enclosing "execution" object. Substitutes ONLY inside the execution
@@ -241,42 +224,6 @@ else
   if [ "$CURRENT_PROTECTED" != "$MAIN_PROTECTED" ]; then
     exec_field_replace "$CONFIG" "main_protected" "(true|false)" "$MAIN_PROTECTED"
     CHANGED+=("execution.main_protected=$MAIN_PROTECTED")
-  fi
-fi
-
-# ─── Hook: ensure BLOCK_MAIN_PUSH= exists and matches target ────────
-CURRENT_LINE=$(grep -m1 '^BLOCK_MAIN_PUSH=' "$HOOK" || true)
-
-if [ -z "$CURRENT_LINE" ]; then
-  # Legacy hook — no BLOCK_MAIN_PUSH line. Splice default before the
-  # first non-comment non-blank code line.
-  TMP=$(mktemp)
-  awk -v val="$BLOCK_MAIN_PUSH" '
-    BEGIN { inserted=0 }
-    !inserted && NR>1 && !/^#/ && !/^[[:space:]]*$/ {
-      print "# Preset toggle — set by apply-preset.sh. Do not edit manually."
-      print "BLOCK_MAIN_PUSH=" val
-      print ""
-      inserted=1
-    }
-    { print }
-    END {
-      # Safety net: if the file had no code lines at all, append.
-      if (!inserted) {
-        print "# Preset toggle — set by apply-preset.sh. Do not edit manually."
-        print "BLOCK_MAIN_PUSH=" val
-      }
-    }
-  ' "$HOOK" > "$TMP"
-  cat "$TMP" > "$HOOK"
-  rm -f "$TMP"
-  CHANGED+=("BLOCK_MAIN_PUSH=$BLOCK_MAIN_PUSH (spliced into legacy hook)")
-else
-  CURRENT_VAL="${CURRENT_LINE#BLOCK_MAIN_PUSH=}"
-  CURRENT_VAL="${CURRENT_VAL%%[[:space:]#]*}"
-  if [ "$CURRENT_VAL" != "$BLOCK_MAIN_PUSH" ]; then
-    sed_inplace "s/^BLOCK_MAIN_PUSH=[01]/BLOCK_MAIN_PUSH=$BLOCK_MAIN_PUSH/" "$HOOK"
-    CHANGED+=("BLOCK_MAIN_PUSH: $CURRENT_VAL → $BLOCK_MAIN_PUSH")
   fi
 fi
 
