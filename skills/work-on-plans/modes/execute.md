@@ -124,7 +124,11 @@ time (not at /run-plan acquire-time) keeps the user's typed
 `plans/plans-claim-chip-parity.md` D4 + W2b.1.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh"
 if [ -x "$FILTER" ]; then
   FILTERED=$(printf '%s\n' "${READY_LINES[@]}" | bash "$FILTER")
@@ -177,7 +181,11 @@ helper (it has not landed yet).
 
 ```bash
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 declare -A SLUG_TO_FILE
 for f in "$ZSKILLS_PLANS_DIR"/*.md; do
   [ -e "$f" ] || continue
@@ -250,7 +258,11 @@ For each ready entry in `plans.ready[0:N]`:
    `status: started` BEFORE dispatch:
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    STEP_FILE="$PIPELINE_DIR/step.work-on-plans.$SPRINT_ID.$SLUG"
    printf 'skill: work-on-plans\nparent: work-on-plans.%s\nslug: %s\nmode: %s\nstatus: started\ndate: %s\n' \
      "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -263,7 +275,11 @@ For each ready entry in `plans.ready[0:N]`:
    for Phase 4's activity scan:
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    printf 'skill: run-plan\nparent: work-on-plans\nid: %s\nslug: %s\nmode: %s\ndate: %s\n' \
      "$SPRINT_ID" "$SLUG" "$DISPATCH_MODE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$PIPELINE_DIR/requires.run-plan.$SLUG"
@@ -313,7 +329,11 @@ For each ready entry in `plans.ready[0:N]`:
    - Write `fulfilled.run-plan.<slug>` in this skill's own subdir:
 
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      printf 'skill: run-plan\nparent: work-on-plans\nid: %s\nslug: %s\nstatus: complete\ndate: %s\n' \
        "$SPRINT_ID" "$SLUG" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
        > "$PIPELINE_DIR/fulfilled.run-plan.$SLUG"
@@ -342,7 +362,11 @@ empty-after-failure):
    marker):
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    printf 'skill: work-on-plans\nsprint_id: %s\ntotal: %d\ndone: %d\ncontinue: %s\nstatus: %s\ndate: %s\n' \
      "$SPRINT_ID" "$DISPATCH_COUNT" "$DONE" "${CONTINUE_ON_FAILURE:-0}" \
      "$SPRINT_FINAL_STATUS" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \

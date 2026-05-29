@@ -94,14 +94,22 @@ re-invocation of `/run-plan <plan-file> finish auto` starts fresh
 (Issue #110):
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Failure-protocol cleanup runs from the orchestrator's main session — anchor
 # on $CLAUDE_PROJECT_DIR. PR-mode pipelines that wrote counters inside the
 # worktree get cleaned up by the worktree's own .landed flow.
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')}"
 rm -f "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
 rm -f "$BOOKKEEPING_ROOT/.zskills/tracking/$PIPELINE_ID/verify-pending-attempts."*

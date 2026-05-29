@@ -5,11 +5,16 @@ This is a reference doc for skill authors working in the zskills repo. It is
 sourcing the zskills config-resolution helper from skill bash fences,
 mode files, and subagent-dispatch prompts.
 
-The helper lives at:
+The helper lives at one of two locations depending on the install lane:
 
 ```
-.claude/skills/update-zskills/scripts/zskills-resolve-config.sh
+${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh          # plugin lane
+$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh   # /update-zskills lane
 ```
+
+Both install lanes are first-class and PERMANENT (decision D23) — neither is
+deprecated. New code should source the helper via the lane-portable
+**two-line dual-path form** documented in §1 so it works under either lane.
 
 It resolves the following six shell vars by reading
 `.claude/zskills-config.json` from `$CLAUDE_PROJECT_DIR`:
@@ -29,8 +34,42 @@ empty vars.
 
 ## 1. Sourcing pattern
 
-Drop this **single line** at the top of any skill bash fence that needs
-config values. It must be the first non-comment line:
+### Preferred: lane-portable two-line dual-path form (D6)
+
+Drop this **two-line dual-path** block at the top of any skill bash fence
+that needs config values. It is the PREFERRED form for all new code because
+it resolves correctly on **both** install lanes — the plugin lane (where
+`${CLAUDE_PLUGIN_ROOT}` is set and the helper lives at
+`${CLAUDE_PLUGIN_ROOT}/scripts/`) and the `/update-zskills` lane (where the
+helper lives under `.claude/skills/update-zskills/scripts/`):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+# vars now set: $UNIT_TEST_CMD $FULL_TEST_CMD $TIMEZONE $DEV_SERVER_CMD $TEST_OUTPUT_FILE $COMMIT_CO_AUTHOR
+```
+
+The plugin branch is preferred when `${CLAUDE_PLUGIN_ROOT}` is set AND the
+helper file exists there; otherwise the block falls back to the legacy
+`/update-zskills`-lane path. The same existence-test pattern applies to the
+sibling helpers `zskills-paths.sh` and `zskills-stub-lib.sh`, and `bash`
+invocations of other bundled scripts (`port.sh`, `apply-preset.sh`, etc.)
+use the path-prefix form
+`${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/<x>.sh`.
+
+### Legacy: single-line `/update-zskills`-lane form (NOT deprecated)
+
+The original single-line source form remains **valid forever** on the
+`/update-zskills` lane (decision D23 / F-DA2-4). It is NOT deprecated and
+carries NO migration deadline — under the permanent dual-path commitment the
+legacy path always exists on that lane, so a deadline-warn would be a
+no-op-with-noise. `tests/test-skill-conformance.sh`'s per-fence
+sourcing-discipline check accepts EITHER form permanently. New code should
+still prefer the dual-path form above for lane portability, but pre-existing
+single-line sources need no mechanical migration:
 
 ```bash
 . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"

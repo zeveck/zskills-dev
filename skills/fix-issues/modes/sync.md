@@ -26,7 +26,11 @@ fi
 # doesn't take a plan-file arg. Mirrors sprint mode's SPRINT_ID shape (later
 # in this skill) with a `sync-` prefix so the namespace is unambiguous and
 # downstream pipeline IDs (`fix-issues.${TRACKING_ID}`) are non-empty.
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 TRACKING_ID="${TRACKING_ID:-sync-$(TZ="${TIMEZONE:-UTC}" date +%Y%m%d-%H%M%S)}"
 WT_PATH=$(bash "$HELPER" \
   --prefix fix-issues \
@@ -159,8 +163,16 @@ auto-merge completes will close them.
      # R3-1: re-anchor under the worktree so $ZSKILLS_AUDIT_DIR resolves
      # to TOPLEVEL/.zskills/audit, not $CLAUDE_PROJECT_DIR/.zskills/audit.
      export ZSKILLS_PATHS_ROOT="$TOPLEVEL"
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     fi
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
 
      ABS_FILE="$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md"
      # Portable realpath (DA-R2-1; R3-6: adapted from warn-config-drift.sh:181-203).
@@ -250,7 +262,11 @@ EOF
    (`skills/run-plan/modes/pr.md:373-379`, `skills/run-plan/SKILL.md:874-878`).
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # SYNC_TS: stable per sync invocation. SYNC_ID propagates to /land-pr.
    SYNC_TS="${SYNC_TS:-$(TZ="${TIMEZONE:-UTC}" date +%Y%m%d-%H%M%S)}"
    SYNC_ID="fix-issues.sync.${SYNC_TS}"

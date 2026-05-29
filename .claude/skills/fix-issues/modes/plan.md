@@ -15,7 +15,11 @@ either fires, all candidate issues are selected without prompting.
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_REPORTS_DIR (resolved via zskills-paths.sh; issue #217); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    grep -nE '#[0-9]+' "$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md" | grep -iE 'skip|complex|remain'
    ```
 
@@ -56,7 +60,11 @@ either fires, all candidate issues are selected without prompting.
    per-sprint subdir ($PIPELINE_ID) — the parent reconciles child
    fulfillment in its own scope:
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \

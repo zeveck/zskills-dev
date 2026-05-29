@@ -200,6 +200,23 @@ run_suite "test-demo-server-interactive.sh" "tests/test-demo-server-interactive.
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
+# Phase 2 — SessionStart materialiser + dual-install detection + renderer.
+run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
+run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
+run_suite "test-sessionstart-dual-install-detect.sh" "tests/test-sessionstart-dual-install-detect.sh"
+run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"
+run_suite "test-managed-md-renderer-equivalence.sh" "tests/test-managed-md-renderer-equivalence.sh"
+run_suite "test-inject-bash-timeout-parity.sh" "tests/test-inject-bash-timeout-parity.sh"
+run_suite "test-verify-response-validate-parity.sh" "tests/test-verify-response-validate-parity.sh"
+run_suite "test-hook-template-sibling.sh" "tests/test-hook-template-sibling.sh"
+# Phase 3 — dual-path recognition + cron-fire path-aware rules + frontmatter survival.
+run_suite "test-cron-prefix-or-match.sh" "tests/test-cron-prefix-or-match.sh"
+run_suite "test-cron-fire-rule-dual-path.sh" "tests/test-cron-fire-rule-dual-path.sh"
+run_suite "test-skill-frontmatter-survival.sh" "tests/test-skill-frontmatter-survival.sh"
+
+# Phase 5 — bidirectional lane switch + hook double-fire conditional-skip shim.
+run_suite "test-switch-install-path.sh" "tests/test-switch-install-path.sh"
+run_suite "test-plugin-hook-skip-on-double-register.sh" "tests/test-plugin-hook-skip-on-double-register.sh"
 
 # Opt-in end-to-end smoke for parallel pipelines. Heavier than unit tests
 # (real git repos, concurrent writes), so it runs only when RUN_E2E is set.

@@ -7,7 +7,7 @@ description: >-
   edit parameters). Use when told to "test manually", "test in the
   browser", or "verify with playwright-cli".
 metadata:
-  version: "2026.05.15+bb07e4"
+  version: "2026.05.28+5f62aa"
 ---
 
 # Manual Testing with playwright-cli
@@ -17,7 +17,11 @@ metadata:
 1. Start the dev server (if not already running):
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    if [ -z "$DEV_SERVER_CMD" ]; then
      echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
      exit 1
@@ -29,7 +33,7 @@ metadata:
 2. Open the browser:
 
    ```bash
-   PORT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")
+   PORT=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/port.sh")
    playwright-cli open http://localhost:$PORT
    ```
 

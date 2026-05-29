@@ -12,96 +12,58 @@
 #   git add .claude/rules/zskills/managed.md
 #   git commit
 #
-# The substitution map below MUST stay in lock-step with /update-zskills
-# Step B / Step D --rerender. If you add a placeholder to CLAUDE_TEMPLATE.md,
-# add it here AND in the skill's substitution logic.
+# W2.7 (D24, F-DA2-2): this test no longer carries its own inlined
+# `subs = {...}` substitution map. It invokes the canonical renderer
+# `scripts/render-managed-rules.py` (which routes through the single
+# source-of-truth `scripts/managed_rules_substitution.py`) and diffs its
+# output against the checked-in managed.md — exactly the Step D code path.
+# One map, three callers; no divergence possible.
 
 set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+[ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+
 PASS=0
 FAIL=0
 
-result=$(python3 <<'PY'
-import json, re, sys, difflib
+RENDER_TMP="$(mktemp)"
+trap 'rm -f "$RENDER_TMP"' EXIT
 
-with open("CLAUDE_TEMPLATE.md") as f:
-    template = f.read()
-with open(".claude/zskills-config.json") as f:
-    cfg = json.load(f)
-with open(".claude/rules/zskills/managed.md") as f:
-    expected = f.read()
-
-def empty_or(value, fallback):
-    if value is None or value == "":
-        return fallback
-    return value
-
-ds = cfg.get("dev_server", {})
-testing = cfg.get("testing", {})
-ui = cfg.get("ui", {})
-patterns = testing.get("file_patterns", [])
-patterns_md = "\n".join(f"- `{p}`" for p in patterns) if patterns else "<!-- TODO: testing.file_patterns is empty -->"
-
-subs = {
-    "PROJECT_NAME": cfg.get("project_name", ""),
-    "TIMEZONE": cfg.get("timezone", ""),
-    "DEFAULT_PORT": str(ds.get("default_port", "")),
-    "MAIN_REPO_PATH": ds.get("main_repo_path", ""),
-    "UNIT_TEST_CMD": testing.get("unit_cmd", ""),
-    "FULL_TEST_CMD": testing.get("full_cmd", ""),
-    "TEST_FILE_PATTERNS": patterns_md,
-    "DEV_SERVER_CMD": empty_or(ds.get("cmd", ""), "<!-- TODO: dev_server.cmd not set in .claude/zskills-config.json -->"),
-    "AUTH_BYPASS": empty_or(ui.get("auth_bypass", ""), "<!-- TODO: ui.auth_bypass not set in .claude/zskills-config.json -->"),
-    "SOURCE_LAYOUT": "<!-- TODO: SOURCE_LAYOUT has no config field; fill in project's architecture summary -->",
-}
-
-rendered = template
-for k, v in subs.items():
-    rendered = rendered.replace("{{" + k + "}}", v)
-
-leftover = re.findall(r"\{\{[A-Z_]+\}\}", rendered)
-if leftover:
-    print(f"ERROR: render left unsubstituted placeholders: {leftover}")
-    sys.exit(2)
-
-if rendered == expected:
-    sys.exit(0)
-
-diff = "".join(difflib.unified_diff(
-    expected.splitlines(keepends=True),
-    rendered.splitlines(keepends=True),
-    fromfile=".claude/rules/zskills/managed.md (tracked)",
-    tofile="render(CLAUDE_TEMPLATE.md, .claude/zskills-config.json) (live)",
-    n=3,
-))
-diff_lines = diff.splitlines()
-cap = 200
-if len(diff_lines) > cap:
-    print("\n".join(diff_lines[:cap]))
-    print(f"... (diff truncated; {len(diff_lines)} total lines)")
-else:
-    print(diff)
-sys.exit(1)
-PY
-)
+# Render via the canonical Step-D renderer (no --sentinel; the checked-in
+# managed.md is the unsentinelled /update-zskills-lane form).
+render_err="$(
+  "$PYTHON" scripts/render-managed-rules.py \
+    --config .claude/zskills-config.json \
+    --template CLAUDE_TEMPLATE.md \
+    --out "$RENDER_TMP" 2>&1
+)"
 rc=$?
 
-if [ "$rc" -eq 0 ]; then
+if [ "$rc" -eq 2 ]; then
+  FAIL=$((FAIL + 1))
+  echo "FAIL: render produced unsubstituted placeholders (template/substitution map out of sync)"
+  echo ""
+  echo "$render_err"
+elif [ "$rc" -ne 0 ]; then
+  FAIL=$((FAIL + 1))
+  echo "FAIL: renderer errored (rc=$rc)"
+  echo ""
+  echo "$render_err"
+elif diff -q "$RENDER_TMP" .claude/rules/zskills/managed.md >/dev/null 2>&1; then
   PASS=$((PASS + 1))
   echo "PASS: managed.md matches live render of CLAUDE_TEMPLATE.md + .claude/zskills-config.json"
-elif [ "$rc" -eq 2 ]; then
-  FAIL=$((FAIL + 1))
-  echo "FAIL: render produced unsubstituted placeholders (template/script out of sync)"
-  echo ""
-  echo "$result"
 else
   FAIL=$((FAIL + 1))
   echo "FAIL: .claude/rules/zskills/managed.md is stale relative to CLAUDE_TEMPLATE.md / .claude/zskills-config.json"
   echo ""
-  echo "$result"
+  diff -u .claude/rules/zskills/managed.md "$RENDER_TMP" \
+    | sed -e '1s#.*#--- .claude/rules/zskills/managed.md (tracked)#' \
+          -e '2s#.*#+++ render(CLAUDE_TEMPLATE.md, .claude/zskills-config.json) (live)#' \
+    | head -200
   echo ""
   echo "Remediation: run \`/update-zskills --rerender\` and commit the result."
 fi

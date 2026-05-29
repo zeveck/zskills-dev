@@ -47,7 +47,47 @@ For a per-skill reference see [`docs/skills/`](docs/skills/README.md), and for
 recipes that combine skills into end-to-end workflows see
 [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
 
-## Quick Install
+## Install
+
+zskills ships via **two permanent, first-class install lanes** — pick one
+(or run both). The full side-by-side comparison, tradeoff matrix,
+version-pinning idiom, and per-lane `.gitignore` guidance live in
+**[`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md)**.
+
+| | Plugin lane | `/update-zskills` lane |
+|---|---|---|
+| Install | `/plugin marketplace add zeveck/zskills`<br>`/plugin install zs@zskills` | clone + copy skills, then `/update-zskills install` |
+| Slash prefix | `/zs:run-plan`, `/zs:quickfix` | bare `/run-plan`, `/quickfix` |
+| Update | `/plugin marketplace update` | `/update-zskills install` |
+| `claude` CLI required on host | yes | no |
+
+**Default recommendation** (for the indecisive reader — both lanes are
+first-class, this is not a constraint):
+
+- **Interactive workflows: plugin lane** — one-command install/updates,
+  marketplace-native, the slash menu surfaces the `/zs:` prefix.
+- **Headless CI consumers: `/update-zskills` lane** — no `claude` CLI
+  required on runners; install state is plain tracked files you can verify
+  with a file check.
+- **Power users: either** — the difference is cosmetic.
+
+This is **not** a pip/npm package — do not `pip install` or `npm install`
+it. The repo contains prompt files and scripts.
+
+### Plugin lane (quick start)
+
+From inside a Claude Code session in your project:
+
+```
+/plugin marketplace add zeveck/zskills
+/plugin install zs@zskills
+```
+
+Add the block-diagram add-on with `/plugin install zsbd@zskills`. See
+[`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md) for what gets
+materialised, version pinning, and the bare-slash prose tradeoff.
+
+### `/update-zskills` lane (quick start)
 
 Tell your agent (copy-paste):
 
@@ -59,11 +99,7 @@ A capable agent will clone the repo, copy the skills into your
 project, and run `/update-zskills` to complete setup. Full manual steps
 are below if you prefer to drive it yourself.
 
-This is **not** a pip/npm package — do not `pip install` or `npm install`
-it. The repo contains prompt files and scripts that get copied into your
-project.
-
-### Steps
+#### Steps
 
 1. **Clone the repo** (if not already cloned):
    ```bash
@@ -123,9 +159,14 @@ To include the block-diagram add-on (4 extra skills):
 
 ### Updating
 
-Run `/update-zskills` anytime — it pulls the latest from the repo,
-updates changed skills, and fills any new gaps. If you have a config
-already, it will not re-prompt.
+- **`/update-zskills` lane:** run `/update-zskills` anytime — it pulls the
+  latest from the repo, updates changed skills, and fills any new gaps. If
+  you have a config already, it will not re-prompt.
+- **Plugin lane:** run `/plugin marketplace update`. The SessionStart hook
+  re-materialises the managed `.claude/` artifacts on next session start.
+
+See [`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md) for the full
+per-lane update workflow and version-pinning idiom.
 
 ### Your first plan
 

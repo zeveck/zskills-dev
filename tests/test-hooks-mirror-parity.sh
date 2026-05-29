@@ -17,6 +17,14 @@
 #   hooks/_lib/*       — source-of-truth helpers inlined into hooks, never installed.
 #   hooks/canary3-bad.sh — deliberately-broken syntax-error fixture for canary tests;
 #                          not a real hook, not installed.
+#   hooks/session-start-materialise.sh — PLUGIN-LANE-ONLY hook (registered in
+#                          hooks/hooks.json under SessionStart, never in
+#                          .claude/settings.json). It is the plugin equivalent
+#                          of /update-zskills's install-time writes (plugins
+#                          cannot write at install time — research §10); the
+#                          /update-zskills lane performs those writes directly
+#                          and has no SessionStart materialiser, so there is no
+#                          mirror to byte-compare. (Phase 2, W2.1, D11.)
 
 set -u
 
@@ -32,6 +40,7 @@ fail() { echo "FAIL $*"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 # Excluded basenames (not real hooks / not installed).
 EXCLUDE_BASENAMES=(
   "canary3-bad.sh"
+  "session-start-materialise.sh"
 )
 
 is_excluded() {

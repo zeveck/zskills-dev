@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.28+59f4e3"
+  version: "2026.05.28+7001bb"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -111,7 +111,11 @@ Order-insensitive: `N finish continue` ≡ `N continue finish`.
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
 SANITIZE="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
 [ ! -x "$SANITIZE" ] && SANITIZE="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
@@ -187,7 +191,11 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
    only) to emit the file:
 
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
    python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
    # plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.

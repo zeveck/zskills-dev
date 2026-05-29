@@ -120,3 +120,68 @@ jobs:
               --label "main-broken" \
               --body "$BODY"
           fi
+
+  # ─── Plugin-mode CI lane (W5.1, F-DA1-6) ──────────────────────────────────
+  # zskills ships via TWO permanent install lanes (plugin + /update-zskills).
+  # The `test` job above gates the source tree. This job gates the PLUGIN
+  # lane's manifests + (best-effort) the plugin loader. It is documented as
+  # THREE explicit tiers:
+  #
+  #   Tier 1 (cheap, MANDATORY — runs on every PR): Python JSON-schema
+  #     validation of both plugin.json files (zs + zsbd) and marketplace.json,
+  #     via tests/test-plugin-manifest.sh + tests/test-plugin-marketplace.sh.
+  #     These are stdlib-json (no jq) and have no external dependency, so they
+  #     are the gating floor. A failure here fails the PR.
+  #
+  #   Tier 2 (moderate, BEST-EFFORT): if a `claude` CLI is reachable on the
+  #     runner, run `claude plugin validate --strict .` (marketplace) and
+  #     `claude plugin validate --strict ./block-diagram` (zsbd plugin). The
+  #     CLI is NOT installed by default on GitHub runners and no stable
+  #     public install URL is pinned here, so this tier SKIPS-with-reason when
+  #     `claude` is absent or install fails. It never blocks the PR (the step
+  #     is `continue-on-error` semantics via an explicit `|| true` after a
+  #     reachability probe). If tier 2 becomes chronically flaky (>50% of runs
+  #     skip for non-CLI reasons), tier 1 remains the gating floor (Abort/
+  #     Rollback in PLUGIN_DISTRIBUTION.md Phase 5).
+  #
+  #   Tier 3 (expensive, DEFERRED — NOT in this plan): an actual agentic
+  #     dispatch `claude -p '/zs:briefing summary'` to prove the plugin's
+  #     skills resolve end-to-end under a real model. Tracked as a follow-up
+  #     issue; intentionally absent here.
+  plugin-mode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tier 1 — MANDATORY manifest + marketplace schema validation.
+      - name: "Tier 1 (mandatory): plugin + marketplace manifest validation"
+        run: |
+          set -e
+          echo "== zs + zsbd plugin.json schema =="
+          bash tests/test-plugin-manifest.sh
+          echo "== marketplace.json schema (incl. D10 version lockstep) =="
+          bash tests/test-plugin-marketplace.sh
+
+      # Tier 2 — BEST-EFFORT claude plugin validate --strict. Skips with a
+      # documented reason when the CLI is not reachable. Never blocks the PR.
+      - name: "Tier 2 (best-effort): claude plugin validate --strict"
+        run: |
+          if command -v claude >/dev/null 2>&1; then
+            echo "claude CLI present — running strict plugin validation."
+            claude plugin validate --strict . || {
+              echo "::warning::claude plugin validate --strict . returned non-zero."
+              exit 1
+            }
+            claude plugin validate --strict ./block-diagram || {
+              echo "::warning::claude plugin validate --strict ./block-diagram returned non-zero."
+              exit 1
+            }
+          else
+            echo "::notice::SKIP tier 2 — no \`claude\` CLI on the runner (no stable public install URL pinned). Tier 1 remains the gating floor. See .github/workflows/test.yml plugin-mode comment + PLUGIN_DISTRIBUTION.md Phase 5."
+          fi
+
+      # Tier 3 — DEFERRED. Documented here so the absence is intentional, not
+      # an oversight. An actual `claude -p '/zs:briefing summary'` dispatch is
+      # tracked as a follow-up issue and is NOT part of this plan.
+      - name: "Tier 3 (deferred): agentic /zs:briefing dispatch — follow-up only"
+        run: echo "::notice::Tier 3 (claude -p '/zs:briefing summary') is intentionally deferred to a follow-up issue. Not run here."

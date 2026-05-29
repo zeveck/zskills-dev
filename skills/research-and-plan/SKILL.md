@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.28+6b4c87"
+  version: "2026.05.28+84b45b"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -353,7 +353,11 @@ meta-plan filename gives a stable, per-run scope):
 # parse it from the `output FILE` positional argument or fall back to
 # the canonical default).
 if [ -z "${META_PLAN_PATH:-}" ]; then
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
   # First `.md` token in $ARGUMENTS is the output path. If absent, fall
   # back to a timestamped default so the slug computation below produces
   # a stable, non-empty value rather than fail-closing the sanitiser.

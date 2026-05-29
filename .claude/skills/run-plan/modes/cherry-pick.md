@@ -8,9 +8,17 @@ Before ANY cherry-pick to main, verify ALL of these. If any fails, STOP.
 
 Resolve audit paths via the path-config helper at the top of the fence:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 ```
 
 1. `ls $ZSKILLS_REPORTS_DIR/plan-{slug}.md` — report file exists (Phase 5 ran)
@@ -22,9 +30,17 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
    scope-violation flag. If found, STOP.
 
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+     else
+       source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     fi
    VERIFY_REPORT="$ZSKILLS_REPORTS_DIR/verify-worktree-$(basename "$WORKTREE_PATH").md"
    if [ -f "$VERIFY_REPORT" ] && grep -q "⚠️ Flag" "$VERIFY_REPORT"; then
      echo "HALTED: /verify-changes flagged scope violations in $VERIFY_REPORT." >&2
@@ -103,7 +119,11 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      9. If you genuinely can't reconcile, STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      if [ -z "$FULL_TEST_CMD" ]; then
        echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
        exit 1
@@ -125,7 +145,11 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
   5. **Mark worktree as landed:**
      Write `.landed` marker (atomic: `.tmp` → `mv`):
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
      status: landed
      date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
@@ -148,7 +172,11 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      if [ -z "$FULL_TEST_CMD" ]; then
        echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
        exit 1

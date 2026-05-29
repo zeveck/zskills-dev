@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.26+c2429c"
+  version: "2026.05.28+5f58ee"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -41,7 +41,11 @@ final landing of audit + tracker file changes is the user's call
 finalization in Step 3).
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
 HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
@@ -209,7 +213,7 @@ For each issue with `User Verify: NEEDED`:
    - What to look at (specific UI element, panel, interaction)
    - Steps to reproduce (open app → navigate → interact → observe)
    - What "correct" looks like (expected appearance or behavior)
-   - URL: `http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/`
+   - URL: `http://localhost:$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/port.sh")/`
    - The user may be verifying hours later — "check the UI" is useless.
      Be specific: "Open the toolstrip, click the lightning icon, verify
      the Physical Variables panel opens with a table showing V, I, P

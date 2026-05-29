@@ -13,7 +13,11 @@ After the verification agent commits Phase N, BEFORE dispatching Phase N+1's
 impl agent:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 cd "$WORKTREE_PATH"
 # HEAD precondition (symmetric to pr-rebase.sh:82-88; Issue #429).
 # If CWD drifted (forgot a `cd`, wrong worktree active), `git rebase
@@ -119,7 +123,11 @@ fi
 After the LAST phase's verification agent commits, before pushing:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 cd "$WORKTREE_PATH"
 # HEAD precondition (symmetric to pr-rebase.sh:82-88; Issue #429).
 # If CWD drifted (forgot a `cd`, wrong worktree active), `git rebase
@@ -209,9 +217,17 @@ Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper anchored on
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])PLAN_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_AUDIT_DIR (resolved via zskills-paths.sh); the basename token itself remains literal so the regex still flags the /PLAN_REPORT.md tail -->
 ```bash
 cd "$WORKTREE_PATH"
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 ZSKILLS_PATHS_ROOT="$WORKTREE_PATH" \
-  source "$WORKTREE_PATH/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$WORKTREE_PATH/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 # Edit plan file: change tracker row 🟡 → ✅ with commit hash
 git add <plan-file> ["$ZSKILLS_REPORTS_DIR/plan-{slug}.md" "$ZSKILLS_AUDIT_DIR/PLAN_REPORT.md"]
 git commit -m "chore: mark phase <name> done (landed)"
@@ -232,7 +248,11 @@ body on existing PRs, preserving any user-added review notes outside the
 markers.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 cd "$WORKTREE_PATH"
 
 # --- Construct PR title and body ---
