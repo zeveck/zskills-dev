@@ -586,7 +586,11 @@ class Simulation {
       } else if (item.inFlight) {
         const age = elapsed - item.startedAtElapsed;
         const frac = Math.min(1.0, age / Math.max(1.0, item.workDuration));
-        phasesDone = Math.max(1, Math.floor(frac * phaseDefs.length));
+        // A just-claimed plan starts on Phase 1 with 0 phases done (so the
+        // claim chip reads "Phase 1", not "Phase 2"). phases_done ticks up
+        // as work progresses; capped at length-1 so it never shows "all
+        // done" while still in-flight (completion is handled separately).
+        phasesDone = Math.floor(frac * phaseDefs.length);
         if (phaseDefs.length > 1) {
           phasesDone = Math.min(phasesDone, phaseDefs.length - 1);
         }

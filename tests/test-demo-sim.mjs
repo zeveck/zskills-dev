@@ -127,8 +127,25 @@ function emptyPayload() {
       "col=" + (pobj && pobj.queue.column) + " claim=" + (pobj && pobj.claim));
   }
 
+  // Regression guard: a freshly-claimed plan must START on Phase 1 with 0
+  // phases done — not jump straight to "Phase 2" (the old max(1,...) bug).
+  if (pobj && pobj.phases_done === 0 && pobj.claim &&
+      pobj.claim.current_phase === "Phase 1") {
+    ok("(b) freshly-claimed plan starts on Phase 1 (0 done), not Phase 2");
+  } else {
+    bad("(b) fresh claim did not start on Phase 1",
+      "phases_done=" + (pobj && pobj.phases_done) +
+      " current_phase=" + (pobj && pobj.claim && pobj.claim.current_phase));
+  }
+
+  // Then phases tick up while still in-flight (0 < done < count).
+  const midItem = sim._bySlug[targetSlug];
+  fastForward(sim, Math.ceil(midItem.workDuration * 0.6));
+  sim.tick();
+  snap = sim.buildSnapshot();
+  pobj = findPlanObj(snap, targetSlug);
   if (pobj && pobj.phases_done > 0 && pobj.phases_done < pobj.phase_count) {
-    ok("(b) in-flight plan shows partial phase progress");
+    ok("(b) in-flight plan ticks phases mid-flight (0 < done < count)");
   } else {
     bad("(b) phases not ticking mid-flight",
       "phases_done=" + (pobj && pobj.phases_done) + " of " + (pobj && pobj.phase_count));
