@@ -94,8 +94,49 @@ extract_interp_stdin_body() {
   # The "flags only, no positional" rule stops `bash script.sh <<<data`
   # and `bash run.sh <<EOF` — there the body is stdin DATA for the script
   # file, not code, so Pass-1 should strip it as inert.
+  #
+  # #789 broadening (closure-incomplete on #772): the head must also match
+  #   * an absolute/relative interpreter PATH — `/bin/bash <<<…`,
+  #     `/usr/bin/bash <<<…`, `./bash <<<…` (agents invoke interpreters by
+  #     full path routinely, so the bare-token-only head left this open),
+  #     and
+  #   * LONG flags — `bash --norc <<<…`, `bash --posix <<<…` (the prior
+  #     `-[A-Za-z]+` flag clause matched single-dash short flags only, so a
+  #     `--word` broke the run-up to the redirect), and
+  #   * an OPTION-ARGUMENT word consumed by an arg-taking flag —
+  #     `bash -eo pipefail <<<…` / `bash -o pipefail <<<…` /
+  #     `bash --rcfile FILE <<<…` (the `pipefail` / FILE token is the
+  #     argument to `-o` / `--rcfile`, NOT a script positional, so stdin is
+  #     still the script → re-inject as code).
+  #
+  # The script-positional discriminator is PRESERVED: a free non-flag token
+  # (one NOT consumed as an option-argument) before the redirect — e.g.
+  # `bash script.sh <<<data`, `sh deploy.sh <<<data` — terminates the flag
+  # run before the `<<<`/`<<`, so the head does not reach the operator and
+  # the body is left for Pass-1 to strip as inert DATA. Only `-o`/`-*o`,
+  # `--rcfile`, and `--init-file` consume a following word; every other
+  # token that is not a flag stops the run.
+  #
+  # `pp` is an OPTIONAL path prefix: zero or more `dir/` segments. The
+  # interpreter basename is matched as the final segment, so `/bin/bash`,
+  # `/usr/bin/bash`, and `./bash` all resolve to the `bash` basename, while
+  # `myscript.sh`, `run-bash.sh`, and `foo/sh.txt` do NOT (the basename
+  # token must be exactly one of the interpreters, with no trailing word
+  # chars before the flags/redirect).
+  #
+  # Capture-group budget: keep head_re at a STABLE group count so the
+  # heredoc backrefs below (delim/body) stay correct. bnd(1) + pp(1) +
+  # interp(1) + flagrun-outer(1) = 4 capture groups — flagrun is written
+  # with a SINGLE capturing group (the outer `*` repeat); every alternative
+  # inside it uses flat alternation / char classes, no nested capture. So
+  # the heredoc delim = \5 and body = \6 (both single-digit, sed-safe).
+  # Verified empirically with a per-group sed dump during the fix.
   local bnd='(^|[[:space:];&|`(])'
-  local head_re="${bnd}(bash|sh|zsh|dash|ash|ksh)([[:space:]]+-[A-Za-z]+)*[[:space:]]*"
+  local pp='(/?[A-Za-z0-9_.+-]+/)*'
+  # Each `|`-alternative below is a complete `[[:space:]]+<flag-or-pair>`
+  # element; the outer parens + `*` are the only capturing group.
+  local flagrun='([[:space:]]+-[A-Za-z]*o[[:space:]]+[A-Za-z0-9_.+/-]+|[[:space:]]+--rcfile[[:space:]]+[A-Za-z0-9_.+/-]+|[[:space:]]+--init-file[[:space:]]+[A-Za-z0-9_.+/-]+|[[:space:]]+--[A-Za-z][-A-Za-z0-9]*=[^[:space:]]*|[[:space:]]+--[A-Za-z][-A-Za-z0-9]*|[[:space:]]+-[A-Za-z]+)*'
+  local head_re="${bnd}${pp}(bash|sh|zsh|dash|ash|ksh)${flagrun}[[:space:]]*"
 
   # --- Here-strings: <interp> [flags] <<< "body" | '"'"'body'"'"' | body ---
   # Quoted forms first so the body capture stops at the closing quote;
@@ -111,16 +152,25 @@ extract_interp_stdin_body() {
   # Body arrives with literal two-char `\n` separators (the extractor does
   # not JSON-decode). We rewrite the body's `\n` back to real newlines so
   # each re-injected line becomes its own scannable segment. The DELIM is
-  # backref-pinned to the opener; quoted-delim alts tried first. Capture
-  # groups: \1 boundary, \2 interp, \3 flags, \4 delim, \5 body.
+  # backref-pinned to the opener; quoted-delim alts tried first. With the
+  # #789 head_re broadening the head now has 4 capture groups (boundary,
+  # path-prefix, interp, flag-run), so the delim is \5 and the body is \6
+  # (was \4/\5 pre-#789, when head_re had 3 groups). Group numbering was
+  # confirmed empirically — see the per-group dump during the fix.
+  # NOTE: the sed substitution delimiter is `#`, NOT `/` — the #789 head_re
+  # broadening adds an optional path prefix (`pp`) that embeds literal `/`
+  # characters into the pattern, which would otherwise be parsed as the
+  # `s/.../.../`` delimiter and abort with "unknown option to `s'". `#` is
+  # absent from head_re; it is only a delimiter for the sed SCRIPT, so a `#`
+  # appearing in the matched heredoc BODY (a shell comment) is harmless.
   printf '%s' "$cmd" | sed -nE \
-    "s/.*${head_re}<<-?[[:space:]]*\"([A-Za-z_][A-Za-z0-9_]*)\"\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    "s#.*${head_re}<<-?[[:space:]]*\"([A-Za-z_][A-Za-z0-9_]*)\"\\\\n(.*)\\\\n\\5(\\\\n.*|\$)#\\6#p" \
     | sed -E 's/\\n/\n/g'
   printf '%s' "$cmd" | sed -nE \
-    "s/.*${head_re}<<-?[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    "s#.*${head_re}<<-?[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'\\\\n(.*)\\\\n\\5(\\\\n.*|\$)#\\6#p" \
     | sed -E 's/\\n/\n/g'
   printf '%s' "$cmd" | sed -nE \
-    "s/.*${head_re}<<-?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\\\\n(.*)\\\\n\\4(\\\\n.*|$)/\\5/p" \
+    "s#.*${head_re}<<-?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)\\\\n(.*)\\\\n\\5(\\\\n.*|\$)#\\6#p" \
     | sed -E 's/\\n/\n/g'
 }
 

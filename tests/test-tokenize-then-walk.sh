@@ -410,6 +410,23 @@ assert_hook_allow "HSA4" 'bash script.sh <<<data (here-string is DATA for script
 assert_hook_allow "HSA5" 'bash run.sh <<EOF (heredoc is DATA for script)'      'bash run.sh <<EOF\nrm -rf /etc\nEOF'
 assert_hook_allow "HSA6" 'bash <<<"echo git clean -fdx" (interpreter runs benign echo)' 'bash <<<"echo git clean -fdx"'
 
+# ─── Absolute-path + long-flag interpreter here-string/heredoc (#789) ───
+# Closure-incomplete on #772: the head regex matched only a bare interpreter
+# token with single-dash short flags, so an absolute path (`/bin/bash`), a
+# `--long` flag, or an option-argument word (`-eo pipefail`) slipped past
+# re-injection and the body was stripped inert. These exercise the broadened
+# head end-to-end through the same envelope-piping harness as the #772 cases.
+
+# DENY: absolute/relative path, long flag, option-arg — all interpreter-stdin.
+assert_hook_deny "AHS1" '/bin/bash <<<"git reset --hard" (absolute path)'    '/bin/bash <<<"git reset --hard"'
+assert_hook_deny "AHS2" '/usr/bin/bash <<<"git clean -fdx" (absolute path)'  '/usr/bin/bash <<<"git clean -fdx"'
+assert_hook_deny "AHS3" 'bash --norc <<<"git clean -fdx" (long flag)'        'bash --norc <<<"git clean -fdx"'
+assert_hook_deny "AHS4" 'bash -eo pipefail <<<"git reset --hard" (-o arg)'   'bash -eo pipefail <<<"git reset --hard"'
+assert_hook_deny "AHD1" '/bin/bash heredoc -> git clean -fdx (abs-path heredoc)' '/bin/bash <<EOF\ngit clean -fdx\nEOF'
+
+# ALLOW: script-file positional is still DATA, even via absolute-path interp.
+assert_hook_allow "AHSA1" '/bin/bash script.sh <<<data (abs path + script positional)' '/bin/bash script.sh <<<"git clean -fdx"'
+
 # ─── Summary ───
 echo ""
 echo "Total: PASS=$PASS FAIL=$FAIL"
