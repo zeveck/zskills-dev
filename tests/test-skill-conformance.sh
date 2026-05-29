@@ -472,6 +472,27 @@ check do "Path B Worktree"  '^### Path B'
 check do "Path C Direct"    '^### Path C'
 
 echo ""
+echo "=== /do — issue-claim wiring (claim-work-item Phase 2 / W2.2 + W2.3) ==="
+# /do parses the issue number (reachable only via --force triage override).
+# Acquire uses the $CLAIM_HELPER indirection (CLAIM_HELPER=...claim-issue.sh
+# + `bash "$CLAIM_HELPER" acquire "$ISSUE_NUM"`); release inlines the
+# literal claim-issue.sh path. The sentinels grep the EXISTING script name
+# so a future edit dropping the wiring FAILS the test. These are positive
+# assertions only.
+check_fixed do "SKILL.md parses ISSUE_NUM"        'ISSUE_NUM="${BASH_REMATCH[1]}"'
+# worktree mode: acquire after PIPELINE_ID + worktree; release in Phase 5 Report (SKILL.md).
+check_in_file do "modes/worktree.md" "worktree CLAIM_HELPER"  'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/worktree.md" "worktree acquire"       'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+check_in_file do "modes/direct.md"   "direct CLAIM_HELPER"    'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/direct.md"   "direct acquire"         'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+check_in_file do "modes/pr.md"       "pr CLAIM_HELPER"        'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/pr.md"       "pr acquire"             'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+# Release: /do worktree/direct release in SKILL.md Phase 5 Report + error
+# handling; /do pr releases inline (early-exit) + in the finalize block.
+check_fixed do "SKILL.md releases issue claim"  'claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"'
+check_in_file do "modes/pr.md"       "pr release"        'claim-issue\.sh" release "\$ISSUE_NUM" --require-pipeline "\$PIPELINE_ID"'
+
+echo ""
 echo "=== /fix-issues — behavior contracts ==="
 check       fix-issues "stop-precedence"            'Takes precedence|takes precedence'
 check_fixed fix-issues "landing-default"            'LANDING_MODE="cherry-pick"'
@@ -629,6 +650,28 @@ echo "=== /quickfix — behavior contracts (PR_LANDING_UNIFICATION Phase 5) ==="
 check_fixed quickfix "Phase 7 dispatches /land-pr" 'land-pr'
 check_not   quickfix "no inline gh pr create"      'gh pr create'
 check_not   quickfix "no fire-and-forget literal"  'Fire-and-forget'
+
+echo ""
+echo "=== /quickfix — issue-claim wiring (claim-work-item Phase 2 / W2.4) ==="
+# /quickfix parses the issue number (proceeds only under `force` since
+# triage REDIRECTs issue refs to /fix-issues), acquires at WI 1.8 around
+# the Tracking-setup block, releases in the Phase 7 finalize + abandon
+# sites. Reuses the existing PIPELINE_ID="quickfix.$SLUG".
+check_fixed quickfix "parses ISSUE_NUM"          'ISSUE_NUM="${BASH_REMATCH[1]}"'
+check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"'
+check_fixed quickfix "acquires issue claim"      'bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
+check_fixed quickfix "releases issue claim"      'claim-issue.sh" release "$ISSUE_NUM" --require-pipeline'
+
+echo ""
+echo "=== /investigate — issue-claim wiring (claim-work-item Phase 2 / W2.1) ==="
+# /investigate synthesizes PIPELINE_ID="investigate.issue-$N" (no pipeline
+# id of its own), acquires at the #N parse (Phase 1 step 1) before any
+# reproduction work, releases on the success-path Report bash block + the
+# explicit per-STOP prose at each abandon point.
+check_fixed investigate "synthesizes PIPELINE_ID"  'sanitize-pipeline-id.sh" "investigate.issue-$N"'
+check_fixed investigate "CLAIM_HELPER assignment"  'CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"'
+check_fixed investigate "acquires issue claim"     'bash "$CLAIM_HELPER" acquire "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
+check_fixed investigate "releases issue claim"     'claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"'
 
 echo ""
 echo "=== /draft-plan, /refine-plan, /draft-tests — auto flag + /land-pr dispatch (#581) ==="
