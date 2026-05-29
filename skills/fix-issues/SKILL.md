@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.28+09107c"
+  version: "2026.05.28+3a3b40"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -130,6 +130,11 @@ fi
 
 ```bash
 # Detect landing mode (same logic as /run-plan)
+# Resolve repo root before any config read. $PROJECT_ROOT is never exported
+# into a SKILL.md fence (it is only set inside post-run-invariants.sh, a
+# separate process), so anchor it on $CLAUDE_PROJECT_DIR -- the established
+# peer pattern used elsewhere in this skill family (#791).
+PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 LANDING_MODE="cherry-pick"
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
   LANDING_MODE="pr"
