@@ -134,7 +134,6 @@ to_plugin() {
   info "  /plugin marketplace add zeveck/zskills"
   info "  /plugin install zs@zskills"
   info "  Restart Claude Code (close + reopen)."
-  info "  Optionally: /zs:migrate-crons to re-tag pre-existing crons."
 
   # 4. Block on confirmation.
   confirm_block

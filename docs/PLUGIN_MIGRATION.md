@@ -21,7 +21,7 @@ state is lane-independent and preserved across switches.
 2. Strip zskills hook entries from `.claude/settings.json`
    (`scripts/migrate-strip-settings.py`; non-zskills hook entries preserved).
 3. Prints the in-session steps: `/plugin marketplace add zeveck/zskills`,
-   `/plugin install zs@zskills`, restart, optional `/zs:migrate-crons`.
+   `/plugin install zs@zskills`, restart.
 4. Blocks on confirmation (`ZSKILLS_SWITCH_NONINTERACTIVE=1` skips the block
    for tests/CI).
 5. Basename-gated removal of the mirrored `.claude/skills/<zskills>/`,
