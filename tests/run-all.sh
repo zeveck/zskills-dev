@@ -192,6 +192,7 @@ run_suite "test-plan-claim-filter-edge-cases.sh" "tests/test-plan-claim-filter-e
 run_suite "test-fix-issues-selection-filter.sh" "tests/test-fix-issues-selection-filter.sh"
 run_suite "test-plan-claim-collector.sh" "tests/test-plan-claim-collector.sh"
 run_suite "test-plan-claim-render-dom.sh" "tests/test-plan-claim-render-dom.sh"
+run_suite "test-tab-dot-render-dom.sh" "tests/test-tab-dot-render-dom.sh"
 run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handleaction-guard.sh"
 run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.sh"
 run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
