@@ -1,14 +1,14 @@
 #!/bin/bash
-# Tests for the /cleanup-merged branch-name-list + `local` token + `force`
+# Tests for the /cleanup-merged branch-name-list + `local` token + `--force`
 # interface (pick-and-choose branch cleanup from the dashboard Branches tab).
 #
 # Coverage:
 #   Static (skill-source + docs assertions):
-#     - argument-hint advertises local / force / <branch>
-#     - WI 1.2 parser accepts `local`, `force`, and collects branch names
+#     - argument-hint advertises local / --force / <branch>
+#     - WI 1.2 parser accepts `local`, `--force`, and collects branch names
 #     - is_named() narrowing helper present
 #     - protected-skip is evaluated before any force logic (ordering)
-#     - docs reflect the new interface (local token, force, names)
+#     - docs reflect the new interface (local token, --force, names)
 #
 #   Behavioral (extract the REAL parser + Phase 5 loop, run against a
 #   throwaway git repo with stubbed gh — exercises the decision logic, not
@@ -18,7 +18,7 @@
 #     - safety still applies to named branches (unmerged un-forced => skip)
 #     - local vs remote routing (the section keys map to scope)
 #     - THE LOAD-BEARING INVARIANT: a config-protected branch named WITH
-#       `force` is NOT deleted — it survives and a refusal notice is emitted.
+#       `--force` is NOT deleted — it survives and a refusal notice is emitted.
 #
 # Run from repo root: bash tests/test-cleanup-merged-namelist.sh
 
@@ -35,23 +35,36 @@ FAIL_COUNT=0
 pass() { printf '\033[32m  PASS\033[0m %s\n' "$1"; PASS_COUNT=$((PASS_COUNT+1)); }
 fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 
-echo "=== cleanup-merged branch-name-list + force interface ==="
+echo "=== cleanup-merged branch-name-list + --force interface ==="
 
 # ── Static: skill source ────────────────────────────────────────────
 
 # argument-hint advertises the new tokens.
-if grep -qE '^argument-hint:.*local.*remote.*all.*force.*branch' "$SKILL"; then
-  pass "argument-hint advertises local | remote | all, force, <branch>"
+if grep -qE '^argument-hint:.*local.*remote.*all.*--force.*branch' "$SKILL"; then
+  pass "argument-hint advertises local | remote | all, --force, <branch>"
 else
   fail "argument-hint missing new tokens"
 fi
 
-# WI 1.2 parser accepts `local` and `force` as positional tokens.
+# WI 1.2 parser accepts `local` and `--force`.
+# Issue #810: `--force` (dashed) is the normalised form; bare positional
+# `force` must NOT appear as a case branch.
 if grep -q 'local)  SCOPE="local"' "$SKILL" \
-   && grep -q 'force)  FORCE=1' "$SKILL"; then
-  pass "WI 1.2: local + force positional tokens accepted"
+   && grep -qE '^[[:space:]]*--force\) FORCE=1' "$SKILL" \
+   && ! grep -qE '^[[:space:]]*force\)[[:space:]]+FORCE=1' "$SKILL"; then
+  pass "WI 1.2: local + --force tokens accepted (bare 'force)' absent)"
 else
-  fail "WI 1.2: local/force token parsing incomplete"
+  fail "WI 1.2: local/--force token parsing incomplete or bare 'force)' still present"
+fi
+
+# Ordering: `--force)` case MUST appear BEFORE the `--*|-*` unknown-flag
+# catchall, else --force would be rejected as unknown.
+FORCE_LN=$(grep -n -E '^[[:space:]]*--force\) FORCE=1' "$SKILL" | head -1 | cut -d: -f1)
+CATCHALL_LN=$(grep -n -E '^[[:space:]]*--\*\|-\*\)' "$SKILL" | head -1 | cut -d: -f1)
+if [ -n "$FORCE_LN" ] && [ -n "$CATCHALL_LN" ] && [ "$FORCE_LN" -lt "$CATCHALL_LN" ]; then
+  pass "WI 1.2: --force case precedes --*|-* catchall (force=$FORCE_LN, catchall=$CATCHALL_LN)"
+else
+  fail "WI 1.2: --force case ordering wrong (force=$FORCE_LN, catchall=$CATCHALL_LN)"
 fi
 
 # Non-keyword positionals collected as branch names.
@@ -84,10 +97,10 @@ else
 fi
 
 # The refusal notice exists.
-if echo "$PHASE5_SLICE" | grep -q 'refusing to delete even with force'; then
-  pass "Phase 5: 'refusing to delete even with force' notice present"
+if echo "$PHASE5_SLICE" | grep -q 'refusing to delete even with --force'; then
+  pass "Phase 5: 'refusing to delete even with --force' notice present"
 else
-  fail "Phase 5: force-refusal notice missing"
+  fail "Phase 5: --force-refusal notice missing"
 fi
 
 # ── Static: docs ────────────────────────────────────────────────────
@@ -226,14 +239,14 @@ STUB
     fail "Scenario A (preview): branch 'merged' was deleted in preview mode"
   fi
 
-  # ── Scenario B: narrowing — apply force on 'unmerged' only ────────
+  # ── Scenario B: narrowing — apply --force on 'unmerged' only ──────
   # Names narrow the set: 'untouched' (a merged ancestor) must survive
   # because it was not named.
-  B=$(run_scan_with_args apply force unmerged)
+  B=$(run_scan_with_args apply --force unmerged)
   if ! branch_exists unmerged; then
-    pass "Scenario B (narrow+force): named unmerged branch deleted"
+    pass "Scenario B (narrow+--force): named unmerged branch deleted"
   else
-    fail "Scenario B: 'unmerged' not deleted despite apply+force+name ($B)"
+    fail "Scenario B: 'unmerged' not deleted despite apply+--force+name ($B)"
   fi
   if branch_exists untouched; then
     pass "Scenario B (narrow): un-named branch 'untouched' survives"
@@ -241,28 +254,28 @@ STUB
     fail "Scenario B: un-named 'untouched' was wrongly deleted ($B)"
   fi
 
-  # ── Scenario C: safety still applies to a named branch (no force) ──
-  # Create an unmerged branch and name it WITHOUT force: PR_STATE is empty
+  # ── Scenario C: safety still applies to a named branch (no --force) ─
+  # Create an unmerged branch and name it WITHOUT --force: PR_STATE is empty
   # (stub) and no upstream-gone, so it is not merged => must NOT delete.
   ( cd "$TMP" && git checkout -q -b unmerged2 main && git commit -q --allow-empty -m "u2 work" && git checkout -q main )
   C=$(run_scan_with_args apply unmerged2)
   if branch_exists unmerged2; then
-    pass "Scenario C (safety): named-but-not-merged branch SKIP'd without force"
+    pass "Scenario C (safety): named-but-not-merged branch SKIP'd without --force"
   else
-    fail "Scenario C: 'unmerged2' deleted without force despite not being merged ($C)"
+    fail "Scenario C: 'unmerged2' deleted without --force despite not being merged ($C)"
   fi
 
-  # ── Scenario D (THE INVARIANT): protected + named + force => SURVIVES
-  D=$(run_scan_with_args apply force protected)
+  # ── Scenario D (THE INVARIANT): protected + named + --force => SURVIVES
+  D=$(run_scan_with_args apply --force protected)
   if branch_exists protected; then
-    pass "INVARIANT: config-protected branch named WITH force is NOT deleted (it survives)"
+    pass "INVARIANT: config-protected branch named WITH --force is NOT deleted (it survives)"
   else
-    fail "INVARIANT VIOLATED: protected branch was deleted under force+name!! ($D)"
+    fail "INVARIANT VIOLATED: protected branch was deleted under --force+name!! ($D)"
   fi
-  if echo "$D" | grep -q 'refusing to delete even with force'; then
-    pass "INVARIANT: loud refusal notice emitted for protected+force"
+  if echo "$D" | grep -q 'refusing to delete even with --force'; then
+    pass "INVARIANT: loud refusal notice emitted for protected+--force"
   else
-    fail "INVARIANT: no refusal notice for protected+force ($D)"
+    fail "INVARIANT: no refusal notice for protected+--force ($D)"
   fi
   if echo "$D" | grep -q 'LOCAL_PROTECTED=1'; then
     pass "INVARIANT: protected counter incremented (not deleted)"

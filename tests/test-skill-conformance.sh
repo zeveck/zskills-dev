@@ -561,15 +561,40 @@ echo "=== auto grammar (QUICKFIX_GRAMMAR_REDESIGN Phase 2) ==="
 check_fixed quickfix    "AUTO_FLAG init"        'AUTO_FLAG=0'
 
 # QUICKFIX_GRAMMAR_REDESIGN Phase 4 (AC4.12, AC4.13) — positional
-# from-here/skip-tests/force replace --`-prefixed flags; --yes was
+# from-here/skip-tests replace --`-prefixed flags; --yes was
 # removed entirely; WI 1.10 `read -r` block was deleted.
+# Issue #810: `--force` (dashed) replaces the bare positional `force` form
+# for cross-skill consistency (also pinned on /do, /work-on-plans,
+# /cleanup-merged in the "--force form normalization" block below).
 check_fixed quickfix    "positional from-here arm"   '[fF][rR][oO][mM]-[hH][eE][rR][eE]) FROM_HERE=1'
 check_fixed quickfix    "positional skip-tests arm"  '[sS][kK][iI][pP]-[tT][eE][sS][tT][sS]) SKIP_TESTS=1'
-check_fixed quickfix    "positional force arm"       '[fF][oO][rR][cC][eE]) FORCE=1'
+check_fixed quickfix    "--force arm (issue #810)"   '--force) FORCE=1'
+check_not   quickfix    "no bare 'force)' arm (#810)" '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1'
 check_not   quickfix    "no YES_FLAG variable (AC4.13)"          'YES_FLAG'
 check_not   quickfix    "no `read -r answer` block (AC4.13)"     'read -r answer'
 check       quickfix    "argument-hint [from-here]"  'argument-hint:.*\[from-here\]'
 check_not   quickfix    "argument-hint NO [--yes]"   'argument-hint:.*\[--yes\]'
+check       quickfix    "argument-hint [--force] (issue #810)" 'argument-hint:.*\[--force\]'
+check_not   quickfix    "argument-hint NO bare [force] (issue #810)" 'argument-hint:.*\[force\]'
+
+# Issue #810 — --force form normalization across all four skills.
+# Bare positional `force` was the form on /quickfix and /cleanup-merged;
+# /do and /work-on-plans were already on the dashed form. Now all four
+# accept `--force`. This block pins the dashed parser arm on every
+# skill that accepts a force override, and pins the absence of any
+# bare-`force)` case branch on the two that previously had one.
+#
+# /do — pre-flight bash-regex parser detects --force out of $ARGUMENTS.
+check_fixed do            "--force pre-flight parser (issue #810)" '(^|[[:space:]])--force($|[[:space:]])'
+
+# /work-on-plans — synopsis advertises --force.
+check_fixed work-on-plans "--force in synopsis (issue #810)" '[--force]'
+
+# /cleanup-merged — dashed parser arm; no bare 'force)' arm; --force
+# advertised in argument-hint.
+check_fixed cleanup-merged "--force) parser arm (issue #810)" '--force) FORCE=1'
+check_not   cleanup-merged "no bare 'force)' arm (issue #810)" '^[[:space:]]*force\)[[:space:]]+FORCE=1'
+check       cleanup-merged "argument-hint [--force] (issue #810)" 'argument-hint:.*\[--force\]'
 
 check_fixed run-plan    "AUTO_FLAG init"        'AUTO_FLAG=0'
 

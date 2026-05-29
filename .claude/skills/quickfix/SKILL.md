@@ -1,6 +1,6 @@
 ---
 name: quickfix
-argument-hint: "[<description>] [auto] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]"
+argument-hint: "[<description>] [auto] [from-here] [skip-tests] [--force] [--branch <name>] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
   one-commit PR without a worktree. Two auto-detected modes: user-edited
@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.28+814ef1"
+  version: "2026.05.29+96de31"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -48,9 +48,9 @@ ceremony than the change is worth, but a PR is still required.
 ## Argument parser (WI 1.2)
 
 Bash-regex idiom matching `skills/do/SKILL.md:70-92`. Recognized flags:
-`--branch <name>`, `--rounds N`. Recognized positional tokens
+`--branch <name>`, `--rounds N`, `--force`. Recognized positional tokens
 (case-insensitive, anywhere in the arg vector): `auto`,
-`from-here`, `skip-tests`, `force`. The positional `auto` token enables
+`from-here`, `skip-tests`. The positional `auto` token enables
 auto-merge via `/land-pr` and matches the convention in `/run-plan`,
 `/fix-issues`, and `/do`. Everything else becomes the DESCRIPTION
 (trimmed of leading/trailing whitespace). Empty DESCRIPTION is allowed
@@ -61,8 +61,10 @@ at parse time — mode detection (WI 1.5) decides whether it is fatal.
   feature branch off a non-main checkout.
 - **skip-tests** (optional) — skip the WI 1.12 test gate. Warn-only;
   use only for emergency hotfixes where the test suite is unrelated.
-- **force** (optional) — bypass a triage REDIRECT verdict (WI 1.5.4) and
-  proceed with `/quickfix` anyway.
+- **--force** (optional) — bypass a triage REDIRECT verdict (WI 1.5.4) and
+  proceed with `/quickfix` anyway. Dashed form to match `/do`,
+  `/work-on-plans`, and `/cleanup-merged` — `--force` is a safety-gate
+  override, distinct from the positional verb/mode tokens.
 
 WI 1.5.5's confirmation prompt is bypassed when `AUTO_FLAG=1`.
 
@@ -92,14 +94,18 @@ while [ $i -lt ${#ARGS[@]} ]; do
       i=$((i+1))
       BRANCH_OVERRIDE="${ARGS[$i]:-}"
       ;;
-    # Positional `from-here` / `skip-tests` / `force` tokens (case-insensitive).
+    # Dashed safety-gate override `--force` (case-sensitive — `--Force`,
+    # `--FORCE` etc. are NOT accepted; this matches /do, /work-on-plans,
+    # /cleanup-merged conventions). The positional bare `force` form was
+    # retired in favor of this dashed form (issue #810).
+    --force) FORCE=1 ;;
+    # Positional `from-here` / `skip-tests` tokens (case-insensitive).
     # Bracket-class form matches each letter case-insensitively; the hyphen
     # between bracket classes is treated as a literal character (NOT inside
     # a class). Verified: matches `from-here`, `From-Here`, `FROM-HERE`;
     # does NOT match `FromHere`, `FROMHERE`, `from-here2`.
     [fF][rR][oO][mM]-[hH][eE][rR][eE]) FROM_HERE=1 ;;
     [sS][kK][iI][pP]-[tT][eE][sS][tT][sS]) SKIP_TESTS=1 ;;
-    [fF][oO][rR][cC][eE]) FORCE=1 ;;
     # Positional `auto` token (case-insensitive). Recognized anywhere in
     # the arg vector — `/quickfix <desc> auto` and `/quickfix auto <desc>`
     # both set AUTO_FLAG=1. Mirrors the convention in /run-plan,
@@ -367,10 +373,10 @@ linebreak is a real newline, not the literal `\n` characters):
 
 | target | Line 1 | Line 2 |
 |--------|--------|--------|
-| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with force to bypass.` |
-| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with force to bypass.` |
-| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with force to bypass.` |
-| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). force will not help — vague descriptions cannot be planned.` |
+| `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
+| `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
+| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
+| ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
 
 The model implements these as a `printf 'line1\nline2\n' "$REASON"` so
 both lines are emitted to stdout and both are independently greppable
@@ -381,13 +387,13 @@ lines), then `exit 0`. **No marker is written** (WI 1.8 has not yet
 run). No branch. No tracking dir.
 
 On REDIRECT and `$FORCE -eq 1`: print
-`Triage: REDIRECT(<target>) overridden by force; proceeding.`
+`Triage: REDIRECT(<target>) overridden by --force; proceeding.`
 Continue.
 
 ### WI 1.5.4a — Inline plan composition (model-layer)
 
 This is a **model-layer instruction**, not a bash block. After triage
-returns PROCEED (or after `force` overrides a REDIRECT), the model
+returns PROCEED (or after `--force` overrides a REDIRECT), the model
 composes a short inline plan held in `INLINE_PLAN`. `INLINE_PLAN` is a
 logical placeholder for text the model composes in its response. When
 WI 1.5.4b dispatches the reviewer Agent, the model copies the
@@ -1103,7 +1109,7 @@ cat > "$BODY_FILE" <<-EOF
 	## Test plan
 
 	- Ran project \`unit_cmd\` before commit (or skip-tests).
-	- Independent \`/verify-changes\` before push (or skipped via force/skip-tests).
+	- Independent \`/verify-changes\` before push (or skipped via --force/skip-tests).
 	- Review diff.
 
 	🤖 Generated with /quickfix

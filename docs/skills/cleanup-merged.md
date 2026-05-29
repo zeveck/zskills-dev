@@ -15,7 +15,7 @@
 /cleanup-merged all apply             execute both
 /cleanup-merged apply <br> <br>...    narrow to NAMED local branches, then apply
 /cleanup-merged remote apply <br>...  narrow to NAMED remote branches, then apply
-/cleanup-merged apply force <br>...   override merged-check + unpushed guard for NAMED branches
+/cleanup-merged apply --force <br>... override merged-check + unpushed guard for NAMED branches
 ```
 
 ## Positional Tokens
@@ -26,8 +26,13 @@
 | `local` | Scope to local branches (the default; token exists for symmetry) |
 | `remote` | Scope to remote branches (requires `gh`) |
 | `all` | Scope to both local + remote branches |
-| `force` | Override the merged-check + unpushed guard, ONLY for branches you explicitly name. NEVER overrides protected-skip. |
 | `<branch>` | Any non-keyword positional is a branch NAME — narrows the candidate set to only the named branches. |
+
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Override the merged-check + unpushed guard, ONLY for branches you explicitly name. NEVER overrides protected-skip. Dashed form (issue #810) — matches `/do`, `/work-on-plans`, `/quickfix`. |
 
 ## Branch Names (narrowing)
 
@@ -37,18 +42,18 @@ still subject to merged-confirmation, the unpushed-commits guard, and the
 protected-skip. Names without `apply` are preview-only.
 
 - `local` (or default) names route to local deletion (`git branch -d`,
-  `-D` only under `force` for unmerged).
+  `-D` only under `--force` for unmerged).
 - `remote` names route to remote deletion (`git push origin --delete`).
 
-## Force
+## --force
 
-`force` overrides ONLY the merged-check and the unpushed-commits guard,
+`--force` overrides ONLY the merged-check and the unpushed-commits guard,
 and ONLY for branches you explicitly name. It lets you delete a named
 branch that is not yet confirmed merged.
 
-**`force` can NEVER delete a config-protected branch.** Naming a protected
-branch (with or without `force`) emits a loud
-`PROTECTED (config) ... — refusing to delete even with force` notice and
+**`--force` can NEVER delete a config-protected branch.** Naming a protected
+branch (with or without `--force`) emits a loud
+`PROTECTED (config) ... — refusing to delete even with --force` notice and
 skips it. The protected-skip is sacrosanct — no token or naming
 combination overrides it.
 
@@ -60,7 +65,7 @@ Configure branches that should never be deleted in `.claude/zskills-config.json`
 { "cleanup": { "protected_branches": ["docs/run-order-guide"] } }
 ```
 
-Protected branches are marked `PROTECTED (config)` in preview and skipped automatically during apply — including when named explicitly with `force`.
+Protected branches are marked `PROTECTED (config)` in preview and skipped automatically during apply — including when named explicitly with `--force`.
 
 ## Examples
 
@@ -72,7 +77,7 @@ Protected branches are marked `PROTECTED (config)` in preview and skipped automa
 /cleanup-merged all              preview everything
 /cleanup-merged all apply        clean up everything
 /cleanup-merged local apply feat/foo feat/bar   delete just those two local branches
-/cleanup-merged apply force feat/wip            delete a named unmerged local branch
+/cleanup-merged apply --force feat/wip          delete a named unmerged local branch
 ```
 
 ## Common Patterns
@@ -86,7 +91,7 @@ Protected branches are marked `PROTECTED (config)` in preview and skipped automa
 
 - Preview is the default -- safe to run any time
 - Bails on a dirty working tree
-- Never deletes a branch with unpushed commits (unless you name it explicitly with `force`)
+- Never deletes a branch with unpushed commits (unless you name it explicitly with `--force`)
 - Remote cleanup requires `gh` for PR-state gating (never deletes branches with open PRs)
-- Protected branches from config are always skipped -- `force` can never override this
+- Protected branches from config are always skipped -- `--force` can never override this
 - Legacy `--dry-run` and `--review` flags work as aliases for one release cycle
