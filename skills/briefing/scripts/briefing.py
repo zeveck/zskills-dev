@@ -16,6 +16,9 @@ Usage:
   python3 briefing.py verify             — Verification status
   python3 briefing.py current            — Current session status
   python3 briefing.py worktrees-status   — Detailed worktree cleanup report
+  python3 briefing.py dogfooding [--since=] [--no-gh]
+                                         — Per-skill successful-usage counts
+                                           (.landed source: + labeled gh backfill)
 """
 
 import glob
@@ -160,6 +163,27 @@ def parse_landed(content):
         date_match = re.match(r'^date:\s*(.+)', line)
         if date_match:
             result['date'] = date_match.group(1).strip()
+            current_list = None
+            continue
+        # `source:` names the skill that produced the landing (e.g.
+        # fix-issues, run-plan, do). Captured for the dogfooding
+        # measurement (SKILL_VERIFICATION_SMOKES Phase 4) — the strongest
+        # per-skill usage signal.
+        source_match = re.match(r'^source:\s*(.+)', line)
+        if source_match:
+            result['source'] = source_match.group(1).strip()
+            current_list = None
+            continue
+        # `ci:` / `pr_state:` distinguish a SUCCESSFUL land from an attempt
+        # in PR-mode markers (used by the dogfooding success filter).
+        ci_match = re.match(r'^ci:\s*(.+)', line)
+        if ci_match:
+            result['ci'] = ci_match.group(1).strip()
+            current_list = None
+            continue
+        pr_state_match = re.match(r'^pr_state:\s*(.+)', line)
+        if pr_state_match:
+            result['pr_state'] = pr_state_match.group(1).strip()
             current_list = None
             continue
         reason_match = re.match(r'^reason:\s*(.+)', line)
@@ -1882,13 +1906,272 @@ def format_worktrees_status(worktrees, opts=None):
 
 
 # ---------------------------------------------------------------------------
+# dogfooding — Layer-2 per-skill usage measurement
+# (SKILL_VERIFICATION_SMOKES Phase 4)
+# ---------------------------------------------------------------------------
+#
+# MEASURE real per-skill usage from durable signals (display-first; NO hard
+# CI gate). Two sources, by descending fidelity:
+#   1. `.landed` markers across worktrees — the STRONGEST signal: the
+#      `source:` field names the producing skill, and `status:`/`ci:`/
+#      `pr_state:` distinguish a SUCCESSFUL land from a mere attempt.
+#      Gitignored + lives in /tmp worktrees → a rolling on-disk window.
+#   2. `gh pr list --state merged` — the durable BACKFILL beyond the on-disk
+#      window, but it only names the subsystem touched (via conventional-
+#      commit scope prefix), NOT the skill → a WEAKER per-skill attribution.
+#      Routed through run() so a PATH-stripped / offline environment yields
+#      '' rather than crashing (hermetic-without-gh contract).
+
+# Canonical skill-name map: `source:` field variants → one skill name.
+# Variants arise because callers stamp scoped sources (fix-issues-sprint,
+# fix-issues-pr-mode-NNN). Exact keys take precedence; prefix rules below
+# catch the parameterized variants.
+_DOGFOOD_SOURCE_CANON = {
+    'fix-issues': 'fix-issues',
+    'fix-issues-sprint': 'fix-issues',
+    'fix-issues-pr-mode': 'fix-issues',
+    'run-plan': 'run-plan',
+    'draft-plan': 'draft-plan',
+    'do': 'do',
+    'quickfix': 'quickfix',
+    'commit': 'commit',
+    'land-pr': 'land-pr',
+    'fix-report': 'fix-report',
+    'add-block': 'add-block',
+    'add-example': 'add-example',
+}
+
+# Ordered (prefix, canonical) rules for parameterized variants like
+# `fix-issues-pr-mode-481` or `run-plan.SOME_PLAN`. Longest prefixes first
+# so `fix-issues-pr-mode-*` wins over `fix-issues-*`.
+_DOGFOOD_SOURCE_PREFIXES = [
+    ('fix-issues-pr-mode', 'fix-issues'),
+    ('fix-issues-sprint', 'fix-issues'),
+    ('fix-issues', 'fix-issues'),
+    ('run-plan', 'run-plan'),
+    ('draft-plan', 'draft-plan'),
+    ('fix-report', 'fix-report'),
+    ('add-block', 'add-block'),
+    ('add-example', 'add-example'),
+    ('quickfix', 'quickfix'),
+    ('land-pr', 'land-pr'),
+    ('commit', 'commit'),
+    ('do', 'do'),
+]
+
+
+def canonicalize_source(source):
+    """Map a `.landed` `source:` value (or a variant) to a canonical skill
+    name. Returns the canonicalized name, or the cleaned raw token when no
+    rule matches (so unknown sources still aggregate honestly under their
+    own bucket rather than vanishing).
+    """
+    if not source:
+        return None
+    s = source.strip()
+    if not s:
+        return None
+    # Strip a trailing dotted/parametric suffix down to its leading token
+    # for exact-map lookup (e.g. "run-plan.MY_PLAN" → leading "run-plan").
+    lead = re.split(r'[.\s]', s, 1)[0]
+    if s in _DOGFOOD_SOURCE_CANON:
+        return _DOGFOOD_SOURCE_CANON[s]
+    if lead in _DOGFOOD_SOURCE_CANON:
+        return _DOGFOOD_SOURCE_CANON[lead]
+    for prefix, canon in _DOGFOOD_SOURCE_PREFIXES:
+        if s == prefix or s.startswith(prefix + '-') or s.startswith(prefix + '.'):
+            return canon
+    return lead
+
+
+def _landed_is_successful(landed):
+    """A land counts as SUCCESSFUL when status is landed/full, OR a PR-mode
+    marker whose pr_state is MERGED or ci is pass. Attempts (pr-failed,
+    conflict, direct-*-failed, etc.) do NOT count.
+    """
+    if not landed:
+        return False
+    status = (landed.get('status') or '').strip()
+    if status in ('landed', 'full'):
+        return True
+    pr_state = (landed.get('pr_state') or '').strip().upper()
+    ci = (landed.get('ci') or '').strip().lower()
+    if pr_state == 'MERGED':
+        return True
+    if ci == 'pass':
+        return True
+    return False
+
+
+def _scan_landed_markers(repo_root=None, search_roots=None):
+    """Yield parsed `.landed` dicts. Scans the registered worktrees (via
+    classify_worktrees, which reads each worktree's `.landed`) by default;
+    `search_roots` overrides with an explicit list of directories to scan
+    for a `.landed` file (used by the test harness — no git/network).
+    """
+    results = []
+    if search_roots is not None:
+        for root in search_roots:
+            landed_path = os.path.join(root, '.landed')
+            if os.path.isfile(landed_path):
+                try:
+                    with open(landed_path, 'r', encoding='utf-8') as f:
+                        results.append(parse_landed(f.read()))
+                except OSError:
+                    pass
+        return results
+    # Default path: reuse the worktree classifier's per-worktree .landed
+    # parse (already populated in the 'landed' key for landed categories).
+    for wt in classify_worktrees(repo_root=repo_root):
+        landed = wt.get('landed')
+        if landed:
+            results.append(landed)
+    return results
+
+
+# Map a conventional-commit scope prefix (the subsystem the PR touched) to
+# the skill most likely responsible. This is the WEAKER gh-backfill signal —
+# it attributes by subsystem, not by skill, so it is labeled as such in the
+# emitted report and never overrides the .landed `source:` count.
+_DOGFOOD_SCOPE_HINTS = {
+    'fix-issues': 'fix-issues',
+    'run-plan': 'run-plan',
+    'draft-plan': 'draft-plan',
+    'briefing': 'briefing',
+    'commit': 'commit',
+    'land-pr': 'land-pr',
+    'quickfix': 'quickfix',
+    'do': 'do',
+}
+
+
+def _scope_from_subject(subject):
+    """Extract the conventional-commit scope from a PR title, e.g.
+    'fix(run-plan): ...' → 'run-plan'. Returns None when no scope present.
+    """
+    m = re.match(r'^[a-z]+\(([^)]+)\):', subject or '', re.IGNORECASE)
+    if m:
+        return m.group(1).strip().lower()
+    return None
+
+
+def gather_dogfooding(since=None, repo_root=None, search_roots=None,
+                      enable_gh_backfill=True):
+    """Aggregate per-skill SUCCESSFUL usage from .landed markers (+ labeled
+    gh-merged-PR backfill). Returns a dict:
+        { 'window': <since>,
+          'skills': { <canonical-skill>: {
+              'landed_count': int,        # successful .landed lands
+              'merged_pr_count': int,     # gh-backfill (subsystem hint)
+              'last_seen': <ISO date|None> } },
+          'gh_backfill': 'used'|'unavailable'|'disabled' }
+    """
+    since_git = parse_period(since)
+    skills = {}
+
+    def _bucket(name):
+        return skills.setdefault(
+            name, {'landed_count': 0, 'merged_pr_count': 0, 'last_seen': None})
+
+    # --- Source 1: .landed markers (strong signal) -------------------
+    for landed in _scan_landed_markers(repo_root=repo_root,
+                                       search_roots=search_roots):
+        if not _landed_is_successful(landed):
+            continue
+        skill = canonicalize_source(landed.get('source'))
+        if not skill:
+            continue
+        b = _bucket(skill)
+        b['landed_count'] += 1
+        date = landed.get('date')
+        if date and (b['last_seen'] is None or date > b['last_seen']):
+            b['last_seen'] = date
+
+    # --- Source 2: gh merged-PR backfill (weak, subsystem-level) -----
+    gh_backfill = 'disabled'
+    if enable_gh_backfill:
+        gh_backfill = 'unavailable'
+        # Route through run(): catches a missing gh / offline → '' so the
+        # measurement stays hermetic in PATH-stripped tests.
+        out = run(
+            f'gh pr list --state merged --json number,title,mergedAt '
+            f'--search "merged:>={_gh_since_date(since_git)}" --limit 200',
+            cwd=repo_root)
+        if out:
+            try:
+                prs = json.loads(out)
+            except (ValueError, TypeError):
+                prs = []
+            if prs:
+                gh_backfill = 'used'
+            for pr in prs:
+                scope = _scope_from_subject(pr.get('title'))
+                if not scope:
+                    continue
+                skill = _DOGFOOD_SCOPE_HINTS.get(scope)
+                if not skill:
+                    continue
+                b = _bucket(skill)
+                b['merged_pr_count'] += 1
+
+    return {
+        'window': since or '24h',
+        'skills': skills,
+        'gh_backfill': gh_backfill,
+    }
+
+
+def _gh_since_date(since_git):
+    """Best-effort YYYY-MM-DD for gh's `merged:>=` search qualifier from a
+    git --since string like '7 days ago'. Falls back to a wide-open '*' on
+    parse failure (gh treats a bad qualifier leniently)."""
+    m = re.match(r'^(\d+)\s+(hour|day)s?\s+ago$', since_git or '')
+    if not m:
+        # '24 hours ago' default or unparseable → 1 day back.
+        days = 1
+    else:
+        n = int(m.group(1))
+        days = max(1, n if m.group(2) == 'day' else (n + 23) // 24)
+    try:
+        from datetime import timedelta
+        d = datetime.now() - timedelta(days=days)
+        return d.strftime('%Y-%m-%d')
+    except Exception:
+        return '1970-01-01'
+
+
+def format_dogfooding(data):
+    """Render the dogfooding aggregation as a terminal section."""
+    lines = []
+    window = data.get('window', '24h')
+    lines.append(f'DOGFOODING — per-skill successful usage ({window})')
+    lines.append('')
+    skills = data.get('skills', {})
+    if not skills:
+        lines.append('  (no successful lands recorded in window)')
+    else:
+        for name in sorted(skills):
+            b = skills[name]
+            last = b.get('last_seen') or '-'
+            advisory = '  ! 0 in window' if b['landed_count'] == 0 else ''
+            lines.append(
+                f'  {name.ljust(16)} landed={b["landed_count"]}  '
+                f'merged_pr={b["merged_pr_count"]}  last_seen={last}{advisory}')
+    lines.append('')
+    backfill = data.get('gh_backfill', 'disabled')
+    lines.append(f'  (gh merged-PR backfill: {backfill} — subsystem-level '
+                 f'hint, weaker than .landed source:)')
+    return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
 def main():
     args = sys.argv[1:]
     if not args:
-        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
+        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status|dogfooding> [--since=24h] [--output=path] [--no-gh]', file=sys.stderr)
         sys.exit(1)
 
     subcommand = args[0]
@@ -1974,8 +2257,15 @@ def main():
         wts = classify_worktrees()
         print(format_worktrees_status(wts))
 
+    elif subcommand == 'dogfooding':
+        # `--no-gh` disables the gh-merged-PR backfill (the .landed scan
+        # still runs); useful for hermetic / offline runs.
+        enable_gh = '--no-gh' not in rest
+        data = gather_dogfooding(since=since, enable_gh_backfill=enable_gh)
+        print(format_dogfooding(data))
+
     else:
-        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status> [--since=24h] [--output=path]', file=sys.stderr)
+        print(f'Usage: python3 {SELF} <worktrees|checkboxes|commits|summary|report|verify|current|worktrees-status|dogfooding> [--since=24h] [--output=path] [--no-gh]', file=sys.stderr)
         sys.exit(1)
 
 

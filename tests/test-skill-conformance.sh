@@ -3105,6 +3105,46 @@ for _h in "${HOOK_STAMP_TARGETS[@]}"; do
 done
 
 echo ""
+echo "=== weak-skill static invariants — doc / qe-audit / session-report / review-feedback ==="
+# SKILL_VERIFICATION_SMOKES Phase 3: the 4 LLM-judgment-bound skills have no
+# executable behavioral surface a shell smoke can drive — their only
+# deterministic property is static SKILL.md structure. Guard the documented
+# modes / formats / rules against accidental deletion with thin static greps.
+# (Per the plan's grep-first rule, assertions that duplicate an existing
+# conformance check are SKIPPED and recorded in the phase notes; e.g.
+# qe-audit's `## Files to change` is already asserted at the #681 section
+# above, so it is NOT re-asserted here.)
+
+# doc — documented modes present in argument-hint/mode prose + invocation flag.
+check_fixed doc "argument-hint lists blocks|examples|newsletter modes" '[blocks|examples|newsletter|<description>]'
+check_fixed doc "mode prose: /doc blocks"      '/doc blocks'
+check_fixed doc "mode prose: /doc examples"    '/doc examples'
+check_fixed doc "mode prose: /doc newsletter"  '/doc newsletter'
+check_fixed doc "disable-model-invocation flag" 'disable-model-invocation: true'
+
+# qe-audit — meta-command precedence prose (stop/next/now). The
+# `## Files to change` issue-body requirement is ALREADY covered at the
+# #681 section above (check qe-audit "issue body format prescribes
+# Files-to-change") — not duplicated here.
+check_fixed qe-audit "meta-command 'Takes precedence' prose" 'Takes precedence'
+check_fixed qe-audit "meta-command: stop (highest precedence)" 'stop'
+check_fixed qe-audit "meta-command: next"                     'next'
+
+# session-report — report-format template structure + no-bulk-scans rule.
+check_fixed session-report "report template header"   '## Session Report — <date> <time> ET'
+check_fixed session-report "report template Headline:" '**Headline:**'
+check_fixed session-report "report template Intent → status:" '**Intent → status:**'
+check_fixed session-report "report template Next action:" '**Next action:**'
+check_fixed session-report "no-bulk-scans prohibition"  'Do not run bulk repo scans'
+
+# review-feedback (block-diagram skill) — severity-label mapping table +
+# one-issue-per-entry rule.
+check_fixed block-diagram/review-feedback "Label Mapping section heading" '## Label Mapping'
+check_fixed block-diagram/review-feedback "label-mapping table header" '| Feedback type | GitHub label |'
+check_fixed block-diagram/review-feedback "re-rated severity column" 'Re-rated Severity'
+check_fixed block-diagram/review-feedback "one-issue-per-entry rule" 'One GitHub issue per feedback entry'
+
+echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 if [ $FAIL_COUNT -eq 0 ]; then

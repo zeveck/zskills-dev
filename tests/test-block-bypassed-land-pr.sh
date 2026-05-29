@@ -634,6 +634,43 @@ else
   pass "AC5.6d: bad-date marker → ISO-8601 parse DETECTS"
 fi
 
+# ──────────────────────────────────────────────────────────────
+# C32 — state-transition flip within ONE fixture (absorbs the unique
+# behavioral coverage of docs/plans/CANARY_BYPASS_DETECT.md's Phase 2
+# fulfillment-teardown step, AC-P2.3). The existing C1/C3 (no/mismatched
+# marker → Pattern 1) and C2 (matching marker → Pattern 2) are SEPARATE
+# fixtures; this case proves the Pattern-2 → Pattern-1 SELECTION is driven
+# by marker presence/absence within a single fixture: write a matching
+# requires.land-pr.<id> marker, run `gh pr create` → Pattern 2; then `rm`
+# the marker, re-run the SAME envelope → Pattern 1. State-driven, not
+# heuristic. This is the canary's last un-absorbed assertion.
+# ──────────────────────────────────────────────────────────────
+clean_tracking
+FLIP_PIPELINE="commit.canary-bypass-flip"
+FLIP_ID="canary-bypass-flip"
+write_requires_marker "$FLIP_PIPELINE" "$FLIP_ID" "$SANDBOX_HEAD"
+FLIP_ENVELOPE="$(mkenv "gh pr create -B main")"
+
+# Step 1 — marker present → Pattern 2.
+run_hook "$FLIP_ENVELOPE"
+flip_step1_ok=1
+[[ "$HOOK_OUT" == *'"permissionDecision":"deny"'* ]] || flip_step1_ok=0
+[[ "$HOOK_OUT" == *'declared an intent to'* ]] || flip_step1_ok=0
+
+# Step 2 — remove the marker, re-run the SAME envelope → Pattern 1.
+rm -f "$SANDBOX/.zskills/tracking/$FLIP_PIPELINE/requires.land-pr.$FLIP_ID"
+run_hook "$FLIP_ENVELOPE"
+flip_step2_ok=1
+[[ "$HOOK_OUT" == *'"permissionDecision":"deny"'* ]] || flip_step2_ok=0
+[[ "$HOOK_OUT" == *'outside a caller skill'* ]] || flip_step2_ok=0
+
+if [ "$flip_step1_ok" -eq 1 ] && [ "$flip_step2_ok" -eq 1 ]; then
+  pass "C32: marker present → Pattern 2; marker removed → Pattern 1 (state-transition flip, one fixture)"
+else
+  fail "C32: state-transition flip did not follow marker presence/absence" \
+    "step1(Pattern2)=$flip_step1_ok step2(Pattern1)=$flip_step2_ok last_out=$HOOK_OUT"
+fi
+
 # Cleanup tracking sentinels.
 clean_tracking
 

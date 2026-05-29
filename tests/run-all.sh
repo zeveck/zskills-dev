@@ -83,6 +83,7 @@ run_suite "test-draft-tests-phase4.sh" "tests/test-draft-tests-phase4.sh"
 run_suite "test-draft-tests-phase5.sh" "tests/test-draft-tests-phase5.sh"
 run_suite "test-briefing-parity.sh" "tests/test-briefing-parity.sh"
 run_suite "test-briefing-worktrees-merged-diverged.sh" "tests/test-briefing-worktrees-merged-diverged.sh"
+run_suite "test-briefing-dogfooding.sh" "tests/test-briefing-dogfooding.sh"
 run_suite "test-skill-invariants.sh" "tests/test-skill-invariants.sh"
 run_suite "test-issue-380-committed-state-checks.sh" "tests/test-issue-380-committed-state-checks.sh"
 run_suite "test-phase-5b-gate.sh" "tests/test-phase-5b-gate.sh"
@@ -106,6 +107,10 @@ run_suite "test-fix-issues-sprint-land-pr.sh" "tests/test-fix-issues-sprint-land
 run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase2-source-filter.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-commit.sh" "tests/test-commit.sh"
+run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"
+run_suite "test-draft-plan-args-smoke.sh" "tests/test-draft-plan-args-smoke.sh"
+run_suite "test-add-example-smoke.sh" "tests/test-add-example-smoke.sh"
+run_suite "test-add-block-smoke.sh" "tests/test-add-block-smoke.sh"
 # Opt-in race-isolation test for the #594 fix pattern. Adds ~2-3 min
 # to run-all.sh (20+5 conformance invocations), and the value is
 # documentation-of-bug-class rather than direct regression coverage —

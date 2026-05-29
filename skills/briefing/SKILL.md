@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.21+9519ec"
+  version: "2026.05.28+74165e"
 ---
 
 # /briefing — Project Status Briefing
@@ -209,6 +209,35 @@ Present the output **verbatim**. Sections:
 
 **Important:** Always extract logs before removing any worktree. Logs document how work was done — they are part of the project, not disposable artifacts.
 
+### `dogfooding`
+
+Per-skill SUCCESSFUL-usage measurement (Layer-2 of the skill-verification
+model — MEASURED reality, not a duplicated test). Display-first; there is
+deliberately **no hard-assert "skill X ran ≥N times" CI gate** (it would
+false-fail on quiet periods).
+
+```bash
+python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" dogfooding --since=<period>
+# --no-gh   disable the gh merged-PR backfill (hermetic / offline runs)
+```
+
+It aggregates two signals, by descending fidelity:
+
+- **`.landed` markers** (strong) — the `source:` field names the producing
+  skill; `status:`/`ci:`/`pr_state:` distinguish a SUCCESSFUL land (status
+  `landed`/`full`, or `pr_state: MERGED` / `ci: pass`) from a mere attempt.
+  These are gitignored and live in `/tmp` worktrees, so this is a rolling
+  on-disk window, not a permanent ledger.
+- **`gh pr list --state merged`** (weaker, labeled) — durable backfill
+  beyond the on-disk window, but attributes by conventional-commit scope
+  (subsystem), not by skill. The output labels this signal as such; it never
+  overrides a `.landed` count.
+
+Source variants are canonicalized to one skill name (e.g. `fix-issues`,
+`fix-issues-sprint`, `fix-issues-pr-mode-*` → `fix-issues`). The report
+emits per-skill `landed_count`, `merged_pr_count`, and `last_seen`, and may
+flag `0 in <window>` per skill as advisory text for a human to read.
+
 ## Data Gathering
 
 The agent runs `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" <subcommand>` and captures stdout.
@@ -223,6 +252,7 @@ The agent runs `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/bri
 | `verify`    | Text     | Pre-formatted verification checklist     |
 | `current`   | Text     | Pre-formatted in-flight status           |
 | `worktrees-status` | Text | Cleanup readiness report             |
+| `dogfooding` | Text | Per-skill successful-usage counts (`.landed` source: + labeled gh backfill) |
 
 ## Worktree Categories
 
