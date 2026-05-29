@@ -1856,6 +1856,34 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
       # (#606 tax fix). `too-vague` is intentionally left untouched (no
       # canonical dashboard skip-code; vague rows need user clarification,
       # not auto-tagging — re-classified next fire by design).
+      #
+      # #808 — persistent skip-state in monitor-state.json. The scratchpad
+      # write-back ONLY persists the decision when a tracker row lands
+      # (research blurb existed). For the raw dashboard-drag case (#803:
+      # issue dragged to Ready with no prior research, declined plan-scale
+      # before any blurb existed) there is no scratchpad → no row write →
+      # the next fire re-litigates the same decline indefinitely. Record
+      # the decline in monitor-state.json (gitignored, symmetric with
+      # `issues.reconsider`) so the filter drops the candidate next fire
+      # regardless of tracker-row presence. `too-vague` is excluded — vague
+      # rows need user clarification, not auto-tagging (kept for the next
+      # fire so the user can see and act). `author-decision` is aliased to
+      # `needs-decision` (the filter's canonical code).
+      MONITOR_SKIP_CODE=""
+      case "$CLASS" in
+        plan-scale)         MONITOR_SKIP_CODE="plan-scale" ;;
+        bug-unclear-cause)  MONITOR_SKIP_CODE="bug-unclear-cause" ;;
+        needs-decision|author-decision) MONITOR_SKIP_CODE="needs-decision" ;;
+        deferred)           MONITOR_SKIP_CODE="deferred" ;;
+        too-vague)          : ;;  # do not persist; re-triage next fire
+      esac
+      if [ -n "$MONITOR_SKIP_CODE" ]; then
+        ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
+          "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+          "$ISSUE_NUM" "$MONITOR_SKIP_CODE" \
+          || echo "WARN: fix-issues: record-skip.sh failed for #$ISSUE_NUM ($MONITOR_SKIP_CODE) — next fire may re-litigate" >&2
+      fi
+
       SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
       if [ -f "$SCRATCH" ]; then
         NEW_ACTION_NOW=""
@@ -2113,6 +2141,30 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
       # here — the scratchpad is held in `.zskills/research-staging/` for
       # the end-of-loop batch sync-PR that mirrors the dashboard-empty
       # pattern at SKILL.md ~1303-1378.
+      #
+      # #808 — persistent skip-state in monitor-state.json. Symmetric with
+      # the cherry-pick-mode write-back above: record the decline in
+      # `monitor-state.json` (gitignored) so the next fire's filter drops
+      # the candidate BEFORE re-triage, even when the issue has no
+      # tracker row (raw dashboard-drag case — #803). `too-vague` is
+      # intentionally excluded (vague rows need user clarification, not
+      # auto-tagging); `author-decision` is aliased to `needs-decision`
+      # (the filter's canonical code).
+      MONITOR_SKIP_CODE=""
+      case "$CLASS" in
+        plan-scale)         MONITOR_SKIP_CODE="plan-scale" ;;
+        bug-unclear-cause)  MONITOR_SKIP_CODE="bug-unclear-cause" ;;
+        needs-decision|author-decision) MONITOR_SKIP_CODE="needs-decision" ;;
+        deferred)           MONITOR_SKIP_CODE="deferred" ;;
+        too-vague)          : ;;  # do not persist; re-triage next fire
+      esac
+      if [ -n "$MONITOR_SKIP_CODE" ]; then
+        ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
+          "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+          "$ISSUE_NUM" "$MONITOR_SKIP_CODE" \
+          || echo "WARN: fix-issues PR-mode: record-skip.sh failed for #$ISSUE_NUM ($MONITOR_SKIP_CODE) — next fire may re-litigate" >&2
+      fi
+
       SCRATCH=".zskills/research-staging/$PIPELINE_ID/issue-${ISSUE_NUM}.md"
       if [ -f "$SCRATCH" ]; then
         NEW_ACTION_NOW=""
