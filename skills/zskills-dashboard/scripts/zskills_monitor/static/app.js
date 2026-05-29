@@ -1105,44 +1105,42 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     card.removeAttribute("draggable");
   }
 
-  // Per-row mode chip on Ready cards — three-state machine (issue #814).
-  // States, keyed on claim state + effective dispatch mode:
-  //   queued          — !plan.claim. Two-way cycle inherit ⇄ phase ⇄ finish.
-  //   running-phase   — plan.claim AND effective mode === "phase".
-  //                     One-way escalate-to-finish (phase mode re-reads the
-  //                     chip each round; never reversible mid-run).
-  //   running-finish  — plan.claim AND effective mode === "finish".
-  //                     LOCKED. /run-plan finish-auto holds the claim across
-  //                     all phases and resolves mode from invocation args,
-  //                     not from monitor-state.json — so a click would be
-  //                     informationally inert. The lock makes that honest.
+  // Per-row mode chip on Ready cards (issue #814 + follow-up).
+  // Two effective states keyed on claim + effective dispatch mode:
+  //   - running-finish  → LOCKED. /run-plan finish-auto holds the claim
+  //                       across all phases and resolves mode from args
+  //                       (not monitor-state.json), so a click would be
+  //                       informationally inert. The lock makes that honest.
+  //   - anything else   → togglable. Cycle inherit ⇄ phase ⇄ finish.
+  //                       This includes both queued and running-phase:
+  //                       in queued you can change your mind freely; in
+  //                       running-phase /work-on-plans re-reads the chip
+  //                       between phases, so toggles still take effect.
+  //                       If a user toggles to finish, the next dispatch
+  //                       picks up finish-auto and the chip locks then.
+  // We still distinguish "queued" vs "running-phase" via data-state so
+  // CSS can colorize running chips (signals "this is live"), but the
+  // click behavior is the same in both.
   // Effective mode = currentEntryMode(slug) || defaultMode || "phase".
   if (col === "ready") {
     const entryMode = currentEntryMode(slug);
     const isOverride = entryMode === "phase" || entryMode === "finish";
     const effectiveMode = isOverride ? entryMode : (defaultMode || "phase");
     const isClaimed = !!(plan && plan.claim);
-    let state, action, ariaLabel, chipText, chipHtml = null;
-    if (!isClaimed) {
+    const locked = isClaimed && effectiveMode === "finish";
+    let state, ariaLabel;
+    if (locked) {
+      state = "running-finish";
+      ariaLabel = "Mode: finish (locked while running).";
+    } else if (isClaimed) {
+      state = "running-phase";
+      ariaLabel = "Mode: " + effectiveMode
+        + " (running). Click to cycle inherit, phase, finish.";
+    } else {
       state = "queued";
-      action = "toggle-mode";
-      chipText = effectiveMode;
       ariaLabel = isOverride
         ? ("Mode: " + effectiveMode + " (override). Click to cycle inherit, phase, finish.")
         : ("Mode: " + effectiveMode + " (inherits default). Click to cycle inherit, phase, finish.");
-    } else if (effectiveMode === "phase") {
-      state = "running-phase";
-      action = "escalate-mode";
-      chipText = "phase ↑ finish";
-      ariaLabel = "Mode: phase (running). Click to escalate to finish (one-way).";
-    } else {
-      // running-finish
-      state = "running-finish";
-      action = null;  // no-op
-      chipText = "finish";
-      chipHtml = '<span class="mode-chip-lock" aria-hidden="true">'
-        + SVG_ICONS.lock + '</span> finish';
-      ariaLabel = "Mode: finish (locked while running).";
     }
     const chipAttrs = {
       type: "button",
@@ -1151,14 +1149,19 @@ function buildPlanCard(plan, slug, col, defaultMode) {
       "data-source": isOverride ? "explicit" : "inherit",
       "aria-label": ariaLabel,
     };
-    if (action) {
-      chipAttrs["data-action"] = action;
-    } else {
+    if (locked) {
       chipAttrs["aria-disabled"] = "true";
       chipAttrs.disabled = "disabled";
+    } else {
+      chipAttrs["data-action"] = "toggle-mode";
     }
     const chipOpts = { cls: "mode-chip", attrs: chipAttrs };
-    if (chipHtml) chipOpts.html = chipHtml; else chipOpts.text = chipText;
+    if (locked) {
+      chipOpts.html = '<span class="mode-chip-lock" aria-hidden="true">'
+        + SVG_ICONS.lock + '</span> ' + effectiveMode;
+    } else {
+      chipOpts.text = effectiveMode;
+    }
     const chip = el("button", chipOpts);
     card.appendChild(chip);
   }
@@ -2652,20 +2655,6 @@ async function togglePlanMode(slug) {
 // Escalate a running (claimed) plan's mode to finish. One-way: never sets
 // back to phase or inherit. Issue #814. /work-on-plans re-reads the chip
 // each round, so this takes effect at the next phase dispatch.
-async function escalatePlanMode(slug) {
-  const next = clonedQueues();
-  const loc = findPlan(next, slug);
-  if (!loc || loc.col !== "ready") return;
-  const entry = next.plans[loc.col][loc.idx];
-  if (entry.mode === "finish") return;  // already at finish; nothing to do
-  entry.mode = "finish";
-  const ok = await commitQueueChange(next, { action: "Escalate mode to finish" });
-  if (ok) {
-    announce("plans-live",
-      "Mode for " + slug + " escalated to finish");
-  }
-}
-
 // -------------------------------------------------------------- trigger
 
 async function postTrigger(command) {
@@ -3193,7 +3182,6 @@ async function handleAction(action, target) {
   if (action === "plan-right") return movePlan(slug, "right");
   if (action === "plan-discard") return discardPlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
-  if (action === "escalate-mode") return escalatePlanMode(slug);
 
   // Column-header chevron: move-all in column, adjacent column only.
   if (action === "plan-move-all-left" || action === "plan-move-all-right" ||

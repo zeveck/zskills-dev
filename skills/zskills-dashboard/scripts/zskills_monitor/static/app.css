@@ -1277,6 +1277,11 @@ button svg { display: inline-block; vertical-align: middle; }
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  /* In a flex-column card the default align-items: stretch was making
+     the chip span full card width with text anchored at the left
+     (#814 follow-up). Pin to start so the chip stays a content-sized
+     pill, restoring the centered-looking text people expect. */
+  align-self: flex-start;
 }
 
 /* Queued + inherit (issue #814): subtle filled button, not the old

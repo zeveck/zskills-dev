@@ -50,8 +50,10 @@ if [ ! -f "$APP_JS" ] || [ ! -f "$APP_CSS" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Static-grep: confirm the dashed-dim inherit treatment is gone and the
-# three data-state rules + the escalate-mode action are present.
+# Static-grep: confirm the dashed-dim inherit treatment is gone, the
+# three data-state rules are present, and the dropped escalate affordance
+# is actually gone (toggle-mode is the only chip action; only
+# running-finish locks).
 # ---------------------------------------------------------------------------
 
 # Old dashed-dim rule must not appear with its previous shape (selector
@@ -84,15 +86,15 @@ else
 fi
 
 if grep -qE 'action === "escalate-mode"' "$APP_JS"; then
-  pass "handleAction dispatches escalate-mode"
+  fail "handleAction still dispatches escalate-mode (should be removed — escalate affordance was dropped)"
 else
-  fail "handleAction does not dispatch escalate-mode"
+  pass "handleAction no longer dispatches escalate-mode (dropped)"
 fi
 
 if grep -qE 'async function escalatePlanMode\(' "$APP_JS"; then
-  pass "escalatePlanMode async function defined"
+  fail "escalatePlanMode function still present (should be removed)"
 else
-  fail "escalatePlanMode function missing"
+  pass "escalatePlanMode function removed (dropped affordance)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -297,11 +299,11 @@ function makeUnclaimedPlan(slug, phaseCount) {
   expectTrue(chip, "running-phase (inherit): chip rendered");
   if (chip) {
     expect(chip.getAttribute("data-state"), "running-phase",
-      "running-phase (inherit): data-state=running-phase");
-    expect(chip.getAttribute("data-action"), "escalate-mode",
-      "running-phase: action=escalate-mode (NOT toggle-mode — escalate is one-way)");
-    expectTrue(chip.textContent.indexOf("finish") >= 0,
-      "running-phase: chip text includes the 'finish' escalate target");
+      "running-phase (inherit): data-state=running-phase (for CSS colorize)");
+    expect(chip.getAttribute("data-action"), "toggle-mode",
+      "running-phase: action=toggle-mode (same cycle as queued — escalate affordance dropped)");
+    expect(chip.textContent.trim(), "phase",
+      "running-phase: chip text is just the mode (no arrow affordance)");
     // Must NOT be locked.
     expect(chip.getAttribute("disabled"), null, "running-phase: chip is enabled (not locked)");
     expect(chip.getAttribute("aria-disabled"), null, "running-phase: no aria-disabled on chip");
@@ -317,8 +319,8 @@ function makeUnclaimedPlan(slug, phaseCount) {
   if (chip) {
     expect(chip.getAttribute("data-state"), "running-phase",
       "running-phase (explicit): data-state=running-phase even when default is finish");
-    expect(chip.getAttribute("data-action"), "escalate-mode",
-      "running-phase (explicit): action=escalate-mode");
+    expect(chip.getAttribute("data-action"), "toggle-mode",
+      "running-phase (explicit): action=toggle-mode");
   }
 }
 
