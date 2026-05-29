@@ -30,7 +30,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         purposes), STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      if [ -z "$FULL_TEST_CMD" ]; then
        echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
        exit 1
@@ -69,7 +73,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      b. Write `.landed` marker (atomic):
         ```bash
-        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        else
+          . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+        fi
         cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: full
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
@@ -87,7 +95,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
-        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        else
+          . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+        fi
         cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
         status: partial
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
@@ -113,7 +125,11 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      if [ -z "$FULL_TEST_CMD" ]; then
        echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
        exit 1

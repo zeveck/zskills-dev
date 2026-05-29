@@ -115,7 +115,14 @@ else
 fi
 
 if [ -n "$FR_GATE_LINE" ]; then
-  slice=$(sed -n "${FR_GATE_LINE},$((FR_GATE_LINE + 30))p" "$FR_SKILL")
+  # Window widened 30 -> 50 (PLUGIN_DISTRIBUTION Phase 3 W3.1): the
+  # config-resolver source at the top of the gate fence grew from a
+  # single line to the 4-line dual-path if/else block (D6), pushing the
+  # ensure-worktree.sh dispatch (where --prefix/--pipeline-id live) a few
+  # lines further down. The intent is unchanged — assert the gate's
+  # ensure-worktree dispatch carries --prefix fix-report + --pipeline-id;
+  # the window just needs headroom for the lane-portable preamble.
+  slice=$(sed -n "${FR_GATE_LINE},$((FR_GATE_LINE + 50))p" "$FR_SKILL")
   if echo "$slice" | grep -q -- '--prefix fix-report' && echo "$slice" | grep -q -- '--pipeline-id'; then
     pass "fix-report worktree gate passes --prefix fix-report + --pipeline-id"
   else

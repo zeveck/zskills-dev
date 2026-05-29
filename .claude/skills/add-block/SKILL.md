@@ -4,7 +4,7 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks to
   "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.20+0d78b5"
+  version: "2026.05.28+96bf80"
 ---
 
 # Adding Block Types
@@ -414,7 +414,11 @@ describe('NameBlock', () => {
 ### Run tests
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$FULL_TEST_CMD" ]; then
   echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
   exit 1
@@ -428,7 +432,11 @@ All existing tests must continue to pass (unit, E2E, and codegen suites).
 
 After Step 6 tests pass:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.tests"
 ```
@@ -448,7 +456,11 @@ This single `requires` marker pairs with the single `/add-example`
 invocation that follows; do NOT loop per-block.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'skill: add-example\nparent: add-block\nblock: %s\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.add-example.${BLOCK_SLUG}"
@@ -489,7 +501,11 @@ unit tests with value assertions, browser verification, and screenshots.
 
 After `/add-example` completes:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example"
 ```
@@ -497,7 +513,11 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date 
 If the example was deferred (batch mode, will be done later), create the
 deferred marker instead with the reason:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ndeferred: true\nreason: batch mode — example deferred until all blocks implemented\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.example-deferred"
@@ -534,7 +554,11 @@ Add a Rust emitter for the block in `src/codegen/block-emitter.js`.
    ```javascript
    Name: { paramName: defaultValue },
    ```
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
 
 4. Add any codegen-only params to `CODEGEN_ONLY_PARAMS` if they shouldn't appear in the Rust `Params` struct.
 
@@ -576,7 +600,11 @@ handled by `/add-example` (Step 7), not here.
 
 After codegen is implemented:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen"
 ```
@@ -597,11 +625,19 @@ Create a GitHub issue and add an entry to `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` 
 
 **Description:** {Why this block can't be emitted yet and what's needed.}
 ```
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 
 After deferring codegen, create the deferred marker with the GitHub issue number:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ndeferred: true\nissue: #%s\ndate: %s\n' \
   "$BLOCK_NAME" "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.codegen-deferred"
@@ -633,7 +669,11 @@ Use the `/manual-testing` skill with `playwright-cli` to verify the block works 
 
 After Step 9 manual testing completes:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.manual-test"
 ```
@@ -714,7 +754,11 @@ variants) exist.
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])BUILD_ISSUES\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /BUILD_ISSUES.md tail (mirrors skills/fix-issues/SKILL.md:1050 exemption for ISSUES_PLAN.md) -->
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$FULL_TEST_CMD" ]; then
   echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
   exit 1
@@ -758,7 +802,11 @@ noted" instead of failing. These checks prevent that.
 
 After the self-audit checklist passes:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.self-audit"
 ```
@@ -771,7 +819,11 @@ printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date 
 
 Before dispatching the verification agent, create a delegation requirement:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'skill: verify-changes\nparent: add-block\nblock: %s\ndate: %s\n' \
   "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.${BLOCK_SLUG}"
@@ -823,7 +875,11 @@ If verification fails: dispatch a fix agent (max 2 fix+verify rounds).
 
 After verification completes:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'block: %s\ncompleted: %s\n' "$BLOCK_NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.add-block.${BLOCK_SLUG}.verify"
 ```

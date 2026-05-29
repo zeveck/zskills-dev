@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.28+722e14"
+  version: "2026.05.29+ca3f3d"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -248,7 +248,11 @@ To resolve all three vars in one step (sibling resolution to the
 `$FULL_TEST_CMD` decision tree above), source the helper:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Informational fallbacks for the recipe (non-critical-path):
 [ -z "$DEV_SERVER_CMD" ] && DEV_SERVER_CMD=npm
 [ -z "$TEST_OUTPUT_FILE" ] && TEST_OUTPUT_FILE=.test-results.txt
@@ -826,7 +830,11 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    derive from the plan file slug if standalone (e.g., `FEATURE_PLAN.md` →
    `feature-plan`). Then create the fulfillment file in the MAIN repo:
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # Re-derive BRANCH_PREFIX and PLAN_SLUG at fence-top (R-5-1):
    # both were set in earlier disjoint fences (BRANCH_PREFIX@178-185,
    # PLAN_SLUG@382) and do NOT survive cross-fence per the
@@ -851,7 +859,11 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
      BOOKKEEPING_ROOT="$PR_WORKTREE_PATH"
    fi
    ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-     source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+     else
+       source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+     fi
    MAIN_ROOT="$BOOKKEEPING_ROOT"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
    PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")

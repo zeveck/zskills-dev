@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.21+aaf42e"
+  version: "2026.05.28+aff488"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -223,7 +223,11 @@ PIPELINE_ID assignment below):
    parent pipeline. verify-changes becomes its own pipeline owner.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -337,7 +341,11 @@ to file as below; read the file when the call returns.
 1. **Run the full test suite with output captured to a file** (resolve via
    `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`):
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
    mkdir -p "$TEST_OUT"
    $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
@@ -380,7 +388,11 @@ to file as below; read the file when the call returns.
    d. **Re-run the failing test file** to confirm the skip works, then
       run the final gate:
       ```bash
-      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+        . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+      else
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      fi
       TEST_OUT="/tmp/zskills-tests/$(basename "$(pwd)")"
       mkdir -p "$TEST_OUT"
       $FULL_TEST_CMD > "$TEST_OUT/${TEST_OUTPUT_FILE:-.test-results.txt}" 2>&1
@@ -402,7 +414,11 @@ to file as below; read the file when the call returns.
 After recording test results (pass or fail), create the tests-run step
 marker if a tracking ID is present:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -440,7 +456,11 @@ Use the `/manual-testing` skill for recipes, selectors, and setup instructions.
 **"No dev server" is not an excuse to skip.** If UI files changed and no
 dev server is running, START ONE:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$DEV_SERVER_CMD" ]; then
   echo "ERROR: dev_server.cmd not configured. Run /update-zskills." >&2
   exit 1
@@ -479,7 +499,7 @@ have started one is skipping, not verifying.
    - What to look at (specific UI element, interaction, visual behavior)
    - How to reproduce (steps: open app, navigate to X, click Y, observe Z)
    - What "correct" looks like (expected appearance, behavior, output)
-   - URL: `http://localhost:$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/port.sh")/`
+   - URL: `http://localhost:$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/port.sh")/`
 
    The user may be verifying hours later in a different context. "NEEDED"
    without instructions is useless — the user won't know what to check.
@@ -489,7 +509,11 @@ have started one is skipping, not verifying.
 After completing agent verification (Phase 4), if UI changes were verified
 and a tracking ID is present, create the manual-verified step marker:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"
@@ -566,7 +590,11 @@ resolve via the helper with `ZSKILLS_PATHS_ROOT` pointing at the main repo:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 ```
 Then write to `$ZSKILLS_REPORTS_DIR/verify-{scope-slug}.md` and `$ZSKILLS_AUDIT_DIR/VERIFICATION_REPORT.md`.
 This prevents reports from being lost when the worktree is cleaned up.
@@ -700,7 +728,11 @@ After writing the report (or confirming verification is clean), create the
 complete step marker and update the fulfillment file if a tracking ID is
 present:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 MARKER_STEM="verify-changes"
 [ "$SCOPE" = "branch" ] && MARKER_STEM="verify-changes.final"

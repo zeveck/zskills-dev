@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.27+ebc1e5"
+  version: "2026.05.28+814ef1"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -644,7 +644,11 @@ the transcript (tier-2 tracking per `tests/test-hooks.sh:245`), and write
 the `started` marker under the pipeline-scoped tracking dir.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 PIPELINE_ID=$(bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "quickfix.$SLUG")
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
@@ -823,7 +827,11 @@ directory (never piped — see CLAUDE.md's "capture test output to a file,
 never pipe" rule).
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ "$SKIP_TESTS" -eq 1 ]; then
   echo "WARN: skip-tests passed; skipping $UNIT_CMD" >&2
 else
@@ -862,7 +870,11 @@ On commit failure, clean up verified-each-step: any cleanup step that
 itself fails exits 6 (manual intervention).
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Stage: reject directory entries.
 while IFS= read -r f; do
   [ -z "$f" ] && continue
@@ -910,7 +922,11 @@ same error, then STOP and report).
 # Resolve $COMMIT_CO_AUTHOR at fence-top — context compaction may have
 # lost vars set in the earlier helper-source fence (per the convention at
 # run-plan/modes/pr.md:325-345).
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 
 # The model must set COMMIT_SUBJECT before this fence runs (see prose
 # above). DESCRIPTION goes in the body as context, not the subject line.
@@ -1351,7 +1367,11 @@ fi
 # $LAND_OUTCOME survives). Replaces the broken `trap 'finalize_marker $?'
 # EXIT` pattern that fired at WI 1.8 fence-exit (skill entry) instead of
 # at flow end. Mirrors /commit pr / /do pr / /fix-issues pr.
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # Reconstruct $MARKER path from $ZSKILLS_PIPELINE_ID + $SLUG (both
 # preserved across fences by the persistent-shell harness; $SLUG also

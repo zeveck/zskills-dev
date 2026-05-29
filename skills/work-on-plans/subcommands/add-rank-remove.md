@@ -45,7 +45,11 @@ as Step 1.
 ensure_monitor_state() {
   if [ ! -f "$MONITOR_STATE" ]; then
     # Re-run the Step 1 bootstrap helper. Same shape, same path.
-    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+    if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+      . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+    else
+      source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+    fi
     export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
     python3 - "$MONITOR_STATE" "$MAIN_ROOT" <<'PY'
 # plans_dir resolved via zskills-paths.sh in the wrapping bash fence — see Phase 2a.10 of ZSKILLS_PATH_CONFIG plan.
@@ -461,7 +465,11 @@ After every successful mutating subcommand (including `every` and
 `stop`, NOT including `next`), write a sprint-completion marker:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'skill: work-on-plans\nsprint_id: %s\nsubcommand: %s\nstatus: complete\ndate: %s\n' \
   "$SPRINT_ID" "$SUBCOMMAND" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$PIPELINE_DIR/fulfilled.work-on-plans.$SPRINT_ID"

@@ -38,7 +38,11 @@ This is for landing worktree work onto main via cherry-pick.
 
 5. **Run tests after cherry-picks land:**
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    if [ -z "$FULL_TEST_CMD" ]; then
      echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
      exit 1
@@ -56,7 +60,11 @@ This is for landing worktree work onto main via cherry-pick.
 6. **Write `.landed` marker** on the worktree (so `/fix-report` knows
    it's safe to remove):
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
    status: full
    date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)

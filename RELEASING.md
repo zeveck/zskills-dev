@@ -42,6 +42,49 @@ lanes installed at once in a consumer repo: each plugin-registered hook
 defers to a settings.json-registered copy of the same hook (basename match,
 with a `# zskills-hook-version:` skew guard) so hooks never double-fire.
 
+## Dual-path release flow (plugin lane + legacy lane)
+
+A release ships BOTH lanes from the same dev commit. The legacy lane is
+served by the existing **🚀 Ship to Prod** workflow (`scripts/build-prod.sh`
+→ `prod/main` + `YYYY.MM.N` tag). The plugin lane is served by
+`scripts/build-plugin-release.sh`, which produces the prod-stripped plugin
+tree and a parallel `prod/<version>` tag. Release steps:
+
+1. **Bump BOTH `plugin.json.version` files in lockstep** (D10):
+   `.claude-plugin/plugin.json` (the `zs` plugin) and
+   `block-diagram/.claude-plugin/plugin.json` (the `zsbd` addon). They MUST
+   stay equal — `tests/test-plugin-marketplace.sh` asserts
+   `zs.version == zsbd.version`. Choose the next `YYYY.MM.N` value (same
+   scheme as the git tag). Commit the bump on dev.
+2. **Run `bash scripts/build-plugin-release.sh`** (no `--push`) to dry-build
+   the prod-stripped plugin tree as LOCAL `prod/main` + `prod/<version>`
+   refs. It strips canary plans/hooks, `RELEASING.md`, `build-*.sh`,
+   `dev_only:` skills, and MW-EXAMPLE files; copies `CLAUDE_TEMPLATE.md`
+   into the plugin tree (D3, the fallback the SessionStart materialiser
+   renders `managed.md` from); and generates the suffixless sibling copies
+   of the `.template` hooks (D4). Verify the strip set:
+   `git ls-tree -r refs/heads/prod/main | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE'`
+   must return 0 hits. Clean up the local refs after inspecting
+   (`git update-ref -d refs/heads/prod/main` +
+   `git update-ref -d refs/tags/prod/<version>`).
+3. **Push BOTH refs** — the moving window pointer AND the pinned tag. The
+   plugin builder pushes when invoked with `--push`
+   (`build-plugin-release.sh --version <version> --push`): it pushes
+   `prod/main` (the moving `prod/main` ref unpinned consumers track) and the
+   parallel `prod/<version>` tag (which reproducibility-minded consumers pin
+   via marketplace `source.ref` / `source.sha`). The actual push is a
+   deliberate, human-gated step — the build/dry-run never pushes.
+4. **Notify both lanes' consumers.** Plugin-lane consumers refresh via
+   `claude plugin marketplace update zskills` (or auto-update if enabled);
+   legacy-lane consumers run `/update-zskills` (smart-detect pulls the new
+   skills/hooks and re-renders `managed.md`). The CHANGELOG entry is the
+   per-line summary for both.
+
+The two builders are independent: `build-prod.sh` serves the legacy mirror
+and `build-plugin-release.sh` serves the plugin tree, but both strip from
+the same dev HEAD and both target `prod/main`. A release runs whichever the
+maintainer chooses; for a full dual-path release, run both and push both.
+
 ## TL;DR
 
 1. Click **🚀 Ship to Prod** in the README (or go to Actions → "🚀 Ship to Prod" → Run workflow).

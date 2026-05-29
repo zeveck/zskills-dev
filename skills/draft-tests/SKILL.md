@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.22+f25079"
+  version: "2026.05.28+f78ab2"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -81,7 +81,11 @@ fi
 # $ZSKILLS_PLANS_DIR. Phase 1's Tracking-fulfillment fence re-derives
 # $TRACKING_ID idempotently from the same $PLAN_FILE.
 if [ -z "${PLAN_FILE:-}" ]; then
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
   for tok in $ARGUMENTS; do
     case "$tok" in
       */*) PLAN_FILE="$tok"; break ;;
@@ -204,7 +208,11 @@ writing to disk. The bare-relative `scripts/sanitize-pipeline-id.sh`
 form is FORBIDDEN — that path no longer exists post-PR-#97.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 if [ -n "${ZSKILLS_PIPELINE_ID:-}" ]; then
   PIPELINE_ID="$ZSKILLS_PIPELINE_ID"
@@ -391,7 +399,11 @@ coverage floor on ac-less phases (the scope is empty by construction).
 After the parser returns, write the research step marker:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-tests.$TRACKING_ID.research"
 ```
@@ -1812,7 +1824,11 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
   # (e.g., caller-in-worktree, where WT_PATH was empty but TOPLEVEL is
   # already a worktree — we want paths anchored on TOPLEVEL).
   export ZSKILLS_PATHS_ROOT="$TOPLEVEL"
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 
   # R3-1 path-remap: if $PLAN_FILE was computed BEFORE the preamble set
   # $ZSKILLS_PATHS_ROOT (e.g., a stale value cached in the caller's
@@ -1848,7 +1864,11 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
     echo "draft-tests: unexpected staged set: $STAGED (expected $FILE_REL only)" >&2
     exit 1
   fi
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
 
   # Per-skill commit subject (R2-F8: case-stmt, not table cell).
   BASE=$(basename "$FILE_REL" .md)
@@ -1878,7 +1898,11 @@ worktree commit stands and the caller lands manually.
 
 ```bash
 if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
   BRANCH_NAME=$(git -C "$TOPLEVEL" rev-parse --abbrev-ref HEAD)
   SLUG="$TRACKING_ID"
   PR_TITLE="docs(tests): draft test specs for $(basename "$PLAN_FILE" .md) via /draft-tests"
@@ -1931,7 +1955,11 @@ update the fulfillment marker to `status: complete`. Mirrors
 `/draft-plan`'s Phase 6 post-finalize contract:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-tests.$TRACKING_ID}"
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \

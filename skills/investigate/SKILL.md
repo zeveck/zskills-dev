@@ -7,7 +7,7 @@ description: >-
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
   root-cause understanding before writing a fix.
 metadata:
-  version: "2026.05.15+6336ef"
+  version: "2026.05.28+93a842"
 ---
 
 # /investigate \<description or #issue> — Root-Cause Debugging
@@ -205,7 +205,11 @@ included in the final report.
 
 3. **Run the full test suite:**
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    if [ -z "$FULL_TEST_CMD" ]; then
      echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
      exit 1

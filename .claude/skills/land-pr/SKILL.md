@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.22+1186c0"
+  version: "2026.05.28+9aa2d7"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -718,7 +718,11 @@ from inside a worktree but without `--worktree-path` silently skipped
 the `.landed` write. `--worktree-path` remains an explicit override.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Auto-detect WORKTREE_PATH from cwd when caller didn't pass --worktree-path.
 # Detection uses `git rev-parse` (worktree root + git-dir vs git-common-dir
 # divergence indicates a LINKED worktree, not the main worktree) plus
@@ -813,7 +817,11 @@ fulfill. The 4 non-/run-plan callers never pass `--tracking-id`, so this
 block is a no-op for them (preserves current behavior exactly).
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -n "$TRACKING_ID" ] \
    && [ "$MERGE_REQUESTED" = "true" ] \
    && [ "$PR_STATE" = "MERGED" ] \

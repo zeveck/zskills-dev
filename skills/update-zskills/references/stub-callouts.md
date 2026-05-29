@@ -121,7 +121,11 @@ Production callers (other skills' scripts) source via
 `$CLAUDE_PROJECT_DIR`:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-stub-lib.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-stub-lib.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+fi
 ```
 
 Tests source via the absolute repo-root form:

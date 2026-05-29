@@ -95,6 +95,14 @@ if zsbd_plugin is not None:
 zs_plugin, zerr = load(".claude-plugin/plugin.json")
 if zs_plugin is not None:
     out("dependencies" not in zs_plugin, "zs plugin: dependencies ABSENT", repr(zs_plugin.get("dependencies")))
+
+# D10 (W5.2) — the two plugin.json `version` fields bump in LOCKSTEP. Assert
+# they are present and exactly equal across the zs + zsbd manifests.
+if zs_plugin is not None and zsbd_plugin is not None:
+    zs_ver = zs_plugin.get("version")
+    zsbd_ver = zsbd_plugin.get("version")
+    out(isinstance(zs_ver, str) and zs_ver == zsbd_ver,
+        "D10: zs.version == zsbd.version (lockstep)", f"{zs_ver!r} vs {zsbd_ver!r}")
 PY
 )
 

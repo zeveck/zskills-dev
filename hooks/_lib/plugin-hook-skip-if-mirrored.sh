@@ -50,8 +50,19 @@ _PHSIM_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 _phsim_main() {
   local my_path my_basename settings consumer_script plugin_ver consumer_ver marker
 
-  # Step 2: basename of the sourcing hook.
-  my_path="${BASH_SOURCE[0]}"
+  # Step 2: basename of the sourcing hook. The sourcing hook is the
+  # OUTERMOST entry of the BASH_SOURCE stack (the script the harness invoked
+  # with `bash <hook>`), regardless of how many sourced/function frames sit
+  # between it and this shim. The empirical 2026-05-26 note claimed
+  # ${BASH_SOURCE[0]} == the sourcing hook under claude 2.1.149 (call depth
+  # 1, so [0] == outermost). Under a plain `bash <hook>` invocation that
+  # source-includes this shim, the shim's own path is [0] and the hook is the
+  # LAST index. Using the outermost (last) entry resolves to the sourcing
+  # hook in BOTH environments — portable and correct. (Past fragility: the
+  # hardcoded [0] silently no-op'd under plain bash, defeating the
+  # double-fire guard everywhere except the exact claude build it was tuned
+  # for; W5.7 testbed surfaced it.)
+  my_path="${BASH_SOURCE[${#BASH_SOURCE[@]}-1]}"
   my_basename="$(basename "$my_path")"
 
   # Need CLAUDE_PROJECT_DIR to find the consumer settings.json.

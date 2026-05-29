@@ -424,7 +424,11 @@ implementation agent, the orchestrator captures a test baseline in the worktree:
 ```bash
 # Resolve config-derived vars at fence-top — context compaction may have
 # lost vars set in earlier fences (per the convention at modes/pr.md:325-345).
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 
 # Orchestrator captures baseline BEFORE impl agent starts
 cd "$WORKTREE_PATH"
@@ -442,11 +446,19 @@ create the implementation step marker. Per the PR-mode bookkeeping rule,
 the bookkeeping anchor is `$WORKTREE_PATH` in PR mode and `$CLAUDE_PROJECT_DIR`
 otherwise — sourced via the path-config helper:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
@@ -598,7 +610,11 @@ Include this VERBATIM in the verifier dispatch prompt:
      there). The verifier must run tests via:
 
      ```bash
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
      cd <worktree-path>
      TEST_OUT="/tmp/zskills-tests/$(basename "<worktree-path>")"
      mkdir -p "$TEST_OUT"
@@ -810,11 +826,19 @@ After verification passes, create the verification step marker. Per the
 PR-mode bookkeeping rule, the bookkeeping anchor is `$WORKTREE_PATH` in PR
 mode and `$CLAUDE_PROJECT_DIR` otherwise — sourced via the path-config helper:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
@@ -880,11 +904,19 @@ globs `step.*.verify`). If Phase 3.5 proceeds cleanly, write an
 informational marker:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'phase: %s\ndrifts_found: %s\ndrifts_corrected: %s\ndrifts_escalated: %s\ncompleted: %s\n' \
@@ -1040,11 +1072,19 @@ attention?" and that's always the newest phase.
 Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper at the top of the
 fence (PR mode anchors on `$WORKTREE_PATH`, otherwise `$CLAUDE_PROJECT_DIR`):
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 mkdir -p "$ZSKILLS_AUDIT_DIR"  # idempotent — always create before write
 ```
 
@@ -1118,11 +1158,19 @@ of all plan reports:
 
 After writing the report and regenerating the index, create the report step marker:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 PLAN_SLUG=$(basename "$PLAN_FILE" .md | tr '[:upper:]' '[:lower:]' | tr '_' '-')
@@ -1325,9 +1373,17 @@ backfill-script idempotency guard both have a canonical source of truth
 resolves `$ZSKILLS_PLANS_DIR` — NEVER hardcode `plans/<slug>.md`:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 ZSKILLS_PATHS_ROOT="${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}" \
-  source "${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 # PR mode only: cd "$WORKTREE_PATH" first (cherry-pick/direct: stay on main)
 # Plan file path resolved via $ZSKILLS_PLANS_DIR — NEVER hardcoded plans/.
 PLAN_FILE="$ZSKILLS_PLANS_DIR/<slug>.md"
@@ -1349,9 +1405,17 @@ backfill emits.
 
 Resolve `$ZSKILLS_AUDIT_DIR` via the path-config helper:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 ```
 
 Check if `$ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md` exists. If it does:
@@ -1501,9 +1565,17 @@ marker and update the fulfillment file. Post-landing happens on `main`
 regardless of `LANDING_MODE` (cherry-pick: after cherry-pick to main; PR:
 after PR merge), so anchor on `$CLAUDE_PROJECT_DIR`:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
-  source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 MAIN_ROOT="$CLAUDE_PROJECT_DIR"
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
@@ -1544,11 +1616,19 @@ rm -f "<worktree-path>/.zskills-tracked"
 In `finish` mode, per-phase markers use the `phasestep` prefix (the hook
 ignores these — they are informational only):
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -1557,11 +1637,19 @@ printf 'phase: %s\ncompleted: %s\n' "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Isec
 After the cross-phase verification in `finish` mode completes, aggregate
 with `step.*` markers:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 BOOKKEEPING_ROOT="$CLAUDE_PROJECT_DIR"
 [ "$LANDING_MODE" = "pr" ] && [ -n "$WORKTREE_PATH" ] && BOOKKEEPING_ROOT="$WORKTREE_PATH"
 ZSKILLS_PATHS_ROOT="$BOOKKEEPING_ROOT" \
-  source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    source "$BOOKKEEPING_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 for stage in implement verify report land; do

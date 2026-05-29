@@ -109,7 +109,11 @@ below and before any tracking write — so both the gate's
 same id:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking"
 
@@ -142,7 +146,11 @@ it needs `TO_DISPATCH` which Phase 2 builds.
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside a comment explaining WHY the defer-all gate does NOT write to it (strand bug from #329); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 8 -->
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
 # execution.max_concurrent_worktrees field is absent or malformed).
 
@@ -228,7 +236,11 @@ sibling-check (the requires.*/fulfilled.* protocol) works regardless of
 which worktree any sub-dispatch runs in:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
@@ -285,7 +297,11 @@ alert user, write failure to report).
    not match-count — use `grep -oE | mapfile`:
 
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    # Fetch number+title+labels in ONE call so the row-writer below can
    # reuse this blob (no N+1 `gh issue view` loop — see issue #280).
    GH_OUT=$(gh issue list --state open --limit 500 --json number,title,labels 2>&1) \
@@ -304,7 +320,11 @@ alert user, write failure to report).
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 mkdir -p "$ZSKILLS_ISSUES_DIR"
 EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)
 if [ -z "$EXISTING_TRACKERS" ]; then
@@ -390,7 +410,11 @@ for it in data:
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    ls "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null
 
    gh issue list --state open --limit 500 --json number -q '.[].number' \
@@ -413,7 +437,11 @@ for it in data:
 4. **Update ALL issue trackers** — scan `$ZSKILLS_ISSUES_DIR/` for tracker files:
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    ls "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null
    ```
    Ensure each tracker reflects current GitHub state. Add new issues to
@@ -450,7 +478,11 @@ for it in data:
 
 2. **Fetch the research blurb from plan files:**
    ```bash
-   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   else
+     source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+   fi
    grep -A 30 '#<N>' "$ZSKILLS_ISSUES_DIR"/*ISSUES*.md 2>/dev/null
    ```
    Plan blurbs contain root cause analysis, affected files, suggested fixes,
@@ -472,7 +504,11 @@ For each candidate, note:
 
 After Phase 1 (preflight + sync + research) is complete:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.preflight"
@@ -497,7 +533,11 @@ arrays — same discipline as Phase 1's row-writer).
 
 ```bash
 if [ "$DASHBOARD_MODE" = "1" ]; then
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
   MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
   MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
 
@@ -697,7 +737,11 @@ once they commit blurbs. In interactive mode, abort with a diagnostic
 pointing at `/fix-issues sync`.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+fi
 eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
   bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
   "${CANDIDATE_ISSUES[@]}")"
@@ -893,7 +937,11 @@ titles — bypassing #402's independent-sizing prose (which requires a
 tracker blurb to read against).
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+fi
 # CANDIDATE_ISSUES is populated from the ranking table above (top N in
 # priority order). Apply the same filter the dashboard branch uses.
 eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
@@ -1251,7 +1299,11 @@ If ALL candidates are too vague, too complex, or already attempted:
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside a comment explaining WHY the no-actionable arm does NOT write to it (strand bug sibling to #331); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 9 -->
    ```bash
-   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
    if [ -n "${WT_PATH:-}" ]; then
@@ -1363,7 +1415,11 @@ If ALL candidates are too vague, too complex, or already attempted:
 
 After Phase 2 (prioritize) is complete:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\nissueCount: %d\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" "$ISSUE_COUNT" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.prioritize"
@@ -1437,7 +1493,11 @@ between Phase 1 and here (other concurrent pipelines, etc.).
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: the SPRINT_REPORT.md basename appears only inside comments explaining WHY this trim does NOT write to it (symmetry with the Phase 1 defer-all gate); no actual `cat >> SPRINT_REPORT.md` heredoc lives in this fence — see tests/test-fix-issues-sprint-worktree-gate.sh assertion 8 -->
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # $ZSKILLS_MAX_CONCURRENT_WORKTREES is now set (defaults to 3 when the
 # execution.max_concurrent_worktrees field is absent or malformed).
 
@@ -1680,7 +1740,11 @@ already handles via the `race-lost` skip-record arm. Same architecture
 as `/work-on-plans` + `/run-plan`.
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-in-flight-issue-claims.sh"
 if [ -x "$FILTER" ] && [ "${#CANDIDATE_ISSUES[@]}" -gt 0 ]; then
   FILTERED=$(printf '%s\n' "${CANDIDATE_ISSUES[@]}" | bash "$FILTER")
@@ -1995,7 +2059,11 @@ race-loss arm).
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
@@ -2264,7 +2332,11 @@ members are listed separately in the sprint report.
 
 After Phase 3 (execute) is complete — all agents have returned:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.execute"
@@ -2279,7 +2351,11 @@ marker so the hook can enforce that verification actually runs. The
 marker lives in fix-issues' own per-sprint subdir (same pattern as
 run-plan's delegation lock in Phase 3 of the tracking plan):
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
@@ -2346,7 +2422,11 @@ Report the review results to the user.
 
 After Phase 4 (verify) is complete — all verification agents have returned:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.verify"
@@ -2427,7 +2507,11 @@ commit hashes, worktree paths, and test counts.
 
 After Phase 5 (report) is complete:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.report"
@@ -2547,8 +2631,16 @@ if [ -n "${WT_PATH:-}" ]; then
   # Re-anchor in case any per-issue dispatch cd'd away.
   cd "$WT_PATH" || { echo "fix-issues: cd $WT_PATH failed (sprint-land)" >&2; exit 1; }
   export ZSKILLS_PATHS_ROOT="$WT_PATH"
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
 
   TOPLEVEL=$(git rev-parse --show-toplevel)
   MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
@@ -2641,7 +2733,11 @@ fi
 
 After Phase 6 (land) is complete:
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.land"

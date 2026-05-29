@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.28+74165e"
+  version: "2026.05.29+065c11"
 ---
 
 # /briefing — Project Status Briefing
@@ -368,11 +368,15 @@ canonical config-resolution helper) against the source repo's latest
 release tag:
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # ZSKILLS_VERSION is the installed version (from .claude/zskills-config.json).
 source_ver=""
 if [ -d "$ZSKILLS_PATH/.git" ]; then
-  source_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+  source_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 fi
 if [ -n "$source_ver" ] && [ "$source_ver" != "$ZSKILLS_VERSION" ]; then
   echo "  zskills: $ZSKILLS_VERSION → $source_ver (run /update-zskills)"

@@ -1,9 +1,9 @@
 ---
 name: update-zskills
-argument-hint: "[install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
+argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.28+63eab6"
+  version: "2026.05.29+95bea7"
 ---
 
 # Update Z Skills Infrastructure
@@ -15,7 +15,8 @@ dependencies.
 **Invocation:**
 
 ```
-/update-zskills [install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct]
+/update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
+                [cherry-pick | locked-main-pr | direct]
                 [--with-addons | --with-block-diagram-addons]
 ```
 
@@ -49,6 +50,37 @@ was found and what was done about it.
   `.pre-paths-migration` already exists. The agent-runnable
   follow-up (path-config-upgrade prompt) handles `start-dev.sh` /
   `stop-dev.sh` rewrites and any cross-references in plan content.
+- `--switch-install-path={to-plugin|to-update-zskills}` — the supported
+  entry point for switching a consumer between the two install lanes
+  (the plugin lane and the legacy `/update-zskills` lane). This sub-mode
+  is a thin delegation: it runs
+  `bash scripts/switch-install-path.sh --to-plugin` (or
+  `--to-update-zskills`) and reports its output. (The lane-switch script
+  is a repo-root `scripts/` tool, not a skill-owned `$ZSK/scripts/` one —
+  it operates on the consumer's `.claude/` and is shared across both
+  lanes.) The script is
+  bidirectional and writes the lock file
+  `.claude/zskills-install-lane` LAST in BOTH directions (config/state
+  writes first, lock claim last — per CLAUDE.md `## Migration scripts`),
+  so an interrupted switch leaves the consumer re-runnable.
+    - `=to-plugin` — switch FROM the `/update-zskills` lane TO the plugin
+      lane: strips zskills hook entries from `.claude/settings.json` (via
+      `scripts/migrate-strip-settings.py`), basename-gated removal of the
+      mirrored `.claude/skills/<zskills>/`, `.claude/hooks/<zskills>.sh`,
+      and `.claude/rules/zskills/managed.md` (consumer-authored skills/
+      hooks are preserved), then writes `plugin` to the lock. The script
+      prints the `/plugin marketplace add` + `/plugin install zs@zskills`
+      steps the user runs in their Claude session.
+    - `=to-update-zskills` — switch FROM the plugin lane TO the
+      `/update-zskills` lane: sentinel-gated removal of the 5
+      plugin-materialised artifacts (only the ones STILL carrying a
+      `zskills-materialised:` sentinel — sentinel-less / re-installed
+      files are preserved), then writes `update-zskills` to the lock.
+    - Idempotent: invoking a direction whose lock already matches is a
+      no-op-with-INFO. Neither direction touches `.zskills/` runtime
+      state (claim markers etc. are lane-independent). See
+      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/PLUGIN_MIGRATION.md`
+      for the Abort/Rollback path.
 
 **Preset keywords (bare word, anywhere in the args):**
 
@@ -858,7 +890,7 @@ clone's latest tag (authoritative), plus how many skills have a different
 
 ```bash
 # Repo-level version: latest YYYY.MM.N tag in the source clone.
-current_zskills_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+current_zskills_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 
 # Installed version: top-level `zskills_version` field in
 # .claude/zskills-config.json. Read with inline BASH_REMATCH (NOT
@@ -875,7 +907,7 @@ if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
 fi
 
 # Per-skill delta: count rows whose `metadata.version` differs upstream.
-delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
 ```
 
@@ -960,18 +992,24 @@ only removes zskills-rendered lines — never user content).
    - `pytest.ini` / `jest.config.*` / `.mocharc.*` — test framework detection
    - Git remote URL or directory name — fallback for project name
 
-2. **Substitute placeholders** in `$PORTABLE/CLAUDE_TEMPLATE.md` using
-   current `.claude/zskills-config.json` values (fall back to
-   auto-detected defaults for empty fields; for truly unknown values,
-   comment out with a TODO marker `<!-- TODO: fill in when known -->`).
-   Placeholder mapping is documented in Step 0.5.
+2. **Render the template** via the canonical renderer (D24 — one
+   substitution map, three callers; no LLM-prose substitution). Run:
+   `python3 "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
+   The renderer imports `scripts/managed_rules_substitution.py` (the single
+   source-of-truth `build_substitutions` + `apply` map), substitutes every
+   `{{PLACEHOLDER}}` from current `.claude/zskills-config.json` values
+   (empty `dev_server.cmd` / `ui.auth_bypass` / `testing.file_patterns`
+   render the documented TODO fallbacks), and exits non-zero rather than
+   ship a broken `{{...}}` token. This step both substitutes AND writes the
+   rendered content (step 3's write is performed by the renderer's
+   atomic-rename `--out`).
 
-3. **Write the rendered content** to
-   `.claude/rules/zskills/managed.md`. Full overwrite is safe by
+3. **The renderer's `--out` writes** `.claude/rules/zskills/managed.md`
+   atomically (step 2 performs the write). Full overwrite is safe by
    ownership rule — zskills owns this file in full; no user content
    ever lives here. The file is regenerated from template + config on
-   every install and every `--rerender`. Never leaves broken
-   `{{PLACEHOLDER}}` strings.
+   every install and every `--rerender`. The renderer never leaves broken
+   `{{PLACEHOLDER}}` strings (it exits non-zero instead).
 
 4. **Run the root-CLAUDE.md migration sub-step** (below) to detect and
    relocate any pre-Phase-4 zskills content from root `./CLAUDE.md`.
@@ -1661,7 +1699,7 @@ If `$PRESET_ARG` is empty, skip this step entirely — nothing to do.
 Otherwise:
 
 ```bash
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
+bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
 
 Capture stdout and the exit code. Report to the user verbatim:
@@ -1689,9 +1727,9 @@ This is what the audit gap report (Step 6) and `/briefing` "Z Skills
 Update Check" read to detect drift on subsequent invocations:
 
 ```bash
-new_repo_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 if [ -n "$new_repo_ver" ]; then
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/json-set-string-field.sh" \
+  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
     "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
 fi
 ```
@@ -1735,7 +1773,7 @@ is already present under `.claude/skills/`; otherwise filter them out.
 Same renderer logic as the update-path table (see Pull Latest step 6).
 
 ```bash
-delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 show_addons=0
 case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
 [ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
@@ -1782,7 +1820,7 @@ had no tags).
    "Fill All Gaps"):
 
    ```bash
-   bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
+   bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
    ```
 
    Capture stdout and exit code; report verbatim to the user. This is
@@ -1796,9 +1834,9 @@ had no tags).
    Check" read on the next invocation:
 
    ```bash
-   new_repo_ver=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+   new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
    if [ -n "$new_repo_ver" ]; then
-     bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/json-set-string-field.sh" \
+     bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
        "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
    fi
    ```
@@ -1838,7 +1876,7 @@ had no tags).
    Generation pseudocode (pure bash + awk):
 
    ```bash
-   delta_tsv=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+   delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
    show_addons=0
    case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
    [ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
@@ -1877,13 +1915,15 @@ no preset, no config backfill, no migration. Pure re-render.
 1. If `$PORTABLE/CLAUDE_TEMPLATE.md` is missing or unreadable, **exit
    1** with error `CLAUDE_TEMPLATE.md missing or unreadable; cannot
    rerender`.
-2. Render the template against current config (same substitution
-   logic as Step B step 2).
-3. Create `.claude/rules/zskills/` if absent.
-4. Write the rendered content to `.claude/rules/zskills/managed.md`
-   (full overwrite — the file is zskills-owned, no user content lives
-   here).
-5. **Exit 0.**
+2. Render the template against current config via the canonical
+   renderer (the SAME `render-managed-rules.py` invocation as Step B
+   step 2 — D24, one substitution map, three callers): run
+   `python3 "$PORTABLE/scripts/render-managed-rules.py" --config .claude/zskills-config.json --template "$PORTABLE/CLAUDE_TEMPLATE.md" --out .claude/rules/zskills/managed.md`.
+   The renderer creates `.claude/rules/zskills/` if absent and writes the
+   rendered content to `.claude/rules/zskills/managed.md` atomically (full
+   overwrite — the file is zskills-owned, no user content lives here).
+3. **Exit 0.** If the renderer exits non-zero (missing template, invalid
+   config, or an unsubstituted placeholder), **exit 1** with its error.
 
 **Exit codes:**
 

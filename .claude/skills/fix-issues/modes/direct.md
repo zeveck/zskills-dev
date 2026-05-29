@@ -34,7 +34,11 @@ git pull --ff-only origin main
 linear and FF-mergeable):
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Claim-helper path is scoped to this loop body; each terminal arm below
 # (plan W2.6c — direct-mode releases) releases the per-issue claim via
 # $HELPER. Defined once at the top of the loop body for grep-locality.
@@ -176,7 +180,11 @@ done
 **After the loop — commit extracted logs and run the full test suite:**
 
 ```bash
-. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$FULL_TEST_CMD" ]; then
   echo "ERROR: testing.full_cmd not configured. Run /update-zskills." >&2
   exit 1

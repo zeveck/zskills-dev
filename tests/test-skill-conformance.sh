@@ -229,6 +229,29 @@ check_not_in_file_filtered() {
   fi
 }
 
+# Phase 4 W4.2(b) (D8): cross-test materialiser-presence check at top.
+# The conformance suite is the broadest structural safety net, so before
+# the per-skill grep checks run, fail fast if any Phase-2 SessionStart
+# materialiser artifact or plugin-lane manifest has gone missing. The
+# behavioral correctness of each is exercised by its dedicated test
+# (test-sessionstart-materialise.sh, test-plugin-manifest.sh, etc.); this
+# is purely a presence/non-deletion tripwire that surfaces a vanished
+# artifact here even if a dedicated test were ever (accidentally) dropped.
+echo "=== plugin-lane + SessionStart materialiser artifacts — presence (W4.2(b)/D8) ==="
+for _art in \
+  hooks/session-start-materialise.sh \
+  hooks/hooks.json \
+  hooks/_lib/plugin-hook-skip-if-mirrored.sh \
+  .claude-plugin/plugin.json \
+  .claude-plugin/marketplace.json \
+  block-diagram/.claude-plugin/plugin.json; do
+  if [ -f "$REPO_ROOT/$_art" ]; then
+    pass "[materialiser-presence] $_art exists"
+  else
+    fail "[materialiser-presence] $_art exists" "$_art"
+  fi
+done
+
 echo "=== /run-plan — behavior contracts ==="
 check       run-plan "stop-precedence"              'Takes precedence'
 check_fixed run-plan "landing-default"              'LANDING_MODE="cherry-pick"'
@@ -2345,7 +2368,7 @@ scan_positive_side() {
 # real-tree case. Use a temp dir so we exercise the same scan_positive_side
 # logic on small fixtures with known ground truth.
 POS_FIXTURE_DIR=$(mktemp -d)
-mkdir -p "$POS_FIXTURE_DIR/skills/syn-pass" "$POS_FIXTURE_DIR/skills/syn-fail"
+mkdir -p "$POS_FIXTURE_DIR/skills/syn-pass" "$POS_FIXTURE_DIR/skills/syn-pass-dualpath" "$POS_FIXTURE_DIR/skills/syn-fail"
 cat > "$POS_FIXTURE_DIR/skills/syn-pass/SKILL.md" <<'PASS_FIXTURE'
 # syn-pass
 
@@ -2354,6 +2377,22 @@ cat > "$POS_FIXTURE_DIR/skills/syn-pass/SKILL.md" <<'PASS_FIXTURE'
 echo "$FULL_TEST_CMD"
 ```
 PASS_FIXTURE
+# Phase 3 W3.5 (D6): the new lane-portable two-line dual-path source form
+# MUST be accepted by the per-fence sourcing-discipline check just like the
+# legacy one-liner. Both branches reference zskills-resolve-config.sh, so the
+# fence-local preamble detector (substring match) recognizes it.
+cat > "$POS_FIXTURE_DIR/skills/syn-pass-dualpath/SKILL.md" <<'PASS_DUALPATH_FIXTURE'
+# syn-pass-dualpath
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+echo "$FULL_TEST_CMD"
+```
+PASS_DUALPATH_FIXTURE
 cat > "$POS_FIXTURE_DIR/skills/syn-fail/SKILL.md" <<'FAIL_FIXTURE'
 # syn-fail
 
@@ -2371,6 +2410,17 @@ if [ "$SYN_PASS_FAIL" -eq 0 ]; then
   pass "positive-side synthetic-PASS: fence using \$FULL_TEST_CMD WITH preamble accepted"
 else
   fail "positive-side synthetic-PASS: should accept fence with preamble" "${SYN_PASS_HITS[*]:-no hits}"
+fi
+
+# Synthetic-PASS (dual-path) case: scan only syn-pass-dualpath; expect 0 hits.
+# Asserts the Phase 3 W3.5/D6 two-line dual-path source form is accepted.
+SYN_DUALPATH_FAIL=0
+SYN_DUALPATH_HITS=()
+scan_positive_side "$POS_FIXTURE_DIR/skills/syn-pass-dualpath" SYN_DUALPATH_FAIL SYN_DUALPATH_HITS
+if [ "$SYN_DUALPATH_FAIL" -eq 0 ]; then
+  pass "positive-side synthetic-PASS (dual-path): two-line CLAUDE_PLUGIN_ROOT fallback source form accepted"
+else
+  fail "positive-side synthetic-PASS (dual-path): should accept the two-line dual-path source form" "${SYN_DUALPATH_HITS[*]:-no hits}"
 fi
 
 # Synthetic-FAIL case: scan only syn-fail; expect 1 hit.
