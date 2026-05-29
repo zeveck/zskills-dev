@@ -1203,6 +1203,29 @@ bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
   release "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" 2>/dev/null || true
 ```
 
+**Issue-claim release (W3.3 / W3.5 — already-complete no-op).** Release any
+linked `issue-<N>` claim alongside the plan claim on this no-op exit path,
+re-parsing the bare-integer issue number(s) from `$PLAN_FILE_FOR_READ`'s
+frontmatter (same normalization as the acquire fence). Without this, the
+issue claim leaks until `/run-plan stop` or a manual release.
+```bash
+ISSUE_NUMS=()
+while IFS= read -r raw; do
+  n=$(printf '%s' "$raw" | tr -d '"'\''#[:space:]')
+  case "$n" in ''|*[!0-9]*) continue ;; esac
+  [ "$n" -gt 0 ] 2>/dev/null && ISSUE_NUMS+=("$n")
+done < <(awk '
+  NR==1 && $0 != "---" { exit }
+  NR==1 { infm=1; next }
+  infm && $0 == "---" { exit }
+  infm && /^[[:space:]]*issue:[[:space:]]*/ { sub(/^[[:space:]]*issue:[[:space:]]*/, "", $0); print $0 }
+' "$PLAN_FILE_FOR_READ" 2>/dev/null)
+for N in "${ISSUE_NUMS[@]}"; do
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+    release "$N" --require-pipeline "$PIPELINE_ID" 2>/dev/null || true
+done
+```
+
 Exit cleanly without re-committing. Output "Plan already complete (no-op)."
 
 ### 0b. Final-verify gate
@@ -1606,6 +1629,31 @@ if [ "$rc" -eq 12 ]; then
 elif [ "$rc" -ne 0 ]; then
   echo "Release failed (rc=$rc)" >&2; exit 1
 fi
+```
+
+**Issue-claim release (W3.3 / W3.5 — terminal merge).** Release every
+linked `issue-<N>` claim run-plan held for this plan's lifetime, alongside
+the plan claim above. Re-parse the bare-integer issue number(s) from
+`$PLAN_FILE_FOR_READ`'s frontmatter (same normalization as the acquire fence
+in SKILL.md). Exit 12 (pipeline mismatch) is tolerated per-issue — it means
+another pipeline owns that issue claim (e.g., the WARN-and-PROCEED path
+never won it) and we must not clobber it.
+```bash
+ISSUE_NUMS=()
+while IFS= read -r raw; do
+  n=$(printf '%s' "$raw" | tr -d '"'\''#[:space:]')
+  case "$n" in ''|*[!0-9]*) continue ;; esac
+  [ "$n" -gt 0 ] 2>/dev/null && ISSUE_NUMS+=("$n")
+done < <(awk '
+  NR==1 && $0 != "---" { exit }
+  NR==1 { infm=1; next }
+  infm && $0 == "---" { exit }
+  infm && /^[[:space:]]*issue:[[:space:]]*/ { sub(/^[[:space:]]*issue:[[:space:]]*/, "", $0); print $0 }
+' "$PLAN_FILE_FOR_READ" 2>/dev/null)
+for N in "${ISSUE_NUMS[@]}"; do
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+    release "$N" --require-pipeline "$PIPELINE_ID" 2>/dev/null || true
+done
 ```
 
 Remove the worktree's `.zskills-tracked` to avoid associating future agents with a dead pipeline:

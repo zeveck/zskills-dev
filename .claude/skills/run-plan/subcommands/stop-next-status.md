@@ -113,14 +113,18 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
    ```
-3.5. **Release all run-plan plan claims (W2a.4 site 1; Option A walk).**
-   /run-plan stop is a session-wide halt by design (step 2 above already
-   deletes ALL `Run /run-plan` crons, not just this plan's). Iterate
-   `.zskills/claims/plan-*/` and call `claim-plan.sh release <slug>
-   --require-pipeline run-plan.<slug>` for every claim whose
-   `pipeline_id` starts with `run-plan.`. Mismatched pipelines are
-   skipped (exit 12) — those claims belong to other in-flight runs and
-   must not be clobbered.
+3.5. **Release all run-plan plan AND issue claims (W2a.4 site 1 + W3.4;
+   Option A walk).** /run-plan stop is a session-wide halt by design
+   (step 2 above already deletes ALL `Run /run-plan` crons, not just this
+   plan's). Iterate `.zskills/claims/plan-*/` and call `claim-plan.sh
+   release <slug> --require-pipeline run-plan.<slug>` for every claim whose
+   `pipeline_id` starts with `run-plan.`; THEN iterate
+   `.zskills/claims/issue-*/` and call `claim-issue.sh release <N>
+   --require-pipeline run-plan.<slug>` for every issue claim whose
+   `pipeline_id` starts with `run-plan.` (the #803 execution-window
+   claims run-plan now holds). Mismatched pipelines are skipped (exit 12)
+   — those claims belong to other in-flight runs (or to /fix-issues, which
+   owns its own `issue-*/` claims) and must not be clobbered.
    ```bash
    CLAIMS_ROOT="$MAIN_ROOT/.zskills/claims"
    RELEASED=0
@@ -152,6 +156,45 @@ except Exception:
        set +e
        bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
          release "$slug" --require-pipeline "$claim_pid"
+       rc=$?
+       set -e
+       case "$rc" in
+         0) RELEASED=$((RELEASED + 1)) ;;
+         12) SKIPPED=$((SKIPPED + 1)) ;;  # mismatched pipeline (multi-session)
+         *) SKIPPED=$((SKIPPED + 1)) ;;
+       esac
+     done
+     # ISSUE-CLAIM SWEEP (W3.4 / M2/M3): run-plan now ALSO owns issue-<N>
+     # claims (the #803 execution-window protection). The plan-* loop above
+     # is structurally blind to issue-*/ dirs, so this PARALLEL loop releases
+     # every issue-<N> whose pipeline_id starts with `run-plan.` — mirroring
+     # the plan-* guard, mismatch-skip (exit 12), and tally. /fix-issues-owned
+     # issue claims (pipeline_id `fix-issues.*`) are skipped, never clobbered.
+     for d in "$CLAIMS_ROOT"/issue-*; do
+       [ -d "$d" ] || continue
+       n=$(basename "$d" | sed 's/^issue-//')
+       [ -n "$n" ] || continue
+       claim_file="$d/claim.json"
+       if [ ! -f "$claim_file" ]; then
+         continue
+       fi
+       claim_pid=$("${ZSKILLS_PYTHON:-python3}" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get('pipeline_id', ''))
+except Exception:
+    pass
+" "$claim_file" 2>/dev/null)
+       # Only touch run-plan-owned issue claims; never clobber /fix-issues'
+       # (or any other pipeline's) issue claim.
+       case "$claim_pid" in
+         run-plan.*) ;;
+         *) continue ;;
+       esac
+       set +e
+       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+         release "$n" --require-pipeline "$claim_pid"
        rc=$?
        set -e
        case "$rc" in

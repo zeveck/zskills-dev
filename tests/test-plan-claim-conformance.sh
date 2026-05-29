@@ -201,6 +201,61 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# I. POSITIVE (Phase 3 / #803 — issue-claim execution-window protection).
+#    These ADD to the battery; they do NOT relax assertion A above (the
+#    plan-claim acquire is untouched and still precedes ### Execution).
+#
+#    I1. SKILL.md contains a `claim-issue.sh acquire` in the same region as
+#        the plan-claim acquire (the issue-claim acquire arm, W3.2). We
+#        anchor it AFTER the plan-claim `claim-plan.sh acquire` line so the
+#        new arm sits where the plan claim is already won.
+#    I2. The operator-stop release loop (stop-next-status.md) contains an
+#        `issue-*` arm: both a `"$CLAIMS_ROOT"/issue-*` glob and a
+#        `claim-issue.sh ... release` call (W3.4). Without this run-plan's
+#        issue claim leaks on /run-plan stop.
+#    I3. The terminal-merge + no-op release sites (execute-phase.md) each
+#        release issue claims via `claim-issue.sh ... release` (W3.3) — at
+#        least 2 such release calls in execute-phase.md.
+# ───────────────────────────────────────────────────────────────────────
+# I1 — issue-claim acquire present in SKILL.md, after the plan-claim acquire.
+plan_acq_ln=$(grep -nE 'claim-plan\.sh"?[[:space:]]*\\?$|claim-plan\.sh"[[:space:]]+acquire' "$RP_SKILL" | head -1 | cut -d: -f1)
+issue_acq_ln=$(grep -nE 'claim-issue\.sh"[[:space:]]*\\?$' "$RP_SKILL" | head -1 | cut -d: -f1)
+# Fall back to a joined-continuation scan to confirm the acquire verb pairs
+# with claim-issue.sh (the verb sits on the continuation line in the source).
+issue_acq_present=$(awk '
+BEGIN{buf=""}
+{ if (substr($0,length($0))=="\\") { buf=buf substr($0,1,length($0)-1) } else { print buf $0; buf="" } }
+' "$RP_SKILL" | grep -cE 'claim-issue\.sh"[[:space:]]+acquire')
+if [ -n "$issue_acq_ln" ] && [ -n "$plan_acq_ln" ] && [ "$issue_acq_ln" -gt "$plan_acq_ln" ] && [ "${issue_acq_present:-0}" -ge 1 ]; then
+  pass "issue-claim acquire present in SKILL.md (line $issue_acq_ln, after plan-claim acquire line $plan_acq_ln) — W3.2/#803"
+else
+  fail "issue-claim acquire (W3.2)" "issue_acq_ln=$issue_acq_ln plan_acq_ln=$plan_acq_ln joined-acquire-hits=$issue_acq_present — expected a claim-issue.sh acquire arm after the plan-claim acquire"
+fi
+
+# I2 — operator-stop loop has an issue-* arm (glob + claim-issue.sh release).
+stop_issue_glob=$(grep -cE '"\$CLAIMS_ROOT"/issue-\*' "$RP_SUB")
+stop_issue_rel=$(awk '
+BEGIN{buf=""}
+{ if (substr($0,length($0))=="\\") { buf=buf substr($0,1,length($0)-1) } else { print buf $0; buf="" } }
+' "$RP_SUB" | grep -cE 'claim-issue\.sh"[[:space:]]+release')
+if [ "${stop_issue_glob:-0}" -ge 1 ] && [ "${stop_issue_rel:-0}" -ge 1 ]; then
+  pass "operator-stop issue-* sweep arm present (CLAIMS_ROOT/issue-* glob + claim-issue.sh release) — W3.4/M2/M3"
+else
+  fail "operator-stop issue-* sweep (W3.4)" "issue-* glob hits=$stop_issue_glob, claim-issue.sh release hits=$stop_issue_rel — expected a parallel issue-* release loop"
+fi
+
+# I3 — terminal-merge + no-op issue-claim release sites in execute-phase.md.
+exec_issue_rel=$(awk '
+BEGIN{buf=""}
+{ if (substr($0,length($0))=="\\") { buf=buf substr($0,1,length($0)-1) } else { print buf $0; buf="" } }
+' "$RP_EXEC" | grep -cE 'claim-issue\.sh"[[:space:]]+release')
+if [ "${exec_issue_rel:-0}" -ge 2 ]; then
+  pass "issue-claim release sites in execute-phase.md (terminal merge + no-op): $exec_issue_rel claim-issue.sh release calls — W3.3"
+else
+  fail "issue-claim release sites (W3.3)" "expected >=2 claim-issue.sh release calls in execute-phase.md, got $exec_issue_rel"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""
