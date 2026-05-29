@@ -1,5 +1,29 @@
 # Plan Report — Ownership-aware work-item claims (#803)
 
+## Phase — 2 Wire /do, /quickfix, /investigate onto claim-issue.sh
+
+**Plan:** docs/plans/claim-work-item.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-claim-work-item (branch `feat/claim-work-item`)
+**Commit:** `bffe378`
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| W2.1 | /investigate acquire/release | Done | synth `investigate.issue-$N`; acquire before reproduction; success-path + per-STOP releases |
+| W2.2 | /do worktree+direct | Done | issue parsed via `--force`; acquire after `do.${TASK_SLUG}`+worktree; release in **Phase 5 Report** (not Phase 4 Land); direct synthesizes `do.<issue>` |
+| W2.3 | /do PR mode | Done | acquire at A5.5; finalize release; **C2 inline-releases at all 3 pre-finalize exits** (exit 5/2/1); no HOLD-on-created |
+| W2.4 | /quickfix | Done | reuse `quickfix.$SLUG`; acquire at Tracking-setup before branch; release in Phase 7 finalize + fail sites |
+| W2.5 | Version bump + mirror (do/quickfix/investigate) | Done | `2026.05.29` ×3; hashes match; mirrors byte-equal |
+| W2.6 | Conformance sentinels | Done | +17 positive assertions; FAIL if wiring dropped; no existing assertion weakened |
+
+### Verification
+- Full suite: **`Overall: 6502/6502 passed, 0 failed`** (baseline 6485 + 17 sentinels). Verified by separate agent; Layer 3 validation passed; known monitor-collect flake did not fire.
+- C1/M1 (no acquire before non-empty PIPELINE_ID + bare-integer issue) holds at all 5 acquire sites; foreign→STOP (not next-candidate); no jq; no forbidden literals.
+
+### Advisory note (plan-text drift, non-numeric — not auto-corrected)
+The plan's W2.1 calls `/investigate`'s reproduction-skip (≈:74-88) an "abandon point" needing a release. In reality that gate **proceeds** with lower confidence (not an abandon); the genuine couldn't-reproduce abandon is covered by the Report-section catch-all release. Release coverage is therefore complete. Minor plan-accuracy note; no behavioral gap.
+
 ## Phase — 1 Shared self-re-entry helper + wire into both twins + tests
 
 **Plan:** docs/plans/claim-work-item.md

@@ -383,7 +383,7 @@ not "around `gh issue close`."
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | Phase 1 — Shared self-re-entry helper + wire into both twins + tests | ✅ | `49e705a` | helper + both EEXIST arms wired; +15 test cases; 6485/6485 green |
-| Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh | ⬚ | | |
+| Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh | ✅ | `bffe378` | 3 consumers wired (C1/M1 placement, C2 inline-releases); +17 conformance sentinels; 6502/6502 green |
 | Phase 3 — run-plan issue-claim (execution-window protection) + operator-stop sweep + optional :597 cleanup | ⬚ | | |
 | Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs | ⬚ | | |
 
