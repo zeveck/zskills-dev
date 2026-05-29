@@ -1,7 +1,8 @@
 ---
 title: Lane-aware /update-zskills (don't flip a plugin consumer)
 created: 2026-05-29
-status: active
+status: "complete"
+completed: "2026-05-29T16:29:41Z"
 ---
 
 # Plan: Lane-aware `/update-zskills`
@@ -30,7 +31,7 @@ classifies as `update-zskills` (verified) — the branch **never fires** there, 
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Lane-aware plugin-context branch + doc-drift + tests | ⬚ | | |
+| 1 — Lane-aware plugin-context branch + doc-drift + tests | ✅ Done | `30f38bf` | Step 0.7 lane branch; #801 doc-drift; +17 tests; 6421/6421 |
 
 ## Phase 1 — Lane-aware plugin-context branch
 

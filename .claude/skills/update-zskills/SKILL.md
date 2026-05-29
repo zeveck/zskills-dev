@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.29+24f693"
+  version: "2026.05.29+90450f"
 ---
 
 # Update Z Skills Infrastructure
@@ -84,16 +84,17 @@ was found and what was done about it.
 
 **Preset keywords (bare word, anywhere in the args):**
 
-Presets control three things at once: `execution.landing`,
-`execution.main_protected`, and the `BLOCK_MAIN_PUSH` line in
-`.claude/hooks/block-unsafe-generic.sh`. Everything else in
-`zskills-config.json` is preserved.
+Presets are **config-only**: they set `execution.landing` and
+`execution.main_protected` in `.claude/zskills-config.json`. The
+main-push gate in `block-unsafe-generic.sh` is no longer set by the preset
+— the hook reads `execution.main_protected` from config at runtime
+(fail-closed). Everything else in `zskills-config.json` is preserved.
 
-| Preset | `execution.landing` | `execution.main_protected` | `BLOCK_MAIN_PUSH` |
+| Preset | `execution.landing` | `execution.main_protected` | push gate (derived at runtime) |
 |---|---|---|---|
-| `cherry-pick` (default) | `cherry-pick` | `false` | `0` |
-| `locked-main-pr` | `pr` | `true` | `1` |
-| `direct` | `direct` | `false` | `0` |
+| `cherry-pick` (default) | `cherry-pick` | `false` | allow |
+| `locked-main-pr` | `pr` | `true` | block |
+| `direct` | `direct` | `false` | allow |
 
 Behavior by invocation:
 - `/update-zskills <preset>` — apply that preset; no greenfield prompt.
@@ -429,13 +430,15 @@ installed, not landing behavior.
 Preset → field mapping (used wherever a preset is applied in later
 steps):
 
-| `$PRESET_ARG` | `execution.landing` | `execution.main_protected` | `BLOCK_MAIN_PUSH` |
-|---|---|---|---|
-| `cherry-pick` | `"cherry-pick"` | `false` | `0` |
-| `locked-main-pr` | `"pr"` | `true` | `1` |
-| `direct` | `"direct"` | `false` | `0` |
+| `$PRESET_ARG` | `execution.landing` | `execution.main_protected` |
+|---|---|---|
+| `cherry-pick` | `"cherry-pick"` | `false` |
+| `locked-main-pr` | `"pr"` | `true` |
+| `direct` | `"direct"` | `false` |
 
-The three affected fields are **preset-owned**. When `$PRESET_ARG` is
+These two config fields are **preset-owned**. (The main-push gate in
+`block-unsafe-generic.sh` derives from `main_protected` at runtime — it is
+not a value the preset writes.) When `$PRESET_ARG` is
 non-empty, every other field in `.claude/zskills-config.json`
 (`branch_prefix`, `testing.*`, `dev_server.*`, `ui.*`, `ci.*`,
 `timezone`, `agents.min_model`) is preserved unchanged.
@@ -585,13 +588,13 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    `$schema` reference in the config resolves correctly).
 5. **If `$PRESET_ARG` was set**, defer preset application to
    **Step F — Apply Preset** (invoked at the end of both install and
-   update paths). Step F runs `.claude/skills/update-zskills/scripts/apply-preset.sh` which handles
-   all three preset-owned fields (`execution.landing`,
-   `execution.main_protected`, `BLOCK_MAIN_PUSH`) atomically,
-   including idempotency, JSON formatting variance, missing
-   `execution` key, and legacy hooks without the `BLOCK_MAIN_PUSH=`
-   line. Don't attempt a manual `Edit` here — the script is the
-   single source of truth.
+   update paths). Step F runs `.claude/skills/update-zskills/scripts/apply-preset.sh` which is
+   **config-only** — it sets the two preset-owned config fields
+   (`execution.landing`, `execution.main_protected`) atomically,
+   including idempotency, JSON formatting variance, and a missing
+   `execution` key. It does NOT touch the hook; `block-unsafe-generic.sh`
+   reads `main_protected` from config at runtime. Don't attempt a manual
+   `Edit` here — the script is the single source of truth.
 
 **If it does not exist:**
 1. **If `$PRESET_ARG` is empty**, run the greenfield prompt (Step 0.6)
@@ -645,13 +648,12 @@ Check if `.claude/zskills-config.json` exists in the target project root (`$PROJ
    left empty by auto-detection stay as empty strings — the install
    summary's test-setup blurb tells the user what to fill in later.
 
-4. **Hook toggle handled by Step F.** The config's `execution.landing`
+4. **No hook edit needed.** The config's `execution.landing`
    and `execution.main_protected` placeholders above are substituted
-   in at write time. The `BLOCK_MAIN_PUSH` line in the hook is set by
-   **Step F — Apply Preset** at the end of the install path, after
-   Step C has copied the hook. Step F idempotently flips the value
-   (or splices the line, on a legacy hook without it) to match the
-   preset target. Nothing to do here.
+   in at write time, and `block-unsafe-generic.sh` reads
+   `main_protected` from config at runtime to decide whether to block
+   a push to `main`/`master` (fail-closed). **Step F — Apply Preset** is
+   config-only and does not touch the hook. Nothing to do here.
 
 **Merge algorithm pseudocode:**
 ```
@@ -722,12 +724,13 @@ Map the reply:
   then proceed. Never re-ask the prompt; never invent a 4th option.
 
 Set `$PRESET_ARG` to the chosen preset and proceed. No follow-up
-questions — the three-field mapping (landing + main_protected +
-BLOCK_MAIN_PUSH) in Step 0.25 is final. In particular, we do **not**
-ask "do you want the main-push block on?" for `locked-main-pr`:
-`main_protected=true` already makes `block-unsafe-project.sh` block
-agent commits, cherry-picks, and pushes on main, so the generic hook's
-`BLOCK_MAIN_PUSH=1` is belt-and-suspenders, not a user-facing choice.
+questions — the two-field config mapping (landing + main_protected) in
+Step 0.25 is final. In particular, we do **not** ask "do you want the
+main-push block on?" for `locked-main-pr`: `main_protected=true` is the
+single source of truth — `block-unsafe-project.sh` blocks agent commits,
+cherry-picks, and pushes on main, and `block-unsafe-generic.sh` derives
+its push gate from the same `main_protected` value at runtime, so the
+push block is not a separate user-facing choice.
 
 ---
 
@@ -823,7 +826,7 @@ Look in `scripts/` for these files (all required by installed skills):
 - `worktree-add-safe.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for safe worktree creation (discriminates fresh vs poisoned stale branches)
 - `create-worktree.sh` — referenced by `/run-plan`, `/fix-issues`, `/do` for unified worktree creation
 - `sanitize-pipeline-id.sh` — shared PIPELINE_ID sanitizer (used by `/run-plan`, `/fix-issues`, `/do`, `/quickfix` before persisting ID)
-- `apply-preset.sh` — required by the preset UX (Step F); splices/flips the `BLOCK_MAIN_PUSH` line in `block-unsafe-generic.sh` and updates `execution.landing`/`execution.main_protected` in config
+- `apply-preset.sh` — required by the preset UX (Step F); **config-only** — updates `execution.landing`/`execution.main_protected` in config (the hook reads `main_protected` at runtime; apply-preset does not touch it)
 - `compute-cron-fire.sh` — required by `/run-plan` (Phase 5c chunked finish-auto, verify-pending retry, re-entry) for computing one-shot cron expressions with correct minute/hour/day/month/year rollover
 - `stop-dev.sh` — sanctioned SIGTERM-only dev-server stopper (reads `.zskills/dev-server.pid`). The approved way for agents to stop a dev server without reaching for `kill -9` / `fuser -k` / `lsof -ti | xargs kill`
 - `statusline.sh` — session statusline helper (optional but should be installed if the user has it)
@@ -942,6 +945,94 @@ Overall: Y/Y dependencies satisfied. Nothing to install.
 If there are gaps and the skill is running in default or install mode,
 proceed to fill them (see below). The audit report is always shown first
 so the user sees what was found before any modifications.
+
+---
+
+## Step 0.7 — Lane check (plugin-lane short-circuit)
+
+This branch sits on the **bare / default path only** — it runs after the
+arg parser (Step 0.25), config read (Step 0.5), and the greenfield prompt
+(Step 0.6), and **at/above** the Default-Mode Smart-Detection fork below.
+Explicit `--migrate-paths` already short-circuited at Step 0.1; explicit
+`install`, `--with-addons`, `--rerender`, and `--switch-install-path` are a
+user *forcing* a legacy/mirror action and are **not** intercepted here
+(typing the flag is opt-in). The destructive case this branch prevents is
+the *silent* flip of a pure-plugin consumer on a **bare** `/update-zskills`
+call: with no `.claude/skills/` mirror, the audit would see every skill/hook
+as "missing" and the gap-fill would copy them all in, flipping the consumer
+onto the legacy lane.
+
+**Signal = `detect_install_state == plugin`**, NOT `$CLAUDE_PLUGIN_ROOT`.
+`lane == plugin` means "plugin-materialised artifacts present AND no legacy
+`.claude/skills` mirror" — the exact flip-risk. `$CLAUDE_PLUGIN_ROOT` is
+rejected: it is set in any `claude --plugin-dir .` session (including the
+dev repo's legacy-lane dogfooding), so keying on it would make
+`/update-zskills install` wrongly hit this branch and refuse to install.
+`detect_install_state` answers "what's installed on disk", not "how was I
+invoked." The dev repo has its legacy mirror present, so it classifies as
+`update-zskills` and this branch **never fires** there.
+
+**Resolve the lane (dual-locate + fail-soft).** `detect-install-state.sh`
+is NOT mirrored into `.claude/hooks/_lib/` on the legacy lane, so locate it
+under `$CLAUDE_PLUGIN_ROOT` or `$PORTABLE`; if it is unreachable, default
+`LANE=update-zskills` (legacy behavior — safe, because the only unreachable
+case is a pure-legacy session, which *should* proceed with legacy behavior
+anyway; a pure-plugin consumer always has `$CLAUDE_PLUGIN_ROOT` set):
+
+```bash
+MAIN_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+DIS=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/_lib/detect-install-state.sh" ]; then
+  DIS="${CLAUDE_PLUGIN_ROOT}/hooks/_lib/detect-install-state.sh"
+elif [ -n "${PORTABLE:-}" ] && [ -f "${PORTABLE}/hooks/_lib/detect-install-state.sh" ]; then
+  DIS="${PORTABLE}/hooks/_lib/detect-install-state.sh"
+fi
+LANE="update-zskills"   # fail-soft default = legacy behavior (safe)
+if [ -n "$DIS" ]; then . "$DIS"; LANE="$(detect_install_state "$MAIN_ROOT")"; fi
+```
+
+**If `LANE == plugin`:** do NOT run Step 0 asset-locate, the audit's
+gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
+
+- **If a preset arg was parsed (`$PRESET_ARG` non-empty):** apply it
+  **config-only** via the existing **Step F — Apply Preset** call (it is
+  lane-portable — it edits only `.claude/zskills-config.json`, never the
+  mirror):
+
+  ```bash
+  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+  ```
+
+  Report the result verbatim per Step F's exit-code table (0 applied / 1
+  no-change / 2 usage / 3 missing config / 4 malformed config), then exit
+  with the script's exit code. Do not proceed to the audit or any fill
+  step.
+
+- **Else (bare call, no preset):** print the plugin-lane explanation and
+  exit 0:
+
+  ```
+  You're on the plugin lane. Skills, hooks, and rules are plugin-managed —
+  update them with `/plugin marketplace update`, not `/update-zskills`. To
+  change landing mode here, run
+  `/zs:update-zskills <cherry-pick|locked-main-pr|direct>` or edit
+  `.claude/zskills-config.json` directly (config is the single source of
+  truth for mode). To switch install lanes, use
+  `scripts/switch-install-path.sh` (or
+  `/update-zskills --switch-install-path=...`).
+  ```
+
+**Else** (`LANE` is `update-zskills`, `dual`, or `fresh`, OR detection was
+unreachable): proceed to the existing behavior **unchanged**. The `dual`
+case is intentionally NOT given its own arm — the mirror already exists, so
+gap-fill is a non-destructive update, and the materialiser +
+`switch-install-path` already own dual detection/warning/recovery;
+`/update-zskills` must not add its own dual handling.
+
+`managed.md` is not touched by this branch — because the plugin arm skips
+the entire gap-fill (including Step B's render), the sentinel-clobber
+landmine (a sentinel-less re-render shifting `detect_install_state`) cannot
+occur on this path.
 
 ---
 
@@ -1224,12 +1315,14 @@ runtime. No install-time fill needed. Only copy the source template.
 >
 > See the canonical table below for the full hook set (additionally: PreToolUse `Agent` matcher → `block-agents.sh`; PostToolUse `Edit`/`Write` matchers → `warn-config-drift.sh`).
 
-**Main-push block (preset-controlled):** `block-unsafe-generic.sh`
-blocks `git push` to `main`/`master` when `BLOCK_MAIN_PUSH=1`, the
-top-of-file variable. The preset controls this value via
-**Step F — Apply Preset** at the end of the install/update path; no
-action here in Step C. Preset mapping: `cherry-pick` → `0`,
-`locked-main-pr` → `1`, `direct` → `0`.
+**Main-push block (config-derived):** `block-unsafe-generic.sh`
+blocks `git push` to `main`/`master` when `BLOCK_MAIN_PUSH=1` — a value the
+hook **derives at runtime** from `execution.main_protected` in
+`.claude/zskills-config.json` (fail-closed: defaults to `1`/block when the
+config is absent or unreadable). The preset sets `main_protected` in config
+(Step F is config-only); the hook reads it. No hook edit here in Step C.
+Effective mapping: `cherry-pick`/`direct` → `main_protected:false` → allow
+push; `locked-main-pr` → `main_protected:true` → block push.
 
 **Note on tracking enforcement:** The tracking enforcement section in
 `block-unsafe-project.sh` (protecting `.zskills/tracking/`, blocking
@@ -1707,16 +1800,17 @@ Capture stdout and the exit code. Report to the user verbatim:
   the script reported.
 - Exit 1: "Preset '<name>' already applied — no changes needed."
 - Exit 2/3/4: print the script's error message and halt; these only
-  fire when the config file is missing, the hook file is missing, the
-  config JSON is malformed, or an unknown preset was somehow passed.
-  In that case, advise the user and do not continue.
+  fire when an unknown preset was somehow passed (2), the config file is
+  missing (3), or the config JSON is malformed (4). apply-preset is
+  config-only — it does not read or edit the hook. In that case, advise
+  the user and do not continue.
 
 **Why a script and not a series of `Edit` calls in the SKILL.md?**
 The script is deterministic, idempotent, and unit-tested
-(`tests/test-apply-preset.sh`, 16 cases covering legacy hooks,
-missing `execution` keys, compact JSON, idempotency, error paths).
+(`tests/test-apply-preset.sh` covers missing `execution` keys, compact
+JSON, idempotency, error paths, and asserts the hook is left untouched).
 A prompt-side sequence of `Edit` calls is fragile against JSON
-formatting variance and legacy hook versions. Delegate to the script.
+formatting variance. Delegate to the script.
 
 #### Step F.5 — Mirror the source-repo tag into config
 
@@ -1951,12 +2045,10 @@ These rules are inviolable. They apply to all modes:
    AND the template's ±2-line context around that value. No other
    cross-writes.
 2. **NEVER overwrite existing hooks or scripts** — if a file already
-   exists, skip it. The user may have customized it.
-   (Exception: `.claude/skills/update-zskills/scripts/apply-preset.sh` performs targeted in-place
-   edits to `block-unsafe-generic.sh` — splicing a missing
-   `BLOCK_MAIN_PUSH=` line or flipping its value. This is a
-   deterministic, non-destructive operation limited to that one line;
-   the rest of the hook is preserved byte-for-byte.)
+   exists, skip it. The user may have customized it. (Presets do not edit
+   any hook: `apply-preset.sh` is config-only, and
+   `block-unsafe-generic.sh` derives its main-push gate from
+   `execution.main_protected` at runtime.)
 3. **Explain what hooks do when installing them** — don't just list
    filenames. The user needs to understand what each hook does.
 4. **Show the user what will be installed BEFORE doing it** — no silent
