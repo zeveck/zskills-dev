@@ -8,8 +8,16 @@ status: active
 # Plan: Ownership-aware work-item claims — self-re-entry in the twin claim scripts
 
 > **Landing mode: PR** — `.claude/zskills-config.json` has `main_protected: true`,
-> so every phase works in a named worktree on a feature branch and lands via
-> `/land-pr` (one PR per phase). No commit/cherry-pick to main.
+> so the plan works in a named worktree on a feature branch and lands via
+> `/land-pr`. No commit/cherry-pick to main.
+>
+> **Execution note (2026-05-29):** run via `/run-plan … finish auto`, which
+> accumulates all phases on one branch (`feat/claim-work-item`) and opens a
+> SINGLE PR for the whole plan — deliberately superseding the original
+> per-phase-PR intent (the phases form one coherent #803 feature in a
+> single-maintainer, agent-facing repo; one bundled PR is lower-overhead and
+> all phases are verified+tested before merge). The per-phase "Lands its own
+> PR" lines below are historical design notes, not the executed landing shape.
 
 ## Overview
 
@@ -374,7 +382,7 @@ not "around `gh issue close`."
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| Phase 1 — Shared self-re-entry helper + wire into both twins + tests | ⬚ | | |
+| Phase 1 — Shared self-re-entry helper + wire into both twins + tests | ✅ | `49e705a` | helper + both EEXIST arms wired; +15 test cases; 6485/6485 green |
 | Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh | ⬚ | | |
 | Phase 3 — run-plan issue-claim (execution-window protection) + operator-stop sweep + optional :597 cleanup | ⬚ | | |
 | Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs | ⬚ | | |
