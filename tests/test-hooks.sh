@@ -316,6 +316,47 @@ expect_allow "WHS-A6: bash run.sh <<EOF (heredoc is DATA for script)" \
 expect_allow "WHS-A7: bash <<<\"echo git clean -fdx\" (interpreter runs benign echo)" \
   "bash <<<\\\"echo git clean -fdx\\\""
 
+# WHS13-WHS20. Absolute-path + long-flag interpreter here-string/heredoc
+# bypass closure (#789) — closure-incomplete on #772. The #772 head regex
+# matched only a BARE interpreter token with single-dash short flags, so
+# `/bin/bash <<<…` (absolute path — the left boundary excluded `/`),
+# `bash --norc <<<…` (long flag broke the flag run), and
+# `bash -eo pipefail <<<…` (option-argument looked like a positional) all
+# slipped past the re-injection and Pass-1 stripped the body as inert.
+# `/bin/bash` is a completely non-adversarial form, so this defeated the
+# destructive-op fence for git reset --hard / rm -rf / git clean -fdx.
+#
+# The #789 head_re broadening adds an optional path prefix, accepts --long
+# flags, and consumes option-argument words after -o/--rcfile/--init-file
+# while STILL terminating the flag run at a free non-flag (script-file)
+# positional — so `bash script.sh <<<data` stays inert DATA.
+# Sanity: each WHS13+ DENY case ALLOWs against the pre-#789 hook (proving
+# the assertion exercises the broadened regex), verified manually.
+
+# --- DENY: absolute / relative interpreter PATH (#789) ---
+expect_deny "WHS13: /bin/bash <<<\"git reset --hard\" (absolute path)" \
+  "/bin/bash <<<\\\"git reset --hard\\\""
+expect_deny "WHS14: /usr/bin/bash <<<\"git clean -fdx\" (absolute path)" \
+  "/usr/bin/bash <<<\\\"git clean -fdx\\\""
+expect_deny "WHS15: cd /tmp && /bin/bash <<<\"git clean -fdx\" (cd-chain, abs path)" \
+  "cd /tmp && /bin/bash <<<\\\"git clean -fdx\\\""
+# --- DENY: long flags + option-argument before the redirect (#789) ---
+expect_deny "WHS16: bash --norc <<<\"git clean -fdx\" (long flag)" \
+  "bash --norc <<<\\\"git clean -fdx\\\""
+expect_deny "WHS17: bash -eo pipefail <<<\"git reset --hard\" (-o option-arg)" \
+  "bash -eo pipefail <<<\\\"git reset --hard\\\""
+expect_deny "WHS18: bash -o pipefail <<<\"git clean -fdx\" (-o option-arg)" \
+  "bash -o pipefail <<<\\\"git clean -fdx\\\""
+# --- DENY: absolute-path heredoc-to-interpreter (#789) ---
+expect_deny "WHS19: /bin/bash <<EOF git clean -fdx EOF (abs-path heredoc)" \
+  "/bin/bash <<EOF\\ngit clean -fdx\\nEOF"
+
+# --- ALLOW: script-positional still DATA, even with abs-path interpreter (#789) ---
+# The broadened head must NOT start denying a script-file positional: the
+# here-string/heredoc is stdin DATA for the script, not interpreter code.
+expect_allow "WHS20: /bin/bash script.sh <<<data (abs path + script positional)" \
+  "/bin/bash script.sh <<<\\\"git clean -fdx\\\""
+
 # 7b. kill-by-port/name anti-pattern — same hazard as fuser -k, different spelling.
 # The original incident was 'lsof -ti :8080 | xargs kill' taking out the docker container.
 # All spellings must be blocked; only explicit-PID kill and the sanctioned helper are allowed.
