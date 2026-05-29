@@ -13,13 +13,25 @@
 #
 # Subcommands:
 #   acquire <slug> --pipeline-id <id>
-#     Exit 0  — acquired (claim.json atomically written).
+#     Exit 0  — acquired-fresh OR self-re-entry (caller already owns this
+#               claim — the stored pipeline_id matches --pipeline-id).
 #     Exit 2  — usage error (bad slug, missing flags).
-#     Exit 10 — EEXIST: claim already held by another pipeline.
-#     Exit 11 — non-EEXIST mkdir failure (EACCES/ENOSPC/EDQUOT/EROFS/...).
+#     Exit 10 — foreign-held by another pipeline (OR claim already exists
+#               but claim.json absent/malformed — never steal).
+#     Exit 11 — non-EEXIST mkdir failure / fs error / atomic-write failure
+#               (EACCES/ENOSPC/EDQUOT/EROFS/...).
 #   release <slug> --require-pipeline <id>
 #     Exit 0  — released (or already absent — idempotent).
-#     Exit 12 — pipeline-id mismatch (refused; claim left intact).
+#     Exit 2  — usage error.
+#     Exit 12 — release pipeline-id mismatch (claim left intact).
+#
+# Self-re-entry: the EEXIST arm of acquire delegates to
+# create-worktree/scripts/claim-self-reentry.sh (a bash subprocess). A
+# pipeline re-acquiring its OWN claim (same pipeline_id) gets exit 0; a
+# foreign claim, an absent claim.json, or a malformed claim.json gets exit
+# 10 (never steal). This makes a chunked `finish auto` re-fire re-acquiring
+# the same plan return 0 instead of self-colliding on rc=10. No
+# TTL/heartbeat/sweep.
 #   set-phase <slug> --require-pipeline <id> --current-phase "<str>"
 #     Exit 0  — current_phase updated (atomic write).
 #     Exit 2  — claim.json missing for slug.
@@ -81,6 +93,31 @@ _locate_sanitizer() {
     candidates+=(
       "${CLAUDE_PROJECT_DIR}/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
       "${CLAUDE_PROJECT_DIR}/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+    )
+  fi
+  local c
+  for c in "${candidates[@]}"; do
+    if [ -f "$c" ]; then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Locate claim-self-reentry.sh — same precedence as _locate_sanitizer,
+# reusing the _CLAIM_SCRIPT_DIR anchor. SOURCED at script load; the
+# resolved PATH is invoked as a bash subprocess from the EEXIST arm of
+# cmd_acquire.
+_locate_self_reentry() {
+  local candidates=(
+    "$_CLAIM_SCRIPT_DIR/../../create-worktree/scripts/claim-self-reentry.sh"
+    "$_CLAIM_SCRIPT_DIR/../../../skills/create-worktree/scripts/claim-self-reentry.sh"
+  )
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    candidates+=(
+      "${CLAUDE_PROJECT_DIR}/.claude/skills/create-worktree/scripts/claim-self-reentry.sh"
+      "${CLAUDE_PROJECT_DIR}/skills/create-worktree/scripts/claim-self-reentry.sh"
     )
   fi
   local c
@@ -188,6 +225,21 @@ cmd_acquire() {
   if [ "$mkdir_status" -ne 0 ]; then
     case "$mkdir_err" in
       *"File exists"*)
+        # Ownership-aware self-re-entry: delegate to the shared helper as a
+        # bash SUBPROCESS (its exit 10/0 contract would terminate a sourcing
+        # caller). Helper exit 0 → self → return 0; exit 10 → foreign →
+        # return 10. If the helper cannot be located, fail conservative
+        # (return 10, never silently steal) with a one-line WARN.
+        local sr_helper
+        if ! sr_helper=$(_locate_self_reentry); then
+          echo "run-plan claim-plan.sh acquire: cannot locate claim-self-reentry.sh (looked in create-worktree bundle); treating existing claim as foreign" >&2
+          return 10
+        fi
+        bash "$sr_helper" "$claim_dir" "$pipeline_id"
+        local sr_rc=$?
+        if [ "$sr_rc" -eq 0 ]; then
+          return 0
+        fi
         return 10
         ;;
       *)

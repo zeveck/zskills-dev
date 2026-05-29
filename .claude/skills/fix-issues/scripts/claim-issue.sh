@@ -9,12 +9,24 @@
 #
 # Subcommands:
 #   acquire <N> --pipeline-id <id> --sprint-id <id>
-#     Exit 0  — acquired (claim.json atomically written).
-#     Exit 10 — EEXIST: claim already held by another pipeline.
-#     Exit 11 — non-EEXIST mkdir failure (EACCES/ENOSPC/EDQUOT/EROFS/...).
+#     Exit 0  — acquired-fresh OR self-re-entry (caller already owns this
+#               claim — the stored pipeline_id matches --pipeline-id).
+#     Exit 2  — usage error.
+#     Exit 10 — foreign-held by another pipeline (OR claim already exists
+#               but claim.json absent/malformed — never steal).
+#     Exit 11 — non-EEXIST mkdir failure / fs error / atomic-write failure
+#               (EACCES/ENOSPC/EDQUOT/EROFS/...).
 #   release <N> [--require-pipeline <id>]
 #     Exit 0  — released (or already absent — idempotent).
-#     Exit 12 — pipeline-id mismatch (refused; claim left intact).
+#     Exit 2  — usage error.
+#     Exit 12 — release pipeline-id mismatch (claim left intact).
+#
+# Self-re-entry: the EEXIST arm of acquire delegates to
+# create-worktree/scripts/claim-self-reentry.sh (a bash subprocess). A
+# pipeline re-acquiring its OWN claim (same pipeline_id) gets exit 0; a
+# foreign claim, an absent claim.json, or a malformed claim.json gets exit
+# 10 (never steal). No TTL/heartbeat/sweep — is-stale stays the 30s
+# crash-window check only.
 #   is-stale <N>
 #     Race-tolerance check ONLY: stale iff the claim dir exists without
 #     claim.json and is older than 30s (mkdir-succeeded-then-crashed).
@@ -51,6 +63,38 @@ if [ -z "$_CLAIM_PYTHON" ]; then
   echo "fix-issues claim-issue.sh: install Python 3 (or set ZSKILLS_PYTHON)" >&2
   exit 127
 fi
+
+# ---------------------------------------------------------------------------
+# Resolve script-bundle directory for sibling lookups
+# (claim-self-reentry.sh lives in the create-worktree bundle).
+# ---------------------------------------------------------------------------
+_CLAIM_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Locate claim-self-reentry.sh — prefer sibling create-worktree skill
+# layout, fall back to repo source tree, then to .claude/skills/ mirror.
+# Mirrors claim-plan.sh's _locate_sanitizer() precedence verbatim. SOURCED
+# at script load; the resolved PATH is invoked as a bash subprocess from
+# the EEXIST arm of cmd_acquire.
+_locate_self_reentry() {
+  local candidates=(
+    "$_CLAIM_SCRIPT_DIR/../../create-worktree/scripts/claim-self-reentry.sh"
+    "$_CLAIM_SCRIPT_DIR/../../../skills/create-worktree/scripts/claim-self-reentry.sh"
+  )
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    candidates+=(
+      "${CLAUDE_PROJECT_DIR}/.claude/skills/create-worktree/scripts/claim-self-reentry.sh"
+      "${CLAUDE_PROJECT_DIR}/skills/create-worktree/scripts/claim-self-reentry.sh"
+    )
+  fi
+  local c
+  for c in "${candidates[@]}"; do
+    if [ -f "$c" ]; then
+      printf '%s' "$c"
+      return 0
+    fi
+  done
+  return 1
+}
 
 # ---------------------------------------------------------------------------
 # MAIN_ROOT resolution (DA4.1 — round 4b).
@@ -137,9 +181,25 @@ cmd_acquire() {
   mkdir_err=$(mkdir "$claim_dir" 2>&1)
   local mkdir_status=$?
   if [ "$mkdir_status" -ne 0 ]; then
-    # Map "File exists" -> 10; anything else -> 11.
+    # Map "File exists" -> self-re-entry decision (0 self / 10 foreign);
+    # anything else -> 11.
     case "$mkdir_err" in
       *"File exists"*)
+        # Ownership-aware self-re-entry: delegate to the shared helper as a
+        # bash SUBPROCESS (its exit 10/0 contract would terminate a sourcing
+        # caller). Helper exit 0 → self → return 0; exit 10 → foreign →
+        # return 10. If the helper cannot be located, fail conservative
+        # (return 10, never silently steal) with a one-line WARN.
+        local sr_helper
+        if ! sr_helper=$(_locate_self_reentry); then
+          echo "fix-issues claim-issue.sh acquire: cannot locate claim-self-reentry.sh (looked in create-worktree bundle); treating existing claim as foreign" >&2
+          return 10
+        fi
+        bash "$sr_helper" "$claim_dir" "$pipeline_id"
+        local sr_rc=$?
+        if [ "$sr_rc" -eq 0 ]; then
+          return 0
+        fi
         return 10
         ;;
       *)
