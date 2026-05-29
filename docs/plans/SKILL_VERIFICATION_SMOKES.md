@@ -1,7 +1,7 @@
 ---
 title: Skill Verification — Layer-1 Smokes + Layer-2 Dogfooding Measurement
 created: 2026-05-28
-status: active
+status: complete
 ---
 
 # Plan: Skill Verification — Layer-1 Smokes + Layer-2 Dogfooding Measurement
@@ -31,10 +31,10 @@ tests where there is no behavior.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Behavioral smokes for the 4 strong skills | ⬚ | | |
-| 2 — Retire CANARY_BYPASS_DETECT (add the one missing case) | ⬚ | | |
-| 3 — Minimal static-conformance for the 4 weak skills | ⬚ | | |
-| 4 — Layer-2 dogfooding measurement (briefing subcommand) | ⬚ | | |
+| 1 — Behavioral smokes for the 4 strong skills | ✅ Done | `398186b` | 4 smoke files (fix-report/draft-plan/add-example/add-block) |
+| 2 — Retire CANARY_BYPASS_DETECT (add the one missing case) | ✅ Done | `4f87f61` | C32 flip added; canary archived; README row removed |
+| 3 — Minimal static-conformance for the 4 weak skills | ✅ Done | `9d99d4e` | conformance invariants for doc/qe-audit/session-report/review-feedback |
+| 4 — Layer-2 dogfooding measurement (briefing subcommand) | ✅ Done | `c14fc6f` | briefing.py dogfooding + test; landed via PR #795 |
 
 ## Conventions all phases must follow
 
