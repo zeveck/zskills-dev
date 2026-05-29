@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.28+b06b7e"
+  version: "2026.05.28+722e14"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -93,6 +93,11 @@ through multi-phase plans autonomously.
 
 ```bash
 # Detect landing mode
+# Resolve repo root before any config read. $PROJECT_ROOT is never exported
+# into a SKILL.md fence (it is only set inside post-run-invariants.sh, a
+# separate process), so anchor it on $CLAUDE_PROJECT_DIR -- the established
+# peer pattern used elsewhere in this skill (#791).
+PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 LANDING_MODE="cherry-pick"  # default
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]]; then
   LANDING_MODE="pr"
@@ -159,6 +164,7 @@ fi
 
 ```bash
 # direct + main_protected -> error
+PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 if [[ "$LANDING_MODE" == "direct" ]]; then
   CONFIG_FILE="$PROJECT_ROOT/.claude/zskills-config.json"
   if [ -f "$CONFIG_FILE" ]; then
@@ -175,6 +181,7 @@ fi
 
 ```bash
 # Read branch prefix from config (default: feat/)
+PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 BRANCH_PREFIX="feat/"
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
   CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
@@ -192,6 +199,7 @@ verbatim to every impl/verifier/fix-agent dispatch prompt. Three-case
 decision tree (same contract as `/verify-changes`):
 
 ```bash
+PROJECT_ROOT="${PROJECT_ROOT:-$CLAUDE_PROJECT_DIR}"
 FULL_TEST_CMD=""
 if [ -f "$PROJECT_ROOT/.claude/zskills-config.json" ]; then
   CONFIG_CONTENT=$(cat "$PROJECT_ROOT/.claude/zskills-config.json")
