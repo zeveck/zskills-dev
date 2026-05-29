@@ -1,5 +1,29 @@
 # Plan Report — Ownership-aware work-item claims (#803)
 
+## Phase — 3 run-plan issue-claim + operator-stop sweep + :597 cleanup
+
+**Plan:** docs/plans/claim-work-item.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-claim-work-item (branch `feat/claim-work-item`)
+**Commit:** `7751be6`
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| W3.1 | Parse `issue:` from frontmatter (bare int, multi) | Done | reads `$PLAN_FILE_FOR_READ`; leading-`---` block only; strips `#`/quotes |
+| W3.2 | Acquire `issue-<N>` in acquire fence | Done | **D9 rc=10 = WARN-and-PROCEED** (continues, no exit, no plan-claim leak); rc=11→Failure, rc=2→STOP |
+| W3.3 | Release at 3 terminal sites only | Done | terminal-merge + no-op + operator-stop; never per-phase; not near `gh issue close` |
+| W3.4 | operator-stop `issue-*` arm | Done | parallel loop, gates `run-plan.*`, mismatch-skip (12), folds into tally |
+| W3.5 | Multi-issue loop | Done | acquire + both releases + operator-stop loop `ISSUE_NUMS[]` |
+| W3.6 | Optional `:597` cleanup | Done (minimal) | plan-claim decline arm INTACT; only clarifying prose added |
+| W3.7 | Version bump + mirror run-plan | Done | `2026.05.29+cf90e3`; mirror byte-equal |
+| W3.8 | New positive conformance assertions | Done | I1/I2/I3 added; existing A11 untouched; `test-plan-claim-conformance.sh` 11 passed |
+
+### Verification
+- Full suite: **`Overall: 6505/6505 passed, 0 failed`** (baseline 6502 + 3). Separate verifier; Layer 3 passed; known flake did not fire.
+- D9 correctness confirmed: WARN-and-PROCEED arm is NOT a copy of the plan-claim decline arm and does not leak the plan claim; plan-claim decline arm (`rc=10 → exit 0`) intact.
+- No conformance assertion weakened. No drift.
+
 ## Phase — 2 Wire /do, /quickfix, /investigate onto claim-issue.sh
 
 **Plan:** docs/plans/claim-work-item.md
