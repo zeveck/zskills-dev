@@ -6,7 +6,7 @@
 
 Skill distribution repo and presentation site for Z Skills.
 
-- `skills/` — source skill definitions (26 core)
+- `skills/` — source skill definitions (25 core)
 - `block-diagram/` — add-on skills (4)
 - `.claude/skills/` — installed skill copies (what Claude Code reads)
 - `hooks/` — source hook scripts
