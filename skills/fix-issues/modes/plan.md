@@ -70,6 +70,15 @@ either fires, all candidate issues are selected without prompting.
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \
      "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.draft-plan.$ISSUE_NUMBER"
+   # #808: record the skip in monitor-state.json so subsequent sprint
+   # fires drop this issue BEFORE re-triage (the user explicitly chose
+   # /draft-plan here; that decision is now persistent state, symmetric
+   # with the sprint-mode plan-scale-decline path). `reconsider <N>`
+   # clears the entry if the user later changes their mind.
+   ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
+     "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+     "$ISSUE_NUMBER" plan-scale \
+     || echo "WARN: fix-issues plan: record-skip.sh failed for #$ISSUE_NUMBER — sprint may re-pick" >&2
    ```
    Then dispatch `/draft-plan` with:
    - The issue number and full body (`gh issue view <N> --json body`)

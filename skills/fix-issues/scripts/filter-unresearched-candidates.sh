@@ -54,13 +54,27 @@ if [ -z "${ZSKILLS_ISSUES_DIR:-}" ]; then
   exit 1
 fi
 
-# Read the reconsider list from monitor-state.json (one-shot signal).
-# Issues in this list have their skip-code suppressed so Phase 2
-# re-evaluates them. After emitting them as candidates, we remove them
-# from the list so the signal doesn't persist across sprints.
+# Read the reconsider list and the skipped map from monitor-state.json.
+#
+# `issues.reconsider` is a one-shot signal: issues here have their skip-
+# code suppressed so Phase 2 re-evaluates them. After emitting them as
+# candidates, we remove them from the list so the signal doesn't persist
+# across sprints. The same cleanup also removes any matching entries from
+# `issues.skipped` (reconsider and skipped are duals: reconsidering an
+# issue means "un-skip and re-triage").
+#
+# `issues.skipped` is the persistent skip-state added for issue #808: when
+# triage declines an issue as plan-scale / bug-unclear-cause /
+# needs-decision / deferred, the orchestrator records it here so the next
+# fire's filter drops it BEFORE re-triage — even when the issue has no
+# tracker row (raw dashboard-drag case). The map shape is
+# `{ "<issue-num>": "<skip-code>" }`, e.g. `{"803": "plan-scale"}`. This
+# is symmetric with `issues.reconsider`: monitor-state.json is gitignored,
+# so the skip-record never lands as a tracker-row commit on main.
 MAIN_ROOT="${ZSKILLS_MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)}"
 STATE_FILE="${MAIN_ROOT:+$MAIN_ROOT/.zskills/monitor-state.json}"
 RECONSIDER_NUMS=""
+declare -A MONITOR_SKIPPED_MAP=()
 if [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
   RECONSIDER_NUMS=$(python3 -c "
 import json, sys
@@ -72,6 +86,24 @@ try:
 except Exception:
     pass
 " "$STATE_FILE" 2>/dev/null) || RECONSIDER_NUMS=""
+
+  # Read issues.skipped as `<num> <code>` pairs (newline-separated).
+  while IFS=$'\t' read -r _n _c; do
+    [ -n "$_n" ] && MONITOR_SKIPPED_MAP["$_n"]="$_c"
+  done < <(python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    skipped = data.get('issues', {}).get('skipped', {}) or {}
+    # Accept both dict and list-of-pairs shapes defensively.
+    if isinstance(skipped, dict):
+        for k, v in skipped.items():
+            print(f'{k}\t{v}')
+except Exception:
+    pass
+" "$STATE_FILE" 2>/dev/null)
+  unset _n _c
 fi
 
 RESEARCHED=()
@@ -147,16 +179,48 @@ for N in "$@"; do
       break
     fi
   done
+  # Monitor-state skip override (#808): if monitor-state.json's
+  # `issues.skipped` map has this issue, emit SKIP_TAGGED with the
+  # recorded code EVEN WHEN no tracker row exists. This is the raw
+  # dashboard-drag case — the orchestrator declined plan-scale before
+  # any research blurb was written. The reconsider list still suppresses
+  # this (one-shot un-skip + re-triage).
+  monitor_skip_code="${MONITOR_SKIPPED_MAP[$N]:-}"
+  if [ "$is_reconsidered" -eq 1 ]; then
+    monitor_skip_code=""
+    # Track even an unresearched reconsidered issue so the one-shot
+    # cleanup below removes the monitor-state entries on this fire.
+    RECONSIDERED_PROCESSED+=("$N")
+  fi
+
   if [ "$found" -eq 1 ]; then
     RESEARCHED+=("$N")
     if [ -n "$skip_code" ]; then
       SKIP_TAGGED+=("$N:$skip_code")
+    elif [ -n "$monitor_skip_code" ]; then
+      # Tracker row exists but is not skip-tagged; monitor-state.json
+      # has a persisted decline (e.g. agent triaged plan-scale before
+      # the row's `Action now:` was rewritten). Honor the monitor-state
+      # decision so the issue drops from Phase 2.
+      SKIP_TAGGED+=("$N:$monitor_skip_code")
     fi
     if [ "$is_reconsidered" -eq 1 ]; then
-      RECONSIDERED_PROCESSED+=("$N")
+      # already appended above when we cleared monitor_skip_code
+      :
     fi
   else
-    MISSING+=("$N")
+    if [ -n "$monitor_skip_code" ]; then
+      # No tracker row, but monitor-state.json has a persisted skip.
+      # Count as RESEARCHED-for-filtering-purposes AND emit SKIP_TAGGED
+      # so Phase 2 drops the candidate without dispatching research.
+      # Treating it as MISSING would route through research-on-demand
+      # and re-litigate the same skip decision every fire — the bug
+      # this commit fixes.
+      RESEARCHED+=("$N")
+      SKIP_TAGGED+=("$N:$monitor_skip_code")
+    else
+      MISSING+=("$N")
+    fi
   fi
 done
 
@@ -165,28 +229,50 @@ printf 'MISSING="%s"\n' "${MISSING[*]}"
 printf 'SKIP_TAGGED="%s"\n' "${SKIP_TAGGED[*]}"
 
 # One-shot cleanup: remove processed reconsider entries from
-# monitor-state.json so the signal doesn't persist across sprints.
+# monitor-state.json so the signal doesn't persist across sprints. Also
+# remove any matching entries from `issues.skipped` — reconsider and
+# skipped are duals (see #808: reconsidering an issue un-skips it so
+# Phase 2 re-triages it cleanly on this fire).
 if [ "${#RECONSIDERED_PROCESSED[@]}" -gt 0 ] && [ -n "$STATE_FILE" ] && [ -f "$STATE_FILE" ]; then
   REMOVE_LIST=$(printf '%s\n' "${RECONSIDERED_PROCESSED[@]}" | tr '\n' ' ' | sed 's/ $//')
   python3 -c "
 import json, sys, os, tempfile
 
 path = sys.argv[1]
-remove = set(int(x) for x in sys.argv[2:])
+remove_ints = set(int(x) for x in sys.argv[2:])
+remove_strs = set(str(x) for x in sys.argv[2:])
 
 with open(path) as f:
     data = json.load(f)
 
-cur = data.get('issues', {}).get('reconsider', [])
-after = [n for n in cur if n not in remove]
+issues = data.get('issues', {}) or {}
+changed = False
 
-if len(after) == len(cur):
+# reconsider: list of ints
+cur = issues.get('reconsider', [])
+after = [n for n in cur if n not in remove_ints]
+if len(after) != len(cur):
+    if after:
+        issues['reconsider'] = after
+    else:
+        issues.pop('reconsider', None)
+    changed = True
+
+# skipped: dict keyed by stringified issue num
+skipped = issues.get('skipped', {}) or {}
+if isinstance(skipped, dict):
+    new_skipped = {k: v for k, v in skipped.items() if k not in remove_strs}
+    if len(new_skipped) != len(skipped):
+        if new_skipped:
+            issues['skipped'] = new_skipped
+        else:
+            issues.pop('skipped', None)
+        changed = True
+
+if not changed:
     sys.exit(0)
 
-if after:
-    data['issues']['reconsider'] = after
-else:
-    data.get('issues', {}).pop('reconsider', None)
+data['issues'] = issues
 
 tmp = tempfile.NamedTemporaryFile('w', delete=False,
     dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
