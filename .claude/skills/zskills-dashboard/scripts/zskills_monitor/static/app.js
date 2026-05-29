@@ -415,6 +415,30 @@ const lastFingerprint = {
   workState: null,
   defaultMode: null,
 };
+
+// Issue #802 — unread-dot indicator. lastViewed[tab] holds the per-tab
+// fingerprint as of the last time the user *viewed* that tab. An inactive
+// tab shows a dot iff its current fingerprint differs from lastViewed.
+// Initialized to null; the first applySnapshot seeds it from the first
+// snapshot's fingerprints (see seedTabFingerprintsIfUnseen) so the board
+// does NOT open covered in dots. The fingerprints reused here are the same
+// volatile-safe ones that gate per-section re-renders — they exclude
+// age_seconds / heartbeat / ticking timestamps, so volatile churn cannot
+// produce a false dot. `activeTab` tracks which tab is currently shown so
+// the render loop can skip dotting it and so setActiveTab can mark it seen.
+const lastViewed = {
+  plans: null,
+  issues: null,
+  branches: null,
+};
+// Most-recent per-tab fingerprints, refreshed every poll in applySnapshot.
+// setActiveTab reads these to mark the just-opened tab as seen.
+const currentTabFingerprint = {
+  plans: null,
+  issues: null,
+  branches: null,
+};
+let activeTab = "plans";
 let pollTimer = null;
 let pollAbort = null;
 let workPollTimer = null;
@@ -628,6 +652,51 @@ function applySnapshot(snap) {
   if (actFp !== lastFingerprint.activity) {
     lastFingerprint.activity = actFp;
     renderActivity(snap.activity || []);
+  }
+
+  // Issue #802 — unread-dot bookkeeping. Reuse the volatile-safe per-tab
+  // fingerprints just computed above (plansFp / issuesFp / branchesFp) so
+  // a dot appears only on a *meaningful* change to an inactive tab, never
+  // from age/timestamp churn.
+  currentTabFingerprint.plans = plansFp;
+  currentTabFingerprint.issues = issuesFp;
+  currentTabFingerprint.branches = branchesFp;
+  // First snapshot seeds lastViewed so the board does not open in dots.
+  for (const tab of TAB_SLUGS) {
+    if (lastViewed[tab] === null) {
+      lastViewed[tab] = currentTabFingerprint[tab];
+    }
+  }
+  // The active tab is always "seen" — keep its baseline current so it never
+  // dots and so its dot stays cleared while the user is looking at it.
+  if (TAB_SLUGS.includes(activeTab)) {
+    lastViewed[activeTab] = currentTabFingerprint[activeTab];
+  }
+  updateTabDots();
+}
+
+// Issue #802 — show/hide the per-tab unread dot. A tab is dotted iff it is
+// not the active tab AND its current fingerprint differs from the snapshot
+// the user last viewed. Safe to call before the DOM is ready (the element
+// lookups simply no-op).
+function updateTabDots() {
+  if (typeof document === "undefined") return;
+  for (const tab of TAB_SLUGS) {
+    const btn = document.getElementById("tab-" + tab);
+    if (!btn) continue;
+    const dot = btn.querySelector(".tab-dot");
+    const sr = btn.querySelector(".tab-dot-sr");
+    const seen = lastViewed[tab];
+    const cur = currentTabFingerprint[tab];
+    const unread = (tab !== activeTab) && seen !== null && cur !== null && cur !== seen;
+    if (dot) {
+      if (unread) dot.removeAttribute("hidden");
+      else dot.setAttribute("hidden", "");
+    }
+    if (sr) {
+      if (unread) sr.removeAttribute("hidden");
+      else sr.setAttribute("hidden", "");
+    }
   }
 }
 
@@ -3407,6 +3476,16 @@ function setActiveTab(slug, { pushHash = true } = {}) {
       panel.setAttribute("hidden", "");
     }
   }
+  // Issue #802 — opening a tab marks it seen: snapshot its current
+  // fingerprint into lastViewed and re-render dots so this tab clears.
+  // currentTabFingerprint[slug] may still be null pre-first-snapshot; that
+  // is fine (a null baseline never dots until the first snapshot seeds it).
+  activeTab = slug;
+  if (typeof currentTabFingerprint !== "undefined" &&
+      currentTabFingerprint[slug] !== null) {
+    lastViewed[slug] = currentTabFingerprint[slug];
+  }
+  if (typeof updateTabDots === "function") updateTabDots();
   if (pushHash && location.hash !== "#" + slug) {
     history.replaceState(null, "", "#" + slug);
   }
