@@ -4,12 +4,11 @@ user-invocable: true
 disable-model-invocation: false
 argument-hint: "[apply]"
 description: >-
-  OPTIONAL convenience for consumers switching install lanes: normalize
-  registered cron prompts between the bare-prefix form (`Run /<skill>`) and
-  the plugin-namespaced form (`Run /zs:<skill>`). Preview by default; `apply`
-  to rewrite. NOT required — both prefixes are recognized permanently.
+  OPTIONAL: when switching install lanes, normalize cron prompts between the
+  bare-prefix (`Run /<skill>`) and plugin (`Run /zs:<skill>`) forms. Preview by
+  default; `apply` to rewrite. Not required — both prefixes work permanently.
 metadata:
-  version: "2026.05.28+e0ec5d"
+  version: "2026.05.29+ab8712"
 ---
 
 # migrate-crons — optional cron prefix normalisation
