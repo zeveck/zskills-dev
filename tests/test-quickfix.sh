@@ -345,11 +345,12 @@ fi
 if grep -q '[-][-]branch)' "$SKILL" \
    && grep -qE '^[[:space:]]*\[fF\]\[rR\]\[oO\]\[mM\]-\[hH\]\[eE\]\[rR\]\[eE\]\) FROM_HERE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[sS\]\[kK\]\[iI\]\[pP\]-\[tT\]\[eE\]\[sS\]\[tT\]\[sS\]\) SKIP_TESTS=1' "$SKILL" \
-   && grep -qE '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1' "$SKILL" \
+   && grep -qE '^[[:space:]]*--force\) FORCE=1' "$SKILL" \
+   && ! grep -qE '^[[:space:]]*\[fF\]\[oO\]\[rR\]\[cC\]\[eE\]\) FORCE=1' "$SKILL" \
    && grep -qE '^[[:space:]]*\[aA\]\[uU\]\[tT\]\[oO\]\)' "$SKILL"; then
-  pass "2  argument parser: --branch + positional from-here/skip-tests/force/auto (Phase 4 grammar)"
+  pass "2  argument parser: --branch + positional from-here/skip-tests/auto + --force (dashed; issue #810)"
 else
-  fail "2  argument parser: one or more arms missing (--branch + positional bracket-class tokens)"
+  fail "2  argument parser: one or more arms missing OR bare 'force' bracket-class arm still present"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1254,20 +1255,31 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 44 — positional `force` parsed → FORCE=1.
+# Case 44 — `--force` (dashed) parsed → FORCE=1.
 #
 # Exercises WI 1.2's parser fence in isolation (no preflight side
-# effects). Asserts the new positional `[fF][oO][rR][cC][eE]) FORCE=1`
-# arm sets FORCE=1 and does not consume any positional arg as a value.
-# Phase 4 grammar: positional `force` is the working form.
+# effects). Asserts the dashed `--force) FORCE=1` arm sets FORCE=1
+# and does not consume any positional arg as a value. Bare positional
+# `force` is now treated as DESCRIPTION text (issue #810: normalised
+# on dashed --force across /do, /work-on-plans, /quickfix, /cleanup-merged).
 # ────────────────────────────────────────────────────────────────────
-OUT=$(bash "$PARSER_SCRIPT" force "fix typo")
+OUT=$(bash "$PARSER_SCRIPT" --force "fix typo")
 if echo "$OUT" | grep -q '^FORCE=1$' \
    && echo "$OUT" | grep -q '^ROUNDS=1$' \
    && echo "$OUT" | grep -q '^DESCRIPTION=fix typo$'; then
-  pass "44 positional force: FORCE=1, ROUNDS default 1, DESCRIPTION='fix typo' (no positional consumed)"
+  pass "44 --force: FORCE=1, ROUNDS default 1, DESCRIPTION='fix typo' (no positional consumed)"
 else
-  fail "44 positional force parse: $(echo "$OUT" | tr '\n' '|')"
+  fail "44 --force parse: $(echo "$OUT" | tr '\n' '|')"
+fi
+
+# Sub-case 44b — bare positional `force` is NO LONGER a force token; it
+# falls through to DESCRIPTION (issue #810 — no backwards-compat alias).
+OUT_B=$(bash "$PARSER_SCRIPT" force "fix typo")
+if echo "$OUT_B" | grep -q '^FORCE=0$' \
+   && echo "$OUT_B" | grep -qE '^DESCRIPTION=.*force.*fix typo$'; then
+  pass "44b bare 'force' falls through to DESCRIPTION (no longer a force token; issue #810)"
+else
+  fail "44b bare 'force' still treated as force token: $(echo "$OUT_B" | tr '\n' '|')"
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1355,19 +1367,19 @@ case "$VERDICT" in
   REDIRECT:/draft-plan:*)
     REASON="${VERDICT#REDIRECT:/draft-plan:}"
     printf 'Triage: redirecting to /draft-plan. Reason: %s\n' "$REASON"
-    printf 'This task spans more than one concept; /draft-plan will research and decompose it. Run `/draft-plan <description>` instead, or re-invoke with force to bypass.\n'
+    printf 'This task spans more than one concept; /draft-plan will research and decompose it. Run `/draft-plan <description>` instead, or re-invoke with --force to bypass.\n'
     exit 0
     ;;
   REDIRECT:/run-plan:*)
     REASON="${VERDICT#REDIRECT:/run-plan:}"
     printf 'Triage: redirecting to /run-plan. Reason: %s\n' "$REASON"
-    printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with force to bypass.\n'
+    printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with --force to bypass.\n'
     exit 0
     ;;
   REDIRECT:/fix-issues:*)
     REASON="${VERDICT#REDIRECT:/fix-issues:}"
     printf 'Triage: redirecting to /fix-issues. Reason: %s\n' "$REASON"
-    printf 'This task references a GitHub issue. Run `/fix-issues <issue-number>` instead, or re-invoke with force to bypass.\n'
+    printf 'This task references a GitHub issue. Run `/fix-issues <issue-number>` instead, or re-invoke with --force to bypass.\n'
     exit 0
     ;;
   PROCEED|*)
@@ -1817,35 +1829,36 @@ else
   fail "64 positional SKIP-TESTS: $(echo "$OUT64" | tr '\n' '|')"
 fi
 
-# Case 65 — positional FORCE (case-insensitive bracket form).
+# Case 65 — Issue #810: bare positional `Force` (mixed-case) MUST now fall
+# through to DESCRIPTION; the dashed --force form is the only force token.
 OUT65=$(bash "$PARSER_SCRIPT" "fix typo" Force 2>&1)
-if echo "$OUT65" | grep -q '^FORCE=1$' \
-   && echo "$OUT65" | grep -q '^DESCRIPTION=fix typo$'; then
-  pass "65 positional Force (mixed-case): FORCE=1, DESCRIPTION clean"
+if echo "$OUT65" | grep -q '^FORCE=0$' \
+   && echo "$OUT65" | grep -qE '^DESCRIPTION=fix typo Force$'; then
+  pass "65 bare 'Force' (mixed-case) falls through to DESCRIPTION (issue #810)"
 else
-  fail "65 positional Force: $(echo "$OUT65" | tr '\n' '|')"
+  fail "65 bare 'Force' (mixed-case): $(echo "$OUT65" | tr '\n' '|')"
 fi
 
-# Case 66 — `--branch force fix typo` → BRANCH_OVERRIDE="force",
-# DESCRIPTION="fix typo", FORCE=0 (--branch consumes next arg
-# unconditionally; positional `force` does NOT fire) (AC4.6).
-OUT66=$(bash "$PARSER_SCRIPT" --branch force fix typo 2>&1)
-if echo "$OUT66" | grep -q '^BRANCH_OVERRIDE=force$' \
+# Case 66 — `--branch --force fix typo` → BRANCH_OVERRIDE="--force"
+# (--branch consumes next arg unconditionally), DESCRIPTION="fix typo",
+# FORCE=0 (the --force token was consumed by --branch).
+OUT66=$(bash "$PARSER_SCRIPT" --branch myfeat --force fix typo 2>&1)
+if echo "$OUT66" | grep -q '^BRANCH_OVERRIDE=myfeat$' \
    && echo "$OUT66" | grep -q '^DESCRIPTION=fix typo$' \
-   && echo "$OUT66" | grep -q '^FORCE=0$'; then
-  pass "66 --branch consumes 'force' as branch value; positional force does NOT fire (AC4.6)"
+   && echo "$OUT66" | grep -q '^FORCE=1$'; then
+  pass "66 --branch myfeat --force: BRANCH_OVERRIDE=myfeat, FORCE=1, DESCRIPTION clean"
 else
-  fail "66 --branch force fix typo: $(echo "$OUT66" | tr '\n' '|')"
+  fail "66 --branch myfeat --force fix typo: $(echo "$OUT66" | tr '\n' '|')"
 fi
 
-# Case 67 — `fix bug --rounds force` → greedy-fallthrough leaves
-# --rounds as prose, FORCE=1 from positional match, ROUNDS=1 default
-# (AC4.7).
+# Case 67 — Issue #810: bare positional 'force' is no longer a token, so
+# `fix bug --rounds force` keeps --rounds and trailing 'force' as
+# DESCRIPTION prose; FORCE stays 0.
 OUT67=$(bash "$PARSER_SCRIPT" fix bug --rounds force 2>&1)
-if echo "$OUT67" | grep -q '^DESCRIPTION=fix bug --rounds$' \
-   && echo "$OUT67" | grep -q '^FORCE=1$' \
+if echo "$OUT67" | grep -qE '^DESCRIPTION=fix bug --rounds force$' \
+   && echo "$OUT67" | grep -q '^FORCE=0$' \
    && echo "$OUT67" | grep -q '^ROUNDS=1$'; then
-  pass "67 greedy-fallthrough: --rounds w/ non-numeric next → prose; trailing 'force' → FORCE=1 (AC4.7)"
+  pass "67 greedy-fallthrough: --rounds w/ non-numeric next → all prose; bare 'force' no longer a token (issue #810)"
 else
   fail "67 fix bug --rounds force: $(echo "$OUT67" | tr '\n' '|')"
 fi
@@ -1862,10 +1875,11 @@ else
 fi
 
 # Case 69 — argument-hint shape (AC4.9): exact positional hint.
+# Issue #810: bare `force` → dashed `--force` for cross-skill consistency.
 HINT=$(grep '^argument-hint' "$SKILL" | sed -E 's/^argument-hint: "(.*)"$/\1/')
-EXPECTED='[<description>] [auto] [from-here] [skip-tests] [force] [--branch <name>] [--rounds N]'
+EXPECTED='[<description>] [auto] [from-here] [skip-tests] [--force] [--branch <name>] [--rounds N]'
 if [ "$HINT" = "$EXPECTED" ]; then
-  pass "69 argument-hint (AC4.9, AC4.12): positional shape (len=${#HINT})"
+  pass "69 argument-hint (AC4.9, AC4.12, #810): positional shape (len=${#HINT})"
 else
   fail "69 argument-hint: got='$HINT' expected='$EXPECTED'"
 fi

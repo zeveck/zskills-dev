@@ -342,6 +342,8 @@ Three landing modes control how agent work reaches main:
 
 Both skills now triage tasks and run a fresh-agent plan review before execution. Use `--force` to bypass.
 
+**Flag convention.** Positional tokens (`apply`, `pr`, `auto`, `local`, `remote`, `all`, `from-here`, `skip-tests`, etc.) name *modes / verbs*; dashed `--force` is reserved for *safety-gate overrides*. Skills accepting `--force`: `/do`, `/work-on-plans`, `/quickfix`, `/cleanup-merged`. Bare positional `force` is NOT accepted on any of them (issue #810).
+
 After a PR merges on GitHub, run `/cleanup-merged` to catch your local clone up (checkout main, pull, delete merged feature branches). Safe to run anytime; bails on a dirty tree.
 
 **Config default:** Set in `.claude/zskills-config.json`:
