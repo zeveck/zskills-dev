@@ -71,11 +71,13 @@
   </div>
 
   <div class="sample-section">
-    <h2>Pills — Plan card mode</h2>
+    <h2>Pills — Plan card mode (three-state machine, #814)</h2>
     <div class="sample-row">
-      <span class="mode-chip">PHASE</span>
-      <span class="mode-chip">FINISH</span>
-      <span class="mode-chip" data-source="inherit">PHASE (inherited)</span>
+      <span class="mode-chip" data-state="queued" data-source="inherit">PHASE</span>
+      <span class="mode-chip" data-state="queued" data-source="explicit">PHASE</span>
+      <span class="mode-chip" data-state="queued" data-source="explicit">FINISH</span>
+      <span class="mode-chip" data-state="running-phase" data-source="inherit">PHASE &uarr; FINISH</span>
+      <span class="mode-chip" data-state="running-finish" data-source="explicit">&#x1F512; FINISH</span>
     </div>
   </div>
 

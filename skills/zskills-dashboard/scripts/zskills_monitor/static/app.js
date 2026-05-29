@@ -317,6 +317,7 @@ var SVG_ICONS = {
   copy: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M2 11V3a1.5 1.5 0 011.5-1.5H11"/></svg>',
   minus: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 8h8"/></svg>',
   plus: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 8h8"/><path d="M8 4v8"/></svg>',
+  lock: '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V4.5a2.5 2.5 0 015 0V7"/></svg>',
 };
 
 // titleNode(text, href) — returns a span containing either plain text
@@ -1104,26 +1105,61 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     card.removeAttribute("draggable");
   }
 
-  // Per-row mode chip on Ready cards (Phase 7).
+  // Per-row mode chip on Ready cards — three-state machine (issue #814).
+  // States, keyed on claim state + effective dispatch mode:
+  //   queued          — !plan.claim. Two-way cycle inherit ⇄ phase ⇄ finish.
+  //   running-phase   — plan.claim AND effective mode === "phase".
+  //                     One-way escalate-to-finish (phase mode re-reads the
+  //                     chip each round; never reversible mid-run).
+  //   running-finish  — plan.claim AND effective mode === "finish".
+  //                     LOCKED. /run-plan finish-auto holds the claim across
+  //                     all phases and resolves mode from invocation args,
+  //                     not from monitor-state.json — so a click would be
+  //                     informationally inert. The lock makes that honest.
+  // Effective mode = currentEntryMode(slug) || defaultMode || "phase".
   if (col === "ready") {
     const entryMode = currentEntryMode(slug);
     const isOverride = entryMode === "phase" || entryMode === "finish";
-    const displayMode = isOverride ? entryMode : (defaultMode || "phase");
-    const chip = el("button", {
-      cls: "mode-chip",
-      attrs: {
-        type: "button",
-        "data-action": "toggle-mode",
-        "data-slug": slug,
-        "data-source": isOverride ? "explicit" : "inherit",
-        "aria-label": (
-          isOverride
-            ? ("Mode: " + displayMode + " (override). Click to toggle.")
-            : ("Mode: " + displayMode + " (inherits default). Click to set explicit.")
-        ),
-      },
-      text: displayMode,
-    });
+    const effectiveMode = isOverride ? entryMode : (defaultMode || "phase");
+    const isClaimed = !!(plan && plan.claim);
+    let state, action, ariaLabel, chipText, chipHtml = null;
+    if (!isClaimed) {
+      state = "queued";
+      action = "toggle-mode";
+      chipText = effectiveMode;
+      ariaLabel = isOverride
+        ? ("Mode: " + effectiveMode + " (override). Click to cycle inherit, phase, finish.")
+        : ("Mode: " + effectiveMode + " (inherits default). Click to cycle inherit, phase, finish.");
+    } else if (effectiveMode === "phase") {
+      state = "running-phase";
+      action = "escalate-mode";
+      chipText = "phase ↑ finish";
+      ariaLabel = "Mode: phase (running). Click to escalate to finish (one-way).";
+    } else {
+      // running-finish
+      state = "running-finish";
+      action = null;  // no-op
+      chipText = "finish";
+      chipHtml = '<span class="mode-chip-lock" aria-hidden="true">'
+        + SVG_ICONS.lock + '</span> finish';
+      ariaLabel = "Mode: finish (locked while running).";
+    }
+    const chipAttrs = {
+      type: "button",
+      "data-slug": slug,
+      "data-state": state,
+      "data-source": isOverride ? "explicit" : "inherit",
+      "aria-label": ariaLabel,
+    };
+    if (action) {
+      chipAttrs["data-action"] = action;
+    } else {
+      chipAttrs["aria-disabled"] = "true";
+      chipAttrs.disabled = "disabled";
+    }
+    const chipOpts = { cls: "mode-chip", attrs: chipAttrs };
+    if (chipHtml) chipOpts.html = chipHtml; else chipOpts.text = chipText;
+    const chip = el("button", chipOpts);
     card.appendChild(chip);
   }
 
@@ -2613,6 +2649,23 @@ async function togglePlanMode(slug) {
   }
 }
 
+// Escalate a running (claimed) plan's mode to finish. One-way: never sets
+// back to phase or inherit. Issue #814. /work-on-plans re-reads the chip
+// each round, so this takes effect at the next phase dispatch.
+async function escalatePlanMode(slug) {
+  const next = clonedQueues();
+  const loc = findPlan(next, slug);
+  if (!loc || loc.col !== "ready") return;
+  const entry = next.plans[loc.col][loc.idx];
+  if (entry.mode === "finish") return;  // already at finish; nothing to do
+  entry.mode = "finish";
+  const ok = await commitQueueChange(next, { action: "Escalate mode to finish" });
+  if (ok) {
+    announce("plans-live",
+      "Mode for " + slug + " escalated to finish");
+  }
+}
+
 // -------------------------------------------------------------- trigger
 
 async function postTrigger(command) {
@@ -3140,6 +3193,7 @@ async function handleAction(action, target) {
   if (action === "plan-right") return movePlan(slug, "right");
   if (action === "plan-discard") return discardPlan(slug);
   if (action === "toggle-mode") return togglePlanMode(slug);
+  if (action === "escalate-mode") return escalatePlanMode(slug);
 
   // Column-header chevron: move-all in column, adjacent column only.
   if (action === "plan-move-all-left" || action === "plan-move-all-right" ||

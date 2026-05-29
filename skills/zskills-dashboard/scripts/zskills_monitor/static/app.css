@@ -1274,18 +1274,64 @@ button svg { display: inline-block; vertical-align: middle; }
   letter-spacing: 0.04em;
   cursor: pointer;
   font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.mode-chip[data-source="inherit"] {
-  border-style: dashed;
-  color: var(--text-dim);
+/* Queued + inherit (issue #814): subtle filled button, not the old
+   dashed-dim ghost. Must read as a real, clickable button. Greyer than
+   the colored explicit-override below to still signal "default / preference". */
+.mode-chip[data-state="queued"][data-source="inherit"] {
+  background: var(--border);
   border-color: var(--border);
+  color: var(--text);
+  border-style: solid;
 }
 
-.mode-chip:hover,
-.mode-chip:focus-visible {
+/* Queued + explicit override: colored outline. */
+.mode-chip[data-state="queued"][data-source="explicit"] {
+  background: transparent;
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+
+/* Running-phase: colorized + escalate affordance. Chip text reads
+   "phase ↑ finish" — the ↑ indicates the one-way upgrade direction. */
+.mode-chip[data-state="running-phase"] {
+  background: var(--accent2);
+  border-color: var(--accent2);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+/* Running-finish: colorized + locked. Click is a no-op (button is
+   disabled in JS). cursor:not-allowed + matched hover state so nothing
+   visually invites a click. */
+.mode-chip[data-state="running-finish"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  cursor: not-allowed;
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.mode-chip[data-state="running-finish"]:hover,
+.mode-chip[data-state="running-finish"]:focus-visible {
+  filter: none;
+  border-color: var(--accent);
+}
+
+.mode-chip-lock {
+  display: inline-flex;
+  align-items: center;
+}
+
+.mode-chip:not([data-state="running-finish"]):hover,
+.mode-chip:not([data-state="running-finish"]):focus-visible {
   outline: none;
-  filter: brightness(1.2);
+  filter: brightness(1.15);
   border-color: var(--accent);
 }
 
