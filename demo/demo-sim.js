@@ -247,6 +247,10 @@ class PlanItem {
       + rng.randint(-WORK_DURATION_VARIANCE, WORK_DURATION_VARIANCE);
     this.pipelineId = "run-plan.demo-" + String(rng.randint(1000, 9999)).padStart(4, "0");
     this.landingMode = opts.landingMode !== undefined ? opts.landingMode : null;
+    // Per-plan execution mode (phase/finish) set via the Accepted-column
+    // toggle. null = inherit the default. Persists across /api/state polls
+    // so the chip doesn't snap back to inherit after each toggle.
+    this.queueMode = null;
     this.emitted = new Set();
   }
 
@@ -505,10 +509,20 @@ class Simulation {
     for (const col of PLAN_DRAG_COLUMNS) {
       const entries = plans[col] || [];
       for (const entry of entries) {
-        const slug = (entry && typeof entry === "object") ? entry.slug : entry;
+        const isObj = entry && typeof entry === "object";
+        const slug = isObj ? entry.slug : entry;
         const item = this._bySlug[slug];
         if (!item || item.completed) continue;
         this._place(item, col);
+        // Persist the per-plan execution mode on ready entries (the
+        // Accepted column is the only place mode lives). Reset to inherit
+        // on every other column so re-dragging back to Accepted starts
+        // fresh unless the payload re-sets it.
+        if (col === READY_COLUMN && isObj) {
+          item.queueMode = entry.mode || null;
+        } else if (col !== READY_COLUMN) {
+          item.queueMode = null;
+        }
       }
     }
 
@@ -621,7 +635,7 @@ class Simulation {
       if (col === COMPLETED_COLUMN) {
         planQueues[col].push(item.slug);
       } else {
-        planQueues[col].push({ slug: item.slug, mode: null });
+        planQueues[col].push({ slug: item.slug, mode: item.queueMode || null });
       }
 
       const planObj = {
@@ -648,7 +662,7 @@ class Simulation {
         has_report: false,
         report_path: null,
         report: null,
-        queue: { column: col, index: idx, mode: null },
+        queue: { column: col, index: idx, mode: item.queueMode || null },
       };
 
       if (item.inFlight) {

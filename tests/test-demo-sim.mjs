@@ -679,6 +679,66 @@ function workToCompletion(sim, slugs) {
   }
 }
 
+// ------------------------------------------------------------------
+// (h) Per-plan execution mode persists across /api/state polls.
+// Regression guard: the chip's toggle must not snap back to inherit
+// on the next snapshot (Python-demo bug we faithfully ported then
+// surfaced via the live demo).
+// ------------------------------------------------------------------
+{
+  const sim = new Simulation(16, 3);
+  fastForward(sim, 10000);
+  sim.tick();
+  let snap = sim.buildSnapshot();
+  const targetSlug = sim.plans[0].slug;
+
+  // Place the target in Ready with explicit mode=phase; everything else
+  // in backlog so only the target is in-flight.
+  const payload = emptyPayload();
+  for (const p of snap.plans) {
+    if (p.queue.column === COMPLETED_COLUMN) continue;
+    const col = p.slug === targetSlug ? "ready" : "backlog";
+    const mode = p.slug === targetSlug ? "phase" : null;
+    payload.plans[col].push({ slug: p.slug, mode: mode });
+  }
+  for (const i of snap.issues) {
+    if (i.queue.column === COMPLETED_COLUMN) continue;
+    payload.issues.backlog.push(i.number);
+  }
+  sim.applyQueue(payload);
+  snap = sim.buildSnapshot();
+  let pobj = findPlanObj(snap, targetSlug);
+  if (pobj && pobj.queue && pobj.queue.mode === "phase") {
+    ok("(h) mode=phase persists on the next snapshot (no snap-back to inherit)");
+  } else {
+    bad("(h) mode=phase did NOT persist", "queue.mode=" + (pobj && pobj.queue && pobj.queue.mode));
+  }
+
+  // Toggle to finish and re-build — finish must persist too.
+  payload.plans.ready = payload.plans.ready.map(
+    (e) => e.slug === targetSlug ? { slug: targetSlug, mode: "finish" } : e);
+  sim.applyQueue(payload);
+  snap = sim.buildSnapshot();
+  pobj = findPlanObj(snap, targetSlug);
+  if (pobj && pobj.queue && pobj.queue.mode === "finish") {
+    ok("(h) toggling phase -> finish persists across snapshots");
+  } else {
+    bad("(h) mode=finish did NOT persist", "queue.mode=" + (pobj && pobj.queue && pobj.queue.mode));
+  }
+
+  // Toggle back to inherit (mode null) — null must persist.
+  payload.plans.ready = payload.plans.ready.map(
+    (e) => e.slug === targetSlug ? { slug: targetSlug, mode: null } : e);
+  sim.applyQueue(payload);
+  snap = sim.buildSnapshot();
+  pobj = findPlanObj(snap, targetSlug);
+  if (pobj && pobj.queue && pobj.queue.mode === null) {
+    ok("(h) toggling back to inherit (null) persists across snapshots");
+  } else {
+    bad("(h) mode=null (inherit) did NOT persist", "queue.mode=" + (pobj && pobj.queue && pobj.queue.mode));
+  }
+}
+
 console.log("");
 console.log("Results: " + PASS + " passed, " + FAIL + " failed (of " + (PASS + FAIL) + ")");
 process.exitCode = FAIL === 0 ? 0 : 1;
