@@ -667,21 +667,29 @@ expect_deny "git push origin +refs/heads/main (force + fully-qualified — #470)
 expect_deny "git push origin feat:refs/heads/main (refspec + fully-qualified — #470)" "git push origin feat:refs/heads/main"
 
 echo ""
-echo "=== Push: BLOCK_MAIN_PUSH preset toggle ==="
+echo "=== Push: main-push block reads execution.main_protected from config ==="
 
-# The installer flips BLOCK_MAIN_PUSH=1 -> 0 for cherry-pick / direct
-# presets. Simulate by sed-editing a tempo copy of the hook and confirm
-# main pushes are now allowed (the only branch that depends on the toggle).
+# The generic hook no longer carries a static BLOCK_MAIN_PUSH= line spliced
+# per-preset. It reads execution.main_protected from
+# $REPO_ROOT/.claude/zskills-config.json at runtime (fail closed when the
+# config is absent/unparseable). This mirrors the COMMIT and EDIT gates so a
+# single config edit changes all three coherently.
+#
+# `toggle_value` maps to the config:
+#   1 → main_protected: true  → block main/master pushes (locked-main-pr / fail-closed posture)
+#   0 → main_protected: false → allow main/master pushes (cherry-pick / direct)
+# A temp repo holds the config; REPO_ROOT points the hook's resolution at it.
 toggle_test() {
   local label="$1" toggle_value="$2" branch="$3" expected="$4" cmd="${5:-git push}"
-  local tmp_hook tmp_repo result
-  tmp_hook=$(mktemp)
-  sed -E "s/^BLOCK_MAIN_PUSH=[01]/BLOCK_MAIN_PUSH=$toggle_value/" "$HOOK" > "$tmp_hook"
+  local tmp_repo result protected
   tmp_repo=$(mktemp -d)
   (cd "$tmp_repo" && git init -q -b "$branch" 2>/dev/null \
     || (cd "$tmp_repo" && git init -q && git checkout -b "$branch" 2>/dev/null))
-  result=$(cd "$tmp_repo" && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | bash "$tmp_hook")
-  rm -rf "$tmp_repo" "$tmp_hook"
+  mkdir -p "$tmp_repo/.claude"
+  if [ "$toggle_value" = "1" ]; then protected=true; else protected=false; fi
+  printf '{"execution": {"main_protected": %s}}\n' "$protected" > "$tmp_repo/.claude/zskills-config.json"
+  result=$(cd "$tmp_repo" && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | REPO_ROOT="$tmp_repo" bash "$HOOK")
+  rm -rf "$tmp_repo"
   if [ "$expected" = "deny" ]; then
     if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
       pass "$label"
@@ -697,13 +705,14 @@ toggle_test() {
   fi
 }
 
-toggle_test "BLOCK_MAIN_PUSH=1 still denies git push on main" 1 "main" "deny"
-toggle_test "BLOCK_MAIN_PUSH=0 allows git push on main" 0 "main" "allow"
-toggle_test "BLOCK_MAIN_PUSH=0 allows git push on master" 0 "master" "allow"
-# Explicit refspec under =0 — hook parses PUSH_TARGET from args, not from
-# current branch. Branch here is a feature branch to isolate refspec parsing.
-toggle_test "BLOCK_MAIN_PUSH=0 allows 'git push origin main' (explicit refspec)" 0 "feat/test" "allow" "git push origin main"
-toggle_test "BLOCK_MAIN_PUSH=0 allows 'git push -u origin main' (upstream + refspec)" 0 "feat/test" "allow" "git push -u origin main"
+toggle_test "main_protected:true still denies git push on main" 1 "main" "deny"
+toggle_test "main_protected:false allows git push on main" 0 "main" "allow"
+toggle_test "main_protected:false allows git push on master" 0 "master" "allow"
+# Explicit refspec under main_protected:false — hook parses PUSH_TARGET from
+# args, not from current branch. Branch here is a feature branch to isolate
+# refspec parsing.
+toggle_test "main_protected:false allows 'git push origin main' (explicit refspec)" 0 "feat/test" "allow" "git push origin main"
+toggle_test "main_protected:false allows 'git push -u origin main' (upstream + refspec)" 0 "feat/test" "allow" "git push -u origin main"
 
 # Issue #515: `git push origin HEAD` from a `main` checkout resolves
 # server-side to remote `main` — defeats the main-protection regime via a
@@ -714,14 +723,59 @@ toggle_test "BLOCK_MAIN_PUSH=0 allows 'git push -u origin main' (upstream + refs
 # check against "main"/"master" missed. Post-fix, an explicit
 # `if [ "$PUSH_TARGET" = "HEAD" ]` block resolves to the current local
 # branch before the equality check.
-toggle_test "BLOCK_MAIN_PUSH=1 denies 'git push origin HEAD' from main (#515)" 1 "main" "deny" "git push origin HEAD"
-toggle_test "BLOCK_MAIN_PUSH=1 allows 'git push origin HEAD' from feat branch (#515)" 1 "feat/test" "allow" "git push origin HEAD"
-toggle_test "BLOCK_MAIN_PUSH=1 denies 'git push origin HEAD' from master (#515)" 1 "master" "deny" "git push origin HEAD"
+toggle_test "main_protected:true denies 'git push origin HEAD' from main (#515)" 1 "main" "deny" "git push origin HEAD"
+toggle_test "main_protected:true allows 'git push origin HEAD' from feat branch (#515)" 1 "feat/test" "allow" "git push origin HEAD"
+toggle_test "main_protected:true denies 'git push origin HEAD' from master (#515)" 1 "master" "deny" "git push origin HEAD"
 # Combines with #528's path-strip fix: `/usr/bin/git push origin HEAD`
 # from main must also deny — the wrapper-recursion's path-strip recognizes
 # the absolute-path git invocation, and the new HEAD resolution then maps
 # PUSH_TARGET to "main".
-toggle_test "BLOCK_MAIN_PUSH=1 denies '/usr/bin/git push origin HEAD' from main (#515 + #528)" 1 "main" "deny" "/usr/bin/git push origin HEAD"
+toggle_test "main_protected:true denies '/usr/bin/git push origin HEAD' from main (#515 + #528)" 1 "main" "deny" "/usr/bin/git push origin HEAD"
+
+echo ""
+echo "=== Push: main-push block FAILS CLOSED on missing/unparseable config ==="
+
+# When no config is resolvable (absent / unreadable / unparseable), the gate
+# DEFAULTS TO BLOCKING main/master pushes — preserving the prior
+# "zskills-shipped configs fail closed (safer)" posture that the former
+# static BLOCK_MAIN_PUSH=1 line provided.
+failclosed_test() {
+  local label="$1" config_state="$2" branch="$3" expected="$4" cmd="${5:-git push origin main}"
+  local tmp_repo result
+  tmp_repo=$(mktemp -d)
+  (cd "$tmp_repo" && git init -q -b "$branch" 2>/dev/null \
+    || (cd "$tmp_repo" && git init -q && git checkout -b "$branch" 2>/dev/null))
+  mkdir -p "$tmp_repo/.claude"
+  case "$config_state" in
+    absent)      : ;;  # write nothing
+    unparseable) printf 'this is not valid json at all {[' > "$tmp_repo/.claude/zskills-config.json" ;;
+    no-key)      printf '{"execution": {"landing": "pr"}}\n' > "$tmp_repo/.claude/zskills-config.json" ;;
+  esac
+  result=$(cd "$tmp_repo" && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$cmd\"}}" | REPO_ROOT="$tmp_repo" bash "$HOOK")
+  rm -rf "$tmp_repo"
+  if [ "$expected" = "deny" ]; then
+    if [[ "$result" == *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected deny (fail-closed), got: $result"
+    fi
+  else
+    if [[ "$result" != *"permissionDecision"*"deny"* ]]; then
+      pass "$label"
+    else
+      fail "$label — expected allow, got: $result"
+    fi
+  fi
+}
+
+failclosed_test "fail-closed: absent config blocks push origin main" absent "feat/test" "deny"
+failclosed_test "fail-closed: absent config blocks bare push on main" absent "main" "deny" "git push"
+failclosed_test "fail-closed: unparseable config blocks push origin main" unparseable "feat/test" "deny"
+failclosed_test "fail-closed: config missing main_protected key blocks push origin main" no-key "feat/test" "deny"
+# Fail-closed only affects main/master targets — feature-branch pushes still
+# allowed even with no resolvable config (the gate is main-targeted, not a
+# blanket push block).
+failclosed_test "fail-closed: absent config still allows feature-branch push" absent "feat/test" "allow" "git push -u origin feat/test"
 
 echo ""
 echo "=== Non-Bash tool_name ==="

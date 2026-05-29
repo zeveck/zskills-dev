@@ -34,28 +34,27 @@ CANONICAL_CONFIG='{
   }
 }'
 
+# apply-preset.sh is now CONFIG-ONLY — it must NOT read, require, or edit
+# the generic hook. This sentinel hook content lets us assert the hook is
+# left byte-identical after every apply.
 CURRENT_HOOK='#!/bin/bash
 # Block unsafe commands
 # GENERIC safety layer
 
-BLOCK_MAIN_PUSH=1
-
 INPUT=$(cat)
 exit 0'
 
-LEGACY_HOOK='#!/bin/bash
-# Block unsafe commands
-# GENERIC safety layer (pre-preset-UX legacy hook)
-
-INPUT=$(cat)
-exit 0'
-
-# make_project <dir> <config-content> <hook-content>
+# make_project <dir> <config-content> [<hook-content>]
+# The hook is optional — apply-preset no longer requires it. When provided,
+# tests use it to assert the hook is left untouched.
 make_project() {
-  local dir="$1" cfg="$2" hook="$3"
-  mkdir -p "$dir/.claude/hooks"
+  local dir="$1" cfg="$2" hook="${3:-}"
+  mkdir -p "$dir/.claude"
   printf '%s' "$cfg" > "$dir/.claude/zskills-config.json"
-  printf '%s' "$hook" > "$dir/.claude/hooks/block-unsafe-generic.sh"
+  if [ -n "$hook" ]; then
+    mkdir -p "$dir/.claude/hooks"
+    printf '%s' "$hook" > "$dir/.claude/hooks/block-unsafe-generic.sh"
+  fi
 }
 
 # run_preset <dir> <preset> → prints "rc=<code>|<stdout>"
@@ -78,54 +77,71 @@ get_landing() {
 get_main_protected() {
   grep -m1 '"main_protected"' "$1" | sed 's/.*"main_protected"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/'
 }
-get_block_main_push() {
-  grep -m1 '^BLOCK_MAIN_PUSH=' "$1" | sed 's/^BLOCK_MAIN_PUSH=\([01]\).*/\1/'
-}
 
 # Each test uses a unique literal /tmp/zskills-apply-test-<N>/ directory so
 # the generic hook's "rm -r requires literal /tmp/<name>" rule lets us clean
 # up without variable expansion.
 
 # ────────────────────────────────────────────────────────────────────
-echo "=== Happy path: each preset from canonical state ==="
+echo "=== Happy path: each preset writes ONLY config (no hook edits) ==="
 
+# Canonical state is cherry-pick/false. Applying a DIFFERENT preset must
+# flip the config fields; the generic hook must be left byte-identical
+# (config-only behavior — the hook reads main_protected at runtime now).
 rm -rf /tmp/zskills-apply-test-1
 make_project /tmp/zskills-apply-test-1 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-1 cherry-pick)
+hook_before_1=$(cat /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
+result=$(run_preset /tmp/zskills-apply-test-1 locked-main-pr)
 rc="${result%%$'\n'*}"
+hook_after_1=$(cat /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "cherry-pick" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "false" ] && \
-   [ "$(get_block_main_push /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)" = "0" ]; then
-  pass "cherry-pick on canonical state: landing/main_protected correct, BLOCK_MAIN_PUSH flipped to 0"
+   [ "$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "pr" ] && \
+   [ "$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json)" = "true" ] && \
+   [ "$hook_before_1" = "$hook_after_1" ]; then
+  pass "locked-main-pr: config landing=pr/main_protected=true; hook left byte-identical"
 else
-  fail "cherry-pick on canonical state: rc=$rc, landing=$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json), main_protected=$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json), BLOCK_MAIN_PUSH=$(get_block_main_push /tmp/zskills-apply-test-1/.claude/hooks/block-unsafe-generic.sh)"
+  fail "locked-main-pr: rc=$rc, landing=$(get_landing /tmp/zskills-apply-test-1/.claude/zskills-config.json), main_protected=$(get_main_protected /tmp/zskills-apply-test-1/.claude/zskills-config.json), hook-changed=$([ "$hook_before_1" = "$hook_after_1" ] && echo no || echo YES)"
 fi
 
 rm -rf /tmp/zskills-apply-test-2
 make_project /tmp/zskills-apply-test-2 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-2 locked-main-pr)
+hook_before_2=$(cat /tmp/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
+result=$(run_preset /tmp/zskills-apply-test-2 direct)
 rc="${result%%$'\n'*}"
+hook_after_2=$(cat /tmp/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "pr" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "true" ] && \
-   [ "$(get_block_main_push /tmp/zskills-apply-test-2/.claude/hooks/block-unsafe-generic.sh)" = "1" ]; then
-  pass "locked-main-pr on canonical state: all three fields land correctly"
+   [ "$(get_landing /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "direct" ] && \
+   [ "$(get_main_protected /tmp/zskills-apply-test-2/.claude/zskills-config.json)" = "false" ] && \
+   [ "$hook_before_2" = "$hook_after_2" ]; then
+  pass "direct: config landing=direct/main_protected=false; hook left byte-identical"
 else
-  fail "locked-main-pr on canonical state: rc=$rc"
+  fail "direct: rc=$rc"
 fi
 
+# Applying the SAME preset the config already carries → no-op rc=1 (config
+# already matches; no hook splice exists to force a change anymore).
 rm -rf /tmp/zskills-apply-test-3
 make_project /tmp/zskills-apply-test-3 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-3 direct)
+result=$(run_preset /tmp/zskills-apply-test-3 cherry-pick)
+rc="${result%%$'\n'*}"
+if [ "$rc" = "1" ] && echo "${result#*$'\n'}" | grep -q "already applied"; then
+  pass "cherry-pick on already-cherry-pick config: rc=1 'already applied' (config-only, no hook to flip)"
+else
+  fail "cherry-pick no-op: rc=$rc, out=${result#*$'\n'}"
+fi
+
+# apply-preset must succeed even when NO generic hook exists at all (the
+# config-only contract — it no longer requires the hook file).
+rm -rf /tmp/zskills-apply-test-3b
+make_project /tmp/zskills-apply-test-3b "$CANONICAL_CONFIG"   # no hook arg
+result=$(run_preset /tmp/zskills-apply-test-3b locked-main-pr)
 rc="${result%%$'\n'*}"
 if [ "$rc" = "0" ] && \
-   [ "$(get_landing /tmp/zskills-apply-test-3/.claude/zskills-config.json)" = "direct" ] && \
-   [ "$(get_main_protected /tmp/zskills-apply-test-3/.claude/zskills-config.json)" = "false" ] && \
-   [ "$(get_block_main_push /tmp/zskills-apply-test-3/.claude/hooks/block-unsafe-generic.sh)" = "0" ]; then
-  pass "direct on canonical state: all three fields land correctly"
+   [ "$(get_main_protected /tmp/zskills-apply-test-3b/.claude/zskills-config.json)" = "true" ] && \
+   [ ! -e /tmp/zskills-apply-test-3b/.claude/hooks/block-unsafe-generic.sh ]; then
+  pass "no hook present: apply still succeeds (config-only), no hook created"
 else
-  fail "direct on canonical state: rc=$rc"
+  fail "no-hook config-only: rc=$rc, out=${result#*$'\n'}"
 fi
 
 echo ""
@@ -133,10 +149,10 @@ echo "=== Idempotency ==="
 
 rm -rf /tmp/zskills-apply-test-4
 make_project /tmp/zskills-apply-test-4 "$CANONICAL_CONFIG" "$CURRENT_HOOK"
-# First apply — should change something (BLOCK_MAIN_PUSH 1→0 for cherry-pick).
-PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" cherry-pick >/dev/null 2>&1
-# Second apply — should report "already applied" and exit 1.
-PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" cherry-pick >/tmp/zskills-apply-test-4-out 2>&1
+# First apply of a DIFFERENT preset — should change config fields.
+PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >/dev/null 2>&1
+# Second apply of the SAME preset — should report "already applied" and exit 1.
+PROJECT_ROOT=/tmp/zskills-apply-test-4 bash "$SCRIPT" locked-main-pr >/tmp/zskills-apply-test-4-out 2>&1
 rc=$?
 if [ "$rc" = "1" ] && grep -q "already applied" /tmp/zskills-apply-test-4-out; then
   pass "second apply of same preset exits rc=1 with 'already applied' message"
@@ -145,37 +161,6 @@ else
   fail "idempotency: rc=$rc, out=$pass_result"
 fi
 rm -f /tmp/zskills-apply-test-4-out
-
-echo ""
-echo "=== Legacy hook splice ==="
-
-rm -rf /tmp/zskills-apply-test-5
-make_project /tmp/zskills-apply-test-5 "$CANONICAL_CONFIG" "$LEGACY_HOOK"
-result=$(run_preset /tmp/zskills-apply-test-5 cherry-pick)
-rc="${result%%$'\n'*}"
-hook_after=/tmp/zskills-apply-test-5/.claude/hooks/block-unsafe-generic.sh
-if [ "$rc" = "0" ] && \
-   grep -q "^BLOCK_MAIN_PUSH=0" "$hook_after" && \
-   grep -q "^# Preset toggle" "$hook_after" && \
-   grep -q "^INPUT=" "$hook_after"; then
-  pass "legacy hook: BLOCK_MAIN_PUSH= spliced in; original code preserved"
-else
-  fail "legacy hook splice: rc=$rc; hook after:
-$(cat "$hook_after")"
-fi
-
-# Re-apply — should be no-op now that the splice has set the target value
-rm -rf /tmp/zskills-apply-test-6
-make_project /tmp/zskills-apply-test-6 "$CANONICAL_CONFIG" "$LEGACY_HOOK"
-PROJECT_ROOT=/tmp/zskills-apply-test-6 bash "$SCRIPT" cherry-pick >/dev/null 2>&1
-PROJECT_ROOT=/tmp/zskills-apply-test-6 bash "$SCRIPT" cherry-pick >/tmp/zskills-apply-test-6-out 2>&1
-rc=$?
-if [ "$rc" = "1" ]; then
-  pass "legacy hook post-splice: second apply is idempotent"
-else
-  fail "legacy hook post-splice idempotency: rc=$rc, out=$(cat /tmp/zskills-apply-test-6-out)"
-fi
-rm -f /tmp/zskills-apply-test-6-out
 
 echo ""
 echo "=== Missing execution key insert ==="
@@ -255,13 +240,17 @@ fi
 rm -rf /tmp/zskills-apply-test-10
 mkdir -p /tmp/zskills-apply-test-10/.claude
 printf '%s' "$CANONICAL_CONFIG" > /tmp/zskills-apply-test-10/.claude/zskills-config.json
-# Hook file missing (no .claude/hooks/ dir)
-result=$(run_preset /tmp/zskills-apply-test-10 cherry-pick)
+# Hook file missing (no .claude/hooks/ dir). Config-only contract: apply must
+# NOT error on a missing hook (rc=3 is now reserved for a MISSING CONFIG).
+# Applying a different preset succeeds (rc=0) and writes only config.
+result=$(run_preset /tmp/zskills-apply-test-10 locked-main-pr)
 rc="${result%%$'\n'*}"
-if [ "$rc" = "3" ]; then
-  pass "missing hook file: rc=3"
+if [ "$rc" = "0" ] && \
+   [ "$(get_main_protected /tmp/zskills-apply-test-10/.claude/zskills-config.json)" = "true" ] && \
+   [ ! -d /tmp/zskills-apply-test-10/.claude/hooks ]; then
+  pass "missing hook file no longer errors: rc=0, config updated, no hook dir created"
 else
-  fail "missing hook file: expected rc=3, got rc=$rc"
+  fail "missing hook file (config-only): expected rc=0 + config flip + no hook dir, got rc=$rc, out=${result#*$'\n'}"
 fi
 
 rm -rf /tmp/zskills-apply-test-11
@@ -335,20 +324,21 @@ SIBLING_CONFIG='{
   "testing": { "unit_cmd": "npm test" }
 }'
 
-# Read-path test: probe via direct sourcing of the script logic by
-# checking the CHANGED report. After applying cherry-pick to a config
-# whose execution.landing is already cherry-pick AND main_protected is
-# already false, the only state change should be BLOCK_MAIN_PUSH 1→0.
-# If the read regex were unscoped it would see extra.landing="WRONG"
-# and extra.main_protected=true and report execution field changes.
+# Read-path test: after applying cherry-pick to a config whose
+# execution.landing is already cherry-pick AND main_protected is already
+# false, there is NO state change at all (config-only: no hook splice to
+# force a change). The result is rc=1 "already applied". If the read regex
+# were unscoped it would see extra.landing="WRONG" and
+# extra.main_protected=true and report spurious execution field changes
+# (rc=0).
 rm -rf /tmp/zskills-apply-test-15
 make_project /tmp/zskills-apply-test-15 "$SIBLING_CONFIG" "$CURRENT_HOOK"
 out=$(PROJECT_ROOT=/tmp/zskills-apply-test-15 bash "$SCRIPT" cherry-pick 2>&1)
 rc=$?
-# Expectation: rc=0 (BLOCK_MAIN_PUSH flip), and no execution.* changes
-# (because execution already matches the cherry-pick preset).
-if [ "$rc" = "0" ] && \
-   echo "$out" | grep -q "BLOCK_MAIN_PUSH" && \
+# Expectation: rc=1 (no change — config already matches cherry-pick), and
+# no execution.* changes reported.
+if [ "$rc" = "1" ] && \
+   echo "$out" | grep -q "already applied" && \
    ! echo "$out" | grep -q "execution.landing=" && \
    ! echo "$out" | grep -q "execution.main_protected="; then
   pass "sibling-collision read: CURRENT_LANDING / CURRENT_PROTECTED scoped to execution (no spurious flip reports)"
@@ -423,7 +413,7 @@ fi
 
 echo ""
 echo "=== Cleanup ==="
-for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
+for n in 1 2 3 3b 4 5 6 7 8 9 10 11 12 13 14 15 16 17; do
   rm -rf "/tmp/zskills-apply-test-$n"
 done
 pass "temp dirs cleaned"
