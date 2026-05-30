@@ -256,6 +256,96 @@ fi
 (cd "$d_main" && git worktree remove --force "$d_wt") 2>/dev/null || true
 
 # ───────────────────────────────────────────────────────────────────────
+# (e) Locale-independence: self-re-entry must work under a non-English
+# LC_MESSAGES locale (issue #827). The twin scripts grep mkdir's stderr
+# for the literal English "File exists" to detect EEXIST. On a localized
+# locale the diagnostic translates and the case arm misses, silently
+# returning rc=11 instead of routing to self-re-entry. The fix forces
+# `LC_ALL=C` on the mkdir invocation. If a non-English locale is
+# unavailable in this environment (devcontainers commonly only ship C +
+# en_US.utf8), the test gracefully degrades and still asserts the
+# C-locale path keeps working.
+# ───────────────────────────────────────────────────────────────────────
+echo "--- (e) locale-independence ---"
+
+# Pick a non-English locale if one is installed. Prefer fr_FR.UTF-8;
+# accept any non-C/non-en locale otherwise. `locale -a` is POSIX-portable.
+pick_localized_locale() {
+  local cand
+  for cand in fr_FR.UTF-8 fr_FR.utf8 de_DE.UTF-8 de_DE.utf8 es_ES.UTF-8 es_ES.utf8 ja_JP.UTF-8 ja_JP.utf8; do
+    if locale -a 2>/dev/null | grep -Fxq "$cand"; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  # Fall back to any installed locale that isn't C/POSIX/en*.
+  cand=$(locale -a 2>/dev/null | grep -viE '^(C|POSIX|en[_.])' | head -n 1)
+  if [ -n "$cand" ]; then
+    printf '%s' "$cand"
+    return 0
+  fi
+  return 1
+}
+
+e_repo="$SCRATCH_ROOT/e-repo"
+make_repo "$e_repo" || { echo "FATAL repo init"; exit 1; }
+
+# e1 (always runs): acquire under LC_ALL=C — fresh acquire → 0.
+(cd "$e_repo" && LC_ALL=C bash "$ISSUE_SH" acquire 17 --pipeline-id "fix-issues.E" --sprint-id "fix-issues.E")
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "(e1) acquire under LC_ALL=C fresh → exit 0"
+else
+  fail "(e1) acquire under LC_ALL=C fresh → 0" "got rc=$rc"
+fi
+
+# e2 (always runs): re-acquire SAME id under LC_ALL=C — self-re-entry → 0.
+(cd "$e_repo" && LC_ALL=C bash "$ISSUE_SH" acquire 17 --pipeline-id "fix-issues.E" --sprint-id "fix-issues.E")
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "(e2) re-acquire SAME id under LC_ALL=C → exit 0 (self-re-entry)"
+else
+  fail "(e2) re-acquire SAME id under LC_ALL=C → 0" "got rc=$rc"
+fi
+
+# e3: re-acquire SAME id under a NON-ENGLISH LC_ALL — must still route to
+# self-re-entry (rc=0), NOT silently return rc=11 because the localized
+# "File exists" diagnostic missed the case arm.
+LOCALE=""
+if LOCALE=$(pick_localized_locale); then
+  (cd "$e_repo" && LC_ALL="$LOCALE" bash "$ISSUE_SH" acquire 17 --pipeline-id "fix-issues.E" --sprint-id "fix-issues.E")
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass "(e3) re-acquire SAME id under LC_ALL=$LOCALE → exit 0 (self-re-entry survives localized mkdir diagnostic)"
+  elif [ "$rc" -eq 11 ]; then
+    fail "(e3) re-acquire SAME id under LC_ALL=$LOCALE → 0" "got rc=11 — LC_ALL=C prefix on mkdir is missing or ineffective (issue #827 regression)"
+  else
+    fail "(e3) re-acquire SAME id under LC_ALL=$LOCALE → 0" "got rc=$rc"
+  fi
+
+  # e4: same coverage for the plan twin.
+  e_prepo="$SCRATCH_ROOT/e-prepo"
+  make_repo "$e_prepo" || { echo "FATAL repo init"; exit 1; }
+  (cd "$e_prepo" && LC_ALL=C bash "$PLAN_SH" acquire eplan --pipeline-id "run-plan.E") >/dev/null
+  (cd "$e_prepo" && LC_ALL="$LOCALE" bash "$PLAN_SH" acquire eplan --pipeline-id "run-plan.E")
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    pass "(e4) plan re-acquire SAME id under LC_ALL=$LOCALE → exit 0 (self-re-entry survives localized mkdir diagnostic)"
+  elif [ "$rc" -eq 11 ]; then
+    fail "(e4) plan re-acquire SAME id under LC_ALL=$LOCALE → 0" "got rc=11 — LC_ALL=C prefix on mkdir is missing or ineffective (issue #827 regression)"
+  else
+    fail "(e4) plan re-acquire SAME id under LC_ALL=$LOCALE → 0" "got rc=$rc"
+  fi
+else
+  echo "  NOTE: no non-English locale installed (locale -a lists only C / POSIX / en*);" >&2
+  echo "        skipping (e3,e4) localized-diagnostic assertions. The fix is" >&2
+  echo "        still in place — LC_ALL=C prefix on mkdir in both claim-plan.sh" >&2
+  echo "        and claim-issue.sh — and the C-locale path (e1,e2) covers" >&2
+  echo "        the unchanged-behavior side. Install fr_FR.UTF-8 (or any" >&2
+  echo "        non-English UTF-8 locale) to exercise the localized branch." >&2
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""

@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.29+abab96"
+  version: "2026.05.30+3fa96f"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
