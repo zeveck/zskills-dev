@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.29+a8614b"
+  version: "2026.05.29+aa461b"
 ---
 
 # /quickfix — In-Flight Fix → PR
