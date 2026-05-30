@@ -1361,12 +1361,3 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Fix outline.** Restore the staleness step from 3d8e120 before the `**Exit.**` line at SKILL.md:469 in the `next` section. The block adds steps 4 (peek at Ready queue, report count or staleness) and renumbers Exit to step 5. Bump `metadata.version`. Mirror source to `.claude/skills/fix-issues/SKILL.md`. Two files changed, zero logic — pure prose restoration.
 **Complexity:** S. **Action now:** /do pr — restore accidentally-reverted staleness step in /fix-issues `next` section from 3d8e120 + version bump + mirror
 
-### #803 — Agents should claim a work-item (issue/plan) before working it — unify via a shared claim primitive
-
-**Labels:** (none) | **Verdict:** NOT FIXED — plan-scale
-
-**Problem.** Only `/fix-issues` claims an issue before working it (`claim-issue.sh` → `.zskills/claims/issue-<N>/`). `/do`, `/quickfix`, `/run-plan`, `/investigate` do NOT claim, so a concurrent `/fix-issues` cron can grab the same issue → double work / collision. Plans have a parallel `claim-plan.sh` mechanism. Two parallel primitives today, nothing unifies them.
-
-**Fix outline.** Introduce a shared claim primitive — `/claim-work-item` (or one helper script) that claims EITHER an issue (`issue-<N>`) or a plan (`plan-<slug>`), wrapping existing `claim-issue.sh` / `claim-plan.sh`. Wire `/do`, `/quickfix`, `/run-plan`, `/investigate` to claim on pickup and release on resolve. Capture the cross-cutting discipline in CLAUDE_TEMPLATE.md or skill prose (memory anchors don't propagate).
-
-**Complexity:** L. **Action now:** /draft-plan — needs adversarial review per the issue body ("A NEW /claim-work-item skill warrants /draft-plan adversarial review before implementation"). Real design surface: release semantics, stale-claim handling, PR-in-flight holds, dashboard claim-chip interaction.
