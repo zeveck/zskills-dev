@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.29+cf90e3"
+  version: "2026.05.29+8f131b"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -589,6 +589,22 @@ the plan and our session must not double-fire `/run-plan` for it.
 `run-plan.$TRACKING_ID` pipeline_id succeeds — exit 10 here therefore means
 ONLY a truly-foreign pipeline holds the plan, which is exactly when
 "declined" is the correct verdict (D8 / #803).
+
+### Self-re-entry contract (twins: claim-plan.sh / claim-issue.sh)
+
+Both twin primitives share one ownership-aware self-re-entry decision,
+implemented by the helper `skills/create-worktree/scripts/claim-self-reentry.sh`
+(invoked as a bash subprocess on each twin's already-exists branch — NEVER
+sourced, since its exit codes would terminate a sourcing caller). The
+exit-code contract is: **acquire** — `0` = fresh-OR-self (the existing claim
+is the caller's own pipeline_id, or there was no claim and we just took it →
+proceed), `10` = foreign-OR-absent/malformed (another pipeline holds it, or
+claim.json is missing/truncated → never steal), `11` = filesystem
+infrastructure failure, `2` = usage error; **release** — `12` = ownership
+mismatch (the claim is held by a different pipeline_id; release refuses).
+There is NO TTL — a claim is released ONLY by an explicit `release` call, so
+a re-entering self always sees its own claim and proceeds (`0`), and a
+foreign holder is honored until that holder explicitly releases.
 
 ```bash
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"

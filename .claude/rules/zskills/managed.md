@@ -364,3 +364,7 @@ to main. Use PR mode or feature branches.
 ## Tracking Enforcement
 
 Tracking file enforcement is active when `.zskills/tracking/` exists and the session is associated with a pipeline (via `.zskills-tracked` file or transcript). Skills create tracking files during pipeline execution; hooks check them before allowing `git commit`, `git cherry-pick`, and `git push`. Pipeline scoping (suffix matching on pipeline ID) ensures one pipeline's markers don't block another. The orchestrator writes `.zskills-tracked` (single-line pipeline ID) in both the worktree and main repo roots before dispatching agents, and removes it after pipeline completion. The `.claude/skills/update-zskills/scripts/clear-tracking.sh` script lets the user manually clear stale tracking state -- agents are blocked from running it directly.
+
+## Claiming work items
+
+Claim any tracked work-item (issue or plan) before working it; the claim is held for the work's full lifetime INCLUDING idle gaps, and released only on resolve/abandon, NEVER per-step. The discipline applies recursively: a pipeline holding a plan claim that works the plan's issue ALSO holds the issue claim. Foreign-held (acquire exit 10) -> decline (one-shot consumers) or WARN-and-proceed (a plan whose linked issue is foreign-held still runs -- the plan owns the plan); self-re-entry (exit 0) -> proceed; there is NO TTL -- release is always explicit. Issues are claimed via `claim-issue.sh`, plans via `claim-plan.sh`; both are ownership-aware (they recognize the caller's own claim and return success on re-acquire).
