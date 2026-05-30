@@ -56,5 +56,30 @@ if [ "${rc:-0}" = "2" ]; then
 fi
 ```
 
+**Claim the issue (when `$ISSUE_NUM` is non-empty).** After the worktree
+exists and `PIPELINE_ID="do.${TASK_SLUG}"` is set, acquire the
+`claim-issue.sh` claim BEFORE dispatching the implementation agent — this
+stops a concurrent `/fix-issues` cron from double-working the same issue.
+`$ISSUE_NUM` is propagated from `/do`'s Pre-flight pre-parse (set only when
+the description referenced an issue and `--force` overrode the
+`/fix-issues` redirect). Skip entirely when `$ISSUE_NUM` is empty (the
+common /do case). The claim is released in `/do` Phase 5 Report (the
+universal terminal for both auto and non-auto exits).
+
+```bash
+if [ -n "${ISSUE_NUM:-}" ]; then
+  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+  ACQ_RC=$?
+  case "$ACQ_RC" in
+    0)  : ;;  # acquired (fresh or self-re-entry) — proceed
+    10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining." >&2; exit 0 ;;
+    11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+    2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM) — internal bug; stopping." >&2; exit 1 ;;
+    *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+  esac
+fi
+```
+
 Do the work inside the worktree. The verification agent commits after tests pass (one logical unit per commit).
 

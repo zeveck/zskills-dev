@@ -86,6 +86,37 @@ fi
 ```
 Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills-tracked` file in the worktree is the single source of truth.
 
+**Step A5.5 — Claim the issue (when `$ISSUE_NUM` is non-empty).** Now that
+`PIPELINE_ID="do.${TASK_SLUG}"` is set (A4) and the worktree exists (A5),
+acquire the `claim-issue.sh` claim BEFORE dispatching the implementation
+agent (A6). This stops a concurrent `/fix-issues` cron from double-working
+the same issue. `$ISSUE_NUM` is propagated from `/do`'s Pre-flight
+pre-parse (set only when the description referenced an issue and `--force`
+overrode the `/fix-issues` redirect). Skip entirely when `$ISSUE_NUM` is
+empty (the common /do pr case). The A1 slug guards and A5's `exit "$RC"`
+are PRE-acquire, so they need no release. The claim is released in the
+explicit-finalize block at the end of the caller loop (Step A8), and
+inline before every post-acquire-pre-finalize early exit.
+
+```bash
+if [ -n "${ISSUE_NUM:-}" ]; then
+  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+  ACQ_RC=$?
+  case "$ACQ_RC" in
+    0)  : ;;  # acquired (fresh or self-re-entry) — proceed
+    10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining." >&2; exit 0 ;;
+    11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+    2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM) — internal bug; stopping." >&2; exit 1 ;;
+    *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+  esac
+fi
+```
+
+Do NOT copy `/fix-issues`'s HOLD-on-`created` arm: `/do pr` is one-shot
+(no later sprint fire re-runs `/land-pr` to release), so a HOLD would leak
+the claim forever.
+
 **Step A6 — Dispatch implementation agent (wait for completion):**
 
 **Dispatch shape.** Use the `Agent` tool with `subagent_type: "implementer"`.
@@ -150,10 +181,19 @@ cd "$WORKTREE_PATH"
 # $TASK_DESCRIPTION.
 if [ -z "${PR_TITLE:-}" ]; then
   echo "ERROR: PR_TITLE not set — model-layer composition step skipped." >&2
+  # C2 inline-release: this exit is AFTER the Step A5.5 acquire and BEFORE
+  # the explicit-finalize block, so release the issue claim (only if one
+  # was acquired) before bailing or it leaks.
+  if [ -n "${ISSUE_NUM:-}" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  fi
   exit 5
 fi
 if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 60 ] || [[ "$PR_TITLE" != do:\ * ]]; then
   echo "ERROR: PR_TITLE must be a single line ≤60 chars starting with 'do: ' (got '$PR_TITLE')." >&2
+  if [ -n "${ISSUE_NUM:-}" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  fi
   exit 2
 fi
 
@@ -271,6 +311,11 @@ while :; do
     # explicit-finalize block at end-of-fence). Variables in scope (same fence).
     rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
     sed -i "s/^status: started$/status: failed/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
+    # C2 inline-release: post-acquire, pre-finalize early exit — release
+    # the issue claim (only if one was acquired) or it leaks.
+    if [ -n "${ISSUE_NUM:-}" ]; then
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    fi
     exit 1
   fi
 
@@ -436,6 +481,16 @@ case "$LAND_OUTCOME" in
 esac
 sed -i "s/^status: started$/status: $FINAL/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
 rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
+
+# Release the issue claim regardless of created vs merged vs failed
+# (release-on-resolution — the /do pr invocation is terminating either way,
+# and /do is one-shot so there is no later fire to re-release). Only if an
+# issue claim was acquired in Step A5.5. $PIPELINE_ID = do.$TASK_SLUG is
+# re-resolved at the tracking-setup fence-top above and survives in this
+# fence.
+if [ -n "${ISSUE_NUM:-}" ]; then
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+fi
 ```
 
 **Note on the `.landed` schema:** `/land-pr` writes the canonical schema

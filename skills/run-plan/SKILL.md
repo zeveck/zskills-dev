@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.29+ca3f3d"
+  version: "2026.05.29+8f131b"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -584,6 +584,28 @@ On race-lost (exit 10) this fence terminates cleanly; the orchestrator
 reports "declined" and exits the turn — a second pipeline already owns
 the plan and our session must not double-fire `/run-plan` for it.
 
+`claim-plan.sh` is ownership-aware (self-re-entry returns 0), so a chunked
+`finish auto` re-fire re-acquiring its OWN plan claim with the stable
+`run-plan.$TRACKING_ID` pipeline_id succeeds — exit 10 here therefore means
+ONLY a truly-foreign pipeline holds the plan, which is exactly when
+"declined" is the correct verdict (D8 / #803).
+
+### Self-re-entry contract (twins: claim-plan.sh / claim-issue.sh)
+
+Both twin primitives share one ownership-aware self-re-entry decision,
+implemented by the helper `skills/create-worktree/scripts/claim-self-reentry.sh`
+(invoked as a bash subprocess on each twin's already-exists branch — NEVER
+sourced, since its exit codes would terminate a sourcing caller). The
+exit-code contract is: **acquire** — `0` = fresh-OR-self (the existing claim
+is the caller's own pipeline_id, or there was no claim and we just took it →
+proceed), `10` = foreign-OR-absent/malformed (another pipeline holds it, or
+claim.json is missing/truncated → never steal), `11` = filesystem
+infrastructure failure, `2` = usage error; **release** — `12` = ownership
+mismatch (the claim is held by a different pipeline_id; release refuses).
+There is NO TTL — a claim is released ONLY by an explicit `release` call, so
+a re-entering self always sees its own claim and proceeds (`0`), and a
+foreign holder is honored until that holder explicitly releases.
+
 ```bash
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
@@ -599,6 +621,67 @@ case "$rc" in
   2)  echo "claim-plan.sh acquire usage error"; exit 2 ;;
   *)  echo "claim-plan.sh acquire unexpected rc=$rc"; exit 1 ;;
 esac
+```
+
+**Issue-claim acquire (W3.1/W3.2/W3.5, #803 execution-window protection).**
+If the plan's frontmatter carries one or more `issue: N` fields, claim each
+linked `issue-<N>` for the plan's FULL lifetime — held across idle gaps
+between chunked fires (filesystem + no-TTL + self-re-entry make this
+automatic) and released ONLY at the plan's terminal release points
+(execute-phase.md terminal merge, the already-complete no-op, and the
+operator-stop sweep — NEVER per-phase). The issue claim uses run-plan's OWN
+`$PIPELINE_ID` (same as the plan claim) and `--sprint-id "$PIPELINE_ID"`.
+
+This arm is **DELIBERATELY different from the plan-claim decline arm above**:
+issue-foreign-at-start is **WARN-and-PROCEED**, never abort. #739 removed
+auto-expiry, so a possibly-stale issue claim must not block a deliberately-run
+plan — the plan owns the plan; the issue contention is a softer operator
+signal. On rc=10 we log loudly and CONTINUE, and we NEVER release the
+legitimately-won plan claim (no plan-claim leak).
+
+Parse the bare-integer issue number(s) from `$PLAN_FILE_FOR_READ`'s
+frontmatter (the PR-mode-worktree-aware read authority — NOT bare
+`$PLAN_FILE`). Strip `#` and surrounding quotes to a bare positive integer
+(`claim-issue.sh validate_issue_number` rejects non-numeric input with
+exit 2), aligning with the Close-linked-issue parser's tolerance for
+`issue: 42` and `issue: "#42"`.
+
+```bash
+# Parse issue:N field(s) from the plan frontmatter (the leading `---`
+# delimited YAML block only), normalized to bare positive integers.
+# Tolerates `issue: 42`, `issue: "#42"`, `issue: '#42'`. Multiple
+# `issue:` lines → multiple claims.
+ISSUE_NUMS=()
+while IFS= read -r raw; do
+  # strip surrounding quotes and a leading '#', keep only digits
+  n=$(printf '%s' "$raw" | tr -d '"'\''#[:space:]')
+  case "$n" in
+    ''|*[!0-9]*) continue ;;   # skip non-numeric (defensive)
+  esac
+  [ "$n" -gt 0 ] 2>/dev/null && ISSUE_NUMS+=("$n")
+done < <(awk '
+  NR==1 && $0 != "---" { exit }            # no frontmatter → nothing to do
+  NR==1 { infm=1; next }
+  infm && $0 == "---" { exit }             # end of frontmatter block
+  infm && /^[[:space:]]*issue:[[:space:]]*/ {
+    sub(/^[[:space:]]*issue:[[:space:]]*/, "", $0); print $0
+  }
+' "$PLAN_FILE_FOR_READ" 2>/dev/null)
+
+for N in "${ISSUE_NUMS[@]}"; do
+  set +e
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+    acquire "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+  irc=$?
+  set -e
+  case "$irc" in
+    0)  : ;;   # acquired-fresh OR self-re-entry — proceed, issue claim held
+    10) echo "issue #$N is claimed by another pipeline; proceeding with plan execution, issue claim NOT held" >&2 ;;  # WARN-and-PROCEED (D9) — do NOT abort, do NOT release the plan claim
+    11) echo "claim-issue.sh acquire infrastructure failure for issue #$N"; exit 1 ;;   # Failure Protocol
+    2)  echo "claim-issue.sh acquire usage error for issue #$N (un-stripped #N / empty PIPELINE_ID — internal bug)"; exit 2 ;;
+    *)  echo "claim-issue.sh acquire unexpected rc=$irc for issue #$N"; exit 1 ;;
+  esac
+done
 ```
 
 1. **In-progress git operation?**

@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.28+091ad6"
+  version: "2026.05.29+f085ff"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -227,6 +227,19 @@ fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
+fi
+# Issue-number parse (claim-work-item Phase 2 / W2.2). /do is normally
+# REDIRECTed to /fix-issues when the description references an issue
+# (Phase 0a triage); the number is only reachable here when --force
+# overrides that redirect. Extract the FIRST bare positive integer from a
+# `#N` / `closes #N` / `fix #N` reference into ISSUE_NUM so the mode files
+# can claim the issue via claim-issue.sh. When no issue number is present
+# (the common /do case) ISSUE_NUM stays empty and the mode files claim
+# nothing. The number is stripped to a bare integer (claim-issue.sh
+# rejects non-numeric input with exit 2).
+ISSUE_NUM=""
+if [[ "$ARGUMENTS" =~ \#([0-9]+) ]]; then
+  ISSUE_NUM="${BASH_REMATCH[1]}"
 fi
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
@@ -724,6 +737,13 @@ procedure end-to-end**. Do not proceed until you have read the file.
 | `worktree`     | B    | [modes/worktree.md](modes/worktree.md) |
 | `direct`       | C    | [modes/direct.md](modes/direct.md) |
 
+**`$ISSUE_NUM` propagates into the mode files** (set in the Pre-flight
+pre-parse). When non-empty, the mode file claims the issue via
+`claim-issue.sh` AFTER it constructs its `PIPELINE_ID` (the C1/M1 rule —
+never acquire before a non-empty PIPELINE_ID exists). The acquire is NEVER
+placed here in SKILL.md before mode dispatch: PIPELINE_ID is empty at this
+point, so `--pipeline-id ""` would fail usage-error exit 2.
+
 ## Phase 3 — Verify
 
 Verification intensity matches the change type (from Phase 1):
@@ -858,6 +878,25 @@ Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invoca
 
 ## Phase 5 — Report
 
+**Release the issue claim (worktree/direct modes).** Phase 5 is the
+universal terminal reached on BOTH the `auto` and non-`auto` exits of
+worktree and direct modes — so the issue claim (acquired by the mode file
+when `$ISSUE_NUM` was non-empty) is released HERE, not in Phase 4 Land
+(which is `AUTO_FLAG=1`-gated and would leak the claim on the dominant
+non-auto path). PR mode (Path A) handles its own release inside
+`modes/pr.md`'s finalize block and exits before reaching this section.
+Skip when no issue claim was acquired (the common /do case — `$ISSUE_NUM`
+empty):
+
+```bash
+# $ISSUE_NUM (Pre-flight pre-parse) and $PIPELINE_ID (set in the mode file:
+# do.${TASK_SLUG}) survive in the persistent shell. The release is
+# ownership-safe via --require-pipeline.
+if [ -n "${ISSUE_NUM:-}" ] && [ -n "${PIPELINE_ID:-}" ]; then
+  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+fi
+```
+
 Brief inline output. No persistent report file.
 
 **On main (no worktree, no auto):**
@@ -924,6 +963,14 @@ Status: pr-ready | pr-ci-failing | landed
   `.landed` with `status: conflict` and exit with an error message.
 - **If stuck on anything:** report the state and ask the user for
   guidance. Do not retry the same approach in a loop.
+- **Release the issue claim on every abandon path (worktree/direct modes).**
+  When `$ISSUE_NUM` was non-empty and the mode file acquired a
+  `claim-issue.sh` claim, any error exit above (test failure, content
+  issue, cherry-pick conflict, push failure, task-too-big) MUST release it
+  before stopping so the next pipeline can pick the issue up:
+  `bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"`
+  (only if an issue claim was acquired — skip when `$ISSUE_NUM` is empty).
+  PR mode's abandon-path releases live inside `modes/pr.md`.
 
 ## Key Rules
 

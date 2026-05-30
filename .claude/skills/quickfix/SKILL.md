@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.29+96de31"
+  version: "2026.05.29+aa461b"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -144,6 +144,19 @@ done
 # Trim
 DESCRIPTION="${DESCRIPTION#"${DESCRIPTION%%[![:space:]]*}"}"
 DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
+
+# Issue-number parse (claim-work-item Phase 2 / W2.4). /quickfix usually
+# works an in-flight edit, not an issue — but a description that references
+# an issue (`#N` / `closes #N` / `fix #N`) is normally REDIRECTed to
+# /fix-issues by triage (WI 1.5.4) and only proceeds here under `force`.
+# Extract the FIRST bare positive integer into ISSUE_NUM so WI 1.8 can
+# claim the issue via claim-issue.sh. When no issue number is present (the
+# common case) ISSUE_NUM stays empty and nothing is claimed. The number is
+# a bare integer (claim-issue.sh rejects non-numeric input with exit 2).
+ISSUE_NUM=""
+if [[ "$DESCRIPTION" =~ \#([0-9]+) ]]; then
+  ISSUE_NUM="${BASH_REMATCH[1]}"
+fi
 ```
 
 ## Phase 1 — Pre-flight
@@ -686,6 +699,26 @@ branch: $BRANCH
 date: $NOW_ISO
 MARK
 
+# Issue claim (claim-work-item Phase 2 / W2.4). Acquire here — where
+# PIPELINE_ID is established and the `started` marker is written — and
+# BEFORE branch creation (WI 1.9). Only when the description referenced an
+# issue (ISSUE_NUM non-empty, parsed in WI 1.2); skip otherwise (the common
+# /quickfix case). This stops a concurrent /fix-issues cron from
+# double-working the same issue. Released in the Phase 7 explicit-finalize
+# and the fail-finalize abandon sites (test fail, commit fail, push fail).
+if [ -n "${ISSUE_NUM:-}" ]; then
+  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+  ACQ_RC=$?
+  case "$ACQ_RC" in
+    0)  : ;;  # acquired (fresh or self-re-entry) — proceed
+    10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining." >&2; exit 0 ;;
+    11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+    2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM) — internal bug; stopping." >&2; exit 1 ;;
+    *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
+  esac
+fi
+
 # Explicit-finalize pattern (Plan LAND_PR_BYPASS_HARDENING Phase 2; issue
 # #241 — matches /commit pr / /do pr / /fix-issues pr). The marker
 # starts as `status: started`; each terminal path (test fail at Phase 4,
@@ -857,6 +890,11 @@ else
     fi
     # Explicit fail-finalize (issue #241).
     [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
+    # Release the issue claim (only if one was acquired at WI 1.8) — this
+    # abandon path is after the acquire and before the Phase 7 finalize.
+    if [ -n "${ISSUE_NUM:-}" ]; then
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    fi
     exit 4
   fi
 fi
@@ -991,6 +1029,10 @@ if ! git commit -m "$COMMIT_BODY"; then
   fi
   # Explicit fail-finalize (issue #241).
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
+  # Release the issue claim (only if one was acquired at WI 1.8).
+  if [ -n "${ISSUE_NUM:-}" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  fi
   exit 5
 fi
 ```
@@ -1055,6 +1097,10 @@ if ! git push -u origin "$BRANCH"; then
   echo "ERROR: git push failed. Branch '$BRANCH' and its commit are intact locally; retry manually once the remote is reachable." >&2
   # Explicit fail-finalize (issue #241).
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
+  # Release the issue claim (only if one was acquired at WI 1.8).
+  if [ -n "${ISSUE_NUM:-}" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  fi
   exit 5
 fi
 ```
@@ -1184,6 +1230,11 @@ while :; do
     # and runs correctly when called by a parent pipeline. Mirrors the
     # `[ -n "${ZSKILLS_PIPELINE_ID:-}" ]` guard at line 1310 below.
     [ -n "${ZSKILLS_PIPELINE_ID:-}" ] && rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr.$SLUG" 2>/dev/null
+    # Release the issue claim (only if one was acquired at WI 1.8). This
+    # early exit bypasses the end-of-fence explicit-finalize release.
+    if [ -n "${ISSUE_NUM:-}" ]; then
+      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    fi
     exit 5
   fi
 
@@ -1408,6 +1459,19 @@ else
   find "$MAIN_ROOT/.zskills/tracking" \
     -maxdepth 2 -type d -name 'quickfix.*' \
     -exec sh -c 'rm -f "$1"/requires.land-pr.*' _ {} \;
+fi
+
+# Release the issue claim (claim-work-item Phase 2 / W2.4) — only if one
+# was acquired at WI 1.8 (ISSUE_NUM survives in the persistent shell).
+# Release-on-resolution regardless of created vs merged vs pr-ready: the
+# /quickfix invocation is terminating either way and /quickfix is one-shot
+# (no later fire re-releases). $PIPELINE_ID = quickfix.$SLUG; reconstruct
+# from $ZSKILLS_PIPELINE_ID if it didn't survive across fences.
+if [ -n "${ISSUE_NUM:-}" ]; then
+  _RELEASE_PIPELINE="${PIPELINE_ID:-${ZSKILLS_PIPELINE_ID:-}}"
+  if [ -n "$_RELEASE_PIPELINE" ]; then
+    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$_RELEASE_PIPELINE"
+  fi
 fi
 ```
 
