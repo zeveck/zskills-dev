@@ -220,7 +220,11 @@ cmd_acquire() {
 
   # Atomic acquire: mkdir of the claim dir itself.
   local mkdir_err mkdir_status
-  mkdir_err=$(mkdir "$claim_dir" 2>&1)
+  # LC_ALL=C forces mkdir's diagnostic to the English "File exists" the
+  # case arm below greps for. Without it, a non-English LC_MESSAGES
+  # localizes the diagnostic and the EEXIST branch silently misses,
+  # returning rc=11 instead of routing to self-re-entry (issue #827).
+  mkdir_err=$(LC_ALL=C mkdir "$claim_dir" 2>&1)
   mkdir_status=$?
   if [ "$mkdir_status" -ne 0 ]; then
     case "$mkdir_err" in

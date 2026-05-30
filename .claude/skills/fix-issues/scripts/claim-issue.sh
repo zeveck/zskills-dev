@@ -176,9 +176,13 @@ cmd_acquire() {
   fi
 
   # Atomic acquire: mkdir of the claim dir itself. NO 2>/dev/null — the
-  # stderr text distinguishes EEXIST from other failures.
+  # stderr text distinguishes EEXIST from other failures. LC_ALL=C forces
+  # the English "File exists" the case arm below greps for; without it,
+  # a non-English LC_MESSAGES localizes the diagnostic and the EEXIST
+  # branch silently misses, returning rc=11 instead of routing to
+  # self-re-entry (issue #827).
   local mkdir_err
-  mkdir_err=$(mkdir "$claim_dir" 2>&1)
+  mkdir_err=$(LC_ALL=C mkdir "$claim_dir" 2>&1)
   local mkdir_status=$?
   if [ "$mkdir_status" -ne 0 ]; then
     # Map "File exists" -> self-re-entry decision (0 self / 10 foreign);
