@@ -1,5 +1,26 @@
 # Plan Report — Ownership-aware work-item claims (#803)
 
+> **Plan COMPLETE** (all 4 phases) — bundled PR on `feat/claim-work-item`, `6505/6505` tests green.
+
+## Phase — 4 CLAUDE_TEMPLATE recursive claim discipline + docs
+
+**Plan:** docs/plans/claim-work-item.md
+**Status:** Completed (verified)
+**Worktree:** /tmp/zskills-pr-claim-work-item (branch `feat/claim-work-item`)
+**Commit:** `4f10cd7`
+
+### Work Items
+| # | Item | Status | Notes |
+|---|------|--------|-------|
+| W4.1 | Recursive claim rule in `CLAUDE_TEMPLATE.md` | Done | `## Claiming work items`; decline-vs-WARN distinction; no `{{...}}` token |
+| W4.2 | Re-render `managed.md` | Done | via `render-managed-rules.py` (true render, independently reproduced byte-identical) |
+| W4.3 | `test-managed-md-up-to-date.sh` passes | Done | sync gate green |
+| W4.4 | Self-re-entry contract doc | Done | `### Self-re-entry contract` in run-plan SKILL.md; helper path + exit-code contract |
+| W4.5 | Version bump + mirror | Done | run-plan `2026.05.29+8f131b` (W4.4 touched its bundle); mirror byte-equal; CLAUDE_TEMPLATE not bumped (not a skill) |
+
+### Verification
+- Full suite: **`Overall: 6505/6505 passed, 0 failed`** (baseline 6505, docs-only). Separate verifier; Layer 3 passed; known flake did not fire. No drift.
+
 ## Phase — 3 run-plan issue-claim + operator-stop sweep + :597 cleanup
 
 **Plan:** docs/plans/claim-work-item.md

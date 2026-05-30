@@ -2,7 +2,8 @@
 issue: 803
 title: Ownership-aware work-item claims (self-re-entry in the two twin scripts)
 created: 2026-05-29
-status: active
+status: "complete"
+completed: "2026-05-30T00:49:15Z"
 ---
 
 # Plan: Ownership-aware work-item claims — self-re-entry in the twin claim scripts
@@ -385,7 +386,7 @@ not "around `gh issue close`."
 | Phase 1 — Shared self-re-entry helper + wire into both twins + tests | ✅ | `49e705a` | helper + both EEXIST arms wired; +15 test cases; 6485/6485 green |
 | Phase 2 — Wire /do, /quickfix, /investigate onto claim-issue.sh | ✅ | `bffe378` | 3 consumers wired (C1/M1 placement, C2 inline-releases); +17 conformance sentinels; 6502/6502 green |
 | Phase 3 — run-plan issue-claim (execution-window protection) + operator-stop sweep + optional :597 cleanup | ✅ | `7751be6` | issue acquire (D9 WARN-and-PROCEED) + 3 terminal releases + operator-stop `issue-*` arm; +3 conformance assertions; 6505/6505 green |
-| Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs | ⬚ | | |
+| Phase 4 — CLAUDE_TEMPLATE recursive claim discipline + docs | ✅ | `4f10cd7` | recursive claim rule in CLAUDE_TEMPLATE + re-rendered managed.md + self-re-entry contract doc; 6505/6505 green |
 
 ---
 
