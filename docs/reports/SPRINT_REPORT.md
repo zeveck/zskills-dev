@@ -3,30 +3,36 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260530-004608-fnoact
+# /fix-issues sprint — sprint-20260530-025709-fcleanup
 
 **Mode:** N=1, auto, every 2h, cron-fired sprint
-**Started:** 2026-05-29T20:46:11-04:00
-**Open issues at sprint start:** 2 (#803, #67)
+**Started:** 2026-05-29T22:57:11-04:00
+**Open issues at sprint start:** 1 (#67)
 **Actionable picks:** 0
+
+## State changes since last fire
+
+- **#803 closed** (parallel session merged the claim-work-item work at 2026-05-30T01:14:24Z, `stateReason: COMPLETED`). Stale tracker row removed from `docs/issues/ISSUES_PLAN.md` this fire.
 
 ## Triage
 
 | # | Title | Verdict | Route |
 |---|-------|---------|-------|
-| #803 | Agents should claim a work-item before working it | Plan-scale; new skill; body says "warrants /draft-plan adversarial review" | Skip — needs /draft-plan |
-| #67  | GitLab (glab) support — deferred until prereqs land | Author-deferred; "Action now: none" | Skip — author-deferred |
+| #67  | GitLab (glab) support — deferred until prereqs land | Already skip-tagged `deferred` (filter confirmed: `SKIP_TAGGED="67:deferred"`) | Skip — dropped by Phase 2 SKIP_TAGGED filter |
 
-No actionable picks this fire. Both open issues are structurally non-actionable per their own bodies (re-read this fire — no new comments, no body changes).
+0 candidates after SKIP_TAGGED filter. Backlog is empty.
 
-## Tracker updates
+## Forward look
 
-- Added `#803` row to `docs/issues/ISSUES_PLAN.md` with `**Action now:** /draft-plan ...` so future fires drop it via Phase 2 SKIP_TAGGED filter.
-- `#67` already in tracker (`Action now: none` — author-deferred) — left untouched.
+Backlog is now empty of actionable work. Future cron fires (every 2h) will:
+- Sync: nothing to do (no new issues, no closed-issue tracker rows to clean up).
+- Phase 2 filter: drops #67 via SKIP_TAGGED → CANDIDATE_ISSUES=[].
+- No-actionable arm: tracker has 0 diff → empty worktree gets cleaned up, no PR.
+
+To pause the cron entirely: `/fix-issues stop`.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260530-004608-fnoact
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260530-004608-fnoact
-- Per-issue claims: none acquired (no candidates).
-- Cron: `36 */2 * * *` — next fire ~2h after this report.
+- Sprint pipeline ID: fix-issues.sprint-20260530-025709-fcleanup
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260530-025709-fcleanup
+- Cron: `36 */2 * * *`
