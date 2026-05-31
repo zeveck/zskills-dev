@@ -1,5 +1,26 @@
 # Plan Report — Brainstorm mode for /draft-plan
 
+## Phase — 2 Wire brainstorm into SKILL.md
+
+**Plan:** docs/plans/BRAINSTORM_MODE_PLAN.md (Phase 2 of 3)
+**Status:** Completed (verified)
+**Commit:** 0a296c1
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Dedicated BRAINSTORM_FLAG detection fence (separate from AUTO_FLAG) | Done | 0a296c1 |
+| 2 | `brainstorm` added to recognized-flag prose list; preamble loop untouched | Done | 0a296c1 |
+| 3 | "Brainstorm mode" conditional-load + resume-on-reentry stage | Done | 0a296c1 |
+| 4 | Feed-forward (notes-file path into research prompts) + post-research checkpoint skip | Done | 0a296c1 |
+| 5 | argument-hint += [brainstorm] ([auto] retained) | Done | 0a296c1 |
+| 6 | Version bump 2026.05.31+1d4478 + mirror parity | Done | 0a296c1 |
+
+### Verification
+- Independent verifier: PASS on all 7 ACs + every must-not-break conformance/args-smoke pin.
+- Test suite: 6575/6575 passed, 0 failed (baseline 6575/6575; no regressions). test-draft-plan-args-smoke.sh + test-skill-conformance.sh green.
+- Scope: only the two SKILL.md files (+46/-4 symmetric). No drift tokens.
+
 ## Phase — 1 Author references/brainstorm.md
 
 **Plan:** docs/plans/BRAINSTORM_MODE_PLAN.md (Phase 1 of 3)

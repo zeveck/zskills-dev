@@ -67,7 +67,7 @@ design surface that warrants adversarial review up front.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Author references/brainstorm.md | ✅ Done | `aa6d16b` | 338-line brainstorm.md; version 2026.05.31+874a6f + mirror; issue-606 allowlist; 6575/6575 |
-| 2 — Wire brainstorm into SKILL.md | ⬚ | | |
+| 2 — Wire brainstorm into SKILL.md | ✅ Done | `0a296c1` | BRAINSTORM_FLAG + conditional-load/resume + feed-forward + checkpoint-skip + argument-hint; version 1d4478 + mirror; 6575/6575 |
 | 3 — Tests, version bumps, mirrors, conformance | ⬚ | | |
 
 ---
