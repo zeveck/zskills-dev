@@ -44,11 +44,18 @@ design surface that warrants adversarial review up front.
   Per the user (2026-05-31), `/research-and-plan` and `/research-and-go` will NOT pass a
   `brainstorm` token when they delegate `/draft-plan`, so the automated/headless path simply
   never sets the flag — there is nothing to defend against at the parent. We therefore do NOT
-  modify the parent skills. As cheap, non-load-bearing insurance against the one edge case
-  where a delegated sub-problem description happens to contain the standalone word
-  "brainstorm", draft-plan additionally requires `ZSKILLS_PIPELINE_ID` to be empty before
-  entering the dialogue (a one-line inline check, draft-plan-only). If a future need arises to
-  let parents request brainstorm explicitly, the parent-side plumbing can be added then.
+  modify the parent skills, and the gate is simply `BRAINSTORM_FLAG=1`.
+- **Accepted, deferred residual risk (round-2 finding):** an earlier draft added a
+  `ZSKILLS_PIPELINE_ID`-empty check as "insurance" against a delegated sub-problem description
+  that literally contains the word "brainstorm". That check is **inert** — verified that NO
+  skill anywhere `export`s `ZSKILLS_PIPELINE_ID` (`grep -rn 'export ZSKILLS_PIPELINE_ID'
+  skills/` → zero; `/research-and-go` only `echo`s it to the transcript for the tracking hook),
+  so it reads empty in both top-level AND delegated runs and would protect nothing. It is
+  therefore NOT included. The only residual edge — a delegated run whose description contains
+  the standalone word "brainstorm" entering a dialogue with no user — is **explicitly accepted
+  and deferred** per the user's "don't worry about that yet." If hardening is later needed, the
+  mechanism is a parent-passed delegation marker (a forwarded `delegated` token or an actually-
+  exported env var) that draft-plan checks — adventure for a future plan, not invented here.
 - **Demos default toward the live browser companion** (superpowers' common case), with the
   static screenshot as the lighter "sometimes" path — per the user's steer.
 - **Dialogue uses plain conversation text, never `AskUserQuestion`** (settled framework
@@ -60,7 +67,7 @@ design surface that warrants adversarial review up front.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Author references/brainstorm.md | ⬚ | | |
-| 2 — Wire brainstorm into SKILL.md + parent-skill guards | ⬚ | | |
+| 2 — Wire brainstorm into SKILL.md | ⬚ | | |
 | 3 — Tests, version bumps, mirrors, conformance | ⬚ | | |
 
 ---
@@ -87,13 +94,22 @@ demo lifecycle and the durable notes/feed-forward contract.
 
 ### Design & Constraints
 
-**Slug pinning (load-bearing for feed-forward).** All three `/tmp` artifacts derive the slug
-from the SAME `$TRACKING_ID` the SKILL.md preamble computes at `skills/draft-plan/SKILL.md:85`
-(`basename "$OUTPUT_FILE" .md | tr A-Z a-z | tr _ -`). Use it verbatim — do NOT recompute a
-slug from the description, or the feed-forward silently misses:
+**Slug pinning (load-bearing for feed-forward).** The brainstorm notes + demo paths derive
+their slug from the deterministic `$TRACKING_ID` the SKILL.md preamble computes at
+`skills/draft-plan/SKILL.md:85` (`basename "$OUTPUT_FILE" .md | tr A-Z a-z | tr _ -`) — use it
+verbatim, in scope at the gate (set before the brainstorm stage), do NOT recompute from the
+description:
 - notes: `/tmp/draft-plan-brainstorm-$TRACKING_ID.md`
 - demos: `/tmp/draft-plan-demo-$TRACKING_ID/`
-- research (existing): `/tmp/draft-plan-research-$TRACKING_ID.md`
+
+**Do NOT assume the existing research file shares this slug (round-2 finding).** The research
+file's `<slug>` is loose, orchestrator-chosen prose (`SKILL.md:222-226` derives it from the
+output filename "if one was provided," else from the description), so it is NOT guaranteed to
+equal `$TRACKING_ID` (e.g. this very pipeline's research file is
+`/tmp/draft-plan-research-BRAINSTORM_MODE.md` while `$TRACKING_ID` = `brainstorm-mode-plan`).
+The feed-forward therefore does NOT re-derive a path — it passes the **literal**
+`/tmp/draft-plan-brainstorm-$TRACKING_ID.md` string into the research-agent prompts (Phase 2),
+so it never depends on slug parity.
 
 All `/tmp` paths are ABSOLUTE — required because the brainstorm stage runs after the worktree
 preamble, so cwd is the worktree; a relative demo/notes path would write into the worktree.
@@ -123,8 +139,9 @@ seed that feeds Phase 1 research instead of a committed spec):
 7. **Offer the transition checkpoint** when open questions are exhausted: "I think we've got
    enough to draft a plan — start the adversarial design review, or keep exploring?" Require
    an **affirmative confirm**. Ambiguous → ask once more. **Never keyword-auto-detect "ready"**.
-8. **On confirm:** finalize the notes file as a structured design summary, then return control
-   to SKILL.md (Phase 2 wires the return + the redundant-checkpoint skip).
+8. **On confirm:** finalize the notes file as a structured design summary, flip its header to
+   `status: ready` (the terminal marker that authorizes the transition), then return control to
+   SKILL.md (Phase 2 wires the return + the redundant-checkpoint skip).
 
 **Quick-demo lifecycle — EXACT idioms (the worktree-safety + process-lifecycle load-bearing
 rules; the round-1 review found the previous version under-specified and factually wrong about
@@ -146,8 +163,8 @@ screenshot paths and ports):**
   pidfile is mandatory). Spec the idiom literally in the file, e.g.:
   ```bash
   PYTHON=${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}
-  DEMO_DIR="/tmp/draft-plan-demo-$TRACKING_ID"
-  # Serve on an OS-assigned free port; write "PID PORT" to a pidfile for later clean stop.
+  DEMO_DIR="/tmp/draft-plan-demo-$TRACKING_ID"; mkdir -p "$DEMO_DIR"
+  # Serve on an OS-assigned free port; the python prints its URL to .serve.url.
   "$PYTHON" - "$DEMO_DIR" > "$DEMO_DIR/.serve.url" 2>&1 <<'PY' &
   import http.server, socketserver, os, sys, functools
   os.chdir(sys.argv[1])
@@ -156,27 +173,37 @@ screenshot paths and ports):**
       print(f"http://127.0.0.1:{s.server_address[1]}/", flush=True)
       s.serve_forever()
   PY
-  echo "$! " > "$DEMO_DIR/.serve.pid"
+  echo "$!" > "$DEMO_DIR/.serve.pid"          # NO trailing space — ps -p chokes on it
+  # The server needs ~1-3s to bind + flush the URL; wait for it WITHOUT a foreground `sleep`
+  # (harness-blocked per CLAUDE.md). A timeout-bounded busy-wait is sleep-free:
+  timeout 8 bash -c 'until [ -s "$1/.serve.url" ]; do :; done' _ "$DEMO_DIR" || true
   ```
-  Give the user the URL (read from `$DEMO_DIR/.serve.url`) to open and interact with; iterate
-  the HTML in place and tell them to refresh.
+  Give the user the URL (read from `$DEMO_DIR/.serve.url` AFTER the wait above; an immediate read
+  returns empty — round-2 finding). Iterate the HTML in place and tell them to refresh.
 - **Stopping the server (NEVER `kill -9`/`killall`/`pkill`/`fuser -k`; never
   `lsof -ti | xargs kill`).** Read the PID from `$DEMO_DIR/.serve.pid` and `kill "$PID"`
   (SIGTERM that specific PID only) at brainstorm exit, or leave it for the user to stop.
   Because demos live in `/tmp`, a stranded server does not dirty the worktree and cannot
   block `/land-pr`; still, stop it on a clean exit for tidiness.
 
-- **Static screenshot (the "sometimes" lighter case).** Use `playwright-cli screenshot` on a
-  `file://` URL pointing at the demo HTML, **without `--filename`** (per the managed-rule:
-  this saves into the configured, gitignored `.playwright/output/` dir, which is invisible to
-  git — `.gitignore:20` ignores `.playwright/*`). **Do NOT move or rename the screenshot into
-  the tracked worktree** (that is the actual pollution hazard — the file is safe only while it
-  stays in the gitignored dir). Show the user the image from `.playwright/output/`. If
-  playwright-cli errors on environment, check `.devcontainer/setup.sh` first
-  (`feedback_check_devcontainer_before_bailing`).
+- **Static screenshot (the "sometimes" lighter case).** `playwright-cli screenshot` takes NO
+  URL and requires the browser to be open first (round-2 finding: a bare
+  `playwright-cli screenshot file://…` errors "browser 'default' is not open"). The verified
+  sequence is: `playwright-cli open "file://$DEMO_DIR/<demo>.html"` → `playwright-cli screenshot`
+  (NO `--filename`, NO url) → `playwright-cli close`. Omitting `--filename` saves into the
+  configured, gitignored `.playwright/output/` dir (which is invisible to git — `.gitignore:20`
+  ignores `.playwright/*`; verified the screenshot lands there headless in this environment).
+  **Do NOT move or rename the screenshot into the tracked worktree** (that is the actual
+  pollution hazard — it is safe only while it stays in the gitignored dir). Show the user the
+  image from `.playwright/output/`. If playwright-cli errors on environment, check
+  `.devcontainer/setup.sh` first (`feedback_check_devcontainer_before_bailing`).
 
 - **Default toward the live companion** when the user benefits from interaction; use the
   screenshot for fast static conceptual shots. State this preference explicitly in the file.
+- **Authoring-effort honesty note (round-2 finding):** the inline-built HTML companion is a
+  THROWAWAY visualization, not production UI. Keep mockups minimal — enough to make the idea
+  concrete, not polished. The file must say this so the orchestrator doesn't sink
+  disproportionate effort into demo HTML mid-dialogue.
 - Demos are throwaway and never committed; optionally `rm -rf "/tmp/draft-plan-demo-$TRACKING_ID"`
   on brainstorm exit.
 
@@ -189,6 +216,16 @@ agents read it):**
   the skill's existing `/tmp/draft-plan-research-$TRACKING_ID.md` compaction-survival pattern
   (`SKILL.md:222-228`). Accumulate: refined problem statement, decisions + rationale, rejected
   alternatives, open questions, pointers to demo screenshots/URLs.
+- **The notes file IS a resumable state machine (round-2 finding).** The dialogue is multi-turn
+  and WILL sometimes span a context compaction; after compaction the in-context dialogue state
+  and `BRAINSTORM_FLAG` shell var are gone, and nothing would otherwise re-trigger the loop —
+  the orchestrator could jump to Phase 1 with a half-finished seed. Defend structurally: the
+  notes file carries a header `status: in-progress`, flipped to a terminal `status: ready` line
+  ONLY at step 8 (user confirm). The brainstorm-mode entry in SKILL.md (Phase 2) must, on
+  (re)entry when the flag is set, check for the notes file: if it exists with
+  `status: in-progress`, RESUME the dialogue from the captured state rather than restarting or
+  skipping to Phase 1; only a `status: ready` notes file authorizes the transition. This makes
+  the dialogue crash/compaction-safe.
 - **Feed-forward mechanism (pinned):** at transition, the notes file path is injected into
   EACH Phase 1 research agent's PROMPT, with an instruction to read it as the primary design
   seed (Phase 2 of this plan wires the SKILL.md side). The post-dispatch consolidation then
@@ -238,10 +275,15 @@ Verify mirror parity before committing.
 - [ ] Demo HTML + notes use absolute `/tmp/...$TRACKING_ID...` paths; the file states demos
       live ONLY in `/tmp` and are never committed, with the `FILE_REL`-guard rationale.
 - [ ] The live-companion serve idiom is written literally: Python stdlib server on an
-      OS-assigned free port, PID+URL captured to a pidfile under the demo dir, stopped via
-      `kill "$PID"` (no `kill -9`/`pkill`/`lsof|xargs kill`).
-- [ ] The screenshot idiom omits `--filename` (lands in gitignored `.playwright/output/`) and
-      the file explicitly forbids moving/renaming the screenshot into the tracked worktree.
+      OS-assigned free port, PID written to a pidfile with `echo "$!"` (NO trailing space —
+      round-2 bug), a sleep-free `timeout … until [ -s .serve.url ]` wait before reading the
+      URL (no foreground `sleep`), stopped via `kill "$PID"` (no `kill -9`/`pkill`/`lsof|xargs kill`).
+- [ ] The screenshot idiom uses `playwright-cli open <file://url>` → `screenshot` (no url, no
+      `--filename`) → `close` (round-2: `screenshot` needs the browser open first), lands in
+      gitignored `.playwright/output/`, and the file forbids moving/renaming it into the tracked
+      worktree.
+- [ ] The notes file is a resumable state machine: `status: in-progress` until step 8 flips it
+      to `status: ready`; the file documents resume-on-reentry semantics.
 - [ ] The file forbids `AskUserQuestion`, forbids keyword-auto-detecting "ready", and forbids
       `TZ=America/New_York` (and the other forbidden literals).
 - [ ] The feed-forward is specified as "inject the notes-file path into each research agent's
@@ -268,13 +310,14 @@ not pass `brainstorm`).
 
 ### Work Items
 - [ ] Add a dedicated `BRAINSTORM_FLAG` detection fence (separate from `AUTO_FLAG`).
-- [ ] Add `brainstorm` to the recognized-flag set in the description-extraction prose
-      (`SKILL.md:133-147`) and the worktree-preamble token loop (`SKILL.md:69-85`) so the word
-      is stripped from the description.
-- [ ] Add the **conditional-load** prose (new "Brainstorm mode" stage between Pre-check and
-      Phase 1), gated on `BRAINSTORM_FLAG=1` plus the cheap `ZSKILLS_PIPELINE_ID`-empty check.
-- [ ] Wire the **feed-forward** (inject notes-file path into research-agent prompts) and the
-      **post-research checkpoint skip** in brainstorm mode.
+- [ ] Add `brainstorm` to the recognized-flag **prose** list in the description-extraction
+      section (`SKILL.md:143-147`, mirroring the `auto` bullet). NO preamble-loop edit — the
+      `for tok in $ARGUMENTS` loop (`SKILL.md:75-80`) only extracts `.md` tokens for
+      `OUTPUT_FILE` and strips nothing (round-2 finding: there is no `auto)` arm to mirror).
+- [ ] Add the **conditional-load + resume** prose (new "Brainstorm mode" stage between Pre-check
+      and Phase 1), gated on `BRAINSTORM_FLAG=1`.
+- [ ] Wire the **feed-forward** (inject the literal notes-file path into research-agent prompts)
+      and the **post-research checkpoint skip** in brainstorm mode.
 - [ ] Update `argument-hint` (`SKILL.md:4`) to include `[brainstorm]`.
 - [ ] Bump `skills/draft-plan/SKILL.md` `metadata.version` + re-mirror.
 
@@ -289,36 +332,34 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[bB][rR][aA][iI][nN][sS][tT][oO][rR][mM]($|
 fi
 ```
 Whitespace-anchored + case-insensitive → does NOT match `brainstorming`/`brainstormed`/
-`brainstorms`, and won't collide with `output`/`rounds`/`.md`/`auto`. Add `brainstorm` to the
-preamble token strip and the recognized-flag list so it is removed from the description string.
+`brainstorms`, and won't collide with `output`/`rounds`/`.md`/`auto`. Add `brainstorm` only to
+the recognized-flag PROSE list (`SKILL.md:143-147`) so the orchestrator excludes it from the
+description — there is nothing to change in the `.md`-only preamble token loop.
 
-**Delegation gate (simplified per the user — no parent-skill changes).** The parents
-(`/research-and-plan`, `/research-and-go`) will not pass a `brainstorm` token, so the automated
-path never sets the flag and there is nothing to strip at the parent. The only residual edge is
-a delegated sub-problem description that happens to contain the standalone word "brainstorm"
-(`/research-and-plan` composes `/draft-plan output <path> <sub-problem description>$AUTO_ARG`,
-`research-and-plan/SKILL.md:136`). To keep brainstorm strictly interactive-top-level and make a
-headless dialogue-hang structurally impossible at near-zero cost, the gate is:
+**Gate (simplified per the user — no parent-skill changes, no inert env check).** The gate is
+simply `BRAINSTORM_FLAG=1`. The parents (`/research-and-plan`, `/research-and-go`) will not pass
+a `brainstorm` token (the load-bearing guarantee), so the automated/headless path never sets the
+flag. An earlier draft added a `[ -z "${ZSKILLS_PIPELINE_ID:-}" ]` "insurance" check; round 2
+verified it is **inert** (no skill `export`s `ZSKILLS_PIPELINE_ID` — `grep -rn 'export
+ZSKILLS_PIPELINE_ID' skills/` → zero; `/research-and-go` only `echo`s it for the transcript
+hook), so it reads empty in both top-level and delegated runs and protects nothing. It is
+therefore NOT included — a dead check dressed as insurance is worse than none. The one residual
+edge (a delegated description literally containing the standalone word "brainstorm" — the regex
+does fire on it) is **explicitly accepted/deferred** per the user; if hardening is later wanted,
+add a real parent-passed delegation marker and check it here. Result: at top level, `brainstorm`
+(with or without `auto`) enters the dialogue; delegated runs simply never have the flag set.
 
-> Brainstorm runs iff `BRAINSTORM_FLAG=1` **AND** `[ -z "${ZSKILLS_PIPELINE_ID:-}" ]`, the
-> latter read INLINE in the gate fence (the same inline-read pattern the skill already relies
-> on at `SKILL.md:192`; a delegated run has `ZSKILLS_PIPELINE_ID` set by the parent).
-
-This is a one-line, draft-plan-only check — cheap insurance, not load-bearing (the load-bearing
-fact is "parents don't pass brainstorm"). No verification of env-propagation reliability is
-required to ship: if `ZSKILLS_PIPELINE_ID` is reliably set when delegated, the check is exact;
-if it isn't, the worst case is the already-accepted "parents don't pass brainstorm" guarantee,
-unchanged. Result: at an interactive top-level run, `brainstorm` (with or without `auto`) enters
-the dialogue; delegated runs proceed normally without it.
-
-**Conditional-load prose** (follow `/session-report handoff`, `session-report/SKILL.md:28-35`).
-A new section immediately after Pre-check (`SKILL.md:174`), before Phase 1:
+**Conditional-load + resume prose** (follow `/session-report handoff`,
+`session-report/SKILL.md:28-35`). A new section immediately after Pre-check (`SKILL.md:174`),
+before Phase 1:
 > ## Brainstorm mode (only when the `brainstorm` flag is present)
-> If `BRAINSTORM_FLAG=1` AND `ZSKILLS_PIPELINE_ID` is empty (interactive top-level run, not a
-> `/research-and-plan`/`/research-and-go` delegation), **Read
-> [references/brainstorm.md](references/brainstorm.md)** via the Read tool and execute its
-> dialogue loop now, before Phase 1. Otherwise (`BRAINSTORM_FLAG=0`, or the run is
-> delegated/headless), **ignore the reference file entirely** and proceed straight to Phase 1.
+> If `BRAINSTORM_FLAG=1`, **Read [references/brainstorm.md](references/brainstorm.md)** via the
+> Read tool and execute its dialogue loop now, before Phase 1 — UNLESS the notes file
+> `/tmp/draft-plan-brainstorm-$TRACKING_ID.md` already exists with `status: ready` (a prior,
+> completed dialogue — proceed straight to Phase 1 using it as the seed). If the notes file
+> exists with `status: in-progress` (a dialogue interrupted by compaction/crash), RESUME it from
+> its captured state rather than restarting. If `BRAINSTORM_FLAG=0`, **ignore the reference file
+> entirely** and proceed straight to Phase 1.
 
 Shared vars (`$OUTPUT_FILE`, `$TRACKING_ID`, `$AUTO_FLAG`, the slug) are already set and survive
 into the loaded reference via the persistent orchestrator context.
@@ -349,10 +390,13 @@ skills/draft-plan`) and `scripts/mirror-skill.sh draft-plan` before the per-phas
 ### Acceptance Criteria
 - [ ] `BRAINSTORM_FLAG` is set by a dedicated fence; `brainstorming`/`brainstormed`/
       `brainstorms` do NOT match.
-- [ ] `brainstorm` is stripped from the description (preamble loop + extraction prose updated).
-- [ ] SKILL.md Reads `references/brainstorm.md` ONLY when `BRAINSTORM_FLAG=1` AND
-      `ZSKILLS_PIPELINE_ID` is empty; absent flag or delegated → not loaded.
-- [ ] In brainstorm mode the research-agent prompts include the notes-file path and the
+- [ ] `brainstorm` is added to the recognized-flag PROSE list (`SKILL.md:143-147`); the
+      `.md`-only preamble token loop is NOT touched.
+- [ ] SKILL.md Reads `references/brainstorm.md` ONLY when `BRAINSTORM_FLAG=1`; absent flag → not
+      loaded. The gate contains no inert `ZSKILLS_PIPELINE_ID` check.
+- [ ] The "Brainstorm mode" prose implements resume-on-reentry: `status: ready` notes file →
+      skip dialogue, use as seed; `status: in-progress` → resume; absent → run dialogue.
+- [ ] In brainstorm mode the research-agent prompts include the literal notes-file path and the
       post-research checkpoint is skipped; non-brainstorm mode is unchanged.
 - [ ] `argument-hint` includes `[brainstorm]`; `[auto]` retained.
 - [ ] `tests/test-skill-conformance.sh` draft-plan per-skill pins still pass; existing `auto`
@@ -385,11 +429,17 @@ self-contained fences, `grep -qF` parity for externally-sourced fences):
   brainstorm`, `output X.md brainstorm rounds 3 …` (mid), `BRAINSTORM …` (case); negatives:
   `brainstorming the design`, `brainstormed yesterday`, `brainstorms` → flag stays `0`.
 - **Conditional-load parity grep:** assert SKILL.md gates the `references/brainstorm.md` Read on
-  `BRAINSTORM_FLAG` AND `ZSKILLS_PIPELINE_ID` emptiness (file not unconditionally loaded).
+  `BRAINSTORM_FLAG` (file not unconditionally loaded). Also assert the gate does NOT reference
+  `ZSKILLS_PIPELINE_ID` (regression guard against re-adding the inert check).
+- **Resume-contract grep:** assert the "Brainstorm mode" prose references `status: ready` /
+  `status: in-progress` (the resume state machine is wired).
 - **Feed-forward grep:** assert SKILL.md's brainstorm-mode research dispatch references
   `/tmp/draft-plan-brainstorm-` (the notes-file path injected into agent prompts) — the testable
   anchor for "research consumes the seed."
 - **Checkpoint-skip grep:** assert the post-research checkpoint is gated on `BRAINSTORM_FLAG`.
+- **brainstorm.md idiom greps:** assert `references/brainstorm.md` uses `playwright-cli open`
+  before `screenshot`, writes the pidfile with no trailing space (`echo "$!" >`), and uses no
+  bare foreground `sleep` in the serve-wait (regression guards for the round-2 idiom bugs).
 - `references/brainstorm.md` is automatically in scope for `test-skill-conformance.sh`
   (forbidden-literals, fence-local config sourcing, per-skill version, mirror parity) — no new
   conformance test needed, but the suite must pass with it.
@@ -402,8 +452,9 @@ fix touches a skill dir, in which case bump + mirror as in Phases 1–2.
 
 ### Acceptance Criteria
 - [ ] `tests/test-draft-plan-args-smoke.sh` includes BRAINSTORM_FLAG extract-and-run (positives +
-      negatives), conditional-load parity, feed-forward, and checkpoint-skip assertions; the
-      test passes.
+      negatives), conditional-load parity (+ no-`ZSKILLS_PIPELINE_ID` regression guard),
+      resume-contract, feed-forward, checkpoint-skip, and the brainstorm.md idiom greps
+      (`playwright-cli open`, pidfile no-trailing-space, no bare `sleep`); the test passes.
 - [ ] `bash tests/run-all.sh` passes — report each suite + result + the exact command (no
       "all tests pass" without enumeration).
 - [ ] `bash tests/test-skill-conformance.sh` passes, including per-skill version + mirror parity
@@ -418,7 +469,7 @@ Phases 1 and 2.
 
 ## Open Questions / Risks
 
-Most round-1 risks were resolved into concrete design above. Residual items for the implementer:
+Both rounds' risks were resolved into concrete design above. Residual items for the implementer:
 
 1. **Demo server stranding.** The pidfile-based `kill "$PID"` stop is best-effort; a stranded
    `/tmp` server on an ephemeral port is harmless to the worktree and `/land-pr` (it's not on a
@@ -426,24 +477,27 @@ Most round-1 risks were resolved into concrete design above. Residual items for 
 2. **brainstorm runs AFTER the Preflight.** Confirmed the Preflight (`SKILL.md:25-40`) STOPs
    only when there's no `Agent` tool; the brainstorm stage runs after it, dispatches no agents,
    and never executes in a context the Preflight already rejected.
-
-Deferred by design (per the user, 2026-05-31): letting `/research-and-plan` /
-`/research-and-go` explicitly request brainstorm. Out of scope now; add parent-side plumbing
-if the need arises.
+3. **Accepted/deferred (per the user, 2026-05-31):** the headless edge where a delegated
+   sub-problem description literally contains the standalone word "brainstorm" would enter a
+   dialogue with no user. No mitigation ships now (the inert `ZSKILLS_PIPELINE_ID` check was
+   removed in round 2). If hardening is wanted later, add a real parent-passed delegation marker
+   and check it in the gate. Letting parents explicitly REQUEST brainstorm is likewise deferred.
 
 ## Plan Quality
 
-**Drafting process:** /draft-plan with 1 round of adversarial review (reviewer +
+**Drafting process:** /draft-plan with 2 rounds of adversarial review (reviewer +
 devil's-advocate + refiner), top-level orchestration.
-**Convergence:** Converged at round 1 — all reviewer (12) and devil's-advocate (9) findings
-were verified against the actual codebase and either fixed or confirmed non-issues; 0
-substantive issues remain.
-**Remaining concerns:** None blocking. Three implementer-verification items are itemized under
-Open Questions / Risks (ZSKILLS_PIPELINE_ID propagation probe, demo-server stranding tolerance,
-Preflight ordering) — all have a defined, robust fallback and do not gate execution.
+**Convergence:** Converged at round 2 — every round-1 and round-2 finding was independently
+re-verified against the actual codebase by the orchestrator-refiner and either fixed or
+confirmed a non-issue; round 2 found two broken-on-arrival demo idioms (pidfile trailing space;
+missing `playwright-cli open`) and proved the round-1 `ZSKILLS_PIPELINE_ID` gate was inert — all
+fixed. 0 substantive issues remain.
+**Remaining concerns:** None blocking. Two verification items + one explicitly-accepted deferred
+risk are itemized under Open Questions / Risks; none gate execution.
 
 ### Round History
 | Round | Reviewer Findings | Devil's Advocate Findings | Resolved |
 |-------|-------------------|---------------------------|----------|
-| 1     | 12 (3 must-fix, rest confirmations/minor) | 9 (4 critical, 3 major, 2 minor) | All verified; fixed or confirmed-non-issue. Key fixes: feed-forward injected into agent prompts (research file is post-dispatch); screenshot stays in gitignored `.playwright/output/` (no `/tmp` claim, no move-into-tree); ephemeral-port + pidfile demo server (no `port.sh` collision, compliant stop); slug pinned to `$TRACKING_ID`; corrected AskUserQuestion quote. |
-| post  | — | — | User steer (2026-05-31): parents won't pass `brainstorm`, so the delegation gate was simplified from a dual-mechanism (draft-plan check + parent-side strip across 3 skills) to a single one-line `ZSKILLS_PIPELINE_ID`-empty insurance check in draft-plan alone. No parent-skill edits; version-bump scope reduced to 1 skill. |
+| 1     | 12 (3 must-fix, rest confirmations/minor) | 9 (4 critical, 3 major, 2 minor) | All verified; fixed or confirmed-non-issue. Key fixes: feed-forward injected into agent prompts (research file is post-dispatch); screenshot stays in gitignored `.playwright/output/`; ephemeral-port + pidfile demo server; slug pinned to `$TRACKING_ID`; corrected AskUserQuestion quote. |
+| (user steer) | — | — | Parents won't pass `brainstorm` → dropped the parent-side strip + the 3-skill scope; gate simplified, version-bump scope reduced to 1 skill. |
+| 2     | 2 major + 1 minor (rest confirmed-correct) | 3 critical + 2 major + 3 minor | All verified against the codebase. Fixes: removed the **inert** `ZSKILLS_PIPELINE_ID` gate (no skill exports it — verified) and documented the accepted residual; pidfile `echo "$!"` (no trailing space); sleep-free serve-URL wait (foreground `sleep` is harness-blocked); `playwright-cli open`→`screenshot`→`close` (screenshot needs browser open, takes no URL); feed-forward passes the LITERAL notes path (research-file slug ≠ `$TRACKING_ID`); dropped the bogus preamble-token-loop edit (loop is `.md`-only); notes file is a resumable `status:` state machine (compaction-safe); fixed stale tracker row; authoring-effort honesty note. |
