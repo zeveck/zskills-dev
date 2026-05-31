@@ -51,7 +51,8 @@ one-shot with a runnable harness.
   `PASS_COUNT`/`FAIL_COUNT`; final **`Results: N passed, M failed`** line
   (load-bearing — `run-all.sh:36` greps it); exit non-zero on any failure.
 - Register each new `tests/test-*.sh` in `tests/run-all.sh` (the
-  `run_suite` block; plugin suites cluster around lines 200-206).
+  `run_suite` block; plugin suites cluster around lines 206-226 post-#831 —
+  grep the landmark, the count shifts as suites are added).
 - Sandboxing: `TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT`. NEVER write
   into the real repo, the real `$HOME`, or the real `~/.claude`.
 - **No jq** — Python 3 stdlib `json` or bash regex (`BASH_REMATCH`).
@@ -60,7 +61,7 @@ one-shot with a runnable harness.
   and shell punctuation that a regex would mangle.
 - These phases add ONLY `tests/` files + a `run-all.sh` edit → no SKILL.md
   touched → no `metadata.version` bump and no `.claude/skills/` mirror.
-- The `claude` CLI is present (v2.1.156, `claude plugin` subcommand works);
+- The `claude` CLI is present (v2.1.157, `claude plugin` subcommand works);
   Phase 2 may rely on it but MUST degrade to a clean SKIP (not a fail) if it
   is absent on another machine (mirror `test-plugin-self-load.sh`'s
   CLI-absent SKIP pattern).
@@ -99,23 +100,31 @@ in existing plugin coverage, as one new `tests/test-plugin-hooks-integrity.sh`.
     the source line), so the release-generated siblings will too.
   Build the exclusion list explicitly by name with rationale (mirror Gap-1's
   named `.template` allow-list) so a future hook that genuinely forgets the
-  shim still FAILS. The 8 in-tree `block-*.sh` + `warn-config-drift.sh` all
-  source it today and must stay asserted.
-- [ ] **Gap 3 — D3 template-selection fallback (in the MATERIALISER, not the
+  shim still FAILS. **(refine 2026-05-31, finding C1): there are exactly SEVEN
+  in-tree `block-*.sh`** (`block-bad-cron`, `block-bypassed-land-pr`,
+  `block-fix-issue-unclaimed`, `block-main-edits`, `block-run-plan-unclaimed`,
+  `block-stale-skill-version`, `block-unsafe-generic`) + `warn-config-drift.sh`
+  — these all source the shim today and must stay asserted. (`block-agents.sh`
+  + `block-unsafe-project.sh` are the `.template`-only pair excluded above —
+  do NOT count them in the in-tree set; the draft's "8" was internally
+  contradictory with its own exclusion list.)
+- [ ] **Gap 3 — D3 bundled-fallback branch (in the MATERIALISER, not the
   renderer).** Review verified the prefer-consumer-then-bundled fallback lives
-  in `hooks/session-start-materialise.sh` (≈ lines 228-231:
-  `if [ -f "$PROJ/CLAUDE_TEMPLATE.md" ]; then TEMPLATE=... elif [ -f
-  "$PLUGIN/CLAUDE_TEMPLATE.md" ]`), NOT in `scripts/render-managed-rules.py`
-  (which is a pure `--template <path>` consumer with no fallback logic — do
-  NOT target it). **FIRST check whether an existing `test-sessionstart-*.sh`
-  already asserts this selection block** (grep them for `CLAUDE_TEMPLATE`);
-  if one does, record "already covered" and DROP this gap. If uncovered,
-  drive the materialiser's selection block hermetically: in a tmpdir with a
-  fake `$PROJ` and `$PLUGIN`, (i) consumer `CLAUDE_TEMPLATE.md` present →
-  assert it's chosen (sentinel line); (ii) consumer absent, bundled present
-  → assert bundled is chosen. Read `session-start-materialise.sh` first to
-  confirm the exact env/var wiring (`$PROJ`/`$PLUGIN` derivation) and whether
-  the block can be exercised in isolation or needs the surrounding probe stubbed.
+  in `hooks/session-start-materialise.sh` (grep `elif [ -f
+  "$PLUGIN/CLAUDE_TEMPLATE.md"` — post-#831 it's ≈ lines 303-322, NOT the
+  draft's stale 228-231; **grep the landmark, don't trust the number**), NOT
+  in `scripts/render-managed-rules.py` (a pure `--template <path>` consumer
+  with no fallback — do NOT target it). **(refine 2026-05-31, finding H3):
+  the CONSUMER-PRESENT branch is ALREADY covered** — `test-sessionstart-materialise.sh`
+  copies a consumer `CLAUDE_TEMPLATE.md` and asserts managed.md renders from
+  it. The genuine gap is the **consumer-ABSENT → `$PLUGIN` bundled-fallback
+  branch**, which NO existing test exercises (`grep 'PLUGIN/CLAUDE_TEMPLATE'
+  tests/test-sessionstart-*.sh` → 0). So implement ONLY that branch: in a
+  tmpdir with a fake `$PLUGIN` and NO consumer `CLAUDE_TEMPLATE.md`, assert the
+  bundled copy is chosen (sentinel line). Do NOT re-build the present-branch
+  test (duplicate coverage). Read `session-start-materialise.sh` first to
+  confirm the `$PROJ`/`$PLUGIN` wiring and whether the block runs in isolation
+  or needs the surrounding probe stubbed.
 - [ ] Register `tests/test-plugin-hooks-integrity.sh` in `tests/run-all.sh`.
 - [ ] Run `bash tests/run-all.sh`; confirm the new suite appears, passes, and
   the `Overall:` tally rises by the new case count with zero regressions.
@@ -301,14 +310,29 @@ probe test does not exercise.
 - Sandbox only; never run the installer against the real repo or real `$HOME`.
 - This is the original effort's "Phase 8 (synthetic-consumer migration)".
 - The D27 detection logic lives in `hooks/_lib/detect-install-state.sh`
-  (sourced by `session-start-materialise.sh:~49`), NOT inline in the
-  materialiser — read the `_lib` file if you need the detection contract.
-- Confirm rough edges (a) stale shim header comment (`plugin-hook-skip-if-mirrored.sh`
-  header ~lines 16-18 describing the superseded `${BASH_SOURCE[0]}`) and (b)
-  inconsistent switch-install-path WARN text as **acceptance observations**
-  (grep for them; if the audit fixed them, note resolved; else record
-  "audit-pending, not fixed by this plan"). `scripts/switch-install-path.sh`
-  may not exist yet (Phase-5/D25) — absence is expected, not a failure.
+  (sourced by `session-start-materialise.sh` — grep the source line, ≈68
+  post-#831, NOT the draft's ~49), NOT inline in the materialiser — read the
+  `_lib` file if you need the detection contract.
+- **Rough-edge re-baseline (refine 2026-05-31 vs post-#831 source):**
+  - **(a) stale shim header comment — STILL PRESENT, keep as observation.**
+    `hooks/_lib/plugin-hook-skip-if-mirrored.sh:16` (and :57) still describe
+    `${BASH_SOURCE[0]}` while the actual code at line 65 uses the OUTERMOST
+    entry (`${BASH_SOURCE[${#BASH_SOURCE[@]}-1]}`). #831 didn't touch the shim.
+    Record as a doc-comment-vs-code mismatch; not fixed by this plan.
+  - **(b) switch-install-path WARN text — RESOLVED by #831 → convert to a
+    REGRESSION ASSERTION.** The two materialiser dual-install WARN sites
+    (`session-start-materialise.sh:76,82`) now consistently say "run
+    `scripts/switch-install-path.sh` to pick one lane (--to-plugin /
+    --to-update-zskills)". (The shim's line-144 skew-WARN uses different
+    wording but is a DIFFERENT hook for a DIFFERENT condition — version-skew,
+    not dual-install — so it's not an inconsistency.) Since it's fixed, add a
+    small static assertion that the two materialiser WARN sites stay
+    consistent (a regression guard), rather than a "confirm-the-edge" note.
+  - **(c) suffixless hooks only post-release-build — STILL PRESENT, keep as
+    observation** (the graceful-degradation check in Phase 2 covers it).
+- **`scripts/switch-install-path.sh` NOW EXISTS** (+ `tests/test-switch-install-path.sh`
+  registered in run-all.sh) — drop the draft's "may not exist (Phase-5/D25)"
+  hedge; the regression assertion in (b) tests it as present.
 
 ### Acceptance Criteria
 - [ ] A test runs the legacy install oracle end-to-end into a throwaway
@@ -361,3 +385,52 @@ plainly rather than overpromising a CI gate.
 | Phase-1 exit-code caveat (description-budget fails by exit code) correct | Verified (run-all.sh:48) | Confirmed-OK — no change |
 | hooks.json parses as JSON; uniform command shape supports Gap-1 | Verified (hooks.json:7-51) | Confirmed-OK — no change |
 | .template pair sources shim; self-load SKIP pattern exists; run-all cluster ~200-206; em-dash headers parse | Verified (multiple) | Confirmed-OK — no change |
+
+## Drift Log
+
+Re-baselined 2026-05-31 against the post-#831 codebase ("Plugin-lane script
+resolution + dual-install hardening"), which landed after the original draft
+(#800). No phases were executed, so this is a *staleness* re-baseline, not a
+drift-vs-completed-work record. Structural deltas applied:
+
+| Item | As drafted (pre-#831) | Current reality | Action |
+|------|----------------------|-----------------|--------|
+| `scripts/switch-install-path.sh` | "may not exist (Phase-5/D25)" | EXISTS + `test-switch-install-path.sh` registered | Dropped the absence hedge |
+| Rough edge (b) WARN consistency | listed as confirm-as-observation | RESOLVED by #831 (materialiser WARNs consistent) | Converted to a regression assertion |
+| In-tree `block-*.sh` count | "8" | 7 (the 2 `.template`-only excluded) | Corrected to 7 |
+| Gap-3 D3 fallback | "implement both branches" | consumer-present branch already covered | Narrowed to the bundled-fallback branch only |
+| Line refs (D3 fallback, detect-state source, run-all cluster, claude ver) | 228-231 / ~49 / 200-206 / 2.1.156 | 303-322 / ~68 / 206-226 / 2.1.157 | Refreshed + reaffirmed grep-the-landmark |
+| Rough edges (a) shim header, (c) suffixless-post-build | confirm-as-observation | STILL PRESENT | Kept as observations (corrected cites) |
+| `test-plugin-mirrorless-resolution.sh` (added by #831) | not in inventory | covers script-resolution (NOT Phase-1's gaps) | Noted; Phase-1 gaps remain genuinely uncovered |
+
+**Cross-cutting notes (in-scope to NOTE, out-of-scope to FIX here):** the
+plugin-mode CI job does not run the full suite under the plugin lane (only
+manifest validation; Tier-3 live load deferred), and `RUN_E2E` is unset in CI
+(e2e tests dark). These intersect the plan's CI-gating phases but are tracked
+separately (issue-sized), not fixed by this plan.
+
+**Coordination:** a separate `/do` adds a D4 suffixless-hook existence gate —
+Phase 1 Gap-1 (hooks.json↔script existence with `.template` allowance) is
+adjacent; the implementer must NOT duplicate the D4 gate (coordinate / assume
+it exists).
+
+## Plan Review
+
+**Refinement process:** /refine-plan — establish-current-reality preamble +
+1 adversarial round (reviewer + devil's-advocate, both re-grounded on post-#831
+source).
+**Convergence:** Converged at round 1 — both agents independently verified the
+same staleness set; all findings dispositioned (4 substantive fixes applied:
+C1 count, H1/rough-edge-b resolved→assertion, H2 switch-install-path exists,
+H3 Gap-3 narrowed; line refs refreshed; rough edges a/c confirmed still-present
+and kept). 0 substantive issues open.
+**Remaining concerns:** None blocking. The plan is execution-ready against the
+current lane. Honest residue (unchanged intent): the live dual-lane hook-fire
+canary remains attended-only (`claude -p` needs login — not CI-runnable); the
+two cross-cutting CI gaps (plugin-mode-full-suite, RUN_E2E) are tracked
+separately.
+
+### Round History
+| Round | Reviewer Findings | Devil's Advocate Findings | Substantive | Resolved |
+|-------|-------------------|---------------------------|-------------|----------|
+| 1 | 9 (2 MED fixes, 2 stale-line, 5 confirm) | 8 (1 CRITICAL count, 2 HIGH stale-premise/exists, 1 HIGH Gap-3-narrow, rest confirm) | 4 | 4/4 |
