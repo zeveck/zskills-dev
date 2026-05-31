@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.28+e3a921"
+  version: "2026.05.30+ecf4a2"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -125,8 +125,8 @@ marker checks to this pipeline only. It must happen before any git operation.
 immediately (gate is in place from pipeline start):
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
 else
   source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 fi

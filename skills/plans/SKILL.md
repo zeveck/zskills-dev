@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.28+6cab98"
+  version: "2026.05.30+5fcb4a"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -111,15 +111,15 @@ NOT appear as separate top-level entries.
    invocation. Drop-in script:
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    MAIN_ROOT=$(git rev-parse --show-toplevel)
    ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
      else
        source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
      fi
@@ -261,15 +261,15 @@ emission live in `skills/plans/scripts/render-index.py`. The
 implementing agent runs a single pipeline and exits.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(git rev-parse --show-toplevel)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi

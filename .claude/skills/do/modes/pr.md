@@ -149,8 +149,8 @@ any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
 
 Wait for the implementation agent to complete. If the agent reports failure or exits without committing:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
@@ -247,8 +247,8 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 # invocations → variables do NOT survive across fences). $TASK_SLUG and
 # $BRANCH_NAME were model-substituted at fence emission per /do's
 # existing convention (Step A1 + Step A3).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi

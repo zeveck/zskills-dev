@@ -7,7 +7,7 @@ description: >-
   edit parameters). Use when told to "test manually", "test in the
   browser", or "verify with playwright-cli".
 metadata:
-  version: "2026.05.28+5f62aa"
+  version: "2026.05.30+cb2291"
 ---
 
 # Manual Testing with playwright-cli
@@ -17,8 +17,8 @@ metadata:
 1. Start the dev server (if not already running):
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi

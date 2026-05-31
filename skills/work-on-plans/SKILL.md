@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.28+7001bb"
+  version: "2026.05.30+8036f0"
 ---
 
 # /work-on-plans — Batch Plan Executor
@@ -111,8 +111,8 @@ Order-insensitive: `N finish continue` ≡ `N continue finish`.
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi
@@ -191,8 +191,8 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
    only) to emit the file:
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
    else
      source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
    fi

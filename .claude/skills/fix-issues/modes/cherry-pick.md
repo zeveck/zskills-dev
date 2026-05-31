@@ -30,8 +30,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         purposes), STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      fi
@@ -73,8 +73,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      b. Write `.landed` marker (atomic):
         ```bash
-        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
@@ -95,8 +95,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
-        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
@@ -125,8 +125,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      fi
