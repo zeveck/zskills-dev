@@ -33,6 +33,21 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/quickfix/SKILL.md"
+# Issue #836: /quickfix was split into a router SKILL.md (frontmatter →
+# Phase 2 mode detection + branch creation) plus two mode files and a
+# reference. Content the lifecycle greps below key on now lives in:
+#   - SKILL_EXECUTE — Phases 3–6 (make-the-change → test gate → commit →
+#     verify → push)
+#   - SKILL_LAND    — Phase 7 (PR creation, CI poll, /land-pr caller loop,
+#     explicit-finalize) + terminal-marker-states prose
+#   - SKILL_REFS    — Exit codes + Key Rules
+# Assertions that previously grepped the single $SKILL were repointed to
+# the file the literal actually moved into (the asserted literal is what
+# matters, not the file). Whole-lifecycle assertions use $SKILL_ALL, a
+# temp concatenation of all four files.
+SKILL_EXECUTE="$REPO_ROOT/skills/quickfix/modes/execute.md"
+SKILL_LAND="$REPO_ROOT/skills/quickfix/modes/land.md"
+SKILL_REFS="$REPO_ROOT/skills/quickfix/references/exit-codes-and-rules.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -59,6 +74,15 @@ fail() {
 # Per-run scratch directory; never under $REPO_ROOT so `git status` stays clean.
 TEST_TMPDIR="/tmp/zskills-quickfix-test-$$"
 mkdir -p "$TEST_TMPDIR"
+
+# Whole-lifecycle concatenation (issue #836): some structural greps assert
+# a literal appears SOMEWHERE in the /quickfix lifecycle, not in one
+# specific phase. After the split those literals live across SKILL.md +
+# the two mode files + the reference; $SKILL_ALL lets such greps stay
+# file-agnostic. Located-content greps (push form, caller loop, etc.)
+# still target the specific file the content moved into.
+SKILL_ALL="$TEST_TMPDIR/skill-all.md"
+cat "$SKILL" "$SKILL_EXECUTE" "$SKILL_LAND" "$SKILL_REFS" > "$SKILL_ALL"
 
 # List of per-case fixture dirs so the EXIT trap can purge them all. Each
 # case that uses a fixture pushes onto FIXTURES[].
@@ -237,6 +261,13 @@ chmod +x "$PREFLIGHT_SCRIPT"
 # scripts (tests/test-land-pr-scripts.sh) and by the Phase 6 cron-fire
 # canary.
 extract_full_flow() {
+  # Issue #836: Phases 3–6 (WI 1.10 user-edited, WI 1.12 test gate, WI
+  # 1.13 commit, WI 1.14 push) moved from SKILL.md into modes/execute.md.
+  # The full-flow extractor therefore reads SKILL.md (frontmatter → Phase
+  # 2 branch creation) THEN modes/execute.md (Phases 3–6). Phase 7 is in
+  # modes/land.md and still extractor-excluded (its dispatch is a
+  # comment-form Skill-tool invocation bash cannot run); the `## Phase 7`
+  # stop guard is retained as defence-in-depth in case content moves back.
   awk '
     /^### WI 1\.11/         { skip = 1 }
     /^## Phase 4/           { skip = 0 }
@@ -246,7 +277,7 @@ extract_full_flow() {
     /^```bash$/             { infence = 1; next }
     infence && /^```$/      { infence = 0; print ""; next }
     infence                 { print }
-  ' "$SKILL"
+  ' "$SKILL" "$SKILL_EXECUTE"
 }
 
 FULL_FLOW_SCRIPT="$TEST_TMPDIR/full-flow.sh"
@@ -486,9 +517,11 @@ fi
 # ────────────────────────────────────────────────────────────────────
 # Case 8 — Push form is bare-branch (WI 1.14)
 # ────────────────────────────────────────────────────────────────────
-if grep -qE 'git push -u origin "\$BRANCH"' "$SKILL" \
-   && ! grep -qE 'HEAD:main|HEAD:master' "$SKILL" \
-   && ! grep -qE 'git push [^|]*:' "$SKILL"; then
+# Issue #836: WI 1.14 push moved to modes/execute.md; the refspec-absence
+# guard runs over the whole lifecycle ($SKILL_ALL).
+if grep -qE 'git push -u origin "\$BRANCH"' "$SKILL_EXECUTE" \
+   && ! grep -qE 'HEAD:main|HEAD:master' "$SKILL_ALL" \
+   && ! grep -qE 'git push [^|]*:' "$SKILL_ALL"; then
   pass "8  push form: bare-branch only; no HEAD:main / src:dst refspec"
 else
   fail "8  push form: bare-branch assertion failed or a refspec form is present"
@@ -514,11 +547,15 @@ fi
 #       a `case "${LAND_OUTCOME:-__init__}" in` followed by a sed -i
 #       rewriting `status: started` → `status: $FINAL`.
 # ────────────────────────────────────────────────────────────────────
-TRAP_LITERAL_COUNT=$(grep -c "trap 'finalize_marker \$?' EXIT" "$SKILL" 2>/dev/null | head -1)
+# Issue #836: WI 1.8 tracking setup (sanitize + echo + fulfilled.quickfix)
+# stays in SKILL.md; the LAND_OUTCOME case + explicit sed-finalize moved to
+# modes/land.md. The trap-absence regression guard runs over the whole
+# lifecycle ($SKILL_ALL).
+TRAP_LITERAL_COUNT=$(grep -c "trap 'finalize_marker \$?' EXIT" "$SKILL_ALL" 2>/dev/null | head -1)
 TRAP_LITERAL_COUNT=${TRAP_LITERAL_COUNT:-0}
-LAND_OUTCOME_FINALIZE=$(grep -c 'case "${LAND_OUTCOME:-__init__}" in' "$SKILL" 2>/dev/null | head -1)
+LAND_OUTCOME_FINALIZE=$(grep -c 'case "${LAND_OUTCOME:-__init__}" in' "$SKILL_LAND" 2>/dev/null | head -1)
 LAND_OUTCOME_FINALIZE=${LAND_OUTCOME_FINALIZE:-0}
-EXPLICIT_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' "$SKILL" 2>/dev/null | head -1)
+EXPLICIT_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' "$SKILL_LAND" 2>/dev/null | head -1)
 EXPLICIT_SED=${EXPLICIT_SED:-0}
 
 if grep -q 'skills/create-worktree/scripts/sanitize-pipeline-id.sh' "$SKILL" \
@@ -547,12 +584,13 @@ fi
 #     also gates on $COMMIT_CO_AUTHOR being non-empty (consumer opt-out
 #     when blank).
 # ────────────────────────────────────────────────────────────────────
-COAUTH_COUNT=$(grep -c 'Co-Authored-By: \$COMMIT_CO_AUTHOR' "$SKILL" 2>/dev/null || echo 0)
-if grep -qE 'Generated with /quickfix \(user-edited\)' "$SKILL" \
-   && grep -qE 'Generated with /quickfix \(agent-dispatched\)' "$SKILL" \
+# Issue #836: WI 1.13 commit (trailer composition) moved to modes/execute.md.
+COAUTH_COUNT=$(grep -c 'Co-Authored-By: \$COMMIT_CO_AUTHOR' "$SKILL_EXECUTE" 2>/dev/null || echo 0)
+if grep -qE 'Generated with /quickfix \(user-edited\)' "$SKILL_EXECUTE" \
+   && grep -qE 'Generated with /quickfix \(agent-dispatched\)' "$SKILL_EXECUTE" \
    && [ "$COAUTH_COUNT" = "1" ] \
-   && grep -q 'co_author' "$SKILL" \
-   && grep -q 'zskills-resolve-config\.sh' "$SKILL"; then
+   && grep -q 'co_author' "$SKILL_EXECUTE" \
+   && grep -q 'zskills-resolve-config\.sh' "$SKILL_EXECUTE"; then
   pass "10 commit trailer: both mode footers + single agent-only Co-Authored-By: \$COMMIT_CO_AUTHOR + helper-sourced"
 else
   fail "10 commit trailer: contract not satisfied (coauth_count=$COAUTH_COUNT)"
@@ -564,7 +602,8 @@ fi
 # If this fires, someone reintroduced a src:dst refspec push that could
 # bypass the protected-ref guard in hooks/block-unsafe-generic.sh:215-220.
 # ────────────────────────────────────────────────────────────────────
-REFSPEC_MATCHES=$(grep -cE 'git push [^|]*:' "$SKILL" 2>/dev/null)
+# Issue #836: refspec-absence guard runs over the whole lifecycle.
+REFSPEC_MATCHES=$(grep -cE 'git push [^|]*:' "$SKILL_ALL" 2>/dev/null)
 REFSPEC_MATCHES=${REFSPEC_MATCHES:-0}
 if [ "$REFSPEC_MATCHES" -eq 0 ]; then
   pass "11 push-refspec absence (load-bearing): grep returns zero matches"
@@ -578,7 +617,8 @@ fi
 # contain the `printf 'pr: %s\n' "$PR_URL" >> "$MARKER"` idiom (or
 # equivalent append).
 # ────────────────────────────────────────────────────────────────────
-if grep -qE "printf 'pr:[^']*'[[:space:]]+\"\\\$PR_URL\"[[:space:]]+>>[[:space:]]+\"\\\$MARKER\"" "$SKILL"; then
+# Issue #836: WI 1.16 pr:-append lives in Phase 7 → modes/land.md.
+if grep -qE "printf 'pr:[^']*'[[:space:]]+\"\\\$PR_URL\"[[:space:]]+>>[[:space:]]+\"\\\$MARKER\"" "$SKILL_LAND"; then
   pass "12 pr: URL marker append: printf-append idiom present (WI 1.16)"
 else
   fail "12 pr: URL marker append: printf-append idiom missing"
@@ -608,11 +648,12 @@ fi
 # the loose pattern would have caught (every code-form .landed write
 # in the codebase uses `>` or `>>`).
 # ────────────────────────────────────────────────────────────────────
-if ! grep -qE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL"; then
+# Issue #836: .landed-write absence guard runs over the whole lifecycle.
+if ! grep -qE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL_ALL"; then
   pass "13 .landed never written: no redirect targets a .landed file"
 else
   fail "13 .landed never written: a > or >> redirect targets .landed"
-  grep -nE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL" | sed 's/^/    /'
+  grep -nE '>>?[[:space:]]*"?[^"[:space:]]*\.landed' "$SKILL_ALL" | sed 's/^/    /'
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1003,13 +1044,14 @@ rm -f -- "$ERR"
 # return NO output — no variable-expansion rm -rf anywhere in the
 # skill source.
 # ────────────────────────────────────────────────────────────────────
-RMRF_VAR_MATCHES=$(grep -cE 'rm -rf "\$' "$SKILL" 2>/dev/null)
+# Issue #836: rm-rf-var absence guard runs over the whole lifecycle.
+RMRF_VAR_MATCHES=$(grep -cE 'rm -rf "\$' "$SKILL_ALL" 2>/dev/null)
 RMRF_VAR_MATCHES=${RMRF_VAR_MATCHES:-0}
 if [ "$RMRF_VAR_MATCHES" -eq 0 ]; then
   pass "33 rm-rf-var absence (load-bearing R2-H1): grep returns zero matches"
 else
   fail "33 rm-rf-var absence: found $RMRF_VAR_MATCHES match(es)"
-  grep -nE 'rm -rf "\$' "$SKILL" | sed 's/^/    /'
+  grep -nE 'rm -rf "\$' "$SKILL_ALL" | sed 's/^/    /'
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1017,13 +1059,14 @@ fi
 # lines 49 & 60). `grep -nE '\|\| true' skills/quickfix/SKILL.md`
 # must return NO output — fallible commands must not be silenced.
 # ────────────────────────────────────────────────────────────────────
-OR_TRUE_MATCHES=$(grep -cE '\|\| true' "$SKILL" 2>/dev/null)
+# Issue #836: || true absence guard runs over the whole lifecycle.
+OR_TRUE_MATCHES=$(grep -cE '\|\| true' "$SKILL_ALL" 2>/dev/null)
 OR_TRUE_MATCHES=${OR_TRUE_MATCHES:-0}
 if [ "$OR_TRUE_MATCHES" -eq 0 ]; then
   pass "34 || true absence (load-bearing R2-H2): grep returns zero matches"
 else
   fail "34 || true absence: found $OR_TRUE_MATCHES match(es)"
-  grep -nE '\|\| true' "$SKILL" | sed 's/^/    /'
+  grep -nE '\|\| true' "$SKILL_ALL" | sed 's/^/    /'
 fi
 
 # ────────────────────────────────────────────────────────────────────
@@ -1032,7 +1075,9 @@ fi
 # 1.12 / 1.13). Grep must find 'exit 6' at least three times (one
 # per cleanup branch: user-cancel, test failure, commit failure).
 # ────────────────────────────────────────────────────────────────────
-EXIT6_COUNT=$(grep -c '^[[:space:]]*exit 6[[:space:]]*$' "$SKILL")
+# Issue #836: cleanup branches (WI 1.10 / 1.12 / 1.13) live in
+# modes/execute.md.
+EXIT6_COUNT=$(grep -c '^[[:space:]]*exit 6[[:space:]]*$' "$SKILL_EXECUTE")
 if [ "$EXIT6_COUNT" -ge 3 ]; then
   pass "35 cleanup exit 6: $EXIT6_COUNT occurrence(s) across cleanup branches"
 else
@@ -1044,9 +1089,11 @@ fi
 # (status: complete, status: cancelled, status: failed) for grep-ability
 # per Phase 1b acceptance criterion.
 # ────────────────────────────────────────────────────────────────────
-if grep -q 'status: complete' "$SKILL" \
-   && grep -q 'status: cancelled' "$SKILL" \
-   && grep -q 'status: failed' "$SKILL"; then
+# Issue #836: terminal-state documentation spans Phase 7 (land.md) +
+# Exit codes (refs); run over the whole lifecycle.
+if grep -q 'status: complete' "$SKILL_ALL" \
+   && grep -q 'status: cancelled' "$SKILL_ALL" \
+   && grep -q 'status: failed' "$SKILL_ALL"; then
   pass "36 terminal marker states: 'status: complete/cancelled/failed' all documented"
 else
   fail "36 terminal marker states: one of complete/cancelled/failed missing"
@@ -1061,8 +1108,12 @@ fi
 # git ls-files --others" comment would mean the old behavior
 # regressed.
 # ────────────────────────────────────────────────────────────────────
-if grep -q 'git ls-files --others --exclude-standard' "$SKILL" \
-   && ! grep -q "excludes.*git ls-files --others" "$SKILL"; then
+# Issue #836: WI 1.11 DIRTY_AFTER definition lives in modes/execute.md
+# (Phase 3 agent-dispatched). git ls-files appears in both SKILL.md (WI
+# 1.5 mode detection) and execute.md, so the union-present check uses the
+# whole lifecycle; the old-exclusion-wording absence guard also spans both.
+if grep -q 'git ls-files --others --exclude-standard' "$SKILL_ALL" \
+   && ! grep -q "excludes.*git ls-files --others" "$SKILL_ALL"; then
   pass "37 DIRTY_AFTER includes untracked (new-file integrity): union present, old exclusion wording gone"
 else
   fail "37 DIRTY_AFTER includes untracked: union-def missing or old exclusion wording still present"
@@ -1077,7 +1128,9 @@ fi
 # Case 39 — /tmp/zskills-tests test-output-dir idiom present (per
 # CLAUDE.md "capture test output to a file, never pipe" rule).
 # ────────────────────────────────────────────────────────────────────
-if grep -q '/tmp/zskills-tests' "$SKILL"; then
+# Issue #836: the test-output-dir idiom lives in the Phase 4 test gate →
+# modes/execute.md.
+if grep -q '/tmp/zskills-tests' "$SKILL_EXECUTE"; then
   pass "39 /tmp/zskills-tests test-out path: present"
 else
   fail "39 /tmp/zskills-tests test-out path: missing"
@@ -1241,7 +1294,10 @@ rm -f -- "$ERR" "$OUT"
 #       caller loop on success).
 # Phase 7 boundary: from `^## Phase 7` to `^## Exit codes`.
 # ────────────────────────────────────────────────────────────────────
-PHASE7_BODY=$(awk '/^## Phase 7/,/^## Exit codes/' "$SKILL")
+# Issue #836: Phase 7 is the whole of modes/land.md (Phase-7 prose +
+# terminal-marker-states; Exit codes moved to references/). The body is
+# the entire file rather than an awk slice between phase headers.
+PHASE7_BODY=$(cat "$SKILL_LAND")
 PHASE7_LANDPR=$(echo "$PHASE7_BODY"   | grep -c 'Skill: { skill: "land-pr"')
 PHASE7_PR_APPEND=$(echo "$PHASE7_BODY" | grep -cE "printf 'pr:[^']*'[[:space:]]+\"\\\$PR_URL\"[[:space:]]+>>[[:space:]]+\"\\\$MARKER\"")
 PHASE7_RETURN_BASE=$(echo "$PHASE7_BODY" | grep -c 'git checkout "$BASE_BRANCH"')
@@ -1753,7 +1809,8 @@ fi
 # AUTO_FLAG=1 (textual presence of the gated append).
 # ────────────────────────────────────────────────────────────────────
 OUT=$(bash "$PARSER_SCRIPT" "fix readme typo")
-GATED_APPEND=$(grep -cE '\[ "\$\{AUTO_FLAG:-0\}" = "1" \] && LAND_ARGS="\$LAND_ARGS --auto"' "$SKILL" 2>/dev/null || echo 0)
+# Issue #836: Phase 7 LAND_ARGS append lives in modes/land.md.
+GATED_APPEND=$(grep -cE '\[ "\$\{AUTO_FLAG:-0\}" = "1" \] && LAND_ARGS="\$LAND_ARGS --auto"' "$SKILL_LAND" 2>/dev/null || echo 0)
 GATED_APPEND=${GATED_APPEND:-0}
 if echo "$OUT" | grep -q '^AUTO_FLAG=0$' \
    && echo "$OUT" | grep -q '^DESCRIPTION=fix readme typo$' \
@@ -1920,7 +1977,10 @@ fi
 # and requires at least 4 occurrences (1 per failure path) to ensure
 # no path slips back to silent unfinalized state.
 # ────────────────────────────────────────────────────────────────────
-INLINE_FAIL_FINALIZE=$(grep -cE 'sed -i "s/\^status: started\$/status: failed/"' "$SKILL" 2>/dev/null || echo 0)
+# Issue #836: the 4 fail-finalize paths span modes/execute.md (Phase 4
+# test / Phase 5 commit / Phase 6 push) and modes/land.md (Phase 7
+# no-result-file); count over the whole lifecycle.
+INLINE_FAIL_FINALIZE=$(grep -cE 'sed -i "s/\^status: started\$/status: failed/"' "$SKILL_ALL" 2>/dev/null || echo 0)
 INLINE_FAIL_FINALIZE=${INLINE_FAIL_FINALIZE:-0}
 if [ "$INLINE_FAIL_FINALIZE" -ge 4 ]; then
   pass "58 explicit fail-finalize on every cleanup path (issue #241): $INLINE_FAIL_FINALIZE occurrences (>=4 expected)"
@@ -1935,10 +1995,12 @@ fi
 # $FINAL`. Asserts the block lives BETWEEN the BEGIN/END canonical
 # anchors (in-fence with the caller loop so $LAND_OUTCOME survives).
 # ────────────────────────────────────────────────────────────────────
-BEGIN_LINE=$(grep -nF '# === BEGIN CANONICAL /land-pr CALLER LOOP ===' "$SKILL" | head -1 | cut -d: -f1)
-CLOSE_LINE=$(awk -v start="$BEGIN_LINE" 'NR>start && /^```[[:space:]]*$/ {print NR; exit}' "$SKILL")
+# Issue #836: the canonical caller-loop fence (Phase 7) lives in
+# modes/land.md.
+BEGIN_LINE=$(grep -nF '# === BEGIN CANONICAL /land-pr CALLER LOOP ===' "$SKILL_LAND" | head -1 | cut -d: -f1)
+CLOSE_LINE=$(awk -v start="$BEGIN_LINE" 'NR>start && /^```[[:space:]]*$/ {print NR; exit}' "$SKILL_LAND")
 if [ -n "$BEGIN_LINE" ] && [ -n "$CLOSE_LINE" ]; then
-  FENCE_BODY=$(sed -n "${BEGIN_LINE},${CLOSE_LINE}p" "$SKILL")
+  FENCE_BODY=$(sed -n "${BEGIN_LINE},${CLOSE_LINE}p" "$SKILL_LAND")
   CASE_IN_FENCE=$(echo "$FENCE_BODY" | grep -cE 'case "\$\{LAND_OUTCOME:-__init__\}" in' || true)
   CASE_IN_FENCE=${CASE_IN_FENCE:-0}
   SED_IN_FENCE=$(echo "$FENCE_BODY" | grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' || true)
