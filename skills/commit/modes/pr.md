@@ -92,7 +92,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="commit.$BRANCH_SLUG"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Echo (do not env-export) the pipeline id — matches /quickfix's tier-2
-# transcript-propagation idiom (`skills/quickfix/SKILL.md:634`) and
+# transcript-propagation idiom (`skills/quickfix/SKILL.md:672`) and
 # satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
 # which forbids the env-export side-channel form. The Claude Code harness
 # propagates the variable into /land-pr's bash fences via the transcript,

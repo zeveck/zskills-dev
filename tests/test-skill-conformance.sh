@@ -747,7 +747,11 @@ check_in_file_near fix-issues  "modes/sprint.md"             "fix-agent pins imp
 check_in_file_near fix-issues  "modes/pr.md"                "fix-cycle pins implementer"     'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near land-pr     "references/fix-cycle-agent-prompt-template.md" "template pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near do          "modes/pr.md"                "impl+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
-check_in_file_near quickfix    "SKILL.md"                   "agent-dispatched+fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+# Issue #836: /quickfix's agent-dispatched (WI 1.11) and fix-cycle (Phase
+# 7) impl-dispatch pins moved into modes/execute.md and modes/land.md
+# respectively when the lifecycle was split out of SKILL.md.
+check_in_file_near quickfix    "modes/execute.md"           "agent-dispatched pins implementer" 'subagent_type: "implementer"' 'Agent' 0
+check_in_file_near quickfix    "modes/land.md"              "fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 
 # Agent definition file exists with the expected frontmatter shape.
 if [ -f "$REPO_ROOT/.claude/agents/implementer.md" ]; then
@@ -919,12 +923,14 @@ cross_check_no_invocation "no inline gh pr merge (.claude/skills/)" \
 # commit, do, fix-issues, quickfix, draft-plan, refine-plan, draft-tests
 # already each have their own `dispatches /land-pr` check) but consolidate
 # them as a single cross-skill drift-prevention claim.
+# Issue #836: /quickfix dispatches /land-pr from its Phase 7 caller loop,
+# which moved to modes/land.md when the lifecycle was split out of SKILL.md.
 LAND_PR_CALLERS=(
   "skills/run-plan/modes/pr.md"
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/SKILL.md"
+  "skills/quickfix/modes/land.md"
   "skills/draft-plan/SKILL.md"
   "skills/refine-plan/SKILL.md"
   "skills/draft-tests/SKILL.md"
@@ -996,11 +1002,15 @@ echo "=== LAND_PR_BYPASS_HARDENING — Phase 4 conformance tripwires ==="
 # substring match (grep -nF) so indentation doesn't trip the locator.
 
 # Mapping: caller-file → fulfilled-marker-basename (used for textual checks).
+# Issue #836: /quickfix's caller loop + explicit-finalize moved to
+# modes/land.md; its fulfilled.quickfix start-marker is still written in
+# SKILL.md (WI 1.8). The map below keys the in-fence/finalize checks on the
+# land.md file (where the loop + finalize live).
 declare -A LANDPR_MARKER_BASENAME=(
   ["skills/commit/modes/pr.md"]="fulfilled.commit."
   ["skills/do/modes/pr.md"]="fulfilled.do."
   ["skills/fix-issues/modes/pr.md"]="fulfilled.fix-issues."
-  ["skills/quickfix/SKILL.md"]="fulfilled.quickfix."
+  ["skills/quickfix/modes/land.md"]="fulfilled.quickfix."
 )
 
 # Callers that get the new fulfilled.<skill>.<id> start-marker AND
@@ -1021,7 +1031,7 @@ ALL_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/SKILL.md"
+  "skills/quickfix/modes/land.md"
 )
 
 # Helper: get line number of "BEGIN CANONICAL ... " (substring match).
@@ -1061,11 +1071,30 @@ done
 
 # --- Positive: each caller has a requires.land-pr.* write BEFORE LAND_ARGS= ---
 # R-1-3 textual-precedence assert. fix-issues writes the marker inside its
-# per-issue loop, BEFORE LAND_ARGS=. quickfix writes it at SKILL.md:656,
-# well before the caller-loop fence at 1085.
+# per-issue loop, BEFORE LAND_ARGS=.
+#
+# Issue #836: /quickfix split its caller loop (LAND_ARGS=) into
+# modes/land.md while the requires.land-pr.$SLUG write stays in SKILL.md
+# (WI 1.8). The runtime ordering still holds — the router reads SKILL.md
+# (which writes the marker) BEFORE it reads modes/land.md (which composes
+# LAND_ARGS=) — but the precedence is now CROSS-FILE by load order, so the
+# single-file line-number compare doesn't apply. For quickfix we assert
+# the marker write is in SKILL.md AND LAND_ARGS= is in modes/land.md (the
+# load order SKILL.md → land.md provides the precedence guarantee).
 for caller in "${ALL_CALLERS[@]}"; do
   caller_path="$REPO_ROOT/$caller"
   [ ! -f "$caller_path" ] && continue
+  if [ "$caller" = "skills/quickfix/modes/land.md" ]; then
+    qf_skill="$REPO_ROOT/skills/quickfix/SKILL.md"
+    req_in_skill=$(grep -cE 'requires\.land-pr\.' "$qf_skill")
+    args_in_land=$(grep -cE '^[[:space:]]*LAND_ARGS=' "$caller_path")
+    if [ "$req_in_skill" -ge 1 ] && [ "$args_in_land" -ge 1 ]; then
+      pass "[bypass-hardening] $caller requires.land-pr.* write in SKILL.md precedes LAND_ARGS= in land.md (cross-file load order; issue #836)"
+    else
+      fail "[bypass-hardening] $caller requires.land-pr.* precedes LAND_ARGS=" "req-in-SKILL.md=$req_in_skill args-in-land.md=$args_in_land"
+    fi
+    continue
+  fi
   req_line=$(grep -nE 'requires\.land-pr\.' "$caller_path" | head -1 | cut -d: -f1)
   args_line=$(grep -nE '^[[:space:]]*LAND_ARGS=' "$caller_path" | head -1 | cut -d: -f1)
   if [ -z "$req_line" ] || [ -z "$args_line" ]; then
@@ -1103,7 +1132,7 @@ FENCE_CALLERS=(
   "skills/commit/modes/pr.md"
   "skills/do/modes/pr.md"
   "skills/fix-issues/modes/pr.md"
-  "skills/quickfix/SKILL.md"
+  "skills/quickfix/modes/land.md"
 )
 for caller in "${FENCE_CALLERS[@]}"; do
   caller_path="$REPO_ROOT/$caller"
@@ -1504,11 +1533,13 @@ _LP_STATUS_VALUES="created monitored merged push-failed rebase-conflict create-f
 # whitespace) OR after `|` followed by `)` or `|`. This anchors on the
 # case-arm syntax so a mere mention in a comment does NOT satisfy.
 # Each entry is "skill_name relpath".
+# Issue #836: /quickfix's STATUS case-arms live in its Phase 7 caller loop,
+# now in modes/land.md.
 for _LP_PAIR in \
     "commit modes/pr.md" \
     "do modes/pr.md" \
     "fix-issues modes/pr.md" \
-    "quickfix SKILL.md" \
+    "quickfix modes/land.md" \
     "run-plan modes/pr.md" \
     "land-pr references/caller-loop-pattern.md"; do
   _LP_SKILL="${_LP_PAIR%% *}"
