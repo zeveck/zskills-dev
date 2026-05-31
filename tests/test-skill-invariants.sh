@@ -158,6 +158,13 @@ ISSUE_606_ALLOWLIST=(
   "skills/draft-tests/modes/draft.md	PLAN_FILE"
   "skills/draft-tests/modes/backfill.md	PLAN_FILE"
   "skills/draft-tests/modes/land.md	TRACKING_ID"
+  # draft-plan's brainstorm-mode reference file inherits $TRACKING_ID from
+  # the main SKILL.md's preamble (computed at skills/draft-plan/SKILL.md:85,
+  # in scope before the brainstorm stage runs). It is conditionally Read by
+  # SKILL.md only when the `brainstorm` flag is set and is not an entrypoint,
+  # so it documents but does not own the resolver — same pattern as
+  # run-plan/modes/pr.md TRACKING_ID above.
+  "skills/draft-plan/references/brainstorm.md	TRACKING_ID"
 )
 FAMILY_VARS_RE='^(TRACKING_ID|PLAN_FILE|OUTPUT_FILE|META_PLAN_PATH|GOAL|CHANGE_SUMMARY|SPRINT_ID|ROUND)$'
 FAMILY_FAIL=""
