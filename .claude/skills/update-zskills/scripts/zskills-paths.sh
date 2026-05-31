@@ -54,7 +54,7 @@ fi
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills" ]; then
   ZSKILLS_SKILLS_ROOT="${CLAUDE_PLUGIN_ROOT}/skills"
 else
-  ZSKILLS_SKILLS_ROOT="$CLAUDE_PROJECT_DIR/.claude/skills"
+  ZSKILLS_SKILLS_ROOT="${CLAUDE_PROJECT_DIR:-}/.claude/skills"
 fi
 export ZSKILLS_SKILLS_ROOT
 

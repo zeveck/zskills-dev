@@ -81,12 +81,27 @@ fi
 
 # Resolve $ZSKILLS_PLANS_DIR via the canonical shim. Hardcoding `plans/`
 # is FORBIDDEN — this repo sets output.plans_dir: docs/plans.
-. "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/skills/update-zskills/scripts/zskills-paths.sh" 2>/dev/null || {
+# Lane-agnostic resolution: BASH_SOURCE-relative (works on a mirror-less
+# plugin consumer — plugin tree + legacy mirror are both 1:1) first, then the
+# consumer-mirror path under CLAUDE_PROJECT_DIR. ZSKILLS_PATHS_ROOT is provided
+# up front (defaults to git-common-dir/cwd) so the shim resolves config dirs
+# even when CLAUDE_PROJECT_DIR is unset; stderr from the probe is swallowed so
+# a missing-env shim diagnostic doesn't leak (matching legacy behavior).
+_self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+: "${ZSKILLS_PATHS_ROOT:=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}"
+export ZSKILLS_PATHS_ROOT
+if [ -f "$_self_dir/../../update-zskills/scripts/zskills-paths.sh" ] && \
+   . "$_self_dir/../../update-zskills/scripts/zskills-paths.sh" 2>/dev/null; then
+  :
+elif . "${CLAUDE_PROJECT_DIR:-$(pwd)}/.claude/skills/update-zskills/scripts/zskills-paths.sh" 2>/dev/null; then
+  :
+else
   # Fallback: CLAUDE_PROJECT_DIR may not be set in this shell. The shim
   # itself falls back to git-common-dir; mirror that here.
   ZSKILLS_PATHS_ROOT="$(pwd)" \
     source "$(pwd)/.claude/skills/update-zskills/scripts/zskills-paths.sh"
-}
+fi
+unset _self_dir
 
 if [ -z "${ZSKILLS_PLANS_DIR:-}" ] || [ ! -d "$ZSKILLS_PLANS_DIR" ]; then
   echo "ERROR: ZSKILLS_PLANS_DIR not resolved or not a directory: ${ZSKILLS_PLANS_DIR:-<unset>}" >&2
