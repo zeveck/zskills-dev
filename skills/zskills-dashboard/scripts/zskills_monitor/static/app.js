@@ -622,7 +622,7 @@ function applySnapshot(snap) {
   const dmFp = String(lastGoodDefaultMode);
   if (dmFp !== lastFingerprint.defaultMode) {
     lastFingerprint.defaultMode = dmFp;
-    renderDefaultMode(lastGoodDefaultMode);
+    renderDefaultMode(lastGoodDefaultMode, lastWorkState);
   }
 
   const plansFp = fingerprintPlans(snap.plans || [], queues, lastGoodDefaultMode);
@@ -707,6 +707,13 @@ function applyWorkState(ws) {
     lastFingerprint.workState = fp;
     renderRunStatus(ws);
     renderDefaultModeFootnote(ws);
+    // Issue #858 — re-render the chip whenever work-state changes so its
+    // lock + displayed batch_mode track sprint start/stop transitions.
+    // Skip if the snapshot poll hasn't landed yet (lastGoodDefaultMode
+    // is still the bootstrap "phase"); renderDefaultMode is a no-op when
+    // the chip DOM isn't ready, but skipping the redundant call keeps
+    // the fingerprint logic simple.
+    renderDefaultMode(lastGoodDefaultMode, ws);
   }
 }
 
@@ -1390,20 +1397,55 @@ function allColumnsEmpty(colsObj, columnNames) {
   return true;
 }
 
-function renderDefaultMode(mode) {
+// Issue #858 — when a sprint is in flight, the chip mirrors the captured
+// batch_mode from work-on-plans-state.json (NOT the saved default_mode)
+// and is locked: clicks no-op with a tooltip explaining the lock. The
+// in-flight banner adjacent to the chip reserves layout space at all
+// times via CSS visibility (see .dm-footnote-slot) so its appearance
+// doesn't shift the chip row.
+function renderDefaultMode(mode, ws) {
   const phase = $("dm-phase");
   const finish = $("dm-finish");
   if (!phase || !finish) return;
-  const isPhase = mode === "phase";
+  const inFlight = !!(ws && ws.state === "sprint");
+  const effectiveMode = (inFlight && ws.batch_mode) ? ws.batch_mode : mode;
+  const isPhase = effectiveMode === "phase";
   phase.setAttribute("aria-pressed", isPhase ? "true" : "false");
   finish.setAttribute("aria-pressed", isPhase ? "false" : "true");
+  const lockTitle = inFlight
+    ? "Sprint in flight — default mode locked to the captured batch mode (" + effectiveMode + "). Stop the sprint to change it."
+    : "";
+  for (const btn of [phase, finish]) {
+    if (inFlight) {
+      // Use data-locked (not aria-disabled / disabled) so the click
+      // still reaches the handler — setDefaultMode surfaces the lock
+      // reason via a toast. aria-disabled would block click dispatch
+      // under some test runners (and would also hide the chip from
+      // some screen reader users). The tooltip + visual cue + toast
+      // covers the affordance.
+      btn.setAttribute("data-locked", "true");
+      btn.setAttribute("title", lockTitle);
+    } else {
+      btn.removeAttribute("data-locked");
+      btn.removeAttribute("title");
+    }
+  }
 }
 
 function renderDefaultModeFootnote(ws) {
   const note = $("default-mode-footnote");
   if (!note) return;
   const inFlight = ws && ws.state === "sprint";
-  note.hidden = !inFlight;
+  // Keep the slot in the layout always (CSS visibility) so the chip row
+  // doesn't shift when a sprint starts/stops. Toggle a class instead of
+  // the `hidden` attribute (which is display:none and reflows siblings).
+  if (inFlight) {
+    note.classList.add("is-visible");
+  } else {
+    note.classList.remove("is-visible");
+  }
+  // Defensive: clear any legacy `hidden` attribute that older builds set.
+  note.removeAttribute("hidden");
 }
 
 // -------------------------------------------------------------- branches
@@ -2452,7 +2494,7 @@ async function commitQueueChange(newQueues, opts) {
   if (newQueues.default_mode) lastGoodDefaultMode = newQueues.default_mode;
   // Force re-render now (don't wait for next poll).
   const snap = lastSnapshot || { plans: [], issues: [] };
-  renderDefaultMode(lastGoodDefaultMode);
+  renderDefaultMode(lastGoodDefaultMode, lastWorkState);
   renderPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
   renderIssues(snap.issues || [], lastGoodQueues);
   lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
@@ -2470,7 +2512,7 @@ async function commitQueueChange(newQueues, opts) {
     // Revert immediately; do not wait for next poll.
     lastGoodQueues = previous;
     lastGoodDefaultMode = previous.default_mode || "phase";
-    renderDefaultMode(lastGoodDefaultMode);
+    renderDefaultMode(lastGoodDefaultMode, lastWorkState);
     renderPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
     renderIssues(snap.issues || [], lastGoodQueues);
     lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
@@ -2622,6 +2664,20 @@ async function removeIssue(num) {
 
 async function setDefaultMode(mode) {
   if (mode !== "phase" && mode !== "finish") return;
+  // Issue #858 — sprint-in-flight lock. The chip mirrors the captured
+  // batch_mode and clicks no-op (with a toast nudge to surface the
+  // reason). The setter also blocks at the DOM level (data-locked) but
+  // we re-check here in case the chip render lagged the work-state
+  // poll, or a programmatic caller bypasses the click path.
+  if (lastWorkState && lastWorkState.state === "sprint") {
+    showToast(
+      "Default mode is locked while a sprint is in flight (captured: " +
+        (lastWorkState.batch_mode || "phase") +
+        "). Stop the sprint to change it.",
+      "info",
+    );
+    return;
+  }
   if (mode === lastGoodDefaultMode) return;
   const next = clonedQueues();
   next.default_mode = mode;
