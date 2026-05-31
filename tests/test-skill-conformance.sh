@@ -1568,6 +1568,18 @@ done
 check_fixed land-pr "Step 7b post-merge fast-forward sentinel" \
   'Step 7b — Fast-forward local main'
 
+# --- Step 7d terminal-wait + Step 6b UNKNOWN resolver (Issue #871) ---
+# Guard the two coverage-gap closures so a refactor can't silently drop
+# them: (1) Step 6b must resolve a transient UNKNOWN before the BEHIND loop
+# so the rebase fires; (2) Step 7d must drive a queued auto-merge to a
+# terminal state instead of returning while the PR is still OPEN/BEHIND.
+check_fixed land-pr "Step 7d terminal-wait sentinel (Issue #871)" \
+  'Step 7d — Drive a queued auto-merge to a terminal state'
+check_fixed land-pr "Step 7d bounded wait reason token (Issue #871)" \
+  'auto-merge-wait-timeout'
+check_fixed land-pr "Step 6b UNKNOWN resolver before BEHIND loop (Issue #871)" \
+  'UNKNOWN_POLL_MAX'
+
 echo ""
 echo "=== /update-zskills — Step C / C.9 / D contract (DRIFT_ARCH_FIX Phase 2) ==="
 # Step C is the agent-driven settings.json merge — Read+Edit, never Write-from-template.

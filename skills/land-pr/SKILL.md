@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.31+40ed9d"
+  version: "2026.05.31+a44241"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -475,6 +475,26 @@ if [ -z "$STATUS" ] \
     MS_STATE="${BASH_REMATCH[1]}"
   fi
 
+  # Resolve a transient UNKNOWN before deciding the loop. Right after a push,
+  # GitHub hasn't finished computing mergeability and returns UNKNOWN (or, on
+  # a slow read, empty). If we keyed the BEHIND loop off that raw value the
+  # loop would never enter and Step 6b would silently no-op on a PR that is
+  # actually BEHIND (observed live on PR #856). Bounded re-poll: up to 5
+  # attempts ~3-4s apart until MS_STATE is a definite value. NEVER infinite.
+  UNKNOWN_POLL=0
+  UNKNOWN_POLL_MAX=5
+  while { [ "$MS_STATE" = "UNKNOWN" ] || [ -z "$MS_STATE" ]; } \
+        && [ "$UNKNOWN_POLL" -lt "$UNKNOWN_POLL_MAX" ]; do
+    UNKNOWN_POLL=$((UNKNOWN_POLL + 1))
+    echo "INFO: /land-pr Step 6b: mergeStateStatus=UNKNOWN (poll $UNKNOWN_POLL/$UNKNOWN_POLL_MAX); re-probing" >&2
+    sleep 4
+    MS_JSON=$(gh pr view "$PR_NUMBER" --json mergeStateStatus 2>>"$REBASE_STDERR")
+    MS_STATE=""
+    if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+      MS_STATE="${BASH_REMATCH[1]}"
+    fi
+  done
+
   while [ "$MS_STATE" = "BEHIND" ] && [ "$AUTO_REBASE_ITER" -lt "$AUTO_REBASE_MAX" ]; do
     AUTO_REBASE_ITER=$((AUTO_REBASE_ITER + 1))
     echo "INFO: /land-pr Step 6b: PR #$PR_NUMBER is BEHIND (iter $AUTO_REBASE_ITER/$AUTO_REBASE_MAX); rebasing + force-pushing" >&2
@@ -621,6 +641,242 @@ if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "
     REASON="${REASON:-merge-rc-30}"
   elif [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ]; then
     STATUS="merged"
+  fi
+fi
+```
+
+### Step 7d — Drive a queued auto-merge to a terminal state (Issue #871)
+
+Step 7 requests GitHub auto-merge and returns. When the merge request
+succeeds but the PR is still `OPEN` (auto-merge queued, waiting on branch
+protection), nothing in the old flow looped back. If a sibling PR lands
+*after* the merge request, our PR goes `OPEN/BEHIND`; on "Require branches
+to be up to date before merging" repos GitHub's queued auto-merge then
+waits **indefinitely** — the auto-merge never auto-rebases. Step 6b only
+handles BEHIND that exists *before* the merge request; this step handles
+BEHIND that appears *after* it. Observed live on PR #856.
+
+This step drives the queued auto-merge to a terminus by clearing any
+post-request BEHIND (re-using the exact Step 6b rebase machinery) and
+re-checking, bounded by both a wall-clock timeout and a max iteration
+count so it can **NEVER hang**. It does **NOT** re-request auto-merge —
+`pr-merge.sh` already queued it; re-requesting is redundant. We only
+rebase to clear BEHIND and let the already-queued auto-merge fire.
+
+**Run conditions (ALL must hold; otherwise skip entirely):**
+- `$AUTO_FLAG = true` — only meaningful when auto-merge was requested.
+- `$MERGE_REQUESTED = true` — the merge was actually queued.
+- `$PR_STATE = OPEN` — already MERGED needs no driving; UNKNOWN/other
+  isn't a queued-and-waiting state.
+- `$NO_MONITOR = false` AND `$PR_RESUME` empty — `--no-monitor` and
+  `--pr` resume mode are explicitly exempt (same exemptions Step 6/6b
+  honor; these modes hand monitoring back to the caller).
+- `$STATUS` is `merged` only would short-circuit (it's already terminal);
+  and `$STATUS` must NOT be a failure terminus (`merge-failed`,
+  `auto-rebase-blocked`, `auto-rebase-conflict`, `behind-thrash`,
+  `monitor-failed`, etc.) — those are already surfaced.
+
+**Per-iteration handling of `gh pr view --json state,mergeStateStatus`:**
+- `state=MERGED` → set `PR_STATE=MERGED STATUS=merged`, done. (Step 7b/7c
+  below then fire their post-merge fast-forward + tracking copy.)
+- `mergeStateStatus=BEHIND` → re-enter the SAME Step 6b rebase +
+  force-push-with-lease + re-monitor + re-check sequence. Do NOT
+  duplicate-diverge: the inline block below calls the identical
+  `git fetch` → `git rebase` → `git push --force-with-lease` →
+  `pr-monitor.sh` → re-probe steps Step 6b uses. The queued auto-merge
+  fires once BEHIND clears.
+- `mergeStateStatus` in `CLEAN|HAS_HOOKS|UNSTABLE` → mergeable; the queued
+  auto-merge should fire imminently — keep waiting (re-poll) until MERGED
+  or timeout.
+- `BLOCKED|CONFLICTING` → `STATUS=auto-rebase-blocked
+  REASON=mergeStateStatus-<state>`, surface, break.
+- `UNKNOWN`/empty → bounded re-poll (same shape as the Step 6b UNKNOWN
+  resolver above), never treated as terminal.
+- Timeout OR max-iterations exhausted while still OPEN → leave `STATUS`
+  unchanged (`monitored`) and set `REASON=auto-merge-wait-timeout`, so
+  Step 8 maps it to `pr-ready` (row 7) with an explicit reason — NEVER
+  silent.
+
+The loop is bounded by `$CI_TIMEOUT` seconds of wall-clock AND a hard
+iteration cap (10). Per-iteration sleep is ~15s between polls. The rebase
+sub-path itself is bounded by the same `AUTO_REBASE_MAX=3` cap Step 6b
+uses, so the total work is finite.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+if [ "$AUTO_FLAG" = "true" ] \
+   && [ "$MERGE_REQUESTED" = "true" ] \
+   && [ "$PR_STATE" = "OPEN" ] \
+   && [ "$NO_MONITOR" = "false" ] \
+   && [ -z "$PR_RESUME" ] \
+   && [ "$STATUS" != "merge-failed" ] \
+   && [ "$STATUS" != "auto-rebase-blocked" ] \
+   && [ "$STATUS" != "auto-rebase-conflict" ] \
+   && [ "$STATUS" != "behind-thrash" ] \
+   && [ "$STATUS" != "monitor-failed" ]; then
+  TW_STDERR="/tmp/land-pr-terminal-wait-stderr-$BRANCH_SLUG-$$.log"
+  : > "$TW_STDERR"
+  TW_DEADLINE=$(( $(date +%s) + CI_TIMEOUT ))
+  TW_ITER=0
+  TW_ITER_MAX=10
+
+  while [ "$TW_ITER" -lt "$TW_ITER_MAX" ] && [ "$(date +%s)" -lt "$TW_DEADLINE" ]; do
+    TW_ITER=$((TW_ITER + 1))
+
+    # Poll state + mergeStateStatus together.
+    TW_JSON=$(gh pr view "$PR_NUMBER" --json state,mergeStateStatus 2>>"$TW_STDERR")
+    TW_PR_STATE=""
+    TW_MS_STATE=""
+    if [[ "$TW_JSON" =~ \"state\":[[:space:]]*\"([^\"]+)\" ]]; then
+      TW_PR_STATE="${BASH_REMATCH[1]}"
+    fi
+    if [[ "$TW_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+      TW_MS_STATE="${BASH_REMATCH[1]}"
+    fi
+
+    # Terminal: the queued auto-merge fired.
+    if [ "$TW_PR_STATE" = "MERGED" ]; then
+      PR_STATE="MERGED"
+      STATUS="merged"
+      echo "INFO: /land-pr Step 7d: PR #$PR_NUMBER reached MERGED (iter $TW_ITER)" >&2
+      break
+    fi
+
+    # Resolve a transient UNKNOWN before acting (same bounded shape as 6b).
+    TW_UNKNOWN_POLL=0
+    while { [ "$TW_MS_STATE" = "UNKNOWN" ] || [ -z "$TW_MS_STATE" ]; } \
+          && [ "$TW_UNKNOWN_POLL" -lt 5 ]; do
+      TW_UNKNOWN_POLL=$((TW_UNKNOWN_POLL + 1))
+      sleep 4
+      TW_JSON=$(gh pr view "$PR_NUMBER" --json state,mergeStateStatus 2>>"$TW_STDERR")
+      TW_PR_STATE=""
+      TW_MS_STATE=""
+      if [[ "$TW_JSON" =~ \"state\":[[:space:]]*\"([^\"]+)\" ]]; then
+        TW_PR_STATE="${BASH_REMATCH[1]}"
+      fi
+      if [[ "$TW_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
+        TW_MS_STATE="${BASH_REMATCH[1]}"
+      fi
+    done
+    if [ "$TW_PR_STATE" = "MERGED" ]; then
+      PR_STATE="MERGED"
+      STATUS="merged"
+      break
+    fi
+
+    case "$TW_MS_STATE" in
+      BEHIND)
+        # Re-enter the EXACT Step 6b rebase machinery to clear BEHIND. We
+        # do NOT re-request auto-merge — the queued auto-merge fires once
+        # BEHIND clears. Bounded by AUTO_REBASE_MAX (3), same as Step 6b.
+        echo "INFO: /land-pr Step 7d: PR #$PR_NUMBER went BEHIND post-merge-request (iter $TW_ITER); rebasing" >&2
+        TW_REBASE_ITER=0
+        TW_REBASE_MAX=3
+        TW_REBASE_OK=false
+        while [ "$TW_REBASE_ITER" -lt "$TW_REBASE_MAX" ]; do
+          TW_REBASE_ITER=$((TW_REBASE_ITER + 1))
+          REBASE_DIR="${WORKTREE_PATH:-$(pwd)}"
+          if ! git -C "$REBASE_DIR" fetch origin "$BASE_BRANCH" 2>>"$TW_STDERR"; then
+            STATUS="auto-rebase-conflict"
+            REASON="auto-rebase-fetch-failed-rc$?"
+            break
+          fi
+          if ! git -C "$REBASE_DIR" rebase "origin/$BASE_BRANCH" 2>>"$TW_STDERR"; then
+            CONFLICT_PATHS=$(git -C "$REBASE_DIR" diff --name-only --diff-filter=U 2>>"$TW_STDERR" | tr '\n' ' ' | sed 's/ $//')
+            git -C "$REBASE_DIR" rebase --abort 2>>"$TW_STDERR" || true
+            if [ -n "$CONFLICT_PATHS" ]; then
+              CONFLICT_FILES_SIDECAR="/tmp/land-pr-terminal-wait-conflicts-$BRANCH_SLUG-$$.list"
+              printf '%s\n' $CONFLICT_PATHS > "$CONFLICT_FILES_SIDECAR"
+              CONFLICT_FILES_LIST="$CONFLICT_FILES_SIDECAR"
+            fi
+            STATUS="auto-rebase-conflict"
+            REASON="auto-rebase-conflict-tw-iter$TW_REBASE_ITER"
+            break
+          fi
+          if ! git -C "$REBASE_DIR" push --force-with-lease origin "$BRANCH" 2>>"$TW_STDERR"; then
+            PUSH_RC=$?
+            if [ "$TW_REBASE_ITER" -ge "$TW_REBASE_MAX" ]; then
+              STATUS="auto-rebase-blocked"
+              REASON="auto-rebase-push-failed-rc$PUSH_RC"
+              break
+            fi
+            echo "WARN: /land-pr Step 7d: push --force-with-lease failed (rc=$PUSH_RC); retrying" >&2
+            continue
+          fi
+          # Re-monitor CI on the rebased commit (identical to Step 6b).
+          CI_LOG_OUT="/tmp/land-pr-ci-log-$BRANCH_SLUG-tw$TW_REBASE_ITER-$$.txt"
+          MONITOR_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-monitor.sh" \
+            --pr "$PR_NUMBER" --timeout "$CI_TIMEOUT" --log-out "$CI_LOG_OUT")
+          MONITOR_RC=$?
+          while IFS='=' read -r KEY VALUE; do
+            case "$KEY" in
+              CI_STATUS) CI_STATUS="$VALUE" ;;
+              CI_LOG_FILE) CI_LOG_FILE="$VALUE" ;;
+            esac
+          done <<<"$MONITOR_STDOUT"
+          if [ "$MONITOR_RC" -ne 0 ] || [ "$CI_STATUS" != "pass" ]; then
+            STATUS="auto-rebase-blocked"
+            REASON="auto-rebase-ci-${CI_STATUS:-monitor-failed}-tw-iter$TW_REBASE_ITER"
+            break
+          fi
+          TW_REBASE_OK=true
+          break
+        done
+        if [ "$TW_REBASE_OK" != "true" ]; then
+          # A failure terminus was set above (or push exhausted) — surface
+          # and break the outer wait. Step 8 maps these (auto-rebase-*) to
+          # pr-ready/conflict.
+          if [ -z "$STATUS" ] || [ "$STATUS" = "monitored" ] || [ "$STATUS" = "merged" ]; then
+            STATUS="behind-thrash"
+            REASON="${REASON:-auto-rebase-exhausted-tw}"
+          fi
+          break
+        fi
+        # Rebase cleared BEHIND; loop back and let the queued auto-merge fire.
+        ;;
+      CLEAN|HAS_HOOKS|UNSTABLE)
+        # Mergeable and queued — wait for the auto-merge to fire.
+        echo "INFO: /land-pr Step 7d: PR #$PR_NUMBER mergeStateStatus=$TW_MS_STATE; waiting for queued auto-merge (iter $TW_ITER)" >&2
+        ;;
+      BLOCKED|CONFLICTING)
+        STATUS="auto-rebase-blocked"
+        REASON="mergeStateStatus-$TW_MS_STATE"
+        echo "WARN: /land-pr Step 7d: PR #$PR_NUMBER mergeStateStatus=$TW_MS_STATE; surfacing" >&2
+        break
+        ;;
+      *)
+        # Unexpected definite state — surface, don't spin.
+        STATUS="auto-rebase-blocked"
+        REASON="mergeStateStatus-${TW_MS_STATE:-empty}"
+        break
+        ;;
+    esac
+
+    sleep 15
+  done
+
+  # Bounded-out while still OPEN → leave STATUS=monitored, explicit REASON,
+  # Step 8 maps to pr-ready (row 7). NEVER silent.
+  if [ "$PR_STATE" = "OPEN" ] \
+     && [ "$STATUS" != "auto-rebase-blocked" ] \
+     && [ "$STATUS" != "auto-rebase-conflict" ] \
+     && [ "$STATUS" != "behind-thrash" ] \
+     && [ "$STATUS" != "merged" ]; then
+    REASON="${REASON:-auto-merge-wait-timeout}"
+    echo "WARN: /land-pr Step 7d: auto-merge did not reach a terminus within ${CI_TIMEOUT}s / ${TW_ITER_MAX} iterations; PR #$PR_NUMBER left OPEN (REASON=$REASON)" >&2
+  fi
+
+  if [ -s "$TW_STDERR" ] \
+     && { [ "$STATUS" = "auto-rebase-blocked" ] \
+          || [ "$STATUS" = "auto-rebase-conflict" ] \
+          || [ "$STATUS" = "behind-thrash" ]; }; then
+    REBASE_STDERR_FILE="${REBASE_STDERR_FILE:-$TW_STDERR}"
+  else
+    rm -f "$TW_STDERR"
   fi
 fi
 ```
