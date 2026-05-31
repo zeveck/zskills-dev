@@ -1,5 +1,13 @@
 # Plan Report — Plugin-lane script resolution + dual-install hardening
 
+## Phase — 5 Mirror-less prod-tree verification gate
+
+**Status:** Completed (verified) — commit `1340ec4`
+- New `tests/test-plugin-mirrorless-resolution.sh` (9 cases): builds a real `git archive HEAD` release tree + a mirror-less consumer; asserts config-helper + bundled-script + family-3 resolution all work with NO `.claude/skills` mirror; negative control (old path absent) + legacy-unchanged control.
+- **Gate proven REAL (independently):** reverting any migrated fix turns the test RED (resolution falls to the nonexistent mirror-less consumer dir). Override holds (not a run-all.sh global false-green).
+- Wired into `run-all.sh` + the CI `plugin-mode` job. Full suite 6569/6569.
+- **The whole fix (Phases 1–4) is now validated end-to-end on a real plugin-install layout.**
+
 ## Phase — 4 Family 3: fix mirror-path refs inside bundled scripts
 
 **Status:** Completed (verified) — commit `d29be66`
