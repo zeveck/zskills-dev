@@ -146,7 +146,7 @@ plugin-root form (re-derive to confirm 0), so the denylist is a **migration-rege
 | 1 — Foundation: corrected primitives + spec + conformance fixtures | ✅ Done | `425d03f` | ZSKILLS_SKILLS_ROOT + corrected paths; +regression test; 6560/6560 |
 | 2 — Family 1: repoint config-helper `.md` sources (~168 pairs) | ✅ Done | `e3125f3` | 336→0 wrong-form; 23 skills bumped; 6560/6560 |
 | 3 — Family 2: migrate bundled-script `.md` invocations + bootstraps + 10 pinned assertions | ✅ Done | `ac29a24` | 161 invocations + 15 path-prefix → SSR; 49 bootstraps; 15 assertions; 6560/6560 |
-| 4 — Family 3: fix mirror-path refs inside bundled scripts | ⬚ | | |
+| 4 — Family 3: fix mirror-path refs inside bundled scripts | ✅ Done | `d29be66` | post-run-invariants/backfill/stub-lib BASH_SOURCE-relative + paths.sh guard; 6560/6560 |
 | 5 — Mirror-less prod-tree verification gate | ⬚ | | |
 | 6 — Dual-install hardening + doc-wording fix | ⬚ | | |
 

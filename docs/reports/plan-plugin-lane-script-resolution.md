@@ -1,5 +1,13 @@
 # Plan Report — Plugin-lane script resolution + dual-install hardening
 
+## Phase — 4 Family 3: fix mirror-path refs inside bundled scripts
+
+**Status:** Completed (verified) — commit `d29be66`
+- W4.1: 3 runtime-reached mirror sources (post-run-invariants.sh, backfill x2) + 2 stub-lib sites fixed with `$(dirname BASH_SOURCE)`-relative resolution (mirror fallback). Already-relative scripts (claim-plan/claim-issue) left.
+- Source-guard: `zskills-paths.sh:57` `$CLAUDE_PROJECT_DIR` → `${CLAUDE_PROJECT_DIR:-}` (Phase-1 latent unbound-var-under-set-u, strictly safe).
+- W4.2: 4 skill dirs bumped, mirror byte-equal. Verifier caught + fixed a Tier-1 registry obligation (new blob hashes → tier1-shipped-hashes.txt). Final suite 6560/6560.
+- **Carry-forward:** any phase editing a Tier-1 script must register its new blob hash in tier1-shipped-hashes.txt + re-bump update-zskills, same commit.
+
 ## Phase — 3 Family 2: migrate bundled-script `.md` invocations
 
 **Status:** Completed (verified) — commit `ac29a24`
