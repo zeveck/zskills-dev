@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.05.31
 # block-fix-issue-unclaimed.sh — PreToolUse hook on Bash.
 #
 # Backstops the /fix-issues inline-acquire prose discipline (plans/fix-issues-claims.md
@@ -22,6 +22,18 @@
 #   - If no claim exists: emits a PreToolUse deny envelope (same JSON shape
 #     as hooks/block-main-edits.sh:175) with verbatim recovery instructions
 #     mirroring the block-stale-skill-version.sh precedent.
+#   - If a claim DOES exist (issue #865): read claim.json:pipeline_id and
+#     compare to the caller's --pipeline-id (captured from the create-worktree
+#     argv). Same pipeline_id → allow (self-re-entry, e.g. cron re-fire of
+#     the same sprint). Different pipeline_id → deny (foreign pipeline trying
+#     to materialise on an already-claimed issue). Absent or malformed
+#     claim.json → fail-OPEN with stderr WARN (hook's existing infra-error
+#     discipline; do not block on unverifiable state — only deny on a
+#     concrete mismatch). NOTE: this is INTENTIONALLY different from
+#     claim-self-reentry.sh's "absent claim.json → foreign (10)" semantics:
+#     the acquire path must never STEAL an unverifiable claim, but the hook
+#     is a backstop and must never false-deny when it cannot prove a
+#     conflict.
 #   - All other branch patterns (non-fix-issue prefixes like pr-<slug>,
 #     cp-<slug>, wt-<slug>) pass through (exit 0) immediately.
 #   - MAIN_ROOT resolution: `git rev-parse --git-common-dir` parent
@@ -94,9 +106,11 @@ esac
 #   --branch-name <v>     wins outright
 #   else --prefix <v> + positional <slug>   ->   <prefix>-<slug>
 #   else positional <slug>                  ->   wt-<slug>
-# Emits two lines to stdout:
+# Emits three lines to stdout:
 #   BRANCH=<resolved-branch-or-empty>
 #   SLUG=<positional-slug-or-empty>
+#   PIPELINE_ID=<caller-pipeline-id-or-empty>   (issue #865 — captured for
+#                                                the ownership check below)
 WALK=$("$PYTHON" - <<'PY' "$CMD"
 import shlex, sys
 cmd_str = sys.argv[1]
@@ -110,6 +124,7 @@ except ValueError:
 
 prefix = None
 branch_name = None
+pipeline_id = None  # issue #865 — captured for ownership check
 positionals = []
 
 # Walk to the script-path token (whatever ends in create-worktree.sh or
@@ -128,6 +143,15 @@ while i < n:
         continue
     if tok == "--prefix" and i + 1 < n:
         prefix = argv[i + 1]
+        i += 2
+        continue
+    if tok == "--pipeline-id" and i + 1 < n:
+        # issue #865 — capture the caller's pipeline-id so the post-existence
+        # ownership check below can compare against claim.json:pipeline_id.
+        # Mirrors --branch-name / --prefix capture shape (symmetric two-arg
+        # consume). Without this branch the generic --* fall-through silently
+        # swallowed the value, leaving the hook unable to enforce ownership.
+        pipeline_id = argv[i + 1]
         i += 2
         continue
     if tok.startswith("--"):
@@ -156,15 +180,18 @@ else:
 
 print("BRANCH=" + (branch or ""))
 print("SLUG=" + (slug or ""))
+print("PIPELINE_ID=" + (pipeline_id or ""))
 PY
 )
 
 BRANCH=""
 SLUG=""
+CALLER_PIPELINE_ID=""
 while IFS= read -r line; do
   case "$line" in
-    BRANCH=*) BRANCH="${line#BRANCH=}" ;;
-    SLUG=*)   SLUG="${line#SLUG=}" ;;
+    BRANCH=*)      BRANCH="${line#BRANCH=}" ;;
+    SLUG=*)        SLUG="${line#SLUG=}" ;;
+    PIPELINE_ID=*) CALLER_PIPELINE_ID="${line#PIPELINE_ID=}" ;;
   esac
 done <<< "$WALK"
 
@@ -211,7 +238,48 @@ fi
 # ── Claim-presence check ─────────────────────────────────────────────────
 CLAIM_DIR="${MAIN_ROOT}/.zskills/claims/issue-${NNN}"
 if [ -d "$CLAIM_DIR" ]; then
-  exit 0
+  # ── Ownership check (issue #865) ─────────────────────────────────────
+  # Existence alone is insufficient: a foreign pipeline holding the claim
+  # would otherwise let any other pipeline materialise on top of it. Read
+  # claim.json:pipeline_id and compare to the caller's --pipeline-id.
+  #
+  # Fail-open discipline mirrors the rest of this hook (see header §
+  # "fail-open on its own infrastructure errors"): we only DENY on a
+  # concrete mismatch. Absent claim.json, malformed JSON, missing caller
+  # pipeline-id, or absent Python all WARN-and-allow — never false-deny
+  # on unverifiable state. Contrast claim-self-reentry.sh which returns
+  # 10 (foreign) on the same conditions; that path is enforcing
+  # never-steal at acquire time, this path is enforcing never-false-deny
+  # at backstop time.
+  CLAIM_FILE="${CLAIM_DIR}/claim.json"
+  if [ ! -f "$CLAIM_FILE" ]; then
+    echo "block-fix-issue-unclaimed.sh: WARN claim.json missing under $CLAIM_DIR; cannot verify ownership — allowing" >&2
+    exit 0
+  fi
+  if [ -z "$CALLER_PIPELINE_ID" ]; then
+    echo "block-fix-issue-unclaimed.sh: WARN caller did not pass --pipeline-id; cannot verify ownership of issue-${NNN} claim — allowing" >&2
+    exit 0
+  fi
+  STORED_PIPELINE_ID=$("$PYTHON" - "$CLAIM_FILE" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        sys.stdout.write(json.load(f).get("pipeline_id", "") or "")
+except Exception:
+    pass
+PY
+)
+  if [ -z "$STORED_PIPELINE_ID" ]; then
+    echo "block-fix-issue-unclaimed.sh: WARN claim.json at $CLAIM_FILE is malformed or missing pipeline_id; cannot verify ownership — allowing" >&2
+    exit 0
+  fi
+  if [ "$STORED_PIPELINE_ID" = "$CALLER_PIPELINE_ID" ]; then
+    # Self-re-entry — caller already owns this claim.
+    exit 0
+  fi
+  # Concrete mismatch — foreign pipeline interference. Emit the
+  # ownership-mismatch deny envelope (separate STOP_MSG below).
+  OWNERSHIP_DENY=1
 fi
 
 # ── Deny envelope (plan DA4.4 — locked text) ─────────────────────────────
@@ -224,7 +292,25 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/fix-is
 else
   CLAIM_ISSUE_PATH="${MAIN_ROOT}/.claude/skills/fix-issues/scripts/claim-issue.sh"
 fi
-STOP_MSG=$(cat <<EOF
+if [ "${OWNERSHIP_DENY:-0}" = "1" ]; then
+  # Ownership-mismatch deny (issue #865): claim dir exists and
+  # claim.json's pipeline_id differs from the caller's --pipeline-id.
+  # Treat as race-lost (exit 10 semantics in claim-issue.sh acquire) —
+  # the caller pipeline should SKIP this issue and proceed to the next.
+  STOP_MSG=$(cat <<EOF
+STOP: create-worktree.sh for fix-issue-${NNN} denied — issue is held by a foreign pipeline.
+
+Claim at ${MAIN_ROOT}/.zskills/claims/issue-${NNN}/claim.json:
+  stored pipeline_id: ${STORED_PIPELINE_ID}
+  caller pipeline_id: ${CALLER_PIPELINE_ID}
+
+This is the same outcome as ${CLAIM_ISSUE_PATH} acquire returning exit 10 (race lost). The caller pipeline should SKIP issue ${NNN} and proceed to the next. Do NOT remove the claim dir or steal the claim — the holding pipeline will release it on land-or-abandon.
+
+If you believe this is wrong (e.g., a stale claim from a crashed pipeline), inspect claim.json's started_at, sprint_id, and pipeline_id, then escalate to the operator. The hook is a backstop and intentionally fails closed only on a concrete pipeline_id mismatch.
+EOF
+)
+else
+  STOP_MSG=$(cat <<EOF
 STOP: create-worktree.sh for fix-issue-${NNN} denied — no claim found at ${MAIN_ROOT}/.zskills/claims/issue-${NNN}/.
 
 The per-issue dispatch fence in fix-issues modes/sprint.md (the "Worktree setup (cherry-pick and direct modes)" section, and the "PR mode (Phase 3)" section) MUST call:
@@ -236,6 +322,7 @@ immediately above the create-worktree.sh invocation. If this hook fired during a
 If acquire returns exit 10 (race lost — issue held by a concurrent pipeline), skip and proceed to the next issue. If exit 11 (filesystem error), abort the sprint.
 EOF
 )
+fi
 
 # Emit deny envelope. Escape for JSON: backslashes first, then quotes, then
 # newlines. Mirrors block-unsafe-project.sh / block-main-edits.sh.
