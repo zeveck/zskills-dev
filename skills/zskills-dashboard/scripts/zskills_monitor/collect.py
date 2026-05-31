@@ -1732,8 +1732,19 @@ def _annotate_plans_queue(
 
     Precedence (W1.3 / D2 rule (i)): state-file explicit-position WINS
     over inference — a plan present in the state file's `backlog` (or
-    `drafted`, etc.) stays there even if `status: complete` would
-    otherwise infer `completed`. Tested by W1.20.
+    `drafted`, etc.) stays there even if inference would route it
+    elsewhere. Tested by W1.20.
+
+    Completion override (#853): the ONE exception to rule (i). A plan
+    whose frontmatter declares `status: complete|landed` AND carries a
+    parseable `completed:` timestamp bypasses any pin and routes to
+    `completed` via inference. The Completed column is derived (not a
+    drop target, not in PLAN_COLUMNS), so a stale pin would otherwise
+    strand a completed card in its old column with no UI affordance to
+    unstick it. The plan file is source of truth for completion; once it
+    transitions, the dashboard column follows on the next poll. Non-
+    complete pinned plans are unaffected — their pin still beats
+    inference.
 
     `now_utc` defaults to current wall-clock UTC. `window_days` controls
     the `completed:` recency window (D1, configurable via
@@ -1771,7 +1782,28 @@ def _annotate_plans_queue(
 
     for plan in plans:
         slug = plan["slug"]
-        if slug in pos:
+        # Completion override (#853): a plan whose frontmatter declares
+        # `status: complete|landed` AND carries a parseable `completed:`
+        # timestamp is COMPLETE per the plan-file-is-source-of-truth rule.
+        # The Completed column is derived (not a drop target / not in
+        # PLAN_COLUMNS), so a stale pin in the state file (manual drag,
+        # programmatic write, or initial seeding) would otherwise strand
+        # the card in its old column forever. Bypass the pos pin here and
+        # route via inference (→ "completed"), auto-healing stuck plans on
+        # the next poll. This is a NARROW exception to W1.3/D2 rule (i):
+        # non-complete pinned plans still honor their pin below.
+        status = (plan.get("status") or "").strip().lower()
+        completed_raw = plan.get("completed") or ""
+        completed_dt = (
+            _parse_iso_utc(completed_raw)
+            if isinstance(completed_raw, str) else None
+        )
+        if status in ("complete", "landed") and completed_dt is not None:
+            inferred = _infer_default_column(
+                plan, now_utc=now_utc, window_days=window_days,
+            )
+            plan["queue"] = {"column": inferred, "index": -1, "mode": None}
+        elif slug in pos:
             col, i, mode = pos[slug]
             plan["queue"] = {"column": col, "index": i, "mode": mode}
         else:
