@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.31+d1fb40"
+  version: "2026.05.31+3853ab"
 ---
 
 # Update Z Skills Infrastructure
@@ -79,7 +79,7 @@ was found and what was done about it.
     - Idempotent: invoking a direction whose lock already matches is a
       no-op-with-INFO. Neither direction touches `.zskills/` runtime
       state (claim markers etc. are lane-independent). See
-      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/PLUGIN_MIGRATION.md`
+      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/guides/PLUGIN_MIGRATION.md`
       for the Abort/Rollback path.
 
 **Preset keywords (bare word, anywhere in the args):**
