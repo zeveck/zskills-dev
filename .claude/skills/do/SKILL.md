@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.30+c0a098"
+  version: "2026.05.31+b5d0a1"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -889,11 +889,16 @@ Skip when no issue claim was acquired (the common /do case — `$ISSUE_NUM`
 empty):
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # $ISSUE_NUM (Pre-flight pre-parse) and $PIPELINE_ID (set in the mode file:
 # do.${TASK_SLUG}) survive in the persistent shell. The release is
 # ownership-safe via --require-pipeline.
 if [ -n "${ISSUE_NUM:-}" ] && [ -n "${PIPELINE_ID:-}" ]; then
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
 fi
 ```
 
@@ -968,7 +973,7 @@ Status: pr-ready | pr-ci-failing | landed
   `claim-issue.sh` claim, any error exit above (test failure, content
   issue, cherry-pick conflict, push failure, task-too-big) MUST release it
   before stopping so the next pipeline can pick the issue up:
-  `bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"`
+  `bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"`
   (only if an issue claim was acquired — skip when `$ISSUE_NUM` is empty).
   PR mode's abandon-path releases live inside `modes/pr.md`.
 

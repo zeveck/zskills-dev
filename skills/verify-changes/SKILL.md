@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.30+43fa5a"
+  version: "2026.05.31+11266d"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -239,7 +239,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -428,7 +428,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.tests-run"
 ```
@@ -499,7 +499,7 @@ have started one is skipping, not verifying.
    - What to look at (specific UI element, interaction, visual behavior)
    - How to reproduce (steps: open app, navigate to X, click Y, observe Z)
    - What "correct" looks like (expected appearance, behavior, output)
-   - URL: `http://localhost:$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/port.sh")/`
+   - URL: `http://localhost:$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/port.sh")/`
 
    The user may be verifying hours later in a different context. "NEEDED"
    without instructions is useless — the user won't know what to check.
@@ -523,7 +523,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'ui_changes: true\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
@@ -742,7 +742,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.complete"
 

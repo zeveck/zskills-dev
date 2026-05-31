@@ -103,13 +103,18 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    plan (#110). MAIN_ROOT and TRACKING_ID are not yet in scope here, so
    compute them inline:
    ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    TRACKING_ID=$(basename "$PLAN_FILE" .md | tr '[:upper:]_' '[:lower:]-')
    # `stop` is invoked from main session before any worktree exists — anchor
    # on $CLAUDE_PROJECT_DIR. Counters in PR-mode runs that wrote inside the
    # worktree get cleaned up by the worktree's own .landed-marker flow.
    MAIN_ROOT="$CLAUDE_PROJECT_DIR"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-   PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+   PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
    rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
    ```
@@ -126,6 +131,11 @@ If `$ARGUMENTS` contains `stop` (case-insensitive):
    — those claims belong to other in-flight runs (or to /fix-issues, which
    owns its own `issue-*/` claims) and must not be clobbered.
    ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    CLAIMS_ROOT="$MAIN_ROOT/.zskills/claims"
    RELEASED=0
    SKIPPED=0
@@ -154,7 +164,7 @@ except Exception:
          *) continue ;;
        esac
        set +e
-       bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+       bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/claim-plan.sh" \
          release "$slug" --require-pipeline "$claim_pid"
        rc=$?
        set -e
@@ -193,7 +203,7 @@ except Exception:
          *) continue ;;
        esac
        set +e
-       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" \
          release "$n" --require-pipeline "$claim_pid"
        rc=$?
        set -e

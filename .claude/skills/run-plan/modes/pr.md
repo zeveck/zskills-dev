@@ -75,7 +75,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
+  cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan
@@ -163,7 +163,7 @@ if [ $? -ne 0 ]; then
     git rebase --abort
   fi
 
-  cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
+  cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 status: conflict
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: run-plan

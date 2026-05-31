@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.30+18cdfc"
+  version: "2026.05.31+816336"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -438,10 +438,15 @@ Before parsing, check for stale state from a previous failed run:
    anything else. The counter is held — this is recovery, not normal flow.
 
    ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # MAIN_ROOT is already in scope from the "Read authority" block earlier
    # in this section (line ~393); reuse it here.
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-   PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+   PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
    if compgen -G "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed.*" >/dev/null 2>&1; then
      # CronList → check if a "Run /run-plan <plan-file> finish auto" cron
      # already exists (a stale fire from before the failed Delete may have
@@ -490,8 +495,13 @@ Before parsing, check for stale state from a previous failed run:
       and per-phase defer counters so the next pipeline starts clean
       (R6 fix, #110):
       ```bash
+      if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+        . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      else
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      fi
       PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-      PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+      PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
       rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
       rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
       ```
@@ -566,8 +576,13 @@ Before parsing, check for stale state from a previous failed run:
       Phase 2. Before proceeding, clear all per-phase defer counters and
       any stale recovery sentinel from a prior phase (#110):
       ```bash
+      if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+        . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      else
+        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+      fi
       PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-      PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+      PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
       rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers."*
       rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/cron-recovery-needed."*
       ```
@@ -607,10 +622,15 @@ a re-entering self always sees its own claim and proceeds (`0`), and a
 foreign holder is honored until that holder explicitly releases.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 set +e
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/claim-plan.sh" \
   acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
 rc=$?
 set -e
@@ -647,6 +667,11 @@ exit 2), aligning with the Close-linked-issue parser's tolerance for
 `issue: 42` and `issue: "#42"`.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Parse issue:N field(s) from the plan frontmatter (the leading `---`
 # delimited YAML block only), normalized to bare positive integers.
 # Tolerates `issue: 42`, `issue: "#42"`, `issue: '#42'`. Multiple
@@ -670,7 +695,7 @@ done < <(awk '
 
 for N in "${ISSUE_NUMS[@]}"; do
   set +e
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" \
     acquire "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
   irc=$?
   set -e
@@ -753,10 +778,15 @@ done
 
 5. **Clean up landed worktrees from previous phases**
    ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    for wt_line in $(git worktree list --porcelain | grep '^worktree ' | sed 's/^worktree //'); do
      if [ -f "$wt_line/.landed" ] && grep -q 'status: landed' "$wt_line/.landed"; then
        echo "Cleaning up landed worktree: $wt_line"
-       bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$wt_line"
+       bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/land-phase.sh" "$wt_line"
      fi
    done
    ```
@@ -776,10 +806,15 @@ the only matching PR (issue #177).
 Plans MUST cite the helper instead of inlining the gh+grep pattern:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # In a plan phase that needs an open-PR conflict gate. The orchestrator
 # already tracks $RUN_PLAN_PR_NUMBER (the pipeline's own PR) — pass it via
 # --exclude-pr so the gate self-filters.
-if ! bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/pr-preflight.sh" \
+if ! bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/pr-preflight.sh" \
      --path-prefix "skills/update-zskills/" \
      --exclude-pr "${RUN_PLAN_PR_NUMBER:-}"; then
   echo "FAIL: open PR(s) touch the path; coordinate before continuing." >&2
@@ -949,7 +984,7 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
      fi
    MAIN_ROOT="$BOOKKEEPING_ROOT"
    PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
-   PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+   PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: run-plan\nid: %s\nplan: %s\nphase: %s\nstatus: started\ndate: %s\n' \
      "$TRACKING_ID" "$PLAN_FILE" "$PHASE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -983,7 +1018,7 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    fi
    # Phase tracking (UX): update dashboard chip's current_phase. `|| true` —
    # phase-tracking is UX-not-correctness; failure must not abort the pipeline.
-   bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/claim-plan.sh" \
+   bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/claim-plan.sh" \
      set-phase "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" --current-phase "Phase $PHASE" || true
    ```
 

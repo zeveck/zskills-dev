@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.30+4fe643"
+  version: "2026.05.31+40ed9d"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -180,7 +180,7 @@ Caller parsing pattern: see `references/caller-loop-pattern.md`. Never
 ## Canonical `.landed` schema (WI 1.11)
 
 When `--worktree-path` is supplied, `/land-pr` writes a `.landed` marker
-at `<worktree>/.landed` via `bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"`.
+at `<worktree>/.landed` via `bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh"`.
 The schema is canonical across all callers:
 
 ```text
@@ -261,8 +261,13 @@ Run `pr-rebase.sh` against the configured base branch. Parse its
 stdout for `CONFLICT_FILES_LIST` / `REASON`. Map the exit code:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$PR_RESUME" ]; then
-  REBASE_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-rebase.sh" \
+  REBASE_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-rebase.sh" \
     --branch "$BRANCH" --base "$BASE_BRANCH")
   REBASE_RC=$?
 
@@ -308,8 +313,13 @@ steps 4–7 and proceed to step 8/9.
 ### Step 4 — Push and create-or-detect PR (skipped in resume mode)
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$PR_RESUME" ] && [ -z "$STATUS" ]; then
-  PUSH_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-push-and-create.sh" \
+  PUSH_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-push-and-create.sh" \
     --branch "$BRANCH" --base "$BASE_BRANCH" \
     --title "$TITLE" --body-file "$BODY_FILE")
   PUSH_RC=$?
@@ -369,9 +379,14 @@ If `STATUS` is unset (or `created` with `CI_STATUS=not-monitored`
 already set in step 5, in which case skip), run `pr-monitor.sh`:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$STATUS" ] || { [ "$STATUS" = "created" ] && [ "$CI_STATUS" != "not-monitored" ]; }; then
   CI_LOG_OUT="/tmp/land-pr-ci-log-$BRANCH_SLUG-$$.txt"
-  MONITOR_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-monitor.sh" \
+  MONITOR_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-monitor.sh" \
     --pr "$PR_NUMBER" --timeout "$CI_TIMEOUT" --log-out "$CI_LOG_OUT")
   MONITOR_RC=$?
 
@@ -439,6 +454,11 @@ All rebase/push/fetch stderr is captured to a single sidecar
 `REBASE_STDERR_FILE` in the result file when the loop fails.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "$STATUS" ] \
    && [ "$AUTO_FLAG" = "true" ] \
    && [ "$CI_STATUS" = "pass" ] \
@@ -503,7 +523,7 @@ if [ -z "$STATUS" ] \
 
     # Re-poll CI on the rebased commit.
     CI_LOG_OUT="/tmp/land-pr-ci-log-$BRANCH_SLUG-rebase$AUTO_REBASE_ITER-$$.txt"
-    MONITOR_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-monitor.sh" \
+    MONITOR_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-monitor.sh" \
       --pr "$PR_NUMBER" --timeout "$CI_TIMEOUT" --log-out "$CI_LOG_OUT")
     MONITOR_RC=$?
     while IFS='=' read -r KEY VALUE; do
@@ -577,8 +597,13 @@ fi
 Always run `pr-merge.sh` — it owns the auto/CI gating internally.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -n "$PR_NUMBER" ] && [ "$STATUS" != "rebase-conflict" ] && [ "$STATUS" != "rebase-failed" ] && [ "$STATUS" != "push-failed" ] && [ "$STATUS" != "create-failed" ] && [ "$STATUS" != "behind-thrash" ] && [ "$STATUS" != "auto-rebase-conflict" ] && [ "$STATUS" != "auto-rebase-blocked" ]; then
-  MERGE_STDOUT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/land-pr/scripts/pr-merge.sh" \
+  MERGE_STDOUT=$(bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-merge.sh" \
     --pr "$PR_NUMBER" --auto-flag "$AUTO_FLAG" --ci-status "${CI_STATUS:-not-monitored}")
   MERGE_RC=$?
 
@@ -799,7 +824,7 @@ if [ -n "$WORKTREE_PATH" ]; then
     [ -n "$COMMITS_LIST" ]   && printf 'commits: %s\n'   "$COMMITS_LIST"
     [ -n "$ISSUE_NUM" ]      && printf 'issue: %s\n'     "$ISSUE_NUM"
     [ -n "$REASON" ]         && printf 'reason: %s\n'    "$REASON"
-  } | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
+  } | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "$WORKTREE_PATH"
 fi
 ```
 

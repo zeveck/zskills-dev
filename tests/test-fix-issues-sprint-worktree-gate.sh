@@ -77,8 +77,12 @@ fi
 # instead of silently weakening the contract).
 # ─────────────────────────────────────────────────────────────────
 if [ -n "$SPRINT_GATE_LINE" ]; then
-  # Look at the next 25 lines after the heading for the preamble body.
-  slice=$(sed -n "${SPRINT_GATE_LINE},$((SPRINT_GATE_LINE + 25))p" "$FI_SKILL")
+  # Look at the next 32 lines after the heading for the preamble body.
+  # (Widened from 25 → 32: the Family-2 plugin-lane ZSKILLS_SKILLS_ROOT
+  # bootstrap adds a 5-line dual-path source at the fence-top, pushing the
+  # `--prefix`/`--pipeline-id` lines down by 5; the args are still in the
+  # same single preamble fence.)
+  slice=$(sed -n "${SPRINT_GATE_LINE},$((SPRINT_GATE_LINE + 32))p" "$FI_SKILL")
   if echo "$slice" | grep -q -- '--prefix fix-issues' && echo "$slice" | grep -q -- '--pipeline-id'; then
     pass "fix-issues sprint preamble passes --prefix fix-issues + --pipeline-id"
   else

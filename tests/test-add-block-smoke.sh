@@ -38,7 +38,7 @@ if grep -qF 'PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-}"' "$SKILL" \
 else
   fail "parity: 3-tier resolution drifted" "tier fingerprints mismatch"
 fi
-if grep -qF 'BLOCK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")' "$SKILL"; then
+if grep -qF 'BLOCK_SLUG=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")' "$SKILL"; then
   pass "parity: BLOCK_SLUG routed through sanitize-pipeline-id.sh"
 else
   fail "parity: BLOCK_SLUG sanitization drifted" "sanitizer fingerprint mismatch"

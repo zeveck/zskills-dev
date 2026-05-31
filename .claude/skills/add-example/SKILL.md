@@ -6,7 +6,7 @@ description: >-
   verification.
 argument-hint: "<block-type(s)> [concept hint]"
 metadata:
-  version: "2026.05.30+257193"
+  version: "2026.05.31+40e815"
 ---
 
 # Add Example Model
@@ -29,9 +29,14 @@ preamble is a no-op in that case; the parent's `ZSKILLS_PATHS_ROOT` is
 preserved.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 if [ ! -x "$HELPER" ]; then
   echo "add-example: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
@@ -83,10 +88,10 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=add-example.${NAME}}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Sanitised per-marker suffix slug — pairs with add-block's BLOCK_SLUG
 # when invoked under delegation (orchestrator passes NAME == BLOCK_NAME).
-NAME_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$NAME")
+NAME_SLUG=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$NAME")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: add-example\nname: %s\nstatus: started\ndate: %s\n' \
   "$NAME" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \

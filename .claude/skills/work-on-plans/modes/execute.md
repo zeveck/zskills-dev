@@ -129,7 +129,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/work-on-plans/scripts/filter-in-flight-plan-claims.sh"
+FILTER="$ZSKILLS_SKILLS_ROOT/work-on-plans/scripts/filter-in-flight-plan-claims.sh"
 if [ -x "$FILTER" ]; then
   FILTERED=$(printf '%s\n' "${READY_LINES[@]}" | bash "$FILTER")
   if [ -n "$FILTERED" ]; then

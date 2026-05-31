@@ -76,7 +76,7 @@ either fires, all candidate issues are selected without prompting.
    # with the sprint-mode plan-scale-decline path). `reconsider <N>`
    # clears the entry if the user later changes their mind.
    ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
-     "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+     "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/record-skip.sh" \
      "$ISSUE_NUMBER" plan-scale \
      || echo "WARN: fix-issues plan: record-skip.sh failed for #$ISSUE_NUMBER — sprint may re-pick" >&2
    ```

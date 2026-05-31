@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.30+d8cd8b"
+  version: "2026.05.31+1fd7b7"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -707,7 +707,7 @@ MARK
 # double-working the same issue. Released in the Phase 7 explicit-finalize
 # and the fail-finalize abandon sites (test fail, commit fail, push fail).
 if [ -n "${ISSUE_NUM:-}" ]; then
-  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
   bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
   ACQ_RC=$?
   case "$ACQ_RC" in
@@ -893,7 +893,7 @@ else
     # Release the issue claim (only if one was acquired at WI 1.8) — this
     # abandon path is after the acquire and before the Phase 7 finalize.
     if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
     fi
     exit 4
   fi
@@ -1031,7 +1031,7 @@ if ! git commit -m "$COMMIT_BODY"; then
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
   # Release the issue claim (only if one was acquired at WI 1.8).
   if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
   fi
   exit 5
 fi
@@ -1093,13 +1093,18 @@ on that strip.
 On push failure, leave branch and commit intact; the user retries manually.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if ! git push -u origin "$BRANCH"; then
   echo "ERROR: git push failed. Branch '$BRANCH' and its commit are intact locally; retry manually once the remote is reachable." >&2
   # Explicit fail-finalize (issue #241).
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
   # Release the issue claim (only if one was acquired at WI 1.8).
   if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
   fi
   exit 5
 fi
@@ -1233,7 +1238,7 @@ while :; do
     # Release the issue claim (only if one was acquired at WI 1.8). This
     # early exit bypasses the end-of-fence explicit-finalize release.
     if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
     fi
     exit 5
   fi
@@ -1470,7 +1475,7 @@ fi
 if [ -n "${ISSUE_NUM:-}" ]; then
   _RELEASE_PIPELINE="${PIPELINE_ID:-${ZSKILLS_PIPELINE_ID:-}}"
   if [ -n "$_RELEASE_PIPELINE" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$_RELEASE_PIPELINE"
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$_RELEASE_PIPELINE"
   fi
 fi
 ```

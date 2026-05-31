@@ -17,7 +17,7 @@ commit naturally land on the feature branch (not main).
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 if [ ! -x "$HELPER" ]; then
   echo "fix-issues: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11

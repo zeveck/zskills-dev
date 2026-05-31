@@ -125,7 +125,7 @@ ISSUE_TITLE_SLUG=$(printf '%s' "${ISSUE_TITLE:-sprint}" | tr -cd 'a-z0-9' | head
 [ -z "$ISSUE_TITLE_SLUG" ] && ISSUE_TITLE_SLUG="sprint"
 SPRINT_ID="sprint-$(date -u +%Y%m%d-%H%M%S)-$ISSUE_TITLE_SLUG"
 PIPELINE_ID="fix-issues.$SPRINT_ID"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SPRINT_ID after sanitization (strip the "fix-issues." prefix).
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 ```
@@ -204,8 +204,13 @@ is `false` (or unset), the helper no-ops and the sprint runs on main
 as before.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 if [ ! -x "$HELPER" ]; then
   echo "fix-issues: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
@@ -743,7 +748,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 fi
 eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
   "${CANDIDATE_ISSUES[@]}")"
 # eval populated two bash vars: RESEARCHED (space-sep nums) and MISSING.
 read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
@@ -771,7 +776,7 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
     #   (a) candidates with committed tracker rows from prior fires (filter-RESEARCHED)
     #   (b) candidates whose scratchpads this pipeline just created
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     read -r -a MISSING_ARR <<<"${MISSING:-}"
@@ -945,7 +950,7 @@ fi
 # CANDIDATE_ISSUES is populated from the ranking table above (top N in
 # priority order). Apply the same filter the dashboard branch uses.
 eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
   "${CANDIDATE_ISSUES[@]}")"
 read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
 read -r -a MISSING_ARR <<<"${MISSING:-}"
@@ -965,7 +970,7 @@ if [ ${#MISSING_ARR[@]} -gt 0 ]; then
     #   (a) candidates with committed tracker rows from prior fires (filter-RESEARCHED)
     #   (b) candidates whose scratchpads this pipeline just created
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     read -r -a MISSING_ARR <<<"${MISSING:-}"
@@ -1564,7 +1569,12 @@ agent hasn't returned after 1 hour, declare it **failed**:
   pipeline) can pick the issue up again. For each timed-out issue, call:
 
   ```bash
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" \
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" \
        release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
   ```
 
@@ -1745,7 +1755,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-FILTER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-in-flight-issue-claims.sh"
+FILTER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-in-flight-issue-claims.sh"
 if [ -x "$FILTER" ] && [ "${#CANDIDATE_ISSUES[@]}" -gt 0 ]; then
   FILTERED=$(printf '%s\n' "${CANDIDATE_ISSUES[@]}" | bash "$FILTER")
   if [ -n "$FILTERED" ]; then
@@ -1793,7 +1803,12 @@ loser to do real fix work on the next available candidates.
 
 <!-- allow-hardcoded: (^|[^A-Za-z0-9_])ISSUES_PLAN\.md reason: filename basename suffixed onto $ZSKILLS_ISSUES_DIR (resolved via zskills-paths.sh); the basename token remains literal so the regex still flags the /ISSUES_PLAN.md tail -->
 ```bash
-CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 
 DISPATCHED=0
@@ -1817,7 +1832,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     # no commit). After the dispatch returns, refresh RESEARCHED_SET by
     # unioning filter-RESEARCHED with the scratchpad-existence check.
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     RESEARCHED_SET=()
@@ -1879,7 +1894,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
       esac
       if [ -n "$MONITOR_SKIP_CODE" ]; then
         ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
-          "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+          "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/record-skip.sh" \
           "$ISSUE_NUM" "$MONITOR_SKIP_CODE" \
           || echo "WARN: fix-issues: record-skip.sh failed for #$ISSUE_NUM ($MONITOR_SKIP_CODE) — next fire may re-litigate" >&2
       fi
@@ -1970,7 +1985,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     # means we're resuming the same issue across cron turns.
     echo "Resuming existing fix worktree at $WORKTREE_PATH"
   else
-    WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+    WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
       --prefix fix-issue \
       --purpose "fix-issues; issue=${ISSUE_NUM}" \
       --pipeline-id "$PIPELINE_ID" \
@@ -2092,7 +2107,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
 
@@ -2110,7 +2125,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
     # (no commit). Then refresh RESEARCHED_SET by unioning filter-RESEARCHED
     # with the scratchpad-existence check.
     eval "$(ZSKILLS_ISSUES_DIR="$ZSKILLS_ISSUES_DIR" \
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/filter-unresearched-candidates.sh" \
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/filter-unresearched-candidates.sh" \
       "${CANDIDATE_ISSUES[@]}")"
     read -r -a RESEARCHED_ARR <<<"${RESEARCHED:-}"
     RESEARCHED_SET=()
@@ -2160,7 +2175,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
       esac
       if [ -n "$MONITOR_SKIP_CODE" ]; then
         ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
-          "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+          "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/record-skip.sh" \
           "$ISSUE_NUM" "$MONITOR_SKIP_CODE" \
           || echo "WARN: fix-issues PR-mode: record-skip.sh failed for #$ISSUE_NUM ($MONITOR_SKIP_CODE) — next fire may re-litigate" >&2
       fi
@@ -2235,7 +2250,7 @@ for ISSUE_NUM in "${CANDIDATE_ISSUES[@]}"; do
   if [ -d "$WORKTREE_PATH" ]; then
     echo "Resuming existing fix worktree at $WORKTREE_PATH"
   else
-    WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+    WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
       --prefix fix-issue \
       --branch-name "$BRANCH_NAME" \
       --allow-resume \
@@ -2301,7 +2316,7 @@ unset N S
 
 if [ "${#TRACKER_SCRATCHPADS[@]}" -gt 0 ]; then
   echo "fix-issues PR-mode: shipping ${#TRACKER_SCRATCHPADS[@]} skip-tag / leftover row(s) as sprint-tracker PR" >&2
-  TRACKER_WT=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+  TRACKER_WT=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
     --prefix tracker \
     --branch-name "fix-issues-tracker/$SPRINT_ID" \
     --purpose "fix-issues sprint-tracker skip-tag rollup" \

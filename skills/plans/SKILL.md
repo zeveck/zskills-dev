@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.30+5fcb4a"
+  version: "2026.05.31+e4e4af"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -147,7 +147,7 @@ NOT appear as separate top-level entries.
      mkdir -p "$ZSKILLS_AUDIT_DIR"
      PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
        python3 -m zskills_monitor.collect \
-       | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+       | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
            --rebuilt-at "$REBUILT_AT" \
        > "$INDEX"
    fi
@@ -280,7 +280,7 @@ mkdir -p "$ZSKILLS_AUDIT_DIR"
 set -o pipefail
 if ! PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
        python3 -m zskills_monitor.collect \
-     | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+     | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
          --rebuilt-at "$REBUILT_AT" \
      > "$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"; then
   echo "ERROR: python3 -m zskills_monitor.collect failed (or render-index.py rejected its output)" >&2

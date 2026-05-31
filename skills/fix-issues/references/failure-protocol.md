@@ -118,7 +118,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
+cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree>"
 status: failed
 date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
 source: fix-issues

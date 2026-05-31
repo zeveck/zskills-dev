@@ -65,7 +65,7 @@ This is for landing worktree work onto main via cherry-pick.
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
-   cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
+   cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree-path>"
    status: full
    date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
    source: commit-land

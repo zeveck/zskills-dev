@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.30+57057a"
+  version: "2026.05.31+2d84c8"
 ---
 
 # Update Z Skills Infrastructure
@@ -892,8 +892,13 @@ clone's latest tag (authoritative), plus how many skills have a different
 `metadata.version` upstream. Compute it like this:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Repo-level version: latest YYYY.MM.N tag in the source clone.
-current_zskills_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+current_zskills_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 
 # Installed version: top-level `zskills_version` field in
 # .claude/zskills-config.json. Read with inline BASH_REMATCH (NOT
@@ -910,7 +915,7 @@ if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
 fi
 
 # Per-skill delta: count rows whose `metadata.version` differs upstream.
-delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
 ```
 
@@ -1000,7 +1005,12 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   mirror):
 
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
   ```
 
   Report the result verbatim per Step F's exit-code table (0 applied / 1
@@ -1792,7 +1802,12 @@ If `$PRESET_ARG` is empty, skip this step entirely — nothing to do.
 Otherwise:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
 
 Capture stdout and the exit code. Report to the user verbatim:
@@ -1821,9 +1836,14 @@ This is what the audit gap report (Step 6) and `/briefing` "Z Skills
 Update Check" read to detect drift on subsequent invocations:
 
 ```bash
-new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 if [ -n "$new_repo_ver" ]; then
-  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
+  bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/json-set-string-field.sh" \
     "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
 fi
 ```
@@ -1867,10 +1887,15 @@ is already present under `.claude/skills/`; otherwise filter them out.
 Same renderer logic as the update-path table (see Pull Latest step 6).
 
 ```bash
-delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 show_addons=0
 case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-[ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+[ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
 printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
   $2 == "addon" && show_addons == 0 { next }
   { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
@@ -1914,7 +1939,12 @@ had no tags).
    "Fill All Gaps"):
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
    ```
 
    Capture stdout and exit code; report verbatim to the user. This is
@@ -1928,9 +1958,14 @@ had no tags).
    Check" read on the next invocation:
 
    ```bash
-   new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
    if [ -n "$new_repo_ver" ]; then
-     bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
+     bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/json-set-string-field.sh" \
        "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
    fi
    ```
@@ -1970,10 +2005,15 @@ had no tags).
    Generation pseudocode (pure bash + awk):
 
    ```bash
-   delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
    show_addons=0
    case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-   [ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+   [ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
    # Updated section (status=bumped: old → new), then unchanged:
    printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
      $2 == "addon" && show_addons == 0 { next }

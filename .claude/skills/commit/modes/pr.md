@@ -90,7 +90,7 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="commit.$BRANCH_SLUG"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Echo (do not env-export) the pipeline id — matches /quickfix's tier-2
 # transcript-propagation idiom (`skills/quickfix/SKILL.md:634`) and
 # satisfies the conformance test at `tests/test-skill-conformance.sh:1050`

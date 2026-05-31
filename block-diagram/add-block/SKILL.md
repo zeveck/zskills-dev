@@ -4,7 +4,7 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks to
   "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.30+827509"
+  version: "2026.05.31+f06c8e"
 ---
 
 # Adding Block Types
@@ -20,9 +20,14 @@ atomic `.zskills-tracked` write from `--pipeline-id`. No manual
 `.zskills-tracked` write is needed.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 if [ ! -x "$HELPER" ]; then
   echo "add-block: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
@@ -86,6 +91,11 @@ run this block; the sanitizer is deterministic so both yield the same
 PIPELINE_ID and BLOCK_SLUG given the same `$BLOCK_NAME`.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # 3-tier PIPELINE_ID resolution: env → worktree .zskills-tracked
 # (parent's PIPELINE_ID inherited via the worktree file written by
@@ -95,9 +105,9 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
   PIPELINE_ID=$(tr -d '[:space:]' < ".zskills-tracked")
 fi
 : "${PIPELINE_ID:=add-block.${BLOCK_NAME}}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Sanitised per-marker suffix slug — pairs with add-example's NAME_SLUG.
-BLOCK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
+BLOCK_SLUG=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$BLOCK_NAME")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 ```
 

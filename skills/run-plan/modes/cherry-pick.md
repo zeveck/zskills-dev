@@ -150,7 +150,7 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      fi
-     cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree-path>"
+     cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree-path>"
      status: landed
      date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
      source: run-plan
@@ -160,7 +160,12 @@ ZSKILLS_PATHS_ROOT="$CLAUDE_PROJECT_DIR" \
      ```
   6. **Run `.claude/skills/commit/scripts/land-phase.sh`** — atomic post-landing cleanup:
      ```bash
-     bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     else
+       . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+     fi
+     bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/land-phase.sh" "$WORKTREE_PATH"
      ```
      This script handles everything: verifies `.landed` marker, extracts
      logs to main's `.claude/logs/` (MUST succeed — exits 1 on failure),

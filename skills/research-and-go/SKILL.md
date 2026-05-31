@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.30+ecf4a2"
+  version: "2026.05.31+bd74ac"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -89,6 +89,11 @@ descriptions compose the same way as single-line ones: distill the
 intent, don't splice lines.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "${SCOPE:-}" ]; then
   echo "ERROR: SCOPE not set — model-layer composition step skipped." >&2
   exit 5
@@ -99,7 +104,7 @@ if ! [[ "$SCOPE" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#SCOPE} -gt 30 ]; then
 fi
 
 PIPELINE_ID="research-and-go.$SCOPE"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 # Recover SCOPE after sanitization (strip the "research-and-go." prefix).
 # Sanitization is idempotent on a validator-passing $SCOPE, but keep the
 # recovery so any future change to the sanitizer cannot silently skew

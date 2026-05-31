@@ -8,7 +8,7 @@ description: >-
   worktrees. Covers $ZSKILLS_REPORTS_DIR/SPRINT_REPORT.md and any
   landed-but-unclosed issues from prior sprints.
 metadata:
-  version: "2026.05.30+3bbb20"
+  version: "2026.05.31+cb2e7e"
 ---
 
 # /fix-report — Sprint Report Review & Landing
@@ -48,14 +48,14 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 if [ ! -x "$HELPER" ]; then
   echo "fix-report: ensure-worktree.sh missing at $HELPER — run /update-zskills to repair" >&2
   exit 11
 fi
 FIX_REPORT_TS=$(date -u +%Y%m%d-%H%M%S)
 FIX_REPORT_PIPELINE_ID="fix-report.${FIX_REPORT_TS}"
-FIX_REPORT_PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_REPORT_PIPELINE_ID")
+FIX_REPORT_PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_REPORT_PIPELINE_ID")
 WT_PATH=$(bash "$HELPER" \
   --prefix fix-report \
   --pipeline-id "$FIX_REPORT_PIPELINE_ID" \
@@ -213,7 +213,7 @@ For each issue with `User Verify: NEEDED`:
    - What to look at (specific UI element, panel, interaction)
    - Steps to reproduce (open app → navigate → interact → observe)
    - What "correct" looks like (expected appearance or behavior)
-   - URL: `http://localhost:$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/port.sh")/`
+   - URL: `http://localhost:$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/port.sh")/`
    - The user may be verifying hours later — "check the UI" is useless.
      Be specific: "Open the toolstrip, click the lightning icon, verify
      the Physical Variables panel opens with a table showing V, I, P

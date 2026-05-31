@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.05.30+209842"
+  version: "2026.05.31+5d0909"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
@@ -62,7 +62,7 @@ the worktree, not main:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 # Caller-side install-integrity fallback (DA-R3-2): if /update-zskills
 # Step 3 ran as per-file-diff and skipped the new file, the helper itself
 # is missing. Emit an actionable exit-11 message instead of bash's
@@ -179,7 +179,7 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: refine-plan\nid: %s\nplan: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$PLAN_FILE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -426,7 +426,7 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'round: %s\ncompleted: %s\n' "$ROUND" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.refine-plan.$TRACKING_ID.review"
 ```
@@ -743,7 +743,7 @@ else
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-refine-plan.$TRACKING_ID}"
-PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.refine-plan.$TRACKING_ID.finalize"
 

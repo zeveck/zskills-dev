@@ -78,7 +78,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
-        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
+        cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree>"
         status: full
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
@@ -88,7 +88,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         # Release the per-issue claim (plan W2.6b — successful cherry-pick
         # terminal). $HELPER and $ISSUE_NUM are defined in the per-worktree
         # iteration body upstream:
-        #   HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+        #   HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
         #   ISSUE_NUM=<issue number extracted from the worktree's branch name>
         # `|| true` because release is idempotent / best-effort at terminal arms.
         bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
@@ -100,7 +100,7 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
-        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
+        cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree>"
         status: partial
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
