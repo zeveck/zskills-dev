@@ -108,6 +108,40 @@ Exit 0. **No tracking marker is written for `next`** (read-only).
 For `N`/`all` invocations, build the dispatch list and write the
 sprint sentinel.
 
+### Cron-overlap in-flight guard (queue-pickup; #877)
+
+A recurring `every`-cron fires as a `Run /work-on-plans …` turn into the
+SAME active session as a batch that may still be executing across turns
+(CronCreate idle is turn-level, not task-level). Before building the
+dispatch list, ask the shared detector whether THIS session already has a
+fresh work-on-plans batch sentinel; if so, skip this redundant pickup —
+the in-flight batch finishes on its own turns and the next fire picks up
+fresh. Session-scoped (a parallel pipeline in a DIFFERENT session is never
+blocked) with a generous staleness escape inside the helper (a crashed
+batch never deadlocks the cron). Read-only modes (`next`, no-args) and the
+mutating subcommands (`add`/`rank`/`remove`/`default`/`every`/`stop`)
+already exited in Step 3 / are routed to other files, so they never reach
+this execute-path guard. It runs BEFORE the batch's own sentinel write
+below, so it never detects itself.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+GUARD="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$GUARD" ]; then
+  if INFLIGHT_RUN=$(bash "$GUARD" \
+      --glob '.zskills/tracking/*/pipeline.work-on-plans.*' \
+      --session "${CLAUDE_CODE_SESSION_ID:-}" \
+      --root "$MAIN_ROOT"); then
+    echo "work-on-plans run $INFLIGHT_RUN in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+fi
+```
+
 ```bash
 # Dispatch list: take the first N ready entries (or all when "all").
 mapfile -t READY_LINES < <(printf '%s' "$READY_TSV" \
@@ -167,6 +201,28 @@ SPRINT_ID="${PIPELINE_ID#work-on-plans.}"
 PIPELINE_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 mkdir -p "$PIPELINE_DIR"
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+```
+
+### Batch in-flight guard sentinel (#877)
+
+Write a uniform `key: value` guard sentinel the shared
+`check-inflight-batch.sh` detector reads (the batch-scoped `$WORK_STATE`
+JSON the dashboard reads uses a different identity scheme — `<host>:<pid>`
+— so a small parallel sentinel keyed on `CLAUDE_CODE_SESSION_ID` keeps the
+detector simple and symmetric with `/fix-issues`). Removed in the
+end-of-batch finalize below. `workId: $SPRINT_ID` is the per-batch key the
+sibling same-work guard (#883) would match on.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
+printf 'skill: work-on-plans\nmode: batch\nsession: %s\nworkId: %s\nstartedAt: %s\n' \
+  "${CLAUDE_CODE_SESSION_ID:-}" "$SPRINT_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+  > "$PIPELINE_DIR/pipeline.work-on-plans.$SPRINT_ID"
 ```
 
 The PID-derived suffix keeps concurrent invocations on the same host
@@ -385,6 +441,11 @@ empty-after-failure):
      "$SPRINT_ID" "$DISPATCH_COUNT" "$DONE" "${CONTINUE_ON_FAILURE:-0}" \
      "$SPRINT_FINAL_STATUS" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$PIPELINE_DIR/fulfilled.work-on-plans.$SPRINT_ID"
+   # Clear the cron-overlap in-flight guard sentinel (#877). Reached on
+   # all-done AND failure-with-continue AND empty-after-failure; a hard
+   # failure-without-continue exits before here and the helper's staleness
+   # escape reclaims the leaked sentinel.
+   rm -f "$PIPELINE_DIR/pipeline.work-on-plans.$SPRINT_ID"
    ```
 
 2. Rewrite `$WORK_STATE` to `{"state":"idle"}` (last-writer-wins):

@@ -130,6 +130,41 @@ PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeli
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 ```
 
+### Cron-overlap in-flight guard (queue-pickup; #877)
+
+A recurring `every`-cron fires as a `Run /fix-issues …` turn into the SAME
+active session as a sprint that may still be executing across turns
+(CronCreate idle is turn-level, not task-level). Before any worktree
+creation or tracker work, ask the shared detector whether THIS session
+already has a fresh fix-issues sprint sentinel. If so, skip this redundant
+pickup — the in-flight sprint finishes on its own turns and the next fire
+picks up fresh. Session-scoped, so a parallel `/fix-issues` pipeline in a
+DIFFERENT session is never blocked; a generous staleness escape inside the
+helper means a crashed sprint never deadlocks the cron. Subcommands
+(`stop`/`next`/`sync`/`add`/`rank`/`remove`/default) never reach here —
+they are dispatched earlier in `SKILL.md` and never load this sprint-mode
+file. This guard runs BEFORE the sprint's own sentinel write below, so it
+never detects itself.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+GUARD="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$GUARD" ]; then
+  if INFLIGHT_RUN=$(bash "$GUARD" \
+      --glob '.zskills/tracking/*/pipeline.fix-issues.*' \
+      --session "${CLAUDE_CODE_SESSION_ID:-}" \
+      --root "$MAIN_ROOT"); then
+    echo "fix-issues run $INFLIGHT_RUN in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+fi
+```
+
 ### Live worktree count check (defer-all gate)
 
 **Run this BEFORE the sprint worktree gate below.** If the host is already
@@ -250,8 +285,8 @@ fi
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
-  printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
-    "$N" "${FOCUS:-default}" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+  printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nsession: %s\nworkId: %s\nstartedAt: %s\n' \
+    "$N" "${FOCUS:-default}" "${CLAUDE_CODE_SESSION_ID:-}" "$SPRINT_ID" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
 fi
 ```

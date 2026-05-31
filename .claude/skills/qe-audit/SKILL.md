@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.31+968ff1"
+  version: "2026.05.31+0703c0"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -165,6 +165,58 @@ If `$ARGUMENTS` contains `every <schedule>`:
 
 If `every` is NOT present, skip this phase and proceed to the audit/bash
 (bare invocation always runs immediately).
+
+## In-flight guard + sentinel (#877)
+
+Both audit modes below file GitHub issues and mutate the QE issues
+tracker. A recurring `every`-cron fires as a `Run /qe-audit …` turn into
+the SAME active session as an audit that may still be running across turns
+(CronCreate idle is turn-level, not task-level). Two concurrent audits
+double-file the same findings → duplicate GitHub issues + tracker rows,
+which then feed the dashboard Ready queue into duplicate `/fix-issues`
+work. qe-audit has no claim/sentinel of its own, so this guard adds a
+minimal session-scoped one.
+
+Run this BEFORE either mode below. It is reached only on a real audit/bash
+run — `stop`/`next`/`now`-standalone and the `every`-without-`now` case all
+exit earlier, so they bypass the guard. The sentinel run-id is derived from
+`CLAUDE_CODE_SESSION_ID` so the Finalize block can reconstruct and remove
+it without relying on shell-variable persistence across fences. The guard
+runs BEFORE the sentinel write, so it never detects itself; session-scoped,
+so a concurrent audit in a DIFFERENT session is never blocked; a generous
+staleness escape inside the helper means a crashed audit never deadlocks
+the cron.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+
+GUARD="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$GUARD" ]; then
+  if INFLIGHT_RUN=$(bash "$GUARD" \
+      --glob '.zskills/tracking/*/pipeline.qe-audit.*' \
+      --session "${CLAUDE_CODE_SESSION_ID:-}" \
+      --root "$MAIN_ROOT"); then
+    echo "qe-audit run $INFLIGHT_RUN in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+fi
+
+# Write a minimal session-scoped in-flight sentinel (qe-audit has no other
+# claim mechanism). The run-id is the sanitized session id so Finalize can
+# rebuild the path deterministically.
+SESSION_SLUG=$(printf '%s' "${CLAUDE_CODE_SESSION_ID:-unknown}" | tr -cd 'a-zA-Z0-9' | head -c 24)
+[ -n "$SESSION_SLUG" ] || SESSION_SLUG="unknown"
+QE_SENTINEL_DIR="$MAIN_ROOT/.zskills/tracking/qe-audit.$SESSION_SLUG"
+mkdir -p "$QE_SENTINEL_DIR"
+printf 'skill: qe-audit\nsession: %s\nworkId: %s\nstartedAt: %s\n' \
+  "${CLAUDE_CODE_SESSION_ID:-}" "$SESSION_SLUG" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+  > "$QE_SENTINEL_DIR/pipeline.qe-audit.$SESSION_SLUG"
+```
 
 ## Mode: Commit Audit (default)
 
@@ -337,6 +389,9 @@ If a candidate fails any of the 3, the agent stands down. Yield 0-1 issues is a 
    > Audit complete. Filed N issues. Next audit in ~23h 55m (~9:03 AM ET
    > tomorrow, cron XXXX).
 
+9. **Finalize** — run the [Finalize](#finalize--clear-the-in-flight-sentinel-877)
+   block to clear this session's in-flight sentinel (#877).
+
 ### Tips for commit audit
 - Skip docs-only, config-only, and log-only commits
 - For physics/solver commits, pay extra attention to numerical correctness
@@ -471,6 +526,9 @@ Run when `bash` IS present in arguments.
    - Screenshots taken (if manual testing)
    - If a cron is active, include the next run time
 
+9. **Finalize** — run the [Finalize](#finalize--clear-the-in-flight-sentinel-877)
+   block to clear this session's in-flight sentinel (#877).
+
 ## Key Rules
 
 - **Never weaken tests** — if a bash test reveals a real bug, file an issue.
@@ -484,3 +542,24 @@ Run when `bash` IS present in arguments.
   fixes them. Keep the separation clean.
 - **Ultrathink** — use careful, thorough reasoning. Read code, understand
   what changed and why, verify correctness.
+
+## Finalize — clear the in-flight sentinel (#877)
+
+Reached at the END of BOTH modes (Commit Audit and Bash), on any
+completion path. Removes this session's in-flight sentinel so the next
+cron fire is free to start a fresh audit. The path is reconstructed from
+`CLAUDE_CODE_SESSION_ID` (no cross-fence variable dependency). If an audit
+aborts before reaching here, the helper's staleness escape reclaims the
+leaked sentinel on a later fire.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+SESSION_SLUG=$(printf '%s' "${CLAUDE_CODE_SESSION_ID:-unknown}" | tr -cd 'a-zA-Z0-9' | head -c 24)
+[ -n "$SESSION_SLUG" ] || SESSION_SLUG="unknown"
+rm -f "$MAIN_ROOT/.zskills/tracking/qe-audit.$SESSION_SLUG/pipeline.qe-audit.$SESSION_SLUG"
+```
