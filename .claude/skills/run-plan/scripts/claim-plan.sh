@@ -12,14 +12,23 @@
 # points at the wrong root; DA4.1 / DA7 invariant).
 #
 # Subcommands:
-#   acquire <slug> --pipeline-id <id>
+#   acquire <slug> --pipeline-id <id> [--dispatch-mode <mode>]
 #     Exit 0  — acquired-fresh OR self-re-entry (caller already owns this
 #               claim — the stored pipeline_id matches --pipeline-id).
-#     Exit 2  — usage error (bad slug, missing flags).
+#     Exit 2  — usage error (bad slug, missing flags, invalid dispatch-mode).
 #     Exit 10 — foreign-held by another pipeline (OR claim already exists
 #               but claim.json absent/malformed — never steal).
 #     Exit 11 — non-EEXIST mkdir failure / fs error / atomic-write failure
 #               (EACCES/ENOSPC/EDQUOT/EROFS/...).
+#
+#     --dispatch-mode <mode> (issue #874): persists the dispatch mode the
+#     plan is being driven under into claim.json as `dispatch_mode`.
+#     Permitted values: `phase`, `finish`, `inherit`. `inherit` is a
+#     no-op (field omitted from claim.json). The dashboard reads the
+#     field to render the locked finish chip across the full /run-plan
+#     lifetime — outliving the /work-on-plans wrapper that spawned it.
+#     Sibling to #858 (the wrapper-lifetime batch_mode signal); this
+#     field covers the claim's full duration.
 #   release <slug> --require-pipeline <id>
 #     Exit 0  — released (or already absent — idempotent).
 #     Exit 2  — usage error.
@@ -41,11 +50,16 @@
 #       <slug>\t<pipeline_id>\t<age_seconds>
 #
 # Schema (claim.json, D5):
-#   {schema_version, kind, slug, pipeline_id, started_at, current_phase}
+#   {schema_version, kind, slug, pipeline_id, started_at, current_phase
+#    [, dispatch_mode]}
 #   sorted-keys, schema_version=1.
 #   current_phase is initialised to "Phase 0 — acquired" at acquire and
 #   updated by the `set-phase` subcommand. age_seconds is derived from
 #   started_at.
+#   dispatch_mode is OPTIONAL (#874). When --dispatch-mode is `phase` or
+#   `finish`, the field is set verbatim. When omitted or `inherit`, the
+#   field is NOT written — pre-#874 callers and back-compat readers see
+#   the original 6-field schema.
 #
 # Atomicity:
 #   acquire: `mkdir <dir>` is the POSIX atomic primitive; then write
@@ -189,15 +203,16 @@ sanitize_and_validate_slug() {
 # acquire <slug> --pipeline-id <id>
 # ---------------------------------------------------------------------------
 cmd_acquire() {
-  local raw_slug="" pipeline_id=""
+  local raw_slug="" pipeline_id="" dispatch_mode=""
   if [ "$#" -lt 1 ]; then
-    echo "Usage: claim-plan.sh acquire <slug> --pipeline-id <id>" >&2
+    echo "Usage: claim-plan.sh acquire <slug> --pipeline-id <id> [--dispatch-mode <phase|finish|inherit>]" >&2
     return 2
   fi
   raw_slug="$1"; shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --pipeline-id) pipeline_id="${2:-}"; shift 2 ;;
+      --dispatch-mode) dispatch_mode="${2:-}"; shift 2 ;;
       *) echo "run-plan claim-plan.sh acquire: unknown arg '$1'" >&2; return 2 ;;
     esac
   done
@@ -206,6 +221,17 @@ cmd_acquire() {
     echo "run-plan claim-plan.sh acquire: --pipeline-id is required" >&2
     return 2
   fi
+  # Validate --dispatch-mode (issue #874). Empty (flag absent) and
+  # `inherit` are both no-op signals — the field is not written. Only
+  # `phase` and `finish` are persisted verbatim. Anything else is a
+  # usage error.
+  case "$dispatch_mode" in
+    ""|inherit|phase|finish) ;;
+    *)
+      echo "run-plan claim-plan.sh acquire: --dispatch-mode must be one of phase|finish|inherit (got '$dispatch_mode')" >&2
+      return 2
+      ;;
+  esac
   resolve_main_root || return 2
 
   local claims_root="${MAIN_ROOT}/.zskills/claims"
@@ -258,9 +284,13 @@ cmd_acquire() {
   # "Phase 0 — acquired" so the dashboard chip renders `phase 0/M`
   # immediately on acquire (not `phase ?/M`); subsequent updates flow
   # through the `set-phase` subcommand.
-  if ! "$_CLAIM_PYTHON" - "$claim_tmp" "$claim_file" "$pipeline_id" "$SLUG" <<'PY'
+  #
+  # dispatch_mode (#874): if non-empty and not `inherit`, persist
+  # alongside the 6-field core schema. Pre-#874 readers tolerate the
+  # extra key (collect.py uses an explicit allow-list).
+  if ! "$_CLAIM_PYTHON" - "$claim_tmp" "$claim_file" "$pipeline_id" "$SLUG" "$dispatch_mode" <<'PY'
 import json, os, sys, datetime
-tmp_path, final_path, pipeline_id, slug = sys.argv[1:5]
+tmp_path, final_path, pipeline_id, slug, dispatch_mode = sys.argv[1:6]
 now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
 body = {
     "schema_version":     1,
@@ -270,6 +300,8 @@ body = {
     "started_at":         now,
     "current_phase":      "Phase 0 — acquired",
 }
+if dispatch_mode and dispatch_mode != "inherit":
+    body["dispatch_mode"] = dispatch_mode
 with open(tmp_path, "w") as f:
     json.dump(body, f, sort_keys=True)
     f.write("\n")

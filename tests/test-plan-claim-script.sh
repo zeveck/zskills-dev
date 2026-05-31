@@ -258,6 +258,87 @@ else
 fi
 
 # ───────────────────────────────────────────────────────────────────────
+# 21. --dispatch-mode "finish" persists dispatch_mode="finish" on claim.json (#874).
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire dmfinish --pipeline-id "run-plan.dmfinish" --dispatch-mode finish
+) 2>/dev/null
+DM_FILE="$REPO1/.zskills/claims/plan-dmfinish/claim.json"
+if [ -f "$DM_FILE" ]; then
+  DM_VAL=$("$PYTHON" -c "import json; print(json.load(open('$DM_FILE')).get('dispatch_mode','<absent>'))")
+  if [ "$DM_VAL" = "finish" ]; then
+    pass "--dispatch-mode finish persists dispatch_mode='finish' (#874)"
+  else
+    fail "--dispatch-mode finish persists" "got dispatch_mode=<$DM_VAL>"
+  fi
+else
+  fail "--dispatch-mode finish acquire" "claim.json missing"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 22. --dispatch-mode "phase" persists dispatch_mode="phase" on claim.json.
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire dmphase --pipeline-id "run-plan.dmphase" --dispatch-mode phase
+) 2>/dev/null
+DMP_FILE="$REPO1/.zskills/claims/plan-dmphase/claim.json"
+if [ -f "$DMP_FILE" ]; then
+  DMP_VAL=$("$PYTHON" -c "import json; print(json.load(open('$DMP_FILE')).get('dispatch_mode','<absent>'))")
+  if [ "$DMP_VAL" = "phase" ]; then
+    pass "--dispatch-mode phase persists dispatch_mode='phase'"
+  else
+    fail "--dispatch-mode phase persists" "got dispatch_mode=<$DMP_VAL>"
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 23. --dispatch-mode "inherit" is a no-op (field omitted from claim.json).
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire dminherit --pipeline-id "run-plan.dminherit" --dispatch-mode inherit
+) 2>/dev/null
+DMI_FILE="$REPO1/.zskills/claims/plan-dminherit/claim.json"
+if [ -f "$DMI_FILE" ]; then
+  DMI_HAS=$("$PYTHON" -c "import json; d=json.load(open('$DMI_FILE')); print('yes' if 'dispatch_mode' in d else 'no')")
+  if [ "$DMI_HAS" = "no" ]; then
+    pass "--dispatch-mode inherit omits dispatch_mode field (back-compat)"
+  else
+    fail "--dispatch-mode inherit omits" "dispatch_mode present in claim.json"
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 24. Flag absent: dispatch_mode field omitted (pre-#874 schema).
+# ───────────────────────────────────────────────────────────────────────
+(
+  cd "$REPO1"
+  bash "$CLAIM_SH" acquire dmabsent --pipeline-id "run-plan.dmabsent"
+) 2>/dev/null
+DMA_FILE="$REPO1/.zskills/claims/plan-dmabsent/claim.json"
+if [ -f "$DMA_FILE" ]; then
+  DMA_HAS=$("$PYTHON" -c "import json; d=json.load(open('$DMA_FILE')); print('yes' if 'dispatch_mode' in d else 'no')")
+  if [ "$DMA_HAS" = "no" ]; then
+    pass "flag absent: dispatch_mode field omitted (pre-#874 schema unchanged)"
+  else
+    fail "flag absent omits" "dispatch_mode present in claim.json"
+  fi
+fi
+
+# ───────────────────────────────────────────────────────────────────────
+# 25. Invalid --dispatch-mode value returns exit 2.
+# ───────────────────────────────────────────────────────────────────────
+(cd "$REPO1" && bash "$CLAIM_SH" acquire dmbogus --pipeline-id "run-plan.dmbogus" --dispatch-mode bogus) 2>/dev/null
+rc_bogus=$?
+if [ "$rc_bogus" -eq 2 ] && [ ! -d "$REPO1/.zskills/claims/plan-dmbogus" ]; then
+  pass "--dispatch-mode bogus returns exit 2 (usage error, no claim created)"
+else
+  fail "--dispatch-mode bogus exit 2" "rc=$rc_bogus dir=$([ -d "$REPO1/.zskills/claims/plan-dmbogus" ] && echo yes || echo no)"
+fi
+
+# ───────────────────────────────────────────────────────────────────────
 # Summary
 # ───────────────────────────────────────────────────────────────────────
 echo ""

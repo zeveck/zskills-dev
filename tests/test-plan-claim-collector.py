@@ -143,8 +143,56 @@ class ReadPlanClaimsTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short"},
+             "age_seconds", "pipeline_short", "dispatch_mode"},
         )
+        # dispatch_mode (#874) is on the allow-list. Absent in the
+        # source claim → surfaces as None.
+        self.assertIsNone(c["dispatch_mode"])
+
+    def test_dispatch_mode_finish_persists(self) -> None:
+        # #874: claim.json carrying dispatch_mode="finish" must surface
+        # the field verbatim so the dashboard mode chip can lock.
+        _write_plan_claim(self.claims, "dmfinish", {
+            "schema_version": 1,
+            "kind": "plan",
+            "slug": "dmfinish",
+            "pipeline_id": "run-plan.dmfinish",
+            "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "current_phase": "Phase 2",
+            "dispatch_mode": "finish",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertEqual(out["dmfinish"]["dispatch_mode"], "finish")
+
+    def test_dispatch_mode_phase_persists(self) -> None:
+        _write_plan_claim(self.claims, "dmphase", {
+            "schema_version": 1,
+            "kind": "plan",
+            "slug": "dmphase",
+            "pipeline_id": "run-plan.dmphase",
+            "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "current_phase": "Phase 2",
+            "dispatch_mode": "phase",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertEqual(out["dmphase"]["dispatch_mode"], "phase")
+
+    def test_dispatch_mode_unknown_rejected_as_none(self) -> None:
+        # An invalid string in claim.json (would only happen if a future
+        # writer drifted) must NOT propagate to the dashboard — the
+        # collector clamps to None and the chip falls through to its
+        # default precedence.
+        _write_plan_claim(self.claims, "dmbogus", {
+            "schema_version": 1,
+            "kind": "plan",
+            "slug": "dmbogus",
+            "pipeline_id": "run-plan.dmbogus",
+            "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "current_phase": "Phase 1",
+            "dispatch_mode": "bogus",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertIsNone(out["dmbogus"]["dispatch_mode"])
 
     def test_pipeline_short_derived(self) -> None:
         _write_plan_claim(self.claims, "pidcheck", {
@@ -240,6 +288,7 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
             "current_phase": "Phase 2",
             "age_seconds": 30.0,
             "pipeline_short": "alpha",
+            "dispatch_mode": "finish",
         }
         with mock.patch.object(collect, "_read_plan_claims",
                                return_value={"alpha": fake_claim}) as mocked:
@@ -250,6 +299,11 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertEqual(c["pipeline_id"], "run-plan.alpha")
         self.assertEqual(c["current_phase"], "Phase 2")
         self.assertEqual(c["started_at"], "2026-05-21T01:07:31+00:00")
+        # #874: dispatch_mode threads through the allow-list onto plan["claim"]
+        # so the dashboard chip can lock LOCKED finish across the full
+        # /run-plan lifetime (outliving the /work-on-plans wrapper that
+        # spawned it — sibling to #858's wrapper-lifetime batch_mode).
+        self.assertEqual(c["dispatch_mode"], "finish")
         # Allow-list discipline.
         self.assertNotIn("host_pid", c)
         self.assertNotIn("worktree_path", c)
@@ -259,7 +313,7 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short"},
+             "age_seconds", "pipeline_short", "dispatch_mode"},
         )
         # Plan beta has no claim attached.
         self.assertNotIn("claim", plans[1])

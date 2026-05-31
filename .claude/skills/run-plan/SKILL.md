@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.31+05dac8"
+  version: "2026.05.31+c74b30"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -629,9 +629,19 @@ else
 fi
 PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+# Resolve dispatch_mode for the claim record (issue #874 — sibling to
+# #858). The chip's lock condition reads plan.claim.dispatch_mode, which
+# outlives the /work-on-plans wrapper that spawned this /run-plan. Map
+# the canonical $FINISH_MODE ("finish"|"finish-auto"|"") to the
+# claim-side enum (phase|finish|inherit).
+DISPATCH_MODE_FOR_CLAIM="phase"
+if [ "$FINISH_MODE" = "finish" ] || [ "$FINISH_MODE" = "finish-auto" ]; then
+  DISPATCH_MODE_FOR_CLAIM="finish"
+fi
 set +e
 bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/claim-plan.sh" \
-  acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID"
+  acquire "$PLAN_SLUG" --pipeline-id "$PIPELINE_ID" \
+  --dispatch-mode "$DISPATCH_MODE_FOR_CLAIM"
 rc=$?
 set -e
 case "$rc" in

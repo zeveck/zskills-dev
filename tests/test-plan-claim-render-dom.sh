@@ -398,6 +398,99 @@ function collectText(node) {
   expect(findByClass(card, "claim-chip"), null,
     "no claim-chip rendered when plan.claim absent");
 }
+
+// ------------------------------------------------------------------
+// T3.11.#874.a — Ready col + claim.dispatch_mode='finish' → mode chip
+// LOCKED, regardless of entryMode/defaultMode. This is the core
+// regression gate: post wrapper-idle, the chip MUST still read locked.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "lockfinish", title: "Locked finish", status: "active",
+    phase_count: 5, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.lockfinish",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 60,
+      pipeline_short: "lock-abc",
+      dispatch_mode: "finish",
+    },
+  };
+  // defaultMode="phase" — the precedence MUST come from the claim, not
+  // the dashboard default. This is exactly the post-wrapper-idle case.
+  const card = buildPlanCard(plan, "lockfinish", "ready", "phase");
+  const modeChip = findByClass(card, "mode-chip");
+  expectTrue(modeChip,
+    "mode-chip rendered on Ready card with claim.dispatch_mode='finish'");
+  if (modeChip) {
+    expect(modeChip.getAttribute("data-state"), "running-finish",
+      "#874: data-state='running-finish' (LOCKED) when claim.dispatch_mode='finish'");
+    expect(modeChip.getAttribute("aria-disabled"), "true",
+      "#874: aria-disabled='true' when LOCKED");
+    expect(modeChip.getAttribute("disabled"), "disabled",
+      "#874: disabled attr present when LOCKED");
+    // Critically: NO data-action — the chip is informational only when
+    // locked, never togglable.
+    expect(modeChip.getAttribute("data-action"), null,
+      "#874: no data-action='toggle-mode' when LOCKED");
+  }
+}
+
+// ------------------------------------------------------------------
+// T3.11.#874.b — Pre-#874 claim (no dispatch_mode) renders exactly as
+// before: defaultMode/entryMode precedence; defaultMode='phase' → NOT
+// locked (running-phase, togglable).
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "precompat", title: "Back-compat", status: "active",
+    phase_count: 4, phases_done: 1,
+    claim: {
+      pipeline_id: "run-plan.precompat",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 2",
+      age_seconds: 60,
+      pipeline_short: "pc-abc",
+      // dispatch_mode intentionally absent (or null surfaced by collector).
+    },
+  };
+  const card = buildPlanCard(plan, "precompat", "ready", "phase");
+  const modeChip = findByClass(card, "mode-chip");
+  expectTrue(modeChip, "mode-chip rendered for pre-#874 claim");
+  if (modeChip) {
+    expect(modeChip.getAttribute("data-state"), "running-phase",
+      "#874 back-compat: pre-#874 claim + defaultMode='phase' → 'running-phase' (NOT locked)");
+    expect(modeChip.getAttribute("aria-disabled"), null,
+      "#874 back-compat: no aria-disabled when not locked");
+  }
+}
+
+// ------------------------------------------------------------------
+// T3.11.#874.c — explicit dispatch_mode='phase' on a claim suppresses
+// the lock even if a future caller toggled to finish via the chip.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "phasepin", title: "Phase-pinned", status: "active",
+    phase_count: 4, phases_done: 1,
+    claim: {
+      pipeline_id: "run-plan.phasepin",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 2",
+      age_seconds: 60,
+      pipeline_short: "pp-abc",
+      dispatch_mode: "phase",
+    },
+  };
+  const card = buildPlanCard(plan, "phasepin", "ready", "phase");
+  const modeChip = findByClass(card, "mode-chip");
+  expectTrue(modeChip, "mode-chip rendered for dispatch_mode='phase' claim");
+  if (modeChip) {
+    expect(modeChip.getAttribute("data-state"), "running-phase",
+      "#874: dispatch_mode='phase' on claim → 'running-phase' (NOT locked)");
+  }
+}
 NODE
 )
 NODE_RC=$?
