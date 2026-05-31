@@ -7,7 +7,7 @@
 Skill distribution repo and presentation site for Z Skills.
 
 - `skills/` — source skill definitions (25 core)
-- `block-diagram/` — add-on skills (4)
+- `block-diagram/` — add-on skills (3)
 - `.claude/skills/` — installed skill copies (what Claude Code reads)
 - `hooks/` — source hook scripts
 - `scripts/` — consumer-customizable stubs (stop-dev.sh, test-all.sh) and release-only repo tooling (build-prod.sh, mirror-skill.sh); skill machinery moved to `.claude/skills/<owner>/scripts/` (port.sh, clear-tracking.sh, statusline.sh in `update-zskills`; plan-drift-correct.sh in `run-plan`; full mapping in `skills/update-zskills/references/script-ownership.md`)

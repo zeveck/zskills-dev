@@ -1,6 +1,6 @@
 # Block Diagram Domain Skills
 
-4 skills for block-diagram editors and visual modeling projects.
+3 skills for block-diagram editors and visual modeling projects.
 They demonstrate how to extend Z Skills with domain-specific workflows.
 
 ## Skills
@@ -10,7 +10,6 @@ They demonstrate how to extend Z Skills with domain-specific workflows.
 | `/add-block` | 878 | Full lifecycle for adding block types: plan, implement, register, UI, docs, tests, example, codegen, runtime, verification, landing |
 | `/add-example` | 390 | Example model creation: research concept, design layout, build model file, register, test, screenshot, verify |
 | `/model-design` | 252 | Layout guidelines for block diagrams and state charts based on MAAB/NASA standards |
-| `/review-feedback` | 97 | Triage exported feedback JSON into GitHub issues: deduplicate, independently re-rate severity, file |
 
 ## Using These Skills
 
@@ -25,7 +24,6 @@ selectors to your project's architecture, but the patterns are ready to use.
 | `/add-block` | Any project with a plugin/component registry (VS Code extensions, game entities) |
 | `/add-example` | Any project with example templates (starter projects, demo configurations) |
 | `/model-design` | Any project with visual layout rules (diagram tools, form builders, dashboards) |
-| `/review-feedback` | Any project that exports in-app user feedback to triage into an issue tracker |
 
 ## Installation
 

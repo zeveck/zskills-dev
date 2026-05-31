@@ -15,7 +15,7 @@
 
 **25 core skills that plan, build, test, fix, and ship** — so one
 developer can run a full engineering team. (23 user-facing slash
-commands, 2 internal helpers, four block-diagram add-ons, and a
+commands, 2 internal helpers, three block-diagram add-ons, and a
 battery of safety hooks.)
 
 Z Skills encodes hard-won lessons from real agent failures into reusable
@@ -151,7 +151,7 @@ safety hook). Every other config field is preserved. See
 
 ### Add-ons
 
-To include the block-diagram add-on (4 extra skills):
+To include the block-diagram add-on (3 extra skills):
 
 ```bash
 /update-zskills install --with-block-diagram-addons
@@ -489,8 +489,8 @@ by other skills — see Helpers below.
 
 ### Block Diagram Add-on (`block-diagram/`)
 
-4 additional skills for block-diagram editors (`/add-block`, `/add-example`,
-`/model-design`, `/review-feedback`). Not part of the core 25 — install if
+3 additional skills for block-diagram editors (`/add-block`, `/add-example`,
+`/model-design`). Not part of the core 25 — install if
 your project involves visual block diagrams.
 See [`block-diagram/README.md`](block-diagram/README.md).
 
