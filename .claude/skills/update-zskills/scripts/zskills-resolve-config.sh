@@ -58,6 +58,22 @@ if [ -z "${CLAUDE_PROJECT_DIR:-}" ]; then
   fi
 fi
 
+# Source the sibling path-resolution helper so every fence that sources this
+# config helper ALSO gets $ZSKILLS_SKILLS_ROOT (the lane-portable skills root
+# used by Family-2 bundled-script invocations). Corrected Family-1 bootstrap:
+# plugin lane lives under .../skills/update-zskills/scripts/, legacy lane under
+# $CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/. The guard avoids a
+# redundant re-source within one shell; zskills-paths.sh is independently
+# idempotent. CLAUDE_PROJECT_DIR is resolved above before this runs, so the
+# legacy branch anchors on the same project root as the rest of this helper.
+if [ -z "${ZSKILLS_SKILLS_ROOT:-}" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+  fi
+fi
+
 _ZSK_CFG="$CLAUDE_PROJECT_DIR/.claude/zskills-config.json"
 
 # Initialize string vars to empty FIRST (empty-pattern-guard).

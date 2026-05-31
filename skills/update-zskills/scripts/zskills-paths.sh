@@ -48,6 +48,16 @@ if [ -z "$_ZSK_PATHS_ROOT" ]; then
   fi
 fi
 
+# Lane-portable skills root. Plugin: the plugin tree (never a worktree). Legacy: the consumer
+# mirror under $CLAUDE_PROJECT_DIR — anchored on CLAUDE_PROJECT_DIR (NOT ZSKILLS_PATHS_ROOT),
+# matching today's hardcoded `$CLAUDE_PROJECT_DIR/.claude/skills/...` invocation behavior.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills" ]; then
+  ZSKILLS_SKILLS_ROOT="${CLAUDE_PLUGIN_ROOT}/skills"
+else
+  ZSKILLS_SKILLS_ROOT="$CLAUDE_PROJECT_DIR/.claude/skills"
+fi
+export ZSKILLS_SKILLS_ROOT
+
 # Pre-init vars to empty (empty-pattern-guard from DRIFT_ARCH_FIX). NOT export.
 ZSKILLS_PLANS_DIR=""
 ZSKILLS_ISSUES_DIR=""

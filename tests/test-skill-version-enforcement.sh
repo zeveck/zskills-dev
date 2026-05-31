@@ -54,6 +54,11 @@ make_sandbox() {
   chmod +x "$sandbox/scripts/"*.sh
   cp "$REPO_ROOT/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh" \
      "$sandbox/.claude/skills/update-zskills/scripts/"
+  # zskills-resolve-config.sh now sources its sibling zskills-paths.sh (to
+  # export $ZSKILLS_SKILLS_ROOT); copy it too so the source doesn't fail with
+  # "No such file or directory" inside the sandbox.
+  cp "$REPO_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh" \
+     "$sandbox/.claude/skills/update-zskills/scripts/"
 
   # Initial SKILL.md with placeholder version. We bump it to the real
   # hash after the first hash compute.
