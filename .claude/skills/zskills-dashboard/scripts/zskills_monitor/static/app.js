@@ -1128,11 +1128,22 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   // We still distinguish "queued" vs "running-phase" via data-state so
   // CSS can colorize running chips (signals "this is live"), but the
   // click behavior is the same in both.
-  // Effective mode = currentEntryMode(slug) || defaultMode || "phase".
+  // Effective mode precedence (issue #874):
+  //   1. plan.claim.dispatch_mode (persisted on the /run-plan claim;
+  //      outlives the /work-on-plans wrapper that spawned it — sibling
+  //      to #858's wrapper-lifetime batch_mode signal).
+  //   2. currentEntryMode(slug) explicit override.
+  //   3. defaultMode || "phase".
+  // Pre-#874 claims lack dispatch_mode → collect.py surfaces None →
+  // step 1 falls through to step 2 + step 3 unchanged. Back-compat is
+  // structural, not flag-gated.
   if (col === "ready") {
     const entryMode = currentEntryMode(slug);
     const isOverride = entryMode === "phase" || entryMode === "finish";
-    const effectiveMode = isOverride ? entryMode : (defaultMode || "phase");
+    const claimDispatchMode =
+      (plan && plan.claim && plan.claim.dispatch_mode) || null;
+    const effectiveMode =
+      claimDispatchMode || (isOverride ? entryMode : (defaultMode || "phase"));
     const isClaimed = !!(plan && plan.claim);
     const locked = isClaimed && effectiveMode === "finish";
     let state, ariaLabel;

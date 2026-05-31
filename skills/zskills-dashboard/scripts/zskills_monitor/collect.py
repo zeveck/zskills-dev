@@ -1813,7 +1813,10 @@ def _annotate_plans_queue(
             plan["queue"] = {"column": inferred, "index": -1, "mode": None}
         # Claim chip — explicit field allow-list (NOT **claim_dict).
         # NO `worktree_path`, NO `host_pid` — same scope discipline as
-        # the issue side (DA8 / DA2.1).
+        # the issue side (DA8 / DA2.1). `dispatch_mode` (#874) IS on the
+        # allow-list because the dashboard mode chip's lock condition
+        # reads it; the issue side intentionally does NOT mirror — it's
+        # a plan-claim concept.
         if isinstance(slug, str) and slug in plan_claim_index:
             c = plan_claim_index[slug]
             plan["claim"] = {
@@ -1822,6 +1825,7 @@ def _annotate_plans_queue(
                 "current_phase":  c.get("current_phase"),
                 "age_seconds":    c.get("age_seconds"),
                 "pipeline_short": c.get("pipeline_short"),
+                "dispatch_mode":  c.get("dispatch_mode"),
             }
 
 
@@ -2318,7 +2322,8 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
     """Read run-plan claim files under `${main_root}/.zskills/claims/plan-*/`.
 
     Returns `{slug: claim_dict}` keyed by string slug. Each dict carries:
-        pipeline_id, started_at, current_phase, age_seconds, pipeline_short
+        pipeline_id, started_at, current_phase, age_seconds,
+        pipeline_short, dispatch_mode
 
     Tolerant: malformed JSON emits a single stderr line and skips that
     claim. A claim directory present without `claim.json` surfaces a
@@ -2329,6 +2334,13 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
     `age_seconds` is computed from `started_at` (post-#684 cleanup
     removed `last_heartbeat_at` as a duplicate of `started_at`; phase
     progression is now signalled by `current_phase`, not chip age).
+
+    `dispatch_mode` (#874) is the persisted mode under which the plan
+    is being driven (`phase`, `finish`, or `None` when absent). The
+    field survives the wrapper-lifetime gap that #858 left exposed:
+    `/work-on-plans` resets to idle within seconds of dispatching, but
+    the `/run-plan` claim it spawned outlives it by hours, so the
+    dispatch mode must live on the claim, not on the wrapper state file.
     """
     out: Dict[str, Dict[str, Any]] = {}
     claims_dir = main_root / ".zskills" / "claims"
@@ -2363,6 +2375,7 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
                 "current_phase": None,
                 "age_seconds": None,
                 "pipeline_short": None,
+                "dispatch_mode": None,
             }
             continue
         try:
@@ -2383,6 +2396,16 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
         pipeline_id = body.get("pipeline_id")
         started_at = body.get("started_at")
         current_phase = body.get("current_phase")
+        # dispatch_mode (#874): persisted by claim-plan.sh acquire
+        # --dispatch-mode. Only `phase` / `finish` are valid persisted
+        # values; anything else (including absence) surfaces as None and
+        # the renderer falls back to the entry/default mode precedence.
+        raw_dispatch_mode = body.get("dispatch_mode")
+        dispatch_mode: Optional[str]
+        if isinstance(raw_dispatch_mode, str) and raw_dispatch_mode in ("phase", "finish"):
+            dispatch_mode = raw_dispatch_mode
+        else:
+            dispatch_mode = None
         # Compute age from started_at (post-#684 cleanup: last_heartbeat_at
         # was a duplicate of started_at and has been removed).
         age_seconds: Optional[float] = None
@@ -2404,6 +2427,7 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
             "current_phase": current_phase if isinstance(current_phase, str) else None,
             "age_seconds": age_seconds,
             "pipeline_short": pipeline_short,
+            "dispatch_mode": dispatch_mode,
         }
     return out
 
