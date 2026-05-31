@@ -5,7 +5,7 @@ helpers they dispatch. Looking for how to *combine* these skills into
 end-to-end workflows? See **[WORKFLOWS.md](../WORKFLOWS.md)**.
 
 > **Block-diagram add-on:** The domain-specific block-diagram skills
-> (`/add-block`, `/add-example`, `/model-design`, `/review-feedback`) are
+> (`/add-block`, `/add-example`, `/model-design`) are
 > documented separately in **[block-diagram/](block-diagram/README.md)** — they
 > are optional add-ons, not part of the core set.
 

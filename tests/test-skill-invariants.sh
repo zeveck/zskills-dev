@@ -466,15 +466,6 @@ else
   check 'meta: framework-wide checks cover block-diagram/' 'false'
 fi
 
-# Issue #583: /review-feedback Step 2 must independently re-rate severity
-# (sibling triage-discipline rule to QE_ISSUES.md #404/#444). Pass-through
-# of reporter's self-rated severity propagates miscategorization through
-# every downstream /fix-issues sprint.
-check "review-feedback re-rate severity rule (source)" \
-  'grep -q "Independently re-rate severity" block-diagram/review-feedback/SKILL.md'
-check "review-feedback re-rate severity rule (mirror)" \
-  'grep -q "Independently re-rate severity" .claude/skills/review-feedback/SKILL.md'
-
 # Issue #621: /briefing renderer paths must enumerate every canonical
 # worktree category. PR #532 (#516 fix) added
 # `landed-pr-merged-but-diverged` at the producer; readers

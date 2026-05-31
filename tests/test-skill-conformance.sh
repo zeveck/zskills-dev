@@ -3223,8 +3223,8 @@ for _h in "${HOOK_STAMP_TARGETS[@]}"; do
 done
 
 echo ""
-echo "=== weak-skill static invariants — doc / qe-audit / session-report / review-feedback ==="
-# SKILL_VERIFICATION_SMOKES Phase 3: the 4 LLM-judgment-bound skills have no
+echo "=== weak-skill static invariants — doc / qe-audit / session-report ==="
+# SKILL_VERIFICATION_SMOKES Phase 3: the LLM-judgment-bound skills have no
 # executable behavioral surface a shell smoke can drive — their only
 # deterministic property is static SKILL.md structure. Guard the documented
 # modes / formats / rules against accidental deletion with thin static greps.
@@ -3254,13 +3254,6 @@ check_fixed session-report "report template Headline:" '**Headline:**'
 check_fixed session-report "report template Intent → status:" '**Intent → status:**'
 check_fixed session-report "report template Next action:" '**Next action:**'
 check_fixed session-report "no-bulk-scans prohibition"  'Do not run bulk repo scans'
-
-# review-feedback (block-diagram skill) — severity-label mapping table +
-# one-issue-per-entry rule.
-check_fixed block-diagram/review-feedback "Label Mapping section heading" '## Label Mapping'
-check_fixed block-diagram/review-feedback "label-mapping table header" '| Feedback type | GitHub label |'
-check_fixed block-diagram/review-feedback "re-rated severity column" 'Re-rated Severity'
-check_fixed block-diagram/review-feedback "one-issue-per-entry rule" 'One GitHub issue per feedback entry'
 
 echo ""
 echo "---"

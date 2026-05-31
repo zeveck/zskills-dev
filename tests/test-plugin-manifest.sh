@@ -112,13 +112,13 @@ if zsbd is not None:
     out(zsbd.get("skills") == ["./"], "zsbd: skills == ['./']", repr(zsbd.get("skills")))
     out("hooks" not in zsbd, "zsbd: no 'hooks' field (rides with zs)", repr(zsbd.get("hooks")))
 
-# zsbd roster: re-derived list passed in via env must be exactly the 4
+# zsbd roster: re-derived list passed in via env must be exactly the 3
 # block-diagram SKILL.md-bearing dirs.
 expected = [s for s in os.environ.get("EXPECTED_BD_SKILLS", "").split(",") if s]
 expected_set = set(expected)
-canonical = {"add-block", "add-example", "model-design", "review-feedback"}
+canonical = {"add-block", "add-example", "model-design"}
 out(expected_set == canonical,
-    "zsbd roster: disk has exactly add-block/add-example/model-design/review-feedback",
+    "zsbd roster: disk has exactly add-block/add-example/model-design",
     repr(sorted(expected_set)))
 PY
 )

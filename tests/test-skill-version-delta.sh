@@ -146,24 +146,25 @@ else
 fi
 
 # Real-repo smoke check: run against the actual REPO_ROOT and assert the
-# row count is at least 26 core + 3 addon = 29.
+# row count is at least 25 core + 3 addon = 28.
 CLAUDE_PROJECT_DIR="$REPO_ROOT" bash "$HELPER" "$REPO_ROOT" > "$FIXT/real.tsv" 2>"$FIXT/real-err.txt"
 REAL_RC=$?
 if [ "$REAL_RC" -ne 0 ]; then
   fail "real-repo smoke: helper exit code 0" "rc=$REAL_RC stderr=$(cat "$FIXT/real-err.txt")"
 else
   REAL_LINES=$(wc -l < "$FIXT/real.tsv")
-  if [ "$REAL_LINES" -ge 29 ]; then
-    pass "real-repo smoke: $REAL_LINES rows (≥ 25 core + 4 addon = 29)"
+  if [ "$REAL_LINES" -ge 28 ]; then
+    pass "real-repo smoke: $REAL_LINES rows (≥ 25 core + 3 addon = 28)"
   else
-    fail "real-repo smoke row count" "expected ≥29 got $REAL_LINES"
+    fail "real-repo smoke row count" "expected ≥28 got $REAL_LINES"
   fi
   CORE_COUNT=$(awk -F'\t' '$2 == "core"' "$FIXT/real.tsv" | wc -l)
   ADDON_COUNT=$(awk -F'\t' '$2 == "addon"' "$FIXT/real.tsv" | wc -l)
-  # Issue #584: review-feedback moved from skills/ (core) to
-  # block-diagram/ (addon) — kind split now 25 core + 4 addon.
-  if [ "$CORE_COUNT" -ge 25 ] && [ "$ADDON_COUNT" -ge 4 ]; then
-    pass "real-repo smoke: core=$CORE_COUNT (≥25) addon=$ADDON_COUNT (≥4)"
+  # Issue #584: review-feedback was historically moved from skills/ (core)
+  # to block-diagram/ (addon); later removed entirely — kind split now
+  # 25 core + 3 addon.
+  if [ "$CORE_COUNT" -ge 25 ] && [ "$ADDON_COUNT" -ge 3 ]; then
+    pass "real-repo smoke: core=$CORE_COUNT (≥25) addon=$ADDON_COUNT (≥3)"
   else
     fail "real-repo smoke: kind split" "core=$CORE_COUNT addon=$ADDON_COUNT"
   fi
