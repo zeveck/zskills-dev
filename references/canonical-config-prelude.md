@@ -105,6 +105,34 @@ git-tracked). The helper internally reads `$CLAUDE_PROJECT_DIR` and fails
 loudly via `${CLAUDE_PROJECT_DIR:?...}` if it's unset, rather than
 silently expanding to an empty path.
 
+### Inline-prose `resolve via` references must use the lane-portable form (#832/#833)
+
+The "permanently valid" status above applies **only inside `` ```fenced``
+bash blocks** — where the single-line form is the legacy `/update-zskills`-lane
+source, and where it ALSO appears as the `else` fallback branch of the
+dual-lane prelude in §1. It does **not** extend to **inline prose**.
+
+An inline-prose reference is the single-backtick code-span form that shows up
+in a parenthetical, e.g.
+
+> Run `$FULL_TEST_CMD` (resolve via `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"` if you don't already have it).
+
+That wording instructs the agent to source a **single-lane** path. A
+mirror-less plugin install (the primary plugin consumer — no
+`.claude/skills/` mirror) following it runs a path that does not exist and
+fails. Inline-prose `resolve via` references MUST therefore use the
+lane-portable form, pointing at the dual-lane prelude in §1 rather than
+pasting the single-line literal:
+
+> Run `$FULL_TEST_CMD` (resolve via the dual-lane prelude in references/canonical-config-prelude.md §1 if you don't already have it in your environment).
+
+This is the distinction the conformance gate `=== Inline-prose resolve-via
+uses lane-portable wording (#832/#833) ===` in `tests/test-skill-conformance.sh`
+enforces: it is fence-aware and flags the single-lane literal **only** when it
+appears in an inline code-span on a non-fenced line, leaving the fence form
+(both the legacy source and the dual-prelude fallback) untouched per
+decision D23 / finding F-DA2-4.
+
 ## 2. Fallback semantics
 
 The helper produces empty values when the field is absent, the config is
