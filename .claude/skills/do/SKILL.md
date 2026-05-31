@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.31+9dc0b2"
+  version: "2026.05.31+4a50c0"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -783,9 +783,9 @@ Verification intensity matches the change type (from Phase 1):
 
 ### Code changes (js, css, html)
 
-- **Run `$FULL_TEST_CMD`** (resolve via
-  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-  if you don't already have it in your environment) — all suites must pass, not just unit tests.
+- **Run `$FULL_TEST_CMD`** (resolve via the dual-lane prelude in
+  references/canonical-config-prelude.md §1 if you don't already have it in
+  your environment) — all suites must pass, not just unit tests.
   **CRITICAL — Bash tool timeout:** invoke with `timeout: 600000` (10
   min); default 120000ms is shorter than the suite's runtime (~3-4
   min). Do NOT recover from a Bash timeout by retrying with

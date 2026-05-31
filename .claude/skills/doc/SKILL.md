@@ -8,7 +8,7 @@ description: >-
   newsletter entries (/doc newsletter). Use when the user asks to "write a
   newsletter entry", "add to the newsletter", or "update the newsletter".
 metadata:
-  version: "2026.05.15+550c1f"
+  version: "2026.05.31+b7e813"
 ---
 
 # /doc [blocks|examples|\<description>] — Documentation Audit & Fix
@@ -280,9 +280,9 @@ For each gap found:
 - Check all markdown formatting (links, images, tables)
 - Verify image references point to existing files
 - Verify model files load without errors (if dev server is up)
-- `$FULL_TEST_CMD` (resolve via
-  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-  if you don't already have it in your environment) if any code files
+- `$FULL_TEST_CMD` (resolve via the dual-lane prelude in
+  references/canonical-config-prelude.md §1 if you don't already have it in
+  your environment) if any code files
   were touched (component explorer, registry file, docs-registry.js,
   examples-dropdown.js)
 
@@ -315,8 +315,8 @@ Remaining gaps:
 - **Update all cross-references** — a new example needs entries in
   component explorer, `examples/README.md`, and relevant block
   explorer entries. Don't create orphaned docs.
-- **`$FULL_TEST_CMD` before committing** (resolve via
-  `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-  if you don't already have it in your environment) if code files were touched.
+- **`$FULL_TEST_CMD` before committing** (resolve via the dual-lane prelude in
+  references/canonical-config-prelude.md §1 if you don't already have it in
+  your environment) if code files were touched.
 - **Content-only changes skip tests** — if only markdown/images were
   changed, no test run needed.

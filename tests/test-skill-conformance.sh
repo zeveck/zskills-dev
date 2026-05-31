@@ -2177,6 +2177,76 @@ else
 fi
 
 echo ""
+echo "=== Inline-prose resolve-via uses lane-portable wording (#832/#833) ==="
+# Fence-aware gate: the legacy single-lane literal
+#   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+# is PERMANENTLY valid inside ```fenced``` bash blocks (decision D23 /
+# finding F-DA2-4 — it is the legacy /update-zskills-lane source form and the
+# `else` fallback branch of the dual-lane prelude). What is NOT valid is an
+# INLINE-PROSE reference to it — a single-backtick code-span on a non-fenced
+# line, typically a `(resolve via `...`)` parenthetical. A mirror-less plugin
+# consumer (the primary plugin install — no `.claude/skills/` mirror) that
+# follows that prose runs a path that does not exist. Such prose MUST instead
+# point at the lane-portable dual-lane prelude in
+# references/canonical-config-prelude.md §1.
+#
+# Fence-awareness is implemented in PYTHON (repo convention — no jq): walk each
+# skills/**/*.md + block-diagram/**/*.md, toggle fenced-block state on ```/~~~
+# fence-openers, and flag the literal ONLY when it appears inside an inline
+# code-span (`...`) on a NON-fenced line. The `else` fallback line inside the
+# dual-lane prelude lives in a bash fence and is therefore NEVER flagged. An
+# <!-- allow-hardcoded: ... reason: ... --> marker on the line immediately
+# above the prose line exempts that line (same marker convention as the
+# deny-list scan above).
+PROSE_RESOLVE_FAIL=0
+PROSE_RESOLVE_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}" <<'PYEOF'
+import os, sys
+repo = os.environ["ZS_REPO_ROOT"]
+LIT = '. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"'
+INLINE = "`" + LIT + "`"          # the literal wrapped in a single-backtick code-span
+MARKER_FRAG = "allow-hardcoded:"  # an allow-hardcoded marker (verbatim or naming this literal) exempts the next prose line
+roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+files = []
+for root in roots:
+    for dirpath, _dirs, fns in os.walk(root):
+        for fn in fns:
+            if fn.endswith(".md"):
+                files.append(os.path.join(dirpath, fn))
+hits = []
+for f in sorted(files):
+    in_fence = False
+    prev = ""
+    with open(f, encoding="utf-8") as fh:
+        for i, line in enumerate(fh, 1):
+            stripped = line.lstrip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = not in_fence
+                prev = line
+                continue
+            if not in_fence and INLINE in line:
+                if MARKER_FRAG not in prev:
+                    rel = os.path.relpath(f, repo)
+                    hits.append("%s:%d: inline-prose `resolve via ...zskills-resolve-config.sh` code-span "
+                                "is single-lane only — replace with a reference to the dual-lane prelude in "
+                                "references/canonical-config-prelude.md \xc2\xa71 (or add an allow-hardcoded "
+                                "marker on the line above)." % (rel, i))
+            prev = line
+for h in hits:
+    print(h)
+sys.exit(0)
+PYEOF
+)"
+if [ -n "$PROSE_RESOLVE_HITS" ]; then
+  PROSE_RESOLVE_FAIL=1
+  fail "inline-prose resolve-via uses single-lane literal (#832/#833)" "$(printf '%s' "$PROSE_RESOLVE_HITS" | grep -c .) hit(s)"
+  printf '%s\n' "$PROSE_RESOLVE_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+else
+  pass "no inline-prose single-lane resolve-via references (lane-portable wording per #832/#833)"
+fi
+
+echo ""
 echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py) ==="
 # Sibling deny-list scan over non-markdown sources that the existing
 # skills/**/*.md scanner above doesn't see:

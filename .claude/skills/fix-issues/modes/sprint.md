@@ -1665,9 +1665,9 @@ Each agent follows this fix workflow:
 2. Reproduce the bug (unit test or manual)
 3. Implement the fix
 4. Write regression tests (unit and/or E2E as appropriate)
-5. Run `$FULL_TEST_CMD` (resolve via
-   `. "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"`
-   if you don't already have it in your environment) — all suites must pass.
+5. Run `$FULL_TEST_CMD` (resolve via the dual-lane prelude in
+   references/canonical-config-prelude.md §1 if you don't already have it in
+   your environment) — all suites must pass.
    **CRITICAL — Bash tool timeout:** invoke with `timeout: 600000` (10
    min). The default 120000ms is shorter than the suite's actual runtime
    (~3-4 min in zskills). **Do NOT recover from a timeout by retrying
