@@ -1,13 +1,13 @@
 ---
 name: draft-plan
 disable-model-invocation: false
-argument-hint: "[output FILE] [rounds N] [auto] <description...>"
+argument-hint: "[output FILE] [rounds N] [auto] [brainstorm] <description...>"
 description: >-
   Draft a high-quality plan through iterative adversarial review:
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.05.31+874a6f"
+  version: "2026.05.31+1d4478"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -142,6 +142,10 @@ fi
 - `rounds` followed by a number — max review cycles
 - `auto` (whitespace-anchored, case-insensitive) — sets `AUTO_FLAG=1`
   for Phase 6's `/land-pr` dispatch
+- `brainstorm` (whitespace-anchored, case-insensitive) — sets
+  `BRAINSTORM_FLAG=1`, which loads the interactive brainstorm dialogue
+  (`references/brainstorm.md`) before Phase 1. Anchored so it does NOT
+  match `brainstorming`/`brainstormed`/`brainstorms`.
 - Everything else (from the first unrecognized non-flag token onward) is
   the description
 
@@ -149,6 +153,17 @@ fi
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
+fi
+```
+
+`BRAINSTORM_FLAG` is detected by its OWN dedicated fence (kept separate
+from the `AUTO_FLAG` fence above so the args-smoke extractor that keys on
+the `AUTO_FLAG=0 … fi` block is not perturbed):
+
+```bash
+BRAINSTORM_FLAG=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])[bB][rR][aA][iI][nN][sS][tT][oO][rR][mM]($|[[:space:]]) ]]; then
+  BRAINSTORM_FLAG=1
 fi
 ```
 
@@ -171,6 +186,16 @@ intent from the original was lost.
 
 This handles the common case of modernizing old-format plans:
 `/draft-plan plans/OLD_PLAN.md Modernize with progress tracker and phases`
+
+## Brainstorm mode (only when the `brainstorm` flag is present)
+
+If `BRAINSTORM_FLAG=1`, **Read [references/brainstorm.md](references/brainstorm.md)** via the
+Read tool and execute its dialogue loop now, before Phase 1 — UNLESS the notes file
+`/tmp/draft-plan-brainstorm-$TRACKING_ID.md` already exists with `status: ready` (a prior,
+completed dialogue — proceed straight to Phase 1 using it as the seed). If the notes file
+exists with `status: in-progress` (a dialogue interrupted by compaction/crash), RESUME it from
+its captured state rather than restarting. If `BRAINSTORM_FLAG=0`, **ignore the reference file
+entirely** and proceed straight to Phase 1.
 
 ## Phase 1 — Research (parallel agents)
 
@@ -202,6 +227,17 @@ printf 'skill: draft-plan\nid: %s\noutput: %s\nstatus: started\ndate: %s\n' \
 
 Dispatch multiple Explore agents in parallel to investigate the problem space.
 Each agent gets the full description and a specific research focus:
+
+**Brainstorm feed-forward.** When `BRAINSTORM_FLAG=1`, inject the literal
+path `/tmp/draft-plan-brainstorm-$TRACKING_ID.md` into EACH research
+agent's PROMPT, with an instruction to read it as the **primary design
+seed** (the user already steered the design in the brainstorm dialogue).
+Inject the path into the prompts — NOT into the research consolidation
+file, which does not exist until after dispatch. The Codebase / Patterns /
+Prior-art agents still run to ground the design against the repo; the
+Domain agent's "what to build" work is largely pre-answered by the
+brainstorm and may be reduced to verification. When `BRAINSTORM_FLAG=0`,
+dispatch the agents normally with no notes-file injection.
 
 1. **Codebase agent** — find all relevant source files, understand current
    architecture, identify what exists and what needs to change. Map
@@ -295,6 +331,12 @@ PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeli
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.research"
 ```
+
+**Skip this steering checkpoint when `BRAINSTORM_FLAG=1`** — the user
+already steered the design, in depth, during the brainstorm dialogue, so
+re-prompting here is redundant; proceed directly to Phase 2. (This is an
+ADDITIVE condition; the existing "if running as a subagent, skip" branch
+below is unchanged.)
 
 **Present the research summary to the user.** If running interactively
 (user invoked `/draft-plan` directly), wait for input:
