@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.31+4a50c0"
+  version: "2026.05.31+95ac63"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -228,17 +228,23 @@ AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
 fi
-# Issue-number parse (claim-work-item Phase 2 / W2.2). /do is normally
-# REDIRECTed to /fix-issues when the description references an issue
-# (Phase 0a triage); the number is only reachable here when --force
-# overrides that redirect. Extract the FIRST bare positive integer from a
-# `#N` / `closes #N` / `fix #N` reference into ISSUE_NUM so the mode files
-# can claim the issue via claim-issue.sh. When no issue number is present
-# (the common /do case) ISSUE_NUM stays empty and the mode files claim
-# nothing. The number is stripped to a bare integer (claim-issue.sh
-# rejects non-numeric input with exit 2).
+# Issue-number parse (claim-work-item Phase 2 / W2.2). When the description
+# begins with a `#N` reference (optionally preceded by a close-keyword:
+# close/closes/closed/fix/fixes/fixed/resolve/resolves/resolved, case-
+# insensitive) extract the bare integer into ISSUE_NUM so the mode files
+# can claim the issue via claim-issue.sh. The regex is ANCHORED to the
+# start of the description so a `#NNN` literal appearing later in prose
+# (e.g., a quoted example, a line reference, a follow-up "see also #N")
+# does NOT set ISSUE_NUM. An optional leading double-quote is tolerated so
+# /do's quoted-description carve-out (`/do "Fix #N ..."`) still matches.
+# When no issue reference is in scope (the common /do case) ISSUE_NUM
+# stays empty and the mode files claim nothing. claim-issue.sh rejects
+# non-numeric input with exit 2; the `[0-9]+` capture guarantees a bare
+# integer.
 ISSUE_NUM=""
-if [[ "$ARGUMENTS" =~ \#([0-9]+) ]]; then
+if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
+  ISSUE_NUM="${BASH_REMATCH[3]}"
+elif [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
   ISSUE_NUM="${BASH_REMATCH[1]}"
 fi
 ROUNDS=1
@@ -288,7 +294,7 @@ the verdict. Production invocations (where the harness flag is absent and
 the entry-point unset guard at the pre-flight has already cleared the
 test vars) always run the full Agent path. Recognized stub values:
 `PROCEED`, `REDIRECT:/draft-plan:reason`, `REDIRECT:/run-plan:reason`,
-`REDIRECT:/fix-issues:reason`, `REDIRECT:ask-user:reason`.
+`REDIRECT:ask-user:reason`.
 
 The model judges `$DESCRIPTION` against this rubric — qualitative,
 observable from description text, no LOC counting. /do always works in a
@@ -303,7 +309,6 @@ needed).
 | Verbs include any of: `add feature`, `redesign`, `rewrite`, `refactor across` | REDIRECT → `/draft-plan` |
 | `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` |
 | Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user |
-| References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` |
 | References an existing plan file under `$ZSKILLS_PLANS_DIR` | REDIRECT → `/run-plan` |
 
 **Worked examples (calibrate the model's PROCEED/REDIRECT calls):**
@@ -315,7 +320,7 @@ needed).
 | `/do Update the presentation with Phase 3 results auto` | PROCEED | concrete verb + object |
 | `/do add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/do improve` | REDIRECT → ask user | vague verb, no object |
-| `/do fix #142` | REDIRECT → /fix-issues | references issue number |
+| `/do Fix #853 — auto-route completed plans` | PROCEED | issue-numbered descriptions claim the issue via ISSUE_NUM and proceed |
 
 Output one of:
 
@@ -330,7 +335,6 @@ linebreak is a real newline, not the literal `\n` characters):
 |--------|--------|--------|
 | `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
 | `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
-| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
 | ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /do with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
 
 The model implements these as a `printf 'line1\nline2\n' "$REASON"` so

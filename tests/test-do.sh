@@ -572,6 +572,87 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
+# Case 18 — Pre-flight ISSUE_NUM regex is anchored to start-of-description
+# (with optional close-keyword + optional leading double-quote, case-
+# insensitive). A `#NNN` literal appearing later in prose — quoted
+# example, line ref, follow-up "see also #N" — must NOT capture an
+# issue number, otherwise the mode file's claim-issue.sh acquire claims
+# an unrelated issue.
+#
+# Replicates the regex from skills/do/SKILL.md Pre-flight and exercises
+# it directly. The regex source-of-truth is the SKILL.md; this test
+# re-implements it as a behavioral fixture so a future edit that breaks
+# one of these cases fails closed.
+# ────────────────────────────────────────────────────────────────────
+test_issue_num_do() {
+  local input="$1"
+  local expected="$2"
+  local label="$3"
+  local ISSUE_NUM=""
+  if [[ "$input" =~ ^[[:space:]]*\"?([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
+    ISSUE_NUM="${BASH_REMATCH[3]}"
+  elif [[ "$input" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
+    ISSUE_NUM="${BASH_REMATCH[1]}"
+  fi
+  if [ "$ISSUE_NUM" = "$expected" ]; then
+    pass "18 ISSUE_NUM: $label (got '$ISSUE_NUM')"
+  else
+    fail "18 ISSUE_NUM: $label (expected '$expected', got '$ISSUE_NUM')"
+  fi
+}
+# Positive — should capture issue number
+test_issue_num_do "Fix #853 — auto-route completed plans" "853" "Fix #N at start (capital F)"
+test_issue_num_do "fix #853 — lowercase" "853" "fix #N at start (lowercase)"
+test_issue_num_do "Fixes #853 typo" "853" "Fixes #N at start"
+test_issue_num_do "Fixed #853" "853" "Fixed #N at start"
+test_issue_num_do "Closes #853 follow-up work" "853" "Closes #N at start"
+test_issue_num_do "closed #853" "853" "closed #N at start"
+test_issue_num_do "Resolves #853" "853" "Resolves #N at start"
+test_issue_num_do "#853 work item" "853" "bare #N at start"
+test_issue_num_do "   Fix #853 leading whitespace" "853" "leading whitespace + Fix #N"
+test_issue_num_do "\"Fix #853 quoted-head\"" "853" "leading quote + Fix #N (quoted-head carve-out)"
+test_issue_num_do "\"#853 bare-quoted\"" "853" "leading quote + bare #N"
+
+# Negative — should NOT capture
+test_issue_num_do "Remove the example 'fix #142' from prose" "" "fix #N in mid-prose quote → no capture"
+test_issue_num_do "Update file X, see also #853 for context" "" "#N after see-also → no capture"
+test_issue_num_do "Edit collect.py:#142 line reference" "" "#N as path/line reference → no capture"
+test_issue_num_do "Some text fix #142 mid prose" "" "fix #N in middle of prose → no capture"
+test_issue_num_do "Just a regular description" "" "no # at all → no capture"
+test_issue_num_do "Description mentioning #N letter" "" "#N where N is a letter → no capture"
+test_issue_num_do "address #853 work" "" "non-recognized keyword (address) → no capture"
+test_issue_num_do "work on #853" "" "non-recognized verb (work) → no capture"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 19 — Phase 0a triage rubric NO LONGER contains the
+# "References a GitHub issue number → /fix-issues" REDIRECT row.
+# After PR 825 wired ISSUE_NUM + claim-issue.sh into the mode files,
+# the redirect made the claim machinery unreachable on the default
+# path. The row, its worked example, the per-target message template
+# row, and the test-stub-verdict entry are all expected to be absent.
+# ────────────────────────────────────────────────────────────────────
+if grep -qE 'References a GitHub issue number.*REDIRECT.*/fix-issues' "$SKILL"; then
+  fail "19a Phase 0a rubric still contains the issue-number REDIRECT row"
+else
+  pass "19a Phase 0a rubric: issue-number REDIRECT row removed"
+fi
+if grep -qE '/do fix #142.*REDIRECT.*/fix-issues' "$SKILL"; then
+  fail "19b Worked-example row '/do fix #142 → REDIRECT → /fix-issues' still present"
+else
+  pass "19b Worked-example row removed"
+fi
+if grep -qE '^\| `/fix-issues` \| `Triage: redirecting to /fix-issues' "$SKILL"; then
+  fail "19c Per-target redirect-message-template row for /fix-issues still present"
+else
+  pass "19c /fix-issues message-template row removed"
+fi
+if grep -qE 'REDIRECT:/fix-issues:reason' "$SKILL"; then
+  fail "19d Recognized test-stub verdict list still includes REDIRECT:/fix-issues:reason"
+else
+  pass "19d Test-stub verdict list pruned"
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Suite summary
 # ────────────────────────────────────────────────────────────────────
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
