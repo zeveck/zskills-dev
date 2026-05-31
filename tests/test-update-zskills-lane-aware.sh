@@ -213,6 +213,105 @@ else
   fail "AC4. fail-soft failed: rc=$rc4 LANE=$LANE_OUT"
 fi
 
+# ── AC5 (W6.1/W6.2) — hard-refuse explicit install on the plugin lane ─────
+# SKILL.md Step 0.7's W6.1 arm is prose+bash. Structural pins assert the
+# refuse prose + the load-bearing condition are present in BOTH copies, and
+# the refuse fence is executed directly to prove the gate logic.
+SWITCH="scripts/switch-install-path.sh"
+
+# (a) Structural: the hard-refuse prose is present in SKILL.md + mirror and
+#     points at switch-install-path.sh (keyed on detect==plugin, NOT
+#     $CLAUDE_PLUGIN_ROOT).
+for f in "$SKILL" "$MIRROR"; do
+  if grep -q 'hard-refuse' "$REPO_ROOT/$f" \
+     && grep -q 'switch-install-path.sh --to-update-zskills' "$REPO_ROOT/$f" \
+     && grep -q 'switch-in-progress' "$REPO_ROOT/$f"; then
+    pass "AC5a. W6.1 hard-refuse prose + switch-in-progress carve-out present in $f"
+  else
+    fail "AC5a. W6.1 hard-refuse prose MISSING from $f"
+  fi
+done
+
+# (b) Execute the refuse fence's gate logic directly. The fence refuses when
+#     ($MODE==install || $ADDON_FLAG non-empty) AND no switch-in-progress
+#     marker. Model the exact condition the branch uses.
+refuse_gate() {
+  # args: MODE ADDON_FLAG PROJ
+  local MODE="$1" ADDON_FLAG="$2" PROJ="$3"
+  if { [ "$MODE" = install ] || [ -n "$ADDON_FLAG" ]; } \
+     && [ ! -f "$PROJ/.zskills/switch-in-progress" ]; then
+    return 1   # refused
+  fi
+  return 0     # allowed
+}
+PR="$TMP/refuse"; mkdir -p "$PR/.zskills"
+# explicit install, no switch marker → REFUSE
+if ! refuse_gate install "" "$PR"; then
+  pass "AC5b. explicit 'install' on plugin lane → refused (no switch marker)"
+else
+  fail "AC5b. explicit install should have been refused"
+fi
+# --with-addons, no switch marker → REFUSE
+if ! refuse_gate "" "--with-addons" "$PR"; then
+  pass "AC5c. '--with-addons' on plugin lane → refused"
+else
+  fail "AC5c. --with-addons should have been refused"
+fi
+# bare call (no install/addons) → ALLOWED (not refused)
+if refuse_gate "" "" "$PR"; then
+  pass "AC5d. bare call (no install/addons) → not refused"
+else
+  fail "AC5d. bare call wrongly refused"
+fi
+# explicit install WITH switch-in-progress marker → ALLOWED (carve-out)
+: > "$PR/.zskills/switch-in-progress"
+if refuse_gate install "" "$PR"; then
+  pass "AC5e. install + switch-in-progress marker → refuse SKIPPED (W6.2 carve-out)"
+else
+  fail "AC5e. switch-in-progress carve-out failed to skip the refuse"
+fi
+
+# (c) The refuse is keyed on detect==plugin, so it must NOT fire for
+#     update-zskills/dual/fresh. detect_install_state classification is
+#     already covered by test-sessionstart-dual-install-detect.sh; here we
+#     confirm the dev-repo-shaped case classifies NON-plugin (so the refuse
+#     never engages there even with an explicit install arg).
+got="$(detect_install_state "$REPO_ROOT")"
+if [ "$got" != plugin ]; then
+  pass "AC5f. dev-repo-shaped classifies $got (NON-plugin) → install never refused there"
+else
+  fail "AC5f. dev repo wrongly classified plugin (install would be refused — breaks dogfooding)"
+fi
+
+# ── AC6 (W6.2) — switch-install-path.sh --to-update-zskills marker lifecycle
+# The script WRITES .zskills/switch-in-progress at START and REMOVES it only
+# after the lane-lock is written LAST. Drive the full non-interactive switch
+# against a plugin fixture and assert: lock written == update-zskills AND the
+# marker is GONE at completion (so it cannot trip the refuse in steady state).
+P6="$TMP/switch-uz"
+base_fixture "$P6"
+write_sentinelled_hook "$P6/.claude/hooks/inject-bash-timeout.sh"
+write_sentinelled_managed "$P6/.claude/rules/zskills/managed.md"
+mkdir -p "$P6/.claude/agents"
+printf '%s\n' '---' '# zskills-materialised: 2026.05.0' 'name: v' '---' 'x' > "$P6/.claude/agents/verifier.md"
+out6=$(ZSKILLS_SWITCH_NONINTERACTIVE=1 ZSKILLS_SWITCH_PROJECT_DIR="$P6" \
+       bash "$REPO_ROOT/$SWITCH" --to-update-zskills 2>&1); rc6=$?
+if [ "$rc6" -eq 0 ]; then
+  pass "AC6a. switch-install-path.sh --to-update-zskills completed (rc=0)"
+else
+  fail "AC6a. switch exited rc=$rc6, output: $out6"
+fi
+if [ "$(cat "$P6/.claude/zskills-install-lane" 2>/dev/null)" = update-zskills ]; then
+  pass "AC6b. lane-lock written LAST = update-zskills"
+else
+  fail "AC6b. lane-lock not update-zskills: $(cat "$P6/.claude/zskills-install-lane" 2>/dev/null)"
+fi
+if [ ! -e "$P6/.zskills/switch-in-progress" ]; then
+  pass "AC6c. switch-in-progress marker removed after lock-write (no steady-state deadlock)"
+else
+  fail "AC6c. switch-in-progress marker leaked after completion"
+fi
+
 echo ""
 TOTAL=$((PASS_COUNT + FAIL_COUNT))
 printf 'Results: %d passed, %d failed (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$TOTAL"

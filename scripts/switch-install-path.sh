@@ -194,6 +194,20 @@ to_update_zskills() {
   log "Switching to the /update-zskills lane."
   info "Detected current lane: $(detect_install_state "$PROJ")"
 
+  # W6.2 — switch-in-progress marker. This flow instructs the user to
+  # `/plugin uninstall` → restart → `/update-zskills install` while
+  # detect_install_state may still return `plugin` (the plugin is loaded until
+  # the restart, and the materialiser re-arms the sentinelled artifacts on the
+  # restart). The marker is the load-bearing state that survives that restart:
+  # while present, BOTH (i) the SKILL.md Step 0.7 W6.1 hard-refuse skips
+  # itself (so the mandated `/update-zskills install` is allowed) AND (ii)
+  # session-start-materialise.sh skips re-materialise (so it does not re-arm
+  # detect==plugin across the restart). Written at the START; removed only
+  # AFTER the lane-lock is written LAST (preserving the lock-LAST contract).
+  mkdir -p "$PROJ/.zskills"
+  : > "$PROJ/.zskills/switch-in-progress"
+  info "wrote .zskills/switch-in-progress (W6.2 — honored by the install refuse + materialiser until lock-write)"
+
   # 1. Pre-flight inventory of the 5 materialised plugin artifacts.
   log "Pre-flight inventory of plugin-materialised artifacts:"
   local mat
@@ -240,6 +254,13 @@ to_update_zskills() {
 
   # 7. Write the lock LAST.
   write_lock_last update-zskills
+
+  # W6.2 — switch complete: remove the in-progress marker ONLY after the
+  # lock has been written LAST (lock-LAST contract preserved — the marker is
+  # cleared strictly after the claim). Steady-state dual handling (the
+  # materialiser nag) resumes on the next session.
+  rm -f "$PROJ/.zskills/switch-in-progress"
+  info "removed .zskills/switch-in-progress (switch complete)"
   done_ "Switched to the /update-zskills lane."
 }
 

@@ -6,7 +6,7 @@ description: >-
   Plan dashboard. View plan status, find the next ready plan. For batch
   execution, see `/work-on-plans`.
 metadata:
-  version: "2026.05.28+6cab98"
+  version: "2026.05.31+e4e4af"
 ---
 
 # /plans [rebuild | next | details] — Plan Dashboard
@@ -111,15 +111,15 @@ NOT appear as separate top-level entries.
    invocation. Drop-in script:
 
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    MAIN_ROOT=$(git rev-parse --show-toplevel)
    ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
      else
        source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
      fi
@@ -147,7 +147,7 @@ NOT appear as separate top-level entries.
      mkdir -p "$ZSKILLS_AUDIT_DIR"
      PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
        python3 -m zskills_monitor.collect \
-       | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+       | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
            --rebuilt-at "$REBUILT_AT" \
        > "$INDEX"
    fi
@@ -261,15 +261,15 @@ emission live in `skills/plans/scripts/render-index.py`. The
 implementing agent runs a single pipeline and exits.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(git rev-parse --show-toplevel)
 ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi
@@ -280,7 +280,7 @@ mkdir -p "$ZSKILLS_AUDIT_DIR"
 set -o pipefail
 if ! PYTHONPATH="$MAIN_ROOT/skills/zskills-dashboard/scripts" \
        python3 -m zskills_monitor.collect \
-     | python3 "$CLAUDE_PROJECT_DIR/.claude/skills/plans/scripts/render-index.py" \
+     | python3 "$ZSKILLS_SKILLS_ROOT/plans/scripts/render-index.py" \
          --rebuilt-at "$REBUILT_AT" \
      > "$ZSKILLS_AUDIT_DIR/PLAN_INDEX.md"; then
   echo "ERROR: python3 -m zskills_monitor.collect failed (or render-index.py rejected its output)" >&2

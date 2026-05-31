@@ -82,7 +82,15 @@ fi
 # Source the helper with PROJECT_ROOT (worktree path in PR mode, main
 # in direct mode) so $ZSKILLS_AUDIT_DIR resolves to the right tree.
 ZSKILLS_PATHS_ROOT="$PROJECT_ROOT"
-source "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+# Lane-agnostic resolution of the sibling-skill helper: BASH_SOURCE-relative
+# (plugin tree + legacy mirror are both 1:1, so ../../update-zskills/scripts/
+# is correct on both lanes), with the consumer-mirror path as a fallback.
+_self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+for _cand in "$_self_dir/../../update-zskills/scripts/zskills-paths.sh" \
+             "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"; do
+  [ -f "$_cand" ] && { source "$_cand"; break; }
+done
+unset _self_dir _cand
 
 INVARIANT_FAILED=0
 

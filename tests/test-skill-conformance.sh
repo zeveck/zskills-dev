@@ -266,7 +266,7 @@ check_fixed run-plan "pipeline-id echo"             'ZSKILLS_PIPELINE_ID=run-pla
 check_fixed run-plan ".zskills-tracked write"       '.zskills-tracked'
 check_fixed run-plan "test-out per-worktree"        'TEST_OUT="/tmp/zskills-tests/'
 check       run-plan "test capture redirect"        '\$TEST_OUT/(\$TEST_OUTPUT_FILE|\$\{TEST_OUTPUT_FILE:-\.test-results\.txt\})" 2>&1'
-check_fixed run-plan "compute-cron-fire invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/compute-cron-fire.sh"'
+check_fixed run-plan "compute-cron-fire invocation" 'bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/compute-cron-fire.sh"'
 check       run-plan "cron tz warning"              'date.*SYSTEM-local|system-local'
 # PR_LANDING_UNIFICATION Phase 2 WI 2.7 — `/run-plan` no longer owns the
 # inline PR-landing implementation. The following assertions RELOCATED
@@ -290,9 +290,9 @@ check_fixed run-plan "dispatches /land-pr"          'land-pr'
 check_not   run-plan "no inline gh pr create"       'gh pr create'
 check_not   run-plan "no inline gh pr checks --watch" 'gh pr checks.*--watch'
 check_not   run-plan "no inline gh pr merge --auto"  'gh pr merge.*--auto'
-check_fixed run-plan "write-landed invocation"      'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
+check_fixed run-plan "write-landed invocation"      'bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh"'
 check_fixed run-plan "pr-mode bookkeeping"          'PR-mode bookkeeping'
-check_fixed run-plan "post-run-invariants"          'bash "$CLAUDE_PROJECT_DIR/.claude/skills/run-plan/scripts/post-run-invariants.sh"'
+check_fixed run-plan "post-run-invariants"          'bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/post-run-invariants.sh"'
 check_fixed run-plan "final-verify marker glob"     'requires.verify-changes.final.'
 # PR-mode read-authority (the bug caught during CANARY10 re-run): when
 # LANDING_MODE=pr and a feature-branch worktree exists, plan reads MUST
@@ -376,7 +376,7 @@ check run-plan "Failure Protocol"   '^## Failure Protocol'
 
 echo ""
 echo "=== /run-plan — shell idioms ==="
-check_fixed run-plan "create-worktree invocation" 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh"'
+check_fixed run-plan "create-worktree invocation" 'bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh"'
 check_fixed run-plan "pr mode --allow-resume"     '--allow-resume'
 
 echo ""
@@ -398,7 +398,7 @@ check       commit "origin/main for log"      'git log origin/main\.\.HEAD'
 #     #131` regex per WI 3.4).
 # REMOVED: "step6: poll-ci.sh invocation" — poll-ci.sh was deleted in
 # WI 3.5a; pr-monitor.sh in /land-pr is the canonical successor.
-check_fixed commit "write-landed"             'bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh"'
+check_fixed commit "write-landed"             'bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh"'
 # WI 3.4 NEW: verify modes/pr.md now dispatches /land-pr.
 check_fixed commit "modes/pr.md dispatches /land-pr" 'land-pr'
 check       commit "read-only reviewer"       'You are read-only|you are read-only'
@@ -429,7 +429,7 @@ check       do "pr extended punctuation"      'extended.*punctuation pattern|ext
 check       do "task-slug collision suffix"   'date \+%s \| tail -c'
 check_fixed do "branch name slug"             'do-${TASK_SLUG}'
 check_fixed do "pr worktree path"             '/tmp/${PROJECT_NAME}-do-'
-check_fixed do "sanitize-pipeline-id"         'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"'
+check_fixed do "sanitize-pipeline-id"         'bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"'
 check_fixed do "pipeline-id format"           'PIPELINE_ID="do.'
 # Landing-mode resolution: /do must detect pr/direct/worktree flags,
 # fall back to execution.landing in zskills-config, and enforce the
@@ -501,7 +501,7 @@ check_fixed fix-issues "fix branch naming"          'fix/issue-'
 check_fixed fix-issues "pr worktree path"           '/tmp/${PROJECT_NAME}-fix-issue-'
 check_fixed fix-issues "sprint-id format"           'SPRINT_ID="sprint-'
 check_fixed fix-issues "pipeline-id format"         'PIPELINE_ID="fix-issues.'
-check_fixed fix-issues "sanitize-pipeline-id"       'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"'
+check_fixed fix-issues "sanitize-pipeline-id"       'bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"'
 check_fixed fix-issues "recover sprint-id"          'SPRINT_ID="${PIPELINE_ID#fix-issues.'
 check       fix-issues "3 agent dispatch cap"       'most 3 worktree agents per message'
 check       fix-issues "agent 1-hour timeout"       'Agent timeout: 1 hour|1.hour.*timeout'
@@ -658,7 +658,7 @@ echo "=== /quickfix — issue-claim wiring (claim-work-item Phase 2 / W2.4) ==="
 # the Tracking-setup block, releases in the Phase 7 finalize + abandon
 # sites. Reuses the existing PIPELINE_ID="quickfix.$SLUG".
 check_fixed quickfix "parses ISSUE_NUM"          'ISSUE_NUM="${BASH_REMATCH[1]}"'
-check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"'
+check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"'
 check_fixed quickfix "acquires issue claim"      'bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
 check_fixed quickfix "releases issue claim"      'claim-issue.sh" release "$ISSUE_NUM" --require-pipeline'
 
@@ -669,7 +669,7 @@ echo "=== /investigate — issue-claim wiring (claim-work-item Phase 2 / W2.1) =
 # reproduction work, releases on the success-path Report bash block + the
 # explicit per-STOP prose at each abandon point.
 check_fixed investigate "synthesizes PIPELINE_ID"  'sanitize-pipeline-id.sh" "investigate.issue-$N"'
-check_fixed investigate "CLAIM_HELPER assignment"  'CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"'
+check_fixed investigate "CLAIM_HELPER assignment"  'CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"'
 check_fixed investigate "acquires issue claim"     'bash "$CLAIM_HELPER" acquire "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
 check_fixed investigate "releases issue claim"     'claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"'
 
@@ -1904,7 +1904,7 @@ echo "=== ensure-worktree preamble adoption ==="
 # Phase 5 (PREAMBLE_WORKTREE_GATE): every adopter skill MUST embed the
 # `bash "$HELPER"` invocation form of the shared ensure-worktree.sh
 # preamble. The preamble defines:
-#   HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+#   HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 # and dispatches via `WT_PATH=$(bash "$HELPER" \ ...)`. A fixed-string
 # match on `bash "$HELPER"` is the load-bearing literal — if the slug
 # routing in any adopter regresses (e.g. someone open-codes
@@ -2453,8 +2453,8 @@ cat > "$POS_FIXTURE_DIR/skills/syn-pass-dualpath/SKILL.md" <<'PASS_DUALPATH_FIXT
 # syn-pass-dualpath
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi

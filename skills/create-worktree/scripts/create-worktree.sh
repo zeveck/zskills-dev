@@ -369,7 +369,15 @@ fi
 # WI 3.1 — Consumer post-create-worktree callout.
 # See .claude/skills/update-zskills/references/stub-callouts.md.
 # ──────────────────────────────────────────────────────────────────
+# Resolve the stub-lib lane-agnostically: BASH_SOURCE-relative (the plugin
+# tree, where no .claude/skills mirror exists) first, then the consumer
+# mirror — so consumer stub-callouts fire on the plugin lane too.
+_self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 _STUB_LIB="${CLAUDE_PROJECT_DIR:-$MAIN_ROOT}/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+if [ -f "$_self_dir/../../update-zskills/scripts/zskills-stub-lib.sh" ]; then
+  _STUB_LIB="$_self_dir/../../update-zskills/scripts/zskills-stub-lib.sh"
+fi
+unset _self_dir
 if [ -f "$_STUB_LIB" ]; then
   # shellcheck disable=SC1090
   . "$_STUB_LIB"

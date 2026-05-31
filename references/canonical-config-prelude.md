@@ -8,7 +8,7 @@ mode files, and subagent-dispatch prompts.
 The helper lives at one of two locations depending on the install lane:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh          # plugin lane
+${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh          # plugin lane
 $CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh   # /update-zskills lane
 ```
 
@@ -40,25 +40,47 @@ Drop this **two-line dual-path** block at the top of any skill bash fence
 that needs config values. It is the PREFERRED form for all new code because
 it resolves correctly on **both** install lanes — the plugin lane (where
 `${CLAUDE_PLUGIN_ROOT}` is set and the helper lives at
-`${CLAUDE_PLUGIN_ROOT}/scripts/`) and the `/update-zskills` lane (where the
-helper lives under `.claude/skills/update-zskills/scripts/`):
+`${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/`) and the
+`/update-zskills` lane (where the helper lives under
+`.claude/skills/update-zskills/scripts/`):
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 # vars now set: $UNIT_TEST_CMD $FULL_TEST_CMD $TIMEZONE $DEV_SERVER_CMD $TEST_OUTPUT_FILE $COMMIT_CO_AUTHOR
+#               + $ZSKILLS_SKILLS_ROOT (sourced transitively via zskills-paths.sh)
 ```
 
 The plugin branch is preferred when `${CLAUDE_PLUGIN_ROOT}` is set AND the
 helper file exists there; otherwise the block falls back to the legacy
 `/update-zskills`-lane path. The same existence-test pattern applies to the
-sibling helpers `zskills-paths.sh` and `zskills-stub-lib.sh`, and `bash`
-invocations of other bundled scripts (`port.sh`, `apply-preset.sh`, etc.)
-use the path-prefix form
-`${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/<x>.sh`.
+sibling helper `zskills-stub-lib.sh`. Note that `zskills-resolve-config.sh`
+itself sources `zskills-paths.sh` (via this same corrected dual-path form), so
+sourcing the config helper transitively exports `$ZSKILLS_SKILLS_ROOT` — the
+lane-portable absolute path to the installed skills tree
+(`${CLAUDE_PLUGIN_ROOT}/skills` under the plugin lane,
+`$CLAUDE_PROJECT_DIR/.claude/skills` under the `/update-zskills` lane).
+
+### Family 2: bundled-script invocations use `$ZSKILLS_SKILLS_ROOT`
+
+`bash`/`python3` invocations of other bundled scripts (`port.sh`,
+`apply-preset.sh`, etc.) — anything you would call rather than source — run
+through the resolved skills root. After the fence has sourced
+`zskills-resolve-config.sh` (which exports `$ZSKILLS_SKILLS_ROOT`), invoke a
+bundled script via:
+
+```bash
+bash "$ZSKILLS_SKILLS_ROOT/<owner>/scripts/<x>"
+```
+
+For example, `bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/port.sh"`.
+This resolves correctly under both lanes because `$ZSKILLS_SKILLS_ROOT` already
+encodes the lane-correct prefix. The `python3`, `VAR=$(…)`, and
+command-substitution variants all use the same `$ZSKILLS_SKILLS_ROOT/<owner>/scripts/<x>`
+path form.
 
 ### Legacy: single-line `/update-zskills`-lane form (NOT deprecated)
 

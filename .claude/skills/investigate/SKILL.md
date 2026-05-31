@@ -7,7 +7,7 @@ description: >-
   reproduce, trace, state root cause, fix, verify. The agent must PROVE
   root-cause understanding before writing a fix.
 metadata:
-  version: "2026.05.29+c324f6"
+  version: "2026.05.31+d41f1d"
 ---
 
 # /investigate \<description or #issue> — Root-Cause Debugging
@@ -66,13 +66,18 @@ Examples:
    synthesize the pipeline id through the shared sanitizer:
 
    ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
    # Only when the input is an issue reference. $N = bare positive integer
    # (claim-issue.sh rejects non-numeric / decorated input with exit 2).
    N="${N#\#}"          # strip a leading '#'
    N="${N//\"/}"        # strip any quotes
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
-   PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "investigate.issue-$N")
-   CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+   PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "investigate.issue-$N")
+   CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
    bash "$CLAIM_HELPER" acquire "$N" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
    ACQ_RC=$?
    case "$ACQ_RC" in
@@ -226,7 +231,7 @@ included in the final report.
    Let the user decide the next step. Do not guess a third time.
    **Before stopping, release the issue claim** (only if you acquired one
    in Phase 1 — i.e. the input was an issue number):
-   `bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"`.
+   `bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"`.
 
 ## Phase 5 — Verify
 
@@ -243,8 +248,8 @@ included in the final report.
 
 3. **Run the full test suite:**
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
@@ -254,7 +259,7 @@ included in the final report.
      # in Phase 1 — i.e. the input was an issue number; $N / $PIPELINE_ID
      # are set there and survive in the persistent shell).
      if [ -n "${N:-}" ] && [ -n "${PIPELINE_ID:-}" ]; then
-       bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"
+       bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"
      fi
      exit 1
    fi
@@ -285,11 +290,16 @@ not persist. Skip when the input was a bare description (no claim was
 acquired):
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # $N and $PIPELINE_ID were set in Phase 1 step 1 (issue-number path only)
 # and survive in the persistent shell. The release is ownership-safe
 # (--require-pipeline refuses to release a claim another pipeline owns).
 if [ -n "${N:-}" ] && [ -n "${PIPELINE_ID:-}" ]; then
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"
 fi
 ```
 
@@ -321,7 +331,7 @@ If the investigation was abandoned (couldn't reproduce, couldn't find root
 cause, fix failed twice), report what was learned and what remains unknown.
 **Before stopping on any abandon path, release the issue claim** (only if
 the input was an issue number and Phase 1 acquired a claim):
-`bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"`.
+`bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$N" --require-pipeline "$PIPELINE_ID"`.
 This covers the couldn't-reproduce STOP (Phase 1), the couldn't-find-root
 STOP (Phase 2/3 — when you cannot state the causal chain), and the
 two-attempt-limit STOP (Phase 4). A released claim lets the next pipeline

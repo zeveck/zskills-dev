@@ -30,8 +30,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         purposes), STOP and report to the user.
   2. **Verify main is clean before cherry-picking:**
      ```bash
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      fi
@@ -73,12 +73,12 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         ```
      b. Write `.landed` marker (atomic):
         ```bash
-        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
-        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
+        cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree>"
         status: full
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
@@ -88,19 +88,19 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
         # Release the per-issue claim (plan W2.6b — successful cherry-pick
         # terminal). $HELPER and $ISSUE_NUM are defined in the per-worktree
         # iteration body upstream:
-        #   HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+        #   HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
         #   ISSUE_NUM=<issue number extracted from the worktree's branch name>
         # `|| true` because release is idempotent / best-effort at terminal arms.
         bash "$HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" || true
         ```
      c. For tiers that were SKIPPED (conflict), write partial marker:
         ```bash
-        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-          . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+        if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+          . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
         else
           . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
         fi
-        cat <<LANDED | bash "$CLAUDE_PROJECT_DIR/.claude/skills/commit/scripts/write-landed.sh" "<worktree>"
+        cat <<LANDED | bash "$ZSKILLS_SKILLS_ROOT/commit/scripts/write-landed.sh" "<worktree>"
         status: partial
         date: $(TZ="${TIMEZONE:-UTC}" date -Iseconds)
         source: fix-issues
@@ -125,8 +125,8 @@ Auto-land each verified fix by cherry-picking its worktree commits onto main wit
      ```
   8. **Run tests** after all cherry-picks land:
      ```bash
-     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-       . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+     if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+       . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
      else
        . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
      fi

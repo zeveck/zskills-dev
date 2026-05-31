@@ -15,8 +15,8 @@ either fires, all candidate issues are selected without prompting.
 
    <!-- allow-hardcoded: (^|[^A-Za-z0-9_])SPRINT_REPORT\.md reason: filename basename suffixed onto $ZSKILLS_REPORTS_DIR (resolved via zskills-paths.sh; issue #217); the basename token itself remains literal so the regex still flags the /SPRINT_REPORT.md tail -->
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
    else
      source "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
    fi
@@ -60,8 +60,8 @@ either fires, all candidate issues are selected without prompting.
    per-sprint subdir ($PIPELINE_ID) — the parent reconciles child
    fulfillment in its own scope:
    ```bash
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
    else
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
@@ -76,7 +76,7 @@ either fires, all candidate issues are selected without prompting.
    # with the sprint-mode plan-scale-decline path). `reconsider <N>`
    # clears the entry if the user later changes their mind.
    ZSKILLS_MAIN_ROOT="$MAIN_ROOT" bash \
-     "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/record-skip.sh" \
+     "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/record-skip.sh" \
      "$ISSUE_NUMBER" plan-scale \
      || echo "WARN: fix-issues plan: record-skip.sh failed for #$ISSUE_NUMBER — sprint may re-pick" >&2
    ```

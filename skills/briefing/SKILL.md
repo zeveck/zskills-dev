@@ -5,7 +5,7 @@ description: >-
   Generate a project briefing: worktree status, open checkboxes, recent commits.
   Modes: summary (default), report, verify, current, worktrees. Period: 1h, 6h, 24h, 2d, 7d.
 metadata:
-  version: "2026.05.29+ceb9ce"
+  version: "2026.05.31+3ebee6"
 ---
 
 # /briefing — Project Status Briefing
@@ -14,7 +14,7 @@ Gather project state and present a structured briefing.
 
 ## Runtime
 
-The briefing helper is `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py"`.
+The briefing helper is `python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py"`.
 Python 3 is required (per CLAUDE.md "Python is required"). If `python3`
 is not on PATH, output a clear error and stop:
 
@@ -58,7 +58,12 @@ extraction and which commits are unlanded.
 Quick terminal-only triage view. The helper outputs pre-formatted text.
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" summary --since=<period>
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" summary --since=<period>
 ```
 
 Present the output **verbatim** — it is already formatted with three buckets:
@@ -73,7 +78,12 @@ Present the output **verbatim** — it is already formatted with three buckets:
 Generate a detailed markdown report and write it to `$ZSKILLS_AUDIT_DIR/`.
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" report --since=<period>
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" report --since=<period>
 ```
 
 The helper writes the file directly and prints its path. Report includes:
@@ -102,7 +112,12 @@ fix reports, and plan reports that need human sign-off.
 #### Step 1 — Gather data
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" verify
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" verify
 ```
 
 The script output includes both report sign-off data and worktree data.
@@ -180,7 +195,12 @@ Empty state: `ALL CLEAR — no pending sign-off items.`
 Show what's actively in flight right now.
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" current
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" current
 ```
 
 Present the output **verbatim**. Sections:
@@ -197,7 +217,12 @@ Detailed worktree analysis with cleanup readiness. Read-only — shows what's
 safe to remove but does not remove anything.
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" worktrees-status
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" worktrees-status
 ```
 
 Present the output **verbatim**. Sections:
@@ -217,7 +242,12 @@ deliberately **no hard-assert "skill X ran ≥N times" CI gate** (it would
 false-fail on quiet periods).
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" dogfooding --since=<period>
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" dogfooding --since=<period>
 # --no-gh   disable the gh merged-PR backfill (hermetic / offline runs)
 ```
 
@@ -240,7 +270,7 @@ flag `0 in <window>` per skill as advisory text for a human to read.
 
 ## Data Gathering
 
-The agent runs `python3 "$CLAUDE_PROJECT_DIR/.claude/skills/briefing/scripts/briefing.py" <subcommand>` and captures stdout.
+The agent runs `python3 "$ZSKILLS_SKILLS_ROOT/briefing/scripts/briefing.py" <subcommand>` and captures stdout.
 
 | Subcommand   | Output   | Description                              |
 |-------------|----------|------------------------------------------|
@@ -368,15 +398,15 @@ canonical config-resolution helper) against the source repo's latest
 release tag:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 # ZSKILLS_VERSION is the installed version (from .claude/zskills-config.json).
 source_ver=""
 if [ -d "$ZSKILLS_PATH/.git" ]; then
-  source_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+  source_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 fi
 if [ -n "$source_ver" ] && [ "$source_ver" != "$ZSKILLS_VERSION" ]; then
   echo "  zskills: $ZSKILLS_VERSION → $source_ver (run /update-zskills)"

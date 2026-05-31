@@ -9,9 +9,10 @@
 #   1. fresh          → detect_install_state == fresh; materialiser writes.
 #   2. plugin         → detect == plugin; materialiser writes.
 #   3. update-zskills → detect == update-zskills; materialiser EXITS EARLY
-#      with WARN + dual-install-warned marker; does NOT materialise.
+#      with an imperative nag EVERY session (W6.3 — no once-per-session
+#      marker gate); does NOT materialise.
 #   4. dual           → detect == dual; materialiser EXITS EARLY with the
-#      dual WARN + marker; does NOT materialise.
+#      dual nag EVERY session (W6.3); does NOT materialise.
 #   5. partial-cleanup (orphan hook, deleted SKILL.md, no sentinels) →
 #      classifies as update-zskills + early exit (F-R2-3 closure).
 
@@ -106,16 +107,19 @@ else
   fail "3b. update-zskills: materialiser wrote artifacts (should have skipped)"
 fi
 if grep -q 'install lane is /update-zskills' "$err3" \
-   && grep -q -- '--switch-install-path=to-plugin' "$err3"; then
-  pass "3c. update-zskills: documented WARN emitted"
+   && grep -q 'not a supported client state' "$err3" \
+   && grep -q 'switch-install-path.sh' "$err3"; then
+  pass "3c. update-zskills: imperative nag emitted (W6.3)"
 else
-  fail "3c. update-zskills WARN text missing"
+  fail "3c. update-zskills nag text missing"
   sed 's/^/      /' "$err3"
 fi
-if [ -f "$P3/.zskills/dual-install-warned" ]; then
-  pass "3d. update-zskills: dual-install-warned marker created"
+# W6.3 — the once-per-session marker gate is removed; the materialiser must
+# NOT write a .zskills/dual-install-warned marker any more.
+if [ ! -e "$P3/.zskills/dual-install-warned" ]; then
+  pass "3d. update-zskills: no once-per-session marker (W6.3 gate dropped)"
 else
-  fail "3d. dual-install-warned marker NOT created"
+  fail "3d. dual-install-warned marker unexpectedly created (W6.3 should have dropped it)"
 fi
 
 # ── 4. dual (both sentinelled AND un-sentinelled evidence) ────────────────
@@ -132,16 +136,18 @@ else
   fail "4b. dual: materialiser wrote artifacts (should have skipped)"
 fi
 if grep -q 'dual install detected' "$err4" \
-   && grep -q 'switch-install-path.sh --to-plugin' "$err4"; then
-  pass "4c. dual: documented WARN emitted"
+   && grep -q 'not a supported client state' "$err4" \
+   && grep -q 'switch-install-path.sh' "$err4"; then
+  pass "4c. dual: imperative nag emitted (W6.3)"
 else
-  fail "4c. dual WARN text missing"
+  fail "4c. dual nag text missing"
   sed 's/^/      /' "$err4"
 fi
-if [ -f "$P4/.zskills/dual-install-warned" ]; then
-  pass "4d. dual: dual-install-warned marker created"
+# W6.3 — no once-per-session marker any more.
+if [ ! -e "$P4/.zskills/dual-install-warned" ]; then
+  pass "4d. dual: no once-per-session marker (W6.3 gate dropped)"
 else
-  fail "4d. dual-install-warned marker NOT created"
+  fail "4d. dual-install-warned marker unexpectedly created (W6.3 should have dropped it)"
 fi
 
 # ── 5. partial-cleanup: orphan hook, deleted SKILL.md, no sentinels ───────
@@ -164,14 +170,31 @@ else
   sed 's/^/      /' "$err5"
 fi
 
-# ── 6. once-per-session gating: a second materialise run on the uz fixture
-#    does NOT re-emit the WARN (marker already present). ─────────────────────
+# ── 6. W6.3 — the nag fires EVERY session (no once-per-session gate): a
+#    second materialise run on the uz fixture RE-EMITS the nag. ──────────────
 err3b="$TMP/err3b"; run_mat "$P3" "$err3b"
-if [ ! -s "$err3b" ]; then
-  pass "6. WARN is gated once-per-session (marker suppresses repeat)"
+if grep -q 'not a supported client state' "$err3b"; then
+  pass "6. nag re-emitted every session (W6.3 — no once-per-session gate)"
 else
-  fail "6. WARN re-emitted despite existing marker"
+  fail "6. nag NOT re-emitted on second run (W6.3 requires every-session nag)"
   sed 's/^/      /' "$err3b"
+fi
+
+# ── 7. W6.2 — switch-in-progress marker skips re-materialise on the plugin
+#    fixture: a session during an in-flight --to-update-zskills switch must
+#    NOT re-arm detect==plugin (no agents written) even though detect==plugin.
+P7="$TMP/switching"
+base_fixture "$P7"
+write_sentinelled_hook "$P7/.claude/hooks/inject-bash-timeout.sh"
+write_sentinelled_managed "$P7/.claude/rules/zskills/managed.md"
+got="$(detect_install_state "$P7")"
+[ "$got" = plugin ] && pass "7a. switching fixture still classifies plugin" || fail "7a. expected plugin, got $got"
+mkdir -p "$P7/.zskills"; : > "$P7/.zskills/switch-in-progress"
+err7="$TMP/err7"; run_mat "$P7" "$err7"
+if [ ! -e "$P7/.claude/agents/verifier.md" ]; then
+  pass "7b. switch-in-progress: materialiser skips re-materialise (no re-arm)"
+else
+  fail "7b. switch-in-progress: materialiser re-armed detect==plugin (should skip)"
 fi
 
 echo ""

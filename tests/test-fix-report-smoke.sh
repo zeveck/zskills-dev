@@ -34,7 +34,7 @@ echo "=== fix-report behavioral smoke ==="
 # Extract the integrity-check fence from the preamble (self-contained
 # enough to run with HELPER pointed at a nonexistent file).
 GATE_BLOCK=$(awk '
-  /HELPER="\$CLAUDE_PROJECT_DIR\/.claude\/skills\/create-worktree\/scripts\/ensure-worktree.sh"/{capture=1}
+  /HELPER="\$ZSKILLS_SKILLS_ROOT\/create-worktree\/scripts\/ensure-worktree.sh"/{capture=1}
   capture {print}
   capture && /exit 11/{found_exit=1}
   capture && found_exit && /^fi$/{exit}
@@ -152,7 +152,7 @@ fi
 # lane, same path the skill uses) with a dirty slug and assert it collapses
 # to [a-zA-Z0-9._-].
 SANITIZER="$REPO_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
-if grep -qF 'bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_REPORT_PIPELINE_ID"' "$SKILL"; then
+if grep -qF 'bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$FIX_REPORT_PIPELINE_ID"' "$SKILL"; then
   pass "pipeline-id: SKILL.md routes FIX_REPORT_PIPELINE_ID through sanitize-pipeline-id.sh"
 else
   fail "pipeline-id: SKILL.md no longer routes FIX_REPORT_PIPELINE_ID through sanitizer" "fingerprint drift"

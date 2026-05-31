@@ -148,7 +148,7 @@ expect_skill_contains "AC-1.3: per-pipeline subdir layout" \
 expect_skill_contains "AC-1.3: status: started literal" \
   'status: started'
 expect_skill_contains "AC-1.3: cross-skill sanitize-pipeline-id form" \
-  '"$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"'
+  '"$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"'
 # The bare-relative form is FORBIDDEN. Assert SKILL.md does not contain
 # the legacy `bash scripts/sanitize-pipeline-id.sh` invocation.
 if grep -F -q -- 'bash scripts/sanitize-pipeline-id.sh' "$SKILL_MD"; then

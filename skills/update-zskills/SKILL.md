@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.29+664a17"
+  version: "2026.05.31+1c048e"
 ---
 
 # Update Z Skills Infrastructure
@@ -892,8 +892,13 @@ clone's latest tag (authoritative), plus how many skills have a different
 `metadata.version` upstream. Compute it like this:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Repo-level version: latest YYYY.MM.N tag in the source clone.
-current_zskills_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+current_zskills_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 
 # Installed version: top-level `zskills_version` field in
 # .claude/zskills-config.json. Read with inline BASH_REMATCH (NOT
@@ -910,7 +915,7 @@ if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
 fi
 
 # Per-skill delta: count rows whose `metadata.version` differs upstream.
-delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 n_changed=$(printf '%s\n' "$delta_tsv" | awk -F'\t' '$5 == "bumped" || $5 == "new"' | wc -l)
 ```
 
@@ -950,17 +955,34 @@ so the user sees what was found before any modifications.
 
 ## Step 0.7 — Lane check (plugin-lane short-circuit)
 
-This branch sits on the **bare / default path only** — it runs after the
-arg parser (Step 0.25), config read (Step 0.5), and the greenfield prompt
-(Step 0.6), and **at/above** the Default-Mode Smart-Detection fork below.
-Explicit `--migrate-paths` already short-circuited at Step 0.1; explicit
-`install`, `--with-addons`, `--rerender`, and `--switch-install-path` are a
-user *forcing* a legacy/mirror action and are **not** intercepted here
-(typing the flag is opt-in). The destructive case this branch prevents is
-the *silent* flip of a pure-plugin consumer on a **bare** `/update-zskills`
-call: with no `.claude/skills/` mirror, the audit would see every skill/hook
-as "missing" and the gap-fill would copy them all in, flipping the consumer
-onto the legacy lane.
+This branch runs after the arg parser (Step 0.25), config read (Step 0.5),
+and the greenfield prompt (Step 0.6), and **at/above** the Default-Mode
+Smart-Detection fork below. Explicit `--migrate-paths` already
+short-circuited at Step 0.1; `--rerender` and `--switch-install-path` are a
+user *forcing* a config/lane action and are **not** intercepted by the
+hard-refuse below. The destructive case this branch prevents is the *silent*
+flip of a pure-plugin consumer on a **bare** `/update-zskills` call: with no
+`.claude/skills/` mirror, the audit would see every skill/hook as "missing"
+and the gap-fill would copy them all in, flipping the consumer onto the
+legacy lane.
+
+**Policy reversal (W6.1) — explicit `install` / `--with-addons` is now
+HARD-REFUSED on the plugin lane.** Earlier this branch let explicit `install`
+through as an "opt-in" mirror action. That carve-out is removed: a client is
+**single-lane**, so running `/update-zskills install` on a `detect ==
+plugin` consumer is never the right move — it would re-create the legacy
+mirror alongside the plugin and put the consumer into the dual state the rest
+of the system actively pushes to consolidate. The refuse points the user at
+`scripts/switch-install-path.sh` (the supported lane-switch path) and exits
+non-zero. **Keyed on `detect_install_state == plugin`, NOT
+`$CLAUDE_PLUGIN_ROOT`** — so the dev repo (which keeps its legacy mirror and
+classifies `update-zskills`) is never blocked, and dogfooding both lanes from
+this repo via `/update-zskills install` still works. The one carve-out: the
+refuse is **SKIPPED while a lane switch is in progress** (see the
+`switch-in-progress` marker below), so `switch-install-path.sh
+--to-update-zskills` — which mandates `/plugin uninstall` → restart →
+`/update-zskills install` — does not deadlock against its own
+not-yet-completed switch.
 
 **Signal = `detect_install_state == plugin`**, NOT `$CLAUDE_PLUGIN_ROOT`.
 `lane == plugin` means "plugin-materialised artifacts present AND no legacy
@@ -994,13 +1016,43 @@ if [ -n "$DIS" ]; then . "$DIS"; LANE="$(detect_install_state "$MAIN_ROOT")"; fi
 **If `LANE == plugin`:** do NOT run Step 0 asset-locate, the audit's
 gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
 
+- **W6.1 hard-refuse — explicit `install` / `--with-addons` on the plugin
+  lane.** If an explicit install arg was parsed (`$MODE == "install"` OR
+  `$ADDON_FLAG` non-empty) AND no lane switch is in progress, REFUSE and exit
+  non-zero. The `switch-in-progress` carve-out (W6.2) lets
+  `scripts/switch-install-path.sh --to-update-zskills` run its mandated
+  `/update-zskills install` step without tripping this refuse:
+
+  ```bash
+  if { [ "$MODE" = install ] || [ -n "$ADDON_FLAG" ]; } \
+     && [ ! -f "${CLAUDE_PROJECT_DIR:-$PWD}/.zskills/switch-in-progress" ]; then
+    echo "ERROR: refusing 'install' / '--with-addons' on the plugin lane." >&2
+    echo "A client is single-lane. Running it here would re-create the legacy" >&2
+    echo ".claude/skills mirror alongside the plugin (the dual state the system" >&2
+    echo "actively pushes to consolidate). To switch lanes, run:" >&2
+    echo "    bash scripts/switch-install-path.sh --to-update-zskills" >&2
+    echo "  (or /update-zskills --switch-install-path=to-update-zskills)" >&2
+    exit 1
+  fi
+  ```
+
+  (The `switch-install-path.sh --to-update-zskills` flow writes
+  `.zskills/switch-in-progress` at its START and removes it only after the
+  lane-lock is written LAST, so this skip is active exactly for the duration
+  of an in-flight switch and not in steady state.)
+
 - **If a preset arg was parsed (`$PRESET_ARG` non-empty):** apply it
   **config-only** via the existing **Step F — Apply Preset** call (it is
   lane-portable — it edits only `.claude/zskills-config.json`, never the
   mirror):
 
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
   ```
 
   Report the result verbatim per Step F's exit-code table (0 applied / 1
@@ -1792,7 +1844,12 @@ If `$PRESET_ARG` is empty, skip this step entirely — nothing to do.
 Otherwise:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
 ```
 
 Capture stdout and the exit code. Report to the user verbatim:
@@ -1821,9 +1878,14 @@ This is what the audit gap report (Step 6) and `/briefing` "Z Skills
 Update Check" read to detect drift on subsequent invocations:
 
 ```bash
-new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
 if [ -n "$new_repo_ver" ]; then
-  bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
+  bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/json-set-string-field.sh" \
     "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
 fi
 ```
@@ -1867,10 +1929,15 @@ is already present under `.claude/skills/`; otherwise filter them out.
 Same renderer logic as the update-path table (see Pull Latest step 6).
 
 ```bash
-delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
 show_addons=0
 case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-[ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+[ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
 printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
   $2 == "addon" && show_addons == 0 { next }
   { printf "  %-20s %s  (%s)\n", $1, $3, $5 }
@@ -1914,7 +1981,12 @@ had no tags).
    "Fill All Gaps"):
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/apply-preset.sh" "$PRESET_ARG"
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
    ```
 
    Capture stdout and exit code; report verbatim to the user. This is
@@ -1928,9 +2000,14 @@ had no tags).
    Check" read on the next invocation:
 
    ```bash
-   new_repo_ver=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   new_repo_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
    if [ -n "$new_repo_ver" ]; then
-     bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/json-set-string-field.sh" \
+     bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/json-set-string-field.sh" \
        "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" zskills_version "$new_repo_ver"
    fi
    ```
@@ -1970,10 +2047,15 @@ had no tags).
    Generation pseudocode (pure bash + awk):
 
    ```bash
-   delta_tsv=$(bash "${CLAUDE_PLUGIN_ROOT:-$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills}/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   delta_tsv=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/skill-version-delta.sh" "$ZSKILLS_PATH")
    show_addons=0
    case "$ARGS" in *--with-addons*|*--with-block-diagram-addons*) show_addons=1 ;; esac
-   [ "$show_addons" = 0 ] && [ -d "$CLAUDE_PROJECT_DIR/.claude/skills/add-block" ] && show_addons=1
+   [ "$show_addons" = 0 ] && [ -d "$ZSKILLS_SKILLS_ROOT/add-block" ] && show_addons=1
    # Updated section (status=bumped: old → new), then unchanged:
    printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
      $2 == "addon" && show_addons == 0 { next }

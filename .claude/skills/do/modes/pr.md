@@ -53,24 +53,34 @@ WORKTREE_PATH="/tmp/${PROJECT_NAME}-do-${TASK_SLUG}"
 
 **Step A4 — Sanitize TASK_SLUG + construct PIPELINE_ID (BEFORE worktree creation):**
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Route TASK_SLUG through the shared sanitizer (collapses any character
 # outside [a-zA-Z0-9._-] into `_`, truncates to 128 bytes). KEEP this
 # defensive call: removing would require exhaustive downstream audit of
 # TASK_SLUG consumers (R2-M4). It is safe to run this BEFORE worktree
 # creation because the sanitized slug is needed by --pipeline-id.
-TASK_SLUG=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$TASK_SLUG")
+TASK_SLUG=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$TASK_SLUG")
 PIPELINE_ID="do.${TASK_SLUG}"
 ```
 
 **Step A5 — Worktree creation (pre-flight prune+fetch+ff-merge is owned by create-worktree.sh):**
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # /do expects a fresh branch per task — no legitimate resume.
 # --pipeline-id passes $PIPELINE_ID explicitly; the script sanitizes it
 # again internally (idempotent on already-safe inputs) and writes the
 # sanitized value to the worktree's .zskills-tracked. No env var reliance,
 # no cross-invocation pollution.
-WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
   --prefix do \
   --branch-name "${BRANCH_PREFIX}do-${TASK_SLUG}" \
   --purpose "do PR mode; task=${TASK_SLUG}" \
@@ -99,8 +109,13 @@ explicit-finalize block at the end of the caller loop (Step A8), and
 inline before every post-acquire-pre-finalize early exit.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -n "${ISSUE_NUM:-}" ]; then
-  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
   bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
   ACQ_RC=$?
   case "$ACQ_RC" in
@@ -149,8 +164,8 @@ any sub-agents. Use that model or higher (haiku=1 < sonnet=2 < opus=3).
 
 Wait for the implementation agent to complete. If the agent reports failure or exits without committing:
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
@@ -171,6 +186,11 @@ exhausted `gh pr view` retries). `/do pr` is responsible only for the
 title/body composition and the fix-cycle agent's task-context slot.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 cd "$WORKTREE_PATH"
 
 # Compose $PR_TITLE (model-layer). Set shell variable PR_TITLE to a
@@ -185,14 +205,14 @@ if [ -z "${PR_TITLE:-}" ]; then
   # the explicit-finalize block, so release the issue claim (only if one
   # was acquired) before bailing or it leaks.
   if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
   fi
   exit 5
 fi
 if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 60 ] || [[ "$PR_TITLE" != do:\ * ]]; then
   echo "ERROR: PR_TITLE must be a single line ≤60 chars starting with 'do: ' (got '$PR_TITLE')." >&2
   if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
   fi
   exit 2
 fi
@@ -247,8 +267,8 @@ RESULT_FILE="/tmp/land-pr-result-$BRANCH_SLUG-$$.txt"
 # invocations → variables do NOT survive across fences). $TASK_SLUG and
 # $BRANCH_NAME were model-substituted at fence emission per /do's
 # existing convention (Step A1 + Step A3).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
@@ -314,7 +334,7 @@ while :; do
     # C2 inline-release: post-acquire, pre-finalize early exit — release
     # the issue claim (only if one was acquired) or it leaks.
     if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
     fi
     exit 1
   fi
@@ -489,7 +509,7 @@ rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
 # re-resolved at the tracking-setup fence-top above and survives in this
 # fence.
 if [ -n "${ISSUE_NUM:-}" ]; then
-  bash "$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
 fi
 ```
 

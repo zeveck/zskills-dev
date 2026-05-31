@@ -15,8 +15,12 @@
 #
 # D27 — the dual-install detection probe runs FIRST (before any write). On
 # lane=update-zskills or lane=dual the materialiser emits the documented
-# WARN (once per session, gated by .zskills/dual-install-warned) and exits
-# WITHOUT materialising, so /update-zskills install state is never clobbered.
+# nag EVERY session (W6.3 — no once-per-session gate) and exits WITHOUT
+# materialising, so /update-zskills install state is never clobbered. The nag
+# is imperative because dual install is NOT a supported client state — but a
+# SessionStart hook CANNOT uninstall a lane, so it can only surface the
+# conflict and point at the consolidation tool; the actual block lives in
+# SKILL.md Step 0.7 (the writer that would re-create the mirror).
 #
 # D20(a) — overwrite guard: each artifact is written WITH a materialiser
 # sentinel (detect-by-prefix `^(#|<!--) zskills-materialised: <version>`),
@@ -42,6 +46,21 @@ PLUGIN="${CLAUDE_PLUGIN_ROOT:-}"
 PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 [ -n "$PYTHON" ] || exit 0
 
+# ── W6.2 — switch-in-progress skip ────────────────────────────────────────
+# scripts/switch-install-path.sh --to-update-zskills writes
+# .zskills/switch-in-progress at its START (removed only after the lane-lock
+# is written LAST). That flow mandates /plugin uninstall → restart →
+# /update-zskills install; on the restart the plugin is still loaded and the
+# materialiser would otherwise re-arm the sentinelled artifacts → re-classify
+# detect==plugin → the mandated /update-zskills install would be hard-refused
+# (a deadlock the bare reorder cannot avoid). While this marker is present we
+# do NOT re-materialise, so detect==plugin is not re-armed across the switch's
+# restart. The marker is cleared by switch-install-path.sh at lock-write; the
+# steady-state dual nag (below) resumes on the next session.
+if [ -f "$PROJ/.zskills/switch-in-progress" ]; then
+  exit 0
+fi
+
 CONFIG="$PROJ/.claude/zskills-config.json"
 PLUGIN_VERSION="$("$PYTHON" -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$PLUGIN/.claude-plugin/plugin.json" 2>/dev/null || echo unknown)"
 
@@ -51,19 +70,16 @@ LANE="$(detect_install_state "$PROJ")"
 case "$LANE" in
   fresh|plugin) ;;
   update-zskills)
-    if [ ! -f "$PROJ/.zskills/dual-install-warned" ]; then
-      mkdir -p "$PROJ/.zskills"
-      echo "zskills: plugin loaded but install lane is /update-zskills. Run /update-zskills --switch-install-path=to-plugin to switch, or /plugin uninstall zs@zskills to remove the plugin." >&2
-      touch "$PROJ/.zskills/dual-install-warned"
-    fi
+    # W6.3 — nag EVERY session (no .zskills/dual-install-warned gate) so the
+    # conflict keeps surfacing until the consumer consolidates. A SessionStart
+    # hook cannot uninstall a lane; it can only surface + point at the tool.
+    echo "zskills: plugin loaded but install lane is /update-zskills. Dual install is not a supported client state — run scripts/switch-install-path.sh to pick one lane (--to-plugin to keep the plugin, --to-update-zskills to keep the mirror), or /plugin uninstall zs@zskills." >&2
     exit 0  # Do NOT materialise — would clobber /update-zskills install state.
     ;;
   dual)
-    if [ ! -f "$PROJ/.zskills/dual-install-warned" ]; then
-      mkdir -p "$PROJ/.zskills"
-      echo "zskills: dual install detected (/update-zskills AND plugin). Run bash scripts/switch-install-path.sh --to-plugin to consolidate." >&2
-      touch "$PROJ/.zskills/dual-install-warned"
-    fi
+    # W6.3 — nag EVERY session (no once-per-session gate). A SessionStart hook
+    # cannot uninstall a lane; surface + point at the consolidation tool.
+    echo "zskills: dual install detected (/update-zskills AND plugin). Dual install is not a supported client state — run scripts/switch-install-path.sh to pick one lane (--to-plugin or --to-update-zskills)." >&2
     # Conditional-skip shim handles double-fire on hooks; we still skip the
     # materialiser here too (would clobber /update-zskills install state).
     exit 0

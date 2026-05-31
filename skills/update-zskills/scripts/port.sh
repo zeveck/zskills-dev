@@ -51,7 +51,16 @@ if [[ -n "$DEV_PORT" ]]; then
 fi
 
 # ─── Consumer dev-port.sh callout (stub-callout convention) ───
+# Resolve the stub-lib lane-agnostically: BASH_SOURCE-relative (this script
+# already lives in update-zskills/scripts/, so the lib is a sibling — present
+# on the plugin tree where no .claude/skills mirror exists) first, then the
+# consumer mirror — so consumer dev-port.sh callouts fire on the plugin lane too.
+_self_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 _STUB_LIB="${CLAUDE_PROJECT_DIR:-$PROJECT_ROOT}/.claude/skills/update-zskills/scripts/zskills-stub-lib.sh"
+if [ -f "$_self_dir/zskills-stub-lib.sh" ]; then
+  _STUB_LIB="$_self_dir/zskills-stub-lib.sh"
+fi
+unset _self_dir
 if [ -f "$_STUB_LIB" ]; then
   # shellcheck disable=SC1090
   . "$_STUB_LIB"

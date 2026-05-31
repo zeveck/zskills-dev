@@ -9,7 +9,7 @@ description: >-
   phases are never modified (checksum-gated). Sister skill to /draft-plan,
   scoped to test specs.
 metadata:
-  version: "2026.05.28+f78ab2"
+  version: "2026.05.31+3cd506"
 ---
 
 # /draft-tests \<plan-file> [rounds N] [guidance...] — Adversarial Test-Spec Drafter
@@ -65,7 +65,7 @@ the worktree, not main:
 ```bash
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 TOPLEVEL=$(git rev-parse --show-toplevel)
-HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/ensure-worktree.sh"
+HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/ensure-worktree.sh"
 # Caller-side install-integrity fallback (DA-R3-2): if /update-zskills
 # Step 3 ran as per-file-diff and skipped the new file, the helper itself
 # is missing. Emit an actionable exit-11 message instead of bash's
@@ -81,8 +81,8 @@ fi
 # $ZSKILLS_PLANS_DIR. Phase 1's Tracking-fulfillment fence re-derives
 # $TRACKING_ID idempotently from the same $PLAN_FILE.
 if [ -z "${PLAN_FILE:-}" ]; then
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi
@@ -208,8 +208,8 @@ writing to disk. The bare-relative `scripts/sanitize-pipeline-id.sh`
 form is FORBIDDEN — that path no longer exists post-PR-#97.
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
@@ -218,7 +218,7 @@ if [ -n "${ZSKILLS_PIPELINE_ID:-}" ]; then
   PIPELINE_ID="$ZSKILLS_PIPELINE_ID"
 else
   RAW_PIPELINE_ID="draft-tests.$TRACKING_ID"
-  PIPELINE_ID=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$RAW_PIPELINE_ID")
+  PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$RAW_PIPELINE_ID")
 fi
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: draft-tests\nid: %s\nplan: %s\nstatus: started\ndate: %s\n' \
@@ -263,9 +263,14 @@ to `ac_less:` and an advisory line is emitted), and persistence to a
 parsed-state file:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 SLUG="$TRACKING_ID"
 PARSED_STATE="/tmp/draft-tests-parsed-${SLUG}.md"
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/parse-plan.sh" \
+bash "$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/parse-plan.sh" \
   "$PLAN_FILE" "$PARSED_STATE"
 ```
 
@@ -399,8 +404,8 @@ coverage floor on ac-less phases (the scope is empty by construction).
 After the parser returns, write the research step marker:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
@@ -444,7 +449,7 @@ printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   modification, the justification is: "ID prefix is content-preserving
   metadata required to reference criteria from the appended specs."
 - **Cross-skill script invocation.** Use the
-  `"$CLAUDE_PROJECT_DIR/.claude/skills/<owner>/scripts/<name>"` form
+  `"$ZSKILLS_SKILLS_ROOT/<owner>/scripts/<name>"` form
   for any helper from another skill (and from this skill's own
   scripts). The bare-`scripts/<name>` form is forbidden post-PR-#97 —
   those paths are removed by `/update-zskills`'s STALE_LIST migration
@@ -490,9 +495,14 @@ implementation; the same idioms apply here).
 ### Three-case test-cmd resolution (config-first)
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 PROJECT_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 DETECT_STATE="/tmp/draft-tests-detect-${SLUG}.md"
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/detect-language.sh" \
+bash "$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/detect-language.sh" \
   "$PROJECT_ROOT" "$DETECT_STATE"
 ```
 
@@ -621,6 +631,11 @@ user-authored sections like `## Anti-Patterns -- Hard Constraints`,
 block-aware (mirroring the parse-plan section-boundary scan).
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ "$CASE" = "3" ]; then
   PREREQ_BODY="/tmp/draft-tests-prereq-${SLUG}.md"
   awk '
@@ -629,7 +644,7 @@ if [ "$CASE" = "3" ]; then
     active                        { print }
   ' "$DETECT_STATE" > "$PREREQ_BODY"
   if [ -s "$PREREQ_BODY" ]; then
-    bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/insert-prerequisites.sh" \
+    bash "$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/insert-prerequisites.sh" \
       "$PLAN_FILE" "$PREREQ_BODY"
   fi
 fi
@@ -695,7 +710,12 @@ After dispatch, the agent's output is parsed for the spec bodies, written
 to `$SPECS_FILE`, and the orchestrator runs:
 
 ```bash
-bash "$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/draft-orchestrator.sh" \
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+bash "$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/draft-orchestrator.sh" \
   "$PLAN_FILE" "$PARSED_STATE" "$SPECS_FILE" "$DRAFT_ROUND_OUT" 0
 ```
 
@@ -1147,6 +1167,11 @@ invocation mode).
 Invocation:
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 # Issue #629: this fence is a per-iteration recipe meant to run inside
 # the orchestrator's round loop where $ROUND_N is the counter and
 # $PREV_INPUT is the previous round's refiner input. Default-resolve
@@ -1155,7 +1180,7 @@ Invocation:
 # /draft-plan's `ROUND="${ROUND:-1}"` pattern at SKILL.md L523.
 ROUND_N="${ROUND_N:-1}"
 PREV_INPUT="${PREV_INPUT:-}"
-PRECHECK="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/coverage-floor-precheck.sh"
+PRECHECK="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/coverage-floor-precheck.sh"
 bash "$PRECHECK" \
   "$PLAN_FILE" "$PARSED_STATE" "$PREV_INPUT" \
   "$ROUND_N" "$SLUG" \
@@ -1238,7 +1263,12 @@ becomes the final spec set used in Phase 5 / 6.
 Invocation:
 
 ```bash
-CONVERGENCE="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/convergence-check.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+CONVERGENCE="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/convergence-check.sh"
 bash "$CONVERGENCE" "$REFINED_OUT" "$FLOOR_FINDINGS"
 # rc=0 -> CONVERGED; rc=1 -> NOT CONVERGED (reasons on stdout)
 ```
@@ -1633,7 +1663,12 @@ response.
 Invocation:
 
 ```bash
-VERIFY="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/verify-completed-checksums.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+VERIFY="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/verify-completed-checksums.sh"
 bash "$VERIFY" "$PLAN_FILE" "$PARSED_STATE"
 ```
 
@@ -1717,12 +1752,17 @@ form.
 ### Per-script invocation summary
 
 ```bash
-GAP="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/gap-detect.sh"
-BACKFILL="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/append-backfill-phase.sh"
-TSR="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/insert-test-spec-revisions.sh"
-FLIP="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/flip-frontmatter-status.sh"
-REINV="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/re-invocation-detect.sh"
-VERIFY="$CLAUDE_PROJECT_DIR/.claude/skills/draft-tests/scripts/verify-completed-checksums.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+GAP="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/gap-detect.sh"
+BACKFILL="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/append-backfill-phase.sh"
+TSR="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/insert-test-spec-revisions.sh"
+FLIP="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/flip-frontmatter-status.sh"
+REINV="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/re-invocation-detect.sh"
+VERIFY="$ZSKILLS_SKILLS_ROOT/draft-tests/scripts/verify-completed-checksums.sh"
 
 # Step 1: gap detection (writes gaps file).
 bash "$GAP" "$PLAN_FILE" "$PARSED_STATE" "$DETECT_STATE" "$GAPS_FILE"
@@ -1824,8 +1864,8 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
   # (e.g., caller-in-worktree, where WT_PATH was empty but TOPLEVEL is
   # already a worktree — we want paths anchored on TOPLEVEL).
   export ZSKILLS_PATHS_ROOT="$TOPLEVEL"
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-paths.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-paths.sh"
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi
@@ -1864,8 +1904,8 @@ if [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
     echo "draft-tests: unexpected staged set: $STAGED (expected $FILE_REL only)" >&2
     exit 1
   fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
@@ -1898,8 +1938,8 @@ worktree commit stands and the caller lands manually.
 
 ```bash
 if [ "${AUTO_FLAG:-0}" = "1" ] && [ "$TOPLEVEL" != "$MAIN_ROOT" ]; then
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-    . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
   else
     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
   fi
@@ -1955,8 +1995,8 @@ update the fulfillment marker to `status: complete`. Mirrors
 `/draft-plan`'s Phase 6 post-finalize contract:
 
 ```bash
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/scripts/zskills-resolve-config.sh"
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi

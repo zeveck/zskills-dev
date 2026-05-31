@@ -16,6 +16,11 @@ compose the same way as single-line ones: distill the intent, don't
 splice lines.
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -z "${TASK_SLUG:-}" ]; then
   echo "ERROR: TASK_SLUG not set — model-layer composition step skipped." >&2
   exit 5
@@ -42,14 +47,14 @@ rc=0
 # placement consistent with every other worktree-creating skill and works
 # in containerized environments where MAIN_ROOT's parent may not be
 # writable.
-WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
   --prefix do --no-preflight \
   --pipeline-id "$PIPELINE_ID" \
   "${ATTEMPT_SLUG}") || rc=$?
 if [ "${rc:-0}" = "2" ]; then
   # rc=2 is path-exists collision — retry with timestamp suffix.
   ATTEMPT_SLUG="${TASK_SLUG}-$(date +%s | tail -c 5)"
-  WORKTREE_PATH=$(bash "$CLAUDE_PROJECT_DIR/.claude/skills/create-worktree/scripts/create-worktree.sh" \
+  WORKTREE_PATH=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/create-worktree.sh" \
     --prefix do --no-preflight \
     --pipeline-id "$PIPELINE_ID" \
     "${ATTEMPT_SLUG}")
@@ -67,8 +72,13 @@ common /do case). The claim is released in `/do` Phase 5 Report (the
 universal terminal for both auto and non-auto exits).
 
 ```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
 if [ -n "${ISSUE_NUM:-}" ]; then
-  CLAIM_HELPER="$CLAUDE_PROJECT_DIR/.claude/skills/fix-issues/scripts/claim-issue.sh"
+  CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
   bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
   ACQ_RC=$?
   case "$ACQ_RC" in

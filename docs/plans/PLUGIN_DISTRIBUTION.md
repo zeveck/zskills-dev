@@ -9,6 +9,8 @@ completed: "2026-05-28T22:01:34Z"
 
 > **Landing mode: PR** — All phases use worktree isolation with a named feature branch. `execution.landing = "pr"` and `execution.main_protected = true` per `.claude/zskills-config.json`.
 
+> **SUPERSEDED FRAMING NOTE (PLUGIN_LANE_SCRIPT_RESOLUTION Phase 6, W6.4):** This completed plan repeatedly frames dual-install as a "permanent, supported, first-class" state (Overview, D16, D23). That framing is superseded: **a consumer is single-lane** — it picks exactly ONE lane. Dual-install is a dogfooding-repo / mid-switch *transient* the system tolerates without corruption and actively pushes to consolidate (every-session nag + the W6.1 `/update-zskills install` hard-refuse on `detect==plugin`). The dual-path *machinery* (conditional-skip shim, detection probe, bidirectional switch tooling) remains correct and permanent; only the "permanent client end-state" characterization is revised. The body below is left intact as the historical record.
+
 ## Overview
 
 zskills currently distributes itself via a bespoke installer (`/update-zskills`) that mirrors `skills/` → `.claude/skills/`, copies `hooks/*.sh` → `.claude/hooks/`, copies `.claude/agents/*.md`, registers PreToolUse/PostToolUse hooks in the consumer's `.claude/settings.json`, and renders `CLAUDE_TEMPLATE.md` → `.claude/rules/zskills/managed.md` against `.claude/zskills-config.json`. Claude Code now ships a first-class plugin/marketplace system. **This plan adds plugin distribution as a permanent second install path alongside the existing `/update-zskills` path. Neither path is retired. Both are first-class.**
