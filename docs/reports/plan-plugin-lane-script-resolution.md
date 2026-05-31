@@ -1,5 +1,14 @@
 # Plan Report — Plugin-lane script resolution + dual-install hardening
 
+## Phase — 6 Dual-install hardening + doc-wording fix (FINAL)
+
+**Status:** Completed (verified) — commit `1dff7ca`. **Plan complete.**
+- W6.1: Step 0.7 hard-refuses explicit `/update-zskills install`/`--with-addons` when `detect_install_state == plugin` (dev repo exempt).
+- W6.2: `.zskills/switch-in-progress` marker (written by switch-install-path at start, removed after lock-LAST) honored by BOTH the refuse and the materialiser — verified end-to-end to break the round-2 restart-deadlock.
+- W6.3: materialiser dual-install nag escalated to every-session imperative (exit 0/no-clobber).
+- W6.4: CLAUDE.md "supported permanent state" → single-lane-per-client framing; PLUGIN_DISTRIBUTION.md superseded note.
+- W6.5/6.6: tests (refuse/marker/escalation, all executing logic), version bump. Full suite 6581/6581.
+
 ## Phase — 5 Mirror-less prod-tree verification gate
 
 **Status:** Completed (verified) — commit `1340ec4`
