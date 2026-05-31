@@ -58,6 +58,14 @@ if ! git clone --quiet "$REPO_ROOT" "$CLONE"; then
   exit "$FAIL_COUNT"
 fi
 
+# A fresh `git clone` writes a new .git/config that does NOT inherit the source
+# repo's local user.name/user.email, and CI runners have no global identity, so
+# the clone has NO git author/committer. build-plugin-release.sh step 9
+# (commit-tree, which builds the prod commit) then fails with "empty ident name".
+# Give the throwaway clone a local identity so that step succeeds on CI.
+git -C "$CLONE" config user.email "d4-gate-test@zskills.invalid"
+git -C "$CLONE" config user.name  "zskills D4 gate test"
+
 # ── Run the REAL build (no --push, default version) inside the clone ─────────
 BUILD_OUT="$TMP/build.out"
 if ( cd "$CLONE" && bash scripts/build-plugin-release.sh ) > "$BUILD_OUT" 2>&1; then
