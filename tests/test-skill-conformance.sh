@@ -1756,6 +1756,37 @@ check_fixed research-and-go   "preflight: Agent-tool-required heading (issue #14
   '## Preflight — top-level dispatch required'
 
 echo ""
+echo "=== /draft-tests — structural existence pins (issue #861) ==="
+# PR #855 split /draft-tests's SKILL.md into 5 files (3 modes + 2 references).
+# This block mirrors the post-#849 /quickfix pin pattern: assert every split
+# file exists on BOTH the source tree (skills/draft-tests/) AND the install
+# mirror (.claude/skills/draft-tests/), failing closed if any vanishes. The
+# /draft-tests row in docs/issues/ISSUES_PLAN.md noted that prior coverage
+# (test-skill-conformance.sh:936 /land-pr caller array + variable-family
+# allowlist in test-skill-invariants.sh) is sideways — it gates downstream
+# behavior but never asserts the files themselves. This block closes that
+# gap symmetrically with /quickfix.
+DT_REQ_FILES=(
+  "skills/draft-tests/modes/draft.md"
+  "skills/draft-tests/modes/backfill.md"
+  "skills/draft-tests/modes/land.md"
+  "skills/draft-tests/references/test-spec-format.md"
+  "skills/draft-tests/references/design-constraints.md"
+  ".claude/skills/draft-tests/modes/draft.md"
+  ".claude/skills/draft-tests/modes/backfill.md"
+  ".claude/skills/draft-tests/modes/land.md"
+  ".claude/skills/draft-tests/references/test-spec-format.md"
+  ".claude/skills/draft-tests/references/design-constraints.md"
+)
+for dt_path in "${DT_REQ_FILES[@]}"; do
+  if [ -f "$REPO_ROOT/$dt_path" ]; then
+    pass "[draft-tests-presence] $dt_path exists"
+  else
+    fail "[draft-tests-presence] $dt_path exists" "$dt_path"
+  fi
+done
+
+echo ""
 echo "=== /draft-tests — behavior contracts (WI 6.3) ==="
 # Anchor: tests/test-skill-conformance.sh draft-tests block — one check
 # per WI 6.3 sub-bullet of plans/DRAFT_TESTS_SKILL_PLAN.md (current count:
