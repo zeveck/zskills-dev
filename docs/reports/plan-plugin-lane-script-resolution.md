@@ -1,5 +1,15 @@
 # Plan Report — Plugin-lane script resolution + dual-install hardening
 
+## Phase — 3 Family 2: migrate bundled-script `.md` invocations
+
+**Status:** Completed (verified) — commit `ac29a24`
+- W3.1: 161 bundled-script invocations → `$ZSKILLS_SKILLS_ROOT/<owner>/scripts/<x>`; EXCLUSION grep after = 0; legacy config-helper source lines (238) preserved (chicken-and-egg intact).
+- W3.2: 15 path-prefix sites → `$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/<x>`.
+- W3.3: 49 bootstraps added to executable fences; 3 illustrative doc-example fences left (placeholder args).
+- W3.4: 15 test assertion/anchor updates (lockstep, NONE weakened — independently confirmed); hooks denylist assertion untouched.
+- W3.5: 22 skill dirs bumped, mirror byte-equal. Full suite 6560/6560.
+- Drift: plan estimates (~144/~39/10) were undercounts; actual 161/49/15. No missed work (EXCLUSION grep=0 is the completeness check).
+
 ## Phase — 2 Family 1: repoint config-helper `.md` sources
 
 **Status:** Completed (verified) — commit `e3125f3`
