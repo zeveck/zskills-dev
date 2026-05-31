@@ -162,6 +162,18 @@ jobs:
           echo "== marketplace.json schema (incl. D10 version lockstep) =="
           bash tests/test-plugin-marketplace.sh
 
+      # Mirror-less prod-tree dogfood — builds a SHIPPED plugin tree (git
+      # archive HEAD + build-plugin-release.sh strip set) and a mirror-LESS
+      # consumer, then proves lane-portable script resolution works on the
+      # real plugin path. This is the regression gate for the Phase 1-4
+      # `$CLAUDE_PROJECT_DIR/.claude/skills/...` → `$ZSKILLS_SKILLS_ROOT`
+      # migration; it would have caught the original bug class. Needs the full
+      # git history (checkout@v4 provides HEAD).
+      - name: "Tier 1 (mandatory): mirror-less plugin-lane resolution dogfood"
+        run: |
+          set -e
+          bash tests/test-plugin-mirrorless-resolution.sh
+
       # Tier 2 — BEST-EFFORT claude plugin validate --strict. Skips with a
       # documented reason when the CLI is not reachable. Never blocks the PR.
       - name: "Tier 2 (best-effort): claude plugin validate --strict"

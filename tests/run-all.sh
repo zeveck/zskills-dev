@@ -206,6 +206,7 @@ run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
+run_suite "test-plugin-mirrorless-resolution.sh" "tests/test-plugin-mirrorless-resolution.sh"
 # Phase 2 — SessionStart materialiser + dual-install detection + renderer.
 run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
 run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
