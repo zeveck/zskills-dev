@@ -4,7 +4,7 @@ description: >-
   Step-by-step guide for adding new block types. Use when the user asks to
   "add a block", "create a new block", or "implement a block".
 metadata:
-  version: "2026.05.31+c5656a"
+  version: "2026.05.31+445ceb"
 ---
 
 # Adding Block Types
@@ -569,11 +569,6 @@ Add a Rust emitter for the block in `src/codegen/block-emitter.js`.
    ```javascript
    Name: { paramName: defaultValue },
    ```
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
-     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
-   else
-     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-   fi
 
 4. Add any codegen-only params to `CODEGEN_ONLY_PARAMS` if they shouldn't appear in the Rust `Params` struct.
 
@@ -641,11 +636,6 @@ Create a GitHub issue and add an entry to `$ZSKILLS_ISSUES_DIR/BUILD_ISSUES.md` 
 
 **Description:** {Why this block can't be emitted yet and what's needed.}
 ```
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
-  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
-else
-  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
-fi
 
 After deferring codegen, create the deferred marker with the GitHub issue number:
 ```bash
