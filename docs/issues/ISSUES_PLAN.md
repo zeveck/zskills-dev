@@ -1361,3 +1361,23 @@ Plus a structural conformance pin in `tests/test-skill-conformance.sh` (or new t
 **Fix outline.** Restore the staleness step from 3d8e120 before the `**Exit.**` line at SKILL.md:469 in the `next` section. The block adds steps 4 (peek at Ready queue, report count or staleness) and renumbers Exit to step 5. Bump `metadata.version`. Mirror source to `.claude/skills/fix-issues/SKILL.md`. Two files changed, zero logic — pure prose restoration.
 **Complexity:** S. **Action now:** /do pr — restore accidentally-reverted staleness step in /fix-issues `next` section from 3d8e120 + version bump + mirror
 
+
+### #832 — skills/doc/SKILL.md: missed by PR #831 plugin-lane migration — still uses single-lane resolver source
+
+**Labels:** (none) | **Verdict:** UNCLEAR — issue premise contradicts canonical decision D23
+
+**Problem.** Issue claims doc-skill was uniquely missed by PR #831's plugin-lane migration of the resolver source. Implementer dispatch on 2026-05-31 surfaced 3 structural ambiguities: (1) `references/canonical-config-prelude.md` §1 explicitly states the legacy single-line form is "valid forever, NOT deprecated" (D23 / F-DA2-4); (2) the doc-skill is NOT uniquely missed — 11 other inline-prose sites across 9 skills (fix-issues, do, do/modes/direct, qe-audit, verify-changes×3, fix-report, run-plan/modes/execute-phase, fix-issues/modes/sprint, doc×2) use the same legacy literal; (3) PR #831 migrated executable bash fences only, not inline-prose `(resolve via ...)` parentheticals, for which there's no precedent dual-prelude pattern (a 5-line bash block doesn't fit in a code-span).
+
+**Fix outline.** Three possible scope choices: (A) narrow doc-skill only, drop #833 because gate contradicts D23, file follow-up to revise D23 OR design a more nuanced gate; (B) full prose-form sweep across 12 sites in 9 skills + scoped gate (inline-prose only, not fences) + D23 revision; (C) close both — "working as designed per D23; mirror-less plugin consumers run /update-zskills to install legacy mirror." Decision is load-bearing and contradicts canonical reference doc; requires author judgment.
+
+**Complexity:** S-M. **Action now:** /draft-plan — pick scope option A/B/C with author input; current issue body's framing assumes the doc-skill is uniquely affected which is empirically false.
+
+### #833 — test-skill-conformance.sh: add check_not for legacy single-lane resolver source pattern
+
+**Labels:** (none) | **Verdict:** UNCLEAR — gate proposal contradicts D23
+
+**Problem.** Issue proposes a check_not gate that flags every occurrence of the legacy single-lane resolver source literal. Implementer dispatch on 2026-05-31 found this contradicts `references/canonical-config-prelude.md` §1 (D23 / F-DA2-4: "legacy form valid forever, NOT deprecated"). The canonical reference itself uses the legacy literal in 4+ documented examples; the gate as proposed would catch them. The gate also presumes #832's "doc-skill uniquely missed" framing which is empirically false (11+ other sites use the legacy literal in inline prose).
+
+**Fix outline.** Depends on resolution of [[#832]]. If scope option A: drop entirely. If option B: scope the gate to inline-prose-backtick form only (NOT executable fences), and update D23 to scope its "forever" guarantee to fences. If option C: close as redundant.
+
+**Complexity:** S (the gate itself is one check_not block). **Action now:** /draft-plan — joint scope decision with #832; gate design depends on whether D23 is revised.
