@@ -2259,6 +2259,83 @@ else
 fi
 
 echo ""
+echo "=== Tracking-fence empty-PIPELINE_ID guard (#852) ==="
+# A tracking-marker fence that does `mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"`
+# (or, more generally, writes under .zskills/tracking/$PIPELINE_ID) must be
+# preceded by a fail-loud guard:
+#
+#   [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID ..." >&2; exit 1; }
+#
+# Without it, an upstream hiccup that empties $PIPELINE_ID (e.g. a failed
+# resolver source line leaving $ZSKILLS_SKILLS_ROOT unset, so the
+# sanitize-pipeline-id.sh cmd-substitution yields "") produces a SILENT flat
+# write to `.zskills/tracking//...` — violating the per-pipeline-subdir
+# invariant and tripping the dedup hook on later runs. This tripwire asserts
+# the guard appears within the preceding 10 lines of the SAME bash fence as
+# every `mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"` line.
+TRACK_GUARD_FAIL=0
+TRACK_GUARD_HITS="$(ZS_REPO_ROOT="$REPO_ROOT" "${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}" <<'PYEOF'
+import os, re, sys
+repo = os.environ["ZS_REPO_ROOT"]
+roots = [os.path.join(repo, "skills"), os.path.join(repo, "block-diagram")]
+files = []
+for root in roots:
+    for dirpath, _dirs, fns in os.walk(root):
+        for fn in fns:
+            if fn.endswith(".md"):
+                files.append(os.path.join(dirpath, fn))
+MKDIR = re.compile(r'mkdir -p "\$MAIN_ROOT/\.zskills/tracking/\$PIPELINE_ID"')
+GUARD = re.compile(r'\[ -n "\$PIPELINE_ID" \]')
+WINDOW = 10
+hits = []
+for f in sorted(files):
+    with open(f, encoding="utf-8") as fh:
+        lines = fh.readlines()
+    # Build a per-line fence id (None outside any fence).
+    in_fence = False
+    fence_id = 0
+    fence_of = [None] * (len(lines) + 1)  # 1-indexed
+    for i, line in enumerate(lines, 1):
+        s = line.lstrip()
+        if s.startswith("```") or s.startswith("~~~"):
+            in_fence = not in_fence
+            if in_fence:
+                fence_id += 1
+            continue
+        fence_of[i] = fence_id if in_fence else None
+    for i, line in enumerate(lines, 1):
+        if fence_of[i] is None or not MKDIR.search(line):
+            continue
+        fid = fence_of[i]
+        guarded = False
+        for j in range(i - 1, max(0, i - 1 - WINDOW), -1):
+            if fence_of[j] != fid:
+                continue  # left the fence — keep scanning back within window
+            if GUARD.search(lines[j - 1]):
+                guarded = True
+                break
+        if not guarded:
+            rel = os.path.relpath(f, repo)
+            hits.append('%s:%d: tracking mkdir under $PIPELINE_ID with no '
+                        '`[ -n "$PIPELINE_ID" ]` guard within the preceding %d '
+                        'lines of the same fence (#852 — would silently flat-write '
+                        'on empty $PIPELINE_ID).' % (rel, i, WINDOW))
+for h in hits:
+    print(h)
+sys.exit(0)
+PYEOF
+)"
+if [ -n "$TRACK_GUARD_HITS" ]; then
+  TRACK_GUARD_FAIL=1
+  fail "tracking fence missing empty-PIPELINE_ID guard (#852)" "$(printf '%s' "$TRACK_GUARD_HITS" | grep -c .) hit(s)"
+  printf '%s\n' "$TRACK_GUARD_HITS" | while IFS= read -r h; do
+    [ -n "$h" ] && printf '    %s\n' "$h" >&2
+  done
+else
+  pass "all tracking mkdir fences carry an empty-PIPELINE_ID fail-loud guard (#852)"
+fi
+
+echo ""
 echo "=== No skill-file drift hardcodes (extended scope: hooks/, scripts/, *.py) ==="
 # Sibling deny-list scan over non-markdown sources that the existing
 # skills/**/*.md scanner above doesn't see:

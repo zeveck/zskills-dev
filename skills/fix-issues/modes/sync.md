@@ -275,6 +275,7 @@ EOF
    # set by the sprint-mode preamble (sync may run standalone).
    MAIN_ROOT="${MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir)/.." && pwd)}"
    PIPELINE_ID="${PIPELINE_ID:-fix-issues.${SYNC_TS}}"
+   [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
    # Write the requires.land-pr marker on main_root BEFORE dispatch. The
@@ -379,6 +380,7 @@ EOF
        # forbids env-exporting this variable. Sync therefore writes the
        # marker itself once /land-pr returns merged — same end-state, no
        # side-channel.
+       [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
        printf 'skill: land-pr\nid: %s\npr: %s\nbranch: %s\ndate: %s\n' \
          "$SYNC_ID" "${LP[PR_URL]:-}" "$SYNC_BRANCH" \
          "$(TZ=UTC date -Iseconds)" \

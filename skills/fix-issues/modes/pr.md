@@ -61,6 +61,7 @@ MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 # $PIPELINE_ID and $SPRINT_ID are presumed set by the "Sprint identity"
 # section at skills/fix-issues/modes/sprint.md:122-126.
 NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 cat > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/fulfilled.fix-issues.$SPRINT_ID" <<MARK
 status: started

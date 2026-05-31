@@ -99,6 +99,7 @@ PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeli
 # where /land-pr Step 8b consumes it
 # (`PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"`).
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 mkdir -p "$TRACK_DIR"
 NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)

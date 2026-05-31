@@ -279,6 +279,7 @@ PIPELINE_ID="do.$TASK_SLUG"
 # satisfies the conformance test at `tests/test-skill-conformance.sh:1050`
 # which forbids the env-export side-channel form.
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 mkdir -p "$TRACK_DIR"
 NOW_ISO=$(TZ="${TIMEZONE:-UTC}" date -Iseconds)
