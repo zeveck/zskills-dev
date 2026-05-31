@@ -8,7 +8,7 @@ description: >-
   playwright-cli, fix problems, re-verify until clean, then report with
   recommendations.
 metadata:
-  version: "2026.05.31+9eba25"
+  version: "2026.05.31+19f6c4"
 ---
 
 # /verify-changes [scope] — Verify, Test & Fix Changes
@@ -240,6 +240,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nid: %s\nscope: %s\nstatus: started\ndate: %s\n' \
   "$TRACKING_ID" "$SCOPE" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -429,6 +430,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'result: %s\ncompleted: %s\n' "$TEST_RESULT" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.tests-run"
 ```
@@ -524,6 +526,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'ui_changes: true\ncompleted: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.manual-verified"
 ```
@@ -743,6 +746,7 @@ if [ -z "$PIPELINE_ID" ] && [ -f ".zskills-tracked" ]; then
 fi
 : "${PIPELINE_ID:=$MARKER_STEM.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.verify-changes.$TRACKING_ID.complete"
 

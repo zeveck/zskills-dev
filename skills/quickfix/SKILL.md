@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.31+d0e090"
+  version: "2026.05.31+9063b5"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -675,6 +675,7 @@ fi
 PIPELINE_ID=$(bash "$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "quickfix.$SLUG")
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
 
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 TRACK_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 MARKER="$TRACK_DIR/fulfilled.quickfix.$SLUG"
 mkdir -p "$TRACK_DIR"

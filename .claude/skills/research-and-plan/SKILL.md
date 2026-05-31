@@ -6,7 +6,7 @@ description: >-
   Researches the domain, identifies sub-problems and dependencies,
   produces a meta-plan whose phases each delegate to /run-plan.
 metadata:
-  version: "2026.05.31+e5496e"
+  version: "2026.05.31+d07661"
 ---
 
 # /research-and-plan [output FILE] \<description...> — Meta-Plan Decomposer
@@ -372,6 +372,7 @@ fi
 META_PLAN_SLUG=$(basename "$META_PLAN_PATH" .md | tr '[:upper:]_' '[:lower:]-')
 PIPELINE_ID="research-and-plan.$META_PLAN_SLUG"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 for i in 1 2 ... N; do
   printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-plan\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.$i"

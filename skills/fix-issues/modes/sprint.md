@@ -246,6 +246,7 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 
 if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID" ]; then
@@ -515,6 +516,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.preflight"
 ```
@@ -577,6 +579,7 @@ if [ "$DASHBOARD_MODE" = "1" ]; then
       fi
 
       local SPRINT_LAND_ID="fix-issues.dashboard-sync.${SPRINT_ID}"
+      [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
       mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
       printf 'skill: land-pr\nrequired-by: fix-issues-dashboard-empty\ndate: %s\n' \
         "$(TZ=UTC date -Iseconds)" \
@@ -1340,6 +1343,7 @@ If ALL candidates are too vague, too complex, or already attempted:
          fi
 
          SPRINT_LAND_ID="fix-issues.sync.${SPRINT_ID}"
+         [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
          mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
          printf 'skill: land-pr\nrequired-by: fix-issues-no-actionable\ndate: %s\n' \
            "$(TZ=UTC date -Iseconds)" \
@@ -1426,6 +1430,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\nissueCount: %d\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" "$ISSUE_COUNT" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.prioritize"
 ```
@@ -2353,6 +2358,7 @@ if [ "${#TRACKER_SCRATCHPADS[@]}" -gt 0 ]; then
         "$SPRINT_ID" "${#TRACKER_SCRATCHPADS[@]}"
       printf '## Test plan\n- [x] Tracker-only diff; no per-issue work in this PR.\n'
     } > "$TRACKER_BODY"
+    [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
     mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
     printf 'skill: land-pr\nrequired-by: fix-issues-pr-mode-tracker-rollup\ndate: %s\n' \
       "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -2405,6 +2411,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.execute"
 ```
@@ -2424,6 +2431,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill: verify-changes\nparent: fix-issues\nmode: sprint\ndate: %s\n' \
   "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
@@ -2495,6 +2503,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.verify"
 ```
@@ -2580,6 +2589,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.report"
 ```
@@ -2745,6 +2755,7 @@ if [ -n "${WT_PATH:-}" ]; then
     # Dispatch /land-pr for the sprint-level SPRINT_REPORT.md commit.
     # Mirrors sync mode's /land-pr arg vector at $TOPLEVEL.
     SPRINT_LAND_ID="fix-issues.sprint.${SPRINT_ID}"
+    [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
     mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
     printf 'skill: land-pr\nrequired-by: fix-issues-sprint\ndate: %s\n' \
       "$(TZ=UTC date -Iseconds)" \
@@ -2806,6 +2817,7 @@ else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.fix-issues.$SPRINT_ID.land"
 ```

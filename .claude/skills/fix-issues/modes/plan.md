@@ -66,6 +66,7 @@ either fires, all candidate issues are selected without prompting.
      . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
    fi
    MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+   [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
    mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
    printf 'skill: draft-plan\nparent: fix-issues\nissue: %s\ndate: %s\n' \
      "$ISSUE_NUMBER" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \

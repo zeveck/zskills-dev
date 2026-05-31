@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.31+bd74ac"
+  version: "2026.05.31+02562d"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -110,6 +110,7 @@ PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeli
 # recovery so any future change to the sanitizer cannot silently skew
 # $SCOPE away from what $PIPELINE_ID encodes.
 SCOPE="${PIPELINE_ID#research-and-go.}"
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 mkdir -p "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 printf 'skill=research-and-go\ngoal=%s\nstartedAt=%s\n' "$DESCRIPTION" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.research-and-go.$SCOPE"
 ```
@@ -150,6 +151,7 @@ will block any commit on main until this final verification has been
 fulfilled. The orchestrator cannot skip the final cross-branch check.
 
 ```bash
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'skill=verify-changes\nscope=branch\nrequiredBy=research-and-go\nmeta_plan=%s\nmeta_plan_slug=%s\ncreatedAt=%s\n' \
   "$META_PLAN_PATH" "$META_PLAN_SLUG" "$(date -Iseconds)" \
   > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/requires.verify-changes.final.$META_PLAN_SLUG"
@@ -246,6 +248,7 @@ metadata intent explicit in the marker basename.
 
 ```bash
 for i in 1 2 ... N; do
+  [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
   printf 'skill=draft-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.draft-plan.$i"
   printf 'skill=run-plan\nindex=%d\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$i" "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.$i"
 done
@@ -254,6 +257,7 @@ done
 Also create a metadata marker for the meta-plan execution itself:
 
 ```bash
+[ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
 printf 'skill=run-plan\nid=meta\nrequiredBy=research-and-go\ncreatedAt=%s\n' "$(date -Iseconds)" > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/meta.run-plan.meta"
 ```
 
