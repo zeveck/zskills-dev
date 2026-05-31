@@ -9,7 +9,7 @@ description: >-
   queue (add/rank/remove/default) and recurring schedules. Mirrors
   /fix-issues for bugs.
 metadata:
-  version: "2026.05.31+9dfd23"
+  version: "2026.05.31+962c6a"
 ---
 
 # /work-on-plans — Batch Plan Executor

@@ -731,10 +731,42 @@ code, pre, .mono {
   font-weight: 600;
 }
 
+/* Issue #858 — locked chip when a sprint is in flight. The chip still
+ * shows the active batch_mode (pressed state preserved) but a faint
+ * border + not-allowed cursor signal that clicks are no-ops. The CSS
+ * does NOT use `pointer-events: none` so the title/tooltip still
+ * surfaces on hover, and the click handler in setDefaultMode shows a
+ * toast explaining the lock. */
+.seg-btn[data-locked="true"] {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.seg-btn[data-locked="true"]:hover,
+.seg-btn[data-locked="true"]:focus-visible {
+  background: var(--surface2);
+  color: var(--text-dim);
+}
+
+.seg-btn[data-locked="true"][aria-pressed="true"]:hover,
+.seg-btn[data-locked="true"][aria-pressed="true"]:focus-visible {
+  background: var(--accent);
+  color: #0d1117;
+}
+
+/* Issue #858 — the in-flight banner reserves layout space at all
+ * times via `visibility: hidden` instead of the `hidden` attribute
+ * (display:none), so the chip row does not shift vertically when a
+ * sprint starts or stops. */
 .dm-footnote {
   font-size: 0.78rem;
   font-style: italic;
   flex-basis: 100%;
+  visibility: hidden;
+}
+
+.dm-footnote.is-visible {
+  visibility: visible;
 }
 
 .run-status {

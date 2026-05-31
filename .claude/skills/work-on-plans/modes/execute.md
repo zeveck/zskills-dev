@@ -219,21 +219,35 @@ Exit 1.
 ### Initial sprint state
 
 Write `state=sprint` to `$WORK_STATE` before the first dispatch. The
-file is rewritten between dispatches (heartbeat) and at the end:
+file is rewritten between dispatches (heartbeat) and at the end.
+
+Resolve `BATCH_MODE` once before the embed: this is the per-batch
+resolved mode the dashboard reads to drive its in-flight chip-lock
+(issue #858). Precedence matches Step 5's per-entry resolution but
+without the per-entry override layer (the chip is batch-scoped):
+`MODE_OVERRIDE` (CLI), then `DEFAULT_MODE` (top-level saved), then
+`"phase"`. While the sprint is in flight the dashboard's
+`Default mode:` chip mirrors this value and is locked — clicking it
+no-ops with a tooltip explaining the in-flight lock.
+
+```bash
+BATCH_MODE="${MODE_OVERRIDE:-${DEFAULT_MODE:-phase}}"
+```
 
 <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
 ```bash
 # No ZSKILLS_* env vars needed: this embed operates on $WORK_STATE
 # only (state file in $MAIN_ROOT/.zskills/, not via the path-config helper).
-python3 - "$WORK_STATE" "$SPRINT_ID" "$DISPATCH_COUNT" <<'PY'
+python3 - "$WORK_STATE" "$SPRINT_ID" "$DISPATCH_COUNT" "$BATCH_MODE" <<'PY'
 import json, os, sys, socket, tempfile, datetime
-path, sprint_id, total = sys.argv[1], sys.argv[2], int(sys.argv[3])
+path, sprint_id, total, batch_mode = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 now = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
 doc = {
     "state": "sprint",
     "sprint_id": f"work-on-plans.{sprint_id}",
     "session_id": f"{socket.gethostname()}:{os.getpid()}:{now}",
     "started_at": now,
+    "batch_mode": batch_mode,
     "progress": {"done": 0, "total": total, "current_slug": ""},
     "updated_at": now,
 }
