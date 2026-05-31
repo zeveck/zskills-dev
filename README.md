@@ -45,14 +45,14 @@ stories.
 
 For a per-skill reference see [`docs/skills/`](docs/skills/README.md), and for
 recipes that combine skills into end-to-end workflows see
-[`docs/WORKFLOWS.md`](docs/WORKFLOWS.md).
+[`docs/guides/WORKFLOWS.md`](docs/guides/WORKFLOWS.md).
 
 ## Install
 
 zskills ships via **two permanent, first-class install lanes** — pick one
 (or run both). The full side-by-side comparison, tradeoff matrix,
 version-pinning idiom, and per-lane `.gitignore` guidance live in
-**[`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md)**.
+**[`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md)**.
 
 | | Plugin lane | `/update-zskills` lane |
 |---|---|---|
@@ -84,7 +84,7 @@ From inside a Claude Code session in your project:
 ```
 
 Add the block-diagram add-on with `/plugin install zsbd@zskills`. See
-[`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md) for what gets
+[`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) for what gets
 materialised, version pinning, and the bare-slash prose tradeoff.
 
 ### `/update-zskills` lane (quick start)
@@ -165,7 +165,7 @@ To include the block-diagram add-on (3 extra skills):
 - **Plugin lane:** run `/plugin marketplace update`. The SessionStart hook
   re-materialises the managed `.claude/` artifacts on next session start.
 
-See [`docs/PLUGIN_INSTALL.md`](docs/PLUGIN_INSTALL.md) for the full
+See [`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) for the full
 per-lane update workflow and version-pinning idiom.
 
 ### Your first plan

@@ -6,9 +6,9 @@
 >
 > **Scope:** this is the **operator/observer** guide. For the enforcement
 > mechanics (how hooks gate commits) see
-> [`ZSKILLS_TRACKING_OVERVIEW.md`](../ZSKILLS_TRACKING_OVERVIEW.md); for the
+> [`ZSKILLS_TRACKING_OVERVIEW.md`](ZSKILLS_TRACKING_OVERVIEW.md); for the
 > marker naming scheme see
-> [`docs/tracking/TRACKING_NAMING.md`](tracking/TRACKING_NAMING.md).
+> [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md).
 
 ## You don't need an agent to watch zskills
 
@@ -330,11 +330,11 @@ your audit history is never touched.
 
 ## See also
 
-- [`ZSKILLS_TRACKING_OVERVIEW.md`](../ZSKILLS_TRACKING_OVERVIEW.md) — the
+- [`ZSKILLS_TRACKING_OVERVIEW.md`](ZSKILLS_TRACKING_OVERVIEW.md) — the
   enforcement model: how markers gate commits, with worked examples and a
   troubleshooting section.
-- [`docs/tracking/TRACKING_NAMING.md`](tracking/TRACKING_NAMING.md) — the
+- [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md) — the
   authoritative marker naming scheme, delegation semantics, and `.landed`
   semantics.
-- [`docs/WORKFLOWS.md`](WORKFLOWS.md) — end-to-end workflows (§11 is the short
+- [`docs/guides/WORKFLOWS.md`](WORKFLOWS.md) — end-to-end workflows (§11 is the short
   Status & monitoring index this doc expands on).

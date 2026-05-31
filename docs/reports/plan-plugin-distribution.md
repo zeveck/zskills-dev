@@ -17,15 +17,15 @@
 ### Work Items
 | # | Item | Status | Notes |
 |---|------|--------|-------|
-| W6.1 | `docs/PLUGIN_INSTALL.md` | Done | 257 lines: side-by-side comparison, install/slash-prefix/update per lane, D26 default + tradeoff matrix, D1 pin idiom, D20(b) gitignore, marketplace promotion (doc-only), Known-tradeoffs bare-slash gap, switching-lanes pointer |
-| W6.2 | `docs/PLUGIN_MIGRATION.md` | Confirmed (Phase 5) | bidirectional, optional framing, both-direction Abort/Rollback — satisfactory, no augment |
+| W6.1 | `docs/guides/PLUGIN_INSTALL.md` | Done | 257 lines: side-by-side comparison, install/slash-prefix/update per lane, D26 default + tradeoff matrix, D1 pin idiom, D20(b) gitignore, marketplace promotion (doc-only), Known-tradeoffs bare-slash gap, switching-lanes pointer |
+| W6.2 | `docs/guides/PLUGIN_MIGRATION.md` | Confirmed (Phase 5) | bidirectional, optional framing, both-direction Abort/Rollback — satisfactory, no augment |
 | W6.3 | marketplace promotion | Documented only | human-gated; not executed |
 | W6.4 | issue #432 closeout | n/a | already CLOSED |
 | W6.5 | MW-EXAMPLE cleanup | n/a | absent everywhere (no-op tombstone) |
 | W6.6 | README.md both lanes | Done | two-lane table + D26 default + link to PLUGIN_INSTALL.md; existing /update-zskills content preserved |
 
 ### Verification (proportionate to docs-only)
-- Scope: `README.md` + new `docs/PLUGIN_INSTALL.md` only. All required PLUGIN_INSTALL sections confirmed present. README references both lanes + links the install doc.
+- Scope: `README.md` + new `docs/guides/PLUGIN_INSTALL.md` only. All required PLUGIN_INSTALL sections confirmed present. README references both lanes + links the install doc.
 - Full suite: `6249/6249 passed, 0 failed`.
 - No publish performed (no git push, no prod-tag, no marketplace activation).
 - Surfaced (non-blocking): `block-unsafe-generic.sh` false-positives on `kill -0 $(pgrep ...)` liveness probes (no signal sent) — flagged as a framework refinement, not patched.
@@ -46,7 +46,7 @@
 | W5.5 | `scripts/build-plugin-release.sh` | Done | no self-delete; --push-gated; D3 template copy + D4 suffixless siblings; local dry-run strip = 0 hits |
 | W5.6 | `scripts/switch-install-path.sh` bidirectional (D25) | Done | lock-LAST both directions; + `migrate-strip-settings.py`; file-removal proven sentinel/basename-gated |
 | W5.7 | hook double-fire testbed (D16(a)) | Done | **caught + fixed a real Phase-1 shim bug** (BASH_SOURCE[0]→outermost frame) |
-| W5.8/W5.9 | RELEASING.md + CLAUDE.md dual-path release/dogfood docs | Done | + `docs/PLUGIN_MIGRATION.md` |
+| W5.8/W5.9 | RELEASING.md + CLAUDE.md dual-path release/dogfood docs | Done | + `docs/guides/PLUGIN_MIGRATION.md` |
 | W5.10 | issue closeout | n/a | no open plugin/distribution issue found |
 
 ### New tests

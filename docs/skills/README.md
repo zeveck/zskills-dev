@@ -2,7 +2,7 @@
 
 Per-skill reference for the **23 user-facing Z Skills**, plus the 2 internal
 helpers they dispatch. Looking for how to *combine* these skills into
-end-to-end workflows? See **[WORKFLOWS.md](../WORKFLOWS.md)**.
+end-to-end workflows? See **[WORKFLOWS.md](../guides/WORKFLOWS.md)**.
 
 > **Block-diagram add-on:** The domain-specific block-diagram skills
 > (`/add-block`, `/add-example`, `/model-design`) are

@@ -80,7 +80,7 @@
     <p>Answer <em>“what is the system doing, what has it done, and what's stuck?”</em>
        — without reading git history by hand. This is the observer's guide;
        for how the hooks <em>enforce</em> these markers, see
-       <code>ZSKILLS_TRACKING_OVERVIEW.md</code>.</p>
+       <code>docs/guides/ZSKILLS_TRACKING_OVERVIEW.md</code>.</p>
   </header>
 
   <div class="callout key">
@@ -248,7 +248,7 @@ for r in "$T"/*/requires.*; do
   f="${r/requires./fulfilled.}"
   [ -e "$f" ] || echo "UNFULFILLED: $r"
 done</code></pre>
-  <p class="lede">(<code>ZSKILLS_TRACKING_OVERVIEW.md</code> shows how the hooks turn an
+  <p class="lede">(<code>docs/guides/ZSKILLS_TRACKING_OVERVIEW.md</code> shows how the hooks turn an
      unfulfilled <code>requires.*</code> into a commit/push <strong>block</strong> — the same
      signal you read by hand here, enforced automatically there.)</p>
 
@@ -331,9 +331,9 @@ ls docs/reports/plan-*.md                                  # per-plan narratives
   <div class="seealso">
     <strong>See also</strong>
     <ul>
-      <li><code>ZSKILLS_TRACKING_OVERVIEW.md</code> — the enforcement model: how markers gate commits, worked examples, troubleshooting.</li>
+      <li><code>docs/guides/ZSKILLS_TRACKING_OVERVIEW.md</code> — the enforcement model: how markers gate commits, worked examples, troubleshooting.</li>
       <li><code>docs/tracking/TRACKING_NAMING.md</code> — authoritative marker naming scheme, delegation semantics, <code>.landed</code> semantics.</li>
-      <li><code>docs/WORKFLOWS.md</code> — end-to-end workflows (§11 is the short Status &amp; monitoring index this doc expands on).</li>
+      <li><code>docs/guides/WORKFLOWS.md</code> — end-to-end workflows (§11 is the short Status &amp; monitoring index this doc expands on).</li>
     </ul>
   </div>
 
