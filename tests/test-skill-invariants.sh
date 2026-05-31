@@ -90,8 +90,8 @@ ISSUE_606_PAIRS=(
   "skills/fix-issues/modes/sync.md|TRACKING_ID"
   "skills/run-plan/subcommands/stop-next-status.md|PLAN_FILE"
   "skills/quickfix/SKILL.md|ZSKILLS_PIPELINE_ID"
-  "skills/draft-tests/SKILL.md|ROUND_N"
-  "skills/draft-tests/SKILL.md|PREV_INPUT"
+  "skills/draft-tests/modes/draft.md|ROUND_N"
+  "skills/draft-tests/modes/draft.md|PREV_INPUT"
 )
 for pair in "${ISSUE_606_PAIRS[@]}"; do
   f="${pair%%|*}"; v="${pair##*|}"
@@ -152,6 +152,12 @@ ISSUE_606_ALLOWLIST=(
   "skills/run-plan/modes/pr.md	TRACKING_ID"
   "skills/commit/modes/pr.md	TRACKING_ID"
   "skills/fix-issues/modes/pr.md	SPRINT_ID"
+  # After #835 split, draft-tests mode files inherit PLAN_FILE/TRACKING_ID
+  # from the entry-point SKILL.md's preflight + arg parse — same pattern
+  # as run-plan's post-#724/#725 modes above.
+  "skills/draft-tests/modes/draft.md	PLAN_FILE"
+  "skills/draft-tests/modes/backfill.md	PLAN_FILE"
+  "skills/draft-tests/modes/land.md	TRACKING_ID"
 )
 FAMILY_VARS_RE='^(TRACKING_ID|PLAN_FILE|OUTPUT_FILE|META_PLAN_PATH|GOAL|CHANGE_SUMMARY|SPRINT_ID|ROUND)$'
 FAMILY_FAIL=""

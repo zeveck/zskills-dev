@@ -14,6 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_DIR="$REPO_ROOT/skills/draft-tests"
 SKILL_MD="$SKILL_DIR/SKILL.md"
+
+# skill_grep: scan SKILL.md + modes/*.md + references/*.md for content that
+# may live in any post-split file (issue #835 split). Mirrors the
+# tests/test-fix-issues.sh:34 pattern used for post-split /fix-issues.
+skill_grep() { grep "$@" "$SKILL_DIR"/SKILL.md "$SKILL_DIR"/modes/*.md "$SKILL_DIR"/references/*.md 2>/dev/null; }
 DETECT_SCRIPT="$SKILL_DIR/scripts/detect-language.sh"
 PREREQ_SCRIPT="$SKILL_DIR/scripts/insert-prerequisites.sh"
 PARSE_SCRIPT="$SKILL_DIR/scripts/parse-plan.sh"
@@ -562,7 +567,7 @@ for needle in \
   'config-first' \
   'Prerequisites'
 do
-  if grep -F -q -- "$needle" "$SKILL_MD"; then
+  if skill_grep -F -q -- "$needle"; then
     pass "SKILL.md mentions: $needle"
   else
     fail "SKILL.md missing: $needle"
