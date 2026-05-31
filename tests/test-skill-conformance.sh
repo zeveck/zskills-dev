@@ -933,7 +933,7 @@ LAND_PR_CALLERS=(
   "skills/quickfix/modes/land.md"
   "skills/draft-plan/SKILL.md"
   "skills/refine-plan/SKILL.md"
-  "skills/draft-tests/SKILL.md"
+  "skills/draft-tests/modes/land.md"
 )
 ALL_CALLERS_OK=1
 for caller in "${LAND_PR_CALLERS[@]}"; do

@@ -17,6 +17,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_DIR="$REPO_ROOT/skills/draft-tests"
 SKILL_MD="$SKILL_DIR/SKILL.md"
+
+# skill_grep: scan SKILL.md + modes/*.md + references/*.md for content that
+# may live in any post-split file (issue #835 split). Mirrors the
+# tests/test-fix-issues.sh:34 pattern used for post-split /fix-issues.
+skill_grep() { grep "$@" "$SKILL_DIR"/SKILL.md "$SKILL_DIR"/modes/*.md "$SKILL_DIR"/references/*.md 2>/dev/null; }
 PARSE_SCRIPT="$SKILL_DIR/scripts/parse-plan.sh"
 APPEND_SCRIPT="$SKILL_DIR/scripts/append-tests-section.sh"
 ORCH_SCRIPT="$SKILL_DIR/scripts/draft-orchestrator.sh"
@@ -322,13 +327,13 @@ fi
 echo ""
 echo "=== AC-3.4 -- config-set vs config-absent prompt assembly ==="
 
-if grep -F -q 'config_unit_cmd' "$SKILL_MD"; then
+if skill_grep -F -q 'config_unit_cmd'; then
   pass "AC-3.4: SKILL.md Phase 3 prose references config_unit_cmd from detection-state"
 else
   fail "AC-3.4: SKILL.md Phase 3 prose missing config_unit_cmd reference"
 fi
 
-if grep -F -q 'no configured test runner' "$SKILL_MD"; then
+if skill_grep -F -q 'no configured test runner'; then
   pass "AC-3.4: SKILL.md Phase 3 prose mandates literal 'no configured test runner' string"
 else
   fail "AC-3.4: SKILL.md Phase 3 prose missing 'no configured test runner' literal"
@@ -682,12 +687,12 @@ fi
 echo ""
 echo "=== Drafter never writes test code framing ==="
 
-if grep -F -q 'Drafter never writes test code' "$SKILL_MD"; then
+if skill_grep -F -q 'Drafter never writes test code'; then
   pass "SKILL.md prose contains 'Drafter never writes test code' framing"
 else
   fail "SKILL.md prose missing 'Drafter never writes test code' framing"
 fi
-if grep -F -q 'Anti-pattern' "$SKILL_MD"; then
+if skill_grep -F -q 'Anti-pattern'; then
   pass "SKILL.md prose contains the anti-pattern list"
 else
   fail "SKILL.md prose missing anti-pattern list"
@@ -743,7 +748,7 @@ for needle in \
   'Anti-pattern' \
   'Drafter never writes test code'
 do
-  if grep -F -q -- "$needle" "$SKILL_MD"; then
+  if skill_grep -F -q -- "$needle"; then
     pass "SKILL.md mentions: $needle"
   else
     fail "SKILL.md missing: $needle"

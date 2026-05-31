@@ -18,6 +18,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_DIR="$REPO_ROOT/skills/draft-tests"
 SKILL_MD="$SKILL_DIR/SKILL.md"
+
+# skill_grep: scan SKILL.md + modes/*.md + references/*.md for content that
+# may live in any post-split file (issue #835 split). Mirrors the
+# tests/test-fix-issues.sh:34 pattern used for post-split /fix-issues.
+skill_grep() { grep "$@" "$SKILL_DIR"/SKILL.md "$SKILL_DIR"/modes/*.md "$SKILL_DIR"/references/*.md 2>/dev/null; }
 PARSE_SCRIPT="$SKILL_DIR/scripts/parse-plan.sh"
 PRECHECK_SCRIPT="$SKILL_DIR/scripts/coverage-floor-precheck.sh"
 CONVERGENCE_SCRIPT="$SKILL_DIR/scripts/convergence-check.sh"
@@ -470,12 +475,12 @@ else
   fail "AC-4.3: refiner-rejects-format fixture missing 'finding-format-violation'"
 fi
 # SKILL.md prose must establish the requirement.
-if grep -F -q "Blast radius:" "$SKILL_MD"; then
+if skill_grep -F -q "Blast radius:"; then
   pass "AC-4.3: SKILL.md prose mentions 'Blast radius:'"
 else
   fail "AC-4.3: SKILL.md prose missing 'Blast radius:'"
 fi
-if grep -F -q "finding-format-violation" "$SKILL_MD"; then
+if skill_grep -F -q "finding-format-violation"; then
   pass "AC-4.3: SKILL.md prose mentions 'finding-format-violation'"
 else
   fail "AC-4.3: SKILL.md prose missing 'finding-format-violation'"
@@ -534,7 +539,7 @@ fi
 pass "AC-4.5: stubbed loop completed end-to-end without live LLM dispatch"
 
 # Also: SKILL.md must mention ZSKILLS_TEST_LLM as the live-mode gate.
-if grep -F -q "ZSKILLS_TEST_LLM" "$SKILL_MD"; then
+if skill_grep -F -q "ZSKILLS_TEST_LLM"; then
   pass "AC-4.5: SKILL.md prose names ZSKILLS_TEST_LLM as the live-mode gate"
 else
   fail "AC-4.5: SKILL.md prose missing ZSKILLS_TEST_LLM gate"
@@ -717,7 +722,7 @@ for needle in \
   'No findings — spec set meets the stated criteria' \
   "Reviewer, DA, and refiner agents inherit"
 do
-  if grep -F -q -- "$needle" "$SKILL_MD"; then
+  if skill_grep -F -q -- "$needle"; then
     pass "SKILL.md mentions: $needle"
   else
     fail "SKILL.md missing: $needle"

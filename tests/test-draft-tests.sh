@@ -22,6 +22,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_DIR="$REPO_ROOT/skills/draft-tests"
 SKILL_MD="$SKILL_DIR/SKILL.md"
+
+# skill_grep: scan SKILL.md + modes/*.md + references/*.md for content that
+# may live in any post-split file (issue #835 split). Mirrors the
+# tests/test-fix-issues.sh:34 pattern used for post-split /fix-issues.
+skill_grep() { grep "$@" "$SKILL_DIR"/SKILL.md "$SKILL_DIR"/modes/*.md "$SKILL_DIR"/references/*.md 2>/dev/null; }
 PARSE_SCRIPT="$SKILL_DIR/scripts/parse-plan.sh"
 FIXTURES="$REPO_ROOT/tests/fixtures/draft-tests"
 
@@ -41,7 +46,7 @@ fail() { printf '\033[31m  FAIL\033[0m %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT+1));
 # Grep the SKILL.md for a literal substring; pass if found, fail otherwise.
 expect_skill_contains() {
   local label="$1" needle="$2"
-  if grep -F -q -- "$needle" "$SKILL_MD"; then
+  if skill_grep -F -q -- "$needle"; then
     pass "$label"
   else
     fail "$label — SKILL.md missing literal: $needle"
@@ -51,7 +56,7 @@ expect_skill_contains() {
 # Grep the SKILL.md for an extended-regex pattern.
 expect_skill_matches() {
   local label="$1" pattern="$2"
-  if grep -E -q -- "$pattern" "$SKILL_MD"; then
+  if skill_grep -E -q -- "$pattern"; then
     pass "$label"
   else
     fail "$label — SKILL.md missing pattern: $pattern"
@@ -151,7 +156,7 @@ expect_skill_contains "AC-1.3: cross-skill sanitize-pipeline-id form" \
   '"$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"'
 # The bare-relative form is FORBIDDEN. Assert SKILL.md does not contain
 # the legacy `bash scripts/sanitize-pipeline-id.sh` invocation.
-if grep -F -q -- 'bash scripts/sanitize-pipeline-id.sh' "$SKILL_MD"; then
+if skill_grep -F -q -- 'bash scripts/sanitize-pipeline-id.sh'; then
   fail "AC-1.3: SKILL.md must not use forbidden bare-relative sanitize-pipeline-id.sh path"
 else
   pass "AC-1.3: no forbidden bare-relative sanitize-pipeline-id.sh path"
