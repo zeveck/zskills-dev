@@ -1,13 +1,13 @@
 ---
 name: session-report
-argument-hint: ""
+argument-hint: "[handoff]"
 description: >-
   Audit what THIS session said it would do vs. what's actually shipped.
   Verifies session-mentioned items against ground truth (git, PRs, plans,
   worktrees), not conversation memory — items may have been completed in
   another session.
 metadata:
-  version: "2026.05.21+a6f97e"
+  version: "2026.05.31+bdd065"
 ---
 
 # /session-report — Session Intent vs. Actual State
@@ -24,6 +24,15 @@ item in a different session, or it may have been reverted, never
 committed, or stuck in a worktree. Conversation memory is unreliable
 (compaction, parallel sessions, background agents). The report's only
 value is its accuracy.
+
+## Mode dispatch
+
+Inspect `$ARGUMENTS`. If it contains the token `handoff`, this is **not** a
+retrospective audit — it is a durable end-of-session hand-off (forward
+capture + persist + ready-message). **Read [modes/handoff.md](modes/handoff.md)
+in full and follow its procedure end-to-end**; do not proceed past this
+section with the default audit. Otherwise (plain `/session-report`, no
+`handoff`), ignore the mode file entirely and run the default audit below.
 
 ## Step 1 — Enumerate session intent
 
