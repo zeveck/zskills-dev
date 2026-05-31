@@ -1475,10 +1475,13 @@ else
   fail "W1.19: got '$W119'"
 fi
 
-# W1.20 — annotate_plans_queue_prefers_completed_on_dual_membership:
-# WRONG — actually per D2 state-file explicit-position WINS over
-# inference. A plan in state-file's `drafted` column with status:complete
-# stays in `drafted`, NOT in `completed`.
+# W1.20 — annotate_plans_queue_completion_overrides_pin (#853):
+# A plan with status:complete AND a parseable completed: timestamp routes
+# to `completed` EVEN WHEN pinned in state-file's `drafted` column. The
+# completion override (#853) is the ONE exception to D2 rule (i): the
+# Completed column is derived (not a drop target), so a stale pin would
+# otherwise strand a completed card with no UI affordance to unstick it.
+# Inverts the prior W1.20 assertion (was `col=drafted`).
 W120=$(PYTHONPATH="$PKG_PARENT" python3 -c '
 import sys
 sys.path.insert(0, "'"$PKG_PARENT"'")
@@ -1501,10 +1504,43 @@ plans = [
 c._annotate_plans_queue(plans, state, now_utc=now, window_days=14)
 print("col=" + plans[0]["queue"]["column"])
 ' 2>&1)
-if printf '%s\n' "$W120" | grep -q "^col=drafted$"; then
-  pass "W1.20: annotate_plans_queue_prefers_state_explicit_over_completed (D2)"
+if printf '%s\n' "$W120" | grep -q "^col=completed$"; then
+  pass "W1.20: annotate_plans_queue_completion_overrides_pin (#853)"
 else
   fail "W1.20: got '$W120'"
+fi
+
+# W1.20b — completion override is NARROW: a non-complete pinned plan still
+# honors its pin (D2 rule (i) intact). status:active pinned in `drafted`
+# stays `drafted`; status:complete WITHOUT parseable completed: also stays
+# pinned (no override without a valid timestamp).
+W120B=$(PYTHONPATH="$PKG_PARENT" python3 -c '
+import sys
+sys.path.insert(0, "'"$PKG_PARENT"'")
+import zskills_monitor.collect as c
+from datetime import datetime, timezone, timedelta
+
+now = datetime(2026, 5, 22, 12, 0, 0, tzinfo=timezone.utc)
+state = {
+    "plans": {
+        "backlog": [{"slug": "active-plan", "mode": None},
+                    {"slug": "complete-no-date", "mode": None}],
+    },
+    "issues": {"backlog": []},
+}
+plans = [
+    {"slug": "active-plan", "status": "active", "phases_done": 0},
+    {"slug": "complete-no-date", "status": "complete", "completed": "", "phases_done": 1},
+]
+c._annotate_plans_queue(plans, state, now_utc=now, window_days=14)
+print("active=" + plans[0]["queue"]["column"])
+print("nodate=" + plans[1]["queue"]["column"])
+' 2>&1)
+if printf '%s\n' "$W120B" | grep -q "^active=backlog$" \
+    && printf '%s\n' "$W120B" | grep -q "^nodate=backlog$"; then
+  pass "W1.20b: completion_override_narrow_pin_preserved (#853)"
+else
+  fail "W1.20b: got '$W120B'"
 fi
 
 # W1.21 — annotate_issues_queue_drops_closed_from_explicit_positions:
