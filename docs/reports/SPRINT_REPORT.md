@@ -3,43 +3,52 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260531-165117-dtsplit
+# /fix-issues sprint — sprint-20260531-212209-dq30m
 
-**Mode:** N=1, auto, every 2h, cron-fired sprint
-**Started:** 2026-05-31T16:04:22-04:00 (sprint dispatched 2026-05-31 16:51 UTC; completed after one rate-limit recovery + post-split conformance fix cycle)
-**Open issues at sprint start:** 5 (#67, #832, #833, #835, #836)
-**Skip-tagged:** 3 (#67 deferred; #832, #833 needs-decision)
-**Newly researched:** 0 (#836 closed by a parallel session between fires)
-**Actionable picks:** 1 (#835)
+**Mode:** N=2, dashboard, auto, every 30m (queue-worker)
+**Started:** 2026-05-31T18:52:12-04:00
+**Ready queue head at start:** 13 issues (#852, #853, #858, #861, #866, #865, #864, #863, #862, #871, #869, #868, #867)
 
-## Landed this fire
+## Claims (concurrency)
 
-### #835 — /draft-tests SKILL.md split
-- **PR:** https://github.com/zeveck/zskills-dev/pull/855 (merged, CI pass on rebase, BEHIND → CLEAN after force-push)
-- **Branch:** `feat/do-drafttests-split`
-- **Commit:** `b47dc6a` (rebased atop #854 + #851)
-- **Files (19):** `skills/draft-tests/SKILL.md` slimmed 2072 → 233 lines; 3 new `modes/` files (draft 1096, backfill 421, land 246) and 2 new `references/` files (test-spec-format 130, design-constraints 71); mirror copies under `.claude/skills/draft-tests/`. Plus 7 test files updated to the post-split conformance pattern (5 draft-tests test files + test-skill-conformance.sh + test-skill-invariants.sh).
-- **Tests:** `bash tests/run-all.sh` — 6574/6574 passed (0 failed, 0 skipped). Initial run had 69 post-split conformance failures (all root-caused to tests grep'ing SKILL.md for content that moved to modes/); resolved via the conformance test updates.
-- **Skill version bump:** `skills/draft-tests/SKILL.md` (+ mirror) bumped to `2026.05.31+57c781`.
+- Tried #852 (top of Ready) → **rc=10 foreign-held** by parallel sprint `sprint-20260531-210058-fixqueue`. Skipped per dashboard branch's race-loser policy.
+- Tried #853 (next) → **rc=10 foreign-held** by same parallel sprint. Skipped.
+- Claimed #858 → rc=0 ✅
+- Claimed #861 → rc=0 ✅
+
+## Landed this fire (2)
+
+### #858 — /work-on-plans chip locks to in-flight batch_mode + no layout shift
+- **PR:** https://github.com/zeveck/zskills-dev/pull/878 (merged after auto-rebase resolved a single-region conflict with PR #876)
+- **Commit:** `5b0c6af` (post-rebase)
+- **Files (12):** `work-on-plans/modes/execute.md` writes `batch_mode`; `zskills_monitor/static/app.js` renderDefaultMode + setDefaultMode bail + toast; `app.css` `.seg-btn[data-locked]` + `.dm-footnote` visibility toggle; `index.html` drops legacy hidden attribute; mirrors + version bumps on `work-on-plans` (`962c6a`) and `zskills-dashboard` (`cecde4`).
+- **Tests:** 6620/6620 passed (later 6634/6634 after #861 add).
+- **Playwright verification:** 3 visual states (idle / running-finish / running-phase) + real-click on locked chip showing toast. All screenshots in `.playwright/output/858-state{1,2,3}*.png`.
+- **Conflict recovery:** Rebase hit single-region conflict on `zskills-dashboard/SKILL.md` (metadata.version line only — PR #876 also bumped it). Resolved by editing the conflict region directly (per memory anchor `feedback_single_region_rebase_conflict_edit_directly`), recomputing the post-rebase content hash via `scripts/skill-content-hash.sh`, re-bumping to `cecde4`. Verified no content dropped from PR #876's side via `diff origin/main:SKILL.md HEAD:SKILL.md` (empty modulo version line).
+
+### #861 — Structural existence pins for /draft-tests split files
+- **PR:** https://github.com/zeveck/zskills-dev/pull/880 (merged clean)
+- **Commit:** `7aa2056`
+- **Files (1):** `tests/test-skill-conformance.sh` (+31 lines) — 10-path existence-pin block (5 split files × 2 lanes) placed adjacent to existing `/draft-tests` behavior contracts.
+- **Tests:** 6634/6634 passed. Gate-fires sanity check confirmed: moved `modes/backfill.md` → `/tmp/`, conformance correctly FAILED with clear message; restored.
+- **CI-only change** — no production code, no `metadata.version` bumps.
+
+## Concurrent session activity (informational)
+
+During this fire, parallel session `sprint-20260531-210058-fixqueue` shipped:
+- PR #873 (fix(do,quickfix): retire obsolete /fix-issues triage REDIRECT + anchor ISSUE_NUM regex) — likely closes #863
+- PR #875 (fix(land-pr): drive queued auto-merge to a terminal state, closes #871)
+- PR #876 (fix(#853): route completed+pinned plans to Completed column)
+
+They still hold the #852 claim. Next fire (~30m) will check Ready queue freshly.
 
 ## Sprint mechanics notes
 
-- **Rate-limit recovery:** The first implementer agent dispatch hit an Anthropic rate limit after ~52 tool uses with the bulk of the split done (slim SKILL.md + 5 split files + mirrors). The orchestrator resumed inline — ran the test suite, identified the 69 conformance failures, fixed them by adding the `skill_grep()` helper to the 5 draft-tests test files (modeled on `tests/test-fix-issues.sh:34`'s post-split pattern), added 3 entries to `test-skill-invariants.sh`'s `ISSUE_606_ALLOWLIST` for the new mode files, and retargeted the `LAND_PR_CALLERS` entry in `test-skill-conformance.sh` from `skills/draft-tests/SKILL.md` to `skills/draft-tests/modes/land.md`. Total: 1 implementer agent + ~5 orchestrator-level conformance fixes.
-- **Auto-rebase fire:** Post-CI-green, the PR was BEHIND because `origin/main` advanced (#851 + #854 landed during the run). Rebased + `git push --force-with-lease`; CI re-ran green on the new SHA; auto-merge fired cleanly.
-
-## Sidefinding follow-up (from last fire — closed)
-
-The `test-plans-render-index.sh` sidefinding from sprint 20260531-143854 was fixed in commit `0916480` ("test(backfill): run backfill in a throwaway clone so the test never mutates live docs/plans"). Cycle from surfacing → fix in one sprint cycle — good.
-
-## Open backlog
-
-- **#67, #832, #833** — skip-tagged.
-- #836 closed by parallel session before this fire dispatched it.
-- No new issues require action.
+- Process correction surfaced mid-fire: claim should be acquired BEFORE per-task worktree creation, not after. Empty per-task worktree had to be cleaned up after #852 claim race-loss. Going forward, gating the per-task `--prefix do` worktree creation behind a successful claim (mirroring the `--prefix fix-issue` hook gate) is worth filing as a follow-up.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260531-165117-dtsplit
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260531-165117-dtsplit
-- Issue claim for #835 acquired and released cleanly.
-- Cron: `36 */2 * * *` — next fire ~2h.
+- Sprint pipeline ID: fix-issues.sprint-20260531-212209-dq30m
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260531-212209-dq30m
+- Issue claims (#858, #861) acquired and released cleanly.
+- Cron: `*/30 * * * *` — next fire ~30 min.
