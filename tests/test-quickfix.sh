@@ -1432,12 +1432,6 @@ case "$VERDICT" in
     printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with --force to bypass.\n'
     exit 0
     ;;
-  REDIRECT:/fix-issues:*)
-    REASON="${VERDICT#REDIRECT:/fix-issues:}"
-    printf 'Triage: redirecting to /fix-issues. Reason: %s\n' "$REASON"
-    printf 'This task references a GitHub issue. Run `/fix-issues <issue-number>` instead, or re-invoke with --force to bypass.\n'
-    exit 0
-    ;;
   PROCEED|*)
     echo "PROCEED"
     exit 0
@@ -1601,20 +1595,23 @@ fi
 #   (2) Strengthened structural assertion (replaces the weak
 #       `! grep -F 'Reason: <reason>\nThis task'`): extract the
 #       redirect-message markdown table from WI 1.5.4, then for EACH of
-#       the 4 documented targets (`/draft-plan`, `/run-plan`,
-#       `/fix-issues`, `ask-user`), assert (a) the row exists, (b) the
-#       Line 2 column starts with the documented opener. Also assert
-#       the table has exactly 4 data rows.
+#       the 3 documented targets (`/draft-plan`, `/run-plan`,
+#       `ask-user`), assert (a) the row exists, (b) the Line 2 column
+#       starts with the documented opener. Also assert the table has
+#       exactly 3 data rows.
+#
+# The `/fix-issues` redirect was retired once /quickfix's mode files
+# gained their own claim-issue.sh acquire/release machinery — issue-
+# numbered descriptions now claim and proceed instead of being kicked
+# to /fix-issues. The table dropped from 4 rows to 3.
 # ────────────────────────────────────────────────────────────────────
 # Part 1: per-target line-grep.
 if grep -q 'Triage: redirecting to /draft-plan' "$SKILL" \
    && grep -q 'This task spans more than one concept' "$SKILL" \
    && grep -q 'Triage: redirecting to /run-plan' "$SKILL" \
    && grep -q 'This task references an existing plan file' "$SKILL" \
-   && grep -q 'Triage: redirecting to /fix-issues' "$SKILL" \
-   && grep -q 'This task references a GitHub issue' "$SKILL" \
    && grep -q 'Re-invoke /quickfix with a concrete description' "$SKILL"; then
-  pass "51a redirect lines: line 1 + line 2 present per target (/draft-plan, /run-plan, /fix-issues, ask-user)"
+  pass "51a redirect lines: line 1 + line 2 present per target (/draft-plan, /run-plan, ask-user)"
 else
   fail "51a redirect lines: at least one per-target line missing in skill source"
 fi
@@ -1631,11 +1628,11 @@ TABLE=$(awk '
   in_table                        { print }
 ' "$SKILL")
 
-# 4 rows expected: /draft-plan, /run-plan, /fix-issues, ask-user.
+# 3 rows expected: /draft-plan, /run-plan, ask-user. The /fix-issues row
+# was retired (see Part 1 header comment above).
 ROW_COUNT=$(echo "$TABLE" | grep -c '^|')
 ROW_DRAFT=$(echo "$TABLE" | grep -c '^| `/draft-plan` ')
 ROW_RUNPLAN=$(echo "$TABLE" | grep -c '^| `/run-plan` ')
-ROW_FIX=$(echo "$TABLE" | grep -c '^| `/fix-issues` ')
 ROW_ASK=$(echo "$TABLE" | grep -c '^| ask-user ')
 
 # Check Line 2 opener for each row by extracting the third pipe column.
@@ -1663,28 +1660,28 @@ opener_for() {
 # verbatim including the wrapping backticks.
 DRAFT_OPENER=$(opener_for '`/draft-plan`')
 RUNPLAN_OPENER=$(opener_for '`/run-plan`')
-FIX_OPENER=$(opener_for '`/fix-issues`')
 ASK_OPENER=$(opener_for 'ask-user')
 
 OPENER_OK=1
 case "$DRAFT_OPENER"   in 'This task spans more than one concept'*) ;; *) OPENER_OK=0;; esac
 case "$RUNPLAN_OPENER" in 'This task references an existing plan file'*) ;; *) OPENER_OK=0;; esac
-case "$FIX_OPENER"     in 'This task references a GitHub issue'*) ;; *) OPENER_OK=0;; esac
 case "$ASK_OPENER"     in 'Re-invoke /quickfix with a concrete description'*) ;; *) OPENER_OK=0;; esac
 
-if [ "$ROW_COUNT" -eq 4 ] \
+# Defensive: assert the retired /fix-issues row is NOT present.
+ROW_FIX=$(echo "$TABLE" | grep -c '^| `/fix-issues` ')
+
+if [ "$ROW_COUNT" -eq 3 ] \
    && [ "$ROW_DRAFT" -eq 1 ] \
    && [ "$ROW_RUNPLAN" -eq 1 ] \
-   && [ "$ROW_FIX" -eq 1 ] \
+   && [ "$ROW_FIX" -eq 0 ] \
    && [ "$ROW_ASK" -eq 1 ] \
    && [ "$OPENER_OK" -eq 1 ]; then
-  pass "51b redirect-table structure: 4 rows (draft/run/fix/ask), each Line 2 starts with documented opener"
+  pass "51b redirect-table structure: 3 rows (draft/run/ask), /fix-issues row absent, each Line 2 starts with documented opener"
 else
   fail "51b redirect-table structure: rows=$ROW_COUNT draft=$ROW_DRAFT run=$ROW_RUNPLAN fix=$ROW_FIX ask=$ROW_ASK opener-ok=$OPENER_OK"
   echo "  --- table ---"; echo "$TABLE" | sed 's/^/    /'
   echo "  draft-opener='$DRAFT_OPENER'"
   echo "  runplan-opener='$RUNPLAN_OPENER'"
-  echo "  fix-opener='$FIX_OPENER'"
   echo "  ask-opener='$ASK_OPENER'"
 fi
 
@@ -2012,6 +2009,89 @@ if [ -n "$BEGIN_LINE" ] && [ -n "$CLOSE_LINE" ]; then
   fi
 else
   fail "59 end-of-Phase-7 explicit-finalize: BEGIN/CLOSE anchors not located (BEGIN_LINE=$BEGIN_LINE CLOSE_LINE=$CLOSE_LINE)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 71 — Pre-flight ISSUE_NUM regex is anchored to start-of-description
+# (with optional close-keyword + leading whitespace, case-insensitive).
+# A `#NNN` literal appearing later in prose — quoted example, line ref,
+# follow-up "see also #N" — must NOT capture an issue number, otherwise
+# the claim-issue.sh acquire in WI 1.8 claims an unrelated issue.
+#
+# Replicates the regex from skills/quickfix/SKILL.md Pre-flight and
+# exercises it directly. The regex source-of-truth is the SKILL.md; this
+# test re-implements it as a behavioral fixture so a future edit that
+# breaks one of these cases fails closed.
+# ────────────────────────────────────────────────────────────────────
+test_issue_num_qf() {
+  local input="$1"
+  local expected="$2"
+  local label="$3"
+  local ISSUE_NUM=""
+  if [[ "$input" =~ ^[[:space:]]*([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
+    ISSUE_NUM="${BASH_REMATCH[3]}"
+  elif [[ "$input" =~ ^[[:space:]]*#([0-9]+) ]]; then
+    ISSUE_NUM="${BASH_REMATCH[1]}"
+  fi
+  if [ "$ISSUE_NUM" = "$expected" ]; then
+    pass "71 ISSUE_NUM: $label (got '$ISSUE_NUM')"
+  else
+    fail "71 ISSUE_NUM: $label (expected '$expected', got '$ISSUE_NUM')"
+  fi
+}
+# Positive — should capture issue number
+test_issue_num_qf "Fix #853 — auto-route completed plans" "853" "Fix #N at start (capital F)"
+test_issue_num_qf "fix #853 — lowercase" "853" "fix #N at start (lowercase)"
+test_issue_num_qf "Fixes #853 typo" "853" "Fixes #N at start"
+test_issue_num_qf "Fixed #853" "853" "Fixed #N at start"
+test_issue_num_qf "Closes #853 follow-up work" "853" "Closes #N at start"
+test_issue_num_qf "closed #853" "853" "closed #N at start"
+test_issue_num_qf "Resolves #853" "853" "Resolves #N at start"
+test_issue_num_qf "#853 work item" "853" "bare #N at start"
+test_issue_num_qf "   Fix #853 leading whitespace" "853" "leading whitespace + Fix #N"
+# Quickfix Pre-flight runs after the quoted-head carve-out is normalized,
+# so it does not need to tolerate a leading literal `"`. (/do's regex
+# does tolerate it for its different invocation shape.) The quickfix
+# regex deliberately omits `\"?`.
+
+# Negative — should NOT capture
+test_issue_num_qf "Remove the example 'fix #142' from prose" "" "fix #N in mid-prose quote → no capture"
+test_issue_num_qf "Update file X, see also #853 for context" "" "#N after see-also → no capture"
+test_issue_num_qf "Edit collect.py:#142 line reference" "" "#N as path/line reference → no capture"
+test_issue_num_qf "Some text fix #142 mid prose" "" "fix #N in middle of prose → no capture"
+test_issue_num_qf "Just a regular description" "" "no # at all → no capture"
+test_issue_num_qf "Description mentioning #N letter" "" "#N where N is a letter → no capture"
+test_issue_num_qf "address #853 work" "" "non-recognized keyword (address) → no capture"
+test_issue_num_qf "work on #853" "" "non-recognized verb (work) → no capture"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 72 — Phase 0a triage rubric NO LONGER contains the
+# "References a GitHub issue number → /fix-issues" REDIRECT row.
+# After PR 825 wired ISSUE_NUM + claim-issue.sh into the mode files,
+# the redirect made the claim machinery unreachable on the default
+# path. The row, its worked example, the per-target message template
+# row, and the test-stub-verdict entry are all expected to be absent.
+# ────────────────────────────────────────────────────────────────────
+SKILL="$REPO_ROOT/skills/quickfix/SKILL.md"
+if grep -qE 'References a GitHub issue number.*REDIRECT.*/fix-issues' "$SKILL"; then
+  fail "72a Phase 0a rubric still contains the issue-number REDIRECT row"
+else
+  pass "72a Phase 0a rubric: issue-number REDIRECT row removed"
+fi
+if grep -qE '/quickfix fix #142.*REDIRECT.*/fix-issues' "$SKILL"; then
+  fail "72b Worked-example row '/quickfix fix #142 → REDIRECT → /fix-issues' still present"
+else
+  pass "72b Worked-example row removed"
+fi
+if grep -qE '^\| `/fix-issues` \| `Triage: redirecting to /fix-issues' "$SKILL"; then
+  fail "72c Per-target redirect-message-template row for /fix-issues still present"
+else
+  pass "72c /fix-issues message-template row removed"
+fi
+if grep -qE 'REDIRECT:/fix-issues:reason' "$SKILL"; then
+  fail "72d Recognized test-stub verdict list still includes REDIRECT:/fix-issues:reason"
+else
+  pass "72d Test-stub verdict list pruned"
 fi
 
 echo ""

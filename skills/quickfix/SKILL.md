@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.31+5fad41"
+  version: "2026.05.31+d0e090"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -146,15 +146,21 @@ DESCRIPTION="${DESCRIPTION#"${DESCRIPTION%%[![:space:]]*}"}"
 DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
 
 # Issue-number parse (claim-work-item Phase 2 / W2.4). /quickfix usually
-# works an in-flight edit, not an issue — but a description that references
-# an issue (`#N` / `closes #N` / `fix #N`) is normally REDIRECTed to
-# /fix-issues by triage (WI 1.5.4) and only proceeds here under `force`.
-# Extract the FIRST bare positive integer into ISSUE_NUM so WI 1.8 can
-# claim the issue via claim-issue.sh. When no issue number is present (the
-# common case) ISSUE_NUM stays empty and nothing is claimed. The number is
-# a bare integer (claim-issue.sh rejects non-numeric input with exit 2).
+# works an in-flight edit, not an issue — but when the description begins
+# with a `#N` reference (optionally preceded by a close-keyword:
+# close/closes/closed/fix/fixes/fixed/resolve/resolves/resolved, case-
+# insensitive) extract the bare integer into ISSUE_NUM so WI 1.8 can
+# claim the issue via claim-issue.sh. The regex is ANCHORED to the start
+# of the description so a `#NNN` literal appearing later in prose (e.g.,
+# a quoted example, a line reference, a follow-up "see also #N") does
+# NOT set ISSUE_NUM. When no issue reference is in scope (the common
+# case) ISSUE_NUM stays empty and nothing is claimed. claim-issue.sh
+# rejects non-numeric input with exit 2; the `[0-9]+` capture guarantees
+# a bare integer.
 ISSUE_NUM=""
-if [[ "$DESCRIPTION" =~ \#([0-9]+) ]]; then
+if [[ "$DESCRIPTION" =~ ^[[:space:]]*([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
+  ISSUE_NUM="${BASH_REMATCH[3]}"
+elif [[ "$DESCRIPTION" =~ ^[[:space:]]*#([0-9]+) ]]; then
   ISSUE_NUM="${BASH_REMATCH[1]}"
 fi
 ```
@@ -347,7 +353,7 @@ the verdict. Production invocations (where the harness flag is absent
 and the entry-point unset guard at WI 1.2 has already cleared the test
 vars) always run the full Agent path. Recognized stub values:
 `PROCEED`, `REDIRECT:/draft-plan:reason`, `REDIRECT:/run-plan:reason`,
-`REDIRECT:/fix-issues:reason`, `REDIRECT:ask-user:reason`.
+`REDIRECT:ask-user:reason`.
 
 The model judges `$DESCRIPTION` (and, in user-edited mode, the dirty-tree
 shape) against this rubric — qualitative, observable from description
@@ -360,7 +366,6 @@ text and dirty-tree shape, no LOC counting:
 | Verbs include any of: `add feature`, `redesign`, `rewrite`, `refactor across` | REDIRECT → `/draft-plan` | both |
 | `and` connects unrelated areas (e.g. "fix nav and update copy") | REDIRECT → `/draft-plan` | both |
 | Vague verbs alone: `improve`, `fix it`, `update`, `clean up` (no concrete object) | REDIRECT → ask user | both |
-| References a GitHub issue number (`#N`, `closes #N`, `fix #N`) | REDIRECT → `/fix-issues` | both |
 | References an existing plan file under `$ZSKILLS_PLANS_DIR` | REDIRECT → `/run-plan` | both |
 | Dirty tree (user-edited mode) spans heterogeneous subsystems (model judgment) | REDIRECT → `/draft-plan` | user-edited only |
 
@@ -373,7 +378,7 @@ text and dirty-tree shape, no LOC counting:
 | `/quickfix update CHANGELOG with v0.5 release notes` | PROCEED | concrete verb + object + file |
 | `/quickfix add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/quickfix improve` | REDIRECT → ask user | vague verb, no object |
-| `/quickfix fix #142` | REDIRECT → /fix-issues | references issue number |
+| `/quickfix Fix #853 typo` | PROCEED | issue-numbered descriptions claim the issue via ISSUE_NUM and proceed |
 
 Output one of:
 
@@ -388,7 +393,6 @@ linebreak is a real newline, not the literal `\n` characters):
 |--------|--------|--------|
 | `/draft-plan` | `Triage: redirecting to /draft-plan. Reason: <reason>` | `This task spans more than one concept; /draft-plan will research and decompose it. Run \`/draft-plan <description>\` instead, or re-invoke with --force to bypass.` |
 | `/run-plan` | `Triage: redirecting to /run-plan. Reason: <reason>` | `This task references an existing plan file. Run \`/run-plan <plan-path>\` to execute it, or re-invoke with --force to bypass.` |
-| `/fix-issues` | `Triage: redirecting to /fix-issues. Reason: <reason>` | `This task references a GitHub issue. Run \`/fix-issues <issue-number>\` instead, or re-invoke with --force to bypass.` |
 | ask-user | `Triage: cannot proceed — description is too vague to act on. Reason: <reason>` | `Re-invoke /quickfix with a concrete description (verb + object + which file/area). --force will not help — vague descriptions cannot be planned.` |
 
 The model implements these as a `printf 'line1\nline2\n' "$REASON"` so
