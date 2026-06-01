@@ -232,6 +232,7 @@ run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
 run_suite "test-plugin-mirrorless-resolution.sh" "tests/test-plugin-mirrorless-resolution.sh"
 run_suite "test-plugin-d4-hook-siblings.sh" "tests/test-plugin-d4-hook-siblings.sh"
+run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh"
 # Phase 2 — SessionStart materialiser + dual-install detection + renderer.
 run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
 run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
