@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.01+fee8a8"
+  version: "2026.06.01+5deb35"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -974,6 +974,18 @@ if [ "${#ISSUE_NUMS[@]}" -gt 0 ] && [ -n "${PIPELINE_ID:-}" ]; then
     bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
   done
   unset _ISSUE_N
+fi
+
+# Issue #883 — clear the in-flight sentinel for worktree/direct modes
+# (PR mode handles its own clear inside modes/pr.md's explicit-finalize
+# block, before exiting and skipping this Phase 5). $PIPELINE_ID was
+# set by the mode file (worktree.md: do.${TASK_SLUG} unsuffixed;
+# direct.md: do.${ISSUE_NUMS[0]}); both modes match the WRITE key
+# exactly, so a single clear works for both. Skip entirely when
+# $PIPELINE_ID never got set (the no-issue direct-mode path).
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ] && [ -n "${PIPELINE_ID:-}" ]; then
+  bash "$INFLIGHT_HELPER" clear do --pipeline-id "$PIPELINE_ID" || true
 fi
 ```
 

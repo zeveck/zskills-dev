@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.31+bd3dd9"
+  version: "2026.06.01+0f0dba"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -651,6 +651,54 @@ case "$rc" in
   2)  echo "claim-plan.sh acquire usage error"; exit 2 ;;
   *)  echo "claim-plan.sh acquire unexpected rc=$rc"; exit 1 ;;
 esac
+```
+
+### Same-plan in-flight guard (issue #883)
+
+**Cron re-fires can land while the previous turn of THIS SAME plan is
+still mid-flight** (chunked `finish auto` re-fires `/run-plan $PLAN_FILE`
+every interval, and CronCreate's "fires only while idle" is turn-level
+idle, not task-level). `claim-plan.sh` does NOT close this: its self-
+re-entry returns rc=0 (proceed) for any same-pipeline re-acquire (#825),
+so two same-session same-plan turns both pass the claim gate. The
+shared `check-inflight-batch.sh` helper, called with the per-work-
+identity `--pipeline-id` filter, distinguishes "same plan re-fire mid-
+flight" (skip) from "different plan in-flight" (proceed):
+
+- Two `/run-plan` invocations for DIFFERENT plans → each writes its own
+  `inflight/run-plan/run-plan.<plan-a>.json` / `<plan-b>.json` sentinel;
+  the `--pipeline-id` filter ensures cross-plan fires don't collide.
+- Two cron fires of `/run-plan $PLAN_A` while phase-N is still running →
+  the second fire sees the same-pipeline sentinel and exits clean,
+  leaving the in-flight turn to finish on its own.
+
+The sentinel is cleared at all `/run-plan` terminal exit points (Phase
+5b's already-complete no-op release + Phase 6's terminal-merge release;
+both in `modes/execute-phase.md`). Stale escape lives in the helper
+(2h max-age) — a crashed turn's sentinel is reclaimed automatically.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check run-plan --pipeline-id "$PIPELINE_ID" > /tmp/.run-plan-inflight.$$ 2>/dev/null; then
+    INFLIGHT_LINE=$(cat /tmp/.run-plan-inflight.$$)
+    rm -f /tmp/.run-plan-inflight.$$
+    INFLIGHT_AGE=$(printf '%s' "$INFLIGHT_LINE" | awk -F'\t' '{print $3}')
+    echo "run-plan $PIPELINE_ID in flight (sentinel age ${INFLIGHT_AGE:-?}s); skipping redundant cron re-fire" >&2
+    exit 0
+  fi
+  rm -f /tmp/.run-plan-inflight.$$
+  # Fresh fire — write our sentinel so subsequent same-session same-plan
+  # re-fires see it and skip. Cleared in modes/execute-phase.md at the
+  # already-complete no-op (Phase 5b) and the terminal-merge (Phase 6).
+  bash "$INFLIGHT_HELPER" write run-plan --pipeline-id "$PIPELINE_ID" || \
+    echo "run-plan: WARN — could not write in-flight sentinel (continuing)" >&2
+fi
 ```
 
 **Issue-claim acquire (W3.1/W3.2/W3.5, #803 execution-window protection).**

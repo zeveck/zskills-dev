@@ -33,6 +33,27 @@ fi
 MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
 ATTEMPT_SLUG="${TASK_SLUG}"
 PIPELINE_ID="do.${TASK_SLUG}"
+
+# Issue #883 — same-task in-flight guard. Run BEFORE the worktree
+# create-with-retry below: the rc=2 retry suffixes ATTEMPT_SLUG when a
+# directory already exists, which would mask a legitimate same-task re-
+# fire (the second cron fire's TASK_SLUG would be re-derived from the
+# same description and naively match the pre-existing worktree, then
+# fall into the timestamp-suffix branch and create a second worktree
+# alongside the first). The shared sentinel uses the UNSUFFIXED key
+# (`do.${TASK_SLUG}`) so the check and the writer agree. Cleared at
+# /do Phase 5 Report (universal terminal for worktree mode).
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check do --pipeline-id "$PIPELINE_ID" > /tmp/.do-inflight.$$ 2>/dev/null; then
+    rm -f /tmp/.do-inflight.$$
+    echo "/do task $PIPELINE_ID in flight; skipping redundant cron re-fire" >&2
+    exit 0
+  fi
+  rm -f /tmp/.do-inflight.$$
+  bash "$INFLIGHT_HELPER" write do --pipeline-id "$PIPELINE_ID" || \
+    echo "do: WARN — could not write in-flight sentinel (continuing)" >&2
+fi
 # rc=0 BEFORE the first invocation is MANDATORY (R-M2 regression guard:
 # without it, a stale rc=2 from an earlier shell scope would falsely
 # trigger the retry block even when the first invocation succeeded).

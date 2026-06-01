@@ -1225,6 +1225,14 @@ PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
 PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
 bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/claim-plan.sh" \
   release "$PLAN_SLUG" --require-pipeline "$PIPELINE_ID" 2>/dev/null || true
+
+# Issue #883 — clear the shared in-flight sentinel on the already-complete
+# no-op exit path so the next cron fire (if scheduling has not stopped
+# yet) is free to no-op cleanly without seeing a stale sentinel.
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
+fi
 ```
 
 **Issue-claim release (W3.3 / W3.5 — already-complete no-op).** Release any
@@ -1695,6 +1703,16 @@ if [ "$rc" -eq 12 ]; then
   exit 1
 elif [ "$rc" -ne 0 ]; then
   echo "Release failed (rc=$rc)" >&2; exit 1
+fi
+
+# Issue #883 — clear the shared in-flight sentinel at the terminal merge.
+# This is the canonical "we are truly done with this plan" point, so any
+# stragglers re-firing on the same cron schedule before the schedule is
+# torn down will see the sentinel gone and run cleanly through the
+# already-complete no-op.
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
 fi
 ```
 

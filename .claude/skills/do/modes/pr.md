@@ -26,7 +26,45 @@ if ! [[ "$TASK_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || [ ${#TASK_SLUG} -gt 30 ];
 fi
 ```
 
-**Step A2 — Collision check (BEFORE deriving BRANCH_NAME or WORKTREE_PATH):**
+**Step A2 — Same-task in-flight guard (issue #883, BEFORE collision check).**
+Cron re-fires of `Run /do <task-description> ... every N now` would
+otherwise re-run the SAME task while a previous turn is still mid-
+flight. The shared `check-inflight-batch.sh` helper, called with the
+per-work-identity `--pipeline-id "do.<unsuffixed-TASK_SLUG>"` filter,
+detects the same-session same-task sentinel and exits clean — leaving
+the in-flight turn to finish. This MUST run BEFORE the Step A2.5
+collision check below: the collision check would suffix `TASK_SLUG`
+when a worktree already exists, masking the very same-task signal we
+want to detect. Crashed-turn worktrees ARE escaped by the helper's
+staleness logic (2h max-age sentinel reclaim) — when the sentinel
+ages out, the next fire proceeds AND the collision check still
+suffixes around the stale worktree on disk.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+INFLIGHT_KEY="do.${TASK_SLUG}"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check do --pipeline-id "$INFLIGHT_KEY" > /tmp/.do-inflight.$$ 2>/dev/null; then
+    rm -f /tmp/.do-inflight.$$
+    echo "/do task $INFLIGHT_KEY in flight; skipping redundant cron re-fire" >&2
+    exit 0
+  fi
+  rm -f /tmp/.do-inflight.$$
+  # Write the sentinel immediately so a same-session re-fire arriving
+  # within the helper-call window also skips. The check + write must
+  # both use the UNSUFFIXED key so a future re-fire (which re-derives
+  # the same unsuffixed TASK_SLUG from the same description) finds it.
+  bash "$INFLIGHT_HELPER" write do --pipeline-id "$INFLIGHT_KEY" || \
+    echo "do: WARN — could not write in-flight sentinel (continuing)" >&2
+fi
+```
+
+**Step A2.5 — Collision check (BEFORE deriving BRANCH_NAME or WORKTREE_PATH):**
 ```bash
 PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel)")
 if [ -d "/tmp/${PROJECT_NAME}-do-${TASK_SLUG}" ]; then
@@ -566,6 +604,19 @@ if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
     esac
   done
   unset _ISSUE_N
+fi
+
+# Issue #883 — clear the in-flight sentinel on every LAND_OUTCOME
+# (terminal point for /do pr; Phase 5 in SKILL.md is bypassed by the
+# `exit` at the end of this caller-loop). Use $INFLIGHT_KEY (the
+# unsuffixed form set in Step A2) — it persists in the same shell
+# session because /do pr's fences run inline. Falling back to
+# $PIPELINE_ID when INFLIGHT_KEY is unset defends against any future
+# refactor that drops Step A2's variable set without dropping the
+# write.
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear do --pipeline-id "${INFLIGHT_KEY:-$PIPELINE_ID}" || true
 fi
 ```
 

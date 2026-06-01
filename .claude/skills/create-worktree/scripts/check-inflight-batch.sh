@@ -1,16 +1,24 @@
 #!/bin/bash
 # check-inflight-batch.sh — Shared session-scoped in-flight guard for
 # queue-pickup workers (/fix-issues sprint, /work-on-plans batch,
-# /qe-audit audit). Closes the cron-pickup concurrency hole documented
-# in issue #877.
+# /qe-audit audit; closes the cron-pickup concurrency hole in #877)
+# AND for same-work re-entry workers (/run-plan, /do; closes the
+# cron-reentry concurrency hole in #883).
 #
-# Why this is shared (not three per-skill scripts): all three workers
-# share the same shape — a recurring cron fire re-fires FRESH work
-# (a fresh sprint / batch / audit, not a continuation of a specific
-# item). The right skip-key is "my session already has an in-flight
-# run of this skill," and the two robustness traps (session-scoping +
-# staleness escape) are identical. Factor once, integrate at each
-# entry point.
+# Why this is shared (not five per-skill scripts): all five workers
+# share the same SHAPE — a recurring cron fire that can land while a
+# previous run is still mid-flight. They differ only on the skip-key.
+# The two queue-pickup workers (#877) re-fire FRESH work (any batch
+# matters), so the skip-key is "my session already has an in-flight
+# run of this skill." The two same-work workers (#883) re-fire the
+# SAME plan/task each time, so the skip-key is "my session already
+# has an in-flight run of THIS specific pipeline_id." Both forms
+# share the same session-scoping + staleness-escape robustness traps,
+# so the helper carries one Python pass parameterised by an optional
+# --pipeline-id filter on the `check` subcommand. Without the filter
+# (the #877 shape) any same-session sentinel for the skill matches;
+# with the filter (the #883 shape) only a sentinel whose pipeline_id
+# equals the filter value matches.
 #
 # Sentinel layout:
 #   $MAIN_ROOT/.zskills/inflight/<skill>/<pipeline-id>.json
@@ -22,10 +30,15 @@
 #   }
 #
 # Subcommands:
-#   check <skill> [--max-age-seconds N] [--session-id <id>]
+#   check <skill> [--max-age-seconds N] [--session-id <id>] [--pipeline-id <id>]
 #     Returns 0 (in-flight; SKIP) iff a sentinel exists for <skill>
 #     whose session_id matches THIS session AND whose started_at age
-#     is less than max-age-seconds (default 7200 = 2h).
+#     is less than max-age-seconds (default 7200 = 2h). When
+#     --pipeline-id is also passed (issue #883), the sentinel's
+#     pipeline_id must additionally equal that value — the "same work"
+#     skip-key for /run-plan + /do where the cron re-fires the SAME
+#     plan/task. Without --pipeline-id (the #877 queue-pickup shape),
+#     any same-session sentinel counts.
 #     Returns 1 (no in-flight; PROCEED) otherwise. Stale sentinels
 #     (older than max-age) are removed in-line and treated as absent
 #     (graceful escape from a dead-session sentinel).
@@ -241,16 +254,26 @@ _validate_pipeline_id() {
 }
 
 # ---------------------------------------------------------------------------
-# check <skill> [--max-age-seconds N] [--session-id <id>]
+# check <skill> [--max-age-seconds N] [--session-id <id>] [--pipeline-id <id>]
 #
 # Exit 0  — in-flight, SKIP (caller should exit 0 cleanly).
 # Exit 1  — no in-flight sentinel for this session, PROCEED.
 # Exit 2  — usage error.
+#
+# `--pipeline-id` (issue #883): when present, only a sentinel whose
+# pipeline_id matches THIS value counts as in-flight. This is the
+# "same-work" skip-key used by /run-plan and /do, where the cron re-fires
+# the SAME plan/task and must skip iff that specific plan/task is mid-
+# flight. Two concurrent /run-plan invocations for DIFFERENT plans each
+# write sentinels under inflight/run-plan/; without the pipeline-id
+# filter the per-skill check would over-match. When `--pipeline-id` is
+# absent, behavior is unchanged from #877: any same-session sentinel
+# under the skill dir counts as in-flight (the queue-pickup skip-key).
 # ---------------------------------------------------------------------------
 cmd_check() {
-  local skill="" max_age="$_DEFAULT_MAX_AGE" explicit_sid=""
+  local skill="" max_age="$_DEFAULT_MAX_AGE" explicit_sid="" filter_pid=""
   if [ "$#" -lt 1 ]; then
-    echo "Usage: check-inflight-batch.sh check <skill> [--max-age-seconds N] [--session-id <id>]" >&2
+    echo "Usage: check-inflight-batch.sh check <skill> [--max-age-seconds N] [--session-id <id>] [--pipeline-id <id>]" >&2
     return 2
   fi
   skill="$1"; shift
@@ -258,6 +281,7 @@ cmd_check() {
     case "$1" in
       --max-age-seconds) max_age="${2:-}"; shift 2 ;;
       --session-id)      explicit_sid="${2:-}"; shift 2 ;;
+      --pipeline-id)     filter_pid="${2:-}"; shift 2 ;;
       *) echo "check-inflight-batch.sh check: unknown arg '$1'" >&2; return 2 ;;
     esac
   done
@@ -265,6 +289,9 @@ cmd_check() {
   case "$max_age" in
     ''|*[!0-9]*) echo "check-inflight-batch.sh check: --max-age-seconds must be non-negative integer" >&2; return 2 ;;
   esac
+  if [ -n "$filter_pid" ]; then
+    _validate_pipeline_id "$filter_pid" || return 2
+  fi
   resolve_main_root || return 2
 
   local sid
@@ -280,12 +307,15 @@ cmd_check() {
   fi
 
   # Python pass: find any sentinel matching session_id AND not stale.
-  # Stale sentinels (age > max_age) are removed inline. Returns "match"
-  # iff a fresh same-session sentinel was found.
+  # Stale sentinels (age > max_age) are removed inline. When filter_pid
+  # is non-empty (issue #883), additionally require the sentinel's
+  # pipeline_id to equal filter_pid — this is the "same work in flight"
+  # skip-key used by /run-plan and /do. When filter_pid is empty, any
+  # same-session sentinel counts (the #877 queue-pickup skip-key).
   local result
-  result=$("$_INFLIGHT_PYTHON" - "$skill_dir" "$sid" "$max_age" <<'PY'
+  result=$("$_INFLIGHT_PYTHON" - "$skill_dir" "$sid" "$max_age" "$filter_pid" <<'PY'
 import json, os, sys, time, datetime
-skill_dir, want_sid, max_age = sys.argv[1], sys.argv[2], int(sys.argv[3])
+skill_dir, want_sid, max_age, want_pid = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 now = datetime.datetime.now(datetime.timezone.utc)
 match = None
 try:
@@ -327,9 +357,13 @@ for name in entries:
             pass
         continue
     # Fresh sentinel. Check session-id.
-    if body.get("session_id", "") == want_sid:
-        match = (body.get("pipeline_id", "?"), int(age))
-        break
+    if body.get("session_id", "") != want_sid:
+        continue
+    # Optional per-work-identity filter (issue #883).
+    if want_pid and body.get("pipeline_id", "") != want_pid:
+        continue
+    match = (body.get("pipeline_id", "?"), int(age))
+    break
 if match is None:
     print("none")
 else:
