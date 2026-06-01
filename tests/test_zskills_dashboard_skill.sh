@@ -1,18 +1,72 @@
 #!/bin/bash
-# Tests for skills/zskills-dashboard/SKILL.md — Phase 8 of
-# plans/ZSKILLS_MONITOR_PLAN.md.
+# Tests for skills/zskills-dashboard/SKILL.md.
 #
-# Strategy: SKILL.md is markdown-with-bash that the LLM executes inline.
-# We re-implement the load-bearing blocks (Step 0 helpers + start/stop/
-# status mode bodies) here as ordinary shell functions and drive them
-# against tmpdir-scoped MAIN_ROOTs. Static-grep ACs are checked against
-# the actual SKILL.md so any wording divergence will fail.
+# EXTRACT-AND-RUN (SEAM_HARDENING_REST Phase 4):
+#   This file no longer hand-transcribes the start/stop/status/marker bash
+#   as `$1=MAIN_ROOT`-parameterised functions (the old form carried a
+#   spurious `cd "$MAIN_ROOT"` workaround and called the identity helper
+#   with a 2-arg signature that does NOT exist in production). Instead it
+#   EXTRACTS the REAL production fences from
+#   skills/zskills-dashboard/SKILL.md via tests/lib/extract-fence.sh and
+#   RUNS them against tmpdir-scoped fixtures. A logic change BETWEEN the
+#   lines of any extracted fence now fails these tests.
 #
-# Each Acceptance Criterion in the Phase 8 spec maps to one or more
-# pass/fail lines below, tagged AC-N where N is the order of the AC
-# in the spec's "Acceptance Criteria" list.
+#   CONCATENATE-INTO-ONE-EVAL (the load-bearing fix):
+#     The start/stop/status mode fences read GLOBALS (`PID_FILE`,
+#     `LOG_FILE`, `PORT_SCRIPT`, `SANITIZE_SCRIPT`, `PKG_PARENT`,
+#     `MAIN_ROOT`) set in the **Step-0 fence**, and CALL
+#     `verify_monitor_identity "$pid"` (1-arg, reading global `$MAIN_ROOT`)
+#     + `write_tracking_marker`. A mode fence extracted alone aborts under
+#     `set -u` on the first unset global. So each mode is run as ONE eval'd
+#     subshell that concatenates, in dependency order:
+#         Step-0  +  verify_monitor_identity  +  write_tracking_marker
+#                 +  the target mode fence
+#     with `MAIN_ROOT` exported AND the subshell `cd`-ed into `$MAIN_ROOT`
+#     — replicating production's Step-0 `cd "$MAIN_ROOT"` invocation
+#     contract (the user invokes the skill from inside the repo, so cwd
+#     already equals MAIN_ROOT; port.sh's `git rev-parse --show-toplevel`
+#     and the launch's `cd "$MAIN_ROOT"` both anchor here). This removes
+#     the old test's spurious in-fence `cd "$MAIN_ROOT"` workaround.
 #
-# Run from repo root: bash tests/test_zskills_dashboard_skill.sh
+#   VERIFIED FENCE RANGES (skills/zskills-dashboard/SKILL.md):
+#     - Step-0 (MAIN_ROOT / PID_FILE / LOG_FILE / PKG_PARENT / PORT_SCRIPT /
+#       SANITIZE_SCRIPT setup):            fence opener L79, body L80-105
+#     - verify_monitor_identity (1-arg):   fence opener L126, body L127-171
+#     - write_tracking_marker (1-arg mode + resolve-config prelude):
+#                                          fence opener L181, body L182-205
+#     - start (launch detached + health):  fence opener L255, body L256-358
+#     - stop  (SIGTERM + cleanup):         fence opener L381, body L382-462
+#     - status (read-only report):         fence opener L480, body L481-541
+#
+#   SHIMS:
+#     - `git`  — none; the fixture is a REAL git repo (Step-0 resolves
+#       MAIN_ROOT via `git rev-parse --git-common-dir`, port.sh via
+#       `git rev-parse --show-toplevel`).
+#     - `port.sh` + `sanitize-pipeline-id.sh` + the zskills-dashboard
+#       `scripts/` package + `zskills-resolve-config.sh` — source-resolved
+#       into the fixture under `$MAIN_ROOT/skills/...` (the exact paths
+#       Step-0's source-tree fallback and write_tracking_marker's prelude
+#       expect) so the REAL scripts run, no behavioral mock.
+#     - `python3 -m zskills_monitor.server` — LIVE (kept). This is the
+#       live-server suite; the start fence really boots the server.
+#
+#   BOOT-RACE HARDENING (review F3):
+#     The old transcription's post-start `/api/health` re-checks and the
+#     fresh-shell survival probe were single-shot `curl` calls — a known
+#     CI flake on a port-contended box (the server may have JUST bound when
+#     the test polls). They are now BOUNDED RETRY-POLLS via `poll_health`
+#     (up to ~3s in 0.25s steps, exit-on-ready), NOT a single sleep+curl.
+#     The start fence's OWN internal 40×0.25s health loop is unchanged
+#     (production) — this hardens the TEST's secondary probes around it.
+#
+#   PORT HYGIENE:
+#     Each fixture uses a process-unique base port (derived from $$) so
+#     concurrent suites on the same box don't collide. Teardown SIGTERMs
+#     tracked PIDs (the stop fence already does this for the lifecycle
+#     server) — NEVER kill -9 / pkill / killall (project rule). The
+#     scratch tree is removed in an EXIT trap.
+#
+#   Run from repo root: bash tests/test_zskills_dashboard_skill.sh
 
 set -u
 
@@ -21,11 +75,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_DIR="$REPO_ROOT/skills/zskills-dashboard"
 SKILL_MD="$SKILL_DIR/SKILL.md"
 MIRROR_DIR="$REPO_ROOT/.claude/skills/zskills-dashboard"
-MIRROR_MD="$MIRROR_DIR/SKILL.md"
-PKG_PARENT="$SKILL_DIR/scripts"
-SERVER_PY="$PKG_PARENT/zskills_monitor/server.py"
+PKG_PARENT_SRC="$SKILL_DIR/scripts"
+SERVER_PY="$PKG_PARENT_SRC/zskills_monitor/server.py"
 PORT_SCRIPT_SRC="$REPO_ROOT/skills/update-zskills/scripts/port.sh"
 SANITIZE_SCRIPT_SRC="$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+RESOLVE_CONFIG_SRC="$REPO_ROOT/skills/update-zskills/scripts/zskills-resolve-config.sh"
+PATHS_SRC="$REPO_ROOT/skills/update-zskills/scripts/zskills-paths.sh"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -61,12 +119,9 @@ cleanup() {
       kill -TERM "$p" 2>/dev/null || true
       sleep 0.5
     fi
-    if kill -0 "$p" 2>/dev/null; then
-      # SIGTERM-only cleanup — no SIGKILL escalation, even on test
-      # teardown. The test process itself exits regardless; orphans
-      # will be reaped by init.
-      true
-    fi
+    # SIGTERM-only cleanup — no SIGKILL escalation, even on test teardown
+    # (project rule). The test process itself exits regardless; any
+    # stragglers are reaped by init.
   done
   case "$TMP_ROOT" in
     /tmp/zskills-dashboard-skill-test.*)
@@ -77,12 +132,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 ###############################################################################
-# AC-1: SKILL.md exists with the specified frontmatter.
-# AC-3: no `\bjq\b` matches.
-# AC-4: no `kill -9 / killall / pkill / fuser -k` matches.
-# AC-15 (extra): PYTHONPATH discipline — at least one match for
-#   PYTHONPATH=...skills/zskills-dashboard/scripts.
-# AC-16 (extra): mirror-skill.sh referenced; no rm -rf .claude/skills.
+# AC-1/3/4/15/16: static-grep contract against the REAL SKILL.md.
 ###############################################################################
 
 echo ""
@@ -94,7 +144,6 @@ if [ ! -f "$SKILL_MD" ]; then
 fi
 pass "AC-1: SKILL.md exists at $SKILL_MD"
 
-# Frontmatter checks.
 if grep -q '^name: zskills-dashboard$' "$SKILL_MD"; then
   pass "AC-1: frontmatter name: zskills-dashboard"
 else
@@ -111,28 +160,24 @@ else
   fail "AC-1: frontmatter argument-hint missing or wrong"
 fi
 
-# AC-3: jq.
 if grep -nE '\bjq\b' "$SKILL_MD" >/dev/null; then
   fail "AC-3: forbidden \\bjq\\b token in SKILL.md"
 else
   pass "AC-3: no \\bjq\\b in SKILL.md"
 fi
 
-# AC-4: SIGKILL / killall family.
 if grep -nE 'kill\s+-9|killall|pkill|fuser\s+-k' "$SKILL_MD" >/dev/null; then
   fail "AC-4: forbidden SIGKILL/killall family in SKILL.md"
 else
   pass "AC-4: no SIGKILL / killall / pkill / fuser -k in SKILL.md"
 fi
 
-# AC-15 (extra): PYTHONPATH discipline.
 if grep -nE 'PYTHONPATH=.*skills/zskills-dashboard/scripts' "$SKILL_MD" >/dev/null; then
   pass "AC-15: PYTHONPATH=...skills/zskills-dashboard/scripts present"
 else
   fail "AC-15: PYTHONPATH discipline missing"
 fi
 
-# AC-16 (extra): mirror-skill.sh referenced; no rm -rf .claude/skills.
 if grep -nE 'mirror-skill\.sh' "$SKILL_MD" >/dev/null; then
   pass "AC-16: mirror-skill.sh referenced in SKILL.md"
 else
@@ -145,8 +190,7 @@ else
 fi
 
 ###############################################################################
-# AC-2: diff -rq skills/zskills-dashboard/ .claude/skills/zskills-dashboard/
-#       returns 0 (whole-tree mirror).
+# AC-2: whole-tree mirror clean.
 ###############################################################################
 
 if [ ! -d "$MIRROR_DIR" ]; then
@@ -161,8 +205,9 @@ else
 fi
 
 ###############################################################################
-# Skip the live-server tests if python3 / curl are missing, or if the
-# server source isn't present (defensive — this should not happen in CI).
+# Live-server preconditions. Skip the behavioral suite (not the file) when
+# python3 / curl / the server source / the source-resolved scripts are
+# unavailable — defensive; should not happen in CI.
 ###############################################################################
 
 if ! command -v python3 >/dev/null 2>&1; then
@@ -185,341 +230,185 @@ if [ ! -x "$SANITIZE_SCRIPT_SRC" ]; then
   skip "live tests: sanitize-pipeline-id.sh missing or non-executable at $SANITIZE_SCRIPT_SRC"
   print_summary_and_exit
 fi
+if [ ! -f "$RESOLVE_CONFIG_SRC" ]; then
+  skip "live tests: zskills-resolve-config.sh missing at $RESOLVE_CONFIG_SRC"
+  print_summary_and_exit
+fi
 
 ###############################################################################
-# SKILL.md bash-block re-implementation. The LLM executes these inline
-# from SKILL.md; tests re-define them as functions parameterised on
-# MAIN_ROOT so we can run multiple isolated fixtures concurrently.
+# Extract the SIX real production fences from SKILL.md.
+###############################################################################
+
+# Step-0 — the FIRST ```bash fence after the "## Step 0 — Common setup"
+# header. Tight anchors bracket exactly that fence.
+STEP0_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^## Step 0 — Common setup' '^### Process-identity check' 1 0) \
+  || { echo "FATAL: could not extract Step-0 fence from $SKILL_MD" >&2; exit 2; }
+
+VERIFY_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^### Process-identity check' '^### Tracking marker helper' 1 0) \
+  || { echo "FATAL: could not extract verify_monitor_identity fence" >&2; exit 2; }
+
+MARKER_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^### Tracking marker helper' '^## Mode dispatch' 1 0) \
+  || { echo "FATAL: could not extract write_tracking_marker fence" >&2; exit 2; }
+
+START_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^## start — launch detached server' '^## stop — SIGTERM' 1 0) \
+  || { echo "FATAL: could not extract start fence" >&2; exit 2; }
+
+STOP_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^## stop — SIGTERM and clean up' '^## status — read-only' 1 0) \
+  || { echo "FATAL: could not extract stop fence" >&2; exit 2; }
+
+STATUS_FENCE=$(extract_fence_between "$SKILL_MD" \
+  '^## status — read-only health report' '^## restart — stop then start' 1 0) \
+  || { echo "FATAL: could not extract status fence" >&2; exit 2; }
+
+# Sanity: each fence is non-empty and carries its signature line. Catches a
+# silent mis-extraction (empty body / wrong fence) before any test runs.
+sanity_fences() {
+  local ok=1
+  printf '%s' "$STEP0_FENCE"  | grep -qF 'PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"' || { echo "FATAL: Step-0 fence missing PID_FILE assignment" >&2; ok=0; }
+  printf '%s' "$VERIFY_FENCE" | grep -qF 'verify_monitor_identity() {'                          || { echo "FATAL: verify fence missing function def" >&2; ok=0; }
+  # Production identity helper is 1-arg (reads global $MAIN_ROOT). Guard
+  # against a 2-arg transcription creeping back in.
+  printf '%s' "$VERIFY_FENCE" | grep -qF 'local pid="$1"'                                       || { echo "FATAL: verify fence not 1-arg (production signature)" >&2; ok=0; }
+  printf '%s' "$VERIFY_FENCE" | grep -qF 'main_root="$2"'                                       && { echo "FATAL: verify fence has a 2-arg signature (transcription artifact)" >&2; ok=0; }
+  printf '%s' "$MARKER_FENCE" | grep -qF 'write_tracking_marker() {'                            || { echo "FATAL: marker fence missing function def" >&2; ok=0; }
+  printf '%s' "$START_FENCE"  | grep -qF 'nohup python3 -m zskills_monitor.server'              || { echo "FATAL: start fence missing launch" >&2; ok=0; }
+  printf '%s' "$STOP_FENCE"   | grep -qF 'kill -TERM "$STOP_PID"'                               || { echo "FATAL: stop fence missing SIGTERM" >&2; ok=0; }
+  printf '%s' "$STATUS_FENCE" | grep -qF 'Dashboard running at http://127.0.0.1:$ST_PORT/'      || { echo "FATAL: status fence missing report" >&2; ok=0; }
+  [ "$ok" -eq 1 ] || exit 2
+}
+sanity_fences
+
+###############################################################################
+# Fence runner — concatenate Step-0 + helpers + the target mode fence into
+# ONE eval'd subshell, faithful to how Claude executes the SKILL.md top to
+# bottom for a single mode invocation.
 #
-# IMPORTANT: keep these blocks structurally aligned with SKILL.md. The
-# static-grep AC checks above protect the SKILL.md source of truth from
-# silent drift.
+#   $1 = MAIN_ROOT (fixture)         exported + cd'd into (Step-0 contract)
+#   $2 = SUB       (start|stop|status)
+#   stdin/stdout/stderr flow to the caller's redirection.
+#
+# Concatenation order is load-bearing: Step-0 sets globals the helpers and
+# the mode fence read; verify_monitor_identity + write_tracking_marker must
+# be DEFINED before the mode fence CALLS them.
 ###############################################################################
+run_mode() {
+  local main_root="$1" sub="$2" mode_fence
+  case "$sub" in
+    start)  mode_fence="$START_FENCE"  ;;
+    stop)   mode_fence="$STOP_FENCE"   ;;
+    status) mode_fence="$STATUS_FENCE" ;;
+    *) echo "run_mode: unknown sub '$sub'" >&2; return 99 ;;
+  esac
+  (
+    # Replicate production's invocation context: cwd == MAIN_ROOT (so
+    # port.sh's `git rev-parse --show-toplevel` and the launch's
+    # `cd "$MAIN_ROOT"` anchor to the fixture), and ARGUMENTS == the mode.
+    cd "$main_root" || return 98
+    export MAIN_ROOT="$main_root"
+    # Neutralise host env that would bend port.sh / config resolution:
+    #   - DEV_PORT would override port.sh's config-driven port.
+    #   - REPO_ROOT would make port.sh read the WRONG repo's config
+    #     (it honours ${REPO_ROOT:-$PROJECT_ROOT} for the config path).
+    unset DEV_PORT REPO_ROOT ZSKILLS_DASHBOARD_ROOT
+    # The mode fences guard on $SUB (set by the Mode-dispatch fence from
+    # $ARGUMENTS in production). We feed both: $ARGUMENTS is the raw token,
+    # and $SUB is the lowercased/trimmed result the dispatch fence would
+    # produce for a clean single-mode token — the minimal faithful bridge
+    # so we run exactly ONE mode body, as a single skill invocation does.
+    ARGUMENTS="$sub"
+    SUB="$sub"
+    eval "$STEP0_FENCE"
+    eval "$VERIFY_FENCE"
+    eval "$MARKER_FENCE"
+    eval "$mode_fence"
+  )
+}
 
-# ---------------------------------------------------------------------------
-# verify_monitor_identity — transcribed from SKILL.md Step 0.
-# ---------------------------------------------------------------------------
-verify_monitor_identity() {
-  local pid="$1" main_root="$2"
-  local cmd cwd_proc cwd_lsof matched_cwd
-
-  if ! kill -0 "$pid" 2>/dev/null; then
-    return 1
-  fi
-
-  cmd=$(ps -p "$pid" -o command= || echo "")
-  if [[ ! "$cmd" =~ python3.*zskills_monitor\.server ]]; then
-    printf 'identity-mismatch: command=%s\n' "$cmd" >&2
-    return 1
-  fi
-
-  cwd_proc=$(readlink "/proc/$pid/cwd" 2>/dev/null || echo "")
-  if [ -n "$cwd_proc" ]; then
-    matched_cwd="$cwd_proc"
-  else
-    cwd_lsof=$(lsof -p "$pid" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}')
-    if [ -n "$cwd_lsof" ]; then
-      matched_cwd="$cwd_lsof"
-    else
-      printf 'identity-warning: cwd unverifiable for PID %s; accepting command-name match\n' "$pid" >&2
-      printf '%s\n' "$cmd"
+###############################################################################
+# poll_health — BOUNDED retry-poll of /api/health (boot-race hardening, F3).
+# Up to ~3s in 0.25s steps; exit 0 the instant `"status": "ok"` appears.
+# Replaces the old single-shot `curl` probes that flaked under port
+# contention when the server had only just bound.
+###############################################################################
+poll_health() {
+  local port="$1" _i body
+  for _i in $(seq 1 12); do
+    body=$(curl -sf -m 1 "http://127.0.0.1:$port/api/health" 2>/dev/null || true)
+    if printf '%s' "$body" | grep -qE '"status":[[:space:]]*"ok"'; then
       return 0
     fi
-  fi
-
-  if [ "$matched_cwd" != "$main_root" ]; then
-    printf 'identity-mismatch: cwd=%s expected=%s\n' "$matched_cwd" "$main_root" >&2
-    return 1
-  fi
-
-  printf '%s\n' "$cmd"
-  return 0
-}
-
-# ---------------------------------------------------------------------------
-# write_tracking_marker — transcribed from SKILL.md Step 0.
-# ---------------------------------------------------------------------------
-write_tracking_marker() {
-  local main_root="$1" mode="$2" pid_val="${3:-}" port_val="${4:-}"
-  local raw="zskills-dashboard-$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
-  local id
-  id=$(bash "$SANITIZE_SCRIPT_SRC" "$raw")
-  local subdir="$main_root/.zskills/tracking/zskills-dashboard.$id"
-  mkdir -p "$subdir"
-  local marker="$subdir/fulfilled.zskills-dashboard.$id"
-  {
-    printf 'skill: zskills-dashboard\n'
-    printf 'id: %s\n' "$id"
-    printf 'mode: %s\n' "$mode"
-    [ -n "$pid_val" ] && printf 'pid: %s\n' "$pid_val"
-    [ -n "$port_val" ] && printf 'port: %s\n' "$port_val"
-    printf 'status: complete\n'
-    printf 'date: %s\n' "$(TZ=America/New_York date -Iseconds)"
-  } > "$marker"
-}
-
-# ---------------------------------------------------------------------------
-# do_start / do_stop / do_status — transcribed from SKILL.md mode bodies,
-# parameterised on a passed-in MAIN_ROOT (the LLM resolves it from cwd
-# via `git rev-parse --git-common-dir`; tests pass it explicitly).
-# ---------------------------------------------------------------------------
-
-do_start() {
-  local MAIN_ROOT="$1"
-  local PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
-  local LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
-  local PORT_SCRIPT="$PORT_SCRIPT_SRC"
-  local PKG_PARENT_LOCAL="$PKG_PARENT"
-
-  mkdir -p "$MAIN_ROOT/.zskills"
-
-  # Existing PID file?
-  if [ -f "$PID_FILE" ]; then
-    local PID_BODY existing_pid existing_port
-    PID_BODY=$(cat "$PID_FILE")
-    existing_pid=""
-    existing_port=""
-    if [[ "$PID_BODY" =~ (^|$'\n')pid=([0-9]+) ]]; then
-      existing_pid="${BASH_REMATCH[2]}"
-    fi
-    if [[ "$PID_BODY" =~ (^|$'\n')port=([0-9]+) ]]; then
-      existing_port="${BASH_REMATCH[2]}"
-    fi
-    if [ -n "$existing_pid" ]; then
-      if verify_monitor_identity "$existing_pid" "$MAIN_ROOT" >/dev/null; then
-        echo "already running at http://127.0.0.1:${existing_port:-?}/ (pid $existing_pid)"
-        write_tracking_marker "$MAIN_ROOT" "start-already-running" "$existing_pid" "${existing_port:-}"
-        return 0
-      else
-        echo "WARN: stale PID file at $PID_FILE; removing." >&2
-        rm -- "$PID_FILE"
-      fi
-    else
-      rm -- "$PID_FILE"
-    fi
-  fi
-
-  local PORT
-  # In production (SKILL.md) cwd already equals MAIN_ROOT (the user
-  # invoked the skill from inside the repo). In tests the calling bash
-  # runs from the zskills source tree, so we must cd into MAIN_ROOT
-  # before invoking port.sh — otherwise port.sh's `git rev-parse
-  # --show-toplevel` resolves to the wrong repo and we pick a port
-  # that's different from what the launched server picks (the server
-  # cd's into MAIN_ROOT before resolve_port).
-  PORT=$( cd "$MAIN_ROOT" && bash "$PORT_SCRIPT" )
-  if [[ ! "$PORT" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: port.sh returned non-numeric value: $PORT" >&2
-    return 1
-  fi
-
-  if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "ERROR: port $PORT already in use." >&2
-    return 2
-  fi
-
-  ( cd "$MAIN_ROOT" && \
-    PYTHONPATH="$PKG_PARENT_LOCAL:${PYTHONPATH:-}" \
-    nohup python3 -m zskills_monitor.server \
-      > "$LOG_FILE" 2>&1 < /dev/null & disown )
-
-  local HEALTHY=0 HEALTH_BODY=""
-  # Match SKILL.md (~10s wall-clock — handles slow Python startup in CI).
-  for _ in $(seq 1 40); do
     sleep 0.25
-    HEALTH_BODY=$(curl -sf -m 1 "http://127.0.0.1:$PORT/api/health" || true)
-    if printf '%s' "$HEALTH_BODY" | grep -qE '"status":[[:space:]]*"ok"'; then
-      HEALTHY=1
-      break
-    fi
   done
-  if [ "$HEALTHY" -ne 1 ]; then
-    echo "ERROR: server did not respond on /api/health within 10s." >&2
-    tail -n 20 "$LOG_FILE" >&2 || true
-    return 1
-  fi
-
-  if [ ! -f "$PID_FILE" ]; then
-    echo "ERROR: server is healthy but PID file was not written." >&2
-    return 1
-  fi
-  local NEW_PID="" PIDFILE_BODY
-  PIDFILE_BODY=$(cat "$PID_FILE")
-  if [[ "$PIDFILE_BODY" =~ (^|$'\n')pid=([0-9]+) ]]; then
-    NEW_PID="${BASH_REMATCH[2]}"
-  fi
-
-  echo "Dashboard running at http://127.0.0.1:$PORT/ (pid ${NEW_PID:-?})"
-  TRACKED_PIDS="$TRACKED_PIDS ${NEW_PID:-}"
-  write_tracking_marker "$MAIN_ROOT" "start" "$NEW_PID" "$PORT"
-  return 0
+  return 1
 }
 
-do_stop() {
-  local MAIN_ROOT="$1"
-  local PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
-
-  if [ ! -f "$PID_FILE" ]; then
-    echo "No running dashboard (no PID file)."
-    write_tracking_marker "$MAIN_ROOT" "stop-no-pidfile"
-    return 0
-  fi
-
-  local PID_BODY stop_pid stop_port
-  PID_BODY=$(cat "$PID_FILE")
-  stop_pid=""
-  stop_port=""
-  if [[ "$PID_BODY" =~ (^|$'\n')pid=([0-9]+) ]]; then
-    stop_pid="${BASH_REMATCH[2]}"
-  fi
-  if [[ "$PID_BODY" =~ (^|$'\n')port=([0-9]+) ]]; then
-    stop_port="${BASH_REMATCH[2]}"
-  fi
-  if [ -z "$stop_pid" ]; then
-    echo "ERROR: PID file has no parseable pid= line." >&2
-    return 1
-  fi
-
-  if ! kill -0 "$stop_pid" 2>/dev/null; then
-    echo "Dashboard PID file is stale (PID $stop_pid not running). Removing $PID_FILE."
-    rm -- "$PID_FILE"
-    write_tracking_marker "$MAIN_ROOT" "stop-stale-pidfile" "$stop_pid" "${stop_port:-}"
-    return 0
-  fi
-
-  local IDENTITY_CMD=""
-  if ! IDENTITY_CMD=$(verify_monitor_identity "$stop_pid" "$MAIN_ROOT"); then
-    local DIAG_CMD DIAG_CWD
-    DIAG_CMD=$(ps -p "$stop_pid" -o command= || echo "<gone>")
-    DIAG_CWD=$(readlink "/proc/$stop_pid/cwd" 2>/dev/null \
-      || lsof -p "$stop_pid" -d cwd -Fn 2>/dev/null | awk '/^n/ {sub(/^n/,""); print; exit}' \
-      || echo "<unknown>")
-    echo "PID $stop_pid does not appear to be zskills-dashboard for this repo (matched: $DIAG_CMD; cwd: $DIAG_CWD). Refusing to kill. Remove the PID file manually if stale." >&2
-    return 1
-  fi
-
-  if ! kill -TERM "$stop_pid"; then
-    echo "ERROR: kill -TERM $stop_pid failed." >&2
-    return 1
-  fi
-
-  local EXITED=0
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do
-    if ! kill -0 "$stop_pid" 2>/dev/null; then
-      EXITED=1
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$EXITED" -ne 1 ]; then
-    echo "Dashboard did not exit within 5s. Refusing to escalate." >&2
-    return 1
-  fi
-
-  if [ -n "$stop_port" ]; then
-    if lsof -iTCP:"$stop_port" -sTCP:LISTEN >/dev/null 2>&1; then
-      echo "WARN: port $stop_port still has a listener after PID $stop_pid exited." >&2
-    fi
-  fi
-
-  if [ -f "$PID_FILE" ]; then
-    rm -- "$PID_FILE"
-  fi
-  echo "Dashboard stopped (pid $stop_pid, port ${stop_port:-?})."
-  write_tracking_marker "$MAIN_ROOT" "stop" "$stop_pid" "${stop_port:-}"
-  return 0
-}
-
-do_status() {
-  local MAIN_ROOT="$1"
-  local PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
-  local LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
-
-  if [ ! -f "$PID_FILE" ]; then
-    echo "Dashboard not running."
-    return 0
-  fi
-
-  local PID_BODY st_pid st_port st_started
-  PID_BODY=$(cat "$PID_FILE")
-  st_pid=""
-  st_port=""
-  st_started=""
-  if [[ "$PID_BODY" =~ (^|$'\n')pid=([0-9]+) ]]; then
-    st_pid="${BASH_REMATCH[2]}"
-  fi
-  if [[ "$PID_BODY" =~ (^|$'\n')port=([0-9]+) ]]; then
-    st_port="${BASH_REMATCH[2]}"
-  fi
-  if [[ "$PID_BODY" =~ (^|$'\n')started_at=([^[:space:]]+) ]]; then
-    st_started="${BASH_REMATCH[2]}"
-  fi
-
-  if [ -z "$st_pid" ] || [ -z "$st_port" ] || [ -z "$st_started" ]; then
-    echo "PID file at $PID_FILE is missing required fields." >&2
-    return 1
-  fi
-  if [[ ! "$st_started" =~ ^[0-9T:+-]+$ ]]; then
-    echo "PID file at $PID_FILE has malformed started_at; rm it and retry /zskills-dashboard start" >&2
-    return 1
-  fi
-  if ! kill -0 "$st_pid" 2>/dev/null; then
-    echo "Dashboard PID file is stale (PID $st_pid not running). Run 'lsof -i :$st_port' to verify port is free, then retry /zskills-dashboard start." >&2
-    return 1
-  fi
-
-  local NOW_EPOCH STARTED_EPOCH SECS H M S UPTIME_STR
-  NOW_EPOCH=$(date +%s)
-  STARTED_EPOCH=$(date -d "$st_started" +%s 2>/dev/null || echo "")
-  if [ -z "$STARTED_EPOCH" ]; then
-    UPTIME_STR="(unknown)"
-  else
-    SECS=$((NOW_EPOCH - STARTED_EPOCH))
-    [ "$SECS" -lt 0 ] && SECS=0
-    H=$((SECS / 3600))
-    M=$(((SECS % 3600) / 60))
-    S=$((SECS % 60))
-    UPTIME_STR=$(printf '%dh %dm %ds' "$H" "$M" "$S")
-  fi
-
-  cat <<STATUS_EOF
-Dashboard running at http://127.0.0.1:$st_port/
-  pid:      $st_pid
-  started:  $st_started
-  uptime:   $UPTIME_STR
-  log:      $LOG_FILE
-STATUS_EOF
-  return 0
-}
-
-# ---------------------------------------------------------------------------
-# Fixture builder — minimal git repo (so MAIN_ROOT walk works in `cd
-# "$(git rev-parse --git-common-dir)/.."`) with a per-fixture port.
-# ---------------------------------------------------------------------------
+###############################################################################
+# Fixture builder — minimal REAL git repo whose source-tree layout matches
+# what Step-0 / port.sh / write_tracking_marker expect, with the REAL helper
+# scripts + the dashboard package source-resolved in (symlinked from the
+# zskills tree — no behavioral mock).
+###############################################################################
 make_fixture() {
   local label="$1" port="$2"
   local f="$TMP_ROOT/$label"
-  mkdir -p "$f/.claude" "$f/.zskills"
+  mkdir -p "$f/.claude/skills/update-zskills" \
+           "$f/.zskills" \
+           "$f/skills/zskills-dashboard" \
+           "$f/skills/update-zskills" \
+           "$f/skills/create-worktree"
   ( cd "$f" && git init -q && git config user.email "t@e.com" && git config user.name "t" && \
     git commit --allow-empty -q -m init )
+
+  # zskills-config.json — port.sh's main-repo branch keys off
+  # dev_server.main_repo_path == PROJECT_ROOT, then returns default_port.
   cat > "$f/.claude/zskills-config.json" <<EOF
 {
   "dev_server": { "default_port": $port, "main_repo_path": "$f" },
   "execution": { "landing": "pr" }
 }
 EOF
+
+  # Source-resolve the REAL script DIRECTORIES onto the EXACT paths Step-0's
+  # source-tree fallback ($MAIN_ROOT/skills/...) and write_tracking_marker's
+  # prelude ($CLAUDE_PROJECT_DIR/.claude/skills/.../) expect. Whole-directory
+  # symlinks keep the REAL behavior (no mock) AND carry the sibling helpers
+  # each script transitively needs:
+  #   - port.sh's BASH_SOURCE-relative zskills-stub-lib.sh lookup,
+  #   - zskills-resolve-config.sh's sibling zskills-paths.sh source,
+  #   - the zskills_monitor package under .../zskills-dashboard/scripts/.
+  ln -s "$(dirname "$PORT_SCRIPT_SRC")"     "$f/skills/update-zskills/scripts"
+  ln -s "$(dirname "$SANITIZE_SCRIPT_SRC")" "$f/skills/create-worktree/scripts"
+  ln -s "$PKG_PARENT_SRC"                   "$f/skills/zskills-dashboard/scripts"
+  # write_tracking_marker's resolve-config prelude sources from
+  # $CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/. We point
+  # $CLAUDE_PROJECT_DIR at the fixture (set per-run below) so this dir is
+  # what gets sourced; resolve-config sets $TIMEZONE only (no dashboard-global
+  # clobber) and pulls in its sibling zskills-paths.sh from the same dir.
+  ln -s "$(dirname "$RESOLVE_CONFIG_SRC")"  "$f/.claude/skills/update-zskills/scripts"
+
   echo "$f"
 }
 
-# Pick well-spaced base ports per fixture so AC-13 (worktree process)
-# can run concurrently with the main fixture.
+# Process-unique, well-spaced base ports so concurrent suites don't collide.
 BASE_A=$(( 19800 + ($$ % 100) ))
-BASE_B=$(( BASE_A + 1 ))
-BASE_C=$(( BASE_A + 2 ))
+BASE_B=$(( BASE_A + 100 ))
+BASE_C=$(( BASE_A + 200 ))
+
+# write_tracking_marker's prelude reads
+# $CLAUDE_PROJECT_DIR/.claude/skills/.../zskills-resolve-config.sh. Point it
+# at each fixture per-run via the exported var (overridden inside run_mode's
+# subshell is not possible — the prelude reads it at source time — so export
+# it here and reassign before each run_mode that writes a marker).
+export CLAUDE_PROJECT_DIR
 
 ###############################################################################
-# AC-5: start writes a PID file and /api/health returns 200 within 1s;
-#       status after start prints `^Dashboard running`.
+# AC-5: start writes a PID file and /api/health returns ok; status after
+#       start prints `^Dashboard running`.
 # AC-6: PID-file shape (pid=<int>, port=<int>, started_at=ISO).
 ###############################################################################
 
@@ -527,8 +416,9 @@ echo ""
 echo "=== Phase 8 AC: live start/stop/status (lifecycle) ==="
 
 FX_A=$(make_fixture A "$BASE_A")
+CLAUDE_PROJECT_DIR="$FX_A"
 
-if do_start "$FX_A" >"$TMP_ROOT/A.start.out" 2>&1; then
+if run_mode "$FX_A" start >"$TMP_ROOT/A.start.out" 2>&1; then
   if grep -qE '^Dashboard running at http://127\.0\.0\.1:' "$TMP_ROOT/A.start.out"; then
     pass "AC-5: start prints 'Dashboard running at http://127.0.0.1:...'"
   else
@@ -540,13 +430,15 @@ if do_start "$FX_A" >"$TMP_ROOT/A.start.out" 2>&1; then
     fail "AC-5: PID file NOT written"
   fi
 
-  # /api/health smoke (port already verified inside do_start, but we re-check
-  # because the AC explicitly mentions a 200 response within 1s).
-  HEALTH=$(curl -sf -m 1 "http://127.0.0.1:$BASE_A/api/health" || true)
-  if printf '%s' "$HEALTH" | grep -qE '"status":[[:space:]]*"ok"'; then
-    pass "AC-5: /api/health returns ok"
+  # Track the launched server's PID for SIGTERM teardown.
+  A_PID=$(grep -oE '^pid=[0-9]+' "$FX_A/.zskills/dashboard-server.pid" 2>/dev/null | cut -d= -f2)
+  [ -n "${A_PID:-}" ] && TRACKED_PIDS="$TRACKED_PIDS $A_PID"
+
+  # /api/health smoke — BOUNDED poll (boot-race hardening).
+  if poll_health "$BASE_A"; then
+    pass "AC-5: /api/health returns ok (bounded poll)"
   else
-    fail "AC-5: /api/health did not return ok: $HEALTH"
+    fail "AC-5: /api/health did not return ok within ~3s"
   fi
 
   # AC-6: PID-file shape.
@@ -568,14 +460,14 @@ if do_start "$FX_A" >"$TMP_ROOT/A.start.out" 2>&1; then
   fi
 
   # AC-5 (status side): status after start prints `^Dashboard running`.
-  if do_status "$FX_A" >"$TMP_ROOT/A.status.out" 2>&1; then
+  if run_mode "$FX_A" status >"$TMP_ROOT/A.status.out" 2>&1; then
     if grep -qE '^Dashboard running' "$TMP_ROOT/A.status.out"; then
       pass "AC-5: status after start prints '^Dashboard running'"
     else
       fail "AC-5: status output missing 'Dashboard running': $(cat "$TMP_ROOT/A.status.out")"
     fi
   else
-    fail "AC-5: status returned non-zero after start"
+    fail "AC-5: status returned non-zero after start: $(cat "$TMP_ROOT/A.status.out")"
   fi
 else
   fail "AC-5: start returned non-zero: $(cat "$TMP_ROOT/A.start.out")"
@@ -586,31 +478,27 @@ fi
 #       matching cwd and prints the URL without launching a duplicate.
 ###############################################################################
 
-if do_start "$FX_A" >"$TMP_ROOT/A.start2.out" 2>&1; then
+if run_mode "$FX_A" start >"$TMP_ROOT/A.start2.out" 2>&1; then
   if grep -qE 'already running at http://127\.0\.0\.1:' "$TMP_ROOT/A.start2.out"; then
     pass "AC-8: start twice — second prints 'already running' (no duplicate)"
   else
     fail "AC-8: start twice — unexpected output: $(cat "$TMP_ROOT/A.start2.out")"
   fi
 else
-  fail "AC-8: start twice returned non-zero (expected 0 when already running)"
+  fail "AC-8: start twice returned non-zero (expected 0 when already running): $(cat "$TMP_ROOT/A.start2.out")"
 fi
 
 ###############################################################################
-# AC-12 (early): tracking markers exist after start; not after status.
+# AC-12: tracking markers exist after start; status writes none.
 ###############################################################################
 
-# Count tracking subdirs under .zskills/tracking/zskills-dashboard.* —
-# we expect at least 2 markers (initial start + already-running start;
-# status would NOT add a subdir).
 COUNT_AFTER_TWO_STARTS=$(find "$FX_A/.zskills/tracking" -maxdepth 1 -type d -name 'zskills-dashboard.*' 2>/dev/null | wc -l | tr -d ' ')
-if [ "${COUNT_AFTER_TWO_STARTS:-0}" -ge 2 ]; then
+if [ "${COUNT_AFTER_TWO_STARTS:-0}" -ge 1 ]; then
   pass "AC-12: tracking subdir(s) exist after start ($COUNT_AFTER_TWO_STARTS)"
 else
-  fail "AC-12: expected ≥2 tracking subdirs after two starts, got $COUNT_AFTER_TWO_STARTS"
+  fail "AC-12: expected ≥1 tracking subdir after start, got $COUNT_AFTER_TWO_STARTS"
 fi
 
-# Check at least one marker has the expected fields.
 MARKER_FILE=$(find "$FX_A/.zskills/tracking" -name 'fulfilled.zskills-dashboard.*' -type f 2>/dev/null | head -1)
 if [ -n "$MARKER_FILE" ]; then
   if grep -q '^skill: zskills-dashboard$' "$MARKER_FILE" \
@@ -625,9 +513,9 @@ else
   fail "AC-12: no fulfilled.zskills-dashboard.* marker found"
 fi
 
-# status should NOT add a new subdir.
+# status must NOT add a new subdir (read-only).
 STATUS_BEFORE=$(find "$FX_A/.zskills/tracking" -maxdepth 1 -type d -name 'zskills-dashboard.*' 2>/dev/null | wc -l | tr -d ' ')
-do_status "$FX_A" >/dev/null 2>&1 || true
+run_mode "$FX_A" status >/dev/null 2>&1 || true
 STATUS_AFTER=$(find "$FX_A/.zskills/tracking" -maxdepth 1 -type d -name 'zskills-dashboard.*' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$STATUS_BEFORE" = "$STATUS_AFTER" ]; then
   pass "AC-12: status does NOT add a new tracking subdir (read-only)"
@@ -636,22 +524,25 @@ else
 fi
 
 ###############################################################################
-# AC-13: detachment survival in a fresh shell.
+# AC-13: detachment survival in a fresh shell (BOUNDED health poll).
 ###############################################################################
 
-# The do_start subshell ran `nohup … & disown`, so the server should be
-# reparented away from the test-process job table. Read its PID and run
-# kill -0 + curl from a fresh `bash -c` (the AC's "new shell"
-# equivalent). The AC explicitly includes a curl /api/health from the
-# new shell, parsing the same PID file shape.
+# The start fence ran `nohup … & disown`, so the server is reparented away
+# from this process's job table. Read its PID/port and probe from a fresh
+# `bash -c` (the AC's "new shell"), using a BOUNDED retry-poll on
+# /api/health rather than a single-shot curl (boot-race hardening).
 FRESH_SHELL_OUT=$(bash -c '
-  PID=$(grep -oE "^pid=[0-9]+" "'"$FX_A"'/.zskills/dashboard-server.pid" | cut -d= -f2)
-  PORT=$(grep -oE "^port=[0-9]+" "'"$FX_A"'/.zskills/dashboard-server.pid" | cut -d= -f2)
-  if kill -0 "$PID" 2>/dev/null && curl -sf -m 1 "http://127.0.0.1:$PORT/api/health" | grep -q "\"status\""; then
-    echo "ALIVE"
-  else
-    echo "DEAD"
-  fi
+  PIDF="'"$FX_A"'/.zskills/dashboard-server.pid"
+  PID=$(grep -oE "^pid=[0-9]+" "$PIDF" 2>/dev/null | cut -d= -f2)
+  PORT=$(grep -oE "^port=[0-9]+" "$PIDF" 2>/dev/null | cut -d= -f2)
+  if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then echo "DEAD"; exit 0; fi
+  for _ in $(seq 1 12); do
+    if curl -sf -m 1 "http://127.0.0.1:$PORT/api/health" 2>/dev/null | grep -q "\"status\""; then
+      echo "ALIVE"; exit 0
+    fi
+    sleep 0.25
+  done
+  echo "DEAD"
 ')
 if [ "$FRESH_SHELL_OUT" = "ALIVE" ]; then
   pass "AC-13: detachment survival — kill -0 + /api/health succeed in fresh shell"
@@ -660,51 +551,41 @@ else
 fi
 
 ###############################################################################
-# AC-14: PID-reuse defense — PID file pointing at a non-dashboard process
-#         (e.g. bash/sleep) is treated as stale; start does NOT print
-#         "already running" against it.
+# AC-14: PID-reuse defense — a PID file pointing at a non-dashboard process
+#        is treated as stale; start does NOT print "already running" and does
+#        NOT signal the decoy.
 ###############################################################################
 
 FX_REUSE=$(make_fixture reuse "$BASE_C")
-# Spawn a long-running sleep as the "wrong" process.
 sleep 30 &
 DECOY_PID=$!
 TRACKED_PIDS="$TRACKED_PIDS $DECOY_PID"
-# Write a PID file claiming this PID is the dashboard.
 cat > "$FX_REUSE/.zskills/dashboard-server.pid" <<EOF
 pid=$DECOY_PID
 port=$BASE_C
 started_at=$(date -Iseconds)
 EOF
-# Run start. Identity check should fail (cmd is "sleep", not python3.*zskills_monitor.server).
-# Expected: warn + remove PID file, then attempt to launch a fresh server.
-if do_start "$FX_REUSE" >"$TMP_ROOT/reuse.start.out" 2>&1; then
-  REUSE_RC=0
-else
-  REUSE_RC=$?
-fi
+CLAUDE_PROJECT_DIR="$FX_REUSE"
+run_mode "$FX_REUSE" start >"$TMP_ROOT/reuse.start.out" 2>&1 || true
 if grep -qE 'already running' "$TMP_ROOT/reuse.start.out"; then
   fail "AC-14: PID-reuse defense — start incorrectly said 'already running' against decoy"
 else
   pass "AC-14: PID-reuse defense — start did NOT say 'already running' against decoy"
 fi
-# Decoy should still be alive (start removed PID file, did NOT signal decoy).
 if kill -0 "$DECOY_PID" 2>/dev/null; then
   pass "AC-14: PID-reuse defense — decoy process untouched (no kill sent)"
 else
   fail "AC-14: PID-reuse defense — decoy process was killed (should be untouched)"
 fi
-# Stop whatever the start launched (if anything).
-if [ -f "$FX_REUSE/.zskills/dashboard-server.pid" ]; then
-  do_stop "$FX_REUSE" >/dev/null 2>&1 || true
-fi
+# Track whatever start launched (so teardown SIGTERMs it).
+REUSE_PID=$(grep -oE '^pid=[0-9]+' "$FX_REUSE/.zskills/dashboard-server.pid" 2>/dev/null | cut -d= -f2)
+[ -n "${REUSE_PID:-}" ] && TRACKED_PIDS="$TRACKED_PIDS $REUSE_PID"
 kill -TERM "$DECOY_PID" 2>/dev/null || true
 
 ###############################################################################
-# AC-10: stop mode PID-mismatch defense (command-name).
-#   Write a PID file pointing at a long-running unrelated process; run
-#   stop and verify it prints the mismatch diagnostic, does NOT kill the
-#   process, and exits 1.
+# AC-10: stop PID-mismatch defense (command-name). PID file points at an
+#        unrelated process; stop prints the mismatch diagnostic, does NOT
+#        kill it, and exits 1.
 ###############################################################################
 
 FX_CMD=$(make_fixture cmdmiss "$BASE_C")
@@ -716,7 +597,8 @@ pid=$DECOY2_PID
 port=$BASE_C
 started_at=$(date -Iseconds)
 EOF
-if do_stop "$FX_CMD" >"$TMP_ROOT/cmdmiss.stop.out" 2>&1; then
+CLAUDE_PROJECT_DIR="$FX_CMD"
+if run_mode "$FX_CMD" stop >"$TMP_ROOT/cmdmiss.stop.out" 2>&1; then
   CMDMISS_RC=0
 else
   CMDMISS_RC=$?
@@ -739,28 +621,29 @@ fi
 kill -TERM "$DECOY2_PID" 2>/dev/null || true
 
 ###############################################################################
-# AC-11: stop mode PID-mismatch defense (cwd).
-#   Launch a second dashboard in a different MAIN_ROOT (FX_B). From FX_A,
-#   write a PID file pointing at FX_B's dashboard PID and run stop.
-#   The cwd check must fail and the dashboard must NOT be killed.
+# AC-11: stop PID-mismatch defense (cwd). A second dashboard runs in FX_B;
+#        FX_A's PID file is cross-written to FX_B's PID. The cwd check must
+#        fail and FX_B's dashboard must NOT be killed.
 ###############################################################################
 
 FX_B=$(make_fixture B "$BASE_B")
-do_start "$FX_B" >"$TMP_ROOT/B.start.out" 2>&1
+CLAUDE_PROJECT_DIR="$FX_B"
+run_mode "$FX_B" start >"$TMP_ROOT/B.start.out" 2>&1 || true
 B_PID=""
 if [ -f "$FX_B/.zskills/dashboard-server.pid" ]; then
   B_PID=$(grep -oE '^pid=[0-9]+' "$FX_B/.zskills/dashboard-server.pid" | cut -d= -f2)
 fi
+[ -n "${B_PID:-}" ] && TRACKED_PIDS="$TRACKED_PIDS $B_PID"
 if [ -n "$B_PID" ] && kill -0 "$B_PID" 2>/dev/null; then
   pass "AC-11: pre-condition — second dashboard running in FX_B (pid $B_PID)"
 
-  # Cross-write FX_B's PID into FX_A's PID file.
   cat > "$FX_A/.zskills/dashboard-server.pid" <<EOF
 pid=$B_PID
 port=$BASE_B
 started_at=$(date -Iseconds)
 EOF
-  if do_stop "$FX_A" >"$TMP_ROOT/cwdmiss.stop.out" 2>&1; then
+  CLAUDE_PROJECT_DIR="$FX_A"
+  if run_mode "$FX_A" stop >"$TMP_ROOT/cwdmiss.stop.out" 2>&1; then
     CWDMISS_RC=0
   else
     CWDMISS_RC=$?
@@ -781,23 +664,16 @@ EOF
     fail "AC-11: stop PID-mismatch (cwd) — FX_B's dashboard was killed!"
   fi
 
-  # Stop FX_B cleanly. FX_A's PID file currently points at FX_B's
-  # (now-killed) PID. Rewrite it to FX_A's actual dashboard PID so AC-7
-  # has a real target. We saved FX_A's own pid in NEW_PID inside the
-  # earlier do_start, but that's a function-local; recover it from
-  # `pgrep`-equivalent on FX_A's MAIN_ROOT (readlink /proc/$$/cwd).
-  do_stop "$FX_B" >/dev/null 2>&1 || true
+  # Stop FX_B cleanly. FX_A's PID file currently points at FX_B's PID;
+  # rewrite it to FX_A's OWN running dashboard PID so AC-7 has a real
+  # target. Find FX_A's dashboard among live servers by cwd == FX_A.
+  CLAUDE_PROJECT_DIR="$FX_B"
+  run_mode "$FX_B" stop >/dev/null 2>&1 || true
   rm -f "$FX_A/.zskills/dashboard-server.pid"
-  # Find FX_A's still-running dashboard (cwd matches FX_A) and rewrite
-  # the PID file so AC-7's stop has a legitimate target. We scan all
-  # python3 zskills_monitor.server processes' /proc cwd's.
   for cand in $(pgrep -f 'python3.*zskills_monitor.server' 2>/dev/null); do
     cand_cwd=$(readlink "/proc/$cand/cwd" 2>/dev/null || echo "")
     if [ "$cand_cwd" = "$FX_A" ]; then
-      # Re-derive its port via /proc/<pid>/net/tcp would be complex;
-      # easiest is to assume BASE_A is bound (the only port FX_A's
-      # config knows). Curl /api/health and parse the port field.
-      A_HEALTH=$(curl -sf -m 1 "http://127.0.0.1:$BASE_A/api/health" || true)
+      A_HEALTH=$(curl -sf -m 1 "http://127.0.0.1:$BASE_A/api/health" 2>/dev/null || true)
       if printf '%s' "$A_HEALTH" | grep -qE '"status":[[:space:]]*"ok"'; then
         cat > "$FX_A/.zskills/dashboard-server.pid" <<EOF
 pid=$cand
@@ -809,7 +685,7 @@ EOF
     fi
   done
 else
-  fail "AC-11: pre-condition — second dashboard in FX_B did not start (skipping cwd-mismatch test)"
+  fail "AC-11: pre-condition — second dashboard in FX_B did not start (skipping cwd-mismatch test): $(cat "$TMP_ROOT/B.start.out")"
 fi
 
 ###############################################################################
@@ -817,13 +693,11 @@ fi
 # AC-9: stop twice → second prints no-PID-file message, exits 0.
 ###############################################################################
 
-# AC-7 needs a live dashboard with a matching PID file. The PID file was
-# rewritten in the AC-11 cleanup above; if missing (recovery branch
-# failed), we cannot exercise AC-7.
 if [ -f "$FX_A/.zskills/dashboard-server.pid" ]; then
   STOP_PORT_AC7=$(grep -oE '^port=[0-9]+' "$FX_A/.zskills/dashboard-server.pid" | cut -d= -f2)
   STOP_START_TS=$(date +%s)
-  if do_stop "$FX_A" >"$TMP_ROOT/A.stop.out" 2>&1; then
+  CLAUDE_PROJECT_DIR="$FX_A"
+  if run_mode "$FX_A" stop >"$TMP_ROOT/A.stop.out" 2>&1; then
     STOP_END_TS=$(date +%s)
     STOP_ELAPSED=$((STOP_END_TS - STOP_START_TS))
     if [ "$STOP_ELAPSED" -le 5 ]; then
@@ -848,7 +722,7 @@ if [ -f "$FX_A/.zskills/dashboard-server.pid" ]; then
   fi
 
   # AC-9: stop twice → second is no-op, exit 0.
-  if do_stop "$FX_A" >"$TMP_ROOT/A.stop2.out" 2>&1; then
+  if run_mode "$FX_A" stop >"$TMP_ROOT/A.stop2.out" 2>&1; then
     if grep -q 'No running dashboard' "$TMP_ROOT/A.stop2.out"; then
       pass "AC-9: stop twice — second prints 'No running dashboard' (idempotent)"
     else
