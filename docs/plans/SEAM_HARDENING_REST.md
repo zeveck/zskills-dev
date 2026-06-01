@@ -75,7 +75,7 @@ dependency, not build-if-absent**:
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Verify `tests/lib/extract-fence.sh` exists (hard dep on #830) | ⬚ | | |
+| 1 — Verify `tests/lib/extract-fence.sh` exists (hard dep on #830) | ✅ Done | `verify-gate` | lib present + sourceable on main (HIGH #943 landed) |
 | 2 — verify-changes: extract-and-run the real arg-parser | ⬚ | | |
 | 3 — fix-issues: extract-and-run the 3 sprint fences (assert a row lands) | ⬚ | | |
 | 4 — zskills-dashboard: extract-and-run (concatenated Step-0 + helpers) | ⬚ | | |
