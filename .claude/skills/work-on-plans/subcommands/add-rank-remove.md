@@ -328,8 +328,25 @@ PY
 ### `every SCHEDULE [phase|finish] [--force]`
 
 Register an in-session recurring cron via `CronCreate`. The cron
-fires on schedule and re-runs `/work-on-plans all <schedule_mode>`
-(self-perpetuating: the cron itself dies with the session).
+fires on schedule and re-runs `/work-on-plans <count> <schedule_mode>
+every <SCHEDULE> now` (self-perpetuating: the cron itself dies with
+the session).
+
+**Count capture (issue #906 — parity with `/fix-issues`).** `every`
+is reached two ways:
+
+- **Composed with a leading `N`/`all`** on the dispatch path (router
+  Step 3 composed-form routing): `$N` (or `ALL_MODE=1`) is already
+  set. Capture it as the **`schedule_count`** — the cron prompt
+  carries that count so each fire drains exactly `N` plans (or `all`
+  when `ALL_MODE=1`), NOT unconditional `all`.
+- **Bare `every SCHEDULE`** (no leading count, first-token
+  subcommand): `schedule_count` is the literal `all` — drain the
+  whole ready queue per fire, the pre-#906 behavior.
+
+`COUNT_TOKEN` below is `$N` when an integer count was given, else
+`all`. It is both persisted (`schedule_count` in `$WORK_STATE`) and
+baked into the cron prompt.
 
 **Mode capture.** At registration, resolve the captured `schedule_mode`
 once and persist it: CLI flag (`phase` or `finish` token after
@@ -391,7 +408,9 @@ current_session_id`:
 If `state == "scheduled"` AND `session_id == current_session_id`:
 treat as idempotent take-over — `CronDelete` the existing
 `/work-on-plans` cron (matched by `prompt` starting with
-`Run /work-on-plans every`), then proceed with the new registration.
+`Run /work-on-plans ` — the prompt now carries a count/`all` token
+between the skill name and `every`, so match the broad prefix, the
+same prefix `stop` uses), then proceed with the new registration.
 `--force` is NOT required in the same-session case.
 
 **`CronCreate` failure.** Exit 1 with:
@@ -411,6 +430,7 @@ Do NOT write `$WORK_STATE` on `CronCreate` failure.
   "session_id": "<host>:<pid>:<invocation_start_time>",
   "schedule": "every <SCHEDULE>",
   "schedule_mode": "phase|finish",
+  "schedule_count": "<COUNT_TOKEN>",
   "session_started_at": "<iso>",
   "last_fire_at": "<iso == session_started_at>",
   "next_fire_at": "<iso>",
@@ -419,16 +439,33 @@ Do NOT write `$WORK_STATE` on `CronCreate` failure.
 ```
 
 `last_fire_at = session_started_at` so staleness computes from the
-schedule's birth, not epoch (Shared Schemas).
+schedule's birth, not epoch (Shared Schemas). `schedule_count` is the
+captured count (`$N` or `all`) so the schedule's identity survives a
+session-end-then-`next` query.
 
 The `every` skill body uses the **`CronCreate`/`CronDelete`/`CronList`
-tools** (not bash). The cron prompt is reconstructed verbatim:
+tools** (not bash). The cron prompt is reconstructed with the captured
+count and mode, and **always includes `now`** so each fire runs
+immediately and re-registers itself (self-perpetuating — mirrors
+`/fix-issues`'s `sprint.md:53` `CRON_PROMPT`):
 
 ```
-Run /work-on-plans all <schedule_mode>
+Run /work-on-plans <COUNT_TOKEN> <schedule_mode> every <SCHEDULE> now
 ```
 
-(Captured mode wins, regardless of `default_mode` at fire time.)
+Examples:
+- `/work-on-plans 1 every 1h finish now` →
+  `Run /work-on-plans 1 finish every 1h now` (one plan per hour).
+- `/work-on-plans all every 4h phase now` →
+  `Run /work-on-plans all phase every 4h now`.
+- bare `/work-on-plans every 2h` →
+  `Run /work-on-plans all phase every 2h now`.
+
+(Captured count + mode win, regardless of `default_mode` /
+queue size at fire time. The `now` in the cron prompt is for the
+CRON's own re-invocation; whether THIS invocation runs immediately is
+controlled by the user's own `now` flag per the router's composed-form
+routing.)
 
 For schedule expression conversion (interval → cron) and `CronCreate`
 mechanics, mirror the `/fix-issues` Phase 0 implementation

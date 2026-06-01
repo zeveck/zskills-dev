@@ -1,11 +1,19 @@
-# Execute mode + read-only listing
+# Dispatch path + read-only listing
+
+> **Terminology (issue #906).** This file implements the **dispatch
+> path** (the `N`/`all` queue-draining loop). The word "execute" is
+> deliberately avoided as a label here because it collides with the
+> CLAUDE.md "Execution Modes" concept (cherry-pick / pr / direct
+> landing), which is unrelated. The file is still named `execute.md`
+> for path-stability, but the procedure is "dispatch", not a mode.
 
 > **Loaded by the router.** Variables `$MAIN_ROOT`, `$MONITOR_STATE`,
 > `$MONITOR_LOCK`, `$WORK_STATE`, `$PLAN_INDEX`, `$SANITIZE`,
 > `$READY_TSV`, `$DEFAULT_MODE`, `$WORK_STATE_VALUE`, `$N`,
 > `$ALL_MODE`, `$MODE_OVERRIDE`, `$CONTINUE_ON_FAILURE` are set by
-> Steps 0-2 in `SKILL.md` before this file is read. All bash fences
-> below reference those variables directly.
+> Steps 0-2 in `SKILL.md` before this file is read, and the
+> `ensure_lockfile` / `with_monitor_lock` helpers from Step 0 are
+> also defined. All bash fences below reference those directly.
 
 ## Step 3 — Read-only modes (no args, `next`)
 
@@ -103,7 +111,7 @@ PY
 
 Exit 0. **No tracking marker is written for `next`** (read-only).
 
-## Step 4 — Execute mode setup
+## Step 4 — Dispatch-path setup
 
 For `N`/`all` invocations, build the dispatch list and write the
 sprint sentinel.
@@ -115,7 +123,7 @@ sprint sentinel.
 The shared `check-inflight-batch.sh` helper detects "my session already
 has an in-flight work-on-plans batch" via session-scoped sentinels and
 exits clean when so, leaving the in-flight run to finish on its own
-turns. The check runs ONLY on `N`/`all` execute entry — read-only modes
+turns. The check runs ONLY on `N`/`all` dispatch-path entry — read-only modes
 (`(no args)`, `next`) exit in Step 3 above, and mutating subcommands
 (`add`/`rank`/`remove`/`default`/`every`/`stop`) route to
 `subcommands/add-rank-remove.md` in `SKILL.md` Step 3. The carve-out is
@@ -396,6 +404,58 @@ For each ready entry in `plans.ready[0:N]`:
      ```
 
    - Heartbeat `$WORK_STATE` (`progress.done++`, `updated_at = now`).
+
+   - **Prune the completed plan from `plans.ready` (issue #906).**
+     `/run-plan` sets the plan's frontmatter `status: complete` when
+     it lands; a completed plan must not linger in the ready queue
+     (observed bug: a merged plan stayed in `ready` slot 1, ahead of
+     runnable plans, so subsequent `N`/`all` targeted a no-op stale
+     entry). Drop the just-completed `$SLUG` from `plans.ready` via
+     the **locked** read-modify-write path — `with_monitor_lock` so
+     the prune serializes against the Phase 5 HTTP server, and
+     `os.replace` for the atomic write (same pattern the mutating
+     subcommands use). The prune is conditional on the plan file's
+     `status: complete` so a per-batch run that did NOT land (phase
+     mode that stopped mid-plan) does not strip a still-runnable
+     entry:
+
+     <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on $MONITOR_STATE state file in $MAIN_ROOT/.zskills/; no path-config preamble needed -->
+     ```bash
+     prune_completed() {
+       # Drop $SLUG from plans.ready iff its plan file is status:complete.
+       python3 - "$MONITOR_STATE" "$SLUG" "${SLUG_TO_FILE[$SLUG]:-}" <<'PY'
+     import json, os, re, sys, tempfile
+     path, slug, plan_file = sys.argv[1], sys.argv[2], sys.argv[3]
+     # Only prune when the plan landed (frontmatter status: complete).
+     status = ''
+     if plan_file and os.path.exists(plan_file):
+         text = open(plan_file, encoding='utf-8', errors='replace').read()
+         if text.startswith('---'):
+             end = text.find('\n---', 3)
+             if end >= 0:
+                 m = re.search(r'^status:\s*([^\n]+)', text[3:end], re.MULTILINE)
+                 if m:
+                     status = m.group(1).strip().strip('"').strip("'").lower()
+     if status != 'complete':
+         sys.exit(0)  # not landed yet — leave it in ready
+     doc = json.load(open(path))
+     ready = doc.get('plans', {}).get('ready', [])
+     new_ready = [e for e in ready
+                  if not ((isinstance(e, dict) and e.get('slug') == slug) or e == slug)]
+     if len(new_ready) == len(ready):
+         sys.exit(0)  # already gone — no-op
+     doc.setdefault('plans', {})['ready'] = new_ready
+     import datetime
+     doc['updated_at'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+     tmp = tempfile.NamedTemporaryFile('w', delete=False,
+         dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
+     json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
+     os.replace(tmp.name, path)
+     print(f"/work-on-plans: pruned completed plan '{slug}' from ready queue.")
+     PY
+     }
+     with_monitor_lock prune_completed
+     ```
 
    - Note: `/run-plan` writes its OWN
      `fulfilled.run-plan.<child-slug>` under
