@@ -124,6 +124,128 @@ else
   check_auto "use auto-land mode" 0 "'auto-land' (no whitespace boundary) rejected"
 fi
 
+# ── Surface 3: BRAINSTORM_FLAG regex (extract-and-run) ───────────────
+# The BRAINSTORM_FLAG fence is self-contained (pure `[[ =~ ]]`) and lives
+# in its OWN block (kept separate from AUTO_FLAG so the AUTO extractor that
+# stops at the first `^fi$` is not perturbed). Extract it verbatim and run.
+BRAINSTORM_BLOCK=$(awk '
+  /^BRAINSTORM_FLAG=0$/{capture=1}
+  capture {print}
+  capture && /^fi$/{exit}
+' "$SKILL")
+
+if [ -z "$BRAINSTORM_BLOCK" ]; then
+  fail "brainstorm-flag: could not extract BRAINSTORM_FLAG fence" "awk extract empty"
+else
+  pass "brainstorm-flag: BRAINSTORM_FLAG fence extracted from SKILL.md"
+  check_brainstorm() { # $1=ARGUMENTS $2=expected(0/1) $3=label
+    local ARGUMENTS="$1"
+    local BRAINSTORM_FLAG
+    eval "$BRAINSTORM_BLOCK"
+    if [ "$BRAINSTORM_FLAG" = "$2" ]; then
+      pass "brainstorm-flag: $3 -> BRAINSTORM_FLAG=$2"
+    else
+      fail "brainstorm-flag: $3" "expected $2 got $BRAINSTORM_FLAG"
+    fi
+  }
+  # Positives — whitespace-anchored, case-insensitive, any position.
+  check_brainstorm "brainstorm Add dark mode" 1 "leading 'brainstorm'"
+  check_brainstorm "Add dark mode brainstorm" 1 "trailing 'brainstorm'"
+  check_brainstorm "output X.md brainstorm rounds 3 Add dark mode" 1 "mid 'brainstorm' word-bounded"
+  check_brainstorm "BRAINSTORM Add dark mode" 1 "uppercase 'BRAINSTORM'"
+  # Negatives — substring/inflection forms must NOT trip the flag (flag stays 0).
+  check_brainstorm "brainstorming the design" 0 "'brainstorming' (no boundary) rejected"
+  check_brainstorm "brainstormed yesterday" 0 "'brainstormed' (no boundary) rejected"
+  check_brainstorm "brainstorms" 0 "'brainstorms' (no boundary) rejected"
+fi
+
+# ── Surface 4: brainstorm-mode wiring parity greps (externally-sourced) ──
+# These fences are NOT self-contained (they live in prose / depend on the
+# Read-tool dispatch and $TRACKING_ID), so assert by fingerprint grep that
+# the wiring stays present, mirroring the Surface-1 `grep -qF` parity style.
+
+# Conditional-load parity: references/brainstorm.md is gated on BRAINSTORM_FLAG,
+# i.e. the Read is NOT unconditional. The "## Brainstorm mode" section opens
+# with the `If BRAINSTORM_FLAG=1, **Read [references/brainstorm.md]...` gate.
+if grep -qF 'If `BRAINSTORM_FLAG=1`, **Read [references/brainstorm.md](references/brainstorm.md)**' "$SKILL"; then
+  pass "conditional-load: brainstorm.md Read is gated on BRAINSTORM_FLAG=1"
+else
+  fail "conditional-load: brainstorm.md gate drifted" "missing BRAINSTORM_FLAG=1 Read gate"
+fi
+# Regression guard: the gate must NOT re-introduce the inert ZSKILLS_PIPELINE_ID
+# check. Scope the assertion to the "## Brainstorm mode" section so unrelated
+# PIPELINE_ID uses elsewhere in SKILL.md (tracking fences) don't false-positive.
+BRAINSTORM_SECTION=$(awk '
+  /^## Brainstorm mode/{capture=1; next}
+  /^## /{if (capture) exit}
+  capture {print}
+' "$SKILL")
+if printf '%s' "$BRAINSTORM_SECTION" | grep -qF 'ZSKILLS_PIPELINE_ID'; then
+  fail "conditional-load: brainstorm gate references ZSKILLS_PIPELINE_ID" "inert check re-added"
+else
+  pass "conditional-load: brainstorm gate does NOT reference ZSKILLS_PIPELINE_ID"
+fi
+
+# Resume-contract: the brainstorm-mode prose wires the resume state machine
+# on the notes-file status markers (status: ready / status: in-progress).
+if printf '%s' "$BRAINSTORM_SECTION" | grep -qF 'status: ready' \
+   && printf '%s' "$BRAINSTORM_SECTION" | grep -qF 'status: in-progress'; then
+  pass "resume-contract: brainstorm prose references status: ready / status: in-progress"
+else
+  fail "resume-contract: brainstorm resume states drifted" "missing status: ready / status: in-progress"
+fi
+
+# Feed-forward: the brainstorm-mode research dispatch injects the notes-file
+# path /tmp/draft-plan-brainstorm-<id>.md into each research agent prompt.
+if grep -qF '/tmp/draft-plan-brainstorm-' "$SKILL"; then
+  pass "feed-forward: research dispatch references /tmp/draft-plan-brainstorm- notes path"
+else
+  fail "feed-forward: notes-file path drifted" "missing /tmp/draft-plan-brainstorm-"
+fi
+
+# Checkpoint-skip: the post-research steering checkpoint is gated on
+# BRAINSTORM_FLAG=1 (skipped because the user already steered in dialogue).
+if grep -qF 'Skip this steering checkpoint when `BRAINSTORM_FLAG=1`' "$SKILL"; then
+  pass "checkpoint-skip: post-research checkpoint gated on BRAINSTORM_FLAG=1"
+else
+  fail "checkpoint-skip: checkpoint gate drifted" "missing 'Skip this steering checkpoint when BRAINSTORM_FLAG=1'"
+fi
+
+# ── Surface 5: references/brainstorm.md idiom parity greps ───────────
+# Round-2 regression guards: the verified playwright / serve-wait idioms in
+# references/brainstorm.md must not regress to the buggy forms.
+BRAINSTORM_REF="$REPO_ROOT/skills/draft-plan/references/brainstorm.md"
+if [ ! -f "$BRAINSTORM_REF" ]; then
+  fail "brainstorm.md idioms: reference file missing" "$BRAINSTORM_REF not found"
+else
+  # playwright-cli open MUST precede screenshot (bare screenshot file://… errors
+  # "browser 'default' is not open"). Anchor on the FENCED command lines (start
+  # of line, no leading backtick) so inline prose like `playwright-cli screenshot`
+  # — which legitimately appears earlier when documenting the gotcha — is ignored.
+  OPEN_LINE=$(grep -nE '^playwright-cli open' "$BRAINSTORM_REF" | head -1 | cut -d: -f1)
+  SHOT_LINE=$(grep -nE '^playwright-cli screenshot' "$BRAINSTORM_REF" | head -1 | cut -d: -f1)
+  if [ -n "$OPEN_LINE" ] && [ -n "$SHOT_LINE" ] && [ "$OPEN_LINE" -lt "$SHOT_LINE" ]; then
+    pass "brainstorm.md idioms: 'playwright-cli open' precedes 'screenshot'"
+  else
+    fail "brainstorm.md idioms: open/screenshot order" "open=$OPEN_LINE screenshot=$SHOT_LINE (open must precede)"
+  fi
+  # Pidfile write must have NO trailing space after the redirect target
+  # (`echo "$!" > "$DEMO_DIR/.serve.pid"` — a trailing space breaks `ps -p`).
+  if grep -qF 'echo "$!" > "$DEMO_DIR/.serve.pid"' "$BRAINSTORM_REF"; then
+    pass "brainstorm.md idioms: pidfile write has no trailing space"
+  else
+    fail "brainstorm.md idioms: pidfile write drifted" "missing exact 'echo \"\$!\" > \"\$DEMO_DIR/.serve.pid\"'"
+  fi
+  # The serve-wait must contain NO bare foreground `sleep` (harness-blocked);
+  # the timeout-bounded busy-wait is the sleep-free substitute. Assert no
+  # fenced bash line invokes `sleep` as a command.
+  if grep -nE '(^|[^[:alnum:]_])sleep[[:space:]]+[0-9]' "$BRAINSTORM_REF" | grep -vq '`sleep`'; then
+    fail "brainstorm.md idioms: bare 'sleep' present in serve-wait" "$(grep -nE '(^|[^[:alnum:]_])sleep[[:space:]]+[0-9]' "$BRAINSTORM_REF" | grep -v '`sleep`')"
+  else
+    pass "brainstorm.md idioms: no bare foreground 'sleep' in serve-wait"
+  fi
+fi
+
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed"
 [ "$FAIL_COUNT" -eq 0 ] && exit 0 || exit 1
