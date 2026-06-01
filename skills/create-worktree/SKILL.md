@@ -9,7 +9,7 @@ description: >-
   and sanitised .zskills-tracked / .worktreepurpose writes. Prints the
   worktree path on stdout.
 metadata:
-  version: "2026.06.01+6569d1"
+  version: "2026.06.01+e7b84c"
 ---
 
 # /create-worktree — Unified Worktree Creation
