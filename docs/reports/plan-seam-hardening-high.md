@@ -1,5 +1,17 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 6b — work-on-plans: dispatch-loop seam + sandbox harness  ✅ Done (2026-06-01T11:16:18-04:00)
+
+**Commit:** `9f8a3d1` on `feat/seam-hardening-high`
+**Tests:** Overall 7017/7017 passed, 0 failed (baseline 6993 → +24).
+
+- Added a strictly-gated `_ZSKILLS_TEST_HARNESS` seam on the Step-5 `/run-plan` dispatch directive in `work-on-plans/modes/execute.md` (+ entry unset-guard mirroring `do/SKILL.md`). **Production-safety verified independently:** flag-unset → seam inert, the `Skill: {…}` directive is unchanged (additive gate, not a replacement).
+- Added `test-work-on-plans-dispatch-seam.sh` (24 tests) extracting the real dispatch loop: marker lifecycle, mode precedence (CLI>per-entry>default>phase), failure-arm stop + report, `continue`, sprint-completion + work-state→idle + exit code, arg-router rules 1-7 + exit-2. Mutation-proven (gate-inversion swallows injected failure).
+- Version bump `2026.06.01+7a11d3` → `2026.06.01+a67fc0` + byte-identical mirror. (Drift: plan recipe's `skill-content-hash.sh <file>` is wrong — script takes a directory; impl corrected.)
+
+**Verification:** independent verifier PASS — own flag-unset prod-safety test, recomputed hash matches, conformance/version-delta/mirror-parity green, scope clean (6 paths), Layer-3 exit 0. NOTE: 6 transient `test_zskills_monitor_dashboard_ui.sh` live-server flakes on first run (pass 239/239 isolated; cleared on re-run; unrelated to change set) — watch at PR-CI landing.
+
+
 ## Phase 6a — work-on-plans: de-hollow mutator tests (test-only)  ✅ Done (2026-06-01T10:15:53-04:00)
 
 **Commit:** `ae98c7d` on `feat/seam-hardening-high`
