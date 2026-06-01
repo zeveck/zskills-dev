@@ -108,7 +108,11 @@ run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase
 run_suite "test-fix-issues-skip-persistence.sh" "tests/test-fix-issues-skip-persistence.sh"
 run_suite "test-fix-issues-skip-effective-reason.sh" "tests/test-fix-issues-skip-effective-reason.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
-run_suite "test-commit.sh" "tests/test-commit.sh"
+# SEAM_HARDENING_HIGH Phase 3 — extract-and-run the real /commit arg-parser
+# + the real /commit pr canonical /land-pr caller loop. These supersede the
+# static-grep coverage that used to live in tests/test-commit.sh (removed).
+run_suite "test-commit-parsing.sh" "tests/test-commit-parsing.sh"
+run_suite "test-commit-pr-caller-loop.sh" "tests/test-commit-pr-caller-loop.sh"
 run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"
 run_suite "test-draft-plan-args-smoke.sh" "tests/test-draft-plan-args-smoke.sh"
 run_suite "test-add-example-smoke.sh" "tests/test-add-example-smoke.sh"
