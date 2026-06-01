@@ -2151,118 +2151,27 @@ else
     fi
   done < "$FORBIDDEN_FIXTURE"
 
-  DRIFT_FAIL=0
-  DRIFT_HITS=()
-
-  while IFS= read -r skill_file; do
-    in_fence=0
-    fence_type=""
-    unset allowed_in_fence; declare -A allowed_in_fence=()
-    prev_lines=()
-    line_no=0
-    while IFS= read -r line; do
-      line_no=$((line_no + 1))
-      # Blockquote normalisation: strip a leading `>` + optional space
-      # before applying any structural regex. Without this, blockquoted
-      # fenced bash blocks (` >    ```bash`) go undetected.
-      norm_line="$line"
-      if [[ "$norm_line" =~ ^[[:space:]]*\>[[:space:]]?(.*)$ ]]; then
-        norm_line="${BASH_REMATCH[1]}"
-      fi
-
-      if [ "$in_fence" -eq 0 ]; then
-        # Outside any fence.
-        if [[ "$norm_line" =~ ^[[:space:]]*\<!--[[:space:]]+allow-hardcoded:[[:space:]]+(.+)[[:space:]]+reason:.*--\>[[:space:]]*$ ]]; then
-          captured="${BASH_REMATCH[1]}"
-          # Trim trailing whitespace.
-          captured="${captured%"${captured##*[![:space:]]}"}"
-          prev_lines+=("$captured")
-        elif [[ "$norm_line" =~ ^[[:space:]]*\`\`\`([a-zA-Z0-9_+-]*)[[:space:]]*$ ]]; then
-          # Fence-opener of any kind. Track exec vs other so non-shell
-          # fences (json, markdown, etc.) don't get scanned for shell
-          # literals — but their bounds are still tracked.
-          lang="${BASH_REMATCH[1]}"
-          in_fence=1
-          if [ -z "$lang" ] || [ "$lang" = "bash" ] || [ "$lang" = "sh" ] || [ "$lang" = "shell" ]; then
-            fence_type="exec"
-          else
-            fence_type="other"
-          fi
-          allowed_in_fence=()
-          if [ "$fence_type" = "exec" ]; then
-            for lit in "${prev_lines[@]:-}"; do
-              [ -n "$lit" ] && allowed_in_fence["$lit"]=1
-            done
-          fi
-          prev_lines=()
-          continue
-        else
-          # Any other non-blank line resets the marker block.
-          [ -n "$norm_line" ] && prev_lines=()
-        fi
-        # PROSE-IMPERATIVE detection: bullet/numbered line with a
-        # code-span AND a sentence-start imperative verb.
-        if [[ "$norm_line" =~ ^[[:space:]]*([-*]|[0-9]+\.) ]] \
-           && [[ "$norm_line" =~ \`[^\`]+\` ]] \
-           && [[ "$norm_line" =~ (^|[.\;\:][[:space:]]+|\*\*)(Run|Execute|Invoke)[[:space:]] ]]; then
-          for literal in "${FIXED_LITERALS[@]}"; do
-            if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
-              DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no contains '$literal'. Replace with \$VAR (preferred), OR add on the line ABOVE this bullet: <!-- allow-hardcoded: $literal reason: <why> -->")
-              DRIFT_FAIL=1
-            fi
-          done
-          for pattern in "${REGEX_PATTERNS[@]}"; do
-            if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
-              if [[ "$pattern" == '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' ]]; then
-                DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches the skill-version-literal regex '$pattern'. Per-skill version values belong in metadata.version frontmatter, not pasted into prose imperatives. To mark this bullet as an illustrative example, add on the line ABOVE: <!-- allow-hardcoded: $pattern reason: documenting the format with an example value -->")
-              else
-                DRIFT_HITS+=("DRIFT (prose-imperative): $skill_file:$line_no matches forbidden regex '$pattern'. Replace with \$VAR (preferred), OR add on the line ABOVE this bullet: <!-- allow-hardcoded: $pattern reason: <why> -->")
-              fi
-              DRIFT_FAIL=1
-            fi
-          done
-        fi
-        continue
-      fi
-
-      # Inside a fence.
-      if [[ "$norm_line" =~ ^[[:space:]]*\`\`\`[[:space:]]*$ ]]; then
-        in_fence=0
-        fence_type=""
-        allowed_in_fence=()
-        prev_lines=()
-        continue
-      fi
-      # Only scan exec-type fences (bash / sh / shell / no-language).
-      if [ "$fence_type" != "exec" ]; then
-        continue
-      fi
-      for literal in "${FIXED_LITERALS[@]}"; do
-        if [[ "$norm_line" == *"$literal"* ]] && [ -z "${allowed_in_fence[$literal]:-}" ]; then
-          DRIFT_HITS+=("DRIFT: $skill_file:$line_no contains '$literal' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred), OR mark this fence as illustrative by adding on the line ABOVE the opening backticks: <!-- allow-hardcoded: $literal reason: <why> -->")
-          DRIFT_FAIL=1
-        fi
-      done
-      for pattern in "${REGEX_PATTERNS[@]}"; do
-        if [[ "$norm_line" =~ $pattern ]] && [ -z "${allowed_in_fence[$pattern]:-}" ]; then
-          # Tailored hint for the skill-version-literal regex (issue #179).
-          if [[ "$pattern" == '[0-9]{4}\.[0-9]{2}\.[0-9]{2}\+[0-9a-f]{6}' ]]; then
-            DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches the skill-version-literal regex '$pattern' inside a bash fence. Per-skill version values belong in metadata.version frontmatter, not in fence bodies. To mark this fence as an illustrative example, add on the line ABOVE the opening backticks: <!-- allow-hardcoded: $pattern reason: documenting the format with an example value -->. Alternatively, switch the fence language to \`\`\`text (non-exec, not scanned).")
-          else
-            DRIFT_HITS+=("DRIFT: $skill_file:$line_no matches forbidden regex '$pattern' inside a bash fence without an allow-hardcoded marker. Replace with \$VAR (preferred), OR mark this fence as illustrative by adding on the line ABOVE the opening backticks: <!-- allow-hardcoded: $pattern reason: <why> -->")
-          fi
-          DRIFT_FAIL=1
-        fi
-      done
-    done < "$skill_file"
-  done < <(find "$REPO_ROOT/skills" "$REPO_ROOT/block-diagram" -name '*.md' | sort)
+  # The .md deny-list scan itself lives in the SHARED script
+  # tests/lib/forbidden-literals-scan.sh (#948) so the single-source-of-
+  # truth guarantee is STRUCTURAL: tests/test-hooks.sh's fixture-extension
+  # Surface 2 probe calls the SAME script directly against a synthetic
+  # tree, instead of nesting this whole suite. The scan's matching
+  # semantics, output (DRIFT lines), and gate behavior are unchanged — it
+  # still walks the real skills/ + block-diagram/ trees and fails on any
+  # forbidden literal. (The FIXED_LITERALS / REGEX_PATTERNS arrays parsed
+  # above remain in scope for the extended-scope sibling scan further down.)
+  # shellcheck source=tests/lib/forbidden-literals-scan.sh
+  . "$SCRIPT_DIR/lib/forbidden-literals-scan.sh"
+  DRIFT_HITS_OUT="$(run_forbidden_literals_scan "$REPO_ROOT" "$FORBIDDEN_FIXTURE")"
+  DRIFT_FAIL=$?
 
   if [ "$DRIFT_FAIL" -eq 0 ]; then
     pass "no skill-file drift hardcodes (deny-list clean against tests/fixtures/forbidden-literals.txt)"
   else
-    fail "skill-file drift hardcodes detected" "${#DRIFT_HITS[@]} hit(s)"
-    for h in "${DRIFT_HITS[@]}"; do
-      printf '    %s\n' "$h" >&2
+    DRIFT_HIT_COUNT=$(printf '%s' "$DRIFT_HITS_OUT" | grep -c .)
+    fail "skill-file drift hardcodes detected" "$DRIFT_HIT_COUNT hit(s)"
+    printf '%s\n' "$DRIFT_HITS_OUT" | while IFS= read -r h; do
+      [ -n "$h" ] && printf '    %s\n' "$h" >&2
     done
   fi
 
@@ -2273,20 +2182,30 @@ else
   # conformance. Inspect the live scanner source for the dual-root find
   # invocation. Fails closed if a future edit drops `block-diagram` from
   # any of the three sites.
+  #
+  # As of #948 the .md deny-list scan's dual-root find lives in the shared
+  # script tests/lib/forbidden-literals-scan.sh (it scans $scan_root/skills
+  # + $scan_root/block-diagram), NOT inline in this suite. Count both files
+  # so the #458 guarantee survives the relocation.
   SELF="$REPO_ROOT/tests/test-skill-conformance.sh"
+  SCAN_LIB="$REPO_ROOT/tests/lib/forbidden-literals-scan.sh"
+  # Prose-imperative coverage scan (still inline) + extended-scope are in $SELF.
   bd_root_hits=$(grep -cE 'find "\$REPO_ROOT/skills" "\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
+  # The deny-list scan's dual-root find now lives in the shared script,
+  # parameterised on $scan_root.
+  bd_lib_hits=$(grep -cE 'find "\$scan_root/skills" "\$scan_root/block-diagram"' "$SCAN_LIB" 2>/dev/null || echo 0)
   # Also count the positive-side scanner's `extra_root` plumbing (a 4th-arg
   # variant that passes the second root through the helper function).
   bd_extra_root_hits=$(grep -cE 'scan_positive_side "\$REPO_ROOT/skills".*"\$REPO_ROOT/block-diagram"' "$SELF" 2>/dev/null || echo 0)
-  # Expected: 2 dual-root find invocations (deny-list at ~line 1762, prose-
-  # imperative coverage at ~line 2408) + 1 scan_positive_side with extra_root
-  # (real-tree case). Total >= 3 references to block-diagram across the
-  # three scanner-root sites.
-  bd_total=$((bd_root_hits + bd_extra_root_hits))
+  # Expected: 1 dual-root find in the shared deny-list script + 1 dual-root
+  # find inline for prose-imperative coverage + 1 scan_positive_side with
+  # extra_root (real-tree case). Total >= 3 references to block-diagram
+  # across the three scanner-root sites.
+  bd_total=$((bd_root_hits + bd_lib_hits + bd_extra_root_hits))
   if [ "$bd_total" -ge 3 ]; then
     pass "deny-list/positive-side/coverage scanners all scope block-diagram/ (#458 regression fixture: found $bd_total of 3 expected block-diagram scan-root references)"
   else
-    fail "deny-list scanner scope regression" "expected 3 block-diagram scan-root references in $SELF (2 dual-root find + 1 scan_positive_side extra_root), got $bd_total — at least one of the three scanner roots has regressed to skills/-only (#458)"
+    fail "deny-list scanner scope regression" "expected 3 block-diagram scan-root references (1 dual-root find in $SCAN_LIB + 1 dual-root find + 1 scan_positive_side extra_root in $SELF), got $bd_total — at least one of the three scanner roots has regressed to skills/-only (#458)"
   fi
 fi
 

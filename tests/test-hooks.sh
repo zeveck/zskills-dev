@@ -4723,34 +4723,30 @@ else
   fail "fixture-extension: drift-warn hook missed appended literal" "rc=$EXT_RC stderr=$EXT_ERR_CONTENT"
 fi
 
-# Surface 2: deny-list test (test-skill-conformance.sh) against the
-# synthetic skills/ tree. Run with REPO_ROOT pointing at the synthetic
-# fixture directory.
+# Surface 2: the forbidden-literals deny-list scan — the SAME shared
+# script tests/test-skill-conformance.sh calls (#948) — invoked DIRECTLY
+# against the synthetic skills/ tree. This is the structural single-
+# source-of-truth proof: both surfaces run identical scan code, not just
+# a shared fixture. Sub-second, and it removes the prior nested full-suite
+# run that re-ran the whole conformance suite against the throwaway tree
+# (~71s + #587 tally-line-leak risk into run_suite's parser).
 EXT_DENY_OUT=$(mktemp)
-REPO_ROOT="$FIXTURE_EXT_DIR" bash "$REPO_ROOT/tests/test-skill-conformance.sh" \
-  > "$EXT_DENY_OUT" 2>&1
+(
+  . "$REPO_ROOT/tests/lib/forbidden-literals-scan.sh"
+  run_forbidden_literals_scan "$FIXTURE_EXT_DIR" \
+    "$FIXTURE_EXT_DIR/tests/fixtures/forbidden-literals.txt"
+) > "$EXT_DENY_OUT" 2>&1
 EXT_DENY_RC=$?
-# We expect FAIL on the deny-list section; other sections will likely
-# also fail because the synthetic tree has no real skills — that's
-# expected and not what we are asserting. We only check that the new
-# synthetic literal surfaces in the deny-list output.
-if grep -q '__TEST_LITERAL__' "$EXT_DENY_OUT"; then
-  pass "fixture-extension: deny-list test picks up appended literal — DRIFT line emitted"
+# We expect a non-zero rc (hits found) and the synthetic literal in the
+# emitted DRIFT lines. Asserting on the literal is what proves the scan
+# reads the appended fixture entry.
+if [ "$EXT_DENY_RC" -ne 0 ] && grep -q '__TEST_LITERAL__' "$EXT_DENY_OUT"; then
+  pass "fixture-extension: deny-list scan picks up appended literal — DRIFT line emitted"
 else
-  fail "fixture-extension: deny-list test missed appended literal" "no __TEST_LITERAL__ in output (rc=$EXT_DENY_RC)"
-  # Surface ONLY the deny-list / forbidden-literals section of the
-  # conformance output — that's where __TEST_LITERAL__ should appear.
-  # Avoid dumping unrelated [run-plan]/[verify-changes] FAILs that fire
-  # because the synthetic fixture lacks real skills (expected) — those
-  # FAILs are noise (#587 root cause), and any inner "N passed, N failed"
-  # tally line leaked here would be miscounted by run_suite's parser.
-  echo "  -- relevant conformance output (deny-list / forbidden section) --" >&2
-  if ! grep -E 'deny-list|forbidden|__TEST_LITERAL__' "$EXT_DENY_OUT" \
-       | grep -v -E '^[[:space:]]*Results:[[:space:]]+[0-9]+ passed' \
-       | head -30 >&2; then
-    echo "  -- (no deny-list/forbidden lines in output; conformance may have crashed before reaching that section) --" >&2
-  fi
-  echo "  -- end relevant output --" >&2
+  fail "fixture-extension: deny-list scan missed appended literal" "no __TEST_LITERAL__ in output (rc=$EXT_DENY_RC)"
+  echo "  -- deny-list scan output --" >&2
+  head -30 "$EXT_DENY_OUT" >&2
+  echo "  -- end output --" >&2
 fi
 rm -f "$EXT_DENY_OUT"
 rm -rf "$FIXTURE_EXT_DIR"
