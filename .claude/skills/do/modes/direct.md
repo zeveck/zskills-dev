@@ -31,6 +31,26 @@ else
 fi
 if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
   PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "do.${ISSUE_NUMS[0]}")
+
+  # Issue #883 — same-task in-flight guard. Direct mode without an
+  # issue number has no stable identity (no TASK_SLUG), so the guard
+  # only attaches when an issue number anchors the pipeline_id. A
+  # cron re-fire of `Run /do Fix #N ... every ... now` would otherwise
+  # double-fire on top of the in-flight turn. Write the sentinel right
+  # after the check passes; clear it in /do Phase 5 Report (universal
+  # terminal for worktree/direct modes).
+  INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+  if [ -x "$INFLIGHT_HELPER" ]; then
+    if bash "$INFLIGHT_HELPER" check do --pipeline-id "$PIPELINE_ID" > /tmp/.do-inflight.$$ 2>/dev/null; then
+      rm -f /tmp/.do-inflight.$$
+      echo "/do task $PIPELINE_ID in flight; skipping redundant cron re-fire" >&2
+      exit 0
+    fi
+    rm -f /tmp/.do-inflight.$$
+    bash "$INFLIGHT_HELPER" write do --pipeline-id "$PIPELINE_ID" || \
+      echo "do: WARN — could not write in-flight sentinel (continuing)" >&2
+  fi
+
   CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
   _ACQUIRED=()
   for ISSUE_NUM in "${ISSUE_NUMS[@]}"; do
