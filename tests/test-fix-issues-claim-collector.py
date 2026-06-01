@@ -257,6 +257,96 @@ class AnnotateIssuesQueueGatingTests(unittest.TestCase):
         self.assertNotIn("claim", issues[1])
 
 
+class EffectiveSkipReasonTests(unittest.TestCase):
+    """Issue #862 — the dashboard skip chip and the /fix-issues
+    drop-decision are unified behind ONE precedence: a live
+    `monitor-state.json:issues.skipped[N]` override wins over the
+    committed `Action now:` blurb-derived reason.
+
+    These tests drive the Python (chip) side: `_read_monitor_skipped`,
+    `_resolve_effective_skip_reason`, and `_annotate_issues_queue`'s
+    wiring of the two. The bash (filter) side is asserted to agree on the
+    same inputs by tests/test-fix-issues-skip-effective-reason.sh.
+    """
+
+    def test_read_monitor_skipped_both_shapes(self) -> None:
+        # Accept bare-string (legacy) AND dict (#862 reason) entries.
+        state = {
+            "issues": {
+                "skipped": {
+                    "100": "plan-scale",
+                    "200": {"code": "needs-decision", "reason": "author A/B/C scope decision"},
+                    "300": {"code": "deferred"},  # dict without reason
+                    "bad": "plan-scale",          # non-int key skipped
+                    "400": {"no": "code"},        # malformed — skipped
+                    "500": "",                    # empty code — skipped
+                },
+            },
+        }
+        out = collect._read_monitor_skipped(state)
+        self.assertEqual(out.get(100), {"code": "plan-scale", "reason": ""})
+        self.assertEqual(
+            out.get(200),
+            {"code": "needs-decision", "reason": "author A/B/C scope decision"},
+        )
+        self.assertEqual(out.get(300), {"code": "deferred", "reason": ""})
+        self.assertNotIn(400, out)
+        self.assertNotIn(500, out)
+        # non-int key never lands.
+        self.assertNotIn("bad", out)
+
+    def test_override_beats_stale_blurb(self) -> None:
+        # (a) a live issues.skipped[N] override beats a stale blurb-derived
+        # reason in the chip. Blurb says plan-scale; override says
+        # needs-decision (the #832/#833 re-triage case).
+        monitor = {832: {"code": "needs-decision", "reason": "author decision pending"}}
+        blurb = {832: {"code": "plan-scale", "label": "plan-scale", "source": "**Action now:** /draft-plan"}}
+        eff = collect._resolve_effective_skip_reason(832, monitor, blurb)
+        self.assertEqual(eff["code"], "needs-decision")
+        self.assertEqual(eff["label"], "author decision pending")  # reason -> label
+        self.assertIn("monitor-state override", eff["source"])
+
+    def test_override_without_reason_uses_default_label(self) -> None:
+        monitor = {7: {"code": "plan-scale", "reason": ""}}
+        eff = collect._resolve_effective_skip_reason(7, monitor, {})
+        self.assertEqual(eff["code"], "plan-scale")
+        self.assertEqual(eff["label"], "plan-scale")  # canonical default
+
+    def test_blurb_fallback_when_no_override(self) -> None:
+        # No override -> blurb-derived reason flows through unchanged.
+        blurb = {9: {"code": "deferred", "label": "leave open", "source": "src"}}
+        eff = collect._resolve_effective_skip_reason(9, {}, blurb)
+        self.assertEqual(eff, {"code": "deferred", "label": "leave open", "source": "src"})
+        # And None when neither side has anything.
+        self.assertIsNone(collect._resolve_effective_skip_reason(9, {}, {}))
+
+    def test_annotate_applies_override_in_fixture_branch(self) -> None:
+        # _annotate_issues_queue reads the override from `state` even in
+        # the 2-arg fixture branch (no main_root, no blurb index). The
+        # chip gets the override reason.
+        issues = [{"number": 50, "title": "re-triaged"}]
+        state = {
+            "issues": {
+                "triage": [], "ready": [50], "in-progress": [], "done": [],
+                "skipped": {"50": {"code": "needs-decision", "reason": "needs author X/Y"}},
+            },
+        }
+        collect._annotate_issues_queue(issues, state)
+        sr = issues[0].get("skip_reason")
+        self.assertIsNotNone(sr)
+        self.assertEqual(sr["code"], "needs-decision")
+        self.assertEqual(sr["label"], "needs author X/Y")
+
+    def test_reconsider_resets_to_blurb_baseline_semantics(self) -> None:
+        # When issues.skipped[N] is absent (reconsider cleared it), the
+        # chip falls back to the blurb baseline — no separate clear-path.
+        # Here we simulate the post-reconsider state: no override entry,
+        # so _resolve_effective_skip_reason returns the blurb reason.
+        blurb = {77: {"code": "plan-scale", "label": "plan-scale", "source": "src"}}
+        eff = collect._resolve_effective_skip_reason(77, {}, blurb)
+        self.assertEqual(eff["code"], "plan-scale")
+
+
 class ReadClaimsLatencyBenchmark(unittest.TestCase):
     """T3.3 — issue #514 latency budget. <10ms wall-clock p95 for 50
     simulated claims. NOT skip-not-fail. If this regresses, memoize

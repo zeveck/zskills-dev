@@ -106,6 +106,7 @@ run_suite "test-fix-issues-sprint-worktree-gate.sh" "tests/test-fix-issues-sprin
 run_suite "test-fix-issues-sprint-land-pr.sh" "tests/test-fix-issues-sprint-land-pr.sh"
 run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase2-source-filter.sh"
 run_suite "test-fix-issues-skip-persistence.sh" "tests/test-fix-issues-skip-persistence.sh"
+run_suite "test-fix-issues-skip-effective-reason.sh" "tests/test-fix-issues-skip-effective-reason.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
 run_suite "test-commit.sh" "tests/test-commit.sh"
 run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"

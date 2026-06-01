@@ -32,17 +32,25 @@
 #   <skip-code>   One of: plan-scale | bug-unclear-cause | needs-decision
 #                 | deferred. REQUIRED. These mirror the canonical
 #                 dashboard skip-codes the filter recognizes.
-#   <reason>      Optional short string (informational; not consumed by
-#                 the filter). Currently ignored; reserved for future use.
+#   <reason>      Optional short free-text string (e.g. "needs author A/B/C
+#                 scope decision"). When present, the persisted entry becomes
+#                 the dict shape `{"code": <code>, "reason": <reason>}` and the
+#                 reason flows through to the dashboard skip chip's label
+#                 (#862). When absent, the legacy bare-string shape
+#                 `"<skip-code>"` is preserved (back-compat).
 #
 # Behavior:
 #   - Resolves `$MAIN_ROOT` from `$ZSKILLS_MAIN_ROOT` if set, else from
 #     `git rev-parse --git-common-dir`.
 #   - Creates `.zskills/monitor-state.json` with `{}` if absent.
-#   - Sets `data["issues"]["skipped"][str(N)] = "<skip-code>"`.
-#   - Idempotent: if the same code is already recorded, exits 0 silently;
-#     if a different code is recorded, overwrites (latest-classification
-#     wins — the orchestrator may re-triage and re-classify).
+#   - Sets `data["issues"]["skipped"][str(N)]` to either the bare code
+#     string (no reason given) or `{"code": <code>, "reason": <reason>}`
+#     (reason given). Both shapes are accepted by every reader
+#     (filter-unresearched-candidates.sh + collect.py).
+#   - Idempotent: if the same {code, reason} is already recorded, exits 0
+#     silently; if a different code/reason is recorded, overwrites
+#     (latest-classification wins — the orchestrator may re-triage and
+#     re-classify).
 #   - Atomic write via Python tempfile + `os.replace`.
 #
 # Exit:
@@ -59,7 +67,10 @@ fi
 
 ISSUE_NUM="$1"
 SKIP_CODE="$2"
-# reason argument reserved for future use; not consumed yet.
+# Optional free-text reason (#862). Empty when omitted; when present it is
+# persisted alongside the code as `{"code": ..., "reason": ...}` and rendered
+# in the dashboard skip chip's label.
+REASON="${3:-}"
 
 case "$ISSUE_NUM" in
   ''|*[!0-9]*)
@@ -92,10 +103,12 @@ if [ ! -f "$STATE_FILE" ]; then
   printf '{}\n' > "$STATE_FILE"
 fi
 
-python3 - "$STATE_FILE" "$ISSUE_NUM" "$SKIP_CODE" <<'PY' || exit 2
+python3 - "$STATE_FILE" "$ISSUE_NUM" "$SKIP_CODE" "$REASON" <<'PY' || exit 2
 import json, os, sys, tempfile
 
 path, num_s, code = sys.argv[1], sys.argv[2], sys.argv[3]
+reason = sys.argv[4] if len(sys.argv) > 4 else ""
+reason = reason.strip()
 
 try:
     with open(path) as f:
@@ -112,13 +125,30 @@ if not isinstance(skipped, dict):
     skipped = {}
     issues['skipped'] = skipped
 
-# Idempotent — same code recorded already, exit silently.
-if skipped.get(num_s) == code:
+
+def _norm(entry):
+    """Normalise either skip-entry shape to (code, reason) for comparison.
+
+    Accepts both the legacy bare-string shape (`"<code>"`) and the
+    dict shape (`{"code": ..., "reason": ...}`) so idempotency holds
+    across a mix of old and new writers (#862)."""
+    if isinstance(entry, dict):
+        return (entry.get('code'), entry.get('reason') or '')
+    return (entry, '')
+
+
+# When a reason is supplied, persist the dict shape so the chip can
+# render it; otherwise keep the legacy bare-string shape (back-compat).
+new_value = {'code': code, 'reason': reason} if reason else code
+
+# Idempotent — same (code, reason) recorded already, exit silently.
+prev_entry = skipped.get(num_s)
+if _norm(prev_entry) == _norm(new_value):
     print(f"/fix-issues: #{num_s} already recorded as skipped ({code}); no-op.", file=sys.stderr)
     sys.exit(0)
 
-prev = skipped.get(num_s)
-skipped[num_s] = code
+prev_code = _norm(prev_entry)[0] if prev_entry is not None else None
+skipped[num_s] = new_value
 
 tmp = tempfile.NamedTemporaryFile('w', delete=False,
     dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
@@ -127,8 +157,9 @@ tmp.write('\n')
 tmp.close()
 os.replace(tmp.name, path)
 
-if prev:
-    print(f"/fix-issues: #{num_s} skip-state updated ({prev} -> {code}).", file=sys.stderr)
+suffix = f" — {reason}" if reason else ""
+if prev_code:
+    print(f"/fix-issues: #{num_s} skip-state updated ({prev_code} -> {code}{suffix}).", file=sys.stderr)
 else:
-    print(f"/fix-issues: #{num_s} recorded as skipped ({code}).", file=sys.stderr)
+    print(f"/fix-issues: #{num_s} recorded as skipped ({code}{suffix}).", file=sys.stderr)
 PY

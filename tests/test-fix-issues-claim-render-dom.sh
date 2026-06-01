@@ -436,6 +436,56 @@ function findByClass(root, cls) {
 }
 
 // ------------------------------------------------------------------
+// #862 — mutual exclusion: a live claim SUPPRESSES the skip chip.
+// An actively-claimed issue must NOT also render a `skip:` chip
+// (the split-brain symptom #862 closes — observed an issue with a
+// live in-flight claim showing BOTH an in-flight chip AND a
+// skip:plan-scale chip). The claim chip is authoritative.
+// ------------------------------------------------------------------
+{
+  const issue = {
+    number: 862,
+    title: "Claimed AND carries a skip_reason",
+    labels: [],
+    skip_reason: { code: "plan-scale", label: "plan-scale", source: "**Action now:** /draft-plan" },
+    claim: {
+      pipeline_id: "fix-issues.sprint-20260601-010731-foo",
+      sprint_id: "sprint-20260601-010731-foo",
+      age_seconds: 30,
+      started_at: new Date(Date.now() - 30000).toISOString(),
+      pipeline_short: "010731-foo",
+    },
+  };
+  const card = buildIssueCard(issue, 862, "ready");
+  expect(findByClass(card, "skip-chip"), null,
+    "live claim suppresses skip chip (#862 mutual exclusion — no skip-chip rendered)");
+  expectTrue(findByClass(card, "claim-chip"),
+    "live claim still renders the in-flight claim chip");
+}
+
+// ------------------------------------------------------------------
+// #862 — negative control: a skip_reason WITHOUT a claim still renders
+// the skip chip (mutual exclusion only fires on a live claim).
+// ------------------------------------------------------------------
+{
+  const issue = {
+    number: 863,
+    title: "Skip reason, no claim",
+    labels: [],
+    skip_reason: { code: "needs-decision", label: "author A/B/C scope decision", source: "monitor-state override: author A/B/C scope decision" },
+  };
+  const card = buildIssueCard(issue, 863, "ready");
+  const chip = findByClass(card, "skip-chip");
+  expectTrue(chip, "skip chip renders when no claim present (#862 negative control)");
+  if (chip) {
+    expectTrue(chip.textContent.indexOf("author A/B/C scope decision") >= 0,
+      "skip chip label surfaces the monitor-state override reason (#862)");
+  }
+  expect(findByClass(card, "claim-chip"), null,
+    "no claim chip when issue.claim absent (#862 negative control)");
+}
+
+// ------------------------------------------------------------------
 // T3.2.b — handleAction guards block move/remove on claimed cards
 // ------------------------------------------------------------------
 {
