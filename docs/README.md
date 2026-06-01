@@ -15,7 +15,6 @@ to find the right starting point.
 | [`evals/`](evals/) | Skill evaluations, scorecards, and coverage analyses. |
 | [`issues/`](issues/) | Issue triage notes and per-issue working files. |
 | [`reports/`](reports/) | Post-execution reports from `/run-plan` and other multi-phase work. |
-| [`AUDIT-PR-MODE-RESOLUTION.md`](AUDIT-PR-MODE-RESOLUTION.md) | One-off audit resolution writeup — kept loose pending a notes/ home. |
 
 ## Guides — quick links
 
