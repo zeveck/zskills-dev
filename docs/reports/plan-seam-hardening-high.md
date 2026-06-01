@@ -1,5 +1,17 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 3 — commit: arg-parser extract + caller-loop harness  ✅ Done (2026-06-01T07:52:13-04:00)
+
+**Commit:** `a53e252` on `feat/seam-hardening-high`
+**Tests:** Overall 6962/6962 passed, 0 failed (baseline 6935 → +27 net; removed static-grep test-commit.sh).
+
+- Replaced 100%-static-grep `test-commit.sh` with `test-commit-parsing.sh` (extracts the real `commit/SKILL.md` arg-parser; pr/mid-string-pr/auto-strip/explicit-wins/cherry-pick-exit-1) + `test-commit-pr-caller-loop.sh` (`extract_sentinel_block` the `commit/modes/pr.md` BEGIN/END loop; drives STATUS×CI_STATUS → LAND_OUTCOME, fulfilled/requires lifecycle, --auto gate).
+- Coverage-preservation audited: all 5 old test-commit.sh cases migrated/strengthened; `.landed` still covered by test-landed-schema.sh.
+- **Drift recorded:** the arg-parser fences are column-0, not 3-space-indented as the plan said — test uses strip-indent=0 (correct). Non-numeric drift; plan text left as-is.
+
+**Verification:** independent verifier PASS — mutation-proof, coverage audit, scope clean (4 paths), no SKILL.md edits, Layer-3 exit 0.
+
+
 ## Phase 2 — land-pr: extract Steps 6b/7b/7c fences  ✅ Done (2026-06-01T07:01:39-04:00)
 
 **Commit:** `b4ad4c0` on `feat/seam-hardening-high`
