@@ -124,7 +124,7 @@ the Requirements appendix). Key decisions:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Author references/quiz.md (interaction protocol) | ⬚ | | |
+| 1 — Author references/quiz.md (interaction protocol) | ✅ Done | `520aaab` | 331-line quiz.md; version 2026.06.01+ab6deb + mirror; 6773/6773 |
 | 2 — Wire SKILL.md (flag, conditional load, seam, transcript) | ⬚ | | |
 | 3 — Mirror, version reconcile, conformance + tests | ⬚ | | |
 
