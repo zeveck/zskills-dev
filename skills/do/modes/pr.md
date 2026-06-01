@@ -96,17 +96,21 @@ fi
 ```
 Do NOT echo `ZSKILLS_PIPELINE_ID=do.${TASK_SLUG}` as shell output in the main session — the `.zskills-tracked` file in the worktree is the single source of truth.
 
-**Step A5.5 — Claim the issue (when `$ISSUE_NUM` is non-empty).** Now that
-`PIPELINE_ID="do.${TASK_SLUG}"` is set (A4) and the worktree exists (A5),
-acquire the `claim-issue.sh` claim BEFORE dispatching the implementation
-agent (A6). This stops a concurrent `/fix-issues` cron from double-working
-the same issue. `$ISSUE_NUM` is propagated from `/do`'s Pre-flight
-pre-parse (set only when the description referenced an issue and `--force`
-overrode the `/fix-issues` redirect). Skip entirely when `$ISSUE_NUM` is
-empty (the common /do pr case). The A1 slug guards and A5's `exit "$RC"`
-are PRE-acquire, so they need no release. The claim is released in the
-explicit-finalize block at the end of the caller loop (Step A8), and
-inline before every post-acquire-pre-finalize early exit.
+**Step A5.5 — Claim the issue(s) (when `${#ISSUE_NUMS[@]} -gt 0`).** Now
+that `PIPELINE_ID="do.${TASK_SLUG}"` is set (A4) and the worktree exists
+(A5), fan out the `claim-issue.sh` acquire across every element of
+`ISSUE_NUMS` BEFORE dispatching the implementation agent (A6). This stops
+a concurrent `/fix-issues` cron from double-working any of the same
+issues. `ISSUE_NUMS` is propagated from `/do`'s Pre-flight pre-parse
+(populated only when the description referenced one or more issues and
+`--force` overrode the `/fix-issues` redirect). Skip entirely when
+`ISSUE_NUMS` is empty (the common /do pr case). The A1 slug guards and
+A5's `exit "$RC"` are PRE-acquire, so they need no release. The claims are
+released in the explicit-finalize block at the end of the caller loop
+(Step A8), and inline before every post-acquire-pre-finalize early exit.
+**Partial-acquire rollback:** if any acquire returns rc=10 (foreign-held)
+on issue K, release issues 1..K-1 (acquired earlier in this loop) before
+declining. Same rollback applies on rc=11/2/* failures.
 
 ```bash
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -114,17 +118,28 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-if [ -n "${ISSUE_NUM:-}" ]; then
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
   CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
-  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
-  ACQ_RC=$?
-  case "$ACQ_RC" in
-    0)  : ;;  # acquired (fresh or self-re-entry) — proceed
-    10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining." >&2; exit 0 ;;
-    11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
-    2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM) — internal bug; stopping." >&2; exit 1 ;;
-    *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
-  esac
+  _ACQUIRED=()
+  for ISSUE_NUM in "${ISSUE_NUMS[@]}"; do
+    bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+    ACQ_RC=$?
+    case "$ACQ_RC" in
+      0)  _ACQUIRED+=("$ISSUE_NUM") ;;  # acquired (fresh or self-re-entry) — proceed
+      10|11|2|*)
+        # Partial-acquire rollback: release everything this pipeline grabbed earlier in this loop.
+        for _RB in "${_ACQUIRED[@]}"; do
+          bash "$CLAIM_HELPER" release "$_RB" --require-pipeline "$PIPELINE_ID"
+        done
+        case "$ACQ_RC" in
+          10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining (released ${#_ACQUIRED[@]} prior claim(s))." >&2; exit 0 ;;
+          11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM (released ${#_ACQUIRED[@]} prior claim(s)); stopping." >&2; exit 1 ;;
+          2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM; released ${#_ACQUIRED[@]} prior claim(s)) — internal bug; stopping." >&2; exit 1 ;;
+          *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM (released ${#_ACQUIRED[@]} prior claim(s)); stopping." >&2; exit 1 ;;
+        esac ;;
+    esac
+  done
+  unset _ACQUIRED _RB
 fi
 ```
 
@@ -202,17 +217,23 @@ cd "$WORKTREE_PATH"
 if [ -z "${PR_TITLE:-}" ]; then
   echo "ERROR: PR_TITLE not set — model-layer composition step skipped." >&2
   # C2 inline-release: this exit is AFTER the Step A5.5 acquire and BEFORE
-  # the explicit-finalize block, so release the issue claim (only if one
-  # was acquired) before bailing or it leaks.
-  if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  # the explicit-finalize block, so release the issue claim(s) (only if any
+  # were acquired) before bailing or they leak.
+  if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+    for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+    done
+    unset _ISSUE_N
   fi
   exit 5
 fi
 if [[ "$PR_TITLE" == *$'\n'* ]] || [ ${#PR_TITLE} -gt 60 ] || [[ "$PR_TITLE" != do:\ * ]]; then
   echo "ERROR: PR_TITLE must be a single line ≤60 chars starting with 'do: ' (got '$PR_TITLE')." >&2
-  if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+    for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+    done
+    unset _ISSUE_N
   fi
   exit 2
 fi
@@ -333,9 +354,12 @@ while :; do
     rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
     sed -i "s/^status: started$/status: failed/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
     # C2 inline-release: post-acquire, pre-finalize early exit — release
-    # the issue claim (only if one was acquired) or it leaks.
-    if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    # the issue claim(s) (only if any were acquired) or they leak.
+    if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+      for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+        bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+      done
+      unset _ISSUE_N
     fi
     exit 1
   fi
@@ -503,13 +527,13 @@ esac
 sed -i "s/^status: started$/status: $FINAL/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
 rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
 
-# Release the issue claim based on LAND_OUTCOME (mirrors
+# Release the issue claim(s) based on LAND_OUTCOME (mirrors
 # fix-issues/modes/pr.md:337-345 so the two skills evolve in lockstep).
-# Only if an issue claim was acquired in Step A5.5. $PIPELINE_ID =
+# Only if issue claims were acquired in Step A5.5. $PIPELINE_ID =
 # do.$TASK_SLUG is re-resolved at the tracking-setup fence-top above and
 # survives in this fence.
 #
-# Three groups (issue #864):
+# Three groups (issue #864) × ISSUE_NUMS fan-out (issue #863):
 #   - merged          → RELEASE (work is durably on main).
 #   - pr-ready|created→ HOLD: the PR is OPEN on the remote awaiting human
 #                       review/merge; releasing here would let a concurrent
@@ -522,20 +546,26 @@ rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
 #                       and same shape as fix-issues PR mode's `created`
 #                       arm at fix-issues/modes/pr.md:342-343).
 #   - terminal-failure→ RELEASE (PR is dead-on-arrival; nothing to guard).
-if [ -n "${ISSUE_NUM:-}" ]; then
+#
+# Releases are idempotent per claim-issue.sh, so any claim already
+# released by an inline-release early-exit upstream no-ops here.
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
   CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
-  case "$LAND_OUTCOME" in
-    merged)
-      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
-        || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
-    pr-ready|created)
-      echo "do: holding claim for #$ISSUE_NUM (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash skills/fix-issues/scripts/claim-issue.sh release $ISSUE_NUM' if the PR never lands" >&2 ;;
-    pr-ci-failing|rebase-conflict|auto-rebase-conflict|auto-rebase-blocked|behind-thrash|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed|unknown-status-*)
-      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
-        || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
-    *)
-      echo "do: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD" >&2 ;;
-  esac
+  for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+    case "$LAND_OUTCOME" in
+      merged)
+        bash "$CLAIM_HELPER" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID" \
+          || echo "do: claim release for #$_ISSUE_N returned non-zero (continuing)" >&2 ;;
+      pr-ready|created)
+        echo "do: holding claim for #$_ISSUE_N (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash skills/fix-issues/scripts/claim-issue.sh release $_ISSUE_N' if the PR never lands" >&2 ;;
+      pr-ci-failing|rebase-conflict|auto-rebase-conflict|auto-rebase-blocked|behind-thrash|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed|unknown-status-*)
+        bash "$CLAIM_HELPER" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID" \
+          || echo "do: claim release for #$_ISSUE_N returned non-zero (continuing)" >&2 ;;
+      *)
+        echo "do: unknown LAND_OUTCOME=$LAND_OUTCOME for #$_ISSUE_N; defaulting to HOLD" >&2 ;;
+    esac
+  done
+  unset _ISSUE_N
 fi
 ```
 

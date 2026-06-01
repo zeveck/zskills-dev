@@ -3,7 +3,8 @@
 > Execution modes for `/quickfix`, loaded after Phase 2 mode detection +
 > branch creation in `SKILL.md`. The persistent shell carries `$MODE`,
 > `$SLUG`, `$BRANCH`, `$BASE_BRANCH`, `$MARKER`, `$PIPELINE_ID`,
-> `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUM` from Phase 2 into these phases.
+> `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUMS` (+ back-compat `$ISSUE_NUM`)
+> from Phase 2 into these phases.
 > After Phase 6 (push), read `modes/land.md` for Phase 7.
 
 ## Phase 3 — Make the change
@@ -124,10 +125,13 @@ else
     fi
     # Explicit fail-finalize (issue #241).
     [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
-    # Release the issue claim (only if one was acquired at WI 1.8) — this
-    # abandon path is after the acquire and before the Phase 7 finalize.
-    if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    # Release the issue claim(s) (only if any were acquired at WI 1.8) —
+    # this abandon path is after the acquire and before the Phase 7 finalize.
+    if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+      for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+        bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+      done
+      unset _ISSUE_N
     fi
     exit 4
   fi
@@ -263,9 +267,12 @@ if ! git commit -m "$COMMIT_BODY"; then
   fi
   # Explicit fail-finalize (issue #241).
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
-  # Release the issue claim (only if one was acquired at WI 1.8).
-  if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  # Release the issue claim(s) (only if any were acquired at WI 1.8).
+  if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+    for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+    done
+    unset _ISSUE_N
   fi
   exit 5
 fi
@@ -336,9 +343,12 @@ if ! git push -u origin "$BRANCH"; then
   echo "ERROR: git push failed. Branch '$BRANCH' and its commit are intact locally; retry manually once the remote is reachable." >&2
   # Explicit fail-finalize (issue #241).
   [ -f "$MARKER" ] && sed -i "s/^status: started$/status: failed/" "$MARKER"
-  # Release the issue claim (only if one was acquired at WI 1.8).
-  if [ -n "${ISSUE_NUM:-}" ]; then
-    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  # Release the issue claim(s) (only if any were acquired at WI 1.8).
+  if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+    for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+    done
+    unset _ISSUE_N
   fi
   exit 5
 fi

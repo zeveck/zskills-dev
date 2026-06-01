@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.31+12f9ca"
+  version: "2026.05.31+065fb4"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -228,25 +228,68 @@ AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
 fi
-# Issue-number parse (claim-work-item Phase 2 / W2.2). When the description
-# begins with a `#N` reference (optionally preceded by a close-keyword:
-# close/closes/closed/fix/fixes/fixed/resolve/resolves/resolved, case-
-# insensitive) extract the bare integer into ISSUE_NUM so the mode files
-# can claim the issue via claim-issue.sh. The regex is ANCHORED to the
-# start of the description so a `#NNN` literal appearing later in prose
-# (e.g., a quoted example, a line reference, a follow-up "see also #N")
-# does NOT set ISSUE_NUM. An optional leading double-quote is tolerated so
-# /do's quoted-description carve-out (`/do "Fix #N ..."`) still matches.
-# When no issue reference is in scope (the common /do case) ISSUE_NUM
-# stays empty and the mode files claim nothing. claim-issue.sh rejects
-# non-numeric input with exit 2; the `[0-9]+` capture guarantees a bare
-# integer.
-ISSUE_NUM=""
-if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
-  ISSUE_NUM="${BASH_REMATCH[3]}"
+# Issue-number parse (claim-work-item Phase 2 / W2.2). Collect ALL `#N`
+# references in the description into the ISSUE_NUMS array so the mode
+# files can fan-out the claim acquire across every closed issue. The
+# leading match is ANCHORED to the start of the description (optionally
+# preceded by a close-keyword: close/closes/closed/fix/fixes/fixed/
+# resolve/resolves/resolved, case-insensitive; an optional leading
+# double-quote is tolerated for /do's quoted-description carve-out
+# `/do "Fix #N ..."`). Subsequent matches recognize TWO boundary
+# classes:
+#   - STRONG separators (`/`, `+`, `&`) — bare `#N` allowed because
+#     these don't naturally appear in English prose before a `#`
+#     reference. Canonical patterns: "fix #N + #M", "Closes #N / Closes
+#     #M", "fix #N & #M".
+#   - WEAK separators (`,`, `;`, ` and `, ` or `) — require an explicit
+#     close-keyword between the separator and `#N`. This is what blocks
+#     "Closes #832, see also #999" from accidentally claiming #999
+#     (comma is a normal prose punctuator, so bare `#N` after it would
+#     over-capture) while still accepting "Closes #832, Closes #833".
+# When no issue reference is in scope (the common /do case) ISSUE_NUMS
+# stays empty and the mode files claim nothing. ISSUE_NUM is kept as a
+# back-compat scalar (= ISSUE_NUMS[0] when non-empty, else empty).
+# claim-issue.sh rejects non-numeric input with exit 2; the `[0-9]+`
+# capture guarantees a bare integer.
+ISSUE_NUMS=()
+_DO_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
+# Leading anchored match (optional close-keyword, optional leading quote).
+if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?${_DO_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; then
+  ISSUE_NUMS+=("${BASH_REMATCH[3]}")
 elif [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
-  ISSUE_NUM="${BASH_REMATCH[1]}"
+  ISSUE_NUMS+=("${BASH_REMATCH[1]}")
 fi
+# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK.
+# BASH_REMATCH groups: 1=outer kw+space wrapper, 2=kw outer, 3=kw inner,
+# 4=digit capture.
+_DO_REMAINING="$ARGUMENTS"
+while [[ "$_DO_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+)?#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+  _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
+done
+# Subsequent weak-separator matches (`,`, `;`, ` and `, ` or `): require
+# close-keyword before `#N` so prose like "Closes #N, see also #M" doesn't
+# over-capture #M. BASH_REMATCH groups: 1=outer separator, 2=and/or word,
+# 3=kw outer, 4=kw inner, 5=digit capture.
+_DO_REMAINING="$ARGUMENTS"
+while [[ "$_DO_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_DO_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+  _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
+done
+# Dedupe preserving first-seen order (acquire is order-dependent for the
+# partial-rollback contract; releases are idempotent per claim-issue.sh).
+declare -A _DO_SEEN=()
+_DO_UNIQUE=()
+for _n in "${ISSUE_NUMS[@]:-}"; do
+  [ -z "$_n" ] && continue
+  if [ -z "${_DO_SEEN[$_n]:-}" ]; then _DO_UNIQUE+=("$_n"); _DO_SEEN[$_n]=1; fi
+done
+ISSUE_NUMS=("${_DO_UNIQUE[@]}")
+unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _n
+# Back-compat scalar (= first claimed issue, or empty when none). Mode
+# files still reference $ISSUE_NUM in skip-empty guards; new fan-out code
+# iterates "${ISSUE_NUMS[@]}".
+ISSUE_NUM="${ISSUE_NUMS[0]:-}"
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
 # `/do fix the bug --rounds in production` would otherwise capture "in" as
@@ -320,7 +363,7 @@ needed).
 | `/do Update the presentation with Phase 3 results auto` | PROCEED | concrete verb + object |
 | `/do add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/do improve` | REDIRECT → ask user | vague verb, no object |
-| `/do Fix #853 — auto-route completed plans` | PROCEED | issue-numbered descriptions claim the issue via ISSUE_NUM and proceed |
+| `/do Fix #853 — auto-route completed plans` | PROCEED | issue-numbered descriptions claim the issue(s) via ISSUE_NUMS and proceed |
 
 Output one of:
 
@@ -741,12 +784,14 @@ procedure end-to-end**. Do not proceed until you have read the file.
 | `worktree`     | B    | [modes/worktree.md](modes/worktree.md) |
 | `direct`       | C    | [modes/direct.md](modes/direct.md) |
 
-**`$ISSUE_NUM` propagates into the mode files** (set in the Pre-flight
-pre-parse). When non-empty, the mode file claims the issue via
-`claim-issue.sh` AFTER it constructs its `PIPELINE_ID` (the C1/M1 rule —
-never acquire before a non-empty PIPELINE_ID exists). The acquire is NEVER
-placed here in SKILL.md before mode dispatch: PIPELINE_ID is empty at this
-point, so `--pipeline-id ""` would fail usage-error exit 2.
+**`$ISSUE_NUMS` propagates into the mode files** (array set in the
+Pre-flight pre-parse; `$ISSUE_NUM` is kept as a back-compat scalar = the
+first element). When `${#ISSUE_NUMS[@]} -gt 0`, the mode file fans out
+the `claim-issue.sh` acquire across every element AFTER it constructs
+its `PIPELINE_ID` (the C1/M1 rule — never acquire before a non-empty
+PIPELINE_ID exists). The acquire is NEVER placed here in SKILL.md before
+mode dispatch: PIPELINE_ID is empty at this point, so `--pipeline-id ""`
+would fail usage-error exit 2.
 
 ## Phase 3 — Verify
 
@@ -882,14 +927,14 @@ Only reached if `AUTO_FLAG=1` (the `auto` token was present in the user's invoca
 
 ## Phase 5 — Report
 
-**Release the issue claim (worktree/direct modes).** Phase 5 is the
+**Release the issue claim(s) (worktree/direct modes).** Phase 5 is the
 universal terminal reached on BOTH the `auto` and non-`auto` exits of
-worktree and direct modes — so the issue claim (acquired by the mode file
-when `$ISSUE_NUM` was non-empty) is released HERE, not in Phase 4 Land
-(which is `AUTO_FLAG=1`-gated and would leak the claim on the dominant
-non-auto path). PR mode (Path A) handles its own release inside
+worktree and direct modes — so the issue claims (acquired by the mode
+file when `${#ISSUE_NUMS[@]} -gt 0`) are released HERE, not in Phase 4
+Land (which is `AUTO_FLAG=1`-gated and would leak the claims on the
+dominant non-auto path). PR mode (Path A) handles its own release inside
 `modes/pr.md`'s finalize block and exits before reaching this section.
-Skip when no issue claim was acquired (the common /do case — `$ISSUE_NUM`
+Skip when no issue claim was acquired (the common /do case — `ISSUE_NUMS`
 empty):
 
 ```bash
@@ -898,11 +943,15 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update
 else
   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
 fi
-# $ISSUE_NUM (Pre-flight pre-parse) and $PIPELINE_ID (set in the mode file:
-# do.${TASK_SLUG}) survive in the persistent shell. The release is
-# ownership-safe via --require-pipeline.
-if [ -n "${ISSUE_NUM:-}" ] && [ -n "${PIPELINE_ID:-}" ]; then
-  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+# $ISSUE_NUMS (Pre-flight pre-parse) and $PIPELINE_ID (set in the mode file:
+# do.${TASK_SLUG}) survive in the persistent shell. Release each claim in
+# order — releases are idempotent per claim-issue.sh, and ownership-safe via
+# --require-pipeline. Skip entirely when no issues were claimed.
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ] && [ -n "${PIPELINE_ID:-}" ]; then
+  for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+  done
+  unset _ISSUE_N
 fi
 ```
 
@@ -972,13 +1021,17 @@ Status: pr-ready | pr-ci-failing | landed
   `.landed` with `status: conflict` and exit with an error message.
 - **If stuck on anything:** report the state and ask the user for
   guidance. Do not retry the same approach in a loop.
-- **Release the issue claim on every abandon path (worktree/direct modes).**
-  When `$ISSUE_NUM` was non-empty and the mode file acquired a
-  `claim-issue.sh` claim, any error exit above (test failure, content
-  issue, cherry-pick conflict, push failure, task-too-big) MUST release it
-  before stopping so the next pipeline can pick the issue up:
-  `bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"`
-  (only if an issue claim was acquired — skip when `$ISSUE_NUM` is empty).
+- **Release the issue claim(s) on every abandon path (worktree/direct modes).**
+  When `${#ISSUE_NUMS[@]} -gt 0` and the mode file acquired
+  `claim-issue.sh` claims, any error exit above (test failure, content
+  issue, cherry-pick conflict, push failure, task-too-big) MUST release
+  each one before stopping so the next pipeline can pick the issue(s) up:
+  ```bash
+  for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+  done
+  ```
+  (only if any claim was acquired — skip when `ISSUE_NUMS` is empty).
   PR mode's abandon-path releases live inside `modes/pr.md`.
 
 ## Key Rules

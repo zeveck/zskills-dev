@@ -473,24 +473,39 @@ check do "Path C Direct"    '^### Path C'
 
 echo ""
 echo "=== /do — issue-claim wiring (claim-work-item Phase 2 / W2.2 + W2.3) ==="
-# /do parses the issue number (reachable only via --force triage override).
-# Acquire uses the $CLAIM_HELPER indirection (CLAIM_HELPER=...claim-issue.sh
-# + `bash "$CLAIM_HELPER" acquire "$ISSUE_NUM"`); release inlines the
-# literal claim-issue.sh path. The sentinels grep the EXISTING script name
-# so a future edit dropping the wiring FAILS the test. These are positive
-# assertions only.
-check_fixed do "SKILL.md parses ISSUE_NUM"        'ISSUE_NUM="${BASH_REMATCH[1]}"'
+# /do parses the issue number(s) into ISSUE_NUMS (reachable only via
+# --force triage override). Acquire uses the $CLAIM_HELPER indirection
+# (CLAIM_HELPER=...claim-issue.sh + per-issue `bash "$CLAIM_HELPER"
+# acquire "$ISSUE_NUM"` inside a fan-out loop over `"${ISSUE_NUMS[@]}"`);
+# release iterates the array and inlines the literal claim-issue.sh path.
+# The sentinels grep the EXISTING patterns so a future edit dropping the
+# wiring FAILS the test. These are positive assertions only.
+# Multi-issue parser (#863): ISSUE_NUMS array populated from leading
+# anchored + separator-delimited subsequent matches.
+check_fixed do "SKILL.md parses ISSUE_NUMS array"     'ISSUE_NUMS+=("${BASH_REMATCH[3]}")'
+check_fixed do "SKILL.md back-compat ISSUE_NUM"       'ISSUE_NUM="${ISSUE_NUMS[0]:-}"'
 # worktree mode: acquire after PIPELINE_ID + worktree; release in Phase 5 Report (SKILL.md).
-check_in_file do "modes/worktree.md" "worktree CLAIM_HELPER"  'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
-check_in_file do "modes/worktree.md" "worktree acquire"       'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
-check_in_file do "modes/direct.md"   "direct CLAIM_HELPER"    'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
-check_in_file do "modes/direct.md"   "direct acquire"         'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
-check_in_file do "modes/pr.md"       "pr CLAIM_HELPER"        'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
-check_in_file do "modes/pr.md"       "pr acquire"             'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+check_in_file do "modes/worktree.md" "worktree CLAIM_HELPER"     'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/worktree.md" "worktree fan-out acquire"  'for ISSUE_NUM in "\${ISSUE_NUMS\[@\]}"'
+check_in_file do "modes/worktree.md" "worktree acquire call"     'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+check_in_file do "modes/direct.md"   "direct CLAIM_HELPER"       'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/direct.md"   "direct fan-out acquire"    'for ISSUE_NUM in "\${ISSUE_NUMS\[@\]}"'
+check_in_file do "modes/direct.md"   "direct acquire call"       'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+check_in_file do "modes/pr.md"       "pr CLAIM_HELPER"           'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
+check_in_file do "modes/pr.md"       "pr fan-out acquire"        'for ISSUE_NUM in "\${ISSUE_NUMS\[@\]}"'
+check_in_file do "modes/pr.md"       "pr acquire call"           'bash "\$CLAIM_HELPER" acquire "\$ISSUE_NUM"'
+# Partial-acquire rollback: each acquire site releases prior claims on
+# rc=10/11/2/* (issue #863).
+check_in_file do "modes/worktree.md" "worktree rollback"  'for _RB in "\${_ACQUIRED\[@\]}"'
+check_in_file do "modes/direct.md"   "direct rollback"    'for _RB in "\${_ACQUIRED\[@\]}"'
+check_in_file do "modes/pr.md"       "pr rollback"        'for _RB in "\${_ACQUIRED\[@\]}"'
 # Release: /do worktree/direct release in SKILL.md Phase 5 Report + error
 # handling; /do pr releases inline (early-exit) + in the finalize block.
-check_fixed do "SKILL.md releases issue claim"  'claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"'
-check_in_file do "modes/pr.md"       "pr release"        'claim-issue\.sh" release "\$ISSUE_NUM" --require-pipeline "\$PIPELINE_ID"'
+# Release iterates ISSUE_NUMS via `for _ISSUE_N in "${ISSUE_NUMS[@]}"`.
+check_fixed do "SKILL.md release fan-out"        'for _ISSUE_N in "${ISSUE_NUMS[@]}"'
+check_fixed do "SKILL.md release call"           'claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"'
+check_in_file do "modes/pr.md"       "pr release fan-out"  'for _ISSUE_N in "\${ISSUE_NUMS\[@\]}"'
+check_in_file do "modes/pr.md"       "pr release call"     'claim-issue\.sh" release "\$_ISSUE_N" --require-pipeline "\$PIPELINE_ID"'
 
 echo ""
 echo "=== /fix-issues — behavior contracts ==="
@@ -657,10 +672,14 @@ echo "=== /quickfix — issue-claim wiring (claim-work-item Phase 2 / W2.4) ==="
 # triage REDIRECTs issue refs to /fix-issues), acquires at WI 1.8 around
 # the Tracking-setup block, releases in the Phase 7 finalize + abandon
 # sites. Reuses the existing PIPELINE_ID="quickfix.$SLUG".
-check_fixed quickfix "parses ISSUE_NUM"          'ISSUE_NUM="${BASH_REMATCH[1]}"'
+check_fixed quickfix "parses ISSUE_NUMS array"   'ISSUE_NUMS+=("${BASH_REMATCH[3]}")'
+check_fixed quickfix "back-compat ISSUE_NUM"     'ISSUE_NUM="${ISSUE_NUMS[0]:-}"'
 check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"'
+check_fixed quickfix "fan-out acquire"           'for ISSUE_NUM in "${ISSUE_NUMS[@]}"'
 check_fixed quickfix "acquires issue claim"      'bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"'
-check_fixed quickfix "releases issue claim"      'claim-issue.sh" release "$ISSUE_NUM" --require-pipeline'
+check_fixed quickfix "partial-acquire rollback"  'for _RB in "${_ACQUIRED[@]}"'
+check_fixed quickfix "release fan-out"           'for _ISSUE_N in "${ISSUE_NUMS[@]}"'
+check_fixed quickfix "releases issue claim"      'claim-issue.sh" release "$_ISSUE_N" --require-pipeline'
 
 echo ""
 echo "=== /investigate — issue-claim wiring (claim-work-item Phase 2 / W2.1) ==="
