@@ -568,6 +568,22 @@ async function pollWorkOnce() {
   if (ws) {
     lastWorkState = ws;
     applyWorkState(ws);
+  } else {
+    // Issue #892 — fail OPEN, not stuck-locked. A null fetch (network
+    // error / server restart / abort) used to leave lastWorkState stale
+    // at state==="sprint". If the sprint ended during that gap, the
+    // exec-mode chip stayed locked and the change-default-mode UI stayed
+    // blocked until the next *successful* poll. Clearing to null releases
+    // the lock: every lastWorkState consumer (renderDefaultMode,
+    // renderDefaultModeFootnote, the setDefaultMode sprint guard) already
+    // short-circuits on a falsy work-state, and null is the documented
+    // bootstrap value, so no consumer null-derefs. Only re-apply if the
+    // state actually changes (it was previously a sprint), so a transient
+    // failure during idle is a no-op.
+    if (lastWorkState) {
+      lastWorkState = null;
+      applyWorkState(null);
+    }
   }
   // Slow heartbeat while hidden (HIDDEN_POLL_INTERVAL_MS), fast when
   // visible (POLL_INTERVAL_MS). The loop is never stopped.
