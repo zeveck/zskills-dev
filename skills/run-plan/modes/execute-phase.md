@@ -1515,8 +1515,12 @@ against a leftover `requires.*` from a prior pipeline).
 
 Count remaining non-completion markers across all pipelines and surface
 a one-line reminder. Do NOT auto-clean — this skill's job is
-to run plans, not manage long-term tracking state. The user runs
-`bash .claude/skills/update-zskills/scripts/clear-tracking.sh` when they're ready.
+to run plans, not manage long-term tracking state. The user runs the
+clear-tracking script — on the plugin install
+`bash ${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh`,
+or the legacy mirror path
+`bash .claude/skills/update-zskills/scripts/clear-tracking.sh` — when they're
+ready.
 
 ```bash
 # This count surfaces accumulated bookkeeping across ALL pipelines (not just
@@ -1536,8 +1540,16 @@ MARKER_COUNT=$(ls "$MAIN_ROOT/.zskills/tracking/"*/requires.* \
                     "$MAIN_ROOT/.zskills/tracking/"fulfilled.verify-changes.* 2>/dev/null \
                 | wc -l)
 if [ "$MARKER_COUNT" -ge 10 ]; then
+  # Lane-correct path: prefer the ${CLAUDE_PLUGIN_ROOT} form on the plugin
+  # install (no .claude/skills/ mirror exists there), else the legacy mirror
+  # path. Mirrors the dual-lane resolution used elsewhere in this skill (#865).
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh" ]; then
+    CLEAR_TRACKING_PATH="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh"
+  else
+    CLEAR_TRACKING_PATH=".claude/skills/update-zskills/scripts/clear-tracking.sh"
+  fi
   echo "NOTE: $MARKER_COUNT bookkeeping tracking markers on disk across completed pipelines."
-  echo "      Run: bash .claude/skills/update-zskills/scripts/clear-tracking.sh   (preserves fulfilled.run-plan.* completion records)"
+  echo "      Run: bash $CLEAR_TRACKING_PATH   (preserves fulfilled.run-plan.* completion records)"
 fi
 ```
 
