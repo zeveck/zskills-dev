@@ -2564,11 +2564,33 @@ function renderRunStatus(ws) {
 
 // ---------------------------------------------------------------- toasts
 
-function showToast(message, kind) {
+function showToast(message, kind, opts) {
   const region = $("toast-region");
   if (!region) return;
   const toast = el("div", { cls: "toast " + (kind === "info" ? "toast-info" : "") });
   toast.appendChild(el("span", { text: String(message || "") }));
+  // Issue #940 — optional action button rendered between message and close.
+  // When opts.actionLabel + opts.onAction are both provided, render a
+  // <button class="toast-action"> that invokes onAction() on click and
+  // dismisses the toast when the (possibly async) handler resolves.
+  // Used by the locked-chip toast to surface a "Force unlock" recovery
+  // path when an externally-killed cron leaves work-on-plans-state.json
+  // stuck at state=scheduled (see issue body for full rationale).
+  if (opts && opts.actionLabel && typeof opts.onAction === "function") {
+    const actionBtn = el("button", {
+      cls: "toast-action",
+      attrs: { type: "button" },
+      text: String(opts.actionLabel),
+    });
+    actionBtn.addEventListener("click", async () => {
+      try {
+        await opts.onAction();
+      } finally {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }
+    });
+    toast.appendChild(actionBtn);
+  }
   const close = el("button", {
     cls: "toast-close",
     attrs: { type: "button", "aria-label": "Dismiss" },
@@ -2895,11 +2917,26 @@ async function setDefaultMode(mode) {
     && cronPinnedMode
     && cronPinnedMode !== "inherit"
   ) {
+    // Issue #940 — surface a "Force unlock" action for the case where the
+    // /work-on-plans cron was killed externally (Claude session ended
+    // without clean shutdown, REPL hard-killed). state stays at
+    // "scheduled" with schedule_mode pinned but no fire is coming, so
+    // the chip is locked indefinitely until the server-side staleness
+    // sweep (grace = schedule_period + 30 min). Force unlock POSTs to
+    // the existing /api/work-state/reset endpoint. Resilient to a live
+    // cron: if it's still firing, the next fire re-writes
+    // state=scheduled and the lock reappears; if gone, lock stays clear.
     showToast(
-      "Default mode is locked: the active /work-on-plans schedule pins mode to '" +
+      "Default mode is locked: /work-on-plans schedule pins mode to '" +
         cronPinnedMode +
-        "'. Stop the schedule and re-launch without a mode token to control via this chip.",
+        "'. If the cron is no longer running (Claude session ended or REPL killed), use Force unlock to clear the lock.",
       "info",
+      {
+        actionLabel: "Force unlock",
+        onAction: async () => {
+          await fetch("/api/work-state/reset", { method: "POST" });
+        },
+      },
     );
     return;
   }
