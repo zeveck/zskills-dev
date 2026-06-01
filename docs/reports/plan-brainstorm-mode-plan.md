@@ -1,5 +1,12 @@
 # Plan Report — Brainstorm mode for /draft-plan
 
+## Phase — 3 Tests, version bumps, mirrors, conformance (FINAL)
+
+**Status:** Completed (verified) — commit b0b514b
+- +16 brainstorm cases in test-draft-plan-args-smoke.sh (flag extract-and-run ±, conditional-load + no-PIPELINE_ID guard, resume, feed-forward, checkpoint-skip, brainstorm.md idiom greps).
+- Verifier PASS; assertions confirmed non-tautological (flag test extract-and-runs the live SKILL.md fence). Full suite 6591/6591; args-smoke 29/29; conformance 726/726. No drift, test-only (no version bump).
+- Note: a redundant orchestrator baseline capture hung once on an intermittent harness/stdin transient; re-attempted with no workaround, did not recur; no code/infra change.
+
 ## Phase — 2 Wire brainstorm into SKILL.md
 
 **Plan:** docs/plans/BRAINSTORM_MODE_PLAN.md (Phase 2 of 3)
