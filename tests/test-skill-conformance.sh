@@ -481,8 +481,10 @@ echo "=== /do — issue-claim wiring (claim-work-item Phase 2 / W2.2 + W2.3) ===
 # The sentinels grep the EXISTING patterns so a future edit dropping the
 # wiring FAILS the test. These are positive assertions only.
 # Multi-issue parser (#863): ISSUE_NUMS array populated from leading
-# anchored + separator-delimited subsequent matches.
-check_fixed do "SKILL.md parses ISSUE_NUMS array"     'ISSUE_NUMS+=("${BASH_REMATCH[3]}")'
+# anchored + separator-delimited subsequent matches. BASH_REMATCH index
+# is `[4]` after #920 added an optional `issue[s]?:?` filler capture group
+# between the close-keyword and `#N`.
+check_fixed do "SKILL.md parses ISSUE_NUMS array"     'ISSUE_NUMS+=("${BASH_REMATCH[4]}")'
 check_fixed do "SKILL.md back-compat ISSUE_NUM"       'ISSUE_NUM="${ISSUE_NUMS[0]:-}"'
 # worktree mode: acquire after PIPELINE_ID + worktree; release in Phase 5 Report (SKILL.md).
 check_in_file do "modes/worktree.md" "worktree CLAIM_HELPER"     'CLAIM_HELPER=.*fix-issues/scripts/claim-issue\.sh'
@@ -672,7 +674,7 @@ echo "=== /quickfix — issue-claim wiring (claim-work-item Phase 2 / W2.4) ==="
 # triage REDIRECTs issue refs to /fix-issues), acquires at WI 1.8 around
 # the Tracking-setup block, releases in the Phase 7 finalize + abandon
 # sites. Reuses the existing PIPELINE_ID="quickfix.$SLUG".
-check_fixed quickfix "parses ISSUE_NUMS array"   'ISSUE_NUMS+=("${BASH_REMATCH[3]}")'
+check_fixed quickfix "parses ISSUE_NUMS array"   'ISSUE_NUMS+=("${BASH_REMATCH[4]}")'
 check_fixed quickfix "back-compat ISSUE_NUM"     'ISSUE_NUM="${ISSUE_NUMS[0]:-}"'
 check_fixed quickfix "CLAIM_HELPER assignment"   'CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"'
 check_fixed quickfix "fan-out acquire"           'for ISSUE_NUM in "${ISSUE_NUMS[@]}"'

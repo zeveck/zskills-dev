@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.01+0a315a"
+  version: "2026.06.01+f85099"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -246,6 +246,13 @@ fi
 #     "Closes #832, see also #999" from accidentally claiming #999
 #     (comma is a normal prose punctuator, so bare `#N` after it would
 #     over-capture) while still accepting "Closes #832, Closes #833".
+# After the close-keyword (in any of leading/strong/weak passes), an
+# optional `issue[s]?:?` filler token is tolerated between the keyword
+# and `#N` (#920): "Fix issue #906", "fixes issues #906", "Resolves
+# issue: #906" all parse. The token MUST be adjacent to `#N` — a word
+# between `issue` and `#N` (e.g. "Fix issue ticketing for #906") breaks
+# the adjacency and no capture occurs, preserving #863's
+# strong-vs-weak separator discipline.
 # When no issue reference is in scope (the common /do case) ISSUE_NUMS
 # stays empty and the mode files claim nothing. ISSUE_NUM is kept as a
 # back-compat scalar (= ISSUE_NUMS[0] when non-empty, else empty).
@@ -253,27 +260,33 @@ fi
 # capture guarantees a bare integer.
 ISSUE_NUMS=()
 _DO_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
-# Leading anchored match (optional close-keyword, optional leading quote).
-if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?${_DO_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; then
-  ISSUE_NUMS+=("${BASH_REMATCH[3]}")
+_DO_ISSUE_FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
+# Leading anchored match (optional close-keyword, optional leading quote,
+# optional `issue[s]?:?` filler between kw and `#N`). BASH_REMATCH groups
+# (kw branch): 1=kw outer, 2=kw inner, 3=optional filler, 4=digit capture.
+if [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER}#([0-9]+) ]]; then
+  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
 elif [[ "$ARGUMENTS" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
   ISSUE_NUMS+=("${BASH_REMATCH[1]}")
 fi
-# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK.
-# BASH_REMATCH groups: 1=outer kw+space wrapper, 2=kw outer, 3=kw inner,
-# 4=digit capture.
+# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK; if
+# the keyword is present, the optional `issue[s]?:?` filler is also
+# permitted between the kw and `#N`. BASH_REMATCH groups: 1=outer kw+
+# filler wrapper, 2=kw outer, 3=kw inner, 4=optional filler, 5=digit
+# capture.
 _DO_REMAINING="$ARGUMENTS"
-while [[ "$_DO_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+)?#([0-9]+) ]]; do
-  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+while [[ "$_DO_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER})?#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
   _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
 done
 # Subsequent weak-separator matches (`,`, `;`, ` and `, ` or `): require
 # close-keyword before `#N` so prose like "Closes #N, see also #M" doesn't
-# over-capture #M. BASH_REMATCH groups: 1=outer separator, 2=and/or word,
-# 3=kw outer, 4=kw inner, 5=digit capture.
+# over-capture #M. Optional `issue[s]?:?` filler is allowed between kw and
+# `#N`. BASH_REMATCH groups: 1=outer separator, 2=and/or word, 3=kw outer,
+# 4=kw inner, 5=optional filler, 6=digit capture.
 _DO_REMAINING="$ARGUMENTS"
-while [[ "$_DO_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_DO_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; do
-  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+while [[ "$_DO_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_DO_ISSUE_KW}[[:space:]]+${_DO_ISSUE_FILLER}#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[6]}")
   _DO_REMAINING="${_DO_REMAINING#*"${BASH_REMATCH[0]}"}"
 done
 # Dedupe preserving first-seen order (acquire is order-dependent for the
@@ -285,7 +298,7 @@ for _n in "${ISSUE_NUMS[@]:-}"; do
   if [ -z "${_DO_SEEN[$_n]:-}" ]; then _DO_UNIQUE+=("$_n"); _DO_SEEN[$_n]=1; fi
 done
 ISSUE_NUMS=("${_DO_UNIQUE[@]}")
-unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _n
+unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _DO_ISSUE_FILLER _n
 # Back-compat scalar (= first claimed issue, or empty when none). Mode
 # files still reference $ISSUE_NUM in skip-empty guards; new fan-out code
 # iterates "${ISSUE_NUMS[@]}".

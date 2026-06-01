@@ -592,21 +592,23 @@ do_parse_issue_nums() {
   local input="$1"
   ISSUE_NUMS=()
   local _KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
-  if [[ "$input" =~ ^[[:space:]]*\"?${_KW}[[:space:]]+#([0-9]+) ]]; then
-    ISSUE_NUMS+=("${BASH_REMATCH[3]}")
+  # #920: optional `issue[s]?:?` filler tolerated between kw and `#N`.
+  local _FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
+  if [[ "$input" =~ ^[[:space:]]*\"?${_KW}[[:space:]]+${_FILLER}#([0-9]+) ]]; then
+    ISSUE_NUMS+=("${BASH_REMATCH[4]}")
   elif [[ "$input" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
     ISSUE_NUMS+=("${BASH_REMATCH[1]}")
   fi
-  # Strong separators: bare #N OK.
+  # Strong separators: bare #N OK; kw+filler optional.
   local _REM="$input"
-  while [[ "$_REM" =~ [[:space:]]*[/+\&][[:space:]]*(${_KW}[[:space:]]+)?#([0-9]+) ]]; do
-    ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+  while [[ "$_REM" =~ [[:space:]]*[/+\&][[:space:]]*(${_KW}[[:space:]]+${_FILLER})?#([0-9]+) ]]; do
+    ISSUE_NUMS+=("${BASH_REMATCH[5]}")
     _REM="${_REM#*"${BASH_REMATCH[0]}"}"
   done
-  # Weak separators: close-keyword required.
+  # Weak separators: close-keyword required; filler optional.
   _REM="$input"
-  while [[ "$_REM" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_KW}[[:space:]]+#([0-9]+) ]]; do
-    ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+  while [[ "$_REM" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_KW}[[:space:]]+${_FILLER}#([0-9]+) ]]; do
+    ISSUE_NUMS+=("${BASH_REMATCH[6]}")
     _REM="${_REM#*"${BASH_REMATCH[0]}"}"
   done
   declare -A _SEEN=()
@@ -676,6 +678,32 @@ test_issue_num_do "address #853 work" "" "non-recognized keyword (address) → n
 test_issue_num_do "work on #853" "" "non-recognized verb (work) → no capture"
 
 # ────────────────────────────────────────────────────────────────────
+# Case 18i — #920: optional `issue[s]?:?` filler token tolerated between
+# the close-keyword and `#N`. Natural phrasings ("Fix issue #N", "fixes
+# issues #N", "Resolves issue: #N") now capture. The filler MUST be
+# adjacent to `#N` — a word between `issue` and `#N` breaks adjacency
+# and no capture occurs (preserves #863's strong-vs-weak separator
+# discipline).
+# ────────────────────────────────────────────────────────────────────
+# Positive — kw + filler + #N captures
+test_issue_num_do "Fix issue #906: bring /work-on-plans into spec" "906" "Fix issue #N (live #920 regression case)"
+test_issue_num_do "fixes issue #906" "906" "fixes issue #N"
+test_issue_num_do "Fixed issue #906" "906" "Fixed issue #N"
+test_issue_num_do "Closes issue #906" "906" "Closes issue #N"
+test_issue_num_do "closed issue #906" "906" "closed issue #N"
+test_issue_num_do "Resolves issue #906" "906" "Resolves issue #N"
+test_issue_num_do "fixes issues #906" "906" "fixes issues #N (plural)"
+test_issue_num_do "Closes issues #906" "906" "Closes issues #N (plural)"
+test_issue_num_do "Resolves issue: #906" "906" "Resolves issue: #N (colon variant)"
+test_issue_num_do "Fix issue #906 the bug" "906" "Fix issue #N followed by prose"
+test_issue_num_do "\"Fix issue #906 quoted-head\"" "906" "leading quote + Fix issue #N (quoted-head carve-out)"
+# Negative — filler word but NOT adjacent to #N → no capture
+test_issue_num_do "Fix issue ticketing for #906" "" "word between 'issue' and #N → no capture (adjacency required)"
+test_issue_num_do "Fix issue with #906" "" "'with' between 'issue' and #N → no capture"
+# Existing forms still work — keyword without filler is unchanged
+test_issue_num_do "Closes #906" "906" "Closes #N (no filler) still works"
+
+# ────────────────────────────────────────────────────────────────────
 # Case 18m — Multi-issue parser (#863). Description references multiple
 # `#N` issues separated by /, ,, ;, +, &, or " and "/" or " — all
 # captured into ISSUE_NUMS array; back-compat ISSUE_NUM stays as first.
@@ -694,6 +722,14 @@ test_issue_nums_do "Closes #832, see also #999"          "832"         "see-also
 test_issue_nums_do "Closes #832, #833"                   "832"         "bare #N after comma (weak sep) → only #832"
 test_issue_nums_do "fix #832 and #833"                   "832"         "bare #N after 'and' (weak sep) → only #832"
 test_issue_nums_do "fix #832 and fix #832"               "832"         "dedupe: duplicate #N captured once"
+# #920: filler token across separator passes
+test_issue_nums_do "Closes issue #832 / Closes issue #833"        "832,833"     "slash-separated double Closes-issue (kw+filler, strong sep)"
+test_issue_nums_do "Fixes issues #832 + #833"                     "832,833"     "Fixes issues (plural) + bare #N (strong sep, kw absent on RHS)"
+test_issue_nums_do "Fix issue #832 and Closes issue #833"         "832,833"     "and-separated kw+filler on both sides (weak sep)"
+test_issue_nums_do "Fix issue #832, Closes #833"                  "832,833"     "comma-separated: kw+filler then bare-kw (weak sep)"
+# #920 negative — filler-without-adjacency in weak-sep position
+test_issue_nums_do "Fix issue #832, see also issue #999"          "832"         "see-also after comma → only #832 even though 'issue' near #999 (no kw before #999)"
+test_issue_nums_do "fixes issues #906 and #907"                   "906"         "plural 'issues' in leading does NOT loosen weak-sep guard (no kw before #907)"
 
 # ────────────────────────────────────────────────────────────────────
 # Case 18w — Unclaimed-reference WARNING (#907). When the description
