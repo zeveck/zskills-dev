@@ -78,7 +78,7 @@ dependency, not build-if-absent**:
 | 1 — Verify `tests/lib/extract-fence.sh` exists (hard dep on #830) | ✅ Done | `verify-gate` | lib present + sourceable on main (HIGH #943 landed) |
 | 2 — verify-changes: extract-and-run the real arg-parser | ✅ Done | `9fa061c` | killed private parse_args; runs real fence; 8 cases; gawk-clean; 2371/0 |
 | 3 — fix-issues: extract-and-run the 3 sprint fences (assert a row lands) | ✅ Done | `0b00b9d` | real sprint fences; anti-no-op row-lands; gawk-clean; 28/0 |
-| 4 — zskills-dashboard: extract-and-run (concatenated Step-0 + helpers) | ⬚ | | |
+| 4 — zskills-dashboard: extract-and-run (concatenated Step-0 + helpers) | ✅ Done | `1c0b241` | real fences concatenated; boot-race hardened; 5/5 stable; 35/0 |
 | 5a — briefing: importlib unit tests for 4 pure functions | ⬚ | | |
 | 5b — research-and-go + add-block/add-example convert + cleanup-merged consolidation + 2 confirm-only | ⬚ | | |
 
