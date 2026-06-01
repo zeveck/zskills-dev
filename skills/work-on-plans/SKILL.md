@@ -10,7 +10,7 @@ description: >-
   manages the queue (add/rank/remove/default) and recurring schedules.
   Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.06.01+af83cd"
+  version: "2026.06.01+7a11d3"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
@@ -163,8 +163,9 @@ ZSKILLS_PATHS_ROOT="$MAIN_ROOT" \
     source "$MAIN_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
   fi
 export ZSKILLS_PLANS_DIR ZSKILLS_ISSUES_DIR ZSKILLS_AUDIT_DIR
-SANITIZE="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
-[ ! -x "$SANITIZE" ] && SANITIZE="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+SANITIZE="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"
+[ -x "$SANITIZE" ] || SANITIZE="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+[ -x "$SANITIZE" ] || SANITIZE="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
 mkdir -p "$MAIN_ROOT/.zskills/tracking" "$MAIN_ROOT/.zskills" "$ZSKILLS_AUDIT_DIR"
 MONITOR_STATE="$MAIN_ROOT/.zskills/monitor-state.json"
 MONITOR_LOCK="$MAIN_ROOT/.zskills/monitor-state.json.lock"
