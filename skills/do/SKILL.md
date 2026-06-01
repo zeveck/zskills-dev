@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.05.31+065fb4"
+  version: "2026.06.01+fee8a8"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -290,6 +290,28 @@ unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _n
 # files still reference $ISSUE_NUM in skip-empty guards; new fan-out code
 # iterates "${ISSUE_NUMS[@]}".
 ISSUE_NUM="${ISSUE_NUMS[0]:-}"
+# Unclaimed-reference warning (#907). If the description contains a `#N`
+# token that the claim-position rules above did NOT capture into
+# ISSUE_NUMS, the reference is real but UN-claimed. A silent no-claim is
+# the footgun that let `/do Build … for #877` run without claiming #877:
+# a parallel /fix-issues cron then picked up the unclaimed issue and
+# duplicated the work (closed PR #888 vs landed #901). Warn per stray
+# reference (non-fatal — some /do runs legitimately mention an issue
+# without working it; the run proceeds). Claim-positioned refs are already
+# in ISSUE_NUMS and are NOT re-warned.
+_DO_WARN_REMAINING="$ARGUMENTS"
+while [[ "$_DO_WARN_REMAINING" =~ \#([0-9]+) ]]; do
+  _DO_REF="${BASH_REMATCH[1]}"
+  _DO_WARN_REMAINING="${_DO_WARN_REMAINING#*"${BASH_REMATCH[0]}"}"
+  _DO_CLAIMED=0
+  for _n in "${ISSUE_NUMS[@]:-}"; do
+    [ "$_n" = "$_DO_REF" ] && { _DO_CLAIMED=1; break; }
+  done
+  if [ "$_DO_CLAIMED" -eq 0 ]; then
+    echo "WARN: /do: description references #${_DO_REF} but it is not in claim position — NO claim was acquired for it. Prefix the description with the issue number (e.g. \"#${_DO_REF} …\" or \"Fix #${_DO_REF} …\") to claim it and prevent a parallel pipeline from duplicating the work." >&2
+  fi
+done
+unset _DO_WARN_REMAINING _DO_REF _DO_CLAIMED _n
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
 # `/do fix the bug --rounds in production` would otherwise capture "in" as
