@@ -207,6 +207,19 @@ _session_id_from_file() {
 
 resolve_session_id() {
   local sid
+  # Strategy 0 (#908): prefer the harness-provided CLAUDE_CODE_SESSION_ID —
+  # the canonical session identity. It is stable across context compaction
+  # and is re-derived from the persisted session on `--resume`, so it does
+  # not suffer the reboot-staleness of Strategy B's stamped file (which
+  # persists for up to 24h and could make a resumed session read a stale
+  # stamp). Strategies A/B remain as fallbacks for older harnesses or
+  # non-Claude-Code contexts where the env var is absent. The `cc-` prefix
+  # records provenance; write and read both route through this function, so
+  # the namespace stays internally consistent.
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+    printf 'cc-%s' "$CLAUDE_CODE_SESSION_ID"
+    return 0
+  fi
   if sid=$(_session_id_from_proc); then
     printf '%s' "$sid"
     return 0

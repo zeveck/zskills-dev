@@ -193,6 +193,33 @@ else
 fi
 
 echo ""
+echo "=== #908 — prefer CLAUDE_CODE_SESSION_ID for session resolution ==="
+# resolve-session-id prefers the harness-provided env var (cc- prefix).
+SID_ENV=$(cd "$FIXTURE" && CLAUDE_CODE_SESSION_ID="UUID-ABC-123" bash "$HELPER" resolve-session-id)
+if [ "$SID_ENV" = "cc-UUID-ABC-123" ]; then
+  pass "resolve-session-id prefers CLAUDE_CODE_SESSION_ID (#908)"
+else
+  fail "resolve-session-id prefers CLAUDE_CODE_SESSION_ID (#908)" "got '$SID_ENV'"
+fi
+# Falls back to proc/file resolution (non-cc) when the env var is absent.
+SID_FB=$(cd "$FIXTURE" && env -u CLAUDE_CODE_SESSION_ID bash "$HELPER" resolve-session-id)
+if [ -n "$SID_FB" ] && [ "${SID_FB#cc-}" = "$SID_FB" ]; then
+  pass "resolve-session-id falls back (non-cc) when env var unset (#908)"
+else
+  fail "resolve-session-id falls back when env var unset (#908)" "got '$SID_FB'"
+fi
+# End-to-end: the env-var session scopes the guard (same id → in-flight;
+# different id → proceed) even with no --session-id override.
+(cd "$FIXTURE" && CLAUDE_CODE_SESSION_ID="UUID-ENV-1" bash "$HELPER" write fix-issues --pipeline-id "fix-issues.env1" >/dev/null 2>&1)
+(cd "$FIXTURE" && CLAUDE_CODE_SESSION_ID="UUID-ENV-1" bash "$HELPER" check fix-issues >/dev/null 2>&1); rc_same=$?
+(cd "$FIXTURE" && CLAUDE_CODE_SESSION_ID="UUID-ENV-2" bash "$HELPER" check fix-issues >/dev/null 2>&1); rc_diff=$?
+if [ "$rc_same" -eq 0 ] && [ "$rc_diff" -eq 1 ]; then
+  pass "env-var session scoping: same id in-flight, different proceeds (#908)"
+else
+  fail "env-var session scoping (#908)" "same=$rc_same(want 0) diff=$rc_diff(want 1)"
+fi
+
+echo ""
 echo "=== call-site wiring assertions ==="
 
 assert_wired() {
