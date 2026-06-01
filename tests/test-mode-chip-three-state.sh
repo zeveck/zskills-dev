@@ -394,6 +394,175 @@ if [ "$NODE_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Issue #892 — exec-mode chip / change-default-mode lock must FAIL OPEN when
+# fetchWorkState() returns null mid-sprint. Pre-fix, pollWorkOnce only ever
+# reassigned lastWorkState in the success branch, so a null fetch (network
+# error / server restart / abort) while the sprint ended left lastWorkState
+# stale at state==="sprint" — the chip stayed locked and setDefaultMode()
+# stayed blocked until the next *successful* poll. This drives a stub
+# fetchWorkState() returning null mid-sprint and asserts (i) the chip
+# un-locks and (ii) the change-default-mode UI re-enables. Must FAIL against
+# pre-fix behavior.
+# ---------------------------------------------------------------------------
+if command -v node >/dev/null 2>&1; then
+  POLL_OUT=$(APP_JS_PATH="$APP_JS" node - <<'NODE'
+const fs = require("fs");
+const src = fs.readFileSync(process.env.APP_JS_PATH, "utf8");
+
+function extractBlock(text, startRe, endMarker) {
+  const m = text.match(startRe);
+  if (!m) throw new Error("start pattern not found: " + startRe);
+  const startIdx = m.index;
+  const tail = text.slice(startIdx);
+  const endIdx = tail.indexOf(endMarker);
+  if (endIdx < 0) throw new Error("end marker not found: " + endMarker);
+  return tail.slice(0, endIdx + endMarker.length);
+}
+
+// Real functions under test, lifted verbatim from app.js.
+const pollWorkOnceBlk    = extractBlock(src, /\nasync function pollWorkOnce\(\)/, "\n}\n");
+const applyWorkStateBlk  = extractBlock(src, /\nfunction applyWorkState\(ws\)/, "\n}\n");
+const renderDefModeBlk   = extractBlock(src, /\nfunction renderDefaultMode\(mode, ws\)/, "\n}\n");
+const renderFootnoteBlk  = extractBlock(src, /\nfunction renderDefaultModeFootnote\(ws\)/, "\n}\n");
+const setDefaultModeBlk  = extractBlock(src, /\nasync function setDefaultMode\(mode\)/, "\n}\n");
+
+// Minimal DOM: dm-phase / dm-finish buttons + footnote node, addressed via $().
+function makeNode(id) {
+  return {
+    id,
+    attrs: {},
+    classes: new Set(),
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    classList: {
+      _set: null,
+      add(c) { this._set.add(c); },
+      remove(c) { this._set.delete(c); },
+      contains(c) { return this._set.has(c); },
+    },
+  };
+}
+
+const harness = `
+let lastWorkState = null;
+let lastGoodDefaultMode = "phase";
+const lastFingerprint = { workState: null, defaultMode: null };
+let setDefaultModeCommitted = null;   // captures the mode if the setter proceeds
+
+// Leaf stubs — keep the test focused on the lock/poll wiring.
+function nextPollDelay() { return 1000; }
+function scheduleWorkPoll(_d) { /* no reschedule in test */ }
+function renderRunStatus(_ws) { /* exercised elsewhere; irrelevant here */ }
+function showToast(_m, _k) { globalThis.__toastShown = true; }
+function announce(_r, _m) {}
+function clonedQueues() { return { default_mode: lastGoodDefaultMode, plans: {}, issues: {} }; }
+async function commitQueueChange(next, _opts) {
+  // Stand in for the real POST: record that the setter actually proceeded
+  // to mutate the default mode (i.e. the lock did NOT block it).
+  setDefaultModeCommitted = next.default_mode;
+  lastGoodDefaultMode = next.default_mode;
+  return true;
+}
+
+${renderDefModeBlk}
+${renderFootnoteBlk}
+${applyWorkStateBlk}
+${pollWorkOnceBlk}
+${setDefaultModeBlk}
+
+globalThis.__pollWorkOnce = pollWorkOnce;
+globalThis.__setDefaultMode = setDefaultMode;
+globalThis.__getLastWorkState = () => lastWorkState;
+globalThis.__getCommitted = () => setDefaultModeCommitted;
+globalThis.__resetCommitted = () => { setDefaultModeCommitted = null; };
+`;
+
+// $() resolves the three real DOM ids; everything else returns null.
+const nodes = {
+  "dm-phase": makeNode("dm-phase"),
+  "dm-finish": makeNode("dm-finish"),
+  "default-mode-footnote": makeNode("default-mode-footnote"),
+};
+nodes["dm-phase"].classList._set = nodes["dm-phase"].classes;
+nodes["dm-finish"].classList._set = nodes["dm-finish"].classes;
+nodes["default-mode-footnote"].classList._set = nodes["default-mode-footnote"].classes;
+const $stub = (id) => (id in nodes ? nodes[id] : null);
+
+// Controllable fetchWorkState: returns whatever __nextFetch yields.
+globalThis.__nextFetch = null;
+async function fetchWorkState() { return globalThis.__nextFetch; }
+
+(new Function("$", "globalThis", "fetchWorkState", harness))($stub, globalThis, fetchWorkState);
+
+const pollWorkOnce = globalThis.__pollWorkOnce;
+const setDefaultMode = globalThis.__setDefaultMode;
+
+function expectTrue(actual, label) {
+  if (actual) console.log("OK " + label);
+  else { console.log("FAIL " + label + " (got falsy)"); process.exitCode = 1; }
+}
+function expectFalse(actual, label) {
+  if (!actual) console.log("OK " + label);
+  else { console.log("FAIL " + label + " (got truthy)"); process.exitCode = 1; }
+}
+
+(async () => {
+  const phase = nodes["dm-phase"];
+  const finish = nodes["dm-finish"];
+  const footnote = nodes["default-mode-footnote"];
+
+  // 1) A sprint poll lands: chip locks, footnote visible, setter blocked.
+  globalThis.__nextFetch = { state: "sprint", batch_mode: "finish" };
+  await pollWorkOnce();
+  expectTrue(phase.getAttribute("data-locked") === "true", "sprint poll: dm-phase locked");
+  expectTrue(finish.getAttribute("data-locked") === "true", "sprint poll: dm-finish locked");
+  expectTrue(footnote.classList.contains("is-visible"), "sprint poll: footnote visible");
+
+  globalThis.__resetCommitted();
+  await setDefaultMode("phase");
+  expectTrue(globalThis.__getCommitted() === null, "sprint in flight: setDefaultMode blocked (no commit)");
+
+  // 2) Next poll FAILS mid-sprint (fetchWorkState -> null) AND the sprint
+  //    has ended. Pre-fix, lastWorkState stays stale at state==="sprint"
+  //    so the chip stays locked and the setter stays blocked. Post-fix,
+  //    the null fetch clears the lock (fail OPEN).
+  globalThis.__nextFetch = null;
+  await pollWorkOnce();
+
+  expectTrue(globalThis.__getLastWorkState() === null,
+    "null fetch mid-sprint: lastWorkState cleared (no longer stale 'sprint')");
+  expectFalse(phase.getAttribute("data-locked"),
+    "null fetch mid-sprint: dm-phase UNLOCKED (chip fails open)");
+  expectFalse(finish.getAttribute("data-locked"),
+    "null fetch mid-sprint: dm-finish UNLOCKED (chip fails open)");
+  expectFalse(footnote.classList.contains("is-visible"),
+    "null fetch mid-sprint: in-flight footnote hidden");
+
+  // 3) change-default-mode UI re-enabled: setDefaultMode now proceeds.
+  globalThis.__resetCommitted();
+  await setDefaultMode("finish");
+  expectTrue(globalThis.__getCommitted() === "finish",
+    "null fetch mid-sprint: setDefaultMode re-enabled (commit proceeds)");
+})();
+NODE
+)
+  POLL_RC=$?
+  echo "$POLL_OUT"
+  while IFS= read -r line; do
+    case "$line" in
+      OK\ *) pass "${line#OK }" ;;
+      FAIL\ *) fail "${line#FAIL }" ;;
+    esac
+  done <<< "$POLL_OUT"
+  if [ "$POLL_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
+    fail "issue #892 poll harness exited non-zero ($POLL_RC) with no per-test failures parsed"
+  fi
+else
+  skip "node not available — issue #892 poll-loop tests skipped"
+fi
+
+# ---------------------------------------------------------------------------
 # Registration check
 # ---------------------------------------------------------------------------
 if grep -q "test-mode-chip-three-state.sh" "$REPO_ROOT/tests/run-all.sh"; then
