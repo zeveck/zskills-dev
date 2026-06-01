@@ -9,10 +9,11 @@ resume — then persists that to memory and hands you a ready-to-act
 message. Run this near full context, at the end of a long session, before
 `/clear` or `/compact`.
 
-The procedure has two halves: the **retrospective half** reuses the
-default audit verbatim; the **forward half** is unique to this mode.
+The procedure has two phases — a **retrospective phase** (Part 1) that
+reuses the default audit verbatim, and a **forward phase** (Parts 2–4)
+that is unique to this mode.
 
-## Half 1 — Retrospective (reuse the default audit)
+## Part 1 — Retrospective (reuse the default audit)
 
 Run **Steps 1–3 of `SKILL.md`** exactly as written:
 
@@ -27,7 +28,7 @@ This produces the **"work done"** summary. Do NOT run Step 4 (its
 retrospective report format is not what `handoff` emits). Keep the
 per-item status buckets; you reuse them in the ready-message below.
 
-## Half 2 — Forward capture
+## Part 2 — Forward capture
 
 Now switch posture: look forward, not back. Capture what a fresh session
 would need to continue. From the conversation and the verified state, list:
@@ -45,15 +46,15 @@ would need to continue. From the conversation and the verified state, list:
   files, commands, and gotchas the next session needs to pick up cleanly.
   Be concrete: name files and branches, not "the work from before."
 
-## Half 3 — Persist to memory
+## Part 3 — Persist to memory
 
 Write the hand-off so it survives `/clear`, following CLAUDE.md's Memory
 section pattern:
 
 1. **Write a `project_*` memory file** under the session's memory dir
    (`~/.claude/projects/<slug>/memory/project_<topic>_handoff.md` or
-   similar). Put the full forward capture (Half 2) plus a one-line summary
-   of the retrospective status buckets (Half 1) in it. Keep it skimmable —
+   similar). Put the full forward capture (Part 2) plus a one-line summary
+   of the retrospective status buckets (Part 1) in it. Keep it skimmable —
    headers and bullets, not prose walls.
 2. **Add a one-line `MEMORY.md` index pointer** linking the new file
    (`[<topic> hand-off](project_<topic>_handoff.md) — <one-line gist>`).
@@ -63,11 +64,11 @@ section pattern:
 Persisting to memory — not just printing — is what makes the hand-off
 *durable*: it is recoverable after `/clear` wipes the conversation.
 
-## Half 4 — Ready-message
+## Part 4 — Ready-message
 
 Emit a single message with three parts:
 
-1. **Work summary** — the Half-1 status buckets, terse (one bullet per
+1. **Work summary** — the Part-1 status buckets, terse (one bullet per
    intent item, anomalies first — same brevity discipline as the default
    report).
 
@@ -98,7 +99,7 @@ Emit a single message with three parts:
 - **Forward-looking is intentional here** — unlike the default audit, you
   DO capture pending work, open questions, and a kickoff prompt. This
   posture lives entirely in this file; it never bleeds into the default.
-- **Verify, don't recall** still applies to Half 1 — every status bucket
+- **Verify, don't recall** still applies to Part 1 — every status bucket
   traces to a command's output, not conversation memory.
 - **Memory is resume-context, not the issue tracker** — a real
   feature/bug becomes a GitHub issue; the hand-off file points at it.
