@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.01+ac7967"
+  version: "2026.06.01+9a3294"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -158,7 +158,10 @@ fi
   text** is part of the description, NOT the flag — unlike `auto`, `quiz`
   is NOT detected match-anywhere, so a description like "build a quiz app"
   or a trailing "add dark mode quiz" does NOT trigger quiz mode (see the
-  detection note below and the Examples block).
+  detection note below and the Examples block). `brainstorm` and `quiz` are
+  **mutually exclusive** — both are pre-draft interactive interviews
+  occupying the same steering seam, so requesting both (`/draft-plan
+  brainstorm quiz …`) is a fail-loud error, not a silent mode drop (#936).
 - Everything else (from the first unrecognized non-flag token onward) is
   the description
 
@@ -227,12 +230,36 @@ for tok in $ARGUMENTS; do
     output)   expect_value=1 ;;                 # output <path> — value consumed next iter
     rounds)   expect_value=1 ;;                 # rounds N — value consumed next iter
     auto)     ;;                                # recognized flag — consume, keep scanning
+    brainstorm) ;;                              # leading brainstorm flag — consume, keep scanning (#936)
     quiz)     QUIZ_FLAG=1 ;;                     # leading quiz flag
     *.md)     ;;                                # bare leading *.md output token
     */*.md)   ;;                                # path-form leading *.md output token
     *)        break ;;                          # first description token — stop
   esac
 done
+```
+
+**`brainstorm` and `quiz` are mutually exclusive.** Both are pre-draft
+interactive interviews that occupy the SAME steering seam — `brainstorm`
+makes the post-research steering checkpoint skip ("user already steered in
+the dialogue"), and `quiz` REPLACES that same checkpoint with its interview
+loop (branch (a) of the 3-way steering checkpoint below). Running both at
+once is contradictory (two competing interviews, two separate
+`/tmp/draft-plan-{brainstorm,quiz}-$TRACKING_ID.md` notes files both
+claiming to be the pre-draft steering), so the parse FAILS LOUD rather than
+silently picking one. This guard also makes the result **order-independent**:
+`/draft-plan brainstorm quiz X` and `/draft-plan quiz brainstorm X` both
+error identically (#936 — before this guard, the leading-cluster tokenizer
+recognized `quiz` but broke at `brainstorm`, so token order silently decided
+which mode survived). The guard is detection-only — it does not touch the
+`brainstorm` first-token anchor (#914) or the `quiz` leading-flag scan, so
+neither mode's positive/negative behavior regresses:
+
+```bash
+if [ "${BRAINSTORM_FLAG:-0}" = "1" ] && [ "${QUIZ_FLAG:-0}" = "1" ]; then
+  echo "ERROR: brainstorm and quiz modes are mutually exclusive" >&2
+  exit 2
+fi
 ```
 
 Examples:
@@ -246,6 +273,8 @@ Examples:
 - `/draft-plan output p.md quiz rounds 5 Add dark mode` → `QUIZ_FLAG=1` (quiz is in the leading flag cluster, in any order with `output`/`rounds`)
 - `/draft-plan output p.md build a quiz app` → `QUIZ_FLAG` NOT set — "quiz" is a description word, not the leading flag (NEGATIVE example; `quiz` is leading-only, never match-anywhere like `auto`)
 - `/draft-plan add dark mode quiz` → `QUIZ_FLAG` NOT set — a **trailing** `quiz` is description text, not the flag. This is the accepted ergonomic limitation of leading-only parsing: to enable quiz mode, lead with the flag (`/draft-plan quiz add dark mode`).
+- `/draft-plan brainstorm quiz Add dark mode` → **ERROR (exit 2)** — `brainstorm` (first-token flag, #914) and `quiz` (leading-cluster flag) BOTH engage, and the two modes are mutually exclusive (#936). This is the only way to request both modes in one invocation, and it fails loud instead of silently dropping one.
+- `/draft-plan quiz brainstorm Add dark mode` → `QUIZ_FLAG=1`, `BRAINSTORM_FLAG=0` — quiz mode with description "brainstorm Add dark mode". Per #914, `brainstorm` is a flag ONLY as the first token; here it is at position 2, so it is description text, not the brainstorm flag. NOT a both-modes case, so no error. (The `brainstorm) ;;` tokenizer arm above only lets the quiz scan *walk past* a leading `brainstorm`; it never sets `BRAINSTORM_FLAG`, which remains first-token-anchored.)
 
 ## Pre-check — Existing file
 

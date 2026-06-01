@@ -252,6 +252,95 @@ else
   fi
 fi
 
+# ── Surface 6: QUIZ_FLAG leading-cluster scan + brainstorm/quiz mutual
+#    exclusion (extract-and-run) ───────────────────────────────────────
+# #936: the leading-cluster tokenizer must recognize `brainstorm` (walk
+# past it) so a leading `brainstorm` does not break the scan before `quiz`
+# is reached. Combined with the first-token-anchored BRAINSTORM_FLAG fence,
+# this makes `brainstorm quiz X` set BOTH flags, which the mutual-exclusion
+# guard converts into a fail-loud exit 2 instead of a silent mode drop.
+# The guard must NOT regress #914 (brainstorm is still first-token-only for
+# BRAINSTORM_FLAG; the tokenizer arm only lets the quiz scan walk past it).
+
+# Extract the QUIZ_FLAG leading-scan fence (QUIZ_FLAG=0 … done — a for-loop,
+# not an `if … fi`, so stop at the first standalone `done`).
+QUIZ_BLOCK=$(awk '
+  /^QUIZ_FLAG=0$/{capture=1}
+  capture {print}
+  capture && /^done$/{exit}
+' "$SKILL")
+
+# Extract the mutual-exclusion guard fence (the `if [ "${BRAINSTORM_FLAG...`
+# block that emits the error and `exit 2`). Stop at its closing `fi`.
+MUTEX_BLOCK=$(awk '
+  /^if \[ "\$\{BRAINSTORM_FLAG/{capture=1}
+  capture {print}
+  capture && /^fi$/{exit}
+' "$SKILL")
+
+if [ -z "$QUIZ_BLOCK" ]; then
+  fail "quiz-flag: could not extract QUIZ_FLAG fence" "awk extract empty"
+elif [ -z "$MUTEX_BLOCK" ]; then
+  fail "mutex: could not extract brainstorm/quiz mutual-exclusion fence" "awk extract empty"
+else
+  pass "quiz-flag: QUIZ_FLAG leading-scan fence extracted from SKILL.md"
+  pass "mutex: brainstorm/quiz mutual-exclusion fence extracted from SKILL.md"
+
+  # Tokenizer-arm parity: the brainstorm) ;; arm must be present (#936).
+  if grep -qF 'brainstorm) ;;' "$SKILL"; then
+    pass "mutex: leading-cluster tokenizer has 'brainstorm) ;;' arm (#936)"
+  else
+    fail "mutex: 'brainstorm) ;;' tokenizer arm missing" "leading scan would break at brainstorm"
+  fi
+
+  # Run BOTH the BRAINSTORM_FLAG and QUIZ_FLAG fences against $ARGUMENTS,
+  # then run the mutual-exclusion guard in a subshell so its `exit 2` is
+  # captured as a subshell exit code rather than killing the test. Echo the
+  # resolved flags so we can also assert the flag values directly.
+  # Run the real fences in a subshell. The flag values are written to a
+  # dedicated file (NOT stderr) so the guard's own stderr error message does
+  # not contaminate the capture; the guard's `exit 2` becomes the subshell rc.
+  flags_for() { # $1=ARGUMENTS $2=flagfile  -> exit code = guard rc
+    (
+      ARGUMENTS="$1"
+      BRAINSTORM_FLAG=
+      QUIZ_FLAG=
+      eval "$BRAINSTORM_BLOCK"
+      eval "$QUIZ_BLOCK"
+      printf 'B=%s Q=%s\n' "$BRAINSTORM_FLAG" "$QUIZ_FLAG" > "$2"
+      eval "$MUTEX_BLOCK"
+    ) 2>/dev/null
+  }
+  check_combo() { # $1=ARGUMENTS $2=expected_B $3=expected_Q $4=expected_rc $5=label
+    local rc fl ff="/tmp/.draftplan-mutex-flags-$$"
+    flags_for "$1" "$ff"; rc=$?
+    fl=$(cat "$ff" 2>/dev/null); rm -f "$ff"
+    if [ "$fl" = "B=$2 Q=$3" ] && [ "$rc" = "$4" ]; then
+      pass "mutex: $5 -> $fl, exit $rc"
+    else
+      fail "mutex: $5" "expected B=$2 Q=$3 exit $4, got '$fl' exit $rc"
+    fi
+  }
+
+  # The core #936 assertion: requesting BOTH modes (brainstorm first, quiz in
+  # the leading cluster) sets both flags and fails loud (exit 2) — NOT a
+  # silent drop of whichever mode wasn't first.
+  check_combo "brainstorm quiz Add dark mode" 1 1 2 "'brainstorm quiz X' -> both flags, mutual-exclusion error"
+  # Reverse order: per #914, a non-first 'brainstorm' is DESCRIPTION text, not
+  # the flag. So this is unambiguously single-mode quiz (no silent drop, no
+  # error). Order is no longer SILENTLY ambiguous: 'brainstorm quiz' errors
+  # loud; 'quiz brainstorm' is the defined #914 single-mode case.
+  check_combo "quiz brainstorm Add dark mode" 0 1 0 "'quiz brainstorm X' -> quiz-only (brainstorm is description per #914), no error"
+  # Single-mode cases must NOT error.
+  check_combo "brainstorm Add dark mode" 1 0 0 "'brainstorm X' -> brainstorm-only, no error"
+  check_combo "quiz Add dark mode" 0 1 0 "'quiz X' -> quiz-only, no error"
+  # #914 non-regression: 'auto brainstorm' must NOT set BRAINSTORM_FLAG, and
+  # the brainstorm) ;; tokenizer arm must not turn it into a both-modes case.
+  check_combo "auto brainstorm Add dark mode" 0 0 0 "'auto brainstorm X' -> neither flag (#914 preserved), no error"
+  # #914 non-regression: brainstorm embedded in description stays inert.
+  check_combo "Build a brainstorm app for kids" 0 0 0 "'Build a brainstorm app' -> neither flag (#914 preserved), no error"
+fi
+
 echo ""
 echo "Results: $PASS_COUNT passed, $FAIL_COUNT failed"
 [ "$FAIL_COUNT" -eq 0 ] && exit 0 || exit 1
