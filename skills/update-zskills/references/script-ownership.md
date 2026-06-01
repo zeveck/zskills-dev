@@ -31,6 +31,7 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `convergence-check.sh`       | 1      | `draft-tests`                |
 | `coverage-floor-precheck.sh` | 1      | `draft-tests`                |
 | `create-worktree.sh`         | 1      | `create-worktree`            |
+| `defer-backoff-decide.sh`    | 1      | `run-plan`                   |
 | `detect-language.sh`         | 1      | `draft-tests`                |
 | `draft-orchestrator.sh`      | 1      | `draft-tests`                |
 | `flip-frontmatter-status.sh` | 1      | `draft-tests`                |
@@ -58,10 +59,11 @@ logic and the drift test in WI 4.8 case 6a — preserve the column layout.
 | `zskills-stub-lib.sh`        | 1      | `update-zskills`             |
 | `path-config-upgrade.md`     | N      | agent-runnable upgrade prompt for path-config long-tail (start-dev.sh, stop-dev.sh, status:complete non-canary plans, mid-version-skip recovery via `migrate-paths.sh --rewrite-only`); reference doc, NOT a script — `tier1-shipped-hashes.txt` does not apply |
 
-Total: 31 Tier 1 (`append-backfill-phase`, `append-tests-section`,
+Total: 32 Tier 1 (`append-backfill-phase`, `append-tests-section`,
 `apply-preset`, `briefing.py`, `clear-tracking`,
 `compute-cron-fire`, `convergence-check`, `coverage-floor-precheck`,
-`create-worktree`, `detect-language`, `draft-orchestrator`,
+`create-worktree`, `defer-backoff-decide`, `detect-language`,
+`draft-orchestrator`,
 `flip-frontmatter-status`, `gap-detect`, `insert-prerequisites`,
 `insert-test-spec-revisions`, `land-phase`, `migrate-paths`, `parse-plan`,
 `plan-drift-correct`, `port`, `post-run-invariants`,
