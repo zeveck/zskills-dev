@@ -238,6 +238,7 @@ run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh
 run_suite "test-sessionstart-materialise.sh" "tests/test-sessionstart-materialise.sh"
 run_suite "test-sessionstart-materialise-overwrite-guard.sh" "tests/test-sessionstart-materialise-overwrite-guard.sh"
 run_suite "test-sessionstart-dual-install-detect.sh" "tests/test-sessionstart-dual-install-detect.sh"
+run_suite "test-synthetic-consumer-install.sh" "tests/test-synthetic-consumer-install.sh"
 run_suite "test-render-managed-rules-correctness.sh" "tests/test-render-managed-rules-correctness.sh"
 run_suite "test-managed-md-renderer-equivalence.sh" "tests/test-managed-md-renderer-equivalence.sh"
 run_suite "test-inject-bash-timeout-parity.sh" "tests/test-inject-bash-timeout-parity.sh"
