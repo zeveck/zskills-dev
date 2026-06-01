@@ -1,7 +1,8 @@
 ---
 title: Brainstorm mode for /draft-plan
 created: 2026-05-31
-status: active
+status: "complete"
+completed: "2026-06-01T00:19:25Z"
 ---
 
 # Plan: Brainstorm mode for /draft-plan
@@ -66,9 +67,9 @@ design surface that warrants adversarial review up front.
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Author references/brainstorm.md | ⬚ | | |
-| 2 — Wire brainstorm into SKILL.md | ⬚ | | |
-| 3 — Tests, version bumps, mirrors, conformance | ⬚ | | |
+| 1 — Author references/brainstorm.md | ✅ Done | `aa6d16b` | 338-line brainstorm.md; version 2026.05.31+874a6f + mirror; issue-606 allowlist; 6575/6575 |
+| 2 — Wire brainstorm into SKILL.md | ✅ Done | `0a296c1` | BRAINSTORM_FLAG + conditional-load/resume + feed-forward + checkpoint-skip + argument-hint; version 1d4478 + mirror; 6575/6575 |
+| 3 — Tests, version bumps, mirrors, conformance | ✅ Done | `b0b514b` | +16 args-smoke cases; 6591/6591; conformance 726/726 |
 
 ---
 
