@@ -1,6 +1,6 @@
 # /cleanup-merged
 
-> Post-PR-merge local normalization: fetch-and-prune origin, switch off merged feature branches, pull main, and delete local branches whose upstream is gone or whose PR has merged. Preview by default.
+> Post-PR-merge local normalization: fetch-and-prune origin, switch off merged feature branches, pull main, and delete local branches whose upstream is gone, whose PR has merged, or whose tip is fully contained in main (0 commits ahead). Preview by default.
 
 ## Usage
 

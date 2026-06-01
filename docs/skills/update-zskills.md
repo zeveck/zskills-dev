@@ -5,7 +5,8 @@
 ## Usage
 
 ```
-/update-zskills [install | --rerender | --migrate-paths] [cherry-pick | locked-main-pr | direct]
+/update-zskills [install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}]
+                [cherry-pick | locked-main-pr | direct]
                 [--with-addons | --with-block-diagram-addons]
 ```
 
@@ -16,6 +17,7 @@
 | `install` | No | Force a full first-time setup (skip detection step) |
 | `--rerender` | No | Regenerate `.claude/rules/zskills/managed.md` from current config |
 | `--migrate-paths` | No | One-shot relocation of legacy artifacts into path-config layout |
+| `--switch-install-path={to-plugin\|to-update-zskills}` | No | Switch between the two install lanes — `to-plugin` migrates a legacy `/update-zskills`-installed project to the plugin lane, `to-update-zskills` moves the other way |
 | `cherry-pick` | No | Landing mode: cherry-pick changes |
 | `locked-main-pr` | No | Landing mode: PR when main is protected |
 | `direct` | No | Landing mode: direct to main |
@@ -39,6 +41,10 @@ Regenerate `.claude/rules/zskills/managed.md` against the current config. Simple
 ### `--migrate-paths`
 
 One-shot deterministic relocation of legacy artifacts into the path-config layout (`docs/plans/` for plan files, `.zskills/audit/` for reports, `docs/issues/` for issue trackers). Idempotent -- refuses to re-run if the migration manifest already exists.
+
+### `--switch-install-path={to-plugin|to-update-zskills}`
+
+Switch between the two install lanes. `--switch-install-path=to-plugin` migrates a project from the legacy `/update-zskills`-installed layout to the plugin lane (`.claude-plugin/`); `--switch-install-path=to-update-zskills` moves a plugin-installed project back to the `/update-zskills` lane. Used when a project wants to change how it consumes zskills without losing its config or trackers.
 
 ## Examples
 
