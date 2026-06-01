@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.31+993373"
+  version: "2026.06.01+88285e"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -160,6 +160,13 @@ DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
 #   - WEAK separators (`,`, `;`, ` and `, ` or `) — require an explicit
 #     close-keyword between the separator and `#N`. This blocks
 #     "Closes #832, see also #999" from accidentally claiming #999.
+# After the close-keyword (in any of leading/strong/weak passes), an
+# optional `issue[s]?:?` filler token is tolerated between the keyword
+# and `#N` (#920): "Fix issue #906", "fixes issues #906", "Resolves
+# issue: #906" all parse. The token MUST be adjacent to `#N` — a word
+# between `issue` and `#N` (e.g. "Fix issue ticketing for #906") breaks
+# the adjacency and no capture occurs, preserving #863's
+# strong-vs-weak separator discipline.
 # When no issue reference is in scope (the common case) ISSUE_NUMS stays
 # empty and nothing is claimed. ISSUE_NUM is kept as a back-compat
 # scalar (= ISSUE_NUMS[0] when non-empty, else empty). claim-issue.sh
@@ -167,27 +174,33 @@ DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
 # a bare integer.
 ISSUE_NUMS=()
 _QF_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
+_QF_ISSUE_FILLER='([iI][sS][sS][uU][eE][sS]?:?[[:space:]]+)?'
 # Leading anchored match (no leading-quote tolerance: /quickfix runs after
 # the quoted-head carve-out has already normalized the description).
-if [[ "$DESCRIPTION" =~ ^[[:space:]]*${_QF_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; then
-  ISSUE_NUMS+=("${BASH_REMATCH[3]}")
+# BASH_REMATCH groups (kw branch): 1=kw outer, 2=kw inner, 3=optional
+# filler, 4=digit capture.
+if [[ "$DESCRIPTION" =~ ^[[:space:]]*${_QF_ISSUE_KW}[[:space:]]+${_QF_ISSUE_FILLER}#([0-9]+) ]]; then
+  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
 elif [[ "$DESCRIPTION" =~ ^[[:space:]]*#([0-9]+) ]]; then
   ISSUE_NUMS+=("${BASH_REMATCH[1]}")
 fi
-# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK.
-# BASH_REMATCH groups: 1=outer kw+space wrapper, 2=kw outer, 3=kw inner,
-# 4=digit capture.
+# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK; if
+# the keyword is present, the optional `issue[s]?:?` filler is also
+# permitted between the kw and `#N`. BASH_REMATCH groups: 1=outer kw+
+# filler wrapper, 2=kw outer, 3=kw inner, 4=optional filler, 5=digit
+# capture.
 _QF_REMAINING="$DESCRIPTION"
-while [[ "$_QF_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_QF_ISSUE_KW}[[:space:]]+)?#([0-9]+) ]]; do
-  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+while [[ "$_QF_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_QF_ISSUE_KW}[[:space:]]+${_QF_ISSUE_FILLER})?#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
   _QF_REMAINING="${_QF_REMAINING#*"${BASH_REMATCH[0]}"}"
 done
 # Subsequent weak-separator matches (`,`, `;`, ` and `, ` or `): require
-# close-keyword before `#N`. BASH_REMATCH groups: 1=outer separator,
-# 2=and/or word, 3=kw outer, 4=kw inner, 5=digit capture.
+# close-keyword before `#N`. Optional `issue[s]?:?` filler is allowed
+# between kw and `#N`. BASH_REMATCH groups: 1=outer separator, 2=and/or
+# word, 3=kw outer, 4=kw inner, 5=optional filler, 6=digit capture.
 _QF_REMAINING="$DESCRIPTION"
-while [[ "$_QF_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_QF_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; do
-  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+while [[ "$_QF_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_QF_ISSUE_KW}[[:space:]]+${_QF_ISSUE_FILLER}#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[6]}")
   _QF_REMAINING="${_QF_REMAINING#*"${BASH_REMATCH[0]}"}"
 done
 # Dedupe preserving first-seen order.
@@ -198,7 +211,7 @@ for _n in "${ISSUE_NUMS[@]:-}"; do
   if [ -z "${_QF_SEEN[$_n]:-}" ]; then _QF_UNIQUE+=("$_n"); _QF_SEEN[$_n]=1; fi
 done
 ISSUE_NUMS=("${_QF_UNIQUE[@]}")
-unset _QF_SEEN _QF_UNIQUE _QF_REMAINING _QF_ISSUE_KW _n
+unset _QF_SEEN _QF_UNIQUE _QF_REMAINING _QF_ISSUE_KW _QF_ISSUE_FILLER _n
 # Back-compat scalar (= first claimed issue, or empty when none).
 ISSUE_NUM="${ISSUE_NUMS[0]:-}"
 ```
