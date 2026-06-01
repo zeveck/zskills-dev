@@ -148,11 +148,17 @@ else
       fail "brainstorm-flag: $3" "expected $2 got $BRAINSTORM_FLAG"
     fi
   }
-  # Positives — whitespace-anchored, case-insensitive, any position.
-  check_brainstorm "brainstorm Add dark mode" 1 "leading 'brainstorm'"
-  check_brainstorm "Add dark mode brainstorm" 1 "trailing 'brainstorm'"
-  check_brainstorm "output X.md brainstorm rounds 3 Add dark mode" 1 "mid 'brainstorm' word-bounded"
-  check_brainstorm "BRAINSTORM Add dark mode" 1 "uppercase 'BRAINSTORM'"
+  # Positives — first token only, case-insensitive (#914).
+  check_brainstorm "brainstorm Add dark mode" 1 "first-position 'brainstorm' engages"
+  check_brainstorm "BRAINSTORM Add dark mode" 1 "first-position uppercase 'BRAINSTORM' engages"
+  check_brainstorm "Brainstorm a new editor" 1 "first-position mixed-case 'Brainstorm' engages"
+  # Negatives — 'brainstorm' anywhere but first token must NOT engage (#914).
+  check_brainstorm "Add dark mode brainstorm" 0 "trailing 'brainstorm' does NOT engage (#914)"
+  check_brainstorm "output X.md brainstorm rounds 3 Add dark mode" 0 "mid 'brainstorm' does NOT engage (#914)"
+  check_brainstorm "Build a brainstorm app for kids" 0 "'brainstorm' inside description does NOT engage (#914)"
+  check_brainstorm "Add a brainstorm feature to the editor" 0 "'brainstorm' inside description does NOT engage (#914)"
+  check_brainstorm "Document our brainstorm process" 0 "'brainstorm' inside description does NOT engage (#914)"
+  check_brainstorm "auto brainstorm Add dark mode" 0 "'brainstorm' after 'auto' does NOT engage (not first token, #914)"
   # Negatives — substring/inflection forms must NOT trip the flag (flag stays 0).
   check_brainstorm "brainstorming the design" 0 "'brainstorming' (no boundary) rejected"
   check_brainstorm "brainstormed yesterday" 0 "'brainstormed' (no boundary) rejected"
