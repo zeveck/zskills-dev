@@ -578,27 +578,37 @@ print(f"ok={ok} ua={bool(has_ua)} sua={bool(has_sua)} eq={eq}")
     fail "validate_queue_body_rejects_issues_discarded_in_post: issues.discarded → $CODE_DI (expected 400)"
   fi
 
-  # W2.7 — validate_queue_body_rejects_completed_in_post (plans.completed)
+  # W2.7 / #905 — plans.completed for a non-complete plan must be rejected
+  # by the per-slug status gate (server-side half of the drag-to-Completed
+  # safety hatch). The fixture `sample-plan` has status: active per the
+  # MR5 setup, so a POST claiming it is completed must 400 with a clear
+  # message naming the status mismatch.
   RESP=$(curl -s -X POST \
     -H "Origin: http://127.0.0.1:$PORT_D" \
     -H 'Content-Type: application/json' \
-    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[],"completed":[{"slug":"x"}]},"issues":{"triage":[],"ready":[]}}' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[],"completed":[{"slug":"sample-plan"}]},"issues":{"triage":[],"ready":[]}}' \
     -w '\n%{http_code}' \
     "http://127.0.0.1:$PORT_D/api/queue")
   CODE=$(printf '%s\n' "$RESP" | tail -n1)
   BODY=$(printf '%s\n' "$RESP" | sed '$d')
   if [ "$CODE" = "400" ]; then
-    pass "validate_queue_body_rejects_completed_in_post: plans.completed → 400"
+    pass "#905 plans.completed non-complete slug → 400"
   else
-    fail "validate_queue_body_rejects_completed_in_post: plans.completed → $CODE"
+    fail "#905 plans.completed non-complete slug → $CODE"
   fi
-  if printf '%s' "$BODY" | grep -q "completed column is read-only"; then
-    pass "validate_queue_body_rejects_completed_in_post: plans error contains read-only message"
+  if printf '%s' "$BODY" | grep -q "plans.completed entry rejected"; then
+    pass "#905 plans.completed rejection message names the gate"
   else
-    fail "validate_queue_body_rejects_completed_in_post: plans error missing read-only message: $BODY"
+    fail "#905 plans.completed rejection message missing the gate: $BODY"
+  fi
+  if printf '%s' "$BODY" | grep -q "status='active'"; then
+    pass "#905 plans.completed rejection surfaces the actual status"
+  else
+    fail "#905 plans.completed rejection missing actual status in message: $BODY"
   fi
 
-  # W2.7 — analogous case for issues.completed
+  # #905 — issues.completed remains hard-rejected. No drag-to-Completed
+  # safety hatch for issues (closed-ness is owned by GitHub).
   RESP=$(curl -s -X POST \
     -H "Origin: http://127.0.0.1:$PORT_D" \
     -H 'Content-Type: application/json' \
@@ -618,12 +628,74 @@ print(f"ok={ok} ua={bool(has_ua)} sua={bool(has_sua)} eq={eq}")
     fail "validate_queue_body_rejects_completed_in_post: issues error missing read-only message: $BODY"
   fi
 
-  # Clarifying assertion: the read-only message must NOT collide with the
-  # generic "unexpected ... column" path (W2.2 specificity contract).
+  # Clarifying assertion: the issues.completed read-only message must NOT
+  # collide with the generic "unexpected ... column" path (W2.2 specificity
+  # contract). plans.completed no longer hits this path (#905).
   if printf '%s' "$BODY" | grep -q "unexpected issues column"; then
     fail "validate_queue_body_rejects_completed_in_post: completed error collides with generic unknown-column path"
   else
     pass "validate_queue_body_rejects_completed_in_post: completed error is distinct from generic unknown-column"
+  fi
+
+  # #905 — Positive case: plans.completed with a slug whose plan file
+  # declares status: complete must return 200 and persist into the state
+  # file. Set up a fresh fixture plan whose frontmatter status is
+  # complete; POST a body with that slug under plans.completed and
+  # assert (a) 200 OK, (b) the state file's plans.completed contains it.
+  cat >"$MR5/plans/COMPLETE_FIXTURE.md" <<'EOF'
+---
+title: Complete Fixture
+status: complete
+completed: 2026-05-31T10:00:00Z
+---
+## Overview
+Drag-to-Completed positive-case fixture.
+
+## Phase 1 — Trivial
+EOF
+  RESP=$(curl -s -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[],"completed":[{"slug":"complete-fixture"}]},"issues":{"triage":[],"ready":[]}}' \
+    -w '\n%{http_code}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  CODE=$(printf '%s\n' "$RESP" | tail -n1)
+  if [ "$CODE" = "200" ]; then
+    pass "#905 plans.completed status:complete slug → 200"
+  else
+    BODY=$(printf '%s\n' "$RESP" | sed '$d')
+    fail "#905 plans.completed status:complete slug → $CODE (body: $BODY)"
+  fi
+  if grep -q '"complete-fixture"' "$MR5/.zskills/monitor-state.json"; then
+    pass "#905 plans.completed status:complete slug persisted to state file"
+  else
+    fail "#905 plans.completed status:complete slug missing from state file"
+  fi
+
+  # #905 — status: landed is equivalently accepted (both treated as
+  # complete by collect.py:1801 and _read_plan_status downstream).
+  cat >"$MR5/plans/LANDED_FIXTURE.md" <<'EOF'
+---
+title: Landed Fixture
+status: landed
+completed: 2026-05-31T11:00:00Z
+---
+## Overview
+Drag-to-Completed status:landed positive-case fixture.
+
+## Phase 1 — Trivial
+EOF
+  RESP=$(curl -s -X POST \
+    -H "Origin: http://127.0.0.1:$PORT_D" \
+    -H 'Content-Type: application/json' \
+    -d '{"plans":{"drafted":[],"reviewed":[],"ready":[],"completed":[{"slug":"landed-fixture"}]},"issues":{"triage":[],"ready":[]}}' \
+    -w '\n%{http_code}' \
+    "http://127.0.0.1:$PORT_D/api/queue")
+  CODE=$(printf '%s\n' "$RESP" | tail -n1)
+  if [ "$CODE" = "200" ]; then
+    pass "#905 plans.completed status:landed slug → 200"
+  else
+    fail "#905 plans.completed status:landed slug → $CODE"
   fi
 
   # W2.8 — queue_post_roundtrip_backlog: POST a backlog entry, GET

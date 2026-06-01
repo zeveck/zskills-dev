@@ -39,13 +39,21 @@ const POST_RECONCILE_SUPPRESS_MS = 1500;
 // Full tuples used for rendering (active row + below-panel band),
 // deepCloneQueues allocation, fingerprintPlans/Issues membership, and
 // findPlan/findIssue / movePlan / moveIssue navigation. Includes the
-// Phase-3-added `backlog` (writable) and `completed` (read-only) columns.
+// Phase-3-added `backlog` (writable) and `completed` (mostly read-only)
+// columns.
 //
-// Server contract: `completed` is read-only on /api/queue — collect.py
-// derives it per-snapshot from plan frontmatter `completed:` (plans) and
-// GH issue state (issues). postQueue() MUST strip `completed` before
-// sending so the server's validator does not 400 on an otherwise-valid
-// drag commit. See server.py:459-467 / 494-502 for the explicit reject.
+// Server contract: `completed` is derived per-snapshot from plan
+// frontmatter `completed:` (plans) and GH issue state (issues), and is
+// the source of truth for routing. postQueue() strips `completed` by
+// default to keep the writable→derived flow clean.
+//
+// Issue #905 — drag-to-Completed safety hatch (client-side half of
+// #853): a plan whose frontmatter status is `complete` or `landed` MAY
+// be dragged onto Completed; postQueue passes plans.completed through
+// when opts.includeCompletedPlans is set (movePlan threads this when
+// targetCol === "completed"). Server-side _validate_completed_plan_slugs
+// re-checks each slug's status before persisting. Issues retain the
+// unconditional strip (no analogous hatch — closed-ness is owned by GH).
 const PLAN_COLUMNS = ["drafted", "reviewed", "ready", "backlog", "discarded", "completed"];
 const ISSUE_COLUMNS = ["triage", "ready", "backlog", "completed"];
 // Sub-tuples used by renderPlans/renderIssues to draw the active
@@ -739,6 +747,12 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
   for (const c of PLAN_COLUMNS) out.plans[c] = [];
   for (const c of ISSUE_COLUMNS) out.issues[c] = [];
 
+  // Build slug→plan lookup BEFORE the state-pin loop so the completion
+  // override (#853 / #905) can consult `p.queue.column` per slug. Used
+  // later by the completed-window filter as well.
+  const slugToPlanClone = {};
+  for (const p of plans) slugToPlanClone[p.slug] = p;
+
   // Pre-populate from queues (preserves order).
   const seenSlugs = new Set();
   for (const c of PLAN_COLUMNS) {
@@ -746,6 +760,25 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
     for (const e of arr) {
       const entry = (typeof e === "string") ? { slug: e } : (e || {});
       if (!entry.slug || seenSlugs.has(entry.slug)) continue;
+      // Completion override (#905 — client-side half of #853): the ONE
+      // exception to W1.3/D2 rule (i), mirroring the server-side
+      // completion override at collect.py:1785-1805. The state file
+      // owns ordering for ACTIVE plans; for plans the server has
+      // already routed to `completed` via the source-of-truth
+      // override (status: complete|landed + parseable `completed:`),
+      // the stale pin in `queues.plans.<col>` would otherwise lock the
+      // card into its old column before the second loop's inferred
+      // routing could relocate it. Skip the pin here and let the
+      // second loop deposit the slug into out.plans.completed via
+      // `p.queue.column`. Non-complete plans pinned to ANY column
+      // still honor their pin — rule (i) only relaxes for
+      // queue.column === "completed".
+      const planForOverride = slugToPlanClone[entry.slug];
+      if (planForOverride
+          && planForOverride.queue
+          && planForOverride.queue.column === "completed") {
+        continue;
+      }
       seenSlugs.add(entry.slug);
       const obj = { slug: entry.slug };
       if (c === "ready" && entry.mode != null) obj.mode = entry.mode;
@@ -763,9 +796,6 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
   // on the user's completed-window preference from localStorage.
   const planWindow = getCompletedWindow("plan");
   const planCutoff = (planWindow === "all") ? null : Date.now() - planWindow * 86400000;
-  // Build slug→plan lookup for timestamp access during filtering.
-  const slugToPlanClone = {};
-  for (const p of plans) slugToPlanClone[p.slug] = p;
 
   for (const p of plans) {
     if (seenSlugs.has(p.slug)) continue;
@@ -2494,6 +2524,19 @@ async function postQueue(queues, opts) {
   // state, never from monitor-state.json's queue arrays. Sending an
   // EMPTY `completed: []` would still trip the validator's explicit
   // reject, so we remove the key entirely (Phase 3 / D5).
+  //
+  // Issue #905 — Drag-to-Completed safety hatch (client-side half of
+  // #853): the caller may set `opts.includeCompletedPlans = true` when
+  // the originating action was a drag onto Completed for a plan whose
+  // frontmatter status is `complete` / `landed` (gated on the UI side
+  // by isCompletedDropAllowed in onDragOver/onDragEnter/onDrop). When
+  // set, plans.completed passes through unstripped; the server-side
+  // validator at server._validate_queue_body re-checks each slug's
+  // resolved status from the plan file and rejects mismatched entries
+  // (defense in depth — never trust the client's status assertion).
+  // Issues remain unconditionally stripped — there is no drag-to-
+  // Completed hatch for issues.
+  const allowPlansCompleted = !!(opts && opts.includeCompletedPlans);
   const stripCompleted = (obj) => {
     const out = {};
     for (const k of Object.keys(obj || {})) {
@@ -2502,9 +2545,12 @@ async function postQueue(queues, opts) {
     }
     return out;
   };
+  const plansForPayload = allowPlansCompleted
+    ? Object.assign({}, queues.plans)  // pass `completed` through
+    : stripCompleted(queues.plans);
   const payload = {
     default_mode: queues.default_mode || "phase",
-    plans: stripCompleted(queues.plans),
+    plans: plansForPayload,
     issues: stripCompleted(queues.issues),
   };
   let res;
@@ -2653,7 +2699,16 @@ async function movePlan(slug, dCol, dIdxAdjust) {
     targetIdx = (dCol.idx == null) ? next.plans[targetCol].length : dCol.idx;
   }
   next.plans[targetCol].splice(targetIdx, 0, entry);
-  const ok = await commitQueueChange(next, { action: "Move plan" });
+  // Issue #905 — Drag-to-Completed safety hatch. When the user has
+  // landed a card in the Completed column (gated upstream on
+  // status: complete|landed by isCompletedDropAllowed), thread the
+  // `includeCompletedPlans` opt through commitQueueChange→postQueue so
+  // the normal `stripCompleted` defense doesn't drop the entry on the
+  // floor. Server-side _validate_queue_body independently re-verifies
+  // each slug's frontmatter status.
+  const opts = { action: "Move plan" };
+  if (targetCol === "completed") opts.includeCompletedPlans = true;
+  const ok = await commitQueueChange(next, opts);
   if (ok) {
     announce("plans-live", "Moved plan " + slug + " to " + PLAN_COLUMN_LABELS[targetCol] + " position " + (targetIdx + 1));
   }
@@ -2865,7 +2920,28 @@ function onDragStart(ev) {
   // Capture the source column for postQueue (used elsewhere to strip
   // `completed` defensively, and for column-aware drag affordances).
   const sourceColumn = card.getAttribute("data-column");
-  dragState = { kind, slug, num, sourceColumn };
+  // Issue #905 — Drag-to-Completed safety hatch (client-side half of
+  // #853). Capture the plan's effective status (lowercased) so the
+  // drop-zone guards (onDragEnter / onDragOver / onDrop) can selectively
+  // allow a drop onto the Completed column when — and only when — the
+  // plan's frontmatter declares `status: complete` or `status: landed`.
+  // For any other status (active, conflict, null, unknown) the Completed
+  // drop zone refuses to highlight and the drop is hard-rejected, exactly
+  // as today. `status` lookup is best-effort via the in-memory snapshot;
+  // null when the slug is not in lastSnapshot.plans (defensive — caller
+  // is the live DOM, so it should be present).
+  let planStatus = null;
+  if (kind === "plan" && slug) {
+    const snap = (typeof lastSnapshot !== "undefined") ? lastSnapshot : null;
+    const planList = (snap && snap.plans) || [];
+    for (const p of planList) {
+      if (p && p.slug === slug) {
+        planStatus = (p.status || "").toLowerCase() || null;
+        break;
+      }
+    }
+  }
+  dragState = { kind, slug, num, sourceColumn, planStatus };
   if (ev.dataTransfer) {
     try {
       ev.dataTransfer.setData("text/plain", JSON.stringify(dragState));
@@ -2884,12 +2960,33 @@ function onDragEnd(ev) {
   removeInsertIndicator();
 }
 
+// Issue #905 — Drag-to-Completed safety hatch (client-side half of #853).
+// Returns true when the in-flight drag is allowed to land on the Completed
+// drop zone: kind must be "plan" AND the dragged plan's frontmatter status
+// must be "complete" or "landed". Non-complete plans (active, conflict,
+// unknown, null) are blocked here so the drop zone never highlights and
+// onDrop's existing hard-reject path stays the terminal guard. The
+// server-side validator in server._validate_queue_body re-checks the
+// plan's frontmatter status independently — this client guard is UI
+// affordance, not the source of truth.
+function isCompletedDropAllowed(dragState) {
+  if (!dragState) return false;
+  if (dragState.kind !== "plan") return false;
+  const s = dragState.planStatus || "";
+  return s === "complete" || s === "landed";
+}
+
 function onDragOver(ev) {
   const dz = ev.target.closest && ev.target.closest("ul.dropzone");
   if (!dz) return;
   if (!dragState) return;
   // Kind must match dropzone kind.
   if (dz.getAttribute("data-kind") !== dragState.kind) return;
+  // Issue #905 — Completed drop zone is conditionally writable. Block
+  // dragover for non-complete plans so the browser shows the no-drop
+  // cursor and the existing onDrop reject path holds.
+  if (dz.getAttribute("data-column") === "completed"
+      && !isCompletedDropAllowed(dragState)) return;
   ev.preventDefault();
   if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
   // Visible insertion-point feedback: blue line at the computed index.
@@ -2902,6 +2999,11 @@ function onDragEnter(ev) {
   if (!dz) return;
   if (!dragState) return;
   if (dz.getAttribute("data-kind") !== dragState.kind) return;
+  // Issue #905 — Completed drop zone refuses to highlight for non-complete
+  // plans. Symmetric with the onDragOver guard above so the user never
+  // sees the drop-target affordance on a drop they can't make.
+  if (dz.getAttribute("data-column") === "completed"
+      && !isCompletedDropAllowed(dragState)) return;
   dz.classList.add("drop-target");
 }
 
@@ -2963,14 +3065,24 @@ async function onDrop(ev) {
   let targetCol = dz.getAttribute("data-column");
   let targetIdx = computeInsertIndex(dz, ev.clientY);
   removeInsertIndicator();
-  // Phase 4 / W4.2 — Reject drops onto Completed. Completed is read-only
-  // (terminal state derived from GH closedAt / plan frontmatter — D1).
-  // Per D5 the column still renders as a <ul> for visual consistency,
-  // but the handler hard-rejects with a no-op + warn (no POST).
-  if (targetCol === "completed") {
+  // Phase 4 / W4.2 — Completed is normally read-only (terminal state
+  // derived from GH closedAt / plan frontmatter — D1). Per D5 the column
+  // still renders as a <ul> for visual consistency.
+  //
+  // Issue #905 — drag-to-Completed safety hatch (client-side half of
+  // #853): a plan whose frontmatter status is `complete` or `landed` MAY
+  // be dropped onto Completed (e.g. to manually unstick a card the
+  // server-side override missed). For ANY other status the hard-reject
+  // path below stays the terminal guard — symmetric with the highlight
+  // guards in onDragOver / onDragEnter so a non-complete plan can't reach
+  // here through normal UI. (Defense in depth: server.py's
+  // _validate_queue_body independently re-checks the plan frontmatter
+  // and rejects mismatched POSTs.)
+  if (targetCol === "completed" && !isCompletedDropAllowed(dragState)) {
     console.warn(
-      "Drop rejected: completed column is read-only (kind=" + dragState.kind +
-      ", id=" + (dragState.slug || dragState.num) + ")"
+      "Drop rejected: completed column is read-only for non-complete plans (kind=" +
+      dragState.kind + ", id=" + (dragState.slug || dragState.num) +
+      ", status=" + (dragState.planStatus || "<none>") + ")"
     );
     dragState = null;
     return;

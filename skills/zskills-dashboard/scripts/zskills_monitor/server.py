@@ -72,12 +72,18 @@ TRIGGER_CMD_RE = re.compile(r"^/work-on-plans(\s|$)")
 
 # State-file column shapes.
 # NOTE: `completed` is intentionally NOT in either tuple — Completed is
-# read-only on the API surface, derived per-snapshot from plan frontmatter
-# `completed:` field (plans) / GitHub issue state (issues). The POST
-# validator explicitly rejects `plans.completed` / `issues.completed`
-# bodies with a specific error containing "completed column is read-only"
-# (see _validate_queue_body); the generic unknown-column path is a
-# secondary backstop.
+# DERIVED per-snapshot from plan frontmatter `completed:` field (plans) /
+# GitHub issue state (issues), not from monitor-state.json's queue arrays.
+#
+# Issue #905 — drag-to-Completed safety hatch (server-side half of #853):
+# plans.completed is conditionally writable. The POST validator accepts
+# the plans.completed shape (same {slug, mode?} as writable columns);
+# `_handle_queue_post` then runs `_validate_completed_plan_slugs` as a
+# per-slug status gate (only status: complete|landed plans pass). The
+# generic unknown-column path remains as a secondary backstop for any
+# other unexpected column name. Issues.completed remains hard-rejected
+# in _validate_queue_body — there is no analogous hatch for issues
+# (closed-ness is owned by GitHub).
 PLAN_COLUMNS = ("drafted", "reviewed", "ready", "backlog", "discarded")
 ISSUE_COLUMNS = ("triage", "ready", "backlog")
 DEFAULT_MODE_VALUES = ("phase", "finish")
@@ -456,20 +462,23 @@ def _validate_queue_body(body: Any) -> Optional[str]:
     plans = body.get("plans")
     if not isinstance(plans, dict):
         return "plans must be an object"
-    # Explicit reject for `completed` — read-only API surface (derived
-    # per-snapshot from plan frontmatter `completed:`). Placed BEFORE the
-    # generic unknown-column loop so the error message is specific and
-    # diagnosable without server logs (DA6: hard-cut migration boundary).
-    if "completed" in plans:
-        return (
-            "completed column is read-only on the API; cannot accept POSTs "
-            "(derived per-snapshot from plan frontmatter completed: field)"
-        )
+    # Issue #905 — Drag-to-Completed safety hatch (server-side half of
+    # #853): `plans.completed` is normally read-only (derived per-snapshot
+    # from plan frontmatter `completed:` — see collect.py:1785-1805). The
+    # POST validator no longer hard-rejects `plans.completed` shape-wise
+    # — it accepts the same {slug, mode?} entry shape as the writable
+    # columns. The per-slug status gate ("is the plan ACTUALLY complete
+    # or landed per its frontmatter?") is enforced in
+    # `_handle_queue_post.validate_completed_plan_slugs`, which reads
+    # the plan file directly (defense in depth: never trust the client's
+    # assertion that a plan is complete). Issues.completed remains hard-
+    # rejected — there is no drag-to-Completed hatch for issues.
     for col in plans.keys():
-        if col not in PLAN_COLUMNS:
+        if col not in PLAN_COLUMNS and col != "completed":
             return f"unexpected plans column: {col}"
     seen_slugs = set()
-    for col in PLAN_COLUMNS:
+    plan_cols_with_completed = list(PLAN_COLUMNS) + ["completed"]
+    for col in plan_cols_with_completed:
         entries = plans.get(col, [])
         if not isinstance(entries, list):
             return f"plans.{col} must be a list"
@@ -514,6 +523,89 @@ def _validate_queue_body(body: Any) -> Optional[str]:
             if n in seen_issues:
                 return f"duplicate issue across issue columns: {n}"
             seen_issues.add(n)
+    return None
+
+
+def _read_plan_status(plans_dir: pathlib.Path, slug: str) -> Optional[str]:
+    """Read the `status:` frontmatter field for `<slug>` from any *.md
+    under `plans_dir`. Returns the lowercased status string, or None if
+    the plan file cannot be located / read.
+
+    Mirrors collect.py's frontmatter discipline: scan the first 40 lines
+    for `---` fences and `^key:\\s*value` pairs (no PyYAML). The slug→
+    filename mapping uses collect.py's same convention — slugify(stem) ==
+    slug — so we iterate *.md and slugify each stem until we hit a match.
+    """
+    if not plans_dir.is_dir():
+        return None
+    # Lightweight slugify mirror of collect.py's: lowercase, replace
+    # non-alphanumeric runs with '-', strip leading/trailing dashes.
+    def _slugify(stem: str) -> str:
+        s = re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+        return s
+    target = None
+    for md in plans_dir.glob("*.md"):
+        if _slugify(md.stem) == slug:
+            target = md
+            break
+    if target is None:
+        return None
+    try:
+        content = target.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    lines = content.split("\n")[:40]
+    in_fm = False
+    fm_ended = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "---" and not in_fm and not fm_ended:
+            in_fm = True
+            continue
+        if stripped == "---" and in_fm:
+            fm_ended = True
+            in_fm = False
+            continue
+        if in_fm:
+            m = re.match(r"^(\w+):\s*(.+)", stripped)
+            if m and m.group(1).lower() == "status":
+                return m.group(2).strip().strip('"').strip("'").lower()
+    return None
+
+
+def _validate_completed_plan_slugs(
+    plans_dir: pathlib.Path,
+    completed_entries: List[Any],
+) -> Optional[str]:
+    """Issue #905 — Defense-in-depth for the drag-to-Completed safety
+    hatch (server-side half of #853). For each slug in `plans.completed`,
+    read the plan-file frontmatter and reject the whole request when ANY
+    slug has a status that is not `complete` / `landed`. Returns None on
+    accept, an error string on reject (caller surfaces as 400). Missing
+    plan files (slug→file lookup fails) are treated as a reject — the
+    client claims a plan is complete but we cannot confirm it; refuse
+    rather than persist an unverifiable claim. This mirrors the W1.3/D2
+    narrowness of the client-side render override: the Completed column
+    is source-of-truth from the plan file, not the dashboard.
+    """
+    if not isinstance(completed_entries, list) or not completed_entries:
+        return None
+    for entry in completed_entries:
+        if not isinstance(entry, dict):
+            # Shape errors are caught upstream by _validate_queue_body.
+            continue
+        slug = entry.get("slug", "")
+        if not isinstance(slug, str) or not slug:
+            continue
+        status = _read_plan_status(plans_dir, slug)
+        if status not in ("complete", "landed"):
+            shown = status if status is not None else "<plan-file-not-found>"
+            return (
+                f"plans.completed entry rejected: slug {slug!r} has "
+                f"status={shown!r} (only status: complete|landed plans "
+                "may be dragged to Completed; the column is otherwise "
+                "derived from plan frontmatter — see #853 / #905)"
+            )
     return None
 
 
@@ -959,13 +1051,38 @@ class MonitorHandler(BaseHTTPRequestHandler):
             return
         ctx = self._ctx()
         main_root: pathlib.Path = ctx["main_root"]
+        # Issue #905 — server-side per-slug status gate for plans.completed.
+        # The shape validator above accepts plans.completed entries; this
+        # gate reads each slug's plan-file frontmatter and rejects the
+        # whole request when any entry is non-complete/landed. Defense in
+        # depth on top of the client-side isCompletedDropAllowed guard —
+        # a malicious or buggy client cannot persist a false completion
+        # claim. Skipped when plans.completed is absent / empty.
+        completed_payload = payload.get("plans", {}).get("completed")
+        if completed_payload:
+            plans_dir = _resolve_paths(main_root)["plans_dir"]
+            completed_err = _validate_completed_plan_slugs(
+                plans_dir, completed_payload,
+            )
+            if completed_err is not None:
+                self._send_json(400, {"error": completed_err})
+                return
         with _state_lock(main_root):
             existing = _read_monitor_state(main_root)
             existing_dm = existing.get("default_mode", "phase")
+            # Persist plans.completed alongside the writable columns when
+            # the per-slug status gate accepted it. Empty completed array
+            # is preserved as `[]` so a subsequent POST omitting completed
+            # cleanly resets it. Issue #905 / #853.
+            plans_out: Dict[str, Any] = {
+                c: payload["plans"].get(c, []) for c in PLAN_COLUMNS
+            }
+            if "completed" in payload["plans"]:
+                plans_out["completed"] = payload["plans"]["completed"]
             new_doc = {
                 "version": "1.2",
                 "default_mode": payload.get("default_mode", existing_dm),
-                "plans": {c: payload["plans"].get(c, []) for c in PLAN_COLUMNS},
+                "plans": plans_out,
                 "issues": {c: payload["issues"].get(c, []) for c in ISSUE_COLUMNS},
                 "updated_at": _now_iso(),
             }
