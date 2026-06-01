@@ -7,7 +7,7 @@ description: >-
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.06.01+82b352"
+  version: "2026.06.01+ac7967"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -142,10 +142,14 @@ fi
 - `rounds` followed by a number — max review cycles
 - `auto` (whitespace-anchored, case-insensitive) — sets `AUTO_FLAG=1`
   for Phase 6's `/land-pr` dispatch
-- `brainstorm` (whitespace-anchored, case-insensitive) — sets
+- `brainstorm` (first token only, case-insensitive) — sets
   `BRAINSTORM_FLAG=1`, which loads the interactive brainstorm dialogue
-  (`references/brainstorm.md`) before Phase 1. Anchored so it does NOT
-  match `brainstorming`/`brainstormed`/`brainstorms`.
+  (`references/brainstorm.md`) before Phase 1. Anchored to the FIRST token
+  of `$ARGUMENTS` (mirroring the `.md` output-file detection's
+  first-position anchor) so it does NOT engage when `brainstorm` appears
+  anywhere else in the args buffer, e.g. `/draft-plan Build a brainstorm
+  app for kids` or `/draft-plan Add a brainstorm feature` (#914). Also
+  anchored so it does NOT match `brainstorming`/`brainstormed`/`brainstorms`.
 - `quiz` (recognized **ONLY as a leading flag token** — in the flag
   cluster before the description begins, like `output`/`rounds`/`auto`,
   case-insensitive) — sets `QUIZ_FLAG=1`, which conducts an interactive
@@ -171,9 +175,19 @@ the `AUTO_FLAG=0 … fi` block is not perturbed):
 
 ```bash
 BRAINSTORM_FLAG=0
-if [[ "$ARGUMENTS" =~ (^|[[:space:]])[bB][rR][aA][iI][nN][sS][tT][oO][rR][mM]($|[[:space:]]) ]]; then
+# Anchor 'brainstorm' to the FIRST token of $ARGUMENTS (#914). Mirrors the
+# `.md` output-file first-position anchor in the args parser above. This
+# makes `/draft-plan Build a brainstorm app for kids` (and any other args
+# buffer where `brainstorm` is embedded in the description) correctly fall
+# through to Phase 1 instead of opening the 8-step brainstorm dialogue.
+# Read-array off $ARGUMENTS (word-split on whitespace, same as the args
+# parser above), lowercase the first token, compare to literal "brainstorm".
+read -r _bs_first _bs_rest <<<"$ARGUMENTS"
+_bs_lower=$(printf '%s' "$_bs_first" | tr '[:upper:]' '[:lower:]')
+if [ "$_bs_lower" = "brainstorm" ]; then
   BRAINSTORM_FLAG=1
 fi
+unset _bs_first _bs_rest _bs_lower
 ```
 
 **`QUIZ_FLAG` is detected by LEADING-FLAG recognition — NOT `auto`'s
