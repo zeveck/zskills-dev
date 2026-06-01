@@ -1,7 +1,8 @@
 ---
 title: /draft-plan quiz mode — interactive requirements-elicitation before drafting
 created: 2026-05-31
-status: active
+status: "complete"
+completed: "2026-06-01T06:47:24Z"
 ---
 
 # Plan: /draft-plan quiz mode
