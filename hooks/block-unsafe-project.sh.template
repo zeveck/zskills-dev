@@ -459,15 +459,77 @@ extract_cd_target() {
     fi
     break
   done
-  if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
-    local target="${BASH_REMATCH[1]}"
-    # Remove surrounding quotes if present
-    target="${target%\"}"
-    target="${target#\"}"
-    if [ -d "$target" ]; then
-      echo "$target"
-    fi
-  fi
+  # Segment-walk: split $cmd on statement separators (`;`, `&&`, `||`, `|`,
+  # newline) and look for the first `cd <target>` whose preamble in the
+  # segment is purely env-mutating / inert shell statements. Issue #924:
+  # the previous `^cd[[:space:]]+` regex against the whole command missed
+  # `set -e; cd /tmp/wt && …`, `export X=Y; cd …`, `. resolver.sh && cd …`,
+  # `VAR=val cd …`, all common in orchestrator-side worktree bookkeeping.
+  # Segment separators we split on are exactly those that terminate the
+  # previous statement in bash; they cannot appear inside `cd`'s target
+  # token (it's stop-classed on the same chars).
+  local SEG_IFS=$'\n'
+  # Replace each `&&`, `||`, `|`, `;` with a newline so we can read -a.
+  local segs="${cmd//&&/$'\n'}"
+  segs="${segs//||/$'\n'}"
+  segs="${segs//|/$'\n'}"
+  segs="${segs//;/$'\n'}"
+  local IFS_OLD="$IFS"
+  IFS="$SEG_IFS"
+  local -a SEGMENTS
+  # shellcheck disable=SC2206
+  SEGMENTS=( $segs )
+  IFS="$IFS_OLD"
+  local seg
+  for seg in "${SEGMENTS[@]}"; do
+    # Trim leading/trailing whitespace.
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -z "$seg" ] && continue
+    local -a STOKENS
+    # shellcheck disable=SC2206
+    read -ra STOKENS <<< "$seg"
+    local si=0 sn=${#STOKENS[@]}
+    # Skip env-var assignment prefixes (KEY=val ...).
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    # Skip `env` wrapper (and its KEY=val args).
+    [[ $si -lt $sn && "${STOKENS[$si]}" == "env" ]] && ((si++))
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    local stok="${STOKENS[$si]:-}"
+    case "$stok" in
+      */*) stok="${stok##*/}" ;;
+    esac
+    case "$stok" in
+      set|export|unset|source|.|:|true|false|alias|unalias|shopt|declare|local|readonly|typeset)
+        # Inert / env-mutating preamble statement — skip this segment.
+        continue
+        ;;
+      cd)
+        local stgt="${STOKENS[$((si+1))]:-}"
+        [ -z "$stgt" ] && continue
+        # Strip surrounding quotes if present.
+        stgt="${stgt%\"}"; stgt="${stgt#\"}"
+        stgt="${stgt%\'}"; stgt="${stgt#\'}"
+        if [ -d "$stgt" ]; then
+          echo "$stgt"
+          return 0
+        fi
+        # cd target didn't resolve — stop walking; downstream segments
+        # operate on a different cwd we can't reason about.
+        return 0
+        ;;
+      *)
+        # First "real" statement is not a cd — no preamble-cd in this
+        # command. Stop walking; per design, only a leading preamble of
+        # env-mutating statements is allowed before the cd.
+        return 0
+        ;;
+    esac
+  done
 }
 
 # Inlined from hooks/_lib/resolve-effective-worktree-root.sh (source-of-truth, #401).

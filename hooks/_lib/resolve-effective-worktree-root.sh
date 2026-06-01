@@ -32,10 +32,18 @@ set -u
 # Extract the cd target from $INPUT (the PreToolUse JSON wire envelope).
 # Returns:
 #   - The cd target (echoed to stdout) iff:
-#       (a) $INPUT's "command" field begins with `cd <target>`
-#           (env-var prefixes are NOT skipped — KEY=VAL cd /tmp/wt is not
-#           recognized as a worktree-cd; this is intentional, agents do
-#           not prefix `cd` with env-vars in practice)
+#       (a) $INPUT's "command" field contains a `cd <target>` statement
+#           after a possibly-empty preamble of inert / env-mutating shell
+#           statements. Segment-walks over `;`, `&&`, `||`, `|`, and
+#           newline separators and skips segments whose first token is
+#           one of: env-var assignment (`KEY=val`), `set …`, `export …`,
+#           `unset …`, `source …`/`. …`, the `:` builtin, the `env`
+#           wrapper preamble. The first `cd <target>` segment encountered
+#           wins. Issue #924: a preamble like
+#           `set -e; export X=Y; . resolver.sh && cd $WT && git commit`
+#           previously failed to extract because the regex required a
+#           leading `cd`; agents commonly emit such preambles for
+#           orchestrator-side worktree bookkeeping.
 #       (b) <target> resolves to an existing directory on disk
 #   - Empty stdout otherwise.
 #
@@ -134,15 +142,77 @@ extract_cd_target() {
     fi
     break
   done
-  if [[ "$cmd" =~ ^cd[[:space:]]+([^[:space:]\&\;\|]+) ]]; then
-    local target="${BASH_REMATCH[1]}"
-    # Remove surrounding quotes if present
-    target="${target%\"}"
-    target="${target#\"}"
-    if [ -d "$target" ]; then
-      echo "$target"
-    fi
-  fi
+  # Segment-walk: split $cmd on statement separators (`;`, `&&`, `||`, `|`,
+  # newline) and look for the first `cd <target>` whose preamble in the
+  # segment is purely env-mutating / inert shell statements. Issue #924:
+  # the previous `^cd[[:space:]]+` regex against the whole command missed
+  # `set -e; cd /tmp/wt && …`, `export X=Y; cd …`, `. resolver.sh && cd …`,
+  # `VAR=val cd …`, all common in orchestrator-side worktree bookkeeping.
+  # Segment separators we split on are exactly those that terminate the
+  # previous statement in bash; they cannot appear inside `cd`'s target
+  # token (it's stop-classed on the same chars).
+  local SEG_IFS=$'\n'
+  # Replace each `&&`, `||`, `|`, `;` with a newline so we can read -a.
+  local segs="${cmd//&&/$'\n'}"
+  segs="${segs//||/$'\n'}"
+  segs="${segs//|/$'\n'}"
+  segs="${segs//;/$'\n'}"
+  local IFS_OLD="$IFS"
+  IFS="$SEG_IFS"
+  local -a SEGMENTS
+  # shellcheck disable=SC2206
+  SEGMENTS=( $segs )
+  IFS="$IFS_OLD"
+  local seg
+  for seg in "${SEGMENTS[@]}"; do
+    # Trim leading/trailing whitespace.
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    [ -z "$seg" ] && continue
+    local -a STOKENS
+    # shellcheck disable=SC2206
+    read -ra STOKENS <<< "$seg"
+    local si=0 sn=${#STOKENS[@]}
+    # Skip env-var assignment prefixes (KEY=val ...).
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    # Skip `env` wrapper (and its KEY=val args).
+    [[ $si -lt $sn && "${STOKENS[$si]}" == "env" ]] && ((si++))
+    while [[ $si -lt $sn && "${STOKENS[$si]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do
+      ((si++))
+    done
+    local stok="${STOKENS[$si]:-}"
+    case "$stok" in
+      */*) stok="${stok##*/}" ;;
+    esac
+    case "$stok" in
+      set|export|unset|source|.|:|true|false|alias|unalias|shopt|declare|local|readonly|typeset)
+        # Inert / env-mutating preamble statement — skip this segment.
+        continue
+        ;;
+      cd)
+        local stgt="${STOKENS[$((si+1))]:-}"
+        [ -z "$stgt" ] && continue
+        # Strip surrounding quotes if present.
+        stgt="${stgt%\"}"; stgt="${stgt#\"}"
+        stgt="${stgt%\'}"; stgt="${stgt#\'}"
+        if [ -d "$stgt" ]; then
+          echo "$stgt"
+          return 0
+        fi
+        # cd target didn't resolve — stop walking; downstream segments
+        # operate on a different cwd we can't reason about.
+        return 0
+        ;;
+      *)
+        # First "real" statement is not a cd — no preamble-cd in this
+        # command. Stop walking; per design, only a leading preamble of
+        # env-mutating statements is allowed before the cd.
+        return 0
+        ;;
+    esac
+  done
 }
 
 # Resolve the effective worktree root via 3-way fallback. The caller passes
