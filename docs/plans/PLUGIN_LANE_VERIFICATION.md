@@ -1,7 +1,7 @@
 ---
 title: Plugin-Lane Verification — pre-launch gap-closing
 created: 2026-05-29
-status: active
+status: complete
 ---
 
 # Plan: Plugin-Lane Verification — pre-launch gap-closing
@@ -37,9 +37,9 @@ one-shot with a runnable harness.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Static smokes: hooks.json↔script gate, shim-sourcing, D3 fallback | ⬚ | | |
-| 2 — Live dual-lane behavioral validation (claude --plugin-dir .) | ⬚ | | |
-| 3 — Synthetic-consumer legacy-installer migration (D27 dual-install) | ⬚ | | |
+| 1 — Static smokes: hooks.json↔script gate, shim-sourcing, D3 fallback | ✅ Done | `2bdfe77` | hooks.json gate + shim-sourcing + D3 fallback; fail-closed; 7/0 |
+| 2 — Live dual-lane behavioral validation (claude --plugin-dir .) | ✅ Done | `e7341a1` | validate exit-0 + graceful-degrade (CI); attended hookfire/dual-lane flag-guarded (not faked); isolated; 4/0/3skip |
+| 3 — Synthetic-consumer legacy-installer migration (D27 dual-install) | ✅ Done | `3635838` | end-to-end legacy install into throwaway consumer; WARN regression guard; sandbox-only; 13/0 |
 
 ## Conventions all phases follow
 
