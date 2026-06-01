@@ -1015,6 +1015,19 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     "aria-label": "Plan " + (plan ? (plan.title || slug) : slug),
   };
   if (!isCompleted) cardAttrs.draggable = "true";
+  // Issue #884 — plan-row mutation lock. A claim being held means a
+  // /run-plan pipeline owns this plan; drag-reorder, drag-recolumn, and
+  // the X (discard) all create split-brain with that pipeline. The
+  // predicate is the SAME one #858/#874 wire into the chip lock:
+  // `plan && plan.claim`. When set we (1) drop draggable + add a
+  // claim-lock tooltip naming the in-flight pipeline short id, and
+  // (2) render the X disabled + dimmed with the same tooltip (below).
+  const isClaimLocked = !!(plan && plan.claim);
+  const claimLockPidShort =
+    isClaimLocked ? ((plan.claim.pipeline_short) || "?") : null;
+  const claimLockTip = isClaimLocked
+    ? "Locked while plan is being worked (pipeline " + claimLockPidShort + ")."
+    : null;
   const card = el("li", { cls: "card", attrs: cardAttrs });
   const head = el("div", { cls: "card-row" });
   if (isCompleted) {
@@ -1110,6 +1123,14 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     card.appendChild(row);
     card.setAttribute("aria-disabled", "true");
     card.removeAttribute("draggable");
+    // Issue #884 — gate (a): the card is already non-draggable (no
+    // draggable attr → onDragStart's `li.card[draggable='true']` match
+    // fails, so no drag starts and no recolumn drop is possible). Add the
+    // claim-lock affordance: a `claim-locked` class for CSS pointer-event
+    // suppression on the drag surface + a tooltip naming the in-flight
+    // pipeline short id (same string used on the disabled X below).
+    card.className = (card.className ? card.className + " " : "") + "claim-locked";
+    if (claimLockTip) card.setAttribute("title", claimLockTip);
   }
 
   // Per-row mode chip on Ready cards (issue #814 + follow-up).
@@ -1205,16 +1226,40 @@ function buildPlanCard(plan, slug, col, defaultMode) {
         controls.appendChild(makeMoveBtn("plan-right", slug, "→", "Move to next column"));
       }
       if (col !== "discarded") {
-        controls.appendChild(el("button", {
-          cls: "remove-btn",
-          attrs: {
-            type: "button",
-            "data-action": "plan-discard",
-            "data-slug": slug,
-            "aria-label": "Discard plan (move to Discarded)",
-          },
-          html: SVG_ICONS.x,
-        }));
+        // Issue #884 — gate (c): when a claim is held the X (discard) is
+        // rendered disabled + dimmed (.remove-btn:disabled) with a tooltip
+        // naming the in-flight pipeline. The runtime handleAction guard
+        // (aria-disabled match) already no-ops the click; the disabled attr
+        // + dim make the lock honest at the affordance level too. The
+        // data-action is dropped when locked so the delegated dispatcher
+        // never even routes the click. Back-compat: claim absent →
+        // identical to before (enabled, no title, "data-action":
+        // "plan-discard" present in the unclaimed object-literal below).
+        if (isClaimLocked) {
+          controls.appendChild(el("button", {
+            cls: "remove-btn claim-locked",
+            attrs: {
+              type: "button",
+              "data-slug": slug,
+              "aria-label": "Discard plan (disabled — plan is in-flight)",
+              disabled: "disabled",
+              "aria-disabled": "true",
+              title: claimLockTip,
+            },
+            html: SVG_ICONS.x,
+          }));
+        } else {
+          controls.appendChild(el("button", {
+            cls: "remove-btn",
+            attrs: {
+              type: "button",
+              "data-action": "plan-discard",
+              "data-slug": slug,
+              "aria-label": "Discard plan (move to Discarded)",
+            },
+            html: SVG_ICONS.x,
+          }));
+        }
       }
     }
     controls.appendChild(makeCopyBtn((plan && plan.title) || slug));
@@ -2805,6 +2850,15 @@ let dragState = null;
 function onDragStart(ev) {
   const card = ev.target.closest && ev.target.closest("li.card[draggable='true']");
   if (!card) return;
+  // Issue #884 — gate (b): never start a drag on a claimed card. The
+  // render path already drops draggable when a claim is held (so the
+  // selector above normally excludes it), but aria-disabled is the
+  // source-of-truth for claim-respect (cf. moveAllInColumn's in-loop
+  // re-check). Guarding here closes the poll-race window where a claim
+  // lands between render and the next snapshot: no dragState is set, so
+  // the column drop-target never highlights and no recolumn/reorder POST
+  // can fire for a locked card.
+  if (card.getAttribute("aria-disabled") === "true") return;
   const kind = card.getAttribute("data-kind");
   const slug = card.getAttribute("data-slug");
   const num = card.getAttribute("data-number");

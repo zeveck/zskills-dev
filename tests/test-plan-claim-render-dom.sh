@@ -258,6 +258,71 @@ function collectText(node) {
 }
 
 // ------------------------------------------------------------------
+// T3.11.#884.a — gate (a): claimed plan card is non-draggable + carries
+// the claim-lock class + a tooltip naming the in-flight pipeline short id.
+// (The draggable-removed assertion lives in T3.11.a above.)
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "lockdrag", title: "Lock drag", status: "active",
+    phase_count: 5, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.lockdrag",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 60,
+      pipeline_short: "ld-abc",
+    },
+  };
+  // Use a non-ready, non-completed column so the X button is rendered
+  // (Ready also renders it; "drafted" keeps the card simple).
+  const card = buildPlanCard(plan, "lockdrag", "drafted", "phase");
+  expect(card.getAttribute("draggable"), null,
+    "#884 gate(a): claimed plan card has no draggable attribute");
+  expectTrue(/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#884 gate(a): claimed plan card carries claim-locked class");
+  expect(card.getAttribute("title"),
+    "Locked while plan is being worked (pipeline ld-abc).",
+    "#884 gate(a): card tooltip names the in-flight pipeline short id");
+}
+
+// ------------------------------------------------------------------
+// T3.11.#884.c — gate (c): claimed plan's X (discard) button is disabled
+// + dimmed (claim-locked class) + carries the lock tooltip + has NO
+// data-action (so the delegated dispatcher never routes the click).
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "lockx", title: "Lock X", status: "active",
+    phase_count: 5, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.lockx",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 60,
+      pipeline_short: "lx-abc",
+    },
+  };
+  const card = buildPlanCard(plan, "lockx", "ready", "phase");
+  // The X button is the .remove-btn descendant.
+  const rmBtn = findByClass(card, "remove-btn");
+  expectTrue(rmBtn, "#884 gate(c): X (remove-btn) rendered on claimed plan card");
+  if (rmBtn) {
+    expect(rmBtn.getAttribute("disabled"), "disabled",
+      "#884 gate(c): claimed X has disabled attribute");
+    expect(rmBtn.getAttribute("aria-disabled"), "true",
+      "#884 gate(c): claimed X has aria-disabled='true'");
+    expect(rmBtn.getAttribute("data-action"), null,
+      "#884 gate(c): claimed X has NO data-action (click never routes)");
+    expect(rmBtn.getAttribute("title"),
+      "Locked while plan is being worked (pipeline lx-abc).",
+      "#884 gate(c): claimed X tooltip names the in-flight pipeline");
+    expectTrue(/(^|\s)claim-locked(\s|$)/.test(rmBtn.className),
+      "#884 gate(c): claimed X carries claim-locked class (dim styling)");
+  }
+}
+
+// ------------------------------------------------------------------
 // T3.11.b — chip text format "working on phase N · <pid> · <age>"
 // The N/M progress framing now lives on the bar (driven from the same
 // claim.current_phase); the chip is the liveness/activity indicator and
@@ -397,6 +462,21 @@ function collectText(node) {
     "unclaimed plan card retains draggable='true'");
   expect(findByClass(card, "claim-chip"), null,
     "no claim-chip rendered when plan.claim absent");
+  // #884 back-compat: no claim-lock affordances when plan.claim absent.
+  expectTrue(!/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#884 back-compat: unclaimed card has NO claim-locked class");
+  expect(card.getAttribute("title"), null,
+    "#884 back-compat: unclaimed card has no claim-lock tooltip");
+  const rmBtn = findByClass(card, "remove-btn");
+  expectTrue(rmBtn, "#884 back-compat: X (remove-btn) rendered on unclaimed plan");
+  if (rmBtn) {
+    expect(rmBtn.getAttribute("data-action"), "plan-discard",
+      "#884 back-compat: unclaimed X retains data-action='plan-discard'");
+    expect(rmBtn.getAttribute("disabled"), null,
+      "#884 back-compat: unclaimed X is not disabled");
+    expectTrue(!/(^|\s)claim-locked(\s|$)/.test(rmBtn.className),
+      "#884 back-compat: unclaimed X has no claim-locked class");
+  }
 }
 
 // ------------------------------------------------------------------

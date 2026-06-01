@@ -1386,6 +1386,35 @@ button svg { display: inline-block; vertical-align: middle; }
   outline: none;
 }
 
+/* Issue #884 — claim-locked X (discard) button. Dimmed + not-allowed
+   cursor; no hover affordance so nothing invites a click. The disabled
+   attribute already blocks the click in the browser; this makes the lock
+   visible. Matches the .move-btn:disabled dim idiom. */
+.remove-btn:disabled,
+.remove-btn.claim-locked {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.remove-btn:disabled:hover,
+.remove-btn.claim-locked:hover,
+.remove-btn:disabled:focus-visible,
+.remove-btn.claim-locked:focus-visible {
+  border-color: var(--border);
+}
+
+/* Issue #884 — claim-locked plan card. The card is already non-draggable
+   (render drops the draggable attr when a claim is held); suppress pointer
+   events on the drag surface so a mousedown never even begins a drag
+   gesture. The interactive children (claim chip, copy button) re-enable
+   pointer events so they remain clickable. */
+.card.claim-locked {
+  cursor: not-allowed;
+}
+.card.claim-locked .claim-chip,
+.card.claim-locked .copy-btn {
+  cursor: pointer;
+}
+
 /* Copy-to-clipboard button — sits at the trailing edge of .card-controls.
    Inherits .move-btn base styling; margin-left: auto pushes it right so
    it visually separates from the move/remove cluster. */
