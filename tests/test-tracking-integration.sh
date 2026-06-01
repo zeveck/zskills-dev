@@ -129,6 +129,34 @@ try_commit_worktree() {
   return 0
 }
 
+# Helper: attempt a `git push` via the hook (PUSH gate, not COMMIT gate).
+# Exercises the "tracking enforcement on git push" block (#921), whose
+# code-file detection compares branch ranges (merge-base..HEAD) rather than
+# the staged index. Runs git in $repo_root so @{u} / merge-base resolve
+# against the checked-out branch. Returns 0 if allowed, 1 if denied.
+try_push() {
+  local repo_root="${1:-$TEST_TMPDIR}"
+  local tracking_root="${2:-$TEST_TMPDIR}"
+  local transcript="$repo_root/.transcript"
+
+  # NB: `push origin HEAD` (not bare `push`) so the sed-extracted COMMAND's
+  # subcommand token stays clean. The hook's JSON extraction is greedy
+  # (matches to the last quote), so with bare `push` the trailing
+  # `"},"transcript_path"...` attaches to the `push` token and the
+  # subcommand match misses — an artifact of the test JSON, not the gate.
+  # A real push always carries a remote/refspec arg, so this is also the
+  # realistic shape. The push gate's diff uses @{u}/merge-base, not the
+  # refspec, so `origin HEAD` doesn't affect what's tested.
+  local json="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push origin HEAD\"},\"transcript_path\":\"$transcript\"}"
+
+  HOOK_OUTPUT=$(echo "$json" | REPO_ROOT="$repo_root" TRACKING_ROOT="$tracking_root" bash -c "cd '$repo_root' && bash '$repo_root/.claude/hooks/block-unsafe-project.sh'" 2>/dev/null)
+
+  if [[ "$HOOK_OUTPUT" == *"permissionDecision"*"deny"* ]]; then
+    return 1  # denied
+  fi
+  return 0  # allowed
+}
+
 # ═══════════════════════════════════════════════════════════════════════
 # Test 1: Basic enforcement (subdir layout)
 # requires.* in .zskills/tracking/$PIPELINE_ID/ blocks a code commit until
@@ -795,6 +823,127 @@ if try_commit; then
   pass "Test 11a: flat-fallback precision — pipeline 'plan' does not match 'run-plan.thermal-domain' flat marker"
 else
   fail "Test 11a: suffix matching should prevent false positive, got: $HOOK_OUTPUT"
+fi
+
+teardown_repo
+
+# ═══════════════════════════════════════════════════════════════════════
+# Test 12: push gate uses merge-base..HEAD, not @{u}..HEAD (#921)
+#
+# Regression for #921: /land-pr's legitimate BEHIND-clear force-push was
+# blocked. requires.land-pr.<id> is only fulfilled AFTER merge (Step 8b),
+# but the force-push that clears a BEHIND branch happens BEFORE merge.
+# The push gate computed "is there code in this push" as @{u}..HEAD — so
+# after a rebase onto a moved origin/main, @{u} (the OLD pushed commit)
+# made the range include MAIN's intervening code, firing the still-
+# unfulfilled requires.land-pr.<id> gate. The fix computes the pipeline's
+# OWN changes via merge-base origin/main HEAD, so main's intervening
+# commits don't count as this pipeline's code.
+#
+# We simulate the post-rebase BEHIND state with a real `origin` remote:
+#  - origin/main has an intervening CODE commit (intervening.js) that the
+#    pipeline's branch did NOT author.
+#  - the pipeline's feature branch is rebased on top of current origin/main
+#    and carries only a CONTENT-only commit (notes.md) plus a STALE upstream
+#    (@{u}) pointing at the pre-rebase tip (BEHIND origin/main).
+#  - @{u}..HEAD therefore includes intervening.js (code → would block under
+#    the old behavior); merge-base(origin/main,HEAD)..HEAD includes only
+#    notes.md (content-only → does NOT block under the fix).
+# ═══════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "=== Test 12: push gate merge-base scope (#921 BEHIND-clear) ==="
+
+# --- Test 12a: BEHIND-clear of a content-only patch is NOT blocked ---
+setup_repo
+
+PID="do.pr-921"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+# requires.land-pr.<id> present and UNFULFILLED — exactly the state during
+# a BEHIND-clear force-push (the marker is only fulfilled post-merge).
+touch "$DIR/requires.land-pr.$PID"
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+
+(
+  cd "$TEST_TMPDIR"
+  # Stand up a bare origin and push the current main (the merge-base anchor).
+  git branch -M main
+  ORIGIN=$(mktemp -d)
+  git init -q --bare "$ORIGIN"
+  git remote add origin "$ORIGIN"
+  git push -q origin main
+
+  # Pipeline branches off main and pushes its feature branch (sets @{u}).
+  git checkout -q -b feat/921
+  echo "doc content" > notes.md
+  git add notes.md && git commit -q -m "pipeline content-only change"
+  git push -q -u origin feat/921          # @{u} = origin/feat/921 (pre-rebase tip)
+
+  # Meanwhile, another PR lands CODE on main → origin/main advances.
+  git checkout -q main
+  echo "var intervening = 1;" > intervening.js
+  git add intervening.js && git commit -q -m "another PR's code lands on main"
+  git push -q origin main
+
+  # /land-pr clears BEHIND: rebase feat/921 onto the moved origin/main.
+  # @{u} (origin/feat/921) still points at the pre-rebase tip → BEHIND.
+  git checkout -q feat/921
+  git fetch -q origin
+  git rebase -q origin/main
+)
+
+# Sanity: confirm the bug's precondition — @{u}..HEAD picks up the code,
+# while merge-base..HEAD is content-only. (Asserts the scenario is real.)
+ATU_DIFF=$(cd "$TEST_TMPDIR" && git diff --name-only @{u}..HEAD 2>/dev/null)
+MB=$(cd "$TEST_TMPDIR" && git merge-base origin/main HEAD 2>/dev/null)
+MB_DIFF=$(cd "$TEST_TMPDIR" && git diff --name-only "$MB"..HEAD 2>/dev/null)
+if [[ "$ATU_DIFF" == *"intervening.js"* ]] && [[ "$MB_DIFF" != *"intervening.js"* ]] && [[ "$MB_DIFF" == *"notes.md"* ]]; then
+  pass "Test 12a-pre: scenario valid — @{u}..HEAD has main's code, merge-base..HEAD is content-only"
+else
+  fail "Test 12a-pre: scenario setup wrong — @{u}=[$ATU_DIFF] merge-base=[$MB_DIFF]"
+fi
+
+# The push should be ALLOWED: the pipeline's own change (merge-base..HEAD)
+# is content-only, so the unfulfilled requires.land-pr.<id> does not fire.
+if try_push; then
+  pass "Test 12a: BEHIND-clear force-push not blocked when pipeline's own change is content-only (#921 fix)"
+else
+  fail "Test 12a: BEHIND-clear push wrongly blocked — main's intervening code leaked into the diff, got: $HOOK_OUTPUT"
+fi
+
+teardown_repo
+
+# --- Test 12b: genuine un-landed CODE push STILL blocks (no false-negative) ---
+setup_repo
+
+PID="do.pr-921b"
+DIR=$(pipeline_subdir "$TEST_TMPDIR" "$PID")
+touch "$DIR/requires.land-pr.$PID"   # unfulfilled
+printf '%s\n' "$PID" > "$TEST_TMPDIR/.zskills-tracked"
+
+(
+  cd "$TEST_TMPDIR"
+  git branch -M main
+  ORIGIN=$(mktemp -d)
+  git init -q --bare "$ORIGIN"
+  git remote add origin "$ORIGIN"
+  git push -q origin main
+
+  # Pipeline branch carries its OWN un-landed CODE change on top of origin/main.
+  git checkout -q -b feat/921b
+  echo "var x = 1;" > app.js
+  git add app.js && git commit -q -m "pipeline's own code change"
+  git push -q -u origin feat/921b
+)
+
+# merge-base..HEAD now contains app.js (the pipeline's own code) → the
+# unfulfilled requires.land-pr.<id> MUST still block. This is the direction
+# the gate must NOT lose: the merge-base form still catches genuine pushes
+# of the pipeline's own un-landed code.
+if try_push; then
+  fail "Test 12b: push of pipeline's own un-landed code should be blocked by unfulfilled requires.land-pr marker, got: $HOOK_OUTPUT"
+else
+  pass "Test 12b: genuine un-landed code push still blocked by unfulfilled requires.land-pr (#921 fix preserves enforcement)"
 fi
 
 teardown_repo
