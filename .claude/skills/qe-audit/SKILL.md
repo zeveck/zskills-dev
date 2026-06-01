@@ -7,7 +7,7 @@ description: >-
   bash/stress-test features to find bugs. Files GitHub issues for
   findings. Recurring via every SCHEDULE; stop/next manage it.
 metadata:
-  version: "2026.05.31+968ff1"
+  version: "2026.05.31+af0b4b"
 ---
 
 # /qe-audit [bash [area]] [every SCHEDULE] [now] | stop | next — Quality Engineering Audit
@@ -165,6 +165,57 @@ If `$ARGUMENTS` contains `every <schedule>`:
 
 If `every` is NOT present, skip this phase and proceed to the audit/bash
 (bare invocation always runs immediately).
+
+## Phase 0b — Shared in-flight guard (issue #877)
+
+**Cron pickup-fires can land while a previous audit is still running**
+(CronCreate's "fires only while idle" is turn-level idle, not task-level).
+Two concurrent `/qe-audit` audits BOTH `gh issue create` and write the
+QE tracker — surfacing duplicate GitHub issues + tracker rows that then
+feed `/fix-issues` Ready as duplicate fix work. The shared
+`check-inflight-batch.sh` helper detects "my session already has an
+in-flight qe-audit run" via session-scoped sentinels and exits clean
+when so. This check fires AFTER subcommand routing (`stop` / `next`
+exited above; `every <schedule>` without `now` exited at end of Phase 0).
+
+The audit had no prior sentinel — this phase ADDS minimal session-scoped
+in-flight bookkeeping (write here, clear at the end of the audit/bash
+run) so the shared helper has something to detect. Two robustness traps
+(session-scoping + staleness escape default 2h via
+`ZSKILLS_INFLIGHT_MAX_AGE_SECONDS`) live in the helper.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check qe-audit > /tmp/.qe-audit-inflight.$$ 2>/dev/null; then
+    INFLIGHT_LINE=$(cat /tmp/.qe-audit-inflight.$$)
+    rm -f /tmp/.qe-audit-inflight.$$
+    INFLIGHT_PIPELINE=$(printf '%s' "$INFLIGHT_LINE" | awk -F'\t' '{print $2}')
+    echo "qe-audit run ${INFLIGHT_PIPELINE:-(unknown)} in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+  rm -f /tmp/.qe-audit-inflight.$$
+fi
+
+# Construct a per-audit unique pipeline_id and write the in-flight
+# sentinel. Cleared at the end of the audit/bash run (see "Phase 9 —
+# Audit-complete cleanup" below).
+AUDIT_ID="audit-$(date -u +%Y%m%d-%H%M%S)-$$"
+PIPELINE_ID="qe-audit.${AUDIT_ID}"
+SANITIZER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"
+if [ -x "$SANITIZER" ]; then
+  PIPELINE_ID=$(bash "$SANITIZER" "$PIPELINE_ID")
+fi
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" write qe-audit --pipeline-id "$PIPELINE_ID" || \
+    echo "qe-audit: WARN — could not write in-flight sentinel (continuing)" >&2
+fi
+```
 
 ## Mode: Commit Audit (default)
 
@@ -470,6 +521,28 @@ Run when `bash` IS present in arguments.
    - Example models deployed and verified (if applicable)
    - Screenshots taken (if manual testing)
    - If a cron is active, include the next run time
+
+## Phase 9 — Audit-complete cleanup (issue #877)
+
+After the audit (commit-audit) or bash run finishes — whether issues
+were filed or the report was empty — clear the shared in-flight
+sentinel so the next cron fire is free to pick up fresh work:
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ] && [ -n "${PIPELINE_ID:-}" ]; then
+  bash "$INFLIGHT_HELPER" clear qe-audit --pipeline-id "$PIPELINE_ID" || true
+fi
+```
+
+If the audit aborts via the Failure Protocol or an early exit, the
+staleness escape (default 2h) ensures the sentinel does not deadlock
+the next pickup — it is removed in-line on a subsequent `check` call.
 
 ## Key Rules
 

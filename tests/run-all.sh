@@ -203,6 +203,7 @@ run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.
 run_suite "test-plan-claim-fingerprint.sh" "tests/test-plan-claim-fingerprint.sh"
 run_suite "test-plan-claim-conformance.sh" "tests/test-plan-claim-conformance.sh"
 run_suite "test-claim-self-reentry.sh" "tests/test-claim-self-reentry.sh"
+run_suite "test-inflight-batch-guard.sh" "tests/test-inflight-batch-guard.sh"
 run_suite "test-demo-sim.sh" "tests/test-demo-sim.sh"
 run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
