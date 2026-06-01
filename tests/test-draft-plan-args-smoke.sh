@@ -124,45 +124,90 @@ else
   check_auto "use auto-land mode" 0 "'auto-land' (no whitespace boundary) rejected"
 fi
 
-# ── Surface 3: BRAINSTORM_FLAG regex (extract-and-run) ───────────────
-# The BRAINSTORM_FLAG fence is self-contained (pure `[[ =~ ]]`) and lives
-# in its OWN block (kept separate from AUTO_FLAG so the AUTO extractor that
-# stops at the first `^fi$` is not perturbed). Extract it verbatim and run.
-BRAINSTORM_BLOCK=$(awk '
-  /^BRAINSTORM_FLAG=0$/{capture=1}
+# ── Surface 3: STEERING_MODE leading-cluster selector (extract-and-run) ──
+# #944: brainstorm and quiz are a SINGLE mutually-exclusive selector
+# `STEERING_MODE ∈ {"", brainstorm, quiz}` detected by ONE leading-cluster
+# scan (the `set_steering` helper + the `for tok in $ARGUMENTS` case). The
+# fence is self-contained (no external deps), so EXTRACT-AND-RUN it. The
+# fence runs from `STEERING_MODE=""` through its closing `done`, so capture
+# from the assignment to the first standalone `done`. A conflicting second
+# steering token makes `set_steering` `exit 2`, so we run the fence in a
+# subshell and capture both STEERING_MODE and the exit code.
+STEERING_BLOCK=$(awk '
+  /^STEERING_MODE=""/{capture=1}
   capture {print}
-  capture && /^fi$/{exit}
+  capture && /^done$/{exit}
 ' "$SKILL")
 
-if [ -z "$BRAINSTORM_BLOCK" ]; then
-  fail "brainstorm-flag: could not extract BRAINSTORM_FLAG fence" "awk extract empty"
+if [ -z "$STEERING_BLOCK" ]; then
+  fail "steering-mode: could not extract STEERING_MODE fence" "awk extract empty"
 else
-  pass "brainstorm-flag: BRAINSTORM_FLAG fence extracted from SKILL.md"
-  check_brainstorm() { # $1=ARGUMENTS $2=expected(0/1) $3=label
-    local ARGUMENTS="$1"
-    local BRAINSTORM_FLAG
-    eval "$BRAINSTORM_BLOCK"
-    if [ "$BRAINSTORM_FLAG" = "$2" ]; then
-      pass "brainstorm-flag: $3 -> BRAINSTORM_FLAG=$2"
+  pass "steering-mode: STEERING_MODE leading-cluster fence extracted from SKILL.md"
+
+  # Tokenizer-arm parity: both steering arms route through set_steering (#944).
+  if grep -qF 'brainstorm) set_steering brainstorm ;;' "$SKILL" \
+     && grep -qF 'quiz)       set_steering quiz ;;' "$SKILL"; then
+    pass "steering-mode: both case arms route through set_steering (#944)"
+  else
+    fail "steering-mode: set_steering case arms drifted" "missing 'brainstorm) set_steering brainstorm' / 'quiz) set_steering quiz'"
+  fi
+
+  # Run the real fence against $ARGUMENTS in a subshell; STEERING_MODE is
+  # written to a dedicated file (NOT stderr) so set_steering's own stderr
+  # error message does not contaminate the capture; the `exit 2` becomes the
+  # subshell rc.
+  steer_for() { # $1=ARGUMENTS $2=modefile  -> exit code = set_steering rc
+    (
+      ARGUMENTS="$1"
+      STEERING_MODE=""
+      eval "$STEERING_BLOCK"
+      printf 'MODE=%s\n' "$STEERING_MODE" > "$2"
+    ) 2>/dev/null
+  }
+  check_steer() { # $1=ARGUMENTS $2=expected_mode $3=expected_rc $4=label
+    local rc md mf="/tmp/.draftplan-steering-mode-$$" want
+    steer_for "$1" "$mf"; rc=$?
+    md=$(cat "$mf" 2>/dev/null); rm -f "$mf"
+    # In the conflict path, set_steering's `exit 2` aborts the subshell BEFORE
+    # the MODE printf runs, so the modefile is never written and $md is empty.
+    # The exit code is the load-bearing assertion there. In the success path
+    # (rc 0) the modefile carries 'MODE=<mode>'.
+    if [ "$3" = "0" ]; then want="MODE=$2"; else want=""; fi
+    if [ "$md" = "$want" ] && [ "$rc" = "$3" ]; then
+      pass "steering-mode: $4 -> '${md:-<no-write>}', exit $rc"
     else
-      fail "brainstorm-flag: $3" "expected $2 got $BRAINSTORM_FLAG"
+      fail "steering-mode: $4" "expected mode-capture '$want' exit $3, got '$md' exit $rc"
     fi
   }
-  # Positives — first token only, case-insensitive (#914).
-  check_brainstorm "brainstorm Add dark mode" 1 "first-position 'brainstorm' engages"
-  check_brainstorm "BRAINSTORM Add dark mode" 1 "first-position uppercase 'BRAINSTORM' engages"
-  check_brainstorm "Brainstorm a new editor" 1 "first-position mixed-case 'Brainstorm' engages"
-  # Negatives — 'brainstorm' anywhere but first token must NOT engage (#914).
-  check_brainstorm "Add dark mode brainstorm" 0 "trailing 'brainstorm' does NOT engage (#914)"
-  check_brainstorm "output X.md brainstorm rounds 3 Add dark mode" 0 "mid 'brainstorm' does NOT engage (#914)"
-  check_brainstorm "Build a brainstorm app for kids" 0 "'brainstorm' inside description does NOT engage (#914)"
-  check_brainstorm "Add a brainstorm feature to the editor" 0 "'brainstorm' inside description does NOT engage (#914)"
-  check_brainstorm "Document our brainstorm process" 0 "'brainstorm' inside description does NOT engage (#914)"
-  check_brainstorm "auto brainstorm Add dark mode" 0 "'brainstorm' after 'auto' does NOT engage (not first token, #914)"
-  # Negatives — substring/inflection forms must NOT trip the flag (flag stays 0).
-  check_brainstorm "brainstorming the design" 0 "'brainstorming' (no boundary) rejected"
-  check_brainstorm "brainstormed yesterday" 0 "'brainstormed' (no boundary) rejected"
-  check_brainstorm "brainstorms" 0 "'brainstorms' (no boundary) rejected"
+
+  # Positives — leading flag, case-insensitive.
+  check_steer "brainstorm Add dark mode" brainstorm 0 "leading 'brainstorm' engages"
+  check_steer "BRAINSTORM Add dark mode" brainstorm 0 "leading uppercase 'BRAINSTORM' engages"
+  check_steer "Brainstorm a new editor" brainstorm 0 "leading mixed-case 'Brainstorm' engages"
+  check_steer "quiz Add dark mode" quiz 0 "leading 'quiz' engages"
+  # Composability parity (#944): brainstorm in the leading cluster (not token[0]).
+  check_steer "output p.md brainstorm Add dark mode" brainstorm 0 "'output p.md brainstorm' engages brainstorm (composability parity)"
+  check_steer "output p.md quiz rounds 5 Add dark mode" quiz 0 "'output p.md quiz rounds 5' engages quiz (leading cluster, any order)"
+  # Repeated SAME token is a harmless no-op (no error).
+  check_steer "brainstorm brainstorm Add dark mode" brainstorm 0 "repeated 'brainstorm' -> no-op, no error"
+  # Mutual exclusion (#936, #944) — order-independent: BOTH orders exit 2.
+  # set_steering's `exit 2` aborts the fence BEFORE the MODE printf runs, so
+  # the captured MODE is empty in BOTH error paths; the exit code is the
+  # load-bearing assertion (the order-independence proof).
+  check_steer "brainstorm quiz Add dark mode" "" 2 "'brainstorm quiz X' -> mutual-exclusion error (exit 2)"
+  check_steer "quiz brainstorm Add dark mode" "" 2 "'quiz brainstorm X' -> mutual-exclusion error (exit 2), ORDER-INDEPENDENT (#944)"
+  # Negatives — token anywhere but the leading cluster must NOT engage (#914).
+  check_steer "Add dark mode brainstorm" "" 0 "trailing 'brainstorm' does NOT engage (#914)"
+  check_steer "add dark mode quiz" "" 0 "trailing 'quiz' does NOT engage (#914)"
+  check_steer "Build a brainstorm app for kids" "" 0 "'brainstorm' inside description does NOT engage (#914)"
+  check_steer "build a quiz app" "" 0 "'quiz' inside description does NOT engage (#914)"
+  check_steer "Add a brainstorm feature to the editor" "" 0 "'brainstorm' inside description does NOT engage (#914)"
+  check_steer "auto brainstorm Add dark mode" brainstorm 0 "'auto brainstorm X' -> brainstorm (leading cluster, composes with auto; #944)"
+  # Negatives — substring/inflection forms must NOT trip the selector (exact-match arms).
+  check_steer "brainstorming the design" "" 0 "'brainstorming' (exact-match arm) does NOT engage"
+  check_steer "brainstormed yesterday" "" 0 "'brainstormed' (exact-match arm) does NOT engage"
+  check_steer "brainstorms" "" 0 "'brainstorms' (exact-match arm) does NOT engage"
+  check_steer "quizzes for the class" "" 0 "'quizzes' (exact-match arm) does NOT engage"
 fi
 
 # ── Surface 4: brainstorm-mode wiring parity greps (externally-sourced) ──
@@ -170,13 +215,13 @@ fi
 # Read-tool dispatch and $TRACKING_ID), so assert by fingerprint grep that
 # the wiring stays present, mirroring the Surface-1 `grep -qF` parity style.
 
-# Conditional-load parity: references/brainstorm.md is gated on BRAINSTORM_FLAG,
+# Conditional-load parity: references/brainstorm.md is gated on STEERING_MODE,
 # i.e. the Read is NOT unconditional. The "## Brainstorm mode" section opens
-# with the `If BRAINSTORM_FLAG=1, **Read [references/brainstorm.md]...` gate.
-if grep -qF 'If `BRAINSTORM_FLAG=1`, **Read [references/brainstorm.md](references/brainstorm.md)**' "$SKILL"; then
-  pass "conditional-load: brainstorm.md Read is gated on BRAINSTORM_FLAG=1"
+# with the `If STEERING_MODE = brainstorm, **Read [references/brainstorm.md]...` gate.
+if grep -qF 'If `STEERING_MODE = brainstorm`, **Read [references/brainstorm.md](references/brainstorm.md)**' "$SKILL"; then
+  pass "conditional-load: brainstorm.md Read is gated on STEERING_MODE = brainstorm"
 else
-  fail "conditional-load: brainstorm.md gate drifted" "missing BRAINSTORM_FLAG=1 Read gate"
+  fail "conditional-load: brainstorm.md gate drifted" "missing STEERING_MODE = brainstorm Read gate"
 fi
 # Regression guard: the gate must NOT re-introduce the inert ZSKILLS_PIPELINE_ID
 # check. Scope the assertion to the "## Brainstorm mode" section so unrelated
@@ -210,11 +255,11 @@ else
 fi
 
 # Checkpoint-skip: the post-research steering checkpoint is gated on
-# BRAINSTORM_FLAG=1 (skipped because the user already steered in dialogue).
-if grep -qF 'Skip this steering checkpoint when `BRAINSTORM_FLAG=1`' "$SKILL"; then
-  pass "checkpoint-skip: post-research checkpoint gated on BRAINSTORM_FLAG=1"
+# STEERING_MODE = brainstorm (skipped because the user already steered in dialogue).
+if grep -qF 'Skip this steering checkpoint when `STEERING_MODE = brainstorm`' "$SKILL"; then
+  pass "checkpoint-skip: post-research checkpoint gated on STEERING_MODE = brainstorm"
 else
-  fail "checkpoint-skip: checkpoint gate drifted" "missing 'Skip this steering checkpoint when BRAINSTORM_FLAG=1'"
+  fail "checkpoint-skip: checkpoint gate drifted" "missing 'Skip this steering checkpoint when STEERING_MODE = brainstorm'"
 fi
 
 # ── Surface 5: references/brainstorm.md idiom parity greps ───────────
@@ -250,95 +295,6 @@ else
   else
     pass "brainstorm.md idioms: no bare foreground 'sleep' in serve-wait"
   fi
-fi
-
-# ── Surface 6: QUIZ_FLAG leading-cluster scan + brainstorm/quiz mutual
-#    exclusion (extract-and-run) ───────────────────────────────────────
-# #936: the leading-cluster tokenizer must recognize `brainstorm` (walk
-# past it) so a leading `brainstorm` does not break the scan before `quiz`
-# is reached. Combined with the first-token-anchored BRAINSTORM_FLAG fence,
-# this makes `brainstorm quiz X` set BOTH flags, which the mutual-exclusion
-# guard converts into a fail-loud exit 2 instead of a silent mode drop.
-# The guard must NOT regress #914 (brainstorm is still first-token-only for
-# BRAINSTORM_FLAG; the tokenizer arm only lets the quiz scan walk past it).
-
-# Extract the QUIZ_FLAG leading-scan fence (QUIZ_FLAG=0 … done — a for-loop,
-# not an `if … fi`, so stop at the first standalone `done`).
-QUIZ_BLOCK=$(awk '
-  /^QUIZ_FLAG=0$/{capture=1}
-  capture {print}
-  capture && /^done$/{exit}
-' "$SKILL")
-
-# Extract the mutual-exclusion guard fence (the `if [ "${BRAINSTORM_FLAG...`
-# block that emits the error and `exit 2`). Stop at its closing `fi`.
-MUTEX_BLOCK=$(awk '
-  /^if \[ "\$\{BRAINSTORM_FLAG/{capture=1}
-  capture {print}
-  capture && /^fi$/{exit}
-' "$SKILL")
-
-if [ -z "$QUIZ_BLOCK" ]; then
-  fail "quiz-flag: could not extract QUIZ_FLAG fence" "awk extract empty"
-elif [ -z "$MUTEX_BLOCK" ]; then
-  fail "mutex: could not extract brainstorm/quiz mutual-exclusion fence" "awk extract empty"
-else
-  pass "quiz-flag: QUIZ_FLAG leading-scan fence extracted from SKILL.md"
-  pass "mutex: brainstorm/quiz mutual-exclusion fence extracted from SKILL.md"
-
-  # Tokenizer-arm parity: the brainstorm) ;; arm must be present (#936).
-  if grep -qF 'brainstorm) ;;' "$SKILL"; then
-    pass "mutex: leading-cluster tokenizer has 'brainstorm) ;;' arm (#936)"
-  else
-    fail "mutex: 'brainstorm) ;;' tokenizer arm missing" "leading scan would break at brainstorm"
-  fi
-
-  # Run BOTH the BRAINSTORM_FLAG and QUIZ_FLAG fences against $ARGUMENTS,
-  # then run the mutual-exclusion guard in a subshell so its `exit 2` is
-  # captured as a subshell exit code rather than killing the test. Echo the
-  # resolved flags so we can also assert the flag values directly.
-  # Run the real fences in a subshell. The flag values are written to a
-  # dedicated file (NOT stderr) so the guard's own stderr error message does
-  # not contaminate the capture; the guard's `exit 2` becomes the subshell rc.
-  flags_for() { # $1=ARGUMENTS $2=flagfile  -> exit code = guard rc
-    (
-      ARGUMENTS="$1"
-      BRAINSTORM_FLAG=
-      QUIZ_FLAG=
-      eval "$BRAINSTORM_BLOCK"
-      eval "$QUIZ_BLOCK"
-      printf 'B=%s Q=%s\n' "$BRAINSTORM_FLAG" "$QUIZ_FLAG" > "$2"
-      eval "$MUTEX_BLOCK"
-    ) 2>/dev/null
-  }
-  check_combo() { # $1=ARGUMENTS $2=expected_B $3=expected_Q $4=expected_rc $5=label
-    local rc fl ff="/tmp/.draftplan-mutex-flags-$$"
-    flags_for "$1" "$ff"; rc=$?
-    fl=$(cat "$ff" 2>/dev/null); rm -f "$ff"
-    if [ "$fl" = "B=$2 Q=$3" ] && [ "$rc" = "$4" ]; then
-      pass "mutex: $5 -> $fl, exit $rc"
-    else
-      fail "mutex: $5" "expected B=$2 Q=$3 exit $4, got '$fl' exit $rc"
-    fi
-  }
-
-  # The core #936 assertion: requesting BOTH modes (brainstorm first, quiz in
-  # the leading cluster) sets both flags and fails loud (exit 2) — NOT a
-  # silent drop of whichever mode wasn't first.
-  check_combo "brainstorm quiz Add dark mode" 1 1 2 "'brainstorm quiz X' -> both flags, mutual-exclusion error"
-  # Reverse order: per #914, a non-first 'brainstorm' is DESCRIPTION text, not
-  # the flag. So this is unambiguously single-mode quiz (no silent drop, no
-  # error). Order is no longer SILENTLY ambiguous: 'brainstorm quiz' errors
-  # loud; 'quiz brainstorm' is the defined #914 single-mode case.
-  check_combo "quiz brainstorm Add dark mode" 0 1 0 "'quiz brainstorm X' -> quiz-only (brainstorm is description per #914), no error"
-  # Single-mode cases must NOT error.
-  check_combo "brainstorm Add dark mode" 1 0 0 "'brainstorm X' -> brainstorm-only, no error"
-  check_combo "quiz Add dark mode" 0 1 0 "'quiz X' -> quiz-only, no error"
-  # #914 non-regression: 'auto brainstorm' must NOT set BRAINSTORM_FLAG, and
-  # the brainstorm) ;; tokenizer arm must not turn it into a both-modes case.
-  check_combo "auto brainstorm Add dark mode" 0 0 0 "'auto brainstorm X' -> neither flag (#914 preserved), no error"
-  # #914 non-regression: brainstorm embedded in description stays inert.
-  check_combo "Build a brainstorm app for kids" 0 0 0 "'Build a brainstorm app' -> neither flag (#914 preserved), no error"
 fi
 
 echo ""
