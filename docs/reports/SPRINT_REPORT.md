@@ -3,52 +3,41 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260531-212209-dq30m
+# /fix-issues sprint — sprint-20260531-230125-dq30m2
 
-**Mode:** N=2, dashboard, auto, every 30m (queue-worker)
-**Started:** 2026-05-31T18:52:12-04:00
-**Ready queue head at start:** 13 issues (#852, #853, #858, #861, #866, #865, #864, #863, #862, #871, #869, #868, #867)
+**Mode:** N=2, dashboard, auto, every 30m
+**Started:** 2026-05-31T20:05:46-04:00
+**Ready queue at start:** 12 (head: #852, #858, #861 — all closed by parallel session; first valid: #866)
 
-## Claims (concurrency)
+## Claims
+- #866 → rc=0 (claimed first per corrected discipline; per-task worktree created AFTER claim success)
+- #865 → rc=0
 
-- Tried #852 (top of Ready) → **rc=10 foreign-held** by parallel sprint `sprint-20260531-210058-fixqueue`. Skipped per dashboard branch's race-loser policy.
-- Tried #853 (next) → **rc=10 foreign-held** by same parallel sprint. Skipped.
-- Claimed #858 → rc=0 ✅
-- Claimed #861 → rc=0 ✅
+## Landed (2)
 
-## Landed this fire (2)
+### #866 — block-diagram/add-block dual-lane resolver preludes outside fence
+- **PR:** https://github.com/zeveck/zskills-dev/pull/885 (merged clean, no conflicts)
+- **Commit:** `35d6a9f`
+- **Files (2):** `block-diagram/add-block/SKILL.md` + mirror — DELETED the two leaked prose-only resolver preludes (turned out to be pure orphaned duplicates; the actual downstream consumer bash fences already self-source the resolver inside their fences); `metadata.version` bumped to `445ceb`.
+- **Tests:** 6635/6635 passed.
+- **Conformance gate (optional):** skipped — task body marked optional; deletion fix is one-shot; gate is a meaningful new test surface worth a separate follow-up.
 
-### #858 — /work-on-plans chip locks to in-flight batch_mode + no layout shift
-- **PR:** https://github.com/zeveck/zskills-dev/pull/878 (merged after auto-rebase resolved a single-region conflict with PR #876)
-- **Commit:** `5b0c6af` (post-rebase)
-- **Files (12):** `work-on-plans/modes/execute.md` writes `batch_mode`; `zskills_monitor/static/app.js` renderDefaultMode + setDefaultMode bail + toast; `app.css` `.seg-btn[data-locked]` + `.dm-footnote` visibility toggle; `index.html` drops legacy hidden attribute; mirrors + version bumps on `work-on-plans` (`962c6a`) and `zskills-dashboard` (`cecde4`).
-- **Tests:** 6620/6620 passed (later 6634/6634 after #861 add).
-- **Playwright verification:** 3 visual states (idle / running-finish / running-phase) + real-click on locked chip showing toast. All screenshots in `.playwright/output/858-state{1,2,3}*.png`.
-- **Conflict recovery:** Rebase hit single-region conflict on `zskills-dashboard/SKILL.md` (metadata.version line only — PR #876 also bumped it). Resolved by editing the conflict region directly (per memory anchor `feedback_single_region_rebase_conflict_edit_directly`), recomputing the post-rebase content hash via `scripts/skill-content-hash.sh`, re-bumping to `cecde4`. Verified no content dropped from PR #876's side via `diff origin/main:SKILL.md HEAD:SKILL.md` (empty modulo version line).
+### #865 — block-fix-issue-unclaimed.sh ownership check
+- **PR:** https://github.com/zeveck/zskills-dev/pull/887 (merged clean)
+- **Commit:** `9eb2539`
+- **Files (3):** `hooks/block-fix-issue-unclaimed.sh` (+99/-12, source + byte-identical mirror under `.claude/hooks/`); new test `tests/test-block-fix-issue-unclaimed-ownership.sh` (+262 lines, 6 cases).
+- **Hook changes:** captures `--pipeline-id` in shlex walk; reads `claim.json:pipeline_id` via Python json; denies on concrete mismatch with informative envelope (cites both IDs + race-lost semantics + anti-steal guidance); fail-OPEN with WARN on absent/malformed `claim.json` or missing caller `--pipeline-id`. Line-2 `# zskills-hook-version:` stamp bumped `2026.05.0` → `2026.05.31`.
+- **Tests:** 6635/6635 + new ownership suite 6/6 + existing single-pipeline regression 2/2.
+- **Gate-fires sanity check:** constructed claim with `pipeline_id=holder-pipe`, fed hook `--pipeline-id intruder-pipe 99`. Hook emitted informative deny envelope.
 
-### #861 — Structural existence pins for /draft-tests split files
-- **PR:** https://github.com/zeveck/zskills-dev/pull/880 (merged clean)
-- **Commit:** `7aa2056`
-- **Files (1):** `tests/test-skill-conformance.sh` (+31 lines) — 10-path existence-pin block (5 split files × 2 lanes) placed adjacent to existing `/draft-tests` behavior contracts.
-- **Tests:** 6634/6634 passed. Gate-fires sanity check confirmed: moved `modes/backfill.md` → `/tmp/`, conformance correctly FAILED with clear message; restored.
-- **CI-only change** — no production code, no `metadata.version` bumps.
+## Discipline correction (sustained from prior fire)
 
-## Concurrent session activity (informational)
-
-During this fire, parallel session `sprint-20260531-210058-fixqueue` shipped:
-- PR #873 (fix(do,quickfix): retire obsolete /fix-issues triage REDIRECT + anchor ISSUE_NUM regex) — likely closes #863
-- PR #875 (fix(land-pr): drive queued auto-merge to a terminal state, closes #871)
-- PR #876 (fix(#853): route completed+pinned plans to Completed column)
-
-They still hold the #852 claim. Next fire (~30m) will check Ready queue freshly.
-
-## Sprint mechanics notes
-
-- Process correction surfaced mid-fire: claim should be acquired BEFORE per-task worktree creation, not after. Empty per-task worktree had to be cleaned up after #852 claim race-loss. Going forward, gating the per-task `--prefix do` worktree creation behind a successful claim (mirroring the `--prefix fix-issue` hook gate) is worth filing as a follow-up.
+- Per the lesson from sprint `-dq30m` (fire 1): **claimed BOTH issues BEFORE creating any per-task worktree**. Avoided the empty-worktree-on-claim-failure pattern.
+- Process is now: sprint worktree → CLAIM #1 → CLAIM #2 (only if BOTH claim rc=0 do we move on) → per-task worktrees → implementer dispatches.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260531-212209-dq30m
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260531-212209-dq30m
-- Issue claims (#858, #861) acquired and released cleanly.
+- Sprint pipeline ID: fix-issues.sprint-20260531-230125-dq30m2
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260531-230125-dq30m2
 - Cron: `*/30 * * * *` — next fire ~30 min.
+- 6 issues now permanently closed across two consecutive fires (#852/#853/#858/#861/#866/#865) plus #871/#863 closed by parallel session ⇒ ~8 issues shipped in this hour.
