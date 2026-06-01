@@ -1,35 +1,54 @@
 #!/bin/bash
-# tests/test-land-pr-auto-rebase-behind.sh — regression tests for Issue #266.
+# tests/test-land-pr-auto-rebase-behind.sh — regression tests for Issue #266
+# (+ the #875 UNKNOWN→definite re-poll prelude).
 #
-# /land-pr Step 6b (`Auto-rebase BEHIND PRs post-CI-green`) was added to
-# close the OPEN/BEHIND auto-merge stall gap. Without it, when a sibling
-# PR lands between `pr-monitor.sh` returning CI=pass and `pr-merge.sh`
-# requesting auto-merge, the feature branch goes BEHIND, GitHub's
-# auto-merge waits indefinitely (on repos with "Require branches to be up
-# to date" branch protection), and the orchestrator must manually rebase
-# + force-push.
+# /land-pr Step 6b (`Auto-rebase BEHIND PRs post-CI-green`) closes the
+# OPEN/BEHIND auto-merge stall gap. Without it, when a sibling PR lands
+# between `pr-monitor.sh` returning CI=pass and `pr-merge.sh` requesting
+# auto-merge, the feature branch goes BEHIND, GitHub's auto-merge waits
+# indefinitely (on repos with "Require branches to be up to date" branch
+# protection), and the orchestrator must manually rebase + force-push.
 #
-# This test has two layers:
+# EXTRACT-AND-RUN (SEAM_HARDENING_HIGH Phase 2): this test no longer carries
+# a re-implemented copy of the Step 6b control flow. It EXTRACTS the real
+# Step 6b ```bash fence (and the Step 7 merge-gate fence that follows the
+# same step) out of skills/land-pr/SKILL.md via tests/lib/extract-fence.sh
+# and RUNS them against PATH-shimmed gh/git/pr-monitor.sh/sleep with
+# queue-driven outputs. Mutating the production fence (e.g. flipping the
+# BEHIND comparison, dropping the UNKNOWN re-poll, or changing a STATUS
+# token) makes this suite FAIL — that is the point: the test exercises
+# production code, not a copy.
 #
-#   1. Anchor regression guards — grep SKILL.md for sentinel strings that
-#      MUST survive future edits. Failure means the Step 6b prose has
-#      drifted and Issue #266 may have regressed.
+# Two layers:
+#   1. Anchor/schema/mapping greps — sentinel strings + the Step 8 status
+#      mapping that MUST survive future edits (Issue #266 regression guard).
+#   2. Extract-and-run behavior cases — drive the REAL fence with queued
+#      gh/monitor/git outcomes and assert the resulting STATUS/REASON.
 #
-#   2. Reference-implementation harness — mock `gh pr view`,
-#      `pr-monitor.sh`, and the rebase/push git commands; exercise the
-#      loop logic; assert it fires/skips correctly across the matrix.
-#
-# Mock approach: instead of running the SKILL.md bash directly (it depends
-# on gh, real git remotes, and pr-monitor.sh), we extract the Step 6b
-# logic into a `run_auto_rebase_block` function and drive it with mock
-# command queues (gh_mock_queue, monitor_mock_queue, rebase_mock_queue,
-# push_mock_queue) that return predetermined exit codes + outputs.
+# Cases (the 10 preserved + the new #875 re-poll):
+#   1.  BEHIND→CLEAN              (single rebase, clears, STATUS unset)
+#   2.  BEHIND×3 → behind-thrash  (loop cap, auto-rebase-exhausted)
+#   3.  AUTO_FLAG=false           skip-guard
+#   4.  CI_STATUS!=pass           skip-guard
+#   5.  rebase conflict           → auto-rebase-conflict + sidecar
+#   6.  BLOCKED post-rebase       → auto-rebase-blocked / mergeStateStatus-BLOCKED
+#   7.  UNKNOWN post-rebase       → auto-rebase-blocked / auto-rebase-unknown
+#   8.  initial CLEAN             no-op (loop never enters)
+#   9.  PR_NUMBER empty           skip-guard
+#   10. STATUS preset             skip-guard
+#   11. NEW (#875): UNKNOWN-then-BEHIND initial re-poll resolves to BEHIND
+#       and the rebase fires (not a silent no-op).
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_FILE="$REPO_ROOT/skills/land-pr/SKILL.md"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
+# shellcheck source=tests/lib/landpr-harness.sh
+. "$SCRIPT_DIR/lib/landpr-harness.sh"
 
 PASS=0
 FAIL=0
@@ -56,7 +75,8 @@ for anchor in \
   'STATUS="auto-rebase-blocked"' \
   'REBASE_STDERR_FILE="$REBASE_STDERR"' \
   'CLEAN|HAS_HOOKS|UNSTABLE' \
-  'BLOCKED|CONFLICTING'
+  'BLOCKED|CONFLICTING' \
+  'UNKNOWN_POLL_MAX=5'
 do
   if ! grep -qF "$anchor" "$SKILL_FILE"; then
     fail "[anchor] SKILL.md missing Step 6b anchor: $anchor" "(Issue #266 regression)"
@@ -100,354 +120,314 @@ for skip_status in behind-thrash auto-rebase-conflict auto-rebase-blocked; do
   fi
 done
 
-# ---- Layer 2: Reference-implementation harness ----------------------
-# We extract the Step 6b control flow into a shell function and drive it
-# with mocked command queues. Each test case sets up the queues, calls
-# run_auto_rebase_block, and asserts on the resulting STATUS/REASON.
-#
-# Mock queue protocol: each queue is a file (one line per call). A wrapper
-# function pops the head line, parses "exit-code|stdout-payload", and
-# returns accordingly.
+# ---- Extract the REAL Step 6b fence from production SKILL.md ---------
+FIXTURE=$(mktemp -d "/tmp/land-pr-auto-rebase-test.XXXXXX")
+trap 'rm -rf "$FIXTURE"' EXIT
 
-MOCKDIR=$(mktemp -d "/tmp/land-pr-auto-rebase-test.XXXXXX")
-trap 'rm -rf "$MOCKDIR"' EXIT
+STEP6B_FENCE="$FIXTURE/step6b.sh"
+if ! extract_fence_between "$SKILL_FILE" \
+      'Step 6b — Auto-rebase BEHIND PRs post-CI-green' \
+      'Step 7 — Merge' 1 0 > "$STEP6B_FENCE"; then
+  echo "FAIL: could not extract Step 6b fence from $SKILL_FILE" >&2
+  exit 1
+fi
+# Sanity: the extracted fence is the real one (carries production landmarks).
+if ! grep -qF 'push --force-with-lease origin "$BRANCH"' "$STEP6B_FENCE" \
+   || ! grep -qF 'UNKNOWN_POLL_MAX=5' "$STEP6B_FENCE"; then
+  echo "FAIL: extracted Step 6b fence missing production landmarks" >&2
+  exit 1
+fi
+pass "[extract] Step 6b production fence extracted from SKILL.md"
 
-# Mock queue files.
-GH_QUEUE="$MOCKDIR/gh.queue"
-MONITOR_QUEUE="$MOCKDIR/monitor.queue"
-REBASE_QUEUE="$MOCKDIR/rebase.queue"
-PUSH_QUEUE="$MOCKDIR/push.queue"
-FETCH_QUEUE="$MOCKDIR/fetch.queue"
+# Patch out the config source (we set ZSKILLS_SKILLS_ROOT ourselves).
+STEP6B_RUN="$FIXTURE/step6b-run.sh"
+patch_caller_loop "$STEP6B_FENCE" "$STEP6B_RUN"
 
-reset_queues() {
-  : > "$GH_QUEUE"
-  : > "$MONITOR_QUEUE"
-  : > "$REBASE_QUEUE"
-  : > "$PUSH_QUEUE"
-  : > "$FETCH_QUEUE"
-}
+# ---- Queue-driven PATH shims for gh / git / pr-monitor.sh / sleep ----
+# The fence calls (mid-block): `gh pr view ... --json mergeStateStatus`,
+# `git -C <dir> fetch|rebase|push|diff|rebase --abort`,
+# `bash "$ZSKILLS_SKILLS_ROOT/land-pr/scripts/pr-monitor.sh" ...`, and
+# `sleep`. Each external is a thin shim that pops a predetermined
+# rc|payload line off a per-command queue file.
+SHIM_BIN="$FIXTURE/bin"
+SKILLS_ROOT="$FIXTURE/skills-root"
+mkdir -p "$SHIM_BIN" "$SKILLS_ROOT/land-pr/scripts"
 
-queue_push() {
-  # $1=queue-file, $2=exit-code, $3=stdout-payload
-  printf '%s|%s\n' "$2" "$3" >> "$1"
-}
+GH_QUEUE="$FIXTURE/gh.queue"
+REBASE_QUEUE="$FIXTURE/rebase.queue"
+PUSH_QUEUE="$FIXTURE/push.queue"
+FETCH_QUEUE="$FIXTURE/fetch.queue"
+MONITOR_QUEUE="$FIXTURE/monitor.queue"
 
-queue_pop() {
-  # $1=queue-file → echoes "rc|payload" or "0|" if empty
-  local q="$1"
-  if [ ! -s "$q" ]; then
-    echo "0|"
-    return
+# gh shim: pops GH_QUEUE for `pr view ... --json mergeStateStatus`.
+cat > "$SHIM_BIN/gh" <<EOF
+#!/usr/bin/env bash
+Q="$GH_QUEUE"
+if [ -s "\$Q" ]; then
+  line=\$(head -n1 "\$Q"); tail -n +2 "\$Q" > "\$Q.t" && mv "\$Q.t" "\$Q"
+  printf '%s' "\${line#*|}"
+  exit "\${line%%|*}"
+fi
+printf '{"mergeStateStatus":"UNKNOWN"}'
+exit 0
+EOF
+chmod +x "$SHIM_BIN/gh"
+
+# git shim: dispatch on the verb (after stripping a leading -C <dir>).
+cat > "$SHIM_BIN/git" <<EOF
+#!/usr/bin/env bash
+FETCH_Q="$FETCH_QUEUE"; REBASE_Q="$REBASE_QUEUE"; PUSH_Q="$PUSH_QUEUE"
+if [ "\${1:-}" = "-C" ]; then shift 2; fi
+pop() { # \$1=queue → echoes rc, consuming head; default rc 0
+  local q="\$1"
+  if [ -s "\$q" ]; then
+    local line; line=\$(head -n1 "\$q"); tail -n +2 "\$q" > "\$q.t" && mv "\$q.t" "\$q"
+    echo "\${line%%|*}"; return
   fi
-  local head
-  head=$(head -n1 "$q")
-  tail -n +2 "$q" > "$q.tmp" && mv "$q.tmp" "$q"
-  echo "$head"
+  echo 0
+}
+case "\${1:-}" in
+  fetch)  exit "\$(pop "\$FETCH_Q")" ;;
+  rebase)
+    if [ "\${2:-}" = "--abort" ]; then exit 0; fi
+    exit "\$(pop "\$REBASE_Q")" ;;
+  push)   exit "\$(pop "\$PUSH_Q")" ;;
+  diff)   echo "conflict-file.txt"; exit 0 ;;
+  *)      exit 0 ;;
+esac
+EOF
+chmod +x "$SHIM_BIN/git"
+
+# pr-monitor.sh shim (invoked via \$ZSKILLS_SKILLS_ROOT/land-pr/scripts/...):
+# pops MONITOR_QUEUE and emits CI_STATUS=<payload> on stdout, rc from queue.
+cat > "$SKILLS_ROOT/land-pr/scripts/pr-monitor.sh" <<EOF
+#!/usr/bin/env bash
+Q="$MONITOR_QUEUE"
+if [ -s "\$Q" ]; then
+  line=\$(head -n1 "\$Q"); tail -n +2 "\$Q" > "\$Q.t" && mv "\$Q.t" "\$Q"
+  printf 'CI_STATUS=%s\n' "\${line#*|}"
+  exit "\${line%%|*}"
+fi
+printf 'CI_STATUS=pass\n'
+exit 0
+EOF
+chmod +x "$SKILLS_ROOT/land-pr/scripts/pr-monitor.sh"
+
+# sleep shim → no-op so the UNKNOWN re-poll runs fast.
+cat > "$SHIM_BIN/sleep" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$SHIM_BIN/sleep"
+
+qpush() { printf '%s|%s\n' "$2" "$3" >> "$1"; }
+reset_queues() { : > "$GH_QUEUE"; : > "$REBASE_QUEUE"; : > "$PUSH_QUEUE"; : > "$FETCH_QUEUE"; : > "$MONITOR_QUEUE"; }
+
+# run_real_6b — run the EXTRACTED production fence in a clean subshell with
+# the input-prelude seeded + per-case overrides exported by the caller.
+# Echoes the resulting STATUS/REASON/CONFLICT_FILES_LIST as key=value lines.
+run_real_6b() {
+  (
+    set +e
+    set -u
+    export PATH="$SHIM_BIN:$PATH"
+    export ZSKILLS_SKILLS_ROOT="$SKILLS_ROOT"
+    export CLAUDE_PROJECT_DIR="$REPO_ROOT"
+    seed_caller_loop_inputs
+    CONFLICT_FILES_LIST=""
+    # shellcheck disable=SC1090
+    . "$STEP6B_RUN"
+    printf 'STATUS=%s\n' "${STATUS:-}"
+    printf 'REASON=%s\n' "${REASON:-}"
+    printf 'CONFLICT_FILES_LIST=%s\n' "${CONFLICT_FILES_LIST:-}"
+    printf 'REBASE_STDERR_FILE=%s\n' "${REBASE_STDERR_FILE:-}"
+  )
 }
 
-# Mock command functions used by the reference implementation.
-mock_gh_pr_view() {
-  # Returns stdout (the JSON), exit code from queue.
-  local entry rc payload
-  entry=$(queue_pop "$GH_QUEUE")
-  rc="${entry%%|*}"
-  payload="${entry#*|}"
-  printf '%s' "$payload"
-  return "$rc"
+# Parse a key=value blob into out_STATUS/out_REASON/...
+parse_out() {
+  out_STATUS=""; out_REASON=""; out_CONFLICT=""; out_STDERR=""
+  while IFS='=' read -r k v; do
+    case "$k" in
+      STATUS) out_STATUS="$v" ;;
+      REASON) out_REASON="$v" ;;
+      CONFLICT_FILES_LIST) out_CONFLICT="$v" ;;
+      REBASE_STDERR_FILE) out_STDERR="$v" ;;
+    esac
+  done <<<"$1"
 }
 
-mock_pr_monitor() {
-  # Returns "CI_STATUS=X" lines on stdout, exit code from queue.
-  local entry rc payload
-  entry=$(queue_pop "$MONITOR_QUEUE")
-  rc="${entry%%|*}"
-  payload="${entry#*|}"
-  printf '%s\n' "$payload"
-  return "$rc"
-}
-
-mock_git_fetch()   { local entry rc; entry=$(queue_pop "$FETCH_QUEUE");  rc="${entry%%|*}"; return "$rc"; }
-mock_git_rebase()  { local entry rc; entry=$(queue_pop "$REBASE_QUEUE"); rc="${entry%%|*}"; return "$rc"; }
-mock_git_push()    { local entry rc; entry=$(queue_pop "$PUSH_QUEUE");   rc="${entry%%|*}"; return "$rc"; }
-mock_git_rebase_abort() { return 0; }
-mock_git_diff_unmerged() { echo "conflict-file.txt"; return 0; }
-
-# Reference implementation of Step 6b — mirrors the SKILL.md bash logic
-# 1:1, with gh / git / pr-monitor.sh replaced by mock_* shims.
-run_auto_rebase_block() {
-  # Inputs (env): STATUS, AUTO_FLAG, CI_STATUS, PR_NUMBER, BRANCH,
-  #               BASE_BRANCH, WORKTREE_PATH, BRANCH_SLUG, CI_TIMEOUT
-  # Outputs (env): STATUS, REASON, CI_STATUS, CONFLICT_FILES_LIST,
-  #                REBASE_STDERR_FILE
-  : "${BRANCH_SLUG:=test}"
-  : "${CI_TIMEOUT:=600}"
-
-  if [ -z "$STATUS" ] \
-     && [ "$AUTO_FLAG" = "true" ] \
-     && [ "$CI_STATUS" = "pass" ] \
-     && [ -n "$PR_NUMBER" ]; then
-    REBASE_STDERR="$MOCKDIR/rebase-stderr-$BRANCH_SLUG-$$.log"
-    : > "$REBASE_STDERR"
-    AUTO_REBASE_ITER=0
-    AUTO_REBASE_MAX=3
-
-    MS_JSON=$(mock_gh_pr_view)
-    MS_STATE=""
-    if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
-      MS_STATE="${BASH_REMATCH[1]}"
-    fi
-
-    while [ "$MS_STATE" = "BEHIND" ] && [ "$AUTO_REBASE_ITER" -lt "$AUTO_REBASE_MAX" ]; do
-      AUTO_REBASE_ITER=$((AUTO_REBASE_ITER + 1))
-
-      if ! mock_git_fetch; then
-        STATUS="auto-rebase-conflict"
-        REASON="auto-rebase-fetch-failed-rc$?"
-        break
-      fi
-      if ! mock_git_rebase; then
-        CONFLICT_PATHS=$(mock_git_diff_unmerged | tr '\n' ' ' | sed 's/ $//')
-        mock_git_rebase_abort || true
-        if [ -n "$CONFLICT_PATHS" ]; then
-          CONFLICT_FILES_SIDECAR="$MOCKDIR/conflicts-$BRANCH_SLUG-$$.list"
-          printf '%s\n' $CONFLICT_PATHS > "$CONFLICT_FILES_SIDECAR"
-          CONFLICT_FILES_LIST="$CONFLICT_FILES_SIDECAR"
-        fi
-        STATUS="auto-rebase-conflict"
-        REASON="auto-rebase-conflict-iter$AUTO_REBASE_ITER"
-        break
-      fi
-
-      if ! mock_git_push; then
-        PUSH_RC=$?
-        if [ "$AUTO_REBASE_ITER" -ge "$AUTO_REBASE_MAX" ]; then
-          STATUS="auto-rebase-blocked"
-          REASON="auto-rebase-push-failed-rc$PUSH_RC"
-          break
-        fi
-        MS_JSON=$(mock_gh_pr_view)
-        MS_STATE=""
-        if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
-          MS_STATE="${BASH_REMATCH[1]}"
-        fi
-        continue
-      fi
-
-      MONITOR_STDOUT=$(mock_pr_monitor)
-      MONITOR_RC=$?
-      while IFS='=' read -r KEY VALUE; do
-        case "$KEY" in
-          CI_STATUS) CI_STATUS="$VALUE" ;;
-        esac
-      done <<<"$MONITOR_STDOUT"
-      if [ "$MONITOR_RC" -ne 0 ] || [ "$CI_STATUS" != "pass" ]; then
-        STATUS="auto-rebase-blocked"
-        REASON="auto-rebase-ci-${CI_STATUS:-monitor-failed}-iter$AUTO_REBASE_ITER"
-        break
-      fi
-
-      MS_JSON=$(mock_gh_pr_view)
-      MS_STATE=""
-      if [[ "$MS_JSON" =~ \"mergeStateStatus\":[[:space:]]*\"([^\"]+)\" ]]; then
-        MS_STATE="${BASH_REMATCH[1]}"
-      fi
-
-      case "$MS_STATE" in
-        CLEAN|HAS_HOOKS|UNSTABLE) break ;;
-        BEHIND) ;;
-        BLOCKED|CONFLICTING)
-          STATUS="auto-rebase-blocked"
-          REASON="mergeStateStatus-$MS_STATE"
-          break
-          ;;
-        UNKNOWN|"")
-          STATUS="auto-rebase-blocked"
-          REASON="auto-rebase-unknown"
-          break
-          ;;
-        *)
-          STATUS="auto-rebase-blocked"
-          REASON="mergeStateStatus-$MS_STATE"
-          break
-          ;;
-      esac
-    done
-
-    if [ -z "$STATUS" ] && [ "$MS_STATE" = "BEHIND" ] && [ "$AUTO_REBASE_ITER" -ge "$AUTO_REBASE_MAX" ]; then
-      STATUS="behind-thrash"
-      REASON="auto-rebase-exhausted"
-    fi
-
-    if [ -s "$REBASE_STDERR" ] \
-       && { [ "$STATUS" = "behind-thrash" ] \
-            || [ "$STATUS" = "auto-rebase-conflict" ] \
-            || [ "$STATUS" = "auto-rebase-blocked" ]; }; then
-      REBASE_STDERR_FILE="$REBASE_STDERR"
-    else
-      rm -f "$REBASE_STDERR"
-    fi
-  fi
-}
-
-# Helper: run a case with fresh queue + inputs, assert on output.
-run_case() {
-  local label="$1"
-  reset_queues
-  STATUS=""
-  REASON=""
-  CONFLICT_FILES_LIST=""
-  REBASE_STDERR_FILE=""
-}
-
-# ===== Case 1: BEHIND on iter 1, CLEAN on iter 2 → loop breaks, no STATUS set
-run_case "case1: BEHIND→CLEAN"
-AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a BASE_BRANCH=main WORKTREE_PATH="$MOCKDIR" \
-  STATUS="" REASON="" CONFLICT_FILES_LIST="" REBASE_STDERR_FILE=""
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'   # initial probe
-queue_push "$FETCH_QUEUE"   0 ''
-queue_push "$REBASE_QUEUE"  0 ''
-queue_push "$PUSH_QUEUE"    0 ''
-queue_push "$MONITOR_QUEUE" 0 'CI_STATUS=pass'
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"CLEAN"}'    # post-rebase recheck
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ -z "$STATUS" ]; then
+# ===== Case 1: BEHIND on iter 1, CLEAN on iter 2 → loop breaks, no STATUS
+reset_queues
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'
+qpush "$FETCH_QUEUE"   0 ''
+qpush "$REBASE_QUEUE"  0 ''
+qpush "$PUSH_QUEUE"    0 ''
+qpush "$MONITOR_QUEUE" 0 'pass'
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"CLEAN"}'
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ]; then
   pass "[case1] BEHIND→CLEAN: loop broke, STATUS unset → Step 7 proceeds"
 else
-  fail "[case1] BEHIND→CLEAN" "expected empty STATUS, got '$STATUS' REASON='$REASON'"
+  fail "[case1] BEHIND→CLEAN" "expected empty STATUS, got '$out_STATUS' REASON='$out_REASON'"
 fi
 
 # ===== Case 2: BEHIND on all 3 iterations → STATUS=behind-thrash
-run_case "case2: BEHIND×3 → behind-thrash"
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'   # initial
+reset_queues
+qpush "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
 for i in 1 2 3; do
-  queue_push "$FETCH_QUEUE"   0 ''
-  queue_push "$REBASE_QUEUE"  0 ''
-  queue_push "$PUSH_QUEUE"    0 ''
-  queue_push "$MONITOR_QUEUE" 0 'CI_STATUS=pass'
-  queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}' # post-rebase recheck stays BEHIND
+  qpush "$FETCH_QUEUE"   0 ''
+  qpush "$REBASE_QUEUE"  0 ''
+  qpush "$PUSH_QUEUE"    0 ''
+  qpush "$MONITOR_QUEUE" 0 'pass'
+  qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'
 done
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ "$STATUS" = "behind-thrash" ] && [ "$REASON" = "auto-rebase-exhausted" ]; then
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ "$out_STATUS" = "behind-thrash" ] && [ "$out_REASON" = "auto-rebase-exhausted" ]; then
   pass "[case2] BEHIND×3: STATUS=behind-thrash REASON=auto-rebase-exhausted"
 else
-  fail "[case2] BEHIND×3" "expected behind-thrash/auto-rebase-exhausted, got STATUS='$STATUS' REASON='$REASON'"
+  fail "[case2] BEHIND×3" "expected behind-thrash/auto-rebase-exhausted, got STATUS='$out_STATUS' REASON='$out_REASON'"
 fi
 
 # ===== Case 3: AUTO_FLAG=false → loop skipped entirely, no STATUS set
-run_case "case3: AUTO_FLAG=false → skip"
-# Queue would-be entries that should NOT be consumed.
-queue_push "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=false; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ -z "$STATUS" ]; then
+reset_queues
+qpush "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
+parse_out "$( AUTO_FLAG=false CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ]; then
   pass "[case3] AUTO_FLAG=false: loop skipped, STATUS unset"
 else
-  fail "[case3] AUTO_FLAG=false" "expected empty STATUS, got '$STATUS'"
+  fail "[case3] AUTO_FLAG=false" "expected empty STATUS, got '$out_STATUS'"
 fi
 
 # ===== Case 4: CI_STATUS=fail → loop skipped entirely
-run_case "case4: CI=fail → skip"
-queue_push "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=fail; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ -z "$STATUS" ]; then
+reset_queues
+qpush "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
+parse_out "$( AUTO_FLAG=true CI_STATUS=fail PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ]; then
   pass "[case4] CI=fail: loop skipped, STATUS unset"
 else
-  fail "[case4] CI=fail" "expected empty STATUS, got '$STATUS'"
+  fail "[case4] CI=fail" "expected empty STATUS, got '$out_STATUS'"
 fi
 
-# ===== Case 5: Rebase conflict on iter 1 → STATUS=auto-rebase-conflict + CONFLICT_FILES_LIST
-run_case "case5: rebase conflict"
-queue_push "$GH_QUEUE"     0 '{"mergeStateStatus":"BEHIND"}'    # initial
-queue_push "$FETCH_QUEUE"  0 ''
-queue_push "$REBASE_QUEUE" 1 ''                                 # rebase fails → conflict
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ "$STATUS" = "auto-rebase-conflict" ]; then
+# ===== Case 5: Rebase conflict on iter 1 → auto-rebase-conflict + sidecar
+reset_queues
+qpush "$GH_QUEUE"     0 '{"mergeStateStatus":"BEHIND"}'
+qpush "$FETCH_QUEUE"  0 ''
+qpush "$REBASE_QUEUE" 1 ''
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ "$out_STATUS" = "auto-rebase-conflict" ]; then
   pass "[case5] rebase conflict: STATUS=auto-rebase-conflict"
 else
-  fail "[case5] rebase conflict STATUS" "expected auto-rebase-conflict, got '$STATUS'"
+  fail "[case5] rebase conflict STATUS" "expected auto-rebase-conflict, got '$out_STATUS'"
 fi
-if [ -n "$CONFLICT_FILES_LIST" ] && [ -s "$CONFLICT_FILES_LIST" ]; then
+if [ -n "$out_CONFLICT" ] && [ -s "$out_CONFLICT" ]; then
   pass "[case5] rebase conflict: CONFLICT_FILES_LIST sidecar populated"
 else
-  fail "[case5] CONFLICT_FILES_LIST" "expected sidecar path with conflict files, got '$CONFLICT_FILES_LIST'"
+  fail "[case5] CONFLICT_FILES_LIST" "expected sidecar path with conflict files, got '$out_CONFLICT'"
 fi
 
-# ===== Case 6: mergeStateStatus=BLOCKED → STATUS=auto-rebase-blocked
-run_case "case6: BLOCKED post-rebase"
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'   # initial
-queue_push "$FETCH_QUEUE"   0 ''
-queue_push "$REBASE_QUEUE"  0 ''
-queue_push "$PUSH_QUEUE"    0 ''
-queue_push "$MONITOR_QUEUE" 0 'CI_STATUS=pass'
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BLOCKED"}'  # post-rebase
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ "$STATUS" = "auto-rebase-blocked" ] && [ "$REASON" = "mergeStateStatus-BLOCKED" ]; then
+# ===== Case 6: mergeStateStatus=BLOCKED → auto-rebase-blocked
+reset_queues
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'
+qpush "$FETCH_QUEUE"   0 ''
+qpush "$REBASE_QUEUE"  0 ''
+qpush "$PUSH_QUEUE"    0 ''
+qpush "$MONITOR_QUEUE" 0 'pass'
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BLOCKED"}'
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ "$out_STATUS" = "auto-rebase-blocked" ] && [ "$out_REASON" = "mergeStateStatus-BLOCKED" ]; then
   pass "[case6] BLOCKED post-rebase: STATUS=auto-rebase-blocked REASON=mergeStateStatus-BLOCKED"
 else
-  fail "[case6] BLOCKED" "expected auto-rebase-blocked/mergeStateStatus-BLOCKED, got STATUS='$STATUS' REASON='$REASON'"
+  fail "[case6] BLOCKED" "expected auto-rebase-blocked/mergeStateStatus-BLOCKED, got STATUS='$out_STATUS' REASON='$out_REASON'"
 fi
 
-# ===== Case 7: mergeStateStatus=UNKNOWN → auto-rebase-unknown
-run_case "case7: UNKNOWN post-rebase"
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'
-queue_push "$FETCH_QUEUE"   0 ''
-queue_push "$REBASE_QUEUE"  0 ''
-queue_push "$PUSH_QUEUE"    0 ''
-queue_push "$MONITOR_QUEUE" 0 'CI_STATUS=pass'
-queue_push "$GH_QUEUE"      0 '{"mergeStateStatus":"UNKNOWN"}'
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ "$STATUS" = "auto-rebase-blocked" ] && [ "$REASON" = "auto-rebase-unknown" ]; then
+# ===== Case 7: mergeStateStatus=UNKNOWN (post-rebase, terminal) → auto-rebase-unknown
+# The post-rebase re-check is NOT re-polled (only the INITIAL probe re-polls
+# per #875); a UNKNOWN at the post-rebase recheck terminates the loop.
+reset_queues
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'
+qpush "$FETCH_QUEUE"   0 ''
+qpush "$REBASE_QUEUE"  0 ''
+qpush "$PUSH_QUEUE"    0 ''
+qpush "$MONITOR_QUEUE" 0 'pass'
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"UNKNOWN"}'
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ "$out_STATUS" = "auto-rebase-blocked" ] && [ "$out_REASON" = "auto-rebase-unknown" ]; then
   pass "[case7] UNKNOWN post-rebase: STATUS=auto-rebase-blocked REASON=auto-rebase-unknown"
 else
-  fail "[case7] UNKNOWN" "expected auto-rebase-blocked/auto-rebase-unknown, got STATUS='$STATUS' REASON='$REASON'"
+  fail "[case7] UNKNOWN" "expected auto-rebase-blocked/auto-rebase-unknown, got STATUS='$out_STATUS' REASON='$out_REASON'"
 fi
 
 # ===== Case 8: Initial mergeStateStatus=CLEAN → loop never enters
-run_case "case8: initial CLEAN → no-op"
-queue_push "$GH_QUEUE" 0 '{"mergeStateStatus":"CLEAN"}'
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ -z "$STATUS" ]; then
+reset_queues
+qpush "$GH_QUEUE" 0 '{"mergeStateStatus":"CLEAN"}'
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ]; then
   pass "[case8] initial CLEAN: loop never enters, STATUS unset"
 else
-  fail "[case8] initial CLEAN" "expected empty STATUS, got '$STATUS'"
+  fail "[case8] initial CLEAN" "expected empty STATUS, got '$out_STATUS'"
 fi
 
 # ===== Case 9: PR_NUMBER empty → loop skipped (defensive)
-run_case "case9: PR_NUMBER empty → skip"
-STATUS=""; REASON=""; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=""; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-run_auto_rebase_block
-if [ -z "$STATUS" ]; then
+reset_queues
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER="" BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ]; then
   pass "[case9] PR_NUMBER empty: loop skipped, STATUS unset"
 else
-  fail "[case9] PR_NUMBER empty" "expected empty STATUS, got '$STATUS'"
+  fail "[case9] PR_NUMBER empty" "expected empty STATUS, got '$out_STATUS'"
 fi
 
 # ===== Case 10: STATUS already set → loop skipped
-run_case "case10: STATUS preset → skip"
-STATUS="merge-failed"; REASON="prior-failure"; CONFLICT_FILES_LIST=""; REBASE_STDERR_FILE=""
-AUTO_FLAG=true; CI_STATUS=pass; PR_NUMBER=1234; BRANCH=feat/a; BASE_BRANCH=main; WORKTREE_PATH="$MOCKDIR"
-queue_push "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
-run_auto_rebase_block
-if [ "$STATUS" = "merge-failed" ]; then
+reset_queues
+qpush "$GH_QUEUE" 0 '{"mergeStateStatus":"BEHIND"}'
+parse_out "$( STATUS="merge-failed" REASON="prior-failure" AUTO_FLAG=true \
+              CI_STATUS=pass PR_NUMBER=1234 BRANCH=feat/a BASE_BRANCH=main \
+              WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ "$out_STATUS" = "merge-failed" ]; then
   pass "[case10] STATUS=merge-failed preset: loop skipped, STATUS preserved"
 else
-  fail "[case10] STATUS preset" "expected merge-failed preserved, got '$STATUS'"
+  fail "[case10] STATUS preset" "expected merge-failed preserved, got '$out_STATUS'"
+fi
+
+# ===== Case 11 (#875): UNKNOWN-then-BEHIND initial re-poll → rebase fires ====
+# The first `gh pr view` returns UNKNOWN; the bounded re-poll prelude probes
+# again and gets BEHIND, so the BEHIND loop MUST enter and the rebase fires
+# (closing the live hollow-green where UNKNOWN→blocked silently no-op'd a PR
+# that was actually BEHIND). We prove the rebase fired by consuming the
+# fetch/rebase/push/monitor queue entries and reaching CLEAN with STATUS unset.
+reset_queues
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"UNKNOWN"}'   # initial probe → triggers re-poll
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"BEHIND"}'    # re-poll resolves to BEHIND
+qpush "$FETCH_QUEUE"   0 ''
+qpush "$REBASE_QUEUE"  0 ''
+qpush "$PUSH_QUEUE"    0 ''
+qpush "$MONITOR_QUEUE" 0 'pass'
+qpush "$GH_QUEUE"      0 '{"mergeStateStatus":"CLEAN"}'     # post-rebase recheck clears
+# Sentinel: if the rebase fired, the REBASE_QUEUE is fully drained.
+parse_out "$( AUTO_FLAG=true CI_STATUS=pass PR_NUMBER=856 BRANCH=feat/a \
+              BASE_BRANCH=main WORKTREE_PATH="$FIXTURE" run_real_6b )"
+if [ -z "$out_STATUS" ] && [ ! -s "$REBASE_QUEUE" ]; then
+  pass "[case11] UNKNOWN→BEHIND re-poll: rebase fired (queue drained), STATUS unset"
+else
+  fail "[case11] UNKNOWN re-poll" "expected rebase to fire (drained REBASE_QUEUE, STATUS unset); got STATUS='$out_STATUS' rebase-left='$(cat "$REBASE_QUEUE")'"
+fi
+
+# Negative control: a pre-#875 implementation would map the initial UNKNOWN
+# straight to auto-rebase-blocked and NEVER touch the rebase queue. Assert the
+# fence did NOT do that.
+if [ "$out_STATUS" = "auto-rebase-blocked" ]; then
+  fail "[case11-neg] UNKNOWN initial mapped to blocked (the #875 hollow-green)" "STATUS='$out_STATUS' REASON='$out_REASON'"
+else
+  pass "[case11-neg] initial UNKNOWN NOT short-circuited to auto-rebase-blocked (re-poll honored)"
 fi
 
 echo ""
