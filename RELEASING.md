@@ -32,6 +32,62 @@ dogfood BOTH from this repo:
   running `/update-zskills install` against the source tree; iterate with
   `edit → /update-zskills --rerender → test`.
 
+### Repeatable plugin-install dogfood (`scripts/dogfood-plugin-install.sh`)
+
+`claude --plugin-dir .` loads the plugin from the dev working tree, but it
+does NOT exercise the real `claude plugin install` path (marketplace
+resolution → clone → cache). To dogfood THAT half on demand without pushing
+to prod and without leaving cruft in `~/.claude`, run:
+
+```bash
+bash scripts/dogfood-plugin-install.sh            # install from public dev @ main
+bash scripts/dogfood-plugin-install.sh --ref my-branch   # from a pushed branch
+bash scripts/dogfood-plugin-install.sh --keep     # keep the /tmp dir to inspect
+```
+
+It runs the whole flow under an isolated `HOME` (= `CLAUDE_CONFIG_DIR`) in
+`/tmp`, recursively removed on exit (zero cruft): it (1) builds the
+prod-stripped tree via `build-plugin-release.sh` inside a throwaway clone
+with a clone-scoped git identity (the `git commit-tree` step needs an ident a
+fresh clone lacks), (2) writes a throwaway `marketplace.json` whose single
+`zs` entry uses an https `url` source pointing at
+`https://github.com/zeveck/zskills-dev.git` at `--ref` (the `url` source —
+NOT the prod `github` shorthand, which clones via git@ SSH and fails in a
+keyless sandbox), (3) `claude plugin marketplace add` + `claude plugin
+install zs@zskills`, then (4) asserts the cached tree under the isolated
+config root contains `plugin.json`, `hooks/hooks.json`, the non-empty
+`skills/` dir, `hooks/session-start-materialise.sh`, and the lane-portable
+`zskills-resolve-config.sh`. Because the install pulls from the PUBLIC dev
+repo at `--ref`, the branch must already be pushed there to reflect non-main
+work. If the `claude` CLI is absent (e.g. a bare CI runner) it SKIPs and
+exits 0.
+
+**What the install dogfood PROVES vs does NOT.** It validates the
+clone + marketplace-resolution + cache layer only — "installed" is
+necessary, not sufficient. It does NOT exercise RUNTIME resolution: skills
+resolving under `${CLAUDE_PLUGIN_ROOT}`, hooks actually firing, `/zs:` slash
+dispatch, or the SessionStart materialiser writing the 5 consumer artifacts.
+Confirming those needs a real AUTHED `claude` session (interactive or
+headless `claude -p` — both require login); neither the install dogfood nor
+any non-interactive run covers them.
+
+**The complementary BEHAVIOR test — `claude --plugin-dir <built-tree>`.**
+The other half of dogfooding is plugin RUNTIME behavior, via the documented
+official local-dev path: `claude --plugin-dir <tree>` sets
+`CLAUDE_PLUGIN_ROOT`, registers the `hooks/hooks.json` hooks, and namespaces
+the skills under `/zs:`. Get a built tree by running
+`bash scripts/build-plugin-release.sh` and checking out the resulting
+`prod/main` ref into a directory (`git worktree add <dir> prod/main`). **Run
+`--plugin-dir` from a CLEAN, mirror-less consumer dir — NEVER from inside
+this dev repo.** zskills-dev carries a `.claude/skills/` mirror (the
+dogfooding exception, case 3 in CLAUDE.md's plugin-lane mental model), so
+running `--plugin-dir .` here reproduces the "dogfood-mask": the mirror
+satisfies skill lookups and masks whether the plugin lane actually resolves
+under `${CLAUDE_PLUGIN_ROOT}`. Only a mirror-less consumer dir validates
+mirror-less resolution — the norm a real plugin consumer lands in. Full
+runtime confirmation (hooks firing, `/zs:` dispatch, the materialiser
+writing its 5 artifacts) still requires a logged-in session.
+
 Both lanes are exercised by CI (the plugin-lane CI job lands in Phase 5).
 Neither lane is retired; both are supported indefinitely. See
 `docs/plans/PLUGIN_DISTRIBUTION.md` for the full dual-path design.
