@@ -38,7 +38,7 @@ one-shot with a runnable harness.
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Static smokes: hooks.json↔script gate, shim-sourcing, D3 fallback | ✅ Done | `2bdfe77` | hooks.json gate + shim-sourcing + D3 fallback; fail-closed; 7/0 |
-| 2 — Live dual-lane behavioral validation (claude --plugin-dir .) | ⬚ | | |
+| 2 — Live dual-lane behavioral validation (claude --plugin-dir .) | ✅ Done | `e7341a1` | validate exit-0 + graceful-degrade (CI); attended hookfire/dual-lane flag-guarded (not faked); isolated; 4/0/3skip |
 | 3 — Synthetic-consumer legacy-installer migration (D27 dual-install) | ⬚ | | |
 
 ## Conventions all phases follow
