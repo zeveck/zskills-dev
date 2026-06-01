@@ -136,11 +136,20 @@ selection — the lib must cover both.
     rewrite `RESULT_FILE=$(mktemp)` → staged path, neuter
     `. …zskills-resolve-config.sh` sources).
   - **`seed_caller_loop_inputs`** — the input-prelude that exports the
-    variables a caller-loop / Step-6b fence reads from sibling fences
+    variables a caller-loop / Step-6b / Step-7d fence reads from sibling fences
     (`STATUS`, `CI_STATUS`, `AUTO_FLAG`, `PR_NUMBER`, `BRANCH`, `BRANCH_SLUG`,
     `BASE_BRANCH`, `WORKTREE_PATH`, `CI_TIMEOUT`, `MAIN_ROOT`/`COPY_MAIN_ROOT`,
-    `TIMEZONE`, …). This is the C1 fix — the documented seam is the *input
-    contract*, not a copy of the logic.
+    `TIMEZONE`, …). **Also seed the Step-6b/7d auto-rebase + terminal-drive
+    inputs proactively (m5)** so Phase 2 consumes the lib without amending it:
+    `REBASE_STDERR_FILE` (the sidecar stderr path; declared as an input at
+    `land-pr/SKILL.md:174` and written via `REBASE_STDERR` at :466-513),
+    `UNKNOWN_POLL_MAX` (the bounded UNKNOWN re-poll cap, `land-pr/SKILL.md:485`),
+    and the Step-7d terminal-drive vars `PR_STATE` / `TW_ITER` / `REASON`
+    (`land-pr/SKILL.md:705-882`). This is the C1 fix — the documented seam is
+    the *input contract*, not a copy of the logic. The PUBLIC contract of
+    `extract_fence_between` / `extract_sentinel_block` is FROZEN (the sibling
+    plan SEAM_HARDENING_REST hard-depends on it); only `seed_caller_loop_inputs`
+    grows, which is additive.
 - [ ] Keep helpers THIN — extraction + shim + input-seeding only. Per-test
   assertions/fixtures stay in each test file.
 - [ ] `tests/test-extract-fence-lib.sh` — self-test: assert the lib extracts a
@@ -177,30 +186,81 @@ real SKILL.md fences (the logic is NOT in `pr-*.sh` — sourcing unavailable,
 extraction is the fidelity path).
 
 ### Work Items
-- [ ] `tests/test-land-pr-auto-rebase-behind.sh` → extract Step 6b fence
-  (`land-pr/SKILL.md` ~445-573) via the lib; **use `seed_caller_loop_inputs`**
-  for the ~10 sibling-fence vars (C1); PATH-shim `gh`/`git`/`pr-monitor.sh`
-  (queue-driven). Preserve all 10 cases (BEHIND→CLEAN, BEHIND×3→behind-thrash,
-  the AUTO/CI/PR_NUMBER/STATUS skip guards, conflict+sidecar, BLOCKED/UNKNOWN
-  mapping, initial-CLEAN) + the Layer-1 anchor/schema/mapping greps.
-- [ ] `tests/test-land-pr-post-merge-ff.sh` → extract Step 7b fence (~613-644);
-  keep the existing REAL git fixtures (no shim); seed only `MAIN_ROOT`.
-  Preserve cases a–d + WARN/INFO asserts.
-- [ ] (Step 7c done in Phase 1 pilot.)
-- [ ] Confirm both suites still execute in the rollup.
+- [ ] `tests/test-land-pr-auto-rebase-behind.sh` → extract the Step 6b fence
+  (`land-pr/SKILL.md:456-613`, plus the **second fence at 619-646** that
+  follows the same step) via the lib; **use `seed_caller_loop_inputs`** for the
+  sibling-fence vars (C1); PATH-shim `gh`/`git`/`pr-monitor.sh` (queue-driven).
+  **NOTE the #875 drift (M2):** production now opens the step with a bounded
+  **UNKNOWN→definite re-poll prelude** (`land-pr/SKILL.md:481-498`,
+  `UNKNOWN_POLL_MAX=5`, `sleep 4` between probes) BEFORE the `BEHIND` loop;
+  the current re-impl test maps `UNKNOWN→auto-rebase-blocked` and breaks
+  (`tests/test-land-pr-auto-rebase-behind.sh:263-266`) — a live hollow-green
+  the conversion must close. Enumerate the **10 cases** the converted suite
+  preserves + the new one:
+  1. BEHIND→CLEAN (single rebase, clears)
+  2. BEHIND×3→behind-thrash (loop cap, `auto-rebase-max-iters`)
+  3. AUTO_FLAG=0 skip-guard
+  4. CI_STATUS≠green skip-guard
+  5. PR_NUMBER-empty skip-guard
+  6. STATUS≠merge-eligible skip-guard
+  7. conflict → `--abort` + sidecar `REBASE_STDERR_FILE` populated
+  8. BLOCKED mapping
+  9. UNKNOWN mapping (terminal, after re-poll exhausts)
+  10. initial-CLEAN (no rebase needed)
+  11. **NEW (M2): UNKNOWN-then-BEHIND re-poll** — first `gh` probe returns
+     UNKNOWN, a subsequent probe returns BEHIND; assert the re-poll prelude
+     resolves to BEHIND and the rebase fires (not a silent no-op). Shim the
+     `sleep` to a no-op and queue the `gh pr view --json mergeStateStatus`
+     outputs. `seed_caller_loop_inputs` must export `REBASE_STDERR_FILE`
+     (:174) and `UNKNOWN_POLL_MAX` (:485).
+  Keep the Layer-1 anchor/schema/mapping greps.
+- [ ] `tests/test-land-pr-post-merge-ff.sh` → extract Step 7b fence
+  (`land-pr/SKILL.md:894-925`); keep the existing REAL git fixtures (no shim);
+  seed only `MAIN_ROOT`. Preserve cases a–d + WARN/INFO asserts.
+- [ ] (Step 7c — Step 7c fence is now `land-pr/SKILL.md:941-966`; done in
+  Phase 1 pilot.)
+- [ ] **Step 7d (C3) — `tests/test-land-pr-drive-automerge.sh` (NEW):** the
+  ~178-line Step 7d added by #871 (`land-pr/SKILL.md:648` heading, fence
+  **705-882**) drives a queued auto-merge to a terminal state, **re-using the
+  Step-6b rebase machinery** (`gh pr view` poll → BEHIND-detect → rebase →
+  `push --force-with-lease`) — so it carries the SAME hollow-green risk and is
+  entirely outside the existing case-set. **Prefer ADDING cases** (cheaper than
+  scoping out, and re-uses the harness): extract the 705-882 fence via the lib;
+  `seed_caller_loop_inputs` exports the 7d inputs (`PR_STATE`, `TW_ITER`,
+  `REASON`, plus the shared `PR_NUMBER`/`CI_TIMEOUT`/`BRANCH_SLUG`); shim `gh`
+  and `git` queue-driven and shim `sleep` to a no-op. Preserve these terminal
+  arms (each maps to a distinct `>&2` line in the fence):
+  - MERGED reached (`:745` INFO) → loop exits success
+  - BEHIND post-merge-request (`:776` INFO) → rebase + `--force-with-lease`
+    (`:807` retry WARN on push failure)
+  - mergeStateStatus=other / waiting-for-queue (`:843` INFO) → continue polling
+  - surfacing non-recoverable state (`:848` WARN) → break + surface
+  - no-terminus-within-timeout (`:870` WARN) → PR left OPEN, `REASON` set
+- [ ] Confirm all suites still execute in the rollup.
 
 ### Design & Constraints
-- Step 6b calls `pr-monitor.sh` mid-fence — shim to a queued CI_STATUS. Inject
-  `MAIN_ROOT`/`REBASE_DIR` via env override or a real worktree fixture.
+- Step 6b and Step 7d both call `gh pr view --json mergeStateStatus` mid-fence
+  — shim `gh` to a queued mergeStateStatus sequence (the UNKNOWN re-poll and
+  the 7d terminal-drive both consume a *sequence*, not a single value).
+  Step 6b also calls `pr-monitor.sh` — shim to a queued CI_STATUS. Inject
+  `MAIN_ROOT`/`REBASE_DIR` via env override or a real worktree fixture. Shim
+  the in-fence `sleep` calls (UNKNOWN re-poll, 7d poll loop) to no-ops so the
+  suite runs fast.
 - Test-files only; no SKILL.md change. Do NOT modify `pr-*.sh`/`block-*`.
 
 ### Acceptance Criteria
-- [ ] Both tests run the REAL fences; prior cases preserved; each FAILS under
-  fence mutation.
+- [ ] All three converted/new suites (auto-rebase-behind, post-merge-ff,
+  drive-automerge) run the REAL fences; the 10 prior auto-rebase cases + the
+  new UNKNOWN-re-poll case + the 5 Step-7d terminal arms are present; each
+  FAILS under mutation of its production fence.
+- [ ] The UNKNOWN-re-poll case (M2) proves a UNKNOWN-then-BEHIND sequence
+  enters the rebase loop (not a no-op) — closing the live hollow-green.
 - [ ] `bash tests/run-all.sh` exit 0; Overall 0 failed.
 
 ### Dependencies
-Phase 1.
+Phase 1. (Consumes `seed_caller_loop_inputs`'s Step-6b/7d inputs added in
+Phase 1 per m5 — `REBASE_STDERR_FILE`, `UNKNOWN_POLL_MAX`, `PR_STATE`,
+`TW_ITER`, `REASON`.)
 
 ## Phase 3 — commit: arg-parser extract + caller-loop harness
 
@@ -217,7 +277,8 @@ cherry-pick is already exercised by `test-landed-schema.sh` et al. — leave it.
   explicit `push`+config=pr→explicit-wins; config=`cherry-pick`→exit 1 with its
   error text; missing/unknown config→commit.
 - [ ] Caller loop: **`extract_sentinel_block`** the `commit/modes/pr.md`
-  `=== BEGIN…END CANONICAL /land-pr CALLER LOOP ===` (~74-321), `seed_caller_loop_inputs`
+  `=== BEGIN…END CANONICAL /land-pr CALLER LOOP ===` (BEGIN at `pr.md:74`,
+  END at `pr.md:312`), `seed_caller_loop_inputs`
   + faked result-file. Drive each STATUS×CI_STATUS; assert LAND_OUTCOME per
   combo, `fulfilled.commit.<id>` ends `complete` (merged/created/pr-ready) vs
   `failed`, `requires.land-pr.<id>` removed, no-result-file path inline cleanup
@@ -242,33 +303,61 @@ Phase 1.
 ## Phase 4 — do/quickfix: real mechanics extract + de-hollow message asserts
 
 ### Goal
-Kill the hollow `TRIAGE_SIM`/`REVIEW_SIM` (assert against test-authored bash;
-already drifted from do's `--force`). Per the review (C3), split into what IS
-shell-testable vs what is model-layer:
+Kill the hollow `TRIAGE_SIM`/`REVIEW_SIM` heredocs (they assert against
+test-authored bash, not production). Per the review (C3), split into what IS
+shell-testable vs what is model-layer. **NOTE (M5):** the `*_SIM` heredocs live
+ONLY in `tests/test-quickfix.sh` — specifically **Cases 47 and 48**
+(`tests/test-quickfix.sh:1431-1569`: `TRIAGE_SIM`@1431, `REVIEW_SIM`@1516).
+`tests/test-do.sh` contains **no** `*_SIM` — it already has 19 cases and is
+registered at `run-all.sh:110`.
 
 ### Work Items
 - [ ] **Extract-and-run the genuinely-testable mechanics** (these ARE bash):
   the FORCE/ROUNDS/AUTO_FLAG pre-parse (already extracted via
   `extract_parser`/`extract_preflight` — keep), the **VERDICT-parser regex**
-  (extract the ```` ```regex ```` / parser fence and run it against APPROVE /
+  (extract the parser fence and run it against APPROVE /
   `REVISE -- r` / `REJECT -- r` / malformed inputs), and the **cron-zombie
   ORDERING** (Phase 0a-before-0c) — drive dynamically, not the static Case-2
   grep.
 - [ ] **De-hollow the message assertions (NOT a circular harness).** Delete the
-  `*_SIM` heredocs. Replace with a `grep -qF` anchor that the **live**
-  `skills/do/SKILL.md` and `skills/quickfix/SKILL.md` redirect-message **table
-  rows** + the review override string carry the correct PER-SKILL text — this
-  catches the real drift (do=`--force`, quickfix=`force`; the absent ask-user
-  target). Add an explicit comment that message **emission** is model-layer
-  (the model printf's per prose) — above the testable line; the anchor guards
-  the source strings, not emission.
-- [ ] **`do` gets its own test** (today it has none — falsely defers to
-  quickfix's `force`-worded sim): a `test-do.sh` (or new file) case exercising
-  do's REAL verdict-parser + pre-parse + cron-ordering, and the `--force`
-  anchor.
-- [ ] Preserve every prior 47/48 assertion that targeted real behavior (rc=0 on
-  REDIRECT/REJECT path via the parser, no-marker, no-branch, unset-guard) and
-  ADD the ask-user target + force-override anchors.
+  `*_SIM` heredocs (`test-quickfix.sh:1431-1569`, Cases 47/48). Replace with a
+  `grep -qF` anchor that the **live** `skills/do/SKILL.md` and
+  `skills/quickfix/SKILL.md` redirect-message **table rows** carry the correct
+  PER-SKILL text. **Re-anchored drift target (C2):** the original `do=--force`
+  vs `quickfix=force` drift target is DEAD — bare `force` was retired in #822
+  (`eb75e4c`, predates this plan's draft `ce722ff`); both skills now use dashed
+  `--force` uniformly (`do/SKILL.md:73,215`; `quickfix/SKILL.md:64,101`), so
+  that anchor can never fire. Re-anchor onto a string that genuinely STILL
+  differs per skill:
+  - **quickfix-only landing-config soft-redirect** (`quickfix/SKILL.md:271`):
+    `Triage: redirecting to /do worktree. Reason: /quickfix requires execution.landing == "pr" (got "worktree").`
+    and `:274`'s `/commit` variant — `/do` has **no** landing-config redirect
+    at all (its redirects are triage-only), so a grep that this string is
+    PRESENT in `quickfix/SKILL.md` and ABSENT-as-`/quickfix`-self-named in
+    `do/SKILL.md` catches a real per-skill divergence.
+  - **per-skill ask-user target** (the skill names itself): `do/SKILL.md:403`
+    `Re-invoke /do with a concrete description …` vs `quickfix/SKILL.md:434`
+    `Re-invoke /quickfix with a concrete description …`. Anchor each skill's
+    own self-name in its own ask-user row; a copy-paste cross-contamination
+    (do's row saying `/quickfix`) fails the anchor.
+  Add an explicit comment that message **emission** is model-layer (the model
+  printf's per prose) — above the testable line; the anchor guards the source
+  strings, not emission.
+- [ ] **Convert `test-do.sh` Case 6 to behavioral extract-and-run (C1).**
+  `test-do.sh` already exists and is registered, so it does NOT need creating.
+  The ONE residual hollow gap is **Case 6 (`tests/test-do.sh:245-254`): it only
+  `grep -qF`s the two verdict-parser regex strings against the SKILL.md, it
+  never RUNS the parser.** Convert it to extract-and-run (mirror
+  `test-quickfix.sh` Case 52): extract `do`'s real verdict-parser fence and
+  execute it against `APPROVE` / `REVISE -- r` / `REJECT -- r` / malformed
+  inputs, asserting the parsed verdict per input. (do's pre-parse, cron-ordering
+  (Case 2), unset-guard, and `--force` are ALREADY covered by the existing 19
+  cases — do not duplicate them.)
+- [ ] Preserve every prior assertion in **Cases 47 and 48 of `test-quickfix.sh`**
+  (the two SIM cases) that targeted real behavior (rc=0 on REDIRECT/REJECT path
+  via the parser, no-marker, no-branch, unset-guard) and ADD the re-anchored
+  divergent-string anchors (quickfix landing-redirect + per-skill ask-user
+  self-name) when the SIMs are deleted.
 - [ ] (Optional, only if cheap and clearly better — NOT default: technique B,
   add a real ```` ```bash ```` emitter fence to each SKILL.md so emission
   becomes extractable. Heavier — version bump + mirror ×2. Default is the
@@ -281,10 +370,16 @@ shell-testable vs what is model-layer:
   mirrors both SKILL.md.
 
 ### Acceptance Criteria
-- [ ] No test asserts against a `*_SIM`. The verdict-parser/pre-parse/ordering
-  run against production and fail under mutation. A drift in do's or quickfix's
-  redirect message FAILS the anchor (demonstrate by editing one message).
-- [ ] `do` has its own mechanics test; `--force` asserted.
+- [ ] No test asserts against a `*_SIM` (Cases 47/48 of `test-quickfix.sh`
+  converted). The verdict-parser/pre-parse/ordering run against production and
+  fail under mutation.
+- [ ] `test-do.sh` Case 6 RUNS the verdict parser (extract-and-run), not a
+  grep-only check; it fails under mutation of `do`'s production parser fence.
+- [ ] A drift on a genuinely-divergent per-skill string FAILS the anchor:
+  demonstrate by editing `quickfix/SKILL.md`'s landing-config soft-redirect
+  (`:271`/`:274`) OR a per-skill ask-user self-name (do `:403` / quickfix
+  `:434`) and confirming the anchor catches it. (The dead `--force`-vs-`force`
+  anchor is NOT used.)
 - [ ] Message emission is documented as model-layer (above the line).
 - [ ] New/changed suites in rollup; `bash tests/run-all.sh` exit 0; Overall 0.
 
@@ -299,17 +394,26 @@ worktree-commit + `/land-pr`-result-parse fences — high-bug-risk (multiple
 exit-1 guards) and green-by-absence today.
 
 ### Work Items
-- [ ] draft-plan: extract Phase-6 worktree-commit fence (~594-665; **3-space
-  indent → `strip-indent`**, review #4) + land-pr-result-parse fence (~679-726)
-  via the lib; git-init + `git worktree add` sandbox + faked result-file.
-  Assert: MAIN-anchored OUTPUT_FILE remaps to TOPLEVEL; FILE_REL normalizes;
-  escaping `../*` → exit 1; two-file staged set → exit 1; COMMIT_MSG_SUBJECT
-  correct; allow-list parse + unknown-key-ignored + missing-file WARN.
-  (args-smoke is already parity-gated — leave it.)
+- [ ] draft-plan: extract Phase-6 worktree-commit fence (`draft-plan/SKILL.md:638-711`;
+  **3-space indent → `strip-indent`**, review #4 — confirmed: line 638 opens
+  `   ```bash`) + land-pr-result-parse fence (`:723-772`) via the lib; git-init
+  + `git worktree add` sandbox + faked result-file. Assert: MAIN-anchored
+  OUTPUT_FILE remaps to TOPLEVEL; FILE_REL normalizes; escaping `../*` → exit 1;
+  two-file staged set → exit 1; COMMIT_MSG_SUBJECT correct; allow-list parse +
+  unknown-key-ignored + missing-file WARN. (args-smoke is already parity-gated
+  — leave it.)
 - [ ] refine-plan: create `tests/test-refine-plan.sh` (NONE exists) — same
-  harness over Phase-5 fences (~591-671 commit, ~683-731 land-pr) + tracking
-  markers. Assert COMMIT_MSG_SUBJECT==`docs(plans): refine <base>`, the exit-1
-  guards, marker lifecycle, faked result-file branches.
+  harness over Phase-5 fences (`refine-plan/SKILL.md:600-673` commit,
+  `:685-734` land-pr) + tracking markers. **Per-skill indent asymmetry (M4):
+  refine-plan's commit fence is FLUSH-LEFT (line 600 opens ` ```bash` with no
+  3-space body indent) — so it is extracted WITHOUT `strip-indent`, unlike
+  draft-plan's indented fence, even though both are the same per-skill-cased
+  template.** Also note the commit subject is NOT a standalone literal: it
+  drives through a **shared `case "$SKILL"` block at `refine-plan/SKILL.md:662-664`**
+  (`refine-plan) COMMIT_MSG_SUBJECT="docs(plans): refine $BASE" ;;`), so the
+  assertion `COMMIT_MSG_SUBJECT==docs(plans): refine <base>` must run the fence
+  with `SKILL=refine-plan` set and read the case output. Assert: that subject,
+  the exit-1 guards, marker lifecycle, faked result-file branches.
 - [ ] refine-plan **structural edit:** isolate an `## Argument parser` ```` ```bash ````
   fence (its parsing is split between the preamble loop and prose "Detection";
   only AUTO_FLAG is fenced) so plan-file/`rounds N`/`auto` parsing is
@@ -340,12 +444,14 @@ from the seam work (review H1) so each is a bounded session.
 
 ### Work Items
 - [ ] Re-point `test-work-on-plans.sh` (~52-180) to awk-extract the
-  `subcommands/add-rank-remove.md` mutator heredocs (~156-326) and
-  `schedule_under_1h` (~351-367) instead of re-defining them. **The production
-  functions are `do_add`/`do_rank`/`do_remove`/`do_default`** (review #2 — the
-  test currently mis-names them `skill_*`); rewrite call-sites to `do_*` and
-  **co-extract the `ensure_monitor_state` fence (~44) that `do_add` calls**, or
-  the sourced function aborts at runtime.
+  `subcommands/add-rank-remove.md` mutator heredocs (`do_add`@179 …
+  `do_default`@306, i.e. **~179-326**) and `schedule_under_1h` (`@369`) instead
+  of re-defining them. **The production functions are
+  `do_add`/`do_rank`/`do_remove`/`do_default`** (review #2 — the test currently
+  mis-names them `skill_*`); rewrite call-sites to `do_*` and **co-extract the
+  `ensure_monitor_state` fence (`@45`) that every `do_*` calls** (`do_add`@194,
+  `do_rank`@241, `do_remove`@277, `do_default`@312), or the sourced function
+  aborts at runtime.
 - [ ] Preserve all existing assertions (append/insert/idempotent/digit-prefix-
   reject, rank, remove, default, the #546 `schedule_under_1h` N<60 boundary,
   flock, mirror-parity).
@@ -372,13 +478,19 @@ precisely and gate it strictly so the live path is unchanged when the harness
 flag is absent.
 
 ### Work Items
-- [ ] **Seam (`modes/execute.md`):** Step 5's `/run-plan` dispatch is a
-  `Skill: {…}` comment + prose failure-detection — not result-file-drivable.
-  Refactor Steps 1–8's dispatch loop into an executable fence; gate the
-  `/run-plan` dispatch on `_ZSKILLS_TEST_HARNESS=1` to read a per-slug injected
-  result (`_ZSKILLS_TEST_RUNPLAN_RESULT_<SLUG>` or a newline slug→text map),
-  plus an entry-point unset-guard fence (mirror `do/SKILL.md`'s, so production
-  with the flag absent behaves EXACTLY as today). Version bump + mirror.
+- [ ] **Seam (`modes/execute.md`):** the sprint dispatch loop is **Step 5
+  (`execute.md:311-471`)**; the `/run-plan` dispatch directive is the
+  `Skill: { skill: "run-plan", … }` line at **`execute.md:358-359`** (M3 — the
+  region was restructured; there is no "Steps 1–8 dispatch loop", and #877's
+  in-flight guard (`@119`) + the D4 selection filter (`@158`) now sit between
+  the entry point and the dispatch). **Re-scoped (M3): gate ONLY the dispatch
+  directive — do NOT refactor the whole step into one executable fence (bigger
+  and riskier than budgeted).** Gate the `/run-plan` dispatch at 358-359 on
+  `_ZSKILLS_TEST_HARNESS=1` to read a per-slug injected result
+  (`_ZSKILLS_TEST_RUNPLAN_RESULT_<SLUG>` or a newline slug→text map), plus an
+  **entry-point unset-guard fence** (mirror `do/SKILL.md:206-211`'s, so
+  production with the flag absent behaves EXACTLY as today). Version bump +
+  mirror.
 - [ ] **Sandbox harness:** git-init + worktree; seed `plans/*.md` +
   monitor-state with N ready entries; inject success/failure results. Assert:
   `step.`/`requires.`/`fulfilled.run-plan.<slug>` lifecycle under
@@ -394,8 +506,14 @@ flag is absent.
 - The seam is the single genuine `_ZSKILLS_TEST_` addition. **Production-safety:
   the gate must be inert when `_ZSKILLS_TEST_HARNESS` is unset** — add a
   conformance/test assertion that the unguarded path is unchanged (e.g. the
-  dispatch still emits the same `Skill: {…}` directive). Version bump + mirror
-  for execute.md's parent skill.
+  dispatch at `execute.md:358-359` still emits the same
+  `Skill: { skill: "run-plan", args: "…<FILE>.md auto" }` directive). **Validate
+  this against the current Step-5 layout (M3):** the in-flight guard (`@119`),
+  D4 selection filter (`@158`), and slug→file resolver (`@225`) already sit
+  between the entry point and the dispatch — the gate must slot in WITHOUT
+  perturbing those fragments, and the "production unchanged when flag absent"
+  assertion must hold across that multi-fragment Step-5 layout, not a single
+  monolithic fence. Version bump + mirror for execute.md's parent skill.
 - `every`/`stop` Cron* orchestration stays above the testable line — note it.
 
 ### Acceptance Criteria
@@ -419,13 +537,20 @@ test.
 ### Work Items
 - [ ] **Choose (default A):**
   - **A (factor a decision-script — preferred, makes prose testable):** extract
-    the decision rule from `run-plan/SKILL.md` (~485-571) into
+    the decision rule from `run-plan/SKILL.md` (~458-588; the cadence-sanity
+    block is `:458-490`, the decision fences `:497-507`/`:578-588`) into
     `skills/run-plan/scripts/defer-backoff-decide.sh` taking
     `--counter --cadence --cronlist-match --create-result --case
-    --recovery-marker`, emitting the directive vocabulary
-    (`DELETE_ALL_MATCHING_CRONS`/`REPLACE_CRON T`/`WRITE_COUNTER`/`PROCEED`);
-    SKILL.md prose interprets the directives (Cron* calls stay in prose).
-    Re-point `test-runplan-defer-backoff.sh` to source the real script. **This
+    --recovery-marker`, **emitting the directive vocabulary the existing test
+    already consumes (m2): `REPLACE_CRON T` / `WRITE_COUNTER N` /
+    `DELETE_COUNTER` / `PROCEED <message-mode>`** (the invented
+    `DELETE_ALL_MATCHING_CRONS`/`PROCEED`-bare tokens are NOT in production OR
+    the test — `test-runplan-defer-backoff.sh` uses `REPLACE_CRON`/`WRITE_COUNTER`/
+    `DELETE_COUNTER`/`PROCEED` at `:65,73,83,113-136`). Reuse those tokens to
+    avoid a gratuitous rename; if a new directive is genuinely needed, note the
+    rename explicitly in the phase report. SKILL.md prose interprets the
+    directives (Cron* calls stay in prose). Re-point
+    `test-runplan-defer-backoff.sh` to source the real script. **This
     adds a regular file under the skill dir → version bump + mirror; AND
     register it in `references/script-ownership.md` — this is MANDATORY, not
     "if applicable"** (review M2; script ownership is a hard conformance gate).
@@ -436,7 +561,10 @@ test.
     prose-coupled exception in the test header (per technique 2/3 framing).
 - [ ] Cite `test-run-plan-sync-pr-body-progress.sh` as the gold-standard
   template (sources the real script) — no change needed.
-- [ ] Preserve all 14 defer-backoff cases + both anchors.
+- [ ] Preserve all defer-backoff coverage: **14 logical cases / 34 pass-fail
+  assertions** (m1 — `grep -cE '\b(pass|fail)\b' test-runplan-defer-backoff.sh`
+  = 34; the preservation criterion is checkable against the assertion count,
+  not the case count) + both anchors.
 
 ### Design & Constraints
 - A: Cron* primitives stay in prose (not shell-testable); the script covers the
@@ -448,13 +576,35 @@ test.
 - [ ] Either `defer-backoff-decide.sh` exists, is sourced by the test, AND is
   registered in script-ownership.md (A), OR anchors strengthened + exception
   documented (B).
-- [ ] 14 cases + anchors preserved; new/changed suite in rollup;
-  `bash tests/run-all.sh` exit 0; Overall 0; mirror-parity green if SKILL.md
-  touched.
+- [ ] 14 logical cases / 34 assertions + anchors preserved; new/changed suite
+  in rollup; `bash tests/run-all.sh` exit 0; Overall 0; mirror-parity green if
+  SKILL.md touched.
 
 ### Dependencies
 None (A factors a standalone script + sources it, like the gold-standard
 sync-pr-body test; B is anchor-grep only — neither needs Phase 1's lib).
+
+## Drift Log
+
+The plan has **no completed phases** (all 8 are ⬚ remaining), so this log
+records **staleness drift** — divergence between the original /draft-plan spec
+(`ce722ff`, the plan's only prior commit, `docs(plans): draft
+SEAM_HARDENING_HIGH (#830)`) and production reality at refine HEAD `c7d78ab`.
+Production moved under the plan after drafting (notably #871 Step 7d, #875
+land-pr UNKNOWN re-poll, #877 work-on-plans in-flight guard, #849 mode splits,
+#822 bare-`force` retirement). The refine re-anchored every per-phase body to
+HEAD; no phase scope was deleted except the false "do has no test" premise.
+
+| Phase | Original spec | Current reality (HEAD c7d78ab) | Delta |
+|---|---|---|---|
+| 1 | `seed_caller_loop_inputs` seeds caller-loop vars only | Step-6b/7d need `REBASE_STDERR_FILE`/`UNKNOWN_POLL_MAX`/`PR_STATE`/`TW_ITER`/`REASON` | Added those inputs (m5, additive — public `extract_*` contract frozen for sibling plan) |
+| 2 | 6b@~445-573, 7b@~613-644, 7c@~613, "10 cases" | 6b@456-613 + 619-646, 7b@894-925, 7c@941-966; #875 added a bounded UNKNOWN→definite re-poll prelude (481-498); #871 added a ~178-line Step 7d (705-882) re-using the rebase machinery | Re-anchored all 3; enumerated 10 cases + NEW UNKNOWN-re-poll case (M2 — current test maps UNKNOWN→blocked @263-266, a live hollow-green); ADDED a Step-7d work-item with 5 terminal arms (C3, M1) |
+| 3 | pr.md caller-loop sentinel END @~321 | END @312 (BEGIN @74) | Bumped END anchor (m3) |
+| 4 | "do gets its own test (today it has none)"; drift = do=`--force` vs quickfix=`force`; "47/48" assertions | `test-do.sh` exists (19 cases, run-all.sh:110); bare `force` retired in #822 (pre-dates draft) so both use `--force`; `*_SIM` only in test-quickfix.sh Cases 47/48 (1431-1569) | Deleted the false "do has no test" item; re-scoped to converting `test-do.sh` Case 6 (245-254, grep-only) to extract-and-run; re-anchored the dead drift target onto quickfix's landing-config soft-redirect (271/274) + per-skill ask-user self-name (do:403/quickfix:434); reworded "47/48"→"Cases 47 and 48" (C1, C2, M5) |
+| 5 | draft-plan commit ~594-665, parse ~679-726; refine-plan commit ~591-671, parse ~683-731 | draft-plan commit 638-711 (3-space-indented), parse 723-772; refine-plan commit 600-673 FLUSH-LEFT (no strip-indent), subject via shared `case "$SKILL"` @662-664, parse 685-734 | Re-anchored both; flagged per-skill indent asymmetry (draft-plan needs strip-indent, refine-plan does not) + shared-case subject (M4) |
+| 6a | mutator heredocs ~156-326, `ensure_monitor_state`@~44 | `do_add`@179…`do_default`@306 (~179-326), `ensure_monitor_state`@45, `schedule_under_1h`@369 | Bumped heredoc anchor to ~179-326 (m4) |
+| 6b | "refactor Steps 1–8's dispatch loop into one executable fence" | No "Steps 1–8"; dispatch loop is Step 5 (311-471), `/run-plan` directive @358-359; #877 in-flight guard (119) + D4 filter (158) now sit between entry and dispatch | Re-anchored to Step 5; re-scoped from whole-step refactor to gating ONLY the dispatch directive + entry unset-guard (mirror do:206-211); re-validated production-unchanged against the multi-fragment layout (M3) |
+| 7 | decision rule ~485-571; emit `DELETE_ALL_MATCHING_CRONS`/`PROCEED`; "14 cases" | decision region ~458-588; existing test uses `REPLACE_CRON`/`WRITE_COUNTER`/`DELETE_COUNTER`/`PROCEED`; 34 pass-fail assertions | Reconciled vocab to existing test tokens (m2); reconciled "14 cases"→"14 logical cases / 34 assertions" (m1) |
 
 ## Plan Quality
 
@@ -495,3 +645,36 @@ testability — gated strictly and version-bumped, flagged for careful review.
 | R#8 Phase-3/6 "preserve assertions" under-specified | Fixed — Phase 3 explicitly migrates static greps → behavioral |
 | R#1 / DA confirm: all 5 feasibility claims (table-not-bash, fences-not-in-scripts, prose-recipe, hollow re-defs, comment-dispatch) | Confirmed-correct — no change; they ground the plan |
 | M1 ordinal+mixed-indent fragility | Fixed — documented in Phase 1; callers prefer tight regexes |
+
+## Refine Review (refine-plan round 1)
+
+A /refine-plan pass ran a reviewer + devil's-advocate over the 8 remaining
+phases against production HEAD `c7d78ab`. Every finding's empirical anchor was
+independently re-run by the orchestrator (verify-before-fix gate PASSED) and
+spot-checked by the refiner before editing. All 13 findings were **Fixed** in
+place (no Justified-not-fixed). Production-reality drift since the draft
+(`ce722ff`) is itemized in the **Drift Log** above.
+
+| Finding | Severity | Disposition | Evidence (Verified) | Note |
+|---|---|---|---|---|
+| C1 | CRITICAL | Fixed | `ls tests/test-do.sh` exists, `run-all.sh:110`; Case 6 @245-254 is `grep -qF`-only | Deleted false "do has no test"; re-scoped to converting Case 6 to extract-and-run |
+| C2 | CRITICAL | Fixed | `do/SKILL.md:73,215` + `quickfix/SKILL.md:64,101` both dashed `--force`; bare `force` retired in `eb75e4c` (#822) pre-draft | Re-anchored drift target onto quickfix landing-redirect (271/274) + per-skill ask-user self-name (do:403/quickfix:434) |
+| C3 | CRITICAL | Fixed | `land-pr/SKILL.md:648` Step 7d heading, fence 705-882, re-uses 6b rebase machinery | Added a Step-7d work-item with 5 terminal arms (MERGED/BEHIND/waiting/surface/no-terminus) |
+| M1 | MAJOR | Fixed | step headings 6b@409, 7b@884, 7c@927; fences 6b@456-613+619-646, 7b@894-925, 7c@941-966 | Re-anchored all 3 + noted second 6b fence |
+| M2 | MAJOR | Fixed | UNKNOWN re-poll @481-498 (`UNKNOWN_POLL_MAX=5`); test maps UNKNOWN→blocked @263-266 (live hollow-green); `REBASE_STDERR_FILE` input @174 | Added UNKNOWN-re-poll case; seed inputs in Phase 1 |
+| M3 | MAJOR | Fixed | `execute.md` Steps 0/3/4/5/6; dispatch loop = Step 5 @311-471; `/run-plan` directive @358-359; in-flight guard @119, D4 filter @158 | Re-anchored to Step 5; re-scoped to gating only the directive + entry unset-guard (mirror do:206-211); re-validated production-unchanged |
+| M4 | MAJOR | Fixed | draft-plan commit 638-711 (`   ```bash` indented), parse 723-772; refine-plan commit 600-673 FLUSH-LEFT, subject via shared case @662-664, parse 685-734 | Re-anchored; flagged indent asymmetry + shared-case subject |
+| M5 | MAJOR | Fixed | `_SIM` only in test-quickfix.sh @1431 (TRIAGE_SIM) / @1516 (REVIEW_SIM); none in test-do.sh | Reworded "47/48"→"Cases 47 and 48"; noted SIM lives only in test-quickfix.sh |
+| m1 | MINOR | Fixed | `grep -cE '\b(pass\|fail)\b' test-runplan-defer-backoff.sh` = 34 | Reconciled to "14 logical cases / 34 assertions" |
+| m2 | MINOR | Fixed | test uses `REPLACE_CRON`/`WRITE_COUNTER`/`DELETE_COUNTER`/`PROCEED` @65-136; invented tokens absent | Reconciled emitted vocab to existing test tokens |
+| m3 | MINOR | Fixed | `pr.md:312` `=== END CANONICAL /land-pr CALLER LOOP ===` (BEGIN @74) | Bumped END anchor 321→312 |
+| m4 | MINOR | Fixed | `do_add`@179…`do_default`@306, `ensure_monitor_state`@45, `schedule_under_1h`@369 | Bumped heredoc anchor ~156-326 → ~179-326 |
+| m5 | MINOR | Fixed | inputs `REBASE_STDERR_FILE`@174, `UNKNOWN_POLL_MAX`@485, 7d vars @705-882 | Added Step-6b/7d inputs to `seed_caller_loop_inputs`; PUBLIC `extract_*` contract untouched (sibling SEAM_HARDENING_REST hard-dep preserved) |
+
+**Substantive issues remaining: 0.** All 13 findings Fixed in place; none
+Justified-not-fixed. The plan's three-technique framing (extract-and-run /
+parity-gate / anchor-grep) and the honest-residue / model-layer-above-the-line
+stance are preserved verbatim. The Phase-1 lib's public function
+signatures (`extract_fence_between`, `extract_sentinel_block`) and the
+`tests/lib/extract-fence.sh` contract are unchanged (only the additive
+`seed_caller_loop_inputs` grew), preserving the SEAM_HARDENING_REST hard-dep.
