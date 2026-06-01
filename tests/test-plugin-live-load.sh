@@ -52,20 +52,6 @@ skip() { printf '\033[33m  SKIP\033[0m %s\n' "$1"; SKIP_COUNT=$((SKIP_COUNT+1));
 
 echo "=== plugin live load (zs + zsbd) — Phase 2 ==="
 
-# ── SKIP preamble: never FAIL on CLI-absent (this is what CI hits) ─────────
-if ! command -v claude >/dev/null 2>&1; then
-  echo "SKIP: claude CLI unavailable"
-  echo ""
-  echo "Results: 0 passed, 0 failed"
-  exit 0
-fi
-if ! claude plugin --help >/dev/null 2>&1; then
-  echo "SKIP: claude CLI unavailable ('claude plugin --help' failed)"
-  echo ""
-  echo "Results: 0 passed, 0 failed"
-  exit 0
-fi
-
 # ── MANDATORY ISOLATION (before ANY `claude` invocation) ──────────────────
 # Build the hermetic sandbox FIRST. We export a throwaway HOME, XDG_CONFIG_HOME
 # AND CLAUDE_CONFIG_DIR (the var the CLI honors for its config/credentials/
@@ -74,6 +60,10 @@ fi
 # tree is byte-identical before/after). We also pin TMPDIR=/tmp so the CLI's
 # own mktemp usage stays predictable. Every `claude` invocation in this suite
 # goes through run_isolated_claude so isolation can never be forgotten.
+#
+# We create $TMP + trap + sensitivity self-check BEFORE the CLI-absent SKIP
+# preamble so the synthetic-tree sensitivity case runs on EVERY invocation
+# (including CI runners without `claude`). The CLI-absent SKIP comes after.
 #
 # If TMP cannot be created, the WHOLE live phase SKIPs rather than risk
 # touching real state.
@@ -94,10 +84,78 @@ mkdir -p "$ISO_HOME" "$ISO_XDG" "$ISO_CFG" "$TMP/proj"
 # listing-hash before and after the whole run. (Defense in depth: the env vars
 # already redirect all writes; this is the belt to that suspenders.)
 REAL_CLAUDE="${HOME:-/nonexistent}/.claude"
-real_claude_snapshot() {
-  # Listing + sizes + mtimes; stable across a no-write run.
-  find "$REAL_CLAUDE" -maxdepth 3 -printf '%p %s %T@\n' 2>/dev/null | LC_ALL=C sort | md5sum | awk '{print $1}'
+# Paths a plugin-install operation would naturally write to. Anything outside
+# this set is live-session state (transcripts, jobs, sessions, backups) that
+# the running Claude session writes continuously — fingerprinting it makes the
+# isolation check perpetually fail (issue #954). See:
+#   https://github.com/zeveck/zskills-dev/issues/954
+PLUGIN_WRITE_PATHS=( "settings.json" "plugins" "hooks" "agents" "skills" )
+
+# Parametric helper: snapshot a given root restricted to an allow-list of
+# child paths. Used by real_claude_snapshot AND the sensitivity case below.
+snapshot_tree_scoped() {
+  local root="$1"; shift
+  local p
+  for p in "$@"; do
+    if [ -e "$root/$p" ]; then
+      find "$root/$p" -maxdepth 3 -printf '%p %s %T@\n' 2>/dev/null
+    fi
+  done | LC_ALL=C sort | md5sum | awk '{print $1}'
 }
+
+real_claude_snapshot() {
+  snapshot_tree_scoped "$REAL_CLAUDE" "${PLUGIN_WRITE_PATHS[@]}"
+}
+
+# ── (iso-sensitivity) prove snapshot_tree_scoped catches writes in allow-list ─
+# This is a self-check against a SYNTHETIC tree we control — we never write
+# into real ~/.claude/. If snapshot_tree_scoped is broken (e.g., the find
+# command silently fails, the allow-list is misspelled, or md5sum collapses
+# distinct trees), this case fails and the (iso) check below is unreliable.
+SYNTH="$TMP/synth"
+mkdir -p "$SYNTH/plugins" "$SYNTH/hooks" "$SYNTH/agents" "$SYNTH/skills"
+echo '{}' > "$SYNTH/settings.json"
+SYNTH_SNAP_1="$(snapshot_tree_scoped "$SYNTH" "${PLUGIN_WRITE_PATHS[@]}")"
+# Inject a probe file inside one of the allow-list subdirectories.
+echo "probe" > "$SYNTH/plugins/zzz-zskills-isolation-probe-$$"
+SYNTH_SNAP_2="$(snapshot_tree_scoped "$SYNTH" "${PLUGIN_WRITE_PATHS[@]}")"
+if [ "$SYNTH_SNAP_1" != "$SYNTH_SNAP_2" ]; then
+  pass "(iso-sensitivity) snapshot_tree_scoped detects an in-scope write (synthetic tree, no real ~/.claude touched)"
+else
+  fail "(iso-sensitivity) snapshot_tree_scoped did NOT detect an in-scope write — isolation check is hollow"
+fi
+# Inject another file OUTSIDE the allow-list (e.g., a sibling 'projects' dir,
+# which mimics live-session transcript writes). The snapshot MUST NOT change
+# — proving the allow-list correctly excludes live-session noise.
+mkdir -p "$SYNTH/projects"
+echo "transcript" > "$SYNTH/projects/zzz-out-of-scope-$$.jsonl"
+SYNTH_SNAP_3="$(snapshot_tree_scoped "$SYNTH" "${PLUGIN_WRITE_PATHS[@]}")"
+if [ "$SYNTH_SNAP_3" = "$SYNTH_SNAP_2" ]; then
+  pass "(iso-sensitivity) snapshot_tree_scoped correctly IGNORES out-of-scope writes (live-session noise excluded)"
+else
+  fail "(iso-sensitivity) snapshot_tree_scoped INCORRECTLY caught an out-of-scope write — allow-list is broken"
+fi
+# Cleanup not strictly needed — the existing `trap 'rm -rf "$TMP"' EXIT` at
+# the top of this file removes $TMP/synth automatically. But explicit removes
+# keep the synth dir hygienic for subsequent assertions in this file:
+rm -rf "$SYNTH"
+
+# ── SKIP preamble: never FAIL on CLI-absent (this is what CI hits) ─────────
+# Comes AFTER the sensitivity self-check so that check runs even on CI runners
+# without `claude`.
+if ! command -v claude >/dev/null 2>&1; then
+  echo "SKIP: claude CLI unavailable"
+  echo ""
+  printf 'Results: %d passed, %d failed, %d skipped (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
+  exit "$FAIL_COUNT"
+fi
+if ! claude plugin --help >/dev/null 2>&1; then
+  echo "SKIP: claude CLI unavailable ('claude plugin --help' failed)"
+  echo ""
+  printf 'Results: %d passed, %d failed, %d skipped (of %d)\n' "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT" "$((PASS_COUNT + FAIL_COUNT))"
+  exit "$FAIL_COUNT"
+fi
+
 SNAP_BEFORE="$(real_claude_snapshot)"
 
 # Run `claude` with the isolated environment. We use `env -i` to start from a
