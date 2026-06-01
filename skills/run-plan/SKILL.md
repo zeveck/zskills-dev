@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.01+604a89"
+  version: "2026.06.01+4c879a"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -517,61 +517,97 @@ Before parsing, check for stale state from a previous failed run:
       adaptive backoff decision rule (#110). The pipeline cron stays at
       its current cadence on most fires and steps down to a slower
       cadence only at boundary fires `C+1 ∈ {1, 10, 16, 26}`. The
-      counter `C` is per-phase scoped:
+      counter `C` is per-phase scoped.
+
+      **The DECISION is factored into a pure script** —
+      `defer-backoff-decide.sh` — so the (bug-prone) arithmetic/branching
+      is unit-tested in isolation (`tests/test-runplan-defer-backoff.sh`)
+      and can never drift silently from the prose. The Cron* tool calls
+      stay HERE in prose; the script only decides WHICH of them to make.
 
       1. Read `C` from
          `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers.<phase>`
-         (default `0` if missing).
-      2. Read current cadence `R` via `CronList` substring match on
-         `Run /run-plan <plan-file> finish auto`. If multi-match, pick
-         the first for cadence read (the delete-all step in 4 collapses
-         all). If no match: emit `WARN no-cron-match`, do NOT increment
-         counter, output the defer message, exit.
-      3. Compute target cadence `T` from `C+1`:
-         `<10` → `*/1`, `10..15` → `*/10`, `16..25` → `*/30`,
-         `≥26` → `*/60`.
-      4. If `T != R`:
-         a. CronList → enumerate ALL prompts containing
-            `Run /run-plan <plan-file> finish auto`.
-         b. CronDelete each ID.
-         c. CronCreate ONE cron with `cron: T`, `recurring: true`,
-            `prompt: "Run /run-plan <plan-file> finish auto"`.
-         d. Verify: CronList again; if no match found OR cadence != `T`,
-            `sleep 2` between retry attempts (N1 fix: inter-attempt
-            spacing protects against rate-limit-class CronCreate
-            failures, which would otherwise burn all 3 retries inside
-            the same rate-limit window), then retry steps c–d up to 2
-            more times (3 total CronCreate attempts; total worst-case
-            wall-time on the failing path ≈ 4-6s of sleep + 6 LLM tool
-            calls). If all 3 attempts fail: write
-            `cron-recovery-needed.<phase>` marker, emit
-            `WARN cron-replace-failed (3 retries exhausted)` to stdout
-            AND output a prominent user-visible WARN to the turn's final
-            message:
+         (default `0` if missing). Read current cadence `R` via `CronList`
+         substring match on `Run /run-plan <plan-file> finish auto` (if
+         multi-match, pick the first for cadence read — the delete-all
+         directive collapses all). Note the CronList match count `N`
+         (`0` when no cron matches). Then ask the decision script which
+         directives to apply:
+         ```bash
+         DIRECTIVES=$(bash "$ZSKILLS_SKILLS_ROOT/run-plan/scripts/defer-backoff-decide.sh" \
+           --counter "$C" \
+           --cadence "$R" \
+           --cronlist-match "$N" \
+           --create-result ok \
+           --case 3 \
+           --recovery-marker no \
+           --phase "$PHASE")
+         ```
+         (`--create-result` is `ok` on entry; flip to `missing` /
+         `missing-after-3-retries` and re-ask only if the verify in
+         directive `REPLACE_CRON` below comes back short — see step 3d.)
+      2. The script computes target cadence `T` from `C+1`
+         (`<10` → `*/1`, `10..15` → `*/10`, `16..25` → `*/30`,
+         `≥26` → `*/60`) and emits one directive per line. Interpret
+         them top-to-bottom:
 
-            > ⚠ /run-plan finish auto: failed to update cron after 3 attempts.
-            > Pipeline is stalled until you re-invoke /run-plan <plan>
-            > finish auto.
-            >
-            > If the next invocation also fails: run `/run-plan stop` to
-            > clear all crons, then file an issue at
-            > github.com/zeveck/zskills-dev/issues/new with the contents of
-            > .zskills/tracking/<pipeline-id>/cron-recovery-needed.<phase>
-            > and your `CronList` output.
+         - `WARN no-cron-match` — no cron matched (`N == 0`); do NOT
+           increment counter, output the defer message, exit.
+         - `DELETE_ALL_MATCHING_CRONS` — CronList → enumerate ALL prompts
+           containing `Run /run-plan <plan-file> finish auto`, then
+           CronDelete each ID (`T != R`, so the cadence is changing).
+         - `SLEEP_BETWEEN_RETRIES` — `sleep 2` before the CronCreate retry
+           (N1 fix: inter-attempt spacing protects against
+           rate-limit-class CronCreate failures, which would otherwise
+           burn all 3 retries inside the same rate-limit window).
+         - `REPLACE_CRON T` — CronCreate ONE cron with `cron: T`,
+           `recurring: true`,
+           `prompt: "Run /run-plan <plan-file> finish auto"`.
+         - `WRITE_COUNTER N` — write `N` (= `C+1`) to the counter file
+           `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers.<phase>`.
+         - `PROCEED defer-message-printed` — output the defer message
+           (boundary fire `C+1 ∈ {1, 10, 16, 26}`):
 
-            (N2 fix: explicit escalation path — `/run-plan stop` + manual
-            `gh issue` filing — so users have a complete action ladder
-            rather than a re-invoke-or-give-up choice.)
+           > Phase X already in progress, deferring. Backoff cadence now T.
 
-            Do NOT increment counter. Exit.
-      5. If `T == R`: no cron action.
-      6. Write `C+1` to the counter file
-         `$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/in-progress-defers.<phase>`.
-         Output the defer message ONLY at `C+1 ∈ {1, 10, 16, 26}`
-         (silent on intermediate fires so users see meaningful step-down
-         events but not minute-by-minute noise):
+         - `PROCEED defer-message-silent` — advance silently (intermediate
+           fire, so users see meaningful step-down events but not
+           minute-by-minute noise).
 
-         > Phase X already in progress, deferring. Backoff cadence now T.
+      3. **Verify + retry on `REPLACE_CRON`.** After a CronCreate, verify
+         via CronList again; if no match found OR cadence != `T`, re-ask
+         the script with `--create-result missing` (which emits
+         `SLEEP_BETWEEN_RETRIES` then `REPLACE_CRON T`) and retry steps
+         c–d up to 2 more times (3 total CronCreate attempts; worst-case
+         wall-time on the failing path ≈ 4-6s of sleep + 6 LLM tool
+         calls). On the 3rd exhausted attempt, re-ask with
+         `--create-result missing-after-3-retries`; the script then emits
+         the high-severity-race directives (no `WRITE_COUNTER`):
+
+         - `WARN cron-replace-failed (3 retries exhausted)` — emit to stdout.
+         - `WRITE_RECOVERY_MARKER <phase>` — write the
+           `cron-recovery-needed.<phase>` sentinel.
+         - `EMIT_USER_WARN cron-stalled` — output a prominent
+           user-visible WARN to the turn's final message:
+
+           > ⚠ /run-plan finish auto: failed to update cron after 3 attempts.
+           > Pipeline is stalled until you re-invoke /run-plan <plan>
+           > finish auto.
+           >
+           > If the next invocation also fails: run `/run-plan stop` to
+           > clear all crons, then file an issue at
+           > github.com/zeveck/zskills-dev/issues/new with the contents of
+           > .zskills/tracking/<pipeline-id>/cron-recovery-needed.<phase>
+           > and your `CronList` output.
+
+           (N2 fix: explicit escalation path — `/run-plan stop` + manual
+           `gh issue` filing — so users have a complete action ladder
+           rather than a re-invoke-or-give-up choice.)
+
+           Do NOT increment counter. Exit.
+
+      When `T == R` the script emits no `DELETE_ALL_MATCHING_CRONS` /
+      `REPLACE_CRON` (no cron action) — only `WRITE_COUNTER` + `PROCEED`.
    4. **Otherwise**: proceed with normal preflight (steps 1–9) then
       Phase 2. Before proceeding, clear all per-phase defer counters and
       any stale recovery sentinel from a prior phase (#110):

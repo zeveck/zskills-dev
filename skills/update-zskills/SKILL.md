@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.05.31+3853ab"
+  version: "2026.06.01+9e1d01"
 ---
 
 # Update Z Skills Infrastructure
@@ -1682,6 +1682,7 @@ STALE_LIST=(
   convergence-check.sh
   coverage-floor-precheck.sh
   create-worktree.sh
+  defer-backoff-decide.sh
   detect-language.sh
   draft-orchestrator.sh
   flip-frontmatter-status.sh

@@ -4,10 +4,16 @@
 # The backoff rule is specified in skills/run-plan/SKILL.md, Step 0
 # Case 3 ("Next-target phase already In Progress"), with the
 # sentinel-recovery prelude immediately above (the
-# "cron-recovery-needed.<phase>" branch). The skill's bash is entangled
-# with prose, so this test re-implements the decision rule inline as
-# `defer_backoff_step()` — matching the skill's algorithm exactly —
-# and exercises it against synthesized cron/marker state.
+# "cron-recovery-needed.<phase>" branch). The DECISION (the bug-prone,
+# I/O-free part) is now factored into the real production script
+# skills/run-plan/scripts/defer-backoff-decide.sh, which the SKILL.md
+# prose interprets. This test SOURCES that real script (via the
+# defer_backoff_step shim below) rather than re-implementing the rule —
+# matching the gold-standard pattern of
+# tests/test-run-plan-sync-pr-body-progress.sh, which drives the real
+# sync-pr-body-progress.sh helper. A mutation of the production script's
+# decision logic now FAILS these assertions, instead of the test passing
+# against a stale private copy.
 #
 # Assertions target the rule's PUBLIC CONTRACT:
 #   - per-phase counter advances on every fire (C → C+1)
@@ -24,12 +30,18 @@
 #   - defer message printed only at boundary fires C+1 ∈ {1,10,16,26}
 #
 # If the real skill's rule diverges from this state machine, the
-# skill is wrong OR this test is stale — read both, decide which.
+# script is wrong OR this test is stale — read both, decide which.
 # The invariants test (test-skill-invariants.sh) locks down anchors
 # so the rule cannot be silently deleted.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DECIDE_SCRIPT="$REPO_ROOT/skills/run-plan/scripts/defer-backoff-decide.sh"
+
+if [ ! -x "$DECIDE_SCRIPT" ]; then
+  echo "FAIL: $DECIDE_SCRIPT missing or not executable" >&2
+  exit 1
+fi
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -44,98 +56,24 @@ fail() {
   FAIL_COUNT=$((FAIL_COUNT+1))
 }
 
+# Shim: translate the fixture's global state into flags for the REAL
+# production decision script, then exec it. This is the only indirection
+# between the cases below and skills/run-plan/scripts/defer-backoff-decide.sh
+# — every assertion exercises the shipped script's decision logic.
+#
 # Reads globals: COUNTER_VALUE, CURRENT_CADENCE, CRONLIST_MATCH_COUNT,
 # CRONCREATE_VERIFY_RESULT (ok|missing|missing-after-3-retries), PHASE,
 # PLAN_FILE, TRACKING_ID, RECOVERY_MARKER_PRESENT (yes|no), CASE (3|4).
-# Emits decision lines (vocab in header docstring + spec).
+# Emits the script's decision lines (vocab in the script header docstring).
 defer_backoff_step() {
-  # ---- Sentinel-recovery prelude (#110 WI 1.2; A1 fix) -----------------
-  if [ "$RECOVERY_MARKER_PRESENT" = "yes" ]; then
-    echo "PRELUDE_RECOVERY_ATTEMPTED"
-    if [ "${CRONLIST_MATCH_COUNT:-0}" -ge 1 ]; then
-      # Cron exists — cadence-sanity check (A1). Sane set: */1, */10, */30, */60.
-      case "$CURRENT_CADENCE" in
-        '*/1'|'*/10'|'*/30'|'*/60')
-          echo "PRELUDE_RECOVERY_OK"
-          ;;
-        *)
-          # Bad cadence: force-delete, recreate at */1, hold counter.
-          echo "WARN cron-recovery-bad-cadence $CURRENT_CADENCE"
-          echo "DELETE_ALL_MATCHING_CRONS"
-          echo "REPLACE_CRON */1"
-          echo "PRELUDE_RECOVERY_OK"
-          return 0
-          ;;
-      esac
-    else
-      # No cron; prelude attempts CronCreate at */1.
-      if [ "$CRONCREATE_VERIFY_RESULT" = "ok" ]; then
-        echo "REPLACE_CRON */1"
-        echo "PRELUDE_RECOVERY_OK"
-      else
-        echo "PRELUDE_RECOVERY_FAILED"
-      fi
-    fi
-  fi
-
-  # ---- Case 4: new-phase entry (rm per-phase counters + sentinel) ------
-  if [ "${CASE:-3}" = "4" ]; then
-    echo "DELETE_COUNTER"
-    return 0
-  fi
-
-  # ---- Case 3: adaptive backoff decision rule --------------------------
-  # Step 1: counter C → NEXT = C+1.
-  local C="${COUNTER_VALUE:-0}"
-  local NEXT=$((C + 1))
-
-  # Step 2: read R via CronList. No match → WARN + hold counter + exit.
-  if [ "${CRONLIST_MATCH_COUNT:-1}" -eq 0 ]; then
-    echo "WARN no-cron-match"
-    return 0
-  fi
-  local R="$CURRENT_CADENCE"
-
-  # Step 3: compute target cadence T from NEXT.
-  local T
-  if   [ "$NEXT" -lt 10 ]; then T='*/1'
-  elif [ "$NEXT" -le 15 ]; then T='*/10'
-  elif [ "$NEXT" -le 25 ]; then T='*/30'
-  else                          T='*/60'
-  fi
-
-  # Step 4: if T != R, replace cron (delete-all + create + verify w/ 3
-  # retries, sleep 2 between attempts — N1).
-  if [ "$T" != "$R" ]; then
-    echo "DELETE_ALL_MATCHING_CRONS"
-    case "$CRONCREATE_VERIFY_RESULT" in
-      ok)
-        echo "REPLACE_CRON $T"
-        ;;
-      missing)
-        echo "SLEEP_BETWEEN_RETRIES"
-        echo "WARN cron-replace-failed (1 retry, will continue)"
-        echo "REPLACE_CRON $T"
-        ;;
-      missing-after-3-retries)
-        # High-severity race: hold counter, sentinel + user WARN (N2).
-        echo "SLEEP_BETWEEN_RETRIES"
-        echo "WARN cron-replace-failed (3 retries exhausted)"
-        echo "WRITE_RECOVERY_MARKER $PHASE"
-        echo "EMIT_USER_WARN cron-stalled"
-        return 0
-        ;;
-    esac
-  fi
-  # Step 5: T == R → no cron action.
-
-  # Step 6: advance counter; defer message only at boundary fires.
-  echo "WRITE_COUNTER $NEXT"
-  case "$NEXT" in
-    1|10|16|26) echo "PROCEED defer-message-printed" ;;
-    *)          echo "PROCEED defer-message-silent" ;;
-  esac
-  return 0
+  bash "$DECIDE_SCRIPT" \
+    --counter "${COUNTER_VALUE:-0}" \
+    --cadence "${CURRENT_CADENCE:-*/1}" \
+    --cronlist-match "${CRONLIST_MATCH_COUNT:-1}" \
+    --create-result "${CRONCREATE_VERIFY_RESULT:-ok}" \
+    --case "${CASE:-3}" \
+    --recovery-marker "${RECOVERY_MARKER_PRESENT:-no}" \
+    --phase "${PHASE:-3}"
 }
 
 # Fixture setup

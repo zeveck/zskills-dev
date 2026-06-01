@@ -15,6 +15,33 @@
 > `ensure_lockfile` / `with_monitor_lock` helpers from Step 0 are
 > also defined. All bash fences below reference those directly.
 
+## Step 2.9 — Entry-point unset guard (test-seam hygiene)
+
+The Step-5 dispatch loop carries a single strictly-gated test seam (see
+Step 5.5 below) that reads `_ZSKILLS_TEST_RUNPLAN_*` env vars **only**
+when `_ZSKILLS_TEST_HARNESS=1`. Keep this guard FIRST so any code path
+that later reads `_ZSKILLS_TEST_*` env vars sees production-cleared
+values when the harness flag is absent. Symmetric to
+`/do`'s WI 2a.3 entry-point guard (`skills/do/SKILL.md`) and
+`/quickfix`'s WI 1a.3a guard — production behavior is byte-for-byte
+unchanged when `_ZSKILLS_TEST_HARNESS` is unset because the dispatch
+seam's only injected inputs are cleared here before they can be read.
+
+```bash
+# Entry-point unset guard (SEAM_HARDENING_HIGH Phase 6b dispatch seam) —
+# keep first so the Step-5 dispatch seam (which reads
+# _ZSKILLS_TEST_RUNPLAN_RESULT / _ZSKILLS_TEST_RUNPLAN_RESULT_<SLUG> only
+# under the harness flag) sees the production-cleared values when the flag
+# is absent. Symmetric to /do skills/do/SKILL.md's WI 2a.3 guard.
+if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
+  unset _ZSKILLS_TEST_RUNPLAN_RESULT
+  while IFS='=' read -r _v _; do
+    case "$_v" in _ZSKILLS_TEST_RUNPLAN_RESULT_*) unset "$_v" ;; esac
+  done < <(env)
+  unset _v _
+fi
+```
+
 ## Step 3 — Read-only modes (no args, `next`)
 
 ### No-args output format
@@ -367,15 +394,64 @@ For each ready entry in `plans.ready[0:N]`:
    to create its worktree — `/work-on-plans` does not call that
    script directly.
 
+   Capture the `/run-plan` result message into `RUNPLAN_RESULT` for the
+   failure-detection grep in Step 6. In production the model assigns the
+   Skill tool's returned text to `RUNPLAN_RESULT`.
+
+   **Test seam (production behavior unaffected).** `/work-on-plans`
+   dispatches `/run-plan` via the Skill tool, which a sandbox harness
+   cannot drive. So the result is read through a strictly-gated seam: when
+   `_ZSKILLS_TEST_HARNESS=1`, the dispatch is replaced by reading an
+   INJECTED per-slug result instead of invoking the Skill tool. The gate is
+   inert when the flag is unset — the entry-point guard (Step 2.9) has
+   already cleared the injected vars, and the fence's whole body is inside
+   the `[ "${_ZSKILLS_TEST_HARNESS:-}" = "1" ]` branch, so production with
+   the flag absent NEVER reads them and ALWAYS emits the same
+   `Skill: { skill: "run-plan", args: "...auto [finish]" }` directive above.
+
+   <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: seam fence operates on injected env vars + the SLUG loop var only; no path-config preamble needed -->
+   ```bash
+   # SEAM_HARDENING_HIGH Phase 6b — strictly-gated dispatch seam.
+   # PRODUCTION (flag absent): this whole block is skipped; the model
+   # dispatches /run-plan via the Skill tool (directive above) and assigns
+   # the returned text to RUNPLAN_RESULT itself.
+   # HARNESS (flag == 1): read the injected result for $SLUG instead of
+   # dispatching, so the real Step-5/Step-6 loop is exercisable in a sandbox.
+   # Per-slug var takes precedence over the newline slug->text map; the map
+   # row format is "<slug>\t<text>" (TAB-separated, one row per line).
+   if [ "${_ZSKILLS_TEST_HARNESS:-}" = "1" ]; then
+     _slug_uc=$(printf '%s' "$SLUG" | tr '[:lower:]-' '[:upper:]_')
+     _perslug_var="_ZSKILLS_TEST_RUNPLAN_RESULT_${_slug_uc}"
+     if [ -n "${!_perslug_var:-}" ]; then
+       RUNPLAN_RESULT="${!_perslug_var}"
+     else
+       RUNPLAN_RESULT=$(printf '%s\n' "${_ZSKILLS_TEST_RUNPLAN_RESULT:-}" \
+         | awk -F'\t' -v s="$SLUG" '$1==s {sub(/^[^\t]*\t/,""); print; exit}')
+     fi
+     unset _slug_uc _perslug_var
+   fi
+   ```
+
 6. **Detect failure.** `/run-plan` returns a result message; there
    is no exit code from a Skill invocation. Treat the dispatch as a
    FAILURE if **any** of:
 
    - **(a) Result text matches** any of (case-sensitive grep on the
-     response):
+     response, against `RUNPLAN_RESULT` captured in Step 5.5):
      - `Phase \d+ failed`
      - `verification failed`
      - `rebase conflict`
+
+     <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: text-match fence operates on RUNPLAN_RESULT shell var only; no path-config preamble needed -->
+     ```bash
+     # Failure-detection arm (a): grep RUNPLAN_RESULT for the known
+     # /run-plan failure signatures. Sets DISPATCH_FAILED=1 on a match.
+     DISPATCH_FAILED=0
+     if printf '%s' "${RUNPLAN_RESULT:-}" \
+          | grep -Eq 'Phase [0-9]+ failed|verification failed|rebase conflict'; then
+       DISPATCH_FAILED=1
+     fi
+     ```
    - **(b) Marker timeout.** The dispatched `/run-plan` wrote a
      `step.run-plan.*.implement` marker (under
      `$MAIN_ROOT/.zskills/tracking/run-plan.<child-slug>/`) but no

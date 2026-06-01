@@ -1,7 +1,7 @@
 ---
 title: Seam Hardening — HIGH-priority skills (exercise production code, kill hollow-green)
 created: 2026-05-29
-status: active
+status: complete
 ---
 
 # Plan: Seam Hardening — HIGH-priority skills
@@ -73,14 +73,14 @@ file exists. A created-but-unregistered test is itself a #809-class hole.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Shared `tests/lib/` extract + landpr harness (+ pilot) | ⬚ | | |
-| 2 — land-pr: extract Steps 6b/7b/7c fences | ⬚ | | |
-| 3 — commit: arg-parser extract + caller-loop harness | ⬚ | | |
-| 4 — do/quickfix: real mechanics extract + de-hollow message asserts | ⬚ | | |
-| 5 — draft-plan + refine-plan: Phase-6/5 fence harnesses | ⬚ | | |
-| 6a — work-on-plans: de-hollow mutator tests (test-only) | ⬚ | | |
-| 6b — work-on-plans: dispatch-loop seam + sandbox harness (SKILL.md) | ⬚ | | |
-| 7 — run-plan: defer-backoff decision + anchor hardening | ⬚ | | |
+| 1 — Shared `tests/lib/` extract + landpr harness (+ pilot) | ✅ Done | `259bfe3` | lib + self-test + Step-7c pilot; 6903/6903 pass |
+| 2 — land-pr: extract Steps 6b/7b/7c fences | ✅ Done | `b4ad4c0` | 6b+7b+7d extract-and-run; +UNKNOWN re-poll; 6935/6935 pass |
+| 3 — commit: arg-parser extract + caller-loop harness | ✅ Done | `a53e252` | parser + PR caller-loop behavioral; old greps migrated; 6962/6962 pass |
+| 4 — do/quickfix: real mechanics extract + de-hollow message asserts | ✅ Done | `b111d63` | Case 6 runs verdict parser; *_SIM deleted; divergent anchors; 6962/6962 pass |
+| 5 — draft-plan + refine-plan: Phase-6/5 fence harnesses | ✅ Done | `5539a31` | fence harnesses + refine-plan arg-parser fence (bumped+mirrored); 6992/6992 pass |
+| 6a — work-on-plans: de-hollow mutator tests (test-only) | ✅ Done | `ae98c7d` | extracts real do_*/ensure_monitor_state heredocs; 6993/6993 pass |
+| 6b — work-on-plans: dispatch-loop seam + sandbox harness (SKILL.md) | ✅ Done | `9f8a3d1` | _ZSKILLS_TEST_HARNESS seam (inert in prod) + 24-test harness; bump+mirror; 7017/7017 pass |
+| 7 — run-plan: defer-backoff decision + anchor hardening | ✅ Done | `739dff1` | defer-backoff-decide.sh (test sources real script) + dual bump; 7017/7017 pass |
 
 ## Conventions (all phases)
 

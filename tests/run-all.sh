@@ -108,9 +108,18 @@ run_suite "test-fix-issues-phase2-source-filter.sh" "tests/test-fix-issues-phase
 run_suite "test-fix-issues-skip-persistence.sh" "tests/test-fix-issues-skip-persistence.sh"
 run_suite "test-fix-issues-skip-effective-reason.sh" "tests/test-fix-issues-skip-effective-reason.sh"
 run_suite "test-do.sh" "tests/test-do.sh"
-run_suite "test-commit.sh" "tests/test-commit.sh"
+# SEAM_HARDENING_HIGH Phase 3 — extract-and-run the real /commit arg-parser
+# + the real /commit pr canonical /land-pr caller loop. These supersede the
+# static-grep coverage that used to live in tests/test-commit.sh (removed).
+run_suite "test-commit-parsing.sh" "tests/test-commit-parsing.sh"
+run_suite "test-commit-pr-caller-loop.sh" "tests/test-commit-pr-caller-loop.sh"
 run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"
 run_suite "test-draft-plan-args-smoke.sh" "tests/test-draft-plan-args-smoke.sh"
+# SEAM_HARDENING_HIGH Phase 5 — extract-and-run the real draft-plan Phase-6 /
+# refine-plan Phase-5 worktree-commit + /land-pr-result-parse fences (exit-1
+# guards + allow-list parse), plus the refine-plan `## Argument parser` fence.
+run_suite "test-draft-plan-phase6-fences.sh" "tests/test-draft-plan-phase6-fences.sh"
+run_suite "test-refine-plan.sh" "tests/test-refine-plan.sh"
 run_suite "test-add-example-smoke.sh" "tests/test-add-example-smoke.sh"
 run_suite "test-add-block-smoke.sh" "tests/test-add-block-smoke.sh"
 # Opt-in race-isolation test for the #594 fix pattern. Adds ~2-3 min
@@ -137,7 +146,12 @@ run_suite "test-land-pr-scripts.sh" "tests/test-land-pr-scripts.sh"
 run_suite "test-land-pr-worktree-detect.sh" "tests/test-land-pr-worktree-detect.sh"
 run_suite "test-land-pr-post-merge-ff.sh" "tests/test-land-pr-post-merge-ff.sh"
 run_suite "test-land-pr-auto-rebase-behind.sh" "tests/test-land-pr-auto-rebase-behind.sh"
+run_suite "test-land-pr-drive-automerge.sh" "tests/test-land-pr-drive-automerge.sh"
 run_suite "test-land-pr-rebase-rc14-parser.sh" "tests/test-land-pr-rebase-rc14-parser.sh"
+# SEAM_HARDENING_HIGH Phase 1 — extract-and-run lib self-test. The libs it
+# exercises (tests/lib/extract-fence.sh, tests/lib/landpr-harness.sh) are
+# sourceable libraries, NOT suites, so they are intentionally NOT registered.
+run_suite "test-extract-fence-lib.sh" "tests/test-extract-fence-lib.sh"
 run_suite "test-land-pr-tracking-copy.sh" "tests/test-land-pr-tracking-copy.sh"
 run_suite "test-landed-schema.sh" "tests/test-landed-schema.sh"
 run_suite "test-landed-status-vocabulary.sh" "tests/test-landed-status-vocabulary.sh"
@@ -152,6 +166,7 @@ run_suite "test-skill-file-drift-extended-scope.sh" "tests/test-skill-file-drift
 run_suite "test-plan-drift-correct.sh" "tests/test-plan-drift-correct.sh"
 run_suite "test-plans-render-index.sh" "tests/test-plans-render-index.sh"
 run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
+run_suite "test-work-on-plans-dispatch-seam.sh" "tests/test-work-on-plans-dispatch-seam.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"
 run_suite "test_zskills_monitor_server.sh" "tests/test_zskills_monitor_server.sh"
 run_suite "test_zskills_monitor_csrf.sh" "tests/test_zskills_monitor_csrf.sh"

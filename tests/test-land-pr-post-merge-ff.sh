@@ -1,17 +1,22 @@
 #!/bin/bash
 # tests/test-land-pr-post-merge-ff.sh — regression tests for Issue #254.
 #
-# /land-pr Step 7b (`Fast-forward local main after successful merge`) was
-# added to close the post-squash-merge stale-main gap. Without it, local
-# main's ref + working tree stay at the pre-merge SHA after a successful
-# squash-merge, causing downstream skills (worktree creation, status
-# checks) to anchor on stale ground state. The fix surfaces all four
-# skip conditions as WARN/INFO and never overwrites local work.
+# /land-pr Step 7b (`Fast-forward local main after successful merge`) closes
+# the post-squash-merge stale-main gap. Without it, local main's ref +
+# working tree stay at the pre-merge SHA after a successful squash-merge,
+# causing downstream skills (worktree creation, status checks) to anchor on
+# stale ground state. The fix surfaces all four skip conditions as WARN/INFO
+# and never overwrites local work.
 #
-# This test extracts the FF block from SKILL.md (by anchor verification)
-# and runs the reference implementation against real git fixtures.
-# Failure here means SKILL.md drifted from the reference implementation
-# and Issue #254 may have regressed.
+# EXTRACT-AND-RUN (SEAM_HARDENING_HIGH Phase 2): this test no longer carries
+# a re-implemented copy of the Step 7b block. It EXTRACTS the real Step 7b
+# ```bash fence out of skills/land-pr/SKILL.md via tests/lib/extract-fence.sh
+# and RUNS it against REAL git fixtures (git init / clone / reset) — no git
+# shim. The fence resolves MAIN_ROOT itself from `git rev-parse
+# --git-common-dir`; we `cd` into each fixture's repo root so that resolution
+# lands on the fixture. Mutating the production fence (e.g. dropping the
+# ahead-check, or flipping --ff-only) makes this suite FAIL — the test
+# exercises production code, not a copy.
 #
 # Cases (all four enumerated in issue #254's "Tests" section item 1):
 #   a. clean + on-base + behind-origin    → FF happens (main advances)
@@ -24,6 +29,11 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_FILE="$REPO_ROOT/skills/land-pr/SKILL.md"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
+# shellcheck source=tests/lib/landpr-harness.sh
+. "$SCRIPT_DIR/lib/landpr-harness.sh"
 
 PASS=0
 FAIL=0
@@ -52,53 +62,50 @@ do
   fi
 done
 
-# ---- Reference implementation (must mirror SKILL.md Step 7b) --------
-# Run as a function so each case can supply its own MAIN_ROOT, BASE,
-# AHEAD-or-not, etc. Stderr is captured to a buffer per call so we can
-# assert on the WARN/INFO messages.
-run_ff_block() {
-  # Required env: MERGE_REQUESTED, PR_STATE, BASE_BRANCH, MAIN_ROOT (real)
-  # Optional: BRANCH_SLUG
-  : "${BRANCH_SLUG:=test}"
-  if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ]; then
-    # Use the caller-provided MAIN_ROOT directly (the SKILL.md block
-    # resolves it from git-common-dir, but each test fixture sets up
-    # its own repo and passes the path in — same result).
-    if [ -z "$MAIN_ROOT" ] || { [ ! -d "$MAIN_ROOT/.git" ] && [ ! -f "$MAIN_ROOT/.git" ]; }; then
-      echo "WARN: /land-pr Step 7b: could not resolve MAIN_ROOT; skipping local-main FF" >&2
-    else
-      MAIN_HEAD_REF=$(git -C "$MAIN_ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "")
-      MAIN_DIRTY=""
-      if [ -n "$MAIN_HEAD_REF" ]; then
-        MAIN_DIRTY=$(git -C "$MAIN_ROOT" status --porcelain 2>/dev/null | head -1)
-      fi
-      AHEAD=$(git -C "$MAIN_ROOT" rev-list --count "origin/$BASE_BRANCH..$BASE_BRANCH" 2>/dev/null || echo "0")
+# ---- Extract the REAL Step 7b fence from production SKILL.md ---------
+FIXTURE=$(mktemp -d "/tmp/land-pr-ff-test.XXXXXX")
+trap 'rm -rf "$FIXTURE"' EXIT
 
-      if [ "$MAIN_HEAD_REF" != "$BASE_BRANCH" ]; then
-        echo "INFO: /land-pr Step 7b: MAIN_ROOT not on $BASE_BRANCH (HEAD=$MAIN_HEAD_REF); skipping local-main FF" >&2
-      elif [ -n "$MAIN_DIRTY" ]; then
-        echo "WARN: /land-pr Step 7b: MAIN_ROOT working tree dirty; skipping local-main FF" >&2
-      elif [ "$AHEAD" -gt 0 ]; then
-        echo "WARN: /land-pr Step 7b: local $BASE_BRANCH is $AHEAD commit(s) ahead of origin — refusing FF" >&2
-      else
-        FF_STDERR="/tmp/land-pr-ff-stderr-$BRANCH_SLUG-$$.log"
-        if git -C "$MAIN_ROOT" fetch origin "$BASE_BRANCH" 2>"$FF_STDERR" \
-           && git -C "$MAIN_ROOT" merge --ff-only "origin/$BASE_BRANCH" 2>>"$FF_STDERR"; then
-          echo "INFO: /land-pr Step 7b: fast-forwarded local $BASE_BRANCH to origin/$BASE_BRANCH"
-          rm -f "$FF_STDERR"
-        else
-          echo "WARN: /land-pr Step 7b: fetch+ff-merge failed (see $FF_STDERR); local $BASE_BRANCH not updated" >&2
-        fi
-      fi
-    fi
-  fi
+STEP7B_FENCE="$FIXTURE/step7b.sh"
+if ! extract_fence_between "$SKILL_FILE" \
+      'Step 7b — Fast-forward local main' \
+      'Step 7c — Copy worktree tracking markers' 1 0 > "$STEP7B_FENCE"; then
+  echo "FAIL: could not extract Step 7b fence from $SKILL_FILE" >&2
+  exit 1
+fi
+# Sanity: the extracted fence is the real one (carries production landmarks).
+if ! grep -qF 'merge --ff-only "origin/$BASE_BRANCH"' "$STEP7B_FENCE" \
+   || ! grep -qF 'ahead of origin' "$STEP7B_FENCE"; then
+  echo "FAIL: extracted Step 7b fence missing production landmarks" >&2
+  exit 1
+fi
+pass "[extract] Step 7b production fence extracted from SKILL.md"
+
+STEP7B_RUN="$FIXTURE/step7b-run.sh"
+patch_caller_loop "$STEP7B_FENCE" "$STEP7B_RUN"
+
+# run_real_7b — run the EXTRACTED production fence in a subshell, cd'd into
+# the fixture repo so the fence's own `git rev-parse --git-common-dir`
+# MAIN_ROOT resolution lands on the fixture. NO git shim — real git.
+# Returns the fence's stderr (so cases assert on WARN/INFO) on fd 2.
+run_real_7b() {
+  local repo="$1"
+  (
+    set +e
+    set -u
+    cd "$repo" || exit 1
+    seed_caller_loop_inputs
+    MERGE_REQUESTED=true
+    PR_STATE=MERGED
+    BASE_BRANCH=main
+    # shellcheck disable=SC1090
+    . "$STEP7B_RUN"
+  )
 }
 
 # ---- Fixture setup --------------------------------------------------
 # Each case gets its own MAIN_ROOT (a local clone of an "origin" bare
 # repo) so we can control behind/ahead/dirty state independently.
-FIXTURE=$(mktemp -d "/tmp/land-pr-ff-test.XXXXXX")
-trap 'rm -rf "$FIXTURE"' EXIT
 
 # Build a bare "origin" repo with two commits on main.
 ORIGIN="$FIXTURE/origin.git"
@@ -140,14 +147,13 @@ origin_a=$(git -C "$CASE_A" rev-parse origin/main)
 if [ "$before_a" = "$origin_a" ]; then
   fail "[caseA] fixture sanity" "expected behind state, got HEAD==origin/main"
 fi
-stderr_a=$( MERGE_REQUESTED=true PR_STATE=MERGED BASE_BRANCH=main \
-            MAIN_ROOT="$CASE_A" run_ff_block 2>&1 1>/dev/null )
+stderr_a=$( run_real_7b "$CASE_A" 2>&1 1>/dev/null )
 after_a=$(git -C "$CASE_A" rev-parse HEAD)
 origin_a_after=$(git -C "$CASE_A" rev-parse origin/main)
 if [ "$after_a" = "$origin_a_after" ] && [ "$after_a" != "$before_a" ]; then
   pass "[caseA] clean+behind → local main fast-forwarded to origin/main"
 else
-  fail "[caseA] FF expected" "before=$before_a after=$after_a origin=$origin_a_after"
+  fail "[caseA] FF expected" "before=$before_a after=$after_a origin=$origin_a_after stderr=$stderr_a"
 fi
 
 # ===== Case (b): clean + on-feature-branch → INFO skip, no ref change ==
@@ -155,8 +161,7 @@ CASE_B="$FIXTURE/case-b"
 clone_main_root "$CASE_B"
 git -C "$CASE_B" checkout -q -b feat/x
 before_b_main=$(git -C "$CASE_B" rev-parse main)
-stderr_b=$( MERGE_REQUESTED=true PR_STATE=MERGED BASE_BRANCH=main \
-            MAIN_ROOT="$CASE_B" run_ff_block 2>&1 1>/dev/null )
+stderr_b=$( run_real_7b "$CASE_B" 2>&1 1>/dev/null )
 after_b_main=$(git -C "$CASE_B" rev-parse main)
 if [ "$after_b_main" = "$before_b_main" ]; then
   pass "[caseB] on-feature-branch → main ref unchanged"
@@ -174,8 +179,7 @@ CASE_C="$FIXTURE/case-c"
 clone_main_root "$CASE_C"
 before_c=$(git -C "$CASE_C" rev-parse HEAD)
 echo "dirty" >> "$CASE_C/file.txt"   # uncommitted modification
-stderr_c=$( MERGE_REQUESTED=true PR_STATE=MERGED BASE_BRANCH=main \
-            MAIN_ROOT="$CASE_C" run_ff_block 2>&1 1>/dev/null )
+stderr_c=$( run_real_7b "$CASE_C" 2>&1 1>/dev/null )
 after_c=$(git -C "$CASE_C" rev-parse HEAD)
 if [ "$after_c" = "$before_c" ]; then
   pass "[caseC] dirty tree → HEAD unchanged"
@@ -191,11 +195,8 @@ fi
 # ===== Case (d): clean + on-base + ahead-of-origin → WARN, no ref change
 CASE_D="$FIXTURE/case-d"
 clone_main_root "$CASE_D"
-# Make local main AHEAD of origin: reset to v1, then add a local commit
-# that origin doesn't have. Origin is at v2; local will be at v1 + local
-# commit ("ahead by 1 relative to origin/main"... but also behind by 1).
-# To be unambiguously "ahead of origin" with no behind, fetch+reset to
-# origin first, THEN commit locally.
+# Make local main AHEAD of origin: fetch+reset to origin first, THEN commit
+# locally so it is unambiguously "ahead of origin" with no behind.
 git -C "$CASE_D" fetch -q origin main
 git -C "$CASE_D" reset -q --hard origin/main
 echo "local-only" >> "$CASE_D/file.txt"
@@ -206,8 +207,7 @@ ahead_d=$(git -C "$CASE_D" rev-list --count origin/main..main)
 if [ "$ahead_d" -lt 1 ]; then
   fail "[caseD] fixture sanity" "expected ahead>=1 got $ahead_d"
 fi
-stderr_d=$( MERGE_REQUESTED=true PR_STATE=MERGED BASE_BRANCH=main \
-            MAIN_ROOT="$CASE_D" run_ff_block 2>&1 1>/dev/null )
+stderr_d=$( run_real_7b "$CASE_D" 2>&1 1>/dev/null )
 after_d=$(git -C "$CASE_D" rev-parse HEAD)
 if [ "$after_d" = "$before_d" ]; then
   pass "[caseD] ahead-of-origin → HEAD unchanged"

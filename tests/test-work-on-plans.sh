@@ -1,12 +1,24 @@
 #!/bin/bash
-# Tests for skills/work-on-plans/SKILL.md — Phase 3 mutating subcommands
-# (add, rank, remove, default, every, stop) + cross-process flock.
+# Tests for skills/work-on-plans — Phase 3 mutating subcommands
+# (add, rank, remove, default) + the #546 schedule_under_1h boundary +
+# cross-process flock + mirror parity.
 #
-# The skill body is markdown-with-bash that the LLM executes inline.
-# These tests extract the load-bearing pieces — the python heredocs for
-# each mutator and the flock helper — and run them in /tmp fixtures
-# against synthetic monitor-state.json files. Acceptance criteria
-# verified per-case (lines tagged AC-N where N maps to plan ACs).
+# SEAM_HARDENING_HIGH Phase 6a — de-hollowed. This suite USED to re-define
+# the mutator functions as transcribed `skill_*` copies (green-by-absence:
+# the production heredocs could drift and these tests would never notice).
+# It now EXTRACTS the REAL production functions —
+# `ensure_monitor_state` / `do_add` / `do_rank` / `do_remove` /
+# `do_default` (from subcommands/add-rank-remove.md) and `schedule_under_1h`
+# (from the same file's `every` section) — via tests/lib/extract-fence.sh,
+# sources them, and drives them against synthetic monitor-state.json
+# fixtures. Mutating any of those production heredocs FAILS this suite —
+# protection a presence-grep cannot give.
+#
+# Production signatures differ from the old transcribed copies: the `do_*`
+# functions read the global $MONITOR_STATE (not a positional path arg) and
+# call ensure_monitor_state() internally — so each test sets MONITOR_STATE
+# and calls `do_add <slug> [pos]`, `do_rank <slug> <pos>`,
+# `do_remove <slug>`, `do_default <mode>`.
 #
 # Run from repo root: bash tests/test-work-on-plans.sh
 
@@ -17,6 +29,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/work-on-plans/SKILL.md"
 SKILL_DIR="$REPO_ROOT/skills/work-on-plans"
 SKILL_MIRROR="$REPO_ROOT/.claude/skills/work-on-plans/SKILL.md"
+SUBCMD_MD="$SKILL_DIR/subcommands/add-rank-remove.md"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -43,130 +59,64 @@ make_fixture() {
   echo "$f"
 }
 
-# --- Mutators (transcribed verbatim from SKILL.md Step 7) ----------------
-# The skill body fences these as bash heredocs the LLM runs at top-level.
-# We re-define them here so the tests can drive them as ordinary shell
-# functions. If the SKILL.md wording diverges, the structural assertion
-# below ("SKILL.md contains the documented heredoc") will fail.
+# --- Extract-and-run the REAL production mutator heredocs ----------------
+# Each function lives in its own ```bash fence in
+# subcommands/add-rank-remove.md, bracketed by a `### ` heading before and
+# after. We extract the FIRST bash fence in each window (the only one).
+# ensure_monitor_state() is co-extracted because every do_* calls it; the
+# do_* functions read the global $MONITOR_STATE and bootstrap via
+# ensure_monitor_state when the file is absent. We seed the file in every
+# fixture, so ensure_monitor_state's bootstrap branch is skipped and it
+# only parse-checks $MONITOR_STATE.
 
-skill_add() {
-  local state="$1" slug="$2" pos="${3:-}"
-  if [[ "$slug" =~ ^[0-9] ]]; then
-    printf '/work-on-plans: digit-prefix slugs (%q) are reserved for execute-mode N.\n' "$slug" >&2
-    return 2
+EXTRACT_SH="$TEST_TMPDIR/_production-mutators.sh"
+: > "$EXTRACT_SH"
+
+extract_or_die() {
+  # extract_or_die <label> <start-re> <end-re>
+  local label="$1" start_re="$2" end_re="$3"
+  if ! extract_fence_between "$SUBCMD_MD" "$start_re" "$end_re" 1 0 \
+       >> "$EXTRACT_SH"; then
+    echo "FATAL: could not extract $label fence from $SUBCMD_MD" >&2
+    exit 1
   fi
-  if [[ ! "$slug" =~ ^[a-z][a-z0-9-]*$ ]]; then
-    printf '/work-on-plans: invalid slug %q\n' "$slug" >&2
-    return 2
+  printf '\n' >> "$EXTRACT_SH"
+}
+
+extract_or_die "ensure_monitor_state" \
+  '^### Common helper: bootstrap-then-load' '^### `add'
+extract_or_die "do_add" \
+  '^### `add <slug>' '^### `rank'
+extract_or_die "do_rank" \
+  '^### `rank <slug>' '^### `remove'
+extract_or_die "do_remove" \
+  '^### `remove <slug>' '^### `default'
+extract_or_die "do_default" \
+  '^### `default <phase' '^### `every'
+extract_or_die "schedule_under_1h" \
+  '^### `every SCHEDULE' '^### `stop`'
+
+# Source the extracted production functions.
+# shellcheck source=/dev/null
+. "$EXTRACT_SH"
+
+# Sanity: every expected production function got defined from the heredocs.
+for fn in ensure_monitor_state do_add do_rank do_remove do_default schedule_under_1h; do
+  if ! declare -F "$fn" >/dev/null; then
+    echo "FATAL: production function '$fn' not defined after extract+source" >&2
+    exit 1
   fi
-  python3 - "$state" "$slug" "${pos:-}" <<'PY'
-import json, os, sys, tempfile, datetime
-path, slug, pos_s = sys.argv[1], sys.argv[2], sys.argv[3]
-doc = json.load(open(path))
-plans = doc.setdefault("plans", {})
-ready = plans.setdefault("ready", [])
-if any((isinstance(e, dict) and e.get("slug") == slug) or e == slug for e in ready):
-    print(f"/work-on-plans: '{slug}' already in ready queue (no-op).", file=sys.stderr)
-    sys.exit(0)
-entry = {"slug": slug, "mode": ""}
-if pos_s:
-    pos = int(pos_s)
-    if pos < 1: pos = 1
-    if pos > len(ready) + 1: pos = len(ready) + 1
-    ready.insert(pos - 1, entry)
-else:
-    ready.append(entry)
-plans["ready"] = ready
-doc["updated_at"] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-tmp = tempfile.NamedTemporaryFile('w', delete=False,
-    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
-json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
-os.replace(tmp.name, path)
-print(f"/work-on-plans: added '{slug}' to ready queue.")
-PY
-}
+done
 
-skill_rank() {
-  local state="$1" slug="$2" pos_s="${3:-}"
-  if [[ -z "$pos_s" || ! "$pos_s" =~ ^[0-9]+$ ]]; then return 2; fi
-  python3 - "$state" "$slug" "$pos_s" <<'PY'
-import json, os, sys, tempfile, datetime
-path, slug, pos_s = sys.argv[1], sys.argv[2], sys.argv[3]
-pos = int(pos_s)
-doc = json.load(open(path))
-ready = doc.get("plans", {}).get("ready", [])
-idx = next((i for i, e in enumerate(ready)
-            if (isinstance(e, dict) and e.get("slug") == slug) or e == slug),
-           -1)
-if idx < 0:
-    print(f"/work-on-plans: '{slug}' not in ready queue.", file=sys.stderr)
-    sys.exit(2)
-entry = ready.pop(idx)
-if pos < 1: pos = 1
-if pos > len(ready) + 1: pos = len(ready) + 1
-ready.insert(pos - 1, entry)
-doc["plans"]["ready"] = ready
-doc["updated_at"] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-tmp = tempfile.NamedTemporaryFile('w', delete=False,
-    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
-json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
-os.replace(tmp.name, path)
-print(f"/work-on-plans: moved '{slug}' to position {pos}.")
-PY
-}
-
-skill_remove() {
-  local state="$1" slug="$2"
-  python3 - "$state" "$slug" <<'PY'
-import json, os, sys, tempfile, datetime
-path, slug = sys.argv[1], sys.argv[2]
-doc = json.load(open(path))
-ready = doc.get("plans", {}).get("ready", [])
-new_ready = [e for e in ready
-             if not ((isinstance(e, dict) and e.get("slug") == slug) or e == slug)]
-if len(new_ready) == len(ready):
-    print(f"/work-on-plans: '{slug}' not in ready queue (no-op).", file=sys.stderr)
-    sys.exit(0)
-doc.setdefault("plans", {})["ready"] = new_ready
-doc["updated_at"] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-tmp = tempfile.NamedTemporaryFile('w', delete=False,
-    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
-json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
-os.replace(tmp.name, path)
-print(f"/work-on-plans: removed '{slug}' from ready queue.")
-PY
-}
-
-skill_default() {
-  local state="$1" mode="$2"
-  if [[ "$mode" != "phase" && "$mode" != "finish" ]]; then return 2; fi
-  python3 - "$state" "$mode" <<'PY'
-import json, os, sys, tempfile, datetime
-path, mode = sys.argv[1], sys.argv[2]
-doc = json.load(open(path))
-doc["default_mode"] = mode
-doc["updated_at"] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
-tmp = tempfile.NamedTemporaryFile('w', delete=False,
-    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
-json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
-os.replace(tmp.name, path)
-print(f"/work-on-plans: default_mode set to '{mode}'.")
-PY
-}
-
-# Sub-hour detector mirroring SKILL.md schedule_under_1h() exactly.
-schedule_under_1h() {
-  local s="$1"
-  [[ "$s" =~ (^|[[:space:]])([0-9]+)m([[:space:]]|$) ]] && {
-    local n="${BASH_REMATCH[2]}"
-    [ "$n" -lt 60 ] && return 0
-  }
-  [[ "$s" =~ ^\*/([0-9]+)[[:space:]] ]] && {
-    local n="${BASH_REMATCH[1]}"
-    [ "$n" -lt 60 ] && return 0
-  }
-  return 1
-}
+# --- Thin adapters: set the global $MONITOR_STATE then call production ----
+# The production do_* functions read $MONITOR_STATE (not a positional path).
+# These adapters preserve the OLD call-site shape (path as $1) so the body
+# of each test below stays a faithful behavior assertion against the real
+# code. Each sets MONITOR_STATE and shifts it off before delegating.
+do_add_at()     { local MONITOR_STATE="$1"; shift; do_add     "$@"; }
+do_rank_at()    { local MONITOR_STATE="$1"; shift; do_rank    "$@"; }
+do_remove_at()  { local MONITOR_STATE="$1"; shift; do_remove  "$@"; }
+do_default_at() { local MONITOR_STATE="$1"; shift; do_default "$@"; }
 
 # Cross-process lock helper mirroring SKILL.md `with_monitor_lock`.
 with_lock() {
@@ -213,7 +163,18 @@ print(v if not isinstance(v,(list,dict)) else json.dumps(v))
 " "$1" "$2"
 }
 
-echo "=== work-on-plans Phase 3 tests ==="
+echo "=== work-on-plans Phase 3 tests (extract-and-run production mutators) ==="
+
+# --- Test 0: extraction sanity — the sourced functions ARE the production
+# heredocs (idempotency note + atomic os.replace landmarks present). -------
+if grep -q 'already in ready queue (no-op)' "$EXTRACT_SH" \
+   && grep -q 'os.replace(tmp.name, path)' "$EXTRACT_SH" \
+   && grep -q 'digit-prefix slugs' "$EXTRACT_SH" \
+   && grep -q "doc\[\"default_mode\"\] = mode" "$EXTRACT_SH"; then
+  pass "extract: sourced bash carries the real do_add/do_remove/do_default heredoc landmarks"
+else
+  fail "extract: extracted production heredocs missing expected landmarks"
+fi
 
 # --- Test 1: Skill dir has Phase 3 sections (structural) ----------------
 # Content may live in SKILL.md or in subcommands/add-rank-remove.md.
@@ -266,7 +227,7 @@ fi
 # --- Test 5: AC-1 (add bootstraps + appends) ---------------------------
 F=$(make_fixture t5)
 seed_empty "$F/.zskills/monitor-state.json"
-out=$(skill_add "$F/.zskills/monitor-state.json" foo-plan 2>&1)
+out=$(do_add_at "$F/.zskills/monitor-state.json" foo-plan 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "foo-plan" ] \
@@ -277,7 +238,7 @@ else
 fi
 
 # --- Test 6: AC-2 digit-prefix slugs are rejected ---------------------
-out=$(skill_add "$F/.zskills/monitor-state.json" 4-phase-plan 2>&1)
+out=$(do_add_at "$F/.zskills/monitor-state.json" 4-phase-plan 2>&1)
 ec=$?
 if [ "$ec" -eq 2 ] && echo "$out" | grep -q 'digit-prefix slugs'; then
   pass "AC-2 add rejects digit-prefix slug with usage message"
@@ -288,10 +249,10 @@ fi
 # --- Test 7: rank reorders ----------------------------------------------
 F=$(make_fixture t7)
 seed_empty "$F/.zskills/monitor-state.json"
-skill_add "$F/.zskills/monitor-state.json" alpha >/dev/null
-skill_add "$F/.zskills/monitor-state.json" beta  >/dev/null
-skill_add "$F/.zskills/monitor-state.json" gamma >/dev/null
-out=$(skill_rank "$F/.zskills/monitor-state.json" gamma 1 2>&1)
+do_add_at "$F/.zskills/monitor-state.json" alpha >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" beta  >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" gamma >/dev/null
+out=$(do_rank_at "$F/.zskills/monitor-state.json" gamma 1 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "gamma,alpha,beta" ]; then
@@ -301,7 +262,7 @@ else
 fi
 
 # --- Test 8: remove drops entry ----------------------------------------
-out=$(skill_remove "$F/.zskills/monitor-state.json" alpha 2>&1)
+out=$(do_remove_at "$F/.zskills/monitor-state.json" alpha 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "gamma,beta" ]; then
@@ -311,7 +272,7 @@ else
 fi
 
 # --- Test 9: remove of missing slug is idempotent ---------------------
-out=$(skill_remove "$F/.zskills/monitor-state.json" never-existed 2>&1)
+out=$(do_remove_at "$F/.zskills/monitor-state.json" never-existed 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "gamma,beta" ] \
@@ -324,9 +285,9 @@ fi
 # --- Test 10: AC-1 default sets default_mode -----------------------
 F=$(make_fixture t10)
 seed_empty "$F/.zskills/monitor-state.json"
-skill_add "$F/.zskills/monitor-state.json" alpha >/dev/null
-skill_add "$F/.zskills/monitor-state.json" beta  >/dev/null
-out=$(skill_default "$F/.zskills/monitor-state.json" finish 2>&1)
+do_add_at "$F/.zskills/monitor-state.json" alpha >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" beta  >/dev/null
+out=$(do_default_at "$F/.zskills/monitor-state.json" finish 2>&1)
 ec=$?
 dm=$(readkey "$F/.zskills/monitor-state.json" default_mode)
 # AC-1: per-entry mode unchanged
@@ -343,7 +304,7 @@ else
 fi
 
 # --- Test 11: default rejects bogus values ------------------------------
-out=$(skill_default "$F/.zskills/monitor-state.json" turbo 2>&1)
+out=$(do_default_at "$F/.zskills/monitor-state.json" turbo 2>&1)
 ec=$?
 if [ "$ec" -eq 2 ]; then
   pass "default rejects non-{phase,finish} values"
@@ -474,7 +435,7 @@ LOCK="$F/.zskills/monitor-state.json.lock"
 N_RACERS=8
 pids=()
 for i in $(seq 1 "$N_RACERS"); do
-  ( with_lock "$LOCK" skill_add "$F/.zskills/monitor-state.json" "racer-$i" >/dev/null 2>&1 ) &
+  ( with_lock "$LOCK" do_add_at "$F/.zskills/monitor-state.json" "racer-$i" >/dev/null 2>&1 ) &
   pids+=("$!")
 done
 for p in "${pids[@]}"; do wait "$p"; done
@@ -495,8 +456,8 @@ fi
 # (If all 3 attempts land cleanly without a lock, the test environment
 # is too serial to demonstrate the race — that's a soft-fail "skip".)
 unsafe_add() {
-  # Same as skill_add but no flock around the rmw.
-  skill_add "$@"
+  # Same as do_add_at but no flock around the rmw.
+  do_add_at "$@"
 }
 race_lost_at_least_once=0
 for attempt in 1 2 3; do
@@ -526,10 +487,10 @@ fi
 # --- Test 20: AC-1 add at position inserts ------------------------------
 F=$(make_fixture t20)
 seed_empty "$F/.zskills/monitor-state.json"
-skill_add "$F/.zskills/monitor-state.json" a >/dev/null
-skill_add "$F/.zskills/monitor-state.json" b >/dev/null
-skill_add "$F/.zskills/monitor-state.json" c >/dev/null
-out=$(skill_add "$F/.zskills/monitor-state.json" middle 2 2>&1)
+do_add_at "$F/.zskills/monitor-state.json" a >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" b >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" c >/dev/null
+out=$(do_add_at "$F/.zskills/monitor-state.json" middle 2 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "a,middle,b,c" ]; then
@@ -539,7 +500,7 @@ else
 fi
 
 # --- Test 21: idempotent add of existing slug --------------------------
-out=$(skill_add "$F/.zskills/monitor-state.json" a 2>&1)
+out=$(do_add_at "$F/.zskills/monitor-state.json" a 2>&1)
 ec=$?
 ready=$(readq "$F/.zskills/monitor-state.json")
 if [ "$ec" -eq 0 ] && [ "$ready" = "a,middle,b,c" ] \
@@ -550,7 +511,7 @@ else
 fi
 
 # --- Test 22: rank of missing slug fails -------------------------------
-out=$(skill_rank "$F/.zskills/monitor-state.json" not-here 1 2>&1)
+out=$(do_rank_at "$F/.zskills/monitor-state.json" not-here 1 2>&1)
 ec=$?
 if [ "$ec" -eq 2 ] && echo "$out" | grep -q "not in ready queue"; then
   pass "rank of missing slug exits 2 with diagnostic"
@@ -559,7 +520,7 @@ else
 fi
 
 # --- Test 23: add invalid slug --------------------------------------
-out=$(skill_add "$F/.zskills/monitor-state.json" "BadSlug!" 2>&1)
+out=$(do_add_at "$F/.zskills/monitor-state.json" "BadSlug!" 2>&1)
 ec=$?
 if [ "$ec" -eq 2 ]; then
   pass "add rejects invalid slug (uppercase/punctuation)"
@@ -651,8 +612,8 @@ PY
 
 F=$(make_fixture t27)
 seed_empty "$F/.zskills/monitor-state.json"
-skill_add "$F/.zskills/monitor-state.json" done-plan >/dev/null
-skill_add "$F/.zskills/monitor-state.json" todo-plan >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" done-plan >/dev/null
+do_add_at "$F/.zskills/monitor-state.json" todo-plan >/dev/null
 # done-plan landed (status: complete); todo-plan still active.
 printf -- '---\nstatus: complete\n---\n# done\n' > "$F/plans/done-plan.md"
 printf -- '---\nstatus: ready\n---\n# todo\n' > "$F/plans/todo-plan.md"

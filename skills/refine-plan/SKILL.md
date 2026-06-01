@@ -9,7 +9,7 @@ description: >-
   refines until convergence. Completed phases are NEVER modified. Appends
   a Drift Log + Plan Review.
 metadata:
-  version: "2026.05.31+65e420"
+  version: "2026.06.01+827d06"
 ---
 
 # /refine-plan \<plan-file> [rounds N] [guidance...] — Adversarial Plan Refiner
@@ -146,11 +146,69 @@ fi
 - Empty guidance preserves today's reviewer/DA prompt output (no behavior change for invocations without trailing guidance tokens).
 - If no plan file is detected, **error:** "No plan file specified. Usage: `/refine-plan <plan-file> [rounds N] [auto] [guidance...]`"
 
+## Argument parser
+
+The single source of truth for argument parsing. One extractable fence
+implements the Detection rules above verbatim — plan-file resolution
+(`$ZSKILLS_PLANS_DIR` must already be sourced, as in the worktree
+preamble), `rounds N`, the `auto` flag, and guidance-tail joining. The
+worktree preamble re-derives `$PLAN_FILE` independently (it runs before
+this fence to seed the helper's pipeline-id); this fence is the canonical
+parse the rest of the skill reads (`ROUNDS_MAX`, `AUTO_FLAG`, `GUIDANCE`).
+
 ```bash
+# Inputs: $ARGUMENTS (raw), $ZSKILLS_PLANS_DIR (resolved by the preamble).
+# Outputs: PLAN_FILE, ROUNDS_MAX (default 2), AUTO_FLAG (0/1), GUIDANCE.
+
+# auto — whitespace-anchored, case-insensitive (consumed; not guidance).
 AUTO_FLAG=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]]) ]]; then
   AUTO_FLAG=1
 fi
+
+# plan-file — first token with a `/` (use as-is) else first `*.md`
+# (resolve via $ZSKILLS_PLANS_DIR). Mirrors the worktree-preamble loop.
+if [ -z "${PLAN_FILE:-}" ]; then
+  for tok in $ARGUMENTS; do
+    case "$tok" in
+      */*) PLAN_FILE="$tok"; break ;;
+      *.md) PLAN_FILE="$ZSKILLS_PLANS_DIR/$tok"; break ;;
+    esac
+  done
+fi
+
+# rounds N + guidance tail. Single pass: `rounds` followed by a numeric
+# token sets ROUNDS_MAX (both consumed); `rounds` NOT followed by a number
+# is plain guidance. The plan-file token and the `auto` token are consumed
+# (never guidance). Everything else joins GUIDANCE in order. Default
+# ROUNDS_MAX=2.
+ROUNDS_MAX=2
+GUIDANCE=""
+prev_rounds=0
+for tok in $ARGUMENTS; do
+  # Resolve a pending `rounds` against the current token.
+  if [ "$prev_rounds" -eq 1 ]; then
+    prev_rounds=0
+    case "$tok" in
+      ''|*[!0-9]*) GUIDANCE="${GUIDANCE:+$GUIDANCE }rounds" ;;  # not a number
+      *)           ROUNDS_MAX="$tok"; continue ;;               # rounds N consumed
+    esac
+  fi
+  # Skip the consumed plan-file token.
+  if [ -n "${PLAN_FILE:-}" ]; then
+    case "$tok" in
+      */*)  [ "$tok" = "$PLAN_FILE" ] && continue ;;
+      *.md) [ "$ZSKILLS_PLANS_DIR/$tok" = "$PLAN_FILE" ] && continue ;;
+    esac
+  fi
+  case "$tok" in
+    rounds)              prev_rounds=1; continue ;;  # decided next iteration
+    [aA][uU][tT][oO])    continue ;;                 # auto consumed
+    *) GUIDANCE="${GUIDANCE:+$GUIDANCE }$tok" ;;
+  esac
+done
+# A trailing `rounds` with no following token is guidance.
+[ "$prev_rounds" -eq 1 ] && GUIDANCE="${GUIDANCE:+$GUIDANCE }rounds"
 ```
 
 Examples:

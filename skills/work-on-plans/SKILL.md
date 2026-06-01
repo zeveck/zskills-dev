@@ -10,7 +10,7 @@ description: >-
   manages the queue (add/rank/remove/default) and recurring schedules.
   Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.06.01+7a11d3"
+  version: "2026.06.01+a67fc0"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
