@@ -3,35 +3,36 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260601-035736-dq30m6
+# /fix-issues sprint — sprint-20260601-070748-dq30m7
 
 **Mode:** N=2, dashboard, auto, every 30m
-**Picks:** #883 only (only Ready∩Open candidate not claimed by parallel session)
+**Picks:** #914 + #913 (both claimed before any per-task worktree)
 
-## Landed (1)
+## Landed (2)
 
-### #883 — In-flight guard for /run-plan + /do (cron re-entry on same work)
-- **PR:** https://github.com/zeveck/zskills-dev/pull/911 — merged after a HARD recovery (see "Scary recovery" below)
-- **Files (17, +726/-50):** `check-inflight-batch.sh` got new optional `--pipeline-id` filter (backward-compatible) for per-work-item gating; integrated at `/run-plan` SKILL.md, `/run-plan/modes/execute-phase.md`, `/do/SKILL.md`, `/do/modes/{pr,worktree,direct}.md`; mirrors; new 35-test suite `tests/test-inflight-reentry-guard.sh`.
-- **Skip-keys (chosen carefully per skill mode):**
-  - `/run-plan` → `$PIPELINE_ID = run-plan.$TRACKING_ID` (plan-file basename slug). Same plan = same key.
-  - `/do` PR → `do.${TASK_SLUG}` **before** Step A2.5 collision suffix.
-  - `/do` worktree → `do.${TASK_SLUG}`.
-  - `/do` direct → `do.${ISSUE_NUMS[0]}` (issue-anchored only).
-- **/research-and-go:** correctly NOT guarded — one-shot kickoff; downstream protected by /run-plan's new guard.
-- **Tests:** 6759/6759 suite-wide; new suite 35/35; existing batch-guard 32/32 back-compat.
+### #914 — /draft-plan 'brainstorm' keyword anchored to first token
+- **PR:** https://github.com/zeveck/zskills-dev/pull/926 — merged after rebase resolved a real content-merge conflict (preserved BOTH improvements: `quiz` flag block from #922 just-landed + #914's brainstorm anchor explanation).
+- **Files (3):** `skills/draft-plan/SKILL.md` first-token check + Detection-prose update + version → `b24bc5` (re-bumped post-merge to `ac7967`); mirror; `tests/test-draft-plan-args-smoke.sh` flipped 153-154 from positive-asserting-wrong to negative + 6 new cases.
+- **Anchor pattern:** `read -r _bs_first _bs_rest <<<"$ARGUMENTS"; case-insensitive equality vs literal "brainstorm"` — stricter than "first non-flag position." Required for the mandated test `"output X.md brainstorm rounds 3 Add dark mode" → 0`.
+- **Tests:** 6831/6831.
 
-## Scary recovery — `commit --amend` during paused rebase
+### #913 — work-on-plans + zskills-dashboard dual-lane sanitize (sibling of #868)
+- **PR:** https://github.com/zeveck/zskills-dev/pull/928 — merged clean.
+- **Files (4):** `skills/work-on-plans/SKILL.md` used `$ZSKILLS_SKILLS_ROOT` (already exported via earlier `zskills-paths.sh` source). `skills/zskills-dashboard/SKILL.md` used explicit `if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]` dual-lane conditional because the resolver source happens later in that skill. **Also migrated PORT_SCRIPT** at the adjacent lines (issue body authorized the scope expansion).
+- **Versions:** `work-on-plans` → `7a11d3`; `zskills-dashboard` → `300230`.
+- **Tests:** 6826/6826.
 
-PR #911 entered a broken state during rebase conflict resolution. Conflict was on `skills/do/SKILL.md`'s version line (PR #910 had also bumped it). I edited the conflict, ran `git add`, then ran `frontmatter-set.sh` + `mirror-skill.sh do` + `git add` + `git commit --amend --no-edit` **before** `git rebase --continue`. The amend operated on HEAD's position during the pause — which was the LAST APPLIED COMMIT, i.e. the UPSTREAM `b720f60` (PR #910 squash). The amend silently overwrote #910's commit content with my partial diff (just the version bump). `git rebase --continue` then had nothing to apply because my commit had been "consumed" into the upstream slot. I force-pushed the broken state.
+## Conflict resolution
 
-**Recovery:** `git reset --keep 5057e2a` (original #883 commit from reflog) → redo rebase carefully (resolve conflict, `git add`, `git rebase --continue` FIRST, only THEN amend with re-bumped version) → force-push correct state. PR #911 merged cleanly on the second attempt.
+#914's rebase hit a 2-region conflict on `skills/draft-plan/SKILL.md`:
+- **Region 1:** version-line only — picked my version (re-bumped post-rebase to reflect merged content hash).
+- **Region 2:** content merge — HEAD added a new `quiz` flag block (PR #922 brainstorm-mode-plan landed during my impl); #914 added explanatory text to the `brainstorm` description. **Preserved BOTH** by keeping #914's brainstorm anchor explanation AND HEAD's new `quiz` flag block (sequential, no overlap).
 
-**Memory anchor saved:** `feedback_amend_during_rebase_pause_danger` — never run `commit --amend` during a paused rebase; resolve + continue FIRST, amend after.
+Followed the lesson from last fire's memory anchor: resolve conflict → `git add` → `git rebase --continue` FIRST → only THEN amend with re-bumped version. No content lost.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260601-035736-dq30m6
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-035736-dq30m6
-- Issue claim for #883 released cleanly post-merge.
+- Sprint pipeline ID: fix-issues.sprint-20260601-070748-dq30m7
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-070748-dq30m7
+- Issue claims released cleanly.
 - Cron: `*/30 * * * *` — next fire ~30 min.
