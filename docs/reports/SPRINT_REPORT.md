@@ -3,34 +3,33 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260601-001427-dq30m3
+# /fix-issues sprint — sprint-20260601-014727-dq30m4
 
 **Mode:** N=2, dashboard, auto, every 30m
-**Picks:** #864 + #863 (both claimed clean, claim-before-worktree discipline)
+**Picks:** #868, #867 (claim-before-worktree discipline; parallel session held #862, #869 — dropped past them per dashboard race-loser policy)
 
 ## Landed (2)
 
-### #864 — /do pr holds claim during pr-ready window
-- **PR:** https://github.com/zeveck/zskills-dev/pull/890 — merged clean (no rebase needed)
-- **Files (5):** `skills/do/modes/pr.md` 3-group case-arm split (merged → RELEASE, pr-ready|created → HOLD with stderr advisory citing manual-reap command, terminal-failure → RELEASE, unknown → HOLD-with-WARN); `skills/do/SKILL.md` version bump to `12f9ca`; mirrors; new `tests/test-do-pr-claim-release.sh` (+205 lines, 15 assertions covering all 10 LAND_OUTCOME values + source-drift guard).
-- **Tests:** 6653/6653.
+### #868 — /quickfix dual-lane sanitize-pipeline-id.sh path
+- **PR:** https://github.com/zeveck/zskills-dev/pull/897 — merged clean
+- **Fix:** `skills/quickfix/SKILL.md:713` `bash "$MAIN_ROOT/.claude/skills/.../sanitize-pipeline-id.sh"` → `bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"` (matches `/do`, `/fix-issues`, `/run-plan` peer pattern)
+- **Tests:** 6709/6709 + new regression-guard case 9b ensuring the mirror-only path stays gone; fixture's `make_fixture` updated to ship resolver scripts so `$ZSKILLS_SKILLS_ROOT` actually populates in the extracted harness.
+- **Sister-defect audit:** other `.claude/skills/...` references in `/quickfix` reviewed — all are correct LEGACY-LANE fallbacks inside proper dual-lane conditionals; no follow-up scope.
 
-### #863 — /do + /quickfix parse all #N + fan-out claim ops
-- **PR:** https://github.com/zeveck/zskills-dev/pull/894 — merged after auto-rebase resolved a non-trivial conflict with PR #890 (#864) at `skills/do/modes/pr.md:530`.
-- **Files (18, +1223/-410):** parser scalar → `ISSUE_NUMS` array in both `skills/do/SKILL.md` and `skills/quickfix/SKILL.md`; fan-out at 3 acquire sites with partial-rollback on rc=10; fan-out at 9 release sites (4 in /do, 5 in /quickfix); back-compat `$ISSUE_NUM = ${ISSUE_NUMS[0]:-}` preserved; conformance sentinels updated; new `tests/test-do-quickfix-multi-issue-fanout.sh` (16 cases) + multi-issue parse assertions in `tests/test-do.sh` and `tests/test-quickfix.sh`; version bumps to `fda0cc` (/do, later re-bumped `065fb4` post-merge), `c444a9` (/quickfix).
-- **Tests:** 6692/6692 pre-rebase; post-rebase both new suites 15/15 + 16/16 verified.
+### #867 — /run-plan preflight gate becomes lane-agnostic
+- **PR:** https://github.com/zeveck/zskills-dev/pull/899 — merged after auto-rebase (BEHIND on first poll due to parallel session's PR landing during CI; resolved cleanly).
+- **Fix:** replaced broken `grep -qE '^(UNIT_TEST_CMD|FULL_TEST_CMD)=.*\{\{' .claude/hooks/block-unsafe-project.sh 2>/dev/null` (plugin-lane-blind + scanning for `{{...}}` placeholders that no longer exist in hook body) with dual-lane `zskills-resolve-config.sh` sourcing + `$FULL_TEST_CMD` check.
+- **Prose rewrite:** dropped `{{...}}` framing; described two actual failure modes (missing/malformed `.claude/zskills-config.json`, Case-C runtime block); fixed stale citation `:134-147` → `hooks/block-unsafe-project.sh.template:611-630`; added `:714-729` and `:579-606` citations.
+- **Files (2):** `skills/run-plan/SKILL.md` (+54/-36) + mirror. Version: `c74b30` → re-bumped post-merge to `bd3dd9`.
+- **Tests:** 6708/6708.
 
-## Sprint mechanics — multi-region conflict resolution this fire
+## Conflict resolution
 
-PR #894's rebase hit a non-trivial 35-line conflict block at `skills/do/modes/pr.md:530-577`. The two changes overlapped on the same case-arm region:
-- **`HEAD` side (#864, just landed):** 3-group LAND_OUTCOME case-arm with HOLD semantics for `pr-ready|created`.
-- **Theirs side (#863):** uniform release-all loop iterating `ISSUE_NUMS`.
-
-Naïve `checkout --theirs` would have **dropped #864's HOLD semantics** (which had just shipped 30 min earlier). Per memory `feedback_single_region_rebase_conflict_edit_directly` + the user's earlier warning ("Be careful you didn't lose something of theirs in the process"), resolved by **manually merging both improvements** — wrapped #864's case-arm logic inside #863's `for _ISSUE_N in "${ISSUE_NUMS[@]}"` loop. Post-resolution both new test suites pass (15/15 + 16/16); content from neither side dropped. Version re-bumped to `065fb4` to reflect the post-merge content hash.
+#867's rebase hit a version-only conflict on `skills/run-plan/SKILL.md:12` and `.claude/skills/run-plan/SKILL.md:12` — both sides bumped `metadata.version` independently. Resolved by edit-directly (per `feedback_single_region_rebase_conflict_edit_directly`) using my version, then recomputed the post-rebase content hash and re-bumped. No content dropped.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260601-001427-dq30m3
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-001427-dq30m3
+- Sprint pipeline ID: fix-issues.sprint-20260601-014727-dq30m4
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-014727-dq30m4
 - Issue claims released cleanly.
 - Cron: `*/30 * * * *` — next fire ~30 min.
