@@ -89,16 +89,16 @@ extract_or_die() {
 }
 
 extract_or_die "$GUARD_SH" "$EXEC_MD" \
-  '^## Step 2\.9' '^## Step 3' 0
+  '^## Step 2[.]9' '^## Step 3' 0
 # The seam fence opens after the "**Test seam" prose and before Step 6.
 extract_or_die "$SEAM_SH" "$EXEC_MD" \
-  '\*\*Test seam \(production behavior unaffected\)' '^6\. \*\*Detect failure' 1
+  '[*][*]Test seam [(]production behavior unaffected[)]' '^6[.] [*][*]Detect failure' 1
 # arm-a fence sits between the "(a) Result text matches" landmark and "(b)".
 # It is indented 5 spaces (nested deeper); strip one 3-space run, then the
 # extracted body still has 2 leading spaces — harmless for `source` of a
 # straight-line fence, but we normalise below for cleanliness.
 extract_or_die "$ARMA_SH" "$EXEC_MD" \
-  '^   - \*\*\(a\) Result text matches' '^   - \*\*\(b\)' 1
+  '^   - [*][*][(]a[)] Result text matches' '^   - [*][*][(]b[)]' 1
 # Normalise residual leading whitespace on arm-a so `.` sourcing is clean.
 sed -i 's/^  //' "$ARMA_SH"
 

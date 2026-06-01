@@ -75,13 +75,13 @@ FENCE2="$TMP/fence2.sh"   # config-default-mode block
 
 # strip-indent=0: the fences are COLUMN-0 in commit/SKILL.md (drift below).
 if ! extract_fence_between "$SKILL" \
-      '\*\*Parsing:\*\*' \
-      '\*\*Config-driven default mode' 1 0 > "$FENCE1"; then
+      '[*][*]Parsing:[*][*]' \
+      '[*][*]Config-driven default mode' 1 0 > "$FENCE1"; then
   echo "FAIL: could not extract arg-parser fence 1 from $SKILL" >&2
   exit 1
 fi
 if ! extract_fence_between "$SKILL" \
-      '\*\*Config-driven default mode' \
+      '[*][*]Config-driven default mode' \
       '^Disambiguation:' 1 0 > "$FENCE2"; then
   echo "FAIL: could not extract config-default fence 2 from $SKILL" >&2
   exit 1

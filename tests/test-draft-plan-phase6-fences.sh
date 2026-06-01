@@ -48,8 +48,8 @@ trap 'rm -rf "$TMP"' EXIT
 # "Auto-commit the plan file" landmark and before the "Auto-land via" one.
 COMMIT_FENCE="$TMP/commit-fence.sh"
 if ! extract_fence_between "$SKILL" \
-      '^3\. \*\*Auto-commit the plan file' \
-      '^4\. \*\*Auto-land via' 1 1 > "$COMMIT_FENCE"; then
+      '^3[.] [*][*]Auto-commit the plan file' \
+      '^4[.] [*][*]Auto-land via' 1 1 > "$COMMIT_FENCE"; then
   echo "FAIL: could not extract Phase-6 commit fence from $SKILL" >&2
   exit 1
 fi
@@ -73,8 +73,8 @@ fi
 # ── Extract the land-pr result-parse fence (column-0 → strip-indent=0) ──
 LANDPR_FENCE="$TMP/landpr-fence.sh"
 if ! extract_fence_between "$SKILL" \
-      '^4\. \*\*Auto-land via' \
-      '^5\. \*\*Plan index' 1 0 > "$LANDPR_FENCE"; then
+      '^4[.] [*][*]Auto-land via' \
+      '^5[.] [*][*]Plan index' 1 0 > "$LANDPR_FENCE"; then
   echo "FAIL: could not extract Phase-6 land-pr fence from $SKILL" >&2
   exit 1
 fi
