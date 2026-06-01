@@ -1,7 +1,7 @@
 ---
 title: Seam Hardening — REST (remaining shell-testable skills exercise production code)
 created: 2026-05-31
-status: active
+status: complete
 ---
 
 # Plan: Seam Hardening — REST
@@ -75,12 +75,12 @@ dependency, not build-if-absent**:
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Verify `tests/lib/extract-fence.sh` exists (hard dep on #830) | ⬚ | | |
-| 2 — verify-changes: extract-and-run the real arg-parser | ⬚ | | |
-| 3 — fix-issues: extract-and-run the 3 sprint fences (assert a row lands) | ⬚ | | |
-| 4 — zskills-dashboard: extract-and-run (concatenated Step-0 + helpers) | ⬚ | | |
-| 5a — briefing: importlib unit tests for 4 pure functions | ⬚ | | |
-| 5b — research-and-go + add-block/add-example convert + cleanup-merged consolidation + 2 confirm-only | ⬚ | | |
+| 1 — Verify `tests/lib/extract-fence.sh` exists (hard dep on #830) | ✅ Done | `verify-gate` | lib present + sourceable on main (HIGH #943 landed) |
+| 2 — verify-changes: extract-and-run the real arg-parser | ✅ Done | `9fa061c` | killed private parse_args; runs real fence; 8 cases; gawk-clean; 2371/0 |
+| 3 — fix-issues: extract-and-run the 3 sprint fences (assert a row lands) | ✅ Done | `0b00b9d` | real sprint fences; anti-no-op row-lands; gawk-clean; 28/0 |
+| 4 — zskills-dashboard: extract-and-run (concatenated Step-0 + helpers) | ✅ Done | `1c0b241` | real fences concatenated; boot-race hardened; 5/5 stable; 35/0 |
+| 5a — briefing: importlib unit tests for 4 pure functions | ✅ Done | `312488a` | importlib units for 4 fns; registered; 12/0 |
+| 5b — research-and-go + add-block/add-example convert + cleanup-merged consolidation + 2 confirm-only | ✅ Done | `378cd5a` | r-a-go regex+negatives; add-block/example converted; cleanup-merged lib-migrated; confirm-only recorded |
 
 ## Conventions (all phases)
 

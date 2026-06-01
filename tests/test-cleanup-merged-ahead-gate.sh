@@ -31,6 +31,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/cleanup-merged/SKILL.md"
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -43,17 +45,15 @@ echo "=== cleanup-merged Phase 5 gate (issues #516 + #755) ==="
 # ── Phase 5 local-branch-scan bash loop — static checks ─────────────
 # The Phase 5 loop must include the post-merge-work gate for PR=MERGED
 # before `git worktree remove` / `git branch -D`.
-
-PHASE5_SLICE=$(awk '
-  /^## Phase 5 — Local branch scan/{capture=1}
-  /^## Phase 6 —/{exit}
-  capture {print}
-' "$SKILL")
-
-if [ -z "$PHASE5_SLICE" ]; then
-  # Phase header text may have evolved; fall back to a broader range.
-  PHASE5_SLICE=$(sed -n '195,400p' "$SKILL")
-fi
+#
+# Migrated from a bespoke inline awk slice to the shared
+# extract_sentinel_block: the slice is everything strictly between the
+# Phase 5 and Phase 6 section headers (the section headers themselves are
+# not referenced by any assertion below). GAWK-portable landmarks use
+# POSIX char classes for literal metacharacters.
+PHASE5_SLICE=$(extract_sentinel_block "$SKILL" \
+  '^## Phase 5 — Local branch scan' \
+  '^## Phase 6 —')
 
 if echo "$PHASE5_SLICE" | grep -qE 'PR_STATE.*=.*MERGED.*\&\&|PR_STATE.*=.*MERGED.*]; then'; then
   pass "Phase 5: PR_STATE=MERGED branch present"
@@ -102,11 +102,16 @@ fi
 # guard so `force` on a named branch bypasses the post-merge gate; the
 # behavioral harness below sets NAMED_FORCE=0 to exercise the non-force
 # path) and ends at the matching `fi` (before the worktree comment).
-GATE_BLOCK=$(echo "$PHASE5_SLICE" | awk '
-  /if \[ "\$PR_STATE" = "MERGED" \] && \[ "\$UPSTREAM_GONE" = "0" \].*; then/{capture=1}
-  capture {print}
-  capture && /^    fi$/{exit}
-')
+#
+# Migrated to the shared extract_sentinel_block: bracket the post-merge
+# gate `if … fi` exclusively between the comment that immediately precedes
+# the `if` ("# unsafe delete.") and the "# Worktree detection" comment that
+# immediately follows the closing `fi`. The slice thus contains exactly the
+# `if [ "$PR_STATE" = "MERGED" ] … fi` block. POSIX char classes for the
+# literal `.`/`:` so gawk emits no warning.
+GATE_BLOCK=$(extract_sentinel_block "$SKILL" \
+  '^[[:space:]]*#[[:space:]]+unsafe delete[.]$' \
+  '^[[:space:]]*# Worktree detection')
 
 if [ -z "$GATE_BLOCK" ]; then
   fail "Phase 5: could not extract gate block for behavioral test"
@@ -246,20 +251,27 @@ fi
 # from the skill against real git branches. We splice together the actual
 # snippets the skill uses (CONTAINED detection, MERGED gate, DEL_FLAG
 # selection) so we exercise real code, not a paraphrase.
-CONTAINED_BLOCK=$(echo "$PHASE5_SLICE" | awk '
-  /CONTAINED=0/{capture=1}
-  capture {print}
-  capture && /^    fi$/ && seen_merged{exit}
-  /MERGED=1/{seen_merged=1}
-')
-# Anchor the delete-flag extraction on the unique "Delete-flag selection."
-# comment so we do not collide with the merged-check `if NAMED_FORCE` block.
-DELFLAG_BLOCK=$(echo "$PHASE5_SLICE" | awk '
-  /# Delete-flag selection\./{capture=1}
-  capture {print}
-  capture && /git branch "\$DEL_FLAG" "\$branch"/{print_more=1}
-  capture && print_more && /^      fi$/{exit}
-')
+# Migrated to the shared extract_sentinel_block. The CONTAINED detection +
+# PR-state lookup + MERGED candidate gate live in one contiguous run; bracket
+# it exclusively between the comment that precedes `CONTAINED=0` ("… skip the
+# gh round-trip when it holds.") and the "# Merged-check:" comment that
+# follows the `MERGED=1` `fi`.
+CONTAINED_BLOCK=$(extract_sentinel_block "$SKILL" \
+  '^[[:space:]]*#[[:space:]].*skip the gh round-trip when it holds[.]$' \
+  '^[[:space:]]*# Merged-check:')
+# Delete-flag selection: bracket exclusively between the last comment line of
+# the #816 explainer ("… lossless by construction.") and the un-indented
+# `done < <(git for-each-ref …` that closes the loop. The captured slice runs
+# from the `if [ "$NAMED_FORCE" -eq 1 ]; then` DEL_FLAG selection through the
+# `git branch "$DEL_FLAG"` delete block (its `      fi`), stopping before the
+# loop's outer `    fi` (which would be unbalanced if included).
+# End landmark is the loop's OUTER `fi` at exactly 4-space indent (`^    fi$`).
+# The DEL_FLAG block's own `fi`s are 6- and 8-space indented, so this matches
+# the outer loop fi first and the captured slice stops just before it —
+# leaving the eval'd block balanced.
+DELFLAG_BLOCK=$(extract_sentinel_block "$SKILL" \
+  '^[[:space:]]*#[[:space:]].*lossless by construction[.]$' \
+  '^    fi$')
 
 if [ -z "$CONTAINED_BLOCK" ] || [ -z "$DELFLAG_BLOCK" ]; then
   fail "Issue #781: could not extract candidate/delete-flag blocks for behavioral test"

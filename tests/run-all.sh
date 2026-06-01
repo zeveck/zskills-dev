@@ -84,6 +84,7 @@ run_suite "test-draft-tests-phase5.sh" "tests/test-draft-tests-phase5.sh"
 run_suite "test-briefing-parity.sh" "tests/test-briefing-parity.sh"
 run_suite "test-briefing-worktrees-merged-diverged.sh" "tests/test-briefing-worktrees-merged-diverged.sh"
 run_suite "test-briefing-dogfooding.sh" "tests/test-briefing-dogfooding.sh"
+run_suite "test-briefing-units.sh" "tests/test-briefing-units.sh"
 run_suite "test-skill-invariants.sh" "tests/test-skill-invariants.sh"
 run_suite "test-issue-380-committed-state-checks.sh" "tests/test-issue-380-committed-state-checks.sh"
 run_suite "test-phase-5b-gate.sh" "tests/test-phase-5b-gate.sh"
@@ -115,6 +116,10 @@ run_suite "test-commit-parsing.sh" "tests/test-commit-parsing.sh"
 run_suite "test-commit-pr-caller-loop.sh" "tests/test-commit-pr-caller-loop.sh"
 run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"
 run_suite "test-draft-plan-args-smoke.sh" "tests/test-draft-plan-args-smoke.sh"
+# SEAM_HARDENING_REST Phase 5b — extract-and-run the research-and-go
+# landing-mode regex + labeled presence-anchor for the model-layer
+# decompose→dispatch core.
+run_suite "test-research-and-go-args-smoke.sh" "tests/test-research-and-go-args-smoke.sh"
 # SEAM_HARDENING_HIGH Phase 5 — extract-and-run the real draft-plan Phase-6 /
 # refine-plan Phase-5 worktree-commit + /land-pr-result-parse fences (exit-1
 # guards + allow-list parse), plus the refine-plan `## Argument parser` fence.
