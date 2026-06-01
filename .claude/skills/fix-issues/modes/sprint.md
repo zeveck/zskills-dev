@@ -130,6 +130,34 @@ PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeli
 SPRINT_ID="${PIPELINE_ID#fix-issues.}"
 ```
 
+### Shared in-flight guard (issue #877)
+
+**Cron pickup-fires can land while a previous sprint is still running**
+(CronCreate's "fires only while idle" is turn-level idle, not task-level).
+The shared `check-inflight-batch.sh` helper detects "my session already
+has an in-flight fix-issues sprint" via session-scoped sentinels and
+exits clean when so, leaving the in-flight run to finish on its own
+turns. The check runs ONLY on sprint mode entry — subcommand routing
+(`stop` / `next` / `sync` / `plan` / `add` / `remove` / `reconsider`)
+in `SKILL.md` peels off before this file is loaded, so the carve-out
+is structural. The two robustness traps (session-scoping + staleness
+escape with `ZSKILLS_INFLIGHT_MAX_AGE_SECONDS` default 2h) live in the
+helper; this fence is just the call site.
+
+```bash
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check fix-issues > /tmp/.fix-issues-inflight.$$ 2>/dev/null; then
+    INFLIGHT_LINE=$(cat /tmp/.fix-issues-inflight.$$)
+    rm -f /tmp/.fix-issues-inflight.$$
+    INFLIGHT_PIPELINE=$(printf '%s' "$INFLIGHT_LINE" | awk -F'\t' '{print $2}')
+    echo "fix-issues sprint ${INFLIGHT_PIPELINE:-(unknown)} in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+  rm -f /tmp/.fix-issues-inflight.$$
+fi
+```
+
 ### Live worktree count check (defer-all gate)
 
 **Run this BEFORE the sprint worktree gate below.** If the host is already
@@ -253,6 +281,15 @@ if [ ! -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT
   printf 'skill: fix-issues\nmode: sprint\ncount: %s\nfocus: %s\nstartedAt: %s\n' \
     "$N" "${FOCUS:-default}" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
     > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
+fi
+
+# Issue #877 — write the shared in-flight sentinel so subsequent cron
+# pickup-fires in this session detect this sprint as live and skip.
+# Cleared at sprint completion ("Post-land tracking" at the end of this file).
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" write fix-issues --pipeline-id "$PIPELINE_ID" || \
+    echo "fix-issues: WARN — could not write in-flight sentinel (continuing)" >&2
 fi
 ```
 
@@ -2827,6 +2864,13 @@ clean up the sentinel:
 
 ```bash
 rm -f "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/pipeline.fix-issues.$SPRINT_ID"
+
+# Issue #877 — clear the shared in-flight sentinel so the next cron
+# fire is free to pick up fresh work.
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear fix-issues --pipeline-id "$PIPELINE_ID" || true
+fi
 ```
 
 Also remove `.zskills-tracked` from each worktree that was used.

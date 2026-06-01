@@ -108,6 +108,39 @@ Exit 0. **No tracking marker is written for `next`** (read-only).
 For `N`/`all` invocations, build the dispatch list and write the
 sprint sentinel.
 
+### Shared in-flight guard (issue #877)
+
+**Cron pickup-fires can land while a previous batch is still running**
+(CronCreate's "fires only while idle" is turn-level idle, not task-level).
+The shared `check-inflight-batch.sh` helper detects "my session already
+has an in-flight work-on-plans batch" via session-scoped sentinels and
+exits clean when so, leaving the in-flight run to finish on its own
+turns. The check runs ONLY on `N`/`all` execute entry — read-only modes
+(`(no args)`, `next`) exit in Step 3 above, and mutating subcommands
+(`add`/`rank`/`remove`/`default`/`every`/`stop`) route to
+`subcommands/add-rank-remove.md` in `SKILL.md` Step 3. The carve-out is
+structural. Two robustness traps (session-scoping + staleness escape
+default 2h) live in the helper.
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  if bash "$INFLIGHT_HELPER" check work-on-plans > /tmp/.work-on-plans-inflight.$$ 2>/dev/null; then
+    INFLIGHT_LINE=$(cat /tmp/.work-on-plans-inflight.$$)
+    rm -f /tmp/.work-on-plans-inflight.$$
+    INFLIGHT_PIPELINE=$(printf '%s' "$INFLIGHT_LINE" | awk -F'\t' '{print $2}')
+    echo "work-on-plans batch ${INFLIGHT_PIPELINE:-(unknown)} in flight; skipping redundant cron pickup" >&2
+    exit 0
+  fi
+  rm -f /tmp/.work-on-plans-inflight.$$
+fi
+```
+
 ```bash
 # Dispatch list: take the first N ready entries (or all when "all").
 mapfile -t READY_LINES < <(printf '%s' "$READY_TSV" \
@@ -167,6 +200,15 @@ SPRINT_ID="${PIPELINE_ID#work-on-plans.}"
 PIPELINE_DIR="$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID"
 mkdir -p "$PIPELINE_DIR"
 echo "ZSKILLS_PIPELINE_ID=$PIPELINE_ID"
+
+# Issue #877 — write the shared in-flight sentinel so subsequent cron
+# pickup-fires in this session detect this batch as live and skip.
+# Cleared at Step 6 (sprint completion).
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" write work-on-plans --pipeline-id "$PIPELINE_ID" || \
+    echo "work-on-plans: WARN — could not write in-flight sentinel (continuing)" >&2
+fi
 ```
 
 The PID-derived suffix keeps concurrent invocations on the same host
@@ -385,6 +427,13 @@ empty-after-failure):
      "$SPRINT_ID" "$DISPATCH_COUNT" "$DONE" "${CONTINUE_ON_FAILURE:-0}" \
      "$SPRINT_FINAL_STATUS" "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
      > "$PIPELINE_DIR/fulfilled.work-on-plans.$SPRINT_ID"
+
+   # Issue #877 — clear the shared in-flight sentinel so the next cron
+   # fire is free to pick up fresh work.
+   INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+   if [ -x "$INFLIGHT_HELPER" ]; then
+     bash "$INFLIGHT_HELPER" clear work-on-plans --pipeline-id "$PIPELINE_ID" || true
+   fi
    ```
 
 2. Rewrite `$WORK_STATE` to `{"state":"idle"}` (last-writer-wins):
