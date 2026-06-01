@@ -243,8 +243,15 @@ function findAllByAttr(root, k, v) {
   };
   const card = buildPlanCard(plan, "blocked", "ready", "phase");
 
-  const actions = ["plan-up", "plan-down", "plan-left", "plan-right", "plan-discard"];
-  for (const action of actions) {
+  // Issue #884 — the X (plan-discard) on a claimed card is now rendered
+  // disabled + WITHOUT data-action, so the delegated dispatcher never
+  // routes it (structural gate at render time). The keyboard move buttons
+  // (↑↓←→) STILL carry data-action and rely on the handleAction guard.
+  // So the present-with-data-action assertion now covers the 4 move
+  // actions only; plan-discard is checked separately (render-gate +
+  // backstop-guard) below.
+  const moveActions = ["plan-up", "plan-down", "plan-left", "plan-right"];
+  for (const action of moveActions) {
     const btns = findAllByAttr(card, "data-action", action);
     expectTrue(btns.length >= 1, "control button for " + action + " present");
     globalThis.__resetCalls();
@@ -261,6 +268,35 @@ function findAllByAttr(root, k, v) {
       expect(calls.showToast[0][1], "info",
         "toast kind is 'info' for action=" + action);
     }
+  }
+
+  // #884 gate (c) — render-level: the claimed X carries NO data-action,
+  // so it is unreachable via the delegated click dispatcher.
+  {
+    const discardBtns = findAllByAttr(card, "data-action", "plan-discard");
+    expect(discardBtns.length, 0,
+      "#884: claimed X (plan-discard) has NO data-action (render-gated, never dispatched)");
+    const rmBtns = findAllByAttr(card, "disabled", "disabled");
+    expectTrue(rmBtns.length >= 1,
+      "#884: claimed card renders a disabled X (remove-btn) control");
+  }
+
+  // #884 backstop — the handleAction guard STILL blocks a directly
+  // dispatched plan-discard on a claimed card (defense-in-depth for the
+  // poll-race window where a claim lands after render). Synthesize a
+  // plan-discard target parented to the claimed card.
+  {
+    globalThis.__resetCalls();
+    const fakeDiscardTarget = makeNode("button");
+    fakeDiscardTarget.attrs["data-action"] = "plan-discard";
+    fakeDiscardTarget.attrs["data-slug"] = "blocked";
+    fakeDiscardTarget.parent = card;
+    dispatchPlanAction("plan-discard", fakeDiscardTarget);
+    const calls = globalThis.__getCalls();
+    expect(calls.discardPlan.length, 0,
+      "#884 backstop: handleAction guard blocks direct plan-discard on claimed card");
+    expect(calls.showToast.length, 1,
+      "#884 backstop: in-flight toast fired for direct plan-discard");
   }
 
   // toggle-mode: NOT blocked. The user can re-pick landing mode without
