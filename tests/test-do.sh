@@ -696,6 +696,55 @@ test_issue_nums_do "fix #832 and #833"                   "832"         "bare #N 
 test_issue_nums_do "fix #832 and fix #832"               "832"         "dedupe: duplicate #N captured once"
 
 # ────────────────────────────────────────────────────────────────────
+# Case 18w — Unclaimed-reference WARNING (#907). When the description
+# carries a `#N` token that the claim-position rules did NOT capture into
+# ISSUE_NUMS, /do warns (non-fatal) that no claim was acquired for it —
+# the footgun that let `/do Build … for #877` run unclaimed and duplicate
+# a parallel /fix-issues sprint (closed PR #888). Replicates the SKILL.md
+# warning loop (source-of-truth is SKILL.md; anchored by 18w-src below).
+# ────────────────────────────────────────────────────────────────────
+# do_warn_unclaimed echoes "WARN #N" per unclaimed reference (the real
+# skill writes the full sentence to stderr). Assumes do_parse_issue_nums
+# already populated ISSUE_NUMS.
+do_warn_unclaimed() {
+  local input="$1" _REM="$1" _REF _CLAIMED _n out=""
+  while [[ "$_REM" =~ \#([0-9]+) ]]; do
+    _REF="${BASH_REMATCH[1]}"
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+    _CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_REF" ] && { _CLAIMED=1; break; }
+    done
+    [ "$_CLAIMED" -eq 0 ] && out+="WARN #$_REF"$'\n'
+  done
+  printf '%s' "$out"
+}
+test_do_warn() {
+  local input="$1" expected_csv="$2" label="$3"
+  do_parse_issue_nums "$input"
+  local got_csv
+  got_csv=$(do_warn_unclaimed "$input" | grep -oE '#[0-9]+' | tr -d '#' | paste -sd, -)
+  if [ "$got_csv" = "$expected_csv" ]; then
+    pass "18w warn: $label (got '${got_csv:-none}')"
+  else
+    fail "18w warn: $label (expected '$expected_csv', got '$got_csv')"
+  fi
+}
+test_do_warn "Build the guard for #877"        "877" "bare mid-prose #N → WARN (the #888 footgun)"
+test_do_warn "Fix #853 — auto-route"           ""    "claim-positioned #N → NO warn"
+test_do_warn "Closes #832 / Closes #833"       ""    "both claimed (multi) → NO warn"
+test_do_warn "Closes #832, see also #999"      "999" "claimed #832 + unclaimed #999 → warn only #999"
+test_do_warn "Just a regular description"      ""    "no #N → NO warn"
+test_do_warn "Edit collect.py:#142 line ref"   "142" "stray #N → WARN (accepted non-fatal false-positive)"
+# 18w-src — anchor the replication to the SKILL.md source so a future edit
+# that removes the warning fails closed.
+if grep -qF 'is not in claim position — NO claim was acquired' "$SKILL"; then
+  pass "18w-src SKILL.md carries the unclaimed-reference WARN (#907)"
+else
+  fail "18w-src SKILL.md missing the unclaimed-reference WARN (#907)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Case 19 — Phase 0a triage rubric NO LONGER contains the
 # "References a GitHub issue number → /fix-issues" REDIRECT row.
 # After PR 825 wired ISSUE_NUM + claim-issue.sh into the mode files,
