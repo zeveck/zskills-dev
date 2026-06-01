@@ -175,6 +175,7 @@ run_suite "test-fix-issues-claim-release-direct.sh" "tests/test-fix-issues-claim
 run_suite "test-fix-issues-claim-collector.sh" "tests/test-fix-issues-claim-collector.sh"
 run_suite "test-fix-issues-claim-render-dom.sh" "tests/test-fix-issues-claim-render-dom.sh"
 run_suite "test-dashboard-completed-readonly.sh" "tests/test-dashboard-completed-readonly.sh"
+run_suite "test-dashboard-complete-render-drag.sh" "tests/test-dashboard-complete-render-drag.sh"
 run_suite "test-dashboard-backlog-bidir.sh" "tests/test-dashboard-backlog-bidir.sh"
 run_suite "test-backfill-plan-completed.sh" "tests/test-backfill-plan-completed.sh"
 run_suite "test-fix-issues-claim-race-e2e.sh" "tests/test-fix-issues-claim-race-e2e.sh"

@@ -130,6 +130,9 @@ const onDragStartBlock = extractBlock(src, /\nfunction onDragStart\(/, "\n}\n");
 const onDropBlock = extractBlock(src, /\nasync function onDrop\(/, "\n}\n");
 const computeIdxBlock = extractBlock(src, /\nfunction computeInsertIndex\(/, "\n}\n");
 const removeIndicatorBlock = extractBlock(src, /\nfunction removeInsertIndicator\(/, "\n}\n");
+// #905 — onDrop now consults isCompletedDropAllowed for the targetCol
+// === "completed" branch. Extract it so the harness can call into it.
+const isAllowedBlock = extractBlock(src, /\nfunction isCompletedDropAllowed\(/, "\n}\n");
 
 const harness = `
 let dragState = null;
@@ -151,6 +154,7 @@ function applyCollapseStateToColumn(_d, _k, _c) {}
 
 ${computeIdxBlock}
 ${removeIndicatorBlock}
+${isAllowedBlock}
 ${onDragStartBlock}
 ${onDropBlock}
 
