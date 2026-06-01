@@ -3,33 +3,50 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260601-014727-dq30m4
+# /fix-issues sprint — sprint-20260601-030804-dq30m5
 
 **Mode:** N=2, dashboard, auto, every 30m
-**Picks:** #868, #867 (claim-before-worktree discipline; parallel session held #862, #869 — dropped past them per dashboard race-loser policy)
+**Picks:** #877 (only — #883 deferred per dependency)
 
-## Landed (2)
+## Triage (4 candidates available after parallel session's 3 claims)
 
-### #868 — /quickfix dual-lane sanitize-pipeline-id.sh path
-- **PR:** https://github.com/zeveck/zskills-dev/pull/897 — merged clean
-- **Fix:** `skills/quickfix/SKILL.md:713` `bash "$MAIN_ROOT/.claude/skills/.../sanitize-pipeline-id.sh"` → `bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh"` (matches `/do`, `/fix-issues`, `/run-plan` peer pattern)
-- **Tests:** 6709/6709 + new regression-guard case 9b ensuring the mirror-only path stays gone; fixture's `make_fixture` updated to ship resolver scripts so `$ZSKILLS_SKILLS_ROOT` actually populates in the extracted harness.
-- **Sister-defect audit:** other `.claude/skills/...` references in `/quickfix` reviewed — all are correct LEGACY-LANE fallbacks inside proper dual-lane conditionals; no follow-up scope.
+| # | Verdict | Action |
+|---|---------|--------|
+| **#877** | Actionable — shared in-flight guard helper + 3-skill integration. Well-spec'd in body. | Dispatched. |
+| **#883** | Depends on #877 (body: "reuse #877's shared detection helper, keyed on work id"). | Deferred to next fire after #877 lands. |
+| #881 | Held by parallel session. | Skip (foreign-held). |
+| #884 | Held by parallel session. | Skip (foreign-held). |
 
-### #867 — /run-plan preflight gate becomes lane-agnostic
-- **PR:** https://github.com/zeveck/zskills-dev/pull/899 — merged after auto-rebase (BEHIND on first poll due to parallel session's PR landing during CI; resolved cleanly).
-- **Fix:** replaced broken `grep -qE '^(UNIT_TEST_CMD|FULL_TEST_CMD)=.*\{\{' .claude/hooks/block-unsafe-project.sh 2>/dev/null` (plugin-lane-blind + scanning for `{{...}}` placeholders that no longer exist in hook body) with dual-lane `zskills-resolve-config.sh` sourcing + `$FULL_TEST_CMD` check.
-- **Prose rewrite:** dropped `{{...}}` framing; described two actual failure modes (missing/malformed `.claude/zskills-config.json`, Case-C runtime block); fixed stale citation `:134-147` → `hooks/block-unsafe-project.sh.template:611-630`; added `:714-729` and `:579-606` citations.
-- **Files (2):** `skills/run-plan/SKILL.md` (+54/-36) + mirror. Version: `c74b30` → re-bumped post-merge to `bd3dd9`.
-- **Tests:** 6708/6708.
+This fire shipped N=1 because #883's premise required #877 to land first. Dispatching them in parallel would have wasted #883's implementer agent on a missing helper.
 
-## Conflict resolution
+## Landed (1)
 
-#867's rebase hit a version-only conflict on `skills/run-plan/SKILL.md:12` and `.claude/skills/run-plan/SKILL.md:12` — both sides bumped `metadata.version` independently. Resolved by edit-directly (per `feedback_single_region_rebase_conflict_edit_directly`) using my version, then recomputed the post-rebase content hash and re-bumped. No content dropped.
+### #877 — Shared session-scoped in-flight guard
+- **PR:** https://github.com/zeveck/zskills-dev/pull/901 — merged clean.
+- **Files (16):** new `skills/create-worktree/scripts/check-inflight-batch.sh` (~527 lines, subcommands `check / write / clear / list / resolve-session-id`); integration in `/fix-issues/modes/sprint.md`, `/work-on-plans/modes/execute.md`, `/qe-audit/SKILL.md` (NEW Phase 0b + Phase 9 — qe-audit had no sentinel before); 7 mirror files; new 32-assertion test suite `tests/test-inflight-batch-guard.sh`; `metadata.version` bumps on 4 SKILL.md files.
+- **Tests:** 6759/6759 passed (+50 from this PR).
+
+## Key design call — session-scoping mechanism
+
+Walks `$$`'s PPID chain on Linux until landing on the first descendant of PID 1 (init), forms session-id as `pid-<pid>.<start_time>` using `/proc/<pid>/stat` field 22 (start in clock-ticks-since-boot). Constant across all turns of one Claude Code REPL session (the harness/CLI persists across turns) and differs across sessions (different PIDs + start_times). **Critical:** preserves LEGITIMATE parallel pipelines — different sessions can each run their own sprint concurrently (different session-ids), gating only on "my session already has a fresh, un-finalized run sentinel for this skill."
+
+Non-Linux fallback: lazily-stamped `.zskills/session-id` file with 24h refresh (only matters if zskills ever ships outside Linux containers — flagged for future revisit).
+
+## Two robustness traps closed
+- **Session-scoping** — dead/other session's sentinel never gates this one.
+- **Staleness escape** — 7200s (2h) default, configurable via `ZSKILLS_INFLIGHT_MAX_AGE_SECONDS` / `--max-age-seconds`.
+
+## Subcommand carve-out
+Structural, not flag-based. The router peels `stop`/`next`/`sync`/`add`/`rank`/`remove`/`reconsider`/`default` off BEFORE the mode files containing the guard are read. For `/qe-audit` the Phase 0b guard comes after the existing `stop`/`next`/`every-without-now` exits.
+
+## Tangential concerns worth follow-up (not in this PR)
+- Dashboard chip surfacing live in-flight sentinels — UX enhancement, not correctness gap.
+- #883 (re-entry guard for `/run-plan` + `/do`) — same helper, different skip-key. Next fire's natural pick.
+- Session-id fallback refresh window (24h) — only matters on non-Linux.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260601-014727-dq30m4
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-014727-dq30m4
-- Issue claims released cleanly.
-- Cron: `*/30 * * * *` — next fire ~30 min.
+- Sprint pipeline ID: fix-issues.sprint-20260601-030804-dq30m5
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-030804-dq30m5
+- Issue claim for #877 released cleanly.
+- Cron: `*/30 * * * *` — next fire ~30 min; #883 likely picks up if not claimed by parallel session.
