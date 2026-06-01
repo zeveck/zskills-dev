@@ -37,7 +37,7 @@ one-shot with a runnable harness.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Static smokes: hooks.json↔script gate, shim-sourcing, D3 fallback | ⬚ | | |
+| 1 — Static smokes: hooks.json↔script gate, shim-sourcing, D3 fallback | ✅ Done | `2bdfe77` | hooks.json gate + shim-sourcing + D3 fallback; fail-closed; 7/0 |
 | 2 — Live dual-lane behavioral validation (claude --plugin-dir .) | ⬚ | | |
 | 3 — Synthetic-consumer legacy-installer migration (D27 dual-install) | ⬚ | | |
 
