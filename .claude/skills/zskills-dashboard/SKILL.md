@@ -9,7 +9,7 @@ description: >-
   sends SIGTERM; restart = stop+start (for code reloads). State at
   .zskills/monitor-state.json.
 metadata:
-  version: "2026.06.01+ddf615"
+  version: "2026.06.01+300230"
 ---
 
 # /zskills-dashboard — Local Dashboard
@@ -85,13 +85,21 @@ fi
 PID_FILE="$MAIN_ROOT/.zskills/dashboard-server.pid"
 LOG_FILE="$MAIN_ROOT/.zskills/dashboard-server.log"
 PKG_PARENT="$MAIN_ROOT/skills/zskills-dashboard/scripts"
-PORT_SCRIPT="$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh"
-SANITIZE_SCRIPT="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
-
-# Source-tree fallback (zskills repo + tests). In normal installed use the
-# .claude/skills/... paths are canonical.
-[ -x "$PORT_SCRIPT" ] || PORT_SCRIPT="$MAIN_ROOT/skills/update-zskills/scripts/port.sh"
-[ -x "$SANITIZE_SCRIPT" ] || SANITIZE_SCRIPT="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+# Dual-lane resolution: plugin install (${CLAUDE_PLUGIN_ROOT}) first, then
+# .claude/skills/... mirror (legacy /update-zskills install lane), then
+# source-tree fallback (zskills repo + tests).
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh" ]; then
+  PORT_SCRIPT="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/port.sh"
+else
+  PORT_SCRIPT="$MAIN_ROOT/.claude/skills/update-zskills/scripts/port.sh"
+  [ -x "$PORT_SCRIPT" ] || PORT_SCRIPT="$MAIN_ROOT/skills/update-zskills/scripts/port.sh"
+fi
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/skills/create-worktree/scripts/sanitize-pipeline-id.sh" ]; then
+  SANITIZE_SCRIPT="${CLAUDE_PLUGIN_ROOT}/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+else
+  SANITIZE_SCRIPT="$MAIN_ROOT/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+  [ -x "$SANITIZE_SCRIPT" ] || SANITIZE_SCRIPT="$MAIN_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+fi
 
 # Server's own scripts dir is in-skill — no install/source split.
 mkdir -p "$MAIN_ROOT/.zskills"
