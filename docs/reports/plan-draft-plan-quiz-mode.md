@@ -1,5 +1,31 @@
 # Plan Report — /draft-plan quiz mode
 
+## Phase — 3 Mirror, version reconcile, conformance + tests [FINAL]
+
+**Plan:** docs/plans/DRAFT_PLAN_QUIZ_MODE.md
+**Status:** Completed (verified) — plan complete
+**Landing:** PR mode — `feat/draft-plan-quiz-mode` (lands once, here)
+**Commits:** `924a465` (in-progress), `e9cb987` (wiring tripwire), tracker/report/complete commits
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | Source version finalized (`2026.06.01+82b352`) | Done (held from Phase 2; no re-bump needed) | — |
+| 2 | Mirror byte-for-byte (`.claude/skills/draft-plan/`) | Done (held from Phase 2; `diff -rq` clean) | — |
+| 3 | Full suite passes | Done | e9cb987 |
+| 4 | Targeted conformance (deny-list, version, mirror parity) | Done | e9cb987 |
+| 5 | Required wiring tripwire (co-occurrence, fails-closed) | Done | e9cb987 |
+| 6 | No CHANGELOG/README (R10) | Done (none, by design) | — |
+
+### Verification
+- Test suite: PASSED — `Overall: 6774/6774 passed, 0 failed` (new tripwire +1 over the 6773 prior).
+- **Wiring tripwire fails-closed:** `check_in_file_near draft-plan SKILL.md … 'references/quiz.md' 'QUIZ_FLAG=1' 10` — passes only when the conditional-load directive and its `QUIZ_FLAG=1` guard co-occur within 10 lines; FAILS if the guard is stripped (degraded to unconditional read) or the reference survives only in a comment. One targeted assertion, not a sweep.
+- Version reconcile: source `2026.06.01+82b352` == fresh content hash; correctly NOT re-bumped (no skill-content change in Phase 3).
+- Mirror parity: `diff -rq skills/draft-plan .claude/skills/draft-plan` clean.
+
+### Plan outcome
+All 3 phases complete and verified. `/draft-plan` now supports an opt-in leading-flag `quiz` mode (interactive requirements interview before drafting) via the conditionally-loaded `references/quiz.md`, wired into SKILL.md with the autonomous-caller leak structurally closed by leading-flag parsing. No `issue:` linked. Landing via `/land-pr` (auto-merge).
+
 ## Phase — 2 Wire SKILL.md (flag, conditional load, seam, transcript) [UNFINALIZED]
 
 **Plan:** docs/plans/DRAFT_PLAN_QUIZ_MODE.md
