@@ -28,6 +28,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/cleanup-merged/SKILL.md"
 DOC="$REPO_ROOT/docs/skills/cleanup-merged.md"
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -82,11 +84,11 @@ else
 fi
 
 # Protected-skip must appear BEFORE any FORCE-gated deletion in Phase 5.
-PHASE5_SLICE=$(awk '
-  /^## Phase 5 — Local branch scan/{capture=1}
-  /^## Phase 6 —/{exit}
-  capture {print}
-' "$SKILL")
+# Migrated to the shared extract_sentinel_block: everything strictly between
+# the Phase 5 and Phase 6 section headers (headers themselves unused below).
+PHASE5_SLICE=$(extract_sentinel_block "$SKILL" \
+  '^## Phase 5 — Local branch scan' \
+  '^## Phase 6 —')
 
 PROT_LINE=$(echo "$PHASE5_SLICE" | grep -n 'if is_protected "\$branch"; then' | head -1 | cut -d: -f1)
 FORCE_LINE=$(echo "$PHASE5_SLICE" | grep -n 'NAMED_FORCE=1' | head -1 | cut -d: -f1)
@@ -122,22 +124,26 @@ fi
 # Extract the WI 1.2 parse block (from `for arg in "$@"` through the
 # is_named helper + FORCE-without-names guard) and the Phase 5 loop body.
 
-# Extract from the `APPLY=0` initializer through the `FORCE=0` reset at the
-# end of the parse work-item (the closing `fi` of the force-without-names
-# guard). The prose paragraph after the fence is excluded by stopping at fi.
-PARSE_BLOCK=$(awk '
-  /^APPLY=0$/{capture=1}
-  capture {print}
-  capture && /^  FORCE=0$/{print_close=1}
-  print_close && /^fi$/{exit}
-' "$SKILL")
+# Migrated to the shared extract_fence_between. Both blocks ARE complete
+# ```bash fences in the production SKILL.md, so the bespoke awk slicers reduce
+# to a single fence extraction each (the fence body == the block, including
+# its trailing `fi`). GAWK-portable landmarks use POSIX char classes for
+# literal metacharacters (`[.]`, `[*]`).
+#
+# PARSE_BLOCK: the WI 1.2 "Argument parse" fence (APPLY=0 … FORCE-without-
+# names guard fi), bracketed by its heading and the "--force can never reach"
+# explainer that follows the fence.
+PARSE_BLOCK=$(extract_fence_between "$SKILL" \
+  '^### WI 1[.]2 — Argument parse' \
+  '^[*][*].--force.. can never reach' 1 0)
 
-PHASE5_BODY=$(echo "$PHASE5_SLICE" | awk '
-  /^CURRENT=\$\(git rev-parse --abbrev-ref HEAD\)$/{capture=1}
-  capture {print}
-  capture && /done < <\(git for-each-ref --format=.%\(refname:short\). refs\/heads\/\)/{print_close=1}
-  print_close && /^fi$/{exit}
-')
+# PHASE5_BODY: the Phase 5 local-branch-scan loop fence (CURRENT=… through the
+# `done < <(git for-each-ref … refs/heads/)` and the loop's closing `fi`),
+# bracketed by the "Protected branches" prose just above the fence and the
+# "When a PR merges via the GitHub web UI" paragraph just below it.
+PHASE5_BODY=$(extract_fence_between "$SKILL" \
+  '^Protected branches [(]from' \
+  '^When a PR merges via the GitHub web UI' 1 0)
 
 if [ -z "$PARSE_BLOCK" ]; then
   fail "could not extract WI 1.2 parse block for behavioral test"
