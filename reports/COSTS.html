@@ -190,7 +190,7 @@
   <p>An estimate of what it would cost to build Z Skills via the Claude API at published list prices, computed from per-API-response token counts in Claude Code session JSONL transcripts.</p>
   <p style="font-size: 0.95em;"><strong>Actual out-of-pocket cost was much lower.</strong> The development happened on a Claude Max x20 plan ($200/mo) plus some overflow usage spend &mdash; not at API list prices. The figures here are the list-price API equivalent: useful as a benchmark for someone reproducing this work via direct API calls, not a record of what was actually paid.</p>
   <p style="font-size: 0.95em;"><strong>Companion reports: <a href="TECHNICAL.html">Technical Stats &rarr;</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a></strong></p>
-  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-05-21</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>cost</em>.</p>
+  <p style="font-size: 0.9em;">JSONL data as of <strong>2026-06-01</strong>. The <a href="../PRESENTATION.html">main presentation</a> covers what skills <em>do</em>; this page covers their <em>cost</em>.</p>
 </section>
 
 <section id="topline" class="fade-in">
@@ -199,18 +199,18 @@
   <div class="caveat"><strong>Read this before the headline.</strong> JSONL coverage begins <strong>2026-04-18</strong>; the first ~23 days (2026-03-26 &rarr; 2026-04-17) ran on <strong>Opus 4.6</strong> and aren't directly measurable. <strong>Logged-only figures below therefore underestimate the list-price equivalent</strong> &mdash; the Projected total card includes a workload-based estimate for the unlogged period. Rates use Anthropic's published per-model pricing for Opus 4.5+ and Haiku 4.5; see methodology for multipliers.</div>
 
   <div class="stat-grid">
-    <div class="stat"><div class="val">53,368</div><div class="label">Opus 4.7 API responses</div><div class="sub">Cost: $8,895. Earlier Opus 4.6 responses (2026-03-26 &rarr; 2026-04-17) not in log.</div></div>
-    <div class="stat purple"><div class="val">2,152</div><div class="label">Haiku 4.5 API responses</div><div class="sub">Cost: $21. Subagent dispatches (Explore agents etc.). Haiku 4.5 didn't exist before 2026-04 so coverage is complete from its launch.</div></div>
-    <div class="stat orange"><div class="val">$8,916</div><div class="label">Logged list-price spend</div><div class="sub">Opus 4.7 + Haiku 4.5 combined, from 55,520 logged API responses (2026-04-18 onward).</div></div>
-    <div class="stat pink"><div class="val">~$12.7k</div><div class="label">Projected total (logged + estimated 4.6)</div><div class="sub">$8,916 logged + ~$3,818 estimated for the 23 unlogged Opus 4.6 days. Realistic range ~$11.7k&ndash;$13.5k &mdash; see "By Model &rarr; Opus 4.6" for the workload-ratio derivation and uncertainty.</div></div>
+    <div class="stat"><div class="val">70,065</div><div class="label">Opus API responses</div><div class="sub">Cost: $12,240. Split: 62,766 Opus 4.7 ($10,789) + 7,299 Opus 4.8 ($1,451). Opus 4.8 launched 2026-05-29 and shares the Opus 4.5+ rate card. Earlier Opus 4.6 responses (2026-03-26 &rarr; 2026-04-17) not in log.</div></div>
+    <div class="stat purple"><div class="val">1,057</div><div class="label">Haiku 4.5 API responses</div><div class="sub">Cost: $11. Subagent dispatches (Explore agents etc.). Down from 2,152 in the 2026-05-21 snapshot &mdash; partly less Explore-agent use over time, partly because two now-deleted <code>-tmp-zskills-*</code> worktree-dirs contributed Haiku traffic that's no longer measurable.</div></div>
+    <div class="stat orange"><div class="val">$12,251</div><div class="label">Logged list-price spend</div><div class="sub">Opus 4.7/4.8 + Haiku 4.5 combined, from 71,122 logged API responses across a 45-day window (2026-04-18 &rarr; 2026-06-01).</div></div>
+    <div class="stat pink"><div class="val">~$16k</div><div class="label">Projected total (logged + estimated 4.6)</div><div class="sub">$12,251 logged + ~$3,760 estimated for the 23 unlogged Opus 4.6 days. Realistic range ~$15k&ndash;$17k &mdash; see "By Model &rarr; Opus 4.6" for the workload-ratio derivation and uncertainty.</div></div>
   </div>
 
-  <p style="color: var(--text-dim); font-size: 0.92em;">Sessions in scope: 85 top-level Claude Code REPL sessions plus 1,532 isolated subagent dispatches (verifiers, implementers, reviewers, Explore agents), across 8 project working directories (main repo + 7 ephemeral worktree-spawned project dirs).</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Sessions in scope: 2,070 JSONL transcripts across 6 project working directories (main repo + 5 ephemeral worktree-spawned dirs). The 2026-05-21 snapshot scanned 8 dirs; two of those <code>-tmp-zskills-*</code> dirs have since been cleaned off disk and are no longer measurable. Some net-growth figures below are accordingly understated relative to pure activity scaling.</p>
 </section>
 
 <section id="by-model" class="fade-in">
   <h2>By Model</h2>
-  <p>The Opus / Haiku 4.5+ rates published at <a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a> (fetched 2026-05-21). <em>MTok = million tokens.</em></p>
+  <p>The Opus / Haiku 4.5+ rates published at <a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a> (fetched 2026-05-21; unchanged since). <em>MTok = million tokens.</em></p>
 
   <table>
     <thead>
@@ -218,66 +218,68 @@
     </thead>
     <tbody>
       <tr><td><code>claude-opus-4-7</code></td><td class="num">$5 / MTok</td><td class="num">$6.25 / MTok</td><td class="num">$10 / MTok</td><td class="num">$0.50 / MTok</td><td class="num">$25 / MTok</td></tr>
+      <tr><td><code>claude-opus-4-8</code></td><td class="num">$5 / MTok</td><td class="num">$6.25 / MTok</td><td class="num">$10 / MTok</td><td class="num">$0.50 / MTok</td><td class="num">$25 / MTok</td></tr>
       <tr><td><code>claude-haiku-4-5</code></td><td class="num">$1 / MTok</td><td class="num">$1.25 / MTok</td><td class="num">$2 / MTok</td><td class="num">$0.10 / MTok</td><td class="num">$5 / MTok</td></tr>
     </tbody>
   </table>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Opus 4.5, 4.6, 4.7, and 4.8 all bill at the same Opus 4.5+ tier; the per-model rows above are identical and shown for completeness. Per-model cost totals therefore depend only on token volume, not on which Opus version handled the response.</p>
 
-  <h3>Opus 4.7 (logged) &mdash; $8,895</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">All 53,368 logged Opus API responses are <code>claude-opus-4-7</code> (verified by grep across all JSONL <code>model</code> fields). Pre-2026-04-18 Opus 4.6 responses are not in the log and are <strong>not</strong> reflected in this subtotal.</p>
+  <h3>Opus 4.7 + 4.8 (logged) &mdash; $12,240</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">62,766 logged responses are <code>claude-opus-4-7</code> ($10,789); 7,299 are <code>claude-opus-4-8</code> ($1,451). Opus 4.8 launched 2026-05-29; both versions bill at the same Opus 4.5+ tier so they're combined in the per-category breakdown below. Pre-2026-04-18 Opus 4.6 responses are not in the log and are <strong>not</strong> reflected in this subtotal.</p>
   <table>
     <thead>
       <tr><th>Category</th><th class="num">Tokens</th><th class="num">Rate / MTok</th><th class="num">Cost</th></tr>
     </thead>
     <tbody>
-      <tr><td>Input (uncached)</td><td class="num">457,151</td><td class="num">$5.00</td><td class="num">$2.29</td></tr>
-      <tr><td>Output</td><td class="num">40,172,450</td><td class="num">$25.00</td><td class="num">$1,004.31</td></tr>
-      <tr><td>5-min cache write</td><td class="num">178,010,195</td><td class="num">$6.25</td><td class="num">$1,112.56</td></tr>
-      <tr><td>1-hour cache write</td><td class="num">214,677,496</td><td class="num">$10.00</td><td class="num">$2,146.77</td></tr>
-      <tr><td>Cache read</td><td class="num">9,257,595,322</td><td class="num">$0.50</td><td class="num">$4,628.80</td></tr>
+      <tr><td>Input (uncached)</td><td class="num">1,414,714</td><td class="num">$5.00</td><td class="num">$7.07</td></tr>
+      <tr><td>Output</td><td class="num">48,866,617</td><td class="num">$25.00</td><td class="num">$1,221.67</td></tr>
+      <tr><td>5-min cache write</td><td class="num">246,295,697</td><td class="num">$6.25</td><td class="num">$1,539.35</td></tr>
+      <tr><td>1-hour cache write</td><td class="num">303,037,062</td><td class="num">$10.00</td><td class="num">$3,030.37</td></tr>
+      <tr><td>Cache read</td><td class="num">12,883,345,011</td><td class="num">$0.50</td><td class="num">$6,441.67</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Opus subtotal</strong></td><td class="num">9.65 B input-side + 40.2 M output</td><td class="num">&mdash;</td><td class="num"><strong>$8,894.73</strong></td></tr>
+      <tr><td><strong>Opus subtotal</strong></td><td class="num">13.43 B input-side + 48.9 M output</td><td class="num">&mdash;</td><td class="num"><strong>$12,240.13</strong></td></tr>
     </tfoot>
   </table>
 
-  <h3>Opus 4.6 (estimated) &mdash; ~$3,818</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">The pre-2026-04-18 development period predates Claude Code's per-session JSONL transcripts, so token counts can't be read directly. The estimate below scales the logged Opus 4.7 era's daily cost by relative workload intensity, using commits/day as the workload proxy.</p>
+  <h3>Opus 4.6 (estimated) &mdash; ~$3,760</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">The pre-2026-04-18 development period predates Claude Code's per-session JSONL transcripts, so token counts can't be read directly. The estimate below scales the logged Opus 4.7/4.8 era's daily cost by relative workload intensity, using commits/day as the workload proxy.</p>
   <table>
     <thead>
       <tr><th>Input</th><th class="num">Value</th></tr>
     </thead>
     <tbody>
       <tr><td>Unlogged days (2026-03-26 &rarr; 2026-04-17)</td><td class="num">23</td></tr>
-      <tr><td>Unlogged commits</td><td class="num">209 (9.09/day)</td></tr>
-      <tr><td>Logged commits</td><td class="num">488 (14.35/day)</td></tr>
-      <tr><td>Workload intensity ratio (4.6 &divide; 4.7)</td><td class="num">0.633</td></tr>
-      <tr><td>Logged daily rate</td><td class="num">$262.22/day</td></tr>
+      <tr><td>Unlogged commits</td><td class="num">221 (9.61/day)</td></tr>
+      <tr><td>Logged commits (2026-04-18 &rarr; 2026-06-01, 45 days)</td><td class="num">720 (16.00/day)</td></tr>
+      <tr><td>Workload intensity ratio (4.6 &divide; new)</td><td class="num">0.601</td></tr>
+      <tr><td>Logged daily rate</td><td class="num">$272.24/day</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>4.6 estimate</strong> &mdash; $262.22 &times; 23 &times; 0.633</td><td class="num"><strong>$3,818</strong></td></tr>
+      <tr><td><strong>4.6 estimate</strong> &mdash; $272.24 &times; 23 &times; 0.601</td><td class="num"><strong>$3,760</strong></td></tr>
     </tfoot>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">This is a sensitivity-bounded estimate, not a measurement. Two uncertainties widen the range: <strong>(1)</strong> Opus 4.7 uses a denser tokenizer than 4.6 (up to 35% more tokens for the same fixed text, per Anthropic), so equivalent 4.6 work used fewer tokens &mdash; pulling the estimate down to ~$2,829 at the upper bound. <strong>(2)</strong> Commits/day is an approximate work-intensity proxy; 4.6-era commits may have represented more or less work-per-commit than logged-era ones, in either direction. A realistic range is ~$3.0k&ndash;$4.5k for the 4.6 era, putting the projected total between ~$11.7k and ~$13.5k.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">This is a sensitivity-bounded estimate, not a measurement. Two uncertainties widen the range: <strong>(1)</strong> Opus 4.7/4.8 use a denser tokenizer than 4.6 (up to 35% more tokens for the same fixed text, per Anthropic), so equivalent 4.6 work used fewer tokens &mdash; pulling the estimate down to ~$2,786 at the upper bound. <strong>(2)</strong> Commits/day is an approximate work-intensity proxy; 4.6-era commits may have represented more or less work-per-commit than logged-era ones, in either direction. A realistic range is ~$3.0k&ndash;$4.5k for the 4.6 era, putting the projected total between ~$15k and ~$17k.</p>
 
-  <h3>Haiku 4.5 (logged) &mdash; $21</h3>
-  <p style="color: var(--text-dim); font-size: 0.92em;">Haiku 4.5 responses are subagent dispatches the Z Skills orchestrators send out for cheaper read-only investigation (e.g., the <code>Explore</code> agent type ships pinned to Haiku 4.5). 2.2k responses across the same project dirs.</p>
+  <h3>Haiku 4.5 (logged) &mdash; $11</h3>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Haiku 4.5 responses are subagent dispatches the Z Skills orchestrators send out for cheaper read-only investigation (e.g., the <code>Explore</code> agent type ships pinned to Haiku 4.5). 1,057 responses across the project dirs &mdash; about half the 2026-05-21 snapshot's 2,152, reflecting both less Explore-agent dispatching in the recent period and the two deleted <code>-tmp-zskills-*</code> dirs that previously contributed Haiku traffic.</p>
   <table>
     <thead>
       <tr><th>Category</th><th class="num">Tokens</th><th class="num">Rate / MTok</th><th class="num">Cost</th></tr>
     </thead>
     <tbody>
-      <tr><td>Input (uncached)</td><td class="num">143,149</td><td class="num">$1.00</td><td class="num">$0.14</td></tr>
-      <tr><td>Output</td><td class="num">817,232</td><td class="num">$5.00</td><td class="num">$4.09</td></tr>
-      <tr><td>5-min cache write</td><td class="num">6,759,953</td><td class="num">$1.25</td><td class="num">$8.45</td></tr>
+      <tr><td>Input (uncached)</td><td class="num">69,881</td><td class="num">$1.00</td><td class="num">$0.07</td></tr>
+      <tr><td>Output</td><td class="num">408,952</td><td class="num">$5.00</td><td class="num">$2.04</td></tr>
+      <tr><td>5-min cache write</td><td class="num">3,450,069</td><td class="num">$1.25</td><td class="num">$4.31</td></tr>
       <tr><td>1-hour cache write</td><td class="num">0</td><td class="num">$2.00</td><td class="num">$0.00</td></tr>
-      <tr><td>Cache read</td><td class="num">81,997,734</td><td class="num">$0.10</td><td class="num">$8.20</td></tr>
+      <tr><td>Cache read</td><td class="num">42,558,454</td><td class="num">$0.10</td><td class="num">$4.26</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Haiku subtotal</strong></td><td class="num">88.9 M input-side + 0.8 M output</td><td class="num">&mdash;</td><td class="num"><strong>$20.88</strong></td></tr>
+      <tr><td><strong>Haiku subtotal</strong></td><td class="num">46.1 M input-side + 0.4 M output</td><td class="num">&mdash;</td><td class="num"><strong>$10.68</strong></td></tr>
     </tfoot>
   </table>
 
-  <p style="text-align: right; font-size: 1.15em; margin-top: 16px;"><strong>Projected total: $8,895 (4.7) + ~$3,818 (4.6) + $21 (Haiku) = ~$12,734</strong> (~$12.7k, range ~$11.7k&ndash;$13.5k)</p>
+  <p style="text-align: right; font-size: 1.15em; margin-top: 16px;"><strong>Projected total: $12,240 (Opus 4.7/4.8) + ~$3,760 (4.6) + $11 (Haiku) = ~$16,011</strong> (~$16k, range ~$15k&ndash;$17k)</p>
 </section>
 
 <section id="by-category" class="fade-in">
@@ -287,25 +289,25 @@
       <tr><th>Category</th><th class="num">Total tokens</th><th class="num">Total cost</th><th class="num">Share of cost</th></tr>
     </thead>
     <tbody>
-      <tr><td>Input (uncached)</td><td class="num">600,300</td><td class="num">$2.43</td><td class="num">&lt;0.1%</td></tr>
-      <tr><td>Output</td><td class="num">40,989,682</td><td class="num">$1,008.40</td><td class="num">11.3%</td></tr>
-      <tr><td>5-min cache write</td><td class="num">184,770,148</td><td class="num">$1,121.01</td><td class="num">12.6%</td></tr>
-      <tr><td>1-hour cache write</td><td class="num">214,677,496</td><td class="num">$2,146.77</td><td class="num">24.1%</td></tr>
-      <tr><td>Cache read</td><td class="num">9,339,593,056</td><td class="num">$4,637.00</td><td class="num">52.0%</td></tr>
+      <tr><td>Input (uncached)</td><td class="num">1,484,595</td><td class="num">$7.14</td><td class="num">0.1%</td></tr>
+      <tr><td>Output</td><td class="num">49,275,569</td><td class="num">$1,223.71</td><td class="num">10.0%</td></tr>
+      <tr><td>5-min cache write</td><td class="num">249,745,766</td><td class="num">$1,543.66</td><td class="num">12.6%</td></tr>
+      <tr><td>1-hour cache write</td><td class="num">303,037,062</td><td class="num">$3,030.37</td><td class="num">24.7%</td></tr>
+      <tr><td>Cache read</td><td class="num">12,925,903,465</td><td class="num">$6,445.93</td><td class="num">52.6%</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Total</strong></td><td class="num">9.74 B input-side + 41.0 M output</td><td class="num"><strong>$8,915.61</strong></td><td class="num">100%</td></tr>
+      <tr><td><strong>Total</strong></td><td class="num">13.48 B input-side + 49.3 M output</td><td class="num"><strong>$12,250.81</strong></td><td class="num">100%</td></tr>
     </tfoot>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">Cache reads alone are 52% of total spend &mdash; reflecting Z Skills' heavy use of pre-cached CLAUDE.md, SKILL.md bodies, and session context. Each subagent dispatch reads the cache rather than re-paying full input rates.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">Cache reads alone are 53% of total spend &mdash; reflecting Z Skills' heavy use of pre-cached CLAUDE.md, SKILL.md bodies, and session context. Each subagent dispatch reads the cache rather than re-paying full input rates.</p>
 </section>
 
 <section id="cache" class="fade-in">
   <h2>Cache Effectiveness</h2>
   <div class="stat-grid">
-    <div class="stat green"><div class="val">95.9%</div><div class="label">Cache-read share of input</div><div class="sub">9.34 B cache reads / 9.74 B input-side tokens</div></div>
-    <div class="stat"><div class="val">~15,558&times;</div><div class="label">Read-to-uncached ratio</div><div class="sub">Each uncached input token rides alongside ~15,558 cache-hit reads (9.34 B combined reads &divide; 600,300 uncached input tokens).</div></div>
-    <div class="stat purple"><div class="val">~$41,733</div><div class="label">Cache savings (hypothetical upper bound)</div><div class="sub">Gap between actual cache-read cost ($4,637) and the same tokens billed at uncached input rates ($46,370). Without caching, the workload itself would likely have been smaller, so this is a ceiling on what caching is worth &mdash; not a refund.</div></div>
+    <div class="stat green"><div class="val">95.9%</div><div class="label">Cache-read share of input</div><div class="sub">12.93 B cache reads / 13.48 B input-side tokens</div></div>
+    <div class="stat"><div class="val">~8,706&times;</div><div class="label">Read-to-uncached ratio</div><div class="sub">Each uncached input token rides alongside ~8,706 cache-hit reads (12.93 B reads &divide; 1.48 M uncached input tokens). Down from ~15,558&times; in the 2026-05-21 snapshot &mdash; recent activity carries slightly more uncached input per cache hit, but cache reads still dominate.</div></div>
+    <div class="stat purple"><div class="val">~$58,013</div><div class="label">Cache savings (hypothetical upper bound)</div><div class="sub">Gap between actual cache-read cost ($6,446) and the same tokens billed at uncached input rates ($64,459). Without caching, the workload itself would likely have been smaller, so this is a ceiling on what caching is worth &mdash; not a refund.</div></div>
   </div>
 
   <h3>Counterfactual math</h3>
@@ -315,23 +317,23 @@
     </thead>
     <tbody>
       <tr>
-        <td>Opus cache reads (9.26 B @ $5 vs $0.50)</td>
-        <td class="num">$46,287.98</td>
-        <td class="num">$4,628.80</td>
-        <td class="num">$41,659.18</td>
+        <td>Opus cache reads (12.88 B @ $5 vs $0.50)</td>
+        <td class="num">$64,416.73</td>
+        <td class="num">$6,441.67</td>
+        <td class="num">$57,975.05</td>
       </tr>
       <tr>
-        <td>Haiku cache reads (82.0 M @ $1 vs $0.10)</td>
-        <td class="num">$81.99</td>
-        <td class="num">$8.20</td>
-        <td class="num">$73.80</td>
+        <td>Haiku cache reads (42.6 M @ $1 vs $0.10)</td>
+        <td class="num">$42.56</td>
+        <td class="num">$4.26</td>
+        <td class="num">$38.30</td>
       </tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Total</strong></td><td class="num">$46,370</td><td class="num">$4,637</td><td class="num">$41,733</td></tr>
+      <tr><td><strong>Total</strong></td><td class="num">$64,459</td><td class="num">$6,446</td><td class="num">$58,013</td></tr>
     </tfoot>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">The "$41.7k savings" figure is the gap between what cache reads actually cost ($4,637) and what they would have cost if every cache read had been billed as fresh uncached input ($46,370). Real billing only ever paid the cached rate &mdash; this is an upper bound on what caching is worth, not a refund.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">The "$58k savings" figure is the gap between what cache reads actually cost ($6,446) and what they would have cost if every cache read had been billed as fresh uncached input ($64,459). Real billing only ever paid the cached rate &mdash; this is an upper bound on what caching is worth, not a refund.</p>
 
   <h3>Cache-write tier split</h3>
   <table>
@@ -339,27 +341,28 @@
       <tr><th>Tier</th><th class="num">Tokens</th><th class="num">Share of cache writes</th><th class="num">Cost</th></tr>
     </thead>
     <tbody>
-      <tr><td>5-minute cache writes</td><td class="num">184,770,148</td><td class="num">46.3%</td><td class="num">$1,121.01</td></tr>
-      <tr><td>1-hour cache writes</td><td class="num">214,677,496</td><td class="num">53.7%</td><td class="num">$2,146.77</td></tr>
+      <tr><td>5-minute cache writes</td><td class="num">249,745,766</td><td class="num">45.2%</td><td class="num">$1,543.66</td></tr>
+      <tr><td>1-hour cache writes</td><td class="num">303,037,062</td><td class="num">54.8%</td><td class="num">$3,030.37</td></tr>
     </tbody>
     <tfoot>
-      <tr><td><strong>Total writes</strong></td><td class="num">399,447,644</td><td class="num">100%</td><td class="num">$3,267.78</td></tr>
+      <tr><td><strong>Total writes</strong></td><td class="num">552,782,828</td><td class="num">100%</td><td class="num">$4,574.03</td></tr>
     </tfoot>
   </table>
-  <p style="color: var(--text-dim); font-size: 0.92em;">1-hour cache writes edge out 5-minute writes by ~1.2&times;, reflecting Z Skills' long-running pipelines (multi-hour plan executions, fix-issues sprints) where extending cache TTL beyond 5 minutes pays back.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">1-hour cache writes edge out 5-minute writes by ~1.21&times;, reflecting Z Skills' long-running pipelines (multi-hour plan executions, fix-issues sprints) where extending cache TTL beyond 5 minutes pays back. Mix essentially unchanged from the 2026-05-21 snapshot.</p>
 </section>
 
 <section id="method" class="fade-in">
   <h2>Methodology</h2>
 
   <h3>Rate source</h3>
-  <p>All rates fetched <strong>2026-05-21</strong> from Anthropic's published API pricing page (<a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a>):</p>
+  <p>All rates fetched <strong>2026-05-21</strong> from Anthropic's published API pricing page (<a href="https://platform.claude.com/docs/en/about-claude/pricing">platform.claude.com/docs/en/about-claude/pricing</a>) and unchanged through the 2026-06-01 refresh:</p>
 <pre><code>Claude Opus 4.7  → $5 input / $25 output / $6.25 5m-CW / $10 1h-CW / $0.50 CR per MTok
+Claude Opus 4.8  → $5 input / $25 output / $6.25 5m-CW / $10 1h-CW / $0.50 CR per MTok
 Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR per MTok</code></pre>
-  <p style="color: var(--text-dim); font-size: 0.92em;">The prior Opus generation (4.0 and 4.1) is listed at 3&times; these rates &mdash; the Opus 4.5+ pricing tier took effect with the <strong>Opus 4.5 release on 2025-11-24</strong>. Equivalent work done at those older rates would have cost roughly 3&times; as much (~$27k logged-only, ~$38k including the projected 4.6 era). Z Skills development used Opus 4.6 in the unlogged pre-2026-04-18 era and Opus 4.7 thereafter; both bill at the Opus 4.5+ tier above.</p>
+  <p style="color: var(--text-dim); font-size: 0.92em;">The prior Opus generation (4.0 and 4.1) is listed at 3&times; these rates &mdash; the Opus 4.5+ pricing tier took effect with the <strong>Opus 4.5 release on 2025-11-24</strong>. Equivalent work done at those older rates would have cost roughly 3&times; as much (~$37k logged-only, ~$48k including the projected 4.6 era). Z Skills development used Opus 4.6 in the unlogged pre-2026-04-18 era, Opus 4.7 from 2026-04-18 through 2026-05-28, and a mix of Opus 4.7 + 4.8 from 2026-05-29 onward; all bill at the Opus 4.5+ tier above.</p>
 
   <h3>Per-response token totals (the unit of billing)</h3>
-  <p>Scanned 1,617 JSONL files across 8 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 7 <code>~/.claude/projects/-tmp-zskills-*/</code> ephemeral worktree-spawned dirs). Claude Code splits each API response into multiple JSONL records &mdash; one per content block (<code>thinking</code>, <code>text</code>, <code>tool_use</code>) &mdash; and each record carries the full per-response <code>usage</code> object. The Anthropic API bills per response, not per content block, so token totals are computed by deduplicating against <code>message.id</code> (one ID = one API response = one bill). For <code>output_tokens</code>, which streams cumulatively, the max value across a response's records is used (per <a href="https://platform.claude.com/docs/en/api/messages-streaming">Anthropic's streaming docs</a>: "token counts shown in the <code>usage</code> field of the <code>message_delta</code> event are cumulative"). For <code>input_tokens</code>, <code>cache_read_input_tokens</code>, and <code>cache_creation</code> (5m / 1h), values are constant across all records of a given <code>message.id</code> (verified empirically: 100% match across 35k+ multi-record message.ids).</p>
+  <p>Scanned 2,070 JSONL files across 6 project working directories (<code>~/.claude/projects/-workspaces-zskills/</code> + 5 <code>~/.claude/projects/-tmp-zskills-*/</code> ephemeral worktree-spawned dirs). The 2026-05-21 snapshot scanned 8 dirs; two of those <code>-tmp-zskills-*</code> dirs have since been cleaned off disk. Claude Code splits each API response into multiple JSONL records &mdash; one per content block (<code>thinking</code>, <code>text</code>, <code>tool_use</code>) &mdash; and each record carries the full per-response <code>usage</code> object. The Anthropic API bills per response, not per content block, so token totals are computed by deduplicating against <code>message.id</code> (one ID = one API response = one bill). For <code>output_tokens</code>, which streams cumulatively, the max value across a response's records is used (per <a href="https://platform.claude.com/docs/en/api/messages-streaming">Anthropic's streaming docs</a>: "token counts shown in the <code>usage</code> field of the <code>message_delta</code> event are cumulative"). For <code>input_tokens</code>, <code>cache_read_input_tokens</code>, and <code>cache_creation</code> (5m / 1h), values are constant across all records of a given <code>message.id</code> (verified empirically: 100% match across the multi-record message.ids in the corpus).</p>
   <p style="color: var(--text-dim); font-size: 0.92em;">Cache-tier split comes from <code>usage.cache_creation.ephemeral_5m_input_tokens</code> and <code>usage.cache_creation.ephemeral_1h_input_tokens</code>; the flat <code>cache_creation_input_tokens</code> field agrees with the decomposed total on &gt;99.99% of records (5 records disagree by ~5k tokens each, immaterial). Records with <code>message.model</code> containing <code>"synthetic"</code> are excluded as non-API turns.</p>
 
   <h3>Multipliers applied</h3>
@@ -378,8 +381,8 @@ Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR 
   <p style="color: var(--text-dim); font-size: 0.92em;">The per-API-response billing methodology was checked through internal consistency checks. These confirm the JSONL data is being read correctly &mdash; not that the JSONL itself matches a third-party billing record (none available since development ran on the Claude Max subscription, not direct API billing).</p>
   <ul style="margin-left: 20px; color: var(--text-dim); font-size: 0.92em;">
     <li><strong>API semantics.</strong> Anthropic's streaming-API documentation states that the <code>usage</code> object is emitted once per API response (not per content block), with <code>output_tokens</code> reported cumulatively across each response's <code>message_delta</code> events.</li>
-    <li><strong>Field-by-field consistency.</strong> Across 35k+ multi-record <code>message.id</code>s, <code>input_tokens</code>, <code>cache_read_input_tokens</code>, and <code>cache_creation</code> tier values are 100% constant within each <code>message.id</code> (per-response data), confirming they should be counted once per response, not once per content block.</li>
-    <li><strong>Cross-file uniqueness.</strong> No <code>message.id</code> appears in more than one JSONL file across the 1,617 scanned, so dedup-by-<code>message.id</code> doesn't over- or under-count across the parent-session/subagent split.</li>
+    <li><strong>Field-by-field consistency.</strong> Across the multi-record <code>message.id</code>s in the corpus, <code>input_tokens</code>, <code>cache_read_input_tokens</code>, and <code>cache_creation</code> tier values are 100% constant within each <code>message.id</code> (per-response data), confirming they should be counted once per response, not once per content block.</li>
+    <li><strong>Cross-file uniqueness.</strong> No <code>message.id</code> appears in more than one JSONL file across the 2,070 scanned, so dedup-by-<code>message.id</code> doesn't over- or under-count across the parent-session/subagent split.</li>
     <li><strong>Manual trace.</strong> Twenty randomly-sampled <code>message.id</code>s were inspected by hand; every multi-record entry resolved to either a content-block split within a single API response (<code>thinking</code> + <code>text</code> + <code>tool_use</code> blocks) or a session-resume duplicate (Claude Code re-writes prior turns when a session is resumed). Dedup-by-<code>message.id</code> handles both.</li>
     <li><strong>End-to-end session walk.</strong> A short session was read line-by-line: by-eye counted 5 distinct assistant API responses across 9 usage-bearing JSONL records. Dedup-by-<code>message.id</code> returned 5 &mdash; exact match against the by-hand count.</li>
     <li><strong>Three arithmetic methods.</strong> Aggregate-first, per-record-of-deduplicated-set, and per-day re-aggregation all reproduce the grand total to the cent.</li>
@@ -388,9 +391,9 @@ Claude Haiku 4.5 → $1 input / $5 output  / $1.25 5m-CW / $2  1h-CW / $0.10 CR 
 </section>
 
 <section class="fade-in" style="text-align:center; padding: 40px 0; border-top: 2px solid var(--border);">
-  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>~$12.2k estimated Claude API spend &rarr; 26 skills, 695 commits / 390 merged PRs, 104 test scripts</strong></p>
+  <p style="font-size: 1.05em; color: var(--text); max-width: 800px; margin: 0 auto;"><strong>~$16k estimated Claude API spend &rarr; 940 commits / 635 merged PRs on main across a 68-day project span</strong></p>
   <p style="margin-top: 16px;"><a href="../PRESENTATION.html">&larr; Main presentation</a> &middot; <a href="PERMISSIONS.html">Permission Prompts &rarr;</a> &middot; <a href="TECHNICAL.html">Technical report</a> &middot; <a href="https://github.com/zeveck/zskills">github.com/zeveck/zskills</a></p>
-  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-05-21. Built with Claude Code (Claude Opus 4.6 / 4.7).</p>
+  <p style="margin-top: 24px; font-size: 0.85em; color: var(--text-dim);">JSONL data as of 2026-06-01. Built with Claude Code (Claude Opus 4.6 / 4.7 / 4.8).</p>
 </section>
 
 </div>
