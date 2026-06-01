@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.06.01+0f0dba"
+  version: "2026.06.01+604a89"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -938,13 +938,45 @@ Source: `skills/run-plan/scripts/pr-preflight.sh`. Pure bash; no `jq`.
    - If multiple phases share the same number (e.g., 4a, 4b, 4c), treat
      each sub-phase as a separate phase
 
-4. **Check dependencies** — if a prerequisite phase isn't Done, **STOP.**
+**Recoverable-STOP sentinel hygiene (Issue #923).** Steps 4–6 below each
+have a recoverable **STOP** that deliberately leaves the `every`/`finish auto`
+cron alive to retry on a later fire (dependency-not-met, phase-in-progress
+conflict, staleness). Before taking any of those STOP-and-exit branches,
+clear the #883 in-flight sentinel — otherwise the retry fire (same
+`(session_id, pipeline_id)`) is treated as a redundant re-fire and SKIPPED
+until the 2h staleness reclaims it, defeating the intended retry. Re-derive
+`$PIPELINE_ID` / `$INFLIGHT_HELPER` at fence-top exactly as the terminal-clear
+sites in `modes/execute-phase.md` do (config-source first):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
+fi
+```
+
+This is distinct from Step 0 Case 3's adaptive-backoff defer — that path is a
+genuine "phase actively in progress, keep deferring" yield and MUST keep the
+sentinel set; do NOT add the clear there.
+
+4. **Check dependencies** — if a prerequisite phase isn't Done, **STOP**
+   (clear the sentinel via the fence above first).
    Report which dependency is missing. If `every`, the cron retries later.
 
 5. **Check for conflicts** — if the target phase is "In Progress" (🟡 or
-   equivalent), another agent may be working on it. **STOP.** Do not compete.
+   equivalent), another agent may be working on it. **STOP** (clear the
+   sentinel via the fence above first). Do not compete.
 
-6. **Check for staleness.** Two independent checks:
+6. **Check for staleness.** Two independent checks. If a check forces a
+   STOP-and-exit that leaves the cron alive to retry, clear the sentinel via
+   the fence above first.
 
    **a. Textual staleness.** if the plan's Dependencies section
    contains language like "drafted before," "may need refresh," or "APIs

@@ -1034,10 +1034,21 @@ commits on the feature branch.
    git add <plan-file> [companion-doc]
    git commit -m "chore: mark phase <name> in progress"
    ```
-   Not ✅ Done yet — Phase 6 updates to Done after landing succeeds (in
-   cherry-pick/direct via a main commit, in PR mode via a commit on the
-   feature branch *before* push so it's captured in the squash). If
-   landing fails in either mode, tracker correctly reads In Progress.
+   Not ✅ Done yet — for a phase that lands this turn (single-phase runs, and
+   the FINAL phase of a chunked `finish`/`finish auto` run), Phase 6 updates
+   to Done after landing succeeds (in cherry-pick/direct via a main commit, in
+   PR mode via a commit on the feature branch *before* push so it's captured
+   in the squash). If landing fails in either mode, tracker correctly reads
+   In Progress.
+
+   **Chunked `finish`/`finish auto` non-final phases (Issue #191 + #923).**
+   These phases do NOT land in Phase 6 — landing happens once after the final
+   phase (`LAND_NOW=false`; see Phase 6's final-phase gating). So a non-final
+   phase must reach ✅ Done at **phase-turn-end** — after the phase verifies
+   and its work is committed to the plan-scoped feature branch, before this
+   turn's Phase-5c advancement exit — not "after landing." Flip the tracker
+   row to ✅ and commit it on the same plan-scoped branch as the phase's work
+   so the next cron-fired turn reads the phase as complete and advances.
 
 5. **(PR mode only) Sync the GitHub PR body's progress section.** The PR
    body was snapshotted at PR-open time in Phase 6 (Step 5, Create PR) and

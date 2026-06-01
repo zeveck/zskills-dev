@@ -119,6 +119,35 @@ idempotent re-entry check handles redundant fires as cheap no-ops.
 #   prompt: "Run /run-plan <plan-file> finish auto"
 ```
 
+**Clear the #883 in-flight sentinel before exiting this turn (Issue #923).**
+This is the non-final Phase-5c advancement exit: the cron is *meant* to fire
+again to pick up the next phase. The plan+session-scoped sentinel written at
+`/run-plan` entry must be cleared here, otherwise the next-phase cron fire —
+same `(session_id, pipeline_id)` — is treated as a redundant re-fire and
+SKIPPED until the 2h staleness reclaims it, suppressing phase advancement.
+Re-derive `$PIPELINE_ID` / `$INFLIGHT_HELPER` at fence-top exactly as the
+terminal-clear sites in `modes/execute-phase.md` do (config-source first):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
+fi
+```
+
+Then output the `Phase <N> … complete / Phase <N+1> will fire automatically`
+chunking message and exit this turn. **Do NOT** clear the sentinel during a
+genuine mid-phase yield (e.g. a backgrounded baseline capture) — that path
+keeps the sentinel so a redundant re-fire while the phase is actually still
+running is correctly skipped; the 2h staleness is the dead-turn backstop.
+
 **Cron terminates when the plan completes.** Phase 1 Step 0 Case 1
 (frontmatter `status: complete`) explicitly deletes this cron — see
 the SKILL.md main file's Phase 1 Step 0 block. That's the only
