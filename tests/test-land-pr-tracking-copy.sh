@@ -9,10 +9,15 @@
 # enforce_step_verify_marker) then blocks subsequent phases' commits
 # because main has .verify but no .report companion.
 #
-# This test extracts the Step 7c block from SKILL.md (by anchor
-# verification) and runs a reference implementation against tmpdir
-# fixtures. Failure here means SKILL.md drifted from the reference
-# implementation and Issue #604 may have regressed.
+# EXTRACT-AND-RUN (SEAM_HARDENING_HIGH Phase 1 pilot): this test no longer
+# carries a re-implemented copy of Step 7c. It EXTRACTS the real Step 7c
+# ```bash fence out of skills/land-pr/SKILL.md via tests/lib/extract-fence.sh
+# and RUNS it against tmpdir fixtures. The fence resolves COPY_MAIN_ROOT from
+# `git rev-parse --git-common-dir`; we shim git (tests/lib/landpr-harness.sh
+# mkshim) to point it at each fixture's own MAIN_ROOT and drop a real `.git`
+# marker there so the production `.git`-existence guard passes. Mutating the
+# production fence (e.g. dropping the cp -af) makes this suite FAIL — that is
+# the point: the test exercises production code, not a copy.
 #
 # Cases:
 #   a. Happy path — markers copied
@@ -21,12 +26,18 @@
 #   d. MERGE_REQUESTED=false — no-op
 #   e. Pre-existing main markers overwritten (last-run-wins)
 #   f. requires.* and fulfilled.* siblings also copied (not just step.*)
+#   g. ZSKILLS_PIPELINE_ID overrides TRACKING_ID
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL_FILE="$REPO_ROOT/skills/land-pr/SKILL.md"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
+# shellcheck source=tests/lib/landpr-harness.sh
+. "$SCRIPT_DIR/lib/landpr-harness.sh"
 
 PASS=0
 FAIL=0
@@ -55,45 +66,51 @@ do
   fi
 done
 
-# ---- Reference implementation (must mirror SKILL.md Step 7c) --------
-# Run as a function so each case can supply its own env. Stderr is
-# captured per call so we can assert on the WARN/INFO messages.
-# COPY_MAIN_ROOT is passed in directly by the test (the SKILL.md block
-# resolves it from git-common-dir, but each fixture sets up its own
-# layout — same shape, same behavior).
-run_copy_block() {
-  : "${BRANCH_SLUG:=test}"
-  if [ "$MERGE_REQUESTED" = "true" ] && [ "$PR_STATE" = "MERGED" ] && [ -n "$WORKTREE_PATH" ]; then
-    local COPY_PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-${TRACKING_ID:+run-plan.$TRACKING_ID}}"
-    # In production the block re-resolves COPY_MAIN_ROOT from git-common-dir;
-    # for the test we accept a pre-set COPY_MAIN_ROOT env override so each
-    # case can point at its own tmpdir without needing a real git repo.
-    if [ -z "$COPY_PIPELINE_ID" ]; then
-      echo "INFO: /land-pr Step 7c: no PIPELINE_ID resolvable (no --tracking-id and no ZSKILLS_PIPELINE_ID); skipping tracking copy"
-    elif [ -z "$COPY_MAIN_ROOT" ]; then
-      echo "WARN: /land-pr Step 7c: could not resolve MAIN_ROOT; skipping tracking copy" >&2
-    else
-      local WT_TRACK="$WORKTREE_PATH/.zskills/tracking/$COPY_PIPELINE_ID"
-      local MAIN_TRACK="$COPY_MAIN_ROOT/.zskills/tracking/$COPY_PIPELINE_ID"
-      if [ -d "$WT_TRACK" ]; then
-        mkdir -p "$MAIN_TRACK"
-        local CP_STDERR="/tmp/land-pr-tracking-copy-stderr-$BRANCH_SLUG-$$.log"
-        if cp -af "$WT_TRACK/." "$MAIN_TRACK/" 2>"$CP_STDERR"; then
-          echo "INFO: /land-pr Step 7c: copied $WT_TRACK/. → $MAIN_TRACK/ (last-run-wins)"
-          rm -f "$CP_STDERR"
-        else
-          echo "WARN: /land-pr Step 7c: cp -af failed (see $CP_STDERR); tracking markers not fully copied" >&2
-        fi
-      else
-        echo "INFO: /land-pr Step 7c: no worktree tracking subdir at $WT_TRACK; skipping copy"
-      fi
-    fi
-  fi
-}
-
-# ---- Fixture setup --------------------------------------------------
+# ---- Extract the REAL Step 7c fence from production SKILL.md ---------
 FIXTURE=$(mktemp -d "/tmp/land-pr-tracking-copy-test.XXXXXX")
 trap 'rm -rf "$FIXTURE"' EXIT
+
+STEP7C_FENCE="$FIXTURE/step7c.sh"
+if ! extract_fence_between "$SKILL_FILE" \
+      'Step 7c — Copy worktree tracking markers to main' \
+      'Step 8 — Compose' 1 0 > "$STEP7C_FENCE"; then
+  echo "FAIL: could not extract Step 7c fence from $SKILL_FILE" >&2
+  exit 1
+fi
+# Sanity: the extracted fence is the real one (carries the production cp line).
+if ! grep -qF 'cp -af "$WT_TRACK/." "$MAIN_TRACK/"' "$STEP7C_FENCE"; then
+  echo "FAIL: extracted fence does not contain the production cp -af line" >&2
+  exit 1
+fi
+pass "[extract] Step 7c production fence extracted from SKILL.md"
+
+# Run the EXTRACTED production fence in a subshell with:
+#   - a git shim that returns "$COPY_MAIN_ROOT/.git" for --git-common-dir,
+#     so the fence resolves COPY_MAIN_ROOT to our fixture's main root;
+#   - the input-prelude seeded so `set -u` does not abort on unbound vars;
+#   - per-case overrides exported by the caller before invocation.
+# COPY_MAIN_ROOT is passed in directly by each case (the fence's own
+# git-common-dir resolution lands on the same path because the shim echoes
+# "$MAIN/.git"). A real .git marker is dropped in $main so the fence's
+# `.git`-existence guard passes.
+run_real_step7c() {
+  local wt="$1" main="$2"
+  # Real .git marker so the production guard
+  #   [ ! -d "$COPY_MAIN_ROOT/.git" ] && [ ! -f "$COPY_MAIN_ROOT/.git" ]
+  # does not short-circuit to the WARN branch.
+  mkdir -p "$main/.git"
+  local shim="$FIXTURE/shim-$$-$RANDOM"
+  mkshim "$shim" "$wt" "$main" "0" "gnu" "feat/x"
+  (
+    set +e
+    set -u
+    export PATH="$shim/bin:$PATH"
+    # Seed inputs, then apply per-case overrides (already exported by caller).
+    seed_caller_loop_inputs
+    # shellcheck disable=SC1090
+    . "$STEP7C_FENCE"
+  )
+}
 
 # Helper: build a worktree-side tracking subdir populated with a full
 # set of markers (step.*, requires.*, fulfilled.*).
@@ -116,7 +133,8 @@ mkdir -p "$CASE_A_MAIN"
 seed_worktree_markers "$CASE_A_WT" "run-plan.testplan"
 ( MERGE_REQUESTED=true PR_STATE=MERGED \
   WORKTREE_PATH="$CASE_A_WT" COPY_MAIN_ROOT="$CASE_A_MAIN" \
-  TRACKING_ID="testplan" run_copy_block ) >/dev/null 2>&1
+  TRACKING_ID="testplan" \
+  run_real_step7c "$CASE_A_WT" "$CASE_A_MAIN" ) >/dev/null 2>&1
 A_DEST="$CASE_A_MAIN/.zskills/tracking/run-plan.testplan"
 if [ -f "$A_DEST/step.run-plan.testplan.implement" ] \
    && [ -f "$A_DEST/step.run-plan.testplan.verify" ] \
@@ -130,14 +148,11 @@ fi
 CASE_B_WT="$FIXTURE/case-b-wt"
 CASE_B_MAIN="$FIXTURE/case-b-main"
 mkdir -p "$CASE_B_WT" "$CASE_B_MAIN"  # WT exists but no .zskills/tracking/<pid>
-stderr_b=$( MERGE_REQUESTED=true PR_STATE=MERGED \
-            WORKTREE_PATH="$CASE_B_WT" COPY_MAIN_ROOT="$CASE_B_MAIN" \
-            TRACKING_ID="testplan" run_copy_block 2>&1 1>/dev/null )
 B_DEST="$CASE_B_MAIN/.zskills/tracking/run-plan.testplan"
-# stdout INFO is captured to stdout, not stderr; we accept either path.
 out_b=$( MERGE_REQUESTED=true PR_STATE=MERGED \
          WORKTREE_PATH="$CASE_B_WT" COPY_MAIN_ROOT="$CASE_B_MAIN" \
-         TRACKING_ID="testplan" run_copy_block 2>&1 )
+         TRACKING_ID="testplan" \
+         run_real_step7c "$CASE_B_WT" "$CASE_B_MAIN" 2>&1 )
 if [ ! -d "$B_DEST" ]; then
   pass "[caseB] missing worktree subdir → main subdir not created"
 else
@@ -157,7 +172,8 @@ mkdir -p "$CASE_C_MAIN"
 # Neither TRACKING_ID nor ZSKILLS_PIPELINE_ID set → COPY_PIPELINE_ID empty.
 out_c=$( MERGE_REQUESTED=true PR_STATE=MERGED \
          WORKTREE_PATH="$CASE_C_WT" COPY_MAIN_ROOT="$CASE_C_MAIN" \
-         TRACKING_ID="" ZSKILLS_PIPELINE_ID="" run_copy_block 2>&1 )
+         TRACKING_ID="" ZSKILLS_PIPELINE_ID="" \
+         run_real_step7c "$CASE_C_WT" "$CASE_C_MAIN" 2>&1 )
 if [ ! -d "$CASE_C_MAIN/.zskills" ]; then
   pass "[caseC] empty PIPELINE_ID → no main .zskills dir created"
 else
@@ -176,7 +192,8 @@ seed_worktree_markers "$CASE_D_WT" "run-plan.testplan"
 mkdir -p "$CASE_D_MAIN"
 ( MERGE_REQUESTED=false PR_STATE=OPEN \
   WORKTREE_PATH="$CASE_D_WT" COPY_MAIN_ROOT="$CASE_D_MAIN" \
-  TRACKING_ID="testplan" run_copy_block ) >/dev/null 2>&1
+  TRACKING_ID="testplan" \
+  run_real_step7c "$CASE_D_WT" "$CASE_D_MAIN" ) >/dev/null 2>&1
 if [ ! -d "$CASE_D_MAIN/.zskills" ]; then
   pass "[caseD] MERGE_REQUESTED=false → no copy attempted"
 else
@@ -193,7 +210,8 @@ mkdir -p "$E_MAIN_SUBDIR"
 printf 'STALE\n' > "$E_MAIN_SUBDIR/step.run-plan.testplan.verify"
 ( MERGE_REQUESTED=true PR_STATE=MERGED \
   WORKTREE_PATH="$CASE_E_WT" COPY_MAIN_ROOT="$CASE_E_MAIN" \
-  TRACKING_ID="testplan" run_copy_block ) >/dev/null 2>&1
+  TRACKING_ID="testplan" \
+  run_real_step7c "$CASE_E_WT" "$CASE_E_MAIN" ) >/dev/null 2>&1
 if grep -qF "phase: 3" "$E_MAIN_SUBDIR/step.run-plan.testplan.verify"; then
   pass "[caseE] stale main marker overwritten by fresh worktree content"
 else
@@ -207,7 +225,8 @@ seed_worktree_markers "$CASE_F_WT" "run-plan.testplan"
 mkdir -p "$CASE_F_MAIN"
 ( MERGE_REQUESTED=true PR_STATE=MERGED \
   WORKTREE_PATH="$CASE_F_WT" COPY_MAIN_ROOT="$CASE_F_MAIN" \
-  TRACKING_ID="testplan" run_copy_block ) >/dev/null 2>&1
+  TRACKING_ID="testplan" \
+  run_real_step7c "$CASE_F_WT" "$CASE_F_MAIN" ) >/dev/null 2>&1
 F_DEST="$CASE_F_MAIN/.zskills/tracking/run-plan.testplan"
 if [ -f "$F_DEST/requires.run-plan.testplan" ] \
    && [ -f "$F_DEST/fulfilled.run-plan.testplan" ]; then
@@ -224,7 +243,7 @@ mkdir -p "$CASE_G_MAIN"
 ( MERGE_REQUESTED=true PR_STATE=MERGED \
   WORKTREE_PATH="$CASE_G_WT" COPY_MAIN_ROOT="$CASE_G_MAIN" \
   TRACKING_ID="something-else" ZSKILLS_PIPELINE_ID="custom.pipeline.id" \
-  run_copy_block ) >/dev/null 2>&1
+  run_real_step7c "$CASE_G_WT" "$CASE_G_MAIN" ) >/dev/null 2>&1
 if [ -f "$CASE_G_MAIN/.zskills/tracking/custom.pipeline.id/step.run-plan.testplan.implement" ]; then
   pass "[caseG] ZSKILLS_PIPELINE_ID takes precedence over TRACKING_ID"
 else
