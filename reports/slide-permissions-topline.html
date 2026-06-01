@@ -38,38 +38,38 @@
 <div class="frame">
   <div class="eyebrow">Permissions Topline</div>
   <h1>Approvals that would have fired</h1>
-  <p class="deck">Z Skills development ran with <code>--dangerously-skip-permissions</code>. Under a representative enterprise-leaning config (<code>EXAMPLE_settings.json</code>) the same workload would have generated <strong>~2,695 permission prompts</strong> across the 34-day logged window. The headline scales heavily with what's in <code>ask</code>.</p>
+  <p class="deck">Z Skills development ran with <code>--dangerously-skip-permissions</code>. Under a representative enterprise-leaning config (<code>EXAMPLE_settings.json</code>) the same workload would have generated <strong>~2,722 permission prompts</strong> across the 45-day logged window. The headline scales heavily with what's in <code>ask</code>.</p>
 
   <div class="stats">
     <div class="stat orange">
-      <div class="val">~2,695</div>
+      <div class="val">~2,722</div>
       <div class="label">Total estimated prompts</div>
-      <div class="sub">~79/day average over 34 days. Mix of front-loaded one-time and sustained recurring.</div>
+      <div class="sub">~60/day average over 45 days. Mix of front-loaded one-time and sustained recurring.</div>
     </div>
     <div class="stat">
-      <div class="val">1,228</div>
+      <div class="val">1,254</div>
       <div class="label">Every-time (recurring)</div>
-      <div class="sub">From <code>ask</code> rules. Prompt on every invocation; no "always-allow" escape.</div>
+      <div class="sub">From <code>ask</code> rules: 1,096 Bash (986 <code>gh *</code> + 110 <code>curl *</code>) + 104 WebFetch + 54 WebSearch. Prompt on every invocation; no "always-allow" escape.</div>
     </div>
     <div class="stat purple">
-      <div class="val">1,020</div>
+      <div class="val">1,219</div>
       <div class="label">Session-scoped resets</div>
-      <div class="sub">Edit (511) + Write (509). "Always-allow" expires at session end; each new session re-prompts.</div>
+      <div class="sub">Edit (655 sessions) + Write (564 sessions). "Always-allow" expires at session end; each new session re-prompts.</div>
     </div>
     <div class="stat green">
-      <div class="val">440</div>
+      <div class="val">249</div>
       <div class="label">First-time Bash prefixes</div>
       <div class="sub">Each prompts once then permanent. Front-loaded in the first ~1-2 weeks.</div>
     </div>
   </div>
 
   <div class="driver">
-    <div class="big">948</div>
-    <div class="text"><strong>Single biggest driver: <code>gh *</code> in the <code>ask</code> list.</strong> 35% of all prompts. Every PR / issue / CI interaction. Moving <code>gh *</code> to <code>allow</code> would cut the total to ~1.75k.</div>
+    <div class="big">986</div>
+    <div class="text"><strong>Single biggest driver: <code>gh *</code> in the <code>ask</code> list.</strong> 36% of all prompts. Every PR / issue / CI interaction. Moving <code>gh *</code> to <code>allow</code> would cut the total to ~1.74k.</div>
   </div>
 
   <div class="footnote">
-    Plus 92 hard-denied calls (89× <code>rm -rf /...</code>, 2× <code>dd</code>, 1× <code>sudo</code>) — caught by <code>deny</code> rules with no escape. Anthropic permission model: <a href="https://code.claude.com/docs/en/permissions">code.claude.com/docs/en/permissions</a>.
+    Plus 130 hard-denied calls (127× <code>rm</code>, 2× <code>dd</code>, 1× <code>sudo</code>) — caught by <code>deny</code> rules with no escape. Measured against 2,078 JSONL session transcripts (2026-04-18 → 2026-06-01) across 6 project working directories. Anthropic permission model: <a href="https://code.claude.com/docs/en/permissions">code.claude.com/docs/en/permissions</a>.
   </div>
 </div>
 </body>
