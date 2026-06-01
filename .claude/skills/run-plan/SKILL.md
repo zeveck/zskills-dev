@@ -9,7 +9,7 @@ description: >-
   auto-land to main. Self-schedules via cron; use `next` to check, `stop`
   to cancel.
 metadata:
-  version: "2026.05.31+f2c567"
+  version: "2026.05.31+bd3dd9"
 ---
 
 # /run-plan \<plan-file> [phase|finish] [auto] [every SCHEDULE] [now] | stop | next — Plan Phase Executor
@@ -742,49 +742,67 @@ done
    If worktrees from a previous run exist (paths containing `plan-`), warn
    the user. Do not remove them — note their presence and continue.
 
-4. **Unconfigured hook placeholders?**
+4. **Unconfigured test-command config?**
    ```bash
-   grep -qE '^(UNIT_TEST_CMD|FULL_TEST_CMD)=.*\{\{' .claude/hooks/block-unsafe-project.sh 2>/dev/null
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+     . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   else
+     . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+   fi
+   # Lane-agnostic: $FULL_TEST_CMD is read from .claude/zskills-config.json
+   # at the project root, the SAME source the hook itself reads at runtime.
    ```
    This gate is an **early-exit mirror** of the hook's own commit-block:
-   when `UNIT_TEST_CMD` or `FULL_TEST_CMD` has unreplaced placeholders AND
-   test infrastructure exists, the hook will block the eventual `git
-   commit` with *"Test infrastructure detected but FULL_TEST_CMD not
-   configured"* — so catching it at preflight just prevents wasted work.
-   Its job is to notice when a project *has* test infrastructure but the
-   hook doesn't yet know about it.
+   when `testing.full_cmd` is unset/empty in `.claude/zskills-config.json`
+   AND test infrastructure exists, the hook will block the eventual `git
+   commit` with *"BLOCKED: project has test infrastructure ... but
+   testing.full_cmd is empty"* (Case C at
+   `hooks/block-unsafe-project.sh.template:714-729`) — so catching it at
+   preflight just prevents wasted work. Its job is to notice when a
+   project *has* test infrastructure but the config doesn't yet name a
+   test command.
 
-   **Scope matters.** A bare `grep '{{' <file>` false-positives on
-   intentional placeholders that the hook itself leaves in (e.g.
-   `UI_FILE_PATTERNS="{{UI_FILE_PATTERNS}}"` as a runtime "UI not
-   applicable here" sentinel, especially common in the zskills source
-   tree where the hook is a template). The anchored grep mirrors the
-   hook's actual runtime check (`block-unsafe-project.sh:179`) which
-   only fires on `UNIT_TEST_CMD` / `FULL_TEST_CMD` containing `{{`.
+   **Why the config read, not a hook grep.** The hook resolves
+   `UNIT_TEST_CMD` / `FULL_TEST_CMD` at runtime from
+   `.claude/zskills-config.json`
+   (`hooks/block-unsafe-project.sh.template:579-606`) — there are no
+   `{{...}}` placeholders left in the hook body to scan for. Both install
+   lanes share that one config file, so the resolver is lane-agnostic by
+   construction: the legacy lane reads `.claude/zskills-config.json`
+   directly; the plugin lane's hook lives under `${CLAUDE_PLUGIN_ROOT}`
+   but still reads the SAME `.claude/zskills-config.json` in the
+   checked-out tree (the resolver above mirrors that contract).
 
    Three cases, report each explicitly so the reasoning is legible:
 
-   - **Placeholders found AND test infra exists** — where test infra means
-     any of: `package.json` with a `"test"` script, `vitest.config.*`,
-     `jest.config.*`, `pytest.ini`, `.mocharc.*`, or `Makefile` (this list
-     must match `block-unsafe-project.sh:134-147` exactly, otherwise
+   - **`FULL_TEST_CMD` empty AND test infra exists** — where test infra
+     means any of: `package.json` with a `"test"` script, `vitest.config.*`,
+     `jest.config.*`, `pytest.ini`, `.mocharc.*`, `Makefile`, or
+     `tests/*.sh|*.py|*.js` (this list must match
+     `hooks/block-unsafe-project.sh.template:611-630` exactly, otherwise
      preflight under-reports and the hook still blocks at commit time):
-     **STOP.** Hook placeholders have not been configured — run
+     **STOP.** Test-command config has not been set — run
      `/update-zskills` first, or (if this plan's purpose is to configure
-     them) have the plan land those changes in an early phase before real
-     enforcement matters. Report: *"hook-placeholder gate tripped:
-     placeholders present AND test infra detected — stopping."*
-   - **Placeholders found, no test infra**: gate silent, proceed. This is
-     either a fresh/bootstrap project or one with no tests by design. If
-     the plan establishes tests, **it should also fill the hook
-     placeholders** (`UNIT_TEST_CMD`, `FULL_TEST_CMD`, and
-     `UI_FILE_PATTERNS` in `.claude/hooks/block-unsafe-project.sh`) in the
-     same phase, so subsequent runs have real enforcement. Report: *"gate
-     silent: placeholders present but no test infra yet — bootstrap or
-     tests-by-design; if this plan adds tests, also fill the hook
-     placeholders."*
-   - **No placeholders**: hook is configured, nothing to do. Report:
-     *"hook configured; gate n/a."*
+     it) have the plan land those changes in an early phase before real
+     enforcement matters. Report: *"hook-config gate tripped:
+     testing.full_cmd unset AND test infra detected — stopping."*
+   - **`FULL_TEST_CMD` empty, no test infra**: gate silent, proceed. This
+     is either a fresh/bootstrap project or one with no tests by design.
+     If the plan establishes tests, **it should also fill the testing
+     config** (`testing.unit_cmd`, `testing.full_cmd`, and optionally
+     `ui.file_patterns` in `.claude/zskills-config.json`) in the same
+     phase, so subsequent runs have real enforcement. Report: *"gate
+     silent: testing.full_cmd unset but no test infra yet — bootstrap or
+     tests-by-design; if this plan adds tests, also fill testing.full_cmd."*
+   - **`FULL_TEST_CMD` non-empty**: config is set, nothing to do. Report:
+     *"testing.full_cmd configured; gate n/a."*
+
+   If the resolver itself fails to read
+   `.claude/zskills-config.json` (missing or malformed), `FULL_TEST_CMD`
+   ends up empty and the gate falls through the same three cases above,
+   which is the correct behavior — a missing config in a project with
+   test infra is exactly the misconfiguration the hook's Case-C block
+   exists to catch.
 
 5. **Clean up landed worktrees from previous phases**
    ```bash
