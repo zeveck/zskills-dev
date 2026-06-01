@@ -1,5 +1,17 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 5 — draft-plan + refine-plan: Phase-6/5 fence harnesses  ✅ Done (2026-06-01T09:34:37-04:00)
+
+**Commit:** `5539a31` on `feat/seam-hardening-high`
+**Tests:** Overall 6992/6992 passed, 0 failed (baseline 6962 → +30).
+
+- Added `test-draft-plan-phase6-fences.sh` (extracts draft-plan Phase-6 commit fence [strip-indent=1] + land-pr-result-parse fence; OUTPUT_FILE remap, FILE_REL, ../* → exit 1, two-file-staged → exit 1, allow-list parse).
+- Added `test-refine-plan.sh` (NEW — none existed) over refine-plan Phase-5 fences (commit FLUSH-LEFT strip-indent=0; shared `case "$SKILL"` subject; marker lifecycle) + the new arg-parser fence.
+- **refine-plan SKILL.md edit:** isolated an extractable `## Argument parser` fence (behavior-preserving — verified vs all 6 Arguments Examples); version bumped `2026.05.31+65e420` → `2026.06.01+827d06`, byte-identical mirror.
+
+**Verification:** independent verifier PASS — behavior-preservation analysis, recomputed version hash matches, conformance 2370/2370 + version-delta 12/12 + mirror-parity 57/57 green, mutation-proof, scope clean (5 paths), Layer-3 exit 0. (Drift: draft-plan plan-cited line ranges stale; tests grep landmarks.)
+
+
 ## Phase 4 — do/quickfix: real mechanics extract + de-hollow message asserts  ✅ Done (2026-06-01T08:39:07-04:00)
 
 **Commit:** `b111d63` on `feat/seam-hardening-high`
