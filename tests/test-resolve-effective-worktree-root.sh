@@ -10,8 +10,11 @@
 #       * quoted target path (single/double quotes stripped)
 #       * non-existent target (returns empty)
 #       * no leading `cd` (returns empty)
-#       * env-var-prefixed `KEY=val cd ...` (NOT recognized — intentional,
-#         documented carve-out)
+#       * env-var-prefixed `KEY=val cd ...` (recognized — #924)
+#       * shell preamble before cd: `set -e; cd …`, `export X=Y; cd …`,
+#         `. resolver.sh && cd …`, mixed-preamble (#924)
+#       * preamble of inert statements that does NOT contain a cd → empty
+#         (e.g., `set -e; git commit -m foo`)
 #   - resolve_effective_worktree_root:
 #       * env_override takes precedence over cd_target AND fallback
 #       * cd_target takes precedence over fallback when env_override empty
@@ -87,13 +90,14 @@ else
   fail "CE5 expected empty, got [$got]"
 fi
 
-# CE6 — env-var prefix BEFORE cd is NOT recognized (intentional carve-out).
+# CE6 — env-var prefix BEFORE cd is recognized (#924: orchestrator-side
+# `VAR=val cd /tmp/wt && git commit` is a real shape we see in practice).
 INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"FOO=bar cd $TMPDIR_REAL && git commit\"}}"
 got=$(extract_cd_target)
-if [ -z "$got" ]; then
-  pass "CE6 env-var-prefixed cd → empty (intentional carve-out)"
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE6 env-var-prefixed cd (#924) → echoes target"
 else
-  fail "CE6 expected empty (env-prefix not recognized), got [$got]"
+  fail "CE6 expected [$TMPDIR_REAL] got [$got]"
 fi
 
 # CE7 — semicolon separator (cd /tmp/x; git commit).
@@ -103,6 +107,91 @@ if [ "$got" = "$TMPDIR_REAL" ]; then
   pass "CE7 cd <dir>; <cmd> (semicolon separator) → echoes target"
 else
   fail "CE7 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# ─── #924 preamble shapes ───
+# Orchestrator-side worktree bookkeeping commits routinely emit commands
+# with a shell preamble before the cd: `set -e`, `export FOO=bar`,
+# `source <resolver>` / `. <resolver>`, `VAR=val cd …`. Pre-#924 the
+# extract regex required `^cd …`, falling back to the ambient main-repo
+# cwd and triggering false-positive "main is protected" blocks.
+
+# CE8 — `set -e` preamble.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"set -e; cd $TMPDIR_REAL && git commit -m foo\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE8 #924: set -e; cd <dir> → echoes target"
+else
+  fail "CE8 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE9 — `export VAR=val` preamble.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"export FOO=bar; cd $TMPDIR_REAL && git commit\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE9 #924: export VAR=val; cd <dir> → echoes target"
+else
+  fail "CE9 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE10 — `. <file>` (source) preamble joined with &&.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\". /tmp/resolver.sh && cd $TMPDIR_REAL && git commit\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE10 #924: . <file> && cd <dir> → echoes target"
+else
+  fail "CE10 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE11 — `source <file>` preamble joined with &&.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"source /tmp/resolver.sh && cd $TMPDIR_REAL && git commit\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE11 #924: source <file> && cd <dir> → echoes target"
+else
+  fail "CE11 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE12 — mixed preamble (set -e + export + cd).
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"set -e; export FOO=bar; cd $TMPDIR_REAL && git commit -m foo\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE12 #924: set -e; export X=Y; cd <dir> → echoes target"
+else
+  fail "CE12 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE13 — preamble that does NOT lead to a cd → empty (no false-positive
+# extraction from an inert-statement prefix).
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"set -e; export FOO=bar; git commit -m foo\"}}"
+got=$(extract_cd_target)
+if [ -z "$got" ]; then
+  pass "CE13 #924: preamble without cd → empty"
+else
+  fail "CE13 expected empty, got [$got]"
+fi
+
+# CE14 — newline-separated preamble (multi-line bash command).
+# Wire-format double-escape: agent JSON encodes a real newline as `\n`,
+# and we already test `\n` decoding in CE3. Here use the same wire form.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"set -e\\nexport FOO=bar\\ncd $TMPDIR_REAL\\ngit commit\"}}"
+got=$(extract_cd_target)
+if [ "$got" = "$TMPDIR_REAL" ]; then
+  pass "CE14 #924: multi-line preamble + cd → echoes target"
+else
+  fail "CE14 expected [$TMPDIR_REAL] got [$got]"
+fi
+
+# CE15 — non-preamble first statement (e.g., `git status`) before a cd
+# should NOT silently extract the later cd. Pre-#924 the regex would not
+# have matched either; post-#924 we explicitly stop at the first non-inert
+# statement to preserve "first effective cwd" semantics.
+INPUT="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status; cd $TMPDIR_REAL && git commit\"}}"
+got=$(extract_cd_target)
+if [ -z "$got" ]; then
+  pass "CE15 #924: non-inert prefix before cd → empty (stop on first real statement)"
+else
+  fail "CE15 expected empty, got [$got]"
 fi
 
 # ─── resolve_effective_worktree_root tests ───
