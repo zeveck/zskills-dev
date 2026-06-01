@@ -3295,7 +3295,7 @@ check_sanitize_count "skills/run-plan/SKILL.md"                       5 "skills/
 check_sanitize_count "skills/run-plan/modes/execute-phase.md"        10 "skills/run-plan/modes/execute-phase.md"
 check_sanitize_count "skills/run-plan/subcommands/stop-next-status.md" 1 "skills/run-plan/subcommands/stop-next-status.md"
 check_sanitize_count "skills/commit/modes/pr.md"      1 "skills/commit/modes/pr.md"
-check_sanitize_count "skills/draft-plan/SKILL.md"     4 "skills/draft-plan/SKILL.md"
+check_sanitize_count "skills/draft-plan/SKILL.md"     5 "skills/draft-plan/SKILL.md"
 check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKILL.md"
 check_sanitize_count "skills/verify-changes/SKILL.md" 4 "skills/verify-changes/SKILL.md"
 
