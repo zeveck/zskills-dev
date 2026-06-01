@@ -44,7 +44,9 @@ once CI is green.
 
 - `/draft-plan` researches the goal and runs iterative adversarial review,
   emitting a plan file under `docs/plans/`. This catches design flaws before
-  they cost you commits.
+  they cost you commits. Add `brainstorm` for an interactive design dialogue
+  before research, or `quiz` for an interactive requirements interview that
+  elicits intent and scope before research.
 - `/run-plan` executes that plan. `finish` runs **all** phases (not just the
   next one) and `auto` lets it land each phase autonomously, so you can walk
   away. Drop `finish auto` to step through one phase at a time.
@@ -63,6 +65,9 @@ once CI is green.
   its phases, so each phase ships with its tests defined rather than improvised.
 - `/run-plan` then executes phases whose acceptance criteria already include
   those tests.
+- For an even more grounded plan, pre-seed `/draft-plan` with `brainstorm`
+  (design dialogue) or `quiz` (requirements interview) before `/draft-tests`
+  appends test specs.
 
 ## 3. Big goal decomposition
 

@@ -437,7 +437,7 @@ by other skills — see Helpers below.
 | Skill | Purpose |
 |-------|---------|
 | `/research-and-plan` | Decompose broad goals into focused sub-plans with dependency ordering |
-| `/draft-plan` | Adversarial plan drafting: research, draft, devil's advocate review, refine until converged |
+| `/draft-plan` | Adversarial plan drafting: research, draft, devil's advocate review, refine until converged. Optional `brainstorm` flag runs an interactive design dialogue first; optional `quiz` flag runs an interactive requirements interview first |
 | `/refine-plan` | Refine in-progress plans: review remaining phases against completed work, generate Drift Log |
 | `/draft-tests` | Append a `### Tests` subsection to each pending phase of an existing plan via a senior-QE reviewer + devil's-advocate + refiner loop |
 | `/plans` | Plan dashboard: index, status tracking, priority ranking |
