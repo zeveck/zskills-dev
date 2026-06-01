@@ -115,6 +115,11 @@ run_suite "test-commit-parsing.sh" "tests/test-commit-parsing.sh"
 run_suite "test-commit-pr-caller-loop.sh" "tests/test-commit-pr-caller-loop.sh"
 run_suite "test-fix-report-smoke.sh" "tests/test-fix-report-smoke.sh"
 run_suite "test-draft-plan-args-smoke.sh" "tests/test-draft-plan-args-smoke.sh"
+# SEAM_HARDENING_HIGH Phase 5 — extract-and-run the real draft-plan Phase-6 /
+# refine-plan Phase-5 worktree-commit + /land-pr-result-parse fences (exit-1
+# guards + allow-list parse), plus the refine-plan `## Argument parser` fence.
+run_suite "test-draft-plan-phase6-fences.sh" "tests/test-draft-plan-phase6-fences.sh"
+run_suite "test-refine-plan.sh" "tests/test-refine-plan.sh"
 run_suite "test-add-example-smoke.sh" "tests/test-add-example-smoke.sh"
 run_suite "test-add-block-smoke.sh" "tests/test-add-block-smoke.sh"
 # Opt-in race-isolation test for the #594 fix pattern. Adds ~2-3 min
