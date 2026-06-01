@@ -198,6 +198,7 @@ run_suite "test-fix-issues-selection-filter.sh" "tests/test-fix-issues-selection
 run_suite "test-plan-claim-collector.sh" "tests/test-plan-claim-collector.sh"
 run_suite "test-plan-claim-render-dom.sh" "tests/test-plan-claim-render-dom.sh"
 run_suite "test-mode-chip-three-state.sh" "tests/test-mode-chip-three-state.sh"
+run_suite "test-dashboard-run-status-locks.sh" "tests/test-dashboard-run-status-locks.sh"
 run_suite "test-tab-dot-render-dom.sh" "tests/test-tab-dot-render-dom.sh"
 run_suite "test-plan-claim-handleaction-guard.sh" "tests/test-plan-claim-handleaction-guard.sh"
 run_suite "test-plan-claim-moveall-skip.sh" "tests/test-plan-claim-moveall-skip.sh"

@@ -1547,15 +1547,39 @@ function renderDefaultMode(mode, ws) {
   const finish = $("dm-finish");
   if (!phase || !finish) return;
   const inFlight = !!(ws && ws.state === "sprint");
-  const effectiveMode = (inFlight && ws.batch_mode) ? ws.batch_mode : mode;
+  // Issue #930 — cron-pinned lock. When a /work-on-plans schedule is
+  // active with an explicit mode token in argv, every fire dispatches
+  // that mode literally; the chip-stored default_mode is ignored. Mirror
+  // the cron-pinned mode as the active chip state (visibly locked) so
+  // the UI is a live mirror of what the next fire will actually run.
+  // "inherit" is the sentinel for "no pin" — chip stays editable then.
+  const cronPinnedMode = ws && ws.schedule_mode;
+  const cronLocked = !!(
+    ws
+    && ws.state === "scheduled"
+    && cronPinnedMode
+    && cronPinnedMode !== "inherit"
+  );
+  const locked = inFlight || cronLocked;
+  let effectiveMode;
+  if (inFlight && ws.batch_mode) {
+    effectiveMode = ws.batch_mode;
+  } else if (cronLocked) {
+    effectiveMode = cronPinnedMode;
+  } else {
+    effectiveMode = mode;
+  }
   const isPhase = effectiveMode === "phase";
   phase.setAttribute("aria-pressed", isPhase ? "true" : "false");
   finish.setAttribute("aria-pressed", isPhase ? "false" : "true");
-  const lockTitle = inFlight
-    ? "Sprint in flight — default mode locked to the captured batch mode (" + effectiveMode + "). Stop the sprint to change it."
-    : "";
+  let lockTitle = "";
+  if (inFlight) {
+    lockTitle = "Sprint in flight — default mode locked to the captured batch mode (" + effectiveMode + "). Stop the sprint to change it.";
+  } else if (cronLocked) {
+    lockTitle = "Default mode is locked: the active /work-on-plans schedule pins mode to '" + cronPinnedMode + "'. Stop the schedule and re-launch without a mode token to control via this chip.";
+  }
   for (const btn of [phase, finish]) {
-    if (inFlight) {
+    if (locked) {
       // Use data-locked (not aria-disabled / disabled) so the click
       // still reaches the handler — setDefaultMode surfaces the lock
       // reason via a toast. aria-disabled would block click dispatch
@@ -2449,12 +2473,18 @@ function renderRunStatus(ws) {
       cls: "run-text",
       text: "Running " + sched + " · next fire " + next,
     }));
-    const stop = el("button", {
-      cls: "run-stop-btn",
-      attrs: { type: "button", "data-action": "run-stop" },
-      text: "Stop",
-    });
-    root.appendChild(stop);
+    // Issue #930 — only render Stop when a /work-on-plans trigger is
+    // configured. Without trigger_configured, POST /api/trigger returns
+    // 501 and the click is dead UI (symmetric with the idle Run controls
+    // gate below).
+    if (ws && ws.trigger_configured) {
+      const stop = el("button", {
+        cls: "run-stop-btn",
+        attrs: { type: "button", "data-action": "run-stop" },
+        text: "Stop",
+      });
+      root.appendChild(stop);
+    }
     return;
   }
   if (state === "sprint") {
@@ -2847,6 +2877,28 @@ async function setDefaultMode(mode) {
       "Default mode is locked while a sprint is in flight (captured: " +
         (lastWorkState.batch_mode || "phase") +
         "). Stop the sprint to change it.",
+      "info",
+    );
+    return;
+  }
+  // Issue #930 — cron-pinned lock (same family as #874/#858 wrapper-vs-
+  // dispatch-lifetime signals). When the active /work-on-plans schedule
+  // has an explicit mode token in argv (state==="scheduled" +
+  // schedule_mode set, not "inherit"), every cron fire dispatches with
+  // that mode literally — the saved default_mode is ignored. The chip
+  // must surface that the click is functionally inert until the schedule
+  // is stopped or re-launched without a mode token.
+  const cronPinnedMode = lastWorkState && lastWorkState.schedule_mode;
+  if (
+    lastWorkState
+    && lastWorkState.state === "scheduled"
+    && cronPinnedMode
+    && cronPinnedMode !== "inherit"
+  ) {
+    showToast(
+      "Default mode is locked: the active /work-on-plans schedule pins mode to '" +
+        cronPinnedMode +
+        "'. Stop the schedule and re-launch without a mode token to control via this chip.",
       "info",
     );
     return;
