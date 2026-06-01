@@ -73,7 +73,7 @@ file exists. A created-but-unregistered test is itself a #809-class hole.
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Shared `tests/lib/` extract + landpr harness (+ pilot) | ⬚ | | |
+| 1 — Shared `tests/lib/` extract + landpr harness (+ pilot) | ✅ Done | `259bfe3` | lib + self-test + Step-7c pilot; 6903/6903 pass |
 | 2 — land-pr: extract Steps 6b/7b/7c fences | ⬚ | | |
 | 3 — commit: arg-parser extract + caller-loop harness | ⬚ | | |
 | 4 — do/quickfix: real mechanics extract + de-hollow message asserts | ⬚ | | |
