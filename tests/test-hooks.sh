@@ -6,6 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HOOK="$REPO_ROOT/hooks/block-unsafe-generic.sh"
 
+# shellcheck source=tests/lib/extract-fence.sh
+# Shared fence-extraction primitives (SEAM_HARDENING_HIGH Phase 1). Used by
+# test_verify_changes_arg_parser to extract-and-run the REAL parser fence from
+# skills/verify-changes/SKILL.md instead of a drift-prone private re-type.
+. "$SCRIPT_DIR/lib/extract-fence.sh"
+
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -4063,27 +4069,59 @@ test_pipeline_scoping_filter
 echo ""
 echo "=== /verify-changes \$ARGUMENTS parser (extracted from skill) ==="
 
-# test_verify_changes_arg_parser — re-implements the parser from
-# skills/verify-changes/SKILL.md under "Parsing $ARGUMENTS" and
-# exercises it against token strings. Locks down Phase H's parser
-# before any cron-fired use.
+# test_verify_changes_arg_parser — EXTRACT-AND-RUN the REAL parser fence from
+# skills/verify-changes/SKILL.md under "### Parsing $ARGUMENTS" (Phase 2 of
+# SEAM_HARDENING_REST). The prior version re-typed the parser inline, which
+# silently drifted from production. Now we pull the actual production ```bash
+# fence via extract_fence_between and source it, so any change to the SKILL.md
+# parser is reflected here and a regression in it FAILS these cases.
 #
-# The parser is a small for-token case statement:
+# The parser is a small for-token case statement (production source):
 #   tracking-id=X  → TRACKING_ID=X
 #   worktree|branch|last → SCOPE=<token>
 #   [0-9]*         → if SCOPE=="last", SCOPE="last N"
 # Order-independent; unknown tokens are tolerated (ignored).
+#
+# The production fence iterates over $ARGUMENTS; the test cases below call
+# parse_args with a single positional arg, so the wrapper bridges $1→ARGUMENTS.
 test_verify_changes_arg_parser() {
+  local vc_skill="$REPO_ROOT/skills/verify-changes/SKILL.md"
+  local vc_tmp; vc_tmp=$(mktemp -d "/tmp/vc-arg-parser.XXXXXX")
+  local vc_fence="$vc_tmp/parser-fence.sh"
+
+  # Extract the self-contained ```bash fence under "### Parsing $ARGUMENTS".
+  # The section ends at the next "### " heading / "Lets " prose line; bracket
+  # tightly with the heading landmark and the trailing prose so exactly the one
+  # parser fence is captured. POSIX char classes ([.] not \.) keep the landmark
+  # regexes gawk-safe (gawk strips backslash-escaped metacharacters in -v).
+  if ! extract_fence_between "$vc_skill" \
+        '^### Parsing [$]ARGUMENTS' \
+        '^Lets ' 1 0 > "$vc_fence"; then
+    fail "parser: could not extract real parser fence from $vc_skill"
+    rm -rf "$vc_tmp"
+    return
+  fi
+
+  # Sanity: the extracted fence carries its production landmarks, so a future
+  # re-anchoring that grabs the wrong fence fails loud here, not silently.
+  if grep -qF 'tracking-id=*) TRACKING_ID="${tok#tracking-id=}"' "$vc_fence" \
+     && grep -qF 'worktree|branch|last) SCOPE="$tok"' "$vc_fence" \
+     && grep -qF 'for tok in $ARGUMENTS' "$vc_fence"; then
+    pass "parser: [extract] fence carries tok-loop / tracking-id / scope landmarks"
+  else
+    fail "parser: [extract] fence missing production landmarks — wrong fence extracted?"
+    rm -rf "$vc_tmp"
+    return
+  fi
+
+  # Wrapper bridges the test's positional $1 to the production parser's
+  # $ARGUMENTS, then sources the REAL extracted fence (no re-typed copy).
   parse_args() {
+    local ARGUMENTS="$1"
     SCOPE=""
     TRACKING_ID=""
-    for tok in $1; do
-      case "$tok" in
-        tracking-id=*) TRACKING_ID="${tok#tracking-id=}" ;;
-        worktree|branch|last) SCOPE="$tok" ;;
-        [0-9]*) [ "$SCOPE" = "last" ] && SCOPE="last $tok" ;;
-      esac
-    done
+    # shellcheck source=/dev/null
+    . "$vc_fence"
   }
 
   # Case 1: branch + tracking-id (the cron-fired use pattern)
@@ -4149,6 +4187,8 @@ test_verify_changes_arg_parser() {
   else
     fail "parser: empty — SCOPE='$SCOPE', TRACKING_ID='$TRACKING_ID'"
   fi
+
+  rm -rf "$vc_tmp"
 }
 test_verify_changes_arg_parser
 
