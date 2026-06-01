@@ -221,7 +221,7 @@ compaction-survival pattern (`SKILL.md:222-228`). Accumulate, as the dialogue pr
 
 **The notes file IS a resumable state machine.** The dialogue is multi-turn and WILL
 sometimes span a context compaction. After compaction, the in-context dialogue state and
-the `BRAINSTORM_FLAG` shell variable are gone, and nothing would otherwise re-trigger the
+the `STEERING_MODE` shell variable are gone, and nothing would otherwise re-trigger the
 loop — the orchestrator could wrongly jump to Phase 1 with a half-finished seed. Defend
 this structurally with a header status line:
 
@@ -254,7 +254,7 @@ tracking_id: <$TRACKING_ID>
 - <URL or .playwright/output/ screenshot path>
 ```
 
-**Resume-on-reentry semantics.** When SKILL.md (re)enters with `BRAINSTORM_FLAG=1`, it
+**Resume-on-reentry semantics.** When SKILL.md (re)enters with `STEERING_MODE = brainstorm`, it
 checks for the notes file (Phase 2 wires the SKILL.md side):
 
 - **Notes file exists with `status: ready`** → a prior dialogue already completed.

@@ -775,17 +775,19 @@ check_in_file_near quickfix    "modes/execute.md"           "agent-dispatched pi
 check_in_file_near quickfix    "modes/land.md"              "fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 
 # /draft-plan — quiz-mode conditional-load wiring (DRAFT_PLAN_QUIZ_MODE Phase
-# 3, R9). The interactive quiz interview is gated behind QUIZ_FLAG=1 and its
-# procedure lives in references/quiz.md, read via a conditional-load directive.
-# There is no orphan-reference gate today, so this is the ONLY automated check
-# that exercises the new wiring. Use check_in_file_near (NOT a bare grep for
+# 3, R9; #944 collapsed the two booleans into STEERING_MODE). The interactive
+# quiz interview is gated behind STEERING_MODE = quiz and its procedure lives
+# in references/quiz.md, read via a conditional-load directive. There is no
+# orphan-reference gate today, so this is the ONLY automated check that
+# exercises the new wiring. Use check_in_file_near (NOT a bare grep for
 # 'references/quiz.md') so the assertion verifies CO-OCCURRENCE: the
-# references/quiz.md reference must appear within 10 lines of a QUIZ_FLAG=1
-# conditional token. A bare substring grep would still pass if the conditional
-# guard were stripped (degraded to an unconditional read) or if the string
-# survived only in a comment elsewhere; the _near form fails closed in both
-# cases — removing the `QUIZ_FLAG=1`-guarded conditional load breaks it.
-check_in_file_near draft-plan  "SKILL.md"                   "quiz conditional-load wiring" 'references/quiz.md' 'QUIZ_FLAG=1' 10
+# references/quiz.md reference must appear within 10 lines of a
+# `STEERING_MODE = quiz` conditional token. A bare substring grep would still
+# pass if the conditional guard were stripped (degraded to an unconditional
+# read) or if the string survived only in a comment elsewhere; the _near form
+# fails closed in both cases — removing the `STEERING_MODE = quiz`-guarded
+# conditional load breaks it.
+check_in_file_near draft-plan  "SKILL.md"                   "quiz conditional-load wiring" 'references/quiz.md' 'STEERING_MODE = quiz' 10
 
 # Agent definition file exists with the expected frontmatter shape.
 if [ -f "$REPO_ROOT/.claude/agents/implementer.md" ]; then
