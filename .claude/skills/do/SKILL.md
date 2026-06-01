@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.01+5deb35"
+  version: "2026.06.01+0a315a"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
