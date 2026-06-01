@@ -159,11 +159,18 @@ GITIGNORE
   git -C "$fix" branch --set-upstream-to=origin/main main >/dev/null 2>&1
 
   # Provide the scripts the skill depends on (sanitize-pipeline-id.sh).
-  # Skill references it via $MAIN_ROOT/.claude/skills/create-worktree/scripts/
-  # (post-Phase-3a path under the .claude mirror).
+  # Issue #868: skill now resolves the sanitize path via $ZSKILLS_SKILLS_ROOT
+  # (set by zskills-resolve-config.sh, which sources zskills-paths.sh). Both
+  # helpers also need to ship in the fixture so the skill's `.` source line
+  # actually exports the variable.
   mkdir -p "$fix/.claude/skills/create-worktree/scripts"
   cp "$REPO_ROOT/skills/create-worktree/scripts/sanitize-pipeline-id.sh" "$fix/.claude/skills/create-worktree/scripts/"
   chmod +x "$fix/.claude/skills/create-worktree/scripts/sanitize-pipeline-id.sh"
+  mkdir -p "$fix/.claude/skills/update-zskills/scripts"
+  cp "$REPO_ROOT/skills/update-zskills/scripts/zskills-resolve-config.sh" "$fix/.claude/skills/update-zskills/scripts/"
+  cp "$REPO_ROOT/skills/update-zskills/scripts/zskills-paths.sh" "$fix/.claude/skills/update-zskills/scripts/"
+  chmod +x "$fix/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  chmod +x "$fix/.claude/skills/update-zskills/scripts/zskills-paths.sh"
 
   # Config with aligned unit_cmd / full_cmd (default: `true` passes).
   mkdir -p "$fix/.claude"
@@ -558,7 +565,12 @@ LAND_OUTCOME_FINALIZE=${LAND_OUTCOME_FINALIZE:-0}
 EXPLICIT_SED=$(grep -cE 'sed -i "s/\^status: started\$/status: \$FINAL/"' "$SKILL_LAND" 2>/dev/null | head -1)
 EXPLICIT_SED=${EXPLICIT_SED:-0}
 
-if grep -q 'skills/create-worktree/scripts/sanitize-pipeline-id.sh' "$SKILL" \
+# Issue #868: dual-lane migration — sanitize-pipeline-id.sh path is now
+# resolved via $ZSKILLS_SKILLS_ROOT (set by zskills-resolve-config.sh)
+# instead of the mirror-only $MAIN_ROOT/.claude/skills/ literal that broke
+# plugin-lane consumers. Accept either the lane-portable resolved form OR
+# any direct `create-worktree/scripts/sanitize-pipeline-id.sh` suffix.
+if grep -qE 'create-worktree/scripts/sanitize-pipeline-id\.sh' "$SKILL" \
    && grep -qE 'echo.*ZSKILLS_PIPELINE_ID=\$PIPELINE_ID' "$SKILL" \
    && grep -q 'fulfilled.quickfix' "$SKILL" \
    && [ "$TRAP_LITERAL_COUNT" -eq 0 ] \
@@ -567,6 +579,18 @@ if grep -q 'skills/create-worktree/scripts/sanitize-pipeline-id.sh' "$SKILL" \
   pass "9  tracking: sanitize + echo + marker path; trap gone; LAND_OUTCOME case + explicit sed-finalize present (issue #241)"
 else
   fail "9  tracking: trap-literal-count=$TRAP_LITERAL_COUNT (want 0), land-outcome-case=$LAND_OUTCOME_FINALIZE (want >=1), explicit-sed=$EXPLICIT_SED (want >=1)"
+fi
+
+# Issue #868 regression guard: the mirror-only `.claude/skills/...`
+# sanitize-pipeline-id path MUST NOT come back. Both the source SKILL.md
+# and the legacy-lane mirror MUST resolve the script via a lane-portable
+# variable (typically $ZSKILLS_SKILLS_ROOT).
+MIRROR_ONLY_SANITIZE=$(grep -cE '\.claude/skills/create-worktree/scripts/sanitize-pipeline-id\.sh' "$SKILL" 2>/dev/null | head -1)
+MIRROR_ONLY_SANITIZE=${MIRROR_ONLY_SANITIZE:-0}
+if [ "$MIRROR_ONLY_SANITIZE" -eq 0 ]; then
+  pass "9b tracking: mirror-only .claude/skills/.../sanitize-pipeline-id.sh path absent from SKILL.md (issue #868)"
+else
+  fail "9b tracking: mirror-only .claude/skills/.../sanitize-pipeline-id.sh path STILL PRESENT in SKILL.md (count=$MIRROR_ONLY_SANITIZE) — breaks plugin-lane consumers (issue #868)"
 fi
 
 # ────────────────────────────────────────────────────────────────────
