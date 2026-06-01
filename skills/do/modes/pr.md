@@ -503,14 +503,39 @@ esac
 sed -i "s/^status: started$/status: $FINAL/" "$TRACK_DIR/fulfilled.do.$TASK_SLUG"
 rm -f "$TRACK_DIR/requires.land-pr.$TASK_SLUG"
 
-# Release the issue claim regardless of created vs merged vs failed
-# (release-on-resolution — the /do pr invocation is terminating either way,
-# and /do is one-shot so there is no later fire to re-release). Only if an
-# issue claim was acquired in Step A5.5. $PIPELINE_ID = do.$TASK_SLUG is
-# re-resolved at the tracking-setup fence-top above and survives in this
-# fence.
+# Release the issue claim based on LAND_OUTCOME (mirrors
+# fix-issues/modes/pr.md:337-345 so the two skills evolve in lockstep).
+# Only if an issue claim was acquired in Step A5.5. $PIPELINE_ID =
+# do.$TASK_SLUG is re-resolved at the tracking-setup fence-top above and
+# survives in this fence.
+#
+# Three groups (issue #864):
+#   - merged          → RELEASE (work is durably on main).
+#   - pr-ready|created→ HOLD: the PR is OPEN on the remote awaiting human
+#                       review/merge; releasing here would let a concurrent
+#                       /fix-issues (or another /do pr) re-claim the same
+#                       issue and duplicate the fix. /do is one-shot so
+#                       there is no "later fire" to re-release — the
+#                       stalled-PR claim is cleared manually via
+#                       `claim-issue.sh release` once the human resolves
+#                       the PR (same precedent as #684 for plan claims,
+#                       and same shape as fix-issues PR mode's `created`
+#                       arm at fix-issues/modes/pr.md:342-343).
+#   - terminal-failure→ RELEASE (PR is dead-on-arrival; nothing to guard).
 if [ -n "${ISSUE_NUM:-}" ]; then
-  bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+  CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
+  case "$LAND_OUTCOME" in
+    merged)
+      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
+        || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
+    pr-ready|created)
+      echo "do: holding claim for #$ISSUE_NUM (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash skills/fix-issues/scripts/claim-issue.sh release $ISSUE_NUM' if the PR never lands" >&2 ;;
+    pr-ci-failing|rebase-conflict|auto-rebase-conflict|auto-rebase-blocked|behind-thrash|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed|unknown-status-*)
+      bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
+        || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
+    *)
+      echo "do: unknown LAND_OUTCOME=$LAND_OUTCOME for #$ISSUE_NUM; defaulting to HOLD" >&2 ;;
+  esac
 fi
 ```
 
