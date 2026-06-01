@@ -60,7 +60,7 @@ case "$LAND_OUTCOME" in
     bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
       || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
   pr-ready|created)
-    echo "do: holding claim for #$ISSUE_NUM (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash skills/fix-issues/scripts/claim-issue.sh release $ISSUE_NUM' if the PR never lands" >&2 ;;
+    echo "do: holding claim for #$ISSUE_NUM (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash $CLAIM_HELPER release $ISSUE_NUM' if the PR never lands" >&2 ;;
   pr-ci-failing|rebase-conflict|auto-rebase-conflict|auto-rebase-blocked|behind-thrash|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed|unknown-status-*)
     bash "$CLAIM_HELPER" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID" \
       || echo "do: claim release for #$ISSUE_NUM returned non-zero (continuing)" >&2 ;;
@@ -189,6 +189,17 @@ if grep -q 'pr-ready|created)' "$DO_PR_MD" \
   pass "skills/do/modes/pr.md contains the split case arms"
 else
   fail "skills/do/modes/pr.md split case arms" "expected three-group case missing from source"
+fi
+
+# Dual-lane path discipline (issue #893): the HOLD-arm stderr manual-reap
+# instruction must reference the resolved $CLAIM_HELPER, never the legacy
+# single-lane literal `skills/fix-issues/scripts/claim-issue.sh` (which does
+# not exist on the plugin lane). Same defect class as #832, in stderr prose.
+if grep -q "reaped manually via 'bash \$CLAIM_HELPER release" "$DO_PR_MD" \
+   && ! grep -q 'skills/fix-issues/scripts/claim-issue.sh' "$DO_PR_MD"; then
+  pass "skills/do/modes/pr.md HOLD-arm stderr uses \$CLAIM_HELPER (no hardcoded single-lane path, #893)"
+else
+  fail "skills/do/modes/pr.md HOLD-arm dual-lane path" "expected \$CLAIM_HELPER in HOLD-arm stderr and no hardcoded skills/fix-issues/scripts/claim-issue.sh literal"
 fi
 
 # ───────────────────────────────────────────────────────────────────────

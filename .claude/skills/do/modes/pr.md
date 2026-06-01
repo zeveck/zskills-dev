@@ -595,7 +595,7 @@ if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
         bash "$CLAIM_HELPER" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID" \
           || echo "do: claim release for #$_ISSUE_N returned non-zero (continuing)" >&2 ;;
       pr-ready|created)
-        echo "do: holding claim for #$_ISSUE_N (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash skills/fix-issues/scripts/claim-issue.sh release $_ISSUE_N' if the PR never lands" >&2 ;;
+        echo "do: holding claim for #$_ISSUE_N (LAND_OUTCOME=$LAND_OUTCOME — PR is in flight awaiting human review/merge); /do is one-shot so the claim is reaped manually via 'bash $CLAIM_HELPER release $_ISSUE_N' if the PR never lands" >&2 ;;
       pr-ci-failing|rebase-conflict|auto-rebase-conflict|auto-rebase-blocked|behind-thrash|rebase-failed|push-failed|create-failed|monitor-failed|merge-failed|unknown-status-*)
         bash "$CLAIM_HELPER" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID" \
           || echo "do: claim release for #$_ISSUE_N returned non-zero (continuing)" >&2 ;;
