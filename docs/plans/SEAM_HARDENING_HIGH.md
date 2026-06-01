@@ -78,7 +78,7 @@ file exists. A created-but-unregistered test is itself a #809-class hole.
 | 3 — commit: arg-parser extract + caller-loop harness | ✅ Done | `a53e252` | parser + PR caller-loop behavioral; old greps migrated; 6962/6962 pass |
 | 4 — do/quickfix: real mechanics extract + de-hollow message asserts | ✅ Done | `b111d63` | Case 6 runs verdict parser; *_SIM deleted; divergent anchors; 6962/6962 pass |
 | 5 — draft-plan + refine-plan: Phase-6/5 fence harnesses | ✅ Done | `5539a31` | fence harnesses + refine-plan arg-parser fence (bumped+mirrored); 6992/6992 pass |
-| 6a — work-on-plans: de-hollow mutator tests (test-only) | ⬚ | | |
+| 6a — work-on-plans: de-hollow mutator tests (test-only) | ✅ Done | `ae98c7d` | extracts real do_*/ensure_monitor_state heredocs; 6993/6993 pass |
 | 6b — work-on-plans: dispatch-loop seam + sandbox harness (SKILL.md) | ⬚ | | |
 | 7 — run-plan: defer-backoff decision + anchor hardening | ⬚ | | |
 

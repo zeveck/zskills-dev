@@ -1,5 +1,16 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 6a — work-on-plans: de-hollow mutator tests (test-only)  ✅ Done (2026-06-01T10:15:53-04:00)
+
+**Commit:** `ae98c7d` on `feat/seam-hardening-high`
+**Tests:** Overall 6993/6993 passed, 0 failed (baseline 6992 → +1).
+
+- Converted `test-work-on-plans.sh` from re-defined `skill_*` copies → extract-and-run the real `do_add`/`do_rank`/`do_remove`/`do_default` + `ensure_monitor_state` + `schedule_under_1h` heredocs from `subcommands/add-rank-remove.md` (via `extract_fence_between`; thin `do_*_at` adapters set $MONITOR_STATE + delegate).
+- All 30 prior assertions preserved (append/insert/idempotent/digit-reject, rank, remove, default, #546 schedule_under_1h boundary, flock, mirror-parity); 0 re-defined `skill_*` remain.
+
+**Verification:** independent verifier PASS — adapters confirmed thin delegators, mutation-proof (breaking real do_add append → 10 failures), scope clean (1 path), Layer-3 exit 0.
+
+
 ## Phase 5 — draft-plan + refine-plan: Phase-6/5 fence harnesses  ✅ Done (2026-06-01T09:34:37-04:00)
 
 **Commit:** `5539a31` on `feat/seam-hardening-high`
