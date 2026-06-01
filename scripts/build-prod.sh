@@ -9,6 +9,10 @@
 #   1. `<!-- prod-strip:start --> … <!-- prod-strip:end -->` blocks from
 #      README.md — the dev-repo warning banner and ship-to-prod badge.
 #      (Same marker pattern can be added to any other markdown file later.)
+#   1b. Rewrite dev-only URLs (zeveck.github.io/zskills-dev →
+#      zskills.synapticnoise.com) in README.md so the dev README points at
+#      the dev Pages site while the prod README ships with the prod URL.
+#      (Same per-file pattern can be added to any other markdown file later.)
 #   2. `plans/CANARY_*.md` and any top-level `CANARY_*.md` — canaries are
 #      regression guards for zskills-dev internals; prod consumers don't
 #      need them.
@@ -53,7 +57,19 @@ strip_markers() {
   fi
 }
 
+rewrite_dev_urls() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if grep -q 'zeveck\.github\.io/zskills-dev' "$file"; then
+    log "rewriting dev→prod URLs in $file"
+    sed -i 's|zeveck\.github\.io/zskills-dev|zskills.synapticnoise.com|g' "$file"
+  else
+    printf "  ${DIM}(no dev urls in $file)${RESET}\n"
+  fi
+}
+
 strip_markers README.md
+rewrite_dev_urls README.md
 
 # ─── 1b. Remove dev-maintainer-only files wholesale ────────────────────
 # RELEASING.md is entirely dev-maintainer-only (PAT setup, workflow

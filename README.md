@@ -31,7 +31,15 @@ phase inside an isolated git worktree, verifying each phase with a fresh
 reviewer agent and landing the result to main (cherry-pick, PR, or
 direct — your choice).
 
-**[View the full presentation](https://zskills.synapticnoise.com/PRESENTATION.html)**
+## Docs
+
+- [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
+- [`docs/guides/WORKFLOWS.md`](docs/guides/WORKFLOWS.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
+- [`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) — install via the plugin marketplace or the `/update-zskills` script.
+- [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 23 user-facing skills + 2 helpers.
+- [`docs/guides/INSPECTING_AND_MONITORING.md`](docs/guides/INSPECTING_AND_MONITORING.md) — observe a running zskills project.
+
+**[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
 for the architecture, workflow stages, enforcement model, and war
 stories.
 
@@ -42,10 +50,6 @@ stories.
 ![Quality and Fix skills](screenshots/skills-quality-fix.png)
 
 ![Utility and Reference skills](screenshots/skills-utility.png)
-
-For a per-skill reference see [`docs/skills/`](docs/skills/README.md), and for
-recipes that combine skills into end-to-end workflows see
-[`docs/guides/WORKFLOWS.md`](docs/guides/WORKFLOWS.md).
 
 ## Install
 
