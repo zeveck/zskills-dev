@@ -90,19 +90,47 @@ ISO_XDG="$TMP/home/.config"
 ISO_CFG="$TMP/home/.claude"
 mkdir -p "$ISO_HOME" "$ISO_XDG" "$ISO_CFG" "$TMP/proj"
 
-# Snapshot the REAL ~/.claude tree so we can prove isolation held. We compare a
-# listing-hash before and after the whole run. (Defense in depth: the env vars
-# already redirect all writes; this is the belt to that suspenders.)
+# ── Isolation proof, hardened (#956) ──────────────────────────────────────
+# The earlier whole-tree md5 snapshot of real ~/.claude false-BREACHed whenever
+# ANY concurrent process wrote under ~/.claude — e.g. a live Claude Code session
+# running while this suite runs (observed 2026-06-01). The env vars below already
+# redirect every write the isolated CLI makes; the ACTUAL safety property this
+# suite must prove is narrower and concurrency-robust: the ONE real file we now
+# (optionally) read to seed auth — ~/.claude/.credentials.json — is byte-
+# identical before and after. We copy that file into the isolated config dir so
+# headless `claude -p` can authenticate (mandatory for the (B) hook-fire probes
+# — an empty config dir bails at /login); seeding a COPY does not rewrite the
+# user's real credential (verified: real mtime unchanged across the probe).
+#
+# If the real credentials file is absent (CI / unauthed dev), nothing is seeded,
+# the (B) checks still hit their "not logged in" SKIP guard, and the iso
+# assertion below skips cleanly (there was nothing to protect).
 REAL_CLAUDE="${HOME:-/nonexistent}/.claude"
-real_claude_snapshot() {
-  # Listing + sizes + mtimes; stable across a no-write run.
-  find "$REAL_CLAUDE" -maxdepth 3 -printf '%p %s %T@\n' 2>/dev/null | LC_ALL=C sort | md5sum | awk '{print $1}'
+REAL_CREDS="$REAL_CLAUDE/.credentials.json"
+cred_content_md5() {
+  # Content hash of just the real credentials file. Concurrency-robust: other
+  # writers under ~/.claude do not touch this single file. Empty output when
+  # the file is absent (CI) — callers treat that as "nothing to protect".
+  [ -f "$REAL_CREDS" ] || return 0
+  md5sum "$REAL_CREDS" 2>/dev/null | awk '{print $1}'
 }
-SNAP_BEFORE="$(real_claude_snapshot)"
+CRED_MD5_BEFORE="$(cred_content_md5)"
+
+# Seed ONLY the credential into the isolated config dir, GUARDED on existence.
+# When absent (CI), this is a no-op and every (B) check SKIPs at its login
+# guard — unauthed behavior is unchanged. Seeding is harmless for the (A1)/(A2)
+# validate calls (validate needs no auth).
+if [ -f "$REAL_CREDS" ]; then
+  if cp "$REAL_CREDS" "$ISO_CFG/.credentials.json" 2>/dev/null; then
+    chmod 600 "$ISO_CFG/.credentials.json" 2>/dev/null || true
+  fi
+fi
 
 # Run `claude` with the isolated environment. We use `env -i` to start from a
 # clean slate (so a stray CLAUDE_* in the dev shell can't leak real state),
-# then re-export only PATH + the isolation vars. Args are passed through.
+# then re-export only PATH + the isolation vars. Args are passed through. The
+# seeded $ISO_CFG/.credentials.json (when present) lets headless `claude -p`
+# authenticate without touching the real ~/.claude tree.
 run_isolated_claude() {
   env -i \
     PATH="$PATH" \
@@ -227,8 +255,15 @@ run_attended_hookfire_check() {
   # deny via the session's tool-error surface in --print mode.
   #
   # NOTE: the exact observable depends on the authed session's transcript
-  # format. We assert on a deny/blocked signal in the output. If the prompt
-  # does not run (auth failed despite the flag), we SKIP — never fake a PASS.
+  # format. We assert on a deny/blocked signal in the output. A SINGLE hook
+  # fire can score a deny-count >1 here because the model REPEATS the block
+  # message in its natural-language explanation (observed: count 3 for one
+  # fire). That prose-verbosity does NOT matter for THIS check — we only need
+  # "the hook fired at all" (≥1 deny signal), which is prose-robust. (The
+  # exactly-once assertion that IS sensitive to prose verbosity lives in the
+  # dual-install function below, where it uses a deterministic marker count
+  # instead of prose-grep.) If the prompt does not run (auth failed despite
+  # the flag), we SKIP — never fake a PASS.
   if run_isolated_claude -p \
        'Run this exact bash command and report the tool result verbatim: rm -rf /etc/zzz-zskills-hookfire-probe' \
        --plugin-dir "$REPO_ROOT" --dangerously-skip-permissions >"$out" 2>&1; then
@@ -239,7 +274,7 @@ run_attended_hookfire_check() {
     return
   fi
   if grep -qiE 'BLOCKED|deny|recursive rm requires|block-unsafe' "$out"; then
-    pass "  [attended] hookfire: PreToolUse hook FIRED — deny-envelope observed on known-blocked command"
+    pass "  [attended] hookfire: PreToolUse hook FIRED — deny-envelope observed on known-blocked command (≥1; prose-robust)"
   else
     fail "  [attended] hookfire: NO deny-envelope observed on a known-blocked command (hook did not fire?)"
     sed 's/^/      /' "$out"
@@ -247,23 +282,105 @@ run_attended_hookfire_check() {
 }
 
 # run_attended_dual_install_skip_shim_check
-#   Intent: assert the D16(a) conditional-skip shim defers EXACTLY ONCE under a
-#   REAL dual install — plugin loaded via --plugin-dir AND a mirrored
-#   .claude/hooks/ copy registered in an isolated consumer settings.json. Under
-#   a real authed session, a known-blocked command must be denied EXACTLY ONCE
-#   (the consumer-lane copy fires; the plugin copy defers via the shim), not
-#   twice. (Attended: needs an authed session for the hooks to actually run.)
+#   Intent: assert that under a REAL dual install — the SAME hook basename
+#   registered on BOTH lanes (plugin via --plugin-dir AND a mirrored
+#   .claude/hooks/ copy registered in an isolated consumer settings.json) — the
+#   D16(a) conditional-skip shim makes the hook take effect EXACTLY ONCE per
+#   matching tool call: the consumer-lane copy fires; the plugin-lane copy
+#   defers via the shim. ("Exactly once" is the PER-COMMAND effect count, NOT a
+#   deferral count — in a dual install the plugin copy defers on EVERY matching
+#   call, indefinitely. Dual-install is an unsupported dogfood/transient state;
+#   the shim keeps it corruption-free by ensuring one net effect, not zero and
+#   not two.) (Attended: needs an authed session for the hooks to actually run.)
+#
+#   DETERMINISTIC OBSERVABLE (#956): we do NOT grep the model's prose for deny
+#   envelopes — a single real hook fire can score a prose deny-count of 3
+#   because the model repeats the block message in its explanation. Instead we
+#   register on BOTH lanes a tiny synthetic hook fixture (written at runtime
+#   into the probe's tmpdir) that SOURCES THE REAL SHIM
+#   (hooks/_lib/plugin-hook-skip-if-mirrored.sh) and, when it does NOT defer,
+#   appends exactly one line to a marker file. We then count marker-file lines.
+#   The plugin copy sources the shim and, finding its same-basename sibling in
+#   the consumer settings.json, defers (appends nothing); the consumer copy
+#   does not source the shim and fires (appends one line). Expected count: 1.
+#   This exercises the REAL shim's defer logic (the actual thing under test)
+#   with a verbatim, prose-immune count.
 run_attended_dual_install_skip_shim_check() {
   echo "  [attended] run_attended_dual_install_skip_shim_check"
   local proj="$TMP/attended-dual"
-  mkdir -p "$proj/.claude/hooks"
-  # Mirror the generic hook consumer-side and register it in settings.json so
-  # the same basename exists on BOTH lanes (plugin via --plugin-dir, consumer
-  # via settings.json) — the dual-install condition the shim guards.
-  cp "$REPO_ROOT/hooks/block-unsafe-generic.sh" "$proj/.claude/hooks/block-unsafe-generic.sh" 2>/dev/null || {
-    skip "  [attended] dual-install: could not stage consumer-side hook copy"
+  # The synthetic plugin lives in its OWN dir so we never mutate the real repo's
+  # hooks.json. It must carry hooks/_lib/plugin-hook-skip-if-mirrored.sh because
+  # the plugin-copy fixture sources the REAL shim via ${CLAUDE_PLUGIN_ROOT}.
+  local synplug="$TMP/attended-dual-plugin"
+  mkdir -p "$proj/.claude/hooks" "$synplug/hooks/_lib" "$synplug/.claude-plugin"
+  local marker="$proj/.dualfire-marker"
+  : > "$marker"
+
+  # Stage the real shim into the synthetic plugin so the plugin copy can source
+  # it the way a shipped plugin hook does (via ${CLAUDE_PLUGIN_ROOT}).
+  cp "$REPO_ROOT/hooks/_lib/plugin-hook-skip-if-mirrored.sh" \
+     "$synplug/hooks/_lib/plugin-hook-skip-if-mirrored.sh" 2>/dev/null || {
+    skip "  [attended] dual-install: could not stage real shim into synthetic plugin"
     return
   }
+
+  # ── Plugin-lane copy of the fixture ──────────────────────────────────────
+  # Sources the REAL shim as its first executable line (exactly like a shipped
+  # plugin hook). The shim, finding the same basename (dualfire-probe.sh) in the
+  # consumer settings.json, calls `exit 0` to DEFER — so this copy appends
+  # nothing. The version-stamp line (#2) is required so the shim's skew compare
+  # has a plugin stamp to read; we stamp BOTH copies identically (equal → the
+  # shim's silent-defer branch fires, which is the dual-install behavior we
+  # assert). Marker path is hardcoded at write time (no env dependency at fire).
+  cat > "$synplug/hooks/dualfire-probe.sh" <<PLUGINHOOK
+#!/usr/bin/env bash
+# zskills-hook-version: 2026.05.0
+# Synthetic dual-install probe — PLUGIN LANE copy. Sources the REAL D16(a) shim.
+[ -n "\${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "\${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh" ] && source "\${CLAUDE_PLUGIN_ROOT}/hooks/_lib/plugin-hook-skip-if-mirrored.sh"
+# If the shim did NOT defer (no same-basename consumer sibling), we fire.
+printf 'fired\n' >> "$marker"
+exit 0
+PLUGINHOOK
+  chmod +x "$synplug/hooks/dualfire-probe.sh"
+
+  # Synthetic plugin manifest + hooks.json registering the plugin-lane fixture.
+  cat > "$synplug/.claude-plugin/plugin.json" <<'PLUGINJSON'
+{
+  "name": "zsdualprobe",
+  "version": "2026.05.0",
+  "description": "Synthetic dual-install probe plugin (test fixture).",
+  "hooks": "./hooks/hooks.json"
+}
+PLUGINJSON
+  cat > "$synplug/hooks/hooks.json" <<'PLUGINHOOKS'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/dualfire-probe.sh\"", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}
+PLUGINHOOKS
+
+  # ── Consumer-lane copy of the fixture ────────────────────────────────────
+  # Does NOT source the shim (consumer hooks never do — only plugin-registered
+  # hooks source it). So it always FIRES and appends one line. Registered in the
+  # consumer project's settings.json under the SAME basename — that registration
+  # is exactly what the plugin copy's shim detects to decide to defer.
+  cat > "$proj/.claude/hooks/dualfire-probe.sh" <<CONSUMERHOOK
+#!/usr/bin/env bash
+# zskills-hook-version: 2026.05.0
+# Synthetic dual-install probe — CONSUMER LANE copy. No shim source; always fires.
+printf 'fired\n' >> "$marker"
+exit 0
+CONSUMERHOOK
+  chmod +x "$proj/.claude/hooks/dualfire-probe.sh"
+
   cat > "$proj/.claude/settings.json" <<'JSON'
 {
   "hooks": {
@@ -271,34 +388,40 @@ run_attended_dual_install_skip_shim_check() {
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"", "timeout": 5 }
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/dualfire-probe.sh\"", "timeout": 5 }
         ]
       }
     ]
   }
 }
 JSON
+
   local out="$TMP/attended-dual.out"
+  # A single benign Bash tool call triggers the PreToolUse matcher on both
+  # lanes. We use a harmless command (the fixtures only append a marker; they
+  # never block), so the model just runs it. We do not depend on the prose.
   if run_isolated_claude -p \
-       'Run this exact bash command and report the tool result verbatim: rm -rf /etc/zzz-zskills-dualinstall-probe' \
-       --plugin-dir "$REPO_ROOT" --add-dir "$proj" --dangerously-skip-permissions >"$out" 2>&1; then
+       'Run this exact bash command and report the tool result verbatim: echo zskills-dualinstall-probe' \
+       --plugin-dir "$synplug" --add-dir "$proj" --dangerously-skip-permissions >"$out" 2>&1; then
     :
   fi
   if grep -qiE 'not logged in|please run /login' "$out"; then
     skip "  [attended] dual-install: session not authed (no creds) — cannot observe shim defer"
     return
   fi
-  # Count deny-envelope occurrences. Exactly one = shim deferred the plugin
-  # copy correctly. Two = double-fire (shim failed). Zero = neither fired.
+  # DETERMINISTIC count: marker-file lines, immune to model prose verbosity.
+  # Exactly one = shim deferred the plugin copy (consumer copy fired alone).
+  # Two = double-fire (shim failed to defer). Zero = neither fired (no matching
+  # tool call ran, or both deferred — unexpected).
   local n
-  n="$(grep -ciE 'recursive rm requires|BLOCKED' "$out")"
+  n="$(grep -c 'fired' "$marker" 2>/dev/null || echo 0)"
   if [ "$n" -eq 1 ]; then
-    pass "  [attended] dual-install: hook fired EXACTLY ONCE — plugin copy deferred via shim (no double-fire)"
+    pass "  [attended] dual-install: hook took effect EXACTLY ONCE — plugin copy deferred via real shim (marker count=1; prose-immune)"
   elif [ "$n" -ge 2 ]; then
-    fail "  [attended] dual-install: hook DOUBLE-FIRED ($n denies) — shim did not defer the plugin copy"
+    fail "  [attended] dual-install: hook DOUBLE-FIRED (marker count=$n) — shim did not defer the plugin copy"
     sed 's/^/      /' "$out"
   else
-    fail "  [attended] dual-install: hook did not fire at all (0 denies) — unexpected"
+    fail "  [attended] dual-install: hook did not take effect at all (marker count=0) — no matching tool call ran, or both copies deferred (unexpected)"
     sed 's/^/      /' "$out"
   fi
 }
@@ -311,12 +434,22 @@ else
   skip "(B) run_attended_dual_install_skip_shim_check — skipped: attended-only, headless auth unavailable (set ZSKILLS_LIVE_ATTENDED=1 in an authed env to run)"
 fi
 
-# ── Isolation proof: real ~/.claude tree must be byte-identical ───────────
-SNAP_AFTER="$(real_claude_snapshot)"
-if [ "$SNAP_BEFORE" = "$SNAP_AFTER" ]; then
-  pass "(iso) real ~/.claude tree unchanged across the run (writes went to isolated CLAUDE_CONFIG_DIR)"
+# ── Isolation proof: real credential must be byte-identical (#956) ────────
+# We assert the specific, concurrency-robust safety property: seeding a COPY of
+# ~/.claude/.credentials.json into the isolated config dir did NOT rewrite or
+# rotate the user's real credential. (The prior whole-tree snapshot false-
+# BREACHed on any concurrent ~/.claude writer; the narrow content-hash of the
+# single credential file is immune to that.) When the real credential is absent
+# (CI), nothing was seeded and there is nothing to protect — skip cleanly.
+if [ -z "$CRED_MD5_BEFORE" ]; then
+  skip "(iso) no real ~/.claude/.credentials.json present — nothing seeded, isolation assertion not applicable"
 else
-  fail "(iso) real ~/.claude tree CHANGED — isolation breach (env vars did not redirect writes)"
+  CRED_MD5_AFTER="$(cred_content_md5)"
+  if [ "$CRED_MD5_BEFORE" = "$CRED_MD5_AFTER" ]; then
+    pass "(iso) real ~/.claude/.credentials.json byte-identical across the run (seeded a copy; did not rewrite/rotate the user's credential)"
+  else
+    fail "(iso) real ~/.claude/.credentials.json CHANGED — the run rewrote/rotated the user's credential (isolation breach)"
+  fi
 fi
 
 echo ""
