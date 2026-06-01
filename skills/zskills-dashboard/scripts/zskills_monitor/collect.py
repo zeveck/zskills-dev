@@ -1826,6 +1826,9 @@ def _annotate_plans_queue(
                 "age_seconds":    c.get("age_seconds"),
                 "pipeline_short": c.get("pipeline_short"),
                 "dispatch_mode":  c.get("dispatch_mode"),
+                # stale (#912): drives the client's in-UI release
+                # affordance for dead-pipeline claims.
+                "stale":          bool(c.get("stale")),
             }
 
 
@@ -2312,6 +2315,18 @@ def _resolve_effective_skip_reason(
 _CLAIM_DIR_RE = re.compile(r"^issue-(\d+)$")
 _PLAN_CLAIM_DIR_RE = re.compile(r"^plan-(.+)$")
 
+# Staleness threshold for plan claims (#912). A `/run-plan` pipeline that
+# died mid-flight (kill -9, OOM, container restart) leaves claim.json on
+# disk indefinitely, which the dashboard renders as a permanently
+# claim-locked card with no in-UI recovery. A claim older than this is
+# tagged `stale: true` so the renderer can offer a release affordance
+# (it is NOT filtered out — the card must still render so the user sees
+# and can dismiss it). 6h is comfortably longer than any healthy phase or
+# inter-phase idle gap. Fail toward NOT stale: a claim whose age cannot be
+# computed (missing/malformed started_at) is never tagged stale, so a live
+# claim is never wrongly offered for release.
+PLAN_CLAIM_STALE_SECONDS = 21600  # 6h
+
 
 def _derive_pipeline_short(pipeline_id: str, maxlen: int = 28) -> str:
     """Derive a short, human-meaningful label from a pipeline id.
@@ -2442,7 +2457,16 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
 
     Returns `{slug: claim_dict}` keyed by string slug. Each dict carries:
         pipeline_id, started_at, current_phase, age_seconds,
-        pipeline_short, dispatch_mode
+        pipeline_short, dispatch_mode, stale
+
+    `stale` (#912) is `True` when `age_seconds` exceeds
+    `PLAN_CLAIM_STALE_SECONDS` (6h) — the signal that the owning pipeline
+    almost certainly died mid-flight and left an orphaned claim. The
+    renderer uses it to offer an in-UI release affordance instead of the
+    hard claim-lock. It is computed fail-toward-not-stale: if `age_seconds`
+    is `None` (missing/malformed/unparseable `started_at`, or the
+    null-metadata sweep-race entry) the claim is NEVER marked stale, so a
+    live claim is never wrongly surfaced as releasable.
 
     Tolerant: malformed JSON emits a single stderr line and skips that
     claim. A claim directory present without `claim.json` surfaces a
@@ -2495,6 +2519,9 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
                 "age_seconds": None,
                 "pipeline_short": None,
                 "dispatch_mode": None,
+                # Null-metadata sweep-race entry has no age → fail toward
+                # not-stale (#912).
+                "stale": False,
             }
             continue
         try:
@@ -2540,6 +2567,12 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
         pipeline_short: Optional[str] = None
         if isinstance(pipeline_id, str) and pipeline_id:
             pipeline_short = _derive_pipeline_short(pipeline_id)
+        # Staleness (#912): fail toward NOT stale — only a successfully
+        # computed age that exceeds the threshold marks the claim stale.
+        # A None age (missing/malformed/unparseable started_at) leaves a
+        # live claim hard-locked rather than wrongly offering it for
+        # release.
+        stale = isinstance(age_seconds, (int, float)) and age_seconds > PLAN_CLAIM_STALE_SECONDS
         out[slug] = {
             "pipeline_id": pipeline_id if isinstance(pipeline_id, str) else None,
             "started_at": started_at if isinstance(started_at, str) else None,
@@ -2547,6 +2580,7 @@ def _read_plan_claims(main_root: pathlib.Path) -> Dict[str, Dict[str, Any]]:
             "age_seconds": age_seconds,
             "pipeline_short": pipeline_short,
             "dispatch_mode": dispatch_mode,
+            "stale": bool(stale),
         }
     return out
 
