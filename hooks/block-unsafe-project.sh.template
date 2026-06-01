@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -1014,10 +1014,35 @@ if is_git_subcommand_in_wrappers "$COMMAND" push; then
       GIT_ARGS="-C $CD_TARGET"
     fi
     CODE_FILES=""
-    PUSH_DIFF=$(git $GIT_ARGS diff --name-only @{u}..HEAD 2>/dev/null)
-    if [ -z "$PUSH_DIFF" ]; then
-      # Fallback: compare against main (works before first push -u)
-      PUSH_DIFF=$(git $GIT_ARGS diff --name-only main..HEAD 2>/dev/null)
+    # Compute "is there code in this push" as the pipeline's OWN changes
+    # (merge-base..HEAD), NOT @{u}..HEAD (#921). Rationale: /land-pr's
+    # legitimate BEHIND-clear rebases onto a moved origin/main and
+    # force-pushes BEFORE merge — but requires.land-pr.<id> is only
+    # fulfilled AFTER merge (Step 8b). With @{u}..HEAD, @{u} is the OLD
+    # pushed commit, so the range picks up MAIN's intervening commits'
+    # code (other PRs that landed), making CODE_FILES non-empty and
+    # firing the still-unfulfilled requires.land-pr.<id> gate —
+    # chicken-and-egg (can't push to clear BEHIND). The merge-base form
+    # counts ONLY this pipeline's own changes, so a rebase-and-force-push
+    # of an unchanged patch presents no NEW code and the gate doesn't
+    # fire; it still fires on a genuine un-landed-code push. Mirrors the
+    # verifier's documented merge-base diff convention
+    # (.claude/agents/verifier.md). origin/main is the base ref: this
+    # repo is main-based and there is no existing base-branch variable in
+    # this hook to reuse.
+    MERGE_BASE=$(git $GIT_ARGS merge-base origin/main HEAD 2>/dev/null)
+    if [ -n "$MERGE_BASE" ]; then
+      PUSH_DIFF=$(git $GIT_ARGS diff --name-only "$MERGE_BASE"..HEAD 2>/dev/null)
+    else
+      # Fallback: origin/main not fetched / merge-base unavailable in this
+      # hook context. Fall back to the prior @{u}..HEAD behavior (then
+      # main..HEAD) rather than passing everything — fail toward the SAFE
+      # (old, enforcing) behavior, not toward open.
+      PUSH_DIFF=$(git $GIT_ARGS diff --name-only @{u}..HEAD 2>/dev/null)
+      if [ -z "$PUSH_DIFF" ]; then
+        # Compare against main (works before first push -u)
+        PUSH_DIFF=$(git $GIT_ARGS diff --name-only main..HEAD 2>/dev/null)
+      fi
     fi
     if [ -n "$PUSH_DIFF" ]; then
       while IFS= read -r line; do
