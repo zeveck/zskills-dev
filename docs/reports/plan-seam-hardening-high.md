@@ -1,5 +1,20 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 7 — run-plan: defer-backoff decision + anchor hardening  ✅ Done (2026-06-01T12:29:32-04:00) — PLAN COMPLETE
+
+**Commit:** `739dff1` on `feat/seam-hardening-high`
+**Tests:** Overall 7017/7017 passed, 0 failed (post-commit gate).
+
+- **Option A**: factored the Case-3 adaptive-backoff DECISION out of `run-plan/SKILL.md` into pure `skills/run-plan/scripts/defer-backoff-decide.sh` (counter→cadence boundaries, retry-exhaustion, Case-4 reset; Cron* orchestration stays in prose). Re-pointed `test-runplan-defer-backoff.sh` to SOURCE the real script (14 cases / 34 assertions preserved; gold-standard sync-pr-body pattern).
+- Registered in `script-ownership.md` + `tier1-shipped-hashes.txt` + STALE_LIST. Dual version bump (run-plan `7e37d7`, update-zskills `9e1d01`) + mirrors.
+
+**Verification:** independent verifier PASS — **post-commit gate satisfied** (migration 6c/6d cleared on commit → 7017/7017), pure-script + behavior-preservation + dual-hash recompute, mutation-proven, scope 11 paths, Layer-3 exit 0.
+
+---
+
+**PLAN COMPLETE — all 8 phases done.** Frontmatter flipped to `status: complete`; landing via /land-pr. 18 HIGH-skill test seams now exercise production code (extract-and-run / sentinel / pure-script), killing the #809 hollow-green class for the 8 highest-traffic skills. Phase-1 `tests/lib/extract-fence.sh` contract frozen for the sibling SEAM_HARDENING_REST plan.
+
+
 ## Phase 6b — work-on-plans: dispatch-loop seam + sandbox harness  ✅ Done (2026-06-01T11:16:18-04:00)
 
 **Commit:** `9f8a3d1` on `feat/seam-hardening-high`
