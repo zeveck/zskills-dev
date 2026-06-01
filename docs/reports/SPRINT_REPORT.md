@@ -3,36 +3,36 @@ title: /fix-issues Sprint Report
 status: complete
 ---
 
-# /fix-issues sprint — sprint-20260601-070748-dq30m7
+# /fix-issues sprint — sprint-20260601-080624-dq30m8
 
 **Mode:** N=2, dashboard, auto, every 30m
-**Picks:** #914 + #913 (both claimed before any per-task worktree)
+**Picks:** #920 + #924
 
 ## Landed (2)
 
-### #914 — /draft-plan 'brainstorm' keyword anchored to first token
-- **PR:** https://github.com/zeveck/zskills-dev/pull/926 — merged after rebase resolved a real content-merge conflict (preserved BOTH improvements: `quiz` flag block from #922 just-landed + #914's brainstorm anchor explanation).
-- **Files (3):** `skills/draft-plan/SKILL.md` first-token check + Detection-prose update + version → `b24bc5` (re-bumped post-merge to `ac7967`); mirror; `tests/test-draft-plan-args-smoke.sh` flipped 153-154 from positive-asserting-wrong to negative + 6 new cases.
-- **Anchor pattern:** `read -r _bs_first _bs_rest <<<"$ARGUMENTS"; case-insensitive equality vs literal "brainstorm"` — stricter than "first non-flag position." Required for the mandated test `"output X.md brainstorm rounds 3 Add dark mode" → 0`.
-- **Tests:** 6831/6831.
+### #920 — claim parser accepts "Fix issue #N"
+- **PR:** https://github.com/zeveck/zskills-dev/pull/934 — merged after auto-rebase (BEHIND on first poll).
+- **Fix:** Added optional `(issue[s]?:?[[:space:]]+)?` filler between close-keyword and `#N` at all 3 regex sites (leading-anchored, strong-sep loop, weak-sep loop) shared as `_DO_ISSUE_FILLER` / `_QF_ISSUE_FILLER`. Filler is regex-optional and itself requires `#N` adjacency — backtracking on `"Fix issue ticketing for #906"` correctly fails to capture.
+- **Files (7):** `/do` + `/quickfix` parsers (mirrored) + tests + conformance index sentinels bumped `[3→4]/[4→5]/[5→6]` per site.
+- **Tests:** 6871/6871.
 
-### #913 — work-on-plans + zskills-dashboard dual-lane sanitize (sibling of #868)
-- **PR:** https://github.com/zeveck/zskills-dev/pull/928 — merged clean.
-- **Files (4):** `skills/work-on-plans/SKILL.md` used `$ZSKILLS_SKILLS_ROOT` (already exported via earlier `zskills-paths.sh` source). `skills/zskills-dashboard/SKILL.md` used explicit `if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]` dual-lane conditional because the resolver source happens later in that skill. **Also migrated PORT_SCRIPT** at the adjacent lines (issue body authorized the scope expansion).
-- **Versions:** `work-on-plans` → `7a11d3`; `zskills-dashboard` → `300230`.
-- **Tests:** 6826/6826.
+### #924 — `extract_cd_target` skips shell preambles
+- **PR:** https://github.com/zeveck/zskills-dev/pull/938 — merged clean.
+- **Fix:** segment-walking loop. Splits command on `&&|||;\n` separators; per-segment skip env-vars + optional `env`, then check first token against inert whitelist (`set/export/unset/source/./...`); first `cd` segment extracts. ANY OTHER real statement stops the walk (preserves "first effective cwd wins"). Chosen over regex extension because regex can't enforce "every preceding segment is inert."
+- **Files (5):** source-of-truth helper `hooks/_lib/resolve-effective-worktree-root.sh` rewritten; inlined helper re-synced byte-identical at `hooks/block-unsafe-project.sh.template` and `hooks/block-stale-skill-version.sh`; mirrors; 8 new test cases (CE8-CE15) covering each preamble shape.
+- **Hook line-2 stamps:** `2026.05.0 → 2026.06.0` on both source hooks.
+- **Drift gate:** `test-hook-helper-drift.sh` verified inlined helpers byte-identical across all 3 sites.
+- **Tests:** 6840/6840 (24/24 in targeted suite — 16 prior + 8 new).
 
-## Conflict resolution
+## Significance
 
-#914's rebase hit a 2-region conflict on `skills/draft-plan/SKILL.md`:
-- **Region 1:** version-line only — picked my version (re-bumped post-rebase to reflect merged content hash).
-- **Region 2:** content merge — HEAD added a new `quiz` flag block (PR #922 brainstorm-mode-plan landed during my impl); #914 added explanatory text to the `brainstorm` description. **Preserved BOTH** by keeping #914's brainstorm anchor explanation AND HEAD's new `quiz` flag block (sequential, no overlap).
+#924 closes a recurring foot-gun I've been hitting throughout this session — every time a bash call started with `. resolver.sh` or `set -e` before `cd $WT_PATH && git commit`, the hook resolved to the main repo and false-positive-blocked the worktree commit. The "use literal paths instead of `$WT_PATH`" workaround I've been applying repeatedly is now obsolete on main.
 
-Followed the lesson from last fire's memory anchor: resolve conflict → `git add` → `git rebase --continue` FIRST → only THEN amend with re-bumped version. No content lost.
+#920 closes a related foot-gun: descriptions naturally phrased "Fix issue #N: …" silently ran unclaimed, racing concurrent `/fix-issues` crons.
 
 ## Sprint metadata
 
-- Sprint pipeline ID: fix-issues.sprint-20260601-070748-dq30m7
-- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-070748-dq30m7
+- Sprint pipeline ID: fix-issues.sprint-20260601-080624-dq30m8
+- Sprint worktree: /tmp/zskills-fix-issues-sprint-20260601-080624-dq30m8
 - Issue claims released cleanly.
 - Cron: `*/30 * * * *` — next fire ~30 min.
