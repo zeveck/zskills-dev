@@ -1,5 +1,18 @@
 # Plan Report — Seam Hardening (HIGH-priority skills)
 
+## Phase 4 — do/quickfix: real mechanics extract + de-hollow message asserts  ✅ Done (2026-06-01T08:39:07-04:00)
+
+**Commit:** `b111d63` on `feat/seam-hardening-high`
+**Tests:** Overall 6962/6962 passed, 0 failed (cases converted in place).
+
+- Converted `test-do.sh` Case 6 (grep-only verdict-regex strings) → extract-and-run the real `/do` verdict parser (APPROVE / REVISE -- r / REJECT -- r / malformed).
+- Deleted the hollow `*_SIM` heredocs (`test-quickfix.sh` Cases 47/48); replaced with the real WI 1.2 parser unset-guard + extract-and-run verdict regex + **per-skill divergent-string anchors**.
+- Re-anchored message drift on genuinely-divergent strings (quickfix landing-config soft-redirect; ask-user self-name `/do` vs `/quickfix`; no-marker prose) — NOT the dead `--force`/`force` pair (retired #822). Message emission documented as model-layer.
+- No circular table-harness; no SKILL.md edits (test-only / technique-A).
+
+**Verification:** independent verifier PASS — all 6 anchors verified present-in-own/absent-in-sibling, mutation-proof on Case 6 + anchors, scope clean (2 paths), Layer-3 exit 0.
+
+
 ## Phase 3 — commit: arg-parser extract + caller-loop harness  ✅ Done (2026-06-01T07:52:13-04:00)
 
 **Commit:** `a53e252` on `feat/seam-hardening-high`
