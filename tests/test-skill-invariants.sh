@@ -142,6 +142,12 @@ ISSUE_606_ALLOWLIST=(
   # so they don't need their own resolver. Filed: separate issue
   # (post-#606 follow-up) if the family-pattern test fails on them.
   "skills/run-plan/references/failure-protocol.md	PLAN_FILE"
+  # failure-protocol.md's #923 §1 sentinel-clear fence reads $TRACKING_ID via
+  # PIPELINE_ID's default (run-plan.$TRACKING_ID), inheriting it from the main
+  # SKILL.md preamble in scope when the Failure Protocol runs — same inherit
+  # pattern as the PLAN_FILE entry directly above; documents but does not own
+  # the resolver.
+  "skills/run-plan/references/failure-protocol.md	TRACKING_ID"
   # After #725 extraction, PLAN_FILE is assigned in subcommands/stop-next-status.md
   # (Status mode's resolver) and modes/execute-phase.md (Phase 2 example); the
   # router SKILL.md reads it from the orchestrator's parsed $ARGUMENTS context.
@@ -150,6 +156,13 @@ ISSUE_606_ALLOWLIST=(
   "skills/run-plan/modes/execute-phase.md	TRACKING_ID"
   "skills/run-plan/modes/pr.md	PLAN_FILE"
   "skills/run-plan/modes/pr.md	TRACKING_ID"
+  # finish-mode.md is a reference file Read by Phase 5c (execute-phase.md);
+  # its #923 sentinel-clear fence reads $TRACKING_ID via PIPELINE_ID's default
+  # (run-plan.$TRACKING_ID), inheriting it from the main SKILL.md / Phase 1
+  # preamble in scope when Phase 5c runs — same inherit pattern as
+  # modes/pr.md and execute-phase.md above; it documents but does not own
+  # the resolver.
+  "skills/run-plan/references/finish-mode.md	TRACKING_ID"
   "skills/commit/modes/pr.md	TRACKING_ID"
   "skills/fix-issues/modes/pr.md	SPRINT_ID"
   # After #835 split, draft-tests mode files inherit PLAN_FILE/TRACKING_ID

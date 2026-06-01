@@ -19,6 +19,27 @@ CronList → find the /run-plan job ID → CronDelete
 Do this BEFORE any cleanup or reporting. Even if you're about to fix the
 problem, kill the cron. The user can restart it after reviewing.
 
+**Also clear the #883 in-flight sentinel (Issue #923 hygiene).** The cron is
+already dead so the leftover sentinel is mostly moot, but clearing it ensures
+a manual `/run-plan` re-invoke after this fatal failure isn't blocked by a
+stale entry until the 2h staleness. Re-derive `$PIPELINE_ID` /
+`$INFLIGHT_HELPER` at fence-top exactly as the terminal-clear sites in
+`modes/execute-phase.md` do (config-source first):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+if [ -x "$INFLIGHT_HELPER" ]; then
+  bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
+fi
+```
+
 ### 2. Restore the working tree
 
 If a cherry-pick is in a conflicted state:

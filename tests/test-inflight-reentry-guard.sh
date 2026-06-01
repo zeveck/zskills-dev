@@ -180,6 +180,39 @@ fi
 (cd "$FIXTURE" && bash "$HELPER" clear do --pipeline-id "do.fix-readme") >/dev/null 2>&1
 
 echo ""
+echo "=== #923: phase advancement NOT suppressed after a turn clears on exit ==="
+# Models the chunked finish-auto fix: phase N's turn writes the sentinel at
+# entry, then clears it on its non-terminal Phase-5c advancement exit. The
+# next cron fire (same session+pipeline) for phase N+1 must PROCEED, not be
+# treated as a redundant re-fire. Before #923 the sentinel survived the
+# advancement exit, so this check returned rc=0 (skip) and suppressed
+# advancement until the 2h staleness.
+(cd "$FIXTURE" && bash "$HELPER" write run-plan --pipeline-id "run-plan.plan-adv" --session-id "TEST-SID-ADV")
+# Phase N's turn completes and clears its sentinel on the advancement exit.
+# `clear` is keyed on skill+pipeline-id only (no --session-id arg) — exactly
+# the `clear run-plan --pipeline-id "$PIPELINE_ID"` call the fix adds.
+(cd "$FIXTURE" && bash "$HELPER" clear run-plan --pipeline-id "run-plan.plan-adv") >/dev/null 2>&1
+# Phase N+1's cron fire (SAME session+pipeline) re-enters the guard.
+(cd "$FIXTURE" && bash "$HELPER" check run-plan --session-id "TEST-SID-ADV" --pipeline-id "run-plan.plan-adv" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" -eq 1 ]; then
+  pass "next phase proceeds (rc=1) after prior turn cleared its sentinel on exit"
+else
+  fail "next phase proceeds (rc=1) after prior turn cleared its sentinel on exit" "got rc=$rc (advancement suppressed)"
+fi
+# Control: WITHOUT the clear, the same next-phase check still skips (rc=0) —
+# confirms the assertion above is driven by the clear, not a vacant sentinel.
+(cd "$FIXTURE" && bash "$HELPER" write run-plan --pipeline-id "run-plan.plan-adv2" --session-id "TEST-SID-ADV")
+(cd "$FIXTURE" && bash "$HELPER" check run-plan --session-id "TEST-SID-ADV" --pipeline-id "run-plan.plan-adv2" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "control: without the on-exit clear, next-phase check still skips (rc=0)"
+else
+  fail "control: without the on-exit clear, next-phase check still skips (rc=0)" "got rc=$rc"
+fi
+(cd "$FIXTURE" && bash "$HELPER" clear run-plan --pipeline-id "run-plan.plan-adv2") >/dev/null 2>&1
+
+echo ""
 echo "=== call-site wiring assertions ==="
 
 assert_wired() {
@@ -212,6 +245,18 @@ else
   fail "run-plan execute-phase.md: at least 2 clear sites" "got $clear_count"
 fi
 assert_wired "run-plan execute-phase.md: clear w/ --pipeline-id" "$RP_EXEC" \
+  '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
+
+# #923: clear-on-retry-exit sites added to finish-mode.md (non-final Phase-5c
+# advancement), SKILL.md (recoverable Parse-plan STOPs), and
+# failure-protocol.md (§1 hygiene). The fix is incomplete if any is missing.
+RP_FINISH="$REPO_ROOT/skills/run-plan/references/finish-mode.md"
+RP_FAIL="$REPO_ROOT/skills/run-plan/references/failure-protocol.md"
+assert_wired "run-plan finish-mode.md (#923): clear on Phase-5c advancement exit" "$RP_FINISH" \
+  '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
+assert_wired "run-plan SKILL.md (#923): clear before recoverable Parse-plan STOPs" "$RP_SKILL" \
+  '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
+assert_wired "run-plan failure-protocol.md (#923): clear in §1 hygiene" "$RP_FAIL" \
   '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
 
 # /do mode files — entry-guard wiring.
@@ -250,6 +295,8 @@ for pair in \
   "create-worktree/scripts/check-inflight-batch.sh" \
   "run-plan/SKILL.md" \
   "run-plan/modes/execute-phase.md" \
+  "run-plan/references/finish-mode.md" \
+  "run-plan/references/failure-protocol.md" \
   "do/SKILL.md" \
   "do/modes/pr.md" \
   "do/modes/worktree.md" \
