@@ -772,6 +772,19 @@ check_in_file_near do          "modes/pr.md"                "impl+fix-cycle pins
 check_in_file_near quickfix    "modes/execute.md"           "agent-dispatched pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 check_in_file_near quickfix    "modes/land.md"              "fix-cycle pins implementer" 'subagent_type: "implementer"' 'Agent' 0
 
+# /draft-plan — quiz-mode conditional-load wiring (DRAFT_PLAN_QUIZ_MODE Phase
+# 3, R9). The interactive quiz interview is gated behind QUIZ_FLAG=1 and its
+# procedure lives in references/quiz.md, read via a conditional-load directive.
+# There is no orphan-reference gate today, so this is the ONLY automated check
+# that exercises the new wiring. Use check_in_file_near (NOT a bare grep for
+# 'references/quiz.md') so the assertion verifies CO-OCCURRENCE: the
+# references/quiz.md reference must appear within 10 lines of a QUIZ_FLAG=1
+# conditional token. A bare substring grep would still pass if the conditional
+# guard were stripped (degraded to an unconditional read) or if the string
+# survived only in a comment elsewhere; the _near form fails closed in both
+# cases — removing the `QUIZ_FLAG=1`-guarded conditional load breaks it.
+check_in_file_near draft-plan  "SKILL.md"                   "quiz conditional-load wiring" 'references/quiz.md' 'QUIZ_FLAG=1' 10
+
 # Agent definition file exists with the expected frontmatter shape.
 if [ -f "$REPO_ROOT/.claude/agents/implementer.md" ]; then
   pass "[.claude/agents/implementer.md] exists"
@@ -3295,7 +3308,7 @@ check_sanitize_count "skills/run-plan/SKILL.md"                       5 "skills/
 check_sanitize_count "skills/run-plan/modes/execute-phase.md"        10 "skills/run-plan/modes/execute-phase.md"
 check_sanitize_count "skills/run-plan/subcommands/stop-next-status.md" 1 "skills/run-plan/subcommands/stop-next-status.md"
 check_sanitize_count "skills/commit/modes/pr.md"      1 "skills/commit/modes/pr.md"
-check_sanitize_count "skills/draft-plan/SKILL.md"     4 "skills/draft-plan/SKILL.md"
+check_sanitize_count "skills/draft-plan/SKILL.md"     5 "skills/draft-plan/SKILL.md"
 check_sanitize_count "skills/refine-plan/SKILL.md"    3 "skills/refine-plan/SKILL.md"
 check_sanitize_count "skills/verify-changes/SKILL.md" 4 "skills/verify-changes/SKILL.md"
 

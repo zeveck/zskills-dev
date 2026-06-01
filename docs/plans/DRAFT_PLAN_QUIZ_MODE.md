@@ -1,7 +1,8 @@
 ---
 title: /draft-plan quiz mode — interactive requirements-elicitation before drafting
 created: 2026-05-31
-status: active
+status: "complete"
+completed: "2026-06-01T06:47:24Z"
 ---
 
 # Plan: /draft-plan quiz mode
@@ -124,9 +125,9 @@ the Requirements appendix). Key decisions:
 
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — Author references/quiz.md (interaction protocol) | ⬚ | | |
-| 2 — Wire SKILL.md (flag, conditional load, seam, transcript) | ⬚ | | |
-| 3 — Mirror, version reconcile, conformance + tests | ⬚ | | |
+| 1 — Author references/quiz.md (interaction protocol) | ✅ Done | `520aaab` | 331-line quiz.md; version 2026.06.01+ab6deb + mirror; 6773/6773 |
+| 2 — Wire SKILL.md (flag, conditional load, seam, transcript) | ✅ Done | `ff1a562` | leading-flag QUIZ_FLAG + conditional-load seam + transcript wiring + gated step.*.quiz; version 2026.06.01+82b352 + mirror; conformance sanitize-count 4→5; 6773/6773 |
+| 3 — Mirror, version reconcile, conformance + tests | ✅ Done | `e9cb987` | required co-occurrence wiring tripwire (references/quiz.md + QUIZ_FLAG=1, fails-closed); version 82b352 + mirror parity final; 6774/6774 |
 
 ---
 

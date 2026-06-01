@@ -1,13 +1,13 @@
 ---
 name: draft-plan
 disable-model-invocation: false
-argument-hint: "[output FILE] [rounds N] [auto] [brainstorm] <description...>"
+argument-hint: "[output FILE] [rounds N] [auto] [brainstorm] [quiz] <description...>"
 description: >-
   Draft a high-quality plan through iterative adversarial review:
   research, draft, review, devil's-advocate, refine — repeated until
   convergence. Output is a plan file ready for /run-plan execution.
 metadata:
-  version: "2026.05.31+258cda"
+  version: "2026.06.01+82b352"
 ---
 
 # /draft-plan [output FILE] [rounds N] \<description...> — Adversarial Plan Drafter
@@ -113,7 +113,7 @@ fi
 ## Arguments
 
 ```
-/draft-plan [output FILE] [rounds N] [auto] <description...>
+/draft-plan [output FILE] [rounds N] [auto] [quiz] <description...>
 ```
 
 - **output FILE** (optional) — where to write the plan. Default:
@@ -146,6 +146,15 @@ fi
   `BRAINSTORM_FLAG=1`, which loads the interactive brainstorm dialogue
   (`references/brainstorm.md`) before Phase 1. Anchored so it does NOT
   match `brainstorming`/`brainstormed`/`brainstorms`.
+- `quiz` (recognized **ONLY as a leading flag token** — in the flag
+  cluster before the description begins, like `output`/`rounds`/`auto`,
+  case-insensitive) — sets `QUIZ_FLAG=1`, which conducts an interactive
+  requirements interview before drafting by loading
+  (`references/quiz.md`). A `quiz` appearing **within the description
+  text** is part of the description, NOT the flag — unlike `auto`, `quiz`
+  is NOT detected match-anywhere, so a description like "build a quiz app"
+  or a trailing "add dark mode quiz" does NOT trigger quiz mode (see the
+  detection note below and the Examples block).
 - Everything else (from the first unrecognized non-flag token onward) is
   the description
 
@@ -167,6 +176,51 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[bB][rR][aA][iI][nN][sS][tT][oO][rR][mM]($|
 fi
 ```
 
+**`QUIZ_FLAG` is detected by LEADING-FLAG recognition — NOT `auto`'s
+match-anywhere regex.** `quiz` fires **only** when it appears in the
+leading flag cluster, before the first description token. If a description
+word "quiz" set the flag (the way a description word "auto" trips
+`AUTO_FLAG` today — a pre-existing exposure NOT inherited here), then an
+autonomously-dispatched call from `/research-and-plan` (which passes the
+user description verbatim) or the `/run-plan` delegate
+(`/draft-plan plans/FOO.md <desc> auto`) would hang the pipeline on an
+interactive prompt with no human to answer. So the parse consumes the
+leading cluster first and only then tests for `quiz`. Tokenize the leading
+cluster: consume, **in any order**, the output-file token (either the
+literal `output <path>`, OR a bare leading `*.md` token), `rounds N`
+(consuming the numeric value token after `rounds`, so the bare `N` is not
+mis-read as the first description token), `auto`, and `quiz`. The **first
+token matching none of these** begins the description, and everything from
+there (including any later `quiz`) is description, not a flag:
+
+```bash
+QUIZ_FLAG=0
+# Leading-flag scan: walk the tokens, consuming recognized flags in any
+# order. Stop at the first token that is none of them — that begins the
+# description. A `quiz` AFTER the description start is description text,
+# never the flag. (Strip the description first; never match raw
+# $ARGUMENTS match-anywhere — that is exactly auto's false-positive.)
+expect_value=0   # 1 = the previous token was `output`/`rounds`; this one is its value
+for tok in $ARGUMENTS; do
+  if [ "$expect_value" = "1" ]; then
+    # The value token after `output` (a path) or `rounds` (a number);
+    # consume it unconditionally and keep scanning the leading cluster.
+    expect_value=0
+    continue
+  fi
+  ltok=$(printf '%s' "$tok" | tr '[:upper:]' '[:lower:]')
+  case "$ltok" in
+    output)   expect_value=1 ;;                 # output <path> — value consumed next iter
+    rounds)   expect_value=1 ;;                 # rounds N — value consumed next iter
+    auto)     ;;                                # recognized flag — consume, keep scanning
+    quiz)     QUIZ_FLAG=1 ;;                     # leading quiz flag
+    *.md)     ;;                                # bare leading *.md output token
+    */*.md)   ;;                                # path-form leading *.md output token
+    *)        break ;;                          # first description token — stop
+  esac
+done
+```
+
 Examples:
 - `/draft-plan Add dark mode to the editor`
 - `/draft-plan THERMAL_PLAN.md Implement thermal domain` → writes `$ZSKILLS_PLANS_DIR/THERMAL_PLAN.md`
@@ -174,6 +228,10 @@ Examples:
 - `/draft-plan output plans/THERMAL_PLAN.md rounds 5 Implement thermal domain`
 - `/draft-plan rounds 5 Implement thermal domain with multi-domain coupling`
 - `/draft-plan Fix the README.md formatting` → description only, no output file detected
+- `/draft-plan quiz Add dark mode to the editor` → `QUIZ_FLAG=1` (leading flag) — runs the interactive requirements interview first
+- `/draft-plan output p.md quiz rounds 5 Add dark mode` → `QUIZ_FLAG=1` (quiz is in the leading flag cluster, in any order with `output`/`rounds`)
+- `/draft-plan output p.md build a quiz app` → `QUIZ_FLAG` NOT set — "quiz" is a description word, not the leading flag (NEGATIVE example; `quiz` is leading-only, never match-anywhere like `auto`)
+- `/draft-plan add dark mode quiz` → `QUIZ_FLAG` NOT set — a **trailing** `quiz` is description text, not the flag. This is the accepted ergonomic limitation of leading-only parsing: to enable quiz mode, lead with the flag (`/draft-plan quiz add dark mode`).
 
 ## Pre-check — Existing file
 
@@ -196,6 +254,48 @@ completed dialogue — proceed straight to Phase 1 using it as the seed). If the
 exists with `status: in-progress` (a dialogue interrupted by compaction/crash), RESUME it from
 its captured state rather than restarting. If `BRAINSTORM_FLAG=0`, **ignore the reference file
 entirely** and proceed straight to Phase 1.
+
+## Quiz mode (only when the `quiz` flag is present) — research sequencing
+
+When `QUIZ_FLAG=1` **and** running interactively (the same predicate as the
+subagent-skip in "Post-research tracking" below — quiz never fires under a
+subagent caller in practice, since the research-and-* callers don't pass
+`quiz`), the conversational requirements interview runs **FIRST, before any
+research.** The order is strictly: **quiz interview → (on go-signal) the
+existing Phase-1 research fan-out, seeded → Phase 2 draft.** No research is
+split, moved, or interleaved — the fan-out is simply gated behind the quiz
+and seeded with the interview file. Concretely:
+
+1. **Defer the research fan-out** until the quiz produces its go-signal. Do
+   NOT dispatch the Phase-1 Research agents while `QUIZ_FLAG=1` and the quiz
+   has not yet exited.
+2. **Conduct the interview now.** The conditional-load directive and the
+   quiz loop are emitted at the "Post-research tracking" seam below (Work
+   Item 5's 3-way branch); when `QUIZ_FLAG=1` that seam is reached with the
+   research fan-out still deferred, the directive fires, and the interview
+   runs to its explicit go-signal.
+3. **On the go-signal, run the existing Phase-1 fan-out UNCHANGED**
+   (the same agents in "Research agents" below), with one additive behavior:
+   **seed each fan-out agent with the durable interview file**
+   `/tmp/draft-plan-quiz-$TRACKING_ID.md` as priors — "here is what the
+   interview established with the user; validate and extend it, do not
+   re-derive it." Also hand the fan-out the interview file's deferred
+   open-questions list so the Codebase / Prior-art agents resolve them. This
+   is the same seeding shape brainstorm mode uses (injecting the notes path
+   into each research prompt) — inject the **literal**
+   `/tmp/draft-plan-quiz-$TRACKING_ID.md` path into the prompts, never a
+   re-derived one.
+4. **Then Phase 2 drafts** from the seeded research.
+
+When `QUIZ_FLAG=0`, research runs **exactly as today** — the full Phase-1
+fan-out runs immediately, followed by the single-shot post-research
+checkpoint. quiz.md is never read and no `step.*.quiz` marker is written.
+
+The interview mechanics (loop state machine, question-style discipline,
+go-signal contract, persistence + recovery-read, transcript-capture
+distillation) live entirely in
+[references/quiz.md](references/quiz.md); this SKILL.md only orders
+quiz-before-fan-out and passes the interview file in.
 
 ## Phase 1 — Research (parallel agents)
 
@@ -338,6 +438,24 @@ re-prompting here is redundant; proceed directly to Phase 2. (This is an
 ADDITIVE condition; the existing "if running as a subagent, skip" branch
 below is unchanged.)
 
+This steering checkpoint is a **3-way branch.** The branch sits AFTER the
+scope-check decomposition `exit` above and BEFORE Phase 2:
+
+**(a) When `QUIZ_FLAG=1` and running interactively** (the same predicate
+as the subagent-skip in branch (c) below — interactive, not a subagent):
+emit the conditional-load directive
+
+> **Read [references/quiz.md](references/quiz.md) in full and follow its
+> procedure end-to-end. Do not proceed until you have read that file.**
+
+then conduct the quiz loop per that file, exiting to Phase 2 **only on the
+explicit go-signal**. Note: per "Quiz mode" above, this branch is reached
+with the Phase-1 research fan-out still DEFERRED — the interview runs first,
+and the (seeded) fan-out runs only after the go-signal, before Phase 2.
+
+**(b) When `QUIZ_FLAG=0`** (default), the existing single-shot checkpoint,
+verbatim and unchanged:
+
 **Present the research summary to the user.** If running interactively
 (user invoked `/draft-plan` directly), wait for input:
 > Research complete. Summary written to `/tmp/draft-plan-research-<slug>.md`.
@@ -351,10 +469,51 @@ Do not stop here. The checkpoint is a pause for steering, not the end of
 the skill. After the user responds (even if they just say "looks good" or
 "continue"), move to Phase 2 without being asked again.
 
-**If running as a subagent** (dispatched by `/research-and-plan` or
+**(c) If running as a subagent** (dispatched by `/research-and-plan` or
 `/research-and-go`), skip the user checkpoint — proceed directly to
 Phase 2. The decomposition was already approved by the user in the
-parent skill.
+parent skill. (Quiz never reaches this branch in practice since the
+research-and-* callers don't pass `quiz`, but the guard is the same
+predicate and must remain — it is load-bearing for those callers.)
+
+#### Quiz exit — transcript capture + optional step marker
+
+These steps run **only when `QUIZ_FLAG=1`** (i.e., branch (a) above ran the
+quiz to its go-signal). A normal (non-quiz) run does NONE of this.
+
+1. **Transcript-capture merge (R5).** After the quiz exits, merge the
+   distilled requirements into the existing research summary file
+   `/tmp/draft-plan-research-<slug>.md` as confirmed requirements (so each
+   seeded fan-out agent treats the interview-established intent as a given to
+   validate and extend), and — in Phase 6 — add a **"Requirements captured
+   via quiz"** subsection to the plan's `## Plan Quality` section. Follow the
+   transcript-capture distillation spec in
+   [references/quiz.md](references/quiz.md) ("Transcript capture — distill,
+   don't dump"); do NOT duplicate that spec here — distill decisions plus
+   rationale, never a raw chat dump.
+
+2. **Optional `step.*.quiz` tracking marker** (convention symmetry with the
+   research/review/finalize markers; informational only, NOT hook-gated).
+   Gated behind `QUIZ_FLAG=1` so a normal run never emits it. This clones the
+   FULL research-marker fence above — including the `MAIN_ROOT` +
+   `PIPELINE_ID` derivation and the pipeline-id sanitize call — NOT just
+   the `printf`, to avoid an empty-`PIPELINE_ID` flat-marker write:
+
+```bash
+if [ "${QUIZ_FLAG:-0}" = "1" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+    . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  else
+    . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+  fi
+  MAIN_ROOT=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+  PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-draft-plan.$TRACKING_ID}"
+  PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+  [ -n "$PIPELINE_ID" ] || { echo "tracking: empty PIPELINE_ID — refusing flat write" >&2; exit 1; }
+  printf 'completed: %s\n' "$(TZ="${TIMEZONE:-UTC}" date -Iseconds)" \
+    > "$MAIN_ROOT/.zskills/tracking/$PIPELINE_ID/step.draft-plan.$TRACKING_ID.quiz"
+fi
+```
 
 ## Phase 2 — Draft
 
@@ -624,6 +783,16 @@ After each round of review + refinement:
    | 2     | 2 issues          | 3 issues                  | 5/5      |
    | 3     | 0 issues          | 0 issues                  | Converged|
    ```
+
+   **When `QUIZ_FLAG=1`**, also add a **"Requirements captured via quiz"**
+   subsection to this Plan Quality section — a short record (a few lines)
+   noting the requirements were elicited through a quiz interview and listing
+   the key decisions/assumptions confirmed. This documents *how* the plan's
+   requirements were grounded without reproducing the conversation. Produce it
+   from the transcript-capture distillation per
+   [references/quiz.md](references/quiz.md) ("Transcript capture — distill,
+   don't dump"); distill, do NOT dump the raw chat. When `QUIZ_FLAG=0`, omit
+   this subsection entirely.
 
 2. **Write the plan file** to the output path. The user can't review what
    they can't read — plans are often too large to meaningfully summarize
