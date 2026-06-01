@@ -125,7 +125,7 @@ the Requirements appendix). Key decisions:
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — Author references/quiz.md (interaction protocol) | ✅ Done | `520aaab` | 331-line quiz.md; version 2026.06.01+ab6deb + mirror; 6773/6773 |
-| 2 — Wire SKILL.md (flag, conditional load, seam, transcript) | 🟡 In Progress | | |
+| 2 — Wire SKILL.md (flag, conditional load, seam, transcript) | ✅ Done | `ff1a562` | leading-flag QUIZ_FLAG + conditional-load seam + transcript wiring + gated step.*.quiz; version 2026.06.01+82b352 + mirror; conformance sanitize-count 4→5; 6773/6773 |
 | 3 — Mirror, version reconcile, conformance + tests | ⬚ | | |
 
 ---

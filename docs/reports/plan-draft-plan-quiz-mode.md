@@ -1,5 +1,36 @@
 # Plan Report — /draft-plan quiz mode
 
+## Phase — 2 Wire SKILL.md (flag, conditional load, seam, transcript) [UNFINALIZED]
+
+**Plan:** docs/plans/DRAFT_PLAN_QUIZ_MODE.md
+**Status:** Completed (verified)
+**Landing:** PR mode — `feat/draft-plan-quiz-mode` (chunked finish-auto; lands once after Phase 3)
+**Worktree:** /tmp/zskills-pr-draft-plan-quiz-mode
+**Commits:** `2eda56b` (mark in-progress), `ff1a562` (implementation), tracker commit (this phase)
+
+### Work Items
+| # | Item | Status | Commit |
+|---|------|--------|--------|
+| 1 | argument-hint + usage synopsis `[quiz]` | Done | ff1a562 |
+| 2 | recognized-pattern bullet (leading-flag, loads quiz.md) | Done | ff1a562 |
+| 3 | leading-flag `QUIZ_FLAG` detection (NOT match-anywhere) + tokenization | Done | ff1a562 |
+| 4 | conditional-load 3-way branch at post-research seam | Done | ff1a562 |
+| 5 | research-sequencing (quiz first → seeded fan-out → Phase 2) | Done | ff1a562 |
+| 6 | transcript-capture wiring (research summary + Plan Quality) | Done | ff1a562 |
+| 7 | gated `step.*.quiz` marker (full fence clone) | Done | ff1a562 |
+| 8 | negative + trailing-quiz examples | Done | ff1a562 |
+| 9 | version bump `2026.06.01+82b352` + mirror | Done | ff1a562 |
+
+### Verification
+- Test suite: PASSED — `Overall: 6773/6773 passed, 0 failed`; F==0, N>=6773 (clean Phase-1 prior).
+- **Leading-flag leak closed (behaviorally verified):** description-word `quiz` does NOT set the flag (`output p.md build a quiz app`→0, `plans/FOO.md make a quiz tool auto`→0, `add dark mode quiz`→0); leading/cluster cases →1; case-insensitive.
+- `QUIZ_FLAG=0` branch character-identical to `origin/main` (single-shot checkpoint unchanged); subagent-skip preserved.
+- **Test-change scrutiny:** `check_sanitize_count` `4→5` confirmed legitimate — 5 real `sanitize-pipeline-id` construct-sites (the 5th is the new gated `step.*.quiz` fence). Not test-weakening.
+- Mirror parity: `.claude/skills/draft-plan/SKILL.md` byte-identical.
+
+### Notes
+- Phase 3 (mirror reconcile / version finalize + required wiring tripwire + full conformance) remains; cron advances.
+
 ## Phase — 1 Author references/quiz.md (interaction protocol) [UNFINALIZED]
 
 **Plan:** docs/plans/DRAFT_PLAN_QUIZ_MODE.md
