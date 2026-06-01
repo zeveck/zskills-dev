@@ -1,32 +1,63 @@
 #!/bin/bash
 # tests/test-fix-issues-bootstrap.sh — behavioral fixture tests for the
-# bootstrap + row-writer + /land-pr dispatch paths added in PR #269
-# (commit c5c928c) to skills/fix-issues/SKILL.md. Closes #284.
+# bootstrap + row-writer + /land-pr dispatch paths in
+# skills/fix-issues/modes/sprint.md (originally added in PR #269 / #284).
+#
+# EXTRACT-AND-RUN (SEAM_HARDENING_REST Phase 3):
+#   This file no longer carries an EMBEDDED copy of the bootstrap +
+#   row-writer bash guarded by a loose substring-parity gate. Instead it
+#   EXTRACTS the three REAL production fences from modes/sprint.md via
+#   tests/lib/extract-fence.sh's extract_fence_between and RUNS them
+#   against a fixture worktree with a mocked `gh`. A logic change BETWEEN
+#   the (formerly fingerprinted) lines of any fence now fails these tests —
+#   not just a deleted line.
+#
+#   The three fences (verified line ranges in modes/sprint.md):
+#     - FETCH       (≈342-354, 3-space-indented → strip-indent=1):
+#         sources zskills-paths.sh, runs `gh issue list`, populates
+#         $GH_OUT / $OPEN_NUMS / $OPEN_COUNT. Run FIRST — the row-writer's
+#         python3 consumes $GH_OUT / $OPEN_NUMS (cross-fence state).
+#     - BOOTSTRAP   (≈365-399, column-0 → strip-indent=0):
+#         sources zskills-resolve-config.sh, creates ISSUES_PLAN.md from a
+#         frontmatter+header template when no tracker exists and there are
+#         open issues; clean early `exit 0` when 0 open issues.
+#     - ROW-WRITER  (≈416-448, 3-space-indented → strip-indent=1):
+#         appends `### #N — <title>` rows for residual (untracked) issues,
+#         deduped via the PCRE membership anchor (#301), title/labels parsed
+#         with Python json (#280).
+#
+#   MIXED INDENT (critical): fetch + row-writer are nested under a numbered
+#   markdown list item (3-space body indent → strip-indent=1); bootstrap is
+#   a column-0 fence (strip-indent=0). A wrong strip-indent per fence yields
+#   syntactically broken bash once the fences are concatenated and eval'd.
+#
+#   ANTI-NO-OP (review F4): the production fences source
+#   zskills-{paths,resolve-config}.sh, which RESOLVE $ZSKILLS_ISSUES_DIR
+#   from $CLAUDE_PROJECT_DIR/.claude/zskills-config.json — and would
+#   OVERWRITE any value we seed. If those source-scripts were allowed to
+#   run against an empty/absent config, $ZSKILLS_ISSUES_DIR would resolve
+#   to the repo's real plans/ (or be wrong), and the row-writer would write
+#   somewhere other than our fixture — the test would pass against a no-op.
+#   Defense: we point $CLAUDE_PROJECT_DIR at a STUB project root whose
+#   .claude/skills/update-zskills/scripts/zskills-{paths,resolve-config}.sh
+#   are inert (they set $TIMEZONE but DO NOT touch $ZSKILLS_ISSUES_DIR), and
+#   we EXPORT $ZSKILLS_ISSUES_DIR to the per-case fixture dir ourselves. The
+#   behavioral tests then ASSERT a row actually LANDS in that fixture dir
+#   (file present with expected content), not merely that the eval ran.
 #
 # Why a second test file (alongside test-fix-issues.sh):
 #   test-fix-issues.sh is regression-grep guards for the source markdown
 #   (#280 #282 #300 #301). It does NOT execute any bash from the skill.
-#   This file complements it by EXECUTING the bootstrap + row-writer
-#   logic against a fixture worktree with a mocked `gh`, asserting the
-#   produced ISSUES_PLAN.md actually contains the expected rows.
-#
-# Strategy:
-#   The bootstrap + row-writer logic is markdown-fenced bash in
-#   skills/fix-issues/SKILL.md. We cannot `source` markdown. Instead:
-#     1. We embed faithful copies of the two bash blocks (BOOTSTRAP_BLOCK,
-#        ROW_WRITER_BLOCK) inline below.
-#     2. A parity test (test_skill_md_parity) source-greps SKILL.md for
-#        the load-bearing lines, so if the source drifts the embedded
-#        copies are flagged and must be re-synced.
-#   This pattern matches the test-fix-issues.sh discipline: detect drift
-#   without re-implementing logic in a way that diverges silently.
+#   This file complements it by EXECUTING the real extracted fences against
+#   a fixture worktree with a mocked `gh`, asserting the produced
+#   ISSUES_PLAN.md actually contains the expected rows.
 #
 # Mock strategy:
-#   PATH-prefix shim — tests/fixtures/issue-284-tmp/bin/gh — writes a
-#   canned JSON blob for `gh issue list` calls. Per-case canned data
-#   lives in the per-case fixture dir; the shim reads it via env var.
-#   This is simpler than mocks/mock-gh.sh's keyed-response design and
-#   sufficient for our 4 scenarios (one `gh issue list` call per case).
+#   PATH-prefix shim writes a canned JSON blob for `gh issue list` calls.
+#   Per-case canned data lives in the per-case fixture dir; the shim reads
+#   it via env var. Sufficient for our scenarios (one `gh issue list` call
+#   per case). `gh issue close` is recorded to a call-log for the
+#   end-to-end sync-and-land smoke.
 
 set -u
 
@@ -34,6 +65,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SKILL="$REPO_ROOT/skills/fix-issues/modes/sprint.md"
 SKILL_SYNC="$REPO_ROOT/skills/fix-issues/modes/sync.md"
+
+# shellcheck source=tests/lib/extract-fence.sh
+. "$SCRIPT_DIR/lib/extract-fence.sh"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -49,6 +83,73 @@ else
   trap 'rm -rf "$SCRATCH_ROOT"' EXIT
 fi
 mkdir -p "$SCRATCH_ROOT"
+
+# ---- Extract the three REAL fences from modes/sprint.md ----------------
+# Tight prose landmarks bracket exactly one ```bash fence each (the lib's
+# preferred anchoring over fence-index counting). Per-fence strip-indent:
+#   FETCH + ROW-WRITER = 1 (3-space markdown-list indent); BOOTSTRAP = 0.
+FETCH_FENCE=$(extract_fence_between "$SKILL" \
+  'Fetch the open-issue list AND count safely' 'Bootstrap empty' 1 1) \
+  || { echo "FATAL: could not extract FETCH fence from $SKILL" >&2; exit 2; }
+BOOTSTRAP_FENCE=$(extract_fence_between "$SKILL" \
+  'Bootstrap empty' 'Row-writer for residual issues' 1 0) \
+  || { echo "FATAL: could not extract BOOTSTRAP fence from $SKILL" >&2; exit 2; }
+ROWWRITER_FENCE=$(extract_fence_between "$SKILL" \
+  'Row-writer for residual issues' 'Find gaps' 1 1) \
+  || { echo "FATAL: could not extract ROW-WRITER fence from $SKILL" >&2; exit 2; }
+
+# Sanity: each fence is non-empty and carries its signature line. Catches a
+# silent mis-extraction (empty body / wrong fence) before any test runs.
+sanity_fences() {
+  local ok=1
+  printf '%s' "$FETCH_FENCE" | grep -qF 'GH_OUT=$(gh issue list' || { echo "FATAL: FETCH fence missing GH_OUT assignment" >&2; ok=0; }
+  printf '%s' "$BOOTSTRAP_FENCE" | grep -qF 'title: Issues — Auto-Bootstrapped Tracker' || { echo "FATAL: BOOTSTRAP fence missing header template" >&2; ok=0; }
+  printf '%s' "$ROWWRITER_FENCE" | grep -qF '**Verdict:** NOT YET RESEARCHED' || { echo "FATAL: ROW-WRITER fence missing Verdict line" >&2; ok=0; }
+  [ "$ok" -eq 1 ] || exit 2
+}
+sanity_fences
+
+# ---- Stub project root: inert source-scripts -> preserve our seed ------
+# The production fences `source` zskills-paths.sh (FETCH) and
+# zskills-resolve-config.sh (BOOTSTRAP) from
+# $CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/. The REAL
+# scripts RESOLVE $ZSKILLS_ISSUES_DIR from config and would CLOBBER the
+# fixture dir we seed → the anti-no-op trap. We point $CLAUDE_PROJECT_DIR
+# at a stub root whose copies of those two scripts are inert: they export
+# $TIMEZONE (consumed by the bootstrap's `date`) and DELIBERATELY do NOT
+# assign $ZSKILLS_ISSUES_DIR, so the value the caller exports survives.
+STUB_ROOT="$SCRATCH_ROOT/stub-project"
+STUB_SCRIPTS="$STUB_ROOT/.claude/skills/update-zskills/scripts"
+mkdir -p "$STUB_SCRIPTS"
+cat > "$STUB_SCRIPTS/zskills-paths.sh" <<'STUB'
+# Test stub — inert. Production resolves $ZSKILLS_ISSUES_DIR here; the test
+# seeds it instead, so this stub must NOT assign it.
+:
+STUB
+cat > "$STUB_SCRIPTS/zskills-resolve-config.sh" <<'STUB'
+# Test stub — inert. Production resolves config vars here; the bootstrap
+# fence only consumes $TIMEZONE (for `date`), which we leave empty so the
+# fence's `${TIMEZONE:-UTC}` fallback applies. MUST NOT assign
+# $ZSKILLS_ISSUES_DIR (the test seeds it).
+TIMEZONE="${TIMEZONE:-}"
+STUB
+
+# ---- Run the three real fences in order, in the caller's subshell ------
+# Concatenation order is load-bearing: FETCH first ($GH_OUT/$OPEN_NUMS/
+# $OPEN_COUNT), then BOOTSTRAP, then ROW-WRITER (consumes $GH_OUT and
+# iterates $OPEN_NUMS). A clean `exit 0` in BOOTSTRAP (zero-open case) ends
+# this subshell exactly as the production skill exits the step. Run inside
+# `( ... )` by each test case with $ZSKILLS_ISSUES_DIR + $CLAUDE_PROJECT_DIR
+# + PATH (gh shim) exported.
+run_real_sync() {
+  eval "$FETCH_FENCE"
+  eval "$BOOTSTRAP_FENCE"
+  eval "$ROWWRITER_FENCE"
+  # Echo the row count the production skill prints after the row-writer so
+  # callers can observe it; ROW-WRITER itself does not echo (the skill's
+  # surrounding prose does). Keeping it here is harmless and mirrors intent.
+  return 0
+}
 
 # ---- gh shim ------------------------------------------------------------
 # A minimal `gh` substitute. Reads $MOCK_GH_ISSUES_JSON for the canned
@@ -78,79 +179,6 @@ SHIM
   chmod +x "$bin_dir/gh"
 }
 
-# ---- Bootstrap + row-writer logic (verbatim from SKILL.md) -------------
-# Sourced into each test case's subshell with $ZSKILLS_ISSUES_DIR set and
-# `gh` on PATH. The block is a literal paste of skills/fix-issues/SKILL.md
-# lines (the "Fetch the open-issue list" block, the "Bootstrap empty
-# $ZSKILLS_ISSUES_DIR/" block, and the "Row-writer for residual issues"
-# block — see test_skill_md_parity below for the source-grep parity gate).
-run_sync_bootstrap_and_rowwriter() {
-  # Fetch (uses gh shim).
-  GH_OUT=$(gh issue list --state open --limit 500 --json number,title,labels 2>&1) \
-    || { echo "ERROR: 'gh issue list' failed:" >&2; echo "$GH_OUT" >&2; return 1; }
-  mapfile -t OPEN_NUMS < <(echo "$GH_OUT" | grep -oE '"number":[0-9]+' | sed 's/.*://')
-  OPEN_COUNT=${#OPEN_NUMS[@]}
-
-  # Bootstrap empty $ZSKILLS_ISSUES_DIR/.
-  mkdir -p "$ZSKILLS_ISSUES_DIR"
-  EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)
-  if [ -z "$EXISTING_TRACKERS" ]; then
-    if [ "$OPEN_COUNT" -eq 0 ]; then
-      echo "Sync complete. 0 open issues, no trackers needed."
-      return 0
-    fi
-    TODAY=$(TZ=America/New_York date +%Y-%m-%d)
-    cat > "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" <<TRACKER
----
-title: Issues — Auto-Bootstrapped Tracker
-status: active
-created: $TODAY
----
-
-# Issues — Auto-Bootstrapped Tracker
-
-Created by \`/fix-issues sync\` on $TODAY because this repo had no tracker files in \`\$ZSKILLS_ISSUES_DIR/\` when sync ran.
-
-## Open Issues
-
-(rows added by sync step 5 below)
-TRACKER
-    echo "Bootstrapped $ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
-    BOOTSTRAP_NEW=yes
-  else
-    BOOTSTRAP_NEW=no
-  fi
-
-  # Row-writer for residual issues.
-  NEW_RESEARCHED_COUNT=0
-  for N in "${OPEN_NUMS[@]}"; do
-    if grep -qP "(?<![0-9])#$N(?![0-9])" \
-         "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null; then
-      continue
-    fi
-    ISSUE_META=$(printf '%s' "$GH_OUT" | python3 -c '
-import json, sys
-data = json.load(sys.stdin)
-target = int(sys.argv[1])
-for it in data:
-    if it.get("number") == target:
-        title = it.get("title", "")
-        labels = ",".join(l.get("name", "") for l in it.get("labels", []) or [])
-        sys.stdout.write(title + "\x1f" + labels)
-        break
-' "$N") || { echo "ERROR: python3 parse failed for #$N" >&2; return 1; }
-    ISSUE_TITLE_RAW="${ISSUE_META%%$'\x1f'*}"
-    ISSUE_LABELS="${ISSUE_META#*$'\x1f'}"
-    {
-      printf '\n### #%s — %s\n' "$N" "$ISSUE_TITLE_RAW"
-      printf '\n**Labels:** %s\n' "${ISSUE_LABELS:-(none)}"
-      printf '\n**Verdict:** NOT YET RESEARCHED\n'
-    } >> "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md"
-    NEW_RESEARCHED_COUNT=$((NEW_RESEARCHED_COUNT + 1))
-  done
-  echo "row-writer added $NEW_RESEARCHED_COUNT rows"
-}
-
 # ---- Per-test fixture builder ------------------------------------------
 new_case() {
   local label="$1"
@@ -158,6 +186,65 @@ new_case() {
   mkdir -p "$dir/bin" "$dir/issues"
   make_gh_shim "$dir/bin"
   printf '%s' "$dir"
+}
+
+# ---- Anti-no-op guard test ---------------------------------------------
+# Prove the harness is NOT a no-op: with $ZSKILLS_ISSUES_DIR seeded, the
+# row-writer writes a real file into the fixture dir; and if it were NOT
+# seeded, the eval would NOT write there. This is the structural defense
+# against review-F4 hollowness — a row must actually LAND.
+test_anti_noop_row_lands() {
+  local label="anti-noop"
+  local dir; dir=$(new_case "$label")
+  local issues_dir="$dir/issues"
+  local json="$dir/gh-issues.json"
+  cat > "$json" <<'JSON'
+[{"number":777,"title":"Anti-noop sentinel","labels":[{"name":"meta"}]}]
+JSON
+
+  ( set -u
+    export PATH="$dir/bin:$PATH"
+    export CLAUDE_PROJECT_DIR="$STUB_ROOT"
+    export ZSKILLS_ISSUES_DIR="$issues_dir"
+    export MOCK_GH_ISSUES_JSON="$json"
+    run_real_sync
+  ) > "$dir/out.txt" 2> "$dir/err.txt"
+  local rc=$?
+
+  local plan="$issues_dir/ISSUES_PLAN.md"
+  if [ "$rc" -ne 0 ]; then
+    fail "anti-noop: real fences run clean" "rc=$rc; err: $(cat "$dir/err.txt")"
+    return
+  fi
+  # The row MUST physically land in the seeded fixture dir.
+  if [ -f "$plan" ] && grep -qF '### #777 — Anti-noop sentinel' "$plan"; then
+    pass "anti-noop: a row actually LANDS in seeded \$ZSKILLS_ISSUES_DIR (not a no-op)"
+  else
+    fail "anti-noop: row lands in seeded dir" "no #777 row at $plan"
+    return
+  fi
+
+  # Counterfactual: WITHOUT a writable, seeded $ZSKILLS_ISSUES_DIR the
+  # eval cannot land the row. We point it at a path under a non-writable
+  # parent so `mkdir -p`/`cat >` fail — proving the assertion above is
+  # load-bearing (the test would FAIL, not silently pass, on a no-op).
+  local noop_parent="$dir/noop-parent"
+  mkdir -p "$noop_parent"
+  chmod 000 "$noop_parent"
+  ( set -u
+    export PATH="$dir/bin:$PATH"
+    export CLAUDE_PROJECT_DIR="$STUB_ROOT"
+    export ZSKILLS_ISSUES_DIR="$noop_parent/cannot-create"
+    export MOCK_GH_ISSUES_JSON="$json"
+    run_real_sync
+  ) > "$dir/noop-out.txt" 2> "$dir/noop-err.txt"
+  local noop_rc=$?
+  chmod 755 "$noop_parent"
+  if [ ! -f "$noop_parent/cannot-create/ISSUES_PLAN.md" ]; then
+    pass "anti-noop: counterfactual — no row lands when dir is unwritable (assertion is load-bearing)"
+  else
+    fail "anti-noop: counterfactual no-write" "row unexpectedly landed despite unwritable dir (rc=$noop_rc)"
+  fi
 }
 
 # ---- Test 1: bootstrap with empty issues_dir ---------------------------
@@ -170,16 +257,17 @@ test_bootstrap_empty_issues_dir() {
   local json="$dir/gh-issues.json"
   # Compact JSON (no spaces after colons) — matches real `gh issue list
   # --json ...` output. The OPEN_NUMS regex `"number":[0-9]+` requires
-  # this shape (the SKILL.md path is gh-compact-JSON-only).
+  # this shape (the sprint.md path is gh-compact-JSON-only).
   cat > "$json" <<'JSON'
 [{"number":101,"title":"First open issue","labels":[{"name":"bug"}]},{"number":202,"title":"Second issue with \"escaped\" quotes","labels":[]},{"number":303,"title":"Third issue","labels":[{"name":"meta"},{"name":"chore"}]}]
 JSON
 
   ( set -u
     export PATH="$dir/bin:$PATH"
+    export CLAUDE_PROJECT_DIR="$STUB_ROOT"
     export ZSKILLS_ISSUES_DIR="$issues_dir"
     export MOCK_GH_ISSUES_JSON="$json"
-    run_sync_bootstrap_and_rowwriter
+    run_real_sync
   ) > "$dir/out.txt" 2> "$dir/err.txt"
   local rc=$?
 
@@ -271,9 +359,10 @@ JSON
 
   ( set -u
     export PATH="$dir/bin:$PATH"
+    export CLAUDE_PROJECT_DIR="$STUB_ROOT"
     export ZSKILLS_ISSUES_DIR="$issues_dir"
     export MOCK_GH_ISSUES_JSON="$json"
-    run_sync_bootstrap_and_rowwriter
+    run_real_sync
   ) > "$dir/out.txt" 2> "$dir/err.txt"
   local rc=$?
 
@@ -283,7 +372,7 @@ JSON
   fi
   pass "dedup: exits 0"
 
-  # Per SKILL.md: the row-writer always appends to
+  # Per sprint.md: the row-writer always appends to
   # $ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md regardless of which existing
   # tracker(s) are present. So with a pre-existing MY_ISSUES.md and
   # bootstrap skipped, residual rows still land in ISSUES_PLAN.md (which
@@ -366,9 +455,10 @@ test_zero_open_issues_clean_exit() {
 
   ( set -u
     export PATH="$dir/bin:$PATH"
+    export CLAUDE_PROJECT_DIR="$STUB_ROOT"
     export ZSKILLS_ISSUES_DIR="$issues_dir"
     export MOCK_GH_ISSUES_JSON="$json"
-    run_sync_bootstrap_and_rowwriter
+    run_real_sync
   ) > "$dir/out.txt" 2> "$dir/err.txt"
   local rc=$?
 
@@ -400,7 +490,7 @@ test_zero_open_issues_clean_exit() {
 }
 
 # ---- Test 4: end-to-end sync-and-land smoke test -----------------------
-# The `/land-pr` dispatch is a Skill-tool comment in SKILL.md, not bash
+# The `/land-pr` dispatch is a Skill-tool comment in sync.md, not bash
 # we can execute. What we CAN verify executably:
 #   (a) The Step-5-sub-step-2 preamble runs: SYNC_TS/SYNC_ID derive,
 #       requires.land-pr.<id> marker is written to main_root.
@@ -438,7 +528,7 @@ test_sync_and_land_smoke() {
   local body_file="$dir/body.md"
   {
     printf '## Summary\n`/fix-issues sync` on %s updated trackers.\n\n' \
-      "$(TZ=America/New_York date +%F)"
+      "$(TZ=UTC date +%F)"
     printf '## Test plan\n- [x] Tracker diff reviewed by user before merge.\n'
   } > "$body_file"
 
@@ -556,45 +646,11 @@ RESULT2
   fi
 }
 
-# ---- Parity gate: SKILL.md vs embedded bash blocks ---------------------
-# Verify load-bearing lines from the embedded run_sync_bootstrap_and_rowwriter
-# function still match the SKILL.md source. If SKILL.md drifts, this test
-# fails and the embedded copy must be re-synced. The lines below are
-# fingerprints — not full block matches — chosen to detect:
-#   - Bootstrap glob shape (the `*_ISSUES.md` + `ISSUES_PLAN.md` pair).
-#   - Bootstrap header literal.
-#   - Row-writer membership regex (PCRE lookarounds, issue #301).
-#   - Row-writer Python json field separator (issue #280 path).
-#   - Row-writer output format (### #N — header + Labels + Verdict).
-test_skill_md_parity() {
-  local fingerprints=(
-    'EXISTING_TRACKERS=$(ls "$ZSKILLS_ISSUES_DIR"/*_ISSUES.md "$ZSKILLS_ISSUES_DIR/ISSUES_PLAN.md" 2>/dev/null | head -1)'
-    'title: Issues — Auto-Bootstrapped Tracker'
-    '## Open Issues'
-    'grep -qP "(?<![0-9])#$N(?![0-9])" \'
-    'sys.stdout.write(title + "\x1f" + labels)'
-    "printf '\\n### #%s — %s\\n' \"\$N\" \"\$ISSUE_TITLE_RAW\""
-    "printf '\\n**Verdict:** NOT YET RESEARCHED\\n'"
-  )
-  local ok=1
-  local miss=()
-  for fp in "${fingerprints[@]}"; do
-    if ! grep -qF "$fp" "$SKILL"; then
-      ok=0
-      miss+=("$fp")
-    fi
-  done
-  if [ "$ok" -eq 1 ]; then
-    pass "parity: embedded bootstrap+row-writer matches SKILL.md fingerprints"
-  else
-    fail "parity: embedded bootstrap+row-writer matches SKILL.md fingerprints" \
-      "missing in SKILL.md: ${miss[*]}"
-  fi
-}
-
 # ---- /land-pr dispatch wiring parity -----------------------------------
 # Confirm the load-bearing lines used by the end-to-end sync-and-land
-# test still appear in SKILL.md verbatim.
+# test still appear in sync.md verbatim. This is the model-layer dispatch
+# wiring (not executable bash we extract-and-run), so the parity anchor is
+# the right tool here — KEPT per SEAM_HARDENING_REST Phase 3.
 test_land_pr_dispatch_parity() {
   local hits=0
   grep -qF 'requires.land-pr.${SYNC_ID}' "$SKILL_SYNC" && hits=$((hits+1))
@@ -603,15 +659,16 @@ test_land_pr_dispatch_parity() {
   grep -qF 'Skill: { skill: "land-pr"' "$SKILL_SYNC" && hits=$((hits+1))
   grep -qF 'case "${LP[STATUS]:-}" in' "$SKILL_SYNC" && hits=$((hits+1))
   if [ "$hits" -eq 5 ]; then
-    pass "parity: /land-pr dispatch wiring (5 fingerprints) present in SKILL.md"
+    pass "parity: /land-pr dispatch wiring (5 fingerprints) present in sync.md"
   else
     fail "parity: /land-pr dispatch wiring fingerprints" "only $hits/5 hits"
   fi
 }
 
 echo "=== /fix-issues bootstrap + row-writer + /land-pr behavioral tests (issue #284) ==="
-test_skill_md_parity
+echo "    (extract-and-run: REAL fences from modes/sprint.md — SEAM_HARDENING_REST Phase 3)"
 test_land_pr_dispatch_parity
+test_anti_noop_row_lands
 test_bootstrap_empty_issues_dir
 test_dedup_preexisting_issues_md
 test_zero_open_issues_clean_exit
