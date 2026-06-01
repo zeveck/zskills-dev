@@ -2010,6 +2010,41 @@ check_fixed block-diagram/add-example "ensure-worktree invocation" 'bash "$HELPE
 check_fixed fix-issues                "ensure-worktree invocation" 'bash "$HELPER"'
 
 echo ""
+echo "=== clear-tracking recovery hint — dual-lane path (#865) ==="
+# User-facing tracking-cleanup recovery hints must NOT print a bare
+# mirror-only clear-tracking.sh path as the SOLE hint: on the plugin lane
+# there is no .claude/skills/ mirror, so the legacy path does not exist.
+# Each site that mentions clear-tracking.sh MUST also carry the
+# ${CLAUDE_PLUGIN_ROOT}-resolved form. A future edit that drops the
+# plugin-lane path (regressing to bare mirror-only) fails closed here.
+CLEAR_TRACKING_HINT_SITES=(
+  "skills/research-and-go/SKILL.md"
+  "skills/run-plan/modes/execute-phase.md"
+  "skills/run-plan/SKILL.md"
+)
+CT_HINT_CHECKED=0
+for rel in "${CLEAR_TRACKING_HINT_SITES[@]}"; do
+  f="$REPO_ROOT/$rel"
+  [ -f "$f" ] || continue
+  # Only enforce on files that actually reference clear-tracking.sh.
+  if grep -q 'clear-tracking\.sh' "$f"; then
+    CT_HINT_CHECKED=$((CT_HINT_CHECKED + 1))
+    if grep -qF '${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh' "$f"; then
+      pass "[$rel] clear-tracking.sh hint carries \${CLAUDE_PLUGIN_ROOT} (plugin-lane) path"
+    else
+      fail "[$rel] clear-tracking.sh hint missing plugin-lane path" '${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh (bare mirror-only path is wrong on the plugin lane — #865)'
+    fi
+  fi
+done
+# Guard against the site list silently going stale (files renamed away or
+# clear-tracking.sh dropped everywhere) making the assertion vacuous.
+if [ "$CT_HINT_CHECKED" -lt 2 ]; then
+  fail "[clear-tracking dual-lane] too few sites scanned ($CT_HINT_CHECKED < 2)" "clear-tracking.sh recovery-hint sites moved/removed — update CLEAR_TRACKING_HINT_SITES (#865)"
+else
+  pass "clear-tracking.sh recovery-hint dual-lane scan covered $CT_HINT_CHECKED sites"
+fi
+
+echo ""
 echo "=== ensure-worktree.sh caller contract ==="
 # Companion to the create-worktree.sh caller-contract scan above.
 # Every multi-line `bash "$HELPER" \` invocation in skills/ AND

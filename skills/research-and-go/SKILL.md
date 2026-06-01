@@ -6,7 +6,7 @@ description: >-
   adversarial review, then execute all of them autonomously via /run-plan.
   One command, walk away.
 metadata:
-  version: "2026.05.31+02562d"
+  version: "2026.05.31+bdce69"
 ---
 
 # /research-and-go \<description> — Plan and Execute Everything
@@ -354,7 +354,7 @@ the end of Step 2.
 Under chunked finish auto, `/research-and-go` Step 2 schedules a cron and
 exits -- Step 3 never runs in-session. Cleanup happens when the user (or a
 future automation) observes the pipeline is complete. Run
-`bash .claude/skills/update-zskills/scripts/clear-tracking.sh` (interactive) to wipe tracking. Do NOT
+the clear-tracking script — on the plugin install `bash ${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/clear-tracking.sh`, or the legacy mirror path `bash .claude/skills/update-zskills/scripts/clear-tracking.sh` — (interactive) to wipe tracking. Do NOT
 auto-wipe -- `requires.verify-changes.final.*` and its fulfillment marker
 are pipeline-completion records that should survive until the user confirms
 the pipeline finished.
