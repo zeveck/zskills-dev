@@ -53,6 +53,48 @@ After Phase 6 (land) succeeds for the current phase AND
 > schedule runs AFTER `post-run-invariants.sh` passes. If invariants
 > fail, do NOT schedule the next cron; invoke Failure Protocol.
 
+> **In-flight sentinel clear (issue #935) — REQUIRED before scheduling
+> the next-phase cron.** Phase 5c is a NON-terminal exit: it ends this
+> chunked turn and reschedules a cron for the next phase, but it is NOT
+> Phase 5b's already-complete no-op or Phase 6's terminal merge — the
+> only two sites that clear the same-plan in-flight sentinel written at
+> Phase 1 entry (issue #883). Without a clear here, this turn's still-fresh
+> sentinel persists into fire N+1, which runs in the SAME session with the
+> SAME `$PIPELINE_ID` (`run-plan.$TRACKING_ID`, stable across fires) — so
+> fire N+1's Phase 1 same-plan guard `check` MATCHES the stale sentinel and
+> SKIPS the whole turn ("skipping redundant cron re-fire"). The multi-phase
+> plan then silently stalls until the helper's 2h stale-sentinel escape —
+> functionally indistinguishable from a hung verifier. Between chunked
+> fires the pipeline is NOT in flight; it is idle waiting for the next cron
+> tick, so clearing the sentinel here is correct. The guard's actual job —
+> skipping a genuine OVERLAPPING re-fire (two cron ticks landing while one
+> turn is mid-execution) — is unaffected, because Phase 5c only runs when a
+> turn is ENDING (rescheduling), so the next fire writes a fresh sentinel
+> on entry that covers any later overlap. Use the EXACT canonical idiom
+> already used at the Phase 5b and Phase 6 clear sites in
+> `modes/execute-phase.md` (`$INFLIGHT_HELPER` and `$PIPELINE_ID` are both
+> resolved at Phase 1 entry — re-resolve them here the same way the other
+> clear sites do, since each chunked turn is a fresh process):
+>
+> ```bash
+> if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+>   . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+> else
+>   . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+> fi
+> PIPELINE_ID="${ZSKILLS_PIPELINE_ID:-run-plan.$TRACKING_ID}"
+> PIPELINE_ID=$(bash "$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/sanitize-pipeline-id.sh" "$PIPELINE_ID")
+> INFLIGHT_HELPER="$ZSKILLS_SKILLS_ROOT/create-worktree/scripts/check-inflight-batch.sh"
+> if [ -x "$INFLIGHT_HELPER" ]; then
+>   bash "$INFLIGHT_HELPER" clear run-plan --pipeline-id "$PIPELINE_ID" || true
+> fi
+> ```
+>
+> This clear applies to BOTH cases 1 and 2 below (next-phase-in-this-plan
+> and sub-plan-delegate-to-meta-plan) — every path that reschedules a cron
+> and ends the turn. Case 3 (all phases done) routes through Phase 5b /
+> Phase 6, whose existing terminal clears cover it.
+
 1. **NEXT incomplete phase exists in this plan**: schedule a one-shot cron
    (`recurring: false`) for `/run-plan <plan-file> finish auto` ~5 min
    from now. The next cron-fired turn will pick up the next phase. Then

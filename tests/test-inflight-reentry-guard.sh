@@ -180,6 +180,42 @@ fi
 (cd "$FIXTURE" && bash "$HELPER" clear do --pipeline-id "do.fix-readme") >/dev/null 2>&1
 
 echo ""
+echo "=== chunked finish-auto: sentinel cleared between sequential fires (issue #935) ==="
+# Behavioral simulation of two SEQUENTIAL chunked finish-auto cron fires of
+# the same multi-phase plan. Fire N writes the same-plan sentinel at Phase 1
+# entry, runs its phase, and reaches the Phase 5c chunked transition which
+# (post-#935) MUST clear the sentinel before scheduling fire N+1. Fire N+1,
+# same session + same pipeline_id (run-plan.$TRACKING_ID is stable across
+# fires), then re-enters Phase 1 and runs its same-plan guard `check`. With
+# the Phase 5c clear in place the sentinel is gone, so fire N+1 PROCEEDS
+# (rc=1) and executes the next phase. Without it the stale-fresh sentinel
+# matches → fire N+1 SKIPS (rc=0) → the plan silently stalls until the 2h
+# escape. We assert the cleared-between-fires behavior the fix guarantees.
+CHUNK_SID="TEST-SID-935"
+CHUNK_PID="run-plan.multi-phase-plan"
+# --- Fire N: Phase 1 entry writes the sentinel ---
+(cd "$FIXTURE" && bash "$HELPER" write run-plan --pipeline-id "$CHUNK_PID" --session-id "$CHUNK_SID")
+# Sanity: a re-fire BEFORE Phase 5c clears (i.e. a genuine overlapping fire
+# while fire N is still mid-turn) MUST still skip — the guard's real job.
+(cd "$FIXTURE" && bash "$HELPER" check run-plan --session-id "$CHUNK_SID" --pipeline-id "$CHUNK_PID" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" -eq 0 ]; then
+  pass "overlapping re-fire (before Phase 5c clear) still skips — guard intact (rc=0)"
+else
+  fail "overlapping re-fire (before Phase 5c clear) still skips" "got rc=$rc"
+fi
+# --- Phase 5c chunked transition: clears the sentinel before rescheduling ---
+(cd "$FIXTURE" && bash "$HELPER" clear run-plan --pipeline-id "$CHUNK_PID")
+# --- Fire N+1: Phase 1 same-plan guard check — must PROCEED, not skip ---
+(cd "$FIXTURE" && bash "$HELPER" check run-plan --session-id "$CHUNK_SID" --pipeline-id "$CHUNK_PID" >/dev/null 2>&1)
+rc=$?
+if [ "$rc" -eq 1 ]; then
+  pass "fire N+1 proceeds after Phase 5c clear — no silent stall (rc=1)"
+else
+  fail "fire N+1 proceeds after Phase 5c clear — no silent stall (rc=1)" "got rc=$rc (sentinel persisted → fire N+1 would SKIP, #935 deadlock)"
+fi
+
+echo ""
 echo "=== call-site wiring assertions ==="
 
 assert_wired() {
@@ -213,6 +249,18 @@ else
 fi
 assert_wired "run-plan execute-phase.md: clear w/ --pipeline-id" "$RP_EXEC" \
   '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
+
+# /run-plan references/finish-mode.md — Phase 5c chunked-transition clear
+# (issue #935). SKILL.md Phase 5c and modes/execute-phase.md Phase 5c both
+# delegate to references/finish-mode.md, which MUST clear the same-plan
+# sentinel before rescheduling the next-phase cron — mirroring the Phase 5b
+# / Phase 6 terminal clears — so a sequential chunked fire N+1 doesn't match
+# the stale-fresh sentinel and silently skip.
+RP_FINISH="$REPO_ROOT/skills/run-plan/references/finish-mode.md"
+assert_wired "run-plan finish-mode.md: Phase 5c clear w/ --pipeline-id (#935)" "$RP_FINISH" \
+  '"\$INFLIGHT_HELPER" clear run-plan --pipeline-id "\$PIPELINE_ID"'
+assert_wired "run-plan finish-mode.md: #935 annotation on Phase 5c clear" "$RP_FINISH" \
+  'issue #935'
 
 # /do mode files — entry-guard wiring.
 DO_PR="$REPO_ROOT/skills/do/modes/pr.md"
@@ -250,6 +298,7 @@ for pair in \
   "create-worktree/scripts/check-inflight-batch.sh" \
   "run-plan/SKILL.md" \
   "run-plan/modes/execute-phase.md" \
+  "run-plan/references/finish-mode.md" \
   "do/SKILL.md" \
   "do/modes/pr.md" \
   "do/modes/worktree.md" \
