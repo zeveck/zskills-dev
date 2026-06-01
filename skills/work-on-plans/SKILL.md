@@ -1,32 +1,37 @@
 ---
 name: work-on-plans
 disable-model-invocation: true
-argument-hint: "(no args = list ready queue) | [N|all] [phase|finish] [continue] | default <phase|finish> | every SCHEDULE [phase|finish] | stop | next"
+argument-hint: "N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next | (no args = list ready queue)"
 description: >-
   Batch-execute the prioritized ready queue from the dashboard: reads
   .zskills/monitor-state.json (plans.ready) and dispatches /run-plan auto
-  [finish] per entry, honoring each plan's queued mode. Also manages the
-  queue (add/rank/remove/default) and recurring schedules. Mirrors
-  /fix-issues for bugs.
+  [finish] per entry, honoring each plan's queued mode. N|all composes with
+  every SCHEDULE + now for the queue-worker pattern (N plans per fire). Also
+  manages the queue (add/rank/remove/default) and recurring schedules.
+  Mirrors /fix-issues for bugs.
 metadata:
-  version: "2026.05.31+582e84"
+  version: "2026.06.01+af83cd"
 ---
 
-# /work-on-plans — Batch Plan Executor
+# /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
 
 Dispatches `/run-plan <plan> auto [finish]` per entry in the
 prioritized ready queue from the monitor dashboard. Mirrors
-`/fix-issues` for bugs but operates on plans instead.
+`/fix-issues` for bugs but operates on plans instead. The count
+(`N`/`all`) **composes** with `every SCHEDULE` + `now`: each recurring
+fire drains the captured count of plans (the queue-worker pattern —
+`/work-on-plans 1 every 1h finish now` runs one plan now and one per
+hour thereafter), exactly as `/fix-issues N every SCHEDULE now` does.
 
 **Ultrathink throughout.** Use careful, thorough reasoning at every
 step.
 
 > **Phase note.** Phases 1 and 3 are landed: read-only listing
-> (`(no args)`, `next`), execute slots (`N|all [phase|finish]
-> [continue]`), and the queue-mutation + scheduling subcommands
-> (`add`, `rank`, `remove`, `default`, `every`, `stop`). All
-> read-modify-write paths use the cross-process flock on
-> `.zskills/monitor-state.json.lock` (Shared Schemas).
+> (`(no args)`, `next`), the dispatch path (`N|all [phase|finish]
+> [every SCHEDULE] [now] [continue]`), and the queue-mutation +
+> scheduling subcommands (`add`, `rank`, `remove`, `default`,
+> `every`, `stop`). All read-modify-write paths use the cross-process
+> flock on `.zskills/monitor-state.json.lock` (Shared Schemas).
 
 ## Top-level invariant
 
@@ -48,15 +53,33 @@ verify you have access to the Agent tool (a top-level marker):
 ```
 /work-on-plans                       # list ready queue (read-only)
 /work-on-plans next                  # print active schedule (read-only)
-/work-on-plans N [phase|finish] [continue]
-/work-on-plans all [phase|finish] [continue]
+/work-on-plans N    [phase|finish] [every SCHEDULE] [now] [continue] [--force]
+/work-on-plans all  [phase|finish] [every SCHEDULE] [now] [continue] [--force]
 /work-on-plans add <slug> [pos]
 /work-on-plans rank <slug> <pos>
 /work-on-plans remove <slug>
 /work-on-plans default <phase|finish>
-/work-on-plans every SCHEDULE [phase|finish] [--force]
 /work-on-plans stop
 ```
+
+`N`/`all` **compose** with `every SCHEDULE` + `now` — they are no
+longer mutually exclusive (this is the parity fix with `/fix-issues`,
+issue #906):
+
+- **No `every`** → one-shot dispatch of the count, exactly as before.
+- **`every SCHEDULE` without `now`** → register the recurring cron
+  only; do NOT dispatch this invocation.
+- **`every SCHEDULE` with `now`** → register the recurring cron AND
+  dispatch the count immediately.
+
+The recurring cron prompt **carries the count**:
+`Run /work-on-plans $N <mode> every $SCHEDULE now` (mirrors
+`/fix-issues`'s `sprint.md` count-carrying cron). Each fire drains the
+captured `N` plans — NOT unconditional `all` — so "1 plan per hour"
+(`/work-on-plans 1 every 1h finish now`) is now expressible. (Bare
+`every SCHEDULE` with no leading count still registers a recurring
+schedule; absent an explicit count it drains `all` per fire, as
+before.)
 
 **Parsing rules.** Treat `$ARGUMENTS` as whitespace-separated tokens.
 Trim and lowercase each (slugs come pre-lowercased per Shared Schemas).
@@ -70,30 +93,39 @@ Trim and lowercase each (slugs come pre-lowercased per Shared Schemas).
 3. **First token is `stop` → cancel any active `/work-on-plans`
    cron** (see Step 7 — `stop`).
 
-4. **First token matches `^[0-9]+$` → execute mode (N).** Set `N` to
+4. **First token matches `^[0-9]+$` → dispatch path (N).** Set `N` to
    that integer.
 
-5. **First token is `all` → execute mode (all).** Set `N` to the count
-   of `plans.ready` after sync (resolved at dispatch time).
+5. **First token is `all` → dispatch path (all).** Set `ALL_MODE=1`;
+   `N` resolves to the count of `plans.ready` after sync (at dispatch
+   time, in `modes/execute.md`).
 
 6. **First token is one of `add`, `rank`, `remove`, `default`,
    `every`** → mutating subcommand (see Step 7 — Mutating
    subcommands). Subcommand keywords match slot 1 literally. A slot-1
-   value matching `^[0-9]+$` or `^all$` continues to route to execute
-   mode (rules 4–5).
+   value matching `^[0-9]+$` or `^all$` routes to the dispatch path
+   (rules 4–5). Bare `every` as the first token (no leading count) is
+   still the recurring-schedule subcommand and drains `all` per fire.
 
 7. **First token is anything else → usage error.** Print:
 
-   > Usage: /work-on-plans (no args) | next | stop | N [phase|finish] [continue] | all [phase|finish] [continue] | add <slug> [pos] | rank <slug> <pos> | remove <slug> | default <phase|finish> | every SCHEDULE [phase|finish] [--force]
+   > Usage: /work-on-plans (no args) | next | stop | N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | add <slug> [pos] | rank <slug> <pos> | remove <slug> | default <phase|finish>
 
    Exit 2.
 
-In execute mode, the remaining tokens are recognised by name (order
-insensitive, no positional meaning):
+On the dispatch path (rules 4–5), the remaining tokens are recognised
+by name (order insensitive, no positional meaning):
 
 - `phase` → `MODE_OVERRIDE=phase` (mutex with `finish`)
 - `finish` → `MODE_OVERRIDE=finish` (mutex with `phase`)
 - `continue` → `CONTINUE_ON_FAILURE=1`
+- `every` followed by a SCHEDULE expression → `SCHEDULE` captured;
+  register a recurring cron (see Step 7 — `every`). **Composes with
+  `N`/`all`** — the count is carried into the cron prompt.
+- `now` → `RUN_NOW=1`. With `every`, dispatch this invocation AND
+  schedule. Without `every`, `now` is a no-op (the default is to run).
+- `--force` → `FORCE=1` (take over a foreign live schedule; relevant
+  only with `every`).
 - anything else → usage error (same message as above)
 
 If both `phase` and `finish` appear, error:
@@ -101,6 +133,20 @@ If both `phase` and `finish` appear, error:
 > Usage: /work-on-plans … : `phase` and `finish` are mutually exclusive.
 
 Order-insensitive: `N finish continue` ≡ `N continue finish`.
+
+**Composed-form routing.** When `every` is present on the dispatch
+path, route as follows (mirrors `/fix-issues` Phase 0):
+
+1. **Register the recurring cron FIRST** — follow Step 7's `every`
+   procedure (`subcommands/add-rank-remove.md`), passing the captured
+   `N`/`ALL_MODE` so the cron prompt carries the count
+   (`Run /work-on-plans $N <mode> every $SCHEDULE now`). When
+   `ALL_MODE=1`, the cron prompt carries `all` instead of an integer.
+2. **Then decide whether to dispatch this invocation:**
+   - `now` present → fall through to the dispatch path
+     (`modes/execute.md`) and drain the count immediately.
+   - `now` absent → **exit after registration.** Do NOT dispatch now;
+     the cron fires on schedule.
 
 **The mode override is per-batch only.** It does NOT mutate the saved
 `mode` on individual ready-queue entries or the top-level
@@ -407,9 +453,10 @@ end-to-end**. Do not proceed until you have read the file.
 
 | Condition | Reference file |
 |-----------|----------------|
-| No args, or `next` | [modes/execute.md](modes/execute.md) — Steps 3-6 (read-only listing + execute loop + sprint completion) |
-| Integer `N` or `all` (execute mode) | [modes/execute.md](modes/execute.md) — Steps 3-6 (read-only listing + execute loop + sprint completion) |
-| `add`, `rank`, `remove`, `default`, `every`, `stop` | [subcommands/add-rank-remove.md](subcommands/add-rank-remove.md) — Step 7 (mutating subcommands) |
+| No args, or `next` | [modes/execute.md](modes/execute.md) — Steps 3-6 (read-only listing + dispatch loop + sprint completion) |
+| Integer `N` or `all`, **with `every`** | [subcommands/add-rank-remove.md](subcommands/add-rank-remove.md) — Step 7 `every` (register the count-carrying cron) FIRST, then [modes/execute.md](modes/execute.md) Steps 3-6 only if `now` is present |
+| Integer `N` or `all`, no `every` (one-shot dispatch) | [modes/execute.md](modes/execute.md) — Steps 3-6 (read-only listing + dispatch loop + sprint completion) |
+| Bare `add`, `rank`, `remove`, `default`, `every`, `stop` | [subcommands/add-rank-remove.md](subcommands/add-rank-remove.md) — Step 7 (mutating subcommands) |
 
 Both reference files assume all variables from Steps 0-2 are already
 set (`$MAIN_ROOT`, `$MONITOR_STATE`, `$MONITOR_LOCK`, `$WORK_STATE`,
@@ -461,6 +508,18 @@ set (`$MAIN_ROOT`, `$MONITOR_STATE`, `$MONITOR_LOCK`, `$WORK_STATE`,
   `work-on-plans-state.json`. Each cron fire dispatches with the
   captured mode, NOT live `default_mode`. To change mode, `stop`
   and re-register.
+- **Count-carrying cron (issue #906).** When `every` composes with a
+  leading `N`/`all`, the count is persisted as `schedule_count` in
+  `work-on-plans-state.json` and baked into the cron prompt
+  (`Run /work-on-plans $N <mode> every $SCHEDULE now`), mirroring
+  `/fix-issues`'s `sprint.md:53`. Each fire drains that many plans —
+  NOT unconditional `all`. Bare `every` (no leading count) carries
+  `all` per fire, as before.
+- **Prune on completion (issue #906).** When a dispatched `/run-plan`
+  reports `status: complete` for a plan, remove that slug from
+  `plans.ready` in `monitor-state.json` — through `with_monitor_lock`
+  + atomic `os.replace`, the same locked read-modify-write path the
+  mutating subcommands use (a merged plan must not linger in `ready`).
 - **Finish-mode SCHEDULE ≥ 1h.** `/work-on-plans every <s> finish`
   refuses sub-hour intervals. Phase mode has no minimum.
 - **Same-session re-registration is idempotent.** `every` from the

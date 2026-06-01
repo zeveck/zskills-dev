@@ -251,9 +251,14 @@ fi
 # --- Test 4: argument-hint frontmatter advertises core surface ----------
 # Queue-mutation subcommands (add/rank/remove) were moved to the detail
 # docs page to shorten the hint under 120 chars. The hint still covers
-# the execution, default, schedule, and control subcommands.
-if grep -q 'argument-hint:.*default.*every SCHEDULE.*stop' "$SKILL"; then
-  pass "argument-hint advertises core surface (default/every/stop)"
+# the dispatch, schedule, default, and control subcommands. Post-#906
+# `every SCHEDULE` composes with the leading N|all count (it is no
+# longer a standalone subcommand listed beside default), so the order
+# is `... every SCHEDULE ... default ... stop`.
+if grep -q 'argument-hint:.*every SCHEDULE' "$SKILL" \
+   && grep -q 'argument-hint:.*default' "$SKILL" \
+   && grep -q 'argument-hint:.*stop' "$SKILL"; then
+  pass "argument-hint advertises core surface (every SCHEDULE/default/stop)"
 else
   fail "argument-hint missing one or more core subcommands"
 fi
@@ -560,6 +565,135 @@ if [ "$ec" -eq 2 ]; then
   pass "add rejects invalid slug (uppercase/punctuation)"
 else
   fail "add invalid slug (ec=$ec out=$out)"
+fi
+
+# --- Test 24: #906 combined N+every+now grammar documented -------------
+# The skill dir must show N|all composing with every+now (no longer
+# mutually exclusive), and the parser must recognise `now` + `every`
+# on the dispatch path.
+if grep -rq 'N|all .*\[every SCHEDULE\] \[now\]' "$SKILL_DIR" \
+   && grep -rq 'now. → .RUN_NOW=1' "$SKILL_DIR" \
+   && grep -rq 'Composes with' "$SKILL_DIR" \
+   && grep -rq 'compose' "$SKILL_DIR"; then
+  pass "#906 skill dir documents N|all composing with every SCHEDULE + now"
+else
+  fail "#906 combined-grammar documentation missing"
+fi
+
+# --- Test 25: #906 count-carrying recurring cron prompt shape ----------
+# The cron prompt must carry the count and `now` (mirrors
+# fix-issues/modes/sprint.md:53 CRON_PROMPT). Must NOT be the old
+# count-less `Run /work-on-plans all <mode>` form.
+if grep -rq 'Run /work-on-plans <COUNT_TOKEN> <schedule_mode> every <SCHEDULE> now' "$SKILL_DIR" \
+   && grep -rq 'Run /work-on-plans 1 finish every 1h now' "$SKILL_DIR" \
+   && grep -rq 'schedule_count' "$SKILL_DIR"; then
+  pass "#906 cron prompt carries count + now (queue-worker parity)"
+else
+  fail "#906 count-carrying cron prompt shape missing"
+fi
+# Negative: the old count-less cron prompt must be gone.
+if grep -rq '^Run /work-on-plans all <schedule_mode>$' "$SKILL_DIR"; then
+  fail "#906 stale count-less cron prompt 'Run /work-on-plans all <schedule_mode>' still present"
+else
+  pass "#906 old count-less cron prompt removed"
+fi
+
+# --- Test 26: #906 de-collided 'execute mode' terminology --------------
+# No internal use of "execute mode" / "execution mode" as the dispatch
+# path LABEL (collides with CLAUDE.md Execution Modes = landing modes).
+# The single explanatory cross-reference to CLAUDE.md "Execution Modes"
+# (the de-collision rationale itself) is exempt — it names the colliding
+# concept to explain WHY the label was renamed, it does not use it as a
+# label. Filter those rationale lines (they mention CLAUDE.md) out.
+offending=$(grep -rni 'execut\(e\|ion\) mode' "$SKILL_DIR" \
+  | grep -vi 'CLAUDE.md' || true)
+if [ -n "$offending" ]; then
+  fail "#906 'execute/execution mode' label still present: $offending"
+else
+  pass "#906 dispatch-path label de-collided from 'Execution Modes'"
+fi
+
+# --- Test 27: #906 prune-on-complete logic (functional) ----------------
+# Mirror the prune_completed embed from modes/execute.md: a slug is
+# dropped from plans.ready ONLY when its plan file frontmatter is
+# status: complete. Drive it directly against a fixture.
+prune_completed_test() {
+  local state="$1" slug="$2" plan_file="$3"
+  python3 - "$state" "$slug" "$plan_file" <<'PY'
+import json, os, re, sys, tempfile, datetime
+path, slug, plan_file = sys.argv[1], sys.argv[2], sys.argv[3]
+status = ''
+if plan_file and os.path.exists(plan_file):
+    text = open(plan_file, encoding='utf-8', errors='replace').read()
+    if text.startswith('---'):
+        end = text.find('\n---', 3)
+        if end >= 0:
+            m = re.search(r'^status:\s*([^\n]+)', text[3:end], re.MULTILINE)
+            if m:
+                status = m.group(1).strip().strip('"').strip("'").lower()
+if status != 'complete':
+    sys.exit(0)
+doc = json.load(open(path))
+ready = doc.get('plans', {}).get('ready', [])
+new_ready = [e for e in ready
+             if not ((isinstance(e, dict) and e.get('slug') == slug) or e == slug)]
+if len(new_ready) == len(ready):
+    sys.exit(0)
+doc.setdefault('plans', {})['ready'] = new_ready
+doc['updated_at'] = datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+tmp = tempfile.NamedTemporaryFile('w', delete=False,
+    dir=os.path.dirname(path), prefix='.monitor-state.', suffix='.tmp')
+json.dump(doc, tmp, indent=2); tmp.write('\n'); tmp.close()
+os.replace(tmp.name, path)
+print(f"/work-on-plans: pruned completed plan '{slug}' from ready queue.")
+PY
+}
+
+F=$(make_fixture t27)
+seed_empty "$F/.zskills/monitor-state.json"
+skill_add "$F/.zskills/monitor-state.json" done-plan >/dev/null
+skill_add "$F/.zskills/monitor-state.json" todo-plan >/dev/null
+# done-plan landed (status: complete); todo-plan still active.
+printf -- '---\nstatus: complete\n---\n# done\n' > "$F/plans/done-plan.md"
+printf -- '---\nstatus: ready\n---\n# todo\n' > "$F/plans/todo-plan.md"
+# Prune the completed one through the locked path.
+out=$(with_lock "$F/.zskills/monitor-state.json.lock" \
+  prune_completed_test "$F/.zskills/monitor-state.json" done-plan "$F/plans/done-plan.md" 2>&1)
+ready=$(readq "$F/.zskills/monitor-state.json")
+if [ "$ready" = "todo-plan" ] && echo "$out" | grep -q "pruned completed plan 'done-plan'"; then
+  pass "#906 prune-on-complete drops a status:complete plan from ready (locked)"
+else
+  fail "#906 prune-on-complete (ready=$ready out=$out)"
+fi
+
+# --- Test 28: #906 prune is a no-op for a NOT-complete plan ------------
+out=$(with_lock "$F/.zskills/monitor-state.json.lock" \
+  prune_completed_test "$F/.zskills/monitor-state.json" todo-plan "$F/plans/todo-plan.md" 2>&1)
+ec=$?
+ready=$(readq "$F/.zskills/monitor-state.json")
+if [ "$ec" -eq 0 ] && [ "$ready" = "todo-plan" ] && [ -z "$out" ]; then
+  pass "#906 prune-on-complete leaves a non-complete plan in ready"
+else
+  fail "#906 prune no-op for active plan (ec=$ec ready=$ready out=$out)"
+fi
+
+# --- Test 29: #906 prune embed uses with_monitor_lock + os.replace -----
+# Watch-item (b): the prune write MUST go through the flock helper and
+# the atomic os.replace, same as the mutating subcommands.
+EXEC_MD="$SKILL_DIR/modes/execute.md"
+if grep -q 'with_monitor_lock prune_completed' "$EXEC_MD" \
+   && grep -q 'os.replace(tmp.name, path)' "$EXEC_MD" \
+   && grep -q 'def prune_completed\|prune_completed()' "$EXEC_MD"; then
+  pass "#906 prune embed wraps in with_monitor_lock + atomic os.replace"
+else
+  fail "#906 prune embed missing lock/atomic-write guards"
+fi
+
+# --- Test 30: #906 argument-hint advertises the composed form ----------
+if grep -q 'argument-hint:.*N|all .*\[every SCHEDULE\] \[now\]' "$SKILL"; then
+  pass "#906 argument-hint advertises N|all [every SCHEDULE] [now] composition"
+else
+  fail "#906 argument-hint missing composed-form surface"
 fi
 
 echo ""
