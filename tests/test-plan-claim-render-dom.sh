@@ -480,6 +480,92 @@ function collectText(node) {
 }
 
 // ------------------------------------------------------------------
+// T3.11.#912.a — STALE claim (claim.stale=true): card is NOT hard-locked.
+// The owning pipeline is dead (claim >6h old). The card must stay
+// draggable + aria-enabled, the X must be re-enabled with its existing
+// plan-discard action, and the chip must carry the claim-chip--stale
+// modifier + a "click to release" tooltip. This is the #912 recovery
+// affordance — the user can finally dismiss the dead card.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "deadpipe", title: "Dead pipeline", status: "active",
+    phase_count: 5, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.deadpipe",
+      started_at: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 24 * 3600,
+      pipeline_short: "dp-abc",
+      stale: true,
+    },
+  };
+  const card = buildPlanCard(plan, "deadpipe", "ready", "phase");
+  // Card NOT hard-locked: aria-enabled, still draggable, no claim-locked.
+  expect(card.getAttribute("aria-disabled"), null,
+    "#912: stale claim card is NOT aria-disabled (recovery enabled)");
+  expect(card.getAttribute("draggable"), "true",
+    "#912: stale claim card retains draggable='true'");
+  expectTrue(!/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#912: stale claim card has NO claim-locked class");
+  // Chip still rendered, with the stale modifier + release tooltip.
+  const chip = findByClass(card, "claim-chip");
+  expectTrue(chip, "#912: claim chip still rendered for stale claim");
+  expectTrue(chip && /claim-chip--stale/.test(chip.className),
+    "#912: stale chip carries claim-chip--stale modifier");
+  expectTrue(chip && chip.textContent.indexOf("stale") >= 0,
+    "#912: stale chip text reads as stale (dead pipeline)");
+  expectTrue(chip && /click to release/.test(chip.getAttribute("title") || ""),
+    "#912: stale chip tooltip offers 'click to release'");
+  // X is re-enabled with the existing plan-discard action.
+  const rmBtn = findByClass(card, "remove-btn");
+  expectTrue(rmBtn, "#912: X (remove-btn) rendered on stale claim card");
+  if (rmBtn) {
+    expect(rmBtn.getAttribute("disabled"), null,
+      "#912: stale claim X is ENABLED (no disabled attr)");
+    expect(rmBtn.getAttribute("aria-disabled"), null,
+      "#912: stale claim X has no aria-disabled");
+    expect(rmBtn.getAttribute("data-action"), "plan-discard",
+      "#912: stale claim X retains data-action='plan-discard' (release path)");
+    expectTrue(!/(^|\s)claim-locked(\s|$)/.test(rmBtn.className),
+      "#912: stale claim X has no claim-locked class");
+  }
+}
+
+// ------------------------------------------------------------------
+// T3.11.#912.b — FRESH claim (claim.stale=false): the #884/#904 hard-lock
+// is UNCHANGED. X disabled, card aria-disabled + claim-locked. This is the
+// regression guard ensuring the stale branch doesn't loosen live claims.
+// ------------------------------------------------------------------
+{
+  const plan = {
+    slug: "livepipe", title: "Live pipeline", status: "active",
+    phase_count: 5, phases_done: 2,
+    claim: {
+      pipeline_id: "run-plan.livepipe",
+      started_at: new Date(Date.now() - 60000).toISOString(),
+      current_phase: "Phase 3",
+      age_seconds: 60,
+      pipeline_short: "lv-abc",
+      stale: false,
+    },
+  };
+  const card = buildPlanCard(plan, "livepipe", "ready", "phase");
+  expect(card.getAttribute("aria-disabled"), "true",
+    "#912: fresh (non-stale) claim card stays aria-disabled (hard-locked)");
+  expectTrue(/(^|\s)claim-locked(\s|$)/.test(card.className),
+    "#912: fresh claim card retains claim-locked class");
+  const rmBtn = findByClass(card, "remove-btn");
+  expectTrue(rmBtn, "#912: X rendered on fresh claim card");
+  if (rmBtn) {
+    expect(rmBtn.getAttribute("disabled"), "disabled",
+      "#912: fresh claim X stays disabled (hard-lock unchanged)");
+    expect(rmBtn.getAttribute("data-action"), null,
+      "#912: fresh claim X has NO data-action (hard-lock unchanged)");
+  }
+}
+
+// ------------------------------------------------------------------
 // T3.11.#874.a — Ready col + claim.dispatch_mode='finish' → mode chip
 // LOCKED, regardless of entryMode/defaultMode. This is the core
 // regression gate: post wrapper-idle, the chip MUST still read locked.

@@ -143,11 +143,13 @@ class ReadPlanClaimsTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short", "dispatch_mode"},
+             "age_seconds", "pipeline_short", "dispatch_mode", "stale"},
         )
         # dispatch_mode (#874) is on the allow-list. Absent in the
         # source claim → surfaces as None.
         self.assertIsNone(c["dispatch_mode"])
+        # stale (#912) is on the allow-list. A fresh claim → not stale.
+        self.assertFalse(c["stale"])
 
     def test_dispatch_mode_finish_persists(self) -> None:
         # #874: claim.json carrying dispatch_mode="finish" must surface
@@ -252,6 +254,101 @@ class ReadPlanClaimsTests(unittest.TestCase):
         # age_seconds=None (renderer falls back to '?').
         self.assertIsNone(out["bad-started"]["age_seconds"])
 
+    # ------------------------------------------------------------------
+    # Staleness gate (#912) — dead-pipeline claim recovery.
+    # ------------------------------------------------------------------
+
+    def test_stale_claim_tagged_when_old(self) -> None:
+        # A claim whose owning /run-plan pipeline died mid-flight leaves
+        # claim.json on disk indefinitely. age > PLAN_CLAIM_STALE_SECONDS
+        # (6h) → stale: True so the renderer offers an in-UI release path
+        # instead of the permanent hard-lock. ~24h ago is well past 6h.
+        now = datetime.now(timezone.utc)
+        old_started = now - timedelta(hours=24)
+        _write_plan_claim(self.claims, "dead-pipeline", {
+            "schema_version": 1,
+            "kind": "run-plan",
+            "slug": "dead-pipeline",
+            "pipeline_id": "run-plan.dead-pipeline",
+            "started_at": old_started.isoformat(timespec="seconds"),
+            "current_phase": "Phase 3",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        c = out["dead-pipeline"]
+        self.assertTrue(c["stale"])
+        # The card must still render (NOT filtered out) so the user can
+        # dismiss it.
+        self.assertIsNotNone(c["age_seconds"])
+        self.assertGreater(c["age_seconds"], collect.PLAN_CLAIM_STALE_SECONDS)
+
+    def test_fresh_claim_not_stale(self) -> None:
+        # A just-started claim (started_at=now) is a LIVE pipeline; it must
+        # keep the #884/#904 hard-lock (stale: False).
+        now = datetime.now(timezone.utc)
+        _write_plan_claim(self.claims, "live-pipeline", {
+            "schema_version": 1,
+            "kind": "run-plan",
+            "slug": "live-pipeline",
+            "pipeline_id": "run-plan.live-pipeline",
+            "started_at": now.isoformat(timespec="seconds"),
+            "current_phase": "Phase 1",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertFalse(out["live-pipeline"]["stale"])
+
+    def test_claim_just_under_threshold_not_stale(self) -> None:
+        # Boundary: a claim a few minutes under 6h is still live.
+        now = datetime.now(timezone.utc)
+        started = now - timedelta(
+            seconds=collect.PLAN_CLAIM_STALE_SECONDS - 300)
+        _write_plan_claim(self.claims, "near-threshold", {
+            "schema_version": 1,
+            "kind": "run-plan",
+            "slug": "near-threshold",
+            "pipeline_id": "run-plan.near-threshold",
+            "started_at": started.isoformat(timespec="seconds"),
+            "current_phase": "Phase 5",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertFalse(out["near-threshold"]["stale"])
+
+    def test_unparseable_started_at_fails_toward_not_stale(self) -> None:
+        # Fail-toward-not-stale: an unparseable started_at yields
+        # age_seconds=None, which must NOT be treated as stale — otherwise
+        # a live claim with a transiently-malformed timestamp would be
+        # wrongly offered for release.
+        _write_plan_claim(self.claims, "bad-age", {
+            "schema_version": 1,
+            "kind": "run-plan",
+            "slug": "bad-age",
+            "pipeline_id": "run-plan.bad-age",
+            "started_at": "garbage-not-iso",
+            "current_phase": "Phase 1",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertIsNone(out["bad-age"]["age_seconds"])
+        self.assertFalse(out["bad-age"]["stale"])
+
+    def test_missing_started_at_fails_toward_not_stale(self) -> None:
+        # A claim with no started_at at all → age None → not stale.
+        _write_plan_claim(self.claims, "no-started", {
+            "schema_version": 1,
+            "kind": "run-plan",
+            "slug": "no-started",
+            "pipeline_id": "run-plan.no-started",
+            "current_phase": "Phase 1",
+        })
+        out = collect._read_plan_claims(self.tmp)
+        self.assertIsNone(out["no-started"]["age_seconds"])
+        self.assertFalse(out["no-started"]["stale"])
+
+    def test_null_metadata_entry_not_stale(self) -> None:
+        # Sweep-while-flush race (dir present, claim.json absent) → null
+        # metadata entry with stale: False (no age to judge).
+        _mkdir_no_claim(self.claims, "pending")
+        out = collect._read_plan_claims(self.tmp)
+        self.assertFalse(out["pending"]["stale"])
+
 
 class AnnotatePlansQueueGatingTests(unittest.TestCase):
     """R2.6 mirror — the 2-arg fixture branch MUST NOT call _read_plan_claims."""
@@ -313,8 +410,10 @@ class AnnotatePlansQueueGatingTests(unittest.TestCase):
         self.assertEqual(
             set(c.keys()),
             {"pipeline_id", "started_at", "current_phase",
-             "age_seconds", "pipeline_short", "dispatch_mode"},
+             "age_seconds", "pipeline_short", "dispatch_mode", "stale"},
         )
+        # stale (#912) threads through onto plan["claim"] from the collector.
+        self.assertIn("stale", c)
         # Plan beta has no claim attached.
         self.assertNotIn("claim", plans[1])
 

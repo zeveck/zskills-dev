@@ -1068,11 +1068,29 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   // `plan && plan.claim`. When set we (1) drop draggable + add a
   // claim-lock tooltip naming the in-flight pipeline short id, and
   // (2) render the X disabled + dimmed with the same tooltip (below).
-  const isClaimLocked = !!(plan && plan.claim);
+  // Issue #912 — stale-claim recovery. A claim whose owning /run-plan
+  // pipeline died mid-flight (kill -9, OOM, crash) leaves claim.json on
+  // disk indefinitely. collect.py tags such claims `stale: true` (age >
+  // 6h). A stale claim must NOT hard-lock the card: the user needs an
+  // in-UI path to dismiss the dead card from their queue (the X they'd
+  // click is itself disabled by the lock — a UI trap with zero recovery).
+  // So `isClaimLocked` excludes stale claims: a stale claim leaves the
+  // card draggable + the X enabled (its existing `plan-discard` action
+  // fires, moving the card to Discarded). A non-stale (live) claim keeps
+  // the #884/#904 hard-lock unchanged. The on-disk claim.json persists
+  // until shell cleanup — the dashboard is read-only collectors + thin JS
+  // with no server endpoint to delete claim files (same constraint as
+  // #884) — but the card leaves the user's active queue immediately.
+  const isClaimStale = !!(plan && plan.claim && plan.claim.stale);
+  const isClaimLocked = !!(plan && plan.claim) && !isClaimStale;
   const claimLockPidShort =
-    isClaimLocked ? ((plan.claim.pipeline_short) || "?") : null;
+    (plan && plan.claim) ? ((plan.claim.pipeline_short) || "?") : null;
   const claimLockTip = isClaimLocked
     ? "Locked while plan is being worked (pipeline " + claimLockPidShort + ")."
+    : null;
+  const claimStaleTip = isClaimStale
+    ? "Pipeline appears dead (claim >6h old, pipeline " + claimLockPidShort +
+      ") — click to release."
     : null;
   const card = el("li", { cls: "card", attrs: cardAttrs });
   const head = el("div", { cls: "card-row" });
@@ -1155,28 +1173,47 @@ function buildPlanCard(plan, slug, col, defaultMode) {
       const m = cp.match(/Phase\s+(\d+)/i);
       phaseFragment = m ? "working on phase " + m[1] : "working on " + cp;
     }
-    const tip = c.pipeline_id
-      ? "claim pipeline=" + c.pipeline_id +
-        " started=" + (c.started_at || "?") +
-        " current_phase=" + (c.current_phase || "?")
-      : "claim metadata pending";
+    // Issue #912 — stale claims read as "stale (dead pipeline)" rather
+    // than the live "working on phase N" framing, and carry the release
+    // hint as their chip tooltip.
+    const tip = isClaimStale
+      ? claimStaleTip
+      : (c.pipeline_id
+        ? "claim pipeline=" + c.pipeline_id +
+          " started=" + (c.started_at || "?") +
+          " current_phase=" + (c.current_phase || "?")
+        : "claim metadata pending");
+    const chipText = isClaimStale
+      ? "stale (dead pipeline) · " + pidShort + " · " + ageStr
+      : phaseFragment + " · " + pidShort + " · " + ageStr;
     const row = el("div", { cls: "card-sub" });
     row.appendChild(el("span", {
-      cls: "claim-chip claim-chip--in-flight",
+      cls: "claim-chip claim-chip--in-flight" +
+        (isClaimStale ? " claim-chip--stale" : ""),
       attrs: { title: tip },
-      text: phaseFragment + " · " + pidShort + " · " + ageStr,
+      text: chipText,
     }));
     card.appendChild(row);
-    card.setAttribute("aria-disabled", "true");
-    card.removeAttribute("draggable");
-    // Issue #884 — gate (a): the card is already non-draggable (no
-    // draggable attr → onDragStart's `li.card[draggable='true']` match
-    // fails, so no drag starts and no recolumn drop is possible). Add the
-    // claim-lock affordance: a `claim-locked` class for CSS pointer-event
-    // suppression on the drag surface + a tooltip naming the in-flight
-    // pipeline short id (same string used on the disabled X below).
-    card.className = (card.className ? card.className + " " : "") + "claim-locked";
-    if (claimLockTip) card.setAttribute("title", claimLockTip);
+    if (isClaimStale) {
+      // Issue #912 — a stale claim's owning pipeline is dead. Do NOT
+      // hard-lock: leave the card draggable and aria-enabled so the
+      // runtime handleAction guard (which keys on aria-disabled="true")
+      // passes through to the existing plan-discard / move actions,
+      // giving the user a path to clear the dead card. No claim-locked
+      // class, no aria-disabled, no draggable removal.
+      if (claimStaleTip) card.setAttribute("title", claimStaleTip);
+    } else {
+      card.setAttribute("aria-disabled", "true");
+      card.removeAttribute("draggable");
+      // Issue #884 — gate (a): the card is already non-draggable (no
+      // draggable attr → onDragStart's `li.card[draggable='true']` match
+      // fails, so no drag starts and no recolumn drop is possible). Add the
+      // claim-lock affordance: a `claim-locked` class for CSS pointer-event
+      // suppression on the drag surface + a tooltip naming the in-flight
+      // pipeline short id (same string used on the disabled X below).
+      card.className = (card.className ? card.className + " " : "") + "claim-locked";
+      if (claimLockTip) card.setAttribute("title", claimLockTip);
+    }
   }
 
   // Per-row mode chip on Ready cards (issue #814 + follow-up).

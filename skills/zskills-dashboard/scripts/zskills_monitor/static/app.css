@@ -453,6 +453,18 @@ code, pre, .mono {
   vertical-align: middle;
 }
 
+/* Issue #912 — stale claim chip. A /run-plan pipeline that died mid-flight
+   leaves an orphaned claim.json; collect.py tags it stale (age >6h). The
+   card is NOT hard-locked (the X is re-enabled so the user can clear it);
+   the chip recolours from the live green to a muted amber to read as
+   "dead, recoverable" rather than "actively working". */
+.claim-chip--stale {
+  background: rgba(210, 153, 34, 0.14);
+  border-color: var(--yellow, #d29922);
+  color: var(--yellow, #d29922);
+  cursor: help;
+}
+
 /* Closure-reason chip (#687) — muted pill for "not planned" / "closed"
    on Completed-column issue cards. Matches claim-chip--in-flight's pill
    aesthetic but uses neutral grey to read as informational, not active. */
