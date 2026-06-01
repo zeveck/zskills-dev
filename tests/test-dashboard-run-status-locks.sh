@@ -387,4 +387,171 @@ if [ "$NODE_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
   fail "node harness exited non-zero ($NODE_RC) with no per-test failures parsed"
 fi
 
+# ---------------------------------------------------------------------------
+# Issue #940 — showToast optional action-button arg (DOM-stubbed).
+#
+# The locked-chip toast now passes a 3rd arg {actionLabel, onAction} so the
+# user can recover from an externally-killed cron via the existing
+# /api/work-state/reset endpoint. Verify both backward-compat (2-arg) and
+# the new 3-arg form.
+# ---------------------------------------------------------------------------
+
+TOAST_NODE_OUT=$(APP_JS_PATH="$APP_JS" node - <<'NODE'
+const fs = require("fs");
+const src = fs.readFileSync(process.env.APP_JS_PATH, "utf8");
+
+function extractBlock(text, startRe, endMarker) {
+  const m = text.match(startRe);
+  if (!m) throw new Error("start pattern not found: " + startRe);
+  const startIdx = m.index;
+  const tail = text.slice(startIdx);
+  const endIdx = tail.indexOf(endMarker);
+  if (endIdx < 0) throw new Error("end marker not found: " + endMarker);
+  return tail.slice(0, endIdx + endMarker.length);
+}
+
+const showToastBlk = extractBlock(src, /\nfunction showToast\(message, kind, opts\)/, "\n}\n");
+const elBlock      = extractBlock(src, /\nfunction el\(tag, opts\)/, "\n}\n");
+
+function makeNode(id, tag) {
+  return {
+    id,
+    tagName: (tag || "div").toUpperCase(),
+    className: "",
+    textContent: "",
+    innerHTML: "",
+    attrs: {},
+    children: [],
+    parent: null,
+    _listeners: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    appendChild(c) { c.parent = this; this.children.push(c); return c; },
+    removeChild(c) {
+      const i = this.children.indexOf(c);
+      if (i >= 0) { this.children.splice(i, 1); c.parent = null; }
+      return c;
+    },
+    get parentNode() { return this.parent; },
+    addEventListener(ev, fn) {
+      if (!this._listeners[ev]) this._listeners[ev] = [];
+      this._listeners[ev].push(fn);
+    },
+    dispatch(ev) {
+      const fns = this._listeners[ev] || [];
+      const results = [];
+      for (const fn of fns) results.push(fn());
+      return Promise.all(results);
+    },
+  };
+}
+
+const toastRegion = makeNode("toast-region", "div");
+const nodes = { "toast-region": toastRegion };
+const $stub = (id) => (id in nodes ? nodes[id] : null);
+const document = { createElement(tag) { return makeNode(null, tag); } };
+
+// Stub setTimeout (no-op so our DOM isn't auto-cleared mid-assert).
+const setTimeoutStub = () => 0;
+
+const harness = `
+${elBlock}
+${showToastBlk}
+globalThis.__showToast = showToast;
+`;
+
+(new Function("document", "$", "setTimeout", "globalThis", harness))(
+  document, $stub, setTimeoutStub, globalThis
+);
+
+const showToast = globalThis.__showToast;
+
+function expect(actual, expected, label) {
+  const aStr = JSON.stringify(actual);
+  const eStr = JSON.stringify(expected);
+  if (aStr !== eStr) {
+    console.log("FAIL " + label + " (got " + aStr + ", expected " + eStr + ")");
+    process.exitCode = 1;
+  } else {
+    console.log("OK " + label);
+  }
+}
+function expectTrue(actual, label) {
+  if (actual) console.log("OK " + label);
+  else { console.log("FAIL " + label + " (got falsy " + JSON.stringify(actual) + ")"); process.exitCode = 1; }
+}
+
+function findByClass(root, cls) {
+  if ((root.className || "").split(/\s+/).indexOf(cls) >= 0) return root;
+  for (const c of (root.children || [])) {
+    const hit = findByClass(c, cls);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function resetRegion() { toastRegion.children = []; }
+
+(async () => {
+  // Case J: 2-arg showToast does NOT render an action button (back-compat).
+  resetRegion();
+  showToast("hello", "info");
+  expect(toastRegion.children.length, 1, "2-arg showToast: one toast appended");
+  const toast2 = toastRegion.children[0];
+  expect(findByClass(toast2, "toast-action"), null,
+    "2-arg showToast: no toast-action button rendered");
+  expectTrue(findByClass(toast2, "toast-close"),
+    "2-arg showToast: close button still rendered");
+
+  // Case K: 3-arg showToast DOES render a button, click invokes onAction.
+  resetRegion();
+  let onActionCalls = 0;
+  showToast("locked", "info", {
+    actionLabel: "Force unlock",
+    onAction: async () => { onActionCalls += 1; },
+  });
+  expect(toastRegion.children.length, 1, "3-arg showToast: one toast appended");
+  const toast3 = toastRegion.children[0];
+  const actionBtn = findByClass(toast3, "toast-action");
+  expectTrue(actionBtn, "3-arg showToast: toast-action button rendered");
+  if (actionBtn) {
+    expect(actionBtn.tagName, "BUTTON",
+      "3-arg showToast: action element is a <button>");
+    expect(actionBtn.textContent, "Force unlock",
+      "3-arg showToast: action button label is 'Force unlock'");
+    expect(actionBtn.getAttribute("type"), "button",
+      "3-arg showToast: action button has type=button");
+  }
+  // Simulate click and let the async handler complete.
+  if (actionBtn) await actionBtn.dispatch("click");
+  expect(onActionCalls, 1, "3-arg showToast: clicking action invokes onAction once");
+  // After click, the toast is dismissed (removed from region).
+  expect(toastRegion.children.length, 0,
+    "3-arg showToast: toast removed from region after action click");
+
+  // Case L: 3-arg showToast with only actionLabel (no onAction) — no button.
+  resetRegion();
+  showToast("msg", "info", { actionLabel: "Nope" });
+  const toast4 = toastRegion.children[0];
+  expect(findByClass(toast4, "toast-action"), null,
+    "3-arg showToast missing onAction: action button NOT rendered");
+})();
+NODE
+)
+TOAST_NODE_RC=$?
+
+echo "$TOAST_NODE_OUT"
+
+while IFS= read -r line; do
+  case "$line" in
+    OK\ *) pass "${line#OK }" ;;
+    FAIL\ *) fail "${line#FAIL }" ;;
+  esac
+done <<< "$TOAST_NODE_OUT"
+
+if [ "$TOAST_NODE_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
+  fail "showToast node harness exited non-zero ($TOAST_NODE_RC) with no per-test failures parsed"
+fi
+
 print_summary_and_exit
