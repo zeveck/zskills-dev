@@ -584,23 +584,75 @@ fi
 # re-implements it as a behavioral fixture so a future edit that breaks
 # one of these cases fails closed.
 # ────────────────────────────────────────────────────────────────────
+# do_parse_issue_nums replicates the SKILL.md parser. Sets the
+# ISSUE_NUMS array (and back-compat ISSUE_NUM = first) for the caller.
+# Strong separators (`/`, `+`, `&`) accept bare `#N`; weak separators
+# (`,`, `;`, ` and `, ` or `) require a close-keyword before `#N`.
+do_parse_issue_nums() {
+  local input="$1"
+  ISSUE_NUMS=()
+  local _KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
+  if [[ "$input" =~ ^[[:space:]]*\"?${_KW}[[:space:]]+#([0-9]+) ]]; then
+    ISSUE_NUMS+=("${BASH_REMATCH[3]}")
+  elif [[ "$input" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
+    ISSUE_NUMS+=("${BASH_REMATCH[1]}")
+  fi
+  # Strong separators: bare #N OK.
+  local _REM="$input"
+  while [[ "$_REM" =~ [[:space:]]*[/+\&][[:space:]]*(${_KW}[[:space:]]+)?#([0-9]+) ]]; do
+    ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+  done
+  # Weak separators: close-keyword required.
+  _REM="$input"
+  while [[ "$_REM" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_KW}[[:space:]]+#([0-9]+) ]]; do
+    ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+  done
+  declare -A _SEEN=()
+  local _UNIQUE=()
+  local _n
+  for _n in "${ISSUE_NUMS[@]:-}"; do
+    [ -z "$_n" ] && continue
+    if [ -z "${_SEEN[$_n]:-}" ]; then _UNIQUE+=("$_n"); _SEEN[$_n]=1; fi
+  done
+  ISSUE_NUMS=("${_UNIQUE[@]}")
+  ISSUE_NUM="${ISSUE_NUMS[0]:-}"
+}
+
+# test_issue_num_do — back-compat scalar (= ISSUE_NUMS[0]) check.
 test_issue_num_do() {
   local input="$1"
   local expected="$2"
   local label="$3"
-  local ISSUE_NUM=""
-  if [[ "$input" =~ ^[[:space:]]*\"?([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
-    ISSUE_NUM="${BASH_REMATCH[3]}"
-  elif [[ "$input" =~ ^[[:space:]]*\"?#([0-9]+) ]]; then
-    ISSUE_NUM="${BASH_REMATCH[1]}"
-  fi
-  if [ "$ISSUE_NUM" = "$expected" ]; then
-    pass "18 ISSUE_NUM: $label (got '$ISSUE_NUM')"
+  do_parse_issue_nums "$input"
+  if [ "${ISSUE_NUM:-}" = "$expected" ]; then
+    pass "18 ISSUE_NUM: $label (got '${ISSUE_NUM:-}')"
   else
-    fail "18 ISSUE_NUM: $label (expected '$expected', got '$ISSUE_NUM')"
+    fail "18 ISSUE_NUM: $label (expected '$expected', got '${ISSUE_NUM:-}')"
   fi
 }
-# Positive — should capture issue number
+
+# test_issue_nums_do — multi-issue array check. `expected_csv` is the
+# comma-joined expected array (e.g., "832,833"); empty string asserts the
+# array is empty.
+test_issue_nums_do() {
+  local input="$1"
+  local expected_csv="$2"
+  local label="$3"
+  do_parse_issue_nums "$input"
+  local got_csv=""
+  if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+    got_csv=$(IFS=','; echo "${ISSUE_NUMS[*]}")
+  fi
+  if [ "$got_csv" = "$expected_csv" ]; then
+    pass "18m ISSUE_NUMS: $label (got '$got_csv')"
+  else
+    fail "18m ISSUE_NUMS: $label (expected '$expected_csv', got '$got_csv')"
+  fi
+}
+
+# Positive — should capture issue number(s)
 test_issue_num_do "Fix #853 — auto-route completed plans" "853" "Fix #N at start (capital F)"
 test_issue_num_do "fix #853 — lowercase" "853" "fix #N at start (lowercase)"
 test_issue_num_do "Fixes #853 typo" "853" "Fixes #N at start"
@@ -622,6 +674,26 @@ test_issue_num_do "Just a regular description" "" "no # at all → no capture"
 test_issue_num_do "Description mentioning #N letter" "" "#N where N is a letter → no capture"
 test_issue_num_do "address #853 work" "" "non-recognized keyword (address) → no capture"
 test_issue_num_do "work on #853" "" "non-recognized verb (work) → no capture"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 18m — Multi-issue parser (#863). Description references multiple
+# `#N` issues separated by /, ,, ;, +, &, or " and "/" or " — all
+# captured into ISSUE_NUMS array; back-compat ISSUE_NUM stays as first.
+# ────────────────────────────────────────────────────────────────────
+test_issue_nums_do "Closes #832 / Closes #833"           "832,833"     "slash-separated double Closes (the canonical multi-issue pattern)"
+test_issue_nums_do "fix #832 + #833"                     "832,833"     "plus-separated bare #N (strong sep)"
+test_issue_nums_do "Closes #832 & #833"                  "832,833"     "ampersand-separated bare #N (strong sep)"
+test_issue_nums_do "fix #832 and fix #833"               "832,833"     "and-separated keyword + #N (weak sep + kw OK)"
+test_issue_nums_do "Closes #832; Resolves #833"          "832,833"     "semicolon-separated different keywords (weak sep + kw OK)"
+test_issue_nums_do "Fix #832, Closes #833"               "832,833"     "comma-separated keyword + #N (weak sep + kw OK)"
+test_issue_nums_do "Closes #832 / Closes #833 + #834"    "832,833,834" "triple-fanout slash + plus (mixed strong seps)"
+test_issue_nums_do "Fix #853"                            "853"         "single-issue case still works"
+test_issue_nums_do "Just a regular description"          ""            "zero-issue case → empty array"
+# Weak separators without a close-keyword don't fan out (over-capture guard):
+test_issue_nums_do "Closes #832, see also #999"          "832"         "see-also after comma → only #832 (weak sep, no kw before #999)"
+test_issue_nums_do "Closes #832, #833"                   "832"         "bare #N after comma (weak sep) → only #832"
+test_issue_nums_do "fix #832 and #833"                   "832"         "bare #N after 'and' (weak sep) → only #832"
+test_issue_nums_do "fix #832 and fix #832"               "832"         "dedupe: duplicate #N captured once"
 
 # ────────────────────────────────────────────────────────────────────
 # Case 19 — Phase 0a triage rubric NO LONGER contains the

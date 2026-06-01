@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.05.31+9063b5"
+  version: "2026.05.31+c444a9"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -146,23 +146,61 @@ DESCRIPTION="${DESCRIPTION#"${DESCRIPTION%%[![:space:]]*}"}"
 DESCRIPTION="${DESCRIPTION%"${DESCRIPTION##*[![:space:]]}"}"
 
 # Issue-number parse (claim-work-item Phase 2 / W2.4). /quickfix usually
-# works an in-flight edit, not an issue — but when the description begins
-# with a `#N` reference (optionally preceded by a close-keyword:
-# close/closes/closed/fix/fixes/fixed/resolve/resolves/resolved, case-
-# insensitive) extract the bare integer into ISSUE_NUM so WI 1.8 can
-# claim the issue via claim-issue.sh. The regex is ANCHORED to the start
-# of the description so a `#NNN` literal appearing later in prose (e.g.,
-# a quoted example, a line reference, a follow-up "see also #N") does
-# NOT set ISSUE_NUM. When no issue reference is in scope (the common
-# case) ISSUE_NUM stays empty and nothing is claimed. claim-issue.sh
+# works an in-flight edit, not an issue — but when the description
+# references one or more `#N` issues, collect them all into ISSUE_NUMS so
+# WI 1.8 can fan-out the claim acquire across every closed issue. The
+# leading match is ANCHORED to the start of the description (optionally
+# preceded by a close-keyword: close/closes/closed/fix/fixes/fixed/
+# resolve/resolves/resolved, case-insensitive). Subsequent matches
+# recognize TWO boundary classes:
+#   - STRONG separators (`/`, `+`, `&`) — bare `#N` allowed because
+#     these don't naturally appear in English prose before a `#`
+#     reference. Canonical patterns: "fix #N + #M", "Closes #N / Closes
+#     #M", "fix #N & #M".
+#   - WEAK separators (`,`, `;`, ` and `, ` or `) — require an explicit
+#     close-keyword between the separator and `#N`. This blocks
+#     "Closes #832, see also #999" from accidentally claiming #999.
+# When no issue reference is in scope (the common case) ISSUE_NUMS stays
+# empty and nothing is claimed. ISSUE_NUM is kept as a back-compat
+# scalar (= ISSUE_NUMS[0] when non-empty, else empty). claim-issue.sh
 # rejects non-numeric input with exit 2; the `[0-9]+` capture guarantees
 # a bare integer.
-ISSUE_NUM=""
-if [[ "$DESCRIPTION" =~ ^[[:space:]]*([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)[[:space:]]+#([0-9]+) ]]; then
-  ISSUE_NUM="${BASH_REMATCH[3]}"
+ISSUE_NUMS=()
+_QF_ISSUE_KW='([cC][lL][oO][sS][eE][sSdD]?|[fF][iI][xX]([eE][sSdD])?|[rR][eE][sS][oO][lL][vV][eE][sSdD]?)'
+# Leading anchored match (no leading-quote tolerance: /quickfix runs after
+# the quoted-head carve-out has already normalized the description).
+if [[ "$DESCRIPTION" =~ ^[[:space:]]*${_QF_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; then
+  ISSUE_NUMS+=("${BASH_REMATCH[3]}")
 elif [[ "$DESCRIPTION" =~ ^[[:space:]]*#([0-9]+) ]]; then
-  ISSUE_NUM="${BASH_REMATCH[1]}"
+  ISSUE_NUMS+=("${BASH_REMATCH[1]}")
 fi
+# Subsequent strong-separator matches (`/`, `+`, `&`): bare `#N` OK.
+# BASH_REMATCH groups: 1=outer kw+space wrapper, 2=kw outer, 3=kw inner,
+# 4=digit capture.
+_QF_REMAINING="$DESCRIPTION"
+while [[ "$_QF_REMAINING" =~ [[:space:]]*[/+\&][[:space:]]*(${_QF_ISSUE_KW}[[:space:]]+)?#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[4]}")
+  _QF_REMAINING="${_QF_REMAINING#*"${BASH_REMATCH[0]}"}"
+done
+# Subsequent weak-separator matches (`,`, `;`, ` and `, ` or `): require
+# close-keyword before `#N`. BASH_REMATCH groups: 1=outer separator,
+# 2=and/or word, 3=kw outer, 4=kw inner, 5=digit capture.
+_QF_REMAINING="$DESCRIPTION"
+while [[ "$_QF_REMAINING" =~ ([[:space:]]*[,\;][[:space:]]*|[[:space:]](and|or|AND|OR|And|Or)[[:space:]]+)${_QF_ISSUE_KW}[[:space:]]+#([0-9]+) ]]; do
+  ISSUE_NUMS+=("${BASH_REMATCH[5]}")
+  _QF_REMAINING="${_QF_REMAINING#*"${BASH_REMATCH[0]}"}"
+done
+# Dedupe preserving first-seen order.
+declare -A _QF_SEEN=()
+_QF_UNIQUE=()
+for _n in "${ISSUE_NUMS[@]:-}"; do
+  [ -z "$_n" ] && continue
+  if [ -z "${_QF_SEEN[$_n]:-}" ]; then _QF_UNIQUE+=("$_n"); _QF_SEEN[$_n]=1; fi
+done
+ISSUE_NUMS=("${_QF_UNIQUE[@]}")
+unset _QF_SEEN _QF_UNIQUE _QF_REMAINING _QF_ISSUE_KW _n
+# Back-compat scalar (= first claimed issue, or empty when none).
+ISSUE_NUM="${ISSUE_NUMS[0]:-}"
 ```
 
 ## Phase 1 — Pre-flight
@@ -378,7 +416,7 @@ text and dirty-tree shape, no LOC counting:
 | `/quickfix update CHANGELOG with v0.5 release notes` | PROCEED | concrete verb + object + file |
 | `/quickfix add dark mode and refactor the worker pool` | REDIRECT → /draft-plan | "and" connects unrelated areas |
 | `/quickfix improve` | REDIRECT → ask user | vague verb, no object |
-| `/quickfix Fix #853 typo` | PROCEED | issue-numbered descriptions claim the issue via ISSUE_NUM and proceed |
+| `/quickfix Fix #853 typo` | PROCEED | issue-numbered descriptions claim the issue(s) via ISSUE_NUMS and proceed |
 
 Output one of:
 
@@ -704,24 +742,38 @@ branch: $BRANCH
 date: $NOW_ISO
 MARK
 
-# Issue claim (claim-work-item Phase 2 / W2.4). Acquire here — where
+# Issue claim(s) (claim-work-item Phase 2 / W2.4). Acquire here — where
 # PIPELINE_ID is established and the `started` marker is written — and
-# BEFORE branch creation (WI 1.9). Only when the description referenced an
-# issue (ISSUE_NUM non-empty, parsed in WI 1.2); skip otherwise (the common
-# /quickfix case). This stops a concurrent /fix-issues cron from
-# double-working the same issue. Released in the Phase 7 explicit-finalize
-# and the fail-finalize abandon sites (test fail, commit fail, push fail).
-if [ -n "${ISSUE_NUM:-}" ]; then
+# BEFORE branch creation (WI 1.9). Only when the description referenced
+# one or more issues (ISSUE_NUMS non-empty, parsed in WI 1.2); skip
+# otherwise (the common /quickfix case). This stops a concurrent
+# /fix-issues cron from double-working any of the same issues. Released in
+# the Phase 7 explicit-finalize and the fail-finalize abandon sites (test
+# fail, commit fail, push fail). Partial-acquire rollback: if any acquire
+# returns rc=10/11/2/* on issue K, release issues 1..K-1 acquired earlier
+# in this loop before declining/stopping.
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
   CLAIM_HELPER="$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh"
-  bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
-  ACQ_RC=$?
-  case "$ACQ_RC" in
-    0)  : ;;  # acquired (fresh or self-re-entry) — proceed
-    10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining." >&2; exit 0 ;;
-    11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
-    2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM) — internal bug; stopping." >&2; exit 1 ;;
-    *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM; stopping." >&2; exit 1 ;;
-  esac
+  _ACQUIRED=()
+  for ISSUE_NUM in "${ISSUE_NUMS[@]}"; do
+    bash "$CLAIM_HELPER" acquire "$ISSUE_NUM" --pipeline-id "$PIPELINE_ID" --sprint-id "$PIPELINE_ID"
+    ACQ_RC=$?
+    case "$ACQ_RC" in
+      0)  _ACQUIRED+=("$ISSUE_NUM") ;;  # acquired (fresh or self-re-entry) — proceed
+      10|11|2|*)
+        # Partial-acquire rollback: release everything this pipeline grabbed earlier in this loop.
+        for _RB in "${_ACQUIRED[@]}"; do
+          bash "$CLAIM_HELPER" release "$_RB" --require-pipeline "$PIPELINE_ID"
+        done
+        case "$ACQ_RC" in
+          10) echo "issue #$ISSUE_NUM is being worked by another pipeline; declining (released ${#_ACQUIRED[@]} prior claim(s))." >&2; exit 0 ;;
+          11) echo "claim-issue.sh: filesystem error acquiring issue #$ISSUE_NUM (released ${#_ACQUIRED[@]} prior claim(s)); stopping." >&2; exit 1 ;;
+          2)  echo "claim-issue.sh: usage error (empty PIPELINE_ID or non-numeric ISSUE_NUM=$ISSUE_NUM; released ${#_ACQUIRED[@]} prior claim(s)) — internal bug; stopping." >&2; exit 1 ;;
+          *)  echo "claim-issue.sh: unexpected exit $ACQ_RC acquiring issue #$ISSUE_NUM (released ${#_ACQUIRED[@]} prior claim(s)); stopping." >&2; exit 1 ;;
+        esac ;;
+    esac
+  done
+  unset _ACQUIRED _RB
 fi
 
 # Explicit-finalize pattern (Plan LAND_PR_BYPASS_HARDENING Phase 2; issue
@@ -791,13 +843,13 @@ context cost of the entire lifecycle up front:
    `modes/execute.md`** for Phases 3–6 (make the change → test gate →
    commit → verify → push). The shared shell variables established above
    (`$MODE`, `$SLUG`, `$BRANCH`, `$BASE_BRANCH`, `$MARKER`, `$PIPELINE_ID`,
-   `$ZSKILLS_PIPELINE_ID`, `$ISSUE_NUM`, `$CHANGED_FILES`, `$DELS`,
-   `$COMMIT_SUBJECT`) all survive into those phases via the persistent
-   shell.
+   `$ZSKILLS_PIPELINE_ID`, `$ISSUE_NUMS` (+ back-compat `$ISSUE_NUM`),
+   `$CHANGED_FILES`, `$DELS`, `$COMMIT_SUBJECT`) all survive into those
+   phases via the persistent shell.
 2. **Then read `modes/land.md`** for Phase 7 (PR creation, CI poll, and
    the fix-cycle dispatched via `/land-pr`), which consumes
    `$PR_TITLE`, `$BRANCH`, `$BASE_BRANCH`, `$MARKER`, `$SLUG`,
-   `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUM`.
+   `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUMS`.
 3. **Exit codes and Key Rules** live in `references/exit-codes-and-rules.md`.
 
 Read these in order; do not skip ahead. Phases 3–7 are a single

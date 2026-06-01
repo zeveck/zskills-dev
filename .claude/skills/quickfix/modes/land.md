@@ -3,8 +3,9 @@
 > Final phase of the `/quickfix` lifecycle, loaded after `modes/execute.md`
 > pushes the branch (Phase 6). The persistent shell carries `$PR_TITLE`
 > (composed model-layer below), `$BRANCH`, `$BASE_BRANCH`, `$MARKER`,
-> `$SLUG`, `$PIPELINE_ID`, `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUM` from
-> the earlier phases. Exit codes + Key Rules live in
+> `$SLUG`, `$PIPELINE_ID`, `$ZSKILLS_PIPELINE_ID`, and `$ISSUE_NUMS` (+
+> back-compat `$ISSUE_NUM`) from the earlier phases. Exit codes + Key
+> Rules live in
 > `references/exit-codes-and-rules.md`.
 
 ## Phase 7 — PR creation, CI poll, fix-cycle (WI 1.15) — dispatch `/land-pr`
@@ -132,10 +133,13 @@ while :; do
     # and runs correctly when called by a parent pipeline. Mirrors the
     # `[ -n "${ZSKILLS_PIPELINE_ID:-}" ]` guard at line 1310 below.
     [ -n "${ZSKILLS_PIPELINE_ID:-}" ] && rm -f "$MAIN_ROOT/.zskills/tracking/$ZSKILLS_PIPELINE_ID/requires.land-pr.$SLUG" 2>/dev/null
-    # Release the issue claim (only if one was acquired at WI 1.8). This
-    # early exit bypasses the end-of-fence explicit-finalize release.
-    if [ -n "${ISSUE_NUM:-}" ]; then
-      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$PIPELINE_ID"
+    # Release the issue claim(s) (only if any were acquired at WI 1.8).
+    # This early exit bypasses the end-of-fence explicit-finalize release.
+    if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
+      for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+        bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$PIPELINE_ID"
+      done
+      unset _ISSUE_N
     fi
     exit 5
   fi
@@ -363,16 +367,21 @@ else
     -exec sh -c 'rm -f "$1"/requires.land-pr.*' _ {} \;
 fi
 
-# Release the issue claim (claim-work-item Phase 2 / W2.4) — only if one
-# was acquired at WI 1.8 (ISSUE_NUM survives in the persistent shell).
-# Release-on-resolution regardless of created vs merged vs pr-ready: the
-# /quickfix invocation is terminating either way and /quickfix is one-shot
-# (no later fire re-releases). $PIPELINE_ID = quickfix.$SLUG; reconstruct
-# from $ZSKILLS_PIPELINE_ID if it didn't survive across fences.
-if [ -n "${ISSUE_NUM:-}" ]; then
+# Release the issue claim(s) (claim-work-item Phase 2 / W2.4) — only if
+# any were acquired at WI 1.8 (ISSUE_NUMS survives in the persistent
+# shell). Release-on-resolution regardless of created vs merged vs
+# pr-ready: the /quickfix invocation is terminating either way and
+# /quickfix is one-shot (no later fire re-releases). $PIPELINE_ID =
+# quickfix.$SLUG; reconstruct from $ZSKILLS_PIPELINE_ID if it didn't
+# survive across fences. Releases are idempotent per claim-issue.sh, so
+# any claim already released by an upstream inline-release no-ops here.
+if [ "${#ISSUE_NUMS[@]}" -gt 0 ]; then
   _RELEASE_PIPELINE="${PIPELINE_ID:-${ZSKILLS_PIPELINE_ID:-}}"
   if [ -n "$_RELEASE_PIPELINE" ]; then
-    bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$ISSUE_NUM" --require-pipeline "$_RELEASE_PIPELINE"
+    for _ISSUE_N in "${ISSUE_NUMS[@]}"; do
+      bash "$ZSKILLS_SKILLS_ROOT/fix-issues/scripts/claim-issue.sh" release "$_ISSUE_N" --require-pipeline "$_RELEASE_PIPELINE"
+    done
+    unset _ISSUE_N
   fi
 fi
 ```
