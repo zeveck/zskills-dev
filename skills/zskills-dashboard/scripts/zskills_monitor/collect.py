@@ -1871,9 +1871,17 @@ def _annotate_issues_queue(
                 continue  # closed — route via inference to completed/triage
             pos[n] = (col, i)
 
+    # Live monitor-state skip override map (#862). Read from `state` (not
+    # the filesystem) so it is available even in the 2-arg fixture branch,
+    # and so it is the SAME source `filter-unresearched-candidates.sh`
+    # consumes from `monitor-state.json`. The unified precedence
+    # (override wins, else blurb) is applied per-issue below via
+    # `_resolve_effective_skip_reason`.
+    monitor_skipped: Dict[int, Dict[str, str]] = _read_monitor_skipped(state)
+
     # Build skip-reason index once per snapshot (avoids re-parsing the
     # tracker per Ready issue). Only populated when main_root is given.
-    skip_index: Dict[int, Dict[str, str]] = {}
+    skip_index: Dict[int, Optional[Dict[str, str]]] = {}
     issues_plan_path: Optional[pathlib.Path] = None
     # Claim index — parallel to skip_index; gated on main_root for the
     # same reason (R2.6: fixture branch passes 2-arg, no real filesystem).
@@ -1925,10 +1933,15 @@ def _annotate_issues_queue(
         if isinstance(num, int) and num in pos:
             col, i = pos[num]
             issue["queue"] = {"column": col, "index": i}
-            if num in skip_index:
-                reason = skip_index[num]
-                if reason is not None:
-                    issue["skip_reason"] = reason
+            # Effective skip-reason (#862): live monitor-state override
+            # wins over the blurb-derived reason. Identical precedence to
+            # filter-unresearched-candidates.sh so the chip and the
+            # drop-decision never split-brain.
+            reason = _resolve_effective_skip_reason(
+                num, monitor_skipped, skip_index,
+            )
+            if reason is not None:
+                issue["skip_reason"] = reason
         else:
             # W1.2b — issue default-column inference. Closed-within-window
             # issues land in `completed`; everything else falls through
@@ -2174,6 +2187,112 @@ def _build_skip_reason_index(
     for num in issue_numbers:
         out[num] = _parse_action_now(num, text)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Effective skip-reason resolution (issue #862)
+# ---------------------------------------------------------------------------
+#
+# Split-brain fix: the dashboard skip chip and the /fix-issues drop-decision
+# were sourced from two different, non-unified places — the chip from the
+# committed `Action now:` blurb (`_parse_action_now`), the drop from
+# `monitor-state.json:issues.skipped` (read by
+# `filter-unresearched-candidates.sh`). An orchestrator that re-triaged an
+# issue and recorded a new classification moved the FILTER but not the CHIP.
+#
+# The fix unifies both behind ONE precedence, implemented identically in
+# this module (chip path) and in `filter-unresearched-candidates.sh`
+# (drop path) — the two languages can't literally share a function, so the
+# precedence is mirrored and locked by a cross-path agreement test
+# (tests/test-fix-issues-skip-effective-reason.sh):
+#
+#   1. LIVE OVERRIDE — `monitor-state.json:issues.skipped[N]` wins when
+#      present. The value is EITHER a bare code string (legacy / no-reason)
+#      OR a dict `{"code": ..., "reason": ...}` (#862 free-text reason).
+#   2. BLURB FALLBACK — else the `Action now:` blurb-derived reason
+#      (`_parse_action_now` via `_build_skip_reason_index`).
+#
+# `reconsider <N>` clears `issues.skipped[N]` (the filter's one-shot dual),
+# which naturally resets the chip to the blurb baseline — no separate
+# clear-path is needed here.
+
+# Canonical dashboard skip-code → chip label map, mirroring
+# `_parse_action_now`'s per-code default labels. Used to synthesise a chip
+# `skip_reason` dict for a monitor-state override that has no committed
+# tracker blurb to source a label from.
+_SKIP_CODE_DEFAULT_LABELS: Dict[str, str] = {
+    "plan-scale": "plan-scale",
+    "bug-unclear-cause": "unclear cause",
+    "needs-decision": "author decision needed",
+    "deferred": "deferred",
+    "unresearched": "not yet researched",
+}
+
+
+def _read_monitor_skipped(state: Dict[str, Any]) -> Dict[int, Dict[str, str]]:
+    """Read `state["issues"]["skipped"]` into `{issue_num: {code, reason}}`.
+
+    `state` is the live monitor-state dict (the same dict
+    `filter-unresearched-candidates.sh` reads from
+    `monitor-state.json`), so this is the SINGLE source the override side
+    of the precedence consults — no separate filesystem read, and it works
+    in the 2-arg fixture branch too.
+
+    Accepts BOTH persisted shapes per entry (#862):
+      - bare code string `"<code>"`  (legacy / no-reason)
+      - dict `{"code": ..., "reason": ...}`  (free-text reason recorded)
+
+    Malformed / empty entries are skipped. `reason` is normalised to a
+    (possibly empty) string.
+    """
+    out: Dict[int, Dict[str, str]] = {}
+    issues_section = state.get("issues", {})
+    if not isinstance(issues_section, dict):
+        return out
+    skipped = issues_section.get("skipped", {})
+    if not isinstance(skipped, dict):
+        return out
+    for k, v in skipped.items():
+        try:
+            num = int(k)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(v, dict):
+            code = v.get("code")
+            reason = v.get("reason") or ""
+        else:
+            code = v
+            reason = ""
+        if not isinstance(code, str) or not code:
+            continue
+        out[num] = {"code": code, "reason": str(reason)}
+    return out
+
+
+def _resolve_effective_skip_reason(
+    issue_number: int,
+    monitor_skipped: Dict[int, Dict[str, str]],
+    blurb_index: Dict[int, Optional[Dict[str, str]]],
+) -> Optional[Dict[str, str]]:
+    """Return the effective `skip_reason` dict for one issue, or None.
+
+    Implements the unified precedence (#862):
+      1. live `monitor-state.json:issues.skipped[N]` override wins;
+      2. else the blurb-derived reason.
+
+    On a live override, the chip `skip_reason` carries the override code
+    plus a label sourced from the recorded free-text reason when present,
+    otherwise the canonical per-code default label. `source` is annotated
+    so the chip tooltip discloses the override origin.
+    """
+    override = monitor_skipped.get(issue_number)
+    if override is not None:
+        code = override["code"]
+        reason = override.get("reason") or ""
+        label = reason if reason else _SKIP_CODE_DEFAULT_LABELS.get(code, code)
+        source = "monitor-state override" + (f": {reason}" if reason else "")
+        return {"code": code, "label": label, "source": source}
+    return blurb_index.get(issue_number)
 
 
 # ---------------------------------------------------------------------------

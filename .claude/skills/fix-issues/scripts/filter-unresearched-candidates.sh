@@ -67,10 +67,19 @@ fi
 # triage declines an issue as plan-scale / bug-unclear-cause /
 # needs-decision / deferred, the orchestrator records it here so the next
 # fire's filter drops it BEFORE re-triage — even when the issue has no
-# tracker row (raw dashboard-drag case). The map shape is
-# `{ "<issue-num>": "<skip-code>" }`, e.g. `{"803": "plan-scale"}`. This
-# is symmetric with `issues.reconsider`: monitor-state.json is gitignored,
-# so the skip-record never lands as a tracker-row commit on main.
+# tracker row (raw dashboard-drag case). The map value is EITHER a bare
+# code string `"<skip-code>"` (legacy / no-reason) OR a dict
+# `{"code": "<skip-code>", "reason": "<free-text>"}` (#862, when a
+# free-text reason was recorded). The filter only consumes the CODE; the
+# reason flows to the dashboard chip via collect.py. This is symmetric
+# with `issues.reconsider`: monitor-state.json is gitignored, so the
+# skip-record never lands as a tracker-row commit on main.
+#
+# Effective-skip-reason precedence (#862) — MUST match
+# collect.py:_resolve_effective_skip_code precedence exactly, otherwise
+# the dashboard chip and this drop-decision split-brain again: the live
+# `issues.skipped[N]` override WINS when present; only when it is absent
+# does the tracker-row `Action now:` blurb-derived code apply.
 MAIN_ROOT="${ZSKILLS_MAIN_ROOT:-$(cd "$(git rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)}"
 STATE_FILE="${MAIN_ROOT:+$MAIN_ROOT/.zskills/monitor-state.json}"
 RECONSIDER_NUMS=""
@@ -96,10 +105,18 @@ try:
     with open(sys.argv[1]) as f:
         data = json.load(f)
     skipped = data.get('issues', {}).get('skipped', {}) or {}
-    # Accept both dict and list-of-pairs shapes defensively.
+    # The map value is EITHER a bare code string (legacy / no-reason) OR a
+    # dict {'code': ..., 'reason': ...} (#862). The filter only consumes
+    # the CODE; reason is for the dashboard chip. Extract the code from
+    # whichever shape is present.
     if isinstance(skipped, dict):
         for k, v in skipped.items():
-            print(f'{k}\t{v}')
+            if isinstance(v, dict):
+                code = v.get('code')
+            else:
+                code = v
+            if code:
+                print(f'{k}\t{code}')
 except Exception:
     pass
 " "$STATE_FILE" 2>/dev/null)
@@ -195,14 +212,18 @@ for N in "$@"; do
 
   if [ "$found" -eq 1 ]; then
     RESEARCHED+=("$N")
-    if [ -n "$skip_code" ]; then
-      SKIP_TAGGED+=("$N:$skip_code")
-    elif [ -n "$monitor_skip_code" ]; then
-      # Tracker row exists but is not skip-tagged; monitor-state.json
-      # has a persisted decline (e.g. agent triaged plan-scale before
-      # the row's `Action now:` was rewritten). Honor the monitor-state
-      # decision so the issue drops from Phase 2.
+    # Effective-skip-reason precedence (#862): the live monitor-state
+    # override WINS over the tracker-row blurb-derived code. This mirrors
+    # collect.py:_resolve_effective_skip_code so the dashboard chip and
+    # this drop-decision never diverge (an orchestrator that re-triages an
+    # issue and records a new classification in monitor-state must move
+    # BOTH the chip and the filter, not just the filter). When no
+    # monitor-state override is present, fall back to the tracker-derived
+    # code.
+    if [ -n "$monitor_skip_code" ]; then
       SKIP_TAGGED+=("$N:$monitor_skip_code")
+    elif [ -n "$skip_code" ]; then
+      SKIP_TAGGED+=("$N:$skip_code")
     fi
     if [ "$is_reconsidered" -eq 1 ]; then
       # already appended above when we cleared monitor_skip_code

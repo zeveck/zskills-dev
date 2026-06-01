@@ -1818,7 +1818,16 @@ function buildIssueCard(issue, num, col) {
   // "N untracked" badge) can consume it. Tooltip carries the verbatim
   // Action-now / Verdict source line. Non-interactive — card remains
   // drag-and-droppable.
-  if (issue && issue.skip_reason && issue.skip_reason.code && issue.skip_reason.code !== "unresearched") {
+  //
+  // Mutual exclusion (#862): an issue with a live in-flight claim is NOT
+  // also a skipped issue — the claim chip (rendered below) is the
+  // authoritative live state, and showing BOTH an in-flight chip AND a
+  // `skip:` chip is the split-brain this fix closes. A claimed card on a
+  // non-completed column suppresses the skip chip entirely. (Completed
+  // cards never carry a live claim, so an explicitly-skipped completed
+  // item — rare — keeps its skip chip.)
+  var hasLiveClaim = !!(issue && issue.claim && !isCompleted);
+  if (!hasLiveClaim && issue && issue.skip_reason && issue.skip_reason.code && issue.skip_reason.code !== "unresearched") {
     const sr = issue.skip_reason;
     const code = String(sr.code || "");
     const label = String(sr.label || code || "");
