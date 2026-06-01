@@ -1402,172 +1402,154 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 47 — Triage REDIRECT path (driven by _ZSKILLS_TEST_HARNESS=1 +
-# _ZSKILLS_TEST_TRIAGE_VERDICT=REDIRECT:/draft-plan:multi-concept):
+# Case 47 — Triage REDIRECT: real-behavior + per-skill divergent-string
+# anchor (Phase 4 de-hollow, C2/C3).
 #
-#   (a) BOTH lines of the /draft-plan redirect message print to stdout.
-#   (b) exit 0.
-#   (c) NO marker file at .zskills/tracking/quickfix.*/fulfilled.quickfix.*
-#   (d) NO branch created.
-#   (e) Entry-point unset guard: invoking with the verdict env var set
-#       but WITHOUT _ZSKILLS_TEST_HARNESS=1 unsets the var (the parser's
-#       guard at WI 1.2 fires).
+# DE-HOLLOWED: the prior version of this case carried a `TRIAGE_SIM`
+# heredoc that re-implemented the model's redirect logic in test-authored
+# bash and asserted against ITS OWN output — a circular, hollow check
+# that exercised no production code. That heredoc is DELETED.
 #
-# Triage is a model-layer instruction (not a bash fence). The test
-# emulates the model's implementation: when the harness flag is set,
-# parse the verdict and emit the per-target redirect message extracted
-# verbatim from the SKILL.md table at WI 1.5.4. Then assert end state.
-# Production behavior (no harness flag) is verified separately via the
-# parser's unset guard.
+# MESSAGE EMISSION IS MODEL-LAYER: triage is prose, not a bash fence. The
+# model printf's the redirect lines per the WI 1.5.4 table; there is no
+# shell to run. So this case does NOT assert that a message was emitted —
+# it (a) runs the REAL WI 1.2 parser and asserts its unset guard fires,
+# (b) asserts the redirect/no-op path leaves NO marker and NO branch on a
+# real fixture, and (c) anchors the genuinely PER-SKILL-DIVERGENT source
+# strings the model is instructed to print. The anchor guards the SOURCE
+# strings (which DO drift on a copy-paste edit), not the emission.
+#
+# Re-anchor rationale (C2): the original `do=--force` vs `quickfix=force`
+# drift target is DEAD — bare `force` was retired in #822; both skills now
+# use dashed `--force`. We re-anchor onto strings that genuinely STILL
+# differ per skill: (1) the quickfix-ONLY landing-config soft-redirect
+# (quickfix/SKILL.md WI: `redirecting to /do worktree` + `redirecting to
+# /commit`), which /do has NO equivalent of (its redirects are triage-
+# only); and (2) each skill's own ask-user self-name (`Re-invoke /do` vs
+# `Re-invoke /quickfix`), where a cross-contaminated copy-paste fails.
 # ────────────────────────────────────────────────────────────────────
+DO_SKILL="$REPO_ROOT/skills/do/SKILL.md"
 FIX=$(make_fixture c47)
-OUT=$(mktemp)
-ERR=$(mktemp)
 
-# Mini-harness: simulate the model's triage execution under the test
-# seam. Reads the redirect message from the SKILL.md table, prints
-# both lines, exits 0 — exactly what the model-layer prose at WI
-# 1.5.4 specifies under _ZSKILLS_TEST_HARNESS=1 / REDIRECT.
-TRIAGE_SIM="$TEST_TMPDIR/triage-sim-c47.sh"
-cat > "$TRIAGE_SIM" <<'TRIAGE_EOF'
-#!/bin/bash
-set -u
-# Entry-point unset guard (verbatim from WI 1.2).
-if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
-  unset _ZSKILLS_TEST_TRIAGE_VERDICT _ZSKILLS_TEST_REVIEW_VERDICT
-fi
-# Skip if seam vars unset (production path) — proceed silently.
-VERDICT="${_ZSKILLS_TEST_TRIAGE_VERDICT:-}"
-if [ -z "$VERDICT" ]; then
-  echo "PRODUCTION_PATH"
-  exit 0
-fi
-# Parse REDIRECT:<target>:<reason>.
-case "$VERDICT" in
-  REDIRECT:/draft-plan:*)
-    REASON="${VERDICT#REDIRECT:/draft-plan:}"
-    printf 'Triage: redirecting to /draft-plan. Reason: %s\n' "$REASON"
-    printf 'This task spans more than one concept; /draft-plan will research and decompose it. Run `/draft-plan <description>` instead, or re-invoke with --force to bypass.\n'
-    exit 0
-    ;;
-  REDIRECT:/run-plan:*)
-    REASON="${VERDICT#REDIRECT:/run-plan:}"
-    printf 'Triage: redirecting to /run-plan. Reason: %s\n' "$REASON"
-    printf 'This task references an existing plan file. Run `/run-plan <plan-path>` to execute it, or re-invoke with --force to bypass.\n'
-    exit 0
-    ;;
-  PROCEED|*)
-    echo "PROCEED"
-    exit 0
-    ;;
-esac
-TRIAGE_EOF
-chmod +x "$TRIAGE_SIM"
-
-# Run the simulated triage path with harness flag + REDIRECT verdict.
-(cd "$FIX" && _ZSKILLS_TEST_HARNESS=1 _ZSKILLS_TEST_TRIAGE_VERDICT="REDIRECT:/draft-plan:multi-concept" \
-   bash "$TRIAGE_SIM" >"$OUT" 2>"$ERR")
-RC=$?
-
-# (a) Both redirect-message lines on stdout (Reason on line 1, opener
-# verbatim on line 2).
-LINE1_PRESENT=$(grep -c 'Triage: redirecting to /draft-plan\. Reason: multi-concept' "$OUT")
-LINE2_PRESENT=$(grep -c 'This task spans more than one concept' "$OUT")
-# (c) No marker (the simulation never wrote one — this is what the
-# model-layer prose specifies: redirect exits BEFORE WI 1.8).
-MARKER_COUNT=$(find "$FIX/.zskills/tracking" -type f -name 'fulfilled.quickfix.*' 2>/dev/null | wc -l)
-# (d) No branch (we never invoked git checkout -b).
-BRANCH_COUNT=$(git -C "$FIX" branch --list 'quickfix/*' | wc -l)
-# (e) Entry-point unset guard: verdict env var present WITHOUT
-# harness flag → parser unsets it (TRIAGE_VAR_STATE=UNSET).
+# (a) Real WI 1.2 parser: verdict env var present WITHOUT the harness
+# flag → the parser's entry-point unset guard clears it (production
+# guard, run against extracted production code, NOT a sim).
 GUARD_OUT=$(_ZSKILLS_TEST_TRIAGE_VERDICT="REDIRECT:/draft-plan:bogus" bash "$PARSER_SCRIPT" "fix")
+GUARD_RC=$?
 GUARD_VAR_STATE=$(echo "$GUARD_OUT" | grep '^TRIAGE_VAR_STATE=' | cut -d= -f2)
 
-if [ "$RC" -eq 0 ] \
-   && [ "$LINE1_PRESENT" -ge 1 ] \
-   && [ "$LINE2_PRESENT" -ge 1 ] \
-   && [ "$MARKER_COUNT" -eq 0 ] \
-   && [ "$BRANCH_COUNT" -eq 0 ] \
-   && [ "$GUARD_VAR_STATE" = "UNSET" ]; then
-  pass "47 triage REDIRECT(/draft-plan): both lines printed, exit 0, no marker, no branch, unset guard fires when harness flag absent"
-else
-  fail "47 triage REDIRECT: rc=$RC line1=$LINE1_PRESENT line2=$LINE2_PRESENT markers=$MARKER_COUNT branches=$BRANCH_COUNT guard-var-state='$GUARD_VAR_STATE'"
-  echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
-  echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
-fi
-rm -f -- "$OUT" "$ERR"
-
-# ────────────────────────────────────────────────────────────────────
-# Case 48 — Review REJECT path (driven by _ZSKILLS_TEST_HARNESS=1 +
-# _ZSKILLS_TEST_REVIEW_VERDICT="REJECT: contract violation"):
-#   (a) reject reason prints to stdout
-#   (b) exit 0
-#   (c) NO marker
-#   (d) NO branch
-#
-# Like Case 47, review is model-layer prose. Simulate the model's
-# implementation under the test seam: parse REVIEW verdict, on REJECT
-# (with FORCE=0) print the reason and exit 0, write nothing to disk.
-# ────────────────────────────────────────────────────────────────────
-FIX=$(make_fixture c48)
-OUT=$(mktemp)
-ERR=$(mktemp)
-
-REVIEW_SIM="$TEST_TMPDIR/review-sim-c48.sh"
-cat > "$REVIEW_SIM" <<'REVIEW_EOF'
-#!/bin/bash
-set -u
-# Entry-point unset guard.
-if [ "${_ZSKILLS_TEST_HARNESS:-}" != "1" ]; then
-  unset _ZSKILLS_TEST_TRIAGE_VERDICT _ZSKILLS_TEST_REVIEW_VERDICT
-fi
-VERDICT="${_ZSKILLS_TEST_REVIEW_VERDICT:-}"
-FORCE="${FORCE:-0}"
-case "$VERDICT" in
-  APPROVE)
-    echo "VERDICT: APPROVE"
-    exit 0
-    ;;
-  REJECT:*|REVISE:*)
-    REASON="${VERDICT#*:}"
-    REASON="${REASON# }"
-    KIND="${VERDICT%%:*}"
-    printf 'VERDICT: %s -- %s\n' "$KIND" "$REASON"
-    if [ "$FORCE" -eq 1 ]; then
-      printf 'Review %s overridden by force; proceeding.\n' "$KIND"
-      exit 0
-    fi
-    # Soft-reject (or REVISE-as-soft-reject after rounds): exit 0,
-    # no marker, no branch — WI 1.8 has not yet run.
-    exit 0
-    ;;
-  *)
-    echo "PROCEED"
-    exit 0
-    ;;
-esac
-REVIEW_EOF
-chmod +x "$REVIEW_SIM"
-
-(cd "$FIX" && _ZSKILLS_TEST_HARNESS=1 _ZSKILLS_TEST_REVIEW_VERDICT="REJECT: contract violation" FORCE=0 \
-   bash "$REVIEW_SIM" >"$OUT" 2>"$ERR")
-RC=$?
-
-REJECT_LINE=$(grep -c 'VERDICT: REJECT -- contract violation' "$OUT")
+# (b) No marker, no branch on the real fixture (the redirect path exits
+# before WI 1.8 marker-write / WI 2 branch-creation; nothing here touches
+# either, so the fixture must remain clean).
 MARKER_COUNT=$(find "$FIX/.zskills/tracking" -type f -name 'fulfilled.quickfix.*' 2>/dev/null | wc -l)
 BRANCH_COUNT=$(git -C "$FIX" branch --list 'quickfix/*' | wc -l)
 
-if [ "$RC" -eq 0 ] \
-   && [ "$REJECT_LINE" -ge 1 ] \
+# (c) Per-skill divergent SOURCE-string anchors.
+#   c1: quickfix HAS the landing-config soft-redirect (both variants);
+#       /do has NEITHER (no landing-config redirect at all).
+QF_LAND_WORKTREE=$(grep -c 'Triage: redirecting to /do worktree\. Reason: /quickfix requires execution.landing' "$SKILL")
+QF_LAND_COMMIT=$(grep -c 'Triage: redirecting to /commit\. Reason: /quickfix requires execution.landing' "$SKILL")
+DO_LAND_REDIRECT=$(grep -c 'requires execution.landing' "$DO_SKILL")
+#   c2: per-skill ask-user self-name — quickfix says /quickfix, do says
+#       /do; each must NOT carry the other's self-name in its ask-user row.
+QF_SELFNAME=$(grep -c 'Re-invoke /quickfix with a concrete description' "$SKILL")
+QF_CROSS=$(grep -c 'Re-invoke /do with a concrete description' "$SKILL")
+DO_SELFNAME=$(grep -c 'Re-invoke /do with a concrete description' "$DO_SKILL")
+DO_CROSS=$(grep -c 'Re-invoke /quickfix with a concrete description' "$DO_SKILL")
+
+if [ "$GUARD_RC" -eq 0 ] \
+   && [ "$GUARD_VAR_STATE" = "UNSET" ] \
    && [ "$MARKER_COUNT" -eq 0 ] \
-   && [ "$BRANCH_COUNT" -eq 0 ]; then
-  pass "48 review REJECT: reason printed, exit 0, no marker, no branch"
+   && [ "$BRANCH_COUNT" -eq 0 ] \
+   && [ "$QF_LAND_WORKTREE" -ge 1 ] && [ "$QF_LAND_COMMIT" -ge 1 ] \
+   && [ "$DO_LAND_REDIRECT" -eq 0 ] \
+   && [ "$QF_SELFNAME" -ge 1 ] && [ "$QF_CROSS" -eq 0 ] \
+   && [ "$DO_SELFNAME" -ge 1 ] && [ "$DO_CROSS" -eq 0 ]; then
+  pass "47 triage REDIRECT: real parser unset-guard fires (rc=0, UNSET), no marker, no branch; per-skill divergent anchors (quickfix landing-redirect present + absent in /do; each skill self-names its own ask-user row)"
 else
-  fail "48 review REJECT: rc=$RC reject-line=$REJECT_LINE markers=$MARKER_COUNT branches=$BRANCH_COUNT"
-  echo "  --- stdout ---"; sed 's/^/    /' "$OUT"
-  echo "  --- stderr ---"; sed 's/^/    /' "$ERR"
+  fail "47 triage REDIRECT: guard-rc=$GUARD_RC guard-var='$GUARD_VAR_STATE' markers=$MARKER_COUNT branches=$BRANCH_COUNT qf-land-wt=$QF_LAND_WORKTREE qf-land-commit=$QF_LAND_COMMIT do-land=$DO_LAND_REDIRECT qf-self=$QF_SELFNAME qf-cross=$QF_CROSS do-self=$DO_SELFNAME do-cross=$DO_CROSS"
 fi
-rm -f -- "$OUT" "$ERR"
+
+# ────────────────────────────────────────────────────────────────────
+# Case 48 — Review REJECT: real-behavior + per-skill divergent-string
+# anchor (Phase 4 de-hollow, C2/C3).
+#
+# DE-HOLLOWED: the prior version carried a `REVIEW_SIM` heredoc that
+# re-implemented the model's REVIEW verdict-parse + reject-print in
+# test-authored bash and asserted against ITS OWN output — circular and
+# hollow. That heredoc is DELETED.
+#
+# MESSAGE EMISSION IS MODEL-LAYER: review is prose; the model printf's the
+# REJECT verdict/override line per WI 1.5.5 / WI 1.5.4b. So instead of
+# asserting an emitted message, this case:
+#   (a) extract-and-RUNS the REAL verdict regex (the production
+#       ```regex fence) against a REJECT-with-reason input, proving a
+#       `VERDICT: REJECT -- contract violation` line PARSES as a valid
+#       REJECT (and that the same regex rejects a bare REJECT — the `--`
+#       requirement is load-bearing);
+#   (b) asserts NO marker / NO branch on a real fixture and that the
+#       REVIEW-seam unset guard fires in the real WI 1.2 parser;
+#   (c) anchors the genuinely PER-SKILL-DIVERGENT review-REJECT source
+#       prose: quickfix's `**No marker is written** (WI 1.8 has not yet
+#       run).` + bare `Continue.` vs /do's `(no tracking for /do)` +
+#       `Continue to Phase 0c.` A copy-paste cross-contamination flips
+#       these and the anchor fails.
+# ────────────────────────────────────────────────────────────────────
+DO_SKILL="$REPO_ROOT/skills/do/SKILL.md"
+FIX=$(make_fixture c48)
+
+# (a) Extract the production REVISE/REJECT regex (the same ```regex fence
+# Case 52 parses, WI 1.5.4b) and run it against the REJECT reason input.
+# Extracted locally so this case is independent of Case 52's ordering.
+C48_REVREJ_REGEX=$(awk '
+  /^### WI 1\.5\.4b/   { in_section = 1; next }
+  /^### WI 1\.5\.5/    { in_section = 0 }
+  !in_section          { next }
+  /^```regex$/         { infence = 1; next }
+  infence && /^```$/   { infence = 0; next }
+  infence              { print }
+' "$SKILL" | grep -E '^\^VERDICT:.*REVISE\|REJECT' | head -1)
+
+C48_PARSE_OK=0
+if [ -n "$C48_REVREJ_REGEX" ]; then
+  set +u
+  REJECT_INPUT="VERDICT: REJECT -- contract violation"
+  REJECT_BARE="VERDICT: REJECT"
+  # Reason WITHOUT the `--` separator must NOT match — load-bearing input
+  # that catches a production regex that drops the `--` requirement.
+  REJECT_NO_SEP="VERDICT: REJECT contract violation"
+  if [[ "$REJECT_INPUT" =~ $C48_REVREJ_REGEX ]] \
+     && ! [[ "$REJECT_BARE" =~ $C48_REVREJ_REGEX ]] \
+     && ! [[ "$REJECT_NO_SEP" =~ $C48_REVREJ_REGEX ]]; then
+    C48_PARSE_OK=1
+  fi
+  set -u
+fi
+
+# (b) No marker / no branch on the real fixture; REVIEW-seam unset guard.
+MARKER_COUNT=$(find "$FIX/.zskills/tracking" -type f -name 'fulfilled.quickfix.*' 2>/dev/null | wc -l)
+BRANCH_COUNT=$(git -C "$FIX" branch --list 'quickfix/*' | wc -l)
+GUARD_OUT=$(_ZSKILLS_TEST_REVIEW_VERDICT="REJECT: bogus" bash "$PARSER_SCRIPT" "fix")
+REVIEW_VAR_STATE=$(echo "$GUARD_OUT" | grep '^REVIEW_VAR_STATE=' | cut -d= -f2)
+
+# (c) Per-skill divergent review-REJECT prose anchors.
+QF_NOMARKER=$(grep -c '\*\*No marker is written\*\* (WI 1.8 has not yet' "$SKILL")
+DO_NOMARKER=$(grep -c '\*\*No marker is written\*\* (no tracking for /do)' "$DO_SKILL")
+# Cross-contamination guards: quickfix must NOT carry /do's variant and
+# vice-versa.
+QF_HAS_DO_VARIANT=$(grep -c 'no tracking for /do' "$SKILL")
+DO_HAS_QF_VARIANT=$(grep -c 'WI 1.8 has not yet' "$DO_SKILL")
+
+if [ "$C48_PARSE_OK" -eq 1 ] \
+   && [ "$MARKER_COUNT" -eq 0 ] \
+   && [ "$BRANCH_COUNT" -eq 0 ] \
+   && [ "$REVIEW_VAR_STATE" = "UNSET" ] \
+   && [ "$QF_NOMARKER" -ge 1 ] && [ "$DO_NOMARKER" -ge 1 ] \
+   && [ "$QF_HAS_DO_VARIANT" -eq 0 ] && [ "$DO_HAS_QF_VARIANT" -eq 0 ]; then
+  pass "48 review REJECT: production regex parses 'REJECT -- reason' (and rejects bare REJECT); no marker, no branch, REVIEW unset-guard fires; per-skill divergent no-marker prose anchored (quickfix 'WI 1.8' vs /do 'no tracking for /do', no cross-contamination)"
+else
+  fail "48 review REJECT: parse-ok=$C48_PARSE_OK markers=$MARKER_COUNT branches=$BRANCH_COUNT review-var='$REVIEW_VAR_STATE' qf-nomarker=$QF_NOMARKER do-nomarker=$DO_NOMARKER qf-has-do=$QF_HAS_DO_VARIANT do-has-qf=$DO_HAS_QF_VARIANT regex='$C48_REVREJ_REGEX'"
+fi
 
 # ────────────────────────────────────────────────────────────────────
 # Case 49 — DELETED in Phase 4 (QUICKFIX_GRAMMAR_REDESIGN, WI 4.6b).

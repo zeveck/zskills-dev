@@ -242,16 +242,80 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
-# Case 6 — VERDICT parser regex documented:
-#   - APPROVE bare: `^VERDICT:[[:space:]]+APPROVE[[:space:]]*$`
-#   - REVISE/REJECT require `--` + reason:
-#     `^VERDICT:[[:space:]]+(REVISE|REJECT)[[:space:]]+--[[:space:]]+(.+)$`
+# Case 6 — VERDICT parser regex: extract-and-RUN (Phase 4, C1).
+#
+# Previously this case only `grep -qF`'d the two regex STRINGS against
+# the SKILL.md — it never ran the parser, so a regex that was present in
+# the file but semantically wrong (e.g. dropped the `--` requirement)
+# would still pass. Convert to behavioral extract-and-run: pull `/do`'s
+# REAL verdict-parser regexes out of the ```regex fence in Phase 0b and
+# match them against APPROVE / `REVISE -- r` / `REJECT -- r` / malformed
+# inputs, asserting the parse outcome per input. Mirror of
+# test-quickfix.sh Case 52.
+#
+# The verdict-parser fence is the lone ```regex block, which lives in the
+# `## Phase 0b` section (between `## Phase 0b` and `## Phase 0c`). It is a
+# ```regex fence (NOT ```bash), so the bash-only `extract_fence_between`
+# lib helper does not apply; we use a scoped awk for the regex fence, as
+# Case 52 does on the quickfix side.
 # ────────────────────────────────────────────────────────────────────
-if grep -qF '^VERDICT:[[:space:]]+APPROVE[[:space:]]*$' "$SKILL" \
-   && grep -qF '^VERDICT:[[:space:]]+(REVISE|REJECT)[[:space:]]+--[[:space:]]+(.+)$' "$SKILL"; then
-  pass "6  VERDICT parser regex: APPROVE bare + REVISE/REJECT (-- + reason) documented"
+VERDICT_REGEX_BODY=$(awk '
+  /^## Phase 0b/       { in_section = 1; next }
+  /^## Phase 0c/       { in_section = 0 }
+  !in_section          { next }
+  /^```regex$/         { infence = 1; next }
+  infence && /^```$/   { infence = 0; next }
+  infence              { print }
+' "$SKILL")
+
+# Two patterns: (1) bare APPROVE, (2) REVISE|REJECT with -- + reason.
+# Strip comment/blank lines via the grep filters below.
+APPROVE_REGEX=$(echo "$VERDICT_REGEX_BODY" | grep -E '^\^VERDICT:.*APPROVE' | head -1)
+REVREJ_REGEX=$(echo "$VERDICT_REGEX_BODY"  | grep -E '^\^VERDICT:.*REVISE\|REJECT' | head -1)
+
+if [ -z "$APPROVE_REGEX" ] || [ -z "$REVREJ_REGEX" ]; then
+  fail "6  verdict-regex extraction: APPROVE='$APPROVE_REGEX' REVREJ='$REVREJ_REGEX' (fence missing or malformed)"
 else
-  fail "6  VERDICT parser regex: missing one or both regex forms"
+  c6_match() {
+    # $1=input $2=want(match|nomatch) $3=regex $4=label
+    local input="$1" want="$2" rx="$3" label="$4" got
+    if [[ "$input" =~ $rx ]]; then got=match; else got=nomatch; fi
+    if [ "$got" = "$want" ]; then
+      echo "    ok: $label ('$input' → $got)"
+      return 0
+    fi
+    echo "    FAIL: $label ('$input' → $got, want $want)"
+    return 1
+  }
+
+  C6_RESULTS=$(
+    set +u
+    # APPROVE: bare matches; APPROVE + free text must NOT match either regex.
+    c6_match "VERDICT: APPROVE"                       match    "$APPROVE_REGEX" "bare APPROVE"                 || exit 1
+    c6_match "VERDICT: APPROVE because plan is fine"  nomatch  "$APPROVE_REGEX" "APPROVE+free-text → no"       || exit 1
+    c6_match "VERDICT: APPROVE because plan is fine"  nomatch  "$REVREJ_REGEX"  "APPROVE+free-text → no (rr)"  || exit 1
+    # REVISE/REJECT: require `--` + reason.
+    c6_match "VERDICT: REVISE -- too many concepts"   match    "$REVREJ_REGEX"  "REVISE -- reason"             || exit 1
+    c6_match "VERDICT: REJECT -- contract violation"  match    "$REVREJ_REGEX"  "REJECT -- reason"             || exit 1
+    # Reason WITHOUT the `--` separator must NOT match — this is the
+    # load-bearing input that fails if production drops the `--` literal.
+    c6_match "VERDICT: REVISE too many concepts"      nomatch  "$REVREJ_REGEX"  "REVISE+reason, no -- → no"    || exit 1
+    c6_match "VERDICT: REJECT contract violation"     nomatch  "$REVREJ_REGEX"  "REJECT+reason, no -- → no"    || exit 1
+    c6_match "VERDICT: REVISE"                        nomatch  "$REVREJ_REGEX"  "REVISE bare → no (-- req'd)"  || exit 1
+    c6_match "VERDICT: REJECT"                        nomatch  "$REVREJ_REGEX"  "REJECT bare → no (-- req'd)"  || exit 1
+    c6_match "VERDICT: REVISE"                        nomatch  "$APPROVE_REGEX" "REVISE bare → no (approve)"   || exit 1
+    # Malformed: not a VERDICT line at all → neither regex.
+    c6_match "garbage line"                           nomatch  "$APPROVE_REGEX" "malformed → no (approve)"     || exit 1
+    c6_match "garbage line"                           nomatch  "$REVREJ_REGEX"  "malformed → no (revrej)"      || exit 1
+  )
+  C6_RC=$?
+
+  if [ "$C6_RC" -eq 0 ]; then
+    pass "6  VERDICT parser (extract-and-run): bare APPROVE matches; APPROVE+text rejected; REVISE/REJECT require -- + reason; bare REVISE/REJECT and malformed rejected"
+  else
+    fail "6  VERDICT parser (extract-and-run): a match expectation failed"
+    echo "$C6_RESULTS" | sed 's/^/  /'
+  fi
 fi
 
 # ────────────────────────────────────────────────────────────────────
