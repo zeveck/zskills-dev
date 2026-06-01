@@ -166,6 +166,7 @@ run_suite "test-skill-file-drift-extended-scope.sh" "tests/test-skill-file-drift
 run_suite "test-plan-drift-correct.sh" "tests/test-plan-drift-correct.sh"
 run_suite "test-plans-render-index.sh" "tests/test-plans-render-index.sh"
 run_suite "test-work-on-plans.sh" "tests/test-work-on-plans.sh"
+run_suite "test-work-on-plans-dispatch-seam.sh" "tests/test-work-on-plans-dispatch-seam.sh"
 run_suite "test_zskills_monitor_collect.sh" "tests/test_zskills_monitor_collect.sh"
 run_suite "test_zskills_monitor_server.sh" "tests/test_zskills_monitor_server.sh"
 run_suite "test_zskills_monitor_csrf.sh" "tests/test_zskills_monitor_csrf.sh"
