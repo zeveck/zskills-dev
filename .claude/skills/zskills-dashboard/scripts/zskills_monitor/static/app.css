@@ -725,6 +725,13 @@ code, pre, .mono {
   font-size: 0.85rem;
 }
 
+/* Issue #995 — explicit hide so `display: flex` above doesn't defeat
+   the [hidden] attribute set by renderRunStatus when no run-state pill
+   content was rendered (idle + no trigger + no warning). */
+.run-status[hidden] {
+  display: none;
+}
+
 .run-status.run-status-stale {
   border-color: var(--orange);
 }
