@@ -1,7 +1,8 @@
 ---
 title: Docs Viewer — JS-based Markdown viewer at /docs/
 created: 2026-06-02
-status: drafted
+status: complete
+completed: 2026-06-02
 ---
 
 # Plan: Docs Viewer — JS-based Markdown viewer at /docs/
@@ -53,12 +54,12 @@ Phases 2 and 4).
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — MarkdownRenderer lift + tests | ⬚ | | |
-| 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ⬚ | | |
-| 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ⬚ | | |
-| 3 — Styling + dark-default + theme toggle | ⬚ | | |
-| 4 — Catalog generator + frontmatter metadata strip | ⬚ | | |
-| 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ⬚ | | |
+| 1 — MarkdownRenderer lift + tests | ✅ Done | `fd79c2c` | 27/27 renderer tests; full suite 7185/7185 |
+| 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ✅ Done | `474aed5` | 33/33 shell tests; full suite 7228/7228 |
+| 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ✅ Done | `ea81d88` | 38/38 routing tests; doc-viewer suites 98/98 |
+| 3 — Styling + dark-default + theme toggle | ✅ Done | `101b4a9` | 31/31 styling tests; full suite 7297/7297 |
+| 4 — Catalog generator + frontmatter metadata strip | ✅ Done | `942c0cd` | 36 new tests (catalog+frontmatter); 176-item catalog; full suite 7333/7333 |
+| 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ✅ Done | `05e46fe` | parity verified (0 unexplained HTML-only tokens); IAM.html deleted; .nojekyll gate added; build-prod.sh no-op confirmed; full suite 7336/7336 |
 
 ## Conventions all phases follow
 
