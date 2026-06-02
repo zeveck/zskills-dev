@@ -1455,13 +1455,15 @@ If the plan file has YAML frontmatter with an `issue:` field (e.g.,
 
 ### 3. Update plan frontmatter
 
-Change `status: active` (or `status: in-progress`) to `status: complete`
-in the plan file's YAML frontmatter. If the plan has no `status:` field,
-add one: `status: complete`. **Also write a `completed:` ISO-8601 UTC
-datetime field** so the dashboard's Completed-window inference and the
-backfill-script idempotency guard both have a canonical source of truth
-(D1 of the completed-backlog-sections plan). The path-config helper
-resolves `$ZSKILLS_PLANS_DIR` — NEVER hardcode `plans/<slug>.md`:
+Mark the plan complete via **`scripts/mark-plan-complete.sh`** — this
+helper writes BOTH `status: complete` AND `completed: <ISO-8601 UTC
+datetime>` atomically to the plan's YAML frontmatter (the dashboard's
+Completed-column inference at `collect.py:1795-1801` requires both
+fields; writing only `status:complete` is the half-write bug #957
+closed). NEVER write `status: complete` via a manual `Edit` to the
+frontmatter — that's the antipattern that caused #957; the helper is
+the only supported path. The path-config helper resolves
+`$ZSKILLS_PLANS_DIR` — NEVER hardcode `plans/<slug>.md`:
 
 ```bash
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
@@ -1478,19 +1480,17 @@ ZSKILLS_PATHS_ROOT="${WORKTREE_PATH:-$CLAUDE_PROJECT_DIR}" \
 # PR mode only: cd "$WORKTREE_PATH" first (cherry-pick/direct: stay on main)
 # Plan file path resolved via $ZSKILLS_PLANS_DIR — NEVER hardcoded plans/.
 PLAN_FILE="$ZSKILLS_PLANS_DIR/<slug>.md"
-bash scripts/frontmatter-set.sh "$PLAN_FILE" status complete
-completed_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-bash scripts/frontmatter-set.sh "$PLAN_FILE" completed "$completed_ts"
+bash scripts/mark-plan-complete.sh "$PLAN_FILE"
 git add "$PLAN_FILE"
 git commit -m "chore: mark plan complete — <plan-name>"
 ```
 
-The `completed:` field is **full ISO-8601 UTC datetime**
-(`YYYY-MM-DDTHH:MM:SSZ`), NOT a date-only string — matches GH's
-`closedAt` format so cross-source date comparison in the dashboard is
-uniform. Do not use `date -I` or `cut -c1-10`; both produce date-only
-strings that mix poorly with the full-datetime form the historical
-backfill emits.
+The helper writes the canonical **full ISO-8601 UTC datetime**
+(`YYYY-MM-DDTHH:MM:SSZ`) — matches GH's `closedAt` format so
+cross-source date comparison in the dashboard is uniform. The helper
+internalizes this format; do not work around it with `date -I` or
+`cut -c1-10` (both produce date-only strings that mix poorly with the
+full-datetime form the historical backfill emits).
 
 ### 4. Update sprint report
 
