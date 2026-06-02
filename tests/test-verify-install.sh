@@ -11,14 +11,20 @@
 # Anti-hollow contract (the load-bearing requirement): the verifier must FAIL
 # on a deliberately-broken install, not only PASS on a good one. This file
 # asserts BOTH directions for BOTH lanes:
-#   - good legacy install            → verify_overall_rc == 0 (no FAIL)
-#   - broken legacy (hook file gone) → FAIL
-#   - broken legacy (managed.md TODO)→ FAIL
-#   - good plugin layout             → no FAIL
-#   - broken plugin (sentinel dropped)→ FAIL
-#   - broken plugin (artifact dropped)→ FAIL
-#   - dual install                   → FAIL
-#   - none                           → FAIL
+#   - good legacy install                  → verify_overall_rc == 0 (no FAIL)
+#   - good legacy + UNSET optional config  → 0 FAIL  (#1004 — the renderer's
+#       designed `<!-- TODO -->` placeholders for unset OPTIONAL config must
+#       NOT be flagged; this is the recurrence-proof case PR #1003 missed)
+#   - good legacy + NO zskills_version     → 0 FAIL / 0 WARN  (#1004 — Step F.5
+#       legitimately skips writing it on an untagged source clone)
+#   - broken legacy (hook file gone)       → FAIL
+#   - broken legacy (raw {{TOKEN}})        → FAIL  (renderer never ran)
+#   - good plugin layout                   → no FAIL
+#   - good plugin + NO zskills_version     → 0 FAIL / 0 WARN  (#1004)
+#   - broken plugin (sentinel dropped)     → FAIL
+#   - broken plugin (artifact dropped)     → FAIL
+#   - dual install                         → FAIL
+#   - none                                 → FAIL
 #
 # Sandbox-only: every consumer dir lives under $TMP; the real repo / $HOME are
 # never written. The verifier is read-only (it only inspects files), so even
@@ -63,6 +69,8 @@ run_cheap_capture() {
 count_fail() { grep -c '^FAIL' "$1" 2>/dev/null || echo 0; }
 # Does the captured output contain a FAIL whose id matches $2?
 has_fail_id() { grep -q "^FAIL	$2	" "$1"; }
+# Does the captured output contain a WARN whose id matches $2?
+has_warn_id() { grep -q "^WARN	$2	" "$1"; }
 
 # ── Synthetic LEGACY install builder ────────────────────────────────────────
 # Produces a consumer dir with: a populated .claude/skills/, a settings.json
@@ -154,16 +162,78 @@ else
   fail "2. broken legacy hook-resolve" "expected FAIL on legacy.hooks-resolve; VI_FAIL=$VI_FAIL records=$(grep '^FAIL' "$OUT")"
 fi
 
-# ── LEGACY broken (B): leave a TODO placeholder in managed.md → FAIL ─────────
-LB2="$(make_legacy_good 3)"
-printf '%s\n' '# rules' '<!-- TODO: dev_server.cmd not set -->' \
-  > "$LB2/.claude/rules/zskills/managed.md"
-OUT="$TMP/out-legacy-broken-managed.txt"
-run_cheap_capture "$LB2" "$OUT"
-if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "legacy.managed-no-placeholders"; then
-  pass "3. broken legacy (managed.md TODO placeholder) → FAIL on legacy.managed-no-placeholders"
+# ── LEGACY valid + UNSET optional config (#1004): managed.md carries the ─────
+# renderer's DESIGNED `<!-- TODO -->` placeholders for unset OPTIONAL config
+# (dev_server.cmd, ui.auth_bypass, testing.file_patterns, …). This is the
+# common real-world case — and ALWAYS the case for projects with no dev server
+# / no web-app auth gate. It is a VALID install and must PASS with 0 FAIL.
+# This is the recurrence-proof case the original clean-managed.md fixture
+# missed (the false-FAIL #1004 reported).
+LV="$(make_legacy_good 3)"
+cat > "$LV/.claude/rules/zskills/managed.md" <<'MD'
+# acme — Agent Reference
+
+## Dev Server
+<!-- TODO: dev_server.cmd not set in .claude/zskills-config.json -->
+
+**Auth gate:**
+<!-- TODO: ui.auth_bypass not set in .claude/zskills-config.json -->
+
+### Test files
+<!-- TODO: testing.file_patterns is empty -->
+
+## Architecture
+<!-- TODO: SOURCE_LAYOUT has no config field; fill in project's architecture summary -->
+MD
+OUT="$TMP/out-legacy-valid-unset-optional.txt"
+run_cheap_capture "$LV" "$OUT"
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "3. valid legacy install with UNSET optional config (<!-- TODO --> placeholders present) → 0 FAIL"
 else
-  fail "3. broken legacy managed placeholder" "expected FAIL on legacy.managed-no-placeholders; records=$(grep '^FAIL' "$OUT")"
+  fail "3. valid legacy unset-optional" "expected 0 FAIL on designed <!-- TODO --> placeholders, got $(grep '^FAIL' "$OUT")"
+fi
+# And it must PASS the managed-rendered check specifically (not merely avoid FAIL).
+if has_fail_id "$OUT" "legacy.managed-rendered" || has_fail_id "$OUT" "legacy.managed-present"; then
+  fail "3b. valid legacy unset-optional managed check" "managed.md check FAILed on designed placeholders: $(grep -E 'managed' "$OUT")"
+else
+  pass "3b. valid legacy unset-optional → managed.md check does not FAIL on <!-- TODO --> placeholders"
+fi
+
+# ── LEGACY valid + NO zskills_version (#1004): an untagged source clone ───────
+# legitimately leaves zskills_version unset (Step F.5 skips writing it). This
+# must produce 0 FAIL AND 0 WARN — absence of a version is NOT install
+# breakage, and must not even alarm with a WARN.
+LNV="$(make_legacy_good 4)"
+cat > "$LNV/.claude/zskills-config.json" <<'JSON'
+{ "project_name": "acme" }
+JSON
+OUT="$TMP/out-legacy-no-version.txt"
+run_cheap_capture "$LNV" "$OUT"
+if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
+  pass "3c. valid legacy install with NO zskills_version → 0 FAIL / 0 WARN (no version-recorded check)"
+else
+  fail "3c. valid legacy no-version" "expected 0 FAIL / 0 WARN; FAIL=$(grep '^FAIL' "$OUT") WARN=$(grep '^WARN' "$OUT")"
+fi
+if has_warn_id "$OUT" "legacy.version-recorded" || has_fail_id "$OUT" "legacy.version-recorded"; then
+  fail "3d. legacy version-recorded removed" "legacy.version-recorded check still present — should be cut per #1004"
+else
+  pass "3d. legacy.version-recorded check removed (no false-positive WARN on untagged clone)"
+fi
+
+# ── LEGACY broken (B): a raw, UN-substituted {{TOKEN}} in managed.md → FAIL ───
+# This is the ONLY managed.md content that means "the renderer never ran" — a
+# copied-but-unrendered template. The renderer itself RAISES on a surviving
+# {{...}}, so this can never appear in a real render; its presence is genuine
+# breakage and MUST FAIL.
+LB2="$(make_legacy_good 5)"
+printf '%s\n' '# rules' 'Auth bypass: {{AUTH_BYPASS}}' \
+  > "$LB2/.claude/rules/zskills/managed.md"
+OUT="$TMP/out-legacy-broken-unrendered.txt"
+run_cheap_capture "$LB2" "$OUT"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "legacy.managed-rendered"; then
+  pass "3e. broken legacy (raw {{TOKEN}} in managed.md, renderer never ran) → FAIL on legacy.managed-rendered"
+else
+  fail "3e. broken legacy unrendered managed" "expected FAIL on legacy.managed-rendered; records=$(grep '^FAIL' "$OUT")"
 fi
 
 # ── PLUGIN: good layout → no FAIL ───────────────────────────────────────────
@@ -186,6 +256,26 @@ if grep -q '^PASS	lane.detect	detected lane: plugin' "$OUT"; then
   pass "4b. good plugin layout → lane detected as plugin"
 else
   fail "4b. good plugin lane detect" "lane.detect not 'plugin': $(grep lane.detect "$OUT")"
+fi
+
+# ── PLUGIN valid + NO zskills_version (#1004): plugin seed config has no tag ──
+# A valid mirror-less plugin install whose seed config carries no zskills_version
+# must produce 0 FAIL AND 0 WARN — same zero-false-positive bar as legacy.
+PNV="$(make_plugin_good 5)"
+cat > "$PNV/.claude/zskills-config.json" <<'JSON'
+{ "project_name": "acme" }
+JSON
+OUT="$TMP/out-plugin-no-version.txt"
+run_cheap_capture "$PNV" "$OUT"
+if [ "$VI_FAIL" -eq 0 ] && [ "$VI_WARN" -eq 0 ]; then
+  pass "4c. valid plugin install with NO zskills_version → 0 FAIL / 0 WARN (no version-recorded check)"
+else
+  fail "4c. valid plugin no-version" "expected 0 FAIL / 0 WARN; FAIL=$(grep '^FAIL' "$OUT") WARN=$(grep '^WARN' "$OUT")"
+fi
+if has_warn_id "$OUT" "plugin.version-recorded" || has_fail_id "$OUT" "plugin.version-recorded"; then
+  fail "4d. plugin version-recorded removed" "plugin.version-recorded check still present — should be cut per #1004"
+else
+  pass "4d. plugin.version-recorded check removed (no false-positive WARN on untagged seed config)"
 fi
 
 # ── PLUGIN broken (A): strip a sentinel from one artifact → FAIL ─────────────

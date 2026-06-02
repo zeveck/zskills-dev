@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.02+ff2cf6"
+  version: "2026.06.02+d76c61"
 ---
 
 # Update Z Skills Infrastructure
@@ -2060,8 +2060,13 @@ After the final report, run the bundled consumer post-install verifier's
 **cheap structural tier** and append its result to the success output. This
 catches the consumer-side of the dogfood-mask (#799/#831): environment-specific
 install breakage that dev-repo tests structurally cannot see (a registered hook
-that resolves to nothing, a leftover `<!-- TODO -->` placeholder in
-`managed.md`, a dropped artifact/sentinel, an accidental dual-install).
+that resolves to nothing, an un-rendered `managed.md` carrying raw `{{TOKEN}}`
+template placeholders, a dropped artifact/sentinel, an accidental dual-install).
+Per the zero-false-positive bar (#1004) it NEVER flags the renderer's designed
+`<!-- TODO -->` comments for unset OPTIONAL config, nor a missing
+`zskills_version` (an untagged source clone legitimately lacks one) — a FAIL
+always means the install is genuinely broken, never that an optional setting is
+unconfigured.
 
 **NON-FATAL — informative only.** The install already succeeded; this
 verification reports PASS/WARN/FAIL but **does NOT undo or fail the install**.
