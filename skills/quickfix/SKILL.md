@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.06.01+58b49f"
+  version: "2026.06.01+66842d"
 ---
 
 # /quickfix — In-Flight Fix → PR
@@ -48,7 +48,7 @@ ceremony than the change is worth, but a PR is still required.
 ## Argument parser (WI 1.2)
 
 Bash-regex idiom matching `skills/do/SKILL.md:70-92`. Recognized flags:
-`--branch <name>`, `--rounds N`, `--force`. Recognized positional tokens
+`--branch <name>`, `--rounds N`, `--force`, `--no-claim`. Recognized positional tokens
 (case-insensitive, anywhere in the arg vector): `auto`,
 `from-here`, `skip-tests`. The positional `auto` token enables
 auto-merge via `/land-pr` and matches the convention in `/run-plan`,
@@ -65,6 +65,20 @@ at parse time — mode detection (WI 1.5) decides whether it is fatal.
   proceed with `/quickfix` anyway. Dashed form to match `/do`,
   `/work-on-plans`, and `/cleanup-merged` — `--force` is a safety-gate
   override, distinct from the positional verb/mode tokens.
+- **--no-claim** (optional) — treat every bare `#N` in the description as a
+  mere mention. Suppresses the stray-`#N` pre-flight check (#959):
+  `/quickfix` normally STOPS when the description references an issue
+  currently held in-flight by a foreign pipeline (to prevent duplicating
+  its work — the closed-PR-#888-vs-landed-#901 footgun), and warns on any
+  other stray `#N` (#907). Pass `--no-claim` when the reference is
+  deliberate ("fix tooltip, related to #340") and you do NOT want
+  `/quickfix` to halt or warn on it. Claim-positioned `#N` (a leading `#N`
+  or `Fix #N …`) are unaffected — they still acquire their claim through WI
+  1.8's normal acquire-or-decline. **Accepted residual:** a false-STOP
+  fires ONLY when a `/quickfix` mentions an issue that is in flight RIGHT
+  NOW but isn't actually being worked; recover with `--no-claim`. Mentions
+  of closed/old issues never trigger (no live claim). Not advertised in the
+  `argument-hint` frontmatter (kept lean per #961); documented here.
 
 WI 1.5.5's confirmation prompt is bypassed when `AUTO_FLAG=1`.
 
@@ -83,6 +97,7 @@ BRANCH_OVERRIDE=""
 FROM_HERE=0
 SKIP_TESTS=0
 FORCE=0
+NO_CLAIM=0
 ROUNDS=1
 AUTO_FLAG=0
 
@@ -99,6 +114,17 @@ while [ $i -lt ${#ARGS[@]} ]; do
     # /cleanup-merged conventions). The positional bare `force` form was
     # retired in favor of this dashed form (issue #810).
     --force) FORCE=1 ;;
+    # Issue #959: `--no-claim` opt-out. When present, the stray-`#N`
+    # pre-flight (the #907 loop below) treats every bare `#N` as a mere
+    # mention — it suppresses BOTH the foreign-held STOP and the #907 warn.
+    # Use it when a /quickfix legitimately references an issue it is NOT
+    # working (e.g. "fix tooltip, related to #340"). Consumed by the case
+    # parser like `--force`, so it never falls through into DESCRIPTION and
+    # never leaks into the soft-redirect prompts (which interpolate
+    # `$DESCRIPTION`, not the raw arg vector). Claim-positioned `#N` (in
+    # ISSUE_NUMS) are independent of this flag — they still go through WI
+    # 1.8's acquire-or-decline.
+    --no-claim) NO_CLAIM=1 ;;
     # Positional `from-here` / `skip-tests` tokens (case-insensitive).
     # Bracket-class form matches each letter case-insensitively; the hyphen
     # between bracket classes is treated as a literal character (NOT inside
@@ -214,6 +240,103 @@ ISSUE_NUMS=("${_QF_UNIQUE[@]}")
 unset _QF_SEEN _QF_UNIQUE _QF_REMAINING _QF_ISSUE_KW _QF_ISSUE_FILLER _n
 # Back-compat scalar (= first claimed issue, or empty when none).
 ISSUE_NUM="${ISSUE_NUMS[0]:-}"
+# Unclaimed-reference check (#907 warn + #959 foreign-held STOP). If the
+# description contains a `#N` token that the claim-position rules above did
+# NOT capture into ISSUE_NUMS, the reference is real but UN-claimed by this
+# /quickfix run. A silent no-claim is the footgun that let `/do Build … for
+# #877` run without claiming #877: a parallel /fix-issues cron then picked
+# up the unclaimed issue and duplicated the work (closed PR #888 vs landed
+# #901). /quickfix lands issue work (one-commit PR), so the same risk
+# applies here.
+#
+# Two-tier handling per stray (non-ISSUE_NUMS) `#N` (#959):
+#   1. READ-ONLY foreign-held check. If issue N currently has a LIVE claim
+#      held by a DIFFERENT pipeline, STOP (clean exit 0 — decline, not an
+#      error). #907's warn fails UNSAFE in autonomous use (an agent reads
+#      the warn and proceeds anyway, re-creating the #877 duplication); the
+#      STOP fails SAFE and is recoverable via `--no-claim`. We DO NOT acquire
+#      on stray refs (that would spuriously claim "see #340" mentions — the
+#      over-capture the conservative ISSUE_NUMS parser deliberately avoids).
+#   2. Not held (or no claim.json) → keep the #907 warn and proceed.
+#
+# Foreign-vs-self is decided by READING `.zskills/claims/issue-N/claim.json`
+# and comparing its `pipeline_id` to THIS run's pipeline_id — exactly the
+# pattern hooks/block-fix-issue-unclaimed.sh uses. We do NOT use
+# filter-in-flight-issue-claims.sh alone: it drops the caller's OWN pipeline
+# claims too and cannot distinguish foreign from self, which would wrongly
+# stop on self-re-entry. Fail-OPEN discipline mirrors
+# block-fix-issue-unclaimed.sh: a missing/malformed claim.json, or a missing
+# pipeline_id, is treated as "not held" → warn-and-proceed, never a false
+# STOP. (In practice a stray ref is by definition never acquired by THIS
+# /quickfix run, so any live claim on it is foreign; the self-exclusion
+# below is the belt-and-suspenders that keeps a hypothetical self-claim from
+# stopping us.)
+#
+# Accepted residual (intentional, safe-direction): a false-STOP fires ONLY
+# when a /quickfix mentions an issue that is in flight RIGHT NOW but isn't
+# actually being worked (`fix tooltip, related to #340` while #340 is live).
+# Recover with `--no-claim`. Mentions of closed/old issues never trigger (no
+# live claim). This is the irreducible cost of "issues optional + can't tell
+# work-from-mention out of free text" — the failure mode relocates from
+# "fails → duplicates silently" to "fails → halts with a clear message".
+#
+# `--no-claim` (NO_CLAIM=1, parsed in the case loop above) suppresses BOTH
+# the STOP and the warn — every bare `#N` is then a pure mention.
+#
+# Resolve MAIN_ROOT the same way block-fix-issue-unclaimed.sh does:
+# `git rev-parse --git-common-dir` parent, falling back to
+# ${CLAUDE_PROJECT_DIR:-$PWD}. This is correct from a worktree too (the
+# claims live under the MAIN repo's .zskills/).
+if [ "$NO_CLAIM" -ne 1 ]; then
+  _QF_MAIN_ROOT=""
+  if _QF_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) && [ -n "$_QF_COMMON_DIR" ]; then
+    if _QF_RESOLVED=$(cd "$_QF_COMMON_DIR/.." 2>/dev/null && pwd); then
+      _QF_MAIN_ROOT="$_QF_RESOLVED"
+    fi
+  fi
+  [ -z "$_QF_MAIN_ROOT" ] && _QF_MAIN_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+  _QF_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  # This run's pipeline_id, if already known. In the pre-flight it is
+  # typically unset; an empty value can never equal a real stored
+  # pipeline_id, so every live claim on a stray ref reads as foreign — which
+  # is exactly right (stray refs are never self-claimed). When set, it
+  # provides the explicit self-exclusion.
+  _QF_SELF_PIPELINE_ID="${PIPELINE_ID:-}"
+  _QF_WARN_REMAINING="$DESCRIPTION"
+  while [[ "$_QF_WARN_REMAINING" =~ \#([0-9]+) ]]; do
+    _QF_REF="${BASH_REMATCH[1]}"
+    _QF_WARN_REMAINING="${_QF_WARN_REMAINING#*"${BASH_REMATCH[0]}"}"
+    _QF_CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_QF_REF" ] && { _QF_CLAIMED=1; break; }
+    done
+    [ "$_QF_CLAIMED" -eq 1 ] && continue
+    # Stray ref — read its claim.json (if any) and decide foreign vs not-held.
+    _QF_CLAIM_FILE="${_QF_MAIN_ROOT}/.zskills/claims/issue-${_QF_REF}/claim.json"
+    _QF_STORED_PID=""
+    if [ -f "$_QF_CLAIM_FILE" ] && [ -n "$_QF_PYTHON" ]; then
+      _QF_STORED_PID=$("$_QF_PYTHON" - "$_QF_CLAIM_FILE" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        sys.stdout.write(json.load(f).get("pipeline_id", "") or "")
+except Exception:
+    pass
+PY
+)
+    fi
+    if [ -n "$_QF_STORED_PID" ] && [ "$_QF_STORED_PID" != "$_QF_SELF_PIPELINE_ID" ]; then
+      # Foreign-held in-flight → STOP (decline, clean exit 0).
+      echo "STOP: /quickfix: description references #${_QF_REF}, which is currently held by a foreign pipeline (claim pipeline_id: ${_QF_STORED_PID}, claim at ${_QF_CLAIM_FILE})." >&2
+      echo "      Another pipeline is already working #${_QF_REF}; proceeding would duplicate its work (the exact failure of closed PR #888 vs landed #901)." >&2
+      echo "      If you are ONLY referencing #${_QF_REF} and not working it, re-run with --no-claim to treat the reference as a mention and skip this check." >&2
+      exit 0
+    fi
+    # Not held (no claim.json / malformed / self) → #907 warn + proceed.
+    echo "WARN: /quickfix: description references #${_QF_REF} but it is not in claim position — NO claim was acquired for it. Prefix the description with the issue number (e.g. \"#${_QF_REF} …\" or \"Fix #${_QF_REF} …\") to claim it and prevent a parallel pipeline from duplicating the work. If you are only referencing #${_QF_REF} (not working it), pass --no-claim to silence this." >&2
+  done
+  unset _QF_WARN_REMAINING _QF_REF _QF_CLAIMED _n _QF_MAIN_ROOT _QF_COMMON_DIR _QF_RESOLVED _QF_PYTHON _QF_SELF_PIPELINE_ID _QF_CLAIM_FILE _QF_STORED_PID
+fi
 ```
 
 ## Phase 1 — Pre-flight
