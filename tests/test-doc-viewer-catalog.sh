@@ -9,7 +9,7 @@
 #   - Per-section item ordering is path-ascending (sort stability)
 #   - Excluded dirs (docs/plans, docs/reports, docs/evals, docs/issues, docs/tracking) emit zero entries
 #   - Catalog scope: Guides + Skills only (user-facing onboarding; ~35 entries)
-#   - INSPECTING_AND_MONITORING.md is present (Phase 5 dependency)
+#   - inspecting-and-monitoring.md is present (Phase 5 dependency)
 #   - tests/run-all.sh registers this file
 #
 # Run from repo root: bash tests/test-doc-viewer-catalog.sh
@@ -124,22 +124,27 @@ else
 fi
 
 # Phase 5 dependency.
-if grep -q '"docs/guides/INSPECTING_AND_MONITORING.md"' "$REGISTRY"; then
-  pass "catalog includes docs/guides/INSPECTING_AND_MONITORING.md (Phase 5 dep)"
+if grep -q '"docs/guides/inspecting-and-monitoring.md"' "$REGISTRY"; then
+  pass "catalog includes docs/guides/inspecting-and-monitoring.md (Phase 5 dep)"
 else
-  fail "catalog missing docs/guides/INSPECTING_AND_MONITORING.md"
+  fail "catalog missing docs/guides/inspecting-and-monitoring.md"
 fi
 
 # Per-section path-ordering check: within each section block, the
-# extracted paths must already be ascending.
+# extracted paths must be ascending — EXCEPT sections listed in
+# SECTION_ORDER (scripts/build-catalog.sh), which use a curated order.
+# Curated sections instead assert a verbatim sequence.
 SORT_CHECK_OUT=$(awk '
-  /section: "/        { in_sec=1; n=0; next }
+  /section: "Guides"/  { skip_sec=1; in_sec=1; n=0; next }
+  /section: "/         { skip_sec=0; in_sec=1; n=0; next }
   in_sec && /^    \]/ {
-    sorted=1
-    for (i=2; i<=n; i++) {
-      if (paths[i-1] > paths[i]) { sorted=0; bad=paths[i-1]" > "paths[i]; break }
+    if (!skip_sec) {
+      sorted=1
+      for (i=2; i<=n; i++) {
+        if (paths[i-1] > paths[i]) { sorted=0; bad=paths[i-1]" > "paths[i]; break }
+      }
+      if (!sorted) { print "UNSORTED: "bad; exit 1 }
     }
-    if (!sorted) { print "UNSORTED: "bad; exit 1 }
     in_sec=0; n=0; next
   }
   in_sec && /path: "/  {
@@ -147,9 +152,41 @@ SORT_CHECK_OUT=$(awk '
   }
 ' "$REGISTRY")
 if [ -z "$SORT_CHECK_OUT" ]; then
-  pass "all sections sorted by path ascending"
+  pass "all non-curated sections sorted by path ascending"
 else
   fail "section path-order broken: $SORT_CHECK_OUT"
+fi
+
+# Curated Guides order — assert verbatim sequence matches the canonical
+# importance order (Overview first, then the install / workflow / ops
+# triad, then the niche references).
+EXPECTED_GUIDES_PATHS='docs/guides/README.md
+docs/guides/installing-zskills.md
+docs/guides/workflows.md
+docs/guides/inspecting-and-monitoring.md
+docs/guides/switching-install-lanes.md
+docs/guides/tracking-overview.md'
+ACTUAL_GUIDES_PATHS=$(awk '
+  /section: "Guides"/  { in_sec=1; next }
+  in_sec && /^    \]/  { exit }
+  in_sec && /path: "/  {
+    match($0, /path: "[^"]+"/); print substr($0, RSTART+7, RLENGTH-8)
+  }
+' "$REGISTRY")
+if [ "$ACTUAL_GUIDES_PATHS" = "$EXPECTED_GUIDES_PATHS" ]; then
+  pass "Guides section follows curated importance order"
+else
+  fail "Guides curated order drift: expected
+$EXPECTED_GUIDES_PATHS
+got
+$ACTUAL_GUIDES_PATHS"
+fi
+
+# Guides README is renamed to "Overview" (curated display-name override).
+if grep -qE '\{ name: "Overview", path: "docs/guides/README.md" \}' "$REGISTRY"; then
+  pass 'docs/guides/README.md displays as "Overview" (curated rename)'
+else
+  fail 'expected curated display-name override for docs/guides/README.md → "Overview"'
 fi
 
 # Trailing newline + no CRLF.

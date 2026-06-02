@@ -14,7 +14,7 @@
 #   - .claude-plugin/marketplace.json's `zs` source.ref — the moving window
 #     unpinned consumers track — must equal the BRANCH the button pushes
 #     (`main`).
-#   - docs/guides/PLUGIN_INSTALL.md's pin-by-version idiom must be a BARE
+#   - docs/guides/installing-zskills.md's pin-by-version idiom must be a BARE
 #     `<version>` tag (e.g. `2026.06.0`), matching the TAG namespace the
 #     button pushes (`refs/tags/${TAG}`, bare — NOT `prod/<version>`).
 #
@@ -42,7 +42,7 @@ PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 
 WF=".github/workflows/ship-to-prod.yml"
 MP=".claude-plugin/marketplace.json"
-DOC="docs/guides/PLUGIN_INSTALL.md"
+DOC="docs/guides/installing-zskills.md"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -132,15 +132,15 @@ fi
 if grep -Eq 'ref"?:?[^"]*"?[0-9]{4}\.[0-9]{2}\.[0-9]+' "$DOC"; then
   pass "docs document a bare '<version>' tag pin idiom (YYYY.MM.N)"
 else
-  fail "docs must document a bare '<version>' tag pin idiom (YYYY.MM.N) in PLUGIN_INSTALL.md"
+  fail "docs must document a bare '<version>' tag pin idiom (YYYY.MM.N) in installing-zskills.md"
 fi
 if grep -q 'prod/<version>' "$DOC"; then
-  fail "docs must NOT document the obsolete 'prod/<version>' pin idiom (found in PLUGIN_INSTALL.md)"
+  fail "docs must NOT document the obsolete 'prod/<version>' pin idiom (found in installing-zskills.md)"
 else
   pass "docs do NOT reference the obsolete 'prod/<version>' pin idiom"
 fi
 if grep -q '"ref": "prod/' "$DOC"; then
-  fail "docs must NOT show a 'prod/...' source.ref example (found in PLUGIN_INSTALL.md)"
+  fail "docs must NOT show a 'prod/...' source.ref example (found in installing-zskills.md)"
 else
   pass "docs do NOT show a 'prod/...' source.ref example"
 fi

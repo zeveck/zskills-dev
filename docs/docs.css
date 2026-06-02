@@ -189,6 +189,19 @@ html, body {
 #zl-docs-main a { color: var(--accent); }
 #zl-docs-main img { max-width: 100%; border-radius: 6px; margin: 10px 0; }
 
+/* Loading placeholder — shown before the first doc renders and during
+ * subsequent fetches. Centered both axes within the main pane so the
+ * empty-state doesn't read as a stuck top-left fragment. */
+.zl-docs-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+
 /* Frontmatter strip (Phase 4) — subtle muted metadata above plan H1. */
 .zs-frontmatter {
   font-size: 13px;

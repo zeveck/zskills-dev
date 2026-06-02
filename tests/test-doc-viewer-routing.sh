@@ -335,7 +335,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 2: Valid hash #docs/guides/WORKFLOWS.md → fetch for that path
+# Test 2: Valid hash #docs/guides/workflows.md → fetch for that path
 # ---------------------------------------------------------------------------
 SCENARIO_2=$(cat <<JS
 ${HARNESS}
@@ -344,7 +344,7 @@ global.fetch = async (url) => {
   fetchUrls.push(url);
   return { ok: true, status: 200, text: async () => '# Workflows' };
 };
-global.location.hash = '#docs/guides/WORKFLOWS.md';
+global.location.hash = '#docs/guides/workflows.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -353,10 +353,10 @@ process.stdout.write('HTML_START\n' + (main.innerHTML || '') + '\nHTML_END\n');
 JS
 )
 OUT2=$(run_node_scenario "valid hash → WORKFLOWS" "$SCENARIO_2")
-if echo "$OUT2" | grep -q '"../docs/guides/WORKFLOWS.md"'; then
-  pass "test2: hash #docs/guides/WORKFLOWS.md → fetch('../docs/guides/WORKFLOWS.md')"
+if echo "$OUT2" | grep -q '"../docs/guides/workflows.md"'; then
+  pass "test2: hash #docs/guides/workflows.md → fetch('../docs/guides/workflows.md')"
 else
-  fail "test2: expected fetch arg '../docs/guides/WORKFLOWS.md' — got: $OUT2"
+  fail "test2: expected fetch arg '../docs/guides/workflows.md' — got: $OUT2"
 fi
 
 # ---------------------------------------------------------------------------
@@ -396,7 +396,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 4: Anchor-hash form #docs/guides/WORKFLOWS.md#some-section parses
+# Test 4: Anchor-hash form #docs/guides/workflows.md#some-section parses
 #         via indexOf — pathPart and anchor are split on FIRST '#'.
 #
 # We extract routeFromHash's parse contract by exercising it through a
@@ -406,8 +406,8 @@ fi
 SCENARIO_4=$(cat <<JS
 ${HARNESS}
 // Use a stub catalog entry path that we'll inject by setting location.hash
-// to 'docs/guides/WORKFLOWS.md#sec#sub'. routeFromHash should compute
-// pathPart='docs/guides/WORKFLOWS.md' and anchor='sec#sub'. We can
+// to 'docs/guides/workflows.md#sec#sub'. routeFromHash should compute
+// pathPart='docs/guides/workflows.md' and anchor='sec#sub'. We can
 // observe the parse by checking fetch is invoked with the path only,
 // AND by observing scrollToAnchor on element with id 'sec#sub' (which
 // won't exist, so no scroll happens — but no crash either).
@@ -416,7 +416,7 @@ global.fetch = async (url) => {
   fetchUrls.push(url);
   return { ok: true, status: 200, text: async () => '<a id="sec#sub">x</a>\n# H' };
 };
-global.location.hash = '#docs/guides/WORKFLOWS.md#sec#sub';
+global.location.hash = '#docs/guides/workflows.md#sec#sub';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -425,12 +425,12 @@ JS
 )
 OUT4=$(run_node_scenario "triple-hash anchor parse" "$SCENARIO_4")
 # The path used for fetch must NOT include the anchor portion.
-if echo "$OUT4" | grep -q '"../docs/guides/WORKFLOWS.md"'; then
+if echo "$OUT4" | grep -q '"../docs/guides/workflows.md"'; then
   pass "test4: pathPart parses correctly via indexOf (anchor stripped from fetch URL)"
 else
   fail "test4: expected fetch arg WITHOUT anchor — got: $OUT4"
 fi
-if echo "$OUT4" | grep -q "WORKFLOWS.md#sec"; then
+if echo "$OUT4" | grep -q "workflows.md#sec"; then
   fail "test4: fetch URL leaked the anchor (split-truncate bug suspected) — got: $OUT4"
 else
   pass "test4: fetch URL does not include anchor portion"
@@ -452,7 +452,7 @@ global.fetch = async () => ({
   // Renderer's baseUrl resolution emits "../docs/guides/X.md" for a
   // relative "../guides/X.md" href from inside docs/skills/README.md.
   // rewriteInternalLinksToHash should rewrite that to "#docs/guides/X.md".
-  text: async () => '[Workflows](../guides/WORKFLOWS.md)',
+  text: async () => '[Workflows](../guides/workflows.md)',
 });
 global.location.hash = '#docs/skills/README.md';
 await import(process.env.APP_JS);
@@ -465,10 +465,10 @@ process.stdout.write('HREF_RAW_MD:' + (rendered.match(/href="([^"#]+\.md)"/) || 
 JS
 )
 OUT5=$(run_node_scenario "rewriteInternalLinksToHash" "$SCENARIO_5")
-if echo "$OUT5" | grep -q '^HREF_HASH:#docs/guides/WORKFLOWS.md'; then
-  pass "test5: internal .md link rewritten to hash URL (#docs/guides/WORKFLOWS.md)"
+if echo "$OUT5" | grep -q '^HREF_HASH:#docs/guides/workflows.md'; then
+  pass "test5: internal .md link rewritten to hash URL (#docs/guides/workflows.md)"
 else
-  fail "test5: expected href='#docs/guides/WORKFLOWS.md' — got: $OUT5"
+  fail "test5: expected href='#docs/guides/workflows.md' — got: $OUT5"
 fi
 if echo "$OUT5" | grep -q '^HREF_RAW_MD:$'; then
   pass "test5: no remaining raw .md hrefs in rendered output (all rewritten)"
@@ -492,7 +492,7 @@ global.fetch = async () => {
 };
 await import(process.env.APP_JS);
 // First sidebar click: simulate by setting location.hash + firing hashchange.
-global.location.hash = '#docs/guides/WORKFLOWS.md';
+global.location.hash = '#docs/guides/workflows.md';
 fireHashchange();
 await flushTicks();
 const c1 = fetchCount;

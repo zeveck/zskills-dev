@@ -9,14 +9,14 @@ These docs are organised in two halves:
 
 ## New here? Read in this order
 
-1. **[Install zskills](guides/PLUGIN_INSTALL.md)** — pick the plugin lane or the `/update-zskills` lane.
-2. **[Workflows](guides/WORKFLOWS.md)** — see the canonical recipes (draft → review → execute → land).
-3. **[Inspecting & monitoring](guides/INSPECTING_AND_MONITORING.md)** — observe a running project without reading git history.
+1. **[Install zskills](guides/installing-zskills.md)** — pick the plugin lane or the `/update-zskills` lane.
+2. **[Workflows](guides/workflows.md)** — see the canonical recipes (draft → review → execute → land).
+3. **[Inspecting & monitoring](guides/inspecting-and-monitoring.md)** — observe a running project without reading git history.
 
 ## Guides — quick links
 
-- [Workflows](guides/WORKFLOWS.md) — end-to-end recipes that combine multiple skills.
-- [Installing zskills](guides/PLUGIN_INSTALL.md) — install via the plugin lane or `/update-zskills` lane, with the full side-by-side comparison.
-- [Switching install lanes](guides/PLUGIN_MIGRATION.md) — move between the plugin and `/update-zskills` lanes, with Abort/Rollback for both directions.
-- [Inspecting & monitoring](guides/INSPECTING_AND_MONITORING.md) — observe a running zskills project without reading git history by hand.
-- [Tracking system overview](guides/ZSKILLS_TRACKING_OVERVIEW.md) — the enforcement model: how tracking markers gate commits.
+- [Workflows](guides/workflows.md) — end-to-end recipes that combine multiple skills.
+- [Installing zskills](guides/installing-zskills.md) — install via the plugin lane or `/update-zskills` lane, with the full side-by-side comparison.
+- [Switching install lanes](guides/switching-install-lanes.md) — move between the plugin and `/update-zskills` lanes, with Abort/Rollback for both directions.
+- [Inspecting & monitoring](guides/inspecting-and-monitoring.md) — observe a running zskills project without reading git history by hand.
+- [Tracking system overview](guides/tracking-overview.md) — the enforcement model: how tracking markers gate commits.

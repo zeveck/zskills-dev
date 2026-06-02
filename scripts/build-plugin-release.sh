@@ -268,7 +268,7 @@ if [ "$DO_PUSH" -eq 1 ]; then
   # (refs/heads/prod/main, refs/tags/prod/$VERSION) are just this builder's
   # staging namespace; the DEST refs on prod are bare so they match the
   # publisher and so marketplace.json's `zs` source.ref (`main`) + the
-  # bare-`<version>` pin idiom (docs/guides/PLUGIN_INSTALL.md) resolve.
+  # bare-`<version>` pin idiom (docs/guides/installing-zskills.md) resolve.
   # (tests/test-plugin-ref-consistency.sh guards this consistency.)
   git push prod "refs/heads/prod/main:refs/heads/main"
   git push prod "refs/tags/prod/$VERSION:refs/tags/$VERSION"

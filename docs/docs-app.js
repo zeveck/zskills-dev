@@ -43,6 +43,12 @@ for (const section of DOCS_CATALOG) {
     link.href = '#' + item.path;        // anchor semantics + URL preview
     link.setAttribute('data-path', item.path);
     link.addEventListener('click', (e) => {
+      // Modifier-key clicks → let the browser open in new tab / window.
+      // Without this guard, Ctrl/Cmd-click on a sidebar entry was being
+      // swallowed by preventDefault and routed in-place. The main-pane
+      // click handler below has the same guard for body links; this
+      // makes sidebar entries symmetric.
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
       e.preventDefault();
       location.hash = '#' + item.path;
       // hashchange fires → routeFromHash → loadDoc (single ingress).
@@ -245,7 +251,7 @@ async function loadDoc(item, navEl) {
     return;
   }
 
-  main.innerHTML = '<p style="color:#888">Loading&hellip;</p>';
+  main.innerHTML = '<p class="zl-docs-loading">Loading&hellip;</p>';
 
   try {
     // Paths are relative to repo root; from /docs/ we need to go up one level

@@ -21,9 +21,15 @@
 #   - docs/issues/   (issue triage notes)
 #   - docs/tracking/ (pipeline tracking system internals)
 #
-# Per-section items sorted by `path` ascending (NOT by `name`, since name
-# derives from H1 which changes on title rewordings — sorting by name would
-# make the byte-diff regression gate produce spurious churn).
+# Per-section items sorted by `path` ascending by default (NOT by `name`,
+# since name derives from H1 which changes on title rewordings — sorting
+# by name would make the byte-diff regression gate produce spurious churn).
+#
+# Curated ordering: sections listed in SECTION_ORDER use the curated
+# sequence; items not in the curated list fall back to alphabetical-by-path
+# AFTER the curated entries. Display names can be overridden via
+# DISPLAY_NAME_OVERRIDES (e.g., docs/guides/README.md → "Overview") so the
+# H1-derived default doesn't fight the curated intent.
 #
 # Output format: 2-space indent, LF newlines, trailing newline, key order
 # (name, path), no trailing comma. The regression test in
@@ -62,6 +68,27 @@ SECTIONS = [
     ('Guides',                'docs/guides'),
     ('Skills',                'docs/skills'),
 ]
+
+# Curated per-section item order. Paths listed appear first (in this order);
+# any other items in the section fall back to alphabetical-by-path AFTER
+# the curated entries. Sections not listed here use pure alphabetical order.
+SECTION_ORDER = {
+    'Guides': [
+        'docs/guides/README.md',
+        'docs/guides/installing-zskills.md',
+        'docs/guides/workflows.md',
+        'docs/guides/inspecting-and-monitoring.md',
+        'docs/guides/switching-install-lanes.md',
+        'docs/guides/tracking-overview.md',
+    ],
+}
+
+# Display-name overrides for catalog items where the H1-derived name fights
+# the curated intent (e.g., a section's own README would show its section
+# name instead of "Overview").
+DISPLAY_NAME_OVERRIDES = {
+    'docs/guides/README.md': 'Overview',
+}
 
 FRONTMATTER_RE = re.compile(r'^---\n.*?\n---\n', re.DOTALL)
 H1_RE          = re.compile(r'^# (.+)$', re.MULTILINE)
@@ -135,8 +162,17 @@ for label, rel_dir in SECTIONS:
     items = gather_section(label, rel_dir)
     if not items:
         continue
-    # Sort by path ascending (the second field of the tuple).
-    items.sort(key=lambda t: t[1])
+    # Apply display-name overrides BEFORE sort so naming is canonical.
+    items = [(DISPLAY_NAME_OVERRIDES.get(p, n), p) for (n, p) in items]
+    curated = SECTION_ORDER.get(label)
+    if curated:
+        # Curated entries first (in curated order), then any remaining items
+        # alphabetical-by-path. Stable: items with the same sort key keep
+        # their relative insertion order.
+        rank = {p: i for i, p in enumerate(curated)}
+        items.sort(key=lambda t: (rank.get(t[1], len(curated)), t[1]))
+    else:
+        items.sort(key=lambda t: t[1])
     sections_out.append((label, items))
 
 

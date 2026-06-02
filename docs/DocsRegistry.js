@@ -21,12 +21,12 @@ export const DOCS_CATALOG = [
   {
     section: "Guides",
     items: [
-      { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/INSPECTING_AND_MONITORING.md" },
-      { name: "Installing zskills — the two install lanes", path: "docs/guides/PLUGIN_INSTALL.md" },
-      { name: "Switching install lanes (`scripts/switch-install-path.sh`)", path: "docs/guides/PLUGIN_MIGRATION.md" },
-      { name: "Guides", path: "docs/guides/README.md" },
-      { name: "Z Skills Workflows", path: "docs/guides/WORKFLOWS.md" },
-      { name: "Z Skills Tracking System Overview", path: "docs/guides/ZSKILLS_TRACKING_OVERVIEW.md" }
+      { name: "Overview", path: "docs/guides/README.md" },
+      { name: "Installing zskills", path: "docs/guides/installing-zskills.md" },
+      { name: "Z Skills Workflows", path: "docs/guides/workflows.md" },
+      { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/inspecting-and-monitoring.md" },
+      { name: "Switching install lanes (`scripts/switch-install-path.sh`)", path: "docs/guides/switching-install-lanes.md" },
+      { name: "Z Skills Tracking System Overview", path: "docs/guides/tracking-overview.md" }
     ]
   },
   {
@@ -44,7 +44,7 @@ export const DOCS_CATALOG = [
       { name: "/fix-issues", path: "docs/skills/fix-issues.md" },
       { name: "/fix-report", path: "docs/skills/fix-report.md" },
       { name: "/investigate", path: "docs/skills/investigate.md" },
-      { name: "`/land-pr` (internal helper)", path: "docs/skills/land-pr.md" },
+      { name: "/land-pr", path: "docs/skills/land-pr.md" },
       { name: "/manual-testing", path: "docs/skills/manual-testing.md" },
       { name: "/plans", path: "docs/skills/plans.md" },
       { name: "/qe-audit", path: "docs/skills/qe-audit.md" },

@@ -225,10 +225,10 @@ fi
 
 for path in \
   "docs/README.md" \
-  "docs/guides/WORKFLOWS.md" \
-  "docs/guides/PLUGIN_INSTALL.md" \
+  "docs/guides/workflows.md" \
+  "docs/guides/installing-zskills.md" \
   "docs/skills/README.md" \
-  "docs/guides/INSPECTING_AND_MONITORING.md" \
+  "docs/guides/inspecting-and-monitoring.md" \
 ; do
   if echo "$REGISTRY_JSON" | grep -q "\"path\":\"$path\""; then
     pass "DocsRegistry.js: catalog includes $path"

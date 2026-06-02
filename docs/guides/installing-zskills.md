@@ -32,12 +32,9 @@ The first command registers the `zskills` marketplace (the
 second installs the `zs` plugin (the full distribution). Restart the
 session when prompted so the plugin's hooks load.
 
-To add the block-diagram add-on (3 extra skills for block-diagram
-projects), install the `zsbd` plugin from the same marketplace:
-
-```
-/plugin install zsbd@zskills
-```
+The plugin lane's default mode is **`locked-main-pr`**: agents don't
+write to `main` directly; changes ship through pull requests. See
+[Landing mode](#landing-mode) to change this.
 
 On first SessionStart after install, a hook materialises five artifacts
 into your repo's `.claude/` that a plugin cannot write at install time:
@@ -70,9 +67,51 @@ Then in a Claude Code session:
 project settings, installs hooks and scripts into `.claude/`, registers
 hooks in `.claude/settings.json`, renders `CLAUDE_TEMPLATE.md` →
 `.claude/rules/zskills/managed.md`, and reports any gaps. See the repo
-[README](../../README.md) for the full first-run flow (including the
-landing-mode prompt). Add the block-diagram add-on with
-`/update-zskills install --with-block-diagram-addons`.
+[README](../../README.md) for the full first-run flow.
+
+`/update-zskills install` asks you to pick a landing mode. The default
+suggestion is **`cherry-pick`**: agents work in their own copy of the
+project, and each commit is cherry-picked back to `main` once it
+passes verification. To skip the prompt, name the mode you want at
+install time: `/update-zskills install cherry-pick`. See
+[Landing mode](#landing-mode) for the other options.
+
+## Landing mode
+
+Landing mode is how an agent's finished work reaches your `main` branch.
+You have three choices:
+
+- **`locked-main-pr`** — Most work happens in a worktree on a feature
+  branch. When the work is verified, the branch is pushed and a pull
+  request is opened. `main` is locked — agents can't commit or push to
+  it directly. Pick this when you want code review on agent changes, or
+  simply want a checkpoint before `main` moves.
+
+- **`cherry-pick`** — Most work happens in a worktree on a feature
+  branch. When a commit is verified, it's cherry-picked back to `main`.
+  Lower ceremony than PRs; good for solo work where you trust the
+  verifier and don't want PR overhead.
+
+- **`direct`** — Agents work and commit directly on `main`. No worktree,
+  no landing step. Low ceremony, higher risk.
+
+To change modes after install:
+
+```
+/update-zskills <mode>
+```
+
+(On the plugin lane: `/zs:update-zskills <mode>`.) This switches modes
+without touching anything else in your config — test commands,
+dev-server config, project name all stay as they were.
+
+You can also pick the mode when installing:
+
+```
+/update-zskills install <mode>
+```
+
+This skips the prompt and applies it immediately.
 
 ## Update workflow
 
@@ -97,9 +136,8 @@ landing-mode prompt). Add the block-diagram add-on with
 
 ## Slash-prefix difference
 
-- **Plugin lane** namespaces skills under `/zs:` (and the block-diagram
-  add-on under `/zsbd:`): you type `/zs:run-plan`, `/zs:quickfix`, etc.
-  The slash menu shows the prefixed names.
+- **Plugin lane** namespaces skills under `/zs:`: you type `/zs:run-plan`,
+  `/zs:quickfix`, etc. The slash menu shows the prefixed names.
 - **`/update-zskills` lane** uses bare names: `/run-plan`, `/quickfix`, etc.
 
 The difference is purely the **typed-invocation surface**. Skill-to-skill
@@ -146,11 +184,7 @@ To **pin to a specific release**, edit your marketplace's `zs` entry to either:
   ```
 
 The `github` source schema accepts `repo`, `ref?`, and `sha?` — there is no
-`path` field. The co-located `zsbd` add-on ships as the relative-path source
-`./block-diagram` inside the same marketplace repo, so it follows the
-marketplace's checked-out ref by construction; no separate `ref` is needed (or
-supported) on the relative-path entry. Pinning the `zs` entry's ref/sha
-therefore pins `zsbd` to the same snapshot.
+`path` field.
 
 For how releases produce these refs, see
 [RELEASING.md](../../RELEASING.md). The "🚀 Ship to Prod" button
@@ -240,7 +274,7 @@ lower-friction choice.
 ## Switching lanes
 
 Already installed via one lane and want to move to the other? See
-[`PLUGIN_MIGRATION.md`](PLUGIN_MIGRATION.md) — `scripts/switch-install-path.sh`
+[`switching-install-lanes.md`](switching-install-lanes.md) — `scripts/switch-install-path.sh`
 (also reachable as `/update-zskills --switch-install-path={to-plugin|to-update-zskills}`)
 is the bidirectional consolidation tool, with Abort/Rollback documented for
 both directions.

@@ -2,7 +2,7 @@
 
 Per-skill reference for the **23 user-facing Z Skills**, plus the 2 internal
 helpers they dispatch. Looking for how to *combine* these skills into
-end-to-end workflows? See [Workflows](../guides/WORKFLOWS.md).
+end-to-end workflows? See [Workflows](../guides/workflows.md).
 
 <details>
 <summary><strong>Quick reference table</strong> — alphabetical jump list (click to expand)</summary>

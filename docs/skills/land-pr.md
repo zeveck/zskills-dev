@@ -1,4 +1,4 @@
-# `/land-pr` (internal helper)
+# /land-pr
 
 > **Not for direct user invocation.** `/land-pr` carries `user-invocable: false`
 > in its skill frontmatter. It's the shared PR-landing engine that other skills
@@ -51,4 +51,4 @@ The slash runtime will not dispatch `user-invocable: false` skills in any useful
 ## See also
 
 - [`/commit`](commit.md) — the user-facing skill that wraps `/land-pr` correctly
-- [Workflows](../guides/WORKFLOWS.md) — when each landing skill is the right pick
+- [Workflows](../guides/workflows.md) — when each landing skill is the right pick

@@ -154,7 +154,16 @@ export function renderMarkdown(md, options) {
         inList = true;
         listTag = 'ul';
       }
-      const itemText = line.replace(/^[-*]\s+/, '');
+      let itemText = line.replace(/^[-*]\s+/, '');
+      i++;
+      // Lazy-continuation: lines indented with whitespace (and not themselves
+      // starting a new list item) belong to the current item.
+      while (i < lines.length && /^\s+\S/.test(lines[i]) &&
+             !/^\s*[-*]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i])) {
+        itemText += ' ' + lines[i].trim();
+        i++;
+      }
       // GFM task list checkbox
       const taskMatch = itemText.match(/^\[([ xX])\]\s+(.*)/);
       if (taskMatch) {
@@ -163,7 +172,6 @@ export function renderMarkdown(md, options) {
       } else {
         out.push(`<li>${inlineMarkdown(itemText, baseUrl)}</li>`);
       }
-      i++;
       continue;
     }
 
@@ -175,8 +183,15 @@ export function renderMarkdown(md, options) {
         inList = true;
         listTag = 'ol';
       }
-      out.push(`<li>${inlineMarkdown(line.replace(/^\d+\.\s+/, ''), baseUrl)}</li>`);
+      let itemText = line.replace(/^\d+\.\s+/, '');
       i++;
+      while (i < lines.length && /^\s+\S/.test(lines[i]) &&
+             !/^\s*[-*]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i])) {
+        itemText += ' ' + lines[i].trim();
+        i++;
+      }
+      out.push(`<li>${inlineMarkdown(itemText, baseUrl)}</li>`);
       continue;
     }
 
