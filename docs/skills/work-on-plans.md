@@ -1,6 +1,6 @@
 # /work-on-plans
 
-> Batch-execute the prioritized ready queue from the dashboard: reads `.zskills/monitor-state.json` (`plans.ready`) and dispatches `/run-plan auto [finish]` per entry, honoring each plan's queued mode. Also manages the queue (`add`/`rank`/`remove`/`default`) and recurring schedules.
+> Batch-execute the prioritized ready queue from the dashboard: reads `.zskills/monitor-state.json` (`plans.ready`) and dispatches `/run-plan auto` per entry. Default mode is `finish` (one PR per plan, post-#988); the `phase` token opts out to phase-pacing. Also manages the queue (`add`/`rank`/`remove`/`default`) and recurring schedules.
 
 ## Usage
 
@@ -50,7 +50,7 @@ Set the top-level `default_mode` for newly added entries. Does not mutate saved 
 
 ### `every SCHEDULE [phase|finish] [--force]`
 
-Register a recurring cron. Each fire dispatches `/work-on-plans all <schedule_mode>`. Mode is captured at registration (CLI flag > current `default_mode` > `"phase"`). Finish mode requires SCHEDULE >= 1h to avoid collision with `/run-plan`'s phase-chaining crons. Use `--force` to take over a schedule owned by another session.
+Register a recurring cron. Each fire dispatches `/work-on-plans all <schedule_mode>`. Mode is captured at registration (CLI flag > current `default_mode` > `"finish"`, post-#988). Finish mode requires SCHEDULE >= 1h to avoid collision with `/run-plan`'s phase-chaining crons. Use `--force` to take over a schedule owned by another session.
 
 ### `stop`
 

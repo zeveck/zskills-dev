@@ -37,9 +37,9 @@ under fd 9 already held; calling Python with the JSON path is safe.
 ### Common helper: bootstrap-then-load
 
 If `$MONITOR_STATE` is missing, run the Step 1 bootstrap helper to
-auto-create the file (`ready=[]`, `default_mode="phase"`). Then load
-the JSON. If present but unparseable, halt with the same diagnostic
-as Step 1.
+auto-create the file (`ready=[]`, `default_mode="finish"` post-#988).
+Then load the JSON. If present but unparseable, halt with the same
+diagnostic as Step 1.
 
 ```bash
 ensure_monitor_state() {
@@ -123,7 +123,9 @@ else:
 
 doc = {
     "version": "1.1",
-    "default_mode": "phase",
+    # Post-#988 default for new state files (chip removed; bare
+    # /work-on-plans N resolves to `finish` per dispatch).
+    "default_mode": "finish",
     "plans": {
         "drafted":  [{"slug": s} for s in drafted],
         "reviewed": [{"slug": s} for s in reviewed],
@@ -302,6 +304,14 @@ Set the top-level `default_mode`. Per-entry `mode` values are NOT
 touched (in-flight sprints capture mode at start; this only changes
 the inheritance default for newly added entries).
 
+> **Note (#988):** the chip that exposed this subcommand visually was
+> removed from the dashboard, and the dispatcher's bash floor now falls
+> back to `"finish"` when `default_mode` is unset. The subcommand is
+> retained as a back-compat path — it still writes the field, and the
+> Step 1 read still honors a non-default value — but it is effectively
+> a no-op for fresh installs. The whole `default <phase|finish>`
+> machinery is a candidate for removal in a follow-up.
+
 ```bash
 do_default() {
   local mode="$1"
@@ -350,7 +360,8 @@ baked into the cron prompt.
 
 **Mode capture.** At registration, resolve the captured `schedule_mode`
 once and persist it: CLI flag (`phase` or `finish` token after
-SCHEDULE) > current `default_mode` from `$MONITOR_STATE` > `"phase"`.
+SCHEDULE) > current `default_mode` from `$MONITOR_STATE` > `"finish"`
+(post-#988 default for unconfigured installs).
 **Each fire uses the captured `schedule_mode`, NOT live
 `default_mode`.** To change mode, `stop` and re-register.
 
@@ -459,7 +470,11 @@ Examples:
 - `/work-on-plans all every 4h phase now` →
   `Run /work-on-plans all phase every 4h now`.
 - bare `/work-on-plans every 2h` →
-  `Run /work-on-plans all phase every 2h now`.
+  `Run /work-on-plans all finish every 2h now` (mode resolves to the
+  current `default_mode` if any historical value is on disk, otherwise
+  `"finish"` post-#988; note finish-mode requires SCHEDULE ≥ 1h, so a
+  bare sub-hour `every` falls back to `phase` only when a chip-set
+  `default_mode=phase` is on disk).
 
 (Captured count + mode win, regardless of `default_mode` /
 queue size at fire time. The `now` in the cron prompt is for the

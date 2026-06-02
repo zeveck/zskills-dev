@@ -683,23 +683,25 @@ else
   fail "AC: found inline event handlers"
 fi
 
-# AC: Default-mode toggle UI present.
-if grep -q 'id="dm-phase"' "$INDEX_HTML" && grep -q 'id="dm-finish"' "$INDEX_HTML"; then
-  pass "AC: default-mode segmented buttons in index.html"
+# Issue #988 — Default-mode chip and in-flight-sprint footnote REMOVED.
+# Verify they are GONE from index.html (regression guard).
+if ! grep -q 'id="dm-phase"' "$INDEX_HTML" && ! grep -q 'id="dm-finish"' "$INDEX_HTML"; then
+  pass "AC (#988): default-mode segmented buttons removed from index.html"
 else
-  fail "AC: default-mode buttons missing"
+  fail "AC (#988): default-mode buttons still present"
+fi
+if ! grep -q 'id="default-mode-footnote"' "$INDEX_HTML"; then
+  pass "AC (#988): default-mode footnote element removed"
+else
+  fail "AC (#988): default-mode footnote element still present"
 fi
 
-# AC: in-flight-sprint footnote element present.
-if grep -q 'id="default-mode-footnote"' "$INDEX_HTML"; then
-  pass "AC: default-mode footnote element present"
+# Issue #988 — dashboard title is an anchor to the deployed docs page.
+if grep -q 'id="dashboard-title-link"' "$INDEX_HTML" \
+   && grep -q 'zskills-dashboard-the-browser-view' "$INDEX_HTML"; then
+  pass "AC (#988): dashboard title is an anchor to inspecting-and-monitoring#zskills-dashboard-the-browser-view"
 else
-  fail "AC: default-mode footnote element missing"
-fi
-if grep -q 'Sprint in flight' "$INDEX_HTML"; then
-  pass "AC: 'Sprint in flight' footnote text present"
-else
-  fail "AC: 'Sprint in flight' footnote text missing"
+  fail "AC (#988): dashboard title anchor missing"
 fi
 
 # AC: aria-live regions for plans/issues announcements.

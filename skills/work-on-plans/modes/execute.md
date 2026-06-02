@@ -299,16 +299,17 @@ Write `state=sprint` to `$WORK_STATE` before the first dispatch. The
 file is rewritten between dispatches (heartbeat) and at the end.
 
 Resolve `BATCH_MODE` once before the embed: this is the per-batch
-resolved mode the dashboard reads to drive its in-flight chip-lock
-(issue #858). Precedence matches Step 5's per-entry resolution but
+resolved mode. Precedence matches Step 5's per-entry resolution but
 without the per-entry override layer (the chip is batch-scoped):
-`MODE_OVERRIDE` (CLI), then `DEFAULT_MODE` (top-level saved), then
-`"phase"`. While the sprint is in flight the dashboard's
-`Default mode:` chip mirrors this value and is locked — clicking it
-no-ops with a tooltip explaining the in-flight lock.
+`MODE_OVERRIDE` (CLI), then `DEFAULT_MODE` (top-level saved, if any
+historical value is still present), then `"finish"` (the post-#988
+default for unconfigured installs). Persisted to
+`work-on-plans-state.json` as the captured `batch_mode` so the in-flight
+per-plan card chip lock and the run-status panel can render it
+consistently across page reloads.
 
 ```bash
-BATCH_MODE="${MODE_OVERRIDE:-${DEFAULT_MODE:-phase}}"
+BATCH_MODE="${MODE_OVERRIDE:-${DEFAULT_MODE:-finish}}"
 ```
 
 <!-- allow-hardcoded: 2a.10-AC-non-using-sites reason: Python embed operates on non-ZSKILLS state files; no source+export preamble needed per pragmatic AC interpretation -->
@@ -342,8 +343,10 @@ For each ready entry in `plans.ready[0:N]`:
 1. **Resolve dispatch mode** (precedence, highest first):
    - CLI override (`MODE_OVERRIDE` from arg parse), then
    - per-entry `mode` from the ready entry (if non-empty), then
-   - top-level `default_mode`, then
-   - `"phase"`.
+   - top-level `default_mode` (if any historical value is present in
+     `monitor-state.json` — the field is no longer surfaced via a chip
+     post-#988 but is still tolerated and read here), then
+   - `"finish"` (post-#988 default for unconfigured installs).
 
 2. **Write `step.work-on-plans.<sprint-id>.<slug>`** with
    `status: started` BEFORE dispatch:

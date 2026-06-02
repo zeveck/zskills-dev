@@ -244,17 +244,20 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // State: QUEUED — unclaimed plan in 'ready' column
 // ------------------------------------------------------------------
 
-// Q1: inherit (entry.mode=null, defaultMode=phase). Real button, NOT dashed.
+// Q1: inherit (entry.mode=null) → post-#988 falls back to literal "finish".
+//      Chip is togglable (queued state); the post-#988 default of "finish"
+//      doesn't lock unclaimed plans (only claimed + finish does).
 {
   globalThis.__entryMode = null;
-  const card = buildPlanCard(makeUnclaimedPlan("q-inherit", 3), "q-inherit", "ready", "phase");
+  const card = buildPlanCard(makeUnclaimedPlan("q-inherit", 3), "q-inherit", "ready");
   const chip = findByClass(card, "mode-chip");
   expectTrue(chip, "queued-inherit: chip rendered");
   if (chip) {
     expect(chip.getAttribute("data-state"), "queued", "queued-inherit: data-state=queued");
     expect(chip.getAttribute("data-source"), "inherit", "queued-inherit: data-source=inherit");
     expect(chip.getAttribute("data-action"), "toggle-mode", "queued-inherit: data-action=toggle-mode (cycle)");
-    expectTrue(chip.textContent.indexOf("phase") >= 0, "queued-inherit: chip shows effective mode 'phase'");
+    expectTrue(chip.textContent.indexOf("finish") >= 0,
+      "queued-inherit: chip shows post-#988 effective mode 'finish'");
     expect(chip.getAttribute("disabled"), null, "queued-inherit: not disabled");
   }
 }
@@ -262,7 +265,7 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // Q2: explicit phase override.
 {
   globalThis.__entryMode = "phase";
-  const card = buildPlanCard(makeUnclaimedPlan("q-phase", 3), "q-phase", "ready", "finish");
+  const card = buildPlanCard(makeUnclaimedPlan("q-phase", 3), "q-phase", "ready");
   const chip = findByClass(card, "mode-chip");
   expectTrue(chip, "queued-explicit-phase: chip rendered");
   if (chip) {
@@ -276,7 +279,7 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // Q3: explicit finish override.
 {
   globalThis.__entryMode = "finish";
-  const card = buildPlanCard(makeUnclaimedPlan("q-finish", 3), "q-finish", "ready", "phase");
+  const card = buildPlanCard(makeUnclaimedPlan("q-finish", 3), "q-finish", "ready");
   const chip = findByClass(card, "mode-chip");
   expectTrue(chip, "queued-explicit-finish: chip rendered");
   if (chip) {
@@ -291,15 +294,19 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // State: RUNNING-PHASE — claimed, effective mode = phase
 // ------------------------------------------------------------------
 
-// RP1: claimed + inherit + defaultMode=phase → running-phase.
+// RP1: claimed + entry.mode=phase explicit override → running-phase.
+//      Post-#988 there is no "inherit" path that lands on phase for a
+//      claimed plan without a dispatch_mode — the literal fallback is
+//      "finish", which would lock the chip. Only an explicit per-entry
+//      override produces the running-phase state for a claimed plan.
 {
-  globalThis.__entryMode = null;
-  const card = buildPlanCard(makeClaimedPlan("rp-inherit", 5), "rp-inherit", "ready", "phase");
+  globalThis.__entryMode = "phase";
+  const card = buildPlanCard(makeClaimedPlan("rp-explicit-1", 5), "rp-explicit-1", "ready");
   const chip = findByClass(card, "mode-chip");
-  expectTrue(chip, "running-phase (inherit): chip rendered");
+  expectTrue(chip, "running-phase (explicit-1): chip rendered");
   if (chip) {
     expect(chip.getAttribute("data-state"), "running-phase",
-      "running-phase (inherit): data-state=running-phase (for CSS colorize)");
+      "running-phase (explicit-1): data-state=running-phase (for CSS colorize)");
     expect(chip.getAttribute("data-action"), "toggle-mode",
       "running-phase: action=toggle-mode (same cycle as queued — escalate affordance dropped)");
     expect(chip.textContent.trim(), "phase",
@@ -310,17 +317,19 @@ function makeUnclaimedPlan(slug, phaseCount) {
   }
 }
 
-// RP2: claimed + entry.mode=phase explicit override → running-phase.
+// RP2: claimed + entry.mode=phase explicit override → running-phase
+//      (covers the case where the per-entry override beats whatever the
+//      default would have been).
 {
   globalThis.__entryMode = "phase";
-  const card = buildPlanCard(makeClaimedPlan("rp-explicit", 5), "rp-explicit", "ready", "finish");
+  const card = buildPlanCard(makeClaimedPlan("rp-explicit-2", 5), "rp-explicit-2", "ready");
   const chip = findByClass(card, "mode-chip");
-  expectTrue(chip, "running-phase (explicit): chip rendered");
+  expectTrue(chip, "running-phase (explicit-2): chip rendered");
   if (chip) {
     expect(chip.getAttribute("data-state"), "running-phase",
-      "running-phase (explicit): data-state=running-phase even when default is finish");
+      "running-phase (explicit-2): data-state=running-phase even when default would be finish");
     expect(chip.getAttribute("data-action"), "toggle-mode",
-      "running-phase (explicit): action=toggle-mode");
+      "running-phase (explicit-2): action=toggle-mode");
   }
 }
 
@@ -331,7 +340,7 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // RF1: claimed + entry.mode=finish → running-finish, locked.
 {
   globalThis.__entryMode = "finish";
-  const card = buildPlanCard(makeClaimedPlan("rf-explicit", 5), "rf-explicit", "ready", "phase");
+  const card = buildPlanCard(makeClaimedPlan("rf-explicit", 5), "rf-explicit", "ready");
   const chip = findByClass(card, "mode-chip");
   expectTrue(chip, "running-finish (explicit): chip rendered");
   if (chip) {
@@ -353,15 +362,18 @@ function makeUnclaimedPlan(slug, phaseCount) {
   }
 }
 
-// RF2: claimed + inherit + defaultMode=finish → running-finish, locked.
+// RF2: claimed + inherit (entry.mode=null) → post-#988 literal default
+//      "finish" → running-finish, locked. (Pre-#988 this case relied on
+//      defaultMode="finish" being passed in; the post-#988 default falls
+//      out of the literal fallback in buildPlanCard.)
 {
   globalThis.__entryMode = null;
-  const card = buildPlanCard(makeClaimedPlan("rf-inherit", 5), "rf-inherit", "ready", "finish");
+  const card = buildPlanCard(makeClaimedPlan("rf-inherit", 5), "rf-inherit", "ready");
   const chip = findByClass(card, "mode-chip");
   expectTrue(chip, "running-finish (inherit): chip rendered");
   if (chip) {
     expect(chip.getAttribute("data-state"), "running-finish",
-      "running-finish (inherit defaultMode=finish): data-state=running-finish");
+      "running-finish (inherit, post-#988 default=finish): data-state=running-finish");
     expect(chip.getAttribute("disabled"), "disabled",
       "running-finish (inherit): button is disabled (no-op)");
   }
@@ -372,7 +384,7 @@ function makeUnclaimedPlan(slug, phaseCount) {
 // ------------------------------------------------------------------
 {
   globalThis.__entryMode = null;
-  const card = buildPlanCard(makeUnclaimedPlan("backlog-plan", 3), "backlog-plan", "backlog", "phase");
+  const card = buildPlanCard(makeUnclaimedPlan("backlog-plan", 3), "backlog-plan", "backlog");
   const chip = findByClass(card, "mode-chip");
   expect(chip, null, "non-ready column: no mode-chip rendered");
 }
@@ -394,172 +406,42 @@ if [ "$NODE_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Issue #892 — exec-mode chip / change-default-mode lock must FAIL OPEN when
-# fetchWorkState() returns null mid-sprint. Pre-fix, pollWorkOnce only ever
-# reassigned lastWorkState in the success branch, so a null fetch (network
-# error / server restart / abort) while the sprint ended left lastWorkState
-# stale at state==="sprint" — the chip stayed locked and setDefaultMode()
-# stayed blocked until the next *successful* poll. This drives a stub
-# fetchWorkState() returning null mid-sprint and asserts (i) the chip
-# un-locks and (ii) the change-default-mode UI re-enables. Must FAIL against
-# pre-fix behavior.
+# Issue #988 — the global Default-mode chip (dm-phase / dm-finish) and its
+# setDefaultMode + renderDefaultMode wiring were removed. The plan-card
+# mode chip exercised above is the only mode UI that remains. The poll-loop
+# fail-open behavior the chip relied on (issue #892) is no longer testable
+# at this seam — the downstream consumers of lastWorkState (run-status
+# panel + per-plan card chip lock) carry their own coverage. The static
+# grep below verifies the chip's JS wiring is GONE (regression guard).
 # ---------------------------------------------------------------------------
-if command -v node >/dev/null 2>&1; then
-  POLL_OUT=$(APP_JS_PATH="$APP_JS" node - <<'NODE'
-const fs = require("fs");
-const src = fs.readFileSync(process.env.APP_JS_PATH, "utf8");
-
-function extractBlock(text, startRe, endMarker) {
-  const m = text.match(startRe);
-  if (!m) throw new Error("start pattern not found: " + startRe);
-  const startIdx = m.index;
-  const tail = text.slice(startIdx);
-  const endIdx = tail.indexOf(endMarker);
-  if (endIdx < 0) throw new Error("end marker not found: " + endMarker);
-  return tail.slice(0, endIdx + endMarker.length);
-}
-
-// Real functions under test, lifted verbatim from app.js.
-const pollWorkOnceBlk    = extractBlock(src, /\nasync function pollWorkOnce\(\)/, "\n}\n");
-const applyWorkStateBlk  = extractBlock(src, /\nfunction applyWorkState\(ws\)/, "\n}\n");
-const renderDefModeBlk   = extractBlock(src, /\nfunction renderDefaultMode\(mode, ws\)/, "\n}\n");
-const renderFootnoteBlk  = extractBlock(src, /\nfunction renderDefaultModeFootnote\(ws\)/, "\n}\n");
-const setDefaultModeBlk  = extractBlock(src, /\nasync function setDefaultMode\(mode\)/, "\n}\n");
-
-// Minimal DOM: dm-phase / dm-finish buttons + footnote node, addressed via $().
-function makeNode(id) {
-  return {
-    id,
-    attrs: {},
-    classes: new Set(),
-    setAttribute(k, v) { this.attrs[k] = String(v); },
-    getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; },
-    removeAttribute(k) { delete this.attrs[k]; },
-    classList: {
-      _set: null,
-      add(c) { this._set.add(c); },
-      remove(c) { this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-    },
-  };
-}
-
-const harness = `
-let lastWorkState = null;
-let lastGoodDefaultMode = "phase";
-const lastFingerprint = { workState: null, defaultMode: null };
-let setDefaultModeCommitted = null;   // captures the mode if the setter proceeds
-
-// Leaf stubs — keep the test focused on the lock/poll wiring.
-function nextPollDelay() { return 1000; }
-function scheduleWorkPoll(_d) { /* no reschedule in test */ }
-function renderRunStatus(_ws) { /* exercised elsewhere; irrelevant here */ }
-function showToast(_m, _k) { globalThis.__toastShown = true; }
-function announce(_r, _m) {}
-function clonedQueues() { return { default_mode: lastGoodDefaultMode, plans: {}, issues: {} }; }
-async function commitQueueChange(next, _opts) {
-  // Stand in for the real POST: record that the setter actually proceeded
-  // to mutate the default mode (i.e. the lock did NOT block it).
-  setDefaultModeCommitted = next.default_mode;
-  lastGoodDefaultMode = next.default_mode;
-  return true;
-}
-
-${renderDefModeBlk}
-${renderFootnoteBlk}
-${applyWorkStateBlk}
-${pollWorkOnceBlk}
-${setDefaultModeBlk}
-
-globalThis.__pollWorkOnce = pollWorkOnce;
-globalThis.__setDefaultMode = setDefaultMode;
-globalThis.__getLastWorkState = () => lastWorkState;
-globalThis.__getCommitted = () => setDefaultModeCommitted;
-globalThis.__resetCommitted = () => { setDefaultModeCommitted = null; };
-`;
-
-// $() resolves the three real DOM ids; everything else returns null.
-const nodes = {
-  "dm-phase": makeNode("dm-phase"),
-  "dm-finish": makeNode("dm-finish"),
-  "default-mode-footnote": makeNode("default-mode-footnote"),
-};
-nodes["dm-phase"].classList._set = nodes["dm-phase"].classes;
-nodes["dm-finish"].classList._set = nodes["dm-finish"].classes;
-nodes["default-mode-footnote"].classList._set = nodes["default-mode-footnote"].classes;
-const $stub = (id) => (id in nodes ? nodes[id] : null);
-
-// Controllable fetchWorkState: returns whatever __nextFetch yields.
-globalThis.__nextFetch = null;
-async function fetchWorkState() { return globalThis.__nextFetch; }
-
-(new Function("$", "globalThis", "fetchWorkState", harness))($stub, globalThis, fetchWorkState);
-
-const pollWorkOnce = globalThis.__pollWorkOnce;
-const setDefaultMode = globalThis.__setDefaultMode;
-
-function expectTrue(actual, label) {
-  if (actual) console.log("OK " + label);
-  else { console.log("FAIL " + label + " (got falsy)"); process.exitCode = 1; }
-}
-function expectFalse(actual, label) {
-  if (!actual) console.log("OK " + label);
-  else { console.log("FAIL " + label + " (got truthy)"); process.exitCode = 1; }
-}
-
-(async () => {
-  const phase = nodes["dm-phase"];
-  const finish = nodes["dm-finish"];
-  const footnote = nodes["default-mode-footnote"];
-
-  // 1) A sprint poll lands: chip locks, footnote visible, setter blocked.
-  globalThis.__nextFetch = { state: "sprint", batch_mode: "finish" };
-  await pollWorkOnce();
-  expectTrue(phase.getAttribute("data-locked") === "true", "sprint poll: dm-phase locked");
-  expectTrue(finish.getAttribute("data-locked") === "true", "sprint poll: dm-finish locked");
-  expectTrue(footnote.classList.contains("is-visible"), "sprint poll: footnote visible");
-
-  globalThis.__resetCommitted();
-  await setDefaultMode("phase");
-  expectTrue(globalThis.__getCommitted() === null, "sprint in flight: setDefaultMode blocked (no commit)");
-
-  // 2) Next poll FAILS mid-sprint (fetchWorkState -> null) AND the sprint
-  //    has ended. Pre-fix, lastWorkState stays stale at state==="sprint"
-  //    so the chip stays locked and the setter stays blocked. Post-fix,
-  //    the null fetch clears the lock (fail OPEN).
-  globalThis.__nextFetch = null;
-  await pollWorkOnce();
-
-  expectTrue(globalThis.__getLastWorkState() === null,
-    "null fetch mid-sprint: lastWorkState cleared (no longer stale 'sprint')");
-  expectFalse(phase.getAttribute("data-locked"),
-    "null fetch mid-sprint: dm-phase UNLOCKED (chip fails open)");
-  expectFalse(finish.getAttribute("data-locked"),
-    "null fetch mid-sprint: dm-finish UNLOCKED (chip fails open)");
-  expectFalse(footnote.classList.contains("is-visible"),
-    "null fetch mid-sprint: in-flight footnote hidden");
-
-  // 3) change-default-mode UI re-enabled: setDefaultMode now proceeds.
-  globalThis.__resetCommitted();
-  await setDefaultMode("finish");
-  expectTrue(globalThis.__getCommitted() === "finish",
-    "null fetch mid-sprint: setDefaultMode re-enabled (commit proceeds)");
-})();
-NODE
-)
-  POLL_RC=$?
-  echo "$POLL_OUT"
-  while IFS= read -r line; do
-    case "$line" in
-      OK\ *) pass "${line#OK }" ;;
-      FAIL\ *) fail "${line#FAIL }" ;;
-    esac
-  done <<< "$POLL_OUT"
-  if [ "$POLL_RC" != "0" ] && [ "$FAIL_COUNT" -eq 0 ]; then
-    fail "issue #892 poll harness exited non-zero ($POLL_RC) with no per-test failures parsed"
+for sym in "renderDefaultMode" "renderDefaultModeFootnote" "setDefaultMode" "lastGoodDefaultMode"; do
+  if grep -qF "function $sym" "$APP_JS" \
+     || grep -qF "async function $sym" "$APP_JS" \
+     || grep -qE "^let $sym " "$APP_JS"; then
+    fail "app.js still defines $sym (should be removed per #988)"
+  else
+    pass "app.js no longer defines $sym (#988)"
   fi
+done
+
+for el in 'id="dm-phase"' 'id="dm-finish"' 'id="default-mode-footnote"'; do
+  if grep -qF "$el" "$REPO_ROOT/skills/zskills-dashboard/scripts/zskills_monitor/static/index.html"; then
+    fail "index.html still carries $el (should be removed per #988)"
+  else
+    pass "index.html no longer carries $el (#988)"
+  fi
+done
+
+if grep -qE 'text:[[:space:]]*"Copy and run:"' "$APP_JS"; then
+  fail 'app.js still emits "Copy and run:" label (should be removed per #988)'
 else
-  skip "node not available — issue #892 poll-loop tests skipped"
+  pass 'app.js no longer emits "Copy and run:" label (#988)'
+fi
+
+if grep -qE '"data-action":[[:space:]]*"copy-cmd"' "$APP_JS"; then
+  fail 'app.js still wires data-action="copy-cmd" (should be removed per #988)'
+else
+  pass 'app.js no longer wires data-action="copy-cmd" (#988)'
 fi
 
 # ---------------------------------------------------------------------------
