@@ -1,8 +1,25 @@
 #!/usr/bin/env bash
-# build-plugin-release.sh — W5.5 (D1/D3/D4). Build the prod-stripped plugin
-# release tree from the current dev HEAD and materialise it as a LOCAL
-# `prod/main` branch + a parallel `prod/<version>` tag. Push is GATED behind
-# an explicit `--push` flag (NOT passed during plan runs / dry runs).
+# build-plugin-release.sh — NOT the publish path.
+#
+# THE publish path is the "🚀 Ship to Prod" button
+# (.github/workflows/ship-to-prod.yml → scripts/build-prod.sh), which pushes
+# a single complete prod tree to prod `main` + a bare `<version>` tag. THIS
+# script is for LOCAL dogfood / prod-tree builds and for producing the
+# D4/strip test fixtures (tests/test-plugin-d4-hook-siblings.sh,
+# tests/test-plugin-mirrorless-resolution.sh exercise the same strip set).
+#
+# It shares the plugin-completion logic (D4 hook siblings + the dev-only
+# strip set) with build-prod.sh via scripts/_lib/finalize-prod-tree.sh, so
+# the two builders can never diverge on what makes the prod tree a complete
+# plugin.
+#
+# W5.5 (D1/D3/D4). Builds the prod-stripped plugin release tree from the
+# current dev HEAD and materialises it as a LOCAL `prod/main` branch + a
+# parallel `prod/<version>` tag. On `--push` it pushes those dev-local refs
+# to prod's BARE `main` branch + a BARE `<version>` tag — EXACTLY the refs
+# the "Ship to Prod" button publishes, so a local dogfood build resolves
+# identically to a real release. Push is GATED behind an explicit `--push`
+# flag (NOT passed during plan runs / dry runs).
 #
 # Modelled on scripts/build-prod.sh, with these differences:
 #   - Builds into a TEMP staging tree (git archive | tar -x), never the dev
@@ -51,6 +68,11 @@ cd "$PROJECT_ROOT"
 
 PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
 [ -n "$PYTHON" ] || { echo "ERROR: install Python 3 (or set ZSKILLS_PYTHON)" >&2; exit 1; }
+
+# Shared prod-tree finalizer (D4 hook siblings + dev-only strip set). The
+# SAME helper is sourced by build-prod.sh (the real publisher), so the two
+# builders cannot diverge on what makes the prod tree a complete plugin.
+source "$SCRIPT_DIR/_lib/finalize-prod-tree.sh"
 
 BOLD='\033[1m'; GREEN='\033[32m'; YELLOW='\033[33m'; DIM='\033[2m'; RESET='\033[0m'
 log()  { printf "${BOLD}▸${RESET} %s\n" "$1"; }
@@ -132,20 +154,14 @@ done
 # matches `CANARY` anywhere in the path) sees 0 survivors. The
 # canary*-bad.sh hooks use a lowercase `canary` basename, so they get an
 # explicit pass below.
-log "removing CANARY* plans / fixtures and canary*-bad hooks"
+log "removing CANARY* plans / fixtures"
 find "$STAGE" -type f -name '*CANARY*' -print -delete || true
-# Canary hooks (hooks/canary*-bad.sh — deliberately-broken regression
-# fixtures; lowercase basename, not matched by the *CANARY* glob above).
-find "$STAGE/hooks" -maxdepth 1 -type f -name 'canary*-bad.sh' -print -delete 2>/dev/null || true
+# NOTE: hooks/canary*-bad.sh (lowercase basename), build-*.sh release
+# tooling, and MW-EXAMPLE files are stripped by the SHARED finalizer
+# (finalize_prod_tree, step 8 below) so this builder and build-prod.sh
+# strip the IDENTICAL dev-only set.
 
-# ── 4. Remove build-*.sh release tooling (SELF-DELETION-SAFE) ───────────────
-# This strips build-*.sh from the STAGING tree only. The running script lives
-# in $SCRIPT_DIR (the dev scripts/ dir), which is NOT under $STAGE — so this
-# can never delete the script that is currently executing.
-log "removing build-*.sh release tooling from staging scripts/"
-find "$STAGE/scripts" -maxdepth 1 -type f -name 'build-*.sh' -print -delete 2>/dev/null || true
-
-# ── 5. Remove dev_only skills (+ mirrors) and MW-EXAMPLE files ─────────────
+# ── 4. Remove dev_only skills (+ mirrors) ──────────────────────────────────
 log "scanning for dev_only skills"
 dev_only_count=0
 for skill_file in "$STAGE"/skills/*/SKILL.md "$STAGE"/block-diagram/*/SKILL.md; do
@@ -166,15 +182,7 @@ for skill_file in "$STAGE"/skills/*/SKILL.md "$STAGE"/block-diagram/*/SKILL.md; 
 done
 [ "$dev_only_count" -eq 0 ] && printf "  ${DIM}(no dev_only: true skills)${RESET}\n"
 
-log "removing MW-EXAMPLE-marked files"
-mw_count=0
-while IFS= read -r mwfile; do
-  [ -n "$mwfile" ] || continue
-  rm -f "$mwfile" && mw_count=$((mw_count + 1))
-done < <(grep -rl 'MW-EXAMPLE' "$STAGE" 2>/dev/null || true)
-[ "$mw_count" -eq 0 ] && printf "  ${DIM}(no MW-EXAMPLE files)${RESET}\n"
-
-# ── 6. Version-bump-before-branch (D1/D10) ─────────────────────────────────
+# ── 5. Version-bump-before-branch (D1/D10) ─────────────────────────────────
 # Set BOTH plugin.json versions in the staging tree to $VERSION before the
 # prod commit is built, so marketplace version-resolution sees the bumped
 # value (never the commit-SHA fallback, research §11).
@@ -209,15 +217,13 @@ else
   warn "D3: repo-root CLAUDE_TEMPLATE.md not found — skipping copy"
 fi
 
-# ── 8. D4 — generate suffixless sibling copies of .template hooks ──────────
-log "D4: generating suffixless sibling copies of .template hooks"
-shopt -s nullglob
-for tmpl in "$PLUGIN_TREE"/hooks/*.sh.template; do
-  sibling="${tmpl%.template}"
-  cp "$tmpl" "$sibling"
-  done_ "D4: $(basename "$sibling") (byte-equal sibling of $(basename "$tmpl"))"
-done
-shopt -u nullglob
+# ── 8. Shared plugin-completion + dev-only strip set ───────────────────────
+# Generate the D4 suffixless hook siblings (block-agents.sh,
+# block-unsafe-project.sh) and strip the shared dev-only set (build-*.sh,
+# hooks/canary*-bad.sh, MW-EXAMPLE files). The SAME helper runs in
+# build-prod.sh, so the two builders cannot diverge. Operates on the STAGING
+# tree ($PLUGIN_TREE == $STAGE), never the dev working tree.
+finalize_prod_tree "$PLUGIN_TREE"
 
 # ── 9. Build the prod commit + LOCAL prod/main + prod/<version> tag ────────
 # Use a TEMPORARY git index so the dev working tree / index is never touched.
@@ -255,15 +261,17 @@ done_ "strip verification: 0 forbidden paths in prod/main"
 
 # ── 11. Push (GATED behind --push) ─────────────────────────────────────────
 if [ "$DO_PUSH" -eq 1 ]; then
-  log "pushing prod/main + prod/$VERSION to the prod remote"
-  # Push to the SAME refs everything else resolves: marketplace.json's `zs`
-  # source.ref is `prod/main`, and the pin-by-version idiom (docs/guides/
-  # PLUGIN_INSTALL.md) is `prod/<version>`. The dest refs MUST be `prod/main`
-  # (branch) and `prod/$VERSION` (tag), NOT bare `main` / `$VERSION` — pushing
-  # to bare refs would leave the marketplace/docs references unresolvable.
+  log "pushing prod main + $VERSION tag to the prod remote"
+  # Push the dev-LOCAL prod/main + prod/<version> refs to prod's BARE `main`
+  # branch + a BARE `<version>` tag — EXACTLY what the "Ship to Prod" button
+  # (ship-to-prod.yml → build-prod.sh) publishes. The dev-local ref names
+  # (refs/heads/prod/main, refs/tags/prod/$VERSION) are just this builder's
+  # staging namespace; the DEST refs on prod are bare so they match the
+  # publisher and so marketplace.json's `zs` source.ref (`main`) + the
+  # bare-`<version>` pin idiom (docs/guides/PLUGIN_INSTALL.md) resolve.
   # (tests/test-plugin-ref-consistency.sh guards this consistency.)
-  git push prod "refs/heads/prod/main:refs/heads/prod/main"
-  git push prod "refs/tags/prod/$VERSION:refs/tags/prod/$VERSION"
+  git push prod "refs/heads/prod/main:refs/heads/main"
+  git push prod "refs/tags/prod/$VERSION:refs/tags/$VERSION"
   done_ "pushed to prod"
 else
   log "--push NOT passed: prod refs are LOCAL only (dry run). Nothing pushed."

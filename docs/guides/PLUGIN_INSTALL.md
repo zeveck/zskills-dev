@@ -142,23 +142,23 @@ not a constraint.
 
 ## Pin-by-version idiom
 
-Each release pushes **both** a moving `prod/main` ref and a parallel
-`prod/<version>` tag (e.g. `prod/2026.06.0`). Unpinned consumers track the
-moving `prod/main` window; consumers who want reproducibility pin to a
-specific version.
+Each release publishes to the prod repo's **`main` branch** and a parallel
+**bare `<version>` tag** (e.g. `2026.06.0`). Unpinned consumers track the
+moving `main` window; consumers who want reproducibility pin to a specific
+version tag.
 
 The default marketplace entry tracks the moving window:
 
 ```json
-{ "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "prod/main" } }
+{ "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "main" } }
 ```
 
 To **pin to a specific release**, edit your marketplace's `zs` entry to either:
 
-- Override `source.ref` to the version tag:
+- Override `source.ref` to the bare version tag:
 
   ```json
-  { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "prod/2026.06.0" } }
+  { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "2026.06.0" } }
   ```
 
 - Or pin `source.sha` to the exact commit:
@@ -175,9 +175,12 @@ supported) on the relative-path entry. Pinning the `zs` entry's ref/sha
 therefore pins `zsbd` to the same snapshot.
 
 For how releases produce these refs, see
-[`RELEASING.md`](../RELEASING.md) (the dual-path release flow:
-`build-prod.sh` for the legacy mirror, `build-plugin-release.sh` for the
-plugin tree, both targeting `prod/main` plus a `prod/<version>` tag).
+[`RELEASING.md`](../RELEASING.md). The "🚀 Ship to Prod" button
+(`ship-to-prod.yml` → `scripts/build-prod.sh`) is the SINGLE publish path: it
+strips dev-only artifacts and pushes one complete, plugin-installable tree to
+the prod repo's `main` branch plus a bare `<version>` tag. (The legacy
+`/update-zskills` lane and the plugin lane both resolve against that same
+published tree.)
 
 ## `.gitignore` guidance
 
@@ -216,12 +219,13 @@ resolves) and promoting a release to it are **human-gated publish actions**
 performed by maintainers — not part of consumer onboarding. The mechanics live
 in [`RELEASING.md`](../RELEASING.md):
 
-- The release pushes the prod-stripped plugin tree to `prod/main` plus a
-  `prod/<version>` tag via `scripts/build-plugin-release.sh --push` (a
-  deliberate, human-gated step — the dry build never pushes).
+- The release pushes the prod-stripped, plugin-installable tree to the prod
+  repo's `main` branch plus a bare `<version>` tag via the "🚀 Ship to Prod"
+  button (`ship-to-prod.yml` → `scripts/build-prod.sh`) — a deliberate,
+  human-gated step (the dry-run never pushes).
 - The `.claude-plugin/marketplace.json` manifest at the repo root is what
   `/plugin marketplace add zeveck/zskills` reads; its `zs` entry's
-  `source.ref` (default `prod/main`) determines which release consumers track.
+  `source.ref` (default `main`) determines which release consumers track.
 
 Consumers do not perform any activation step — they only run the install
 commands above.

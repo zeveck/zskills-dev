@@ -2,7 +2,7 @@
 
 ## 2026.06.0
 
-### Added — Plugin distribution lane (marketplace + prod/2026.06.0)
+### Added — Plugin distribution lane (marketplace + 2026.06.0)
 
 zskills is now distributed via **two permanent, first-class install lanes**
 (a consumer picks exactly one):
@@ -11,9 +11,9 @@ zskills is now distributed via **two permanent, first-class install lanes**
   `/plugin marketplace add zeveck/zskills && /plugin install zs@zskills`
   reads `.claude-plugin/marketplace.json` (the `zskills` marketplace listing
   the `zs` plugin + the `zsbd` block-diagram addon) and resolves the plugin
-  tree from the prod repo's `prod/main` ref (pin a release via the
-  `prod/<version>` tag, e.g. `prod/2026.06.0`). Skills surface under the
-  `/zs:` slash prefix.
+  tree from the prod repo's `main` branch (pin a release via the bare
+  `<version>` tag, e.g. `2026.06.0`). Skills surface under the `/zs:` slash
+  prefix.
 - **`/update-zskills` lane** — the existing legacy mirror installer
   (`.claude/skills/` mirror + hooks + rendered `managed.md`).
 
@@ -31,15 +31,28 @@ Plugin-lane machinery shipped this release:
   tool (`--to-plugin` / `--to-update-zskills`); dual-install is a tolerated
   transient, not a supported end-state, and this is the consolidation entry
   point.
-- **Ref-consistency fix** — `scripts/build-plugin-release.sh --push` now
-  pushes to `prod/main` (branch) + `prod/<version>` (tag), matching what
-  `marketplace.json` and `docs/guides/PLUGIN_INSTALL.md` resolve (previously
-  it pushed to bare `main` / `<version>`, which left the plugin lane
-  unresolvable on first install). Guarded by a new
-  `tests/test-plugin-ref-consistency.sh` (fail-closed against regression).
-  The plugin builder also now rewrites dev→prod URLs
-  (`zeveck.github.io/zskills-dev` → `zskills.synapticnoise.com`) in the
-  staged README, mirroring `build-prod.sh`.
+- **Single-publish, complete-plugin model** — there is ONE publish path: the
+  **🚀 Ship to Prod** button (`ship-to-prod.yml` → `scripts/build-prod.sh`),
+  which pushes one complete, plugin-installable tree to the prod repo's `main`
+  branch + a bare `<version>` tag. `build-prod.sh` is now plugin-COMPLETE: it
+  keeps the plugin manifests AND, via the shared
+  `scripts/_lib/finalize-prod-tree.sh` finalizer, generates the D4 suffixless
+  hook siblings (`block-agents.sh`, `block-unsafe-project.sh` — without them
+  the plugin's `hooks.json` registered two safety hooks whose scripts didn't
+  exist, so they silently never fired) and strips the same dev-only set as the
+  local builder (`build-*.sh`, `hooks/canary*-bad.sh`, MW-EXAMPLE files). The
+  marketplace `zs` `source.ref` is `main` and the pin idiom is the bare
+  `<version>` tag — matching exactly what the button publishes (a prior cut
+  declared `prod/main` / `prod/<version>`, refs that never existed on prod, so
+  the first `/plugin install` could not resolve). `scripts/build-plugin-release.sh`
+  is now documented as a local dogfood/test-fixture builder (NOT the publish
+  path) and shares the finalizer with `build-prod.sh` so the two can't
+  diverge. Guarded by `tests/test-plugin-ref-consistency.sh` (marketplace ref
+  ↔ workflow push branch ↔ docs pin idiom) and `tests/test-plugin-d4-hook-siblings.sh`
+  (build-prod.sh's tree contains the D4 siblings), both fail-closed against
+  regression. The builders also rewrite dev→prod URLs
+  (`zeveck.github.io/zskills-dev` → `zskills.synapticnoise.com`) in the staged
+  README.
 
 ### Changed — paths defaults
 
