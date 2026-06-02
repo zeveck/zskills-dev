@@ -161,7 +161,7 @@ jobs:
           bash tests/test-plugin-manifest.sh
           echo "== marketplace.json schema (incl. D10 version lockstep) =="
           bash tests/test-plugin-marketplace.sh
-          echo "== build push targets ↔ consumer-resolved refs (prod/main + prod/<version>) =="
+          echo "== build push targets ↔ consumer-resolved refs (bare main + bare <version> tag) =="
           bash tests/test-plugin-ref-consistency.sh
 
       # Mirror-less prod-tree dogfood — builds a SHIPPED plugin tree (git
@@ -176,8 +176,9 @@ jobs:
           set -e
           bash tests/test-plugin-mirrorless-resolution.sh
 
-      # D4 existence gate — runs the REAL build-plugin-release.sh in an
-      # isolated throwaway clone and asserts the built prod/main tree CONTAINS
+      # D4 existence gate — runs the REAL publisher build-prod.sh (the script
+      # ship-to-prod.yml runs; refs are bare main + a bare <version> tag) in an
+      # isolated throwaway clone and asserts the built prod tree CONTAINS
       # a suffixless sibling of every hooks/*.sh.template (block-agents.sh +
       # block-unsafe-project.sh today — the safety hooks hooks.json registers
       # on the plugin lane), byte-equal to its .template. A regression that
