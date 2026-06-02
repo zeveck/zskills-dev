@@ -2,49 +2,47 @@
 
 Per-skill reference for the **23 user-facing Z Skills**, plus the 2 internal
 helpers they dispatch. Looking for how to *combine* these skills into
-end-to-end workflows? See **[WORKFLOWS.md](../guides/WORKFLOWS.md)**.
+end-to-end workflows? See [Workflows](../guides/WORKFLOWS.md).
 
-> **Block-diagram add-on:** The domain-specific block-diagram skills
-> (`/add-block`, `/add-example`, `/model-design`) are
-> documented separately in **[block-diagram/](block-diagram/README.md)** — they
-> are optional add-ons, not part of the core set.
+<details>
+<summary><strong>Quick reference table</strong> — alphabetical jump list (click to expand)</summary>
 
-## Quick Reference
+| Skill | Description |
+|-------|-------------|
+| [`/briefing`](briefing.md) | Generate a project briefing with status, commits, worktrees |
+| [`/cleanup-merged`](cleanup-merged.md) | Post-PR-merge local normalization |
+| [`/commit`](commit.md) | Safe commit workflow with optional push, land, or PR |
+| [`/do`](do.md) | Lightweight task dispatcher for ad-hoc work |
+| [`/doc`](doc.md) | Audit and fix documentation gaps |
+| [`/draft-plan`](draft-plan.md) | Draft plans through iterative adversarial review |
+| [`/draft-tests`](draft-tests.md) | Draft test specifications into existing plans |
+| [`/fix-issues`](fix-issues.md) | Orchestrate batch bug-fixing sprints |
+| [`/fix-report`](fix-report.md) | Review sprint results, land fixes, close issues |
+| [`/investigate`](investigate.md) | Deep debugging for complex bugs |
+| [`/manual-testing`](manual-testing.md) | Browser-based manual testing recipes |
+| [`/plans`](plans.md) | Plan dashboard: view status, find next ready plan |
+| [`/qe-audit`](qe-audit.md) | Quality engineering audit for test coverage gaps |
+| [`/quickfix`](quickfix.md) | Ship an in-flight edit as a one-commit PR |
+| [`/refine-plan`](refine-plan.md) | Refine in-progress plans against completed work |
+| [`/research-and-go`](research-and-go.md) | Full pipeline: decompose, plan, and execute autonomously |
+| [`/research-and-plan`](research-and-plan.md) | Decompose broad goals into executable sub-plans |
+| [`/run-plan`](run-plan.md) | Execute plan phases with verification and landing |
+| [`/session-report`](session-report.md) | Audit session intent vs. actual shipped state |
+| [`/update-zskills`](update-zskills.md) | Install or update Z Skills infrastructure |
+| [`/verify-changes`](verify-changes.md) | Verify recent changes: diffs, tests, manual checks |
+| [`/work-on-plans`](work-on-plans.md) | Batch-execute prioritized plan queue from dashboard |
+| [`/zskills-dashboard`](zskills-dashboard.md) | Local web dashboard for plans, issues, and tracking |
 
-| Skill | Description | Docs |
-|-------|-------------|------|
-| [`/briefing`](briefing.md) | Generate a project briefing with status, commits, worktrees | [Details](briefing.md) |
-| [`/cleanup-merged`](cleanup-merged.md) | Post-PR-merge local normalization | [Details](cleanup-merged.md) |
-| [`/commit`](commit.md) | Safe commit workflow with optional push, land, or PR | [Details](commit.md) |
-| [`/do`](do.md) | Lightweight task dispatcher for ad-hoc work | [Details](do.md) |
-| [`/doc`](doc.md) | Audit and fix documentation gaps | [Details](doc.md) |
-| [`/draft-plan`](draft-plan.md) | Draft plans through iterative adversarial review | [Details](draft-plan.md) |
-| [`/draft-tests`](draft-tests.md) | Draft test specifications into existing plans | [Details](draft-tests.md) |
-| [`/fix-issues`](fix-issues.md) | Orchestrate batch bug-fixing sprints | [Details](fix-issues.md) |
-| [`/fix-report`](fix-report.md) | Review sprint results, land fixes, close issues | [Details](fix-report.md) |
-| [`/investigate`](investigate.md) | Deep debugging for complex bugs | [Details](investigate.md) |
-| [`/manual-testing`](manual-testing.md) | Browser-based manual testing recipes | [Details](manual-testing.md) |
-| [`/plans`](plans.md) | Plan dashboard: view status, find next ready plan | [Details](plans.md) |
-| [`/qe-audit`](qe-audit.md) | Quality engineering audit for test coverage gaps | [Details](qe-audit.md) |
-| [`/quickfix`](quickfix.md) | Ship an in-flight edit as a one-commit PR | [Details](quickfix.md) |
-| [`/refine-plan`](refine-plan.md) | Refine in-progress plans against completed work | [Details](refine-plan.md) |
-| [`/research-and-go`](research-and-go.md) | Full pipeline: decompose, plan, and execute autonomously | [Details](research-and-go.md) |
-| [`/research-and-plan`](research-and-plan.md) | Decompose broad goals into executable sub-plans | [Details](research-and-plan.md) |
-| [`/run-plan`](run-plan.md) | Execute plan phases with verification and landing | [Details](run-plan.md) |
-| [`/session-report`](session-report.md) | Audit session intent vs. actual shipped state | [Details](session-report.md) |
-| [`/update-zskills`](update-zskills.md) | Install or update Z Skills infrastructure | [Details](update-zskills.md) |
-| [`/verify-changes`](verify-changes.md) | Verify recent changes: diffs, tests, manual checks | [Details](verify-changes.md) |
-| [`/work-on-plans`](work-on-plans.md) | Batch-execute prioritized plan queue from dashboard | [Details](work-on-plans.md) |
-| [`/zskills-dashboard`](zskills-dashboard.md) | Local web dashboard for plans, issues, and tracking | [Details](zskills-dashboard.md) |
+#### Internal helpers
 
-### Internal helpers
+Dispatched by other skills — not designed for direct user invocation. Listed for reference only.
 
-Dispatched by other skills — not designed for direct user invocation.
+| Skill | Description |
+|-------|-------------|
+| [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work |
+| [`/land-pr`](land-pr.md) | PR landing helper (rebase, push, create-or-detect, monitor CI, optional auto-merge) |
 
-| Skill | Description | Docs |
-|-------|-------------|------|
-| [`/create-worktree`](create-worktree.md) | Create an isolated git worktree for agent work | [Details](create-worktree.md) |
-| `/land-pr` | PR landing helper (rebase, push, create/detect PR, poll CI, optional auto-merge). `user-invocable: false`; dispatched by `/run-plan`, `/commit pr`, `/do pr`, `/fix-issues`, and `/quickfix`. | — |
+</details>
 
 ## Categories
 

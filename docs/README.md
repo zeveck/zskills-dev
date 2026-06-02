@@ -1,9 +1,17 @@
 # Z Skills documentation
 
-Operator and adopter documentation for zskills. Two starting points:
+Z Skills turns Claude Code into a disciplined engineering team — 23 user-facing slash commands that plan, build, test, fix, and ship with verification at every step.
 
-- **[Guides](guides/WORKFLOWS.md)** — end-to-end recipes, install instructions, and operational concepts.
-- **[Skills](skills/README.md)** — per-skill reference for the 23 user-facing slash commands plus the 2 internal helpers.
+These docs are organised in two halves:
+
+- **[Guides](guides/README.md)** — install instructions, end-to-end workflows, and operational concepts. **Start here if you're new to zskills.**
+- **[Skills reference](skills/README.md)** — per-skill detail pages for the 23 user-facing slash commands plus 2 internal helpers. Reach for this when you need to know exactly what a single skill does, its arguments, and its modes.
+
+## New here? Read in this order
+
+1. **[Install zskills](guides/PLUGIN_INSTALL.md)** — pick the plugin lane or the `/update-zskills` lane.
+2. **[Workflows](guides/WORKFLOWS.md)** — see the canonical recipes (draft → review → execute → land).
+3. **[Inspecting & monitoring](guides/INSPECTING_AND_MONITORING.md)** — observe a running project without reading git history.
 
 ## Guides — quick links
 

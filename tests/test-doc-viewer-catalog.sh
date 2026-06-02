@@ -92,24 +92,24 @@ else
 fi
 
 # Section ordering — user-facing scope only.
-EXPECTED_ORDER='Start here Guides Skills Skills > Block diagram'
+EXPECTED_ORDER='Start here Guides Skills'
 ACTUAL_ORDER=$(grep -oE 'section: "[^"]+"' "$REGISTRY" | sed 's/section: "\(.*\)"/\1/' | tr '\n' ' ' | sed 's/ $//')
 if [ "$ACTUAL_ORDER" = "$EXPECTED_ORDER" ]; then
-  pass "4 sections present in fixed order"
+  pass "3 sections present in fixed order"
 else
   fail "section order mismatch — expected '$EXPECTED_ORDER', got '$ACTUAL_ORDER'"
 fi
 
-# Entry count: ~35 (1 Start here + ~5 Guides + ~25 Skills + ~4 Block diagram).
+# Entry count: ~33 (1 Start here + ~6 Guides + ~26 Skills).
 ENTRY_COUNT=$(grep -cE '^\s+\{ name: ' "$REGISTRY")
-if [ "$ENTRY_COUNT" -ge 25 ] && [ "$ENTRY_COUNT" -le 60 ]; then
-  pass "catalog has $ENTRY_COUNT entries (in expected 25..60 range)"
+if [ "$ENTRY_COUNT" -ge 25 ] && [ "$ENTRY_COUNT" -le 50 ]; then
+  pass "catalog has $ENTRY_COUNT entries (in expected 25..50 range)"
 else
-  fail "catalog has $ENTRY_COUNT entries, expected 25..60 (Start here + Guides + Skills + Block diagram only)"
+  fail "catalog has $ENTRY_COUNT entries, expected 25..50 (Start here + Guides + Skills only)"
 fi
 
-# Internal-only dirs (plans/reports/evals/issues/tracking) must be excluded —
-# this is an onboarding viewer, not a folder tour.
+# Internal/optional dirs must be excluded — this is an onboarding viewer.
+# block-diagram is an optional add-on, not part of the core set.
 for dir in plans reports evals issues tracking; do
   if grep -q "\"docs/$dir/" "$REGISTRY"; then
     fail "catalog includes docs/$dir/ entries (must be excluded — internal artifacts)"
@@ -117,6 +117,11 @@ for dir in plans reports evals issues tracking; do
     pass "catalog excludes docs/$dir/"
   fi
 done
+if grep -q '"docs/skills/block-diagram/' "$REGISTRY"; then
+  fail "catalog includes block-diagram add-on entries (must be excluded for v1)"
+else
+  pass "catalog excludes docs/skills/block-diagram/"
+fi
 
 # Phase 5 dependency.
 if grep -q '"docs/guides/INSPECTING_AND_MONITORING.md"' "$REGISTRY"; then

@@ -24,6 +24,7 @@ export const DOCS_CATALOG = [
       { name: "Inspecting & Monitoring a zskills Project", path: "docs/guides/INSPECTING_AND_MONITORING.md" },
       { name: "Installing zskills — the two install lanes", path: "docs/guides/PLUGIN_INSTALL.md" },
       { name: "Switching install lanes (`scripts/switch-install-path.sh`)", path: "docs/guides/PLUGIN_MIGRATION.md" },
+      { name: "Guides", path: "docs/guides/README.md" },
       { name: "Z Skills Workflows", path: "docs/guides/WORKFLOWS.md" },
       { name: "Z Skills Tracking System Overview", path: "docs/guides/ZSKILLS_TRACKING_OVERVIEW.md" }
     ]
@@ -43,6 +44,7 @@ export const DOCS_CATALOG = [
       { name: "/fix-issues", path: "docs/skills/fix-issues.md" },
       { name: "/fix-report", path: "docs/skills/fix-report.md" },
       { name: "/investigate", path: "docs/skills/investigate.md" },
+      { name: "`/land-pr` (internal helper)", path: "docs/skills/land-pr.md" },
       { name: "/manual-testing", path: "docs/skills/manual-testing.md" },
       { name: "/plans", path: "docs/skills/plans.md" },
       { name: "/qe-audit", path: "docs/skills/qe-audit.md" },
@@ -56,15 +58,6 @@ export const DOCS_CATALOG = [
       { name: "/verify-changes", path: "docs/skills/verify-changes.md" },
       { name: "/work-on-plans", path: "docs/skills/work-on-plans.md" },
       { name: "/zskills-dashboard", path: "docs/skills/zskills-dashboard.md" }
-    ]
-  },
-  {
-    section: "Skills > Block diagram",
-    items: [
-      { name: "Block Diagram Add-On Skills", path: "docs/skills/block-diagram/README.md" },
-      { name: "/add-block", path: "docs/skills/block-diagram/add-block.md" },
-      { name: "/add-example", path: "docs/skills/block-diagram/add-example.md" },
-      { name: "/model-design", path: "docs/skills/block-diagram/model-design.md" }
     ]
   }
 ];

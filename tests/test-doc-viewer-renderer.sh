@@ -152,12 +152,16 @@ function check(name, cond, msg) {
     'expected <ol> with two items; got: ' + h);
 }
 
-// T8: Internal .md link gets zl-docs-internal-link class
+// T8: Internal .md link gets zl-docs-internal-link class AND its raw
+//     (un-baseUrl-resolved) href so the hash-router in docs-app.js
+//     (rewriteInternalLinksToHash) can resolve it against the current
+//     doc's location. Applying baseUrl here would double-resolve and
+//     produce `docs/docs/...` (see the doc-viewer post-deploy fixup).
 {
   const h = renderMarkdown('See [the guide](guides/INSPECTING.md).');
   check('T8.md-link-internal-class',
-    /<a href="getting-started\/guides\/INSPECTING\.md" class="zl-docs-internal-link">the guide<\/a>/.test(h),
-    'expected zl-docs-internal-link; got: ' + h);
+    /<a href="guides\/INSPECTING\.md" class="zl-docs-internal-link">the guide<\/a>/.test(h),
+    'expected zl-docs-internal-link with RAW href (no baseUrl prefix); got: ' + h);
 }
 
 // T9: External https link gets target="_blank" rel="noopener"

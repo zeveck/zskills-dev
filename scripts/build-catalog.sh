@@ -12,9 +12,9 @@
 #   - docs/README.md            → "Start here" (position 0, single entry)
 #   - docs/guides/*.md          → "Guides"
 #   - docs/skills/*.md          → "Skills"
-#   - docs/skills/block-diagram/*.md → "Skills > Block diagram"
 #
-# Deliberately excluded (agent/dev artifacts, not docs a new user needs):
+# Deliberately excluded (agent/dev artifacts OR optional add-ons, not docs a new user needs):
+#   - docs/skills/block-diagram/ (optional block-diagram add-on; users who need it visit the addon repo separately)
 #   - docs/plans/    (in-flight + completed design plans — for maintainers)
 #   - docs/reports/  (post-execution reports — auto-generated)
 #   - docs/evals/    (skill evaluations / coverage analyses)
@@ -61,7 +61,6 @@ SECTIONS = [
     ('Start here',            None),  # special: single README entry
     ('Guides',                'docs/guides'),
     ('Skills',                'docs/skills'),
-    ('Skills > Block diagram','docs/skills/block-diagram'),
 ]
 
 FRONTMATTER_RE = re.compile(r'^---\n.*?\n---\n', re.DOTALL)

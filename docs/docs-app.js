@@ -262,42 +262,72 @@ async function loadDoc(item, navEl) {
 }
 
 function renderDoc(item, md) {
-  // Determine base URL for resolving relative paths
+  // Determine base URL for resolving relative paths (used by the renderer
+  // for <img> src resolution so images fetch from the correct repo path).
   const pathParts = item.path.split('/');
   pathParts.pop();
   const baseUrl = pathParts.length > 0 ? '../' + pathParts.join('/') + '/' : '../';
 
-  main.innerHTML = renderFrontmatterStrip(md) + renderMarkdown(stripFrontmatter(md), { baseUrl });
+  const html = renderFrontmatterStrip(md) + renderMarkdown(stripFrontmatter(md), { baseUrl });
+  main.innerHTML = rewriteInternalLinksToHash(html, item.path);
 
   main.scrollTop = 0;
 }
 
-// Intercept internal anchor links and doc-to-doc links. Doc-to-doc links
-// now route via `location.hash` (single-ingress); in-page `#section`
-// anchors are still handled inline.
+// The renderer resolves relative `<a href="X.md">` to `../docs/<...>/X.md`
+// using baseUrl (so they'd "work" as fetches). For our hash-routed viewer,
+// such hrefs need to be HASH URLs (`#docs/<...>/X.md`) so:
+//   (a) click handlers don't double-resolve against `currentHashPath`,
+//   (b) Ctrl/Cmd-click opens the viewer-with-hash in a new tab (instead of
+//       serving raw markdown), and
+//   (c) hover shows the actual destination doc in the URL bar tooltip.
+// We rewrite every internal `<a href>` (or `<a href>` carrying a section
+// anchor) to a hash URL anchored at this doc's location in the repo.
+function rewriteInternalLinksToHash(html, currentPath) {
+  // currentPath is e.g. "docs/skills/README.md" — repo-root-relative.
+  const dirParts = currentPath.split('/');
+  dirParts.pop();  // drop filename
+  const currentDir = dirParts.join('/');  // e.g. "docs/skills"
+
+  return html.replace(
+    /(<a\b[^>]*\bhref=)"([^"]+)"/gi,
+    (full, prefix, href) => {
+      // Skip absolute URLs (http://...), root-relative (/...), pure section
+      // anchors (#...), and mailto/tel/etc.
+      if (/^([a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(href)) return full;
+      // Only rewrite if the href targets a .md doc (with optional #anchor).
+      if (!/\.md(\?[^#]*)?(#.+)?$/i.test(href)) return full;
+      // Resolve relative to currentDir using URL constructor (handles ../).
+      // Use synthetic origin; the result's pathname is the repo-rel path.
+      const base = new URL('https://x/' + currentDir + '/', 'https://x/');
+      const u = new URL(href, base);
+      const resolved = u.pathname.slice(1) + u.hash;  // strip leading '/'
+      return prefix + '"#' + resolved + '"';
+    }
+  );
+}
+
+// Intercept in-page section anchors only — smooth-scroll inside the
+// rendered doc. Internal doc-to-doc links no longer need a JS click handler:
+// rewriteInternalLinksToHash() (called by renderDoc) has already converted
+// every `<a href="X.md">` to `<a href="#docs/.../X.md">`, so clicking such
+// a link natively updates location.hash → hashchange → routeFromHash, AND
+// Ctrl/Cmd-click opens the viewer-with-hash in a new tab without us
+// fighting the browser via e.preventDefault().
 main.addEventListener('click', (e) => {
   const link = e.target.closest('a');
   if (!link) return;
   const href = link.getAttribute('href');
   if (!href) return;
-
-  // Anchor link within current page
-  if (href.startsWith('#')) {
+  // Modifier-key clicks → let the browser open in new tab / window.
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+  // Pure in-page anchor (`#section-name`, NO doc path): smooth-scroll.
+  // Hash routes that ALSO have a section (e.g. `#docs/X.md#sec`) are
+  // delivered to routeFromHash via hashchange — not handled here.
+  if (href.startsWith('#') && !href.startsWith('#docs/')) {
     e.preventDefault();
     const target = main.querySelector(href);
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-
-  // Internal doc link (e.g., ../guides/X.md#anchor). Route via
-  // location.hash so hashchange → routeFromHash → loadDoc is the single
-  // ingress; the section anchor (if any) is carried inside the resolved
-  // path and parsed back out by routeFromHash.
-  if (href.endsWith('.md') || href.includes('.md#')) {
-    e.preventDefault();
-    const resolved = resolveLink(href, currentHashPath());
-    location.hash = '#' + resolved;
-    return;
   }
 });
 
