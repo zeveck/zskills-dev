@@ -487,6 +487,165 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# Oracle: render the bare-preset config-only version nudge.
+# Mirrors the SKILL.md `## Bare-preset config-only short-circuit` spec:
+#   best-effort `git fetch --tags` (offline-safe), reuse resolve-repo-version
+#   + installed `zskills_version`, print the nudge line ONLY when installed
+#   is strictly behind current (sort -V). Otherwise emit nothing.
+# ----------------------------------------------------------------------
+render_bare_preset_nudge() {
+  local zskills_path="$1" claude_dir="$2"
+  local current installed
+  # Best-effort tag refresh (offline-safe — failure never aborts).
+  if [ -n "$zskills_path" ] && [ -d "$zskills_path/.git" ]; then
+    git -C "$zskills_path" fetch --tags --quiet 2>/dev/null || true
+  fi
+  current=""
+  [ -n "$zskills_path" ] && current=$(bash "$RESOLVE" "$zskills_path")
+  installed=$(read_installed_zskills_ver "$claude_dir/.claude/zskills-config.json")
+  # Skip silently unless BOTH present AND installed strictly behind current.
+  [ -z "$current" ] && return 0
+  [ -z "$installed" ] && return 0
+  [ "$installed" = "$current" ] && return 0
+  local earliest
+  earliest=$(printf '%s\n%s\n' "$installed" "$current" | sort -V | head -1)
+  [ "$earliest" = "$installed" ] || return 0  # installed is NOT behind
+  echo "zskills ${installed} → ${current} available. Run /update-zskills (no args) to pull + update."
+}
+
+# ----------------------------------------------------------------------
+# Test 9: Bare preset is config-only (does NOT render/run the update or
+# audit pass) and emits the config-only confirmation + version nudge —
+# while `install <preset>` still does both. Asserted as SKILL.md textual
+# invariants (the skill is agent-executed; the oracle encodes the spec).
+# ----------------------------------------------------------------------
+echo ""
+echo "=== Test 9: bare preset config-only short-circuit (SKILL.md invariants) ==="
+SHORTCIRCUIT_BLOCK=$(awk '/^## Bare-preset config-only short-circuit/,/^## Default Mode — Smart Detection/' "$SKILL_MD")
+if [ -n "$SHORTCIRCUIT_BLOCK" ]; then
+  pass "SKILL.md has '## Bare-preset config-only short-circuit' section"
+else
+  fail "SKILL.md bare-preset section" "missing '## Bare-preset config-only short-circuit' heading"
+fi
+# The short-circuit must forbid audit/pull/fill on a bare preset.
+if echo "$SHORTCIRCUIT_BLOCK" | grep -qi 'do .*NOT.* run the audit' \
+   && echo "$SHORTCIRCUIT_BLOCK" | grep -qi 'NOT.* pull'; then
+  pass "bare-preset section documents: no audit, no pull"
+else
+  fail "bare-preset no-audit/no-pull" "section does not forbid audit/pull:
+$SHORTCIRCUIT_BLOCK"
+fi
+# Config-only confirmation wording present.
+if echo "$SHORTCIRCUIT_BLOCK" | grep -q 'config only — no skills pulled or updated'; then
+  pass "bare-preset section contains config-only confirmation line"
+else
+  fail "bare-preset confirmation" "missing 'config only — no skills pulled or updated' line"
+fi
+# Version-availability nudge line present, pointing at the bare command.
+if echo "$SHORTCIRCUIT_BLOCK" | grep -q 'available. Run /update-zskills (no args) to pull + update'; then
+  pass "bare-preset section contains version-availability nudge line"
+else
+  fail "bare-preset nudge" "missing version-availability nudge line"
+fi
+# Best-effort, offline-safe fetch documented.
+if echo "$SHORTCIRCUIT_BLOCK" | grep -q 'fetch --tags' \
+   && echo "$SHORTCIRCUIT_BLOCK" | grep -qi 'offline-safe'; then
+  pass "bare-preset section documents best-effort offline-safe git fetch --tags"
+else
+  fail "bare-preset fetch" "missing best-effort offline-safe 'git fetch --tags'"
+fi
+# Reuses existing machinery (resolve-repo-version.sh) — no new comparison logic.
+if echo "$SHORTCIRCUIT_BLOCK" | grep -q 'resolve-repo-version.sh'; then
+  pass "bare-preset section reuses resolve-repo-version.sh (no new comparison logic)"
+else
+  fail "bare-preset reuse" "section does not reference resolve-repo-version.sh"
+fi
+# Behavior-by-invocation: bare preset is config-only; install <preset> does both.
+BEHAVIOR_BLOCK=$(awk '/^Behavior by invocation:/,/^---$/' "$SKILL_MD")
+if echo "$BEHAVIOR_BLOCK" | grep -qi 'bare.* preset' \
+   && echo "$BEHAVIOR_BLOCK" | grep -qi 'config-only'; then
+  pass "Behavior-by-invocation documents bare preset as config-only"
+else
+  fail "Behavior bare preset" "behavior section does not mark bare preset config-only:
+$BEHAVIOR_BLOCK"
+fi
+if echo "$BEHAVIOR_BLOCK" | grep -q 'install <preset>' \
+   && echo "$BEHAVIOR_BLOCK" | grep -qi 'install AND set config'; then
+  pass "Behavior-by-invocation: install <preset> still installs AND sets config"
+else
+  fail "Behavior install <preset>" "behavior section does not keep install <preset> doing both:
+$BEHAVIOR_BLOCK"
+fi
+
+# ----------------------------------------------------------------------
+# Test 10: Bare-preset version-nudge oracle — behind, current, ahead,
+# missing-version, and tagless (offline-safe) cases.
+# ----------------------------------------------------------------------
+echo ""
+echo "=== Test 10: bare-preset version-nudge oracle (only-when-behind, offline-safe) ==="
+# Reuse Test 1's source (tag 2026.05.0) + consumer (installed 2026.04.0 → behind).
+NUDGE=$(render_bare_preset_nudge "$T1/source" "$T1/consumer")
+if echo "$NUDGE" | grep -qF 'zskills 2026.04.0 → 2026.05.0 available. Run /update-zskills (no args) to pull + update.'; then
+  pass "nudge printed when installed behind (2026.04.0 → 2026.05.0)"
+else
+  fail "nudge when behind" "got: '$NUDGE'"
+fi
+# Up-to-date consumer → no nudge.
+T10=$(mktemp -d /tmp/zskills-test-vsurf-XXXXXX)
+mkdir -p "$T10/source/skills" "$T10/source/scripts"
+cp "$GET_HELPER" "$T10/source/scripts/frontmatter-get.sh"
+write_skill "$T10/source/skills/run-plan" run-plan "2026.05.02+aaaaaa"
+( cd "$T10/source" && git init -q && git config user.email t@e && git config user.name t \
+  && git add -A && git commit -q -m init && git tag 2026.05.0 )
+mkdir -p "$T10/consumer/.claude/skills"
+cat > "$T10/consumer/.claude/zskills-config.json" <<'EOF'
+{ "project_name": "acme", "zskills_version": "2026.05.0" }
+EOF
+NUDGE=$(render_bare_preset_nudge "$T10/source" "$T10/consumer")
+if [ -z "$NUDGE" ]; then
+  pass "no nudge when installed == current (2026.05.0)"
+else
+  fail "no nudge when current" "unexpected nudge: '$NUDGE'"
+fi
+# Installed AHEAD of source tag → no nudge.
+cat > "$T10/consumer/.claude/zskills-config.json" <<'EOF'
+{ "project_name": "acme", "zskills_version": "2026.06.1" }
+EOF
+NUDGE=$(render_bare_preset_nudge "$T10/source" "$T10/consumer")
+if [ -z "$NUDGE" ]; then
+  pass "no nudge when installed ahead of source tag (offline-safe / no false nudge)"
+else
+  fail "no nudge when ahead" "unexpected nudge: '$NUDGE'"
+fi
+# Tagless source (offline-safe: no tags → no nudge, no failure).
+T10B=$(mktemp -d /tmp/zskills-test-vsurf-XXXXXX)
+mkdir -p "$T10B/source/skills" "$T10B/source/scripts"
+cp "$GET_HELPER" "$T10B/source/scripts/frontmatter-get.sh"
+write_skill "$T10B/source/skills/run-plan" run-plan "2026.05.02+aaaaaa"
+( cd "$T10B/source" && git init -q && git config user.email t@e && git config user.name t \
+  && git add -A && git commit -q -m init )  # NO tag
+mkdir -p "$T10B/consumer/.claude/skills"
+cat > "$T10B/consumer/.claude/zskills-config.json" <<'EOF'
+{ "project_name": "acme", "zskills_version": "2026.04.0" }
+EOF
+NUDGE=$(render_bare_preset_nudge "$T10B/source" "$T10B/consumer")
+if [ -z "$NUDGE" ]; then
+  pass "no nudge when source clone tagless (offline-safe)"
+else
+  fail "no nudge when tagless" "unexpected nudge: '$NUDGE'"
+fi
+# Missing installed zskills_version → no nudge (nothing to compare against).
+cat > "$T10/consumer/.claude/zskills-config.json" <<'EOF'
+{ "project_name": "acme" }
+EOF
+NUDGE=$(render_bare_preset_nudge "$T10/source" "$T10/consumer")
+if [ -z "$NUDGE" ]; then
+  pass "no nudge when installed zskills_version absent"
+else
+  fail "no nudge when installed absent" "unexpected nudge: '$NUDGE'"
+fi
+
+# ----------------------------------------------------------------------
 # Summary
 # ----------------------------------------------------------------------
 echo ""
