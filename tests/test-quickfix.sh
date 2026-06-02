@@ -1936,10 +1936,12 @@ fi
 
 # Case 69 — argument-hint shape (AC4.9): exact positional hint.
 # Issue #810: bare `force` → dashed `--force` for cross-skill consistency.
+# Issue #961: --force de-advertised from the slash-menu teaser (still parsed
+# + documented; see Case 66 parser coverage). The hint no longer lists it.
 HINT=$(grep '^argument-hint' "$SKILL" | sed -E 's/^argument-hint: "(.*)"$/\1/')
-EXPECTED='[<description>] [auto] [from-here] [skip-tests] [--force] [--branch <name>] [--rounds N]'
+EXPECTED='[<description>] [auto] [from-here] [skip-tests] [--branch <name>] [--rounds N]'
 if [ "$HINT" = "$EXPECTED" ]; then
-  pass "69 argument-hint (AC4.9, AC4.12, #810): positional shape (len=${#HINT})"
+  pass "69 argument-hint (AC4.9, AC4.12, #961): positional shape (len=${#HINT})"
 else
   fail "69 argument-hint: got='$HINT' expected='$EXPECTED'"
 fi

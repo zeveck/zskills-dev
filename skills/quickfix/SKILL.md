@@ -1,6 +1,6 @@
 ---
 name: quickfix
-argument-hint: "[<description>] [auto] [from-here] [skip-tests] [--force] [--branch <name>] [--rounds N]"
+argument-hint: "[<description>] [auto] [from-here] [skip-tests] [--branch <name>] [--rounds N]"
 description: >-
   Ship an in-flight edit (or short agent-authored fix) from main as a
   one-commit PR without a worktree. Two auto-detected modes: user-edited
@@ -11,7 +11,7 @@ description: >-
   '/do worktree' or '/commit' respectively. No .landed marker.
   Positional auto: auto-merge.
 metadata:
-  version: "2026.06.01+88285e"
+  version: "2026.06.01+58b49f"
 ---
 
 # /quickfix — In-Flight Fix → PR
