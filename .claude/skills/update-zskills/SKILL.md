@@ -1,9 +1,9 @@
 ---
 name: update-zskills
-argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
+argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.02+81a457"
+  version: "2026.06.02+ff2cf6"
 ---
 
 # Update Z Skills Infrastructure
@@ -97,16 +97,27 @@ main-push gate in `block-unsafe-generic.sh` is no longer set by the preset
 | `direct` | `direct` | `false` | allow |
 
 Behavior by invocation:
-- `/update-zskills <preset>` — apply that preset; no greenfield prompt.
-  If the config already exists, overwrite ONLY the three preset-owned
-  fields above; every other field (branch_prefix, tests, CI, dev_server,
-  UI patterns, timezone, min_model) is preserved.
+- `/update-zskills <preset>` (a **bare** preset — a preset keyword with NO
+  `install` mode token) — **config-only**. Overwrite ONLY the two
+  preset-owned fields above (`execution.landing`,
+  `execution.main_protected`) in `.claude/zskills-config.json`; every
+  other field (branch_prefix, tests, CI, dev_server, UI patterns,
+  timezone, min_model) is preserved. **Do NOT audit, pull, or update
+  skills** — a bare preset is a pure landing-mode switch, not a refresh.
+  No greenfield prompt. After writing, print a config-only confirmation
+  (see "Config-only confirmation + version nudge" below) that makes clear
+  nothing was pulled, plus a best-effort version-availability nudge. See
+  the dedicated **`### Bare-preset config-only short-circuit`** step for
+  the algorithm.
+- `/update-zskills install <preset>` (a preset composed with the explicit
+  `install` mode token) — install AND set config: run the full install
+  (audit + fill all gaps) AND apply the preset via Step F. Unchanged.
 - `/update-zskills` **and no existing `.claude/zskills-config.json`** —
   ask the user the greenfield prompt (see Step 0.6), then apply the
-  chosen preset and write the config.
+  chosen preset and write the config (as part of the install/update pass).
 - `/update-zskills` **and existing config, no preset arg** — respect the
   existing config; do NOT re-ask. This is the idempotent re-install /
-  update path.
+  update path (smart detection — audit + pull + update). Unchanged.
 
 **Add-on flags:**
 - `--with-addons` — install/update core skills + ALL available add-on packs
@@ -1055,9 +1066,10 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   ```
 
   Report the result verbatim per Step F's exit-code table (0 applied / 1
-  no-change / 2 usage / 3 missing config / 4 malformed config), then exit
-  with the script's exit code. Do not proceed to the audit or any fill
-  step.
+  no-change / 2 usage / 3 missing config / 4 malformed config), then print
+  the config-only confirmation + best-effort version nudge from
+  **`### Bare-preset config-only short-circuit`** below, and exit with the
+  script's exit code. Do not proceed to the audit or any fill step.
 
 - **Else (bare call, no preset):** print the plugin-lane explanation and
   exit 0:
@@ -1074,9 +1086,13 @@ gap-fill (Steps A–G below), or any `.claude/`-mirroring step.
   ```
 
 **Else** (`LANE` is `update-zskills`, `dual`, or `fresh`, OR detection was
-unreachable): proceed to the existing behavior **unchanged**. The `dual`
-case is intentionally NOT given its own arm — the mirror already exists, so
-gap-fill is a non-destructive update, and the materialiser +
+unreachable): proceed to the existing behavior. **First** check for a bare
+preset: if `$PRESET_ARG` is non-empty AND `$MODE` is NOT `install`, jump to
+**`## Bare-preset config-only short-circuit`** (config-only — no audit, no
+pull, no fill) and exit there. Otherwise (no preset, or `install <preset>`)
+proceed to **Default Mode — Smart Detection** / Fill-All-Gaps **unchanged**.
+The `dual` case is intentionally NOT given its own arm — the mirror already
+exists, so gap-fill is a non-destructive update, and the materialiser +
 `switch-install-path` already own dual detection/warning/recovery;
 `/update-zskills` must not add its own dual handling.
 
@@ -1084,6 +1100,96 @@ gap-fill is a non-destructive update, and the materialiser +
 the entire gap-fill (including Step B's render), the sentinel-clobber
 landmine (a sentinel-less re-render shifting `detect_install_state`) cannot
 occur on this path.
+
+---
+
+## Bare-preset config-only short-circuit
+
+**Runs on the legacy lane** (i.e. when Step 0.7's `Else` arm was taken —
+`LANE` is `update-zskills`, `dual`, or `fresh`, OR detection was
+unreachable) **when a bare preset was parsed**: `$PRESET_ARG` is non-empty
+AND `$MODE` is NOT `install`. (On the plugin lane the equivalent
+config-only apply already happened in Step 0.7's preset arm, which then
+prints the same confirmation + nudge documented here.)
+
+A bare preset is a **pure landing-mode switch** — write the two
+preset-owned config fields and STOP. Do **NOT** run the audit, do **NOT**
+pull the source clone for skill updates, do **NOT** render/fill any gap.
+The full smart-detect update is reserved for `/update-zskills` (no preset)
+and `/update-zskills install <preset>`.
+
+**Step 1 — Apply the preset (config-only).** Run the same
+`apply-preset.sh` invocation as Step F (it edits ONLY
+`.claude/zskills-config.json` — `execution.landing` +
+`execution.main_protected` — preserving every other field; it never
+touches the hook or the mirror):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh" ]; then
+  . "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/scripts/zskills-resolve-config.sh"
+else
+  . "$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/scripts/zskills-resolve-config.sh"
+fi
+bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/apply-preset.sh" "$PRESET_ARG"
+```
+
+Capture the exit code per Step F's table (0 applied / 1 no-change /
+2 usage / 3 missing config / 4 malformed config).
+
+**Step 2 — Config-only confirmation + version nudge.** Print a
+confirmation that is EXPLICIT that nothing was pulled or updated, pointing
+the user at the bare no-arg command for a real update:
+
+```
+Applied preset <name> (config only — no skills pulled or updated).
+```
+
+(For exit 1 / no-change, say `Preset <name> already applied — config
+unchanged (no skills pulled or updated).` instead.)
+
+**Version nudge (best-effort, offline-safe — reuse the existing
+machinery, do NOT invent new comparison logic).** Reuse the SAME
+resolve-repo-version + installed-`zskills_version` comparison the audit's
+"Versions:" line uses (see `### Step 6 — Produce the gap report`). The
+ONLY addition for this path is a best-effort `git fetch --tags` on the
+source clone FIRST, so the comparison sees newly-published tags that the
+local clone has not yet fetched:
+
+```bash
+# Best-effort tag refresh on the source clone (offline-safe). The source
+# clone is $ZSKILLS_PATH when Step 0 resolved a git clone; if it is unset,
+# not a git repo, or the fetch fails (no network / no remote), SKIP the
+# nudge entirely — NEVER fail or abort the config write because of it.
+if [ -n "${ZSKILLS_PATH:-}" ] && [ -d "$ZSKILLS_PATH/.git" ]; then
+  git -C "$ZSKILLS_PATH" fetch --tags --quiet || true
+fi
+# Reuse the audit's resolve+read (single source of truth — same scripts):
+current_zskills_ver=""
+installed_zskills_ver=""
+if [ -n "${ZSKILLS_PATH:-}" ]; then
+  current_zskills_ver=$(bash "$ZSKILLS_SKILLS_ROOT/update-zskills/scripts/resolve-repo-version.sh" "$ZSKILLS_PATH")
+fi
+if [ -f "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json" ]; then
+  cfg=$(cat "$CLAUDE_PROJECT_DIR/.claude/zskills-config.json")
+  if [[ "$cfg" =~ \"zskills_version\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]]; then
+    installed_zskills_ver="${BASH_REMATCH[1]}"
+  fi
+fi
+```
+
+Print the nudge line **ONLY when the installed version is strictly behind
+the latest available tag** (both versions present AND
+`installed_zskills_ver` sorts before `current_zskills_ver` under `sort
+-V`). When the fetch fails, there is no source clone, there are no tags,
+the installed version is unknown, or installed ≥ current — **silently skip
+the nudge** (print nothing extra; the config write already succeeded):
+
+```
+zskills <installed_zskills_ver> → <current_zskills_ver> available. Run /update-zskills (no args) to pull + update.
+```
+
+**Step 3 — Exit.** Exit with `apply-preset.sh`'s exit code. Do NOT proceed
+to the audit, Default Mode — Smart Detection, or any fill/update step.
 
 ---
 
