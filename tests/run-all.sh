@@ -239,7 +239,30 @@ run_suite "test-plugin-manifest.sh" "tests/test-plugin-manifest.sh"
 run_suite "test-plugin-marketplace.sh" "tests/test-plugin-marketplace.sh"
 run_suite "test-plugin-ref-consistency.sh" "tests/test-plugin-ref-consistency.sh"
 run_suite "test-plugin-self-load.sh" "tests/test-plugin-self-load.sh"
-run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+# #991 — deterministic unit test for the attended capability-gate decision
+# (runs without live `claude`); the gate itself wires in just below.
+run_suite "test-attended-gate.sh" "tests/test-attended-gate.sh"
+
+# #991 — capability-gate + throttle the live plugin runtime checks (§B of
+# test-plugin-live-load.sh) so they auto-run when the machine CAN (claude CLI +
+# credentials present) and SKIP cleanly when it can't (CI: no `claude`), with a
+# throttle so we don't add live-`claude` time to EVERY full-suite run. The
+# marker is stored OUT OF TREE (~/.zskills/last-attended-plugin-run) so it never
+# pollutes `git status`, survives worktree removal, and applies globally. When
+# the gate fails (CI, or throttled) we leave ZSKILLS_LIVE_ATTENDED unset → §B
+# SKIPs exactly as before, so CI behavior is byte-for-byte unchanged.
+. "$REPO_ROOT/tests/lib/attended-gate.sh"
+ATTENDED_MARKER="${HOME:-/tmp}/.zskills/last-attended-plugin-run"
+ATTENDED_THROTTLE_SECONDS="${ZSKILLS_ATTENDED_THROTTLE_SECONDS:-14400}"  # ~4h
+ATTENDED_NOW="$(date +%s)"
+if attended_gate_should_run "$ATTENDED_MARKER" "$ATTENDED_NOW" "$ATTENDED_THROTTLE_SECONDS"; then
+  echo ""
+  echo "[#991] attended gate PASSED (claude + creds present, throttle window elapsed) — running §B live."
+  ZSKILLS_LIVE_ATTENDED=1 run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+  attended_gate_refresh_marker "$ATTENDED_MARKER" "$ATTENDED_NOW"
+else
+  run_suite "test-plugin-live-load.sh" "tests/test-plugin-live-load.sh"
+fi
 run_suite "test-plugin-mirrorless-resolution.sh" "tests/test-plugin-mirrorless-resolution.sh"
 run_suite "test-plugin-d4-hook-siblings.sh" "tests/test-plugin-d4-hook-siblings.sh"
 run_suite "test-plugin-hooks-integrity.sh" "tests/test-plugin-hooks-integrity.sh"
