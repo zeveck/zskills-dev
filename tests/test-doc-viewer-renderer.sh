@@ -26,6 +26,12 @@
 #   T14  Security strip: <script>alert(1)</script> — both tokens absent
 #   T15  Security strip: <div onclick=alert(2)> — both tokens absent
 #   T16  Inline-HTML escaping: <kbd>X</kbd> mid-paragraph renders escaped
+#   T17  Security: raw <a href="javascript:..."> neutralized (#983)
+#   T18  Security: raw <img onerror=...> handler stripped (#983 supplement)
+#   T19  Security: markdown [x](javascript:...) drops link, keeps text (#983)
+#   T20  Security: markdown ![alt](data:text/html,...) drops image (#983)
+#   T21  Security: markdown [x](//evil.com) protocol-relative dropped (#983)
+#   T22  Security: HTML-entity-encoded scheme &#x6A;avascript: neutralized (#983)
 #
 # Run from repo root: bash tests/test-doc-viewer-renderer.sh
 
@@ -228,6 +234,99 @@ function check(name, cond, msg) {
   check('T16.inline-html-escaped',
     h.includes('&lt;kbd&gt;') && h.includes('&lt;/kbd&gt;'),
     'expected &lt;kbd&gt;...&lt;/kbd&gt; (escaped); got: ' + h);
+}
+
+// T17: Raw HTML <a href="javascript:..."> is neutralized (issue #983).
+// The href= scheme-strip should rewrite the scheme to about:blank#blocked-scheme-
+// so that no live `javascript:` URL reaches main.innerHTML.
+{
+  const h = renderMarkdown('<a href="javascript:alert(1)">x</a>');
+  // After scheme rewrite, the literal substring 'href="javascript' (a live
+  // scheme in attribute position) must be absent. The string 'javascript'
+  // may still appear inside the about:blank#blocked-scheme-javascript:...
+  // fragment but that is not interpreted as a URL scheme.
+  check('T17.raw-anchor-javascript-no-live-href',
+    !/href\s*=\s*["']?\s*javascript:/i.test(h),
+    'expected no live href=javascript:; got: ' + h);
+  check('T17.raw-anchor-javascript-neutralized',
+    /about:blank#blocked-scheme/.test(h),
+    'expected about:blank#blocked-scheme- replacement; got: ' + h);
+}
+
+// T18: Raw HTML <img src="x" onerror="alert(1)"> — onerror stripped.
+// Supplements T15 (which covers onclick) with onerror, a common image-XSS handler.
+{
+  const h = renderMarkdown('<img src="x" onerror="alert(1)">');
+  check('T18.raw-img-onerror-stripped',
+    !/onerror/i.test(h),
+    'expected no onerror in output; got: ' + h);
+  check('T18.raw-img-onerror-body-stripped',
+    !/alert\(1\)/.test(h),
+    'expected no alert(1) in output; got: ' + h);
+}
+
+// T19: Markdown [x](javascript:...) produces text only — no <a href.
+// Markdown link parser stops at the first ')' so the regex captures
+// `href = "javascript:alert(1"`; the scheme check on the raw href must still
+// fire and drop the link entirely.
+{
+  const h = renderMarkdown('[click](javascript:alert(1))');
+  check('T19.md-link-javascript-no-scheme',
+    !/javascript:/i.test(h),
+    'expected no live javascript: in output; got: ' + h);
+  check('T19.md-link-javascript-no-href',
+    !/<a\s+href/i.test(h),
+    'expected no <a href in output; got: ' + h);
+  check('T19.md-link-javascript-text-preserved',
+    /click/.test(h),
+    'expected bracket-text preserved; got: ' + h);
+}
+
+// T20: Markdown ![alt](data:text/html,...) produces alt-text only.
+// data:text/html, even on an <img>, is an XSS surface (browsers may render).
+{
+  const h = renderMarkdown('![alt-text](data:text/html,<script>alert(1)</script>)');
+  check('T20.md-image-data-text-html-no-scheme',
+    !/data:text\/html/i.test(h),
+    'expected no data:text/html in output; got: ' + h);
+  check('T20.md-image-data-text-html-no-script',
+    !/<script/i.test(h),
+    'expected no <script tag in output; got: ' + h);
+  check('T20.md-image-data-text-html-alt-preserved',
+    /alt-text/.test(h),
+    'expected alt-text preserved; got: ' + h);
+}
+
+// T21: Markdown [x](//evil.com) — protocol-relative is open-redirect surface.
+// Should be dropped to text-only.
+{
+  const h = renderMarkdown('[click](//evil.com)');
+  check('T21.md-link-protocol-relative-no-href',
+    !/href\s*=\s*["']?\/\/evil\.com/.test(h),
+    'expected no protocol-relative href; got: ' + h);
+  check('T21.md-link-protocol-relative-text-preserved',
+    /click/.test(h),
+    'expected bracket-text preserved; got: ' + h);
+}
+
+// T22: HTML-entity-encoded scheme <a href="&#x6A;avascript:..."> is neutralized.
+// `&#x6A;` is the HTML numeric entity for `j`; when the browser decodes the
+// attribute value at render time, the result is `javascript:alert(1)` — a
+// live XSS scheme. The stripUnsafeHtml entity-encoded-href neutralizer must
+// rewrite this to about:blank#blocked-entity-encoded so the decoded form is
+// no longer a scheme.
+{
+  const h = renderMarkdown('<a href="&#x6A;avascript:alert(1)">x</a>');
+  // The href must NOT decode to a live javascript: scheme. The literal
+  // `&#x6A;avascript:` as the START of the href value is the dangerous form;
+  // after rewrite it lives inside `about:blank#blocked-entity-encoded&#x6A;...`
+  // which decodes harmlessly.
+  check('T22.entity-encoded-scheme-not-live-href',
+    !/href\s*=\s*["']\s*&#/.test(h),
+    'expected no href starting with &#; got: ' + h);
+  check('T22.entity-encoded-scheme-neutralized',
+    /about:blank#blocked-entity-encoded/.test(h),
+    'expected about:blank#blocked-entity-encoded replacement; got: ' + h);
 }
 
 console.log('__COUNTS__\t' + pass + '\t' + fail);
