@@ -25,9 +25,9 @@
 #     byte-equality).
 #
 # Strip set (verified by `git ls-tree -r <prod-ref> | grep -E
-# 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE'` returning 0 hits):
+# 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE'` returning 0 hits):
 #   - hooks/canary*-bad.sh and CANARY_* plans / top-level CANARY_*.md
-#   - RELEASING.md (dev-maintainer-only)
+#   - RELEASING.md + DEV-QUAL.md (dev-maintainer-only)
 #   - build-*.sh scripts (release tooling, not shipped to consumers)
 #   - any skill with `dev_only: true` frontmatter (+ its mirror)
 #   - any file containing the MW-EXAMPLE marker (dev-only worked examples)
@@ -105,9 +105,9 @@ strip_markers() {
 }
 strip_markers "$STAGE/README.md"
 
-# ── 2. Remove dev-maintainer-only files (RELEASING.md) ─────────────────────
+# ── 2. Remove dev-maintainer-only files (RELEASING.md + DEV-QUAL.md) ────────
 log "removing dev-maintainer-only files"
-for f in RELEASING.md; do
+for f in RELEASING.md DEV-QUAL.md; do
   [ -f "$STAGE/$f" ] && { rm -v "$STAGE/$f"; }
 done
 
@@ -232,7 +232,7 @@ done_ "LOCAL tag prod/$VERSION → $PROD_COMMIT"
 
 # ── 10. Verify the strip set on the LOCAL prod ref ─────────────────────────
 log "verifying strip set on local prod/main"
-HITS="$(git ls-tree -r --name-only refs/heads/prod/main | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
+HITS="$(git ls-tree -r --name-only refs/heads/prod/main | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
 if [ -n "$HITS" ]; then
   warn "strip verification FAILED — these forbidden paths survived:"
   printf '%s\n' "$HITS" | sed 's/^/    /'
