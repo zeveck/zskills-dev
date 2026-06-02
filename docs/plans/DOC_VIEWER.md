@@ -53,7 +53,7 @@ Phases 2 and 4).
 ## Progress Tracker
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
-| 1 — MarkdownRenderer lift + tests | ⬚ | | |
+| 1 — MarkdownRenderer lift + tests | ✅ Done | `8f17208` | 27/27 renderer tests; full suite 7185/7185 |
 | 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ⬚ | | |
 | 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ⬚ | | |
 | 3 — Styling + dark-default + theme toggle | ⬚ | | |
