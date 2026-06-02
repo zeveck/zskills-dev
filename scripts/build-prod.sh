@@ -72,11 +72,12 @@ strip_markers README.md
 rewrite_dev_urls README.md
 
 # ─── 1b. Remove dev-maintainer-only files wholesale ────────────────────
-# RELEASING.md is entirely dev-maintainer-only (PAT setup, workflow
-# internals); shipping it to prod would publish an empty file (since its
-# whole content is inside prod-strip markers) and clutter the prod tree.
+# RELEASING.md and DEV-QUAL.md are entirely dev-maintainer-only (PAT setup,
+# workflow internals; the manual-acceptance dev-quality checklist); shipping
+# them to prod would publish empty files (their whole content is inside
+# prod-strip markers) and clutter the prod tree.
 log "removing dev-maintainer-only files"
-for f in RELEASING.md; do
+for f in RELEASING.md DEV-QUAL.md; do
   if [ -f "$f" ]; then
     rm -v "$f"
   else

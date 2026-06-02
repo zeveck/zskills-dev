@@ -66,8 +66,8 @@ git -C "$REPO_ROOT" archive --format=tar HEAD | tar -x -C "$REL"
 if [ -f "$REL/README.md" ] && grep -q 'prod-strip:start' "$REL/README.md"; then
   sed -i '/<!-- prod-strip:start -->/,/<!-- prod-strip:end -->/d' "$REL/README.md"
 fi
-# 2. dev-maintainer-only files (RELEASING.md).
-for f in RELEASING.md; do
+# 2. dev-maintainer-only files (RELEASING.md + DEV-QUAL.md).
+for f in RELEASING.md DEV-QUAL.md; do
   [ -f "$REL/$f" ] && rm -f "$REL/$f"
 done
 # 3. CANARY* plans/fixtures + canary*-bad.sh hooks.
@@ -101,7 +101,7 @@ done < <(grep -rl 'MW-EXAMPLE' "$REL" 2>/dev/null || true)
 # prod ref (step 10). 0 forbidden survivors == $REL matches the shipped tree.
 STRIP_HITS="$(cd "$REL" && find . -type f \
   | sed 's|^\./||' \
-  | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
+  | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE' || true)"
 if [ -z "$STRIP_HITS" ]; then
   pass "0. strip set applied: 0 forbidden paths in \$REL (matches shipped tree)"
 else
