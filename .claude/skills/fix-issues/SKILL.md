@@ -8,7 +8,7 @@ description: >-
   every SCHEDULE; stop/next manage it. sync updates trackers + closes
   already-fixed issues; plan drafts plans for skipped ones.
 metadata:
-  version: "2026.05.31+3d8ae4"
+  version: "2026.06.02+952112"
 ---
 
 # /fix-issues N [focus|dashboard] [auto] [every SCHEDULE] [now] [pr|direct] | sync | plan [auto] | stop | next | add <N> [column] [pos] | remove <N> [column] — Batch Bug-Fixing Sprint
@@ -71,8 +71,11 @@ report, and optionally auto-lands to main. Can self-schedule for recurring runs.
   - Each run re-registers the cron (self-perpetuating)
   - Cron is session-scoped — dies when the session dies
 - **now** (optional) — run immediately. When combined with `every`, runs
-  immediately AND schedules. Without `every`, `now` is the default behavior
-  (bare invocation always runs immediately).
+  immediately AND schedules. Without `every`, `now` needs no `every` to take
+  effect — a sprint with `now` (or a standalone `now` against an active cron)
+  runs immediately rather than only scheduling. (A *truly bare* `/fix-issues`
+  with no N and no subcommand does NOT start a sprint — it reports cron status
+  + a usage hint and exits; see the Execution path bare row.)
 - **sync** — update all issue tracker files from GitHub, research new
   issues, AND verify/close issues that appear already fixed. Dispatches
   research agents that also check if open issues are already resolved in
@@ -233,6 +236,41 @@ if [[ "$ARGUMENTS" =~ (^|[[:space:]])[rR][eE][cC][oO][nN][sS][iI][dD][eE][rR][[:
 fi
 ```
 
+**Detect a truly-bare invocation (no N, no subcommand).** A bare
+`/fix-issues` with no leading integer `N` AND none of the recognized
+subcommands/flags (`stop`/`next`/`sync`/`plan`/`now`/`every`/`pr`/`direct`/
+`dashboard`/`add`/`remove`/`reconsider`) must NOT fall through to
+`modes/sprint.md` (which dereferences `$N` with no default). Route it to the
+bare-invocation handler in `subcommands/stop-next.md` instead. This guard
+fires ONLY for the empty case — a standalone `now` (handled by its own row),
+any subcommand, or a leading `N` all leave `BARE_MODE=0`. Place this AFTER
+all subcommand detection so every recognized token has already been seen.
+
+```bash
+BARE_MODE=0
+if ! [[ "$ARGUMENTS" =~ ^[[:space:]]*[0-9]+ ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[sS][tT][oO][pP]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[nN][eE][xX][tT]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[sS][yY][nN][cC]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][lL][aA][nN]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[nN][oO][wW]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[eE][vV][eE][rR][yY]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[pP][rR]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][iI][rR][eE][cC][tT]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[dD][aA][sS][hH][bB][oO][aA][rR][dD]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[aA][dD][dD]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[rR][eE][mM][oO][vV][eE]($|[[:space:]]) ]] \
+   && ! [[ "$ARGUMENTS" =~ (^|[[:space:]])[rR][eE][cC][oO][nN][sS][iI][dD][eE][rR]($|[[:space:]]) ]]; then
+  BARE_MODE=1
+fi
+```
+
+When `BARE_MODE=1`, route to the bare-invocation handler in
+[subcommands/stop-next.md](subcommands/stop-next.md) (the "Bare invocation"
+section): report active-cron status + cron-control hint if a `/fix-issues`
+cron exists, else a general usage hint with no cron output, then `exit 0`.
+NEVER enter `modes/sprint.md`.
+
 **Mutual exclusion for `dashboard`.** `dashboard` is a source-of-truth
 override for the candidate-selection step (Phase 2). It is incompatible
 with any mode that either (a) defines its own priority rubric (`focus`)
@@ -321,6 +359,7 @@ Do not proceed until you have read the file.
 | `stop` | [subcommands/stop-next.md](subcommands/stop-next.md) |
 | `sync` | [modes/sync.md](modes/sync.md) |
 | `plan` | [modes/plan.md](modes/plan.md) |
+| Bare (`BARE_MODE=1` — no N, no subcommand) | [subcommands/stop-next.md](subcommands/stop-next.md) |
 | Otherwise (sprint mode with N) | [modes/sprint.md](modes/sprint.md) |
 
 ## Key Rules
