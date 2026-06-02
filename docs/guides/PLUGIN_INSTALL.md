@@ -10,10 +10,9 @@ is not a supported end-state.
 
 → **[`/update-zskills` lane](#update-zskills-lane)** — the original installer.
   Pick this if you prefer bare slash names (`/run-plan` over `/zs:run-plan`,
-  matching the skill prose verbatim), want the skill source mirrored into your
-  repo's `.claude/` for reviewable diffs, are already running this lane and
-  don't want to switch, or genuinely can't use the plugin lane (e.g. installing
-  from a host without the `claude` CLI).
+  matching the skill prose verbatim), want the skill source mirrored into
+  your repo's `.claude/` for reviewable diffs, or are already running this
+  lane and don't want to switch.
 
 The lanes are not tiered — neither is deprecated and both produce the same
 running behavior. See the [tradeoff matrix](#tradeoff-matrix) for the full
@@ -28,10 +27,15 @@ From inside a Claude Code session in your project:
 /plugin install zs@zskills
 ```
 
-The first command registers the `zskills` marketplace (the
-`.claude-plugin/marketplace.json` manifest in the zskills repo root). The
-second installs the `zs` plugin (the full distribution). Restart the session
-when prompted so the plugin's hooks load.
+**How that resolves:** Claude Code reads `zeveck/zskills` as a GitHub
+shorthand and fetches the `.claude-plugin/marketplace.json` manifest from
+the default branch of `https://github.com/zeveck/zskills`. That registers
+the marketplace named `zskills`. The second command then looks up `zs` in
+that manifest's `plugins` array — its `source` block points at the same
+GitHub repo (or a pinned ref; see [Pin-by-version idiom](#pin-by-version-idiom))
+— and fetches the plugin tree.
+
+Restart the session when prompted so the plugin's hooks load.
 
 To add the block-diagram add-on (3 extra skills for block-diagram
 projects), install the `zsbd` plugin from the same marketplace:
