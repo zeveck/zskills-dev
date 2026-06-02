@@ -43,7 +43,7 @@
 
 ## Brainstorm mode (`brainstorm`)
 
-Loads [`references/brainstorm.md`](https://github.com/zeroskills/zskills/blob/main/skills/draft-plan/references/brainstorm.md) and runs an 8-step interactive dialogue **before Phase 1**:
+Loads [`references/brainstorm.md`](https://github.com/zeveck/zskills/blob/main/skills/draft-plan/references/brainstorm.md) and runs an 8-step interactive dialogue **before Phase 1**:
 
 1. Restate the seed idea in 1-2 sentences.
 2. Optionally offer a visual companion (live HTML demo or `playwright-cli` screenshot) when the idea is visual.
@@ -58,7 +58,7 @@ The notes file is a **resumable state machine** -- if compaction interrupts the 
 
 ## Quiz mode (`quiz`)
 
-Loads [`references/quiz.md`](https://github.com/zeroskills/zskills/blob/main/skills/draft-plan/references/quiz.md) and runs an interactive **requirements interview** before any research:
+Loads [`references/quiz.md`](https://github.com/zeveck/zskills/blob/main/skills/draft-plan/references/quiz.md) and runs an interactive **requirements interview** before any research:
 
 - **No research during the interview** -- conversation runs against the agent's existing knowledge. Codebase uncertainties are deferred to the post-interview fan-out as open questions, never interrogated out of the user.
 - **Ask vs defer rule:** ask the *user* about intent, scope, priorities, preferences, and success criteria; defer any *codebase fact* the agent is unsure of to the fan-out's open-questions list.
