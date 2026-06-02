@@ -91,7 +91,7 @@ pattern — user manages lifecycle via `/fix-issues stop`). Do NOT auto-kill
 the cron on empty Ready; new issues may drag onto Ready before the next fire.
 
 If `every` is NOT present, skip this phase entirely and proceed to Phase 1
-(bare invocation always runs immediately).
+(a sprint with N and no `every` runs immediately — no scheduling needed).
 
 ## Phase 1 — Preflight & Sync
 
