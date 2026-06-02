@@ -211,17 +211,19 @@ fi
 
 # --- Test 4: argument-hint frontmatter advertises core surface ----------
 # Queue-mutation subcommands (add/rank/remove) were moved to the detail
-# docs page to shorten the hint under 120 chars. The hint still covers
-# the dispatch, schedule, default, and control subcommands. Post-#906
-# `every SCHEDULE` composes with the leading N|all count (it is no
-# longer a standalone subcommand listed beside default), so the order
-# is `... every SCHEDULE ... default ... stop`.
+# docs page to shorten the hint. Issue #961 further de-advertises
+# `default <phase|finish>` from the slash-menu teaser; `default` stays
+# fully parsed + documented (Test 1 sources the do_default heredoc; the
+# AC tests below exercise it). The hint still covers the dispatch,
+# schedule, and control surface. Post-#906 `every SCHEDULE` composes with
+# the leading N|all count, so the order is `N|all ... every SCHEDULE ...
+# stop`.
 if grep -q 'argument-hint:.*every SCHEDULE' "$SKILL" \
-   && grep -q 'argument-hint:.*default' "$SKILL" \
-   && grep -q 'argument-hint:.*stop' "$SKILL"; then
-  pass "argument-hint advertises core surface (every SCHEDULE/default/stop)"
+   && grep -q 'argument-hint:.*stop' "$SKILL" \
+   && ! grep -q 'argument-hint:.*default' "$SKILL"; then
+  pass "argument-hint advertises core surface (every SCHEDULE/stop); default de-advertised (#961)"
 else
-  fail "argument-hint missing one or more core subcommands"
+  fail "argument-hint missing core surface tokens or still advertises default"
 fi
 
 # --- Test 5: AC-1 (add bootstraps + appends) ---------------------------

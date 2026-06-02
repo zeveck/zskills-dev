@@ -3,7 +3,7 @@
 # review additions (the cron-zombie regression fix).
 #
 # Phase 2b cases (1–13):
-#   1.  argument-hint contains --force and --rounds N
+#   1.  argument-hint contains --rounds N but NOT --force (#961 de-advertise)
 #   2.  Phase 0a heading + rubric-table present AND comes BEFORE Phase 0c
 #       (cron-zombie regression guard: triage MUST run before CronCreate)
 #   3.  Phase 0b inline-plan + review prose present
@@ -155,13 +155,17 @@ extract_task_description_for_cron_block() {
 echo "=== /do — Phase 2a structural and behavioral coverage ==="
 
 # ────────────────────────────────────────────────────────────────────
-# Case 1 — argument-hint contains --force and --rounds N (WI 2a.1)
+# Case 1 — argument-hint contains --rounds N but NOT --force (WI 2a.1)
+# Issue #961: --force de-advertised from the slash-menu teaser. It stays
+# fully parsed + documented (see Case 4 cron-persistence prose and Case 8
+# TASK_DESCRIPTION strip coverage, plus the --force prose in the Arguments
+# section); only the hint drops it.
 # ────────────────────────────────────────────────────────────────────
-if grep -qE '^argument-hint: ".*--force.*"' "$SKILL" \
-   && grep -qE '^argument-hint: ".*--rounds N.*"' "$SKILL"; then
-  pass "1  argument-hint: --force and --rounds N present"
+if grep -qE '^argument-hint: ".*--rounds N.*"' "$SKILL" \
+   && ! grep -qE '^argument-hint: ".*--force.*"' "$SKILL"; then
+  pass "1  argument-hint: --rounds N present, --force de-advertised (#961)"
 else
-  fail "1  argument-hint: missing --force or --rounds N"
+  fail "1  argument-hint: missing --rounds N or still advertises --force"
   grep -n '^argument-hint:' "$SKILL" | sed 's/^/    /'
 fi
 

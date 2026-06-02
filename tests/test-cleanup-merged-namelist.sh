@@ -4,7 +4,7 @@
 #
 # Coverage:
 #   Static (skill-source + docs assertions):
-#     - argument-hint advertises local / --force / <branch>
+#     - argument-hint advertises local / <branch> (--force de-advertised, #961)
 #     - WI 1.2 parser accepts `local`, `--force`, and collects branch names
 #     - is_named() narrowing helper present
 #     - protected-skip is evaluated before any force logic (ordering)
@@ -41,11 +41,14 @@ echo "=== cleanup-merged branch-name-list + --force interface ==="
 
 # ── Static: skill source ────────────────────────────────────────────
 
-# argument-hint advertises the new tokens.
-if grep -qE '^argument-hint:.*local.*remote.*all.*--force.*branch' "$SKILL"; then
-  pass "argument-hint advertises local | remote | all, --force, <branch>"
+# argument-hint advertises the scope tokens + <branch>, but NOT --force.
+# Issue #961: --force de-advertised from the slash-menu teaser; it stays
+# parsed + documented (see the WI 1.2 --force parser-arm test below).
+if grep -qE '^argument-hint:.*local.*remote.*all.*branch' "$SKILL" \
+   && ! grep -qE '^argument-hint:.*--force' "$SKILL"; then
+  pass "argument-hint advertises local | remote | all, <branch>; --force de-advertised (#961)"
 else
-  fail "argument-hint missing new tokens"
+  fail "argument-hint missing scope/<branch> tokens or still advertises --force"
 fi
 
 # WI 1.2 parser accepts `local` and `--force`.

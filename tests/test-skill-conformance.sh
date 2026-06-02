@@ -612,7 +612,7 @@ check_not   quickfix    "no YES_FLAG variable (AC4.13)"          'YES_FLAG'
 check_not   quickfix    "no `read -r answer` block (AC4.13)"     'read -r answer'
 check       quickfix    "argument-hint [from-here]"  'argument-hint:.*\[from-here\]'
 check_not   quickfix    "argument-hint NO [--yes]"   'argument-hint:.*\[--yes\]'
-check       quickfix    "argument-hint [--force] (issue #810)" 'argument-hint:.*\[--force\]'
+check_not   quickfix    "argument-hint NO [--force] (#961 reverses #810)" 'argument-hint:.*--force'
 check_not   quickfix    "argument-hint NO bare [force] (issue #810)" 'argument-hint:.*\[force\]'
 
 # Issue #810 — --force form normalization across all four skills.
@@ -632,7 +632,7 @@ check_fixed work-on-plans "--force in synopsis (issue #810)" '[--force]'
 # advertised in argument-hint.
 check_fixed cleanup-merged "--force) parser arm (issue #810)" '--force) FORCE=1'
 check_not   cleanup-merged "no bare 'force)' arm (issue #810)" '^[[:space:]]*force\)[[:space:]]+FORCE=1'
-check       cleanup-merged "argument-hint [--force] (issue #810)" 'argument-hint:.*\[--force\]'
+check_not   cleanup-merged "argument-hint NO [--force] (#961 reverses #810)" 'argument-hint:.*--force'
 
 check_fixed run-plan    "AUTO_FLAG init"        'AUTO_FLAG=0'
 

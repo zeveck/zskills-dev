@@ -1,7 +1,7 @@
 ---
 name: cleanup-merged
 disable-model-invocation: true
-argument-hint: "[apply] [local | remote | all] [--force] [<branch>...]"
+argument-hint: "[apply] [local | remote | all] [<branch>...]"
 description: >-
   Post-PR-merge local normalization: fetch-and-prune origin, switch off
   merged feature branches, pull main, and delete local branches whose
@@ -13,7 +13,7 @@ description: >-
   explicitly name. Protected branches from config are NEVER deleted (even
   with `--force`) — they are always skipped.
 metadata:
-  version: "2026.05.29+dd08af"
+  version: "2026.06.01+07db32"
 ---
 
 # /cleanup-merged — Post-PR-merge local normalization
