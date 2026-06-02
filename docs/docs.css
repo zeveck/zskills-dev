@@ -4,11 +4,13 @@
  * Phase 3 transformations:
  *   - Newsletter block (upstream L139-182) stripped.
  *   - Light-only palette (7 vars) replaced with dark-default + light
- *     overlay. The dark vars are lifted verbatim from
- *     docs/guides/inspecting-and-monitoring.html:9-10; the light overlay
- *     from inspecting-and-monitoring.html:15-16. The doc viewer uses the
- *     9 vars relevant to viewer concerns; the host page also defines
- *     --warn and --pill-* which the viewer does not need.
+ *     overlay. The palettes were lifted verbatim from the now-deleted
+ *     docs/guides/inspecting-and-monitoring.html (DOC_VIEWER Phase 5
+ *     removed that hand-built page in favor of rendering the equivalent
+ *     INSPECTING_AND_MONITORING.md through this viewer). The doc viewer
+ *     uses the 9 vars relevant to viewer concerns; the original host
+ *     page also defined --warn and --pill-* which the viewer does not
+ *     need.
  *   - Variable-name rewrites:
  *       --color-bg            → --bg
  *       --color-surface       → --panel
