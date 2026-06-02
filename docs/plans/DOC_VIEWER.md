@@ -57,7 +57,7 @@ Phases 2 and 4).
 | 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ✅ Done | `474aed5` | 33/33 shell tests; full suite 7228/7228 |
 | 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ✅ Done | `ea81d88` | 38/38 routing tests; doc-viewer suites 98/98 |
 | 3 — Styling + dark-default + theme toggle | ✅ Done | `101b4a9` | 31/31 styling tests; full suite 7297/7297 |
-| 4 — Catalog generator + frontmatter metadata strip | ⬚ | | |
+| 4 — Catalog generator + frontmatter metadata strip | ✅ Done | `942c0cd` | 36 new tests (catalog+frontmatter); 176-item catalog; full suite 7333/7333 |
 | 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ⬚ | | |
 
 ## Conventions all phases follow
