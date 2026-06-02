@@ -4,7 +4,7 @@ user-invocable: false
 description: Helper for PR landing — rebase, push, create-or-detect PR, poll CI, optional auto-merge. Dispatched via the Skill tool by /run-plan, /commit pr, /do pr, /fix-issues pr, /quickfix, /draft-plan, /refine-plan, /draft-tests (and orchestrator agents landing one-off PRs). Returns state via --result-file for caller-driven fix-cycle loops. Not for direct slash invocation — humans should use /commit pr instead.
 argument-hint: --branch <name> --title <title> --body-file <path> --result-file <path> [--auto] [--worktree-path <path>] [--landed-source <skill>] [--ci-timeout <sec>] [--no-monitor] [--pr <num>] [--issue <num>] [--tracking-id <id>]
 metadata:
-  version: "2026.05.31+a44241"
+  version: "2026.06.01+979c6f"
 ---
 
 # /land-pr — land a feature branch as a PR
@@ -33,6 +33,10 @@ parsing, CI-fix-cycle agent dispatch) lives in
 `references/caller-loop-pattern.md`. The fix-cycle agent prompt template
 lives in `references/fix-cycle-agent-prompt-template.md`. Phases 2–5 of
 the PR_LANDING_UNIFICATION plan copy from these references.
+
+## Reporting back to the user
+
+When this skill returns to the orchestrator (via the result file written in Step 9), the orchestrator typically composes a user-facing summary of the landing outcome. **NEVER instruct the user to type `/land-pr` in that summary.** This skill carries `user-invocable: false` for a reason — the slash runtime will not dispatch it from a human-typed slash command in any useful way. If the PR landed cleanly, just report the PR URL + merge status. If the PR is in a non-terminal state (CI failing, OPEN/BEHIND, rebase conflict), recommend `/commit pr` to retry the landing (it dispatches `/land-pr` internally with the right arguments), or — for low-level recovery — `git push` + `gh pr create` directly. The other 7 caller skills (`/run-plan`, `/do pr`, `/fix-issues pr`, `/quickfix`, `/draft-plan`, `/refine-plan`, `/draft-tests`) all dispatch `/land-pr` internally and are valid recommendations depending on the workflow that originated the PR.
 
 ## When invoked
 
