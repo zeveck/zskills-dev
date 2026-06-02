@@ -96,6 +96,10 @@ function makeNode(id, tag) {
     appendChild(c) { c.parent = this; this.children.push(c); return c; },
     closest() { return null; },
     addEventListener() {},
+    // DOM `firstChild` getter — surfaces children[0] so production-code
+    // checks like `if (!root.firstChild)` (issue #995's empty-render
+    // guard) behave like a real browser instead of always being truthy.
+    get firstChild() { return this.children.length > 0 ? this.children[0] : null; },
     classList: {
       _set: null,
       add(c) { this._set.add(c); },
@@ -161,6 +165,7 @@ function resetNodes() {
     nodes[k].children = [];
     nodes[k].classes.clear();
     nodes[k].className = "";
+    nodes[k].hidden = false;
   }
 }
 
@@ -215,6 +220,103 @@ function findByClass(root, cls) {
   });
   expect(findByClass(root, "run-stop-btn"), null,
     "scheduled + trigger_configured omitted: Stop button NOT rendered (defaults to false)");
+
+  // -----------------------------------------------------------------------
+  // Issue #995 — phantom-pill hide guard.
+  // The empty .run-status container would otherwise still draw a visible
+  // border + padding "pill" in the demo's idle + no-trigger + no-warning
+  // state. renderRunStatus must set root.hidden=true when no children
+  // were appended, and root.hidden=false on every live render path.
+  // -----------------------------------------------------------------------
+
+  // Case M: state==="idle", trigger_configured=false, no warning —
+  //   NO children appended AND root.hidden===true.
+  resetNodes();
+  renderRunStatus({
+    state: "idle",
+    trigger_configured: false,
+  });
+  expect(root.children.length, 0,
+    "idle + no trigger + no warning: no children appended");
+  expect(root.hidden, true,
+    "idle + no trigger + no warning: root.hidden=true (phantom pill suppressed)");
+
+  // Case N: state==="idle", trigger_configured=true — Run controls
+  //   ARE rendered AND root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "idle",
+    trigger_configured: true,
+  });
+  expectTrue(findByClass(root, "run-btn"),
+    "idle + trigger_configured=true: ▶ Run top N button rendered");
+  expect(root.hidden, false,
+    "idle + trigger_configured=true: root.hidden=false (pill visible)");
+
+  // Case O: state==="idle" + warning present, no trigger — warning text
+  //   IS rendered AND root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "idle",
+    trigger_configured: false,
+    warning: "Background process exited unexpectedly",
+  });
+  expectTrue(findByClass(root, "run-text"),
+    "idle + warning: warning text rendered");
+  expect(root.hidden, false,
+    "idle + warning: root.hidden=false (pill visible)");
+
+  // Case P: state==="scheduled" — pill always renders, root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "scheduled",
+    schedule: "every 1h",
+    next_fire_at: "2026-06-01T12:00:00+00:00",
+    trigger_configured: true,
+  });
+  expect(root.hidden, false,
+    "scheduled: root.hidden=false (pill visible)");
+
+  // Case Q: state==="sprint" — pill always renders, root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "sprint",
+    progress: { done: 1, total: 3, current_slug: "PLAN_X" },
+  });
+  expect(root.hidden, false,
+    "sprint: root.hidden=false (pill visible)");
+
+  // Case R: state==="stale-scheduled" — pill always renders, root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "stale-scheduled",
+  });
+  expect(root.hidden, false,
+    "stale-scheduled: root.hidden=false (pill visible)");
+
+  // Case S: state==="stale-sprint" — pill always renders, root.hidden===false.
+  resetNodes();
+  renderRunStatus({
+    state: "stale-sprint",
+    updated_at: "2026-06-01T00:00:00+00:00",
+  });
+  expect(root.hidden, false,
+    "stale-sprint: root.hidden=false (pill visible)");
+
+  // Case T: transition from idle-empty (hidden=true) → scheduled — the
+  //   second render must unhide. This is the regression case the
+  //   top-of-function `root.hidden = false` guards against.
+  resetNodes();
+  renderRunStatus({ state: "idle", trigger_configured: false });
+  expect(root.hidden, true, "transition setup: idle-empty hidden=true");
+  renderRunStatus({
+    state: "scheduled",
+    schedule: "every 1h",
+    next_fire_at: "2026-06-01T12:00:00+00:00",
+    trigger_configured: true,
+  });
+  expect(root.hidden, false,
+    "transition: idle-empty → scheduled unhides root (no phantom invisible pill)");
 })();
 NODE
 )

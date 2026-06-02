@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Fixed — dashboard idle-state phantom pill (#995)
+
+- **Dashboard:** `renderRunStatus` now hides the `.run-status` container
+  (`root.hidden=true` + CSS `.run-status[hidden] { display: none; }`) when
+  no run-state content was rendered — idle + `trigger_configured=false` +
+  no warning. Previously the empty container's border, padding, and flex
+  layout still drew a visible "phantom pill" in the demo's idle state.
+  Live render arms (scheduled, sprint, stale-scheduled, stale-sprint,
+  idle-with-trigger, idle-with-warning) are unchanged; the top-of-function
+  `root.hidden=false` ensures state transitions from idle-empty back to a
+  live state correctly re-show the pill. Resolves #992 (URL question
+  parked there; prod URL adoption is a no-op against current main because
+  PR #984 has not yet landed — when it does, the source link will need
+  its path token flipped from `/demo/` to `/dashboard-demo/`).
+
 ### Changed — `/work-on-plans` default flips to `finish` (#988)
 
 - **Dashboard:** removed the "Default mode" segmented chip

@@ -2370,6 +2370,13 @@ function renderRunStatus(ws) {
   if (!root) return;
   clear(root);
   root.classList.remove("run-status-stale");
+  // Issue #995 — clear() removes children but does NOT reset `hidden`,
+  // so we must unhide on every render. The end-of-function guard below
+  // re-hides only when no children were appended (idle + no trigger + no
+  // warning — the demo's case). Without this top-level unhide, a state
+  // transition from idle-empty to scheduled would leave hidden=true and
+  // the scheduled pill invisible.
+  root.hidden = false;
   const state = (ws && ws.state) || "idle";
   const warning = ws && ws.warning;
 
@@ -2462,6 +2469,17 @@ function renderRunStatus(ws) {
   // when no /work-on-plans trigger is configured; the docs explain how
   // to feed the queue (matching the Issues / Branches columns, which
   // have always been state-only with no inline how-to).
+
+  // Issue #995 — fall-through reaches here when state===idle and
+  // trigger_configured is false (and no warning) — no children were
+  // appended. Hide the empty container so its border + padding don't
+  // draw a visible "phantom pill" (the demo's case). The early-return
+  // arms above all append children and skip this guard; root.hidden
+  // was unhidden at the top of the function so those paths render
+  // normally.
+  if (!root.firstChild) {
+    root.hidden = true;
+  }
 }
 
 // ---------------------------------------------------------------- toasts
