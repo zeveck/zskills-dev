@@ -7,7 +7,7 @@ description: >-
   or execution.landing config. Recurring via every SCHEDULE; stop/next
   manage the schedule.
 metadata:
-  version: "2026.06.01+f85099"
+  version: "2026.06.01+e6d3b6"
 ---
 
 # /do \<description> [worktree] [pr] [auto] [every SCHEDULE] [now] [--force] [--rounds N] | stop [query] | next [query] | now [query] — Lightweight Task Dispatcher
@@ -72,6 +72,15 @@ and a persistent report file, it's too big for `/do`. Use `/run-plan` instead.
   immediately AND schedules. Without `every`, `now` is the default behavior.
 - **--force** (optional) — bypass triage redirect and review reject. Persists
   into the cron prompt verbatim when used with `every`.
+- **--no-claim** (optional) — treat every bare `#N` in the description as a
+  mere mention. Suppresses the stray-`#N` pre-flight check (#959): /do
+  normally STOPS when the description references an issue currently held
+  in-flight by a foreign pipeline (to prevent duplicating its work — the
+  closed-PR-#888-vs-landed-#901 footgun), and warns on any other stray `#N`.
+  Pass `--no-claim` when the reference is deliberate ("fix tooltip, related
+  to #340") and you do NOT want /do to halt or warn on it. Claim-positioned
+  `#N` (a leading `#N` or `Fix #N …`) are unaffected — they still acquire
+  their claim through the mode files' normal acquire-or-decline.
 - **--rounds N** (optional) — max review/refine cycles (default 1; `0` skips
   review with stderr WARN).
 - **stop** — cancel `/do` cron(s). Bare `/do stop` → all crons.
@@ -215,6 +224,16 @@ FORCE=0
 if [[ "$ARGUMENTS" =~ (^|[[:space:]])--force($|[[:space:]]) ]]; then
   FORCE=1
 fi
+# Issue #959: `--no-claim` opt-out. When present, the stray-`#N` pre-flight
+# (the #907 loop below) treats every bare `#N` as a mere mention — it
+# suppresses BOTH the new foreign-held STOP and the #907 warn. Use it when a
+# /do legitimately references an issue it is NOT working (e.g. "fix tooltip,
+# related to #340"). Claim-positioned `#N` (in ISSUE_NUMS) are independent of
+# this flag — they still go through the mode files' A5.5 acquire-or-decline.
+NO_CLAIM=0
+if [[ "$ARGUMENTS" =~ (^|[[:space:]])--no-claim($|[[:space:]]) ]]; then
+  NO_CLAIM=1
+fi
 # Issue #297: positional `auto` token (case-insensitive, anywhere in the
 # args) opts /do pr into /land-pr's auto-merge path. Mirrors /quickfix,
 # /run-plan, /fix-issues. Pre-parsed here so Phase 1.5's strip chain and
@@ -303,28 +322,100 @@ unset _DO_SEEN _DO_UNIQUE _DO_REMAINING _DO_ISSUE_KW _DO_ISSUE_FILLER _n
 # files still reference $ISSUE_NUM in skip-empty guards; new fan-out code
 # iterates "${ISSUE_NUMS[@]}".
 ISSUE_NUM="${ISSUE_NUMS[0]:-}"
-# Unclaimed-reference warning (#907). If the description contains a `#N`
-# token that the claim-position rules above did NOT capture into
-# ISSUE_NUMS, the reference is real but UN-claimed. A silent no-claim is
-# the footgun that let `/do Build … for #877` run without claiming #877:
-# a parallel /fix-issues cron then picked up the unclaimed issue and
-# duplicated the work (closed PR #888 vs landed #901). Warn per stray
-# reference (non-fatal — some /do runs legitimately mention an issue
-# without working it; the run proceeds). Claim-positioned refs are already
-# in ISSUE_NUMS and are NOT re-warned.
-_DO_WARN_REMAINING="$ARGUMENTS"
-while [[ "$_DO_WARN_REMAINING" =~ \#([0-9]+) ]]; do
-  _DO_REF="${BASH_REMATCH[1]}"
-  _DO_WARN_REMAINING="${_DO_WARN_REMAINING#*"${BASH_REMATCH[0]}"}"
-  _DO_CLAIMED=0
-  for _n in "${ISSUE_NUMS[@]:-}"; do
-    [ "$_n" = "$_DO_REF" ] && { _DO_CLAIMED=1; break; }
-  done
-  if [ "$_DO_CLAIMED" -eq 0 ]; then
-    echo "WARN: /do: description references #${_DO_REF} but it is not in claim position — NO claim was acquired for it. Prefix the description with the issue number (e.g. \"#${_DO_REF} …\" or \"Fix #${_DO_REF} …\") to claim it and prevent a parallel pipeline from duplicating the work." >&2
+# Unclaimed-reference check (#907 warn + #959 foreign-held STOP). If the
+# description contains a `#N` token that the claim-position rules above did
+# NOT capture into ISSUE_NUMS, the reference is real but UN-claimed by this
+# /do run. A silent no-claim is the footgun that let `/do Build … for #877`
+# run without claiming #877: a parallel /fix-issues cron then picked up the
+# unclaimed issue and duplicated the work (closed PR #888 vs landed #901).
+#
+# Two-tier handling per stray (non-ISSUE_NUMS) `#N` (#959):
+#   1. READ-ONLY foreign-held check. If issue N currently has a LIVE claim
+#      held by a DIFFERENT pipeline, STOP (clean exit 0 — decline, not an
+#      error). #907's warn fails UNSAFE in autonomous use (an agent reads
+#      the warn and proceeds anyway, re-creating the #877 duplication); the
+#      STOP fails SAFE and is recoverable via `--no-claim`. We DO NOT acquire
+#      on stray refs (that would spuriously claim "see #340" mentions — the
+#      over-capture the conservative ISSUE_NUMS parser deliberately avoids).
+#   2. Not held (or no claim.json) → keep the #907 warn and proceed.
+#
+# Foreign-vs-self is decided by READING `.zskills/claims/issue-N/claim.json`
+# and comparing its `pipeline_id` to THIS run's pipeline_id — exactly the
+# pattern hooks/block-fix-issue-unclaimed.sh uses. We do NOT use
+# filter-in-flight-issue-claims.sh alone: it drops the caller's OWN pipeline
+# claims too and cannot distinguish foreign from self, which would wrongly
+# stop on self-re-entry. Fail-OPEN discipline mirrors
+# block-fix-issue-unclaimed.sh: a missing/malformed claim.json, or a missing
+# pipeline_id, is treated as "not held" → warn-and-proceed, never a false
+# STOP. (In practice a stray ref is by definition never acquired by THIS /do
+# run, so any live claim on it is foreign; the self-exclusion below is the
+# belt-and-suspenders that keeps a hypothetical self-claim from stopping us.)
+#
+# Accepted residual (intentional, safe-direction): a false-STOP fires ONLY
+# when a /do mentions an issue that is in flight RIGHT NOW but isn't actually
+# being worked (`fix tooltip, related to #340` while #340 is live). Recover
+# with `--no-claim`. Mentions of closed/old issues never trigger (no live
+# claim). This is the irreducible cost of "issues optional + can't tell
+# work-from-mention out of free text" — the failure mode relocates from
+# "fails → duplicates silently" to "fails → halts with a clear message".
+#
+# `--no-claim` (NO_CLAIM=1, parsed in the pre-parse above) suppresses BOTH
+# the STOP and the warn — every bare `#N` is then a pure mention.
+#
+# Resolve MAIN_ROOT the same way block-fix-issue-unclaimed.sh does:
+# `git rev-parse --git-common-dir` parent, falling back to
+# ${CLAUDE_PROJECT_DIR:-$PWD}. This is correct from a worktree too (the
+# claims live under the MAIN repo's .zskills/).
+if [ "$NO_CLAIM" -ne 1 ]; then
+  _DO_MAIN_ROOT=""
+  if _DO_COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null) && [ -n "$_DO_COMMON_DIR" ]; then
+    if _DO_RESOLVED=$(cd "$_DO_COMMON_DIR/.." 2>/dev/null && pwd); then
+      _DO_MAIN_ROOT="$_DO_RESOLVED"
+    fi
   fi
-done
-unset _DO_WARN_REMAINING _DO_REF _DO_CLAIMED _n
+  [ -z "$_DO_MAIN_ROOT" ] && _DO_MAIN_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+  _DO_PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+  # This run's pipeline_id, if already known (mode files set PIPELINE_ID as
+  # `do.<task-slug>`). In the pre-flight it is typically unset; an empty
+  # value can never equal a real stored pipeline_id, so every live claim on a
+  # stray ref reads as foreign — which is exactly right (stray refs are never
+  # self-claimed). When set, it provides the explicit self-exclusion.
+  _DO_SELF_PIPELINE_ID="${PIPELINE_ID:-}"
+  _DO_WARN_REMAINING="$ARGUMENTS"
+  while [[ "$_DO_WARN_REMAINING" =~ \#([0-9]+) ]]; do
+    _DO_REF="${BASH_REMATCH[1]}"
+    _DO_WARN_REMAINING="${_DO_WARN_REMAINING#*"${BASH_REMATCH[0]}"}"
+    _DO_CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_DO_REF" ] && { _DO_CLAIMED=1; break; }
+    done
+    [ "$_DO_CLAIMED" -eq 1 ] && continue
+    # Stray ref — read its claim.json (if any) and decide foreign vs not-held.
+    _DO_CLAIM_FILE="${_DO_MAIN_ROOT}/.zskills/claims/issue-${_DO_REF}/claim.json"
+    _DO_STORED_PID=""
+    if [ -f "$_DO_CLAIM_FILE" ] && [ -n "$_DO_PYTHON" ]; then
+      _DO_STORED_PID=$("$_DO_PYTHON" - "$_DO_CLAIM_FILE" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        sys.stdout.write(json.load(f).get("pipeline_id", "") or "")
+except Exception:
+    pass
+PY
+)
+    fi
+    if [ -n "$_DO_STORED_PID" ] && [ "$_DO_STORED_PID" != "$_DO_SELF_PIPELINE_ID" ]; then
+      # Foreign-held in-flight → STOP (decline, clean exit 0).
+      echo "STOP: /do: description references #${_DO_REF}, which is currently held by a foreign pipeline (claim pipeline_id: ${_DO_STORED_PID}, claim at ${_DO_CLAIM_FILE})." >&2
+      echo "      Another pipeline is already working #${_DO_REF}; proceeding would duplicate its work (the exact failure of closed PR #888 vs landed #901)." >&2
+      echo "      If you are ONLY referencing #${_DO_REF} and not working it, re-run with --no-claim to treat the reference as a mention and skip this check." >&2
+      exit 0
+    fi
+    # Not held (no claim.json / malformed / self) → #907 warn + proceed.
+    echo "WARN: /do: description references #${_DO_REF} but it is not in claim position — NO claim was acquired for it. Prefix the description with the issue number (e.g. \"#${_DO_REF} …\" or \"Fix #${_DO_REF} …\") to claim it and prevent a parallel pipeline from duplicating the work. If you are only referencing #${_DO_REF} (not working it), pass --no-claim to silence this." >&2
+  done
+  unset _DO_WARN_REMAINING _DO_REF _DO_CLAIMED _n _DO_MAIN_ROOT _DO_COMMON_DIR _DO_RESOLVED _DO_PYTHON _DO_SELF_PIPELINE_ID _DO_CLAIM_FILE _DO_STORED_PID
+fi
 ROUNDS=1
 # Greedy-fallthrough: only consume `--rounds <N>` when N is a numeric literal.
 # `/do fix the bug --rounds in production` would otherwise capture "in" as
@@ -628,6 +719,7 @@ If `$ARGUMENTS` contains `every <schedule>`:
      | sed -E 's/(^|[[:space:]])every[[:space:]]+[^[:space:]]+($|[[:space:]])/ /' \
      | sed -E 's/(^|[[:space:]])now($|[[:space:]])/ /' \
      | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
+     | sed -E 's/(^|[[:space:]])--no-claim($|[[:space:]])/ /' \
      | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
      | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
    if [ -n "$QUOTED_HEAD" ] && [ -n "$STRIPPED_REST" ]; then
@@ -763,6 +855,7 @@ TASK_DESCRIPTION=$(echo "$REMAINING" \
   | sed -E 's/(^|[[:space:]])worktree($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])[aA][uU][tT][oO]($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--force($|[[:space:]])/ /' \
+  | sed -E 's/(^|[[:space:]])--no-claim($|[[:space:]])/ /' \
   | sed -E 's/(^|[[:space:]])--rounds[[:space:]]+[0-9]+($|[[:space:]])/ /' \
   | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//')
 if [ -z "$TASK_DESCRIPTION" ]; then
@@ -771,8 +864,9 @@ if [ -z "$TASK_DESCRIPTION" ]; then
 fi
 ```
 
-The `sed -E` lines strip `auto`, `--force`, and `--rounds N` (numeric N
-only) from `TASK_DESCRIPTION` so they don't leak into downstream prompts.
+The `sed -E` lines strip `auto`, `--force`, `--no-claim`, and `--rounds N`
+(numeric N only) from `TASK_DESCRIPTION` so they don't leak into downstream
+prompts.
 `auto` is the positional auto-merge opt-in (issue #297; mirrors /quickfix,
 /run-plan, /fix-issues) — it is pre-parsed at WI 2a.0 into `AUTO_FLAG`,
 read by `modes/pr.md` to inject `--auto` into the `/land-pr` invocation,

@@ -845,6 +845,157 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────
+# Case 18x — Foreign-held stray-`#N` STOP (#959). The #907 warn fails
+# UNSAFE in autonomous use; #959 upgrades it to a read-only foreign-held
+# check that STOPS (decline) when a stray `#N` is currently claimed by a
+# DIFFERENT pipeline. Foreign-vs-self is decided by reading
+# `.zskills/claims/issue-N/claim.json`'s pipeline_id and comparing to this
+# run's pipeline_id — exactly the pattern block-fix-issue-unclaimed.sh uses.
+# `--no-claim` suppresses the stop. Missing/malformed claim.json → not-held
+# → warn + proceed (fail-open). Self-claim (stored == caller) → no stop.
+#
+# Replicates the SKILL.md stray-ref loop against a fixture claims dir, in
+# the Case-18 style. Source-of-truth is SKILL.md (anchored by 18x-src).
+# ────────────────────────────────────────────────────────────────────
+PY_BIN="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+
+# do_stray_check replicates the SKILL.md #959 stray-ref decision. Echoes one
+# of: "STOP <ref> <stored_pid>", "WARN <ref>" per stray ref. Assumes
+# do_parse_issue_nums already populated ISSUE_NUMS. Args:
+#   $1 = description, $2 = claims-root dir, $3 = caller pipeline_id,
+#   $4 = NO_CLAIM (0/1).
+do_stray_check() {
+  local input="$1" claims_root="$2" self_pid="$3" no_claim="$4"
+  local _REM="$input" _REF _CLAIMED _n _claim_file _stored out=""
+  [ "$no_claim" -eq 1 ] && { printf ''; return; }
+  while [[ "$_REM" =~ \#([0-9]+) ]]; do
+    _REF="${BASH_REMATCH[1]}"
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+    _CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_REF" ] && { _CLAIMED=1; break; }
+    done
+    [ "$_CLAIMED" -eq 1 ] && continue
+    _claim_file="${claims_root}/issue-${_REF}/claim.json"
+    _stored=""
+    if [ -f "$_claim_file" ] && [ -n "$PY_BIN" ]; then
+      _stored=$("$PY_BIN" - "$_claim_file" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        sys.stdout.write(json.load(f).get("pipeline_id", "") or "")
+except Exception:
+    pass
+PY
+)
+    fi
+    if [ -n "$_stored" ] && [ "$_stored" != "$self_pid" ]; then
+      out+="STOP $_REF $_stored"$'\n'
+    else
+      out+="WARN $_REF"$'\n'
+    fi
+  done
+  printf '%s' "$out"
+}
+
+mk_claim() {
+  # $1 = claims-root, $2 = issue number, $3 = pipeline_id
+  local dir="$1/issue-$2"
+  mkdir -p "$dir"
+  printf '{"pipeline_id": "%s", "started_at": "now"}\n' "$3" > "$dir/claim.json"
+}
+
+# Fixture claims dir.
+STRAY_ROOT="$TEST_TMPDIR/claims-stray"
+register_fixture "$STRAY_ROOT"
+mkdir -p "$STRAY_ROOT"
+mk_claim "$STRAY_ROOT" 340 "fix-issues.sprint-foreign"   # foreign holder
+mk_claim "$STRAY_ROOT" 555 "do.this-run-slug"            # self holder
+
+# (a) stray #N with a foreign live claim → STOP signalled.
+do_parse_issue_nums "fix tooltip, related to #340"
+GOT=$(do_stray_check "fix tooltip, related to #340" "$STRAY_ROOT" "do.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^STOP 340 fix-issues\.sprint-foreign$'; then
+  pass "18x foreign-held stray #340 → STOP (names holder)"
+else
+  fail "18x foreign-held stray #340 → STOP (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (b) stray #N with NO claim → warn + proceed (no stop).
+do_parse_issue_nums "fix tooltip, related to #999"
+GOT=$(do_stray_check "fix tooltip, related to #999" "$STRAY_ROOT" "do.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^WARN 999$' && ! printf '%s' "$GOT" | grep -q '^STOP'; then
+  pass "18x not-held stray #999 → WARN, no STOP"
+else
+  fail "18x not-held stray #999 → WARN (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (c) stray #N whose claim.json pipeline_id == caller (self) → NO stop.
+do_parse_issue_nums "fix tooltip, related to #555"
+GOT=$(do_stray_check "fix tooltip, related to #555" "$STRAY_ROOT" "do.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^WARN 555$' && ! printf '%s' "$GOT" | grep -q '^STOP'; then
+  pass "18x self-claimed stray #555 → no STOP (self-exclusion)"
+else
+  fail "18x self-claimed stray #555 → no STOP (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (d) --no-claim present → stray-ref stop suppressed (no STOP, no WARN).
+do_parse_issue_nums "fix tooltip, related to #340"
+GOT=$(do_stray_check "fix tooltip, related to #340" "$STRAY_ROOT" "do.this-run-slug" 1)
+if [ -z "$GOT" ]; then
+  pass "18x --no-claim suppresses foreign-held STOP (and warn)"
+else
+  fail "18x --no-claim should suppress all stray output (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# 18x-src — anchor the foreign-held STOP + --no-claim handling to SKILL.md.
+if grep -qF 'is currently held by a foreign pipeline' "$SKILL" \
+   && grep -qF 'claims/issue-${_DO_REF}/claim.json' "$SKILL"; then
+  pass "18x-src SKILL.md carries the foreign-held stray-ref STOP (#959)"
+else
+  fail "18x-src SKILL.md missing the foreign-held stray-ref STOP (#959)"
+fi
+if grep -qE 'NO_CLAIM=0' "$SKILL" \
+   && grep -qF 'if [ "$NO_CLAIM" -ne 1 ]; then' "$SKILL"; then
+  pass "18x-src SKILL.md parses --no-claim and gates the stray check on it"
+else
+  fail "18x-src SKILL.md missing --no-claim parse / gate"
+fi
+# Both the STOP message AND the #907 warn must reference --no-claim.
+if grep -qF 're-run with --no-claim' "$SKILL" \
+   && grep -qF 'pass --no-claim to silence' "$SKILL"; then
+  pass "18x-src STOP + #907 warn both reference --no-claim"
+else
+  fail "18x-src STOP and/or #907 warn missing --no-claim reference"
+fi
+# Strip chains in Phase 1.5 Step 2 and Phase 0c must drop --no-claim.
+if [ "$(grep -cF "sed -E 's/(^|[[:space:]])--no-claim(\$|[[:space:]])/ /'" "$SKILL")" -ge 2 ]; then
+  pass "18x-src --no-claim stripped in BOTH Phase 1.5 Step 2 and Phase 0c chains"
+else
+  fail "18x-src --no-claim not stripped in both strip chains (expected >=2 occurrences)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 18y — Documentation discipline for --no-claim (#959):
+#   - argument-hint frontmatter must NOT contain --no-claim (per spec).
+#   - the ## Arguments body MUST document --no-claim.
+# ────────────────────────────────────────────────────────────────────
+if grep -qE '^argument-hint:' "$SKILL" \
+   && grep -E '^argument-hint:' "$SKILL" | grep -q -- '--no-claim'; then
+  fail "18y argument-hint frontmatter must NOT contain --no-claim"
+else
+  pass "18y argument-hint frontmatter does NOT contain --no-claim"
+fi
+# Arguments body documents --no-claim (a bullet with the flag in the
+# ## Arguments section). The Arguments section precedes Phase headings;
+# assert a `**--no-claim**` bullet exists.
+if grep -qE '^\- \*\*--no-claim\*\*' "$SKILL"; then
+  pass "18y ## Arguments body documents --no-claim (bullet present)"
+else
+  fail "18y ## Arguments body missing --no-claim bullet"
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Case 19 — Phase 0a triage rubric NO LONGER contains the
 # "References a GitHub issue number → /fix-issues" REDIRECT row.
 # After PR 825 wired ISSUE_NUM + claim-issue.sh into the mode files,
