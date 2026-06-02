@@ -1252,6 +1252,35 @@ fi
 expect_project_deny "issue-547: commit on main with unfulfilled requires.land-pr (still blocked)" "git commit -m test"
 teardown_project_test
 
+# Issue #986: the carve-out is per-marker-type, not blanket-branch.
+# requires.verify-changes.* (and any non-land-pr requires.*) MUST enforce
+# on feature branches too — verify-changes can and should run pre-merge.
+# Past failure: PR #980 landed with requires.verify-changes.doc-viewer
+# unfulfilled because every commit was on the feature branch and the
+# outer is_on_main gate skipped all requires.* checks.
+
+# Positive case (#986 fix): commit on feature branch with UNFULFILLED
+# requires.verify-changes.* must be DENIED.
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
+# Switch to a feature branch.
+(cd "$TEST_TMPDIR" && git checkout -q -b fix/issue-986-test 2>/dev/null)
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_deny "issue-986: commit on feature branch with unfulfilled requires.verify-changes (now blocked)" "git commit -m test"
+teardown_project_test
+
+# Negative case (#986 fix): commit on feature branch with FULFILLED
+# requires.verify-changes.* must be ALLOWED (the verifier ran).
+setup_project_test
+mkdir -p "$TEST_TMPDIR/$DEFAULT_SUBDIR"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/requires.verify-changes.test-plan"
+touch "$TEST_TMPDIR/$DEFAULT_SUBDIR/fulfilled.verify-changes.test-plan"
+(cd "$TEST_TMPDIR" && git checkout -q -b fix/issue-986-test 2>/dev/null)
+(cd "$TEST_TMPDIR" && echo "var x=1;" > app.js && git add app.js)
+expect_project_allow "issue-986: commit on feature branch with fulfilled requires.verify-changes (passes)" "git commit -m test"
+teardown_project_test
+
 echo ""
 echo "=== Project hook: step enforcement ==="
 
