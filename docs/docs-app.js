@@ -197,13 +197,15 @@ function resolveLink(href, basePath) {
 function renderErrorPane(targetPath) {
   const safe = escapeHtml(targetPath);
   main.innerHTML = `
-    <div class="zs-error-pane">
-      <h2>Page not found</h2>
-      <p>No catalog entry for <code>${safe}</code>.</p>
-      <p><a href="#docs/README.md" class="zl-docs-internal-link">Back to docs home</a></p>
-      <p>Or view raw source on
-        <a href="https://github.com/zeveck/zskills/blob/main/${safe}"
-           target="_blank" rel="noopener">GitHub</a>.</p>
+    <div class="zl-docs-content">
+      <div class="zs-error-pane">
+        <h2>Page not found</h2>
+        <p>No catalog entry for <code>${safe}</code>.</p>
+        <p><a href="#docs/README.md" class="zl-docs-internal-link">Back to docs home</a></p>
+        <p>Or view raw source on
+          <a href="https://github.com/zeveck/zskills/blob/main/${safe}"
+             target="_blank" rel="noopener">GitHub</a>.</p>
+      </div>
     </div>`;
 }
 
@@ -269,20 +271,40 @@ function renderDoc(item, md) {
   const baseUrl = pathParts.length > 0 ? '../' + pathParts.join('/') + '/' : '../';
 
   const html = renderFrontmatterStrip(md) + renderMarkdown(stripFrontmatter(md), { baseUrl });
-  main.innerHTML = rewriteInternalLinksToHash(html, item.path);
+  const rewritten = rewriteInternalLinksToHash(html, item.path);
+  // Wrap in .zl-docs-content so the 900px constraint lives on a centered
+  // child while #zl-docs-main's scrollbar stays flush at the viewport's
+  // right edge (no mid-page scrollbar gutter).
+  main.innerHTML = '<div class="zl-docs-content">' + rewritten + '</div>';
 
   main.scrollTop = 0;
 }
 
-// The renderer resolves relative `<a href="X.md">` to `../docs/<...>/X.md`
-// using baseUrl (so they'd "work" as fetches). For our hash-routed viewer,
-// such hrefs need to be HASH URLs (`#docs/<...>/X.md`) so:
-//   (a) click handlers don't double-resolve against `currentHashPath`,
-//   (b) Ctrl/Cmd-click opens the viewer-with-hash in a new tab (instead of
-//       serving raw markdown), and
-//   (c) hover shows the actual destination doc in the URL bar tooltip.
-// We rewrite every internal `<a href>` (or `<a href>` carrying a section
-// anchor) to a hash URL anchored at this doc's location in the repo.
+// The renderer emits raw relative `<a href="X.md">` for internal doc links
+// (it skips baseUrl for these — see MarkdownRenderer.js inlineMarkdown).
+// For our hash-routed viewer, those hrefs need to be HASH URLs
+// (`#docs/<...>/X.md`) so:
+//   (a) the hash router (routeFromHash) picks them up natively,
+//   (b) Ctrl/Cmd-click opens the viewer-with-hash in a new tab, and
+//   (c) hover shows the actual destination in the URL bar tooltip.
+//
+// Some link targets are not in the catalog (e.g. `../README.md`, root
+// project files, internal subdirs like `../tracking/`). For those we
+// fall back to a GitHub source URL so the user sees the content in a new
+// tab instead of an in-viewer "Page not found" error pane.
+const GITHUB_SOURCE_BASE = 'https://github.com/zeveck/zskills/blob/main/';
+
+function isCatalogPath(repoRelPath) {
+  // Strip any #anchor before lookup.
+  const bare = repoRelPath.replace(/#.*$/, '');
+  for (const section of DOCS_CATALOG) {
+    for (const item of section.items) {
+      if (item.path === bare) return true;
+    }
+  }
+  return false;
+}
+
 function rewriteInternalLinksToHash(html, currentPath) {
   // currentPath is e.g. "docs/skills/README.md" — repo-root-relative.
   const dirParts = currentPath.split('/');
@@ -290,8 +312,8 @@ function rewriteInternalLinksToHash(html, currentPath) {
   const currentDir = dirParts.join('/');  // e.g. "docs/skills"
 
   return html.replace(
-    /(<a\b[^>]*\bhref=)"([^"]+)"/gi,
-    (full, prefix, href) => {
+    /(<a\b[^>]*\bhref=)"([^"]+)"((?:[^>])*>)/gi,
+    (full, prefix, href, suffix) => {
       // Skip absolute URLs (http://...), root-relative (/...), pure section
       // anchors (#...), and mailto/tel/etc.
       if (/^([a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(href)) return full;
@@ -302,7 +324,22 @@ function rewriteInternalLinksToHash(html, currentPath) {
       const base = new URL('https://x/' + currentDir + '/', 'https://x/');
       const u = new URL(href, base);
       const resolved = u.pathname.slice(1) + u.hash;  // strip leading '/'
-      return prefix + '"#' + resolved + '"';
+      const bareResolved = u.pathname.slice(1);  // path only, no anchor
+      // In-catalog target → hash URL, stays in viewer.
+      if (isCatalogPath(bareResolved)) {
+        return prefix + '"#' + resolved + '"' + suffix;
+      }
+      // Not in catalog (e.g. ../README.md, ../tracking/X.md, ../RELEASING.md).
+      // Fall back to GitHub source in a new tab — the doc still exists in
+      // the repo, just isn't part of the user-facing viewer scope.
+      const ghHref = GITHUB_SOURCE_BASE + bareResolved + (u.hash || '');
+      // Add target=_blank rel=noopener if not already present; otherwise just
+      // swap the href value.
+      let newSuffix = suffix;
+      if (!/\btarget=/i.test(prefix + suffix)) {
+        newSuffix = ' target="_blank" rel="noopener"' + suffix;
+      }
+      return prefix + '"' + ghHref + '"' + newSuffix;
     }
   );
 }

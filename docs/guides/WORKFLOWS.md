@@ -2,7 +2,7 @@
 
 This is a **recipes / playbook** doc: it shows how to chain Z Skills into
 real end-to-end workflows. For what an individual skill does and its full
-argument list, see the per-skill reference in [`skills/README.md`](skills/README.md).
+argument list, see the [per-skill reference](../skills/README.md).
 
 ## Philosophy
 
@@ -220,6 +220,5 @@ in a real browser.
 
 ## See also
 
-- [`skills/README.md`](skills/README.md) — the per-skill reference (every
-  skill, its description, and full argument syntax).
-- [`../README.md`](../README.md) — project overview.
+- [Per-skill reference](../skills/README.md) — every skill with its
+  description and full argument syntax.
