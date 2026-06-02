@@ -422,7 +422,6 @@ const lastFingerprint = {
   issues: null,
   activity: null,
   workState: null,
-  defaultMode: null,
 };
 
 // Issue #802 — unread-dot indicator. lastViewed[tab] holds the per-tab
@@ -467,7 +466,6 @@ let pendingPosts = 0;
 
 // last-known-good queues — used to revert local DOM on POST failure.
 let lastGoodQueues = null;
-let lastGoodDefaultMode = "phase";
 
 // Phase 5d: debounce setConnected(false) to avoid banner flap on a
 // single transient fetchState failure. Require DISCONNECT_FAILURE_THRESHOLD
@@ -571,15 +569,11 @@ async function pollWorkOnce() {
   } else {
     // Issue #892 — fail OPEN, not stuck-locked. A null fetch (network
     // error / server restart / abort) used to leave lastWorkState stale
-    // at state==="sprint". If the sprint ended during that gap, the
-    // exec-mode chip stayed locked and the change-default-mode UI stayed
-    // blocked until the next *successful* poll. Clearing to null releases
-    // the lock: every lastWorkState consumer (renderDefaultMode,
-    // renderDefaultModeFootnote, the setDefaultMode sprint guard) already
-    // short-circuits on a falsy work-state, and null is the documented
-    // bootstrap value, so no consumer null-derefs. Only re-apply if the
-    // state actually changes (it was previously a sprint), so a transient
-    // failure during idle is a no-op.
+    // at state==="sprint". Clearing to null lets every lastWorkState
+    // consumer (per-plan chip lock, run-status panel) short-circuit on a
+    // falsy work-state. Only re-apply if the state actually changes (it
+    // was previously a sprint), so a transient failure during idle is a
+    // no-op.
     if (lastWorkState) {
       lastWorkState = null;
       applyWorkState(null);
@@ -636,23 +630,20 @@ function applySnapshot(snap) {
   // doesn't wipe the user's persisted ordering on the next POST. Missing
   // key (older snapshot shape) is treated as true to preserve current
   // steady-state behavior.
-  const queues = snap.queues || { plans: {}, issues: {}, default_mode: "phase" };
+  // `default_mode` is tolerated on the wire (server still writes it; the
+  // `default <phase|finish>` subcommand still mutates it) but the
+  // dispatcher no longer reads it for resolution and the dashboard no
+  // longer renders a chip for it — see issue #988.
+  const queues = snap.queues || { plans: {}, issues: {} };
   const issuesFetchOk = snap.issues_fetch_ok !== false;
   lastGoodQueues = deepCloneQueues(
     queues, snap.plans || [], snap.issues || [], issuesFetchOk,
   );
-  lastGoodDefaultMode = queues.default_mode || "phase";
 
-  const dmFp = String(lastGoodDefaultMode);
-  if (dmFp !== lastFingerprint.defaultMode) {
-    lastFingerprint.defaultMode = dmFp;
-    renderDefaultMode(lastGoodDefaultMode, lastWorkState);
-  }
-
-  const plansFp = fingerprintPlans(snap.plans || [], queues, lastGoodDefaultMode);
+  const plansFp = fingerprintPlans(snap.plans || [], queues);
   if (plansFp !== lastFingerprint.plans) {
     lastFingerprint.plans = plansFp;
-    renderPlans(snap.plans || [], queues, lastGoodDefaultMode);
+    renderPlans(snap.plans || [], queues);
   }
 
   const branchesFp = fingerprintBranches(snap.branches || [], snap.worktrees || []);
@@ -730,14 +721,6 @@ function applyWorkState(ws) {
   if (fp !== lastFingerprint.workState) {
     lastFingerprint.workState = fp;
     renderRunStatus(ws);
-    renderDefaultModeFootnote(ws);
-    // Issue #858 — re-render the chip whenever work-state changes so its
-    // lock + displayed batch_mode track sprint start/stop transitions.
-    // Skip if the snapshot poll hasn't landed yet (lastGoodDefaultMode
-    // is still the bootstrap "phase"); renderDefaultMode is a no-op when
-    // the chip DOM isn't ready, but skipping the redundant call keeps
-    // the fingerprint logic simple.
-    renderDefaultMode(lastGoodDefaultMode, ws);
   }
 }
 
@@ -911,7 +894,7 @@ function deepCloneQueues(queues, plans, issues, issuesFetchOk) {
   return out;
 }
 
-function fingerprintPlans(plans, queues, defaultMode) {
+function fingerprintPlans(plans, queues) {
   // Include queue position so reorders re-render.
   const pos = {};
   for (const c of PLAN_COLUMNS) {
@@ -926,7 +909,6 @@ function fingerprintPlans(plans, queues, defaultMode) {
   // standalone test harnesses that extract this function in isolation.
   const _gcw = (typeof getCompletedWindow !== "undefined") ? getCompletedWindow : null;
   return JSON.stringify({
-    dm: defaultMode,
     cw: _gcw ? _gcw("plan") : null,
     rows: plans.map(p => [
       p.slug, p.title, p.status,
@@ -1045,7 +1027,7 @@ function planBySlug(plans, slug) {
   return null;
 }
 
-function buildPlanCard(plan, slug, col, defaultMode) {
+function buildPlanCard(plan, slug, col) {
   // Phase 4 / D5 / D7 — Completed cards are READ-ONLY. Omit draggable
   // attribute, omit per-card action controls, omit the move-all chevron
   // (handled in renderPlans), omit the plan-title click-through link
@@ -1237,7 +1219,9 @@ function buildPlanCard(plan, slug, col, defaultMode) {
   //      outlives the /work-on-plans wrapper that spawned it — sibling
   //      to #858's wrapper-lifetime batch_mode signal).
   //   2. currentEntryMode(slug) explicit override.
-  //   3. defaultMode || "phase".
+  //   3. literal "finish" — the post-#988 default for unconfigured
+  //      installs (the old default-mode chip and its `default_mode` JSON
+  //      field are no longer read for resolution).
   // Pre-#874 claims lack dispatch_mode → collect.py surfaces None →
   // step 1 falls through to step 2 + step 3 unchanged. Back-compat is
   // structural, not flag-gated.
@@ -1247,7 +1231,7 @@ function buildPlanCard(plan, slug, col, defaultMode) {
     const claimDispatchMode =
       (plan && plan.claim && plan.claim.dispatch_mode) || null;
     const effectiveMode =
-      claimDispatchMode || (isOverride ? entryMode : (defaultMode || "phase"));
+      claimDispatchMode || (isOverride ? entryMode : "finish");
     const isClaimed = !!(plan && plan.claim);
     const locked = isClaimed && effectiveMode === "finish";
     let state, ariaLabel;
@@ -1438,7 +1422,7 @@ function currentEntryMode(slug) {
   return null;
 }
 
-function renderPlans(plans, queues, defaultMode) {
+function renderPlans(plans, queues) {
   const body = $("plans-body");
   const empty = $("plans-empty");
   clear(body);
@@ -1506,7 +1490,7 @@ function renderPlans(plans, queues, defaultMode) {
     for (const entry of arr) {
       const slug = (typeof entry === "string") ? entry : (entry && entry.slug);
       if (!slug) continue;
-      const card = buildPlanCard(slugToPlan[slug] || null, slug, c, defaultMode);
+      const card = buildPlanCard(slugToPlan[slug] || null, slug, c);
       ul.appendChild(card);
     }
     colDiv.appendChild(ul);
@@ -1522,7 +1506,6 @@ function renderPlans(plans, queues, defaultMode) {
     kind: "plan",
     queues: lastGoodQueues,
     slugToPlan: slugToPlan,
-    defaultMode: defaultMode,
   });
   body.appendChild(band);
 }
@@ -1534,81 +1517,6 @@ function allColumnsEmpty(colsObj, columnNames) {
     if (arr.length) return false;
   }
   return true;
-}
-
-// Issue #858 — when a sprint is in flight, the chip mirrors the captured
-// batch_mode from work-on-plans-state.json (NOT the saved default_mode)
-// and is locked: clicks no-op with a tooltip explaining the lock. The
-// in-flight banner adjacent to the chip reserves layout space at all
-// times via CSS visibility (see .dm-footnote-slot) so its appearance
-// doesn't shift the chip row.
-function renderDefaultMode(mode, ws) {
-  const phase = $("dm-phase");
-  const finish = $("dm-finish");
-  if (!phase || !finish) return;
-  const inFlight = !!(ws && ws.state === "sprint");
-  // Issue #930 — cron-pinned lock. When a /work-on-plans schedule is
-  // active with an explicit mode token in argv, every fire dispatches
-  // that mode literally; the chip-stored default_mode is ignored. Mirror
-  // the cron-pinned mode as the active chip state (visibly locked) so
-  // the UI is a live mirror of what the next fire will actually run.
-  // "inherit" is the sentinel for "no pin" — chip stays editable then.
-  const cronPinnedMode = ws && ws.schedule_mode;
-  const cronLocked = !!(
-    ws
-    && ws.state === "scheduled"
-    && cronPinnedMode
-    && cronPinnedMode !== "inherit"
-  );
-  const locked = inFlight || cronLocked;
-  let effectiveMode;
-  if (inFlight && ws.batch_mode) {
-    effectiveMode = ws.batch_mode;
-  } else if (cronLocked) {
-    effectiveMode = cronPinnedMode;
-  } else {
-    effectiveMode = mode;
-  }
-  const isPhase = effectiveMode === "phase";
-  phase.setAttribute("aria-pressed", isPhase ? "true" : "false");
-  finish.setAttribute("aria-pressed", isPhase ? "false" : "true");
-  let lockTitle = "";
-  if (inFlight) {
-    lockTitle = "Sprint in flight — default mode locked to the captured batch mode (" + effectiveMode + "). Stop the sprint to change it.";
-  } else if (cronLocked) {
-    lockTitle = "Default mode is locked: the active /work-on-plans schedule pins mode to '" + cronPinnedMode + "'. Stop the schedule and re-launch without a mode token to control via this chip.";
-  }
-  for (const btn of [phase, finish]) {
-    if (locked) {
-      // Use data-locked (not aria-disabled / disabled) so the click
-      // still reaches the handler — setDefaultMode surfaces the lock
-      // reason via a toast. aria-disabled would block click dispatch
-      // under some test runners (and would also hide the chip from
-      // some screen reader users). The tooltip + visual cue + toast
-      // covers the affordance.
-      btn.setAttribute("data-locked", "true");
-      btn.setAttribute("title", lockTitle);
-    } else {
-      btn.removeAttribute("data-locked");
-      btn.removeAttribute("title");
-    }
-  }
-}
-
-function renderDefaultModeFootnote(ws) {
-  const note = $("default-mode-footnote");
-  if (!note) return;
-  const inFlight = ws && ws.state === "sprint";
-  // Keep the slot in the layout always (CSS visibility) so the chip row
-  // doesn't shift when a sprint starts/stops. Toggle a class instead of
-  // the `hidden` attribute (which is display:none and reflows siblings).
-  if (inFlight) {
-    note.classList.add("is-visible");
-  } else {
-    note.classList.remove("is-visible");
-  }
-  // Defensive: clear any legacy `hidden` attribute that older builds set.
-  note.removeAttribute("hidden");
 }
 
 // -------------------------------------------------------------- branches
@@ -2216,8 +2124,8 @@ function buildNavPill(label, count, targetId, kind, col) {
 // drop-target (empty UL with placeholder text); Completed renders
 // per-card buildPlanCard / buildIssueCard for read-only display.
 //
-// `opts.kind` is "plan" or "issue". For plans, opts.slugToPlan +
-// opts.defaultMode are required. For issues, opts.numToIssue is required.
+// `opts.kind` is "plan" or "issue". For plans, opts.slugToPlan is
+// required. For issues, opts.numToIssue is required.
 function renderBelowPanelBand(opts) {
   const kind = opts.kind;
   const queues = opts.queues;
@@ -2316,7 +2224,7 @@ function renderBelowPanelBand(opts) {
         const slug = (typeof entry === "string") ? entry : (entry && entry.slug);
         if (!slug) continue;
         const card = buildPlanCard(
-          opts.slugToPlan[slug] || null, slug, c, opts.defaultMode,
+          opts.slugToPlan[slug] || null, slug, c,
         );
         ul.appendChild(card);
       }
@@ -2528,7 +2436,6 @@ function renderRunStatus(ws) {
     root.appendChild(el("span", { cls: "run-text", text: warning }));
   }
   const triggerConfigured = !!(ws && ws.trigger_configured);
-  const dm = lastGoodDefaultMode || "phase";
   if (triggerConfigured) {
     root.appendChild(el("span", { cls: "run-label", text: "Idle:" }));
     const nInput = el("input", {
@@ -2549,17 +2456,12 @@ function renderRunStatus(ws) {
       text: "▶ Run top N",
     });
     root.appendChild(runBtn);
-  } else {
-    root.appendChild(el("span", { cls: "run-label", text: "Copy and run:" }));
-    const cmd = "/work-on-plans 3 " + dm;
-    root.appendChild(el("code", { cls: "run-cmd-snippet", text: cmd }));
-    const copyBtn = el("button", {
-      cls: "copy-btn",
-      attrs: { type: "button", "data-action": "copy-cmd", "data-cmd": cmd, "aria-label": "Copy command" },
-      html: SVG_ICONS.copy,
-    });
-    root.appendChild(copyBtn);
   }
+  // Issue #988 — the "Copy and run:" snippet that previously rendered on
+  // the no-trigger branch is gone. Idle dashboard renders nothing here
+  // when no /work-on-plans trigger is configured; the docs explain how
+  // to feed the queue (matching the Issues / Branches columns, which
+  // have always been state-only with no inline how-to).
 }
 
 // ---------------------------------------------------------------- toasts
@@ -2707,15 +2609,12 @@ async function commitQueueChange(newQueues, opts) {
     : null;
   // Optimistic: snap UI to new queues immediately.
   lastGoodQueues = newQueues;
-  if (newQueues.default_mode) lastGoodDefaultMode = newQueues.default_mode;
   // Force re-render now (don't wait for next poll).
   const snap = lastSnapshot || { plans: [], issues: [] };
-  renderDefaultMode(lastGoodDefaultMode, lastWorkState);
-  renderPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
+  renderPlans(snap.plans || [], lastGoodQueues);
   renderIssues(snap.issues || [], lastGoodQueues);
-  lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
+  lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues);
   lastFingerprint.issues = fingerprintIssues(snap.issues || [], lastGoodQueues);
-  lastFingerprint.defaultMode = String(lastGoodDefaultMode);
 
   pendingPosts++;
   let ok;
@@ -2727,13 +2626,10 @@ async function commitQueueChange(newQueues, opts) {
   if (!ok && previous) {
     // Revert immediately; do not wait for next poll.
     lastGoodQueues = previous;
-    lastGoodDefaultMode = previous.default_mode || "phase";
-    renderDefaultMode(lastGoodDefaultMode, lastWorkState);
-    renderPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
+    renderPlans(snap.plans || [], lastGoodQueues);
     renderIssues(snap.issues || [], lastGoodQueues);
-    lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues, lastGoodDefaultMode);
+    lastFingerprint.plans = fingerprintPlans(snap.plans || [], lastGoodQueues);
     lastFingerprint.issues = fingerprintIssues(snap.issues || [], lastGoodQueues);
-    lastFingerprint.defaultMode = String(lastGoodDefaultMode);
   }
   return ok;
 }
@@ -2764,7 +2660,6 @@ function clonedQueues() {
   return lastGoodQueues
     ? JSON.parse(JSON.stringify(lastGoodQueues))
     : {
-        default_mode: "phase",
         plans: { drafted: [], reviewed: [], ready: [], backlog: [], discarded: [], completed: [] },
         issues: { triage: [], ready: [], backlog: [], completed: [] },
       };
@@ -2885,66 +2780,6 @@ async function removeIssue(num) {
   next.issues[loc.col].splice(loc.idx, 1);
   const ok = await commitQueueChange(next, { action: "Remove issue" });
   if (ok) announce("issues-live", "Removed issue #" + num);
-}
-
-async function setDefaultMode(mode) {
-  if (mode !== "phase" && mode !== "finish") return;
-  // Issue #858 — sprint-in-flight lock. The chip mirrors the captured
-  // batch_mode and clicks no-op (with a toast nudge to surface the
-  // reason). The setter also blocks at the DOM level (data-locked) but
-  // we re-check here in case the chip render lagged the work-state
-  // poll, or a programmatic caller bypasses the click path.
-  if (lastWorkState && lastWorkState.state === "sprint") {
-    showToast(
-      "Default mode is locked while a sprint is in flight (captured: " +
-        (lastWorkState.batch_mode || "phase") +
-        "). Stop the sprint to change it.",
-      "info",
-    );
-    return;
-  }
-  // Issue #930 — cron-pinned lock (same family as #874/#858 wrapper-vs-
-  // dispatch-lifetime signals). When the active /work-on-plans schedule
-  // has an explicit mode token in argv (state==="scheduled" +
-  // schedule_mode set, not "inherit"), every cron fire dispatches with
-  // that mode literally — the saved default_mode is ignored. The chip
-  // must surface that the click is functionally inert until the schedule
-  // is stopped or re-launched without a mode token.
-  const cronPinnedMode = lastWorkState && lastWorkState.schedule_mode;
-  if (
-    lastWorkState
-    && lastWorkState.state === "scheduled"
-    && cronPinnedMode
-    && cronPinnedMode !== "inherit"
-  ) {
-    // Issue #940 — surface a "Force unlock" action for the case where the
-    // /work-on-plans cron was killed externally (Claude session ended
-    // without clean shutdown, REPL hard-killed). state stays at
-    // "scheduled" with schedule_mode pinned but no fire is coming, so
-    // the chip is locked indefinitely until the server-side staleness
-    // sweep (grace = schedule_period + 30 min). Force unlock POSTs to
-    // the existing /api/work-state/reset endpoint. Resilient to a live
-    // cron: if it's still firing, the next fire re-writes
-    // state=scheduled and the lock reappears; if gone, lock stays clear.
-    showToast(
-      "Default mode is locked: /work-on-plans schedule pins mode to '" +
-        cronPinnedMode +
-        "'. If the cron is no longer running (Claude session ended or REPL killed), use Force unlock to clear the lock.",
-      "info",
-      {
-        actionLabel: "Force unlock",
-        onAction: async () => {
-          await fetch("/api/work-state/reset", { method: "POST" });
-        },
-      },
-    );
-    return;
-  }
-  if (mode === lastGoodDefaultMode) return;
-  const next = clonedQueues();
-  next.default_mode = mode;
-  const ok = await commitQueueChange(next, { action: "Set default mode" });
-  if (ok) announce("plans-live", "Default mode: " + mode);
 }
 
 async function togglePlanMode(slug) {
@@ -3623,25 +3458,14 @@ async function handleAction(action, target) {
       const v = parseInt(input.value, 10);
       if (Number.isFinite(v) && v >= 1 && v <= 99) n = v;
     }
-    const cmd = "/work-on-plans " + n + " " + (lastGoodDefaultMode || "phase");
+    // Issue #988 — the dashboard no longer carries a default-mode chip.
+    // Trigger fires the bare `/work-on-plans N`; the skill resolves its
+    // own default (`finish` post-#988) at dispatch time.
+    const cmd = "/work-on-plans " + n;
     return postTrigger(cmd);
   }
   if (action === "run-stop") {
     return postTrigger("/work-on-plans stop");
-  }
-  if (action === "copy-cmd") {
-    const cmd = target.getAttribute("data-cmd") || "";
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      try {
-        await navigator.clipboard.writeText(cmd);
-        showToast("Copied to clipboard.", "info");
-      } catch (_err) {
-        showToast("Copy failed — select text manually.", "err");
-      }
-    } else {
-      showToast("Clipboard API unavailable.", "err");
-    }
-    return;
   }
   if (action === "clear-stale-sprint") {
     return postWorkStateReset();
@@ -3825,12 +3649,6 @@ function bindActionEvents() {
     cb.checked = !cb.checked;
     cb.dispatchEvent(new Event("change", { bubbles: true }));
   });
-
-  // Default-mode segmented buttons.
-  const phase = $("dm-phase");
-  const finish = $("dm-finish");
-  if (phase) phase.addEventListener("click", () => setDefaultMode("phase"));
-  if (finish) finish.addEventListener("click", () => setDefaultMode("finish"));
 
   // Drag events at the document level.
   document.body.addEventListener("dragstart", onDragStart);

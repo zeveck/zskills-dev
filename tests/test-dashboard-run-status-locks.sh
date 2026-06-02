@@ -1,21 +1,14 @@
 #!/bin/bash
-# Tests for the run-status widget locks introduced by issue #930:
+# Tests for the run-status widget gates introduced by issue #930:
 #
-#   1. Default-mode chip lock parity with #874 / #858: when the active
-#      /work-on-plans schedule has an explicit mode token in argv
-#      (state==="scheduled" + schedule_mode set, not "inherit"), every
-#      cron fire dispatches that mode literally — the saved default_mode
-#      is ignored. The chip must surface a live mirror of the cron-pinned
-#      mode, render visibly locked, and setDefaultMode() must early-return
-#      with a toast. The lock must remain restricted to the cron-pinned
-#      mode (i.e., the chip stays editable when state===scheduled with
-#      schedule_mode null or "inherit"), and the existing #858 sprint
-#      lock must NOT regress.
-#
-#   2. Stop button gate on trigger_configured: the scheduled-branch Stop
+#   1. Stop button gate on trigger_configured: the scheduled-branch Stop
 #      button renders unconditionally pre-fix and POSTs to /api/trigger
 #      which 501s without dashboard.work_on_plans_trigger set. Post-fix,
 #      Stop only renders when trigger_configured is true.
+#
+# (Per issue #988, the original Bug 1 — default-mode chip lock parity —
+# is gone with the chip itself; renderDefaultMode / setDefaultMode were
+# removed from app.js. The Stop-gate + showToast cases below remain.)
 #
 # Run from repo root: bash tests/test-dashboard-run-status-locks.sh
 
@@ -60,7 +53,9 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# Default-mode chip lock matrix + Stop-button gate (DOM-stubbed).
+# Stop-button gate on trigger_configured (DOM-stubbed).
+# (Issue #988 dropped the default-mode chip; the prior chip-lock cases
+# A-F are gone with the chip itself. Stop-gate + showToast remain below.)
 # ---------------------------------------------------------------------------
 
 NODE_OUT=$(APP_JS_PATH="$APP_JS" node - <<'NODE'
@@ -78,12 +73,10 @@ function extractBlock(text, startRe, endMarker) {
 }
 
 // Real functions under test, lifted verbatim from app.js.
-const renderDefModeBlk   = extractBlock(src, /\nfunction renderDefaultMode\(mode, ws\)/, "\n}\n");
-const setDefaultModeBlk  = extractBlock(src, /\nasync function setDefaultMode\(mode\)/, "\n}\n");
 const renderRunStatusBlk = extractBlock(src, /\nfunction renderRunStatus\(ws\)/, "\n}\n");
 const elBlock            = extractBlock(src, /\nfunction el\(tag, opts\)/, "\n}\n");
 
-// Minimal DOM: dm-phase / dm-finish buttons + run-status container.
+// Minimal DOM: run-status container only (chip-related nodes dropped per #988).
 function makeNode(id, tag) {
   return {
     id,
@@ -113,8 +106,6 @@ function makeNode(id, tag) {
 }
 
 const nodes = {
-  "dm-phase": makeNode("dm-phase", "button"),
-  "dm-finish": makeNode("dm-finish", "button"),
   "run-status": makeNode("run-status", "div"),
 };
 for (const k of Object.keys(nodes)) {
@@ -128,51 +119,26 @@ const document = {
 
 const harness = `
 let lastWorkState = null;
-let lastGoodDefaultMode = "phase";
-let setDefaultModeCommitted = null;
-let lastToast = null;
 
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 var SVG_ICONS = { copy: "" };
 
 function clear(node) { node.children = []; node.classes.clear(); }
-function showToast(msg, kind) { lastToast = { msg: String(msg), kind: kind }; }
-function announce() {}
-function clonedQueues() { return { default_mode: lastGoodDefaultMode, plans: {}, issues: {} }; }
-async function commitQueueChange(next) {
-  setDefaultModeCommitted = next.default_mode;
-  lastGoodDefaultMode = next.default_mode;
-  return true;
-}
+function showToast() {}
 function formatLocalTime(s) { return s || "?"; }
 function relativeTime(s) { return s || "?"; }
 
 ${elBlock}
 
-${renderDefModeBlk}
-
 ${renderRunStatusBlk}
 
-${setDefaultModeBlk}
-
-globalThis.__renderDefaultMode = renderDefaultMode;
 globalThis.__renderRunStatus = renderRunStatus;
-globalThis.__setDefaultMode = setDefaultMode;
-globalThis.__setLastWorkState = (ws) => { lastWorkState = ws; };
-globalThis.__getLastToast = () => lastToast;
-globalThis.__resetToast = () => { lastToast = null; };
-globalThis.__getCommitted = () => setDefaultModeCommitted;
-globalThis.__resetCommitted = () => { setDefaultModeCommitted = null; };
-globalThis.__getLastGoodDefaultMode = () => lastGoodDefaultMode;
-globalThis.__setLastGoodDefaultMode = (m) => { lastGoodDefaultMode = m; };
 `;
 
 (new Function("document", "$", "globalThis", harness))(document, $stub, globalThis);
 
-const renderDefaultMode = globalThis.__renderDefaultMode;
 const renderRunStatus = globalThis.__renderRunStatus;
-const setDefaultMode = globalThis.__setDefaultMode;
 
 function expect(actual, expected, label) {
   const aStr = JSON.stringify(actual);
@@ -187,10 +153,6 @@ function expect(actual, expected, label) {
 function expectTrue(actual, label) {
   if (actual) console.log("OK " + label);
   else { console.log("FAIL " + label + " (got falsy " + JSON.stringify(actual) + ")"); process.exitCode = 1; }
-}
-function expectFalse(actual, label) {
-  if (!actual) console.log("OK " + label);
-  else { console.log("FAIL " + label + " (got truthy " + JSON.stringify(actual) + ")"); process.exitCode = 1; }
 }
 
 function resetNodes() {
@@ -212,126 +174,10 @@ function findByClass(root, cls) {
 }
 
 (async () => {
-  const phase = nodes["dm-phase"];
-  const finish = nodes["dm-finish"];
   const root = nodes["run-status"];
 
   // -----------------------------------------------------------------------
-  // Bug 1 — Default-mode chip lock matrix.
-  // -----------------------------------------------------------------------
-
-  // Case A: state==="sprint" — existing #858 sprint-lock fires (don't regress).
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "sprint", batch_mode: "finish" });
-  globalThis.__setLastGoodDefaultMode("phase");
-  renderDefaultMode("phase", { state: "sprint", batch_mode: "finish" });
-  expect(phase.getAttribute("data-locked"), "true", "sprint: dm-phase data-locked=true (no regression)");
-  expect(finish.getAttribute("data-locked"), "true", "sprint: dm-finish data-locked=true (no regression)");
-  expectTrue(
-    (phase.getAttribute("title") || "").indexOf("Sprint in flight") >= 0,
-    "sprint: tooltip mentions sprint-in-flight (#858 wording preserved)"
-  );
-  expect(finish.getAttribute("aria-pressed"), "true", "sprint: dm-finish active (mirrors batch_mode=finish)");
-  globalThis.__resetCommitted();
-  globalThis.__resetToast();
-  await setDefaultMode("phase");
-  expect(globalThis.__getCommitted(), null, "sprint: setDefaultMode early-returns (no commit)");
-  expectTrue(
-    (globalThis.__getLastToast() || {}).msg
-      && globalThis.__getLastToast().msg.indexOf("sprint is in flight") >= 0,
-    "sprint: toast wording is the #858 sprint variant"
-  );
-
-  // Case B: state==="scheduled", schedule_mode==="finish" — cron-pinned lock.
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "scheduled", schedule_mode: "finish" });
-  globalThis.__setLastGoodDefaultMode("phase");
-  renderDefaultMode("phase", { state: "scheduled", schedule_mode: "finish" });
-  expect(phase.getAttribute("data-locked"), "true",
-    "scheduled+pin=finish: dm-phase data-locked=true");
-  expect(finish.getAttribute("data-locked"), "true",
-    "scheduled+pin=finish: dm-finish data-locked=true");
-  expect(finish.getAttribute("aria-pressed"), "true",
-    "scheduled+pin=finish: dm-finish is the active chip (mirrors cron-pinned mode)");
-  expect(phase.getAttribute("aria-pressed"), "false",
-    "scheduled+pin=finish: dm-phase NOT active");
-  expectTrue(
-    (phase.getAttribute("title") || "").indexOf("/work-on-plans schedule pins mode to 'finish'") >= 0,
-    "scheduled+pin=finish: tooltip names the cron-pinned mode"
-  );
-  globalThis.__resetCommitted();
-  globalThis.__resetToast();
-  await setDefaultMode("phase");
-  expect(globalThis.__getCommitted(), null,
-    "scheduled+pin=finish: setDefaultMode early-returns (no commit)");
-  expectTrue(
-    (globalThis.__getLastToast() || {}).msg
-      && globalThis.__getLastToast().msg.indexOf("/work-on-plans schedule pins mode to 'finish'") >= 0,
-    "scheduled+pin=finish: toast names the cron-pinned mode"
-  );
-
-  // Case C: state==="scheduled", schedule_mode==="phase" — cron-pinned lock to phase.
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "scheduled", schedule_mode: "phase" });
-  globalThis.__setLastGoodDefaultMode("finish");
-  renderDefaultMode("finish", { state: "scheduled", schedule_mode: "phase" });
-  expect(phase.getAttribute("data-locked"), "true",
-    "scheduled+pin=phase: dm-phase data-locked=true");
-  expect(finish.getAttribute("data-locked"), "true",
-    "scheduled+pin=phase: dm-finish data-locked=true");
-  expect(phase.getAttribute("aria-pressed"), "true",
-    "scheduled+pin=phase: dm-phase active (mirrors cron-pinned mode, ignores saved default_mode=finish)");
-  expect(finish.getAttribute("aria-pressed"), "false",
-    "scheduled+pin=phase: dm-finish NOT active");
-  globalThis.__resetCommitted();
-  await setDefaultMode("finish");
-  expect(globalThis.__getCommitted(), null,
-    "scheduled+pin=phase: setDefaultMode early-returns (no commit)");
-
-  // Case D: state==="scheduled", schedule_mode==null — chip is EDITABLE.
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "scheduled" });
-  globalThis.__setLastGoodDefaultMode("phase");
-  renderDefaultMode("phase", { state: "scheduled" });
-  expectFalse(phase.getAttribute("data-locked"),
-    "scheduled+no-pin: dm-phase NOT locked (no schedule_mode → editable)");
-  expectFalse(finish.getAttribute("data-locked"),
-    "scheduled+no-pin: dm-finish NOT locked");
-  expectFalse(phase.getAttribute("title"),
-    "scheduled+no-pin: no lock tooltip");
-  globalThis.__resetCommitted();
-  await setDefaultMode("finish");
-  expect(globalThis.__getCommitted(), "finish",
-    "scheduled+no-pin: setDefaultMode proceeds (commit recorded)");
-
-  // Case E: state==="scheduled", schedule_mode==="inherit" — sentinel for no-pin, editable.
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "scheduled", schedule_mode: "inherit" });
-  globalThis.__setLastGoodDefaultMode("phase");
-  renderDefaultMode("phase", { state: "scheduled", schedule_mode: "inherit" });
-  expectFalse(phase.getAttribute("data-locked"),
-    "scheduled+inherit-sentinel: dm-phase NOT locked (inherit == no pin)");
-  expectFalse(finish.getAttribute("data-locked"),
-    "scheduled+inherit-sentinel: dm-finish NOT locked");
-  globalThis.__resetCommitted();
-  await setDefaultMode("finish");
-  expect(globalThis.__getCommitted(), "finish",
-    "scheduled+inherit-sentinel: setDefaultMode proceeds (commit recorded)");
-
-  // Case F: state==="idle" — chip editable as today.
-  resetNodes();
-  globalThis.__setLastWorkState({ state: "idle" });
-  globalThis.__setLastGoodDefaultMode("phase");
-  renderDefaultMode("phase", { state: "idle" });
-  expectFalse(phase.getAttribute("data-locked"), "idle: dm-phase NOT locked");
-  expectFalse(finish.getAttribute("data-locked"), "idle: dm-finish NOT locked");
-  globalThis.__resetCommitted();
-  await setDefaultMode("finish");
-  expect(globalThis.__getCommitted(), "finish",
-    "idle: setDefaultMode proceeds (commit recorded)");
-
-  // -----------------------------------------------------------------------
-  // Bug 2 — Stop-button gate on trigger_configured.
+  // Stop-button gate on trigger_configured.
   // -----------------------------------------------------------------------
 
   // Case G: state==="scheduled", trigger_configured===false — NO Stop button.

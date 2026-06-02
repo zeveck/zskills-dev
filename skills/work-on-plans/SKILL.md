@@ -5,12 +5,13 @@ argument-hint: "N|all [phase|finish] [every SCHEDULE] [now] [continue] | stop | 
 description: >-
   Batch-execute the prioritized ready queue from the dashboard: reads
   .zskills/monitor-state.json (plans.ready) and dispatches /run-plan auto
-  [finish] per entry, honoring each plan's queued mode. N|all composes with
-  every SCHEDULE + now for the queue-worker pattern (N plans per fire). Also
-  manages the queue (add/rank/remove/default) and recurring schedules.
-  Mirrors /fix-issues for bugs.
+  per entry (mode resolves to `finish` by default; `phase` opts out),
+  honoring each plan's queued mode. N|all composes with every SCHEDULE +
+  now for the queue-worker pattern (N plans per fire). Also manages the
+  queue (add/rank/remove/default) and recurring schedules. Mirrors
+  /fix-issues for bugs.
 metadata:
-  version: "2026.06.01+495d55"
+  version: "2026.06.02+3119a3"
 ---
 
 # /work-on-plans N|all [phase|finish] [every SCHEDULE] [now] [continue] [--force] | default <phase|finish> | stop | next — Batch Plan Executor
@@ -22,6 +23,13 @@ prioritized ready queue from the monitor dashboard. Mirrors
 fire drains the captured count of plans (the queue-worker pattern —
 `/work-on-plans 1 every 1h finish now` runs one plan now and one per
 hour thereafter), exactly as `/fix-issues N every SCHEDULE now` does.
+
+**Default mode is `finish`** (post-#988): with no token, no per-plan
+override, and no historical `default_mode` in `monitor-state.json`, each
+dispatch resolves to `/run-plan <slug> auto finish` — one PR per plan.
+The explicit `phase` token still opts out to phase-pacing. Cron-scheduled
+fires are unaffected: their mode is captured at registration and baked
+into the cron prompt, so the schedule's mode token (if any) always wins.
 
 **Ultrathink throughout.** Use careful, thorough reasoning at every
 step.
@@ -326,7 +334,11 @@ If `$MONITOR_STATE` does not exist, **bootstrap** it:
 
    doc = {
        "version": "1.1",
-       "default_mode": "phase",
+       # Post-#988 the chip is gone and the dispatcher falls back to
+       # `finish` when the field is absent or empty; bootstrapping with
+       # the explicit literal keeps the on-disk shape consistent for any
+       # legacy consumer (server validator) that expects it.
+       "default_mode": "finish",
        "plans": {
            "drafted":  [{"slug": s} for s in drafted],
            "reviewed": [{"slug": s} for s in reviewed],
@@ -386,7 +398,7 @@ default):
 READY_TSV=$(python3 - "$MONITOR_STATE" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
-default = doc.get('default_mode', 'phase')
+default = doc.get('default_mode', 'finish')
 for entry in doc.get('plans', {}).get('ready', []):
     if isinstance(entry, str):       # version 1.0 forward-compat
         slug, mode = entry, ''
@@ -400,7 +412,7 @@ print(f'__DEFAULT__\t{default}', end='')
 PY
 )
 DEFAULT_MODE=$(printf '%s' "$READY_TSV" | awk -F'\t' '$1=="__DEFAULT__" {print $2}')
-[ -z "$DEFAULT_MODE" ] && DEFAULT_MODE=phase
+[ -z "$DEFAULT_MODE" ] && DEFAULT_MODE=finish
 ```
 
 The `__DEFAULT__` sentinel separates the queue rows from the default
@@ -505,10 +517,10 @@ set (`$MAIN_ROOT`, `$MONITOR_STATE`, `$MONITOR_LOCK`, `$WORK_STATE`,
   boundary.
 - **Schedule mode-capture invariant.** `every` resolves
   `schedule_mode` once at registration (CLI flag > current
-  `default_mode` > `"phase"`) and persists it in
-  `work-on-plans-state.json`. Each cron fire dispatches with the
-  captured mode, NOT live `default_mode`. To change mode, `stop`
-  and re-register.
+  `default_mode` from `monitor-state.json` if present > `"finish"`,
+  post-#988) and persists it in `work-on-plans-state.json`. Each cron
+  fire dispatches with the captured mode, NOT live `default_mode`. To
+  change mode, `stop` and re-register.
 - **Count-carrying cron (issue #906).** When `every` composes with a
   leading `N`/`all`, the count is persisted as `schedule_count` in
   `work-on-plans-state.json` and baked into the cron prompt

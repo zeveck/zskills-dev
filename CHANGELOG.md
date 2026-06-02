@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Changed — `/work-on-plans` default flips to `finish` (#988)
+
+- **Dashboard:** removed the "Default mode" segmented chip
+  (`dm-phase` / `dm-finish`) and the per-idle "Copy and run"
+  `/work-on-plans 3 <mode>` snippet from the Plans panel. Both were
+  shadowed in every load-bearing path (sprint-in-flight locks to
+  `ws.batch_mode`; cron-scheduled locks to `ws.schedule_mode`; per-plan
+  cards prefer `claim.dispatch_mode` / explicit `entry.mode`), and the
+  snippet was a hint, not a contract.
+- **Title link:** the dashboard's `Z Skills Dashboard` heading is now an
+  anchor to the deployed docs page anchored at
+  `INSPECTING_AND_MONITORING.md#zskills-dashboard-the-browser-view`.
+- **`/work-on-plans` default flip:** with no explicit token, no per-plan
+  mode, and no historical `default_mode` in `monitor-state.json`, the
+  dispatcher's bash floor now resolves to `finish` (previously `phase`).
+  A bare `/work-on-plans 3` therefore advances three plans by one PR each.
+  The explicit `phase` token still opts out to phase-by-phase pacing.
+- **Cron-scheduled fires are unaffected.** Schedules capture `schedule_mode`
+  at registration and bake it into the cron prompt; explicit tokens always
+  win at fire time.
+- The `/work-on-plans default <phase|finish>` subcommand is retained for
+  back-compat — it still writes `default_mode` to JSON and the Step 1
+  read still honors a non-default value — but it is effectively a no-op
+  for fresh installs and is a candidate for removal in a follow-up.
+
 ## 2026.06.0
 
 ### Added — Plugin distribution lane (marketplace + 2026.06.0)

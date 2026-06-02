@@ -87,8 +87,10 @@ queue* — the dashboard's drag-and-drop order, read from
 `.zskills/monitor-state.json` (`plans.ready`) — and `/work-on-plans next` shows
 whether a recurring batch run is scheduled. Both are read-only **until** you
 hand them an action: `/plans rebuild` regenerates the index;
-`/work-on-plans N|all [finish]` dispatches `/run-plan` per queued plan (the
-execution mode — the bug-side analogue is `/fix-issues`).
+`/work-on-plans N|all [phase]` dispatches `/run-plan` per queued plan (the
+execution mode — the bug-side analogue is `/fix-issues`). The default
+mode is `finish` (one PR per plan); the `phase` token opts out to
+one-phase-at-a-time pacing.
 
 ### `/zskills-dashboard` — the browser view
 
@@ -105,7 +107,7 @@ priority queue). `restart` = stop+start (use after code changes). Leave it
 running and refresh to watch a pipeline progress without asking the agent
 anything.
 
-![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed, and the `/work-on-plans` copy-and-run line.](assets/zskills-dashboard.png)
+![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed.](assets/zskills-dashboard.png)
 
 > **Try it live:** an interactive, browser-only demo of this dashboard runs at
 > **<https://zeveck.github.io/zskills-dev/demo/>** — drop plans into *Accepted*

@@ -158,14 +158,15 @@ const makeCopyBtnBlk  = extractBlock(src, /\nfunction makeCopyBtn\(/, "\n}\n");
 const buildPlanBlock  = extractBlock(src, /\nfunction buildPlanCard\(/, "\n  return card;\n}\n");
 
 // currentEntryMode is used inside buildPlanCard for the ready-column
-// mode chip — stub it.
+// mode chip — stub it. Cases that need a non-null override set
+// globalThis.__entryMode before calling buildPlanCard.
 const harness = `
 let repoUrl = "https://example.invalid/repo";
 if (typeof navigator === "undefined") globalThis.navigator = {};
 if (!navigator.clipboard) navigator.clipboard = { writeText: function() { return Promise.resolve(); } };
 var SVG_ICONS = {chevronLeft:"",chevronsLeft:"",chevronRight:"",chevronsRight:"",arrowUp:"",arrowDown:"",arrowLeft:"",arrowRight:"",x:"",copy:"",minus:"",plus:""};
 var MOVE_ICON_MAP = {};
-function currentEntryMode(_slug) { return null; }
+function currentEntryMode(_slug) { return globalThis.__entryMode || null; }
 
 ${elBlock}
 
@@ -604,9 +605,11 @@ function collectText(node) {
 }
 
 // ------------------------------------------------------------------
-// T3.11.#874.b — Pre-#874 claim (no dispatch_mode) renders exactly as
-// before: defaultMode/entryMode precedence; defaultMode='phase' → NOT
-// locked (running-phase, togglable).
+// T3.11.#874.b — Pre-#874 claim (no dispatch_mode) with per-entry
+// `entryMode="phase"` → resolves to phase → NOT locked (running-phase,
+// togglable). Post-#988 the default-mode chip is gone and the literal
+// fallback is "finish", so this back-compat case requires an explicit
+// per-entry override to exercise the running-phase branch.
 // ------------------------------------------------------------------
 {
   const plan = {
@@ -621,12 +624,16 @@ function collectText(node) {
       // dispatch_mode intentionally absent (or null surfaced by collector).
     },
   };
-  const card = buildPlanCard(plan, "precompat", "ready", "phase");
+  // Force the per-entry override stub to 'phase' for this case so the
+  // resolved mode is phase (not the post-#988 default of finish).
+  globalThis.__entryMode = "phase";
+  const card = buildPlanCard(plan, "precompat", "ready");
+  globalThis.__entryMode = null;
   const modeChip = findByClass(card, "mode-chip");
   expectTrue(modeChip, "mode-chip rendered for pre-#874 claim");
   if (modeChip) {
     expect(modeChip.getAttribute("data-state"), "running-phase",
-      "#874 back-compat: pre-#874 claim + defaultMode='phase' → 'running-phase' (NOT locked)");
+      "#874 back-compat: pre-#874 claim + per-entry 'phase' → 'running-phase' (NOT locked)");
     expect(modeChip.getAttribute("aria-disabled"), null,
       "#874 back-compat: no aria-disabled when not locked");
   }

@@ -25,7 +25,7 @@
 #       * requires.run-plan.<slug>                     (parent declaration)
 #       * fulfilled.run-plan.<slug>                    (on success)
 #       under .zskills/tracking/work-on-plans.<sprint>/
-#       * mode-resolution precedence CLI > per-entry > default_mode > phase
+#       * mode-resolution precedence CLI > per-entry > default_mode > finish
 #         in the marker `mode:` field
 #       * the failure-arm text-match STOPS the loop (no `continue`) AND writes
 #         a report to $ZSKILLS_AUDIT_DIR/work-on-plans-<sprint>.md, exit != 0
@@ -242,7 +242,7 @@ run_dispatch_loop() {
   READY_TSV=$(python3 - "$MONITOR_STATE" <<'PY'
 import json, sys
 doc = json.load(open(sys.argv[1]))
-default = doc.get('default_mode', 'phase')
+default = doc.get('default_mode', 'finish')
 for e in doc.get('plans', {}).get('ready', []):
     if isinstance(e, str):
         slug, mode = e, ''
@@ -255,7 +255,7 @@ PY
 )
   local DEFAULT_MODE
   DEFAULT_MODE=$(printf '%s' "$READY_TSV" | awk -F'\t' '$1=="__DEFAULT__"{print $2}')
-  [ -z "$DEFAULT_MODE" ] && DEFAULT_MODE=phase
+  [ -z "$DEFAULT_MODE" ] && DEFAULT_MODE=finish
 
   # Build ordered slug/mode arrays (drop the sentinel).
   local -a SLUGS=() ENTRY_MODES=()
@@ -284,12 +284,12 @@ PY
     local ENTRY_MODE="${ENTRY_MODES[$i]}"
     DISPATCH_COUNT=$((DISPATCH_COUNT + 1))
 
-    # Mode-resolution precedence: CLI > per-entry > default_mode > phase.
+    # Mode-resolution precedence: CLI > per-entry > default_mode > finish.
     local DISPATCH_MODE
     if [ -n "$MODE_OVERRIDE" ]; then DISPATCH_MODE="$MODE_OVERRIDE"
     elif [ -n "$ENTRY_MODE" ]; then DISPATCH_MODE="$ENTRY_MODE"
     elif [ -n "$DEFAULT_MODE" ]; then DISPATCH_MODE="$DEFAULT_MODE"
-    else DISPATCH_MODE="phase"; fi
+    else DISPATCH_MODE="finish"; fi
 
     # step.work-on-plans.<sprint>.<slug> (status: started) — production format.
     printf 'skill: work-on-plans\nparent: work-on-plans.%s\nslug: %s\nmode: %s\nstatus: started\ndate: %s\n' \
@@ -430,7 +430,7 @@ fi
 
 # ─────────────────────────────────────────────────────────────────────
 # Test 4 — mode-resolution precedence in the marker `mode:` field.
-#   CLI override beats per-entry beats default_mode beats phase.
+#   CLI override beats per-entry beats default_mode beats finish.
 # ─────────────────────────────────────────────────────────────────────
 # 4a: per-entry mode wins over default_mode (no CLI override).
 ROOT=$(make_sandbox t4a)
