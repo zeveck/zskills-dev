@@ -172,12 +172,42 @@ vi_resolve_hook_path() {
   printf '%s\n' "$path"
 }
 
+# vi_is_zskills_hook <basename> → 0 if <basename> is a zskills-OWNED hook
+# (one of the canonical settings.json-owned triples in update-zskills/SKILL.md,
+# plus the two non-registered-but-shipped hooks). Used to scope the integrity
+# checks (non-empty + line-2 version stamp) to zskills' OWN hooks — a foreign
+# (consumer-supplied) hook registered alongside zskills ones legitimately does
+# NOT carry the `# zskills-hook-version:` stamp, so blanket-checking every
+# registered hook would false-FAIL a valid install with foreign hooks.
+vi_is_zskills_hook() {
+  case "$1" in
+    block-unsafe-generic.sh|block-unsafe-project.sh|block-stale-skill-version.sh|\
+    block-bypassed-land-pr.sh|block-fix-issue-unclaimed.sh|block-run-plan-unclaimed.sh|\
+    block-agents.sh|block-bad-cron.sh|block-main-edits.sh|warn-config-drift.sh|\
+    inject-bash-timeout.sh|verify-response-validate.sh)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# vi_hook_has_version_stamp <path> → 0 if line 2 of the hook carries the
+# `# zskills-hook-version:` sentinel (the convention CLAUDE.md documents and
+# tests/test-skill-conformance.sh gates). 1 otherwise.
+vi_hook_has_version_stamp() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  sed -n '2p' "$f" 2>/dev/null | grep -Eq '^#[[:space:]]*zskills-hook-version:[[:space:]]'
+}
+
 # ───────────────────────────────────────────────────────────────────────────
 # LEGACY-lane cheap structural checks.
 #
 # vi_check_legacy <project_dir>
 #   - .claude/skills/ populated
 #   - every hook registered in .claude/settings.json resolves to a real file
+#   - AT LEAST ONE hook is registered (zero registered hooks == de-hooked
+#     install == broken; #1008 F1)
+#   - the canonical safety-hook set is registered in settings.json (#1008 F1)
 #   - .claude/rules/zskills/managed.md present AND rendered (no raw,
 #     un-substituted {{TOKEN}} template placeholders)
 #   - .claude/zskills-config.json present
@@ -195,11 +225,32 @@ vi_check_legacy() {
   local proj="$1"
   local claude="$proj/.claude"
 
-  # (1) .claude/skills/ populated.
-  if [ -d "$claude/skills" ] && [ -n "$(ls -A "$claude/skills" 2>/dev/null)" ]; then
-    vi_emit PASS "legacy.skills-populated" ".claude/skills/ has $(ls -1 "$claude/skills" | wc -l | tr -d ' ') entries"
-  else
+  # (1) .claude/skills/ populated AND each skill dir carries a SKILL.md.
+  #
+  # #1008 medium gap (partial mirror): a half-finished `cp -r` can leave a skill
+  # DIRECTORY behind with no SKILL.md (e.g. only references/ copied). The bare
+  # `ls -A >= 1` check passed such a corrupt mirror. We now require every
+  # immediate subdirectory of .claude/skills/ to contain a SKILL.md — a skill
+  # dir without one is genuinely broken. (We do NOT compare subdir trees against
+  # a source: the verifier is self-contained and has no source to diff against,
+  # and many valid skills have no subdirs at all — so SKILL.md presence is the
+  # tightest assertion that can never false-FAIL a healthy install.)
+  if [ ! -d "$claude/skills" ] || [ -z "$(ls -A "$claude/skills" 2>/dev/null)" ]; then
     vi_emit FAIL "legacy.skills-populated" ".claude/skills/ missing or empty"
+  else
+    local skilldir skill_missing="" skill_count=0
+    for skilldir in "$claude/skills"/*/; do
+      [ -d "$skilldir" ] || continue
+      skill_count=$((skill_count + 1))
+      if [ ! -f "${skilldir}SKILL.md" ]; then
+        skill_missing="$skill_missing $(basename "$skilldir")"
+      fi
+    done
+    if [ -n "$skill_missing" ]; then
+      vi_emit FAIL "legacy.skills-populated" "skill dir(s) missing SKILL.md (partial mirror?):$skill_missing"
+    else
+      vi_emit PASS "legacy.skills-populated" ".claude/skills/ has $skill_count skill(s), each with a SKILL.md"
+    fi
   fi
 
   # (2) settings.json present + valid JSON + every registered hook resolves.
@@ -210,19 +261,72 @@ vi_check_legacy() {
     vi_emit FAIL "legacy.settings-valid-json" ".claude/settings.json is not valid JSON"
   else
     vi_emit PASS "legacy.settings-present" ".claude/settings.json present and valid JSON"
-    local missing="" total=0 cmd hp
+    local missing="" total=0 cmd hp base registered="" empty_hooks="" unstamped=""
     while IFS= read -r cmd; do
       [ -n "$cmd" ] || continue
       total=$((total + 1))
       hp="$(vi_resolve_hook_path "$proj" "$cmd")"
       if [ -z "$hp" ] || [ ! -f "$hp" ]; then
         missing="$missing ${cmd##*/}"
+        continue
+      fi
+      # Record the resolved-path basename for the canonical-set cross-check.
+      base="${hp##*/}"
+      [ -n "$base" ] && registered="$registered $base "
+      # #1008 medium gaps — hook INTEGRITY, scoped to zskills-owned hooks so a
+      # foreign consumer hook never false-FAILs:
+      #   (a) corrupted/empty (0-byte) hook — `[ -f ]` alone passes a truncated
+      #       `cp`; require `[ -s ]`.
+      #   (b) drifted mirror — a consumer hook predating source carries a stale
+      #       (or absent) line-2 `# zskills-hook-version:` stamp.
+      if vi_is_zskills_hook "$base"; then
+        [ -s "$hp" ] || empty_hooks="$empty_hooks $base"
+        vi_hook_has_version_stamp "$hp" || unstamped="$unstamped $base"
       fi
     done < <(vi_settings_hook_commands "$settings")
-    if [ -z "$missing" ]; then
-      vi_emit PASS "legacy.hooks-resolve" "all $total registered hook commands resolve to existing files"
-    else
+
+    # (2a) ZERO registered hooks → a de-hooked install (#1008 F1). Every zskills
+    # safety hook (block-unsafe-*, block-stale-skill-version, block-agents, …)
+    # has been stripped from settings.json — the verifier exists to catch exactly
+    # this "install silently failed" case, so a count of 0 is a FAIL, not a PASS.
+    if [ "$total" -eq 0 ]; then
+      vi_emit FAIL "legacy.hooks-resolve" "no hooks registered in settings.json — a de-hooked install (every zskills safety hook stripped) is broken"
+    elif [ -n "$missing" ]; then
       vi_emit FAIL "legacy.hooks-resolve" "unresolved hook script(s):$missing"
+    else
+      vi_emit PASS "legacy.hooks-resolve" "all $total registered hook commands resolve to existing files"
+    fi
+
+    # (2b) Canonical safety-hook set (#1008 F1). Even with a NON-zero hook count,
+    # an install missing the core safety hooks is broken. We require the minimal
+    # set of settings.json-registered safety hooks that a HEALTHY legacy install
+    # ALWAYS registers (per the canonical zskills-owned triples table in
+    # update-zskills/SKILL.md). We deliberately do NOT require inject-bash-timeout.sh
+    # or verify-response-validate.sh here: SKILL.md states those have NO
+    # settings.json entry (loaded via verifier.md frontmatter / direct skill
+    # invocation), so requiring them would false-FAIL every valid legacy install.
+    local canon canon_missing=""
+    for canon in block-unsafe-generic.sh block-unsafe-project.sh block-stale-skill-version.sh block-agents.sh; do
+      case "$registered" in
+        *" $canon "*) : ;;
+        *) canon_missing="$canon_missing $canon" ;;
+      esac
+    done
+    if [ -n "$canon_missing" ]; then
+      vi_emit FAIL "legacy.canonical-hooks" "canonical safety hook(s) not registered in settings.json:$canon_missing"
+    else
+      vi_emit PASS "legacy.canonical-hooks" "canonical safety hooks registered (block-unsafe-generic/project, block-stale-skill-version, block-agents)"
+    fi
+
+    # (2c) Hook integrity (#1008 medium gaps) — scoped to zskills-owned hooks.
+    # Only meaningful when at least one zskills hook resolved (skipped on the
+    # zero/all-unresolved case, already FAILed above).
+    if [ -n "$empty_hooks" ]; then
+      vi_emit FAIL "legacy.hooks-integrity" "zskills hook(s) are 0-byte/truncated (corrupt mirror):$empty_hooks"
+    elif [ -n "$unstamped" ]; then
+      vi_emit FAIL "legacy.hooks-integrity" "zskills hook(s) missing line-2 # zskills-hook-version: stamp (drifted/corrupt mirror):$unstamped"
+    elif [ -n "$registered" ]; then
+      vi_emit PASS "legacy.hooks-integrity" "all registered zskills hooks are non-empty and version-stamped"
     fi
   fi
 
@@ -311,6 +415,30 @@ vi_check_plugin() {
     vi_emit WARN "plugin.mirror-less" ".claude/skills/ present on the plugin lane (dual-install? run scripts/switch-install-path.sh)"
   else
     vi_emit PASS "plugin.mirror-less" ".claude/skills/ absent (mirror-less plugin install)"
+  fi
+
+  # (3) ${CLAUDE_PLUGIN_ROOT} reachability (#1008 medium gap). The materialised
+  # artifacts above live in the CONSUMER's .claude/, but the live skills/hooks
+  # resolve under ${CLAUDE_PLUGIN_ROOT}. A CLAUDE_PLUGIN_ROOT pointing at a
+  # deleted/empty dir → the plugin "passes" the artifact checks yet has ZERO
+  # functional skills. Assert the two manifests a loaded plugin always carries.
+  # Reached only on the plugin lane (vi_detect_lane returned `plugin`, which
+  # requires CLAUDE_PLUGIN_ROOT set), so a healthy plugin install always has
+  # these — never a false positive.
+  local proot="${CLAUDE_PLUGIN_ROOT:-}"
+  local pmissing=""
+  if [ -z "$proot" ]; then
+    # Defensive: vi_check_plugin is only dispatched when CLAUDE_PLUGIN_ROOT is
+    # set, so an empty value here is itself broken.
+    vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} is empty on the plugin lane"
+  else
+    [ -f "$proot/.claude-plugin/plugin.json" ] || pmissing="$pmissing .claude-plugin/plugin.json"
+    [ -f "$proot/hooks/hooks.json" ]           || pmissing="$pmissing hooks/hooks.json"
+    if [ -n "$pmissing" ]; then
+      vi_emit FAIL "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT}=$proot missing required plugin file(s):$pmissing"
+    else
+      vi_emit PASS "plugin.root-reachable" "\${CLAUDE_PLUGIN_ROOT} resolves (.claude-plugin/plugin.json + hooks/hooks.json present)"
+    fi
   fi
 
   # NOTE (#1004): no `plugin.version-recorded` check — same rationale as the
