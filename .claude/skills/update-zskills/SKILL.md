@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install | --rerender | --migrate-paths | --switch-install-path={to-plugin|to-update-zskills}] [cherry-pick | locked-main-pr | direct] [--with-addons | --with-block-diagram-addons]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.01+9e1d01"
+  version: "2026.06.02+81a457"
 ---
 
 # Update Z Skills Infrastructure
@@ -1948,6 +1948,44 @@ printf '%s\n' "$delta_tsv" | awk -F'\t' -v show_addons="$show_addons" '
 `zskills_version` from Step F.5 (or `(unversioned)` if the source clone
 had no tags).
 
+#### Step G.5 — Post-install verification (#999, cheap tier, NON-FATAL)
+
+After the final report, run the bundled consumer post-install verifier's
+**cheap structural tier** and append its result to the success output. This
+catches the consumer-side of the dogfood-mask (#799/#831): environment-specific
+install breakage that dev-repo tests structurally cannot see (a registered hook
+that resolves to nothing, a leftover `<!-- TODO -->` placeholder in
+`managed.md`, a dropped artifact/sentinel, an accidental dual-install).
+
+**NON-FATAL — informative only.** The install already succeeded; this
+verification reports PASS/WARN/FAIL but **does NOT undo or fail the install**.
+A FAIL is surfaced to the user (so they can fix their environment) but the
+install stands. Run ONLY the cheap tier here — never `--deep` (the heavy
+live-`claude` probe is opt-in and must not run on the success path).
+
+Resolve the verifier path lane-awarely (it ships at
+`.claude/skills/update-zskills/verifiers/` on the legacy lane,
+`${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/` on the plugin lane):
+
+```bash
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
+  VERIFY_INSTALL="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh"
+else
+  VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
+fi
+if [ -f "$VERIFY_INSTALL" ]; then
+  # Cheap tier only (no --deep). Non-fatal: capture and report, never abort.
+  bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
+    echo "(post-install verification reported a FAIL above — the install still succeeded; review and fix your environment, then re-run /update-zskills to re-verify)"
+else
+  echo "(post-install verifier not found at $VERIFY_INSTALL — skipping verification)"
+fi
+```
+
+Report the verifier's per-check output and overall result as a final block of
+the success message. On WARN-only, note it's informative; on FAIL, tell the
+user the install succeeded but verification flagged an environment issue.
+
 ### Pull Latest and Update (already-installed path)
 
 1. **Pull latest from upstream.** Find the `zskills/` clone (Step 0) and
@@ -2071,6 +2109,24 @@ had no tags).
 
    `(unversioned)` placeholder applies to either side of the `Repo
    version:` arrow if the corresponding tag is missing.
+
+7. **Post-install verification (#999, cheap tier, NON-FATAL).** Same as
+   install-path **Step G.5**: run the bundled consumer verifier's cheap
+   structural tier and append its result. NON-FATAL — the update already
+   succeeded; a verifier FAIL is reported (so the consumer can fix their
+   environment) but never undoes the update. Cheap tier only (no `--deep`).
+
+   ```bash
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh" ]; then
+     VERIFY_INSTALL="${CLAUDE_PLUGIN_ROOT}/skills/update-zskills/verifiers/verify-install.sh"
+   else
+     VERIFY_INSTALL="$CLAUDE_PROJECT_DIR/.claude/skills/update-zskills/verifiers/verify-install.sh"
+   fi
+   if [ -f "$VERIFY_INSTALL" ]; then
+     bash "$VERIFY_INSTALL" --project-dir "$CLAUDE_PROJECT_DIR" || \
+       echo "(post-install verification reported a FAIL above — the update still succeeded; review and fix your environment, then re-run /update-zskills to re-verify)"
+   fi
+   ```
 
 ---
 
