@@ -103,7 +103,20 @@ strip_markers() {
     sed -i '/<!-- prod-strip:start -->/,/<!-- prod-strip:end -->/d' "$file"
   fi
 }
+
+# Rewrite dev-only URLs (zeveck.github.io/zskills-dev → zskills.synapticnoise.com)
+# in the staging markdown so plugin consumers don't get a README pointing at the
+# dev Pages site. Mirrors scripts/build-prod.sh's rewrite_dev_urls exactly.
+rewrite_dev_urls() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  if grep -q 'zeveck\.github\.io/zskills-dev' "$file"; then
+    log "rewriting dev→prod URLs in $(basename "$file")"
+    sed -i 's|zeveck\.github\.io/zskills-dev|zskills.synapticnoise.com|g' "$file"
+  fi
+}
 strip_markers "$STAGE/README.md"
+rewrite_dev_urls "$STAGE/README.md"
 
 # ── 2. Remove dev-maintainer-only files (RELEASING.md + DEV-QUAL.md) ────────
 log "removing dev-maintainer-only files"
@@ -243,8 +256,14 @@ done_ "strip verification: 0 forbidden paths in prod/main"
 # ── 11. Push (GATED behind --push) ─────────────────────────────────────────
 if [ "$DO_PUSH" -eq 1 ]; then
   log "pushing prod/main + prod/$VERSION to the prod remote"
-  git push prod "refs/heads/prod/main:refs/heads/main"
-  git push prod "refs/tags/prod/$VERSION:refs/tags/$VERSION"
+  # Push to the SAME refs everything else resolves: marketplace.json's `zs`
+  # source.ref is `prod/main`, and the pin-by-version idiom (docs/guides/
+  # PLUGIN_INSTALL.md) is `prod/<version>`. The dest refs MUST be `prod/main`
+  # (branch) and `prod/$VERSION` (tag), NOT bare `main` / `$VERSION` — pushing
+  # to bare refs would leave the marketplace/docs references unresolvable.
+  # (tests/test-plugin-ref-consistency.sh guards this consistency.)
+  git push prod "refs/heads/prod/main:refs/heads/prod/main"
+  git push prod "refs/tags/prod/$VERSION:refs/tags/prod/$VERSION"
   done_ "pushed to prod"
 else
   log "--push NOT passed: prod refs are LOCAL only (dry run). Nothing pushed."

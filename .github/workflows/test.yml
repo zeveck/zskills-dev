@@ -161,6 +161,8 @@ jobs:
           bash tests/test-plugin-manifest.sh
           echo "== marketplace.json schema (incl. D10 version lockstep) =="
           bash tests/test-plugin-marketplace.sh
+          echo "== build push targets ↔ consumer-resolved refs (prod/main + prod/<version>) =="
+          bash tests/test-plugin-ref-consistency.sh
 
       # Mirror-less prod-tree dogfood — builds a SHIPPED plugin tree (git
       # archive HEAD + build-plugin-release.sh strip set) and a mirror-LESS

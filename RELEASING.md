@@ -141,6 +141,36 @@ and `build-plugin-release.sh` serves the plugin tree, but both strip from
 the same dev HEAD and both target `prod/main`. A release runs whichever the
 maintainer chooses; for a full dual-path release, run both and push both.
 
+### Default-branch / cross-lane invariant (verify before first publish)
+
+For `/plugin marketplace add zeveck/zskills` **without an explicit ref** to
+resolve the release manifest, the prod repo's **default branch must be
+`prod/main`** — that is where the built plugin tree + `marketplace.json`
+live. `/plugin marketplace add zeveck/zskills` reads the manifest from the
+default branch, so if the prod repo's default branch is still `main` (or
+anything other than `prod/main`), the unpinned `add` will not find
+`marketplace.json`. **Verify this repo setting on `github.com/zeveck/zskills`
+before the first publish** (Settings → General → Default branch → `prod/main`).
+This is consistent with `marketplace.json`'s `zs` `source.ref: prod/main`
+and the `prod/<version>` pin idiom (`docs/guides/PLUGIN_INSTALL.md`); the
+build now pushes to `prod/main` + `prod/<version>` (NOT bare `main` /
+`<version>`), guarded by `tests/test-plugin-ref-consistency.sh`.
+
+> **PUBLISH-MODEL TODO (human): reconcile legacy vs plugin push targets on
+> `prod/main`.** Both lanes target `prod/main` from the same dev HEAD:
+> step 7 of the legacy **🚀 Ship to Prod** workflow pushes the *legacy
+> mirror* stripped commit to `prod/main`, while `build-plugin-release.sh
+> --push` pushes the *plugin* tree commit to `prod/main`. These are two
+> different trees pushed to the SAME branch — running both for one release
+> would have one overwrite the other (last-push-wins), and the plugin-lane
+> `/plugin marketplace add` resolution requires the PLUGIN tree on the
+> default branch. Decide the publish model before the first dual-path
+> publish: e.g. (a) the plugin tree owns `prod/main` and the legacy mirror
+> ships to a separate ref/repo, or (b) a single unified tree serves both
+> lanes. Do NOT assume "run both and push both" (above) is conflict-free —
+> it currently is not. This note is a flag for human resolution, not a
+> decision made here.
+
 ## TL;DR
 
 1. Click **🚀 Ship to Prod** in the README (or go to Actions → "🚀 Ship to Prod" → Run workflow).
