@@ -58,7 +58,7 @@ Phases 2 and 4).
 | 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ✅ Done | `ea81d88` | 38/38 routing tests; doc-viewer suites 98/98 |
 | 3 — Styling + dark-default + theme toggle | ✅ Done | `101b4a9` | 31/31 styling tests; full suite 7297/7297 |
 | 4 — Catalog generator + frontmatter metadata strip | ✅ Done | `942c0cd` | 36 new tests (catalog+frontmatter); 176-item catalog; full suite 7333/7333 |
-| 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ⬚ | | |
+| 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ✅ Done | `05e46fe` | parity verified (0 unexplained HTML-only tokens); IAM.html deleted; .nojekyll gate added; build-prod.sh no-op confirmed; full suite 7336/7336 |
 
 ## Conventions all phases follow
 
