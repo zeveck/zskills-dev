@@ -136,7 +136,7 @@ SCEN1=$(cat <<JS
 ${HARNESS}
 const md = '---\nstatus: complete\ncompleted: 2026-06-01\ncreated: 2026-05-29\ntitle: Plugin Lane\n---\n# Plan';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/PLUGIN_LANE_VERIFICATION.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -167,7 +167,7 @@ SCEN2=$(cat <<JS
 ${HARNESS}
 const md = '---\ncreated: 2026-05-29\ncompleted: 2026-06-01\nstatus: complete\n---\n# H';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/DOC_VIEWER.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -222,7 +222,7 @@ SCEN4=$(cat <<JS
 ${HARNESS}
 const md = '---\n---\n# H';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/DOC_VIEWER.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -253,7 +253,7 @@ SCEN5=$(cat <<JS
 ${HARNESS}
 const md = '---\ntitle: never closed\n\n# Body';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/DOC_VIEWER.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -281,7 +281,7 @@ SCEN6=$(cat <<JS
 ${HARNESS}
 const md = '---\ntitle: <img src=x onerror=alert(1)>\nstatus: drafted\n---\n# H';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/DOC_VIEWER.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -313,7 +313,7 @@ SCEN7=$(cat <<JS
 ${HARNESS}
 const md = '---\nstatus: x\ncustomField: hello\n---\n# H';
 global.fetch = async () => ({ ok: true, status: 200, text: async () => md });
-global.location.hash = '#docs/plans/DOC_VIEWER.md';
+global.location.hash = '#docs/guides/WORKFLOWS.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
