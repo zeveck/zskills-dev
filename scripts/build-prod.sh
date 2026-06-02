@@ -1,9 +1,16 @@
 #!/bin/bash
-# build-prod.sh — Strip dev-only artifacts from the working tree in
-# preparation for shipping to zskills-prod. Runs in CI against a fresh
-# zskills-dev checkout; modifies the working tree but does NOT commit.
-# The caller (the ship-to-prod workflow) is responsible for writing the
-# tree into prod afterwards.
+# build-prod.sh — THE prod publisher. The "🚀 Ship to Prod" button
+# (.github/workflows/ship-to-prod.yml) runs THIS script against a fresh
+# zskills-dev checkout, then pushes the resulting tree to prod `main` +
+# a bare `<version>` tag. This is the SINGLE publish path for BOTH the
+# legacy `/update-zskills` lane and the plugin lane — the published prod
+# tree is a complete, plugin-installable tree (it keeps the plugin
+# manifests AND, via the shared finalizer below, the D4 suffixless hook
+# siblings the plugin's hooks.json registers). It modifies the working
+# tree but does NOT commit; the workflow writes the tree into prod after.
+#
+# (scripts/build-plugin-release.sh is NOT the publish path — it is a local
+# dogfood / prod-tree builder and the source of the D4/strip test fixtures.)
 #
 # What it strips:
 #   1. `<!-- prod-strip:start --> … <!-- prod-strip:end -->` blocks from
@@ -16,9 +23,19 @@
 #   2. `plans/CANARY_*.md` and any top-level `CANARY_*.md` — canaries are
 #      regression guards for zskills-dev internals; prod consumers don't
 #      need them.
-#   3. Any skill directory whose `SKILL.md` front-matter contains
+#   3. RELEASING.md + DEV-QUAL.md — dev-maintainer-only.
+#   4. Any skill directory whose `SKILL.md` front-matter contains
 #      `dev_only: true` — skills we keep in dev but don't distribute.
 #      Strips both `skills/<name>/` and any mirrored `.claude/skills/<name>/`.
+#   5. The SHARED plugin-completion + dev-only strip set (via
+#      scripts/_lib/finalize-prod-tree.sh, also called by
+#      build-plugin-release.sh so the two builders can never diverge):
+#        - D4 suffixless hook siblings (block-agents.sh,
+#          block-unsafe-project.sh) GENERATED so the plugin's safety hooks
+#          actually exist for consumers;
+#        - build-*.sh release/dogfood tooling STRIPPED;
+#        - hooks/canary*-bad.sh fixtures STRIPPED;
+#        - MW-EXAMPLE-marked files STRIPPED.
 #
 # Running against an already-stripped tree should be a no-op (idempotent).
 # Intended to grow: add transforms here as the dev/prod split widens.
@@ -34,6 +51,11 @@ cd "$PROJECT_ROOT"
 # on missing project root.
 ZSKILLS_PATHS_ROOT="$PROJECT_ROOT"
 source "$PROJECT_ROOT/.claude/skills/update-zskills/scripts/zskills-paths.sh"
+
+# Shared prod-tree finalizer (D4 hook siblings + dev-only strip set). The
+# SAME helper is sourced by build-plugin-release.sh, so the two builders
+# cannot diverge on what makes the prod tree a complete plugin.
+source "$SCRIPT_DIR/_lib/finalize-prod-tree.sh"
 
 BOLD='\033[1m'
 GREEN='\033[32m'
@@ -126,5 +148,16 @@ done
 if [ "$dev_only_count" -eq 0 ]; then
   printf "  ${DIM}(no dev_only: true skills found)${RESET}\n"
 fi
+
+# ─── 4. Shared plugin-completion + dev-only strip set ──────────────────────
+# Generate the D4 suffixless hook siblings (so the plugin's safety hooks
+# actually exist for consumers) and strip the shared dev-only set
+# (build-*.sh, hooks/canary*-bad.sh, MW-EXAMPLE files). Operates IN-PLACE on
+# the working tree ($PROJECT_ROOT). NOTE: this deletes build-*.sh — INCLUDING
+# this running script — from the prod tree; that is intentional (release
+# tooling must not ship to consumers, and the ship-to-prod workflow's
+# `git add -A` would otherwise re-commit it). bash has already fully read
+# this script by now, so its on-disk removal mid-run is safe.
+finalize_prod_tree "$PROJECT_ROOT"
 
 done_ "prod tree built"

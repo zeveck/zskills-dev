@@ -98,13 +98,23 @@ lanes installed at once in a consumer repo: each plugin-registered hook
 defers to a settings.json-registered copy of the same hook (basename match,
 with a `# zskills-hook-version:` skew guard) so hooks never double-fire.
 
-## Dual-path release flow (plugin lane + legacy lane)
+## Release flow — ONE publish serves BOTH lanes
 
-A release ships BOTH lanes from the same dev commit. The legacy lane is
-served by the existing **🚀 Ship to Prod** workflow (`scripts/build-prod.sh`
-→ `prod/main` + `YYYY.MM.N` tag). The plugin lane is served by
-`scripts/build-plugin-release.sh`, which produces the prod-stripped plugin
-tree and a parallel `prod/<version>` tag. Release steps:
+There is a SINGLE publish path: the **🚀 Ship to Prod** button
+(`.github/workflows/ship-to-prod.yml` → `scripts/build-prod.sh`). It strips
+dev-only artifacts from the current dev HEAD and pushes ONE complete,
+plugin-installable tree to the prod repo's **`main` branch** plus a bare
+**`YYYY.MM.N` tag**. That single published tree serves BOTH the legacy
+`/update-zskills` lane (which mirrors `skills/` + hooks) AND the plugin lane
+(`build-prod.sh` keeps the plugin manifests AND generates the D4 suffixless
+hook siblings, so `/plugin install zs@zskills` gets a complete plugin).
+
+`scripts/build-plugin-release.sh` is **NOT the publish path** — it is a local
+dogfood / prod-tree builder (and the source of the D4/strip test fixtures). It
+shares the plugin-completion logic with `build-prod.sh` via
+`scripts/_lib/finalize-prod-tree.sh`, so the two builders cannot diverge.
+
+Release steps:
 
 1. **Bump BOTH `plugin.json.version` files in lockstep** (D10):
    `.claude-plugin/plugin.json` (the `zs` plugin) and
@@ -112,64 +122,42 @@ tree and a parallel `prod/<version>` tag. Release steps:
    stay equal — `tests/test-plugin-marketplace.sh` asserts
    `zs.version == zsbd.version`. Choose the next `YYYY.MM.N` value (same
    scheme as the git tag). Commit the bump on dev.
-2. **Run `bash scripts/build-plugin-release.sh`** (no `--push`) to dry-build
-   the prod-stripped plugin tree as LOCAL `prod/main` + `prod/<version>`
-   refs. It strips canary plans/hooks, `RELEASING.md`, `build-*.sh`,
-   `dev_only:` skills, and MW-EXAMPLE files; copies `CLAUDE_TEMPLATE.md`
-   into the plugin tree (D3, the fallback the SessionStart materialiser
-   renders `managed.md` from); and generates the suffixless sibling copies
-   of the `.template` hooks (D4). Verify the strip set:
-   `git ls-tree -r refs/heads/prod/main | grep -E 'CANARY|RELEASING|dev_only|build-.*\.sh|MW-EXAMPLE'`
-   must return 0 hits. Clean up the local refs after inspecting
-   (`git update-ref -d refs/heads/prod/main` +
-   `git update-ref -d refs/tags/prod/<version>`).
-3. **Push BOTH refs** — the moving window pointer AND the pinned tag. The
-   plugin builder pushes when invoked with `--push`
-   (`build-plugin-release.sh --version <version> --push`): it pushes
-   `prod/main` (the moving `prod/main` ref unpinned consumers track) and the
-   parallel `prod/<version>` tag (which reproducibility-minded consumers pin
-   via marketplace `source.ref` / `source.sha`). The actual push is a
-   deliberate, human-gated step — the build/dry-run never pushes.
-4. **Notify both lanes' consumers.** Plugin-lane consumers refresh via
-   `claude plugin marketplace update zskills` (or auto-update if enabled);
-   legacy-lane consumers run `/update-zskills` (smart-detect pulls the new
+2. **(Optional) Dry-build / inspect locally.** Two ways:
+   - **Workflow dry-run:** click Run workflow with **Dry run** checked — it
+     builds the prod tree and shows the file diff in the run summary, pushing
+     nothing.
+   - **Local builder:** `bash scripts/build-plugin-release.sh` (no `--push`)
+     materialises a LOCAL `prod/main` + `prod/<version>` staging ref you can
+     inspect with `git ls-tree -r refs/heads/prod/main`. Verify the strip set
+     returns 0 hits:
+     `git ls-tree -r refs/heads/prod/main | grep -E 'CANARY|RELEASING|DEV-QUAL|dev_only|build-.*\.sh|MW-EXAMPLE'`.
+     Clean up after (`git update-ref -d refs/heads/prod/main` +
+     `git update-ref -d refs/tags/prod/<version>`). NOTE: those `prod/...`
+     ref names are this builder's LOCAL staging namespace; on `--push` it
+     pushes them to prod's BARE `main` + bare `<version>` — exactly what the
+     button publishes.
+3. **Publish via the button.** Click **🚀 Ship to Prod** (Dry run unchecked).
+   The workflow gates on the full test suite, computes the next `YYYY.MM.N`
+   tag, runs `build-prod.sh`, and pushes the stripped tree to prod's `main`
+   branch + the bare tag (prod-first, so dev stays clean on any failure).
+4. **Notify consumers.** Plugin-lane consumers refresh via
+   `/plugin marketplace update` (or auto-update if enabled); legacy-lane
+   consumers run `/update-zskills install` (smart-detect pulls the new
    skills/hooks and re-renders `managed.md`). The CHANGELOG entry is the
    per-line summary for both.
 
-The two builders are independent: `build-prod.sh` serves the legacy mirror
-and `build-plugin-release.sh` serves the plugin tree, but both strip from
-the same dev HEAD and both target `prod/main`. A release runs whichever the
-maintainer chooses; for a full dual-path release, run both and push both.
+### Cross-lane invariant
 
-### Default-branch / cross-lane invariant (verify before first publish)
-
-For `/plugin marketplace add zeveck/zskills` **without an explicit ref** to
-resolve the release manifest, the prod repo's **default branch must be
-`prod/main`** — that is where the built plugin tree + `marketplace.json`
-live. `/plugin marketplace add zeveck/zskills` reads the manifest from the
-default branch, so if the prod repo's default branch is still `main` (or
-anything other than `prod/main`), the unpinned `add` will not find
-`marketplace.json`. **Verify this repo setting on `github.com/zeveck/zskills`
-before the first publish** (Settings → General → Default branch → `prod/main`).
-This is consistent with `marketplace.json`'s `zs` `source.ref: prod/main`
-and the `prod/<version>` pin idiom (`docs/guides/PLUGIN_INSTALL.md`); the
-build now pushes to `prod/main` + `prod/<version>` (NOT bare `main` /
-`<version>`), guarded by `tests/test-plugin-ref-consistency.sh`.
-
-> **PUBLISH-MODEL TODO (human): reconcile legacy vs plugin push targets on
-> `prod/main`.** Both lanes target `prod/main` from the same dev HEAD:
-> step 7 of the legacy **🚀 Ship to Prod** workflow pushes the *legacy
-> mirror* stripped commit to `prod/main`, while `build-plugin-release.sh
-> --push` pushes the *plugin* tree commit to `prod/main`. These are two
-> different trees pushed to the SAME branch — running both for one release
-> would have one overwrite the other (last-push-wins), and the plugin-lane
-> `/plugin marketplace add` resolution requires the PLUGIN tree on the
-> default branch. Decide the publish model before the first dual-path
-> publish: e.g. (a) the plugin tree owns `prod/main` and the legacy mirror
-> ships to a separate ref/repo, or (b) a single unified tree serves both
-> lanes. Do NOT assume "run both and push both" (above) is conflict-free —
-> it currently is not. This note is a flag for human resolution, not a
-> decision made here.
+For `/plugin marketplace add zeveck/zskills` **without an explicit ref**,
+Claude Code reads `marketplace.json` from the prod repo's **default branch,
+`main`** — which is exactly where the button publishes. No special default-
+branch setting is needed: prod's default branch is `main` (correct), the
+button pushes to `main`, and `marketplace.json`'s `zs` `source.ref` is `main`.
+The pin-by-version idiom is the bare `<version>` tag the button pushes (e.g.
+`2026.06.0`, NOT `prod/2026.06.0`). `tests/test-plugin-ref-consistency.sh`
+guards this consistency (marketplace ref ↔ workflow push branch ↔ docs pin
+idiom); `tests/test-plugin-d4-hook-siblings.sh` guards that `build-prod.sh`'s
+published tree actually contains the D4 hook siblings.
 
 ## TL;DR
 
@@ -212,12 +200,14 @@ On dispatch, it:
    `.0`, second is `.1`, etc.).
 5. Runs `scripts/build-prod.sh` to strip dev-only artifacts from the working
    tree (see that file's header for the full list of transforms).
-6. Writes the stripped tree as a new commit with `prod/main` as its parent,
-   so prod ends up with a linear history of release snapshots.
-7. **Prod-first push:** pushes the stripped commit to `prod/main`, then the
-   matching tag to prod. Only **after** prod succeeds does dev get tagged
-   and a GitHub Release created. Any failure before this point leaves dev
-   untouched — no orphan tags, no partial state.
+6. Writes the stripped tree as a new commit whose parent is prod's current
+   `main` (fetched as the `prod/main` remote-tracking ref), so prod ends up
+   with a linear history of release snapshots.
+7. **Prod-first push:** pushes the stripped commit to prod's BARE `main`
+   branch (`refs/heads/main`), then the matching bare `<version>` tag
+   (`refs/tags/${TAG}`) to prod. Only **after** prod succeeds does dev get
+   tagged and a GitHub Release created. Any failure before this point leaves
+   dev untouched — no orphan tags, no partial state.
 
 ## Who can release
 
@@ -249,12 +239,13 @@ Run the workflow in dry-run mode after any build-prod.sh change.
 
 ## Recovering from a bad release
 
-Because prod's main is always built on top of the previous prod/main (not
-force-pushed), a bad release leaves a bad commit at HEAD. To recover:
+Because prod's `main` is always built on top of the previous prod `main`
+commit (not force-pushed), a bad release leaves a bad commit at HEAD. To
+recover:
 
-- Simplest: ship a new release with the fix. Prod's main advances forward.
+- Simplest: ship a new release with the fix. Prod's `main` advances forward.
 - If the bad release must be expunged entirely, you'll need to force-push
-  prod/main manually (locally, authenticated as a prod collaborator) and
+  prod's `main` manually (locally, authenticated as a prod collaborator) and
   delete the bad tag from both repos. The workflow intentionally does not
   automate this — expunging history should be rare and deliberate.
 

@@ -75,7 +75,7 @@ zs_src = zs.get("source")
 ok_zs = (isinstance(zs_src, dict)
          and zs_src.get("source") == "github"
          and zs_src.get("repo") == "zeveck/zskills"
-         and zs_src.get("ref") == "prod/main")
+         and zs_src.get("ref") == "main")
 out(ok_zs, "marketplace: zs source is github {source,repo,ref}", repr(zs_src))
 
 # zsbd source — relative-path string (D1).
