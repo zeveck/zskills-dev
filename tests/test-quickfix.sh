@@ -2175,6 +2175,204 @@ test_issue_nums_qf "Fix issue #832, see also issue #999"          "832"         
 test_issue_nums_qf "fixes issues #906 and #907"                   "906"         "plural 'issues' in leading does NOT loosen weak-sep guard (no kw before #907)"
 
 # ────────────────────────────────────────────────────────────────────
+# Case 71w — Unclaimed-reference WARNING (#907). When the description
+# carries a `#N` token that the claim-position rules did NOT capture into
+# ISSUE_NUMS, /quickfix warns (non-fatal) that no claim was acquired for
+# it — the footgun that let `/do Build … for #877` run unclaimed and
+# duplicate a parallel /fix-issues sprint (closed PR #888). Replicates the
+# SKILL.md warning loop (source-of-truth is SKILL.md; anchored by 71w-src).
+# Mirrors test-do.sh Case 18w.
+# ────────────────────────────────────────────────────────────────────
+# qf_warn_unclaimed echoes "WARN #N" per unclaimed reference (the real
+# skill writes the full sentence to stderr). Assumes qf_parse_issue_nums
+# already populated ISSUE_NUMS.
+qf_warn_unclaimed() {
+  local input="$1" _REM="$1" _REF _CLAIMED _n out=""
+  while [[ "$_REM" =~ \#([0-9]+) ]]; do
+    _REF="${BASH_REMATCH[1]}"
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+    _CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_REF" ] && { _CLAIMED=1; break; }
+    done
+    [ "$_CLAIMED" -eq 0 ] && out+="WARN #$_REF"$'\n'
+  done
+  printf '%s' "$out"
+}
+test_qf_warn() {
+  local input="$1" expected_csv="$2" label="$3"
+  qf_parse_issue_nums "$input"
+  local got_csv
+  got_csv=$(qf_warn_unclaimed "$input" | grep -oE '#[0-9]+' | tr -d '#' | paste -sd, -)
+  if [ "$got_csv" = "$expected_csv" ]; then
+    pass "71w warn: $label (got '${got_csv:-none}')"
+  else
+    fail "71w warn: $label (expected '$expected_csv', got '$got_csv')"
+  fi
+}
+test_qf_warn "Build the guard for #877"        "877" "bare mid-prose #N → WARN (the #888 footgun)"
+test_qf_warn "Fix #853 — auto-route"           ""    "claim-positioned #N → NO warn"
+test_qf_warn "Closes #832 / Closes #833"       ""    "both claimed (multi) → NO warn"
+test_qf_warn "Closes #832, see also #999"      "999" "claimed #832 + unclaimed #999 → warn only #999"
+test_qf_warn "Just a regular description"      ""    "no #N → NO warn"
+test_qf_warn "Edit collect.py:#142 line ref"   "142" "stray #N → WARN (accepted non-fatal false-positive)"
+# 71w-src — anchor the replication to the SKILL.md source so a future edit
+# that removes the warning fails closed.
+if grep -qF 'is not in claim position — NO claim was acquired' "$SKILL"; then
+  pass "71w-src SKILL.md carries the unclaimed-reference WARN (#907)"
+else
+  fail "71w-src SKILL.md missing the unclaimed-reference WARN (#907)"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 71x — Foreign-held stray-`#N` STOP (#959). The #907 warn fails
+# UNSAFE in autonomous use; #959 upgrades it to a read-only foreign-held
+# check that STOPS (decline) when a stray `#N` is currently claimed by a
+# DIFFERENT pipeline. Foreign-vs-self is decided by reading
+# `.zskills/claims/issue-N/claim.json`'s pipeline_id and comparing to this
+# run's pipeline_id — exactly the pattern block-fix-issue-unclaimed.sh uses.
+# `--no-claim` suppresses the stop. Missing/malformed claim.json → not-held
+# → warn + proceed (fail-open). Self-claim (stored == caller) → no stop.
+# Mirrors test-do.sh Case 18x.
+# ────────────────────────────────────────────────────────────────────
+PY_BIN="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+
+# qf_stray_check replicates the SKILL.md #959 stray-ref decision. Echoes one
+# of: "STOP <ref> <stored_pid>", "WARN <ref>" per stray ref. Assumes
+# qf_parse_issue_nums already populated ISSUE_NUMS. Args:
+#   $1 = description, $2 = claims-root dir, $3 = caller pipeline_id,
+#   $4 = NO_CLAIM (0/1).
+qf_stray_check() {
+  local input="$1" claims_root="$2" self_pid="$3" no_claim="$4"
+  local _REM="$input" _REF _CLAIMED _n _claim_file _stored out=""
+  [ "$no_claim" -eq 1 ] && { printf ''; return; }
+  while [[ "$_REM" =~ \#([0-9]+) ]]; do
+    _REF="${BASH_REMATCH[1]}"
+    _REM="${_REM#*"${BASH_REMATCH[0]}"}"
+    _CLAIMED=0
+    for _n in "${ISSUE_NUMS[@]:-}"; do
+      [ "$_n" = "$_REF" ] && { _CLAIMED=1; break; }
+    done
+    [ "$_CLAIMED" -eq 1 ] && continue
+    _claim_file="${claims_root}/issue-${_REF}/claim.json"
+    _stored=""
+    if [ -f "$_claim_file" ] && [ -n "$PY_BIN" ]; then
+      _stored=$("$PY_BIN" - "$_claim_file" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        sys.stdout.write(json.load(f).get("pipeline_id", "") or "")
+except Exception:
+    pass
+PY
+)
+    fi
+    if [ -n "$_stored" ] && [ "$_stored" != "$self_pid" ]; then
+      out+="STOP $_REF $_stored"$'\n'
+    else
+      out+="WARN $_REF"$'\n'
+    fi
+  done
+  printf '%s' "$out"
+}
+
+qf_mk_claim() {
+  # $1 = claims-root, $2 = issue number, $3 = pipeline_id
+  local dir="$1/issue-$2"
+  mkdir -p "$dir"
+  printf '{"pipeline_id": "%s", "started_at": "now"}\n' "$3" > "$dir/claim.json"
+}
+
+# Fixture claims dir.
+QF_STRAY_ROOT="$TEST_TMPDIR/claims-stray"
+register_fixture "$QF_STRAY_ROOT"
+mkdir -p "$QF_STRAY_ROOT"
+qf_mk_claim "$QF_STRAY_ROOT" 340 "fix-issues.sprint-foreign"   # foreign holder
+qf_mk_claim "$QF_STRAY_ROOT" 555 "quickfix.this-run-slug"      # self holder
+
+# (a) stray #N with a foreign live claim → STOP signalled.
+qf_parse_issue_nums "fix tooltip, related to #340"
+GOT=$(qf_stray_check "fix tooltip, related to #340" "$QF_STRAY_ROOT" "quickfix.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^STOP 340 fix-issues\.sprint-foreign$'; then
+  pass "71x foreign-held stray #340 → STOP (names holder)"
+else
+  fail "71x foreign-held stray #340 → STOP (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (b) stray #N with NO claim → warn + proceed (no stop).
+qf_parse_issue_nums "fix tooltip, related to #999"
+GOT=$(qf_stray_check "fix tooltip, related to #999" "$QF_STRAY_ROOT" "quickfix.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^WARN 999$' && ! printf '%s' "$GOT" | grep -q '^STOP'; then
+  pass "71x not-held stray #999 → WARN, no STOP"
+else
+  fail "71x not-held stray #999 → WARN (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (c) stray #N whose claim.json pipeline_id == caller (self) → NO stop.
+qf_parse_issue_nums "fix tooltip, related to #555"
+GOT=$(qf_stray_check "fix tooltip, related to #555" "$QF_STRAY_ROOT" "quickfix.this-run-slug" 0)
+if printf '%s' "$GOT" | grep -qE '^WARN 555$' && ! printf '%s' "$GOT" | grep -q '^STOP'; then
+  pass "71x self-claimed stray #555 → no STOP (self-exclusion)"
+else
+  fail "71x self-claimed stray #555 → no STOP (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# (d) --no-claim present → stray-ref stop suppressed (no STOP, no WARN).
+qf_parse_issue_nums "fix tooltip, related to #340"
+GOT=$(qf_stray_check "fix tooltip, related to #340" "$QF_STRAY_ROOT" "quickfix.this-run-slug" 1)
+if [ -z "$GOT" ]; then
+  pass "71x --no-claim suppresses foreign-held STOP (and warn)"
+else
+  fail "71x --no-claim should suppress all stray output (got: '$(printf '%s' "$GOT" | tr '\n' '|')')"
+fi
+
+# 71x-src — anchor the foreign-held STOP + --no-claim handling to SKILL.md.
+if grep -qF 'is currently held by a foreign pipeline' "$SKILL" \
+   && grep -qF 'claims/issue-${_QF_REF}/claim.json' "$SKILL"; then
+  pass "71x-src SKILL.md carries the foreign-held stray-ref STOP (#959)"
+else
+  fail "71x-src SKILL.md missing the foreign-held stray-ref STOP (#959)"
+fi
+if grep -qE 'NO_CLAIM=0' "$SKILL" \
+   && grep -qF 'if [ "$NO_CLAIM" -ne 1 ]; then' "$SKILL"; then
+  pass "71x-src SKILL.md parses --no-claim and gates the stray check on it"
+else
+  fail "71x-src SKILL.md missing --no-claim parse / gate"
+fi
+# The case-parser arm must consume --no-claim (so it never falls through
+# into DESCRIPTION and never leaks into the soft-redirect prompts).
+if grep -qE '^[[:space:]]*--no-claim\) NO_CLAIM=1 ;;' "$SKILL"; then
+  pass "71x-src --no-claim consumed by the case parser (no leak into DESCRIPTION)"
+else
+  fail "71x-src --no-claim case arm missing (would leak into DESCRIPTION / redirect prompts)"
+fi
+# Both the STOP message AND the #907 warn must reference --no-claim.
+if grep -qF 're-run with --no-claim' "$SKILL" \
+   && grep -qF 'pass --no-claim to silence' "$SKILL"; then
+  pass "71x-src STOP + #907 warn both reference --no-claim"
+else
+  fail "71x-src STOP and/or #907 warn missing --no-claim reference"
+fi
+
+# ────────────────────────────────────────────────────────────────────
+# Case 71y — Documentation discipline for --no-claim (#959):
+#   - argument-hint frontmatter must NOT contain --no-claim (#961 lean).
+#   - the Arguments body MUST document --no-claim (bullet present).
+# Mirrors test-do.sh Case 18y.
+# ────────────────────────────────────────────────────────────────────
+if grep -qE '^argument-hint:' "$SKILL" \
+   && grep -E '^argument-hint:' "$SKILL" | grep -q -- '--no-claim'; then
+  fail "71y argument-hint frontmatter must NOT contain --no-claim"
+else
+  pass "71y argument-hint frontmatter does NOT contain --no-claim"
+fi
+if grep -qE '^\- \*\*--no-claim\*\*' "$SKILL"; then
+  pass "71y Arguments body documents --no-claim (bullet present)"
+else
+  fail "71y Arguments body missing --no-claim bullet"
+fi
+
+# ────────────────────────────────────────────────────────────────────
 # Case 72 — Phase 0a triage rubric NO LONGER contains the
 # "References a GitHub issue number → /fix-issues" REDIRECT row.
 # After PR 825 wired ISSUE_NUM + claim-issue.sh into the mode files,
