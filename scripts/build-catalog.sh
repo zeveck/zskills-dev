@@ -8,19 +8,18 @@
 #   - BUILD_CATALOG_OUT (env var) — explicit override
 #   - else docs/DocsRegistry.js relative to repo root
 #
-# Discovery:
+# Scope (user-facing onboarding only):
 #   - docs/README.md            → "Start here" (position 0, single entry)
 #   - docs/guides/*.md          → "Guides"
 #   - docs/skills/*.md          → "Skills"
 #   - docs/skills/block-diagram/*.md → "Skills > Block diagram"
-#   - docs/plans/*.md           → "Plans" (flat, ~77 entries)
-#   - docs/plans/archive/canaries/*.md → "Archived plans"
-#   - docs/reports/*.md         → "Reports"
-#   - docs/evals/*.md           → "Evals"
 #
-# Deliberately excluded for v1 (agent-only artifacts, not user docs):
-#   - docs/issues/  (issue plans)
-#   - docs/tracking/ (pipeline tracking dumps)
+# Deliberately excluded (agent/dev artifacts, not docs a new user needs):
+#   - docs/plans/    (in-flight + completed design plans — for maintainers)
+#   - docs/reports/  (post-execution reports — auto-generated)
+#   - docs/evals/    (skill evaluations / coverage analyses)
+#   - docs/issues/   (issue triage notes)
+#   - docs/tracking/ (pipeline tracking system internals)
 #
 # Per-section items sorted by `path` ascending (NOT by `name`, since name
 # derives from H1 which changes on title rewordings — sorting by name would
@@ -63,10 +62,6 @@ SECTIONS = [
     ('Guides',                'docs/guides'),
     ('Skills',                'docs/skills'),
     ('Skills > Block diagram','docs/skills/block-diagram'),
-    ('Plans',                 'docs/plans'),
-    ('Archived plans',        'docs/plans/archive/canaries'),
-    ('Reports',               'docs/reports'),
-    ('Evals',                 'docs/evals'),
 ]
 
 FRONTMATTER_RE = re.compile(r'^---\n.*?\n---\n', re.DOTALL)

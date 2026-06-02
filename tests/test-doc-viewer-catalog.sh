@@ -7,9 +7,8 @@
 #   - Two consecutive runs produce byte-identical output (determinism gate)
 #   - The committed docs/DocsRegistry.js byte-matches a fresh run (drift gate)
 #   - Per-section item ordering is path-ascending (sort stability)
-#   - Excluded dirs (docs/issues, docs/tracking) emit zero entries
-#   - Catalog includes ≥170 entries (sized to the 178-MD repo minus the 3
-#     excluded artifacts)
+#   - Excluded dirs (docs/plans, docs/reports, docs/evals, docs/issues, docs/tracking) emit zero entries
+#   - Catalog scope: Guides + Skills only (user-facing onboarding; ~35 entries)
 #   - INSPECTING_AND_MONITORING.md is present (Phase 5 dependency)
 #   - tests/run-all.sh registers this file
 #
@@ -92,34 +91,32 @@ else
   diff -u "$REGISTRY" "$TMP1" | head -80
 fi
 
-# Section ordering.
-EXPECTED_ORDER='Start here Guides Skills Skills > Block diagram Plans Archived plans Reports Evals'
+# Section ordering — user-facing scope only.
+EXPECTED_ORDER='Start here Guides Skills Skills > Block diagram'
 ACTUAL_ORDER=$(grep -oE 'section: "[^"]+"' "$REGISTRY" | sed 's/section: "\(.*\)"/\1/' | tr '\n' ' ' | sed 's/ $//')
 if [ "$ACTUAL_ORDER" = "$EXPECTED_ORDER" ]; then
-  pass "8 sections present in fixed order"
+  pass "4 sections present in fixed order"
 else
   fail "section order mismatch — expected '$EXPECTED_ORDER', got '$ACTUAL_ORDER'"
 fi
 
-# Entry count >= 170.
+# Entry count: ~35 (1 Start here + ~5 Guides + ~25 Skills + ~4 Block diagram).
 ENTRY_COUNT=$(grep -cE '^\s+\{ name: ' "$REGISTRY")
-if [ "$ENTRY_COUNT" -ge 170 ]; then
-  pass "catalog has $ENTRY_COUNT entries (>= 170)"
+if [ "$ENTRY_COUNT" -ge 25 ] && [ "$ENTRY_COUNT" -le 60 ]; then
+  pass "catalog has $ENTRY_COUNT entries (in expected 25..60 range)"
 else
-  fail "catalog has $ENTRY_COUNT entries, expected >= 170"
+  fail "catalog has $ENTRY_COUNT entries, expected 25..60 (Start here + Guides + Skills + Block diagram only)"
 fi
 
-# Exclusions: docs/issues, docs/tracking.
-if grep -q '"docs/issues/' "$REGISTRY"; then
-  fail "catalog includes docs/issues/ entries (must be excluded for v1)"
-else
-  pass "catalog excludes docs/issues/"
-fi
-if grep -q '"docs/tracking/' "$REGISTRY"; then
-  fail "catalog includes docs/tracking/ entries (must be excluded for v1)"
-else
-  pass "catalog excludes docs/tracking/"
-fi
+# Internal-only dirs (plans/reports/evals/issues/tracking) must be excluded —
+# this is an onboarding viewer, not a folder tour.
+for dir in plans reports evals issues tracking; do
+  if grep -q "\"docs/$dir/" "$REGISTRY"; then
+    fail "catalog includes docs/$dir/ entries (must be excluded — internal artifacts)"
+  else
+    pass "catalog excludes docs/$dir/"
+  fi
+done
 
 # Phase 5 dependency.
 if grep -q '"docs/guides/INSPECTING_AND_MONITORING.md"' "$REGISTRY"; then

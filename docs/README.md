@@ -1,20 +1,9 @@
-# `docs/` — Z Skills documentation
+# Z Skills documentation
 
-This directory holds operator/adopter documentation, design plans, issue
-tracking, audit reports, and reference material for zskills. Use this index
-to find the right starting point.
+Operator and adopter documentation for zskills. Two starting points:
 
-## Layout
-
-| Path | What's here |
-|------|-------------|
-| [`guides/`](guides/) | Operator and adopter guides — start here if you're using zskills (workflows, plugin install/migration, monitoring, tracking concepts). |
-| [`skills/`](skills/README.md) | Per-skill reference for the 23 user-facing skills plus the 2 internal helpers. |
-| [`plans/`](plans/) | Design plans (in-flight, accepted, and completed). Source of truth for multi-phase efforts. |
-| [`tracking/`](tracking/) | Authoritative naming scheme and delegation semantics for the tracking system markers under `.zskills/tracking/`. |
-| [`evals/`](evals/) | Skill evaluations, scorecards, and coverage analyses. |
-| [`issues/`](issues/) | Issue triage notes and per-issue working files. |
-| [`reports/`](reports/) | Post-execution reports from `/run-plan` and other multi-phase work. |
+- **[Guides](guides/WORKFLOWS.md)** — end-to-end recipes, install instructions, and operational concepts.
+- **[Skills](skills/README.md)** — per-skill reference for the 23 user-facing slash commands plus the 2 internal helpers.
 
 ## Guides — quick links
 
