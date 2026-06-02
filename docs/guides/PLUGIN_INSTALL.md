@@ -1,13 +1,23 @@
 # Installing zskills
 
-zskills installs via the **plugin lane** by default — one command in your
-Claude Code session and you're set. Pick the legacy **`/update-zskills`
-lane** instead if you're installing on a headless CI runner without the
-`claude` CLI. Pick one and stick with it; running both at once is not a
-supported end-state.
+zskills ships via two permanent, first-class install lanes — both
+supported indefinitely. Pick one and stick with it; running both at once
+is not a supported end-state.
 
-→ **Default install: [Plugin lane](#plugin-lane)** (one command, slash-menu discovery).
-→ **CI / no `claude` CLI: [`/update-zskills` lane](#update-zskills-lane)**.
+→ **[Plugin lane](#plugin-lane)** (recommended for new installs) — one command in
+  your Claude Code session, marketplace-native updates, slash menu shows skills
+  under a `/zs:` prefix.
+
+→ **[`/update-zskills` lane](#update-zskills-lane)** — the original installer.
+  Pick this if you prefer bare slash names (`/run-plan` over `/zs:run-plan`,
+  matching the skill prose verbatim), want the skill source mirrored into your
+  repo's `.claude/` for reviewable diffs, are already running this lane and
+  don't want to switch, or genuinely can't use the plugin lane (e.g. installing
+  from a host without the `claude` CLI).
+
+The lanes are not tiered — neither is deprecated and both produce the same
+running behavior. See the [tradeoff matrix](#tradeoff-matrix) for the full
+side-by-side.
 
 ## Plugin lane
 
