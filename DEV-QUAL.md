@@ -154,11 +154,13 @@ mirror artifacts are stripped, and the lane lock flips to `plugin`.
   mirror present, zskills hooks registered in `.claude/settings.json`.
 
 **Steps.**
-1. Run the switcher (also reachable as
-   `/update-zskills --switch-install-path=to-plugin`):
-   ```bash
-   bash scripts/switch-install-path.sh --to-plugin
+1. Run the switcher in your Claude session:
    ```
+   /update-zskills --switch-install-path=to-plugin
+   ```
+   (it dispatches the bundled `scripts/switch-install-path.sh --to-plugin`
+   for you; invoke the script directly only when debugging the switch
+   machinery.)
 2. It strips the zskills hook entries from `.claude/settings.json` FIRST
    (config write first), prints the
    `/plugin marketplace add zeveck/zskills` + `/plugin install zs@zskills`
@@ -179,7 +181,7 @@ mirror artifacts are stripped, and the lane lock flips to `plugin`.
   kept).
 - `.zskills/` runtime state (claim markers, tracking) is untouched
   (lane-independent).
-- Re-running `bash scripts/switch-install-path.sh --to-plugin` is a
+- Re-running `/update-zskills --switch-install-path=to-plugin` is a
   no-op-with-INFO ("Already on the plugin lane").
 
 ---
@@ -197,11 +199,13 @@ without deadlocking on Step 0.7's hard-refuse.
   sentinelled artifacts present, no `.claude/skills/` mirror.
 
 **Steps.**
-1. Run the switcher (also reachable as
-   `/update-zskills --switch-install-path=to-update-zskills`):
-   ```bash
-   bash scripts/switch-install-path.sh --to-update-zskills
+1. Run the switcher in your Claude session:
    ```
+   /update-zskills --switch-install-path=to-update-zskills
+   ```
+   (it dispatches the bundled `scripts/switch-install-path.sh
+   --to-update-zskills` for you; invoke the script directly only when
+   debugging the switch machinery.)
 2. It writes `.zskills/switch-in-progress` at its START. This marker is
    load-bearing: while it is present BOTH (i) the `/update-zskills` Step 0.7
    W6.1 hard-refuse skips itself (so the mandated `/update-zskills install`
@@ -232,7 +236,7 @@ without deadlocking on Step 0.7's hard-refuse.
 - `.zskills/switch-in-progress` is gone (cleared strictly AFTER the lock was
   written — lock-LAST contract preserved).
 - `.zskills/` runtime state is untouched.
-- Re-running `bash scripts/switch-install-path.sh --to-update-zskills` is a
+- Re-running `/update-zskills --switch-install-path=to-update-zskills` is a
   no-op-with-INFO ("Already on the /update-zskills lane").
 
 ---

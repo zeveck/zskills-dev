@@ -1,7 +1,7 @@
 {
   "name": "zsbd",
   "displayName": "Z Skills — Block Diagram Addons",
-  "version": "2026.05.1",
+  "version": "2026.06.0",
   "description": "Block-diagram-editor skill addons (add-block, add-example, model-design).",
   "author": { "name": "Rich Conlan", "url": "https://github.com/zeveck/zskills" },
   "homepage": "https://github.com/zeveck/zskills",
