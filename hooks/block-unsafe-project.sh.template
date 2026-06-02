@@ -1,5 +1,5 @@
 #!/bin/bash
-# zskills-hook-version: 2026.06.0
+# zskills-hook-version: 2026.06.1
 # Block unsafe commands — PROJECT-SPECIFIC enforcement layer.
 # No external dependencies — bash and git only.
 #
@@ -912,21 +912,29 @@ if is_git_subcommand_in_wrappers "$COMMAND" commit; then
 
       PIPELINE_SUBDIR="$TRACKING_DIR/$PIPELINE_ID"
 
-      # Delegation check: requires.* must have matching fulfilled.*
-      # Subdir-only reader (Phase 6: dual-read fallback removed; all writers migrated).
+      # Delegation check at commit-time.
       #
-      # Fire ONLY when committing on main (issue #547). The gate's purpose is
-      # to protect the actual landing event — commits hitting `main`. Commits
-      # on feature branches (`feat/*`, `fix/*`, `cp-*`, worktree branches) are
-      # legitimate intermediate work that will be PR-merged or cherry-picked
-      # later, and must not be blocked by a `requires.land-pr.<id>` marker
-      # whose fulfillment can only happen AFTER those very commits land.
-      # PR #211's protection is preserved: a `finish-auto` exit before
-      # /land-pr leaves `requires.land-pr` unfulfilled, and any subsequent
-      # commit-to-main in that pipeline is still blocked.
-      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ] && is_on_main; then
+      # The carve-out below applies ONLY to `requires.land-pr.*` markers,
+      # not the whole `requires.*` family. `requires.land-pr.<id>` can only
+      # be fulfilled AFTER the PR merge happens, so blocking a feature-branch
+      # commit on it would deadlock — that's the original #547 reason.
+      # `requires.verify-changes.<id>` is fundamentally different: the verifier
+      # CAN and SHOULD run BEFORE any commit lands, on the feature branch
+      # itself. Blanket-skipping all `requires.*` on feature branches let
+      # PR #980 land with `requires.verify-changes.doc-viewer` unfulfilled
+      # (issue #986).
+      #
+      # Decision tree (per marker, evaluated inside the loop):
+      #   requires.land-pr.*  + feature branch → defer (would deadlock)
+      #   requires.land-pr.*  + main           → enforce (PR #211 intent)
+      #   requires.<other>.*  + any branch     → enforce (the #986 fix)
+      if [ -n "$PIPELINE_ID" ] && [ -d "$PIPELINE_SUBDIR" ]; then
         for req in "$PIPELINE_SUBDIR"/requires.*; do
           [ -e "$req" ] || continue
+          # Defer requires.land-pr.* on feature branches (deadlock avoidance).
+          if [[ "$(basename "$req")" =~ ^requires\.land-pr\. ]] && ! is_on_main; then
+            continue
+          fi
           enforce_requires_marker "$req" "committing"
         done
       fi
