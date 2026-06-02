@@ -1,45 +1,45 @@
 # /manual-testing
 
-> Block-diagram editor manual testing recipes for playwright-cli using real mouse/keyboard events (add blocks, connect ports, run simulations, edit parameters).
+> Support skill that helps playwright-cli interact with a UI the way a user would — clicking menus, click-and-dragging elements on canvases, typing into inputs, using keyboard shortcuts — and documents workarounds where playwright-cli is too limited to mimic a particular user action.
 
-## Usage
-
-```
-/manual-testing
-```
-
-No arguments -- the skill provides testing recipes for the block-diagram editor.
+`/manual-testing` is an **internal helper**, not a user-facing command
+(`user-invocable: false`). Other skills — most often `/verify-changes` —
+dispatch it when they need to confirm a UI change works by driving the real
+interface the way a person would.
 
 ## Prerequisites
 
 1. Start the dev server
 2. Open the browser with playwright-cli
-3. Bypass the auth gate
+3. Bypass the auth gate (if the app has one)
 
 ## Workflow
 
-The skill provides recipes for testing with real mouse/keyboard events:
+The skill guides playwright-cli to behave like a user with real
+mouse/keyboard events:
 
-- Adding blocks to the canvas
-- Connecting ports between blocks
-- Running simulations
-- Editing block parameters
-- Verifying UI behavior
-
-## Examples
-
-```
-/manual-testing
-```
+- Use menus by clicking them (not by JS-evaluating the bound command)
+- Move elements on a canvas by click-and-drag
+- Type into inputs by focusing and typing
+- Drive keyboard-driven actions with real key presses
+- Document workarounds where playwright-cli's API can't mimic a given user
+  action (gesture-based interactions, hover-only menus, native OS dialogs,
+  timing-sensitive drags)
 
 ## Common Patterns
 
-- **After UI changes:** use `/manual-testing` recipes to verify the editor works correctly
-- **Verification complement:** used alongside automated tests for visual/interactive verification
+- **After UI changes:** a verification caller uses these recipes to confirm
+  the interface still works the way a user expects.
+- **Verification complement:** used alongside automated tests for
+  visual/interactive verification.
 
 ## Tips & Gotchas
 
-- Uses **real mouse/keyboard events** (`click`, `type`, `press`, `drag`) -- never `page.evaluate()` for user actions
-- `eval`/JS is only for setup and assertions (auth bypass, reading state, querying DOM)
+- Uses **real mouse/keyboard events** (`click`, `type`, `press`, `drag`,
+  `mousemove`) -- never `page.evaluate()` to simulate user actions
+- `eval`/JS is only for setup and assertions (auth bypass, reading state,
+  querying DOM coordinates) -- never for clicking, dragging, or typing
 - Requires the dev server to be running and playwright-cli to be available
-- The auth gate must be bypassed before testing
+- The auth gate must be bypassed before testing (if the app has one)
+- Where playwright-cli can't mimic a gesture, take the closest faithful
+  workaround and flag it in the verification report
