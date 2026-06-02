@@ -63,10 +63,19 @@ for (const section of DOCS_CATALOG) {
 // empty-frontmatter shape (`---\n---\n`) explicitly because the offset-4
 // `indexOf('\n---\n', 4)` search would otherwise miss the closer.
 //
-// renderFrontmatterStrip: placeholder body returning '' in Phase 2a. Phase 4
-// swaps this for a parsed-fields `<div class="zs-frontmatter">…</div>`
-// emitter. The function MUST exist in Phase 2a so the renderer call site
-// (in loadDoc below) parses without ReferenceError on first paint.
+// renderFrontmatterStrip (Phase 4): parses a leading YAML `---\n…\n---\n`
+// block and returns a `<div class="zs-frontmatter">…</div>` muted strip
+// rendered ABOVE the H1. Recognized fields are emitted in fixed order:
+// status, completed, created, title, issue. Unknown fields render with
+// their literal key. Empty frontmatter (`---\n---\n` with no fields) and
+// missing frontmatter both return the empty string. Malformed (no closer)
+// returns the empty string and the body renderer falls through unchanged.
+//
+// XSS discipline: every parsed YAML value AND every unknown-field key is
+// wrapped in escapeHtml(). This function runs OUTSIDE renderMarkdown, so
+// stripUnsafeHtml never touches frontmatter values — without the wrap a
+// malicious `title: <img src=x onerror=alert(1)>` would land raw in
+// main.innerHTML.
 // ---------------------------------------------------------------------------
 function stripFrontmatter(md) {
   if (!md.startsWith('---\n')) return md;
@@ -76,8 +85,67 @@ function stripFrontmatter(md) {
   return md.slice(close + 5);
 }
 
+const FRONTMATTER_FIELD_ORDER = ['status', 'completed', 'created', 'title', 'issue'];
+
+function parseFrontmatterFields(md) {
+  // Returns { fields: { key: value }, order: [keys in source order] } or
+  // null when there is no parseable frontmatter block.
+  if (!md.startsWith('---\n')) return null;
+  if (md.startsWith('---\n---\n')) return { fields: {}, order: [] };
+  const close = md.indexOf('\n---\n', 4);
+  if (close === -1) return null;
+  const block = md.slice(4, close);
+  const fields = {};
+  const order = [];
+  for (const raw of block.split('\n')) {
+    const m = raw.match(/^(\w+):\s*(.+)$/);
+    if (!m) continue;
+    let val = m[2].trim();
+    // Strip a single pair of surrounding quotes (single or double).
+    if (
+      (val.startsWith('"') && val.endsWith('"') && val.length >= 2) ||
+      (val.startsWith("'") && val.endsWith("'") && val.length >= 2)
+    ) {
+      val = val.slice(1, -1);
+    }
+    if (!(m[1] in fields)) order.push(m[1]);
+    fields[m[1]] = val;
+  }
+  return { fields, order };
+}
+
 function renderFrontmatterStrip(md) {
-  return '';
+  const parsed = parseFrontmatterFields(md);
+  if (!parsed) return '';
+  const { fields, order } = parsed;
+  if (order.length === 0) return '';
+  // Emit recognized fields in fixed order, then unknown fields in source
+  // order. Each rendered span shows "<key>: <value>" (key italicised via
+  // CSS muted style); pieces joined by ' · '.
+  const seen = new Set();
+  const pieces = [];
+  for (const key of FRONTMATTER_FIELD_ORDER) {
+    if (key in fields) {
+      seen.add(key);
+      pieces.push(
+        '<span class="zs-frontmatter-field">'
+        + '<span class="zs-frontmatter-key">' + escapeHtml(key) + ':</span> '
+        + '<span class="zs-frontmatter-val">' + escapeHtml(fields[key]) + '</span>'
+        + '</span>'
+      );
+    }
+  }
+  for (const key of order) {
+    if (seen.has(key)) continue;
+    pieces.push(
+      '<span class="zs-frontmatter-field">'
+      + '<span class="zs-frontmatter-key">' + escapeHtml(key) + ':</span> '
+      + '<span class="zs-frontmatter-val">' + escapeHtml(fields[key]) + '</span>'
+      + '</span>'
+    );
+  }
+  if (pieces.length === 0) return '';
+  return '<div class="zs-frontmatter">' + pieces.join(' <span class="zs-frontmatter-sep">·</span> ') + '</div>';
 }
 
 // ---------------------------------------------------------------------------

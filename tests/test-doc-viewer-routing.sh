@@ -547,10 +547,16 @@ if echo "$RENDERED7" | grep -q '<hr'; then
 else
   pass "test7: no <hr> in rendered output (frontmatter delim stripped)"
 fi
-if echo "$RENDERED7" | grep -qi 'title:'; then
-  fail "test7: rendered HTML contains 'title:' paragraph — frontmatter body leaked: $RENDERED7"
+# Phase 2 contract: frontmatter NEVER renders as a free-floating <p> in the
+# body. Phase 4 added a visible <div class="zs-frontmatter"> strip above
+# the H1, so `title:` may now appear INSIDE that strip — but never inside
+# a <p>. Strip out the zs-frontmatter <div>...</div> first, then assert
+# no 'title:' remains in the body.
+BODY7=$(echo "$RENDERED7" | sed 's|<div class="zs-frontmatter">[^<]*\(<[^>]*>[^<]*\)*</div>||g; s|<div class="zs-frontmatter">.*</div>||g')
+if echo "$BODY7" | grep -qi 'title:'; then
+  fail "test7: rendered body (post-strip-removal) contains 'title:' paragraph — frontmatter body leaked: $RENDERED7"
 else
-  pass "test7: no 'title:' paragraph in rendered output"
+  pass "test7: no 'title:' paragraph in rendered body (frontmatter strip-extracted from check)"
 fi
 if echo "$RENDERED7" | grep -q '<h1[^>]*>H</h1>'; then
   pass "test7: H1 'H' rendered after frontmatter strip"

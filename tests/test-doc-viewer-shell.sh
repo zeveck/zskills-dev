@@ -182,11 +182,14 @@ else
 fi
 
 # Count items (crude grep on the dumped JSON).
+# Phase 2a shipped a 5-item stub; Phase 4 replaced it with the generated
+# catalog (~170+ items). The stub-pin migrated to a floor check; the
+# byte-determinism + drift gate lives in test-doc-viewer-catalog.sh.
 item_count=$(echo "$REGISTRY_JSON" | grep -o '"path":"[^"]*"' | wc -l | tr -d ' ')
-if [ "$item_count" = "5" ]; then
-  pass "DocsRegistry.js: catalog has 5 items"
+if [ "$item_count" -ge 5 ]; then
+  pass "DocsRegistry.js: catalog has $item_count items (>= 5 — Phase 4 generated catalog)"
 else
-  fail "DocsRegistry.js: expected 5 items, got $item_count"
+  fail "DocsRegistry.js: expected >= 5 items, got $item_count"
 fi
 
 for path in \
