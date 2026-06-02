@@ -55,7 +55,7 @@ Phases 2 and 4).
 |-------|--------|--------|-------|
 | 1 — MarkdownRenderer lift + tests | ✅ Done | `fd79c2c` | 27/27 renderer tests; full suite 7185/7185 |
 | 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ✅ Done | `474aed5` | 33/33 shell tests; full suite 7228/7228 |
-| 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ⬚ | | |
+| 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ✅ Done | `ea81d88` | 38/38 routing tests; doc-viewer suites 98/98 |
 | 3 — Styling + dark-default + theme toggle | ⬚ | | |
 | 4 — Catalog generator + frontmatter metadata strip | ⬚ | | |
 | 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ⬚ | | |
