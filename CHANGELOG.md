@@ -1,6 +1,47 @@
 # Changelog
 
-## Unreleased
+## 2026.06.0
+
+### Added — Plugin distribution lane (marketplace + prod/2026.06.0)
+
+zskills is now distributed via **two permanent, first-class install lanes**
+(a consumer picks exactly one):
+
+- **Plugin lane** — Claude Code's native marketplace/plugin mechanism.
+  `/plugin marketplace add zeveck/zskills && /plugin install zs@zskills`
+  reads `.claude-plugin/marketplace.json` (the `zskills` marketplace listing
+  the `zs` plugin + the `zsbd` block-diagram addon) and resolves the plugin
+  tree from the prod repo's `prod/main` ref (pin a release via the
+  `prod/<version>` tag, e.g. `prod/2026.06.0`). Skills surface under the
+  `/zs:` slash prefix.
+- **`/update-zskills` lane** — the existing legacy mirror installer
+  (`.claude/skills/` mirror + hooks + rendered `managed.md`).
+
+Plugin-lane machinery shipped this release:
+
+- **SessionStart materialiser** (`hooks/session-start-materialise.sh`) —
+  writes the 5 consumer-side artifacts (`verifier.md`, `implementer.md`,
+  `inject-bash-timeout.sh`, `verify-response-validate.sh`, rendered
+  `managed.md`) into `.claude/` at session start, since plugins cannot write
+  at install time. Runs the D27 dual-install probe first and defers (without
+  clobbering) when the `/update-zskills` lane is already present. (This
+  release also fixes a `set -e` fail-open bug in its Python-interpreter
+  resolution.)
+- **`scripts/switch-install-path.sh`** — bidirectional lane-consolidation
+  tool (`--to-plugin` / `--to-update-zskills`); dual-install is a tolerated
+  transient, not a supported end-state, and this is the consolidation entry
+  point.
+- **Ref-consistency fix** — `scripts/build-plugin-release.sh --push` now
+  pushes to `prod/main` (branch) + `prod/<version>` (tag), matching what
+  `marketplace.json` and `docs/guides/PLUGIN_INSTALL.md` resolve (previously
+  it pushed to bare `main` / `<version>`, which left the plugin lane
+  unresolvable on first install). Guarded by a new
+  `tests/test-plugin-ref-consistency.sh` (fail-closed against regression).
+  The plugin builder also now rewrites dev→prod URLs
+  (`zeveck.github.io/zskills-dev` → `zskills.synapticnoise.com`) in the
+  staged README, mirroring `build-prod.sh`.
+
+### Changed — paths defaults
 
 - feat(paths): flip `output.issues_dir` default from `.zskills/issues/`
   to `docs/issues/` so `/fix-issues sync` research blurbs and tracker

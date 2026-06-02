@@ -2,7 +2,12 @@
 
 zskills ships via **two permanent, first-class install lanes**. Neither is
 deprecated; both are supported indefinitely. This doc is the full side-by-side
-comparison so you can pick one (or run both — see [Known tradeoffs](#known-tradeoffs)).
+comparison so you can pick **exactly one**. A consumer is single-lane: running
+both lanes at once is *not* a supported end-state — it is tolerated only
+transiently while switching lanes (if you've landed on both, e.g. mid-switch,
+the mirror wins and the plugin materialiser defers — run
+`scripts/switch-install-path.sh` to consolidate to one; see
+[Switching lanes](#switching-lanes)).
 
 - **Plugin lane** — Claude Code's native marketplace/plugin mechanism. One
   command to install, one command to update, and skills show up in the slash
@@ -138,7 +143,7 @@ not a constraint.
 ## Pin-by-version idiom
 
 Each release pushes **both** a moving `prod/main` ref and a parallel
-`prod/<version>` tag (e.g. `prod/2026.05.1`). Unpinned consumers track the
+`prod/<version>` tag (e.g. `prod/2026.06.0`). Unpinned consumers track the
 moving `prod/main` window; consumers who want reproducibility pin to a
 specific version.
 
@@ -153,7 +158,7 @@ To **pin to a specific release**, edit your marketplace's `zs` entry to either:
 - Override `source.ref` to the version tag:
 
   ```json
-  { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "prod/2026.05.1" } }
+  { "name": "zs", "source": { "source": "github", "repo": "zeveck/zskills", "ref": "prod/2026.06.0" } }
   ```
 
 - Or pin `source.sha` to the exact commit:
@@ -197,9 +202,12 @@ The right guidance depends on your lane.
   which skill/hook versions you have installed, and the mirror is reviewable in
   a diff.
 
-If you run **both** lanes (see below), follow the `/update-zskills`-lane
-guidance — the mirror wins, and the materialiser defers to it (it detects the
-`/update-zskills` install lane and exits without writing).
+If you've **transiently landed on both** lanes (e.g. mid-switch — not a
+supported end-state), follow the `/update-zskills`-lane guidance: the mirror
+wins, and the plugin materialiser defers to it (it detects the
+`/update-zskills` install lane and exits without writing). Then run
+`scripts/switch-install-path.sh` to consolidate to one lane (see
+[Switching lanes](#switching-lanes)).
 
 ## Marketplace promotion / activation
 

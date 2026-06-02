@@ -53,8 +53,11 @@ stories.
 
 ## Install
 
-zskills ships via **two permanent, first-class install lanes** — pick one
-(or run both). The full side-by-side comparison, tradeoff matrix,
+zskills ships via **two permanent, first-class install lanes** — pick
+**exactly one**. Running both at once is *not* a supported end-state; it is
+tolerated only transiently while switching lanes (the mirror wins and the
+plugin materialiser defers — run `scripts/switch-install-path.sh` to
+consolidate). The full side-by-side comparison, tradeoff matrix,
 version-pinning idiom, and per-lane `.gitignore` guidance live in
 **[`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md)**.
 

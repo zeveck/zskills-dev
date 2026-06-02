@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zskills-hook-version: 2026.05.0
+# zskills-hook-version: 2026.06.0
 # session-start-materialise.sh — W2.1 SessionStart materialiser (D11, D20, D27).
 #
 # Plugins cannot write to the consumer repo at install time (research §10),
@@ -43,7 +43,12 @@ PLUGIN="${CLAUDE_PLUGIN_ROOT:-}"
 [ -n "$PROJ" ] || exit 0
 [ -n "$PLUGIN" ] || exit 0
 
-PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python)}"
+# `|| true` guards the command substitution: under `set -euo pipefail`, if
+# BOTH python3 and python are absent the substitution exits nonzero and `set
+# -e` would abort BEFORE the intended fail-open guard below. The trailing
+# `|| true` keeps PYTHON empty so the `[ -n "$PYTHON" ] || exit 0` fail-open
+# fires as designed.
+PYTHON="${ZSKILLS_PYTHON:-$(command -v python3 || command -v python || true)}"
 [ -n "$PYTHON" ] || exit 0
 
 # ── W6.2 — switch-in-progress skip ────────────────────────────────────────
