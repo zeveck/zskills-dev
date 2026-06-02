@@ -4,6 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Z Skills — Documentation</title>
+  <!--
+    FOUC-prevention inline script. MUST run before the <link rel="stylesheet">
+    below so the [data-theme="..."] selector on <html> is in place by first
+    paint — no flash on hard reload. Default mode is `system` (follows the OS
+    preference via prefers-color-scheme); persisted to localStorage under
+    `zskills-docs-theme`. The toggle wiring in docs-app.js re-uses the same
+    storage key + matchMedia query.
+  -->
+  <script>
+  (function() {
+    var s = localStorage.getItem('zskills-docs-theme') || 'system';
+    var dark = s === 'dark' || (s === 'system' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  })();
+  </script>
   <link rel="stylesheet" href="./docs.css">
 </head>
 <body>
@@ -11,6 +27,10 @@
     <header id="zl-docs-header">
       <a href="/" class="zl-docs-logo" style="color:#5db0ff">Z Skills Docs</a>
       <span class="zl-docs-header-title">Documentation</span>
+      <button id="zl-docs-theme-toggle"
+              class="zl-docs-theme-toggle"
+              type="button"
+              aria-label="Theme: system (click to switch)">⚙</button>
     </header>
     <div id="zl-docs-layout">
       <nav id="zl-docs-nav"></nav>

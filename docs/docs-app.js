@@ -242,3 +242,90 @@ main.addEventListener('click', (e) => {
 window.addEventListener('hashchange', routeFromHash);
 window.addEventListener('popstate', routeFromHash);
 document.addEventListener('DOMContentLoaded', routeFromHash);
+
+// ---------------------------------------------------------------------------
+// Theme toggle (DOC_VIEWER Phase 3).
+//
+// The FOUC-prevention inline script in index.html already sets data-theme on
+// <html> synchronously before docs.css loads. This module reuses the same
+// storage key + matchMedia query for click-driven cycling and OS-preference
+// tracking (system mode only).
+//
+// State machine: light → dark → system → light (3-state).
+// Storage: localStorage['zskills-docs-theme'] ∈ {'light','dark','system'}.
+// `data-theme` on <html> is always 'light' or 'dark' — never 'system' (the
+// styling layer resolves system → effective-dark/light here).
+// ---------------------------------------------------------------------------
+const THEME_KEY = 'zskills-docs-theme';
+const THEME_STATES = ['light', 'dark', 'system'];
+const THEME_ICONS  = { light: '☀', dark: '🌙', system: '⚙' };
+
+function themeStorage() {
+  // Defensive: under bare-Node test stubs `localStorage` is not defined.
+  // Real browser sessions always have it; the no-op shim only services
+  // tests + the rare iframe-without-storage env.
+  if (typeof localStorage !== 'undefined') return localStorage;
+  return { getItem() { return null; }, setItem() {} };
+}
+
+function currentThemeState() {
+  const s = themeStorage().getItem(THEME_KEY);
+  return THEME_STATES.indexOf(s) >= 0 ? s : 'system';
+}
+
+function prefersDarkMQ() {
+  // Defensive: under bare-Node test stubs window.matchMedia may not exist.
+  // The viewer ships in browsers (where it always exists), so the defensive
+  // path is only exercised by tests — but the test path must not crash on
+  // top-level evaluation. Returns a stub object with `.matches = false` +
+  // a no-op addEventListener when matchMedia is absent.
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(prefers-color-scheme: dark)');
+  }
+  return { matches: false, addEventListener() {}, removeEventListener() {} };
+}
+
+function effectiveDark(state) {
+  return state === 'dark' || (state === 'system' && prefersDarkMQ().matches);
+}
+
+function applyTheme() {
+  const state = currentThemeState();
+  // documentElement is defensive for the same reason as localStorage /
+  // matchMedia — bare-Node DOM stubs may lack it. The FOUC inline script in
+  // index.html runs unguarded because the real browser ALWAYS has it on the
+  // pre-CSS critical path.
+  const docEl = (typeof document !== 'undefined') ? document.documentElement : null;
+  if (docEl && typeof docEl.setAttribute === 'function') {
+    docEl.setAttribute('data-theme', effectiveDark(state) ? 'dark' : 'light');
+  }
+  const btn = (typeof document !== 'undefined' && document.getElementById)
+    ? document.getElementById('zl-docs-theme-toggle') : null;
+  if (btn) {
+    btn.textContent = THEME_ICONS[state];
+    if (typeof btn.setAttribute === 'function') {
+      btn.setAttribute('aria-label', `Theme: ${state} (click to switch)`);
+    }
+  }
+}
+
+function cycleTheme() {
+  const state = currentThemeState();
+  const next = THEME_STATES[(THEME_STATES.indexOf(state) + 1) % THEME_STATES.length];
+  themeStorage().setItem(THEME_KEY, next);
+  applyTheme();
+}
+
+// OS-level theme-change listener fires for every doc-viewer session — the
+// effect is a no-op when state ∈ {light,dark} because applyTheme() rederives
+// from currentThemeState() each call and effectiveDark() only consults
+// matchMedia when state === 'system'. Keeping the listener always-attached
+// (rather than attach-on-system / detach-on-set) avoids a class of subscribe
+// bugs around state transitions.
+prefersDarkMQ().addEventListener('change', applyTheme);
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('zl-docs-theme-toggle');
+  if (btn) btn.addEventListener('click', cycleTheme);
+  applyTheme();
+});

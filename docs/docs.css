@@ -1,0 +1,203 @@
+/* ── Z Skills Standalone Docs Page ──────────────────────────── */
+/*
+ * Lifted from zimulink's docs__docs.css (193 LOC, light-only).
+ * Phase 3 transformations:
+ *   - Newsletter block (upstream L139-182) stripped.
+ *   - Light-only palette (7 vars) replaced with dark-default + light
+ *     overlay. The dark vars are lifted verbatim from
+ *     docs/guides/inspecting-and-monitoring.html:9-10; the light overlay
+ *     from inspecting-and-monitoring.html:15-16. The doc viewer uses the
+ *     9 vars relevant to viewer concerns; the host page also defines
+ *     --warn and --pill-* which the viewer does not need.
+ *   - Variable-name rewrites:
+ *       --color-bg            → --bg
+ *       --color-surface       → --panel
+ *       --color-border        → --line
+ *       --color-text          → --ink
+ *       --color-text-muted    → --muted
+ *       --color-primary       → --accent
+ *       --color-primary-light → split by call site:
+ *         (a) nav-item hover/active  → --panel2 (subtle elevated tint)
+ *         (b) inline <code> + <pre>  → --code (dedicated code accent)
+ */
+
+:root {
+  /* Dark defaults */
+  --bg: #0f1115;
+  --panel: #161a22;
+  --panel2: #1b2030;
+  --ink: #e6e9ef;
+  --muted: #9aa4b2;
+  --line: #2a3142;
+  --accent: #5db0ff;
+  --accent2: #7ee2b8;
+  --code: #0b0d12;
+}
+
+[data-theme="light"] {
+  /* Light overlay */
+  --bg: #f6f8fb;
+  --panel: #ffffff;
+  --panel2: #f0f3f8;
+  --ink: #1b2430;
+  --muted: #5b6776;
+  --line: #dde3ec;
+  --accent: #1668c7;
+  --accent2: #0f8a5f;
+  --code: #0e1116;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+/* Header */
+#zl-docs-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.zl-docs-logo {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  letter-spacing: 0.05em;
+}
+.zl-docs-logo:hover { text-decoration: underline; }
+.zl-docs-header-title {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Theme toggle button (Phase 3 addition — not lifted). */
+.zl-docs-theme-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+.zl-docs-theme-toggle:hover {
+  background: var(--panel2);
+  border-color: var(--accent);
+}
+
+/* Layout */
+#zl-docs-layout {
+  display: flex;
+  height: calc(100vh - 48px);
+}
+
+/* Sidebar nav */
+#zl-docs-nav {
+  width: 240px;
+  min-width: 240px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 12px 0;
+  background: var(--panel);
+}
+.zl-docs-section-header {
+  padding: 10px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.zl-docs-nav-item {
+  display: block;
+  padding: 6px 16px 6px 28px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink);
+  text-decoration: none;
+  transition: background 100ms ease;
+}
+.zl-docs-nav-item:hover {
+  background: var(--panel2);
+}
+.zl-docs-nav-item.active {
+  background: var(--panel2);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Main content */
+#zl-docs-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+  max-width: 900px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+#zl-docs-main h1 { font-size: 24px; margin: 24px 0 12px; font-weight: 700; }
+#zl-docs-main h2 { font-size: 18px; margin: 20px 0 8px; font-weight: 600; }
+#zl-docs-main h3 { font-size: 15px; margin: 14px 0 6px; font-weight: 600; }
+#zl-docs-main p { margin: 8px 0; }
+#zl-docs-main ul, #zl-docs-main ol { margin: 8px 0; padding-left: 24px; }
+#zl-docs-main li { margin: 4px 0; }
+#zl-docs-main code {
+  background: var(--code);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+#zl-docs-main pre {
+  background: var(--code);
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-size: 13px;
+  margin: 10px 0;
+}
+#zl-docs-main pre code { background: none; padding: 0; border: none; }
+#zl-docs-main hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+#zl-docs-main a { color: var(--accent); }
+#zl-docs-main img { max-width: 100%; border-radius: 6px; margin: 10px 0; }
+
+/* Tables */
+.zl-docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+}
+.zl-docs-table th, .zl-docs-table td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+.zl-docs-table th {
+  background: var(--panel);
+  font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  #zl-docs-nav {
+    width: 180px;
+    min-width: 180px;
+  }
+  #zl-docs-main {
+    padding: 16px 20px;
+  }
+}
