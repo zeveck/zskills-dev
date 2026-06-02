@@ -154,7 +154,16 @@ export function renderMarkdown(md, options) {
         inList = true;
         listTag = 'ul';
       }
-      const itemText = line.replace(/^[-*]\s+/, '');
+      let itemText = line.replace(/^[-*]\s+/, '');
+      i++;
+      // Lazy-continuation: lines indented with whitespace (and not themselves
+      // starting a new list item) belong to the current item.
+      while (i < lines.length && /^\s+\S/.test(lines[i]) &&
+             !/^\s*[-*]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i])) {
+        itemText += ' ' + lines[i].trim();
+        i++;
+      }
       // GFM task list checkbox
       const taskMatch = itemText.match(/^\[([ xX])\]\s+(.*)/);
       if (taskMatch) {
@@ -163,7 +172,6 @@ export function renderMarkdown(md, options) {
       } else {
         out.push(`<li>${inlineMarkdown(itemText, baseUrl)}</li>`);
       }
-      i++;
       continue;
     }
 
@@ -175,8 +183,15 @@ export function renderMarkdown(md, options) {
         inList = true;
         listTag = 'ol';
       }
-      out.push(`<li>${inlineMarkdown(line.replace(/^\d+\.\s+/, ''), baseUrl)}</li>`);
+      let itemText = line.replace(/^\d+\.\s+/, '');
       i++;
+      while (i < lines.length && /^\s+\S/.test(lines[i]) &&
+             !/^\s*[-*]\s+/.test(lines[i]) &&
+             !/^\s*\d+\.\s+/.test(lines[i])) {
+        itemText += ' ' + lines[i].trim();
+        i++;
+      }
+      out.push(`<li>${inlineMarkdown(itemText, baseUrl)}</li>`);
       continue;
     }
 
@@ -315,13 +330,27 @@ function inlineMarkdown(s, baseUrl) {
     if (href.startsWith('#')) {
       return `<a href="${href}" class="zl-docs-internal-link">${text}</a>`;
     }
+    // Internal .md doc links: pass through the RAW (un-baseUrl-resolved)
+    // href. The hash router in docs-app.js (rewriteInternalLinksToHash)
+    // resolves these against the current doc's location and converts them
+    // to `#docs/.../X.md` form. Applying baseUrl here pre-concatenates
+    // `../docs/<dir>/`, which then double-resolves against `docs/<dir>/`
+    // and produces `docs/docs/...` (the double-prefix bug fixed by this
+    // change). Only images (`![alt](src)` above) and non-.md links need
+    // baseUrl resolution at render time, because those are real fetch URLs
+    // anchored at the viewer's location, not hash-router inputs.
+    const isInternalMd = (href.endsWith('.md') || href.includes('.md#'))
+      && !href.startsWith('http') && !href.startsWith('/');
+    if (isInternalMd) {
+      return `<a href="${href}" class="zl-docs-internal-link">${text}</a>`;
+    }
     // Resolve relative paths against baseUrl (skip absolute URLs and root-relative paths)
     const resolved = href.startsWith('http') || href.startsWith('/') ? href : normalizePath(baseUrl + href);
     // Reject dangerous schemes / entity-encoded / protocol-relative — emit text only. #983.
     if (isDangerousUrl(href, resolved)) {
       return text;
     }
-    // .md links are internal doc navigation — no target="_blank"
+    // Absolute or root-relative .md (rare): internal, no target="_blank"
     if (resolved.endsWith('.md') || resolved.includes('.md#')) {
       return `<a href="${resolved}" class="zl-docs-internal-link">${text}</a>`;
     }

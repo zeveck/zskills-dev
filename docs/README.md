@@ -1,25 +1,22 @@
-# `docs/` — Z Skills documentation
+# Z Skills documentation
 
-This directory holds operator/adopter documentation, design plans, issue
-tracking, audit reports, and reference material for zskills. Use this index
-to find the right starting point.
+Z Skills turns Claude Code into a disciplined engineering team — 23 user-facing slash commands that plan, build, test, fix, and ship with verification at every step.
 
-## Layout
+These docs are organised in two halves:
 
-| Path | What's here |
-|------|-------------|
-| [`guides/`](guides/) | Operator and adopter guides — start here if you're using zskills (workflows, plugin install/migration, monitoring, tracking concepts). |
-| [`skills/`](skills/README.md) | Per-skill reference for the 23 user-facing skills plus the 2 internal helpers. |
-| [`plans/`](plans/) | Design plans (in-flight, accepted, and completed). Source of truth for multi-phase efforts. |
-| [`tracking/`](tracking/) | Authoritative naming scheme and delegation semantics for the tracking system markers under `.zskills/tracking/`. |
-| [`evals/`](evals/) | Skill evaluations, scorecards, and coverage analyses. |
-| [`issues/`](issues/) | Issue triage notes and per-issue working files. |
-| [`reports/`](reports/) | Post-execution reports from `/run-plan` and other multi-phase work. |
+- **[Guides](guides/README.md)** — install instructions, end-to-end workflows, and operational concepts. **Start here if you're new to zskills.**
+- **[Skills reference](skills/README.md)** — per-skill detail pages for the 23 user-facing slash commands plus 2 internal helpers. Reach for this when you need to know exactly what a single skill does, its arguments, and its modes.
+
+## New here? Read in this order
+
+1. **[Install zskills](guides/installing-zskills.md)** — pick the plugin lane or the `/update-zskills` lane.
+2. **[Workflows](guides/workflows.md)** — see the canonical recipes (draft → review → execute → land).
+3. **[Inspecting & monitoring](guides/inspecting-and-monitoring.md)** — observe a running project without reading git history.
 
 ## Guides — quick links
 
-- [`guides/WORKFLOWS.md`](guides/WORKFLOWS.md) — end-to-end recipes that combine multiple skills.
-- [`guides/PLUGIN_INSTALL.md`](guides/PLUGIN_INSTALL.md) — install via the plugin lane or `/update-zskills` lane, with the full side-by-side comparison.
-- [`guides/PLUGIN_MIGRATION.md`](guides/PLUGIN_MIGRATION.md) — switch between install lanes, with Abort/Rollback for both directions.
-- [`guides/INSPECTING_AND_MONITORING.md`](guides/INSPECTING_AND_MONITORING.md) — observe a running zskills project without reading git history by hand.
-- [`guides/ZSKILLS_TRACKING_OVERVIEW.md`](guides/ZSKILLS_TRACKING_OVERVIEW.md) — the enforcement model: how tracking markers gate commits.
+- [Workflows](guides/workflows.md) — end-to-end recipes that combine multiple skills.
+- [Installing zskills](guides/installing-zskills.md) — install via the plugin lane or `/update-zskills` lane, with the full side-by-side comparison.
+- [Switching install lanes](guides/switching-install-lanes.md) — move between the plugin and `/update-zskills` lanes, with Abort/Rollback for both directions.
+- [Inspecting & monitoring](guides/inspecting-and-monitoring.md) — observe a running zskills project without reading git history by hand.
+- [Tracking system overview](guides/tracking-overview.md) — the enforcement model: how tracking markers gate commits.

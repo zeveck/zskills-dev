@@ -25,6 +25,7 @@
 
 :root {
   /* Dark defaults */
+  color-scheme: dark;
   --bg: #0f1115;
   --panel: #161a22;
   --panel2: #1b2030;
@@ -38,6 +39,7 @@
 
 [data-theme="light"] {
   /* Light overlay */
+  color-scheme: light;
   --bg: #f6f8fb;
   --panel: #ffffff;
   --panel2: #f0f3f8;
@@ -46,7 +48,7 @@
   --line: #dde3ec;
   --accent: #1668c7;
   --accent2: #0f8a5f;
-  --code: #0e1116;
+  --code: #f6f8fa;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -54,7 +56,7 @@
 html, body {
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
+  font-size: 16px;
   color: var(--ink);
   background: var(--bg);
 }
@@ -70,7 +72,7 @@ html, body {
   background: var(--panel);
 }
 .zl-docs-logo {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--accent);
   text-decoration: none;
@@ -78,7 +80,7 @@ html, body {
 }
 .zl-docs-logo:hover { text-decoration: underline; }
 .zl-docs-header-title {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--muted);
 }
 
@@ -90,7 +92,7 @@ html, body {
   color: var(--ink);
   border-radius: 4px;
   padding: 4px 10px;
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   transition: background 100ms ease, border-color 100ms ease;
 }
@@ -116,7 +118,7 @@ html, body {
 }
 .zl-docs-section-header {
   padding: 10px 16px 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
@@ -126,7 +128,7 @@ html, body {
   display: block;
   padding: 6px 16px 6px 28px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink);
   text-decoration: none;
   transition: background 100ms ease;
@@ -140,45 +142,69 @@ html, body {
   color: var(--accent);
 }
 
-/* Main content */
+/* Main content
+ *
+ * The scrollbar lives on the OUTER flex item (#zl-docs-main), which fills
+ * the viewport to the right edge — so the scrollbar is flush right.
+ * Inside, a centered child holds the 900px-constrained content with
+ * symmetric whitespace on both sides (margin: 0 auto on .zl-docs-content).
+ * The renderer writes into #zl-docs-main, but renderDoc() wraps the HTML
+ * in <div class="zl-docs-content"> at write time. */
 #zl-docs-main {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
-  max-width: 900px;
-  font-size: 14px;
+  padding: 0;          /* padding moves to the inner .zl-docs-content */
+  font-size: 16px;
   line-height: 1.7;
   color: var(--ink);
 }
-#zl-docs-main h1 { font-size: 24px; margin: 24px 0 12px; font-weight: 700; }
-#zl-docs-main h2 { font-size: 18px; margin: 20px 0 8px; font-weight: 600; }
-#zl-docs-main h3 { font-size: 15px; margin: 14px 0 6px; font-weight: 600; }
-#zl-docs-main p { margin: 8px 0; }
-#zl-docs-main ul, #zl-docs-main ol { margin: 8px 0; padding-left: 24px; }
-#zl-docs-main li { margin: 4px 0; }
+.zl-docs-content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 32px;
+}
+#zl-docs-main h1 { font-size: 28px; margin: 24px 0 12px; font-weight: 700; }
+#zl-docs-main h2 { font-size: 22px; margin: 22px 0 10px; font-weight: 600; }
+#zl-docs-main h3 { font-size: 18px; margin: 16px 0 8px; font-weight: 600; }
+#zl-docs-main p { margin: 10px 0; }
+#zl-docs-main ul, #zl-docs-main ol { margin: 10px 0; padding-left: 24px; }
+#zl-docs-main li { margin: 6px 0; }
 #zl-docs-main code {
   background: var(--code);
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 3px;
-  font-size: 13px;
+  font-size: 14.5px;
 }
 #zl-docs-main pre {
   background: var(--code);
-  padding: 12px 16px;
+  padding: 14px 18px;
   border-radius: 6px;
   overflow-x: auto;
   white-space: pre-wrap;
-  font-size: 13px;
-  margin: 10px 0;
+  font-size: 14.5px;
+  margin: 12px 0;
 }
 #zl-docs-main pre code { background: none; padding: 0; border: none; }
 #zl-docs-main hr { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
 #zl-docs-main a { color: var(--accent); }
 #zl-docs-main img { max-width: 100%; border-radius: 6px; margin: 10px 0; }
 
+/* Loading placeholder — shown before the first doc renders and during
+ * subsequent fetches. Centered both axes within the main pane so the
+ * empty-state doesn't read as a stuck top-left fragment. */
+.zl-docs-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+
 /* Frontmatter strip (Phase 4) — subtle muted metadata above plan H1. */
 .zs-frontmatter {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   margin: 0 0 8px;
   padding: 4px 0 6px;
@@ -190,7 +216,7 @@ html, body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 11px;
+  font-size: 12px;
 }
 .zs-frontmatter-val { color: var(--ink); }
 .zs-frontmatter-sep { color: var(--line); margin: 0 2px; }
@@ -200,7 +226,7 @@ html, body {
   width: 100%;
   border-collapse: collapse;
   margin: 10px 0;
-  font-size: 13px;
+  font-size: 15px;
 }
 .zl-docs-table th, .zl-docs-table td {
   border: 1px solid var(--line);

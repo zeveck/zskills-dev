@@ -1,6 +1,6 @@
 #!/bin/bash
 # Parity check: docs/guides/inspecting-and-monitoring.html vs the rendered
-# docs/guides/INSPECTING_AND_MONITORING.md (DOC_VIEWER Phase 5).
+# docs/guides/inspecting-and-monitoring.md (DOC_VIEWER Phase 5).
 #
 # This is the falsifiable gate that justifies deleting the hand-built .html.
 # Two-step procedure:
@@ -32,7 +32,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 HTML_SRC="$REPO_ROOT/docs/guides/inspecting-and-monitoring.html"
-MD_SRC="$REPO_ROOT/docs/guides/INSPECTING_AND_MONITORING.md"
+MD_SRC="$REPO_ROOT/docs/guides/inspecting-and-monitoring.md"
 RENDERER="$REPO_ROOT/docs/MarkdownRenderer.js"
 EXTRACT="$REPO_ROOT/scripts/extract-html-text.py"
 

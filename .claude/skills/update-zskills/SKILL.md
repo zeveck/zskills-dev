@@ -3,7 +3,7 @@ name: update-zskills
 argument-hint: "[install] [cherry-pick|locked-main-pr|direct]"
 description: Install or update Z Skills supporting infrastructure (CLAUDE.md rules, hooks, scripts)
 metadata:
-  version: "2026.06.02+d76c61"
+  version: "2026.06.02+8b1630"
 ---
 
 # Update Z Skills Infrastructure
@@ -79,7 +79,7 @@ was found and what was done about it.
     - Idempotent: invoking a direction whose lock already matches is a
       no-op-with-INFO. Neither direction touches `.zskills/` runtime
       state (claim markers etc. are lane-independent). See
-      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/guides/PLUGIN_MIGRATION.md`
+      `docs/plans/PLUGIN_DISTRIBUTION.md` (D25) and `docs/guides/switching-install-lanes.md`
       for the Abort/Rollback path.
 
 **Preset keywords (bare word, anywhere in the args):**

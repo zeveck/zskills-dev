@@ -34,10 +34,10 @@ direct — your choice).
 ## Docs
 
 - [`docs/README.md`](docs/README.md) — full doc index (guides, plans, reports, per-skill reference).
-- [`docs/guides/WORKFLOWS.md`](docs/guides/WORKFLOWS.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
-- [`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) — install via the plugin marketplace or the `/update-zskills` script.
+- [`docs/guides/workflows.md`](docs/guides/workflows.md) — end-to-end recipes that chain skills (plan-driven dev, backlog sprints, post-merge cleanup, …).
+- [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) — install via the plugin marketplace or the `/update-zskills` script.
 - [`docs/skills/README.md`](docs/skills/README.md) — per-skill reference for the 23 user-facing skills + 2 helpers.
-- [`docs/guides/INSPECTING_AND_MONITORING.md`](docs/guides/INSPECTING_AND_MONITORING.md) — observe a running zskills project.
+- [`docs/guides/inspecting-and-monitoring.md`](docs/guides/inspecting-and-monitoring.md) — observe a running zskills project.
 
 **[View the full presentation](https://zeveck.github.io/zskills-dev/PRESENTATION.html)**
 for the architecture, workflow stages, enforcement model, and war
@@ -59,7 +59,7 @@ tolerated only transiently while switching lanes (the mirror wins and the
 plugin materialiser defers — run `scripts/switch-install-path.sh` to
 consolidate). The full side-by-side comparison, tradeoff matrix,
 version-pinning idiom, and per-lane `.gitignore` guidance live in
-**[`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md)**.
+**[`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md)**.
 
 | | Plugin lane | `/update-zskills` lane |
 |---|---|---|
@@ -91,7 +91,7 @@ From inside a Claude Code session in your project:
 ```
 
 Add the block-diagram add-on with `/plugin install zsbd@zskills`. See
-[`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) for what gets
+[`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for what gets
 materialised, version pinning, and the bare-slash prose tradeoff.
 
 ### `/update-zskills` lane (quick start)
@@ -172,7 +172,7 @@ To include the block-diagram add-on (3 extra skills):
 - **Plugin lane:** run `/plugin marketplace update`. The SessionStart hook
   re-materialises the managed `.claude/` artifacts on next session start.
 
-See [`docs/guides/PLUGIN_INSTALL.md`](docs/guides/PLUGIN_INSTALL.md) for the full
+See [`docs/guides/installing-zskills.md`](docs/guides/installing-zskills.md) for the full
 per-lane update workflow and version-pinning idiom.
 
 ### Your first plan

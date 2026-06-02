@@ -2,34 +2,34 @@
 
 This is a **recipes / playbook** doc: it shows how to chain Z Skills into
 real end-to-end workflows. For what an individual skill does and its full
-argument list, see the per-skill reference in [`skills/README.md`](skills/README.md).
+argument list, see the [per-skill reference](../skills/README.md).
 
 ## Philosophy
 
-Z Skills favors **plan-driven development**: for anything bigger than a
-one-line change, you draft a plan, review it adversarially, then execute it
-phase by phase. **Verification happens at every step** — implementers run
-tests, a fresh verifier subagent re-checks the work before it lands, and
-nothing reaches `main` unverified.
+Z Skills matches the skill to the work — not the other way around. A typo
+fix runs through `/quickfix` or `/do`; a backlog of small bugs through
+`/fix-issues`; a feature with real design surface gets `/draft-plan`
+first; a broad goal that decomposes into multiple sub-plans gets
+`/research-and-plan`. Plans are the exception, not the default — reserve
+them for work whose design surface actually warrants adversarial review
+(integration points, multi-command coordination, hook interactions).
 
-How finished work reaches `main` is controlled by a **landing mode**, passed
-as a positional token to most execution skills:
+**Verification happens at every step** regardless of which skill you pick:
+implementers run tests, a fresh verifier subagent re-checks the work
+before it lands, and nothing reaches `main` unverified. The skill choice
+governs *ceremony*; verification is constant.
 
-| Mode | Token | How it works |
-|------|-------|--------------|
-| Cherry-pick | *(default)* | Work in an auto-named worktree, cherry-pick to `main` |
-| PR | `pr` | Work in a named worktree, push the branch, open a PR |
-| Direct | `direct` | Work directly on `main`, no landing step |
+Landing mode (cherry-pick / locked-main-pr / direct) is install-time
+configuration — covered in
+[Installing zskills → Landing mode](installing-zskills.md#landing-mode).
+The workflow snippets below pass `pr` or `direct` as a positional override
+when needed; otherwise the configured default applies.
 
 > **Argument syntax.** User-facing skills take **positional tokens** —
 > `auto`, `pr`, `direct`, `finish` — *not* `--flags`. (For example:
 > `/run-plan docs/plans/X.md finish auto pr`.) The dashed `--auto` form
 > belongs only to the internal `/land-pr` helper that these skills dispatch
 > for you; you should never type it yourself.
-
-In `main_protected: true` projects, agents cannot commit or push directly to
-`main`, so use `pr` mode (or a worktree). Add `auto` to opt into auto-merge
-once CI is green.
 
 ---
 
@@ -220,6 +220,5 @@ in a real browser.
 
 ## See also
 
-- [`skills/README.md`](skills/README.md) — the per-skill reference (every
-  skill, its description, and full argument syntax).
-- [`../README.md`](../README.md) — project overview.
+- [Per-skill reference](../skills/README.md) — every skill with its
+  description and full argument syntax.

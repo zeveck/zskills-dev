@@ -1,42 +1,24 @@
-# Installing zskills — the two install lanes
+# Installing zskills
 
-zskills ships via **two permanent, first-class install lanes**. Neither is
-deprecated; both are supported indefinitely. This doc is the full side-by-side
-comparison so you can pick **exactly one**. A consumer is single-lane: running
-both lanes at once is *not* a supported end-state — it is tolerated only
-transiently while switching lanes (if you've landed on both, e.g. mid-switch,
-the mirror wins and the plugin materialiser defers — run
-`scripts/switch-install-path.sh` to consolidate to one; see
-[Switching lanes](#switching-lanes)).
+zskills ships via two permanent, first-class install lanes — both
+supported indefinitely. Pick one and stick with it; running both at once
+is not a supported end-state.
 
-- **Plugin lane** — Claude Code's native marketplace/plugin mechanism. One
-  command to install, one command to update, and skills show up in the slash
-  menu under a `/zs:` prefix.
-- **`/update-zskills` lane** — the bespoke installer that mirrors the skill
-  source into your repo's `.claude/`, copies the hooks, registers them in
-  `.claude/settings.json`, and renders the managed CLAUDE.md rules. Install
-  state is plain tracked files in your repo.
+→ **[Plugin lane](#plugin-lane)** (recommended for new installs) — one command in
+  your Claude Code session, marketplace-native updates, slash menu shows skills
+  under a `/zs:` prefix.
 
-For the **default recommendation** (which lane to pick when you have no strong
-preference), jump to [Default recommendation](#default-recommendation).
+→ **[`/update-zskills` lane](#update-zskills-lane)** — the original installer.
+  Pick this if you prefer bare slash names (`/run-plan` over `/zs:run-plan`,
+  matching the skill prose verbatim), want the skill source mirrored into
+  your repo's `.claude/` for reviewable diffs, or are already running this
+  lane and don't want to switch.
 
-## Side-by-side comparison
+The lanes are not tiered — neither is deprecated and both produce the same
+running behavior. See the [tradeoff matrix](#tradeoff-matrix) for the full
+side-by-side.
 
-| Surface | `/update-zskills` lane | Plugin lane |
-|---|---|---|
-| Install command | `/update-zskills install ...` | `/plugin marketplace add zeveck/zskills && /plugin install zs@zskills` |
-| Slash prefix | bare (`/run-plan`, `/quickfix`) | `/zs:` (`/zs:run-plan`, `/zs:quickfix`) |
-| Skills location | `.claude/skills/<name>/` | `${CLAUDE_PLUGIN_ROOT}/skills/<name>/` |
-| Hooks location | `.claude/hooks/<name>.sh` | `${CLAUDE_PLUGIN_ROOT}/hooks/<name>.sh` (plus 4 materialised under `.claude/`) |
-| Rules file | `.claude/rules/zskills/managed.md` (rendered by `/update-zskills`) | `.claude/rules/zskills/managed.md` (materialised by the SessionStart hook) |
-| Updates | `/update-zskills install` (re-fetch + re-mirror) | `/plugin marketplace update` |
-| Marketplace name / Plugin name | n/a | `zskills` / `zs` |
-| `claude` CLI required on the host? | no | yes |
-| Install state checkable via file presence? | yes (tracked files in `.claude/`) | partial (only the 5 materialised artifacts; the rest lives under `${CLAUDE_PLUGIN_ROOT}`) |
-
-## Install
-
-### Plugin lane
+## Plugin lane
 
 From inside a Claude Code session in your project:
 
@@ -47,28 +29,25 @@ From inside a Claude Code session in your project:
 
 The first command registers the `zskills` marketplace (the
 `.claude-plugin/marketplace.json` manifest in the zskills repo root). The
-second installs the `zs` plugin (the full distribution). Restart the session
-when prompted so the plugin's hooks load.
+second installs the `zs` plugin (the full distribution). Restart the
+session when prompted so the plugin's hooks load.
 
-To add the block-diagram add-on (3 extra skills) install the `zsbd` plugin
-from the same marketplace:
+The plugin lane's default mode is **`locked-main-pr`**: agents don't
+write to `main` directly; changes ship through pull requests. See
+[Landing mode](#landing-mode) to change this.
 
-```
-/plugin install zsbd@zskills
-```
-
-On the first SessionStart after install, a hook materialises five artifacts
+On first SessionStart after install, a hook materialises five artifacts
 into your repo's `.claude/` that a plugin cannot write at install time:
 
 1. `.claude/agents/verifier.md`
 2. `.claude/agents/implementer.md`
 3. `.claude/hooks/inject-bash-timeout.sh`
 4. `.claude/hooks/verify-response-validate.sh`
-5. `.claude/rules/zskills/managed.md` (rendered from the shipped `CLAUDE_TEMPLATE.md`)
+5. `.claude/rules/zskills/managed.md` (rendered from `CLAUDE_TEMPLATE.md`)
 
-These five paths are **plugin-managed** — see [.gitignore guidance](#gitignore-guidance).
+These five paths are plugin-managed — see [.gitignore guidance](#gitignore-guidance).
 
-### `/update-zskills` lane
+## `/update-zskills` lane
 
 Clone the repo, copy the skills, and run `/update-zskills`:
 
@@ -85,26 +64,54 @@ Then in a Claude Code session:
 ```
 
 `/update-zskills` creates `.claude/zskills-config.json` with auto-detected
-project settings, installs hooks and scripts into `.claude/`, registers hooks
-in `.claude/settings.json`, renders `CLAUDE_TEMPLATE.md` →
+project settings, installs hooks and scripts into `.claude/`, registers
+hooks in `.claude/settings.json`, renders `CLAUDE_TEMPLATE.md` →
 `.claude/rules/zskills/managed.md`, and reports any gaps. See the repo
-[`README.md`](../README.md) for the full first-run flow (including the
-landing-mode prompt). Add the block-diagram add-on with
-`/update-zskills install --with-block-diagram-addons`.
+[README](../../README.md) for the full first-run flow.
 
-## Slash-prefix expectations
+`/update-zskills install` asks you to pick a landing mode. The default
+suggestion is **`cherry-pick`**: agents work in their own copy of the
+project, and each commit is cherry-picked back to `main` once it
+passes verification. To skip the prompt, name the mode you want at
+install time: `/update-zskills install cherry-pick`. See
+[Landing mode](#landing-mode) for the other options.
 
-- **`/update-zskills` lane:** skills are invoked bare — `/run-plan`,
-  `/quickfix`, `/fix-issues`, etc.
-- **Plugin lane:** Claude Code namespaces plugin-provided skills under the
-  plugin name, so the slash menu and typed invocations use the `/zs:` prefix —
-  `/zs:run-plan`, `/zs:quickfix`, `/zs:fix-issues`. The `zsbd` add-on skills
-  are similarly namespaced under `/zsbd:`.
+## Landing mode
 
-This prefix difference is purely the **typed-invocation surface**. Skill-tool
-dispatch (one skill calling another) and cron auto-fire are prefix-agnostic —
-see [Known tradeoffs](#known-tradeoffs) for the one place this difference
-leaks into the UX.
+Landing mode is how an agent's finished work reaches your `main` branch.
+You have three choices:
+
+- **`locked-main-pr`** — Most work happens in a worktree on a feature
+  branch. When the work is verified, the branch is pushed and a pull
+  request is opened. `main` is locked — agents can't commit or push to
+  it directly. Pick this when you want code review on agent changes, or
+  simply want a checkpoint before `main` moves.
+
+- **`cherry-pick`** — Most work happens in a worktree on a feature
+  branch. When a commit is verified, it's cherry-picked back to `main`.
+  Lower ceremony than PRs; good for solo work where you trust the
+  verifier and don't want PR overhead.
+
+- **`direct`** — Agents work and commit directly on `main`. No worktree,
+  no landing step. Low ceremony, higher risk.
+
+To change modes after install:
+
+```
+/update-zskills <mode>
+```
+
+(On the plugin lane: `/zs:update-zskills <mode>`.) This switches modes
+without touching anything else in your config — test commands,
+dev-server config, project name all stay as they were.
+
+You can also pick the mode when installing:
+
+```
+/update-zskills install <mode>
+```
+
+This skips the prompt and applies it immediately.
 
 ## Update workflow
 
@@ -113,21 +120,30 @@ leaks into the UX.
 | Plugin | `/plugin marketplace update` | Re-fetches the marketplace's tracked ref and pulls the new plugin tree. The SessionStart materialiser re-writes the 5 `.claude/` artifacts on next session start (only files still carrying the `zskills-materialised:` sentinel are overwritten — your edits are never clobbered). |
 | `/update-zskills` | `/update-zskills install` | Re-fetches the source tree, re-mirrors changed skills/hooks into `.claude/`, and re-renders `managed.md`. Existing config is preserved (no re-prompt). |
 
-## Default recommendation
+## Side-by-side comparison
 
-Both lanes are first-class; this recommendation is for the indecisive reader,
-not a constraint.
+| Surface | `/update-zskills` lane | Plugin lane |
+|---|---|---|
+| Install command | `/update-zskills install ...` | `/plugin marketplace add zeveck/zskills && /plugin install zs@zskills` |
+| Slash prefix | bare (`/run-plan`, `/quickfix`) | `/zs:` (`/zs:run-plan`, `/zs:quickfix`) |
+| Skills location | `.claude/skills/<name>/` | `${CLAUDE_PLUGIN_ROOT}/skills/<name>/` |
+| Hooks location | `.claude/hooks/<name>.sh` | `${CLAUDE_PLUGIN_ROOT}/hooks/<name>.sh` (plus 4 materialised under `.claude/`) |
+| Rules file | `.claude/rules/zskills/managed.md` (rendered by `/update-zskills`) | `.claude/rules/zskills/managed.md` (materialised by the SessionStart hook) |
+| Updates | `/update-zskills install` (re-fetch + re-mirror) | `/plugin marketplace update` |
+| Marketplace name / Plugin name | n/a | `zskills` / `zs` |
+| `claude` CLI required on the host? | no | yes |
+| Install state checkable via file presence? | yes (tracked files in `.claude/`) | partial (only the 5 materialised artifacts; the rest lives under `${CLAUDE_PLUGIN_ROOT}`) |
 
-- **Interactive workflows (default): plugin lane.** One-command install and
-  one-command updates, marketplace-native, and the slash menu surfaces the
-  `/zs:` prefix so discovery is built in.
-- **Headless CI consumers: `/update-zskills` lane.** The plugin lane requires
-  the `claude` CLI on your runners; the `/update-zskills` lane does not. Its
-  install state is plain tracked files, so CI can verify presence with a file
-  check rather than a CLI round-trip.
-- **Power users: either.** The difference is cosmetic — pick by preference.
+## Slash-prefix difference
 
-### Tradeoff matrix
+- **Plugin lane** namespaces skills under `/zs:`: you type `/zs:run-plan`,
+  `/zs:quickfix`, etc. The slash menu shows the prefixed names.
+- **`/update-zskills` lane** uses bare names: `/run-plan`, `/quickfix`, etc.
+
+The difference is purely the **typed-invocation surface**. Skill-to-skill
+dispatch and cron auto-fire are prefix-agnostic — see [Known tradeoffs](#known-tradeoffs) for the one place the prefix leaks into the UX.
+
+## Tradeoff matrix
 
 | Dimension | Plugin lane | `/update-zskills` lane |
 |---|---|---|
@@ -168,14 +184,10 @@ To **pin to a specific release**, edit your marketplace's `zs` entry to either:
   ```
 
 The `github` source schema accepts `repo`, `ref?`, and `sha?` — there is no
-`path` field. The co-located `zsbd` add-on ships as the relative-path source
-`./block-diagram` inside the same marketplace repo, so it follows the
-marketplace's checked-out ref by construction; no separate `ref` is needed (or
-supported) on the relative-path entry. Pinning the `zs` entry's ref/sha
-therefore pins `zsbd` to the same snapshot.
+`path` field.
 
 For how releases produce these refs, see
-[`RELEASING.md`](../RELEASING.md). The "🚀 Ship to Prod" button
+[RELEASING.md](../../RELEASING.md). The "🚀 Ship to Prod" button
 (`ship-to-prod.yml` → `scripts/build-prod.sh`) is the SINGLE publish path: it
 strips dev-only artifacts and pushes one complete, plugin-installable tree to
 the prod repo's `main` branch plus a bare `<version>` tag. (The legacy
@@ -217,7 +229,7 @@ wins, and the plugin materialiser defers to it (it detects the
 Activating the public marketplace (so `/plugin marketplace add zeveck/zskills`
 resolves) and promoting a release to it are **human-gated publish actions**
 performed by maintainers — not part of consumer onboarding. The mechanics live
-in [`RELEASING.md`](../RELEASING.md):
+in [RELEASING.md](../../RELEASING.md):
 
 - The release pushes the prod-stripped, plugin-installable tree to the prod
   repo's `main` branch plus a bare `<version>` tag via the "🚀 Ship to Prod"
@@ -257,13 +269,12 @@ gap only** — every functional path still works:
 
 If the prefix translation is a recurring friction for your team, the
 `/update-zskills` lane (bare prefixes, matching the prose verbatim) is the
-lower-friction choice — which is exactly the kind of preference the
-[default recommendation](#default-recommendation) leaves to the reader.
+lower-friction choice.
 
 ## Switching lanes
 
 Already installed via one lane and want to move to the other? See
-[`PLUGIN_MIGRATION.md`](PLUGIN_MIGRATION.md) — `scripts/switch-install-path.sh`
+[`switching-install-lanes.md`](switching-install-lanes.md) — `scripts/switch-install-path.sh`
 (also reachable as `/update-zskills --switch-install-path={to-plugin|to-update-zskills}`)
 is the bidirectional consolidation tool, with Abort/Rollback documented for
 both directions.

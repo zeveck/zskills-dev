@@ -7,10 +7,9 @@
 #   - Two consecutive runs produce byte-identical output (determinism gate)
 #   - The committed docs/DocsRegistry.js byte-matches a fresh run (drift gate)
 #   - Per-section item ordering is path-ascending (sort stability)
-#   - Excluded dirs (docs/issues, docs/tracking) emit zero entries
-#   - Catalog includes ≥170 entries (sized to the 178-MD repo minus the 3
-#     excluded artifacts)
-#   - INSPECTING_AND_MONITORING.md is present (Phase 5 dependency)
+#   - Excluded dirs (docs/plans, docs/reports, docs/evals, docs/issues, docs/tracking) emit zero entries
+#   - Catalog scope: Guides + Skills only (user-facing onboarding; ~35 entries)
+#   - inspecting-and-monitoring.md is present (Phase 5 dependency)
 #   - tests/run-all.sh registers this file
 #
 # Run from repo root: bash tests/test-doc-viewer-catalog.sh
@@ -92,52 +91,60 @@ else
   diff -u "$REGISTRY" "$TMP1" | head -80
 fi
 
-# Section ordering.
-EXPECTED_ORDER='Start here Guides Skills Skills > Block diagram Plans Archived plans Reports Evals'
+# Section ordering — user-facing scope only.
+EXPECTED_ORDER='Start here Guides Skills'
 ACTUAL_ORDER=$(grep -oE 'section: "[^"]+"' "$REGISTRY" | sed 's/section: "\(.*\)"/\1/' | tr '\n' ' ' | sed 's/ $//')
 if [ "$ACTUAL_ORDER" = "$EXPECTED_ORDER" ]; then
-  pass "8 sections present in fixed order"
+  pass "3 sections present in fixed order"
 else
   fail "section order mismatch — expected '$EXPECTED_ORDER', got '$ACTUAL_ORDER'"
 fi
 
-# Entry count >= 170.
+# Entry count: ~33 (1 Start here + ~6 Guides + ~26 Skills).
 ENTRY_COUNT=$(grep -cE '^\s+\{ name: ' "$REGISTRY")
-if [ "$ENTRY_COUNT" -ge 170 ]; then
-  pass "catalog has $ENTRY_COUNT entries (>= 170)"
+if [ "$ENTRY_COUNT" -ge 25 ] && [ "$ENTRY_COUNT" -le 50 ]; then
+  pass "catalog has $ENTRY_COUNT entries (in expected 25..50 range)"
 else
-  fail "catalog has $ENTRY_COUNT entries, expected >= 170"
+  fail "catalog has $ENTRY_COUNT entries, expected 25..50 (Start here + Guides + Skills only)"
 fi
 
-# Exclusions: docs/issues, docs/tracking.
-if grep -q '"docs/issues/' "$REGISTRY"; then
-  fail "catalog includes docs/issues/ entries (must be excluded for v1)"
+# Internal/optional dirs must be excluded — this is an onboarding viewer.
+# block-diagram is an optional add-on, not part of the core set.
+for dir in plans reports evals issues tracking; do
+  if grep -q "\"docs/$dir/" "$REGISTRY"; then
+    fail "catalog includes docs/$dir/ entries (must be excluded — internal artifacts)"
+  else
+    pass "catalog excludes docs/$dir/"
+  fi
+done
+if grep -q '"docs/skills/block-diagram/' "$REGISTRY"; then
+  fail "catalog includes block-diagram add-on entries (must be excluded for v1)"
 else
-  pass "catalog excludes docs/issues/"
-fi
-if grep -q '"docs/tracking/' "$REGISTRY"; then
-  fail "catalog includes docs/tracking/ entries (must be excluded for v1)"
-else
-  pass "catalog excludes docs/tracking/"
+  pass "catalog excludes docs/skills/block-diagram/"
 fi
 
 # Phase 5 dependency.
-if grep -q '"docs/guides/INSPECTING_AND_MONITORING.md"' "$REGISTRY"; then
-  pass "catalog includes docs/guides/INSPECTING_AND_MONITORING.md (Phase 5 dep)"
+if grep -q '"docs/guides/inspecting-and-monitoring.md"' "$REGISTRY"; then
+  pass "catalog includes docs/guides/inspecting-and-monitoring.md (Phase 5 dep)"
 else
-  fail "catalog missing docs/guides/INSPECTING_AND_MONITORING.md"
+  fail "catalog missing docs/guides/inspecting-and-monitoring.md"
 fi
 
 # Per-section path-ordering check: within each section block, the
-# extracted paths must already be ascending.
+# extracted paths must be ascending — EXCEPT sections listed in
+# SECTION_ORDER (scripts/build-catalog.sh), which use a curated order.
+# Curated sections instead assert a verbatim sequence.
 SORT_CHECK_OUT=$(awk '
-  /section: "/        { in_sec=1; n=0; next }
+  /section: "Guides"/  { skip_sec=1; in_sec=1; n=0; next }
+  /section: "/         { skip_sec=0; in_sec=1; n=0; next }
   in_sec && /^    \]/ {
-    sorted=1
-    for (i=2; i<=n; i++) {
-      if (paths[i-1] > paths[i]) { sorted=0; bad=paths[i-1]" > "paths[i]; break }
+    if (!skip_sec) {
+      sorted=1
+      for (i=2; i<=n; i++) {
+        if (paths[i-1] > paths[i]) { sorted=0; bad=paths[i-1]" > "paths[i]; break }
+      }
+      if (!sorted) { print "UNSORTED: "bad; exit 1 }
     }
-    if (!sorted) { print "UNSORTED: "bad; exit 1 }
     in_sec=0; n=0; next
   }
   in_sec && /path: "/  {
@@ -145,9 +152,41 @@ SORT_CHECK_OUT=$(awk '
   }
 ' "$REGISTRY")
 if [ -z "$SORT_CHECK_OUT" ]; then
-  pass "all sections sorted by path ascending"
+  pass "all non-curated sections sorted by path ascending"
 else
   fail "section path-order broken: $SORT_CHECK_OUT"
+fi
+
+# Curated Guides order — assert verbatim sequence matches the canonical
+# importance order (Overview first, then the install / workflow / ops
+# triad, then the niche references).
+EXPECTED_GUIDES_PATHS='docs/guides/README.md
+docs/guides/installing-zskills.md
+docs/guides/workflows.md
+docs/guides/inspecting-and-monitoring.md
+docs/guides/switching-install-lanes.md
+docs/guides/tracking-overview.md'
+ACTUAL_GUIDES_PATHS=$(awk '
+  /section: "Guides"/  { in_sec=1; next }
+  in_sec && /^    \]/  { exit }
+  in_sec && /path: "/  {
+    match($0, /path: "[^"]+"/); print substr($0, RSTART+7, RLENGTH-8)
+  }
+' "$REGISTRY")
+if [ "$ACTUAL_GUIDES_PATHS" = "$EXPECTED_GUIDES_PATHS" ]; then
+  pass "Guides section follows curated importance order"
+else
+  fail "Guides curated order drift: expected
+$EXPECTED_GUIDES_PATHS
+got
+$ACTUAL_GUIDES_PATHS"
+fi
+
+# Guides README is renamed to "Overview" (curated display-name override).
+if grep -qE '\{ name: "Overview", path: "docs/guides/README.md" \}' "$REGISTRY"; then
+  pass 'docs/guides/README.md displays as "Overview" (curated rename)'
+else
+  fail 'expected curated display-name override for docs/guides/README.md → "Overview"'
 fi
 
 # Trailing newline + no CRLF.

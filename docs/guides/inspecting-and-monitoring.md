@@ -6,7 +6,7 @@
 >
 > **Scope:** this is the **operator/observer** guide. For the enforcement
 > mechanics (how hooks gate commits) see
-> [`ZSKILLS_TRACKING_OVERVIEW.md`](ZSKILLS_TRACKING_OVERVIEW.md); for the
+> [`tracking-overview.md`](tracking-overview.md); for the
 > marker naming scheme see
 > [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md).
 
@@ -110,7 +110,7 @@ anything.
 ![The zskills dashboard: plan columns (Drafted/Proposed/Accepted/…), per-plan status chips and phase progress, the Recent-activity feed.](assets/zskills-dashboard.png)
 
 > **Try it live:** an interactive, browser-only demo of this dashboard runs at
-> **<https://zeveck.github.io/zskills-dev/demo/>** — drop plans into *Accepted*
+> **<http://zskills.synapticnoise.com/demo/>** — drop plans into *Accepted*
 > (and issues into *Ready*) and watch them get worked, with the activity feed
 > and run-status chips updating live. *(The screenshot above is from that demo;
 > its plan names are illustrative placeholders.)*
@@ -208,7 +208,7 @@ for r in "$T"/*/requires.*; do
 done
 ```
 
-(See `ZSKILLS_TRACKING_OVERVIEW.md` for how the hooks turn an unfulfilled
+(See `tracking-overview.md` for how the hooks turn an unfulfilled
 `requires.*` into a commit/push **block** — the same signal you can read by
 hand here, enforced automatically there.)
 
@@ -332,11 +332,11 @@ your audit history is never touched.
 
 ## See also
 
-- [`ZSKILLS_TRACKING_OVERVIEW.md`](ZSKILLS_TRACKING_OVERVIEW.md) — the
+- [`tracking-overview.md`](tracking-overview.md) — the
   enforcement model: how markers gate commits, with worked examples and a
   troubleshooting section.
 - [`docs/tracking/TRACKING_NAMING.md`](../tracking/TRACKING_NAMING.md) — the
   authoritative marker naming scheme, delegation semantics, and `.landed`
   semantics.
-- [`docs/guides/WORKFLOWS.md`](WORKFLOWS.md) — end-to-end workflows (§11 is the short
+- [`docs/guides/workflows.md`](workflows.md) — end-to-end workflows (§11 is the short
   Status & monitoring index this doc expands on).

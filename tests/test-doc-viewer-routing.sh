@@ -154,9 +154,18 @@ assert_count_eq "no loadDoc(item, navItems[idx]) main-click direct call" "$APP_J
   'loadDoc(item, navItems\[idx\])' 0
 assert_count_eq "no history.replaceState in loadDoc" "$APP_JS" "history.replaceState" 0
 
-# location.hash set from at least 2 places (sidebar + main-click).
-assert_re_count_ge "location.hash assigned from ≥2 places" "$APP_JS" \
-  "location\\.hash\\s*=" 2
+# location.hash assignment: post-refactor, only the SIDEBAR click handler
+# assigns location.hash. Internal MD links in rendered content are rewritten
+# to hash URLs by rewriteInternalLinksToHash() so the browser handles them
+# natively (including Ctrl/Cmd+click in new-tab), which means the JS click
+# handler in main does NOT call location.hash = ... for them. ≥1 site is
+# the correct contract.
+assert_re_count_ge "location.hash assigned by sidebar handler (≥1 site)" "$APP_JS" \
+  "location\\.hash\\s*=" 1
+# Pinning: rewriteInternalLinksToHash must exist (it owns the link rewrite
+# so the browser handles internal-link clicks natively).
+assert_re_count_ge "rewriteInternalLinksToHash defined" "$APP_JS" \
+  "function rewriteInternalLinksToHash" 1
 
 # ---------------------------------------------------------------------------
 # Node-DOM behavior tests
@@ -326,7 +335,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 2: Valid hash #docs/guides/WORKFLOWS.md → fetch for that path
+# Test 2: Valid hash #docs/guides/workflows.md → fetch for that path
 # ---------------------------------------------------------------------------
 SCENARIO_2=$(cat <<JS
 ${HARNESS}
@@ -335,7 +344,7 @@ global.fetch = async (url) => {
   fetchUrls.push(url);
   return { ok: true, status: 200, text: async () => '# Workflows' };
 };
-global.location.hash = '#docs/guides/WORKFLOWS.md';
+global.location.hash = '#docs/guides/workflows.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -344,10 +353,10 @@ process.stdout.write('HTML_START\n' + (main.innerHTML || '') + '\nHTML_END\n');
 JS
 )
 OUT2=$(run_node_scenario "valid hash → WORKFLOWS" "$SCENARIO_2")
-if echo "$OUT2" | grep -q '"../docs/guides/WORKFLOWS.md"'; then
-  pass "test2: hash #docs/guides/WORKFLOWS.md → fetch('../docs/guides/WORKFLOWS.md')"
+if echo "$OUT2" | grep -q '"../docs/guides/workflows.md"'; then
+  pass "test2: hash #docs/guides/workflows.md → fetch('../docs/guides/workflows.md')"
 else
-  fail "test2: expected fetch arg '../docs/guides/WORKFLOWS.md' — got: $OUT2"
+  fail "test2: expected fetch arg '../docs/guides/workflows.md' — got: $OUT2"
 fi
 
 # ---------------------------------------------------------------------------
@@ -387,7 +396,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 4: Anchor-hash form #docs/guides/WORKFLOWS.md#some-section parses
+# Test 4: Anchor-hash form #docs/guides/workflows.md#some-section parses
 #         via indexOf — pathPart and anchor are split on FIRST '#'.
 #
 # We extract routeFromHash's parse contract by exercising it through a
@@ -397,8 +406,8 @@ fi
 SCENARIO_4=$(cat <<JS
 ${HARNESS}
 // Use a stub catalog entry path that we'll inject by setting location.hash
-// to 'docs/guides/WORKFLOWS.md#sec#sub'. routeFromHash should compute
-// pathPart='docs/guides/WORKFLOWS.md' and anchor='sec#sub'. We can
+// to 'docs/guides/workflows.md#sec#sub'. routeFromHash should compute
+// pathPart='docs/guides/workflows.md' and anchor='sec#sub'. We can
 // observe the parse by checking fetch is invoked with the path only,
 // AND by observing scrollToAnchor on element with id 'sec#sub' (which
 // won't exist, so no scroll happens — but no crash either).
@@ -407,7 +416,7 @@ global.fetch = async (url) => {
   fetchUrls.push(url);
   return { ok: true, status: 200, text: async () => '<a id="sec#sub">x</a>\n# H' };
 };
-global.location.hash = '#docs/guides/WORKFLOWS.md#sec#sub';
+global.location.hash = '#docs/guides/workflows.md#sec#sub';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
@@ -416,63 +425,55 @@ JS
 )
 OUT4=$(run_node_scenario "triple-hash anchor parse" "$SCENARIO_4")
 # The path used for fetch must NOT include the anchor portion.
-if echo "$OUT4" | grep -q '"../docs/guides/WORKFLOWS.md"'; then
+if echo "$OUT4" | grep -q '"../docs/guides/workflows.md"'; then
   pass "test4: pathPart parses correctly via indexOf (anchor stripped from fetch URL)"
 else
   fail "test4: expected fetch arg WITHOUT anchor — got: $OUT4"
 fi
-if echo "$OUT4" | grep -q "WORKFLOWS.md#sec"; then
+if echo "$OUT4" | grep -q "workflows.md#sec"; then
   fail "test4: fetch URL leaked the anchor (split-truncate bug suspected) — got: $OUT4"
 else
   pass "test4: fetch URL does not include anchor portion"
 fi
 
 # ---------------------------------------------------------------------------
-# Test 5: Relative .md link click in rendered content → preventDefault()
-#         called AND location.hash updated to resolved target.
+# Test 5: rewriteInternalLinksToHash() converts relative .md links in
+#         rendered content into hash URLs (`#docs/.../X.md`). This is what
+#         makes the browser handle the click natively — both for plain
+#         clicks (location.hash update → hashchange) AND for Ctrl/Cmd+click
+#         (open the URL in a new tab WITH the right hash). The old contract
+#         (JS click handler calls e.preventDefault() + sets location.hash)
+#         is gone — links are pre-rewritten at render time instead.
 # ---------------------------------------------------------------------------
 SCENARIO_5=$(cat <<JS
 ${HARNESS}
 global.fetch = async () => ({
   ok: true, status: 200,
-  text: async () => '[Workflows](../guides/WORKFLOWS.md)',
+  // Renderer's baseUrl resolution emits "../docs/guides/X.md" for a
+  // relative "../guides/X.md" href from inside docs/skills/README.md.
+  // rewriteInternalLinksToHash should rewrite that to "#docs/guides/X.md".
+  text: async () => '[Workflows](../guides/workflows.md)',
 });
-// Anchor the current page in docs/skills/README.md so a '../guides/...'
-// relative href resolves to docs/guides/... (URL spec: from base dir
-// /docs/skills/, '../guides/X' → /docs/guides/X).
 global.location.hash = '#docs/skills/README.md';
 await import(process.env.APP_JS);
 fireDOMContentLoaded();
 await flushTicks();
-
-// Build a synthetic <a> with the relative href that the rendered markdown
-// would produce; dispatch a fake click event through main's click handler.
-const linkEl = makeEl('a');
-linkEl.href = '../guides/WORKFLOWS.md';
-linkEl.parentEl = main;
-let prevented = false;
-const evt = {
-  target: linkEl,
-  preventDefault() { prevented = true; this.defaultPrevented = true; },
-  defaultPrevented: false,
-};
-// Find main's click listener and invoke it.
-const clickListeners = main._listeners.click || [];
-for (const fn of clickListeners) fn(evt);
-process.stdout.write('PREVENTED:' + prevented + '\n');
-process.stdout.write('NEW_HASH:' + global.location.hash + '\n');
+// Probe the rendered HTML's link: must now be a hash URL.
+const rendered = main.innerHTML;
+process.stdout.write('HREF_HASH:' + (rendered.match(/href="(#[^"]+)"/) || [,''])[1] + '\n');
+process.stdout.write('HREF_RAW_MD:' + (rendered.match(/href="([^"#]+\.md)"/) || [,''])[1] + '\n');
 JS
 )
-OUT5=$(run_node_scenario "relative md link click" "$SCENARIO_5")
-if echo "$OUT5" | grep -q '^PREVENTED:true'; then
-  pass "test5: .md link click calls e.preventDefault()"
+OUT5=$(run_node_scenario "rewriteInternalLinksToHash" "$SCENARIO_5")
+if echo "$OUT5" | grep -q '^HREF_HASH:#docs/guides/workflows.md'; then
+  pass "test5: internal .md link rewritten to hash URL (#docs/guides/workflows.md)"
 else
-  fail "test5: expected preventDefault() — got: $OUT5"
+  fail "test5: expected href='#docs/guides/workflows.md' — got: $OUT5"
 fi
-if echo "$OUT5" | grep -q '^NEW_HASH:#docs/guides/WORKFLOWS.md'; then
-  pass "test5: .md link click sets location.hash to resolved target"
+if echo "$OUT5" | grep -q '^HREF_RAW_MD:$'; then
+  pass "test5: no remaining raw .md hrefs in rendered output (all rewritten)"
 else
-  fail "test5: expected location.hash='#docs/guides/WORKFLOWS.md' — got: $OUT5"
+  fail "test5: raw .md href still present after rewrite — got: $OUT5"
 fi
 
 # ---------------------------------------------------------------------------
@@ -491,7 +492,7 @@ global.fetch = async () => {
 };
 await import(process.env.APP_JS);
 // First sidebar click: simulate by setting location.hash + firing hashchange.
-global.location.hash = '#docs/guides/WORKFLOWS.md';
+global.location.hash = '#docs/guides/workflows.md';
 fireHashchange();
 await flushTicks();
 const c1 = fetchCount;

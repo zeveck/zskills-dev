@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Redirecting&hellip;</title>
+<script>
+(function() {
+  // Pages 404s preserve location.pathname for the requested URL.
+  // Map "/zskills-dev/docs/guides/" → viewer at "/zskills-dev/docs/#docs/guides/README.md".
+  var path = location.pathname;
+  var marker = '/docs/';
+  var idx = path.indexOf(marker);
+  if (idx < 0) { location.replace('./'); return; }
+  var base = path.slice(0, idx + marker.length);
+  var sub = path.slice(idx + marker.length).replace(/\/+$/, '');  // strip trailing slash(es)
+  if (!sub) { location.replace(base); return; }
+  // If sub ends with .md, route directly. Otherwise assume sub is a directory and try sub/README.md.
+  var hash = /\.md$/i.test(sub) ? ('#docs/' + sub) : ('#docs/' + sub + '/README.md');
+  location.replace(base + hash);
+})();
+</script>
+</head><body><p>Redirecting to the docs viewer&hellip;</p>
+<p><a id="manual" href="./">Continue manually &rarr;</a></p>
+</body></html>
