@@ -39,6 +39,8 @@ print_summary_and_exit() {
   exit 0
 }
 
+FOURZEROFOUR="$REPO_ROOT/docs/404.html"
+
 for f in "$INDEX_HTML" "$APP_JS" "$REGISTRY" "$RENDERER"; do
   if [ ! -f "$f" ]; then
     fail "expected file exists: $f"
@@ -46,6 +48,14 @@ for f in "$INDEX_HTML" "$APP_JS" "$REGISTRY" "$RENDERER"; do
   fi
 done
 pass "docs/index.html, docs/docs-app.js, docs/DocsRegistry.js, docs/MarkdownRenderer.js all exist"
+
+# Post-deploy fix: docs/404.html is the GitHub Pages fallback that rewrites
+# /docs/<subdir>/ misses into a viewer hash route.
+if [ -f "$FOURZEROFOUR" ]; then
+  pass "docs/404.html exists (GH Pages subpath fallback)"
+else
+  fail "docs/404.html missing — needed for /docs/<subdir>/ → viewer hash redirect"
+fi
 
 # ---------------------------------------------------------------------------
 # Static-grep contracts — index.html
@@ -96,6 +106,27 @@ assert_count_eq "index.html: sibling-relative ./docs.css present" "$INDEX_HTML" 
 
 # Direct module script (no async unlock loader).
 assert_count_eq "index.html: <script type=\"module\"> present" "$INDEX_HTML" '<script type="module"' 1
+
+# Post-deploy fix: header logo must NOT link to '/' (wrong under path-prefixed
+# deploys like /zskills-dev/docs/). Route through the viewer hash instead.
+assert_count_eq "index.html: header logo does NOT use href=\"/\"" \
+  "$INDEX_HTML" 'class="zl-docs-logo"' 1
+got_logo_root=$(_grep_count 'href="/" class="zl-docs-logo"' "$INDEX_HTML")
+if [ "$got_logo_root" = "0" ]; then
+  pass "index.html: header logo does not have href=\"/\" (path-prefixed-deploy safe)"
+else
+  fail "index.html: header logo still has href=\"/\" (breaks under path-prefixed deploy)"
+fi
+assert_count_ge "index.html: header logo routes through viewer hash" \
+  "$INDEX_HTML" 'href="#docs/README.md"' 1
+
+# Post-deploy fix: 404.html redirect script semantics.
+assert_count_ge "docs/404.html: redirects via location.replace" \
+  "$FOURZEROFOUR" "location.replace" 1
+assert_count_ge "docs/404.html: builds viewer hash with '#docs/' prefix" \
+  "$FOURZEROFOUR" "#docs/" 1
+assert_count_ge "docs/404.html: handles trailing-slash directories via README.md" \
+  "$FOURZEROFOUR" "README.md" 1
 
 # ---------------------------------------------------------------------------
 # Static-grep contracts — docs-app.js

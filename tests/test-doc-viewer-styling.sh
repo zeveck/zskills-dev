@@ -173,16 +173,22 @@ else
   fail "index.html: FOUC ordering violated — inline script line $inline_line, stylesheet line $link_line"
 fi
 
-# Inline-script semantic operations (3 grep assertions per plan v1):
+# Inline-script semantic operations (2-state post-deploy fix):
 #   (i)   reads localStorage key 'zskills-docs-theme'
 #   (ii)  writes data-theme via document.documentElement.setAttribute
-#   (iii) queries prefers-color-scheme via window.matchMedia
+#   (iii) defaults to 'dark' (the dark-first contract); no matchMedia branch.
 assert_count_ge "index.html: inline reads localStorage zskills-docs-theme" \
   "$INDEX_HTML" "localStorage.getItem('zskills-docs-theme')" 1
 assert_count_ge "index.html: inline sets data-theme via documentElement.setAttribute" \
   "$INDEX_HTML" "document.documentElement.setAttribute" 1
-assert_count_ge "index.html: inline queries prefers-color-scheme via matchMedia" \
-  "$INDEX_HTML" "window.matchMedia('(prefers-color-scheme: dark)')" 1
+# FOUC default must be 'dark', not 'system'.
+assert_count_ge "index.html: FOUC default is 'dark' (not 'system')" \
+  "$INDEX_HTML" "|| 'dark'" 1
+assert_count_eq "index.html: no 'system' FOUC fallback" \
+  "$INDEX_HTML" "|| 'system'" 0
+# matchMedia must be GONE from index.html (no system mode).
+assert_count_eq "index.html: no matchMedia query (system mode removed)" \
+  "$INDEX_HTML" "matchMedia" 0
 
 # Toggle button: id + aria-label.
 assert_count_ge "index.html: toggle button #zl-docs-theme-toggle present" \
@@ -197,20 +203,40 @@ assert_count_ge "docs-app.js: reads localStorage key zskills-docs-theme" \
   "$APP_JS" "zskills-docs-theme" 1
 assert_count_ge "docs-app.js: defines applyTheme" \
   "$APP_JS" "function applyTheme" 1
-assert_count_ge "docs-app.js: defines cycleTheme (3-state cycle)" \
+assert_count_ge "docs-app.js: defines cycleTheme (2-state cycle)" \
   "$APP_JS" "function cycleTheme" 1
 
-# 3-state ordering literal — light → dark → system.
-got_states=$(_grep_count_re "'light', 'dark', 'system'" "$APP_JS")
+# 2-state ordering literal — dark → light (dark-first default).
+got_states=$(_grep_count_re "'dark', 'light'" "$APP_JS")
 if [ "$got_states" -ge "1" ]; then
-  pass "docs-app.js: THEME_STATES literal ['light','dark','system'] present"
+  pass "docs-app.js: THEME_STATES literal ['dark','light'] present (2-state)"
 else
-  fail "docs-app.js: expected ['light','dark','system'] state literal"
+  fail "docs-app.js: expected ['dark','light'] state literal"
 fi
 
-# matchMedia change listener for system-mode tracking.
-assert_count_ge "docs-app.js: matchMedia change listener wired" \
-  "$APP_JS" "addEventListener('change', applyTheme)" 1
+# 'system' state must be GONE.
+got_system=$(_grep_count "'system'" "$APP_JS")
+if [ "$got_system" = "0" ]; then
+  pass "docs-app.js: no 'system' theme state references"
+else
+  fail "docs-app.js: stale 'system' theme state references present (count=$got_system)"
+fi
+
+# matchMedia must be GONE (no system mode → no OS-preference listener).
+got_mm=$(_grep_count "matchMedia" "$APP_JS")
+if [ "$got_mm" = "0" ]; then
+  pass "docs-app.js: no matchMedia references (system mode removed)"
+else
+  fail "docs-app.js: stale matchMedia references present (count=$got_mm)"
+fi
+
+# ---------------------------------------------------------------------------
+# docs.css — color-scheme declarations for native widgets (scrollbars, etc.)
+# ---------------------------------------------------------------------------
+assert_count_ge "docs.css: color-scheme: dark in :root" \
+  "$CSS" "color-scheme: dark" 1
+assert_count_ge "docs.css: color-scheme: light in [data-theme=\"light\"]" \
+  "$CSS" "color-scheme: light" 1
 
 # ---------------------------------------------------------------------------
 # Conformance: tests/run-all.sh registers this file.

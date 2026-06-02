@@ -25,6 +25,7 @@
 
 :root {
   /* Dark defaults */
+  color-scheme: dark;
   --bg: #0f1115;
   --panel: #161a22;
   --panel2: #1b2030;
@@ -38,6 +39,7 @@
 
 [data-theme="light"] {
   /* Light overlay */
+  color-scheme: light;
   --bg: #f6f8fb;
   --panel: #ffffff;
   --panel2: #f0f3f8;
@@ -46,7 +48,7 @@
   --line: #dde3ec;
   --accent: #1668c7;
   --accent2: #0f8a5f;
-  --code: #0e1116;
+  --code: #f6f8fa;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }

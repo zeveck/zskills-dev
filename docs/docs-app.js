@@ -312,21 +312,23 @@ window.addEventListener('popstate', routeFromHash);
 document.addEventListener('DOMContentLoaded', routeFromHash);
 
 // ---------------------------------------------------------------------------
-// Theme toggle (DOC_VIEWER Phase 3).
+// Theme toggle (DOC_VIEWER Phase 3 — simplified to 2-state).
 //
 // The FOUC-prevention inline script in index.html already sets data-theme on
 // <html> synchronously before docs.css loads. This module reuses the same
-// storage key + matchMedia query for click-driven cycling and OS-preference
-// tracking (system mode only).
+// storage key for click-driven cycling.
 //
-// State machine: light → dark → system → light (3-state).
-// Storage: localStorage['zskills-docs-theme'] ∈ {'light','dark','system'}.
-// `data-theme` on <html> is always 'light' or 'dark' — never 'system' (the
-// styling layer resolves system → effective-dark/light here).
+// State machine: dark ↔ light (2-state). Default = dark (the viewer ships
+// dark-first). The OS-preference (system) branch was removed in the
+// post-deploy fix — user found 3-state overkill, and the OS query caused
+// light-OS visitors to land on light despite the dark-default contract.
+//
+// Storage: localStorage['zskills-docs-theme'] ∈ {'light','dark'}.
+// `data-theme` on <html> is always 'light' or 'dark' (1:1 with stored state).
 // ---------------------------------------------------------------------------
 const THEME_KEY = 'zskills-docs-theme';
-const THEME_STATES = ['light', 'dark', 'system'];
-const THEME_ICONS  = { light: '☀', dark: '🌙', system: '⚙' };
+const THEME_STATES = ['dark', 'light'];
+const THEME_ICONS  = { dark: '🌙', light: '☀' };
 
 function themeStorage() {
   // Defensive: under bare-Node test stubs `localStorage` is not defined.
@@ -338,34 +340,18 @@ function themeStorage() {
 
 function currentThemeState() {
   const s = themeStorage().getItem(THEME_KEY);
-  return THEME_STATES.indexOf(s) >= 0 ? s : 'system';
-}
-
-function prefersDarkMQ() {
-  // Defensive: under bare-Node test stubs window.matchMedia may not exist.
-  // The viewer ships in browsers (where it always exists), so the defensive
-  // path is only exercised by tests — but the test path must not crash on
-  // top-level evaluation. Returns a stub object with `.matches = false` +
-  // a no-op addEventListener when matchMedia is absent.
-  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-    return window.matchMedia('(prefers-color-scheme: dark)');
-  }
-  return { matches: false, addEventListener() {}, removeEventListener() {} };
-}
-
-function effectiveDark(state) {
-  return state === 'dark' || (state === 'system' && prefersDarkMQ().matches);
+  return THEME_STATES.indexOf(s) >= 0 ? s : 'dark';
 }
 
 function applyTheme() {
   const state = currentThemeState();
-  // documentElement is defensive for the same reason as localStorage /
-  // matchMedia — bare-Node DOM stubs may lack it. The FOUC inline script in
-  // index.html runs unguarded because the real browser ALWAYS has it on the
-  // pre-CSS critical path.
+  // documentElement is defensive for the same reason as localStorage —
+  // bare-Node DOM stubs may lack it. The FOUC inline script in index.html
+  // runs unguarded because the real browser ALWAYS has it on the pre-CSS
+  // critical path.
   const docEl = (typeof document !== 'undefined') ? document.documentElement : null;
   if (docEl && typeof docEl.setAttribute === 'function') {
-    docEl.setAttribute('data-theme', effectiveDark(state) ? 'dark' : 'light');
+    docEl.setAttribute('data-theme', state);
   }
   const btn = (typeof document !== 'undefined' && document.getElementById)
     ? document.getElementById('zl-docs-theme-toggle') : null;
@@ -383,14 +369,6 @@ function cycleTheme() {
   themeStorage().setItem(THEME_KEY, next);
   applyTheme();
 }
-
-// OS-level theme-change listener fires for every doc-viewer session — the
-// effect is a no-op when state ∈ {light,dark} because applyTheme() rederives
-// from currentThemeState() each call and effectiveDark() only consults
-// matchMedia when state === 'system'. Keeping the listener always-attached
-// (rather than attach-on-system / detach-on-set) avoids a class of subscribe
-// bugs around state transitions.
-prefersDarkMQ().addEventListener('change', applyTheme);
 
 document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('zl-docs-theme-toggle');
