@@ -3466,6 +3466,44 @@ check_fixed session-report "report template Intent → status:" '**Intent → st
 check_fixed session-report "report template Next action:" '**Next action:**'
 check_fixed session-report "no-bulk-scans prohibition"  'Do not run bulk repo scans'
 
+# ── #976 — agents must not recommend /land-pr (or any user-invocable:false
+#    skill) as a user-typeable next step. Catches the regression in skill
+#    SOURCE files only — agent chat output is not source-gated by this test;
+#    the rules in CLAUDE_TEMPLATE.md + land-pr/SKILL.md cover the runtime side.
+# ---------------------------------------------------------------------------
+echo "── #976 — no user-typed-recommendation of user-invocable:false skills ──"
+
+# Discover the current set of user-invocable:false skills (schema-driven).
+USER_INVOCABLE_FALSE_SKILLS=()
+while IFS= read -r f; do
+  slug=$(basename "$(dirname "$f")")
+  USER_INVOCABLE_FALSE_SKILLS+=("$slug")
+done < <(grep -l '^user-invocable: false$' "$REPO_ROOT"/skills/*/SKILL.md 2>/dev/null || true)
+
+if [ "${#USER_INVOCABLE_FALSE_SKILLS[@]}" -eq 0 ]; then
+  pass "#976: no user-invocable:false skills present in skills/ — assertion vacuous"
+else
+  # Antipattern verbs that read as user-typing instructions.
+  # (We deliberately omit "run", "dispatch", and "invoke" — they false-
+  # positive on legitimate prose like "/run-plan dispatches /land-pr
+  # internally" and "callers invoke /land-pr via the Skill tool". The
+  # narrow set "type" / "re-run" reliably reads as a human-typing
+  # recommendation in agent-report context.)
+  for slug in "${USER_INVOCABLE_FALSE_SKILLS[@]}"; do
+    HITS=$(grep -rEn "(^|[^a-zA-Z\`])(type|re-run)[[:space:]]+\`?/$slug\b" \
+      --include='*.md' \
+      "$REPO_ROOT"/skills/ 2>/dev/null \
+      | grep -vE "skills/$slug/SKILL.md.*user-invocable|references/.*self-defense|test-skill-conformance" \
+      || true)
+    if [ -z "$HITS" ]; then
+      pass "#976: no user-typed-recommendation of /$slug in skill bodies"
+    else
+      fail "#976: skill bodies contain user-typed-recommendation of /$slug" "(type|re-run) /$slug"
+      echo "$HITS" | sed 's/^/        /'
+    fi
+  done
+fi
+
 echo ""
 echo "---"
 TOTAL=$((PASS_COUNT + FAIL_COUNT))

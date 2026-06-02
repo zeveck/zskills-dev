@@ -283,6 +283,10 @@ If the verifying read is too expensive to do now, say so and stop -- do
 not substitute a guess and let downstream failure do the verification.
 The only research you can skip is what you just verified in this turn.
 
+### User-facing reports
+
+**Never recommend `/land-pr` (or any other `user-invocable: false` skill) to users in final reports, summaries, or "next step" suggestions.** `/land-pr` is an orchestrator-dispatch-only helper (8 caller skills dispatch it via the Skill tool). The slash runtime will not dispatch a `user-invocable: false` skill typed by a human, so telling the user to "run /land-pr ..." sends them down a dead end. When suggesting how to land a branch, recommend `/commit pr` (or one of the other 7 callers — `/run-plan`, `/do pr`, `/fix-issues pr`, `/quickfix`, `/draft-plan`, `/refine-plan`, `/draft-tests`) or plain `git push && gh pr create`. The current full list of `user-invocable: false` skills is just `/land-pr` today; the rule generalizes if more are added later.
+
 ## Migration scripts
 
 **Multi-step state-mutating scripts must write the idempotency lock LAST.** If
