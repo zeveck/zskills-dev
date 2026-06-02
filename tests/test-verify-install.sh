@@ -84,15 +84,28 @@ make_legacy_good() {
            "$c/.claude/rules/zskills"
   printf '%s\n' '---' 'name: update-zskills' '---' '# Update Z Skills' \
     > "$c/.claude/skills/update-zskills/SKILL.md"
-  # A real hook file the registration will point at.
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$c/.claude/hooks/block-unsafe-generic.sh"
-  # settings.json registering that hook via the canonical command form.
+  # Real hook files the registration will point at. A HEALTHY legacy install
+  # always registers the canonical safety-hook set (#1008 F1), and each shipped
+  # zskills hook carries a line-2 `# zskills-hook-version:` stamp (the integrity
+  # check the verifier now enforces, #1008 medium gaps). Seed all four canonical
+  # hooks, version-stamped + non-empty.
+  local h
+  for h in block-unsafe-generic block-unsafe-project block-stale-skill-version block-agents; do
+    printf '%s\n' '#!/usr/bin/env bash' "# zskills-hook-version: 2026.06.0" 'exit 0' \
+      > "$c/.claude/hooks/$h.sh"
+  done
+  # settings.json registering the canonical set via the canonical command form.
   cat > "$c/.claude/settings.json" <<'JSON'
 {
   "hooks": {
     "PreToolUse": [
       { "matcher": "Bash", "hooks": [
-        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"", "timeout": 5 }
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"", "timeout": 5 },
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh\"", "timeout": 5 },
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh\"", "timeout": 5 }
+      ] },
+      { "matcher": "Agent", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh\"", "timeout": 5 }
       ] }
     ]
   }
@@ -236,16 +249,129 @@ else
   fail "3e. broken legacy unrendered managed" "expected FAIL on legacy.managed-rendered; records=$(grep '^FAIL' "$OUT")"
 fi
 
+# ── LEGACY broken (C): a DE-HOOKED install — empty {"hooks":{}} (#1008 F1) ────
+# Every zskills safety hook stripped from settings.json. This is the exact
+# "install silently failed" case the verifier exists to catch; before the F1
+# fix it false-PASSed with "all 0 registered hook commands resolve". MUST FAIL
+# on legacy.hooks-resolve (zero registered hooks) AND legacy.canonical-hooks
+# (canonical safety set absent).
+LDH="$(make_legacy_good 6)"
+printf '%s\n' '{"hooks":{}}' > "$LDH/.claude/settings.json"
+OUT="$TMP/out-legacy-dehooked.txt"
+run_cheap_capture "$LDH" "$OUT"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "legacy.hooks-resolve"; then
+  pass "3f. de-hooked legacy (empty {\"hooks\":{}}) → FAIL on legacy.hooks-resolve (was a false-PASS pre-#1008)"
+else
+  fail "3f. de-hooked legacy hooks-resolve" "expected FAIL on legacy.hooks-resolve; records=$(grep '^FAIL' "$OUT")"
+fi
+if has_fail_id "$OUT" "legacy.canonical-hooks"; then
+  pass "3g. de-hooked legacy → FAIL on legacy.canonical-hooks (canonical safety set absent)"
+else
+  fail "3g. de-hooked legacy canonical-hooks" "expected FAIL on legacy.canonical-hooks; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── LEGACY broken (D): only NON-canonical hooks registered (#1008 F1) ─────────
+# A non-zero hook count, but the canonical safety set is missing — the install
+# registered only a foreign/non-safety hook. MUST FAIL on legacy.canonical-hooks
+# even though legacy.hooks-resolve PASSes (the registered hook file exists).
+LNC="$(make_legacy_good 7)"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$LNC/.claude/hooks/my-custom-hook.sh"
+cat > "$LNC/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/my-custom-hook.sh\"", "timeout": 5 }
+      ] }
+    ]
+  }
+}
+JSON
+OUT="$TMP/out-legacy-noncanonical.txt"
+run_cheap_capture "$LNC" "$OUT"
+if has_fail_id "$OUT" "legacy.canonical-hooks"; then
+  pass "3h. only NON-canonical hook registered → FAIL on legacy.canonical-hooks"
+else
+  fail "3h. non-canonical-only canonical-hooks" "expected FAIL on legacy.canonical-hooks; records=$(grep '^FAIL' "$OUT")"
+fi
+# hooks-resolve must still PASS (the foreign hook file exists) — proving the
+# canonical-hooks check is what catches it, not a resolve failure.
+if has_fail_id "$OUT" "legacy.hooks-resolve"; then
+  fail "3i. non-canonical-only hooks-resolve" "legacy.hooks-resolve should PASS (file exists); records=$(grep '^FAIL' "$OUT")"
+else
+  pass "3i. only NON-canonical hook registered → legacy.hooks-resolve still PASSes (resolve != canonical-set)"
+fi
+
+# ── LEGACY broken (E): a corrupt (0-byte) canonical hook (#1008 medium gap) ───
+# A truncated `cp` leaves a registered zskills hook at 0 bytes. `[ -f ]` alone
+# passed it; the integrity check (`[ -s ]`) must FAIL.
+LEZ="$(make_legacy_good 12)"
+: > "$LEZ/.claude/hooks/block-unsafe-generic.sh"   # truncate to 0 bytes
+OUT="$TMP/out-legacy-empty-hook.txt"
+run_cheap_capture "$LEZ" "$OUT"
+if has_fail_id "$OUT" "legacy.hooks-integrity"; then
+  pass "3j. corrupt 0-byte canonical hook → FAIL on legacy.hooks-integrity"
+else
+  fail "3j. empty-hook integrity" "expected FAIL on legacy.hooks-integrity; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── LEGACY broken (F): a zskills hook missing its line-2 version stamp ────────
+# A drifted/corrupt mirror whose zskills hook lacks the `# zskills-hook-version:`
+# line-2 sentinel. MUST FAIL on legacy.hooks-integrity.
+LNS="$(make_legacy_good 13)"
+printf '%s\n' '#!/usr/bin/env bash' '# no version stamp here' 'exit 0' \
+  > "$LNS/.claude/hooks/block-agents.sh"
+OUT="$TMP/out-legacy-unstamped-hook.txt"
+run_cheap_capture "$LNS" "$OUT"
+if has_fail_id "$OUT" "legacy.hooks-integrity"; then
+  pass "3k. zskills hook missing line-2 version stamp → FAIL on legacy.hooks-integrity"
+else
+  fail "3k. unstamped-hook integrity" "expected FAIL on legacy.hooks-integrity; records=$(grep '^FAIL' "$OUT")"
+fi
+
+# ── LEGACY valid + a FOREIGN hook registered alongside canonical (no FP) ──────
+# A healthy install may register a consumer's OWN hook that legitimately carries
+# NO `# zskills-hook-version:` stamp. The integrity check is scoped to zskills
+# hooks, so the foreign hook must NOT trigger a FAIL — zero-false-positive bar.
+LFH="$(make_legacy_good 14)"
+printf '#!/usr/bin/env bash\necho hi\n' > "$LFH/.claude/hooks/consumer-own.sh"
+cat > "$LFH/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-generic.sh\"", "timeout": 5 },
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-unsafe-project.sh\"", "timeout": 5 },
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-stale-skill-version.sh\"", "timeout": 5 },
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/consumer-own.sh\"", "timeout": 5 }
+      ] },
+      { "matcher": "Agent", "hooks": [
+        { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-agents.sh\"", "timeout": 5 }
+      ] }
+    ]
+  }
+}
+JSON
+OUT="$TMP/out-legacy-foreign-hook.txt"
+run_cheap_capture "$LFH" "$OUT"
+if [ "$VI_FAIL" -eq 0 ]; then
+  pass "3l. valid legacy + FOREIGN (unstamped) hook alongside canonical → 0 FAIL (integrity scoped to zskills hooks)"
+else
+  fail "3l. foreign-hook no-false-positive" "expected 0 FAIL; foreign unstamped hook should not trip integrity: $(grep '^FAIL' "$OUT")"
+fi
+
 # ── PLUGIN: good layout → no FAIL ───────────────────────────────────────────
 # The plugin lane is keyed on CLAUDE_PLUGIN_ROOT being set. Set it (to any
 # non-empty value) for these cases ONLY.
 PG="$(make_plugin_good 1)"
 OUT="$TMP/out-plugin-good.txt"
 # The plugin lane keys on CLAUDE_PLUGIN_ROOT being set; export it (with a
-# plugin.json so the version cross-check resolves) for all plugin cases.
+# plugin.json AND hooks/hooks.json so the #1008 reachability check resolves)
+# for all plugin cases.
 CLAUDE_PLUGIN_ROOT="$TMP/fake-plugin-root"; export CLAUDE_PLUGIN_ROOT
-mkdir -p "$CLAUDE_PLUGIN_ROOT/.claude-plugin"
+mkdir -p "$CLAUDE_PLUGIN_ROOT/.claude-plugin" "$CLAUDE_PLUGIN_ROOT/hooks"
 printf '{ "version": "2026.06.0" }\n' > "$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json"
+printf '{ "hooks": {} }\n' > "$CLAUDE_PLUGIN_ROOT/hooks/hooks.json"
 run_cheap_capture "$PG" "$OUT"
 if [ "$VI_FAIL" -eq 0 ]; then
   pass "4. good plugin layout → 0 FAIL (5 sentinelled artifacts, mirror-less)"
@@ -314,6 +440,30 @@ if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "lane.dual-unsupported"; then
 else
   fail "7. dual install" "expected FAIL on lane.dual-unsupported; records=$(grep '^FAIL' "$OUT")"
 fi
+
+# ── PLUGIN broken (D): CLAUDE_PLUGIN_ROOT pointing at an UNREACHABLE dir ──────
+# (#1008 medium gap) The 5 materialised artifacts are present in the consumer's
+# .claude/, but ${CLAUDE_PLUGIN_ROOT} points at a dir missing the plugin
+# manifests — so the live skills/hooks resolve to NOTHING. MUST FAIL on
+# plugin.root-reachable even though every artifact check PASSes.
+PB4="$(make_plugin_good 6)"
+SAVED_PROOT="$CLAUDE_PLUGIN_ROOT"
+CLAUDE_PLUGIN_ROOT="$TMP/empty-plugin-root"; export CLAUDE_PLUGIN_ROOT
+mkdir -p "$CLAUDE_PLUGIN_ROOT"   # exists but has no .claude-plugin/ or hooks/
+OUT="$TMP/out-plugin-unreachable.txt"
+run_cheap_capture "$PB4" "$OUT"
+if [ "$VI_FAIL" -gt 0 ] && has_fail_id "$OUT" "plugin.root-reachable"; then
+  pass "7b. plugin root unreachable (no plugin.json/hooks.json) → FAIL on plugin.root-reachable"
+else
+  fail "7b. plugin root unreachable" "expected FAIL on plugin.root-reachable; records=$(grep '^FAIL' "$OUT")"
+fi
+# Artifact checks must still PASS — proving root-reachable is what catches it.
+if has_fail_id "$OUT" "plugin.artifact.agents/verifier.md"; then
+  fail "7c. unreachable-root artifacts" "artifact checks should PASS (artifacts present); records=$(grep '^FAIL' "$OUT")"
+else
+  pass "7c. plugin root unreachable → artifact checks still PASS (root-reachable is the catcher)"
+fi
+CLAUDE_PLUGIN_ROOT="$SAVED_PROOT"; export CLAUDE_PLUGIN_ROOT
 
 unset CLAUDE_PLUGIN_ROOT
 
