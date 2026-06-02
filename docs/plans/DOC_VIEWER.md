@@ -54,7 +54,8 @@ Phases 2 and 4).
 | Phase | Status | Commit | Notes |
 |-------|--------|--------|-------|
 | 1 — MarkdownRenderer lift + tests | ⬚ | | |
-| 2 — Viewer shell + hash routing + stub catalog | ⬚ | | |
+| 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke | ⬚ | | |
+| 2b — Hash routing + helpers + handler rewrites + error pane + routing test | ⬚ | | |
 | 3 — Styling + dark-default + theme toggle | ⬚ | | |
 | 4 — Catalog generator + frontmatter metadata strip | ⬚ | | |
 | 5 — Inspecting-and-monitoring.html disposition + URL plumbing | ⬚ | | |
@@ -325,16 +326,22 @@ every Markdown feature the zskills corpus actually uses.
 ### Dependencies
 None — foundation phase. Pre-flight gates (above) must pass.
 
-## Phase 2 — Viewer shell + hash routing + stub catalog + frontmatter source-strip
+## Phase 2a — Viewer shell + stub catalog + frontmatter helpers + sanity smoke
 
 ### Goal
-Lift the index.html shell + docs-app.js, strip the password gate and
-newsletter logic, write the net-new hash-routing listeners + inline error
-pane + GitHub off-catalog fallback (none of which exist in the upstream
-source), lift the YAML-frontmatter SOURCE strip into the render pipeline
-(so plan files don't render `---` as `<hr>` and the YAML keys as visible
-paragraphs between Phases 2 and 4), and wire it all against a 5-item stub
-catalog so the viewer renders one doc end-to-end.
+Lift the index.html shell + docs-app.js verbatim minus the strips
+(password gate, newsletter logic, examples/ folder branch); KEEP upstream's
+eager initial-load block AND upstream's direct-`loadDoc` sidebar + main
+click handlers in place; rewrite ONLY the renderer call site to use the
+new frontmatter helpers; add the `stripFrontmatter` + `renderFrontmatterStrip`
+placeholder helpers (load-bearing for the renderer call site — without
+them the file throws `ReferenceError` on first paint); write the 5-item
+stub catalog; and add a static-grep + Node-DOM sanity-smoke test. The
+result is an unstyled, upstream-routing-shape viewer that renders one
+catalog doc end-to-end. **Phase 2a is intentionally unstyled — Phase 3
+ships the CSS palette. Verifiers should NOT flag the unstyled look as a
+regression.** Phase 2b layers hash-routing + helpers + handler rewrites +
+error pane on top.
 
 ### Work Items
 - [ ] Copy `/tmp/zimulink-lift/docs__index.html` → `docs/index.html`.
@@ -377,9 +384,9 @@ catalog so the viewer renders one doc end-to-end.
   `<script type="module" src="./docs-app.js"></script>` injected just
   before `</body>` — loaded after parse, no async unlock.
 - [ ] Copy `/tmp/zimulink-lift/docs__docs-app.js` → `docs/docs-app.js`.
-  STRIP (correct boundaries — the original `101-170` strip range is a
-  syntax-error trap because the surrounding `if/else` straddles
-  101-173; see Round-1 finding DA #1):
+  STRIPS in Phase 2a (correct boundaries — the original `101-170` strip
+  range is a syntax-error trap because the surrounding `if/else`
+  straddles 101-173; see Round-1 finding DA #1):
   - Line 11: `const headerTitle = document.querySelector('.zl-docs-header-title');`
     — the header title is set statically in Phase 3 styling; no JS
     mutation needed.
@@ -392,114 +399,53 @@ catalog so the viewer renders one doc end-to-end.
     ```js
     main.innerHTML = renderFrontmatterStrip(md) + renderMarkdown(stripFrontmatter(md), { baseUrl });
     ```
-    where `renderFrontmatterStrip` and `stripFrontmatter` are the helpers
-    added below (see "Frontmatter source-strip" work item). The
-    syntax-error trap: stripping 101-170 alone leaves a dangling `} else
-    { ... }` because the upstream `if` opens at line 101 and the matching
-    `} else { ... }` closes at 171-173. The strip MUST run 101-173 with
-    a single-line replacement.
-  KEEP (with REWRITES specified below): imports (rewritten — see
-  next), sidebar build (lines 17-31; the click-handler attachment on
-  L28 IS rewritten, and L17-25 must add a `data-path` attribute to
-  each `<a>` so the `findNavEl` helper can locate it),
-  `loadDoc` outer shell (lines 57-91 minus the stripped lines),
-  `renderDoc` outer shell line (line 93 + the `pathParts`/`baseUrl`
-  computation lines 94-97 + `main.innerHTML = ''` line 99 — but note
-  line 99's `''` clear is now unnecessary because the replacement line
-  assigns directly; remove line 99), click delegation for internal
-  `.md` links (lines 179-234; the inner block at L193-221 IS rewritten,
-  and the L224-233 examples/ branch IS stripped).
-- [ ] **Rewrite the sidebar click handler (line 28) to set
-  `location.hash` instead of calling `loadDoc` directly.** Upstream
-  L28 reads `link.addEventListener('click', () => loadDoc(item, link));`
-  — that bypasses the new hash-routing. Replace with:
-  ```js
-  link.addEventListener('click', (e) => {
-    e.preventDefault();
-    location.hash = '#' + item.path;
-    // hashchange fires → routeFromHash → loadDoc (single ingress)
-  });
-  ```
-  **Double-load-prevention reasoning (load-bearing, do NOT pre-set
-  `lastHandledHash`):** `lastHandledHash` starts as `null`. On the
-  first sidebar click, `location.hash = '#docs/...'` fires
-  `hashchange` → `routeFromHash` sees `raw='docs/...'` ≠ `null` →
-  loads the doc → sets `lastHandledHash='docs/...'`. On a SECOND
-  click of the SAME sidebar entry, assigning `location.hash` to its
-  current value is a browser no-op (no `hashchange` fires per the
-  HTML spec) — no double load. Pre-setting `lastHandledHash =
-  item.path` BEFORE assigning the hash would cause `routeFromHash`
-  to bail and the doc would never load on first click — that is the
-  bug, do not write it that way.
-- [ ] **Rewrite the sidebar build's INNER item loop (upstream lines
-  24-29) to emit `data-path` attributes** so `findNavEl` (added below)
-  can locate nav elements after hashchange. **Preserve the outer loop
-  and section header build (upstream lines 18-22): `for (const section
-  of DOCS_CATALOG)` + the `<div class="zl-docs-section-header">` block
-  are NOT modified.** AC: `grep -c 'zl-docs-section-header' docs/docs-app.js`
-  returns 1. The upstream inner loop creates
-  `<div class="zl-docs-nav-item">` elements with no path attribute;
-  replace the inner element-creation lines with:
-  ```js
-  for (const item of section.items) {
-    const link = document.createElement('a');
-    link.className = 'zl-docs-nav-item';
-    link.textContent = item.name;
-    link.href = '#' + item.path;        // anchor semantics for free
-    link.setAttribute('data-path', item.path);
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      location.hash = '#' + item.path;
-    });
-    nav.appendChild(link);
-  }
-  ```
-  Switching from `<div>` to `<a>` is a minor a11y win (keyboard +
-  screen-reader semantics) and lets the browser's URL preview show
-  the destination on hover; the `e.preventDefault()` + manual
-  `location.hash` assignment is still required because we want a
-  single `hashchange`-driven ingress.
-- [ ] **Rewrite the upstream main-click handler's catalog-scan block
-  (lines 193-221) to set `location.hash` instead of calling
-  `loadDoc` directly.** Upstream lines 193-221 walk DOCS_CATALOG,
-  find a matching item by path, and invoke `loadDoc(item, navItems[idx])`
-  directly — same anti-pattern as the sidebar handler, and same
-  URL-sync break. REPLACE the entire `if (href.endsWith('.md') || …)`
-  branch's inner body with:
-  ```js
-  if (href.endsWith('.md') || href.includes('.md#')) {
-    e.preventDefault();
-    const resolved = resolveLink(href, currentHashPath());
-    location.hash = '#' + resolved;
-    // hashchange → routeFromHash → loadDoc; section anchor (if any)
-    // rides along inside `resolved` and is parsed out by routeFromHash.
-    return;
-  }
-  ```
-  Where `currentHashPath()` is a 1-liner helper returning the path
-  portion of `location.hash.slice(1)` (everything before the SECOND
-  `#`), used so relative `.md` link resolution works whether the
-  user navigated via sidebar or pasted a deep link. Add the helper
-  body:
-  ```js
-  function currentHashPath() {
-    const raw = location.hash.slice(1);
-    const hashIdx = raw.indexOf('#');
-    return hashIdx < 0 ? raw : raw.slice(0, hashIdx);
-  }
-  ```
-  This block REPLACES upstream lines 193-221 entirely — the catalog
-  scan and the "Not in catalog — load directly" off-catalog branch
-  are both subsumed by `routeFromHash`'s catalog-miss → `renderErrorPane`
-  path (which carries the GitHub fallback link). Do not preserve the
-  off-catalog `loadDoc` direct call.
-- [ ] Rewrite the imports at the top of `docs-app.js`:
+    where `renderFrontmatterStrip` and `stripFrontmatter` are the
+    helpers added in this phase (see "Frontmatter source-strip helpers"
+    work item below). **Both helpers MUST land in 2a** — the upstream
+    eager block (lines 34-55, preserved verbatim per the next bullet)
+    calls `loadDoc` on first paint, which calls this line; if the
+    helpers are deferred to 2b the file throws a `ReferenceError`
+    immediately at module load and the shell can't be smoke-tested in
+    isolation (verified Round-1 finding DA #1). The syntax-error trap:
+    stripping 101-170 alone leaves a dangling `} else { ... }` because
+    the upstream `if` opens at line 101 and the matching `} else { ... }`
+    closes at 171-173. The strip MUST run 101-173 with the single-line
+    replacement.
+  - Lines 224-233: the upstream click-handler's `examples/<name>/`
+    folder branch. zskills has no `examples/` directory (verified —
+    `ls /workspaces/zskills/examples 2>&1` → ENOENT). REMOVE this
+    entire branch; do not adapt it. This is a pure deletion and fits
+    the "lift + strip" shape of Phase 2a (the surrounding click
+    handler's catalog-scan inner body at L193-221 is rewritten in
+    Phase 2b, not here).
+- [ ] **Preserve upstream's routing shape verbatim in Phase 2a.** The
+  following upstream sections are KEPT BYTE-FOR-BYTE — they are
+  rewritten in Phase 2b, not here, so that Phase 2a's shell has a
+  working render path the moment it lands and can be smoke-tested in
+  isolation:
+  - Sidebar build (upstream lines 17-31, including the L28
+    `link.addEventListener('click', () => loadDoc(item, link));`
+    direct-call). Phase 2b rewrites the inner item loop (lines 24-29)
+    to emit `<a data-path=...>` and route via `location.hash`.
+  - The eager initial-load top-level block (upstream lines 34-55, bare
+    top-level code — NOT an IIFE). Phase 2b REMOVES it and replaces
+    with a `DOMContentLoaded` listener calling `routeFromHash`. AC for
+    2a (positive presence): `grep -c 'DOCS_CATALOG\[0\]' docs/docs-app.js`
+    returns ≥1 (the eager fallback at L51 references
+    `DOCS_CATALOG[0]?.items[0]`).
+  - `loadDoc` body, including the upstream `history.replaceState` call
+    at line 66 (Phase 2b removes the replaceState call when it adds
+    listener-based routing).
+  - The main click handler's catalog-scan inner body (upstream lines
+    193-221), which calls `loadDoc(item, navItems[idx])` directly.
+    Phase 2b replaces this entire block with `resolveLink` +
+    `location.hash`. (The `examples/` branch at lines 224-233 is
+    already stripped in 2a per the previous bullet.)
+- [ ] Rewrite the imports at the top of `docs-app.js` to the sibling-relative
+  form. Phase 2a imports ONLY `renderMarkdown` — `escapeHtml` is added in
+  Phase 2b alongside `renderErrorPane` (which is the only caller):
   - Line 6 `import { renderMarkdown } from '../src/ui/MarkdownRenderer.js';`
-    → `import { renderMarkdown, escapeHtml } from './MarkdownRenderer.js';`
-    (BOTH names — `escapeHtml` is used by the inline error pane
-    helper `renderErrorPane` added below to HTML-escape the
-    user-supplied path; omitting it produces a ReferenceError on the
-    first off-catalog hash. Verified Round-2 finding DA #2.)
+    → `import { renderMarkdown } from './MarkdownRenderer.js';`
   - Line 7 `import { DOCS_CATALOG } from '../src/ui/DocsRegistry.js';`
     → `import { DOCS_CATALOG } from './DocsRegistry.js';`
 - [ ] Write `docs/DocsRegistry.js` with a 5-item STUB catalog (the
@@ -515,6 +461,292 @@ catalog so the viewer renders one doc end-to-end.
     ] },
   ];
   ```
+  Verified 2026-06-02: `head -8` on each of the 5 files returns no
+  YAML frontmatter — every file opens at its `# H1`. So 2a's render
+  path (which calls `renderFrontmatterStrip` → returns `''` placeholder,
+  then `renderMarkdown(stripFrontmatter(md), ...)` → `stripFrontmatter`
+  returns the input unchanged because the leading 4 bytes are not
+  `---\n`) is a pure pass-through for the stub catalog. The helpers
+  are still load-bearing as references — the call site won't parse
+  without them — and they unlock plan-file rendering once Phase 4
+  generates the broader catalog.
+- [ ] **Frontmatter source-strip helpers** (MOVED from the original
+  monolithic Phase 2; the visible `.zs-frontmatter` strip rendering
+  stays in Phase 4 but the SOURCE strip + the placeholder MUST land
+  in 2a because the renderer call site references both names — see
+  the L101-173 replacement bullet above). The renderer's HR rule
+  (`MarkdownRenderer.js:91 /^---+$/`) matches the frontmatter opener
+  AND closer, so without source-strip every plan file (once Phase 4
+  exposes them) renders a stray `<hr>` followed by paragraphs of
+  `title: Foo`, `status: drafted`, etc., followed by another `<hr>`.
+  Implementation in `docs/docs-app.js`:
+  ```js
+  function stripFrontmatter(md) {
+    if (!md.startsWith('---\n')) return md;
+    // Empty-frontmatter precheck: `---\n---\n` — closing `\n---\n`
+    // starts at offset 3, so the offset-4 search misses it and we'd
+    // return unstripped. Handle the empty case explicitly. (Round-2
+    // finding DA #6.)
+    if (md.startsWith('---\n---\n')) return md.slice(8);
+    const close = md.indexOf('\n---\n', 4);
+    if (close === -1) return md;        // unterminated → pass through
+    return md.slice(close + 5);
+  }
+  function renderFrontmatterStrip(md) {
+    // Phase 2a: emit nothing (placeholder). Phase 4 replaces this body
+    // with the parsed-fields strip emitter.
+    return '';
+  }
+  ```
+  Phase 4 swaps `renderFrontmatterStrip`'s body for the full parsed
+  `<div class="zs-frontmatter">` emitter. `stripFrontmatter` stays as
+  written across Phases 2a/2b/4.
+- [ ] Add `tests/test-doc-viewer-shell.sh` (static-grep contracts +
+  Node-DOM sanity smoke). The shell test asserts the file lifts +
+  strips landed cleanly and that the shell renders ONE doc end-to-end
+  using upstream's eager block — no hash routing involved. Cases:
+  - **Static greps (the strip + lift contracts):** see the matching
+    Phase 2a ACs below; each is a 1-line shell assertion.
+  - **Node-DOM `import DOCS_CATALOG` assertion:** spawn
+    `node --input-type=module -e "import('./docs/DocsRegistry.js').then(m => process.stdout.write(JSON.stringify(m.DOCS_CATALOG)))"`
+    and assert the JSON has exactly 1 section with 5 items at the
+    expected paths.
+  - **Node-DOM sanity smoke (~20 LOC):** import `docs-app.js` under a
+    minimal DOM stub (mirror `tests/test-tab-dot-render-dom.sh`'s
+    harness), mock `fetch` to return `# H` for the first catalog
+    item's URL, drive `loadDoc(DOCS_CATALOG[0].items[0], null)`
+    directly, and assert `document.querySelector('main').innerHTML`
+    contains `<h1` and the slugified id (`id="h"` per Phase 1 slugify
+    spec) and `>H</h1>`. This gates the L101-173 replacement plus the
+    frontmatter helpers' presence — a missing `renderFrontmatterStrip`
+    or `stripFrontmatter` produces a `ReferenceError` on `loadDoc`
+    invocation and the test fails closed. The smoke does NOT exercise
+    `hashchange`, sidebar clicks, or `location.hash` — those are 2b's
+    domain.
+- [ ] Register `test-doc-viewer-shell.sh` in `tests/run-all.sh`.
+- [ ] Run `bash tests/run-all.sh` to confirm green (Phase 1 + new shell
+  suite + pre-existing).
+
+### Design & Constraints
+- **Lift sources:** `/tmp/zimulink-lift/docs__index.html` (135 LOC),
+  `/tmp/zimulink-lift/docs__docs-app.js` (234 LOC),
+  `/tmp/zimulink-lift/src__ui__DocsRegistry.js` (99 LOC — shape only,
+  all content replaced).
+- **Lift-vs-net-new split (Phase 2a).** LIFTED verbatim: sidebar build
+  loop (upstream lines 17-31, including the direct-call click handler);
+  eager initial-load block (upstream lines 34-55); `loadDoc` body
+  including `history.replaceState`; `renderDoc` baseUrl computation
+  (upstream lines 93-99 minus the `main.innerHTML = ''` clear, which
+  the L101-173 replacement makes redundant); main click handler outer
+  shell (upstream lines 179-234 minus the L101-173 inner body's
+  newsletter branch — already stripped — and minus the L224-233
+  examples/ branch). NET-NEW in 2a: ONLY the frontmatter helpers
+  (`stripFrontmatter`, `renderFrontmatterStrip` placeholder) and the
+  one-line renderer call site at L101-173. All hash routing,
+  listeners, helper functions, `renderErrorPane`, `resolveLink`,
+  handler rewrites, and `escapeHtml` import are deferred to Phase 2b.
+- **Catalog shape:** array of `{section: string, items: [{name, path}]}`.
+  Paths are repo-root-relative.
+- **Fetch prefix:** viewer at `/docs/index.html` fetches with
+  `'../' + item.path` (so `item.path = 'docs/guides/X.md'` becomes
+  fetch URL `'../docs/guides/X.md'`). The browser resolves this against
+  the page URL `/docs/`, yielding the final URL `/docs/guides/X.md`
+  served by GitHub Pages (i.e., the on-disk file at repo root
+  `docs/guides/X.md`). Equivalent under `python3 -m http.server`
+  served from repo root.
+- **`.nojekyll` interaction.** Because Pages serves the repo verbatim
+  (PR #47), MD files at `docs/*.md` are served as `text/markdown` /
+  `text/plain` and `fetch().text()` returns the raw source — exactly
+  what the renderer wants. No build step.
+- **Intentionally unstyled.** Phase 2a does NOT touch `docs/docs.css`;
+  the page will look broken (no flex layout, no width split between
+  sidebar and main) when served. Phase 3 ships the palette. Verifiers
+  must NOT flag the unstyled look as a regression.
+- **No SKILL.md edits** in this phase → no `metadata.version` bump
+  required.
+- **No DOMPurify import** — security strip lives in `MarkdownRenderer.js`
+  (Phase 1).
+- **`stripFrontmatter` heuristic + corpus risk.** The strip rule is
+  "any document whose first 4 bytes are `---\n` and which contains a
+  later `\n---\n` (or the empty-FM `---\n---\n` shape) has its prefix
+  through the closer stripped." A document whose ACTUAL first content
+  line is an HR `---` followed somewhere later by another `---` line
+  would be mis-stripped — the renderer would lose its first
+  paragraph. Verified against the current zskills corpus (2026-06-02):
+  no `docs/**/*.md` file opens with `---\n` as a content HR (every
+  hit is genuine YAML frontmatter). Future regression would surface
+  as "first paragraph missing in viewer" — discoverable by readers.
+  v2 may tighten by requiring line 2 to match
+  `^[a-zA-Z_][\w-]*:\s` (a YAML key) before committing to strip,
+  but the heuristic stays as-is for v1 to match the lifted renderer's
+  simplicity.
+
+### Acceptance Criteria
+- [ ] `docs/index.html`, `docs/docs-app.js`, `docs/DocsRegistry.js`
+  exist with strips applied and the 5-item stub catalog.
+- [ ] `grep -c "zl-gate" docs/index.html` returns 0
+  (gate fully removed).
+- [ ] `grep -c 'Password gate' docs/index.html` returns 0
+  (orphan comment also removed).
+- [ ] `grep -c "isNewsletter" docs/docs-app.js` returns 0
+  (newsletter branch fully removed).
+- [ ] `grep -c 'name="robots"' docs/index.html` returns 0
+  (noindex meta removed).
+- [ ] `grep -c 'favicon.svg' docs/index.html` returns 0 (broken
+  reference removed).
+- [ ] `grep -c 'href="/docs/docs.css"' docs/index.html` returns 0
+  (absolute path replaced); `grep -c 'href="./docs.css"' docs/index.html`
+  returns 1.
+- [ ] `grep -c "type=\"module\"" docs/index.html` returns 1 (the
+  `<script type="module" src="./docs-app.js">` tag is present; no
+  async unlock loader).
+- [ ] `grep -c "function stripFrontmatter" docs/docs-app.js` returns 1
+  AND `grep -c "function renderFrontmatterStrip" docs/docs-app.js`
+  returns 1 (both helpers present in 2a so the L101-173 renderer
+  call site parses).
+- [ ] **Upstream eager initial-load block is PRESERVED in 2a:**
+  `grep -c 'DOCS_CATALOG\[0\]' docs/docs-app.js` returns ≥1 (the
+  upstream L51 `DOCS_CATALOG[0]?.items[0]` fallback is still in the
+  file). Phase 2b's parallel AC asserts this drops to 0 once the
+  eager block is replaced by the `DOMContentLoaded` listener.
+- [ ] **Upstream sidebar handler is PRESERVED in 2a:**
+  `grep -c 'loadDoc(item, link)' docs/docs-app.js` returns ≥1 (the
+  upstream L28 direct-call form is still in the file). Phase 2b
+  rewrites it.
+- [ ] **Upstream main-click catalog-scan + direct `loadDoc(item,
+  navItems[idx])` IS still present in 2a:**
+  `grep -c "loadDoc(item, navItems\\[idx\\])" docs/docs-app.js`
+  returns ≥1 (this is the upstream L207 inner-body line, kept
+  verbatim in 2a). Phase 2b's parallel AC asserts this drops to 0.
+- [ ] **The DocsRegistry import works:** the Node-DOM `import
+  DOCS_CATALOG` assertion in `tests/test-doc-viewer-shell.sh` passes
+  — `DOCS_CATALOG` is a 1-section, 5-item array at the expected paths.
+- [ ] **The shell renders one doc end-to-end:** the Node-DOM sanity
+  smoke in `tests/test-doc-viewer-shell.sh` mocks `fetch` to return
+  `# H`, invokes `loadDoc` on the first catalog item, and asserts
+  `main.innerHTML` contains `<h1` + the slug id + `>H</h1>`. No
+  `ReferenceError` (which is what a missing frontmatter helper would
+  produce on the L101-173 call site).
+- [ ] **Hash-routing additions are NOT yet in 2a (negative ACs that
+  pin the split):**
+  - `grep -nE "hashchange|popstate|DOMContentLoaded" docs/docs-app.js`
+    returns 0 (no listener wires in 2a — Phase 2b adds them).
+  - `grep -c "function routeFromHash" docs/docs-app.js` returns 0.
+  - `grep -c "function renderErrorPane" docs/docs-app.js` returns 0.
+  - `grep -c "function resolveLink" docs/docs-app.js` returns 0.
+  - `grep -cE "import \\{[^}]*\\bescapeHtml\\b[^}]*\\}" docs/docs-app.js`
+    returns 0 (escapeHtml is NOT imported in 2a — Phase 2b adds it).
+- [ ] `tests/test-doc-viewer-shell.sh` exits 0; emits
+  `Results: N passed, M failed`; registered in `run-all.sh`.
+- [ ] `bash tests/run-all.sh` exits 0 (Phase 1's renderer test +
+  Phase 2a's shell test + the full pre-existing suite).
+- [ ] Manual smoke (attended, optional but recommended for the
+  implementing agent): serve repo root via
+  `python3 -m http.server 8000`, open
+  `http://localhost:8000/docs/`, verify the first catalog item
+  (`docs/README.md`) renders via upstream's eager initial-load path
+  (no hash). Other 4 items are reachable only via sidebar clicks
+  using upstream's direct-`loadDoc` form (no URL sync yet — that's
+  Phase 2b). The unstyled look is expected; do not flag it.
+
+### Dependencies
+Phase 1 (MarkdownRenderer must exist and be importable).
+
+## Phase 2b — Hash routing + helpers + handler rewrites + error pane + routing test
+
+### Goal
+Layer hash-routing on top of Phase 2a's working shell: remove upstream's
+eager initial-load block; rewrite the sidebar build's inner item loop +
+the main click handler's catalog-scan inner body to route via
+`location.hash`; add `routeFromHash` + its referenced helpers
+(`findCatalogItem`, `findNavEl`, `scrollToAnchor`); add `resolveLink` +
+`currentHashPath` for relative `.md` link resolution; add `renderErrorPane`
+for catalog misses (with GitHub off-catalog fallback link); add the
+3 routing listeners (`hashchange`, `popstate`, `DOMContentLoaded`); add
+`escapeHtml` to the imports (needed by `renderErrorPane`); and add the
+routing test suite. The result is a fully deep-linkable viewer with
+single-ingress (hash) routing.
+
+### Work Items
+- [ ] **Extend the imports** — add `escapeHtml` alongside the existing
+  `renderMarkdown`:
+  - Phase 2a's `import { renderMarkdown } from './MarkdownRenderer.js';`
+    → `import { renderMarkdown, escapeHtml } from './MarkdownRenderer.js';`
+  - `escapeHtml` is used by `renderErrorPane` to HTML-escape the
+    user-supplied path before string-interpolating it into the error
+    pane's GitHub link. Without this import the first off-catalog hash
+    produces a `ReferenceError`. (Verified Round-2 finding DA #2.)
+- [ ] **Rewrite the sidebar build's INNER item loop (upstream lines
+  24-29) to emit `data-path` attributes and route via `location.hash`,**
+  so `findNavEl` (added below) can locate nav elements after hashchange
+  and so a single ingress (`hashchange` → `routeFromHash` → `loadDoc`)
+  handles all navigation. **Preserve the outer loop and section header
+  build (upstream lines 18-22): `for (const section of DOCS_CATALOG)` +
+  the `<div class="zl-docs-section-header">` block are NOT modified.**
+  AC: `grep -c 'zl-docs-section-header' docs/docs-app.js` returns 1.
+  Replace the inner element-creation lines with:
+  ```js
+  for (const item of section.items) {
+    const link = document.createElement('a');
+    link.className = 'zl-docs-nav-item';
+    link.textContent = item.name;
+    link.href = '#' + item.path;        // anchor semantics for free
+    link.setAttribute('data-path', item.path);
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      location.hash = '#' + item.path;
+      // hashchange fires → routeFromHash → loadDoc (single ingress)
+    });
+    nav.appendChild(link);
+  }
+  ```
+  Switching from `<div>` to `<a>` is a minor a11y win (keyboard +
+  screen-reader semantics) and lets the browser's URL preview show the
+  destination on hover; the `e.preventDefault()` + manual
+  `location.hash` assignment is still required because we want a
+  single `hashchange`-driven ingress.
+  **Double-load-prevention reasoning (load-bearing, do NOT pre-set
+  `lastHandledHash`):** `lastHandledHash` (defined alongside
+  `routeFromHash` below) starts as `null`. On the first sidebar click,
+  `location.hash = '#docs/...'` fires `hashchange` → `routeFromHash`
+  sees `raw='docs/...'` ≠ `null` → loads the doc → sets
+  `lastHandledHash='docs/...'`. On a SECOND click of the SAME sidebar
+  entry, assigning `location.hash` to its current value is a browser
+  no-op (no `hashchange` fires per the HTML spec) — no double load.
+  Pre-setting `lastHandledHash = item.path` BEFORE assigning the hash
+  would cause `routeFromHash` to bail and the doc would never load on
+  first click — that is the bug, do not write it that way.
+- [ ] **Rewrite the upstream main-click handler's catalog-scan block
+  (lines 193-221) to set `location.hash` instead of calling
+  `loadDoc` directly.** Upstream walks DOCS_CATALOG, finds a matching
+  item by path, and invokes `loadDoc(item, navItems[idx])` directly —
+  same anti-pattern as the sidebar handler, and same URL-sync break.
+  REPLACE the entire `if (href.endsWith('.md') || …)` branch's inner
+  body with:
+  ```js
+  if (href.endsWith('.md') || href.includes('.md#')) {
+    e.preventDefault();
+    const resolved = resolveLink(href, currentHashPath());
+    location.hash = '#' + resolved;
+    // hashchange → routeFromHash → loadDoc; section anchor (if any)
+    // rides along inside `resolved` and is parsed out by routeFromHash.
+    return;
+  }
+  ```
+  This block REPLACES upstream lines 193-221 entirely — the catalog
+  scan and the "Not in catalog — load directly" off-catalog branch
+  are both subsumed by `routeFromHash`'s catalog-miss → `renderErrorPane`
+  path (which carries the GitHub fallback link). Do not preserve the
+  off-catalog `loadDoc` direct call.
+- [ ] **Remove the upstream eager initial-load block** (lines 34-55 of
+  upstream `docs__docs-app.js`, preserved verbatim in Phase 2a). The
+  `DOMContentLoaded` listener added below supersedes it — keeping
+  both would race (eager block loads first item, then hashchange-on-load
+  fires and re-renders). AC: `grep -c 'DOCS_CATALOG\[0\]' docs/docs-app.js`
+  returns 0 (the L51 fallback reference is gone).
+- [ ] **Remove the upstream `history.replaceState` call at line 66**
+  inside `loadDoc` — superseded by setting `location.hash` directly
+  (which fires `hashchange` for free).
 - [ ] **Write net-new hash-routing listeners.** The upstream source
   does NOT have these — verified via
   `grep -nE "hashchange|popstate|DOMContentLoaded|lastHandledHash"
@@ -554,16 +786,7 @@ catalog so the viewer renders one doc end-to-end.
   window.addEventListener('DOMContentLoaded', routeFromHash);
   ```
   Where `findCatalogItem`, `findNavEl`, `scrollToAnchor`,
-  `renderErrorPane` are small helpers added in the same file (bodies
-  specified in the next Work Item). The
-  upstream's initial-load top-level eager block (lines 34-55, bare
-  top-level code — NOT an IIFE; it executes once at module-load time)
-  is REPLACED by the `DOMContentLoaded` listener calling
-  `routeFromHash` — do not keep both, the listener supersedes the
-  upstream's eager startup block.
-  Also remove the upstream `history.replaceState` call at line 66
-  inside `loadDoc` — it is superseded by setting `location.hash`
-  directly (which fires `hashchange` for free).
+  `renderErrorPane` are the helpers added below.
 - [ ] **Specify the three referenced helpers** (`findCatalogItem`,
   `findNavEl`, `scrollToAnchor`) used by `routeFromHash`. Write them
   alongside `routeFromHash` in `docs/docs-app.js`:
@@ -594,60 +817,19 @@ catalog so the viewer renders one doc end-to-end.
   ```
   Document the slug-form requirement so future anchor authors don't
   expect `#Section Name` to work (it won't — must be `#section-name`).
-- [ ] **Write the inline catalog-miss error pane.** This is NEW UX, not
-  in the upstream (the upstream's only error path is line 89
-  `main.innerHTML = '<p style="color:#f44336">Could not load document.</p>'`
-  on `fetch` failure). Net-new helper:
+- [ ] **Add the `currentHashPath` 1-liner helper** used by the main
+  click-handler rewrite to compute the base for relative `.md` link
+  resolution:
   ```js
-  function renderErrorPane(targetPath) {
-    const safe = escapeHtml(targetPath);
-    main.innerHTML = `
-      <div class="zs-error-pane">
-        <h2>Page not found</h2>
-        <p>No catalog entry for <code>${safe}</code>.</p>
-        <p><a href="#docs/README.md" class="zl-docs-internal-link">Back to docs home</a></p>
-        <p>Or view raw source on
-          <a href="https://github.com/zeveck/zskills/blob/main/${safe}"
-             target="_blank" rel="noopener">GitHub</a>.</p>
-      </div>`;
+  function currentHashPath() {
+    const raw = location.hash.slice(1);
+    const hashIdx = raw.indexOf('#');
+    return hashIdx < 0 ? raw : raw.slice(0, hashIdx);
   }
   ```
-  (`escapeHtml` is imported from `MarkdownRenderer.js`.) The GitHub
-  link is the off-catalog fallback — it works even when the catalog
-  is stale or the user typed a path that exists in the repo but not
-  in the sidebar.
-- [ ] **Frontmatter source-strip** (MOVED here from Phase 4; the
-  visible `.zs-frontmatter` strip rendering remains in Phase 4 but the
-  SOURCE removal must happen here so Phase 2 doesn't ship visibly
-  broken). The renderer's HR rule
-  (`MarkdownRenderer.js:91 /^---+$/`) matches the frontmatter opener
-  AND closer, so without source-strip every plan file renders a stray
-  `<hr>` followed by paragraphs of `title: Foo`, `status: drafted`, etc.,
-  followed by another `<hr>`. Implementation in `docs/docs-app.js`:
-  ```js
-  function stripFrontmatter(md) {
-    if (!md.startsWith('---\n')) return md;
-    // Empty-frontmatter precheck: `---\n---\n` — closing `\n---\n`
-    // starts at offset 3, so the offset-4 search misses it and we'd
-    // return unstripped. Handle the empty case explicitly. (Round-2
-    // finding DA #6.)
-    if (md.startsWith('---\n---\n')) return md.slice(8);
-    const close = md.indexOf('\n---\n', 4);
-    if (close === -1) return md;        // unterminated → pass through
-    return md.slice(close + 5);
-  }
-  function renderFrontmatterStrip(md) {
-    // Phase 2: emit nothing (placeholder). Phase 4 replaces this body
-    // with the parsed-fields strip emitter.
-    return '';
-  }
-  ```
-  Phase 4 swaps `renderFrontmatterStrip`'s body for the full parsed
-  `<div class="zs-frontmatter">` emitter. `stripFrontmatter` stays as
-  written.
-- [ ] Implement internal-link resolver using the `URL` constructor.
+- [ ] **Implement internal-link resolver using the `URL` constructor.**
   This is also net-new — upstream's click handler (lines 193-221)
-  does a simpler `rawPath.replace(/^(\.\.\/)+/, '')` plus a catalog
+  did a simpler `rawPath.replace(/^(\.\.\/)+/, '')` plus a catalog
   scan; zskills needs richer resolution for relative paths like
   `../guides/X.md` inside `docs/skills/Y.md`:
   ```js
@@ -666,12 +848,28 @@ catalog so the viewer renders one doc end-to-end.
   `location.hash = '#' + resolveLink(href, current)` — `hashchange`
   fires, `routeFromHash` does the rest. No `pushState` to a different
   pathname, no full reload.
-- [ ] **Strip the upstream click-handler's examples/ folder branch.**
-  Lines 224-233 of `docs__docs-app.js` handle `examples/<name>/` folder
-  links by resolving to `examples/<name>/README.md`. zskills has no
-  `examples/` directory (verified —
-  `ls /workspaces/zskills/examples 2>&1` → ENOENT). REMOVE this entire
-  branch; do not adapt it.
+- [ ] **Write the inline catalog-miss error pane.** This is NEW UX, not
+  in the upstream (the upstream's only error path is line 89
+  `main.innerHTML = '<p style="color:#f44336">Could not load document.</p>'`
+  on `fetch` failure). Net-new helper:
+  ```js
+  function renderErrorPane(targetPath) {
+    const safe = escapeHtml(targetPath);
+    main.innerHTML = `
+      <div class="zs-error-pane">
+        <h2>Page not found</h2>
+        <p>No catalog entry for <code>${safe}</code>.</p>
+        <p><a href="#docs/README.md" class="zl-docs-internal-link">Back to docs home</a></p>
+        <p>Or view raw source on
+          <a href="https://github.com/zeveck/zskills/blob/main/${safe}"
+             target="_blank" rel="noopener">GitHub</a>.</p>
+      </div>`;
+  }
+  ```
+  (`escapeHtml` is imported from `MarkdownRenderer.js` per the Phase 2b
+  import-extend Work Item.) The GitHub link is the off-catalog fallback —
+  it works even when the catalog is stale or the user typed a path
+  that exists in the repo but not in the sidebar.
 - [ ] Add `tests/test-doc-viewer-routing.sh` (Node-DOM extract-and-exec)
   covering:
   - Empty hash → `routeFromHash` sets `lastHandledHash = ''` and
@@ -692,98 +890,70 @@ catalog so the viewer renders one doc end-to-end.
     "no full page reload" assertion is structurally hard in Node-DOM
     — `preventDefault` being called is the actionable surrogate; see
     Round-1 finding R #10.)
-  - Frontmatter source-strip: an MD string starting with `---\ntitle:
-    X\nstatus: drafted\n---\n# H` renders neither `<hr>` nor a
-    paragraph containing `title: X` or `status: drafted` (Phase 2's
-    Phase-4-broken-without-this-fix regression gate).
-  - Frontmatter empty-case: `---\n---\n# H` strips cleanly to `# H`
-    and renders ONLY the `<h1>H</h1>` — no `<hr>`, no empty paragraph
-    (Round-2 finding DA #6 regression gate; without the precheck the
-    offset-4 search misses the closer and the renderer emits two
-    `<hr>` lines).
+  - Sidebar click fires the load EXACTLY ONCE (not twice from the
+    click + hashchange double path) — implemented with a `loadDoc`
+    spy that counts invocations: after a synthetic sidebar click on
+    `docs/guides/WORKFLOWS.md`, `spy.callCount === 1` AND a SECOND
+    click on the SAME entry yields `spy.callCount === 1` still
+    (browser no-op on same-value hash assignment).
+  - Frontmatter source-strip (regression — the helpers landed in 2a
+    but the routing path is what feeds them in the deep-link case):
+    an MD string starting with `---\ntitle: X\nstatus: drafted\n---\n# H`
+    renders neither `<hr>` nor a paragraph containing `title: X` or
+    `status: drafted`.
 - [ ] Register `test-doc-viewer-routing.sh` in `tests/run-all.sh`.
-- [ ] Run `bash tests/run-all.sh` to confirm green.
+- [ ] Run `bash tests/run-all.sh` to confirm green (Phase 1 + 2a + 2b +
+  pre-existing).
 
 ### Design & Constraints
-- **Lift sources:** `/tmp/zimulink-lift/docs__index.html` (135 LOC),
-  `/tmp/zimulink-lift/docs__docs-app.js` (234 LOC),
-  `/tmp/zimulink-lift/src__ui__DocsRegistry.js` (99 LOC — shape only,
-  all content replaced).
-- **Lift-vs-net-new split (this phase).** LIFTED: sidebar build loop
-  (lines 17-31), `loadDoc` shell minus stripped lines (lines 57-91),
-  `renderDoc` baseUrl computation (lines 93-99 minus the
-  `main.innerHTML = ''` clear), click delegation outer shell (lines
-  179-234 minus the `examples/` branch). NET-NEW (specified above):
+- **Lift-vs-net-new split (Phase 2b).** NET-NEW (all written here):
   the 3 routing listeners, `lastHandledHash` dedupe, `routeFromHash`,
-  `renderErrorPane`, GitHub fallback link, `stripFrontmatter`,
-  `renderFrontmatterStrip` placeholder, `resolveLink` URL-constructor
-  resolver. Do not describe these as "preserved" or "kept" — they are
-  written here.
-- **Catalog shape:** array of `{section: string, items: [{name, path}]}`.
-  Paths are repo-root-relative.
-- **Fetch prefix:** viewer at `/docs/index.html` fetches with
-  `'../' + item.path` (so `item.path = 'docs/guides/X.md'` becomes
-  fetch URL `'../docs/guides/X.md'`). The browser resolves this against
-  the page URL `/docs/`, yielding the final URL `/docs/guides/X.md`
-  served by GitHub Pages (i.e., the on-disk file at repo root
-  `docs/guides/X.md`). Concretely: at
-  `https://zskills.synapticnoise.com/docs/`, the relative fetch
-  `'../docs/guides/X.md'` resolves to
-  `https://zskills.synapticnoise.com/docs/guides/X.md`. Equivalent
-  under `python3 -m http.server` served from repo root.
-- **`.nojekyll` interaction.** Because Pages serves the repo verbatim
-  (PR #47), MD files at `docs/*.md` are served as `text/markdown` /
-  `text/plain` and `fetch().text()` returns the raw source — exactly
-  what the renderer wants. No build step.
+  `findCatalogItem`, `findNavEl`, `scrollToAnchor`, `currentHashPath`,
+  `resolveLink`, `renderErrorPane`, the `escapeHtml` import addition.
+  REWRITES (replacing 2a's preserved-upstream sections): sidebar inner
+  item loop (upstream L24-29 → `<a data-path=...>` + `location.hash`);
+  main click handler inner body (upstream L193-221 → `resolveLink` +
+  `location.hash`); REMOVALS: upstream eager block L34-55, upstream
+  `history.replaceState` at L66.
+- **Single-ingress invariant.** All loads after Phase 2b go through
+  `hashchange` → `routeFromHash` → `loadDoc`. No direct `loadDoc` call
+  remains in the sidebar or main-click handlers. The single-fire
+  routing-test assertion gates this.
 - **No SKILL.md edits** in this phase → no `metadata.version` bump
   required.
-- **No DOMPurify import** — security strip lives in `MarkdownRenderer.js`
-  (Phase 1).
-- **`stripFrontmatter` heuristic + corpus risk.** The strip rule is
-  "any document whose first 4 bytes are `---\n` and which contains a
-  later `\n---\n` (or the empty-FM `---\n---\n` shape) has its prefix
-  through the closer stripped." A document whose ACTUAL first content
-  line is an HR `---` followed somewhere later by another `---` line
-  would be mis-stripped — the renderer would lose its first
-  paragraph. Verified against the current zskills corpus (2026-06-02):
-  no `docs/**/*.md` file opens with `---\n` as a content HR (every
-  hit is genuine YAML frontmatter). Future regression would surface
-  as "first paragraph missing in viewer" — discoverable by readers.
-  v2 may tighten by requiring line 2 to match
-  `^[a-zA-Z_][\w-]*:\s` (a YAML key) before committing to strip,
-  but the heuristic stays as-is for v1 to match the lifted renderer's
-  simplicity.
 
 ### Acceptance Criteria
-- [ ] `docs/index.html`, `docs/docs-app.js`, `docs/DocsRegistry.js`
-  exist with strips applied and the 5-item stub catalog.
-- [ ] `grep -c "zl-gate" docs/index.html` returns 0
-  (gate fully removed).
-- [ ] `grep -c 'Password gate' docs/index.html` returns 0
-  (orphan comment also removed).
-- [ ] `grep -c "isNewsletter" docs/docs-app.js` returns 0
-  (newsletter branch fully removed).
-- [ ] `grep -c 'name="robots"' docs/index.html` returns 0
-  (noindex meta removed).
-- [ ] `grep -c 'favicon.svg' docs/index.html` returns 0 (broken
-  reference removed).
-- [ ] `grep -c 'href="/docs/docs.css"' docs/index.html` returns 0
-  (absolute path replaced); `grep -c 'href="./docs.css"' docs/index.html`
-  returns 1.
 - [ ] `grep -nE "hashchange|popstate|DOMContentLoaded" docs/docs-app.js`
   returns ≥3 (the 3 listeners are wired).
-- [ ] `grep -c "function stripFrontmatter" docs/docs-app.js` returns 1
-  AND `grep -c "function renderFrontmatterStrip" docs/docs-app.js`
-  returns 1 (both helpers present).
-- [ ] `grep -cE "import \{[^}]*\bescapeHtml\b[^}]*\} from ['\"]\./MarkdownRenderer\.js['\"]" docs/docs-app.js`
-  returns 1 (escapeHtml is imported alongside `renderMarkdown` so
-  `renderErrorPane` can call it).
+- [ ] `grep -c "function routeFromHash" docs/docs-app.js` returns 1.
 - [ ] All three routing helpers are defined:
   `grep -c "function findCatalogItem" docs/docs-app.js` returns 1,
   `grep -c "function findNavEl" docs/docs-app.js` returns 1,
   `grep -c "function scrollToAnchor" docs/docs-app.js` returns 1.
+- [ ] `grep -c "function currentHashPath" docs/docs-app.js` returns 1.
+- [ ] `grep -c "function resolveLink" docs/docs-app.js` returns 1.
+- [ ] `grep -c "function renderErrorPane" docs/docs-app.js` returns 1.
+- [ ] `grep -cE "import \\{[^}]*\\bescapeHtml\\b[^}]*\\} from ['\"]\\./MarkdownRenderer\\.js['\"]" docs/docs-app.js`
+  returns 1 (escapeHtml is imported alongside `renderMarkdown` so
+  `renderErrorPane` can call it).
+- [ ] **Upstream eager initial-load block is REMOVED in 2b:**
+  `grep -c 'DOCS_CATALOG\[0\]' docs/docs-app.js` returns 0
+  (parallel to Phase 2a's positive presence AC).
+- [ ] **Upstream sidebar `loadDoc(item, link)` direct-call form is
+  REMOVED in 2b:** `grep -c 'loadDoc(item, link)' docs/docs-app.js`
+  returns 0 (the rewrite replaces the entire inner item loop).
+- [ ] **Upstream main-click direct `loadDoc(item, navItems[idx])` call
+  is GONE:** `grep -c "loadDoc(item, navItems\\[idx\\])" docs/docs-app.js`
+  returns 0.
+- [ ] Sidebar AND main-click handlers both route via `location.hash`:
+  `grep -cE "location\\.hash\\s*=" docs/docs-app.js` returns ≥ 2 (the
+  sidebar handler + the internal-link handler each set it).
+- [ ] Sidebar `<a>` elements carry `data-path` attributes (so
+  `findNavEl` can locate them):
+  `grep -c "setAttribute('data-path'" docs/docs-app.js` returns 1.
 - [ ] Loading `docs/index.html` with no hash invokes `loadDoc` on
-  `docs/README.md` (verified by routing test).
+  `docs/README.md` (verified by routing test via `DOMContentLoaded`
+  → `routeFromHash` → empty-raw → `docs/README.md` fallback).
 - [ ] Loading `docs/index.html#docs/guides/WORKFLOWS.md` renders
   WORKFLOWS (verified by routing test).
 - [ ] Loading `docs/index.html#docs/nonexistent.md` renders the inline
@@ -793,39 +963,29 @@ catalog so the viewer renders one doc end-to-end.
   `docs/README.md` calls `event.preventDefault()` (asserted via
   `evt.defaultPrevented === true`) and sets `window.location.hash`
   to the resolved target (verified by routing test).
-- [ ] Upstream's direct `loadDoc(item, navItems[idx])` catalog-scan call
-  is GONE from the main click handler:
-  `grep -c "loadDoc(item, navItems\[idx\])" docs/docs-app.js` returns 0.
-- [ ] Sidebar AND main-click handlers both route via `location.hash`:
-  `grep -cE "location\.hash\s*=" docs/docs-app.js` returns ≥ 2 (the
-  sidebar handler + the internal-link handler each set it).
-- [ ] Sidebar `<a>` elements carry `data-path` attributes (so
-  `findNavEl` can locate them):
-  `grep -c "setAttribute('data-path'" docs/docs-app.js` returns 1.
 - [ ] Routing test asserts a sidebar click fires the load EXACTLY ONCE
-  (not twice from the click + hashchange double path) — implemented
-  with a `loadDoc` spy that counts invocations: after a synthetic
-  sidebar click on `docs/guides/WORKFLOWS.md`, `spy.callCount === 1`
-  AND a SECOND click on the SAME entry yields `spy.callCount === 1`
-  still (browser no-op on same-value hash assignment).
-- [ ] Frontmatter source-strip: a plan-style MD `---\ntitle:
+  (not twice from the click + hashchange double path).
+- [ ] Frontmatter source-strip regression: a plan-style MD `---\ntitle:
   X\nstatus: drafted\n---\n# H` renders neither `<hr>` nor a paragraph
-  containing `title: X` (verified by routing test).
+  containing `title: X` (verified by routing test against the 2a
+  helpers, exercised through the hash-routed load path).
 - [ ] `tests/test-doc-viewer-routing.sh` exits 0; emits
   `Results: N passed, M failed`; registered in `run-all.sh`.
-- [ ] `docs/index.html` loads `<script type="module" src="./docs-app.js">`
-  directly (no async unlock loader; `grep -c "type=\"module\"" docs/index.html`
-  returns 1).
+- [ ] `bash tests/run-all.sh` exits 0 (Phase 1 + 2a shell + 2b routing
+  + pre-existing).
 - [ ] Manual smoke (attended, optional but recommended for the
   implementing agent): serve repo root via
   `python3 -m http.server 8000`, open
-  `http://localhost:8000/docs/`, verify all 5 catalog items load and
-  render including a Progress Tracker table AND a plan file with
-  frontmatter renders cleanly (no stray `---`, no `title:` paragraph
-  above the H1).
+  `http://localhost:8000/docs/`, verify all 5 catalog items load via
+  sidebar click AND deep-linking by editing the URL hash works AND
+  browser back/forward navigates correctly. A plan file with
+  frontmatter (once Phase 4's catalog exposes one) renders cleanly
+  (no stray `---`, no `title:` paragraph above the H1).
 
 ### Dependencies
-Phase 1 (MarkdownRenderer must exist and be importable).
+Phase 2a (the viewer shell, frontmatter helpers, and stub catalog
+must exist for the routing-layer additions and handler rewrites to
+have something to attach to).
 
 ## Phase 3 — Styling + dark-default + theme toggle
 
@@ -995,7 +1155,10 @@ a 3-state (light/dark/system) theme toggle with FOUC prevention.
   FOUC visible on hard reload of `docs/index.html`.
 
 ### Dependencies
-Phase 2 (shell HTML must exist to attach styles + toggle to).
+Phase 2a (shell HTML must exist to attach styles + toggle to). Phase 3
+does NOT need hash routing — styling layers on the shell, and the
+toggle button + theme-state machine are independent of the routing
+ingress added in Phase 2b.
 
 ## Phase 4 — Catalog generator + visible frontmatter strip
 
@@ -1175,8 +1338,10 @@ and adds its CSS).
 - [ ] `bash tests/run-all.sh` exits 0 on the full suite.
 
 ### Dependencies
-Phase 2 (catalog wiring + routing in place); Phase 1 (renderer in
-place); Phase 3 (CSS palette + `.zs-frontmatter` styling target).
+Phase 2b (catalog wiring + routing in place — the catalog-miss
+regression gate at the bottom of this phase requires `routeFromHash`,
+which lands in 2b); Phase 1 (renderer in place); Phase 3 (CSS palette
++ `.zs-frontmatter` styling target).
 
 ## Phase 5 — Inspecting-and-monitoring.html disposition + URL plumbing
 
@@ -1358,6 +1523,38 @@ catalog being run, not a special-case entry.
 | 1     | 14                | 18 (5 critical, 10 major, 3 minor) | 29/29 (with overlap; 0 deferred) |
 | 2     | 6 (0 critical, 1 major, 3 minor, 2 nit) | 6 (2 critical, 2 major, 2 minor) | 11/11 (0 deferred) |
 | 3     | 0 (CONVERGED)     | 2 (1 major, 1 minor)      | 2/2 (in-place by orchestrator) |
+| Refine 1 (post-PR-#975) | 5 (2 major, 3 minor) | 4 (2 critical, 2 major) | 9/9 (0 deferred) |
+
+### Refinement round (post-PR-#975)
+
+A single `/refine-plan` round (1 reviewer + 1 devil's advocate dispatched in
+parallel; refiner verify-before-fix). Scope was the user-requested Phase 2
+→ Phase 2a/Phase 2b structural split: 2a lifts the shell + stub catalog +
+frontmatter helpers + sanity smoke (intentionally unstyled — Phase 3 ships
+the palette); 2b layers hash routing + helpers + handler rewrites + error
+pane + the routing-test suite on top. Phases 1, 3, 4, 5 were NOT renumbered;
+Phase 3 dep updated to "Phase 2a", Phase 4 dep updated to "Phase 2b". The
+critical empirical re-check was that the L101-173 renderer call site
+references `renderFrontmatterStrip` + `stripFrontmatter` directly, so both
+helpers MUST land in 2a (deferring them to 2b would `ReferenceError` on
+module load). Upstream's eager initial-load block (lines 34-55) is preserved
+verbatim in 2a (positive presence AC `grep -c 'DOCS_CATALOG\[0\]'` ≥ 1) and
+removed in 2b (parallel negative AC `grep -c 'DOCS_CATALOG\[0\]'` = 0).
+The 5 stub-catalog files have no YAML frontmatter (verified via `head -8`
+on each), so 2a's render path is pure pass-through for the stub catalog —
+the frontmatter helpers are still load-bearing as references but exercise
+nothing until plan files are in the catalog (Phase 4).
+
+### Drift Log
+
+No completed phases — all phases were reviewed as remaining at refinement
+time. Refinement applied a Phase 2 → 2a/2b structural split per round-1
+DA + reviewer + user direction; Phase 3/4 dependency lines updated;
+Phase 1 + Phase 5 internals preserved byte-for-byte; the Plan Quality
+round-history rows 1-3 preserved byte-for-byte; the Pre-flight section
+preserved byte-for-byte. Only additive edits to Plan Quality: a new
+"Refine 1" row in the Round History table and this Refinement-round
+subsection.
 
 ### Pre-flight requirements (must hold before Phase 1 begins)
 
