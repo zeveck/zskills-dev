@@ -1,7 +1,8 @@
 ---
 title: Docs Viewer — JS-based Markdown viewer at /docs/
 created: 2026-06-02
-status: drafted
+status: complete
+completed: 2026-06-02
 ---
 
 # Plan: Docs Viewer — JS-based Markdown viewer at /docs/
